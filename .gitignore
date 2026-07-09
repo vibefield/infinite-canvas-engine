@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+.idea/
+*.log
+
+# Design drafts are version-controlled ONLY on the `local-dev` branch (never pushed).
+# On main they stay present-but-untracked. See CLAUDE.md "Draft workflow".
+/draft/
