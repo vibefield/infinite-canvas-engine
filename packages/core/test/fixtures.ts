@@ -8,7 +8,7 @@
  * strata's schema registry is process-global and `names.define` THROWS on a
  * duplicate name, so every component/tag/relation/resource is defined ONCE here at
  * module scope. Prefabs, by contrast, live in @ice/core's own registry which
- * `prefabs.__reset()` clears between tests — so prefab definitions belong in the
+ * `__resetPrefabsForTests()` clears between tests — so prefab definitions belong in the
  * tests (via {@link defineStdPrefabs}), re-registered fresh each run.
  */
 import { LoroDoc } from "loro-crdt";
@@ -56,7 +56,7 @@ export const mxDurableRes = defineResource("mx:Background", { color: field("stri
 /** Runtime-declared resource (durable defaults false) — illegal in a tx. */
 export const mxRuntimeRes = defineResource("mx:Camera", { zoom: field("f32", { default: 1 }) });
 
-/** The standard prefab trio, registered fresh (call AFTER `prefabs.__reset()`). */
+/** The standard prefab trio, registered fresh (call AFTER `__resetPrefabsForTests()`). */
 export interface StdPrefabs {
   box: Prefab;
   cursor: Prefab;

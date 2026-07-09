@@ -18,6 +18,7 @@
  * corrupt a cancel-restore.
  */
 import { enumOf, field } from "@vibecook/strata-ecs";
+import { definePhaseSet } from "../helpers/phase-set";
 import { defineComponent, defineRelation, defineTag } from "../schema/meta";
 
 // --- kind components (design-003 §4.2) ---
@@ -69,25 +70,44 @@ export const WheelZoom = defineComponent("WheelZoom", {
   anchorY: field("f32", { default: 0 }),
 });
 
-// --- phase tags (exclusive set; flipped via the PhaseSet helper) ---
+// --- phases (exclusive set + one-tick Just* markers; flipped via the PhaseSet helper) ---
+
+/**
+ * The recognizer lifecycle as ONE PhaseSet (design-003 §4.2): six mutually-exclusive
+ * phases. Each mints a persistent `Gesture<Phase>` tag AND a one-tick `GestureJust<Phase>`
+ * marker (plain concatenation — the doc vocabulary "GesturePossible"… is unchanged), so
+ * behaviors edge-trigger discrete/terminal actions on the markers exactly once while a
+ * terminal tag lingers through the reap window (§4.2, §4.1). The named phase tags below
+ * are re-exports of `GesturePhases.tags.*` for ergonomics + `ops/claims` compatibility.
+ * `GesturePossible` etc. is the ONLY definition path for these tag names (strata's schema
+ * registry is process-global — a second `defineTag("GesturePossible")` would throw).
+ */
+export const GesturePhases = definePhaseSet("Gesture", [
+  "Possible",
+  "Active",
+  "Recognized",
+  "Ended",
+  "Failed",
+  "Cancelled",
+] as const);
 
 /** Recognizer alive, not yet claiming. */
-export const GesturePossible = defineTag("GesturePossible");
+export const GesturePossible = GesturePhases.tags.Possible;
 
 /** Continuous kinds' claiming phase + per-frame work gate. */
-export const GestureActive = defineTag("GestureActive");
+export const GestureActive = GesturePhases.tags.Active;
 
 /** Discrete kinds' terminal claim. */
-export const GestureRecognized = defineTag("GestureRecognized");
+export const GestureRecognized = GesturePhases.tags.Recognized;
 
 /** Continuous kinds' terminal (release). */
-export const GestureEnded = defineTag("GestureEnded");
+export const GestureEnded = GesturePhases.tags.Ended;
 
 /** Recognizer failed its predicate or lost arbitration. */
-export const GestureFailed = defineTag("GestureFailed");
+export const GestureFailed = GesturePhases.tags.Failed;
 
 /** Recognizer cancelled (pointercancel / integrity / CancelRequest). */
-export const GestureCancelled = defineTag("GestureCancelled");
+export const GestureCancelled = GesturePhases.tags.Cancelled;
 
 /** Suspended (a pinch suspends the single-pointer recognizers) — "suspend, don't kill". */
 export const GestureSuspended = defineTag("GestureSuspended");

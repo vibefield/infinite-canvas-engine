@@ -3,9 +3,11 @@
  * (design-003 §4.2, design-002 §2/§3).
  *
  * A phase set is a small, fixed list of mutually-exclusive phases (e.g. a recognizer's
- * `possible → active → ended`). For each phase it mints two tags via the schema wrapper:
- *   - a persistent phase tag   `${name}:${phase}`      — "the entity is in this phase"
- *   - a one-tick `Just` marker `${name}:just-${phase}` — "the entity ENTERED this phase this frame"
+ * `Possible → Active → Ended`). For each phase it mints two tags via the schema wrapper,
+ * named by PLAIN CONCATENATION so the doc vocabulary holds (design-001 §5.5: the catalog's
+ * gesture set is definePhaseSet("Gesture", ["Possible", …]) → "GesturePossible"):
+ *   - a persistent phase tag   `${name}${phase}`     — "the entity is in this phase"
+ *   - a one-tick `Just` marker `${name}Just${phase}` — "the entity ENTERED this phase this frame"
  *
  * Why two tags: terminal phases persist through the reap window (design-003 §4.1), so a
  * behavior that acted on the persistent tag would fire on every frame the tag lingers.
@@ -82,8 +84,8 @@ export function definePhaseSet<const P extends string>(name: string, phases: rea
   const justTags = {} as Record<P, Tag>;
   const allMarkerTags: Tag[] = [];
   for (const phase of phases) {
-    tags[phase] = defineTag(`${name}:${phase}`);
-    const marker = defineTag(`${name}:just-${phase}`);
+    tags[phase] = defineTag(`${name}${phase}`);
+    const marker = defineTag(`${name}Just${phase}`);
     justTags[phase] = marker;
     allMarkerTags.push(marker);
   }
@@ -98,6 +100,10 @@ export function definePhaseSet<const P extends string>(name: string, phases: rea
     if (devGuardsEnabled() && hasReader(m) && m.hasTag(e, nextTag)) {
       // Already in `next` — the transition is a no-op. Warn and skip so the fresh marker
       // is not re-emitted (which would edge-trigger downstream behaviors a second time).
+      // BEST-EFFORT detection only: a SystemCtx's hasTag reads pre-flush state, so a
+      // deferred same-body double-set is invisible here. That miss is harmless — the
+      // clear-then-add below is idempotent and tags dedupe, so the marker still fires
+      // exactly once. Reliable detection holds for immediate writers (World).
       console.warn(`ice: definePhaseSet("${name}").set — entity is already in phase "${next}"; no-op.`);
       return;
     }

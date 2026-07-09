@@ -41,6 +41,15 @@ export function createLiveWriter(world: World, opts: LiveWriterOpts): LiveWriter
       if (devGuardsEnabled() && opts.keyOf(e) !== undefined) {
         const prefabId = world.get(e, PrefabId)?.id;
         const prefab = typeof prefabId === "string" ? prefabs.get(prefabId) : undefined;
+        if (!opts.cellInDoc && prefab === undefined) {
+          // Fail CLOSED (review finding A5): a doc-bound entity whose prefab we
+          // cannot resolve must not get free live writes — without eligibility
+          // knowledge every write could be a doc cell. Wire `cellInDoc` (exact)
+          // or ensure durable spawns stamp a registered PrefabId.
+          throw new Error(
+            `ice: live write to a doc-bound entity with no resolvable prefab (PrefabId=${String(prefabId)}) — the guard cannot determine cell sovereignty; wire cellInDoc or spawn via a registered prefab.`,
+          );
+        }
         const guardedCell = opts.cellInDoc
           ? opts.cellInDoc(e, component as Component)
           : (prefab?.eligible.has(component as Component) ?? false);

@@ -15,8 +15,9 @@ describe("definePhaseSet", () => {
       gesture.justTags.active,
       gesture.justTags.ended,
     ]);
-    expect(gesture.tags.possible.name).toBe("test-gesture:possible");
-    expect(gesture.justTags.possible.name).toBe("test-gesture:just-possible");
+    // Plain concatenation keeps the doc vocabulary: ("Gesture","Possible") → "GesturePossible".
+    expect(gesture.tags.possible.name).toBe("test-gesturepossible");
+    expect(gesture.justTags.possible.name).toBe("test-gestureJustpossible");
   });
 
   it("set moves the phase tag exclusively and current() reads it back", () => {

@@ -3,15 +3,15 @@
  *
  * `Selected` is a runtime rider; toggling it via `world.addTag/removeTag` is a
  * legal free write from an app handler (design-001 §2 rule 4 — riders are not
- * doc cells). The engine bumps a selection version stamp on change, but that
- * resource lives in another module (helpers/version-stamps.ts): rather than
- * import it, these ops take an optional `onChange` hook the engine wires later.
- * Selection is committed ONCE per interaction, never per frame (the v1 marquee
- * lesson) — so change-only firing of `onChange` matters.
+ * doc cells). The engine bumps the `SelectionVersion` stamp (helpers/version-stamps.ts)
+ * on every actual change, in addition to firing the optional `onChange` hook the
+ * app wires for its own bookkeeping. Selection is committed ONCE per interaction,
+ * never per frame (the v1 marquee lesson) — so change-only firing matters for both.
  */
 import { defineQuery } from "@vibecook/strata-ecs";
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { Selected } from "../catalog/selection-presence";
+import { bumpVersion, SelectionVersion } from "../helpers/version-stamps";
 
 export type SelectionMode = "replace" | "toggle" | "add";
 
@@ -70,7 +70,10 @@ export function setSelection(
     }
   }
 
-  if (changed) onChange?.();
+  if (changed) {
+    bumpVersion(world, SelectionVersion);
+    onChange?.();
+  }
 }
 
 /** Clear the whole selection. `onChange` fires once, only if something was selected. */
@@ -80,5 +83,8 @@ export function clearSelection(world: World, onChange?: () => void): void {
     world.removeTag(e, Selected);
     changed = true;
   }
-  if (changed) onChange?.();
+  if (changed) {
+    bumpVersion(world, SelectionVersion);
+    onChange?.();
+  }
 }

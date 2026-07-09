@@ -16,6 +16,7 @@
  */
 import { enumOf, field } from "@vibecook/strata-ecs";
 import { defineComponent, defineRelation, defineResource, defineTag } from "../schema/meta";
+import { SNAP_DEFAULTS } from "../settings/defaults";
 
 // --- runtime resources (design-001 §5.7) ---
 
@@ -39,8 +40,8 @@ export const ActiveTool = defineResource("ActiveTool", { id: field("string", { d
 
 /** Global snap toggle + threshold in screen px (scaled by zoom at use, design-003 §5.2). */
 export const SnapConfig = defineResource("SnapConfig", {
-  enabled: field("bool", { default: true }),
-  thresholdPx: field("f32", { default: 8 }),
+  enabled: field("bool", { default: SNAP_DEFAULTS.enabled }),
+  thresholdPx: field("f32", { default: SNAP_DEFAULTS.thresholdPx }),
 });
 
 /** Per-container view-state memory — a runtime rider on container widgets (design-001 §5.7). */

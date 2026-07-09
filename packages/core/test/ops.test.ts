@@ -10,6 +10,7 @@ import { attachDurable, createDurableStore } from "@vibecook/strata-ecs/durable"
 import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import { ChildOf, Position, Wire, WireFrom, WireTo } from "../src/catalog";
+import { SelectionVersion } from "../src/helpers/version-stamps";
 import { cascadeDestroy } from "../src/ops/cascade";
 import { clearSelection, selectedEntities, setSelection } from "../src/ops/selection";
 
@@ -68,6 +69,22 @@ describe("selection ops (design-003 §5.1)", () => {
     expect(n).toBe(2);
     clearSelection(w, bump); // nothing selected → no flip
     expect(n).toBe(2);
+  });
+
+  it("bumps SelectionVersion exactly once per changing call, never on a no-op", () => {
+    const w = createWorld();
+    const a = w.spawn({ components: [[Position, { x: 0, y: 0 }]] });
+    const versionOf = () => w.getResource(SelectionVersion)?.v ?? 0;
+
+    expect(versionOf()).toBe(0);
+    setSelection(w, [a], "add");
+    expect(versionOf()).toBe(1);
+    setSelection(w, [a], "add"); // already selected → no flip
+    expect(versionOf()).toBe(1);
+    clearSelection(w);
+    expect(versionOf()).toBe(2);
+    clearSelection(w); // nothing selected → no flip
+    expect(versionOf()).toBe(2);
   });
 });
 

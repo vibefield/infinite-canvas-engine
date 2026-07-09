@@ -3,15 +3,21 @@
  * types, enum labels, relation arities, and default/required split that
  * design-001 §5 + design-003 §4 specify. These lock the vocabulary contract.
  */
-import type { Component, Relation, Resource, Tag } from "@vibecook/strata-ecs";
+import { type Component, createWorld, type Relation, type Resource, type Tag } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import * as cat from "../src/catalog";
 import { schemaMeta } from "../src/schema/meta";
+import { SNAP_DEFAULTS } from "../src/settings/defaults";
 
 /** Declared scalar type of a field ("f64" | "f32" | …), or undefined for an enum field. */
 function scalarType(comp: Component, name: string): string | undefined {
   const t = comp.fieldByName.get(name)?.spec.type;
   return typeof t === "string" ? t : undefined;
+}
+
+/** Declared default value of a field, or undefined if the field has none. */
+function defaultOf(comp: Component | Resource, name: string): unknown {
+  return comp.fieldByName.get(name)?.spec.default;
 }
 
 /** Enum labels of a field, in declaration order, or [] if the field is not an enum. */
@@ -160,6 +166,46 @@ describe("gesture (§5.5, design-003 §4.2)", () => {
     expect(cat).not.toHaveProperty("GesturePending");
   });
 
+  it("GesturePhases mints one-tick Just<Phase> markers with the contract names", () => {
+    // The six phases are ONE PhaseSet; alongside each persistent phase tag it mints a
+    // "GestureJust<Phase>" marker (plain concatenation, design-003 §4.2).
+    const markers: [Tag, string][] = [
+      [cat.GesturePhases.justTags.Possible, "GestureJustPossible"],
+      [cat.GesturePhases.justTags.Active, "GestureJustActive"],
+      [cat.GesturePhases.justTags.Recognized, "GestureJustRecognized"],
+      [cat.GesturePhases.justTags.Ended, "GestureJustEnded"],
+      [cat.GesturePhases.justTags.Failed, "GestureJustFailed"],
+      [cat.GesturePhases.justTags.Cancelled, "GestureJustCancelled"],
+    ];
+    for (const [t, name] of markers) expect(schemaMeta.tagName(t)).toBe(name);
+    // The named phase tags are the SAME handles the PhaseSet exposes (re-exports, not clones).
+    expect(cat.GesturePossible).toBe(cat.GesturePhases.tags.Possible);
+    expect(cat.GestureActive).toBe(cat.GesturePhases.tags.Active);
+  });
+
+  it("GesturePhases.set moves a recognizer Possible→Active and raises GestureJustActive exactly once", () => {
+    const world = createWorld();
+    const rec = world.spawn();
+
+    cat.GesturePhases.set(world, rec, "Possible");
+    expect(cat.GesturePhases.current(world, rec)).toBe("Possible");
+
+    cat.GesturePhases.set(world, rec, "Active");
+    // Exclusive persistent phase: Possible dropped for Active.
+    expect(cat.GesturePhases.current(world, rec)).toBe("Active");
+    expect(world.hasTag(rec, cat.GesturePossible)).toBe(false);
+    expect(world.hasTag(rec, cat.GestureActive)).toBe(true);
+
+    // EXACTLY ONE Just* marker is raised, and it is the entered phase's.
+    const raised = cat.GesturePhases.phases.filter((p) => world.hasTag(rec, cat.GesturePhases.justTags[p]));
+    expect(raised).toEqual(["Active"]);
+
+    // The marker is one-tick: cleanup clears it while the persistent phase stays.
+    cat.GesturePhases.clearMarkers(world, rec);
+    expect(world.hasTag(rec, cat.GesturePhases.justTags.Active)).toBe(false);
+    expect(world.hasTag(rec, cat.GestureActive)).toBe(true);
+  });
+
   it("recognizer relations carry the right arities", () => {
     expect(arityOf(cat.Watches)).toBe("many");
     expect(arityOf(cat.Captures)).toBe("one");
@@ -223,6 +269,11 @@ describe("camera / resources / derived / chrome / nav (§5.7, §5.8)", () => {
       expect(meta?.name).toBe(name);
       expect(meta?.durable).toBe(false);
     }
+  });
+
+  it("SnapConfig defaults equal SNAP_DEFAULTS (single source of truth pin)", () => {
+    expect(defaultOf(cat.SnapConfig, "enabled")).toBe(SNAP_DEFAULTS.enabled);
+    expect(defaultOf(cat.SnapConfig, "thresholdPx")).toBe(SNAP_DEFAULTS.thresholdPx);
   });
 
   it("Camera fields have the right types; ContainerCamera is a component rider", () => {

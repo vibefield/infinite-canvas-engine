@@ -17,7 +17,7 @@ Source designs: the reviewed series in `draft/` (local-dev branch; present-but-u
 
 ## M1 — Kernel (pure math, ported)
 
-Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tests: coordinate module (screen/world/local + zoom-around-point + THE Y-flip — one module, L13), `computeSnapGuides` (alignment + equal-spacing + merge), RBush `SpatialIndex` (O(log n) removal), `ZoomBands` + hysteresis, port-anchor + bezier + segment-distance hit math, eviction policy, FBO-pool/`ResourceRegistry` (pure parts).
+Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tests: coordinate module (screen/world/local + zoom-around-point + THE Y-flip — one module, L13), `computeSnapGuides` (alignment + equal-spacing + merge), RBush `SpatialIndex` (O(log n) removal), `ZoomBands` + hysteresis, port-anchor + bezier + segment-distance hit math, eviction policy + fboPixelSize (the pure slices); the stateful FBO pool + ResourceRegistry land in M7 (r3f).
 
 **Exit**: kernel suite green; zero deps; property tests on coordinate round-trips and snap merge rules.
 

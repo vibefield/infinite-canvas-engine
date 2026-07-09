@@ -21,11 +21,14 @@ export {
 } from "./schema/meta";
 
 // Prefabs — sovereignty at the entity level (design-001 §2).
+// (__resetPrefabsForTests is deliberately NOT re-exported — test-only, import from the module.)
 export {
   definePrefab,
+  init,
   PrefabId,
   prefabs,
   type ComponentInit,
+  type FieldWrite,
   type Prefab,
   type PrefabClass,
   type PrefabDef,
@@ -38,6 +41,7 @@ export { instantiate, type EphSpawner, type SpawnTarget } from "./engine/instant
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";
 export { createLiveWriter, type LiveWriter, type LiveWriterOpts } from "./guards/live-writer";
 export { guardedTransaction, type GuardedTx } from "./guards/guarded-tx";
+export { writeRuntimeResource } from "./guards/resource-writer";
 
 // The component/tag/relation/resource catalog (design-001 §5, faithful transcription).
 export * from "./catalog";
@@ -49,6 +53,7 @@ export * from "./helpers/version-stamps";
 // Catalog-adjacent ops (app-handler write paths).
 export * from "./ops/selection";
 export * from "./ops/cascade";
+export * from "./ops/claims";
 
 // Reviewed default constants (citations point at the owning design sections).
 export * from "./settings/defaults";

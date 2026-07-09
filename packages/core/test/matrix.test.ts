@@ -6,7 +6,7 @@
  * (schema/prefab · engine/instantiate · guards/*) and tries to break its
  * sovereignty guarantees. Each `it` names the design rule it pins. Fixtures and
  * the "mx:*" schema live in ./fixtures (declared once — strata's registry is
- * process-global); prefabs are (re)defined per test after `prefabs.__reset()`.
+ * process-global); prefabs are (re)defined per test after `__resetPrefabsForTests()`.
  *
  * Real strata throughout: createWorld + createDurableStore(LoroDoc) + attachDurable.
  * Durable timing (verified against strata source): a value write to a PRE-EXISTING
@@ -18,11 +18,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWorld, defineQuery } from "@vibecook/strata-ecs";
 import type { Entity, SystemCtx } from "@vibecook/strata-ecs";
 import { attachDurable } from "@vibecook/strata-ecs/durable";
-import { definePrefab, PrefabId, prefabs } from "../src/schema/prefab";
+import { __resetPrefabsForTests, definePrefab, PrefabId } from "../src/schema/prefab";
 import { instantiate } from "../src/engine/instantiate";
 import { createLiveWriter } from "../src/guards/live-writer";
 import { guardedTransaction } from "../src/guards/guarded-tx";
 import { setDevGuards } from "../src/guards/dev";
+import { makeDefaultMayDiverge } from "../src/ops/claims";
+// The matrix MAY import the catalog now that it is stable (the schema registry is process-global
+// and unaffected by the prefab reset in beforeEach): the real recognizer tags/relations/riders pin
+// makeDefaultMayDiverge against live claims rather than a stub predicate.
+import { Captures, Drags, GestureActive, TransformTween } from "../src/catalog/gesture";
 import {
   attachWorld,
   defineStdPrefabs,
@@ -46,7 +51,7 @@ import {
 } from "./fixtures";
 
 beforeEach(() => {
-  prefabs.__reset();
+  __resetPrefabsForTests();
 });
 
 afterEach(() => {
@@ -322,6 +327,116 @@ describe("rule 4 — per-cell live guard (createLiveWriter)", () => {
 });
 
 // =====================================================================================
+// RULE 4 (cellInDoc) — the EXACT doc-membership predicate vs the eligibility fallback
+// (design-001 §2 rule 4; live-writer finding A6 / matrix finding #2)
+// =====================================================================================
+describe("rule 4 (cellInDoc) — exact doc membership vs the eligibility approximation", () => {
+  it("rule 4: with cellInDoc wired to the doc, a committed cell w/o claim throws but an eligible-but-UNCOMMITTED optional is free", () => {
+    const { world, store } = attachWorld();
+    const { box } = defineStdPrefabs();
+    const e = makeDurableBox(world, store, box);
+    // mxRotation is ELIGIBLE (box optional) but never attached via tx → not a doc cell. Attach it as a
+    // RUNTIME rider so the value write has a column to land in (rule 2: a world-added component never
+    // enters the doc, so the exact predicate below still reports it absent).
+    world.addComponent(e, mxRotation, { r: 0 });
+
+    const lw = createLiveWriter(world, {
+      keyOf: (x) => store.keyOf(x),
+      mayDiverge: () => false,
+      cellInDoc: (x, c) => store.getComponent(x, c) !== undefined, // EXACT: the real doc.getComponent
+    });
+
+    // Position was committed at spawn → it IS a doc cell → no claim → throws.
+    expect(() => lw.set(e, mxPosition, { x: 1, y: 1 })).toThrow(/gesture claim/);
+    // The exact predicate is LESS strict than eligibility: mxRotation is eligible yet not in the doc → free.
+    expect(() => lw.set(e, mxRotation, { r: 1 })).not.toThrow();
+    expect(world.get(e, mxRotation)).toEqual({ r: 1 });
+  });
+
+  it("rule 4: the SAME uncommitted optional THROWS under the FALLBACK (no cellInDoc) — pins the documented over-approximation", () => {
+    const { world, store } = attachWorld();
+    const { box } = defineStdPrefabs();
+    const e = makeDurableBox(world, store, box);
+
+    // No cellInDoc → the guard falls back to prefab ELIGIBILITY, which is stricter: mxRotation is
+    // eligible, so it is guarded even though it is not actually in the doc (fails safe; §2 rule 4).
+    const lw = createLiveWriter(world, {
+      keyOf: (x) => store.keyOf(x),
+      mayDiverge: () => false,
+    });
+    expect(() => lw.set(e, mxRotation, { r: 1 })).toThrow(/gesture claim/);
+  });
+});
+
+// =====================================================================================
+// RULE 4 (real claims) — makeDefaultMayDiverge over LIVE recognizers, + the fail-closed
+// prefab branch (design-001 §3; live-writer findings A2 / A5)
+// =====================================================================================
+describe("rule 4 (real claims) — makeDefaultMayDiverge + fail-closed prefab", () => {
+  it("rule 4: an Active recognizer that Captures then Drags the box grants divergence; dropping Active revokes it", () => {
+    const { world, store } = attachWorld();
+    const { box } = defineStdPrefabs();
+    const e = makeDurableBox(world, store, box);
+    const lw = createLiveWriter(world, {
+      keyOf: (x) => store.keyOf(x),
+      mayDiverge: makeDefaultMayDiverge(world),
+    });
+
+    // No claim → guarded.
+    expect(() => lw.set(e, mxPosition, { x: 1, y: 1 })).toThrow(/gesture claim/);
+
+    // A live recognizer Captures the box AND is Active → divergence granted.
+    const rec = world.spawn();
+    world.addTag(rec, GestureActive);
+    world.setRelation(rec, Captures, e);
+    expect(() => lw.set(e, mxPosition, { x: 2, y: 2 })).not.toThrow();
+    expect(world.get(e, mxPosition)).toEqual({ x: 2, y: 2 });
+
+    // Drop Active (the Captures edge remains) → divergence revoked.
+    world.removeTag(rec, GestureActive);
+    expect(() => lw.set(e, mxPosition, { x: 3, y: 3 })).toThrow(/gesture claim/);
+
+    // The Drags edge-set is the OTHER grant path — an Active recognizer that Drags it also diverges.
+    const rec2 = world.spawn();
+    world.addTag(rec2, GestureActive);
+    world.addRelation(rec2, Drags, e);
+    expect(() => lw.set(e, mxPosition, { x: 4, y: 4 })).not.toThrow();
+    world.removeTag(rec2, GestureActive);
+    expect(() => lw.set(e, mxPosition, { x: 5, y: 5 })).toThrow(/gesture claim/);
+  });
+
+  it("rule 4: a live TransformTween on the box IS the claim (fly-back holds it past reap); removing it revokes divergence", () => {
+    const { world, store } = attachWorld();
+    const { box } = defineStdPrefabs();
+    const e = makeDurableBox(world, store, box);
+    const lw = createLiveWriter(world, {
+      keyOf: (x) => store.keyOf(x),
+      mayDiverge: makeDefaultMayDiverge(world),
+    });
+
+    expect(() => lw.set(e, mxPosition, { x: 1, y: 1 })).toThrow(/gesture claim/);
+    world.addComponent(e, TransformTween, { toX: 0, toY: 0, durationMs: 100, elapsedMs: 0 });
+    expect(() => lw.set(e, mxPosition, { x: 6, y: 6 })).not.toThrow();
+    world.removeComponent(e, TransformTween);
+    expect(() => lw.set(e, mxPosition, { x: 7, y: 7 })).toThrow(/gesture claim/);
+  });
+
+  it("rule 4 (A5): a doc-bound entity with no resolvable prefab FAILS CLOSED (no free live writes)", () => {
+    const { world, store } = attachWorld();
+    const { box } = defineStdPrefabs();
+    const e = makeDurableBox(world, store, box);
+    // Strip the runtime PrefabId: keyOf still binds e to the doc, but the guard can no longer resolve a
+    // prefab, so it cannot know which cells are doc-sovereign — every write could be one → fail closed.
+    world.removeComponent(e, PrefabId);
+    const lw = createLiveWriter(world, {
+      keyOf: (x) => store.keyOf(x),
+      mayDiverge: makeDefaultMayDiverge(world),
+    });
+    expect(() => lw.set(e, mxPosition, { x: 1, y: 1 })).toThrow(/no resolvable prefab/);
+  });
+});
+
+// =====================================================================================
 // RULE 5 — runtime riders (design-001 §2 rule 2): world.* on a durable entity never durable
 // =====================================================================================
 describe("rule 5 — runtime riders never enter the document", () => {
@@ -352,15 +467,37 @@ describe("rule 5 — runtime riders never enter the document", () => {
     expect(world2.hasTag(e2, mxWidgetTag)).toBe(true);
   });
 
-  it("rule 5: a rider dies with the durable entity's despawn (re-projection cannot restore it)", () => {
-    const { world, store } = attachWorld();
+  it("rule 5: a rider dies with the despawn; a SURVIVING box re-projects WITHOUT its rider", () => {
+    const { world, store } = attachWorld(1);
     const { box } = defineStdPrefabs();
-    const e = makeDurableBox(world, store, box);
-    world.addTag(e, mxSelected);
+    // Two durable boxes: one is despawned, one survives — both carry runtime riders.
+    const doomed = makeDurableBox(world, store, box);
+    const survivor = makeDurableBox(world, store, box, [[mxPosition, { x: 9, y: 9 }]]);
+    world.addTag(doomed, mxSelected);
+    world.addComponent(survivor, mxRider, { n: 7 });
+    world.addTag(survivor, mxSelected);
 
-    store.transaction((tx) => tx.destroy(e));
+    store.transaction((tx) => tx.destroy(doomed));
     world.sync();
-    expect(world.isAlive(e)).toBe(false);
+    // Local despawn: the doomed handle is dead, taking its rider with it (nothing to restore).
+    expect(world.isAlive(doomed)).toBe(false);
+
+    // Adversarial re-projection: bootstrap a FRESH world from the converged snapshot.
+    const store2 = makeStore(2);
+    const world2 = createWorld();
+    attachDurable(world2, store2);
+    store2.applyRemote(store.exportSnapshot());
+    world2.sync();
+
+    // The despawn did not resurrect — exactly one durable box re-projects (the survivor).
+    expect(world2.count(defineQuery([mxPosition]))).toBe(1);
+    const s2 = must(world2.firstOf(defineQuery([mxPosition])));
+    // POSITIVE (same live entity): its essential cell + tag re-projected with real values.
+    expect(world2.get(s2, mxPosition)).toEqual({ x: 9, y: 9 });
+    expect(world2.hasTag(s2, mxWidgetTag)).toBe(true);
+    // NEGATIVE (same live entity): the runtime rider did NOT — re-projection restores the doc, never riders.
+    expect(world2.has(s2, mxRider)).toBe(false);
+    expect(world2.hasTag(s2, mxSelected)).toBe(false);
   });
 });
 

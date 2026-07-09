@@ -25,6 +25,17 @@ export type FieldWrite = string | number | boolean | Entity | EntityKey | null;
 
 export type ComponentInit = readonly [Component, Record<string, FieldWrite>];
 
+/**
+ * Typed component-init pair: `init(Position, { x: 0, y: 0 })` gets full
+ * compile-time field checking (missing/extra/mistyped fields error) before
+ * erasing to the registry's loose `ComponentInit`. Prefer this in every
+ * prefab definition and instantiate override; raw pairs remain legal for
+ * dynamic construction (review finding B4).
+ */
+export function init<S extends Record<string, FieldWrite>>(c: Component<S>, v: S): ComponentInit {
+  return [c as Component, v];
+}
+
 export interface PrefabDef {
   store: PrefabClass;
   /** Essential set: spawned with, committed for durable prefabs. */
@@ -102,8 +113,13 @@ export const prefabs = {
   get(id: string): Prefab | undefined {
     return registry.get(id);
   },
-  /** TEST-ONLY: clears the registry (process-global, like strata's schema). */
-  __reset(): void {
-    registry.clear();
-  },
 };
+
+/**
+ * TEST-ONLY registry wipe. Deliberately a standalone export that the public
+ * barrel does NOT re-export (review finding A8) — tests import it from this
+ * module path directly.
+ */
+export function __resetPrefabsForTests(): void {
+  registry.clear();
+}
