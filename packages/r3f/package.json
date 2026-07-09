@@ -1,0 +1,19 @@
+{
+  "name": "@ice/r3f",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/index.ts --format esm --dts --external three,@react-three/fiber,react"
+  },
+  "dependencies": {
+    "@ice/react": "workspace:*"
+  },
+  "peerDependencies": {
+    "@react-three/fiber": ">=9",
+    "react": ">=19",
+    "three": ">=0.160.0"
+  }
+}

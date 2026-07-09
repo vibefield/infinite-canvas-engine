@@ -30,6 +30,8 @@ git checkout local-dev && git add -f draft && git commit -m "local: draft snapsh
 
 ## Working here
 
-- No code yet — M0 of `docs/implementation-plan.md` bootstraps the pnpm monorepo (packages: kernel, core, dom, react, r3f, devtools; strict one-direction imports, dependency-cruiser-enforced; strata-ecs is core's only runtime dep).
-- strata-ecs is pre-1.0: pin the version; API-verify against `../strata-ecs/src` when in doubt (the design docs cite file:line for every load-bearing claim).
+- pnpm monorepo (Node 24+): packages `kernel`/`core`/`dom`/`react`/`r3f`/`devtools` (`@ice/*` — scope rename possible pre-publish). Import walls are dependency-cruiser-enforced and CI-fatal: kernel imports nothing; core = strata-ecs + kernel only; chain dom → react → r3f; devtools → core; nobody imports devtools.
+- Commands: `pnpm run ci` (typecheck + lint + test + depcruise — the merge gate) · `pnpm run build` · per-package `pnpm --filter @ice/kernel test`.
+- strata-ecs pinned at `0.2.0` (pre-1.0): API-verify against `../strata-ecs/src` when in doubt (the design docs cite file:line for every load-bearing claim); upgrades re-run the full trace suite. Upstream asks live in `docs/strata-petitions.md`.
+- Milestones + exit criteria: `docs/implementation-plan.md` (next: M1 kernel math ports).
 - Verify design claims against the docs before "fixing" behavior that looks odd — several counterintuitive choices (e.g., ports on-demand, stratified z, OS cursor default) are deliberate, reviewed decisions.

@@ -1,0 +1,22 @@
+{
+  "name": "infinite-canvas-engine",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "pnpm": { "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"] },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r --if-present run test",
+    "lint": "biome check .",
+    "depcruise": "depcruise packages --config .dependency-cruiser.cjs",
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run depcruise"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "dependency-cruiser": "^16.6.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.3",
+    "vitest": "^3.0.0"
+  }
+}

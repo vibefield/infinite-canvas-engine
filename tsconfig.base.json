@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "@ice/kernel": ["./packages/kernel/src/index.ts"],
+      "@ice/core": ["./packages/core/src/index.ts"],
+      "@ice/dom": ["./packages/dom/src/index.ts"],
+      "@ice/react": ["./packages/react/src/index.ts"],
+      "@ice/r3f": ["./packages/r3f/src/index.ts"],
+      "@ice/devtools": ["./packages/devtools/src/index.ts"]
+    }
+  }
+}

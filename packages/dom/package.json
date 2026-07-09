@@ -1,0 +1,14 @@
+{
+  "name": "@ice/dom",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/index.ts --format esm --dts"
+  },
+  "dependencies": {
+    "@ice/core": "workspace:*"
+  }
+}

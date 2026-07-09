@@ -1,0 +1,17 @@
+{
+  "name": "@ice/react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/index.ts --format esm --dts"
+  },
+  "dependencies": {
+    "@ice/dom": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}
