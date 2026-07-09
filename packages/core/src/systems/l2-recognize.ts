@@ -1,0 +1,543 @@
+/**
+ * L2 — recognizer lifecycle + per-kind FSMs (design-003 §4.1–§4.2).
+ *
+ * `ctl:spawn`  — cancelSweep (consumes the one-tick CancelRequest) →
+ *                recognizerSpawn (tool profiles; pinch on 2nd touch suspends
+ *                singles; wheel recognizers are `Simultaneous`) →
+ *                recognizerIntegrity (requiredWatches counts, capture death,
+ *                suspension lift). Newborns are identity-only until the
+ *                ctl:spawn flush, so integrity naturally skips them until the
+ *                next frame — by which time their edges are placed.
+ * `ctl:recognize` — per-kind systems. Transitions go through the PhaseSet via
+ *                `ctx` (visible at this phase's flush — arbitration reads them
+ *                the same frame); field updates are immediate `edit().set`
+ *                under declared `access.write`.
+ *
+ * All timing reads FrameInfo.now (the engine clock); all thresholds read
+ * GESTURE_DEFAULTS (GestureSettings resource indirection arrives with the
+ * settings task). Gesture math is screen-space totals + zoom-at-claim — never
+ * live PointerWorld (design-002 §2 staleness rule).
+ */
+import type { Entity, SystemCtx, World } from "@vibecook/strata-ecs";
+import { Any, Not, defineQuery, defineSystem, type System } from "@vibecook/strata-ecs";
+import {
+  Camera,
+  CancelRequest,
+  Captures,
+  ClaimedBy,
+  Down,
+  Drag,
+  GesturePhases,
+  GestureSuspended,
+  HadCapture,
+  HandledByWidget,
+  LocalPointer,
+  LongPress,
+  Pinch,
+  Pointer,
+  PointerButtons,
+  PointerScreen,
+  PointerWheel,
+  SnapState,
+  Simultaneous,
+  Tap,
+  TouchesExact,
+  Watches,
+  WentCancelled,
+  WentDown,
+  WentUp,
+  WheelPan,
+  WheelZoom,
+} from "../catalog";
+import { ActiveTool } from "../catalog/camera-derived";
+import { FrameInfo } from "../engine/frame-info";
+import { GESTURE_DEFAULTS } from "../settings/defaults";
+
+export type SingleKindName = "tap" | "longPress" | "drag";
+
+/** Tool id → single-pointer recognizer set spawned per down (design-003 §4.1). */
+export type SpawnProfiles = Readonly<Record<string, readonly SingleKindName[]>>;
+
+export const DEFAULT_SPAWN_PROFILES: SpawnProfiles = {
+  select: ["tap", "longPress", "drag"],
+  pan: ["drag"],
+};
+
+const anyKindQ = defineQuery([Any(Tap, LongPress, Drag, Pinch, WheelPan, WheelZoom)]);
+const downQ = defineQuery([Pointer, WentDown, Not(HandledByWidget), LocalPointer]);
+const heldTouchQ = defineQuery([Pointer, PointerButtons, LocalPointer]);
+const wheelSourceQ = defineQuery([Pointer, PointerWheel, LocalPointer]);
+const tapQ = defineQuery([Tap, Not(GestureSuspended)]);
+const longPressQ = defineQuery([LongPress, Not(GestureSuspended)]);
+const dragQ = defineQuery([Drag, Not(GestureSuspended)]);
+const pinchQ = defineQuery([Pinch]);
+const wheelKindQ = defineQuery([Any(WheelPan, WheelZoom)]);
+
+const P = GesturePhases;
+
+/** A recognizer is in a phase from which no further recognition can happen. */
+function isTerminal(ctx: SystemCtx | World, e: Entity): boolean {
+  if (ctx.hasTag(e, P.tags.Failed) || ctx.hasTag(e, P.tags.Cancelled) || ctx.hasTag(e, P.tags.Ended)) {
+    return true;
+  }
+  // Recognized is terminal for Tap only — LongPress keeps a continuous tail.
+  return ctx.hasTag(e, P.tags.Recognized) && ctx.has(e, Tap);
+}
+
+function requiredWatches(ctx: SystemCtx | World, e: Entity): number {
+  return ctx.has(e, Pinch) ? 2 : 1;
+}
+
+function dist(ax: number, ay: number, bx: number, by: number): number {
+  return Math.hypot(bx - ax, by - ay);
+}
+
+export interface L2Deps {
+  readonly world: World;
+  readonly profiles?: SpawnProfiles;
+}
+
+export interface L2Systems {
+  cancelSweep: System;
+  recognizerSpawn: System;
+  /** Same design slot as recognizerSpawn (design-002 §2) over the wheel-source query. */
+  wheelSpawn: System;
+  recognizerIntegrity: System;
+  tapSystem: System;
+  longPressSystem: System;
+  dragSystem: System;
+  pinchSystem: System;
+  wheelSystem: System;
+}
+
+export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2Deps): L2Systems {
+  /** Non-terminal recognizers watching `pointer` (live reverse edges). */
+  const watchersOf = (ctx: SystemCtx, pointer: Entity): Entity[] =>
+    ctx.getReverse(pointer, Watches).filter((rec) => !isTerminal(ctx, rec));
+
+  const cancelSweep = defineSystem(
+    anyKindQ,
+    (b, ctx) => {
+      for (const r of b) {
+        const e = b.entity(r);
+        if (isTerminal(ctx, e)) continue;
+        P.set(ctx, e, "Cancelled");
+      }
+    },
+    {
+      name: "cancelSweep",
+      runIf: (ctx) => ctx.getResource(CancelRequest)?.active === true,
+    },
+  );
+
+  const recognizerSpawn = defineSystem(
+    downQ,
+    (b, ctx) => {
+      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      const tool = ctx.getResource(ActiveTool)?.id ?? "select";
+      const profile = profiles[tool] ?? DEFAULT_SPAWN_PROFILES.select ?? [];
+
+      for (const r of b) {
+        const pointer = b.entity(r);
+
+        // Skip pointers already claimed by a live, non-terminal recognizer.
+        const claimant = ctx.getRelation(pointer, ClaimedBy);
+        if (claimant !== undefined && !isTerminal(ctx, claimant)) continue;
+
+        const screen = ctx.read(pointer, PointerScreen);
+        const captureTarget = ctx.getRelation(pointer, TouchesExact);
+
+        // Pinch rule: this down makes it TWO local touch pointers held — spawn a
+        // Pinch watching both and suspend both pointers' single-pointer
+        // recognizers (spawn this pointer's singles pre-suspended).
+        let pinchPartner: Entity | undefined;
+        if (ctx.read(pointer, Pointer).device === "touch") {
+          world.query(heldTouchQ).each((pb) => {
+            for (const pr of pb) {
+              const other = pb.entity(pr);
+              if (other === pointer) continue;
+              if (world.read(other, Pointer).device !== "touch") continue;
+              if (world.read(other, PointerButtons).buttons === 0) continue;
+              // A partner already claimed by a live gesture never forms a pinch —
+              // two touches dragging two widgets stay two independent gestures
+              // (design-003 §9); pinch is for two FREE fingers.
+              const partnerClaim = ctx.getRelation(other, ClaimedBy);
+              if (partnerClaim !== undefined && !isTerminal(ctx, partnerClaim)) continue;
+              pinchPartner = other;
+            }
+          });
+        }
+        const suspendedAtBirth = pinchPartner !== undefined;
+
+        const spawnSingle = (kind: SingleKindName): void => {
+          const tags = suspendedAtBirth
+            ? ([P.tags.Possible, GestureSuspended] as const)
+            : ([P.tags.Possible] as const);
+          let rec: Entity;
+          if (kind === "tap") {
+            rec = ctx.spawn({
+              components: [
+                [Tap, { downAt: now }],
+                [Down, { x: screen.x, y: screen.y, ms: now }],
+              ],
+              tags: [...tags],
+            });
+          } else if (kind === "longPress") {
+            rec = ctx.spawn({
+              components: [
+                [LongPress, { downAt: now, startX: screen.x, startY: screen.y, curX: screen.x, curY: screen.y }],
+                [Down, { x: screen.x, y: screen.y, ms: now }],
+              ],
+              tags: [...tags],
+            });
+          } else {
+            rec = ctx.spawn({
+              components: [
+                [
+                  Drag,
+                  { startX: screen.x, startY: screen.y, totalX: 0, totalY: 0, velX: 0, velY: 0, zoomAtClaim: 1 },
+                ],
+                [SnapState, { dx: 0, dy: 0 }], // essential at spawn — writers never race an attach
+                [Down, { x: screen.x, y: screen.y, ms: now }],
+              ],
+              tags: [...tags],
+            });
+          }
+          ctx.addRelation(rec, Watches, pointer);
+          if (captureTarget !== undefined) {
+            ctx.setRelation(rec, Captures, captureTarget);
+            ctx.addTag(rec, HadCapture);
+          }
+        };
+
+        for (const kind of profile) spawnSingle(kind);
+
+        if (pinchPartner !== undefined) {
+          const partnerScreen = ctx.read(pinchPartner, PointerScreen);
+          const spread = dist(screen.x, screen.y, partnerScreen.x, partnerScreen.y);
+          const cx = (screen.x + partnerScreen.x) / 2;
+          const cy = (screen.y + partnerScreen.y) / 2;
+          const pinch = ctx.spawn({
+            components: [
+              [
+                Pinch,
+                {
+                  startDist: spread,
+                  startZoom: ctx.getResource(Camera)?.zoom ?? 1,
+                  cx,
+                  cy,
+                  zoomAtClaim: ctx.getResource(Camera)?.zoom ?? 1,
+                },
+              ],
+              [Down, { x: cx, y: cy, ms: now }],
+            ],
+            tags: [P.tags.Possible],
+          });
+          ctx.addRelation(pinch, Watches, pointer);
+          ctx.addRelation(pinch, Watches, pinchPartner);
+          // Suspend the partner's existing singles ("suspend, don't kill").
+          for (const rec of watchersOf(ctx, pinchPartner)) {
+            if (!ctx.has(rec, Pinch)) ctx.addTag(rec, GestureSuspended);
+          }
+        }
+      }
+    },
+    { name: "recognizerSpawn" },
+  );
+
+  // Wheel recognizer spawn rides the same ctl:spawn slot: wheel deltas landed
+  // this tick (values — visible) and no live wheel recognizer watches the pointer.
+  const wheelSpawn = defineSystem(
+    wheelSourceQ,
+    (b, ctx) => {
+      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      for (const r of b) {
+        const pointer = b.entity(r);
+        const wheel = ctx.read(pointer, PointerWheel);
+        const zooming = wheel.pinch !== 0;
+        const panning = wheel.dx !== 0 || wheel.dy !== 0;
+        if (!zooming && !panning) continue;
+        const hasLive = ctx
+          .getReverse(pointer, Watches)
+          .some((rec) => (ctx.has(rec, WheelPan) || ctx.has(rec, WheelZoom)) && !isTerminal(ctx, rec));
+        if (hasLive) continue;
+        const screen = ctx.read(pointer, PointerScreen);
+        const rec = zooming
+          ? ctx.spawn({
+              components: [
+                [WheelZoom, { pinch: 0, anchorX: screen.x, anchorY: screen.y }],
+                [Down, { x: screen.x, y: screen.y, ms: now }], // Down.ms = last wheel activity (silence timer)
+              ],
+              tags: [P.tags.Possible, Simultaneous],
+            })
+          : ctx.spawn({
+              components: [
+                [WheelPan, { dx: 0, dy: 0, anchorX: screen.x, anchorY: screen.y }],
+                [Down, { x: screen.x, y: screen.y, ms: now }],
+              ],
+              tags: [P.tags.Possible, Simultaneous],
+            });
+        ctx.addRelation(rec, Watches, pointer);
+      }
+    },
+    { name: "wheelSpawn" },
+  );
+
+  const recognizerIntegrity = defineSystem(
+    anyKindQ,
+    (b, ctx) => {
+      for (const r of b) {
+        const e = b.entity(r);
+        if (isTerminal(ctx, e)) continue;
+
+        // Suspension lift: no live non-terminal Pinch shares any watched pointer.
+        if (ctx.hasTag(e, GestureSuspended) && !ctx.has(e, Pinch)) {
+          const pointers = ctx.getRelations(e, Watches);
+          const suspenderAlive = pointers.some((p) =>
+            ctx.getReverse(p, Watches).some((rec) => ctx.has(rec, Pinch) && !isTerminal(ctx, rec)),
+          );
+          if (!suspenderAlive) ctx.removeTag(e, GestureSuspended);
+        }
+
+        // Required-watches count (edges to despawned pointers auto-clear).
+        if (ctx.getRelations(e, Watches).length !== requiredWatches(ctx, e)) {
+          P.set(ctx, e, "Cancelled");
+          continue;
+        }
+
+        // Capture death — incl. remote despawns (edge auto-clears; HadCapture remembers).
+        if (ctx.hasTag(e, HadCapture) && ctx.getRelation(e, Captures) === undefined) {
+          P.set(ctx, e, "Cancelled");
+        }
+      }
+    },
+    { name: "recognizerIntegrity" },
+  );
+
+  // --- per-kind FSMs (ctl:recognize) ---
+
+  const tapSystem = defineSystem(
+    tapQ,
+    (b, ctx) => {
+      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      for (const r of b) {
+        const e = b.entity(r);
+        if (!ctx.hasTag(e, P.tags.Possible)) continue;
+        const pointer = ctx.getRelations(e, Watches)[0];
+        if (pointer === undefined) continue; // integrity cancels next frame
+        if (ctx.hasTag(pointer, WentCancelled)) {
+          P.set(ctx, e, "Cancelled");
+          continue;
+        }
+        const down = ctx.read(e, Down);
+        const screen = ctx.read(pointer, PointerScreen);
+        const moved = dist(down.x, down.y, screen.x, screen.y);
+        if (moved > GESTURE_DEFAULTS.tapSlopPx) {
+          P.set(ctx, e, "Failed");
+          continue;
+        }
+        const held = now - ctx.read(e, Tap).downAt;
+        if (ctx.hasTag(pointer, WentUp)) {
+          P.set(ctx, e, held <= GESTURE_DEFAULTS.tapMaxMs ? "Recognized" : "Failed");
+        } else if (held > GESTURE_DEFAULTS.tapMaxMs) {
+          P.set(ctx, e, "Failed");
+        }
+      }
+    },
+    { name: "tapSystem" },
+  );
+
+  const longPressSystem = defineSystem(
+    longPressQ,
+    (b, ctx) => {
+      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      for (const r of b) {
+        const e = b.entity(r);
+        const pointer = ctx.getRelations(e, Watches)[0];
+        if (pointer === undefined) continue;
+        const screen = ctx.read(pointer, PointerScreen);
+        const lp = ctx.read(e, LongPress);
+
+        if (ctx.hasTag(pointer, WentCancelled)) {
+          P.set(ctx, e, "Cancelled");
+          continue;
+        }
+
+        if (ctx.hasTag(e, P.tags.Possible)) {
+          if (ctx.hasTag(pointer, WentUp)) {
+            P.set(ctx, e, "Failed"); // released before the hold
+            continue;
+          }
+          if (dist(lp.startX, lp.startY, screen.x, screen.y) > GESTURE_DEFAULTS.longPressSlopPx) {
+            P.set(ctx, e, "Failed");
+            continue;
+          }
+          if (now - lp.downAt >= GESTURE_DEFAULTS.longPressMs) {
+            ctx.edit(e).set(LongPress, { ...lp, curX: screen.x, curY: screen.y });
+            P.set(ctx, e, "Recognized"); // discrete claim; continuous tail follows
+          }
+          continue;
+        }
+
+        if (ctx.hasTag(e, P.tags.Recognized)) {
+          ctx.edit(e).set(LongPress, { ...lp, curX: screen.x, curY: screen.y }); // the tail
+          if (ctx.hasTag(pointer, WentUp)) P.set(ctx, e, "Ended");
+        }
+      }
+    },
+    { name: "longPressSystem", access: { write: [LongPress] } },
+  );
+
+  const dragSystem = defineSystem(
+    dragQ,
+    (b, ctx) => {
+      const dtMs = ctx.getResource(FrameInfo)?.dt ?? 16;
+      for (const r of b) {
+        const e = b.entity(r);
+        const pointer = ctx.getRelations(e, Watches)[0];
+        if (pointer === undefined) continue;
+        const screen = ctx.read(pointer, PointerScreen);
+        const d = ctx.read(e, Drag);
+
+        if (ctx.hasTag(pointer, WentCancelled)) {
+          P.set(ctx, e, "Cancelled");
+          continue;
+        }
+
+        if (ctx.hasTag(e, P.tags.Possible)) {
+          const down = ctx.read(e, Down);
+          if (dist(down.x, down.y, screen.x, screen.y) > GESTURE_DEFAULTS.dragSlopPx) {
+            // Origin measured FROM DEAD-ZONE EXIT (no jump on promote).
+            ctx.edit(e).set(Drag, {
+              startX: screen.x,
+              startY: screen.y,
+              totalX: 0,
+              totalY: 0,
+              velX: 0,
+              velY: 0,
+              zoomAtClaim: ctx.getResource(Camera)?.zoom ?? 1,
+            });
+            P.set(ctx, e, "Active");
+          } else if (ctx.hasTag(pointer, WentUp)) {
+            P.set(ctx, e, "Failed"); // released inside the dead zone
+          }
+          continue;
+        }
+
+        if (ctx.hasTag(e, P.tags.Active)) {
+          const totalX = screen.x - d.startX;
+          const totalY = screen.y - d.startY;
+          const frameDx = totalX - d.totalX;
+          const frameDy = totalY - d.totalY;
+          const dtS = Math.max(dtMs, 1) / 1000;
+          const alpha = 0.3; // EMA release velocity (v2 constant)
+          ctx.edit(e).set(Drag, {
+            ...d,
+            totalX,
+            totalY,
+            velX: d.velX + alpha * (frameDx / dtS - d.velX),
+            velY: d.velY + alpha * (frameDy / dtS - d.velY),
+          });
+          if (ctx.hasTag(pointer, WentUp)) P.set(ctx, e, "Ended");
+        }
+      }
+    },
+    { name: "dragSystem", access: { write: [Drag] } },
+  );
+
+  const pinchSystem = defineSystem(
+    pinchQ,
+    (b, ctx) => {
+      for (const r of b) {
+        const e = b.entity(r);
+        const pointers = ctx.getRelations(e, Watches);
+        if (pointers.length !== 2) continue; // integrity cancels
+        const [pa, pb] = pointers as [Entity, Entity];
+        if (ctx.hasTag(pa, WentCancelled) || ctx.hasTag(pb, WentCancelled)) {
+          P.set(ctx, e, "Cancelled");
+          continue;
+        }
+        const sa = ctx.read(pa, PointerScreen);
+        const sb = ctx.read(pb, PointerScreen);
+        const spread = dist(sa.x, sa.y, sb.x, sb.y);
+        const cx = (sa.x + sb.x) / 2;
+        const cy = (sa.y + sb.y) / 2;
+        const pin = ctx.read(e, Pinch);
+        const anyUp = ctx.hasTag(pa, WentUp) || ctx.hasTag(pb, WentUp);
+
+        if (ctx.hasTag(e, P.tags.Possible)) {
+          if (anyUp) {
+            P.set(ctx, e, "Cancelled"); // lost a finger pre-activation
+            continue;
+          }
+          if (Math.abs(spread - pin.startDist) > GESTURE_DEFAULTS.pinchSlopPx) {
+            const zoom = ctx.getResource(Camera)?.zoom ?? 1;
+            // Re-baseline at activation (v2): the dead-zone spread never zooms.
+            ctx.edit(e).set(Pinch, { startDist: spread, startZoom: zoom, cx, cy, zoomAtClaim: zoom });
+            P.set(ctx, e, "Active");
+          }
+          continue;
+        }
+
+        if (ctx.hasTag(e, P.tags.Active)) {
+          ctx.edit(e).set(Pinch, { ...pin, cx, cy });
+          if (anyUp) P.set(ctx, e, "Ended");
+        }
+      }
+    },
+    { name: "pinchSystem", access: { write: [Pinch] } },
+  );
+
+  const wheelSystem = defineSystem(
+    wheelKindQ,
+    (b, ctx) => {
+      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      for (const r of b) {
+        const e = b.entity(r);
+        if (isTerminal(ctx, e)) continue;
+        const pointer = ctx.getRelations(e, Watches)[0];
+        if (pointer === undefined) continue;
+        const wheel = ctx.read(pointer, PointerWheel);
+        const screen = ctx.read(pointer, PointerScreen);
+        const down = ctx.read(e, Down);
+        const isZoom = ctx.has(e, WheelZoom);
+        const active = isZoom ? wheel.pinch !== 0 : wheel.dx !== 0 || wheel.dy !== 0;
+
+        if (active) {
+          if (isZoom) {
+            ctx.edit(e).set(WheelZoom, { pinch: wheel.pinch, anchorX: screen.x, anchorY: screen.y });
+          } else {
+            ctx.edit(e).set(WheelPan, { dx: wheel.dx, dy: wheel.dy, anchorX: screen.x, anchorY: screen.y });
+          }
+          ctx.edit(e).set(Down, { x: screen.x, y: screen.y, ms: now }); // last-activity timer
+          if (ctx.hasTag(e, P.tags.Possible)) P.set(ctx, e, "Active");
+        } else {
+          // Zero the per-frame deltas so cameraControl never re-applies stale ones.
+          if (isZoom) {
+            const z = ctx.read(e, WheelZoom);
+            if (z.pinch !== 0) ctx.edit(e).set(WheelZoom, { ...z, pinch: 0 });
+          } else {
+            const p = ctx.read(e, WheelPan);
+            if (p.dx !== 0 || p.dy !== 0) ctx.edit(e).set(WheelPan, { ...p, dx: 0, dy: 0 });
+          }
+          if (ctx.hasTag(e, P.tags.Active) && now - down.ms > GESTURE_DEFAULTS.wheelEndSilenceMs) {
+            P.set(ctx, e, "Ended");
+          }
+        }
+      }
+    },
+    { name: "wheelSystem", access: { write: [WheelPan, WheelZoom, Down] } },
+  );
+
+  return {
+    cancelSweep,
+    recognizerSpawn,
+    wheelSpawn,
+    recognizerIntegrity,
+    tapSystem,
+    longPressSystem,
+    dragSystem,
+    pinchSystem,
+    wheelSystem,
+  };
+}

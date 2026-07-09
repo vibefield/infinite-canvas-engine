@@ -11,7 +11,7 @@
  * carry ergonomic zero/empty defaults.
  */
 import { enumOf, field } from "@vibecook/strata-ecs";
-import { defineComponent, defineRelation, defineTag } from "../schema/meta";
+import { defineComponent, defineRelation, defineResource, defineTag } from "../schema/meta";
 
 /** Pointer identity. `owner` is the peer/user id ("" for the local device). */
 export const Pointer = defineComponent("Pointer", {
@@ -70,6 +70,29 @@ export const LocalPointer = defineTag("LocalPointer");
 export const PointerWorld = defineComponent("PointerWorld", {
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
+});
+
+/**
+ * Keyboard modifier state (design-003 §2 — minimal keyboard). Written by ingest
+ * from adapter key events. `space` is the pan gesture modifier (design-003 §4.4);
+ * shortcuts are app handlers between frames, never a tick system.
+ */
+export const Keyboard = defineResource("Keyboard", {
+  shift: field("bool", { default: false }),
+  ctrl: field("bool", { default: false }),
+  alt: field("bool", { default: false }),
+  meta: field("bool", { default: false }),
+  space: field("bool", { default: false }),
+});
+
+/**
+ * ONE-TICK cancel request (design-003 §4.1/§8): escape / tool switch / doc
+ * detach all converge here via `cancelActiveGestures()`. The ctl:spawn sweep
+ * consumes it; cleanup clears it — a latched cancel would kill every future
+ * gesture forever.
+ */
+export const CancelRequest = defineResource("CancelRequest", {
+  active: field("bool", { default: false }),
 });
 
 /** pointer → hovered entity (radiused pick — "hover is forgiving"). */

@@ -112,6 +112,13 @@ export const GestureCancelled = GesturePhases.tags.Cancelled;
 /** Suspended (a pinch suspends the single-pointer recognizers) — "suspend, don't kill". */
 export const GestureSuspended = defineTag("GestureSuspended");
 
+/**
+ * The recognizer latched a `Captures` target at spawn (design-003 §4.1 integrity).
+ * Relations auto-clear on target despawn, so "had a capture, has none now" is
+ * detectable only with this spawn-time mark — integrity cancels on that edge loss.
+ */
+export const HadCapture = defineTag("HadCapture");
+
 /** Runs alongside claims without competing (wheel pan/zoom) — keeps zoom-while-dragging legal. */
 export const Simultaneous = defineTag("Simultaneous");
 
