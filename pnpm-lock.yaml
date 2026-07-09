@@ -31,7 +31,11 @@ importers:
         version: link:../kernel
       '@vibecook/strata-ecs':
         specifier: 0.2.0
-        version: 0.2.0(react@19.2.7)
+        version: 0.2.0(loro-crdt@1.13.6)(react@19.2.7)
+    devDependencies:
+      loro-crdt:
+        specifier: ^1.0.0
+        version: 1.13.6
 
   packages/devtools:
     dependencies:
@@ -935,6 +939,9 @@ packages:
     resolution: {integrity: sha512-IXO6OCs9yg8tMKzfPZ1YmheJbZCiEsnBdcB03l0OcfK9prKnJb96siuHCr5Fl37/yo9DnKU+TLpxzTUspw9shg==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
+  loro-crdt@1.13.6:
+    resolution: {integrity: sha512-OsnKW64J+1XdCMafAqR+aASn/wQEgDzwcDwu6dDOVSxxbLPFgnU6LX8ja+hd5PnEcT+kuz9eXSagvlYXsRbQIw==}
+
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
 
@@ -1635,8 +1642,9 @@ snapshots:
 
   '@types/webxr@0.5.24': {}
 
-  '@vibecook/strata-ecs@0.2.0(react@19.2.7)':
+  '@vibecook/strata-ecs@0.2.0(loro-crdt@1.13.6)(react@19.2.7)':
     optionalDependencies:
+      loro-crdt: 1.13.6
       react: 19.2.7
 
   '@vitest/expect@3.2.7':
@@ -1937,6 +1945,8 @@ snapshots:
   lines-and-columns@1.2.4: {}
 
   load-tsconfig@0.2.5: {}
+
+  loro-crdt@1.13.6: {}
 
   loupe@3.2.1: {}
 

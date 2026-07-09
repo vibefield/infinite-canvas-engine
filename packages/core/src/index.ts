@@ -4,4 +4,51 @@
  * Import wall: strata-ecs + @ice/kernel ONLY — never react/dom/three (enforced).
  */
 export const CORE_VERSION = "0.0.0";
+
 export { defineSchemaOnce, hmrInvalidateOnSchemaChange } from "./boot/hmr";
+
+// Schema wrappers (record metadata, delegate to strata) + registries.
+export {
+  defineComponent,
+  defineRelation,
+  defineResource,
+  defineTag,
+  schemaMeta,
+  type ComponentMeta,
+  type RawSchema,
+  type RelationMeta,
+  type ResourceMeta,
+} from "./schema/meta";
+
+// Prefabs — sovereignty at the entity level (design-001 §2).
+export {
+  definePrefab,
+  PrefabId,
+  prefabs,
+  type ComponentInit,
+  type Prefab,
+  type PrefabClass,
+  type PrefabDef,
+} from "./schema/prefab";
+
+// Spawn routing (the class IS the spawn path).
+export { instantiate, type EphSpawner, type SpawnTarget } from "./engine/instantiate";
+
+// Write-path guards.
+export { devGuardsEnabled, setDevGuards } from "./guards/dev";
+export { createLiveWriter, type LiveWriter, type LiveWriterOpts } from "./guards/live-writer";
+export { guardedTransaction, type GuardedTx } from "./guards/guarded-tx";
+
+// The component/tag/relation/resource catalog (design-001 §5, faithful transcription).
+export * from "./catalog";
+
+// Engine helpers: PhaseSet + Just* markers (design-003 §4.2), version stamps (design-002 §4).
+export * from "./helpers/phase-set";
+export * from "./helpers/version-stamps";
+
+// Catalog-adjacent ops (app-handler write paths).
+export * from "./ops/selection";
+export * from "./ops/cascade";
+
+// Reviewed default constants (citations point at the owning design sections).
+export * from "./settings/defaults";

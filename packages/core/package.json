@@ -6,10 +6,14 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsup src/index.ts --format esm --dts"
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ice/kernel": "workspace:*",
     "@vibecook/strata-ecs": "0.2.0"
+  },
+  "devDependencies": {
+    "loro-crdt": "^1.0.0"
   }
 }
