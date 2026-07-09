@@ -47,6 +47,12 @@ export interface PrefabDef {
   relations?: readonly Relation[];
   /** Write-ownership badge (devtools) — runtime prefabs only. */
   owner?: "derive";
+  /**
+   * Pack version for the document version gate (design-001 §5.2, design-005
+   * §6.3): stamped as an `engine.pack.<id>.<v>` marker key at doc creation and
+   * compared at open. Bump when the prefab's durable shape changes. Default 1.
+   */
+  version?: number;
 }
 
 export interface Prefab extends PrefabDef {
@@ -112,6 +118,10 @@ export function definePrefab(id: string, def: PrefabDef): Prefab {
 export const prefabs = {
   get(id: string): Prefab | undefined {
     return registry.get(id);
+  },
+  /** Every registered prefab (the version gate stamps/compares the full set). */
+  all(): Prefab[] {
+    return [...registry.values()];
   },
 };
 

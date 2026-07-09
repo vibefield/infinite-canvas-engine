@@ -71,11 +71,23 @@ function deviceOf(pointerId: string): InputEvent["device"] {
   return "mouse";
 }
 
-export function createTraceRig(): TraceRig {
+export function createTraceRig(opts: { sink?: { commit(intent: never): void } } = {}): TraceRig {
   const world = createWorld();
   const engine = createEngine(world);
   const sink = createRecordingCommitSink();
-  const core = installInteractionCore(engine, { sink });
+  // Tee: the rig's recorder always sees intents (assertions); an external sink
+  // (e.g. the M5 doc-backed one) receives them too.
+  const external = opts.sink;
+  const teed =
+    external === undefined
+      ? sink
+      : {
+          commit(intent: Parameters<(typeof sink)["commit"]>[0]) {
+            sink.commit(intent);
+            (external as { commit(i: typeof intent): void }).commit(intent);
+          },
+        };
+  const core = installInteractionCore(engine, { sink: teed });
 
   // Synthetic L1: the declared map, applied every frame in the react slot.
   const targetsOf = new Map<string, Entity | undefined>();

@@ -126,6 +126,32 @@ export type { MarqueeBuffer } from "./systems/l3-marquee";
 export { DEFAULT_SPAWN_PROFILES, type SingleKindName, type SpawnProfiles } from "./systems/l2-recognize";
 export { createCursorSync } from "./systems/l4-cursor";
 
+// The doc kit (design-001 §6, design-005 §6): envelope, version gate, sessions.
+export {
+  ENGINE_SCHEMA_VERSION,
+  ENVELOPE_MAGIC,
+  ENVELOPE_VERSION,
+  EnvelopeError,
+  decodeEnvelope,
+  encodeEnvelope,
+  type EnvelopeHeader,
+} from "./doc/envelope";
+export {
+  gateVerdict,
+  readDocVersionReport,
+  stampEngineMeta,
+  type DocVersionReport,
+  type GateVerdict,
+} from "./doc/version-gate";
+export { createDocCommitSink, createReadOnlyCommitSink } from "./doc/doc-commit-sink";
+export {
+  createDocSession,
+  openDocSession,
+  type DocSession,
+  type DocSessionOpts,
+  type OpenDocResult,
+} from "./doc/doc-kit";
+
 // Reviewed default constants (citations point at the owning design sections).
 export * from "./settings/defaults";
 

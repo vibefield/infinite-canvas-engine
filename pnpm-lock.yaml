@@ -54,9 +54,8 @@ importers:
       '@vibecook/strata-ecs':
         specifier: 0.3.0
         version: 0.3.0(loro-crdt@1.13.6)(react@19.2.7)
-    devDependencies:
       loro-crdt:
-        specifier: ^1.0.0
+        specifier: ^1.13.6
         version: 1.13.6
 
   packages/devtools:

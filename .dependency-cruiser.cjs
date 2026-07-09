@@ -38,10 +38,23 @@ module.exports = {
     {
       name: "core-only-kernel-strata",
       comment:
-        "design-002 §6: core is headless — kernel + strata-ecs only, never react/dom/three or a stray dep.",
+        "design-002 §6: core is headless — kernel + strata-ecs only, never react/dom/three or a stray dep. " +
+        "Named exception (design-005 §6.1, M5): loro-crdt — strata's own optional peer; the engine doc kit " +
+        "is 'the ONE place a LoroDoc enters' now that doc creation is engine-owned.",
       severity: "error",
       from: { path: "^packages/core/src" },
-      to: { pathNot: ["^packages/core/src", "^packages/kernel", nm("@vibecook/strata-ecs")] },
+      to: {
+        pathNot: [
+          "^packages/core/src",
+          "^packages/kernel",
+          nm("@vibecook/strata-ecs"),
+          nm("loro-crdt"),
+          // Subpath exports ("@vibecook/strata-ecs/durable") resolve through the
+          // package "exports" map, which the cruiser reports by SPECIFIER — allow
+          // the specifier form alongside the resolved node_modules path.
+          "^@vibecook/strata-ecs(/|$)",
+        ],
+      },
     },
     {
       name: "dom-only-core-kernel",
