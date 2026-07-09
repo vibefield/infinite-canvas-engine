@@ -7,6 +7,35 @@ export const CORE_VERSION = "0.0.0";
 
 export { defineSchemaOnce, hmrInvalidateOnSchemaChange } from "./boot/hmr";
 
+// Strata surface re-exported for downstream packages: dom/react/r3f reach
+// strata ONLY through core (design-002 §6 — strata is core's sole runtime
+// dependency; the import walls make a direct dep a CI failure).
+export {
+  All,
+  Any,
+  Not,
+  Related,
+  createWorld,
+  defineQuery,
+  defineSystem,
+  enumOf,
+  field,
+} from "@vibecook/strata-ecs";
+export type {
+  Batch,
+  Component,
+  Condition,
+  Entity,
+  Pipeline,
+  Query,
+  Relation,
+  Resource,
+  System,
+  SystemCtx,
+  Tag,
+  World,
+} from "@vibecook/strata-ecs";
+
 // Schema wrappers (record metadata, delegate to strata) + registries.
 export {
   defineComponent,
@@ -36,6 +65,26 @@ export {
 
 // Spawn routing (the class IS the spawn path).
 export { instantiate, type EphSpawner, type SpawnTarget } from "./engine/instantiate";
+
+// The frame contract (design-002): FrameInfo clock, phase-group pipeline,
+// reflector registry, and the engine facade that owns step(now).
+export { FrameInfo, setFrameInfo } from "./engine/frame-info";
+export { createPipelineRegistry, PHASE_GROUPS, type PhaseGroup, type PipelineRegistry } from "./engine/pipeline";
+export {
+  createReflectorRegistry,
+  type ReflectorDef,
+  type ReflectorObserve,
+  type ReflectorQuerySpec,
+  type ReflectorRegistry,
+} from "./engine/reflectors";
+export {
+  createEngine,
+  type Engine,
+  type EngineOpts,
+  type FrameTelemetry,
+  type PublishHook,
+  type SystemRunRecord,
+} from "./engine/engine";
 
 // Write-path guards.
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";

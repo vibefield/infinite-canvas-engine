@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   islandToWorld,
+  planeCssTransform,
   screenToWorld,
   worldToIsland,
   worldToScreen,
@@ -37,6 +38,34 @@ describe("coords: screen ↔ world", () => {
   it("world origin maps to screen (-cam.x*zoom, -cam.y*zoom)", () => {
     const cam = { x: 100, y: 50, zoom: 2 };
     expect(worldToScreen(0, 0, cam)).toEqual({ x: -200, y: -100 });
+  });
+});
+
+describe("coords: planeCssTransform", () => {
+  it("applying the plane transform to a world-unit child equals worldToScreen (property)", () => {
+    const rand = makePrng(1234);
+    for (let i = 0; i < CASES; i++) {
+      const cam = randomCamera(rand);
+      const wx = inRange(rand, -1e6, 1e6);
+      const wy = inRange(rand, -1e6, 1e6);
+      const t = planeCssTransform(cam);
+      // CSS `translate(tx,ty) scale(s)` with origin 0 0 on a child laid out at (wx, wy):
+      const screen = { x: wx * t.scale + t.tx, y: wy * t.scale + t.ty };
+      const expected = worldToScreen(wx, wy, cam);
+      expect(screen.x).toBeCloseTo(expected.x, 6);
+      expect(screen.y).toBeCloseTo(expected.y, 6);
+    }
+  });
+
+  it("identity camera is the identity transform", () => {
+    const t = planeCssTransform({ x: 0, y: 0, zoom: 1 });
+    // Numeric compares: tx/ty are -0 here and Object.is(-0, +0) is false; CSS treats them the same.
+    expect(t.tx === 0 && t.ty === 0).toBe(true);
+    expect(t.scale).toBe(1);
+  });
+
+  it("pan-only moves the plane opposite the camera, scaled by zoom", () => {
+    expect(planeCssTransform({ x: 100, y: -50, zoom: 2 })).toEqual({ tx: -200, ty: 100, scale: 2 });
   });
 });
 

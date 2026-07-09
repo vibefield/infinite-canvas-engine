@@ -53,6 +53,21 @@ export function zoomAtPoint(
   };
 }
 
+/**
+ * Camera → the ONE per-plane CSS transform (design-002 §5 `planeTransform`).
+ * Children are laid out in WORLD units inside the plane (left/top = world x/y),
+ * the plane carries `transform: translate(tx px, ty px) scale(scale)` with
+ * `transform-origin: 0 0` — so a child at world point p lands at
+ * `p·zoom + t = (p − camera)·zoom`, i.e. exactly `worldToScreen(p)`.
+ */
+export function planeCssTransform(camera: CameraState): { tx: number; ty: number; scale: number } {
+  return {
+    tx: -camera.x * camera.zoom,
+    ty: -camera.y * camera.zoom,
+    scale: camera.zoom,
+  };
+}
+
 /** World → island (center-origin, Y-up). THE Y-flip, direction one. */
 export function worldToIsland(worldX: number, worldY: number, widget: Rect): Vec2 {
   return {
