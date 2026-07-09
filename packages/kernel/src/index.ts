@@ -1,7 +1,14 @@
 /**
  * @ice/kernel — pure math. Plain structs in, plain structs out.
- * Import wall: this package imports NOTHING (enforced by dependency-cruiser).
- * M1 fills this with: coords (screen/world/local + THE Y-flip — the one seam),
- * snap, spatial index, zoom bands, port anchors/bezier, hit math.
+ * Import wall: nothing but `rbush` (named exception — zero-dep R-tree).
  */
 export const KERNEL_VERSION = "0.0.0";
+
+export * from "./shapes";
+export * from "./coords";
+export * from "./snap";
+export * from "./spatial-index";
+export * from "./zoom-bands";
+export * from "./eviction";
+export * from "./anchors";
+export * from "./bezier";

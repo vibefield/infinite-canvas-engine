@@ -9,10 +9,11 @@ module.exports = {
     { name: "no-circular", severity: "error", from: {}, to: { circular: true } },
     {
       name: "kernel-imports-nothing",
-      comment: "kernel is pure math: plain structs in, plain structs out; zero deps",
+      comment:
+        "kernel is pure math: plain structs in, plain structs out. Single named exception: rbush (zero-dep R-tree data structure).",
       severity: "error",
       from: { path: "^packages/kernel/src" },
-      to: { pathNot: "^packages/kernel/src" },
+      to: { pathNot: "^packages/kernel/src|^node_modules/(\\.pnpm/)?rbush" },
     },
     {
       name: "core-is-headless",

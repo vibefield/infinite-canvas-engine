@@ -8,5 +8,11 @@
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "rbush": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/rbush": "^3.0.3"
   }
 }
