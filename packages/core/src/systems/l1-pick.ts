@@ -116,7 +116,13 @@ export function createPickingSystems(
       }
       if (changed) bumpVersion(world, SpatialVersion);
     },
-    { name: "spatialSync" },
+    {
+      name: "spatialSync",
+      // The inner world.query col() reads are charged to THIS system by access
+      // enforcement — the anchor query carries no components, so the default
+      // read set is empty and the columns must be declared explicitly.
+      access: { read: [Position, Size] },
+    },
   );
 
   /** Top pick under a point within `rWorld`: HandleSpec chrome first, else the highest-StackZ widget. */

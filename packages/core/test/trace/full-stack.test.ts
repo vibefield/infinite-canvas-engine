@@ -25,6 +25,10 @@ function makeRig() {
   const engine = createEngine(world);
   const sink = createRecordingCommitSink();
   const stack = installInteractionStack(engine, { sink });
+  // Register a reflector like a REAL app: arming reactivity arms strata's
+  // access enforcement permanently — undeclared col()/edit().set writes must
+  // DEV-throw here, not first in the browser (this caught spatialSync once).
+  engine.registerReflector({ name: "armed", always: false, flush: () => {} });
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false }); // screen == world
   let now = 1000;
   const step = (n = 1) => {
