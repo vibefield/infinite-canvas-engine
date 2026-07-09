@@ -29,3 +29,4 @@ export * from "./pointer";
 export * from "./gesture";
 export * from "./selection-presence";
 export * from "./camera-derived";
+export * from "./settings-resources";

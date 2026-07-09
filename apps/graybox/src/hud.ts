@@ -1,23 +1,46 @@
 /**
- * The telemetry HUD — an `always: true` reflector (design-002 §5 cheap-overlay
- * style; dogfoods the "flush every frame regardless of dirt" path). It writes
- * ONE overlay div per frame from read-only sources: engine frame telemetry
- * (`engine.lastFrame()`), the frame clock (FrameInfo), and the two reflectors'
- * write counters. Law 10 holds — it reads no layout and writes no ECS.
- *
- * Shows: rolling fps, ECS tick µs (telemetry totalMicros), per-frame deltas of
- * transform writes and gray-box style writes (the O(1)-pan / churn instruments),
- * the live node count, which reflectors flushed, and the per-system ran/skip + µs
- * table (empty until a scripted run registers the drag system).
+ * The telemetry + interaction HUD — an `always: true` reflector (design-002 §5
+ * cheap-overlay style). It writes ONE overlay div per frame from READ-ONLY
+ * sources (Law 10: reads no layout, writes no ECS): engine frame telemetry, the
+ * frame clock, the two geometry reflectors' write counters, and — new for M4 —
+ * a live snapshot of the interaction world: every recognizer's kind + phase, the
+ * claimed-pointer count, the selection count, and the running commit-intent tally
+ * from the recording sink.
  */
 import type { CanvasHost } from "@ice/dom";
-import { type Engine, FrameInfo, type ReflectorDef } from "@ice/core";
+import {
+  Any,
+  ClaimedBy,
+  type CommitIntent,
+  Drag,
+  type Entity,
+  FrameInfo,
+  GesturePhases,
+  LongPress,
+  Pinch,
+  Pointer,
+  type ReflectorDef,
+  RoutedConnect,
+  RoutedMarquee,
+  RoutedMove,
+  RoutedPan,
+  RoutedResize,
+  Selected,
+  Tap,
+  WheelPan,
+  WheelZoom,
+  type World,
+  defineQuery,
+  type Engine,
+} from "@ice/core";
 
 export interface HudDeps {
   engine: Engine;
   host: CanvasHost;
   plane: { transformWrites(): number };
   graybox: { styleWrites(): number; nodeCount(): number };
+  /** The recording commit sink — its intents length is the gesture-commit tally. */
+  sink: { readonly intents: readonly CommitIntent[] };
 }
 
 const HUD_STYLE: Readonly<Record<string, string>> = {
@@ -33,6 +56,31 @@ const HUD_STYLE: Readonly<Record<string, string>> = {
   borderRadius: "4px",
   zIndex: "10",
 };
+
+const recognizerQ = defineQuery([Any(Tap, LongPress, Drag, Pinch, WheelPan, WheelZoom)]);
+const pointerQ = defineQuery([Pointer]);
+const selectedQ = defineQuery([Selected]);
+
+const P = GesturePhases;
+
+function kindOf(world: World, e: Entity): string {
+  if (world.has(e, Tap)) return "tap";
+  if (world.has(e, LongPress)) return "longPress";
+  if (world.has(e, Drag)) return "drag";
+  if (world.has(e, Pinch)) return "pinch";
+  if (world.has(e, WheelPan)) return "wheelPan";
+  if (world.has(e, WheelZoom)) return "wheelZoom";
+  return "?";
+}
+
+function routeOf(world: World, e: Entity): string {
+  if (world.hasTag(e, RoutedMove)) return " move";
+  if (world.hasTag(e, RoutedResize)) return " resize";
+  if (world.hasTag(e, RoutedPan)) return " pan";
+  if (world.hasTag(e, RoutedMarquee)) return " marquee";
+  if (world.hasTag(e, RoutedConnect)) return " connect";
+  return "";
+}
 
 export function createHudReflector(deps: HudDeps): ReflectorDef {
   const el = deps.host.container.ownerDocument.createElement("div");
@@ -60,21 +108,34 @@ export function createHudReflector(deps: HudDeps): ReflectorDef {
       prevTransform = transform;
       prevStyle = style;
 
+      // --- interaction snapshot ---
+      const recognizers: string[] = [];
+      world.query(recognizerQ).each((b) => {
+        for (const r of b) {
+          const e = b.entity(r);
+          recognizers.push(`${kindOf(world, e)}:${P.current(world, e) ?? "-"}${routeOf(world, e)}`);
+        }
+      });
+      let claims = 0;
+      world.query(pointerQ).each((b) => {
+        for (const r of b) {
+          if (world.getRelation(b.entity(r), ClaimedBy) !== undefined) claims++;
+        }
+      });
+      let selection = 0;
+      world.query(selectedQ).each((b) => {
+        selection += b.count;
+      });
+
       const frame = deps.engine.lastFrame();
       const lines = [
         `fps ${ema.toFixed(0).padStart(3)}   tick ${frame ? `${frame.totalMicros}µs` : "—"}`,
-        `nodes ${deps.graybox.nodeCount()}`,
-        `transform writes/frame ${dTransform}`,
-        `graybox style writes/frame ${dStyle}`,
-        `reflectors ${frame ? frame.reflectorsFlushed.join(", ") : "—"}`,
+        `nodes ${deps.graybox.nodeCount()}   selected ${selection}`,
+        `transform writes/frame ${dTransform}   graybox writes/frame ${dStyle}`,
+        `claims ${claims}   commits ${deps.sink.intents.length}`,
+        `recognizers (${recognizers.length}): ${recognizers.slice(0, 6).join("  ") || "—"}`,
       ];
-      if (frame && frame.systems.length > 0) {
-        lines.push("systems:");
-        for (const s of frame.systems) {
-          lines.push(`  ${s.phase}/${s.system} ${s.ran ? "ran " : "skip"} ${s.micros}µs`);
-        }
-      }
-      lines.push("", "[p] scripted pan   [d] scripted drag");
+      lines.push("", "pan: drag empty canvas · space/middle-drag · wheel = zoom", "tap = select · drag a box = move");
       el.textContent = lines.join("\n");
     },
   };

@@ -117,10 +117,19 @@ export {
 export {
   ensureCanvasSurface,
   installInteractionCore,
+  installInteractionStack,
   type InteractionCore,
   type InteractionCoreOpts,
+  type InteractionStack,
 } from "./interaction/install";
+export type { MarqueeBuffer } from "./systems/l3-marquee";
 export { DEFAULT_SPAWN_PROFILES, type SingleKindName, type SpawnProfiles } from "./systems/l2-recognize";
+export { createCursorSync } from "./systems/l4-cursor";
 
 // Reviewed default constants (citations point at the owning design sections).
 export * from "./settings/defaults";
+
+// --- M4 camera slice (design-003 §5 item 9 + simulate tail) ---
+// Sole exception to the no-barrel-edit rule: the camera-sim factory + its
+// runtime resource, exported so the DOM demo and integration can wire them.
+export { CameraInertia, createCameraSystems, type CameraSystems } from "./systems/camera-sim";

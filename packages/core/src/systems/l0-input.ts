@@ -122,8 +122,13 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
   );
 
   const pointerIngest = defineSystem(
-    anchorQ, // exactly one canvas-surface entity ⇒ the body runs exactly once per frame
-    (_b, ctx) => {
+    anchorQ,
+    (b, ctx) => {
+      // A tag-only query structurally matches EVERY archetype, and strata invokes
+      // the body per archetype chunk — including zero-matched-row ones. Guard to
+      // the one batch actually holding the canvas entity so the drain runs
+      // exactly once per frame BY CONSTRUCTION, not by drain-idempotence.
+      if (b.count === 0) return;
       const events = queue.drain();
       if (events.length === 0) return;
 

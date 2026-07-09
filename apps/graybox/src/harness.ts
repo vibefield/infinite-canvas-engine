@@ -1,27 +1,24 @@
 /**
  * The scripted measurement harness — the M3 exit numbers, "measured, not
- * asserted" (docs/implementation-plan.md M3). Each run drives `engine.step`
- * directly (no rAF) so the frame count and the write counters are exact.
+ * asserted" (docs/implementation-plan.md M3), now driven through the REAL M4
+ * interaction stack.
  *
- * Two runs, each also bound to a hotkey by {@link installHarnessHotkeys}:
- *
- *  - scriptedPan (design-002 §5 O(1) pan): translate the Camera resource each
- *    frame. Expectation — the plane-transform reflector writes exactly ONE
- *    transform per frame (it observes Camera), and the gray-box reflector writes
- *    ZERO styles (a camera move stamps no Position/Size, so its query never
- *    wakes). Pan cost is independent of node count.
+ *  - scriptedPan (design-002 §5 O(1) pan): a held pan drag driven ENTIRELY
+ *    through the input queue — synthetic pointer down + one move per frame. The
+ *    real L0→L2→cameraControl path moves the Camera resource; the property under
+ *    test is unchanged from M3: the plane-transform reflector writes exactly ONE
+ *    transform per moving frame (it observes Camera) and the gray-box reflector
+ *    writes ZERO styles (a camera move stamps no Position/Size). Pan cost stays
+ *    independent of node count — now proven end-to-end, not by a direct Camera poke.
  *
  *  - scriptedDrag (design-001 §7 churn budget): a `simulate` system moves ONE
  *    entity per frame through the honest in-tick value-write path
- *    (`ctx.edit().set(Position)`), camera untouched. Expectation — per frame:
- *    value writes on one entity ⇒ the gray-box reflector wakes and writes
- *    exactly ONE style (its change-only geometry cache suppresses the other
- *    9,999), ZERO plane-transform writes (camera static), and the live node
- *    count never moves (zero enter/exit ⇒ zero migrations/tag flips).
+ *    (`ctx.edit().set(Position)`), camera untouched. Per frame: exactly ONE
+ *    gray-box style write (the change-only cache suppresses the other 9,999), ZERO
+ *    plane-transform writes, and a stable live node count.
  *
- * A warm-up `step` precedes every measured window so first-paint (the reflectors'
- * unconditional first flush — plane paints once, gray-box mounts all N) is NOT
- * charged to the steady-state deltas.
+ * A warm-up `step` precedes every measured window so first-paint is NOT charged
+ * to the steady-state deltas.
  */
 import {
   Camera,
@@ -31,6 +28,9 @@ import {
   type Engine,
   type Entity,
   field,
+  type InputEvent,
+  type InputQueue,
+  NO_MODS,
   Position,
   Size,
 } from "@ice/core";
@@ -123,16 +123,33 @@ function collectMicros(engine: Engine, samples: number[]): void {
   if (frame !== undefined) samples.push(frame.totalMicros);
 }
 
+/** A synthetic mouse InputEvent (canvas pan driver — no picking in the harness ⇒ canvas capture). */
+function mouseEvent(kind: InputEvent["kind"], x: number, y: number, buttons: number): InputEvent {
+  return { kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS };
+}
+
 export function scriptedPan(
   engine: Engine,
   reflectors: HarnessReflectors,
+  queue: InputQueue,
   frames = 300,
 ): PanResult {
-  const world = engine.world;
   let now = performance.now();
 
-  // Warm-up: consume first-paint (plane writes 1, gray-box mounts N) so the
-  // measured deltas are steady-state only.
+  // Warm-up: consume first-paint (plane writes 1, gray-box mounts N).
+  engine.step(now);
+  now += 16;
+
+  // Begin a held pan on empty canvas: down, then a slop-exit move → RoutedPan.
+  // The harness stack runs the pan tool with no picking installed, so the drag
+  // captures the canvas and routes to pan (never a widget move).
+  let px = 400;
+  const py = 300;
+  queue.enqueue(mouseEvent("down", px, py, 1));
+  engine.step(now);
+  now += 16;
+  px += 20; // 20px > drag slop → Active this frame (total 0, no camera move yet)
+  queue.enqueue(mouseEvent("move", px, py, 1));
   engine.step(now);
   now += 16;
 
@@ -141,8 +158,8 @@ export function scriptedPan(
   const micros: number[] = [];
 
   for (let i = 0; i < frames; i++) {
-    const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
-    world.setResource(Camera, { ...cam, x: cam.x + 3, y: cam.y + 1 });
+    px += 3; // one per-frame delta → cameraControl pans at current zoom
+    queue.enqueue(mouseEvent("move", px, py, 1));
     engine.step(now);
     now += 16;
     collectMicros(engine, micros);
@@ -155,6 +172,11 @@ export function scriptedPan(
     styleWrites: reflectors.graybox.styleWrites() - style0,
     frameMicros: stats(micros),
   };
+
+  // Release (not measured — inertia after this point is outside the window).
+  queue.enqueue(mouseEvent("up", px, py, 0));
+  engine.step(now);
+
   reportPan(result);
   return result;
 }
@@ -242,9 +264,13 @@ function reportDrag(r: DragResult): void {
 }
 
 /** Wire `p` → scriptedPan, `d` → scriptedDrag on the document. Returns a detach fn. */
-export function installHarnessHotkeys(engine: Engine, reflectors: HarnessReflectors): () => void {
+export function installHarnessHotkeys(
+  engine: Engine,
+  reflectors: HarnessReflectors,
+  queue: InputQueue,
+): () => void {
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "p") scriptedPan(engine, reflectors);
+    if (e.key === "p") scriptedPan(engine, reflectors, queue);
     else if (e.key === "d") scriptedDrag(engine, reflectors);
   };
   document.addEventListener("keydown", onKey);

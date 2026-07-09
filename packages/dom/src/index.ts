@@ -14,5 +14,8 @@ export { createGrayboxReflector } from "./reflectors/graybox";
 // The rAF frame loop (design-002 §1: the platform owns the loop).
 export { startRafLoop } from "./loop";
 
-// TEMPORARY M3-demo pan/zoom adapter — replaced by M4's L0 interaction stack.
-export { attachDemoPanZoom } from "./demo-input";
+// The L0 pointer adapter (design-003 §2–§3): DOM events → InputQueue, nothing more.
+export { attachPointerAdapter } from "./pointer-adapter";
+
+// L4 cursor projection output (design-003 §7: local cursor = OS cursor, one write).
+export { createCursorReflector } from "./reflectors/cursor";

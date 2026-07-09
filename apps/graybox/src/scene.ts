@@ -1,14 +1,23 @@
 /**
- * The demo scene: N gray-box entities (Position + Size) scattered over a large
- * world area via the deterministic LCG. Spawned outside any tick (plain
- * `world.spawn`, immediate on the runtime store) — this is app setup, not a
- * gesture write, so no sovereignty/claim machinery is involved.
+ * The demo scene: N gray-box entities scattered over a large world area via the
+ * deterministic LCG. Each is a full interaction citizen — `Selectable` +
+ * `Movable` (tap selects, drag moves; select-on-grab) with a `StackZ` so the
+ * moveClaim elevate has something to raise. Spawned outside any tick (plain
+ * `world.spawn`, immediate on the runtime store) — app setup, not a gesture write.
  */
-import { type Entity, Position, Size, type World } from "@ice/core";
+import {
+  type Entity,
+  Movable,
+  Position,
+  Selectable,
+  Size,
+  StackZ,
+  type World,
+} from "@ice/core";
 import { inRange, makePrng } from "./prng";
 
 export interface SceneOpts {
-  /** Entity count (M3 budget target: 10k). */
+  /** Entity count. */
   count?: number;
   /** LCG seed — same seed ⇒ same layout. */
   seed?: number;
@@ -37,7 +46,14 @@ export function spawnScene(world: World, opts: SceneOpts = {}): Scene {
     const y = inRange(rand, -half, half);
     const w = inRange(rand, minSize, maxSize);
     const h = inRange(rand, minSize, maxSize);
-    entities[i] = world.spawn({ components: [[Position, { x, y }], [Size, { w, h }]] });
+    entities[i] = world.spawn({
+      components: [
+        [Position, { x, y }],
+        [Size, { w, h }],
+        [StackZ, { z: i }],
+      ],
+      tags: [Selectable, Movable],
+    });
   }
   return { entities };
 }
