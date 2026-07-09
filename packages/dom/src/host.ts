@@ -23,9 +23,8 @@ export interface CanvasHost {
   dispose(): void;
 }
 
-/** The container styles the host owns (cleared on dispose). */
+/** The container styles the host owns unconditionally (cleared on dispose). */
 const CONTAINER_STYLE: Readonly<Record<string, string>> = {
-  position: "relative",
   overflow: "hidden",
   touchAction: "none",
   userSelect: "none",
@@ -41,6 +40,21 @@ const PLANE_STYLE: Readonly<Record<string, string>> = {
 };
 
 export function createCanvasHost(container: HTMLElement): CanvasHost {
+  // The plane needs the container to be a POSITIONED containing block — but
+  // `absolute`/`fixed` already qualify, so only promote a `static` container
+  // to `relative`. Stomping an app's `position: absolute` with inline
+  // `relative` collapses the common `#app { position: absolute; inset: 0 }`
+  // sizing pattern to zero height (inset offsets a relative box, it does not
+  // size it), and the host's own overflow:hidden then clips everything.
+  // Inline style first (authoritative and environment-independent), computed
+  // second (catches stylesheet rules like `#app { position: absolute }`).
+  const view = container.ownerDocument.defaultView;
+  const position =
+    container.style.position !== ""
+      ? container.style.position
+      : (view?.getComputedStyle(container).position ?? "");
+  const promoteToRelative = position === "" || position === "static";
+  if (promoteToRelative) container.style.position = "relative";
   Object.assign(container.style, CONTAINER_STYLE);
 
   const contentPlane = container.ownerDocument.createElement("div");
@@ -52,6 +66,7 @@ export function createCanvasHost(container: HTMLElement): CanvasHost {
     contentPlane,
     dispose() {
       contentPlane.remove();
+      if (promoteToRelative) container.style.removeProperty("position");
       for (const prop of Object.keys(CONTAINER_STYLE)) {
         container.style.removeProperty(
           // camelCase → kebab-case for removeProperty (touchAction → touch-action).

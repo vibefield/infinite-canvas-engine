@@ -30,4 +30,21 @@ describe("createCanvasHost", () => {
     expect(container.style.position).toBe("");
     expect(container.style.touchAction).toBe("");
   });
+
+  it("keeps an already-positioned container's positioning (the inset-sized #app pattern)", () => {
+    // Regression: stomping `position: absolute` with inline `relative` collapses
+    // an `inset: 0`-sized container to zero height — overflow:hidden then clips
+    // the whole scene (the graybox demo's black screen).
+    const container = document.createElement("div");
+    container.style.position = "absolute";
+    container.style.inset = "0";
+
+    const host = createCanvasHost(container);
+    expect(container.style.position).toBe("absolute");
+    expect(container.style.overflow).toBe("hidden");
+
+    // Dispose must not strip the app's own positioning either.
+    host.dispose();
+    expect(container.style.position).toBe("absolute");
+  });
 });
