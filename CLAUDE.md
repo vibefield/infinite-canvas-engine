@@ -12,12 +12,13 @@ Prior attempts (read-only reference): `../infinite-canvas` (v1, on reactive-ecs\
 
 ### Draft workflow (snapshotting draft changes)
 
+Edit drafts on `main`'s worktree as usual, then snapshot with:
+
 ```sh
-git checkout local-dev && git add -f draft && git commit -m "local: draft snapshot" \
-  && git checkout main && git checkout local-dev -- draft/ && git restore --staged draft/
+sh scripts/snapshot-drafts.sh "local: what changed"
 ```
 
-(The final two commands restore `draft/` into the worktree untracked after the branch switch removes it.) A `.git/hooks/pre-push` hook blocks pushing `local-dev`; do not remove it. Never merge `local-dev` into `main`.
+**NEVER `git checkout local-dev` while drafts have uncommitted edits** — git silently OVERWRITES ignored-untracked files with the branch's committed versions (edits lost; this bit us once). The script commits to `local-dev` through a temporary index: no branch switch, no clobber. A `.git/hooks/pre-push` hook blocks pushing `local-dev`; do not remove it. Never merge `local-dev` into `main`.
 
 ## Non-negotiable engine laws (digest — full list in draft/examined-inventory.md §3)
 
