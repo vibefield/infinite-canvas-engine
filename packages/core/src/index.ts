@@ -159,3 +159,23 @@ export * from "./settings/defaults";
 // Sole exception to the no-barrel-edit rule: the camera-sim factory + its
 // runtime resource, exported so the DOM demo and integration can wire them.
 export { CameraInertia, createCameraSystems, type CameraSystems } from "./systems/camera-sim";
+
+// --- M5 app-facing doc kit slice (design-005 §6.5–6.6): autosave + dumb relay ---
+export {
+  restoreAutosave,
+  startAutosave,
+  type Autosave,
+  type AutosaveOpts,
+  type AutosaveState,
+  type AutosaveStatus,
+  type AutosaveStorageRead,
+  type AutosaveStorageWrite,
+  type CancelScheduled,
+  type RestoreResult,
+} from "./doc/autosave";
+export {
+  attachBroadcastRelay,
+  type BroadcastRelay,
+  type BroadcastRelayOpts,
+  type RelayChannel,
+} from "./doc/broadcast-relay";
