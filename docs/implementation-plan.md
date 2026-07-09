@@ -11,7 +11,7 @@ Source designs: the reviewed series in `draft/` (local-dev branch; present-but-u
 - **dependency-cruiser rules from day one**: kernel imports nothing; core imports strata-ecs + kernel only (no react/dom/three); one-direction chain dom → react → r3f; devtools → core.
 - Pin `@vibecook/strata-ecs` (pre-1.0); CI = typecheck + lint + test + dep-cruise (the merge gate).
 - HMR-safe schema/prefab boot-kit skeleton (globalThis guard + `import.meta.hot.invalidate` — the strata reference pattern).
-- File the two strata petitions early so upstream can consider them while we build: per-relation/tag versioning (design-002 §4 caveat); origin-tagged engine commits (un-undoable migrations without `clearHistory`, design-005 §10).
+- File the two strata petitions early so upstream can consider them while we build: per-relation/tag versioning (design-002 §4 caveat); origin-tagged engine commits (un-undoable migrations without `clearHistory`, design-005 §10). *(Both LANDED upstream in strata 0.3.0, 2026-07-09 — see docs/strata-petitions.md.)*
 
 **Exit**: empty packages build + import-wall violations fail CI.
 
@@ -75,7 +75,7 @@ Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tes
 
 - Presence publish (publish step), remote cursors + selection summaries, bootstrap kit (hello/snapshot/buffer, reconnect = re-bootstrap), ws-relay adapter, read-only attach mode, migration read-repair path with legacy-schema registration test.
 
-**Exit**: two-machine collab demo over the dumb relay; version-skew test: older pack opens read-only, migrator upgrades + `clearHistory`, both converge.
+**Exit**: two-machine collab demo over the dumb relay; version-skew test: older pack opens read-only, migrator upgrades via `{ undoable: false }` transactions (strata 0.3.0 — user history survives), both converge.
 
 ## M10 — API polish, devtools, docs
 
@@ -89,5 +89,5 @@ Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tes
 
 - **Tests-as-traces**: every red-team frame trace and every design "Exit" metric lives in CI; a design amendment requires updating its trace.
 - **Benchmarks**: churn budget, pan O(1), pick latency, reactivity tax — tracked per milestone against the M3 baseline.
-- **Risks**: strata pre-1.0 drift (pinned; upgrade PRs re-run the full trace suite) · global tag/rel version over-fire (change-only discipline; petition filed) · access-declaration omissions (DEV throws early by design) · R3F version coupling in the router/islands (isolate in `r3f` package; the synthetic-event dispatcher is the only R3F-internal-adjacent code).
+- **Risks**: strata pre-1.0 drift (pinned; upgrade PRs re-run the full trace suite) · ~~global tag/rel version over-fire~~ (RESOLVED upstream in 0.3.0 — per-tag/relation observer precision; change-only writes remain stamp-volume hygiene) · access-declaration omissions (DEV throws early by design) · R3F version coupling in the router/islands (isolate in `r3f` package; the synthetic-event dispatcher is the only R3F-internal-adjacent code).
 - **Definition of "engine v1 done"**: M10 exit + the scope fence of design-005 §9 intact (nothing snuck in).

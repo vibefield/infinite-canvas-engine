@@ -1,6 +1,10 @@
-# strata-ecs petitions (ready to file upstream)
+# strata-ecs petitions — BOTH LANDED in strata-ecs 0.3.0 (2026-07-09)
 
-Two non-blocking improvement requests surfaced by the engine design reviews. Change-only write discipline and `clearHistory()` cover us meanwhile — these would remove the workarounds.
+Kept as the record of two improvement requests surfaced by the engine design reviews; both shipped upstream, additive, no breaking changes:
+1. → `doc.transaction(fn, { undoable: false })` (history hooks skip it; pending redo survives) — retires the `clearHistory()` migration workaround (design-005 §6.4 updated).
+2. → per-tag/relation observer precision for row-filtered `observeQuery` — retires change-only writes as a *correctness* requirement (they remain stamp-volume hygiene; design-002 §4 updated).
+
+Original petitions below.
 
 ## 1. Per-relation/tag membership versioning
 
