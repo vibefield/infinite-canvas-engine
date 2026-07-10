@@ -7,9 +7,20 @@ export const DOM_VERSION = "0.0.0";
 // The canvas host (design-004 §1; M3: one content plane).
 export { createCanvasHost, type CanvasHost } from "./host";
 
+// The lifted plane (design-004 §1, P3 — M6): host + lifted for drag-promote.
+export { createPlanes, type Planes } from "./planes";
+
 // Built-in DOM reflectors (design-002 §5, post-notify output only).
-export { createPlaneTransformReflector } from "./reflectors/plane-transform";
+export { createPlaneTransformReflector, type CameraPlanes } from "./reflectors/plane-transform";
 export { createGrayboxReflector } from "./reflectors/graybox";
+
+// The DOM widget host layer (design-004 §2): host divs reconciled against the
+// engine mount store; React portals target each host's content element.
+export {
+  createDomWidgetsReflector,
+  type DomWidgetsHost,
+  type DomWidgetsReflector,
+} from "./reflectors/dom-widgets";
 
 // The rAF frame loop (design-002 §1: the platform owns the loop).
 export { startRafLoop } from "./loop";
@@ -22,3 +33,7 @@ export { createCursorReflector } from "./reflectors/cursor";
 
 // P0 ground-plane grid (design-004 §1: WebGL canvas, camera uniforms, fullscreen-triangle shader).
 export { createGridReflector, DEFAULT_GRID_CONFIG, type GridConfig } from "./reflectors/grid";
+
+// M6 chrome plane reflector (P4) + measurement adapter (design-004 §2 measure, §5 chrome).
+export { createChromeReflector } from "./reflectors/chrome";
+export { attachMeasureAdapter, type MeasureAdapter } from "./measure-adapter";

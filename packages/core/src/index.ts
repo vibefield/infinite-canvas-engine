@@ -203,3 +203,8 @@ export {
   type BroadcastRelayOpts,
   type RelayChannel,
 } from "./doc/broadcast-relay";
+
+// --- M6 measurement + chrome + breakpoints (design-004 §2 measure, §5 chrome, §8 LOD) ---
+export { createMeasureQueue, type MeasureEvent, type MeasureQueue } from "./input/measure-queue";
+export { createMeasureIngest } from "./systems/measure-ingest";
+export { createBreakpointSystem, createSelectionChromeSystem } from "./systems/chrome";

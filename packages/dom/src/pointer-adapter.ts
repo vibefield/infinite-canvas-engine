@@ -18,12 +18,39 @@
  *    (the zoom signal), a plain wheel becomes dx/dy (deltaMode lines → px ×16);
  *  - window blur enqueues a synthetic `cancel` for every pointer still down
  *    (design-003 §8) — the browser will not send the pointerups.
+ *
+ * Widget opt-out (the pinned widget-event contract, design-002 §8 / design-004 §4):
+ * on `pointerdown` ONLY, if the event's target chain (up to the container) crosses
+ * a native interactive (input/textarea/select/button/a[href]/contenteditable/
+ * media[controls]) or an explicit `[data-canvas-interactive]`, the down fact is
+ * flagged `surfaceHandled: true` — the fact still lands (the one input path is
+ * absolute), but recognizer-spawn/arbitration skip it (`HandledByWidget` flows
+ * through L0). `stopPropagation()` inside widget content is the OTHER boundary:
+ * a stopped event never reaches the container listener, so it never becomes a
+ * canvas fact at all — that is the design, not a gap.
  */
 import { NO_MODS, type InputEvent, type InputMods, type InputQueue } from "@ice/core";
 import type { CanvasHost } from "./host";
 
 /** DOM_DELTA_LINE → px (one wheel "line" ≈ 16px; matches typical browser mapping). */
 const WHEEL_LINE_PX = 16;
+
+/**
+ * Elements whose `pointerdown` is the widget's, not the canvas's (design-002 §8).
+ * `contenteditable=""` (bare attribute) and `="true"` are editable; `="false"` is
+ * not. Media only opts out WITH visible controls.
+ */
+const INTERACTIVE_SELECTOR =
+  'input, textarea, select, button, a[href], [contenteditable=""], [contenteditable="true"], audio[controls], video[controls], [data-canvas-interactive]';
+
+/** True if `target`'s ancestor chain, up to but excluding `container`, holds an interactive surface. */
+function crossesInteractive(target: EventTarget | null, container: HTMLElement): boolean {
+  if (!(target instanceof Element)) return false;
+  const match = target.closest(INTERACTIVE_SELECTOR);
+  // `closest` walks to the document root; bound it to inside the canvas so an
+  // interactive ANCESTOR of the container (unusual, but legal) does not count.
+  return match !== null && container.contains(match);
+}
 
 function pointerIdOf(e: PointerEvent): string {
   if (e.pointerType === "touch") return `touch:${e.pointerId}`;
@@ -72,7 +99,19 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
         // capture is best-effort — a detached or unsupported target must not throw here.
       }
     }
-    queue.enqueue({ kind: "down", pointerId: id, device, screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e) });
+    // Widget opt-out: down on a native interactive / [data-canvas-interactive]
+    // flags the fact so recognizers skip it (design-002 §8). Absent otherwise.
+    const surfaceHandled = crossesInteractive(e.target, container);
+    queue.enqueue({
+      kind: "down",
+      pointerId: id,
+      device,
+      screenX: x,
+      screenY: y,
+      buttons: e.buttons,
+      mods: pointerMods(e),
+      ...(surfaceHandled ? { surfaceHandled: true } : {}),
+    });
   };
 
   const onPointerMove = (e: PointerEvent): void => {

@@ -1,0 +1,244 @@
+/**
+ * The DOM widget HOST reflector (design-004 §2 host pipeline; design-002 §5
+ * `domWidgets`).
+ *
+ * This is the reflector-owned HALF of the widget runtime: it reconciles a host
+ * `<div>` per mounted widget against the engine's mount store and paints its
+ * world-unit geometry. The OTHER half — the React portal list — is owned by a
+ * hook subscribed to the SAME store (design-004 §2, decision 3); this file never
+ * touches React. Each host carries an inner `data-ice-content` element that the
+ * portal targets, so the two halves meet only at that node.
+ *
+ * Store, not query: membership (enter/exit) and the culled-but-kept-mounted
+ * `hidden` flag are ENGINE-side decisions (cull + keep-mounted LRU, mount-store.ts)
+ * published through a `useSyncExternalStore` snapshot. That store has NO ECS stamp
+ * for a reflector `observe` to watch, so — like the cursor reflector — this one is
+ * `always: true` and does its own cheap dirt detection:
+ *  - **membership**: `store.getSnapshot()` identity is O(1); the snapshot changes
+ *    IFF membership or a hidden flag changed, so an unchanged snapshot skips the
+ *    reconcile entirely;
+ *  - **geometry**: a private observer on `[Position, Size]` sets a dirty flag, so
+ *    the (change-only) geometry pass runs only when a widget actually moved/resized
+ *    — a still scene touches no DOM. Effective size is `MeasuredSize` where present
+ *    and non-zero, else `Size` (design-004 §2). (MeasuredSize changes ride a
+ *    dedicated observer; the note below is historical:
+ *    picked up on the next Position/Size stamp or membership change; the ResizeObserver
+ *    measurement path — a later slice — will arm its own dirt.)
+ *  - **drag-promote** (P3): a private observer on `[Grab]` membership sets a dirty
+ *    flag; a host whose entity holds `Grab` re-parents content→lifted plane and back
+ *    on release. Re-parenting MOVES the host node (with its content child), which
+ *    PRESERVES the React portal — the portal targets the content node, and moving a
+ *    portal's container node does not remount it, so widget React state survives the
+ *    lift. While ANY host is lifted, every host's content element is inerted
+ *    (`pointer-events: none`, the pinned inert-during-drag contract, design-004 §4).
+ *
+ * Law 10: reflectors run post-notify, write output only, never read layout or
+ * write ECS — this flush touches only host `<div>` style/attributes/parentage.
+ */
+import {
+  Grab,
+  MeasuredSize,
+  Position,
+  Size,
+  defineQuery,
+  type Entity,
+  type MountEntry,
+  type ReflectorDef,
+  type WidgetMountStore,
+  type World,
+} from "@ice/core";
+
+/** The two planes a host can live in (design-004 §1: P1 content, P3 lifted). */
+export interface DomWidgetsHost {
+  readonly contentPlane: HTMLElement;
+  readonly liftedPlane: HTMLElement;
+}
+
+interface HostRec {
+  /** The absolute-positioned, world-unit host div; re-parents content↔lifted on promote. */
+  readonly host: HTMLDivElement;
+  /** The `data-ice-content` portal target (React mounts INTO this). */
+  readonly content: HTMLDivElement;
+  // Geometry cache — the change-only guard (graybox pattern).
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Last-applied `display:none` (culled-but-kept-mounted) state. */
+  hidden: boolean;
+  /** Last-applied parent: true = lifted plane, false = content plane. */
+  lifted: boolean;
+}
+
+interface Geom {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const geometryQuery = defineQuery([Position, Size]);
+const measuredQuery = defineQuery([MeasuredSize]);
+const grabQuery = defineQuery([Grab]);
+
+function writeGeom(el: HTMLDivElement, x: number, y: number, w: number, h: number): void {
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.style.width = `${w}px`;
+  el.style.height = `${h}px`;
+}
+
+export interface DomWidgetsReflector extends ReflectorDef {
+  /** The entity's content element (the `data-ice-content` portal target), or undefined if not hosted. */
+  hostFor(entity: Entity): HTMLElement | undefined;
+  /** Live host count (= mounted widgets, visible + kept-mounted). */
+  hostCount(): number;
+  /** Geometry writes so far — one per enter, one per changed host, zero for unchanged (churn instrument). */
+  geometryWrites(): number;
+  /** Tear down the private observers (call when unregistering the reflector before the world dies). */
+  dispose(): void;
+}
+
+export function createDomWidgetsReflector(
+  host: DomWidgetsHost,
+  world: World,
+  store: WidgetMountStore,
+): DomWidgetsReflector {
+  const doc = host.contentPlane.ownerDocument;
+  const hosts = new Map<Entity, HostRec>();
+  let lastSnapshot: readonly MountEntry[] | undefined;
+  let geometryWrites = 0;
+  /** True while any host is lifted → all content is inerted (pinned drag contract). */
+  let inert = false;
+
+  // Private dirt flags — the store carries no ECS stamp, so geometry/promote work
+  // is gated by observers rather than the registry's (unused under `always`) dirt.
+  let geometryDirty = false;
+  let promoteDirty = false;
+  const unsubs: Array<() => void> = [
+    world.reactive.observeQuery(geometryQuery, () => { geometryDirty = true; }, { cols: [Position, Size] }),
+    // MeasuredSize rides its own observer: adding it to geometryQuery's cols
+    // would require it in the query and drop widgets without the rider.
+    world.reactive.observeQuery(measuredQuery, () => { geometryDirty = true; }, { cols: [MeasuredSize] }),
+    world.reactive.observeQuery(grabQuery, () => { promoteDirty = true; }, { cols: [] }),
+  ];
+
+  function readGeom(e: Entity): Geom {
+    const p = world.get(e, Position);
+    const measured = world.get(e, MeasuredSize);
+    const s = measured !== undefined && measured.w > 0 ? measured : world.get(e, Size);
+    return { x: p?.x ?? 0, y: p?.y ?? 0, w: s?.w ?? 0, h: s?.h ?? 0 };
+  }
+
+  function createHost(e: Entity): HostRec {
+    const el = doc.createElement("div");
+    el.style.position = "absolute";
+    el.setAttribute("data-ice-entity", String(e));
+
+    const content = doc.createElement("div");
+    content.setAttribute("data-ice-content", "");
+    content.style.width = "100%";
+    content.style.height = "100%";
+    if (inert) content.style.pointerEvents = "none"; // entering mid-drag: honor the inert contract
+    el.appendChild(content);
+
+    const g = readGeom(e);
+    writeGeom(el, g.x, g.y, g.w, g.h);
+    geometryWrites++;
+    const lifted = world.has(e, Grab);
+    (lifted ? host.liftedPlane : host.contentPlane).appendChild(el);
+    return { host: el, content, x: g.x, y: g.y, w: g.w, h: g.h, hidden: false, lifted };
+  }
+
+  /** Enter/exit/hidden reconcile against the store snapshot. Returns whether membership changed. */
+  function reconcile(snapshot: readonly MountEntry[]): boolean {
+    let membershipChanged = false;
+    const present = new Set<Entity>();
+    for (const entry of snapshot) {
+      present.add(entry.entity);
+      let rec = hosts.get(entry.entity);
+      if (rec === undefined) {
+        rec = createHost(entry.entity);
+        hosts.set(entry.entity, rec);
+        membershipChanged = true;
+      }
+      if (entry.hidden !== rec.hidden) {
+        rec.hidden = entry.hidden;
+        rec.host.style.display = entry.hidden ? "none" : ""; // cull ≠ unmount
+      }
+    }
+    for (const [e, rec] of hosts) {
+      if (present.has(e)) continue;
+      rec.host.remove(); // React unmounts via the store; the host div goes too
+      hosts.delete(e);
+      membershipChanged = true;
+    }
+    return membershipChanged;
+  }
+
+  /** Change-only geometry rewrite over the live hosts (graybox pattern). */
+  function updateGeometry(): void {
+    for (const [e, rec] of hosts) {
+      const g = readGeom(e);
+      if (g.x !== rec.x || g.y !== rec.y || g.w !== rec.w || g.h !== rec.h) {
+        writeGeom(rec.host, g.x, g.y, g.w, g.h);
+        rec.x = g.x;
+        rec.y = g.y;
+        rec.w = g.w;
+        rec.h = g.h;
+        geometryWrites++;
+      }
+    }
+  }
+
+  /** Re-parent promoted hosts content↔lifted and toggle the global inert state. */
+  function updatePromote(): void {
+    let anyLifted = false;
+    for (const [e, rec] of hosts) {
+      const shouldLift = world.has(e, Grab);
+      if (shouldLift) anyLifted = true;
+      if (shouldLift !== rec.lifted) {
+        rec.lifted = shouldLift;
+        // appendChild MOVES the existing node between planes — the React portal
+        // (targeting the content child) survives the move.
+        (shouldLift ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+      }
+    }
+    if (anyLifted !== inert) {
+      inert = anyLifted;
+      for (const rec of hosts.values()) {
+        rec.content.style.pointerEvents = inert ? "none" : "";
+      }
+    }
+  }
+
+  return {
+    name: "domWidgets",
+    always: true, // store membership has no ECS stamp; the flush self-gates cheaply
+    flush(_world: World) {
+      const snapshot = store.getSnapshot();
+      let membershipChanged = false;
+      if (snapshot !== lastSnapshot) {
+        lastSnapshot = snapshot;
+        membershipChanged = reconcile(snapshot);
+      }
+      if (geometryDirty) {
+        geometryDirty = false;
+        updateGeometry();
+      }
+      // Membership changes can add/remove a lifted host → recompute inert even
+      // without a Grab stamp (e.g. a lifted widget despawns mid-drag).
+      if (promoteDirty || membershipChanged) {
+        promoteDirty = false;
+        updatePromote();
+      }
+    },
+    hostFor: (entity) => hosts.get(entity)?.content,
+    hostCount: () => hosts.size,
+    geometryWrites: () => geometryWrites,
+    dispose() {
+      for (const u of unsubs) u();
+      unsubs.length = 0;
+    },
+  };
+}
