@@ -66,7 +66,8 @@ module.exports = {
     {
       name: "react-only-dom-core-kernel-react",
       comment:
-        "design-002 §6: react layers on dom — dom/core/kernel + react peer (jsx-runtime), never three/r3f.",
+        "design-002 §6: react layers on dom — dom/core/kernel + react/react-dom peers " +
+        "(jsx-runtime + createPortal: portals-from-one-root IS the package, design-004 §2), never three/r3f.",
       severity: "error",
       from: { path: "^packages/react/src" },
       to: {
@@ -76,6 +77,7 @@ module.exports = {
           "^packages/core",
           "^packages/kernel",
           nm("react"),
+          nm("react-dom"),
         ],
       },
     },
