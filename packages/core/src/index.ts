@@ -152,6 +152,30 @@ export {
   type OpenDocResult,
 } from "./doc/doc-kit";
 
+// The widget runtime core (design-005 §2 + design-004 §2): props DSL,
+// defineWidget compiler, equip, spawn, cull/LRU/mount store.
+export { p, type JsonShape, type PropSpec, type PropsDecl, type StandardSchemaV1 } from "./widget/props";
+export {
+  WidgetEquipped,
+  defineWidget,
+  widgets,
+  type SizeMode,
+  type WidgetDef,
+  type WidgetGroup,
+  type WidgetInteraction,
+  type WidgetSurface,
+  type WidgetType,
+} from "./widget/define-widget";
+export { createWidgetEquipSystem } from "./widget/equip";
+export { spawnWidget, type SpawnWidgetOpts } from "./widget/spawn";
+export {
+  createWidgetRuntime,
+  installWidgetRuntime,
+  type MountEntry,
+  type WidgetMountStore,
+  type WidgetRuntime,
+} from "./widget/mount-store";
+
 // Reviewed default constants (citations point at the owning design sections).
 export * from "./settings/defaults";
 

@@ -1,0 +1,232 @@
+/**
+ * `defineWidget` v1 — the flagship compiler (design-005 §2).
+ *
+ * Sugar over `definePrefab` + registries — nothing here is unavailable to a
+ * hand-rolled prefab. Compile output:
+ *  - one durable prefab: `PrefabId{type}` + Position/Size/StackZ + ONE
+ *    generated component per conflict group (`<type>:<group>`; ungrouped
+ *    fields form the "props" default group) + Accepts/Provides when a
+ *    container contract is declared;
+ *  - a capability-stamp recipe (RUNTIME tags at projection — the equip system
+ *    consumes it; tags stay pure, design-001 §2);
+ *  - a view registration (surface, component, sizeMode, sizes) the React/dom
+ *    layers consume;
+ *  - the migration chain (stored now; the M9 migrator runs it).
+ *
+ * Definition-time rules enforced: every top-level field defaulted (p.json
+ * derives one), group membership total and disjoint, enum defaults among
+ * options (checked in the DSL), duplicate types rejected.
+ */
+import { field, enumOf } from "@vibecook/strata-ecs";
+import type { Component, Tag } from "@vibecook/strata-ecs";
+import {
+  Accepts,
+  Container,
+  Movable,
+  Position,
+  Provides,
+  Resizable,
+  Selectable,
+  Size,
+  SnapSource,
+  SnapTarget,
+  StackZ,
+} from "../catalog";
+import { defineComponent, defineTag } from "../schema/meta";
+import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
+import type { JsonSpec, PropSpec, PropsDecl } from "./props";
+
+export type WidgetSurface = "dom" | "gl";
+export type SizeMode = "fixed" | "auto-height" | "auto";
+
+export interface WidgetInteraction {
+  readonly selectable?: boolean;
+  readonly movable?: boolean;
+  readonly resizable?: boolean;
+  readonly snap?: "source" | "target" | "both" | "none";
+}
+
+export interface WidgetDef {
+  readonly type: string;
+  readonly version?: number;
+  /** Top-level props: a plain record, or the DSL's `p.object(...)` result. */
+  readonly props?: PropsDecl | { readonly kind: "object"; readonly fields: Readonly<Record<string, unknown>> };
+  /** Conflict groups: group name → prop names. Ungrouped props → "props". */
+  readonly groups?: Readonly<Record<string, readonly string[]>>;
+  readonly surface: WidgetSurface;
+  /** Framework component (opaque to core — the react package narrows it). */
+  readonly component: unknown;
+  readonly sizeMode?: SizeMode;
+  readonly defaultSize?: { readonly w: number; readonly h: number };
+  readonly minSize?: { readonly w: number; readonly h: number };
+  readonly interaction?: WidgetInteraction;
+  readonly container?: { readonly accepts: readonly string[]; readonly provides?: readonly string[] };
+  /** fromVersion → idempotent absolute transform (M9 runs the chain). */
+  readonly migrate?: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
+}
+
+export interface WidgetGroup {
+  readonly name: string;
+  readonly component: Component;
+  /** prop name → spec (field order = component field order). */
+  readonly fields: Readonly<Record<string, PropSpec>>;
+}
+
+export interface WidgetType {
+  readonly type: string;
+  readonly version: number;
+  readonly prefab: Prefab;
+  readonly groups: readonly WidgetGroup[];
+  readonly propToGroup: Readonly<Record<string, string>>;
+  readonly surface: WidgetSurface;
+  readonly component: unknown;
+  readonly sizeMode: SizeMode;
+  readonly defaultSize: { readonly w: number; readonly h: number };
+  readonly minSize: { readonly w: number; readonly h: number };
+  /** Runtime capability tags the equip system stamps at projection. */
+  readonly capabilityTags: readonly Tag[];
+  readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
+}
+
+/** Stamped by the equip system once a projected widget carries its capability tags. */
+export const WidgetEquipped = defineTag("WidgetEquipped");
+
+const registry = new Map<string, WidgetType>();
+
+export const widgets = {
+  get(type: string): WidgetType | undefined {
+    return registry.get(type);
+  },
+  all(): WidgetType[] {
+    return [...registry.values()];
+  },
+};
+
+function normalizeProps(props: WidgetDef["props"]): PropsDecl {
+  if (props === undefined) return {};
+  if ("kind" in props && props.kind === "object") {
+    return props.fields as PropsDecl; // p.object(...) authored form
+  }
+  return props as PropsDecl;
+}
+
+function strataFieldOf(name: string, spec: PropSpec) {
+  switch (spec.kind) {
+    case "string":
+      return field("string", { default: spec.default ?? "" });
+    case "number":
+      return field("f64", { default: spec.default ?? 0 });
+    case "boolean":
+      return field("bool", { default: spec.default ?? false });
+    case "enum": {
+      const fallback = spec.default ?? spec.options[0] ?? ""; // p.enum enforces non-empty
+      return field(enumOf([...spec.options]), { default: fallback });
+    }
+    case "json":
+      return field("string", { default: (spec as JsonSpec).default ?? "null" });
+    default:
+      throw new Error(`ice: defineWidget prop "${name}" has an unknown spec kind.`);
+  }
+}
+
+export function defineWidget(def: WidgetDef): WidgetType {
+  if (registry.has(def.type)) {
+    throw new Error(`ice: widget type "${def.type}" is already defined.`);
+  }
+  const props = normalizeProps(def.props);
+
+  // Group membership: total and disjoint; ungrouped → the "props" group.
+  const propToGroup: Record<string, string> = {};
+  for (const [group, names] of Object.entries(def.groups ?? {})) {
+    for (const name of names) {
+      if (!(name in props)) {
+        throw new Error(`ice: widget "${def.type}" group "${group}" lists unknown prop "${name}".`);
+      }
+      if (propToGroup[name] !== undefined) {
+        throw new Error(`ice: widget "${def.type}" prop "${name}" is in two groups — groups must be disjoint.`);
+      }
+      propToGroup[name] = group;
+    }
+  }
+  for (const name of Object.keys(props)) {
+    propToGroup[name] ??= "props";
+  }
+
+  // One generated component per group, named `<type>:<group>`.
+  const byGroup = new Map<string, Record<string, PropSpec>>();
+  for (const [name, spec] of Object.entries(props)) {
+    const g = propToGroup[name] as string;
+    let fields = byGroup.get(g);
+    if (fields === undefined) {
+      fields = {};
+      byGroup.set(g, fields);
+    }
+    fields[name] = spec;
+  }
+  const groups: WidgetGroup[] = [];
+  for (const [g, fields] of byGroup) {
+    const raw: Record<string, ReturnType<typeof strataFieldOf>> = {};
+    for (const [name, spec] of Object.entries(fields)) raw[name] = strataFieldOf(name, spec);
+    groups.push({ name: g, component: defineComponent(`${def.type}:${g}`, raw) as Component, fields });
+  }
+
+  // Essential set: geometry + every group at its defaults (+ container cells).
+  const defaultSize = def.defaultSize ?? { w: 240, h: 160 };
+  const essential: ComponentInit[] = [
+    init(Position, { x: 0, y: 0 }),
+    init(Size, { w: defaultSize.w, h: defaultSize.h }),
+    init(StackZ, { z: 0 }),
+  ];
+  for (const g of groups) {
+    const defaults: Record<string, string | number | boolean> = {};
+    for (const [name, spec] of Object.entries(g.fields)) {
+      if (spec.kind === "json") defaults[name] = (spec as JsonSpec).default ?? "null";
+      else if (spec.kind === "enum") defaults[name] = spec.default ?? spec.options[0] ?? "";
+      else defaults[name] = spec.default ?? (spec.kind === "string" ? "" : spec.kind === "number" ? 0 : false);
+    }
+    essential.push([g.component, defaults] as ComponentInit);
+  }
+  if (def.container !== undefined) {
+    essential.push(init(Accepts, { list: JSON.stringify(def.container.accepts) }));
+    essential.push(init(Provides, { list: JSON.stringify(def.container.provides ?? []) }));
+  }
+
+  const prefab = definePrefab(def.type, {
+    store: "durable",
+    components: essential,
+    version: def.version ?? 1,
+  });
+
+  // Capability recipe → runtime tags at projection (equip system).
+  const interaction = def.interaction ?? {};
+  const capabilityTags: Tag[] = [];
+  if (interaction.selectable !== false) capabilityTags.push(Selectable);
+  if (interaction.movable !== false) capabilityTags.push(Movable);
+  if (interaction.resizable === true) capabilityTags.push(Resizable);
+  const snap = interaction.snap ?? "target";
+  if (snap === "source" || snap === "both") capabilityTags.push(SnapSource);
+  if (snap === "target" || snap === "both") capabilityTags.push(SnapTarget);
+  if (def.container !== undefined) capabilityTags.push(Container);
+
+  const widget: WidgetType = {
+    type: def.type,
+    version: def.version ?? 1,
+    prefab,
+    groups,
+    propToGroup,
+    surface: def.surface,
+    component: def.component,
+    sizeMode: def.sizeMode ?? "fixed",
+    defaultSize,
+    minSize: def.minSize ?? { w: 40, h: 40 },
+    capabilityTags,
+    migrate: def.migrate ?? {},
+  };
+  registry.set(def.type, widget);
+  return widget;
+}
+
+/** TEST-ONLY wipe (mirrors __resetPrefabsForTests; not on the barrel). */
+export function __resetWidgetsForTests(): void {
+  registry.clear();
+}
