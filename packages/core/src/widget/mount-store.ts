@@ -23,6 +23,9 @@ import type { Engine } from "../engine/engine";
 import { RUNTIME_BUDGETS } from "../settings/defaults";
 import { WidgetEquipped } from "./define-widget";
 import { createWidgetEquipSystem } from "./equip";
+import { createBreakpointSystem } from "../systems/chrome";
+import { createMeasureIngest } from "../systems/measure-ingest";
+import type { MeasureQueue } from "../input/measure-queue";
 
 const widgetQ = defineQuery([Position, Size, WidgetEquipped]);
 
@@ -184,17 +187,25 @@ export function createWidgetRuntime(
 /** Install cull + mount + the post-notify listener flush on an engine. */
 export function installWidgetRuntime(
   engine: Engine,
-  opts: { keepMounted?: number } = {},
+  opts: { keepMounted?: number; measureQueue?: MeasureQueue } = {},
 ): WidgetRuntime & { uninstall(): void } {
   const runtime = createWidgetRuntime(engine.world, opts);
-  // equip → cull → mount (equip's deferred tags land at the derive flush, so a
-  // brand-new widget mounts one frame after projection — accepted lag).
+  // equip → cull → mount → breakpoint (equip's deferred tags land at the
+  // derive flush, so a brand-new widget mounts one frame after projection —
+  // accepted lag). Breakpoints ship installed (review: built but orphaned).
   const removeSystems = engine.addSystems(
     "derive",
     createWidgetEquipSystem(),
     runtime.cullSystem,
     runtime.mountSystem,
+    createBreakpointSystem(engine.world),
   );
+  // Measurement ingest (input phase) when the app wires a measure queue
+  // (the dom measure adapter feeds it; design-004 §2).
+  const removeMeasure =
+    opts.measureQueue !== undefined
+      ? engine.addSystems("input", createMeasureIngest(engine.world, opts.measureQueue))
+      : undefined;
   const removeReflector = engine.registerReflector({
     name: "widgetMountFlush",
     always: true, // cheap: a dirty-flag check; listener fan-out only on change
@@ -204,6 +215,7 @@ export function installWidgetRuntime(
     ...runtime,
     uninstall() {
       removeSystems();
+      removeMeasure?.();
       removeReflector();
     },
   };

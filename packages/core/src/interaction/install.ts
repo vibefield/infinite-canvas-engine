@@ -32,6 +32,7 @@ import { createDropSystem } from "../systems/l3-drop";
 import { createMarqueeBehavior, type MarqueeBuffer } from "../systems/l3-marquee";
 import { createResizeBehavior } from "../systems/l3-resize";
 import { createSnapSystem } from "../systems/l3-snap";
+import { createSelectionChromeSystem } from "../systems/chrome";
 import { createCursorSync } from "../systems/l4-cursor";
 
 const canvasSurfaceQ = defineQuery([CanvasSurface]);
@@ -165,7 +166,10 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
       camera.cameraControl,
     ),
     engine.addSystems("simulate", camera.cameraInertia, camera.tweenSystem),
-    engine.addSystems("derive", cursor),
+    // selectionChrome BEFORE cursor: handles spawn/update at the derive flush,
+    // so cursor + next frame's spatialSync see them (review: the pool existed
+    // but nothing installed it — resize was unreachable outside the trace rig).
+    engine.addSystems("derive", createSelectionChromeSystem(world), cursor),
     engine.addSystems("cleanup", cleanup.recognizerReap, cleanup.oneTickClear),
   ];
 

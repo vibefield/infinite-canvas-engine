@@ -139,7 +139,6 @@ export function createDomWidgetsReflector(
     content.setAttribute("data-ice-content", "");
     content.style.width = "100%";
     content.style.height = "100%";
-    if (inert) content.style.pointerEvents = "none"; // entering mid-drag: honor the inert contract
     el.appendChild(content);
 
     const g = readGeom(e);
@@ -206,9 +205,12 @@ export function createDomWidgetsReflector(
     }
     if (anyLifted !== inert) {
       inert = anyLifted;
-      for (const rec of hosts.values()) {
-        rec.content.style.pointerEvents = inert ? "none" : "";
-      }
+      // PLANE-LEVEL inert (review finding — design-004 §1/§4 contract): two
+      // writes cover every widget, including the lifted one and any host that
+      // enters mid-drag; events fall through to the container, so canvas
+      // facts keep flowing while content handlers go quiet.
+      host.contentPlane.style.pointerEvents = inert ? "none" : "";
+      host.liftedPlane.style.pointerEvents = inert ? "none" : "";
     }
   }
 

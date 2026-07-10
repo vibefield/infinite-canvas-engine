@@ -148,9 +148,12 @@ export function createSelectionChromeSystem(world: World): System {
       for (const e of selectedEntities(world)) {
         if (!ctx.has(e, Position)) continue;
         const p = ctx.read(e, Position);
+        // Effective size (review finding): the outline must wrap what the user
+        // SEES — MeasuredSize where auto-sized and measured, else Size.
+        const m = ctx.get(e, MeasuredSize);
         const s = ctx.get(e, Size);
-        const w = s?.w ?? 0;
-        const h = s?.h ?? 0;
+        const w = m !== undefined && m.w > 0 ? m.w : (s?.w ?? 0);
+        const h = m !== undefined && m.h > 0 ? m.h : (s?.h ?? 0);
         minX = Math.min(minX, p.x);
         minY = Math.min(minY, p.y);
         maxX = Math.max(maxX, p.x + w);
@@ -279,15 +282,20 @@ export function createBreakpointSystem(_world: World): System {
         const eh = m !== undefined && m.h > 0 ? m.h : (sh[r] as number);
         const cw = clampU16(ew);
         const ch = clampU16(eh);
+        // Tier input is the ON-SCREEN width: effective size × zoom (design-004
+        // §8 — a zoomed-out large card shows micro content). Stored w,h remain
+        // the world-effective size the tier was computed from.
+        const zoom = ctx.getResource(Camera)?.zoom ?? 1;
+        const screenW = ew * zoom;
 
         const existing = ctx.get(e, WidgetBreakpoint);
         if (existing === undefined) {
-          const idx = rawTierIndex(ew);
+          const idx = rawTierIndex(screenW);
           ctx.addComponent(e, WidgetBreakpoint, { tier: TIER_NAMES[idx] as Tier, w: cw, h: ch });
           continue;
         }
         const curIdx = TIER_NAMES.indexOf(existing.tier as Tier);
-        const idx = hysteresisTierIndex(ew, curIdx < 0 ? rawTierIndex(ew) : curIdx);
+        const idx = hysteresisTierIndex(screenW, curIdx < 0 ? rawTierIndex(screenW) : curIdx);
         // Write only on a tier change — the tier must be stable within a band so
         // the measure→tier→content→measure loop converges (w,h ride the change).
         if (idx !== curIdx) {

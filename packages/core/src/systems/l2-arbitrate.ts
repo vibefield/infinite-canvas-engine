@@ -25,6 +25,7 @@ import {
   HandleSpec,
   Keyboard,
   LongPress,
+  Movable,
   Pinch,
   Pointer,
   PointerButtons,
@@ -131,7 +132,10 @@ export function createArbitrationSystems(): { arbitration: System; dragRoute: Sy
         }
         const onCanvas = captured === undefined || ctx.hasTag(captured, CanvasSurface);
         if (!onCanvas && ctx.has(captured, Position)) {
-          ctx.addTag(e, RoutedMove);
+          // A widget capture routes to Move ONLY when the widget is Movable
+          // (capability gate — review finding): a non-movable widget's drag
+          // claims the pointer (no pan-through) but drives no behavior.
+          if (ctx.hasTag(captured, Movable)) ctx.addTag(e, RoutedMove);
           continue;
         }
 

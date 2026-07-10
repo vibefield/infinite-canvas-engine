@@ -153,6 +153,11 @@ export function createSelectMoveBehaviors(
                 durationMs: FLY_BACK_MS,
                 elapsedMs: 0,
               });
+              // Restore StackZ NOW (it is not animated): fly-back commits
+              // nothing, so an elevated z left in place would keep the cell
+              // diverged forever and hold remote z-edits indefinitely — the
+              // same law as the cancel path (design-003 §5.3).
+              if (ctx.has(w, StackZ)) ctx.edit(w).set(StackZ, { z: g.z });
             }
           } else if (container !== undefined) {
             // Consume: reparent + final position, one intent (one tx at M5).

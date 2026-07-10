@@ -19,3 +19,15 @@ Original petitions below.
 **Today** (verified `loro-snapshot.ts` UndoManager config): `excludeOriginPrefixes: [META_ORIGIN]` exists for strata's own meta writes, but application transactions cannot mark themselves undo-exempt. The engine's document migrations (read-repair at open) must run as normal transactions and then call `doc.clearHistory()` — correct, but it nukes the whole stack rather than excluding one commit.
 
 **Ask**: allow `doc.transaction(fn, { origin })` (or an `undoable: false` option) whose commits are excluded from the UndoManager via the existing origin-prefix mechanism. Migrations, format upgrades, and janitorial transforms could then run without destroying user history.
+
+## Petition 3 (candidate, M4/M6 field finding): same-phase writer-pair advisory opt-out
+
+`validatePipelineAccess` warns when two systems in one phase declare the same
+write column ("moveBehavior"/"resizeBehavior" × Position). Ours are
+route-exclusive by design (design-003 §5 co-locates them; a recognizer is
+RoutedMove xor RoutedResize), so the advisory fires on every armed boot as
+permanent noise. Ask: a `SystemAccess.orderIndependent?: readonly Component[]`
+hint (or a pipeline-level suppression) so deliberate co-located writers can
+attest disjointness. Also from M5: a warn-suppression (or official tag) for
+foreign META_ORIGIN commits — the engine's write-once meta stamps trip the
+"untagged writer" warn once per peer.

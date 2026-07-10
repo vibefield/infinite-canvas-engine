@@ -37,6 +37,8 @@ import {
   type EnvelopeHeader,
 } from "./envelope";
 import { createDocCommitSink, createReadOnlyCommitSink } from "./doc-commit-sink";
+import { createLiveWriter, type LiveWriter } from "../guards/live-writer";
+import { makeDefaultMayDiverge } from "../ops/claims";
 import {
   gateVerdict,
   readDocVersionReport,
@@ -56,6 +58,13 @@ export interface DocSession {
   readonly store: DurableStore;
   readonly sink: CommitSink;
   readonly readOnly: boolean;
+  /**
+   * The design-001 §3 step-2 DEV guard, wired to THIS doc: userland live
+   * writes to doc cells go through it (throws without a claim/tween;
+   * cellInDoc is exact via store.getComponent). Engine behaviors stay on
+   * ctx — they hold claims by construction.
+   */
+  readonly liveWriter: LiveWriter;
   /** Present on the open path (the gate's evidence). */
   readonly report?: DocVersionReport;
   /** Envelope-framed snapshot for storage (autosave kit consumes this). */
@@ -106,12 +115,18 @@ function makeSession(
   });
 
   const sink = readOnly ? createReadOnlyCommitSink() : createDocCommitSink(store, world);
+  const liveWriter = createLiveWriter(world, {
+    keyOf: (e) => store.keyOf(e),
+    mayDiverge: makeDefaultMayDiverge(world),
+    cellInDoc: (e, c) => store.getComponent(e, c) !== undefined,
+  });
   let closed = false;
 
   return {
     store,
     sink,
     readOnly,
+    liveWriter,
     ...(report !== undefined ? { report } : {}),
     exportEnvelope(savedAt) {
       const header: EnvelopeHeader = {
@@ -173,10 +188,17 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
   // M5: "migrate" attaches read-only (the M9 migrator upgrades in place).
   const readOnly = verdict !== "ok";
 
-  const store = createDurableStore(
-    doc,
-    opts.maxUndoSteps !== undefined ? { maxUndoSteps: opts.maxUndoSteps } : undefined,
-  );
-  const attachment = attachDurable(world, store);
-  return { ok: true, session: makeSession(world, store, attachment, readOnly, report) };
+  try {
+    const store = createDurableStore(
+      doc,
+      opts.maxUndoSteps !== undefined ? { maxUndoSteps: opts.maxUndoSteps } : undefined,
+    );
+    const attachment = attachDurable(world, store);
+    return { ok: true, session: makeSession(world, store, attachment, readOnly, report) };
+  } catch (err) {
+    // Store/attach residuals (already-attached world, pending-import state,
+    // mid-emit) quarantine like everything else on this path — open() NEVER
+    // throws (review hardening; the corrupt-bytes exit bar extended to attach).
+    return { ok: false, reason: `ice: attach failed — ${String(err)}`, report };
+  }
 }

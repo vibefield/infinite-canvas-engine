@@ -137,22 +137,26 @@ describe("dom-widgets host reflector", () => {
     const content = reflector.hostFor(e) as HTMLElement;
     const hostDiv = content.parentElement as HTMLElement;
     expect(hostDiv.parentElement).toBe(planes.content); // starts in P1
-    expect(content.style.pointerEvents).toBe("");
+    expect(planes.content.style.pointerEvents).toBe("");
 
     world.addComponent(e, Grab, { x: 0, y: 0, w: 10, h: 10, z: 0 });
     engine.step(1);
     expect(hostDiv.parentElement).toBe(planes.lifted); // re-parented to P3
     expect(content.parentElement).toBe(hostDiv); // the content node moved WITH the host (portal survives)
-    expect(content.style.pointerEvents).toBe("none"); // inert while any host is lifted
+    // PLANE-LEVEL inert (review fix): two writes cover every widget, incl. the
+    // lifted one; events fall through to the container so canvas facts flow.
+    expect(planes.content.style.pointerEvents).toBe("none");
+    expect(planes.lifted.style.pointerEvents).toBe("none");
 
     world.removeComponent(e, Grab);
     engine.step(2);
     expect(hostDiv.parentElement).toBe(planes.content); // back to P1
-    expect(content.style.pointerEvents).toBe(""); // inert cleared
+    expect(planes.content.style.pointerEvents).toBe(""); // inert cleared
+    expect(planes.lifted.style.pointerEvents).toBe("");
   });
 
-  it("inerts a host that enters mid-drag while another is lifted", () => {
-    const { world, engine, store, reflector } = setup();
+  it("keeps the planes inert for a host that enters mid-drag", () => {
+    const { world, engine, planes, store, reflector } = setup();
     const dragged = spawnBox(world, 0, 0, 10, 10);
     store.set([{ entity: dragged, hidden: false }]);
     engine.step(0);
@@ -163,10 +167,12 @@ describe("dom-widgets host reflector", () => {
     const late = spawnBox(world, 20, 20, 10, 10);
     store.set([{ entity: dragged, hidden: false }, { entity: late, hidden: false }]);
     engine.step(2);
-    expect(reflector.hostFor(late)?.style.pointerEvents).toBe("none"); // honors the inert contract on entry
+    // Plane-level inert covers late entrants with ZERO per-host writes.
+    expect(reflector.hostFor(late)).toBeTruthy();
+    expect(planes.content.style.pointerEvents).toBe("none");
 
     world.removeComponent(dragged, Grab);
     engine.step(3);
-    expect(reflector.hostFor(late)?.style.pointerEvents).toBe(""); // cleared for all on release
+    expect(planes.content.style.pointerEvents).toBe(""); // cleared on release
   });
 });

@@ -195,9 +195,22 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       queue.enqueue({ kind: "cancel", pointerId: id, device: s.device, screenX: s.x, screenY: s.y, buttons: 0, mods: { ...NO_MODS, space: spaceHeld } });
     }
     live.clear();
-    if (spaceHeld) {
-      spaceHeld = false;
-      lastMods = { ...lastMods, space: false };
+    // Modifier keyups are also lost on blur — ENQUEUE the clearing fact, or
+    // the world's Keyboard resource stays latched (space-stuck: every canvas
+    // drag pans forever). Clearing only local state was the bug: lastMods
+    // already saying "space up" suppressed the next emitKeyIfChanged too.
+    spaceHeld = false;
+    if (lastMods.space || lastMods.shift || lastMods.ctrl || lastMods.alt || lastMods.meta) {
+      lastMods = { ...NO_MODS };
+      queue.enqueue({
+        kind: "key",
+        pointerId: "",
+        device: "mouse",
+        screenX: 0,
+        screenY: 0,
+        buttons: 0,
+        mods: { ...NO_MODS },
+      });
     }
   };
 

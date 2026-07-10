@@ -96,16 +96,26 @@ export function useWidgetProps<T extends Record<string, unknown>>(
   }, [raw, g]);
 }
 
-/** Selection membership (Tier-1 wake on Selected churn; O(1) snapshot). */
+/**
+ * Selection membership (Tier-1 wake on Selected churn; O(1) snapshot).
+ * Frozen-hidden like every widget hook: a selection change must not re-render
+ * 256 hidden trees (review finding — design-004 §2 applies to ALL hooks).
+ */
 export function useSelected(world: World, entity: Entity): boolean {
+  const hidden = useContext(WidgetHiddenContext);
+  const last = useRef(false);
   const subscribe = useCallback(
-    (onChange: () => void) => world.reactive.observeQuery(selectedQ, onChange),
-    [world],
+    (onChange: () => void) => {
+      if (hidden) return () => {};
+      return world.reactive.observeQuery(selectedQ, onChange);
+    },
+    [world, hidden],
   );
-  const getSnapshot = useCallback(
-    () => world.isAlive(entity) && world.hasTag(entity, Selected),
-    [world, entity],
-  );
+  const getSnapshot = useCallback(() => {
+    if (hidden) return last.current;
+    last.current = world.isAlive(entity) && world.hasTag(entity, Selected);
+    return last.current;
+  }, [world, entity, hidden]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 

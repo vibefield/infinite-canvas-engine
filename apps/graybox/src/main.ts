@@ -102,7 +102,10 @@ async function boot(): Promise<void> {
       console.warn(`graybox: autosave quarantined — ${restored.reason}; starting fresh.`);
     }
     session = createDocSession(world);
-    boxCount = spawnSceneDurable(session, { count: 500 });
+    // Plan-letter default is 10k (M3 exit scale); ?n=500 keeps the two-tab
+    // full-snapshot relay snappy on slow machines until M9's update-mode relay.
+    const n = Number(new URLSearchParams(location.search).get("n")) || 10_000;
+    boxCount = spawnSceneDurable(session, { count: n });
   }
   sinkRef.target = session.sink;
 
