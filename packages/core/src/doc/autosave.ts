@@ -135,10 +135,19 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
   let firstDirtyAt = 0;
   let cancelTimer: CancelScheduled | undefined;
   let saving = false;
-  let inflight: Promise<void> = Promise.resolve();
   let lastSavedAt: number | undefined;
   let errored = false;
   let stopped = false;
+  // The serialized writer: at most ONE storage.put is ever in flight. A save
+  // requested while a put runs does NOT start a second put — the running loop
+  // re-runs with FRESHLY exported bytes once the current put settles. So two
+  // puts never interleave and never land out of order; the newest document
+  // always wins (latest-wins), and a slow put can never be clobbered by a
+  // faster one started later. `writing` (a flag, not the promise) is the gate:
+  // a run that finishes synchronously — e.g. a put that throws before any await
+  // — must clear it WITHOUT racing the `writeInFlight = runWrites()` assignment.
+  let writing = false;
+  let writeInFlight: Promise<void> = Promise.resolve();
 
   const deferred = (): boolean =>
     world.getResource(Camera)?.gesturing === true || anyGestureNonTerminal(world);
@@ -168,30 +177,50 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
       cancelTimer = schedule(onTimer, debounceMs);
       return;
     }
-    void save();
+    requestWrite();
   }
 
-  function save(): Promise<void> {
-    if (!dirty) return inflight;
-    dirty = false;
-    saving = true;
-    const at = now();
-    const bytes = session.exportEnvelope(at);
-    const p = (async (): Promise<void> => {
-      try {
-        await storage.put(bytes);
-        lastSavedAt = at;
-        errored = false;
-      } catch (err) {
-        errored = true;
-        dirty = true; // keep the doc marked so a later change or flush retries
-        throw err;
-      } finally {
-        saving = false;
+  /**
+   * Persist the LATEST document until nothing is dirty. One loop owns the sole
+   * `storage.put` call site, so writes are strictly serialized; each iteration
+   * re-exports, so a change that arrives mid-put is written on the next pass
+   * (latest-wins) rather than lost under a stale in-flight put. This never
+   * rejects: a throwing/rejecting put is caught, recorded as status "error",
+   * and left dirty for the next change/flush to retry — a persistent failure
+   * breaks out instead of spinning.
+   */
+  async function runWrites(): Promise<void> {
+    try {
+      while (dirty && !stopped) {
+        const at = now();
+        const bytes = session.exportEnvelope(at);
+        dirty = false; // optimistic: a change during the await re-sets it
+        saving = true;
+        try {
+          await storage.put(bytes);
+          lastSavedAt = at;
+          errored = false;
+        } catch {
+          errored = true;
+          dirty = true; // keep marked so a later change/flush retries
+          break; // do not spin on a persistent failure
+        } finally {
+          saving = false;
+        }
       }
-    })();
-    inflight = p.catch(() => undefined); // swallow for the shared awaiter; callers of save() see the throw
-    return p;
+    } finally {
+      writing = false;
+    }
+  }
+
+  /** Kick (or join) the serialized writer; returns the in-flight write promise. */
+  function requestWrite(): Promise<void> {
+    if (stopped) return writeInFlight;
+    if (!writing) {
+      writing = true;
+      writeInFlight = runWrites();
+    }
+    return writeInFlight;
   }
 
   const markDirty = (): void => {
@@ -208,17 +237,21 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
       clearTimer();
       // Force-write the current document even mid-gesture: the doc holds only
       // committed state (the in-flight gesture commits at JustEnded), so every
-      // frame is a consistent one to persist.
-      if (dirty) {
-        await save().catch(() => undefined);
-      }
-      await inflight;
+      // frame is a consistent one to persist. Serialized like every other save —
+      // if a put is already running this joins it, and the queued dirty state is
+      // written when that put settles.
+      if (dirty) requestWrite();
+      await writeInFlight;
     },
     stop(): void {
       if (stopped) return;
       stopped = true;
       clearTimer();
       unsub();
+      // Semantics: a put already in flight runs to completion (a promise cannot
+      // be cancelled); the writer loop's `!stopped` guard then DROPS any queued
+      // newer write — nothing is persisted after stop() beyond the put already
+      // awaiting. Call flush() before stop() to force a final save.
     },
     state(): AutosaveState {
       const status: AutosaveStatus = saving

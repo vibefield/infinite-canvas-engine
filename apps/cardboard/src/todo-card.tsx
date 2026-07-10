@@ -21,8 +21,9 @@
  *
  * The store reaches the view through {@link CardStoreContext} (React context
  * flows through `createPortal`, so the app root's provider wraps every card).
- * `sizeMode: "fixed"` for v1 — auto-height measurement is wired in the engine
- * (MeasuredSize / breakpoints) but the demo keeps a fixed card box for clarity.
+ * `sizeMode: "auto-height"` — the host measures the card's content box
+ * (measure-adapter → measureQueue → `MeasuredSize`) and the effective size
+ * drives geometry/cull/breakpoint; `defaultSize` is the pre-measure fallback.
  */
 import {
   type DocSession,
@@ -186,8 +187,8 @@ export const TodoCard = defineWidget({
   groups: { content: ["title", "items"], style: ["color"] },
   surface: "dom",
   component: TodoCardView,
-  sizeMode: "fixed", // v1: auto-height is wired in the engine; the demo stays fixed-box
-  defaultSize: { w: 220, h: 180 },
+  sizeMode: "auto-height", // host measures the content box → MeasuredSize (design-004 §2)
+  defaultSize: { w: 220, h: 180 }, // pre-measure fallback (effective size until the first sample)
   minSize: { w: 140, h: 90 },
   interaction: { selectable: true, movable: true, resizable: true, snap: "both" },
 });

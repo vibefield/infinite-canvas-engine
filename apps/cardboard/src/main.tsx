@@ -35,6 +35,7 @@ import {
   attachBroadcastRelay,
   createDocSession,
   createEngine,
+  createMeasureQueue,
   createRecordingCommitSink,
   createWorld,
   defineQuery,
@@ -54,6 +55,7 @@ import {
   createPlaneTransformReflector,
   createPlanes,
   startRafLoop,
+  wireMeasurement,
 } from "@ice/dom";
 import { WidgetRoot } from "@ice/react";
 import { createElement } from "react";
@@ -138,7 +140,10 @@ async function boot(): Promise<void> {
   world.setResource(ActiveTool, { id: "select" });
 
   // Widget runtime: cull + keep-mounted LRU + the mount store WidgetRoot consumes.
-  const runtime = installWidgetRuntime(engine);
+  // The measure queue makes the auto-height path real — measureIngest drains it,
+  // wireMeasurement (below, once the host reflector exists) feeds it.
+  const measureQueue = createMeasureQueue();
+  const runtime = installWidgetRuntime(engine, { measureQueue });
 
   // --- boot the document: restore, quarantine-and-reset, or create fresh ---
   const storage = createLocalStorageStorage(STORAGE_KEY);
@@ -178,6 +183,9 @@ async function boot(): Promise<void> {
     world,
     runtime.store,
   );
+  // The measure side: observe each mounted host, reconnect + re-measure on show
+  // (design-004 §2). Feeds measureQueue, which installWidgetRuntime drains.
+  wireMeasurement(runtime.store, domWidgets, measureQueue);
   engine.registerReflector(createPlaneTransformReflector({ contentPlane: planes.content, liftedPlane: planes.lifted }));
   engine.registerReflector(createGridReflector(host));
   engine.registerReflector(domWidgets);

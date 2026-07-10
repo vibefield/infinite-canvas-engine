@@ -222,6 +222,124 @@ describe("autosave: flush", () => {
   });
 });
 
+describe("autosave: hardening (async put safety)", () => {
+  it("(a) a throwing put never kills the scheduler: records 'error' and retries on the next change", async () => {
+    const timer = fakeTimer();
+    let failNext = true;
+    const puts: Uint8Array[] = [];
+    const storage = {
+      // Synchronous storage error (a rejecting Promise takes the same catch path).
+      put: (bytes: Uint8Array): void => {
+        if (failNext) {
+          failNext = false;
+          throw new Error("disk full");
+        }
+        puts.push(bytes);
+      },
+    };
+    const { world, session, commit } = makeSession();
+    const auto = startAutosave(session, { storage, world, now: timer.now, schedule: timer.schedule });
+
+    commit();
+    timer.advance(800);
+    timer.fire(); // first save → put throws, caught
+    await Promise.resolve();
+    expect(puts).toHaveLength(0);
+    expect(auto.state().status).toBe("error");
+
+    // The scheduler survived: a later change re-arms and the retry succeeds.
+    commit();
+    expect(timer.hasPending()).toBe(true);
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+    expect(puts).toHaveLength(1);
+    expect(auto.state().status).toBe("saved");
+  });
+
+  it("(b) serializes writes: a save during an in-flight put waits, and the NEWER bytes win", async () => {
+    const timer = fakeTimer();
+    // A controllable deferred put: bytes commit only when the test resolves it.
+    const pending: { bytes: Uint8Array; resolve: () => void }[] = [];
+    let committed: Uint8Array | undefined;
+    const storage = {
+      put: (bytes: Uint8Array): Promise<void> =>
+        new Promise<void>((resolve) => {
+          pending.push({
+            bytes,
+            resolve: () => {
+              committed = bytes;
+              resolve();
+            },
+          });
+        }),
+    };
+    const { world, session, commit } = makeSession();
+    const auto = startAutosave(session, { storage, world, now: timer.now, schedule: timer.schedule });
+
+    commit(); // change #1 (one box)
+    timer.advance(800);
+    timer.fire(); // save #1 → put(bytes1) in flight, deferred
+    expect(pending).toHaveLength(1);
+
+    commit(); // change #2 (two boxes) arrives WHILE put #1 is in flight
+    const flushed = auto.flush(); // requests a save — must not start a 2nd put yet
+    await Promise.resolve();
+    expect(pending).toHaveLength(1); // serialized: still exactly one put in flight
+
+    pending[0]?.resolve(); // put #1 (older bytes) settles first
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pending).toHaveLength(2); // NOW the writer issues put #2 with fresh bytes
+
+    pending[1]?.resolve(); // put #2 (newer bytes) settles last
+    await flushed;
+
+    // Storage ends holding the NEWER document (both commits), never stale bytes1.
+    expect(committed).toBe(pending[1]?.bytes);
+    const world2 = createWorld();
+    const restored = await restoreAutosave(world2, { get: () => committed });
+    expect(restored.status).toBe("restored");
+    expect(countPositions(world2)).toBe(2); // both commits present → latest-wins
+  });
+
+  it("(c) stop() during an in-flight put drops the queued newer write (no write after stop)", async () => {
+    const timer = fakeTimer();
+    const pending: { bytes: Uint8Array; resolve: () => void }[] = [];
+    let committed: Uint8Array | undefined;
+    const storage = {
+      put: (bytes: Uint8Array): Promise<void> =>
+        new Promise<void>((resolve) => {
+          pending.push({
+            bytes,
+            resolve: () => {
+              committed = bytes;
+              resolve();
+            },
+          });
+        }),
+    };
+    const { world, session, commit } = makeSession();
+    const auto = startAutosave(session, { storage, world, now: timer.now, schedule: timer.schedule });
+
+    commit();
+    timer.advance(800);
+    timer.fire(); // put #1 in flight
+    expect(pending).toHaveLength(1);
+
+    commit(); // queue a newer change while put #1 is in flight
+    auto.stop(); // stop mid-put
+
+    pending[0]?.resolve(); // the in-flight put runs to completion
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Semantics: the awaiting put finished; the queued newer write is NOT issued.
+    expect(pending).toHaveLength(1);
+    expect(committed).toBe(pending[0]?.bytes);
+  });
+});
+
 describe("autosave: restore + quarantine (M5 exit — never brick boot)", () => {
   it("restores a valid envelope into a fresh world", async () => {
     const src = makeSession();

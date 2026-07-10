@@ -37,3 +37,5 @@ export { createGridReflector, DEFAULT_GRID_CONFIG, type GridConfig } from "./ref
 // M6 chrome plane reflector (P4) + measurement adapter (design-004 §2 measure, §5 chrome).
 export { createChromeReflector } from "./reflectors/chrome";
 export { attachMeasureAdapter, type MeasureAdapter } from "./measure-adapter";
+// M6 measurement wiring: mount-store → observe/unobserve + reconnect-on-show (design-004 §2).
+export { wireMeasurement, type MeasureWiringHosts, type MeasureWiringOpts } from "./measure-wiring";

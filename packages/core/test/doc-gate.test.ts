@@ -15,6 +15,7 @@ import {
   Position,
   Size,
   StackZ,
+  TransformTween,
   createDocSession,
   decodeEnvelope,
   definePrefab,
@@ -23,6 +24,7 @@ import {
   init,
   openDocSession,
   readDocVersionReport,
+  setDevGuards,
   stampEngineMeta,
   type EnvelopeHeader,
 } from "../src";
@@ -254,5 +256,43 @@ describe("openDocSession: never throws", () => {
       for (const r of b) found.push(world2.read(b.entity(r), Position));
     });
     expect(found).toEqual([{ x: 42, y: 7 }]);
+  });
+});
+
+describe("DocSession.liveWriter — the design-001 §3 step-2 guard, wired to the live doc", () => {
+  it("throws on a claimless doc-cell write, allows under a live TransformTween, allows runtime-only", () => {
+    setDevGuards(true); // the guard only fires with DEV guards on
+    const world = createWorld();
+    const session = createDocSession(world);
+
+    // A durable (doc-bound) box: its Position is a committed doc cell.
+    session.store.transaction((tx) => {
+      tx.spawn({
+        components: [[Position, { x: 0, y: 0 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]],
+      });
+    });
+    world.sync();
+    const boxQ = defineQuery([Position, Size]);
+    const box = world.firstOf(boxQ);
+    if (box === undefined) throw new Error("durable box missing after sync");
+    expect(session.store.keyOf(box)).toBeDefined(); // doc-bound
+
+    // (1) No claim, no tween → the committed cell is sovereign → THROWS.
+    expect(() => session.liveWriter.set(box, Position, { x: 5, y: 5 })).toThrow(/gesture claim/);
+
+    // (2) A live fly-back TransformTween IS the claim (design-001 §3 amended) → allowed;
+    //     the write lands in the runtime, removing the tween revokes divergence again.
+    world.addComponent(box, TransformTween, { toX: 0, toY: 0, durationMs: 100, elapsedMs: 0 });
+    expect(() => session.liveWriter.set(box, Position, { x: 6, y: 6 })).not.toThrow();
+    expect(world.read(box, Position)).toEqual({ x: 6, y: 6 });
+    world.removeComponent(box, TransformTween);
+    expect(() => session.liveWriter.set(box, Position, { x: 7, y: 7 })).toThrow(/gesture claim/);
+
+    // (3) A runtime-only entity (never doc-bound: keyOf undefined) → the guard is
+    //     keyed on doc-binding, so its live writes are always free.
+    const draft = world.spawn({ components: [[Position, { x: 0, y: 0 }]] });
+    expect(session.store.keyOf(draft)).toBeUndefined();
+    expect(() => session.liveWriter.set(draft, Position, { x: 9, y: 9 })).not.toThrow();
+    expect(world.read(draft, Position)).toEqual({ x: 9, y: 9 });
   });
 });
