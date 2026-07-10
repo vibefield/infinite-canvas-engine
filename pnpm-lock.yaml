@@ -61,6 +61,58 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)
 
+  apps/glboard:
+    dependencies:
+      '@ice/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ice/dom':
+        specifier: workspace:*
+        version: link:../../packages/dom
+      '@ice/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@ice/r3f':
+        specifier: workspace:*
+        version: link:../../packages/r3f
+      '@ice/react':
+        specifier: workspace:*
+        version: link:../../packages/react
+      '@react-three/fiber':
+        specifier: ^9
+        version: 9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+      loro-crdt:
+        specifier: ^1.13.6
+        version: 1.13.6
+      react:
+        specifier: ^19
+        version: 19.2.7
+      react-dom:
+        specifier: ^19
+        version: 19.2.7(react@19.2.7)
+      three:
+        specifier: ^0.185.0
+        version: 0.185.1
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.2.3(@types/react@19.2.17)
+      '@types/three':
+        specifier: ^0.185.0
+        version: 0.185.1
+      happy-dom:
+        specifier: ^20.0.0
+        version: 20.10.6
+      vite:
+        specifier: ^7.0.0
+        version: 7.3.6(@types/node@26.1.1)
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)
+
   apps/graybox:
     dependencies:
       '@ice/core':
