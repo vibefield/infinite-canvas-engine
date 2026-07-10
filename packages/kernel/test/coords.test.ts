@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  compositeCameraFrustum,
   islandToWorld,
   planeCssTransform,
   screenToWorld,
+  worldRectToComposite,
   worldToIsland,
   worldToScreen,
   zoomAtPoint,
@@ -118,5 +120,61 @@ describe("coords: island space (THE Y-flip)", () => {
       expect(back.x).toBeCloseTo(wx, 6);
       expect(back.y).toBeCloseTo(wy, 6);
     }
+  });
+});
+
+describe("coords: P2 composite scene", () => {
+  /**
+   * Ortho-project a Y-up scene point through the composite frustum onto
+   * Y-down screen px — the same math Three's OrthographicCamera performs.
+   * Inline here (kernel tests import no three).
+   */
+  function orthoToScreen(
+    sceneX: number,
+    sceneY: number,
+    f: ReturnType<typeof compositeCameraFrustum>,
+    vw: number,
+    vh: number,
+  ): { x: number; y: number } {
+    const ndcX = (2 * (sceneX - f.x - f.left)) / (f.right - f.left) - 1;
+    const ndcY = (2 * (sceneY - f.y - f.bottom)) / (f.top - f.bottom) - 1;
+    return { x: ((ndcX + 1) / 2) * vw, y: ((1 - ndcY) / 2) * vh };
+  }
+
+  it("frustum + quad transform reproduce worldToScreen exactly (property)", () => {
+    // THE alignment invariant: a composite quad at worldRectToComposite(rect)
+    // must land on the same screen pixels as a DOM host at rect under the
+    // plane transform. Otherwise P1/P2 drift at arbitrary zoom.
+    const rand = makePrng(7);
+    for (let i = 0; i < CASES; i++) {
+      const cam = randomCamera(rand);
+      const vw = inRange(rand, 100, 4000);
+      const vh = inRange(rand, 100, 4000);
+      const rect: Rect = {
+        x: inRange(rand, -1e5, 1e5),
+        y: inRange(rand, -1e5, 1e5),
+        width: inRange(rand, 1, 2000),
+        height: inRange(rand, 1, 2000),
+      };
+      const f = compositeCameraFrustum(cam, vw, vh);
+      const q = worldRectToComposite(rect);
+      const got = orthoToScreen(q.x, q.y, f, vw, vh);
+      const want = worldToScreen(rect.x + rect.width / 2, rect.y + rect.height / 2, cam);
+      expect(got.x / (vw / 2)).toBeCloseTo(want.x / (vw / 2), 6);
+      expect(got.y / (vh / 2)).toBeCloseTo(want.y / (vh / 2), 6);
+    }
+  });
+
+  it("quad scale is the world size; center is Y-negated", () => {
+    const q = worldRectToComposite({ x: 100, y: 200, width: 80, height: 60 });
+    expect(q).toEqual({ x: 140, y: -230, sx: 80, sy: 60 });
+  });
+
+  it("frustum spans viewport/zoom world units from the camera origin", () => {
+    const f = compositeCameraFrustum({ x: 10, y: 20, zoom: 2 }, 800, 600);
+    expect(f.right).toBe(400);
+    expect(f.bottom).toBe(-300);
+    expect(f.x).toBe(10);
+    expect(f.y).toBe(-20);
   });
 });

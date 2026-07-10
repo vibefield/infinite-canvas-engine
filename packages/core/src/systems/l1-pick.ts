@@ -36,18 +36,17 @@ import {
   Camera,
   CanvasSurface,
   HandledByWidget,
-  HandleSpec,
   LocalPointer,
   Pointer,
   PointerRadius,
   PointerScreen,
   Position,
   Size,
-  StackZ,
   Targets,
   TouchesExact,
 } from "../catalog";
 import { PointerVersion, SpatialVersion, bumpVersion, makeVersionGuard } from "../helpers/version-stamps";
+import { distPointToBox, pickTopAt } from "../ops/point-pick";
 import { POINTER_DEFAULTS } from "../settings/defaults";
 
 const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
@@ -55,13 +54,6 @@ const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
 const canvasSurfaceQ = defineQuery([CanvasSurface]);
 const posSizeQ = defineQuery([Position, Size]);
 const pointerQ = defineQuery([Pointer, PointerScreen, PointerRadius, LocalPointer, Not(HandledByWidget)]);
-
-/** Distance from a point to the nearest edge of an AABB (0 iff inside). */
-function distPointToBox(px: number, py: number, minX: number, minY: number, maxX: number, maxY: number): number {
-  const dx = Math.max(minX - px, 0, px - maxX);
-  const dy = Math.max(minY - py, 0, py - maxY);
-  return Math.hypot(dx, dy);
-}
 
 export interface PickingSystems {
   spatialSync: System;
@@ -125,32 +117,9 @@ export function createPickingSystems(
     },
   );
 
-  /** Top pick under a point within `rWorld`: HandleSpec chrome first, else the highest-StackZ widget. */
-  const pickTop = (ctx: SystemCtx, wx: number, wy: number, rWorld: number): Entity | undefined => {
-    let bestHandle: Entity | undefined;
-    let bestHandleD = Number.POSITIVE_INFINITY;
-    let bestWidget: Entity | undefined;
-    let bestWidgetZ = Number.NEGATIVE_INFINITY;
-    for (const entry of index.searchPoint(wx, wy, rWorld)) {
-      const e = entry.id;
-      if (!ctx.isAlive(e)) continue;
-      const d = distPointToBox(wx, wy, entry.minX, entry.minY, entry.maxX, entry.maxY);
-      if (d > rWorld) continue; // narrow: disc-vs-box (point-in-box when rWorld = 0)
-      if (ctx.has(e, HandleSpec)) {
-        if (d < bestHandleD) {
-          bestHandleD = d;
-          bestHandle = e;
-        }
-      } else if (ctx.has(e, Position)) {
-        const z = ctx.get(e, StackZ)?.z ?? 0;
-        if (z > bestWidgetZ) {
-          bestWidgetZ = z;
-          bestWidget = e;
-        }
-      }
-    }
-    return bestHandle ?? bestWidget;
-  };
+  /** THE narrow-phase, shared with the router's event-time pick (ops/point-pick). */
+  const pickTop = (ctx: SystemCtx, wx: number, wy: number, rWorld: number): Entity | undefined =>
+    pickTopAt(ctx, index, wx, wy, rWorld);
 
   const picking = defineSystem(
     pointerQ,

@@ -59,6 +59,13 @@ export interface WidgetDef {
   readonly sizeMode?: SizeMode;
   readonly defaultSize?: { readonly w: number; readonly h: number };
   readonly minSize?: { readonly w: number; readonly h: number };
+  /**
+   * GL only: the island repaints every frame while visible (design-004 §3
+   * animation contract — the EXPLICIT opt-in; plain `useFrame` inside a
+   * portal cannot be attributed to an island, so it never drives repaints;
+   * content-driven animation goes through `useIslandFrame`).
+   */
+  readonly animated?: boolean;
   readonly interaction?: WidgetInteraction;
   readonly container?: { readonly accepts: readonly string[]; readonly provides?: readonly string[] };
   /** fromVersion → idempotent absolute transform (M9 runs the chain). */
@@ -83,6 +90,8 @@ export interface WidgetType {
   readonly sizeMode: SizeMode;
   readonly defaultSize: { readonly w: number; readonly h: number };
   readonly minSize: { readonly w: number; readonly h: number };
+  /** GL islands: repaint every visible frame (design-004 §3). */
+  readonly animated: boolean;
   /** Runtime capability tags the equip system stamps at projection. */
   readonly capabilityTags: readonly Tag[];
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
@@ -219,6 +228,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     sizeMode: def.sizeMode ?? "fixed",
     defaultSize,
     minSize: def.minSize ?? { w: 40, h: 40 },
+    animated: def.animated === true,
     capabilityTags,
     migrate: def.migrate ?? {},
   };

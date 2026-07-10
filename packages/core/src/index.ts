@@ -104,6 +104,7 @@ export * from "./ops/selection";
 export * from "./ops/cascade";
 export * from "./ops/claims";
 export * from "./ops/gestures";
+export * from "./ops/point-pick";
 
 // The interaction stack (design-003): input queue, commit seam, install.
 export { createInputQueue, NO_MODS, type InputEvent, type InputEventKind, type InputMods, type InputQueue } from "./input/queue";

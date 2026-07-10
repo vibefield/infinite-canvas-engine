@@ -26,7 +26,7 @@ export {
 export { startRafLoop } from "./loop";
 
 // The L0 pointer adapter (design-003 §2–§3): DOM events → InputQueue, nothing more.
-export { attachPointerAdapter } from "./pointer-adapter";
+export { attachPointerAdapter, type GLRoute, type PointerAdapterOpts } from "./pointer-adapter";
 
 // L4 cursor projection output (design-003 §7: local cursor = OS cursor, one write).
 export { createCursorReflector } from "./reflectors/cursor";

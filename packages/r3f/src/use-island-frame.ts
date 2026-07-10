@@ -1,0 +1,53 @@
+/**
+ * The island animation contract (design-004 §3, rev 2 corrected).
+ *
+ * Plain `useFrame` CANNOT drive island repaints: R3F portals share the
+ * root's single commingled `internal.subscribers` array, so a subscription
+ * cannot be attributed to an island without probing R3F internals (banned).
+ * `useIslandFrame` is the engine's wrapper: it registers the callback WITH
+ * the island (bridge-side), which (a) holds the island's animation signal
+ * while subscribed — the island turns Hot and repaints every visible frame —
+ * and (b) fires the callback exactly when its island paints, so content
+ * mutation and texture refresh can never desynchronize.
+ *
+ * The callback runs INSIDE the render pass: it may mutate three objects in
+ * the island scene freely, but any ECS write throws under the DEV render
+ * write trap (M7 exit). Engine state changes belong in systems or ops.
+ */
+import { createContext, useCallback, useContext, useEffect, useRef } from "react";
+import type { Entity } from "@ice/core";
+import type { GLBridge, IslandFrameCallback } from "./bridge";
+
+export interface IslandContextValue {
+  readonly bridge: GLBridge;
+  readonly entity: Entity;
+}
+
+/** Provided per-island by `<Island>`; null outside island content. */
+export const IslandContext = createContext<IslandContextValue | null>(null);
+
+export function useIslandContext(): IslandContextValue {
+  const ctx = useContext(IslandContext);
+  if (ctx === null) {
+    throw new Error("ice: useIslandFrame/useIslandInvalidate must run inside a GL widget's island.");
+  }
+  return ctx;
+}
+
+/** Per-frame tick while mounted (island goes Hot). `cb(dtMs)` on paint. */
+export function useIslandFrame(cb: IslandFrameCallback): void {
+  const { bridge, entity } = useIslandContext();
+  const ref = useRef(cb);
+  ref.current = cb; // latest closure runs without re-subscribing
+  useEffect(() => bridge.addFrameCallback(entity, (dt) => ref.current(dt)), [bridge, entity]);
+}
+
+/**
+ * One-shot repaint scheduler for content that changes outside React's render
+ * cycle (imperative subscriptions, sockets). Bumps the island's paint
+ * generation + wakes the demand loop.
+ */
+export function useIslandInvalidate(): () => void {
+  const { bridge, entity } = useIslandContext();
+  return useCallback(() => bridge.bumpPaint(entity), [bridge, entity]);
+}

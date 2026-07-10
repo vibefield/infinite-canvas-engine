@@ -20,6 +20,30 @@ const PHASE_PRIORITY: Record<IslandPhase, number> = {
   Hot: Number.POSITIVE_INFINITY,
 };
 
+/**
+ * The island phase truth table (design-004 §3; v1 `computePhase` verbatim —
+ * RFC-002 pinned it with tests). `active` is the nested-canvas membership
+ * signal (always true until M8); `hasFbo` splits Warm (retained texture,
+ * composite-ready) from Waking (must paint before compositing) — after an
+ * eviction a re-entering island comes back as Waking, after a plain cull
+ * round-trip it comes back Warm from the retained texture.
+ */
+export function computeIslandPhase(
+  active: boolean,
+  visible: boolean,
+  animating: boolean,
+  hasFbo: boolean,
+): IslandPhase {
+  if (!active) return "Dormant";
+  if (visible) {
+    if (animating) return "Hot";
+    return hasFbo ? "Warm" : "Waking";
+  }
+  // Culled OR not yet culled-classified: treat as Cold — never paint a widget
+  // the engine hasn't placed in the viewport yet (v1 rule, kept).
+  return "Cold";
+}
+
 /** Ordered ids to release so total bytes ≤ budget. Pure. */
 export function selectEvictions<Id>(
   candidates: EvictionCandidate<Id>[],

@@ -32,6 +32,27 @@
 import { NO_MODS, type InputEvent, type InputMods, type InputQueue } from "@ice/core";
 import type { CanvasHost } from "./host";
 
+/**
+ * The router GL path's adapter seam (design-004 §4). The GL plane is
+ * `pointer-events: none` — its events land HERE, and the injected router
+ * (built by @ice/r3f; the adapter stays ECS-free) performs the synchronous
+ * point-pick + island raycast + synthetic dispatch at event time. Returning
+ * `true` means island content claimed the event (stopPropagation'd or held
+ * under island capture): the fact still lands — flagged `surfaceHandled`, so
+ * recognizers skip it via `HandledByWidget` — the same contract as the
+ * native-interactive opt-out.
+ */
+export type GLRoute = (
+  kind: "down" | "move" | "up" | "cancel",
+  screenX: number,
+  screenY: number,
+  native: PointerEvent,
+) => boolean;
+
+export interface PointerAdapterOpts {
+  readonly glRoute?: GLRoute;
+}
+
 /** DOM_DELTA_LINE → px (one wheel "line" ≈ 16px; matches typical browser mapping). */
 const WHEEL_LINE_PX = 16;
 
@@ -64,9 +85,14 @@ function deviceOf(e: PointerEvent): InputEvent["device"] {
   return "mouse";
 }
 
-export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () => void {
+export function attachPointerAdapter(
+  host: CanvasHost,
+  queue: InputQueue,
+  opts: PointerAdapterOpts = {},
+): () => void {
   const { container } = host;
   const view = container.ownerDocument.defaultView;
+  const { glRoute } = opts;
 
   let spaceHeld = false;
   // Pointers currently down — for the blur-cancel sweep (id → last sample).
@@ -100,8 +126,11 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       }
     }
     // Widget opt-out: down on a native interactive / [data-canvas-interactive]
-    // flags the fact so recognizers skip it (design-002 §8). Absent otherwise.
-    const surfaceHandled = crossesInteractive(e.target, container);
+    // flags the fact so recognizers skip it (design-002 §8). The GL router is
+    // the same boundary for island content — its synchronous pick + synthetic
+    // dispatch happens HERE, at event time (design-004 §4).
+    const surfaceHandled =
+      crossesInteractive(e.target, container) || glRoute?.("down", x, y, e) === true;
     queue.enqueue({
       kind: "down",
       pointerId: id,
@@ -123,7 +152,17 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       seen.x = x;
       seen.y = y;
     }
-    queue.enqueue({ kind: "move", pointerId: id, device, screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e) });
+    const glHandled = glRoute?.("move", x, y, e) === true; // island capture / hover synth
+    queue.enqueue({
+      kind: "move",
+      pointerId: id,
+      device,
+      screenX: x,
+      screenY: y,
+      buttons: e.buttons,
+      mods: pointerMods(e),
+      ...(glHandled ? { surfaceHandled: true } : {}),
+    });
   };
 
   const endPointer =
@@ -140,7 +179,17 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
           // release is best-effort (capture may already be gone).
         }
       }
-      queue.enqueue({ kind, pointerId: id, device, screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e) });
+      const glHandled = glRoute?.(kind, x, y, e) === true; // releases island capture
+      queue.enqueue({
+        kind,
+        pointerId: id,
+        device,
+        screenX: x,
+        screenY: y,
+        buttons: e.buttons,
+        mods: pointerMods(e),
+        ...(glHandled ? { surfaceHandled: true } : {}),
+      });
     };
   const onPointerUp = endPointer("up");
   const onPointerCancel = endPointer("cancel");

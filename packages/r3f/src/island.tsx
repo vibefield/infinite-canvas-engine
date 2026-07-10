@@ -1,0 +1,54 @@
+/**
+ * One island = one GL widget's private Scene + center-origin Y-up ortho
+ * camera, mounted via R3F `createPortal` so the content tree (hooks, state,
+ * drei) lives OUTSIDE the composite scene and paints into a pooled FBO
+ * (design-004 §3; the island-space convention is kernel's — Law 13).
+ *
+ * Deliberately thin: registration/unregistration is the ONLY effect. The
+ * camera frustum is written by the frame pass at paint time from the live
+ * `Size` (v1 set it from a React effect AND bumped an ECS component — both
+ * moved out; islands never write ECS). Unmount (cull) drops scene + camera;
+ * the FBO and island state survive in the pool/bridge — retention is
+ * decoupled from culling by design.
+ */
+import { createPortal } from "@react-three/fiber";
+import { createElement, useEffect, useMemo, type ComponentType, type ReactElement } from "react";
+import { OrthographicCamera, Scene } from "three";
+import type { Entity, WidgetType, World } from "@ice/core";
+import type { WidgetComponentProps } from "@ice/react";
+import type { GLBridge } from "./bridge";
+import { IslandContext } from "./use-island-frame";
+
+export interface IslandProps {
+  readonly bridge: GLBridge;
+  readonly world: World;
+  readonly entity: Entity;
+  readonly widget: WidgetType;
+}
+
+export function Island({ bridge, world, entity, widget }: IslandProps): ReactElement | null {
+  const scene = useMemo(() => new Scene(), []);
+  const camera = useMemo(() => {
+    const cam = new OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+    cam.position.set(0, 0, 100); // +Z looking at the XY content plane
+    cam.lookAt(0, 0, 0);
+    return cam;
+  }, []);
+
+  useEffect(
+    () => bridge.registerIsland(entity, { scene, camera }),
+    [bridge, entity, scene, camera],
+  );
+
+  const View = widget.component as ComponentType<WidgetComponentProps>;
+  if (View == null) return null;
+
+  return createPortal(
+    createElement(
+      IslandContext.Provider,
+      { value: { bridge, entity } },
+      createElement(View, { entity, world }),
+    ),
+    scene,
+  ) as unknown as ReactElement;
+}

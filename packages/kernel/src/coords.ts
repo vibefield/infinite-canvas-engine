@@ -83,3 +83,41 @@ export function islandToWorld(islandX: number, islandY: number, widget: Rect): V
     y: widget.y + widget.height / 2 - islandY,
   };
 }
+
+// --- P2 composite scene (design-004 §1/§3) -------------------------------
+// The GL-views plane composites island quads in a Three scene whose axes are
+// world-unit X-right / Y-UP (Three convention). Same flip as island space,
+// applied at WORLD scale — these two helpers are the only place it exists.
+
+/**
+ * Camera → the P2 composite ortho frustum + camera position (world units,
+ * Y-up scene). `left/top` pin the viewport's top-left to `Camera.{x,y}`
+ * exactly like `planeCssTransform` does for the DOM planes: the frustum spans
+ * `viewport / zoom` world units and the camera sits at the world origin
+ * offset, so a quad at `worldRectToComposite(rect)` lands on the same screen
+ * pixels as a DOM host at `rect` under the plane transform.
+ */
+export function compositeCameraFrustum(
+  camera: CameraState,
+  viewportW: number,
+  viewportH: number,
+): { left: number; right: number; top: number; bottom: number; x: number; y: number } {
+  return {
+    left: 0,
+    right: viewportW / camera.zoom,
+    top: 0,
+    bottom: -(viewportH / camera.zoom),
+    x: camera.x,
+    y: -camera.y,
+  };
+}
+
+/** World rect → composite-quad center + scale in the Y-up P2 scene. */
+export function worldRectToComposite(rect: Rect): { x: number; y: number; sx: number; sy: number } {
+  return {
+    x: rect.x + rect.width / 2,
+    y: -(rect.y + rect.height / 2),
+    sx: rect.width,
+    sy: rect.height,
+  };
+}

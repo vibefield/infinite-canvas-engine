@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectEvictions, type EvictionCandidate } from "../src/eviction";
+import { computeIslandPhase, selectEvictions, type EvictionCandidate } from "../src/eviction";
 
 function c(
   id: number,
@@ -51,5 +51,23 @@ describe("selectEvictions (ported v1 suite)", () => {
       c(4, "Cold", 50, 150),
     ];
     expect(selectEvictions(candidates, 200, 80)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("computeIslandPhase (v1 truth table, RFC-002)", () => {
+  it("pins the full table", () => {
+    // active, visible, animating, hasFbo → phase
+    expect(computeIslandPhase(false, true, true, true)).toBe("Dormant"); // !active dominates
+    expect(computeIslandPhase(true, true, true, false)).toBe("Hot"); // animating dominates fbo
+    expect(computeIslandPhase(true, true, true, true)).toBe("Hot");
+    expect(computeIslandPhase(true, true, false, true)).toBe("Warm"); // retained texture
+    expect(computeIslandPhase(true, true, false, false)).toBe("Waking"); // must paint first
+    expect(computeIslandPhase(true, false, false, true)).toBe("Cold"); // culled
+    expect(computeIslandPhase(true, false, true, true)).toBe("Cold"); // culled ignores animation
+  });
+
+  it("cull round-trip with retained FBO re-enters Warm; after eviction re-enters Waking", () => {
+    expect(computeIslandPhase(true, true, false, true)).toBe("Warm");
+    expect(computeIslandPhase(true, true, false, false)).toBe("Waking");
   });
 });

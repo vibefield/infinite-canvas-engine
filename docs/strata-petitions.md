@@ -31,3 +31,17 @@ hint (or a pipeline-level suppression) so deliberate co-located writers can
 attest disjointness. Also from M5: a warn-suppression (or official tag) for
 foreign META_ORIGIN commits — the engine's write-once meta stamps trip the
 "untagged writer" warn once per peer.
+
+## Petition 4 (candidate, M7 field finding): DEV write hook / public write version
+
+**Today** (verified `world.ts`, `observe.ts`, `runtime-store.ts` 0.3.0):
+`WorldObserver` exposes spawn/destroy/tick/phase callbacks but no
+value/tag/relation WRITE hook, and the per-component version counters
+(`componentMaxFrame`) are private. The M7 exit criterion "zero render→ECS
+writes, DEV-asserted" therefore ships as own-property shadows over the world
+instance's 14 public mutators for the duration of the GL render pass
+(`@ice/r3f` `dev-write-trap.ts`) — exact and prod-free, but it patches the
+world object. **Ask**: either a DEV-only `WorldObserver.onWrite?(kind)`
+(synchronous, fired from the mutator chokepoints) or a public monotonic
+`world.writeVersion()`; the trap then becomes observation-only
+(begin/end snapshot compare) with zero patching.
