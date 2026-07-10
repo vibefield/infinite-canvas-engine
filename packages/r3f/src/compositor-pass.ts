@@ -81,6 +81,16 @@ export interface GlLike {
 
 export interface CompCameraLike {
   setFrustum(f: { left: number; right: number; top: number; bottom: number; x: number; y: number }): void;
+  /**
+   * The ACTUAL camera object handed to `gl.render` for the composite pass —
+   * three's renderer instanceof-checks it, so this must be the real
+   * `OrthographicCamera`, NOT this adapter. (Field bug 2026-07-10: the pass
+   * rendered with the adapter itself; three threw "camera is not an instance
+   * of THREE.Camera" every frame and P2 never composited. The headless fakes
+   * couldn't catch it — both types erase to `object` and the fake render is
+   * a no-op.)
+   */
+  readonly raw: object;
 }
 
 export interface IslandCameraLike {
@@ -253,7 +263,7 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   // 7. composite to the backbuffer -------------------------------------------
   gl.setRenderTarget(null);
   gl.clear();
-  gl.render(ctx.compositeScene, ctx.compCamera);
+  gl.render(ctx.compositeScene, ctx.compCamera.raw);
 
   stats.fboBytes = pool.bytesUsed();
   return stats;

@@ -175,6 +175,7 @@ export function GLViews({
         quads,
         gl: glLike,
         compCamera: {
+          raw: compCamera, // the REAL camera — gl.render instanceof-checks it
           setFrustum: (f) => {
             compCamera.left = f.left;
             compCamera.right = f.right;

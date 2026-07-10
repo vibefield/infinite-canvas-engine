@@ -16,8 +16,14 @@
  *
  * Camera-gesture kinds and their math:
  *  - RoutedPan Drag (Active): integrate the PER-FRAME screen delta at the CURRENT
- *    zoom via a per-recognizer last-total memo (design decision 14).
- *  - WheelPan (Active): pan by its per-tick deltas (`Camera -= d/zoom`).
+ *    zoom via a per-recognizer last-total memo (design decision 14). Sign is
+ *    content-follows-pointer (`Camera -= Δ/zoom`, design-003 §5 item 9): the
+ *    drag GRABS the canvas, standard in every canvas app.
+ *  - WheelPan (Active): `Camera += d/zoom` — scroll direction = TRAVEL direction
+ *    (wheel-down/swipe-down moves the viewport down the world; content moves
+ *    opposite). This is the Figma/Freeform convention for both mouse wheels and
+ *    macOS natural-scroll trackpads; the sign was inverted until James's field
+ *    report (2026-07-10) and is now pinned by a trace.
  *  - WheelZoom (Active): anchored zoom, `zoomAtPoint(cam, anchor, zoom·e^(-pinch·k))`.
  *  - Pinch (Active): zoom `startZoom · spread/startDist`, anchored at the live centroid.
  * `Camera.gesturing` is true while ANY of these is Active (compositor DPR gate).
@@ -104,7 +110,13 @@ export function createCameraSystems(world: World): CameraSystems {
 
   const cameraControl = defineSystem(
     surfaceQ,
-    () => {
+    (b) => {
+      // Tag-only anchor query: the body runs once per ARCHETYPE (empty batches
+      // included) — do the whole-frame aggregate only for the batch holding
+      // the surface (same idiom as pointerIngest). Without this guard the
+      // non-idempotent integrations (wheel pan, zoom) applied N-archetypes×
+      // per frame — caught by the wheel-pan direction trace (2026-07-10).
+      if (b.count === 0) return;
       const cam0 = world.getResource(Camera) ?? CAMERA_ZERO;
       let x = cam0.x;
       let y = cam0.y;
@@ -136,6 +148,8 @@ export function createCameraSystems(world: World): CameraSystems {
       });
 
       // 2) WheelPan — per-tick deltas (wheelSystem zeroes them on silent frames).
+      // += : scroll direction is travel direction (see module note). The DRAG
+      // pan above keeps -= (grab-the-canvas) — the two are deliberately opposed.
       world.query(wheelPanQ).each((b) => {
         for (const r of b) {
           const rec = b.entity(r);
@@ -143,8 +157,8 @@ export function createCameraSystems(world: World): CameraSystems {
           anyActive = true;
           const w = world.read(rec, WheelPan);
           if (w.dx === 0 && w.dy === 0) continue;
-          x -= w.dx / zoom;
-          y -= w.dy / zoom;
+          x += w.dx / zoom;
+          y += w.dy / zoom;
         }
       });
 
@@ -203,7 +217,8 @@ export function createCameraSystems(world: World): CameraSystems {
 
   const cameraInertia = defineSystem(
     surfaceQ,
-    () => {
+    (b) => {
+      if (b.count === 0) return; // anchor idiom — see cameraControl
       const inertia = world.getResource(CameraInertia);
       if (inertia === undefined || (inertia.vx === 0 && inertia.vy === 0)) return;
 

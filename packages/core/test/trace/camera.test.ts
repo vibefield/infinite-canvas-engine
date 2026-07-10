@@ -145,3 +145,40 @@ describe("trace: pan inertia + touch-to-stop (design-003 §5 item 9)", () => {
     expect(readCamera(rig).x).toBe(x8); // frozen — no more coasting
   });
 });
+
+describe("trace: wheel-pan direction (James's field report 2026-07-10)", () => {
+  it("scroll direction = travel direction: wheel-down/right INCREASES camera x/y by d/zoom", () => {
+    const rig = cameraRig();
+
+    // Wheel-down + wheel-right at zoom 1: the viewport travels down/right the
+    // world (content slides opposite) — Figma/Freeform convention for mouse
+    // wheels AND macOS natural-scroll trackpads. The sign was inverted until
+    // this trace pinned it.
+    rig.wheel(400, 300, 50, 120, 0);
+    rig.step();
+    expect(readCamera(rig).x).toBeCloseTo(50, 6);
+    expect(readCamera(rig).y).toBeCloseTo(120, 6);
+
+    // At zoom 2 the same screen deltas cover HALF the world distance.
+    rig.world.setResource(Camera, { x: 0, y: 0, zoom: 2, gesturing: false });
+    rig.step(12); // let the first WheelPan recognizer end (150ms silence)
+    rig.wheel(400, 300, 50, 120, 0);
+    rig.step();
+    expect(readCamera(rig).x).toBeCloseTo(25, 6);
+    expect(readCamera(rig).y).toBeCloseTo(60, 6);
+
+    // The DRAG pan keeps the opposite, design-pinned sign (content follows the
+    // pointer — grab-the-canvas): drag right ⇒ camera.x DECREASES.
+    rig.step(12);
+    const beforeDrag = readCamera(rig).x;
+    rig.down("mouse", 400, 300, { button: 4 }); // middle button → RoutedPan
+    rig.step();
+    rig.move("mouse", 420, 300);
+    rig.step(); // claim frame (dead-zone exit)
+    rig.move("mouse", 440, 300);
+    rig.step();
+    expect(readCamera(rig).x).toBeLessThan(beforeDrag);
+    rig.up("mouse", 440, 300);
+    rig.step(2);
+  });
+});

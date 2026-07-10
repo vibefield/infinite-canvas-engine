@@ -137,6 +137,11 @@ interface GLRig {
   bridge: GLBridge;
   pool: ReturnType<typeof createFakePool>;
   quads: ReturnType<typeof createFakeQuads>;
+  /** Every gl.render call, in order (island paints then the composite). */
+  renders: { scene: object; camera: object }[];
+  /** Stable sentinels the pass must hand to the FINAL gl.render. */
+  compScene: object;
+  compCamRaw: object;
   spawnCard(x: number, y: number, w?: number, h?: number): Entity;
   /** Register a fake island (scene/camera are inert handles). */
   mount(e: Entity): () => void;
@@ -154,7 +159,13 @@ function createGLRig(opts: { devAssert?: boolean } = {}): GLRig {
   world.setResource(Viewport, { w: 800, h: 600, dpr: 1 });
   let now = 0;
   let ratio = 1;
+  const renders: { scene: object; camera: object }[] = [];
+  const compScene = {};
+  const compCamRaw = {};
   return {
+    renders,
+    compScene,
+    compCamRaw,
     world,
     engine,
     bridge,
@@ -189,15 +200,17 @@ function createGLRig(opts: { devAssert?: boolean } = {}): GLRig {
           gl: {
             setRenderTarget() {},
             clear() {},
-            render() {},
+            render(scene, camera) {
+              renders.push({ scene, camera });
+            },
             setPixelRatio(n: number) {
               ratio = n;
             },
             getPixelRatio: () => ratio,
           },
-          compCamera: { setFrustum() {} },
+          compCamera: { raw: compCamRaw, setFrustum() {} },
           islandCamera: () => ({ setFrustum() {} }),
-          compositeScene: {},
+          compositeScene: compScene,
           maxFboBytes,
           maxRepaintsPerFrame: maxRepaints,
           dtMs: 16,
@@ -366,6 +379,25 @@ describe("zero render→ECS writes (M7 exit, DEV trap)", () => {
     // The trap disarmed in finally: mutators are usable again outside the pass.
     expect(() => rig.world.removeTag(e, Visible)).not.toThrow();
     expect(() => rig.world.addTag(e, Visible)).not.toThrow();
+  });
+});
+
+describe("composite render identity (field bug 2026-07-10)", () => {
+  it("the final gl.render uses the REAL camera handle (compCamera.raw), never the adapter", () => {
+    // In the browser three instanceof-checks the camera; passing the adapter
+    // threw "camera is not an instance of THREE.Camera" every frame and P2
+    // never composited. The fakes can't instanceof-check — identity pins it.
+    const rig = createGLRig();
+    rig.mount(rig.spawnCard(0, 0));
+    rig.pass();
+    const last = rig.renders[rig.renders.length - 1];
+    expect(last?.scene).toBe(rig.compScene);
+    expect(last?.camera).toBe(rig.compCamRaw);
+    // Island paints (all renders before the last) never use the composite pair.
+    for (const r of rig.renders.slice(0, -1)) {
+      expect(r.scene).not.toBe(rig.compScene);
+      expect(r.camera).not.toBe(rig.compCamRaw);
+    }
   });
 });
 
