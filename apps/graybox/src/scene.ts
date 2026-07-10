@@ -105,15 +105,19 @@ export function spawnSceneDurable(session: DocSession, opts: SceneOpts = {}): nu
  * count equipped.
  */
 export function equipSceneBoxes(world: World): number {
-  let n = 0;
+  // Collect during the walk, mutate after: `world.addTag` is structural and
+  // THROWS mid-iteration (a tag flip can reorder archetype rows under the
+  // walk). Outside a system there is no ctx to defer through, so two passes.
+  const bare: Entity[] = [];
   world.query(sceneBoxQ).each((b) => {
     for (const r of b) {
       const e = b.entity(r);
-      if (world.hasTag(e, Selectable)) continue;
-      world.addTag(e, Selectable);
-      world.addTag(e, Movable);
-      n += 1;
+      if (!world.hasTag(e, Selectable)) bare.push(e);
     }
   });
-  return n;
+  for (const e of bare) {
+    world.addTag(e, Selectable);
+    world.addTag(e, Movable);
+  }
+  return bare.length;
 }
