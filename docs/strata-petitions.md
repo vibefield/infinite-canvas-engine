@@ -45,3 +45,47 @@ world object. **Ask**: either a DEV-only `WorldObserver.onWrite?(kind)`
 (synchronous, fired from the mutator chokepoints) or a public monotonic
 `world.writeVersion()`; the trap then becomes observation-only
 (begin/end snapshot compare) with zero patching.
+
+## Petition 5 (candidate, M7 field finding): zero-match chunk skip + first-class tick systems
+
+**Field impact**: `cameraControl`/`cameraInertia` (tag-only `CanvasSurface`
+anchor, no `b.count` guard) ran once per archetype per frame — wheel pan,
+zoom, and inertia integrated N-archetypes× per frame in real worlds, growing
+with shape diversity over a session. Masked for months because the drag pan's
+delta-memo is idempotent under re-execution and no trace asserted exact
+magnitudes; caught 2026-07-10 by the wheel-pan direction trace (engine commit
+87bb4b5). Second occurrence of this class (M4: `pointerIngest`/`spatialSync`).
+
+**Today** (verified 0.3.0 `runtime-store.ts`): `archetypeMatchesQuery`
+(:1466) narrows by COMPONENTS only — tags are row filters — so a tag-only
+query's `buildMatches` (:1458) returns EVERY archetype, a list the creation
+hook grows forever. `runQuery` (:1413) skips truly empty archetypes (:1425
+`arch.count === 0`) but, on the row-filtered path, calls
+`fillMatchedRows` and then invokes the body EVEN WHEN ZERO ROWS MATCHED
+(:1436-1439 — no `count === 0` check). Every side-effectful body anchored on
+a tag therefore runs once per non-empty archetype in the world.
+
+**Explicitly NOT the ask**: making tags archetype-defining. Row-level tags
+are the right call for this engine — interaction-rate tag flips
+(GestureActive, Visible/Culled, one-tick Just* markers) MUST NOT migrate rows
+between tables. We endorse that design; no refactor wanted.
+
+**Ask (two additive, scoped changes)**:
+1. **Skip zero-match chunks**: `if (!dense && count === 0) continue;` before
+   the `fn(...)` at :1439. A body can do nothing row-wise with an empty
+   chunk; anything relying on empty invocations is the anchor abuse this
+   petition exists to kill. Retires the engine-wide `if (b.count === 0)
+   return` house guard as a correctness requirement.
+2. **First-class once-per-tick systems**: the anchor idiom exists ONLY
+   because `defineSystem` requires a query — whole-frame aggregates
+   (ingest, spatial sync, camera control, mount reconcile) must cosplay as
+   entity systems. A `defineTickSystem(body, { name, access, runIf })`
+   (queryless; body runs exactly once per tick in its phase slot) deletes
+   the idiom and its footgun outright. Even with ask 1, the anchor idiom
+   stays fragile-by-convention: a second entity carrying the anchor tag in
+   a different shape silently doubles the body again.
+
+**Engine migration when shipped**: convert the anchor systems
+(pointerIngest, spatialSync, cameraControl, cameraInertia, widgetMount
+reconcile) to tick systems; drop the count guards; the wheel-pan magnitude
+trace pins correctness across the change.
