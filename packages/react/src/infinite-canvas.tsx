@@ -46,6 +46,7 @@ import {
   wireMeasurement,
   type CanvasHost,
   type DomWidgetsReflector,
+  type GLRoute,
   type GridConfig,
   type Planes,
 } from "@ice/dom";
@@ -77,6 +78,14 @@ export interface InfiniteCanvasProps {
    * (memoize in the caller to avoid redundant same-value redraws).
    */
   readonly grid?: Partial<GridConfig>;
+  /**
+   * GL pointer routing (event-time island pick — @ice/r3f's
+   * createGLPointerRouter). Provide from the FIRST render (a stub delegating
+   * to a ref is fine — the real router usually arrives in onReady); the prop
+   * is read through a ref, so later identity changes take effect without
+   * re-attaching the adapter.
+   */
+  readonly glRoute?: GLRoute;
   readonly className?: string;
   readonly style?: CSSProperties;
   /** Overlays inside the viewport (toolbars, HUD) — rendered under the EngineProvider. */
@@ -88,6 +97,7 @@ export function InfiniteCanvas({
   measureQueue,
   onReady,
   grid: gridConfig,
+  glRoute,
   className,
   style,
   children,
@@ -102,6 +112,10 @@ export function InfiniteCanvas({
   const gridRef = useRef<ReturnType<typeof createGridReflector> | null>(null);
   const gridConfigRef = useRef(gridConfig);
   gridConfigRef.current = gridConfig;
+  // glRoute reads through a ref: the adapter captures ONE function at attach,
+  // and the app's real router typically arrives post-mount (onReady).
+  const glRouteRef = useRef(glRoute);
+  glRouteRef.current = glRoute;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -134,7 +148,13 @@ export function InfiniteCanvas({
       core.registerReflector(remoteCursors.reflector),
     ];
 
-    const detachPointer = attachPointerAdapter(host, stack.queue);
+    const detachPointer = attachPointerAdapter(
+      host,
+      stack.queue,
+      glRouteRef.current !== undefined
+        ? { glRoute: (kind, x, y, e) => glRouteRef.current?.(kind, x, y, e) === true }
+        : {},
+    );
     const detachMeasure =
       measureQueue !== undefined ? wireMeasurement(runtime.store, domWidgets, measureQueue) : undefined;
     const detachKeymap = attachKeymap(engine);
