@@ -1,6 +1,322 @@
-/** PLACEHOLDER shell — the full v1-playground App port (engine, scene seed,
- * chrome, panels, GL root) lands with task 65. Widgets register via their
- * module side effects when the barrel is imported. */
+/**
+ * widgetlab App — the v1 playground App.tsx on the v3 facade. Structure kept
+ * 1:1: demo scene (iOS grid, PITCH 174), dark-mode toggle (persisted), themed
+ * dot grid, zoom pill, floating Settings/ECS/Inspector buttons, breadcrumbs,
+ * keyboard shortcuts (⌘Z/⇧⌘Z undo/redo · Esc exit container · ⌫ delete).
+ *
+ * v3 adaptations (deliberate):
+ *  - createLayoutEngine → createCanvasEngine + docs.create(); the seed spawns
+ *    are {undoable:false} so the user's first ⌘Z is clean (moodboard rule).
+ *    Spawn ORDER carries v1's zIndex order (fractional StackZ stacks later
+ *    spawns on top).
+ *  - v1's r3fRoot IBL → GL islands are private scenes (design-004); metallic
+ *    cards carry their own studio rigs (gl-cards port). No shared Environment.
+ *  - v1's GL overlap glow → CSS inset glow in CardShell, driven by the same
+ *    --ic-glow-* vars the settings panel tunes.
+ *  - EcsDevtools → @ice/devtools attachDevtools (mounted while the ECS button
+ *    is active).
+ */
+import { Camera, createCanvasEngine, type CanvasEngine } from "@ice/core";
+import { attachDevtools } from "@ice/devtools";
+import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/dom";
+import { GLViews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter } from "@ice/r3f";
+import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
+import { Canvas } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
+import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
+import { WIDGETS } from "./widgets";
+
+// === v1 theme constants (App.tsx verbatim) ===
+
+const DEFAULT_THEME_COLORS: ThemeColors = {
+  dotLight: "#BFC4CC",
+  dotDark: "#595E66",
+  bgLight: "#FAFAFA",
+  bgDark: "#171717",
+};
+
+const DEFAULT_OVERLAP_GLOW_THEME_COLORS: OverlapGlowThemeColors = {
+  glowLight: "#808080",
+  glowDark: "#FFFFFF",
+  rimLight: "#808080",
+  rimDark: "#FFFFFF",
+};
+
+/** v1 DEFAULT_OVERLAP_GLOW_CONFIG values ([candidate, target] pairs — CardChrome's var defaults). */
+const DEFAULT_OVERLAP_GLOW: OverlapGlowConfig = {
+  glowColor: [0.5, 0.5, 0.5],
+  glowAlpha: [0.25, 0.45],
+  glowSize: [60, 80],
+  rimColor: [0.5, 0.5, 0.5],
+  rimWidth: 1,
+  rimAlpha: [0.3, 0.5],
+  rimRadius: 40,
+};
+
+function hexToRgb01(hex: string): [number, number, number] {
+  const s = hex.replace("#", "").padEnd(6, "0").slice(0, 6);
+  return [
+    Number.parseInt(s.slice(0, 2), 16) / 255,
+    Number.parseInt(s.slice(2, 4), 16) / 255,
+    Number.parseInt(s.slice(4, 6), 16) / 255,
+  ];
+}
+
+function hexToRgb255(hex: string): string {
+  const s = hex.replace("#", "").padEnd(6, "0").slice(0, 6);
+  return `${Number.parseInt(s.slice(0, 2), 16)}, ${Number.parseInt(s.slice(2, 4), 16)}, ${Number.parseInt(s.slice(4, 6), 16)}`;
+}
+
+// === the demo scene — v1 createDemoScene coordinates verbatim ===
+
+const GX = 50;
+const GY = 50;
+const PITCH = 174;
+const G3X = GX + PITCH * 2 + 19 + 329 + 19; // 765
+const G6X = G3X + PITCH * 2 + 40 + 329 + 30; // 1512
+
+/** type id → [x, y, w, h, props?] in v1 spawn (zIndex) order. */
+const SCENE: Array<[string, number, number, number, number, Record<string, unknown>?]> = [
+  ["clock-card", GX, GY, 155, 155],
+  ["battery-card", GX + PITCH, GY, 155, 155],
+  ["calendar-card", GX, GY + PITCH, 155, 155, { dateIso: "", nextEvent: "Design review", nextEventTime: "3:30 PM" }],
+  ["weather-card", GX, GY + PITCH * 2, 329, 155, { location: "Cupertino", temp: 72, high: 78, low: 60, condition: "sunny" }],
+  ["stocks-card", GX, GY + PITCH * 3, 329, 155],
+  ["fitness-card", GX, GY + PITCH * 4, 329, 345],
+  ["photos-card", GX + PITCH * 2 + 19, GY, 329, 535],
+  ["matte-sphere-card", G3X, GY, 155, 155],
+  ["crystal-widget", G3X + PITCH, GY, 155, 155],
+  ["torus-knot-card", G3X, GY + PITCH, 329, 155],
+  ["floating-cube-widget", G3X, GY + PITCH * 2, 329, 155],
+  ["gold-knot-card", G3X, GY + PITCH * 3, 329, 345],
+  ["debug-resizable", G3X + PITCH * 2 + 40, GY, 260, 180],
+  ["card-container", G3X + PITCH * 2 + 40, GY + 220, 329, 345, { title: "Widgets", accent: "#6366F1" }],
+  ["card-container", G3X + PITCH * 2 + 40, GY + 220 + 345 + 19, 329, 345, { title: "Saved", accent: "#EC4899" }],
+  ["todo-list-card", G6X, GY, 329, 345],
+  ["shapes-card", G6X, GY + 345 + 19, 329, 345],
+  ["orbit-cube-card", G6X, GY + (345 + 19) * 2, 329, 155],
+];
+
+export function createDemoEngine(): CanvasEngine {
+  const ce = createCanvasEngine({
+    widgets: WIDGETS,
+    settings: { zoom: { min: 0.25, max: 3 }, snap: { enabled: false } },
+  });
+  ce.docs.create();
+  for (const [type, x, y, w, h, props] of SCENE) {
+    ce.ops.spawnWidget(type, { x, y, w, h, undoable: false, ...(props !== undefined ? { props } : {}) });
+  }
+  ce.world.sync(); // project the durable seeds now (graybox idiom) — queryable before the first frame
+  return ce;
+}
+
+// === chrome bits ===
+
+function ZoomPill({ ce }: { ce: CanvasEngine }) {
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const z = ce.world.getResource(Camera)?.zoom ?? 1;
+      setZoom((prev) => (Math.abs(prev - z) > 1e-4 ? z : prev));
+    }, 100);
+    return () => clearInterval(id);
+  }, [ce]);
+  const zoomBy = (f: number) => ce.ops.zoomTo((ce.world.getResource(Camera)?.zoom ?? 1) * f);
+  return (
+    <div className="absolute top-4 right-16 z-50 flex h-10 items-center overflow-hidden rounded-full bg-white shadow-lg dark:bg-neutral-800">
+      <button
+        type="button"
+        onClick={() => zoomBy(0.8)}
+        className="flex h-10 w-10 items-center justify-center text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+        title="Zoom out"
+        aria-label="Zoom out"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        onClick={() => ce.ops.zoomTo(1)}
+        onDoubleClick={() => ce.ops.zoomToFit()}
+        className="flex h-10 w-14 items-center justify-center text-sm font-medium tabular-nums text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700"
+        title="Click: reset to 100% · Double-click: zoom to fit"
+        aria-label={`Current zoom: ${Math.round(zoom * 100)}%`}
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      <button
+        type="button"
+        onClick={() => zoomBy(1.25)}
+        className="flex h-10 w-10 items-center justify-center text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+        title="Zoom in"
+        aria-label="Zoom in"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+const fabCls = (active: boolean) =>
+  `absolute z-50 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors ${
+    active
+      ? "bg-neutral-800 text-white dark:bg-white dark:text-neutral-800"
+      : "bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+  }`;
+
 export function App() {
-  return <div className="h-screen w-screen" />;
+  const ce = useMemo(() => createDemoEngine(), []);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showInspector, setShowInspector] = useState(false);
+  const [showEcs, setShowEcs] = useState(false);
+  const [dark, setDark] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("ic-dark-mode");
+      if (saved !== null) return saved === "true";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return false;
+  });
+
+  const [gridConfig, setGridConfig] = useState<GridConfig>({ ...DEFAULT_GRID_CONFIG });
+  const [themeColors, setThemeColors] = useState<ThemeColors>(DEFAULT_THEME_COLORS);
+  const [overlapGlow, setOverlapGlow] = useState<OverlapGlowConfig>(DEFAULT_OVERLAP_GLOW);
+  const [overlapGlowThemeColors, setOverlapGlowThemeColors] = useState<OverlapGlowThemeColors>(
+    DEFAULT_OVERLAP_GLOW_THEME_COLORS,
+  );
+
+  // --- GL root: bridge + router arrive in onReady; glRoute delegates via ref ---
+  const routerRef = useRef<GLPointerRouter | null>(null);
+  const [gl, setGl] = useState<{ bridge: GLBridge; plane: HTMLDivElement } | null>(null);
+  const glRoute = useCallback(
+    (kind: "down" | "move" | "up" | "cancel", x: number, y: number, e: PointerEvent) =>
+      routerRef.current?.route(kind, x, y, e) === true,
+    [],
+  );
+  const onReady = useCallback(
+    (handle: InfiniteCanvasHandle) => {
+      const bridge = createGLBridge(ce.engine);
+      routerRef.current = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
+      const plane = handle.host.container.ownerDocument.createElement("div");
+      plane.style.cssText = "position:absolute;inset:0;pointer-events:none;"; // P2: display-only (router owns GL hits)
+      handle.host.container.appendChild(plane);
+      setGl({ bridge, plane });
+    },
+    [ce],
+  );
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("ic-dark-mode", String(dark));
+  }, [dark]);
+
+  // --canvas-bg from theme (v1); the glow CSS vars feed CardShell's inset glow.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--canvas-bg", dark ? themeColors.bgDark : themeColors.bgLight);
+    root.style.setProperty("--ic-glow-color", hexToRgb255(dark ? overlapGlowThemeColors.glowDark : overlapGlowThemeColors.glowLight));
+    root.style.setProperty("--ic-glow-size-c", `${overlapGlow.glowSize[0]}px`);
+    root.style.setProperty("--ic-glow-size-t", `${overlapGlow.glowSize[1]}px`);
+    root.style.setProperty("--ic-glow-alpha-c", String(overlapGlow.glowAlpha[0]));
+    root.style.setProperty("--ic-glow-alpha-t", String(overlapGlow.glowAlpha[1]));
+  }, [dark, themeColors, overlapGlow, overlapGlowThemeColors]);
+
+  const effectiveGrid = useMemo<Partial<GridConfig>>(
+    () => ({ ...gridConfig, dotColor: hexToRgb01(dark ? themeColors.dotDark : themeColors.dotLight) }),
+    [gridConfig, dark, themeColors],
+  );
+
+  // Keyboard shortcuts — v1 handler, ported onto docs/ops/nav.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        ce.docs.undo();
+      }
+      if (mod && e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        ce.docs.redo();
+      }
+      if (e.key === "Escape") {
+        if (ce.nav.depth() > 0) ce.ops.exitContainer();
+        else ce.ops.cancelActiveGestures();
+      }
+      if (e.key === "Backspace" || e.key === "Delete") {
+        const el = document.activeElement;
+        if (el?.closest("input, textarea, select, [contenteditable]")) return;
+        ce.ops.deleteSelection();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [ce]);
+
+  // ECS devtools while the button is active (v1's EcsDevtools panel slot).
+  useEffect(() => {
+    if (!showEcs) return;
+    const d = attachDevtools(ce.engine, {});
+    return () => d.detach();
+  }, [showEcs, ce]);
+
+  return (
+    <div className="h-screen w-screen" style={{ background: "var(--canvas-bg)" }}>
+      <InfiniteCanvas
+        engine={ce}
+        grid={effectiveGrid}
+        glRoute={glRoute}
+        onReady={onReady}
+        className="h-full w-full"
+      >
+        {gl !== null &&
+          createPortal(
+            <Canvas orthographic frameloop="demand" gl={{ alpha: true }} style={{ width: "100%", height: "100%" }}>
+              <GLViews engine={ce.engine} bridge={gl.bridge} store={ce.runtime.store} />
+            </Canvas>,
+            gl.plane,
+          )}
+      </InfiniteCanvas>
+
+      <NavigationBreadcrumbs engine={ce} />
+      <ZoomPill ce={ce} />
+
+      {/* Dark mode toggle */}
+      <button
+        type="button"
+        onClick={() => setDark((d) => !d)}
+        className="absolute top-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+        title={dark ? "Switch to light mode" : "Switch to dark mode"}
+      >
+        {dark ? "☀" : "☾"}
+      </button>
+
+      <button type="button" onClick={() => setShowSettings((s) => !s)} className={`${fabCls(showSettings)} bottom-4 left-4`} title="Settings">
+        ⚙
+      </button>
+      <button type="button" onClick={() => setShowEcs((s) => !s)} className={`${fabCls(showEcs)} bottom-4 right-16`} title="ECS Editor">
+        ▦
+      </button>
+      <button type="button" onClick={() => setShowInspector((s) => !s)} className={`${fabCls(showInspector)} bottom-4 right-4`} title="Inspector">
+        ✎
+      </button>
+
+      {showSettings && (
+        <SettingsPanel
+          engine={ce}
+          gridConfig={gridConfig}
+          onGridChange={setGridConfig}
+          themeColors={themeColors}
+          onThemeColorsChange={setThemeColors}
+          overlapGlow={overlapGlow}
+          onOverlapGlowChange={setOverlapGlow}
+          overlapGlowThemeColors={overlapGlowThemeColors}
+          onOverlapGlowThemeColorsChange={setOverlapGlowThemeColors}
+          stressWidgetType="clock-card"
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+      {showInspector && <InspectorPanel engine={ce} onClose={() => setShowInspector(false)} />}
+    </div>
+  );
 }
