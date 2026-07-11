@@ -28,6 +28,17 @@ export interface CommitReparent {
   readonly container: Entity;
 }
 
+/**
+ * A wire creation riding a connect outcome (design-003 §5.8; design-001
+ * §5.3): wires bind WIDGET entities + port IDS — never port entities.
+ */
+export interface CommitWireSpawn {
+  readonly from: Entity;
+  readonly to: Entity;
+  readonly fromPort: string;
+  readonly toPort: string;
+}
+
 export interface CommitIntent {
   /** Outcome kind — traces assert on it. */
   readonly kind: "move" | "consume" | "resize" | "connect" | "create" | "delete";
@@ -35,6 +46,7 @@ export interface CommitIntent {
   readonly gesture: Entity;
   readonly writes: readonly CommitWrite[];
   readonly reparents?: readonly CommitReparent[];
+  readonly wires?: readonly CommitWireSpawn[];
 }
 
 export interface CommitSink {

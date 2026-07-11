@@ -39,6 +39,15 @@ import type { JsonSpec, PropSpec, PropsDecl } from "./props";
 export type WidgetSurface = "dom" | "gl";
 export type SizeMode = "fixed" | "auto-height" | "auto";
 
+export interface WidgetPortDecl {
+  readonly id: string;
+  readonly side: "n" | "e" | "s" | "w";
+  /** Slot index along the side (0-based; anchor spacing is the kernel's). */
+  readonly index?: number;
+  /** Compatibility keys (empty = connects to anything). */
+  readonly accepts?: readonly string[];
+}
+
 export interface WidgetInteraction {
   readonly selectable?: boolean;
   readonly movable?: boolean;
@@ -67,6 +76,12 @@ export interface WidgetDef {
    */
   readonly animated?: boolean;
   readonly interaction?: WidgetInteraction;
+  /**
+   * Node-editor port schema (design-005 §2; design-001 §5.3): wires bind to
+   * widget + port ID — port ENTITIES are runtime and on-demand. `accepts` is
+   * the compatibility key list the connect gesture checks.
+   */
+  readonly ports?: readonly WidgetPortDecl[];
   readonly container?: { readonly accepts: readonly string[]; readonly provides?: readonly string[] };
   /** fromVersion → idempotent absolute transform (M9 runs the chain). */
   readonly migrate?: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
@@ -92,6 +107,8 @@ export interface WidgetType {
   readonly minSize: { readonly w: number; readonly h: number };
   /** GL islands: repaint every visible frame (design-004 §3). */
   readonly animated: boolean;
+  /** Node-editor ports (empty when not a node). */
+  readonly ports: readonly WidgetPortDecl[];
   /** Runtime capability tags the equip system stamps at projection. */
   readonly capabilityTags: readonly Tag[];
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
@@ -143,6 +160,11 @@ export function defineWidget(def: WidgetDef): WidgetType {
     throw new Error(`ice: widget type "${def.type}" is already defined.`);
   }
   const props = normalizeProps(def.props);
+  const portIds = new Set<string>();
+  for (const port of def.ports ?? []) {
+    if (portIds.has(port.id)) throw new Error(`ice: widget "${def.type}" declares duplicate port id "${port.id}".`);
+    portIds.add(port.id);
+  }
 
   // Group membership: total and disjoint; ungrouped → the "props" group.
   const propToGroup: Record<string, string> = {};
@@ -229,6 +251,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     defaultSize,
     minSize: def.minSize ?? { w: 40, h: 40 },
     animated: def.animated === true,
+    ports: def.ports ?? [],
     capabilityTags,
     migrate: def.migrate ?? {},
   };

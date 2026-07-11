@@ -126,8 +126,13 @@ export function createArbitrationSystems(): { arbitration: System; dragRoute: Sy
           ctx.addTag(e, RoutedResize);
           continue;
         }
-        if (captured !== undefined && ctx.has(captured, Port)) {
-          ctx.addTag(e, RoutedConnect); // materializes at M8 (no ports exist before then)
+        // Connect routes BEFORE the Movable gate (design-003 §4.4, M8): a
+        // port-down on a movable widget starts a CONNECT, not a move — and the
+        // connect tool routes every drag to connect (connectClaim no-ops when the
+        // capture isn't a port). The port branch works even when the pick landed
+        // on the widget body: pickTopAt's port tier already returned the port.
+        if ((captured !== undefined && ctx.has(captured, Port)) || tool === "connect") {
+          ctx.addTag(e, RoutedConnect);
           continue;
         }
         const onCanvas = captured === undefined || ctx.hasTag(captured, CanvasSurface);

@@ -13,14 +13,23 @@
  * accepts it; do not "fix" it here.
  */
 import type { Component, Entity } from "@vibecook/strata-ecs";
-import type { SpatialIndex } from "@ice/kernel";
-import { HandleSpec, Position, StackZ } from "../catalog";
+import type { Cubic, SpatialIndex } from "@ice/kernel";
+import { distanceToCubic } from "@ice/kernel";
+import { HandleSpec, Port, Position, StackZ, Wire } from "../catalog";
 
 /** Structural reads both `World` and `SystemCtx` provide. */
 export interface PickReader {
   isAlive(e: Entity): boolean;
   has(e: Entity, c: Component): boolean;
+  hasTag(e: Entity, t: import("@vibecook/strata-ecs").Tag): boolean;
   get<S>(e: Entity, c: Component<S>): S | undefined;
+}
+
+/** Wire narrow-phase source: cached cubics from wireSync (M8). */
+export interface WirePickSource {
+  cubicOf(e: Entity): Cubic | undefined;
+  /** Pick slop in WORLD units (screen slop / zoom, caller-converted). */
+  readonly slopWorld: number;
 }
 
 /** Distance from a point to the nearest edge of an AABB (0 iff inside). */
@@ -37,18 +46,32 @@ export function distPointToBox(
   return Math.hypot(dx, dy);
 }
 
-/** Top pick under a world point within `rWorld` (point-in-box when 0). */
+/**
+ * Top pick under a world point within `rWorld` (point-in-box when 0).
+ * Tier order (design-003 §3, amended for M8): HandleSpec chrome → PORT
+ * entities (interaction affordances sit atop their widget edge) → widgets by
+ * StackZ → WIRES (render in P0 under content; pick below widgets, above
+ * canvas — render order and pick order agree). The canvas fallback stays the
+ * caller's. Wires narrow-phase against their cached cubic (`wires` source;
+ * without one, wire entries are skipped — coarse AABB hits would make fat
+ * bounding boxes steal canvas taps).
+ */
 export function pickTopAt(
   reader: PickReader,
   index: SpatialIndex<Entity>,
   wx: number,
   wy: number,
   rWorld: number,
+  wires?: WirePickSource,
 ): Entity | undefined {
   let bestHandle: Entity | undefined;
   let bestHandleD = Number.POSITIVE_INFINITY;
+  let bestPort: Entity | undefined;
+  let bestPortD = Number.POSITIVE_INFINITY;
   let bestWidget: Entity | undefined;
   let bestWidgetZ = Number.NEGATIVE_INFINITY;
+  let bestWire: Entity | undefined;
+  let bestWireD = Number.POSITIVE_INFINITY;
   for (const entry of index.searchPoint(wx, wy, rWorld)) {
     const e = entry.id;
     if (!reader.isAlive(e)) continue;
@@ -59,6 +82,20 @@ export function pickTopAt(
         bestHandleD = d;
         bestHandle = e;
       }
+    } else if (reader.has(e, Port)) {
+      if (d < bestPortD) {
+        bestPortD = d;
+        bestPort = e;
+      }
+    } else if (reader.hasTag(e, Wire)) {
+      if (wires === undefined) continue;
+      const cubic = wires.cubicOf(e);
+      if (cubic === undefined) continue;
+      const wd = distanceToCubic(wx, wy, cubic);
+      if (wd <= rWorld + wires.slopWorld && wd < bestWireD) {
+        bestWireD = wd;
+        bestWire = e;
+      }
     } else if (reader.has(e, Position)) {
       const z = reader.get(e, StackZ)?.z ?? 0;
       if (z > bestWidgetZ) {
@@ -67,5 +104,5 @@ export function pickTopAt(
       }
     }
   }
-  return bestHandle ?? bestWidget;
+  return bestHandle ?? bestPort ?? bestWidget ?? bestWire;
 }

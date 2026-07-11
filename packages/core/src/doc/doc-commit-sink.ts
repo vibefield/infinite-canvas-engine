@@ -18,6 +18,8 @@ import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import type { World } from "@vibecook/strata-ecs";
 import { ChildOf } from "../catalog";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
+import { PrefabId } from "../schema/prefab";
+import { Wire, WireFrom, WirePorts, WireTo } from "../catalog/graph";
 import { guardedTransaction } from "../guards/guarded-tx";
 
 export function createDocCommitSink(store: DurableStore, world: World): CommitSink {
@@ -27,7 +29,13 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
       const liveReparents = (intent.reparents ?? []).filter(
         (r) => store.keyOf(r.entity) !== undefined && store.keyOf(r.container) !== undefined,
       );
-      if (liveWrites.length === 0 && liveReparents.length === 0) return; // nothing durable survived
+      // Wires bind widgets + port ids (design-001 §5.3): both ENDPOINT widgets
+      // must still be durable-live at commit (the same divergence-is-the-signal
+      // re-guard as writes — a remote delete mid-gesture drops the spawn).
+      const liveWires = (intent.wires ?? []).filter(
+        (w) => store.keyOf(w.from) !== undefined && store.keyOf(w.to) !== undefined,
+      );
+      if (liveWrites.length === 0 && liveReparents.length === 0 && liveWires.length === 0) return;
 
       guardedTransaction(store, world, (tx) => {
         for (const w of liveWrites) {
@@ -35,6 +43,17 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
         }
         for (const r of liveReparents) {
           tx.setRelation(r.entity, ChildOf, r.container);
+        }
+        for (const w of liveWires) {
+          const wire = tx.spawn({
+            components: [
+              [PrefabId, { id: "wire" }],
+              [WirePorts, { from: w.fromPort, to: w.toPort }],
+            ],
+            tags: [Wire],
+          });
+          tx.setRelation(wire, WireFrom, w.from);
+          tx.setRelation(wire, WireTo, w.to);
         }
       });
     },

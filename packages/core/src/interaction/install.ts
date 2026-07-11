@@ -14,7 +14,7 @@
  */
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
-import type { SpatialIndex } from "@ice/kernel";
+import { SpatialIndex } from "@ice/kernel";
 import { CanvasSurface } from "../catalog";
 import { createRecordingCommitSink, type CommitSink } from "../engine/commit-sink";
 import type { Engine } from "../engine/engine";
@@ -24,12 +24,15 @@ import { createCameraSystems } from "../systems/camera-sim";
 import { createCleanupSystems } from "../systems/cleanup";
 import { createL0Systems } from "../systems/l0-input";
 import { createPickingSystems } from "../systems/l1-pick";
+import { createWireSync } from "../systems/l1-wires";
 import { createArbitrationSystems } from "../systems/l2-arbitrate";
 import { createL2Systems, type SpawnProfiles } from "../systems/l2-recognize";
 import { createSelectMoveBehaviors } from "../systems/l3-behave";
 import { createClaimSystems } from "../systems/l3-claim";
+import { createConnectSystems, type WirePreviewBuffer } from "../systems/l3-connect";
 import { createDropSystem } from "../systems/l3-drop";
 import { createMarqueeBehavior, type MarqueeBuffer } from "../systems/l3-marquee";
+import { createPortMaterialize } from "../systems/l3-ports";
 import { createResizeBehavior } from "../systems/l3-resize";
 import { createSnapSystem } from "../systems/l3-snap";
 import { createSelectionChromeSystem } from "../systems/chrome";
@@ -102,10 +105,14 @@ export function installInteractionCore(engine: Engine, opts: InteractionCoreOpts
 }
 
 export interface InteractionStack extends InteractionCore {
-  /** The one spatial index (picking/snap/drop/marquee share it). */
+  /** The one spatial index (picking/snap/drop/marquee/wires/ports share it). */
   readonly index: SpatialIndex<Entity>;
   /** Marquee preview render buffer (out-of-ECS by design — design-003 §5.7). */
   readonly marqueeBuffer: MarqueeBuffer;
+  /** Connect preview render buffer (out-of-ECS — design-004 §6; M8). */
+  readonly wirePreview: WirePreviewBuffer;
+  /** Nav-op seam (design-004 §7): forget spatialSync's last-known AABBs. */
+  clearCaches(): void;
   /** L4 cursor readout for the DOM cursor reflector. */
   readCursor(): string;
 }
@@ -125,22 +132,30 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   const canvasSurface = ensureCanvasSurface(world);
 
   const l0 = createL0Systems(world, queue);
-  const pick = createPickingSystems(world);
+  // The shared index is built HERE so wireSync (its source) and picking (its
+  // consumer of that source) can both bind it before either installs.
+  const index = new SpatialIndex<Entity>();
+  const { wireSync, wires } = createWireSync(world, index);
+  const pick = createPickingSystems(world, index, wires);
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
   const arb = createArbitrationSystems();
   const claims = createClaimSystems(world);
   const behaviors = createSelectMoveBehaviors(world, sink);
-  const snap = createSnapSystem(world, pick.index);
-  const drop = createDropSystem(world, pick.index);
+  const snap = createSnapSystem(world, index);
+  const drop = createDropSystem(world, index);
   const resize = createResizeBehavior(world, sink);
-  const marquee = createMarqueeBehavior(world, pick.index);
+  const marquee = createMarqueeBehavior(world, index);
+  const connect = createConnectSystems(world, sink, index, wires);
+  const ports = createPortMaterialize(world, index);
   const camera = createCameraSystems(world);
   const cursor = createCursorSync(world);
   const cleanup = createCleanupSystems(world);
 
   const removers = [
     engine.addSystems("input", l0.pointerLifecycle, l0.pointerIngest, l0.pointerWorldSync),
-    engine.addSystems("react", pick.spatialSync, pick.picking),
+    // wireSync AFTER spatialSync (both SpatialVersion writers), BEFORE picking —
+    // which now narrow-phases wire entries against wireSync's cached cubics.
+    engine.addSystems("react", pick.spatialSync, wireSync, pick.picking),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
     engine.addSystems(
       "ctl:recognize",
@@ -151,10 +166,10 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
       l2.wheelSystem,
     ),
     engine.addSystems("ctl:arbitrate", arb.arbitration, arb.dragRoute),
-    engine.addSystems("ctl:claim", claims.moveClaim, claims.resizeClaim),
+    engine.addSystems("ctl:claim", claims.moveClaim, claims.resizeClaim, connect.connectClaim),
     // design-003 §5 in-phase order (value writes are immediately visible; the
-    // order IS the contract): select → snap → move → drop → resize → marquee
-    // → camera. Connect joins at M8.
+    // order IS the contract): select → snap → move → drop → resize → marquee →
+    // connect → camera.
     engine.addSystems(
       "ctl:behave",
       behaviors.selectBehavior,
@@ -163,13 +178,15 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
       drop,
       resize,
       marquee,
+      connect.connectBehavior,
       camera.cameraControl,
     ),
     engine.addSystems("simulate", camera.cameraInertia, camera.tweenSystem),
-    // selectionChrome BEFORE cursor: handles spawn/update at the derive flush,
-    // so cursor + next frame's spatialSync see them (review: the pool existed
-    // but nothing installed it — resize was unreachable outside the trace rig).
-    engine.addSystems("derive", createSelectionChromeSystem(world), cursor),
+    // derive order: portMaterialize BEFORE selectionChrome (both touch the index
+    // in derive; ports must be indexed before chrome/next-frame picking read it),
+    // selectionChrome BEFORE cursor (handles spawn at the derive flush so cursor
+    // + next frame's spatialSync see them).
+    engine.addSystems("derive", ports, createSelectionChromeSystem(world), cursor),
     engine.addSystems("cleanup", cleanup.recognizerReap, cleanup.oneTickClear),
   ];
 
@@ -177,8 +194,10 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     queue,
     sink,
     canvasSurface,
-    index: pick.index,
+    index,
     marqueeBuffer: marquee.buffer,
+    wirePreview: connect.previewBuffer,
+    clearCaches: () => pick.clearCaches(),
     readCursor: cursor.readCursor,
     uninstall() {
       for (const remove of removers) remove();

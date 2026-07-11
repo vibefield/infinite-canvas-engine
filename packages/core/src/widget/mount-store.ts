@@ -18,16 +18,17 @@
  */
 import { Not, defineQuery, defineSystem, defineTickSystem, type Entity, type System, type TickSystem, type World } from "@vibecook/strata-ecs";
 import { screenToWorld } from "@ice/kernel";
-import { Camera, Culled, MeasuredSize, Position, Size, Viewport, Visible } from "../catalog";
+import { Active, Camera, Culled, MeasuredSize, Position, Size, Viewport, Visible } from "../catalog";
 import type { Engine } from "../engine/engine";
 import { RUNTIME_BUDGETS } from "../settings/defaults";
 import { WidgetEquipped } from "./define-widget";
 import { createWidgetEquipSystem } from "./equip";
 import { createBreakpointSystem } from "../systems/chrome";
+import { createActiveMembership } from "../nav/nested-canvas";
 import { createMeasureIngest } from "../systems/measure-ingest";
 import type { MeasureQueue } from "../input/measure-queue";
 
-const widgetQ = defineQuery([Position, Size, WidgetEquipped]);
+const widgetQ = defineQuery([Position, Size, WidgetEquipped, Active]);
 
 export interface MountEntry {
   readonly entity: Entity;
@@ -96,7 +97,7 @@ export function createWidgetRuntime(
   let dirty = false;
   const listeners = new Set<() => void>();
 
-  const visibleWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Visible]);
+  const visibleWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Active, Visible]);
   const culledWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Not(Visible)]);
 
   // Tick system (strata 0.5.0): one full reconcile per frame by construction
@@ -188,6 +189,7 @@ export function installWidgetRuntime(
   // accepted lag). Breakpoints ship installed (review: built but orphaned).
   const removeSystems = engine.addSystems(
     "derive",
+    createActiveMembership(engine.world), // membership BEFORE cull (design-004 §7)
     createWidgetEquipSystem(),
     runtime.cullSystem,
     runtime.mountSystem,

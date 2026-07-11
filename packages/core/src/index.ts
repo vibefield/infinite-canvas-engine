@@ -128,6 +128,15 @@ export {
 export type { MarqueeBuffer } from "./systems/l3-marquee";
 export { DEFAULT_SPAWN_PROFILES, type SingleKindName, type SpawnProfiles } from "./systems/l2-recognize";
 export { createCursorSync } from "./systems/l4-cursor";
+// M8 node-editor core (design-004 §6, design-003 §5.8): wire sync, port
+// materialization, connect gesture + its out-of-ECS preview buffer.
+export { createWireSync, type WireSyncSystem } from "./systems/l1-wires";
+export { createPortMaterialize } from "./systems/l3-ports";
+export {
+  createConnectSystems,
+  type ConnectSystems,
+  type WirePreviewBuffer,
+} from "./systems/l3-connect";
 
 // The doc kit (design-001 §6, design-005 §6): envelope, version gate, sessions.
 export {
@@ -166,6 +175,7 @@ export {
   type WidgetDef,
   type WidgetGroup,
   type WidgetInteraction,
+  type WidgetPortDecl,
   type WidgetSurface,
   type WidgetType,
 } from "./widget/define-widget";
@@ -211,3 +221,12 @@ export {
 export { createMeasureQueue, type MeasureEvent, type MeasureQueue } from "./input/measure-queue";
 export { createMeasureIngest } from "./systems/measure-ingest";
 export { createBreakpointSystem, createSelectionChromeSystem } from "./systems/chrome";
+
+// --- M8 nested canvas (design-004 §7): membership, nav ops, integrity ---
+export {
+  createNestedCanvas,
+  currentNavEntry,
+  currentNavFrame,
+  type NestedCanvas,
+  type NestedCanvasOpts,
+} from "./nav/nested-canvas";

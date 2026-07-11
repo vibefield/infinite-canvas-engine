@@ -34,6 +34,16 @@ export { createCursorReflector } from "./reflectors/cursor";
 // P0 ground-plane grid (design-004 §1: WebGL canvas, camera uniforms, fullscreen-triangle shader).
 export { createGridReflector, DEFAULT_GRID_CONFIG, type GridConfig } from "./reflectors/grid";
 
+// P0 wires pass (design-004 §1): screen-space canvas under content — bezier wires
+// (geometry from kernel anchors, culled endpoints included), connect preview, port dots.
+export {
+  createWiresReflector,
+  DEFAULT_WIRES_CONFIG,
+  type WirePreview,
+  type WiresConfig,
+  type WiresReflector,
+} from "./reflectors/wires";
+
 // M6 chrome plane reflector (P4) + measurement adapter (design-004 §2 measure, §5 chrome).
 export { createChromeReflector } from "./reflectors/chrome";
 export { attachMeasureAdapter, type MeasureAdapter } from "./measure-adapter";

@@ -45,8 +45,10 @@ import {
   Targets,
   TouchesExact,
 } from "../catalog";
+import { Active } from "../catalog/camera-derived";
+import { WidgetEquipped } from "../widget/define-widget";
 import { PointerVersion, SpatialVersion, bumpVersion, makeVersionGuard } from "../helpers/version-stamps";
-import { distPointToBox, pickTopAt } from "../ops/point-pick";
+import { distPointToBox, pickTopAt, type WirePickSource } from "../ops/point-pick";
 import { POINTER_DEFAULTS } from "../settings/defaults";
 
 const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
@@ -60,11 +62,15 @@ export interface PickingSystems {
   picking: System;
   /** The shared spatial index — snap/drop/marquee consume the SAME instance. */
   index: SpatialIndex<Entity>;
+  /** Nav-op seam (design-004 §7): forget every last-known AABB so the next
+   *  spatialSync pass repopulates the cleared index from the new Active set. */
+  clearCaches(): void;
 }
 
 export function createPickingSystems(
   world: World,
   index: SpatialIndex<Entity> = new SpatialIndex<Entity>(),
+  wires?: WirePickSource,
 ): PickingSystems {
   // Private last-known AABB cache — the compare-and-skip that keeps spatialSync
   // cheap while running every frame (it is the SpatialVersion writer).
@@ -81,6 +87,10 @@ export function createPickingSystems(
         const sh = batch.col(Size).h;
         for (const row of batch) {
           const e = batch.entity(row);
+          // Nav gating (design-004 §7): only ACTIVE widgets are hittable —
+          // container content indexes only inside its frame. Non-widget
+          // Position+Size entities (chrome handles) are frame-local already.
+          if (world.hasTag(e, WidgetEquipped) && !world.hasTag(e, Active)) continue;
           seen.add(e);
           const x = px[row] as number;
           const y = py[row] as number;
@@ -112,9 +122,11 @@ export function createPickingSystems(
     },
   );
 
-  /** THE narrow-phase, shared with the router's event-time pick (ops/point-pick). */
+  /** THE narrow-phase, shared with the router's event-time pick (ops/point-pick).
+   *  `wires` (M8) narrow-phases wire entries against their cached cubic; undefined
+   *  before the wire slice installs ⇒ wire index entries are skipped by pickTopAt. */
   const pickTop = (ctx: SystemCtx, wx: number, wy: number, rWorld: number): Entity | undefined =>
-    pickTopAt(ctx, index, wx, wy, rWorld);
+    pickTopAt(ctx, index, wx, wy, rWorld, wires);
 
   const picking = defineSystem(
     pointerQ,
@@ -160,5 +172,5 @@ export function createPickingSystems(
     { name: "picking", runIf: makeVersionGuard(world, [PointerVersion, SpatialVersion]) },
   );
 
-  return { spatialSync, picking, index };
+  return { spatialSync, picking, index, clearCaches: () => cache.clear() };
 }

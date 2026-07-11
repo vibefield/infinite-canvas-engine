@@ -24,6 +24,18 @@ export const POINTER_DEFAULTS = {
   hoverReleaseDeadBandPx: 4,
 } as const;
 
+/**
+ * Wire/port picking geometry (design-003 §3 wires-below-widgets; design-004 §6).
+ * `wirePickSlopPx` is added to the pointer radius (screen px, `/zoom` at use) so a
+ * thin bezier stays grab-able; `portIndexHalfWorld` is the half-extent of the tiny
+ * world AABB a materialized port occupies in the spatial index (design-004 §6 —
+ * ports are pickable but carry no Position/Size, so spatialSync never sees them).
+ */
+export const GRAPH_PICK_DEFAULTS = {
+  wirePickSlopPx: 8,
+  portIndexHalfWorld: 6,
+} as const;
+
 /** SnapConfig resource defaults (design-005 §4 engine facade). */
 export const SNAP_DEFAULTS = {
   enabled: true,

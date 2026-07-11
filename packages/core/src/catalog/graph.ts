@@ -12,6 +12,7 @@
  */
 import { enumOf, field } from "@vibecook/strata-ecs";
 import { defineComponent, defineRelation, defineTag } from "../schema/meta";
+import { definePrefab, init } from "../schema/prefab";
 
 // --- durable wire prefab: a reified edge entity (relations carry no data) ---
 
@@ -55,3 +56,15 @@ export const Accepts = defineComponent("Accepts", { list: field("string", { defa
 
 /** JSON list of provides-keys this widget offers to containers. */
 export const Provides = defineComponent("Provides", { list: field("string", { default: "[]" }) });
+
+/**
+ * The durable wire prefab (design-001 §5.3): PrefabId "wire" + WirePorts;
+ * Wire tag + WireFrom/WireTo edges ride the spawn (doc commit sink executes
+ * connect intents). Registered here so the version gate stamps
+ * `engine.pack.wire.<v>` like every durable pack.
+ */
+export const WirePrefab = definePrefab("wire", {
+  store: "durable",
+  version: 1,
+  components: [init(WirePorts, { from: "", to: "" })],
+});
