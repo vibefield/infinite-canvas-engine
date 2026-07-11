@@ -28,6 +28,6 @@
     "react": "^19",
     "three": "^0.185.0",
     "vitest": "^3",
-    "@vibecook/strata-ecs": "0.3.0"
+    "@vibecook/strata-ecs": "0.5.0"
   }
 }

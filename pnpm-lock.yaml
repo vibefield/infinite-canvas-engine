@@ -141,8 +141,8 @@ importers:
         specifier: workspace:*
         version: link:../kernel
       '@vibecook/strata-ecs':
-        specifier: 0.3.0
-        version: 0.3.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.5.0
+        version: 0.5.0(loro-crdt@1.13.6)(react@19.2.7)
       loro-crdt:
         specifier: ^1.13.6
         version: 1.13.6
@@ -198,8 +198,8 @@ importers:
         specifier: ^0.185.0
         version: 0.185.1
       '@vibecook/strata-ecs':
-        specifier: 0.3.0
-        version: 0.3.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.5.0
+        version: 0.5.0(loro-crdt@1.13.6)(react@19.2.7)
       react:
         specifier: ^19
         version: 19.2.7
@@ -838,8 +838,8 @@ packages:
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
-  '@vibecook/strata-ecs@0.3.0':
-    resolution: {integrity: sha512-TSbPIMurx39wTCPOTN/xgyHwoPIo5JmwMxjI7EuGL820nzPPa5KAyfTiLIsZJ2BwkDt6zH9MCs/jxR2/suk9Cg==}
+  '@vibecook/strata-ecs@0.5.0':
+    resolution: {integrity: sha512-fNWtYHDgcYOGKLLaddvwHu2Tja4qTn8IEzq6kSYSjPswpK+//6Zb5QGYl6uhyX1SwwQbhuRo0NSM8XF4vgL/TQ==}
     engines: {node: '>=20'}
     peerDependencies:
       loro-crdt: '>=1'
@@ -1896,7 +1896,7 @@ snapshots:
     dependencies:
       '@types/node': 26.1.1
 
-  '@vibecook/strata-ecs@0.3.0(loro-crdt@1.13.6)(react@19.2.7)':
+  '@vibecook/strata-ecs@0.5.0(loro-crdt@1.13.6)(react@19.2.7)':
     optionalDependencies:
       loro-crdt: 1.13.6
       react: 19.2.7
