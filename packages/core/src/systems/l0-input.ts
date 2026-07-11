@@ -21,12 +21,11 @@
  * still land, but carry the one-tick `HandledByWidget` tag L1/L2 read (the
  * pinned widget-event contract, design-002 §8).
  */
-import type { Entity, System, World } from "@vibecook/strata-ecs";
-import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
+import type { Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
 import { screenToWorld } from "@ice/kernel";
 import {
   Camera,
-  CanvasSurface,
   HandledByWidget,
   Keyboard,
   LocalPointer,
@@ -47,7 +46,6 @@ import { POINTER_DEFAULTS } from "../settings/defaults";
 
 const pointerQ = defineQuery([Pointer, PointerScreen]);
 const touchLifecycleQ = defineQuery([Pointer, PointerButtons]);
-const anchorQ = defineQuery([CanvasSurface]);
 
 function radiusFor(device: InputEvent["device"]): number {
   if (device === "touch") return POINTER_DEFAULTS.radiusTouchPx;
@@ -76,7 +74,7 @@ interface Sample {
 
 export interface L0Systems {
   pointerLifecycle: System;
-  pointerIngest: System;
+  pointerIngest: TickSystem;
   pointerWorldSync: System;
 }
 
@@ -121,14 +119,10 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
     },
   );
 
-  const pointerIngest = defineSystem(
-    anchorQ,
-    (b, ctx) => {
-      // A tag-only query structurally matches EVERY archetype, and strata invokes
-      // the body per archetype chunk — including zero-matched-row ones. Guard to
-      // the one batch actually holding the canvas entity so the drain runs
-      // exactly once per frame BY CONSTRUCTION, not by drain-idempotence.
-      if (b.count === 0) return;
+  // Tick system (strata 0.5.0): the drain runs exactly once per frame by
+  // construction — the scheduler owns cardinality, no anchor query needed.
+  const pointerIngest = defineTickSystem(
+    (ctx) => {
       const events = queue.drain();
       if (events.length === 0) return;
 

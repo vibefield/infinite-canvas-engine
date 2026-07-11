@@ -4,9 +4,9 @@
  * Two systems, run in this order:
  *
  * `spatialSync` maintains the kernel `SpatialIndex` over every Position+Size
- * entity (widgets AND HandleSpec chrome — both carry a world AABB). It is
- * anchored on the CanvasSurface query (exactly one entity, guaranteed by
- * install) so the body runs EVERY frame — it is the writer that bumps
+ * entity (widgets AND HandleSpec chrome — both carry a world AABB). It is a
+ * TICK system (strata 0.5.0) so the body runs EVERY frame — it is the writer
+ * that bumps
  * `SpatialVersion`, and its own writes have no version stamp to gate on
  * (design-002 §4), so it must run eagerly and stays cheap via a private
  * last-known cache: an entity is re-`upsert`ed only when its AABB actually
@@ -29,8 +29,8 @@
  * (design-001 §4). Relations are written change-only (design-002 §4 hygiene).
  * Wires/ports are M8 — skipped.
  */
-import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
-import { defineQuery, defineSystem, Not } from "@vibecook/strata-ecs";
+import type { Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem, defineTickSystem, Not } from "@vibecook/strata-ecs";
 import { SpatialIndex, screenToWorld, type CameraState } from "@ice/kernel";
 import {
   Camera,
@@ -56,7 +56,7 @@ const posSizeQ = defineQuery([Position, Size]);
 const pointerQ = defineQuery([Pointer, PointerScreen, PointerRadius, LocalPointer, Not(HandledByWidget)]);
 
 export interface PickingSystems {
-  spatialSync: System;
+  spatialSync: TickSystem;
   picking: System;
   /** The shared spatial index — snap/drop/marquee consume the SAME instance. */
   index: SpatialIndex<Entity>;
@@ -70,16 +70,11 @@ export function createPickingSystems(
   // cheap while running every frame (it is the SpatialVersion writer).
   const cache = new Map<Entity, { x: number; y: number; w: number; h: number }>();
 
-  const spatialSync = defineSystem(
-    canvasSurfaceQ, // anchor: the CanvasSurface batch ⇒ the body runs every frame (despawn sweep is total)
-    (b, _ctx) => {
-      // A tag-only query has no required component, so strata invokes the body once per ARCHETYPE
-      // (empty batches included). Do the (idempotent) work only for the batch holding the canvas
-      // surface — exactly once per frame.
-      if (b.count === 0) return;
+  const spatialSync = defineTickSystem(
+    (ctx) => {
       const seen = new Set<Entity>();
       let changed = false;
-      world.query(posSizeQ).each((batch) => {
+      ctx.query(posSizeQ).each((batch) => {
         const px = batch.col(Position).x;
         const py = batch.col(Position).y;
         const sw = batch.col(Size).w;
@@ -110,9 +105,9 @@ export function createPickingSystems(
     },
     {
       name: "spatialSync",
-      // The inner world.query col() reads are charged to THIS system by access
-      // enforcement — the anchor query carries no components, so the default
-      // read set is empty and the columns must be declared explicitly.
+      // The inner ctx.query col() reads are charged to THIS system by access
+      // enforcement — a tick system has no query, so the default read set is
+      // empty and the columns must be declared explicitly.
       access: { read: [Position, Size] },
     },
   );

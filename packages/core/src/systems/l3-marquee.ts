@@ -18,8 +18,8 @@
  * Camera staleness: both corners convert with the CURRENT camera, so a mid-
  * marquee camera move re-projects the rect (accepted — design-002 §2).
  */
-import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
-import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
+import type { Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
 import { type CameraState, type SpatialIndex, screenToWorld } from "@ice/kernel";
 import {
   Camera,
@@ -53,7 +53,7 @@ export interface MarqueeBuffer {
 export function createMarqueeBehavior(
   world: World,
   index: SpatialIndex<Entity>,
-): System & { buffer: MarqueeBuffer } {
+): TickSystem & { buffer: MarqueeBuffer } {
   const buffer: MarqueeBuffer = { rect: null, hits: [] };
 
   const queryHits = (ctx: SystemCtx, rx: number, ry: number, rw: number, rh: number): Entity[] => {
@@ -86,13 +86,11 @@ export function createMarqueeBehavior(
     if (changed) bumpVersion(world, SelectionVersion);
   };
 
-  const sys = defineSystem(
-    canvasSurfaceQ,
-    (b, ctx) => {
-      // A tag-only query has no required component, so strata invokes the body once per ARCHETYPE.
-      // Run only for the batch holding the canvas surface — exactly once per frame (commitSelection
-      // is NOT idempotent within a tick: its tags defer, so a re-run would re-bump SelectionVersion).
-      if (b.count === 0) return;
+  // Tick system (strata 0.5.0): exactly once per frame by construction
+  // (commitSelection is NOT idempotent within a tick: its tags defer, so a
+  // re-run would re-bump SelectionVersion).
+  const sys = defineTickSystem(
+    (ctx) => {
       const cam = ctx.getResource(Camera) ?? IDENTITY_CAM;
       const canvas = ctx.firstOf(canvasSurfaceQ);
       let active = false;

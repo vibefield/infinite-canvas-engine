@@ -1,4 +1,15 @@
-# Petition 5 — Strata System Execution Semantics (candidate; M7 field finding)
+# Petition 5 — Strata System Execution Semantics (LANDED in strata-ecs 0.5.0, 2026-07-11)
+
+> **LANDED**: the full minimal conforming implementation AND the roadmap's
+> attributed in-body walk in one release — `defineTickSystem` (P2),
+> `ctx.query(q).each` with col()-read charging + write stamping keyed to
+> system identity (P1/P3), zero-match chunks never delivered (P4; every Batch
+> now has count ≥ 1). One typed breaking change (`Phase.systems` widened) —
+> source-compatible for the engine. Engine migrated: 8 anchor systems
+> (pointerIngest, spatialSync, cameraControl, cameraInertia, widgetMount,
+> selectionChrome, marquee, measureIngest) are tick systems; every
+> `b.count === 0` guard and the mount reconcile's dedupe flag are deleted.
+> Original petition below.
 
 Strata currently conflates system execution with query iteration. A scheduled
 system body is invoked once per visited archetype — including empty results —

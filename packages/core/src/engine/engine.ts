@@ -19,7 +19,8 @@
  * opt-in — `world.observe` costs a `performance.now()` pair per system when
  * armed, so benches leave it off.
  */
-import type { System, World } from "@vibecook/strata-ecs";
+import type { World } from "@vibecook/strata-ecs";
+import type { AnySystem } from "./pipeline";
 import { setFrameInfo } from "./frame-info";
 import { createPipelineRegistry, type PhaseGroup } from "./pipeline";
 import { createReflectorRegistry, type ReflectorDef } from "./reflectors";
@@ -50,7 +51,7 @@ export interface EngineOpts {
 export interface Engine {
   readonly world: World;
   /** Register systems into a canonical phase group. Returns a remover. */
-  addSystems(group: PhaseGroup, ...systems: readonly System[]): () => void;
+  addSystems(group: PhaseGroup, ...systems: readonly AnySystem[]): () => void;
   /** Register a post-notify output reflector (design-002 §5). Returns an unregister. */
   registerReflector(def: ReflectorDef): () => void;
   /** Register a publish-step hook (post-tick, pre-notify presence I/O). Returns a remover. */

@@ -43,11 +43,10 @@
  *   measure loop converges (§2). The stored w,h are the effective size at the
  *   tier transition (what the tier "was computed from").
  */
-import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
-import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
+import type { Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
 import {
   Camera,
-  CanvasSurface,
   HandleSpec,
   MeasuredSize,
   Position,
@@ -110,10 +109,9 @@ function handleRect(anchor: HandleAnchor, b: Rect, worldSize: number): Rect {
   return { x: p.x - worldSize / 2, y: p.y - worldSize / 2, w: worldSize, h: worldSize };
 }
 
-const canvasSurfaceQ = defineQuery([CanvasSurface]);
 const selectedQ = defineQuery([Selected]);
 
-export function createSelectionChromeSystem(world: World): System {
+export function createSelectionChromeSystem(world: World): TickSystem {
   // Pool state (a derived cache, not world state): the box + 8 handles, aligned
   // to HANDLE_ANCHORS, plus the last-written geometry for change-only writes.
   let boxEntity: Entity | undefined;
@@ -132,13 +130,10 @@ export function createSelectionChromeSystem(world: World): System {
     handleCache.clear();
   };
 
-  const sys = defineSystem(
-    canvasSurfaceQ,
-    (b, ctx) => {
-      // Anchor pattern: tag-only query matches every archetype; run once for the
-      // batch holding the canvas surface (spawn/destroy are NOT idempotent).
-      if (b.count === 0) return;
-
+  // Tick system (strata 0.5.0): exactly one pass per frame by construction
+  // (spawn/destroy are NOT idempotent — cardinality is the scheduler's now).
+  const sys = defineTickSystem(
+    (ctx) => {
       // Union bbox over the selection's positioned entities.
       let minX = Number.POSITIVE_INFINITY;
       let minY = Number.POSITIVE_INFINITY;

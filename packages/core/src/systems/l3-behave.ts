@@ -207,7 +207,15 @@ export function createSelectMoveBehaviors(
         }
       }
     },
-    { name: "moveBehavior", access: { write: [Position, StackZ] } },
+    {
+      name: "moveBehavior",
+      // Position is co-written with resizeBehavior in ctl:behave BY DESIGN
+      // (design-003 §5 in-phase order) and row-disjoint by construction
+      // (dragRoute: RoutedMove xor RoutedResize) — attested (strata 0.4.0,
+      // petition 3a), so the writer-pair advisory stays quiet here and loud
+      // for real mistakes.
+      access: { write: [Position, StackZ], orderIndependent: [Position] },
+    },
   );
 
   return { selectBehavior, moveBehavior };

@@ -1,4 +1,13 @@
-# Petition 4 — DEV write hook / public write version (candidate; M7 field finding)
+# Petition 4 — DEV write hook (LANDED in strata-ecs 0.4.0, 2026-07-11)
+
+> **LANDED**: Option A, better than asked — `world.devOnWrite(cb)` is
+> pre-mutation with throws PROPAGATING (a clean veto), fired from chokepoints
+> downstream of bound references, covering routes the shadows missed (doc
+> transactions, sync drains, undo echoes) and any future mutator; plus
+> `ReadonlyWorld`/`WorldMutatorName` as the compile-time half. Engine
+> migrated: the render write trap is one persistent registration + an armed
+> flag; the 14 mutator shadows are deleted; `enabled` remains the app-side
+> production gate per the 0.4.0 dev-mode note. Original petition below.
 
 ## The problem being solved
 

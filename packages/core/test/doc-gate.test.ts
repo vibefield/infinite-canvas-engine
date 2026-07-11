@@ -5,6 +5,7 @@
  * REAL `LoroDoc`s, and `openDocSession`'s never-throws contract end to end.
  */
 import { LoroDoc } from "loro-crdt";
+import { createDurableStore } from "@vibecook/strata-ecs/durable";
 import { createWorld, defineQuery } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
@@ -142,7 +143,7 @@ describe("version gate: verdicts against real LoroDocs", () => {
 
   it("stampEngineMeta'd doc -> ok", () => {
     const doc = new LoroDoc();
-    stampEngineMeta(doc);
+    stampEngineMeta(createDurableStore(doc));
     const report = readDocVersionReport(doc);
     expect(report.docSchema).toBe(ENGINE_SCHEMA_VERSION);
     expect(gateVerdict(report)).toBe("ok");
@@ -150,7 +151,7 @@ describe("version gate: verdicts against real LoroDocs", () => {
 
   it("an extra HIGHER engine.schema marker (newer app wrote it) -> readOnly", () => {
     const doc = new LoroDoc();
-    stampEngineMeta(doc);
+    stampEngineMeta(createDurableStore(doc));
     const meta = doc.getMap("meta");
     meta.set(`engine.schema.${ENGINE_SCHEMA_VERSION + 1}`, true);
     doc.commit();
@@ -161,7 +162,7 @@ describe("version gate: verdicts against real LoroDocs", () => {
 
   it("a pack marker for an id with NO local registration counts as newerInDoc -> readOnly", () => {
     const doc = new LoroDoc();
-    stampEngineMeta(doc); // docSchema matches local exactly
+    stampEngineMeta(createDurableStore(doc)); // docSchema matches local exactly
     const meta = doc.getMap("meta");
     meta.set("engine.pack.gate:ghost.5", true); // no local prefab named "gate:ghost"
     doc.commit();

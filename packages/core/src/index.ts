@@ -18,6 +18,7 @@ export {
   createWorld,
   defineQuery,
   defineSystem,
+  defineTickSystem,
   enumOf,
   field,
 } from "@vibecook/strata-ecs";
@@ -33,6 +34,7 @@ export type {
   System,
   SystemCtx,
   Tag,
+  TickSystem,
   World,
 } from "@vibecook/strata-ecs";
 
@@ -69,7 +71,7 @@ export { instantiate, type EphSpawner, type SpawnTarget } from "./engine/instant
 // The frame contract (design-002): FrameInfo clock, phase-group pipeline,
 // reflector registry, and the engine facade that owns step(now).
 export { FrameInfo, setFrameInfo } from "./engine/frame-info";
-export { createPipelineRegistry, PHASE_GROUPS, type PhaseGroup, type PipelineRegistry } from "./engine/pipeline";
+export { createPipelineRegistry, PHASE_GROUPS, type AnySystem, type PhaseGroup, type PipelineRegistry } from "./engine/pipeline";
 export {
   createReflectorRegistry,
   type ReflectorDef,

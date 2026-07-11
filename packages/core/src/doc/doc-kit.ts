@@ -154,11 +154,13 @@ function makeSession(
 /** Create + attach a fresh document (local-first by construction, design-001 §6.3). */
 export function createDocSession(world: World, opts: DocSessionOpts = {}): DocSession {
   const doc = new LoroDoc();
-  stampEngineMeta(doc);
+  // Store FIRST, then stamp through its sanctioned meta path (strata 0.4.0),
+  // then attach — metaTransaction is callable pre-attach by contract.
   const store = createDurableStore(
     doc,
     opts.maxUndoSteps !== undefined ? { maxUndoSteps: opts.maxUndoSteps } : undefined,
   );
+  stampEngineMeta(store);
   const attachment = attachDurable(world, store);
   return makeSession(world, store, attachment, false);
 }

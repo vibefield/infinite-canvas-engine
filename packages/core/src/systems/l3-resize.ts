@@ -180,6 +180,10 @@ export function createResizeBehavior(world: World, sink: CommitSink): System {
         }
       }
     },
-    { name: "resizeBehavior", access: { write: [Position, Size] } },
+    {
+      name: "resizeBehavior",
+      // Position co-write attested — see moveBehavior (row-disjoint routes).
+      access: { write: [Position, Size], orderIndependent: [Position] },
+    },
   );
 }

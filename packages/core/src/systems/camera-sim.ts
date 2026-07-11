@@ -7,10 +7,9 @@
  * `cameraControl` is a PURE value consumer: it reads active camera-gesture
  * recognizers and writes ONLY the `Camera` resource (resources are access-exempt,
  * design-003 §10 — hence no `access.write`). It NEVER touches an entity's
- * components. It is driven off the guaranteed-singleton `CanvasSurface` entity so
- * the body runs EXACTLY ONCE per frame (same idiom as `pointerIngest`): the
- * camera is a whole-frame aggregate over every active camera gesture, written
- * once, change-guarded (an unconditional write would churn `CameraVersion` and
+ * components. It is a TICK system (strata 0.5.0): the scheduler runs the body
+ * EXACTLY once per frame — the camera is a whole-frame aggregate over every
+ * active camera gesture, written once, change-guarded (an unconditional write would churn `CameraVersion` and
  * wake the plane reflector every frame). Camera writes go through the closed-over
  * `world.setResource` (no `ctx` resource API; verified legal in systems).
  *
@@ -30,12 +29,11 @@
  * On pan JustEnded, inertia is seeded from the Drag's release velocity.
  */
 import { field } from "@vibecook/strata-ecs";
-import type { Entity, System, World } from "@vibecook/strata-ecs";
-import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
+import type { Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
 import { zoomAtPoint } from "@ice/kernel";
 import {
   Camera,
-  CanvasSurface,
   Drag,
   GesturePhases,
   LocalPointer,
@@ -74,12 +72,11 @@ export const CameraInertia = defineResource(
 );
 
 export interface CameraSystems {
-  cameraControl: System;
-  cameraInertia: System;
+  cameraControl: TickSystem;
+  cameraInertia: TickSystem;
   tweenSystem: System;
 }
 
-const surfaceQ = defineQuery([CanvasSurface]);
 const panDragQ = defineQuery([Drag, RoutedPan]);
 const wheelPanQ = defineQuery([WheelPan]);
 const wheelZoomQ = defineQuery([WheelZoom]);
@@ -108,15 +105,13 @@ export function createCameraSystems(world: World): CameraSystems {
   // captured on the attach frame. Cleaned on arrival.
   const tweenStart = new Map<Entity, { x: number; y: number }>();
 
-  const cameraControl = defineSystem(
-    surfaceQ,
-    (b) => {
-      // Tag-only anchor query: the body runs once per ARCHETYPE (empty batches
-      // included) — do the whole-frame aggregate only for the batch holding
-      // the surface (same idiom as pointerIngest). Without this guard the
-      // non-idempotent integrations (wheel pan, zoom) applied N-archetypes×
-      // per frame — caught by the wheel-pan direction trace (2026-07-10).
-      if (b.count === 0) return;
+  // Tick system (strata 0.5.0, petition 5): the scheduler owns cardinality —
+  // the whole-frame aggregate runs EXACTLY once per frame by construction.
+  // (Pre-0.5.0 this was a CanvasSurface-anchored chunk system; a missing
+  // count guard multiplied the non-idempotent integrations N-archetypes× —
+  // caught by the wheel-pan direction trace, 2026-07-10.)
+  const cameraControl = defineTickSystem(
+    (ctx) => {
       const cam0 = world.getResource(Camera) ?? CAMERA_ZERO;
       let x = cam0.x;
       let y = cam0.y;
@@ -124,7 +119,7 @@ export function createCameraSystems(world: World): CameraSystems {
       let anyActive = false;
 
       // 1) RoutedPan drags — per-frame delta at CURRENT zoom (design decision 14).
-      world.query(panDragQ).each((b) => {
+      ctx.query(panDragQ).each((b) => {
         for (const r of b) {
           const rec = b.entity(r);
           if (world.hasTag(rec, P.tags.Active)) {
@@ -150,7 +145,7 @@ export function createCameraSystems(world: World): CameraSystems {
       // 2) WheelPan — per-tick deltas (wheelSystem zeroes them on silent frames).
       // += : scroll direction is travel direction (see module note). The DRAG
       // pan above keeps -= (grab-the-canvas) — the two are deliberately opposed.
-      world.query(wheelPanQ).each((b) => {
+      ctx.query(wheelPanQ).each((b) => {
         for (const r of b) {
           const rec = b.entity(r);
           if (!world.hasTag(rec, P.tags.Active)) continue;
@@ -163,7 +158,7 @@ export function createCameraSystems(world: World): CameraSystems {
       });
 
       // 3) WheelZoom — anchored zoom about the (live) wheel anchor.
-      world.query(wheelZoomQ).each((b) => {
+      ctx.query(wheelZoomQ).each((b) => {
         for (const r of b) {
           const rec = b.entity(r);
           if (!world.hasTag(rec, P.tags.Active)) continue;
@@ -183,7 +178,7 @@ export function createCameraSystems(world: World): CameraSystems {
       });
 
       // 4) Pinch — zoom by the spread ratio, anchored at the live centroid.
-      world.query(pinchQ).each((b) => {
+      ctx.query(pinchQ).each((b) => {
         for (const r of b) {
           const rec = b.entity(r);
           if (!world.hasTag(rec, P.tags.Active)) continue;
@@ -215,16 +210,14 @@ export function createCameraSystems(world: World): CameraSystems {
     { name: "cameraControl" },
   );
 
-  const cameraInertia = defineSystem(
-    surfaceQ,
-    (b) => {
-      if (b.count === 0) return; // anchor idiom — see cameraControl
+  const cameraInertia = defineTickSystem(
+    (ctx) => {
       const inertia = world.getResource(CameraInertia);
       if (inertia === undefined || (inertia.vx === 0 && inertia.vy === 0)) return;
 
       // Touch-to-stop: any pointer going down this frame kills inertia dead (v2).
       let stopped = false;
-      world.query(downPointerQ).each((b) => {
+      ctx.query(downPointerQ).each((b) => {
         if (b.count > 0) stopped = true;
       });
       if (stopped) {

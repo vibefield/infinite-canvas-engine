@@ -1,54 +1,46 @@
 /**
  * The zero-render→ECS-writes DEV assertion (M7 exit criterion; design-004 §3
  * fix #3). While a compositor frame pass runs — including island paints and
- * `useIslandFrame` callbacks — every world MUTATOR throws with attribution.
+ * `useIslandFrame` callbacks — every world mutation throws with attribution.
  *
- * Mechanism: own-property shadows over the world instance's mutating methods
- * for the duration of the pass, removed in `end()` (the prototype methods
- * return untouched). This traps OUR strata instance's public surface, not
- * R3F internals (probing those is banned). strata 0.3.0 exposes no write
- * hook or public write-version counter — petition candidate recorded in
- * docs/strata-petitions.md; when one ships this becomes observation-only.
+ * strata 0.4.0 (petition 4 LANDED): one persistent `world.devOnWrite`
+ * registration + an armed flag. The hook is DEV-only, synchronous, and
+ * PRE-MUTATION with throws propagating to the mutator's caller — so a throw
+ * while armed is a clean veto whose stack names the offender. Fired from
+ * strata's internal chokepoints, it covers every route the old own-property
+ * mutator shadows could miss: bound/destructured method references, document
+ * transactions, sync/attach drains, undo echoes, and any mutator added
+ * upstream later. (Raw `batch.col()` column pokes remain the documented
+ * carve-out — no chokepoint exists by design.)
  *
- * DEV-only by construction: create it with `enabled: false` (the default in
- * production) and both methods are no-ops.
+ * `enabled` is the app-side production gate the 0.4.0 notes ask for: in an
+ * un-shimmed browser production bundle strata's own DEV flag can evaluate
+ * true, so registration is gated HERE (default off; demos/traces opt in).
  */
 import type { World } from "@ice/core";
 
-/** Every public mutator on the strata World surface (0.3.0, API-verified). */
-const MUTATORS = [
-  "spawn",
-  "destroy",
-  "addComponent",
-  "removeComponent",
-  "addTag",
-  "removeTag",
-  "setRelation",
-  "addRelation",
-  "removeRelation",
-  "setResource",
-  "updateResource",
-  "edit",
-  "import",
-  "reset",
-] as const;
-
 export interface RenderWriteTrap {
-  /** Arm the trap (idempotent within a pass is a bug — begin twice throws). */
+  /** Arm the trap (begin twice without end is a bug — throws). */
   begin(): void;
   /** Disarm; always call in `finally`. */
   end(): void;
+  /** Unregister the hook entirely (bridge teardown). */
+  dispose(): void;
   readonly enabled: boolean;
 }
 
 export function createRenderWriteTrap(world: World, enabled: boolean): RenderWriteTrap {
   let armed = false;
+  let unregister: (() => void) | null = null;
 
-  const throwFor = (name: string) => () => {
-    throw new Error(
-      `ice: world.${name}() called during the GL render pass — the render path never writes ECS (design-004 §3). Move the write to a system, an input fact, or an app op OUTSIDE useIslandFrame/render.`,
-    );
-  };
+  if (enabled) {
+    unregister = world.devOnWrite((kind) => {
+      if (!armed) return;
+      throw new Error(
+        `ice: world mutation (${kind}) during the GL render pass — the render path never writes ECS (design-004 §3). Move the write to a system, an input fact, or an app op OUTSIDE useIslandFrame/render.`,
+      );
+    });
+  }
 
   return {
     enabled,
@@ -56,25 +48,14 @@ export function createRenderWriteTrap(world: World, enabled: boolean): RenderWri
       if (!enabled) return;
       if (armed) throw new Error("ice: render write trap begin() while already armed.");
       armed = true;
-      const w = world as unknown as Record<string, unknown>;
-      for (const name of MUTATORS) {
-        if (typeof w[name] === "function") {
-          Object.defineProperty(w, name, {
-            value: throwFor(name),
-            configurable: true,
-            writable: true,
-          });
-        }
-      }
     },
     end() {
-      if (!enabled || !armed) return;
       armed = false;
-      const w = world as unknown as Record<string, unknown>;
-      for (const name of MUTATORS) {
-        // Remove the own-property shadow; the prototype method resurfaces.
-        if (Object.hasOwn(w, name)) delete w[name];
-      }
+    },
+    dispose() {
+      armed = false;
+      unregister?.();
+      unregister = null;
     },
   };
 }

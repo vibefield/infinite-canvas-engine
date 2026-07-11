@@ -13,7 +13,10 @@
  * registration-time coupling between groups).
  */
 import { phase } from "@vibecook/strata-ecs";
-import type { Pipeline, System } from "@vibecook/strata-ecs";
+import type { Pipeline, System, TickSystem } from "@vibecook/strata-ecs";
+
+/** Either system form (strata 0.5.0): chunk-bodied or once-per-dispatch tick. */
+export type AnySystem = System | TickSystem;
 
 /** The eleven strata phases, in run order (design-002 §2 table). */
 export const PHASE_GROUPS = [
@@ -34,7 +37,7 @@ export type PhaseGroup = (typeof PHASE_GROUPS)[number];
 
 export interface PipelineRegistry {
   /** Append systems to a group (run order = registration order). Returns a remover (HMR). */
-  add(group: PhaseGroup, ...systems: readonly System[]): () => void;
+  add(group: PhaseGroup, ...systems: readonly AnySystem[]): () => void;
   /**
    * The pipeline value for this frame (design-002 §1: "pipeline is a value,
    * rebuilt per frame"). Cached until the registry changes; empty groups are
@@ -44,7 +47,7 @@ export interface PipelineRegistry {
 }
 
 export function createPipelineRegistry(): PipelineRegistry {
-  const groups = new Map<PhaseGroup, System[]>();
+  const groups = new Map<PhaseGroup, AnySystem[]>();
   let cached: Pipeline | undefined;
 
   return {

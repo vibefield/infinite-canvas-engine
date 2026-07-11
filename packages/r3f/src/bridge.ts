@@ -206,6 +206,7 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
     uninstall() {
       removeReflector();
       removeWorldObserver();
+      renderAssert.dispose();
       islands.clear();
       frameCbs.clear();
       state.clear();

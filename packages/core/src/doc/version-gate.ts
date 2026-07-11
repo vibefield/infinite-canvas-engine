@@ -8,13 +8,13 @@
  * `doc.getMap("meta")` on the RAW LoroDoc after import, BEFORE
  * `createDurableStore`/`attachDurable` — an incompatible doc never projects.
  *
- * Stamps commit with strata's own meta origin ("strata-meta") so the
- * UndoManager excludes them exactly like the docId stamp. Remote peers'
- * adapters warn ONCE that this commit is untagged (no `strata:<n>` message —
- * we are a "foreign writer" to the batch protocol, deliberately: faking the
- * tag would corrupt batch-boundary bookkeeping). Harmless for write-once
- * markers; a warn-suppression for META_ORIGIN commits is a strata petition
- * candidate (docs/strata-petitions.md).
+ * Stamps go through `store.metaTransaction` (strata 0.4.0 — petition 3b
+ * LANDED): the commit is properly tagged (peers no longer warn about an
+ * untagged foreign writer), excluded from undo/redo, and invisible to
+ * observers. Same underlying `meta` root map and raw keys as the pre-0.4.0
+ * raw-doc stamps, so docs stamped by either path read identically here —
+ * and importers also stopped warning about metadata-only commits from
+ * before the API, so legacy docs are quiet too.
  *
  * M5 gate policy: exact schema + no doc-side pack NEWER than local ⇒ ok;
  * anything else ⇒ readOnly (or reject via policy). The migrate verdict (older
@@ -22,10 +22,9 @@
  * already carries it so the facade policy hook is stable.
  */
 import type { LoroDoc } from "loro-crdt";
+import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import { prefabs } from "../schema/prefab";
 import { ENGINE_SCHEMA_VERSION } from "./envelope";
-
-const META_ORIGIN = "strata-meta"; // mirrors strata durable's constant (loro-snapshot.ts)
 
 const SCHEMA_PREFIX = "engine.schema.";
 const PACK_PREFIX = "engine.pack.";
@@ -46,18 +45,22 @@ export interface DocVersionReport {
 
 export type GateVerdict = "ok" | "readOnly" | "migrate" | "reject";
 
-/** Stamp the engine markers on a raw doc (create path; idempotent write-once). */
-export function stampEngineMeta(doc: LoroDoc): void {
-  const meta = doc.getMap("meta");
-  const stamp = (key: string): void => {
-    if (meta.get(key) === undefined) meta.set(key, true);
-  };
-  stamp(`${SCHEMA_PREFIX}${ENGINE_SCHEMA_VERSION}`);
-  for (const p of prefabs.all()) {
-    if (p.store !== "durable") continue;
-    stamp(`${PACK_PREFIX}${p.id}.${p.version ?? 1}`);
-  }
-  doc.commit({ origin: META_ORIGIN });
+/**
+ * Stamp the engine markers through the store's sanctioned meta path (create
+ * path; idempotent write-once; callable BEFORE attach — the order is
+ * `createDurableStore(doc)` first, then stamp, then `attachDurable`).
+ */
+export function stampEngineMeta(store: DurableStore): void {
+  store.metaTransaction((meta) => {
+    const stamp = (key: string): void => {
+      if (meta.get(key) === undefined) meta.set(key, true);
+    };
+    stamp(`${SCHEMA_PREFIX}${ENGINE_SCHEMA_VERSION}`);
+    for (const p of prefabs.all()) {
+      if (p.store !== "durable") continue;
+      stamp(`${PACK_PREFIX}${p.id}.${p.version ?? 1}`);
+    }
+  });
 }
 
 /** Read the marker keys off a raw (imported, unattached) doc and compare. */

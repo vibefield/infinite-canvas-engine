@@ -1,4 +1,12 @@
-# Petition 3 — Advisory-noise opt-outs (candidate; M4/M5/M6 field findings)
+# Petition 3 — Advisory-noise opt-outs (LANDED in strata-ecs 0.4.0, 2026-07-11)
+
+> **LANDED**: `SystemAccess.orderIndependent` (quiet only when EVERY co-writer
+> attests — an un-attested newcomer re-arms the advisory, better than the ask)
+> and `DurableStore.metaTransaction(fn)`/`MetaEditor` (ask option 1, the
+> sanctioned path; importers also stopped warning about metadata-only legacy
+> commits). Engine migrated: move/resize attest Position; `stampEngineMeta`
+> now takes the store (create order: store → stamp → attach). Original
+> petition below.
 
 Two unrelated DEV warnings that are each CORRECT in general and each a
 guaranteed false positive for this engine — so they fire on every boot /

@@ -10,7 +10,7 @@
  * Scheduled on the CANVAS-SURFACE anchor query (exactly one such entity,
  * guaranteed by install) — like `pointerIngest` — because the body must run on
  * frames where no measured widget exists yet, and a tag-only query matches every
- * archetype, so the `if (b.count === 0) return` guard runs the drain exactly
+ * archetype-independent (a tick system, strata 0.5.0): the drain runs exactly
  * once per frame BY CONSTRUCTION.
  *
  * Two guards keep a hidden widget's `display:none` collapse out of the rider
@@ -21,23 +21,19 @@
  * per entity so a same-tick pair never double-`addComponent`s (strata's
  * flush-time duplicate policy).
  */
-import type { Entity, System, World } from "@vibecook/strata-ecs";
-import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { CanvasSurface, MeasuredSize } from "../catalog";
+import type { Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
+import { MeasuredSize } from "../catalog";
 import type { MeasureQueue } from "../input/measure-queue";
-
-const anchorQ = defineQuery([CanvasSurface]);
 
 /** Sub-pixel dead-band (px): a change must exceed this on either axis to restamp. */
 const MEASURE_DEAD_BAND_PX = 1;
 
-export function createMeasureIngest(world: World, queue: MeasureQueue): System {
-  return defineSystem(
-    anchorQ,
-    (b, ctx) => {
-      // Tag-only anchor query matches every archetype; do the drain exactly once
-      // for the batch actually holding the canvas surface (mirrors pointerIngest).
-      if (b.count === 0) return;
+export function createMeasureIngest(world: World, queue: MeasureQueue): TickSystem {
+  // Tick system (strata 0.5.0): the drain runs exactly once per frame by
+  // construction (mirrors pointerIngest).
+  return defineTickSystem(
+    (ctx) => {
       const events = queue.drain();
       if (events.length === 0) return;
 
