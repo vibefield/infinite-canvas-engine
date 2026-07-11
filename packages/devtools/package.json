@@ -6,9 +6,13 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsup src/index.ts --format esm --dts"
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ice/core": "workspace:*"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.0.0"
   }
 }

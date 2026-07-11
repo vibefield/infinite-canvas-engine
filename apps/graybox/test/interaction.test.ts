@@ -1,6 +1,6 @@
 /**
  * Demo interaction path, headless: the FULL stack (`installInteractionStack` —
- * real picking + spatial index, exactly what main.ts boots) under the pan tool.
+ * real picking + spatial index, exactly what main.ts boots) under the select tool.
  * Proves what a hand-tester would check — tap selects a box, drag moves a box
  * and commits once, and a drag on empty canvas pans instead of moving anything.
  */
@@ -28,8 +28,12 @@ function stack() {
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
   const engine = createEngine(world);
   const sink = createRecordingCommitSink();
-  const core = installInteractionStack(engine, { sink, profiles: { pan: ["tap", "drag"] } });
-  world.setResource(ActiveTool, { id: "pan" });
+  // M10 tool-policy mechanization: the pan tool is a REAL hand tool now
+  // (widget drags pan, never move) — this rig runs the select tool like the
+  // demo's default, and the canvas-pan test uses the middle-button device
+  // convention (honored above tool policy).
+  const core = installInteractionStack(engine, { sink });
+  world.setResource(ActiveTool, { id: "select" });
 
   let now = 1000;
   const enq = (kind: "down" | "move" | "up", x: number, y: number, buttons: number, mods?: Partial<InputMods>) =>
@@ -81,11 +85,11 @@ describe("graybox demo interactions (real stack + app picking)", () => {
     const s = stack();
     const a = s.box(100, 100);
     const before = s.world.read(a, Position);
-    s.enq("down", 500, 500, 1); // world (500,500) — no box there → canvas capture → RoutedPan
+    s.enq("down", 500, 500, 4); // middle button: device pan convention → RoutedPan
     s.step();
-    s.enq("move", 520, 500, 1);
+    s.enq("move", 520, 500, 4);
     s.step(); // Active, RoutedPan
-    s.enq("move", 560, 500, 1);
+    s.enq("move", 560, 500, 4);
     s.step(); // camera pans; box is untouched
     const cam = s.world.getResource(Camera);
     expect(cam?.x).toBeLessThan(0); // panned right → camera.x drifts negative

@@ -198,6 +198,10 @@ importers:
       '@ice/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      happy-dom:
+        specifier: ^20.0.0
+        version: 20.10.6
 
   packages/dom:
     dependencies:
