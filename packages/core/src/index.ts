@@ -160,6 +160,11 @@ export {
   type GateVerdict,
 } from "./doc/version-gate";
 export { createDocCommitSink, createReadOnlyCommitSink } from "./doc/doc-commit-sink";
+// Durable undo/redo availability resource (strata plan-undo U2) — re-exported
+// so react's useUndoStatus takes the typed observeResource path (the import
+// wall forbids react reaching @vibecook/strata-ecs/durable directly).
+export { DurableUndoStatus } from "@vibecook/strata-ecs/durable";
+export type { DurableUndoStatusValue } from "@vibecook/strata-ecs/durable";
 export {
   createDocSession,
   openDocSession,
