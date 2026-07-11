@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Prevent browser gestures on the canvas (v1 index.css verbatim) */
+html,
+body {
+	overscroll-behavior: none;
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+:root {
+	--canvas-bg: #fafafa;
+	--canvas-dot: rgba(0, 0, 0, 0.16);
+}
+.dark {
+	--canvas-bg: #171717;
+	--canvas-dot: rgba(255, 255, 255, 0.08);
+}
