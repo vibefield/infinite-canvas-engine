@@ -30,14 +30,19 @@ import {
   GesturePhases,
   GestureSuspended,
   HadCapture,
+  HadRequiresFail,
+  HadSequence,
   HandledByWidget,
   LocalPointer,
   LongPress,
+  MultiTap,
   Pinch,
   Pointer,
   PointerButtons,
   PointerScreen,
   PointerWheel,
+  RequiresFail,
+  Sequence,
   SnapState,
   Simultaneous,
   Tap,
@@ -74,6 +79,8 @@ const longPressQ = defineQuery([LongPress, Not(GestureSuspended)]);
 const dragQ = defineQuery([Drag, Not(GestureSuspended)]);
 const pinchQ = defineQuery([Pinch]);
 const wheelKindQ = defineQuery([Any(WheelPan, WheelZoom)]);
+const pendingTapQ = defineQuery([Tap, GesturePhases.tags.Pending]);
+const pendingQ = defineQuery([Any(Tap, LongPress, Drag, Pinch), GesturePhases.tags.Pending]);
 
 const P = GesturePhases;
 
@@ -116,6 +123,8 @@ export interface L2Systems {
   dragSystem: System;
   pinchSystem: System;
   wheelSystem: System;
+  /** Resolves Pending `Sequence`/`RequiresFail` edges; last in `ctl:recognize`. */
+  dependencySystem: System;
 }
 
 export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2Deps): L2Systems {
@@ -179,6 +188,32 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         }
         const suspendedAtBirth = pinchPartner !== undefined;
 
+        // Multi-tap REJOIN (v2 findPendingTap): a down on a MultiTap target near a
+        // Pending tap's last down re-points that tap at the new pointer (count
+        // preserved) instead of spawning fresh. Edge-parked Pendings never rejoin.
+        let rejoined = false;
+        if (captureTarget !== undefined && ctx.has(captureTarget, MultiTap)) {
+          const mt = ctx.read(captureTarget, MultiTap);
+          ctx.query(pendingTapQ).each((pb) => {
+            for (const pr of pb) {
+              if (rejoined) return;
+              const cand = pb.entity(pr);
+              if (ctx.getRelation(cand, Captures) !== captureTarget) continue;
+              if (ctx.hasTag(cand, HadSequence) || ctx.hasTag(cand, HadRequiresFail)) continue;
+              if (ctx.read(cand, Tap).count >= mt.max) continue;
+              const d = ctx.read(cand, Down);
+              if (dist(screen.x, screen.y, d.x, d.y) > mt.slopPx) continue;
+              ctx.removeRelation(cand, Watches); // old finger lifted — re-point at the new one
+              ctx.addRelation(cand, Watches, pointer);
+              ctx.edit(cand).set(Down, { x: screen.x, y: screen.y, ms: now });
+              if (suspendedAtBirth) ctx.addTag(cand, GestureSuspended);
+              P.set(ctx, cand, "Possible"); // Pending → Possible; count preserved
+              rejoined = true;
+              return;
+            }
+          });
+        }
+
         const spawnSingle = (kind: SingleKindName): void => {
           const tags = suspendedAtBirth
             ? ([P.tags.Possible, GestureSuspended] as const)
@@ -220,7 +255,10 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
           }
         };
 
-        for (const kind of profile) spawnSingle(kind);
+        for (const kind of profile) {
+          if (kind === "tap" && rejoined) continue; // the rejoined Pending tap IS this down's tap
+          spawnSingle(kind);
+        }
 
         if (pinchPartner !== undefined) {
           const partnerScreen = ctx.read(pinchPartner, PointerScreen);
@@ -309,8 +347,11 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
           if (!suspenderAlive) ctx.removeTag(e, GestureSuspended);
         }
 
-        // Required-watches count (edges to despawned pointers auto-clear).
-        if (ctx.getRelations(e, Watches).length !== requiredWatches(ctx, e)) {
+        // Required-watches count (edges to despawned pointers auto-clear). A
+        // Pending recognizer is ALLOWED to outlive its watched pointer — a
+        // multi-tap awaiting the next tap, or an edge-parked recognizer before
+        // its source (v2 rule); only capture death cancels those (below).
+        if (!ctx.hasTag(e, P.tags.Pending) && ctx.getRelations(e, Watches).length !== requiredWatches(ctx, e)) {
           P.set(ctx, e, "Cancelled");
           continue;
         }
@@ -332,7 +373,24 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
       const now = ctx.getResource(FrameInfo)?.now ?? 0;
       for (const r of b) {
         const e = b.entity(r);
-        if (!ctx.hasTag(e, P.tags.Possible)) continue;
+        const pending = ctx.hasTag(e, P.tags.Pending);
+        if (!ctx.hasTag(e, P.tags.Possible) && !pending) continue;
+
+        if (pending) {
+          // Edge-parked Pending (Sequence/RequiresFail) belongs to the dependency
+          // system — never window-expire it here (v2 rule).
+          if (ctx.hasTag(e, HadSequence) || ctx.hasTag(e, HadRequiresFail)) continue;
+          // Multi-tap Pending: await a rejoin (recognizerSpawn) or the window closing.
+          const down = ctx.read(e, Down);
+          const cap = ctx.getRelation(e, Captures);
+          const windowMs =
+            cap !== undefined && ctx.has(cap, MultiTap)
+              ? ctx.read(cap, MultiTap).windowMs
+              : gs(ctx).multiTapWindowMs;
+          if (now - down.ms > windowMs) P.set(ctx, e, "Recognized"); // window closed → final count stands
+          continue;
+        }
+
         const pointer = ctx.getRelations(e, Watches)[0];
         if (pointer === undefined) continue; // integrity cancels next frame
         if (ctx.hasTag(pointer, WentCancelled)) {
@@ -346,15 +404,35 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
           P.set(ctx, e, "Failed");
           continue;
         }
-        const held = now - ctx.read(e, Tap).downAt;
+        // Hold measured from Down.ms, not Tap.downAt: a rejoined multi-tap rebases
+        // Down per tap while downAt keeps the FIRST down (the gesture's birth).
+        const held = now - down.ms;
         if (ctx.hasTag(pointer, WentUp)) {
-          P.set(ctx, e, held <= gs(ctx).tapMaxMs ? "Recognized" : "Failed");
+          if (held > gs(ctx).tapMaxMs) {
+            P.set(ctx, e, "Failed");
+            continue;
+          }
+          // Clean release — count it (v2): at the target count → Recognized now;
+          // under it → park Pending (never reaped) until rejoin or window close.
+          const tap = ctx.read(e, Tap);
+          const cap = ctx.getRelation(e, Captures);
+          const max = cap !== undefined && ctx.has(cap, MultiTap) ? ctx.read(cap, MultiTap).max : 1;
+          const count = tap.count + 1;
+          ctx.edit(e).set(Tap, { ...tap, count });
+          if (count >= max) {
+            P.set(ctx, e, "Recognized");
+          } else {
+            ctx.edit(e).set(Down, { ...down, ms: now }); // restart the inter-tap window from release
+            P.set(ctx, e, "Pending");
+          }
         } else if (held > gs(ctx).tapMaxMs) {
           P.set(ctx, e, "Failed");
         }
       }
     },
-    { name: "tapSystem" },
+    // Down co-writers in ctl:recognize (tap park / wheel activity / dependency
+    // rebase) touch DISJOINT rows — tap rows, wheel rows, edge-parked rows.
+    { name: "tapSystem", access: { write: [Tap, Down], orderIndependent: [Down] } },
   );
 
   const longPressSystem = defineSystem(
@@ -536,7 +614,62 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         }
       }
     },
-    { name: "wheelSystem", access: { write: [WheelPan, WheelZoom, Down] } },
+    { name: "wheelSystem", access: { write: [WheelPan, WheelZoom, Down], orderIndependent: [Down] } },
+  );
+
+  // dependency (last in ctl:recognize; v2 dependencySystem) — resolve the Pending
+  // EDGE cases. `RequiresFail` gates the EXIT (finish once `other` fails);
+  // `Sequence` gates the ENTRANCE (wait for `after` to pass, then hand off,
+  // rebasing Down). A multi-tap Pending has neither edge → untouched (tapSystem
+  // owns its window). TIMING (differs from v2's immediate-write model): phase
+  // flips flush at the ctl:recognize boundary, so this system observes a
+  // target's SAME-GROUP transition one frame later via its persistent tag —
+  // safe because reap waits terminal+1 (cleanup.ts), and this system's own
+  // flips flush before ctl:arbitrate reads their Just* markers this frame.
+  const dependencySystem = defineSystem(
+    pendingQ,
+    (b, ctx) => {
+      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      for (const r of b) {
+        const e = b.entity(r);
+        if (ctx.hasTag(e, HadRequiresFail)) {
+          const other = ctx.getRelation(e, RequiresFail);
+          if (other === undefined) {
+            P.set(ctx, e, "Failed"); // orphaned edge (target despawned; edge auto-cleared)
+          } else if (ctx.hasTag(other, P.tags.Failed) || ctx.hasTag(other, P.tags.Cancelled)) {
+            // `other` failed → this may finish: discrete (Tap) → Recognized, continuous → Active.
+            P.set(ctx, e, ctx.has(e, Tap) ? "Recognized" : "Active");
+          } else if (ctx.hasTag(other, P.tags.Recognized) || ctx.hasTag(other, P.tags.Active)) {
+            P.set(ctx, e, "Failed"); // `other` won → this loses
+          } // else still waiting (other Possible/Pending)
+          continue;
+        }
+        if (ctx.hasTag(e, HadSequence)) {
+          const after = ctx.getRelation(e, Sequence);
+          if (after === undefined) {
+            P.set(ctx, e, "Failed");
+          } else if (ctx.hasTag(after, P.tags.Active) || ctx.hasTag(after, P.tags.Recognized)) {
+            // Hand off: rebase Down to the current pointer, enter, and RETIRE the
+            // source — else it keeps its pointer claimed and arbitration would
+            // fail this freshly-handed-off recognizer (v2 rule).
+            const p = ctx.getRelations(e, Watches)[0];
+            if (p !== undefined) {
+              const screen = ctx.read(p, PointerScreen);
+              ctx.edit(e).set(Down, { x: screen.x, y: screen.y, ms: now });
+            }
+            P.set(ctx, e, "Possible");
+            // v2 retired an ACTIVE source; v3 must retire any still-live one —
+            // LongPress claims at Recognized and keeps a continuous tail, and
+            // arbitration's claim is first-wins (a live source would hold the
+            // pointer against the handed-off recognizer forever).
+            if (!isTerminal(ctx, after)) P.set(ctx, after, "Ended");
+          } else if (ctx.hasTag(after, P.tags.Failed) || ctx.hasTag(after, P.tags.Cancelled)) {
+            P.set(ctx, e, "Failed");
+          } // else still waiting
+        }
+      }
+    },
+    { name: "dependencySystem", access: { write: [Down], orderIndependent: [Down] } },
   );
 
   return {
@@ -549,5 +682,6 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
     dragSystem,
     pinchSystem,
     wheelSystem,
+    dependencySystem,
   };
 }

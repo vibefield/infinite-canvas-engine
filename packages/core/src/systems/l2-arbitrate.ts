@@ -22,6 +22,8 @@ import {
   Drag,
   GesturePhases,
   GestureSuspended,
+  HadRequiresFail,
+  HadSequence,
   HandleSpec,
   Keyboard,
   LongPress,
@@ -108,6 +110,18 @@ export function createArbitrationSystems(): { arbitration: System; dragRoute: Sy
           if (rec === winner) continue;
           if (isTerminal(ctx, rec)) continue;
           if (ctx.hasTag(rec, Simultaneous) || ctx.hasTag(rec, GestureSuspended)) continue;
+          // Edge-parked Pending recognizers are the dependency system's to
+          // resolve. v2 resolved them same-tick BEFORE arbitration (immediate
+          // writes); v3's flush model runs dependency a frame behind the
+          // source's claim, so arbitration must not race it — the dependency
+          // verdict lands next frame either way. (Multi-tap Pendings carry no
+          // edge and stay killable — tap-then-drag fails the pending tap.)
+          if (
+            ctx.hasTag(rec, P.tags.Pending) &&
+            (ctx.hasTag(rec, HadSequence) || ctx.hasTag(rec, HadRequiresFail))
+          ) {
+            continue;
+          }
           P.set(ctx, rec, "Failed");
         }
       }

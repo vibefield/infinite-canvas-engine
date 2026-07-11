@@ -79,6 +79,8 @@ export function installInteractionCore(engine: Engine, opts: InteractionCoreOpts
     // input: lifecycle BEFORE ingest (value-based up+1 destroy; see l0-input.ts).
     engine.addSystems("input", l0.pointerLifecycle, l0.pointerIngest, l0.pointerWorldSync),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
+    // dependency LAST in ctl:recognize: its Pending resolutions flush at the
+    // group boundary, so arbitration sees their Just* markers this frame.
     engine.addSystems(
       "ctl:recognize",
       l2.tapSystem,
@@ -86,6 +88,7 @@ export function installInteractionCore(engine: Engine, opts: InteractionCoreOpts
       l2.dragSystem,
       l2.pinchSystem,
       l2.wheelSystem,
+      l2.dependencySystem,
     ),
     engine.addSystems("ctl:arbitrate", arb.arbitration, arb.dragRoute),
     engine.addSystems("ctl:claim", claims.moveClaim, claims.resizeClaim),
@@ -165,6 +168,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
       l2.dragSystem,
       l2.pinchSystem,
       l2.wheelSystem,
+      l2.dependencySystem,
     ),
     engine.addSystems("ctl:arbitrate", arb.arbitration, arb.dragRoute),
     engine.addSystems("ctl:claim", claims.moveClaim, claims.resizeClaim, connect.connectClaim),

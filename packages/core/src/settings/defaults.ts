@@ -3,7 +3,7 @@
  * Not exported from the package barrel yet (design-005 §4 engine facade wires these in later).
  */
 
-/** Recognizer timing/slop defaults (design-003 §4.2 kind table; inertia constants from §5 item 9). */
+/** Recognizer timing/slop defaults (design-003 §4.2 kind table; inertia constants from §5 item 9; multi-tap from v2 gesture.ts). */
 export const GESTURE_DEFAULTS = {
   tapMaxMs: 250,
   tapSlopPx: 8,
@@ -14,6 +14,8 @@ export const GESTURE_DEFAULTS = {
   wheelEndSilenceMs: 150,
   inertiaMinVelocityPxPerS: 120,
   inertiaDecayMs: 325,
+  multiTapWindowMs: 280,
+  multiTapSlopPx: 20,
 } as const;
 
 /** Pick radii + retarget dead-band (design-003 §3 L1 targeting). */

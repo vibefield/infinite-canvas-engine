@@ -20,6 +20,7 @@
 import { enumOf, field } from "@vibecook/strata-ecs";
 import { definePhaseSet } from "../helpers/phase-set";
 import { defineComponent, defineRelation, defineTag } from "../schema/meta";
+import { GESTURE_DEFAULTS } from "../settings/defaults";
 
 // --- kind components (design-003 §4.2) ---
 
@@ -34,8 +35,16 @@ export const Drag = defineComponent("Drag", {
   zoomAtClaim: field("f32", { default: 1 }),
 });
 
-/** Discrete tap — claims at up within the tap window & slop. */
-export const Tap = defineComponent("Tap", { downAt: field("f64", { default: 0 }) });
+/**
+ * Discrete tap — claims at up within the tap window & slop. `count` is the
+ * multi-tap tally (v2 gesture.ts): 0 while the (next) tap is in progress; each
+ * clean release increments it. Without a `MultiTap` opt-in on the capture
+ * target the first release Recognizes at count 1 — zero added latency.
+ */
+export const Tap = defineComponent("Tap", {
+  downAt: field("f64", { default: 0 }),
+  count: field("u32", { default: 0 }),
+});
 
 /** Discrete-with-tail: claims at the long-press hold, then tracks cur X/Y per frame (touch marquee rides it). */
 export const LongPress = defineComponent("LongPress", {
@@ -73,7 +82,7 @@ export const WheelZoom = defineComponent("WheelZoom", {
 // --- phases (exclusive set + one-tick Just* markers; flipped via the PhaseSet helper) ---
 
 /**
- * The recognizer lifecycle as ONE PhaseSet (design-003 §4.2): six mutually-exclusive
+ * The recognizer lifecycle as ONE PhaseSet (design-003 §4.2): seven mutually-exclusive
  * phases. Each mints a persistent `Gesture<Phase>` tag AND a one-tick `GestureJust<Phase>`
  * marker (plain concatenation — the doc vocabulary "GesturePossible"… is unchanged), so
  * behaviors edge-trigger discrete/terminal actions on the markers exactly once while a
@@ -81,10 +90,17 @@ export const WheelZoom = defineComponent("WheelZoom", {
  * are re-exports of `GesturePhases.tags.*` for ergonomics + `ops/claims` compatibility.
  * `GesturePossible` etc. is the ONLY definition path for these tag names (strata's schema
  * registry is process-global — a second `defineTag("GesturePossible")` would throw).
+ *
+ * `Pending` (restored from v2 gesture.ts — the design-003 §4.2 "dead machinery" drop is
+ * superseded now that a real gesture ships it): criteria met but recognition withheld —
+ * a multi-tap awaiting its inter-tap window, or a recognizer parked behind a
+ * `Sequence`/`RequiresFail` edge. NEVER reaped; exempt from integrity's watched-pointer
+ * count (a pending multi-tap legitimately outlives its lifted touch pointer).
  */
 export const GesturePhases = definePhaseSet("Gesture", [
   "Possible",
   "Active",
+  "Pending",
   "Recognized",
   "Ended",
   "Failed",
@@ -96,6 +112,9 @@ export const GesturePossible = GesturePhases.tags.Possible;
 
 /** Continuous kinds' claiming phase + per-frame work gate. */
 export const GestureActive = GesturePhases.tags.Active;
+
+/** Recognition withheld (multi-tap window / dependency edge); never reaped. */
+export const GesturePending = GesturePhases.tags.Pending;
 
 /** Discrete kinds' terminal claim. */
 export const GestureRecognized = GesturePhases.tags.Recognized;
@@ -132,10 +151,41 @@ export const RoutedPan = defineTag("RoutedPan");
 /** Draw-tool drag: the release rect creates a widget (design-005 §3, M10). */
 export const RoutedDraw = defineTag("RoutedDraw");
 
+/**
+ * Per-target multi-tap opt-in (v2 gesture.ts): declares "this target counts
+ * multi-taps", read via the recognizer's `Captures` target. Absent → max 1,
+ * zero latency (a plain widget stays instant). `windowMs` = the inter-tap
+ * wait; `slopPx` = max screen gap between taps for the rejoin.
+ */
+export const MultiTap = defineComponent("MultiTap", {
+  max: field("u32", { default: 2 }),
+  windowMs: field("f32", { default: GESTURE_DEFAULTS.multiTapWindowMs }),
+  slopPx: field("f32", { default: GESTURE_DEFAULTS.multiTapSlopPx }),
+});
+
 // --- recognizer relations ---
 
 /** recognizer → watched pointer(s). */
 export const Watches = defineRelation("Watches", { arity: "many" });
+
+/**
+ * Sequencing edges (v2 gesture.ts; resolved by the dependency system at the end
+ * of `ctl:recognize`). `Sequence` gates the ENTRANCE: a `Pending` recognizer
+ * waits for `after` to pass (Active/Recognized), then hands off — Down rebases
+ * to the current pointer and the source retires. `RequiresFail` gates the EXIT:
+ * a `Pending` recognizer finishes only once `other` fails (discrete →
+ * Recognized, continuous → Active); if `other` wins, it loses. Edges auto-clear
+ * on despawn, so each carries a `Had*` spawn-time mark (the `HadCapture`
+ * pattern): "had an edge, has none" = orphaned → Failed.
+ */
+export const Sequence = defineRelation("Sequence", { arity: "one" });
+export const RequiresFail = defineRelation("RequiresFail", { arity: "one" });
+
+/** The recognizer was given a `Sequence` edge (orphan detection — see above). */
+export const HadSequence = defineTag("HadSequence");
+
+/** The recognizer was given a `RequiresFail` edge (orphan detection — see above). */
+export const HadRequiresFail = defineTag("HadRequiresFail");
 
 /** recognizer → grabbed entity (widget/port/handle/canvas), latched at down. */
 export const Captures = defineRelation("Captures", { arity: "one" });

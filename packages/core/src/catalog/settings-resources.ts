@@ -24,6 +24,8 @@ export const GestureSettings = defineResource("GestureSettings", {
   wheelEndSilenceMs: field("f32", { default: GESTURE_DEFAULTS.wheelEndSilenceMs }),
   inertiaMinVelocityPxPerS: field("f32", { default: GESTURE_DEFAULTS.inertiaMinVelocityPxPerS }),
   inertiaDecayMs: field("f32", { default: GESTURE_DEFAULTS.inertiaDecayMs }),
+  multiTapWindowMs: field("f32", { default: GESTURE_DEFAULTS.multiTapWindowMs }),
+  multiTapSlopPx: field("f32", { default: GESTURE_DEFAULTS.multiTapSlopPx }),
 });
 
 /** Pick radii + retarget dead-band live mirror (design-003 §3 L1 targeting). */

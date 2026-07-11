@@ -146,16 +146,21 @@ describe("gesture (§5.5, design-003 §4.2)", () => {
     expect(cat.WheelZoom.fieldByName.has("dx")).toBe(false);
   });
 
-  it("phase + route tags carry the exact contract names (no Pending)", () => {
+  it("phase + route tags carry the exact contract names (incl. restored Pending)", () => {
+    // Pending was dropped at M4 as dead machinery, then RESTORED with the v2
+    // gesture port (multi-tap window / Sequence / RequiresFail parking).
     const tags: [Tag, string][] = [
       [cat.GesturePossible, "GesturePossible"],
       [cat.GestureActive, "GestureActive"],
+      [cat.GesturePending, "GesturePending"],
       [cat.GestureRecognized, "GestureRecognized"],
       [cat.GestureEnded, "GestureEnded"],
       [cat.GestureFailed, "GestureFailed"],
       [cat.GestureCancelled, "GestureCancelled"],
       [cat.GestureSuspended, "GestureSuspended"],
       [cat.Simultaneous, "Simultaneous"],
+      [cat.HadSequence, "HadSequence"],
+      [cat.HadRequiresFail, "HadRequiresFail"],
       [cat.RoutedMove, "RoutedMove"],
       [cat.RoutedResize, "RoutedResize"],
       [cat.RoutedConnect, "RoutedConnect"],
@@ -163,7 +168,6 @@ describe("gesture (§5.5, design-003 §4.2)", () => {
       [cat.RoutedPan, "RoutedPan"],
     ];
     for (const [t, name] of tags) expect(schemaMeta.tagName(t)).toBe(name);
-    expect(cat).not.toHaveProperty("GesturePending");
   });
 
   it("GesturePhases mints one-tick Just<Phase> markers with the contract names", () => {
