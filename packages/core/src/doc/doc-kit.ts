@@ -37,6 +37,7 @@ import {
   type EnvelopeHeader,
 } from "./envelope";
 import { createDocCommitSink, createReadOnlyCommitSink } from "./doc-commit-sink";
+import { runMigrations } from "./migrate";
 import { createLiveWriter, type LiveWriter } from "../guards/live-writer";
 import { makeDefaultMayDiverge } from "../ops/claims";
 import {
@@ -52,6 +53,13 @@ export interface DocSessionOpts {
   readonly maxUndoSteps?: number;
   /** Override the default gate policy (design-005 §6.3 facade hook). */
   readonly onGate?: (report: DocVersionReport, verdict: GateVerdict) => GateVerdict;
+  /**
+   * Run the M9 read-repair migrator on a "migrate" verdict (design-005 §6.4).
+   * Default TRUE: the doc attaches writable, the migrator upgrades older packs
+   * in place, and the session re-gates. Set false to keep M5 behavior (a
+   * "migrate" verdict attaches read-only, no upgrade).
+   */
+  readonly migrate?: boolean;
 }
 
 export interface DocSession {
@@ -187,8 +195,6 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
   if (verdict === "reject") {
     return { ok: false, reason: "ice: version gate rejected the document", report };
   }
-  // M5: "migrate" attaches read-only (the M9 migrator upgrades in place).
-  const readOnly = verdict !== "ok";
 
   try {
     const store = createDurableStore(
@@ -196,7 +202,28 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
       opts.maxUndoSteps !== undefined ? { maxUndoSteps: opts.maxUndoSteps } : undefined,
     );
     const attachment = attachDurable(world, store);
-    return { ok: true, session: makeSession(world, store, attachment, readOnly, report) };
+
+    // M9 (design-005 §6.4): the "migrate" verdict upgrades in place. Attach is
+    // identical either way — readOnly is an engine concept (the commit sink), and
+    // the migrator writes through store.transaction directly — so we run it on the
+    // live attachment, then RE-GATE off the freshly stamped markers. A migrate that
+    // catches the doc fully up flips the session writable; one that could not
+    // upgrade every older pack (a type with no/gappy chain) stays read-only. Opt
+    // out with opts.migrate=false (then "migrate" keeps M5's read-only behavior).
+    let effectiveReport = report;
+    let readOnly = verdict !== "ok";
+    if (verdict === "migrate" && (opts.migrate ?? true)) {
+      try {
+        runMigrations({ store, world }, report);
+        effectiveReport = readDocVersionReport(doc);
+        readOnly = gateVerdict(effectiveReport) !== "ok";
+      } catch {
+        // A faulting transform must never brick open(): keep the doc, fall back
+        // read-only (the user still gets projection + presence).
+        readOnly = true;
+      }
+    }
+    return { ok: true, session: makeSession(world, store, attachment, readOnly, effectiveReport) };
   } catch (err) {
     // Store/attach residuals (already-attached world, pending-import state,
     // mid-emit) quarantine like everything else on this path — open() NEVER

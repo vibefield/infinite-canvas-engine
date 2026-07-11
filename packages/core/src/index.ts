@@ -21,6 +21,9 @@ export {
   defineTickSystem,
   enumOf,
   field,
+  // Query-only for apps (`Not(Local)` = remote presence peers); strata-owned,
+  // auto-applied by the ephemeral store on spawn, never transmitted.
+  Local,
 } from "@vibecook/strata-ecs";
 export type {
   Batch,
@@ -163,6 +166,7 @@ export {
   type DocSessionOpts,
   type OpenDocResult,
 } from "./doc/doc-kit";
+export { runMigrations, type MigrationCtx, type MigrationOutcome } from "./doc/migrate";
 
 // The widget runtime core (design-005 §2 + design-004 §2): props DSL,
 // defineWidget compiler, equip, spawn, cull/LRU/mount store.
@@ -230,3 +234,31 @@ export {
   type NestedCanvas,
   type NestedCanvasOpts,
 } from "./nav/nested-canvas";
+
+// --- M9 presence layer (design-005 §6.5, design-001 §5.6) ---
+export {
+  attachPresence,
+  createPresencePublish,
+  createRemoteCursorsSystem,
+  DEFAULT_PRESENCE_TTL_MS,
+  installPresence,
+  type InstallPresenceOpts,
+  type PresenceOpts,
+  type PresencePublishOpts,
+  type PresenceSession,
+} from "./presence";
+
+// --- M9 transport/bootstrap kit (design-005 §6.5): join protocol + byte channels ---
+export {
+  joinDoc,
+  type BootstrapClock,
+  type JoinDocOpts,
+  type JoinResult,
+} from "./doc/bootstrap";
+export {
+  broadcastChannelByteChannel,
+  webSocketByteChannel,
+  type ByteChannel,
+  type OwnedByteChannel,
+  type WebSocketLike,
+} from "./doc/channels";

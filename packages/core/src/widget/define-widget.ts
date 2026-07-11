@@ -90,7 +90,18 @@ export interface WidgetDef {
    * (its `provides` wins).
    */
   readonly provides?: readonly string[];
-  /** fromVersion → idempotent absolute transform (M9 runs the chain). */
+  /**
+   * fromVersion → idempotent absolute transform (M9's `runMigrations` runs the
+   * chain at open; `prev`/return are flat prop records spanning every group).
+   *
+   * No parallel `legacy` schema field is needed for field-level changes: strata
+   * is field-tolerant within a known component name (extra stored fields dropped,
+   * missing default-filled — every generated field carries a default), so a v1
+   * cell projects into the v2 group component of the same name and the transform
+   * reads the already-v2-shaped value. See doc/migrate.ts for the as-built note;
+   * migrating data out of a group REMOVED wholesale in v2 is vNext (design-005
+   * §6.4 cross-schema movement).
+   */
   readonly migrate?: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
 }
 
@@ -159,6 +170,40 @@ function strataFieldOf(name: string, spec: PropSpec) {
       return field("string", { default: (spec as JsonSpec).default ?? "null" });
     default:
       throw new Error(`ice: defineWidget prop "${name}" has an unknown spec kind.`);
+  }
+}
+
+/**
+ * Chain-coverage check (design-005 §6.4): to upgrade a doc written by ANY pack
+ * version in `1..version-1`, the migrate chain needs an entry for every one of
+ * those fromVersions. A gap means docs at the uncovered version stay read-only
+ * (the M9 runner skips a type it cannot reach `version` from), so warn rather
+ * than throw — a partial chain is a live-with-it degradation, not a definition
+ * error. Keys ≥ `version` or ≤ 0 are meaningless fromVersions; flag them too.
+ */
+function validateMigrateChain(
+  type: string,
+  version: number,
+  migrate: Readonly<Record<number, unknown>>,
+): void {
+  const keys = Object.keys(migrate).map(Number);
+  if (keys.length === 0) return;
+  const gaps: number[] = [];
+  for (let v = 1; v < version; v++) {
+    if (typeof migrate[v] !== "function") gaps.push(v);
+  }
+  if (gaps.length > 0) {
+    console.warn(
+      `ice: defineWidget("${type}") migrate chain has gaps at fromVersion(s) [${gaps.join(", ")}] — ` +
+        `docs written at those versions cannot reach v${version} and will open read-only (design-005 §6.4).`,
+    );
+  }
+  const stray = keys.filter((v) => v <= 0 || v >= version);
+  if (stray.length > 0) {
+    console.warn(
+      `ice: defineWidget("${type}") migrate declares transform(s) for fromVersion(s) [${stray.join(", ")}] ` +
+        `outside the migratable range 1..${version - 1} — they never run.`,
+    );
   }
 }
 
@@ -231,10 +276,13 @@ export function defineWidget(def: WidgetDef): WidgetType {
     essential.push(init(Provides, { list: JSON.stringify(def.provides) })); // leaf: no Container tag
   }
 
+  const version = def.version ?? 1;
+  if (def.migrate !== undefined) validateMigrateChain(def.type, version, def.migrate);
+
   const prefab = definePrefab(def.type, {
     store: "durable",
     components: essential,
-    version: def.version ?? 1,
+    version,
   });
 
   // Capability recipe → runtime tags at projection (equip system).
@@ -250,7 +298,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
 
   const widget: WidgetType = {
     type: def.type,
-    version: def.version ?? 1,
+    version,
     prefab,
     groups,
     propToGroup,

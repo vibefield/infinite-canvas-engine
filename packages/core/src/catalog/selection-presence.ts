@@ -27,6 +27,15 @@ export const SnapTarget = defineTag("SnapTarget");
 
 // --- ephemeral presence-peer prefab facets (components + tags only — no relations/resources) ---
 
+/**
+ * Marks an ephemeral presence-peer entity (design-001 §5.6). Rides the presence
+ * blob so remote peers project it — a peer query is `[PresencePeer, Not(Local)]`
+ * (remote peers) or `[PresencePeer, Local]` (self). `Local` is strata-owned and
+ * auto-applied by the ephemeral store on spawn (never transmitted); this is the
+ * ONLY presence tag the engine mints, so pack differences can't corrupt it.
+ */
+export const PresencePeer = defineTag("PresencePeer");
+
 /** Peer display identity. */
 export const PresenceInfo = defineComponent("PresenceInfo", { name: "string", color: "string" });
 

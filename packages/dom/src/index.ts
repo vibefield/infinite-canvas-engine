@@ -30,6 +30,8 @@ export { attachPointerAdapter, type GLRoute, type PointerAdapterOpts } from "./p
 
 // L4 cursor projection output (design-003 §7: local cursor = OS cursor, one write).
 export { createCursorReflector } from "./reflectors/cursor";
+// P5 remote cursors (design-004 §1: screen-space pooled nodes; M9 presence).
+export { createRemoteCursorsReflector, type RemoteCursorsReflector } from "./reflectors/remote-cursors";
 
 // P0 ground-plane grid (design-004 §1: WebGL canvas, camera uniforms, fullscreen-triangle shader).
 export { createGridReflector, DEFAULT_GRID_CONFIG, type GridConfig } from "./reflectors/grid";
