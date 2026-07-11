@@ -48,10 +48,7 @@ function makeRing(): CursorNode {
 function makeRemote(color: string, label: string): CursorNode {
   const el = document.createElement("div");
   el.className = "cur remote";
-  el.innerHTML =
-    `<svg width="20" height="20" viewBox="0 0 20 20" fill="${color}" aria-hidden="true">` +
-    `<path d="M1.5 1.5 L1.5 16 L5.4 12.2 L8.1 18.5 L10.6 17.4 L7.9 11.3 L13.5 11.3 Z"/></svg>` +
-    `<span class="lbl" style="background:${color}">${label}</span>`;
+  el.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" fill="${color}" aria-hidden="true"><path d="M1.5 1.5 L1.5 16 L5.4 12.2 L8.1 18.5 L10.6 17.4 L7.9 11.3 L13.5 11.3 Z"/></svg><span class="lbl" style="background:${color}">${label}</span>`;
   return { el, kind: "remote" };
 }
 
@@ -252,7 +249,8 @@ export function CursorLayer() {
 
     const unregStage = engine.registerReflector({ name: "plStage", always: true, flush });
     const removeAdapter = attachPointerAdapter(host, stack.queue);
-    engine.enableTelemetry();
+    // No engine.enableTelemetry(): the strata observer arms its own
+    // world-observer telemetry only while attached (its systems tab feed).
     const stopRaf = startRafLoop(engine);
 
     return () => {
@@ -276,7 +274,7 @@ export function CursorLayer() {
     <>
       <div ref={stageRef} className="proto-stage" />
       <ZoomPill world={pw.world} />
-      <ObserverPanel world={pw.world} engine={pw.engine} />
+      <ObserverPanel world={pw.world} />
     </>
   );
 }
