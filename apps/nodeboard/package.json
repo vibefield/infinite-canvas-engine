@@ -1,0 +1,28 @@
+{
+  "name": "nodeboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ice/core": "workspace:*",
+    "@ice/dom": "workspace:*",
+    "@ice/kernel": "workspace:*",
+    "@ice/react": "workspace:*",
+    "loro-crdt": "^1.13.6",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "happy-dom": "^20.0.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
+  }
+}

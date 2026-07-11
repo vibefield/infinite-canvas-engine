@@ -83,6 +83,13 @@ export interface WidgetDef {
    */
   readonly ports?: readonly WidgetPortDecl[];
   readonly container?: { readonly accepts: readonly string[]; readonly provides?: readonly string[] };
+  /**
+   * Provides-keys WITHOUT container semantics (nodeboard field finding): a
+   * leaf that only offers itself to containers must not become a Container
+   * (drop target + Enter affordance). Ignored when `container` is present
+   * (its `provides` wins).
+   */
+  readonly provides?: readonly string[];
   /** fromVersion → idempotent absolute transform (M9 runs the chain). */
   readonly migrate?: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
 }
@@ -220,6 +227,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if (def.container !== undefined) {
     essential.push(init(Accepts, { list: JSON.stringify(def.container.accepts) }));
     essential.push(init(Provides, { list: JSON.stringify(def.container.provides ?? []) }));
+  } else if (def.provides !== undefined && def.provides.length > 0) {
+    essential.push(init(Provides, { list: JSON.stringify(def.provides) })); // leaf: no Container tag
   }
 
   const prefab = definePrefab(def.type, {
