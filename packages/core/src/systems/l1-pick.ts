@@ -49,6 +49,7 @@ import { Active } from "../catalog/camera-derived";
 import { WidgetEquipped } from "../widget/define-widget";
 import { PointerVersion, SpatialVersion, bumpVersion, makeVersionGuard } from "../helpers/version-stamps";
 import { distPointToBox, pickTopAt, type WirePickSource } from "../ops/point-pick";
+import { PointerSettings } from "../catalog/settings-resources";
 import { POINTER_DEFAULTS } from "../settings/defaults";
 
 const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
@@ -134,7 +135,8 @@ export function createPickingSystems(
       const cam = ctx.getResource(Camera);
       const zoom = cam?.zoom ?? 1;
       const canvas = ctx.firstOf(canvasSurfaceQ);
-      const deadBandWorld = POINTER_DEFAULTS.hoverReleaseDeadBandPx / zoom;
+      const deadBandWorld =
+        (ctx.getResource(PointerSettings) ?? POINTER_DEFAULTS).hoverReleaseDeadBandPx / zoom;
 
       for (const r of b) {
         const p = b.entity(r);

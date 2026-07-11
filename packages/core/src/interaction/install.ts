@@ -36,6 +36,7 @@ import { createPortMaterialize } from "../systems/l3-ports";
 import { createResizeBehavior } from "../systems/l3-resize";
 import { createSnapSystem } from "../systems/l3-snap";
 import { createSelectionChromeSystem } from "../systems/chrome";
+import { createDrawBehavior } from "../systems/l3-draw";
 import { createCursorSync } from "../systems/l4-cursor";
 
 const canvasSurfaceQ = defineQuery([CanvasSurface]);
@@ -179,6 +180,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
       resize,
       marquee,
       connect.connectBehavior,
+      createDrawBehavior(world, sink),
       camera.cameraControl,
     ),
     engine.addSystems("simulate", camera.cameraInertia, camera.tweenSystem),

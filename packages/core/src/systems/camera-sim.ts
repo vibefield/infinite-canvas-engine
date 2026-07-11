@@ -48,6 +48,7 @@ import {
   WheelPan,
   WheelZoom,
 } from "../catalog";
+import { CameraLimits } from "../catalog/settings-resources";
 import { FrameInfo } from "../engine/frame-info";
 import { defineResource } from "../schema/meta";
 import { CAMERA_DEFAULTS, GESTURE_DEFAULTS } from "../settings/defaults";
@@ -84,8 +85,10 @@ const pinchQ = defineQuery([Pinch]);
 const downPointerQ = defineQuery([Pointer, WentDown, LocalPointer]);
 const tweenQ = defineQuery([Position, TransformTween]);
 
-function clampZoom(z: number): number {
-  return Math.min(CAMERA_DEFAULTS.maxZoom, Math.max(CAMERA_DEFAULTS.minZoom, z));
+function clampZoom(world: World, z: number): number {
+  // Live-tunable limits (design-005 §4): resource first, const fallback.
+  const lim = world.getResource(CameraLimits) ?? CAMERA_DEFAULTS;
+  return Math.min(lim.maxZoom, Math.max(lim.minZoom, z));
 }
 
 /** Cubic ease-out (design-003 §5 item 5 fly-back easing). */
@@ -169,7 +172,7 @@ export function createCameraSystems(world: World): CameraSystems {
             { x, y, zoom },
             wz.anchorX,
             wz.anchorY,
-            clampZoom(zoom * Math.exp(-wz.pinch * ZOOM_SENSITIVITY)),
+            clampZoom(world, zoom * Math.exp(-wz.pinch * ZOOM_SENSITIVITY)),
           );
           x = next.x;
           y = next.y;
@@ -195,7 +198,7 @@ export function createCameraSystems(world: World): CameraSystems {
             { x, y, zoom },
             pin.cx,
             pin.cy,
-            clampZoom(pin.startZoom * (spread / pin.startDist)),
+            clampZoom(world, pin.startZoom * (spread / pin.startDist)),
           );
           x = next.x;
           y = next.y;

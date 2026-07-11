@@ -20,6 +20,7 @@ import { ChildOf } from "../catalog";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { PrefabId } from "../schema/prefab";
 import { Wire, WireFrom, WirePorts, WireTo } from "../catalog/graph";
+import { widgetSpawnInits } from "../widget/spawn";
 import { guardedTransaction } from "../guards/guarded-tx";
 
 export function createDocCommitSink(store: DurableStore, world: World): CommitSink {
@@ -35,7 +36,8 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
       const liveWires = (intent.wires ?? []).filter(
         (w) => store.keyOf(w.from) !== undefined && store.keyOf(w.to) !== undefined,
       );
-      if (liveWrites.length === 0 && liveReparents.length === 0 && liveWires.length === 0) return;
+      const creates = intent.creates ?? [];
+      if (liveWrites.length === 0 && liveReparents.length === 0 && liveWires.length === 0 && creates.length === 0) return;
 
       guardedTransaction(store, world, (tx) => {
         for (const w of liveWrites) {
@@ -43,6 +45,12 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
         }
         for (const r of liveReparents) {
           tx.setRelation(r.entity, ChildOf, r.container);
+        }
+        // Draw-tool creations: one prefab spawn per rect (design-005 §3),
+        // through the SAME override builder as ops.spawnWidget.
+        for (const c of creates) {
+          const { prefab, overrides } = widgetSpawnInits(c.type, { x: c.x, y: c.y, w: c.w, h: c.h });
+          tx.spawnPrefab(prefab, overrides);
         }
         for (const w of liveWires) {
           const wire = tx.spawn({

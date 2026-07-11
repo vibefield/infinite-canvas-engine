@@ -39,10 +39,24 @@ interface GuardedEditor {
 }
 
 interface TxDoc {
-  transaction(fn: (tx: Mutator) => void): void;
+  transaction(fn: (tx: Mutator) => void, opts?: { undoable?: boolean }): void;
 }
 
-export function guardedTransaction(doc: TxDoc, world: World, run: (tx: GuardedTx) => void): void {
+export interface GuardedTxOpts {
+  /**
+   * strata 0.3.0 passthrough: `false` excludes this commit from the LOCAL
+   * undo stack (batch seeds, janitorial writes — retires the cardboard
+   * first-⌘Z-removes-a-seed quirk). Default true: one tx = one undo step.
+   */
+  readonly undoable?: boolean;
+}
+
+export function guardedTransaction(
+  doc: TxDoc,
+  world: World,
+  run: (tx: GuardedTx) => void,
+  opts?: GuardedTxOpts,
+): void {
   doc.transaction((tx) => {
     const spawned = new Map<Entity, Prefab>();
 
@@ -123,5 +137,5 @@ export function guardedTransaction(doc: TxDoc, world: World, run: (tx: GuardedTx
     };
 
     run(guarded);
-  });
+  }, opts);
 }

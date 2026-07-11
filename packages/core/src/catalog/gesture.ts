@@ -129,6 +129,8 @@ export const RoutedResize = defineTag("RoutedResize");
 export const RoutedConnect = defineTag("RoutedConnect");
 export const RoutedMarquee = defineTag("RoutedMarquee");
 export const RoutedPan = defineTag("RoutedPan");
+/** Draw-tool drag: the release rect creates a widget (design-005 §3, M10). */
+export const RoutedDraw = defineTag("RoutedDraw");
 
 // --- recognizer relations ---
 

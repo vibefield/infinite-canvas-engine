@@ -39,6 +39,15 @@ export interface CommitWireSpawn {
   readonly toPort: string;
 }
 
+/** A widget creation riding a create outcome (draw tool, design-005 §3). */
+export interface CommitCreate {
+  readonly type: string;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
 export interface CommitIntent {
   /** Outcome kind — traces assert on it. */
   readonly kind: "move" | "consume" | "resize" | "connect" | "create" | "delete";
@@ -47,6 +56,7 @@ export interface CommitIntent {
   readonly writes: readonly CommitWrite[];
   readonly reparents?: readonly CommitReparent[];
   readonly wires?: readonly CommitWireSpawn[];
+  readonly creates?: readonly CommitCreate[];
 }
 
 export interface CommitSink {

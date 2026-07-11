@@ -14,8 +14,8 @@
  *                under declared `access.write`.
  *
  * All timing reads FrameInfo.now (the engine clock); all thresholds read
- * GESTURE_DEFAULTS (GestureSettings resource indirection arrives with the
- * settings task). Gesture math is screen-space totals + zoom-at-claim — never
+ * the GestureSettings RESOURCE (live-tunable, design-005 §4) with the
+ * GESTURE_DEFAULTS constants as the unset fallback. Gesture math is screen-space totals + zoom-at-claim — never
  * live PointerWorld (design-002 §2 staleness rule).
  */
 import type { Entity, SystemCtx, World } from "@vibecook/strata-ecs";
@@ -51,6 +51,8 @@ import {
 } from "../catalog";
 import { ActiveTool } from "../catalog/camera-derived";
 import { FrameInfo } from "../engine/frame-info";
+import { GestureSettings } from "../catalog/settings-resources";
+import { tools } from "../tools/define-tool";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
 
 export type SingleKindName = "tap" | "longPress" | "drag";
@@ -74,6 +76,12 @@ const pinchQ = defineQuery([Pinch]);
 const wheelKindQ = defineQuery([Any(WheelPan, WheelZoom)]);
 
 const P = GesturePhases;
+
+/** Live-tunable gesture settings (design-005 §4): resource first, const fallback. */
+function gs(ctx: SystemCtx): Readonly<Record<keyof typeof GESTURE_DEFAULTS, number>> {
+  return ctx.getResource(GestureSettings) ?? GESTURE_DEFAULTS;
+}
+
 
 /** A recognizer is in a phase from which no further recognition can happen. */
 function isTerminal(ctx: SystemCtx | World, e: Entity): boolean {
@@ -135,7 +143,9 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
     (b, ctx) => {
       const now = ctx.getResource(FrameInfo)?.now ?? 0;
       const tool = ctx.getResource(ActiveTool)?.id ?? "select";
-      const profile = profiles[tool] ?? DEFAULT_SPAWN_PROFILES.select ?? [];
+      // Explicit profiles (test/app override) → tool registry (design-005 §3)
+      // → select. Tools parameterize L2 spawn purely through config.
+      const profile = profiles[tool] ?? tools.get(tool)?.spawnProfile ?? DEFAULT_SPAWN_PROFILES.select ?? [];
 
       for (const r of b) {
         const pointer = b.entity(r);
@@ -332,14 +342,14 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         const down = ctx.read(e, Down);
         const screen = ctx.read(pointer, PointerScreen);
         const moved = dist(down.x, down.y, screen.x, screen.y);
-        if (moved > GESTURE_DEFAULTS.tapSlopPx) {
+        if (moved > gs(ctx).tapSlopPx) {
           P.set(ctx, e, "Failed");
           continue;
         }
         const held = now - ctx.read(e, Tap).downAt;
         if (ctx.hasTag(pointer, WentUp)) {
-          P.set(ctx, e, held <= GESTURE_DEFAULTS.tapMaxMs ? "Recognized" : "Failed");
-        } else if (held > GESTURE_DEFAULTS.tapMaxMs) {
+          P.set(ctx, e, held <= gs(ctx).tapMaxMs ? "Recognized" : "Failed");
+        } else if (held > gs(ctx).tapMaxMs) {
           P.set(ctx, e, "Failed");
         }
       }
@@ -368,11 +378,11 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
             P.set(ctx, e, "Failed"); // released before the hold
             continue;
           }
-          if (dist(lp.startX, lp.startY, screen.x, screen.y) > GESTURE_DEFAULTS.longPressSlopPx) {
+          if (dist(lp.startX, lp.startY, screen.x, screen.y) > gs(ctx).longPressSlopPx) {
             P.set(ctx, e, "Failed");
             continue;
           }
-          if (now - lp.downAt >= GESTURE_DEFAULTS.longPressMs) {
+          if (now - lp.downAt >= gs(ctx).longPressMs) {
             ctx.edit(e).set(LongPress, { ...lp, curX: screen.x, curY: screen.y });
             P.set(ctx, e, "Recognized"); // discrete claim; continuous tail follows
           }
@@ -406,7 +416,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
 
         if (ctx.hasTag(e, P.tags.Possible)) {
           const down = ctx.read(e, Down);
-          if (dist(down.x, down.y, screen.x, screen.y) > GESTURE_DEFAULTS.dragSlopPx) {
+          if (dist(down.x, down.y, screen.x, screen.y) > gs(ctx).dragSlopPx) {
             // Origin measured FROM DEAD-ZONE EXIT (no jump on promote).
             ctx.edit(e).set(Drag, {
               startX: screen.x,
@@ -470,7 +480,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
             P.set(ctx, e, "Cancelled"); // lost a finger pre-activation
             continue;
           }
-          if (Math.abs(spread - pin.startDist) > GESTURE_DEFAULTS.pinchSlopPx) {
+          if (Math.abs(spread - pin.startDist) > gs(ctx).pinchSlopPx) {
             const zoom = ctx.getResource(Camera)?.zoom ?? 1;
             // Re-baseline at activation (v2): the dead-zone spread never zooms.
             ctx.edit(e).set(Pinch, { startDist: spread, startZoom: zoom, cx, cy, zoomAtClaim: zoom });
@@ -520,7 +530,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
             const p = ctx.read(e, WheelPan);
             if (p.dx !== 0 || p.dy !== 0) ctx.edit(e).set(WheelPan, { ...p, dx: 0, dy: 0 });
           }
-          if (ctx.hasTag(e, P.tags.Active) && now - down.ms > GESTURE_DEFAULTS.wheelEndSilenceMs) {
+          if (ctx.hasTag(e, P.tags.Active) && now - down.ms > gs(ctx).wheelEndSilenceMs) {
             P.set(ctx, e, "Ended");
           }
         }

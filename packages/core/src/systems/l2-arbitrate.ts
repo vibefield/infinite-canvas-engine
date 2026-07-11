@@ -13,7 +13,7 @@
  * `dragRoute` — the ONE pan/marquee/move decision, latched at Drag activation
  * via route tags; the route never changes mid-gesture (design-003 §4.4).
  */
-import type { Entity, System, SystemCtx } from "@vibecook/strata-ecs";
+import type { Entity, System, SystemCtx, Tag } from "@vibecook/strata-ecs";
 import { Any, Not, defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import {
   CanvasSurface,
@@ -32,6 +32,7 @@ import {
   Port,
   Position,
   RoutedConnect,
+  RoutedDraw,
   RoutedMarquee,
   RoutedMove,
   RoutedPan,
@@ -44,6 +45,7 @@ import {
 } from "../catalog";
 import { ActiveTool } from "../catalog/camera-derived";
 import { devGuardsEnabled } from "../guards/dev";
+import { tools } from "../tools/define-tool";
 
 const P = GesturePhases;
 
@@ -116,43 +118,73 @@ export function createArbitrationSystems(): { arbitration: System; dragRoute: Sy
   const dragRoute = defineSystem(
     justActiveDragQ,
     (b, ctx) => {
-      const tool = ctx.getResource(ActiveTool)?.id ?? "select";
+      // Tool ROUTE POLICY (design-005 §3, mechanized at M10): the active
+      // tool's config decides canvas/widget/port drag routes; unknown ids
+      // resolve to select semantics (tools.resolve). Device conventions
+      // (space / middle / one-finger touch → pan) sit ABOVE tool policy.
+      const tool = tools.resolve(ctx.getResource(ActiveTool)?.id ?? "select");
       const spaceHeld = ctx.getResource(Keyboard)?.space === true;
+      const routeTag = (route: string): Tag | undefined => {
+        switch (route) {
+          case "marquee":
+            return RoutedMarquee;
+          case "pan":
+            return RoutedPan;
+          case "connect":
+            return RoutedConnect;
+          case "move":
+            return RoutedMove;
+          case "draw":
+            return RoutedDraw;
+          default:
+            return undefined; // "none": claim the pointer, drive no behavior
+        }
+      };
       for (const r of b) {
         const e = b.entity(r);
         const captured = ctx.getRelation(e, Captures);
 
         if (captured !== undefined && ctx.has(captured, HandleSpec)) {
-          ctx.addTag(e, RoutedResize);
+          // Resize gate (design-005 §3): a gating tool suppresses the handle
+          // grab entirely — the claim still holds the pointer.
+          if (tool.gates.resizable) ctx.addTag(e, RoutedResize);
           continue;
         }
-        // Connect routes BEFORE the Movable gate (design-003 §4.4, M8): a
-        // port-down on a movable widget starts a CONNECT, not a move — and the
-        // connect tool routes every drag to connect (connectClaim no-ops when the
-        // capture isn't a port). The port branch works even when the pick landed
-        // on the widget body: pickTopAt's port tier already returned the port.
-        if ((captured !== undefined && ctx.has(captured, Port)) || tool === "connect") {
-          ctx.addTag(e, RoutedConnect);
+        // Port captures route BEFORE the Movable gate (design-003 §4.4, M8):
+        // a port-down on a movable widget starts a connect, not a move — and
+        // pickTopAt's port tier returns the port even when the pointer sat on
+        // the widget body.
+        if (captured !== undefined && ctx.has(captured, Port)) {
+          const t = routeTag(tool.route.portDrag);
+          if (t !== undefined) ctx.addTag(e, t);
           continue;
         }
         const onCanvas = captured === undefined || ctx.hasTag(captured, CanvasSurface);
         if (!onCanvas && ctx.has(captured, Position)) {
-          // A widget capture routes to Move ONLY when the widget is Movable
-          // (capability gate — review finding): a non-movable widget's drag
-          // claims the pointer (no pan-through) but drives no behavior.
-          if (ctx.hasTag(captured, Movable)) ctx.addTag(e, RoutedMove);
+          // Widget capture. "move" additionally requires the Movable
+          // capability AND the tool's movable gate (review finding: a
+          // non-movable widget's drag claims the pointer — no pan-through —
+          // but drives no behavior).
+          const route = tool.route.widgetDrag;
+          if (route === "move") {
+            if (tool.gates.movable && ctx.hasTag(captured, Movable)) ctx.addTag(e, RoutedMove);
+          } else {
+            const t = routeTag(route);
+            if (t !== undefined) ctx.addTag(e, t);
+          }
           continue;
         }
 
-        // Canvas capture: pan vs marquee (design-003 §4.4).
+        // Canvas capture: device pan conventions first, then tool policy.
         const pointer = ctx.getRelations(e, Watches)[0];
         const middleButton =
           pointer !== undefined && (ctx.read(pointer, PointerButtons).buttons & 4) !== 0;
         const touch = pointer !== undefined && ctx.read(pointer, Pointer).device === "touch";
-        if (tool === "pan" || spaceHeld || middleButton || touch) {
+        if (spaceHeld || middleButton || touch) {
           ctx.addTag(e, RoutedPan); // one-finger touch pans (Freeform default)
         } else {
-          ctx.addTag(e, RoutedMarquee);
+          const t = routeTag(tool.route.canvasDrag);
+          if (t !== undefined) ctx.addTag(e, t);
         }
       }
     },

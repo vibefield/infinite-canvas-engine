@@ -11,7 +11,7 @@
  */
 import { field } from "@vibecook/strata-ecs";
 import { defineResource } from "../schema/meta";
-import { GESTURE_DEFAULTS, POINTER_DEFAULTS } from "../settings/defaults";
+import { CAMERA_DEFAULTS, GESTURE_DEFAULTS, POINTER_DEFAULTS } from "../settings/defaults";
 
 /** Recognizer timing/slop live mirror (design-003 §4.2 kind table; inertia constants §5 item 9). */
 export const GestureSettings = defineResource("GestureSettings", {
@@ -32,4 +32,10 @@ export const PointerSettings = defineResource("PointerSettings", {
   radiusTouchPx: field("f32", { default: POINTER_DEFAULTS.radiusTouchPx }),
   radiusPenPx: field("f32", { default: POINTER_DEFAULTS.radiusPenPx }),
   hoverReleaseDeadBandPx: field("f32", { default: POINTER_DEFAULTS.hoverReleaseDeadBandPx }),
+});
+
+/** Zoom clamp live mirror (design-005 §4 `settings.zoom`; camera-sim consumes). */
+export const CameraLimits = defineResource("CameraLimits", {
+  minZoom: field("f32", { default: CAMERA_DEFAULTS.minZoom }),
+  maxZoom: field("f32", { default: CAMERA_DEFAULTS.maxZoom }),
 });

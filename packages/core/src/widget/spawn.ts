@@ -19,14 +19,16 @@ export interface SpawnWidgetOpts {
   readonly w?: number;
   readonly h?: number;
   readonly props?: Readonly<Record<string, unknown>>;
+  /** false ⇒ the spawn never enters the local undo stack (batch seeds). */
+  readonly undoable?: boolean;
 }
 
-export function spawnWidget(
-  store: DurableStore,
-  world: World,
-  type: string,
-  opts: SpawnWidgetOpts,
-): Entity {
+/**
+ * The prefab-override list for a widget spawn (Position/Size + validated
+ * whole-group prop values). Shared by `spawnWidget` and the doc sink's
+ * create-intent execution (draw tool) so the two can never diverge.
+ */
+export function widgetSpawnInits(type: string, opts: SpawnWidgetOpts): { prefab: import("../schema/prefab").Prefab; overrides: ComponentInit[] } {
   const widget = widgets.get(type);
   if (widget === undefined) throw new Error(`ice: spawnWidget — unknown widget type "${type}".`);
 
@@ -69,10 +71,25 @@ export function spawnWidget(
     overrides.push([g.component, value] as ComponentInit);
   }
 
+  return { prefab: widget.prefab, overrides };
+}
+
+export function spawnWidget(
+  store: DurableStore,
+  world: World,
+  type: string,
+  opts: SpawnWidgetOpts,
+): Entity {
+  const { prefab, overrides } = widgetSpawnInits(type, opts);
   let spawned: Entity | undefined;
-  guardedTransaction(store, world, (tx) => {
-    spawned = tx.spawnPrefab(widget.prefab, overrides);
-  });
+  guardedTransaction(
+    store,
+    world,
+    (tx) => {
+      spawned = tx.spawnPrefab(prefab, overrides);
+    },
+    opts.undoable === false ? { undoable: false } : undefined,
+  );
   if (spawned === undefined) throw new Error("ice: spawnWidget — transaction did not spawn.");
   return spawned;
 }

@@ -94,7 +94,7 @@ export {
 // Write-path guards.
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";
 export { createLiveWriter, type LiveWriter, type LiveWriterOpts } from "./guards/live-writer";
-export { guardedTransaction, type GuardedTx } from "./guards/guarded-tx";
+export { guardedTransaction, type GuardedTx, type GuardedTxOpts } from "./guards/guarded-tx";
 export { writeRuntimeResource } from "./guards/resource-writer";
 
 // The component/tag/relation/resource catalog (design-001 §5, faithful transcription).
@@ -116,6 +116,7 @@ export { createInputQueue, NO_MODS, type InputEvent, type InputEventKind, type I
 export {
   createRecordingCommitSink,
   type CommitIntent,
+  type CommitCreate,
   type CommitReparent,
   type CommitSink,
   type CommitWrite,
@@ -184,7 +185,7 @@ export {
   type WidgetType,
 } from "./widget/define-widget";
 export { createWidgetEquipSystem } from "./widget/equip";
-export { spawnWidget, type SpawnWidgetOpts } from "./widget/spawn";
+export { spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
 export {
   createWidgetRuntime,
   installWidgetRuntime,
@@ -262,3 +263,24 @@ export {
   type OwnedByteChannel,
   type WebSocketLike,
 } from "./doc/channels";
+
+// --- M10 published facade (design-005 §3-§4): tools + createCanvasEngine ---
+export {
+  createDrawTool,
+  defineTool,
+  tools,
+  type CanvasDragRoute,
+  type Tool,
+  type ToolDef,
+  type ToolGates,
+  type ToolRoute,
+  type WidgetDragRoute,
+} from "./tools/define-tool";
+export {
+  createCanvasEngine,
+  type CanvasDocs,
+  type CanvasEngine,
+  type CanvasEngineOpts,
+  type CanvasOps,
+} from "./facade/create-canvas-engine";
+export { createDrawBehavior } from "./systems/l3-draw";

@@ -42,15 +42,16 @@ import {
 } from "../catalog";
 import { PointerVersion, bumpVersion } from "../helpers/version-stamps";
 import type { InputEvent, InputQueue } from "../input/queue";
+import { PointerSettings } from "../catalog/settings-resources";
 import { POINTER_DEFAULTS } from "../settings/defaults";
 
 const pointerQ = defineQuery([Pointer, PointerScreen]);
 const touchLifecycleQ = defineQuery([Pointer, PointerButtons]);
 
-function radiusFor(device: InputEvent["device"]): number {
-  if (device === "touch") return POINTER_DEFAULTS.radiusTouchPx;
-  if (device === "pen") return POINTER_DEFAULTS.radiusPenPx;
-  return POINTER_DEFAULTS.radiusMousePx;
+function radiusFor(device: InputEvent["device"], ps?: { radiusTouchPx: number; radiusPenPx: number; radiusMousePx: number }): number {
+  if (device === "touch") return (ps ?? POINTER_DEFAULTS).radiusTouchPx;
+  if (device === "pen") return (ps ?? POINTER_DEFAULTS).radiusPenPx;
+  return (ps ?? POINTER_DEFAULTS).radiusMousePx;
 }
 
 /** Per-pointer fold of one tick's drained events. */
@@ -125,6 +126,8 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
     (ctx) => {
       const events = queue.drain();
       if (events.length === 0) return;
+      // Live-tunable pick radii (design-005 §4): resource first, const fallback.
+      const pointerSettings = ctx.getResource(PointerSettings);
 
       // --- pass 1: fold ---
       const samples = new Map<string, Sample>();
@@ -190,7 +193,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
               [PointerButtons, { buttons: s.buttons, downX: s.downX, downY: s.downY }],
               [PointerMods, s.mods],
               [PointerWheel, { dx: s.wheelDx, dy: s.wheelDy, pinch: s.wheelPinch }],
-              [PointerRadius, { r: radiusFor(s.device) }],
+              [PointerRadius, { r: radiusFor(s.device, pointerSettings) }],
               [PointerWorld, { x: 0, y: 0 }],
             ],
             tags: [LocalPointer],
