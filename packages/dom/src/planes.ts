@@ -22,6 +22,8 @@ export interface Planes {
   readonly content: HTMLDivElement;
   /** P3: camera-transformed, stacked above content; promoted (dragged) hosts re-parent here. */
   readonly lifted: HTMLDivElement;
+  /** Remove the lifted plane (the content plane is the host's — host.dispose reaps it). */
+  dispose(): void;
 }
 
 /**
@@ -47,5 +49,13 @@ export function createPlanes(host: CanvasHost): Planes {
   const lifted = host.container.ownerDocument.createElement("div");
   Object.assign(lifted.style, LIFTED_PLANE_STYLE);
   host.container.appendChild(lifted); // after contentPlane ⇒ P3 stacks above P1
-  return { content: host.contentPlane, lifted };
+  return {
+    content: host.contentPlane,
+    lifted,
+    // Without this a React StrictMode remount stacks a second P3
+    // (2026-07-11 reflector-teardown sweep, with the grid-canvas fix).
+    dispose() {
+      lifted.remove();
+    },
+  };
 }

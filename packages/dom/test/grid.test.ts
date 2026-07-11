@@ -66,6 +66,20 @@ describe("grid reflector", () => {
     expect(first?.nextElementSibling).toBe(host.contentPlane);
   });
 
+  it("dispose removes the inserted canvas — a remount cannot stack a second grid (2026-07-11 field report)", () => {
+    const { host, reflector, container } = setup();
+    expect(container.querySelectorAll("canvas")).toHaveLength(1);
+
+    // The bug shape: create-without-dispose (StrictMode effect remount) stacks a second canvas…
+    const second = createGridReflector(host);
+    expect(container.querySelectorAll("canvas")).toHaveLength(2);
+
+    // …dispose reaps each factory's own canvas.
+    second.dispose();
+    reflector.dispose();
+    expect(container.querySelectorAll("canvas")).toHaveLength(0);
+  });
+
   it("reports unavailable under happy-dom (no WebGL) and never throws on flush", () => {
     const { world, engine, reflector } = setup();
     expect(reflector.available()).toBe(false);

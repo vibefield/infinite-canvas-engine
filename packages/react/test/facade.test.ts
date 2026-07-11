@@ -20,7 +20,7 @@ import {
   type CanvasEngine,
   type Entity,
 } from "@ice/core";
-import { act, createElement, useState, type ReactElement } from "react";
+import { StrictMode, act, createElement, useState, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -289,5 +289,30 @@ describe("<InfiniteCanvas>", () => {
     });
     expect(caf).toHaveBeenCalled(); // the loop was cancelled
     expect(mountEl.querySelector("[data-ice-canvas]")).toBeNull(); // host torn down
+  });
+
+  it("StrictMode remount stacks nothing: exactly one grid + one wires canvas (double-grid field report)", () => {
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+
+    const { engine } = makeEngine();
+    const mountEl = document.createElement("div");
+    document.body.appendChild(mountEl);
+    const root = createRoot(mountEl);
+
+    // StrictMode runs the mount effect twice ON THE SAME container div — every
+    // factory-inserted node (grid canvas, wires canvas, chrome plane, lifted
+    // plane) must be disposed by the cleanup or it duplicates here.
+    act(() => {
+      root.render(createElement(StrictMode, null, createElement(InfiniteCanvas, { engine })));
+    });
+
+    const container = mountEl.querySelector("[data-ice-canvas]");
+    expect(container).toBeTruthy();
+    expect(container?.querySelectorAll("canvas")).toHaveLength(2); // grid + wires, once each
+
+    act(() => {
+      root.unmount();
+    });
   });
 });

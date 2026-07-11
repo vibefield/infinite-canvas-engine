@@ -258,6 +258,7 @@ export function CursorLayer() {
       removeAdapter();
       unregStage();
       unregGrid();
+      grid.dispose(); // unregister stops flushes; dispose removes the canvas + RO (StrictMode double-grid)
       ro.disconnect();
       for (const node of nodes.values()) node.el.remove();
       nodes.clear();
@@ -267,6 +268,7 @@ export function CursorLayer() {
       chromeNodes.clear();
       if (selboxNode) selboxNode.remove();
       if (marqueeNode) marqueeNode.remove();
+      host.dispose(); // removes the (unused) content plane + host-owned styles
     };
   }, [pw]);
 

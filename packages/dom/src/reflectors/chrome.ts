@@ -58,7 +58,7 @@ export function createChromeReflector(
   // handed the same world by the registry, so we read it there, not from closure.
   _world: World,
   marqueeBuffer: MarqueeBuffer,
-): ReflectorDef & { writes(): number } {
+): ReflectorDef & { writes(): number; dispose(): void } {
   const doc = host.container.ownerDocument;
   // The screen-space overlay plane — appended after the content plane, so it
   // paints above it (P4 over P1) without a camera transform of its own.
@@ -212,5 +212,10 @@ export function createChromeReflector(
       drewLast = boxNodes.size > 0 || handleNodes.size > 0 || marqueeNode !== null;
     },
     writes: () => writes,
+    // The P4 overlay plane is this factory's insertion — unregistering the
+    // reflector alone leaves it behind (2026-07-11 teardown sweep).
+    dispose() {
+      plane.remove();
+    },
   };
 }

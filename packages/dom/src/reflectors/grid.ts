@@ -222,7 +222,7 @@ function collectUniforms(gl: GLContext, program: WebGLProgram): Record<UniformNa
 export function createGridReflector(
   host: GridHost,
   opts: Partial<GridConfig> = {},
-): ReflectorDef & { available(): boolean } {
+): ReflectorDef & { available(): boolean; dispose(): void } {
   const config: GridConfig = { ...DEFAULT_GRID_CONFIG, ...opts };
   const doc = host.container.ownerDocument;
 
@@ -309,8 +309,9 @@ export function createGridReflector(
   const initialRect = host.container.getBoundingClientRect();
   applySize(initialRect.width, initialRect.height);
 
+  let ro: ResizeObserver | undefined;
   try {
-    const ro = new ResizeObserver((entries) => {
+    ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry === undefined) return;
       applySize(entry.contentRect.width, entry.contentRect.height);
@@ -337,5 +338,16 @@ export function createGridReflector(
       }
     },
     available: () => gl !== null,
+    // Unregistering a reflector only stops its flushes — the canvas this
+    // factory inserted (and its ResizeObserver) must be torn down explicitly,
+    // or a React StrictMode remount stacks a second frozen grid under the
+    // live one (field report 2026-07-11).
+    dispose() {
+      ro?.disconnect();
+      gl = null;
+      program = null;
+      uniforms = null;
+      canvas.remove();
+    },
   };
 }

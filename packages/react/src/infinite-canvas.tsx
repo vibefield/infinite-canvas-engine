@@ -101,13 +101,21 @@ export function InfiniteCanvas({
     const domWidgets = createDomWidgetsReflector(planeArgs, world, runtime.store);
     const remoteCursors = createRemoteCursorsReflector(host, world);
 
+    // Handles kept for teardown: unregistering only stops flushes — the DOM
+    // these factories inserted (grid canvas, wires canvas, chrome plane) must
+    // be disposed too, or a StrictMode remount stacks duplicates (the
+    // double-grid field report, 2026-07-11).
+    const grid = createGridReflector(host);
+    const wires = createWiresReflector(host, world, { readPreview: () => stack.wirePreview });
+    const chrome = createChromeReflector(host, world, stack.marqueeBuffer);
+
     // Registration order = flush order — node-board's proven sequence.
     const unregister = [
       core.registerReflector(createPlaneTransformReflector(planeArgs)),
-      core.registerReflector(createGridReflector(host)),
-      core.registerReflector(createWiresReflector(host, world, { readPreview: () => stack.wirePreview })),
+      core.registerReflector(grid),
+      core.registerReflector(wires),
       core.registerReflector(domWidgets),
-      core.registerReflector(createChromeReflector(host, world, stack.marqueeBuffer)),
+      core.registerReflector(chrome),
       core.registerReflector(createCursorReflector(host, stack.readCursor)),
       core.registerReflector(remoteCursors.reflector),
     ];
@@ -141,6 +149,10 @@ export function InfiniteCanvas({
       resizeObserver?.disconnect();
       for (const unreg of unregister) unreg();
       remoteCursors.destroy();
+      grid.dispose();
+      wires.dispose();
+      chrome.dispose();
+      planes.dispose();
       host.dispose();
       setHosts(undefined);
     };
