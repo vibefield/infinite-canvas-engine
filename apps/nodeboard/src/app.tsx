@@ -18,17 +18,31 @@
  * browser entry (`main.tsx`) and the headless exit tests. `boot({ mount:false })`
  * runs the engine/session/seed/nav path WITHOUT the browser-only pieces (grid,
  * rAF, relay, autosave, ResizeObserver, React mount) so happy-dom can drive it.
+ *
+ * COLLAB (M9): pass `room` (or an injected `channel`) → the doc boot swaps the
+ * localStorage restore/create path for `joinDoc` over a byte channel (WebSocket
+ * when `relay` is given, else a same-origin BroadcastChannel), the ROOM is the
+ * source of truth so there is NO storage restore/autosave/dumb-relay, and a
+ * presence session (attachPresence → installPresence + the remote-cursors
+ * reflector) rides the same channel. The seeder path runs `seedScene`; a joiner
+ * imports the room's snapshot. `channel`/`clock` are optional test seams
+ * defaulting to the real adapters.
  */
 import {
   ActiveTool,
+  type BootstrapClock,
+  type ByteChannel,
   Camera,
   ChildOf,
   type CommitSink,
   type DocSession,
   type Engine,
   type Entity,
+  type JoinDocOpts,
+  type JoinResult,
   PrefabId,
   Position,
+  type PresenceSession,
   Size,
   StackZ,
   Viewport,
@@ -38,6 +52,8 @@ import {
   WireTo,
   type World,
   attachBroadcastRelay,
+  attachPresence,
+  broadcastChannelByteChannel,
   createDocSession,
   createEngine,
   createNestedCanvas,
@@ -45,10 +61,13 @@ import {
   createWorld,
   defineQuery,
   installInteractionStack,
+  installPresence,
   installWidgetRuntime,
+  joinDoc,
   restoreAutosave,
   spawnWidget,
   startAutosave,
+  webSocketByteChannel,
   writeRuntimeResource,
 } from "@ice/core";
 import type { NestedCanvas } from "@ice/core";
@@ -61,9 +80,11 @@ import {
   createGridReflector,
   createPlaneTransformReflector,
   createPlanes,
+  createRemoteCursorsReflector,
   createWiresReflector,
   startRafLoop,
 } from "@ice/dom";
+import type { RemoteCursorsReflector } from "@ice/dom";
 import { WidgetRoot } from "@ice/react";
 import { createRoot } from "react-dom/client";
 import { createDocUi } from "./doc-ui";
@@ -73,8 +94,45 @@ import { NavContext, StoreContext } from "./store-context";
 
 const STORAGE_KEY = "ice-nodeboard/doc";
 const RELAY_CHANNEL = "ice-nodeboard";
+/** Prefix for the BroadcastChannel collab fallback (`?room` with no `?relay`). */
+const COLLAB_BC_PREFIX = "ice-nodeboard-";
 
 const widgetQ = defineQuery([Position, Size, StackZ]);
+
+// --- collab identity (design-001 §5.6 presence prefab) -----------------------
+
+const PRESENCE_NAMES = ["Otter", "Heron", "Marmot", "Lynx", "Falcon", "Badger", "Gecko", "Wren", "Vole", "Puffin"];
+const PRESENCE_ADJECTIVES = ["Swift", "Calm", "Bright", "Bold", "Keen", "Quiet", "Merry", "Deft"];
+const PRESENCE_PALETTE = ["#e5484d", "#0090ff", "#30a46c", "#f76b15", "#8e4ec6", "#e2a336", "#12a594", "#d6409f"];
+
+const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(Math.random() * xs.length)] as T;
+
+/** Presence identity override (tests pass a fixed name/color/peerId; the app randomizes). */
+export interface CollabIdentity {
+  readonly name?: string;
+  readonly color?: string;
+  readonly peerId?: string;
+}
+
+/** Resolve a presence identity: caller overrides win; otherwise a randomized fun name + palette color. */
+function resolveIdentity(id?: CollabIdentity): { name: string; color: string; peerId?: string } {
+  return {
+    name: id?.name ?? `${pick(PRESENCE_ADJECTIVES)} ${pick(PRESENCE_NAMES)}`,
+    color: id?.color ?? pick(PRESENCE_PALETTE),
+    ...(id?.peerId !== undefined ? { peerId: id.peerId } : {}),
+  };
+}
+
+/**
+ * Build the collab byte channel: an injected `channel` (tests) wins; else a
+ * WebSocket to `${relay}/${room}` when `relay` is given; else a same-origin
+ * BroadcastChannel keyed by the room (two-tab collab, no server).
+ */
+function buildCollabChannel(room: string, relay?: string, injected?: ByteChannel): ByteChannel {
+  if (injected !== undefined) return injected;
+  if (relay !== undefined) return webSocketByteChannel(new WebSocket(`${relay}/${encodeURIComponent(room)}`));
+  return broadcastChannelByteChannel(COLLAB_BC_PREFIX + room);
+}
 
 // Ensure all three widget types register (import side effect kept honest).
 void MathNode;
@@ -176,7 +234,7 @@ export function seedScene(session: DocSession, world: World): number {
 export interface BootOptions {
   /** Viewport element the host styles. Default: `#app`. */
   readonly container?: HTMLElement;
-  /** Autosave sink. Default: localStorage. */
+  /** Autosave sink. Default: localStorage. LOCAL mode only (collab ignores it). */
   readonly storage?: NodeboardStorage;
   /**
    * false → HEADLESS: skip the React mount, grid, rAF loop, broadcast relay,
@@ -184,6 +242,22 @@ export interface BootOptions {
    * wire. Default true (the browser app).
    */
   readonly mount?: boolean;
+  /**
+   * Present ⇒ COLLAB mode: join the room's document over a byte channel via
+   * `joinDoc` (NO localStorage restore/autosave — the room is authoritative).
+   * The channel is a WebSocket to `relay` when given, else a BroadcastChannel.
+   */
+  readonly room?: string;
+  /** WebSocket relay base URL (e.g. `ws://localhost:9301`). With `room`, builds a WebSocket channel. */
+  readonly relay?: string;
+  /** Injected byte channel (tests) — overrides `room`/`relay` channel construction. Implies collab mode. */
+  readonly channel?: ByteChannel;
+  /** Injected bootstrap clock (tests) for a deterministic hello-timeout. Default: real timers. */
+  readonly clock?: BootstrapClock;
+  /** Presence identity override (tests). Default: a randomized fun name + palette color. */
+  readonly identity?: CollabIdentity;
+  /** Version-gate override, forwarded to `joinDoc` (a non-"ok" verdict ⇒ a read-only joiner). */
+  readonly onGate?: JoinDocOpts["onGate"];
 }
 
 export interface BootHandle {
@@ -194,6 +268,8 @@ export interface BootHandle {
   readonly nav: NestedCanvas;
   /** Widgets present after boot (seeded or restored). */
   readonly widgetCount: number;
+  /** Collab role in `joinDoc` mode: "seeder" (founded the doc) or "joiner" (imported it). Absent in local mode. */
+  readonly role?: JoinResult["role"];
   dispose(): void;
 }
 
@@ -250,22 +326,44 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
   });
   engine.addSystems("react", nav.navIntegrity);
 
-  // --- boot the document: restore, quarantine-and-reset, or create fresh ---
-  const storage = options.storage ?? createLocalStorageStorage(STORAGE_KEY);
-  const restored = await restoreAutosave(world, storage);
+  // --- boot the document: COLLAB (joinDoc) or LOCAL (restore/quarantine/create) ---
+  const collabMode = options.room !== undefined || options.channel !== undefined;
 
   let session: DocSession;
   let quarantineReason: string | undefined;
-  if (restored.status === "restored") {
-    session = restored.session;
+  let role: JoinResult["role"] | undefined;
+  let presence: PresenceSession | undefined;
+  let joinResult: JoinResult | undefined;
+  let storage: NodeboardStorage | undefined; // LOCAL mode only
+
+  if (collabMode) {
+    // The room is authoritative → NO storage restore. Presence attaches BEFORE
+    // joinDoc so it rides the same byte channel (kind PRESENCE frames); the
+    // seeder runs seedScene, a joiner imports the room's snapshot instead.
+    const channel = buildCollabChannel(options.room ?? "default", options.relay, options.channel);
+    presence = attachPresence(world, resolveIdentity(options.identity));
+    joinResult = await joinDoc(world, channel, {
+      presence,
+      seed: (s) => void seedScene(s, world),
+      ...(options.clock !== undefined ? { clock: options.clock } : {}),
+      ...(options.onGate !== undefined ? { onGate: options.onGate } : {}),
+    });
+    session = joinResult.session;
+    role = joinResult.role;
   } else {
-    if (restored.status === "quarantined") {
-      storage.stashQuarantine(restored.bytes);
-      quarantineReason = restored.reason;
-      console.warn(`node-board: autosave quarantined — ${restored.reason}; starting fresh.`);
+    storage = options.storage ?? createLocalStorageStorage(STORAGE_KEY);
+    const restored = await restoreAutosave(world, storage);
+    if (restored.status === "restored") {
+      session = restored.session;
+    } else {
+      if (restored.status === "quarantined") {
+        storage.stashQuarantine(restored.bytes);
+        quarantineReason = restored.reason;
+        console.warn(`node-board: autosave quarantined — ${restored.reason}; starting fresh.`);
+      }
+      session = createDocSession(world);
+      seedScene(session, world);
     }
-    session = createDocSession(world);
-    seedScene(session, world);
   }
   sinkRef.target = session.sink;
 
@@ -277,8 +375,9 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     widgetCount += b.count;
   });
 
+  // Autosave + the M5 dumb tab relay are LOCAL-only (collab persists via the room).
   let autosave: ReturnType<typeof startAutosave> | undefined;
-  if (mount) {
+  if (mount && !collabMode && storage !== undefined) {
     attachBroadcastRelay(session, { channelName: RELAY_CHANNEL });
     autosave = startAutosave(session, { storage, world });
     if (typeof window !== "undefined") {
@@ -302,16 +401,30 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
   engine.registerReflector(createChromeReflector(host, world, stack.marqueeBuffer));
   engine.registerReflector(createCursorReflector(host, stack.readCursor));
 
+  // Collab presence (registered LAST so its plane is topmost, P5 over P4):
+  // installPresence adds the publish hook (outbound cursor/selection facets) +
+  // the derive system projecting PresencePeer → CursorVisual; the reflector
+  // renders those remote cursors. `keyOf` carries durable selection keys so a
+  // peer can outline the exact widgets you have selected.
+  let remoteCursors: RemoteCursorsReflector | undefined;
+  let uninstallPresence: (() => void) | undefined;
+  if (collabMode && presence !== undefined) {
+    remoteCursors = createRemoteCursorsReflector(host, world);
+    engine.registerReflector(remoteCursors.reflector);
+    uninstallPresence = installPresence(engine, presence, { keyOf: (e) => session.store.keyOf(e) });
+  }
+
   let docUi: ReturnType<typeof createDocUi> | undefined;
-  if (mount && autosave !== undefined) {
+  if (mount) {
     docUi = createDocUi({
       host,
       world,
       session,
       nav,
-      autosave,
       widgetCount,
+      ...(autosave !== undefined ? { autosave } : {}),
       ...(quarantineReason !== undefined ? { quarantineReason } : {}),
+      ...(role !== undefined ? { collab: { role } } : {}),
     });
     engine.registerReflector(docUi.reflector);
   }
@@ -351,10 +464,19 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     stack,
     nav,
     widgetCount,
+    ...(role !== undefined ? { role } : {}),
     dispose() {
       detachAdapter();
       docUi?.detach();
       resizeObserver?.disconnect();
+      // Collab teardown: uninstall the presence systems/reflector, ship presence
+      // tombstones, then leave the room (unsubscribes the channel + closes the
+      // session). leave() also closes the doc, so no separate session.close().
+      uninstallPresence?.();
+      remoteCursors?.destroy();
+      presence?.detach();
+      joinResult?.leave();
+      autosave?.flush();
       root?.unmount();
       reactHost?.remove();
       host.dispose();

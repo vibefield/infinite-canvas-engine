@@ -14,7 +14,10 @@ import {
   type Autosave,
   type DocSession,
   type Entity,
+  Local,
   type NestedCanvas,
+  Not,
+  PresencePeer,
   type ReflectorDef,
   Selected,
   type World,
@@ -29,12 +32,17 @@ export interface DocUiDeps {
   world: World;
   session: DocSession;
   nav: NestedCanvas;
-  autosave: Autosave;
+  /** LOCAL mode only — the autosave status line. Absent in collab mode. */
+  autosave?: Autosave;
   widgetCount: number;
   quarantineReason?: string;
+  /** COLLAB mode only — the joinDoc role, drives the collab status line. */
+  collab?: { role: "seeder" | "joiner" };
 }
 
 const selectedQ = defineQuery([Selected]);
+/** Remote presence peers (design-001 §5.6: `PresencePeer` + `Not(Local)`). */
+const remotePeersQ = defineQuery([PresencePeer, Not(Local)]);
 
 const PANEL_STYLE: Readonly<Record<string, string>> = {
   position: "absolute",
@@ -169,6 +177,7 @@ export function createDocUi(deps: DocUiDeps): DocUi {
   doc.addEventListener("keydown", onKey);
 
   const savedLabel = (): string => {
+    if (deps.autosave === undefined) return "idle";
     const s = deps.autosave.state();
     switch (s.status) {
       case "saving":
@@ -217,8 +226,17 @@ export function createDocUi(deps: DocUiDeps): DocUi {
         `node-board · ${deps.widgetCount} widgets${deps.session.readOnly ? " [READ-ONLY]" : ""}`,
         `tool: ${tool}${depth > 0 ? ` · inside group (depth ${depth})` : ""}`,
         "connect: drag port→port · dbl-click group to enter",
-        `autosave: ${savedLabel()}`,
       ];
+      if (deps.collab !== undefined) {
+        // Peers online = remote peers (PresencePeer, Not(Local)) + ourselves.
+        let remote = 0;
+        deps.world.query(remotePeersQ).each((b) => {
+          remote += b.count;
+        });
+        lines.push(`collab: ${deps.collab.role} · ${remote + 1} online`);
+      } else if (deps.autosave !== undefined) {
+        lines.push(`autosave: ${savedLabel()}`);
+      }
       if (deps.quarantineReason !== undefined) lines.push("quarantined prior save:", deps.quarantineReason);
       lines.push("Del delete · ⌘Z undo · ⇧⌘Z redo · Esc exit");
       status.textContent = lines.join("\n");
