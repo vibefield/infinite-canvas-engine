@@ -46,6 +46,7 @@ import {
   wireMeasurement,
   type CanvasHost,
   type DomWidgetsReflector,
+  type GridConfig,
   type Planes,
 } from "@ice/dom";
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
@@ -70,6 +71,12 @@ export interface InfiniteCanvasProps {
   readonly measureQueue?: MeasureQueue;
   /** Called once after the host/reflectors/loop are live (app-side GL/devtools). */
   readonly onReady?: (handle: InfiniteCanvasHandle) => void;
+  /**
+   * Dot-grid tuning (theme dot color, spacing, fades). Applied live via the
+   * grid reflector's `configure` — changing it never re-boots the canvas
+   * (memoize in the caller to avoid redundant same-value redraws).
+   */
+  readonly grid?: Partial<GridConfig>;
   readonly className?: string;
   readonly style?: CSSProperties;
   /** Overlays inside the viewport (toolbars, HUD) — rendered under the EngineProvider. */
@@ -80,6 +87,7 @@ export function InfiniteCanvas({
   engine,
   measureQueue,
   onReady,
+  grid: gridConfig,
   className,
   style,
   children,
@@ -89,6 +97,11 @@ export function InfiniteCanvas({
   // Keep onReady out of the effect deps (identity churn must not re-boot).
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  // The live grid handle (set by the mount effect); the grid-config effect
+  // below re-tunes it without re-booting the canvas.
+  const gridRef = useRef<ReturnType<typeof createGridReflector> | null>(null);
+  const gridConfigRef = useRef(gridConfig);
+  gridConfigRef.current = gridConfig;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -105,7 +118,8 @@ export function InfiniteCanvas({
     // these factories inserted (grid canvas, wires canvas, chrome plane) must
     // be disposed too, or a StrictMode remount stacks duplicates (the
     // double-grid field report, 2026-07-11).
-    const grid = createGridReflector(host);
+    const grid = createGridReflector(host, gridConfigRef.current ?? {});
+    gridRef.current = grid;
     const wires = createWiresReflector(host, world, { readPreview: () => stack.wirePreview });
     const chrome = createChromeReflector(host, world, stack.marqueeBuffer);
 
@@ -150,6 +164,7 @@ export function InfiniteCanvas({
       for (const unreg of unregister) unreg();
       remoteCursors.destroy();
       grid.dispose();
+      gridRef.current = null;
       wires.dispose();
       chrome.dispose();
       planes.dispose();
@@ -157,6 +172,13 @@ export function InfiniteCanvas({
       setHosts(undefined);
     };
   }, [engine, measureQueue]);
+
+  // Live grid re-tune — never re-boots the canvas (the mount effect above
+  // deliberately omits `gridConfig` from its deps; initial config rides the
+  // ref at creation).
+  useEffect(() => {
+    if (gridConfig !== undefined) gridRef.current?.configure(gridConfig);
+  }, [gridConfig]);
 
   return (
     <EngineProvider engine={engine}>

@@ -66,6 +66,14 @@ describe("grid reflector", () => {
     expect(first?.nextElementSibling).toBe(host.contentPlane);
   });
 
+  it("configure merges live config without throwing, even with no GL (headless)", () => {
+    const { reflector } = setup();
+    expect(reflector.available()).toBe(false); // happy-dom: no WebGL
+    // The seam widgetlab's theme switch + settings panel drive — must be safe
+    // pre-GL and repaint-on-call post-GL (uniforms upload per draw()).
+    expect(() => reflector.configure({ dotColor: [0.1, 0.2, 0.3], dotAlpha: 0.5 })).not.toThrow();
+  });
+
   it("dispose removes the inserted canvas — a remount cannot stack a second grid (2026-07-11 field report)", () => {
     const { host, reflector, container } = setup();
     expect(container.querySelectorAll("canvas")).toHaveLength(1);

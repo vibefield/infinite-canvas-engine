@@ -222,7 +222,7 @@ function collectUniforms(gl: GLContext, program: WebGLProgram): Record<UniformNa
 export function createGridReflector(
   host: GridHost,
   opts: Partial<GridConfig> = {},
-): ReflectorDef & { available(): boolean; dispose(): void } {
+): ReflectorDef & { available(): boolean; dispose(): void; configure(next: Partial<GridConfig>): void } {
   const config: GridConfig = { ...DEFAULT_GRID_CONFIG, ...opts };
   const doc = host.container.ownerDocument;
 
@@ -338,6 +338,22 @@ export function createGridReflector(
       }
     },
     available: () => gl !== null,
+    // Live re-tune (theme switches, settings panels): draw() uploads every
+    // config uniform per call, so a merge + one redraw at the last camera is
+    // the whole story. Outside the frame contract by design — config is host
+    // input, not world state (same class as the RO resize path).
+    configure(next: Partial<GridConfig>) {
+      Object.assign(config, next);
+      if (gl !== null) {
+        try {
+          draw(lastCamera);
+        } catch {
+          gl = null;
+          program = null;
+          uniforms = null;
+        }
+      }
+    },
     // Unregistering a reflector only stops its flushes — the canvas this
     // factory inserted (and its ResizeObserver) must be torn down explicitly,
     // or a React StrictMode remount stacks a second frozen grid under the
