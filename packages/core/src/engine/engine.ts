@@ -54,6 +54,8 @@ export interface Engine {
   addSystems(group: PhaseGroup, ...systems: readonly AnySystem[]): () => void;
   /** Register a post-notify output reflector (design-002 §5). Returns an unregister. */
   registerReflector(def: ReflectorDef): () => void;
+  /** All registered reflector names (devtools; telemetry-independent). */
+  reflectorNames(): readonly string[];
   /** Register a publish-step hook (post-tick, pre-notify presence I/O). Returns a remover. */
   onPublish(hook: PublishHook): () => void;
   /** Run one full frame. `now` in ms (rAF timestamp or a test counter). */
@@ -87,6 +89,9 @@ export function createEngine(world: World, opts?: EngineOpts): Engine {
       return pipeline.add(group, ...systems);
     },
 
+    reflectorNames() {
+      return reflectors.names();
+    },
     registerReflector(def) {
       return reflectors.register(def);
     },

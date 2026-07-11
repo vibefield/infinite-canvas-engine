@@ -257,9 +257,13 @@ function renderPlanes({ doc, world, engine, state }: RenderCtx): HTMLElement[] {
   const out: HTMLElement[] = [heading(doc, "reflectors (flushed last frame)")];
   const frame = engine.lastFrame();
   const flushedNow = new Set(frame?.reflectorsFlushed ?? []);
+  // Registered enumeration is telemetry-independent (engine.reflectorNames,
+  // added on this panel's field request) — idle-since-boot reflectors list
+  // too; the seen-set only backfills ones unregistered since their flush.
+  for (const name of engine.reflectorNames()) state.seenReflectors.add(name);
   for (const name of flushedNow) state.seenReflectors.add(name);
   if (state.seenReflectors.size === 0) {
-    out.push(empty(doc, frame ? "no reflectors registered" : "enable telemetry + step to list reflectors"));
+    out.push(empty(doc, "no reflectors registered"));
   }
   for (const name of [...state.seenReflectors].sort()) {
     const r = row(doc, name);

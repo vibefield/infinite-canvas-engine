@@ -27,7 +27,9 @@ evidence. One file per open petition in `docs/petitions/`.
 
 ## Open candidates
 
-None currently.
+| # | Title | Field finding | File |
+|---|-------|---------------|------|
+| 6 | Public entity introspection (`world.componentsOf`/`tagsOf` — promote the existing internal readers) | M10 devtools | [petitions/petition-6-entity-introspection.md](petitions/petition-6-entity-introspection.md) |
 
 House rules for petitions: cite strata source file:line for every
 current-behavior claim; state the engine field impact that motivated it;

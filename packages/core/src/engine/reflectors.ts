@@ -52,6 +52,9 @@ export interface ReflectorRegistry {
   flushAll(): void;
   /** Names flushed on the most recent `flushAll` (telemetry). */
   lastFlushed(): readonly string[];
+  /** Every registered reflector, registration order (devtools enumeration —
+   *  independent of telemetry; a reflector idle since boot still lists). */
+  names(): readonly string[];
 }
 
 interface Entry {
@@ -111,6 +114,10 @@ export function createReflectorRegistry(
 
     lastFlushed() {
       return flushed;
+    },
+
+    names() {
+      return entries.map((e) => e.def.name);
     },
   };
 }
