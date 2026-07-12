@@ -25,7 +25,7 @@ import {
   useSyncExternalStore,
   type ReactElement,
 } from "react";
-import { Mesh, OrthographicCamera, PlaneGeometry, type WebGLRenderTarget } from "three";
+import { Mesh, OrthographicCamera, PlaneGeometry, type Texture, type WebGLRenderTarget } from "three";
 import {
   PrefabId,
   RUNTIME_BUDGETS,
@@ -54,6 +54,13 @@ export interface GLViewsProps {
   readonly maxFboBytes?: number;
   /** Repaint stagger per composited frame (v1 default 4). */
   readonly maxRepaintsPerFrame?: number;
+  /**
+   * Shared IBL: stamped as `scene.environment` on EVERY island's private
+   * scene (arrival/change repaints all islands). Load it app-side (e.g.
+   * drei's useEnvironment in a Suspense boundary) — undefined until then is
+   * fine; islands paint unlit-by-IBL and repaint when it lands.
+   */
+  readonly environment?: Texture | null;
 }
 
 export function GLViews({
@@ -62,6 +69,7 @@ export function GLViews({
   store,
   maxFboBytes = RUNTIME_BUDGETS.fboBytes,
   maxRepaintsPerFrame = 4,
+  environment,
 }: GLViewsProps): ReactElement {
   const world = engine.world;
   const gl = useThree((s) => s.gl);
@@ -227,6 +235,7 @@ export function GLViews({
         world,
         entity: entry.entity as Entity,
         widget,
+        ...(environment !== undefined ? { environment } : {}),
       }),
     );
   }

@@ -10,16 +10,12 @@
  * `useIslandFrame` (`dt` seconds → `dtMs / 1000`; the tilt term accumulates a
  * local elapsed clock in place of `state.clock.elapsedTime`).
  *
- * LIGHTING ADAPTATION (no v3 equivalent for v1's IBL): the v1 card carried
- * only an `ambientLight` and relied on the InfiniteCanvas r3fRoot's shared
- * environment map (propagated to every widget scene by the v1 Compositor) to
- * light a fully-metallic (`metalness: 1`) surface. v3 islands are private
- * scenes with NO shared environment, so a metal knot lit by ambient alone
- * renders nearly black. The MATERIAL is ported verbatim (metalness/roughness/
- * clearcoat/envMapIntensity unchanged); the ambient is kept; and a two-point
- * "studio" rig is ADDED so the metal shows specular highlights. It will still
- * read darker/less reflective than v1 until an island `<Environment>`/IBL
- * exists. Flagged in the port report.
+ * LIGHTING: v1 carried only an `ambientLight` and relied on the canvas-root
+ * IBL (the v1 Compositor propagated it to every widget scene). v3 restores
+ * that via `<GLViews environment>` — the App loads the same "apartment" HDR
+ * and every island scene gets it as `scene.environment`, so the material is
+ * v1-verbatim AND v1-lit. (An interim two-point studio rig lived here before
+ * the seam existed; removed with it.)
  */
 import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
@@ -59,27 +55,11 @@ function GoldKnotView({ entity, world }: WidgetComponentProps): ReactElement {
     m.rotation.x = Math.sin(elapsed.current * 0.5) * 0.2;
   });
 
-  const light = size * 2.2;
-
   return (
     <group>
-      {/* v1 lit this scene from the canvas-root IBL environment; v3 islands
-          have no shared env, so an explicit rig replaces it (see module note). */}
+      {/* v1-verbatim: ambient only — the shared island environment (GLViews
+          environment seam) carries the metallic response, exactly like v1. */}
       <ambientLight intensity={0.15} />
-      <pointLight
-        position={[size * 0.5, size * 0.5, size * 0.7]}
-        intensity={240}
-        distance={light}
-        decay={1.4}
-        color="#FFFFFF"
-      />
-      <pointLight
-        position={[-size * 0.5, -size * 0.3, size * 0.5]}
-        intensity={120}
-        distance={light}
-        decay={1.6}
-        color="#FFE7C2"
-      />
       <mesh ref={meshRef} position={[0, 0, 6]}>
         <torusKnotGeometry args={[size * 0.18, size * 0.055, 220, 40]} />
         <meshPhysicalMaterial

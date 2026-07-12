@@ -13,7 +13,7 @@
  */
 import { createPortal } from "@react-three/fiber";
 import { createElement, useEffect, useMemo, type ComponentType, type ReactElement } from "react";
-import { OrthographicCamera, Scene } from "three";
+import { OrthographicCamera, Scene, type Texture } from "three";
 import type { Entity, WidgetType, World } from "@ice/core";
 import type { WidgetComponentProps } from "@ice/react";
 import type { GLBridge } from "./bridge";
@@ -24,9 +24,11 @@ export interface IslandProps {
   readonly world: World;
   readonly entity: Entity;
   readonly widget: WidgetType;
+  /** Shared IBL for this island's private scene (see GLViews.environment). */
+  readonly environment?: Texture | null;
 }
 
-export function Island({ bridge, world, entity, widget }: IslandProps): ReactElement | null {
+export function Island({ bridge, world, entity, widget, environment }: IslandProps): ReactElement | null {
   const scene = useMemo(() => new Scene(), []);
   const camera = useMemo(() => {
     const cam = new OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
@@ -39,6 +41,15 @@ export function Island({ bridge, world, entity, widget }: IslandProps): ReactEle
     () => bridge.registerIsland(entity, { scene, camera }),
     [bridge, entity, scene, camera],
   );
+
+  // Shared environment (v1's Compositor propagated its env map to every widget
+  // scene; v3 islands are private, so propagation is this explicit stamp). The
+  // HDR usually arrives AFTER the first cold paint — bumpPaint repaints even
+  // static (animated:false) islands with the new lighting.
+  useEffect(() => {
+    scene.environment = environment ?? null;
+    bridge.bumpPaint(entity);
+  }, [environment, scene, bridge, entity]);
 
   const View = widget.component as ComponentType<WidgetComponentProps>;
   if (View == null) return null;
