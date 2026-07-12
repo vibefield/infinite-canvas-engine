@@ -117,6 +117,14 @@ try {
   document.title += " ·ok";
 } catch (err) {
   console.error(err);
+  /* cold-CDN resilience: esm.sh sub-builds can flake on the very first hit —
+     retry once per tab before declaring failure. */
+  const retryKey = "iceRetry:" + location.pathname + location.search;
+  if (!sessionStorage.getItem(retryKey)) {
+    sessionStorage.setItem(retryKey, "1");
+    location.reload();
+    throw err;
+  }
   boot.classList.add("err");
   boot.innerHTML = "";
   boot.textContent = "demo failed to load — " + (err?.message ?? err);
