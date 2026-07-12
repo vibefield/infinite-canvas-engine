@@ -41,6 +41,13 @@ export interface IslandRenderState {
    * every pass (5 Hot vs cap 4 froze the shapes card, 2026-07-12).
    */
   lastPaintSeq: number;
+  /**
+   * Composite-quad scale (lift-on-hold): scales the CARD on the canvas —
+   * texture, rounded alpha corners and all — instead of the scene content
+   * (which the card-sized frustum would crop into hard corners, 2026-07-12
+   * field report). ≠1 also pops render order over neighbors.
+   */
+  compositeScale: number;
 }
 
 const FRESH_PAINTED_AT: PaintedAt = { w: 0, h: 0, dpr: 1, band: 0 };
@@ -79,6 +86,7 @@ export function createIslandStateStore(): IslandStateStore {
         animRefs: 0,
         animatedDecl: false,
         lastPaintSeq: 0,
+        compositeScale: 1,
       };
       entries.set(key, s);
     }

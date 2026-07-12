@@ -1,8 +1,11 @@
 /**
- * GL twin of CardShell's lift: scales the island scene 1.05 while the widget
- * is hold-armed (post-Sequence-hand-off Drag capturing it, no Grab yet) or
- * live-dragged (Grab). Static islands repaint via useIslandInvalidate on
- * flip; animated ones pick the scale up on their next Hot tick anyway.
+ * GL twin of CardShell's lift — via the COMPOSITE quad (useIslandLift), not a
+ * scene-scale: the quad carries the texture's rounded alpha corners with it
+ * and pops the card over its neighbors, while a scene-scale pushed the
+ * backplate past the card-sized frustum and cropped the corners square
+ * (field report 2026-07-12). Lift signals match CardShell: hold-armed
+ * (post-Sequence-hand-off Drag capturing this widget, no Grab yet) or
+ * live-dragged (Grab).
  */
 import {
   Captures,
@@ -13,7 +16,7 @@ import {
   type Entity,
   type World,
 } from "@ice/core";
-import { useIslandInvalidate } from "@ice/r3f";
+import { useIslandLift } from "@ice/r3f";
 import { useEffect, useState, type ReactNode } from "react";
 
 function isLifted(world: World, entity: Entity): boolean {
@@ -37,14 +40,10 @@ export function GlLiftGroup({
   children: ReactNode;
 }) {
   const [lifted, setLifted] = useState(false);
-  const invalidate = useIslandInvalidate();
   useEffect(() => {
     const id = setInterval(() => setLifted(isLifted(world, entity)), 60);
     return () => clearInterval(id);
   }, [world, entity]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `lifted` is the TRIGGER — the effect must fire on every flip to repaint static islands
-  useEffect(() => {
-    invalidate(); // repaint even static (animated:false) islands on flip
-  }, [lifted, invalidate]);
-  return <group scale={lifted ? 1.05 : 1}>{children}</group>;
+  useIslandLift(lifted ? 1.05 : 1);
+  return <group>{children}</group>;
 }

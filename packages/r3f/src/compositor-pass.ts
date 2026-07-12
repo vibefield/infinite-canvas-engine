@@ -259,10 +259,15 @@ export function runCompositorPass(ctx: PassContext): PassStats {
       continue;
     }
     const q = worldRectToComposite({ x: pos.x, y: pos.y, width: size.w, height: size.h });
-    quad.setTransform(q.x, q.y, q.sx, q.sy);
+    // Lift-on-hold scales the QUAD (center-anchored — q.x/q.y is the rect
+    // center): texture + rounded alpha corners scale together, and the card
+    // overlaps its neighbors — scaling the SCENE instead crops the corners
+    // at the card-sized frustum (2026-07-12 field report).
+    const lift = s.compositeScale;
+    quad.setTransform(q.x, q.y, q.sx * lift, q.sy * lift);
     quad.setTexture(fbo.texture);
     const grabbed = world.get(e as Entity, Grab) !== undefined;
-    quad.setRenderOrder(grabbed ? GRABBED_RENDER_ORDER : (world.get(e as Entity, StackZ)?.z ?? 0));
+    quad.setRenderOrder(grabbed || lift !== 1 ? GRABBED_RENDER_ORDER : (world.get(e as Entity, StackZ)?.z ?? 0));
     quad.setVisible(true);
     pool.touch(e);
   }

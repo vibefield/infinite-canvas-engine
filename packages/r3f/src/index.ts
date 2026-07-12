@@ -24,6 +24,7 @@ export {
   useIslandContext,
   useIslandFrame,
   useIslandInvalidate,
+  useIslandLift,
   type IslandContextValue,
 } from "./use-island-frame";
 export { RenderTargetPool, type PoolEntryInfo } from "./pool";

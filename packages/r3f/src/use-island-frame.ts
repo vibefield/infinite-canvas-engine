@@ -51,3 +51,17 @@ export function useIslandInvalidate(): () => void {
   const { bridge, entity } = useIslandContext();
   return useCallback(() => bridge.bumpPaint(entity), [bridge, entity]);
 }
+
+/**
+ * Composite-quad lift: scales the CARD on the canvas (texture + rounded alpha
+ * corners together) and pops it over neighbors while ≠1. Scaling scene content
+ * instead crops the corners at the card-sized frustum — the 2026-07-12
+ * hard-corner field report. Resets to 1 on unmount.
+ */
+export function useIslandLift(scale: number): void {
+  const { bridge, entity } = useIslandContext();
+  useEffect(() => {
+    bridge.setCompositeScale(entity, scale);
+  }, [bridge, entity, scale]);
+  useEffect(() => () => bridge.setCompositeScale(entity, 1), [bridge, entity]);
+}

@@ -72,6 +72,8 @@ export interface GLBridge {
   requestFrame(): void;
   /** Island invalidation — this island must repaint (props/size/manual dirt). */
   bumpPaint(entity: Entity): void;
+  /** Composite-quad lift scale (1 = rest). Scales the CARD on the canvas, corners intact. */
+  setCompositeScale(entity: Entity, scale: number): void;
   /** GLViews wires R3F's demand-loop `invalidate` here (null on unmount). */
   setInvalidate(fn: (() => void) | null): void;
   /** Tear down reflector + observers + state (doc close / app teardown). */
@@ -193,6 +195,13 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
     bumpPaint(entity) {
       state.bumpPaint(entity);
       requestFrame();
+    },
+
+    setCompositeScale(entity, scale) {
+      const s = state.ensure(entity);
+      if (s.compositeScale === scale) return; // change-only — no idle churn
+      s.compositeScale = scale;
+      requestFrame(); // composite-level only: no island repaint needed
     },
 
     setInvalidate(fn) {
