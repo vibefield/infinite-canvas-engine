@@ -16,9 +16,17 @@ import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@i
 import { useIslandFrame } from "@ice/r3f";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
+import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
 
 /** v1 `medium` preset. */
 export const SIZE = { w: 329, h: 155 } as const;
+
+/** v1 card background: `linear-gradient(135deg, #2D1B5E 0%, #1A1240 55%, #0A0820 100%)`. */
+const BACKPLATE: readonly GradientStop[] = [
+  { offset: 0, color: "#2D1B5E" },
+  { offset: 0.55, color: "#1A1240" },
+  { offset: 1, color: "#0A0820" },
+];
 
 type TorusKnotProps = { hue: number };
 
@@ -44,6 +52,7 @@ function TorusKnotView({ entity, world }: WidgetComponentProps): ReactElement {
 
   return (
     <group>
+      <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.5, size * 0.5, size * 0.7]}
         intensity={220}

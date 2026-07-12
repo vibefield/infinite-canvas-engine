@@ -37,9 +37,17 @@ import { type WidgetComponentProps, useCommit, useWidgetProps, useWorldComponent
 import { useIslandFrame } from "@ice/r3f";
 import { type ReactElement, useMemo, useRef } from "react";
 import { type Mesh, Vector3 } from "three";
+import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
 
 /** v1 `large` preset. */
 export const SIZE = { w: 329, h: 345 } as const;
+
+/** v1 card background: `linear-gradient(135deg, #1F2333 0%, #14161F 60%, #0A0B12 100%)`. */
+const BACKPLATE: readonly GradientStop[] = [
+  { offset: 0, color: "#1F2333" },
+  { offset: 0.6, color: "#14161F" },
+  { offset: 1, color: "#0A0B12" },
+];
 
 const ACCENTS = ["#4060ff", "#20ffa0", "#ff4060", "#ffcc00"] as const;
 
@@ -152,9 +160,15 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
   const onClick = (e: ShapesPointer): void => {
     e.stopPropagation();
     if (movedRef.current > CLICK_MOVE_THRESHOLD) return; // a drag, not a click
-    commit((tx) => {
-      tx.edit(entity).set(propsGroup.component, { accentIdx: (accentIdx + 1) % ACCENTS.length } as never);
-    });
+    // A durable-write failure (e.g. no active doc) must never break the handler
+    // or the router — the repel keeps working even if the accent can't persist.
+    try {
+      commit((tx) => {
+        tx.edit(entity).set(propsGroup.component, { accentIdx: (accentIdx + 1) % ACCENTS.length } as never);
+      });
+    } catch (err) {
+      console.warn("[ShapesCard] accent commit failed", err);
+    }
   };
 
   useIslandFrame((dtMs) => {
@@ -256,15 +270,16 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
         color={accent}
       />
 
-      {/* Invisible full-card backplate that catches pointer events. Sits at z=0
-          so cursor → ray hit lands in the middle of the body cloud. `visible
-          false` on the MATERIAL keeps the mesh a raycast hit while it never
-          renders (the bodies carry no handlers, so they don't claim). */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: R3F mesh — onClick is a 3D raycast handler dispatched by the GL router, not a DOM click. */}
-      <mesh position={[0, 0, 0]} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={clearPointer} onPointerOut={clearPointer} onClick={onClick}>
-        <planeGeometry args={[width, height]} />
-        <meshBasicMaterial visible={false} />
-      </mesh>
+      {/* The VISIBLE gradient card is ALSO the RFC-006 interaction claim surface
+          (behind the swarm): press-drag parts the bodies, click (sub-threshold
+          move) cycles the accent. The router reaches it through the body cloud —
+          the bodies carry no handlers, so only this plane claims. */}
+      <GlCardBackplate
+        width={width}
+        height={height}
+        stops={BACKPLATE}
+        handlers={{ onPointerDown, onPointerMove, onPointerUp: clearPointer, onPointerOut: clearPointer, onClick }}
+      />
 
       {PALETTE.map((spec, i) => (
         <mesh

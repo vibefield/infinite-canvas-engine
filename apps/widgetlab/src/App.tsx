@@ -21,11 +21,11 @@ import { attachDevtools } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/dom";
 import { GLViews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter } from "@ice/r3f";
 import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
-import { useEnvironment } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Texture } from "three";
+import { PMREMGenerator, type Texture } from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
 import { WIDGETS } from "./widgets";
@@ -115,13 +115,20 @@ export function createDemoEngine(): CanvasEngine {
 }
 
 /**
- * v1's `r3fRoot={<Environment preset="apartment"/>}` equivalent: load the same
- * HDR (suspends inside its own boundary so GLViews stays mounted while it
- * streams), then hand the texture up — <GLViews environment> stamps it on
- * every island scene and repaints them (the metallic cards light up like v1).
+ * v1's `r3fRoot={<Environment preset="apartment"/>}` equivalent — but
+ * DETERMINISTIC: three's built-in RoomEnvironment through PMREM instead of
+ * drei's CDN HDR (a slow/blocked fetch left the metallic cards silhouetted —
+ * field-verified 2026-07-12). Near-identical neutral studio look, zero
+ * network. <GLViews environment> stamps it on every island scene.
  */
 function EnvLoader({ onTex }: { onTex: (t: Texture | null) => void }) {
-  const tex = useEnvironment({ preset: "apartment" });
+  const gl = useThree((s) => s.gl);
+  const tex = useMemo(() => {
+    const pmrem = new PMREMGenerator(gl);
+    const t = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    return t;
+  }, [gl]);
   useEffect(() => {
     onTex(tex);
     return () => onTex(null);
@@ -290,9 +297,7 @@ export function App() {
         {gl !== null &&
           createPortal(
             <Canvas orthographic frameloop="demand" gl={{ alpha: true }} style={{ width: "100%", height: "100%" }}>
-              <Suspense fallback={null}>
-                <EnvLoader onTex={setEnvTex} />
-              </Suspense>
+              <EnvLoader onTex={setEnvTex} />
               <GLViews engine={ce.engine} bridge={gl.bridge} store={ce.runtime.store} environment={envTex} />
             </Canvas>,
             gl.plane,

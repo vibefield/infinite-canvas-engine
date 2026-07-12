@@ -22,9 +22,17 @@ import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@i
 import { useIslandFrame } from "@ice/r3f";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
+import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
 
 /** v1 `large` preset. */
 export const SIZE = { w: 329, h: 345 } as const;
+
+/** v1 card background: `linear-gradient(135deg, #4A2814 0%, #2A0E12 60%, #14080C 100%)`. */
+const BACKPLATE: readonly GradientStop[] = [
+  { offset: 0, color: "#4A2814" },
+  { offset: 0.6, color: "#2A0E12" },
+  { offset: 1, color: "#14080C" },
+];
 
 type GoldKnotMetal = "gold" | "chrome" | "copper";
 type GoldKnotProps = { metal: GoldKnotMetal };
@@ -57,6 +65,7 @@ function GoldKnotView({ entity, world }: WidgetComponentProps): ReactElement {
 
   return (
     <group>
+      <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       {/* v1-verbatim: ambient only — the shared island environment (GLViews
           environment seam) carries the metallic response, exactly like v1. */}
       <ambientLight intensity={0.15} />

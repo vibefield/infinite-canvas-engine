@@ -16,9 +16,17 @@ import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
+import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
 
 /** v1 `small` preset. */
 export const SIZE = { w: 155, h: 155 } as const;
+
+/** v1 card background: `linear-gradient(135deg, #FFB6C1 0%, #FF7E8A 55%, #C24A6B 100%)`. */
+const BACKPLATE: readonly GradientStop[] = [
+  { offset: 0, color: "#FFB6C1" },
+  { offset: 0.55, color: "#FF7E8A" },
+  { offset: 1, color: "#C24A6B" },
+];
 
 type MatteSphereProps = { color: string };
 
@@ -36,6 +44,7 @@ function MatteSphereView({ entity, world }: WidgetComponentProps): ReactElement 
 
   return (
     <group>
+      <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.4, size * 0.4, size * 0.6]}
         intensity={160}
