@@ -1,0 +1,1279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API reference — infinite-canvas-engine</title>
+<meta name="description" content="The published surface of infinite-canvas-engine: @ice/core, @ice/react, @ice/dom, @ice/r3f, @ice/devtools, @ice/kernel.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='18' height='18' rx='3' fill='none' stroke='%234DA3FF' stroke-width='2'/%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5' fill='%2306090F' stroke='%234DA3FF' stroke-width='2'/%3E%3Crect x='22' y='22' width='7' height='7' rx='1.5' fill='%2306090F' stroke='%234DA3FF' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=Newsreader:ital,opsz,wght@1,6..72,300..500&family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#06090F; --bg1:#0A101B; --bg2:#0F1826; --bg3:#152238;
+  --line:#182639; --line2:#233650;
+  --ink:#E9F1FB; --ink2:#A3B5CC; --ink3:#64799A;
+  --blue:#4DA3FF; --blue-soft:rgba(77,163,255,.13);
+  --amber:#FFB84D; --amber-soft:rgba(255,184,77,.12);
+  --violet:#C08BFF; --violet-soft:rgba(192,139,255,.13);
+  --mint:#4DE3AE; --mint-soft:rgba(77,227,174,.11);
+  --rose:#FF7B92;
+  --disp:"Schibsted Grotesk",system-ui,sans-serif;
+  --body:"Inter",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:"Newsreader",Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:84px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{
+  background:var(--bg0);color:var(--ink);font:400 15.5px/1.66 var(--body);
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:rgba(77,163,255,.32)}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:4px}
+code,pre,kbd{font-family:var(--mono)}
+p code, li code, td code{
+  font-size:.86em;color:var(--ink);background:var(--bg2);
+  border:1px solid var(--line);border-radius:4px;padding:1px 5px;
+}
+
+/* ------------------------------------------------ top nav */
+.nav{
+  position:fixed;inset:0 0 auto 0;z-index:60;height:60px;
+  background:rgba(6,9,15,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.nav-in{max-width:1360px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;gap:24px}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--mono);font-size:13.5px;font-weight:700}
+.brand .dim{color:var(--ink3);font-weight:400}
+.nav-right{margin-left:auto;display:flex;gap:20px;align-items:center}
+.nav-right a{font-size:13.5px;color:var(--ink2)}
+.nav-right a:hover{color:var(--ink)}
+.nav-right .here{color:var(--blue);font-family:var(--mono);font-size:12.5px;font-weight:700}
+@media (max-width:520px){
+  .nav-in{gap:12px;padding:0 16px}
+  .brand{font-size:12px;gap:8px}
+  .brand .dim{display:none}
+  .shell{padding-left:16px;padding-right:16px}
+}
+@media (max-width:700px){
+  .t td:first-child{white-space:normal}
+  .t td code{white-space:normal}
+}
+
+/* ------------------------------------------------ layout */
+.shell{max-width:1360px;margin:0 auto;padding:96px 24px 80px;display:grid;grid-template-columns:248px minmax(0,1fr);gap:44px}
+@media (max-width:980px){.shell{grid-template-columns:minmax(0,1fr);padding-top:84px}}
+
+/* sidebar */
+.side{position:sticky;top:84px;align-self:start;max-height:calc(100vh - 108px);overflow-y:auto;padding-right:6px}
+@media (max-width:980px){.side{position:static;max-height:none;overflow:visible}}
+.filter{
+  width:100%;background:var(--bg1);border:1px solid var(--line2);border-radius:9px;
+  color:var(--ink);font:500 13px/1 var(--mono);padding:11px 13px;margin-bottom:8px;
+}
+.filter::placeholder{color:var(--ink3)}
+.filter:focus{outline:none;border-color:var(--blue)}
+.fcount{font-family:var(--mono);font-size:10.5px;color:var(--ink3);margin:0 2px 18px;display:block;min-height:14px}
+.side nav{display:flex;flex-direction:column;gap:26px}
+.sgroup .st{
+  font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);margin-bottom:9px;
+}
+.sgroup a{
+  display:block;font-family:var(--mono);font-size:12.5px;color:var(--ink2);
+  padding:5px 10px;border-left:2px solid var(--line);transition:color .12s,border-color .12s;
+}
+.sgroup a:hover{color:var(--ink)}
+.sgroup a.on{color:var(--blue);border-color:var(--blue)}
+@media (max-width:980px){
+  .side nav{flex-direction:row;flex-wrap:wrap;gap:18px}
+  .sgroup a{border-left:0;padding:3px 0}
+}
+
+/* ------------------------------------------------ content */
+.doc-head{margin-bottom:56px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.eyebrow b{color:var(--blue);font-weight:700}
+.doc-head h1{font-family:var(--disp);font-size:clamp(34px,4.4vw,52px);font-weight:800;letter-spacing:-.025em;margin:14px 0 0}
+.doc-head h1 em{font-family:var(--serif);font-style:italic;font-weight:400;color:var(--ink2)}
+.doc-head .lead{margin-top:16px;color:var(--ink2);max-width:70ch}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px}
+.lchip{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;padding:4px 11px;border-radius:99px;border:1px solid var(--line2);color:var(--ink3)}
+.lchip i{font-style:normal;font-weight:700}
+.lchip.d i{color:var(--blue)}.lchip.r i{color:var(--amber)}.lchip.e i{color:var(--violet)}
+
+.pkg{margin:0 0 76px;scroll-margin-top:84px}
+.pkg-head{border-bottom:1px solid var(--line2);padding-bottom:18px;margin-bottom:34px}
+.pkg-head h2{font-family:var(--mono);font-size:clamp(21px,2.6vw,27px);font-weight:700;letter-spacing:-.01em}
+.pkg-head h2 .at{color:var(--blue)}
+.pkg-head .imports{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-top:8px;letter-spacing:.03em}
+.pkg-head .desc{color:var(--ink2);margin-top:10px;max-width:72ch;font-size:14.5px}
+.subhead{
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink3);margin:44px 0 6px;display:flex;align-items:center;gap:10px;scroll-margin-top:84px;
+}
+.subhead::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* entries */
+.entry{
+  border:1px solid var(--line);border-radius:12px;background:var(--bg1);
+  padding:22px 24px 20px;margin-top:14px;scroll-margin-top:84px;
+}
+.entry[hidden]{display:none}
+.entry>h4{
+  font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:0;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+}
+.entry>h4 a{color:var(--ink)}
+.entry>h4 a:hover{color:var(--blue)}
+.entry>h4 a::before{content:"#";color:var(--line2);margin-right:7px;font-weight:400}
+.entry>h4 a:hover::before{color:var(--blue)}
+.kchip{
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  padding:3px 8px;border-radius:5px;border:1px solid var(--line2);color:var(--ink3);
+}
+.kchip.hook{color:var(--violet);border-color:rgba(192,139,255,.4)}
+.kchip.cmp{color:var(--mint);border-color:rgba(77,227,174,.4)}
+.kchip.d{color:var(--blue);border-color:rgba(77,163,255,.4)}
+.kchip.r{color:var(--amber);border-color:rgba(255,184,77,.4)}
+.kchip.e{color:var(--violet);border-color:rgba(192,139,255,.4)}
+.sig{
+  margin:14px 0 0;background:#080D16;border:1px solid var(--line);border-radius:8px;
+  padding:13px 16px;font-size:12.3px;line-height:1.7;color:#BCCDE4;overflow-x:auto;white-space:pre;
+}
+.entry p{margin-top:13px;color:var(--ink2);font-size:14px;max-width:78ch}
+.entry p b{color:var(--ink);font-weight:600}
+.entry ul{margin:12px 0 2px;list-style:none;display:flex;flex-direction:column;gap:8px}
+.entry li{font-size:13.6px;color:var(--ink2);padding-left:18px;position:relative}
+.entry li::before{content:"";position:absolute;left:2px;top:8.5px;width:6px;height:6px;border-radius:2px;background:var(--line2)}
+.entry li b{color:var(--ink);font-weight:600}
+.callout{
+  margin-top:16px;border:1px solid rgba(255,184,77,.35);background:var(--amber-soft);
+  border-radius:9px;padding:14px 17px;font-size:13.4px;color:var(--ink2);
+}
+.callout b{color:var(--amber)}
+.callout.v{border-color:rgba(192,139,255,.35);background:var(--violet-soft)}
+.callout.v b{color:var(--violet)}
+.callout.m{border-color:rgba(77,227,174,.35);background:var(--mint-soft)}
+.callout.m b{color:var(--mint)}
+.tryit{
+  margin-top:16px;border:1px solid rgba(77,227,174,.3);border-radius:9px;overflow:hidden;
+}
+.tryit .tt{
+  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--mint);background:#11272B;padding:7px 15px;
+}
+.tryit pre{background:#080D16;padding:14px 17px;overflow-x:auto;font-size:12.3px;line-height:1.7;color:var(--ink2);tab-size:2;margin:0}
+kbd{
+  font:600 11px/1 var(--mono);color:var(--ink);background:var(--bg3);
+  border:1px solid var(--line2);border-bottom-width:2px;border-radius:5px;padding:3px 6px;white-space:nowrap;
+}
+
+/* tables */
+.t{width:100%;border-collapse:collapse;margin-top:16px;font-size:13.2px}
+.t th{
+  text-align:left;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink3);padding:0 12px 9px 0;border-bottom:1px solid var(--line2);
+}
+.t td{padding:10px 12px 10px 0;border-bottom:1px solid var(--line);color:var(--ink2);vertical-align:top}
+.t tr:last-child td{border-bottom:0}
+.t td:first-child{white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--ink)}
+.t .req{color:var(--rose);font-size:10px;font-family:var(--mono);margin-left:4px}
+.t td code{white-space:nowrap}
+.t.wide td:first-child{white-space:normal}
+
+/* code blocks */
+.codeblock{background:#080D16;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:16px}
+.codeblock pre{padding:17px 19px;overflow-x:auto;font-size:12.4px;line-height:1.72;color:var(--ink2);tab-size:2}
+.tk-k{color:#7CB8FF}.tk-f{color:#C7A9FF}.tk-s{color:#8CE0BE}.tk-n{color:#FFCE85}
+.tk-c{color:#54688A;font-style:italic}.tk-p{color:#7E92B0}
+
+/* footer */
+footer{border-top:1px solid var(--line);margin-top:40px;padding:30px 0 40px}
+footer .nav-in{height:auto;align-items:flex-start}
+footer p{font-family:var(--mono);font-size:11px;color:var(--ink3);line-height:1.8}
+footer a{color:var(--ink2);border-bottom:1px solid var(--line2)}
+footer a:hover{color:var(--ink)}
+.nores{
+  display:none;border:1px dashed var(--line2);border-radius:12px;padding:28px;text-align:center;
+  font-family:var(--mono);font-size:12.5px;color:var(--ink3);margin-top:20px;
+}
+body.empty .nores{display:block}
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Main">
+  <div class="nav-in">
+    <a class="brand" href="index.html">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="7" y="7" width="18" height="18" rx="3" fill="none" stroke="#4DA3FF" stroke-width="2"/>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" fill="#06090F" stroke="#4DA3FF" stroke-width="2"/>
+        <rect x="22" y="22" width="7" height="7" rx="1.5" fill="#06090F" stroke="#4DA3FF" stroke-width="2"/>
+      </svg>
+      infinite-canvas-engine&nbsp;<span class="dim">@ice/*</span>
+    </a>
+    <div class="nav-right">
+      <a href="index.html">Overview</a>
+      <span class="here">API reference</span>
+    </div>
+  </div>
+</nav>
+
+<div class="shell">
+
+  <!-- ============================================================ SIDEBAR -->
+  <aside class="side">
+    <input class="filter" id="filter" type="search" placeholder="Filter the API… ( / )" aria-label="Filter API entries">
+    <span class="fcount" id="fcount"></span>
+    <nav aria-label="API sections">
+      <div class="sgroup">
+        <p class="st">Guide</p>
+        <a href="#overview">Overview</a>
+        <a href="#start">Getting started</a>
+        <a href="#pointers">Pointers &amp; gestures</a>
+        <a href="#selection">Select, move, resize</a>
+        <a href="#snap">Snap &amp; guides</a>
+        <a href="#camera">Camera</a>
+        <a href="#containers">Containers &amp; nesting</a>
+        <a href="#node-editor">Node editor</a>
+        <a href="#docs-behavior">Documents &amp; undo</a>
+        <a href="#presence-behavior">Presence</a>
+        <a href="#rendering">Rendering &amp; performance</a>
+        <a href="#vocabulary">The vocabulary</a>
+      </div>
+      <div class="sgroup">
+        <p class="st">@ice/core</p>
+        <a href="#definewidget">defineWidget</a>
+        <a href="#props-dsl">p — the props DSL</a>
+        <a href="#definetool">defineTool</a>
+        <a href="#defineprefab">definePrefab</a>
+        <a href="#schema">schema wrappers</a>
+        <a href="#facade">createCanvasEngine</a>
+        <a href="#ops">engine.ops</a>
+        <a href="#docs">engine.docs</a>
+        <a href="#dockit">documents &amp; collab</a>
+        <a href="#seams">extension seams</a>
+      </div>
+      <div class="sgroup">
+        <p class="st">Surfaces</p>
+        <a href="#react">@ice/react</a>
+        <a href="#dom">@ice/dom</a>
+        <a href="#r3f">@ice/r3f</a>
+        <a href="#devtools">@ice/devtools</a>
+        <a href="#kernel">@ice/kernel</a>
+      </div>
+      <div class="sgroup">
+        <p class="st">Appendix</p>
+        <a href="#phases">phase reference</a>
+        <a href="#defaults">defaults &amp; budgets</a>
+        <a href="#keymap">keymap defaults</a>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- ============================================================ CONTENT -->
+  <main>
+    <header class="doc-head" id="overview">
+      <p class="eyebrow"><b>@ice</b> · engine v1 · documentation</p>
+      <h1>The guide, and the <em>published surface.</em></h1>
+      <p class="lead">Start with <a href="#start" style="border-bottom:1px solid var(--line2)">getting started</a> and the <a href="#builtins" style="border-bottom:1px solid var(--line2)">built-in behavior guide</a> — a complete tour of what the engine does out of the box. The per-package reference follows. Everything listed is importable from the package <b>root</b> — deep imports are unsupported and wall-checked; source of truth is each package's barrel.</p>
+      <div class="legend" aria-label="Sovereignty legend">
+        <span class="lchip d"><i>durable</i> — lives in the CRDT doc · tx.spawn · undoable</span>
+        <span class="lchip r"><i>runtime</i> — dies with the session · world.spawn</span>
+        <span class="lchip e"><i>ephemeral</i> — rides presence · eph.spawn · TTL</span>
+      </div>
+    </header>
+
+    <div class="nores" id="nores">no entries match — try a shorter query</div>
+
+    <!-- ======================================================== GETTING STARTED -->
+    <section class="pkg" id="start">
+      <div class="pkg-head">
+        <h2>Getting started</h2>
+        <p class="desc">One widget definition, one engine, one component tree. Everything on this page — selection, moving, resizing, snapping, marquee, camera, undo — works on this app with no further code.</p>
+      </div>
+
+      <article class="entry" id="quickstart" data-k="quickstart getting started install minimal app example">
+        <h4><a href="#quickstart">A complete minimal app</a></h4>
+        <pre class="sig">pnpm add @ice/core @ice/react</pre>
+        <div class="codeblock"><pre><code><span class="tk-k">import</span> { createCanvasEngine, defineWidget, p } <span class="tk-k">from</span> <span class="tk-s">"@ice/core"</span>;
+<span class="tk-k">import</span> { EngineProvider, InfiniteCanvas, attachKeymap, useCommit, useWidgetProps } <span class="tk-k">from</span> <span class="tk-s">"@ice/react"</span>;
+<span class="tk-k">import</span> { createRoot } <span class="tk-k">from</span> <span class="tk-s">"react-dom/client"</span>;
+
+<span class="tk-c">// 1 · Define a widget — any React component becomes a canvas citizen.</span>
+<span class="tk-k">const</span> <span class="tk-f">Sticky</span> = <span class="tk-f">defineWidget</span>({
+  <span class="tk-p">type</span>: <span class="tk-s">"sticky"</span>,
+  <span class="tk-p">surface</span>: <span class="tk-s">"dom"</span>,
+  <span class="tk-p">props</span>: { <span class="tk-p">text</span>: p.<span class="tk-f">string</span>({ <span class="tk-p">default</span>: <span class="tk-s">"Write something…"</span> }) },
+  <span class="tk-p">component</span>: <span class="tk-f">StickyView</span>,
+  <span class="tk-p">defaultSize</span>: { <span class="tk-p">w</span>: <span class="tk-n">220</span>, <span class="tk-p">h</span>: <span class="tk-n">160</span> },
+  <span class="tk-p">interaction</span>: { <span class="tk-p">selectable</span>: <span class="tk-n">true</span>, <span class="tk-p">movable</span>: <span class="tk-n">true</span>, <span class="tk-p">resizable</span>: <span class="tk-n">true</span>, <span class="tk-p">snap</span>: <span class="tk-s">"both"</span> },
+});
+
+<span class="tk-c">// 2 · The view reads props with a hook and writes through commit —</span>
+<span class="tk-c">//     one commit call = one undo step, synced to every peer.</span>
+<span class="tk-k">function</span> <span class="tk-f">StickyView</span>({ entity, world }) {
+  <span class="tk-k">const</span> props = <span class="tk-f">useWidgetProps</span>(world, entity, <span class="tk-s">"sticky"</span>);
+  <span class="tk-k">const</span> commit = <span class="tk-f">useCommit</span>();
+  <span class="tk-k">return</span> (
+    &lt;<span class="tk-f">textarea</span>
+      <span class="tk-p">value</span>={props.text}
+      <span class="tk-p">onChange</span>={(e) =&gt;
+        <span class="tk-f">commit</span>((tx) =&gt; tx.<span class="tk-f">edit</span>(entity).<span class="tk-f">set</span>(Sticky.groups[<span class="tk-n">0</span>].component, { <span class="tk-p">text</span>: e.target.value }))
+      }
+    /&gt;
+  );
+}
+
+<span class="tk-c">// 3 · Boot: engine → document → content → mount.</span>
+<span class="tk-k">const</span> engine = <span class="tk-f">createCanvasEngine</span>({ <span class="tk-p">widgets</span>: [Sticky] });
+engine.docs.<span class="tk-f">create</span>();                                  <span class="tk-c">// a local-first document</span>
+engine.ops.<span class="tk-f">spawnWidget</span>(<span class="tk-s">"sticky"</span>, { <span class="tk-p">at</span>: { <span class="tk-p">x</span>: <span class="tk-n">120</span>, <span class="tk-p">y</span>: <span class="tk-n">120</span> } });
+<span class="tk-f">attachKeymap</span>(engine);                                   <span class="tk-c">// ⌫ · ⌘Z · ⌘D · ⌘A · Esc · arrows · v/h/c</span>
+
+<span class="tk-f">createRoot</span>(document.getElementById(<span class="tk-s">"root"</span>)).<span class="tk-f">render</span>(
+  &lt;<span class="tk-f">EngineProvider</span> <span class="tk-p">engine</span>={engine}&gt;
+    &lt;<span class="tk-f">InfiniteCanvas</span> <span class="tk-p">engine</span>={engine} /&gt;
+  &lt;/<span class="tk-f">EngineProvider</span>&gt;,
+);</code></pre></div>
+        <p>What you now have, with zero extra code: click to select (shift-click toggles), drag to move with snap guides, eight resize handles, marquee select on empty canvas, wheel to pan, pinch or <kbd>⌘</kbd>-scroll to zoom, per-gesture undo, and full keyboard support. Every behavior is documented in the sections below.</p>
+        <div class="tryit"><p class="tt">Try it in the repo</p><pre>pnpm --filter cardboard dev     # DOM widget board
+pnpm --filter nodeboard dev     # node editor (add ?room=x&amp;relay=ws://localhost:9301 after `pnpm relay`)
+pnpm --filter glboard dev       # mixed DOM + GL board</pre></div>
+      </article>
+    </section>
+
+    <!-- ======================================================== BUILT-IN BEHAVIOR -->
+    <section class="pkg" id="builtins">
+      <div class="pkg-head">
+        <h2>Built-in behavior</h2>
+        <p class="desc">Everything the engine does out of the box, and the knobs on each behavior. Numbers quoted here are the shipped defaults — all of them are live-tunable through <code>createCanvasEngine({ settings })</code> or the corresponding resource (see <a href="#defaults" style="border-bottom:1px solid var(--line2)">defaults &amp; budgets</a>).</p>
+      </div>
+
+      <h3 class="subhead" id="pointers">Pointers &amp; gestures</h3>
+
+      <article class="entry" id="picking-behavior" data-k="picking hover pick radius targets touch pen mouse hit testing priority wires canvas">
+        <h4><a href="#picking-behavior">How picking works</a></h4>
+        <p><b>Hovering is forgiving, grabbing is precise.</b> Hover targeting uses a pick radius around the pointer — <b>0 px</b> for mouse, <b>4 px</b> for pen, <b>12 px</b> for touch — so small targets are easy to hit on the right device. The press that starts a gesture uses an exact point pick, so you never grab something you weren't on.</p>
+        <ul>
+          <li><b>Pick priority</b>, top to bottom: resize handles → ports → widgets (front-most first) → wires → the canvas itself. Render order and pick order always agree.</li>
+          <li><b>Widget content wins.</b> Native interactive elements (<code>input</code>, <code>textarea</code>, <code>button</code>, links…) automatically keep their events. Custom interactive content calls <code>stopPropagation()</code>; sustained interactions (sliders, drawing surfaces) also call <code>setPointerCapture</code> so they survive a simultaneous canvas drag.</li>
+          <li><b>Everything is inspectable.</b> Each pointer is an entity; what it hovers and touches are relations on it (<code>Targets</code>, <code>TouchesExact</code>) you can query or watch in devtools.</li>
+        </ul>
+      </article>
+
+      <article class="entry" id="gestures-behavior" data-k="gestures tap long press drag pinch wheel recognizer arbitration cancel escape concurrency double tap multitap">
+        <h4><a href="#gestures-behavior">The six gestures</a></h4>
+        <p>Every pointer-down mints a set of gesture candidates (the active tool decides which — see <a href="#tools-behavior" style="border-bottom:1px solid var(--line2)">built-in tools</a>). The first one to commit to an interpretation claims the pointer; the rest stand down. You never wire these up — they are the engine's native vocabulary.</p>
+        <table class="t">
+          <thead><tr><th>gesture</th><th>fires when</th><th>drives</th></tr></thead>
+          <tbody>
+            <tr><td>Tap</td><td>released within 250 ms and 8 px of the press</td><td>select / toggle-select / clear</td></tr>
+            <tr><td>Long-press</td><td>held 500 ms within 10 px — keeps tracking after it fires</td><td>touch marquee · hold-to-lift dragging</td></tr>
+            <tr><td>Drag</td><td>moved past 10 px of slop (origin measured from where slop was exited — no jump)</td><td>move · resize · marquee · pan · connect · draw</td></tr>
+            <tr><td>Pinch</td><td>two <i>free</i> fingers change spread by 6 px</td><td>anchored zoom (a finger mid-drag is never stolen)</td></tr>
+            <tr><td>Wheel-pan / wheel-zoom</td><td>wheel activity; the gesture ends after 150 ms of silence</td><td>camera — runs <i>alongside</i> other gestures, never claims</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li><b>Ties resolve by priority</b>: Pinch &gt; Drag &gt; Long-press &gt; Tap.</li>
+          <li><b>True concurrency.</b> Two fingers on two widgets are two independent gestures — two commits, two undo steps. Wheel-zoom during a drag is legal, and the in-flight drag stays glued to the cursor.</li>
+          <li><b>Every failure path cancels cleanly.</b> <kbd>Esc</kbd>, switching tools, window blur, a lost touch, or a collaborator deleting the widget mid-drag: the gesture cancels and everything it touched is restored. If one of several dragged widgets is deleted remotely, the survivors keep dragging and commit normally.</li>
+          <li><b>Double-tap is opt-in per target</b> — attach <code>MultiTap</code> to a widget and Tap reports a <code>count</code> (280 ms window, 20 px slop). Single taps stay zero-latency on widgets that don't opt in.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>// double-tap support on one widget (runtime component, from an app handler):
+world.addComponent(card, MultiTap, { max: 2, windowMs: 280, slopPx: 20 });</pre></div>
+      </article>
+
+      <article class="entry" id="tools-behavior" data-k="tools select pan connect draw shortcut cursor routes built-in">
+        <h4><a href="#tools-behavior">Built-in tools</a></h4>
+        <p>A tool is a routing table, not a mode with its own code: it decides which gestures spawn and where a drag goes based on what it started on. Three ship enabled; a fourth is a one-line factory. Switching tools always cancels in-flight gestures first.</p>
+        <table class="t">
+          <thead><tr><th>tool</th><th>key</th><th>drag on canvas</th><th>drag on widget</th><th>drag on port</th></tr></thead>
+          <tbody>
+            <tr><td>select</td><td><kbd>V</kbd></td><td>marquee</td><td>move</td><td>connect</td></tr>
+            <tr><td>pan</td><td><kbd>H</kbd></td><td>pan</td><td>pan (grab cursor)</td><td>—</td></tr>
+            <tr><td>connect</td><td><kbd>C</kbd></td><td>pan</td><td>connect (crosshair)</td><td>connect</td></tr>
+            <tr><td>createDrawTool(type)</td><td>yours</td><td>draw the rect, spawn <code>type</code></td><td>—</td><td>—</td></tr>
+          </tbody>
+        </table>
+        <p><b>Device overrides come first</b>, whatever the tool: one-finger drag on empty canvas pans on touch; holding <kbd>Space</kbd> or dragging with the middle button pans on desktop.</p>
+        <div class="tryit"><p class="tt">Try it</p><pre>const StampNote = createDrawTool("sticky", { shortcut: "n" });  // drag a rect → sticky appears
+const engine = createCanvasEngine({ widgets: [Sticky], tools: [StampNote] });
+engine.ops.setTool("draw:sticky");   // or press N</pre></div>
+      </article>
+
+      <h3 class="subhead" id="selection">Select, move, resize</h3>
+
+      <article class="entry" id="selection-behavior" data-k="selection click tap shift toggle marquee rubber band clear keyboard nudge delete duplicate">
+        <h4><a href="#selection-behavior">Selection</a></h4>
+        <ul>
+          <li><b>Click / tap</b> a widget replaces the selection; <kbd>⇧</kbd>-click toggles membership; clicking empty canvas clears; clicking a wire selects the wire.</li>
+          <li><b>Marquee</b>: drag on empty canvas with the select tool. Hit previews update live; the selection itself commits once, on release (<kbd>⇧</kbd> extends the existing selection). On touch: long-press empty canvas, then drag.</li>
+          <li><b>Chrome</b>: the selection draws one combined box with eight screen-constant handles, always above content — as do snap guides and remote collaborators' selection outlines.</li>
+          <li><b>Keyboard</b>: <kbd>⌫</kbd> deletes (children and attached wires cascade), <kbd>⌘D</kbd> duplicates at a +16/+16 offset, <kbd>⌘A</kbd> selects all, arrows nudge ±1 px (<kbd>⇧</kbd> ±10 px) — each press is one undo step. <code>mod</code> is <kbd>⌘</kbd> on macOS, <kbd>Ctrl</kbd> elsewhere. Keystrokes in editable content are always ignored.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>engine.ops.setSelection([a, b]);      // programmatic selection — same path the gestures use
+engine.ops.selectAll();
+engine.ops.clearSelection();</pre></div>
+      </article>
+
+      <article class="entry" id="move-behavior" data-k="move drag widgets grab lift hold longpress ios stacking elevate fly back">
+        <h4><a href="#move-behavior">Moving</a></h4>
+        <p>Grabbing an unselected widget selects it first, so the drag always moves the whole selection as one rigid group. While dragging, the group elevates to the top of the stacking order; a cancelled drag restores both positions <i>and</i> stacking. Releasing commits <b>one transaction — one undo step</b>, no matter how many widgets moved.</p>
+        <ul>
+          <li><b>Hold-to-lift</b>: declare <code>dragOn: "longPress"</code> and the widget uses the iOS home-screen model — press and hold ~500 ms, the card lifts under your finger, then it drags. A plain drag on it pans/marquees instead, so scrollable content stays reachable on touch.</li>
+          <li><b>Reordering without moving</b>: <code>ops.reorder(ids, "top" | "bottom")</code>.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>interaction: { movable: true, dragOn: "longPress" }   // hold-to-lift, like iOS
+pnpm --filter widgetlab dev                           // feel both drag models side by side</pre></div>
+      </article>
+
+      <article class="entry" id="resize-behavior" data-k="resize handles anchor alt center shift aspect ratio min size">
+        <h4><a href="#resize-behavior">Resizing</a></h4>
+        <p>Drag any of the eight handles: the opposite edge or corner stays anchored. Hold <kbd>⌥</kbd> to resize about the center, <kbd>⇧</kbd> to keep the aspect ratio. A multi-selection resizes together about the shared anchor. <code>minSize</code> from the widget definition is respected; release commits one undo step.</p>
+        <div class="tryit"><p class="tt">Try it</p><pre>interaction: { resizable: true }, minSize: { w: 160, h: 80 }</pre></div>
+      </article>
+
+      <h3 class="subhead" id="snap">Snap &amp; guides</h3>
+
+      <article class="entry" id="snap-behavior" data-k="snap guides alignment equal spacing threshold source target">
+        <h4><a href="#snap-behavior">Snapping</a></h4>
+        <p>While you move widgets, the engine tests the <i>intended</i> position against nearby widgets for <b>edge and center alignment</b> (nearest match wins per axis) and for <b>equal-spacing runs</b> — “these three are 24 px apart, snap the fourth to continue the rhythm.” Guides and spacing bars draw above content and never oscillate. The threshold is <b>5 px on screen</b> at any zoom.</p>
+        <ul>
+          <li><b>Per-widget roles</b>: <code>snap: "source"</code> (snaps to others), <code>"target"</code> (others snap to it), <code>"both"</code>, or <code>"none"</code>. Cards that snap to frames but not vice-versa are one line each.</li>
+          <li><b>Candidates come from the spatial index</b> — snapping stays flat-cost on boards with thousands of widgets.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>createCanvasEngine({ settings: { snap: { enabled: true, thresholdPx: 8 } } })
+// or flip it live: world.setResource(SnapConfig, { enabled: false, thresholdPx: 5 })</pre></div>
+      </article>
+
+      <h3 class="subhead" id="camera">Camera</h3>
+
+      <article class="entry" id="camera-behavior" data-k="camera pan zoom wheel pinch trackpad inertia anchored zoom to fit limits">
+        <h4><a href="#camera-behavior">Pan &amp; zoom</a></h4>
+        <ul>
+          <li><b>Wheel scrolls the canvas</b> — scroll down, travel down (the Figma / Freeform convention for mice and natural-scroll trackpads alike).</li>
+          <li><b>Zoom is always anchored</b>: trackpad pinch and <kbd>⌘</kbd>/<kbd>Ctrl</kbd>-scroll zoom at the cursor; touch pinch zooms at the finger centroid. Default range 0.1× – 5×.</li>
+          <li><b>Drag-pan</b> via the pan tool, <kbd>Space</kbd>-drag, middle-button drag, or one-finger drag on touch. Touch pans release with <b>inertia</b> (past 120 px/s, ~325 ms glide, touch again to stop dead).</li>
+          <li><b>Zooming mid-gesture is safe</b> — a widget you're dragging stays under the cursor while the camera zooms underneath it.</li>
+          <li><b>Panning costs the same at 10 widgets or 10,000</b>: the camera lands as one transform per output plane, never per widget.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>engine.ops.zoomToFit();            // frame everything (or zoomToFit(ids) for a subset)
+engine.ops.zoomTo(1, { x, y });    // 100% at an anchor
+engine.ops.panTo(0, 0);
+createCanvasEngine({ settings: { zoom: { min: 0.25, max: 3 } } })</pre></div>
+      </article>
+
+      <h3 class="subhead" id="containers">Containers &amp; nesting</h3>
+
+      <article class="entry" id="container-behavior" data-k="containers frames drop consume fly back reject solid nesting enter exit pages cascade">
+        <h4><a href="#container-behavior">Drop, consume, fly back</a></h4>
+        <p>Declare <code>container: { accepts: [...] }</code> on a widget and it becomes a frame. Drag something whose <code>provides</code> keys match over it and it highlights as a drop candidate; release inside and the drop <b>consumes</b> — the child reparents, its position converts into the frame's space, and the whole outcome is one transaction. Release over a frame that doesn't accept it and the widget <b>flies back</b> to where it started — an animated rejection that commits nothing.</p>
+        <ul>
+          <li><b>Solid widgets</b> (<code>interaction: { solid: true }</code>) reject <i>all</i> drops — things dropped on them fly back rather than stacking on top.</li>
+          <li><b>Deleting a frame cascades</b>: children and any wires attached to them go with it, in the same transaction — and one undo brings the whole subtree back.</li>
+          <li><b>Nesting is navigation.</b> <code>ops.enterContainer(frame)</code> steps inside — the canvas re-roots to the frame's content, and each container remembers its own camera. <code>ops.exitContainer()</code> steps back out. "Pages" are exactly this: root-level frames plus a toolbar that calls these two ops.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>const Frame = defineWidget({
+  type: "frame", surface: "dom", component: FrameView,
+  defaultSize: { w: 640, h: 420 },
+  interaction: { selectable: true, movable: true, resizable: true },
+  container: { accepts: ["card"] },
+});
+const Card = defineWidget({ /* … */ provides: ["card"] });
+// drag a card onto the frame → consumed; onto anything solid → flies back
+engine.ops.enterContainer(frame);   // step in (camera remembered per container)
+engine.ops.exitContainer();         // step out</pre></div>
+      </article>
+
+      <h3 class="subhead" id="node-editor">Node editor</h3>
+
+      <article class="entry" id="node-behavior" data-k="node editor ports wires connect compatible light up preview cascade">
+        <h4><a href="#node-behavior">Ports &amp; wires</a></h4>
+        <p>Declare <code>ports</code> on a widget and it becomes a node. Drag from a port (any tool) or from the node body with the connect tool: a preview wire follows the pointer, <b>compatible ports nearby light up</b> (staged by distance, within ~600 px), and the wire snaps to a port when you hover it. Release on a compatible port and the connection commits as a durable wire — release anywhere else and the preview simply fades.</p>
+        <ul>
+          <li><b>Compatibility is declared, not coded</b>: a connection requires the ports' <code>accepts</code> keys to match. Incompatible ports never light up.</li>
+          <li><b>Ports cost nothing until needed.</b> Port entities materialize on demand — near the viewport with the connect tool, on hover, or during a connect drag — and reap afterward. Panning a 10,000-node board with the select tool creates zero port entities.</li>
+          <li><b>Wires render under content</b> and pick above the canvas, so they're clickable but never in the way. Deleting either endpoint deletes the wire in the same transaction.</li>
+          <li><b>No flicker on commit</b>: the preview persists exactly until the real wire appears.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>const Osc = defineWidget({ /* … */ ports: [{ id: "out", side: "e", accepts: ["signal"] }] });
+const Filter = defineWidget({ /* … */ ports: [
+  { id: "in", side: "w", accepts: ["signal"] },
+  { id: "out", side: "e", accepts: ["signal"] },
+]});
+// run it:  pnpm --filter nodeboard dev</pre></div>
+      </article>
+
+      <h3 class="subhead" id="docs-behavior">Documents &amp; undo</h3>
+
+      <article class="entry" id="undo-behavior" data-k="undo redo history per gesture selection restore transaction">
+        <h4><a href="#undo-behavior">Undo that matches what you did</a></h4>
+        <p>History is recorded <b>per gesture, not per frame</b>. Moving five widgets is one step. Dropping into a container — move plus reparent — is one step. A resize, a nudge, a duplicate: one step each. Undo also restores the selection you had, so redo-after-undo lands you exactly where you were. Camera moves, hovers, and marquees never enter history.</p>
+        <div class="tryit"><p class="tt">Try it</p><pre>engine.docs.undo();     engine.docs.redo();
+const { canUndo, canRedo } = useUndoStatus();   // for toolbar buttons</pre></div>
+      </article>
+
+      <article class="entry" id="docs-lifecycle-behavior" data-k="documents save open autosave quarantine version gate migrations read only">
+        <h4><a href="#docs-lifecycle-behavior">Saving, opening, evolving</a></h4>
+        <ul>
+          <li><b>Documents are local-first.</b> <code>docs.create()</code> starts one; <code>exportEnvelope()</code> yields versioned bytes you can store anywhere.</li>
+          <li><b>Opening never crashes the app.</b> Corrupt or incompatible bytes quarantine as a result value. On version skew your policy decides: reject, open read-only (viewers still see live presence), or migrate.</li>
+          <li><b>Migrations are the <code>migrate</code> chains from your widget definitions</b>, run once at open, invisibly to user history — a stale redo even survives.</li>
+          <li><b>Autosave is gesture-aware</b>: debounced 800 ms with a 10 s ceiling, scheduled on idle, and never while a drag is live — you'll never persist a half-finished move.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>engine.docs.autosave({ get: () => load(), put: (bytes) => store(bytes) });
+const gate = engine.docs.open(bytes);   // "ok" | "read-only" | "migrate" | "reject" — never a throw</pre></div>
+      </article>
+
+      <h3 class="subhead" id="presence-behavior">Presence</h3>
+
+      <article class="entry" id="presence-live" data-k="presence cursors collaborators selection outlines peers join room relay">
+        <h4><a href="#presence-live">Live collaborators</a></h4>
+        <p>Join a document over any byte channel and presence comes with it: every peer's <b>named cursor</b> moves live on its own layer, and their <b>selection outlines</b> draw around what they have selected (item-accurate up to 32 entities, a bounding box beyond). Presence data expires on disconnect and can never trigger a content re-render — a busy room costs nothing on your widgets.</p>
+        <div class="tryit"><p class="tt">Try it</p><pre>await engine.docs.join(webSocketByteChannel(ws), {
+  presence: { name: "James", color: "#4f8ef7" },
+  seed: (s) =&gt; s.spawnWidget("sticky", { at: origin }),   // first peer only
+});
+const peers = usePresencePeers();                          // avatar stack
+// two-tab demo, no server: broadcastChannelByteChannel("room-1")</pre></div>
+      </article>
+
+      <h3 class="subhead" id="rendering">Rendering &amp; performance</h3>
+
+      <article class="entry" id="rendering-behavior" data-k="culling unmount lru frozen hidden measurement auto size breakpoints responsive gl islands fbo zoom bands dpr">
+        <h4><a href="#rendering-behavior">What the renderer does for you</a></h4>
+        <ul>
+          <li><b>Off-screen widgets hide, they don't unmount.</b> The most recent 256 stay mounted (tunable), so scrolling away and back preserves React state — scroll positions, focus, in-progress input.</li>
+          <li><b>Hidden widgets are frozen.</b> Their prop subscriptions suspend while hidden: a collaborator editing 500 off-screen cards re-renders zero of your trees.</li>
+          <li><b>Auto-sizing without polluting the document</b>: <code>sizeMode: "auto-height"</code> or <code>"auto"</code> measures real content (ResizeObserver) into a session-only value; the document keeps only authored sizes.</li>
+          <li><b>Responsive widgets</b>: <code>useBreakpoint(entity)</code> returns one of five tiers computed from on-screen size × zoom — swap dense/full layouts without measuring anything yourself.</li>
+          <li><b>GL widgets are islands</b>: each renders into a pooled texture at zoom-banded resolution (256 MB budget), composites as a quad, and repaints only when it declares <code>animated</code>, subscribes via <code>useIslandFrame</code>, or its props change. While you pan or zoom, resolution gates down and repaints defer — gestures stay at full frame rate.</li>
+          <li><b>Rendering never writes back</b>: reflectors and the GL loop are consumers of world state, enforced in dev builds. If a frame is wrong, the truth is in the world, not in a render callback.</li>
+        </ul>
+        <div class="tryit"><p class="tt">Try it</p><pre>const bp = useBreakpoint(entity);          // "xs" … tier 5 — render dense vs full
+createCanvasEngine({ budgets: { keepMounted: 512, fboBytes: 128e6 } })
+pnpm --filter glboard dev                  // islands, bands, and GL input live</pre></div>
+      </article>
+    </section>
+
+    <!-- ======================================================== VOCABULARY -->
+    <section class="pkg" id="vocabulary">
+      <div class="pkg-head">
+        <h2>The vocabulary</h2>
+        <p class="desc">The engine's state is ordinary ECS data, and the whole vocabulary is exported from <code>@ice/core</code> — your systems, tools, and debug panels query the very same components the built-ins write. The tables below are the complete shipped catalog.</p>
+      </div>
+
+      <article class="entry" id="vocab-scene" data-k="vocabulary components position size rotation stackz prefabid childof scene">
+        <h4><a href="#vocab-scene">Scene &amp; identity</a><span class="kchip d">document data</span></h4>
+        <table class="t wide">
+          <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Position · Size · Rotation · StackZ</td><td>components</td><td>Where a widget is, how big, and its stacking order (fractional, so reorders never renumber neighbors).</td></tr>
+            <tr><td>PrefabId</td><td>component</td><td>The widget's type id — document identity for the version gate and migrations.</td></tr>
+            <tr><td>ChildOf</td><td>relation</td><td>Containment edge (child → frame). Cascade delete walks it.</td></tr>
+            <tr><td>Container · Accepts · Provides</td><td>tag + components</td><td>The containment contract compiled from <code>defineWidget</code>.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="vocab-capability" data-k="vocabulary capability tags selectable movable resizable snap solid longpressdrag selected">
+        <h4><a href="#vocab-capability">Capabilities &amp; selection</a><span class="kchip r">runtime</span></h4>
+        <table class="t wide">
+          <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Selectable · Movable · Resizable</td><td>tags</td><td>What gestures may do to a widget — stamped from <code>interaction</code> at load, so behaviors self-select by capability.</td></tr>
+            <tr><td>SnapSource · SnapTarget</td><td>tags</td><td>The snap roles.</td></tr>
+            <tr><td>Solid</td><td>tag</td><td>Drop-rejecting: things dropped here fly back.</td></tr>
+            <tr><td>LongPressDrag</td><td>tag</td><td>Hold-to-lift drag model (<code>dragOn: "longPress"</code>).</td></tr>
+            <tr><td>Selected</td><td>tag</td><td>Selection membership. Flip it only through <code>ops.setSelection</code> — never per-frame.</td></tr>
+            <tr><td>MultiTap</td><td>component</td><td>Per-widget double/triple-tap opt-in: <code>{max, windowMs, slopPx}</code>.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="vocab-pointer" data-k="vocabulary pointers input facts targets touchesexact wentdown wentup keyboard">
+        <h4><a href="#vocab-pointer">Pointers (input facts)</a><span class="kchip r">runtime</span></h4>
+        <table class="t wide">
+          <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Pointer · PointerScreen · PointerWorld · PointerButtons · PointerMods · PointerWheel · PointerRadius</td><td>components</td><td>One entity per active pointer: raw screen position, derived world position, buttons, modifiers, wheel accumulation, device pick radius.</td></tr>
+            <tr><td>WentDown · WentUp · WentCancelled</td><td>tags</td><td>One-frame edge marks, cleared automatically at end of frame.</td></tr>
+            <tr><td>Targets · TouchesExact</td><td>relations</td><td>What the pointer is over: forgiving (radiused) and exact. The dual pick.</td></tr>
+            <tr><td>HandledByWidget · LocalPointer</td><td>tags</td><td>"Widget content took this event" (the canvas stands down) · marks your own pointers vs. remote ones.</td></tr>
+            <tr><td>Keyboard · CancelRequest</td><td>resources</td><td>Live modifier state · the one-frame "cancel everything" signal behind <kbd>Esc</kbd> and tool switches.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="vocab-gesture" data-k="vocabulary gestures recognizers drag tap longpress pinch wheel grab drags claimedby droptarget snapstate transformtween routed">
+        <h4><a href="#vocab-gesture">Gestures in flight</a><span class="kchip r">runtime</span></h4>
+        <table class="t wide">
+          <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Tap · LongPress · Drag · Pinch · WheelPan · WheelZoom</td><td>components</td><td>One entity per gesture candidate, carrying its live math (totals, velocity, zoom-at-claim…).</td></tr>
+            <tr><td>Watches · Captures · ClaimedBy</td><td>relations</td><td>Which pointers a gesture reads · what it latched at press · which gesture owns a pointer (the arbitration result, queryable).</td></tr>
+            <tr><td>RoutedMove · RoutedResize · RoutedMarquee · RoutedPan · RoutedConnect · RoutedDraw</td><td>tags</td><td>Where a drag was routed — latched once at activation, never changed mid-gesture.</td></tr>
+            <tr><td>Drags · Grab · SnapState</td><td>relation + components</td><td>The live edge set a move drives · each widget's grabbed origin (position, size, stacking) · the current snap correction.</td></tr>
+            <tr><td>DropTarget · OverlapCandidate · OverlapRejected</td><td>relation + tags</td><td>Container-drop candidacy while dragging.</td></tr>
+            <tr><td>TransformTween</td><td>component</td><td>The fly-back animation rider; it owns the cell until the widget lands.</td></tr>
+            <tr><td>Simultaneous · GestureSuspended · Sequence · RequiresFail · Down · MultiTap</td><td>misc</td><td>Camera gestures that never claim · pinch suspension · gesture-graph edges for advanced combos · press records.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="vocab-graph" data-k="vocabulary node graph port wire portanchor portof wirefrom wireto canvassurface">
+        <h4><a href="#vocab-graph">Node graph</a></h4>
+        <table class="t wide">
+          <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Wire · WireFrom · WireTo · WirePorts</td><td>tag + relations + component</td><td>A durable wire entity and its endpoints (stored by widget + port id, so wires survive reload and replication).</td></tr>
+            <tr><td>Port · PortAnchor · PortOf</td><td>components + relation</td><td>On-demand port entities: declaration, computed anchor point, owning widget.</td></tr>
+            <tr><td>CanvasSurface</td><td>tag</td><td>The canvas-background entity — the guaranteed pick fallback.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="vocab-derived" data-k="vocabulary chrome selectionbox handlespec guideline marqueebox cursorvisual breakpoints measuredsize visible culled active nav">
+        <h4><a href="#vocab-derived">Derived UI &amp; navigation</a><span class="kchip r">runtime</span></h4>
+        <table class="t wide">
+          <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td>SelectionBox · HandleSpec · GuideLine · MarqueeBox · CursorVisual · VisualOf · Follows</td><td>chrome</td><td>The selection box, the eight handles, snap guides, the marquee rect, cursor visuals — all plain entities you can query or restyle.</td></tr>
+            <tr><td>Visible · Culled · Active</td><td>tags</td><td>Viewport partition (visible vs culled) · membership in the current navigation frame.</td></tr>
+            <tr><td>MeasuredSize · WidgetBreakpoint</td><td>components</td><td>Measured content size (session-only) · the 5-tier responsive breakpoint.</td></tr>
+            <tr><td>NavDepth · NavCamera · NavFrame · ContainerCamera</td><td>nav</td><td>The container navigation stack and per-container camera memory.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="vocab-resources" data-k="vocabulary resources camera viewport activetool settings gesturesettings pointersettings cameralimits snapconfig frameinfo presence">
+        <h4><a href="#vocab-resources">Resources &amp; presence</a></h4>
+        <table class="t wide">
+          <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Camera · Viewport · ActiveTool</td><td>resources</td><td>The one camera (x, y, zoom, gesturing flag) · stage size · current tool id.</td></tr>
+            <tr><td>GestureSettings · PointerSettings · CameraLimits · SnapConfig</td><td>resources <span class="kchip r">live-tunable</span></td><td>Every constant from the appendix, adjustable at runtime.</td></tr>
+            <tr><td>FrameInfo · PointerVersion · SelectionVersion · SpatialVersion</td><td>resources</td><td>Tick/dt/now · cheap change stamps systems use to skip work.</td></tr>
+            <tr><td>PresencePeer · PresenceInfo · PresenceCursor · SelectionSummary</td><td>ephemeral <span class="kchip e">presence</span></td><td>Remote collaborators: identity, live cursor, selection summary. Your partition is writable; peers project read-only.</td></tr>
+            <tr><td>DurableUndoStatus</td><td>resource</td><td><code>{canUndo, canRedo}</code>, kept fresh across document swaps.</td></tr>
+          </tbody>
+        </table>
+        <div class="tryit"><p class="tt">Try it</p><pre>import { Position, Camera, SnapConfig } from "@ice/core";
+const pos = useWorldComponent(world, entity, Position);        // subscribe in React
+world.getResource(Camera);                                     // read in a handler — { x, y, zoom, gesturing }
+world.setResource(SnapConfig, { enabled: false, thresholdPx: 5 });</pre></div>
+      </article>
+    </section>
+
+    <!-- ======================================================== @ice/core -->
+    <section class="pkg" id="core">
+      <div class="pkg-head">
+        <h2><span class="at">@ice</span>/core</h2>
+        <p class="imports">imports: strata-ecs · @ice/kernel · loro-crdt — never react, dom, or three</p>
+        <p class="desc">The engine: ECS catalog, frame contract, interaction stack, widget runtime, node graph, nested canvas, doc kit, presence, migrations, and the <code>createCanvasEngine</code> facade. Headless by construction.</p>
+      </div>
+
+      <h3 class="subhead" id="primitives">Definition primitives</h3>
+
+      <article class="entry" id="definewidget" data-k="definewidget widget prefab props groups surface component sizemode interaction ports container migrate">
+        <h4><a href="#definewidget">defineWidget</a><span class="kchip">function</span><span class="kchip d">durable prefab</span></h4>
+        <pre class="sig">defineWidget(def: WidgetDef): WidgetType</pre>
+        <p>The flagship compiler. Props compile to <b>one component per conflict group</b> on a durable prefab; interaction flags become runtime capability tags stamped at projection; ports and containers opt the widget into the node editor and nesting. Sugar over <code>definePrefab</code> + registries — nothing here is unavailable to a hand-rolled prefab.</p>
+        <table class="t">
+          <thead><tr><th>field</th><th>type</th><th>notes</th></tr></thead>
+          <tbody>
+            <tr><td>type<span class="req">req</span></td><td><code>string</code></td><td>Prefab id and document identity (<code>PrefabId</code>). Duplicate types are rejected.</td></tr>
+            <tr><td>version</td><td><code>number = 1</code></td><td>Per-type document version — the open gate and migrations key off it.</td></tr>
+            <tr><td>props</td><td><code>Record&lt;string, p.*&gt;</code></td><td>The props DSL (below). Every top-level field must carry a default.</td></tr>
+            <tr><td>groups</td><td><code>Record&lt;group, prop[]&gt;</code></td><td>Conflict groups → one generated component each (<code>&lt;type&gt;:&lt;group&gt;</code>). Membership must be total and disjoint; ungrouped props form the <code>"props"</code> group. The component is the CRDT conflict unit.</td></tr>
+            <tr><td>surface<span class="req">req</span></td><td><code>"dom" | "gl"</code></td><td>DOM portal widget, or R3F compositor island.</td></tr>
+            <tr><td>component<span class="req">req</span></td><td><code>FC&lt;{entity, world}&gt;</code></td><td>Opaque to core — the react package narrows it.</td></tr>
+            <tr><td>sizeMode</td><td><code>"fixed" | "auto-height" | "auto"</code></td><td>Auto modes measure via ResizeObserver → <code>MeasuredSize</code> rider; auto widgets never commit <code>Size</code> — the doc stores authorial intent only.</td></tr>
+            <tr><td>defaultSize · minSize</td><td><code>{w, h}</code></td><td>World units.</td></tr>
+            <tr><td>animated</td><td><code>boolean</code></td><td><b>GL only</b>: repaint every visible frame. Plain <code>useFrame</code> inside a portal cannot be attributed to an island — content-driven animation goes through <code>useIslandFrame</code>.</td></tr>
+            <tr><td>interaction</td><td><code>WidgetInteraction</code></td><td><code>selectable · movable · resizable</code> · <code>snap: "source"|"target"|"both"|"none"</code> · <code>solid</code> (drop-rejecting target — dropped widgets fly back) · <code>dragOn: "press" | "longPress"</code> (hold-to-lift, the iOS model).</td></tr>
+            <tr><td>ports</td><td><code>{id, side, index?, accepts?}[]</code></td><td>Wires bind to widget + port <b>id</b>; port entities are runtime and materialize on demand. <code>accepts</code> is the compatibility key list the connect gesture checks.</td></tr>
+            <tr><td>container</td><td><code>{accepts, provides?}</code></td><td>Containment contract: makes this widget a drop target and an enterable frame.</td></tr>
+            <tr><td>provides</td><td><code>string[]</code></td><td>Provides-keys <i>without</i> container semantics — a leaf that offers itself to containers without becoming one. Ignored when <code>container</code> is present.</td></tr>
+            <tr><td>migrate</td><td><code>{[from]: (prev) ⇒ next}</code></td><td>Idempotent absolute transforms over flat prop records; chain contiguity validated at definition time; run at document open as read-repair.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout"><b>Authoring contract.</b> Native interactives auto-opt-out of canvas gestures; custom interactive content calls <code>stopPropagation()</code> (DOM) or stops the synthetic event (GL); sustained widget-owned interactions <b>must <code>setPointerCapture</code></b> — capture survives the inert-during-drag window. Mark non-native interactive roots with <code>data-canvas-interactive</code>. Anything worth persisting lives in props; React state is best-effort under the keep-mounted budget.</div>
+      </article>
+
+      <article class="entry" id="props-dsl" data-k="p props dsl string number boolean enum json array object standard schema">
+        <h4><a href="#props-dsl">p</a><span class="kchip">namespace</span></h4>
+        <pre class="sig">p.string · p.number · p.boolean · p.enum · p.json  (+ p.array / p.object shapes)</pre>
+        <p>The engine props DSL: introspectable (so it compiles to typed strata components), and every spec <b>implements Standard Schema v1</b> so it plugs into ecosystem tooling.</p>
+        <table class="t">
+          <thead><tr><th>spec</th><th>signature</th><th>notes</th></tr></thead>
+          <tbody>
+            <tr><td>p.string</td><td><code>p.string({default?})</code></td><td></td></tr>
+            <tr><td>p.number</td><td><code>p.number({default?, min?, max?})</code></td><td>Bounds validated at write.</td></tr>
+            <tr><td>p.boolean</td><td><code>p.boolean({default?})</code></td><td></td></tr>
+            <tr><td>p.enum</td><td><code>p.enum(options, {default?})</code></td><td>Persists as labels; options are <b>additive-only</b> across versions.</td></tr>
+            <tr><td>p.json</td><td><code>p.json(shape, {default?})</code></td><td>The <b>only</b> nesting escape hatch — an explicit string cell, visibly conflict-coarse (last write wins for the whole value).</td></tr>
+            <tr><td>p.array / p.object</td><td><code>p.array(item) · p.object(fields)</code></td><td>JSON shape builders, used inside <code>p.json</code>.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="definetool" data-k="definetool tool select pan connect draw createdrawtool spawnprofile route gates cursor shortcut">
+        <h4><a href="#definetool">defineTool</a> / <a href="#definetool">createDrawTool</a><span class="kchip">function</span></h4>
+        <pre class="sig">defineTool(def: ToolDef): Tool
+createDrawTool(widgetType: string): Tool</pre>
+        <p>A tool is <b>pure configuration</b> — it parameterizes recognizer spawn, drag routing, capability gates, and the cursor. It adds no code paths; genuinely new behaviors register systems through the same extension slot the built-ins use.</p>
+        <div class="codeblock"><pre><code><span class="tk-k">const</span> <span class="tk-f">ConnectTool</span> = <span class="tk-f">defineTool</span>({
+  <span class="tk-p">id</span>: <span class="tk-s">"connect"</span>,
+  <span class="tk-p">cursor</span>: <span class="tk-s">"crosshair"</span>,                                 <span class="tk-c">// cursor while this tool is active</span>
+  <span class="tk-p">spawnProfile</span>: { <span class="tk-p">onDown</span>: [<span class="tk-s">"drag"</span>], <span class="tk-p">wheel</span>: <span class="tk-n">true</span> },     <span class="tk-c">// recognizer kinds per pointer-down</span>
+  <span class="tk-p">route</span>: { <span class="tk-p">canvasDrag</span>: <span class="tk-s">"pan"</span>, <span class="tk-p">widgetDrag</span>: <span class="tk-s">"connect"</span>, <span class="tk-p">portDrag</span>: <span class="tk-s">"connect"</span> },
+  <span class="tk-p">gates</span>: { <span class="tk-p">movable</span>: <span class="tk-n">false</span>, <span class="tk-p">resizable</span>: <span class="tk-n">false</span> },        <span class="tk-c">// capability gating while active</span>
+  <span class="tk-p">shortcut</span>: <span class="tk-s">"c"</span>,
+});</code></pre></div>
+        <ul>
+          <li><b>Built-ins</b>: <code>select</code> (<kbd>V</kbd>), <code>pan</code> (<kbd>H</kbd>, grab cursor), <code>connect</code> (<kbd>C</kbd>, crosshair); <code>createDrawTool(type, {id?, shortcut?})</code> registers a <code>draw:&lt;type&gt;</code> tool whose canvas drag draws the spawn rect. Full routing tables in <a href="#tools-behavior" style="border-bottom:1px solid var(--line2)">built-in tools</a>.</li>
+          <li><b>Switching tools runs <code>cancelActiveGestures()</code> first</b> — no gesture survives a context it can't commit into.</li>
+        </ul>
+      </article>
+
+      <article class="entry" id="defineprefab" data-k="defineprefab prefab store durable runtime ephemeral spawn sovereignty">
+        <h4><a href="#defineprefab">definePrefab</a><span class="kchip">function</span></h4>
+        <pre class="sig">definePrefab(id: string, def: PrefabDef): Prefab   // store: "durable" | "runtime" | "ephemeral"</pre>
+        <p>The base primitive <code>defineWidget</code> sugars over: an entity kind's essential component set, its durable-eligible extras, and its store. <b>The spawn path is the sovereignty class</b> — components and tags stay pure.</p>
+        <table class="t">
+          <thead><tr><th>store</th><th>spawn path</th><th>lives in</th><th>replicated</th><th>undoable</th></tr></thead>
+          <tbody>
+            <tr><td><span class="kchip d">durable</span></td><td><code>tx.spawn</code></td><td>Loro doc, projected into runtime</td><td>yes (CRDT)</td><td>yes</td></tr>
+            <tr><td><span class="kchip r">runtime</span></td><td><code>world.spawn</code></td><td>runtime world only</td><td>no</td><td>no</td></tr>
+            <tr><td><span class="kchip e">ephemeral</span></td><td><code>eph.spawn</code></td><td>presence store, own peer partition</td><td>yes (TTL)</td><td>no</td></tr>
+          </tbody>
+        </table>
+        <p>Definition-time validation (all DEV-throw): eligible components are eid-free; every field defaulted or supplied; ephemeral prefabs carry components + tags only; prefab ids unique. Anything <code>world.*</code>-added to a durable entity is a <b>runtime rider</b> — never committed, never replicated.</p>
+      </article>
+
+      <article class="entry" id="schema" data-k="definecomponent definetag definerelation defineresource schema wrappers catalog">
+        <h4><a href="#schema">defineComponent / defineTag / defineRelation / defineResource</a><span class="kchip">function</span></h4>
+        <pre class="sig">strata-ecs wrappers that record engine metadata (sovereignty, devtools badges)</pre>
+        <p>Thin wrappers over strata's definitions that register metadata for the sovereignty panel and DEV guards. The <b>catalog</b> in <code>@ice/core</code> ships the full engine vocabulary — <code>Position</code>, <code>Size</code>, <code>StackZ</code>, <code>Selected</code>, <code>Camera</code>, <code>ChildOf</code>, <code>ClaimedBy</code>, <code>Targets</code>, and the rest — so apps and custom systems query the same components the engine writes.</p>
+      </article>
+
+      <h3 class="subhead" id="facade-h">The facade</h3>
+
+      <article class="entry" id="facade" data-k="createcanvasengine facade engine budgets settings policy world ops docs step dispose">
+        <h4><a href="#facade">createCanvasEngine</a><span class="kchip">function</span></h4>
+        <pre class="sig">createCanvasEngine({ widgets?, tools?, budgets?, settings?, policy?, measureQueue? })
+  ⇒ { world, engine, stack, runtime, nav, ops, docs, budgets, step(now), dispose() }</pre>
+        <p>Construction wires the world, schema/prefab registration (HMR-safe boot kit), the pipeline, built-in systems, the reflector registry, and settings resources. <b>Doc-less by construction</b> — ops that need a document throw with guidance; <code>engine.docs.create()</code> is the first call of every editor app.</p>
+        <table class="t">
+          <thead><tr><th>option</th><th>notes</th></tr></thead>
+          <tbody>
+            <tr><td>widgets · tools</td><td><code>WidgetType[]</code> / <code>Tool[]</code> to register. Built-in tools ship regardless.</td></tr>
+            <tr><td>budgets</td><td><code>{keepMounted: 256, fboBytes: 256e6, portSpawnPerFrame: 64, portRadiusPx: 600}</code></td></tr>
+            <tr><td>settings</td><td>Seeds live-tunable resources: <code>GestureSettings</code>, <code>PointerSettings</code>, <code>CameraLimits</code> (zoom clamp 0.1–5), <code>SnapConfig</code> (threshold 5 px). Resource first, reviewed constants as fallback.</td></tr>
+            <tr><td>policy</td><td><code>{versionGate: "reject" | "read-only" | "migrate"}</code> — what <code>docs.open</code> does on version skew.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="ops" data-k="ops settool spawnwidget deleteselection duplicateselection setselection clearselection selectall reorder zoomtofit zoomto panto entercontainer exitcontainer cancelactivegestures">
+        <h4><a href="#ops">engine.ops</a><span class="kchip">namespace</span><span class="kchip d">write paths</span></h4>
+        <pre class="sig">every op is ONE engine-owned write path — one transaction or one resource write</pre>
+        <p>App handlers (toolbar buttons, shortcuts) call ops between frames. Ops are the only public write paths; each is sovereignty-correct by construction.</p>
+        <table class="t">
+          <thead><tr><th>op</th><th>path</th></tr></thead>
+          <tbody>
+            <tr><td>setTool(id)</td><td>Cancels active gestures first, then flips the <code>ActiveTool</code> resource.</td></tr>
+            <tr><td>spawnWidget(type, {at, props?, parent?})</td><td>One tx spawning the durable prefab.</td></tr>
+            <tr><td>deleteSelection()</td><td>One tx + engine cascade: containment recursion + wire cleanup.</td></tr>
+            <tr><td>duplicateSelection()</td><td>Twin spawns offset +16/+16 — one tx, one undo step.</td></tr>
+            <tr><td>setSelection(ids, mode?) · clearSelection() · selectAll()</td><td>Tag flips + <code>SelectionVersion</code> bump. Selection is never per-frame.</td></tr>
+            <tr><td>reorder(ids, "top" | "bottom")</td><td>Fractional <code>StackZ</code> writes, one tx.</td></tr>
+            <tr><td>zoomToFit(ids?) · zoomTo(z, anchor?) · panTo(x, y)</td><td><code>Camera</code> resource writes.</td></tr>
+            <tr><td>enterContainer(frame) · exitContainer()</td><td>Nav stack push/pop, camera memory, explicit spatial-index rebuild, nav integrity.</td></tr>
+            <tr><td>cancelActiveGestures()</td><td>Sets the one-tick <code>CancelRequest</code>; all non-terminal recognizers cancel next tick with riders restored.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="entry" id="docs" data-k="docs create open join current close undo redo autosave envelope version gate">
+        <h4><a href="#docs">engine.docs</a><span class="kchip">namespace</span><span class="kchip d">documents</span></h4>
+        <pre class="sig">create() · open(bytes) · join(channel, {presence?, seed?}) · current() · close()
+undo() · redo() · autosave(storage)</pre>
+        <table class="t">
+          <thead><tr><th>member</th><th>notes</th></tr></thead>
+          <tbody>
+            <tr><td>create()</td><td>New LoroDoc + version stamps + attach. Local-first — collab is a posture, not a mode.</td></tr>
+            <tr><td>open(bytes)</td><td>Parses the <b>ICE1 envelope</b> header <i>before</i> any import; <b>never throws</b> — corrupt or incompatible input quarantines as a return value. Version gate: <code>ok / read-only / migrate / reject</code> per facade policy.</td></tr>
+            <tr><td>join(channel, opts)</td><td>Bootstrap protocol over any <code>Uint8Array</code> channel, then attach. <code>presence</code> publishes cursor + selection facets; <code>seed</code> runs only on the first peer.</td></tr>
+            <tr><td>undo() / redo()</td><td>Per-gesture steps; selection restored via history hooks; status survives doc swaps (<code>DurableUndoStatus</code>).</td></tr>
+            <tr><td>autosave(storage)</td><td>Debounce 800 ms, 10 s max-wait, idle-scheduled, <b>deferred while any gesture is live</b>, quarantine-on-incompatible-restore. App provides get/put.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <h3 class="subhead" id="dockit">Documents &amp; collab (under the facade)</h3>
+
+      <article class="entry" id="docsession" data-k="createdocsession opendocsession doc session attach detach">
+        <h4><a href="#docsession">createDocSession / openDocSession</a><span class="kchip">function</span></h4>
+        <pre class="sig">createDocSession(world) · openDocSession(world, bytes)</pre>
+        <p>The primitives under <code>engine.docs</code>, for custom shells. Open never throws — quarantine is a return value. Detach kills undo history, baselines, and held cells with the attachment.</p>
+      </article>
+
+      <article class="entry" id="runmigrations" data-k="runmigrations migration read repair undoable false">
+        <h4><a href="#runmigrations">runMigrations</a><span class="kchip">function</span></h4>
+        <pre class="sig">runMigrations(ctx): MigrationOutcome</pre>
+        <p>Read-repair at open (the facade runs it on <code>migrate</code>): per-type chains execute as <b>one <code>{undoable: false}</code> transaction</b> — the commit never enters the local undo stack, and concurrent migrators converge (idempotent absolute writes + first-writer-wins marker keys).</p>
+      </article>
+
+      <article class="entry" id="joindoc" data-k="joindoc bootstrap hello snapshot buffer drain seeder reconnect">
+        <h4><a href="#joindoc">joinDoc</a><span class="kchip">function</span></h4>
+        <pre class="sig">joinDoc(world, channel, opts)</pre>
+        <p>The bootstrap state machine: broadcast hello → buffer inbound → import addressed snapshot as causal base → drain. 800 ms of silence elects the seeder. Reconnect is a full re-bootstrap — never a resumed stream.</p>
+      </article>
+
+      <article class="entry" id="channels" data-k="broadcastchannelbytechannel websocketbytechannel byte channel transport relay">
+        <h4><a href="#channels">broadcastChannelByteChannel / webSocketByteChannel</a><span class="kchip">function</span></h4>
+        <pre class="sig">broadcastChannelByteChannel(name) · webSocketByteChannel(ws) ⇒ ByteChannel</pre>
+        <p><code>ByteChannel</code> adapters. The app moves bytes and owns the transport; the engine owns the protocol — anything carrying <code>Uint8Array</code> works.</p>
+      </article>
+
+      <article class="entry" id="autosave" data-k="startautosave restoreautosave storage quarantine">
+        <h4><a href="#autosave">startAutosave / restoreAutosave</a><span class="kchip">function</span></h4>
+        <pre class="sig">startAutosave(session, storage, opts?) · restoreAutosave(world, storage)</pre>
+        <p>The kit under <code>docs.autosave</code>: envelope writes on a debounced, gesture-deferred idle schedule; restore quarantines incompatible bytes instead of bricking boot.</p>
+      </article>
+
+      <article class="entry" id="presence" data-k="attachpresence installpresence presenceinfo presencecursor selectionsummary peers not local">
+        <h4><a href="#presence">attachPresence / installPresence</a><span class="kchip">function</span><span class="kchip e">ephemeral</span></h4>
+        <pre class="sig">attachPresence(world, room, info) · installPresence(engine)</pre>
+        <p>Ephemeral peer facets: <code>PresenceInfo</code>, <code>PresenceCursor</code>, <code>SelectionSummary</code>. Your own partition is writable; remote peers project read-only as <code>Not(Local)</code>. Publishing happens in the engine's post-tick publish step — presence can never trigger content repaints.</p>
+      </article>
+
+      <article class="entry" id="guardedtx" data-k="guardedtransaction transaction tx undoable eligibility commit">
+        <h4><a href="#guardedtx">guardedTransaction</a><span class="kchip">function</span><span class="kchip d">write path</span></h4>
+        <pre class="sig">guardedTransaction(store, world, fn, {undoable?})</pre>
+        <p>The eligibility-guarded transaction primitive under <code>useCommit</code> and every op. One call = one undo step; DEV-validates tx eligibility (durable entity × eligible component).</p>
+      </article>
+
+      <article class="entry" id="cascade" data-k="cascadedestroy delete cascade childof wires">
+        <h4><a href="#cascade">cascadeDestroy</a><span class="kchip">function</span></h4>
+        <pre class="sig">cascadeDestroy(tx, world, root)</pre>
+        <p>Containment recursion + wire cascade in one transaction: children despawn with their frame; wires despawn with either endpoint.</p>
+      </article>
+
+      <h3 class="subhead" id="seams">Extension seams</h3>
+
+      <article class="entry" id="addsystems" data-k="addsystems system phases defineticksystem runif access write">
+        <h4><a href="#addsystems">engine.addSystems</a><span class="kchip">method</span></h4>
+        <pre class="sig">engine.addSystems(phase, ...systems)   // 11 fixed phases — see the phase reference</pre>
+        <p>Custom behaviors join the same pipeline the built-ins use. <code>defineTickSystem</code> wraps once-per-frame work. Two laws bind: structure via <code>ctx.*</code> only, and <b><code>access.write</code> declared on every value-writing system</b> — reflectors arm strata enforcement permanently, so undeclared writes DEV-throw.</p>
+      </article>
+
+      <article class="entry" id="registerreflector" data-k="registerreflector reflector observe queries resources flush dirty">
+        <h4><a href="#registerreflector">engine.registerReflector</a><span class="kchip">method</span><span class="kchip cmp">output</span></h4>
+        <pre class="sig">engine.registerReflector({ name, observe, always?, flush })</pre>
+        <div class="codeblock"><pre><code>engine.<span class="tk-f">registerReflector</span>({
+  <span class="tk-p">name</span>: <span class="tk-s">"minimap"</span>,
+  <span class="tk-p">observe</span>: { <span class="tk-p">queries</span>: [{ <span class="tk-p">q</span>: boxes, <span class="tk-p">cols</span>: [Position, Size] }], <span class="tk-p">resources</span>: [Camera] },
+  <span class="tk-p">always</span>: <span class="tk-n">false</span>,               <span class="tk-c">// true = flush every frame (cheap overlays)</span>
+  <span class="tk-f">flush</span>(view) { <span class="tk-c">/* batched DOM/GL writes; no layout reads; never writes ECS */</span> },
+});</code></pre></div>
+        <p>Reflectors are the <b>only</b> writers of DOM/GL/R3F. Observer-armed with per-reflector dirty sets, they run after <code>notify()</code>, in registration order, fault-isolated: a throwing reflector is skipped for the frame, never crashes the loop.</p>
+      </article>
+
+      <article class="entry" id="publish-hook" data-k="onpublish publish presence hook telemetry reflectornames enabletelemetry">
+        <h4><a href="#publish-hook">engine.onPublish / enableTelemetry / reflectorNames</a><span class="kchip">method</span></h4>
+        <pre class="sig">engine.onPublish(hook)      // the post-tick presence I/O slot
+engine.enableTelemetry()    // per-system run/skip + µs → devtools loop tab
+engine.reflectorNames()</pre>
+        <p><code>publish</code> is the designated home for ephemeral structural writes — they are illegal for the whole tick. It runs before <code>notify()</code>, so observers see presence the same frame.</p>
+      </article>
+    </section>
+
+    <!-- ======================================================== @ice/react -->
+    <section class="pkg" id="react">
+      <div class="pkg-head">
+        <h2><span class="at">@ice</span>/react</h2>
+        <p class="imports">imports: @ice/dom · @ice/core · @ice/kernel — peers: react, react-dom</p>
+        <p class="desc">The app surface: mount the canvas, write through <code>useCommit</code>, subscribe with equality-suppressed hooks.</p>
+      </div>
+
+      <article class="entry" id="engineprovider" data-k="engineprovider context provider">
+        <h4><a href="#engineprovider">&lt;EngineProvider&gt;</a><span class="kchip cmp">component</span></h4>
+        <pre class="sig">&lt;EngineProvider engine={ce}&gt;…&lt;/EngineProvider&gt;</pre>
+        <p>Context root — all hooks require it. Threads the engine (and its current doc session) to widgets so userland never hand-rolls store plumbing.</p>
+      </article>
+
+      <article class="entry" id="infinitecanvas" data-k="infinitecanvas canvas component planes adapters reflectors raf keymap widgetroot onready">
+        <h4><a href="#infinitecanvas">&lt;InfiniteCanvas&gt;</a><span class="kchip cmp">component</span></h4>
+        <pre class="sig">&lt;InfiniteCanvas engine={ce} measureQueue={q?} onReady={(host) ⇒ …}? /&gt;</pre>
+        <p>Mounts the six output planes, pointer/measure adapters, built-in reflectors, the keymap, the rAF loop, and the widget portal root. Unmount detaches cleanly — <b>the engine outlives it</b>. GL islands and devtools attach app-side via <code>onReady</code> (the import walls keep core react-free and react three-free).</p>
+      </article>
+
+      <article class="entry" id="usecommit" data-k="usecommit commit write transaction undo hook">
+        <h4><a href="#usecommit">useCommit</a><span class="kchip hook">hook</span><span class="kchip d">write path</span></h4>
+        <pre class="sig">const commit = useCommit()
+commit((tx: GuardedTx) ⇒ void, {undoable?})   // one call = one undo step</pre>
+        <p><b>The</b> widget write path. Resolves <code>engine.docs.current()</code> at call time and runs a <code>guardedTransaction</code>; doc-less calls throw with guidance.</p>
+        <div class="codeblock"><pre><code><span class="tk-k">const</span> props = <span class="tk-f">useWidgetProps</span>(world, entity, <span class="tk-s">"sticky"</span>);
+<span class="tk-k">const</span> commit = <span class="tk-f">useCommit</span>();
+<span class="tk-f">commit</span>((tx) =&gt;
+  tx.<span class="tk-f">edit</span>(entity).<span class="tk-f">set</span>(Sticky.groups[<span class="tk-n">0</span>].component, { ...props, <span class="tk-p">text</span> }));</code></pre></div>
+      </article>
+
+      <article class="entry" id="usewidgetprops" data-k="usewidgetprops props subscription tier3 frozen hidden hook">
+        <h4><a href="#usewidgetprops">useWidgetProps</a><span class="kchip hook">hook</span></h4>
+        <pre class="sig">useWidgetProps(world, entity, type, group?) ⇒ props</pre>
+        <p>Row-granular, equality-suppressed subscription, json-parsed, typed from the DSL — and <b>frozen while the widget is hidden</b>: a doc edit re-renders zero off-screen trees; on show, resubscribe + one refresh render.</p>
+      </article>
+
+      <article class="entry" id="snapshot-hooks" data-k="useselected usebreakpoint useworldcomponent snapshot hooks">
+        <h4><a href="#snapshot-hooks">useSelected / useBreakpoint / useWorldComponent</a><span class="kchip hook">hook</span></h4>
+        <pre class="sig">useSelected(entity) · useBreakpoint(entity) · useWorldComponent(world, entity, C)</pre>
+        <p>Equality-suppressed snapshots (strata's <code>get()</code> returns fresh objects — these hooks cache by shallow-eq). <code>useBreakpoint</code> reads the 5-tier responsive component derived from effective size × zoom.</p>
+      </article>
+
+      <article class="entry" id="usetool" data-k="usetool usetoolstate activetool hook">
+        <h4><a href="#usetool">useTool / useToolState</a><span class="kchip hook">hook</span></h4>
+        <pre class="sig">const [toolId, setTool] = useTool()   ·   useToolState(id) ⇒ boolean</pre>
+        <p>Over the <code>ActiveTool</code> resource; <code>setTool</code> routes through <code>ops.setTool</code> (which cancels active gestures first).</p>
+      </article>
+
+      <article class="entry" id="useundostatus" data-k="useundostatus canundo canredo durable undo status hook">
+        <h4><a href="#useundostatus">useUndoStatus</a><span class="kchip hook">hook</span></h4>
+        <pre class="sig">useUndoStatus() ⇒ {canUndo, canRedo}</pre>
+        <p>Via the <code>DurableUndoStatus</code> resource — survives document swaps.</p>
+      </article>
+
+      <article class="entry" id="usepresencepeers" data-k="usepresencepeers peers presence cursors hook">
+        <h4><a href="#usepresencepeers">usePresencePeers</a><span class="kchip hook">hook</span><span class="kchip e">ephemeral</span></h4>
+        <pre class="sig">usePresencePeers() ⇒ PresencePeerView[]</pre>
+        <p>Remote peers (<code>PresencePeer × Not(Local)</code>), membership-keyed stable snapshots — for avatar stacks and peer lists.</p>
+      </article>
+
+      <article class="entry" id="attachkeymap" data-k="attachkeymap keyboard shortcuts keymap">
+        <h4><a href="#attachkeymap">attachKeymap</a><span class="kchip">function</span></h4>
+        <pre class="sig">attachKeymap(ce, target?, overrides?) ⇒ detach</pre>
+        <p>Ships the defaults below; app entries override or extend. Every entry resolves to an op — there is no system-side keyboard logic — and editable targets are skipped automatically.</p>
+      </article>
+
+      <article class="entry" id="useworld" data-k="useworld escape hatch read observe">
+        <h4><a href="#useworld">useWorld</a><span class="kchip hook">hook</span></h4>
+        <pre class="sig">useWorld() ⇒ World   // read + observe only</pre>
+        <div class="callout"><b>Escape hatch.</b> Reading and observing are fine; mutation from components is DEV-warned — every v1 entanglement started as a convenient direct write. Write through <code>useCommit</code> or ops.</div>
+      </article>
+
+      <article class="entry" id="widgetroot" data-k="widgetroot advanced portal hosts">
+        <h4><a href="#widgetroot">WidgetRoot</a><span class="kchip cmp">component</span><span class="kchip">advanced</span></h4>
+        <pre class="sig">&lt;WidgetRoot engine hosts /&gt;   // portal-list owner; InfiniteCanvas mounts it for you</pre>
+        <p>Owns portal-list membership via <code>useSyncExternalStore</code> over the engine's enter/exit/evict feed. Exported for custom shells that assemble planes by hand.</p>
+      </article>
+    </section>
+
+    <!-- ======================================================== @ice/dom -->
+    <section class="pkg" id="dom">
+      <div class="pkg-head">
+        <h2><span class="at">@ice</span>/dom</h2>
+        <p class="imports">imports: @ice/core · @ice/kernel</p>
+        <p class="desc"><code>&lt;InfiniteCanvas&gt;</code> wires all of this — direct use is for custom shells (vanilla JS, other frameworks).</p>
+      </div>
+
+      <article class="entry" id="host" data-k="createcanvashost createplanes host planes">
+        <h4><a href="#host">createCanvasHost / createPlanes</a><span class="kchip">function</span></h4>
+        <pre class="sig">createCanvasHost(container) ⇒ CanvasHost   ·   createPlanes(host) ⇒ Planes</pre>
+        <p>Builds the stage and the six output planes (P0 ground GL · P1 content DOM · P2 GL views · P3 lifted · P4 chrome · P5 cursors).</p>
+      </article>
+
+      <article class="entry" id="adapters" data-k="attachpointeradapter attachmeasureadapter wiremeasurement adapters enqueue glroute">
+        <h4><a href="#adapters">attachPointerAdapter / attachMeasureAdapter / wireMeasurement</a><span class="kchip">function</span></h4>
+        <pre class="sig">attachPointerAdapter(host, queue, {glRoute?})   ·   attachMeasureAdapter(…) · wireMeasurement(…)</pre>
+        <p>Adapters <b>only enqueue</b> — normalized events into the input queue drained once per tick by <code>pointerIngest</code>. <code>glRoute</code> is the seam the r3f router plugs into. The measure adapter feeds ResizeObserver measurements the same way (facts in, via the queue).</p>
+      </article>
+
+      <article class="entry" id="reflectors" data-k="reflectors planetransform grid wires domwidgets chrome cursor remotecursors">
+        <h4><a href="#reflectors">Built-in reflectors</a><span class="kchip cmp">output</span></h4>
+        <pre class="sig">createPlaneTransformReflector · createGridReflector · createWiresReflector
+createDomWidgetsReflector · createChromeReflector · createCursorReflector
+createRemoteCursorsReflector</pre>
+        <ul>
+          <li><b>planeTransform</b> — observes <code>Camera</code> only; ONE transform per camera-applied plane. The O(1)-pan reflector.</li>
+          <li><b>domWidgets</b> — host enter/exit + world-unit position/size on change; content stays React's.</li>
+          <li><b>chrome</b> — pooled nodes: selection box + 8 handles, guides, marquee (+ preview outlines from the marquee render buffer).</li>
+          <li><b>cursor</b> — one <code>style.cursor</code> write on the stage (the OS cursor is the local cursor); <b>remoteCursors</b> — presence peers on P5.</li>
+          <li><b>grid / wires</b> — kernel-driven GL passes on P0.</li>
+        </ul>
+      </article>
+
+      <article class="entry" id="rafloop" data-k="startrafloop loop step">
+        <h4><a href="#rafloop">startRafLoop</a><span class="kchip">function</span></h4>
+        <pre class="sig">startRafLoop(engine) ⇒ stop</pre>
+        <p>Drives <code>engine.step(now)</code> — the whole frame contract, one entry point.</p>
+      </article>
+    </section>
+
+    <!-- ======================================================== @ice/r3f -->
+    <section class="pkg" id="r3f">
+      <div class="pkg-head">
+        <h2><span class="at">@ice</span>/r3f</h2>
+        <p class="imports">imports: @ice/react — peers: three · @react-three/fiber</p>
+        <p class="desc">GL widget islands and the virtual-texture compositor. <b>Zero render→ECS writes</b>, DEV-enforced via a write trap.</p>
+      </div>
+
+      <article class="entry" id="glbridge" data-k="createglbridge bridge islands fbo">
+        <h4><a href="#glbridge">createGLBridge</a><span class="kchip">function</span></h4>
+        <pre class="sig">createGLBridge(engine, {devAssertRenderWrites?}) ⇒ GLBridge</pre>
+        <p>The engine↔R3F seam: island lifecycle, FBO pool (size-keyed, MSAA, LRU under <code>budgets.fboBytes</code>), zoom bands with hysteresis, Hot/Warm/Waking/Cold/Dormant phases, two-level invalidation (cheap composite vs expensive island repaint).</p>
+      </article>
+
+      <article class="entry" id="glviews" data-k="glviews canvas demand frameloop composite">
+        <h4><a href="#glviews">&lt;GLViews&gt;</a><span class="kchip cmp">component</span></h4>
+        <pre class="sig">&lt;Canvas frameloop="demand"&gt;&lt;GLViews engine={ce} bridge={bridge} store={store} /&gt;&lt;/Canvas&gt;</pre>
+        <p>Mounts inside an R3F <code>&lt;Canvas&gt;</code> on the P2 plane. Each GL widget renders to its own island (own Scene + ortho camera via <code>createPortal</code>) and composites as a textured quad — the per-widget composite fact is exactly <code>{opacity}</code>.</p>
+      </article>
+
+      <article class="entry" id="useislandframe" data-k="useislandframe useislandinvalidate animation contract useframe">
+        <h4><a href="#useislandframe">useIslandFrame / useIslandInvalidate</a><span class="kchip hook">hook</span></h4>
+        <pre class="sig">useIslandFrame(cb) · useIslandInvalidate() ⇒ invalidate</pre>
+        <div class="callout"><b>The only sanctioned island animation paths.</b> R3F portals share one commingled subscriber array, so a plain <code>useFrame</code> cannot be attributed to an island and will not repaint reliably. Declare <code>animated: true</code> or subscribe here.</div>
+      </article>
+
+      <article class="entry" id="glrouter" data-k="createglpointerrouter router synthetic events surfacehandled raycast">
+        <h4><a href="#glrouter">createGLPointerRouter</a><span class="kchip">function</span></h4>
+        <pre class="sig">createGLPointerRouter({world, bridge, index}) ⇒ GLRoute   // plug into attachPointerAdapter</pre>
+        <p>At event time: synchronous read-only point-pick against the spatial index → island-local conversion (kernel) → raycast → synthetic R3F events with per-island capture. A handler that stops propagation marks the pointer <code>surfaceHandled</code> — a world-state fact recognizers respect. First tap on a GL widget works; no stale-frame routing.</p>
+      </article>
+
+      <article class="entry" id="r3f-advanced" data-k="island rendertargetpool resourceregistry compositematerial islandstatestore renderwritetrap advanced">
+        <h4><a href="#r3f-advanced">Compositor internals</a><span class="kchip">advanced</span></h4>
+        <pre class="sig">Island · RenderTargetPool · ResourceRegistry · CompositeMaterial
+createIslandStateStore · createRenderWriteTrap</pre>
+        <p>Exported for custom compositor shells and tests; <code>&lt;GLViews&gt;</code> assembles them for you.</p>
+      </article>
+    </section>
+
+    <!-- ======================================================== @ice/devtools -->
+    <section class="pkg" id="devtools">
+      <div class="pkg-head">
+        <h2><span class="at">@ice</span>/devtools</h2>
+        <p class="imports">imports: @ice/core only — nobody imports devtools</p>
+        <p class="desc">Because all interaction state is world state, the panel sees everything — live recognizers, claims, and phases included.</p>
+      </div>
+
+      <article class="entry" id="attachdevtools" data-k="attachdevtools devtools panel pointers recognizers planes sovereignty loop telemetry">
+        <h4><a href="#attachdevtools">attachDevtools</a><span class="kchip">function</span></h4>
+        <pre class="sig">attachDevtools(engine, {container?, intervalMs?, keyOf?, cellInDoc?, telemetry?}) ⇒ {detach}</pre>
+        <ul>
+          <li><b>pointers / recognizers</b> — live pointers and gestures: phases, claims, routes, watches.</li>
+          <li><b>planes</b> — per-plane node counts and reflector timings.</li>
+          <li><b>sovereignty</b> — per-entity doc/runtime cell badges from the prefab registry.</li>
+          <li><b>loop</b> — per-system run/skip + µs (honest telemetry: a skipped system stamps nothing).</li>
+        </ul>
+        <div class="callout"><b>Dev builds only.</b> Arming telemetry permanently arms reactive stamping (+17–28% on write-heavy paths — the budgeted always-on tax).</div>
+      </article>
+    </section>
+
+    <!-- ======================================================== @ice/kernel -->
+    <section class="pkg" id="kernel">
+      <div class="pkg-head">
+        <h2><span class="at">@ice</span>/kernel</h2>
+        <p class="imports">imports: rbush only — no ECS, no DOM, no React. Plain structs in, plain structs out.</p>
+        <p class="desc">Pure math. Every screen↔world conversion — and <b>the one Y-flip</b> — lives here and nowhere else.</p>
+      </div>
+
+      <article class="entry" id="coords" data-k="screentoworld worldtoscreen zoomatpoint planecsstransform worldtoisland islandtoworld compositecamerafrustum coordinates yflip">
+        <h4><a href="#coords">Coordinates</a><span class="kchip">functions</span></h4>
+        <pre class="sig">screenToWorld · worldToScreen · zoomAtPoint · planeCssTransform
+worldToIsland · islandToWorld · compositeCameraFrustum</pre>
+        <p><code>zoomAtPoint</code> is the anchored-zoom math under wheel/pinch; <code>planeCssTransform</code> feeds the O(1)-pan reflector; the island pair converts through widget-local space for GL routing and composite placement.</p>
+      </article>
+
+      <article class="entry" id="spatial" data-k="spatialindex rbush hit path point rect query">
+        <h4><a href="#spatial">SpatialIndex</a><span class="kchip">class</span></h4>
+        <pre class="sig">new SpatialIndex()   // rbush-backed; O(log n) removal</pre>
+        <p><b>The only hit path.</b> Point picks, rect queries, snap-candidate gathering, marquee hits, and the GL router all query this index — one truth for "what is here".</p>
+      </article>
+
+      <article class="entry" id="snap" data-k="computesnapguides snap alignment spacing guides">
+        <h4><a href="#snap">computeSnapGuides</a><span class="kchip">function</span></h4>
+        <pre class="sig">computeSnapGuides(dragged, candidates, threshold)</pre>
+        <p>Edge/center alignment (7X + 7Y pairs, nearest-wins per axis) + equal-spacing detection with gap-pattern extension, then merged. Candidates come from the spatial index — no full-scene scans at any board size.</p>
+      </article>
+
+      <article class="entry" id="wire-math" data-k="portanchor wirecubic distancetocubic bezier anchors wires">
+        <h4><a href="#wire-math">Ports &amp; wires</a><span class="kchip">functions</span></h4>
+        <pre class="sig">portAnchor · wireCubic · distanceToCubic</pre>
+        <p>Anchor placement along widget sides, the wire's cubic geometry, and segment-distance hit math (wires pick below widgets, above canvas).</p>
+      </article>
+
+      <article class="entry" id="bands" data-k="selectband isoutofband fbopixelsize zoom bands hysteresis eviction selectevictions computeislandphase">
+        <h4><a href="#bands">Zoom bands &amp; eviction</a><span class="kchip">functions</span></h4>
+        <pre class="sig">selectBand · isOutOfBand · fboPixelSize · selectEvictions · computeIslandPhase</pre>
+        <p>Power-of-two FBO resolution bands with <code>[×0.5, ×2]</code> hysteresis; LRU eviction policy and the Hot/Warm/Waking/Cold/Dormant phase function for the compositor.</p>
+      </article>
+    </section>
+
+    <!-- ======================================================== APPENDIX -->
+    <section class="pkg" id="appendix">
+      <div class="pkg-head">
+        <h2>Appendix</h2>
+        <p class="desc">The ordering contract, the reviewed constants, and the shipped keymap.</p>
+      </div>
+
+      <h3 class="subhead" id="phases">Phase reference — <code style="text-transform:none">engine.step(now)</code></h3>
+      <article class="entry" data-k="phases input react ctl spawn recognize arbitrate claim behave simulate derive present cleanup sync publish notify reflect">
+        <h4><a href="#phases">sync → tick (11 phases) → publish → notify → reflect</a></h4>
+        <p>A strata phase flush is the only structural settle point. Wherever a stage must see the previous stage's spawns within one frame, the stages are separate phases — ordering is the contract.</p>
+        <table class="t wide">
+          <thead><tr><th>phase</th><th>what runs</th></tr></thead>
+          <tbody>
+            <tr><td>input</td><td>pointerIngest (queue → pointer values, one-tick <code>WentDown/WentUp</code>, wheel accumulation) · lifecycle · pointerWorldSync.</td></tr>
+            <tr><td>react</td><td>picking — dual pick via the spatial index: <code>Targets</code> (radiused, forgiving) + <code>TouchesExact</code> (precise). <code>runIf</code>: pointer/camera/spatial versions.</td></tr>
+            <tr><td>ctl:spawn</td><td>recognizerSpawn (tool spawn profiles; pinch on 2nd free touch) · recognizerIntegrity (required-watch counts; capture death cancels).</td></tr>
+            <tr><td>ctl:recognize</td><td>Per-kind updates: tap · longPress · drag · pinch · wheel — dead-zones, promotion, phase transitions with one-frame <code>Just*</code> markers (the edge triggers systems gate on).</td></tr>
+            <tr><td>ctl:arbitrate</td><td>First claiming recognizer wins its pointers (<code>ClaimedBy</code> relation; priority Pinch &gt; Drag &gt; LongPress &gt; Tap) · dragRoute latches pan/marquee/move/resize/connect.</td></tr>
+            <tr><td>ctl:claim</td><td>Claim systems attach riders (<code>Grab</code> with origin + z) and <code>Drags</code> edges; StackZ elevates; select-on-grab. Flush ⇒ behaviors read them <b>this frame</b>.</td></tr>
+            <tr><td>ctl:behave</td><td>Behaviors: select · snap · move · drop/consume · resize · marquee · connect · cameraControl. Live absolute writes; commit on release = one <code>doc.transaction</code>.</td></tr>
+            <tr><td>simulate</td><td>cameraInertia · tweenSystem (fly-back <code>TransformTween</code> — the tween holds the claim until reconvergence).</td></tr>
+            <tr><td>derive</td><td>promoteSweep · activeMembership · cull · breakpoint · port materialize/reap · selection chrome · guides · marquee chrome · cursor resolve · wire geometry.</td></tr>
+            <tr><td>present</td><td>frameStats and render-buffer fills. Presence I/O is <b>not</b> here — it lives in the post-tick publish step.</td></tr>
+            <tr><td>cleanup</td><td>One-tick marks cleared · terminal recognizers reaped (+1 frame) · <code>CancelRequest</code> consumed.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <h3 class="subhead" id="defaults">Defaults &amp; budgets</h3>
+      <article class="entry" data-k="defaults constants gesture settings tap longpress drag pinch wheel inertia pick radius zoom snap autosave budgets keepmounted fbo port">
+        <h4><a href="#defaults">Reviewed constants</a><span class="kchip r">live-tunable resources</span></h4>
+        <p>Everything below seeds a resource (<code>GestureSettings</code> · <code>PointerSettings</code> · <code>CameraLimits</code> · <code>SnapConfig</code> · budgets) — tune at construction or live.</p>
+        <table class="t">
+          <thead><tr><th>constant</th><th>default</th><th>where</th></tr></thead>
+          <tbody>
+            <tr><td>tap</td><td>≤ 250 ms · ≤ 8 px slop</td><td>GestureSettings</td></tr>
+            <tr><td>long-press</td><td>500 ms hold · ≤ 10 px slop</td><td>GestureSettings</td></tr>
+            <tr><td>drag activation</td><td>&gt; 10 px slop (origin measured from dead-zone exit)</td><td>GestureSettings</td></tr>
+            <tr><td>pinch activation</td><td>spread change &gt; 6 px (re-baselined)</td><td>GestureSettings</td></tr>
+            <tr><td>wheel gesture end</td><td>150 ms silence</td><td>GestureSettings</td></tr>
+            <tr><td>multi-tap (opt-in)</td><td>280 ms window · 20 px slop</td><td>MultiTap component</td></tr>
+            <tr><td>camera inertia</td><td>seed &gt; 120 px/s · 325 ms decay · touch-to-stop</td><td>GestureSettings</td></tr>
+            <tr><td>pick radius</td><td>mouse 0 · pen 4 px · touch 12 px (grab stays exact)</td><td>PointerSettings</td></tr>
+            <tr><td>zoom clamp</td><td>0.1 – 5</td><td>CameraLimits</td></tr>
+            <tr><td>snap threshold</td><td>5 px screen-constant (<code>threshold/zoom</code> in world)</td><td>SnapConfig</td></tr>
+            <tr><td>autosave</td><td>800 ms debounce · 10 s max-wait · gesture-deferred</td><td>autosave kit</td></tr>
+            <tr><td>keep-mounted LRU</td><td>256 widgets</td><td>budgets</td></tr>
+            <tr><td>FBO pool</td><td>256 MB</td><td>budgets</td></tr>
+            <tr><td>port materialization</td><td>≤ 64 spawns/frame · 600 px radius</td><td>budgets</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <h3 class="subhead" id="keymap">Keymap defaults</h3>
+      <article class="entry" data-k="keymap shortcuts delete undo redo duplicate select all escape nudge space pan">
+        <h4><a href="#keymap">attachKeymap defaults</a></h4>
+        <p>All entries resolve to ops; editable targets (inputs, contenteditable) are skipped automatically.</p>
+        <table class="t">
+          <thead><tr><th>keys</th><th>op</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>⌫</kbd> / <kbd>Delete</kbd></td><td><code>ops.deleteSelection()</code> — one transaction, cascade included</td></tr>
+            <tr><td><kbd>mod Z</kbd> · <kbd>⇧ mod Z</kbd></td><td><code>docs.undo()</code> / <code>docs.redo()</code> — per-gesture steps, selection restored</td></tr>
+            <tr><td><kbd>mod D</kbd></td><td><code>ops.duplicateSelection()</code> — twins at +16/+16</td></tr>
+            <tr><td><kbd>mod A</kbd></td><td><code>ops.selectAll()</code></td></tr>
+            <tr><td><kbd>Esc</kbd></td><td><code>ops.cancelActiveGestures()</code> — cancels and restores every in-flight gesture</td></tr>
+            <tr><td>arrows / <kbd>⇧</kbd> arrows</td><td>nudge selection ±1 px / ±10 px — <b>one transaction per press</b> (each press is an undo step)</td></tr>
+            <tr><td><kbd>V</kbd> · <kbd>H</kbd> · <kbd>C</kbd></td><td><code>ops.setTool</code> — select · pan · connect, plus any registered tool's <code>shortcut</code></td></tr>
+            <tr><td><kbd>Space</kbd> (hold) · middle button</td><td>pan routing — a device override in the drag router, not a keymap entry</td></tr>
+          </tbody>
+        </table>
+      </article>
+    </section>
+
+    <footer>
+      <div class="nav-in" style="padding:0">
+        <p>
+          infinite-canvas-engine · engine v1 (M0–M10) · built on strata-ecs + loro-crdt<br>
+          source of truth: <code style="font-size:10px">packages/*/src/index.ts</code> — deep imports are unsupported and wall-checked.
+        </p>
+        <p style="margin-left:auto;text-align:right">
+          <a href="index.html">← overview</a><br>
+          run the merge gate: <code style="font-size:10px">pnpm run ci</code>
+        </p>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script>
+/* ------------------------------------------------ filter */
+(function () {
+  var input = document.getElementById("filter");
+  var count = document.getElementById("fcount");
+  var entries = Array.prototype.slice.call(document.querySelectorAll(".entry"));
+  var sections = Array.prototype.slice.call(document.querySelectorAll(".pkg"));
+  var subheads = Array.prototype.slice.call(document.querySelectorAll(".subhead"));
+
+  function apply() {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0;
+    entries.forEach(function (en) {
+      var hay = (en.getAttribute("data-k") || "") + " " + en.textContent.toLowerCase();
+      var hit = !q || hay.indexOf(q) !== -1;
+      en.hidden = !hit;
+      if (hit) shown++;
+    });
+    sections.forEach(function (s) {
+      var any = s.querySelector(".entry:not([hidden])");
+      s.style.display = any ? "" : "none";
+    });
+    subheads.forEach(function (h) {
+      /* hide a subhead if every entry until the next subhead/section end is hidden */
+      var el = h.nextElementSibling, any = false;
+      while (el && !el.classList.contains("subhead")) {
+        if (el.classList.contains("entry") && !el.hidden) { any = true; break; }
+        el = el.nextElementSibling;
+      }
+      h.style.display = any ? "" : "none";
+    });
+    count.textContent = q ? shown + " / " + entries.length + " entries" : "";
+    document.body.classList.toggle("empty", q && shown === 0);
+  }
+  input.addEventListener("input", apply);
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { input.value = ""; apply(); input.blur(); }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "/" && document.activeElement !== input &&
+        !/^(input|textarea)$/i.test(document.activeElement.tagName)) {
+      e.preventDefault(); input.focus();
+    }
+  });
+})();
+
+/* ------------------------------------------------ scroll spy */
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll(".side nav a"));
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute("href").slice(1)] = a; });
+  var targets = Object.keys(byId).map(function (id) { return document.getElementById(id); }).filter(Boolean);
+  if (!("IntersectionObserver" in window)) return;
+  var current = null;
+  var io = new IntersectionObserver(function (ens) {
+    ens.forEach(function (en) {
+      if (en.isIntersecting) {
+        if (current) current.classList.remove("on");
+        current = byId[en.target.id];
+        if (current) current.classList.add("on");
+      }
+    });
+  }, { rootMargin: "-15% 0px -70% 0px" });
+  targets.forEach(function (t) { io.observe(t); });
+})();
+</script>
+</body>
+</html>
