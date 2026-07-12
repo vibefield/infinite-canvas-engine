@@ -7,6 +7,7 @@
 import { createWorld } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
+  Resizable,
   Camera,
   createEngine,
   createSelectionChromeSystem,
@@ -46,7 +47,7 @@ function rig() {
     return out;
   };
   const spawnBox = (x: number, y: number, w: number, h: number) =>
-    world.spawn({ components: [[Position, { x, y }], [Size, { w, h }]] });
+    world.spawn({ components: [[Position, { x, y }], [Size, { w, h }]], tags: [Resizable] });
   return { world, engine, step, entities, spawnBox };
 }
 

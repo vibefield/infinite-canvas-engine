@@ -95,8 +95,38 @@ export function attachPointerAdapter(
   const { glRoute } = opts;
 
   let spaceHeld = false;
-  // Pointers currently down — for the blur-cancel sweep (id → last sample).
-  const live = new Map<string, { device: InputEvent["device"]; x: number; y: number }>();
+  // Pointers currently down — blur-cancel sweep + DEFERRED-CAPTURE state.
+  // Capture timing (field report 2026-07-12, v1's click-vs-drag discrimination):
+  // capturing on DOWN retargets the derived `click`/`dblclick` to the container,
+  // killing every widget-body handler (todo rows, folder double-click). So:
+  //   - GL-claimed downs capture IMMEDIATELY (the router synthesizes its own
+  //     clicks; island drags must keep delivering outside the element);
+  //   - native-interactive downs NEVER capture (the engine ignores them);
+  //   - everything else captures on the FIRST held-button move past a 4px slop
+  //     — below every recognizer dead zone, so a drag is always captured
+  //     before it can activate, while a clean tap never captures at all.
+  const live = new Map<
+    string,
+    {
+      device: InputEvent["device"];
+      x: number;
+      y: number;
+      downX: number;
+      downY: number;
+      native: boolean;
+      captured: boolean;
+    }
+  >();
+  const CAPTURE_SLOP_PX = 4;
+
+  const capture = (pointerId: number): void => {
+    if (typeof container.setPointerCapture !== "function") return;
+    try {
+      container.setPointerCapture(pointerId);
+    } catch {
+      // capture is best-effort — a detached or unsupported target must not throw here.
+    }
+  };
   // Last emitted keyboard tuple — emit a `key` fact only when it actually changes.
   let lastMods = { shift: false, ctrl: false, alt: false, meta: false, space: false };
 
@@ -117,20 +147,15 @@ export function attachPointerAdapter(
     const id = pointerIdOf(e);
     const device = deviceOf(e);
     const { x, y } = relative(e.clientX, e.clientY);
-    live.set(id, { device, x, y });
-    if (typeof container.setPointerCapture === "function") {
-      try {
-        container.setPointerCapture(e.pointerId);
-      } catch {
-        // capture is best-effort — a detached or unsupported target must not throw here.
-      }
-    }
     // Widget opt-out: down on a native interactive / [data-canvas-interactive]
     // flags the fact so recognizers skip it (design-002 §8). The GL router is
     // the same boundary for island content — its synchronous pick + synthetic
     // dispatch happens HERE, at event time (design-004 §4).
-    const surfaceHandled =
-      crossesInteractive(e.target, container) || glRoute?.("down", x, y, e) === true;
+    const native = crossesInteractive(e.target, container);
+    const glClaimed = glRoute?.("down", x, y, e) === true;
+    live.set(id, { device, x, y, downX: x, downY: y, native, captured: glClaimed });
+    if (glClaimed) capture(e.pointerId); // island capture semantics need it NOW
+    const surfaceHandled = native || glClaimed;
     queue.enqueue({
       kind: "down",
       pointerId: id,
@@ -151,6 +176,17 @@ export function attachPointerAdapter(
     if (seen !== undefined) {
       seen.x = x;
       seen.y = y;
+      // Deferred capture: a real drag is forming — take it before any
+      // recognizer dead zone (>=8px) can activate.
+      if (
+        !seen.captured &&
+        !seen.native &&
+        e.buttons !== 0 &&
+        Math.hypot(x - seen.downX, y - seen.downY) > CAPTURE_SLOP_PX
+      ) {
+        capture(e.pointerId);
+        seen.captured = true;
+      }
     }
     const glHandled = glRoute?.("move", x, y, e) === true; // island capture / hover synth
     queue.enqueue({

@@ -31,8 +31,11 @@ export interface IslandProps {
 export function Island({ bridge, world, entity, widget, environment }: IslandProps): ReactElement | null {
   const scene = useMemo(() => new Scene(), []);
   const camera = useMemo(() => {
-    const cam = new OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
-    cam.position.set(0, 0, 100); // +Z looking at the XY content plane
+    // Generous depth range (ortho — free): at z=100 a large card's rotating
+    // geometry (e.g. a 329px torus knot's lobe swinging toward the camera)
+    // crossed the near plane and clipped (field report 2026-07-12).
+    const cam = new OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
+    cam.position.set(0, 0, 500); // +Z looking at the XY content plane
     cam.lookAt(0, 0, 0);
     return cam;
   }, []);

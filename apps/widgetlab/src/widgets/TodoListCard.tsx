@@ -5,10 +5,13 @@
  * transaction per edit, the whole "props" group written absolutely (the `items`
  * array serialized into its `p.json` string cell).
  *
- * Interactivity parity: native form elements (button/input) auto-bypass the
- * dom pointer router; the `<li>` whole-row toggle still calls stopPropagation
- * so the click isn't read as the start of a card drag (v1's RFC-006 idiom).
- * `draft` stays React state (v1 parity) — only the todo items are widget data.
+ * Interactivity: native form elements (button/input) auto-bypass the dom
+ * pointer router; the `<li>` whole-row toggle is a plain onClick — the pointer
+ * adapter discriminates click vs drag by movement, so a press-and-drag on a row
+ * still moves the card while a stationary click toggles it (no stopPropagation
+ * needed). The remove button stops click propagation so it doesn't also toggle
+ * the row it sits in. `draft` stays React state (v1 parity) — only the todo
+ * items are widget data.
  *
  * size: large
  */
@@ -81,18 +84,12 @@ function TodoListView({ entity, world }: WidgetComponentProps): ReactElement {
         {items.map((item) => (
           <li
             key={item.id}
-            // `<li>` is not in the router's native-interactive list, so without
-            // this stopPropagation the click would also start an engine drag on
-            // the card. Demonstrates the boundary idiom from RFC-006.
-            onClick={(e) => {
-              e.stopPropagation();
-              toggle(item.id);
-            }}
+            // Plain click toggles the row; press-and-drag on it still moves the
+            // card (the <li> is not a native-interactive, so the pointer adapter
+            // routes movement to the engine and a stationary click here).
+            onClick={() => toggle(item.id)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.stopPropagation();
-                toggle(item.id);
-              }
+              if (e.key === "Enter" || e.key === " ") toggle(item.id);
             }}
             className="group flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-white/5"
           >
@@ -113,8 +110,10 @@ function TodoListView({ entity, world }: WidgetComponentProps): ReactElement {
             <button
               type="button"
               aria-label="Remove task"
-              // <button> auto-bypasses the router via the native-interactive
-              // selector; stopPropagation included for clarity.
+              // <button> is a native-interactive (router bypasses it). This
+              // stopPropagation is load-bearing: it keeps the click from
+              // bubbling to the row's onClick, which would toggle (resurrect)
+              // the item we just removed.
               onClick={(e) => {
                 e.stopPropagation();
                 remove(item.id);
@@ -130,7 +129,6 @@ function TodoListView({ entity, world }: WidgetComponentProps): ReactElement {
         className="mt-2 flex items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          e.stopPropagation();
           add();
         }}
       >

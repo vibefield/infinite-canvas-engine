@@ -26,6 +26,11 @@ function DebugResizableView({ entity, world }: WidgetComponentProps): ReactEleme
         fontSize: 12,
         border: "1px solid #4a4a6a",
         boxSizing: "border-box",
+        // Clip our own gradient + border to CardShell's radius: a bordered,
+        // backgrounded child isn't reliably clipped by the parent's
+        // border-radius + overflow:hidden (CardShell also has a transform), so
+        // the square corners poked out. `inherit` = CardShell's 22px.
+        borderRadius: "inherit",
       }}
     >
       <div className="absolute inset-0 grid place-items-center pointer-events-none">

@@ -21,6 +21,7 @@ import { field, enumOf } from "@vibecook/strata-ecs";
 import type { Component, Tag } from "@vibecook/strata-ecs";
 import {
   Accepts,
+  ChildOf,
   Container,
   Movable,
   Position,
@@ -282,6 +283,11 @@ export function defineWidget(def: WidgetDef): WidgetType {
   const prefab = definePrefab(def.type, {
     store: "durable",
     components: essential,
+    // Every widget is containment-eligible: drop-to-consume commits
+    // `ChildOf(widget → container)` in the SAME tx as the final position
+    // (design-003 §5.5), and an undeclared relation throws at commit — the
+    // widgetlab folder-drop field report (2026-07-12) hit exactly that.
+    relations: [ChildOf],
     version,
   });
 

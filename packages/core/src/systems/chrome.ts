@@ -50,6 +50,7 @@ import {
   HandleSpec,
   MeasuredSize,
   Position,
+  Resizable,
   SelectionBox,
   Selected,
   Size,
@@ -119,15 +120,35 @@ export function createSelectionChromeSystem(world: World): TickSystem {
   let boxCache: Rect | undefined;
   const handleCache = new Map<Entity, Rect>();
 
+  const reapHandles = (ctx: SystemCtx): void => {
+    for (const h of handleEntities) ctx.destroy(h);
+    handleEntities = [];
+    handleCache.clear();
+  };
+
   const reap = (ctx: SystemCtx): void => {
     if (boxEntity !== undefined) {
       ctx.destroy(boxEntity);
       boxEntity = undefined;
       boxCache = undefined;
     }
-    for (const h of handleEntities) ctx.destroy(h);
-    handleEntities = [];
-    handleCache.clear();
+    reapHandles(ctx);
+  };
+
+  const spawnHandles = (ctx: SystemCtx, bbox: Rect, worldSize: number, box: Entity): void => {
+    for (const anchor of HANDLE_ANCHORS) {
+      const hr = handleRect(anchor, bbox, worldSize);
+      const he = ctx.spawn({
+        components: [
+          [Position, { x: hr.x, y: hr.y }],
+          [Size, { w: hr.w, h: hr.h }],
+          [HandleSpec, { anchor }],
+        ],
+      });
+      ctx.setRelation(he, VisualOf, box); // VisualOf is arity "one"
+      handleEntities.push(he);
+      handleCache.set(he, hr);
+    }
   };
 
   // Tick system (strata 0.5.0): exactly one pass per frame by construction
@@ -140,8 +161,14 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       let maxX = Number.NEGATIVE_INFINITY;
       let maxY = Number.NEGATIVE_INFINITY;
       let any = false;
+      // Resize affordance gate (field report 2026-07-12, v1 parity): handles
+      // exist only when EVERY selected entity is Resizable — a non-resizable
+      // card gets the outline box, never the 8 grips (mixed multi-select is
+      // conservatively grip-less too).
+      let allResizable = true;
       for (const e of selectedEntities(world)) {
         if (!ctx.has(e, Position)) continue;
+        if (!ctx.hasTag(e, Resizable)) allResizable = false;
         const p = ctx.read(e, Position);
         // Effective size (review finding): the outline must wrap what the user
         // SEES — MeasuredSize where auto-sized and measured, else Size.
@@ -170,19 +197,16 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         // are identity-only until the phase boundary, so no edit() until next frame.
         boxEntity = ctx.spawn({ components: [[SelectionBox, { ...bbox }]] });
         boxCache = { ...bbox };
-        for (const anchor of HANDLE_ANCHORS) {
-          const hr = handleRect(anchor, bbox, worldSize);
-          const he = ctx.spawn({
-            components: [
-              [Position, { x: hr.x, y: hr.y }],
-              [Size, { w: hr.w, h: hr.h }],
-              [HandleSpec, { anchor }],
-            ],
-          });
-          ctx.setRelation(he, VisualOf, boxEntity); // VisualOf is arity "one"
-          handleEntities.push(he);
-          handleCache.set(he, hr);
-        }
+        if (allResizable) spawnHandles(ctx, bbox, worldSize, boxEntity);
+        return;
+      }
+
+      // Reconcile the grip pool with the gate (selection composition changed).
+      if (!allResizable && handleEntities.length > 0) reapHandles(ctx);
+      if (allResizable && handleEntities.length === 0) {
+        spawnHandles(ctx, bbox, worldSize, boxEntity);
+        // Newborns are identity-only until the flush — geometry rode the
+        // payload; change-only edits begin next frame.
         return;
       }
 
