@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICE demo — node editor</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="demo.css">
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.2.7",
+    "react/jsx-runtime": "https://esm.sh/react@19.2.7/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@19.2.7?deps=react@19.2.7",
+    "react-dom/client": "https://esm.sh/react-dom@19.2.7/client?deps=react@19.2.7",
+    "htm/react": "https://esm.sh/htm@3.1.1/react?deps=react@19.2.7",
+    "loro-crdt": "https://esm.sh/loro-crdt@1.13.6",
+    "rbush": "https://esm.sh/rbush@3.0.1",
+    "@vibecook/strata-ecs": "https://esm.sh/@vibecook/strata-ecs@0.5.0?external=loro-crdt,react",
+    "@vibecook/strata-ecs/durable": "https://esm.sh/@vibecook/strata-ecs@0.5.0/durable?external=loro-crdt,react",
+    "@vibecook/strata-ecs/ephemeral": "https://esm.sh/@vibecook/strata-ecs@0.5.0/ephemeral?external=loro-crdt,react",
+    "@vibecook/ice": "/packages/ice/dist/index.js",
+    "@vibecook/ice/react": "/packages/ice/dist/react.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<div class="boot" id="boot"><span><span class="spin"></span>loading @vibecook/ice from esm.sh…</span></div>
+<a class="standalone" href="nodes.html" target="_blank" rel="noopener">open standalone ↗</a>
+
+<script type="module">
+const boot = document.getElementById("boot");
+if (window.top !== window.self) document.body.classList.add("framed");
+try {
+  const { createCanvasEngine, defineWidget, p } = await import("@vibecook/ice");
+  const {
+    EngineProvider, InfiniteCanvas, attachKeymap,
+    useWidgetProps, useTool, useUndoStatus,
+  } = await import("@vibecook/ice/react");
+  const { createRoot } = await import("react-dom/client");
+  const { html } = await import("htm/react");
+
+  /* -------------------------------------------------- node widgets */
+  const nodeView = (type) =>
+    function NodeView({ entity, world }) {
+      const pr = useWidgetProps(world, entity, type);
+      return html`<div className="node">
+        <span className="t">${pr.title}</span>
+        <span className="r"><span>${pr.left}</span><b>${pr.right}</b></span>
+      </div>`;
+    };
+  const nodeWidget = (type, title, left, right, ports) =>
+    defineWidget({
+      type,
+      surface: "dom",
+      props: {
+        title: p.string({ default: title }),
+        left: p.string({ default: left }),
+        right: p.string({ default: right }),
+      },
+      component: nodeView(type),
+      defaultSize: { w: 195, h: 96 },
+      minSize: { w: 150, h: 80 },
+      interaction: { selectable: true, movable: true, snap: "both" },
+      ports,
+    });
+
+  const Osc = nodeWidget("osc", "oscillator", "sine · 440 Hz", "out ›", [
+    { id: "out", side: "e", accepts: ["sig"] },
+  ]);
+  const Filt = nodeWidget("filter", "filter", "‹ in · low-pass", "out ›", [
+    { id: "in", side: "w", accepts: ["sig"] },
+    { id: "out", side: "e", accepts: ["sig"] },
+  ]);
+  const Scope = nodeWidget("scope", "scope", "‹ in", "draws the wave", [
+    { id: "in", side: "w", accepts: ["sig"] },
+  ]);
+
+  /* -------------------------------------------------- boot */
+  const engine = createCanvasEngine({ widgets: [Osc, Filt, Scope] });
+  engine.docs.create();
+  const seed = (type, x, y) => engine.ops.spawnWidget(type, { x, y, undoable: false });
+  seed("osc", 80, 200);
+  seed("filter", 400, 140);
+  seed("scope", 720, 240);
+  attachKeymap(engine);
+  engine.ops.setTool("connect"); // connect-affine: nearby ports materialize immediately
+
+  function Toolbar() {
+    const [tool, setTool] = useTool();
+    const undo = useUndoStatus();
+    const tb = (id, label, key) => html`<button
+      key=${id} className=${tool === id ? "on" : ""}
+      onClick=${() => setTool(id)}>${label}<i>${key}</i></button>`;
+    return html`<div className="bar">
+      ${tb("select", "select", "V")}
+      ${tb("connect", "connect", "C")}
+      ${tb("pan", "pan", "H")}
+      <span className="sep"></span>
+      <button disabled=${!undo.canUndo} onClick=${() => engine.docs.undo()}>undo<i>⌘Z</i></button>
+      <button disabled=${!undo.canRedo} onClick=${() => engine.docs.redo()}>redo<i>⇧⌘Z</i></button>
+    </div>`;
+  }
+
+  createRoot(document.getElementById("root")).render(
+    html`<${EngineProvider} engine=${engine}>
+      <div className="stage"><${InfiniteCanvas} engine=${engine} /></div>
+      <${Toolbar} />
+      <div className="hint"><b>drag from a port to a compatible port</b> — nearby ports light up; the wire commits on release. click a wire to select it; <b>⌫</b> deletes. deleting a node cascades its wires.</div>
+    <//>`,
+  );
+  requestAnimationFrame(() => engine.ops.zoomToFit());
+
+  boot.remove();
+  document.title += " ·ok";
+} catch (err) {
+  console.error(err);
+  boot.classList.add("err");
+  boot.innerHTML = "";
+  boot.textContent = "demo failed to load — " + (err?.message ?? err);
+  document.title += " ·fail";
+}
+</script>
+</body>
+</html>

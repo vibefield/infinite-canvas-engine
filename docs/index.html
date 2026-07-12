@@ -273,6 +273,13 @@ code,pre,kbd{font-family:var(--mono)}
 .pillar p{font-size:13.8px;color:var(--ink2);line-height:1.62}
 .pillar p code{font-size:12px;color:var(--ink2);background:var(--bg2);padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
 
+/* live demo embeds */
+.livewrap{margin-top:52px;border:1px solid var(--line2);border-radius:14px;overflow:hidden;background:#080D16}
+.livewrap iframe{display:block;width:100%;height:500px;border:0}
+.livemeta{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.livemeta a{color:var(--ink2);border-bottom:1px solid var(--line2)}
+.livemeta a:hover{color:var(--ink)}
+
 /* diagram shells */
 .diagram{
   margin-top:52px;background:var(--bg1);border:1px solid var(--line);border-radius:var(--rad);
@@ -422,6 +429,7 @@ footer a:hover{color:var(--ink)}
       infinite-canvas-engine&nbsp;<span class="dim">@vibecook/ice</span>
     </a>
     <div class="nav-links">
+      <a href="#live">Live</a>
       <a href="#architecture">Architecture</a>
       <a href="#widgets">Widgets</a>
       <a href="#collab">Collab</a>
@@ -573,6 +581,20 @@ footer a:hover{color:var(--ink)}
       </div>
     </div>
   </div>
+</section>
+
+<!-- ================================================================ LIVE -->
+<section class="sec" id="live">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="kicker k-mint">Proof, not promises</p>
+      <h2>This is not a video. <em>It's the engine.</em></h2>
+      <p class="lead">A live board — the published <code>@vibecook/ice</code>, loaded from esm.sh, running in this page right now. Drag a note and snap guides appear; drag empty canvas for a marquee; grab a corner to resize; <code>⌘Z</code> undoes exactly one gesture.</p>
+    </div>
+    <div class="livewrap rv"><iframe src="demos/board.html" loading="lazy" title="Live ICE demo — the starter board"></iframe></div>
+    <p class="livemeta rv">more live boards in the docs: <a href="api.html#containers">containers</a> · <a href="api.html#node-editor">node editor</a> · <a href="api.html#presence-behavior">presence, two peers</a> · <a href="demos/board.html" target="_blank" rel="noopener">open this one standalone ↗</a></p>
+  </div>
+  <div class="wrap"><div class="hr"></div></div>
 </section>
 
 <!-- ================================================================ FRAME CONTRACT -->

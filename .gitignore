@@ -7,3 +7,4 @@ dist/
 # Design drafts are version-controlled ONLY on the `local-dev` branch (never pushed).
 # On main they stay present-but-untracked. See CLAUDE.md "Draft workflow".
 /draft/
+docs/.local-*.html

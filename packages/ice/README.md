@@ -42,7 +42,7 @@ function StickyView({ entity, world }) {
 
 const engine = createCanvasEngine({ widgets: [Sticky] });
 engine.docs.create(); // a local-first document
-engine.ops.spawnWidget("sticky", { at: { x: 120, y: 120 } });
+engine.ops.spawnWidget("sticky", { x: 120, y: 120 });
 attachKeymap(engine); // ⌫ · ⌘Z · ⌘D · ⌘A · Esc · arrows · v/h/c
 
 createRoot(document.getElementById("root")).render(

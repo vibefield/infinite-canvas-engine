@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICE demo — presence</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="demo.css">
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.2.7",
+    "react/jsx-runtime": "https://esm.sh/react@19.2.7/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@19.2.7?deps=react@19.2.7",
+    "react-dom/client": "https://esm.sh/react-dom@19.2.7/client?deps=react@19.2.7",
+    "htm/react": "https://esm.sh/htm@3.1.1/react?deps=react@19.2.7",
+    "loro-crdt": "https://esm.sh/loro-crdt@1.13.6",
+    "rbush": "https://esm.sh/rbush@3.0.1",
+    "@vibecook/strata-ecs": "https://esm.sh/@vibecook/strata-ecs@0.5.0?external=loro-crdt,react",
+    "@vibecook/strata-ecs/durable": "https://esm.sh/@vibecook/strata-ecs@0.5.0/durable?external=loro-crdt,react",
+    "@vibecook/strata-ecs/ephemeral": "https://esm.sh/@vibecook/strata-ecs@0.5.0/ephemeral?external=loro-crdt,react",
+    "@vibecook/ice": "/packages/ice/dist/index.js",
+    "@vibecook/ice/react": "/packages/ice/dist/react.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<div class="boot" id="boot"><span><span class="spin"></span>loading @vibecook/ice from esm.sh…</span></div>
+<a class="standalone" href="collab.html" target="_blank" rel="noopener">open standalone ↗</a>
+
+<script type="module">
+const boot = document.getElementById("boot");
+if (window.top !== window.self) document.body.classList.add("framed");
+try {
+  const { createCanvasEngine, defineWidget, p, broadcastChannelByteChannel } = await import("@vibecook/ice");
+  const {
+    EngineProvider, InfiniteCanvas, attachKeymap,
+    useCommit, useWidgetProps, useTool, useUndoStatus, usePresencePeers,
+  } = await import("@vibecook/ice/react");
+  const { createRoot } = await import("react-dom/client");
+  const { html } = await import("htm/react");
+
+  const qs = new URLSearchParams(location.search);
+  const me = {
+    name: qs.get("peer") || "guest",
+    color: qs.get("color") || "#4DA3FF",
+  };
+
+  /* -------------------------------------------------- one widget */
+  const Sticky = defineWidget({
+    type: "sticky",
+    surface: "dom",
+    props: {
+      text: p.string({ default: "…" }),
+      hue: p.enum(["lemon", "mint", "rose"], { default: "lemon" }),
+    },
+    component: StickyView,
+    defaultSize: { w: 200, h: 130 },
+    minSize: { w: 140, h: 96 },
+    interaction: { selectable: true, movable: true, resizable: true, snap: "both" },
+  });
+  function StickyView({ entity, world }) {
+    const props = useWidgetProps(world, entity, "sticky");
+    const commit = useCommit();
+    return html`<div className=${"sticky " + props.hue}>
+      <textarea
+        value=${props.text}
+        onChange=${(e) =>
+          commit((tx) => tx.edit(entity).set(Sticky.groups[0].component, { ...props, text: e.target.value }))}
+      />
+    </div>`;
+  }
+
+  /* -------------------------------------------------- join the room */
+  const engine = createCanvasEngine({ widgets: [Sticky] });
+  const res = await engine.docs.join(broadcastChannelByteChannel("ice-docs-collab-v1"), {
+    presence: me,
+  });
+  if (res.role === "seeder") {
+    const seed = (x, y, text, hue) =>
+      engine.ops.spawnWidget("sticky", { x, y, props: { text, hue }, undoable: false });
+    seed(90, 100, "drag me in one frame —", "lemon");
+    seed(330, 150, "— watch me move in the other", "mint");
+    seed(160, 300, "edits, cursors, selection: all live", "rose");
+  }
+  attachKeymap(engine);
+
+  function Hud() {
+    const [tool, setTool] = useTool();
+    const undo = useUndoStatus();
+    const peers = usePresencePeers();
+    const tb = (id, label, key) => html`<button
+      key=${id} className=${tool === id ? "on" : ""}
+      onClick=${() => setTool(id)}>${label}<i>${key}</i></button>`;
+    return html`
+      <div className="bar">
+        ${tb("select", "select", "V")}
+        ${tb("pan", "pan", "H")}
+        <span className="sep"></span>
+        <button disabled=${!undo.canUndo} onClick=${() => engine.docs.undo()}>undo<i>⌘Z</i></button>
+      </div>
+      <div className="peer">
+        <span className="dot" style=${{ background: me.color }}></span>${me.name}
+        <span style=${{ color: "var(--ink3)", fontWeight: 400 }}>
+          · ${peers.length} other ${peers.length === 1 ? "peer" : "peers"} here
+        </span>
+      </div>`;
+  }
+
+  createRoot(document.getElementById("root")).render(
+    html`<${EngineProvider} engine=${engine}>
+      <div className="stage"><${InfiniteCanvas} engine=${engine} /></div>
+      <${Hud} />
+      <div className="hint">this frame is a live peer — the twin frame (or this page in <b>another tab</b>) shares the document over BroadcastChannel. no server involved.</div>
+    <//>`,
+  );
+  requestAnimationFrame(() => engine.ops.zoomToFit());
+
+  boot.remove();
+  document.title += " ·ok";
+} catch (err) {
+  console.error(err);
+  boot.classList.add("err");
+  boot.innerHTML = "";
+  boot.textContent = "demo failed to load — " + (err?.message ?? err);
+  document.title += " ·fail";
+}
+</script>
+</body>
+</html>

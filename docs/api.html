@@ -172,6 +172,12 @@ kbd{
   font:600 11px/1 var(--mono);color:var(--ink);background:var(--bg3);
   border:1px solid var(--line2);border-bottom-width:2px;border-radius:5px;padding:3px 6px;white-space:nowrap;
 }
+.demo-embed{margin-top:16px;border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:#080D16}
+.demo-embed iframe{display:block;width:100%;height:440px;border:0}
+.demo-cap{margin-top:9px;font-family:var(--mono);font-size:10.5px;color:var(--ink3);letter-spacing:.03em}
+.demo-duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.demo-duo .demo-embed{margin-top:0}
+@media (max-width:900px){.demo-duo{grid-template-columns:1fr}}
 
 /* tables */
 .t{width:100%;border-collapse:collapse;margin-top:16px;font-size:13.2px}
@@ -333,7 +339,7 @@ body.empty .nores{display:block}
 <span class="tk-c">// 3 · Boot: engine → document → content → mount.</span>
 <span class="tk-k">const</span> engine = <span class="tk-f">createCanvasEngine</span>({ <span class="tk-p">widgets</span>: [Sticky] });
 engine.docs.<span class="tk-f">create</span>();                                  <span class="tk-c">// a local-first document</span>
-engine.ops.<span class="tk-f">spawnWidget</span>(<span class="tk-s">"sticky"</span>, { <span class="tk-p">at</span>: { <span class="tk-p">x</span>: <span class="tk-n">120</span>, <span class="tk-p">y</span>: <span class="tk-n">120</span> } });
+engine.ops.<span class="tk-f">spawnWidget</span>(<span class="tk-s">"sticky"</span>, { <span class="tk-p">x</span>: <span class="tk-n">120</span>, <span class="tk-p">y</span>: <span class="tk-n">120</span> });
 <span class="tk-f">attachKeymap</span>(engine);                                   <span class="tk-c">// ⌫ · ⌘Z · ⌘D · ⌘A · Esc · arrows · v/h/c</span>
 
 <span class="tk-f">createRoot</span>(document.getElementById(<span class="tk-s">"root"</span>)).<span class="tk-f">render</span>(
@@ -345,6 +351,8 @@ engine.ops.<span class="tk-f">spawnWidget</span>(<span class="tk-s">"sticky"</sp
         <div class="tryit"><p class="tt">Try it in the repo</p><pre>pnpm --filter cardboard dev     # DOM widget board
 pnpm --filter nodeboard dev     # node editor (add ?room=x&amp;relay=ws://localhost:9301 after `pnpm relay`)
 pnpm --filter glboard dev       # mixed DOM + GL board</pre></div>
+        <div class="demo-embed"><iframe src="demos/board.html" loading="lazy" title="Live demo — the starter board"></iframe></div>
+        <p class="demo-cap">live — this exact app, served from the published package via esm.sh. <a href="demos/board.html" target="_blank" rel="noopener" style="color:var(--ink2);border-bottom:1px solid var(--line2)">open standalone ↗</a></p>
       </article>
     </section>
 
@@ -490,6 +498,8 @@ const Card = defineWidget({ /* … */ provides: ["card"] });
 // drag a card onto the frame → consumed; onto anything solid → flies back
 engine.ops.enterContainer(frame);   // step in (camera remembered per container)
 engine.ops.exitContainer();         // step out</pre></div>
+        <div class="demo-embed"><iframe src="demos/containers.html" loading="lazy" title="Live demo — containers, consume and fly-back"></iframe></div>
+        <p class="demo-cap">live — drop a card in the frame (consume), onto solid (fly-back); the amber card drags on hold. <a href="demos/containers.html" target="_blank" rel="noopener" style="color:var(--ink2);border-bottom:1px solid var(--line2)">open standalone ↗</a></p>
       </article>
 
       <h3 class="subhead" id="node-editor">Node editor</h3>
@@ -509,6 +519,8 @@ const Filter = defineWidget({ /* … */ ports: [
   { id: "out", side: "e", accepts: ["signal"] },
 ]});
 // run it:  pnpm --filter nodeboard dev</pre></div>
+        <div class="demo-embed"><iframe src="demos/nodes.html" loading="lazy" title="Live demo — node editor, ports and wires"></iframe></div>
+        <p class="demo-cap">live — the connect tool is active: drag from a port to a compatible port. <a href="demos/nodes.html" target="_blank" rel="noopener" style="color:var(--ink2);border-bottom:1px solid var(--line2)">open standalone ↗</a></p>
       </article>
 
       <h3 class="subhead" id="docs-behavior">Documents &amp; undo</h3>
@@ -537,12 +549,18 @@ const gate = engine.docs.open(bytes);   // "ok" | "read-only" | "migrate" | "rej
       <article class="entry" id="presence-live" data-k="presence cursors collaborators selection outlines peers join room relay">
         <h4><a href="#presence-live">Live collaborators</a></h4>
         <p>Join a document over any byte channel and presence comes with it: every peer's <b>named cursor</b> moves live on its own layer, and their <b>selection outlines</b> draw around what they have selected (item-accurate up to 32 entities, a bounding box beyond). Presence data expires on disconnect and can never trigger a content re-render — a busy room costs nothing on your widgets.</p>
-        <div class="tryit"><p class="tt">Try it</p><pre>await engine.docs.join(webSocketByteChannel(ws), {
+        <div class="tryit"><p class="tt">Try it</p><pre>const res = await engine.docs.join(webSocketByteChannel(ws), {
   presence: { name: "James", color: "#4f8ef7" },
-  seed: (s) =&gt; s.spawnWidget("sticky", { at: origin }),   // first peer only
 });
+if (res.role === "seeder")                                 // first peer seeds the board
+  engine.ops.spawnWidget("sticky", { x: 0, y: 0, undoable: false });
 const peers = usePresencePeers();                          // avatar stack
 // two-tab demo, no server: broadcastChannelByteChannel("room-1")</pre></div>
+        <div class="demo-duo">
+          <div class="demo-embed"><iframe src="demos/collab.html?peer=Ada&amp;color=%23FFB84D" loading="lazy" title="Live demo — presence, peer Ada"></iframe></div>
+          <div class="demo-embed"><iframe data-src="demos/collab.html?peer=Mika&amp;color=%23C08BFF" title="Live demo — presence, peer Mika"></iframe></div>
+        </div>
+        <p class="demo-cap">live — two peers sharing one document over BroadcastChannel, no server: drag in one frame, watch the other. cursors, selection outlines, and edits sync; each peer's undo is their own.</p>
       </article>
 
       <h3 class="subhead" id="rendering">Rendering &amp; performance</h3>
@@ -791,7 +809,7 @@ createDrawTool(widgetType: string): Tool</pre>
           <thead><tr><th>op</th><th>path</th></tr></thead>
           <tbody>
             <tr><td>setTool(id)</td><td>Cancels active gestures first, then flips the <code>ActiveTool</code> resource.</td></tr>
-            <tr><td>spawnWidget(type, {at, props?, parent?})</td><td>One tx spawning the durable prefab.</td></tr>
+            <tr><td>spawnWidget(type, {x, y, w?, h?, props?, undoable?})</td><td>One tx spawning the durable prefab. <code>undoable: false</code> keeps batch seeds out of the user's undo stack.</td></tr>
             <tr><td>deleteSelection()</td><td>One tx + engine cascade: containment recursion + wire cleanup.</td></tr>
             <tr><td>duplicateSelection()</td><td>Twin spawns offset +16/+16 — one tx, one undo step.</td></tr>
             <tr><td>setSelection(ids, mode?) · clearSelection() · selectAll()</td><td>Tag flips + <code>SelectionVersion</code> bump. Selection is never per-frame.</td></tr>
@@ -1253,6 +1271,21 @@ worldToIsland · islandToWorld · compositeCameraFrustum</pre>
       e.preventDefault(); input.focus();
     }
   });
+})();
+
+/* ------------------------------------------------ presence duo stagger */
+/* The designed bootstrap path is "a joiner arrives after a seeder exists" —
+   peer two loads only after peer one's join has fully resolved (an iframe's
+   load event waits on the demo's top-level await). */
+(function () {
+  var duo = document.querySelector(".demo-duo");
+  if (!duo) return;
+  var one = duo.querySelector("iframe[src]");
+  var two = duo.querySelector("iframe[data-src]");
+  if (!one || !two) return;
+  one.addEventListener("load", function () {
+    setTimeout(function () { two.src = two.getAttribute("data-src"); }, 1400);
+  }, { once: true });
 })();
 
 /* ------------------------------------------------ scroll spy */

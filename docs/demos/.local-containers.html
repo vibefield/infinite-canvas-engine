@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICE demo — containers</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="demo.css">
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.2.7",
+    "react/jsx-runtime": "https://esm.sh/react@19.2.7/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@19.2.7?deps=react@19.2.7",
+    "react-dom/client": "https://esm.sh/react-dom@19.2.7/client?deps=react@19.2.7",
+    "htm/react": "https://esm.sh/htm@3.1.1/react?deps=react@19.2.7",
+    "loro-crdt": "https://esm.sh/loro-crdt@1.13.6",
+    "rbush": "https://esm.sh/rbush@3.0.1",
+    "@vibecook/strata-ecs": "https://esm.sh/@vibecook/strata-ecs@0.5.0?external=loro-crdt,react",
+    "@vibecook/strata-ecs/durable": "https://esm.sh/@vibecook/strata-ecs@0.5.0/durable?external=loro-crdt,react",
+    "@vibecook/strata-ecs/ephemeral": "https://esm.sh/@vibecook/strata-ecs@0.5.0/ephemeral?external=loro-crdt,react",
+    "@vibecook/ice": "/packages/ice/dist/index.js",
+    "@vibecook/ice/react": "/packages/ice/dist/react.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<div class="boot" id="boot"><span><span class="spin"></span>loading @vibecook/ice from esm.sh…</span></div>
+<a class="standalone" href="containers.html" target="_blank" rel="noopener">open standalone ↗</a>
+
+<script type="module">
+const boot = document.getElementById("boot");
+if (window.top !== window.self) document.body.classList.add("framed");
+try {
+  const { createCanvasEngine, defineWidget, p } = await import("@vibecook/ice");
+  const {
+    EngineProvider, InfiniteCanvas, attachKeymap,
+    useCommit, useWidgetProps, useTool, useUndoStatus,
+  } = await import("@vibecook/ice/react");
+  const { createRoot } = await import("react-dom/client");
+  const { html } = await import("htm/react");
+
+  /* -------------------------------------------------- widgets */
+  const Frame = defineWidget({
+    type: "frame",
+    surface: "dom",
+    props: { title: p.string({ default: "frame — accepts cards" }) },
+    component: FrameView,
+    defaultSize: { w: 420, h: 290 },
+    minSize: { w: 260, h: 180 },
+    interaction: { selectable: true, movable: true, resizable: true, snap: "target" },
+    container: { accepts: ["card"] },
+  });
+  function FrameView({ entity, world }) {
+    const pr = useWidgetProps(world, entity, "frame");
+    return html`<div className="frame"><span className="t">${pr.title}</span></div>`;
+  }
+
+  const cardView = (type, extraClass) =>
+    function CardView({ entity, world }) {
+      const pr = useWidgetProps(world, entity, type);
+      return html`<div className=${"cardw " + extraClass}>
+        <span className="t">${pr.label}</span><span className="s">${pr.sub}</span>
+      </div>`;
+    };
+  const cardProps = (label, sub) => ({
+    label: p.string({ default: label }),
+    sub: p.string({ default: sub }),
+  });
+
+  const Card = defineWidget({
+    type: "card", surface: "dom",
+    props: cardProps("card", "drag me into the frame"),
+    component: cardView("card", ""),
+    defaultSize: { w: 175, h: 92 },
+    interaction: { selectable: true, movable: true, snap: "source" },
+    provides: ["card"],
+  });
+  const HoldCard = defineWidget({
+    type: "hold-card", surface: "dom",
+    props: cardProps("hold-to-lift", "press ~½ s — it lifts, then drags"),
+    component: cardView("hold-card", "hold"),
+    defaultSize: { w: 175, h: 92 },
+    interaction: { selectable: true, movable: true, snap: "source", dragOn: "longPress" },
+    provides: ["card"],
+  });
+  const SolidCard = defineWidget({
+    type: "solid-card", surface: "dom",
+    props: cardProps("solid", "drops onto me fly back"),
+    component: cardView("solid-card", "solid"),
+    defaultSize: { w: 185, h: 92 },
+    interaction: { selectable: true, movable: true, solid: true },
+  });
+
+  /* -------------------------------------------------- boot */
+  const engine = createCanvasEngine({ widgets: [Frame, Card, HoldCard, SolidCard] });
+  engine.docs.create();
+  const seed = (type, x, y) => engine.ops.spawnWidget(type, { x, y, undoable: false });
+  seed("frame", 470, 110);
+  seed("card", 90, 110);
+  seed("card", 110, 240);
+  seed("hold-card", 90, 380);
+  seed("solid-card", 330, 470);
+  attachKeymap(engine);
+
+  function Toolbar() {
+    const [tool, setTool] = useTool();
+    const undo = useUndoStatus();
+    const tb = (id, label, key) => html`<button
+      key=${id} className=${tool === id ? "on" : ""}
+      onClick=${() => setTool(id)}>${label}<i>${key}</i></button>`;
+    return html`<div className="bar">
+      ${tb("select", "select", "V")}
+      ${tb("pan", "pan", "H")}
+      <span className="sep"></span>
+      <button disabled=${!undo.canUndo} onClick=${() => engine.docs.undo()}>undo<i>⌘Z</i></button>
+      <button disabled=${!undo.canRedo} onClick=${() => engine.docs.redo()}>redo<i>⇧⌘Z</i></button>
+    </div>`;
+  }
+
+  createRoot(document.getElementById("root")).render(
+    html`<${EngineProvider} engine=${engine}>
+      <div className="stage"><${InfiniteCanvas} engine=${engine} /></div>
+      <${Toolbar} />
+      <div className="hint">drop a card <b>inside the frame</b> — it reparents in one undo step. drop it on <b>solid</b> — it flies back, nothing commits. the amber card drags on <b>hold</b>.</div>
+    <//>`,
+  );
+  requestAnimationFrame(() => engine.ops.zoomToFit());
+
+  boot.remove();
+  document.title += " ·ok";
+} catch (err) {
+  console.error(err);
+  boot.classList.add("err");
+  boot.innerHTML = "";
+  boot.textContent = "demo failed to load — " + (err?.message ?? err);
+  document.title += " ·fail";
+}
+</script>
+</body>
+</html>

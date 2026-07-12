@@ -89,7 +89,7 @@ Import walls are dependency-cruiser-enforced and CI-fatal.
 
 ```ts
 // --- ops: every app-handler write path (design-005 §4) ---
-engine.ops.spawnWidget("sticky", { at: … });   // one tx
+engine.ops.spawnWidget("sticky", { x, y, props });   // one tx ({undoable:false} for seeds)
 engine.ops.deleteSelection();                   // cascade: children + wires
 engine.ops.duplicateSelection();                // +16/+16 twins, one undo step
 engine.ops.reorder(ids, "top");                 // fractional StackZ
@@ -107,8 +107,8 @@ engine.docs.autosave(storage);                   // debounced, gesture-deferred,
 import { webSocketByteChannel } from "@vibecook/ice";
 await engine.docs.join(webSocketByteChannel(ws), {
   presence: { name: "James", color: "#4f8ef7" },  // cursors + selection summaries
-  seed: (s) => …,                                  // ran only by the first peer
-});
+});                                               // ⇒ { role: "seeder" | "joiner", session, leave }
+// role === "seeder" ⇒ this peer arrived first — seed the board via ops({undoable:false})
 
 // --- node editor (opt-in per widget) ---
 defineWidget({ …, ports: [{ id: "out", side: "e", accepts: ["number"] }] });
