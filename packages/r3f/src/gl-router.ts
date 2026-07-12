@@ -272,7 +272,18 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
           dispatch("onPointerMove", "pointermove", capture.entity, hits, native, capture.downObject);
           return true;
         }
-        if (native.buttons === 0) syncHover(castAt(screenX, screenY), native);
+        if (native.buttons === 0) {
+          const cast = castAt(screenX, screenY);
+          syncHover(cast, native);
+          // Native-R3F hover parity (2026-07-12 field report — v1's hover-driven
+          // widgets, e.g. the shapes swarm, read point-carrying moves WITHOUT a
+          // press): buttonless moves over an island dispatch onPointerMove with
+          // the pick's island-local point. Never claims — the engine still sees
+          // the move (no gesture is active buttonless, so nothing competes).
+          if (cast !== undefined) {
+            dispatch("onPointerMove", "pointermove", cast.entity, cast.hits, native);
+          }
+        }
         return false;
       }
 

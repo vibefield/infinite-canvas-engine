@@ -169,5 +169,5 @@ export const TodoListCard = defineWidget({
   surface: "dom",
   component: TodoListView,
   provides: ["widget"],
-  interaction: { resizable: false },
+  interaction: { solid: true, resizable: false },
 });

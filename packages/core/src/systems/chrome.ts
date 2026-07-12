@@ -183,8 +183,11 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         any = true;
       }
 
-      if (!any) {
-        if (boxEntity !== undefined) reap(ctx); // selection emptied → drop the pool
+      if (!any || !allResizable) {
+        // Selection emptied — or contains a non-resizable widget: cards show
+        // NO engine chrome at all (box included), v1 parity (field report
+        // 2026-07-12); only fully-resizable selections get box + grips.
+        if (boxEntity !== undefined) reap(ctx);
         return;
       }
 
@@ -197,16 +200,7 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         // are identity-only until the phase boundary, so no edit() until next frame.
         boxEntity = ctx.spawn({ components: [[SelectionBox, { ...bbox }]] });
         boxCache = { ...bbox };
-        if (allResizable) spawnHandles(ctx, bbox, worldSize, boxEntity);
-        return;
-      }
-
-      // Reconcile the grip pool with the gate (selection composition changed).
-      if (!allResizable && handleEntities.length > 0) reapHandles(ctx);
-      if (allResizable && handleEntities.length === 0) {
         spawnHandles(ctx, bbox, worldSize, boxEntity);
-        // Newborns are identity-only until the flush — geometry rode the
-        // payload; change-only edits begin next frame.
         return;
       }
 

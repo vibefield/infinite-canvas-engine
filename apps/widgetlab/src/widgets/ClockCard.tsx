@@ -120,5 +120,5 @@ export const ClockCard = defineWidget({
   surface: "dom",
   component: ClockView,
   provides: ["widget"],
-  interaction: { resizable: false },
+  interaction: { solid: true, resizable: false },
 });

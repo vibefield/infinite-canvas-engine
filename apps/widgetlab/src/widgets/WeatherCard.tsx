@@ -148,5 +148,5 @@ export const WeatherCard = defineWidget({
   surface: "dom",
   component: WeatherView,
   provides: ["widget"],
-  interaction: { resizable: false },
+  interaction: { solid: true, resizable: false },
 });

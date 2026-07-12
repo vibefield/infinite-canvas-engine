@@ -13,7 +13,7 @@
  *    knobs (--ic-glow-*) stay live for the settings panel.
  * Both signals are chrome-grade: a ~120 ms poll, no ECS writes.
  */
-import { Grab, OverlapCandidate, type Entity, type World } from "@ice/core";
+import { Grab, OverlapCandidate, OverlapRejected, type Entity, type World } from "@ice/core";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 const RADIUS = 22;
@@ -30,12 +30,20 @@ export function CardShell({
   children: ReactNode;
 }) {
   const [lifted, setLifted] = useState(false);
-  const [overlap, setOverlap] = useState(false);
+  // v1's two glow tiers: "target" (accepting container — strong, -t vars) and
+  // "candidate" (rejecting overlap hover — weak, -c vars).
+  const [overlap, setOverlap] = useState<"none" | "accept" | "reject">("none");
 
   useEffect(() => {
     const id = setInterval(() => {
       setLifted(world.has(entity, Grab));
-      setOverlap(world.hasTag(entity, OverlapCandidate));
+      setOverlap(
+        world.hasTag(entity, OverlapCandidate)
+          ? "accept"
+          : world.hasTag(entity, OverlapRejected)
+            ? "reject"
+            : "none",
+      );
     }, 120);
     return () => clearInterval(id);
   }, [world, entity]);
@@ -57,14 +65,15 @@ export function CardShell({
     transition: "transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 220ms ease",
   };
 
+  const tier = overlap === "accept" ? "t" : "c";
   const glow: CSSProperties = {
     position: "absolute",
     inset: 0,
     pointerEvents: "none",
     borderRadius: "inherit",
-    boxShadow: "inset 0 0 var(--ic-glow-size-c, 60px) rgba(var(--ic-glow-color, 128, 128, 128), var(--ic-glow-alpha-c, 0.25))",
-    opacity: overlap ? 1 : 0,
-    transition: "opacity 220ms ease",
+    boxShadow: `inset 0 0 var(--ic-glow-size-${tier}, 60px) rgba(var(--ic-glow-color, 128, 128, 128), var(--ic-glow-alpha-${tier}, 0.25))`,
+    opacity: overlap !== "none" ? 1 : 0,
+    transition: "opacity 220ms ease, box-shadow 220ms ease",
   };
 
   return (

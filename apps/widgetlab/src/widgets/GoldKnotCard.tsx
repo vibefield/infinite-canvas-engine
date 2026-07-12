@@ -93,6 +93,6 @@ export const GoldKnotCard = defineWidget({
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 240, h: 200 },
-  interaction: { selectable: true, movable: true },
+  interaction: { solid: true, selectable: true, movable: true },
   provides: ["widget"], // drop-to-consume advertisement — CardContainer accepts ["widget"]
 });

@@ -230,6 +230,22 @@ export const Down = defineComponent("Down", { x: "f64", y: "f64", ms: "f64" });
 export const OverlapCandidate = defineTag("OverlapCandidate");
 
 /**
+ * Capability: a SOLID widget is a drop-REJECTING target — dragging another
+ * widget onto it and releasing flies the dragged set back (v1's iOS-card
+ * overlap contract, field report 2026-07-12). Opt-in via `defineWidget`
+ * `interaction.solid`; free-overlap apps (moodboard) never equip it.
+ */
+export const Solid = defineTag("Solid");
+
+/**
+ * On a hovered Solid widget (or a mismatched container) while a drag's bounds
+ * overlap it: the REJECT half of the drop signal pair (OverlapCandidate is the
+ * accept half) — chrome renders the weak "won't take it" glow. Change-only,
+ * cleared on move-off and on every move terminal.
+ */
+export const OverlapRejected = defineTag("OverlapRejected");
+
+/**
  * Fly-back tween easing Position → target (design-003 §5 move outcome; design-001 §3 amends the
  * per-cell guard so a live tween IS the diverging authority until reconvergence).
  *

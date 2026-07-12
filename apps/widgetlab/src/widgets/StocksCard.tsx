@@ -147,5 +147,5 @@ export const StocksCard = defineWidget({
   surface: "dom",
   component: StocksView,
   provides: ["widget"],
-  interaction: { resizable: false },
+  interaction: { solid: true, resizable: false },
 });

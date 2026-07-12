@@ -225,7 +225,9 @@ export function App() {
       routerRef.current = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
       const plane = handle.host.container.ownerDocument.createElement("div");
       plane.style.cssText = "position:absolute;inset:0;pointer-events:none;"; // P2: display-only (router owns GL hits)
-      handle.host.container.appendChild(plane);
+      // P2 sits UNDER the lifted plane (P3) and chrome — glboard's insertion
+      // point; appending last would stack GL over dragged widgets/chrome.
+      handle.host.container.insertBefore(plane, handle.planes.lifted);
       setGl({ bridge, plane });
     },
     [ce],
@@ -294,9 +296,18 @@ export function App() {
         onReady={onReady}
         className="h-full w-full"
       >
+        {/* Canvas pointerEvents none is LOAD-BEARING (glboard precedent):
+            without it the R3F canvas swallows every pointer event over the
+            whole viewport — DOM widgets lose hover/click while the engine
+            keeps working via container bubbling (field report 2026-07-12). */}
         {gl !== null &&
           createPortal(
-            <Canvas orthographic frameloop="demand" gl={{ alpha: true }} style={{ width: "100%", height: "100%" }}>
+            <Canvas
+              orthographic
+              frameloop="demand"
+              gl={{ alpha: true }}
+              style={{ pointerEvents: "none", position: "absolute", inset: 0 }}
+            >
               <EnvLoader onTex={setEnvTex} />
               <GLViews engine={ce.engine} bridge={gl.bridge} store={ce.runtime.store} environment={envTex} />
             </Canvas>,

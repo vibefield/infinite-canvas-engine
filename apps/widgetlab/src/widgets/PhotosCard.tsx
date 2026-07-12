@@ -134,5 +134,5 @@ export const PhotosCard = defineWidget({
   surface: "dom",
   component: PhotosView,
   provides: ["widget"],
-  interaction: { resizable: false },
+  interaction: { solid: true, resizable: false },
 });

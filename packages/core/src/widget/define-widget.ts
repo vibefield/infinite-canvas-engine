@@ -31,6 +31,7 @@ import {
   Size,
   SnapSource,
   SnapTarget,
+  Solid,
   StackZ,
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
@@ -54,6 +55,8 @@ export interface WidgetInteraction {
   readonly movable?: boolean;
   readonly resizable?: boolean;
   readonly snap?: "source" | "target" | "both" | "none";
+  /** Drop-REJECTING target: widgets dropped onto this one fly back (v1 iOS-card contract). */
+  readonly solid?: boolean;
 }
 
 export interface WidgetDef {
@@ -297,6 +300,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if (interaction.selectable !== false) capabilityTags.push(Selectable);
   if (interaction.movable !== false) capabilityTags.push(Movable);
   if (interaction.resizable === true) capabilityTags.push(Resizable);
+  if (interaction.solid === true) capabilityTags.push(Solid);
   const snap = interaction.snap ?? "target";
   if (snap === "source" || snap === "both") capabilityTags.push(SnapSource);
   if (snap === "target" || snap === "both") capabilityTags.push(SnapTarget);

@@ -27,10 +27,12 @@ import {
   DropTarget,
   GestureActive,
   OverlapCandidate,
+  OverlapRejected,
   Position,
   Provides,
   RoutedMove,
   Size,
+  Solid,
   StackZ,
 } from "../catalog";
 
@@ -75,13 +77,16 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
 
         const prev = ctx.getRelation(rec, DropTarget);
 
-        // Topmost Container under the union bounds (∉dragged).
+        // Topmost drop-evaluating widget under the union bounds (∉dragged):
+        // a Container (accept/reject by contracts) OR a Solid widget (always
+        // rejects — v1's iOS-card overlap contract, 2026-07-12 field report).
         let container: Entity | undefined;
         let bestZ = Number.NEGATIVE_INFINITY;
         if (any) {
           for (const entry of index.search({ minX, minY, maxX, maxY })) {
             const e = entry.id;
-            if (draggedSet.has(e) || !ctx.isAlive(e) || !ctx.hasTag(e, Container)) continue;
+            if (draggedSet.has(e) || !ctx.isAlive(e)) continue;
+            if (!ctx.hasTag(e, Container) && !ctx.hasTag(e, Solid)) continue;
             const z = ctx.get(e, StackZ)?.z ?? 0;
             if (z > bestZ) {
               bestZ = z;
@@ -90,21 +95,26 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
           }
         }
 
+        const clearSignals = (e: Entity): void => {
+          if (!ctx.isAlive(e)) return;
+          if (ctx.hasTag(e, OverlapCandidate)) ctx.removeTag(e, OverlapCandidate);
+          if (ctx.hasTag(e, OverlapRejected)) ctx.removeTag(e, OverlapRejected);
+        };
+
         if (container === undefined) {
           if (prev !== undefined) {
-            if (ctx.isAlive(prev) && ctx.hasTag(prev, OverlapCandidate)) ctx.removeTag(prev, OverlapCandidate);
+            clearSignals(prev);
             ctx.removeRelation(rec, DropTarget);
           }
           continue;
         }
 
-        // A moved-off previous container loses its candidate tag.
-        if (prev !== undefined && prev !== container && ctx.isAlive(prev) && ctx.hasTag(prev, OverlapCandidate)) {
-          ctx.removeTag(prev, OverlapCandidate);
-        }
+        // A moved-off previous target loses its signal tags.
+        if (prev !== undefined && prev !== container) clearSignals(prev);
         if (prev !== container) ctx.setRelation(rec, DropTarget, container);
 
-        // accepts ∩ (union of dragged provides) — a widget with no Provides never matches.
+        // accepts ∩ (union of dragged provides) — a widget with no Provides never
+        // matches; a Solid non-container has no Accepts and always rejects.
         const provided = new Set<string>();
         for (const w of dragged) {
           if (!ctx.isAlive(w)) continue;
@@ -115,8 +125,10 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
 
         if (matches) {
           if (!ctx.hasTag(container, OverlapCandidate)) ctx.addTag(container, OverlapCandidate);
-        } else if (ctx.hasTag(container, OverlapCandidate)) {
-          ctx.removeTag(container, OverlapCandidate);
+          if (ctx.hasTag(container, OverlapRejected)) ctx.removeTag(container, OverlapRejected);
+        } else {
+          if (ctx.hasTag(container, OverlapCandidate)) ctx.removeTag(container, OverlapCandidate);
+          if (!ctx.hasTag(container, OverlapRejected)) ctx.addTag(container, OverlapRejected);
         }
       }
     },

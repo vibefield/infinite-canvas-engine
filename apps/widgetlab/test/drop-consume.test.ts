@@ -3,7 +3,7 @@
  * must adopt it (ChildOf) — the whole real pipeline: queue → picking →
  * recognizers → dragRoute → drop candidate → moveBehavior consume commit.
  */
-import { ChildOf, NO_MODS, Position, PrefabId, Viewport, defineQuery, type Entity, type InputEvent } from "@ice/core";
+import { ChildOf, NO_MODS, OverlapCandidate, OverlapRejected, Position, PrefabId, Viewport, defineQuery, type Entity, type InputEvent } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createDemoEngine } from "../src/App";
 
@@ -53,5 +53,42 @@ describe("widgetlab drop-to-consume", () => {
     step(3); // consume commit + doc round-trip
 
     expect(ce.world.getRelation(clock, ChildOf)).toBe(folder);
+  });
+});
+
+describe("widgetlab card-on-card reject (v1 iOS contract)", () => {
+  it("drop clock-card onto battery-card → OverlapRejected hover, then fly-back home", () => {
+    const ce = createDemoEngine();
+    ce.world.setResource(Viewport, { w: 1900, h: 1100, dpr: 1 });
+    let now = 0;
+    const step = (n = 1) => {
+      for (let i = 0; i < n; i++) {
+        now += 16;
+        ce.step(now);
+      }
+    };
+    step(3);
+
+    const clock = findByType(ce.world, "clock-card")[0] as Entity;
+    const battery = findByType(ce.world, "battery-card")[0] as Entity;
+    const home = { ...ce.world.read(clock, Position) };
+
+    // clock center (127,127) → battery center (301,127).
+    ce.stack.queue.enqueue(ev("down", 127, 127, 1));
+    step();
+    ce.stack.queue.enqueue(ev("move", 160, 140, 1)); // activate
+    step();
+    ce.stack.queue.enqueue(ev("move", 301, 127, 1)); // over battery (Solid, no Accepts)
+    step(2);
+    expect(ce.world.hasTag(battery, OverlapRejected)).toBe(true); // the weak "won't take it" glow signal
+    expect(ce.world.hasTag(battery, OverlapCandidate)).toBe(false);
+
+    ce.stack.queue.enqueue(ev("up", 301, 127, 0));
+    step(2); // rejected drop → fly-back tween attached, no commit
+    expect(ce.world.hasTag(battery, OverlapRejected)).toBe(false); // terminal cleanup
+    step(30); // ~480ms — tween eases home and reaps itself
+    const back = ce.world.read(clock, Position);
+    expect(back.x).toBeCloseTo(home.x, 0);
+    expect(back.y).toBeCloseTo(home.y, 0);
   });
 });

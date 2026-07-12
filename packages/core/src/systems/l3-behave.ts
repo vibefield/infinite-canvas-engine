@@ -26,6 +26,7 @@ import {
   GesturePhases,
   Grab,
   OverlapCandidate,
+  OverlapRejected,
   PointerMods,
   Position,
   RoutedMove,
@@ -109,6 +110,7 @@ export function createSelectMoveBehaviors(
     const container = ctx.getRelation(rec, DropTarget);
     if (container !== undefined) {
       if (ctx.hasTag(container, OverlapCandidate)) ctx.removeTag(container, OverlapCandidate);
+      if (ctx.hasTag(container, OverlapRejected)) ctx.removeTag(container, OverlapRejected);
       ctx.removeRelation(rec, DropTarget);
     }
   };
