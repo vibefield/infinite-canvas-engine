@@ -31,6 +31,7 @@ import {
   Position,
   RoutedMove,
   Selectable,
+  Size,
   Selected,
   SnapState,
   StackZ,
@@ -141,7 +142,31 @@ export function createSelectMoveBehaviors(
           const snap = ctx.get(rec, SnapState) ?? { dx: 0, dy: 0 };
           const wx = d.totalX / d.zoomAtClaim + snap.dx;
           const wy = d.totalY / d.zoomAtClaim + snap.dy;
-          const container = ctx.getRelation(rec, DropTarget);
+          let container = ctx.getRelation(rec, DropTarget);
+
+          // Re-validate at RELEASE: the drop system's candidate is one frame
+          // behind, and a coalesced final-move+up frame can leave a STALE
+          // target the widget no longer overlaps (2026-07-12: a mid-path card
+          // triggered a spurious fly-back). The FINAL bounds are the truth.
+          if (container !== undefined && ctx.isAlive(container)) {
+            const cp = ctx.get(container, Position);
+            const cs = ctx.get(container, Size);
+            let overlaps = false;
+            if (cp !== undefined && cs !== undefined) {
+              for (const w of dragged) {
+                if (!ctx.isAlive(w) || !ctx.has(w, Grab) || !ctx.has(w, Size)) continue;
+                const g = ctx.read(w, Grab);
+                const ws = ctx.read(w, Size);
+                const x = g.x + wx;
+                const y = g.y + wy;
+                if (x < cp.x + cs.w && x + ws.w > cp.x && y < cp.y + cs.h && y + ws.h > cp.y) {
+                  overlaps = true;
+                  break;
+                }
+              }
+            }
+            if (!overlaps) container = undefined; // stale → plain commit
+          }
 
           if (container !== undefined && !ctx.hasTag(container, OverlapCandidate)) {
             // Rejected drop → fly-back, NO commit. The tween holds the claim

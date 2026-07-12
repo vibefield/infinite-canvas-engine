@@ -238,6 +238,17 @@ export const OverlapCandidate = defineTag("OverlapCandidate");
 export const Solid = defineTag("Solid");
 
 /**
+ * Capability: this widget's drag starts on LONG-PRESS (the iOS home-screen
+ * model — hold to lift, then move; taps and widget-internal interactions stay
+ * instant). Opt-in via `defineWidget` `interaction.dragOn: "longPress"`.
+ * Mechanically: `recognizerSpawn` parks the widget's Drag recognizer
+ * `Pending` behind a `Sequence` edge to the same pointer's LongPress — the
+ * restored Pending machinery's hand-off does the rest (design-003 §4.2
+ * amendment; first production wiring, 2026-07-12).
+ */
+export const LongPressDrag = defineTag("LongPressDrag");
+
+/**
  * On a hovered Solid widget (or a mismatched container) while a drag's bounds
  * overlap it: the REJECT half of the drop signal pair (OverlapCandidate is the
  * accept half) — chrome renders the weak "won't take it" glow. Change-only,

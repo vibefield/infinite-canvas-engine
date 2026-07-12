@@ -90,5 +90,5 @@ export const BatteryCard = defineWidget({
   surface: "dom",
   component: BatteryView,
   provides: ["widget"],
-  interaction: { solid: true, resizable: false },
+  interaction: { solid: true, dragOn: "longPress", resizable: false },
 });

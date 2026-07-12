@@ -23,6 +23,7 @@ import {
   Accepts,
   ChildOf,
   Container,
+  LongPressDrag,
   Movable,
   Position,
   Provides,
@@ -57,6 +58,8 @@ export interface WidgetInteraction {
   readonly snap?: "source" | "target" | "both" | "none";
   /** Drop-REJECTING target: widgets dropped onto this one fly back (v1 iOS-card contract). */
   readonly solid?: boolean;
+  /** "longPress": hold-to-lift dragging (iOS home-screen model); default "press". */
+  readonly dragOn?: "press" | "longPress";
 }
 
 export interface WidgetDef {
@@ -301,6 +304,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if (interaction.movable !== false) capabilityTags.push(Movable);
   if (interaction.resizable === true) capabilityTags.push(Resizable);
   if (interaction.solid === true) capabilityTags.push(Solid);
+  if (interaction.dragOn === "longPress") capabilityTags.push(LongPressDrag);
   const snap = interaction.snap ?? "target";
   if (snap === "source" || snap === "both") capabilityTags.push(SnapSource);
   if (snap === "target" || snap === "both") capabilityTags.push(SnapTarget);

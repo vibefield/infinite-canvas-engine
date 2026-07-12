@@ -62,6 +62,7 @@ interface Sample {
   buttons: number;
   downX: number;
   downY: number;
+  downMs: number;
   wentDown: boolean;
   wentUp: boolean;
   wentCancelled: boolean;
@@ -147,6 +148,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
             buttons: ev.buttons,
             downX: 0,
             downY: 0,
+            downMs: 0,
             wentDown: false,
             wentUp: false,
             wentCancelled: false,
@@ -167,6 +169,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           s.wentDown = true;
           s.downX = ev.screenX;
           s.downY = ev.screenY;
+          s.downMs = ev.tMs ?? 0; // event-time anchor (0 ⇒ consumers use frame now)
         } else if (ev.kind === "up") {
           s.wentUp = true;
         } else if (ev.kind === "cancel") {
@@ -190,7 +193,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
             components: [
               [Pointer, { id, device: s.device, owner: "" }],
               [PointerScreen, { x: s.x, y: s.y }],
-              [PointerButtons, { buttons: s.buttons, downX: s.downX, downY: s.downY }],
+              [PointerButtons, { buttons: s.buttons, downX: s.downX, downY: s.downY, downMs: s.downMs }],
               [PointerMods, s.mods],
               [PointerWheel, { dx: s.wheelDx, dy: s.wheelDy, pinch: s.wheelPinch }],
               [PointerRadius, { r: radiusFor(s.device, pointerSettings) }],
@@ -212,6 +215,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           buttons: s.buttons,
           downX: s.wentDown ? s.downX : prev.downX,
           downY: s.wentDown ? s.downY : prev.downY,
+          downMs: s.wentDown ? s.downMs : prev.downMs,
         });
         ctx.edit(existing).set(PointerMods, s.mods);
         if (s.hasWheel) {

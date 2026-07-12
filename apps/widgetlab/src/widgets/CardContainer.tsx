@@ -107,6 +107,6 @@ export const CardContainer = defineWidget({
   component: CardContainerView,
   sizeMode: "fixed",
   defaultSize: { w: CARD_CONTAINER_SIZE.w, h: CARD_CONTAINER_SIZE.h },
-  interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
+  interaction: { selectable: true, movable: true, resizable: false, snap: "both", dragOn: "longPress" },
   container: { accepts: ["widget"] },
 });

@@ -19,7 +19,7 @@
  * live PointerWorld (design-002 §2 staleness rule).
  */
 import type { Entity, SystemCtx, World } from "@vibecook/strata-ecs";
-import { Any, Not, defineQuery, defineSystem, type System } from "@vibecook/strata-ecs";
+import { Any, Not, defineQuery, defineSystem, type System, type Tag } from "@vibecook/strata-ecs";
 import {
   Camera,
   CancelRequest,
@@ -35,6 +35,7 @@ import {
   HandledByWidget,
   LocalPointer,
   LongPress,
+  LongPressDrag,
   MultiTap,
   Pinch,
   Pointer,
@@ -165,6 +166,12 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
 
         const screen = ctx.read(pointer, PointerScreen);
         const captureTarget = ctx.getRelation(pointer, TouchesExact);
+        // Gesture timing anchors on the down EVENT's timestamp when the adapter
+        // supplied one — a stalled frame at pointerdown must not eat into tap/
+        // long-press windows (2026-07-12 field debugging: a 640 ms headless
+        // stall made long-press unreachable). 0 ⇒ no stamp ⇒ frame now.
+        const downStamp = ctx.read(pointer, PointerButtons).downMs;
+        const downMs = downStamp > 0 ? downStamp : now;
 
         // Pinch rule: this down makes it TWO local touch pointers held — spawn a
         // Pinch watching both and suspend both pointers' single-pointer
@@ -187,6 +194,18 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
           });
         }
         const suspendedAtBirth = pinchPartner !== undefined;
+
+        // iOS hold-to-lift (LongPressDrag capability, 2026-07-12): the widget's
+        // Drag recognizer spawns PARKED (Pending + Sequence → this down's
+        // LongPress). The dependency system hands off when the hold passes;
+        // early movement fails the LongPress and the parked Drag dies with it
+        // — taps and widget-internal interactions stay instant. Requires the
+        // profile to spawn longPress BEFORE drag (the default select order).
+        const holdToDrag =
+          captureTarget !== undefined &&
+          ctx.hasTag(captureTarget, LongPressDrag) &&
+          profile.includes("longPress");
+        let lpRec: Entity | undefined;
 
         // Multi-tap REJOIN (v2 findPendingTap): a down on a MultiTap target near a
         // Pending tap's last down re-points that tap at the new pointer (count
@@ -214,24 +233,26 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
           });
         }
 
-        const spawnSingle = (kind: SingleKindName): void => {
-          const tags = suspendedAtBirth
-            ? ([P.tags.Possible, GestureSuspended] as const)
-            : ([P.tags.Possible] as const);
+        const spawnSingle = (kind: SingleKindName): Entity => {
+          // A parked drag enters Pending (edge-gated) instead of Possible.
+          const park = kind === "drag" && holdToDrag && lpRec !== undefined;
+          const basePhase = park ? P.tags.Pending : P.tags.Possible;
+          const baseTags = park ? [basePhase, HadSequence] : [basePhase];
+          const tags = suspendedAtBirth ? ([...baseTags, GestureSuspended] as const) : (baseTags as readonly Tag[]);
           let rec: Entity;
           if (kind === "tap") {
             rec = ctx.spawn({
               components: [
-                [Tap, { downAt: now }],
-                [Down, { x: screen.x, y: screen.y, ms: now }],
+                [Tap, { downAt: downMs }],
+                [Down, { x: screen.x, y: screen.y, ms: downMs }],
               ],
               tags: [...tags],
             });
           } else if (kind === "longPress") {
             rec = ctx.spawn({
               components: [
-                [LongPress, { downAt: now, startX: screen.x, startY: screen.y, curX: screen.x, curY: screen.y }],
-                [Down, { x: screen.x, y: screen.y, ms: now }],
+                [LongPress, { downAt: downMs, startX: screen.x, startY: screen.y, curX: screen.x, curY: screen.y }],
+                [Down, { x: screen.x, y: screen.y, ms: downMs }],
               ],
               tags: [...tags],
             });
@@ -243,7 +264,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
                   { startX: screen.x, startY: screen.y, totalX: 0, totalY: 0, velX: 0, velY: 0, zoomAtClaim: 1 },
                 ],
                 [SnapState, { dx: 0, dy: 0 }], // essential at spawn — writers never race an attach
-                [Down, { x: screen.x, y: screen.y, ms: now }],
+                [Down, { x: screen.x, y: screen.y, ms: downMs }],
               ],
               tags: [...tags],
             });
@@ -253,11 +274,14 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
             ctx.setRelation(rec, Captures, captureTarget);
             ctx.addTag(rec, HadCapture);
           }
+          if (park && lpRec !== undefined) ctx.setRelation(rec, Sequence, lpRec);
+          return rec;
         };
 
         for (const kind of profile) {
           if (kind === "tap" && rejoined) continue; // the rejoined Pending tap IS this down's tap
-          spawnSingle(kind);
+          const rec = spawnSingle(kind);
+          if (kind === "longPress") lpRec = rec;
         }
 
         if (pinchPartner !== undefined) {

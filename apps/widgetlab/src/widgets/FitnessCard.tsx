@@ -138,5 +138,5 @@ export const FitnessCard = defineWidget({
   surface: "dom",
   component: FitnessView,
   provides: ["widget"],
-  interaction: { solid: true, resizable: false },
+  interaction: { solid: true, dragOn: "longPress", resizable: false },
 });

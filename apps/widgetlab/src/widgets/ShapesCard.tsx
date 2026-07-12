@@ -142,9 +142,12 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
     lastPointRef.current = { x: e.point.x, y: e.point.y };
   };
 
-  // Claim the down so the router routes moves/up/click to this island.
+  // NO down claim (2026-07-12): a claimed down suppresses the engine gesture
+  // entirely, making the card undraggable. Repel rides the router's HOVER
+  // moves (buttonless point delivery); click rides the router's unclaimed
+  // click pairing; dragging the card is the engine's hold-to-lift
+  // (interaction.dragOn "longPress").
   const onPointerDown = (e: ShapesPointer): void => {
-    e.stopPropagation();
     movedRef.current = 0;
     lastPointRef.current = e.point ? { x: e.point.x, y: e.point.y } : null;
     setPointer(e);
@@ -157,8 +160,7 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
     lastPointRef.current = null;
   };
 
-  const onClick = (e: ShapesPointer): void => {
-    e.stopPropagation();
+  const onClick = (): void => {
     if (movedRef.current > CLICK_MOVE_THRESHOLD) return; // a drag, not a click
     // A durable-write failure (e.g. no active doc) must never break the handler
     // or the router — the repel keeps working even if the accent can't persist.
@@ -315,7 +317,7 @@ export const ShapesCard = defineWidget({
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 240, h: 200 },
-  interaction: { solid: true, selectable: true, movable: true },
+  interaction: { solid: true, dragOn: "longPress", selectable: true, movable: true },
   provides: ["widget"], // drop-to-consume advertisement — CardContainer accepts ["widget"]
 });
 

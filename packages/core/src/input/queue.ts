@@ -39,6 +39,14 @@ export interface InputEvent {
   readonly wheel?: { readonly dx: number; readonly dy: number; readonly pinch: number };
   /** GL-island opt-out (pinned widget-event contract, design-002 §8): fact still lands, recognizers skip. */
   readonly surfaceHandled?: boolean;
+  /**
+   * Event timestamp (DOMHighResTimeStamp — the same clock rAF hands
+   * `engine.step`). Gesture timing anchors on THIS, not the processing frame:
+   * a stalled main thread (GC, cold paints) otherwise eats into hold windows —
+   * a 640 ms stall at pointerdown made long-press unreachable (2026-07-12
+   * field debugging). Absent ⇒ the processing frame's now.
+   */
+  readonly tMs?: number;
 }
 
 export const NO_MODS: InputMods = { shift: false, ctrl: false, alt: false, meta: false, space: false };

@@ -164,6 +164,7 @@ export function attachPointerAdapter(
       screenY: y,
       buttons: e.buttons,
       mods: pointerMods(e),
+      tMs: e.timeStamp,
       ...(surfaceHandled ? { surfaceHandled: true } : {}),
     });
   };
@@ -197,6 +198,7 @@ export function attachPointerAdapter(
       screenY: y,
       buttons: e.buttons,
       mods: pointerMods(e),
+      tMs: e.timeStamp,
       ...(glHandled ? { surfaceHandled: true } : {}),
     });
   };

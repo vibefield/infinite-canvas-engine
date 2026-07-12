@@ -18,7 +18,9 @@ import {
   HadRequiresFail,
   HadSequence,
   LongPress,
+  LongPressDrag,
   MultiTap,
+  Position,
   RequiresFail,
   Selected,
   Sequence,
@@ -280,5 +282,39 @@ describe("trace: Sequence (entrance gate / hand-off)", () => {
     rig.step();
     rig.step(); // dependency observes next frame
     expect(rig.world.hasTag(parked, P.tags.Failed)).toBe(true);
+  });
+});
+
+describe("trace: hold-to-lift drag (LongPressDrag — the Sequence machinery's production wiring)", () => {
+  it("early movement never drags; holding 500ms then moving drags the widget", () => {
+    const rig = createTraceRig();
+    const box = rig.spawnBox({ x: 100, y: 100 });
+    rig.world.addTag(box, LongPressDrag);
+    const before = { ...rig.world.read(box, Position) };
+
+    // Quick press-drag (no hold): movement fails the LongPress; the dependency
+    // system fails the parked Drag with it — the widget never moves.
+    rig.target("mouse", box);
+    rig.down("mouse", 110, 110);
+    rig.step();
+    rig.move("mouse", 160, 140); // > longPressSlop → LP Failed
+    rig.step(2); // dependency observes the failure next frame → parked Drag Failed
+    rig.up("mouse", 160, 140);
+    rig.step(3);
+    expect(rig.world.read(box, Position)).toEqual(before);
+
+    // Hold past 500ms: hand-off (Drag → Possible, Down rebased, LP retired),
+    // then movement activates the drag and the widget follows.
+    rig.down("mouse", 110, 110);
+    rig.step(35); // ~560ms — LongPress Recognized → hand-off
+    rig.move("mouse", 125, 120); // past the 10px dead zone from the rebased origin → Active
+    rig.step();
+    rig.move("mouse", 165, 140); // totals (40, 20) from dead-zone exit
+    rig.step();
+    rig.up("mouse", 165, 140);
+    rig.step(2);
+    const after = rig.world.read(box, Position);
+    expect(after.x).toBeCloseTo(before.x + 40, 0);
+    expect(after.y).toBeCloseTo(before.y + 20, 0);
   });
 });

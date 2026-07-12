@@ -43,8 +43,9 @@ describe("widgetlab drop-to-consume", () => {
     expect(folder).toBeDefined();
 
     // clock center (127,127) → folder center (1317, 442); identity camera.
+    // Cards drag on HOLD-TO-LIFT (dragOn "longPress"): hold past 500ms first.
     ce.stack.queue.enqueue(ev("down", 127, 127, 1));
-    step();
+    step(35); // ~560ms hold → LongPress hand-off unparks the drag
     ce.stack.queue.enqueue(ev("move", 160, 160, 1)); // past the dead zone → drag activates
     step();
     ce.stack.queue.enqueue(ev("move", 1317, 442, 1)); // over the folder
@@ -73,9 +74,9 @@ describe("widgetlab card-on-card reject (v1 iOS contract)", () => {
     const battery = findByType(ce.world, "battery-card")[0] as Entity;
     const home = { ...ce.world.read(clock, Position) };
 
-    // clock center (127,127) → battery center (301,127).
+    // clock center (127,127) → battery center (301,127). Hold-to-lift first.
     ce.stack.queue.enqueue(ev("down", 127, 127, 1));
-    step();
+    step(35); // LongPress hand-off
     ce.stack.queue.enqueue(ev("move", 160, 140, 1)); // activate
     step();
     ce.stack.queue.enqueue(ev("move", 301, 127, 1)); // over battery (Solid, no Accepts)

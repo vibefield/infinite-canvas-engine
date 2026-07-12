@@ -26,11 +26,13 @@ export const PointerScreen = defineComponent("PointerScreen", {
   y: field("f32", { default: 0 }),
 });
 
-/** Button bitmask + the screen point where the current press began. */
+/** Button bitmask + the screen point/time where the current press began. */
 export const PointerButtons = defineComponent("PointerButtons", {
   buttons: field("u8", { default: 0 }),
   downX: field("f32", { default: 0 }),
   downY: field("f32", { default: 0 }),
+  /** The down EVENT's timestamp (0 = unknown ⇒ consumers fall back to frame now). */
+  downMs: field("f64", { default: 0 }),
 });
 
 /** Keyboard modifiers latched with the pointer sample. */
