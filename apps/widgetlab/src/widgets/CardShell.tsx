@@ -13,7 +13,17 @@
  *    knobs (--ic-glow-*) stay live for the settings panel.
  * Both signals are chrome-grade: a ~120 ms poll, no ECS writes.
  */
-import { Grab, OverlapCandidate, OverlapRejected, type Entity, type World } from "@ice/core";
+import {
+  Captures,
+  Drag,
+  GesturePhases,
+  Grab,
+  HadSequence,
+  OverlapCandidate,
+  OverlapRejected,
+  type Entity,
+  type World,
+} from "@ice/core";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 const RADIUS = 22;
@@ -35,8 +45,25 @@ export function CardShell({
   const [overlap, setOverlap] = useState<"none" | "accept" | "reject">("none");
 
   useEffect(() => {
+    // Lift feedback fires at the LONG-PRESS (iOS: the hold IS the "you can
+    // drag now" signal, before any movement — field report 2026-07-12): after
+    // the Sequence hand-off, this widget's captured Drag sits un-parked
+    // (HadSequence, Possible/Active) with no Grab yet — that armed state
+    // lifts; Grab (live move) keeps it lifted through the drag.
+    const armedByHold = (): boolean => {
+      for (const rec of world.getReverse(entity, Captures)) {
+        if (!world.has(rec, Drag) || !world.hasTag(rec, HadSequence)) continue;
+        if (
+          world.hasTag(rec, GesturePhases.tags.Possible) ||
+          world.hasTag(rec, GesturePhases.tags.Active)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
     const id = setInterval(() => {
-      setLifted(world.has(entity, Grab));
+      setLifted(world.has(entity, Grab) || armedByHold());
       setOverlap(
         world.hasTag(entity, OverlapCandidate)
           ? "accept"
@@ -44,7 +71,7 @@ export function CardShell({
             ? "reject"
             : "none",
       );
-    }, 120);
+    }, 60); // snappy — the lift must read as an immediate response to the hold
     return () => clearInterval(id);
   }, [world, entity]);
 
