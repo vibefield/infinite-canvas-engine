@@ -1,0 +1,81 @@
+{
+  "name": "@vibecook/ice",
+  "version": "0.1.0",
+  "description": "ICE — infinite canvas engine. Figma-grade infinite-canvas UX as a framework: defineWidget turns React/R3F components into canvas citizens — selectable, movable, resizable, wired into node graphs, CRDT-synced, undoable per gesture.",
+  "license": "MIT",
+  "author": "James Yong <me@jamesyong42.com>",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamesyong-42/infinite-canvas-engine.git"
+  },
+  "homepage": "https://jamesyong-42.github.io/infinite-canvas-engine/",
+  "bugs": "https://github.com/jamesyong-42/infinite-canvas-engine/issues",
+  "keywords": [
+    "infinite-canvas",
+    "canvas",
+    "whiteboard",
+    "node-editor",
+    "ecs",
+    "crdt",
+    "local-first",
+    "collaboration",
+    "loro",
+    "react",
+    "r3f",
+    "three",
+    "gestures"
+  ],
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "types": "./dist/types/packages/ice/src/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/types/packages/ice/src/index.d.ts", "default": "./dist/index.js" },
+    "./kernel": { "types": "./dist/types/packages/ice/src/kernel.d.ts", "default": "./dist/kernel.js" },
+    "./dom": { "types": "./dist/types/packages/ice/src/dom.d.ts", "default": "./dist/dom.js" },
+    "./react": { "types": "./dist/types/packages/ice/src/react.d.ts", "default": "./dist/react.js" },
+    "./r3f": { "types": "./dist/types/packages/ice/src/r3f.d.ts", "default": "./dist/r3f.js" },
+    "./devtools": { "types": "./dist/types/packages/ice/src/devtools.d.ts", "default": "./dist/devtools.js" },
+    "./package.json": "./package.json"
+  },
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup && tsc -p tsconfig.dts.json",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@vibecook/strata-ecs": "0.5.0",
+    "loro-crdt": "^1.13.6",
+    "rbush": "^3.0.1"
+  },
+  "peerDependencies": {
+    "@react-three/fiber": ">=9",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "three": ">=0.160.0"
+  },
+  "peerDependenciesMeta": {
+    "@react-three/fiber": { "optional": true },
+    "react": { "optional": true },
+    "react-dom": { "optional": true },
+    "three": { "optional": true }
+  },
+  "devDependencies": {
+    "@ice/core": "workspace:*",
+    "@ice/devtools": "workspace:*",
+    "@ice/dom": "workspace:*",
+    "@ice/kernel": "workspace:*",
+    "@ice/r3f": "workspace:*",
+    "@ice/react": "workspace:*",
+    "@react-three/fiber": "^9",
+    "@types/rbush": "^3.0.3",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.185.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "three": "^0.185.0"
+  }
+}

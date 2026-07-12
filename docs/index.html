@@ -419,7 +419,7 @@ footer a:hover{color:var(--ink)}
         <rect x="3" y="3" width="7" height="7" rx="1.5" fill="#06090F" stroke="#4DA3FF" stroke-width="2"/>
         <rect x="22" y="22" width="7" height="7" rx="1.5" fill="#06090F" stroke="#4DA3FF" stroke-width="2"/>
       </svg>
-      infinite-canvas-engine&nbsp;<span class="dim">@ice/*</span>
+      infinite-canvas-engine&nbsp;<span class="dim">@vibecook/ice</span>
     </a>
     <div class="nav-links">
       <a href="#architecture">Architecture</a>
@@ -520,13 +520,13 @@ footer a:hover{color:var(--ink)}
 
   <div class="hero-copy">
     <div class="wrap">
-      <p class="eyebrow"><b>@ice</b> · a framework for infinite-canvas apps · built on strata-ecs</p>
+      <p class="eyebrow"><b>ICE</b> — infinite canvas engine · built on strata-ecs</p>
       <h1>An infinite canvas that <em>shows its work.</em></h1>
       <p class="sub"><code>defineWidget</code> turns React and R3F components into canvas citizens — selectable, movable, resizable, wired into node graphs, synced over CRDT, undoable per gesture. Underneath: an archetype ECS where every pointer, gesture, and claim is queryable world state.</p>
       <div class="cta-row">
         <a class="btn btn-solid" href="api.html">Read the API →</a>
         <a class="btn btn-ghost" href="#architecture">The architecture</a>
-        <span class="install"><span class="ps1">$</span> pnpm add @ice/core @ice/react</span>
+        <span class="install"><span class="ps1">$</span> pnpm add @vibecook/ice</span>
       </div>
     </div>
   </div>
@@ -743,7 +743,7 @@ footer a:hover{color:var(--ink)}
     <div class="twocol">
       <div class="codeblock rv">
         <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span>&nbsp;todo-card.tsx</div>
-        <pre><code><span class="tk-k">import</span> { defineWidget, p } <span class="tk-k">from</span> <span class="tk-s">"@ice/core"</span>;
+        <pre><code><span class="tk-k">import</span> { defineWidget, p } <span class="tk-k">from</span> <span class="tk-s">"@vibecook/ice"</span>;
 
 <span class="tk-k">const</span> <span class="tk-f">TodoCard</span> = <span class="tk-f">defineWidget</span>({
   <span class="tk-p">type</span>: <span class="tk-s">"todo-card"</span>,
@@ -1021,7 +1021,7 @@ footer a:hover{color:var(--ink)}
   <div class="wrap">
     <div class="sec-head rv">
       <p class="kicker k-blue">Structure</p>
-      <h2>Six packages, <em>one direction.</em></h2>
+      <h2>One package, six entries, <em>one direction.</em></h2>
       <p class="lead">Dependencies flow one way and the walls are CI-fatal. <code>core</code> never imports React, DOM, or three.js — the engine is headless by construction, and every surface is an adapter.</p>
     </div>
 
@@ -1084,35 +1084,35 @@ footer a:hover{color:var(--ink)}
     </figure>
 
     <table class="pkgtable rv">
-      <thead><tr><th>Package</th><th>Contents</th><th>May import</th></tr></thead>
+      <thead><tr><th>Entry</th><th>Contents</th><th>May import</th></tr></thead>
       <tbody>
         <tr>
-          <td><code class="pk">@ice/kernel</code></td>
+          <td><code class="pk">@vibecook/ice/kernel</code></td>
           <td>Pure math: coordinates (the one Y-flip), snap guides, RBush spatial index, bezier/anchors, zoom bands, eviction policy.</td>
           <td><small>rbush only</small></td>
         </tr>
         <tr>
-          <td><code class="pk">@ice/core</code></td>
+          <td><code class="pk">@vibecook/ice</code></td>
           <td>The engine: ECS catalog, frame contract, interaction stack, widget runtime, node graph, nested canvas, doc kit, presence, migrations, <code>createCanvasEngine</code>.</td>
           <td><small>strata-ecs · kernel · loro-crdt</small></td>
         </tr>
         <tr>
-          <td><code class="pk">@ice/dom</code></td>
+          <td><code class="pk">@vibecook/ice/dom</code></td>
           <td>DOM planes + reflectors (grid, widgets, wires, chrome, cursors), pointer/measure adapters, rAF loop.</td>
           <td><small>core · kernel</small></td>
         </tr>
         <tr>
-          <td><code class="pk">@ice/react</code></td>
+          <td><code class="pk">@vibecook/ice/react</code></td>
           <td><code>&lt;InfiniteCanvas&gt;</code>, <code>EngineProvider</code>, hooks (<code>useCommit</code>, <code>useWidgetProps</code>, <code>useSelected</code>, …), keymap.</td>
           <td><small>dom · core · kernel + react peers</small></td>
         </tr>
         <tr>
-          <td><code class="pk">@ice/r3f</code></td>
+          <td><code class="pk">@vibecook/ice/r3f</code></td>
           <td>GL widget islands + virtual-texture compositor, GL pointer router.</td>
           <td><small>react-pkg + three/@react-three/fiber peers</small></td>
         </tr>
         <tr>
-          <td><code class="pk">@ice/devtools</code></td>
+          <td><code class="pk">@vibecook/ice/devtools</code></td>
           <td><code>attachDevtools(engine)</code> — pointers/recognizers, planes, sovereignty, loop tabs.</td>
           <td><small>core only — nobody imports devtools</small></td>
         </tr>

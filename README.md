@@ -1,16 +1,25 @@
-# infinite-canvas-engine
+# ICE — infinite canvas engine
 
 A universal infinite-canvas framework — Figma/Freeform-grade interaction,
 real-time collaboration, and a `defineWidget` primitive that turns any React
 (or R3F) component into a canvas citizen: selectable, movable, resizable,
 wired into a node graph, synced over CRDT, undoable per gesture.
 
-Built on [strata-ecs](../strata-ecs): an archetype ECS with reactivity and
-opt-in Loro-CRDT durable + ephemeral (presence) layers.
+Built on [`@vibecook/strata-ecs`](https://www.npmjs.com/package/@vibecook/strata-ecs):
+an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
+(presence) layers.
+
+**npm** [`@vibecook/ice`](https://www.npmjs.com/package/@vibecook/ice) ·
+**docs** <https://jamesyong-42.github.io/infinite-canvas-engine/> ·
+MIT license
+
+```sh
+pnpm add @vibecook/ice react react-dom   # react/react-dom are optional peers
+```
 
 ```tsx
-import { createCanvasEngine, defineWidget, p } from "@ice/core";
-import { EngineProvider, InfiniteCanvas, useCommit, useWidgetProps } from "@ice/react";
+import { createCanvasEngine, defineWidget, p } from "@vibecook/ice";
+import { EngineProvider, InfiniteCanvas, useCommit, useWidgetProps } from "@vibecook/ice/react";
 
 const Sticky = defineWidget({
   type: "sticky",
@@ -38,16 +47,19 @@ root.render(
 );
 ```
 
-## Packages
+## Entry points
 
-| Package | Contents | May import |
+One npm package, six entry points (the repo develops them as workspace
+packages; `packages/ice` bundles them for publish):
+
+| Entry | Contents | May import |
 |---|---|---|
-| `@ice/kernel` | Pure math: coordinates (THE one Y-flip), snap, spatial index, bezier/anchors, zoom bands, eviction | `rbush` only |
-| `@ice/core` | The engine: ECS catalog, frame contract, interaction stack (L0–L4), widget runtime, node graph, nested canvas, doc kit, presence, bootstrap, migrations, `createCanvasEngine` facade | strata-ecs, kernel, loro-crdt |
-| `@ice/dom` | DOM planes + reflectors (grid, widgets, wires, chrome, cursors), pointer/measure adapters | core, kernel |
-| `@ice/react` | `<InfiniteCanvas>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap | dom, core, kernel + react/react-dom |
-| `@ice/r3f` | GL widget islands + virtual-texture compositor, GL pointer router | react + three/@react-three/fiber peers |
-| `@ice/devtools` | `attachDevtools(engine)` — pointers/recognizers, planes, sovereignty, loop tabs | core only; **nobody imports devtools** |
+| `@vibecook/ice/kernel` | Pure math: coordinates (THE one Y-flip), snap, spatial index, bezier/anchors, zoom bands, eviction | `rbush` only |
+| `@vibecook/ice` | The engine: ECS catalog, frame contract, interaction stack, widget runtime, node graph, nested canvas, doc kit, presence, bootstrap, migrations, `createCanvasEngine` facade | strata-ecs, kernel, loro-crdt |
+| `@vibecook/ice/dom` | DOM planes + reflectors (grid, widgets, wires, chrome, cursors), pointer/measure adapters | core, kernel |
+| `@vibecook/ice/react` | `<InfiniteCanvas>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap | dom, core, kernel + react/react-dom |
+| `@vibecook/ice/r3f` | GL widget islands + virtual-texture compositor, GL pointer router | react + three/@react-three/fiber peers |
+| `@vibecook/ice/devtools` | `attachDevtools(engine)` — pointers/recognizers, planes, sovereignty, loop tabs | core only; **nobody imports devtools** |
 
 Import walls are dependency-cruiser-enforced and CI-fatal.
 
@@ -92,7 +104,7 @@ engine.docs.open(bytes);                         // gate: ok | readOnly | migrat
 engine.docs.autosave(storage);                   // debounced, gesture-deferred, quarantining
 
 // --- collab: the app moves bytes, the engine owns the protocol ---
-import { webSocketByteChannel } from "@ice/core";
+import { webSocketByteChannel } from "@vibecook/ice";
 await engine.docs.join(webSocketByteChannel(ws), {
   presence: { name: "James", color: "#4f8ef7" },  // cursors + selection summaries
   seed: (s) => …,                                  // ran only by the first peer
@@ -126,8 +138,8 @@ pnpm run ci        # typecheck + lint + tests (~440) + import walls — the merg
 
 ## Status
 
-Engine v1: milestones M0–M10 complete — kernel math, engine spine, interaction
-stack, durable documents + undo, widget runtime (DOM), GL islands, node editor,
-nested canvas, presence + bootstrap + migrations, facade + devtools. The scope
-fence (design-005 §9) holds: no layout engines, no rich-text, no comments, no
-permissions — each has a named seam instead.
+Engine v1 is complete: kernel math, the engine spine, the interaction stack,
+durable documents + per-gesture undo, the DOM widget runtime, GL islands, the
+node editor, nested canvas, presence + bootstrap + migrations, the facade, and
+devtools. The scope fence holds: no layout engine, no rich-text, no comments,
+no permissions — each exclusion has a named seam instead.

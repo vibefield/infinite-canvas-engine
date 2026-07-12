@@ -351,6 +351,61 @@ importers:
         specifier: ^20.0.0
         version: 20.10.6
 
+  packages/ice:
+    dependencies:
+      '@vibecook/strata-ecs':
+        specifier: 0.5.0
+        version: 0.5.0(loro-crdt@1.13.6)(react@19.2.7)
+      loro-crdt:
+        specifier: ^1.13.6
+        version: 1.13.6
+      rbush:
+        specifier: ^3.0.1
+        version: 3.0.1
+    devDependencies:
+      '@ice/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ice/devtools':
+        specifier: workspace:*
+        version: link:../devtools
+      '@ice/dom':
+        specifier: workspace:*
+        version: link:../dom
+      '@ice/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@ice/r3f':
+        specifier: workspace:*
+        version: link:../r3f
+      '@ice/react':
+        specifier: workspace:*
+        version: link:../react
+      '@react-three/fiber':
+        specifier: ^9
+        version: 9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+      '@types/rbush':
+        specifier: ^3.0.3
+        version: 3.0.4
+      '@types/react':
+        specifier: ^19
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.2.3(@types/react@19.2.17)
+      '@types/three':
+        specifier: ^0.185.0
+        version: 0.185.1
+      react:
+        specifier: ^19
+        version: 19.2.7
+      react-dom:
+        specifier: ^19
+        version: 19.2.7(react@19.2.7)
+      three:
+        specifier: ^0.185.0
+        version: 0.185.1
+
   packages/kernel:
     dependencies:
       rbush:

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API reference — infinite-canvas-engine</title>
-<meta name="description" content="The published surface of infinite-canvas-engine: @ice/core, @ice/react, @ice/dom, @ice/r3f, @ice/devtools, @ice/kernel.">
+<meta name="description" content="The published surface of infinite-canvas-engine: @vibecook/ice, @vibecook/ice/react, @vibecook/ice/dom, @vibecook/ice/r3f, @vibecook/ice/devtools, @vibecook/ice/kernel.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='18' height='18' rx='3' fill='none' stroke='%234DA3FF' stroke-width='2'/%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5' fill='%2306090F' stroke='%234DA3FF' stroke-width='2'/%3E%3Crect x='22' y='22' width='7' height='7' rx='1.5' fill='%2306090F' stroke='%234DA3FF' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -215,7 +215,7 @@ body.empty .nores{display:block}
         <rect x="3" y="3" width="7" height="7" rx="1.5" fill="#06090F" stroke="#4DA3FF" stroke-width="2"/>
         <rect x="22" y="22" width="7" height="7" rx="1.5" fill="#06090F" stroke="#4DA3FF" stroke-width="2"/>
       </svg>
-      infinite-canvas-engine&nbsp;<span class="dim">@ice/*</span>
+      infinite-canvas-engine&nbsp;<span class="dim">@vibecook/ice</span>
     </a>
     <div class="nav-right">
       <a href="index.html">Overview</a>
@@ -247,7 +247,7 @@ body.empty .nores{display:block}
         <a href="#vocabulary">The vocabulary</a>
       </div>
       <div class="sgroup">
-        <p class="st">@ice/core</p>
+        <p class="st">@vibecook/ice</p>
         <a href="#definewidget">defineWidget</a>
         <a href="#props-dsl">p — the props DSL</a>
         <a href="#definetool">defineTool</a>
@@ -261,11 +261,11 @@ body.empty .nores{display:block}
       </div>
       <div class="sgroup">
         <p class="st">Surfaces</p>
-        <a href="#react">@ice/react</a>
-        <a href="#dom">@ice/dom</a>
-        <a href="#r3f">@ice/r3f</a>
-        <a href="#devtools">@ice/devtools</a>
-        <a href="#kernel">@ice/kernel</a>
+        <a href="#react">@vibecook/ice/react</a>
+        <a href="#dom">@vibecook/ice/dom</a>
+        <a href="#r3f">@vibecook/ice/r3f</a>
+        <a href="#devtools">@vibecook/ice/devtools</a>
+        <a href="#kernel">@vibecook/ice/kernel</a>
       </div>
       <div class="sgroup">
         <p class="st">Appendix</p>
@@ -279,7 +279,7 @@ body.empty .nores{display:block}
   <!-- ============================================================ CONTENT -->
   <main>
     <header class="doc-head" id="overview">
-      <p class="eyebrow"><b>@ice</b> · engine v1 · documentation</p>
+      <p class="eyebrow"><b>ICE</b> — infinite canvas engine · documentation</p>
       <h1>The guide, and the <em>published surface.</em></h1>
       <p class="lead">Start with <a href="#start" style="border-bottom:1px solid var(--line2)">getting started</a> and the <a href="#builtins" style="border-bottom:1px solid var(--line2)">built-in behavior guide</a> — a complete tour of what the engine does out of the box. The per-package reference follows. Everything listed is importable from the package <b>root</b> — deep imports are unsupported and wall-checked; source of truth is each package's barrel.</p>
       <div class="legend" aria-label="Sovereignty legend">
@@ -300,9 +300,9 @@ body.empty .nores{display:block}
 
       <article class="entry" id="quickstart" data-k="quickstart getting started install minimal app example">
         <h4><a href="#quickstart">A complete minimal app</a></h4>
-        <pre class="sig">pnpm add @ice/core @ice/react</pre>
-        <div class="codeblock"><pre><code><span class="tk-k">import</span> { createCanvasEngine, defineWidget, p } <span class="tk-k">from</span> <span class="tk-s">"@ice/core"</span>;
-<span class="tk-k">import</span> { EngineProvider, InfiniteCanvas, attachKeymap, useCommit, useWidgetProps } <span class="tk-k">from</span> <span class="tk-s">"@ice/react"</span>;
+        <pre class="sig">pnpm add @vibecook/ice react react-dom   # react/react-dom are peers of the react entry</pre>
+        <div class="codeblock"><pre><code><span class="tk-k">import</span> { createCanvasEngine, defineWidget, p } <span class="tk-k">from</span> <span class="tk-s">"@vibecook/ice"</span>;
+<span class="tk-k">import</span> { EngineProvider, InfiniteCanvas, attachKeymap, useCommit, useWidgetProps } <span class="tk-k">from</span> <span class="tk-s">"@vibecook/ice/react"</span>;
 <span class="tk-k">import</span> { createRoot } <span class="tk-k">from</span> <span class="tk-s">"react-dom/client"</span>;
 
 <span class="tk-c">// 1 · Define a widget — any React component becomes a canvas citizen.</span>
@@ -567,7 +567,7 @@ pnpm --filter glboard dev                  // islands, bands, and GL input live<
     <section class="pkg" id="vocabulary">
       <div class="pkg-head">
         <h2>The vocabulary</h2>
-        <p class="desc">The engine's state is ordinary ECS data, and the whole vocabulary is exported from <code>@ice/core</code> — your systems, tools, and debug panels query the very same components the built-ins write. The tables below are the complete shipped catalog.</p>
+        <p class="desc">The engine's state is ordinary ECS data, and the whole vocabulary is exported from <code>@vibecook/ice</code> — your systems, tools, and debug panels query the very same components the built-ins write. The tables below are the complete shipped catalog.</p>
       </div>
 
       <article class="entry" id="vocab-scene" data-k="vocabulary components position size rotation stackz prefabid childof scene">
@@ -665,18 +665,18 @@ pnpm --filter glboard dev                  // islands, bands, and GL input live<
             <tr><td>DurableUndoStatus</td><td>resource</td><td><code>{canUndo, canRedo}</code>, kept fresh across document swaps.</td></tr>
           </tbody>
         </table>
-        <div class="tryit"><p class="tt">Try it</p><pre>import { Position, Camera, SnapConfig } from "@ice/core";
+        <div class="tryit"><p class="tt">Try it</p><pre>import { Position, Camera, SnapConfig } from "@vibecook/ice";
 const pos = useWorldComponent(world, entity, Position);        // subscribe in React
 world.getResource(Camera);                                     // read in a handler — { x, y, zoom, gesturing }
 world.setResource(SnapConfig, { enabled: false, thresholdPx: 5 });</pre></div>
       </article>
     </section>
 
-    <!-- ======================================================== @ice/core -->
+    <!-- ======================================================== @vibecook/ice -->
     <section class="pkg" id="core">
       <div class="pkg-head">
-        <h2><span class="at">@ice</span>/core</h2>
-        <p class="imports">imports: strata-ecs · @ice/kernel · loro-crdt — never react, dom, or three</p>
+        <h2><span class="at">@vibecook/ice</span></h2>
+        <p class="imports">imports: strata-ecs · @vibecook/ice/kernel · loro-crdt — never react, dom, or three</p>
         <p class="desc">The engine: ECS catalog, frame contract, interaction stack, widget runtime, node graph, nested canvas, doc kit, presence, migrations, and the <code>createCanvasEngine</code> facade. Headless by construction.</p>
       </div>
 
@@ -762,7 +762,7 @@ createDrawTool(widgetType: string): Tool</pre>
       <article class="entry" id="schema" data-k="definecomponent definetag definerelation defineresource schema wrappers catalog">
         <h4><a href="#schema">defineComponent / defineTag / defineRelation / defineResource</a><span class="kchip">function</span></h4>
         <pre class="sig">strata-ecs wrappers that record engine metadata (sovereignty, devtools badges)</pre>
-        <p>Thin wrappers over strata's definitions that register metadata for the sovereignty panel and DEV guards. The <b>catalog</b> in <code>@ice/core</code> ships the full engine vocabulary — <code>Position</code>, <code>Size</code>, <code>StackZ</code>, <code>Selected</code>, <code>Camera</code>, <code>ChildOf</code>, <code>ClaimedBy</code>, <code>Targets</code>, and the rest — so apps and custom systems query the same components the engine writes.</p>
+        <p>Thin wrappers over strata's definitions that register metadata for the sovereignty panel and DEV guards. The <b>catalog</b> in <code>@vibecook/ice</code> ships the full engine vocabulary — <code>Position</code>, <code>Size</code>, <code>StackZ</code>, <code>Selected</code>, <code>Camera</code>, <code>ChildOf</code>, <code>ClaimedBy</code>, <code>Targets</code>, and the rest — so apps and custom systems query the same components the engine writes.</p>
       </article>
 
       <h3 class="subhead" id="facade-h">The facade</h3>
@@ -898,11 +898,11 @@ engine.reflectorNames()</pre>
       </article>
     </section>
 
-    <!-- ======================================================== @ice/react -->
+    <!-- ======================================================== @vibecook/ice/react -->
     <section class="pkg" id="react">
       <div class="pkg-head">
-        <h2><span class="at">@ice</span>/react</h2>
-        <p class="imports">imports: @ice/dom · @ice/core · @ice/kernel — peers: react, react-dom</p>
+        <h2><span class="at">@vibecook/ice</span>/react</h2>
+        <p class="imports">imports: @vibecook/ice/dom · @vibecook/ice · @vibecook/ice/kernel — peers: react, react-dom</p>
         <p class="desc">The app surface: mount the canvas, write through <code>useCommit</code>, subscribe with equality-suppressed hooks.</p>
       </div>
 
@@ -978,11 +978,11 @@ commit((tx: GuardedTx) ⇒ void, {undoable?})   // one call = one undo step</pre
       </article>
     </section>
 
-    <!-- ======================================================== @ice/dom -->
+    <!-- ======================================================== @vibecook/ice/dom -->
     <section class="pkg" id="dom">
       <div class="pkg-head">
-        <h2><span class="at">@ice</span>/dom</h2>
-        <p class="imports">imports: @ice/core · @ice/kernel</p>
+        <h2><span class="at">@vibecook/ice</span>/dom</h2>
+        <p class="imports">imports: @vibecook/ice · @vibecook/ice/kernel</p>
         <p class="desc"><code>&lt;InfiniteCanvas&gt;</code> wires all of this — direct use is for custom shells (vanilla JS, other frameworks).</p>
       </div>
 
@@ -1019,11 +1019,11 @@ createRemoteCursorsReflector</pre>
       </article>
     </section>
 
-    <!-- ======================================================== @ice/r3f -->
+    <!-- ======================================================== @vibecook/ice/r3f -->
     <section class="pkg" id="r3f">
       <div class="pkg-head">
-        <h2><span class="at">@ice</span>/r3f</h2>
-        <p class="imports">imports: @ice/react — peers: three · @react-three/fiber</p>
+        <h2><span class="at">@vibecook/ice</span>/r3f</h2>
+        <p class="imports">imports: @vibecook/ice/react — peers: three · @react-three/fiber</p>
         <p class="desc">GL widget islands and the virtual-texture compositor. <b>Zero render→ECS writes</b>, DEV-enforced via a write trap.</p>
       </div>
 
@@ -1059,11 +1059,11 @@ createIslandStateStore · createRenderWriteTrap</pre>
       </article>
     </section>
 
-    <!-- ======================================================== @ice/devtools -->
+    <!-- ======================================================== @vibecook/ice/devtools -->
     <section class="pkg" id="devtools">
       <div class="pkg-head">
-        <h2><span class="at">@ice</span>/devtools</h2>
-        <p class="imports">imports: @ice/core only — nobody imports devtools</p>
+        <h2><span class="at">@vibecook/ice</span>/devtools</h2>
+        <p class="imports">imports: @vibecook/ice only — nobody imports devtools</p>
         <p class="desc">Because all interaction state is world state, the panel sees everything — live recognizers, claims, and phases included.</p>
       </div>
 
@@ -1080,10 +1080,10 @@ createIslandStateStore · createRenderWriteTrap</pre>
       </article>
     </section>
 
-    <!-- ======================================================== @ice/kernel -->
+    <!-- ======================================================== @vibecook/ice/kernel -->
     <section class="pkg" id="kernel">
       <div class="pkg-head">
-        <h2><span class="at">@ice</span>/kernel</h2>
+        <h2><span class="at">@vibecook/ice</span>/kernel</h2>
         <p class="imports">imports: rbush only — no ECS, no DOM, no React. Plain structs in, plain structs out.</p>
         <p class="desc">Pure math. Every screen↔world conversion — and <b>the one Y-flip</b> — lives here and nowhere else.</p>
       </div>
