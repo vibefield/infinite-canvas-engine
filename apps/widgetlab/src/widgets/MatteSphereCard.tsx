@@ -16,6 +16,7 @@ import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
+import { GlLiftGroup } from "./GlLiftGroup";
 import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
 
 /** v1 `small` preset. */
@@ -43,7 +44,7 @@ function MatteSphereView({ entity, world }: WidgetComponentProps): ReactElement 
   const lightDistance = size * 1.5;
 
   return (
-    <group>
+    <GlLiftGroup world={world} entity={entity}>
       <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.4, size * 0.4, size * 0.6]}
@@ -64,7 +65,7 @@ function MatteSphereView({ entity, world }: WidgetComponentProps): ReactElement 
         <sphereGeometry args={[size * 0.32, 48, 48]} />
         <meshStandardMaterial color={color} roughness={0.35} metalness={0.05} />
       </mesh>
-    </group>
+    </GlLiftGroup>
   );
 }
 

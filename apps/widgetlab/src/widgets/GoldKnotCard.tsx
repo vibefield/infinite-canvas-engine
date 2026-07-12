@@ -20,6 +20,7 @@
 import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
+import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
 import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
@@ -64,7 +65,7 @@ function GoldKnotView({ entity, world }: WidgetComponentProps): ReactElement {
   });
 
   return (
-    <group>
+    <GlLiftGroup world={world} entity={entity}>
       <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       {/* v1-verbatim: ambient only — the shared island environment (GLViews
           environment seam) carries the metallic response, exactly like v1. */}
@@ -80,7 +81,7 @@ function GoldKnotView({ entity, world }: WidgetComponentProps): ReactElement {
           envMapIntensity={1.4}
         />
       </mesh>
-    </group>
+    </GlLiftGroup>
   );
 }
 

@@ -39,6 +39,7 @@
 import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandInvalidate } from "@ice/r3f";
+import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import type { Mesh } from "three";
 import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
@@ -130,7 +131,7 @@ function OrbitCubeView({ entity, world }: WidgetComponentProps): ReactElement {
   const light = size * 3;
 
   return (
-    <group>
+    <GlLiftGroup world={world} entity={entity}>
       <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.6, size * 0.6, size * 0.8]}
@@ -166,7 +167,7 @@ function OrbitCubeView({ entity, world }: WidgetComponentProps): ReactElement {
           clearcoatRoughness={0.15}
         />
       </mesh>
-    </group>
+    </GlLiftGroup>
   );
 }
 

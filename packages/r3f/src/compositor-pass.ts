@@ -160,10 +160,17 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     const bandStale = !cam.gesturing && s.fboGeneration >= 0 && isOutOfBand(cam.zoom, s.paintedAt.band);
     if (wantsPhase || genDirty || bandStale) toPaint.push(e as Entity);
   }
+  // Order: never-painted first (cold paints jump the queue), then LEAST
+  // RECENTLY PAINTED — the fairness key. Insertion order starved the same
+  // island every pass once Hot count exceeded the stagger cap (five Hot vs
+  // cap four froze the shapes card at boot, 2026-07-12 field report).
   toPaint.sort((a, b) => {
     const sa = bridge.state.get(a);
     const sb = bridge.state.get(b);
-    return (sa !== undefined && sa.fboGeneration < 0 ? 0 : 1) - (sb !== undefined && sb.fboGeneration < 0 ? 0 : 1);
+    const coldA = sa !== undefined && sa.fboGeneration < 0 ? 0 : 1;
+    const coldB = sb !== undefined && sb.fboGeneration < 0 ? 0 : 1;
+    if (coldA !== coldB) return coldA - coldB;
+    return (sa?.lastPaintSeq ?? 0) - (sb?.lastPaintSeq ?? 0);
   });
 
   const cap = Math.max(1, ctx.maxRepaintsPerFrame);

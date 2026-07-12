@@ -18,6 +18,7 @@
 import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
+import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
 
@@ -51,7 +52,7 @@ function CrystalView({ entity, world }: WidgetComponentProps): ReactElement {
   const lightDistance = size * 2;
 
   return (
-    <group>
+    <GlLiftGroup world={world} entity={entity}>
       <pointLight
         position={[size * 0.3, size * 0.4, size * 0.6]}
         intensity={180}
@@ -81,7 +82,7 @@ function CrystalView({ entity, world }: WidgetComponentProps): ReactElement {
           attenuationColor={tint}
         />
       </mesh>
-    </group>
+    </GlLiftGroup>
   );
 }
 

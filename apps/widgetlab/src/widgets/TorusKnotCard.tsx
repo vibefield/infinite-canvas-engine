@@ -14,6 +14,7 @@
 import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
+import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
 import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
@@ -51,7 +52,7 @@ function TorusKnotView({ entity, world }: WidgetComponentProps): ReactElement {
   const light = size * 2.2;
 
   return (
-    <group>
+    <GlLiftGroup world={world} entity={entity}>
       <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.5, size * 0.5, size * 0.7]}
@@ -81,7 +82,7 @@ function TorusKnotView({ entity, world }: WidgetComponentProps): ReactElement {
           iridescenceThicknessRange={[100, 800]}
         />
       </mesh>
-    </group>
+    </GlLiftGroup>
   );
 }
 

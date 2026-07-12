@@ -35,6 +35,12 @@ export interface IslandRenderState {
   animRefs: number;
   /** The widget type declared `animated` (repaint every visible frame). */
   animatedDecl: boolean;
+  /**
+   * Monotonic stamp of the last repaint — the stagger's FAIRNESS key. Without
+   * it, more Hot islands than maxRepaintsPerFrame starves the same island
+   * every pass (5 Hot vs cap 4 froze the shapes card, 2026-07-12).
+   */
+  lastPaintSeq: number;
 }
 
 const FRESH_PAINTED_AT: PaintedAt = { w: 0, h: 0, dpr: 1, band: 0 };
@@ -60,6 +66,7 @@ export interface IslandStateStore {
 
 export function createIslandStateStore(): IslandStateStore {
   const entries = new Map<number, IslandRenderState>();
+  let paintSeq = 0;
 
   const ensure = (key: number): IslandRenderState => {
     let s = entries.get(key);
@@ -71,6 +78,7 @@ export function createIslandStateStore(): IslandStateStore {
         paintedAt: FRESH_PAINTED_AT,
         animRefs: 0,
         animatedDecl: false,
+        lastPaintSeq: 0,
       };
       entries.set(key, s);
     }
@@ -88,6 +96,7 @@ export function createIslandStateStore(): IslandStateStore {
       const s = ensure(key);
       s.fboGeneration = s.paintGeneration;
       s.paintedAt = at;
+      s.lastPaintSeq = ++paintSeq;
     },
     markEvicted(key) {
       const s = entries.get(key);

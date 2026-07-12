@@ -35,6 +35,7 @@
 import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useCommit, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
+import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useMemo, useRef } from "react";
 import { type Mesh, Vector3 } from "three";
 import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
@@ -261,7 +262,7 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
   const lightDist = Math.max(width, height) * 2;
 
   return (
-    <group>
+    <GlLiftGroup world={world} entity={entity}>
       <ambientLight intensity={0.55} />
       <directionalLight position={[width, height, width]} intensity={1.1} />
       <pointLight
@@ -304,7 +305,7 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
           <meshStandardMaterial color={colorFor(spec.tone)} roughness={spec.roughness} metalness={0.18} />
         </mesh>
       ))}
-    </group>
+    </GlLiftGroup>
   );
 }
 

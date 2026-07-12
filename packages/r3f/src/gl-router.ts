@@ -100,6 +100,8 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
   const captures = new Map<number, { entity: Entity; downObject: Object3D | undefined }>();
   // entity → objects currently hovered (buttonless-move enter/leave synth).
   const hovered = new Map<Entity, Set<Object3D>>();
+  // pointerId → unclaimed down's topmost object (click pairing without a claim).
+  const unclaimedDowns = new Map<number, { entity: Entity; object: Object3D }>();
 
   /** Screen → (GL widget entity, island intersections); undefined off-GL. */
   const castAt = (
@@ -254,12 +256,22 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
     route(kind, screenX, screenY, native) {
       if (kind === "down") {
         const cast = castAt(screenX, screenY);
-        if (cast === undefined) return false;
+        if (cast === undefined) {
+          unclaimedDowns.delete(native.pointerId);
+          return false;
+        }
         const { stopped, claimedBy } = dispatch("onPointerDown", "pointerdown", cast.entity, cast.hits, native);
         if (stopped) {
+          unclaimedDowns.delete(native.pointerId);
           captures.set(native.pointerId, { entity: cast.entity, downObject: claimedBy });
           return true;
         }
+        // UNCLAIMED down over an island: remember the topmost object so a
+        // clean up on the same object still yields a click (native-R3F
+        // parity; v1 RFC-008 coexistence — the engine's tap runs too, so a
+        // cube click can log AND select, 2026-07-12 field report).
+        const top = cast.hits[0]?.object;
+        if (top !== undefined) unclaimedDowns.set(native.pointerId, { entity: cast.entity, object: top });
         return false;
       }
 
@@ -288,7 +300,18 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
       }
 
       // up | cancel
-      if (capture === undefined) return false;
+      if (capture === undefined) {
+        // Unclaimed click pairing: down and up on the same topmost object.
+        const pending = unclaimedDowns.get(native.pointerId);
+        unclaimedDowns.delete(native.pointerId);
+        if (kind === "up" && pending !== undefined) {
+          const cast = castAt(screenX, screenY);
+          if (cast !== undefined && cast.entity === pending.entity && cast.hits[0]?.object === pending.object) {
+            dispatch("onClick", "click", cast.entity, cast.hits, native, pending.object);
+          }
+        }
+        return false;
+      }
       captures.delete(native.pointerId);
       const cast = castAt(screenX, screenY);
       const hits = cast !== undefined && cast.entity === capture.entity ? cast.hits : [];

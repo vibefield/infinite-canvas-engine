@@ -15,6 +15,7 @@
 import { Size, defineWidget, p } from "@ice/core";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
+import { GlLiftGroup } from "./GlLiftGroup";
 import { RoundedBox } from "@react-three/drei";
 import { type ReactElement, useRef } from "react";
 import type { Group } from "three";
@@ -49,7 +50,7 @@ function CubeView({ entity, world }: WidgetComponentProps): ReactElement {
   const cubeSize = size * 0.42;
 
   return (
-    <group>
+    <GlLiftGroup world={world} entity={entity}>
       <pointLight
         position={[size * 0.5, size * 0.5, size * 0.8]}
         intensity={200}
@@ -70,7 +71,7 @@ function CubeView({ entity, world }: WidgetComponentProps): ReactElement {
           <meshStandardMaterial color={color} roughness={0.55} metalness={0.1} />
         </RoundedBox>
       </group>
-    </group>
+    </GlLiftGroup>
   );
 }
 
