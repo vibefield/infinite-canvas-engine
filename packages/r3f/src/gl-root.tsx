@@ -61,6 +61,43 @@ export interface GLViewsProps {
    * fine; islands paint unlit-by-IBL and repaint when it lands.
    */
   readonly environment?: Texture | null;
+  /**
+   * GL frame profiling (2026-07-13): fires once per composited frame with the
+   * pass's real costs. CPU/counts/pass-shape are engine-measured every
+   * profiled frame; GPU ms rides stats-gl's headless `StatsProfiler`
+   * (EXT_disjoint_timer_query / WebGPU timestamps — 0 where unsupported, e.g.
+   * Safari without its flag), DYNAMICALLY imported on first use so the
+   * dependency costs nothing when profiling is off. Feed the numbers to the
+   * devtools profiler HUD as lanes (`devtools.lane("gpu", s.gpuMs)`).
+   */
+  readonly onFrameStats?: (stats: GlFrameStats) => void;
+}
+
+/** One profiled composite frame — see {@link GLViewsProps.onFrameStats}. */
+export interface GlFrameStats {
+  /** Whole-pass main-thread ms (reconcile + island paints + composite). */
+  readonly cpuMs: number;
+  /** GPU ms summed across the pass's render calls (0 until queries resolve / unsupported). */
+  readonly gpuMs: number;
+  /** stats-gl smoothed fps (0 until the profiler is live). */
+  readonly fps: number;
+  /** `renderer.info` aggregated across ALL of this pass's render calls. */
+  readonly drawCalls: number;
+  readonly triangles: number;
+  readonly geometries: number;
+  readonly textures: number;
+  /** Engine-side pass shape (PassStats + the FBO pool's real byte count). */
+  readonly fboBytes: number;
+  readonly repainted: number;
+  readonly pendingPaints: number;
+  readonly evicted: number;
+}
+
+/** The slice of stats-gl's StatsProfiler we drive (structural — the import is dynamic). */
+interface GpuProfilerLike {
+  update(): void;
+  getData(): { fps: number; cpu: number; gpu: number };
+  dispose(): void;
 }
 
 export function GLViews({
@@ -70,6 +107,7 @@ export function GLViews({
   maxFboBytes = RUNTIME_BUDGETS.fboBytes,
   maxRepaintsPerFrame = 4,
   environment,
+  onFrameStats,
 }: GLViewsProps): ReactElement {
   const world = engine.world;
   const gl = useThree((s) => s.gl);
@@ -156,6 +194,24 @@ export function GLViews({
     return () => bridge.setInvalidate(null);
   }, [bridge, invalidate]);
 
+  // --- GL profiling (opt-in via onFrameStats) --------------------------------
+  // The callback rides a ref (no useFrame re-subscribe); the GPU profiler is
+  // dynamic-imported on first profiled frame. stats-gl's three-renderer init
+  // PATCHES gl.render to bracket every call, so the pass's N island paints +
+  // composite sum into one per-frame gpu figure.
+  const statsCbRef = useRef(onFrameStats);
+  statsCbRef.current = onFrameStats;
+  const gpuProfilerRef = useRef<GpuProfilerLike | null>(null);
+  const gpuProfilerState = useRef<"idle" | "loading" | "ready" | "failed">("idle");
+  useEffect(
+    () => () => {
+      gpuProfilerRef.current?.dispose();
+      gpuProfilerRef.current = null;
+      gpuProfilerState.current = "idle";
+    },
+    [],
+  );
+
   // Teardown: quads + pool die with the context (island state survives in
   // the bridge — a remounted Canvas re-wakes islands from Waking).
   useEffect(() => {
@@ -173,6 +229,31 @@ export function GLViews({
 
   // The pass. Priority 1 suppresses R3F's default render — we own the frame.
   useFrame((_, delta) => {
+    const profiling = statsCbRef.current !== undefined;
+    if (profiling) {
+      if (gpuProfilerState.current === "idle") {
+        gpuProfilerState.current = "loading";
+        void import("stats-gl")
+          .then(async ({ StatsProfiler }) => {
+            const p = new StatsProfiler({ trackGPU: true }) as unknown as GpuProfilerLike & {
+              init(renderer: unknown): Promise<void>;
+            };
+            await p.init(gl); // three-renderer init: patches gl.render to bracket every call
+            gpuProfilerRef.current = p;
+            gpuProfilerState.current = "ready";
+          })
+          .catch(() => {
+            gpuProfilerState.current = "failed"; // headless / no WebGL2 — CPU + counts still report
+          });
+      }
+      // Aggregate renderer.info across ALL of this pass's render calls (three's
+      // default autoReset clears after EACH call — only the composite would count).
+      gl.info.autoReset = false;
+      gl.info.reset();
+    } else if (!gl.info.autoReset) {
+      gl.info.autoReset = true; // profiling stopped — restore vanilla three behavior
+    }
+    const passStart = profiling ? performance.now() : 0;
     bridge.renderAssert.begin();
     let stats: ReturnType<typeof runCompositorPass>;
     try {
@@ -213,6 +294,26 @@ export function GLViews({
       });
     } finally {
       bridge.renderAssert.end();
+    }
+    const cb = statsCbRef.current;
+    if (cb !== undefined) {
+      const gpu = gpuProfilerRef.current;
+      gpu?.update();
+      const d = gpu?.getData();
+      const info = gl.info;
+      cb({
+        cpuMs: performance.now() - passStart,
+        gpuMs: d?.gpu ?? 0,
+        fps: d?.fps ?? 0,
+        drawCalls: info.render.calls,
+        triangles: info.render.triangles,
+        geometries: info.memory.geometries,
+        textures: info.memory.textures,
+        fboBytes: pool.bytesUsed(),
+        repainted: stats.repainted,
+        pendingPaints: stats.pendingPaints,
+        evicted: stats.evicted,
+      });
     }
     // Self-sustain: Hot islands and stagger-deferred paints keep the demand
     // loop spinning; otherwise it parks until the next invalidation.

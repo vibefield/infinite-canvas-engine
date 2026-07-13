@@ -14,7 +14,8 @@
   "dependencies": {
     "@ice/core": "workspace:*",
     "@ice/kernel": "workspace:*",
-    "@ice/react": "workspace:*"
+    "@ice/react": "workspace:*",
+    "stats-gl": "^4.2.3"
   },
   "peerDependencies": {
     "@react-three/fiber": ">=9",
@@ -25,9 +26,9 @@
     "@react-three/fiber": "^9",
     "@types/react": "^19",
     "@types/three": "^0.185.0",
+    "@vibecook/strata-ecs": "0.6.0",
     "react": "^19",
     "three": "^0.185.0",
-    "vitest": "^3",
-    "@vibecook/strata-ecs": "0.6.0"
+    "vitest": "^3"
   }
 }

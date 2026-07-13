@@ -17,7 +17,7 @@ export {
   type QuadsLike,
   type TargetLike,
 } from "./compositor-pass";
-export { GLViews, type GLViewsProps } from "./gl-root";
+export { GLViews, type GLViewsProps, type GlFrameStats } from "./gl-root";
 export { Island, type IslandProps } from "./island";
 export {
   IslandContext,

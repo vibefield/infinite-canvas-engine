@@ -36,5 +36,6 @@ export default defineConfig({
     /^react-dom(\/|$)/,
     /^three(\/|$)/,
     /^@react-three\//,
+    /^stats-gl(\/|$)/, // GL profiling GPU timer — dynamic-imported by the r3f entry
   ],
 });

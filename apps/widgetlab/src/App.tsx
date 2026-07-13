@@ -17,9 +17,9 @@
  *    is active).
  */
 import { Camera, createCanvasEngine, type CanvasEngine } from "@ice/core";
-import { attachDevtools } from "@ice/devtools";
+import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/dom";
-import { GLViews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter } from "@ice/r3f";
+import { GLViews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -300,12 +300,29 @@ export function App() {
 
   // ECS devtools while the button is active (v1's EcsDevtools panel slot).
   // The FACADE goes in (not ce.engine): the strata observer's durable tab
-  // tracks docs.current() live only through it.
+  // tracks docs.current() live only through it. The handle also rides a ref
+  // so the GL profiling callback below can feed the profiler HUD's lanes.
+  const devtoolsRef = useRef<DevtoolsHandle | null>(null);
   useEffect(() => {
     if (!showEcs) return;
     const d = attachDevtools(ce);
-    return () => d.detach();
+    devtoolsRef.current = d;
+    return () => {
+      devtoolsRef.current = null;
+      d.detach();
+    };
   }, [showEcs, ce]);
+
+  // GL frame profiling → profiler HUD lanes ("gl cpu" = the whole compositor
+  // pass on the main thread; "gpu" = summed render-call GPU time, 0 where
+  // timer queries are unsupported). Only wired while the ECS panel is open —
+  // GLViews skips all measurement when the prop is absent.
+  const onGlStats = useCallback((s: GlFrameStats) => {
+    const dt = devtoolsRef.current;
+    if (dt === null) return;
+    dt.lane("gl cpu", s.cpuMs);
+    if (s.gpuMs > 0) dt.lane("gpu", s.gpuMs);
+  }, []);
 
   return (
     <div className="h-screen w-screen" style={{ background: "var(--canvas-bg)" }}>
@@ -329,7 +346,13 @@ export function App() {
               style={{ pointerEvents: "none", position: "absolute", inset: 0 }}
             >
               <EnvLoader onTex={setEnvTex} />
-              <GLViews engine={ce.engine} bridge={gl.bridge} store={ce.runtime.store} environment={envTex} />
+              <GLViews
+                engine={ce.engine}
+                bridge={gl.bridge}
+                store={ce.runtime.store}
+                environment={envTex}
+                {...(showEcs ? { onFrameStats: onGlStats } : {})}
+              />
             </Canvas>,
             gl.plane,
           )}

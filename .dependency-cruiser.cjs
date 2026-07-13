@@ -84,7 +84,8 @@ module.exports = {
     {
       name: "r3f-top-of-chain",
       comment:
-        "design-002 §6: r3f is the top — react/dom/core/kernel + peers react|three|@react-three, nothing above.",
+        "design-002 §6: r3f is the top — react/dom/core/kernel + peers react|three|@react-three " +
+        "+ stats-gl (2026-07-13: the GL profiling seam's GPU-timer dep, dynamic-imported), nothing above.",
       severity: "error",
       from: { path: "^packages/r3f/src" },
       to: {
@@ -97,6 +98,8 @@ module.exports = {
           nm("react"),
           nm("three"),
           nm("@react-three"),
+          nm("stats-gl"),
+          "^stats-gl(/|$)", // dynamic import reports by specifier (the strata-subpath precedent)
         ],
       },
     },
