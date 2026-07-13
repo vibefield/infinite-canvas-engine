@@ -261,3 +261,80 @@ function importDoc(snapshot: Uint8Array): LoroDoc {
   doc.import(snapshot);
   return doc;
 }
+
+// --- 4. atomicity: a faulting transform aborts with the doc UNTOUCHED -------
+
+const BOOM = "mig:boom";
+const boom = defineWidget({
+  type: BOOM,
+  version: 2,
+  surface: "dom",
+  component: {},
+  props: { label: p.string({ default: "" }) },
+  migrate: {
+    1: () => {
+      throw new Error("transform boom");
+    },
+  },
+});
+const boomGroupName = firstGroup(boom).component.name;
+
+/** A v1 doc holding BOTH a card and a boom entity (two types, two pack markers). */
+function buildTwoTypeV1Envelope(): Uint8Array {
+  const doc = new LoroDoc();
+  const entities = doc.getMap("entities");
+  const c = entities.setContainer("card-0", new LoroMap());
+  c.set("exists", true);
+  c.set("comp:PrefabId", { id: CARD });
+  c.set(`comp:${cardGroupName}`, { title: "keep", weight: 2000 });
+  const b = entities.setContainer("boom-0", new LoroMap());
+  b.set("exists", true);
+  b.set("comp:PrefabId", { id: BOOM });
+  b.set(`comp:${boomGroupName}`, { label: "x" });
+  const meta = doc.getMap("meta");
+  meta.set(`engine.schema.${ENGINE_SCHEMA_VERSION}`, true);
+  meta.set(`engine.pack.${CARD}.1`, true);
+  meta.set(`engine.pack.${BOOM}.1`, true);
+  doc.commit();
+  const header: EnvelopeHeader = {
+    engineSchema: ENGINE_SCHEMA_VERSION,
+    prefabVersions: { [CARD]: 1, [BOOM]: 1 },
+  };
+  return encodeEnvelope(header, doc.export({ mode: "snapshot" }));
+}
+
+describe("a faulting transform aborts with the doc UNTOUCHED (2026-07-13 review)", () => {
+  it("plans ALL types before writing: CARD stays v1 when BOOM's transform throws; the report tells the truth", () => {
+    const world = createWorld();
+    const result = openDocSession(world, buildTwoTypeV1Envelope());
+    if (!result.ok) throw new Error(`open failed: ${result.reason}`);
+    const session = result.session;
+
+    // The fault fell back read-only…
+    expect(session.readOnly).toBe(true);
+
+    // …with NOTHING half-migrated: the card kept its v1 value (the transform
+    // would have divided weight by 1000 — the old per-type commit order let
+    // CARD land permanently while BOOM aborted the open).
+    world.sync();
+    let cardEntity: ReturnType<typeof world.firstOf> | undefined;
+    let entityCount = 0;
+    world.query(durableQ).each((batch) => {
+      for (const row of batch) {
+        entityCount++;
+        const e = batch.entity(row);
+        if (world.read(e, PrefabId).id === CARD) cardEntity = e;
+      }
+    });
+    expect(entityCount).toBe(2);
+    if (cardEntity === undefined) throw new Error("card entity not projected");
+    const props = world.get(cardEntity, cardProps) as CardProps;
+    expect(props.weight).toBe(2000); // NOT 2 — no partial migration
+
+    // …and session.report matches the doc AS IS: both types still older, still gated.
+    const report = session.report;
+    if (report === undefined) throw new Error("session.report missing");
+    expect([...report.olderInDoc].sort()).toEqual([BOOM, CARD].sort());
+    expect(gateVerdict(report)).toBe("migrate");
+  });
+});

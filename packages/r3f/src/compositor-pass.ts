@@ -35,7 +35,7 @@ import {
   worldRectToComposite,
   type EvictionCandidate,
 } from "@ice/kernel";
-import { Camera, Grab, Position, Size, StackZ, Viewport, Visible, type Entity, type World } from "@ice/core";
+import { Active, Camera, Grab, Position, Size, StackZ, Viewport, Visible, type Entity, type World } from "@ice/core";
 import type { GLBridge } from "./bridge";
 
 /** Render order far above any sane StackZ — the grabbed quad draws last. */
@@ -136,13 +136,18 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   if (gl.getPixelRatio() !== targetDpr) gl.setPixelRatio(targetDpr);
 
   // 2. phases (module-side state only) --------------------------------------
-  // `active` is the M8 nested-canvas input — always true until then.
+  // `active` = current-nav-frame membership (design-004 §7): the core
+  // activeMembership system tags Active on the entities of the frame you are in
+  // and clears it for other containers' content. A non-Active island keeps its
+  // retained FBO but classifies Dormant (kernel truth table) — evicted only
+  // under real pressure, re-Warms on re-entry.
   const phaseOf = (e: number): ReturnType<typeof computeIslandPhase> => {
     const alive = world.isAlive(e as Entity);
+    const active = alive && world.hasTag(e as Entity, Active);
     const visible = alive && world.hasTag(e as Entity, Visible) && bridge.islandFor(e as Entity) !== undefined;
     const s = bridge.state.get(e);
     const hasFbo = s !== undefined && s.fboGeneration >= 0 && pool.get(e) !== null;
-    return computeIslandPhase(true, visible, bridge.state.isAnimating(e), hasFbo);
+    return computeIslandPhase(active, visible, bridge.state.isAnimating(e), hasFbo);
   };
   for (const [e, s] of bridge.state.all()) {
     s.phase = phaseOf(e);

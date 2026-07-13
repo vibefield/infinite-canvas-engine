@@ -90,10 +90,27 @@ export function useWidgetProps<T extends Record<string, unknown>>(
     const out: Record<string, unknown> = {};
     for (const [name, spec] of Object.entries(g.fields)) {
       const v = raw[name];
-      out[name] = spec.kind === "json" && typeof v === "string" ? JSON.parse(v) : v;
+      out[name] = spec.kind === "json" && typeof v === "string" ? parseJsonCell(v, spec.default) : v;
     }
     return out as T;
   }, [raw, g]);
+}
+
+/**
+ * A json cell is one CRDT string a remote peer may have written malformed —
+ * decoding must never throw mid-render (2026-07-13 review). Fall back to the
+ * spec's serialized default (engine-derived, always valid JSON), then null.
+ */
+function parseJsonCell(cell: string, serializedDefault: string | undefined): unknown {
+  try {
+    return JSON.parse(cell);
+  } catch {
+    try {
+      return JSON.parse(serializedDefault ?? "null");
+    } catch {
+      return null;
+    }
+  }
 }
 
 /**

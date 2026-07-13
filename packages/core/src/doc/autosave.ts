@@ -7,14 +7,19 @@
  * ENVELOPE (`session.exportEnvelope(savedAt)`) — never raw Loro bytes — so the
  * restore path can read the header and gate/quarantine BEFORE any import.
  *
- * CHANGE-SUBSCRIPTION SURFACE (the one this kit rides): `DurableStore`'s
- * `subscribeOutbound(fn: (bytes) => void): Unsubscribe` (durable-store.ts) fires
- * SYNCHRONOUSLY on each sealed LOCAL commit and NOT on remote imports
- * (`onLocalBatch` early-returns on `origin !== "local"`). That is exactly the
- * autosave trigger: a peer persists what it authored; remote changes are
- * persisted by whichever peer originated them (its own local commit fires its
- * own autosave). No polling — the design's `store.exportSnapshot()` length/
- * frontier poll is the last-resort fallback and is not needed here.
+ * CHANGE-SUBSCRIPTION SURFACE: two triggers, plus an initial arm.
+ * - `DurableStore.subscribeOutbound` (durable-store.ts) fires SYNCHRONOUSLY on
+ *   each sealed LOCAL commit and never on remote imports.
+ * - `DocSession.subscribeRemote` (doc-kit) fires after each successful
+ *   `applyRemote`. The original design left remote changes to "whichever peer
+ *   originated them" — but that peer persists to ITS storage, not this one's:
+ *   a joiner that received edits and closed restored a STALE local backup
+ *   (2026-07-13 review). Local autosave must reflect the last-seen document.
+ * - Autosave starts DIRTY: state that predates startAutosave() (a seeded or
+ *   freshly-joined doc) reaches storage after the first debounce, not only
+ *   after the next edit (same review — a seeded doc could close unsaved).
+ * No polling — the design's `store.exportSnapshot()` length/frontier poll is
+ * the last-resort fallback and is not needed here.
  *
  * Clock and scheduler are injectable so tests are deterministic with NO real
  * timers; the design's `requestIdleCallback` optimization is just an alternate
@@ -230,24 +235,35 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
     arm();
   };
 
-  const unsub = session.store.subscribeOutbound(() => markDirty());
+  const unsubOutbound = session.store.subscribeOutbound(() => markDirty());
+  const unsubRemote = session.subscribeRemote(() => markDirty());
+  // Start dirty: the document AS HANDED IN (seeded, opened, joined) is unsaved
+  // state — without this, a doc with no post-start edits never reaches storage.
+  markDirty();
 
   return {
     async flush(): Promise<void> {
+      if (stopped) {
+        await writeInFlight; // stop() semantics: nothing new persists after stop
+        return;
+      }
       clearTimer();
       // Force-write the current document even mid-gesture: the doc holds only
       // committed state (the in-flight gesture commits at JustEnded), so every
       // frame is a consistent one to persist. Serialized like every other save —
       // if a put is already running this joins it, and the queued dirty state is
-      // written when that put settles.
-      if (dirty) requestWrite();
+      // written when that put settles. ALWAYS exports — a flush must never be a
+      // silent no-op (2026-07-13 review: the beforeunload path relied on it).
+      dirty = true;
+      requestWrite();
       await writeInFlight;
     },
     stop(): void {
       if (stopped) return;
       stopped = true;
       clearTimer();
-      unsub();
+      unsubOutbound();
+      unsubRemote();
       // Semantics: a put already in flight runs to completion (a promise cannot
       // be cancelled); the writer loop's `!stopped` guard then DROPS any queued
       // newer write — nothing is persisted after stop() beyond the put already

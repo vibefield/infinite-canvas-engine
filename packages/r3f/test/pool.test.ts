@@ -51,11 +51,17 @@ describe("RenderTargetPool", () => {
     expect(pool.size()).toBe(1);
   });
 
-  it("sums bytesUsed across entries as w × h × 4 × 2 (MSAA)", () => {
+  it("charges the real MSAA allocation: 36 bytes/px (4 resolve + 16 colour + 16 depth) for a 4-sample RGBA8+depth target", () => {
     const pool = new RenderTargetPool(() => 0);
-    pool.acquire(1, 100, 60, 2); // 200 × 120 → 200*120*4*2 = 192000
-    pool.acquire(2, 10, 10, 1); //  10 ×  10 →  10*10*4*2   =    800
-    expect(pool.bytesUsed()).toBe(192000 + 800);
+    pool.acquire(1, 1, 1, 1); // 1 × 1 px → 4×1 + 4×4 (colour) + 4×4 (depth) = 36
+    expect(pool.bytesUsed()).toBe(36);
+  });
+
+  it("sums bytesUsed across entries as w × h × 36 (MSAA real-allocation model)", () => {
+    const pool = new RenderTargetPool(() => 0);
+    pool.acquire(1, 100, 60, 2); // 200 × 120 → 200*120*36 = 864000
+    pool.acquire(2, 10, 10, 1); //  10 ×  10 →  10*10*36   =   3600
+    expect(pool.bytesUsed()).toBe(864000 + 3600);
   });
 
   it("get() returns the target or null when absent", () => {
@@ -80,7 +86,7 @@ describe("RenderTargetPool", () => {
     const pool = new RenderTargetPool(clock.now);
     pool.acquire(5, 10, 10, 1);
     const infos = pool.entryInfos();
-    expect(infos).toEqual([{ key: 5, bytes: 800, lastUsedMs: 42 }]);
+    expect(infos).toEqual([{ key: 5, bytes: 3600, lastUsedMs: 42 }]);
   });
 
   it("release() disposes the target, removes it, and decrements bytesUsed", () => {

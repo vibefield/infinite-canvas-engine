@@ -46,6 +46,7 @@ import { cascadeDestroy } from "../ops/cascade";
 import { clearSelection, selectedEntities, setSelection } from "../ops/selection";
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
+import { setWidgetProps } from "../widget/set-props";
 import { WidgetEquipped, widgets } from "../widget/define-widget";
 import { registerBuiltinTools, tools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
@@ -85,6 +86,8 @@ export interface CanvasOps {
   /** cancel active gestures → switch (design-003 §8; the strata-example lesson). */
   setTool(id: string): void;
   spawnWidget(type: string, opts: SpawnWidgetOpts): Entity;
+  /** Validated prop update: Standard-Schema-checked, json serialized, ONE tx (2026-07-13 review). */
+  setWidgetProps(entity: Entity, props: Readonly<Record<string, unknown>>): void;
   deleteSelection(): void;
   /** Twin spawns offset +16/+16; the clones become the selection. */
   duplicateSelection(): Entity[];
@@ -321,6 +324,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     spawnWidget(type, o) {
       const s = requireSession("spawnWidget");
       return spawnWidget(s.store, world, type, o);
+    },
+    setWidgetProps(entity, props) {
+      const s = requireSession("setWidgetProps");
+      setWidgetProps(s.store, world, entity, props);
     },
     deleteSelection() {
       const s = requireSession("deleteSelection");

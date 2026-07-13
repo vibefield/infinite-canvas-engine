@@ -34,6 +34,7 @@ import { defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
 import type { SpatialIndex } from "@ice/kernel";
 import {
   Camera,
+  CameraLimits,
   Container,
   ContainerCamera,
   Culled,
@@ -50,6 +51,7 @@ import { PrefabId } from "../schema/prefab";
 import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { ChildOf } from "../catalog/scene";
+import { CAMERA_DEFAULTS } from "../settings/defaults";
 
 const navEntryQ = defineQuery([NavDepth, NavCamera]);
 // Keyed on PrefabId (present AT SPAWN — same flush as equip's WidgetEquipped
@@ -156,9 +158,13 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
 
   const applyCameraForFrame = (frame: Entity | undefined): void => {
     if (frame === undefined) return;
+    // Every zoom written here must honor the configured band (facade settings.zoom),
+    // or enterContainer breaks the app's own invariant the moment it lands.
+    const lim = world.getResource(CameraLimits) ?? CAMERA_DEFAULTS;
+    const clampZoom = (z: number): number => Math.min(lim.maxZoom, Math.max(lim.minZoom, z));
     const rider = world.get(frame, ContainerCamera);
     if (rider !== undefined && rider.zoom > 0) {
-      writeRuntimeResource(world, Camera, { x: rider.x, y: rider.y, zoom: rider.zoom, gesturing: false });
+      writeRuntimeResource(world, Camera, { x: rider.x, y: rider.y, zoom: clampZoom(rider.zoom), gesturing: false });
       return;
     }
     // Zoom-to-fit over the frame's direct content (fallback; identity if empty).
@@ -179,11 +185,11 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
     }
     const vp = world.getResource(Viewport);
     if (!any || vp === undefined || vp.w === 0) {
-      writeRuntimeResource(world, Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+      writeRuntimeResource(world, Camera, { x: 0, y: 0, zoom: clampZoom(1), gesturing: false });
       return;
     }
     const pad = 80;
-    const zoom = Math.min(2, Math.max(0.1, Math.min(vp.w / (maxX - minX + pad * 2), vp.h / (maxY - minY + pad * 2))));
+    const zoom = clampZoom(Math.min(vp.w / (maxX - minX + pad * 2), vp.h / (maxY - minY + pad * 2)));
     writeRuntimeResource(world, Camera, {
       x: minX - (vp.w / zoom - (maxX - minX)) / 2,
       y: minY - (vp.h / zoom - (maxY - minY)) / 2,

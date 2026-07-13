@@ -20,17 +20,29 @@ import { SRGBColorSpace, WebGLRenderTarget } from "three";
  */
 
 /**
- * Colour bytes per pixel for the default RGBA8 render-target format.
+ * Real GPU-allocation model for one target's bytes (2026-07-13 review finding).
  *
- * v1 accounted a flat `BYTES_PER_PIXEL = 8` constant
- * (WidgetRenderTargetPool.ts:8) reasoning "RGBA8 colour + packed depth/stencil".
- * We keep the identical byte total but express it in the design-004 §3 form
- * `colour × (samples > 1 ? 2 : 1)`: 4 colour bytes, doubled when MSAA adds the
- * resolve buffer. Because {@link SAMPLES} is 4 (> 1) this yields 8 bytes/pixel —
- * byte-for-byte the v1 figure — while remaining correct if the sample count ever
- * changes.
+ * An MSAA `WebGLRenderTarget` (RGBA8, three's default `depthBuffer: true`,
+ * `stencilBuffer: false`) is NOT one surface — three allocates three:
+ *   - the sampleable resolve texture: {@link COLOR_BYTES_PER_PIXEL} × 1;
+ *   - a multisample colour renderbuffer: {@link COLOR_BYTES_PER_PIXEL} × {@link SAMPLES};
+ *   - a multisample depth renderbuffer: {@link DEPTH_BYTES_PER_PIXEL} × {@link SAMPLES}.
+ * At {@link SAMPLES} = 4 that is 4 + 16 + 16 = 36 bytes/pixel.
+ *
+ * v1 (and this file until now) charged a flat 8 bytes/pixel (`colour × 2`),
+ * which under-counts the real allocation ~4.5×. The eviction pass in
+ * compositor-pass.ts trusts `bytesUsed()` against RUNTIME_BUDGETS.fboBytes
+ * (256 MB), so the undercount let real GPU use approach a gigabyte before
+ * eviction fired. The model below charges the true figure so the budget bounds
+ * reality.
+ *
+ * Single-sample ({@link SAMPLES} ≤ 1): the texture IS the colour buffer — no
+ * separate resolve, no multisample multiplier — so it degrades to colour + depth.
  */
 const COLOR_BYTES_PER_PIXEL = 4;
+
+/** Depth renderbuffer bytes per pixel (three's default depth24). */
+const DEPTH_BYTES_PER_PIXEL = 4;
 
 /**
  * MSAA sample count. Matches the canvas's antialias setting so island edges look
@@ -38,9 +50,12 @@ const COLOR_BYTES_PER_PIXEL = 4;
  */
 const SAMPLES = 4;
 
-/** GPU bytes for one target at the given pixel size (see {@link COLOR_BYTES_PER_PIXEL}). */
+/** GPU bytes for one target at the given pixel size — see the allocation model above. */
 function targetBytes(pixelWidth: number, pixelHeight: number): number {
-  return pixelWidth * pixelHeight * COLOR_BYTES_PER_PIXEL * (SAMPLES > 1 ? 2 : 1);
+  const msaa = SAMPLES > 1;
+  const colorBytes = COLOR_BYTES_PER_PIXEL * (msaa ? 1 + SAMPLES : 1);
+  const depthBytes = DEPTH_BYTES_PER_PIXEL * (msaa ? SAMPLES : 1);
+  return pixelWidth * pixelHeight * (colorBytes + depthBytes);
 }
 
 interface PoolEntry {

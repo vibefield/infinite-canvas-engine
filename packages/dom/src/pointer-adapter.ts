@@ -275,7 +275,15 @@ export function attachPointerAdapter(
     emitKeyIfChanged(e);
   };
 
-  const onBlur = (): void => {
+  /**
+   * Drain every latched input to a clean slate (Law 2: enqueue only). Called on
+   * window blur AND on detach: the browser delivers no more pointerups/keyups
+   * once we blur, and detaching mid-gesture (unmounting the canvas while the
+   * engine outlives it) must not strand an Active drag / held buttons / latched
+   * modifiers in the world for a remount of the same engine to resurrect. Also
+   * clears the deferred-capture `live` map so no per-pointer tracking survives.
+   */
+  const cancelAllInput = (): void => {
     // The browser will not deliver pointerups once we lose focus — cancel every
     // still-down pointer so no gesture is stranded Active (design-003 §8).
     for (const [id, s] of live) {
@@ -301,6 +309,10 @@ export function attachPointerAdapter(
     }
   };
 
+  const onBlur = (): void => {
+    cancelAllInput();
+  };
+
   container.addEventListener("pointerdown", onPointerDown);
   container.addEventListener("pointermove", onPointerMove);
   container.addEventListener("pointerup", onPointerUp);
@@ -311,6 +323,9 @@ export function attachPointerAdapter(
   view?.addEventListener("blur", onBlur);
 
   return () => {
+    // Sweep first (a detach can land mid-gesture) — same clean-slate cancel as
+    // blur; facts drain on the engine's next step. Then unwire the listeners.
+    cancelAllInput();
     container.removeEventListener("pointerdown", onPointerDown);
     container.removeEventListener("pointermove", onPointerMove);
     container.removeEventListener("pointerup", onPointerUp);

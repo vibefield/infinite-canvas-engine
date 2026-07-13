@@ -192,6 +192,7 @@ export {
 } from "./widget/define-widget";
 export { createWidgetEquipSystem } from "./widget/equip";
 export { spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
+export { setWidgetProps } from "./widget/set-props";
 export {
   createWidgetRuntime,
   installWidgetRuntime,

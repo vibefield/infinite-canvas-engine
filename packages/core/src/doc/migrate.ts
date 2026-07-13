@@ -79,19 +79,30 @@ interface EntityPlan {
   readonly present: ReadonlySet<number>;
 }
 
+interface TypePlan {
+  readonly id: string;
+  readonly widget: NonNullable<ReturnType<typeof widgets.get>>;
+  readonly localV: number;
+  readonly plans: EntityPlan[];
+}
+
 /**
- * Run every applicable per-type migration against an ATTACHED doc. Reads happen
- * before the write transaction opens (a clean read snapshot → compute → one
- * absolute write pass); each type stamps its new marker in its own
- * `metaTransaction` after its data transaction commits. Never throws for a
- * merely-un-migratable type (missing widget / gappy chain → skipped); a genuine
- * fault (a throwing transform) propagates so the caller can fall back read-only.
+ * Run every applicable per-type migration against an ATTACHED doc. ALL types
+ * are planned (read + transform-fold) BEFORE anything is written — a throwing
+ * transform on the Nth type therefore aborts with the document untouched,
+ * never with types 1..N-1 permanently migrated and the rest old (2026-07-13
+ * review). Each type then writes one non-undoable transaction and stamps its
+ * marker. Never throws for a merely-un-migratable type (missing widget /
+ * gappy chain → skipped); a genuine fault (a throwing transform) propagates so
+ * the caller can fall back read-only.
  */
 export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): MigrationOutcome {
   const { store, world } = ctx;
   const migrated: string[] = [];
   const skipped: string[] = [];
 
+  // --- plan pass: every type's reads + chain folds, NO writes yet ---
+  const typePlans: TypePlan[] = [];
   for (const id of report.olderInDoc) {
     const widget = widgets.get(id);
     const chain = widget?.migrate;
@@ -118,7 +129,8 @@ export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): Migr
       continue;
     }
 
-    // --- read pass: gather each entity's current props + fold the chain ---
+    // Gather each entity's current props + fold the chain (transforms run HERE,
+    // pre-write — their throws leave the doc byte-identical).
     const plans: EntityPlan[] = [];
     world.query(allDurableQ).each((batch) => {
       for (const row of batch) {
@@ -142,11 +154,14 @@ export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): Migr
         plans.push({ e, next: cur, present });
       }
     });
+    typePlans.push({ id, widget, localV, plans });
+  }
 
-    // --- write pass: ONE non-undoable transaction of absolute per-group writes ---
-    // `edit().set` / `addComponent` canon the value against the group schema, so a
-    // flat `next` spanning all groups is picked apart per group (extra keys ignored,
-    // missing declared-default keys default-filled).
+  // --- write pass: per type, ONE non-undoable transaction of absolute per-group
+  // writes. `edit().set` / `addComponent` canon the value against the group
+  // schema, so a flat `next` spanning all groups is picked apart per group
+  // (extra keys ignored, missing declared-default keys default-filled).
+  for (const { id, widget, localV, plans } of typePlans) {
     store.transaction(
       (tx) => {
         for (const { e, next, present } of plans) {

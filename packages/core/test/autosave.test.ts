@@ -20,10 +20,17 @@ import {
   createDocSession,
   decodeEnvelope,
   defineQuery,
+  openDocSession,
   restoreAutosave,
   startAutosave,
   type CancelScheduled,
 } from "../src";
+
+/** Narrow-or-throw (the repo forbids `!`): assert a lookup found something. */
+function must<T>(v: T | null | undefined, what: string): T {
+  if (v == null) throw new Error(`missing ${what}`);
+  return v;
+}
 
 /** A hand-driven clock + single-slot scheduler (the kit only ever arms one timer). */
 function fakeTimer() {
@@ -337,6 +344,73 @@ describe("autosave: hardening (async put safety)", () => {
     // Semantics: the awaiting put finished; the queued newer write is NOT issued.
     expect(pending).toHaveLength(1);
     expect(committed).toBe(pending[0]?.bytes);
+  });
+});
+
+describe("autosave: coverage holes (2026-07-13 review)", () => {
+  it("persists PRE-EXISTING state: a doc seeded before startAutosave saves with no further edit", async () => {
+    const { world, session, commit } = makeSession();
+    commit(); // seeded BEFORE autosave exists — the old kit never saved this
+    const timer = fakeTimer();
+    const storage = fakeStorage();
+    startAutosave(session, { storage, world, now: timer.now, schedule: timer.schedule });
+    expect(timer.hasPending()).toBe(true); // armed at start, not on the next edit
+    timer.advance(800);
+    timer.fire();
+    expect(storage.puts).toHaveLength(1);
+    const world2 = createWorld();
+    const restored = await restoreAutosave(world2, storage);
+    expect(restored.status).toBe("restored");
+    expect(countPositions(world2)).toBe(1); // the seeded box reached storage
+  });
+
+  it("flush() is never a silent no-op: with nothing dirty it still exports the current doc", async () => {
+    const { world, session } = makeSession();
+    const timer = fakeTimer();
+    const storage = fakeStorage();
+    const auto = startAutosave(session, { storage, world, now: timer.now, schedule: timer.schedule });
+    timer.advance(800);
+    timer.fire(); // the initial-dirty save
+    expect(storage.puts).toHaveLength(1);
+    await auto.flush(); // beforeunload path: no changes since — must STILL write
+    expect(storage.puts).toHaveLength(2);
+  });
+
+  it("REMOTE imports mark dirty: a peer's update reaches this peer's local backup", async () => {
+    // Author A commits a base + one later update; B opens the base, autosaves,
+    // then applies A's update REMOTELY (no local commit on B at all).
+    const a = makeSession();
+    a.commit();
+    const bWorld = createWorld();
+    bWorld.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    const opened = openDocSession(bWorld, a.session.exportEnvelope());
+    if (!opened.ok) throw new Error(`open failed: ${opened.reason}`);
+    const bSession = opened.session;
+
+    const updates: Uint8Array[] = [];
+    const unsub = a.session.store.subscribeOutbound((u) => updates.push(u));
+    a.commit(); // the remote change B will import
+    unsub();
+
+    const timer = fakeTimer();
+    const storage = fakeStorage();
+    startAutosave(bSession, { storage, world: bWorld, now: timer.now, schedule: timer.schedule });
+    timer.advance(800);
+    timer.fire(); // initial-dirty save of the base
+    await Promise.resolve(); // let the serialized writer loop settle
+    expect(storage.puts).toHaveLength(1);
+
+    bSession.applyRemote(must(updates.at(-1), "A's update"));
+    expect(timer.hasPending()).toBe(true); // the REMOTE import re-armed the debounce
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+    expect(storage.puts).toHaveLength(2);
+
+    const world2 = createWorld();
+    const restored = await restoreAutosave(world2, storage);
+    expect(restored.status).toBe("restored");
+    expect(countPositions(world2)).toBe(2); // B's backup holds the remote edit it never authored
   });
 });
 

@@ -80,6 +80,15 @@ export interface DocSession {
   /** Relay passthroughs (M5 dumb relay; M9 brings the bootstrap protocol). */
   exportSnapshot(): Uint8Array;
   applyRemote(bytes: Uint8Array): void;
+  /**
+   * Fires after each successful `applyRemote` on THIS session (strata's
+   * `subscribeOutbound` is local-commits-only by design, so remote imports are
+   * otherwise unobservable). Autosave rides this so a peer's local backup
+   * reflects the last-seen document, not just what it authored (2026-07-13
+   * review). A transport writing through `store.applyRemote` directly bypasses
+   * it — engine paths (bootstrap, broadcast relay) all go through the session.
+   */
+  subscribeRemote(fn: (bytes: Uint8Array) => void): () => void;
   /** cancel gestures → detach → world reset in place → respawn the anchor. */
   close(): void;
 }
@@ -129,6 +138,7 @@ function makeSession(
     cellInDoc: (e, c) => store.getComponent(e, c) !== undefined,
   });
   let closed = false;
+  const remoteSubs = new Set<(bytes: Uint8Array) => void>();
 
   return {
     store,
@@ -145,7 +155,14 @@ function makeSession(
       return encodeEnvelope(header, store.exportSnapshot());
     },
     exportSnapshot: () => store.exportSnapshot(),
-    applyRemote: (bytes) => store.applyRemote(bytes),
+    applyRemote(bytes) {
+      store.applyRemote(bytes); // a throw (PendingImportError et al.) skips notification
+      for (const fn of [...remoteSubs]) fn(bytes);
+    },
+    subscribeRemote(fn) {
+      remoteSubs.add(fn);
+      return () => remoteSubs.delete(fn);
+    },
     close() {
       if (closed) return;
       closed = true;
@@ -219,7 +236,11 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
         readOnly = gateVerdict(effectiveReport) !== "ok";
       } catch {
         // A faulting transform must never brick open(): keep the doc, fall back
-        // read-only (the user still gets projection + presence).
+        // read-only (the user still gets projection + presence). Re-read the
+        // report — runMigrations plans all types before writing, so a transform
+        // throw leaves the doc untouched, but a write-phase fault may have
+        // stamped earlier types; session.report must describe the doc AS IS.
+        effectiveReport = readDocVersionReport(doc);
         readOnly = true;
       }
     }

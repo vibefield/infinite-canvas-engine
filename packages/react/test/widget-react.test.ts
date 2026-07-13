@@ -134,3 +134,40 @@ describe("WidgetRoot + hooks (M6 exit, headless form)", () => {
     expect(note()?.getAttribute("data-local")).toBe(localBefore);
   });
 });
+
+// --- malformed json cells (2026-07-13 review) --------------------------------
+
+function MemoView({ entity, world }: WidgetComponentProps) {
+  const props = useWidgetProps<{ items: string[] }>(world, entity, "rt:memo");
+  return createElement("div", { "data-memo": "", "data-items": JSON.stringify(props?.items ?? null) });
+}
+
+const memo = defineWidget({
+  type: "rt:memo",
+  props: { items: p.json(p.array({ kind: "string" }), { default: ["seed"] }) },
+  surface: "dom",
+  component: MemoView,
+  defaultSize: { w: 100, h: 60 },
+});
+const memoGroup = (() => {
+  const g = memo.groups[0];
+  if (g === undefined) throw new Error("ice test: rt:memo has no groups");
+  return g;
+})();
+
+describe("useWidgetProps: malformed json cells never crash render", () => {
+  it("falls back to the spec default when a peer wrote invalid JSON into the cell", () => {
+    const rig = makeRig();
+    const e = spawnWidget(rig.session.store, rig.world, "rt:memo", { x: 10, y: 10, props: { items: ["a"] } });
+    rig.step(3);
+    rig.render();
+    const memoEl = (): Element | null => document.querySelector("[data-memo]");
+    expect(memoEl()?.getAttribute("data-items")).toBe('["a"]');
+
+    // A malformed write lands in the raw string cell — the remote-peer case
+    // setWidgetProps cannot guard. The render must survive and show defaults.
+    rig.session.store.transaction((tx) => tx.edit(e).set(memoGroup.component, { items: "{not json" }));
+    rig.step(2);
+    expect(memoEl()?.getAttribute("data-items")).toBe('["seed"]');
+  });
+});

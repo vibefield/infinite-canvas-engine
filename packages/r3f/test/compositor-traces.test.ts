@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { createWorld } from "@vibecook/strata-ecs";
 import type { OrthographicCamera, Scene } from "three";
 import {
+  Active,
   Camera,
   Position,
   PrefabId,
@@ -180,7 +181,11 @@ function createGLRig(opts: { devAssert?: boolean } = {}): GLRig {
           [PrefabId, { id: CARD.type }],
           [CardProps, { label: "hi" }],
         ],
-        tags: [Visible],
+        // Active mirrors what the core activeMembership system stamps at root —
+        // the compositor pass reads it as current-nav-frame membership. This rig
+        // drives runCompositorPass directly and never runs activeMembership, so
+        // an unstamped card would classify Dormant and blank every island.
+        tags: [Visible, Active],
       });
     },
     mount(e) {
@@ -431,5 +436,46 @@ describe("animation contract", () => {
     stats = rig.pass();
     expect(stats.anyHot).toBe(false);
     expect(ticks.length).toBe(2);
+  });
+});
+
+describe("nav-frame membership (design-004 §7 — Active drives phase)", () => {
+  it("a non-Active island keeps its retained FBO but classifies Dormant; the Active peer stays Warm", () => {
+    const rig = createGLRig();
+    const a = rig.spawnCard(0, 0);
+    const b = rig.spawnCard(200, 0);
+    rig.mount(a);
+    rig.mount(b);
+    rig.pass(); // first paint (Waking during this pass)
+    rig.pass(); // settle → Warm from the retained textures
+    expect(rig.bridge.state.get(a)?.phase).toBe("Warm");
+    expect(rig.bridge.state.get(b)?.phase).toBe("Warm");
+
+    // Navigate away from b's frame: activeMembership would clear Active+Visible
+    // (adds Culled) for another container's content. b's FBO is retained.
+    rig.world.removeTag(b, Active);
+    rig.world.removeTag(b, Visible);
+
+    const stats = rig.pass(); // generous budget — nothing is evicted
+    expect(rig.pool.get(b)).not.toBeNull(); // retained texture survives
+    expect(rig.bridge.state.get(b)?.phase).toBe("Dormant");
+    expect(rig.bridge.state.get(a)?.phase).toBe("Warm"); // still a member, composite-ready
+    expect(stats.evicted).toBe(0);
+  });
+
+  it("an Active + animating island is Hot while a non-Active peer is Dormant", () => {
+    const rig = createGLRig();
+    const a = rig.spawnCard(0, 0);
+    const b = rig.spawnCard(200, 0);
+    rig.mount(a);
+    rig.mount(b);
+    rig.bridge.addFrameCallback(a, () => {}); // a self-sustains → Hot
+    rig.world.removeTag(b, Active);
+    rig.world.removeTag(b, Visible);
+
+    const stats = rig.pass();
+    expect(stats.anyHot).toBe(true);
+    expect(rig.bridge.state.get(a)?.phase).toBe("Hot");
+    expect(rig.bridge.state.get(b)?.phase).toBe("Dormant");
   });
 });

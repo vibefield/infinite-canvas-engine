@@ -131,4 +131,20 @@ describe("attachPointerAdapter", () => {
     expect(queue.drain().length).toBe(0);
     detach();
   });
+
+  it("cancels live pointers and clears latched mods on detach (mid-gesture unmount)", () => {
+    const { container, queue, detach } = setup();
+    const view = container.ownerDocument.defaultView as Window;
+    // Latch Space (the pan modifier) and start a drag, then detach mid-gesture.
+    fire(view, "keydown", { key: " ", code: "Space", shiftKey: false, ctrlKey: false, altKey: false, metaKey: false });
+    fire(container, "pointerdown", { pointerType: "mouse", pointerId: 1, clientX: 100, clientY: 100, buttons: 1 });
+    queue.drain(); // clear the key + down
+
+    detach();
+    const facts = queue.drain();
+    const cancel = facts.find((e) => e.kind === "cancel");
+    expect(cancel?.pointerId).toBe("mouse"); // the still-down pointer is cancelled
+    const key = facts.find((e) => e.kind === "key");
+    expect(key?.mods).toEqual({ ...NO_MODS }); // latched Space cleared, not stranded
+  });
 });

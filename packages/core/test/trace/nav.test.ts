@@ -10,6 +10,7 @@ import { createWorld } from "@vibecook/strata-ecs";
 import {
   Active,
   Camera,
+  CameraLimits,
   Container,
   ContainerCamera,
   ChildOf,
@@ -162,5 +163,25 @@ describe("trace: camera memory + nav integrity (design-004 §7)", () => {
 
     expect(rig.nav.depth()).toBe(0);
     expect(rig.world.getResource(Camera)).toMatchObject({ x: 9, y: 9, zoom: 1 });
+  });
+
+  it("enter clamps zoom into the CameraLimits band (empty reset + out-of-band rider)", () => {
+    const rig = makeRig();
+    rig.world.setResource(CameraLimits, { minZoom: 3, maxZoom: 5 });
+    const folder = rig.spawnBox(100, 100, { container: true }); // empty: no content
+    rig.step(2);
+
+    // Empty container would reset to zoom 1 — clamp up to minZoom, not 1.
+    rig.nav.enterContainer(folder);
+    rig.step();
+    expect(rig.world.getResource(Camera)?.zoom).toBe(3);
+
+    // A saved rider zoom outside the band clamps to maxZoom on re-entry.
+    rig.nav.exitContainer();
+    rig.step();
+    rig.world.edit(folder).set(ContainerCamera, { x: 5, y: 6, zoom: 99 });
+    rig.nav.enterContainer(folder);
+    rig.step();
+    expect(rig.world.getResource(Camera)?.zoom).toBe(5);
   });
 });
