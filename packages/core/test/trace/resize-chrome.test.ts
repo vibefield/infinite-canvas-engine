@@ -43,7 +43,7 @@ function makeRig() {
   // Chrome lands in derive — its handles feed the SAME spatial index picking uses.
   // selectionChrome ships inside installInteractionStack now (review fix) —
   // installing it again here would double the pool (16 handles).
-  engine.registerReflector({ name: "armed", always: false, flush: () => {} });
+  engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false }); // screen == world
   let now = 1000;
   const step = (n = 1) => {

@@ -54,7 +54,7 @@ function makeRig() {
   const engine = createEngine(world);
   const sink = createRecordingCommitSink();
   const stack = installInteractionStack(engine, { sink });
-  engine.registerReflector({ name: "armed", always: false, flush: () => {} }); // arm enforcement like a real app
+  engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} }); // arm enforcement like a real app
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false }); // screen == world
   const bridge = createGLBridge(engine);
   const router = createGLPointerRouter({ world, bridge, index: stack.index });

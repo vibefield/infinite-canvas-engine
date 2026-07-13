@@ -6,6 +6,7 @@
 import { createWorld } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
+  Camera,
   createEngine,
   createMeasureIngest,
   createMeasureQueue,
@@ -18,7 +19,7 @@ function rig() {
   const world = createWorld();
   const engine = createEngine(world);
   // Arm access enforcement like a real app (undeclared writes must DEV-throw here).
-  engine.registerReflector({ name: "armed", always: false, flush: () => {} });
+  engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   ensureCanvasSurface(world);
   const queue = createMeasureQueue();
   engine.addSystems("input", createMeasureIngest(world, queue));

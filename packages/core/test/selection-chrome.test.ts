@@ -28,7 +28,7 @@ const handleQ = defineQuery([HandleSpec]);
 function rig() {
   const world = createWorld();
   const engine = createEngine(world);
-  engine.registerReflector({ name: "armed", always: false, flush: () => {} });
+  engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
   ensureCanvasSurface(world); // chrome anchors on it (like spatialSync/marquee)
   engine.addSystems("derive", createSelectionChromeSystem(world));

@@ -6,6 +6,7 @@
 import { createWorld } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
+  Camera,
   createBreakpointSystem,
   createEngine,
   type Entity,
@@ -18,7 +19,7 @@ import {
 function rig() {
   const world = createWorld();
   const engine = createEngine(world);
-  engine.registerReflector({ name: "armed", always: false, flush: () => {} });
+  engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   engine.addSystems("derive", createBreakpointSystem(world));
   let now = 0;
   const step = () => {

@@ -39,7 +39,7 @@ const DRAW_TOOL = tools.get("draw:facade:card") ?? createDrawTool("facade:card")
 
 function makeRig() {
   const ce = createCanvasEngine({ widgets: [{ type: "facade:card" }], tools: [DRAW_TOOL] });
-  ce.engine.registerReflector({ name: "armed", always: false, flush: () => {} });
+  ce.engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   ce.world.setResource(Viewport, { w: 800, h: 600, dpr: 1 });
   let now = 1000;
   const step = (n = 1): void => {

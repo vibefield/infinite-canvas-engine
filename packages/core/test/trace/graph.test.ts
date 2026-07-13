@@ -112,7 +112,7 @@ function makeGraphRig(opts: { doc?: boolean } = {}): GraphRig {
       },
     },
   });
-  engine.registerReflector({ name: "armed", always: false, flush: () => {} });
+  engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false }); // screen == world
   world.setResource(Viewport, { w: 2000, h: 2000, dpr: 1 });
 

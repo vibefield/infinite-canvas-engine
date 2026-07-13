@@ -66,7 +66,7 @@ export function makeRig(): Rig {
   installWidgetRuntime(engine); // installs activeMembership (design-004 §7)
   const nav = createNestedCanvas(world, { index: stack.index, clearSpatialCaches: () => stack.clearCaches() });
   engine.addSystems("react", nav.navIntegrity);
-  engine.registerReflector({ name: "armed", always: false, flush: () => {} }); // arm strata access enforcement
+  engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} }); // arm strata access enforcement
 
   const session = createDocSession(world);
   sinkRef.target = session.sink;
