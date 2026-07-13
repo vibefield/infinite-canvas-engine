@@ -48,15 +48,17 @@ import {
   WheelPan,
   WheelZoom,
 } from "../catalog";
-import { CameraLimits } from "../catalog/settings-resources";
+import { CameraLimits, GestureSettings } from "../catalog/settings-resources";
 import { FrameInfo } from "../engine/frame-info";
 import { defineResource } from "../schema/meta";
 import { CAMERA_DEFAULTS, GESTURE_DEFAULTS } from "../settings/defaults";
 
 const P = GesturePhases;
 
-/** Wheel/pinch zoom sensitivity — matches the shipped demo pan/zoom feel (design-003 §5 item 9). */
-const ZOOM_SENSITIVITY = 0.0015;
+// Wheel-zoom speed is the v2 prototype curve (2026-07-13, superseding the old
+// e^(−Δ·0.0015) demo constant): factor = 2^(−clamp(Δ, ±maxStep) · sensitivity),
+// live-tunable via GestureSettings. See GESTURE_DEFAULTS for why the clamp is
+// the load-bearing half (mouse-notch ≈ pinch-frame parity).
 
 /** Camera default when the resource is unset (tests may never seed it). */
 const CAMERA_ZERO = { x: 0, y: 0, zoom: 1, gesturing: false } as const;
@@ -168,11 +170,15 @@ export function createCameraSystems(world: World): CameraSystems {
           anyActive = true;
           const wz = world.read(rec, WheelZoom);
           if (wz.pinch === 0) continue;
+          const gset = world.getResource(GestureSettings);
+          const sens = gset?.wheelZoomSensitivity ?? GESTURE_DEFAULTS.wheelZoomSensitivity;
+          const maxStep = gset?.wheelZoomMaxStep ?? GESTURE_DEFAULTS.wheelZoomMaxStep;
+          const step = Math.max(-maxStep, Math.min(maxStep, wz.pinch));
           const next = zoomAtPoint(
             { x, y, zoom },
             wz.anchorX,
             wz.anchorY,
-            clampZoom(world, zoom * Math.exp(-wz.pinch * ZOOM_SENSITIVITY)),
+            clampZoom(world, zoom * 2 ** (-step * sens)),
           );
           x = next.x;
           y = next.y;

@@ -16,6 +16,14 @@ export const GESTURE_DEFAULTS = {
   inertiaDecayMs: 325,
   multiTapWindowMs: 280,
   multiTapSlopPx: 20,
+  // Wheel/pinch zoom speed — the v2 prototype curve (gesture.ts:444-449),
+  // adopted 2026-07-13: factor = 2^(−clamp(Δ, ±maxStep) · sensitivity).
+  // The CLAMP is the load-bearing half: a trackpad pinch sends tiny frequent
+  // deltas (~0.5–3) while a mouse notch sends ~100 — capping the per-frame
+  // step at ±10 makes one notch ≈ one strong pinch frame (×2^0.1 ≈ 1.07),
+  // so both devices share one feel.
+  wheelZoomSensitivity: 0.01,
+  wheelZoomMaxStep: 10,
 } as const;
 
 /** Pick radii + retarget dead-band (design-003 §3 L1 targeting). */

@@ -89,6 +89,25 @@ describe("trace: mid-pan wheel-zoom cursor-lock (design-003 decision 14)", () =>
   });
 });
 
+describe("trace: wheel-zoom speed — the v2 prototype curve (adopted 2026-07-13)", () => {
+  it("factor = 2^(−clamp(Δ, ±10)·0.01): a mouse notch caps at ×2^0.1, a pinch tick is unclamped", () => {
+    const rig = cameraRig();
+
+    // Mouse notch (Δ = −100): the ±10 clamp makes it one strong pinch frame.
+    rig.wheel(400, 300, 0, 0, -100);
+    rig.step();
+    expect(readCamera(rig).zoom).toBeCloseTo(2 ** 0.1, 6);
+
+    rig.step(); // idle frame — per-frame delta zeroed, no further zoom
+    expect(readCamera(rig).zoom).toBeCloseTo(2 ** 0.1, 6);
+
+    // Trackpad pinch tick (Δ = −2, under the clamp): full-resolution step.
+    rig.wheel(400, 300, 0, 0, -2);
+    rig.step();
+    expect(readCamera(rig).zoom).toBeCloseTo(2 ** 0.1 * 2 ** 0.02, 6);
+  });
+});
+
 describe("trace: fly-back tween (design-003 §5 item 5)", () => {
   it("eases Position toward the target and reaps the rider exactly on arrival", () => {
     const rig = cameraRig();
