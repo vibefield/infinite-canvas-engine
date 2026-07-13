@@ -107,16 +107,22 @@ function createFakePool(): PoolLike & { acquired: number[]; released: number[] }
   };
 }
 
-function createFakeQuads(): QuadsLike & { visible: Map<number, boolean>; order: Map<number, number> } {
+function createFakeQuads(): QuadsLike & {
+  visible: Map<number, boolean>;
+  order: Map<number, number>;
+  transforms: Map<number, { x: number; y: number; sx: number; sy: number }>;
+} {
   const visible = new Map<number, boolean>();
   const order = new Map<number, number>();
+  const transforms = new Map<number, { x: number; y: number; sx: number; sy: number }>();
   return {
     visible,
     order,
+    transforms,
     ensure(key) {
       if (!visible.has(key)) visible.set(key, false);
       return {
-        setTransform() {},
+        setTransform: (x, y, sx, sy) => transforms.set(key, { x, y, sx, sy }),
         setTexture() {},
         setVisible: (v) => visible.set(key, v),
         setRenderOrder: (n) => order.set(key, n),
@@ -125,6 +131,7 @@ function createFakeQuads(): QuadsLike & { visible: Map<number, boolean>; order: 
     remove(key) {
       visible.delete(key);
       order.delete(key);
+      transforms.delete(key);
     },
     keys: () => [...visible.keys()],
   };
@@ -514,5 +521,84 @@ describe("nav-frame membership (design-004 §7 — Active drives phase)", () => 
     expect(stats.anyHot).toBe(true);
     expect(rig.bridge.state.get(a)?.phase).toBe("Hot");
     expect(rig.bridge.state.get(b)?.phase).toBe("Dormant");
+  });
+});
+
+describe("the composite-quad lift EASES (DOM card-lift parity, 2026-07-13)", () => {
+  it("eases to target with the spring (no snap), overshoots, settles exactly, pops order", () => {
+    const rig = createGLRig();
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    rig.pass(); // cold paint + composite at rest
+    const rest = rig.quads.transforms.get(e)?.sx ?? 0;
+    expect(rest).toBeGreaterThan(0);
+
+    rig.bridge.setCompositeScale(e, 1.05); // default 180ms spring
+    const series: number[] = [];
+    let animatingPasses = 0;
+    for (let i = 0; i < 12; i++) {
+      const stats = rig.pass(); // dtMs 16 per pass → settles on pass 12 (192ms)
+      if (stats.liftAnimating) animatingPasses += 1;
+      series.push(rig.quads.transforms.get(e)?.sx ?? 0);
+    }
+
+    // Not a snap: the first eased frame is strictly between rest and target.
+    const first = series[0] ?? 0;
+    expect(first).toBeGreaterThan(rest);
+    expect(first).toBeLessThan(rest * 1.05);
+    // The spring overshoots the target mid-flight (cubic-bezier y2 = 1.2)…
+    expect(Math.max(...series)).toBeGreaterThan(rest * 1.0515);
+    // …and lands exactly, with the self-sustain flag dropping on the settle pass.
+    expect(series[11]).toBeCloseTo(rest * 1.05, 6);
+    expect(animatingPasses).toBe(11);
+    // Lift ≠ 1 pops the quad over neighbors for the whole ride (incl. settled hold).
+    expect(rig.quads.order.get(e)).toBe(1e9);
+
+    // Release: retarget to 1 mid-hold → eases back down and the pop clears.
+    rig.bridge.setCompositeScale(e, 1);
+    let last: PassStats = rig.pass();
+    const down = rig.quads.transforms.get(e)?.sx ?? 0;
+    expect(down).toBeLessThan(rest * 1.05); // moving, not snapped
+    expect(down).toBeGreaterThan(rest * 0.9);
+    for (let i = 0; i < 11; i++) last = rig.pass();
+    expect(last.liftAnimating).toBe(false);
+    expect(rig.quads.transforms.get(e)?.sx).toBeCloseTo(rest, 6);
+    expect(rig.quads.order.get(e)).toBe(0); // StackZ again — pop cleared
+  });
+
+  it("durationMs 0 snaps in one pass (the pre-ease behavior stays reachable)", () => {
+    const rig = createGLRig();
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    rig.pass();
+    const rest = rig.quads.transforms.get(e)?.sx ?? 0;
+
+    rig.bridge.setCompositeScale(e, 1.05, 0);
+    const stats = rig.pass();
+    expect(stats.liftAnimating).toBe(false);
+    expect(rig.quads.transforms.get(e)?.sx).toBeCloseTo(rest * 1.05, 6);
+  });
+
+  it("a mid-flight retarget restarts from the DRAWN value — no visual jump", () => {
+    const rig = createGLRig();
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    rig.pass();
+    const rest = rig.quads.transforms.get(e)?.sx ?? 0;
+
+    rig.bridge.setCompositeScale(e, 1.05);
+    rig.pass();
+    rig.pass(); // two frames up (~32ms in)
+    const mid = rig.quads.transforms.get(e)?.sx ?? 0;
+    expect(mid).toBeGreaterThan(rest);
+
+    rig.bridge.setCompositeScale(e, 1); // quick release mid-rise
+    rig.pass();
+    const after = rig.quads.transforms.get(e)?.sx ?? 0;
+    // One eased frame from `mid` toward rest — bounded step, no teleport to 1.
+    expect(after).toBeLessThan(mid);
+    expect(after).toBeGreaterThan(rest);
+    for (let i = 0; i < 12; i++) rig.pass();
+    expect(rig.quads.transforms.get(e)?.sx).toBeCloseTo(rest, 6);
   });
 });

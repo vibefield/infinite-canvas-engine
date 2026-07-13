@@ -46,9 +46,28 @@ export interface IslandRenderState {
    * texture, rounded alpha corners and all — instead of the scene content
    * (which the card-sized frustum would crop into hard corners, 2026-07-12
    * field report). ≠1 also pops render order over neighbors.
+   *
+   * This is the DRAWN value: the compositor pass eases it toward
+   * `liftTarget` (dtMs-driven spring). GL widgets have no CSS transitions, so
+   * the DOM-lift parity (2026-07-13 field report: "GL lift snaps") lives in
+   * the pass, not in userland.
    */
   compositeScale: number;
+  /** Where the lift is headed; `setCompositeScale` retargets from the drawn value. */
+  liftTarget: number;
+  /** Drawn value at (re)target time — the ease runs liftFrom → liftTarget. */
+  liftFrom: number;
+  /** Accumulated pass dtMs since the last retarget; ≥ liftMs ⇒ settled. */
+  liftElapsedMs: number;
+  /** Transition duration in ms; 0 = snap (the pre-ease behavior). */
+  liftMs: number;
 }
+
+/**
+ * Default lift transition — the GL twin of the DOM card-lift idiom (180ms
+ * springy pop; the curve itself lives in the compositor pass).
+ */
+export const LIFT_DEFAULT_MS = 180;
 
 const FRESH_PAINTED_AT: PaintedAt = { w: 0, h: 0, dpr: 1, band: 0 };
 
@@ -87,6 +106,10 @@ export function createIslandStateStore(): IslandStateStore {
         animatedDecl: false,
         lastPaintSeq: 0,
         compositeScale: 1,
+        liftTarget: 1,
+        liftFrom: 1,
+        liftElapsedMs: 0,
+        liftMs: 0,
       };
       entries.set(key, s);
     }

@@ -49,7 +49,14 @@ export interface GlCardBackplateProps {
   readonly stops: readonly GradientStop[];
   /** Corner radius in island units (v1 card radius). Default 22. */
   readonly radius?: number;
-  /** Z behind the content. Default -40. */
+  /**
+   * Z behind the content. Default −max(40, 0.5·min(w,h)): deeper than any
+   * rotating model's sweep (a knot's bounding sphere is ~0.24·min(w,h); the
+   * old fixed −40 depth-clipped its back lobes, visible through the knot's
+   * gaps — 2026-07-13 field report). The island camera is ORTHOGRAPHIC, so a
+   * deeper plate renders pixel-identically (no perspective shrink) and the
+   * depth budget reaches z = −1500 (camera z=500, far 2000).
+   */
   readonly z?: number;
   /** Present → the plane is raycastable and carries these handlers (ShapesCard). */
   readonly handlers?: GlCardBackplateHandlers;
@@ -91,7 +98,7 @@ export function GlCardBackplate({
   height,
   stops,
   radius = 22,
-  z = -40,
+  z,
   handlers,
 }: GlCardBackplateProps): ReactElement {
   const texture = useMemo(
@@ -100,8 +107,9 @@ export function GlCardBackplate({
   );
   useEffect(() => () => texture.dispose(), [texture]);
 
+  const plateZ = z ?? -Math.max(40, 0.5 * Math.min(width, height));
   return (
-    <mesh position={[0, 0, z]} {...(handlers === undefined ? { raycast: NO_RAYCAST } : handlers)}>
+    <mesh position={[0, 0, plateZ]} {...(handlers === undefined ? { raycast: NO_RAYCAST } : handlers)}>
       <planeGeometry args={[width, height]} />
       <meshBasicMaterial map={texture} transparent toneMapped={false} />
     </mesh>

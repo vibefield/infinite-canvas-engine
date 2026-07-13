@@ -28,6 +28,7 @@
 import {
   computeIslandPhase,
   compositeCameraFrustum,
+  cubicBezierEase,
   fboPixelSize,
   isOutOfBand,
   selectBand,
@@ -40,6 +41,13 @@ import type { GLBridge } from "./bridge";
 
 /** Render order far above any sane StackZ — the grabbed quad draws last. */
 const GRABBED_RENDER_ORDER = 1e9;
+
+/**
+ * The lift's spring — the same curve the DOM card lift runs in CSS
+ * (`cubic-bezier(0.2, 0.9, 0.3, 1.2)`: slight overshoot, quick settle).
+ * GL widgets have no CSS transitions, so the pass owns the ease.
+ */
+const LIFT_EASE = cubicBezierEase(0.2, 0.9, 0.3, 1.2);
 
 // --- injected surfaces (GLViews binds three.js; traces bind fakes) ----------
 
@@ -119,11 +127,20 @@ export interface PassStats {
   evicted: number;
   fboBytes: number;
   anyHot: boolean;
+  /** A lift ease is mid-flight — caller re-invalidates (composite-only frames). */
+  liftAnimating: boolean;
 }
 
 export function runCompositorPass(ctx: PassContext): PassStats {
   const { world, bridge, pool, quads, gl } = ctx;
-  const stats: PassStats = { repainted: 0, pendingPaints: 0, evicted: 0, fboBytes: 0, anyHot: false };
+  const stats: PassStats = {
+    repainted: 0,
+    pendingPaints: 0,
+    evicted: 0,
+    fboBytes: 0,
+    anyHot: false,
+    liftAnimating: false,
+  };
 
   const cam = world.getResource(Camera);
   const vp = world.getResource(Viewport);
@@ -274,6 +291,17 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     // center): texture + rounded alpha corners scale together, and the card
     // overlaps its neighbors — scaling the SCENE instead crops the corners
     // at the card-sized frustum (2026-07-12 field report).
+    //
+    // The drawn scale EASES toward its target here, advanced by ctx.dtMs
+    // (deterministic under the traces — no wall clock in the pass). Elapsed
+    // time is the ONLY terminator: the overshoot spring crosses the target
+    // value mid-flight, so a value comparison would freeze at the crossing.
+    if (s.liftElapsedMs < s.liftMs) {
+      s.liftElapsedMs += ctx.dtMs;
+      const t = Math.min(1, s.liftElapsedMs / s.liftMs);
+      s.compositeScale = t >= 1 ? s.liftTarget : s.liftFrom + (s.liftTarget - s.liftFrom) * LIFT_EASE(t);
+      if (t < 1) stats.liftAnimating = true;
+    }
     const lift = s.compositeScale;
     quad.setTransform(q.x, q.y, q.sx * lift, q.sy * lift);
     quad.setTexture(fbo.texture);

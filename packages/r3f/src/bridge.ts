@@ -35,7 +35,7 @@ import {
   type Engine,
   type Entity,
 } from "@ice/core";
-import { createIslandStateStore, type IslandStateStore } from "./island-state";
+import { LIFT_DEFAULT_MS, createIslandStateStore, type IslandStateStore } from "./island-state";
 import { createRenderWriteTrap, type RenderWriteTrap } from "./dev-write-trap";
 
 export interface IslandHandle {
@@ -72,8 +72,13 @@ export interface GLBridge {
   requestFrame(): void;
   /** Island invalidation — this island must repaint (props/size/manual dirt). */
   bumpPaint(entity: Entity): void;
-  /** Composite-quad lift scale (1 = rest). Scales the CARD on the canvas, corners intact. */
-  setCompositeScale(entity: Entity, scale: number): void;
+  /**
+   * Composite-quad lift scale (1 = rest). Scales the CARD on the canvas,
+   * corners intact. Sets the TARGET: the compositor pass eases the drawn
+   * value there over `durationMs` (default 180 — the DOM card-lift spring;
+   * 0 snaps). Mid-flight retargets restart from the current drawn value.
+   */
+  setCompositeScale(entity: Entity, scale: number, durationMs?: number): void;
   /** GLViews wires R3F's demand-loop `invalidate` here (null on unmount). */
   setInvalidate(fn: (() => void) | null): void;
   /** Tear down reflector + observers + state (doc close / app teardown). */
@@ -197,10 +202,19 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
       requestFrame();
     },
 
-    setCompositeScale(entity, scale) {
+    setCompositeScale(entity, scale, durationMs = LIFT_DEFAULT_MS) {
       const s = state.ensure(entity);
-      if (s.compositeScale === scale) return; // change-only — no idle churn
-      s.compositeScale = scale;
+      if (s.liftTarget === scale) return; // change-only — no idle churn
+      s.liftTarget = scale;
+      if (durationMs <= 0) {
+        s.compositeScale = scale; // snap (the pre-ease behavior)
+        s.liftMs = 0;
+        s.liftElapsedMs = 0;
+      } else {
+        s.liftFrom = s.compositeScale; // retarget from the DRAWN value — no jump
+        s.liftMs = durationMs;
+        s.liftElapsedMs = 0;
+      }
       requestFrame(); // composite-level only: no island repaint needed
     },
 

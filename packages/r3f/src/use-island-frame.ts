@@ -57,11 +57,16 @@ export function useIslandInvalidate(): () => void {
  * corners together) and pops it over neighbors while ≠1. Scaling scene content
  * instead crops the corners at the card-sized frustum — the 2026-07-12
  * hard-corner field report. Resets to 1 on unmount.
+ *
+ * The scale EASES to each new value (default 180ms, the DOM card-lift
+ * spring — GL has no CSS transitions, so the compositor runs the curve;
+ * 2026-07-13 field report: "GL lift snaps while DOM lifts smooth").
+ * `durationMs: 0` snaps.
  */
-export function useIslandLift(scale: number): void {
+export function useIslandLift(scale: number, durationMs?: number): void {
   const { bridge, entity } = useIslandContext();
   useEffect(() => {
-    bridge.setCompositeScale(entity, scale);
-  }, [bridge, entity, scale]);
+    bridge.setCompositeScale(entity, scale, durationMs);
+  }, [bridge, entity, scale, durationMs]);
   useEffect(() => () => bridge.setCompositeScale(entity, 1), [bridge, entity]);
 }

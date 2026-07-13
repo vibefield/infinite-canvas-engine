@@ -403,9 +403,10 @@ export function GLViews({
         culledWidgets,
       });
     }
-    // Self-sustain: Hot islands and stagger-deferred paints keep the demand
-    // loop spinning; otherwise it parks until the next invalidation.
-    if (stats.anyHot || stats.pendingPaints > 0) invalidate();
+    // Self-sustain: Hot islands, stagger-deferred paints and mid-flight lift
+    // eases keep the demand loop spinning; otherwise it parks until the next
+    // invalidation.
+    if (stats.anyHot || stats.pendingPaints > 0 || stats.liftAnimating) invalidate();
   }, 1);
 
   // --- island membership (mount store → gl-surface islands) -----------------

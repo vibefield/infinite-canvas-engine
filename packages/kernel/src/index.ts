@@ -12,3 +12,4 @@ export * from "./zoom-bands";
 export * from "./eviction";
 export * from "./anchors";
 export * from "./bezier";
+export * from "./easing";
