@@ -3,7 +3,8 @@
  * scene systems · doc kit · publish step · engine facade · reflector registry.
  * Import wall: strata-ecs + @ice/kernel ONLY — never react/dom/three (enforced).
  */
-export const CORE_VERSION = "0.0.0";
+// Informational only; must track packages/ice/package.json version on publish.
+export const CORE_VERSION = "0.1.0";
 
 export { defineSchemaOnce, hmrInvalidateOnSchemaChange } from "./boot/hmr";
 

@@ -30,8 +30,11 @@ const Sticky = defineWidget({
 });
 
 function StickyView({ entity, world }) {
-  const props = useWidgetProps(world, entity, "sticky");
+  // useWidgetProps returns T | undefined and does not infer T — pass the shape,
+  // and handle the undefined window before the group cell exists.
+  const props = useWidgetProps<{ text: string; color: string }>(world, entity, "sticky");
   const commit = useCommit();     // the sanctioned write path: one tx = one undo step
+  if (!props) return null;
   return <textarea value={props.text} onChange={(e) =>
     commit((tx) => tx.edit(entity).set(Sticky.groups[0].component, { ...props, text: e.target.value }))
   } />;

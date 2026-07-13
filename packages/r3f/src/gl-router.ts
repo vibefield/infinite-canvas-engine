@@ -35,6 +35,8 @@ import { screenToWorld, worldToIsland } from "@ice/kernel";
 import type { SpatialIndex } from "@ice/kernel";
 import {
   Camera,
+  GESTURE_DEFAULTS,
+  GestureSettings,
   PrefabId,
   Position,
   Size,
@@ -96,12 +98,35 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
   const raycaster = new Raycaster();
   const ndc = new Vector2();
 
-  // pointerId → captured island + the down's claiming object (click pairing).
-  const captures = new Map<number, { entity: Entity; downObject: Object3D | undefined }>();
+  // pointerId → captured island + the down's claiming object + screen coords
+  // (click pairing: release must stay within tap slop of the down).
+  const captures = new Map<
+    number,
+    { entity: Entity; downObject: Object3D | undefined; downX: number; downY: number }
+  >();
   // entity → objects currently hovered (buttonless-move enter/leave synth).
   const hovered = new Map<Entity, Set<Object3D>>();
   // pointerId → unclaimed down's topmost object (click pairing without a claim).
-  const unclaimedDowns = new Map<number, { entity: Entity; object: Object3D }>();
+  const unclaimedDowns = new Map<number, { entity: Entity; object: Object3D; downX: number; downY: number }>();
+
+  // Click = press and release on the SAME object without travelling past tap
+  // slop — the engine's own tap threshold, so GL clicks and engine taps agree.
+  const withinTapSlop = (downX: number, downY: number, upX: number, upY: number): boolean => {
+    const slop = world.getResource(GestureSettings)?.tapSlopPx ?? GESTURE_DEFAULTS.tapSlopPx;
+    const dx = upX - downX;
+    const dy = upY - downY;
+    return dx * dx + dy * dy <= slop * slop;
+  };
+
+  /** True when `target` sits on any hit's ancestor chain (release is over it). */
+  const chainHas = (hits: readonly Intersection[], target: Object3D): boolean => {
+    for (const h of hits) {
+      for (let obj: Object3D | null = h.object; obj !== null; obj = obj.parent) {
+        if (obj === target) return true;
+      }
+    }
+    return false;
+  };
 
   /** Screen → (GL widget entity, island intersections); undefined off-GL. */
   const castAt = (
@@ -263,7 +288,12 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
         const { stopped, claimedBy } = dispatch("onPointerDown", "pointerdown", cast.entity, cast.hits, native);
         if (stopped) {
           unclaimedDowns.delete(native.pointerId);
-          captures.set(native.pointerId, { entity: cast.entity, downObject: claimedBy });
+          captures.set(native.pointerId, {
+            entity: cast.entity,
+            downObject: claimedBy,
+            downX: screenX,
+            downY: screenY,
+          });
           return true;
         }
         // UNCLAIMED down over an island: remember the topmost object so a
@@ -271,7 +301,14 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
         // parity; v1 RFC-008 coexistence — the engine's tap runs too, so a
         // cube click can log AND select, 2026-07-12 field report).
         const top = cast.hits[0]?.object;
-        if (top !== undefined) unclaimedDowns.set(native.pointerId, { entity: cast.entity, object: top });
+        if (top !== undefined) {
+          unclaimedDowns.set(native.pointerId, {
+            entity: cast.entity,
+            object: top,
+            downX: screenX,
+            downY: screenY,
+          });
+        }
         return false;
       }
 
@@ -304,7 +341,7 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
         // Unclaimed click pairing: down and up on the same topmost object.
         const pending = unclaimedDowns.get(native.pointerId);
         unclaimedDowns.delete(native.pointerId);
-        if (kind === "up" && pending !== undefined) {
+        if (kind === "up" && pending !== undefined && withinTapSlop(pending.downX, pending.downY, screenX, screenY)) {
           const cast = castAt(screenX, screenY);
           if (cast !== undefined && cast.entity === pending.entity && cast.hits[0]?.object === pending.object) {
             dispatch("onClick", "click", cast.entity, cast.hits, native, pending.object);
@@ -317,10 +354,18 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
       const hits = cast !== undefined && cast.entity === capture.entity ? cast.hits : [];
       if (kind === "up") {
         const { claimedBy } = dispatch("onPointerUp", "pointerup", capture.entity, hits, native, capture.downObject);
-        // Click pairs down+up on the same claiming object (R3F semantics).
-        const clickTarget = claimedBy ?? capture.downObject;
-        if (clickTarget !== undefined && clickTarget === capture.downObject) {
-          dispatch("onClick", "click", capture.entity, hits, native, clickTarget);
+        // Click pairs down+up on the same claiming object (R3F semantics) —
+        // AND the release must land back on it within tap slop. Without both
+        // gates a captured drag ended elsewhere still "clicked" the object it
+        // grabbed (the old `claimedBy ?? downObject` fallback made the
+        // same-object check tautological).
+        if (
+          capture.downObject !== undefined &&
+          (claimedBy === undefined || claimedBy === capture.downObject) &&
+          chainHas(hits, capture.downObject) &&
+          withinTapSlop(capture.downX, capture.downY, screenX, screenY)
+        ) {
+          dispatch("onClick", "click", capture.entity, hits, native, capture.downObject);
         }
       } else {
         dispatch("onPointerCancel", "pointercancel", capture.entity, hits, native, capture.downObject);

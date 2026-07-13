@@ -55,6 +55,14 @@ export function createCanvasHost(container: HTMLElement): CanvasHost {
       : (view?.getComputedStyle(container).position ?? "");
   const promoteToRelative = position === "" || position === "static";
   if (promoteToRelative) container.style.position = "relative";
+  // Record each host-owned property's prior inline value BEFORE overwriting it,
+  // so dispose restores what the caller set (e.g. an inline overflow:auto) rather
+  // than blanket-clearing it. Empty string = the caller had no inline value here.
+  const priorContainerStyle = Object.keys(CONTAINER_STYLE).map((prop) => {
+    // camelCase → kebab-case for the CSSOM property API (touchAction → touch-action).
+    const cssName = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+    return [cssName, container.style.getPropertyValue(cssName)] as const;
+  });
   Object.assign(container.style, CONTAINER_STYLE);
 
   const contentPlane = container.ownerDocument.createElement("div");
@@ -67,11 +75,11 @@ export function createCanvasHost(container: HTMLElement): CanvasHost {
     dispose() {
       contentPlane.remove();
       if (promoteToRelative) container.style.removeProperty("position");
-      for (const prop of Object.keys(CONTAINER_STYLE)) {
-        container.style.removeProperty(
-          // camelCase → kebab-case for removeProperty (touchAction → touch-action).
-          prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`),
-        );
+      for (const [cssName, prior] of priorContainerStyle) {
+        // Restore the caller's prior inline value, or clear the host's if the
+        // caller had none.
+        if (prior !== "") container.style.setProperty(cssName, prior);
+        else container.style.removeProperty(cssName);
       }
     },
   };

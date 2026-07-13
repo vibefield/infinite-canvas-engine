@@ -106,5 +106,14 @@ describe("ResourceRegistry", () => {
     expect(reg.materialCount()).toBe(0);
     expect(reg.textureCount()).toBe(0);
     expect(reg.isDisposed()).toBe(true);
+
+    // Every acquire must throw after dispose, not silently re-insert a resource
+    // that would then leak (dispose() will never run again to sweep it).
+    expect(() => reg.acquireGeometry("g2", () => new BufferGeometry())).toThrow(/after dispose/);
+    expect(() => reg.acquireMaterial("m2", () => new MeshBasicMaterial())).toThrow(/after dispose/);
+    expect(() => reg.acquireTexture("t2", () => new Texture())).toThrow(/after dispose/);
+    expect(reg.geometryCount()).toBe(0);
+    expect(reg.materialCount()).toBe(0);
+    expect(reg.textureCount()).toBe(0);
   });
 });

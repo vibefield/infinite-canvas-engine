@@ -104,10 +104,17 @@ export interface CanvasOps {
 export interface CanvasDocs {
   create(opts?: DocSessionOpts): DocSession;
   open(bytes: Uint8Array, opts?: DocSessionOpts): OpenDocResult;
-  /** §6.5 bootstrap + optional presence sugar over the same channel. */
+  /**
+   * §6.5 bootstrap + optional presence sugar over the same channel. `signal`/
+   * `onSession` are facade-owned (supersede + re-bootstrap wiring) — track the
+   * live session through `docs.current()`. Rejects if another document is
+   * opened while the join is in flight.
+   */
   join(
     channel: ByteChannel,
-    opts?: Omit<JoinDocOpts, "presence"> & { readonly presence?: { name: string; color: string } },
+    opts?: Omit<JoinDocOpts, "presence" | "signal" | "onSession"> & {
+      readonly presence?: { name: string; color: string };
+    },
   ): Promise<JoinResult>;
   current(): DocSession | undefined;
   close(): void;
@@ -197,6 +204,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   let session: DocSession | undefined;
   let presence: PresenceSession | undefined;
   let uninstallPresence: (() => void) | undefined;
+  let joined: JoinResult | undefined; // the room handle — closeDoc must LEAVE, not just close
+  let joinAbort: AbortController | undefined; // kills an in-flight join on supersede
 
   const requireSession = (op: string): DocSession => {
     if (session === undefined) {
@@ -212,11 +221,17 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   };
 
   const closeDoc = (): void => {
+    // A pending join dies here — left to resolve, it would attach a stale
+    // session over whatever the caller opens next.
+    joinAbort?.abort(new Error("ice: docs.join superseded — another document was opened while joining."));
+    joinAbort = undefined;
     uninstallPresence?.();
     uninstallPresence = undefined;
     presence?.detach();
     presence = undefined;
-    session?.close();
+    joined?.leave(); // leaves the ROOM: channel + outbound unsubs, then closes the session
+    joined = undefined;
+    session?.close(); // idempotent — a no-op when leave() above already closed it
     session = undefined;
     sink.target = undefined;
   };
@@ -242,6 +257,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     async join(channel, o = {}) {
       closeDoc();
+      const ac = new AbortController();
+      joinAbort = ac;
       const { presence: presenceOpts, ...joinOpts } = o;
       if (presenceOpts !== undefined) {
         presence = attachPresence(world, { name: presenceOpts.name, color: presenceOpts.color });
@@ -253,7 +270,27 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         ...(gatePolicy !== undefined ? { docOpts: { onGate: gatePolicy } } : {}),
         ...(presence !== undefined ? { presence } : {}),
         ...joinOpts,
+        signal: ac.signal,
+        // Re-bootstrap swaps the session inside joinDoc (PendingImportError
+        // recovery) — re-target the forwarding sink or ops keep committing
+        // into the quarantined session.
+        onSession: (s) => {
+          if (joinAbort !== ac) return; // superseded — a newer doc owns the sink
+          if (s !== undefined) {
+            adoptSession(s);
+          } else {
+            session = undefined; // joinDoc already closed it
+            sink.target = undefined;
+          }
+        },
       });
+      // The await gap: user code in the same task may have opened another doc
+      // after our resolve was queued — that newer doc owns the engine now.
+      if (joinAbort !== ac) {
+        result.leave();
+        throw new Error("ice: docs.join superseded — another document was opened while joining.");
+      }
+      joined = result;
       adoptSession(result.session);
       return result;
     },

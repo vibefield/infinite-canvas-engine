@@ -20,7 +20,16 @@ const rooms = new Map(); // room name → Set<WebSocket>
 const wss = new WebSocketServer({ port: PORT });
 
 wss.on("connection", (socket, req) => {
-  const room = decodeURIComponent((req.url ?? "/").split("?")[0].replace(/^\/+/, "")) || "default";
+  const rawRoom = (req.url ?? "/").split("?")[0].replace(/^\/+/, "");
+  // decodeURIComponent throws URIError on malformed percent-encoding; a single
+  // bad URL must not kill the relay, so fall back to the raw path segment.
+  let room;
+  try {
+    room = decodeURIComponent(rawRoom);
+  } catch {
+    room = rawRoom;
+  }
+  room = room || "default";
   let peers = rooms.get(room);
   if (peers === undefined) {
     peers = new Set();

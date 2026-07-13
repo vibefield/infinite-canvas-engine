@@ -47,4 +47,17 @@ describe("createCanvasHost", () => {
     host.dispose();
     expect(container.style.position).toBe("absolute");
   });
+
+  it("restores a caller's pre-existing inline container style on dispose", () => {
+    // Regression: dispose blanket-cleared its owned properties, destroying any
+    // inline value the caller set on the same property (here overflow:auto).
+    const container = document.createElement("div");
+    container.style.overflow = "auto";
+
+    const host = createCanvasHost(container);
+    expect(container.style.overflow).toBe("hidden"); // host takes over while mounted
+
+    host.dispose();
+    expect(container.style.overflow).toBe("auto"); // caller's value restored, not cleared
+  });
 });

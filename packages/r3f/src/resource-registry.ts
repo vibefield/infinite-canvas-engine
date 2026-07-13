@@ -28,6 +28,9 @@ export class ResourceRegistry {
   private disposed = false;
 
   acquireGeometry<T extends BufferGeometry>(key: string, factory: () => T): T {
+    if (this.disposed) {
+      throw new Error("ResourceRegistry: cannot acquire after dispose");
+    }
     const existing = this.geometries.get(key);
     if (existing) {
       existing.refCount++;
@@ -42,6 +45,9 @@ export class ResourceRegistry {
   }
 
   acquireMaterial<T extends Material>(key: string, factory: () => T): T {
+    if (this.disposed) {
+      throw new Error("ResourceRegistry: cannot acquire after dispose");
+    }
     const existing = this.materials.get(key);
     if (existing) {
       existing.refCount++;
@@ -56,6 +62,9 @@ export class ResourceRegistry {
   }
 
   acquireTexture<T extends Texture>(key: string, factory: () => T): T {
+    if (this.disposed) {
+      throw new Error("ResourceRegistry: cannot acquire after dispose");
+    }
     const existing = this.textures.get(key);
     if (existing) {
       existing.refCount++;

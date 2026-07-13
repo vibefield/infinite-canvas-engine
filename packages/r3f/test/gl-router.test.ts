@@ -215,6 +215,69 @@ describe("island capture (claimed down owns move/up)", () => {
   });
 });
 
+describe("click discipline (2026-07-13 review): press+release same object, within tap slop", () => {
+  it("a captured drag released elsewhere does NOT click the grabbed object", () => {
+    const rig = makeRig();
+    const pad = rig.spawnPad(100, 100);
+    const log: string[] = [];
+    rig.mountIsland(
+      pad,
+      withHandlers(new Mesh(new PlaneGeometry(100, 100)), {
+        onPointerDown: (ev) => ev.stopPropagation(),
+        onClick: () => log.push("click"),
+      }),
+    );
+    rig.step();
+    rig.mouse("down", 150, 150, 1);
+    rig.mouse("move", 400, 400, 1); // captured drag off the island
+    rig.mouse("up", 400, 400, 0); // released in empty space — the old fallback still clicked here
+    expect(log).toEqual([]);
+  });
+
+  it("a captured drag released back ON the object but past tap slop does NOT click", () => {
+    const rig = makeRig();
+    const pad = rig.spawnPad(100, 100);
+    const log: string[] = [];
+    rig.mountIsland(
+      pad,
+      withHandlers(new Mesh(new PlaneGeometry(100, 100)), {
+        onPointerDown: (ev) => ev.stopPropagation(),
+        onClick: () => log.push("click"),
+      }),
+    );
+    rig.step();
+    rig.mouse("down", 120, 120, 1);
+    rig.mouse("move", 170, 170, 1);
+    rig.mouse("up", 170, 170, 0); // still over the pad, but ~70px of travel ≫ 8px slop
+    expect(log).toEqual([]);
+  });
+
+  it("unclaimed click pairing obeys the same slop (clean pair clicks, a far pair does not)", () => {
+    const rig = makeRig();
+    const pad = rig.spawnPad(100, 100);
+    const log: string[] = [];
+    rig.mountIsland(
+      pad,
+      withHandlers(new Mesh(new PlaneGeometry(100, 100)), {
+        onClick: () => log.push("click"), // no down claim — the RFC-008 coexistence path
+      }),
+    );
+    rig.step();
+
+    rig.mouse("down", 150, 150, 1);
+    rig.step();
+    rig.mouse("up", 152, 151, 0); // within slop → click
+    rig.step();
+    expect(log).toEqual(["click"]);
+
+    rig.mouse("down", 150, 150, 1);
+    rig.step();
+    rig.mouse("up", 180, 180, 0); // same topmost object, but past slop → no click
+    rig.step();
+    expect(log).toEqual(["click"]);
+  });
+});
+
 describe("hover synthesis (buttonless moves)", () => {
   it("over/out fire on pick transitions", () => {
     const rig = makeRig();

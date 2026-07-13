@@ -22,6 +22,7 @@ import {
   StackZ,
   attachPresence,
   broadcastChannelByteChannel,
+  createCanvasEngine,
   createDocSession,
   createWorld,
   defineQuery,
@@ -308,6 +309,209 @@ describe("bootstrap: read-only gate + presence (§6.5)", () => {
     bus.deliverAll(); // PRESENCE → B's joinDoc → presenceB.wire.apply
     presWorldB.sync();
     expect(presWorldB.firstOf(remotePeersQ)).toBeDefined(); // A's peer projected despite the read-only doc
+  });
+});
+
+// --- lifecycle hygiene (2026-07-13 review findings 1–4) ---------------------------------------------
+/** Wrap a channel so tests can assert the room was actually LEFT (subs back to 0). */
+function counting(ch: ByteChannel): { ch: ByteChannel; subs(): number } {
+  let n = 0;
+  return {
+    subs: () => n,
+    ch: {
+      send: (b) => ch.send(b),
+      subscribe: (fn) => {
+        n++;
+        const unsub = ch.subscribe(fn);
+        return () => {
+          n--;
+          unsub();
+        };
+      },
+    },
+  };
+}
+
+/**
+ * Author a doc with two SEQUENTIAL updates; delivering only the second to a
+ * peer leaves a causal gap → strata throws PendingImportError → re-bootstrap.
+ */
+function makeGappedDoc(): { base: Uint8Array; update2: Uint8Array; full: () => Uint8Array; close: () => void } {
+  const authWorld = createWorld();
+  const auth = createDocSession(authWorld);
+  let w1: Entity | undefined;
+  auth.store.transaction((tx) => {
+    w1 = tx.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 5, h: 5 }], [StackZ, { z: 0 }]] });
+  });
+  authWorld.sync();
+  const w1e = must(w1, "authored w1");
+  const base = auth.exportEnvelope();
+  const updates: Uint8Array[] = [];
+  const unsub = auth.store.subscribeOutbound((b) => updates.push(b));
+  auth.store.transaction((tx) => tx.edit(w1e).set(Position, { x: 10, y: 0 }));
+  authWorld.sync();
+  auth.store.transaction((tx) => tx.edit(w1e).set(Position, { x: 20, y: 0 }));
+  authWorld.sync();
+  unsub();
+  return {
+    base,
+    update2: must(updates.at(-1), "update2"),
+    full: () => auth.exportEnvelope(),
+    close: () => auth.close(),
+  };
+}
+
+describe("bootstrap: lifecycle hygiene (review 2026-07-13)", () => {
+  it("a throwing seed() rejects the join instead of hanging, and the room is left", async () => {
+    const bus = new Bus();
+    const { clock, advance } = makeClock();
+    const counted = counting(bus.endpoint());
+    const p = joinDoc(createWorld(), counted.ch, {
+      clock,
+      seed: () => {
+        throw new Error("seed boom");
+      },
+    });
+    const rejection = expect(p).rejects.toThrow(/seed boom/);
+    bus.deliverAll(); // hello reaches nobody
+    advance(800); // the timer path — where the old code let the throw escape
+    await rejection;
+    expect(counted.subs()).toBe(0);
+  });
+
+  it("an incompatible base rejects AND unsubscribes the channel", async () => {
+    const bus = new Bus();
+    const { clock } = makeClock();
+    const counted = counting(bus.endpoint());
+    const server = bus.endpoint();
+    const p = joinDoc(createWorld(), counted.ch, { clock });
+    const rejection = expect(p).rejects.toThrow(/base import failed/);
+    bus.deliverAll(); // hello
+    server.send(frame(K.SNAPSHOT_OFFER, new Uint8Array([9, 9, 9]))); // garbage envelope
+    bus.deliverAll();
+    await rejection;
+    expect(counted.subs()).toBe(0);
+  });
+
+  it("abort pre-resolve rejects with the reason; abort post-resolve just leaves (no onError)", async () => {
+    const busA = new Bus();
+    const { clock: clockA } = makeClock();
+    const countedA = counting(busA.endpoint());
+    const acA = new AbortController();
+    const pA = joinDoc(createWorld(), countedA.ch, { clock: clockA, signal: acA.signal });
+    const rejection = expect(pA).rejects.toThrow(/nope/);
+    acA.abort(new Error("nope"));
+    await rejection;
+    expect(countedA.subs()).toBe(0);
+
+    const busB = new Bus();
+    const { clock: clockB, advance: advanceB } = makeClock();
+    const countedB = counting(busB.endpoint());
+    const acB = new AbortController();
+    const errors: unknown[] = [];
+    const pB = joinDoc(createWorld(), countedB.ch, {
+      clock: clockB,
+      signal: acB.signal,
+      onError: (e) => errors.push(e),
+    });
+    busB.deliverAll();
+    advanceB(800);
+    const res = await pB;
+    expect(res.role).toBe("seeder");
+    expect(countedB.subs()).toBe(1);
+    acB.abort(); // caller closing a live join — leave() semantics
+    expect(countedB.subs()).toBe(0);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("a PendingImportError re-bootstraps: the session getter + onSession track the swap", async () => {
+    const doc = makeGappedDoc();
+    cleanups.push(doc.close);
+    const bus = new Bus();
+    const { clock } = makeClock();
+    const worldB = createWorld();
+    const server = bus.endpoint();
+    const transitions: ("session" | undefined)[] = [];
+    const pB = joinDoc(worldB, bus.endpoint(), {
+      clock,
+      onSession: (s) => transitions.push(s === undefined ? undefined : "session"),
+    });
+    bus.deliverAll(); // hello → our manual server ignores it
+    server.send(frame(K.SNAPSHOT_OFFER, doc.base));
+    bus.deliverAll(); // B imports the base, goes active
+    const resB = await pB;
+    cleanups.push(() => resB.leave());
+    const first = resB.session;
+
+    server.send(frame(K.UPDATE, doc.update2)); // causal gap: update1 never delivered
+    bus.deliverAll(); // PendingImportError → quarantine + re-hello
+    server.send(frame(K.SNAPSHOT_OFFER, doc.full())); // the full state answers the re-hello
+    bus.deliverAll();
+
+    expect(resB.session).not.toBe(first); // the getter tracks the replacement
+    worldB.sync();
+    expect(findAt(worldB, 20, 0)).toBeDefined(); // recovered content, gap included
+    expect(transitions[0]).toBe("session"); // initial activation
+    expect(transitions).toContain(undefined); // quarantine window
+    expect(transitions.at(-1)).toBe("session"); // replacement adopted
+  });
+
+  it("facade: docs.close() after a join LEAVES the room (channel fully unsubscribed)", async () => {
+    const bus = new Bus();
+    const { clock, advance } = makeClock();
+    const ce = createCanvasEngine();
+    cleanups.push(() => ce.dispose());
+    const counted = counting(bus.endpoint());
+    const p = ce.docs.join(counted.ch, { clock });
+    bus.deliverAll();
+    advance(800);
+    const res = await p;
+    expect(res.role).toBe("seeder");
+    expect(counted.subs()).toBe(1);
+    ce.docs.close();
+    expect(counted.subs()).toBe(0); // finding 1: closeDoc used to strand the room wiring
+    expect(ce.docs.current()).toBeUndefined();
+  });
+
+  it("facade: docs.create() during a pending join kills the join (no resurrection)", async () => {
+    const bus = new Bus();
+    const { clock, advance } = makeClock();
+    const ce = createCanvasEngine();
+    cleanups.push(() => ce.dispose());
+    const counted = counting(bus.endpoint());
+    const p = ce.docs.join(counted.ch, { clock });
+    const rejection = expect(p).rejects.toThrow(/superseded/);
+    const created = ce.docs.create(); // supersedes mid-handshake
+    await rejection;
+    expect(ce.docs.current()).toBe(created);
+    expect(counted.subs()).toBe(0);
+    advance(800); // the stale join's hello-timeout must NOT seed over the created doc
+    expect(ce.docs.current()).toBe(created);
+  });
+
+  it("facade: an internal re-bootstrap re-targets docs.current()", async () => {
+    const doc = makeGappedDoc();
+    cleanups.push(doc.close);
+    const bus = new Bus();
+    const { clock } = makeClock();
+    const ce = createCanvasEngine();
+    cleanups.push(() => ce.dispose());
+    const server = bus.endpoint();
+    const p = ce.docs.join(bus.endpoint(), { clock });
+    bus.deliverAll();
+    server.send(frame(K.SNAPSHOT_OFFER, doc.base));
+    bus.deliverAll();
+    const res = await p;
+    const first = must(ce.docs.current(), "adopted session");
+
+    server.send(frame(K.UPDATE, doc.update2)); // causal gap → internal re-bootstrap
+    bus.deliverAll();
+    server.send(frame(K.SNAPSHOT_OFFER, doc.full()));
+    bus.deliverAll();
+
+    const swapped = must(ce.docs.current(), "re-adopted session");
+    expect(swapped).not.toBe(first); // finding 3: the facade used to stay on the quarantined session
+    expect(swapped).toBe(res.session); // facade and result getter agree
   });
 });
 

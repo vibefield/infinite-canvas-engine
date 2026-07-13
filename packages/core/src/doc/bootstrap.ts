@@ -77,11 +77,27 @@ export interface JoinDocOpts {
   readonly presence?: PresenceSession;
   /** Surfaced when a re-bootstrap (after a PendingImportError) itself fails, or a base import fails post-join. */
   readonly onError?: (err: unknown) => void;
+  /**
+   * Abort the join: tears the room down (channel unsubscribed, session closed)
+   * and rejects the promise if it hasn't resolved yet. The facade aborts its
+   * pending join when another document supersedes it — a resolution-time check
+   * alone cannot stop a mid-handshake join from attaching to the world.
+   */
+  readonly signal?: AbortSignal;
+  /**
+   * Live-session transitions: fired at every activation (including the first,
+   * just before the promise resolves) and with `undefined` when an internal
+   * re-bootstrap tears the quarantined session down. The facade re-targets its
+   * forwarding sink here — without it, callers keep committing into a session
+   * `rebootstrap()` already closed.
+   */
+  readonly onSession?: (session: DocSession | undefined) => void;
 }
 
 export interface JoinResult {
   /** "seeder" = we created the doc (timed out); "joiner" = we imported a peer's base. */
   readonly role: "seeder" | "joiner";
+  /** LIVE (a getter): after an internal re-bootstrap this is the replacement session. */
   readonly session: DocSession;
   /** Stop relaying, unsubscribe the channel, and close the session. Idempotent. */
   leave(): void;
@@ -133,16 +149,57 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
     let session: DocSession | undefined;
     let active = false;
     let settled = false;
+    let left = false;
     let timeoutHandle: unknown;
     let unsubOutbound: (() => void) | undefined;
     let rebootstrapAttempts = 0;
 
     // UPDATE frames that arrived while BUFFERING — drained after the base imports.
     const buffered: Uint8Array[] = [];
+    // Channel + presence-relay unsubs (filled at wire-up; exists from the start
+    // so teardown is safe on every path, including a pre-resolution abort).
+    const roomSubs: (() => void)[] = [];
+
+    // EVERY exit — leave(), abort, a failed base import, a throwing seed(), the
+    // quarantine give-up — funnels through this one idempotent teardown, so no
+    // path can leak the channel/presence/outbound subscriptions or the timer.
+    const teardown = (): void => {
+      if (left) return;
+      left = true;
+      clock.clearTimeout(timeoutHandle);
+      opts.signal?.removeEventListener("abort", onAbort);
+      for (const unsub of roomSubs.splice(0)) unsub();
+      unsubOutbound?.();
+      unsubOutbound = undefined;
+      session?.close();
+    };
+
+    /** Failure exit: teardown, then reject (pre-resolve) or surface via onError (post-resolve). */
+    const fail = (err: unknown): void => {
+      teardown();
+      if (!settled) {
+        settled = true;
+        reject(err instanceof Error ? err : new Error(String(err)));
+      } else {
+        opts.onError?.(err);
+      }
+    };
+
+    // A post-resolve abort is the caller closing a live join — leave() semantics,
+    // deliberately NOT routed to onError (fail() would report every normal close).
+    const onAbort = (): void => {
+      const wasSettled = settled;
+      teardown();
+      if (!wasSettled) {
+        settled = true;
+        const reason: unknown = opts.signal?.reason ?? new Error("ice: joinDoc aborted");
+        reject(reason instanceof Error ? reason : new Error(String(reason)));
+      }
+    };
 
     const armTimeout = (): void => {
       timeoutHandle = clock.setTimeout(() => {
-        if (!active && !settled) becomeSeeder();
+        if (!active && !left) becomeSeeder();
       }, helloTimeoutMs);
     };
 
@@ -176,29 +233,52 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
       // Local commits → UPDATE frames. Remote-origin imports never fire this
       // (durable's onLocalBatch origin filter), so an import is never rebroadcast.
       unsubOutbound = s.store.subscribeOutbound((bytes) => channel.send(frame(K_UPDATE, bytes)));
+      opts.onSession?.(s);
       if (!settled) {
         settled = true;
-        resolve({ role, session: s, leave });
+        resolve({
+          role,
+          // The getter tracks re-bootstrap: the resolved object never pins the
+          // original session (callers would keep a quarantined one otherwise).
+          get session() {
+            return session as DocSession;
+          },
+          leave: teardown,
+        });
       }
     };
 
     const becomeSeeder = (): void => {
-      if (active || settled) return;
-      const s = createDocSession(world, docOpts);
-      opts.seed?.(s); // seed BEFORE going active — the state rides every future snapshot
+      if (active || left) return;
+      if (rebootstrapAttempts > 0) {
+        // A re-bootstrap that finds no peer cannot recover the doc — re-seeding
+        // here would present a fresh empty doc as if it were the recovered one.
+        teardown();
+        opts.onError?.(new Error("ice: re-bootstrap found no peer to rejoin from — document quarantined"));
+        return;
+      }
+      let s: DocSession | undefined;
+      try {
+        s = createDocSession(world, docOpts);
+        opts.seed?.(s); // seed BEFORE going active — the state rides every future snapshot
+      } catch (err) {
+        // seed() runs inside the hello-timeout timer callback — uncaught, the
+        // throw would escape the timer and the join promise would hang forever.
+        s?.close();
+        fail(err);
+        return;
+      }
       goActive(s, "seeder");
     };
 
     const becomeJoiner = (base: Uint8Array): void => {
-      if (active) return;
+      if (active || left) return;
       clock.clearTimeout(timeoutHandle);
       const result = openDocSession(world, base, docOpts);
       if (!result.ok) {
-        // A corrupt/incompatible base — surface and give up (reconnect = re-join).
-        if (!settled) {
-          settled = true;
-          reject(new Error(`ice: bootstrap base import failed — ${result.reason}`));
-        }
+        // A corrupt/incompatible base — tear the room down and surface it
+        // (reconnect = re-join; the channel must not stay subscribed).
+        fail(new Error(`ice: bootstrap base import failed — ${result.reason}`));
         return;
       }
       const s = result.session;
@@ -211,18 +291,25 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
 
     const rebootstrap = (): void => {
       if (rebootstrapAttempts >= 1) {
+        // Second quarantine: give up FOR REAL — leave the room (else every later
+        // UPDATE re-fires this error against a session we know is dead) and tell
+        // the session listener the doc is gone.
+        teardown();
+        opts.onSession?.(undefined);
         opts.onError?.(new Error("ice: re-bootstrap after PendingImportError failed — document quarantined"));
         return;
       }
       rebootstrapAttempts++;
       // Tear the quarantined session down, return to BUFFERING, and re-hello. The
       // channel subscription + presence relay stay wired (presence is session-free).
+      // `session` keeps pointing at the closed one so the result getter stays
+      // non-undefined; `active=false` routes every frame to the buffering path.
       unsubOutbound?.();
       unsubOutbound = undefined;
       session?.close();
-      session = undefined;
       active = false;
       buffered.length = 0;
+      opts.onSession?.(undefined); // no live session until the re-join lands
       channel.send(frame(K_HELLO, utf8.encode(joinerId)));
       armTimeout();
     };
@@ -264,16 +351,16 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
       // HELLO while buffering: ignore (we have nothing to offer yet).
     };
 
-    const unsubChannel = channel.subscribe(onFrame);
-    const unsubPresence = opts.presence?.onOutbound((b) => channel.send(frame(K_PRESENCE, b)));
+    // Abort wiring before anything opens: a pre-aborted signal never joins the room.
+    if (opts.signal?.aborted === true) {
+      onAbort();
+      return;
+    }
+    opts.signal?.addEventListener("abort", onAbort);
 
-    const leave = (): void => {
-      clock.clearTimeout(timeoutHandle);
-      unsubChannel();
-      unsubPresence?.();
-      unsubOutbound?.();
-      session?.close();
-    };
+    roomSubs.push(channel.subscribe(onFrame));
+    const unsubPresence = opts.presence?.onOutbound((b) => channel.send(frame(K_PRESENCE, b)));
+    if (unsubPresence !== undefined) roomSubs.push(unsubPresence);
 
     // Broadcast hello, buffer inbound, wait for a base (or the silence timeout).
     channel.send(frame(K_HELLO, utf8.encode(joinerId)));
