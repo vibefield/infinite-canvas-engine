@@ -210,8 +210,13 @@ export function App() {
     DEFAULT_OVERLAP_GLOW_THEME_COLORS,
   );
 
-  // --- GL root: bridge + router arrive in onReady; glRoute delegates via ref ---
+  // --- GL root: bridge + router + P2 plane arrive in onReady; glRoute delegates
+  // via ref. glRef keeps the whole set so we can tear it down — onReady fires
+  // from InfiniteCanvas's mount effect, so a StrictMode double-mount would
+  // otherwise stack a stale bridge (reflector + world observer) and a stale
+  // plane div (glboard disposes the same set in its boot handle's dispose()).
   const routerRef = useRef<GLPointerRouter | null>(null);
+  const glRef = useRef<{ bridge: GLBridge; router: GLPointerRouter; plane: HTMLDivElement } | null>(null);
   const [gl, setGl] = useState<{ bridge: GLBridge; plane: HTMLDivElement } | null>(null);
   const [envTex, setEnvTex] = useState<Texture | null>(null);
   const glRoute = useCallback(
@@ -219,19 +224,31 @@ export function App() {
       routerRef.current?.route(kind, x, y, e) === true,
     [],
   );
+  const disposeGl = useCallback(() => {
+    const prev = glRef.current;
+    if (prev === null) return;
+    prev.bridge.uninstall(); // unregisters the render reflector + world observer
+    prev.plane.remove();
+    glRef.current = null;
+    routerRef.current = null;
+  }, []);
   const onReady = useCallback(
     (handle: InfiniteCanvasHandle) => {
+      disposeGl(); // drop a prior mount's set before wiring a fresh one
       const bridge = createGLBridge(ce.engine);
-      routerRef.current = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
+      const router = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
+      routerRef.current = router;
       const plane = handle.host.container.ownerDocument.createElement("div");
       plane.style.cssText = "position:absolute;inset:0;pointer-events:none;"; // P2: display-only (router owns GL hits)
       // P2 sits UNDER the lifted plane (P3) and chrome — glboard's insertion
       // point; appending last would stack GL over dragged widgets/chrome.
       handle.host.container.insertBefore(plane, handle.planes.lifted);
+      glRef.current = { bridge, router, plane };
       setGl({ bridge, plane });
     },
-    [ce],
+    [ce, disposeGl],
   );
+  useEffect(() => disposeGl, [disposeGl]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -254,26 +271,27 @@ export function App() {
     [gridConfig, dark, themeColors],
   );
 
-  // Keyboard shortcuts — v1 handler, ported onto docs/ops/nav.
+  // Keyboard shortcuts. <InfiniteCanvas> already installs the engine default
+  // keymap (packages/react/src/keymap.ts) — ⌘Z undo, ⇧⌘Z redo, ⌫/Delete
+  // deleteSelection (all skipping editable targets), and Esc →
+  // cancelActiveGestures. A second window listener for any of those would fire
+  // them TWICE (preventDefault does not stop the engine's listener; undo would
+  // step back two edits). The only piece the default keymap lacks is the
+  // nav-specific "Esc exits the current container when nested", so that is all
+  // this handler adds. The else-branch cancel is left to the keymap (keymap.ts
+  // line 79), and the editable-target guard mirrors keymap.ts isEditableTarget
+  // (line 42) so Esc inside a widget input never jumps out of the container.
   useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+    };
     const onKeyDown = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && !e.shiftKey && e.key === "z") {
+      if (e.key !== "Escape" || isEditableTarget(e.target)) return;
+      if (ce.nav.depth() > 0) {
         e.preventDefault();
-        ce.docs.undo();
-      }
-      if (mod && e.shiftKey && e.key === "z") {
-        e.preventDefault();
-        ce.docs.redo();
-      }
-      if (e.key === "Escape") {
-        if (ce.nav.depth() > 0) ce.ops.exitContainer();
-        else ce.ops.cancelActiveGestures();
-      }
-      if (e.key === "Backspace" || e.key === "Delete") {
-        const el = document.activeElement;
-        if (el?.closest("input, textarea, select, [contenteditable]")) return;
-        ce.ops.deleteSelection();
+        ce.ops.exitContainer();
       }
     };
     window.addEventListener("keydown", onKeyDown);

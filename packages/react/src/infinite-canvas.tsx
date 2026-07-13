@@ -186,6 +186,7 @@ export function InfiniteCanvas({
       grid.dispose();
       gridRef.current = null;
       wires.dispose();
+      domWidgets.dispose();
       chrome.dispose();
       planes.dispose();
       host.dispose();

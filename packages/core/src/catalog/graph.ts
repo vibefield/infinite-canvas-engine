@@ -58,13 +58,16 @@ export const Accepts = defineComponent("Accepts", { list: field("string", { defa
 export const Provides = defineComponent("Provides", { list: field("string", { default: "[]" }) });
 
 /**
- * The durable wire prefab (design-001 §5.3): PrefabId "wire" + WirePorts;
- * Wire tag + WireFrom/WireTo edges ride the spawn (doc commit sink executes
- * connect intents). Registered here so the version gate stamps
- * `engine.pack.wire.<v>` like every durable pack.
+ * The durable wire prefab (design-001 §5.3): WirePorts + the Wire tag +
+ * eligible WireFrom/WireTo edges — the COMPLETE contract, so the doc commit
+ * sink spawns through the paved `tx.spawnPrefab` path instead of a raw spawn
+ * that bypassed eligibility checks (2026-07-13 review). Registered here so the
+ * version gate stamps `engine.pack.wire.<v>` like every durable pack.
  */
 export const WirePrefab = definePrefab("wire", {
   store: "durable",
   version: 1,
   components: [init(WirePorts, { from: "", to: "" })],
+  tags: [Wire],
+  relations: [WireFrom, WireTo],
 });

@@ -257,9 +257,15 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     const fbo = pool.get(e);
     const pos = alive ? world.get(e as Entity, Position) : undefined;
     const size = alive ? world.get(e as Entity, Size) : undefined;
-    if (fbo === null || s.fboGeneration < 0 || pos === undefined || size === undefined) {
-      // Evicted-while-retained fallback: hidden until first repaint
-      // (design-004 §3 — instant reactivation holds only when the FBO survived).
+    if (s.phase === "Dormant" || fbo === null || s.fboGeneration < 0 || pos === undefined || size === undefined) {
+      // Not composited this pass — hidden, and its FBO ages toward eviction
+      // (the `continue` skips the touch() below, so a hidden island never
+      // stays artificially LRU-warm). Two ways in:
+      //  · Dormant: a retained texture from ANOTHER nav frame (design-004 §7).
+      //    Visibility is derived every pass, so re-entry (Active again → Warm)
+      //    shows the quad next pass — never latched.
+      //  · evicted-while-retained: hidden until first repaint (design-004 §3 —
+      //    instant reactivation holds only when the FBO survived).
       quad.setVisible(false);
       continue;
     }

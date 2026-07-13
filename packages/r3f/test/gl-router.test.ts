@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createWorld } from "@vibecook/strata-ecs";
-import { Mesh, type Object3D, OrthographicCamera, PlaneGeometry, Scene } from "three";
+import { Group, Mesh, type Object3D, OrthographicCamera, PlaneGeometry, Scene } from "three";
 import {
   Camera,
   NO_MODS,
@@ -193,6 +193,52 @@ describe("island capture (claimed down owns move/up)", () => {
     expect(rig.world.get(pad, Position)).toEqual({ x: 100, y: 100 });
     // Capture released: the next move routes nowhere.
     expect(rig.mouse("move", 150, 150, 0)).toBe(false);
+  });
+
+  it("a captured drag over a SIBLING mesh never leaks to it (capture restriction)", () => {
+    const rig = makeRig();
+    const pad = rig.spawnPad(100, 100); // world rect [100,200]², center (150,150)
+    const log: string[] = [];
+    // Two sibling meshes in ONE island, offset so they hit at different screen
+    // points: A at island-local x=-25 (screen 125,150), B at x=+25 (175,150).
+    const meshA = withHandlers(new Mesh(new PlaneGeometry(40, 40)), {
+      onPointerDown: (ev) => {
+        log.push("A-down");
+        ev.stopPropagation();
+      },
+      onPointerMove: () => log.push("A-move"),
+      onPointerUp: () => log.push("A-up"),
+      onClick: () => log.push("A-click"),
+    });
+    meshA.position.set(-25, 0, 0);
+    const meshB = withHandlers(new Mesh(new PlaneGeometry(40, 40)), {
+      onPointerMove: () => log.push("B-move"),
+      onPointerUp: () => log.push("B-up"),
+      onClick: () => log.push("B-click"),
+    });
+    meshB.position.set(25, 0, 0);
+    const group = new Group();
+    group.add(meshA, meshB);
+    rig.mountIsland(pad, group);
+    rig.step();
+
+    rig.mouse("down", 125, 150, 1); // claim A
+    rig.step();
+    expect(rig.mouse("move", 175, 150, 1)).toBe(true); // captured, ray now over B
+    rig.step();
+    expect(rig.mouse("up", 175, 150, 0)).toBe(true); // release over B
+    rig.step();
+
+    // A owns the whole gesture (moves via the `only` capturer fallback, then
+    // the up); B — a sibling in the same island — sees nothing, and the
+    // release landing off the capturer produces no click on either.
+    expect(log).toContain("A-down");
+    expect(log).toContain("A-move");
+    expect(log).toContain("A-up");
+    expect(log).not.toContain("B-move");
+    expect(log).not.toContain("B-up");
+    expect(log).not.toContain("B-click");
+    expect(log).not.toContain("A-click");
   });
 
   it("pointercancel under capture dispatches and releases", () => {

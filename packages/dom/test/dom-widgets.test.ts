@@ -155,6 +155,23 @@ describe("dom-widgets host reflector", () => {
     expect(planes.lifted.style.pointerEvents).toBe("");
   });
 
+  it("dispose() tears down the private observers (a StrictMode remount must not stack subscriptions)", () => {
+    const { world, engine, store, reflector } = setup();
+    const e = spawnBox(world, 0, 0, 10, 10);
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    expect(reflector.geometryWrites()).toBe(1); // entered
+
+    reflector.dispose(); // unsubscribes the [Position,Size] / [MeasuredSize] / [Grab] observers
+
+    // After dispose, a geometry change no longer arms the dirty flag, so the next
+    // flush runs no geometry pass — the observers are truly gone. Without this the
+    // InfiniteCanvas cleanup would leak a subscription set per StrictMode remount.
+    world.edit(e).set(Position, { x: 999, y: 999 });
+    engine.step(1);
+    expect(reflector.geometryWrites()).toBe(1); // unchanged: observer gone, no re-measure
+  });
+
   it("keeps the planes inert for a host that enters mid-drag", () => {
     const { world, engine, planes, store, reflector } = setup();
     const dragged = spawnBox(world, 0, 0, 10, 10);

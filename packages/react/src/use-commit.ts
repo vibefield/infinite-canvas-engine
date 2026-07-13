@@ -32,6 +32,11 @@ export function useCommit(): Commit {
           "ice: useCommit — no active document. Attach one with engine.docs.create()/open()/join() before committing widget edits.",
         );
       }
+      if (session.readOnly) {
+        // The version gate said read-only: a raw store write here would edit —
+        // and broadcast — a document the gate refused (2026-07-13 review).
+        throw new Error("ice: useCommit — the document is read-only (version gate); widget edits are disabled.");
+      }
       guardedTransaction(session.store, engine.world, fn, opts);
     },
     [engine],

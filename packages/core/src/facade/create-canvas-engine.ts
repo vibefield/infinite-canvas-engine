@@ -209,12 +209,24 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   let uninstallPresence: (() => void) | undefined;
   let joined: JoinResult | undefined; // the room handle — closeDoc must LEAVE, not just close
   let joinAbort: AbortController | undefined; // kills an in-flight join on supersede
+  const liveAutosaves = new Set<Autosave>(); // facade-created; stopped at closeDoc
 
   const requireSession = (op: string): DocSession => {
     if (session === undefined) {
       throw new Error(`ice: ops.${op} needs a document — call engine.docs.create()/open()/join() first.`);
     }
     return session;
+  };
+
+  // Read-only is enforced at every SANCTIONED write surface, not only the
+  // gesture sink (2026-07-13 review: the sink swap alone let facade ops and
+  // undo/redo edit — and broadcast — a version-gated document).
+  const requireWritable = (op: string): DocSession => {
+    const s = requireSession(op);
+    if (s.readOnly) {
+      throw new Error(`ice: ops.${op} — the document is read-only (version gate); writes are disabled.`);
+    }
+    return s;
   };
 
   const adoptSession = (next: DocSession): DocSession => {
@@ -228,6 +240,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     // session over whatever the caller opens next.
     joinAbort?.abort(new Error("ice: docs.join superseded — another document was opened while joining."));
     joinAbort = undefined;
+    for (const a of [...liveAutosaves]) a.stop(); // before close: no export of a detached session
+    liveAutosaves.clear();
     uninstallPresence?.();
     uninstallPresence = undefined;
     presence?.detach();
@@ -299,11 +313,26 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     current: () => session,
     close: closeDoc,
-    undo: () => session?.store.undo() ?? false,
-    redo: () => session?.store.redo() ?? false,
+    // Read-only documents must not mutate through history either — undo/redo
+    // write the store exactly like an op does.
+    undo: () => (session === undefined || session.readOnly ? false : session.store.undo()),
+    redo: () => (session === undefined || session.readOnly ? false : session.store.redo()),
     autosave(storage, o) {
       const s = requireSession("autosave");
-      return startAutosave(s, { storage, world, ...o });
+      const inner = startAutosave(s, { storage, world, ...o });
+      // Track facade-created autosaves: an untracked one outlives closeDoc and
+      // its next timer exports the DETACHED old session over the new document's
+      // storage (2026-07-13 review).
+      const handle: Autosave = {
+        flush: () => inner.flush(),
+        state: () => inner.state(),
+        stop: () => {
+          liveAutosaves.delete(handle);
+          inner.stop();
+        },
+      };
+      liveAutosaves.add(handle);
+      return handle;
     },
   };
 
@@ -322,15 +351,15 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       writeRuntimeResource(world, ActiveTool, { id });
     },
     spawnWidget(type, o) {
-      const s = requireSession("spawnWidget");
+      const s = requireWritable("spawnWidget");
       return spawnWidget(s.store, world, type, o);
     },
     setWidgetProps(entity, props) {
-      const s = requireSession("setWidgetProps");
+      const s = requireWritable("setWidgetProps");
       setWidgetProps(s.store, world, entity, props);
     },
     deleteSelection() {
-      const s = requireSession("deleteSelection");
+      const s = requireWritable("deleteSelection");
       const doomed = selectedEntities(world).filter((e) => s.store.keyOf(e) !== undefined);
       if (doomed.length === 0) return;
       s.store.transaction((tx) => {
@@ -338,7 +367,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       });
     },
     duplicateSelection() {
-      const s = requireSession("duplicateSelection");
+      const s = requireWritable("duplicateSelection");
       const sources = selectedEntities(world).filter((e) => s.store.keyOf(e) !== undefined);
       if (sources.length === 0) return [];
       const clones: Entity[] = [];
@@ -376,7 +405,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       setSelection(world, widgetQuery(), "replace");
     },
     reorder(ids, mode) {
-      const s = requireSession("reorder");
+      const s = requireWritable("reorder");
       // Fractional StackZ sweep above/below the current extremes, one tx.
       let extreme = mode === "top" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
       world.query(stackZQ).each((b) => {

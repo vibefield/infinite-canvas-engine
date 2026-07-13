@@ -80,6 +80,37 @@ describe("trace: multi-tap counting (MultiTap opt-in)", () => {
     expect(rig.world.hasTag(box, Selected)).toBe(true);
   });
 
+  it("rejoin's Down rebase survives ARMED access enforcement (recognizerSpawn declares write [Down])", () => {
+    const rig = createTraceRig();
+    // An OBSERVING reflector arms strata's Rule-3 write enforcement (observeQuery →
+    // armAccessEnforcement), as a real app does (InfiniteCanvas/devtools); the plain
+    // trace rig never arms. Without recognizerSpawn's `access.write: [Down]` the
+    // rejoin's `edit(cand).set(Down)` throws "did not declare it in access.write" on
+    // the second down below.
+    rig.engine.registerReflector({ name: "armed", observe: { queries: [{ q: tapRecQ }] }, flush: () => {} });
+    const box = rig.spawnBox({ x: 100, y: 100 });
+    rig.world.addComponent(box, MultiTap, { max: 2, windowMs: 280, slopPx: 20 });
+
+    rig.target("mouse", box);
+    rig.down("mouse", 110, 110);
+    rig.step();
+    rig.up("mouse", 111, 110);
+    rig.step(); // count 1 < max → parked Pending
+    const tap = entitiesOf(rig.world, tapRecQ)[0] as Entity;
+    expect(rig.world.hasTag(tap, P.tags.Pending)).toBe(true);
+
+    rig.down("mouse", 114, 112); // REJOIN: recognizerSpawn rebases Down under armed enforcement
+    rig.step();
+    expect(entitiesOf(rig.world, tapRecQ)).toHaveLength(1); // re-pointed, not re-spawned
+    expect(rig.world.hasTag(tap, P.tags.Possible)).toBe(true);
+    expect(rig.world.read(tap, Tap).count).toBe(1); // count preserved through the rebase
+
+    rig.up("mouse", 114, 112);
+    rig.step(); // count 2 ≥ max → Recognized
+    expect(rig.world.read(tap, Tap).count).toBe(2);
+    expect(rig.world.hasTag(box, Selected)).toBe(true);
+  });
+
   it("single tap on a MultiTap target recognizes with count 1 when the window closes", () => {
     const rig = createTraceRig();
     const box = rig.spawnBox({ x: 100, y: 100 });

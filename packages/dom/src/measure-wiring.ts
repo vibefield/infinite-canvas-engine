@@ -36,15 +36,17 @@ export interface MeasureWiringHosts {
 
 export interface MeasureWiringOpts {
   /**
-   * Border-box read for the forced re-measure on show. Defaults to
-   * `getBoundingClientRect`; tests inject a deterministic stub.
+   * Border-box read for the forced re-measure on show. Defaults to layout
+   * `offsetWidth`/`offsetHeight`; tests inject a deterministic stub.
    */
   readonly measure?: (el: HTMLElement) => { w: number; h: number };
 }
 
+// Layout border-box size, transform-independent — matches the ResizeObserver
+// path's borderBoxSize. getBoundingClientRect would fold in the camera plane's
+// CSS transform and record zoomed CSS pixels as world size at zoom ≠ 1.
 function defaultMeasure(el: HTMLElement): { w: number; h: number } {
-  const rect = el.getBoundingClientRect();
-  return { w: rect.width, h: rect.height };
+  return { w: el.offsetWidth, h: el.offsetHeight };
 }
 
 /**

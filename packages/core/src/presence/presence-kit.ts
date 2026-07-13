@@ -90,20 +90,51 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
       for (const fn of [...outbound]) fn(bytes);
     },
   });
-  const attachment = attachEphemeral(world, eph);
+  let attachment = attachEphemeral(world, eph);
 
   // Identity now; PresenceCursor/SelectionSummary are dynamic facets the publish
   // hook owns. `Local` is auto-applied by eph.spawn (§15.4) — never transmitted.
-  const localPeer = eph.spawn({
-    components: [[PresenceInfo, { name: opts.name, color: opts.color }]],
-    tags: [PresencePeer],
-  });
+  const spawnLocalPeer = (): Entity =>
+    eph.spawn({
+      components: [[PresenceInfo, { name: opts.name, color: opts.color }]],
+      tags: [PresencePeer],
+    });
+  let localPeer = spawnLocalPeer();
 
   let detached = false;
+  // world.reset() (doc close / joinDoc's internal re-bootstrap) kills every
+  // projected presence entity AND our minted local peer, while the loro store,
+  // wire, and outbound timers all survive — leaving the binding pointing at
+  // dead handles and remote keepalives unable to re-project (blob-diff cache
+  // says "unchanged"). Self-heal by REBINDING: tombstone the orphaned minted
+  // keys (peers drop the stale identity now, not at TTL), detach the stale
+  // binding, re-attach (fresh blob-diff cache → the next keepalive ≤ ttl/2
+  // re-projects every remote peer), and re-mint the local identity. Deferred a
+  // microtask: attachEphemeral is illegal inside an observer emit.
+  let healQueued = false;
+  const stopResetHeal = world.observe({
+    onReset: () => {
+      if (detached || healQueued) return;
+      healQueued = true;
+      queueMicrotask(() => {
+        healQueued = false;
+        if (detached) return;
+        eph.leave(); // needs the live seam + minted set — must precede detach
+        attachment.detach();
+        attachment = attachEphemeral(world, eph);
+        localPeer = spawnLocalPeer(); // fresh key (the mint counter only moves forward)
+      });
+    },
+  });
+
   return {
     peerId,
     eph,
-    localPeer,
+    // A getter: the local peer is RE-MINTED after a world reset (see the
+    // self-heal above) — consumers must read through, never capture.
+    get localPeer() {
+      return localPeer;
+    },
     wire: source,
     onOutbound(fn) {
       outbound.add(fn);
@@ -114,6 +145,7 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
     detach() {
       if (detached) return;
       detached = true;
+      stopResetHeal();
       // leave() needs the live seam + minted set, so it MUST precede detach:
       // it deletes our keys and flushes tombstones through `send` NOW (peers
       // despawn us immediately rather than waiting the TTL). detach() then

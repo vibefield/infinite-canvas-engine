@@ -18,8 +18,8 @@ import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import type { World } from "@vibecook/strata-ecs";
 import { ChildOf } from "../catalog";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
-import { PrefabId } from "../schema/prefab";
-import { Wire, WireFrom, WirePorts, WireTo } from "../catalog/graph";
+import { init } from "../schema/prefab";
+import { WireFrom, WirePorts, WirePrefab, WireTo } from "../catalog/graph";
 import { widgetSpawnInits } from "../widget/spawn";
 import { guardedTransaction } from "../guards/guarded-tx";
 
@@ -53,13 +53,10 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
           tx.spawnPrefab(prefab, overrides);
         }
         for (const w of liveWires) {
-          const wire = tx.spawn({
-            components: [
-              [PrefabId, { id: "wire" }],
-              [WirePorts, { from: w.fromPort, to: w.toPort }],
-            ],
-            tags: [Wire],
-          });
+          // The paved prefab path: PrefabId + Wire tag ride the prefab, and
+          // WireFrom/WireTo pass its eligibility contract (raw spawn skipped
+          // those checks entirely — 2026-07-13 review).
+          const wire = tx.spawnPrefab(WirePrefab, [init(WirePorts, { from: w.fromPort, to: w.toPort })]);
           tx.setRelation(wire, WireFrom, w.from);
           tx.setRelation(wire, WireTo, w.to);
         }

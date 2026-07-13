@@ -17,6 +17,15 @@ export interface ByteChannel {
   send(bytes: Uint8Array): void;
   /** Deliver every inbound frame to `fn`. Returns an unsubscribe. */
   subscribe(fn: (bytes: Uint8Array) => void): () => void;
+  /**
+   * OPTIONAL readiness: resolves once the transport can actually transmit,
+   * rejects if it never will. `joinDoc` gates its hello + the seed-silence
+   * window on this — a queue-until-open transport otherwise lets a slow
+   * connect elapse the window and seed a DIVERGENT second doc offline
+   * (2026-07-13 review). Synchronous transports (BroadcastChannel, in-memory
+   * buses) simply omit it.
+   */
+  ready?(): Promise<void>;
 }
 
 /** A `ByteChannel` that owns a resource (a BroadcastChannel) and can release it. */
@@ -109,6 +118,24 @@ export function webSocketByteChannel(ws: WebSocketLike): ByteChannel {
   });
   flush(); // already-open sockets flush immediately
 
+  // Readiness (the ByteChannel.ready contract): a CONNECTING socket resolves on
+  // "open" and rejects on "close"/"error" first — joinDoc must not start its
+  // seed-silence window while frames are still queued behind the connect.
+  const readyPromise = new Promise<void>((resolve, reject) => {
+    if (ws.readyState === WS_OPEN) {
+      resolve();
+      return;
+    }
+    if (ws.readyState > WS_OPEN) {
+      reject(new Error("ice: webSocketByteChannel — the socket is already closing/closed."));
+      return;
+    }
+    ws.addEventListener("open", () => resolve());
+    ws.addEventListener("close", () => reject(new Error("ice: webSocketByteChannel — the socket closed before opening.")));
+    ws.addEventListener("error", () => reject(new Error("ice: webSocketByteChannel — the socket errored before opening.")));
+  });
+  readyPromise.catch(() => {}); // pre-observed: no unhandled rejection when ready() is never called
+
   return {
     send(bytes) {
       if (ws.readyState === WS_OPEN) ws.send(bytes);
@@ -120,5 +147,6 @@ export function webSocketByteChannel(ws: WebSocketLike): ByteChannel {
         listeners.delete(fn);
       };
     },
+    ready: () => readyPromise,
   };
 }

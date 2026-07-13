@@ -336,7 +336,13 @@ function counting(ch: ByteChannel): { ch: ByteChannel; subs(): number } {
  * Author a doc with two SEQUENTIAL updates; delivering only the second to a
  * peer leaves a causal gap → strata throws PendingImportError → re-bootstrap.
  */
-function makeGappedDoc(): { base: Uint8Array; update2: Uint8Array; full: () => Uint8Array; close: () => void } {
+function makeGappedDoc(): {
+  base: Uint8Array;
+  update1: Uint8Array;
+  update2: Uint8Array;
+  full: () => Uint8Array;
+  close: () => void;
+} {
   const authWorld = createWorld();
   const auth = createDocSession(authWorld);
   let w1: Entity | undefined;
@@ -355,6 +361,7 @@ function makeGappedDoc(): { base: Uint8Array; update2: Uint8Array; full: () => U
   unsub();
   return {
     base,
+    update1: must(updates[0], "update1"),
     update2: must(updates.at(-1), "update2"),
     full: () => auth.exportEnvelope(),
     close: () => auth.close(),
@@ -512,6 +519,96 @@ describe("bootstrap: lifecycle hygiene (review 2026-07-13)", () => {
     const swapped = must(ce.docs.current(), "re-adopted session");
     expect(swapped).not.toBe(first); // finding 3: the facade used to stay on the quarantined session
     expect(swapped).toBe(res.session); // facade and result getter agree
+  });
+});
+
+// --- transport contract (2026-07-13 review) ---------------------------------------------------------
+describe("bootstrap: transport contract (2026-07-13 review)", () => {
+  it("a ready()-reporting channel gates the hello + silence window — no offline seed", async () => {
+    const bus = new Bus();
+    const { clock, advance } = makeClock();
+    const ep = bus.endpoint();
+    let readyResolve: (() => void) | undefined;
+    const gated: ByteChannel = {
+      send: (b) => ep.send(b),
+      subscribe: (fn) => ep.subscribe(fn),
+      ready: () =>
+        new Promise<void>((res) => {
+          readyResolve = res;
+        }),
+    };
+    let settled = false;
+    const p = joinDoc(createWorld(), gated, { clock });
+    p.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    advance(800); // the un-gated code seeded HERE, while the socket still connected
+    await Promise.resolve();
+    expect(settled).toBe(false); // window not armed yet — no divergent offline seed
+    must(readyResolve, "ready resolver")();
+    await Promise.resolve(); // begin(): hello out, window armed
+    await Promise.resolve();
+    bus.deliverAll(); // hello reaches nobody
+    advance(800); // NOW the silence window elapses
+    const res = await p;
+    cleanups.push(() => res.leave());
+    expect(res.role).toBe("seeder");
+  });
+
+  it("a channel that can never open rejects the join and leaves the room", async () => {
+    const bus = new Bus();
+    const { clock } = makeClock();
+    const counted = counting(bus.endpoint());
+    const dead: ByteChannel = {
+      send: (b) => counted.ch.send(b),
+      subscribe: (fn) => counted.ch.subscribe(fn),
+      ready: () => Promise.reject(new Error("connect failed")),
+    };
+    const p = joinDoc(createWorld(), dead, { clock });
+    const rejection = expect(p).rejects.toThrow(/connect failed/);
+    await rejection;
+    expect(counted.subs()).toBe(0);
+  });
+
+  it("a throwing channel.send fails the join instead of stranding it half-attached", async () => {
+    const { clock } = makeClock();
+    const boom: ByteChannel = {
+      send: () => {
+        throw new Error("socket died");
+      },
+      subscribe: () => () => {},
+    };
+    await expect(joinDoc(createWorld(), boom, { clock })).rejects.toThrow(/socket died/);
+  });
+
+  it("a mid-drain PendingImportError preserves the undrained frames for the replacement", async () => {
+    const doc = makeGappedDoc();
+    cleanups.push(doc.close);
+    const bus = new Bus();
+    const { clock } = makeClock();
+    const worldB = createWorld();
+    const server = bus.endpoint();
+    const pB = joinDoc(worldB, bus.endpoint(), { clock });
+    bus.deliverAll(); // hello → our manual server ignores it
+    // Buffer order [gapped, clean]: the gapped frame poisons the drain FIRST;
+    // the clean one must survive into the replacement's buffer, not be applied
+    // to the just-closed session.
+    server.send(frame(K.UPDATE, doc.update2));
+    server.send(frame(K.UPDATE, doc.update1));
+    bus.deliverAll();
+    server.send(frame(K.SNAPSHOT_OFFER, doc.base));
+    bus.deliverAll(); // base imports; drain hits the gap → internal re-bootstrap
+    server.send(frame(K.SNAPSHOT_OFFER, doc.full())); // answers the re-hello
+    bus.deliverAll(); // replacement active; the preserved frame drains (dedup no-op)
+    const resB = await pB;
+    cleanups.push(() => resB.leave());
+    worldB.sync();
+    expect(findAt(worldB, 20, 0)).toBeDefined(); // full state recovered, no crash
   });
 });
 

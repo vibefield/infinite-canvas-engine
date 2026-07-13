@@ -128,6 +128,22 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
     return false;
   };
 
+  /** The subset of `hits` on `target`'s chain — the capture restriction, so a
+   *  held pointer's moves/up/cancel never leak to a sibling mesh in the same
+   *  island. Non-empty result ⟺ `chainHas(result, target)`. */
+  const filterToChain = (hits: readonly Intersection[], target: Object3D): Intersection[] => {
+    const kept: Intersection[] = [];
+    for (const h of hits) {
+      for (let obj: Object3D | null = h.object; obj !== null; obj = obj.parent) {
+        if (obj === target) {
+          kept.push(h);
+          break;
+        }
+      }
+    }
+    return kept;
+  };
+
   /** Screen → (GL widget entity, island intersections); undefined off-GL. */
   const castAt = (
     screenX: number,
@@ -163,6 +179,19 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
     handle.scene.updateMatrixWorld(true);
     raycaster.setFromCamera(ndc, cam3);
     return { entity: hit, hits: raycaster.intersectObjects(handle.scene.children, true) };
+  };
+
+  /** Cast at screen restricted to a live capture: same island AND the
+   *  capturing object's chain. Empty (off-content or over a sibling) → the
+   *  dispatcher's `only` fallback still delivers to the capturer. */
+  const captureHits = (
+    x: number,
+    y: number,
+    capture: { entity: Entity; downObject: Object3D | undefined },
+  ): readonly Intersection[] => {
+    const cast = castAt(x, y);
+    if (cast === undefined || cast.entity !== capture.entity) return [];
+    return capture.downObject === undefined ? cast.hits : filterToChain(cast.hits, capture.downObject);
   };
 
   /** R3F bubbling: per intersection, walk up; dedupe eventObjects; stop on stopPropagation. */
@@ -316,8 +345,7 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
 
       if (kind === "move") {
         if (capture !== undefined) {
-          const cast = castAt(screenX, screenY);
-          const hits = cast !== undefined && cast.entity === capture.entity ? cast.hits : [];
+          const hits = captureHits(screenX, screenY, capture);
           dispatch("onPointerMove", "pointermove", capture.entity, hits, native, capture.downObject);
           return true;
         }
@@ -350,8 +378,7 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
         return false;
       }
       captures.delete(native.pointerId);
-      const cast = castAt(screenX, screenY);
-      const hits = cast !== undefined && cast.entity === capture.entity ? cast.hits : [];
+      const hits = captureHits(screenX, screenY, capture);
       if (kind === "up") {
         const { claimedBy } = dispatch("onPointerUp", "pointerup", capture.entity, hits, native, capture.downObject);
         // Click pairs down+up on the same claiming object (R3F semantics) —

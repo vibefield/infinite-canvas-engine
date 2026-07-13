@@ -107,6 +107,38 @@ describe("wireMeasurement", () => {
     expect(ro.disconnected).toBe(true);
   });
 
+  it("forced remeasure records the UNSCALED border-box (offsetWidth), not the camera transform's inflated getBoundingClientRect", async () => {
+    const store = fakeStore();
+    const e = ent(3);
+    // The host lives under a content plane that carries the camera zoom as a CSS
+    // transform; getBoundingClientRect would fold that scale in (zoomed CSS px
+    // recorded as world size), while offsetWidth/offsetHeight are the layout
+    // border-box — transform-independent, matching the ResizeObserver path.
+    const plane = document.createElement("div");
+    plane.style.transform = "scale(2)";
+    const el = document.createElement("div");
+    plane.appendChild(el);
+    // happy-dom does no layout, so fake both reads: layout border-box 220×140,
+    // visual rect doubled by the scale(2).
+    Object.defineProperty(el, "offsetWidth", { value: 220, configurable: true });
+    Object.defineProperty(el, "offsetHeight", { value: 140, configurable: true });
+    el.getBoundingClientRect = () => ({ width: 440, height: 280 }) as unknown as DOMRect;
+    const queue = createMeasureQueue();
+
+    // No `measure` override — this exercises the real defaultMeasure.
+    wireMeasurement(store, { hostFor: (x) => (x === e ? el : undefined) }, queue);
+    await tick();
+
+    store.set([{ entity: e, hidden: false }]); // mount
+    await tick();
+    store.set([{ entity: e, hidden: true }]); // hide
+    await tick();
+    store.set([{ entity: e, hidden: false }]); // show → forced remeasure
+    await tick();
+
+    expect(queue.drain()).toEqual([{ entity: e, w: 220, h: 140 }]); // UNSCALED, not 440×280
+  });
+
   it("never force-enqueues a 0×0 sample on show (a still-collapsed host stays out of the queue)", async () => {
     const store = fakeStore();
     const e = ent(2);

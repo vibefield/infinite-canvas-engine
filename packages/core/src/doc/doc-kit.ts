@@ -208,7 +208,15 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
   }
 
   const report = readDocVersionReport(doc);
-  const verdict = (opts.onGate ?? ((_, v) => v))(report, gateVerdict(report));
+  let verdict: ReturnType<typeof gateVerdict>;
+  try {
+    verdict = (opts.onGate ?? ((_, v) => v))(report, gateVerdict(report));
+  } catch (err) {
+    // A throwing policy callback must not break open()'s no-throw contract —
+    // during network bootstrap it would escape an inbound channel callback and
+    // leave the join promise pending forever. Quarantine instead.
+    return { ok: false, reason: `ice: onGate callback threw — ${String(err)}`, report };
+  }
   if (verdict === "reject") {
     return { ok: false, reason: "ice: version gate rejected the document", report };
   }

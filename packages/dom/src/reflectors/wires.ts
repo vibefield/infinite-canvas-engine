@@ -26,7 +26,7 @@
  * preview is an out-of-ECS buffer with no ECS stamp, exactly like the marquee
  * buffer the chrome reflector consumes), but a full re-stroke happens only when
  * something visible changed — private observers on Camera / [Position,Size] /
- * [Wire] / [Selected] / ports / [RoutedConnect] arm a dirty flag, and the preview
+ * [MeasuredSize] / [Wire] / [Selected] / ports / [RoutedConnect] arm a dirty flag, and the preview
  * buffer is diffed by value each frame. A static scene with an idle preview
  * re-strokes zero times after first paint.
  *
@@ -120,6 +120,7 @@ export const DEFAULT_WIRES_CONFIG: WiresConfig = {
 
 const wireQ = defineQuery([Wire]);
 const geometryQ = defineQuery([Position, Size]);
+const measuredQ = defineQuery([MeasuredSize]);
 const selectedQ = defineQuery([Selected]);
 const portQ = defineQuery([Port, PortAnchor]);
 const routedConnectQ = defineQuery([RoutedConnect]);
@@ -244,6 +245,10 @@ export function createWiresReflector(
     world.reactive.observeResource(Camera, wake),
     world.reactive.observeQuery(wireQ, wake, { cols: [] }),
     world.reactive.observeQuery(geometryQ, wake, { cols: [Position, Size] }),
+    // MeasuredSize rides its own observer (readRect prefers it over Size): adding
+    // it to geometryQ's cols would require it in the query and drop widgets
+    // without the rider. An auto-sized node growing via measurement re-strokes.
+    world.reactive.observeQuery(measuredQ, wake, { cols: [MeasuredSize] }),
     world.reactive.observeQuery(selectedQ, wake, { cols: [] }),
     world.reactive.observeQuery(portQ, wake, { cols: [PortAnchor] }),
     world.reactive.observeQuery(routedConnectQ, wake, { cols: [] }),

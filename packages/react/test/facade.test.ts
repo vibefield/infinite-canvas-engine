@@ -20,6 +20,7 @@ import {
   type CanvasEngine,
   type Entity,
 } from "@ice/core";
+import * as iceDom from "@ice/dom";
 import { StrictMode, act, createElement, useState, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -314,5 +315,36 @@ describe("<InfiniteCanvas>", () => {
     act(() => {
       root.unmount();
     });
+  });
+
+  it("disposes every domWidgets reflector it creates — a StrictMode remount leaks no observers", () => {
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+
+    // Wrap the factory so each constructed reflector's dispose is a spy — the
+    // domWidgets reflector installs private reactive observers on the shared,
+    // engine-owned world, so a missed dispose stacks a subscription set per remount.
+    const disposeSpies: Array<ReturnType<typeof vi.spyOn>> = [];
+    const realFactory = iceDom.createDomWidgetsReflector;
+    vi.spyOn(iceDom, "createDomWidgetsReflector").mockImplementation((...args) => {
+      const refl = realFactory(...(args as Parameters<typeof realFactory>));
+      disposeSpies.push(vi.spyOn(refl, "dispose"));
+      return refl;
+    });
+
+    const { engine } = makeEngine();
+    const mountEl = document.createElement("div");
+    document.body.appendChild(mountEl);
+    const root = createRoot(mountEl);
+    act(() => {
+      root.render(createElement(StrictMode, null, createElement(InfiniteCanvas, { engine })));
+    });
+    act(() => root.unmount());
+
+    // StrictMode constructs the reflector twice (mount → interleaved cleanup →
+    // mount); the fix disposes BOTH — the first at the interleaved cleanup, the
+    // second at unmount.
+    expect(disposeSpies.length).toBeGreaterThanOrEqual(2);
+    for (const spy of disposeSpies) expect(spy).toHaveBeenCalled();
   });
 });

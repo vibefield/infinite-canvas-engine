@@ -7,23 +7,32 @@
  * own docs prescribe.
  */
 import type { CanvasEngine } from "@ice/core";
-import { InfiniteCanvas } from "@ice/react";
-import { attachDevtools } from "@ice/devtools";
-import type { CSSProperties, ReactElement } from "react";
+import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
+import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
+import { useCallback, useEffect, useRef, type CSSProperties, type ReactElement } from "react";
 import { Toolbar } from "./toolbar";
 
 const CANVAS_STYLE: CSSProperties = { position: "absolute", inset: 0 };
 
 export function App({ engine }: { engine: CanvasEngine }): ReactElement {
+  // Keep the devtools handle so a StrictMode remount (onReady fires again from
+  // InfiniteCanvas's mount effect) detaches the prior panel + its 500 ms
+  // interval before attaching a new one, instead of stacking them.
+  const devtoolsRef = useRef<DevtoolsHandle | null>(null);
+  const onReady = useCallback(({ engine: handle }: InfiniteCanvasHandle) => {
+    devtoolsRef.current?.detach();
+    // handle is the CanvasEngine facade; devtools reads the core Engine.
+    devtoolsRef.current = attachDevtools(handle.engine, { intervalMs: 500 });
+  }, []);
+  useEffect(
+    () => () => {
+      devtoolsRef.current?.detach();
+      devtoolsRef.current = null;
+    },
+    [],
+  );
   return (
-    <InfiniteCanvas
-      engine={engine}
-      style={CANVAS_STYLE}
-      onReady={({ engine: handle }) => {
-        // handle is the CanvasEngine facade; devtools reads the core Engine.
-        attachDevtools(handle.engine, { intervalMs: 500 });
-      }}
-    >
+    <InfiniteCanvas engine={engine} style={CANVAS_STYLE} onReady={onReady}>
       <Toolbar />
     </InfiniteCanvas>
   );

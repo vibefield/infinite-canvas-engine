@@ -72,7 +72,7 @@ export function createPresencePublish(
   session: PresenceSession,
   opts: PresencePublishOpts = {},
 ): PublishHook {
-  const { eph, localPeer } = session;
+  const { eph } = session;
   const keyOf = opts.keyOf;
   const cap = opts.maxKeys ?? SELECTION_KEY_CAP;
 
@@ -80,10 +80,22 @@ export function createPresencePublish(
   let lastCursor: CursorFacet | undefined;
   let summaryPresent = false;
   let lastSummary: SummaryFacet | undefined;
+  // `session.localPeer` is a GETTER — a world reset re-mints it (the
+  // presence-kit self-heal). Read through per publish; when the identity
+  // swaps, drop the change-suppression caches too: the fresh peer carries NO
+  // facets, so an "unchanged" cursor must still be re-added.
+  let localPeer = session.localPeer;
 
   // The engine hands the hook its world; it is `session`'s world by construction
   // (installPresence registers on the same engine), so we read the captured one.
   return () => {
+    if (session.localPeer !== localPeer) {
+      localPeer = session.localPeer;
+      cursorPresent = false;
+      lastCursor = undefined;
+      summaryPresent = false;
+      lastSummary = undefined;
+    }
     publishCursor(world);
     publishSelection(world);
   };

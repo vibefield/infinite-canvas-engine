@@ -13,12 +13,14 @@ import {
   createEngine,
   createRecordingCommitSink,
   defineQuery,
+  defineWidget,
   type Entity,
   HandleSpec,
   installInteractionStack,
   Movable,
   NO_MODS,
   Position,
+  PrefabId,
   Resizable,
   Selectable,
   Selected,
@@ -27,6 +29,11 @@ import {
 } from "../../src";
 
 const handleQ = defineQuery([HandleSpec]);
+
+// A widget whose declared floor (defineWidget minSize) resize must respect —
+// resolved through the target's PrefabId. Registered once at module scope.
+const MINBOX = "resize-minbox";
+defineWidget({ type: MINBOX, surface: "gl", component: null, minSize: { w: 80, h: 60 } });
 
 function makeRig() {
   const world = createWorld();
@@ -103,5 +110,46 @@ describe("resize through selection chrome (full stack)", () => {
     expect(rig.sink.intents[0]?.kind).toBe("resize");
     const writeEntities = new Set(rig.sink.intents[0]?.writes.map((w) => w.entity as Entity));
     expect(writeEntities.has(box)).toBe(true);
+  });
+
+  it("clamps a widget's resize to its defineWidget minSize, keeping the anchor corner stationary", () => {
+    const rig = makeRig();
+    // 200×200 at (100,100) → SE corner (300,300); minSize is 80×60.
+    const box = rig.world.spawn({
+      components: [
+        [PrefabId, { id: MINBOX }],
+        [Position, { x: 100, y: 100 }],
+        [Size, { w: 200, h: 200 }],
+        [StackZ, { z: 0 }],
+      ],
+      tags: [Selectable, Movable, Resizable],
+    });
+    rig.step();
+
+    rig.mouse("down", 200, 200, 1); // tap the box center → select
+    rig.step();
+    rig.mouse("up", 200, 200, 0);
+    rig.step();
+    expect(rig.world.hasTag(box, Selected)).toBe(true);
+    rig.step(3); // reap tap, chrome spawns handles, spatialSync indexes them
+    expect(rig.handleCount()).toBe(8);
+
+    // Grab the SE handle and drag far past the minimum toward NW. The drag
+    // re-origins at dead-zone exit (285,285), so totals are measured from there.
+    rig.mouse("down", 300, 300, 1);
+    rig.step();
+    rig.mouse("move", 285, 285, 1); // 21px — exits slop, claims + routes Resize, total re-origins here
+    rig.step();
+    rig.mouse("move", 100, 100, 1); // would shrink to 15×15 — below the 80×60 floor
+    rig.step();
+
+    // Clamped at the floor; the NW anchor corner never drifts.
+    expect(rig.world.read(box, Size)).toEqual({ w: 80, h: 60 });
+    expect(rig.world.read(box, Position)).toEqual({ x: 100, y: 100 });
+
+    rig.mouse("up", 100, 100, 0);
+    rig.step();
+    expect(rig.sink.intents).toHaveLength(1);
+    expect(rig.sink.intents[0]?.kind).toBe("resize");
   });
 });

@@ -314,7 +314,11 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         }
       }
     },
-    { name: "recognizerSpawn" },
+    // The multi-tap REJOIN rebases a Pending tap's Down (edit().set above); spawns
+    // are structural, not value writes. Sole declared Down writer in ctl:spawn
+    // (cancelSweep/wheelSpawn/recognizerIntegrity write no cells) → no same-phase
+    // co-writer, so no orderIndependent attestation.
+    { name: "recognizerSpawn", access: { write: [Down] } },
   );
 
   // Wheel recognizer spawn rides the same ctl:spawn slot: wheel deltas landed

@@ -17,6 +17,7 @@ import {
   defineQuery,
   defineWidget,
   type Entity,
+  MeasuredSize,
   Port,
   PortAnchor,
   Position,
@@ -272,5 +273,26 @@ describe("wires reflector", () => {
     world.setResource(Camera, { x: 50, y: 0, zoom: 1, gesturing: false });
     step();
     expect(reflector.redraws()).toBe(2); // pan → wires re-project
+  });
+
+  it("re-strokes when an auto-sized endpoint's MeasuredSize VALUE grows (anchor tracks the measured box)", () => {
+    const { world, step, reflector } = setup();
+    const a = spawnNode(world, 0, 0);
+    const b = spawnNode(world, 300, 0);
+    spawnWire(world, a, b);
+    world.addComponent(a, MeasuredSize, { w: 120, h: 80 }); // auto-sized from the first measurement
+    step();
+    const base = reflector.redraws();
+
+    step();
+    expect(reflector.redraws()).toBe(base); // idle → no re-stroke
+
+    // A later measurement GROWS the box: a pure MeasuredSize value change — no
+    // archetype move (a already has the rider), Position/Size untouched, so the
+    // [Position,Size] observer stays silent. readRect prefers MeasuredSize, so the
+    // wire anchor moves; only a MeasuredSize observer catches this.
+    world.edit(a).set(MeasuredSize, { w: 200, h: 140 });
+    step();
+    expect(reflector.redraws()).toBe(base + 1);
   });
 });

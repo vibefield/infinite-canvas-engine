@@ -184,3 +184,40 @@ describe("remote-cursor derive system", () => {
     expect(B.world.firstOf(remoteCursorVisualQ)).toBeUndefined();
   });
 });
+
+// --- world.reset self-heal (2026-07-13 review: internal re-bootstrap) --------------------------------
+
+describe("presence survives world.reset (doc close / internal re-bootstrap)", () => {
+  it("re-mints the local peer, re-projects remotes, and keeps the mutator usable", async () => {
+    const a = makePeer("A", "#f00");
+    const b = makePeer("B", "#0f0");
+
+    // Round-trip first: B sees A.
+    a.session.eph.addComponent(a.session.localPeer, PresenceCursor, { x: 1, y: 2, device: "mouse" });
+    await converge(a, b, () => firstRemotePeer(b) !== undefined);
+    expect(firstRemotePeer(b)).toBeDefined();
+    const oldLocal = b.session.localPeer;
+
+    // The doc layer resets B's world (close / re-bootstrap): every presence
+    // entity dies while the loro store + binding + timers survive.
+    b.world.reset();
+    await sleep(0); // the heal is deferred one microtask past the reset emit
+
+    // Local identity re-minted on a LIVE entity (the session getter tracks it).
+    expect(b.session.localPeer).not.toBe(oldLocal);
+    b.world.sync();
+    expect(b.world.isAlive(b.session.localPeer)).toBe(true);
+    expect(b.world.hasTag(b.session.localPeer, PresencePeer)).toBe(true);
+
+    // Remotes re-project from A's ongoing traffic — the fresh binding has an
+    // empty blob-diff cache, so even a same-value refresh recreates the entity.
+    a.session.eph.edit(a.session.localPeer).set(PresenceCursor, { x: 3, y: 4, device: "mouse" });
+    await converge(a, b, () => firstRemotePeer(b) !== undefined);
+    expect(firstRemotePeer(b)).toBeDefined();
+
+    // The local mutator still works post-heal (the publish path's writes).
+    b.session.eph.addComponent(b.session.localPeer, PresenceCursor, { x: 9, y: 9, device: "mouse" });
+    b.world.sync();
+    expect(b.world.has(b.session.localPeer, PresenceCursor)).toBe(true);
+  });
+});

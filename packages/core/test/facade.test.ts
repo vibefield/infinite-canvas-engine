@@ -239,3 +239,83 @@ describe("createCanvasEngine (design-005 §4)", () => {
     expect(s2.store.canUndo()).toBe(true);
   });
 });
+
+// --- read-only enforcement + gate hardening + autosave lifecycle (2026-07-13 review) -----------------
+
+describe("read-only sessions refuse every sanctioned write surface", () => {
+  function readOnlyRig() {
+    const src = makeRig();
+    src.ce.docs.create();
+    src.ce.ops.spawnWidget("facade:card", { x: 10, y: 10 });
+    const s = src.ce.docs.current();
+    if (s === undefined) throw new Error("no source session");
+    const bytes = s.exportEnvelope();
+    src.ce.dispose();
+
+    const { ce } = makeRig();
+    const result = ce.docs.open(bytes, { onGate: () => "readOnly" });
+    if (!result.ok) throw new Error(`open failed: ${result.reason}`);
+    return { ce, session: result.session };
+  }
+
+  it("ops, undo/redo all refuse — the sink swap alone was not enforcement", () => {
+    const { ce, session } = readOnlyRig();
+    expect(session.readOnly).toBe(true);
+    expect(() => ce.ops.spawnWidget("facade:card", { x: 0, y: 0 })).toThrow(/read-only/);
+    expect(() => ce.ops.deleteSelection()).toThrow(/read-only/);
+    expect(() => ce.ops.duplicateSelection()).toThrow(/read-only/);
+    expect(() => ce.ops.reorder([], "top")).toThrow(/read-only/);
+    expect(() => ce.ops.setWidgetProps(0 as never, {})).toThrow(/read-only/);
+    expect(ce.docs.undo()).toBe(false);
+    expect(ce.docs.redo()).toBe(false);
+    ce.dispose();
+  });
+});
+
+describe("a throwing onGate callback quarantines instead of escaping (2026-07-13 review)", () => {
+  it("docs.open returns { ok: false } with the thrown reason", () => {
+    const src = makeRig();
+    src.ce.docs.create();
+    const s = src.ce.docs.current();
+    if (s === undefined) throw new Error("no source session");
+    const bytes = s.exportEnvelope();
+    src.ce.dispose();
+
+    const { ce } = makeRig();
+    const result = ce.docs.open(bytes, {
+      onGate: () => {
+        throw new Error("policy boom");
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/onGate callback threw.*policy boom/);
+    ce.dispose();
+  });
+});
+
+describe("facade autosaves stop at closeDoc (2026-07-13 review)", () => {
+  it("a pending autosave timer cannot export the detached old session over a new doc", () => {
+    const { ce } = makeRig();
+    ce.docs.create();
+    let pending: (() => void) | undefined;
+    const puts: Uint8Array[] = [];
+    ce.docs.autosave(
+      { put: (b: Uint8Array) => void puts.push(b) },
+      {
+        now: () => 0,
+        schedule: (fn: () => void) => {
+          pending = fn;
+          return () => {
+            pending = undefined;
+          };
+        },
+      },
+    );
+    expect(pending).toBeDefined(); // armed at start (start-dirty)
+    ce.docs.close(); // must STOP the autosave, not orphan its timer
+    expect(pending).toBeUndefined();
+    ce.docs.create(); // the new doc's storage stays untouched by the old handle
+    expect(puts).toHaveLength(0);
+    ce.dispose();
+  });
+});

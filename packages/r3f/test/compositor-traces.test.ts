@@ -463,6 +463,43 @@ describe("nav-frame membership (design-004 §7 — Active drives phase)", () => 
     expect(stats.evicted).toBe(0);
   });
 
+  it("Dormant hides its quad and ages toward eviction; re-entry re-shows it", () => {
+    const rig = createGLRig();
+    const a = rig.spawnCard(0, 0);
+    const b = rig.spawnCard(200, 0);
+    rig.mount(a);
+    rig.mount(b);
+    rig.pass(); // first paint (Waking)
+    rig.pass(); // settle → Warm, both quads composited and touched
+    expect(rig.quads.visible.get(b)).toBe(true);
+
+    const lastUsed = (key: number): number | undefined =>
+      rig.pool.entryInfos().find((i) => i.key === key)?.lastUsedMs;
+
+    // Navigate away from b's frame (activeMembership clears Active+Visible).
+    rig.world.removeTag(b, Active);
+    rig.world.removeTag(b, Visible);
+    rig.pass();
+    expect(rig.bridge.state.get(b)?.phase).toBe("Dormant");
+    expect(rig.quads.visible.get(b)).toBe(false); // retained FBO no longer composites
+    const dormantMark = lastUsed(b);
+    expect(dormantMark).not.toBeUndefined(); // FBO retained, not evicted
+
+    // Aging: the retained FBO is never re-touched while Dormant, even as its
+    // Active peer keeps compositing (and bumping the shared LRU clock).
+    rig.pass();
+    rig.pass();
+    expect(lastUsed(b)).toBe(dormantMark);
+
+    // Re-entry: Active (+Visible) again → Warm from the retained texture; the
+    // quad composites again next pass (visibility derived, never latched off).
+    rig.world.addTag(b, Active);
+    rig.world.addTag(b, Visible);
+    rig.pass();
+    expect(rig.bridge.state.get(b)?.phase).toBe("Warm");
+    expect(rig.quads.visible.get(b)).toBe(true);
+  });
+
   it("an Active + animating island is Hot while a non-Active peer is Dormant", () => {
     const rig = createGLRig();
     const a = rig.spawnCard(0, 0);

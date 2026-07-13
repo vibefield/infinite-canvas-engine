@@ -185,6 +185,18 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
       }
     };
 
+    // EVERY channel write goes through this guard: a transport throw (a socket
+    // flipping state between the readiness check and send) must fail the join,
+    // not strand a half-attached session — and an outbound-subscription send
+    // must never escape into the user's local transaction (2026-07-13 review).
+    const send = (bytes: Uint8Array): void => {
+      try {
+        channel.send(bytes);
+      } catch (err) {
+        fail(err);
+      }
+    };
+
     // A post-resolve abort is the caller closing a live join — leave() semantics,
     // deliberately NOT routed to onError (fail() would report every normal close).
     const onAbort = (): void => {
@@ -232,7 +244,7 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
       active = true;
       // Local commits → UPDATE frames. Remote-origin imports never fire this
       // (durable's onLocalBatch origin filter), so an import is never rebroadcast.
-      unsubOutbound = s.store.subscribeOutbound((bytes) => channel.send(frame(K_UPDATE, bytes)));
+      unsubOutbound = s.store.subscribeOutbound((bytes) => send(frame(K_UPDATE, bytes)));
       opts.onSession?.(s);
       if (!settled) {
         settled = true;
@@ -282,11 +294,26 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
         return;
       }
       const s = result.session;
+      session = s; // BEFORE the send: a throwing transport must find it in teardown
       // §6.5: import base → re-broadcast own base → drain buffer. Go active before
       // draining so late live UPDATEs (post-drain) apply through the active path.
-      channel.send(frame(K_SNAPSHOT_OFFER, s.exportEnvelope())); // envelope-framed (a peer may OPEN it)
+      send(frame(K_SNAPSHOT_OFFER, s.exportEnvelope())); // envelope-framed (a peer may OPEN it)
+      if (left) return; // the offer send failed — teardown already closed s
       goActive(s, "joiner");
-      for (const bytes of buffered.splice(0)) applyRemoteSafe(bytes);
+      const drained = buffered.splice(0);
+      for (let i = 0; i < drained.length; i++) {
+        const bytes = drained[i];
+        if (bytes === undefined) continue;
+        applyRemoteSafe(bytes);
+        if (left || !active || session !== s) {
+          // A PendingImportError mid-drain re-bootstrapped (or quarantined) the
+          // session — the rest of these frames belong to the REPLACEMENT's
+          // buffer (they may import cleanly once the fresh base lands), not to
+          // the session that just closed under us.
+          buffered.push(...drained.slice(i + 1));
+          break;
+        }
+      }
     };
 
     const rebootstrap = (): void => {
@@ -310,7 +337,7 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
       active = false;
       buffered.length = 0;
       opts.onSession?.(undefined); // no live session until the re-join lands
-      channel.send(frame(K_HELLO, utf8.encode(joinerId)));
+      send(frame(K_HELLO, utf8.encode(joinerId)));
       armTimeout();
     };
 
@@ -359,11 +386,24 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
     opts.signal?.addEventListener("abort", onAbort);
 
     roomSubs.push(channel.subscribe(onFrame));
-    const unsubPresence = opts.presence?.onOutbound((b) => channel.send(frame(K_PRESENCE, b)));
+    const unsubPresence = opts.presence?.onOutbound((b) => send(frame(K_PRESENCE, b)));
     if (unsubPresence !== undefined) roomSubs.push(unsubPresence);
 
     // Broadcast hello, buffer inbound, wait for a base (or the silence timeout).
-    channel.send(frame(K_HELLO, utf8.encode(joinerId)));
-    armTimeout();
+    // A transport that reports readiness GATES both: arming the ~800 ms window
+    // while a socket is still CONNECTING lets a slow connect elapse it and seed
+    // a divergent second doc offline — whose seeded state (pre-outbound-
+    // subscription) would never reach the existing room (2026-07-13 review).
+    const begin = (): void => {
+      if (left) return; // aborted while the transport was connecting
+      send(frame(K_HELLO, utf8.encode(joinerId)));
+      if (left) return; // the hello itself failed — already torn down
+      armTimeout();
+    };
+    if (channel.ready !== undefined) {
+      channel.ready().then(begin, (err: unknown) => fail(err));
+    } else {
+      begin();
+    }
   });
 }

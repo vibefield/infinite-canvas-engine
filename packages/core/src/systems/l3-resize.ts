@@ -7,7 +7,9 @@
  * zoomAtClaim`, resized about the FIXED opposite edge/corner of the grabbed
  * handle (`n`/`s` height-only, `e`/`w` width-only, corners both). Modifiers ride
  * the watched pointer's `PointerMods`: `alt` = resize about center, `shift` =
- * preserve aspect (corner handles). Min size clamps to 1×1. `JustEnded` emits ONE
+ * preserve aspect (corner handles). Min size clamps to the target widget's
+ * `defineWidget` `minSize` (via `PrefabId`), or 1×1 for non-widget resizables.
+ * `JustEnded` emits ONE
  * `resize` commit (Position+Size per live target); `JustCancelled`/`JustFailed`
  * restore from `Grab`. Every terminal path removes `Grab` and the `Drags` edges
  * (mirrors l3-behave's clearGestureState; resize has no DropTarget).
@@ -28,6 +30,8 @@ import {
   Watches,
 } from "../catalog";
 import type { CommitSink, CommitWrite } from "../engine/commit-sink";
+import { PrefabId } from "../schema/prefab";
+import { widgets } from "../widget/define-widget";
 
 const P = GesturePhases;
 const resizeDragQ = defineQuery([Drag, RoutedResize]);
@@ -50,6 +54,8 @@ function computeResize(
   dy: number,
   alt: boolean,
   shift: boolean,
+  minW: number,
+  minH: number,
 ): RectVals {
   const affectsLeft = anchor === "w" || anchor === "nw" || anchor === "sw";
   const affectsRight = anchor === "e" || anchor === "ne" || anchor === "se";
@@ -100,14 +106,14 @@ function computeResize(
     }
   }
 
-  // Min 1×1 — adjust the moving edge so the fixed edge stays put.
-  if (right - left < 1) {
-    if (affectsLeft && !affectsRight) left = right - 1;
-    else right = left + 1;
+  // Min size — adjust the moving edge so the fixed (anchor) edge stays put.
+  if (right - left < minW) {
+    if (affectsLeft && !affectsRight) left = right - minW;
+    else right = left + minW;
   }
-  if (bottom - top < 1) {
-    if (affectsTop && !affectsBottom) top = bottom - 1;
-    else bottom = top + 1;
+  if (bottom - top < minH) {
+    if (affectsTop && !affectsBottom) top = bottom - minH;
+    else bottom = top + minH;
   }
 
   return { x: left, y: top, w: right - left, h: bottom - top };
@@ -119,6 +125,14 @@ export function createResizeBehavior(world: World, sink: CommitSink): System {
       if (ctx.isAlive(w) && ctx.has(w, Grab)) ctx.removeComponent(w, Grab);
     }
     ctx.removeRelation(rec, Drags);
+  };
+
+  // A resizable widget's declared floor (defineWidget `minSize`); non-widget
+  // resizables (no `PrefabId`) keep the historical 1×1.
+  const minSizeOf = (ctx: SystemCtx, w: Entity): { w: number; h: number } => {
+    const type = ctx.get(w, PrefabId)?.id;
+    const widget = typeof type === "string" ? widgets.get(type) : undefined;
+    return widget?.minSize ?? { w: 1, h: 1 };
   };
 
   return defineSystem(
@@ -142,7 +156,8 @@ export function createResizeBehavior(world: World, sink: CommitSink): System {
           for (const w of ctx.getRelations(rec, Drags)) {
             if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
             const g = ctx.read(w, Grab);
-            const rz = computeResize(g, anchor, dx, dy, alt, shift);
+            const min = minSizeOf(ctx, w);
+            const rz = computeResize(g, anchor, dx, dy, alt, shift, min.w, min.h);
             ctx.edit(w).set(Position, { x: rz.x, y: rz.y });
             ctx.edit(w).set(Size, { w: rz.w, h: rz.h });
           }
@@ -159,7 +174,8 @@ export function createResizeBehavior(world: World, sink: CommitSink): System {
             for (const w of ctx.getRelations(rec, Drags)) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
               const g = ctx.read(w, Grab);
-              const rz = computeResize(g, anchor, dx, dy, alt, shift);
+              const min = minSizeOf(ctx, w);
+              const rz = computeResize(g, anchor, dx, dy, alt, shift, min.w, min.h);
               writes.push({ entity: w, component: Position, value: { x: rz.x, y: rz.y } });
               writes.push({ entity: w, component: Size, value: { w: rz.w, h: rz.h } });
             }
