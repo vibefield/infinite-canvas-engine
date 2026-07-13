@@ -45,11 +45,16 @@ export function WidgetRoot({ world, store, hosts }: WidgetRootProps): ReactEleme
     if (!world.isAlive(entry.entity)) continue;
     const type = world.get(entry.entity, PrefabId)?.id;
     const widget = typeof type === "string" ? widgets.get(type) : undefined;
-    if (widget === undefined || widget.surface !== "dom") continue;
+    if (widget === undefined) continue;
+    // dom widgets portal their component; gl widgets portal their optional
+    // DOM CHROME — the host div lives in the content plane (P1), which stacks
+    // UNDER the GL canvas (P2), so the card body renders beneath the island's
+    // 3D content (v1's CardChrome sandwich — shared CSS with DOM cards).
+    const view = widget.surface === "dom" ? widget.component : widget.chrome;
+    if (view == null) continue;
     const target = hosts.hostFor(entry.entity);
     if (target === undefined) continue; // host lands next pass
-    const View = widget.component as ComponentType<WidgetComponentProps>;
-    if (View == null) continue;
+    const View = view as ComponentType<WidgetComponentProps>;
     portals.push(
       createPortal(
         createElement(

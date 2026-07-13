@@ -4,7 +4,18 @@
  * plane. The store here is a hand-rolled 2-method fake (the reflector consumes
  * only `subscribe`/`getSnapshot`); the real store lives in @ice/core.
  */
-import { Grab, MeasuredSize, type MountEntry, Position, Size, createEngine, createWorld, type Entity } from "@ice/core";
+import {
+  Grab,
+  MeasuredSize,
+  Position,
+  PrefabId,
+  Size,
+  createEngine,
+  createWorld,
+  defineWidget,
+  type Entity,
+  type MountEntry,
+} from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createCanvasHost } from "../src/host";
 import { createPlanes } from "../src/planes";
@@ -191,5 +202,40 @@ describe("dom-widgets host reflector", () => {
     world.removeComponent(dragged, Grab);
     engine.step(3);
     expect(planes.content.style.pointerEvents).toBe(""); // cleared on release
+  });
+});
+
+describe("GL widgets' chrome hosts never promote (v1 CardChrome sandwich, 2026-07-13)", () => {
+  it("a Grabbed gl-surface widget's host stays in the content plane (under its own model)", () => {
+    // A gl widget's host carries DOM CHROME that must remain UNDER the GL
+    // canvas — promoting to P3 would cover the widget's floating 3D content
+    // with its own opaque card. The GL side pops renderOrder-top instead.
+    defineWidget({
+      type: "dw:gl-card",
+      surface: "gl",
+      component: () => null,
+      defaultSize: { w: 10, h: 10 },
+    });
+    const { world, engine, planes, store, reflector } = setup();
+    const e = world.spawn({
+      components: [[Position, { x: 0, y: 0 }], [Size, { w: 10, h: 10 }], [PrefabId, { id: "dw:gl-card" }]],
+    });
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    const hostDiv = (reflector.hostFor(e) as HTMLElement).parentElement as HTMLElement;
+    expect(hostDiv.parentElement).toBe(planes.content);
+
+    world.addComponent(e, Grab, { x: 0, y: 0, w: 10, h: 10, z: 0 });
+    engine.step(1);
+    expect(hostDiv.parentElement).toBe(planes.content); // NOT re-parented
+    // …but it z-pops over its P1 neighbors (the within-plane twin of the
+    // grabbed quad's renderOrder-top within P2).
+    expect(hostDiv.style.zIndex).toBe("1000");
+    // And a gl-only grab does not inert the planes (no promoted host exists).
+    expect(planes.content.style.pointerEvents).toBe("");
+
+    world.removeComponent(e, Grab);
+    engine.step(2);
+    expect(hostDiv.style.zIndex).toBe(""); // pop cleared on release
   });
 });

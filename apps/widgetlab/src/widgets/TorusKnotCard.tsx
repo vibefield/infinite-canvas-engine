@@ -17,7 +17,7 @@ import { useIslandFrame } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
-import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
+import { makeGlCardChrome, type GradientStop } from "./GlCardChrome";
 
 /** v1 `medium` preset. */
 export const SIZE = { w: 329, h: 155 } as const;
@@ -53,7 +53,6 @@ function TorusKnotView({ entity, world }: WidgetComponentProps): ReactElement {
 
   return (
     <GlLiftGroup world={world} entity={entity}>
-      <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.5, size * 0.5, size * 0.7]}
         intensity={220}
@@ -92,6 +91,7 @@ export const TorusKnotCard = defineWidget({
   surface: "gl",
   animated: true,
   component: TorusKnotView,
+  chrome: makeGlCardChrome(BACKPLATE),
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 200, h: 120 },

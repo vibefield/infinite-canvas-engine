@@ -17,7 +17,7 @@ import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@i
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
 import { GlLiftGroup } from "./GlLiftGroup";
-import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
+import { makeGlCardChrome, type GradientStop } from "./GlCardChrome";
 
 /** v1 `small` preset. */
 export const SIZE = { w: 155, h: 155 } as const;
@@ -45,7 +45,6 @@ function MatteSphereView({ entity, world }: WidgetComponentProps): ReactElement 
 
   return (
     <GlLiftGroup world={world} entity={entity}>
-      <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.4, size * 0.4, size * 0.6]}
         intensity={160}
@@ -75,6 +74,7 @@ export const MatteSphereCard = defineWidget({
   surface: "gl",
   animated: false,
   component: MatteSphereView,
+  chrome: makeGlCardChrome(BACKPLATE),
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 120, h: 120 },

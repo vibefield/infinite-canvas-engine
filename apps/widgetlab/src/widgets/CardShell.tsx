@@ -37,7 +37,8 @@ export function CardShell({
   world: World;
   entity: Entity;
   background?: string;
-  children: ReactNode;
+  /** Omitted for GL cards — their content floats in the island above (GlCardChrome). */
+  children?: ReactNode;
 }) {
   const [lifted, setLifted] = useState(false);
   // v1's two glow tiers: "target" (accepting container — strong, -t vars) and

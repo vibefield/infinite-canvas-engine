@@ -23,7 +23,7 @@ import { useIslandFrame } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
-import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
+import { makeGlCardChrome, type GradientStop } from "./GlCardChrome";
 
 /** v1 `large` preset. */
 export const SIZE = { w: 329, h: 345 } as const;
@@ -66,7 +66,6 @@ function GoldKnotView({ entity, world }: WidgetComponentProps): ReactElement {
 
   return (
     <GlLiftGroup world={world} entity={entity}>
-      <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       {/* v1-verbatim: ambient only — the shared island environment (GLViews
           environment seam) carries the metallic response, exactly like v1. */}
       <ambientLight intensity={0.15} />
@@ -91,6 +90,7 @@ export const GoldKnotCard = defineWidget({
   surface: "gl",
   animated: true,
   component: GoldKnotView,
+  chrome: makeGlCardChrome(BACKPLATE),
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 240, h: 200 },

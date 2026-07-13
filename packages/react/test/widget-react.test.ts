@@ -171,3 +171,34 @@ describe("useWidgetProps: malformed json cells never crash render", () => {
     expect(memoEl()?.getAttribute("data-items")).toBe('["seed"]');
   });
 });
+
+function GlChromeView({ entity }: WidgetComponentProps) {
+  return createElement("div", { "data-gl-chrome": String(entity) });
+}
+defineWidget({
+  type: "rt:gl-chromed",
+  surface: "gl",
+  component: () => null, // island content — rendered by @ice/r3f, not here
+  chrome: GlChromeView,
+  defaultSize: { w: 100, h: 60 },
+});
+defineWidget({
+  type: "rt:gl-bare",
+  surface: "gl",
+  component: () => null,
+  defaultSize: { w: 100, h: 60 },
+});
+
+describe("GL chrome portals (v1 CardChrome-under-the-canvas, 2026-07-13)", () => {
+  it("portals a gl widget's chrome into its content-plane host; bare gl widgets portal nothing", () => {
+    const rig = makeRig();
+    const a = spawnWidget(rig.session.store, rig.world, "rt:gl-chromed", { x: 10, y: 10 });
+    spawnWidget(rig.session.store, rig.world, "rt:gl-bare", { x: 300, y: 10 });
+    rig.step(3); // project → equip → mount
+    rig.render();
+
+    const chromes = rig.hostRoot.querySelectorAll("[data-gl-chrome]");
+    expect(chromes.length).toBe(1); // the bare gl widget contributed no portal
+    expect(chromes[0]?.getAttribute("data-gl-chrome")).toBe(String(a));
+  });
+});

@@ -72,6 +72,16 @@ export interface WidgetDef {
   readonly surface: WidgetSurface;
   /** Framework component (opaque to core — the react package narrows it). */
   readonly component: unknown;
+  /**
+   * GL only: a DOM chrome component portaled into the widget's CONTENT-plane
+   * host (P1), which stacks UNDER the GL canvas (P2) — v1's proven
+   * CardChrome-beneath-the-canvas sandwich. The island renders ONLY the 3D
+   * content; the card body (gradient, radius, ring, shadow, lift spring,
+   * hover/overlap glow) is DOM and shares the app's CSS with DOM widgets.
+   * Opaque to core — the react package narrows it. Ignored for dom-surface
+   * widgets (their component IS the chrome).
+   */
+  readonly chrome?: unknown;
   readonly sizeMode?: SizeMode;
   readonly defaultSize?: { readonly w: number; readonly h: number };
   readonly minSize?: { readonly w: number; readonly h: number };
@@ -127,6 +137,8 @@ export interface WidgetType {
   readonly propToGroup: Readonly<Record<string, string>>;
   readonly surface: WidgetSurface;
   readonly component: unknown;
+  /** GL widgets: DOM chrome under the canvas (see WidgetDef.chrome). */
+  readonly chrome: unknown;
   readonly sizeMode: SizeMode;
   readonly defaultSize: { readonly w: number; readonly h: number };
   readonly minSize: { readonly w: number; readonly h: number };
@@ -318,6 +330,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     propToGroup,
     surface: def.surface,
     component: def.component,
+    chrome: def.chrome,
     sizeMode: def.sizeMode ?? "fixed",
     defaultSize,
     minSize: def.minSize ?? { w: 40, h: 40 },

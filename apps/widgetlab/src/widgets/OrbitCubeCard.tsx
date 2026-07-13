@@ -42,7 +42,7 @@ import { useIslandInvalidate } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import type { Mesh } from "three";
-import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
+import { makeGlCardChrome, type GradientStop } from "./GlCardChrome";
 
 /** v1 `medium` preset. */
 export const SIZE = { w: 329, h: 155 } as const;
@@ -132,7 +132,6 @@ function OrbitCubeView({ entity, world }: WidgetComponentProps): ReactElement {
 
   return (
     <GlLiftGroup world={world} entity={entity}>
-      <GlCardBackplate width={width} height={height} stops={BACKPLATE} />
       <pointLight
         position={[size * 0.6, size * 0.6, size * 0.8]}
         intensity={200}
@@ -177,6 +176,7 @@ export const OrbitCubeCard = defineWidget({
   surface: "gl",
   animated: false, // event-driven; repaints scheduled via useIslandInvalidate
   component: OrbitCubeView,
+  chrome: makeGlCardChrome(BACKPLATE),
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 200, h: 120 },

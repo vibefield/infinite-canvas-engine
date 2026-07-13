@@ -39,8 +39,10 @@ import {
   Grab,
   MeasuredSize,
   Position,
+  PrefabId,
   Size,
   defineQuery,
+  widgets,
   type Entity,
   type MountEntry,
   type ReflectorDef,
@@ -123,6 +125,17 @@ export function createDomWidgetsReflector(
     world.reactive.observeQuery(grabQuery, () => { promoteDirty = true; }, { cols: [] }),
   ];
 
+  /**
+   * GL widgets' hosts carry DOM CHROME that must stay in the content plane
+   * (P1, UNDER the GL canvas) even while grabbed — promoting to P3 would
+   * cover the widget's own 3D content with its opaque card. The GL side pops
+   * the grabbed quad renderOrder-top within P2 instead (design-004 §1).
+   */
+  function promotable(e: Entity): boolean {
+    const type = world.get(e, PrefabId)?.id;
+    return typeof type !== "string" || widgets.get(type)?.surface !== "gl";
+  }
+
   function readGeom(e: Entity): Geom {
     const p = world.get(e, Position);
     const measured = world.get(e, MeasuredSize);
@@ -144,7 +157,7 @@ export function createDomWidgetsReflector(
     const g = readGeom(e);
     writeGeom(el, g.x, g.y, g.w, g.h);
     geometryWrites++;
-    const lifted = world.has(e, Grab);
+    const lifted = world.has(e, Grab) && promotable(e);
     (lifted ? host.liftedPlane : host.contentPlane).appendChild(el);
     return { host: el, content, x: g.x, y: g.y, w: g.w, h: g.h, hidden: false, lifted };
   }
@@ -194,13 +207,25 @@ export function createDomWidgetsReflector(
   function updatePromote(): void {
     let anyLifted = false;
     for (const [e, rec] of hosts) {
-      const shouldLift = world.has(e, Grab);
+      const grabbed = world.has(e, Grab);
+      const shouldLift = grabbed && promotable(e);
       if (shouldLift) anyLifted = true;
       if (shouldLift !== rec.lifted) {
         rec.lifted = shouldLift;
         // appendChild MOVES the existing node between planes — the React portal
         // (targeting the content child) survives the move.
         (shouldLift ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+      }
+      // A grabbed GL widget's chrome host stays in P1 (see promotable) but must
+      // still stack over its P1 NEIGHBORS while dragged — the within-plane
+      // z-pop, mirroring the quad's renderOrder-top within P2. (Neighbor GL
+      // content can still overdraw the dragged card's gradient — the v1
+      // uDraggedRect situation; an accepted transient until the app compositor
+      // hook lands, design-005.)
+      if (grabbed && !shouldLift) {
+        if (rec.host.style.zIndex !== "1000") rec.host.style.zIndex = "1000";
+      } else if (rec.host.style.zIndex !== "") {
+        rec.host.style.zIndex = "";
       }
     }
     if (anyLifted !== inert) {

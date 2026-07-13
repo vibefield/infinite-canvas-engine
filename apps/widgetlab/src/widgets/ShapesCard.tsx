@@ -38,7 +38,7 @@ import { useIslandFrame } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
 import { type ReactElement, useMemo, useRef } from "react";
 import { type Mesh, Vector3 } from "three";
-import { GlCardBackplate, type GradientStop } from "./GlCardBackplate";
+import { makeGlCardChrome, type GradientStop } from "./GlCardChrome";
 
 /** v1 `large` preset. */
 export const SIZE = { w: 329, h: 345 } as const;
@@ -273,16 +273,26 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
         color={accent}
       />
 
-      {/* The VISIBLE gradient card is ALSO the RFC-006 interaction claim surface
-          (behind the swarm): press-drag parts the bodies, click (sub-threshold
-          move) cycles the accent. The router reaches it through the body cloud —
-          the bodies carry no handlers, so only this plane claims. */}
-      <GlCardBackplate
-        width={width}
-        height={height}
-        stops={BACKPLATE}
-        handlers={{ onPointerDown, onPointerMove, onPointerUp: clearPointer, onPointerOut: clearPointer, onClick }}
-      />
+      {/* The RFC-006 interaction claim surface (behind the swarm): press-drag
+          parts the bodies, click (sub-threshold move) cycles the accent. The
+          router reaches it through the body cloud — the bodies carry no
+          handlers, so only this plane claims. The VISIBLE card moved to DOM
+          chrome (GlCardChrome — shared CSS with DOM cards); this plane is now
+          purely a raycast target: fully transparent, writes neither color nor
+          depth, and three's raw Raycaster (the GL router's pick path) hits it
+          regardless of paint. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: R3F mesh — onClick is a 3D raycast handler dispatched by the GL router, not a DOM click. */}
+      <mesh
+        position={[0, 0, -Math.max(40, 0.5 * Math.min(width, height))]}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={clearPointer}
+        onPointerOut={clearPointer}
+        onClick={onClick}
+      >
+        <planeGeometry args={[width, height]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} />
+      </mesh>
 
       {PALETTE.map((spec, i) => (
         <mesh
@@ -315,6 +325,7 @@ export const ShapesCard = defineWidget({
   surface: "gl",
   animated: true,
   component: ShapesView,
+  chrome: makeGlCardChrome(BACKPLATE),
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 240, h: 200 },
