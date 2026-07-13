@@ -13,4 +13,5 @@ export {
   type DevtoolsHandle,
   type DevtoolsOpts,
 } from "./attach";
+export { createDock, type Dock, type DockCorner, type DockOptions, type DockSlotId } from "./dock";
 export { createGlPanel, type GlPanel, type GlPanelCorner, type GlPanelOptions, type GlPanelStats } from "./gl-panel";

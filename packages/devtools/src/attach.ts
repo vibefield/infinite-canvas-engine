@@ -20,6 +20,10 @@
  *                   `lastFrame()` telemetry (one frame late by construction:
  *                   publish runs before this frame's reflect).
  *
+ * By default all three tools mount into ONE draggable dock (dock.ts —
+ * 2026-07-13, James: "make the 3 tools into one draggable panel"); pass
+ * `dock: false` for the classic scattered corners.
+ *
  * Reads only, outside the tick (verified-unrestricted); never a reflector,
  * never writes ECS. Nobody imports this package (depcruise-enforced leaf).
  */
@@ -37,6 +41,7 @@ import {
   type ProfilerHandle,
   type ProfilerOptions,
 } from "@vibecook/strata-ecs/tools";
+import { createDock, type Dock, type DockOptions, type DockSlotId } from "./dock";
 import { createGlPanel, type GlPanel, type GlPanelOptions, type GlPanelStats } from "./gl-panel";
 import {
   CursorVisual,
@@ -60,8 +65,14 @@ import {
 } from "@ice/core";
 
 export interface DevtoolsOpts {
-  /** Where both panels mount (default: document.body). */
+  /** Where the dock (or, with `dock: false`, each panel) mounts (default: document.body). */
   readonly container?: HTMLElement;
+  /**
+   * ONE draggable dock hosting all three tools (the default). `false` scatters
+   * them to their classic fixed corners; an object sets initial placement.
+   * The dock mounts lazily with the first tool that needs it.
+   */
+  readonly dock?: boolean | Pick<DockOptions, "corner" | "title" | "width">;
   /** Observer panel: `false` to omit, or strata passthrough options. */
   readonly observer?: boolean | Pick<ObserverOptions, "defaultTab" | "tab" | "recorderCap">;
   /** Profiler HUD: `false` to omit, or strata passthrough options. */
@@ -174,12 +185,26 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
       ? undefined
       : (): ObserverEphemeralSource | null => presence()?.eph ?? null;
 
+  // The dock is created with the first tool that mounts (so all-flags-off
+  // attaches — and glPanel-only attaches before the first push — stay DOM-free).
+  let dock: Dock | null = null;
+  const mountIn = (id: DockSlotId): { container?: HTMLElement } => {
+    if (opts.dock === false) return opts.container !== undefined ? { container: opts.container } : {};
+    if (dock === null) {
+      dock = createDock({
+        ...(typeof opts.dock === "object" ? opts.dock : {}),
+        ...(opts.container !== undefined ? { container: opts.container } : {}),
+      });
+    }
+    return { container: dock.slot(id) };
+  };
+
   const observer =
     opts.observer === false
       ? null
       : attachObserver(world, {
           ...(typeof opts.observer === "object" ? opts.observer : {}),
-          ...(opts.container !== undefined ? { container: opts.container } : {}),
+          ...mountIn("observer"),
           describe: opts.describe ?? engineDescribe,
           ...(durable !== undefined ? { durable } : {}),
           ...(ephemeral !== undefined ? { ephemeral } : {}),
@@ -190,7 +215,7 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
       ? null
       : attachProfiler(world, {
           ...(typeof opts.profiler === "object" ? opts.profiler : {}),
-          ...(opts.container !== undefined ? { container: opts.container } : {}),
+          ...mountIn("profiler"),
         });
 
   // The "reflect" lane: reflector flushes run POST-notify, invisible to
@@ -218,7 +243,7 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
       if (glPanel === null) {
         glPanel = createGlPanel({
           ...(typeof opts.glPanel === "object" ? opts.glPanel : {}),
-          ...(opts.container !== undefined ? { container: opts.container } : {}),
+          ...mountIn("gl"),
         });
       }
       glPanel.push(stats);
@@ -231,6 +256,8 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
       profiler?.dispose();
       glPanel?.dispose();
       glPanel = null;
+      dock?.dispose();
+      dock = null;
     },
   };
 }

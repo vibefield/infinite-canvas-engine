@@ -5,7 +5,7 @@
  * facade exposes the durable inspection seam the observer's durable tab reads.
  * Runs under happy-dom; devtools reads the world outside the tick.
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   Drag,
   GesturePhases,
@@ -18,15 +18,19 @@ import {
 import { attachDevtools, engineDescribe } from "../src";
 
 describe("attachDevtools: strata observer + profiler lifecycle", () => {
-  it("mounts both panels; detach removes both and is idempotent", () => {
+  it("mounts both panels inside ONE dock; detach removes everything and is idempotent", () => {
     const ce = createCanvasEngine();
     const handle = attachDevtools(ce);
-    expect(document.querySelector(".strata-obs")).not.toBeNull();
-    expect(document.querySelector(".strata-prof")).not.toBeNull();
+    expect(document.querySelectorAll(".ice-dock").length).toBe(1);
+    const obs = document.querySelector(".strata-obs");
+    const prof = document.querySelector(".strata-prof");
+    expect(obs?.closest(".ice-dock")).not.toBeNull();
+    expect(prof?.closest(".ice-dock")).not.toBeNull();
     expect(handle.observer).not.toBeNull();
     expect(handle.profiler).not.toBeNull();
 
     handle.detach();
+    expect(document.querySelector(".ice-dock")).toBeNull();
     expect(document.querySelector(".strata-obs")).toBeNull();
     expect(document.querySelector(".strata-prof")).toBeNull();
     handle.detach(); // idempotent
@@ -85,8 +89,8 @@ describe("the durable inspection seam (observer durable tab feed)", () => {
   });
 });
 
-describe("the GL metrics panel (comprehensive r3f profiling, 2026-07-13)", () => {
-  const STATS = {
+// One plausible frame of GlPanelStats — shared by the GL panel + dock suites.
+const STATS = {
     cpuMs: 1.2,
     gpuMs: 5.5,
     fps: 60,
@@ -113,6 +117,7 @@ describe("the GL metrics panel (comprehensive r3f profiling, 2026-07-13)", () =>
     culledWidgets: 12,
   };
 
+describe("the GL metrics panel (comprehensive r3f profiling, 2026-07-13)", () => {
   it("mounts lazily on the first glStats push, renders the census, disposes with detach", () => {
     const ce = createCanvasEngine();
     const handle = attachDevtools(ce, { observer: false, profiler: false, glPanel: { expanded: true } });
@@ -144,4 +149,93 @@ describe("the GL metrics panel (comprehensive r3f profiling, 2026-07-13)", () =>
     handle.detach();
     ce.dispose();
   });
+});
+
+describe("the dock: one draggable panel for all three tools (2026-07-13)", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it("hosts all three tools in fixed slot order (strips first, observer last)", () => {
+      const ce = createCanvasEngine();
+      const handle = attachDevtools(ce);
+      handle.glStats(STATS);
+
+      expect(document.querySelectorAll(".ice-dock").length).toBe(1);
+      const slots = Array.from(document.querySelectorAll<HTMLElement>(".ice-dock-slot"));
+      expect(slots.map((s) => s.dataset.slot)).toEqual(["profiler", "gl", "observer"]);
+      expect(slots[0]?.querySelector(".strata-prof")).not.toBeNull();
+      expect(slots[1]?.querySelector(".ice-gl")).not.toBeNull();
+      expect(slots[2]?.querySelector(".strata-obs")).not.toBeNull();
+
+      handle.detach();
+      expect(document.querySelector(".ice-dock")).toBeNull();
+      ce.dispose();
+    });
+
+    it("mounts lazily: no dock until the first tool needs it", () => {
+      const ce = createCanvasEngine();
+      const handle = attachDevtools(ce, { observer: false, profiler: false });
+      expect(document.querySelector(".ice-dock")).toBeNull(); // gl is push-lazy
+      handle.glStats(STATS);
+      expect(document.querySelector(".ice-dock")).not.toBeNull();
+      handle.detach();
+      ce.dispose();
+    });
+
+    it("drags by its header and persists the position", () => {
+      const ce = createCanvasEngine();
+      const handle = attachDevtools(ce);
+      const dock = document.querySelector<HTMLElement>(".ice-dock");
+      const head = document.querySelector<HTMLElement>(".ice-dock-head");
+      expect(dock).not.toBeNull();
+      expect(head).not.toBeNull();
+      if (dock === null || head === null) return;
+      const before = { left: dock.style.left, top: dock.style.top };
+
+      const ev = (type: string, x: number, y: number): PointerEvent =>
+        new PointerEvent(type, { pointerId: 7, clientX: x, clientY: y, bubbles: true, cancelable: true });
+      head.dispatchEvent(ev("pointerdown", 500, 20));
+      expect(dock.classList.contains("dragging")).toBe(true);
+      head.dispatchEvent(ev("pointermove", 400, 70)); // −100, +50
+      head.dispatchEvent(ev("pointerup", 400, 70));
+
+      expect(dock.classList.contains("dragging")).toBe(false);
+      expect(dock.style.left).not.toBe(before.left);
+      expect(dock.style.top).not.toBe(before.top);
+      const saved = JSON.parse(localStorage.getItem("ice-dock:layout") ?? "{}") as { x?: number; y?: number };
+      expect(typeof saved.x).toBe("number");
+      expect(typeof saved.y).toBe("number");
+
+      handle.detach();
+      ce.dispose();
+    });
+
+    it("collapses via the header button (state persisted)", () => {
+      const ce = createCanvasEngine();
+      const handle = attachDevtools(ce);
+      const dock = document.querySelector<HTMLElement>(".ice-dock");
+      const btn = document.querySelector<HTMLButtonElement>(".ice-dock-btn");
+      expect(dock?.classList.contains("collapsed")).toBe(false);
+      btn?.click();
+      expect(dock?.classList.contains("collapsed")).toBe(true);
+      const saved = JSON.parse(localStorage.getItem("ice-dock:layout") ?? "{}") as { open?: boolean };
+      expect(saved.open).toBe(false);
+      btn?.click();
+      expect(dock?.classList.contains("collapsed")).toBe(false);
+      handle.detach();
+      ce.dispose();
+    });
+
+    it("dock: false restores the classic scattered corners", () => {
+      const ce = createCanvasEngine();
+      const handle = attachDevtools(ce, { dock: false });
+      handle.glStats(STATS);
+      expect(document.querySelector(".ice-dock")).toBeNull();
+      expect(document.querySelector(".strata-obs")?.parentElement).toBe(document.body);
+      expect(document.querySelector(".strata-prof")?.parentElement).toBe(document.body);
+      expect(document.querySelector(".ice-gl")?.parentElement).toBe(document.body);
+      handle.detach();
+      ce.dispose();
+    });
 });
