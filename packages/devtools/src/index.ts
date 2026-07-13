@@ -1,9 +1,15 @@
 /**
- * @ice/devtools — the engine devtools panel (design-005 §4): pointers/recognizers,
- * planes, sovereignty badges, loop telemetry. A standalone DOM panel that reads
- * the world outside the tick — it is NOT a reflector and writes no ECS.
- * Import wall: @ice/core (+kernel) only; nobody imports us (depcruise-enforced).
+ * @ice/devtools — strata's observer panel + FPS profiler, engine-flavored
+ * (describe/durable/ephemeral/reflect-lane glue). Reads the world outside the
+ * tick; never a reflector, never writes ECS. Nobody imports us
+ * (depcruise-enforced leaf).
  */
-export const DEVTOOLS_VERSION = "0.0.0";
+export const DEVTOOLS_VERSION = "0.1.0";
 
-export { attachDevtools, type DevtoolsHandle, type DevtoolsOpts } from "./panel";
+export {
+  attachDevtools,
+  engineDescribe,
+  type DevtoolsEngine,
+  type DevtoolsHandle,
+  type DevtoolsOpts,
+} from "./attach";

@@ -86,6 +86,7 @@ import {
 } from "@ice/dom";
 import type { RemoteCursorsReflector } from "@ice/dom";
 import { WidgetRoot } from "@ice/react";
+import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { createRoot } from "react-dom/client";
 import { createDocUi } from "./doc-ui";
 import { GroupNode, MathNode, SumNode } from "./nodes";
@@ -452,9 +453,13 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
 
   const detachAdapter = attachPointerAdapter(host, stack.queue);
 
+  // Devtools: strata's observer panel + FPS/reflect profiler HUD. Browser-only.
+  // A bare core engine (not the facade) → the observer's durable tab idles.
+  let devtools: DevtoolsHandle | undefined;
   if (mount) {
     engine.enableTelemetry();
     startRafLoop(engine);
+    devtools = attachDevtools(engine);
   }
 
   return {
@@ -466,6 +471,7 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     widgetCount,
     ...(role !== undefined ? { role } : {}),
     dispose() {
+      devtools?.detach();
       detachAdapter();
       docUi?.detach();
       resizeObserver?.disconnect();

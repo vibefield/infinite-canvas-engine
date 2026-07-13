@@ -299,9 +299,11 @@ export function App() {
   }, [ce]);
 
   // ECS devtools while the button is active (v1's EcsDevtools panel slot).
+  // The FACADE goes in (not ce.engine): the strata observer's durable tab
+  // tracks docs.current() live only through it.
   useEffect(() => {
     if (!showEcs) return;
-    const d = attachDevtools(ce.engine, {});
+    const d = attachDevtools(ce);
     return () => d.detach();
   }, [showEcs, ce]);
 

@@ -40,6 +40,7 @@ import {
   createPlaneTransformReflector,
   startRafLoop,
 } from "@ice/dom";
+import { attachDevtools } from "@ice/devtools";
 import { createDocUi } from "./doc-ui";
 import { installHarnessHotkeys } from "./harness";
 import { createHudReflector } from "./hud";
@@ -136,6 +137,11 @@ async function boot(): Promise<void> {
 
   engine.enableTelemetry();
   startRafLoop(engine);
+
+  // Devtools: strata's observer panel + FPS/reflect profiler HUD. Fire-and-forget
+  // boot (no dispose seam), so the handle stays attached for the page's lifetime.
+  // A bare core engine (not the facade) → the observer's durable tab idles.
+  attachDevtools(engine);
 }
 
 void boot().catch((err) => {

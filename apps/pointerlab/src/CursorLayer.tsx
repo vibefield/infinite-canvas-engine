@@ -30,6 +30,7 @@ import {
   type World,
 } from "@ice/core";
 import { attachPointerAdapter, createCanvasHost, createGridReflector, startRafLoop } from "@ice/dom";
+import { attachDevtools } from "@ice/devtools";
 import { worldToScreen } from "@ice/kernel";
 import { zoomToFit } from "./camera";
 import { Cur, RING_RADIUS_PX, RemoteInfo, WidgetVisual } from "./components";
@@ -253,7 +254,14 @@ export function CursorLayer() {
     // world-observer telemetry only while attached (its systems tab feed).
     const stopRaf = startRafLoop(engine);
 
+    // Devtools PROFILER HUD only: this app already mounts its own strata observer
+    // (<ObserverPanel/>), so { observer: false } avoids a second, duplicate panel.
+    // attachDevtools arms its own telemetry for the profiler (independent of the
+    // observer's world-observer telemetry noted above).
+    const devtools = attachDevtools(engine, { observer: false });
+
     return () => {
+      devtools.detach();
       stopRaf();
       removeAdapter();
       unregStage();

@@ -58,6 +58,7 @@ import {
   startRafLoop,
 } from "@ice/dom";
 import { WidgetRoot } from "@ice/react";
+import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { type GLBridge, type GLPointerRouter, GLViews, createGLBridge, createGLPointerRouter } from "@ice/r3f";
 import { Canvas } from "@react-three/fiber";
 import type { CSSProperties } from "react";
@@ -298,9 +299,14 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     glRoute: (kind, x, y, native) => router.route(kind, x, y, native),
   });
 
+  // Devtools: strata's observer panel + FPS/reflect profiler HUD (the profiler is
+  // especially useful on this mixed DOM+GL board). Browser-only. A bare core
+  // engine (not the facade) → the observer's durable tab idles.
+  let devtools: DevtoolsHandle | undefined;
   if (mount) {
     engine.enableTelemetry();
     startRafLoop(engine);
+    devtools = attachDevtools(engine);
   }
 
   return {
@@ -311,6 +317,7 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     router,
     widgetCount,
     dispose() {
+      devtools?.detach();
       detachAdapter();
       docUi?.detach();
       resizeObserver?.disconnect();

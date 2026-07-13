@@ -101,11 +101,24 @@ module.exports = {
       },
     },
     {
-      name: "devtools-only-core-kernel",
-      comment: "design-002 §6: devtools reads core + kernel only; it sits off the chain, imported by no one.",
+      name: "devtools-only-core-kernel-strata",
+      comment:
+        "design-002 §6 (amended 2026-07-13): devtools reads core + kernel and WRAPS " +
+        "@vibecook/strata-ecs/tools (observer panel + profiler — the standing rule is wrap " +
+        "first-party tools, never re-implement); it sits off the chain, imported by no one.",
       severity: "error",
       from: { path: "^packages/devtools/src" },
-      to: { pathNot: ["^packages/devtools/src", "^packages/core", "^packages/kernel"] },
+      to: {
+        pathNot: [
+          "^packages/devtools/src",
+          "^packages/core",
+          "^packages/kernel",
+          nm("@vibecook/strata-ecs"),
+          // Subpath exports ("@vibecook/strata-ecs/tools") resolve through the
+          // package "exports" map, reported by SPECIFIER (the core rule's precedent).
+          "^@vibecook/strata-ecs(/|$)",
+        ],
+      },
     },
     {
       name: "nobody-imports-devtools",

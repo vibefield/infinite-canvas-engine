@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ice/core": "workspace:*",
+    "@ice/devtools": "workspace:*",
     "@ice/dom": "workspace:*",
     "@ice/kernel": "workspace:*",
     "@ice/react": "workspace:*",

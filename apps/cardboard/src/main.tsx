@@ -58,6 +58,7 @@ import {
   wireMeasurement,
 } from "@ice/dom";
 import { WidgetRoot } from "@ice/react";
+import { attachDevtools } from "@ice/devtools";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { createDocUi } from "./doc-ui";
@@ -217,6 +218,11 @@ async function boot(): Promise<void> {
   attachPointerAdapter(host, stack.queue);
   engine.enableTelemetry();
   startRafLoop(engine);
+
+  // Devtools: strata's observer panel + FPS/reflect profiler HUD. This boot is
+  // fire-and-forget (no dispose seam), so the handle is left attached for the
+  // page's lifetime. A bare core engine (not the facade) → the durable tab idles.
+  attachDevtools(engine);
 }
 
 void boot().catch((err) => {

@@ -65,6 +65,12 @@ export interface DocSessionOpts {
 export interface DocSession {
   readonly store: DurableStore;
   readonly sink: CommitSink;
+  /**
+   * The strata attachment — a read-only INSPECTION seam: its `baseline` feeds
+   * the observer devtools' durable tab (runtime-vs-baseline = the un-agreed
+   * sync delta). Never a sync path; `close()` owns its lifecycle.
+   */
+  readonly attachment: Attachment;
   readonly readOnly: boolean;
   /**
    * The design-001 §3 step-2 DEV guard, wired to THIS doc: userland live
@@ -143,6 +149,7 @@ function makeSession(
   return {
     store,
     sink,
+    attachment,
     readOnly,
     liveWriter,
     ...(report !== undefined ? { report } : {}),

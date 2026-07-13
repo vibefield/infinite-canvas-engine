@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ice/core": "workspace:*"
+    "@ice/core": "workspace:*",
+    "@vibecook/strata-ecs": "0.6.0"
   },
   "devDependencies": {
     "happy-dom": "^20.0.0"
