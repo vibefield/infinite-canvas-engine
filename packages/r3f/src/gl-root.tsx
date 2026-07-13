@@ -26,9 +26,14 @@ import {
   type ReactElement,
 } from "react";
 import { Mesh, OrthographicCamera, PlaneGeometry, type Texture, type WebGLRenderTarget } from "three";
+import { selectBand } from "@ice/kernel";
 import {
+  Camera,
+  Culled,
   PrefabId,
   RUNTIME_BUDGETS,
+  Visible,
+  defineQuery,
   widgets,
   type Engine,
   type Entity,
@@ -73,7 +78,11 @@ export interface GLViewsProps {
   readonly onFrameStats?: (stats: GlFrameStats) => void;
 }
 
-/** One profiled composite frame — see {@link GLViewsProps.onFrameStats}. */
+/**
+ * One profiled composite frame — see {@link GLViewsProps.onFrameStats}.
+ * MIRRORED structurally as `GlPanelStats` in @ice/devtools (which cannot
+ * import r3f under the walls) — keep the shapes aligned.
+ */
 export interface GlFrameStats {
   /** Whole-pass main-thread ms (reconcile + island paints + composite). */
   readonly cpuMs: number;
@@ -84,13 +93,39 @@ export interface GlFrameStats {
   /** `renderer.info` aggregated across ALL of this pass's render calls. */
   readonly drawCalls: number;
   readonly triangles: number;
+  readonly points: number;
+  readonly lines: number;
+  /** Live compiled shader programs (renderer-lifetime, not per-frame). */
+  readonly programs: number;
   readonly geometries: number;
   readonly textures: number;
-  /** Engine-side pass shape (PassStats + the FBO pool's real byte count). */
+  /** Virtual texturing: live island render targets + their summed resolution. */
+  readonly renderTargets: number;
+  readonly renderMegaPixels: number;
   readonly fboBytes: number;
+  readonly fboBudgetBytes: number;
+  /** Island phase census (the demand/retention state machine, design-004 §3/§7). */
+  readonly islands: {
+    readonly total: number;
+    readonly hot: number;
+    readonly warm: number;
+    readonly waking: number;
+    readonly cold: number;
+    readonly dormant: number;
+  };
+  /** Live targets per painted zoom band ("×1", "×0.5", …) — the LOD downgrade census. */
+  readonly bandHistogram: Readonly<Record<string, number>>;
+  /** This pass's shape (PassStats). */
   readonly repainted: number;
   readonly pendingPaints: number;
   readonly evicted: number;
+  /** LOD context: camera zoom → hysteresis band → the DPR new paints get. */
+  readonly zoom: number;
+  readonly band: number;
+  readonly effectiveDpr: number;
+  /** Scene population: Visible vs Culled widgets (all surfaces). */
+  readonly visibleWidgets: number;
+  readonly culledWidgets: number;
 }
 
 /** The slice of stats-gl's StatsProfiler we drive (structural — the import is dynamic). */
@@ -99,6 +134,10 @@ interface GpuProfilerLike {
   getData(): { fps: number; cpu: number; gpu: number };
   dispose(): void;
 }
+
+// Scene-population census (profiling only — never queried when the seam is off).
+const visibleWidgetsQ = defineQuery([Visible]);
+const culledWidgetsQ = defineQuery([Culled]);
 
 export function GLViews({
   engine,
@@ -301,18 +340,67 @@ export function GLViews({
       gpu?.update();
       const d = gpu?.getData();
       const info = gl.info;
+
+      // Island / virtual-texture census: phases + live-target resolutions come
+      // straight from the bridge state the pass just stamped (paintedAt holds
+      // each FBO's real pixel dims + the zoom band it was painted at).
+      let total = 0;
+      let hot = 0;
+      let warm = 0;
+      let waking = 0;
+      let cold = 0;
+      let dormant = 0;
+      let pixels = 0;
+      const bandHistogram: Record<string, number> = {};
+      for (const [e, s] of bridge.state.all()) {
+        total++;
+        if (s.phase === "Hot") hot++;
+        else if (s.phase === "Warm") warm++;
+        else if (s.phase === "Waking") waking++;
+        else if (s.phase === "Dormant") dormant++;
+        else cold++;
+        if (s.fboGeneration >= 0 && pool.get(e) !== null) {
+          pixels += s.paintedAt.w * s.paintedAt.h;
+          const key = `×${s.paintedAt.band}`;
+          bandHistogram[key] = (bandHistogram[key] ?? 0) + 1;
+        }
+      }
+      let visibleWidgets = 0;
+      let culledWidgets = 0;
+      world.query(visibleWidgetsQ).each((b) => {
+        visibleWidgets += b.count;
+      });
+      world.query(culledWidgetsQ).each((b) => {
+        culledWidgets += b.count;
+      });
+      const zoom = world.getResource(Camera)?.zoom ?? 1;
+      const band = selectBand(zoom);
+
       cb({
         cpuMs: performance.now() - passStart,
         gpuMs: d?.gpu ?? 0,
         fps: d?.fps ?? 0,
         drawCalls: info.render.calls,
         triangles: info.render.triangles,
+        points: info.render.points,
+        lines: info.render.lines,
+        programs: info.programs?.length ?? 0,
         geometries: info.memory.geometries,
         textures: info.memory.textures,
+        renderTargets: pool.size(),
+        renderMegaPixels: pixels / 1e6,
         fboBytes: pool.bytesUsed(),
+        fboBudgetBytes: maxFboBytes,
+        islands: { total, hot, warm, waking, cold, dormant },
+        bandHistogram,
         repainted: stats.repainted,
         pendingPaints: stats.pendingPaints,
         evicted: stats.evicted,
+        zoom,
+        band,
+        effectiveDpr: gl.getPixelRatio() * band,
+        visibleWidgets,
+        culledWidgets,
       });
     }
     // Self-sustain: Hot islands and stagger-deferred paints keep the demand

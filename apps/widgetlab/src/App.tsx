@@ -322,6 +322,7 @@ export function App() {
     if (dt === null) return;
     dt.lane("gl cpu", s.cpuMs);
     if (s.gpuMs > 0) dt.lane("gpu", s.gpuMs);
+    dt.glStats(s); // the full GL panel: renderer counts, VT census, LOD bands, culls
   }, []);
 
   return (

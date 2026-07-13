@@ -297,10 +297,11 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
               bridge={bridge}
               store={runtime.store}
               onFrameStats={(s) => {
-                // GL costs → profiler HUD lanes (devtools is always attached
-                // on this board, so the lanes are always live).
+                // GL costs → profiler HUD lanes + the full GL metrics panel
+                // (devtools is always attached on this board, so both are live).
                 devtools?.lane("gl cpu", s.cpuMs);
                 if (s.gpuMs > 0) devtools?.lane("gpu", s.gpuMs);
+                devtools?.glStats(s);
               }}
             />
           </Canvas>,

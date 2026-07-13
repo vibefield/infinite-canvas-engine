@@ -37,6 +37,7 @@ import {
   type ProfilerHandle,
   type ProfilerOptions,
 } from "@vibecook/strata-ecs/tools";
+import { createGlPanel, type GlPanel, type GlPanelOptions, type GlPanelStats } from "./gl-panel";
 import {
   CursorVisual,
   Drag,
@@ -65,6 +66,8 @@ export interface DevtoolsOpts {
   readonly observer?: boolean | Pick<ObserverOptions, "defaultTab" | "tab" | "recorderCap">;
   /** Profiler HUD: `false` to omit, or strata passthrough options. */
   readonly profiler?: boolean | Pick<ProfilerOptions, "budgetMs" | "windowSize" | "corner" | "expanded" | "lanes">;
+  /** GL metrics panel: `false` to omit, or placement/budget options. Mounts lazily on the first `glStats` push. */
+  readonly glPanel?: boolean | Pick<GlPanelOptions, "corner" | "budgetMs" | "expanded">;
   /** Collab demos: the presence session whose store feeds the ephemeral tab. */
   readonly presence?: () => PresenceSession | null | undefined;
   /** Override entity labeling (default: the engine describe below). */
@@ -76,7 +79,13 @@ export interface DevtoolsHandle {
   readonly profiler: ProfilerHandle | null;
   /** Host-cost lane passthrough (paint, decode…); no-op when the profiler is off. */
   lane(name: string, ms: number): void;
-  /** Tear both panels + the telemetry hook down. Idempotent. */
+  /**
+   * Feed one GL frame's metrics (wire `<GLViews onFrameStats>` here). The GL
+   * panel mounts on the first push — renderer counts, virtual-texture census,
+   * LOD banding, cull population. No-op when opts.glPanel === false.
+   */
+  glStats(stats: GlPanelStats): void;
+  /** Tear all panels + the telemetry hook down. Idempotent. */
   detach(): void;
 }
 
@@ -196,6 +205,7 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
     });
   }
 
+  let glPanel: GlPanel | null = null;
   let detached = false;
   return {
     observer,
@@ -203,12 +213,24 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
     lane(name, ms) {
       profiler?.lane(name, ms);
     },
+    glStats(stats) {
+      if (detached || opts.glPanel === false) return;
+      if (glPanel === null) {
+        glPanel = createGlPanel({
+          ...(typeof opts.glPanel === "object" ? opts.glPanel : {}),
+          ...(opts.container !== undefined ? { container: opts.container } : {}),
+        });
+      }
+      glPanel.push(stats);
+    },
     detach() {
       if (detached) return;
       detached = true;
       removePublish?.();
       observer?.dispose();
       profiler?.dispose();
+      glPanel?.dispose();
+      glPanel = null;
     },
   };
 }

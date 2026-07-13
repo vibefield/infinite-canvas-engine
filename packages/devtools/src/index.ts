@@ -13,3 +13,4 @@ export {
   type DevtoolsHandle,
   type DevtoolsOpts,
 } from "./attach";
+export { createGlPanel, type GlPanel, type GlPanelCorner, type GlPanelOptions, type GlPanelStats } from "./gl-panel";

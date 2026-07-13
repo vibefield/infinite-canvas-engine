@@ -84,3 +84,64 @@ describe("the durable inspection seam (observer durable tab feed)", () => {
     ce.dispose();
   });
 });
+
+describe("the GL metrics panel (comprehensive r3f profiling, 2026-07-13)", () => {
+  const STATS = {
+    cpuMs: 1.2,
+    gpuMs: 5.5,
+    fps: 60,
+    drawCalls: 42,
+    triangles: 123456,
+    points: 0,
+    lines: 0,
+    programs: 7,
+    geometries: 12,
+    textures: 18,
+    renderTargets: 14,
+    renderMegaPixels: 6.2,
+    fboBytes: 40 * 1048576,
+    fboBudgetBytes: 256 * 1048576,
+    islands: { total: 14, hot: 2, warm: 9, waking: 1, cold: 1, dormant: 1 },
+    bandHistogram: { "×1": 6, "×0.5": 8 },
+    repainted: 2,
+    pendingPaints: 1,
+    evicted: 0,
+    zoom: 0.45,
+    band: 0.5,
+    effectiveDpr: 1,
+    visibleWidgets: 18,
+    culledWidgets: 12,
+  };
+
+  it("mounts lazily on the first glStats push, renders the census, disposes with detach", () => {
+    const ce = createCanvasEngine();
+    const handle = attachDevtools(ce, { observer: false, profiler: false, glPanel: { expanded: true } });
+    expect(document.querySelector(".ice-gl")).toBeNull(); // lazy — no pushes yet
+
+    handle.glStats(STATS);
+    const panel = document.querySelector(".ice-gl");
+    expect(panel).not.toBeNull();
+    const text = panel?.textContent ?? "";
+    expect(text).toContain("14 targets · 6.2 MP total");
+    expect(text).toContain("40MB / 256MB");
+    expect(text).toContain("2 hot");
+    expect(text).toContain("9 warm");
+    expect(text).toContain("zoom 45% → band ×0.5 → paint dpr 1.00");
+    expect(text).toContain("×0.5: 8");
+    expect(text).toContain("18 visible · 12 culled");
+    expect(text).toContain("123.5k"); // triangles, k-formatted
+
+    handle.detach();
+    expect(document.querySelector(".ice-gl")).toBeNull();
+    ce.dispose();
+  });
+
+  it("glPanel: false makes glStats a no-op", () => {
+    const ce = createCanvasEngine();
+    const handle = attachDevtools(ce, { observer: false, profiler: false, glPanel: false });
+    handle.glStats(STATS);
+    expect(document.querySelector(".ice-gl")).toBeNull();
+    handle.detach();
+    ce.dispose();
+  });
+});
