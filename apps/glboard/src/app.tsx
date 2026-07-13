@@ -272,6 +272,11 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
   const bridge = createGLBridge(engine, { devAssertRenderWrites: true });
   const router = createGLPointerRouter({ world, bridge, index: stack.index });
 
+  // Declared ahead of the React render below: the GLViews profiling callback
+  // closes over it (frames only tick after boot finishes, so it is assigned
+  // by the time the first report fires).
+  let devtools: DevtoolsHandle | undefined;
+
   // --- ONE React root: store provider over BOTH DOM widgets AND the GL Canvas.
   // react-dom portals the Canvas into the P2 plane; R3F v9 bridges this DOM
   // context into the Canvas reconciler, so both surfaces share `session.store`.
@@ -287,7 +292,17 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
         <WidgetRoot world={world} store={runtime.store} hosts={domWidgets} />
         {createPortal(
           <Canvas orthographic frameloop="demand" gl={{ alpha: true }} style={GL_CANVAS_STYLE}>
-            <GLViews engine={engine} bridge={bridge} store={runtime.store} />
+            <GLViews
+              engine={engine}
+              bridge={bridge}
+              store={runtime.store}
+              onFrameStats={(s) => {
+                // GL costs → profiler HUD lanes (devtools is always attached
+                // on this board, so the lanes are always live).
+                devtools?.lane("gl cpu", s.cpuMs);
+                if (s.gpuMs > 0) devtools?.lane("gpu", s.gpuMs);
+              }}
+            />
           </Canvas>,
           glPlane,
         )}
@@ -302,7 +317,6 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
   // Devtools: strata's observer panel + FPS/reflect profiler HUD (the profiler is
   // especially useful on this mixed DOM+GL board). Browser-only. A bare core
   // engine (not the facade) → the observer's durable tab idles.
-  let devtools: DevtoolsHandle | undefined;
   if (mount) {
     engine.enableTelemetry();
     startRafLoop(engine);
