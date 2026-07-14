@@ -5,24 +5,26 @@
  *
  * `spatialSync` maintains the kernel `SpatialIndex` over every Position+Size
  * entity (widgets AND HandleSpec chrome — both carry a world AABB). It is a
- * TICK system (strata 0.5.0) so the body runs EVERY frame — it is the writer
- * that bumps
- * `SpatialVersion`, and its own writes have no version stamp to gate on
- * (design-002 §4), so it must run eagerly and stays cheap via a private
- * last-known cache: an entity is re-`upsert`ed only when its AABB actually
- * changed, and a cache-sweep removes entries no longer matched (despawns, or a
- * lost Position/Size). Materialized ports are M8 — skipped.
+ * TICK system so the body runs every frame — it is the writer that bumps
+ * `SpatialVersion` — but as of strata 0.7.0 (petition 7 LANDED) the body is
+ * O(delta), not O(N): a `world.changes` collector journals exactly which
+ * entities were touched (Position/Size writes, Active/WidgetEquipped flips,
+ * spawns, destroys — same-frame, drained INSIDE the pipeline), and each is
+ * re-checked against `isIndexable` → upsert or remove. The 2026-07-13 walk
+ * machinery (last-known AABB cache, compare-and-skip, generation sweep) is
+ * RETIRED — the collector knows; the system no longer has to discover.
  *
- * Per-frame constant factors (2026-07-13 perf audit — this was the top
- * always-on system at 17µs/frame on an 18-widget board):
- *  - nav gating rides the QUERIES, not per-row `hasTag` calls: widgets match
- *    `[Position, Size, WidgetEquipped, Active]`, chrome matches
- *    `[Position, Size, Not(WidgetEquipped)]` — the union is exactly the old
- *    `!WidgetEquipped || Active` predicate, resolved at archetype level;
- *  - the sweep is a GENERATION stamp on cache entries (mutated in place),
- *    not a per-frame `seen` Set + `gone` array — zero steady-state
- *    allocations. The remaining idle cost is the O(N) compare walk; gating
- *    the WHOLE body needs a strata changed-since primitive (petition 7).
+ * The FULL WALK survives as exactly what petition 7 said it should be:
+ *  - the SEED (a collector only journals writes made after its creation);
+ *  - the `reset` route (world.reset / replace import / nav `clearCaches`);
+ *  - the `coarse` fallback (some declared-raw-write system touched
+ *    Position/Size rows the journal cannot attribute — rescan, never miss).
+ * Nav gating rides the walk QUERIES at archetype level: widgets match
+ * `[Position, Size, WidgetEquipped, Active]`, chrome matches
+ * `[Position, Size, Not(WidgetEquipped)]` — the union is exactly
+ * `Position+Size ∧ (¬WidgetEquipped ∨ Active)`, and `isIndexable` is the
+ * same predicate entity-wise for the delta path. Materialized ports are M8 —
+ * skipped.
  *
  * `picking` runs the dual pick (design-003 §3), gated by a version guard over
  * `PointerVersion ∨ SpatialVersion`. `CameraVersion` does not exist — camera
@@ -89,58 +91,90 @@ export function createPickingSystems(
   index: SpatialIndex<Entity> = new SpatialIndex<Entity>(),
   wires?: WirePickSource,
 ): PickingSystems {
-  // Private last-known AABB cache — the compare-and-skip that keeps spatialSync
-  // cheap while running every frame (it is the SpatialVersion writer). Entries
-  // carry a GENERATION stamp (mutated in place each visit) so membership sweep
-  // needs no per-frame Set/array allocations.
-  const cache = new Map<Entity, { x: number; y: number; w: number; h: number; gen: number }>();
-  let gen = 0;
+  // The change journal (petition 7 / strata 0.7.0). Subscribing here is the
+  // whole trick: Position/Size writes, Active/WidgetEquipped flips, spawns
+  // and destroys journal the ENTITY at the write chokepoints — no walk needed
+  // to discover them. `seeded` gates the initial full walk (pre-collector
+  // entities) and is re-armed by nav `clearCaches` (design-004 §7).
+  //
+  // `coarse: false` is the engine's ATTESTATION (the strata option's exact
+  // contract): every Position/Size writer here uses store-visible writes —
+  // absolute writes via `ctx.*`/`world.edit`/doc projection are engine LAW.
+  // Without it, the declared-`access.write` blanket from exact-path systems
+  // (move/resize/snap declare for enforcement) would mark coarse every
+  // gesture frame and force the full rescan collectors exist to retire.
+  const collector = world.changes.collect({
+    components: [Position, Size],
+    tags: [Active, WidgetEquipped],
+    coarse: false,
+  });
+  let seeded = false;
+  // Entities THIS system put in the index. The index is SHARED and
+  // multi-writer (ports + wires maintain their own entries) — rebuilds must
+  // remove only our own stale entries, never `index.clear()`.
+  let known = new Set<Entity>();
+
+  /**
+   * The delta path's entity-wise twin of the walk queries' union: upserts and
+   * reports true when `e` belongs in the index, false (no write) otherwise.
+   */
+  const upsertIfIndexable = (e: Entity): boolean => {
+    if (!world.isAlive(e)) return false;
+    const p = world.get(e, Position);
+    const s = world.get(e, Size);
+    if (p === undefined || s === undefined) return false;
+    if (world.hasTag(e, WidgetEquipped) && !world.hasTag(e, Active)) return false;
+    index.upsert(e, { minX: p.x, minY: p.y, maxX: p.x + s.w, maxY: p.y + s.h });
+    return true;
+  };
 
   const spatialSync = defineTickSystem(
     (ctx) => {
-      gen += 1;
-      let changed = false;
-      const visit = (batch: Batch): void => {
-        const px = batch.col(Position).x;
-        const py = batch.col(Position).y;
-        const sw = batch.col(Size).w;
-        const sh = batch.col(Size).h;
-        for (const row of batch) {
-          const x = px[row] as number;
-          const y = py[row] as number;
-          const w = sw[row] as number;
-          const h = sh[row] as number;
-          const e = batch.entity(row);
-          const prev = cache.get(e);
-          if (prev === undefined) {
-            index.upsert(e, { minX: x, minY: y, maxX: x + w, maxY: y + h });
-            cache.set(e, { x, y, w, h, gen });
-            changed = true;
-            continue;
+      const delta = collector.drain();
+      // Full-walk routes: seed, reset (world.reset / nav), coarse raw writes.
+      if (!seeded || delta.reset || delta.coarse.length > 0) {
+        seeded = true;
+        const next = new Set<Entity>();
+        const visit = (batch: Batch): void => {
+          const px = batch.col(Position).x;
+          const py = batch.col(Position).y;
+          const sw = batch.col(Size).w;
+          const sh = batch.col(Size).h;
+          for (const row of batch) {
+            const x = px[row] as number;
+            const y = py[row] as number;
+            const e = batch.entity(row);
+            index.upsert(e, {
+              minX: x,
+              minY: y,
+              maxX: x + (sw[row] as number),
+              maxY: y + (sh[row] as number),
+            });
+            next.add(e);
           }
-          prev.gen = gen;
-          if (prev.x !== x || prev.y !== y || prev.w !== w || prev.h !== h) {
-            index.upsert(e, { minX: x, minY: y, maxX: x + w, maxY: y + h });
-            prev.x = x;
-            prev.y = y;
-            prev.w = w;
-            prev.h = h;
-            changed = true;
-          }
+        };
+        ctx.query(widgetAabbQ).each(visit);
+        ctx.query(chromeAabbQ).each(visit);
+        for (const e of known) {
+          if (!next.has(e)) index.remove(e); // only OUR stale entries — never index.clear()
         }
-      };
-      ctx.query(widgetAabbQ).each(visit);
-      ctx.query(chromeAabbQ).each(visit);
-      // Sweep: anything not visited this generation left the indexable set
-      // (despawn, lost Position/Size, or an equipped widget going inactive).
-      for (const [e, rec] of cache) {
-        if (rec.gen !== gen) {
+        known = next;
+        bumpVersion(world, SpatialVersion);
+        return;
+      }
+      // Delta path — O(changed), ~0 on still frames.
+      if (delta.changed.length === 0 && delta.removed.length === 0) return;
+      for (const e of delta.removed) {
+        if (known.delete(e)) index.remove(e); // destroyed — drop by our cached key
+      }
+      for (const e of delta.changed) {
+        if (upsertIfIndexable(e)) {
+          known.add(e);
+        } else if (known.delete(e)) {
           index.remove(e);
-          cache.delete(e);
-          changed = true;
         }
       }
-      if (changed) bumpVersion(world, SpatialVersion);
+      bumpVersion(world, SpatialVersion);
     },
     {
       name: "spatialSync",
@@ -202,5 +236,14 @@ export function createPickingSystems(
     { name: "picking", runIf: makeVersionGuard(world, [PointerVersion, SpatialVersion]) },
   );
 
-  return { spatialSync, picking, index, clearCaches: () => cache.clear() };
+  // clearCaches (nav seam, design-004 §7): re-arm the seed — the next tick
+  // rebuilds the cleared index from the new Active set via the full walk.
+  return {
+    spatialSync,
+    picking,
+    index,
+    clearCaches: () => {
+      seeded = false;
+    },
+  };
 }

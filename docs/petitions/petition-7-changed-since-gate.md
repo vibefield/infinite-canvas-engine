@@ -177,7 +177,7 @@ overstatements corrected above (S5 scope, S3 magnitude). The interaction-
 time argument (S4) is the strongest measured result and is the collector's
 decisive advantage over the original boolean ask.
 
-## LANDED — strata 0.7.0 (2026-07-14, local commit ff23f1e; npm publish pending)
+## LANDED — strata 0.7.0 (2026-07-14, commit ff23f1e; published to npm same day; engine pins bumped, upgrade gate green)
 
 Implemented as the adopted shape: `world.changes.collect({ components, tags,
 coarse }) → ChangeCollector` with in-pipeline `drain()` →

@@ -30,7 +30,7 @@ evidence. One file per open petition in `docs/petitions/`.
 | # | Title | Field finding | File |
 |---|-------|---------------|------|
 | 6 | Public entity introspection (`world.componentsOf`/`tagsOf` — promote the existing internal readers) | M10 devtools | [petitions/petition-6-entity-introspection.md](petitions/petition-6-entity-introspection.md) |
-| 7 | Change detection for eager derivation systems — adopted shape: opt-in pull-based `ChangeCollector` (exact entity journal + coarse raw-write fallback; maintainer rec endorsed 2026-07-14, supersedes the original changed-since boolean) | 2026-07-13 perf audit — spatialSync/cull/breakpoint walk all rows every frame to confirm nothing changed | [petitions/petition-7-changed-since-gate.md](petitions/petition-7-changed-since-gate.md) · [rec](petitions/petition-7-recommendation.md) |
+| 7 | ~~Change detection for eager derivation systems~~ **LANDED in 0.7.0 (2026-07-14)**: opt-in pull-based `ChangeCollector` (`world.changes.collect`; exact entity journal + coarse raw-write fallback with per-collector `coarse:false` attestation). Engine adoption: spatialSync is O(delta) — idle 103→0.8µs, one-mover 98→6µs at N=2000 | 2026-07-13 perf audit — spatialSync/cull/breakpoint walk all rows every frame to confirm nothing changed | [petitions/petition-7-changed-since-gate.md](petitions/petition-7-changed-since-gate.md) · [rec](petitions/petition-7-recommendation.md) |
 
 House rules for petitions: cite strata source file:line for every
 current-behavior claim; state the engine field impact that motivated it;

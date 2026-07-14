@@ -245,8 +245,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
       '@vibecook/strata-ecs':
-        specifier: 0.6.0
-        version: 0.6.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.7.0
+        version: 0.7.0(loro-crdt@1.13.6)(react@19.2.7)
       react:
         specifier: ^19
         version: 19.2.7
@@ -337,8 +337,8 @@ importers:
         specifier: workspace:*
         version: link:../kernel
       '@vibecook/strata-ecs':
-        specifier: 0.6.0
-        version: 0.6.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.7.0
+        version: 0.7.0(loro-crdt@1.13.6)(react@19.2.7)
       loro-crdt:
         specifier: ^1.13.6
         version: 1.13.6
@@ -349,8 +349,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@vibecook/strata-ecs':
-        specifier: 0.6.0
-        version: 0.6.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.7.0
+        version: 0.7.0(loro-crdt@1.13.6)(react@19.2.7)
     devDependencies:
       happy-dom:
         specifier: ^20.0.0
@@ -372,8 +372,8 @@ importers:
   packages/ice:
     dependencies:
       '@vibecook/strata-ecs':
-        specifier: 0.6.0
-        version: 0.6.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.7.0
+        version: 0.7.0(loro-crdt@1.13.6)(react@19.2.7)
       loro-crdt:
         specifier: ^1.13.6
         version: 1.13.6
@@ -462,8 +462,8 @@ importers:
         specifier: ^0.185.0
         version: 0.185.1
       '@vibecook/strata-ecs':
-        specifier: 0.6.0
-        version: 0.6.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.7.0
+        version: 0.7.0(loro-crdt@1.13.6)(react@19.2.7)
       react:
         specifier: ^19
         version: 19.2.7
@@ -1232,8 +1232,8 @@ packages:
     peerDependencies:
       react: '>= 16.8.0'
 
-  '@vibecook/strata-ecs@0.6.0':
-    resolution: {integrity: sha512-l7xzGEl5cZO22nlclhWR/WCx7SI+SqlmmYoiB5pQm0UnmQXNvaK48g7MrgnTHW343X5MuPwoHzR0kOxE9Hk0uQ==}
+  '@vibecook/strata-ecs@0.7.0':
+    resolution: {integrity: sha512-gS4+Cf3s3YIDRJnzqP1IYCgdWd64+/fM738XuLsycleFTm2CbqjJSKqGiL5cl54XiOnHZHBvW/R3CCeuScIxPQ==}
     engines: {node: '>=20'}
     peerDependencies:
       loro-crdt: '>=1'
@@ -2650,7 +2650,7 @@ snapshots:
       '@use-gesture/core': 10.3.1
       react: 19.2.7
 
-  '@vibecook/strata-ecs@0.6.0(loro-crdt@1.13.6)(react@19.2.7)':
+  '@vibecook/strata-ecs@0.7.0(loro-crdt@1.13.6)(react@19.2.7)':
     optionalDependencies:
       loro-crdt: 1.13.6
       react: 19.2.7

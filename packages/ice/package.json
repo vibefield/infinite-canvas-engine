@@ -46,7 +46,7 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@vibecook/strata-ecs": "0.6.0",
+    "@vibecook/strata-ecs": "0.7.0",
     "loro-crdt": "^1.13.6",
     "stats-gl": "^4.2.3",
     "rbush": "^3.0.1"

@@ -14,7 +14,7 @@
     "@ice/devtools": "workspace:*",
     "@ice/dom": "workspace:*",
     "@ice/kernel": "workspace:*",
-    "@vibecook/strata-ecs": "0.6.0",
+    "@vibecook/strata-ecs": "0.7.0",
     "react": "^19",
     "react-dom": "^19"
   },
