@@ -1,0 +1,39 @@
+diff --git a/dist/events-583399dd.cjs.prod.js b/dist/events-583399dd.cjs.prod.js
+index f3834fa28aa8504b48da031e326acb332a722965..8055981c30278b4829ed83473eac473aefe3e2af 100644
+--- a/dist/events-583399dd.cjs.prod.js
++++ b/dist/events-583399dd.cjs.prod.js
+@@ -1038,7 +1038,7 @@ const createStore = (invalidate, advance) => {
+       linear: false,
+       flat: false,
+       controls: null,
+-      clock: new THREE__namespace.Clock(),
++      clock: /* patched: THREE.Clock is deprecated (r183) and warns at construction; R3F 9.6.1 still news it up. Identical logic, warning-free — drop this patch when R3F moves to THREE.Timer. */ (() => { const c = { autoStart: true, startTime: 0, oldTime: 0, elapsedTime: 0, running: false, start() { c.startTime = performance.now(); c.oldTime = c.startTime; c.elapsedTime = 0; c.running = true; }, stop() { c.getElapsedTime(); c.running = false; c.autoStart = false; }, getElapsedTime() { c.getDelta(); return c.elapsedTime; }, getDelta() { let diff = 0; if (c.autoStart && !c.running) { c.start(); return 0; } if (c.running) { const t = performance.now(); diff = (t - c.oldTime) / 1000; c.oldTime = t; c.elapsedTime += diff; } return diff; } }; return c; })(),
+       pointer,
+       mouse: pointer,
+       frameloop: 'always',
+diff --git a/dist/events-b389eeca.esm.js b/dist/events-b389eeca.esm.js
+index 76f308c96cb09a20e854133e48ec9ef7682edecc..147d5d1079fedc195af74f152c319559b90efd67 100644
+--- a/dist/events-b389eeca.esm.js
++++ b/dist/events-b389eeca.esm.js
+@@ -1013,7 +1013,7 @@ const createStore = (invalidate, advance) => {
+       linear: false,
+       flat: false,
+       controls: null,
+-      clock: new THREE.Clock(),
++      clock: /* patched: THREE.Clock is deprecated (r183) and warns at construction; R3F 9.6.1 still news it up. Identical logic, warning-free — drop this patch when R3F moves to THREE.Timer. */ (() => { const c = { autoStart: true, startTime: 0, oldTime: 0, elapsedTime: 0, running: false, start() { c.startTime = performance.now(); c.oldTime = c.startTime; c.elapsedTime = 0; c.running = true; }, stop() { c.getElapsedTime(); c.running = false; c.autoStart = false; }, getElapsedTime() { c.getDelta(); return c.elapsedTime; }, getDelta() { let diff = 0; if (c.autoStart && !c.running) { c.start(); return 0; } if (c.running) { const t = performance.now(); diff = (t - c.oldTime) / 1000; c.oldTime = t; c.elapsedTime += diff; } return diff; } }; return c; })(),
+       pointer,
+       mouse: pointer,
+       frameloop: 'always',
+diff --git a/dist/events-f19bcc32.cjs.dev.js b/dist/events-f19bcc32.cjs.dev.js
+index 07d45d4c0bd7d57301d338040e8aa71c88fce7c5..0d530a9698e3dbeb05d14b543dc7221f031ef987 100644
+--- a/dist/events-f19bcc32.cjs.dev.js
++++ b/dist/events-f19bcc32.cjs.dev.js
+@@ -1038,7 +1038,7 @@ const createStore = (invalidate, advance) => {
+       linear: false,
+       flat: false,
+       controls: null,
+-      clock: new THREE__namespace.Clock(),
++      clock: /* patched: THREE.Clock is deprecated (r183) and warns at construction; R3F 9.6.1 still news it up. Identical logic, warning-free — drop this patch when R3F moves to THREE.Timer. */ (() => { const c = { autoStart: true, startTime: 0, oldTime: 0, elapsedTime: 0, running: false, start() { c.startTime = performance.now(); c.oldTime = c.startTime; c.elapsedTime = 0; c.running = true; }, stop() { c.getElapsedTime(); c.running = false; c.autoStart = false; }, getElapsedTime() { c.getDelta(); return c.elapsedTime; }, getDelta() { let diff = 0; if (c.autoStart && !c.running) { c.start(); return 0; } if (c.running) { const t = performance.now(); diff = (t - c.oldTime) / 1000; c.oldTime = t; c.elapsedTime += diff; } return diff; } }; return c; })(),
+       pointer,
+       mouse: pointer,
+       frameloop: 'always',

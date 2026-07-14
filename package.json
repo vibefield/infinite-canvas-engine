@@ -2,8 +2,18 @@
   "name": "infinite-canvas-engine",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
-  "pnpm": { "onlyBuiltDependencies": ["@biomejs/biome", "esbuild"] },
+  "engines": {
+    "node": ">=24"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "esbuild"
+    ],
+    "patchedDependencies": {
+      "@react-three/fiber@9.6.1": "patches/@react-three__fiber@9.6.1.patch"
+    }
+  },
   "scripts": {
     "build": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r run typecheck",

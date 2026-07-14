@@ -70,16 +70,19 @@ function CrystalView({ entity, world }: WidgetComponentProps): ReactElement {
       <ambientLight intensity={0.4} />
       <mesh ref={meshRef}>
         <icosahedronGeometry args={[size * 0.3, 0]} />
+        {/* Glass WITHOUT `transmission` (2026-07-14): transmission makes three
+            run renderTransmissionPass — a second full scene render into a
+            mipmapped RT every paint (Firefox warns on its lazy-init) — to
+            refract what's BEHIND the mesh, and this island's behind is empty
+            transparent black. The refraction contributed nothing; opacity +
+            clearcoat + IBL reads the same here at zero extra passes. */}
         <meshPhysicalMaterial
           color={tint}
           roughness={0.08}
-          transmission={0.85}
-          thickness={1.2}
-          ior={1.45}
+          transparent
+          opacity={0.9}
           clearcoat={1}
           clearcoatRoughness={0.05}
-          attenuationDistance={2.5}
-          attenuationColor={tint}
         />
       </mesh>
     </GlLiftGroup>

@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@react-three/fiber@9.6.1':
+    hash: 7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973
+    path: patches/@react-three__fiber@9.6.1.patch
+
 importers:
 
   .:
@@ -92,7 +97,7 @@ importers:
         version: link:../../packages/react
       '@react-three/fiber':
         specifier: ^9
-        version: 9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+        version: 9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       loro-crdt:
         specifier: ^1.13.6
         version: 1.13.6
@@ -292,10 +297,10 @@ importers:
         version: link:../../packages/react
       '@react-three/drei':
         specifier: ^10
-        version: 10.7.7(@react-three/fiber@9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1))(@types/react@19.2.17)(@types/three@0.185.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+        version: 10.7.7(@react-three/fiber@9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1))(@types/react@19.2.17)(@types/three@0.185.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       '@react-three/fiber':
         specifier: ^9
-        version: 9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+        version: 9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       react:
         specifier: ^19
         version: 19.2.7
@@ -404,7 +409,7 @@ importers:
         version: link:../react
       '@react-three/fiber':
         specifier: ^9
-        version: 9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+        version: 9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       '@types/rbush':
         specifier: ^3.0.3
         version: 3.0.4
@@ -454,7 +459,7 @@ importers:
     devDependencies:
       '@react-three/fiber':
         specifier: ^9
-        version: 9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+        version: 9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       '@types/react':
         specifier: ^19
         version: 19.2.17
@@ -2395,12 +2400,12 @@ snapshots:
       promise-worker-transferable: 1.0.4
       three: 0.185.1
 
-  '@react-three/drei@10.7.7(@react-three/fiber@9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1))(@types/react@19.2.17)(@types/three@0.185.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)':
+  '@react-three/drei@10.7.7(@react-three/fiber@9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1))(@types/react@19.2.17)(@types/three@0.185.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)':
     dependencies:
       '@babel/runtime': 7.29.7
       '@mediapipe/tasks-vision': 0.10.17
       '@monogrid/gainmap-js': 3.4.0(three@0.185.1)
-      '@react-three/fiber': 9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+      '@react-three/fiber': 9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       '@use-gesture/react': 10.3.1(react@19.2.7)
       camera-controls: 3.1.2(three@0.185.1)
       cross-env: 7.0.3
@@ -2428,7 +2433,7 @@ snapshots:
       - '@types/three'
       - immer
 
-  '@react-three/fiber@9.6.1(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)':
+  '@react-three/fiber@9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)':
     dependencies:
       '@babel/runtime': 7.29.7
       '@types/webxr': 0.5.24
