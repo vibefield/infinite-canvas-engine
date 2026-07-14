@@ -4,6 +4,12 @@
  * (absolute inset-0, `pointer-events: none` — the router owns GL hit
  * testing; the canvas element never sees pointers).
  *
+ * Mount with `gl={{ alpha: true, antialias: false }}`: the composite pass
+ * draws only textured quads whose corners are shader-rounded ALPHA, not
+ * geometry, so backbuffer MSAA buys nothing — and at fullscreen dpr 2 it
+ * costs ~21 % of the GPU frame (2026-07-14 A/B). Island edges keep their own
+ * MSAA 4 inside the FBOs (pool.ts), which is where the 3D geometry lives.
+ *
  * Owns everything whose lifetime IS the GL context's: the FBO pool, the
  * shared unit-quad geometry, the per-widget composite quads, the composite
  * camera, and the priority-1 `useFrame` that runs `runCompositorPass` (which
@@ -50,6 +56,7 @@ import {
 } from "./compositor-pass";
 import { Island } from "./island";
 import { RenderTargetPool } from "./pool";
+import { selfSustainPlan } from "./self-sustain";
 
 export interface GLViewsProps {
   readonly engine: Engine;
@@ -59,6 +66,22 @@ export interface GLViewsProps {
   readonly maxFboBytes?: number;
   /** Repaint stagger per composited frame (v1 default 4). */
   readonly maxRepaintsPerFrame?: number;
+  /**
+   * Ambient-animation rate cap (default 60; `Infinity` = uncapped). Applies
+   * ONLY to self-sustained frames — Hot islands and stagger backlogs park the
+   * loop between paints instead of spinning at native refresh (5 Hot islands
+   * at 120 Hz dpr-2 measured 96 % GPU duty at idle, 2026-07-14). Lift eases
+   * and externally invalidated frames (camera, drags, props dirt) still run
+   * at display rate. Approximate: frames land on the vsync grid.
+   */
+  readonly maxAnimationFps?: number;
+  /**
+   * Idle paint-DPR ceiling (default 1.5; `Infinity` = uncapped): island FBOs
+   * allocate at `min(pixelRatio, maxPaintDpr) × band`. On dpr-2 displays the
+   * composite's bilinear upscale from 1.5× is visually indistinguishable
+   * (2026-07-14 A/B) and cuts Hot repaint cost ~22 %.
+   */
+  readonly maxPaintDpr?: number;
   /**
    * Shared IBL: stamped as `scene.environment` on EVERY island's private
    * scene (arrival/change repaints all islands). Load it app-side (e.g.
@@ -145,6 +168,8 @@ export function GLViews({
   store,
   maxFboBytes = RUNTIME_BUDGETS.fboBytes,
   maxRepaintsPerFrame = 4,
+  maxAnimationFps = 60,
+  maxPaintDpr = 1.5,
   environment,
   onFrameStats,
 }: GLViewsProps): ReactElement {
@@ -238,6 +263,19 @@ export function GLViews({
     return () => bridge.setInvalidate(null);
   }, [bridge, invalidate]);
 
+  // Ambient-animation throttle (self-sustain.ts): at most one wake-up timer
+  // pending; a pass that runs for ANY reason clears it and reschedules at its
+  // tail, so external invalidations (which arrive on their own) never stack
+  // extra frames on top of the cap.
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (animTimerRef.current !== null) clearTimeout(animTimerRef.current);
+      animTimerRef.current = null;
+    },
+    [],
+  );
+
   // --- GL profiling (opt-in via onFrameStats) --------------------------------
   // The callback rides a ref (no useFrame re-subscribe); the GPU profiler is
   // dynamic-imported on first profiled frame. stats-gl's three-renderer init
@@ -297,7 +335,13 @@ export function GLViews({
     } else if (!gl.info.autoReset) {
       gl.info.autoReset = true; // profiling stopped — restore vanilla three behavior
     }
-    const passStart = profiling ? performance.now() : 0;
+    // A pass is running — cancel any pending animation wake-up; the tail
+    // reschedules from THIS pass's start if animation still wants frames.
+    if (animTimerRef.current !== null) {
+      clearTimeout(animTimerRef.current);
+      animTimerRef.current = null;
+    }
+    const passStart = performance.now(); // profiling cpuMs + the rate cap's schedule anchor
     bridge.renderAssert.begin();
     let stats: ReturnType<typeof runCompositorPass>;
     try {
@@ -334,6 +378,7 @@ export function GLViews({
         compositeScene: scene,
         maxFboBytes,
         maxRepaintsPerFrame,
+        maxPaintDpr,
         dtMs: delta * 1000,
       });
     } finally {
@@ -403,15 +448,22 @@ export function GLViews({
         evicted: stats.evicted,
         zoom,
         band,
-        effectiveDpr: gl.getPixelRatio() * band,
+        effectiveDpr: Math.min(gl.getPixelRatio(), maxPaintDpr) * band,
         visibleWidgets,
         culledWidgets,
       });
     }
-    // Self-sustain: Hot islands, stagger-deferred paints and mid-flight lift
-    // eases keep the demand loop spinning; otherwise it parks until the next
-    // invalidation.
-    if (stats.anyHot || stats.pendingPaints > 0 || stats.liftAnimating) invalidate();
+    // Self-sustain: lift eases re-invalidate at native refresh (interaction
+    // feedback); Hot islands and stagger backlogs reschedule at the animation
+    // rate cap; otherwise the loop parks until the next invalidation.
+    const plan = selfSustainPlan(stats, performance.now() - passStart, maxAnimationFps);
+    if (plan === "now") invalidate();
+    else if (plan !== "none") {
+      animTimerRef.current = setTimeout(() => {
+        animTimerRef.current = null;
+        invalidate();
+      }, plan);
+    }
   }, 1);
 
   // --- island membership (mount store → gl-surface islands) -----------------

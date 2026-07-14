@@ -168,7 +168,7 @@ interface GLRig {
   spawnCard(x: number, y: number, w?: number, h?: number): Entity;
   /** Register a fake island (scene/camera are inert handles). */
   mount(e: Entity): () => void;
-  pass(opts?: { maxFboBytes?: number; maxRepaints?: number }): PassStats;
+  pass(opts?: { maxFboBytes?: number; maxRepaints?: number; maxPaintDpr?: number }): PassStats;
   step(): void;
 }
 
@@ -216,7 +216,9 @@ function createGLRig(opts: { devAssert?: boolean } = {}): GLRig {
         camera: { updateProjectionMatrix() {} } as unknown as OrthographicCamera,
       });
     },
-    pass({ maxFboBytes = Number.MAX_SAFE_INTEGER, maxRepaints = 100 } = {}) {
+    // maxPaintDpr defaults NEUTRAL (Infinity) so pre-cap traces stay
+    // byte-identical; the dpr-cap trace opts in with the production 1.5.
+    pass({ maxFboBytes = Number.MAX_SAFE_INTEGER, maxRepaints = 100, maxPaintDpr = Number.POSITIVE_INFINITY } = {}) {
       bridge.renderAssert.begin();
       try {
         return runCompositorPass({
@@ -240,6 +242,7 @@ function createGLRig(opts: { devAssert?: boolean } = {}): GLRig {
           compositeScene: compScene,
           maxFboBytes,
           maxRepaintsPerFrame: maxRepaints,
+          maxPaintDpr,
           dtMs: 16,
         });
       } finally {
@@ -678,5 +681,38 @@ describe("the drag clip (v1 uDraggedRect restored for the chrome sandwich, 2026-
     rig.world.addComponent(a, Grab, { x: 0, y: 0, w: 100, h: 100, z: 0 });
     rig.pass();
     expect(rig.quads.clips.get(b)).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0, exempt: false });
+  });
+});
+
+describe("idle paint-DPR cap (design-004 §3 amendment 2026-07-14)", () => {
+  it("paints at min(pixelRatio, maxPaintDpr) × band; uncapped repaint re-acquires full res", () => {
+    const rig = createGLRig();
+    rig.world.setResource(Viewport, { w: 800, h: 600, dpr: 2 }); // retina: pass sets pixelRatio 2
+    const e = rig.spawnCard(0, 0); // 100×100 world units, band ×1 at zoom 1
+
+    rig.mount(e);
+    rig.pass({ maxPaintDpr: 1.5 });
+    // capped: 100 × min(2, 1.5) = 150 px per side (fake pool charges pw*ph*4)
+    expect(rig.pool.bytesUsed()).toBe(150 * 150 * 4);
+    expect(rig.bridge.state.get(e)?.paintedAt.dpr).toBe(1.5);
+
+    // No forced churn: the cap applies at PAINT time. A later uncapped repaint
+    // (props dirt) re-acquires at the full resolution.
+    rig.bridge.bumpPaint(e);
+    rig.pass(); // rig default: maxPaintDpr Infinity
+    expect(rig.pool.bytesUsed()).toBe(200 * 200 * 4);
+    expect(rig.bridge.state.get(e)?.paintedAt.dpr).toBe(2);
+  });
+
+  it("composes with the gesture drop: pixelRatio is already 1 while gesturing", () => {
+    const rig = createGLRig();
+    rig.world.setResource(Viewport, { w: 800, h: 600, dpr: 2 });
+    rig.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: true });
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    rig.pass({ maxPaintDpr: 1.5 }); // Waking paint happens even mid-gesture
+    // min(min(2,1) [gesture drop], 1.5 [cap]) = 1 → 100 px per side
+    expect(rig.pool.bytesUsed()).toBe(100 * 100 * 4);
+    expect(rig.bridge.state.get(e)?.paintedAt.dpr).toBe(1);
   });
 });

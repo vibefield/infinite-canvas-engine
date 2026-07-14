@@ -291,7 +291,7 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
       <StoreContext.Provider value={session.store}>
         <WidgetRoot world={world} store={runtime.store} hosts={domWidgets} />
         {createPortal(
-          <Canvas orthographic frameloop="demand" gl={{ alpha: true }} style={GL_CANVAS_STYLE}>
+          <Canvas orthographic frameloop="demand" gl={{ alpha: true, antialias: false }} style={GL_CANVAS_STYLE}>
             <GLViews
               engine={engine}
               bridge={bridge}

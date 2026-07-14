@@ -11,9 +11,10 @@
  *      module-side state ONLY — no ECS writes anywhere in the pass);
  *   3. `useIslandFrame` callbacks for Hot islands (paint-attributed — this
  *      is why plain `useFrame` is not the contract);
- *   4. paint pass, Waking-first, staggered by `maxRepaintsPerFrame`; band
- *      repaints suppressed while gesturing (the composite's bilinear stretch
- *      is the accepted transient) and picked up on the first idle pass;
+ *   4. paint pass, Waking-first, staggered by `maxRepaintsPerFrame`, at
+ *      `min(pixelRatio, maxPaintDpr) × band`; band repaints suppressed while
+ *      gesturing (the composite's bilinear stretch is the accepted transient)
+ *      and picked up on the first idle pass;
  *   5. eviction to budget (kernel `selectEvictions`; Hot/Waking immune);
  *   6. quad reconcile: transform from Position/Size (kernel Y-flip), texture
  *      from the pool, `StackZ` render order with grabbed widgets on top
@@ -136,6 +137,15 @@ export interface PassContext {
   readonly compositeScene: object;
   readonly maxFboBytes: number;
   readonly maxRepaintsPerFrame: number;
+  /**
+   * Idle ceiling on island paint resolution (design-004 §3 amendment,
+   * 2026-07-14): new paints allocate at `min(pixelRatio, maxPaintDpr) × band`.
+   * On a dpr-2 display the composite's bilinear upscale from a 1.5× texture is
+   * visually indistinguishable (A/B knot crops) while Hot repaint cost drops
+   * ~22 %. Composes with the gesture drop (pixelRatio is already 1 while
+   * gesturing) and with zoom bands. `Infinity` = uncapped.
+   */
+  readonly maxPaintDpr: number;
   readonly dtMs: number;
 }
 
@@ -192,7 +202,7 @@ export function runCompositorPass(ctx: PassContext): PassStats {
 
   // 3+4. paint pass (Waking first, staggered) --------------------------------
   const band = selectBand(cam.zoom);
-  const effectiveDpr = gl.getPixelRatio() * band;
+  const effectiveDpr = Math.min(gl.getPixelRatio(), ctx.maxPaintDpr) * band;
   const toPaint: Entity[] = [];
   for (const [e, s] of bridge.state.all()) {
     if (bridge.islandFor(e as Entity) === undefined) continue; // unmounted: retained texture only

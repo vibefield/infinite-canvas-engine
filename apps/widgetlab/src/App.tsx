@@ -343,7 +343,7 @@ export function App() {
             <Canvas
               orthographic
               frameloop="demand"
-              gl={{ alpha: true }}
+              gl={{ alpha: true, antialias: false }}
               style={{ pointerEvents: "none", position: "absolute", inset: 0 }}
             >
               <EnvLoader onTex={setEnvTex} />
