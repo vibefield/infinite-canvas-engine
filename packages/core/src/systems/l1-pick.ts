@@ -13,6 +13,17 @@
  * changed, and a cache-sweep removes entries no longer matched (despawns, or a
  * lost Position/Size). Materialized ports are M8 — skipped.
  *
+ * Per-frame constant factors (2026-07-13 perf audit — this was the top
+ * always-on system at 17µs/frame on an 18-widget board):
+ *  - nav gating rides the QUERIES, not per-row `hasTag` calls: widgets match
+ *    `[Position, Size, WidgetEquipped, Active]`, chrome matches
+ *    `[Position, Size, Not(WidgetEquipped)]` — the union is exactly the old
+ *    `!WidgetEquipped || Active` predicate, resolved at archetype level;
+ *  - the sweep is a GENERATION stamp on cache entries (mutated in place),
+ *    not a per-frame `seen` Set + `gone` array — zero steady-state
+ *    allocations. The remaining idle cost is the O(N) compare walk; gating
+ *    the WHOLE body needs a strata changed-since primitive (petition 7).
+ *
  * `picking` runs the dual pick (design-003 §3), gated by a version guard over
  * `PointerVersion ∨ SpatialVersion`. `CameraVersion` does not exist — camera
  * motion alone does not re-pick, an accepted staleness (design-002 §2). Pointer
@@ -29,7 +40,7 @@
  * (design-001 §4). Relations are written change-only (design-002 §4 hygiene).
  * Wires/ports are M8 — skipped.
  */
-import type { Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
+import type { Batch, Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, defineTickSystem, Not } from "@vibecook/strata-ecs";
 import { SpatialIndex, screenToWorld, type CameraState } from "@ice/kernel";
 import {
@@ -55,7 +66,12 @@ import { POINTER_DEFAULTS } from "../settings/defaults";
 const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
 
 const canvasSurfaceQ = defineQuery([CanvasSurface]);
-const posSizeQ = defineQuery([Position, Size]);
+// Nav gating at ARCHETYPE level (design-004 §7): the union of these two is
+// exactly `Position+Size ∧ (¬WidgetEquipped ∨ Active)` — equipped widgets are
+// hittable only while Active (in-frame); chrome/pre-equip entities always.
+// Tags in the query beat per-row `hasTag` calls (2026-07-13 perf audit).
+const widgetAabbQ = defineQuery([Position, Size, WidgetEquipped, Active]);
+const chromeAabbQ = defineQuery([Position, Size, Not(WidgetEquipped)]);
 const pointerQ = defineQuery([Pointer, PointerScreen, PointerRadius, LocalPointer, Not(HandledByWidget)]);
 
 export interface PickingSystems {
@@ -74,43 +90,55 @@ export function createPickingSystems(
   wires?: WirePickSource,
 ): PickingSystems {
   // Private last-known AABB cache — the compare-and-skip that keeps spatialSync
-  // cheap while running every frame (it is the SpatialVersion writer).
-  const cache = new Map<Entity, { x: number; y: number; w: number; h: number }>();
+  // cheap while running every frame (it is the SpatialVersion writer). Entries
+  // carry a GENERATION stamp (mutated in place each visit) so membership sweep
+  // needs no per-frame Set/array allocations.
+  const cache = new Map<Entity, { x: number; y: number; w: number; h: number; gen: number }>();
+  let gen = 0;
 
   const spatialSync = defineTickSystem(
     (ctx) => {
-      const seen = new Set<Entity>();
+      gen += 1;
       let changed = false;
-      ctx.query(posSizeQ).each((batch) => {
+      const visit = (batch: Batch): void => {
         const px = batch.col(Position).x;
         const py = batch.col(Position).y;
         const sw = batch.col(Size).w;
         const sh = batch.col(Size).h;
         for (const row of batch) {
-          const e = batch.entity(row);
-          // Nav gating (design-004 §7): only ACTIVE widgets are hittable —
-          // container content indexes only inside its frame. Non-widget
-          // Position+Size entities (chrome handles) are frame-local already.
-          if (world.hasTag(e, WidgetEquipped) && !world.hasTag(e, Active)) continue;
-          seen.add(e);
           const x = px[row] as number;
           const y = py[row] as number;
           const w = sw[row] as number;
           const h = sh[row] as number;
+          const e = batch.entity(row);
           const prev = cache.get(e);
-          if (prev === undefined || prev.x !== x || prev.y !== y || prev.w !== w || prev.h !== h) {
+          if (prev === undefined) {
             index.upsert(e, { minX: x, minY: y, maxX: x + w, maxY: y + h });
-            cache.set(e, { x, y, w, h });
+            cache.set(e, { x, y, w, h, gen });
+            changed = true;
+            continue;
+          }
+          prev.gen = gen;
+          if (prev.x !== x || prev.y !== y || prev.w !== w || prev.h !== h) {
+            index.upsert(e, { minX: x, minY: y, maxX: x + w, maxY: y + h });
+            prev.x = x;
+            prev.y = y;
+            prev.w = w;
+            prev.h = h;
             changed = true;
           }
         }
-      });
-      const gone: Entity[] = [];
-      for (const e of cache.keys()) if (!seen.has(e)) gone.push(e);
-      for (const e of gone) {
-        index.remove(e);
-        cache.delete(e);
-        changed = true;
+      };
+      ctx.query(widgetAabbQ).each(visit);
+      ctx.query(chromeAabbQ).each(visit);
+      // Sweep: anything not visited this generation left the indexable set
+      // (despawn, lost Position/Size, or an equipped widget going inactive).
+      for (const [e, rec] of cache) {
+        if (rec.gen !== gen) {
+          index.remove(e);
+          cache.delete(e);
+          changed = true;
+        }
       }
       if (changed) bumpVersion(world, SpatialVersion);
     },
