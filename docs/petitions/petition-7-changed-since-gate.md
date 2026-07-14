@@ -1,4 +1,11 @@
-# Petition 7 — Changed-since gate for eager derivation systems (candidate; 2026-07-13 perf audit)
+# Petition 7 — Change detection for eager derivation systems (candidate; 2026-07-13 perf audit)
+
+> **ADOPTED SHAPE (2026-07-14)**: the maintainer-side review
+> ([petition-7-recommendation.md](petition-7-recommendation.md)) proposes an
+> opt-in pull-based **ChangeCollector** instead of the boolean changed-since
+> gate originally asked below. ENDORSED — see the final section for why it
+> strictly subsumes the original ask and the engine's adoption notes. The
+> sections in between are kept as the motivating evidence.
 
 ## Field impact
 
@@ -53,7 +60,7 @@ reads, `batch.entity(row)`, cache lookup — is the residual cost.
   frozen counters and report "no change" forever, which is silent
   wrongness, not degradation.
 
-## Ask (additive)
+## Original ask (additive; superseded by the adopted shape below)
 
 A synchronous changed-since primitive for systems, in whichever shape fits
 strata's plan-cache architecture best:
@@ -89,3 +96,62 @@ Constant-factor trims only (landed with this petition): nav gating moved
 from per-row `hasTag` into query tags (archetype-level filtering), and the
 membership sweep generation-stamped instead of allocating a `seen` Set +
 `gone` array per frame. Idle cost is walk-bound and stays O(N).
+
+## Adopted shape (2026-07-14) — opt-in pull-based ChangeCollector
+
+The maintainer recommendation
+([petition-7-recommendation.md](petition-7-recommendation.md)): an exact
+entity journal for writes strata can identify (edit/set, add/remove,
+destroy, projection — the `doWriteCells`/migration chokepoints already
+receive the entity), a **conservative per-archetype fallback** for raw
+typed-array writes, a `reset` marker, per-collector epoch deduplication over
+packed entity handles, and **pull** semantics: `collector.drain()` is
+callable INSIDE the pipeline (`world.changes`, not `world.reactive` — a
+different scheduling contract from the notify boundary).
+
+**Why this supersedes the boolean gate:**
+
+1. **It fixes interaction, not just idle.** `changedSince` collapses to
+   "walk everything" the moment ONE entity moves — at the 2–3k ceiling a
+   single-widget drag would still cost a ms-class walk per gesture frame,
+   which is when the budget matters most. `drain()` is O(delta): one moved
+   widget ⇒ one upsert.
+2. **Same-frame exactness holds.** Pull-inside-the-pipeline sees exactly
+   what today's full walk sees (everything written before the react phase);
+   the design-003 §3 down-frame pick precision is untouched.
+3. **The arming question (this file's 2026-07-13 amendment) is answered
+   more strictly**: collectors get their OWN gate rather than riding
+   `reactiveOn` — one UI `observeValue` must not tax every component write
+   with journal checks. Dormant-until-attached is preserved.
+4. **It retires spatialSync's private machinery entirely.** The last-known
+   AABB cache, compare-and-skip and generation sweep exist only because the
+   system cannot know WHICH entities changed. With a collector over
+   `[Position, Size]` + `tags: [Active, WidgetEquipped]` + lifecycle, the
+   body becomes: drain → per entity `isIndexable ? upsert : remove` → bump
+   `SpatialVersion` if the delta was non-empty; `reset` routes to the
+   existing nav `clearCaches()` rebuild.
+5. **The exact/coarse hybrid fits this engine's laws.** Absolute writes via
+   `ctx.*` and doc projection are both EXACT-path — the engine would see
+   nearly pure exact deltas; the coarse fallback stays a safety net. And the
+   `touch()` posture is right: forgetting it produces over-work, never stale
+   state (unlike a SpatialDirty tag, where forgetting corrupts).
+
+Also endorsed: rejecting a `Changed(Position)` query filter (Bevy's
+looks-O(changed)-runs-O(all-matches) footgun; EnTT-style named collectors
+make the cost visible), deferring exact query-deltas (entered/exited) in
+favor of consumer-side `isIndexable` rechecks, and NOT introducing
+fixed-size chunking (strata's archetype IS its chunk).
+
+**Engine adoption notes (asks for the implementation):**
+
+- **drain() allocation contract**: internal buffers reused across drains,
+  returned arrays valid only until the next `drain()` — a per-frame drain
+  must not be per-frame garbage.
+- **Opaque coarse regions**: `ChangeRegion` should expose "iterate batches
+  of this region" without leaking a live archetype/query handle.
+- **Tags in v1 config are load-bearing for spatialSync** (`Active` /
+  `WidgetEquipped` flips change the indexable set); resources can stay on
+  the existing stamps (`cull`'s Camera dependency — and engine-side, cull
+  may eventually query the rbush by viewport instead of walking at all).
+- The original boolean gate needs no separate API: `drain()` emptiness IS
+  `changedSince`.

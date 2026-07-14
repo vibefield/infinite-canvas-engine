@@ -30,7 +30,7 @@ evidence. One file per open petition in `docs/petitions/`.
 | # | Title | Field finding | File |
 |---|-------|---------------|------|
 | 6 | Public entity introspection (`world.componentsOf`/`tagsOf` — promote the existing internal readers) | M10 devtools | [petitions/petition-6-entity-introspection.md](petitions/petition-6-entity-introspection.md) |
-| 7 | Changed-since gate for eager derivation systems (expose the §2 stamps synchronously to systems) | 2026-07-13 perf audit — spatialSync/cull/breakpoint walk all rows every frame to confirm nothing changed | [petitions/petition-7-changed-since-gate.md](petitions/petition-7-changed-since-gate.md) |
+| 7 | Change detection for eager derivation systems — adopted shape: opt-in pull-based `ChangeCollector` (exact entity journal + coarse raw-write fallback; maintainer rec endorsed 2026-07-14, supersedes the original changed-since boolean) | 2026-07-13 perf audit — spatialSync/cull/breakpoint walk all rows every frame to confirm nothing changed | [petitions/petition-7-changed-since-gate.md](petitions/petition-7-changed-since-gate.md) · [rec](petitions/petition-7-recommendation.md) |
 
 House rules for petitions: cite strata source file:line for every
 current-behavior claim; state the engine field impact that motivated it;
