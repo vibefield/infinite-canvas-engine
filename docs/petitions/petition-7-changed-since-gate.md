@@ -176,3 +176,43 @@ Net: the adopted-shape endorsement stands on all structural claims; two
 overstatements corrected above (S5 scope, S3 magnitude). The interaction-
 time argument (S4) is the strongest measured result and is the collector's
 decisive advantage over the original boolean ask.
+
+## LANDED — strata 0.7.0 (2026-07-14, local commit ff23f1e; npm publish pending)
+
+Implemented as the adopted shape: `world.changes.collect({ components, tags,
+coarse }) → ChangeCollector` with in-pipeline `drain()` →
+`{ changed, removed, coarse, reset }`. Exact journal at the sparse
+chokepoints (doWriteCells / place / migrate-old-archetype / destroy /
+doAddTag / doRemoveTag — immediate AND ctx-flush paths share the funnels);
+`removed` reserved for destroys; own gate (never arms `reactiveOn`);
+buffer-reuse drain contract; 11 strata tests. Engine migration validated
+end-to-end against `file:../strata-ecs` (full engine CI green; blocked from
+main only by the npm publish → pin bump).
+
+**Two as-built findings the recommendation didn't anticipate** (both caught
+by the engine's M8 graph traces on first integration):
+
+1. **The coarse blanket over-fires structurally for exact-path pipelines.**
+   Engine systems declare `access.write` for ENFORCEMENT but write through
+   `ctx.*` (exact chokepoints); the declared-writes blanket cannot tell the
+   difference, so coarse fired every gesture frame ⇒ permanent full rescans
+   — the walk collectors exist to retire. Landed fix: `coarse: false`, a
+   per-collector ATTESTATION ("all my writers are store-visible"), sound
+   under the engine's absolute-writes law; the rec's `touch()` op remains
+   the precision upgrade for mixed pipelines.
+2. **Consumers of SHARED indexes must not rebuild by clearing.** The spatial
+   index is multi-writer (ports + wires maintain their own entries);
+   spatialSync's rebuild now tracks its OWN membership set and removes only
+   its stale entries — `index.clear()` wiped its co-writers' entries.
+
+**Measured (node, same bench as the validation spike):**
+
+| N=2000 | before (walk) | after (collector) |
+|---|---|---|
+| idle | 103µs/frame | **0.80µs** (~130×) |
+| one entity moving | 98.3µs/frame | **6.08µs** (~16×) |
+
+spatialSync's cache/compare/sweep machinery is deleted; the full walk
+survives only as seed / reset / coarse routes, exactly as specced.
+Follow-ups: migrate cull / breakpoint / widgetMount / wireSync to
+collectors; publish 0.7.0 + flip the engine pin.
