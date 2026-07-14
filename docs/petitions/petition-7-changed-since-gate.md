@@ -155,3 +155,24 @@ fixed-size chunking (strata's archetype IS its chunk).
   may eventually query the rbush by viewport instead of walking at all).
 - The original boolean gate needs no separate API: `drain()` emptiness IS
   `changedSince`.
+
+## Validation spike (2026-07-14) — every load-bearing claim tested
+
+Behavior pins are committed as `packages/core/test/strata-boundary-pins.test.ts`
+(they re-run at every strata upgrade); benches ran once in node (vitest,
+dev build, reactivity unarmed in the bench worlds) and are recorded here.
+
+| # | Claim | Method | Result |
+|---|-------|--------|--------|
+| S1 | Stamping is opt-in, armed one-way by the first `observe*`; writes never arm | pinned test | **CONFIRMED** |
+| S2 | Observers are one boundary LATE for mid-frame consumers (an observer-armed gate would give stale picks; pull-based `drain()` is required) | pinned test: react-phase system sees `flag=false` for a same-frame input-phase write while `world.get` sees the new value | **CONFIRMED** |
+| S5 | "Production always arms reactivity" | pinned test: headless `createCanvasEngine` + doc + widget + steps | **CORRECTED** — the headless core facade does NOT arm; arming comes from the dom/react layers (the dom-widgets reflector registers observers at construction). True for browser apps, false for headless cores — added support for the collector's SEPARATE gate |
+| S3 | The idle walk is O(N) | bench, N=100/500/2000 | **CONFIRMED with corrected magnitude**: 13.6µs → 31µs → **103µs** idle at N=2000 (node). The earlier "milliseconds-class at 2–3k" was ~10× overstated for node; ms territory needs ~10k+ entities or browser+DEV-enforcement multipliers (browser DEV measured ~3–5× node at small N). Still a constant burn worth removing |
+| S4 | The boolean gate collapses to a full walk during interaction; a collector is O(delta) | bench: one entity moving per frame among N=2000 | **CONFIRMED**: full walk **98.3µs/frame** vs simulated exact-journal **~1.0µs/frame** (~100×); journal idle early-outs to ~0 |
+| — | `doWriteCells` receives the entity (exact journal implementable); conservative declared-write stamping exists | source | **CONFIRMED**: `core/runtime-store.ts:1129` (`doWriteCells(e, c, encoded)`), `:663` (`stampWrites(q, comps)` — "after a system runs, stamp its access.write set") |
+| — | +17–28% always-on stamping cost; Bevy `Changed<T>` iterates all matches | cite-only (strata's own bench comment `runtime-store.ts:190-192`; Bevy docs) | not re-validated |
+
+Net: the adopted-shape endorsement stands on all structural claims; two
+overstatements corrected above (S5 scope, S3 magnitude). The interaction-
+time argument (S4) is the strongest measured result and is the collector's
+decisive advantage over the original boolean ask.
