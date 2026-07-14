@@ -43,6 +43,15 @@ reads, `batch.entity(row)`, cache lookup — is the residual cost.
   around).
 - The stamps live behind `world.runtime`, the `@internal` seam
   (`core/stamps.test.ts:8`) — no public synchronous read surface exists.
+- **Stamping is OPT-IN**: every stamp site is behind the `reactiveOn` gate
+  (`core/runtime-store.ts:227/:240/:591/:785` — value, resource, rows-version
+  and membership stamps alike), flipped one-way by the first `observe*`
+  registration (`core/runtime-store.ts:195-199`). The gate exists for cause:
+  always-on stamping benched at **+17–28% on migrate-heavy scenarios**
+  (`core/runtime-store.ts:190-192`). A world that never registers an
+  observer records NOTHING — a naive changed-since reader there would see
+  frozen counters and report "no change" forever, which is silent
+  wrongness, not degradation.
 
 ## Ask (additive)
 
@@ -61,6 +70,18 @@ strata's plan-cache architecture best:
 Either retires the full-walk pattern: `spatialSync` (and cull/breakpoint/
 widgetMount/wireSync) open with `if (!changed) return` and cost ~0 on still
 frames, with same-frame exactness the observer path cannot give.
+
+**Arming semantics (required — the `reactiveOn` gate must stay honest):**
+acquiring a changed-since cursor is a change-detection SUBSCRIPTION and must
+arm `enableReactive()` exactly like `observe*` registration does — the
+caller opts into the write-path stamping cost knowingly. It must never read
+through an unarmed gate (frozen counters ⇒ silent "no change"). For this
+engine the trade is strictly favorable: production always arms reactivity
+anyway (Tier-3 props observers, reflector observes, presence), so the
+stamping cost is already paid and the read surface is pure profit; and the
++17–28% figure is a migrate-heavy synthetic — interaction-rate frames write
+a handful of cells (zero when idle, which is exactly when the walk-skip
+pays).
 
 ## Workaround until then
 
