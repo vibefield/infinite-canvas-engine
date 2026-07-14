@@ -9,10 +9,18 @@ import type { Texture } from "three";
  * Ported from v1 `CompositionMaterial`
  * (../infinite-canvas .../r3f/compositor/CompositionMaterial.ts) STRIPPED to the
  * engine-neutral core per design-004 §3 rev 2: the v1 app-specific uniforms and
- * shader branches — `uDraggedRect`/`uIsDragged` drag-promote clip, the
- * `uHotPoint`/`uHotStrength`/`uIsOverlapTarget` overlap glow, the rim band, and
- * the module-level `sharedGlowUniforms` — are DELETED. Userland looks belong in
- * userland materials, not the compositor.
+ * shader branches — the `uHotPoint`/`uHotStrength`/`uIsOverlapTarget` overlap
+ * glow, the rim band, and the module-level `sharedGlowUniforms` — are DELETED.
+ * Userland looks belong in userland materials (and, as of the chrome sandwich,
+ * in DOM CSS).
+ *
+ * `uDraggedRect`/`uIsDragged` are RESTORED (2026-07-13 amendment): with
+ * `defineWidget.chrome` an ENGINE feature, a dragged GL card's DOM chrome
+ * lives in P1 under every other quad — neighbor fragments inside the dragged
+ * card's rect must discard so the chrome+content pair floats whole (v1's
+ * RFC-003 clip, re-cut from screen-space gl_FragCoord to composite-space
+ * `vWorld`, so it is DPR/Y-flip-free by construction). This is compositing
+ * CORRECTNESS for an engine feature, not an app look. Rect (0,0,0,0) = off.
  *
  * What is KEPT verbatim is the colour-management contract: the FBO already holds
  * sRGB-encoded, display-ready values (RenderTargetPool sets
@@ -23,8 +31,10 @@ import type { Texture } from "three";
 
 const VERTEX_SHADER = /* glsl */ `
 varying vec2 vUv;
+varying vec2 vWorld;
 void main() {
   vUv = uv;
+  vWorld = (modelMatrix * vec4(position, 1.0)).xy;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
@@ -43,9 +53,20 @@ void main() {
 const FRAGMENT_SHADER = /* glsl */ `
 uniform sampler2D map;
 uniform float uOpacity;
+uniform vec4 uDraggedRect;
+uniform float uIsDragged;
 varying vec2 vUv;
+varying vec2 vWorld;
 
 void main() {
+  // Drag clip (v1 RFC-003, composite-space): while a chrome-carrying GL card
+  // is dragged, every OTHER quad discards fragments inside its rect so the
+  // card's P1 DOM chrome shows through. (0,0,0,0) rect ⇒ measure-zero, off.
+  if (uIsDragged < 0.5 &&
+      vWorld.x >= uDraggedRect.x && vWorld.x <= uDraggedRect.z &&
+      vWorld.y >= uDraggedRect.y && vWorld.y <= uDraggedRect.w) {
+    discard;
+  }
   vec4 c = texture2D(map, vUv);
   if (c.a < 0.001) discard;
   c.a *= uOpacity;
@@ -67,11 +88,16 @@ export class CompositeMaterial extends ShaderMaterial {
   // the setters allocation-free.
   private readonly mapUniform: { value: Texture | null };
   private readonly opacityUniform: { value: number };
+  private readonly draggedRectUniform: { value: [number, number, number, number] };
+  private readonly isDraggedUniform: { value: number };
 
   constructor() {
     const uniforms = {
       map: { value: null as Texture | null },
       uOpacity: { value: 1 },
+      // three uploads number[] as vec4 — no Vector4 allocation needed.
+      uDraggedRect: { value: [0, 0, 0, 0] as [number, number, number, number] },
+      uIsDragged: { value: 0 },
     };
     super({
       vertexShader: VERTEX_SHADER,
@@ -90,6 +116,8 @@ export class CompositeMaterial extends ShaderMaterial {
     // handles stay in sync with `this.uniforms`.
     this.mapUniform = uniforms.map;
     this.opacityUniform = uniforms.uOpacity;
+    this.draggedRectUniform = uniforms.uDraggedRect;
+    this.isDraggedUniform = uniforms.uIsDragged;
   }
 
   /** Bind the island's FBO texture (null clears). */
@@ -100,6 +128,23 @@ export class CompositeMaterial extends ShaderMaterial {
   /** Composite opacity. Pass-through — no clamping; callers pass valid 0..1. */
   setOpacity(opacity: number): void {
     this.opacityUniform.value = opacity;
+  }
+
+  /**
+   * Drag clip, composite-space min/max (v1's uDraggedRect re-cut from screen
+   * space). (0,0,0,0) = inactive. Mutates the vec4 in place — no allocation.
+   */
+  setDraggedRect(minX: number, minY: number, maxX: number, maxY: number): void {
+    const r = this.draggedRectUniform.value;
+    r[0] = minX;
+    r[1] = minY;
+    r[2] = maxX;
+    r[3] = maxY;
+  }
+
+  /** True on the dragged card's own quad — exempt from the clip. */
+  setIsDragged(isDragged: boolean): void {
+    this.isDraggedUniform.value = isDragged ? 1 : 0;
   }
 
   // dispose() is inherited from ShaderMaterial — it fires the dispose event that

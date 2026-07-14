@@ -14,9 +14,11 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "@vibecook/strata-ecs";
 import type { OrthographicCamera, Scene } from "three";
+import { worldRectToComposite } from "@ice/kernel";
 import {
   Active,
   Camera,
+  Grab,
   Position,
   PrefabId,
   Size,
@@ -107,18 +109,29 @@ function createFakePool(): PoolLike & { acquired: number[]; released: number[] }
   };
 }
 
+interface FakeClip {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  exempt: boolean;
+}
+
 function createFakeQuads(): QuadsLike & {
   visible: Map<number, boolean>;
   order: Map<number, number>;
   transforms: Map<number, { x: number; y: number; sx: number; sy: number }>;
+  clips: Map<number, FakeClip>;
 } {
   const visible = new Map<number, boolean>();
   const order = new Map<number, number>();
   const transforms = new Map<number, { x: number; y: number; sx: number; sy: number }>();
+  const clips = new Map<number, FakeClip>();
   return {
     visible,
     order,
     transforms,
+    clips,
     ensure(key) {
       if (!visible.has(key)) visible.set(key, false);
       return {
@@ -126,12 +139,14 @@ function createFakeQuads(): QuadsLike & {
         setTexture() {},
         setVisible: (v) => visible.set(key, v),
         setRenderOrder: (n) => order.set(key, n),
+        setDragClip: (minX, minY, maxX, maxY, exempt) => clips.set(key, { minX, minY, maxX, maxY, exempt }),
       };
     },
     remove(key) {
       visible.delete(key);
       order.delete(key);
       transforms.delete(key);
+      clips.delete(key);
     },
     keys: () => [...visible.keys()],
   };
@@ -600,5 +615,68 @@ describe("the composite-quad lift EASES (DOM card-lift parity, 2026-07-13)", () 
     expect(after).toBeGreaterThan(rest);
     for (let i = 0; i < 12; i++) rig.pass();
     expect(rig.quads.transforms.get(e)?.sx).toBeCloseTo(rest, 6);
+  });
+});
+
+describe("the drag clip (v1 uDraggedRect restored for the chrome sandwich, 2026-07-13)", () => {
+  const CHROMED =
+    widgets.get("trace:gl-card-chromed") ??
+    defineWidget({
+      type: "trace:gl-card-chromed",
+      surface: "gl",
+      props: { label: p.string({ default: "hi" }) },
+      component: () => null,
+      chrome: () => null, // presence is what the pass gates on
+    });
+
+  function spawnChromed(rig: GLRig, x: number, y: number, w = 100, h = 100): Entity {
+    return rig.world.spawn({
+      components: [
+        [Position, { x, y }],
+        [Size, { w, h }],
+        [StackZ, { z: 0 }],
+        [PrefabId, { id: CHROMED.type }],
+      ],
+      tags: [Visible, Active],
+    });
+  }
+
+  it("grabbing a chrome-carrying card clips every OTHER quad to its rect; release clears", () => {
+    const rig = createGLRig();
+    const a = spawnChromed(rig, 0, 0); // chromed — the dragged card
+    const b = rig.spawnCard(50, 0); // plain neighbor (no chrome)
+    rig.mount(a);
+    rig.mount(b);
+    rig.pass();
+    expect(rig.quads.clips.get(b)).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0, exempt: false }); // off at rest
+
+    rig.world.addComponent(a, Grab, { x: 0, y: 0, w: 100, h: 100, z: 0 });
+    rig.pass();
+    // Expected rect: the SAME composite-space conversion the pass uses.
+    const q = worldRectToComposite({ x: 0, y: 0, width: 100, height: 100 });
+    const expected = { minX: q.x - q.sx / 2, minY: q.y - q.sy / 2, maxX: q.x + q.sx / 2, maxY: q.y + q.sy / 2 };
+    const clipB = rig.quads.clips.get(b);
+    expect(clipB?.exempt).toBe(false);
+    expect(clipB?.minX).toBeCloseTo(expected.minX, 6);
+    expect(clipB?.minY).toBeCloseTo(expected.minY, 6);
+    expect(clipB?.maxX).toBeCloseTo(expected.maxX, 6);
+    expect(clipB?.maxY).toBeCloseTo(expected.maxY, 6);
+    expect(rig.quads.clips.get(a)?.exempt).toBe(true); // the dragged quad itself is exempt
+
+    rig.world.removeComponent(a, Grab);
+    rig.pass();
+    expect(rig.quads.clips.get(b)).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0, exempt: false });
+    expect(rig.quads.clips.get(a)).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0, exempt: false });
+  });
+
+  it("grabbing a CHROMELESS gl widget sets no clip (v1 withCard:false parity)", () => {
+    const rig = createGLRig();
+    const a = rig.spawnCard(0, 0); // plain trace card — no chrome
+    const b = rig.spawnCard(50, 0);
+    rig.mount(a);
+    rig.mount(b);
+    rig.world.addComponent(a, Grab, { x: 0, y: 0, w: 100, h: 100, z: 0 });
+    rig.pass();
+    expect(rig.quads.clips.get(b)).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0, exempt: false });
   });
 });

@@ -3,16 +3,35 @@ import { describe, expect, it } from "vitest";
 import { CompositeMaterial } from "../src/composite-material";
 
 describe("CompositeMaterial", () => {
-  it("exposes exactly the neutral uniforms { map, uOpacity } and no app looks", () => {
+  it("exposes the neutral uniforms + the drag clip, and no app LOOKS", () => {
     const mat = new CompositeMaterial();
-    expect(Object.keys(mat.uniforms).sort()).toEqual(["map", "uOpacity"]);
+    // uDraggedRect/uIsDragged are ENGINE facts again (2026-07-13 amendment:
+    // the chrome sandwich makes the clip compositing correctness, not a look).
+    expect(Object.keys(mat.uniforms).sort()).toEqual(["map", "uDraggedRect", "uIsDragged", "uOpacity"]);
     expect(mat.uniforms.map?.value).toBeNull();
     expect(mat.uniforms.uOpacity?.value).toBe(1);
-    // v1's drag-promote / overlap-glow / rim uniforms are DELETED (design-004 §3).
-    expect(mat.uniforms.uDraggedRect).toBeUndefined();
-    expect(mat.uniforms.uIsDragged).toBeUndefined();
+    expect(mat.uniforms.uDraggedRect?.value).toEqual([0, 0, 0, 0]); // off at rest
+    expect(mat.uniforms.uIsDragged?.value).toBe(0);
+    // v1's overlap-glow / rim uniforms stay DELETED — those live in DOM chrome now.
     expect(mat.uniforms.uHotStrength).toBeUndefined();
     expect(mat.uniforms.uGlowColor).toBeUndefined();
+  });
+
+  it("setDraggedRect / setIsDragged drive the clip uniforms in place (no allocation)", () => {
+    const mat = new CompositeMaterial();
+    const cell = mat.uniforms.uDraggedRect?.value as number[];
+    mat.setDraggedRect(10, -60, 110, 40);
+    expect(mat.uniforms.uDraggedRect?.value).toBe(cell); // same array, mutated
+    expect(cell).toEqual([10, -60, 110, 40]);
+    mat.setIsDragged(true);
+    expect(mat.uniforms.uIsDragged?.value).toBe(1);
+    mat.setIsDragged(false);
+    expect(mat.uniforms.uIsDragged?.value).toBe(0);
+    // The shader tests composite-space position from the model transform —
+    // resolution/DPR-free by construction (v1 used gl_FragCoord + Y math).
+    expect(mat.vertexShader).toContain("vWorld = (modelMatrix");
+    expect(mat.fragmentShader).toContain("uDraggedRect");
+    expect(mat.fragmentShader).toContain("uIsDragged < 0.5");
   });
 
   it("setMap binds and clears the FBO texture", () => {

@@ -36,7 +36,20 @@ import {
   worldRectToComposite,
   type EvictionCandidate,
 } from "@ice/kernel";
-import { Active, Camera, Grab, Position, Size, StackZ, Viewport, Visible, type Entity, type World } from "@ice/core";
+import {
+  Active,
+  Camera,
+  Grab,
+  Position,
+  PrefabId,
+  Size,
+  StackZ,
+  Viewport,
+  Visible,
+  widgets,
+  type Entity,
+  type World,
+} from "@ice/core";
 import type { GLBridge } from "./bridge";
 
 /** Render order far above any sane StackZ — the grabbed quad draws last. */
@@ -70,6 +83,12 @@ export interface QuadLike {
   setTexture(t: unknown): void;
   setVisible(v: boolean): void;
   setRenderOrder(n: number): void;
+  /**
+   * Drag clip (v1 RFC-003, composite-space): non-exempt quads discard
+   * fragments inside the rect so a dragged card's P1 DOM chrome shows
+   * through. (0,0,0,0, false) = inactive.
+   */
+  setDragClip(minX: number, minY: number, maxX: number, maxY: number, exempt: boolean): void;
 }
 
 export interface QuadsLike {
@@ -268,6 +287,16 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   for (const key of quads.keys()) {
     if (!liveKeys.has(key)) quads.remove(key);
   }
+  // Drag clip collection (v1 RFC-003): the first grabbed CHROME-carrying
+  // widget's lift-scaled composite rect; every other composited quad discards
+  // inside it so the dragged card's P1 DOM chrome pairs with its content.
+  const hasChrome = (e: number): boolean => {
+    const type = world.get(e as Entity, PrefabId)?.id;
+    return typeof type === "string" && widgets.get(type)?.chrome != null;
+  };
+  const composited: Array<{ key: number; quad: QuadLike }> = [];
+  let clip: { key: number; minX: number; minY: number; maxX: number; maxY: number } | null = null;
+
   for (const [e, s] of bridge.state.all()) {
     const quad = quads.ensure(e);
     const alive = world.isAlive(e as Entity);
@@ -309,6 +338,17 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     quad.setRenderOrder(grabbed || lift !== 1 ? GRABBED_RENDER_ORDER : (world.get(e as Entity, StackZ)?.z ?? 0));
     quad.setVisible(true);
     pool.touch(e);
+    composited.push({ key: e, quad });
+    if (clip === null && grabbed && hasChrome(e)) {
+      const hw = (q.sx * lift) / 2;
+      const hh = (q.sy * lift) / 2;
+      clip = { key: e, minX: q.x - hw, minY: q.y - hh, maxX: q.x + hw, maxY: q.y + hh };
+    }
+  }
+  // Apply after the loop — the grabbed widget may reconcile after a neighbor.
+  for (const { key, quad } of composited) {
+    if (clip === null) quad.setDragClip(0, 0, 0, 0, false);
+    else quad.setDragClip(clip.minX, clip.minY, clip.maxX, clip.maxY, key === clip.key);
   }
 
   // 7. composite to the backbuffer -------------------------------------------

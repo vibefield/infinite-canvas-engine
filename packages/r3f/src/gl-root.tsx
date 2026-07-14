@@ -197,6 +197,11 @@ export function GLViews({
           setRenderOrder: (n) => {
             m.renderOrder = n;
           },
+          setDragClip: (minX, minY, maxX, maxY, exempt) => {
+            const mat = m.material as CompositeMaterial;
+            mat.setDraggedRect(minX, minY, maxX, maxY);
+            mat.setIsDragged(exempt);
+          },
         };
       },
       remove(key: number) {
