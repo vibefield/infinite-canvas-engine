@@ -55,6 +55,7 @@ caches (a nav-only resweep — rebuilding them cost +80 ms at 100k on the first 
   three more ungated O(N)-per-tick derive systems. They are the next gating targets
   (same churn-signal treatment: breakpoint ← Size/zoom-band churn, cull ← camera/
   spatial versions, mount ← Active/Visible churn). At 10k total idle frame is 2.6 ms.
+  *(Gated the same day — see the second pass below.)*
 - **enter/exit at 100k+800** (99.9/48.1 ms; baseline 46.4/47.0): exit is at parity;
   enter's extra is dominated by the OTHER ungated systems reacting to the zoom-to-fit
   camera write (breakpoint recomputes all 100k zoom-dependent classes) plus a cold
@@ -68,6 +69,57 @@ caches (a nav-only resweep — rebuilding them cost +80 ms at 100k on the first 
   flip re-anchoring, container reparent (DFS stops at container children), container
   despawn (orphan resweep insurance), and 20-idle-tick flip-free stability under an
   armed observer.
+
+### Second pass (same day): breakpoint / cull / widgetMount gates + the flash fix
+
+The three systems named above got the same treatment, through a REAL `runIf`
+(`helpers/churn-guard.ts` — drain-in-runIf with a same-frame stash; `breakpoint`
+declares `access.write` and a run-but-early-out would blanket-stamp it, per
+helpers/version-stamps.ts). Triggers: breakpoint ← zoom compare ∨
+Size/MeasuredSize/Active churn (query now ACTIVE-scoped — tiers drive rendered
+content; frozen-while-hidden per design-004 §2); cull ← camera/viewport window
+compare ∨ Position/Size/MeasuredSize/Active churn; widgetMount ← Visible/Culled
+flips + destroys (LRU recency stamped at the flip — same eviction order).
+The bench also gained camera-churn scenarios and a REAL `Viewport` (without one,
+cull/mount take their headless early-return and measure nothing).
+
+**Benching the gates found a real correctness bug (the flash):** membership
+classifies on the projection frame, but equip stamps `Container` one flush later
+— fresh container CONTENT anchored to root for one frame, cull mass-Visible-
+tagged it in the very flush membership corrected it (change-only writes let the
+conflict through), and the zombies stayed mounted forever: **6,440 phantom
+mounts on a 10k-board seed**, plus polluted archetypes that defeated chunk-level
+tag filtering for every Active-scoped query. Fixed at the root: membership
+answers container-ness from the WIDGET REGISTRY (via PrefabId) during the
+equip-lag window (`isContainerForMembership`, nav/nested-canvas.ts). Pinned by
+`test/mount-gate.test.ts` ("container content never flash-mounts").
+
+| idle µs/frame | before gates | after gates + flash fix |
+| --- | --- | --- |
+| flat-100k | 25,057 | **872** |
+| nested-10k | 2,561 | **106** |
+| nested-100k | 25,577 | **890** |
+
+Remaining idle tail at 100k: widgetEquip 262 µs, marquee 207 µs, cursorSync 207 µs.
+
+| camera-churn µs/frame (150-frame gestures) | zoom | pan |
+| --- | --- | --- |
+| flat-100k (everything Active — the O(N) ceiling) | 64,610 (bp 21,047 · cull 40,812) | 42,072 (bp SKIPPED · cull 40,817) |
+| nested-10k | 460 | 276 |
+| nested-100k | 4,367 (bp 1,720 · cull 1,726 · mount 8) | 2,616 (bp skipped · cull 1,711) |
+
+- **Pan frames skip breakpoint entirely** (1 run vs 450) — pre-gate every pan
+  frame paid the full scan.
+- **Clean tag partitions restored chunk-level query filtering**: nested-100k
+  camera frames dropped from 33/19 ms (first gated run, zombie archetypes) to
+  4.4/2.6 ms — Active-scoped queries skip non-active CHUNKS wholesale, exactly
+  the l1-pick "nav gating rides the walk queries at archetype level" contract.
+  Corollary: a FLAT all-Active 100k board cannot skip anything — its ~40 ms
+  camera frames are the honest O(N) ceiling; containers (or a future
+  index-driven cull) are the structural mitigation.
+- nav enter/exit at nested-100k: 30/33 ms (was 144/68 with zombies; 46/47 at
+  the pre-gate baseline).
+- widgetMount: 4.0 ms every idle frame → 8–51 µs, only on flip frames.
 
 ## M3 baseline (2026-07-09)
 

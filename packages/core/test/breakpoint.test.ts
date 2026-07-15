@@ -2,10 +2,17 @@
  * breakpoint: `WidgetBreakpoint` from a widget's effective size (design-004 §8).
  * Asserts the 5 width tiers, ±10% boundary hysteresis (stable within a band), the
  * MeasuredSize-over-Size effective-size rule, and lazy add on WidgetEquipped only.
+ *
+ * 2026-07-15 gate: the system is Active-scoped (tiers drive RENDERED content;
+ * non-active widgets are frozen-while-hidden) and runIf-gated on zoom change ∨
+ * Size/MeasuredSize/Active churn — rig spawns stamp Active the way the real
+ * pipeline's membership system does, and the gate suite below pins skips via
+ * run/skip telemetry.
  */
 import { createWorld } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
+  Active,
   Camera,
   createBreakpointSystem,
   createEngine,
@@ -21,15 +28,20 @@ function rig() {
   const engine = createEngine(world);
   engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   engine.addSystems("derive", createBreakpointSystem(world));
+  engine.enableTelemetry();
   let now = 0;
   const step = () => {
     now += 16;
     engine.step(now);
   };
-  const spawn = (w: number, h = 100) =>
-    world.spawn({ components: [[Size, { w, h }]], tags: [WidgetEquipped] });
+  const spawn = (w: number, h = 100, opts: { active?: boolean } = {}) =>
+    world.spawn({
+      components: [[Size, { w, h }]],
+      tags: opts.active === false ? [WidgetEquipped] : [WidgetEquipped, Active],
+    });
   const tier = (e: Entity) => world.get(e, WidgetBreakpoint)?.tier;
-  return { world, step, spawn, tier };
+  const ran = () => engine.lastFrame()?.systems.find((s) => s.system === "breakpoint")?.ran;
+  return { world, engine, step, spawn, tier, ran };
 }
 
 describe("breakpoint tiers", () => {
@@ -94,5 +106,65 @@ describe("breakpoint tiers", () => {
     const bare = world.spawn({ components: [[Size, { w: 200, h: 100 }]] });
     step();
     expect(world.has(bare, WidgetBreakpoint)).toBe(false);
+  });
+});
+
+describe("breakpoint gate (design-004 §8 × the 2026-07-15 runIf)", () => {
+  it("zoom change re-tiers Active widgets; pan (zoom unchanged) SKIPS", () => {
+    const { world, step, spawn, tier, ran } = rig();
+    world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    const e = spawn(200); // normal at zoom 1
+    step();
+    expect(tier(e)).toBe("normal");
+
+    // Zoom out far: on-screen width 200·0.3 = 60 → micro.
+    world.setResource(Camera, { x: 0, y: 0, zoom: 0.3, gesturing: false });
+    step();
+    expect(ran()).toBe(true);
+    expect(tier(e)).toBe("micro");
+
+    // Pan only: zoom unchanged → the system must not even run.
+    world.setResource(Camera, { x: 500, y: 300, zoom: 0.3, gesturing: false });
+    step();
+    expect(ran()).toBe(false);
+    expect(tier(e)).toBe("micro");
+  });
+
+  it("idle frames skip; Size churn re-tiers just fine through the journal", () => {
+    const { world, step, spawn, tier, ran } = rig();
+    const e = spawn(100); // compact
+    step();
+    expect(tier(e)).toBe("compact");
+    step();
+    step();
+    expect(ran()).toBe(false); // settled: no churn, no zoom motion
+
+    world.edit(e).set(Size, { w: 400, h: 100 });
+    step();
+    expect(ran()).toBe(true);
+    expect(tier(e)).toBe("expanded");
+  });
+
+  it("non-Active widgets are frozen (no tier churn while hidden), re-tier on activation", () => {
+    const { world, step, spawn, tier, ran } = rig();
+    world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    const shown = spawn(200);
+    const hidden = spawn(200, 100, { active: false }); // closed-container content
+    step();
+    expect(tier(shown)).toBe("normal");
+    expect(tier(hidden)).toBeUndefined(); // never rendered, never tiered
+
+    // Zoom moves only the Active widget's tier; the hidden one stays frozen.
+    world.setResource(Camera, { x: 0, y: 0, zoom: 0.3, gesturing: false });
+    step();
+    expect(tier(shown)).toBe("micro");
+    expect(tier(hidden)).toBeUndefined();
+
+    // Activation (nav enter analog) journals via the Active tag → tiers at
+    // the CURRENT zoom in one tick.
+    world.addTag(hidden, Active);
+    step();
+    expect(ran()).toBe(true);
+    expect(tier(hidden)).toBe("micro");
   });
 });

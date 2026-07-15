@@ -236,6 +236,7 @@ export { createBreakpointSystem, createSelectionChromeSystem } from "./systems/c
 
 // --- M8 nested canvas (design-004 §7): membership, nav ops, integrity ---
 export {
+  createActiveMembership,
   createNestedCanvas,
   currentNavEntry,
   currentNavFrame,

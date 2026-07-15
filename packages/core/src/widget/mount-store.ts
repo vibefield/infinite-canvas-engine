@@ -4,19 +4,27 @@
  *
  * - `cullSystem` (derive): viewport test over equipped widgets' EFFECTIVE size
  *   (MeasuredSize where present, else Size), overscan scaled by zoom; flips
- *   Visible/Culled CHANGE-ONLY.
+ *   Visible/Culled CHANGE-ONLY. GATED (2026-07-15, the activeMembership
+ *   playbook): a real `runIf` — camera/viewport window compare as the `extra`
+ *   trigger (full pass; the window moved under everyone) ∨ a petition-7
+ *   collector on Position/Size/MeasuredSize + Active flips (delta pass —
+ *   drags/spawns/measures re-test only the journaled entities). Idle frames
+ *   skip; camera frames stay O(active) by the widgetQ Active scope.
  * - `mountSystem` (derive, after cull): maintains the mount list — every
  *   Visible widget is mounted; Culled widgets stay mounted-but-hidden
  *   (`display:none` at the host; React state preserved) within a count LRU
  *   budget (default RUNTIME_BUDGETS.keepMountedWidgets); beyond it the
  *   least-recently-visible unmount for real. Decisions are ENGINE-side; the
  *   dom host reflector and the React portal hook both consume the snapshot.
+ *   GATED the same way on Visible/Culled flips (+ destroys of tagged
+ *   widgets); LRU recency is stamped at the flip (identical eviction order —
+ *   "last tick seen visible" = the tick it stopped being visible).
  * - The store implements the `useSyncExternalStore` contract: `subscribe` /
  *   `getSnapshot` with snapshot identity changing IFF membership or a hidden
  *   flag changed. Listener notification is deferred to post-notify (the
  *   engine flush reflector) — never from inside the tick.
  */
-import { Not, defineQuery, defineSystem, defineTickSystem, type Entity, type System, type TickSystem, type World } from "@vibecook/strata-ecs";
+import { Not, defineQuery, defineTickSystem, type Entity, type TickSystem, type World } from "@vibecook/strata-ecs";
 import { screenToWorld } from "@ice/kernel";
 import { Active, Camera, Culled, MeasuredSize, Position, Size, Viewport, Visible } from "../catalog";
 import type { Engine } from "../engine/engine";
@@ -27,6 +35,7 @@ import { createBreakpointSystem } from "../systems/chrome";
 import { createActiveMembership } from "../nav/nested-canvas";
 import { createMeasureIngest } from "../systems/measure-ingest";
 import type { MeasureQueue } from "../input/measure-queue";
+import { makeChurnGuard } from "../helpers/churn-guard";
 
 const widgetQ = defineQuery([Position, Size, WidgetEquipped, Active]);
 
@@ -43,7 +52,7 @@ export interface WidgetMountStore {
 
 export interface WidgetRuntime {
   readonly store: WidgetMountStore;
-  readonly cullSystem: System;
+  readonly cullSystem: TickSystem;
   readonly mountSystem: TickSystem;
   /** Post-notify listener flush — install registers it as a reflector. */
   flush(): void;
@@ -55,9 +64,37 @@ export function createWidgetRuntime(
 ): WidgetRuntime {
   const budget = opts.keepMounted ?? RUNTIME_BUDGETS.keepMountedWidgets;
 
-  const cullSystem = defineSystem(
-    widgetQ,
-    (b, ctx) => {
+  // Camera/viewport window compare — the cull gate's `extra` trigger. Kept
+  // outside the guard so the closure caches the last-seen window verbatim
+  // (undefined-ness included: the headless posture compares equal and never
+  // fires; the first real camera write fires a full pass).
+  let lastWin: { x: number; y: number; zoom: number; w: number; h: number } | undefined | null = null;
+  const cullGuard = makeChurnGuard(
+    world,
+    { components: [Position, Size, MeasuredSize], tags: [Active], coarse: false },
+    () => {
+      const cam = world.getResource(Camera);
+      const vp = world.getResource(Viewport);
+      const win =
+        cam === undefined || vp === undefined
+          ? undefined
+          : { x: cam.x, y: cam.y, zoom: cam.zoom, w: vp.w, h: vp.h };
+      const changed =
+        lastWin === null ||
+        (win === undefined) !== (lastWin === undefined) ||
+        (win !== undefined &&
+          lastWin !== undefined &&
+          lastWin !== null &&
+          (win.x !== lastWin.x || win.y !== lastWin.y || win.zoom !== lastWin.zoom || win.w !== lastWin.w || win.h !== lastWin.h));
+      lastWin = win;
+      return changed;
+    },
+  );
+
+  const cullSystem = defineTickSystem(
+    (ctx) => {
+      const work = cullGuard.take();
+      if (work === undefined) return;
       const cam = ctx.getResource(Camera);
       const vp = ctx.getResource(Viewport);
       if (cam === undefined || vp === undefined || vp.w === 0) return; // headless: everything stays unculled
@@ -68,8 +105,7 @@ export function createWidgetRuntime(
       const minY = tl.y - over;
       const maxX = br.x + over;
       const maxY = br.y + over;
-      for (const r of b) {
-        const e = b.entity(r);
+      const classify = (e: Entity): void => {
         const p = ctx.read(e, Position);
         const m = ctx.get(e, MeasuredSize);
         const s = m !== undefined && m.w > 0 ? m : ctx.read(e, Size); // effective size
@@ -84,9 +120,22 @@ export function createWidgetRuntime(
           ctx.addTag(e, Culled);
           if (ctx.hasTag(e, Visible)) ctx.removeTag(e, Visible);
         }
+      };
+      if (work.full) {
+        ctx.query(widgetQ).each((b) => {
+          for (const r of b) classify(b.entity(r));
+        });
+        return;
+      }
+      for (const e of work.changed) {
+        // The delta twin of widgetQ: equipped ∧ Active (membership already
+        // parks non-Active in the canonical Culled state — never touch them).
+        if (!ctx.isAlive(e) || !ctx.hasTag(e, Active)) continue;
+        if (!world.hasTag(e, WidgetEquipped) || !ctx.has(e, Position) || !ctx.has(e, Size)) continue;
+        classify(e);
       }
     },
-    { name: "cull" },
+    { name: "cull", access: { read: [Position, Size, MeasuredSize] }, runIf: cullGuard.runIf },
   );
 
   // --- mount bookkeeping (engine-side LRU; closure state is derived cache) ---
@@ -100,46 +149,69 @@ export function createWidgetRuntime(
   const visibleWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Active, Visible]);
   const culledWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Not(Visible)]);
 
-  // Tick system (strata 0.5.0): one full reconcile per frame by construction
-  // (widgetQ spans archetypes; the pre-0.5.0 chunk form needed a
-  // reconciledThisTick dedupe flag re-armed from the flush — all gone).
+  // GATED tick system (2026-07-15): Visible/Culled flips journal the entity;
+  // destroys of tagged widgets land in `removed` (every mounted widget carries
+  // one of the two tags). Idle frames skip. LRU recency stamps at the flip —
+  // "last tick seen visible" = the tick it stopped being visible, so the
+  // eviction order matches the old refresh-every-frame bookkeeping.
+  const mountGuard = makeChurnGuard(world, { tags: [Visible, Culled], coarse: false });
+
   const mountSystem = defineTickSystem(
     (ctx) => {
+      const work = mountGuard.take();
+      if (work === undefined) return;
       tickCounter += 1;
       let changed = false;
 
-      ctx.query(visibleWidgetsQ).each((vb) => {
-        for (const r of vb) {
-          const e = vb.entity(r);
-          lastVisibleTick.set(e, tickCounter);
-          const entry = mounted.get(e);
-          if (entry === undefined) {
-            mounted.set(e, { hidden: false });
-            changed = true;
-          } else if (entry.hidden) {
-            entry.hidden = false;
-            changed = true;
-          }
-        }
-      });
-      ctx.query(culledWidgetsQ).each((cb) => {
-        for (const r of cb) {
-          const e = cb.entity(r);
-          const entry = mounted.get(e);
-          if (entry !== undefined && !entry.hidden) {
-            entry.hidden = true;
-            changed = true;
-          }
-        }
-      });
-      // Sweep dead entities + enforce the keep-mounted LRU budget.
-      for (const e of [...mounted.keys()]) {
-        if (!world.isAlive(e)) {
-          mounted.delete(e);
-          lastVisibleTick.delete(e);
+      const markVisible = (e: Entity): void => {
+        lastVisibleTick.set(e, tickCounter);
+        const entry = mounted.get(e);
+        if (entry === undefined) {
+          mounted.set(e, { hidden: false });
+          changed = true;
+        } else if (entry.hidden) {
+          entry.hidden = false;
           changed = true;
         }
+      };
+      const markHidden = (e: Entity): void => {
+        const entry = mounted.get(e);
+        if (entry !== undefined && !entry.hidden) {
+          entry.hidden = true;
+          lastVisibleTick.set(e, tickCounter); // visible until THIS tick
+          changed = true;
+        }
+      };
+
+      if (work.full) {
+        // Full reconcile: first run, reset (doc switch — every handle dead),
+        // coarse. Queries + the isAlive sweep rebuild the map from scratch.
+        ctx.query(visibleWidgetsQ).each((vb) => {
+          for (const r of vb) markVisible(vb.entity(r));
+        });
+        ctx.query(culledWidgetsQ).each((cb) => {
+          for (const r of cb) markHidden(cb.entity(r));
+        });
+        for (const e of [...mounted.keys()]) {
+          if (!world.isAlive(e)) {
+            mounted.delete(e);
+            lastVisibleTick.delete(e);
+            changed = true;
+          }
+        }
+      } else {
+        for (const e of work.removed) {
+          if (mounted.delete(e)) changed = true;
+          lastVisibleTick.delete(e);
+        }
+        for (const e of work.changed) {
+          if (!world.isAlive(e)) continue; // removed handles it
+          if (ctx.hasTag(e, Visible)) markVisible(e);
+          else markHidden(e);
+        }
       }
+
+      // Keep-mounted LRU budget (only reachable when something flipped).
       const hiddenEntries = [...mounted.entries()].filter(([, v]) => v.hidden);
       const visibleCount = mounted.size - hiddenEntries.length;
       const hiddenBudget = Math.max(0, budget - visibleCount);
@@ -157,7 +229,7 @@ export function createWidgetRuntime(
         dirty = true;
       }
     },
-    { name: "widgetMount" },
+    { name: "widgetMount", runIf: mountGuard.runIf },
   );
 
   return {

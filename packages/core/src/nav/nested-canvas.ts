@@ -67,6 +67,7 @@ import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { ChildOf } from "../catalog/scene";
 import { CAMERA_DEFAULTS } from "../settings/defaults";
+import { WidgetEquipped, widgets } from "../widget/define-widget";
 
 const navEntryQ = defineQuery([NavDepth, NavCamera]);
 // Keyed on PrefabId (present AT SPAWN — same flush as equip's WidgetEquipped
@@ -99,12 +100,31 @@ export function currentNavFrame(world: World): Entity | undefined {
   return frame !== undefined && world.isAlive(frame) ? frame : undefined;
 }
 
+/**
+ * Container-ness for MEMBERSHIP decisions, with the equip-lag fallback: the
+ * `Container` capability tag lands at the equip flush, ONE FRAME after a
+ * widget projects — but membership classifies on the projection frame (the
+ * M6 mount-timing invariant). Answering from the runtime tag alone during
+ * that window mis-anchors fresh container CONTENT to the root for a frame;
+ * cull then mass-Visible-tags it in the same flush membership corrects it
+ * (change-only writes let the conflict through), and the zombies stay
+ * mounted forever (measured: 6,440 phantom mounts on a 10k-board seed,
+ * 2026-07-15). Pre-equip, the WIDGET REGISTRY answers from PrefabId.
+ */
+function isContainerForMembership(world: World, e: Entity): boolean {
+  if (world.hasTag(e, Container)) return true;
+  if (world.hasTag(e, WidgetEquipped)) return false; // equipped: the tag is truth
+  const id = world.get(e, PrefabId)?.id;
+  if (typeof id !== "string") return false;
+  return widgets.get(id)?.capabilityTags.includes(Container) ?? false;
+}
+
 /** First container ancestor on the ChildOf chain (undefined = root-level). */
 function firstContainerAncestor(world: World, e: Entity): Entity | undefined {
   let cur = world.getRelation(e, ChildOf);
   let hops = 0;
   while (cur !== undefined && hops < 64) {
-    if (world.hasTag(cur, Container)) return cur;
+    if (isContainerForMembership(world, cur)) return cur;
     cur = world.getRelation(cur, ChildOf);
     hops += 1;
   }
@@ -221,7 +241,7 @@ export function createActiveMembership(world: World): TickSystem {
               const e = b.entity(r);
               classify(e);
               nextParent.set(e, world.getRelation(e, ChildOf));
-              if (world.hasTag(e, Container)) nextContainer.add(e);
+              if (isContainerForMembership(world, e)) nextContainer.add(e);
             }
           });
           knownParent = nextParent;
@@ -249,7 +269,7 @@ export function createActiveMembership(world: World): TickSystem {
           if (visited.has(e)) continue;
           visited.add(e);
           classify(e);
-          if (e !== root && world.hasTag(e, Container)) continue;
+          if (e !== root && isContainerForMembership(world, e)) continue;
           for (const c of world.getReverse(e, ChildOf)) {
             if (isEquipped(c)) stack.push(c);
           }
@@ -259,7 +279,7 @@ export function createActiveMembership(world: World): TickSystem {
       for (const e of delta.changed) {
         if (!world.isAlive(e) || !isEquipped(e)) continue;
         const parent = world.getRelation(e, ChildOf);
-        const isCont = world.hasTag(e, Container);
+        const isCont = isContainerForMembership(world, e);
         if (knownParent.has(e) && knownParent.get(e) === parent && knownContainer.has(e) === isCont) {
           continue; // Position-only churn — membership inputs unchanged
         }

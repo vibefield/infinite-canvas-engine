@@ -59,6 +59,8 @@ import {
 } from "../catalog";
 import { selectedEntities } from "../ops/selection";
 import { WidgetEquipped } from "../widget/define-widget";
+import { Active } from "../catalog/camera-derived";
+import { makeChurnGuard } from "../helpers/churn-guard";
 
 // --- selection chrome ---------------------------------------------------------
 
@@ -279,43 +281,85 @@ function clampU16(v: number): number {
   return Math.max(0, Math.min(65535, Math.round(v)));
 }
 
-const equippedWidgetQ = defineQuery([Size, WidgetEquipped]);
+// ACTIVE-scoped (2026-07-15 gate): tiers drive RENDERED content; non-active
+// widgets (closed-container content) are frozen-while-hidden by design and
+// recompute on re-activation via the Active-tag journal below. This is what
+// bounds a zoom gesture's cost to the current frame's content.
+const equippedWidgetQ = defineQuery([Size, WidgetEquipped, Active]);
 
-export function createBreakpointSystem(_world: World): System {
-  return defineSystem(
-    equippedWidgetQ,
-    (b, ctx) => {
-      const sw = b.col(Size).w;
-      const sh = b.col(Size).h;
-      for (const r of b) {
-        const e = b.entity(r);
-        const m = ctx.get(e, MeasuredSize);
-        // Effective size: MeasuredSize where auto-sized and measured, else Size.
-        const ew = m !== undefined && m.w > 0 ? m.w : (sw[r] as number);
-        const eh = m !== undefined && m.h > 0 ? m.h : (sh[r] as number);
-        const cw = clampU16(ew);
-        const ch = clampU16(eh);
-        // Tier input is the ON-SCREEN width: effective size × zoom (design-004
-        // §8 — a zoomed-out large card shows micro content). Stored w,h remain
-        // the world-effective size the tier was computed from.
-        const zoom = ctx.getResource(Camera)?.zoom ?? 1;
-        const screenW = ew * zoom;
+/** One entity's tier pass (shared by the full walk and the delta path). */
+function retier(ctx: SystemCtx, e: Entity, w: number, h: number, zoom: number): void {
+  const m = ctx.get(e, MeasuredSize);
+  // Effective size: MeasuredSize where auto-sized and measured, else Size.
+  const ew = m !== undefined && m.w > 0 ? m.w : w;
+  const eh = m !== undefined && m.h > 0 ? m.h : h;
+  const cw = clampU16(ew);
+  const ch = clampU16(eh);
+  // Tier input is the ON-SCREEN width: effective size × zoom (design-004
+  // §8 — a zoomed-out large card shows micro content). Stored w,h remain
+  // the world-effective size the tier was computed from.
+  const screenW = ew * zoom;
 
-        const existing = ctx.get(e, WidgetBreakpoint);
-        if (existing === undefined) {
-          const idx = rawTierIndex(screenW);
-          ctx.addComponent(e, WidgetBreakpoint, { tier: TIER_NAMES[idx] as Tier, w: cw, h: ch });
-          continue;
-        }
-        const curIdx = TIER_NAMES.indexOf(existing.tier as Tier);
-        const idx = hysteresisTierIndex(screenW, curIdx < 0 ? rawTierIndex(screenW) : curIdx);
-        // Write only on a tier change — the tier must be stable within a band so
-        // the measure→tier→content→measure loop converges (w,h ride the change).
-        if (idx !== curIdx) {
-          ctx.edit(e).set(WidgetBreakpoint, { tier: TIER_NAMES[idx] as Tier, w: cw, h: ch });
-        }
+  const existing = ctx.get(e, WidgetBreakpoint);
+  if (existing === undefined) {
+    const idx = rawTierIndex(screenW);
+    ctx.addComponent(e, WidgetBreakpoint, { tier: TIER_NAMES[idx] as Tier, w: cw, h: ch });
+    return;
+  }
+  const curIdx = TIER_NAMES.indexOf(existing.tier as Tier);
+  const idx = hysteresisTierIndex(screenW, curIdx < 0 ? rawTierIndex(screenW) : curIdx);
+  // Write only on a tier change — the tier must be stable within a band so
+  // the measure→tier→content→measure loop converges (w,h ride the change).
+  if (idx !== curIdx) {
+    ctx.edit(e).set(WidgetBreakpoint, { tier: TIER_NAMES[idx] as Tier, w: cw, h: ch });
+  }
+}
+
+export function createBreakpointSystem(world: World): TickSystem {
+  // The gate (2026-07-15; the activeMembership playbook, but through a REAL
+  // runIf — this system declares access.write, and a run-but-early-out would
+  // blanket-stamp WidgetBreakpoint every frame). Zoom is the `extra` trigger:
+  // its change re-tiers everything Active; Size/MeasuredSize churn and
+  // Active flips re-tier only the journaled entities. Pan frames (zoom
+  // unchanged) skip entirely — pre-gate they paid the full O(N) scan.
+  // A TICK system (one body per frame — the batch form would re-run the
+  // guard logic per chunk), so the full walk goes through ctx.query and the
+  // column reads are declared explicitly (the spatialSync precedent).
+  let lastZoom: number | undefined;
+  const guard = makeChurnGuard(
+    world,
+    { components: [Size, MeasuredSize], tags: [Active], coarse: false },
+    () => {
+      const zoom = world.getResource(Camera)?.zoom;
+      const changed = zoom !== lastZoom;
+      lastZoom = zoom;
+      return changed;
+    },
+  );
+
+  return defineTickSystem(
+    (ctx) => {
+      const work = guard.take();
+      if (work === undefined) return; // runIf false — never happens with the guard wired
+      const zoom = ctx.getResource(Camera)?.zoom ?? 1;
+      if (work.full) {
+        ctx.query(equippedWidgetQ).each((b) => {
+          const sw = b.col(Size).w;
+          const sh = b.col(Size).h;
+          for (const r of b) {
+            retier(ctx, b.entity(r), sw[r] as number, sh[r] as number, zoom);
+          }
+        });
+        return;
+      }
+      // Delta path: only the journaled entities, re-read entity-wise.
+      for (const e of work.changed) {
+        if (!ctx.isAlive(e) || !ctx.has(e, Size) || !ctx.hasTag(e, Active)) continue;
+        if (!world.hasTag(e, WidgetEquipped)) continue;
+        const s = ctx.read(e, Size);
+        retier(ctx, e, s.w, s.h, zoom);
       }
     },
-    { name: "breakpoint", access: { write: [WidgetBreakpoint] } },
+    { name: "breakpoint", access: { read: [Size], write: [WidgetBreakpoint] }, runIf: guard.runIf },
   );
 }

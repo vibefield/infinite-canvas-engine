@@ -28,7 +28,7 @@
  * registries are process-global (same caveat as bench/reactivity-tax.test.ts).
  */
 import { describe, expect, it } from "vitest";
-import { ChildOf, createCanvasEngine, defineWidget } from "../src";
+import { Camera, ChildOf, Viewport, createCanvasEngine, defineWidget } from "../src";
 import type { CanvasEngine } from "../src";
 import type { Entity } from "@vibecook/strata-ecs";
 import { guardedTransaction } from "../src/guards/guarded-tx";
@@ -85,6 +85,10 @@ interface Seeded {
 /** Build the tree in ONE {undoable:false} transaction (batch-seed idiom). */
 function seed(shape: TreeShape): Seeded {
   const ce = createCanvasEngine({ widgets: WIDGETS });
+  // A real window — without it cull/mount take their headless early-return
+  // and the bench measures nothing but scheduler overhead for them.
+  ce.world.setResource(Viewport, { w: 1600, h: 1000, dpr: 1 });
+  ce.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
   const session = ce.docs.create();
   const midFolders: Entity[] = [];
   let widgetCount = 0;
@@ -176,6 +180,53 @@ function timeIdle(
   return { frameUs: median(frameSamples), membershipUs: median(memberSamples), top };
 }
 
+/** Median µs/frame + per-system medians under camera churn (zoom or pan). */
+function timeCamera(
+  ce: CanvasEngine,
+  nowRef: { now: number },
+  mode: "zoom" | "pan",
+): { frameUs: number; sys: string } {
+  const base = ce.world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
+  const frameSamples: number[] = [];
+  const systemUs = new Map<string, number[]>();
+  const FRAMES = 150;
+  for (let rep = 0; rep < 3; rep++) {
+    const start = performance.now();
+    for (let i = 0; i < FRAMES; i++) {
+      if (mode === "zoom") {
+        const z = 0.8 + 0.4 * ((i % 20) / 20); // wiggle: every frame differs
+        ce.world.setResource(Camera, { x: base.x, y: base.y, zoom: z, gesturing: true });
+      } else {
+        ce.world.setResource(Camera, { x: base.x + i * 7, y: base.y, zoom: base.zoom, gesturing: true });
+      }
+      nowRef.now += 16;
+      ce.engine.step(nowRef.now);
+      const frame = ce.engine.lastFrame();
+      if (frame === undefined) continue;
+      for (const s of frame.systems) {
+        if (!s.ran || (s.system !== "breakpoint" && s.system !== "cull" && s.system !== "widgetMount")) continue;
+        let arr = systemUs.get(s.system);
+        if (arr === undefined) {
+          arr = [];
+          systemUs.set(s.system, arr);
+        }
+        arr.push(s.micros);
+      }
+    }
+    frameSamples.push(((performance.now() - start) / FRAMES) * 1000);
+  }
+  ce.world.setResource(Camera, base);
+  const median = (xs: number[]): number => {
+    if (xs.length === 0) return 0;
+    const s = [...xs].sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)] ?? 0;
+  };
+  const sys = ["breakpoint", "cull", "widgetMount"]
+    .map((n) => `${n}=${median(systemUs.get(n) ?? []).toFixed(0)}µs(${systemUs.get(n)?.length ?? 0} runs)`)
+    .join("  ");
+  return { frameUs: median(frameSamples), sys };
+}
+
 const HEADER =
   "shape        | widgets+fold | frame µs | member µs  | enter ms | exit ms | attach ms | envelope | seed ms";
 
@@ -188,6 +239,8 @@ describe("membership at scale (BENCH=1 only)", () => {
         const nowRef = { now: 0 };
 
         const idle = timeIdle(ce, nowRef);
+        const zoomChurn = timeCamera(ce, nowRef, "zoom");
+        const panChurn = timeCamera(ce, nowRef, "pan");
 
         // Nav: enter a mid-depth folder, one step (resweep + index rebuild),
         // then exit + one step. Flat boards have no folders — skipped.
@@ -223,6 +276,8 @@ membership-scale ${shape.name} (µs = median):
   ${HEADER}
   ${shape.name.padEnd(12)} | ${String(widgetCount).padStart(7)}+${String(folderCount).padEnd(4)} | ${idle.frameUs.toFixed(1).padStart(8)} | ${idle.membershipUs.toFixed(1).padStart(10)} | ${enterMs.toFixed(1).padStart(8)} | ${exitMs.toFixed(1).padStart(7)} | ${attachMs.toFixed(0).padStart(9)} | ${(bytes.length / 1024).toFixed(0).padStart(7)}k | ${seedMs.toFixed(0).padStart(7)}
   top idle systems: ${idle.top}
+  zoom frames: ${zoomChurn.frameUs.toFixed(1)}µs/frame  ${zoomChurn.sys}
+  pan frames:  ${panChurn.frameUs.toFixed(1)}µs/frame  ${panChurn.sys}
 `);
         expect(idle.frameUs).toBeGreaterThan(0);
       },
