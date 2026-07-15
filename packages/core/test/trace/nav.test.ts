@@ -6,7 +6,7 @@
  * in their design slots) with an armed reflector — the full-stack idiom.
  */
 import { describe, expect, it } from "vitest";
-import { createWorld } from "@vibecook/strata-ecs";
+import { createWorld, defineQuery } from "@vibecook/strata-ecs";
 import {
   Active,
   Camera,
@@ -31,6 +31,8 @@ import {
   installInteractionStack,
   type Entity,
 } from "../../src";
+
+const activeQ = defineQuery([Active]);
 
 function makeRig() {
   const world = createWorld();
@@ -118,6 +120,118 @@ describe("trace: active membership (design-004 §7)", () => {
     rig.step();
     expect(rig.world.hasTag(inner, Selected)).toBe(true);
     expect(rig.world.hasTag(folder, Selected)).toBe(false); // folder is NOT in this frame's index
+  });
+});
+
+describe("trace: gated membership delta paths (design-004 §7 runIf, 2026-07-15)", () => {
+  it("spawn classifies SAME tick (the M6 mount-timing invariant)", () => {
+    const rig = makeRig();
+    rig.step(2); // settle: seeded, journal drained
+    const folder = rig.spawnBox(300, 100, { container: true });
+    const inner = rig.spawnBox(50, 50, { parent: folder });
+    const root = rig.spawnBox(100, 100);
+    rig.step(1); // ONE tick: the delta route must classify all three
+    expect(rig.world.hasTag(root, Active)).toBe(true);
+    expect(rig.world.hasTag(folder, Active)).toBe(true);
+    expect(rig.world.hasTag(inner, Active)).toBe(false);
+    expect(rig.world.hasTag(inner, Culled)).toBe(true);
+  });
+
+  it("reparent (with the frame-local Position co-write) flips membership without a nav change", () => {
+    const rig = makeRig();
+    const box = rig.spawnBox(100, 100);
+    const folder = rig.spawnBox(300, 100, { container: true });
+    rig.step(2);
+    expect(rig.world.hasTag(box, Active)).toBe(true);
+
+    // The consume shape: ChildOf + Position rewritten together (design-001
+    // frame-local coordinates — the co-write IS the collector's churn signal).
+    rig.world.setRelation(box, ChildOf, folder);
+    rig.world.edit(box).set(Position, { x: 10, y: 10 });
+    rig.step(1);
+    expect(rig.world.hasTag(box, Active)).toBe(false);
+    expect(rig.world.hasTag(box, Culled)).toBe(true);
+
+    // Drag-out shape: back to root.
+    rig.world.removeRelation(box, ChildOf);
+    rig.world.edit(box).set(Position, { x: 150, y: 150 });
+    rig.step(1);
+    expect(rig.world.hasTag(box, Active)).toBe(true);
+  });
+
+  it("container-ness flip re-anchors the subtree (the equip-lag correction path)", () => {
+    const rig = makeRig();
+    const group = rig.spawnBox(300, 100); // NOT a container yet
+    const child = rig.spawnBox(20, 20, { parent: group });
+    rig.step(2);
+    // A non-container parent is transparent: child anchors to root → Active.
+    expect(rig.world.hasTag(child, Active)).toBe(true);
+
+    rig.world.addTag(group, Container); // equip stamps Container one flush later
+    rig.step(1);
+    expect(rig.world.hasTag(group, Active)).toBe(true); // still a root widget
+    expect(rig.world.hasTag(child, Active)).toBe(false); // now CONTENT of group
+    expect(rig.world.hasTag(child, Culled)).toBe(true);
+  });
+
+  it("container reparent moves the folder, not its content's anchor (DFS stops at container children)", () => {
+    const rig = makeRig();
+    const a = rig.spawnBox(100, 100, { container: true });
+    const w = rig.spawnBox(10, 10, { parent: a });
+    const b = rig.spawnBox(500, 100, { container: true });
+    rig.step(2);
+    expect(rig.world.hasTag(a, Active)).toBe(true);
+    expect(rig.world.hasTag(w, Active)).toBe(false);
+
+    // Consume folder A into folder B (co-write).
+    rig.world.setRelation(a, ChildOf, b);
+    rig.world.edit(a).set(Position, { x: 5, y: 5 });
+    rig.step(1);
+    expect(rig.world.hasTag(a, Active)).toBe(false); // A is B's content now
+    expect(rig.world.hasTag(w, Active)).toBe(false); // w still anchors to A
+
+    rig.nav.enterContainer(b);
+    rig.step(2);
+    expect(rig.world.hasTag(a, Active)).toBe(true); // inside B: A is a member
+    expect(rig.world.hasTag(w, Active)).toBe(false); // w is A's content, not B's
+
+    rig.nav.enterContainer(a);
+    rig.step(2);
+    expect(rig.world.hasTag(w, Active)).toBe(true); // inside A at last
+  });
+
+  it("container despawn (remote analog, NO cascade) resweeps: orphaned content re-anchors", () => {
+    const rig = makeRig();
+    const folder = rig.spawnBox(300, 100, { container: true });
+    const inner = rig.spawnBox(50, 50, { parent: folder });
+    rig.step(2);
+    expect(rig.world.hasTag(inner, Active)).toBe(false);
+
+    // Bare destroy — the ChildOf edge auto-clears with it and the orphan's
+    // own row journals NOTHING; the container-despawn insurance resweeps.
+    rig.world.destroy(folder);
+    rig.step(1);
+    expect(rig.world.hasTag(inner, Active)).toBe(true); // root-level now
+    expect(rig.world.hasTag(inner, Culled)).toBe(false);
+  });
+
+  it("idle frames after settle leave membership untouched (no churn, no flips)", () => {
+    const rig = makeRig();
+    const box = rig.spawnBox(100, 100);
+    const folder = rig.spawnBox(300, 100, { container: true });
+    const inner = rig.spawnBox(50, 50, { parent: folder });
+    rig.step(2);
+
+    // 20 idle ticks: the drain-empty early return must hold the partition
+    // stable (any Active flip changes the query's membership and fires this).
+    let flips = 0;
+    rig.world.reactive.observeQuery(activeQ, () => {
+      flips++;
+    });
+    rig.step(20);
+    expect(flips).toBe(0);
+    expect(rig.world.hasTag(box, Active)).toBe(true);
+    expect(rig.world.hasTag(inner, Active)).toBe(false);
   });
 });
 

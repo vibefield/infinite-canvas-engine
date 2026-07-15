@@ -7,10 +7,25 @@
  *   (at root: no container ancestor at all). Children of a deeper container
  *   are that container's content — not Active until you enter it.
  * - `activeMembership` (derive tick, before cull): recomputes membership and
- *   flips Active/Visible/Culled CHANGE-ONLY. A nav switch is O(frame
- *   content) tag flips — bounded, rare, migration-free. Boards without
- *   containers converge to "everything Active" on the first pass and never
- *   write again (M3–M7 demos unaffected).
+ *   flips Active/Visible/Culled CHANGE-ONLY, gated per design-004 §7
+ *   (`runIf: nav-change ∨ ChildOf churn`) as a drain-and-early-return tick
+ *   body — the spatialSync shape (petition 7 ChangeCollector; a `runIf`
+ *   cannot drain, and this system declares no writes so an early-out
+ *   blanket-stamps nothing). Idle frames cost one drain + one nav compare.
+ *   Full resweeps run on seed / reset / coarse / NAV CHANGE / container
+ *   despawn; everything else is delta-driven: a journaled entity whose
+ *   membership INPUTS (ChildOf edge, Container-ness) are unchanged is
+ *   skipped (drag frames journal Position every tick — O(1) each), a real
+ *   reparent/container-flip reclassifies its re-anchored subtree.
+ *   MEMBERSHIP-CHURN SIGNAL (why Position is the reparent proxy): relations
+ *   are not collector-journalable (strata CollectOptions = components +
+ *   tags), but coordinates are FRAME-LOCAL (design-001 §5.1) — a reparent
+ *   that does not rewrite Position into the new frame's space is already a
+ *   bug, and every real path co-writes: the doc sink commits reparent +
+ *   Position in ONE tx (doc-commit-sink.ts), and undo/redo/remote imports
+ *   project both rows of that tx. A bare runtime `world.setRelation(e,
+ *   ChildOf, …)` with no Position write on a pre-existing entity is OUTSIDE
+ *   the contract and goes stale until the next resweep.
  * - Nav stack = SESSION entities: `NavEntry` rows carry NavDepth + NavCamera
  *   (the camera to restore on exit) + NavFrame(entry→container). Root =
  *   empty stack. Current frame = deepest live entry's NavFrame target.
@@ -29,7 +44,7 @@
  *   rider back (per-user view memory; lost on undo-despawn — accepted) and
  *   restores the entry's NavCamera.
  */
-import type { Entity, TickSystem, World } from "@vibecook/strata-ecs";
+import type { ChangeCollector, Entity, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
 import type { SpatialIndex } from "@ice/kernel";
 import {
@@ -120,30 +135,139 @@ export interface NestedCanvasOpts {
  * The membership stamper alone — installed by `installWidgetRuntime` (before
  * cull) so EVERY app partitions correctly, containers or not: a board with no
  * containers converges to all-Active on the first pass and never writes again.
+ *
+ * Gated per design-004 §7 (see the file header): the tick body drains a
+ * petition-7 collector and early-returns on idle frames; membership work runs
+ * only on nav change or membership-input churn. Baseline before this gate
+ * (bench/membership-scale.test.ts, 2026-07-15): the full scan cost 19.0 ms
+ * PER IDLE FRAME at 100k widgets nested 8 deep.
  */
 export function createActiveMembership(world: World): TickSystem {
+  // Created lazily on the FIRST run: both installWidgetRuntime and
+  // createNestedCanvas construct an instance but rigs install only one — an
+  // un-installed instance must never accumulate an undrained journal.
+  let collector: ChangeCollector | undefined;
+  let seeded = false;
+  let lastFrame: Entity | undefined;
+  let framePrimed = false;
+  // Last-known membership INPUTS per equipped widget (the spatialSync `known`
+  // pattern): ChildOf edge + Container-ness. A journaled entity whose inputs
+  // are unchanged (Position-only churn — every drag frame) is skipped without
+  // a chain walk. Rebuilt wholesale on every full resweep.
+  let knownParent = new Map<Entity, Entity | undefined>();
+  let knownContainer = new Set<Entity>();
+
+  const isEquipped = (e: Entity): boolean =>
+    world.has(e, PrefabId) && world.has(e, Position) && world.has(e, Size);
+
   return defineTickSystem(
     (ctx) => {
+      if (collector === undefined) {
+        // Position is the reparent proxy (frame-local co-write — file header);
+        // PrefabId journals widget spawns/despawns; Container journals
+        // container-ness flips (equip lands them one flush after spawn).
+        // `coarse: false` is the same attestation spatialSync makes: every
+        // writer of these components is store-visible (ctx/edit/projection).
+        collector = world.changes.collect({
+          components: [PrefabId, Position],
+          tags: [Container],
+          coarse: false,
+        });
+      }
+      const delta = collector.drain();
       const frame = currentNavFrame(world);
-      ctx.query(equippedQ).each((b) => {
-        for (const r of b) {
-          const e = b.entity(r);
-          const member = firstContainerAncestor(world, e) === frame;
-          if (member) {
-            if (!ctx.hasTag(e, Active)) {
-              ctx.addTag(e, Active); // cull re-classifies Visible next pass
-              if (ctx.hasTag(e, Culled)) ctx.removeTag(e, Culled);
+      const navChanged = !framePrimed || frame !== lastFrame;
+      framePrimed = true;
+      lastFrame = frame;
+
+      const classify = (e: Entity): void => {
+        const member = firstContainerAncestor(world, e) === frame;
+        if (member) {
+          if (!ctx.hasTag(e, Active)) {
+            ctx.addTag(e, Active); // cull re-classifies Visible next pass
+            if (ctx.hasTag(e, Culled)) ctx.removeTag(e, Culled);
+          }
+        } else {
+          // Canonical non-member state (never-was-active included): out of
+          // Active, out of Visible, Culled — the mount store hides it and
+          // the partition invariant (Visible ⊕ Culled over Active) holds.
+          if (ctx.hasTag(e, Active)) ctx.removeTag(e, Active);
+          if (ctx.hasTag(e, Visible)) ctx.removeTag(e, Visible);
+          if (!ctx.hasTag(e, Culled)) ctx.addTag(e, Culled);
+        }
+      };
+
+      // Container-despawn insurance: a dead container's ex-CHILDREN changed
+      // first-ancestor without any journaled write of their own (a remote tx
+      // can delete just the folder row; engine-local deletes cascade, so this
+      // stays rare). Resweep rather than reconstruct the orphan set.
+      let containerRemoved = false;
+      for (const e of delta.removed) {
+        if (knownContainer.delete(e)) containerRemoved = true;
+        knownParent.delete(e);
+      }
+
+      // Structural resweeps rebuild the input caches; a NAV-ONLY resweep keeps
+      // them — nav moves the frame, not the tree, and the cache rebuild is the
+      // expensive half at scale (measured +80 ms on a 100k-entity enter).
+      const structural = !seeded || delta.reset || delta.coarse.length > 0 || containerRemoved;
+      if (structural || navChanged) {
+        seeded = true;
+        if (structural) {
+          const nextParent = new Map<Entity, Entity | undefined>();
+          const nextContainer = new Set<Entity>();
+          ctx.query(equippedQ).each((b) => {
+            for (const r of b) {
+              const e = b.entity(r);
+              classify(e);
+              nextParent.set(e, world.getRelation(e, ChildOf));
+              if (world.hasTag(e, Container)) nextContainer.add(e);
             }
-          } else {
-            // Canonical non-member state (never-was-active included): out of
-            // Active, out of Visible, Culled — the mount store hides it and
-            // the partition invariant (Visible ⊕ Culled over Active) holds.
-            if (ctx.hasTag(e, Active)) ctx.removeTag(e, Active);
-            if (ctx.hasTag(e, Visible)) ctx.removeTag(e, Visible);
-            if (!ctx.hasTag(e, Culled)) ctx.addTag(e, Culled);
+          });
+          knownParent = nextParent;
+          knownContainer = nextContainer;
+        } else {
+          ctx.query(equippedQ).each((b) => {
+            for (const r of b) classify(b.entity(r));
+          });
+        }
+        return;
+      }
+
+      if (delta.changed.length === 0) return; // the idle frame: one drain, one compare
+
+      // Delta route: reclassify entities whose membership inputs changed plus
+      // the subtree a reparent/container-flip re-anchors. The walk stops at
+      // container CHILDREN (their content anchors to them — unaffected by a
+      // move above), but the DFS ROOT recurses even when it is a container:
+      // its container-ness may have just flipped, re-anchoring its children.
+      const visited = new Set<Entity>();
+      const reclassifySubtree = (root: Entity): void => {
+        const stack: Entity[] = [root];
+        while (stack.length > 0) {
+          const e = stack.pop() as Entity;
+          if (visited.has(e)) continue;
+          visited.add(e);
+          classify(e);
+          if (e !== root && world.hasTag(e, Container)) continue;
+          for (const c of world.getReverse(e, ChildOf)) {
+            if (isEquipped(c)) stack.push(c);
           }
         }
-      });
+      };
+
+      for (const e of delta.changed) {
+        if (!world.isAlive(e) || !isEquipped(e)) continue;
+        const parent = world.getRelation(e, ChildOf);
+        const isCont = world.hasTag(e, Container);
+        if (knownParent.has(e) && knownParent.get(e) === parent && knownContainer.has(e) === isCont) {
+          continue; // Position-only churn — membership inputs unchanged
+        }
+        knownParent.set(e, parent);
+        if (isCont) knownContainer.add(e);
+        else knownContainer.delete(e);
+        reclassifySubtree(e);
+      }
     },
     { name: "activeMembership" },
   );

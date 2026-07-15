@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run",
-    "bench": "BENCH=1 vitest run bench/reactivity-tax.test.ts"
+    "bench": "BENCH=1 vitest run bench/"
   },
   "dependencies": {
     "@ice/kernel": "workspace:*",

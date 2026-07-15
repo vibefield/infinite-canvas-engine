@@ -12,6 +12,63 @@ exist to catch regressions by eye across milestones, not to assert a
 threshold in a test. The bench source is the single source of truth; this
 file is its recorded output.
 
+## M8 — nested-canvas membership at scale (2026-07-15)
+
+**Machine**: Apple M1 Max (arm64), Node v24.14.1, `@vibecook/strata-ecs` 0.7.0.
+
+Source: `packages/core/bench/membership-scale.test.ts` (`pnpm --filter @ice/core run bench`).
+Context: the container-model design discussion ("relations in one doc vs doc-per-container",
+2026-07-15) stress-tested the one-doc model at 10⁵ rows and found `activeMembership`
+implemented as an ungated full scan — design-004 §7 specifies `runIf: nav-change ∨ ChildOf
+churn`. The gate landed the same day (petition-7 ChangeCollector, the spatialSync shape;
+Position is the reparent churn-signal because frame-local coordinates make every real
+reparent co-write it — see `nav/nested-canvas.ts`).
+
+Tree shapes: `flat-100k` = 100,000 root leaves; `nested-10k/100k` = 10/100 root folder
+chains × depth 8 × 125 leaves per folder. Real facade pipeline (`createCanvasEngine`),
+headless, telemetry armed. µs = median.
+
+### activeMembership per idle frame (the gate's target)
+
+| shape | before | after | |
+| --- | --- | --- | --- |
+| flat-100k | 3,251.8 µs | **3.0 µs** | ~1,080× |
+| nested-10k | 1,626.4 µs | **0.6 µs** | ~2,700× |
+| nested-100k | 19,031.6 µs | **3.8 µs** | ~5,000× |
+
+**Verdict: the design-004 §7 gate holds at scale.** An idle frame costs one collector
+drain + one nav-frame compare; drag frames journal Position but skip on the
+membership-inputs cache (O(1) per dragged entity); reparents/container-flips reclassify
+only the re-anchored subtree; nav changes resweep classification but keep the input
+caches (a nav-only resweep — rebuilding them cost +80 ms at 100k on the first cut).
+
+### Whole idle frame + nav + attach (context numbers, after the gate)
+
+| shape | frame µs | enter ms | exit ms | attach ms | envelope | seed ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| flat-100k | 25,057 | — | — | 3,177 | 9.2 MB | 62,242 |
+| nested-10k | 2,561 | 10.2 | 5.7 | 323 | 1.0 MB | 2,026 |
+| nested-100k | 25,577 | 99.9 | 48.1 | 3,550 | 10.3 MB | 119,141 |
+
+- **The idle frame at 100k is still ~25 ms — and telemetry now names the owners:**
+  `breakpoint` ≈ 18.5 ms, `widgetMount` ≈ 4.0 ms, `cull` ≈ 1.9 ms per idle frame —
+  three more ungated O(N)-per-tick derive systems. They are the next gating targets
+  (same churn-signal treatment: breakpoint ← Size/zoom-band churn, cull ← camera/
+  spatial versions, mount ← Active/Visible churn). At 10k total idle frame is 2.6 ms.
+- **enter/exit at 100k+800** (99.9/48.1 ms; baseline 46.4/47.0): exit is at parity;
+  enter's extra is dominated by the OTHER ungated systems reacting to the zoom-to-fit
+  camera write (breakpoint recomputes all 100k zoom-dependent classes) plus a cold
+  nav-sweep path — once per user click, expected to shrink when breakpoint/cull gate.
+- **attach-projection is ~3.2–3.9 s at 100k rows** (docs.open → full-doc projection;
+  ~0.3–0.5 s at 10k). One-time per board open. This is the honest cost of the
+  "one doc per board, whole doc projects at attach" model at pathological size — the
+  10k-row number is the realistic-board posture. Envelope ≈ 100 B/row.
+- Membership-gate consistency is pinned by `test/trace/nav.test.ts` ("gated membership
+  delta paths"): same-tick spawn classification, reparent + drag-out, container-ness
+  flip re-anchoring, container reparent (DFS stops at container children), container
+  despawn (orphan resweep insurance), and 20-idle-tick flip-free stability under an
+  armed observer.
+
 ## M3 baseline (2026-07-09)
 
 **Machine**: Apple M1 Max (arm64), Node v24.14.1, `@vibecook/strata-ecs` 0.3.0.
