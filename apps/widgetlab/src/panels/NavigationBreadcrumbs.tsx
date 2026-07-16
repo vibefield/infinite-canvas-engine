@@ -7,8 +7,9 @@
  *    ENTITIES: one `NavEntry` per depth, carrying `NavDepth{d}` (root = empty
  *    stack) and a `NavFrame → container` relation. We query `[NavDepth]`, sort
  *    by depth, and synthesize the always-present "Root" crumb at depth 0.
- *  - Back / jump go through `ce.ops.exitContainer()` (v1's `engine.exitContainer`
- *    + `invalidatePresent`; v3 reflows on the next frame).
+ *  - Back goes through `ce.ops.exitContainer()`; crumb jumps through
+ *    `ce.ops.exitTo(depth)` — one composed portal-zoom flight per jump
+ *    (design-006 §5), not a loop of single pops.
  *  - Container titles are read generically: the container's `PrefabId` → its
  *    widget type → the first group carrying a `title` field → that value. If no
  *    such field exists we fall back to the PrefabId string, then "Folder"
@@ -125,12 +126,9 @@ export function NavigationBreadcrumbs({ engine }: NavigationBreadcrumbsProps) {
   const jumpToDepth = (targetDepth: number) => {
     const currentDepth = crumbs.length - 1;
     if (targetDepth >= currentDepth) return;
-    // The engine only exposes exitContainer (pop one). Loop until we reach
-    // the target depth. Cheap — the stack is typically shallow.
-    const steps = currentDepth - targetDepth;
-    for (let i = 0; i < steps; i++) {
-      engine.ops.exitContainer();
-    }
+    // ONE composed transition for the whole jump (design-006 §5) — looping
+    // exitContainer would stack N flights, each cancelling the last.
+    engine.ops.exitTo(targetDepth);
   };
 
   return (

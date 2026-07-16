@@ -243,22 +243,25 @@ describe("trace: camera memory + nav integrity (design-004 §7)", () => {
     rig.step(2);
 
     rig.world.setResource(Camera, { x: 42, y: 24, zoom: 2, gesturing: false });
-    rig.nav.enterContainer(folder);
+    rig.nav.enterContainer(folder, { transition: "none" });
     rig.step();
-    // Inside: camera is the frame's (zoom-to-fit — anything but the outer).
+    // Inside: the DEFAULT framing (zoom-to-fit — anything but the outer).
     const inside = rig.world.getResource(Camera);
     expect(inside?.x).not.toBe(42);
 
     rig.world.setResource(Camera, { x: -5, y: -7, zoom: 0.5, gesturing: false });
-    rig.nav.exitContainer();
+    rig.nav.exitContainer({ transition: "none" });
     rig.step();
     const outside = rig.world.getResource(Camera);
     expect(outside).toMatchObject({ x: 42, y: 24, zoom: 2 }); // NavCamera restore
-    expect(rig.world.get(folder, ContainerCamera)).toMatchObject({ x: -5, y: -7, zoom: 0.5 }); // rider saved
+    // design-006 (James, 2026-07-15): NO per-canvas view memory — the engine
+    // neither writes nor reads the ContainerCamera rider on nav.
+    expect(rig.world.get(folder, ContainerCamera)).toBeUndefined();
 
-    rig.nav.enterContainer(folder);
+    rig.nav.enterContainer(folder, { transition: "none" });
     rig.step();
-    expect(rig.world.getResource(Camera)).toMatchObject({ x: -5, y: -7, zoom: 0.5 }); // rider applied
+    // Re-entry lands the SAME default framing, not where the camera was left.
+    expect(rig.world.getResource(Camera)).toMatchObject(inside as object);
   });
 
   it("integrity: the current frame's container dies → pop to root, camera restored", () => {
@@ -279,23 +282,27 @@ describe("trace: camera memory + nav integrity (design-004 §7)", () => {
     expect(rig.world.getResource(Camera)).toMatchObject({ x: 9, y: 9, zoom: 1 });
   });
 
-  it("enter clamps zoom into the CameraLimits band (empty reset + out-of-band rider)", () => {
+  it("enter clamps the ARRIVAL zoom into the CameraLimits band (empty reset + tight fit)", () => {
     const rig = makeRig();
     rig.world.setResource(CameraLimits, { minZoom: 3, maxZoom: 5 });
     const folder = rig.spawnBox(100, 100, { container: true }); // empty: no content
     rig.step(2);
 
     // Empty container would reset to zoom 1 — clamp up to minZoom, not 1.
-    rig.nav.enterContainer(folder);
+    rig.nav.enterContainer(folder, { transition: "none" });
     rig.step();
     expect(rig.world.getResource(Camera)?.zoom).toBe(3);
 
-    // A saved rider zoom outside the band clamps to maxZoom on re-entry.
-    rig.nav.exitContainer();
+    // A lone 100×80 child fits at zoom 2.5 (600/240) — a maxZoom 2 band
+    // clamps the arrival DOWN. (Fit can never exceed 600/160 = 3.75 at this
+    // viewport — the 80px pad is the ceiling — so the band moves, not the box.)
+    rig.nav.exitContainer({ transition: "none" });
     rig.step();
-    rig.world.edit(folder).set(ContainerCamera, { x: 5, y: 6, zoom: 99 });
-    rig.nav.enterContainer(folder);
+    rig.world.setResource(CameraLimits, { minZoom: 0.1, maxZoom: 2 });
+    rig.spawnBox(0, 0, { parent: folder });
     rig.step();
-    expect(rig.world.getResource(Camera)?.zoom).toBe(5);
+    rig.nav.enterContainer(folder, { transition: "none" });
+    rig.step();
+    expect(rig.world.getResource(Camera)?.zoom).toBe(2);
   });
 });

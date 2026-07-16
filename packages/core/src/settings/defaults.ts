@@ -59,6 +59,26 @@ export const CAMERA_DEFAULTS = {
   dtClampMs: 64,
 } as const;
 
+/**
+ * Nav-transition motion constants (design-006 §4/§5, tuned in the approved
+ * 2026-07-15 mock). `responseMs` is the critically-damped spring response for
+ * ENTER; exit runs at `exitResponseFactor ×` (returning is lighter). Response
+ * scales `durationPerOctave` per zoom-octave beyond `baseOctaves` (Apple's
+ * duration-with-distance). Beyond `freezeOctaves` a flight cannot be presented
+ * geometrically (Chromium raster-scale swing — design-006 §5): the start depth
+ * caps at `capFactor ×` arrival and the transition presents as a crossfade.
+ */
+export const NAV_TRANSITION_DEFAULTS = {
+  responseMs: 420,
+  exitResponseFactor: 0.8,
+  durationPerOctave: 0.12,
+  baseOctaves: 3.5,
+  freezeOctaves: 4.2,
+  capFactor: 10,
+  settleP: 0.999,
+  settleV: 0.02,
+} as const;
+
 /** Widget/FBO/port budgets (design-004 §2 host pipeline, §3 FBO pool, §6 port materialization; ported into design-005 §4 engine facade). */
 export const RUNTIME_BUDGETS = {
   keepMountedWidgets: 256,

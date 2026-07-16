@@ -240,9 +240,12 @@ export {
   createNestedCanvas,
   currentNavEntry,
   currentNavFrame,
+  type NavOpts,
   type NestedCanvas,
   type NestedCanvasOpts,
 } from "./nav/nested-canvas";
+// design-006 T1: the flight resource (T2's reflector consumes it) + system factory.
+export { abortNavFlight, createNavFlight, NavTransition, startNavFlight } from "./systems/nav-flight";
 
 // --- M9 presence layer (design-005 §6.5, design-001 §5.6) ---
 export {

@@ -23,6 +23,7 @@ import { createInputQueue } from "../input/queue";
 import { createCameraSystems } from "../systems/camera-sim";
 import { createCleanupSystems } from "../systems/cleanup";
 import { createL0Systems } from "../systems/l0-input";
+import { createNavFlight } from "../systems/nav-flight";
 import { createPickingSystems } from "../systems/l1-pick";
 import { createWireSync } from "../systems/l1-wires";
 import { createArbitrationSystems } from "../systems/l2-arbitrate";
@@ -187,7 +188,10 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
       createDrawBehavior(world, sink),
       camera.cameraControl,
     ),
-    engine.addSystems("simulate", camera.cameraInertia, camera.tweenSystem),
+    // navFlight AFTER cameraControl's group (ctl:behave): a gesture going
+    // Active stamps Camera.gesturing THIS frame, so the flight yields
+    // same-frame (design-006 §4 "touch always wins").
+    engine.addSystems("simulate", camera.cameraInertia, camera.tweenSystem, createNavFlight(world)),
     // derive order: portMaterialize BEFORE selectionChrome (both touch the index
     // in derive; ports must be indexed before chrome/next-frame picking read it),
     // selectionChrome BEFORE cursor (handles spawn at the derive flush so cursor

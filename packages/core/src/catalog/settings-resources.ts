@@ -11,7 +11,12 @@
  */
 import { field } from "@vibecook/strata-ecs";
 import { defineResource } from "../schema/meta";
-import { CAMERA_DEFAULTS, GESTURE_DEFAULTS, POINTER_DEFAULTS } from "../settings/defaults";
+import {
+  CAMERA_DEFAULTS,
+  GESTURE_DEFAULTS,
+  NAV_TRANSITION_DEFAULTS,
+  POINTER_DEFAULTS,
+} from "../settings/defaults";
 
 /** Recognizer timing/slop live mirror (design-003 §4.2 kind table; inertia constants §5 item 9). */
 export const GestureSettings = defineResource("GestureSettings", {
@@ -42,4 +47,9 @@ export const PointerSettings = defineResource("PointerSettings", {
 export const CameraLimits = defineResource("CameraLimits", {
   minZoom: field("f32", { default: CAMERA_DEFAULTS.minZoom }),
   maxZoom: field("f32", { default: CAMERA_DEFAULTS.maxZoom }),
+});
+
+/** Nav-transition spring response live mirror (design-006 §4; navFlight consumes). */
+export const NavTransitionSettings = defineResource("NavTransitionSettings", {
+  responseMs: field("f32", { default: NAV_TRANSITION_DEFAULTS.responseMs }),
 });

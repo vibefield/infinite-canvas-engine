@@ -38,20 +38,35 @@
  *   container died (undo/remote — NavFrame edge auto-cleared), pop to the
  *   nearest LIVE ancestor entry (skipping dead ones) or root, restore that
  *   camera, rebuild. The recognizer-integrity pattern applied to nav.
- * - Camera memory: enter saves the live camera on the pushed entry
- *   (NavCamera) and applies the container's `ContainerCamera` rider (else
- *   zoom-to-fit over the frame's content, else identity); exit writes the
- *   rider back (per-user view memory; lost on undo-despawn — accepted) and
- *   restores the entry's NavCamera.
+ * - Camera policy (design-006, amending design-004 §7; James 2026-07-15):
+ *   enter saves the live camera on the pushed entry (NavCamera) and ALWAYS
+ *   lands on the DEFAULT framing — zoom-to-fit over the frame's content, else
+ *   identity. The `ContainerCamera` rider is neither read nor written by the
+ *   engine anymore (per-canvas view memory made re-entry unpredictable); the
+ *   component stays in the catalog for userland. Exit restores the entry's
+ *   NavCamera — "back where you came from" is the nav stack, not view memory.
+ * - Transitions (design-006 T1): with a live Viewport and `transition` not
+ *   "none", enter/exit CUT exactly as before and then FLY — the camera snaps
+ *   to the continuity-solved start and `navFlight` springs it to the arrival
+ *   (systems/nav-flight.ts). `exitTo(depth)` pops multi-level in ONE flight
+ *   through the composed portals (rebuilt from CURRENT container rects — a
+ *   collaborator may have moved a card). Headless (no Viewport) or opted-out
+ *   calls snap, preserving the pre-T1 behavior exactly.
  */
 import type { ChangeCollector, Entity, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
-import type { SpatialIndex } from "@ice/kernel";
+import type { CameraState, PortalAffine, SpatialIndex } from "@ice/kernel";
+import {
+  composeAffine,
+  invertAffine,
+  portalAffine,
+  solveFlightStart,
+  visibleRect,
+} from "@ice/kernel";
 import {
   Camera,
   CameraLimits,
   Container,
-  ContainerCamera,
   Culled,
   NavCamera,
   NavDepth,
@@ -61,6 +76,7 @@ import {
   Viewport,
   Visible,
 } from "../catalog";
+import { abortNavFlight, startNavFlight } from "../systems/nav-flight";
 import { Active } from "../catalog/camera-derived";
 import { PrefabId } from "../schema/prefab";
 import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
@@ -131,11 +147,18 @@ function firstContainerAncestor(world: World, e: Entity): Entity | undefined {
   return undefined;
 }
 
+/** Per-op transition choice (design-006 §3.1); default is the portal zoom. */
+export interface NavOpts {
+  readonly transition?: "zoom" | "none";
+}
+
 export interface NestedCanvas {
   readonly activeMembership: TickSystem;
   readonly navIntegrity: TickSystem;
-  enterContainer(container: Entity): void;
-  exitContainer(): void;
+  enterContainer(container: Entity, opts?: NavOpts): void;
+  exitContainer(opts?: NavOpts): void;
+  /** Pop to `targetDepth` in ONE transition (breadcrumb jumps; design-006 §5). */
+  exitTo(targetDepth: number, opts?: NavOpts): void;
   /** Depth of the nav stack (0 = root). */
   depth(): number;
 }
@@ -300,18 +323,15 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
     bumpVersion(world, SpatialVersion);
   };
 
-  const applyCameraForFrame = (frame: Entity | undefined): void => {
-    if (frame === undefined) return;
-    // Every zoom written here must honor the configured band (facade settings.zoom),
-    // or enterContainer breaks the app's own invariant the moment it lands.
+  /**
+   * The DEFAULT framing for a frame: zoom-to-fit its direct content (pad 80),
+   * identity when empty/headless; zoom clamped into the configured band
+   * (facade settings.zoom) — the ARRIVAL honors limits even though flight
+   * paths transit outside them. No `ContainerCamera` rider (design-006).
+   */
+  const resolveArrivalCamera = (frame: Entity): CameraState => {
     const lim = world.getResource(CameraLimits) ?? CAMERA_DEFAULTS;
     const clampZoom = (z: number): number => Math.min(lim.maxZoom, Math.max(lim.minZoom, z));
-    const rider = world.get(frame, ContainerCamera);
-    if (rider !== undefined && rider.zoom > 0) {
-      writeRuntimeResource(world, Camera, { x: rider.x, y: rider.y, zoom: clampZoom(rider.zoom), gesturing: false });
-      return;
-    }
-    // Zoom-to-fit over the frame's direct content (fallback; identity if empty).
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
@@ -328,47 +348,32 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
       any = true;
     }
     const vp = world.getResource(Viewport);
-    if (!any || vp === undefined || vp.w === 0) {
-      writeRuntimeResource(world, Camera, { x: 0, y: 0, zoom: clampZoom(1), gesturing: false });
-      return;
-    }
+    if (!any || vp === undefined || vp.w === 0) return { x: 0, y: 0, zoom: clampZoom(1) };
     const pad = 80;
     const zoom = clampZoom(Math.min(vp.w / (maxX - minX + pad * 2), vp.h / (maxY - minY + pad * 2)));
-    writeRuntimeResource(world, Camera, {
+    return {
       x: minX - (vp.w / zoom - (maxX - minX)) / 2,
       y: minY - (vp.h / zoom - (maxY - minY)) / 2,
       zoom,
-      gesturing: false,
-    });
+    };
   };
 
-  const popTo = (targetDepth: number): void => {
-    // Destroy entries deeper than targetDepth; restore the camera of the
-    // shallowest destroyed entry (the camera as it was before entering it).
-    const doomed: Entity[] = [];
-    world.query(navEntryQ).each((b) => {
-      for (const r of b) {
-        const e = b.entity(r);
-        const d = world.read(e, NavDepth).d;
-        if (d > targetDepth) doomed.push(e);
-      }
-    });
-    // Shallowest doomed entry's saved camera is the correct restore point.
-    let shallowest: Entity | undefined;
-    let shallowestD = Number.POSITIVE_INFINITY;
-    for (const e of doomed) {
-      const d = world.read(e, NavDepth).d;
-      if (d < shallowestD) {
-        shallowestD = d;
-        shallowest = e;
-      }
-    }
-    if (shallowest !== undefined) {
-      const cam = world.read(shallowest, NavCamera);
-      writeRuntimeResource(world, Camera, { x: cam.x, y: cam.y, zoom: cam.zoom, gesturing: false });
-    }
-    for (const e of doomed) world.destroy(e); // ops run OUTSIDE the tick — structural world.* is legal here
-    rebuildIndex();
+  const snapCamera = (c: CameraState): void => {
+    writeRuntimeResource(world, Camera, { x: c.x, y: c.y, zoom: c.zoom, gesturing: false });
+  };
+
+  /** Flights need a real viewport and no opt-out; headless snaps (pre-T1 behavior). */
+  const flightable = (opts: NavOpts | undefined): boolean => {
+    const vp = world.getResource(Viewport);
+    return opts?.transition !== "none" && vp !== undefined && vp.w > 0 && vp.h > 0;
+  };
+
+  /** Container body rect in its parent frame's coords — the portal (§8.5: full body for now). */
+  const containerRect = (c: Entity): { x: number; y: number; width: number; height: number } | undefined => {
+    const p = world.get(c, Position);
+    const s = world.get(c, Size);
+    if (p === undefined || s === undefined) return undefined;
+    return { x: p.x, y: p.y, width: s.w, height: s.h };
   };
 
   const activeMembership = createActiveMembership(world);
@@ -390,6 +395,7 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
         }
       });
       if (!Number.isFinite(deadAt)) return;
+      abortNavFlight(world); // integrity is never blocked on animation (design-006 §4)
       let restore: { x: number; y: number; zoom: number } | undefined;
       ctx.query(navEntryQ).each((b) => {
         for (const r of b) {
@@ -415,10 +421,54 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
     },
   );
 
+  const exitTo = (targetDepth: number, opts?: NavOpts): void => {
+    // Live entries, depth ascending; the deepest is the current frame.
+    const entries: { e: Entity; d: number }[] = [];
+    world.query(navEntryQ).each((b) => {
+      for (const r of b) {
+        const e = b.entity(r);
+        entries.push({ e, d: world.read(e, NavDepth).d });
+      }
+    });
+    entries.sort((a, b) => a.d - b.d);
+    const deepest = entries[entries.length - 1];
+    if (deepest === undefined || targetDepth < 0 || targetDepth >= deepest.d) return;
+    const doomed = entries.filter((x) => x.d > targetDepth);
+    const shallowest = doomed[0] as { e: Entity; d: number }; // non-empty by the guard
+    // The shallowest doomed entry's saved camera is the restore point (the
+    // camera as it was the moment that level was entered).
+    const restore = world.read(shallowest.e, NavCamera);
+    const c1: CameraState = { x: restore.x, y: restore.y, zoom: restore.zoom };
+    const camPre = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
+
+    // Compose the portal chain from CURRENT rects (containers move), outermost
+    // first: A maps the departed frame's coords into the TARGET frame's. Any
+    // dead/rect-less link degrades the whole jump to a snap — never half-fly.
+    let A: PortalAffine | undefined;
+    if (flightable(opts)) {
+      const vp = world.getResource(Viewport) as { w: number; h: number };
+      for (const { e } of doomed) {
+        const frame = world.getRelation(e, NavFrame);
+        const K = frame !== undefined && world.isAlive(frame) ? containerRect(frame) : undefined;
+        if (frame === undefined || K === undefined) {
+          A = undefined;
+          break;
+        }
+        const M = portalAffine(visibleRect(resolveArrivalCamera(frame), vp.w, vp.h), K);
+        A = A === undefined ? M : composeAffine(A, M);
+      }
+    }
+
+    for (const { e } of doomed) world.destroy(e); // ops run OUTSIDE the tick — structural world.* is legal here
+    if (A !== undefined) startNavFlight(world, "exit", A, solveFlightStart(A, camPre), c1);
+    else snapCamera(c1);
+    rebuildIndex();
+  };
+
   return {
     activeMembership,
     navIntegrity,
-    enterContainer(container) {
+    enterContainer(container, opts) {
       if (!world.isAlive(container) || !world.hasTag(container, Container)) {
         throw new Error("ice: enterContainer target is not a live container.");
       }
@@ -431,22 +481,24 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
         ],
       });
       world.setRelation(entry, NavFrame, container);
-      applyCameraForFrame(container);
+      const c1 = resolveArrivalCamera(container);
+      const K = containerRect(container);
+      if (flightable(opts) && K !== undefined) {
+        const vp = world.getResource(Viewport) as { w: number; h: number };
+        // A = M⁻¹: parent (departed) coords → child (destination) coords.
+        const A = invertAffine(portalAffine(visibleRect(c1, vp.w, vp.h), K));
+        startNavFlight(world, "enter", A, solveFlightStart(A, cam), c1);
+      } else {
+        snapCamera(c1);
+      }
       rebuildIndex();
     },
-    exitContainer() {
+    exitContainer(opts) {
       const entry = currentNavEntry(world);
       if (entry === undefined) return; // already at root
-      // Persist per-user view memory on the frame we're leaving.
-      const frame = world.getRelation(entry, NavFrame);
-      const cam = world.getResource(Camera);
-      if (frame !== undefined && world.isAlive(frame) && cam !== undefined) {
-        const rider = { x: cam.x, y: cam.y, zoom: cam.zoom };
-        if (world.has(frame, ContainerCamera)) world.edit(frame).set(ContainerCamera, rider);
-        else world.addComponent(frame, ContainerCamera, rider);
-      }
-      popTo(world.read(entry, NavDepth).d - 1);
+      exitTo(world.read(entry, NavDepth).d - 1, opts);
     },
+    exitTo,
     depth() {
       const entry = currentNavEntry(world);
       return entry === undefined ? 0 : world.read(entry, NavDepth).d;

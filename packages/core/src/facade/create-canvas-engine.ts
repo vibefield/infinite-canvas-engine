@@ -40,7 +40,7 @@ import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { guardedTransaction } from "../guards/guarded-tx";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { installInteractionStack, type InteractionStack } from "../interaction/install";
-import { createNestedCanvas, type NestedCanvas } from "../nav/nested-canvas";
+import { createNestedCanvas, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
 import { cancelActiveGestures } from "../ops/gestures";
 import { cascadeDestroy } from "../ops/cascade";
 import { clearSelection, selectedEntities, setSelection } from "../ops/selection";
@@ -99,8 +99,10 @@ export interface CanvasOps {
   zoomToFit(ids?: readonly Entity[]): void;
   zoomTo(zoom: number, anchor?: { x: number; y: number }): void;
   panTo(x: number, y: number): void;
-  enterContainer(container: Entity): void;
-  exitContainer(): void;
+  enterContainer(container: Entity, opts?: NavOpts): void;
+  exitContainer(opts?: NavOpts): void;
+  /** Pop several levels in ONE transition (breadcrumb jumps; design-006 §5). */
+  exitTo(targetDepth: number, opts?: NavOpts): void;
   cancelActiveGestures(): void;
 }
 
@@ -469,8 +471,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
       writeRuntimeResource(world, Camera, { x, y, zoom: cam.zoom, gesturing: false });
     },
-    enterContainer: (c) => nav.enterContainer(c),
-    exitContainer: () => nav.exitContainer(),
+    enterContainer: (c, opts) => nav.enterContainer(c, opts),
+    exitContainer: (opts) => nav.exitContainer(opts),
+    exitTo: (d, opts) => nav.exitTo(d, opts),
     cancelActiveGestures: () => cancelActiveGestures(world),
   };
 
