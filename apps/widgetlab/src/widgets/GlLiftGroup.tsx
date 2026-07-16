@@ -16,8 +16,9 @@ import {
   type Entity,
   type World,
 } from "@ice/core";
-import { useIslandLift } from "@ice/r3f";
+import { useIslandLift, useIslandOpacity } from "@ice/r3f";
 import { useEffect, useState, type ReactNode } from "react";
+import { LIFT_OPACITY } from "./CardShell";
 
 function isLifted(world: World, entity: Entity): boolean {
   if (world.has(entity, Grab)) return true;
@@ -45,5 +46,9 @@ export function GlLiftGroup({
     return () => clearInterval(id);
   }, [world, entity]);
   useIslandLift(lifted ? 1.05 : 1);
+  // The drag-lift fade: same value as CardShell's CSS opacity, so the DOM
+  // chrome (P1) and the floating 3D content (the composite quad) drop to 75 %
+  // and restore together.
+  useIslandOpacity(lifted ? LIFT_OPACITY : 1);
   return <group>{children}</group>;
 }

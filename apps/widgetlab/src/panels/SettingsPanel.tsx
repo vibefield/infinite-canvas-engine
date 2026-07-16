@@ -18,7 +18,18 @@
  *  - "Overlap Glow": v3 has no GL glow pass. The whole section forwards to app
  *    state whose consumer would be a future CSS-level adaptation in the App.
  */
-import { CameraLimits, type CanvasEngine, writeRuntimeResource } from "@ice/core";
+import {
+  CameraLimits,
+  Opacity,
+  PrefabId,
+  SnapConfig,
+  defineQuery,
+  guardedTransaction,
+  widgets,
+  writeRuntimeResource,
+  type CanvasEngine,
+  type Entity,
+} from "@ice/core";
 import type { GridConfig } from "@ice/dom";
 import { useState } from "react";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./types";
@@ -42,6 +53,9 @@ interface SettingsPanelProps {
   stressWidgetType?: string;
   onClose: () => void;
 }
+
+// Every prefab-spawned entity; filtered to registered widget types below.
+const widgetQ = defineQuery([PrefabId]);
 
 const inputCls =
   "w-full rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-right dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200";
@@ -89,6 +103,49 @@ export function SettingsPanel({
   // CameraLimits runtime resource, camera-sim consumes it next frame).
   const applyZoom = () => {
     writeRuntimeResource(engine.world, CameraLimits, { minZoom, maxZoom });
+  };
+
+  // Snapping — the SnapConfig runtime resource (CameraLimits pattern): the
+  // snapSystem reads it next frame, so the toggle/threshold are live mid-drag.
+  const snapCfg = engine.world.getResource(SnapConfig);
+  const [snapEnabled, setSnapEnabled] = useState(snapCfg?.enabled ?? true);
+  const [snapThreshold, setSnapThreshold] = useState(snapCfg?.thresholdPx ?? 5);
+  const applySnap = (enabled: boolean, thresholdPx: number) => {
+    setSnapEnabled(enabled);
+    setSnapThreshold(thresholdPx);
+    writeRuntimeResource(engine.world, SnapConfig, { enabled, thresholdPx });
+  };
+
+  const [cardOpacity, setCardOpacity] = useState(1);
+  // All-cards durable Opacity write: one guardedTransaction over every spawned
+  // widget. The dom host reflects it as `style.opacity`; a gl card fades via
+  // its composite quad's `uOpacity` (+ its DOM chrome through the same host
+  // path). `undoable: false` — a slider drag is a stream of txs, not edits the
+  // user expects ⌘Z to unwind one notch at a time.
+  const applyCardOpacity = (a: number) => {
+    setCardOpacity(a);
+    const session = engine.docs.current();
+    if (session === undefined || session.readOnly) return;
+    const world = engine.world;
+    const targets: Entity[] = [];
+    world.query(widgetQ).each((b) => {
+      for (const r of b) {
+        const e = b.entity(r);
+        const type = world.get(e, PrefabId)?.id;
+        if (typeof type === "string" && widgets.get(type) !== undefined) targets.push(e);
+      }
+    });
+    guardedTransaction(
+      session.store,
+      world,
+      (tx) => {
+        for (const e of targets) {
+          if (world.get(e, Opacity) === undefined) tx.addComponent(e, Opacity, { a });
+          else tx.edit(e).set(Opacity, { a });
+        }
+      },
+      { undoable: false },
+    );
   };
 
   // Helper to update a grid field
@@ -146,6 +203,57 @@ export function SettingsPanel({
               />
             </label>
           </div>
+        </div>
+
+        {/* Snapping — live SnapConfig writes; guides render at P0 (ground). */}
+        <div>
+          <div className={sectionCls}>Snapping</div>
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={snapEnabled}
+                onChange={(e) => applySnap(e.target.checked, snapThreshold)}
+              />
+              <span className={labelCls}>enabled (drag cards near each other)</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <span className={`w-10 ${labelCls}`}>range</span>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                step="1"
+                className="flex-1 accent-neutral-600 dark:accent-neutral-300"
+                value={snapThreshold}
+                onChange={(e) => applySnap(snapEnabled, Number(e.target.value))}
+              />
+              <span className="w-10 text-right tabular-nums text-neutral-500 dark:text-neutral-400">
+                {snapThreshold}px
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Card opacity — the durable Opacity cell on EVERY widget (design-004
+            §3: `{opacity}` is the whole per-widget composite fact). */}
+        <div>
+          <div className={sectionCls}>Card Opacity (all widgets)</div>
+          <label className="flex items-center gap-2">
+            <span className={`w-10 ${labelCls}`}>alpha</span>
+            <input
+              type="range"
+              min="0.1"
+              max="1"
+              step="0.05"
+              className="flex-1 accent-neutral-600 dark:accent-neutral-300"
+              value={cardOpacity}
+              onChange={(e) => applyCardOpacity(Number(e.target.value))}
+            />
+            <span className="w-10 text-right tabular-nums text-neutral-500 dark:text-neutral-400">
+              {cardOpacity.toFixed(2)}
+            </span>
+          </label>
         </div>
 
         {/* Breakpoint thresholds — NO v3 seam; local state only (reported). */}

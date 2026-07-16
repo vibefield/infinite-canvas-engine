@@ -16,7 +16,21 @@
  *  - EcsDevtools → @ice/devtools attachDevtools (mounted while the ECS button
  *    is active).
  */
-import { Camera, createCanvasEngine, type CanvasEngine } from "@ice/core";
+import {
+  Camera,
+  Culled,
+  GuideLine,
+  Position,
+  PrefabId,
+  Size,
+  SnapConfig,
+  SnapSource,
+  SnapTarget,
+  Viewport,
+  createCanvasEngine,
+  defineQuery,
+  type CanvasEngine,
+} from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/dom";
 import { GLViews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
@@ -104,7 +118,8 @@ const SCENE: Array<[string, number, number, number, number, Record<string, unkno
 export function createDemoEngine(): CanvasEngine {
   const ce = createCanvasEngine({
     widgets: WIDGETS,
-    settings: { zoom: { min: 0.25, max: 3 }, snap: { enabled: false } },
+    // snap on (2026-07-16): cards are snap "both"; guides render at P0 (ground).
+    settings: { zoom: { min: 0.25, max: 3 }, snap: { enabled: true, thresholdPx: 5 } },
   });
   ce.docs.create();
   for (const [type, x, y, w, h, props] of SCENE) {
@@ -112,6 +127,41 @@ export function createDemoEngine(): CanvasEngine {
   }
   ce.world.sync(); // project the durable seeds now (graybox idiom) — queryable before the first frame
   return ce;
+}
+
+/** DEV-only console probe: `window.__iceDebug()` dumps the live snap state. */
+function installDebugProbe(ce: CanvasEngine): void {
+  const guideQ = defineQuery([GuideLine]);
+  const widgetQ = defineQuery([PrefabId]);
+  (window as unknown as { __iceDebug?: () => unknown }).__iceDebug = () => {
+    const world = ce.world;
+    const guides: unknown[] = [];
+    world.query(guideQ).each((b) => {
+      for (const r of b) guides.push(world.get(b.entity(r), GuideLine));
+    });
+    const widgets: unknown[] = [];
+    world.query(widgetQ).each((b) => {
+      for (const r of b) {
+        const e = b.entity(r);
+        widgets.push({
+          e,
+          type: world.get(e, PrefabId)?.id,
+          pos: world.get(e, Position),
+          size: world.get(e, Size),
+          snapSource: world.hasTag(e, SnapSource),
+          snapTarget: world.hasTag(e, SnapTarget),
+          culled: world.hasTag(e, Culled),
+        });
+      }
+    });
+    return {
+      snapCfg: world.getResource(SnapConfig),
+      camera: world.getResource(Camera),
+      viewport: world.getResource(Viewport),
+      guides,
+      widgets,
+    };
+  };
 }
 
 /**
@@ -191,6 +241,14 @@ const fabCls = (active: boolean) =>
 
 export function App() {
   const ce = useMemo(() => createDemoEngine(), []);
+  // DEV probe in an EFFECT, not inside createDemoEngine: StrictMode double-runs
+  // the memo factory, and a factory-installed probe can close over the
+  // ORPHANED twin engine (same seeds, zero frames — no equip tags, 0×0
+  // viewport; cost us a debugging detour 2026-07-16). Effects see the
+  // committed ce only.
+  useEffect(() => {
+    if (import.meta.env.DEV) installDebugProbe(ce);
+  }, [ce]);
   const [showSettings, setShowSettings] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
   const [showEcs, setShowEcs] = useState(false);

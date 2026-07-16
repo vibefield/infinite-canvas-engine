@@ -35,6 +35,15 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 const RADIUS = 22;
 
+/**
+ * Drag-lift fade (2026-07-16, James): a lifted card drops to 75 % opacity for
+ * the whole hold+drag and restores on release. GL cards fade their floating
+ * 3D content in lockstep — GlLiftGroup feeds the SAME value to
+ * `useIslandOpacity` (the composite-quad ease runs the same 180ms/ease pair
+ * as the CSS transition below).
+ */
+export const LIFT_OPACITY = 0.75;
+
 const grabQuery = defineQuery([Grab]);
 
 /**
@@ -134,7 +143,9 @@ export function CardShell({
     boxShadow: baseShadow,
     transform: lifted ? "scale(1.05)" : "scale(1)",
     transformOrigin: "center center",
-    transition: "transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 220ms ease",
+    opacity: lifted ? LIFT_OPACITY : 1,
+    transition:
+      "transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 220ms ease, opacity 180ms ease",
   };
 
   const tier = overlap === "accept" ? "t" : "c";

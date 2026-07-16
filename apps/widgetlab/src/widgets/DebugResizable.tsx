@@ -49,5 +49,5 @@ export const DebugResizable = defineWidget({
   component: DebugResizableView,
   provides: ["widget"],
   defaultSize: { w: 260, h: 180 },
-  interaction: { solid: true, resizable: true },
+  interaction: { solid: true, resizable: true, snap: "both" },
 });
