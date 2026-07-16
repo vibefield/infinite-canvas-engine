@@ -25,6 +25,7 @@ import {
   Container,
   LongPressDrag,
   Movable,
+  Opacity,
   Position,
   Provides,
   Resizable,
@@ -301,6 +302,10 @@ export function defineWidget(def: WidgetDef): WidgetType {
   const prefab = definePrefab(def.type, {
     store: "durable",
     components: essential,
+    // Every widget may carry a durable Opacity (design-004 §3: `{opacity}` is
+    // the whole per-widget composite fact) — optional, not essential: widgets
+    // pay no storage until one is attached, and readers default absent to 1.
+    optional: [Opacity],
     // Every widget is containment-eligible: drop-to-consume commits
     // `ChildOf(widget → container)` in the SAME tx as the final position
     // (design-003 §5.5), and an undeclared relation throws at commit — the

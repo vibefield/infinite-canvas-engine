@@ -26,6 +26,7 @@
 import type { OrthographicCamera, Scene } from "three";
 import {
   Camera,
+  Opacity,
   PrefabId,
   Position,
   Size,
@@ -79,6 +80,14 @@ export interface GLBridge {
    * 0 snaps). Mid-flight retargets restart from the current drawn value.
    */
   setCompositeScale(entity: Entity, scale: number, durationMs?: number): void;
+  /**
+   * Composite-quad opacity (1 = rest) — the lift's fade twin. MULTIPLIES the
+   * widget's durable `Opacity` cell in the pass (presentation-transient over
+   * the doc fact). Sets the TARGET: the pass eases the drawn value there over
+   * `durationMs` (default 180; 0 snaps); mid-flight retargets restart from the
+   * current drawn value.
+   */
+  setCompositeOpacity(entity: Entity, opacity: number, durationMs?: number): void;
   /** GLViews wires R3F's demand-loop `invalidate` here (null on unmount). */
   setInvalidate(fn: (() => void) | null): void;
   /** Tear down reflector + observers + state (doc close / app teardown). */
@@ -151,6 +160,9 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
         // composite dirt — quad transform/order changed, texture still good:
         world.reactive.observeValue(entity, Position, () => requestFrame()),
         world.reactive.observeValue(entity, StackZ, () => requestFrame()),
+        // composite dirt — the durable Opacity cell rides the quad's uOpacity,
+        // never the island's FBO (a fade must not repaint the content):
+        world.reactive.observeValue(entity, Opacity, () => requestFrame()),
       ];
       for (const group of widget?.groups ?? []) {
         unsubs.push(
@@ -214,6 +226,22 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
         s.liftFrom = s.compositeScale; // retarget from the DRAWN value — no jump
         s.liftMs = durationMs;
         s.liftElapsedMs = 0;
+      }
+      requestFrame(); // composite-level only: no island repaint needed
+    },
+
+    setCompositeOpacity(entity, opacity, durationMs = LIFT_DEFAULT_MS) {
+      const s = state.ensure(entity);
+      if (s.opacityTarget === opacity) return; // change-only — no idle churn
+      s.opacityTarget = opacity;
+      if (durationMs <= 0) {
+        s.compositeOpacity = opacity; // snap
+        s.opacityMs = 0;
+        s.opacityElapsedMs = 0;
+      } else {
+        s.opacityFrom = s.compositeOpacity; // retarget from the DRAWN value — no jump
+        s.opacityMs = durationMs;
+        s.opacityElapsedMs = 0;
       }
       requestFrame(); // composite-level only: no island repaint needed
     },

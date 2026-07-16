@@ -22,6 +22,14 @@ export const Size = defineComponent("Size", { w: "f32", h: "f32" });
 /** Optional-eligible rotation, radians. Identity default so a bare attach is ergonomic. */
 export const Rotation = defineComponent("Rotation", { r: field("f32", { default: 0 }) });
 
+/**
+ * Optional-eligible widget opacity, 0..1 (design-004 §3: `{opacity}` is the
+ * neutral composite's WHOLE per-widget fact). Reflected by the dom host
+ * (style.opacity) and the gl composite quad (uOpacity) alike; absent = 1.
+ * Identity default so a bare attach is ergonomic.
+ */
+export const Opacity = defineComponent("Opacity", { a: field("f32", { default: 1 }) });
+
 /** Fractional stacking order — z-reorder is one cell write; midpoints jittered, ties break by key. */
 export const StackZ = defineComponent("StackZ", { z: "f64" });
 

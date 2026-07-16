@@ -24,6 +24,11 @@
  *    dedicated observer; the note below is historical:
  *    picked up on the next Position/Size stamp or membership change; the ResizeObserver
  *    measurement path — a later slice — will arm its own dirt.)
+ *  - **opacity**: a private observer on `[Opacity]` (attach/detach/value) sets a
+ *    dirty flag; the change-only pass writes `style.opacity` on the host (absent
+ *    component = 1 = property cleared). The GL twin is the composite quad's
+ *    `uOpacity` — a gl widget's host here carries only its DOM chrome, so the
+ *    two halves fade from the same cell.
  *  - **drag-promote** (P3): a private observer on `[Grab]` membership sets a dirty
  *    flag; a host whose entity holds `Grab` re-parents content→lifted plane and back
  *    on release. Re-parenting MOVES the host node (with its content child), which
@@ -38,6 +43,7 @@
 import {
   Grab,
   MeasuredSize,
+  Opacity,
   Position,
   PrefabId,
   Size,
@@ -70,6 +76,8 @@ interface HostRec {
   hidden: boolean;
   /** Last-applied parent: true = lifted plane, false = content plane. */
   lifted: boolean;
+  /** Last-applied `Opacity.a` (1 = the no-component default, style cleared). */
+  opacity: number;
 }
 
 interface Geom {
@@ -82,6 +90,7 @@ interface Geom {
 const geometryQuery = defineQuery([Position, Size]);
 const measuredQuery = defineQuery([MeasuredSize]);
 const grabQuery = defineQuery([Grab]);
+const opacityQuery = defineQuery([Opacity]);
 
 function writeGeom(el: HTMLDivElement, x: number, y: number, w: number, h: number): void {
   el.style.left = `${x}px`;
@@ -117,12 +126,17 @@ export function createDomWidgetsReflector(
   // is gated by observers rather than the registry's (unused under `always`) dirt.
   let geometryDirty = false;
   let promoteDirty = false;
+  let opacityDirty = false;
   const unsubs: Array<() => void> = [
     world.reactive.observeQuery(geometryQuery, () => { geometryDirty = true; }, { cols: [Position, Size] }),
     // MeasuredSize rides its own observer: adding it to geometryQuery's cols
     // would require it in the query and drop widgets without the rider.
     world.reactive.observeQuery(measuredQuery, () => { geometryDirty = true; }, { cols: [MeasuredSize] }),
     world.reactive.observeQuery(grabQuery, () => { promoteDirty = true; }, { cols: [] }),
+    // Opacity is an optional rider like MeasuredSize: membership (attach/detach)
+    // and value changes both arm the flag; detach resets the host to the
+    // default via the `?? 1` read.
+    world.reactive.observeQuery(opacityQuery, () => { opacityDirty = true; }, { cols: [Opacity] }),
   ];
 
   /**
@@ -143,6 +157,10 @@ export function createDomWidgetsReflector(
     return { x: p?.x ?? 0, y: p?.y ?? 0, w: s?.w ?? 0, h: s?.h ?? 0 };
   }
 
+  function readOpacity(e: Entity): number {
+    return world.get(e, Opacity)?.a ?? 1;
+  }
+
   function createHost(e: Entity): HostRec {
     const el = doc.createElement("div");
     el.style.position = "absolute";
@@ -157,9 +175,11 @@ export function createDomWidgetsReflector(
     const g = readGeom(e);
     writeGeom(el, g.x, g.y, g.w, g.h);
     geometryWrites++;
+    const opacity = readOpacity(e);
+    if (opacity !== 1) el.style.opacity = String(opacity);
     const lifted = world.has(e, Grab) && promotable(e);
     (lifted ? host.liftedPlane : host.contentPlane).appendChild(el);
-    return { host: el, content, x: g.x, y: g.y, w: g.w, h: g.h, hidden: false, lifted };
+    return { host: el, content, x: g.x, y: g.y, w: g.w, h: g.h, hidden: false, lifted, opacity };
   }
 
   /** Enter/exit/hidden reconcile against the store snapshot. Returns whether membership changed. */
@@ -199,6 +219,18 @@ export function createDomWidgetsReflector(
         rec.w = g.w;
         rec.h = g.h;
         geometryWrites++;
+      }
+    }
+  }
+
+  /** Change-only opacity rewrite over the live hosts (graybox pattern). */
+  function updateOpacity(): void {
+    for (const [e, rec] of hosts) {
+      const o = readOpacity(e);
+      if (o !== rec.opacity) {
+        // 1 clears the property — the no-component host carries no inline style.
+        rec.host.style.opacity = o === 1 ? "" : String(o);
+        rec.opacity = o;
       }
     }
   }
@@ -252,6 +284,10 @@ export function createDomWidgetsReflector(
       if (geometryDirty) {
         geometryDirty = false;
         updateGeometry();
+      }
+      if (opacityDirty) {
+        opacityDirty = false;
+        updateOpacity();
       }
       // Membership changes can add/remove a lifted host → recompute inert even
       // without a Grab stamp (e.g. a lifted widget despawns mid-drag).

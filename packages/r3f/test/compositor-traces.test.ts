@@ -20,6 +20,7 @@ import {
   Camera,
   Grab,
   NavTransition,
+  Opacity,
   Position,
   PrefabId,
   Size,
@@ -123,16 +124,19 @@ function createFakeQuads(): QuadsLike & {
   order: Map<number, number>;
   transforms: Map<number, { x: number; y: number; sx: number; sy: number }>;
   clips: Map<number, FakeClip>;
+  opacity: Map<number, number>;
 } {
   const visible = new Map<number, boolean>();
   const order = new Map<number, number>();
   const transforms = new Map<number, { x: number; y: number; sx: number; sy: number }>();
   const clips = new Map<number, FakeClip>();
+  const opacity = new Map<number, number>();
   return {
     visible,
     order,
     transforms,
     clips,
+    opacity,
     ensure(key) {
       if (!visible.has(key)) visible.set(key, false);
       return {
@@ -140,6 +144,7 @@ function createFakeQuads(): QuadsLike & {
         setTexture() {},
         setVisible: (v) => visible.set(key, v),
         setRenderOrder: (n) => order.set(key, n),
+        setOpacity: (o) => opacity.set(key, o),
         setDragClip: (minX, minY, maxX, maxY, exempt) => clips.set(key, { minX, minY, maxX, maxY, exempt }),
       };
     },
@@ -148,6 +153,7 @@ function createFakeQuads(): QuadsLike & {
       order.delete(key);
       transforms.delete(key);
       clips.delete(key);
+      opacity.delete(key);
     },
     keys: () => [...visible.keys()],
   };
@@ -627,6 +633,77 @@ describe("the composite-quad lift EASES (DOM card-lift parity, 2026-07-13)", () 
     expect(after).toBeGreaterThan(rest);
     for (let i = 0; i < 12; i++) rig.pass();
     expect(rig.quads.transforms.get(e)?.sx).toBeCloseTo(rest, 6);
+  });
+});
+
+describe("composite opacity (design-004 §3 — `{opacity}` is the whole per-widget composite fact)", () => {
+  it("the durable Opacity cell rides the quad — composite dirt only, never an island repaint", () => {
+    const rig = createGLRig();
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    rig.pass(); // cold paint + composite at rest
+    expect(rig.quads.opacity.get(e)).toBe(1); // absent cell = 1
+
+    rig.world.addComponent(e, Opacity, { a: 0.5 });
+    rig.step(); // Tier-3 observer fires at notify() → composite dirt
+    const stats = rig.pass();
+    expect(stats.repainted).toBe(0); // a fade must not repaint the FBO
+    expect(rig.quads.opacity.get(e)).toBeCloseTo(0.5, 6);
+
+    rig.world.removeComponent(e, Opacity);
+    rig.step();
+    rig.pass();
+    expect(rig.quads.opacity.get(e)).toBe(1); // detach restores the default
+  });
+
+  it("setCompositeOpacity eases to target (no snap, no overshoot), settles exactly, restores", () => {
+    const rig = createGLRig();
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    rig.pass();
+    expect(rig.quads.opacity.get(e)).toBe(1);
+
+    rig.bridge.setCompositeOpacity(e, 0.75); // default 180ms fade
+    const series: number[] = [];
+    let animatingPasses = 0;
+    for (let i = 0; i < 12; i++) {
+      const stats = rig.pass(); // dtMs 16 per pass → settles on pass 12 (192ms)
+      if (stats.liftAnimating) animatingPasses += 1;
+      series.push(rig.quads.opacity.get(e) ?? -1);
+    }
+    // Not a snap: the first eased frame is strictly between rest and target…
+    const first = series[0] ?? 0;
+    expect(first).toBeLessThan(1);
+    expect(first).toBeGreaterThan(0.75);
+    // …and the fade curve never overshoots (an undershoot below target reads
+    // as flicker; past-1 on restore would write alpha > 1).
+    expect(Math.min(...series)).toBeGreaterThanOrEqual(0.75);
+    expect(series[11]).toBeCloseTo(0.75, 6);
+    expect(animatingPasses).toBe(11); // self-sustain flag drops on the settle pass
+
+    // Release: retarget to 1 → eases back up and lands exactly.
+    rig.bridge.setCompositeOpacity(e, 1);
+    rig.pass();
+    const up = rig.quads.opacity.get(e) ?? 0;
+    expect(up).toBeGreaterThan(0.75); // moving, not snapped
+    expect(up).toBeLessThan(1);
+    for (let i = 0; i < 12; i++) rig.pass();
+    expect(rig.quads.opacity.get(e)).toBeCloseTo(1, 6);
+    expect(Math.max(...[...rig.quads.opacity.values()])).toBeLessThanOrEqual(1); // never past 1
+  });
+
+  it("durationMs 0 snaps; the fade MULTIPLIES the durable Opacity cell", () => {
+    const rig = createGLRig();
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    rig.pass();
+
+    rig.world.addComponent(e, Opacity, { a: 0.5 });
+    rig.bridge.setCompositeOpacity(e, 0.75, 0);
+    rig.step();
+    const stats = rig.pass();
+    expect(stats.liftAnimating).toBe(false); // snap — no ease frames
+    expect(rig.quads.opacity.get(e)).toBeCloseTo(0.375, 6); // 0.5 × 0.75
   });
 });
 

@@ -70,3 +70,20 @@ export function useIslandLift(scale: number, durationMs?: number): void {
   }, [bridge, entity, scale, durationMs]);
   useEffect(() => () => bridge.setCompositeScale(entity, 1), [bridge, entity]);
 }
+
+/**
+ * Composite-quad fade — the lift's opacity twin (e.g. the drag-lift 75 %
+ * fade): eases the quad's drawn opacity to `opacity` (default 180ms; 0
+ * snaps) and MULTIPLIES the widget's durable `Opacity` cell, so a transient
+ * fade stacks over a doc-level opacity instead of fighting it. The DOM
+ * chrome runs its own CSS `opacity … ease` transition — same duration/curve
+ * family, so card body and GL content fade in lockstep. Resets to 1 on
+ * unmount.
+ */
+export function useIslandOpacity(opacity: number, durationMs?: number): void {
+  const { bridge, entity } = useIslandContext();
+  useEffect(() => {
+    bridge.setCompositeOpacity(entity, opacity, durationMs);
+  }, [bridge, entity, opacity, durationMs]);
+  useEffect(() => () => bridge.setCompositeOpacity(entity, 1), [bridge, entity]);
+}

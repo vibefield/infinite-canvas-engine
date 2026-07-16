@@ -7,6 +7,7 @@
 import {
   Grab,
   MeasuredSize,
+  Opacity,
   Position,
   PrefabId,
   Size,
@@ -138,6 +139,38 @@ describe("dom-widgets host reflector", () => {
 
     engine.step(2); // nothing changed → no geometry pass
     expect(reflector.geometryWrites()).toBe(3);
+  });
+
+  it("reflects the Opacity rider on the host: attach, value change, detach clears", () => {
+    const { world, engine, store, reflector } = setup();
+    const e = spawnBox(world, 0, 0, 10, 10);
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    const hostDiv = reflector.hostFor(e)?.parentElement as HTMLElement;
+    expect(hostDiv.style.opacity).toBe(""); // no component = 1 = no inline style
+
+    // f32-exact values throughout — String(a) must round-trip the cell.
+    world.addComponent(e, Opacity, { a: 0.5 });
+    engine.step(1);
+    expect(hostDiv.style.opacity).toBe("0.5");
+
+    world.edit(e).set(Opacity, { a: 0.75 });
+    engine.step(2);
+    expect(hostDiv.style.opacity).toBe("0.75");
+
+    world.removeComponent(e, Opacity);
+    engine.step(3);
+    expect(hostDiv.style.opacity).toBe(""); // back to the default — property cleared
+  });
+
+  it("a host entering with Opacity already attached paints it at create", () => {
+    const { world, engine, store, reflector } = setup();
+    const e = spawnBox(world, 0, 0, 10, 10);
+    world.addComponent(e, Opacity, { a: 0.25 });
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    const hostDiv = reflector.hostFor(e)?.parentElement as HTMLElement;
+    expect(hostDiv.style.opacity).toBe("0.25");
   });
 
   it("promotes a Grabbed host to the lifted plane + inerts content, restoring on release", () => {

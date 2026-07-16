@@ -42,6 +42,7 @@ import {
   Camera,
   Grab,
   navFlightActive,
+  Opacity,
   Position,
   PrefabId,
   Size,
@@ -64,6 +65,14 @@ const GRABBED_RENDER_ORDER = 1e9;
  */
 const LIFT_EASE = cubicBezierEase(0.2, 0.9, 0.3, 1.2);
 
+/**
+ * The fade's curve — CSS `ease`, NOT the lift spring: an overshoot past 1
+ * would write alpha > 1 into the composite (and a dip below the target reads
+ * as flicker, not bounce). Matches the DOM chrome's `opacity … ease`
+ * transition so card body and GL content fade in lockstep.
+ */
+const OPACITY_EASE = cubicBezierEase(0.25, 0.1, 0.25, 1);
+
 // --- injected surfaces (GLViews binds three.js; traces bind fakes) ----------
 
 export interface TargetLike {
@@ -85,6 +94,11 @@ export interface QuadLike {
   setTexture(t: unknown): void;
   setVisible(v: boolean): void;
   setRenderOrder(n: number): void;
+  /**
+   * Composite opacity, 0..1 (design-004 §3: the neutral composite's whole
+   * per-widget fact) — the pass passes `Opacity` cell × eased fade channel.
+   */
+  setOpacity(o: number): void;
   /**
    * Drag clip (v1 RFC-003, composite-space): non-exempt quads discard
    * fragments inside the rect so a dragged card's P1 DOM chrome shows
@@ -157,7 +171,7 @@ export interface PassStats {
   evicted: number;
   fboBytes: number;
   anyHot: boolean;
-  /** A lift ease is mid-flight — caller re-invalidates (composite-only frames). */
+  /** A composite ease (lift scale or fade) is mid-flight — caller re-invalidates (composite-only frames). */
   liftAnimating: boolean;
 }
 
@@ -357,9 +371,23 @@ export function runCompositorPass(ctx: PassContext): PassStats {
       s.compositeScale = t >= 1 ? s.liftTarget : s.liftFrom + (s.liftTarget - s.liftFrom) * LIFT_EASE(t);
       if (t < 1) stats.liftAnimating = true;
     }
+    // The fade eases the same way (same terminator rationale), on its own
+    // non-overshoot curve — see OPACITY_EASE.
+    if (s.opacityElapsedMs < s.opacityMs) {
+      s.opacityElapsedMs += ctx.dtMs;
+      const t = Math.min(1, s.opacityElapsedMs / s.opacityMs);
+      s.compositeOpacity =
+        t >= 1 ? s.opacityTarget : s.opacityFrom + (s.opacityTarget - s.opacityFrom) * OPACITY_EASE(t);
+      if (t < 1) stats.liftAnimating = true;
+    }
     const lift = s.compositeScale;
     quad.setTransform(q.x, q.y, q.sx * lift, q.sy * lift);
     quad.setTexture(fbo.texture);
+    // Drawn opacity = the widget's durable Opacity cell × the eased fade
+    // channel (absent cell = 1). Clamped: CompositeMaterial passes through
+    // unclamped, and userland cells are raw f32s.
+    const baseOpacity = world.get(e as Entity, Opacity)?.a ?? 1;
+    quad.setOpacity(Math.min(1, Math.max(0, baseOpacity * s.compositeOpacity)));
     const grabbed = world.get(e as Entity, Grab) !== undefined;
     quad.setRenderOrder(grabbed || lift !== 1 ? GRABBED_RENDER_ORDER : (world.get(e as Entity, StackZ)?.z ?? 0));
     quad.setVisible(true);

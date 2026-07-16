@@ -61,6 +61,21 @@ export interface IslandRenderState {
   liftElapsedMs: number;
   /** Transition duration in ms; 0 = snap (the pre-ease behavior). */
   liftMs: number;
+  /**
+   * Composite-quad opacity channel (the lift's fade twin): the DRAWN value the
+   * pass eases toward `opacityTarget` and MULTIPLIES with the widget's durable
+   * `Opacity` cell — presentation-transient (chrome-grade, e.g. the drag-lift
+   * fade) stacked over the doc-level fact, never written to ECS.
+   */
+  compositeOpacity: number;
+  /** Where the fade is headed; `setCompositeOpacity` retargets from the drawn value. */
+  opacityTarget: number;
+  /** Drawn value at (re)target time — the ease runs opacityFrom → opacityTarget. */
+  opacityFrom: number;
+  /** Accumulated pass dtMs since the last retarget; ≥ opacityMs ⇒ settled. */
+  opacityElapsedMs: number;
+  /** Transition duration in ms; 0 = snap. */
+  opacityMs: number;
 }
 
 /**
@@ -110,6 +125,11 @@ export function createIslandStateStore(): IslandStateStore {
         liftFrom: 1,
         liftElapsedMs: 0,
         liftMs: 0,
+        compositeOpacity: 1,
+        opacityTarget: 1,
+        opacityFrom: 1,
+        opacityElapsedMs: 0,
+        opacityMs: 0,
       };
       entries.set(key, s);
     }

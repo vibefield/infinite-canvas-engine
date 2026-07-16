@@ -7,6 +7,7 @@ import {
   Camera,
   Container,
   Movable,
+  Opacity,
   Position,
   Resizable,
   Selectable,
@@ -56,6 +57,10 @@ describe("defineWidget compile", () => {
     expect(Card.capabilityTags).toContain(Resizable);
     expect(Card.capabilityTags).toContain(SnapTarget);
     expect(Card.capabilityTags).toContain(Container);
+    // Opacity is optional-eligible on EVERY widget prefab (design-004 §3:
+    // `{opacity}` is the whole per-widget composite fact) — a durable tx may
+    // attach/write it without a per-widget declaration.
+    expect(Card.prefab.eligible.has(Opacity)).toBe(true);
   });
 
   it("rejects duplicate types and overlapping groups", () => {

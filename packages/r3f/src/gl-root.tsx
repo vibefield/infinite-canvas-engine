@@ -222,6 +222,7 @@ export function GLViews({
           setRenderOrder: (n) => {
             m.renderOrder = n;
           },
+          setOpacity: (o) => (m.material as CompositeMaterial).setOpacity(o),
           setDragClip: (minX, minY, maxX, maxY, exempt) => {
             const mat = m.material as CompositeMaterial;
             mat.setDraggedRect(minX, minY, maxX, maxY);
