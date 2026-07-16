@@ -27,9 +27,14 @@ import {
   SnapSource,
   SnapTarget,
   Viewport,
+  Wire,
+  WireFrom,
+  WirePorts,
+  WireTo,
   createCanvasEngine,
   defineQuery,
   type CanvasEngine,
+  type Entity,
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
@@ -126,14 +131,50 @@ export function createDemoEngine(): CanvasEngine {
   for (const [type, x, y, w, h, props] of SCENE) {
     ce.ops.spawnWidget(type, { x, y, w, h, undoable: false, ...(props !== undefined ? { props } : {}) });
   }
+  // Node trio (2026-07-16): a wire-able signal → filter → scope chain in its
+  // own column right of the todo column. Hover a node to materialize its port
+  // dots, drag dot-to-dot to connect (ports accept "signal"; the dashed
+  // preview goes solid on a compatible target). Two wires pre-seeded.
+  const NX = G6X + 329 + 39; // 1880 — the next column in the v1 grid rhythm
+  const signal = ce.ops.spawnWidget("signal-node", { x: NX, y: 50, w: 170, h: 96, undoable: false });
+  const filter = ce.ops.spawnWidget("filter-node", { x: NX + 240, y: 170, w: 170, h: 96, undoable: false });
+  const scope = ce.ops.spawnWidget("scope-node", { x: NX + 480, y: 62, w: 170, h: 96, undoable: false });
+  seedWire(ce, signal, "out", filter, "in");
+  seedWire(ce, filter, "out", scope, "in-a");
   ce.world.sync(); // project the durable seeds now (graybox idiom) — queryable before the first frame
   return ce;
+}
+
+/**
+ * Seed one wire between two node widgets — nodeboard's `seedWire` verbatim on
+ * the facade's current doc session (design-001 §5.3: a `Wire`-tagged entity
+ * carrying `WirePorts{from,to}` + the endpoint relations; geometry never
+ * stores a port entity).
+ */
+function seedWire(ce: CanvasEngine, from: Entity, fromPort: string, to: Entity, toPort: string): void {
+  const session = ce.docs.current();
+  if (session === undefined) return;
+  session.store.transaction(
+    (tx) => {
+      const wire = tx.spawn({
+        components: [
+          [PrefabId, { id: "wire" }],
+          [WirePorts, { from: fromPort, to: toPort }],
+        ],
+        tags: [Wire],
+      });
+      tx.setRelation(wire, WireFrom, from);
+      tx.setRelation(wire, WireTo, to);
+    },
+    { undoable: false }, // seeds — the user's first ⌘Z stays clean (moodboard rule)
+  );
 }
 
 /** DEV-only console probe: `window.__iceDebug()` dumps the live snap state. */
 function installDebugProbe(ce: CanvasEngine): void {
   const guideQ = defineQuery([GuideLine]);
   const widgetQ = defineQuery([PrefabId]);
+  const wireQ = defineQuery([Wire]);
   (window as unknown as { __iceDebug?: () => unknown }).__iceDebug = () => {
     const world = ce.world;
     const guides: unknown[] = [];
@@ -155,12 +196,17 @@ function installDebugProbe(ce: CanvasEngine): void {
         });
       }
     });
+    let wires = 0;
+    world.query(wireQ).each((b) => {
+      wires += b.count;
+    });
     return {
       snapCfg: world.getResource(SnapConfig),
       camera: world.getResource(Camera),
       viewport: world.getResource(Viewport),
       guides,
       widgets,
+      wires,
     };
   };
 }
