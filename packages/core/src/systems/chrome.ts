@@ -61,6 +61,7 @@ import { selectedEntities } from "../ops/selection";
 import { WidgetEquipped } from "../widget/define-widget";
 import { Active } from "../catalog/camera-derived";
 import { makeChurnGuard } from "../helpers/churn-guard";
+import { navFlightActive } from "./nav-flight";
 
 // --- selection chrome ---------------------------------------------------------
 
@@ -330,6 +331,15 @@ export function createBreakpointSystem(world: World): TickSystem {
     world,
     { components: [Size, MeasuredSize], tags: [Active], coarse: false },
     () => {
+      // A nav flight sweeps the zoom across EVERY tier threshold in ~400 ms —
+      // retier-ing per flight frame swaps widget CONTENT mid-flight (React
+      // commits at the worst possible moment; James's field report,
+      // 2026-07-16). Defer: lastZoom stays FROZEN at the pre-flight value
+      // while flying, so the first post-flight frame compares arrival vs
+      // pre-flight zoom and fires exactly ONE full retier at rest. The delta
+      // path below still runs mid-flight — freshly mounted content gets its
+      // first tier immediately (corrected at settle if the zoom moved on).
+      if (navFlightActive(world)) return false;
       const zoom = world.getResource(Camera)?.zoom;
       const changed = zoom !== lastZoom;
       lastZoom = zoom;

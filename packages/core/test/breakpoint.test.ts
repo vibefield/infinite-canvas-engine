@@ -12,12 +12,14 @@
 import { createWorld } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
+  abortNavFlight,
   Active,
   Camera,
   createBreakpointSystem,
   createEngine,
   type Entity,
   MeasuredSize,
+  NavTransition,
   Size,
   WidgetBreakpoint,
   WidgetEquipped,
@@ -166,5 +168,42 @@ describe("breakpoint gate (design-004 §8 × the 2026-07-15 runIf)", () => {
     step();
     expect(ran()).toBe(true);
     expect(tier(hidden)).toBe("micro");
+  });
+
+  it("a nav flight defers ZOOM retiers to flight end; journaled churn still tiers mid-flight", () => {
+    // design-006 §8.2 (2026-07-16): the flight zoom sweeps every tier
+    // threshold — retier-per-frame would swap widget content mid-flight.
+    const { world, step, spawn, tier, ran } = rig();
+    const e = spawn(200);
+    step();
+    expect(tier(e)).toBe("normal");
+    step();
+    step();
+    expect(ran()).toBe(false); // settled
+
+    world.setResource(NavTransition, {
+      active: true, kind: "enter", p: 0, v: 0, frozen: false, epoch: 1, durMul: 1,
+      c0x: 0, c0y: 0, c0z: 0.2, c1x: 0, c1y: 0, c1z: 0.3, as: 1, aox: 0, aoy: 0,
+    });
+    world.setResource(Camera, { x: 0, y: 0, zoom: 0.3, gesturing: false }); // mid-flight sweep
+    step();
+    expect(ran()).toBe(false); // zoom trigger suppressed
+    expect(tier(e)).toBe("normal"); // frozen mid-flight
+
+    // Fresh content mounting DURING the flight still gets its first tier
+    // (the journal delta path is not suppressed).
+    const fresh = spawn(600); // 600 × 0.3 = 180px → normal
+    step();
+    expect(ran()).toBe(true);
+    expect(tier(fresh)).toBe("normal");
+    expect(tier(e)).toBe("normal"); // the full walk did NOT run
+
+    // Flight ends → the arrival-vs-pre-flight zoom compare fires ONE full retier.
+    abortNavFlight(world);
+    step();
+    expect(ran()).toBe(true);
+    expect(tier(e)).toBe("micro"); // 200 × 0.3 = 60px, retiered at rest
+    step();
+    expect(ran()).toBe(false); // and settles again
   });
 });

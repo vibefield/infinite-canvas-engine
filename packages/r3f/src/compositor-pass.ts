@@ -41,6 +41,7 @@ import {
   Active,
   Camera,
   Grab,
+  navFlightActive,
   Position,
   PrefabId,
   Size,
@@ -176,9 +177,16 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   if (cam === undefined || vp === undefined || vp.w === 0) return stats;
 
   // 1. composite camera + dynamic DPR ---------------------------------------
+  // "Camera in transient motion" = user gesture OR a design-006 nav flight
+  // (§8.2, answered 2026-07-16): both sweep the camera per frame and get the
+  // same duty treatment — DPR drop, band-repaint suppression. Flights go
+  // further (islands turn COLD, below): the flight-end camera write re-fires
+  // the reflector, so everything thaws in one pass with no extra machinery.
+  const inFlight = navFlightActive(world);
+  const inMotion = cam.gesturing || inFlight;
   ctx.compCamera.setFrustum(compositeCameraFrustum(cam, vp.w, vp.h));
   const idleDpr = vp.dpr > 0 ? vp.dpr : 1;
-  const targetDpr = cam.gesturing ? Math.min(idleDpr, 1) : idleDpr;
+  const targetDpr = inMotion ? Math.min(idleDpr, 1) : idleDpr;
   if (gl.getPixelRatio() !== targetDpr) gl.setPixelRatio(targetDpr);
 
   // 2. phases (module-side state only) --------------------------------------
@@ -208,8 +216,16 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     if (bridge.islandFor(e as Entity) === undefined) continue; // unmounted: retained texture only
     const wantsPhase = s.phase === "Hot" || s.phase === "Waking";
     const genDirty = s.paintGeneration > s.fboGeneration;
-    const bandStale = !cam.gesturing && s.fboGeneration >= 0 && isOutOfBand(cam.zoom, s.paintedAt.band);
-    if (wantsPhase || genDirty || bandStale) toPaint.push(e as Entity);
+    const bandStale = !inMotion && s.fboGeneration >= 0 && isOutOfBand(cam.zoom, s.paintedAt.band);
+    // FLIGHT FREEZE (design-006 §8.2): islands with a retained texture go
+    // COLD for the flight — no Hot repaints (their `useIslandFrame` ticks are
+    // paint-attributed, so animation pauses with them), no props repaints,
+    // no band chasing; the composite stretches the stale FBO (the accepted
+    // gesture transient). NEVER-PAINTED islands (fboGeneration < 0) still get
+    // their first paint — an empty quad through a 400 ms enter reads as
+    // missing content, not as motion.
+    const paintable = inFlight ? wantsPhase && s.fboGeneration < 0 : wantsPhase || genDirty || bandStale;
+    if (paintable) toPaint.push(e as Entity);
   }
   // Order: never-painted first (cold paints jump the queue), then LEAST
   // RECENTLY PAINTED — the fairness key. Insertion order starved the same

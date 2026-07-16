@@ -109,6 +109,19 @@ export function abortNavFlight(world: World): void {
   if (t?.active) world.setResource(NavTransition, { ...t, active: false });
 }
 
+/**
+ * Is a nav flight driving the camera right now? THE gate for flight-time
+ * GPU/paint duty (design-006 §8.2, answered by field testing 2026-07-16):
+ * heavy-motion consumers treat `Camera.gesturing ∨ navFlightActive` as one
+ * "camera in transient motion" signal — composite DPR drop, band-repaint
+ * suppression, Hot-island freeze, breakpoint retier deferral. `gesturing`
+ * itself stays a pure user-gesture fact (the inertia precedent): flights
+ * never stamp it, consumers OR the two.
+ */
+export function navFlightActive(world: World): boolean {
+  return world.getResource(NavTransition)?.active === true;
+}
+
 export function createNavFlight(world: World): TickSystem {
   return defineTickSystem(
     () => {

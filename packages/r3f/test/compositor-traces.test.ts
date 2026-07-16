@@ -19,6 +19,7 @@ import {
   Active,
   Camera,
   Grab,
+  NavTransition,
   Position,
   PrefabId,
   Size,
@@ -351,6 +352,14 @@ describe("FBO budget under a scripted zoom/cull storm (M7 exit)", () => {
 
 function world_setZoom(rig: GLRig, zoom: number, gesturing = false): void {
   rig.world.setResource(Camera, { x: 0, y: 0, zoom, gesturing });
+}
+
+/** Arm/disarm a design-006 nav flight (only `active` matters to the pass). */
+function world_setFlight(rig: GLRig, active: boolean): void {
+  rig.world.setResource(NavTransition, {
+    active, kind: "enter", p: 0, v: 0, frozen: false, epoch: 1, durMul: 1,
+    c0x: 0, c0y: 0, c0z: 0.2, c1x: 0, c1y: 0, c1z: 1, as: 1, aox: 0, aoy: 0,
+  });
 }
 
 describe("band crossings while gesturing (design-004 §3)", () => {
@@ -714,5 +723,44 @@ describe("idle paint-DPR cap (design-004 §3 amendment 2026-07-14)", () => {
     // min(min(2,1) [gesture drop], 1.5 [cap]) = 1 → 100 px per side
     expect(rig.pool.bytesUsed()).toBe(100 * 100 * 4);
     expect(rig.bridge.state.get(e)?.paintedAt.dpr).toBe(1);
+  });
+});
+
+describe("nav-flight freeze (design-006 §8.2, 2026-07-16)", () => {
+  it("a flight turns textured islands COLD (Hot paints + ticks pause, bands unchased); cold islands still first-paint; landing thaws in one pass", () => {
+    const rig = createGLRig();
+    const hot = rig.spawnCard(0, 0);
+    rig.mount(hot);
+    const ticks: number[] = [];
+    rig.bridge.addFrameCallback(hot, (dt) => ticks.push(dt));
+    let stats = rig.pass();
+    expect(stats.repainted).toBe(1); // first paint at band 1
+    expect(ticks.length).toBe(1);
+
+    // Mid-flight: zoom sweeps out of band, gesturing stays FALSE.
+    world_setFlight(rig, true);
+    world_setZoom(rig, 4);
+    stats = rig.pass();
+    expect(stats.repainted).toBe(0); // Hot frozen, band repaint suppressed
+    expect(ticks.length).toBe(1); // animation paused (ticks are paint-attributed)
+    stats = rig.pass();
+    expect(stats.repainted).toBe(0); // stays cold for the whole flight
+    expect(ticks.length).toBe(1);
+
+    // A NEVER-PAINTED island mounting mid-flight still gets its first paint —
+    // an empty quad through the flight reads as missing content.
+    const cold = rig.spawnCard(200, 0);
+    rig.mount(cold);
+    stats = rig.pass();
+    expect(stats.repainted).toBe(1); // the cold island only
+    expect(ticks.length).toBe(1); // the hot one is still frozen
+
+    // Landing deactivates the flight → the next pass thaws: the Hot island
+    // repaints (and ticks) at the arrival band. No extra machinery.
+    world_setFlight(rig, false);
+    stats = rig.pass();
+    expect(stats.repainted).toBe(1);
+    expect(ticks.length).toBe(2);
+    expect(rig.bridge.state.get(hot)?.paintedAt.band).toBe(4);
   });
 });
