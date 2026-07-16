@@ -90,12 +90,26 @@ export const HandleSpec = defineComponent("HandleSpec", {
   anchor: enumOf(["nw", "n", "ne", "e", "se", "s", "sw", "w"]),
 });
 
-/** A snap guide line along one axis. */
+/** A snap guide line along one axis. `from == to` ⇒ full-viewport line (v1's full-canvas alignment look — design-003 §6). */
 export const GuideLine = defineComponent("GuideLine", {
   axis: enumOf(["x", "y"]),
   at: field("f64", { default: 0 }),
   from: field("f64", { default: 0 }),
   to: field("f64", { default: 0 }),
+});
+
+/**
+ * One equal-spacing gap segment (snap chrome's second visual, design-003 §6):
+ * a bar along `axis` spanning `from`→`to` at perpendicular position `perp`,
+ * marking a gap of `gap` world units. The kernel indicator's two segments
+ * flatten to two entities (v1 `u_spacings` parity).
+ */
+export const SpacingBar = defineComponent("SpacingBar", {
+  axis: enumOf(["x", "y"]),
+  from: field("f64", { default: 0 }),
+  to: field("f64", { default: 0 }),
+  perp: field("f64", { default: 0 }),
+  gap: field("f32", { default: 0 }),
 });
 
 /** Marquee selection rect. */

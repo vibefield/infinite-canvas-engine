@@ -46,6 +46,15 @@ export {
   type WiresReflector,
 } from "./reflectors/wires";
 
+// P0 snap-guides pass (design-004 §1 as-built amendment 2026-07-16): alignment
+// lines + equal-spacing bars, under content, from the snapSystem's pooled chrome.
+export {
+  createSnapGuidesReflector,
+  DEFAULT_SNAP_GUIDES_CONFIG,
+  type SnapGuidesConfig,
+  type SnapGuidesReflector,
+} from "./reflectors/snap-guides";
+
 // M6 chrome plane reflector (P4) + measurement adapter (design-004 §2 measure, §5 chrome).
 export { createChromeReflector } from "./reflectors/chrome";
 export { attachMeasureAdapter, type MeasureAdapter } from "./measure-adapter";

@@ -15,6 +15,7 @@ import {
   Drag,
   DropTarget,
   Grab,
+  GuideLine,
   OverlapCandidate,
   Position,
   Selected,
@@ -24,9 +25,13 @@ import {
   Targets,
   TouchesExact,
   TransformTween,
+  Viewport,
   cancelActiveGestures,
+  defineQuery,
 } from "../../src";
 import { createFullRig } from "./rig-full";
+
+const guideQ = defineQuery([GuideLine]);
 
 describe("trace: snap non-oscillation (design-003 §5.2)", () => {
   it("keeps the dragged box glued to the guide across frames; Position == intended + snap", () => {
@@ -69,6 +74,73 @@ describe("trace: snap non-oscillation (design-003 §5.2)", () => {
     const g = rig.world.read(a, Grab);
     expect(rig.world.read(a, Position).x).toBe(g.x + d.totalX / d.zoomAtClaim + snap.dx);
     expect(snap.dx).not.toBe(0); // snap is actually engaged
+  });
+});
+
+describe("trace: snap guide chrome pool (design-003 §6; P0 as-built 2026-07-16)", () => {
+  /** Live GuideLine entities with their values, in query order. */
+  function readGuides(rig: ReturnType<typeof createFullRig>) {
+    const out: Array<{ e: number; axis: string; at: number }> = [];
+    rig.world.query(guideQ).each((b) => {
+      for (const r of b) {
+        const e = b.entity(r);
+        const g = rig.world.read(e, GuideLine);
+        out.push({ e, axis: g.axis, at: g.at });
+      }
+    });
+    return out;
+  }
+
+  it("pools GuideLine entities while snapped, holds them stable across frames, reaps on release", () => {
+    const rig = createFullRig();
+    rig.spawnBox({ x: 100, y: 100, w: 80, h: 60, snapSource: true });
+    rig.spawnBox({ x: 300, y: 100, w: 80, h: 60, snapTarget: true, selectable: false, movable: false });
+
+    rig.down("mouse", 140, 130);
+    rig.step();
+    rig.move("mouse", 156, 130); // past slop → Active, grabbed at origin (no snap yet: 144px apart)
+    rig.step();
+    expect(readGuides(rig)).toEqual([]); // out of threshold — no guide chrome
+
+    rig.move("mouse", 356, 130); // intended.left = 300 → left-right + y alignment
+    rig.step();
+    const snapped = readGuides(rig);
+    expect(snapped.length).toBeGreaterThan(0);
+    expect(snapped.some((g) => g.axis === "x" && g.at === 300)).toBe(true); // the glue line
+
+    // Same pointer position next frame: the pool holds the SAME entities (no
+    // per-frame respawn churn — the change-only contract).
+    rig.step();
+    const held = readGuides(rig);
+    expect(held).toEqual(snapped);
+
+    // Release: the pool reaps on the drag-ended frame (the tick system runs
+    // with an empty recognizer query — exactly why it is a tick system).
+    rig.up("mouse", 356, 130);
+    rig.step(2); // Ended frame + reap/cleanup
+    expect(readGuides(rig)).toEqual([]);
+  });
+
+  it("a DISTANT same-axis edge in the viewport contributes a guide (design-003 §5.2 intended ∪ viewport)", () => {
+    const rig = createFullRig();
+    // The widgetlab field check (2026-07-16): the target is 400px BELOW the
+    // dragged rect — zero AABB overlap, so the intended-rect-only query never
+    // saw it. The viewport union is what makes edge-alignment work across the
+    // whole visible board (Figma behavior).
+    rig.world.setResource(Viewport, { w: 1700, h: 1000, dpr: 1 });
+    const a = rig.spawnBox({ x: 100, y: 100, w: 80, h: 60, snapSource: true });
+    rig.spawnBox({ x: 300, y: 500, w: 80, h: 60, snapTarget: true, selectable: false, movable: false });
+
+    rig.down("mouse", 140, 130);
+    rig.step();
+    rig.move("mouse", 156, 130); // past slop → Active; origin re-measured at 156
+    rig.step();
+
+    rig.move("mouse", 353, 130); // intended left = 297 — 3px inside the band of 300
+    rig.step();
+    expect(rig.world.read(a, Position).x).toBe(300); // snapped to the distant edge
+    const guides = readGuides(rig);
+    expect(guides.some((g) => g.axis === "x" && g.at === 300)).toBe(true);
   });
 });
 

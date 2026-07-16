@@ -302,15 +302,16 @@ describe("<InfiniteCanvas>", () => {
     const root = createRoot(mountEl);
 
     // StrictMode runs the mount effect twice ON THE SAME container div — every
-    // factory-inserted node (grid canvas, wires canvas, chrome plane, lifted
-    // plane) must be disposed by the cleanup or it duplicates here.
+    // factory-inserted node (grid canvas, wires canvas, snap-guides canvas,
+    // chrome plane, lifted plane) must be disposed by the cleanup or it
+    // duplicates here.
     act(() => {
       root.render(createElement(StrictMode, null, createElement(InfiniteCanvas, { engine })));
     });
 
     const container = mountEl.querySelector("[data-ice-canvas]");
     expect(container).toBeTruthy();
-    expect(container?.querySelectorAll("canvas")).toHaveLength(2); // grid + wires, once each
+    expect(container?.querySelectorAll("canvas")).toHaveLength(3); // grid + wires + snap-guides, once each
 
     act(() => {
       root.unmount();

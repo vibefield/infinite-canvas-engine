@@ -41,6 +41,7 @@ import {
   createPlaneTransformReflector,
   createPlanes,
   createRemoteCursorsReflector,
+  createSnapGuidesReflector,
   createWiresReflector,
   startRafLoop,
   wireMeasurement,
@@ -135,6 +136,9 @@ export function InfiniteCanvas({
     const grid = createGridReflector(host, gridConfigRef.current ?? {});
     gridRef.current = grid;
     const wires = createWiresReflector(host, world, { readPreview: () => stack.wirePreview });
+    // AFTER wires: both insert before the content plane, so creation order
+    // stacks P0 as grid → wires → guides → content (design-004 §1 amendment).
+    const snapGuides = createSnapGuidesReflector(host, world);
     const chrome = createChromeReflector(host, world, stack.marqueeBuffer);
 
     // Registration order = flush order — node-board's proven sequence.
@@ -142,6 +146,7 @@ export function InfiniteCanvas({
       core.registerReflector(createPlaneTransformReflector(planeArgs)),
       core.registerReflector(grid),
       core.registerReflector(wires),
+      core.registerReflector(snapGuides),
       core.registerReflector(domWidgets),
       core.registerReflector(chrome),
       core.registerReflector(createCursorReflector(host, stack.readCursor)),
@@ -186,6 +191,7 @@ export function InfiniteCanvas({
       grid.dispose();
       gridRef.current = null;
       wires.dispose();
+      snapGuides.dispose();
       domWidgets.dispose();
       chrome.dispose();
       planes.dispose();
