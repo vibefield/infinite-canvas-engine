@@ -6,6 +6,7 @@ import {
   GuideLine,
   Position,
   PrefabId,
+  Selected,
   Size,
   SpacingBar,
   Wire,
@@ -19,6 +20,7 @@ import {
 import { describe, expect, it } from "vitest";
 import type { GroundFrame } from "../src/pass";
 import { collectGuides } from "../src/passes/guides-collect";
+import { collectSelection } from "../src/passes/selection-collect";
 import { SoupBuilder, parseCssColor } from "../src/passes/soup-collect";
 import { collectWires } from "../src/passes/wires-collect";
 
@@ -175,5 +177,46 @@ describe("collectWires", () => {
     world.setRelation(wire, WireTo, b);
     // No Port/PortAnchor entities exist at all — geometry must not need them.
     expect(collectWires(world, frame()).vertexCount).toBeGreaterThan(0);
+  });
+});
+
+describe("collectSelection", () => {
+  const select = (world: ReturnType<typeof createWorld>, x: number, y: number, w: number, h: number) =>
+    world.spawn({
+      components: [
+        [Position, { x, y }],
+        [Size, { w, h }],
+      ],
+      tags: [Selected],
+    });
+
+  it("rings the TRUE rect: quad centered on the camera-mapped rect, radius zoom-scaled", () => {
+    const world = createWorld();
+    select(world, 100, 50, 160, 90);
+    const s = collectSelection(world, frame({ camera: { x: 20, y: 10, zoom: 2 } }));
+    expect(s.vertexCount).toBe(6);
+    const xs = Array.from({ length: 6 }, (_, i) => s.positions[i * 3] as number);
+    const ys = Array.from({ length: 6 }, (_, i) => s.positions[i * 3 + 1] as number);
+    // Rect center: worldToScreen(100,50) = (160,80); + half of (320,180).
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(160 + 160, 5);
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(80 + 90, 5);
+    expect(s.halfSize[0]).toBeCloseTo(160, 5); // 160 world * zoom 2 / 2
+    expect(s.radius[0]).toBeCloseTo(44, 5); // 22 world * zoom 2, unclamped
+    // The quad overhangs the rect (pad + width + AA skirt).
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(320);
+  });
+
+  it("clamps the corner radius to the half-extent of small rects", () => {
+    const world = createWorld();
+    select(world, 0, 0, 30, 20);
+    const s = collectSelection(world, frame());
+    expect(s.radius[0]).toBeCloseTo(10, 5); // min(22, 15, 10)
+  });
+
+  it("ignores Selected entities without a rect (wires) and off-viewport rects", () => {
+    const world = createWorld();
+    world.spawn({ components: [[WirePorts, { from: "a", to: "b" }]], tags: [Wire, Selected] });
+    select(world, 5000, 5000, 100, 100);
+    expect(collectSelection(world, frame()).vertexCount).toBe(0);
   });
 });

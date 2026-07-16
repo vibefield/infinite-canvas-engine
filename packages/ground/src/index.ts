@@ -3,14 +3,15 @@
  * as-built amendment, 2026-07-16). three's WebGPURenderer + TSL, WebGL2
  * fallback automatic. Off the react chain: react receives the layer as an
  * OPAQUE factory (`<InfiniteCanvas ground={ground(...)}>`); imperative apps
- * register `layer.reflector` themselves. Passes: dot grid, wires, snap
- * guides — future ground shaders/effects join the same pass registry.
+ * register `layer.reflector` themselves. Passes: dot grid, wires, selection
+ * rings, snap guides — future ground shaders/effects join the same registry.
  */
-import type { GridConfig, SnapGuidesConfig, WirePreviewBuffer, WiresConfig, World } from "@ice/core";
+import type { GridConfig, SelectionChromeConfig, SnapGuidesConfig, WirePreviewBuffer, WiresConfig, World } from "@ice/core";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
 import { createGuidesPass } from "./passes/guides";
+import { createSelectionPass } from "./passes/selection";
 import { createWiresPass } from "./passes/wires";
 import { createGroundRenderer, type GroundRendererLike } from "./renderer";
 
@@ -20,12 +21,15 @@ export type { GroundRendererLike } from "./renderer";
 export { SoupBuilder, parseCssColor, type Rgba, type TriSoup } from "./passes/soup-collect";
 export { collectGuides } from "./passes/guides-collect";
 export { collectWires } from "./passes/wires-collect";
+export { collectSelection, type RingSoup } from "./passes/selection-collect";
 // Config vocabulary re-exported for app ergonomics (canonical home: @ice/core).
 export {
   DEFAULT_GRID_CONFIG,
+  DEFAULT_SELECTION_CHROME_CONFIG,
   DEFAULT_SNAP_GUIDES_CONFIG,
   DEFAULT_WIRES_CONFIG,
   type GridConfig,
+  type SelectionChromeConfig,
   type SnapGuidesConfig,
   type WiresConfig,
 } from "@ice/core";
@@ -48,6 +52,8 @@ export interface GroundOptions {
   readonly grid?: Partial<GridConfig>;
   readonly wires?: Partial<WiresConfig>;
   readonly guides?: Partial<SnapGuidesConfig>;
+  /** Per-widget SDF selection rings; `false` disables the pass. */
+  readonly selection?: Partial<SelectionChromeConfig> | false;
   /** Extra app passes, rendered after the built-ins (renderOrder ≥ 3 is yours). */
   readonly passes?: readonly GroundPass[];
   /** Force the WebGL2 backend (debug / e2e A-B runs). */
@@ -72,6 +78,7 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
     const wires = createWiresPass(opts.wires ?? {}, ctx.readWirePreview);
     const guides = createGuidesPass(opts.guides ?? {});
     const passes: GroundPass[] = [grid, wires, guides, ...(opts.passes ?? [])];
+    if (opts.selection !== false) passes.push(createSelectionPass(opts.selection ?? {}));
     const layer = createLayer(ctx.host, ctx.world, renderer, passes);
     return {
       reflector: layer.reflector,
