@@ -292,7 +292,7 @@ describe("<InfiniteCanvas>", () => {
     expect(mountEl.querySelector("[data-ice-canvas]")).toBeNull(); // host torn down
   });
 
-  it("StrictMode remount stacks nothing: exactly one grid + one wires canvas (double-grid field report)", () => {
+  it("StrictMode remount stacks nothing: exactly one ground canvas, disposed per unmount (double-grid field report)", () => {
     vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
     vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
 
@@ -301,18 +301,65 @@ describe("<InfiniteCanvas>", () => {
     document.body.appendChild(mountEl);
     const root = createRoot(mountEl);
 
+    // The ground layer arrives through the OPAQUE factory prop (@ice/ground in
+    // production; a structural fake here — react must treat it as a black box).
     // StrictMode runs the mount effect twice ON THE SAME container div — every
-    // factory-inserted node (grid canvas, wires canvas, snap-guides canvas,
-    // chrome plane, lifted plane) must be disposed by the cleanup or it
-    // duplicates here.
+    // factory-inserted node (the ground canvas, chrome plane, lifted plane)
+    // must be disposed by the cleanup or it duplicates here.
+    let created = 0;
+    let disposed = 0;
+    const fakeGround = (ctx: {
+      host: { container: HTMLElement; contentPlane: HTMLElement };
+      world: unknown;
+      readWirePreview: () => unknown;
+    }) => {
+      created++;
+      const canvas = ctx.host.container.ownerDocument.createElement("canvas");
+      ctx.host.container.insertBefore(canvas, ctx.host.contentPlane);
+      return {
+        reflector: { name: "fake-ground", always: true, flush() {}, available: () => true },
+        configureGrid() {},
+        dispose() {
+          disposed++;
+          canvas.remove();
+        },
+      };
+    };
+
     act(() => {
-      root.render(createElement(StrictMode, null, createElement(InfiniteCanvas, { engine })));
+      root.render(
+        createElement(
+          StrictMode,
+          null,
+          createElement(InfiniteCanvas, { engine, ground: fakeGround as never }),
+        ),
+      );
     });
 
     const container = mountEl.querySelector("[data-ice-canvas]");
     expect(container).toBeTruthy();
-    expect(container?.querySelectorAll("canvas")).toHaveLength(3); // grid + wires + snap-guides, once each
+    expect(container?.querySelectorAll("canvas")).toHaveLength(1); // ONE ground canvas, once
+    expect(created).toBe(2); // StrictMode double-mount…
+    expect(disposed).toBe(1); // …first instance disposed by the cleanup
 
+    act(() => {
+      root.unmount();
+    });
+    expect(disposed).toBe(2);
+    expect(mountEl.querySelectorAll("canvas")).toHaveLength(0);
+  });
+
+  it("mounts NO ground canvas when the factory prop is absent (headless/test default)", () => {
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+    const { engine } = makeEngine();
+    const mountEl = document.createElement("div");
+    document.body.appendChild(mountEl);
+    const root = createRoot(mountEl);
+    act(() => {
+      root.render(createElement(InfiniteCanvas, { engine }));
+    });
+    expect(mountEl.querySelectorAll("canvas")).toHaveLength(0);
     act(() => {
       root.unmount();
     });

@@ -29,6 +29,8 @@ export { usePresencePeers, type PresencePeerView } from "./use-presence";
 export { attachKeymap, type KeymapEntry } from "./keymap";
 export {
   InfiniteCanvas,
+  type GroundLayerFactory,
+  type GroundLayerHandle,
   type InfiniteCanvasHandle,
   type InfiniteCanvasProps,
 } from "./infinite-canvas";

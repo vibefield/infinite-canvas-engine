@@ -29,7 +29,8 @@ import {
   type Entity,
   type World,
 } from "@ice/core";
-import { attachPointerAdapter, createCanvasHost, createGridReflector, startRafLoop } from "@ice/dom";
+import { attachPointerAdapter, createCanvasHost, startRafLoop } from "@ice/dom";
+import { ground } from "@ice/ground";
 import { attachDevtools } from "@ice/devtools";
 import { worldToScreen } from "@ice/kernel";
 import { zoomToFit } from "./camera";
@@ -79,9 +80,9 @@ export function CursorLayer() {
 
     const host = createCanvasHost(stage);
 
-    // dot grid — v1's shader verbatim via @ice/dom, tuned for #0d1117.
-    const grid = createGridReflector(host, { dotColor: [0.42, 0.45, 0.5] });
-    const unregGrid = engine.registerReflector(grid);
+    // dot grid — the @ice/ground layer (P0: one WebGPU canvas), tuned for #0d1117.
+    const grid = ground({ grid: { dotColor: [0.42, 0.45, 0.5] } })({ host, world });
+    const unregGrid = engine.registerReflector(grid.reflector);
 
     let fitted = false;
     const syncViewport = () => {

@@ -7,7 +7,7 @@
  * and the viewport sync — everything that must live next to a real container.
  *
  * Boot order (registration order = reflector flush order, mirrored exactly):
- *   host → planes → reflectors[ planeTransform · grid(P0) · wires(P0) ·
+ *   host → planes → reflectors[ planeTransform · ground(P0, app-injected) ·
  *   domWidgets(P1/P3) · chrome(P4) · cursor · remoteCursors(P5) ] →
  *   pointer adapter → measurement (optional) → keymap → rAF loop → viewport RO.
  *
@@ -24,31 +24,41 @@
  *  - GL / R3F: the `@ice/r3f` wall forbids `@ice/react` importing three, so a
  *    GL layer (GLViews) mounts APP-SIDE. Use {@link onReady} to receive the host
  *    + planes and mount it yourself (like apps/glboard).
+ *  - The GROUND layer (P0: dot grid, wires, snap guides — @ice/ground, three's
+ *    WebGPURenderer) rides the same wall: pass its factory through the OPAQUE
+ *    {@link InfiniteCanvasProps.ground} prop (`ground={ground({...})}`); this
+ *    component types it structurally and never imports the package. No factory
+ *    ⇒ no ground layer (headless/test boots).
  *  - Devtools: the import wall forbids `@ice/react` importing `@ice/devtools`.
  *    Wire the panel app-side against `engine.engine` (also via {@link onReady}).
  *  - Measurement: auto-sized widgets need a `MeasureQueue` passed to BOTH
  *    `createCanvasEngine({ measureQueue })` (ingest side) and this component's
  *    `measureQueue` prop (ResizeObserver side). Absent ⇒ measurement is skipped.
  */
-import { Viewport, writeRuntimeResource, type CanvasEngine, type MeasureQueue } from "@ice/core";
+import {
+  Viewport,
+  writeRuntimeResource,
+  type CanvasEngine,
+  type GridConfig,
+  type MeasureQueue,
+  type ReflectorDef,
+  type WirePreviewBuffer,
+  type World,
+} from "@ice/core";
 import {
   attachPointerAdapter,
   createCanvasHost,
   createChromeReflector,
   createCursorReflector,
   createDomWidgetsReflector,
-  createGridReflector,
   createPlaneTransformReflector,
   createPlanes,
   createRemoteCursorsReflector,
-  createSnapGuidesReflector,
-  createWiresReflector,
   startRafLoop,
   wireMeasurement,
   type CanvasHost,
   type DomWidgetsReflector,
   type GLRoute,
-  type GridConfig,
   type Planes,
 } from "@ice/dom";
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
@@ -63,6 +73,24 @@ export interface InfiniteCanvasHandle {
   readonly planes: Planes;
 }
 
+/**
+ * STRUCTURAL mirror of `@ice/ground`'s GroundLayer/GroundFactory (the
+ * `WidgetDef.component`-style opaque seam: react never imports the package —
+ * the wall forbids three here). `@ice/ground.ground(...)` returns a function
+ * assignable to this type.
+ */
+export interface GroundLayerHandle {
+  readonly reflector: ReflectorDef & { available(): boolean };
+  configureGrid(cfg: Partial<GridConfig>): void;
+  dispose(): void;
+}
+
+export type GroundLayerFactory = (ctx: {
+  readonly host: { readonly container: HTMLElement; readonly contentPlane: HTMLElement };
+  readonly world: World;
+  readonly readWirePreview: () => WirePreviewBuffer;
+}) => GroundLayerHandle;
+
 export interface InfiniteCanvasProps {
   /** A constructed engine (`createCanvasEngine(...)`); NOT disposed on unmount. */
   readonly engine: CanvasEngine;
@@ -74,9 +102,17 @@ export interface InfiniteCanvasProps {
   /** Called once after the host/reflectors/loop are live (app-side GL/devtools). */
   readonly onReady?: (handle: InfiniteCanvasHandle) => void;
   /**
+   * The P0 ground layer (dot grid, wires, snap guides — one WebGPU canvas).
+   * Pass `ground(opts)` from `@ice/ground`; received opaquely (see
+   * {@link GroundLayerFactory}). Memoize in the caller — a new identity
+   * re-boots the canvas mount effect. Absent ⇒ no ground layer renders.
+   */
+  readonly ground?: GroundLayerFactory;
+  /**
    * Dot-grid tuning (theme dot color, spacing, fades). Applied live via the
-   * grid reflector's `configure` — changing it never re-boots the canvas
-   * (memoize in the caller to avoid redundant same-value redraws).
+   * ground layer's `configureGrid` — changing it never re-boots the canvas
+   * (memoize in the caller to avoid redundant same-value redraws). No-op
+   * when {@link ground} is absent.
    */
   readonly grid?: Partial<GridConfig>;
   /**
@@ -97,6 +133,7 @@ export function InfiniteCanvas({
   engine,
   measureQueue,
   onReady,
+  ground,
   grid: gridConfig,
   glRoute,
   className,
@@ -108,9 +145,9 @@ export function InfiniteCanvas({
   // Keep onReady out of the effect deps (identity churn must not re-boot).
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
-  // The live grid handle (set by the mount effect); the grid-config effect
+  // The live ground handle (set by the mount effect); the grid-config effect
   // below re-tunes it without re-booting the canvas.
-  const gridRef = useRef<ReturnType<typeof createGridReflector> | null>(null);
+  const groundRef = useRef<GroundLayerHandle | null>(null);
   const gridConfigRef = useRef(gridConfig);
   gridConfigRef.current = gridConfig;
   // glRoute reads through a ref: the adapter captures ONE function at attach,
@@ -130,23 +167,21 @@ export function InfiniteCanvas({
     const remoteCursors = createRemoteCursorsReflector(host, world);
 
     // Handles kept for teardown: unregistering only stops flushes — the DOM
-    // these factories inserted (grid canvas, wires canvas, chrome plane) must
-    // be disposed too, or a StrictMode remount stacks duplicates (the
-    // double-grid field report, 2026-07-11).
-    const grid = createGridReflector(host, gridConfigRef.current ?? {});
-    gridRef.current = grid;
-    const wires = createWiresReflector(host, world, { readPreview: () => stack.wirePreview });
-    // AFTER wires: both insert before the content plane, so creation order
-    // stacks P0 as grid → wires → guides → content (design-004 §1 amendment).
-    const snapGuides = createSnapGuidesReflector(host, world);
+    // these factories inserted (ground canvas, chrome plane) must be disposed
+    // too, or a StrictMode remount stacks duplicates (the double-grid field
+    // report, 2026-07-11).
+    const groundLayer =
+      ground?.({ host, world, readWirePreview: () => stack.wirePreview }) ?? null;
+    groundRef.current = groundLayer;
+    if (groundLayer !== null && gridConfigRef.current !== undefined) {
+      groundLayer.configureGrid(gridConfigRef.current);
+    }
     const chrome = createChromeReflector(host, world, stack.marqueeBuffer);
 
     // Registration order = flush order — node-board's proven sequence.
     const unregister = [
       core.registerReflector(createPlaneTransformReflector(planeArgs)),
-      core.registerReflector(grid),
-      core.registerReflector(wires),
-      core.registerReflector(snapGuides),
+      ...(groundLayer !== null ? [core.registerReflector(groundLayer.reflector)] : []),
       core.registerReflector(domWidgets),
       core.registerReflector(chrome),
       core.registerReflector(createCursorReflector(host, stack.readCursor)),
@@ -188,23 +223,21 @@ export function InfiniteCanvas({
       resizeObserver?.disconnect();
       for (const unreg of unregister) unreg();
       remoteCursors.destroy();
-      grid.dispose();
-      gridRef.current = null;
-      wires.dispose();
-      snapGuides.dispose();
+      groundLayer?.dispose();
+      groundRef.current = null;
       domWidgets.dispose();
       chrome.dispose();
       planes.dispose();
       host.dispose();
       setHosts(undefined);
     };
-  }, [engine, measureQueue]);
+  }, [engine, measureQueue, ground]);
 
   // Live grid re-tune — never re-boots the canvas (the mount effect above
   // deliberately omits `gridConfig` from its deps; initial config rides the
   // ref at creation).
   useEffect(() => {
-    if (gridConfig !== undefined) gridRef.current?.configure(gridConfig);
+    if (gridConfig !== undefined) groundRef.current?.configureGrid(gridConfig);
   }, [gridConfig]);
 
   return (

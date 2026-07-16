@@ -1,0 +1,26 @@
+{
+  "name": "@ice/ground",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/index.ts --format esm --dts --external three",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ice/core": "workspace:*",
+    "@ice/kernel": "workspace:*"
+  },
+  "peerDependencies": {
+    "three": ">=0.185.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.0",
+    "@vibecook/strata-ecs": "0.7.0",
+    "happy-dom": "^20.0.0",
+    "three": "^0.185.0",
+    "vitest": "^3"
+  }
+}

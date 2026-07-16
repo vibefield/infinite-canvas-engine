@@ -46,6 +46,9 @@ importers:
       '@ice/dom':
         specifier: workspace:*
         version: link:../../packages/dom
+      '@ice/ground':
+        specifier: workspace:*
+        version: link:../../packages/ground
       '@ice/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -58,6 +61,9 @@ importers:
       react-dom:
         specifier: ^19
         version: 19.2.7(react@19.2.7)
+      three:
+        specifier: ^0.185.0
+        version: 0.185.1
     devDependencies:
       '@types/react':
         specifier: ^19
@@ -86,6 +92,9 @@ importers:
       '@ice/dom':
         specifier: workspace:*
         version: link:../../packages/dom
+      '@ice/ground':
+        specifier: workspace:*
+        version: link:../../packages/ground
       '@ice/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -203,6 +212,9 @@ importers:
       '@ice/dom':
         specifier: workspace:*
         version: link:../../packages/dom
+      '@ice/ground':
+        specifier: workspace:*
+        version: link:../../packages/ground
       '@ice/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -218,6 +230,9 @@ importers:
       react-dom:
         specifier: ^19
         version: 19.2.7(react@19.2.7)
+      three:
+        specifier: ^0.185.0
+        version: 0.185.1
     devDependencies:
       '@types/react':
         specifier: ^19
@@ -246,6 +261,9 @@ importers:
       '@ice/dom':
         specifier: workspace:*
         version: link:../../packages/dom
+      '@ice/ground':
+        specifier: workspace:*
+        version: link:../../packages/ground
       '@ice/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -258,6 +276,9 @@ importers:
       react-dom:
         specifier: ^19
         version: 19.2.7(react@19.2.7)
+      three:
+        specifier: ^0.185.0
+        version: 0.185.1
     devDependencies:
       '@types/react':
         specifier: ^19
@@ -286,6 +307,9 @@ importers:
       '@ice/dom':
         specifier: workspace:*
         version: link:../../packages/dom
+      '@ice/ground':
+        specifier: workspace:*
+        version: link:../../packages/ground
       '@ice/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -373,6 +397,31 @@ importers:
       happy-dom:
         specifier: ^20.0.0
         version: 20.10.6
+
+  packages/ground:
+    dependencies:
+      '@ice/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ice/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+    devDependencies:
+      '@types/three':
+        specifier: ^0.185.0
+        version: 0.185.1
+      '@vibecook/strata-ecs':
+        specifier: 0.7.0
+        version: 0.7.0(loro-crdt@1.13.6)(react@19.2.7)
+      happy-dom:
+        specifier: ^20.0.0
+        version: 20.10.6
+      three:
+        specifier: ^0.185.0
+        version: 0.185.1
+      vitest:
+        specifier: ^3
+        version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)
 
   packages/ice:
     dependencies:

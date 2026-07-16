@@ -16,6 +16,7 @@
       "@ice/kernel": ["./packages/kernel/src/index.ts"],
       "@ice/core": ["./packages/core/src/index.ts"],
       "@ice/dom": ["./packages/dom/src/index.ts"],
+      "@ice/ground": ["./packages/ground/src/index.ts"],
       "@ice/react": ["./packages/react/src/index.ts"],
       "@ice/r3f": ["./packages/r3f/src/index.ts"],
       "@ice/devtools": ["./packages/devtools/src/index.ts"]

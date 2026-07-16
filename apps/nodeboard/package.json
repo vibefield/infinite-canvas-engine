@@ -13,11 +13,13 @@
     "@ice/core": "workspace:*",
     "@ice/devtools": "workspace:*",
     "@ice/dom": "workspace:*",
+    "@ice/ground": "workspace:*",
     "@ice/kernel": "workspace:*",
     "@ice/react": "workspace:*",
     "loro-crdt": "^1.13.6",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "three": "^0.185.0"
   },
   "devDependencies": {
     "@types/react": "^19",

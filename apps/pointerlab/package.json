@@ -13,10 +13,12 @@
     "@ice/core": "workspace:*",
     "@ice/devtools": "workspace:*",
     "@ice/dom": "workspace:*",
+    "@ice/ground": "workspace:*",
     "@ice/kernel": "workspace:*",
     "@vibecook/strata-ecs": "0.7.0",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "three": "^0.185.0"
   },
   "devDependencies": {
     "@types/react": "^19",

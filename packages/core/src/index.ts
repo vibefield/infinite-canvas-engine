@@ -111,6 +111,10 @@ export * from "./ops/cascade";
 export * from "./ops/claims";
 export * from "./ops/gestures";
 export * from "./ops/point-pick";
+// Port-schema → kernel PortSlot resolution (2026-07-16: exported for the
+// @ice/ground wires pass — rendered and picked anchors agree by construction;
+// retires the wires reflector's local-resolver TODO).
+export { portSlots, portSlotOf } from "./ops/port-geometry";
 
 // The interaction stack (design-003): input queue, commit seam, install.
 export { createInputQueue, NO_MODS, type InputEvent, type InputEventKind, type InputMods, type InputQueue } from "./input/queue";
@@ -203,6 +207,9 @@ export {
 
 // Reviewed default constants (citations point at the owning design sections).
 export * from "./settings/defaults";
+// Ground-layer (P0) pass configs — plain data shared by @ice/ground, the react
+// facade, and apps (2026-07-16 extraction; neither may import the other).
+export * from "./settings/ground-config";
 
 // --- M4 camera slice (design-003 §5 item 9 + simulate tail) ---
 // Sole exception to the no-barrel-edit rule: the camera-sim factory + its

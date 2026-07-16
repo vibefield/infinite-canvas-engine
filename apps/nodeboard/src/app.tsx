@@ -77,13 +77,12 @@ import {
   createChromeReflector,
   createCursorReflector,
   createDomWidgetsReflector,
-  createGridReflector,
   createPlaneTransformReflector,
   createPlanes,
   createRemoteCursorsReflector,
-  createWiresReflector,
   startRafLoop,
 } from "@ice/dom";
+import { ground, type GroundLayer } from "@ice/ground";
 import type { RemoteCursorsReflector } from "@ice/dom";
 import { WidgetRoot } from "@ice/react";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
@@ -393,11 +392,14 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     runtime.store,
   );
   engine.registerReflector(createPlaneTransformReflector({ contentPlane: planes.content, liftedPlane: planes.lifted }));
-  if (mount) engine.registerReflector(createGridReflector(host));
-  // WIRES (P0): renders under content; reads the connect preview off the stack's
-  // out-of-ECS buffer. `stack.wirePreview` IS the WirePreviewBuffer (fields align
-  // with the reflector's WirePreview by construction), so return it directly.
-  engine.registerReflector(createWiresReflector(host, world, { readPreview: () => stack.wirePreview }));
+  // P0 = ONE WebGPU canvas (@ice/ground): grid + WIRES (under content; the
+  // connect preview reads the stack's out-of-ECS buffer) + snap guides.
+  // Headless boots (mount:false — the exit tests) skip it entirely, like the
+  // old grid; graph logic never depended on the render layer.
+  const groundLayer: GroundLayer | null = mount
+    ? ground()({ host, world, readWirePreview: () => stack.wirePreview })
+    : null;
+  if (groundLayer !== null) engine.registerReflector(groundLayer.reflector);
   engine.registerReflector(domWidgets);
   engine.registerReflector(createChromeReflector(host, world, stack.marqueeBuffer));
   engine.registerReflector(createCursorReflector(host, stack.readCursor));
@@ -485,6 +487,7 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
       autosave?.flush();
       root?.unmount();
       reactHost?.remove();
+      groundLayer?.dispose();
       host.dispose();
     },
   };

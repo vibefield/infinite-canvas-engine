@@ -30,7 +30,7 @@ import {
   type CanvasEngine,
   type Entity,
 } from "@ice/core";
-import type { GridConfig } from "@ice/dom";
+import type { GridConfig } from "@ice/core";
 import { useState } from "react";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./types";
 

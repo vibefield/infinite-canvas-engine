@@ -32,7 +32,8 @@ import {
   type CanvasEngine,
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
-import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/dom";
+import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
+import { ground } from "@ice/ground";
 import { GLViews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -383,10 +384,15 @@ export function App() {
     dt.glStats(s); // the full GL panel: renderer counts, VT census, LOD bands, culls
   }, []);
 
+  // The P0 ground layer (grid + wires + snap guides, one WebGPU canvas) —
+  // memoized: a new factory identity re-boots the canvas mount effect.
+  const groundFactory = useMemo(() => ground(), []);
+
   return (
     <div className="h-screen w-screen" style={{ background: "var(--canvas-bg)" }}>
       <InfiniteCanvas
         engine={ce}
+        ground={groundFactory}
         grid={effectiveGrid}
         glRoute={glRoute}
         onReady={onReady}

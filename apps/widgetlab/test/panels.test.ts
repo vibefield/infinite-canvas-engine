@@ -14,7 +14,7 @@
  * the `.tsx` panels comes from vite.config.ts, which vitest loads by default.
  */
 import { type CanvasEngine, createCanvasEngine } from "@ice/core";
-import { DEFAULT_GRID_CONFIG } from "@ice/dom";
+import { DEFAULT_GRID_CONFIG } from "@ice/core";
 import { type ReactElement, act, createElement } from "react";
 import { type Root, createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";

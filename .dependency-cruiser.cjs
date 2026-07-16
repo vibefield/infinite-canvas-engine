@@ -104,6 +104,29 @@ module.exports = {
       },
     },
     {
+      name: "ground-only-core-kernel-three",
+      comment:
+        "design-002 §6 (amended 2026-07-16, the @ice/ground extraction): the P0 ground layer " +
+        "renders with three's WebGPURenderer + TSL — core + kernel + three ONLY (never react/" +
+        "@react-three or a stray dep). Off the react chain: react must NOT import ground (its own " +
+        "allowlist enforces that); apps inject the layer through the InfiniteCanvas `ground` " +
+        "factory prop or register its reflector directly.",
+      severity: "error",
+      from: { path: "^packages/ground/src" },
+      to: {
+        pathNot: [
+          "^packages/ground/src",
+          "^packages/core",
+          "^packages/kernel",
+          nm("three"),
+          // "three/webgpu" and "three/tsl" resolve through the package exports
+          // map, which the cruiser reports by SPECIFIER (the strata-subpath
+          // precedent) — allow the specifier form alongside node_modules paths.
+          "^three(/|$)",
+        ],
+      },
+    },
+    {
       name: "devtools-only-core-kernel-strata",
       comment:
         "design-002 §6 (amended 2026-07-13): devtools reads core + kernel and WRAPS " +
@@ -127,8 +150,17 @@ module.exports = {
       name: "nobody-imports-devtools",
       comment: "design-002 §6: devtools is a leaf — no engine package may depend on it.",
       severity: "error",
-      from: { path: "^packages/(kernel|core|dom|react|r3f)/src" },
+      from: { path: "^packages/(kernel|core|dom|react|r3f|ground)/src" },
       to: { path: "^packages/devtools" },
+    },
+    {
+      name: "nobody-imports-ground",
+      comment:
+        "design-002 §6 (2026-07-16): ground is a leaf like devtools — apps consume it directly; " +
+        "no engine package may depend on it (react receives its layer as an OPAQUE factory prop).",
+      severity: "error",
+      from: { path: "^packages/(kernel|core|dom|react|r3f|devtools)/src" },
+      to: { path: "^packages/ground" },
     },
   ],
   options: {

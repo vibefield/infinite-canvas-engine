@@ -35,6 +35,7 @@
     "./dom": { "types": "./dist/types/packages/ice/src/dom.d.ts", "default": "./dist/dom.js" },
     "./react": { "types": "./dist/types/packages/ice/src/react.d.ts", "default": "./dist/react.js" },
     "./r3f": { "types": "./dist/types/packages/ice/src/r3f.d.ts", "default": "./dist/r3f.js" },
+    "./ground": { "types": "./dist/types/packages/ice/src/ground.d.ts", "default": "./dist/ground.js" },
     "./devtools": { "types": "./dist/types/packages/ice/src/devtools.d.ts", "default": "./dist/devtools.js" },
     "./package.json": "./package.json"
   },

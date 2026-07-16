@@ -52,11 +52,11 @@ import {
   createChromeReflector,
   createCursorReflector,
   createDomWidgetsReflector,
-  createGridReflector,
   createPlaneTransformReflector,
   createPlanes,
   startRafLoop,
 } from "@ice/dom";
+import { ground, type GroundLayer } from "@ice/ground";
 import { WidgetRoot } from "@ice/react";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { type GLBridge, type GLPointerRouter, GLViews, createGLBridge, createGLPointerRouter } from "@ice/r3f";
@@ -250,7 +250,8 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     runtime.store,
   );
   engine.registerReflector(createPlaneTransformReflector({ contentPlane: planes.content, liftedPlane: planes.lifted }));
-  if (mount) engine.registerReflector(createGridReflector(host));
+  const groundLayer: GroundLayer | null = mount ? ground()({ host, world }) : null;
+  if (groundLayer !== null) engine.registerReflector(groundLayer.reflector); // P0: one WebGPU canvas
   engine.registerReflector(domWidgets);
   engine.registerReflector(createChromeReflector(host, world, stack.marqueeBuffer));
   engine.registerReflector(createCursorReflector(host, stack.readCursor));
@@ -340,6 +341,7 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
       reactHost?.remove();
       glPlane.remove();
       bridge.uninstall();
+      groundLayer?.dispose();
       host.dispose();
     },
   };

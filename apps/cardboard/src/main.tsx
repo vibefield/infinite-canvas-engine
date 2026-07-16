@@ -51,12 +51,12 @@ import {
   createChromeReflector,
   createCursorReflector,
   createDomWidgetsReflector,
-  createGridReflector,
   createPlaneTransformReflector,
   createPlanes,
   startRafLoop,
   wireMeasurement,
 } from "@ice/dom";
+import { ground } from "@ice/ground";
 import { WidgetRoot } from "@ice/react";
 import { attachDevtools } from "@ice/devtools";
 import { createElement } from "react";
@@ -188,7 +188,7 @@ async function boot(): Promise<void> {
   // (design-004 §2). Feeds measureQueue, which installWidgetRuntime drains.
   wireMeasurement(runtime.store, domWidgets, measureQueue);
   engine.registerReflector(createPlaneTransformReflector({ contentPlane: planes.content, liftedPlane: planes.lifted }));
-  engine.registerReflector(createGridReflector(host));
+  engine.registerReflector(ground()({ host, world }).reflector); // P0: one WebGPU canvas (grid pass)
   engine.registerReflector(domWidgets);
   engine.registerReflector(createChromeReflector(host, world, stack.marqueeBuffer));
   engine.registerReflector(createCursorReflector(host, stack.readCursor));

@@ -33,27 +33,9 @@ export { createCursorReflector } from "./reflectors/cursor";
 // P5 remote cursors (design-004 §1: screen-space pooled nodes; M9 presence).
 export { createRemoteCursorsReflector, type RemoteCursorsReflector } from "./reflectors/remote-cursors";
 
-// P0 ground-plane grid (design-004 §1: WebGL canvas, camera uniforms, fullscreen-triangle shader).
-export { createGridReflector, DEFAULT_GRID_CONFIG, type GridConfig } from "./reflectors/grid";
-
-// P0 wires pass (design-004 §1): screen-space canvas under content — bezier wires
-// (geometry from kernel anchors, culled endpoints included), connect preview, port dots.
-export {
-  createWiresReflector,
-  DEFAULT_WIRES_CONFIG,
-  type WirePreview,
-  type WiresConfig,
-  type WiresReflector,
-} from "./reflectors/wires";
-
-// P0 snap-guides pass (design-004 §1 as-built amendment 2026-07-16): alignment
-// lines + equal-spacing bars, under content, from the snapSystem's pooled chrome.
-export {
-  createSnapGuidesReflector,
-  DEFAULT_SNAP_GUIDES_CONFIG,
-  type SnapGuidesConfig,
-  type SnapGuidesReflector,
-} from "./reflectors/snap-guides";
+// The P0 ground layer (grid, wires, snap guides) moved to @ice/ground
+// (2026-07-16: one WebGPU canvas, TSL passes — design-004 §1 as-built
+// amendment). @ice/dom has no ground code; configs live in @ice/core.
 
 // M6 chrome plane reflector (P4) + measurement adapter (design-004 §2 measure, §5 chrome).
 export { createChromeReflector } from "./reflectors/chrome";
