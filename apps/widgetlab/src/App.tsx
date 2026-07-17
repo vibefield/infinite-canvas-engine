@@ -488,6 +488,22 @@ export function App() {
       <NavigationBreadcrumbs engine={ce} />
       <ZoomPill ce={ce} />
 
+      {/* Clean Up — desktop-style auto layout (ops.arrange: selection ≥2
+          scopes it, otherwise the whole current frame; one undo step). */}
+      <button
+        type="button"
+        onClick={() => {
+          const moved = ce.ops.arrange();
+          // The packed cluster can extend past the fold — fit it once the
+          // 240ms glide lands (app choice; the op never touches the camera).
+          if (moved.length > 0) setTimeout(() => ce.ops.zoomToFit(), 280);
+        }}
+        className="absolute top-4 right-52 z-50 flex h-10 items-center rounded-full bg-white px-4 text-sm font-medium text-neutral-600 shadow-lg transition-colors hover:bg-neutral-100 hover:text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 dark:hover:text-white"
+        title="Clean up: pack widgets into tidy rows (arranges the selection when 2+ cards are selected)"
+      >
+        ✨ Clean Up
+      </button>
+
       {/* Dark mode toggle */}
       <button
         type="button"

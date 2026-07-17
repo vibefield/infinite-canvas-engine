@@ -106,6 +106,7 @@ export * from "./helpers/phase-set";
 export * from "./helpers/version-stamps";
 
 // Catalog-adjacent ops (app-handler write paths).
+export * from "./ops/arrange";
 export * from "./ops/selection";
 export * from "./ops/cascade";
 export * from "./ops/claims";

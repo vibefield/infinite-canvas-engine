@@ -43,6 +43,7 @@ import { writeRuntimeResource } from "../guards/resource-writer";
 import { installInteractionStack, type InteractionStack } from "../interaction/install";
 import { createNestedCanvas, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
 import { cancelActiveGestures } from "../ops/gestures";
+import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { cascadeDestroy } from "../ops/cascade";
 import { clearSelection, selectedEntities, setSelection } from "../ops/selection";
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
@@ -99,6 +100,12 @@ export interface CanvasOps {
   selectAll(): void;
   /** StackZ sweep, one tx: selection (or ids) to top/bottom. */
   reorder(ids: readonly Entity[], mode: "top" | "bottom"): void;
+  /**
+   * Desktop-style Clean Up (kernel packLayout): tidy reading-order rows, one
+   * undo step, 240ms glide (durationMs: 0 snaps). Scope: ids > selection ≥2 >
+   * current nav frame. Returns the movers (empty = already tidy).
+   */
+  arrange(opts?: ArrangeOpts): Entity[];
   zoomToFit(ids?: readonly Entity[]): void;
   zoomTo(zoom: number, anchor?: { x: number; y: number }): void;
   panTo(x: number, y: number): void;
@@ -433,6 +440,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
           step += 1;
         }
       });
+    },
+    arrange(opts) {
+      const s = requireWritable("arrange");
+      return arrangeWidgets(s.store, s.liveWriter, world, opts);
     },
     zoomToFit(ids) {
       const targets = ids !== undefined && ids.length > 0 ? [...ids] : widgetQuery();
