@@ -18,13 +18,16 @@
  */
 import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
+import { insertSlot, type LayoutRect } from "@ice/kernel";
 import {
   Captures,
+  ChildOf,
   Drag,
   Drags,
   DropTarget,
   GesturePhases,
   Grab,
+  MeasuredSize,
   OverlapCandidate,
   OverlapRejected,
   PointerMods,
@@ -50,6 +53,9 @@ const tapRecognizedQ = defineQuery([Tap, P.justTags.Recognized]);
 const moveDragQ = defineQuery([Drag, RoutedMove]);
 
 const FLY_BACK_MS = 200;
+
+/** Min separation for consume free-slot placement (kernel insertSlot). */
+const CONSUME_GUTTER = 16;
 
 /** ctx-side selection flip (setSelection is the app-handler/world variant). */
 function applySelection(
@@ -191,16 +197,32 @@ export function createSelectMoveBehaviors(
             const writes: CommitWrite[] = [];
             const reparents: { entity: Entity; container: Entity }[] = [];
             const containerPos = ctx.get(container, Position) ?? { x: 0, y: 0 };
+            // Free-slot placement (2026-07-17, James: folder drops "pile up on
+            // each other"): the raw drop point maps everyone who aimed at the
+            // folder's center onto the same container-local spot. Newcomers
+            // get the nearest free slot instead; incumbents NEVER move (the
+            // kernel insertSlot contract). Sizes mirror the folder preview's
+            // rule: measured when real, else declared.
+            const incumbents: LayoutRect[] = [];
+            for (const c of ctx.getReverse(container, ChildOf)) {
+              const cp = ctx.get(c, Position);
+              const cm = ctx.get(c, MeasuredSize);
+              const cs = cm !== undefined && cm.w > 0 ? cm : ctx.get(c, Size);
+              if (cp === undefined || cs === undefined) continue;
+              incumbents.push({ x: cp.x, y: cp.y, w: cs.w, h: cs.h });
+            }
             for (const w of dragged) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
               const g = ctx.read(w, Grab);
               // Container-frame conversion: world → container-local (M8 refines
               // to the kernel container-frame path once nested canvas lands).
-              writes.push({
-                entity: w,
-                component: Position,
-                value: { x: g.x + wx - containerPos.x, y: g.y + wy - containerPos.y },
-              });
+              const hint = { x: g.x + wx - containerPos.x, y: g.y + wy - containerPos.y };
+              const wm = ctx.get(w, MeasuredSize);
+              const ws = wm !== undefined && wm.w > 0 ? wm : (ctx.get(w, Size) ?? { w: 0, h: 0 });
+              const slot = insertSlot(incumbents, ws, hint, CONSUME_GUTTER);
+              // Later cards in a multi-drop see the earlier ones as occupied.
+              incumbents.push({ x: slot.x, y: slot.y, w: ws.w, h: ws.h });
+              writes.push({ entity: w, component: Position, value: slot });
               reparents.push({ entity: w, container });
             }
             if (writes.length > 0) sink.commit({ kind: "consume", gesture: rec, writes, reparents });
