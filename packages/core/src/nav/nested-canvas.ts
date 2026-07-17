@@ -324,6 +324,33 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
   };
 
   /**
+   * THE VISIBILITY CUT (field glitch 2026-07-17): the op snaps the camera to
+   * the flight start SYNCHRONOUSLY, but membership → cull → mount hide the
+   * departed frame's content one to two ticks later — a few frames of the old
+   * scene squeezed under the new camera at the portal. Nav member sets are
+   * DISJOINT across a cut, so the op stamps the canonical non-member state
+   * (¬Active ∧ ¬Visible ∧ Culled) on EVERY equipped widget right now (ops run
+   * outside the tick — the index-rebuild legality); the next tick's membership
+   * resweep re-derives the new frame's members, and every renderer (DOM
+   * mounts, GL island phases, ground wires, selection chrome) reads the same
+   * canonical signal, so the old frame vanishes on the same reflect pass that
+   * first applies the new camera.
+   */
+  const cutVisibility = (): void => {
+    // Two-phase: world.* tag writes are IMMEDIATE (archetype moves) and
+    // illegal mid-iteration — collect, then mutate.
+    const all: Entity[] = [];
+    world.query(equippedQ).each((b) => {
+      for (const r of b) all.push(b.entity(r));
+    });
+    for (const e of all) {
+      if (world.hasTag(e, Active)) world.removeTag(e, Active);
+      if (world.hasTag(e, Visible)) world.removeTag(e, Visible);
+      if (!world.hasTag(e, Culled)) world.addTag(e, Culled);
+    }
+  };
+
+  /**
    * The DEFAULT framing for a frame: zoom-to-fit its direct content (pad 80),
    * identity when empty/headless; zoom clamped into the configured band
    * (facade settings.zoom) — the ARRIVAL honors limits even though flight
@@ -410,6 +437,17 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
         }
       });
       if (restore !== undefined) writeRuntimeResource(world, Camera, { ...restore, gesturing: false });
+      // The same visibility cut the ops make (via ctx — this is a system):
+      // an integrity pop swaps frames too, and stale content under the
+      // restored camera is the same glitch.
+      ctx.query(equippedQ).each((b) => {
+        for (const r of b) {
+          const e = b.entity(r);
+          if (ctx.hasTag(e, Active)) ctx.removeTag(e, Active);
+          if (ctx.hasTag(e, Visible)) ctx.removeTag(e, Visible);
+          if (!ctx.hasTag(e, Culled)) ctx.addTag(e, Culled);
+        }
+      });
       rebuildIndex();
     },
     {
@@ -460,6 +498,7 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
     }
 
     for (const { e } of doomed) world.destroy(e); // ops run OUTSIDE the tick — structural world.* is legal here
+    cutVisibility(); // BEFORE the camera write (see enterContainer)
     if (A !== undefined) startNavFlight(world, "exit", A, solveFlightStart(A, camPre), c1);
     else snapCamera(c1);
     rebuildIndex();
@@ -483,6 +522,7 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
       world.setRelation(entry, NavFrame, container);
       const c1 = resolveArrivalCamera(container);
       const K = containerRect(container);
+      cutVisibility(); // BEFORE the camera write — no frame may render old content under the new camera
       if (flightable(opts) && K !== undefined) {
         const vp = world.getResource(Viewport) as { w: number; h: number };
         // A = M⁻¹: parent (departed) coords → child (destination) coords.
