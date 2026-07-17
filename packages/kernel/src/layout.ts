@@ -215,16 +215,27 @@ export interface LayerGraphOpts {
   readonly gapX: number;
   /** Vertical gap between nodes inside a column. */
   readonly gapY: number;
+  /**
+   * Wrap the column run into stacked BANDS when the unwrapped width would
+   * exceed this (carriage-return style: each band flows left→right, bands
+   * stack top→down with a 2×gapY separator). Omit for a single band — a
+   * graph is inherently wide and only wraps when the caller says the canvas
+   * band demands it.
+   */
+  readonly maxWidth?: number;
 }
 
 /**
  * Layered graph layout (Sugiyama-lite) — the Unreal-Blueprint-style arrange
  * for wired widgets. Rank = longest path from the sources along edge
  * direction (a DFS drops back edges, so cycles are safe); columns flow
- * left→right; nodes stack top→down within a column ordered by the barycenter
- * of their neighbors (3 alternating sweeps); every column is vertically
- * centered on the tallest one. Placements are relative to (0,0) — callers
- * anchor the block. Deterministic: all orderings tie-break on node index.
+ * left→right; nodes stack top→down within a column. Ordering = alternating
+ * barycenter sweeps with the BEST ordering kept (counted wire crossings),
+ * then the classic transpose refinement (adjacent swaps that strictly
+ * reduce crossings) — not provably minimal, but the standard practical
+ * pair. Columns center vertically on their band's tallest. Placements are
+ * relative to (0,0) — callers anchor the block. Deterministic: all
+ * orderings tie-break on node index.
  */
 export function layerGraph(
   nodes: readonly LayoutSize[],
@@ -303,7 +314,38 @@ export function layerGraph(
     }
   };
   reSlot();
-  for (let sweep = 0; sweep < 3; sweep++) {
+
+  /** Wire crossings across every adjacent layer pair, under the current slots. */
+  const crossings = (): number => {
+    let total = 0;
+    for (let li = 0; li < maxRank; li++) {
+      const pairs: Array<[number, number]> = [];
+      for (const [u, v] of kept) {
+        if (rank[u] === li && rank[v] === li + 1) pairs.push([slot[u] as number, slot[v] as number]);
+      }
+      for (let i = 0; i < pairs.length; i++) {
+        for (let j = i + 1; j < pairs.length; j++) {
+          const a = pairs[i] as [number, number];
+          const b = pairs[j] as [number, number];
+          if ((a[0] - b[0]) * (a[1] - b[1]) < 0) total += 1;
+        }
+      }
+    }
+    return total;
+  };
+
+  // Alternating barycenter sweeps; a sweep can WORSEN crossings, so the best
+  // ordering seen is kept, not the last.
+  const snapshot = (): number[][] => layers.map((l) => [...l]);
+  const restore = (saved: number[][]): void => {
+    saved.forEach((l, li) => {
+      layers[li] = [...l];
+    });
+    reSlot();
+  };
+  let best = snapshot();
+  let bestX = crossings();
+  for (let sweep = 0; sweep < 4 && bestX > 0; sweep++) {
     const forward = sweep % 2 === 0;
     for (let li = forward ? 1 : maxRank - 1; forward ? li <= maxRank : li >= 0; li += forward ? 1 : -1) {
       const layer = layers[li] as number[];
@@ -315,30 +357,88 @@ export function layerGraph(
       layer.sort((a, b) => bary(a) - bary(b) || a - b);
       reSlot();
     }
+    const x = crossings();
+    if (x < bestX) {
+      bestX = x;
+      best = snapshot();
+    }
+  }
+  restore(best);
+
+  // Transpose refinement (the classic Sugiyama tail): adjacent swaps that
+  // STRICTLY reduce crossings, until a quiet round. Catches the barycenter's
+  // tie stalls.
+  let improved = bestX > 0;
+  for (let round = 0; round < 4 && improved; round++) {
+    improved = false;
+    for (const layer of layers) {
+      for (let s = 0; s + 1 < layer.length; s++) {
+        const a = layer[s] as number;
+        const b = layer[s + 1] as number;
+        layer[s] = b;
+        layer[s + 1] = a;
+        reSlot();
+        const x = crossings();
+        if (x < bestX) {
+          bestX = x;
+          improved = true;
+        } else {
+          layer[s] = a;
+          layer[s + 1] = b;
+          reSlot();
+        }
+      }
+    }
   }
 
-  // Coordinates: column x from per-layer max width; stacks centered on the
-  // tallest column.
-  const colX = new Array<number>(maxRank + 1).fill(0);
-  let x = 0;
-  for (let li = 0; li <= maxRank; li++) {
-    colX[li] = x;
+  // Coordinates. Column widths first; then the column run is partitioned
+  // into bands (single band unless maxWidth demands wrapping); each band
+  // flows left→right from x=0, stacks below the previous with a 2×gapY
+  // separator, and centers its columns on the band's tallest.
+  const colW = (layers as number[][]).map((layer) => {
     let widest = 0;
-    for (const node of layers[li] as number[]) widest = Math.max(widest, (nodes[node] as LayoutSize).w);
-    x += widest + opts.gapX;
-  }
+    for (const node of layer) widest = Math.max(widest, (nodes[node] as LayoutSize).w);
+    return widest;
+  });
   const colH = (layers as number[][]).map((layer) =>
     layer.reduce((sum, node, i) => sum + (nodes[node] as LayoutSize).h + (i > 0 ? opts.gapY : 0), 0),
   );
-  const tallest = Math.max(...colH);
+
+  const bands: number[][] = [];
+  if (opts.maxWidth === undefined) {
+    bands.push((layers as number[][]).map((_, li) => li));
+  } else {
+    let cur: number[] = [];
+    let width = 0;
+    for (let li = 0; li <= maxRank; li++) {
+      const grown = (cur.length > 0 ? width + opts.gapX : 0) + (colW[li] as number);
+      if (cur.length > 0 && grown > opts.maxWidth) {
+        bands.push(cur);
+        cur = [li];
+        width = colW[li] as number;
+      } else {
+        cur.push(li);
+        width = grown;
+      }
+    }
+    if (cur.length > 0) bands.push(cur);
+  }
 
   const out = new Array<{ x: number; y: number }>(n);
-  for (let li = 0; li <= maxRank; li++) {
-    let y = (tallest - (colH[li] as number)) / 2;
-    for (const node of layers[li] as number[]) {
-      out[node] = { x: colX[li] as number, y };
-      y += (nodes[node] as LayoutSize).h + opts.gapY;
+  let bandTop = 0;
+  for (const band of bands) {
+    let tallest = 0;
+    for (const li of band) tallest = Math.max(tallest, colH[li] as number);
+    let x = 0;
+    for (const li of band) {
+      let y = bandTop + (tallest - (colH[li] as number)) / 2;
+      for (const node of layers[li] as number[]) {
+        out[node] = { x, y };
+        y += (nodes[node] as LayoutSize).h + opts.gapY;
+      }
+      x += (colW[li] as number) + opts.gapX;
     }
+    bandTop += tallest + opts.gapY * 2;
   }
   return out;
 }

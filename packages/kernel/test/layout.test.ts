@@ -210,6 +210,39 @@ describe("layerGraph", () => {
     expect(t?.y).toBe(35);
   });
 
+  it("untangles a fully-reversed bipartite matching to zero crossings", () => {
+    // Sources 0..3 wire to sinks in REVERSE (0→7, 1→6, 2→5, 3→4): index
+    // order = maximal crossings. The ordering pass must flip the sink column.
+    const nodes = Array.from({ length: 8 }, () => ({ w: 100, h: 50 }));
+    const placed = layerGraph(nodes, [
+      [0, 7],
+      [1, 6],
+      [2, 5],
+      [3, 4],
+    ], { gapX: 40, gapY: 20 });
+    const y = (i: number): number => (placed[i] as { y: number }).y;
+    expect(y(7)).toBeLessThan(y(6)); // sink column reversed → wires parallel
+    expect(y(6)).toBeLessThan(y(5));
+    expect(y(5)).toBeLessThan(y(4));
+    // Parallel wires: each source aligns with its sink row.
+    expect(y(0)).toBe(y(7));
+    expect(y(3)).toBe(y(4));
+  });
+
+  it("a long chain wraps into stacked bands under maxWidth", () => {
+    const nodes = Array.from({ length: 6 }, () => ({ w: 100, h: 50 }));
+    const edges: Array<[number, number]> = [];
+    for (let i = 0; i < 5; i++) edges.push([i, i + 1]);
+    const placed = layerGraph(nodes, edges, { gapX: 40, gapY: 20, maxWidth: 500 });
+    for (const p of placed) expect(p.x + 100).toBeLessThanOrEqual(500);
+    const p = placed as Array<{ x: number; y: number }>;
+    expect(p[0]?.x).toBeLessThan(p[1]?.x as number); // band 1 flows left→right
+    expect(p[1]?.x).toBeLessThan(p[2]?.x as number);
+    expect(p[3]?.x).toBe(p[0]?.x); // carriage return
+    expect(p[3]?.y).toBeGreaterThan(p[0]?.y as number); // band 2 below band 1
+    expect(p[3]?.x).toBeLessThan(p[4]?.x as number);
+  });
+
   it("a cycle terminates and still places every node at finite coords", () => {
     const nodes = [
       { w: 100, h: 50 },

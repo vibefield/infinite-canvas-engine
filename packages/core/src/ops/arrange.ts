@@ -114,6 +114,23 @@ export function arrangeWidgets(
   const rects: LayoutRect[] = movable.map(rectOf);
   const gutter = opts.gutter ?? ARRANGE_GUTTER;
 
+  // One band width rules both layers: wired blocks WRAP into stacked bands
+  // when a chain would outgrow it (2026-07-17 "rigid blocks" limit lifted),
+  // and the packer wraps loose rows at the same width. Explicit maxWidth
+  // wins; the default is packLayout's own near-square derivation, computed
+  // over the individual movers.
+  const bandWidth =
+    opts.maxWidth ??
+    (() => {
+      let area = 0;
+      let widest = 0;
+      for (const r of rects) {
+        area += (r.w + gutter) * (r.h + gutter);
+        widest = Math.max(widest, r.w);
+      }
+      return Math.max(widest, Math.sqrt(area * 1.6));
+    })();
+
   // Bystanders are obstacles: every frame widget outside the moving set
   // (unselected, live-claimed, in-flight) stays put and must not be crowded.
   const movableSet = new Set(movable);
@@ -186,32 +203,39 @@ export function arrangeWidgets(
       const lv = local.get(v);
       if (lu !== undefined && lv !== undefined) localEdges.push([lu, lv]);
     }
-    const rel = layerGraph(
-      members.map((gi) => ({ w: (rects[gi] as LayoutRect).w, h: (rects[gi] as LayoutRect).h })),
-      localEdges,
-      { gapX: gutter * 2, gapY: gutter },
-    );
-    let bw = 0;
-    let bh = 0;
+    const sizes = members.map((gi) => ({ w: (rects[gi] as LayoutRect).w, h: (rects[gi] as LayoutRect).h }));
+    const measure = (placements: Array<{ x: number; y: number }>): { w: number; h: number } => {
+      let w = 0;
+      let h = 0;
+      placements.forEach((p, li) => {
+        const r = rects[members[li] as number] as LayoutRect;
+        w = Math.max(w, p.x + r.w);
+        h = Math.max(h, p.y + r.h);
+      });
+      return { w, h };
+    };
+    // Short chains stay LINEAR (the Blueprint promise: follow the wires);
+    // only a run clearly wider than the band (>1.5×) wraps into stacked
+    // bands. The decision depends only on the graph, so re-runs repeat it —
+    // idempotence holds.
+    let rel = layerGraph(sizes, localEdges, { gapX: gutter * 2, gapY: gutter });
+    let dims = measure(rel);
+    if (dims.w > bandWidth * 1.5) {
+      rel = layerGraph(sizes, localEdges, { gapX: gutter * 2, gapY: gutter, maxWidth: bandWidth });
+      dims = measure(rel);
+    }
     let bx = Number.POSITIVE_INFINITY;
     let by = Number.POSITIVE_INFINITY;
-    members.forEach((gi, li) => {
-      const p = rel[li] as { x: number; y: number };
+    for (const gi of members) {
       const r = rects[gi] as LayoutRect;
-      bw = Math.max(bw, p.x + r.w);
-      bh = Math.max(bh, p.y + r.h);
       bx = Math.min(bx, r.x); // the block's CURRENT anchor: members' bbox top-left
       by = Math.min(by, r.y);
-    });
+    }
     units.push({ members, rel });
-    unitRects.push({ x: bx, y: by, w: bw, h: bh });
+    unitRects.push({ x: bx, y: by, w: dims.w, h: dims.h });
   }
 
-  const placedUnits = packLayout(unitRects, {
-    gutter,
-    obstacles,
-    ...(opts.maxWidth !== undefined ? { maxWidth: opts.maxWidth } : {}),
-  });
+  const placedUnits = packLayout(unitRects, { gutter, obstacles, maxWidth: bandWidth });
 
   const finalPos = new Array<{ x: number; y: number }>(movable.length);
   units.forEach((u, k) => {

@@ -198,6 +198,37 @@ describe("ops.arrange", () => {
     ce.dispose();
   });
 
+  it("a LONG wired chain wraps into stacked bands instead of dictating the width", () => {
+    const ce = createCanvasEngine({ widgets: [BOX] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1600, h: 900, dpr: 1 });
+    const nodes: Entity[] = [];
+    for (let i = 0; i < 8; i++) {
+      nodes.push(ce.ops.spawnWidget("arr:box", { x: i * 250, y: (i % 3) * 200, w: 100, h: 100, undoable: false }));
+    }
+    for (let i = 0; i < 7; i++) {
+      const w = ce.world.spawn({ tags: [Wire] });
+      ce.world.setRelation(w, WireFrom, nodes[i] as Entity);
+      ce.world.setRelation(w, WireTo, nodes[i + 1] as Entity);
+    }
+    ce.world.sync();
+    let now = 0;
+    for (let i = 0; i < 5; i++) {
+      now += 16;
+      ce.step(now);
+    }
+
+    ce.ops.arrange({ durationMs: 0, gutter: GUTTER });
+    const ps = nodes.map((e) => ce.world.get(e, Position) as { x: number; y: number });
+    const minX = Math.min(...ps.map((p) => p.x));
+    // Unwrapped the chain would run 8×100 + 7×48 = 1136 wide; the band
+    // (near-square ≈ 444) forces stacked bands.
+    for (const p of ps) expect(p.x + 100 - minX).toBeLessThanOrEqual(450);
+    expect((ps[1] as { x: number }).x).toBeGreaterThan((ps[0] as { x: number }).x); // band flows with the wires
+    expect((ps[3] as { y: number }).y).toBeGreaterThan((ps[0] as { y: number }).y); // later ranks wrap below
+    ce.dispose();
+  });
+
   it("a widget already in flight (TransformTween) is skipped", () => {
     const { ce, all } = makeBoard();
     const b = all[1] as Entity;
