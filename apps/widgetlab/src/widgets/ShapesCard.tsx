@@ -146,8 +146,8 @@ function ShapesView({ entity, world }: WidgetComponentProps): ReactElement {
   // NO down claim (2026-07-12): a claimed down suppresses the engine gesture
   // entirely, making the card undraggable. Repel rides the router's HOVER
   // moves (buttonless point delivery); click rides the router's unclaimed
-  // click pairing; dragging the card is the engine's hold-to-lift
-  // (interaction.dragOn "longPress").
+  // click pairing; dragging the card is the engine's press-drag
+  // (interaction.dragOn "press" — 2026-07-17, all widgetlab cards).
   const onPointerDown = (e: ShapesPointer): void => {
     movedRef.current = 0;
     lastPointRef.current = e.point ? { x: e.point.x, y: e.point.y } : null;
@@ -329,7 +329,7 @@ export const ShapesCard = defineWidget({
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 240, h: 200 },
-  interaction: { solid: true, dragOn: "longPress", selectable: true, movable: true, snap: "both" },
+  interaction: { solid: true, dragOn: "press", selectable: true, movable: true, snap: "both" },
   provides: ["widget"], // drop-to-consume advertisement — CardContainer accepts ["widget"]
 });
 

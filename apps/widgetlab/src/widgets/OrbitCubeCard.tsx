@@ -180,6 +180,6 @@ export const OrbitCubeCard = defineWidget({
   sizeMode: "fixed",
   defaultSize: { w: SIZE.w, h: SIZE.h },
   minSize: { w: 200, h: 120 },
-  interaction: { solid: true, dragOn: "longPress", selectable: true, movable: true, snap: "both" },
+  interaction: { solid: true, dragOn: "press", selectable: true, movable: true, snap: "both" },
   provides: ["widget"], // drop-to-consume advertisement — CardContainer accepts ["widget"]
 });
