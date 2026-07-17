@@ -3,6 +3,8 @@
  * (no three import, no GPU; the render path is Playwright e2e territory).
  */
 import {
+  Active,
+  Culled,
   GuideLine,
   Position,
   PrefabId,
@@ -174,6 +176,25 @@ describe("collectWires", () => {
     world.setRelation(wire, WireFrom, a);
     world.setRelation(wire, WireTo, b);
     // No Port/PortAnchor entities exist at all — geometry must not need them.
+    expect(collectWires(world, frame()).vertexCount).toBeGreaterThan(0);
+  });
+
+  it("scope filter: a NON-MEMBER endpoint (Culled ∧ ¬Active) hides the wire; a viewport-culled MEMBER draws", () => {
+    const world = createWorld();
+    const a = spawnNode(world, 0, 0);
+    const b = spawnNode(world, 300, 0);
+    const wire = world.spawn({ components: [[WirePorts, { from: "out", to: "in" }]], tags: [Wire] });
+    world.setRelation(wire, WireFrom, a);
+    world.setRelation(wire, WireTo, b);
+
+    // Another nav frame's wire (the folder field bug, 2026-07-17): membership
+    // stamped the endpoints Culled without Active — never draw it here.
+    world.addTag(a, Culled);
+    expect(collectWires(world, frame()).vertexCount).toBe(0);
+
+    // Viewport-culled MEMBER (Culled ∧ Active): long wires with offscreen
+    // endpoints must keep drawing.
+    world.addTag(a, Active);
     expect(collectWires(world, frame()).vertexCount).toBeGreaterThan(0);
   });
 });

@@ -19,6 +19,7 @@ import {
 import type { GroundFrame, GroundPass } from "../pass";
 import { createSoupMesh } from "./soup-mesh";
 import {
+  activeQ,
   collectWires,
   connectDragQ,
   geometryQ,
@@ -47,6 +48,9 @@ export function createWiresPass(
         // in geometryQ's cols it would REQUIRE the rider and drop plain widgets.
         world.reactive.observeQuery(measuredQ, wake, { cols: [MeasuredSize] }),
         world.reactive.observeQuery(selectedQ, wake, { cols: [] }),
+        // Nav churn: Active membership flips gate the scope filter (a wire
+        // whose endpoints left the current frame must disappear this frame).
+        world.reactive.observeQuery(activeQ, wake, { cols: [] }),
         world.reactive.observeQuery(portQ, wake, { cols: [PortAnchor] }),
         world.reactive.observeQuery(routedConnectQ, wake, { cols: [] }),
         world.reactive.observeQuery(connectDragQ, wake, { cols: [Drag] }),

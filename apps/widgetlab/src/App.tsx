@@ -17,6 +17,7 @@
  *    is active).
  */
 import {
+  Active,
   Camera,
   Culled,
   GuideLine,
@@ -28,6 +29,7 @@ import {
   SnapSource,
   SnapTarget,
   Viewport,
+  Visible,
   Wire,
   WireFrom,
   WirePorts,
@@ -201,6 +203,8 @@ function installDebugProbe(ce: CanvasEngine): void {
           snapSource: world.hasTag(e, SnapSource),
           snapTarget: world.hasTag(e, SnapTarget),
           culled: world.hasTag(e, Culled),
+          active: world.hasTag(e, Active),
+          visible: world.hasTag(e, Visible),
         });
       }
     });
@@ -212,6 +216,7 @@ function installDebugProbe(ce: CanvasEngine): void {
       snapCfg: world.getResource(SnapConfig),
       camera: world.getResource(Camera),
       viewport: world.getResource(Viewport),
+      navDepth: ce.nav.depth(),
       guides,
       widgets,
       wires,

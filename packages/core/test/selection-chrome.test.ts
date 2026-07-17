@@ -10,6 +10,7 @@ import {
   Resizable,
   Camera,
   ChromeSettings,
+  Culled,
   createEngine,
   createSelectionChromeSystem,
   defineQuery,
@@ -163,6 +164,23 @@ describe("selectionChrome pool", () => {
     expect(bb.y).toBeCloseTo(-5, 5); // f32 liftScale ⇒ ~1e-7 noise
     expect(bb.w).toBeCloseTo(310, 4);
     expect(bb.h).toBeCloseTo(105, 4);
+  });
+
+  it("scope filter: a non-member (Culled ∧ ¬Active) selected widget contributes no chrome", () => {
+    const { world, step, entities, spawnBox } = rig();
+    const a = spawnBox(0, 0, 100, 100); // Resizable, in scope
+    // Another nav frame's widget (folder field bug 2026-07-17): membership
+    // left it Culled without Active; its coords are frame-local elsewhere.
+    const ghost = world.spawn({
+      components: [[Position, { x: 500, y: 0 }], [Size, { w: 50, h: 50 }]],
+      tags: [Culled],
+    });
+    setSelection(world, [a, ghost], "replace");
+    step();
+    // Only the member counts: sole all-resizable selection → box + grips at a.
+    expect(entities(boxQ)).toHaveLength(1);
+    expect(world.read(entities(boxQ)[0] as Entity, SelectionBox)).toEqual({ x: 0, y: 0, w: 100, h: 100 });
+    expect(entities(handleQ)).toHaveLength(8);
   });
 
   it("keeps handles screen-constant: world size = 10 / zoom", () => {

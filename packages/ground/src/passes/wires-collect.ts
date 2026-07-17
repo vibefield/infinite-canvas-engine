@@ -16,6 +16,8 @@
  *   connect drag is routed.
  */
 import {
+  Active,
+  Culled,
   DEFAULT_WIRES_CONFIG,
   Drag,
   MeasuredSize,
@@ -60,6 +62,22 @@ export const portQ = defineQuery([Port, PortAnchor]);
 export const routedConnectQ = defineQuery([RoutedConnect]);
 /** A live connect drag moves the preview every frame — Drag value dirt covers it. */
 export const connectDragQ = defineQuery([RoutedConnect, Drag]);
+/** Nav churn signal: Active membership flips re-collect (scope filter below). */
+export const activeQ = defineQuery([Active]);
+
+/**
+ * Scope filter (field bug 2026-07-17: root wires floated inside a folder).
+ * Coordinates are FRAME-LOCAL (design-001 §5.1) — a wire whose endpoint
+ * belongs to another nav frame is geometric nonsense in this one. The
+ * signature of "out of scope" is the canonical non-member state the
+ * activeMembership system stamps: Culled ∧ ¬Active. A VIEWPORT-culled member
+ * is Culled ∧ Active and must keep drawing (long wires with offscreen
+ * endpoints), and bare worlds with no membership system (unit tests,
+ * membership-less rigs) carry neither tag and draw everything.
+ */
+function outOfScope(world: World, e: Entity): boolean {
+  return world.hasTag(e, Culled) && !world.hasTag(e, Active);
+}
 
 const TESSELLATION_TOLERANCE_PX = 0.25;
 const DASH_PX = 6;
@@ -161,8 +179,13 @@ export function collectWires(
       const wire = batch.entity(r);
       const ports = world.get(wire, WirePorts);
       if (ports === undefined) continue;
-      const from = endpointAnchor(world, world.getRelation(wire, WireFrom), ports.from ?? "");
-      const to = endpointAnchor(world, world.getRelation(wire, WireTo), ports.to ?? "");
+      const fromWidget = world.getRelation(wire, WireFrom);
+      const toWidget = world.getRelation(wire, WireTo);
+      // Both endpoints must be IN the current nav frame (scope filter above).
+      if (fromWidget !== undefined && outOfScope(world, fromWidget)) continue;
+      if (toWidget !== undefined && outOfScope(world, toWidget)) continue;
+      const from = endpointAnchor(world, fromWidget, ports.from ?? "");
+      const to = endpointAnchor(world, toWidget, ports.to ?? "");
       if (from === undefined || to === undefined) continue;
       const cubic = wireCubic(
         portAnchor(from.anchor, from.slot),

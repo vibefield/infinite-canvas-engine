@@ -52,6 +52,7 @@ import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ec
 import {
   Camera,
   ChromeSettings,
+  Culled,
   Grab,
   HandleSpec,
   MeasuredSize,
@@ -182,6 +183,13 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       const liftScale = ctx.getResource(ChromeSettings)?.liftScale ?? 1;
       for (const e of selectedEntities(world)) {
         if (!ctx.has(e, Position)) continue;
+        // Scope filter (field bug 2026-07-17, the wires-collect rule): a
+        // selection that rode a nav transition must not draw chrome for
+        // OTHER frames' widgets — their coords are frame-local nonsense
+        // here. Non-member signature: Culled ∧ ¬Active (viewport-culled
+        // members stay Culled ∧ Active and keep their chrome; bare
+        // membership-less worlds carry neither tag).
+        if (ctx.hasTag(e, Culled) && !ctx.hasTag(e, Active)) continue;
         if (!ctx.hasTag(e, Resizable)) allResizable = false;
         const p = ctx.read(e, Position);
         // Effective size (review finding): the outline must wrap what the user

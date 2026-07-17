@@ -32,7 +32,7 @@ import { RUNTIME_BUDGETS } from "../settings/defaults";
 import { WidgetEquipped } from "./define-widget";
 import { createWidgetEquipSystem } from "./equip";
 import { createBreakpointSystem } from "../systems/chrome";
-import { createActiveMembership } from "../nav/nested-canvas";
+import { createActiveMembership, currentNavFrame } from "../nav/nested-canvas";
 import { createMeasureIngest } from "../systems/measure-ingest";
 import type { MeasureQueue } from "../input/measure-queue";
 import { makeChurnGuard } from "../helpers/churn-guard";
@@ -69,10 +69,30 @@ export function createWidgetRuntime(
   // (undefined-ness included: the headless posture compares equal and never
   // fires; the first real camera write fires a full pass).
   let lastWin: { x: number; y: number; zoom: number; w: number; h: number } | undefined | null = null;
+  // NAV DEFERRAL (field bug 2026-07-17, the folder-zombie): on the tick a nav
+  // op lands, activeMembership strips Active from the departing frame's
+  // widgets IN THE SAME TICK cull's full pass runs — and tag flips flush at
+  // the group boundary, so cull classifies against STALE Active tags and the
+  // FLIGHT-START window (which can span the old frame's coords). A widget
+  // culled at root then re-tags Visible while ¬Active is a ZOMBIE: rendered,
+  // unpickable, repaired by nobody (membership sees no input churn; cull only
+  // touches Active). So: the nav tick SKIPS classification entirely and the
+  // NEXT tick runs a forced full pass against the flushed membership.
+  let lastNavFrame: Entity | undefined;
+  let navPrimed = false;
+  let navSkipTick = false;
+  let navHoldFull = false;
   const cullGuard = makeChurnGuard(
     world,
     { components: [Position, Size, MeasuredSize], tags: [Active], coarse: false },
     () => {
+      const frame = currentNavFrame(world);
+      if (!navPrimed || frame !== lastNavFrame) {
+        navPrimed = true;
+        lastNavFrame = frame;
+        navSkipTick = true;
+        navHoldFull = true;
+      }
       const cam = world.getResource(Camera);
       const vp = world.getResource(Viewport);
       const win =
@@ -87,6 +107,10 @@ export function createWidgetRuntime(
           lastWin !== null &&
           (win.x !== lastWin.x || win.y !== lastWin.y || win.zoom !== lastWin.zoom || win.w !== lastWin.w || win.h !== lastWin.h));
       lastWin = win;
+      // Nav ticks fire the gate regardless: the skip tick must consume the
+      // guard (dropping its delta is safe — the held full pass covers it) and
+      // the following tick must run even if camera/journal are quiet.
+      if (navSkipTick || navHoldFull) return true;
       return changed;
     },
   );
@@ -95,6 +119,14 @@ export function createWidgetRuntime(
     (ctx) => {
       const work = cullGuard.take();
       if (work === undefined) return;
+      if (navSkipTick) {
+        // The nav tick: membership's Active flips flush at this group's
+        // boundary — classify next tick (navHoldFull), never against stale tags.
+        navSkipTick = false;
+        return;
+      }
+      const forcedFull = navHoldFull;
+      navHoldFull = false;
       const cam = ctx.getResource(Camera);
       const vp = ctx.getResource(Viewport);
       if (cam === undefined || vp === undefined || vp.w === 0) return; // headless: everything stays unculled
@@ -121,7 +153,7 @@ export function createWidgetRuntime(
           if (ctx.hasTag(e, Visible)) ctx.removeTag(e, Visible);
         }
       };
-      if (work.full) {
+      if (work.full || forcedFull) {
         ctx.query(widgetQ).each((b) => {
           for (const r of b) classify(b.entity(r));
         });
@@ -206,7 +238,9 @@ export function createWidgetRuntime(
         }
         for (const e of work.changed) {
           if (!world.isAlive(e)) continue; // removed handles it
-          if (ctx.hasTag(e, Visible)) markVisible(e);
+          // Active required, matching visibleWidgetsQ (defense in depth vs the
+          // nav-tick zombie: a stray Visible on a non-member must never mount).
+          if (ctx.hasTag(e, Visible) && ctx.hasTag(e, Active)) markVisible(e);
           else markHidden(e);
         }
       }
