@@ -13,10 +13,21 @@ import { field } from "@vibecook/strata-ecs";
 import { defineResource } from "../schema/meta";
 import {
   CAMERA_DEFAULTS,
+  CHROME_DEFAULTS,
   GESTURE_DEFAULTS,
   NAV_TRANSITION_DEFAULTS,
   POINTER_DEFAULTS,
 } from "../settings/defaults";
+
+/**
+ * Selection-chrome live mirror (2026-07-17): `liftScale` = the app's visual
+ * drag-lift scale factor; `selectionChrome` inflates a Grab-bed member's rect
+ * by it (about the rect center) so the union box always wraps the card the
+ * user SEES, not just its ECS footprint.
+ */
+export const ChromeSettings = defineResource("ChromeSettings", {
+  liftScale: field("f32", { default: CHROME_DEFAULTS.liftScale }),
+});
 
 /** Recognizer timing/slop live mirror (design-003 §4.2 kind table; inertia constants §5 item 9). */
 export const GestureSettings = defineResource("GestureSettings", {

@@ -25,6 +25,7 @@ import {
   ActiveTool,
   Camera,
   CameraLimits,
+  ChromeSettings,
   GestureSettings,
   PointerSettings,
   Position,
@@ -57,7 +58,7 @@ import { startAutosave, type Autosave, type AutosaveOpts, type AutosaveStorageWr
 import { attachPresence, type PresenceSession } from "../presence/presence-kit";
 import { installPresence } from "../presence/remote-cursors";
 import type { MeasureQueue } from "../input/measure-queue";
-import { CAMERA_DEFAULTS, GESTURE_DEFAULTS, POINTER_DEFAULTS, RUNTIME_BUDGETS, SNAP_DEFAULTS } from "../settings/defaults";
+import { CAMERA_DEFAULTS, CHROME_DEFAULTS, GESTURE_DEFAULTS, POINTER_DEFAULTS, RUNTIME_BUDGETS, SNAP_DEFAULTS } from "../settings/defaults";
 
 export interface CanvasEngineOpts {
   /** Registered widget types (definition happens at defineWidget; this list is validated). */
@@ -73,6 +74,8 @@ export interface CanvasEngineOpts {
     readonly gestures?: Partial<Record<keyof typeof GESTURE_DEFAULTS, number>>;
     readonly pointers?: Partial<Record<keyof typeof POINTER_DEFAULTS, number>>;
     readonly snap?: { readonly enabled?: boolean; readonly thresholdPx?: number };
+    /** Selection-chrome knobs: liftScale = the app's visual drag-lift scale (union box wraps it). */
+    readonly chrome?: { readonly liftScale?: number };
   };
   readonly policy?: {
     /** The gate verdict a "migrate"-classified doc downgrades to when migration is off/fails. */
@@ -203,6 +206,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   world.setResource(SnapConfig, {
     enabled: st.snap?.enabled ?? SNAP_DEFAULTS.enabled,
     thresholdPx: st.snap?.thresholdPx ?? SNAP_DEFAULTS.thresholdPx,
+  });
+  world.setResource(ChromeSettings, {
+    liftScale: st.chrome?.liftScale ?? CHROME_DEFAULTS.liftScale,
   });
 
   // --- doc lifecycle ---------------------------------------------------------

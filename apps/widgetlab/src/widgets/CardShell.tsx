@@ -26,6 +26,7 @@ import {
   OverlapCandidate,
   OverlapRejected,
   Position,
+  Selected,
   Size,
   defineQuery,
   type Entity,
@@ -34,6 +35,16 @@ import {
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 const RADIUS = 22;
+
+/**
+ * Selection ring (2026-07-17, James: chrome must track the card's VISUAL size
+ * and sit on top): drawn INSIDE the scaled base div, so the lift transform
+ * carries it for free — pixel-locked to the card through the 180ms scale ease,
+ * riding the P3 lifted plane during drags. Shows only for a SOLE selection;
+ * two or more selected cards share the engine's P4 union box instead
+ * (selectionChrome policy, same date).
+ */
+const RING_COLOR = "#4A90D9";
 
 /**
  * Drag-lift fade (2026-07-16, James): a lifted card drops to 75 % opacity for
@@ -45,6 +56,7 @@ const RADIUS = 22;
 export const LIFT_OPACITY = 0.75;
 
 const grabQuery = defineQuery([Grab]);
+const selectedQuery = defineQuery([Selected]);
 
 /**
  * v1's hot point: the centroid of the dragged widget's rect ∩ this card's
@@ -88,6 +100,7 @@ export function CardShell({
   children?: ReactNode;
 }) {
   const [lifted, setLifted] = useState(false);
+  const [soleSelected, setSoleSelected] = useState(false);
   // v1's two glow tiers: "target" (accepting container — strong, -t vars) and
   // "candidate" (rejecting overlap hover — weak, -c vars).
   const [overlap, setOverlap] = useState<"none" | "accept" | "reject">("none");
@@ -113,6 +126,12 @@ export function CardShell({
     };
     const id = setInterval(() => {
       setLifted(world.has(entity, Grab) || armedByHold());
+      // Sole selection → the in-card ring; ≥2 → the engine's P4 union box.
+      let selCount = 0;
+      world.query(selectedQuery).each((b) => {
+        selCount += b.count;
+      });
+      setSoleSelected(selCount === 1 && world.hasTag(entity, Selected));
       const tier = world.hasTag(entity, OverlapCandidate)
         ? "accept"
         : world.hasTag(entity, OverlapRejected)
@@ -180,11 +199,22 @@ export function CardShell({
     transition: "opacity 220ms ease, background 220ms ease",
   };
 
+  const ring: CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    pointerEvents: "none",
+    borderRadius: "inherit",
+    border: `1.5px solid ${RING_COLOR}`,
+    opacity: soleSelected ? 1 : 0,
+    transition: "opacity 120ms ease",
+  };
+
   return (
     <div style={base}>
       {children}
       <div style={glow} />
       <div style={rim} />
+      <div style={ring} data-card-ring={soleSelected ? "on" : "off"} />
     </div>
   );
 }

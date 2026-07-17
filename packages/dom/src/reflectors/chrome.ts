@@ -113,7 +113,9 @@ export function createChromeReflector(
       seenBox.clear();
       seenHandle.clear();
 
-      // Selection boxes: world rect → screen outline.
+      // Selection boxes: world rect → screen outline. Corner radius is the
+      // app's `--ic-selection-radius` CSS var (world px, so it matches card
+      // corners), zoom-scaled via calc — 0 (unset) keeps the classic sharp box.
       w.query(boxQ).each((batch) => {
         const bx = batch.col(SelectionBox).x;
         const by = batch.col(SelectionBox).y;
@@ -125,7 +127,7 @@ export function createChromeReflector(
           const tl = worldToScreen(bx[r] as number, by[r] as number, cam);
           const sw = (bw[r] as number) * cam.zoom;
           const sh = (bh[r] as number) * cam.zoom;
-          const key = `${tl.x}:${tl.y}:${sw}:${sh}`;
+          const key = `${tl.x}:${tl.y}:${sw}:${sh}:${cam.zoom}`;
           let node = boxNodes.get(e);
           if (node === undefined) {
             node = makeNode(doc, { border: "1px solid #4a90d9" });
@@ -135,6 +137,7 @@ export function createChromeReflector(
           }
           if (boxCache.get(e) !== key) {
             writeRect(node, tl.x, tl.y, sw, sh);
+            node.style.borderRadius = `calc(var(--ic-selection-radius, 0px) * ${cam.zoom})`;
             boxCache.set(e, key);
           }
         }

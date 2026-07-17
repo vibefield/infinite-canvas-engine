@@ -7,6 +7,10 @@
  *   `Selected` set: ONE selection-box entity + 8 resize-handle entities. The box
  *   entity carries ONLY the `SelectionBox` value (x,y,w,h = the union bbox); the
  *   handles carry Position + Size + `HandleSpec{anchor}` + `VisualOf → box`.
+ *   Box policy (amended 2026-07-17): all-resizable selections get box + grips
+ *   (v1 parity); a MULTI-selection gets the box (group bbox) even when
+ *   non-resizable; a single non-resizable widget gets no engine chrome (the
+ *   app owns its selection look).
  *
  *   HANDLE PICKING (the point of the design): handles carry a world AABB, so the
  *   `react`-phase `spatialSync` indexes them automatically and `picking` resolves
@@ -47,6 +51,8 @@ import type { Entity, System, SystemCtx, TickSystem, World } from "@vibecook/str
 import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
 import {
   Camera,
+  ChromeSettings,
+  Grab,
   HandleSpec,
   MeasuredSize,
   Position,
@@ -163,12 +169,17 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       let minY = Number.POSITIVE_INFINITY;
       let maxX = Number.NEGATIVE_INFINITY;
       let maxY = Number.NEGATIVE_INFINITY;
-      let any = false;
+      let count = 0;
       // Resize affordance gate (field report 2026-07-12, v1 parity): handles
       // exist only when EVERY selected entity is Resizable — a non-resizable
       // card gets the outline box, never the 8 grips (mixed multi-select is
       // conservatively grip-less too).
       let allResizable = true;
+      // Visual drag-lift factor (2026-07-17): a Grab-bed member's card is
+      // CSS-scaled about its center by the app (widgetlab 1.05); inflate its
+      // rect by the mirrored setting so the box keeps WRAPPING what the user
+      // sees. 1 (default) ⇒ pure ECS union.
+      const liftScale = ctx.getResource(ChromeSettings)?.liftScale ?? 1;
       for (const e of selectedEntities(world)) {
         if (!ctx.has(e, Position)) continue;
         if (!ctx.hasTag(e, Resizable)) allResizable = false;
@@ -177,19 +188,34 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         // SEES — MeasuredSize where auto-sized and measured, else Size.
         const m = ctx.get(e, MeasuredSize);
         const s = ctx.get(e, Size);
-        const w = m !== undefined && m.w > 0 ? m.w : (s?.w ?? 0);
-        const h = m !== undefined && m.h > 0 ? m.h : (s?.h ?? 0);
-        minX = Math.min(minX, p.x);
-        minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x + w);
-        maxY = Math.max(maxY, p.y + h);
-        any = true;
+        let w = m !== undefined && m.w > 0 ? m.w : (s?.w ?? 0);
+        let h = m !== undefined && m.h > 0 ? m.h : (s?.h ?? 0);
+        let x = p.x;
+        let y = p.y;
+        if (liftScale !== 1 && ctx.has(e, Grab)) {
+          x -= (w * (liftScale - 1)) / 2;
+          y -= (h * (liftScale - 1)) / 2;
+          w *= liftScale;
+          h *= liftScale;
+        }
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + w);
+        maxY = Math.max(maxY, y + h);
+        count++;
       }
 
-      if (!any || !allResizable) {
-        // Selection emptied — or contains a non-resizable widget: cards show
-        // NO engine chrome at all (box included), v1 parity (field report
-        // 2026-07-12); only fully-resizable selections get box + grips.
+      // Box policy (amended 2026-07-17, James: a multi-selection shares ONE
+      // bounding chrome regardless of resizability):
+      //  - box for any ALL-RESIZABLE selection (the grips' anchor, v1 parity)
+      //    OR any selection of TWO OR MORE (the group bbox);
+      //  - a single non-resizable card still shows NO engine chrome — its
+      //    selection look is the app's (e.g. widgetlab's CardShell ring);
+      //  - grips stay gated to all-resizable selections (2026-07-12 rule).
+      const wantBox = count > 0 && (allResizable || count >= 2);
+      const wantHandles = count > 0 && allResizable;
+
+      if (!wantBox) {
         if (boxEntity !== undefined) reap(ctx);
         return;
       }
@@ -203,7 +229,7 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         // are identity-only until the phase boundary, so no edit() until next frame.
         boxEntity = ctx.spawn({ components: [[SelectionBox, { ...bbox }]] });
         boxCache = { ...bbox };
-        spawnHandles(ctx, bbox, worldSize, boxEntity);
+        if (wantHandles) spawnHandles(ctx, bbox, worldSize, boxEntity);
         return;
       }
 
@@ -217,6 +243,18 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       ) {
         ctx.edit(boxEntity).set(SelectionBox, { ...bbox });
         boxCache = { ...bbox };
+      }
+      if (!wantHandles) {
+        // Mixed/non-resizable multi: group box only. Reap grips left over from
+        // an all-resizable selection this replaced.
+        if (handleEntities.length > 0) reapHandles(ctx);
+        return;
+      }
+      if (handleEntities.length === 0) {
+        // Turned all-resizable with the box already placed — grips spawn now
+        // (geometry on the payload; change-only edits begin next frame).
+        spawnHandles(ctx, bbox, worldSize, boxEntity);
+        return;
       }
       for (let i = 0; i < HANDLE_ANCHORS.length; i++) {
         const he = handleEntities[i];

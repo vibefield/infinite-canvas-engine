@@ -52,6 +52,16 @@ export const SNAP_DEFAULTS = {
   thresholdPx: 5,
 } as const;
 
+/**
+ * Selection-chrome knobs (2026-07-17). `liftScale` mirrors the app's visual
+ * drag-lift scale (widgetlab CardShell: 1.05) so the union box can inflate a
+ * grabbed member's rect and keep WRAPPING the card it sees; 1 = no lift
+ * visual, no inflation.
+ */
+export const CHROME_DEFAULTS = {
+  liftScale: 1,
+} as const;
+
 /** Zoom clamp (design-003 §5 item 9 cameraControl) and frame dt clamp (design-002 §1). */
 export const CAMERA_DEFAULTS = {
   minZoom: 0.1,

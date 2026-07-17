@@ -60,31 +60,6 @@ export const DEFAULT_WIRES_CONFIG: WiresConfig = {
   portActiveColor: "#4a90d9",
 };
 
-/**
- * Selection chrome (2026-07-16, ground SDF rings): a thin rounded border drawn
- * at P0 around each Selected widget's TRUE rect. Geometry reads ECS
- * Position/Size only, so a drag-lift (pure CSS scale on the card) never moves
- * the ring — it marks the real footprint the snap system aligns, visible
- * through the lifted card's 75% fade.
- */
-export interface SelectionChromeConfig {
-  /** Ring stroke (CSS color; alpha respected). */
-  color: string;
-  /** Stroke width in screen px (constant across zoom). */
-  width: number;
-  /** Corner radius in WORLD units (zoom-scaled; clamped to the rect half-extent). */
-  radius: number;
-  /** Gap between the widget rect edge and the ring's inner edge, screen px. */
-  pad: number;
-}
-
-export const DEFAULT_SELECTION_CHROME_CONFIG: SelectionChromeConfig = {
-  color: "#4a90d9", // the engine chrome blue (dom chrome box/handles use it too)
-  width: 1.5,
-  radius: 22, // the v1/widgetlab CardShell corner radius — override per app
-  pad: 0,
-};
-
 /** v1 `DEFAULT_SNAP_GUIDE_CONFIG` (SnapGuideRenderer.ts), field for field. */
 export interface SnapGuidesConfig {
   /** Guide line + spacing bar color as [r, g, b] in 0-1 range. */

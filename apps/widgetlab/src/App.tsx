@@ -126,7 +126,13 @@ export function createDemoEngine(): CanvasEngine {
   const ce = createCanvasEngine({
     widgets: WIDGETS,
     // snap on (2026-07-16): cards are snap "both"; guides render at P0 (ground).
-    settings: { zoom: { min: 0.25, max: 3 }, snap: { enabled: true, thresholdPx: 5 } },
+    // chrome.liftScale mirrors CardShell's lift transform (1.05) so the
+    // multi-select union box keeps wrapping a lifted member (2026-07-17).
+    settings: {
+      zoom: { min: 0.25, max: 3 },
+      snap: { enabled: true, thresholdPx: 5 },
+      chrome: { liftScale: 1.05 },
+    },
   });
   ce.docs.create();
   for (const [type, x, y, w, h, props] of SCENE) {
@@ -366,6 +372,9 @@ export function App() {
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--canvas-bg", dark ? themeColors.bgDark : themeColors.bgLight);
+    // Union-box corner radius = CardShell RADIUS (world px; the P4 chrome
+    // reflector zoom-scales it) — the group box wraps rounded cards.
+    root.style.setProperty("--ic-selection-radius", "22px");
     root.style.setProperty("--ic-glow-color", hexToRgb255(dark ? overlapGlowThemeColors.glowDark : overlapGlowThemeColors.glowLight));
     root.style.setProperty("--ic-glow-size-c", `${overlapGlow.glowSize[0]}px`);
     root.style.setProperty("--ic-glow-size-t", `${overlapGlow.glowSize[1]}px`);

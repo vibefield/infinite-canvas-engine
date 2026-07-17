@@ -9,11 +9,13 @@ import { describe, expect, it } from "vitest";
 import {
   Resizable,
   Camera,
+  ChromeSettings,
   createEngine,
   createSelectionChromeSystem,
   defineQuery,
   type Entity,
   ensureCanvasSurface,
+  Grab,
   HandleSpec,
   Position,
   SelectionBox,
@@ -91,6 +93,76 @@ describe("selectionChrome pool", () => {
     // zoom 1 → world size 10, centered on (100,100) → top-left (95,95).
     expect(world.read(se, Position)).toEqual({ x: 95, y: 95 });
     expect(world.read(se, Size)).toEqual({ w: 10, h: 10 });
+  });
+
+  it("box policy (2026-07-17): multi-select shares ONE bounding box regardless of resizability", () => {
+    const { world, step, entities } = rig();
+    const spawnPlain = (x: number, y: number, w: number, h: number) =>
+      world.spawn({ components: [[Position, { x, y }], [Size, { w, h }]] }); // NOT Resizable
+    const a = spawnPlain(0, 0, 100, 100);
+    const b = spawnPlain(200, 0, 100, 50);
+
+    // Single non-resizable: NO engine chrome (v1 parity — the app owns the look).
+    setSelection(world, [a], "replace");
+    step();
+    expect(entities(boxQ)).toHaveLength(0);
+    expect(entities(handleQ)).toHaveLength(0);
+
+    // Two non-resizable: the group box appears, grips stay gated off.
+    setSelection(world, [a, b], "replace");
+    step();
+    expect(entities(boxQ)).toHaveLength(1);
+    expect(entities(handleQ)).toHaveLength(0);
+    const box = entities(boxQ)[0] as Entity;
+    expect(world.read(box, SelectionBox)).toEqual({ x: 0, y: 0, w: 300, h: 100 });
+
+    // Back to a single non-resizable: the box reaps again.
+    setSelection(world, [a], "replace");
+    step();
+    expect(entities(boxQ)).toHaveLength(0);
+  });
+
+  it("mixed selection keeps the box but reaps grips; all-resizable again re-spawns them", () => {
+    const { world, step, entities, spawnBox } = rig();
+    const a = spawnBox(0, 0, 100, 100); // Resizable
+    const c = world.spawn({ components: [[Position, { x: 200, y: 0 }], [Size, { w: 50, h: 50 }]] });
+
+    setSelection(world, [a], "replace");
+    step();
+    expect(entities(boxQ)).toHaveLength(1);
+    expect(entities(handleQ)).toHaveLength(8);
+
+    setSelection(world, [a, c], "replace"); // mixed → box only
+    step();
+    expect(entities(boxQ)).toHaveLength(1);
+    expect(entities(handleQ)).toHaveLength(0);
+
+    setSelection(world, [a], "replace"); // all-resizable again → grips return
+    step(2); // spawn frame + placement boundary
+    expect(entities(boxQ)).toHaveLength(1);
+    expect(entities(handleQ)).toHaveLength(8);
+  });
+
+  it("a Grab-bed member inflates the box by ChromeSettings.liftScale (wraps the lifted card)", () => {
+    const { world, step, entities } = rig();
+    world.setResource(ChromeSettings, { liftScale: 1.2 });
+    const a = world.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 100, h: 100 }]] });
+    const b = world.spawn({
+      components: [
+        [Position, { x: 200, y: 0 }],
+        [Size, { w: 100, h: 50 }],
+        [Grab, { x: 200, y: 0, w: 100, h: 50, z: 0 }], // mid-drag lift
+      ],
+    });
+    setSelection(world, [a, b], "replace");
+    step();
+    const box = entities(boxQ)[0] as Entity;
+    // b inflates ×1.2 about its center → (190, −5, 120, 60); union with a → (0, −5, 310, 105).
+    const bb = world.read(box, SelectionBox);
+    expect(bb.x).toBeCloseTo(0, 5);
+    expect(bb.y).toBeCloseTo(-5, 5); // f32 liftScale ⇒ ~1e-7 noise
+    expect(bb.w).toBeCloseTo(310, 4);
+    expect(bb.h).toBeCloseTo(105, 4);
   });
 
   it("keeps handles screen-constant: world size = 10 / zoom", () => {
