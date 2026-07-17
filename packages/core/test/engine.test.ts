@@ -87,16 +87,17 @@ describe("FrameInfo", () => {
     const engine = createEngine(world);
 
     engine.step(100);
-    expect(world.getResource(FrameInfo)).toEqual({ tick: 1, dt: 0, now: 100 });
+    expect(world.getResource(FrameInfo)).toEqual({ tick: 1, dt: 0, now: 100, clock: 0 });
 
     engine.step(116);
-    expect(world.getResource(FrameInfo)).toEqual({ tick: 2, dt: 16, now: 116 });
+    expect(world.getResource(FrameInfo)).toEqual({ tick: 2, dt: 16, now: 116, clock: 16 });
 
     engine.step(1000); // background-tab hiccup — clamps
     expect(world.getResource(FrameInfo)?.dt).toBe(64);
+    expect(world.getResource(FrameInfo)?.clock).toBe(80); // the gesture clock absorbs only the CLAMPED dt
 
     engine.step(900); // clock went backwards — floors at 0
-    expect(world.getResource(FrameInfo)).toEqual({ tick: 4, dt: 0, now: 900 });
+    expect(world.getResource(FrameInfo)).toEqual({ tick: 4, dt: 0, now: 900, clock: 80 });
   });
 });
 

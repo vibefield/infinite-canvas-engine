@@ -13,10 +13,16 @@
  *                the same frame); field updates are immediate `edit().set`
  *                under declared `access.write`.
  *
- * All timing reads FrameInfo.now (the engine clock); all thresholds read
- * the GestureSettings RESOURCE (live-tunable, design-005 §4) with the
- * GESTURE_DEFAULTS constants as the unset fallback. Gesture math is screen-space totals + zoom-at-claim — never
- * live PointerWorld (design-002 §2 staleness rule).
+ * All timing reads FrameInfo.CLOCK — the accumulated CLAMPED-dt gesture clock
+ * (2026-07-17, supersedes both raw FrameInfo.now and the 2026-07-12
+ * event-timestamp anchor): rAF `now` lags wall time by up to SECONDS under
+ * throttling/headless/software rendering while event.timeStamp does not, so
+ * any window mixing the two evaluates garbage; `clock` is monotonic, stalls
+ * contribute ≤ dtClampMs (the stall-protection intent), and no event
+ * timestamp ever enters window math. All thresholds read the GestureSettings
+ * RESOURCE (live-tunable, design-005 §4) with the GESTURE_DEFAULTS constants
+ * as the unset fallback. Gesture math is screen-space totals + zoom-at-claim
+ * — never live PointerWorld (design-002 §2 staleness rule).
  */
 import type { Entity, SystemCtx, World } from "@vibecook/strata-ecs";
 import { Any, Not, defineQuery, defineSystem, type System, type Tag } from "@vibecook/strata-ecs";
@@ -90,6 +96,11 @@ function gs(ctx: SystemCtx): Readonly<Record<keyof typeof GESTURE_DEFAULTS, numb
   return ctx.getResource(GestureSettings) ?? GESTURE_DEFAULTS;
 }
 
+/** The gesture clock (see the header — NEVER FrameInfo.now for window math). */
+function clk(ctx: SystemCtx): number {
+  return ctx.getResource(FrameInfo)?.clock ?? 0;
+}
+
 
 /** A recognizer is in a phase from which no further recognition can happen. */
 function isTerminal(ctx: SystemCtx | World, e: Entity): boolean {
@@ -151,7 +162,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
   const recognizerSpawn = defineSystem(
     downQ,
     (b, ctx) => {
-      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      const now = clk(ctx);
       const tool = ctx.getResource(ActiveTool)?.id ?? "select";
       // Explicit profiles (test/app override) → tool registry (design-005 §3)
       // → select. Tools parameterize L2 spawn purely through config.
@@ -166,12 +177,12 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
 
         const screen = ctx.read(pointer, PointerScreen);
         const captureTarget = ctx.getRelation(pointer, TouchesExact);
-        // Gesture timing anchors on the down EVENT's timestamp when the adapter
-        // supplied one — a stalled frame at pointerdown must not eat into tap/
-        // long-press windows (2026-07-12 field debugging: a 640 ms headless
-        // stall made long-press unreachable). 0 ⇒ no stamp ⇒ frame now.
-        const downStamp = ctx.read(pointer, PointerButtons).downMs;
-        const downMs = downStamp > 0 ? downStamp : now;
+        // Gesture timing anchors on the CLOCK at ingest. The 2026-07-12
+        // event-timestamp anchor is retired (2026-07-17): event.timeStamp and
+        // rAF now are DIFFERENT clocks under throttling (measured seconds of
+        // skew), and the stall protection it bought is now the clock's own
+        // property — a stalled frame contributes at most dtClampMs.
+        const downMs = now;
 
         // Pinch rule: this down makes it TWO local touch pointers held — spawn a
         // Pinch watching both and suspend both pointers' single-pointer
@@ -326,7 +337,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
   const wheelSpawn = defineSystem(
     wheelSourceQ,
     (b, ctx) => {
-      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      const now = clk(ctx);
       for (const r of b) {
         const pointer = b.entity(r);
         const wheel = ctx.read(pointer, PointerWheel);
@@ -398,7 +409,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
   const tapSystem = defineSystem(
     tapQ,
     (b, ctx) => {
-      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      const now = clk(ctx);
       for (const r of b) {
         const e = b.entity(r);
         const pending = ctx.hasTag(e, P.tags.Pending);
@@ -466,7 +477,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
   const longPressSystem = defineSystem(
     longPressQ,
     (b, ctx) => {
-      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      const now = clk(ctx);
       for (const r of b) {
         const e = b.entity(r);
         const pointer = ctx.getRelations(e, Watches)[0];
@@ -607,7 +618,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
   const wheelSystem = defineSystem(
     wheelKindQ,
     (b, ctx) => {
-      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      const now = clk(ctx);
       for (const r of b) {
         const e = b.entity(r);
         if (isTerminal(ctx, e)) continue;
@@ -657,7 +668,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
   const dependencySystem = defineSystem(
     pendingQ,
     (b, ctx) => {
-      const now = ctx.getResource(FrameInfo)?.now ?? 0;
+      const now = clk(ctx);
       for (const r of b) {
         const e = b.entity(r);
         if (ctx.hasTag(e, HadRequiresFail)) {
