@@ -1,48 +1,171 @@
 /**
- * CardContainer — the v1 folder (RFC-004 Phase 5) on v3 container semantics.
- * `container.accepts: ["widget"]` arms the engine's drop-to-consume + nested
- * canvas; every card advertises `provides: ["widget"]`. Double-click (or
- * Enter/Space) descends via ops.enterContainer — v1 used the widget body's own
- * DOM dblclick, and so do we (no gesture machinery needed). Child count reads
- * the `ChildOf` containment edge (chrome-grade 250 ms poll).
+ * CardContainer — the v1 folder (RFC-004 Phase 5) on v3 container semantics,
+ * re-skinned 2026-07-17 to the design-006 mock's folder (James: "make the
+ * container widget look like that"): a dark surface card whose body is a
+ * live PREVIEW PORTAL — dot-grid backdrop + mini rectangles of the actual
+ * children, mapped through the SAME affine the portal-zoom transition uses
+ * (fit of the child frame's arrival view onto the portal rect), so entering
+ * reads as diving into the picture you were already looking at — and a 36px
+ * bottom bar: accent folder icon, name, count pill.
+ *
+ * `container.accepts: ["widget"]` arms drop-to-consume + nested canvas, and
+ * the folder now ALSO carries `provides: ["widget"]` (2026-07-17): folders
+ * are widgets too, so a folder drops into a folder — nesting was already
+ * fully supported engine-side (membership walks the ChildOf chain), only the
+ * missing Provides blocked the match. Double-click (or Enter/Space) descends
+ * via ops.enterContainer. Child snapshot reads the `ChildOf` containment
+ * edge (chrome-grade 250 ms poll, value-stable state).
  *
  * size: large (329×345).
  */
-import { ChildOf, defineWidget, p, type Entity, type World } from "@ice/core";
+import {
+  CameraLimits,
+  ChildOf,
+  Container,
+  MeasuredSize,
+  Position,
+  PrefabId,
+  Size,
+  Viewport,
+  defineWidget,
+  p,
+  widgets,
+  type Entity,
+  type World,
+} from "@ice/core";
 import { useOps, useWidgetProps } from "@ice/react";
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
 import { CardShell } from "./CardShell";
 
 export const CARD_CONTAINER_SIZE = { w: 329, h: 345 };
 
-function CardContainerView({ entity, world }: { entity: Entity; world: World }) {
+/** Mock constants (design-006 artifact): portal inset + bottom bar height. */
+const FOLDER_PAD = 10;
+const FOLDER_BAR = 36;
+/** The preview portal rect in card-local px (fixed size — sizeMode "fixed"). */
+const PORTAL = {
+  x: FOLDER_PAD,
+  y: FOLDER_PAD,
+  w: CARD_CONTAINER_SIZE.w - FOLDER_PAD * 2,
+  h: CARD_CONTAINER_SIZE.h - FOLDER_PAD - FOLDER_BAR,
+};
+
+type Mini = { x: number; y: number; w: number; h: number; kind: "folder" | "gl" | "dom" };
+
+const MINI_COLOR: Record<Mini["kind"], string> = {
+  folder: "#7B96FF",
+  gl: "#5B739B",
+  dom: "#D9D5C9",
+};
+
+function childrenSnapshot(world: World, entity: Entity): Mini[] {
+  const out: Mini[] = [];
+  for (const c of world.getReverse(entity, ChildOf)) {
+    const pos = world.get(c, Position);
+    const m = world.get(c, MeasuredSize);
+    const s = m !== undefined && m.w > 0 ? m : world.get(c, Size);
+    if (pos === undefined || s === undefined) continue;
+    const type = world.get(c, PrefabId)?.id;
+    const def = typeof type === "string" ? widgets.get(type) : undefined;
+    const kind: Mini["kind"] = def?.capabilityTags.includes(Container)
+      ? "folder"
+      : def?.surface === "gl"
+        ? "gl"
+        : "dom";
+    out.push({ x: pos.x, y: pos.y, w: s.w, h: s.h, kind });
+  }
+  return out;
+}
+
+/** Aspect-FIT affine mapping rect R onto rect K, centers aligned (mock fitAffine). */
+function fitAffine(
+  R: { x: number; y: number; w: number; h: number },
+  K: { x: number; y: number; w: number; h: number },
+): { s: number; ox: number; oy: number } {
+  const s = Math.min(K.w / R.w, K.h / R.h);
+  return { s, ox: K.x + K.w / 2 - (R.x + R.w / 2) * s, oy: K.y + K.h / 2 - (R.y + R.h / 2) * s };
+}
+
+/**
+ * Mini placement = the transition's own map: zoom-to-fit arrival camera over
+ * the children (pad 80, zoom clamped like resolveArrivalCamera), that view
+ * rect fit onto the portal — pixel-continuous with the enter flight. Falls
+ * back to a plain bbox fit when no Viewport exists (headless/tests).
+ */
+function miniRects(minis: Mini[], world: World): Array<Mini & { left: number; top: number; width: number; height: number }> {
+  if (minis.length === 0) return [];
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const c of minis) {
+    minX = Math.min(minX, c.x);
+    minY = Math.min(minY, c.y);
+    maxX = Math.max(maxX, c.x + c.w);
+    maxY = Math.max(maxY, c.y + c.h);
+  }
+  const pad = 80;
+  const vp = world.getResource(Viewport);
+  let R: { x: number; y: number; w: number; h: number };
+  if (vp !== undefined && vp.w > 0 && vp.h > 0) {
+    const lim = world.getResource(CameraLimits);
+    const bw = maxX - minX;
+    const bh = maxY - minY;
+    let zoom = Math.min(vp.w / (bw + pad * 2), vp.h / (bh + pad * 2));
+    if (lim !== undefined) zoom = Math.min(lim.maxZoom, Math.max(lim.minZoom, zoom));
+    R = { x: minX - (vp.w / zoom - bw) / 2, y: minY - (vp.h / zoom - bh) / 2, w: vp.w / zoom, h: vp.h / zoom };
+  } else {
+    R = { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 };
+  }
+  const M = fitAffine(R, PORTAL);
+  return minis.map((c) => ({
+    ...c,
+    left: M.ox + c.x * M.s - PORTAL.x,
+    top: M.oy + c.y * M.s - PORTAL.y,
+    width: c.w * M.s,
+    height: c.h * M.s,
+  }));
+}
+
+function CardContainerView({ entity, world }: { entity: Entity; world: World }): ReactElement {
   const props = useWidgetProps<{ title: string; accent: string }>(world, entity, "card-container");
   const ops = useOps();
-  const [count, setCount] = useState(() => world.getReverse(entity, ChildOf).length);
+  const [minis, setMinis] = useState<Mini[]>(() => childrenSnapshot(world, entity));
   useEffect(() => {
-    const id = setInterval(() => setCount(world.getReverse(entity, ChildOf).length), 250);
+    // Seed from a fresh snapshot (not the state closure) — value-stable
+    // updates: setMinis fires only when the serialized snapshot changes.
+    let lastKey = JSON.stringify(childrenSnapshot(world, entity));
+    const id = setInterval(() => {
+      const next = childrenSnapshot(world, entity);
+      const key = JSON.stringify(next);
+      if (key !== lastKey) {
+        lastKey = key;
+        setMinis(next);
+      }
+    }, 250);
     return () => clearInterval(id);
   }, [world, entity]);
 
   const title = props?.title ?? "Folder";
-  const accent = props?.accent ?? "#6366F1";
-  const enterFolder = () => ops.enterContainer(entity);
-  const onDoubleClick = (event: ReactMouseEvent) => {
+  const accent = props?.accent ?? "#7B96FF";
+  const enterFolder = (): void => ops.enterContainer(entity);
+  const onDoubleClick = (event: ReactMouseEvent): void => {
     event.stopPropagation();
     enterFolder();
   };
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       enterFolder();
     }
   };
+  const placed = miniRects(minis, world);
 
   // v1 note kept: a <div role="button"> rather than <button> — a real button
   // would be treated as a widget-internal control and make the whole surface
   // non-draggable; role + tabIndex + onKeyDown keep keyboard a11y.
   return (
-    <CardShell world={world} entity={entity} background="#1f1f2a">
+    <CardShell world={world} entity={entity} background="#1D1D2B">
       {/* biome-ignore lint/a11y/useSemanticElements: drag-surface; see comment above */}
       <div
         role="button"
@@ -50,47 +173,105 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }) 
         onDoubleClick={onDoubleClick}
         onKeyDown={onKeyDown}
         style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "stretch",
-          justifyContent: "space-between",
+          position: "relative",
           height: "100%",
           width: "100%",
-          padding: 14,
-          background: `linear-gradient(155deg, ${accent} 0%, #1f1f2a 85%)`,
-          color: "#fff",
+          color: "#EAEAF4",
           fontFamily: "-apple-system, system-ui, sans-serif",
-          textAlign: "left",
+          // The mock's 1px hairline (--line) — inset so the shell's clip keeps it.
+          boxShadow: "inset 0 0 0 1px rgba(160, 165, 210, 0.14)",
+          borderRadius: "inherit",
         }}
         title={`Double-click to open ${title}`}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.82 }}>
-            Folder
-          </span>
+        {/* Preview portal: dot-grid backdrop + live minis of the children. */}
+        <div
+          style={{
+            position: "absolute",
+            left: PORTAL.x,
+            top: PORTAL.y,
+            width: PORTAL.w,
+            height: PORTAL.h,
+            overflow: "hidden",
+            borderRadius: 7,
+            background: "radial-gradient(rgba(150,158,210,0.12) 1px, transparent 1px) 0 0 / 14px 14px, #14141F",
+          }}
+        >
+          {placed.map((c, i) => (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: positional snapshot, order-stable per poll
+              key={i}
+              style={{
+                position: "absolute",
+                left: c.left,
+                top: c.top,
+                width: c.width,
+                height: c.height,
+                borderRadius: 2,
+                background: MINI_COLOR[c.kind],
+                opacity: 0.9,
+              }}
+            />
+          ))}
+          {placed.length === 0 && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                color: "#8B8BA6",
+              }}
+            >
+              Empty — drop cards in
+            </div>
+          )}
+        </div>
+
+        {/* Bottom bar: accent folder icon · name · count pill (mock .bar). */}
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: FOLDER_BAR,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "0 12px",
+            boxSizing: "border-box",
+          }}
+        >
+          <svg width="14" height="12" viewBox="0 0 14 12" fill="none" aria-hidden="true" style={{ flex: "none" }}>
+            <path
+              d="M1 3.2C1 2.1 1.9 1.2 3 1.2h2.4l1.4 1.6H11c1.1 0 2 .9 2 2v4C13 9.9 12.1 10.8 11 10.8H3c-1.1 0-2-.9-2-2V3.2Z"
+              fill={accent}
+            />
+          </svg>
+          <span style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: "-0.01em" }}>{title}</span>
           <span
             style={{
+              marginLeft: "auto",
+              minWidth: 24,
+              height: 17,
+              padding: "0 6px",
+              borderRadius: 99,
+              background: `${accent}29`,
+              color: accent,
+              fontSize: 10.5,
+              fontWeight: 700,
+              fontVariantNumeric: "tabular-nums",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              minWidth: 26,
-              height: 20,
-              padding: "0 7px",
-              borderRadius: 999,
-              background: "rgba(0,0,0,0.35)",
-              fontSize: 11,
-              fontWeight: 700,
-              fontVariantNumeric: "tabular-nums",
+              boxSizing: "border-box",
             }}
           >
-            {count}
+            {placed.length}
           </span>
-        </div>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.01em" }}>{title}</div>
-          <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
-            {count === 0 ? "Empty — drop cards in" : "Double-click to open"}
-          </div>
         </div>
       </div>
     </CardShell>
@@ -102,11 +283,15 @@ export const CardContainer = defineWidget({
   surface: "dom",
   props: {
     title: p.string({ default: "Folder" }),
-    accent: p.string({ default: "#6366F1" }),
+    accent: p.string({ default: "#7B96FF" }),
   },
   component: CardContainerView,
   sizeMode: "fixed",
   defaultSize: { w: CARD_CONTAINER_SIZE.w, h: CARD_CONTAINER_SIZE.h },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", dragOn: "press" },
-  container: { accepts: ["widget"] },
+  // Folders are widgets too (2026-07-17): without container.provides a folder
+  // can never match another folder's accepts — folder-in-folder was silently
+  // impossible. (For containers, Provides reads container.provides; the
+  // top-level `provides` field is the LEAF path — define-widget.ts:292.)
+  container: { accepts: ["widget"], provides: ["widget"] },
 });
