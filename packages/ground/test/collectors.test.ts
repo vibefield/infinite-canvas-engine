@@ -219,4 +219,19 @@ describe("collectSelection", () => {
     select(world, 5000, 5000, 100, 100);
     expect(collectSelection(world, frame()).vertexCount).toBe(0);
   });
+
+  it("multi-select collapses to ONE ring around the union bbox", () => {
+    const world = createWorld();
+    select(world, 100, 100, 100, 60);
+    select(world, 400, 300, 80, 80);
+    const s = collectSelection(world, frame());
+    expect(s.vertexCount).toBe(6); // one ring, not two
+    // Union: (100,100)..(480,380) → center (290,240), half (190,140).
+    const xs = Array.from({ length: 6 }, (_, i) => s.positions[i * 3] as number);
+    const ys = Array.from({ length: 6 }, (_, i) => s.positions[i * 3 + 1] as number);
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(290, 5);
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(240, 5);
+    expect(s.halfSize[0]).toBeCloseTo(190, 5);
+    expect(s.halfSize[1]).toBeCloseTo(140, 5);
+  });
 });
