@@ -6,12 +6,13 @@
  * array serialized into its `p.json` string cell).
  *
  * Interactivity: native form elements (button/input) auto-bypass the dom
- * pointer router; the `<li>` whole-row toggle is a plain onClick — the pointer
- * adapter discriminates click vs drag by movement, so a press-and-drag on a row
- * still moves the card while a stationary click toggles it (no stopPropagation
- * needed). The remove button stops click propagation so it doesn't also toggle
- * the row it sits in. `draft` stays React state (v1 parity) — only the todo
- * items are widget data.
+ * pointer router, and the `<li>` rows carry `data-canvas-interactive`
+ * (2026-07-17, James: ALL internal interactions opt out) — a row click
+ * toggles the item WITHOUT selecting or lifting the card. The trade-off is
+ * deliberate: rows are no longer a drag surface, so the card moves by its
+ * header, side padding, and footer. The remove button stops click propagation
+ * so it doesn't also toggle the row it sits in. `draft` stays React state
+ * (v1 parity) — only the todo items are widget data.
  *
  * size: large
  */
@@ -84,9 +85,9 @@ function TodoListView({ entity, world }: WidgetComponentProps): ReactElement {
         {items.map((item) => (
           <li
             key={item.id}
-            // Plain click toggles the row; press-and-drag on it still moves the
-            // card (the <li> is not a native-interactive, so the pointer adapter
-            // routes movement to the engine and a stationary click here).
+            // Widget-internal control: the opt-out keeps a row click from ALSO
+            // running the canvas tap→select path (design-002 §8 contract).
+            data-canvas-interactive=""
             onClick={() => toggle(item.id)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") toggle(item.id);
