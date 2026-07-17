@@ -6,10 +6,18 @@
  * Scope: explicit `ids` > the current selection (when ≥2, Figma-tidy style) >
  * every widget of the CURRENT nav frame (the same Selectable ∧ Active ∧
  * WidgetEquipped set selectAll sees — works at any nav depth, coordinates are
- * frame-local for every member by construction). Placement is kernel
- * `packLayout`: order-preserving shelf rows from the cluster's own bbox
- * top-left — "my mess, straightened", idempotent (a second click is a no-op
- * and commits nothing).
+ * frame-local for every member by construction).
+ *
+ * Placement (v2 2026-07-17, James: "can this clean up be more smarter?"):
+ *  - WIRED widgets arrange like Unreal Blueprint's auto-format: each
+ *    connected component (WireFrom/WireTo among the movers) is laid out by
+ *    kernel `layerGraph` — layered columns along wire direction — and moves
+ *    as one rigid block.
+ *  - Blocks + loose widgets then pack via kernel `packLayout` (bottom-left
+ *    candidates: dense with mixed sizes, anchored at the cluster's own bbox
+ *    top-left, idempotent — a second click is a no-op and commits nothing).
+ *  - Frame widgets OUTSIDE the moving set are passed as OBSTACLES: a scoped
+ *    Clean Up flows around bystanders instead of landing on top of them.
  *
  * Write protocol (design-001 §3, composed from existing primitives only):
  *   1. ONE guarded transaction sets every mover's final Position — a single
@@ -28,11 +36,22 @@
  * TransformTween are skipped. Runtime-only widgets (no doc key) skip the tx
  * and are tweened/written directly — no doc cell, nothing to guard.
  */
-import { packLayout, type LayoutRect } from "@ice/kernel";
+import { layerGraph, packLayout, type LayoutRect } from "@ice/kernel";
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
-import { Active, Grab, MeasuredSize, Position, Selectable, Size, TransformTween } from "../catalog";
+import {
+  Active,
+  Grab,
+  MeasuredSize,
+  Position,
+  Selectable,
+  Size,
+  TransformTween,
+  Wire,
+  WireFrom,
+  WireTo,
+} from "../catalog";
 import { guardedTransaction } from "../guards/guarded-tx";
 import type { LiveWriter } from "../guards/live-writer";
 import { WidgetEquipped } from "../widget/define-widget";
@@ -53,6 +72,7 @@ const ARRANGE_MS = 240;
 const ARRANGE_GUTTER = 24;
 
 const frameWidgetsQ = defineQuery([Position, Size, Selectable, Active, WidgetEquipped]);
+const wireQ = defineQuery([Wire]);
 
 /** Returns the entities that actually moved (empty = already tidy). */
 export function arrangeWidgets(
@@ -85,21 +105,127 @@ export function arrangeWidgets(
   );
   if (movable.length < 2) return [];
 
-  const rects: LayoutRect[] = movable.map((e) => {
+  const rectOf = (e: Entity): LayoutRect => {
     const p = world.get(e, Position) as { x: number; y: number };
     const m = world.get(e, MeasuredSize);
     const s = m !== undefined && m.w > 0 ? m : (world.get(e, Size) ?? { w: 0, h: 0 });
     return { x: p.x, y: p.y, w: s.w, h: s.h };
+  };
+  const rects: LayoutRect[] = movable.map(rectOf);
+  const gutter = opts.gutter ?? ARRANGE_GUTTER;
+
+  // Bystanders are obstacles: every frame widget outside the moving set
+  // (unselected, live-claimed, in-flight) stays put and must not be crowded.
+  const movableSet = new Set(movable);
+  const obstacles: LayoutRect[] = [];
+  world.query(frameWidgetsQ).each((b) => {
+    for (const r of b) {
+      const e = b.entity(r);
+      if (!movableSet.has(e)) obstacles.push(rectOf(e));
+    }
   });
-  const placed = packLayout(rects, {
-    gutter: opts.gutter ?? ARRANGE_GUTTER,
+
+  // Wire edges among the movers (WireFrom/WireTo point at widgets): each
+  // connected component becomes a rigid layerGraph block.
+  const indexOf = new Map<Entity, number>();
+  movable.forEach((e, i) => indexOf.set(e, i));
+  const edges: Array<[number, number]> = [];
+  world.query(wireQ).each((b) => {
+    for (const r of b) {
+      const wire = b.entity(r);
+      const from = world.getRelation(wire, WireFrom);
+      const to = world.getRelation(wire, WireTo);
+      if (from === undefined || to === undefined) continue;
+      const fi = indexOf.get(from);
+      const ti = indexOf.get(to);
+      if (fi !== undefined && ti !== undefined && fi !== ti) edges.push([fi, ti]);
+    }
+  });
+  const parent = movable.map((_, i) => i);
+  const find = (i: number): number => {
+    let root = i;
+    while (parent[root] !== root) root = parent[root] as number;
+    let cursor = i;
+    while (parent[cursor] !== root) {
+      const next = parent[cursor] as number;
+      parent[cursor] = root;
+      cursor = next;
+    }
+    return root;
+  };
+  for (const [u, v] of edges) {
+    const a = find(u);
+    const b = find(v);
+    if (a !== b) parent[a] = b;
+  }
+  const comps = new Map<number, number[]>();
+  for (let i = 0; i < movable.length; i++) {
+    const root = find(i);
+    const list = comps.get(root);
+    if (list === undefined) comps.set(root, [i]);
+    else list.push(i);
+  }
+
+  // Pack units: wired components as blocks (internal layerGraph placement),
+  // everything else as itself.
+  type Unit = { members: number[]; rel: Array<{ x: number; y: number }> };
+  const units: Unit[] = [];
+  const unitRects: LayoutRect[] = [];
+  for (const members of comps.values()) {
+    if (members.length < 2) {
+      const i = members[0] as number;
+      units.push({ members: [i], rel: [{ x: 0, y: 0 }] });
+      unitRects.push(rects[i] as LayoutRect);
+      continue;
+    }
+    const local = new Map<number, number>();
+    members.forEach((gi, li) => local.set(gi, li));
+    const localEdges: Array<[number, number]> = [];
+    for (const [u, v] of edges) {
+      const lu = local.get(u);
+      const lv = local.get(v);
+      if (lu !== undefined && lv !== undefined) localEdges.push([lu, lv]);
+    }
+    const rel = layerGraph(
+      members.map((gi) => ({ w: (rects[gi] as LayoutRect).w, h: (rects[gi] as LayoutRect).h })),
+      localEdges,
+      { gapX: gutter * 2, gapY: gutter },
+    );
+    let bw = 0;
+    let bh = 0;
+    let bx = Number.POSITIVE_INFINITY;
+    let by = Number.POSITIVE_INFINITY;
+    members.forEach((gi, li) => {
+      const p = rel[li] as { x: number; y: number };
+      const r = rects[gi] as LayoutRect;
+      bw = Math.max(bw, p.x + r.w);
+      bh = Math.max(bh, p.y + r.h);
+      bx = Math.min(bx, r.x); // the block's CURRENT anchor: members' bbox top-left
+      by = Math.min(by, r.y);
+    });
+    units.push({ members, rel });
+    unitRects.push({ x: bx, y: by, w: bw, h: bh });
+  }
+
+  const placedUnits = packLayout(unitRects, {
+    gutter,
+    obstacles,
     ...(opts.maxWidth !== undefined ? { maxWidth: opts.maxWidth } : {}),
+  });
+
+  const finalPos = new Array<{ x: number; y: number }>(movable.length);
+  units.forEach((u, k) => {
+    const p = placedUnits[k] as { x: number; y: number };
+    u.members.forEach((gi, li) => {
+      const rel = u.rel[li] as { x: number; y: number };
+      finalPos[gi] = { x: p.x + rel.x, y: p.y + rel.y };
+    });
   });
 
   const moves: Array<{ e: Entity; from: { x: number; y: number }; to: { x: number; y: number } }> = [];
   for (let i = 0; i < movable.length; i++) {
     const from = rects[i] as LayoutRect;
-    const to = placed[i] as { x: number; y: number };
+    const to = finalPos[i] as { x: number; y: number };
     if (Math.abs(from.x - to.x) < 0.5 && Math.abs(from.y - to.y) < 0.5) continue;
     moves.push({ e: movable[i] as Entity, from: { x: from.x, y: from.y }, to });
   }

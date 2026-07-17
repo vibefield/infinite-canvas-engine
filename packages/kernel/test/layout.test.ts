@@ -5,7 +5,7 @@
  * point), pack idempotence, and reading-order preservation.
  */
 import { describe, expect, it } from "vitest";
-import { insertSlot, packLayout, type LayoutRect } from "../src";
+import { insertSlot, layerGraph, packLayout, type LayoutRect } from "../src";
 
 /** Mirror of the module's crowding rule: closer than gutter on both axes. */
 function crowds(a: LayoutRect, b: LayoutRect, gutter: number): boolean {
@@ -136,5 +136,94 @@ describe("packLayout", () => {
     ];
     const placed = packLayout(items, { gutter: 10, maxWidth: 500 });
     expect(placed[0]).toEqual({ x: 1000, y: 2000 });
+  });
+
+  it("fills the air beside a tall item instead of opening a new shelf", () => {
+    // A tall column first, then smalls: the old shelf packer pushed every
+    // small below the tall card (row height = tallest member); bottom-left
+    // packs them beside it.
+    const items: LayoutRect[] = [
+      { x: 0, y: 0, w: 100, h: 300 },
+      { x: 200, y: 10, w: 100, h: 100 },
+      { x: 350, y: 10, w: 100, h: 100 },
+      { x: 500, y: 10, w: 100, h: 100 },
+    ];
+    const placed = packLayout(items, { gutter: 10, origin: { x: 0, y: 0 }, maxWidth: 320 });
+    expect(placed[0]).toEqual({ x: 0, y: 0 });
+    expect(placed[1]).toEqual({ x: 110, y: 0 });
+    expect(placed[2]).toEqual({ x: 220, y: 0 });
+    expect(placed[3]).toEqual({ x: 110, y: 110 }); // beside the tall card, NOT below it
+  });
+
+  it("flows around obstacles and never crowds them", () => {
+    const gutter = 20;
+    const obstacles: LayoutRect[] = [{ x: 0, y: 0, w: 100, h: 100 }];
+    const items: LayoutRect[] = [
+      { x: 10, y: 10, w: 100, h: 100 },
+      { x: 20, y: 20, w: 100, h: 100 },
+    ];
+    const placed = packLayout(items, { gutter, origin: { x: 0, y: 0 }, maxWidth: 400, obstacles });
+    const rects = items.map((it, i) => ({ ...(placed[i] as { x: number; y: number }), w: it.w, h: it.h }));
+    assertNoCrowding([...obstacles, ...rects], gutter);
+  });
+});
+
+describe("layerGraph", () => {
+  it("a wired chain flows left-to-right in edge order, single row", () => {
+    const nodes = [
+      { w: 100, h: 60 },
+      { w: 120, h: 60 },
+      { w: 90, h: 60 },
+    ];
+    // Edges REVERSE the index order — layout must follow wires, not indices.
+    const placed = layerGraph(nodes, [
+      [2, 1],
+      [1, 0],
+    ], { gapX: 40, gapY: 20 });
+    const [a, b, c] = placed as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }];
+    expect(c.x).toBe(0); // source column
+    expect(b.x).toBeGreaterThan(c.x);
+    expect(a.x).toBeGreaterThan(b.x);
+    expect(a.y).toBe(b.y);
+    expect(b.y).toBe(c.y); // equal-height single-node columns align
+  });
+
+  it("a diamond stacks the middle layer in one column, centered", () => {
+    const nodes = [
+      { w: 100, h: 50 },
+      { w: 100, h: 50 },
+      { w: 100, h: 50 },
+      { w: 100, h: 50 },
+    ];
+    const placed = layerGraph(nodes, [
+      [0, 1],
+      [0, 2],
+      [1, 3],
+      [2, 3],
+    ], { gapX: 40, gapY: 20 });
+    const [s, m1, m2, t] = placed as Array<{ x: number; y: number }>;
+    expect(m1?.x).toBe(m2?.x); // same middle column
+    expect((m2?.y as number) - (m1?.y as number)).toBe(70); // h + gapY stack
+    expect(t?.x).toBeGreaterThan(m1?.x as number);
+    // Source and sink center on the two-node column: 120 total → mid 35.
+    expect(s?.y).toBe(35);
+    expect(t?.y).toBe(35);
+  });
+
+  it("a cycle terminates and still places every node at finite coords", () => {
+    const nodes = [
+      { w: 100, h: 50 },
+      { w: 100, h: 50 },
+    ];
+    const placed = layerGraph(nodes, [
+      [0, 1],
+      [1, 0],
+    ], { gapX: 40, gapY: 20 });
+    expect(placed).toHaveLength(2);
+    for (const p of placed) {
+      expect(Number.isFinite(p.x)).toBe(true);
+      expect(Number.isFinite(p.y)).toBe(true);
+    }
+    expect((placed[1] as { x: number }).x).toBeGreaterThan((placed[0] as { x: number }).x); // kept edge 0→1 wins
   });
 });

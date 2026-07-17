@@ -8,11 +8,20 @@
  *    the drop-consume path (l3-behave). Candidates are edge-aligned to the
  *    incumbents (flush right/below/left/above with a gutter), so successive
  *    drops grow aligned rows and columns instead of a global imposed grid.
- *  - `packLayout` — order-preserving shelf packing for the explicit
- *    "Clean Up" command: items flow in reading order (current y, then x)
- *    into left-to-right rows from the cluster's own top-left, so the result
- *    reads as "my mess, straightened", not a shuffle. Idempotent: a packed
- *    layout re-packs to itself (post-pack reading order IS the pack order).
+ *  - `packLayout` — bottom-left candidate packing for the explicit
+ *    "Clean Up" command (v2 2026-07-17, James: shelves were "not really
+ *    efficient" and selection packs "overlay on top of unselected widgets"):
+ *    items flow in reading order (current y, then x, then index) and each
+ *    takes the lowest-then-leftmost free spot, so small cards fill the air
+ *    beside tall ones instead of opening a new shelf. `obstacles` rects are
+ *    honored as immovable — a scoped pack flows AROUND bystanders. Still
+ *    "my mess, straightened": deterministic, anchored at the cluster's own
+ *    top-left, idempotent on packed input (pinned by test).
+ *  - `layerGraph` — the Unreal-Blueprint-style arrange for WIRED widgets:
+ *    Sugiyama-lite layered layout (longest-path ranks along edge direction,
+ *    barycenter ordering, columns left→right, vertically centered). Callers
+ *    lay out each connected component with this and pack the resulting
+ *    blocks with `packLayout`.
  *
  * Plain structs in, plain structs out (Law 13): no ECS, no DOM, no camera.
  * All coordinates live in ONE frame — callers convert (container-local for
@@ -102,24 +111,30 @@ export function insertSlot(
 
 export interface PackOpts {
   readonly gutter: number;
-  /** Row origin; defaults to the items' current bbox top-left (the cluster stays put). */
+  /** Pack origin; defaults to the items' current bbox top-left (the cluster stays put). */
   readonly origin?: LayoutPoint;
   /**
-   * Row wrap width; defaults to a near-square derivation (√(total area × 1.6),
-   * never narrower than the widest item).
+   * Band wrap width; defaults to a near-square derivation (√(total area × 1.6),
+   * never narrower than the widest item). Soft: an item that fits nowhere
+   * inside the band still places (lowest spot, band ignored) rather than
+   * failing.
    */
   readonly maxWidth?: number;
+  /**
+   * Immovable rects the pack must flow AROUND (e.g. unselected widgets when
+   * arranging a selection). Never returned, never moved, never crowded.
+   */
+  readonly obstacles?: readonly LayoutRect[];
 }
 
 /**
- * Order-preserving shelf packing: items in reading order of their CURRENT
- * positions (strict y, then x, then input index) flow into left-to-right
- * rows; a row wraps when the next item would cross `maxWidth`; row height is
- * the tallest member. Returns placements parallel to the input array.
- *
- * Rows are ragged by design (v1 tidy) — the near-modular widget sizes make
- * ragged shelves read as a grid anyway. A future refinement can band-quantize
- * the reading order so near-tied y values don't interleave visual rows.
+ * Bottom-left candidate packing: items in reading order of their CURRENT
+ * positions (strict y, then x, then input index) each take the
+ * lowest-then-leftmost free spot from the candidate set (the origin, plus
+ * gutter-flush right-of and below-of every placed/obstacle rect, plus the
+ * band-left row start under each). Dense with mixed sizes — small cards fill
+ * the air beside tall ones — and obstacle-aware. Returns placements parallel
+ * to the input array.
  */
 export function packLayout(items: readonly LayoutRect[], opts: PackOpts): Array<{ x: number; y: number }> {
   if (items.length === 0) return [];
@@ -158,20 +173,172 @@ export function packLayout(items: readonly LayoutRect[], opts: PackOpts): Array<
       return ia.y - ib.y || ia.x - ib.x || a - b;
     });
 
+  // Feasibility set: obstacles first (they also seed candidates), then
+  // every placed item as it lands.
+  const placed: LayoutRect[] = [...(opts.obstacles ?? [])];
   const out = new Array<{ x: number; y: number }>(items.length);
-  let cursorX = ox;
-  let rowY = oy;
-  let rowH = 0;
   for (const idx of order) {
     const it = items[idx] as LayoutRect;
-    if (cursorX > ox && cursorX + it.w > ox + maxWidth) {
-      rowY += rowH + gutter;
-      cursorX = ox;
-      rowH = 0;
+    const cands: LayoutPoint[] = [{ x: ox, y: oy }];
+    for (const r of placed) {
+      cands.push({ x: r.x + r.w + gutter, y: r.y }); // right, top-aligned
+      cands.push({ x: r.x, y: r.y + r.h + gutter }); // below, left-aligned
+      cands.push({ x: ox, y: r.y + r.h + gutter }); // band-left row start
     }
-    out[idx] = { x: cursorX, y: rowY };
-    cursorX += it.w + gutter;
-    rowH = Math.max(rowH, it.h);
+    let best: LayoutPoint | undefined;
+    // Pass 1 honors the band; pass 2 drops it (an oversize item or a wall of
+    // obstacles must still place — the below-everything candidate is always
+    // free, so pass 2 cannot come up empty).
+    for (const inBand of [true, false]) {
+      for (const c of cands) {
+        if (c.x < ox || c.y < oy) continue;
+        if (inBand && c.x + it.w > ox + maxWidth) continue;
+        if (!isFree(c.x, c.y, it, placed, gutter)) continue;
+        if (best === undefined || c.y < best.y || (c.y === best.y && c.x < best.x)) best = c;
+      }
+      if (best !== undefined) break;
+    }
+    if (best === undefined) {
+      // Defensive only (see pass-2 note above).
+      let maxBottom = oy;
+      for (const r of placed) maxBottom = Math.max(maxBottom, r.y + r.h);
+      best = { x: ox, y: maxBottom + gutter };
+    }
+    out[idx] = { x: best.x, y: best.y };
+    placed.push({ x: best.x, y: best.y, w: it.w, h: it.h });
+  }
+  return out;
+}
+
+export interface LayerGraphOpts {
+  /** Horizontal gap between columns (leave room for wires to breathe). */
+  readonly gapX: number;
+  /** Vertical gap between nodes inside a column. */
+  readonly gapY: number;
+}
+
+/**
+ * Layered graph layout (Sugiyama-lite) — the Unreal-Blueprint-style arrange
+ * for wired widgets. Rank = longest path from the sources along edge
+ * direction (a DFS drops back edges, so cycles are safe); columns flow
+ * left→right; nodes stack top→down within a column ordered by the barycenter
+ * of their neighbors (3 alternating sweeps); every column is vertically
+ * centered on the tallest one. Placements are relative to (0,0) — callers
+ * anchor the block. Deterministic: all orderings tie-break on node index.
+ */
+export function layerGraph(
+  nodes: readonly LayoutSize[],
+  edges: readonly (readonly [number, number])[],
+  opts: LayerGraphOpts,
+): Array<{ x: number; y: number }> {
+  const n = nodes.length;
+  if (n === 0) return [];
+
+  // Drop self-edges; find back edges via iterative DFS (in index order).
+  const outAdj: number[][] = Array.from({ length: n }, () => []);
+  for (const [u, v] of edges) {
+    if (u !== v && u >= 0 && u < n && v >= 0 && v < n) outAdj[u]?.push(v);
+  }
+  const kept: Array<[number, number]> = [];
+  const state = new Array<0 | 1 | 2>(n).fill(0); // 0 unseen, 1 on stack, 2 done
+  for (let root = 0; root < n; root++) {
+    if (state[root] !== 0) continue;
+    const stack: Array<{ u: number; i: number }> = [{ u: root, i: 0 }];
+    state[root] = 1;
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1] as { u: number; i: number };
+      const adj = outAdj[top.u] as number[];
+      if (top.i < adj.length) {
+        const v = adj[top.i] as number;
+        top.i += 1;
+        if (state[v] === 1) continue; // back edge — dropped
+        kept.push([top.u, v]);
+        if (state[v] === 0) {
+          state[v] = 1;
+          stack.push({ u: v, i: 0 });
+        }
+      } else {
+        state[top.u] = 2;
+        stack.pop();
+      }
+    }
+  }
+
+  // Longest-path ranks over the kept DAG (topological relaxation).
+  const keptOut: number[][] = Array.from({ length: n }, () => []);
+  const indeg = new Array<number>(n).fill(0);
+  for (const [u, v] of kept) {
+    keptOut[u]?.push(v);
+    indeg[v] = (indeg[v] as number) + 1;
+  }
+  const rank = new Array<number>(n).fill(0);
+  const queue: number[] = [];
+  for (let i = 0; i < n; i++) if (indeg[i] === 0) queue.push(i);
+  for (let qi = 0; qi < queue.length; qi++) {
+    const u = queue[qi] as number;
+    for (const v of keptOut[u] as number[]) {
+      rank[v] = Math.max(rank[v] as number, (rank[u] as number) + 1);
+      indeg[v] = (indeg[v] as number) - 1;
+      if (indeg[v] === 0) queue.push(v);
+    }
+  }
+
+  const maxRank = Math.max(...rank);
+  const layers: number[][] = Array.from({ length: maxRank + 1 }, () => []);
+  for (let i = 0; i < n; i++) layers[rank[i] as number]?.push(i);
+
+  // Barycenter ordering: neighbors (both directions) pull a node toward
+  // their average slot in the adjacent fixed layer.
+  const neighbors: number[][] = Array.from({ length: n }, () => []);
+  for (const [u, v] of kept) {
+    neighbors[u]?.push(v);
+    neighbors[v]?.push(u);
+  }
+  const slot = new Array<number>(n).fill(0);
+  const reSlot = (): void => {
+    for (const layer of layers) {
+      layer.forEach((node, s) => {
+        slot[node] = s;
+      });
+    }
+  };
+  reSlot();
+  for (let sweep = 0; sweep < 3; sweep++) {
+    const forward = sweep % 2 === 0;
+    for (let li = forward ? 1 : maxRank - 1; forward ? li <= maxRank : li >= 0; li += forward ? 1 : -1) {
+      const layer = layers[li] as number[];
+      const bary = (node: number): number => {
+        const ns = (neighbors[node] as number[]).filter((m) => Math.abs((rank[m] as number) - li) === 1);
+        if (ns.length === 0) return slot[node] as number;
+        return ns.reduce((sum, m) => sum + (slot[m] as number), 0) / ns.length;
+      };
+      layer.sort((a, b) => bary(a) - bary(b) || a - b);
+      reSlot();
+    }
+  }
+
+  // Coordinates: column x from per-layer max width; stacks centered on the
+  // tallest column.
+  const colX = new Array<number>(maxRank + 1).fill(0);
+  let x = 0;
+  for (let li = 0; li <= maxRank; li++) {
+    colX[li] = x;
+    let widest = 0;
+    for (const node of layers[li] as number[]) widest = Math.max(widest, (nodes[node] as LayoutSize).w);
+    x += widest + opts.gapX;
+  }
+  const colH = (layers as number[][]).map((layer) =>
+    layer.reduce((sum, node, i) => sum + (nodes[node] as LayoutSize).h + (i > 0 ? opts.gapY : 0), 0),
+  );
+  const tallest = Math.max(...colH);
+
+  const out = new Array<{ x: number; y: number }>(n);
+  for (let li = 0; li <= maxRank; li++) {
+    let y = (tallest - (colH[li] as number)) / 2;
+    for (const node of layers[li] as number[]) {
+      out[node] = { x: colX[li] as number, y };
+      y += (nodes[node] as LayoutSize).h + opts.gapY;
+    }
   }
   return out;
 }

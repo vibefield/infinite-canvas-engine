@@ -14,6 +14,9 @@ import {
   Position,
   TransformTween,
   Viewport,
+  Wire,
+  WireFrom,
+  WireTo,
   createCanvasEngine,
   defineWidget,
   widgets,
@@ -129,6 +132,69 @@ describe("ops.arrange", () => {
     expect(movers.every((e) => e === b || e === c)).toBe(true);
     expect(ce.world.get(d, Position)).toEqual(dBefore);
     expect(ce.world.get(a, Position)).toEqual({ x: 0, y: 0 });
+    ce.dispose();
+  });
+
+  it("selection Clean Up flows AROUND bystanders (2026-07-17 field bug)", () => {
+    const ce = createCanvasEngine({ widgets: [BOX] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1600, h: 900, dpr: 1 });
+    // Bystanders bracket the selection's bbox top-left: the old packer put
+    // the packed pair right on top of them.
+    const a = ce.ops.spawnWidget("arr:box", { x: 0, y: 0, w: 100, h: 100, undoable: false });
+    const k = ce.ops.spawnWidget("arr:box", { x: 140, y: 0, w: 100, h: 100, undoable: false });
+    const b = ce.ops.spawnWidget("arr:box", { x: 30, y: 60, w: 100, h: 100, undoable: false });
+    const c = ce.ops.spawnWidget("arr:box", { x: 30, y: 60, w: 100, h: 100, undoable: false });
+    ce.world.sync();
+    let now = 0;
+    for (let i = 0; i < 5; i++) {
+      now += 16;
+      ce.step(now);
+    }
+
+    ce.ops.setSelection([b, c]);
+    const movers = ce.ops.arrange({ durationMs: 0, gutter: GUTTER });
+    expect(movers.length).toBeGreaterThan(0);
+    expect(ce.world.get(a, Position)).toEqual({ x: 0, y: 0 });
+    expect(ce.world.get(k, Position)).toEqual({ x: 140, y: 0 });
+    const rects = [a, k, b, c].map((e) => rectOf(ce, e));
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        expect(crowds(rects[i] as never, rects[j] as never)).toBe(false);
+      }
+    }
+    ce.dispose();
+  });
+
+  it("wired widgets arrange as layered columns along wire direction", () => {
+    const ce = createCanvasEngine({ widgets: [BOX] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1600, h: 900, dpr: 1 });
+    // Spatially REVERSED vs wire order: layout must follow the wires.
+    const n0 = ce.ops.spawnWidget("arr:box", { x: 800, y: 600, w: 100, h: 100, undoable: false });
+    const n1 = ce.ops.spawnWidget("arr:box", { x: 400, y: 300, w: 100, h: 100, undoable: false });
+    const n2 = ce.ops.spawnWidget("arr:box", { x: 0, y: 0, w: 100, h: 100, undoable: false });
+    const w1 = ce.world.spawn({ tags: [Wire] });
+    ce.world.setRelation(w1, WireFrom, n0);
+    ce.world.setRelation(w1, WireTo, n1);
+    const w2 = ce.world.spawn({ tags: [Wire] });
+    ce.world.setRelation(w2, WireFrom, n1);
+    ce.world.setRelation(w2, WireTo, n2);
+    ce.world.sync();
+    let now = 0;
+    for (let i = 0; i < 5; i++) {
+      now += 16;
+      ce.step(now);
+    }
+
+    ce.ops.arrange({ durationMs: 0, gutter: GUTTER });
+    const p0 = ce.world.get(n0, Position) as { x: number; y: number };
+    const p1 = ce.world.get(n1, Position) as { x: number; y: number };
+    const p2 = ce.world.get(n2, Position) as { x: number; y: number };
+    expect(p0.x).toBeLessThan(p1.x); // source column leads
+    expect(p1.x).toBeLessThan(p2.x);
+    expect(p0.y).toBe(p1.y); // equal-height single-node columns align
+    expect(p1.y).toBe(p2.y);
     ce.dispose();
   });
 
