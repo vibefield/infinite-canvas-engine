@@ -2,11 +2,13 @@
  * CardContainer — the v1 folder (RFC-004 Phase 5) on v3 container semantics,
  * re-skinned 2026-07-17 to the design-006 mock's folder (James: "make the
  * container widget look like that"): a dark surface card whose body is a
- * live PREVIEW PORTAL — dot-grid backdrop + mini rectangles of the actual
- * children, mapped through the SAME affine the portal-zoom transition uses
- * (fit of the child frame's arrival view onto the portal rect), so entering
- * reads as diving into the picture you were already looking at — and a 36px
- * bottom bar: accent folder icon, name, count pill.
+ * live PREVIEW PORTAL — dot-grid backdrop + minis of the actual children,
+ * mapped through the SAME affine the portal-zoom transition uses (fit of the
+ * child frame's arrival view onto the portal rect), so entering reads as
+ * diving into the picture you were already looking at — and a 36px bottom
+ * bar: accent folder icon, name, count pill. Minis are true card silhouettes
+ * (2026-07-17, James): CARD_RADIUS scaled by the same affine, and each mini
+ * wears its card's REAL background via preview.ts (single source of truth).
  *
  * `container.accepts: ["widget"]` arms drop-to-consume + nested canvas, and
  * the folder now ALSO carries `provides: ["widget"]` (2026-07-17): folders
@@ -21,7 +23,6 @@
 import {
   CameraLimits,
   ChildOf,
-  Container,
   MeasuredSize,
   Position,
   PrefabId,
@@ -35,7 +36,8 @@ import {
 } from "@ice/core";
 import { useOps, useWidgetProps } from "@ice/react";
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
-import { CardShell } from "./CardShell";
+import { CARD_RADIUS, CardShell } from "./CardShell";
+import { FOLDER_BG, previewBackground } from "./preview";
 
 export const CARD_CONTAINER_SIZE = { w: 329, h: 345 };
 
@@ -50,13 +52,7 @@ const PORTAL = {
   h: CARD_CONTAINER_SIZE.h - FOLDER_PAD - FOLDER_BAR,
 };
 
-type Mini = { x: number; y: number; w: number; h: number; kind: "folder" | "gl" | "dom" };
-
-const MINI_COLOR: Record<Mini["kind"], string> = {
-  folder: "#7B96FF",
-  gl: "#5B739B",
-  dom: "#D9D5C9",
-};
+type Mini = { x: number; y: number; w: number; h: number; bg: string };
 
 function childrenSnapshot(world: World, entity: Entity): Mini[] {
   const out: Mini[] = [];
@@ -67,12 +63,8 @@ function childrenSnapshot(world: World, entity: Entity): Mini[] {
     if (pos === undefined || s === undefined) continue;
     const type = world.get(c, PrefabId)?.id;
     const def = typeof type === "string" ? widgets.get(type) : undefined;
-    const kind: Mini["kind"] = def?.capabilityTags.includes(Container)
-      ? "folder"
-      : def?.surface === "gl"
-        ? "gl"
-        : "dom";
-    out.push({ x: pos.x, y: pos.y, w: s.w, h: s.h, kind });
+    const bg = previewBackground(typeof type === "string" ? type : undefined, def?.surface);
+    out.push({ x: pos.x, y: pos.y, w: s.w, h: s.h, bg });
   }
   return out;
 }
@@ -92,7 +84,10 @@ function fitAffine(
  * rect fit onto the portal — pixel-continuous with the enter flight. Falls
  * back to a plain bbox fit when no Viewport exists (headless/tests).
  */
-function miniRects(minis: Mini[], world: World): Array<Mini & { left: number; top: number; width: number; height: number }> {
+function miniRects(
+  minis: Mini[],
+  world: World,
+): Array<Mini & { left: number; top: number; width: number; height: number; radius: number }> {
   if (minis.length === 0) return [];
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
@@ -118,12 +113,15 @@ function miniRects(minis: Mini[], world: World): Array<Mini & { left: number; to
     R = { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 };
   }
   const M = fitAffine(R, PORTAL);
+  // Same silhouette as the card: the 22px corner scaled by the SAME affine.
+  const radius = CARD_RADIUS * M.s;
   return minis.map((c) => ({
     ...c,
     left: M.ox + c.x * M.s - PORTAL.x,
     top: M.oy + c.y * M.s - PORTAL.y,
     width: c.w * M.s,
     height: c.h * M.s,
+    radius,
   }));
 }
 
@@ -165,7 +163,7 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
   // would be treated as a widget-internal control and make the whole surface
   // non-draggable; role + tabIndex + onKeyDown keep keyboard a11y.
   return (
-    <CardShell world={world} entity={entity} background="#1D1D2B">
+    <CardShell world={world} entity={entity} background={FOLDER_BG}>
       {/* biome-ignore lint/a11y/useSemanticElements: drag-surface; see comment above */}
       <div
         role="button"
@@ -207,9 +205,10 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
                 top: c.top,
                 width: c.width,
                 height: c.height,
-                borderRadius: 2,
-                background: MINI_COLOR[c.kind],
-                opacity: 0.9,
+                borderRadius: c.radius,
+                background: c.bg,
+                // Faint hairline + lift so dark gradients read on the dark grid.
+                boxShadow: "inset 0 0 0 1px rgba(235, 240, 255, 0.10), 0 2px 6px rgba(0, 0, 0, 0.40)",
               }}
             />
           ))}

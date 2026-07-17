@@ -97,6 +97,9 @@ function ConditionGlyph({ condition }: { condition: WeatherCondition }): ReactEl
   }
 }
 
+/** The card's sky gradient — exported for the folder preview minis (preview.ts). */
+export const WEATHER_GRADIENT = "linear-gradient(135deg, #3A86FF 0%, #1D4ED8 55%, #0B2AB5 100%)";
+
 function WeatherView({ entity, world }: WidgetComponentProps): ReactElement {
   const props = useWidgetProps<WeatherProps>(world, entity, "weather-card");
   const location = props?.location ?? "San Francisco";
@@ -111,7 +114,7 @@ function WeatherView({ entity, world }: WidgetComponentProps): ReactElement {
       className="flex h-full w-full items-stretch text-white"
       style={{
         fontFamily: "-apple-system, system-ui, sans-serif",
-        background: "linear-gradient(135deg, #3A86FF 0%, #1D4ED8 55%, #0B2AB5 100%)",
+        background: WEATHER_GRADIENT,
       }}
     >
       <div className="flex flex-1 flex-col justify-between p-4">

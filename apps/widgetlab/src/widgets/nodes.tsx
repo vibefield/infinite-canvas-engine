@@ -65,6 +65,13 @@ function NodeBody({
   );
 }
 
+/** Node shell tints by widget type — exported for the folder preview minis. */
+export const NODE_BG = {
+  "signal-node": "#1C2540",
+  "filter-node": "#1F3327",
+  "scope-node": "#33231C",
+} as const;
+
 // --- signal-node: a source. One "out" port (east). --------------------------
 
 type SignalProps = { readonly hz: number };
@@ -72,7 +79,7 @@ type SignalProps = { readonly hz: number };
 function SignalNodeView({ entity, world }: WidgetComponentProps): ReactElement {
   const props = useWidgetProps<SignalProps>(world, entity, "signal-node");
   return (
-    <CardShell world={world} entity={entity} background="#1C2540">
+    <CardShell world={world} entity={entity} background={NODE_BG["signal-node"]}>
       <NodeBody title="Signal" subtitle={`${props?.hz ?? 440} Hz`} accent="#5E9EFF">
         <PortLabel side="e" label="out" />
       </NodeBody>
@@ -100,7 +107,7 @@ type FilterProps = { readonly mode: "lowpass" | "highpass" | "bandpass" };
 function FilterNodeView({ entity, world }: WidgetComponentProps): ReactElement {
   const props = useWidgetProps<FilterProps>(world, entity, "filter-node");
   return (
-    <CardShell world={world} entity={entity} background="#1F3327">
+    <CardShell world={world} entity={entity} background={NODE_BG["filter-node"]}>
       <NodeBody title="Filter" subtitle={props?.mode ?? "lowpass"} accent="#4ADE80">
         <PortLabel side="w" label="in" />
         <PortLabel side="e" label="out" />
@@ -129,7 +136,7 @@ export const FilterNode = defineWidget({
 
 function ScopeNodeView({ entity, world }: WidgetComponentProps): ReactElement {
   return (
-    <CardShell world={world} entity={entity} background="#33231C">
+    <CardShell world={world} entity={entity} background={NODE_BG["scope-node"]}>
       <NodeBody title="Scope" subtitle="A / B" accent="#FFB86C">
         <PortLabel side="w" label="a · b" />
       </NodeBody>

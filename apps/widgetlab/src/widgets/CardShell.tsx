@@ -34,7 +34,11 @@ import {
 } from "@ice/core";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
-const RADIUS = 22;
+/** Card corner radius — exported so folder minis can scale the same silhouette. */
+export const CARD_RADIUS = 22;
+
+/** The default card surface when a view passes no gradient of its own. */
+export const CARD_BG = "#1C1C1E";
 
 /**
  * Selection ring (2026-07-17, James: chrome must track the card's VISUAL size
@@ -90,7 +94,7 @@ function hotPoint(world: World, entity: Entity): { x: number; y: number } {
 export function CardShell({
   world,
   entity,
-  background = "#1C1C1E",
+  background = CARD_BG,
   children,
 }: {
   world: World;
@@ -156,7 +160,7 @@ export function CardShell({
     position: "relative",
     width: "100%",
     height: "100%",
-    borderRadius: `${RADIUS}px`,
+    borderRadius: `${CARD_RADIUS}px`,
     overflow: "hidden",
     background,
     boxShadow: baseShadow,

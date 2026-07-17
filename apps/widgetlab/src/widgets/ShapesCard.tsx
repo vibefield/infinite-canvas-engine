@@ -44,7 +44,7 @@ import { makeGlCardChrome, type GradientStop } from "./GlCardChrome";
 export const SIZE = { w: 329, h: 345 } as const;
 
 /** v1 card background: `linear-gradient(135deg, #1F2333 0%, #14161F 60%, #0A0B12 100%)`. */
-const BACKPLATE: readonly GradientStop[] = [
+export const BACKPLATE: readonly GradientStop[] = [
   { offset: 0, color: "#1F2333" },
   { offset: 0.6, color: "#14161F" },
   { offset: 1, color: "#0A0B12" },
