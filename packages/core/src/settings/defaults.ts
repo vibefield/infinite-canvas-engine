@@ -70,6 +70,22 @@ export const CAMERA_DEFAULTS = {
 } as const;
 
 /**
+ * The natural auto-framing band (2026-07-18, James: "not super zoomed in
+ * nor super zoomed out, should feel natural"): every DEFAULT framing —
+ * `ops.frameContent` at boot, the folder arrival camera, and the folder
+ * minis' portal affine (widgetlab keeps its preview in lockstep) — fits
+ * content via kernel `fitCamera` but never lands outside
+ * [fitMinZoom, fitMaxZoom], intersected with the session's hard
+ * CameraLimits. `ops.zoomToFit` stays UNCAPPED: an explicit "show me
+ * everything" beats natural.
+ */
+export const FIT_DEFAULTS = {
+  pad: 80,
+  minZoom: 0.5,
+  maxZoom: 1,
+} as const;
+
+/**
  * Nav-transition motion constants (design-006 §4/§5, tuned in the approved
  * 2026-07-15 mock). `responseMs` is the critically-damped spring response for
  * ENTER; exit runs at `exitResponseFactor ×` (returning is lighter). Response

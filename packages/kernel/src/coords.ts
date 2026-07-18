@@ -54,6 +54,31 @@ export function zoomAtPoint(
 }
 
 /**
+ * The DEFAULT framing camera (2026-07-18, James: "do zoom to fit, but with a
+ * upper and bottom cap … should feel natural"): zoom-to-fit `content` (a
+ * world-space bbox) with `pad` px of breathing room on every side, zoom
+ * clamped into [minZoom, maxZoom] — the natural band: never so far in that
+ * one small card fills the screen, never so far out that the board turns
+ * into an ant farm. The content CENTER stays centered whether or not a cap
+ * engages. Callers own the band policy (engine default: FIT_DEFAULTS ∩ the
+ * session's hard CameraLimits) and must pass a real viewport.
+ */
+export function fitCamera(
+  content: Rect,
+  vpW: number,
+  vpH: number,
+  opts: { pad: number; minZoom: number; maxZoom: number },
+): CameraState {
+  const fit = Math.min(vpW / (content.width + opts.pad * 2), vpH / (content.height + opts.pad * 2));
+  const zoom = Math.min(opts.maxZoom, Math.max(opts.minZoom, fit));
+  return {
+    x: content.x + content.width / 2 - vpW / (2 * zoom),
+    y: content.y + content.height / 2 - vpH / (2 * zoom),
+    zoom,
+  };
+}
+
+/**
  * Camera → the ONE per-plane CSS transform (design-002 §5 `planeTransform`).
  * Children are laid out in WORLD units inside the plane (left/top = world x/y),
  * the plane carries `transform: translate(tx px, ty px) scale(scale)` with

@@ -20,13 +20,14 @@
  */
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { createWorld, defineQuery } from "@vibecook/strata-ecs";
-import { zoomAtPoint } from "@ice/kernel";
+import { fitCamera, zoomAtPoint } from "@ice/kernel";
 import {
   ActiveTool,
   Camera,
   CameraLimits,
   ChromeSettings,
   GestureSettings,
+  MeasuredSize,
   PointerSettings,
   Position,
   Selectable,
@@ -59,7 +60,15 @@ import { startAutosave, type Autosave, type AutosaveOpts, type AutosaveStorageWr
 import { attachPresence, type PresenceSession } from "../presence/presence-kit";
 import { installPresence } from "../presence/remote-cursors";
 import type { MeasureQueue } from "../input/measure-queue";
-import { CAMERA_DEFAULTS, CHROME_DEFAULTS, GESTURE_DEFAULTS, POINTER_DEFAULTS, RUNTIME_BUDGETS, SNAP_DEFAULTS } from "../settings/defaults";
+import {
+  CAMERA_DEFAULTS,
+  CHROME_DEFAULTS,
+  FIT_DEFAULTS,
+  GESTURE_DEFAULTS,
+  POINTER_DEFAULTS,
+  RUNTIME_BUDGETS,
+  SNAP_DEFAULTS,
+} from "../settings/defaults";
 
 export interface CanvasEngineOpts {
   /** Registered widget types (definition happens at defineWidget; this list is validated). */
@@ -107,6 +116,15 @@ export interface CanvasOps {
    */
   arrange(opts?: ArrangeOpts): Entity[];
   zoomToFit(ids?: readonly Entity[]): void;
+  /**
+   * The natural DEFAULT framing (2026-07-18): zoom-to-fit the current
+   * frame's widgets inside the FIT_DEFAULTS band (never past 100%, never
+   * below 50%, ∩ settings.zoom) — same band as the folder arrival camera.
+   * Returns false (camera untouched) until a real viewport AND content
+   * exist, so boot code can retry. zoomToFit stays the uncapped explicit
+   * "show me everything".
+   */
+  frameContent(): boolean;
   zoomTo(zoom: number, anchor?: { x: number; y: number }): void;
   panTo(x: number, y: number): void;
   enterContainer(container: Entity, opts?: NavOpts): void;
@@ -474,6 +492,37 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         zoom,
         gesturing: false,
       });
+    },
+    frameContent() {
+      const targets = widgetQuery();
+      const vp = world.getResource(Viewport);
+      if (targets.length === 0 || vp === undefined || vp.w === 0) return false;
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let any = false;
+      for (const e of targets) {
+        const p = world.get(e, Position);
+        const m = world.get(e, MeasuredSize);
+        const s = m !== undefined && m.w > 0 ? m : world.get(e, Size);
+        if (p === undefined || s === undefined) continue;
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + s.w);
+        maxY = Math.max(maxY, p.y + s.h);
+        any = true;
+      }
+      if (!any) return false;
+      const lim = world.getResource(CameraLimits) ?? CAMERA_DEFAULTS;
+      const cam = fitCamera({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, vp.w, vp.h, {
+        pad: FIT_DEFAULTS.pad,
+        // Band ∩ hard limits; on no overlap the hard limit wins (arrival rule).
+        minZoom: Math.min(Math.max(FIT_DEFAULTS.minZoom, lim.minZoom), lim.maxZoom),
+        maxZoom: Math.max(Math.min(FIT_DEFAULTS.maxZoom, lim.maxZoom), lim.minZoom),
+      });
+      writeRuntimeResource(world, Camera, { ...cam, gesturing: false });
+      return true;
     },
     zoomTo(zoom, anchor) {
       const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };

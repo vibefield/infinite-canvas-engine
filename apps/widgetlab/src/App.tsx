@@ -309,6 +309,19 @@ export function App() {
   useEffect(() => {
     if (import.meta.env.DEV) installDebugProbe(ce);
   }, [ce]);
+  // Natural boot framing (2026-07-18, James: "do zoom to fit, but with a
+  // upper and bottom cap"): frame the seeded board once the viewport has
+  // been measured and membership has stamped the first tick — frameContent
+  // returns false until both exist, so poll briefly and stop on success.
+  useEffect(() => {
+    if (ce.ops.frameContent()) return;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      if (ce.ops.frameContent() || tries > 40) clearInterval(id);
+    }, 50);
+    return () => clearInterval(id);
+  }, [ce]);
   const [showSettings, setShowSettings] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
   const [showEcs, setShowEcs] = useState(false);

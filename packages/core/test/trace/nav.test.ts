@@ -282,20 +282,21 @@ describe("trace: camera memory + nav integrity (design-004 §7)", () => {
     expect(rig.world.getResource(Camera)).toMatchObject({ x: 9, y: 9, zoom: 1 });
   });
 
-  it("enter clamps the ARRIVAL zoom into the CameraLimits band (empty reset + tight fit)", () => {
+  it("enter clamps the ARRIVAL zoom into the natural band ∩ CameraLimits", () => {
     const rig = makeRig();
     rig.world.setResource(CameraLimits, { minZoom: 3, maxZoom: 5 });
     const folder = rig.spawnBox(100, 100, { container: true }); // empty: no content
     rig.step(2);
 
-    // Empty container would reset to zoom 1 — clamp up to minZoom, not 1.
+    // Empty container would reset to zoom 1 — the natural band tops out at 1,
+    // but a HARD minZoom above it wins (band ∩ limits collapses to [3,3]).
     rig.nav.enterContainer(folder, { transition: "none" });
     rig.step();
     expect(rig.world.getResource(Camera)?.zoom).toBe(3);
 
-    // A lone 100×80 child fits at zoom 2.5 (600/240) — a maxZoom 2 band
-    // clamps the arrival DOWN. (Fit can never exceed 600/160 = 3.75 at this
-    // viewport — the 80px pad is the ceiling — so the band moves, not the box.)
+    // A lone 100×80 child fits at zoom 2.5 (600/240) — the NATURAL cap
+    // (2026-07-18, James: "not super zoomed in") lands the arrival at 100%,
+    // well before the hard maxZoom 2 would have.
     rig.nav.exitContainer({ transition: "none" });
     rig.step();
     rig.world.setResource(CameraLimits, { minZoom: 0.1, maxZoom: 2 });
@@ -303,6 +304,6 @@ describe("trace: camera memory + nav integrity (design-004 §7)", () => {
     rig.step();
     rig.nav.enterContainer(folder, { transition: "none" });
     rig.step();
-    expect(rig.world.getResource(Camera)?.zoom).toBe(2);
+    expect(rig.world.getResource(Camera)?.zoom).toBe(1);
   });
 });

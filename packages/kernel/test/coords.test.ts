@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compositeCameraFrustum,
+  fitCamera,
   islandToWorld,
   planeCssTransform,
   screenToWorld,
@@ -176,5 +177,31 @@ describe("coords: P2 composite scene", () => {
     expect(f.bottom).toBe(-300);
     expect(f.x).toBe(10);
     expect(f.y).toBe(-20);
+  });
+});
+
+describe("fitCamera — the natural default framing", () => {
+  const BAND = { pad: 80, minZoom: 0.5, maxZoom: 1 };
+
+  it("small content caps at maxZoom, centered — one card never fills the screen", () => {
+    const cam = fitCamera({ x: 500, y: 500, width: 100, height: 100 }, 1600, 900, BAND);
+    expect(cam.zoom).toBe(1); // uncapped fit would be ~3.46
+    expect(cam.x).toBe(550 - 800); // content center (550,550) at viewport center
+    expect(cam.y).toBe(550 - 450);
+  });
+
+  it("huge content floors at minZoom, centered — never an ant farm", () => {
+    const cam = fitCamera({ x: 0, y: 0, width: 10000, height: 5000 }, 1600, 900, BAND);
+    expect(cam.zoom).toBe(0.5); // uncapped fit would be ~0.157
+    expect(cam.x).toBe(5000 - 1600); // center (5000,2500) at viewport center
+    expect(cam.y).toBe(2500 - 900);
+  });
+
+  it("in-band content gets the exact padded fit", () => {
+    const cam = fitCamera({ x: 0, y: 0, width: 3000, height: 1000 }, 1600, 900, BAND);
+    const fit = Math.min(1600 / 3160, 900 / 1160);
+    expect(cam.zoom).toBeCloseTo(fit, 10);
+    expect(cam.x).toBeCloseTo(1500 - 800 / fit, 8);
+    expect(cam.y).toBeCloseTo(500 - 450 / fit, 8);
   });
 });

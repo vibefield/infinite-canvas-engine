@@ -58,6 +58,7 @@ import { defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
 import type { CameraState, PortalAffine, SpatialIndex } from "@ice/kernel";
 import {
   composeAffine,
+  fitCamera,
   invertAffine,
   portalAffine,
   solveFlightStart,
@@ -68,6 +69,7 @@ import {
   CameraLimits,
   Container,
   Culled,
+  MeasuredSize,
   NavCamera,
   NavDepth,
   NavFrame,
@@ -82,7 +84,7 @@ import { PrefabId } from "../schema/prefab";
 import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { ChildOf } from "../catalog/scene";
-import { CAMERA_DEFAULTS } from "../settings/defaults";
+import { CAMERA_DEFAULTS, FIT_DEFAULTS } from "../settings/defaults";
 import { WidgetEquipped, widgets } from "../widget/define-widget";
 
 const navEntryQ = defineQuery([NavDepth, NavCamera]);
@@ -351,14 +353,21 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
   };
 
   /**
-   * The DEFAULT framing for a frame: zoom-to-fit its direct content (pad 80),
-   * identity when empty/headless; zoom clamped into the configured band
-   * (facade settings.zoom) — the ARRIVAL honors limits even though flight
-   * paths transit outside them. No `ContainerCamera` rider (design-006).
+   * The DEFAULT framing for a frame: kernel `fitCamera` over its direct
+   * content — zoom-to-fit (FIT_DEFAULTS.pad) capped into the NATURAL band
+   * (FIT_DEFAULTS ∩ the session's CameraLimits: never past 100%, never
+   * below 50% — 2026-07-18, James: "should feel natural"); identity when
+   * empty/headless. Sizes are measured-when-real (the folder minis' rule —
+   * arrival and portal preview must agree). The flight PATH may transit
+   * outside the band; only the arrival honors it. No `ContainerCamera`
+   * rider (design-006).
    */
   const resolveArrivalCamera = (frame: Entity): CameraState => {
     const lim = world.getResource(CameraLimits) ?? CAMERA_DEFAULTS;
-    const clampZoom = (z: number): number => Math.min(lim.maxZoom, Math.max(lim.minZoom, z));
+    // Band ∩ hard limits — when they don't overlap (e.g. minZoom 3), the
+    // HARD limit wins: clamp each band edge into [lim.min, lim.max].
+    const minZoom = Math.min(Math.max(FIT_DEFAULTS.minZoom, lim.minZoom), lim.maxZoom);
+    const maxZoom = Math.max(Math.min(FIT_DEFAULTS.maxZoom, lim.maxZoom), lim.minZoom);
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
@@ -366,7 +375,8 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
     let any = false;
     for (const child of world.getReverse(frame, ChildOf)) {
       const p = world.get(child, Position);
-      const s = world.get(child, Size);
+      const m = world.get(child, MeasuredSize);
+      const s = m !== undefined && m.w > 0 ? m : world.get(child, Size);
       if (p === undefined || s === undefined) continue;
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
@@ -375,14 +385,15 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
       any = true;
     }
     const vp = world.getResource(Viewport);
-    if (!any || vp === undefined || vp.w === 0) return { x: 0, y: 0, zoom: clampZoom(1) };
-    const pad = 80;
-    const zoom = clampZoom(Math.min(vp.w / (maxX - minX + pad * 2), vp.h / (maxY - minY + pad * 2)));
-    return {
-      x: minX - (vp.w / zoom - (maxX - minX)) / 2,
-      y: minY - (vp.h / zoom - (maxY - minY)) / 2,
-      zoom,
-    };
+    if (!any || vp === undefined || vp.w === 0) {
+      return { x: 0, y: 0, zoom: Math.min(maxZoom, Math.max(minZoom, 1)) };
+    }
+    return fitCamera(
+      { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+      vp.w,
+      vp.h,
+      { pad: FIT_DEFAULTS.pad, minZoom, maxZoom },
+    );
   };
 
   const snapCamera = (c: CameraState): void => {

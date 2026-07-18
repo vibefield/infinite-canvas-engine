@@ -23,6 +23,7 @@
 import {
   CameraLimits,
   ChildOf,
+  FIT_DEFAULTS,
   MeasuredSize,
   Position,
   PrefabId,
@@ -99,16 +100,21 @@ function miniRects(
     maxX = Math.max(maxX, c.x + c.w);
     maxY = Math.max(maxY, c.y + c.h);
   }
-  const pad = 80;
+  const pad = FIT_DEFAULTS.pad;
   const vp = world.getResource(Viewport);
   let R: { x: number; y: number; w: number; h: number };
   if (vp !== undefined && vp.w > 0 && vp.h > 0) {
+    // The arrival camera's NATURAL band (2026-07-18): FIT_DEFAULTS ∩
+    // CameraLimits — must match resolveArrivalCamera exactly or the enter
+    // flight lands on a different view than the portal promised.
     const lim = world.getResource(CameraLimits);
+    const fitMin = Math.max(FIT_DEFAULTS.minZoom, lim?.minZoom ?? FIT_DEFAULTS.minZoom);
+    const fitMax = Math.min(FIT_DEFAULTS.maxZoom, lim?.maxZoom ?? FIT_DEFAULTS.maxZoom);
     const bw = maxX - minX;
     const bh = maxY - minY;
     let zoom = Math.min(vp.w / (bw + pad * 2), vp.h / (bh + pad * 2));
-    if (lim !== undefined) zoom = Math.min(lim.maxZoom, Math.max(lim.minZoom, zoom));
-    R = { x: minX - (vp.w / zoom - bw) / 2, y: minY - (vp.h / zoom - bh) / 2, w: vp.w / zoom, h: vp.h / zoom };
+    zoom = Math.min(fitMax, Math.max(fitMin, zoom));
+    R = { x: minX + bw / 2 - vp.w / (2 * zoom), y: minY + bh / 2 - vp.h / (2 * zoom), w: vp.w / zoom, h: vp.h / zoom };
   } else {
     R = { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 };
   }
