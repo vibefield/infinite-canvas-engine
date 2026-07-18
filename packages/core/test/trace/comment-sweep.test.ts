@@ -22,6 +22,7 @@ import {
   Size,
   StackZ,
   SweepsContained,
+  TransformTween,
   Viewport,
   createCanvasEngine,
   createEngine,
@@ -69,6 +70,65 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
     expect(moved.has(comment)).toBe(true);
     expect(moved.has(member)).toBe(true);
     expect(moved.has(outsider)).toBe(false);
+  });
+
+  it("a comment group FILES into an accepting container (2026-07-18: 'i do want that')", () => {
+    const rig = createFullRig();
+    const comment = rig.spawnBox({ x: 0, y: 0, w: 300, h: 250, z: 0.5, sweeps: true, provides: ["widget"] });
+    const member = rig.spawnBox({ x: 50, y: 50, w: 80, h: 60, z: 1, provides: ["widget"] });
+    const folder = rig.spawnBox({
+      x: 600,
+      y: 300,
+      w: 200,
+      h: 200,
+      container: true,
+      accepts: ["widget"],
+      selectable: false,
+      movable: false,
+    });
+    rig.down("mouse", 250, 220); // comment body, clear of the member
+    rig.step();
+    rig.move("mouse", 265, 220);
+    rig.step();
+    rig.move("mouse", 765, 420); // total (500,200): the group overlaps the folder
+    rig.step();
+    rig.up("mouse", 765, 420);
+    rig.step();
+    expect(rig.sink.intents).toHaveLength(1);
+    const intent = rig.sink.intents[0];
+    expect(intent?.kind).toBe("consume");
+    const reparented = new Set((intent?.reparents ?? []).map((r) => r.entity));
+    expect(reparented.has(comment)).toBe(true);
+    expect(reparented.has(member)).toBe(true);
+    expect(reparented.has(folder)).toBe(false);
+  });
+
+  it("a comment group over a NON-matching container is a plain move, never a fly-back", () => {
+    const rig = createFullRig();
+    const comment = rig.spawnBox({ x: 0, y: 0, w: 300, h: 250, z: 0.5, sweeps: true, provides: ["widget"] });
+    rig.spawnBox({ x: 50, y: 50, w: 80, h: 60, z: 1, provides: ["widget"] });
+    rig.spawnBox({
+      x: 600,
+      y: 300,
+      w: 200,
+      h: 200,
+      container: true,
+      accepts: ["other"], // no match — the old rule would DropTarget + fly back
+      selectable: false,
+      movable: false,
+    });
+    rig.down("mouse", 250, 220);
+    rig.step();
+    rig.move("mouse", 265, 220);
+    rig.step();
+    rig.move("mouse", 765, 420);
+    rig.step();
+    rig.up("mouse", 765, 420);
+    rig.step();
+    expect(rig.sink.intents).toHaveLength(1);
+    expect(rig.sink.intents[0]?.kind).toBe("move");
+    expect(rig.world.has(comment, TransformTween)).toBe(false); // no fly-back
+    expect(rig.world.read(comment, Position)).toEqual({ x: 500, y: 200 });
   });
 
   it("a comment group is landscape, not cargo: release over a Solid card is a PLAIN move", () => {

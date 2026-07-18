@@ -47,6 +47,7 @@ import {
   Position,
   PrefabId,
   Size,
+  StackZ,
   defineQuery,
   widgets,
   type Entity,
@@ -91,6 +92,7 @@ const geometryQuery = defineQuery([Position, Size]);
 const measuredQuery = defineQuery([MeasuredSize]);
 const grabQuery = defineQuery([Grab]);
 const opacityQuery = defineQuery([Opacity]);
+const stackZQuery = defineQuery([StackZ]);
 
 function writeGeom(el: HTMLDivElement, x: number, y: number, w: number, h: number): void {
   el.style.left = `${x}px`;
@@ -127,6 +129,7 @@ export function createDomWidgetsReflector(
   let geometryDirty = false;
   let promoteDirty = false;
   let opacityDirty = false;
+  let orderDirty = false;
   const unsubs: Array<() => void> = [
     world.reactive.observeQuery(geometryQuery, () => { geometryDirty = true; }, { cols: [Position, Size] }),
     // MeasuredSize rides its own observer: adding it to geometryQuery's cols
@@ -137,6 +140,10 @@ export function createDomWidgetsReflector(
     // and value changes both arm the flag; detach resets the host to the
     // default via the `?? 1` read.
     world.reactive.observeQuery(opacityQuery, () => { opacityDirty = true; }, { cols: [Opacity] }),
+    // Within-plane stacking IS StackZ (design-004 §1 "StackZ orders normally"
+    // — unimplemented until 2026-07-18, James: the comment box painted over
+    // its members; DOM paint order was silently mount order).
+    world.reactive.observeQuery(stackZQuery, () => { orderDirty = true; }, { cols: [StackZ] }),
   ];
 
   /**
@@ -223,6 +230,43 @@ export function createDomWidgetsReflector(
     }
   }
 
+  /**
+   * Within-plane stacking = StackZ (design-004 §1). DOM paint order is the
+   * plane's child order, so each plane's hosts are kept DOM-sorted by
+   * (StackZ asc, entity asc) — a low-z comment box paints UNDER the members
+   * it wraps even though its host mounted last. Reorder is change-only (a
+   * DOM sequence already in z order touches nothing) and skips a plane while
+   * it contains the focused element (re-appending would blur a mid-rename
+   * input; the next dirt re-asserts the order).
+   */
+  function updateOrder(): void {
+    for (const plane of [host.contentPlane, host.liftedPlane]) {
+      const active = doc.activeElement;
+      if (active !== null && active !== doc.body && plane.contains(active)) continue;
+      const mine: Array<{ el: HTMLDivElement; z: number; e: Entity }> = [];
+      for (const [e, rec] of hosts) {
+        if (rec.host.parentNode !== plane) continue;
+        mine.push({ el: rec.host, z: world.get(e, StackZ)?.z ?? 0, e });
+      }
+      if (mine.length < 2) continue;
+      const target = [...mine].sort((a, b) => a.z - b.z || Number(a.e) - Number(b.e));
+      // Change-only: compare the CURRENT sibling sequence of our hosts.
+      let cursor = 0;
+      let inOrder = true;
+      for (let i = 0; i < plane.children.length; i++) {
+        const child = plane.children.item(i);
+        if (cursor >= target.length || child === null) break;
+        if (child === (target[cursor] as { el: HTMLDivElement }).el) cursor += 1;
+        else if (mine.some((m) => m.el === child)) {
+          inOrder = false;
+          break;
+        }
+      }
+      if (inOrder && cursor === target.length) continue;
+      for (const m of target) plane.appendChild(m.el); // moves, in z order
+    }
+  }
+
   /** Change-only opacity rewrite over the live hosts (graybox pattern). */
   function updateOpacity(): void {
     for (const [e, rec] of hosts) {
@@ -247,6 +291,7 @@ export function createDomWidgetsReflector(
         // appendChild MOVES the existing node between planes — the React portal
         // (targeting the content child) survives the move.
         (shouldLift ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+        orderDirty = true; // the move appended LAST — re-assert StackZ order
       }
       // A grabbed GL widget's chrome host stays in P1 (see promotable) but must
       // still stack over its P1 NEIGHBORS while dragged — the within-plane
@@ -294,6 +339,12 @@ export function createDomWidgetsReflector(
       if (promoteDirty || membershipChanged) {
         promoteDirty = false;
         updatePromote();
+      }
+      // AFTER promote: a re-parent appends last and must re-assert z order;
+      // a fresh mount (createHost appends last) rides membershipChanged.
+      if (orderDirty || membershipChanged) {
+        orderDirty = false;
+        updateOrder();
       }
     },
     hostFor: (entity) => hosts.get(entity)?.content,

@@ -11,6 +11,7 @@ import {
   Position,
   PrefabId,
   Size,
+  StackZ,
   createEngine,
   createWorld,
   defineWidget,
@@ -270,5 +271,59 @@ describe("GL widgets' chrome hosts never promote (v1 CardChrome sandwich, 2026-0
     world.removeComponent(e, Grab);
     engine.step(2);
     expect(hostDiv.style.zIndex).toBe(""); // pop cleared on release
+  });
+});
+
+describe("within-plane stacking = StackZ (design-004 §1, implemented 2026-07-18)", () => {
+  const order = (plane: HTMLElement): string[] =>
+    Array.from(plane.children).map((c) => c.getAttribute("data-ice-entity") ?? "?");
+
+  it("hosts are DOM-ordered by StackZ regardless of mount order", () => {
+    const { world, engine, planes, store } = setup();
+    const top = spawnBox(world, 0, 0, 10, 10); // mounts FIRST but z 2
+    const bottom = spawnBox(world, 20, 0, 10, 10); // mounts second, z 1
+    world.addComponent(top, StackZ, { z: 2 });
+    world.addComponent(bottom, StackZ, { z: 1 });
+    store.set([
+      { entity: top, hidden: false },
+      { entity: bottom, hidden: false },
+    ]);
+    engine.step(0);
+    expect(order(planes.content)).toEqual([String(bottom), String(top)]);
+  });
+
+  it("a StackZ change reorders the plane (the comment-under-members contract)", () => {
+    const { world, engine, planes, store } = setup();
+    const a = spawnBox(world, 0, 0, 10, 10);
+    const b = spawnBox(world, 20, 0, 10, 10);
+    world.addComponent(a, StackZ, { z: 1 });
+    world.addComponent(b, StackZ, { z: 2 });
+    store.set([
+      { entity: a, hidden: false },
+      { entity: b, hidden: false },
+    ]);
+    engine.step(0);
+    expect(order(planes.content)).toEqual([String(a), String(b)]);
+
+    world.edit(a).set(StackZ, { z: 3 }); // a jumps above b
+    engine.step(1);
+    expect(order(planes.content)).toEqual([String(b), String(a)]);
+  });
+
+  it("the lifted plane keeps z order for a promoted group (comment below its members)", () => {
+    const { world, engine, planes, store } = setup();
+    const member = spawnBox(world, 0, 0, 10, 10); // mounts first
+    const comment = spawnBox(world, 0, 0, 100, 100); // mounts LAST, lowest z
+    world.addComponent(member, StackZ, { z: 5 });
+    world.addComponent(comment, StackZ, { z: 0.5 });
+    store.set([
+      { entity: member, hidden: false },
+      { entity: comment, hidden: false },
+    ]);
+    engine.step(0);
+    world.addComponent(comment, Grab, { x: 0, y: 0, w: 100, h: 100, z: 0.5 });
+    world.addComponent(member, Grab, { x: 0, y: 0, w: 10, h: 10, z: 5 });
+    engine.step(1);
+    expect(order(planes.lifted)).toEqual([String(comment), String(member)]);
   });
 });

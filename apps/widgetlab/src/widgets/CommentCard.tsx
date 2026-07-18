@@ -146,8 +146,11 @@ export const CommentCard = defineWidget({
   },
   component: CommentView,
   defaultSize: { w: 400, h: 300 },
-  // No `provides`: a comment never matches a folder's accepts, so sweeping a
-  // group ACROSS a folder can't consume it — release is always a plain move.
+  // Comments are widgets too (2026-07-18, James: "i do want that"): provides
+  // lets a comment (and its swept group) FILE INTO an accepting folder. The
+  // engine's sweeper drop rule keeps this sane — Solid cards never reject a
+  // comment group, and a non-matching container is a plain move.
+  provides: ["widget"],
   interaction: {
     selectable: true,
     movable: true,

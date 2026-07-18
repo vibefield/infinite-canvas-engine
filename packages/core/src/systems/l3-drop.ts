@@ -59,21 +59,13 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
         const dragged = ctx.getRelations(rec, Drags);
 
         // A comment-box group (any dragged SweepsContained widget) is
-        // LANDSCAPE, not cargo (2026-07-18): it never consumes into a
-        // container and never fly-back-rejects off a Solid card — its union
-        // bounds overlap half the board by construction (that's what a
-        // comment is FOR). Skip drop evaluation; release is a plain move.
-        if (dragged.some((w) => ctx.isAlive(w) && ctx.hasTag(w, SweepsContained))) {
-          const held = ctx.getRelation(rec, DropTarget);
-          if (held !== undefined) {
-            if (ctx.isAlive(held)) {
-              if (ctx.hasTag(held, OverlapCandidate)) ctx.removeTag(held, OverlapCandidate);
-              if (ctx.hasTag(held, OverlapRejected)) ctx.removeTag(held, OverlapRejected);
-            }
-            ctx.removeRelation(rec, DropTarget);
-          }
-          continue;
-        }
+        // LANDSCAPE, not cargo — with ONE exception (2026-07-18, James: "i
+        // do want that"): it CAN file into an ACCEPTING container. So for
+        // sweeper sets, Solid widgets never reject (the group's union bounds
+        // overlap half the board by construction — that's what a comment is
+        // FOR), and a NON-matching container is scenery (plain move), never
+        // a fly-back: DropTarget only lands together with OverlapCandidate.
+        const sweeper = dragged.some((w) => ctx.isAlive(w) && ctx.hasTag(w, SweepsContained));
         const draggedSet = new Set<Entity>(dragged);
 
         // Post-move union bounds from the dragged widgets' CURRENT transform.
@@ -104,7 +96,7 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
           for (const entry of index.search({ minX, minY, maxX, maxY })) {
             const e = entry.id;
             if (draggedSet.has(e) || !ctx.isAlive(e)) continue;
-            if (!ctx.hasTag(e, Container) && !ctx.hasTag(e, Solid)) continue;
+            if (!ctx.hasTag(e, Container) && !(!sweeper && ctx.hasTag(e, Solid))) continue;
             const z = ctx.get(e, StackZ)?.z ?? 0;
             if (z > bestZ) {
               bestZ = z;
@@ -127,10 +119,6 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
           continue;
         }
 
-        // A moved-off previous target loses its signal tags.
-        if (prev !== undefined && prev !== container) clearSignals(prev);
-        if (prev !== container) ctx.setRelation(rec, DropTarget, container);
-
         // accepts ∩ (union of dragged provides) — a widget with no Provides never
         // matches; a Solid non-container has no Accepts and always rejects.
         const provided = new Set<string>();
@@ -140,6 +128,20 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
         }
         const accepts = parseList(ctx.get(container, Accepts)?.list);
         const matches = accepts.some((k) => provided.has(k));
+
+        // Sweeper sets never fly back: a non-matching container is treated
+        // like no container at all (release = plain move).
+        if (sweeper && !matches) {
+          if (prev !== undefined) {
+            clearSignals(prev);
+            ctx.removeRelation(rec, DropTarget);
+          }
+          continue;
+        }
+
+        // A moved-off previous target loses its signal tags.
+        if (prev !== undefined && prev !== container) clearSignals(prev);
+        if (prev !== container) ctx.setRelation(rec, DropTarget, container);
 
         if (matches) {
           if (!ctx.hasTag(container, OverlapCandidate)) ctx.addTag(container, OverlapCandidate);

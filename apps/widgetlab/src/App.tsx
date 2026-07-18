@@ -221,16 +221,17 @@ function spawnCommentAroundSelection(ce: CanvasEngine): void {
     any = true;
   }
   if (!any) return;
-  // Below every WIDGET but never at/under the canvas surface's pick level
-  // (z 0): a z ≤ 0 spawn routes drags to the canvas, not the comment —
-  // halving the floor stays positive forever, and each new comment stacks
-  // under the previous ones.
+  // Strictly below every widget (the demo seeds ALL sit at z 0 — a halved
+  // floor landed the comment at 0.5, ABOVE its members; 2026-07-18 field
+  // bug): minZ − 1, so each new comment stacks under the previous ones too.
+  // (The earlier "z ≤ 0 breaks picking" note was a misdiagnosis — the dead
+  // drags were the C/connect keymap collision.)
   let minZ = Number.POSITIVE_INFINITY;
   ce.world.query(widgetStackZQ).each((b) => {
     const z = b.col(StackZ).z;
     for (const r of b) minZ = Math.min(minZ, z[r] as number);
   });
-  const commentZ = Number.isFinite(minZ) && minZ > 0 ? minZ / 2 : 0.5;
+  const commentZ = Number.isFinite(minZ) ? minZ - 1 : -1;
   const color = COMMENT_PALETTE[Math.floor(Math.random() * COMMENT_PALETTE.length)] as string;
   const comment = ce.ops.spawnWidget("comment-card", {
     x: minX - COMMENT_PAD,
