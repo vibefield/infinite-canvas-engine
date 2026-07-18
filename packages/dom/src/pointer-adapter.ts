@@ -28,6 +28,15 @@
  * through L0). `stopPropagation()` inside widget content is the OTHER boundary:
  * a stopped event never reaches the container listener, so it never becomes a
  * canvas fact at all — that is the design, not a gap.
+ *
+ * Hover-time amendment (design-002 §8, 2026-07-18): down/move facts ALSO carry
+ * `overInteractive` — the same `crossesInteractive` check, run at hover time,
+ * OR'd with the GL router's hover verdict — so the world can telegraph the
+ * opt-out BEFORE a down (cursor affordances). It never gates gestures:
+ * `surfaceHandled` stays down-only and keeps its exact meaning. During a
+ * container-captured drag every event retargets to the container, so
+ * `overInteractive` reads false mid-gesture — correct: the gesture owns the
+ * pointer, not the widget under it.
  */
 import { NO_MODS, type InputEvent, type InputMods, type InputQueue } from "@ice/core";
 import type { CanvasHost } from "./host";
@@ -47,7 +56,22 @@ export type GLRoute = (
   screenX: number,
   screenY: number,
   native: PointerEvent,
-) => boolean;
+) => boolean | GLRouteVerdict;
+
+/**
+ * The richer GL verdict (hover-time amendment, 2026-07-18): `handled` keeps the
+ * boolean's exact meaning (island content claimed the event); `overInteractive`
+ * adds the hover fact — the pick chain holds claim-capable content (a mesh with
+ * a down/click handler), so a down HERE would be the island's. Plain `boolean`
+ * returns stay legal (≡ `{ handled }`), so existing routes never break.
+ */
+export interface GLRouteVerdict {
+  readonly handled: boolean;
+  readonly overInteractive?: boolean;
+}
+
+const asVerdict = (v: boolean | GLRouteVerdict | undefined): GLRouteVerdict =>
+  typeof v === "object" ? v : { handled: v === true };
 
 export interface PointerAdapterOpts {
   readonly glRoute?: GLRoute;
@@ -152,7 +176,8 @@ export function attachPointerAdapter(
     // the same boundary for island content — its synchronous pick + synthetic
     // dispatch happens HERE, at event time (design-004 §4).
     const native = crossesInteractive(e.target, container);
-    const glClaimed = glRoute?.("down", x, y, e) === true;
+    const gl = asVerdict(glRoute?.("down", x, y, e));
+    const glClaimed = gl.handled;
     live.set(id, { device, x, y, downX: x, downY: y, native, captured: glClaimed });
     if (glClaimed) capture(e.pointerId); // island capture semantics need it NOW
     const surfaceHandled = native || glClaimed;
@@ -166,6 +191,9 @@ export function attachPointerAdapter(
       mods: pointerMods(e),
       tMs: e.timeStamp,
       ...(surfaceHandled ? { surfaceHandled: true } : {}),
+      // The down IS a hover-bearing fact: a touch's first event must seed the
+      // pointer's OverInteractive truth (no prior moves exist to).
+      overInteractive: surfaceHandled || gl.overInteractive === true,
     });
   };
 
@@ -189,7 +217,7 @@ export function attachPointerAdapter(
         seen.captured = true;
       }
     }
-    const glHandled = glRoute?.("move", x, y, e) === true; // island capture / hover synth
+    const gl = asVerdict(glRoute?.("move", x, y, e)); // island capture / hover synth
     queue.enqueue({
       kind: "move",
       pointerId: id,
@@ -199,7 +227,11 @@ export function attachPointerAdapter(
       buttons: e.buttons,
       mods: pointerMods(e),
       tMs: e.timeStamp,
-      ...(glHandled ? { surfaceHandled: true } : {}),
+      ...(gl.handled ? { surfaceHandled: true } : {}),
+      // Hover fact, every move: DOM chain check ∪ GL verdict. A gl-captured
+      // move (island drag) counts — the widget owns the pointer right now.
+      overInteractive:
+        crossesInteractive(e.target, container) || gl.handled || gl.overInteractive === true,
     });
   };
 
@@ -217,7 +249,7 @@ export function attachPointerAdapter(
           // release is best-effort (capture may already be gone).
         }
       }
-      const glHandled = glRoute?.(kind, x, y, e) === true; // releases island capture
+      const gl = asVerdict(glRoute?.(kind, x, y, e)); // releases island capture
       queue.enqueue({
         kind,
         pointerId: id,
@@ -226,7 +258,9 @@ export function attachPointerAdapter(
         screenY: y,
         buttons: e.buttons,
         mods: pointerMods(e),
-        ...(glHandled ? { surfaceHandled: true } : {}),
+        ...(gl.handled ? { surfaceHandled: true } : {}),
+        // No overInteractive stamp: a capture-retargeted up reads the container,
+        // not the content under the pointer — the next real move re-truths it.
       });
     };
   const onPointerUp = endPointer("up");

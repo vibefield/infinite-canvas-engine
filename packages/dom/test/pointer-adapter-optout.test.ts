@@ -101,3 +101,85 @@ describe("pointer adapter — widget opt-out", () => {
     detach();
   });
 });
+
+describe("pointer adapter — hover-time overInteractive (design-002 §8 amendment)", () => {
+  it("stamps a move over an interactive true, a move over plain content false", () => {
+    const { host, queue, detach } = setup();
+    const button = document.createElement("button");
+    const plain = document.createElement("div");
+    host.contentPlane.appendChild(button);
+    host.contentPlane.appendChild(plain);
+
+    fire(button, "pointermove", { ...DOWN, buttons: 0 });
+    fire(plain, "pointermove", { ...DOWN, buttons: 0 });
+    const [over, off] = queue.drain();
+    expect(over?.overInteractive).toBe(true);
+    expect(off?.overInteractive).toBe(false);
+    detach();
+  });
+
+  it("stamps downs with the same truth the opt-out derived", () => {
+    const { host, queue, detach } = setup();
+    const row = document.createElement("div");
+    row.setAttribute("data-canvas-interactive", "");
+    const plain = document.createElement("div");
+    host.contentPlane.appendChild(row);
+    host.contentPlane.appendChild(plain);
+
+    fire(row, "pointerdown", DOWN);
+    fire(plain, "pointerdown", { ...DOWN, pointerId: 2 });
+    const [optedOut, normal] = queue.drain();
+    expect(optedOut?.overInteractive).toBe(true);
+    expect(normal?.overInteractive).toBe(false);
+    detach();
+  });
+
+  it("leaves up/cancel and blur-cancel facts UNSTAMPED (capture retargeting lies)", () => {
+    const { container, host, queue, detach } = setup();
+    const button = document.createElement("button");
+    host.contentPlane.appendChild(button);
+
+    fire(button, "pointerdown", DOWN);
+    fire(container, "pointerup", { ...DOWN, buttons: 0 });
+    const [, up] = queue.drain();
+    expect(up?.kind).toBe("up");
+    expect(up?.overInteractive).toBeUndefined();
+    detach();
+  });
+
+  it("folds a rich GLRouteVerdict into the move stamp (hover over claim-capable island content)", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const host = createCanvasHost(container);
+    const queue = createInputQueue();
+    const detach = attachPointerAdapter(host, queue, {
+      glRoute: (kind) => (kind === "move" ? { handled: false, overInteractive: true } : false),
+    });
+    const plain = document.createElement("div");
+    host.contentPlane.appendChild(plain);
+
+    fire(plain, "pointermove", { ...DOWN, buttons: 0 });
+    const move = queue.drain()[0];
+    expect(move?.surfaceHandled).toBeUndefined(); // unclaimed — recognizers still see it
+    expect(move?.overInteractive).toBe(true); // but the hover truth carries
+    detach();
+  });
+
+  it("a boolean-returning glRoute still flags handled moves AND counts them as overInteractive", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const host = createCanvasHost(container);
+    const queue = createInputQueue();
+    const detach = attachPointerAdapter(host, queue, {
+      glRoute: (kind) => kind === "move", // legacy boolean: captured island drag
+    });
+    const plain = document.createElement("div");
+    host.contentPlane.appendChild(plain);
+
+    fire(plain, "pointermove", { ...DOWN, buttons: 1 });
+    const move = queue.drain()[0];
+    expect(move?.surfaceHandled).toBe(true);
+    expect(move?.overInteractive).toBe(true);
+    detach();
+  });
+});

@@ -358,3 +358,65 @@ describe("routing boundaries", () => {
     expect(rig.router.route("down", 700, 500, { pointerId: 2, buttons: 1 } as PointerEvent)).toBe(false);
   });
 });
+
+describe("hover-time overInteractive (design-002 §8 amendment)", () => {
+  it("true over claim-capable content, false over hover-only meshes and off-island", () => {
+    const rig = makeRig();
+    const claimPad = rig.spawnPad(100, 100);
+    rig.mountIsland(
+      claimPad,
+      withHandlers(new Mesh(new PlaneGeometry(100, 100)), {
+        onPointerDown: (ev) => ev.stopPropagation(),
+      }),
+    );
+    const hoverPad = rig.spawnPad(300, 100);
+    rig.mountIsland(
+      hoverPad,
+      // Hover-only handlers (the shapes-swarm pattern) never opt a down out.
+      withHandlers(new Mesh(new PlaneGeometry(100, 100)), { onPointerMove: () => {} }),
+    );
+    rig.step();
+
+    rig.mouse("move", 150, 150, 0); // over the claiming mesh
+    expect(rig.router.overInteractive()).toBe(true);
+    rig.mouse("move", 350, 150, 0); // over the hover-only mesh
+    expect(rig.router.overInteractive()).toBe(false);
+    rig.mouse("move", 700, 500, 0); // off any island
+    expect(rig.router.overInteractive()).toBe(false);
+  });
+
+  it("stays true for the whole life of an island capture, drops after release", () => {
+    const rig = makeRig();
+    const pad = rig.spawnPad(100, 100);
+    rig.mountIsland(
+      pad,
+      withHandlers(new Mesh(new PlaneGeometry(100, 100)), {
+        onPointerDown: (ev) => ev.stopPropagation(),
+      }),
+    );
+    rig.step();
+
+    expect(rig.mouse("down", 150, 150, 1)).toBe(true); // claimed — captured
+    rig.mouse("move", 400, 300, 1); // captured drag leaves the island
+    expect(rig.router.overInteractive()).toBe(true);
+    rig.mouse("up", 400, 300, 0);
+    rig.mouse("move", 400, 300, 0); // free move off-island re-truths it
+    expect(rig.router.overInteractive()).toBe(false);
+  });
+
+  it("a held-button ENGINE gesture travelling over the island reads false", () => {
+    const rig = makeRig();
+    const pad = rig.spawnPad(100, 100);
+    rig.mountIsland(
+      pad,
+      withHandlers(new Mesh(new PlaneGeometry(100, 100)), {
+        onPointerDown: (ev) => ev.stopPropagation(),
+      }),
+    );
+    rig.step();
+
+    rig.mouse("down", 700, 500, 1); // canvas down, far from the island
+    rig.mouse("move", 150, 150, 1); // uncaptured held-button move crosses the island
+    expect(rig.router.overInteractive()).toBe(false);
+  });
+});

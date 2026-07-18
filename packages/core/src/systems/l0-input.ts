@@ -29,6 +29,7 @@ import {
   HandledByWidget,
   Keyboard,
   LocalPointer,
+  OverInteractive,
   Pointer,
   PointerButtons,
   PointerMods,
@@ -67,6 +68,8 @@ interface Sample {
   wentUp: boolean;
   wentCancelled: boolean;
   handled: boolean;
+  /** Last hover-bearing fact's verdict; undefined = no hover info this tick (tag holds). */
+  overInteractive: boolean | undefined;
   mods: { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean };
   wheelDx: number;
   wheelDy: number;
@@ -153,6 +156,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
             wentUp: false,
             wentCancelled: false,
             handled: false,
+            overInteractive: undefined,
             mods: { shift: ev.mods.shift, ctrl: ev.mods.ctrl, alt: ev.mods.alt, meta: ev.mods.meta },
             wheelDx: 0,
             wheelDy: 0,
@@ -181,6 +185,9 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           s.hasWheel = true;
         }
         if (ev.surfaceHandled === true) s.handled = true;
+        // Hover truth: last stamped fact wins; unstamped facts (wheel, blur
+        // cancel, test drivers that don't track hover) leave it undefined.
+        if (ev.overInteractive !== undefined) s.overInteractive = ev.overInteractive;
       }
 
       // --- pass 2: apply ---
@@ -205,6 +212,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           if (s.wentUp) ctx.addTag(spawned, WentUp);
           if (s.wentCancelled) ctx.addTag(spawned, WentCancelled);
           if (s.handled) ctx.addTag(spawned, HandledByWidget);
+          if (s.overInteractive === true) ctx.addTag(spawned, OverInteractive);
           byId.set(id, spawned);
           continue;
         }
@@ -230,6 +238,12 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
         if (s.wentUp) ctx.addTag(existing, WentUp);
         if (s.wentCancelled) ctx.addTag(existing, WentCancelled);
         if (s.handled) ctx.addTag(existing, HandledByWidget);
+        // Persistent hover-boundary tag, change-only (interaction-rate law):
+        // written only when a hover-bearing fact arrived AND the state flipped.
+        if (s.overInteractive !== undefined && s.overInteractive !== ctx.hasTag(existing, OverInteractive)) {
+          if (s.overInteractive) ctx.addTag(existing, OverInteractive);
+          else ctx.removeTag(existing, OverInteractive);
+        }
       }
 
       bumpVersion(world, PointerVersion);

@@ -92,6 +92,16 @@ export interface GLPointerRouterDeps {
 export interface GLPointerRouter {
   /** The adapter's `glRoute` seam. True = island content claimed the event. */
   route(kind: "down" | "move" | "up" | "cancel", screenX: number, screenY: number, native: PointerEvent): boolean;
+  /**
+   * Hover-time verdict as of the LAST routed `move` (design-002 §8 amendment,
+   * 2026-07-18): the pick chain under the pointer holds claim-capable island
+   * content — a mesh whose handlers include `onPointerDown`/`onClick` (the
+   * claim/click paths; hover-only handlers like the shapes swarm's move reader
+   * do NOT count — they never opt a down out). True for the whole life of an
+   * island capture. Feed it into the adapter's `GLRouteVerdict.overInteractive`
+   * on moves; presentation truth only, never a routing input.
+   */
+  overInteractive(): boolean;
 }
 
 export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterDeps): GLPointerRouter {
@@ -108,6 +118,22 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
   const hovered = new Map<Entity, Set<Object3D>>();
   // pointerId → unclaimed down's topmost object (click pairing without a claim).
   const unclaimedDowns = new Map<number, { entity: Entity; object: Object3D; downX: number; downY: number }>();
+
+  // Last routed move's hover verdict (the overInteractive() accessor).
+  let hoverInteractive = false;
+
+  /** Any hit-chain object carrying a claim/click handler (down would be the island's). */
+  const chainInteractive = (hits: readonly Intersection[]): boolean => {
+    for (const h of hits) {
+      for (let obj: Object3D | null = h.object; obj !== null; obj = obj.parent) {
+        const handlers = handlersOf(obj);
+        if (handlers !== undefined && (handlers.onPointerDown !== undefined || handlers.onClick !== undefined)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
 
   // Click = press and release on the SAME object without travelling past tap
   // slop — the engine's own tap threshold, so GL clicks and engine taps agree.
@@ -345,12 +371,18 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
 
       if (kind === "move") {
         if (capture !== undefined) {
+          // Captured island drag: the widget owns the pointer for its duration.
+          hoverInteractive = true;
           const hits = captureHits(screenX, screenY, capture);
           dispatch("onPointerMove", "pointermove", capture.entity, hits, native, capture.downObject);
           return true;
         }
+        // Held-button uncaptured move (an ENGINE gesture is travelling over
+        // the island) falls through with hoverInteractive false — correct.
+        hoverInteractive = false;
         if (native.buttons === 0) {
           const cast = castAt(screenX, screenY);
+          hoverInteractive = cast !== undefined && chainInteractive(cast.hits);
           syncHover(cast, native);
           // Native-R3F hover parity (2026-07-12 field report — v1's hover-driven
           // widgets, e.g. the shapes swarm, read point-carrying moves WITHOUT a
@@ -399,5 +431,6 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
       }
       return true;
     },
+    overInteractive: () => hoverInteractive,
   };
 }

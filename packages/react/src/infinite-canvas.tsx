@@ -192,7 +192,9 @@ export function InfiniteCanvas({
       host,
       stack.queue,
       glRouteRef.current !== undefined
-        ? { glRoute: (kind, x, y, e) => glRouteRef.current?.(kind, x, y, e) === true }
+        ? // Pass the verdict through UNCOERCED: a rich GLRouteVerdict return
+          // (hover-time overInteractive, 2026-07-18) must survive this seam.
+          { glRoute: (kind, x, y, e) => glRouteRef.current?.(kind, x, y, e) ?? false }
         : {},
     );
     const detachMeasure =

@@ -40,6 +40,17 @@ export interface InputEvent {
   /** GL-island opt-out (pinned widget-event contract, design-002 §8): fact still lands, recognizers skip. */
   readonly surfaceHandled?: boolean;
   /**
+   * Hover-time widget-boundary fact (design-002 §8 amendment, 2026-07-18): the
+   * pointer is currently over content that would opt a down out — a native
+   * interactive / `[data-canvas-interactive]` (DOM) or claim-capable island
+   * content (GL). Stamped on down/move by adapters that track it; ABSENT means
+   * "no hover information this event" (wheel, key, blur-cancel) — ingest keeps
+   * the pointer's `OverInteractive` tag unchanged, it never treats absent as
+   * false. Presentation-grade truth (cursor affordances), never a gesture gate:
+   * recognizers keep reading `surfaceHandled`/`HandledByWidget` only.
+   */
+  readonly overInteractive?: boolean;
+  /**
    * Event timestamp (DOMHighResTimeStamp — the same clock rAF hands
    * `engine.step`). Gesture timing anchors on THIS, not the processing frame:
    * a stalled main thread (GC, cold paints) otherwise eats into hold windows —

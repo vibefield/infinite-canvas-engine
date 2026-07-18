@@ -65,6 +65,18 @@ export const WentCancelled = defineTag("WentCancelled");
 /** The down was consumed by a widget's own DOM handler — recognizers skip it. */
 export const HandledByWidget = defineTag("HandledByWidget");
 
+/**
+ * PERSISTENT (not one-tick): the pointer is hovering content that would opt a
+ * down out — a native interactive / `[data-canvas-interactive]` (DOM) or
+ * claim-capable island content (GL). Written change-only by ingest from the
+ * adapters' hover-time `overInteractive` fact (design-002 §8 amendment,
+ * 2026-07-18) and held across ticks with no fresh hover information (wheel,
+ * blur). Presentation-grade truth — cursor affordances telegraph "the widget
+ * owns your input here" BEFORE the down; recognizers never read it (the
+ * gesture gate stays `HandledByWidget`).
+ */
+export const OverInteractive = defineTag("OverInteractive");
+
 /** Marks the local device's pointer(s) (vs. presence projections). */
 export const LocalPointer = defineTag("LocalPointer");
 
