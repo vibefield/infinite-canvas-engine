@@ -22,11 +22,14 @@
 import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import {
+  Active,
   Captures,
+  Culled,
   Drag,
   Drags,
   GesturePhases,
   Grab,
+  MeasuredSize,
   Movable,
   PointerMods,
   Position,
@@ -36,6 +39,7 @@ import {
   Selected,
   Size,
   StackZ,
+  SweepsContained,
   Watches,
 } from "../catalog";
 import { SelectionVersion, bumpVersion } from "../helpers/version-stamps";
@@ -46,6 +50,45 @@ const P = GesturePhases;
 const moveClaimQ = defineQuery([Drag, P.justTags.Active, RoutedMove]);
 const resizeClaimQ = defineQuery([Drag, P.justTags.Active, RoutedResize]);
 const stackZQ = defineQuery([StackZ]);
+const sweepCandidatesQ = defineQuery([Position, Size, Movable]);
+
+/**
+ * Comment-box sweep (2026-07-18, James: the UE-Blueprint comment): expand the
+ * dragged set with every widget FULLY INSIDE each SweepsContained member's
+ * bounds at claim time. Spatial membership only — no reparenting, so dragging
+ * a member out later is nothing at all. Frame-scoped via the canonical
+ * non-member signature (Culled ∧ ¬Active — bare test worlds have no tags, so
+ * requiring Active would break them; the wires-scope lesson 2026-07-17):
+ * folder innards live in frame-local coords that can NUMERICALLY overlap a
+ * root comment's rect and must never be swept across frames. Nested comments
+ * need no recursion: inner ⊆ outer ⇒ the inner's members are inside the
+ * outer's bounds already.
+ */
+function expandSweep(world: World, ctx: SystemCtx, dragged: Entity[]): void {
+  const roots = dragged.filter((w) => ctx.isAlive(w) && ctx.hasTag(w, SweepsContained));
+  if (roots.length === 0) return;
+  const inSet = new Set(dragged);
+  for (const root of roots) {
+    const rp = ctx.get(root, Position);
+    const rs = ctx.get(root, Size);
+    if (rp === undefined || rs === undefined) continue;
+    world.query(sweepCandidatesQ).each((b) => {
+      for (const r of b) {
+        const w = b.entity(r);
+        if (inSet.has(w)) continue;
+        if (world.hasTag(w, Culled) && !world.hasTag(w, Active)) continue; // other frame
+        const p = world.get(w, Position);
+        const m = world.get(w, MeasuredSize);
+        const s = m !== undefined && m.w > 0 ? m : world.get(w, Size);
+        if (p === undefined || s === undefined) continue;
+        if (p.x >= rp.x && p.y >= rp.y && p.x + s.w <= rp.x + rs.w && p.y + s.h <= rp.y + rs.h) {
+          inSet.add(w);
+          dragged.push(w);
+        }
+      }
+    });
+  }
+}
 
 /** Fractional-top elevate: max live z + 1 (scan on the claim frame only — O(n) once per gesture). */
 function topZ(world: World): number {
@@ -112,6 +155,11 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
           bumpVersion(world, SelectionVersion);
           dragged = [grabbed];
         }
+
+        // Comment-box sweep BEFORE riders: swept members ride the same
+        // recognizer; rider order keeps the comment BELOW its members in the
+        // elevate (comment first, members after).
+        expandSweep(world, ctx, dragged);
 
         const zBase = topZ(world);
         let elevated = 0;

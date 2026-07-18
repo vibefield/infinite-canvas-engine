@@ -24,6 +24,13 @@ export const Movable = defineTag("Movable");
 export const Resizable = defineTag("Resizable");
 export const SnapSource = defineTag("SnapSource");
 export const SnapTarget = defineTag("SnapTarget");
+/**
+ * Comment-box group drag (2026-07-18, James: the UE-Blueprint comment): a
+ * move claim on this widget ALSO claims every widget fully inside its bounds
+ * at claim time — spatial membership, never reparenting (that's the folder
+ * path). Drag a member out and it simply stops being inside.
+ */
+export const SweepsContained = defineTag("SweepsContained");
 
 // --- ephemeral presence-peer prefab facets (components + tags only — no relations/resources) ---
 

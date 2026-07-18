@@ -1,6 +1,7 @@
 /**
- * widgetlab boot smoke (headless): the demo engine assembles — 20 widget types
- * registered, 21 seeds spawned at the v1 coordinates (+ the wire-able node
+ * widgetlab boot smoke (headless): the demo engine assembles — 21 widget types
+ * registered (comment-card joined 2026-07-18), 21 seeds spawned at the v1
+ * coordinates (+ the wire-able node
  * trio, 2026-07-16) with 2 pre-seeded wires in ONE clean session
  * (undoable:false ⇒ the user's first ⌘Z is a no-op), and the engine steps
  * without throwing (GL islands stay unmounted — no WebGL in happy-dom).
@@ -13,7 +14,7 @@ import { WIDGETS } from "../src/widgets";
 
 describe("widgetlab boot smoke", () => {
   it("seeds the v1 scene + node trio: 21 widgets, 2 wires, clean undo stack, engine steps", () => {
-    expect(WIDGETS).toHaveLength(20);
+    expect(WIDGETS).toHaveLength(21);
 
     const ce = createDemoEngine();
     const posQ = defineQuery([Position]);

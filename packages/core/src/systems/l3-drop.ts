@@ -34,6 +34,7 @@ import {
   Size,
   Solid,
   StackZ,
+  SweepsContained,
 } from "../catalog";
 
 const dropDragQ = defineQuery([Drag, GestureActive, RoutedMove]);
@@ -56,6 +57,23 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
       for (const r of b) {
         const rec = b.entity(r);
         const dragged = ctx.getRelations(rec, Drags);
+
+        // A comment-box group (any dragged SweepsContained widget) is
+        // LANDSCAPE, not cargo (2026-07-18): it never consumes into a
+        // container and never fly-back-rejects off a Solid card — its union
+        // bounds overlap half the board by construction (that's what a
+        // comment is FOR). Skip drop evaluation; release is a plain move.
+        if (dragged.some((w) => ctx.isAlive(w) && ctx.hasTag(w, SweepsContained))) {
+          const held = ctx.getRelation(rec, DropTarget);
+          if (held !== undefined) {
+            if (ctx.isAlive(held)) {
+              if (ctx.hasTag(held, OverlapCandidate)) ctx.removeTag(held, OverlapCandidate);
+              if (ctx.hasTag(held, OverlapRejected)) ctx.removeTag(held, OverlapRejected);
+            }
+            ctx.removeRelation(rec, DropTarget);
+          }
+          continue;
+        }
         const draggedSet = new Set<Entity>(dragged);
 
         // Post-move union bounds from the dragged widgets' CURRENT transform.

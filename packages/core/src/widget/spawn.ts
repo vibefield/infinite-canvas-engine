@@ -8,7 +8,7 @@
  */
 import type { Entity, World } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
-import { Position, Size } from "../catalog";
+import { Position, Size, StackZ } from "../catalog";
 import { guardedTransaction } from "../guards/guarded-tx";
 import { init, type ComponentInit } from "../schema/prefab";
 import { widgets } from "./define-widget";
@@ -18,6 +18,8 @@ export interface SpawnWidgetOpts {
   readonly y: number;
   readonly w?: number;
   readonly h?: number;
+  /** Initial StackZ (e.g. a comment box spawning BEHIND its members); default = prefab default. */
+  readonly z?: number;
   readonly props?: Readonly<Record<string, unknown>>;
   /** false ⇒ the spawn never enters the local undo stack (batch seeds). */
   readonly undoable?: boolean;
@@ -40,6 +42,7 @@ export function widgetSpawnInits(type: string, opts: SpawnWidgetOpts): { prefab:
       h: opts.h ?? widget.defaultSize.h,
     }),
   ];
+  if (opts.z !== undefined) overrides.push(init(StackZ, { z: opts.z }));
   const givenProps = opts.props ?? {};
   for (const [name, value] of Object.entries(givenProps)) {
     const group = widget.propToGroup[name];

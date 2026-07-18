@@ -28,7 +28,9 @@ import {
   SnapConfig,
   SnapSource,
   SnapTarget,
+  Solid,
   StackZ,
+  SweepsContained,
   createEngine,
   createInputQueue,
   createRecordingCommitSink,
@@ -69,6 +71,10 @@ export interface BoxOpts {
   accepts?: string[];
   provides?: string[];
   selected?: boolean;
+  /** UE-comment sweep: a move claim also claims widgets fully inside. */
+  sweeps?: boolean;
+  /** Drop-rejecting target (v1 iOS-card contract). */
+  solid?: boolean;
 }
 
 export interface HandleOpts {
@@ -199,6 +205,8 @@ export function createFullRig(): FullRig {
         ...(opts.snapTarget === true ? [SnapTarget] : []),
         ...(opts.container === true ? [Container] : []),
         ...(opts.selected === true ? [Selected] : []),
+        ...(opts.sweeps === true ? [SweepsContained] : []),
+        ...(opts.solid === true ? [Solid] : []),
       ];
       const components: [Component, Record<string, unknown>][] = [
         [Position, { x: opts.x, y: opts.y }],

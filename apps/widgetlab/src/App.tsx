@@ -21,6 +21,7 @@ import {
   Camera,
   Culled,
   GuideLine,
+  MeasuredSize,
   Position,
   PrefabId,
   Selected,
@@ -28,14 +29,17 @@ import {
   SnapConfig,
   SnapSource,
   SnapTarget,
+  StackZ,
   Viewport,
   Visible,
+  WidgetEquipped,
   Wire,
   WireFrom,
   WirePorts,
   WireTo,
   createCanvasEngine,
   defineQuery,
+  selectedEntities,
   type CanvasEngine,
   type Entity,
 } from "@ice/core";
@@ -49,6 +53,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PMREMGenerator, type Texture } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { installCursorHalo } from "./cursor";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
 import { WIDGETS } from "./widgets";
@@ -179,11 +184,72 @@ function seedWire(ce: CanvasEngine, from: Entity, fromPort: string, to: Entity, 
   );
 }
 
+// === comment box (UE Blueprint, 2026-07-18) ===
+
+/** Curated accents (the lab's card palette) — random pick per C-spawn. */
+const COMMENT_PALETTE = ["#6366F1", "#EC4899", "#22C55E", "#F59E0B", "#06B6D4", "#8B5CF6", "#EF4444", "#3B82F6"];
+
+const COMMENT_PAD = 28;
+const COMMENT_HEADER = 44;
+const COMMENT_GAP = 12; // header → content breathing room
+
+const widgetStackZQ = defineQuery([StackZ, WidgetEquipped]);
+
+/**
+ * C key: wrap the current selection in a comment-card. The comment spawns at
+ * the BOTTOM of the stack (spawn z — ONE undoable tx) so members render and
+ * pick above it, sized to the selection bbox (measured-when-real sizes) plus
+ * header + padding. Random palette accent per spawn.
+ */
+function spawnCommentAroundSelection(ce: CanvasEngine): void {
+  const sel = selectedEntities(ce.world);
+  if (sel.length === 0) return;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let any = false;
+  for (const e of sel) {
+    const p = ce.world.get(e, Position);
+    const m = ce.world.get(e, MeasuredSize);
+    const s = m !== undefined && m.w > 0 ? m : ce.world.get(e, Size);
+    if (p === undefined || s === undefined) continue;
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + s.w);
+    maxY = Math.max(maxY, p.y + s.h);
+    any = true;
+  }
+  if (!any) return;
+  // Below every WIDGET but never at/under the canvas surface's pick level
+  // (z 0): a z ≤ 0 spawn routes drags to the canvas, not the comment —
+  // halving the floor stays positive forever, and each new comment stacks
+  // under the previous ones.
+  let minZ = Number.POSITIVE_INFINITY;
+  ce.world.query(widgetStackZQ).each((b) => {
+    const z = b.col(StackZ).z;
+    for (const r of b) minZ = Math.min(minZ, z[r] as number);
+  });
+  const commentZ = Number.isFinite(minZ) && minZ > 0 ? minZ / 2 : 0.5;
+  const color = COMMENT_PALETTE[Math.floor(Math.random() * COMMENT_PALETTE.length)] as string;
+  const comment = ce.ops.spawnWidget("comment-card", {
+    x: minX - COMMENT_PAD,
+    y: minY - COMMENT_HEADER - COMMENT_GAP,
+    w: maxX - minX + COMMENT_PAD * 2,
+    h: maxY - minY + COMMENT_HEADER + COMMENT_GAP + COMMENT_PAD,
+    z: commentZ,
+    props: { title: "Comment", color },
+  });
+  ce.ops.setSelection([comment]);
+}
+
 /** DEV-only console probe: `window.__iceDebug()` dumps the live snap state. */
 function installDebugProbe(ce: CanvasEngine): void {
   const guideQ = defineQuery([GuideLine]);
   const widgetQ = defineQuery([PrefabId]);
   const wireQ = defineQuery([Wire]);
+  // Raw engine handle for ad-hoc DEV forensics (headless scripts poke tags).
+  (window as unknown as { __ice?: CanvasEngine }).__ice = ce;
   (window as unknown as { __iceDebug?: () => unknown }).__iceDebug = () => {
     const world = ce.world;
     const guides: unknown[] = [];
@@ -351,8 +417,15 @@ export function App() {
   const [gl, setGl] = useState<{ bridge: GLBridge; plane: HTMLDivElement } | null>(null);
   const [envTex, setEnvTex] = useState<Texture | null>(null);
   const glRoute = useCallback(
-    (kind: "down" | "move" | "up" | "cancel", x: number, y: number, e: PointerEvent) =>
-      routerRef.current?.route(kind, x, y, e) === true,
+    (kind: "down" | "move" | "up" | "cancel", x: number, y: number, e: PointerEvent) => {
+      const router = routerRef.current;
+      if (router === null) return false;
+      const handled = router.route(kind, x, y, e);
+      // Moves carry the rich verdict: the router's hover-time overInteractive
+      // feeds the pointer's OverInteractive tag (cursor-halo dot over the
+      // orbit cube / claimed shapes, same telegraph as DOM interactives).
+      return kind === "move" ? { handled, overInteractive: router.overInteractive() } : handled;
+    },
     [],
   );
   const disposeGl = useCallback(() => {
@@ -363,8 +436,19 @@ export function App() {
     glRef.current = null;
     routerRef.current = null;
   }, []);
+  // Cursor halo (2026-07-18): the pointerlab morph as an OS-cursor accent —
+  // ring on canvas, zoomed-in ring over cards, solid dot over internal
+  // interactives (the opt-out telegraph). Same StrictMode discipline as GL:
+  // dispose the prior mount's install before wiring a fresh one.
+  const haloRef = useRef<(() => void) | null>(null);
+  const disposeHalo = useCallback(() => {
+    haloRef.current?.();
+    haloRef.current = null;
+  }, []);
   const onReady = useCallback(
     (handle: InfiniteCanvasHandle) => {
+      disposeHalo();
+      haloRef.current = installCursorHalo(ce, handle.host.container);
       disposeGl(); // drop a prior mount's set before wiring a fresh one
       const bridge = createGLBridge(ce.engine);
       const router = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
@@ -377,9 +461,10 @@ export function App() {
       glRef.current = { bridge, router, plane };
       setGl({ bridge, plane });
     },
-    [ce, disposeGl],
+    [ce, disposeGl, disposeHalo],
   );
   useEffect(() => disposeGl, [disposeGl]);
+  useEffect(() => disposeHalo, [disposeHalo]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -428,8 +513,27 @@ export function App() {
         ce.ops.exitContainer();
       }
     };
+    // C — wrap the selection in a comment box (UE Blueprint, 2026-07-18).
+    // CAPTURE phase + stopPropagation: the engine keymap binds "c" to the
+    // CONNECT tool (tool shortcuts v/h/c) on window bubble — letting both
+    // fire silently flipped the tool, and every later widget drag routed to
+    // connect (gates.movable false): the whole board stopped dragging. With
+    // a selection C means COMMENT and the keymap never sees it; with none,
+    // C falls through and stays the connect-tool shortcut.
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if ((e.key !== "c" && e.key !== "C") || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditableTarget(e.target)) return;
+      if (selectedEntities(ce.world).length === 0) return; // fall through → connect tool
+      e.preventDefault();
+      e.stopPropagation();
+      spawnCommentAroundSelection(ce);
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDownCapture, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDownCapture, true);
+    };
   }, [ce]);
 
   // ECS devtools while the button is active (v1's EcsDevtools panel slot).

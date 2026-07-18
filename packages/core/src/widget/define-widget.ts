@@ -35,6 +35,7 @@ import {
   SnapTarget,
   Solid,
   StackZ,
+  SweepsContained,
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
@@ -61,6 +62,12 @@ export interface WidgetInteraction {
   readonly solid?: boolean;
   /** "longPress": hold-to-lift dragging (iOS home-screen model); default "press". */
   readonly dragOn?: "press" | "longPress";
+  /**
+   * UE-Blueprint comment-box drag (2026-07-18): a move claim on this widget
+   * also claims every widget FULLY INSIDE its bounds at claim time (spatial
+   * membership — never reparenting). Default false.
+   */
+  readonly sweepContained?: boolean;
 }
 
 export interface WidgetDef {
@@ -322,6 +329,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if (interaction.resizable === true) capabilityTags.push(Resizable);
   if (interaction.solid === true) capabilityTags.push(Solid);
   if (interaction.dragOn === "longPress") capabilityTags.push(LongPressDrag);
+  if (interaction.sweepContained === true) capabilityTags.push(SweepsContained);
   const snap = interaction.snap ?? "target";
   if (snap === "source" || snap === "both") capabilityTags.push(SnapSource);
   if (snap === "target" || snap === "both") capabilityTags.push(SnapTarget);
