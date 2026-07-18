@@ -8,6 +8,8 @@ import { defineConfig } from "vitest/config";
 // instances — "expected instance of LoroDoc" the moment a doc session exists
 // (graybox precedent: session-creating tests run alias-free).
 export default defineConfig({
-  test: { environment: "happy-dom" },
+  // setup.ts: localStorage shim — Node 26's experimental undefined-valued
+  // global blocks vitest's happy-dom injection (see the file header).
+  test: { environment: "happy-dom", setupFiles: ["./test/setup.ts"] },
   esbuild: { jsx: "automatic", jsxImportSource: "react" },
 });

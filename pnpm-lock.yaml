@@ -5,9 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@react-three/fiber@9.6.1':
-    hash: 7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973
-    path: patches/@react-three__fiber@9.6.1.patch
+  '@react-three/fiber@9.6.1': 7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973
 
 importers:
 
