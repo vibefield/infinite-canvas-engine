@@ -25,6 +25,7 @@ import { Selected, defineWidget, p, type Entity, type World } from "@ice/core";
 import { useOps, useWidgetProps } from "@ice/react";
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from "react";
 import { CARD_RADIUS } from "./CardShell";
+import { useDragLift } from "./use-drag-lift";
 
 const HEADER = 44;
 
@@ -36,6 +37,7 @@ function CommentView({ entity, world }: { entity: Entity; world: World }): React
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState(false);
+  const { lifted, scale } = useDragLift(world, entity); // the shared iOS lift
 
   useEffect(() => {
     const id = setInterval(() => setSelected(world.hasTag(entity, Selected)), 80);
@@ -63,10 +65,16 @@ function CommentView({ entity, world }: { entity: Entity; world: World }): React
         height: "100%",
         borderRadius: CARD_RADIUS,
         // Tint + hairline: the body must stay see-through — the comment sits
-        // BEHIND its members and the dot grid should read through it.
+        // BEHIND its members and the dot grid should read through it. No
+        // lift-dim: dimming an already-translucent tint washes it out.
         background: `${color}1F`,
-        boxShadow: `inset 0 0 0 1.5px ${color}${selected ? "E6" : "66"}`,
-        transition: "box-shadow 120ms ease",
+        boxShadow: lifted
+          ? `inset 0 0 0 1.5px ${color}${selected ? "E6" : "66"}, 0 30px 60px rgba(0, 0, 0, 0.22)`
+          : `inset 0 0 0 1.5px ${color}${selected ? "E6" : "66"}`,
+        transform: lifted ? `scale(${scale})` : "scale(1)",
+        transformOrigin: "center center",
+        transition:
+          "transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 220ms ease",
         fontFamily: "-apple-system, system-ui, sans-serif",
       }}
     >

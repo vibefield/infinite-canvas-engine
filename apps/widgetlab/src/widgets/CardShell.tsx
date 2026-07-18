@@ -18,11 +18,7 @@
  * All signals are chrome-grade: a ~60 ms poll, no ECS writes.
  */
 import {
-  Captures,
-  Drag,
-  GesturePhases,
   Grab,
-  HadSequence,
   OverlapCandidate,
   OverlapRejected,
   Position,
@@ -33,6 +29,7 @@ import {
   type World,
 } from "@ice/core";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useDragLift } from "./use-drag-lift";
 
 /** Card corner radius — exported so folder minis can scale the same silhouette. */
 export const CARD_RADIUS = 22;
@@ -103,7 +100,9 @@ export function CardShell({
   /** Omitted for GL cards — their content floats in the island above (GlCardChrome). */
   children?: ReactNode;
 }) {
-  const [lifted, setLifted] = useState(false);
+  // Lift signal + scale: the shared hook (use-drag-lift.ts, 2026-07-18) —
+  // Grab-or-armed-hold truth, ChromeSettings.liftScale for the number.
+  const { lifted, scale } = useDragLift(world, entity);
   const [soleSelected, setSoleSelected] = useState(false);
   // v1's two glow tiers: "target" (accepting container — strong, -t vars) and
   // "candidate" (rejecting overlap hover — weak, -c vars).
@@ -111,25 +110,7 @@ export function CardShell({
   const [hot, setHot] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
 
   useEffect(() => {
-    // Lift feedback fires at the LONG-PRESS (iOS: the hold IS the "you can
-    // drag now" signal, before any movement — field report 2026-07-12): after
-    // the Sequence hand-off, this widget's captured Drag sits un-parked
-    // (HadSequence, Possible/Active) with no Grab yet — that armed state
-    // lifts; Grab (live move) keeps it lifted through the drag.
-    const armedByHold = (): boolean => {
-      for (const rec of world.getReverse(entity, Captures)) {
-        if (!world.has(rec, Drag) || !world.hasTag(rec, HadSequence)) continue;
-        if (
-          world.hasTag(rec, GesturePhases.tags.Possible) ||
-          world.hasTag(rec, GesturePhases.tags.Active)
-        ) {
-          return true;
-        }
-      }
-      return false;
-    };
     const id = setInterval(() => {
-      setLifted(world.has(entity, Grab) || armedByHold());
       // Sole selection → the in-card ring; ≥2 → the engine's P4 union box.
       let selCount = 0;
       world.query(selectedQuery).each((b) => {
@@ -164,7 +145,7 @@ export function CardShell({
     overflow: "hidden",
     background,
     boxShadow: baseShadow,
-    transform: lifted ? "scale(1.05)" : "scale(1)",
+    transform: lifted ? `scale(${scale})` : "scale(1)",
     transformOrigin: "center center",
     opacity: lifted ? LIFT_OPACITY : 1,
     transition:

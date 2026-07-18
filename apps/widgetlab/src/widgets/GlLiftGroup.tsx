@@ -7,29 +7,11 @@
  * (post-Sequence-hand-off Drag capturing this widget, no Grab yet) or
  * live-dragged (Grab).
  */
-import {
-  Captures,
-  Drag,
-  GesturePhases,
-  Grab,
-  HadSequence,
-  type Entity,
-  type World,
-} from "@ice/core";
+import type { Entity, World } from "@ice/core";
 import { useIslandLift, useIslandOpacity } from "@ice/r3f";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { LIFT_OPACITY } from "./CardShell";
-
-function isLifted(world: World, entity: Entity): boolean {
-  if (world.has(entity, Grab)) return true;
-  for (const rec of world.getReverse(entity, Captures)) {
-    if (!world.has(rec, Drag) || !world.hasTag(rec, HadSequence)) continue;
-    if (world.hasTag(rec, GesturePhases.tags.Possible) || world.hasTag(rec, GesturePhases.tags.Active)) {
-      return true;
-    }
-  }
-  return false;
-}
+import { useDragLift } from "./use-drag-lift";
 
 export function GlLiftGroup({
   world,
@@ -40,12 +22,11 @@ export function GlLiftGroup({
   entity: Entity;
   children: ReactNode;
 }) {
-  const [lifted, setLifted] = useState(false);
-  useEffect(() => {
-    const id = setInterval(() => setLifted(isLifted(world, entity)), 60);
-    return () => clearInterval(id);
-  }, [world, entity]);
-  useIslandLift(lifted ? 1.05 : 1);
+  // The shared lift signal (use-drag-lift.ts, 2026-07-18): same truth and
+  // same ChromeSettings.liftScale as the DOM CardShell, so the floating 3D
+  // content and the card chrome rise in lockstep from ONE knob.
+  const { lifted, scale } = useDragLift(world, entity);
+  useIslandLift(lifted ? scale : 1);
   // The drag-lift fade: same value as CardShell's CSS opacity, so the DOM
   // chrome (P1) and the floating 3D content (the composite quad) drop to 75 %
   // and restore together.
