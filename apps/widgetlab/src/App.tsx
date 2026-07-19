@@ -7,8 +7,8 @@
  * v3 adaptations (deliberate):
  *  - createLayoutEngine → createCanvasEngine + docs.create(); the seed spawns
  *    are {undoable:false} so the user's first ⌘Z is clean (moodboard rule).
- *    Spawn ORDER carries v1's zIndex order (fractional StackZ stacks later
- *    spawns on top).
+ *    Spawn ORDER carries v1's zIndex order (petition 8: sibling sequence —
+ *    later spawns append "last", i.e. on top).
  *  - v1's r3fRoot IBL → GL islands are private scenes (design-004); metallic
  *    cards carry their own studio rigs (gl-cards port). No shared Environment.
  *  - v1's GL overlap glow → CSS inset glow in CardShell, driven by the same
@@ -29,10 +29,8 @@ import {
   SnapConfig,
   SnapSource,
   SnapTarget,
-  StackZ,
   Viewport,
   Visible,
-  WidgetEquipped,
   Wire,
   WireFrom,
   WirePorts,
@@ -193,13 +191,11 @@ const COMMENT_PAD = 28;
 const COMMENT_HEADER = 44;
 const COMMENT_GAP = 12; // header → content breathing room
 
-const widgetStackZQ = defineQuery([StackZ, WidgetEquipped]);
-
 /**
  * C key: wrap the current selection in a comment-card. The comment spawns at
- * the BOTTOM of the stack (spawn z — ONE undoable tx) so members render and
- * pick above it, sized to the selection bbox (measured-when-real sizes) plus
- * header + padding. Random palette accent per spawn.
+ * the BOTTOM of the frame (order "first" — ONE undoable tx) so members render
+ * and pick above it, sized to the selection bbox (measured-when-real sizes)
+ * plus header + padding. Random palette accent per spawn.
  */
 function spawnCommentAroundSelection(ce: CanvasEngine): void {
   const sel = selectedEntities(ce.world);
@@ -221,24 +217,17 @@ function spawnCommentAroundSelection(ce: CanvasEngine): void {
     any = true;
   }
   if (!any) return;
-  // Strictly below every widget (the demo seeds ALL sit at z 0 — a halved
-  // floor landed the comment at 0.5, ABOVE its members; 2026-07-18 field
-  // bug): minZ − 1, so each new comment stacks under the previous ones too.
-  // (The earlier "z ≤ 0 breaks picking" note was a misdiagnosis — the dead
-  // drags were the C/connect keymap collision.)
-  let minZ = Number.POSITIVE_INFINITY;
-  ce.world.query(widgetStackZQ).each((b) => {
-    const z = b.col(StackZ).z;
-    for (const r of b) minZ = Math.min(minZ, z[r] as number);
-  });
-  const commentZ = Number.isFinite(minZ) ? minZ - 1 : -1;
+  // Strictly below every widget in the frame: sibling place "first" (petition
+  // 8 — retires the minZ−1 scan; each new comment prepends under the previous
+  // ones too). (The old "z ≤ 0 breaks picking" note was a misdiagnosis — the
+  // dead drags were the C/connect keymap collision.)
   const color = COMMENT_PALETTE[Math.floor(Math.random() * COMMENT_PALETTE.length)] as string;
   const comment = ce.ops.spawnWidget("comment-card", {
     x: minX - COMMENT_PAD,
     y: minY - COMMENT_HEADER - COMMENT_GAP,
     w: maxX - minX + COMMENT_PAD * 2,
     h: maxY - minY + COMMENT_HEADER + COMMENT_GAP + COMMENT_PAD,
-    z: commentZ,
+    order: "first",
     props: { title: "Comment", color },
   });
   ce.ops.setSelection([comment]);

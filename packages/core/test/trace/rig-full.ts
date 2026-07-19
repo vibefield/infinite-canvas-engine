@@ -14,7 +14,9 @@
 import type { Component, Entity, World } from "@vibecook/strata-ecs";
 import {
   Accepts,
+  BoardRoot,
   Camera,
+  ChildOf,
   Container,
   HandleSpec,
   Movable,
@@ -29,7 +31,6 @@ import {
   SnapSource,
   SnapTarget,
   Solid,
-  StackZ,
   SweepsContained,
   createEngine,
   createInputQueue,
@@ -37,6 +38,7 @@ import {
   createWorld,
   defineQuery,
   ensureCanvasSurface,
+  writeRuntimeResource,
   type Engine,
   type InputMods,
   type InputQueue,
@@ -61,7 +63,6 @@ export interface BoxOpts {
   y: number;
   w?: number;
   h?: number;
-  z?: number;
   movable?: boolean;
   selectable?: boolean;
   resizable?: boolean;
@@ -91,6 +92,10 @@ export interface FullRig {
   queue: InputQueue;
   sink: ReturnType<typeof createRecordingCommitSink>;
   canvasSurface: Entity;
+  /** The rig's board root — spawnBox hangs ordered ChildOf edges on it (petition 8). */
+  root: Entity;
+  /** The root's sibling sequence (bottom → top) — THE stacking assertion surface. */
+  stack(): Entity[];
   marqueeBuffer: MarqueeBuffer;
   step(n?: number): void;
   down(id: string, x: number, y: number, opts?: { button?: number; mods?: Partial<InputMods> }): void;
@@ -114,6 +119,12 @@ export function createFullRig(): FullRig {
   const sink = createRecordingCommitSink();
   const queue = createInputQueue();
   const canvasSurface = ensureCanvasSurface(world);
+
+  // The ORDERED regime (petition 8), like every doc-kit session: a
+  // componentless board root named by the runtime resource; spawnBox hangs
+  // each box on its sequence in spawn order.
+  const root = world.spawn({});
+  writeRuntimeResource(world, BoardRoot, { root });
 
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
   world.setResource(SnapConfig, { enabled: true, thresholdPx: 5 });
@@ -169,6 +180,8 @@ export function createFullRig(): FullRig {
     queue,
     sink,
     canvasSurface,
+    root,
+    stack: () => world.getReverse(root, ChildOf),
     marqueeBuffer: marquee.buffer,
 
     step(n = 1) {
@@ -211,12 +224,13 @@ export function createFullRig(): FullRig {
       const components: [Component, Record<string, unknown>][] = [
         [Position, { x: opts.x, y: opts.y }],
         [Size, { w: opts.w ?? 80, h: opts.h ?? 60 }],
-        [StackZ, { z: opts.z ?? 0 }],
       ];
       if (opts.accepts !== undefined) components.push([Accepts, { list: JSON.stringify(opts.accepts) }]);
       if (opts.provides !== undefined) components.push([Provides, { list: JSON.stringify(opts.provides) }]);
       // biome-ignore lint/suspicious/noExplicitAny: heterogeneous spawn component list
-      return world.spawn({ components: components as any, tags });
+      const e = world.spawn({ components: components as any, tags });
+      world.setRelation(e, ChildOf, root, "last"); // spawn order IS the sequence
+      return e;
     },
 
     spawnHandle(opts) {

@@ -17,7 +17,6 @@ import {
   type RelayChannel,
   Selectable,
   Size,
-  StackZ,
   type World,
   attachBroadcastRelay,
   createDocSession,
@@ -116,7 +115,7 @@ describe("two-tab convergence (headless): drag on A lands on B", () => {
 
     // Durable box on A at world (300,300); the spawn commit relays to B.
     a.session.store.transaction((tx) => {
-      tx.spawn({ components: [[Position, { x: 300, y: 300 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
+      tx.spawn({ components: [[Position, { x: 300, y: 300 }], [Size, { w: 80, h: 60 }]] });
     });
     a.step(); // project on A
     const onA = findBoxX(a.world, 300);

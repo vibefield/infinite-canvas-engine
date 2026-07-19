@@ -3,6 +3,13 @@
  * centre+Bounds to the engine's top-left Position+Size. Hit-testing is the
  * ENGINE's now (spatial index + disc pick with PointerSettings.radiusMousePx —
  * the v2 prototype's 45px ring reach, release dead-band and all).
+ *
+ * StackZ here is DELIBERATE post-petition-8 (reviewed): pointerlab is a
+ * doc-less, pointer-chrome lab — no BoardRoot, no ChildOf edges, no
+ * dom-widgets reflector to fight — so the engine's legacy fallback
+ * (z asc, entity asc) IS its pick order, and these local runtime-only z
+ * seeds are exactly how a legacy world expresses "later defs on top".
+ * Never synced; do not copy this pattern into doc-attached apps.
  */
 import { Position, Size, StackZ, Movable, Resizable, Selectable, type World } from "@ice/core";
 import { WidgetVisual } from "./components";

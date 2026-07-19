@@ -28,8 +28,8 @@ import {
   type CommitSink,
   type DocSession,
   Position,
+  PrefabId,
   Size,
-  StackZ,
   Viewport,
   type World,
   attachBroadcastRelay,
@@ -68,7 +68,9 @@ import { CardStoreContext, type ColorName, TodoCard } from "./todo-card";
 const STORAGE_KEY = "ice-cardboard/doc";
 const RELAY_CHANNEL = "ice-cardboard";
 
-const cardQ = defineQuery([Position, Size, StackZ]);
+// Seed-count query: PrefabId is the "is a widget" term (StackZ retired —
+// petition 8: post-flip spawns never carry it, so requiring it would count 0).
+const cardQ = defineQuery([Position, Size, PrefabId]);
 
 /** Seed 12 TodoCards in a grid, each its own paved-road spawnWidget transaction. */
 function seedCards(session: DocSession, world: World): number {

@@ -12,7 +12,6 @@ import {
   CanvasSurface,
   Position,
   Size,
-  StackZ,
   createDocSession,
   createEngine,
   installInteractionCore,
@@ -54,7 +53,7 @@ describe("doc lifecycle: close() then re-create on the same world", () => {
     const session = createDocSession(world);
 
     session.store.transaction((tx) => {
-      tx.spawn({ components: [[Position, { x: 10, y: 20 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
+      tx.spawn({ components: [[Position, { x: 10, y: 20 }], [Size, { w: 80, h: 60 }]] });
     });
     engine.step(1000); // project the durable box
     expect(countBoxes(world)).toBe(1);
@@ -69,7 +68,7 @@ describe("doc lifecycle: close() then re-create on the same world", () => {
     // A FRESH session on the SAME world attaches and projects normally.
     const session2 = createDocSession(world);
     session2.store.transaction((tx) => {
-      tx.spawn({ components: [[Position, { x: 5, y: 5 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
+      tx.spawn({ components: [[Position, { x: 5, y: 5 }], [Size, { w: 80, h: 60 }]] });
     });
     engine.step(1032);
     expect(countBoxes(world)).toBe(1);
@@ -91,8 +90,8 @@ describe("doc lifecycle: switch A → B on one world", () => {
     const sessionA = createDocSession(world);
 
     sessionA.store.transaction((tx) => {
-      tx.spawn({ components: [[Position, { x: 42, y: 7 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
-      tx.spawn({ components: [[Position, { x: 200, y: 90 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
+      tx.spawn({ components: [[Position, { x: 42, y: 7 }], [Size, { w: 80, h: 60 }]] });
+      tx.spawn({ components: [[Position, { x: 200, y: 90 }], [Size, { w: 80, h: 60 }]] });
     });
     engine.step(1000);
     expect(positionsOf(world)).toEqual([{ x: 42, y: 7 }, { x: 200, y: 90 }]);

@@ -15,7 +15,6 @@ import {
   EnvelopeError,
   Position,
   Size,
-  StackZ,
   TransformTween,
   createDocSession,
   decodeEnvelope,
@@ -236,7 +235,6 @@ describe("openDocSession: never throws", () => {
         components: [
           [Position, { x: 42, y: 7 }],
           [Size, { w: 80, h: 60 }],
-          [StackZ, { z: 0 }],
         ],
       });
     });
@@ -269,7 +267,7 @@ describe("DocSession.liveWriter — the design-001 §3 step-2 guard, wired to th
     // A durable (doc-bound) box: its Position is a committed doc cell.
     session.store.transaction((tx) => {
       tx.spawn({
-        components: [[Position, { x: 0, y: 0 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]],
+        components: [[Position, { x: 0, y: 0 }], [Size, { w: 80, h: 60 }]],
       });
     });
     world.sync();

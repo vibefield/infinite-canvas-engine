@@ -24,12 +24,12 @@ import {
   Pointer,
   PointerWorld,
   Position,
+  PrefabId,
   PresenceCursor,
   PresencePeer,
   Selected,
   SelectionSummary,
   Size,
-  StackZ,
   type World,
   attachPresence,
   createDocSession,
@@ -50,7 +50,8 @@ function must<T>(v: T | null | undefined, what: string): T {
   return v;
 }
 
-const widgetQ = defineQuery([Position, Size, StackZ]);
+// PrefabId is the "is a widget" term (StackZ retired — petition 8).
+const widgetQ = defineQuery([Position, Size, PrefabId]);
 const remotePeersQ = defineQuery([PresencePeer, Not(Local)]);
 const remoteCursorQ = defineQuery([CursorVisual, Position]);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));

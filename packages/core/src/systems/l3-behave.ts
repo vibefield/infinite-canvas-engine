@@ -5,18 +5,20 @@
  * ctl:claim; per frame (persistent `Active`) apply ABSOLUTE live writes from
  * rider origins + gesture totals; on `JustEnded` emit ONE commit (through the
  * CommitSink seam — M5 swaps in the doc transaction); on `JustCancelled`
- * restore from riders — Position AND StackZ (a forgotten StackZ restore leaves
- * the cell diverged forever); remove riders and gesture-scoped edges on every
- * terminal path. Discrete actions edge-trigger on `Just*` markers only.
+ * restore from riders — Position AND sibling order (petition 8: a forgotten
+ * order restore leaves the sequence diverged forever, the old StackZ law);
+ * remove riders and gesture-scoped edges on every terminal path. Discrete
+ * actions edge-trigger on `Just*` markers only.
  *
  * Move outcome tree (design-003 §5.5, three-way via dropSystem's signals):
  *   DropTarget + OverlapCandidate on the container → CONSUME (reparent intent);
  *   DropTarget without OverlapCandidate → FLY-BACK (no commit; TransformTween
  *     rider per widget — the tween HOLDS the claim, design-001 §3 amended);
- *   no DropTarget → COMMIT (final Position + StackZ per live Drags edge).
+ *   no DropTarget → COMMIT (final Position per live Drags edge + the sibling
+ *     placement as ORDER ops, so one gesture stays one transaction).
  * Without dropSystem installed no DropTarget ever exists ⇒ plain commits.
  */
-import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
+import type { Entity, OrderPlace, System, SystemCtx, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import { insertSlot, type LayoutRect } from "@ice/kernel";
 import {
@@ -28,6 +30,7 @@ import {
   GesturePhases,
   Grab,
   MeasuredSize,
+  NO_ENTITY,
   OverlapCandidate,
   OverlapRejected,
   PointerMods,
@@ -37,13 +40,12 @@ import {
   Size,
   Selected,
   SnapState,
-  StackZ,
   Tap,
   TransformTween,
   Watches,
   Wire,
 } from "../catalog";
-import type { CommitSink, CommitWrite } from "../engine/commit-sink";
+import type { CommitOrder, CommitSink, CommitWrite } from "../engine/commit-sink";
 import { SelectionVersion, bumpVersion } from "../helpers/version-stamps";
 import { selectedEntities } from "../ops/selection";
 
@@ -82,6 +84,83 @@ function applySelection(
   for (const s of current) if (s !== target) ctx.removeTag(s, Selected);
   if (!ctx.hasTag(target, Selected)) ctx.addTag(target, Selected);
   bumpVersion(world, SelectionVersion);
+}
+
+/**
+ * Reinsert the dragged set at its remembered sibling positions (petition 8 —
+ * the cancel/fly-back twin of the claim elevate). Members walk in ORIGINAL
+ * relative order (`Grab.ord`), each `{after: resolved anchor}`:
+ *  - same-`prev` run → ride the previously-reinserted member (a contiguous
+ *    block re-forms in claim order);
+ *  - the original `prev` anchor, when it survived UNDER THE SAME PARENT;
+ *  - else the nearest surviving earlier sibling we know — the last member
+ *    already reinserted into this parent;
+ *  - else "first" — NEVER "last": a mid-stack cancel must not jump to top.
+ * Edge-less members (memo parent NO_ENTITY) were never elevated — skipped; a
+ * parent that died mid-gesture took the whole sequence with it — skipped.
+ * ctx placements apply at the flush IN ORDER, so each anchor is already
+ * placed when consulted.
+ */
+function restoreOrder(ctx: SystemCtx, dragged: readonly Entity[]): void {
+  const members: { e: Entity; parent: Entity; prev: Entity; ord: number }[] = [];
+  for (const w of dragged) {
+    if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
+    const g = ctx.read(w, Grab);
+    if (g.parent === NO_ENTITY || !ctx.isAlive(g.parent)) continue;
+    // FOREIGN-REPARENT GUARD (rev-ice-flip finding 2): the gesture itself never changes a
+    // member's parent mid-flight (elevate is same-parent; consume runs only at end), so a
+    // current parent that differs from the memo means a REMOTE edit won that edge. Restoring
+    // the memo parent would revert the foreign reparent in the runtime only — cancel commits
+    // nothing, so runtime structure forks from the doc until some later remote op happens to
+    // rewrite the row. Skip: order restore is a courtesy; membership truth is the doc's.
+    if (ctx.getRelation(w, ChildOf) !== g.parent) continue;
+    members.push({ e: w, parent: g.parent, prev: g.prev, ord: g.ord });
+  }
+  members.sort((a, b) => a.ord - b.ord);
+  const lastByParent = new Map<Entity, { e: Entity; prev: Entity }>();
+  for (const m of members) {
+    const last = lastByParent.get(m.parent);
+    let place: OrderPlace;
+    if (last !== undefined && last.prev === m.prev) {
+      place = { after: last.e };
+    } else if (m.prev !== NO_ENTITY && ctx.isAlive(m.prev) && ctx.getRelation(m.prev, ChildOf) === m.parent) {
+      place = { after: m.prev };
+    } else if (last !== undefined) {
+      place = { after: last.e };
+    } else {
+      place = "first";
+    }
+    ctx.setRelation(m.e, ChildOf, m.parent, place);
+    lastByParent.set(m.parent, { e: m.e, prev: m.prev });
+  }
+}
+
+/**
+ * The plain-move commit's ORDER ops (petition 8): re-assert each member's
+ * elevated placement — `{parent, "last"}` in CURRENT sibling order, so the
+ * doc transaction lands exactly the runtime sequence the elevate built.
+ * Edge-less members carry no placement.
+ */
+function commitOrders(ctx: SystemCtx, dragged: readonly Entity[]): CommitOrder[] {
+  const byParent = new Map<Entity, Set<Entity>>();
+  for (const w of dragged) {
+    if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
+    const parent = ctx.getRelation(w, ChildOf);
+    if (parent === undefined) continue;
+    let set = byParent.get(parent);
+    if (set === undefined) {
+      set = new Set();
+      byParent.set(parent, set);
+    }
+    set.add(w);
+  }
+  const orders: CommitOrder[] = [];
+  for (const [parent, set] of byParent) {
+    for (const sib of ctx.getReverse(parent, ChildOf)) {
+      if (set.has(sib)) orders.push({ entity: sib, parent, place: "last" });
+    }
+  }
+  return orders;
 }
 
 export function createSelectMoveBehaviors(
@@ -186,12 +265,12 @@ export function createSelectMoveBehaviors(
                 durationMs: FLY_BACK_MS,
                 elapsedMs: 0,
               });
-              // Restore StackZ NOW (it is not animated): fly-back commits
-              // nothing, so an elevated z left in place would keep the cell
-              // diverged forever and hold remote z-edits indefinitely — the
-              // same law as the cancel path (design-003 §5.3).
-              if (ctx.has(w, StackZ)) ctx.edit(w).set(StackZ, { z: g.z });
             }
+            // Restore sibling ORDER now (it is not animated): fly-back commits
+            // nothing, so an elevated sequence left in place would keep the
+            // runtime diverged forever and hold remote reorders indefinitely —
+            // the same law as the cancel path (design-003 §5.3).
+            restoreOrder(ctx, dragged);
           } else if (container !== undefined) {
             // Consume: reparent + final position, one intent (one tx at M5).
             const writes: CommitWrite[] = [];
@@ -227,31 +306,32 @@ export function createSelectMoveBehaviors(
             }
             if (writes.length > 0) sink.commit({ kind: "consume", gesture: rec, writes, reparents });
           } else {
-            // Plain move commit: final Position + StackZ per live edge.
+            // Plain move commit: final Position per live edge + the elevated
+            // sibling placement as ORDER ops — one gesture, one transaction,
+            // one undo step (petition 8).
             const writes: CommitWrite[] = [];
             for (const w of dragged) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
               const g = ctx.read(w, Grab);
               writes.push({ entity: w, component: Position, value: { x: g.x + wx, y: g.y + wy } });
-              const z = ctx.get(w, StackZ);
-              if (z !== undefined) {
-                writes.push({ entity: w, component: StackZ, value: { z: z.z } });
-              }
             }
-            if (writes.length > 0) sink.commit({ kind: "move", gesture: rec, writes });
+            if (writes.length > 0) {
+              sink.commit({ kind: "move", gesture: rec, writes, orders: commitOrders(ctx, dragged) });
+            }
           }
           clearGestureState(ctx, rec, dragged);
           continue;
         }
 
         if (ctx.hasTag(rec, P.justTags.Cancelled) || ctx.hasTag(rec, P.justTags.Failed)) {
-          // Restore Position AND StackZ from Grab (design-003 §5.3), then clean up.
+          // Restore Position AND sibling order from Grab (design-003 §5.3),
+          // then clean up.
           for (const w of dragged) {
             if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
             const g = ctx.read(w, Grab);
             ctx.edit(w).set(Position, { x: g.x, y: g.y });
-            if (ctx.has(w, StackZ)) ctx.edit(w).set(StackZ, { z: g.z });
           }
+          restoreOrder(ctx, dragged);
           clearGestureState(ctx, rec, dragged);
         }
       }
@@ -263,7 +343,7 @@ export function createSelectMoveBehaviors(
       // (dragRoute: RoutedMove xor RoutedResize) — attested (strata 0.4.0,
       // petition 3a), so the writer-pair advisory stays quiet here and loud
       // for real mistakes.
-      access: { write: [Position, StackZ], orderIndependent: [Position] },
+      access: { write: [Position], orderIndependent: [Position] },
     },
   );
 

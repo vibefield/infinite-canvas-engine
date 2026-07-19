@@ -31,6 +31,7 @@ export type {
   Component,
   Condition,
   Entity,
+  OrderPlace,
   Pipeline,
   Query,
   Relation,
@@ -112,6 +113,9 @@ export * from "./ops/cascade";
 export * from "./ops/claims";
 export * from "./ops/gestures";
 export * from "./ops/point-pick";
+// Sibling order (petition 8): THE per-frame stacking source — frame parent,
+// pull-based ordinal cache, and the one comparator paint/pick/drop share.
+export * from "./ops/sibling-order";
 // Port-schema → kernel PortSlot resolution (2026-07-16: exported for the
 // @ice/ground wires pass — rendered and picked anchors agree by construction;
 // retires the wires reflector's local-resolver TODO).
@@ -123,6 +127,7 @@ export {
   createRecordingCommitSink,
   type CommitIntent,
   type CommitCreate,
+  type CommitOrder,
   type CommitReparent,
   type CommitSink,
   type CommitWrite,
@@ -196,7 +201,7 @@ export {
   type WidgetType,
 } from "./widget/define-widget";
 export { createWidgetEquipSystem } from "./widget/equip";
-export { spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
+export { attachSpawnParent, spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
 export { setWidgetProps } from "./widget/set-props";
 export {
   createWidgetRuntime,

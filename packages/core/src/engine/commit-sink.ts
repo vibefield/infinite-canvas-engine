@@ -12,7 +12,7 @@
  * The seam is deliberately dumb data: no callbacks into behaviors, no partial
  * application — a whole gesture outcome in one value.
  */
-import type { Component, Entity } from "@vibecook/strata-ecs";
+import type { Component, Entity, OrderPlace } from "@vibecook/strata-ecs";
 
 /** One absolute component write inside a commit (whole-value, design-001 §2). */
 export interface CommitWrite {
@@ -26,6 +26,18 @@ export interface CommitWrite {
 export interface CommitReparent {
   readonly entity: Entity;
   readonly container: Entity;
+}
+
+/**
+ * An ordered-relation placement riding a commit (petition 8): the gesture's
+ * final sibling position lands IN the gesture's single transaction — one
+ * gesture stays one undo step. `parent` is re-asserted absolutely (a
+ * same-target `setRelation` WITH a place is a move, never a duplicate).
+ */
+export interface CommitOrder {
+  readonly entity: Entity;
+  readonly parent: Entity;
+  readonly place: OrderPlace;
 }
 
 /**
@@ -55,6 +67,7 @@ export interface CommitIntent {
   readonly gesture: Entity;
   readonly writes: readonly CommitWrite[];
   readonly reparents?: readonly CommitReparent[];
+  readonly orders?: readonly CommitOrder[];
   readonly wires?: readonly CommitWireSpawn[];
   readonly creates?: readonly CommitCreate[];
 }

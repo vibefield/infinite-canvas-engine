@@ -14,7 +14,6 @@ import {
   Selectable,
   Selected,
   Size,
-  StackZ,
   createEngine,
   createRecordingCommitSink,
   installInteractionStack,
@@ -58,7 +57,6 @@ describe("full stack (installInteractionStack)", () => {
       components: [
         [Position, { x: 100, y: 100 }],
         [Size, { w: 80, h: 60 }],
-        [StackZ, { z: 0 }],
       ],
       tags: [Selectable, Movable],
     });
@@ -84,7 +82,6 @@ describe("full stack (installInteractionStack)", () => {
       components: [
         [Position, { x: 100, y: 100 }],
         [Size, { w: 80, h: 60 }],
-        [StackZ, { z: 0 }],
       ],
       tags: [Selectable, Movable],
     });

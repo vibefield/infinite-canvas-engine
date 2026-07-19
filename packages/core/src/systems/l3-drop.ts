@@ -3,7 +3,9 @@
  * AFTER moveBehavior so it tests POST-move bounds).
  *
  * For Active `RoutedMove` drags: spatial-query the dragged union bounds for
- * `Container` widgets (∉dragged), pick the topmost by StackZ, and publish two
+ * `Container` widgets (∉dragged), pick the topmost by sibling order (petition
+ * 8 — compareStackOrder, the SAME comparator pick/paint use, so the drop
+ * candidate can never diverge from what the user sees on top), and publish two
  * signals the move-outcome tree consumes (l3-behave §5.5):
  *   - `DropTarget(recognizer → container)` — set for the container under the
  *     bounds REGARDLESS of an accepts-match (so the outcome tree can distinguish
@@ -33,9 +35,9 @@ import {
   RoutedMove,
   Size,
   Solid,
-  StackZ,
   SweepsContained,
 } from "../catalog";
+import { compareStackOrder, createSiblingOrderIndex } from "../ops/sibling-order";
 
 const dropDragQ = defineQuery([Drag, GestureActive, RoutedMove]);
 
@@ -51,6 +53,10 @@ function parseList(raw: string | null | undefined): string[] {
 }
 
 export function createDropSystem(world: World, index: SpatialIndex<Entity>): System {
+  // Frame ordinal map for the topmost-container compare (petition 8) — the
+  // same pull-based source the pick systems read; candidates are same-frame
+  // by construction (the spatial index is Active-gated).
+  const order = createSiblingOrderIndex(world);
   return defineSystem(
     dropDragQ,
     (b, ctx) => {
@@ -91,15 +97,13 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
         // a Container (accept/reject by contracts) OR a Solid widget (always
         // rejects — v1's iOS-card overlap contract, 2026-07-12 field report).
         let container: Entity | undefined;
-        let bestZ = Number.NEGATIVE_INFINITY;
         if (any) {
+          const ordinals = order.ordinals();
           for (const entry of index.search({ minX, minY, maxX, maxY })) {
             const e = entry.id;
             if (draggedSet.has(e) || !ctx.isAlive(e)) continue;
             if (!ctx.hasTag(e, Container) && !(!sweeper && ctx.hasTag(e, Solid))) continue;
-            const z = ctx.get(e, StackZ)?.z ?? 0;
-            if (z > bestZ) {
-              bestZ = z;
+            if (container === undefined || compareStackOrder(ctx, ordinals, e, container) > 0) {
               container = e;
             }
           }

@@ -16,7 +16,7 @@ import { ChildOf, Position } from "../../src";
 import { createFullRig } from "./rig-full";
 
 function dropCardAt395x180(rig: ReturnType<typeof createFullRig>) {
-  const card = rig.spawnBox({ x: 100, y: 100, w: 60, h: 60, z: 1, provides: ["card"] });
+  const card = rig.spawnBox({ x: 100, y: 100, w: 60, h: 60, provides: ["card"] });
   rig.down("mouse", 130, 130);
   rig.step();
   rig.move("mouse", 145, 130); // slop exit → Active
@@ -36,7 +36,6 @@ describe("trace: consume places newcomers in a free slot", () => {
       y: 100,
       w: 200,
       h: 200,
-      z: 0,
       container: true,
       accepts: ["card"],
       selectable: false,
@@ -58,7 +57,6 @@ describe("trace: consume places newcomers in a free slot", () => {
       y: 100,
       w: 200,
       h: 200,
-      z: 0,
       container: true,
       accepts: ["card"],
       selectable: false,

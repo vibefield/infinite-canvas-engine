@@ -7,9 +7,13 @@
  * claim-frame `read(w, Grab)` throws (design-003 review C1).
  *
  * `moveClaim` (JustActive × RoutedMove): select-on-grab, `Drags` edges over the
- * dragged set, `Grab` per widget with the CURRENT Position/Size/StackZ embedded
- * in the command payload, and the StackZ elevate (an immediate value write —
- * part of the gesture divergence, restored from `Grab.z` on cancel).
+ * dragged set, `Grab` per widget with the CURRENT Position/Size + the ORDER
+ * MEMO embedded (petition 8: ChildOf parent, nearest non-dragged predecessor
+ * sibling, original sibling index), and the sibling elevate — `moveRelation(w,
+ * ChildOf, "last")`, frame-scoped, equivalent to the old global-top within the
+ * frame; part of the gesture divergence, restored from the memo on cancel.
+ * Edge-less widgets (legacy/runtime world) skip both memo and elevate — the
+ * move would be a strata no-op and there is no sequence to restore.
  *
  * `resizeClaim` (JustActive × RoutedResize): `Drags` + `Grab` over the Selected
  * ∧ Resizable set; the anchor lives on the captured handle's `HandleSpec` — no
@@ -24,6 +28,7 @@ import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import {
   Active,
   Captures,
+  ChildOf,
   Culled,
   Drag,
   Drags,
@@ -31,6 +36,7 @@ import {
   Grab,
   MeasuredSize,
   Movable,
+  NO_ENTITY,
   PointerMods,
   Position,
   Resizable,
@@ -38,7 +44,6 @@ import {
   RoutedResize,
   Selected,
   Size,
-  StackZ,
   SweepsContained,
   Watches,
 } from "../catalog";
@@ -49,7 +54,6 @@ const P = GesturePhases;
 
 const moveClaimQ = defineQuery([Drag, P.justTags.Active, RoutedMove]);
 const resizeClaimQ = defineQuery([Drag, P.justTags.Active, RoutedResize]);
-const stackZQ = defineQuery([StackZ]);
 const sweepCandidatesQ = defineQuery([Position, Size, Movable]);
 
 /**
@@ -90,20 +94,16 @@ function expandSweep(world: World, ctx: SystemCtx, dragged: Entity[]): void {
   }
 }
 
-/** Fractional-top elevate: max live z + 1 (scan on the claim frame only — O(n) once per gesture). */
-function topZ(world: World): number {
-  let top = 0;
-  world.query(stackZQ).each((b) => {
-    const z = b.col(StackZ).z;
-    for (const r of b) {
-      const v = z[r] as number;
-      if (v > top) top = v;
-    }
-  });
-  return top;
-}
-
-/** Attach the drag riders for one widget; returns false if another gesture owns it. */
+/**
+ * Attach the drag riders for one widget; returns false if another gesture owns
+ * it. `Grab` embeds the ORDER MEMO (petition 8): the widget's ChildOf parent,
+ * its nearest predecessor sibling that is NOT itself mid-drag (`taken` covers
+ * this pass's claims, a live `Grab` covers earlier frames' — both sit at "last"
+ * and are unstable anchors; a predecessor dragged by THIS gesture is fine, the
+ * restore walk reinserts in `ord` order so it is back in place when consulted),
+ * and the original sibling index. The memo reads the PRE-FLUSH sequence — ctx
+ * structure is deferred, so capture and the enqueued elevates never interleave.
+ */
 function attachRiders(ctx: SystemCtx, recognizer: Entity, widget: Entity, taken: Set<Entity>): boolean {
   if (taken.has(widget)) return false;
   const otherOwner = ctx
@@ -113,14 +113,30 @@ function attachRiders(ctx: SystemCtx, recognizer: Entity, widget: Entity, taken:
   taken.add(widget);
   const pos = ctx.read(widget, Position);
   const size = ctx.get(widget, Size);
-  const z = ctx.get(widget, StackZ);
+  const parent = ctx.getRelation(widget, ChildOf);
+  let prev: Entity = NO_ENTITY;
+  let ord = 0;
+  if (parent !== undefined) {
+    const siblings = ctx.getReverse(parent, ChildOf);
+    const at = siblings.indexOf(widget);
+    ord = at >= 0 ? at : 0;
+    for (let i = at - 1; i >= 0; i--) {
+      const sib = siblings[i] as Entity;
+      if (!taken.has(sib) && !ctx.has(sib, Grab)) {
+        prev = sib;
+        break;
+      }
+    }
+  }
   ctx.addRelation(recognizer, Drags, widget);
   ctx.addComponent(widget, Grab, {
     x: pos.x,
     y: pos.y,
     w: size?.w ?? 0,
     h: size?.h ?? 0,
-    z: z?.z ?? 0,
+    parent: parent ?? NO_ENTITY,
+    prev,
+    ord,
   });
   return true;
 }
@@ -158,24 +174,25 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
 
         // Comment-box sweep BEFORE riders: swept members ride the same
         // recognizer; rider order keeps the comment BELOW its members in the
-        // elevate (comment first, members after).
+        // elevate (comment first, members after — each successive "last"
+        // lands ABOVE the previous one).
         expandSweep(world, ctx, dragged);
 
-        const zBase = topZ(world);
-        let elevated = 0;
         for (const w of dragged) {
           if (!ctx.isAlive(w) || !ctx.has(w, Position)) continue;
           if (w !== grabbed && !ctx.hasTag(w, Movable)) continue;
           if (!attachRiders(ctx, rec, w, taken)) continue;
-          if (ctx.has(w, StackZ)) {
-            // Immediate value write — gesture divergence, Grab.z restores on cancel.
-            elevated += 1;
-            ctx.edit(w).set(StackZ, { z: zBase + elevated });
+          // Sibling elevate (petition 8): an immediate structural move —
+          // gesture divergence; the Grab memo restores on cancel/fly-back.
+          // Frame-scoped "last" = the old global-top within the frame. No
+          // edge (legacy/runtime world) ⇒ strata no-op, skipped.
+          if (ctx.getRelation(w, ChildOf) !== undefined) {
+            ctx.moveRelation(w, ChildOf, "last");
           }
         }
       }
     },
-    { name: "moveClaim", access: { write: [StackZ] } },
+    { name: "moveClaim" },
   );
 
   const resizeClaim = defineSystem(

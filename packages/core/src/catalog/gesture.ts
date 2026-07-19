@@ -17,7 +17,7 @@
  * carry real values (Grab, Down) stay bare so a defaulted origin can't silently
  * corrupt a cancel-restore.
  */
-import { enumOf, field } from "@vibecook/strata-ecs";
+import { enumOf, field, type Entity } from "@vibecook/strata-ecs";
 import { definePhaseSet } from "../helpers/phase-set";
 import { defineComponent, defineRelation, defineTag } from "../schema/meta";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
@@ -202,16 +202,31 @@ export const DropTarget = defineRelation("DropTarget", { arity: "one" });
 // --- per-gesture riders ---
 
 /**
+ * "None" sentinel for Grab's eid fields — strata's reserved null handle
+ * (entity 0 is never live; generations start at 1).
+ */
+export const NO_ENTITY = 0 as Entity;
+
+/**
  * Per-dragged-widget origin, attached at claim time with the CURRENT transform embedded
  * (design-001 §3, design-003 §4.5). Bare on purpose: a defaulted zero origin would corrupt
- * the cancel-restore of Position/StackZ.
+ * the cancel-restore of Position and sibling order.
+ *
+ * `parent`/`prev`/`ord` are the ORDER MEMO (petition 8) — the claim-time
+ * elevate is `moveRelation(w, ChildOf, "last")`, so cancel/fly-back must
+ * remember where the widget SAT: its `ChildOf` parent (NO_ENTITY = no edge —
+ * legacy world, nothing to restore), its nearest non-dragged predecessor
+ * sibling (NO_ENTITY = it was first), and its original sibling index (`ord` —
+ * the members' relative order at reinsert; see l3-behave's restore walk).
  */
 export const Grab = defineComponent("Grab", {
   x: "f64",
   y: "f64",
   w: "f32",
   h: "f32",
-  z: "f64",
+  parent: "eid",
+  prev: "eid",
+  ord: "f64",
 });
 
 /** Snap offset — in the Drag prefab's essential set (present from spawn, zeroed — writers never race an attach). */

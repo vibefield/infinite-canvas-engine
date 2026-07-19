@@ -37,10 +37,11 @@
  *                      dead-band (hover is forgiving; hold the current target
  *                      while the pointer stays within its expanded bounds).
  *   - `TouchesExact` = r=0 point pick (grab is precise; no dead-band).
- * Pick priority is plane priority: HandleSpec chrome first, then widgets by
- * StackZ descending, then the CanvasSurface entity as the guaranteed fallback
- * (design-001 §4). Relations are written change-only (design-002 §4 hygiene).
- * Wires/ports are M8 — skipped.
+ * Pick priority is plane priority: HandleSpec chrome first, then widgets
+ * topmost by sibling order (petition 8 — the shared SiblingOrderIndex feeds
+ * pickTopAt, so pick can never diverge from paint), then the CanvasSurface
+ * entity as the guaranteed fallback (design-001 §4). Relations are written
+ * change-only (design-002 §4 hygiene). Wires/ports are M8 — skipped.
  */
 import type { Batch, Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, defineTickSystem, Not } from "@vibecook/strata-ecs";
@@ -62,6 +63,7 @@ import { Active } from "../catalog/camera-derived";
 import { WidgetEquipped } from "../widget/define-widget";
 import { PointerVersion, SpatialVersion, bumpVersion, makeVersionGuard } from "../helpers/version-stamps";
 import { distPointToBox, pickTopAt, type WirePickSource } from "../ops/point-pick";
+import { createSiblingOrderIndex } from "../ops/sibling-order";
 import { PointerSettings } from "../catalog/settings-resources";
 import { POINTER_DEFAULTS } from "../settings/defaults";
 
@@ -185,11 +187,16 @@ export function createPickingSystems(
     },
   );
 
+  // The pull-based frame ordinal map (petition 8): pickTopAt's widget tier
+  // takes the compareStackOrder max over it — the same map every renderer
+  // sorts by. Stamp-checked per read; ~free while order is quiet.
+  const order = createSiblingOrderIndex(world);
+
   /** THE narrow-phase, shared with the router's event-time pick (ops/point-pick).
    *  `wires` (M8) narrow-phases wire entries against their cached cubic; undefined
    *  before the wire slice installs ⇒ wire index entries are skipped by pickTopAt. */
   const pickTop = (ctx: SystemCtx, wx: number, wy: number, rWorld: number): Entity | undefined =>
-    pickTopAt(ctx, index, wx, wy, rWorld, wires);
+    pickTopAt(ctx, index, wx, wy, rWorld, wires, order.ordinals());
 
   const picking = defineSystem(
     pointerQ,

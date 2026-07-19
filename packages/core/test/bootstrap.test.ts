@@ -19,7 +19,6 @@ import {
   PresenceCursor,
   PresencePeer,
   Size,
-  StackZ,
   attachPresence,
   broadcastChannelByteChannel,
   createCanvasEngine,
@@ -137,7 +136,7 @@ function findAt(world: World, x: number, y: number): Entity | undefined {
 
 function spawnBox(session: JoinResult["session"], x: number, y: number): void {
   session.store.transaction((tx) =>
-    tx.spawn({ components: [[Position, { x, y }], [Size, { w: 5, h: 5 }], [StackZ, { z: 0 }]] }),
+    tx.spawn({ components: [[Position, { x, y }], [Size, { w: 5, h: 5 }]] }),
   );
 }
 
@@ -233,7 +232,7 @@ describe("bootstrap: mid-handshake buffering (§6.5)", () => {
     cleanups.push(() => auth.close());
     let w1: Entity | undefined;
     auth.store.transaction((tx) => {
-      w1 = tx.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 10, h: 10 }], [StackZ, { z: 0 }]] });
+      w1 = tx.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 10, h: 10 }]] });
     });
     authWorld.sync();
     const w1e = must(w1, "authored w1");
@@ -347,7 +346,7 @@ function makeGappedDoc(): {
   const auth = createDocSession(authWorld);
   let w1: Entity | undefined;
   auth.store.transaction((tx) => {
-    w1 = tx.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 5, h: 5 }], [StackZ, { z: 0 }]] });
+    w1 = tx.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 5, h: 5 }]] });
   });
   authWorld.sync();
   const w1e = must(w1, "authored w1");

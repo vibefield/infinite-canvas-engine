@@ -226,13 +226,12 @@ describe("trace: resize about anchor (design-003 §5 item 6)", () => {
 /** Drag a provider card into a container and read the drop signals + the move outcome. */
 function dragCardOntoContainer(provides: string[]) {
   const rig = createFullRig();
-  const card = rig.spawnBox({ x: 100, y: 100, w: 60, h: 60, z: 1, provides });
+  const card = rig.spawnBox({ x: 100, y: 100, w: 60, h: 60, provides });
   const container = rig.spawnBox({
     x: 300,
     y: 100,
     w: 200,
     h: 200,
-    z: 0,
     container: true,
     accepts: ["card"],
     selectable: false,

@@ -2,17 +2,17 @@
  * M4 cancellation matrix (implementation-plan M4 exit; design-003 §4.1/§5.3/§8).
  * Every way a live drag can die, asserted tick-by-tick against the REAL loop:
  *
- *  (a) pointercancel mid-drag → recognizer Cancelled, Position + StackZ restored
- *      from Grab, riders (Grab/Drags) removed;
+ *  (a) pointercancel mid-drag → recognizer Cancelled, Position + sibling order
+ *      restored from Grab (petition 8 memo), riders (Grab/Drags) removed;
  *  (b) blur-equivalent → the adapter's blur output (a pointer cancel + a mods-
  *      clearing key fact) unlatches the world's Keyboard resource AND cancels the
  *      gesture — the CORE-contract regression for commit 4778a6b's adapter fix;
  *  (c) capture death → despawning the CAPTURED widget mid-drag cancels the whole
  *      gesture next frame with no throw; riders on the SURVIVING dragged widgets
  *      are restored;
- *  (d) rejected-drop fly-back → StackZ restored to Grab.z on the SAME frame the
- *      tween attaches (4778a6b: an elevated z with no commit held remote z-edits
- *      forever), and nothing commits (the doc z is never written);
+ *  (d) rejected-drop fly-back → sibling order restored on the SAME frame the
+ *      tween attaches (4778a6b's z lesson: an elevated stack with no commit
+ *      held remote edits forever), and nothing commits (the doc is untouched);
  *  (e) Movable gate → a Selectable-but-NOT-Movable widget's drag claims its
  *      pointer but routes no Move: it never grabs and never moves (4778a6b).
  */
@@ -20,7 +20,9 @@ import { createWorld, type Entity } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
   Accepts,
+  BoardRoot,
   Camera,
+  ChildOf,
   Container,
   Drags,
   Grab,
@@ -31,13 +33,13 @@ import {
   RoutedMove,
   Selectable,
   Size,
-  StackZ,
   TransformTween,
   ClaimedBy,
   GesturePhases,
   createEngine,
   createRecordingCommitSink,
   installInteractionStack,
+  writeRuntimeResource,
 } from "../../src";
 import { createTraceRig } from "./rig";
 
@@ -49,7 +51,7 @@ function dragToActive(rig: ReturnType<typeof createTraceRig>, a: Entity): Entity
   rig.down("mouse", 500, 500);
   rig.step(); // frame 1: Possible
   rig.move("mouse", 511, 500); // 11px > slop
-  rig.step(); // frame 2: claim — Active, Grab, StackZ elevated
+  rig.step(); // frame 2: claim — Active, Grab, sibling order elevated
   const pointer = rig.pointerEntity("mouse");
   if (pointer === undefined) throw new Error("pointer missing after down");
   const claimant = rig.world.getRelation(pointer, ClaimedBy);
@@ -58,12 +60,13 @@ function dragToActive(rig: ReturnType<typeof createTraceRig>, a: Entity): Entity
 }
 
 describe("cancel matrix (a): pointercancel mid-drag", () => {
-  it("cancels the recognizer, restores Position AND StackZ from Grab, and removes riders", () => {
+  it("cancels the recognizer, restores Position AND sibling order from Grab, and removes riders", () => {
     const rig = createTraceRig();
-    const a = rig.spawnBox({ x: 100, y: 100, z: 0 });
+    const a = rig.spawnBox({ x: 100, y: 100 });
+    const top = rig.spawnBox({ x: 700, y: 700 }); // above a — the elevate/restore witness
     const claimant = dragToActive(rig, a);
     expect(rig.world.has(a, Grab)).toBe(true);
-    expect(rig.world.read(a, StackZ).z).toBeGreaterThan(0); // elevated during the drag
+    expect(rig.stack()).toEqual([top, a]); // elevated to the frame tail during the drag
 
     rig.move("mouse", 531, 505);
     rig.step();
@@ -75,7 +78,7 @@ describe("cancel matrix (a): pointercancel mid-drag", () => {
 
     expect(rig.world.hasTag(claimant, P.tags.Cancelled)).toBe(true);
     expect(rig.world.read(a, Position)).toEqual({ x: 100, y: 100 }); // restored
-    expect(rig.world.read(a, StackZ).z).toBe(0); // StackZ restored from Grab.z
+    expect(rig.stack()).toEqual([a, top]); // sibling order restored from the memo
     expect(rig.world.has(a, Grab)).toBe(false); // rider removed
     expect(rig.world.getRelations(claimant, Drags)).toEqual([]); // edge removed
   });
@@ -84,7 +87,7 @@ describe("cancel matrix (a): pointercancel mid-drag", () => {
 describe("cancel matrix (b): blur unlatches Keyboard AND cancels the gesture", () => {
   it("the adapter's blur output (cancel + mods-clear key fact) clears Keyboard.space and cancels", () => {
     const rig = createTraceRig();
-    const a = rig.spawnBox({ x: 100, y: 100, z: 0 });
+    const a = rig.spawnBox({ x: 100, y: 100 });
     const claimant = dragToActive(rig, a);
     rig.move("mouse", 531, 505);
     rig.step();
@@ -113,8 +116,9 @@ describe("cancel matrix (b): blur unlatches Keyboard AND cancels the gesture", (
 describe("cancel matrix (c): capture death mid-drag", () => {
   it("despawning the CAPTURED widget cancels the gesture; surviving riders restore, no throw", () => {
     const rig = createTraceRig();
-    const a = rig.spawnBox({ x: 100, y: 100, z: 0 }); // will be captured + destroyed
-    const b = rig.spawnBox({ x: 300, y: 100, z: 0 }); // co-dragged survivor
+    const a = rig.spawnBox({ x: 100, y: 100 }); // will be captured + destroyed
+    const b = rig.spawnBox({ x: 300, y: 100 }); // co-dragged survivor
+    const top = rig.spawnBox({ x: 700, y: 700 }); // above both — the restore witness
 
     // Select both (tap a, shift-tap b).
     rig.target("mouse", a);
@@ -152,15 +156,15 @@ describe("cancel matrix (c): capture death mid-drag", () => {
 
     expect(rig.world.isAlive(a)).toBe(false);
     expect(rig.world.hasTag(claimant, P.tags.Cancelled)).toBe(true);
-    // The survivor's riders are restored from ITS Grab (Position + StackZ), removed.
+    // The survivor's riders are restored from ITS Grab (Position + order memo), removed.
     expect(rig.world.read(b, Position)).toEqual({ x: 300, y: 100 });
-    expect(rig.world.read(b, StackZ).z).toBe(0);
+    expect(rig.stack()).toEqual([b, top]); // back under the witness (a is gone)
     expect(rig.world.has(b, Grab)).toBe(false);
   });
 });
 
-describe("cancel matrix (d): rejected-drop fly-back restores StackZ that frame", () => {
-  it("attaches the tween AND restores StackZ to Grab.z with NO commit (doc z untouched)", () => {
+describe("cancel matrix (d): rejected-drop fly-back restores sibling order that frame", () => {
+  it("attaches the tween AND restores the sequence from the memo with NO commit (doc untouched)", () => {
     // Full stack (drop + tween) with a plain recording sink — no commit = no doc write.
     const world = createWorld();
     const engine = createEngine(world);
@@ -180,28 +184,37 @@ describe("cancel matrix (d): rejected-drop fly-back restores StackZ that frame",
       stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
     };
 
-    const box = world.spawn({
-      components: [[Position, { x: 100, y: 100 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]],
-      tags: [Selectable, Movable],
-    });
-    // A container that does NOT accept the box (box has no Provides ⇒ mismatch).
-    world.spawn({
+    // The ordered regime by hand: componentless root + BoardRoot + edges.
+    const root = world.spawn({});
+    writeRuntimeResource(world, BoardRoot, { root });
+    // Bottom of the stack: a container that does NOT accept the box (the box
+    // has no Provides ⇒ mismatch).
+    const container = world.spawn({
       components: [
         [Position, { x: 400, y: 80 }],
         [Size, { w: 240, h: 200 }],
-        [StackZ, { z: -1 }],
         [Accepts, { list: '["cards"]' }],
       ],
       tags: [Container],
     });
-    step(); // spatial index picks up both
+    const box = world.spawn({
+      components: [[Position, { x: 100, y: 100 }], [Size, { w: 80, h: 60 }]],
+      tags: [Selectable, Movable],
+    });
+    const spare = world.spawn({
+      components: [[Position, { x: 700, y: 700 }], [Size, { w: 80, h: 60 }]],
+      tags: [Selectable, Movable],
+    });
+    world.setRelation(container, ChildOf, root, "last");
+    world.setRelation(box, ChildOf, root, "last");
+    world.setRelation(spare, ChildOf, root, "last"); // the elevate/restore witness
+    step(); // spatial index picks up all three
 
     mouse("down", 120, 120, 1);
     step();
-    mouse("move", 140, 130, 1); // exits slop → Active, Grab, StackZ elevated
+    mouse("move", 140, 130, 1); // exits slop → Active, Grab, sibling order elevated
     step();
-    expect(world.read(box, StackZ).z).toBeGreaterThan(0);
-    expect(world.read(box, Grab).z).toBe(0);
+    expect(world.getReverse(root, ChildOf)).toEqual([container, spare, box]);
     mouse("move", 500, 170, 1); // over the container → DropTarget, no OverlapCandidate
     step();
 
@@ -209,8 +222,9 @@ describe("cancel matrix (d): rejected-drop fly-back restores StackZ that frame",
     step(); // JustEnded → rejected drop → fly-back
 
     expect(world.has(box, TransformTween)).toBe(true); // easing home
-    expect(world.read(box, StackZ).z).toBe(0); // StackZ back to Grab.z THAT frame
-    expect(sink.intents).toHaveLength(0); // NO commit — the doc z is never written
+    // Sibling order back {after: container} THAT frame (the memo's anchor).
+    expect(world.getReverse(root, ChildOf)).toEqual([container, box, spare]);
+    expect(sink.intents).toHaveLength(0); // NO commit — the doc is never written
   });
 });
 

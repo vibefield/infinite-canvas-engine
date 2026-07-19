@@ -20,7 +20,6 @@ import {
   Position,
   Selectable,
   Size,
-  StackZ,
   SweepsContained,
   TransformTween,
   Viewport,
@@ -35,10 +34,11 @@ import { createFullRig } from "./rig-full";
 
 function makeBoard() {
   const rig = createFullRig();
-  const comment = rig.spawnBox({ x: 0, y: 0, w: 400, h: 300, z: 0, sweeps: true });
-  const member = rig.spawnBox({ x: 50, y: 50, w: 80, h: 60, z: 1 });
-  const straddler = rig.spawnBox({ x: 370, y: 50, w: 80, h: 60, z: 1 }); // pokes out the right edge
-  const outsider = rig.spawnBox({ x: 600, y: 50, w: 80, h: 60, z: 1 });
+  // Spawn order IS the stack (petition 8): the comment first = bottom.
+  const comment = rig.spawnBox({ x: 0, y: 0, w: 400, h: 300, sweeps: true });
+  const member = rig.spawnBox({ x: 50, y: 50, w: 80, h: 60 });
+  const straddler = rig.spawnBox({ x: 370, y: 50, w: 80, h: 60 }); // pokes out the right edge
+  const outsider = rig.spawnBox({ x: 600, y: 50, w: 80, h: 60 });
   return { rig, comment, member, straddler, outsider };
 }
 
@@ -74,8 +74,8 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
 
   it("a comment group FILES into an accepting container (2026-07-18: 'i do want that')", () => {
     const rig = createFullRig();
-    const comment = rig.spawnBox({ x: 0, y: 0, w: 300, h: 250, z: 0.5, sweeps: true, provides: ["widget"] });
-    const member = rig.spawnBox({ x: 50, y: 50, w: 80, h: 60, z: 1, provides: ["widget"] });
+    const comment = rig.spawnBox({ x: 0, y: 0, w: 300, h: 250, sweeps: true, provides: ["widget"] });
+    const member = rig.spawnBox({ x: 50, y: 50, w: 80, h: 60, provides: ["widget"] });
     const folder = rig.spawnBox({
       x: 600,
       y: 300,
@@ -105,8 +105,8 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
 
   it("a comment group over a NON-matching container is a plain move, never a fly-back", () => {
     const rig = createFullRig();
-    const comment = rig.spawnBox({ x: 0, y: 0, w: 300, h: 250, z: 0.5, sweeps: true, provides: ["widget"] });
-    rig.spawnBox({ x: 50, y: 50, w: 80, h: 60, z: 1, provides: ["widget"] });
+    const comment = rig.spawnBox({ x: 0, y: 0, w: 300, h: 250, sweeps: true, provides: ["widget"] });
+    rig.spawnBox({ x: 50, y: 50, w: 80, h: 60, provides: ["widget"] });
     rig.spawnBox({
       x: 600,
       y: 300,
@@ -135,7 +135,7 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
     const { rig, comment, member } = makeBoard();
     // A solid card sitting where the group will land — a normal drag would
     // DropTarget it and fly back (v1 iOS-card contract).
-    rig.spawnBox({ x: 700, y: 300, w: 100, h: 100, z: 2, solid: true });
+    rig.spawnBox({ x: 700, y: 300, w: 100, h: 100, solid: true });
 
     rig.down("mouse", 300, 250);
     rig.step();
@@ -161,11 +161,12 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
     const stack = installInteractionStack(engine, { sink });
     engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
     world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    // Edge-less world (no BoardRoot): the legacy fallback orders by entity —
+    // the comment spawns first, so it sits below the member, like the app.
     const comment = world.spawn({
       components: [
         [Position, { x: 0, y: 0 }],
         [Size, { w: 400, h: 300 }],
-        [StackZ, { z: 0.5 }], // the app spawns comments at a fractional low z
       ],
       tags: [Selectable, Movable, SweepsContained],
     });
@@ -173,7 +174,6 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
       components: [
         [Position, { x: 50, y: 50 }],
         [Size, { w: 80, h: 60 }],
-        [StackZ, { z: 1 }],
       ],
       tags: [Selectable, Movable],
     });
@@ -204,8 +204,9 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
 
   it("FACADE engine (real defs + doc + tools): C-shaped comment drags its member", () => {
     // The app-exact path: createCanvasEngine, defineWidget defs (press-drag,
-    // resizable, sweepContained), durable spawns at fractional z, selection
-    // set to the fresh comment — the live widgetlab scenario end to end.
+    // resizable, sweepContained), durable spawns with the comment placed
+    // "first" (under the member — petition 8), selection set to the fresh
+    // comment — the live widgetlab scenario end to end.
     const CMT =
       widgets.get("cmt:c") ??
       defineWidget({
@@ -229,7 +230,7 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
     ce.docs.create();
     ce.world.setResource(Viewport, { w: 1600, h: 900, dpr: 1 });
     const member = ce.ops.spawnWidget("cmt:m", { x: 50, y: 50, w: 80, h: 60, undoable: false });
-    const comment = ce.ops.spawnWidget("cmt:c", { x: 0, y: 0, w: 400, h: 300, z: 0.5, undoable: false });
+    const comment = ce.ops.spawnWidget("cmt:c", { x: 0, y: 0, w: 400, h: 300, order: "first", undoable: false });
     ce.world.sync();
     let now = 1000;
     const step = (n = 1): void => {
@@ -259,7 +260,7 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
 
   it("dragging a member directly moves it alone — out of the comment is just a move", () => {
     const { rig, comment, member } = makeBoard();
-    rig.down("mouse", 90, 80); // on the member (z 1, above the comment)
+    rig.down("mouse", 90, 80); // on the member (spawned after the comment — above it)
     rig.step();
     rig.move("mouse", 105, 80);
     rig.step();

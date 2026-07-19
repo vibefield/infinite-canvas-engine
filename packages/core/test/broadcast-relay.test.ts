@@ -15,7 +15,6 @@ import { describe, expect, it } from "vitest";
 import {
   Position,
   Size,
-  StackZ,
   attachBroadcastRelay,
   createDocSession,
   defineQuery,
@@ -50,7 +49,7 @@ const posQ = defineQuery([Position]);
 
 function spawnBox(session: ReturnType<typeof createDocSession>, x: number): void {
   session.store.transaction((tx) => {
-    tx.spawn({ components: [[Position, { x, y: 0 }], [Size, { w: 20, h: 20 }], [StackZ, { z: 0 }]] });
+    tx.spawn({ components: [[Position, { x, y: 0 }], [Size, { w: 20, h: 20 }]] });
   });
 }
 

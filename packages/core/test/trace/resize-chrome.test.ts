@@ -25,7 +25,6 @@ import {
   Selectable,
   Selected,
   Size,
-  StackZ,
 } from "../../src";
 
 const handleQ = defineQuery([HandleSpec]);
@@ -72,7 +71,6 @@ describe("resize through selection chrome (full stack)", () => {
       components: [
         [Position, { x: 100, y: 100 }],
         [Size, { w: 80, h: 60 }],
-        [StackZ, { z: 0 }],
       ],
       tags: [Selectable, Movable, Resizable],
     });
@@ -120,7 +118,6 @@ describe("resize through selection chrome (full stack)", () => {
         [PrefabId, { id: MINBOX }],
         [Position, { x: 100, y: 100 }],
         [Size, { w: 200, h: 200 }],
-        [StackZ, { z: 0 }],
       ],
       tags: [Selectable, Movable, Resizable],
     });

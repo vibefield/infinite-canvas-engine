@@ -106,7 +106,7 @@ async function boot(): Promise<void> {
     // Plan-letter default is 10k (M3 exit scale); ?n=500 keeps the two-tab
     // full-snapshot relay snappy on slow machines until M9's update-mode relay.
     const n = Number(new URLSearchParams(location.search).get("n")) || 10_000;
-    boxCount = spawnSceneDurable(session, { count: n });
+    boxCount = spawnSceneDurable(session, world, { count: n });
   }
   sinkRef.target = session.sink;
 

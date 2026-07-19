@@ -1,18 +1,26 @@
 /**
  * The demo scene: N gray-box entities scattered over a large world area via the
  * deterministic LCG. Each is a full interaction citizen — `Selectable` +
- * `Movable` (tap selects, drag moves; select-on-grab) with a `StackZ` so the
- * moveClaim elevate has something to raise. Spawned outside any tick (plain
- * `world.spawn`, immediate on the runtime store) — app setup, not a gesture write.
+ * `Movable` (tap selects, drag moves; select-on-grab). Spawned outside any tick
+ * (plain `world.spawn`, immediate on the runtime store) — app setup, not a
+ * gesture write.
+ *
+ * Stacking (petition 8): the DURABLE seed hangs every box on the board root's
+ * ordered `ChildOf` sequence — spawn order IS the sibling order. The RUNTIME
+ * seed has no board root (doc-less world) and stays edge-less: the engine's
+ * legacy fallback orders it (z absent ⇒ entity asc = spawn order), and the
+ * drag elevate is a structural no-op there — graybox's own renderer never
+ * sorted by z anyway.
  */
 import {
+  BoardRoot,
+  ChildOf,
   type DocSession,
   type Entity,
   Movable,
   Position,
   Selectable,
   Size,
-  StackZ,
   type World,
   defineQuery,
 } from "@ice/core";
@@ -52,7 +60,6 @@ export function spawnScene(world: World, opts: SceneOpts = {}): Scene {
       components: [
         [Position, { x, y }],
         [Size, { w, h }],
-        [StackZ, { z: i }],
       ],
       tags: [Selectable, Movable],
     });
@@ -60,18 +67,20 @@ export function spawnScene(world: World, opts: SceneOpts = {}): Scene {
   return { entities };
 }
 
-const sceneBoxQ = defineQuery([Position, Size, StackZ]);
+const sceneBoxQ = defineQuery([Position, Size]);
 
 /**
  * Seed the scene as DURABLE document content — one `store.transaction` spawning
  * every box, so moves commit and sync across tabs (M5). The spawn is
  * `undoable: false`: the initial document existing is not a user edit, so the
  * first Cmd-Z should not wipe the canvas (design.md §12 janitorial transforms).
- * Only the durable CELLS (Position/Size/StackZ) are written here; the runtime
- * capability tags are added post-projection by {@link equipSceneBoxes} — the
- * durable.test pattern (capability tags are runtime riders on durable entities).
+ * Only the durable CELLS (Position/Size) plus the board-root `ChildOf` edge are
+ * written here — bare `tx.spawn`s carry no prefab edge, so without the explicit
+ * setRelation the boxes would be UNORDERED (petition 8). The runtime capability
+ * tags are added post-projection by {@link equipSceneBoxes} — the durable.test
+ * pattern (capability tags are runtime riders on durable entities).
  */
-export function spawnSceneDurable(session: DocSession, opts: SceneOpts = {}): number {
+export function spawnSceneDurable(session: DocSession, world: World, opts: SceneOpts = {}): number {
   const count = opts.count ?? 500;
   const spread = opts.spread ?? 3_000;
   const minSize = opts.minSize ?? 40;
@@ -79,19 +88,21 @@ export function spawnSceneDurable(session: DocSession, opts: SceneOpts = {}): nu
   const rand = makePrng(opts.seed ?? 0x1234_5678);
   const half = spread / 2;
 
+  // Named by doc-kit at create/open — a session always has one on this path.
+  const root = world.getResource(BoardRoot)?.root;
   session.store.transaction((tx) => {
     for (let i = 0; i < count; i++) {
       const x = inRange(rand, -half, half);
       const y = inRange(rand, -half, half);
       const w = inRange(rand, minSize, maxSize);
       const h = inRange(rand, minSize, maxSize);
-      tx.spawn({
+      const e = tx.spawn({
         components: [
           [Position, { x, y }],
           [Size, { w, h }],
-          [StackZ, { z: i }],
         ],
       });
+      if (root !== undefined) tx.setRelation(e, ChildOf, root, "last");
     }
   }, { undoable: false });
   return count;

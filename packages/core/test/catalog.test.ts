@@ -221,8 +221,12 @@ describe("gesture (§5.5, design-003 §4.2)", () => {
   it("Grab/Down latch real origins (bare); SnapState is zeroed (defaulted)", () => {
     expect(scalarType(cat.Grab, "x")).toBe("f64");
     expect(scalarType(cat.Grab, "w")).toBe("f32");
-    expect(scalarType(cat.Grab, "z")).toBe("f64");
-    expect(requiredFields(cat.Grab)).toEqual(["x", "y", "w", "h", "z"]);
+    // The order memo (petition 8): parent + nearest non-dragged predecessor
+    // (eids; 0 = none) + the original sibling index.
+    expect(scalarType(cat.Grab, "parent")).toBe("eid");
+    expect(scalarType(cat.Grab, "prev")).toBe("eid");
+    expect(scalarType(cat.Grab, "ord")).toBe("f64");
+    expect(requiredFields(cat.Grab)).toEqual(["x", "y", "w", "h", "parent", "prev", "ord"]);
     expect(requiredFields(cat.Down)).toEqual(["x", "y", "ms"]);
     expect(requiredFields(cat.SnapState)).toEqual([]);
   });

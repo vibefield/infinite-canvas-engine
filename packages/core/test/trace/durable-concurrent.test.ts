@@ -15,7 +15,6 @@ import {
   Position,
   Selectable,
   Size,
-  StackZ,
   createDocSession,
   type CommitSink,
   type DocSession,
@@ -73,8 +72,8 @@ describe("durable concurrent trace: two full rigs, simultaneous drags", () => {
 
     // Two durable widgets, authored on A, relayed to B (common baseline).
     sessionA.store.transaction((tx) => {
-      tx.spawn({ components: [[Position, { x: 100, y: 100 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
-      tx.spawn({ components: [[Position, { x: 400, y: 100 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
+      tx.spawn({ components: [[Position, { x: 100, y: 100 }], [Size, { w: 80, h: 60 }]] });
+      tx.spawn({ components: [[Position, { x: 400, y: 100 }], [Size, { w: 80, h: 60 }]] });
     });
     rigA.step(); // project structure on A
     pump(); // relay to B + tick both

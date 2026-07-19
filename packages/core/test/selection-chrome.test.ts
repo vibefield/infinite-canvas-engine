@@ -18,6 +18,7 @@ import {
   ensureCanvasSurface,
   Grab,
   HandleSpec,
+  NO_ENTITY,
   Position,
   SelectionBox,
   setSelection,
@@ -152,7 +153,7 @@ describe("selectionChrome pool", () => {
       components: [
         [Position, { x: 200, y: 0 }],
         [Size, { w: 100, h: 50 }],
-        [Grab, { x: 200, y: 0, w: 100, h: 50, z: 0 }], // mid-drag lift
+        [Grab, { x: 200, y: 0, w: 100, h: 50, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 }], // mid-drag lift
       ],
     });
     setSelection(world, [a, b], "replace");

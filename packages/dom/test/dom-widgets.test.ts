@@ -5,7 +5,10 @@
  * only `subscribe`/`getSnapshot`); the real store lives in @ice/core.
  */
 import {
+  BoardRoot,
+  ChildOf,
   Grab,
+  NO_ENTITY,
   MeasuredSize,
   Opacity,
   Position,
@@ -15,8 +18,10 @@ import {
   createEngine,
   createWorld,
   defineWidget,
+  writeRuntimeResource,
   type Entity,
   type MountEntry,
+  type World,
 } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createCanvasHost } from "../src/host";
@@ -184,7 +189,7 @@ describe("dom-widgets host reflector", () => {
     expect(hostDiv.parentElement).toBe(planes.content); // starts in P1
     expect(planes.content.style.pointerEvents).toBe("");
 
-    world.addComponent(e, Grab, { x: 0, y: 0, w: 10, h: 10, z: 0 });
+    world.addComponent(e, Grab, { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
     engine.step(1);
     expect(hostDiv.parentElement).toBe(planes.lifted); // re-parented to P3
     expect(content.parentElement).toBe(hostDiv); // the content node moved WITH the host (portal survives)
@@ -222,7 +227,7 @@ describe("dom-widgets host reflector", () => {
     const dragged = spawnBox(world, 0, 0, 10, 10);
     store.set([{ entity: dragged, hidden: false }]);
     engine.step(0);
-    world.addComponent(dragged, Grab, { x: 0, y: 0, w: 10, h: 10, z: 0 });
+    world.addComponent(dragged, Grab, { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
     engine.step(1);
 
     // A second widget appears while the drag is Active.
@@ -259,7 +264,7 @@ describe("GL widgets' chrome hosts never promote (v1 CardChrome sandwich, 2026-0
     const hostDiv = (reflector.hostFor(e) as HTMLElement).parentElement as HTMLElement;
     expect(hostDiv.parentElement).toBe(planes.content);
 
-    world.addComponent(e, Grab, { x: 0, y: 0, w: 10, h: 10, z: 0 });
+    world.addComponent(e, Grab, { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
     engine.step(1);
     expect(hostDiv.parentElement).toBe(planes.content); // NOT re-parented
     // …but it z-pops over its P1 neighbors (the within-plane twin of the
@@ -274,11 +279,72 @@ describe("GL widgets' chrome hosts never promote (v1 CardChrome sandwich, 2026-0
   });
 });
 
-describe("within-plane stacking = StackZ (design-004 §1, implemented 2026-07-18)", () => {
+describe("within-plane stacking = the frame's ChildOf sibling sequence (petition 8)", () => {
   const order = (plane: HTMLElement): string[] =>
     Array.from(plane.children).map((c) => c.getAttribute("data-ice-entity") ?? "?");
 
-  it("hosts are DOM-ordered by StackZ regardless of mount order", () => {
+  /** The ordered regime by hand: componentless root, named by the resource. */
+  const makeRoot = (world: World): Entity => {
+    const root = world.spawn({});
+    writeRuntimeResource(world, BoardRoot, { root });
+    return root;
+  };
+
+  it("hosts are DOM-ordered by sibling sequence regardless of mount order", () => {
+    const { world, engine, planes, store } = setup();
+    const root = makeRoot(world);
+    const top = spawnBox(world, 0, 0, 10, 10); // mounts FIRST but sits last in sequence
+    const bottom = spawnBox(world, 20, 0, 10, 10); // mounts second, placed first
+    world.setRelation(top, ChildOf, root, "last");
+    world.setRelation(bottom, ChildOf, root, "first");
+    store.set([
+      { entity: top, hidden: false },
+      { entity: bottom, hidden: false },
+    ]);
+    engine.step(0);
+    expect(order(planes.content)).toEqual([String(bottom), String(top)]);
+  });
+
+  it("a pure moveRelation reorders the plane (the comment-under-members contract)", () => {
+    const { world, engine, planes, store } = setup();
+    const root = makeRoot(world);
+    const a = spawnBox(world, 0, 0, 10, 10);
+    const b = spawnBox(world, 20, 0, 10, 10);
+    world.setRelation(a, ChildOf, root, "last");
+    world.setRelation(b, ChildOf, root, "last");
+    store.set([
+      { entity: a, hidden: false },
+      { entity: b, hidden: false },
+    ]);
+    engine.step(0);
+    expect(order(planes.content)).toEqual([String(a), String(b)]);
+
+    world.moveRelation(a, ChildOf, "last"); // a jumps above b — a PURE reorder
+    engine.step(1); // the Related(ChildOf) wake + orderStamp rebuild
+    expect(order(planes.content)).toEqual([String(b), String(a)]);
+  });
+
+  it("the lifted plane keeps sibling order for a promoted group (comment below its members)", () => {
+    const { world, engine, planes, store } = setup();
+    const root = makeRoot(world);
+    const member = spawnBox(world, 0, 0, 10, 10); // mounts first
+    const comment = spawnBox(world, 0, 0, 100, 100); // mounts LAST, placed first
+    world.setRelation(member, ChildOf, root, "last");
+    world.setRelation(comment, ChildOf, root, "first");
+    store.set([
+      { entity: member, hidden: false },
+      { entity: comment, hidden: false },
+    ]);
+    engine.step(0);
+    world.addComponent(comment, Grab, { x: 0, y: 0, w: 100, h: 100, parent: root, prev: NO_ENTITY, ord: 0 });
+    world.addComponent(member, Grab, { x: 0, y: 0, w: 10, h: 10, parent: root, prev: NO_ENTITY, ord: 1 });
+    engine.step(1);
+    expect(order(planes.lifted)).toEqual([String(comment), String(member)]);
+  });
+
+  it("LEGACY fallback: no BoardRoot, no edges — hosts sort by (StackZ asc, entity asc)", () => {
+    // The pre-schema-2 read-only world: v1 docs project their z cells and no
+    // board root exists. The reflector must keep painting them z-correct.
     const { world, engine, planes, store } = setup();
     const top = spawnBox(world, 0, 0, 10, 10); // mounts FIRST but z 2
     const bottom = spawnBox(world, 20, 0, 10, 10); // mounts second, z 1
@@ -292,38 +358,19 @@ describe("within-plane stacking = StackZ (design-004 §1, implemented 2026-07-18
     expect(order(planes.content)).toEqual([String(bottom), String(top)]);
   });
 
-  it("a StackZ change reorders the plane (the comment-under-members contract)", () => {
+  it("mixed plane: edge-less hosts sort ABOVE the ordinal-mapped set (documented choice)", () => {
+    // Nominally impossible post-migration — pinned so a stray bare spawn lands
+    // somewhere stable (see core ops/sibling-order.ts).
     const { world, engine, planes, store } = setup();
-    const a = spawnBox(world, 0, 0, 10, 10);
-    const b = spawnBox(world, 20, 0, 10, 10);
-    world.addComponent(a, StackZ, { z: 1 });
-    world.addComponent(b, StackZ, { z: 2 });
+    const root = makeRoot(world);
+    const ordinal = spawnBox(world, 0, 0, 10, 10);
+    world.setRelation(ordinal, ChildOf, root, "last");
+    const bare = spawnBox(world, 20, 0, 10, 10); // no edge — legacy fallback
     store.set([
-      { entity: a, hidden: false },
-      { entity: b, hidden: false },
+      { entity: bare, hidden: false },
+      { entity: ordinal, hidden: false },
     ]);
     engine.step(0);
-    expect(order(planes.content)).toEqual([String(a), String(b)]);
-
-    world.edit(a).set(StackZ, { z: 3 }); // a jumps above b
-    engine.step(1);
-    expect(order(planes.content)).toEqual([String(b), String(a)]);
-  });
-
-  it("the lifted plane keeps z order for a promoted group (comment below its members)", () => {
-    const { world, engine, planes, store } = setup();
-    const member = spawnBox(world, 0, 0, 10, 10); // mounts first
-    const comment = spawnBox(world, 0, 0, 100, 100); // mounts LAST, lowest z
-    world.addComponent(member, StackZ, { z: 5 });
-    world.addComponent(comment, StackZ, { z: 0.5 });
-    store.set([
-      { entity: member, hidden: false },
-      { entity: comment, hidden: false },
-    ]);
-    engine.step(0);
-    world.addComponent(comment, Grab, { x: 0, y: 0, w: 100, h: 100, z: 0.5 });
-    world.addComponent(member, Grab, { x: 0, y: 0, w: 10, h: 10, z: 5 });
-    engine.step(1);
-    expect(order(planes.lifted)).toEqual([String(comment), String(member)]);
+    expect(order(planes.content)).toEqual([String(ordinal), String(bare)]);
   });
 });

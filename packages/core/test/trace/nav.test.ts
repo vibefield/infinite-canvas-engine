@@ -20,7 +20,6 @@ import {
   Selectable,
   Selected,
   Size,
-  StackZ,
   Viewport,
   Visible,
   WidgetEquipped,
@@ -63,7 +62,6 @@ function makeRig() {
       components: [
         [Position, { x, y }],
         [Size, { w: 100, h: 80 }],
-        [StackZ, { z: 0 }],
         [PrefabId, { id: "navbox" }],
       ],
       tags: opts.container ? [Selectable, WidgetEquipped, Container] : [Selectable, WidgetEquipped],

@@ -25,6 +25,7 @@ import {
   ActiveTool,
   Camera,
   CameraLimits,
+  ChildOf,
   ChromeSettings,
   GestureSettings,
   MeasuredSize,
@@ -33,7 +34,6 @@ import {
   Selectable,
   Size,
   SnapConfig,
-  StackZ,
   Viewport,
 } from "../catalog";
 import { Active } from "../catalog/camera-derived";
@@ -107,7 +107,7 @@ export interface CanvasOps {
   setSelection(ids: readonly Entity[], mode?: "replace" | "add" | "toggle"): void;
   clearSelection(): void;
   selectAll(): void;
-  /** StackZ sweep, one tx: selection (or ids) to top/bottom. */
+  /** Sibling-sequence sweep, one tx: the ids to the frame top/bottom (petition 8). */
   reorder(ids: readonly Entity[], mode: "top" | "bottom"): void;
   /**
    * Desktop-style Clean Up (kernel packLayout): tidy reading-order rows, one
@@ -182,7 +182,6 @@ function createForwardingSink(): CommitSink & { target: CommitSink | undefined }
 
 // Query singletons (module scope — defineQuery identity is the cache key).
 const selectableWidgetsQ = defineQuery([Position, Size, Selectable, Active, WidgetEquipped]);
-const stackZQ = defineQuery([StackZ, PrefabId]);
 
 export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   registerBuiltinTools();
@@ -411,17 +410,22 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
           if (widget === undefined) continue;
           const pos = world.get(src, Position) ?? { x: 0, y: 0 };
           const size = world.get(src, Size);
-          const z = world.get(src, StackZ);
           const overrides: [unknown, unknown][] = [
             [Position, { x: pos.x + 16, y: pos.y + 16 }],
             ...(size !== undefined ? [[Size, { ...size }] as [unknown, unknown]] : []),
-            ...(z !== undefined ? [[StackZ, { z: z.z + 1 }] as [unknown, unknown]] : []),
           ];
           for (const g of widget.groups) {
             const v = world.get(src, g.component);
             if (v !== undefined) overrides.push([g.component, { ...(v as Record<string, unknown>) }]);
           }
-          clones.push(tx.spawnPrefab(widget.prefab, overrides as never));
+          const clone = tx.spawnPrefab(widget.prefab, overrides as never);
+          // The clone joins its source's sequence right above it (petition 8;
+          // the +16/+16 twin reads as "on top of" its source — and an edge-less
+          // clone would be unordered entirely, the pre-flip latent bug). A
+          // source without an edge (legacy doc) has nothing to inherit.
+          const parent = world.getRelation(src, ChildOf);
+          if (parent !== undefined) tx.setRelation(clone, ChildOf, parent, { after: src });
+          clones.push(clone);
         }
       });
       // The clones land at the next sync; select them once alive.
@@ -439,23 +443,19 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     reorder(ids, mode) {
       const s = requireWritable("reorder");
-      // Fractional StackZ sweep above/below the current extremes, one tx.
-      let extreme = mode === "top" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
-      world.query(stackZQ).each((b) => {
-        const col = b.col(StackZ).z;
-        for (const r of b) {
-          const z = col[r] as number;
-          extreme = mode === "top" ? Math.max(extreme, z) : Math.min(extreme, z);
-        }
-      });
-      if (!Number.isFinite(extreme)) extreme = 0;
+      // Sibling-sequence sweep, one tx (petition 8): "top" appends each id to
+      // its sequence tail — painted last = topmost, so later ids finish higher;
+      // "bottom" prepends, later ids finish lower. Exactly the legacy
+      // fractional-z sweep's outcome, keyed on sequence position instead.
+      // TODO(design-005): relative modes ("above"/"below" an anchor) are a
+      // {before}/{after} moveRelation away — deferred until the public ops
+      // table names them.
       guardedTransaction(s.store, world, (tx) => {
-        let step = 1;
         for (const e of ids) {
           if (s.store.keyOf(e) === undefined) continue;
-          const z = mode === "top" ? extreme + step : extreme - step;
-          tx.edit(e).set(StackZ, { z });
-          step += 1;
+          // No ChildOf edge (legacy doc) — no sequence to move within.
+          if (world.getRelation(e, ChildOf) === undefined) continue;
+          tx.moveRelation(e, ChildOf, mode === "top" ? "last" : "first");
         }
       });
     },

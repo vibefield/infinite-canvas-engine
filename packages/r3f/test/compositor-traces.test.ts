@@ -19,6 +19,7 @@ import {
   Active,
   Camera,
   Grab,
+  NO_ENTITY,
   NavTransition,
   Opacity,
   Position,
@@ -739,7 +740,7 @@ describe("the drag clip (v1 uDraggedRect restored for the chrome sandwich, 2026-
     rig.pass();
     expect(rig.quads.clips.get(b)).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0, exempt: false }); // off at rest
 
-    rig.world.addComponent(a, Grab, { x: 0, y: 0, w: 100, h: 100, z: 0 });
+    rig.world.addComponent(a, Grab, { x: 0, y: 0, w: 100, h: 100, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
     rig.pass();
     // Expected rect: the SAME composite-space conversion the pass uses.
     const q = worldRectToComposite({ x: 0, y: 0, width: 100, height: 100 });
@@ -764,7 +765,7 @@ describe("the drag clip (v1 uDraggedRect restored for the chrome sandwich, 2026-
     const b = rig.spawnCard(50, 0);
     rig.mount(a);
     rig.mount(b);
-    rig.world.addComponent(a, Grab, { x: 0, y: 0, w: 100, h: 100, z: 0 });
+    rig.world.addComponent(a, Grab, { x: 0, y: 0, w: 100, h: 100, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
     rig.pass();
     expect(rig.quads.clips.get(b)).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0, exempt: false });
   });

@@ -11,7 +11,7 @@
  * Tags are not eligibility-checked in M2 (essential tags spawn with the
  * prefab; optional-tag modeling is future work — documented).
  */
-import type { Component, Entity, Relation, Resource, Tag, World } from "@vibecook/strata-ecs";
+import type { Component, Entity, OrderPlace, Relation, Resource, Tag, World } from "@vibecook/strata-ecs";
 import type { Mutator } from "@vibecook/strata-ecs/durable";
 import { instantiate } from "../engine/instantiate";
 import { schemaMeta } from "../schema/meta";
@@ -28,9 +28,11 @@ export interface GuardedTx {
   edit(e: Entity): { set<S>(c: Component<S>, v: S): GuardedEditor };
   addTag(e: Entity, t: Tag): void;
   removeTag(e: Entity, t: Tag): void;
-  setRelation(e: Entity, r: Relation, target: Entity): void;
+  setRelation(e: Entity, r: Relation, target: Entity, place?: OrderPlace): void;
   addRelation(e: Entity, r: Relation, target: Entity): void;
   removeRelation(e: Entity, r: Relation, target?: Entity): void;
+  /** Reorder within the current parent's sibling sequence — ordered relations only (petition 8). */
+  moveRelation(e: Entity, r: Relation, place: OrderPlace): void;
   setResource<S>(res: Resource<S>, v: S): void;
 }
 
@@ -114,15 +116,19 @@ export function guardedTransaction(
       },
       addTag: (e, t) => tx.addTag(e, t),
       removeTag: (e, t) => tx.removeTag(e, t),
-      setRelation(e, r, target) {
+      setRelation(e, r, target, place) {
         checkRelation(e, r, "setRelation");
-        tx.setRelation(e, r, target);
+        tx.setRelation(e, r, target, place);
       },
       addRelation(e, r, target) {
         checkRelation(e, r, "addRelation");
         tx.addRelation(e, r, target);
       },
       removeRelation: (e, r, target) => tx.removeRelation(e, r, target),
+      moveRelation(e, r, place) {
+        checkRelation(e, r, "moveRelation");
+        tx.moveRelation(e, r, place);
+      },
       setResource(res, v) {
         if (devGuardsEnabled()) {
           const meta = schemaMeta.resource(res as Resource);

@@ -47,7 +47,8 @@ import {
   Position,
   PrefabId,
   Size,
-  StackZ,
+  compareStackOrder,
+  createSiblingOrderIndex,
   defineQuery,
   widgets,
   type Entity,
@@ -92,7 +93,6 @@ const geometryQuery = defineQuery([Position, Size]);
 const measuredQuery = defineQuery([MeasuredSize]);
 const grabQuery = defineQuery([Grab]);
 const opacityQuery = defineQuery([Opacity]);
-const stackZQuery = defineQuery([StackZ]);
 
 function writeGeom(el: HTMLDivElement, x: number, y: number, w: number, h: number): void {
   el.style.left = `${x}px`;
@@ -119,6 +119,10 @@ export function createDomWidgetsReflector(
 ): DomWidgetsReflector {
   const doc = host.contentPlane.ownerDocument;
   const hosts = new Map<Entity, HostRec>();
+  // The pull-based frame ordinal cache (petition 8): sibling sequence →
+  // entity → position, stamp-checked so updateOrder rebuilds only when the
+  // frame parent's order actually moved.
+  const order = createSiblingOrderIndex(world);
   let lastSnapshot: readonly MountEntry[] | undefined;
   let geometryWrites = 0;
   /** True while any host is lifted → all content is inerted (pinned drag contract). */
@@ -140,10 +144,12 @@ export function createDomWidgetsReflector(
     // and value changes both arm the flag; detach resets the host to the
     // default via the `?? 1` read.
     world.reactive.observeQuery(opacityQuery, () => { opacityDirty = true; }, { cols: [Opacity] }),
-    // Within-plane stacking IS StackZ (design-004 §1 "StackZ orders normally"
-    // — unimplemented until 2026-07-18, James: the comment box painted over
-    // its members; DOM paint order was silently mount order).
-    world.reactive.observeQuery(stackZQuery, () => { orderDirty = true; }, { cols: [StackZ] }),
+    // Within-plane stacking IS the frame's ChildOf sibling sequence (petition
+    // 8, superseding the StackZ sort that fixed the 2026-07-18 comment-box
+    // paint bug). The wake names the relation (Related grammar — pure
+    // reorders fire it); the ordinal cache's stamp check in updateOrder
+    // keeps other-frame churn cheap.
+    order.observe(() => { orderDirty = true; }),
   ];
 
   /**
@@ -231,25 +237,31 @@ export function createDomWidgetsReflector(
   }
 
   /**
-   * Within-plane stacking = StackZ (design-004 §1). DOM paint order is the
-   * plane's child order, so each plane's hosts are kept DOM-sorted by
-   * (StackZ asc, entity asc) — a low-z comment box paints UNDER the members
-   * it wraps even though its host mounted last. Reorder is change-only (a
-   * DOM sequence already in z order touches nothing) and skips a plane while
+   * Within-plane stacking = the frame parent's ChildOf sibling sequence
+   * (petition 8; design-004 §1 amendment). DOM paint order is the plane's
+   * child order, so each plane's hosts are kept DOM-sorted by their sibling
+   * ordinal — a comment box placed "first" paints UNDER the members it wraps
+   * even though its host mounted last. Hosts without an ordinal (no ChildOf
+   * edge — a pre-schema-2 read-only doc, or a kept-mounted other-frame host)
+   * use the legacy (StackZ asc, entity asc) fallback among themselves and
+   * sort ABOVE the ordinal set (compareStackOrder's documented choice; mixed
+   * planes are nominally impossible post-migration). Reorder is change-only
+   * (a DOM sequence already in order touches nothing) and skips a plane while
    * it contains the focused element (re-appending would blur a mid-rename
    * input; the next dirt re-asserts the order).
    */
   function updateOrder(): void {
+    const ordinals = order.ordinals();
     for (const plane of [host.contentPlane, host.liftedPlane]) {
       const active = doc.activeElement;
       if (active !== null && active !== doc.body && plane.contains(active)) continue;
-      const mine: Array<{ el: HTMLDivElement; z: number; e: Entity }> = [];
+      const mine: Array<{ el: HTMLDivElement; e: Entity }> = [];
       for (const [e, rec] of hosts) {
         if (rec.host.parentNode !== plane) continue;
-        mine.push({ el: rec.host, z: world.get(e, StackZ)?.z ?? 0, e });
+        mine.push({ el: rec.host, e });
       }
       if (mine.length < 2) continue;
-      const target = [...mine].sort((a, b) => a.z - b.z || Number(a.e) - Number(b.e));
+      const target = [...mine].sort((a, b) => compareStackOrder(world, ordinals, a.e, b.e));
       // Change-only: compare the CURRENT sibling sequence of our hosts.
       let cursor = 0;
       let inOrder = true;
@@ -263,7 +275,7 @@ export function createDomWidgetsReflector(
         }
       }
       if (inOrder && cursor === target.length) continue;
-      for (const m of target) plane.appendChild(m.el); // moves, in z order
+      for (const m of target) plane.appendChild(m.el); // moves, in sibling order
     }
   }
 
@@ -291,7 +303,7 @@ export function createDomWidgetsReflector(
         // appendChild MOVES the existing node between planes — the React portal
         // (targeting the content child) survives the move.
         (shouldLift ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
-        orderDirty = true; // the move appended LAST — re-assert StackZ order
+        orderDirty = true; // the move appended LAST — re-assert sibling order
       }
       // A grabbed GL widget's chrome host stays in P1 (see promotable) but must
       // still stack over its P1 NEIGHBORS while dragged — the within-plane

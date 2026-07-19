@@ -15,7 +15,6 @@ import {
   Grab,
   Position,
   Selected,
-  StackZ,
   Watches,
   cancelActiveGestures,
 } from "../../src";
@@ -65,7 +64,8 @@ describe("trace: quick tap + shift-tap", () => {
 describe("trace: drag claim frame", () => {
   it("slop exit claims, attaches riders, selects, and applies the first (no-jump) write SAME frame", () => {
     const rig = createTraceRig();
-    const a = rig.spawnBox({ x: 100, y: 100, z: 0 });
+    const a = rig.spawnBox({ x: 100, y: 100 });
+    const top = rig.spawnBox({ x: 700, y: 700 }); // above a — makes the elevate observable
     rig.target("mouse", a);
 
     rig.down("mouse", 500, 500);
@@ -86,9 +86,10 @@ describe("trace: drag claim frame", () => {
     expect(rig.world.hasTag(a, Selected)).toBe(true); // select-on-grab
     // Origin measured from dead-zone exit — NO position jump on the claim frame.
     expect(rig.world.read(a, Position)).toEqual({ x: 100, y: 100 });
-    // StackZ elevated as part of the divergence (Grab.z remembers 0).
-    expect(rig.world.read(a, StackZ).z).toBeGreaterThan(0);
-    expect(rig.world.read(a, Grab).z).toBe(0);
+    // Sibling order elevated as part of the divergence (petition 8): the
+    // dragged box moves to the frame tail; the Grab memo remembers it was first.
+    expect(rig.stack()).toEqual([top, a]);
+    expect(rig.world.read(a, Grab).ord).toBe(0);
 
     rig.move("mouse", 531, 505); // totals (20, 5) at zoomAtClaim 1
     rig.step(); // frame 3
@@ -111,9 +112,10 @@ describe("trace: drag claim frame", () => {
 });
 
 describe("trace: escape one-tick cancel", () => {
-  it("cancels the gesture, restores Position AND StackZ, clears the request, and future gestures work", () => {
+  it("cancels the gesture, restores Position AND sibling order, clears the request, and future gestures work", () => {
     const rig = createTraceRig();
-    const a = rig.spawnBox({ x: 100, y: 100, z: 0 });
+    const a = rig.spawnBox({ x: 100, y: 100 });
+    const top = rig.spawnBox({ x: 700, y: 700 }); // above a — the elevate/restore witness
     rig.target("mouse", a);
 
     rig.down("mouse", 500, 500);
@@ -127,7 +129,7 @@ describe("trace: escape one-tick cancel", () => {
     cancelActiveGestures(rig.world); // app handler between frames (escape)
     rig.step(); // sweep → Cancelled; behavior restores; cleanup clears the flag
     expect(rig.world.read(a, Position)).toEqual({ x: 100, y: 100 });
-    expect(rig.world.read(a, StackZ).z).toBe(0);
+    expect(rig.stack()).toEqual([a, top]); // sibling order restored from the memo
     expect(rig.world.has(a, Grab)).toBe(false);
     expect(rig.world.getResource(CancelRequest)?.active).toBe(false); // one-tick, not latched
 

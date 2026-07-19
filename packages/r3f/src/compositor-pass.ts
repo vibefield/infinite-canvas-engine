@@ -17,7 +17,7 @@
  *      and picked up on the first idle pass;
  *   5. eviction to budget (kernel `selectEvictions`; Hot/Waking immune);
  *   6. quad reconcile: transform from Position/Size (kernel Y-flip), texture
- *      from the pool, `StackZ` render order with grabbed widgets on top
+ *      from the pool, sibling-order renderOrder with grabbed widgets on top
  *      (design-004 §1: renderOrder-top within P2 suffices), `pool.touch` on
  *      every composited quad (still-Warm textures must not look LRU-stale);
  *   7. composite render to the backbuffer;
@@ -55,7 +55,7 @@ import {
 } from "@ice/core";
 import type { GLBridge } from "./bridge";
 
-/** Render order far above any sane StackZ — the grabbed quad draws last. */
+/** Render order far above any sane sibling ordinal or legacy z — the grabbed quad draws last. */
 const GRABBED_RENDER_ORDER = 1e9;
 
 /**
@@ -337,6 +337,11 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   const composited: Array<{ key: number; quad: QuadLike }> = [];
   let clip: { key: number; minX: number; minY: number; maxX: number; maxY: number } | null = null;
 
+  // Frame ordinals once per pass (petition 8): quad renderOrder IS sibling
+  // position. Reading through the bridge's shared index also resets the
+  // staleness its reorder wake filters on.
+  const ordinals = bridge.order.ordinals();
+
   for (const [e, s] of bridge.state.all()) {
     const quad = quads.ensure(e);
     const alive = world.isAlive(e as Entity);
@@ -389,7 +394,14 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     const baseOpacity = world.get(e as Entity, Opacity)?.a ?? 1;
     quad.setOpacity(Math.min(1, Math.max(0, baseOpacity * s.compositeOpacity)));
     const grabbed = world.get(e as Entity, Grab) !== undefined;
-    quad.setRenderOrder(grabbed || lift !== 1 ? GRABBED_RENDER_ORDER : (world.get(e as Entity, StackZ)?.z ?? 0));
+    // Sibling ordinal, else the legacy StackZ fallback (pre-schema-2 read-only
+    // docs are ALL-fallback; mixed frames are nominally impossible, and the
+    // two scales interleaving there is accepted — see core sibling-order.ts).
+    quad.setRenderOrder(
+      grabbed || lift !== 1
+        ? GRABBED_RENDER_ORDER
+        : (ordinals.get(e as Entity) ?? world.get(e as Entity, StackZ)?.z ?? 0),
+    );
     quad.setVisible(true);
     pool.touch(e);
     composited.push({ key: e, quad });

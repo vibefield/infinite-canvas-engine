@@ -40,6 +40,7 @@ import {
   PrefabId,
   Position,
   Size,
+  createSiblingOrderIndex,
   pickTopAt,
   widgets,
   type Entity,
@@ -107,6 +108,13 @@ export interface GLPointerRouter {
 export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterDeps): GLPointerRouter {
   const raycaster = new Raycaster();
   const ndc = new Vector2();
+  // The router's OWN ordinal index (rev-ice-flip finding 1): event-time picks run on the
+  // pointer task, BETWEEN engine ticks — reading the bridge's shared index here would consume
+  // the staleness its reorder wake filters on, and a pure reorder's repaint would be silently
+  // swallowed (pointermove at 125–1000 Hz vs the 60 Hz tick makes the window routine). A pick
+  // read paints nothing, so it must never reset paint dirtiness; one extra rebuild per reorder
+  // is the price. The compositor pass KEEPS sharing the bridge index — its read IS a paint.
+  const routerOrder = createSiblingOrderIndex(world);
 
   // pointerId → captured island + the down's claiming object + screen coords
   // (click pairing: release must stay within tap slop of the down).
@@ -178,7 +186,10 @@ export function createGLPointerRouter({ world, bridge, index }: GLPointerRouterD
     const cam = world.getResource(Camera);
     if (cam === undefined) return undefined;
     const w = screenToWorld(screenX, screenY, cam);
-    const hit = pickTopAt(world, index, w.x, w.y, 0);
+    // The router's OWN ordinals (petition 8; rev-ice-flip finding 1) — same comparator and
+    // stamp discipline as the tick pick, so "topmost" cannot diverge, but reading here never
+    // consumes the bridge index's paint staleness.
+    const hit = pickTopAt(world, index, w.x, w.y, 0, undefined, routerOrder.ordinals());
     if (hit === undefined) return undefined;
     const type = world.get(hit, PrefabId)?.id;
     const widget = typeof type === "string" ? widgets.get(type) : undefined;

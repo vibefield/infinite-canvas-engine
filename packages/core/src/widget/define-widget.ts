@@ -3,7 +3,7 @@
  *
  * Sugar over `definePrefab` + registries — nothing here is unavailable to a
  * hand-rolled prefab. Compile output:
- *  - one durable prefab: `PrefabId{type}` + Position/Size/StackZ + ONE
+ *  - one durable prefab: `PrefabId{type}` + Position/Size + ONE
  *    generated component per conflict group (`<type>:<group>`; ungrouped
  *    fields form the "props" default group) + Accepts/Provides when a
  *    container contract is declared;
@@ -34,7 +34,6 @@ import {
   SnapSource,
   SnapTarget,
   Solid,
-  StackZ,
   SweepsContained,
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
@@ -285,7 +284,9 @@ export function defineWidget(def: WidgetDef): WidgetType {
   const essential: ComponentInit[] = [
     init(Position, { x: 0, y: 0 }),
     init(Size, { w: defaultSize.w, h: defaultSize.h }),
-    init(StackZ, { z: 0 }),
+    // No StackZ (petition 8): stacking is the frame parent's ChildOf sibling
+    // sequence — the spawn path hangs the edge (attachSpawnParent). Not a
+    // group component, so no prefab-pack version bump rides its removal.
   ];
   for (const g of groups) {
     const defaults: Record<string, string | number | boolean> = {};

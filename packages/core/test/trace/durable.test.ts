@@ -23,7 +23,6 @@ import {
   Selectable,
   Selected,
   Size,
-  StackZ,
   cancelActiveGestures,
   createDocSession,
   createEngine,
@@ -89,7 +88,7 @@ function createDuo(): DuoRig {
     pump,
     spawnBox(x, y) {
       session.store.transaction((tx) => {
-        tx.spawn({ components: [[Position, { x, y }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]] });
+        tx.spawn({ components: [[Position, { x, y }], [Size, { w: 80, h: 60 }]] });
       });
       rig.step(); // structure lands at sync
       const onA = findOn(rig.world, x, y);
@@ -205,7 +204,7 @@ describe("durable trace: fly-back reconvergence (design-003 decision 13)", () =>
     // Durable box; runtime container that does NOT accept it (no Provides ⇒ mismatch).
     session.store.transaction((tx) => {
       tx.spawn({
-        components: [[Position, { x: 100, y: 100 }], [Size, { w: 80, h: 60 }], [StackZ, { z: 0 }]],
+        components: [[Position, { x: 100, y: 100 }], [Size, { w: 80, h: 60 }]],
       });
     });
     step();
@@ -222,7 +221,6 @@ describe("durable trace: fly-back reconvergence (design-003 decision 13)", () =>
       components: [
         [Position, { x: 400, y: 80 }],
         [Size, { w: 240, h: 200 }],
-        [StackZ, { z: -1 }],
         [Accepts, { list: '["cards"]' }],
       ],
       tags: [Container],

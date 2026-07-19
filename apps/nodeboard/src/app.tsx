@@ -44,7 +44,6 @@ import {
   Position,
   type PresenceSession,
   Size,
-  StackZ,
   Viewport,
   Wire,
   WireFrom,
@@ -97,7 +96,9 @@ const RELAY_CHANNEL = "ice-nodeboard";
 /** Prefix for the BroadcastChannel collab fallback (`?room` with no `?relay`). */
 const COLLAB_BC_PREFIX = "ice-nodeboard-";
 
-const widgetQ = defineQuery([Position, Size, StackZ]);
+// Seed-count query: PrefabId is the "is a widget" term (StackZ retired —
+// petition 8: post-flip spawns never carry it, so requiring it would count 0).
+const widgetQ = defineQuery([Position, Size, PrefabId]);
 
 // --- collab identity (design-001 §5.6 presence prefab) -----------------------
 

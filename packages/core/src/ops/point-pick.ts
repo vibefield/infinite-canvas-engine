@@ -6,16 +6,19 @@
  * the tick are verified-unrestricted). One implementation so the two can
  * never disagree on ordering.
  *
- * Priority: HandleSpec chrome first (nearest edge), then widgets by StackZ
- * descending. Deliberately NOT plane-stratified: cross-plane z is stratified
- * visually (P2 GL composites above P1 DOM), but pick order is StackZ across
- * all surfaces — design-004 §1 names the mixed-overlap consequence and
- * accepts it; do not "fix" it here.
+ * Priority: HandleSpec chrome first (nearest edge), then widgets topmost by
+ * SIBLING ORDER (petition 8: the frame parent's ChildOf sequence, legacy
+ * (StackZ, entity) fallback for edge-less entities — compareStackOrder is the
+ * ONE comparator paint and pick share). Deliberately NOT plane-stratified:
+ * cross-plane z is stratified visually (P2 GL composites above P1 DOM), but
+ * pick order is sibling order across all surfaces — design-004 §1 names the
+ * mixed-overlap consequence and accepts it; do not "fix" it here.
  */
 import type { Component, Entity } from "@vibecook/strata-ecs";
 import type { Cubic, SpatialIndex } from "@ice/kernel";
 import { distanceToCubic } from "@ice/kernel";
-import { HandleSpec, Port, Position, StackZ, Wire } from "../catalog";
+import { HandleSpec, Port, Position, Wire } from "../catalog";
+import { compareStackOrder } from "./sibling-order";
 
 /** Structural reads both `World` and `SystemCtx` provide. */
 export interface PickReader {
@@ -46,11 +49,16 @@ export function distPointToBox(
   return Math.hypot(dx, dy);
 }
 
+/** No frame parent (legacy world) — every widget compares by the fallback. */
+const NO_ORDINALS: ReadonlyMap<Entity, number> = new Map();
+
 /**
  * Top pick under a world point within `rWorld` (point-in-box when 0).
  * Tier order (design-003 §3, amended for M8): HandleSpec chrome → PORT
  * entities (interaction affordances sit atop their widget edge) → widgets by
- * StackZ → WIRES (render in P0 under content; pick below widgets, above
+ * sibling order (topmost = compareStackOrder max; `ordinals` is the caller's
+ * frame ordinal map — SiblingOrderIndex — so paint and pick share one order)
+ * → WIRES (render in P0 under content; pick below widgets, above
  * canvas — render order and pick order agree). The canvas fallback stays the
  * caller's. Wires narrow-phase against their cached cubic (`wires` source;
  * without one, wire entries are skipped — coarse AABB hits would make fat
@@ -63,13 +71,13 @@ export function pickTopAt(
   wy: number,
   rWorld: number,
   wires?: WirePickSource,
+  ordinals: ReadonlyMap<Entity, number> = NO_ORDINALS,
 ): Entity | undefined {
   let bestHandle: Entity | undefined;
   let bestHandleD = Number.POSITIVE_INFINITY;
   let bestPort: Entity | undefined;
   let bestPortD = Number.POSITIVE_INFINITY;
   let bestWidget: Entity | undefined;
-  let bestWidgetZ = Number.NEGATIVE_INFINITY;
   let bestWire: Entity | undefined;
   let bestWireD = Number.POSITIVE_INFINITY;
   for (const entry of index.searchPoint(wx, wy, rWorld)) {
@@ -97,9 +105,7 @@ export function pickTopAt(
         bestWire = e;
       }
     } else if (reader.has(e, Position)) {
-      const z = reader.get(e, StackZ)?.z ?? 0;
-      if (z > bestWidgetZ) {
-        bestWidgetZ = z;
+      if (bestWidget === undefined || compareStackOrder(reader, ordinals, e, bestWidget) > 0) {
         bestWidget = e;
       }
     }

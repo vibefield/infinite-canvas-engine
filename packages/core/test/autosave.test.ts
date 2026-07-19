@@ -15,7 +15,6 @@ import {
   GesturePhases,
   Position,
   Size,
-  StackZ,
   Tap,
   createDocSession,
   decodeEnvelope,
@@ -83,7 +82,6 @@ function makeSession() {
         components: [
           [Position, { x: n++, y: 0 }],
           [Size, { w: 10, h: 10 }],
-          [StackZ, { z: 0 }],
         ],
       });
     });

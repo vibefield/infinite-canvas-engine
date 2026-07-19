@@ -12,7 +12,8 @@ import {
   PrefabId,
   Selected,
   Size,
-  StackZ,
+  BoardRoot,
+  ChildOf,
   Viewport,
   createCanvasEngine,
   createDrawTool,
@@ -178,11 +179,15 @@ describe("createCanvasEngine (design-005 §4)", () => {
     expect(ce.world.get(clones[0] as Entity, Position)).toEqual({ x: 16, y: 16 });
     expect(ce.world.hasTag(clones[0] as Entity, Selected)).toBe(true); // clones become the selection
 
+    // Petition 8: each clone joins the board-root sequence right above its source.
+    const root = ce.world.getResource(BoardRoot)?.root as Entity;
+    expect(ce.world.getReverse(root, ChildOf)).toEqual([a, clones[0], b, clones[1]]);
+
     ce.ops.reorder([a], "top");
-    const za = ce.world.get(a, StackZ)?.z ?? 0;
-    for (const other of [b, ...clones]) {
-      expect(za).toBeGreaterThan(ce.world.get(other as Entity, StackZ)?.z ?? 0);
-    }
+    step(); // durable order lands at the next sync, like any tx write
+    // "top" = the sequence tail — painted last, above everything.
+    const stack = ce.world.getReverse(root, ChildOf);
+    expect(stack[stack.length - 1]).toBe(a);
 
     ce.ops.setSelection([a]);
     ce.ops.deleteSelection();

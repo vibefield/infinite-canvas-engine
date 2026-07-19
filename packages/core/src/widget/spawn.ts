@@ -6,10 +6,11 @@
  * design-001 §5.2's conflict-group granularity). Validation runs through each
  * prop's Standard Schema before the write.
  */
-import type { Entity, World } from "@vibecook/strata-ecs";
+import type { Entity, OrderPlace, Relation, World } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
-import { Position, Size, StackZ } from "../catalog";
+import { ChildOf, Position, Size } from "../catalog";
 import { guardedTransaction } from "../guards/guarded-tx";
+import { frameParent } from "../ops/sibling-order";
 import { init, type ComponentInit } from "../schema/prefab";
 import { widgets } from "./define-widget";
 
@@ -18,11 +19,34 @@ export interface SpawnWidgetOpts {
   readonly y: number;
   readonly w?: number;
   readonly h?: number;
-  /** Initial StackZ (e.g. a comment box spawning BEHIND its members); default = prefab default. */
-  readonly z?: number;
+  /**
+   * Sibling placement in the spawn parent's `ChildOf` sequence (petition 8);
+   * default "last" = painted last = on top. "first" spawns UNDER everything in
+   * the frame (e.g. a comment box spawning behind its members).
+   */
+  readonly order?: OrderPlace;
+  /** Explicit `ChildOf` parent; default = the frame parent (nav frame ?? board root). */
+  readonly parent?: Entity;
   readonly props?: Readonly<Record<string, unknown>>;
   /** false ⇒ the spawn never enters the local undo stack (batch seeds). */
   readonly undoable?: boolean;
+}
+
+/**
+ * Hang the spawn's `ChildOf` edge (petition 8) — shared by `spawnWidget` and
+ * the doc sink's create-intent execution so frame placement can never diverge
+ * between the two spawn paths. A legacy world (no BoardRoot, no nav frame,
+ * no explicit parent) gets NO edge: the entity stays legacy-fallback-ordered.
+ */
+export function attachSpawnParent(
+  tx: { setRelation(e: Entity, r: Relation, target: Entity, place?: OrderPlace): void },
+  world: World,
+  spawned: Entity,
+  opts?: { readonly parent?: Entity; readonly order?: OrderPlace },
+): void {
+  const parent = opts?.parent ?? frameParent(world);
+  if (parent === undefined) return;
+  tx.setRelation(spawned, ChildOf, parent, opts?.order ?? "last");
 }
 
 /**
@@ -42,7 +66,6 @@ export function widgetSpawnInits(type: string, opts: SpawnWidgetOpts): { prefab:
       h: opts.h ?? widget.defaultSize.h,
     }),
   ];
-  if (opts.z !== undefined) overrides.push(init(StackZ, { z: opts.z }));
   const givenProps = opts.props ?? {};
   for (const [name, value] of Object.entries(givenProps)) {
     const group = widget.propToGroup[name];
@@ -90,6 +113,7 @@ export function spawnWidget(
     world,
     (tx) => {
       spawned = tx.spawnPrefab(prefab, overrides);
+      attachSpawnParent(tx, world, spawned, opts);
     },
     opts.undoable === false ? { undoable: false } : undefined,
   );

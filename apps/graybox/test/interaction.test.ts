@@ -19,7 +19,6 @@ import {
   Selectable,
   Selected,
   Size,
-  StackZ,
 } from "@ice/core";
 import { describe, expect, it } from "vitest";
 
@@ -44,8 +43,8 @@ function stack() {
       engine.step(now);
     }
   };
-  const box = (x: number, y: number, z = 0) =>
-    world.spawn({ components: [[Position, { x, y }], [Size, { w: 80, h: 60 }], [StackZ, { z }]], tags: [Selectable, Movable] });
+  const box = (x: number, y: number) =>
+    world.spawn({ components: [[Position, { x, y }], [Size, { w: 80, h: 60 }]], tags: [Selectable, Movable] });
 
   return { world, sink, enq, step, box };
 }

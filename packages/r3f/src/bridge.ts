@@ -11,7 +11,8 @@
  *
  * Two-level invalidation, mechanized:
  * - COMPOSITE dirt (cheap — re-run the frame pass, sample cached textures):
- *   camera/viewport via the reflector; per-island Position/StackZ Tier-3;
+ *   camera/viewport via the reflector; per-island Position Tier-3; the frame
+ *   ChildOf reorder wake (petition 8 — quad renderOrder is sibling order);
  *   island enter/exit via register/unregister. All call `requestFrame()`.
  * - ISLAND dirt (expensive — repaint the FBO): per-island props-group and
  *   Size Tier-3 → `bumpPaint()` + `requestFrame()`; the animation signal
@@ -30,11 +31,12 @@ import {
   PrefabId,
   Position,
   Size,
-  StackZ,
   Viewport,
+  createSiblingOrderIndex,
   widgets,
   type Engine,
   type Entity,
+  type SiblingOrderIndex,
 } from "@ice/core";
 import { LIFT_DEFAULT_MS, createIslandStateStore, type IslandStateStore } from "./island-state";
 import { createRenderWriteTrap, type RenderWriteTrap } from "./dev-write-trap";
@@ -56,6 +58,12 @@ export interface GLBridge {
   readonly engine: Engine;
   readonly state: IslandStateStore;
   readonly renderAssert: RenderWriteTrap;
+  /**
+   * The frame ordinal cache (petition 8): the compositor pass reads quad
+   * renderOrder from it, and its `ordinals()` read resets the staleness the
+   * bridge's reorder wake filters on — bridge and pass MUST share it.
+   */
+  readonly order: SiblingOrderIndex;
   /**
    * Island mount (the `<Island>` component): registers the scene/camera pair,
    * stamps `animatedDecl` from the widget type, and arms the per-island dirt
@@ -118,6 +126,15 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
     flush: () => requestFrame(),
   });
 
+  // Composite dirt — a reorder in the current frame moves quad renderOrder
+  // (petition 8; replaces the per-island StackZ Tier-3). The wake names
+  // ChildOf (pure reorders fire it); the orderStamp staleness check drops
+  // other-frame churn, and the pass's `ordinals()` read resets it.
+  const order = createSiblingOrderIndex(world);
+  const removeOrderObserver = order.observe(() => {
+    if (order.stale()) requestFrame();
+  });
+
   // Death/reset: drop state so the frame pass releases the pooled FBO on its
   // next reconcile (the bridge is three-free — it never touches the pool).
   const removeWorldObserver = world.observe({
@@ -139,6 +156,7 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
     engine,
     state,
     renderAssert,
+    order,
 
     registerIsland(entity, handle) {
       islands.set(entity, handle);
@@ -157,9 +175,9 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
           state.bumpPaint(entity);
           requestFrame();
         }),
-        // composite dirt — quad transform/order changed, texture still good:
+        // composite dirt — quad transform changed, texture still good (order
+        // dirt is bridge-scoped: the ChildOf reorder wake above):
         world.reactive.observeValue(entity, Position, () => requestFrame()),
-        world.reactive.observeValue(entity, StackZ, () => requestFrame()),
         // composite dirt — the durable Opacity cell rides the quad's uOpacity,
         // never the island's FBO (a fade must not repaint the content):
         world.reactive.observeValue(entity, Opacity, () => requestFrame()),
@@ -256,6 +274,7 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
 
     uninstall() {
       removeReflector();
+      removeOrderObserver();
       removeWorldObserver();
       renderAssert.dispose();
       islands.clear();

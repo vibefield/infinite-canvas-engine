@@ -12,6 +12,8 @@
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { createWorld, defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import {
+  BoardRoot,
+  ChildOf,
   Movable,
   Pointer,
   Position,
@@ -19,12 +21,12 @@ import {
   Selectable,
   Size,
   SnapSource,
-  StackZ,
   Targets,
   TouchesExact,
   createEngine,
   createRecordingCommitSink,
   installInteractionCore,
+  writeRuntimeResource,
   type Engine,
   type InputMods,
   type InteractionCore,
@@ -38,7 +40,6 @@ export interface BoxOpts {
   y: number;
   w?: number;
   h?: number;
-  z?: number;
   movable?: boolean;
   selectable?: boolean;
   resizable?: boolean;
@@ -50,6 +51,10 @@ export interface TraceRig {
   engine: Engine;
   core: InteractionCore;
   sink: ReturnType<typeof createRecordingCommitSink>;
+  /** The rig's board root — spawnBox hangs ordered ChildOf edges on it (petition 8). */
+  root: Entity;
+  /** The root's sibling sequence (bottom → top) — THE stacking assertion surface. */
+  stack(): Entity[];
   /** Advance n frames (16ms each). */
   step(n?: number): void;
   /** Declare what the pointer is over (synthetic L1). undefined = canvas fallback. */
@@ -88,6 +93,12 @@ export function createTraceRig(opts: { sink?: { commit(intent: never): void } } 
           },
         };
   const core = installInteractionCore(engine, { sink: teed });
+
+  // The trace worlds run the ORDERED regime (petition 8), like every doc-kit
+  // session: a componentless board root named by the runtime resource;
+  // spawnBox hangs each box on its sequence in spawn order.
+  const root = world.spawn({});
+  writeRuntimeResource(world, BoardRoot, { root });
 
   // Synthetic L1: the declared map, applied every frame in the react slot.
   const targetsOf = new Map<string, Entity | undefined>();
@@ -138,6 +149,8 @@ export function createTraceRig(opts: { sink?: { commit(intent: never): void } } 
     engine,
     core,
     sink,
+    root,
+    stack: () => world.getReverse(root, ChildOf),
 
     step(n = 1) {
       for (let i = 0; i < n; i++) {
@@ -186,14 +199,15 @@ export function createTraceRig(opts: { sink?: { commit(intent: never): void } } 
         ...(opts.resizable === true ? [Resizable] : []),
         ...(opts.snapSource === true ? [SnapSource] : []),
       ];
-      return world.spawn({
+      const e = world.spawn({
         components: [
           [Position, { x: opts.x, y: opts.y }],
           [Size, { w: opts.w ?? 80, h: opts.h ?? 60 }],
-          [StackZ, { z: opts.z ?? 0 }],
         ],
         tags,
       });
+      world.setRelation(e, ChildOf, root, "last"); // spawn order IS the sequence
+      return e;
     },
 
     pointerEntity(pointerId) {

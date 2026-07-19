@@ -20,7 +20,7 @@ import { ChildOf } from "../catalog";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { init } from "../schema/prefab";
 import { WireFrom, WirePorts, WirePrefab, WireTo } from "../catalog/graph";
-import { widgetSpawnInits } from "../widget/spawn";
+import { attachSpawnParent, widgetSpawnInits } from "../widget/spawn";
 import { guardedTransaction } from "../guards/guarded-tx";
 
 export function createDocCommitSink(store: DurableStore, world: World): CommitSink {
@@ -36,21 +36,43 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
       const liveWires = (intent.wires ?? []).filter(
         (w) => store.keyOf(w.from) !== undefined && store.keyOf(w.to) !== undefined,
       );
+      // Order ops (petition 8): both ends re-guarded — a dead parent must not
+      // roll back the gesture any more than a dead widget does.
+      const liveOrders = (intent.orders ?? []).filter(
+        (o) => store.keyOf(o.entity) !== undefined && store.keyOf(o.parent) !== undefined,
+      );
       const creates = intent.creates ?? [];
-      if (liveWrites.length === 0 && liveReparents.length === 0 && liveWires.length === 0 && creates.length === 0) return;
+      if (
+        liveWrites.length === 0 &&
+        liveReparents.length === 0 &&
+        liveOrders.length === 0 &&
+        liveWires.length === 0 &&
+        creates.length === 0
+      ) {
+        return;
+      }
 
       guardedTransaction(store, world, (tx) => {
         for (const w of liveWrites) {
           tx.edit(w.entity).set(w.component, w.value);
         }
         for (const r of liveReparents) {
+          // Placeless set on the ordered ChildOf appends "last" — a consumed
+          // widget lands on top of the container's sequence (petition 8).
           tx.setRelation(r.entity, ChildOf, r.container);
         }
+        // Sibling placements land in the SAME transaction as the gesture's
+        // value writes — one gesture, one undo step (petition 8).
+        for (const o of liveOrders) {
+          tx.setRelation(o.entity, ChildOf, o.parent, o.place);
+        }
         // Draw-tool creations: one prefab spawn per rect (design-005 §3),
-        // through the SAME override builder as ops.spawnWidget.
+        // through the SAME override builder as ops.spawnWidget — and the same
+        // frame-parent edge attach, so the two spawn paths cannot diverge.
         for (const c of creates) {
           const { prefab, overrides } = widgetSpawnInits(c.type, { x: c.x, y: c.y, w: c.w, h: c.h });
-          tx.spawnPrefab(prefab, overrides);
+          const spawned = tx.spawnPrefab(prefab, overrides);
+          attachSpawnParent(tx, world, spawned);
         }
         for (const w of liveWires) {
           // The paved prefab path: PrefabId + Wire tag ride the prefab, and

@@ -23,7 +23,6 @@ import {
   PrefabId,
   Selectable,
   Size,
-  StackZ,
   Viewport,
   Wire,
   WireFrom,
@@ -171,7 +170,6 @@ function spawnNode(world: World, type: string, x: number, y: number, w = 80, h =
       [PrefabId, { id: type }],
       [Position, { x, y }],
       [Size, { w, h }],
-      [StackZ, { z: 0 }],
     ],
     tags: [Selectable, Movable],
   });
@@ -186,7 +184,6 @@ function spawnDocNode(session: DocSession, type: string, x: number, y: number): 
         [PrefabId, { id: type }],
         [Position, { x, y }],
         [Size, { w: 80, h: 60 }],
-        [StackZ, { z: 0 }],
       ],
     });
   });

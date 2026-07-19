@@ -29,9 +29,9 @@ import {
   type Engine,
   type Entity,
   Position,
+  PrefabId,
   type RelayChannel,
   Size,
-  StackZ,
   Viewport,
   type World,
   attachBroadcastRelay,
@@ -73,7 +73,9 @@ import { StoreContext } from "./store-context";
 const STORAGE_KEY = "ice-glboard/doc";
 const RELAY_CHANNEL = "ice-glboard";
 
-const widgetQ = defineQuery([Position, Size, StackZ]);
+// Seed-count query: PrefabId is the "is a widget" term (StackZ retired —
+// petition 8: post-flip spawns never carry it, so requiring it would count 0).
+const widgetQ = defineQuery([Position, Size, PrefabId]);
 
 const GL_CANVAS_STYLE: CSSProperties = { pointerEvents: "none", position: "absolute", inset: 0 };
 
