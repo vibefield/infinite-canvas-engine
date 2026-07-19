@@ -34,12 +34,10 @@ import {
   type CanvasEngine,
   type Entity,
   type WidgetType,
-  type World,
 } from "@ice/core";
-import { EngineProvider, useStageHold } from "@ice/react";
-import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { WidgetPreview, useStageHold } from "@ice/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { previewBackground } from "../widgets/preview";
-import { getPreviewSandbox } from "./preview-engine";
 
 const ghostQ = defineQuery([InsertGhost]);
 
@@ -91,76 +89,30 @@ function silhouetteIn(def: WidgetType, boxW: number, boxH: number): { w: number;
 }
 
 /**
- * The tile's face (2026-07-19 rev 3, James: "real previews … render them as
- * native react component directly … not interactable, just a preview"):
- *  - DOM widgets mount their REAL component against the preview sandbox,
- *    rendered at true defaultSize and CSS-scaled into the tile — pixel-true
- *    to what the drop creates. `inert` + pointer-events none makes it a pure
- *    picture; the sandbox world never grants tags, so chrome stays at rest.
- *  - GL widgets use BAKED snapshots (scripts/bake-tray-previews.mjs → both
- *    themes), falling back to the gradient silhouette until baked.
+ * The tile's face = the FRAMEWORK's answer (design-005 §2 preview contract,
+ * 2026-07-19): `<WidgetPreview>` owns the whole fallback chain — the def's
+ * declared preview (the GL cards declare baked snapshots), else the real
+ * component in the framework sandbox (dom), else our gradient silhouette.
+ * The tray keeps zero preview knowledge; that is the point of the seam.
  */
 function TileFace({ def, sil }: { def: WidgetType; sil: { w: number; h: number; r: number; s: number } }) {
-  const fallback = (
-    <div
-      className="absolute inset-0"
-      style={{
-        borderRadius: sil.r,
-        background: previewBackground(def.type, def.surface),
-        boxShadow: "inset 0 0 0 1px rgba(127,127,127,0.22)",
-      }}
-    />
-  );
-  if (def.surface === "gl") {
-    const hideBroken = (e: React.SyntheticEvent<HTMLImageElement>): void => {
-      e.currentTarget.style.display = "none"; // not baked yet → the gradient shows
-    };
-    return (
-      <div className="relative" style={{ width: sil.w, height: sil.h }}>
-        {fallback}
-        <img
-          src={`/tray-previews/${def.type}.light.png`}
-          alt=""
-          draggable={false}
-          onError={hideBroken}
-          className="absolute inset-0 h-full w-full object-cover dark:hidden"
-          style={{ borderRadius: sil.r }}
-        />
-        <img
-          src={`/tray-previews/${def.type}.dark.png`}
-          alt=""
-          draggable={false}
-          onError={hideBroken}
-          className="absolute inset-0 hidden h-full w-full object-cover dark:block"
-          style={{ borderRadius: sil.r }}
-        />
-      </div>
-    );
-  }
-  const sandbox = getPreviewSandbox();
-  const entity = sandbox.entities.get(def.type);
-  const View = def.component as ComponentType<{ entity: Entity; world: World }> | null | undefined;
-  if (entity === undefined || View === null || View === undefined) {
-    return <div style={{ width: sil.w, height: sil.h }}>{fallback}</div>;
-  }
   return (
-    <div className="relative overflow-hidden" style={{ width: sil.w, height: sil.h, borderRadius: sil.r }}>
-      <EngineProvider engine={sandbox.ce}>
+    <WidgetPreview
+      type={def.type}
+      width={sil.w}
+      height={sil.h}
+      fallback={
         <div
-          inert
           style={{
-            width: def.defaultSize.w,
-            height: def.defaultSize.h,
-            transform: `scale(${sil.s})`,
-            transformOrigin: "0 0",
-            pointerEvents: "none",
-            userSelect: "none",
+            width: "100%",
+            height: "100%",
+            borderRadius: sil.r,
+            background: previewBackground(def.type, def.surface),
+            boxShadow: "inset 0 0 0 1px rgba(127,127,127,0.22)",
           }}
-        >
-          <View entity={entity} world={sandbox.ce.world} />
-        </div>
-      </EngineProvider>
-    </div>
+        />
+      }
+    />
   );
 }
 

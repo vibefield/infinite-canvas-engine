@@ -25,6 +25,7 @@ export {
   type EngineProviderProps,
 } from "./engine-context";
 export { useCommit, useUndoStatus, type Commit, type UndoStatus } from "./use-commit";
+export { WidgetPreview, type WidgetPreviewProps } from "./widget-preview";
 export { useTool, useToolState } from "./use-tool";
 export { usePresencePeers, type PresencePeerView } from "./use-presence";
 export { attachKeymap, type KeymapEntry } from "./keymap";

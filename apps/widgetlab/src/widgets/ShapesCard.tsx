@@ -33,6 +33,7 @@
  * `useUpdateWidget` → `useCommit` (the sanctioned durable widget-write path).
  */
 import { Size, defineWidget, p } from "@ice/core";
+import { bakedPreview } from "./baked-preview";
 import { type WidgetComponentProps, useCommit, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
@@ -323,6 +324,8 @@ export const ShapesCard = defineWidget({
   type: "shapes-card",
   props: { accentIdx: p.number({ default: 0, min: 0, max: 3 }) },
   surface: "gl",
+  // Baked-snapshot preview (P1 escape hatch) — P2 replaces with live r3f capture.
+  preview: bakedPreview("shapes-card"),
   animated: true,
   component: ShapesView,
   chrome: makeGlCardChrome(BACKPLATE),

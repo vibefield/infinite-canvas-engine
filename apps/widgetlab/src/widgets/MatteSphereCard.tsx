@@ -13,6 +13,7 @@
  * live size from the world (`Size`) instead of v1's width/height render props.
  */
 import { Size, defineWidget, p } from "@ice/core";
+import { bakedPreview } from "./baked-preview";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { type ReactElement, useRef } from "react";
 import type { Mesh } from "three";
@@ -72,6 +73,8 @@ export const MatteSphereCard = defineWidget({
   type: "matte-sphere-card",
   props: { color: p.string({ default: "#F5B8D0" }) },
   surface: "gl",
+  // Baked-snapshot preview (P1 escape hatch) — P2 replaces with live r3f capture.
+  preview: bakedPreview("matte-sphere-card"),
   animated: false,
   component: MatteSphereView,
   chrome: makeGlCardChrome(BACKPLATE),

@@ -106,6 +106,23 @@ export interface WidgetDef {
    * the compatibility key list the connect gesture checks.
    */
   readonly ports?: readonly WidgetPortDecl[];
+  /**
+   * Palette/tray preview (design-005 §2 amendment, 2026-07-19). ENGINE-FREE
+   * BY CONTRACT: a preview renders with no world, no entity, no ops — a pure
+   * picture the host mounts inert (that is what makes it portable: trays,
+   * docs sites, a widget store). Authored at `defaultSize`; hosts scale.
+   * Three tiers, least effort first:
+   *  - absent            → the REAL component mounts with default props in
+   *                        the framework's preview sandbox (dom surfaces;
+   *                        truthful by construction);
+   *  - `{ props: {…} }`  → same sandbox mount with curated props;
+   *  - a component, or `{ component }` → author-owned preview (a static
+   *    mockup, a live self-ticking clock — the author's call). In P1 all
+   *    declared previews are DOM components — the sanctioned escape hatch
+   *    for GL widgets too (P2 adds the r3f snapshot pipeline).
+   * Opaque to core — the react package narrows it (`component` precedent).
+   */
+  readonly preview?: unknown;
   readonly container?: { readonly accepts: readonly string[]; readonly provides?: readonly string[] };
   /**
    * Provides-keys WITHOUT container semantics (nodeboard field finding): a
@@ -156,6 +173,10 @@ export interface WidgetType {
   /** Runtime capability tags the equip system stamps at projection. */
   readonly capabilityTags: readonly Tag[];
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
+  /** Normalized author preview component (opaque; react narrows). null = none declared. */
+  readonly previewComponent: unknown;
+  /** Prop overrides for the default real-component preview mount (validated names). */
+  readonly previewProps?: Readonly<Record<string, unknown>>;
 }
 
 /** Stamped by the equip system once a projected widget carries its capability tags. */
@@ -233,6 +254,26 @@ function validateMigrateChain(
   }
 }
 
+/**
+ * Normalize the `preview` declaration: a bare component (function, or a
+ * memo/forwardRef exotic — an object carrying `$$typeof`) vs. the options
+ * form `{ component?, props? }`. Core never renders either — shape only.
+ */
+function normalizePreview(preview: unknown): {
+  component: unknown;
+  props?: Readonly<Record<string, unknown>>;
+} {
+  if (preview === undefined || preview === null) return { component: null };
+  const isComponent =
+    typeof preview === "function" || (typeof preview === "object" && "$$typeof" in (preview as object));
+  if (isComponent) return { component: preview };
+  const opts = preview as { component?: unknown; props?: Readonly<Record<string, unknown>> };
+  return {
+    component: opts.component ?? null,
+    ...(opts.props !== undefined ? { props: opts.props } : {}),
+  };
+}
+
 export function defineWidget(def: WidgetDef): WidgetType {
   if (registry.has(def.type)) {
     throw new Error(`ice: widget type "${def.type}" is already defined.`);
@@ -307,6 +348,16 @@ export function defineWidget(def: WidgetDef): WidgetType {
   const version = def.version ?? 1;
   if (def.migrate !== undefined) validateMigrateChain(def.type, version, def.migrate);
 
+  // Preview declaration: fail FAST on unknown previewProps names — a typo
+  // would otherwise surface as a spawn throw inside the preview host's error
+  // boundary (a silent placeholder), the worst place to find it.
+  const previewDecl = normalizePreview(def.preview);
+  for (const name of Object.keys(previewDecl.props ?? {})) {
+    if (propToGroup[name] === undefined) {
+      throw new Error(`ice: defineWidget("${def.type}") preview.props names unknown prop "${name}".`);
+    }
+  }
+
   const prefab = definePrefab(def.type, {
     store: "durable",
     components: essential,
@@ -352,6 +403,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
     ports: def.ports ?? [],
     capabilityTags,
     migrate: def.migrate ?? {},
+    previewComponent: previewDecl.component,
+    ...(previewDecl.props !== undefined ? { previewProps: previewDecl.props } : {}),
   };
   registry.set(def.type, widget);
   return widget;
