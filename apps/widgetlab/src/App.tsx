@@ -52,6 +52,7 @@ import { createPortal } from "react-dom";
 import { PMREMGenerator, type Texture } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { installCursorHalo } from "./cursor";
+import { WidgetTray } from "./tray/WidgetTray";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
 import { WIDGETS } from "./widgets";
@@ -590,6 +591,10 @@ export function App() {
             </Canvas>,
             gl.plane,
           )}
+        {/* The widget tray rides INSIDE the container (plane sandwich:
+            content < tray < lifted) — drag a tile out and the ghost floats
+            over the sheet on its way to the board. */}
+        <WidgetTray ce={ce} />
       </InfiniteCanvas>
 
       <NavigationBreadcrumbs engine={ce} />

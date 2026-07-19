@@ -38,6 +38,7 @@ import { createResizeBehavior } from "../systems/l3-resize";
 import { createSnapSystem } from "../systems/l3-snap";
 import { createSelectionChromeSystem } from "../systems/chrome";
 import { createDrawBehavior } from "../systems/l3-draw";
+import { createInsertGhostReap } from "../systems/insert-ghost";
 import { createCursorSync } from "../systems/l4-cursor";
 
 const canvasSurfaceQ = defineQuery([CanvasSurface]);
@@ -197,7 +198,10 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     // selectionChrome BEFORE cursor (handles spawn at the derive flush so cursor
     // + next frame's spatialSync see them).
     engine.addSystems("derive", ports, createSelectionChromeSystem(world), cursor),
-    engine.addSystems("cleanup", cleanup.recognizerReap, cleanup.oneTickClear),
+    // insertGhostReap AFTER recognizerReap: it reads terminal phase tags on
+    // capturing recognizers pre-flush (deferred destroys land at the group
+    // boundary), and its own despawns must not race the marker sweep.
+    engine.addSystems("cleanup", cleanup.recognizerReap, cleanup.oneTickClear, createInsertGhostReap(world)),
   ];
 
   return {

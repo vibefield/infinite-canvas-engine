@@ -37,6 +37,9 @@ const CARD_PREVIEW: Record<string, string> = {
   "crystal-widget": GL_FLOATING_BG,
   "floating-cube-widget": GL_FLOATING_BG,
   "card-container": FOLDER_BG,
+  // The comment's translucent indigo tint (its real body) — minis and tray
+  // tiles read as "a comment", not a blank card.
+  "comment-card": "linear-gradient(135deg, rgba(99, 102, 241, 0.45), rgba(99, 102, 241, 0.18))",
   ...NODE_BG,
 };
 

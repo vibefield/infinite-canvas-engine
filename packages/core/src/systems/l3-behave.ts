@@ -20,15 +20,19 @@
  */
 import type { Entity, OrderPlace, System, SystemCtx, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { insertSlot, type LayoutRect } from "@ice/kernel";
+import { insertSlot, screenToWorld, type CameraState, type LayoutRect } from "@ice/kernel";
 import {
+  Camera,
   Captures,
   ChildOf,
   Drag,
   Drags,
   DropTarget,
   GesturePhases,
+  GhostCommitted,
+  GhostRetiring,
   Grab,
+  InsertGhost,
   MeasuredSize,
   NO_ENTITY,
   OverlapCandidate,
@@ -45,7 +49,7 @@ import {
   Watches,
   Wire,
 } from "../catalog";
-import type { CommitOrder, CommitSink, CommitWrite } from "../engine/commit-sink";
+import type { CommitCreate, CommitOrder, CommitSink, CommitWrite } from "../engine/commit-sink";
 import { SelectionVersion, bumpVersion } from "../helpers/version-stamps";
 import { selectedEntities } from "../ops/selection";
 
@@ -58,6 +62,43 @@ const FLY_BACK_MS = 200;
 
 /** Min separation for consume free-slot placement (kernel insertSlot). */
 const CONSUME_GUTTER = 16;
+
+const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
+
+/** InsertGhost.props (JSON) → CommitCreate.props; empty/malformed ⇒ absent. */
+function parseGhostProps(raw: string): Record<string, unknown> | undefined {
+  if (raw === "" || raw === "{}") return undefined;
+  try {
+    const v: unknown = JSON.parse(raw);
+    return typeof v === "object" && v !== null && Object.keys(v).length > 0
+      ? (v as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Fly a tray-insert ghost HOME (cancel / rejected drop): the tween target is
+ * the tray press point re-projected through the CURRENT camera — the ghost
+ * returns to the tray ON SCREEN even after a mid-drag zoom (wheel gestures are
+ * Simultaneous). `GhostRetiring` hands it to the reap system, which despawns
+ * it when the tween lands. No Position restore, no commit — the ghost never
+ * had a document row to diverge from.
+ */
+function ghostFlyBack(ctx: SystemCtx, ghost: Entity): void {
+  const gh = ctx.read(ghost, InsertGhost);
+  const cam = ctx.getResource(Camera) ?? IDENTITY_CAM;
+  const home = screenToWorld(gh.screenX, gh.screenY, cam);
+  const size = ctx.get(ghost, Size) ?? { w: 0, h: 0 };
+  ctx.addComponent(ghost, TransformTween, {
+    toX: home.x - size.w / 2,
+    toY: home.y - size.h / 2,
+    durationMs: FLY_BACK_MS,
+    elapsedMs: 0,
+  });
+  ctx.addTag(ghost, GhostRetiring);
+}
 
 /** ctx-side selection flip (setSelection is the app-handler/world variant). */
 function applySelection(
@@ -255,9 +296,15 @@ export function createSelectMoveBehaviors(
 
           if (container !== undefined && !ctx.hasTag(container, OverlapCandidate)) {
             // Rejected drop → fly-back, NO commit. The tween holds the claim
-            // (design-001 §3 amended); cells reconverge when it lands.
+            // (design-001 §3 amended); cells reconverge when it lands. A
+            // tray-insert ghost flies HOME (the tray press point) instead of
+            // to a Grab origin it only ever had under the tray — and retires.
             for (const w of dragged) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
+              if (ctx.has(w, InsertGhost)) {
+                ghostFlyBack(ctx, w);
+                continue;
+              }
               const g = ctx.read(w, Grab);
               ctx.addComponent(w, TransformTween, {
                 toX: g.x,
@@ -273,8 +320,13 @@ export function createSelectMoveBehaviors(
             restoreOrder(ctx, dragged);
           } else if (container !== undefined) {
             // Consume: reparent + final position, one intent (one tx at M5).
+            // A tray-insert ghost becomes a CREATE-inside-container instead of
+            // a reparent (it has no document row to reparent): same free-slot
+            // placement, container-local coords, promoted in the same single
+            // transaction. `GhostCommitted` hands it to the reap swap.
             const writes: CommitWrite[] = [];
             const reparents: { entity: Entity; container: Entity }[] = [];
+            const creates: CommitCreate[] = [];
             const containerPos = ctx.get(container, Position) ?? { x: 0, y: 0 };
             // Free-slot placement (2026-07-17, James: folder drops "pile up on
             // each other"): the raw drop point maps everyone who aimed at the
@@ -301,22 +353,71 @@ export function createSelectMoveBehaviors(
               const slot = insertSlot(incumbents, ws, hint, CONSUME_GUTTER);
               // Later cards in a multi-drop see the earlier ones as occupied.
               incumbents.push({ x: slot.x, y: slot.y, w: ws.w, h: ws.h });
+              if (ctx.has(w, InsertGhost)) {
+                const gh = ctx.read(w, InsertGhost);
+                const props = parseGhostProps(gh.props ?? "");
+                creates.push({
+                  type: gh.type ?? "",
+                  x: slot.x,
+                  y: slot.y,
+                  w: ws.w,
+                  h: ws.h,
+                  ...(props !== undefined ? { props } : {}),
+                  parent: container,
+                  select: true,
+                });
+                ctx.addTag(w, GhostCommitted);
+                continue;
+              }
               writes.push({ entity: w, component: Position, value: slot });
               reparents.push({ entity: w, container });
             }
-            if (writes.length > 0) sink.commit({ kind: "consume", gesture: rec, writes, reparents });
+            if (writes.length > 0 || creates.length > 0) {
+              sink.commit({
+                kind: "consume",
+                gesture: rec,
+                writes,
+                reparents,
+                ...(creates.length > 0 ? { creates } : {}),
+              });
+            }
           } else {
             // Plain move commit: final Position per live edge + the elevated
             // sibling placement as ORDER ops — one gesture, one transaction,
-            // one undo step (petition 8).
+            // one undo step (petition 8). A tray-insert ghost becomes the
+            // gesture's CREATE at its final position (the promote — design-001
+            // §3): same single transaction, selected at projection.
             const writes: CommitWrite[] = [];
+            const creates: CommitCreate[] = [];
             for (const w of dragged) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
               const g = ctx.read(w, Grab);
+              if (ctx.has(w, InsertGhost)) {
+                const gh = ctx.read(w, InsertGhost);
+                const props = parseGhostProps(gh.props ?? "");
+                const ws = ctx.get(w, Size) ?? { w: 0, h: 0 };
+                creates.push({
+                  type: gh.type ?? "",
+                  x: g.x + wx,
+                  y: g.y + wy,
+                  w: ws.w,
+                  h: ws.h,
+                  ...(props !== undefined ? { props } : {}),
+                  select: true,
+                });
+                ctx.addTag(w, GhostCommitted);
+                continue;
+              }
               writes.push({ entity: w, component: Position, value: { x: g.x + wx, y: g.y + wy } });
             }
-            if (writes.length > 0) {
-              sink.commit({ kind: "move", gesture: rec, writes, orders: commitOrders(ctx, dragged) });
+            if (writes.length > 0 || creates.length > 0) {
+              sink.commit({
+                kind: creates.length > 0 && writes.length === 0 ? "create" : "move",
+                gesture: rec,
+                writes,
+                orders: commitOrders(ctx, dragged),
+                ...(creates.length > 0 ? { creates } : {}),
+              });
             }
           }
           clearGestureState(ctx, rec, dragged);
@@ -325,9 +426,14 @@ export function createSelectMoveBehaviors(
 
         if (ctx.hasTag(rec, P.justTags.Cancelled) || ctx.hasTag(rec, P.justTags.Failed)) {
           // Restore Position AND sibling order from Grab (design-003 §5.3),
-          // then clean up.
+          // then clean up. A tray-insert ghost has nothing to restore TO —
+          // it flies home to the tray and retires (Escape / blur / integrity).
           for (const w of dragged) {
             if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
+            if (ctx.has(w, InsertGhost)) {
+              ghostFlyBack(ctx, w);
+              continue;
+            }
             const g = ctx.read(w, Grab);
             ctx.edit(w).set(Position, { x: g.x, y: g.y });
           }

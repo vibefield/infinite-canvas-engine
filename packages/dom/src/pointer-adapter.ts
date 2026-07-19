@@ -201,7 +201,19 @@ export function attachPointerAdapter(
     const id = pointerIdOf(e);
     const device = deviceOf(e);
     const { x, y } = relative(e.clientX, e.clientY);
-    const seen = live.get(id);
+    let seen = live.get(id);
+    // ADOPTED-gesture hardening (ops.insertByDrag, 2026-07-19): a held-button
+    // move for a pointer whose down we never saw means widget content started
+    // the gesture and handed it to the engine (the tray tile stopPropagation'd
+    // its down — the sanctioned boundary). Track it from HERE so the deferred
+    // capture below still takes the pointer before it can leave the window
+    // mid-drag, and the blur sweep knows to cancel it. Gated off interactive
+    // targets: a move over opted-out content (text selection in a widget's
+    // input, the tray panel itself) must never trigger a container capture.
+    if (seen === undefined && e.buttons !== 0 && !crossesInteractive(e.target, container)) {
+      seen = { device, x, y, downX: x, downY: y, native: false, captured: false };
+      live.set(id, seen);
+    }
     if (seen !== undefined) {
       seen.x = x;
       seen.y = y;

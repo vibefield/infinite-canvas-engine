@@ -45,6 +45,7 @@ import { installInteractionStack, type InteractionStack } from "../interaction/i
 import { createNestedCanvas, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
 import { cancelActiveGestures } from "../ops/gestures";
 import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
+import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
 import { cascadeDestroy } from "../ops/cascade";
 import { clearSelection, selectedEntities, setSelection } from "../ops/selection";
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
@@ -99,6 +100,16 @@ export interface CanvasOps {
   /** cancel active gestures → switch (design-003 §8; the strata-example lesson). */
   setTool(id: string): void;
   spawnWidget(type: string, opts: SpawnWidgetOpts): Entity;
+  /**
+   * Tray adoption (2026-07-19): DRAFT-spawn a runtime ghost of `type` centered
+   * under the pressing pointer and enqueue one synthetic down — the ordinary
+   * drag stack takes over (lift, snap, drop targets, folder consume). Release
+   * promotes it through ONE `create` tx (selected, one undo step); cancel or a
+   * rejected drop flies it back to the tray press point and despawns it with
+   * zero undo footprint. Call from the tray tile's `pointerdown` AFTER
+   * `stopPropagation()` (the down must not double-land via the adapter).
+   */
+  insertByDrag(type: string, opts: InsertByDragOpts): Entity;
   /** Validated prop update: Standard-Schema-checked, json serialized, ONE tx (2026-07-13 review). */
   setWidgetProps(entity: Entity, props: Readonly<Record<string, unknown>>): void;
   deleteSelection(): void;
@@ -385,6 +396,12 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     spawnWidget(type, o) {
       const s = requireWritable("spawnWidget");
       return spawnWidget(s.store, world, type, o);
+    },
+    insertByDrag(type, o) {
+      // Writable-session gate UP FRONT: the ghost drag would otherwise run
+      // beautifully and silently drop its create at commit (read-only sink).
+      requireWritable("insertByDrag");
+      return insertByDrag(world, stack.queue, type, o);
     },
     setWidgetProps(entity, props) {
       const s = requireWritable("setWidgetProps");

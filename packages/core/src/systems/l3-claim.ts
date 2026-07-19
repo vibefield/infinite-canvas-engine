@@ -34,6 +34,7 @@ import {
   Drags,
   GesturePhases,
   Grab,
+  InsertGhost,
   MeasuredSize,
   Movable,
   NO_ENTITY,
@@ -159,7 +160,17 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
         const shift = pointer !== undefined && ctx.get(pointer, PointerMods)?.shift === true;
         const current = selectedEntities(world);
         let dragged: Entity[];
-        if (ctx.hasTag(grabbed, Selected)) {
+        if (ctx.has(grabbed, InsertGhost)) {
+          // Tray-insert ghosts drag SOLO (2026-07-19): the shift branch below
+          // would sweep the standing selection into the insert, and a
+          // selected-set join makes no sense for a widget that does not exist
+          // yet. Replace-select the ghost (select-on-grab's plain posture) —
+          // the reap system hands the selection to the projected twin at drop.
+          for (const s of current) if (s !== grabbed) ctx.removeTag(s, Selected);
+          if (!ctx.hasTag(grabbed, Selected)) ctx.addTag(grabbed, Selected);
+          bumpVersion(world, SelectionVersion);
+          dragged = [grabbed];
+        } else if (ctx.hasTag(grabbed, Selected)) {
           dragged = current;
         } else if (shift) {
           ctx.addTag(grabbed, Selected);

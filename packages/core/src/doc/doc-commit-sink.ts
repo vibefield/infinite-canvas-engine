@@ -15,13 +15,31 @@
  * cancel, and a DEV warn says why.
  */
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
-import type { World } from "@vibecook/strata-ecs";
+import type { Entity, World } from "@vibecook/strata-ecs";
 import { ChildOf } from "../catalog";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { init } from "../schema/prefab";
 import { WireFrom, WirePorts, WirePrefab, WireTo } from "../catalog/graph";
 import { attachSpawnParent, widgetSpawnInits } from "../widget/spawn";
+import { widgets } from "../widget/define-widget";
 import { guardedTransaction } from "../guards/guarded-tx";
+
+/**
+ * Out-of-ECS hand-off for `CommitCreate.select` (the marquee-buffer precedent:
+ * plain JS state written mid-tick, consumed by a system in a later phase —
+ * never observed, never ECS). The sink appends the spawned twin here; the
+ * insert-ghost reap system drains it and applies the selection ONE tick later,
+ * when the twin's projection is alive. Keyed per world so parallel test
+ * engines never cross-talk.
+ */
+const pendingSelects = new WeakMap<World, Entity[]>();
+
+export function drainCreatedSelections(world: World): Entity[] {
+  const list = pendingSelects.get(world);
+  if (list === undefined || list.length === 0) return [];
+  pendingSelects.set(world, []);
+  return list;
+}
 
 export function createDocCommitSink(store: DurableStore, world: World): CommitSink {
   return {
@@ -41,7 +59,16 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
       const liveOrders = (intent.orders ?? []).filter(
         (o) => store.keyOf(o.entity) !== undefined && store.keyOf(o.parent) !== undefined,
       );
-      const creates = intent.creates ?? [];
+      // Creates re-guard their PARENT (a consume-insert whose folder a remote
+      // deleted mid-gesture): the container-local x/y are meaningless without
+      // the container, so the create is dropped whole — the same
+      // divergence-is-the-signal posture as a dead reparent target. Unknown
+      // types are dropped too (never a throw inside the gesture's tx).
+      const creates = (intent.creates ?? []).filter(
+        (c) =>
+          widgets.get(c.type) !== undefined &&
+          (c.parent === undefined || store.keyOf(c.parent) !== undefined),
+      );
       if (
         liveWrites.length === 0 &&
         liveReparents.length === 0 &&
@@ -66,13 +93,29 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
         for (const o of liveOrders) {
           tx.setRelation(o.entity, ChildOf, o.parent, o.place);
         }
-        // Draw-tool creations: one prefab spawn per rect (design-005 §3),
+        // Draw-tool / tray-insert creations: one prefab spawn per entry,
         // through the SAME override builder as ops.spawnWidget — and the same
-        // frame-parent edge attach, so the two spawn paths cannot diverge.
+        // frame-parent edge attach, so the spawn paths cannot diverge. An
+        // explicit `parent` (consume-insert) hangs the edge on the container
+        // instead — x/y are container-local by that convention.
         for (const c of creates) {
-          const { prefab, overrides } = widgetSpawnInits(c.type, { x: c.x, y: c.y, w: c.w, h: c.h });
+          const { prefab, overrides } = widgetSpawnInits(c.type, {
+            x: c.x,
+            y: c.y,
+            w: c.w,
+            h: c.h,
+            ...(c.props !== undefined ? { props: c.props } : {}),
+          });
           const spawned = tx.spawnPrefab(prefab, overrides);
-          attachSpawnParent(tx, world, spawned);
+          attachSpawnParent(tx, world, spawned, c.parent !== undefined ? { parent: c.parent } : undefined);
+          if (c.select === true) {
+            let list = pendingSelects.get(world);
+            if (list === undefined) {
+              list = [];
+              pendingSelects.set(world, list);
+            }
+            list.push(spawned);
+          }
         }
         for (const w of liveWires) {
           // The paved prefab path: PrefabId + Wire tag ride the prefab, and

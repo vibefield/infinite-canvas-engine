@@ -51,13 +51,23 @@ export interface CommitWireSpawn {
   readonly toPort: string;
 }
 
-/** A widget creation riding a create outcome (draw tool, design-005 §3). */
+/**
+ * A widget creation riding a create outcome (draw tool, design-005 §3;
+ * tray-insert promote, 2026-07-19). `props`/`parent` extend the draw shape for
+ * ghost promotes: prop overrides rebuild the tray instance, `parent` lands a
+ * consume-into-container insert (x/y are container-LOCAL then, matching the
+ * reparent convention). `select` asks the sink to hand the projected twin to
+ * the reap system's selection transfer — the tray's select-on-drop.
+ */
 export interface CommitCreate {
   readonly type: string;
   readonly x: number;
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  readonly props?: Readonly<Record<string, unknown>>;
+  readonly parent?: Entity;
+  readonly select?: boolean;
 }
 
 export interface CommitIntent {

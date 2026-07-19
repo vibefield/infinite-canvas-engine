@@ -27,6 +27,7 @@ export * from "./scene";
 export * from "./graph";
 export * from "./pointer";
 export * from "./gesture";
+export * from "./insert";
 export * from "./selection-presence";
 export * from "./camera-derived";
 export * from "./settings-resources";
