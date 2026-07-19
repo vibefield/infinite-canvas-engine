@@ -83,7 +83,10 @@ export function defineTag(name: string): Tag {
   return t;
 }
 
-export function defineRelation(name: string, opts?: { arity?: "one" | "many" }): Relation {
+export function defineRelation(
+  name: string,
+  opts?: { arity?: "one" | "many"; ordered?: boolean },
+): Relation {
   const r = strataDefineRelation(name, opts);
   relationMeta.set(r, { name, arity: opts?.arity ?? "one" });
   return r;

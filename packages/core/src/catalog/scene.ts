@@ -11,7 +11,7 @@
  * is ergonomic.
  */
 import { field } from "@vibecook/strata-ecs";
-import { defineComponent, defineRelation } from "../schema/meta";
+import { defineComponent, defineRelation, defineResource } from "../schema/meta";
 
 /** Frame-local position, world units. f64 — the infinite canvas loses integer precision in f32 past ~16.7M. */
 export const Position = defineComponent("Position", { x: "f64", y: "f64" });
@@ -30,12 +30,31 @@ export const Rotation = defineComponent("Rotation", { r: field("f32", { default:
  */
 export const Opacity = defineComponent("Opacity", { a: field("f32", { default: 1 }) });
 
-/** Fractional stacking order — z-reorder is one cell write; midpoints jittered, ties break by key. */
+/**
+ * LEGACY (petition 8, engineSchema 2): scalar stacking order, superseded by ordered `ChildOf`
+ * sibling sequences. Stays REGISTERED so v1 docs' z cells keep projecting — the schema
+ * migration sorts by them, and a v1 doc opened read-only still paints z-correct through the
+ * renderers' legacy fallback. Never written for new entities; no new reader outside the
+ * migration and the read-only sort fallback.
+ */
 export const StackZ = defineComponent("StackZ", { z: "f64" });
 
 /**
- * child → parent frame (durable-eligible). Replaces the ParentFrame/ContainerChildren triad:
- * children-of-x = `Related(ChildOf, x)`; ancestor walk = forward `getRelation`; engine cascade
- * walks `getReverse(e, ChildOf)` (see ops/cascade.ts).
+ * child → parent frame (durable-eligible), ORDERED (petition 8): each parent's `getReverse` is
+ * its children in SIBLING ORDER — paint/pick order within a frame IS this sequence (the
+ * per-frame sibling-order law; design-004 §1 amendment). Placement rides
+ * `setRelation(child, ChildOf, parent, place)` / `moveRelation`; order converges
+ * collaboratively (CRDT movable list). Children-of-x = `Related(ChildOf, x)`; ancestor walk =
+ * forward `getRelation`; engine cascade walks `getReverse(e, ChildOf)` (see ops/cascade.ts).
  */
-export const ChildOf = defineRelation("ChildOf", { arity: "one" });
+export const ChildOf = defineRelation("ChildOf", { arity: "one", ordered: true });
+
+/**
+ * The BOARD ROOT (petition 8): the componentless durable entity every root-level widget hangs
+ * its `ChildOf` edge on, so the root frame has a sibling sequence like any container. Minted
+ * once per document (key recorded first-writer-wins in the meta map, `engine.boardRoot`);
+ * componentless BY LAW — it must dodge every widget/pick/cull query. This RUNTIME resource
+ * names it post-attach; absent = a pre-schema-2 read-only doc (renderers fall back to the
+ * legacy StackZ sort).
+ */
+export const BoardRoot = defineResource("BoardRoot", { root: "eid" });

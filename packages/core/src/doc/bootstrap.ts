@@ -143,6 +143,11 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
   const docOpts: DocSessionOpts = {
     ...(opts.docOpts ?? {}),
     ...(opts.onGate !== undefined ? { onGate: opts.onGate } : {}),
+    // SINGLE-WRITER LAW (petition 8, schema-migrate.ts): a live-room joiner is never the
+    // document's sole occupant — structural/pack migration here would split-brain the room
+    // (the peers keep writing the old shape; sync never re-gates). An old-schema doc joined
+    // live attaches read-only; it migrates on its next SOLO open.
+    migrate: false,
   };
 
   return new Promise<JoinResult>((resolve, reject) => {

@@ -19,7 +19,7 @@ export const ENVELOPE_MAGIC = "ICE1";
 export const ENVELOPE_VERSION = 1;
 
 /** The document-format version this build writes (gate compares against it). */
-export const ENGINE_SCHEMA_VERSION = 1;
+export const ENGINE_SCHEMA_VERSION = 2; // 2 = ordered relations (petition 8): board-root + ChildOf sibling sequences
 
 export interface EnvelopeHeader {
   readonly engineSchema: number;

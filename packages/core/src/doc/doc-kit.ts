@@ -38,6 +38,9 @@ import {
 } from "./envelope";
 import { createDocCommitSink, createReadOnlyCommitSink } from "./doc-commit-sink";
 import { runMigrations } from "./migrate";
+import { ensureBoardRoot, resolveBoardRoot, runSchemaMigrations } from "./schema-migrate";
+import { BoardRoot } from "../catalog/scene";
+import { writeRuntimeResource } from "../guards/resource-writer";
 import { createLiveWriter, type LiveWriter } from "../guards/live-writer";
 import { makeDefaultMayDiverge } from "../ops/claims";
 import {
@@ -194,6 +197,10 @@ export function createDocSession(world: World, opts: DocSessionOpts = {}): DocSe
   );
   stampEngineMeta(store);
   const attachment = attachDurable(world, store);
+  // Petition 8: every schema-2 doc carries a board root from birth — root-level widgets hang
+  // their ordered ChildOf edges on it. Runtime resource names it for the ops/renderers.
+  const root = ensureBoardRoot(world, store);
+  writeRuntimeResource(world, BoardRoot, { root });
   return makeSession(world, store, attachment, false);
 }
 
@@ -246,7 +253,13 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
     let readOnly = verdict !== "ok";
     if (verdict === "migrate" && (opts.migrate ?? true)) {
       try {
-        runMigrations({ store, world }, report);
+        // Petition 8: STRUCTURAL schema steps run FIRST (they may spawn the board root and
+        // rewrite relations the pack runner's entities already carry), then the per-prefab
+        // pack runner, then ONE re-gate off the freshly stamped markers. SINGLE-WRITER LAW:
+        // this branch is the solo-open path only — a live-room joiner passes migrate:false
+        // (bootstrap) and stays read-only on an old-schema doc.
+        runSchemaMigrations({ store, world }, report);
+        runMigrations({ store, world }, readDocVersionReport(doc));
         effectiveReport = readDocVersionReport(doc);
         readOnly = gateVerdict(effectiveReport) !== "ok";
       } catch {
@@ -258,6 +271,15 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
         effectiveReport = readDocVersionReport(doc);
         readOnly = true;
       }
+    }
+    // Petition 8: name the board root for ops/renderers when the doc has one (any schema-2
+    // doc). Absent on a pre-schema-2 read-only doc — renderers fall back to the legacy
+    // StackZ sort; never minted here on the read-only path (minting is a write).
+    if (readOnly) {
+      const root = resolveBoardRoot(world, store);
+      if (root !== undefined) writeRuntimeResource(world, BoardRoot, { root });
+    } else {
+      writeRuntimeResource(world, BoardRoot, { root: ensureBoardRoot(world, store) });
     }
     return { ok: true, session: makeSession(world, store, attachment, readOnly, effectiveReport) };
   } catch (err) {
