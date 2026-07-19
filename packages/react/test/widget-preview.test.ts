@@ -9,7 +9,8 @@ import { defineWidget, p, widgets } from "@ice/core";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WidgetPreview, useWidgetProps, type WidgetComponentProps } from "../src";
+import { WidgetPreview, setPreviewSnapshot, useWidgetProps, type WidgetComponentProps } from "../src";
+import { __resetPreviewSnapshotsForTests } from "../src/preview-snapshots";
 import { __resetPreviewSandboxForTests } from "../src/widget-preview";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -71,6 +72,7 @@ afterEach(() => {
   root = null;
   host = null;
   __resetPreviewSandboxForTests();
+  __resetPreviewSnapshotsForTests();
 });
 
 describe("WidgetPreview", () => {
@@ -110,7 +112,25 @@ describe("WidgetPreview", () => {
     err.mockRestore();
   });
 
-  it("gl surface without a declaration renders the fallback (P1 — capture pipeline is P2)", () => {
+  it("a landed GL snapshot renders the snapshot layer (and beats the fallback)", () => {
+    const fakeCapture = document.createElement("canvas");
+    fakeCapture.width = 64;
+    fakeCapture.height = 64;
+    setPreviewSnapshot("pvh:gl", fakeCapture); // the P2 capture seam — no GPU needed
+    const el = render(
+      createElement(WidgetPreview, {
+        type: "pvh:gl",
+        width: 100,
+        height: 100,
+        fallback: createElement("div", { "data-fb": "" }),
+      }),
+    );
+    expect(el.querySelector("[data-preview-snapshot]")).not.toBeNull();
+    expect(el.querySelector("[data-fb]")).toBeNull();
+    expect(el.querySelector("[data-preview-snapshot]")?.closest("[inert]")).not.toBeNull();
+  });
+
+  it("gl surface without a declaration renders the fallback (until a capture lands)", () => {
     const el = render(
       createElement(WidgetPreview, {
         type: "pvh:gl",

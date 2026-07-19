@@ -18,7 +18,6 @@
  * the seam existed; removed with it.)
  */
 import { Size, defineWidget, p } from "@ice/core";
-import { bakedPreview } from "./baked-preview";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
@@ -89,8 +88,6 @@ export const GoldKnotCard = defineWidget({
   type: "gold-knot-card",
   props: { metal: p.enum(["gold", "chrome", "copper"], { default: "gold" }) },
   surface: "gl",
-  // Baked-snapshot preview (P1 escape hatch) — P2 replaces with live r3f capture.
-  preview: bakedPreview("gold-knot-card"),
   animated: true,
   component: GoldKnotView,
   chrome: makeGlCardChrome(BACKPLATE),

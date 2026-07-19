@@ -12,7 +12,6 @@
  * size comes from the live `Size`. `hue` is a `p.number` (0–360).
  */
 import { Size, defineWidget, p } from "@ice/core";
-import { bakedPreview } from "./baked-preview";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
@@ -90,8 +89,6 @@ export const TorusKnotCard = defineWidget({
   type: "torus-knot-card",
   props: { hue: p.number({ default: 285, min: 0, max: 360 }) },
   surface: "gl",
-  // Baked-snapshot preview (P1 escape hatch) — P2 replaces with live r3f capture.
-  preview: bakedPreview("torus-knot-card"),
   animated: true,
   component: TorusKnotView,
   chrome: makeGlCardChrome(BACKPLATE),

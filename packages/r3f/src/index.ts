@@ -38,3 +38,4 @@ export {
   type GLPointerRouterDeps,
   type IslandPointerEvent,
 } from "./gl-router";
+export { captureWidgetPreviews, type CapturePreviewOpts } from "./preview-capture";

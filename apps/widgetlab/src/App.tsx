@@ -44,7 +44,7 @@ import {
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
 import { ground } from "@ice/ground";
-import { GLViews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
+import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -461,6 +461,31 @@ export function App() {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.setItem("ic-dark-mode", String(dark));
   }, [dark]);
+
+  // GL tray previews (design-005 §2 P2): the r3f capture pipeline runs in
+  // IDLE time — never on the boot path (the "cached after first capture"
+  // contract). The environment is a FACTORY, built ON the capture renderer:
+  // PMREM textures don't cross renderers (no CPU image — the main canvas's
+  // envTex reads black there), so the capture mirrors EnvLoader instead.
+  // Skip-if-captured + coalescing live in the capturer, so StrictMode
+  // double-fires cost nothing.
+  useEffect(() => {
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const kick = (): void => {
+      captureWidgetPreviews({
+        environment: (gl) => new PMREMGenerator(gl).fromScene(new RoomEnvironment(), 0.04).texture,
+      }).catch((e) => console.warn("[widgetlab] GL preview capture failed — tray tiles keep their fallback.", e));
+    };
+    const idleId = w.requestIdleCallback?.(kick, { timeout: 4000 });
+    const timerId = idleId === undefined ? window.setTimeout(kick, 1500) : undefined;
+    return () => {
+      if (idleId !== undefined) w.cancelIdleCallback?.(idleId);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+    };
+  }, []);
 
   // --canvas-bg from theme (v1); the glow CSS vars feed CardShell's inset glow.
   useEffect(() => {

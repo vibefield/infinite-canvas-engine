@@ -31,8 +31,18 @@ import {
   type WidgetType,
   type World,
 } from "@ice/core";
-import { Component, type ComponentType, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import {
+  Component,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+  type ComponentType,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { EngineProvider } from "./engine-context";
+import { getPreviewSnapshot, subscribePreviewSnapshots, type PreviewImage } from "./preview-snapshots";
 
 // --- the preview sandbox -----------------------------------------------------
 
@@ -104,6 +114,29 @@ export interface WidgetPreviewProps {
   readonly style?: CSSProperties;
 }
 
+/** Draws a captured snapshot (P2 pipeline / injected cache) at natural size. */
+function SnapshotLayer({ image }: { image: PreviewImage }): ReactElement {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (canvas === null) return;
+    canvas.width = image.width;
+    canvas.height = image.height;
+    try {
+      canvas.getContext("2d")?.drawImage(image, 0, 0);
+    } catch {
+      // a torn-down ImageBitmap or a contextless test DOM — the layer stays blank
+    }
+  }, [image]);
+  return (
+    <canvas
+      ref={ref}
+      data-preview-snapshot=""
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+    />
+  );
+}
+
 function defaultPlaceholder(label: string): ReactElement {
   return (
     <div
@@ -127,6 +160,9 @@ function defaultPlaceholder(label: string): ReactElement {
 }
 
 export function WidgetPreview({ type, width, height, fallback, className, style }: WidgetPreviewProps): ReactElement {
+  // Subscribed BEFORE any early return (hook order): an open palette
+  // re-renders the moment the P2 capture pipeline lands this type's snapshot.
+  const snapshot = useSyncExternalStore(subscribePreviewSnapshots, () => getPreviewSnapshot(type));
   const def = widgets.get(type);
   const safeFallback = fallback ?? defaultPlaceholder(type);
   if (def === undefined || def.defaultSize.w <= 0 || def.defaultSize.h <= 0) {
@@ -167,7 +203,36 @@ export function WidgetPreview({ type, width, height, fallback, className, style 
     return stage(<Declared />);
   }
 
-  // 2. dom surface: the real component + default/curated props in the sandbox.
+  // 2. gl surface with a captured snapshot (the P2 pipeline / an injected
+  // cache): the widget's DOM chrome (if any) renders UNDERNEATH via the
+  // sandbox — the live card's chrome-beneath-canvas sandwich, reproduced —
+  // and the transparent 3D capture layers on top. ONE capture serves both
+  // themes: the 3D content is theme-independent; theme lives in the chrome's
+  // CSS.
+  if (def.surface === "gl" && snapshot !== undefined) {
+    let chromeLayer: ReactNode = null;
+    if (def.chrome !== null && def.chrome !== undefined) {
+      const entity = ensurePreviewEntity(def);
+      if (entity !== undefined && sandbox !== null) {
+        const Chrome = def.chrome as ComponentType<{ entity: Entity; world: World }>;
+        chromeLayer = (
+          <EngineProvider engine={sandbox.ce}>
+            <div style={{ position: "absolute", inset: 0 }}>
+              <Chrome entity={entity} world={sandbox.ce.world} />
+            </div>
+          </EngineProvider>
+        );
+      }
+    }
+    return stage(
+      <div style={{ position: "relative", width: "100%", height: "100%" }}>
+        {chromeLayer}
+        <SnapshotLayer image={snapshot} />
+      </div>,
+    );
+  }
+
+  // 3. dom surface: the real component + default/curated props in the sandbox.
   if (def.surface === "dom" && def.component !== null && def.component !== undefined) {
     const entity = ensurePreviewEntity(def);
     if (entity !== undefined && sandbox !== null) {
@@ -180,7 +245,7 @@ export function WidgetPreview({ type, width, height, fallback, className, style 
     }
   }
 
-  // 3. No path (gl without a declaration, broken spawn): the fallback.
+  // 4. No path (gl before its capture lands, broken spawn): the fallback.
   return (
     <div className={className} style={{ width: fitW, height: fitH, ...style }}>
       {safeFallback}

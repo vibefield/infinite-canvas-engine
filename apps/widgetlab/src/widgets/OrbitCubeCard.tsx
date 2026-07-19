@@ -37,7 +37,6 @@
  * keep v1's "a drag is not a click".
  */
 import { Size, defineWidget, p } from "@ice/core";
-import { bakedPreview } from "./baked-preview";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandInvalidate } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
@@ -175,8 +174,6 @@ export const OrbitCubeCard = defineWidget({
   type: "orbit-cube-card",
   props: { hue: p.number({ default: 200, min: 0, max: 360 }) },
   surface: "gl",
-  // Baked-snapshot preview (P1 escape hatch) — P2 replaces with live r3f capture.
-  preview: bakedPreview("orbit-cube-card"),
   animated: false, // event-driven; repaints scheduled via useIslandInvalidate
   component: OrbitCubeView,
   chrome: makeGlCardChrome(BACKPLATE),

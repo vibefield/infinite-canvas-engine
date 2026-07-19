@@ -26,6 +26,13 @@ export {
 } from "./engine-context";
 export { useCommit, useUndoStatus, type Commit, type UndoStatus } from "./use-commit";
 export { WidgetPreview, type WidgetPreviewProps } from "./widget-preview";
+export {
+  getPreviewSnapshot,
+  hasPreviewSnapshot,
+  setPreviewSnapshot,
+  subscribePreviewSnapshots,
+  type PreviewImage,
+} from "./preview-snapshots";
 export { useTool, useToolState } from "./use-tool";
 export { usePresencePeers, type PresencePeerView } from "./use-presence";
 export { attachKeymap, type KeymapEntry } from "./keymap";

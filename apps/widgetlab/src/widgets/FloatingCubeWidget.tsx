@@ -13,7 +13,6 @@
  * material) is verbatim; size comes from the live `Size`.
  */
 import { Size, defineWidget, p } from "@ice/core";
-import { bakedPreview } from "./baked-preview";
 import { type WidgetComponentProps, useWidgetProps, useWorldComponent } from "@ice/react";
 import { useIslandFrame } from "@ice/r3f";
 import { GlLiftGroup } from "./GlLiftGroup";
@@ -80,8 +79,6 @@ export const FloatingCubeWidget = defineWidget({
   type: "floating-cube-widget",
   props: { color: p.string({ default: "#E8523B" }) },
   surface: "gl",
-  // Baked-snapshot preview (P1 escape hatch) — P2 replaces with live r3f capture.
-  preview: bakedPreview("floating-cube-widget"),
   animated: true,
   component: CubeView,
   sizeMode: "fixed",
