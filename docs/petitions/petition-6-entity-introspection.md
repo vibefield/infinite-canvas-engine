@@ -1,6 +1,6 @@
 # Petition 6 — Public entity introspection (LANDED in strata-ecs 0.9.0, 2026-07-19)
 
-> **LANDED**: exactly the primary ask — `world.componentsOf(e): Component[]` /
+> **LANDED (readers)**: exactly the primary ask — `world.componentsOf(e): Component[]` /
 > `world.tagsOf(e): Tag[]` promoted to the public `World` surface (the
 > `inspect()` alternative was not needed). The promotion HARDENED the readers:
 > before it, a stale handle made `componentsOf` throw a raw TypeError
@@ -8,10 +8,26 @@
 > recycled slot's live bits; both are now generation-guarded and read `[]`
 > for dead/stale/identity-only handles, mirroring `has`/`hasTag`. Pure reads,
 > iteration-safe, not reactive (poll; pair with `world.reactive` for wakes).
-> npm publish pending as of 2026-07-19. Engine adoption when the pin bumps:
-> devtools' sovereignty detail switches to the exhaustive readers, and the
-> eligible-set comparison upgrades to a present-but-not-eligible anomaly
-> badge (the migration recorded below). Original petition follows.
+> Shipped in the 0.9.0 npm publish; ICE pinned it in `94a6adc`.
+>
+> **ADOPTION (superseded — there is no probe to retire)**: this header
+> originally asserted a devtools migration that CANNOT happen as written. The
+> named target — the M10 hand-rolled @ice/devtools SOVEREIGNTY panel's
+> eligible-set + `world.has()` probe — no longer exists: it was DELETED in the
+> devtools rebuild (`85ccb56`, "rebuild on strata's first-party tools") ONE
+> commit after this petition was recorded (`2f65cf5`). @ice/devtools now WRAPS
+> strata's `attachObserver`, whose observer panel ALREADY lists a selected
+> entity's cells exhaustively — so the readers' devtool win is delivered by
+> strata's own observer and there is nothing in ICE to switch. The one
+> ICE-specific piece that did NOT survive the rebuild is the
+> present-but-not-eligible ANOMALY BADGE (a prefab-eligibility overlay on the
+> cell list): strata's observer exposes no per-cell annotation seam
+> (`EntityDescription` is `{label, color, phase}`; `ObserverOptions` carries no
+> entity-detail hook), so ICE cannot decorate the observer's cells. That badge
+> is DEFERRED until strata's observer grows an entity-detail annotation /
+> extension hook — a FUTURE PETITION CANDIDATE, not yet filed. The original
+> petition follows; its "Engine migration when shipped" section is retained
+> for provenance but is now moot.
 
 ## Field impact
 
