@@ -214,13 +214,15 @@ describe("trace: tray insert-by-drag (ghost adoption)", () => {
     ce.dispose();
   });
 
-  it("release over a Solid widget is a rejected drop: fly-back + despawn, nothing created", () => {
+  it("release over a Solid widget is a rejected drop: fly-back to HOME + despawn, nothing created", () => {
     const { ce, step, mouse } = boot();
     ce.ops.spawnWidget("ins:solid", { x: 600, y: 400, undoable: false });
     ce.world.sync();
     step(2);
 
-    const ghost = ce.ops.insertByDrag("ins:card", { screenX: 100, screenY: 100 });
+    // `home` aims the return at persistent chrome (the deferred-spawn proxy
+    // pattern: the ghost spawns at the tray-EXIT point, not over the tray).
+    const ghost = ce.ops.insertByDrag("ins:card", { screenX: 100, screenY: 100, home: { x: 800, y: 880 } });
     step();
     mouse("move", 115, 100, 1);
     step();
@@ -229,6 +231,11 @@ describe("trace: tray insert-by-drag (ghost adoption)", () => {
     mouse("up", 660, 450, 0);
     step(2);
     expect(ce.world.hasTag(ghost, GhostRetiring)).toBe(true); // rejected → home
+    const tween = ce.world.get(ghost, TransformTween);
+    // biome-ignore lint/style/noNonNullAssertion: retiring implies the tween
+    expect(tween!.toX).toBe(750); // home − size/2 (identity cam)
+    // biome-ignore lint/style/noNonNullAssertion: retiring implies the tween
+    expect(tween!.toY).toBe(840);
     step(20);
     expect(ce.world.isAlive(ghost)).toBe(false);
     expect(twinsOf(ce, "ins:card")).toHaveLength(0);

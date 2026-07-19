@@ -558,8 +558,24 @@ export function App() {
   // memoized: a new factory identity re-boots the canvas mount effect.
   const groundFactory = useMemo(() => ground(), []);
 
+  // Widget tray open state lives HERE because the canvas itself reacts: the
+  // reference design's recede — the whole board eases to 0.98 while the
+  // sheet is up. (The tray's handoff math ratio-corrects container coords,
+  // so the transient scale never skews engine picks.)
+  const [trayOpen, setTrayOpen] = useState(false);
+
   return (
     <div className="h-screen w-screen" style={{ background: "var(--canvas-bg)" }}>
+      {/* The recede (reference design): the board eases to 0.98 while the
+          widget sheet is up. The tray proxy is body-level fixed — unaffected. */}
+      <div
+        className="h-full w-full transition-transform"
+        style={{
+          transform: trayOpen ? "scale(0.98)" : "scale(1)",
+          transitionDuration: "600ms",
+          transitionTimingFunction: "cubic-bezier(0.25, 1, 0.3, 1)",
+        }}
+      >
       <InfiniteCanvas
         engine={ce}
         ground={groundFactory}
@@ -591,25 +607,16 @@ export function App() {
             </Canvas>,
             gl.plane,
           )}
-        {/* The widget tray rides INSIDE the container (plane sandwich:
-            content < tray < lifted) — drag a tile out and the ghost floats
-            over the sheet on its way to the board. */}
-        <WidgetTray ce={ce} />
       </InfiniteCanvas>
+      </div>
 
       <NavigationBreadcrumbs engine={ce} />
       <ZoomPill ce={ce} />
 
-      {/* Clean Up — desktop-style auto layout (ops.arrange: selection ≥2
-          scopes it, otherwise the whole current frame; one undo step). */}
-      <button
-        type="button"
-        onClick={() => ce.ops.arrange()}
-        className="absolute top-4 right-52 z-50 flex h-10 items-center rounded-full bg-white px-4 text-sm font-medium text-neutral-600 shadow-lg transition-colors hover:bg-neutral-100 hover:text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 dark:hover:text-white"
-        title="Clean up: pack widgets into tidy rows (arranges the selection when 2+ cards are selected)"
-      >
-        ✨ Clean Up
-      </button>
+      {/* The bottom toolbar ⇄ widget tray (Clean Up moved into it — the
+          reference design consolidates actions there). Deferred-spawn drags:
+          tiles hand off to ops.insertByDrag only once they leave the sheet. */}
+      <WidgetTray ce={ce} open={trayOpen} onOpenChange={setTrayOpen} />
 
       {/* Dark mode toggle */}
       <button

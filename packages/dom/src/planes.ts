@@ -37,8 +37,8 @@ const LIFTED_PLANE_STYLE: Readonly<Record<string, string>> = {
   top: "0",
   transformOrigin: "0 0",
   willChange: "transform",
-  // The ONE explicit z in the plane sandwich (2026-07-19, the widget tray):
-  // app chrome may slot BETWEEN the planes with z-index 1 — resting widgets
+  // The ONE explicit z in the plane sandwich (2026-07-19): in-container app
+  // chrome may slot BETWEEN the planes with z-index 1 — resting widgets
   // slide under it while the dragged (promoted) widget floats over it. DOM
   // order alone leaves no gap for that; everything else stays order-stacked.
   zIndex: "2",

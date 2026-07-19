@@ -1,27 +1,32 @@
 /**
- * The widget tray (2026-07-19, James: "a tray container that when toggled on
- * it slide in from the bottom of the screen, and all kinds of widgets are well
- * organized there in grid layout … if you want any, you drag that one into
- * the canvas").
+ * The bottom toolbar ↔ widget tray (2026-07-19, rev 2 — James: the temp/
+ * "Design Bottom Toolbar Features" reference: "do its bottom toolbar and how
+ * it expand into the widget tray").
  *
- * Rendered INSIDE the canvas container (an <InfiniteCanvas> child) at
- * z-index 1 — the deliberate plane sandwich: resting widgets (content plane,
- * z-auto) slide UNDER the tray, while the one being dragged rides the lifted
- * plane (z-index 2, planes.ts) and floats OVER it on the way out.
+ * ONE morphing element (the reference's dynamic-island move): a 420×64 pill
+ * — tool switcher, Clean Up, a morphing ⊕ — that expands into a 60vh sheet
+ * (pull bar, category pills, iOS-cell widget grid) with a single
+ * `600ms cubic-bezier(0.25,1,0.3,1)` transition over width/height/bottom/
+ * radius; the ⊕ rotates 135° into a ✕. A backdrop dims the canvas while
+ * open (App scales the canvas wrapper to 0.98 — the reference's recede).
  *
- * The drag-out is `ops.insertByDrag` (ghost adoption): the tile's pointerdown
- * `stopPropagation()`s (the sanctioned widget-content boundary — the native
- * down must not double-land) and hands the press to the engine, which spawns
- * the full-size ghost under the pointer and runs the ordinary drag stack —
- * lift, snap, folder drop targets. Release over the TRAY cancels (the
- * "put it back" gesture): a window-level pointerup inside the panel rect sets
- * CancelRequest at event time, and the ctl:spawn cancel sweep outruns the
- * queued up by phase order. Escape cancels via the engine keymap already.
+ * DEFERRED SPAWN (rev 2, the GL-layer workaround): pressing a tile drags a
+ * pure-DOM PROXY of the tile (body-level, above every canvas plane — GL
+ * included, by construction). The real widget does not exist yet. The moment
+ * the proxy leaves the sheet: `ops.insertByDrag` spawns the ghost under the
+ * pointer (`home` aimed at the toolbar for cancel fly-backs), the sheet
+ * recedes, the proxy zooms-in-and-vanishes while the widget host pops out
+ * 0.3→1 (WAAPI on the mounted host — "like the item just spawned it"), and
+ * the tray tile pops back into its slot. Release INSIDE the sheet = the
+ * proxy glides home; nothing was ever spawned. Release over the TOOLBAR
+ * mid-insert = cancel (the put-back; CancelRequest outruns the queued up).
  *
- * Tiles are STATIC previews (preview.ts silhouettes — the folder-mini rule),
- * never live widget mounts: cheap, non-interactive, scroll-friendly.
+ * This component lives OUTSIDE the canvas container (App sibling): its
+ * events never reach the pointer adapter, so no opt-out attributes and no
+ * plane-sandwich z games are needed anymore.
  */
 import {
+  ActiveTool,
   InsertGhost,
   defineQuery,
   widgets as widgetRegistry,
@@ -29,12 +34,15 @@ import {
   type WidgetType,
 } from "@ice/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CARD_RADIUS } from "../widgets/CardShell";
 import { previewBackground } from "../widgets/preview";
 
 const ghostQ = defineQuery([InsertGhost]);
 
-/** Tile label overrides; everything else derives from the type id. */
+const EASE = "cubic-bezier(0.25, 1, 0.3, 1)"; // the reference's island ease
+const MORPH_MS = 600;
+
+// --- catalog presentation -------------------------------------------------
+
 const LABELS: Record<string, string> = {
   "card-container": "Folder",
   "comment-card": "Comment",
@@ -53,87 +61,353 @@ function labelOf(type: string): string {
     .join(" ");
 }
 
-/** Silhouette box: defaultSize fit into the tile art area, radius scaled. */
-function silhouette(def: WidgetType): { w: number; h: number; r: number } {
-  const s = Math.min(74 / def.defaultSize.w, 54 / def.defaultSize.h);
-  return { w: def.defaultSize.w * s, h: def.defaultSize.h * s, r: Math.max(4, CARD_RADIUS * s) };
+const CATEGORIES = ["All", "Cards", "3D", "Nodes", "Tools"] as const;
+const TOOL_TYPES = new Set(["card-container", "comment-card", "debug-resizable"]);
+
+function categoryOf(def: WidgetType): (typeof CATEGORIES)[number] {
+  if (def.type.endsWith("-node")) return "Nodes";
+  if (TOOL_TYPES.has(def.type)) return "Tools";
+  if (def.surface === "gl") return "3D";
+  return "Cards";
 }
 
-function Tile({ ce, def }: { ce: CanvasEngine; def: WidgetType }) {
-  const sil = silhouette(def);
+// iOS-style grid cells (reference: fixed cells, centered, span by size).
+const CELL = 132;
+const GAP = 18;
+const LABEL_H = 24;
+
+function spanOf(def: WidgetType): { cols: number; rows: number } {
+  return { cols: def.defaultSize.w >= 240 ? 2 : 1, rows: def.defaultSize.h >= 240 ? 2 : 1 };
+}
+
+function silhouetteIn(def: WidgetType, boxW: number, boxH: number): { w: number; h: number; r: number } {
+  const s = Math.min((boxW - 8) / def.defaultSize.w, (boxH - LABEL_H - 6) / def.defaultSize.h);
+  return { w: def.defaultSize.w * s, h: def.defaultSize.h * s, r: Math.max(6, 22 * s) };
+}
+
+// --- the proxy drag machine (deferred spawn) --------------------------------
+
+interface ProxyCallbacks {
+  /** The proxy left the sheet — spawn NOW; return false to abort (no engine). */
+  onHandoff(e: PointerEvent): number | false;
+  onSettled(): void;
+}
+
+/**
+ * Imperative on purpose (chrome-grade, no React churn at pointer rate): a
+ * body-level clone of the tile silhouette follows the pointer; crossing out
+ * of `panel` triggers the one-time handoff; releasing inside glides it back.
+ */
+function startTileDrag(
+  down: PointerEvent,
+  tileEl: HTMLElement,
+  panel: HTMLElement,
+  def: WidgetType,
+  cb: ProxyCallbacks,
+): void {
+  const sil = tileEl.querySelector<HTMLElement>("[data-tray-sil]");
+  if (sil === null) return;
+  const silRect = sil.getBoundingClientRect();
+  const doc = tileEl.ownerDocument;
+  let proxy: HTMLElement | null = null;
+  let handed = false;
+
+  const makeProxy = (): HTMLElement => {
+    const p = doc.createElement("div");
+    p.dataset.trayProxy = def.type;
+    Object.assign(p.style, {
+      position: "fixed",
+      left: "0",
+      top: "0",
+      width: `${silRect.width}px`,
+      height: `${silRect.height}px`,
+      borderRadius: getComputedStyle(sil).borderRadius,
+      background: previewBackground(def.type, def.surface),
+      boxShadow: "0 24px 60px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.08)",
+      zIndex: "9999",
+      pointerEvents: "none",
+      willChange: "transform, opacity",
+    } as CSSStyleDeclaration);
+    doc.body.appendChild(p);
+    // The slot empties while its widget is "out" (restored at settle).
+    tileEl.style.transition = "opacity 200ms ease, transform 200ms ease";
+    tileEl.style.opacity = "0.25";
+    tileEl.style.transform = "scale(0.92)";
+    return p;
+  };
+
+  const at = (p: HTMLElement, x: number, y: number, scale: number): void => {
+    p.style.transform = `translate(${x - silRect.width / 2}px, ${y - silRect.height / 2}px) scale(${scale})`;
+  };
+
+  const restoreTile = (pop: boolean): void => {
+    if (pop) {
+      // "the dragged away tile item now re-appears": a small spring pop.
+      tileEl.style.transition = "none";
+      tileEl.style.opacity = "0";
+      tileEl.style.transform = "scale(0.6)";
+      requestAnimationFrame(() => {
+        tileEl.style.transition = "opacity 240ms ease, transform 280ms cubic-bezier(0.34, 1.45, 0.64, 1)";
+        tileEl.style.opacity = "1";
+        tileEl.style.transform = "scale(1)";
+      });
+    } else {
+      tileEl.style.opacity = "1";
+      tileEl.style.transform = "scale(1)";
+    }
+  };
+
+  const settle = (): void => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("keydown", onKey, true);
+    cb.onSettled();
+  };
+
+  const glideBack = (): void => {
+    // Released inside the sheet — nothing spawned; the proxy returns to its slot.
+    const p = proxy;
+    if (p === null) {
+      restoreTile(false);
+      settle();
+      return;
+    }
+    const home = sil.getBoundingClientRect();
+    p.style.transition = `transform 220ms ${EASE}, opacity 220ms ease`;
+    p.style.transform = `translate(${home.left}px, ${home.top}px) scale(0.94)`;
+    p.style.opacity = "0.4";
+    window.setTimeout(() => {
+      p.remove();
+      restoreTile(false);
+    }, 230);
+    settle();
+  };
+
+  const onMove = (e: PointerEvent): void => {
+    if (e.pointerId !== down.pointerId) return;
+    if (proxy === null) {
+      if (Math.hypot(e.clientX - down.clientX, e.clientY - down.clientY) < 4) return;
+      proxy = makeProxy();
+    }
+    at(proxy, e.clientX, e.clientY, 1.06);
+    if (handed) return;
+    const r = panel.getBoundingClientRect();
+    const outside =
+      e.clientX < r.left - 8 || e.clientX > r.right + 8 || e.clientY < r.top - 8 || e.clientY > r.bottom + 8;
+    if (!outside) return;
+
+    // ---- THE HANDOFF: spawn the real widget, morph the proxy into it. ----
+    handed = true;
+    const ghost = cb.onHandoff(e);
+    const p = proxy;
+    if (ghost === false) {
+      p.remove();
+      restoreTile(false);
+      settle();
+      return;
+    }
+    // Item zooms IN and disappears… (timeout fallback: a missed onfinish —
+    // throttled headless frames — must never leave a stray proxy behind).
+    p.animate(
+      [
+        { transform: p.style.transform, opacity: 1 },
+        { transform: `${p.style.transform} scale(1.9)`, opacity: 0 },
+      ],
+      { duration: 200, easing: "ease-out", fill: "forwards" },
+    ).onfinish = () => p.remove();
+    window.setTimeout(() => p.remove(), 320);
+    // …the real widget zooms OUT into place (WAAPI on the host, transient,
+    // self-reverting — the reflector's layout styles are untouched).
+    let tries = 0;
+    const popIn = (): void => {
+      const host = doc.querySelector<HTMLElement>(`[data-ice-entity="${ghost}"]`);
+      if (host === null) {
+        if (++tries < 20) requestAnimationFrame(popIn);
+        return;
+      }
+      host.animate(
+        [
+          { transform: "scale(0.3)", opacity: 0.4 },
+          { transform: "scale(1)", opacity: 1 },
+        ],
+        { duration: 280, easing: "cubic-bezier(0.34, 1.3, 0.64, 1)" },
+      );
+    };
+    requestAnimationFrame(popIn);
+    restoreTile(true);
+    settle(); // the engine owns the pointer from here
+  };
+
+  const onUp = (e: PointerEvent): void => {
+    if (e.pointerId !== down.pointerId) return;
+    glideBack();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key !== "Escape") return;
+    e.stopPropagation();
+    glideBack();
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("keydown", onKey, true);
+}
+
+// --- tiles ------------------------------------------------------------------
+
+function Tile({
+  ce,
+  def,
+  panelRef,
+  onHandoff,
+}: {
+  ce: CanvasEngine;
+  def: WidgetType;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  onHandoff: () => void;
+}) {
+  const { cols, rows } = spanOf(def);
+  const boxW = cols * CELL + (cols - 1) * GAP;
+  const boxH = rows * CELL + (rows - 1) * GAP;
+  const sil = silhouetteIn(def, boxW, boxH);
   const ref = useRef<HTMLDivElement>(null);
 
-  // NATIVE pointerdown, not React's: React delegates at the REACT ROOT, which
-  // sits ABOVE the canvas container — a synthetic-event stopPropagation fires
-  // after the adapter's container listener already saw the down, so the real
-  // down lands flagged, HandledByWidget latches the tick, and the folded
-  // synthetic down is skipped too (the ghost strands; field-debugged
-  // 2026-07-19). A native listener ON the tile stops the bubble BEFORE the
-  // container — the sanctioned widget-content boundary, as designed.
+  // NATIVE pointerdown (2026-07-19 field bug): React delegates at its root —
+  // by then the down already bubbled wherever it will. Here the tray sits
+  // outside the canvas container so nothing double-lands, but native keeps
+  // the press semantics exact (and preventDefault kills text/image drags).
   useEffect(() => {
     const el = ref.current;
     if (el === null) return;
     const onDown = (e: PointerEvent): void => {
       if (e.button !== 0) return;
-      e.stopPropagation(); // the down is the TILE's — never a canvas fact
       e.preventDefault();
-      const container = el.closest("[data-ice-canvas]");
-      if (container === null) return;
-      const rect = container.getBoundingClientRect();
-      const pointerId = e.pointerType === "touch" ? `touch:${e.pointerId}` : e.pointerType === "pen" ? "pen" : "mouse";
-      const device = e.pointerType === "touch" ? ("touch" as const) : e.pointerType === "pen" ? ("pen" as const) : ("mouse" as const);
-      ce.ops.insertByDrag(def.type, {
-        screenX: e.clientX - rect.left,
-        screenY: e.clientY - rect.top,
-        pointerId,
-        device,
-        buttons: e.buttons || 1,
+      const panel = panelRef.current;
+      if (panel === null) return;
+      startTileDrag(e, el, panel, def, {
+        onHandoff: (ev) => {
+          const container = document.querySelector<HTMLElement>("[data-ice-canvas]");
+          if (container === null) return false;
+          // Ratio-corrected: the canvas wrapper is scaled 0.98 while the
+          // sheet is open — container px ≠ visual px until it settles.
+          const rect = container.getBoundingClientRect();
+          const rx = rect.width / container.clientWidth || 1;
+          const ry = rect.height / container.clientHeight || 1;
+          const pointerId = ev.pointerType === "touch" ? `touch:${ev.pointerId}` : ev.pointerType === "pen" ? "pen" : "mouse";
+          const device = ev.pointerType === "touch" ? ("touch" as const) : ev.pointerType === "pen" ? ("pen" as const) : ("mouse" as const);
+          const ghost = ce.ops.insertByDrag(def.type, {
+            screenX: (ev.clientX - rect.left) / rx,
+            screenY: (ev.clientY - rect.top) / ry,
+            pointerId,
+            device,
+            buttons: ev.buttons || 1,
+            // Cancel fly-backs aim at the persistent toolbar, not open canvas.
+            home: { x: container.clientWidth / 2, y: container.clientHeight - 64 },
+          });
+          onHandoff(); // the sheet recedes; the drag continues on full canvas
+          return ghost;
+        },
+        onSettled: () => {},
       });
     };
     el.addEventListener("pointerdown", onDown);
     return () => el.removeEventListener("pointerdown", onDown);
-  }, [ce, def.type]);
+  }, [ce, def, panelRef, onHandoff]);
 
   return (
-    // A plain div ON PURPOSE: this is a press-to-DRAG surface, not a button —
-    // a native <button> would opt its own downs out of the canvas contract,
-    // and there is no click action to expose to keyboard users (keyboard
-    // insert is a future affordance, not a broken one).
     <div
       ref={ref}
       data-tray-tile={def.type}
-      className="group flex cursor-grab flex-col items-center gap-1.5 rounded-xl p-2 transition-colors hover:bg-black/5 active:cursor-grabbing dark:hover:bg-white/10"
-      style={{ touchAction: "none", userSelect: "none" }}
+      className="group relative flex cursor-grab flex-col items-center justify-center active:cursor-grabbing"
+      style={{
+        gridColumn: `span ${cols}`,
+        gridRow: `span ${rows}`,
+        width: boxW,
+        height: boxH,
+        touchAction: "none",
+        userSelect: "none",
+      }}
       title={`Drag onto the canvas to add a ${labelOf(def.type)}`}
     >
-      <div className="flex h-[54px] w-[74px] items-center justify-center">
-        <div
-          className="transition-transform duration-150 group-hover:-translate-y-0.5 group-active:scale-90"
-          style={{
-            width: sil.w,
-            height: sil.h,
-            borderRadius: sil.r,
-            background: previewBackground(def.type, def.surface),
-            boxShadow: "0 4px 10px rgba(0,0,0,0.18), inset 0 0 0 1px rgba(255,255,255,0.06)",
-          }}
-        />
-      </div>
-      <span className="max-w-[84px] truncate text-[10px] font-medium text-neutral-500 dark:text-neutral-400">
+      <div
+        data-tray-sil=""
+        className="transition-transform duration-200 group-hover:scale-[1.03] group-active:scale-95"
+        style={{
+          width: sil.w,
+          height: sil.h,
+          borderRadius: sil.r,
+          background: previewBackground(def.type, def.surface),
+          // Neutral hairline: visible on the light sheet AND the dark one —
+          // the glassy GL tiles otherwise vanish on white.
+          boxShadow: "0 15px 30px rgba(0,0,0,0.18), inset 0 0 0 1px rgba(127,127,127,0.22)",
+        }}
+      />
+      <span className="mt-2 max-w-full truncate text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
         {labelOf(def.type)}
       </span>
     </div>
   );
 }
 
-export function WidgetTray({ ce }: { ce: CanvasEngine }) {
-  const [open, setOpen] = useState(false);
+// --- the tool switcher (the reference's mode pill, on engine tools) ---------
+
+const TOOLS = [
+  { id: "select", label: "Select", key: "V" },
+  { id: "pan", label: "Pan", key: "H" },
+  { id: "connect", label: "Wire", key: "C" },
+] as const;
+const SEG_W = 72;
+
+function ToolSwitcher({ ce }: { ce: CanvasEngine }) {
+  const [active, setActive] = useState("select");
+  useEffect(() => {
+    const id = setInterval(() => setActive(ce.world.getResource(ActiveTool)?.id ?? "select"), 120);
+    return () => clearInterval(id);
+  }, [ce]);
+  const idx = Math.max(0, TOOLS.findIndex((t) => t.id === active));
+  return (
+    <div className="relative flex rounded-full border border-black/5 bg-[#F2F2F7]/80 p-1 shadow-inner dark:border-white/5 dark:bg-black/40">
+      <div
+        className="absolute top-1 bottom-1 rounded-full border border-black/5 bg-white shadow-sm transition-transform duration-300 dark:border-white/10 dark:bg-[#2C2C2E]"
+        style={{ width: SEG_W, transform: `translateX(${idx * SEG_W}px)`, transitionTimingFunction: EASE }}
+      />
+      {TOOLS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => ce.ops.setTool(t.id)}
+          className={`relative z-10 py-1.5 text-[13px] font-medium transition-colors ${
+            active === t.id ? "text-black dark:text-white" : "text-black/50 hover:text-black/80 dark:text-white/50 dark:hover:text-white/80"
+          }`}
+          style={{ width: SEG_W }}
+          title={`${t.label} tool (${t.key})`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// --- the morphing island -----------------------------------------------------
+
+export function WidgetTray({
+  ce,
+  open,
+  onOpenChange,
+}: {
+  ce: CanvasEngine;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [ghostLive, setGhostLive] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const defs = useMemo(() => widgetRegistry.all(), []);
+  const shown = category === "All" ? defs : defs.filter((d) => categoryOf(d) === category);
 
-  // Chrome-grade ghost poll (CardShell's 60ms pattern): drives the
-  // "release here to put it back" affordance while an insert drag is live.
+  // Ghost poll (chrome-grade 60ms): drives the toolbar's put-back affordance.
   useEffect(() => {
     const id = setInterval(() => {
       let live = false;
@@ -145,10 +419,8 @@ export function WidgetTray({ ce }: { ce: CanvasEngine }) {
     return () => clearInterval(id);
   }, [ce]);
 
-  // Release over the tray = cancel (the put-back). Window-level: container
-  // capture retargets the up to the container, but it still BUBBLES to window
-  // with real coordinates. The event-time CancelRequest wins over the queued
-  // up by phase order (ctl:spawn sweep runs before ctl:recognize).
+  // Release over the toolbar mid-insert = cancel (the put-back). Event-time
+  // CancelRequest beats the queued up by phase order (ctl:spawn sweep first).
   useEffect(() => {
     const onUp = (e: PointerEvent): void => {
       const panel = panelRef.current;
@@ -167,74 +439,174 @@ export function WidgetTray({ ce }: { ce: CanvasEngine }) {
     return () => window.removeEventListener("pointerup", onUp);
   }, [ce]);
 
-  // B toggles the tray (v/h/c are engine tool shortcuts; b is free).
+  // B toggles; Escape closes when open (capture — the app's exit-container
+  // handler and the engine keymap must not also act on the same press).
   useEffect(() => {
+    const isEditable = (t: EventTarget | null): boolean =>
+      t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.key !== "b" && e.key !== "B") || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target;
-      if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) {
-        return;
+      if ((e.key === "b" || e.key === "B") && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditable(e.target)) {
+        onOpenChange(!open);
       }
-      setOpen((o) => !o);
+    };
+    const onEscCapture = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape" || !open || isEditable(e.target)) return;
+      if (document.querySelector("[data-tray-proxy]") !== null) return; // the proxy's own Esc glides it back
+      e.stopPropagation();
+      onOpenChange(false);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    window.addEventListener("keydown", onEscCapture, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onEscCapture, true);
+    };
+  }, [open, onOpenChange]);
 
   return (
     <>
-      {/* The toggle pill — above the lifted plane like the rest of the chrome. */}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={`absolute bottom-4 left-1/2 z-10 flex h-10 -translate-x-1/2 items-center gap-2 rounded-full px-4 text-sm font-medium shadow-lg transition-all ${
-          open
-            ? "bg-neutral-800 text-white dark:bg-white dark:text-neutral-900"
-            : "bg-white text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700 dark:hover:text-white"
+      {/* Dimming backdrop — click closes; canvas rests while browsing. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: Escape is the keyboard close; the backdrop click is a redundant pointer affordance */}
+      <div
+        className={`absolute inset-0 z-40 bg-black/10 transition-opacity duration-500 dark:bg-black/40 ${
+          open ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
-        style={{ transform: `translate(-50%, ${open ? "-236px" : "0px"})` }}
-        title="Widget tray (B)"
-      >
-        ❖ Widgets
-        <span className="rounded bg-black/10 px-1 text-[10px] leading-4 dark:bg-white/20">B</span>
-      </button>
+        onClick={() => onOpenChange(false)}
+        aria-hidden
+      />
 
-      {/* The tray sheet — z-index 1: BETWEEN the content plane (resting
-          widgets slide under) and the lifted plane (the dragged one floats
-          over). data-canvas-interactive keeps stray presses out of the
-          engine's recognizers (design-002 §8 opt-out). */}
+      {/* THE morphing island: toolbar pill ⇄ widget sheet, one element. */}
       <div
         ref={panelRef}
-        data-canvas-interactive=""
-        className="absolute bottom-0 left-1/2 w-[min(880px,calc(100%-32px))] rounded-t-[22px] bg-white/90 shadow-[0_-12px_48px_rgba(0,0,0,0.25)] backdrop-blur-xl dark:bg-neutral-900/90"
+        data-tray-panel=""
+        data-tray-open={open ? "true" : "false"}
+        className={`absolute left-1/2 z-50 -translate-x-1/2 overflow-hidden border transition-all ${
+          open
+            ? "bottom-0 h-[60vh] w-[min(80%,64rem)] rounded-t-[2.5rem] rounded-b-none border-b-0 border-black/5 bg-white/90 shadow-[0_-20px_40px_rgba(0,0,0,0.08)] backdrop-blur-3xl dark:border-white/10 dark:bg-[#1C1C1E]/90 dark:shadow-[0_-20px_40px_rgba(0,0,0,0.4)]"
+            : "bottom-8 h-16 w-[440px] rounded-[32px] border-black/5 bg-white/80 shadow-[0_8px_30px_rgba(0,0,0,0.08)] backdrop-blur-xl hover:bg-white/90 dark:border-white/10 dark:bg-[#1C1C1E]/80 dark:shadow-[0_8px_30px_rgba(0,0,0,0.4)] dark:hover:bg-[#1C1C1E]/90"
+        }`}
         style={{
-          zIndex: 1,
-          transform: `translate(-50%, ${open ? "0%" : "112%"})`,
-          transition: "transform 340ms cubic-bezier(0.32, 0.72, 0, 1)",
+          transitionDuration: `${MORPH_MS}ms`,
+          transitionTimingFunction: EASE,
+          willChange: "width, height, bottom, border-radius",
         }}
-        onWheel={(e) => e.stopPropagation()} // scroll the tray, never zoom the canvas
       >
-        <div className="flex items-center justify-between px-5 pt-3.5 pb-1">
-          <span className="text-[13px] font-semibold tracking-tight text-neutral-800 dark:text-neutral-100">
-            Widgets
-          </span>
-          <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
-            {ghostLive ? "release here to put it back" : "drag a widget onto the canvas"}
-          </span>
-        </div>
-        <div
-          className="grid gap-1 overflow-y-auto px-4 pt-1 pb-5 transition-opacity"
-          style={{
-            gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
-            maxHeight: 196,
-            opacity: ghostLive ? 0.45 : 1,
-          }}
-        >
-          {defs.map((def) => (
-            <Tile key={def.type} ce={ce} def={def} />
-          ))}
+        <div className="relative flex h-full w-full flex-col">
+          {/* Pull indicator (open only) — a real button: keyboard closes too. */}
+          <button
+            type="button"
+            aria-label="Close the widget tray"
+            className={`absolute top-3 left-1/2 h-1.5 w-12 -translate-x-1/2 cursor-pointer rounded-full bg-black/20 transition-all duration-300 hover:bg-black/40 dark:bg-white/20 dark:hover:bg-white/40 ${
+              open ? "opacity-100 delay-200" : "pointer-events-none opacity-0"
+            }`}
+            onClick={() => onOpenChange(false)}
+          />
+
+          {/* The morphing ⊕ (plus ⇄ close via 135° rotation). */}
+          <button
+            type="button"
+            data-tray-toggle=""
+            onClick={() => onOpenChange(!open)}
+            className={`absolute z-50 flex items-center justify-center rounded-full transition-all ${
+              open
+                ? "top-5 right-8 h-10 w-10 rotate-[135deg] bg-black/5 text-black/70 shadow-none hover:bg-black/10 hover:text-black dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/20 dark:hover:text-white"
+                : "top-2 right-2 h-12 w-12 rotate-0 bg-black text-white shadow-md hover:scale-105 hover:bg-black/90 active:scale-95 dark:bg-white dark:text-black dark:hover:bg-white/90"
+            }`}
+            style={{ transitionDuration: `${MORPH_MS}ms`, transitionTimingFunction: EASE }}
+            title={open ? "Close (Esc)" : "Widget tray (B)"}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" role="presentation">
+              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+          </button>
+
+          {/* Always-visible header: tools + actions (the toolbar itself). */}
+          <div
+            className={`relative z-40 flex w-full shrink-0 items-center transition-all ${
+              open ? "h-20 px-8 pr-[100px]" : "h-16 px-2 pr-[64px]"
+            }`}
+            style={{ transitionDuration: `${MORPH_MS}ms`, transitionTimingFunction: EASE }}
+          >
+            <ToolSwitcher ce={ce} />
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => ce.ops.arrange()}
+              className="flex h-11 w-11 items-center justify-center rounded-full text-[17px] transition-all hover:bg-black/5 active:scale-95 dark:hover:bg-white/10"
+              title="Clean up: pack widgets into tidy rows (arranges the selection when 2+ are selected)"
+            >
+              ✨
+            </button>
+          </div>
+
+          {/* Put-back affordance: covers the toolbar while an insert drags. */}
+          <div
+            className={`pointer-events-none absolute inset-0 z-[60] flex items-center justify-center bg-white/90 text-[13px] font-medium text-neutral-500 backdrop-blur-xl transition-opacity duration-200 dark:bg-[#1C1C1E]/95 dark:text-neutral-300 ${
+              ghostLive && !open ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            <span className="rounded-full border border-dashed border-neutral-400/60 px-4 py-1.5 dark:border-neutral-500/60">
+              Release here to put it back
+            </span>
+          </div>
+
+          {/* Sheet content: categories + the iOS grid. */}
+          <div
+            className={`relative flex min-h-0 flex-1 flex-col transition-all duration-500 ease-out ${
+              open ? "translate-y-0 opacity-100 delay-150" : "pointer-events-none absolute inset-x-0 top-16 translate-y-12 opacity-0"
+            }`}
+          >
+            <div className="mb-3 flex w-full items-center gap-2 overflow-x-auto px-8 no-scrollbar mask-fade-right">
+              {CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategory(cat)}
+                  className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-[13px] font-medium transition-all active:scale-95 ${
+                    category === cat
+                      ? "border-black bg-black text-white shadow-md dark:border-white dark:bg-white dark:text-black"
+                      : "border-black/5 bg-[#F2F2F7] text-black/70 hover:bg-[#E5E5EA] hover:text-black dark:border-white/5 dark:bg-[#2C2C2E]/50 dark:text-white/70 dark:hover:bg-[#2C2C2E] dark:hover:text-white"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-y-auto px-8 no-scrollbar mask-fade-bottom">
+              <div
+                className="w-full pt-4 pb-28"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(auto-fill, ${CELL}px)`,
+                  gridAutoRows: `${CELL}px`,
+                  gridAutoFlow: "row dense", // small tiles backfill the span gaps
+                  columnGap: GAP,
+                  rowGap: GAP,
+                  justifyContent: "center",
+                }}
+              >
+                {shown.map((def) => (
+                  <Tile key={def.type} ce={ce} def={def} panelRef={panelRef} onHandoff={() => onOpenChange(false)} />
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Reference utility styles (scrollbar hiding + edge fade masks). */}
+      <style>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .mask-fade-right {
+          mask-image: linear-gradient(to right, black 85%, transparent 100%);
+          -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+        }
+        .mask-fade-bottom {
+          mask-image: linear-gradient(to bottom, black 70%, transparent 97%);
+          -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 97%);
+        }
+      `}</style>
     </>
   );
 }

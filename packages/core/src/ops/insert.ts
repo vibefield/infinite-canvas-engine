@@ -47,6 +47,13 @@ export interface InsertByDragOpts {
   readonly device?: "mouse" | "touch" | "pen";
   /** PointerEvent.buttons at the press (default 1 = primary). */
   readonly buttons?: number;
+  /**
+   * Fly-back HOME in screen px (default: the press point). Apps that adopt
+   * the drag AWAY from the tray (the deferred-spawn proxy pattern — the ghost
+   * spawns at the tray-EXIT point) aim the cancel/reject return at the
+   * persistent chrome (the toolbar) instead of a spot in open canvas.
+   */
+  readonly home?: { readonly x: number; readonly y: number };
 }
 
 export function insertByDrag(
@@ -76,8 +83,8 @@ export function insertByDrag(
   world.addComponent(ghost, InsertGhost, {
     type,
     props: JSON.stringify(opts.props ?? {}),
-    screenX: opts.screenX,
-    screenY: opts.screenY,
+    screenX: opts.home?.x ?? opts.screenX,
+    screenY: opts.home?.y ?? opts.screenY,
   });
   for (const tag of widget.capabilityTags) {
     if (tag === LongPressDrag || tag === SweepsContained) continue;
