@@ -17,6 +17,7 @@ import type { OrthographicCamera, Scene } from "three";
 import { worldRectToComposite } from "@ice/kernel";
 import {
   Active,
+  StageMode,
   Camera,
   Grab,
   NO_ENTITY,
@@ -477,6 +478,41 @@ describe("animation contract", () => {
     stats = rig.pass();
     expect(stats.anyHot).toBe(false);
     expect(ticks.length).toBe(2);
+  });
+});
+
+describe("stage background (StageMode holds — the overlay quiesce, 2026-07-19)", () => {
+  it("backgrounded freezes Hot repaints + parks self-sustain; release thaws in one pass", () => {
+    const rig = createGLRig();
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    const ticks: number[] = [];
+    rig.bridge.addFrameCallback(e, (dt) => ticks.push(dt));
+    let stats = rig.pass();
+    expect(stats.anyHot).toBe(true); // animating in the foreground
+    const before = ticks.length;
+
+    rig.world.setResource(StageMode, { backgroundHolds: 1 });
+    stats = rig.pass();
+    expect(stats.repainted).toBe(0); // frozen on the retained texture
+    expect(stats.anyHot).toBe(false); // demand loop parks — GPU goes idle
+    rig.pass();
+    expect(ticks.length).toBe(before); // paint-attributed anim ticks pause too
+
+    rig.world.setResource(StageMode, { backgroundHolds: 0 });
+    stats = rig.pass();
+    expect(stats.repainted).toBeGreaterThan(0); // thaws with no extra wake
+    expect(stats.anyHot).toBe(true);
+    expect(ticks.length).toBe(before + 1);
+  });
+
+  it("a NEVER-painted island still gets its first paint while backgrounded", () => {
+    const rig = createGLRig();
+    rig.world.setResource(StageMode, { backgroundHolds: 1 });
+    const e = rig.spawnCard(0, 0);
+    rig.mount(e);
+    const stats = rig.pass(); // an empty quad reads as missing content, not rest
+    expect(stats.repainted).toBe(1);
   });
 });
 

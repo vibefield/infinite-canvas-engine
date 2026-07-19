@@ -47,6 +47,7 @@ import {
   PrefabId,
   Size,
   StackZ,
+  StageMode,
   Viewport,
   Visible,
   widgets,
@@ -198,6 +199,13 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   // the reflector, so everything thaws in one pass with no extra machinery.
   const inFlight = navFlightActive(world);
   const inMotion = cam.gesturing || inFlight;
+  // STAGE BACKGROUND (StageMode holds, 2026-07-19): app chrome covers the
+  // canvas — same freeze posture as a nav flight (retained textures stretch,
+  // Hot repaints and their paint-attributed `useIslandFrame` ticks pause,
+  // never-painted islands still get their first paint) but WITHOUT the
+  // motion-DPR drop: a resting frame stays full quality.
+  const backgrounded = (world.getResource(StageMode)?.backgroundHolds ?? 0) > 0;
+  const frozen = inFlight || backgrounded;
   ctx.compCamera.setFrustum(compositeCameraFrustum(cam, vp.w, vp.h));
   const idleDpr = vp.dpr > 0 ? vp.dpr : 1;
   const targetDpr = inMotion ? Math.min(idleDpr, 1) : idleDpr;
@@ -238,7 +246,7 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     // gesture transient). NEVER-PAINTED islands (fboGeneration < 0) still get
     // their first paint — an empty quad through a 400 ms enter reads as
     // missing content, not as motion.
-    const paintable = inFlight ? wantsPhase && s.fboGeneration < 0 : wantsPhase || genDirty || bandStale;
+    const paintable = frozen ? wantsPhase && s.fboGeneration < 0 : wantsPhase || genDirty || bandStale;
     if (paintable) toPaint.push(e as Entity);
   }
   // Order: never-painted first (cold paints jump the queue), then LEAST
@@ -423,5 +431,12 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   gl.render(ctx.compositeScene, ctx.compCamera.raw);
 
   stats.fboBytes = pool.bytesUsed();
+  // Backgrounded stages report NO Hot demand: with anyHot suppressed the
+  // self-sustain loop stops requesting frames and the GPU goes fully idle —
+  // the whole point of the hold. (A flight keeps anyHot semantics: its
+  // camera writes drive the frames regardless.) The StageMode flip itself
+  // re-fires this reflector on release — the bridge observes the resource —
+  // so the first foreground pass repaints Hot islands with no extra wake.
+  if (backgrounded) stats.anyHot = false;
   return stats;
 }

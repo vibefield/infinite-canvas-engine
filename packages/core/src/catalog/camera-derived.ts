@@ -38,6 +38,24 @@ export const Viewport = defineResource("Viewport", {
 /** The active tool id (defaults to select). */
 export const ActiveTool = defineResource("ActiveTool", { id: field("string", { default: "select" }) });
 
+/**
+ * Stage presentation phase (2026-07-19, the widget-tray quiesce): app chrome
+ * that covers or recedes the canvas takes a BACKGROUND HOLD via
+ * `ce.stage.background(name)` — refcounted here (facade-owned tokens, this
+ * resource is the world-truth mirror). While holds > 0 the stage stops
+ * DISCRETIONARY per-frame work — animated GL islands freeze on their retained
+ * textures (compositor gate, the design-006 §8.2 flight-freeze posture) —
+ * but the world STAYS LIVE: systems tick, ops reflect, remote edits apply,
+ * tweens land. Backgrounding is rendering policy; whether the canvas is
+ * INTERACTABLE stays the overlay's own concern (its backdrop). Deliberately
+ * NOT a full step-pause: a menu panel floats over a still-visible canvas,
+ * and a frozen world would leave undo/collab visually stale (rev-2 decision,
+ * recorded — a stricter frozen-world mode would be a separate concept).
+ */
+export const StageMode = defineResource("StageMode", {
+  backgroundHolds: field("u32", { default: 0 }),
+});
+
 /** Global snap toggle + threshold in screen px (scaled by zoom at use, design-003 §5.2). */
 export const SnapConfig = defineResource("SnapConfig", {
   enabled: field("bool", { default: SNAP_DEFAULTS.enabled }),

@@ -34,9 +34,12 @@ import {
   type CanvasEngine,
   type Entity,
   type WidgetType,
+  type World,
 } from "@ice/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { EngineProvider, useStageHold } from "@ice/react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { previewBackground } from "../widgets/preview";
+import { getPreviewSandbox } from "./preview-engine";
 
 const ghostQ = defineQuery([InsertGhost]);
 
@@ -82,9 +85,83 @@ function spanOf(def: WidgetType): { cols: number; rows: number } {
   return { cols: def.defaultSize.w >= 240 ? 2 : 1, rows: def.defaultSize.h >= 240 ? 2 : 1 };
 }
 
-function silhouetteIn(def: WidgetType, boxW: number, boxH: number): { w: number; h: number; r: number } {
+function silhouetteIn(def: WidgetType, boxW: number, boxH: number): { w: number; h: number; r: number; s: number } {
   const s = Math.min((boxW - 8) / def.defaultSize.w, (boxH - LABEL_H - 6) / def.defaultSize.h);
-  return { w: def.defaultSize.w * s, h: def.defaultSize.h * s, r: Math.max(6, 22 * s) };
+  return { w: def.defaultSize.w * s, h: def.defaultSize.h * s, r: Math.max(6, 22 * s), s };
+}
+
+/**
+ * The tile's face (2026-07-19 rev 3, James: "real previews … render them as
+ * native react component directly … not interactable, just a preview"):
+ *  - DOM widgets mount their REAL component against the preview sandbox,
+ *    rendered at true defaultSize and CSS-scaled into the tile — pixel-true
+ *    to what the drop creates. `inert` + pointer-events none makes it a pure
+ *    picture; the sandbox world never grants tags, so chrome stays at rest.
+ *  - GL widgets use BAKED snapshots (scripts/bake-tray-previews.mjs → both
+ *    themes), falling back to the gradient silhouette until baked.
+ */
+function TileFace({ def, sil }: { def: WidgetType; sil: { w: number; h: number; r: number; s: number } }) {
+  const fallback = (
+    <div
+      className="absolute inset-0"
+      style={{
+        borderRadius: sil.r,
+        background: previewBackground(def.type, def.surface),
+        boxShadow: "inset 0 0 0 1px rgba(127,127,127,0.22)",
+      }}
+    />
+  );
+  if (def.surface === "gl") {
+    const hideBroken = (e: React.SyntheticEvent<HTMLImageElement>): void => {
+      e.currentTarget.style.display = "none"; // not baked yet → the gradient shows
+    };
+    return (
+      <div className="relative" style={{ width: sil.w, height: sil.h }}>
+        {fallback}
+        <img
+          src={`/tray-previews/${def.type}.light.png`}
+          alt=""
+          draggable={false}
+          onError={hideBroken}
+          className="absolute inset-0 h-full w-full object-cover dark:hidden"
+          style={{ borderRadius: sil.r }}
+        />
+        <img
+          src={`/tray-previews/${def.type}.dark.png`}
+          alt=""
+          draggable={false}
+          onError={hideBroken}
+          className="absolute inset-0 hidden h-full w-full object-cover dark:block"
+          style={{ borderRadius: sil.r }}
+        />
+      </div>
+    );
+  }
+  const sandbox = getPreviewSandbox();
+  const entity = sandbox.entities.get(def.type);
+  const View = def.component as ComponentType<{ entity: Entity; world: World }> | null | undefined;
+  if (entity === undefined || View === null || View === undefined) {
+    return <div style={{ width: sil.w, height: sil.h }}>{fallback}</div>;
+  }
+  return (
+    <div className="relative overflow-hidden" style={{ width: sil.w, height: sil.h, borderRadius: sil.r }}>
+      <EngineProvider engine={sandbox.ce}>
+        <div
+          inert
+          style={{
+            width: def.defaultSize.w,
+            height: def.defaultSize.h,
+            transform: `scale(${sil.s})`,
+            transformOrigin: "0 0",
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
+        >
+          <View entity={entity} world={sandbox.ce.world} />
+        </div>
+      </EngineProvider>
+    </div>
+  );
 }
 
 // --- the proxy drag machine (deferred spawn) --------------------------------
@@ -115,20 +192,24 @@ function startTileDrag(
   let handed = false;
 
   const makeProxy = (): HTMLElement => {
-    const p = doc.createElement("div");
+    // A STATIC CLONE of the tile face (rev 3): you drag the widget's actual
+    // preview — React-free, dead markup, cheap. Inline overrides re-anchor it
+    // to the viewport; the clone keeps the face's own radius/shadows.
+    const p = sil.cloneNode(true) as HTMLElement;
+    p.removeAttribute("data-tray-sil");
     p.dataset.trayProxy = def.type;
     Object.assign(p.style, {
       position: "fixed",
       left: "0",
       top: "0",
+      margin: "0",
       width: `${silRect.width}px`,
       height: `${silRect.height}px`,
-      borderRadius: getComputedStyle(sil).borderRadius,
-      background: previewBackground(def.type, def.surface),
-      boxShadow: "0 24px 60px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.08)",
       zIndex: "9999",
       pointerEvents: "none",
       willChange: "transform, opacity",
+      filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))",
+      transition: "none",
     } as CSSStyleDeclaration);
     doc.body.appendChild(p);
     // The slot goes EMPTY while its widget is "out" (2026-07-19, James: "it
@@ -349,13 +430,11 @@ function Tile({
         style={{
           width: sil.w,
           height: sil.h,
-          borderRadius: sil.r,
-          background: previewBackground(def.type, def.surface),
-          // Neutral hairline: visible on the light sheet AND the dark one —
-          // the glassy GL tiles otherwise vanish on white.
-          boxShadow: "0 15px 30px rgba(0,0,0,0.18), inset 0 0 0 1px rgba(127,127,127,0.22)",
+          filter: "drop-shadow(0 10px 18px rgba(0,0,0,0.16))",
         }}
-      />
+      >
+        <TileFace def={def} sil={sil} />
+      </div>
       <span className="mt-2 max-w-full truncate text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
         {labelOf(def.type)}
       </span>
@@ -420,6 +499,15 @@ export function WidgetTray({
 
   const defs = useMemo(() => widgetRegistry.all(), []);
   const shown = category === "All" ? defs : defs.filter((d) => categoryOf(d) === category);
+
+  // The stage quiesce (ce.stage holds, 2026-07-19): while the sheet is up the
+  // canvas stops discretionary per-frame work — animated GL islands freeze on
+  // their retained textures; the world stays live. Opening also cancels any
+  // in-flight gesture (the setTool hygiene rule) so nothing freezes mid-drag.
+  useStageHold(ce, open, "widget-tray");
+  useEffect(() => {
+    if (open) ce.ops.cancelActiveGestures();
+  }, [open, ce]);
 
   // Ghost poll (chrome-grade 60ms): drives the toolbar's put-back affordance
   // AND the fly-back shrink (2026-07-19, James: "also shrink its size, do a

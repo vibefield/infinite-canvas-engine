@@ -31,6 +31,7 @@ import {
   PrefabId,
   Position,
   Size,
+  StageMode,
   Viewport,
   createSiblingOrderIndex,
   widgets,
@@ -122,7 +123,9 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
   // (only GL widgets wake the canvas — a static GL board ignores DOM churn).
   const removeReflector = engine.registerReflector({
     name: "r3fInvalidator",
-    observe: { resources: [Camera, Viewport] },
+    // StageMode: a background-hold flip must re-fire the pass — freezing on
+    // take, and (critically) REPAINTING Hot islands on release.
+    observe: { resources: [Camera, Viewport, StageMode] },
     flush: () => requestFrame(),
   });
 

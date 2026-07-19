@@ -11,7 +11,7 @@
  * WidgetRoot themselves wrap it in `<EngineProvider>`.
  */
 import { devGuardsEnabled, type CanvasEngine, type CanvasOps, type World } from "@ice/core";
-import { createContext, useContext, type ReactElement, type ReactNode } from "react";
+import { createContext, useContext, useEffect, type ReactElement, type ReactNode } from "react";
 
 const EngineContext = createContext<CanvasEngine | null>(null);
 
@@ -39,6 +39,20 @@ export function useCanvasEngine(): CanvasEngine {
 /** The engine-owned write paths (design-005 §4): setTool, deleteSelection, etc. */
 export function useOps(): CanvasOps {
   return useCanvasEngine().ops;
+}
+
+/**
+ * Take a stage background hold while `active` (ce.stage, 2026-07-19): the
+ * overlay-lifecycle sugar — the disposer releases on deactivate AND unmount,
+ * so a crashed/unmounted overlay can never wedge the canvas backgrounded.
+ * `engine` is an explicit param (not context): overlays typically render as
+ * SIBLINGS of <InfiniteCanvas>, outside the provider.
+ */
+export function useStageHold(engine: CanvasEngine, active: boolean, name: string): void {
+  useEffect(() => {
+    if (!active) return undefined;
+    return engine.stage.background(name);
+  }, [engine, active, name]);
 }
 
 let warnedUseWorld = false;

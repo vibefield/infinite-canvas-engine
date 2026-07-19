@@ -311,6 +311,7 @@ export {
   type CanvasDocs,
   type CanvasEngine,
   type CanvasEngineOpts,
+  type StageControl,
   type CanvasOps,
 } from "./facade/create-canvas-engine";
 export { createDrawBehavior } from "./systems/l3-draw";

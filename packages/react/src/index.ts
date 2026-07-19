@@ -20,6 +20,7 @@ export {
   EngineProvider,
   useCanvasEngine,
   useOps,
+  useStageHold,
   useWorld,
   type EngineProviderProps,
 } from "./engine-context";

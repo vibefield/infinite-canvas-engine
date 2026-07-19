@@ -34,6 +34,7 @@ import {
   Selectable,
   Size,
   SnapConfig,
+  StageMode,
   Viewport,
 } from "../catalog";
 import { Active } from "../catalog/camera-derived";
@@ -167,6 +168,21 @@ export interface CanvasDocs {
   autosave(storage: AutosaveStorageWrite, opts?: Omit<AutosaveOpts, "storage" | "world">): Autosave;
 }
 
+/**
+ * Stage presentation control (StageMode resource, 2026-07-19): app chrome
+ * that covers/recedes the canvas takes a refcounted, NAMED background hold —
+ * the disposer pattern makes overlay lifecycles leak-proof (release on
+ * unmount), the name makes "why isn't the canvas animating?" answerable.
+ * Rendering policy only — input/interactability stays the overlay's concern.
+ */
+export interface StageControl {
+  /** Take a named background hold. Returns an IDEMPOTENT release. */
+  background(name: string): () => void;
+  isBackgrounded(): boolean;
+  /** Live hold names, in take order (debug/devtools). */
+  holds(): readonly string[];
+}
+
 export interface CanvasEngine {
   readonly world: World;
   readonly engine: Engine;
@@ -175,6 +191,7 @@ export interface CanvasEngine {
   readonly nav: NestedCanvas;
   readonly ops: CanvasOps;
   readonly docs: CanvasDocs;
+  readonly stage: StageControl;
   readonly budgets: { readonly keepMounted: number; readonly fboBytes: number };
   /** step(now) passthrough — the app's rAF loop drives this. */
   step(now: number): void;
@@ -560,6 +577,28 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     cancelActiveGestures: () => cancelActiveGestures(world),
   };
 
+  // --- stage holds (StageMode mirror; tokens live HERE, out-of-ECS) ---------
+  const stageHolds = new Map<symbol, string>();
+  const syncStage = (): void => {
+    writeRuntimeResource(world, StageMode, { backgroundHolds: stageHolds.size });
+  };
+  const stage: StageControl = {
+    background(name) {
+      const token = Symbol(name);
+      stageHolds.set(token, name);
+      syncStage();
+      let released = false;
+      return () => {
+        if (released) return; // idempotent — double-release must not eat another hold
+        released = true;
+        stageHolds.delete(token);
+        syncStage();
+      };
+    },
+    isBackgrounded: () => stageHolds.size > 0,
+    holds: () => [...stageHolds.values()],
+  };
+
   return {
     world,
     engine,
@@ -568,6 +607,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     nav,
     ops,
     docs,
+    stage,
     budgets,
     step: (now) => engine.step(now),
     dispose() {
