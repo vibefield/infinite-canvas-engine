@@ -82,6 +82,7 @@ function BatteryView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const BatteryCard = defineWidget({
   type: "battery-card",
+  defaultSize: { w: 155, h: 155 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: {
     phone: p.number({ default: 82, min: 0, max: 100 }),
     watch: p.number({ default: 47, min: 0, max: 100 }),

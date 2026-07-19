@@ -74,6 +74,7 @@ function CalendarView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const CalendarCard = defineWidget({
   type: "calendar-card",
+  defaultSize: { w: 155, h: 155 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: {
     dateIso: p.string({ default: "" }),
     nextEvent: p.string({ default: "Design review" }),

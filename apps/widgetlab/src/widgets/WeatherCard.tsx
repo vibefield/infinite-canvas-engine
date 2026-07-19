@@ -141,6 +141,7 @@ function WeatherView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const WeatherCard = defineWidget({
   type: "weather-card",
+  defaultSize: { w: 329, h: 155 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: {
     location: p.string({ default: "San Francisco" }),
     temp: p.number({ default: 64 }),

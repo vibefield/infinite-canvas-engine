@@ -154,6 +154,7 @@ function TodoListView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const TodoListCard = defineWidget({
   type: "todo-list-card",
+  defaultSize: { w: 329, h: 345 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: {
     title: p.string({ default: "Today" }),
     items: p.json(

@@ -27,10 +27,12 @@
  */
 import {
   ActiveTool,
+  GhostRetiring,
   InsertGhost,
   defineQuery,
   widgets as widgetRegistry,
   type CanvasEngine,
+  type Entity,
   type WidgetType,
 } from "@ice/core";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -129,10 +131,11 @@ function startTileDrag(
       willChange: "transform, opacity",
     } as CSSStyleDeclaration);
     doc.body.appendChild(p);
-    // The slot empties while its widget is "out" (restored at settle).
-    tileEl.style.transition = "opacity 200ms ease, transform 200ms ease";
-    tileEl.style.opacity = "0.25";
-    tileEl.style.transform = "scale(0.92)";
+    // The slot goes EMPTY while its widget is "out" (2026-07-19, James: "it
+    // should feel like you did picked that thing up") — no dimmed duplicate.
+    tileEl.style.transition = "opacity 140ms ease, transform 140ms ease";
+    tileEl.style.opacity = "0";
+    tileEl.style.transform = "scale(0.9)";
     return p;
   };
 
@@ -152,6 +155,9 @@ function startTileDrag(
         tileEl.style.transform = "scale(1)";
       });
     } else {
+      // Instant swap: the proxy just landed EXACTLY on the slot — any fade
+      // here would read as a second object appearing.
+      tileEl.style.transition = "none";
       tileEl.style.opacity = "1";
       tileEl.style.transform = "scale(1)";
     }
@@ -165,21 +171,23 @@ function startTileDrag(
   };
 
   const glideBack = (): void => {
-    // Released inside the sheet — nothing spawned; the proxy returns to its slot.
+    // Released inside the sheet — nothing spawned; the proxy returns to its
+    // slot. Target = the PRESS-TIME rect: re-measuring the silhouette now
+    // would read the hidden/scaled tile and land offset (field report
+    // 2026-07-19). Land at scale 1 with no fade — a put-down, not a vanish —
+    // then the instant tile swap is pixel-seamless.
     const p = proxy;
     if (p === null) {
       restoreTile(false);
       settle();
       return;
     }
-    const home = sil.getBoundingClientRect();
-    p.style.transition = `transform 220ms ${EASE}, opacity 220ms ease`;
-    p.style.transform = `translate(${home.left}px, ${home.top}px) scale(0.94)`;
-    p.style.opacity = "0.4";
+    p.style.transition = `transform 240ms ${EASE}`;
+    p.style.transform = `translate(${silRect.left}px, ${silRect.top}px) scale(1)`;
     window.setTimeout(() => {
       p.remove();
       restoreTile(false);
-    }, 230);
+    }, 250);
     settle();
   };
 
@@ -206,18 +214,17 @@ function startTileDrag(
       settle();
       return;
     }
-    // Item zooms IN and disappears… (timeout fallback: a missed onfinish —
-    // throttled headless frames — must never leave a stray proxy behind).
-    p.animate(
-      [
-        { transform: p.style.transform, opacity: 1 },
-        { transform: `${p.style.transform} scale(1.9)`, opacity: 0 },
-      ],
-      { duration: 200, easing: "ease-out", fill: "forwards" },
-    ).onfinish = () => p.remove();
-    window.setTimeout(() => p.remove(), 320);
-    // …the real widget zooms OUT into place (WAAPI on the host, transient,
-    // self-reverting — the reflector's layout styles are untouched).
+    // Item zooms IN and disappears. CSS transitions, NOT WAAPI: a stalled
+    // compositor (the headless GL-readback stall, field-debugged 2026-07-19)
+    // leaves WAAPI animations pending forever, while a transition's inline
+    // END STATE always applies — worst case it snaps, it never strands.
+    p.style.transition = "transform 200ms ease-out, opacity 200ms ease-out";
+    p.style.transform = `${p.style.transform} scale(1.9)`;
+    p.style.opacity = "0";
+    window.setTimeout(() => p.remove(), 230);
+    // …the real widget zooms OUT into place ("like the item just spawned
+    // it"): transient inline styles on the mounted host, cleared after the
+    // ride so nothing lingers on reflector-owned nodes.
     let tries = 0;
     const popIn = (): void => {
       const host = doc.querySelector<HTMLElement>(`[data-ice-entity="${ghost}"]`);
@@ -225,13 +232,20 @@ function startTileDrag(
         if (++tries < 20) requestAnimationFrame(popIn);
         return;
       }
-      host.animate(
-        [
-          { transform: "scale(0.3)", opacity: 0.4 },
-          { transform: "scale(1)", opacity: 1 },
-        ],
-        { duration: 280, easing: "cubic-bezier(0.34, 1.3, 0.64, 1)" },
-      );
+      host.style.transition = "none";
+      host.style.transformOrigin = "center center";
+      host.style.transform = "scale(0.3)";
+      host.style.opacity = "0.4";
+      void host.offsetWidth; // commit the start state before transitioning
+      host.style.transition = "transform 280ms cubic-bezier(0.34, 1.3, 0.64, 1), opacity 220ms ease";
+      host.style.transform = "scale(1)";
+      host.style.opacity = "1";
+      window.setTimeout(() => {
+        host.style.transition = "";
+        host.style.transform = "";
+        host.style.opacity = "";
+        host.style.transformOrigin = "";
+      }, 320);
     };
     requestAnimationFrame(popIn);
     restoreTile(true);
@@ -407,12 +421,31 @@ export function WidgetTray({
   const defs = useMemo(() => widgetRegistry.all(), []);
   const shown = category === "All" ? defs : defs.filter((d) => categoryOf(d) === category);
 
-  // Ghost poll (chrome-grade 60ms): drives the toolbar's put-back affordance.
+  // Ghost poll (chrome-grade 60ms): drives the toolbar's put-back affordance
+  // AND the fly-back shrink (2026-07-19, James: "also shrink its size, do a
+  // scale down to 0 transition along with the fly") — a retiring ghost's
+  // host scales to nothing while the engine tween carries it home; the reap
+  // despawns it at arrival, so the fill-forwards end state never lingers.
   useEffect(() => {
+    const shrunk = new Set<Entity>();
     const id = setInterval(() => {
       let live = false;
       ce.world.query(ghostQ).each((b) => {
-        if (b.count > 0) live = true;
+        for (const r of b) {
+          live = true;
+          const e = b.entity(r);
+          if (!ce.world.hasTag(e, GhostRetiring) || shrunk.has(e)) continue;
+          shrunk.add(e);
+          // CSS transition, not WAAPI (the compositor-stall lesson): the
+          // host despawns at tween-arrival, so no cleanup is needed.
+          const host = document.querySelector<HTMLElement>(`[data-ice-entity="${e}"]`);
+          if (host !== null) {
+            host.style.transition = "transform 190ms ease-in, opacity 190ms ease-in";
+            host.style.transformOrigin = "center center";
+            host.style.transform = "scale(0)";
+            host.style.opacity = "0.2";
+          }
+        }
       });
       setGhostLive(live);
     }, 60);

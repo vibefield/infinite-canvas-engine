@@ -131,6 +131,7 @@ function StocksView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const StocksCard = defineWidget({
   type: "stocks-card",
+  defaultSize: { w: 329, h: 155 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: {
     tickers: p.json(
       p.array(

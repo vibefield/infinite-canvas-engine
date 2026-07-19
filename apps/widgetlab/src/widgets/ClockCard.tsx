@@ -116,6 +116,7 @@ function ClockView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const ClockCard = defineWidget({
   type: "clock-card",
+  defaultSize: { w: 155, h: 155 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: { timezone: p.string({ default: "local" }) },
   surface: "dom",
   component: ClockView,

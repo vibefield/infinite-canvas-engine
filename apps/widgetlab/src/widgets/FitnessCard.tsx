@@ -130,6 +130,7 @@ function FitnessView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const FitnessCard = defineWidget({
   type: "fitness-card",
+  defaultSize: { w: 329, h: 345 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: {
     move: p.json(goalShape, { default: { current: 420, goal: 520 } }),
     exercise: p.json(goalShape, { default: { current: 22, goal: 30 } }),

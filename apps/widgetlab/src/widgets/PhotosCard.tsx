@@ -124,6 +124,7 @@ function PhotosView({ entity, world }: WidgetComponentProps): ReactElement {
 
 export const PhotosCard = defineWidget({
   type: "photos-card",
+  defaultSize: { w: 329, h: 535 }, // v1 scene size — tray tiles and inserts match the demo grid
   props: {
     badge: p.string({ default: "ON THIS DAY" }),
     yearsAgo: p.number({ default: 4 }),
