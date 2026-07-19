@@ -150,6 +150,21 @@ function startTileDrag(
     const p = sil.cloneNode(true) as HTMLElement;
     p.removeAttribute("data-tray-sil");
     p.dataset.trayProxy = def.type;
+    // cloneNode copies a <canvas> ELEMENT but never its BITMAP — a cloned
+    // canvas is blank, so a GL tile's captured 3D content vanished from the
+    // proxy (James, 2026-07-19). Blit each source canvas into its clone.
+    const srcCanvases = sil.querySelectorAll("canvas");
+    p.querySelectorAll("canvas").forEach((dst, i) => {
+      const src = srcCanvases[i];
+      if (src === undefined) return;
+      dst.width = src.width;
+      dst.height = src.height;
+      try {
+        dst.getContext("2d")?.drawImage(src, 0, 0);
+      } catch {
+        // a contextless clone keeps the chrome-only look — never throws the drag
+      }
+    });
     Object.assign(p.style, {
       position: "fixed",
       left: "0",
