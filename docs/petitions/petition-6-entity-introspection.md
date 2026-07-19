@@ -1,4 +1,17 @@
-# Petition 6 — Public entity introspection (candidate; M10 field finding)
+# Petition 6 — Public entity introspection (LANDED in strata-ecs 0.9.0, 2026-07-19)
+
+> **LANDED**: exactly the primary ask — `world.componentsOf(e): Component[]` /
+> `world.tagsOf(e): Tag[]` promoted to the public `World` surface (the
+> `inspect()` alternative was not needed). The promotion HARDENED the readers:
+> before it, a stale handle made `componentsOf` throw a raw TypeError
+> (`archetypesById[NO_ARCHETYPE]` deref) and `tagsOf` silently read the
+> recycled slot's live bits; both are now generation-guarded and read `[]`
+> for dead/stale/identity-only handles, mirroring `has`/`hasTag`. Pure reads,
+> iteration-safe, not reactive (poll; pair with `world.reactive` for wakes).
+> npm publish pending as of 2026-07-19. Engine adoption when the pin bumps:
+> devtools' sovereignty detail switches to the exhaustive readers, and the
+> eligible-set comparison upgrades to a present-but-not-eligible anomaly
+> badge (the migration recorded below). Original petition follows.
 
 ## Field impact
 
