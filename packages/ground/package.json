@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@types/three": "^0.185.0",
-    "@vibecook/strata-ecs": "0.8.0",
+    "@vibecook/strata-ecs": "0.9.0",
     "happy-dom": "^20.0.0",
     "three": "^0.185.0",
     "vitest": "^3"
