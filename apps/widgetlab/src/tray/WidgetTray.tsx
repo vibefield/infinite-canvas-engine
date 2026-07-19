@@ -27,6 +27,7 @@
  */
 import {
   ActiveTool,
+  Camera,
   GhostRetiring,
   InsertGhost,
   defineQuery,
@@ -119,8 +120,12 @@ function TileFace({ def, sil }: { def: WidgetType; sil: { w: number; h: number; 
 // --- the proxy drag machine (deferred spawn) --------------------------------
 
 interface ProxyCallbacks {
-  /** The proxy left the sheet — spawn NOW; return false to abort (no engine). */
-  onHandoff(e: PointerEvent): number | false;
+  /**
+   * The proxy left the sheet — spawn NOW at the proportional grab `anchor`;
+   * returns the ghost + its on-screen width (visual px) so the proxy can
+   * morph exactly onto it. false = abort (no engine).
+   */
+  onHandoff(e: PointerEvent, anchor: { u: number; v: number }): { ghost: number; screenW: number } | false;
   onSettled(): void;
 }
 
@@ -139,6 +144,13 @@ function startTileDrag(
   const sil = tileEl.querySelector<HTMLElement>("[data-tray-sil]");
   if (sil === null) return;
   const silRect = sil.getBoundingClientRect();
+  // THE GRAB POINT IS THE INVARIANT (2026-07-19 polish): the spot under the
+  // finger at press stays the same spot of the face — proxy, morph, and the
+  // spawned widget all anchor to it, so nothing ever snaps or re-anchors.
+  const grabDx = down.clientX - silRect.left;
+  const grabDy = down.clientY - silRect.top;
+  const u = silRect.width > 0 ? Math.min(1, Math.max(0, grabDx / silRect.width)) : 0.5;
+  const v = silRect.height > 0 ? Math.min(1, Math.max(0, grabDy / silRect.height)) : 0.5;
   const doc = tileEl.ownerDocument;
   let proxy: HTMLElement | null = null;
   let handed = false;
@@ -177,6 +189,9 @@ function startTileDrag(
       willChange: "transform, opacity",
       filter: "drop-shadow(0 24px 48px rgba(0,0,0,0.35))",
       transition: "none",
+      // Scales (the 1.06 lift, the handoff morph) grow around the FINGER,
+      // so the grabbed spot never moves under the cursor.
+      transformOrigin: `${grabDx}px ${grabDy}px`,
     } as CSSStyleDeclaration);
     doc.body.appendChild(p);
     // The slot goes EMPTY while its widget is "out" (2026-07-19, James: "it
@@ -188,7 +203,9 @@ function startTileDrag(
   };
 
   const at = (p: HTMLElement, x: number, y: number, scale: number): void => {
-    p.style.transform = `translate(${x - silRect.width / 2}px, ${y - silRect.height / 2}px) scale(${scale})`;
+    // Positioned by the PRESS OFFSET, not centered: picking a corner keeps
+    // the face exactly where it was under your finger — no pickup snap.
+    p.style.transform = `translate(${x - grabDx}px, ${y - grabDy}px) scale(${scale})`;
   };
 
   const restoreTile = (pop: boolean): void => {
@@ -254,35 +271,39 @@ function startTileDrag(
 
     // ---- THE HANDOFF: spawn the real widget, morph the proxy into it. ----
     handed = true;
-    const ghost = cb.onHandoff(e);
+    const res = cb.onHandoff(e, { u, v });
     const p = proxy;
-    if (ghost === false) {
+    if (res === false) {
       p.remove();
       restoreTile(false);
       settle();
       return;
     }
-    // Item zooms IN and disappears. CSS transitions, NOT WAAPI: a stalled
-    // compositor (the headless GL-readback stall, field-debugged 2026-07-19)
-    // leaves WAAPI animations pending forever, while a transition's inline
-    // END STATE always applies — worst case it snaps, it never strands.
-    p.style.transition = "transform 200ms ease-out, opacity 200ms ease-out";
-    p.style.transform = `${p.style.transform} scale(1.9)`;
+    // The morph is a PURE SCALE about the grab point: proxy and ghost share
+    // the cursor anchor at the same (u,v), so growing the proxy to the
+    // ghost's on-screen size lands it EXACTLY on the widget — no translate,
+    // no re-anchor. CSS transitions, NOT WAAPI: a stalled compositor leaves
+    // WAAPI pending forever; a transition worst-case snaps to its end state.
+    const targetScale = silRect.width > 0 ? res.screenW / silRect.width : 2;
+    p.style.transition = `transform 240ms ${EASE}, opacity 200ms ease-out`;
+    p.style.transform = `translate(${e.clientX - grabDx}px, ${e.clientY - grabDy}px) scale(${targetScale})`;
     p.style.opacity = "0";
-    window.setTimeout(() => p.remove(), 230);
-    // …the real widget zooms OUT into place ("like the item just spawned
-    // it"): transient inline styles on the mounted host, cleared after the
-    // ride so nothing lingers on reflector-owned nodes.
+    window.setTimeout(() => p.remove(), 260);
+    // …while the real widget grows OUT of the proxy: same anchor (u,v) as
+    // its transform origin, starting at the proxy's relative size — the two
+    // crossfade as one object changing resolution. Transient inline styles,
+    // cleared after the ride (reflector-owned nodes stay clean).
+    const startScale = Math.min(0.9, Math.max(0.2, res.screenW > 0 ? silRect.width / res.screenW : 0.3));
     let tries = 0;
     const popIn = (): void => {
-      const host = doc.querySelector<HTMLElement>(`[data-ice-entity="${ghost}"]`);
+      const host = doc.querySelector<HTMLElement>(`[data-ice-entity="${res.ghost}"]`);
       if (host === null) {
         if (++tries < 20) requestAnimationFrame(popIn);
         return;
       }
       host.style.transition = "none";
-      host.style.transformOrigin = "center center";
-      host.style.transform = "scale(0.3)";
+      host.style.transformOrigin = `${u * 100}% ${v * 100}%`;
+      host.style.transform = `scale(${startScale})`;
       host.style.opacity = "0.4";
       void host.offsetWidth; // commit the start state before transitioning
       host.style.transition = "transform 280ms cubic-bezier(0.34, 1.3, 0.64, 1), opacity 220ms ease";
@@ -322,11 +343,15 @@ function Tile({
   def,
   panelRef,
   onHandoff,
+  open,
+  index,
 }: {
   ce: CanvasEngine;
   def: WidgetType;
   panelRef: React.RefObject<HTMLDivElement | null>;
   onHandoff: () => void;
+  open: boolean;
+  index: number;
 }) {
   const { cols, rows } = spanOf(def);
   const boxW = cols * CELL + (cols - 1) * GAP;
@@ -347,7 +372,7 @@ function Tile({
       const panel = panelRef.current;
       if (panel === null) return;
       startTileDrag(e, el, panel, def, {
-        onHandoff: (ev) => {
+        onHandoff: (ev, anchor) => {
           const container = document.querySelector<HTMLElement>("[data-ice-canvas]");
           if (container === null) return false;
           // Ratio-corrected: the canvas wrapper is scaled 0.98 while the
@@ -363,11 +388,16 @@ function Tile({
             pointerId,
             device,
             buttons: ev.buttons || 1,
+            // The grab point carries over: the cursor pins the SAME (u,v)
+            // of the widget it pinned in the tile — no re-anchor snap.
+            anchor,
             // Cancel fly-backs aim at the persistent toolbar, not open canvas.
             home: { x: container.clientWidth / 2, y: container.clientHeight - 64 },
           });
           onHandoff(); // the sheet recedes; the drag continues on full canvas
-          return ghost;
+          // The ghost's on-screen width (visual px) — the proxy morphs to it.
+          const zoom = ce.world.getResource(Camera)?.zoom ?? 1;
+          return { ghost, screenW: def.defaultSize.w * zoom * rx };
         },
         onSettled: () => {},
       });
@@ -377,34 +407,44 @@ function Tile({
   }, [ce, def, panelRef, onHandoff]);
 
   return (
+    // OUTER = React-owned: the grid slot + the open-flip flow-in (slide up +
+    // fade, staggered per tile — riding the sheet's momentum). Kept SEPARATE
+    // from the inner tile the drag machine mutates imperatively (pickup
+    // hide/restore pop), so the two never fight over style.
     <div
-      ref={ref}
-      data-tray-tile={def.type}
-      className="group relative flex cursor-grab flex-col items-center justify-center active:cursor-grabbing"
       style={{
         gridColumn: `span ${cols}`,
         gridRow: `span ${rows}`,
         width: boxW,
         height: boxH,
-        touchAction: "none",
-        userSelect: "none",
+        opacity: open ? 1 : 0,
+        transform: open ? "translateY(0)" : "translateY(28px)",
+        transition: `opacity 420ms ease, transform 560ms ${EASE}`,
+        transitionDelay: open ? `${140 + Math.min(index * 26, 400)}ms` : "0ms",
       }}
-      title={`Drag onto the canvas to add a ${labelOf(def.type)}`}
     >
       <div
-        data-tray-sil=""
-        className="transition-transform duration-200 group-hover:scale-[1.03] group-active:scale-95"
-        style={{
-          width: sil.w,
-          height: sil.h,
-          filter: "drop-shadow(0 10px 18px rgba(0,0,0,0.16))",
-        }}
+        ref={ref}
+        data-tray-tile={def.type}
+        className="group relative flex h-full w-full cursor-grab flex-col items-center justify-center active:cursor-grabbing"
+        style={{ touchAction: "none", userSelect: "none" }}
+        title={`Drag onto the canvas to add a ${labelOf(def.type)}`}
       >
-        <TileFace def={def} sil={sil} />
+        <div
+          data-tray-sil=""
+          className="transition-transform duration-200 group-hover:scale-[1.03] group-active:scale-95"
+          style={{
+            width: sil.w,
+            height: sil.h,
+            filter: "drop-shadow(0 10px 18px rgba(0,0,0,0.16))",
+          }}
+        >
+          <TileFace def={def} sil={sil} />
+        </div>
+        <span className="mt-2 max-w-full truncate text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+          {labelOf(def.type)}
+        </span>
       </div>
-      <span className="mt-2 max-w-full truncate text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-        {labelOf(def.type)}
-      </span>
     </div>
   );
 }
@@ -463,9 +503,25 @@ export function WidgetTray({
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [ghostLive, setGhostLive] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
 
   const defs = useMemo(() => widgetRegistry.all(), []);
   const shown = category === "All" ? defs : defs.filter((d) => categoryOf(d) === category);
+
+  // HANDOFF must release the pointer path SYNCHRONOUSLY: until React
+  // re-renders `open=false`, the backdrop still has pointer-events auto and
+  // the first post-handoff moves land on IT (a container SIBLING — the
+  // adapter never sees them), so the drag origin latches late and the ghost
+  // trails the cursor by the missed travel (anchor-drift field bug,
+  // 2026-07-19). Inline-kill it in the same task; the class value takes back
+  // over on the next open.
+  const handoff = (): void => {
+    backdropRef.current?.style.setProperty("pointer-events", "none");
+    onOpenChange(false);
+  };
+  useEffect(() => {
+    if (open) backdropRef.current?.style.removeProperty("pointer-events");
+  }, [open]);
 
   // The stage quiesce (ce.stage holds, 2026-07-19): while the sheet is up the
   // canvas stops discretionary per-frame work — animated GL islands freeze on
@@ -556,6 +612,7 @@ export function WidgetTray({
       {/* Dimming backdrop — click closes; canvas rests while browsing. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: Escape is the keyboard close; the backdrop click is a redundant pointer affordance */}
       <div
+        ref={backdropRef}
         className={`absolute inset-0 z-40 bg-black/10 transition-opacity duration-500 dark:bg-black/40 ${
           open ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
@@ -673,8 +730,16 @@ export function WidgetTray({
                   justifyContent: "center",
                 }}
               >
-                {shown.map((def) => (
-                  <Tile key={def.type} ce={ce} def={def} panelRef={panelRef} onHandoff={() => onOpenChange(false)} />
+                {shown.map((def, i) => (
+                  <Tile
+                    key={def.type}
+                    ce={ce}
+                    def={def}
+                    panelRef={panelRef}
+                    onHandoff={handoff}
+                    open={open}
+                    index={i}
+                  />
                 ))}
               </div>
             </div>

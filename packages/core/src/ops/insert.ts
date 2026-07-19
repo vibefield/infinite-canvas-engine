@@ -54,6 +54,14 @@ export interface InsertByDragOpts {
    * persistent chrome (the toolbar) instead of a spot in open canvas.
    */
   readonly home?: { readonly x: number; readonly y: number };
+  /**
+   * Proportional GRAB POINT (0–1 within the widget rect; default center).
+   * The grab point is the drag's INVARIANT (2026-07-19 polish): the spot
+   * under the finger in the tray tile stays the same spot of the spawned
+   * widget — the proxy→widget morph then composes as a pure scale about the
+   * cursor, with no re-anchoring snap.
+   */
+  readonly anchor?: { readonly u: number; readonly v: number };
 }
 
 export function insertByDrag(
@@ -69,11 +77,14 @@ export function insertByDrag(
   const wp = screenToWorld(opts.screenX, opts.screenY, cam);
   const w = widget.defaultSize.w;
   const h = widget.defaultSize.h;
-  // Centered under the pointer — the Figma/FigJam palette grab point; Grab
-  // latches the offset at claim so it stays centered for the whole drag.
+  // The pointer pins the ANCHOR point (proportional; default center — the
+  // Figma/FigJam palette behavior). Grab latches the offset at claim, and
+  // the ghost's zero dead zone (l2) keeps it pinned from the first move.
+  const u = opts.anchor?.u ?? 0.5;
+  const v = opts.anchor?.v ?? 0.5;
   const { prefab, overrides } = widgetSpawnInits(type, {
-    x: wp.x - w / 2,
-    y: wp.y - h / 2,
+    x: wp.x - u * w,
+    y: wp.y - v * h,
     w,
     h,
     ...(opts.props !== undefined ? { props: opts.props } : {}),

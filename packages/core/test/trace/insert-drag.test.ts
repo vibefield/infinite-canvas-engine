@@ -132,7 +132,7 @@ describe("trace: tray insert-by-drag (ghost adoption)", () => {
 
     mouse("move", 600, 500, 1); // totals (185, 200) from the origin
     step();
-    expect(ce.world.get(ghost, Position)).toEqual({ x: 535, y: 460 });
+    expect(ce.world.get(ghost, Position)).toEqual({ x: 550, y: 460 }); // 600−0.5·100 — anchor-exact, no dead-zone drift
 
     mouse("up", 600, 500, 0);
     step(3); // commit tick + swap tick
@@ -141,7 +141,7 @@ describe("trace: tray insert-by-drag (ghost adoption)", () => {
     const twins = twinsOf(ce, "ins:card").filter((e) => e !== bystander);
     expect(twins).toHaveLength(1);
     const twin = twins[0] as Entity;
-    expect(ce.world.get(twin, Position)).toEqual({ x: 535, y: 460 });
+    expect(ce.world.get(twin, Position)).toEqual({ x: 550, y: 460 });
     expect(ce.world.hasTag(twin, Selected)).toBe(true); // selection transferred
     const group = CARD.groups.find((g) => g.name === "props");
     expect(group).toBeDefined();
@@ -253,6 +253,25 @@ describe("trace: tray insert-by-drag (ghost adoption)", () => {
     mouse("up", 415, 300, 0);
     step(3);
     expect(twinsOf(ce, "ins:hold")).toHaveLength(1);
+    ce.dispose();
+  });
+
+  it("anchor pins the grab point and the drag activates on the FIRST move (no dead-zone drift)", () => {
+    const { ce, step, mouse } = boot();
+    // Grab at (u=0.25, v=0.1): the cursor pins that proportional point.
+    const ghost = ce.ops.insertByDrag("ins:card", { screenX: 400, screenY: 300, anchor: { u: 0.25, v: 0.1 } });
+    expect(ce.world.get(ghost, Position)).toEqual({ x: 375, y: 292 }); // 400−0.25·100, 300−0.1·80
+    step();
+    mouse("move", 402, 300, 1); // 2px — inside the normal dead zone
+    step();
+    expect(ce.world.has(ghost, Grab)).toBe(true); // ghosts skip the slop: already a drag
+    mouse("move", 502, 400, 1);
+    step();
+    // Anchor invariant mid-drag: cursor − position = (u·w, v·h) EXACTLY —
+    // the ghost origin is the DOWN, so nothing folds into a baked offset.
+    expect(ce.world.get(ghost, Position)).toEqual({ x: 477, y: 392 }); // 502−0.25·100, 400−0.1·80
+    mouse("up", 502, 400, 0);
+    step(3);
     ce.dispose();
   });
 

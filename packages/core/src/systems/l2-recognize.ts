@@ -36,6 +36,7 @@ import {
   GesturePhases,
   GestureSuspended,
   HadCapture,
+  InsertGhost,
   HadRequiresFail,
   HadSequence,
   HandledByWidget,
@@ -533,11 +534,24 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
 
         if (ctx.hasTag(e, P.tags.Possible)) {
           const down = ctx.read(e, Down);
-          if (dist(down.x, down.y, screen.x, screen.y) > gs(ctx).dragSlopPx) {
-            // Origin measured FROM DEAD-ZONE EXIT (no jump on promote).
+          // Adopted insert drags (tray ghosts, 2026-07-19) have NO tap-vs-drag
+          // ambiguity — the user is already mid-drag when the synthetic down
+          // lands, so the dead zone only adds anchor drift (the ghost sits
+          // still while the pointer travels the slop). First move activates.
+          const cap = ctx.getRelation(e, Captures);
+          const ghostDrag = cap !== undefined && ctx.has(cap, InsertGhost);
+          const slopPx = ghostDrag ? 0 : gs(ctx).dragSlopPx;
+          if (dist(down.x, down.y, screen.x, screen.y) > slopPx) {
+            // Origin measured FROM DEAD-ZONE EXIT (no jump on promote) —
+            // EXCEPT ghost drags: the ghost spawned anchored AT the down, so
+            // every pixel since the down belongs to it. PointerScreen is the
+            // tick's FOLDED latest, so an exit-origin bakes in whatever
+            // travel folded into the activation tick (46px at a starved
+            // 2fps, 2–8px on a fast real-browser flick — the anchor-drift
+            // field bug, 2026-07-19). The down IS the anchor; use it.
             ctx.edit(e).set(Drag, {
-              startX: screen.x,
-              startY: screen.y,
+              startX: ghostDrag ? down.x : screen.x,
+              startY: ghostDrag ? down.y : screen.y,
               totalX: 0,
               totalY: 0,
               velX: 0,
