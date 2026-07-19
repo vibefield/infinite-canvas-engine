@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@ice/core": "workspace:*",
-    "@vibecook/strata-ecs": "0.7.0"
+    "@vibecook/strata-ecs": "0.8.0"
   },
   "devDependencies": {
     "happy-dom": "^20.0.0"

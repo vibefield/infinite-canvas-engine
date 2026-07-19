@@ -5,6 +5,17 @@ evidence. One file per open petition in `docs/petitions/`.
 
 ## Landed
 
+**strata-ecs 0.8.0 (2026-07-19)** — petition 8, additive (born landed — originated as
+VibeField's S1, designed jointly, shipped upstream first):
+
+8. **Ordered relations** → `defineRelation(name, { arity: "one", ordered: true })`: sibling
+   sequences with collaborative convergence (CRDT movable list, native-move semantics),
+   placement on `setRelation`, `moveRelation`, `orderStamp`, tx parity, undo-integrated.
+   Retires `StackZ` scalar-z arithmetic, `Grab.z` restore, `topZ()` scans, and design-001's
+   never-built fractional-index debt (see `petitions/petition-8-ordered-relations.md` for the
+   engine migration record). Compatibility: ordered docs need all peers on 0.8.0+ — the
+   envelope `engineSchema` gate covers it.
+
 **strata-ecs 0.3.0 (2026-07-09)** — both original petitions, additive:
 
 1. **Per-relation/tag membership versioning** → per-tag/relation observer

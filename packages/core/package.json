@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@ice/kernel": "workspace:*",
-    "@vibecook/strata-ecs": "0.7.0",
+    "@vibecook/strata-ecs": "0.8.0",
     "loro-crdt": "^1.13.6"
   },
   "devDependencies": {
