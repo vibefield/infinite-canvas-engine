@@ -7,5 +7,10 @@ packages:
 allowBuilds:
   "@biomejs/biome": true
   esbuild: true
+# First-party exemption from the supply-chain minimum-release-age hold: we pin and bump
+# @vibecook/strata-ecs the same day it publishes (the whole petition cadence), so the
+# fresh-release quarantine only ever flags our own artifact. Third-party stays covered.
+minimumReleaseAgeExclude:
+  - "@vibecook/*"
 patchedDependencies:
   "@react-three/fiber@9.6.1": patches/@react-three__fiber@9.6.1.patch
