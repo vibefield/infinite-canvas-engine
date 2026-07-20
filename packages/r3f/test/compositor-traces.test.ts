@@ -479,6 +479,30 @@ describe("animation contract", () => {
     expect(stats.anyHot).toBe(false);
     expect(ticks.length).toBe(2);
   });
+
+  it("stagger-deferred Hot islands BANK their dt — the cap changes cadence, never speed (2026-07-20)", () => {
+    const rig = createGLRig();
+    const a = rig.spawnCard(0, 0);
+    const b = rig.spawnCard(200, 0);
+    rig.mount(a);
+    rig.mount(b);
+    const ticksA: number[] = [];
+    const ticksB: number[] = [];
+    rig.bridge.addFrameCallback(a, (dt) => ticksA.push(dt));
+    rig.bridge.addFrameCallback(b, (dt) => ticksB.push(dt));
+
+    // cap 1 over 2 Hot islands: each pass paints ONE (never-painted first,
+    // then least-recently-painted), the other banks the pass's 16ms.
+    rig.pass({ maxRepaints: 1 }); // a paints (16); b banks 16
+    rig.pass({ maxRepaints: 1 }); // b paints (16+16); a banks 16
+    rig.pass({ maxRepaints: 1 }); // a paints (16+16); b banks 16
+    expect(ticksA).toEqual([16, 32]);
+    expect(ticksB).toEqual([32]);
+    // No time is lost: delivered + still-banked = 3 passes × 16ms for both.
+    const sum = (xs: number[]) => xs.reduce((m, v) => m + v, 0);
+    expect(sum(ticksA) + (rig.bridge.state.get(a)?.pendingDtMs ?? 0)).toBe(48);
+    expect(sum(ticksB) + (rig.bridge.state.get(b)?.pendingDtMs ?? 0)).toBe(48);
+  });
 });
 
 describe("stage background (StageMode holds — the overlay quiesce, 2026-07-19)", () => {

@@ -42,6 +42,17 @@ export interface IslandRenderState {
    */
   lastPaintSeq: number;
   /**
+   * Animation time OWED to this island's `useIslandFrame` callbacks: every
+   * pass a Hot island is paint-eligible adds the pass dtMs; the paint that
+   * finally runs delivers the whole balance and zeroes it. Without this, a
+   * stagger-deferred island simply LOST the deferred passes' time — 5 Hot vs
+   * cap 4 ran every animation at 4/5 speed (2026-07-20 rate probe), violating
+   * design-004's "the cap changes cadence, never speed". Freeze semantics are
+   * preserved: frozen islands are not paint-eligible, so a stage hold still
+   * PAUSES animation rather than banking it.
+   */
+  pendingDtMs: number;
+  /**
    * Composite-quad scale (lift-on-hold): scales the CARD on the canvas —
    * texture, rounded alpha corners and all — instead of the scene content
    * (which the card-sized frustum would crop into hard corners, 2026-07-12
@@ -120,6 +131,7 @@ export function createIslandStateStore(): IslandStateStore {
         animRefs: 0,
         animatedDecl: false,
         lastPaintSeq: 0,
+        pendingDtMs: 0,
         compositeScale: 1,
         liftTarget: 1,
         liftFrom: 1,

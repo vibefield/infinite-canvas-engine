@@ -247,7 +247,15 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     // their first paint — an empty quad through a 400 ms enter reads as
     // missing content, not as motion.
     const paintable = frozen ? wantsPhase && s.fboGeneration < 0 : wantsPhase || genDirty || bandStale;
-    if (paintable) toPaint.push(e as Entity);
+    if (paintable) {
+      toPaint.push(e as Entity);
+      // Animation time is owed to every paint-ELIGIBLE Hot island, painted
+      // this pass or deferred by the stagger cap — the deferred paint delivers
+      // the balance, so the cap changes cadence, never speed (design-004 §3;
+      // the pre-accumulation behavior ran 5-Hot-vs-cap-4 boards at 4/5 speed).
+      // Frozen islands never reach here — a stage hold PAUSES, not banks.
+      if (s.phase === "Hot") s.pendingDtMs += ctx.dtMs;
+    }
   }
   // Order: never-painted first (cold paints jump the queue), then LEAST
   // RECENTLY PAINTED — the fairness key. Insertion order starved the same
@@ -273,9 +281,13 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     const size = world.isAlive(e) ? world.get(e, Size) : undefined;
     if (handle === undefined || s === undefined || size === undefined || size.w <= 0 || size.h <= 0) continue;
 
-    // Hot content ticks exactly when it paints — the attribution contract.
+    // Hot content ticks exactly when it paints — the attribution contract —
+    // and receives the FULL time owed since its last tick (its own pass dt
+    // plus any stagger-deferred passes' dt banked above).
     if (s.phase === "Hot") {
-      for (const cb of bridge.frameCallbacksFor(e)) cb(ctx.dtMs);
+      const owedMs = s.pendingDtMs;
+      s.pendingDtMs = 0;
+      for (const cb of bridge.frameCallbacksFor(e)) cb(owedMs);
     }
 
     ctx.islandCamera(e)?.setFrustum(size.w / 2, size.h / 2);

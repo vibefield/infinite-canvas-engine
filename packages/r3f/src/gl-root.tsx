@@ -187,6 +187,7 @@ export function GLViews({
   const set = useThree((s) => s.set);
   const advance = useThree((s) => s.advance);
   const frameloop = useThree((s) => s.frameloop);
+  const clock = useThree((s) => s.clock);
 
   // --- context-lifetime resources (lazy + disposed-aware, v1 pattern) ------
   const poolRef = useRef<RenderTargetPool | null>(null);
@@ -269,10 +270,19 @@ export function GLViews({
 
   // Wire the reflect-phase renderer for the life of this Canvas: the bridge's
   // r3fAdvance reflector calls this synchronously inside the engine flush.
+  //
+  // R3F's `frameloop="never"` clock contract (their loop.ts): the advance
+  // timestamp IS the clock, in SECONDS — `delta = timestamp − clock.elapsedTime`
+  // feeds useFrame directly. Passing milliseconds ran every island animation
+  // ~1000× fast (field report 2026-07-20, minutes after the advance seam
+  // landed). And `setFrameloop('never')` zeroes elapsedTime with the clock
+  // stopped, so the FIRST advance would deliver the page's whole uptime as
+  // one delta — seed elapsedTime to "now" so the first frame steps from ≈0.
   useEffect(() => {
-    bridge.setRenderNow((nowMs) => advance(nowMs, true));
+    clock.elapsedTime = performance.now() / 1000;
+    bridge.setRenderNow((nowMs) => advance(nowMs / 1000, true));
     return () => bridge.setRenderNow(null);
-  }, [bridge, advance]);
+  }, [bridge, advance, clock]);
 
   // The frameloop contract is a prop on the app's <Canvas> — unenforceable
   // from here, so misconfiguration gets a loud DEV hint instead of a silent

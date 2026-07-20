@@ -212,9 +212,13 @@ async function doCapture(opts: CapturePreviewOpts): Promise<string[]> {
         // — the stage may be backgrounded while this runs).
         await sleep(30);
         const frames = opts.settleFrames ?? 12;
+        // advance() timestamps are SECONDS in frameloop="never" (R3F clock
+        // contract — same unit trap as gl-root's reflect-phase advance): the
+        // capture's frame callbacks get their dt via `cb(16.7)` ms directly,
+        // but any plain-useFrame content reads the clock, so keep it honest.
         for (let i = 0; i < frames; i++) {
           for (const cb of callbacks) cb(16.7);
-          advance(i * 16.7, false, store.getState());
+          advance((i * 16.7) / 1000, false, store.getState());
           await sleep(16);
         }
         // Final frame + readback in the SAME task, via 2D-canvas drawImage:
@@ -223,7 +227,7 @@ async function doCapture(opts: CapturePreviewOpts): Promise<string[]> {
         // stalled) compositor — the synchronous copy depends on neither
         // (field bug 2026-07-19 — full-alpha-zero bitmaps).
         for (const cb of callbacks) cb(16.7);
-        advance(frames * 16.7, false, store.getState());
+        advance((frames * 16.7) / 1000, false, store.getState());
         const snap = document.createElement("canvas");
         snap.width = canvas.width;
         snap.height = canvas.height;
