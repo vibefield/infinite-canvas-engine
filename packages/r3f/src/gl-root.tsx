@@ -1,8 +1,16 @@
 /**
  * GLViews — the P2 root (design-004 §1/§3). Mount ONE inside an R3F
- * `<Canvas frameloop="demand">` that the app positions as the GL-views plane
+ * `<Canvas frameloop="never">` that the app positions as the GL-views plane
  * (absolute inset-0, `pointer-events: none` — the router owns GL hit
  * testing; the canvas element never sees pointers).
+ *
+ * `frameloop="never"` is the contract (design-004 §3 amendment, 2026-07-20):
+ * frames are driven by the ENGINE's reflect phase — the bridge's `r3fAdvance`
+ * reflector calls R3F `advance()` synchronously in the same task the DOM
+ * reflectors write their transforms, so card chrome and GL content present
+ * the same camera every frame. A self-scheduling loop ("demand"/"always")
+ * renders on its own rAF, out of phase with the DOM planes — field-measured
+ * as a permanent one-frame smear under fast pans.
  *
  * Mount with `gl={{ alpha: true, antialias: false }}`: the composite pass
  * draws only textured quads whose corners are shader-rounded ALPHA, not
@@ -177,7 +185,8 @@ export function GLViews({
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const set = useThree((s) => s.set);
-  const invalidate = useThree((s) => s.invalidate);
+  const advance = useThree((s) => s.advance);
+  const frameloop = useThree((s) => s.frameloop);
 
   // --- context-lifetime resources (lazy + disposed-aware, v1 pattern) ------
   const poolRef = useRef<RenderTargetPool | null>(null);
@@ -258,24 +267,23 @@ export function GLViews({
     [gl],
   );
 
-  // Wire the bridge's demand-loop hook for the life of this Canvas.
+  // Wire the reflect-phase renderer for the life of this Canvas: the bridge's
+  // r3fAdvance reflector calls this synchronously inside the engine flush.
   useEffect(() => {
-    bridge.setInvalidate(() => invalidate());
-    return () => bridge.setInvalidate(null);
-  }, [bridge, invalidate]);
+    bridge.setRenderNow((nowMs) => advance(nowMs, true));
+    return () => bridge.setRenderNow(null);
+  }, [bridge, advance]);
 
-  // Ambient-animation throttle (self-sustain.ts): at most one wake-up timer
-  // pending; a pass that runs for ANY reason clears it and reschedules at its
-  // tail, so external invalidations (which arrive on their own) never stack
-  // extra frames on top of the cap.
-  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (animTimerRef.current !== null) clearTimeout(animTimerRef.current);
-      animTimerRef.current = null;
-    },
-    [],
-  );
+  // The frameloop contract is a prop on the app's <Canvas> — unenforceable
+  // from here, so misconfiguration gets a loud DEV hint instead of a silent
+  // return of the one-frame pan smear this seam exists to prevent.
+  useEffect(() => {
+    if (frameloop !== "never") {
+      console.warn(
+        `[ice/r3f] GLViews: <Canvas frameloop="${frameloop}"> — use frameloop="never". The engine drives frames (reflect-phase advance); a self-scheduling loop renders out of phase with the DOM planes.`,
+      );
+    }
+  }, [frameloop]);
 
   // --- GL profiling (opt-in via onFrameStats) --------------------------------
   // The callback rides a ref (no useFrame re-subscribe); the GPU profiler is
@@ -335,12 +343,6 @@ export function GLViews({
       gl.info.reset();
     } else if (!gl.info.autoReset) {
       gl.info.autoReset = true; // profiling stopped — restore vanilla three behavior
-    }
-    // A pass is running — cancel any pending animation wake-up; the tail
-    // reschedules from THIS pass's start if animation still wants frames.
-    if (animTimerRef.current !== null) {
-      clearTimeout(animTimerRef.current);
-      animTimerRef.current = null;
     }
     const passStart = performance.now(); // profiling cpuMs + the rate cap's schedule anchor
     bridge.renderAssert.begin();
@@ -454,17 +456,11 @@ export function GLViews({
         culledWidgets,
       });
     }
-    // Self-sustain: lift eases re-invalidate at native refresh (interaction
-    // feedback); Hot islands and stagger backlogs reschedule at the animation
-    // rate cap; otherwise the loop parks until the next invalidation.
-    const plan = selfSustainPlan(stats, performance.now() - passStart, maxAnimationFps);
-    if (plan === "now") invalidate();
-    else if (plan !== "none") {
-      animTimerRef.current = setTimeout(() => {
-        animTimerRef.current = null;
-        invalidate();
-      }, plan);
-    }
+    // Self-sustain: lift eases latch the immediate next engine frame (native
+    // refresh); Hot islands and stagger backlogs arm the rate-capped due-time;
+    // otherwise the seam parks until the next requestFrame latch. The bridge's
+    // r3fAdvance reflector consumes this on the engine's own loop — no timer.
+    bridge.schedulePass(selfSustainPlan(stats, performance.now() - passStart, maxAnimationFps));
   }, 1);
 
   // --- island membership (mount store → gl-surface islands) -----------------

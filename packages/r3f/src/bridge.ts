@@ -3,11 +3,11 @@
  *
  * Owns everything ENGINE-facing: the module-side island state, the island
  * registry (scene+camera handles the frame pass iterates), per-island dirt
- * observers, the `r3fInvalidator` reflector, `useIslandFrame` callbacks, the
- * render write trap, and entity-death cleanup. Everything GL-facing (FBO
- * pool, quads, the actual passes) lives in `GLViews`, whose lifetime is the
- * Canvas/context's — the bridge outlives Canvas remounts (HMR) and carries
- * the invalidation wiring across them.
+ * observers, the `r3fInvalidator`/`r3fAdvance` reflectors, `useIslandFrame`
+ * callbacks, the render write trap, and entity-death cleanup. Everything
+ * GL-facing (FBO pool, quads, the actual passes) lives in `GLViews`, whose
+ * lifetime is the Canvas/context's — the bridge outlives Canvas remounts
+ * (HMR) and carries the frame wiring across them.
  *
  * Two-level invalidation, mechanized:
  * - COMPOSITE dirt (cheap — re-run the frame pass, sample cached textures):
@@ -20,6 +20,23 @@
  *   are evaluated IN the frame pass (band repaints suppressed while
  *   `Camera.gesturing`; the gesture-end camera write re-fires the reflector,
  *   so the once-at-gesture-end repaint needs no extra machinery).
+ *
+ * REFLECT-PHASE ADVANCE (design-004 §3 amendment, 2026-07-20 — the pan-lag
+ * fix): the composite render is driven FROM the engine's reflect phase, not
+ * from R3F's demand loop. `requestFrame()` only latches `wantsFrame`; the
+ * `r3fAdvance` reflector (`always: true` — registered right after the
+ * observed invalidator so same-flush dirt is consumed) calls the wired
+ * `renderNow` (R3F `advance`) synchronously. DOM plane transforms and the GL
+ * composite therefore commit in the SAME task and present in the same frame.
+ * The prior wiring (`invalidate()` → R3F's own rAF) could only arm R3F for
+ * the NEXT frame, and rAF registration order between the two loops is sticky
+ * luck — field-measured on 2026-07-20: R3F rendering the PREVIOUS frame's
+ * camera while the DOM plane showed the current one, a permanent one-frame
+ * smear under fast pans. Ambient animation rides the same seam: the pass
+ * reports its self-sustain plan via `schedulePass`, and the due-time check
+ * replaces the old wake-up timer (the engine loop runs every frame anyway).
+ * The Canvas must mount `frameloop="never"` — a self-scheduling loop would
+ * re-render out of phase again.
  *
  * Runtime-three-free (type-only imports): unit tests drive the bridge with a
  * real world and fake scene/camera handles, no GL context.
@@ -53,6 +70,11 @@ export type IslandFrameCallback = (dtMs: number) => void;
 export interface GLBridgeOpts {
   /** Arm the zero-render→ECS-writes trap (DEV builds / traces). Default false. */
   readonly devAssertRenderWrites?: boolean;
+  /**
+   * Injected monotonic clock for the ambient-animation due-time (tests pass a
+   * stub — the pool's injected-`now` precedent). Default `performance.now`.
+   */
+  readonly now?: () => number;
 }
 
 export interface GLBridge {
@@ -78,7 +100,12 @@ export interface GLBridge {
   /** Subscribe a paint-time callback; holds an animation ref while live. */
   addFrameCallback(entity: Entity, cb: IslandFrameCallback): () => void;
   frameCallbacksFor(entity: Entity): readonly IslandFrameCallback[];
-  /** Composite invalidation — schedule a frame pass (coalesced). */
+  /**
+   * Composite invalidation — latch a frame pass (coalesced). Consumed by the
+   * `r3fAdvance` reflector on the NEXT engine flush: dirt raised during a
+   * step (observers, the invalidator reflector) renders the SAME frame; dirt
+   * raised outside a step (React effects) renders on the next tick.
+   */
   requestFrame(): void;
   /** Island invalidation — this island must repaint (props/size/manual dirt). */
   bumpPaint(entity: Entity): void;
@@ -97,8 +124,22 @@ export interface GLBridge {
    * current drawn value.
    */
   setCompositeOpacity(entity: Entity, opacity: number, durationMs?: number): void;
-  /** GLViews wires R3F's demand-loop `invalidate` here (null on unmount). */
-  setInvalidate(fn: (() => void) | null): void;
+  /**
+   * GLViews wires R3F's `advance` here (null on unmount). Called ONLY by the
+   * `r3fAdvance` reflector, synchronously inside the engine's reflect phase —
+   * the same task the DOM reflectors write in, so both surfaces present the
+   * same camera. While unwired, latched dirt survives and renders on the
+   * first flush after (re)mount.
+   */
+  setRenderNow(fn: ((nowMs: number) => void) | null): void;
+  /**
+   * The pass reports how the frame loop continues (`selfSustainPlan`):
+   * `"now"` latches an immediate next frame (lift eases, stagger backlogs —
+   * native refresh); a number arms the ambient-animation due-time (the
+   * `maxAnimationFps` cap — replaces the old wake-up timer); `"none"` parks.
+   * Each pass re-reports, so the due-time is always the LAST pass's plan.
+   */
+  schedulePass(plan: "none" | "now" | number): void;
   /** Tear down reflector + observers + state (doc close / app teardown). */
   uninstall(): void;
 }
@@ -110,12 +151,14 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
   const frameCbs = new Map<Entity, Set<IslandFrameCallback>>();
   const renderAssert = createRenderWriteTrap(world, opts.devAssertRenderWrites === true);
 
-  // --- composite invalidation plumbing --------------------------------------
-  let invalidate: (() => void) | null = null;
-  let pending = false; // a requestFrame that arrived before GLViews mounted
+  // --- composite frame plumbing (reflect-phase advance) ---------------------
+  const now = opts.now ?? ((): number => performance.now());
+  let renderNow: ((nowMs: number) => void) | null = null;
+  let wantsFrame = false; // latched dirt — consumed by the r3fAdvance flush
+  let animDueAt: number | null = null; // ambient-animation due-time (rate cap)
+  let rendering = false;
   const requestFrame = (): void => {
-    if (invalidate !== null) invalidate();
-    else pending = true;
+    wantsFrame = true;
   };
 
   // Camera (pan/zoom/gesturing edges) + viewport (resize/dpr) are the global
@@ -124,9 +167,38 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
   const removeReflector = engine.registerReflector({
     name: "r3fInvalidator",
     // StageMode: a background-hold flip must re-fire the pass — freezing on
-    // take, and (critically) REPAINTING Hot islands on release.
+    // take, and (critically) REPAINTING Hot islands on release. The observe
+    // list also keeps strata enforcement armed (a rig must observe — the
+    // always-flush advance reflector below deliberately observes nothing).
     observe: { resources: [Camera, Viewport, StageMode] },
     flush: () => requestFrame(),
+  });
+
+  // The frame driver: flushes EVERY engine frame (always), consumes the latch
+  // and the animation due-time, and renders synchronously — in the same
+  // reflect phase the DOM planes write in, so chrome and GL content present
+  // the same camera atomically. Registered AFTER the invalidator so its dirt
+  // lands in the same flush. State is cleared BEFORE renderNow: requestFrame
+  // calls from inside the pass (frame callbacks, lift retargets) re-latch for
+  // the next frame instead of recursing, and schedulePass (called at the
+  // pass tail) re-arms the due-time after the clear.
+  const removeAdvanceReflector = engine.registerReflector({
+    name: "r3fAdvance",
+    always: true,
+    flush: () => {
+      if (rendering) return;
+      const t = now();
+      if (!wantsFrame && (animDueAt === null || t < animDueAt)) return;
+      if (renderNow === null) return; // unmounted: dirt stays latched
+      wantsFrame = false;
+      animDueAt = null; // consumed — the pass re-reports via schedulePass
+      rendering = true;
+      try {
+        renderNow(t);
+      } finally {
+        rendering = false;
+      }
+    },
   });
 
   // Composite dirt — a reorder in the current frame moves quad renderOrder
@@ -267,23 +339,36 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
       requestFrame(); // composite-level only: no island repaint needed
     },
 
-    setInvalidate(fn) {
-      invalidate = fn;
-      if (fn !== null && pending) {
-        pending = false;
-        fn();
+    setRenderNow(fn) {
+      renderNow = fn;
+      // No immediate render on wire-up: latched dirt renders on the next
+      // engine flush (the loop runs every rAF) — same one-frame mount cost
+      // as the old pending→invalidate path, without rendering mid-effect.
+    },
+
+    schedulePass(plan) {
+      if (plan === "now") {
+        wantsFrame = true;
+        animDueAt = null;
+      } else if (plan === "none") {
+        animDueAt = null; // a latched wantsFrame from other sources survives
+      } else {
+        animDueAt = now() + plan;
       }
     },
 
     uninstall() {
       removeReflector();
+      removeAdvanceReflector();
       removeOrderObserver();
       removeWorldObserver();
       renderAssert.dispose();
       islands.clear();
       frameCbs.clear();
       state.clear();
-      invalidate = null;
+      renderNow = null;
+      wantsFrame = false;
+      animDueAt = null;
     },
   };
 }

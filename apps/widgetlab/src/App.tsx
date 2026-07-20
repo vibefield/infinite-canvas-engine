@@ -442,6 +442,8 @@ export function App() {
       haloRef.current = installCursorHalo(ce, handle.host.container);
       disposeGl(); // drop a prior mount's set before wiring a fresh one
       const bridge = createGLBridge(ce.engine);
+      // DEV-only forensics twin of __ice — headless scripts inspect islands.
+      (window as unknown as { __iceBridge?: GLBridge }).__iceBridge = bridge;
       const router = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
       routerRef.current = router;
       const plane = handle.host.container.ownerDocument.createElement("div");
@@ -617,7 +619,7 @@ export function App() {
           createPortal(
             <Canvas
               orthographic
-              frameloop="demand"
+              frameloop="never"
               gl={{ alpha: true, antialias: false }}
               style={{ pointerEvents: "none", position: "absolute", inset: 0 }}
             >
