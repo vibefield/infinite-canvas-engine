@@ -26,6 +26,7 @@ import {
   createWorld,
   defineQuery,
   joinDoc,
+  offerBase,
   webSocketByteChannel,
   type BootstrapClock,
   type ByteChannel,
@@ -266,6 +267,77 @@ describe("bootstrap: mid-handshake buffering (§6.5)", () => {
     // The buffered move applied AFTER the base import: W1 is at its moved position.
     expect(findAt(worldB, 50, 0)).toBeDefined();
     expect(findAt(worldB, 0, 0)).toBeUndefined();
+  });
+});
+
+// --- (c2) offerBase: partition heal (§6.5 amendment, 2026-07-20) ------------------------------------
+describe("bootstrap: offerBase re-offer (§6.5 lossy-transport repair)", () => {
+  it("re-converges two active peers whose updates a transport outage dropped", async () => {
+    const bus = new Bus();
+    const { clock, advance } = makeClock();
+
+    // A gate that can drop a peer's OUTBOUND frames — the mesh link behind a
+    // still-live channel going down (the Electron-desktop failure mode).
+    const gate = (ch: ByteChannel): { ch: ByteChannel; set(open: boolean): void } => {
+      let open = true;
+      return {
+        ch: {
+          send: (b) => {
+            if (open) ch.send(b);
+          },
+          subscribe: (fn) => ch.subscribe(fn),
+        },
+        set: (v) => {
+          open = v;
+        },
+      };
+    };
+    const gA = gate(bus.endpoint());
+    const gB = gate(bus.endpoint());
+
+    const worldA = createWorld();
+    const pA = joinDoc(worldA, gA.ch, { clock });
+    bus.deliverAll();
+    advance(800); // A seeds
+    const resA = await pA;
+    cleanups.push(() => resA.leave());
+
+    const worldB = createWorld();
+    const pB = joinDoc(worldB, gB.ch, { clock });
+    bus.deliverAll(); // B.hello → A; A answers an addressed snapshot (queued)
+    bus.deliverAll(); // snapshot → B; B imports the base
+    const resB = await pB;
+    cleanups.push(() => resB.leave());
+    bus.deliverAll(); // B's post-import base offer → A (queues empty before the partition)
+
+    // PARTITION both directions; concurrent edits are dropped in flight.
+    gA.set(false);
+    gB.set(false);
+    spawnBox(resA.session, 10, 10);
+    spawnBox(resB.session, 20, 20);
+    bus.deliverAll(); // nothing crosses — the outage ate both UPDATEs
+    worldA.sync();
+    worldB.sync();
+    expect(findAt(worldA, 20, 20)).toBeUndefined(); // diverged
+    expect(findAt(worldB, 10, 10)).toBeUndefined();
+
+    // HEAL, then re-offer from both sides (the link-up resync signal).
+    const sessA = resA.session;
+    const sessB = resB.session;
+    gA.set(true);
+    gB.set(true);
+    offerBase(gA.ch, sessA);
+    offerBase(gB.ch, sessB);
+    bus.deliverAll();
+    worldA.sync();
+    worldB.sync();
+
+    // Both sides hold both boxes, and the offers MERGED into the live sessions
+    // (no re-bootstrap — the session objects are unchanged).
+    expect(findAt(worldA, 20, 20)).toBeDefined();
+    expect(findAt(worldB, 10, 10)).toBeDefined();
+    expect(resA.session).toBe(sessA);
+    expect(resB.session).toBe(sessB);
   });
 });
 

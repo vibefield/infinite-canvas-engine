@@ -282,6 +282,7 @@ export {
 // --- M9 transport/bootstrap kit (design-005 §6.5): join protocol + byte channels ---
 export {
   joinDoc,
+  offerBase,
   type BootstrapClock,
   type JoinDocOpts,
   type JoinResult,

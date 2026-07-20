@@ -133,6 +133,22 @@ function parseSnapshot(payload: Uint8Array): { targetId: string; snapshot: Uint8
 }
 
 /**
+ * Re-offer this session's document to the room (design-005 §6.5 amendment,
+ * 2026-07-20 — the lossy-transport repair). Broadcasts the base as an
+ * UN-addressed SNAPSHOT_OFFER — exactly the frame a joiner broadcasts after
+ * importing its base — so the protocol already defines every receiver's move:
+ * an ACTIVE peer MERGES it (loro dedupes; increments the outage dropped are
+ * subsumed by the full document), a BUFFERING peer OPENS it as its causal base.
+ * Call it when a lossy transport BEHIND a still-live channel heals (an Electron
+ * main's mesh link bounced; the IPC channel object never died). A channel that
+ * itself died (a closed socket) needs a fresh `joinDoc` instead — offers ride
+ * the channel, and a dead one drops them silently.
+ */
+export function offerBase(channel: ByteChannel, session: DocSession): void {
+  channel.send(frame(K_SNAPSHOT_OFFER, session.exportEnvelope()));
+}
+
+/**
  * Join (or found) the room's document over `channel`. Resolves once we go active —
  * as a "joiner" (imported a peer's base) or a "seeder" (timed out and created one).
  */
