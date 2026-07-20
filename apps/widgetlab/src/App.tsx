@@ -588,7 +588,11 @@ export function App() {
   const devtoolsRef = useRef<DevtoolsHandle | null>(null);
   useEffect(() => {
     if (!showEcs) return;
-    const d = attachDevtools(ce);
+    // presence getter: under the desktop shell the join's presence session
+    // feeds the observer's ephemeral tab + peer color-coding (re-read each
+    // poll, so it swaps live across join/close). Plain browser: always
+    // undefined — the panel simply has no presence tab.
+    const d = attachDevtools(ce, { presence: () => ce.docs.presence() });
     devtoolsRef.current = d;
     return () => {
       devtoolsRef.current = null;

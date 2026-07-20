@@ -551,6 +551,25 @@ describe("bootstrap: lifecycle hygiene (review 2026-07-13)", () => {
     expect(ce.docs.current()).toBeUndefined();
   });
 
+  it("facade: docs.presence() exposes the join's presence session, doc-lifecycle scoped (devtools seam)", async () => {
+    const bus = new Bus();
+    const { clock, advance } = makeClock();
+    const ce = createCanvasEngine();
+    cleanups.push(() => ce.dispose());
+    expect(ce.docs.presence()).toBeUndefined(); // doc-less
+
+    const p = ce.docs.join(bus.endpoint(), { clock, presence: { name: "Test Otter", color: "#123456" } });
+    bus.deliverAll();
+    advance(800); // lone joiner → seeder
+    await p;
+
+    const pr = must(ce.docs.presence(), "presence session after join");
+    expect(pr.eph).toBeDefined(); // the devtools ephemeral tab's source (DevtoolsOpts.presence)
+
+    ce.docs.close();
+    expect(ce.docs.presence()).toBeUndefined(); // detached with the doc, like current()
+  });
+
   it("facade: docs.create() during a pending join kills the join (no resurrection)", async () => {
     const bus = new Bus();
     const { clock, advance } = makeClock();

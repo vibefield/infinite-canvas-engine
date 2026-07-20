@@ -162,6 +162,14 @@ export interface CanvasDocs {
     },
   ): Promise<JoinResult>;
   current(): DocSession | undefined;
+  /**
+   * The live presence session (the `join({presence})` sugar's attachment), or
+   * undefined when doc-less / presence-less. An INSPECTION seam — the devtools
+   * dock's ephemeral tab reads `presence().eph` (DevtoolsOpts.presence) —
+   * never a sync path; same contract as `DocSession.attachment`. Swaps with
+   * the doc lifecycle exactly like `current()`: set by join, cleared by close.
+   */
+  presence(): PresenceSession | undefined;
   close(): void;
   undo(): boolean;
   redo(): boolean;
@@ -372,6 +380,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       return result;
     },
     current: () => session,
+    presence: () => presence,
     close: closeDoc,
     // Read-only documents must not mutate through history either — undo/redo
     // write the store exactly like an op does.

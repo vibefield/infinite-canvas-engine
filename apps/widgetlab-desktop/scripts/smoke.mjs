@@ -96,6 +96,12 @@ try {
   await waitFor(() => joined(w2), "window 2 join", 20_000);
   log("both windows joined over IPC");
 
+  // The devtools seam: the facade exposes the join's presence session
+  // (docs.presence() — feeds the ECS panel's ephemeral tab under collab).
+  const hasPresence = await w1.evaluate(() => window.__ice.docs.presence() !== undefined);
+  if (!hasPresence) throw new Error("docs.presence() is undefined under the desktop shell");
+  log("docs.presence() live (devtools seam)");
+
   const widgetCount = (p) => p.evaluate(() => window.__iceDebug().widgets.length);
   const c1 = await waitFor(() => widgetCount(w1), "w1 seeded widgets");
   await waitFor(async () => (await widgetCount(w2)) === c1, "w2 to converge on the seeded board");
