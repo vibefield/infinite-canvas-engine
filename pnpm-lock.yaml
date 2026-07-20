@@ -5,7 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@react-three/fiber@9.6.1': 7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973
+  '@react-three/fiber@9.6.1':
+    hash: 7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973
+    path: patches/@react-three__fiber@9.6.1.patch
 
 importers:
 
@@ -358,6 +360,22 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)
 
+  apps/widgetlab-desktop:
+    dependencies:
+      '@vibecook/truffle':
+        specifier: 0.7.3
+        version: 0.7.3(ws@8.21.0)
+    devDependencies:
+      electron:
+        specifier: ^43.1.0
+        version: 43.1.1
+      playwright-core:
+        specifier: ^1.50.0
+        version: 1.61.1
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)
+
   packages/core:
     dependencies:
       '@ice/kernel':
@@ -619,6 +637,14 @@ packages:
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
+
+  '@electron-internal/extract-zip@1.0.4':
+    resolution: {integrity: sha512-Zr1Vs7E9tpCNhZHDAbFVXc2gEVCG9RqPDjrno5+bdgB6LRAuvgyMHJut4NCVyYwtAieapMzc3fiQ3CSTi75ARg==}
+    engines: {node: '>=22.12.0'}
+
+  '@electron/get@5.0.0':
+    resolution: {integrity: sha512-pjoBpru1KdEtcExBnuHAP1cAc/5faoedw0hzJkL3o4/IJp7HNF1+fbrdxT3gMYRX2oJfvnA/WXeCTVQpYYxyJA==}
+    engines: {node: '>=22.12.0'}
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -1239,6 +1265,9 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
+  '@types/node@24.13.3':
+    resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
+
   '@types/node@26.1.1':
     resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
 
@@ -1294,6 +1323,49 @@ packages:
       loro-crdt:
         optional: true
       react:
+        optional: true
+
+  '@vibecook/truffle-native@0.7.3':
+    resolution: {integrity: sha512-Klkb8gjpJZ84S0rhYeUP3xMT7OAY1/7+JDhv5JL6V7H2y1oHIEes3Y3cZlp6qbx+MOkA801y12YOffa+SctOAQ==}
+    engines: {node: '>=18'}
+
+  '@vibecook/truffle-sidecar-darwin-arm64@0.7.3':
+    resolution: {integrity: sha512-6yZvUQC39oyM9VyJToES42fsyRUaLYBoMomiNu61MFI71xgvA3rt14NRr1RNO9CBpaqiRW+Z8t1baT3a+k+oKg==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@vibecook/truffle-sidecar-darwin-x64@0.7.3':
+    resolution: {integrity: sha512-/Ji9G7lvNkJSqi3PC5o2iRdj8zsxHn1xTdyeh7oD0EPNlC6D9QqNTEcrMIFGXWTBz7+/u3g+l1K0Qpsov5IDHA==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@vibecook/truffle-sidecar-linux-arm64@0.7.3':
+    resolution: {integrity: sha512-w7SChHqS8M29cRD8osLijJh8Dw0YsihQ3miBiwtif1Mse0O+HbwQOszJzqTm2ByIz7NEIecE/ZjBDND/mGCDFA==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@vibecook/truffle-sidecar-linux-x64@0.7.3':
+    resolution: {integrity: sha512-m/eNwgtbX2qUWx4dNmWv5MhZzQ2rFWhrwaiaYd017+GYnLz0SirlYN9x1CTPyj8sK2pmme99GVBtBi3Lgson7w==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [linux]
+
+  '@vibecook/truffle-sidecar-win32-x64@0.7.3':
+    resolution: {integrity: sha512-Gu27vDttnEUxf+3ne/hSB0ubOJEpYrlHP+daDZDC8cHWyVfQer+pTCE21NaMA5gDNuJOnLf3VmuDW6VDuOtxxg==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [win32]
+
+  '@vibecook/truffle@0.7.3':
+    resolution: {integrity: sha512-RWXBGD1LwvO55Eh7f8DBsAJWE7oLWuGN0cme9CWL65r9nPMsG1BoeUjA96FXXySp/qpNfLOWKQtIjIu5o6RMpQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      ws: '>=8'
+    peerDependenciesMeta:
+      ws:
         optional: true
 
   '@vitest/expect@3.2.7':
@@ -1467,6 +1539,11 @@ packages:
   draco3d@1.5.7:
     resolution: {integrity: sha512-m6WCKt/erDXcw+70IJXnG7M3awwQPAsZvJGX5zY7beBqpELw6RDGkYVU0W43AFxye4pDZ5i2Lbyc/NNGqwjUVQ==}
 
+  electron@43.1.1:
+    resolution: {integrity: sha512-I5c5vfuVvaXpWx3IZdwvXgxQW44+e7OP1wXGVQkogLeSFSkUZ6sLCcWV05AdEcs65AO5tAIJJwbp7ixw+LdarA==}
+    engines: {node: '>= 22.12.0'}
+    hasBin: true
+
   enhanced-resolve@5.21.6:
     resolution: {integrity: sha512-aNnGCvbJ/RIyWo1IuhNdVjnNF+EjH9wpzpNHt+ci/m9He9LJvUN8wrCcXjp9cWsGNAuvSpVFTx/vraAFQ8qGjQ==}
     engines: {node: '>=10.13.0'}
@@ -1478,6 +1555,10 @@ packages:
   entities@7.0.1:
     resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
     engines: {node: '>=0.12'}
+
+  env-paths@3.0.0:
+    resolution: {integrity: sha512-dtJUTepzMW3Lm/NPxRf3wP4642UWhjL2sQxc+ym2YMj1m/H2zDNQOlezafzkHwn6sMstjHTwG6iQQsctDW/b1A==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   es-errors@1.3.0:
     resolution: {integrity: sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==}
@@ -1792,6 +1873,11 @@ packages:
   pkg-types@1.3.1:
     resolution: {integrity: sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ==}
 
+  playwright-core@1.61.1:
+    resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   postcss-load-config@6.0.1:
     resolution: {integrity: sha512-oPtTM4oerL+UXmx+93ytZVN82RrlY/wPUV8IeDxFrzIjXOLF1pN+EmKPLbubvKHT2HC20xXsCAH2Z+CKV6Oz/g==}
     engines: {node: '>= 18'}
@@ -1816,6 +1902,10 @@ packages:
 
   potpack@1.0.2:
     resolution: {integrity: sha512-choctRBIV9EMT9WGAZHn3V7t0Z2pMQyl0EZE6pFc/6ml3ssw7Dlf/oAOvFwjm1HVsqfQN8GfeFyJ+d8tRzqueQ==}
+
+  progress@2.0.3:
+    resolution: {integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==}
+    engines: {node: '>=0.4.0'}
 
   promise-worker-transferable@1.0.4:
     resolution: {integrity: sha512-bN+0ehEnrXfxV2ZQvU2PetO0n4gqBD4ulq3MI1WOPLgr7/Mg9yRQkX5+0v1vagr74ZTsl7XtzlaYDo2EuCeYJw==}
@@ -1946,6 +2036,10 @@ packages:
     engines: {node: '>=16 || 14 >=14.17'}
     hasBin: true
 
+  sumchecker@3.0.1:
+    resolution: {integrity: sha512-MvjXzkz/BOfyVDkG0oFOtBxHX2u3gKbMHIF/dXblZsgD3BWOFLmHovIpZY7BykJdAjcqRCBi1WYBNdEC9yI7vg==}
+    engines: {node: '>= 8.0'}
+
   supports-color@7.2.0:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
     engines: {node: '>=8'}
@@ -2069,8 +2163,15 @@ packages:
   ufo@1.6.4:
     resolution: {integrity: sha512-JFNbkD1Svwe0KvGi8GOeLcP4kAWQ609twvCdcHxq1oSL8svv39ZuSvajcD8B+5D0eL4+s1Is2D/O6KN3qcTeRA==}
 
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+
   undici-types@8.3.0:
     resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
+
+  undici@7.28.0:
+    resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
+    engines: {node: '>=20.18.1'}
 
   use-sync-external-store@1.6.0:
     resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
@@ -2264,6 +2365,21 @@ snapshots:
     optional: true
 
   '@dimforge/rapier3d-compat@0.12.0': {}
+
+  '@electron-internal/extract-zip@1.0.4': {}
+
+  '@electron/get@5.0.0':
+    dependencies:
+      debug: 4.4.3
+      env-paths: 3.0.0
+      graceful-fs: 4.2.11
+      progress: 2.0.3
+      semver: 7.8.5
+      sumchecker: 3.0.1
+    optionalDependencies:
+      undici: 7.28.0
+    transitivePeerDependencies:
+      - supports-color
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true
@@ -2656,6 +2772,10 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
+  '@types/node@24.13.3':
+    dependencies:
+      undici-types: 7.18.2
+
   '@types/node@26.1.1':
     dependencies:
       undici-types: 8.3.0
@@ -2706,6 +2826,34 @@ snapshots:
     optionalDependencies:
       loro-crdt: 1.13.6
       react: 19.2.7
+
+  '@vibecook/truffle-native@0.7.3': {}
+
+  '@vibecook/truffle-sidecar-darwin-arm64@0.7.3':
+    optional: true
+
+  '@vibecook/truffle-sidecar-darwin-x64@0.7.3':
+    optional: true
+
+  '@vibecook/truffle-sidecar-linux-arm64@0.7.3':
+    optional: true
+
+  '@vibecook/truffle-sidecar-linux-x64@0.7.3':
+    optional: true
+
+  '@vibecook/truffle-sidecar-win32-x64@0.7.3':
+    optional: true
+
+  '@vibecook/truffle@0.7.3(ws@8.21.0)':
+    dependencies:
+      '@vibecook/truffle-native': 0.7.3
+    optionalDependencies:
+      '@vibecook/truffle-sidecar-darwin-arm64': 0.7.3
+      '@vibecook/truffle-sidecar-darwin-x64': 0.7.3
+      '@vibecook/truffle-sidecar-linux-arm64': 0.7.3
+      '@vibecook/truffle-sidecar-linux-x64': 0.7.3
+      '@vibecook/truffle-sidecar-win32-x64': 0.7.3
+      ws: 8.21.0
 
   '@vitest/expect@3.2.7':
     dependencies:
@@ -2890,6 +3038,14 @@ snapshots:
 
   draco3d@1.5.7: {}
 
+  electron@43.1.1:
+    dependencies:
+      '@electron-internal/extract-zip': 1.0.4
+      '@electron/get': 5.0.0
+      '@types/node': 24.13.3
+    transitivePeerDependencies:
+      - supports-color
+
   enhanced-resolve@5.21.6:
     dependencies:
       graceful-fs: 4.2.11
@@ -2901,6 +3057,8 @@ snapshots:
       tapable: 2.3.3
 
   entities@7.0.1: {}
+
+  env-paths@3.0.0: {}
 
   es-errors@1.3.0: {}
 
@@ -3191,6 +3349,8 @@ snapshots:
       mlly: 1.8.2
       pathe: 2.0.3
 
+  playwright-core@1.61.1: {}
+
   postcss-load-config@6.0.1(jiti@2.7.0)(postcss@8.5.16):
     dependencies:
       lilconfig: 3.1.3
@@ -3205,6 +3365,8 @@ snapshots:
       source-map-js: 1.2.1
 
   potpack@1.0.2: {}
+
+  progress@2.0.3: {}
 
   promise-worker-transferable@1.0.4:
     dependencies:
@@ -3338,6 +3500,12 @@ snapshots:
       tinyglobby: 0.2.17
       ts-interface-checker: 0.1.13
 
+  sumchecker@3.0.1:
+    dependencies:
+      debug: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
+
   supports-color@7.2.0:
     dependencies:
       has-flag: 4.0.0
@@ -3464,7 +3632,12 @@ snapshots:
 
   ufo@1.6.4: {}
 
+  undici-types@7.18.2: {}
+
   undici-types@8.3.0: {}
+
+  undici@7.28.0:
+    optional: true
 
   use-sync-external-store@1.6.0(react@19.2.7):
     dependencies:

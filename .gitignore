@@ -4,6 +4,11 @@ dist/
 .idea/
 *.log
 
+# Desktop-example secrets/state (widgetlab-desktop): the tailnet auth key and
+# tsnet node state never enter the repo.
+apps/widgetlab-desktop/.env
+apps/widgetlab-desktop/tsnet/
+
 # Design drafts are version-controlled ONLY on the `local-dev` branch (never pushed).
 # On main they stay present-but-untracked. See CLAUDE.md "Draft workflow".
 /draft/

@@ -5,10 +5,12 @@
  * keyboard shortcuts (⌘Z/⇧⌘Z undo/redo · Esc exit container · ⌫ delete).
  *
  * v3 adaptations (deliberate):
- *  - createLayoutEngine → createCanvasEngine + docs.create(); the seed spawns
- *    are {undoable:false} so the user's first ⌘Z is clean (moodboard rule).
- *    Spawn ORDER carries v1's zIndex order (petition 8: sibling sequence —
- *    later spawns append "last", i.e. on top).
+ *  - createLayoutEngine → createCanvasEngine + docs.create() — or, under the
+ *    widgetlab-desktop Electron shell, docs.join() over the IPC byte channel
+ *    (collab/desktop.ts; the room's first peer seeds, everyone else imports).
+ *    The seed spawns are {undoable:false} so the user's first ⌘Z is clean
+ *    (moodboard rule). Spawn ORDER carries v1's zIndex order (petition 8:
+ *    sibling sequence — later spawns append "last", i.e. on top).
  *  - v1's r3fRoot IBL → GL islands are private scenes (design-004); metallic
  *    cards carry their own studio rigs (gl-cards port). No shared Environment.
  *  - v1's GL overlap glow → CSS inset glow in CardShell, driven by the same
@@ -38,7 +40,9 @@ import {
   createCanvasEngine,
   defineQuery,
   selectedEntities,
+  spawnWidget,
   type CanvasEngine,
+  type DocSession,
   type Entity,
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
@@ -51,6 +55,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PMREMGenerator, type Texture } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { hasDesktopBridge, startDesktopCollab } from "./collab/desktop";
 import { installCursorHalo } from "./cursor";
 import { WidgetTray } from "./tray/WidgetTray";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
@@ -140,33 +145,47 @@ export function createDemoEngine(): CanvasEngine {
       chrome: { liftScale: 1.05 },
     },
   });
-  ce.docs.create();
+  // Desktop shell (widgetlab-desktop, 2026-07-20): the ROOM owns the document —
+  // App's collab effect joins it over the IPC byte channel (the first peer in
+  // the room seeds via seedDemoScene; every later window/instance imports the
+  // base). The plain browser keeps the local-doc boot below.
+  if (!hasDesktopBridge()) {
+    const session = ce.docs.create();
+    seedDemoScene(ce, session);
+    ce.world.sync(); // project the durable seeds now (graybox idiom) — queryable before the first frame
+  }
+  return ce;
+}
+
+/**
+ * The demo board (the SCENE grid + the node trio), written through
+ * `session.store` directly — NOT `ce.ops`: joinDoc's seeder callback runs
+ * BEFORE the facade adopts the session (ops would throw "needs a document"
+ * there), and the local boot uses the same path so the two stay one seed.
+ */
+function seedDemoScene(ce: CanvasEngine, session: DocSession): void {
   for (const [type, x, y, w, h, props] of SCENE) {
-    ce.ops.spawnWidget(type, { x, y, w, h, undoable: false, ...(props !== undefined ? { props } : {}) });
+    spawnWidget(session.store, ce.world, type, { x, y, w, h, undoable: false, ...(props !== undefined ? { props } : {}) });
   }
   // Node trio (2026-07-16): a wire-able signal → filter → scope chain in its
   // own column right of the todo column. Hover a node to materialize its port
   // dots, drag dot-to-dot to connect (ports accept "signal"; the dashed
   // preview goes solid on a compatible target). Two wires pre-seeded.
   const NX = G6X + 329 + 39; // 1880 — the next column in the v1 grid rhythm
-  const signal = ce.ops.spawnWidget("signal-node", { x: NX, y: 50, w: 170, h: 96, undoable: false });
-  const filter = ce.ops.spawnWidget("filter-node", { x: NX + 240, y: 170, w: 170, h: 96, undoable: false });
-  const scope = ce.ops.spawnWidget("scope-node", { x: NX + 480, y: 62, w: 170, h: 96, undoable: false });
-  seedWire(ce, signal, "out", filter, "in");
-  seedWire(ce, filter, "out", scope, "in-a");
-  ce.world.sync(); // project the durable seeds now (graybox idiom) — queryable before the first frame
-  return ce;
+  const signal = spawnWidget(session.store, ce.world, "signal-node", { x: NX, y: 50, w: 170, h: 96, undoable: false });
+  const filter = spawnWidget(session.store, ce.world, "filter-node", { x: NX + 240, y: 170, w: 170, h: 96, undoable: false });
+  const scope = spawnWidget(session.store, ce.world, "scope-node", { x: NX + 480, y: 62, w: 170, h: 96, undoable: false });
+  seedWire(session, signal, "out", filter, "in");
+  seedWire(session, filter, "out", scope, "in-a");
 }
 
 /**
  * Seed one wire between two node widgets — nodeboard's `seedWire` verbatim on
- * the facade's current doc session (design-001 §5.3: a `Wire`-tagged entity
- * carrying `WirePorts{from,to}` + the endpoint relations; geometry never
- * stores a port entity).
+ * a doc session (design-001 §5.3: a `Wire`-tagged entity carrying
+ * `WirePorts{from,to}` + the endpoint relations; geometry never stores a port
+ * entity).
  */
-function seedWire(ce: CanvasEngine, from: Entity, fromPort: string, to: Entity, toPort: string): void {
-  const session = ce.docs.current();
-  if (session === undefined) return;
+function seedWire(session: DocSession, from: Entity, fromPort: string, to: Entity, toPort: string): void {
   session.store.transaction(
     (tx) => {
       const wire = tx.spawn({
@@ -365,6 +384,14 @@ export function App() {
   // committed ce only.
   useEffect(() => {
     if (import.meta.env.DEV) installDebugProbe(ce);
+  }, [ce]);
+  // Desktop collab (widgetlab-desktop, 2026-07-20): join the switchboard room
+  // from an EFFECT — the memo factory's StrictMode orphan twin must never touch
+  // the bridge (its onMessage handler is single replace-on-set; an orphan's
+  // join would steal the committed engine's channel — collab/desktop.ts header).
+  useEffect(() => {
+    if (!hasDesktopBridge()) return;
+    return startDesktopCollab(ce, (session) => seedDemoScene(ce, session));
   }, [ce]);
   // Natural boot framing (2026-07-18, James: "do zoom to fit, but with a
   // upper and bottom cap"): frame the seeded board once the viewport has

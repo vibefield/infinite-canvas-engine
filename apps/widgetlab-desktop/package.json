@@ -1,0 +1,21 @@
+{
+  "name": "widgetlab-desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The widgetlab demo as a minimal Electron app: an IPC switchboard in main relays ICE bootstrap frames between windows, and a truffle/tsnet mesh makes instances on a tailnet room members — no server.",
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "node scripts/smoke.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vibecook/truffle": "0.7.3"
+  },
+  "devDependencies": {
+    "electron": "^43.1.0",
+    "playwright-core": "^1.50.0",
+    "vitest": "^3.0.0"
+  }
+}

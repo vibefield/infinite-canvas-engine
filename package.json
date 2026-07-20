@@ -8,7 +8,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@biomejs/biome",
-      "esbuild"
+      "esbuild",
+      "electron",
+      "@vibecook/truffle"
     ],
     "patchedDependencies": {
       "@react-three/fiber@9.6.1": "patches/@react-three__fiber@9.6.1.patch"

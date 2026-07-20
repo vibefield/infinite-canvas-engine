@@ -4,9 +4,22 @@ packages:
 # pnpm 11 migration (2026-07-18): settings moved out of package.json#pnpm.
 # allowBuilds carries the old onlyBuiltDependencies approvals; the r3f patch
 # rides patchedDependencies here or pnpm 11 silently stops applying it.
+# electron (binary download) + @vibecook/truffle (native addon + sidecar) are
+# widgetlab-desktop's (2026-07-20) — without approval their installs silently
+# skip and `electron .` / createMeshNode fail at runtime.
 allowBuilds:
   "@biomejs/biome": true
   esbuild: true
+  electron: true
+  "@vibecook/truffle": true
+# pnpm 10 spelling of the same approvals (this machine's pnpm is 10.x, which
+# ignores `allowBuilds` wholesale — electron's binary download and truffle's
+# postinstall silently skipped until this list existed, 2026-07-20).
+onlyBuiltDependencies:
+  - "@biomejs/biome"
+  - esbuild
+  - electron
+  - "@vibecook/truffle"
 # First-party exemption from the supply-chain minimum-release-age hold: we pin and bump
 # @vibecook/strata-ecs the same day it publishes (the whole petition cadence), so the
 # fresh-release quarantine only ever flags our own artifact. Third-party stays covered.
