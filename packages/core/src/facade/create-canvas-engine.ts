@@ -394,6 +394,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       // storage (2026-07-13 review).
       const handle: Autosave = {
         flush: () => inner.flush(),
+        close: async () => {
+          await inner.close();
+          liveAutosaves.delete(handle);
+        },
         state: () => inner.state(),
         stop: () => {
           liveAutosaves.delete(handle);

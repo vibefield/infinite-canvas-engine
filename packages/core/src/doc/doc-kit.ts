@@ -30,7 +30,6 @@ import { ensureCanvasSurface } from "../interaction/install";
 import { cancelActiveGestures } from "../ops/gestures";
 import { selectedEntities, setSelection } from "../ops/selection";
 import {
-  ENGINE_SCHEMA_VERSION,
   EnvelopeError,
   decodeEnvelope,
   encodeEnvelope,
@@ -45,12 +44,12 @@ import { createLiveWriter, type LiveWriter } from "../guards/live-writer";
 import { makeDefaultMayDiverge } from "../ops/claims";
 import {
   gateVerdict,
+  readEnvelopeVersionReport,
   readDocVersionReport,
   stampEngineMeta,
   type DocVersionReport,
   type GateVerdict,
 } from "./version-gate";
-import { prefabs } from "../schema/prefab";
 
 export interface DocSessionOpts {
   readonly maxUndoSteps?: number;
@@ -106,14 +105,9 @@ export type OpenDocResult =
   | { readonly ok: true; readonly session: DocSession }
   | { readonly ok: false; readonly reason: string; readonly report?: DocVersionReport };
 
-function localPrefabVersions(): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const p of prefabs.all()) if (p.store === "durable") out[p.id] = p.version ?? 1;
-  return out;
-}
-
 function makeSession(
   world: World,
+  doc: LoroDoc,
   store: DurableStore,
   attachment: Attachment,
   readOnly: boolean,
@@ -157,15 +151,17 @@ function makeSession(
     liveWriter,
     ...(report !== undefined ? { report } : {}),
     exportEnvelope(savedAt) {
+      const current = readDocVersionReport(doc);
       const header: EnvelopeHeader = {
-        engineSchema: ENGINE_SCHEMA_VERSION,
-        prefabVersions: localPrefabVersions(),
+        engineSchema: current.docSchema,
+        prefabVersions: current.docPacks,
         ...(savedAt !== undefined ? { savedAt } : {}),
       };
       return encodeEnvelope(header, store.exportSnapshot());
     },
     exportSnapshot: () => store.exportSnapshot(),
     applyRemote(bytes) {
+      if (closed) throw new Error("ice: cannot apply a remote update to a closed document");
       store.applyRemote(bytes); // a throw (PendingImportError et al.) skips notification
       for (const fn of [...remoteSubs]) fn(bytes);
     },
@@ -179,6 +175,7 @@ function makeSession(
       cancelActiveGestures(world); // consumed by the next tick IF one runs pre-detach;
       // the reset below clears in-flight gesture state regardless — both paths safe.
       store.setHistoryHooks(null);
+      remoteSubs.clear();
       attachment.detach();
       world.reset(); // in place: observers/systems survive (R3); entities die
       ensureCanvasSurface(world); // the interaction stack's anchor must exist again
@@ -201,20 +198,36 @@ export function createDocSession(world: World, opts: DocSessionOpts = {}): DocSe
   // their ordered ChildOf edges on it. Runtime resource names it for the ops/renderers.
   const root = ensureBoardRoot(world, store);
   writeRuntimeResource(world, BoardRoot, { root });
-  return makeSession(world, store, attachment, false);
+  return makeSession(world, doc, store, attachment, false);
 }
 
 /** Open an envelope: gate BEFORE attach; quarantine is a return value, never a throw. */
 export function openDocSession(world: World, bytes: Uint8Array, opts: DocSessionOpts = {}): OpenDocResult {
   let payload: Uint8Array;
+  let envelopeReport: DocVersionReport;
   try {
-    payload = decodeEnvelope(bytes).payload;
+    const decoded = decodeEnvelope(bytes);
+    payload = decoded.payload;
+    envelopeReport = readEnvelopeVersionReport(decoded.header);
   } catch (err) {
     const reason = err instanceof EnvelopeError ? err.message : String(err);
     return { ok: false, reason };
   }
 
+  // Coarse gate before the WASM import. The in-document markers are still
+  // authoritative and are checked again below; this fast path prevents a
+  // policy-rejected future envelope from reaching Loro at all.
+  try {
+    const preflight = (opts.onGate ?? ((_, v) => v))(envelopeReport, gateVerdict(envelopeReport));
+    if (preflight === "reject") {
+      return { ok: false, reason: "ice: version gate rejected the envelope", report: envelopeReport };
+    }
+  } catch (err) {
+    return { ok: false, reason: `ice: onGate callback threw during envelope preflight — ${String(err)}`, report: envelopeReport };
+  }
+
   const doc = new LoroDoc();
+  let attachment: Attachment | undefined;
   try {
     doc.import(payload);
   } catch (err) {
@@ -240,7 +253,7 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
       doc,
       opts.maxUndoSteps !== undefined ? { maxUndoSteps: opts.maxUndoSteps } : undefined,
     );
-    const attachment = attachDurable(world, store);
+    attachment = attachDurable(world, store);
 
     // M9 (design-005 §6.4): the "migrate" verdict upgrades in place. Attach is
     // identical either way — readOnly is an engine concept (the commit sink), and
@@ -281,11 +294,22 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
     } else {
       writeRuntimeResource(world, BoardRoot, { root: ensureBoardRoot(world, store) });
     }
-    return { ok: true, session: makeSession(world, store, attachment, readOnly, effectiveReport) };
+    return { ok: true, session: makeSession(world, doc, store, attachment, readOnly, effectiveReport) };
   } catch (err) {
     // Store/attach residuals (already-attached world, pending-import state,
     // mid-emit) quarantine like everything else on this path — open() NEVER
     // throws (review hardening; the corrupt-bytes exit bar extended to attach).
+    try {
+      attachment?.detach();
+      world.reset();
+      ensureCanvasSurface(world);
+    } catch (rollbackErr) {
+      return {
+        ok: false,
+        reason: `ice: attach failed — ${String(err)}; rollback failed — ${String(rollbackErr)}`,
+        report,
+      };
+    }
     return { ok: false, reason: `ice: attach failed — ${String(err)}`, report };
   }
 }

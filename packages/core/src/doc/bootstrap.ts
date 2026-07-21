@@ -368,14 +368,18 @@ export function joinDoc(world: World, channel: ByteChannel, opts: JoinDocOpts = 
       const payload = bytes.subarray(1);
 
       if (kind === K_PRESENCE) {
-        opts.presence?.wire.apply(payload); // independent of the doc handshake
+        try {
+          opts.presence?.wire.apply(payload); // independent of the doc handshake
+        } catch (err) {
+          opts.onError?.(err);
+        }
         return;
       }
 
       if (active) {
         if (kind === K_HELLO) {
           if (session !== undefined) {
-            channel.send(frameSnapshot(fromUtf8.decode(payload), session.exportEnvelope()));
+            send(frameSnapshot(fromUtf8.decode(payload), session.exportEnvelope()));
           }
         } else if (kind === K_UPDATE) {
           applyRemoteSafe(payload); // raw loro increment

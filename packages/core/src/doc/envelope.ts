@@ -17,6 +17,7 @@
 
 export const ENVELOPE_MAGIC = "ICE1";
 export const ENVELOPE_VERSION = 1;
+export const MAX_ENVELOPE_HEADER_BYTES = 1024 * 1024;
 
 /** The document-format version this build writes (gate compares against it). */
 export const ENGINE_SCHEMA_VERSION = 2; // 2 = ordered relations (petition 8): board-root + ChildOf sibling sequences
@@ -61,6 +62,9 @@ export function decodeEnvelope(bytes: Uint8Array): { header: EnvelopeHeader; pay
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const headerLen = view.getUint32(5, true);
+  if (headerLen > MAX_ENVELOPE_HEADER_BYTES) {
+    throw new EnvelopeError(`header exceeds ${MAX_ENVELOPE_HEADER_BYTES} bytes`, "header");
+  }
   if (9 + headerLen > bytes.length) throw new EnvelopeError("header overruns the frame", "truncated");
   let header: EnvelopeHeader;
   try {
@@ -68,8 +72,21 @@ export function decodeEnvelope(bytes: Uint8Array): { header: EnvelopeHeader; pay
   } catch {
     throw new EnvelopeError("header is not valid JSON", "header");
   }
-  if (typeof header.engineSchema !== "number" || typeof header.prefabVersions !== "object") {
+  if (
+    !Number.isSafeInteger(header.engineSchema) ||
+    header.engineSchema < 1 ||
+    header.prefabVersions === null ||
+    Array.isArray(header.prefabVersions) ||
+    typeof header.prefabVersions !== "object" ||
+    (header.savedAt !== undefined &&
+      (!Number.isSafeInteger(header.savedAt) || header.savedAt < 0))
+  ) {
     throw new EnvelopeError("header is missing required fields", "header");
+  }
+  for (const [id, version] of Object.entries(header.prefabVersions)) {
+    if (id.length === 0 || !Number.isSafeInteger(version) || version < 1) {
+      throw new EnvelopeError("header carries an invalid prefab version", "header");
+    }
   }
   return { header, payload: bytes.subarray(9 + headerLen) };
 }

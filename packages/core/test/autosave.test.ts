@@ -343,6 +343,59 @@ describe("autosave: hardening (async put safety)", () => {
     expect(pending).toHaveLength(1);
     expect(committed).toBe(pending[0]?.bytes);
   });
+
+  it("close() serializes one captured final revision after an in-flight put", async () => {
+    const timer = fakeTimer();
+    const pending: { bytes: Uint8Array; resolve: () => void }[] = [];
+    let committed: Uint8Array | undefined;
+    const storage = {
+      put: (bytes: Uint8Array): Promise<void> =>
+        new Promise<void>((resolve) => {
+          pending.push({
+            bytes,
+            resolve: () => {
+              committed = bytes;
+              resolve();
+            },
+          });
+        }),
+    };
+    const { world, session, commit } = makeSession();
+    const auto = startAutosave(session, { storage, world, now: timer.now, schedule: timer.schedule });
+
+    commit();
+    timer.advance(800);
+    timer.fire();
+    expect(pending).toHaveLength(1);
+
+    commit();
+    const closing = auto.close();
+    expect(pending).toHaveLength(1);
+    pending[0]?.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pending).toHaveLength(2);
+    pending[1]?.resolve();
+    await closing;
+
+    const restoredWorld = createWorld();
+    const restored = await restoreAutosave(restoredWorld, { get: () => committed });
+    expect(restored.status).toBe("restored");
+    if (restored.status === "restored") expect(countPositions(restoredWorld)).toBe(2);
+  });
+
+  it("close() rejects when the final durable write fails", async () => {
+    const timer = fakeTimer();
+    const { world, session } = makeSession();
+    const auto = startAutosave(session, {
+      storage: { put: async () => Promise.reject(new Error("disk unavailable")) },
+      world,
+      now: timer.now,
+      schedule: timer.schedule,
+    });
+    await expect(auto.close()).rejects.toThrow(/disk unavailable/);
+    expect(auto.state().status).toBe("error");
+  });
 });
 
 describe("autosave: coverage holes (2026-07-13 review)", () => {

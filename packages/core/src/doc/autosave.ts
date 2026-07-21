@@ -23,8 +23,9 @@
  *
  * Clock and scheduler are injectable so tests are deterministic with NO real
  * timers; the design's `requestIdleCallback` optimization is just an alternate
- * `schedule` an app can pass. `flush()` forces a synchronous save (the
- * beforeunload path); `stop()` unsubscribes and cancels the timer.
+ * `schedule` an app can pass. `flush()` forces an awaited save; `close()`
+ * captures and durably serializes the final revision; `stop()` explicitly
+ * discards pending state.
  *
  * RESTORE (`restoreAutosave`): reads storage → `openDocSession`. Incompatible or
  * corrupt bytes NEVER throw and NEVER brick boot (the M5 exit criterion) —
@@ -84,9 +85,15 @@ export interface AutosaveState {
 }
 
 export interface Autosave {
-  /** Force a save of the current document now and await it (beforeunload / explicit save). */
+  /** Force a save of the current document now and await it. Rejects when persistence fails. */
   flush(): Promise<void>;
-  /** Unsubscribe and cancel any pending timer. Idempotent. */
+  /**
+   * Capture the final document synchronously, serialize it behind any in-flight
+   * write, and stop only after storage acknowledges it. Rejects on failure and
+   * may be retried; no document mutation should occur after close begins.
+   */
+  close(): Promise<void>;
+  /** Discard pending state immediately. Idempotent; never use for a normal close. */
   stop(): void;
   /** A pull-based status read for a per-frame HUD (design demo). */
   state(): AutosaveState;
@@ -142,7 +149,12 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
   let saving = false;
   let lastSavedAt: number | undefined;
   let errored = false;
+  let lastWriteError: unknown;
   let stopped = false;
+  let closing = false;
+  let closeBytes: Uint8Array | undefined;
+  let closeSavedAt = 0;
+  let closeInFlight: Promise<void> | undefined;
   // The serialized writer: at most ONE storage.put is ever in flight. A save
   // requested while a put runs does NOT start a second put — the running loop
   // re-runs with FRESHLY exported bytes once the current put settles. So two
@@ -166,7 +178,7 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
 
   const arm = (): void => {
     clearTimer();
-    if (stopped) return;
+    if (stopped || closing) return;
     const elapsed = now() - firstDirtyAt;
     // Debounce, but never later than the max-wait ceiling from the first change.
     const delay = Math.max(0, Math.min(debounceMs, maxWaitMs - elapsed));
@@ -196,7 +208,7 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
    */
   async function runWrites(): Promise<void> {
     try {
-      while (dirty && !stopped) {
+      while (dirty && !stopped && !closing) {
         const at = now();
         const bytes = session.exportEnvelope(at);
         dirty = false; // optimistic: a change during the await re-sets it
@@ -205,8 +217,10 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
           await storage.put(bytes);
           lastSavedAt = at;
           errored = false;
-        } catch {
+          lastWriteError = undefined;
+        } catch (err) {
           errored = true;
+          lastWriteError = err;
           dirty = true; // keep marked so a later change/flush retries
           break; // do not spin on a persistent failure
         } finally {
@@ -220,7 +234,7 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
 
   /** Kick (or join) the serialized writer; returns the in-flight write promise. */
   function requestWrite(): Promise<void> {
-    if (stopped) return writeInFlight;
+    if (stopped || closing) return writeInFlight;
     if (!writing) {
       writing = true;
       writeInFlight = runWrites();
@@ -229,7 +243,7 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
   }
 
   const markDirty = (): void => {
-    if (stopped) return;
+    if (stopped || closing) return;
     if (!dirty) firstDirtyAt = now();
     dirty = true;
     arm();
@@ -257,13 +271,52 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
       dirty = true;
       requestWrite();
       await writeInFlight;
+      if (lastWriteError !== undefined) throw lastWriteError;
+    },
+    close(): Promise<void> {
+      if (stopped) return writeInFlight;
+      if (!closing) {
+        closing = true;
+        clearTimer();
+        unsubOutbound();
+        unsubRemote();
+        // Capture before the caller can detach/reset the world. This exact
+        // envelope is serialized behind the current background write below.
+        closeSavedAt = now();
+        closeBytes = session.exportEnvelope(closeSavedAt);
+        dirty = false;
+      }
+      if (closeInFlight !== undefined) return closeInFlight;
+      const finalBytes = closeBytes;
+      if (finalBytes === undefined) return Promise.reject(new Error("ice: autosave close lost its final envelope"));
+      closeInFlight = (async () => {
+        await writeInFlight;
+        try {
+          await storage.put(finalBytes);
+          lastSavedAt = closeSavedAt;
+          lastWriteError = undefined;
+          errored = false;
+          stopped = true;
+        } catch (err) {
+          lastWriteError = err;
+          errored = true;
+          throw err;
+        }
+      })();
+      void closeInFlight.catch(() => {
+        // A caller may retry close() after recovering the storage path.
+        closeInFlight = undefined;
+      });
+      return closeInFlight;
     },
     stop(): void {
       if (stopped) return;
       stopped = true;
       clearTimer();
-      unsubOutbound();
-      unsubRemote();
+      if (!closing) {
+        unsubOutbound();
+        unsubRemote();
+      }
       // Semantics: a put already in flight runs to completion (a promise cannot
       // be cancelled); the writer loop's `!stopped` guard then DROPS any queued
       // newer write — nothing is persisted after stop() beyond the put already

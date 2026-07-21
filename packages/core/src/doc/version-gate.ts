@@ -24,7 +24,7 @@
 import type { LoroDoc } from "loro-crdt";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import { prefabs } from "../schema/prefab";
-import { ENGINE_SCHEMA_VERSION } from "./envelope";
+import { ENGINE_SCHEMA_VERSION, type EnvelopeHeader } from "./envelope";
 
 const SCHEMA_PREFIX = "engine.schema.";
 const PACK_PREFIX = "engine.pack.";
@@ -97,6 +97,30 @@ export function readDocVersionReport(doc: LoroDoc): DocVersionReport {
   }
 
   return { docSchema, localSchema: ENGINE_SCHEMA_VERSION, docPacks, localPacks, newerInDoc, olderInDoc };
+}
+
+/** Build the same comparison report from an envelope header, before Loro import. */
+export function readEnvelopeVersionReport(header: EnvelopeHeader): DocVersionReport {
+  const localPacks: Record<string, number> = {};
+  for (const p of prefabs.all()) {
+    if (p.store === "durable") localPacks[p.id] = p.version ?? 1;
+  }
+  const docPacks = { ...header.prefabVersions };
+  const newerInDoc: string[] = [];
+  const olderInDoc: string[] = [];
+  for (const [id, version] of Object.entries(docPacks)) {
+    const local = localPacks[id];
+    if (local === undefined || version > local) newerInDoc.push(id);
+    else if (version < local) olderInDoc.push(id);
+  }
+  return {
+    docSchema: header.engineSchema,
+    localSchema: ENGINE_SCHEMA_VERSION,
+    docPacks,
+    localPacks,
+    newerInDoc,
+    olderInDoc,
+  };
 }
 
 /** The default M5 policy. A facade policy hook may override (design-005 §6.3). */
