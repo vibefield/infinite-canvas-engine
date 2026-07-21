@@ -509,3 +509,104 @@ describe("autosave: restore + quarantine (M5 exit — never brick boot)", () => 
     expect(result.reason.length).toBeGreaterThan(0);
   });
 });
+
+describe("autosave: bounded incremental journal", () => {
+  it("writes one checkpoint, then appends the exact outbound Loro update", async () => {
+    const timer = fakeTimer();
+    const checkpoints: Uint8Array[] = [];
+    const updates: Uint8Array[] = [];
+    const { world, session, commit } = makeSession();
+    startAutosave(session, {
+      storage: {
+        put: (bytes) => checkpoints.push(bytes),
+        append: (bytes) => updates.push(bytes),
+      },
+      world,
+      now: timer.now,
+      schedule: timer.schedule,
+    });
+
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+    commit();
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+
+    expect(checkpoints).toHaveLength(1);
+    expect(updates).toHaveLength(1);
+    const restoredWorld = createWorld();
+    const opened = openDocSession(restoredWorld, must(checkpoints[0], "checkpoint"));
+    if (!opened.ok) throw new Error(opened.reason);
+    opened.session.applyRemote(must(updates[0], "journal update"));
+    expect(countPositions(restoredWorld)).toBe(1);
+  });
+
+  it("flush compacts an existing journal into a complete checkpoint", async () => {
+    const timer = fakeTimer();
+    const checkpoints: Uint8Array[] = [];
+    const updates: Uint8Array[] = [];
+    const { world, session, commit } = makeSession();
+    const auto = startAutosave(session, {
+      storage: {
+        put: (bytes) => checkpoints.push(bytes),
+        append: (bytes) => updates.push(bytes),
+      },
+      world,
+      now: timer.now,
+      schedule: timer.schedule,
+    });
+
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+    commit();
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+    await auto.flush();
+
+    expect(updates).toHaveLength(1);
+    expect(checkpoints).toHaveLength(2);
+    const restoredWorld = createWorld();
+    const restored = await restoreAutosave(restoredWorld, {
+      get: () => checkpoints.at(-1),
+    });
+    expect(restored.status).toBe("restored");
+    expect(countPositions(restoredWorld)).toBe(1);
+  });
+
+  it("falls back to a full checkpoint when append is not acknowledged", async () => {
+    const timer = fakeTimer();
+    const checkpoints: Uint8Array[] = [];
+    const { world, session, commit } = makeSession();
+    startAutosave(session, {
+      storage: {
+        put: (bytes) => checkpoints.push(bytes),
+        append: () => Promise.reject(new Error("lost append ack")),
+      },
+      world,
+      now: timer.now,
+      schedule: timer.schedule,
+    });
+
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+    commit();
+    timer.advance(800);
+    timer.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(checkpoints).toHaveLength(2);
+    const restoredWorld = createWorld();
+    const restored = await restoreAutosave(restoredWorld, {
+      get: () => checkpoints.at(-1),
+    });
+    expect(restored.status).toBe("restored");
+    expect(countPositions(restoredWorld)).toBe(1);
+  });
+});
