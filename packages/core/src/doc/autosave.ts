@@ -50,6 +50,9 @@ import type { DocVersionReport } from "./version-gate";
 /** The app-owned write side of storage (localStorage, IndexedDB, fs, cloud — WHERE is app-owned). */
 export interface AutosaveStorageWrite {
   put(bytes: Uint8Array): Promise<void> | void;
+  /** Optional opaque Loro-update journal. `put` replaces the checkpoint and
+   * clears its journal; `append` durably extends the current checkpoint. */
+  append?(bytes: Uint8Array): Promise<void> | void;
 }
 
 /** The app-owned read side of storage (restore path). */
@@ -72,6 +75,10 @@ export interface AutosaveOpts {
   readonly now?: () => number;
   /** Timer factory; return a canceller (default `setTimeout`/`clearTimeout`). */
   readonly schedule?: (fn: () => void, ms: number) => CancelScheduled;
+  /** Compact after this many journal records (default 64). */
+  readonly checkpointEvery?: number;
+  /** Compact before the journal exceeds this many bytes (default 4 MiB). */
+  readonly maxJournalBytes?: number;
 }
 
 export type AutosaveStatus = "idle" | "pending" | "deferred" | "saving" | "saved" | "error";
@@ -142,6 +149,8 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
   const maxWaitMs = opts.maxWaitMs ?? 10_000;
   const now = opts.now ?? (() => Date.now());
   const schedule = opts.schedule ?? defaultSchedule;
+  const checkpointEvery = opts.checkpointEvery ?? 64;
+  const maxJournalBytes = opts.maxJournalBytes ?? 4 * 1024 * 1024;
 
   let dirty = false;
   let firstDirtyAt = 0;
@@ -155,6 +164,10 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
   let closeBytes: Uint8Array | undefined;
   let closeSavedAt = 0;
   let closeInFlight: Promise<void> | undefined;
+  let forceCheckpoint = true;
+  let journalEntries = 0;
+  let journalBytes = 0;
+  let pendingUpdates: Uint8Array[] = [];
   // The serialized writer: at most ONE storage.put is ever in flight. A save
   // requested while a put runs does NOT start a second put — the running loop
   // re-runs with FRESHLY exported bytes once the current put settles. So two
@@ -210,17 +223,52 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
     try {
       while (dirty && !stopped && !closing) {
         const at = now();
+        const nextUpdate = pendingUpdates[0];
+        const canAppend =
+          storage.append !== undefined &&
+          !forceCheckpoint &&
+          nextUpdate !== undefined &&
+          journalEntries < checkpointEvery &&
+          journalBytes + nextUpdate.byteLength <= maxJournalBytes;
+        if (canAppend) {
+          pendingUpdates.shift();
+          dirty = pendingUpdates.length > 0;
+          saving = true;
+          try {
+            await storage.append!(nextUpdate);
+            journalEntries += 1;
+            journalBytes += nextUpdate.byteLength;
+            lastSavedAt = at;
+            errored = false;
+            lastWriteError = undefined;
+          } catch (err) {
+            // The full current snapshot includes this update. A checkpoint is
+            // both the recovery path and compaction, including lost-ACK cases.
+            forceCheckpoint = true;
+            dirty = true;
+            lastWriteError = err;
+          } finally {
+            saving = false;
+          }
+          continue;
+        }
+
         const bytes = session.exportEnvelope(at);
+        pendingUpdates = [];
         dirty = false; // optimistic: a change during the await re-sets it
         saving = true;
         try {
           await storage.put(bytes);
+          forceCheckpoint = false;
+          journalEntries = 0;
+          journalBytes = 0;
           lastSavedAt = at;
           errored = false;
           lastWriteError = undefined;
         } catch (err) {
           errored = true;
           lastWriteError = err;
+          forceCheckpoint = true;
           dirty = true; // keep marked so a later change/flush retries
           break; // do not spin on a persistent failure
         } finally {
@@ -249,8 +297,12 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
     arm();
   };
 
-  const unsubOutbound = session.store.subscribeOutbound(() => markDirty());
-  const unsubRemote = session.subscribeRemote(() => markDirty());
+  const journal = (bytes: Uint8Array): void => {
+    pendingUpdates.push(bytes.slice());
+    markDirty();
+  };
+  const unsubOutbound = session.store.subscribeOutbound(journal);
+  const unsubRemote = session.subscribeRemote(journal);
   // Start dirty: the document AS HANDED IN (seeded, opened, joined) is unsaved
   // state — without this, a doc with no post-start edits never reaches storage.
   markDirty();
@@ -268,6 +320,7 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
       // if a put is already running this joins it, and the queued dirty state is
       // written when that put settles. ALWAYS exports — a flush must never be a
       // silent no-op (2026-07-13 review: the beforeunload path relied on it).
+      forceCheckpoint = true;
       dirty = true;
       requestWrite();
       await writeInFlight;
