@@ -518,8 +518,12 @@ describe("autosave: bounded incremental journal", () => {
     const { world, session, commit } = makeSession();
     startAutosave(session, {
       storage: {
-        put: (bytes) => checkpoints.push(bytes),
-        append: (bytes) => updates.push(bytes),
+        put: (bytes: Uint8Array): void => {
+          checkpoints.push(bytes);
+        },
+        append: (bytes: Uint8Array): void => {
+          updates.push(bytes);
+        },
       },
       world,
       now: timer.now,
@@ -550,8 +554,12 @@ describe("autosave: bounded incremental journal", () => {
     const { world, session, commit } = makeSession();
     const auto = startAutosave(session, {
       storage: {
-        put: (bytes) => checkpoints.push(bytes),
-        append: (bytes) => updates.push(bytes),
+        put: (bytes: Uint8Array): void => {
+          checkpoints.push(bytes);
+        },
+        append: (bytes: Uint8Array): void => {
+          updates.push(bytes);
+        },
       },
       world,
       now: timer.now,
@@ -583,7 +591,9 @@ describe("autosave: bounded incremental journal", () => {
     const { world, session, commit } = makeSession();
     startAutosave(session, {
       storage: {
-        put: (bytes) => checkpoints.push(bytes),
+        put: (bytes: Uint8Array): void => {
+          checkpoints.push(bytes);
+        },
         append: () => Promise.reject(new Error("lost append ack")),
       },
       world,

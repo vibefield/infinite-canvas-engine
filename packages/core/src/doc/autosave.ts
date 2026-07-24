@@ -224,8 +224,12 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
       while (dirty && !stopped && !closing) {
         const at = now();
         const nextUpdate = pendingUpdates[0];
+        // Read the optional appender once per pass, bound to its storage object:
+        // a method-shorthand optional does not narrow through the `canAppend`
+        // alias, and an unbound extraction would break a `this`-using storage.
+        const append = storage.append?.bind(storage);
         const canAppend =
-          storage.append !== undefined &&
+          append !== undefined &&
           !forceCheckpoint &&
           nextUpdate !== undefined &&
           journalEntries < checkpointEvery &&
@@ -235,7 +239,7 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
           dirty = pendingUpdates.length > 0;
           saving = true;
           try {
-            await storage.append!(nextUpdate);
+            await append(nextUpdate);
             journalEntries += 1;
             journalBytes += nextUpdate.byteLength;
             lastSavedAt = at;
