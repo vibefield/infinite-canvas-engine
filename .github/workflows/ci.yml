@@ -8,8 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No version here on purpose: action-setup reads package.json's
+      # `packageManager`, so CI runs the same pnpm that wrote the lockfile.
+      # Pinning 10 here while the lockfile came from 11 is what produced
+      # ERR_PNPM_LOCKFILE_CONFIG_MISMATCH on patchedDependencies.
       - uses: pnpm/action-setup@v4
-        with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile

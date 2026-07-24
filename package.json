@@ -5,17 +5,7 @@
   "engines": {
     "node": ">=24"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@biomejs/biome",
-      "esbuild",
-      "electron",
-      "@vibecook/truffle"
-    ],
-    "patchedDependencies": {
-      "@react-three/fiber@9.6.1": "patches/@react-three__fiber@9.6.1.patch"
-    }
-  },
+  "packageManager": "pnpm@11.13.1",
   "scripts": {
     "build": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r run typecheck",

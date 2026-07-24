@@ -12,9 +12,10 @@ allowBuilds:
   esbuild: true
   electron: true
   "@vibecook/truffle": true
-# pnpm 10 spelling of the same approvals (this machine's pnpm is 10.x, which
-# ignores `allowBuilds` wholesale — electron's binary download and truffle's
-# postinstall silently skipped until this list existed, 2026-07-20).
+# pnpm 10 spelling of the same approvals, kept as a fallback for anyone running
+# pnpm 10 directly (it ignores `allowBuilds` wholesale — electron's binary
+# download and truffle's postinstall silently skipped until this list existed,
+# 2026-07-20). Normally moot: package.json pins packageManager to pnpm 11.
 onlyBuiltDependencies:
   - "@biomejs/biome"
   - esbuild
