@@ -1,8 +1,9 @@
 /**
- * widgetlab-desktop main process — the widgetlab demo as a minimal Electron app.
+ * widgetlab-desktop main process — the widgetlab demo as a standalone Electron app.
  *
- * The renderer is the UNCHANGED widgetlab, loaded from its vite dev server; what
- * the desktop shell adds is a TRANSPORT. This process is the room SWITCHBOARD,
+ * The renderer lives in this package and is loaded from its local Vite build in
+ * production. `ICE_URL` can explicitly point at this package's dev server. The
+ * desktop shell also adds a TRANSPORT: this process is the room SWITCHBOARD,
  * bridged into each window by preload.cjs as `window.iceDesktop`; widgetlab's
  * boot selects the IPC byte channel whenever that bridge exists — the same
  * `ByteChannel` seam @ice/core's BroadcastChannel/WebSocket adapters satisfy.
@@ -30,9 +31,9 @@
  * peers adopt — loro dedupes, so the offer subsumes whatever the outage
  * dropped). No teardown, no world reset, no UI flash.
  *
- * Run: `pnpm --filter widgetlab dev` (the UI dev server), then
- * `pnpm --filter widgetlab-desktop start`. Cmd/Ctrl+N opens another window in
- * the same room — a second collaborator, no network involved. With a tailnet
+ * Run `pnpm --filter widgetlab-desktop start` for a local production build, or
+ * `pnpm --filter widgetlab-desktop dev` for one-command renderer HMR. Cmd/Ctrl+N
+ * opens another window in the same room — a second collaborator, no network involved. With a tailnet
  * auth key in .env (TS_AUTHKEY), other machines running this app join the same
  * room over the truffle mesh (mesh.mjs) — no server anywhere.
  */
@@ -42,22 +43,23 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { loadDotEnv, startMesh } from "./mesh.mjs";
 
-/**
- * The widgetlab UI origin — the vite dev server (default :5173; `ICE_URL`
- * overrides). No packaged mode yet: this example runs against the dev server
- * (canvas-desktop's static-server + @electron/packager treatment is a
- * documented follow-up, not a v1 concern).
- */
-const CANVAS_URL = process.env.ICE_URL ?? "http://localhost:5173";
+/** An explicit renderer dev-server override; production uses the bundled local build. */
+const RENDERER_DEV_URL = process.env.ICE_URL?.trim() || null;
 /** Every window of this instance joins one room (multi-room needs no more than a param later). */
 const ROOM = process.env.ICE_ROOM ?? "widgetlab";
 /** Test knobs (the smoke harness): open N windows at launch. */
 const WINDOWS = Math.max(1, Number(process.env.ICE_WINDOWS ?? "1") || 1);
+/** Opt out of tailnet startup for deterministic local development and tests. */
+const MESH_ENABLED = process.env.ICE_MESH !== "off";
+/** Opt-in renderer diagnostics for the real Electron smoke harness. */
+const RENDERER_DEBUG = process.env.ICE_RENDERER_DEBUG === "1";
 /** How long a fresh instance waits for a mesh link before opening windows anyway (see meshHold). */
 const LINK_GRACE_MS = 8_000;
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
+const appDir = path.join(srcDir, "..");
 const preloadPath = path.join(srcDir, "preload.cjs");
+const rendererEntry = path.join(appDir, "dist", "index.html");
 
 /**
  * The switchboard's whole memory: webContents.id → membership. Entries live
@@ -149,6 +151,10 @@ function scheduleResync(why) {
 const linkWaiters = new Set();
 
 async function startMeshBridge() {
+  if (!MESH_ENABLED) {
+    console.log("[widgetlab-desktop] mesh disabled by ICE_MESH=off (local-only)");
+    return;
+  }
   // Config precedence (lowest→highest): the dev .env beside the app, then the
   // user's .env in userData, then real env vars.
   const env = {
@@ -213,6 +219,16 @@ async function meshHold(meshStart) {
 /** Cascade offset per window so a multi-window launch never fully stacks. */
 let windowIndex = 0;
 
+async function loadRenderer(win) {
+  const query = new URLSearchParams({ collab: ROOM });
+  if (RENDERER_DEBUG) query.set("rendererDebug", "1");
+  if (RENDERER_DEV_URL !== null) {
+    await win.loadURL(`${RENDERER_DEV_URL.replace(/\/$/, "")}/?${query}`);
+    return;
+  }
+  await win.loadFile(rendererEntry, { search: query.toString() });
+}
+
 function createWindow() {
   const i = windowIndex++;
   const win = new BrowserWindow({
@@ -221,7 +237,10 @@ function createWindow() {
     x: 80 + (i % 6) * 48,
     y: 80 + (i % 6) * 40,
     webPreferences: {
-      preload: preloadPath, // contextIsolation + sandbox stay at their safe defaults
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
       // A fully-occluded Electron window reports `visibilityState: "hidden"` and
       // Chromium FREEZES its rAF loop — which is the engine's tick, so a covered
       // collaborator stops flushing presence AND stops applying inbound sync
@@ -231,9 +250,12 @@ function createWindow() {
     },
   });
   win.webContents.once("destroyed", () => leave(win.webContents.id, "window destroyed"));
-  const url = `${CANVAS_URL}/?collab=${encodeURIComponent(ROOM)}`;
-  win.loadURL(url).catch(() => {
-    const msg = `widgetlab-desktop could not reach the widgetlab dev server at ${CANVAS_URL}.<br/>Start it first: <code>pnpm --filter widgetlab dev</code> &nbsp;(then reload with Cmd/Ctrl+R)`;
+  void loadRenderer(win).catch(() => {
+    const source = RENDERER_DEV_URL ?? rendererEntry;
+    const hint = RENDERER_DEV_URL === null
+      ? "Build the bundled renderer with <code>pnpm --filter widgetlab-desktop build</code>, then reload with Cmd/Ctrl+R."
+      : "Start <code>pnpm --filter widgetlab-desktop dev:renderer</code>, then reload with Cmd/Ctrl+R.";
+    const msg = `widgetlab-desktop could not load its renderer from ${source}.<br/>${hint}`;
     void win.loadURL(`data:text/html,<body style="font:16px system-ui;padding:2rem">${encodeURIComponent(msg)}</body>`);
   });
   return win;

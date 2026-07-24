@@ -1,10 +1,9 @@
 /**
  * widgetlab-desktop preload — injects the transport bridge the renderer's ipc ByteChannel
- * (apps/widgetlab) binds to.
+ * (this package's bundled renderer) binds to.
  *
  * The bridge is deliberately TRANSPORT-SHAPED (join/leave/post/onMessage + open/resync lifecycle):
- * no Electron or truffle type reaches the renderer, so widgetlab stays a plain browser app that
- * happens to find `window.iceDesktop` present. Bytes cross the contextBridge by structured clone —
+ * no Electron or truffle type reaches the renderer. Bytes cross the contextBridge by structured clone —
  * `Uint8Array` round-trips faithfully — so no base64 framing anywhere; the channel carries RAW BYTES
  * (opaque ICE bootstrap frames), never envelope objects.
  *

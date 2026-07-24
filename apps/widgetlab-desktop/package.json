@@ -2,20 +2,43 @@
   "name": "widgetlab-desktop",
   "version": "0.0.0",
   "private": true,
-  "description": "The widgetlab demo as a minimal Electron app: an IPC switchboard in main relays ICE bootstrap frames between windows, and a truffle/tsnet mesh makes instances on a tailnet room members — no server.",
+  "description": "A standalone Electron build of Widgetlab with its renderer, IPC collaboration switchboard, and optional truffle/tsnet mesh in one package.",
   "type": "module",
   "main": "src/main.mjs",
   "scripts": {
-    "start": "electron .",
-    "smoke": "node scripts/smoke.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:renderer": "vite",
+    "build": "vite build",
+    "start": "pnpm run build && electron .",
+    "smoke": "pnpm run build && node scripts/smoke.mjs",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@vibecook/truffle": "0.7.3"
+    "@ice/core": "workspace:*",
+    "@ice/devtools": "workspace:*",
+    "@ice/dom": "workspace:*",
+    "@ice/ground": "workspace:*",
+    "@ice/kernel": "workspace:*",
+    "@ice/r3f": "workspace:*",
+    "@ice/react": "workspace:*",
+    "@react-three/drei": "^10",
+    "@react-three/fiber": "^9",
+    "@vibecook/truffle": "0.7.3",
+    "react": "^19",
+    "react-dom": "^19",
+    "three": "^0.185.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.185.0",
     "electron": "^43.1.0",
+    "happy-dom": "^20.0.0",
     "playwright-core": "^1.50.0",
+    "tailwindcss": "^4.0.0",
+    "vite": "^7.0.0",
     "vitest": "^3.0.0"
   }
 }

@@ -1,93 +1,89 @@
-# widgetlab-desktop — the widgetlab demo as a serverless desktop collab app
+# widgetlab-desktop
 
-[widgetlab](../widgetlab) running in a minimal Electron shell. The renderer is the unchanged
-browser app; the desktop shell contributes exactly one thing: **a transport**.
+A standalone Electron version of Widgetlab. This package owns the complete React renderer,
+styles, widget catalog, desktop collaboration adapter, Electron main/preload processes, and
+renderer tests. Production windows load `dist/index.html` directly from disk; neither startup nor
+the end-to-end smoke test depends on `apps/widgetlab` or a separate Vite server.
 
-- **Windows of one instance** — the Electron main process is a room *switchboard*: every window
-  is a collaborator, relayed over IPC. Frames are @ice/core's §6.5 bootstrap frames and stay
-  opaque — the switchboard never decodes a payload, holds no document state, resolves no
-  conflicts (convergence is the engine's job behind `joinDoc`).
-- **Instances across machines** — main additionally joins a
-  [truffle](https://github.com/jamesyong-42/truffle) mesh (Tailscale tsnet embedded in-process):
-  widgetlab-desktop instances on other machines discover each other by appId on your tailnet and
-  become room members — bootstrap frames over raw QUIC streams (each snapshot on its own stream,
-  so a join never head-of-line-blocks live increments), presence over UDP datagrams
-  (latest-lossy; oversize falls back reliable). No server anywhere, and no Tailscale install
-  needed: the app itself is the tailnet node.
-
-What syncs: every widget spawn/move/resize/edit (durable, gesture-atomic undo per peer), the
-full widget set including R3F/GL islands, and live presence cursors (each window shows every
-other collaborator's named cursor).
+The Electron main process is an IPC room switchboard. Every window is a collaborator, and
+`Cmd/Ctrl+N` opens another collaborator window. An optional
+[truffle](https://github.com/jamesyong-42/truffle) mesh lets app instances on the same tailnet join
+the room without a central server.
 
 ## Run
 
+From the repository root:
+
 ```bash
-pnpm install                          # repo root
-pnpm --filter widgetlab dev           # terminal 1 — the UI dev server (vite, :5173)
-pnpm --filter widgetlab-desktop start # terminal 2 — the Electron shell
+pnpm install
+pnpm --filter widgetlab-desktop start
 ```
 
-**Cmd/Ctrl+N** opens a second window — a second collaborator in the room, converging over IPC
-with zero network. `ICE_URL` overrides the dev-server origin; `ICE_ROOM` overrides the room
-name (default `widgetlab`).
+`start` builds this package's renderer and launches Electron against the local build. No web server
+is required.
 
-The renderer detects the desktop shell by the preload bridge (`window.iceDesktop`) and boots
-through `engine.docs.join()` over an IPC byte channel instead of creating a local document —
-the first peer in the room seeds the demo board; every later window/instance imports it.
+For one-command renderer HMR:
 
-### Across machines (the mesh)
-
-Put a Tailscale auth key in `apps/widgetlab-desktop/.env` (gitignored):
-
-```
-TS_AUTHKEY=tskey-auth-…    # Reusable + Ephemeral
+```bash
+pnpm --filter widgetlab-desktop dev
 ```
 
-Then start the app on each machine (each needs its own widgetlab dev server, or set `ICE_URL`).
-Instances register as ephemeral tailnet nodes, find each other by appId (`ice-collab`), and link
-up — the same room converges across machines with zero server. Without an auth key the first
-run opens a browser to authenticate the node interactively; without any tailnet the app just
-runs local-only.
+The development runner starts this package's Vite server, waits for it, launches Electron with an
+explicit `ICE_URL`, and shuts the server down when Electron exits.
 
-A joining instance holds its first window until the mesh link is up (or an 8s grace) — a window
-that hellos before the link would seed its own divergent genesis (the split-seed race; the
-engine's bootstrap declares the cold-start tie-break out of scope, so the shell makes it rare).
+Useful commands:
 
-**Link-flap repair.** truffle raw streams have no replay — anything in flight when a link drops
-is gone. When a link comes (back) up, main sends every window `ice:resync` and each active
-session re-offers its document base (`offerBase` → an un-addressed `SNAPSHOT_OFFER`): active
-peers merge it (loro dedupes; the offer subsumes whatever the outage dropped), buffering peers
-adopt it. No teardown, no re-join, no UI flash — cheaper than canvas-desktop's window-bounce
-because ICE's §6.5 protocol already defines every receiver's move for an offer.
-
-Dev knobs: `ICE_STATE_DIR` (tsnet state; set distinct dirs to run several instances on ONE
-machine — each is its own tailnet node), `ICE_DEVICE_NAME`, `ICE_WINDOWS` (open N windows at
-launch, staggered 2.5s so they don't split-seed).
-
-## How the pieces meet
-
-```
-renderer (widgetlab, unchanged)               main (this package)
-  boot picks the doc path:                      src/main.mjs — room switchboard
-    window.iceDesktop present?  ──────►           members: webContents ↔ room
-      └ docs.join(ipcByteChannel)                 forwards opaque frames room-wide
-        via src/preload.cjs (contextBridge;       reads ONLY bytes[0] to pick a mesh
-        Uint8Array structured-clones)             lane: presence→UDP · snapshot→own
-    absent → docs.create() (plain browser)        QUIC stream · rest→durable stream
-                                                  + truffle mesh node (mesh.mjs)
+```bash
+pnpm --filter widgetlab-desktop typecheck
+pnpm --filter widgetlab-desktop test
+pnpm --filter widgetlab-desktop smoke
 ```
 
-The renderer-side channel is ~40 lines in widgetlab (`ipcByteChannel`) satisfying the same
-`ByteChannel` surface as `broadcastChannelByteChannel` / `webSocketByteChannel` — the engine's
-bootstrap state machine cannot tell the difference.
+The smoke test builds the renderer, launches two real Electron windows over `file://`, verifies both
+joined through IPC, then checks durable widget convergence and ephemeral presence convergence.
 
-## Not in v1 (deliberate)
+## Collaboration
 
-- **Packaging** (a distributable .app): canvas-desktop's `@electron/packager` + loopback
-  static-server treatment ports directly when wanted; this example runs against the dev server.
-- **Persistence**: the room is the source of truth while any instance runs; the board resets
-  when the last instance quits. `docs.autosave()` to userData is the obvious follow-up.
-- **Cross-genesis merge**: two instances that each seeded offline (both cold-started with no
-  link) hold unrelated documents; a later offer-merge between them is undefined-ish (two board
-  roots). meshHold + the launch stagger make it rare; fixing it for real is an engine-level
-  tie-break, tracked in @ice/core's bootstrap notes.
+The renderer detects `window.iceDesktop`, which is exposed by `src/preload.cjs`, and joins the room
+through an IPC `ByteChannel`. The first window seeds the demo board; later windows and linked app
+instances import it. ICE bootstrap frames stay opaque in the Electron main process.
+
+To enable cross-machine collaboration, put a reusable ephemeral Tailscale auth key in
+`apps/widgetlab-desktop/.env` (gitignored):
+
+```dotenv
+TS_AUTHKEY=tskey-auth-…
+```
+
+Without a key, truffle may open the browser for interactive tailnet authentication. Set
+`ICE_MESH=off` for explicitly local-only operation.
+
+Other runtime controls:
+
+- `ICE_ROOM` changes the room name (default: `widgetlab`).
+- `ICE_WINDOWS` opens multiple windows at launch, staggered to avoid split seeding.
+- `ICE_STATE_DIR` changes the embedded tsnet state directory.
+- `ICE_DEVICE_NAME` changes the tailnet device name.
+- `ICE_URL` explicitly selects a renderer development server; normal production startup does not
+  set or need it.
+- `ICE_RENDERER_DEBUG=1` exposes the engine diagnostics used by the Electron smoke harness.
+
+## Layout
+
+```text
+index.html + src/main.tsx
+  React renderer, widgets, panels, cursor systems
+             │ window.iceDesktop
+             ▼
+src/preload.cjs
+  context-isolated IPC byte bridge
+             │
+             ▼
+src/main.mjs
+  window lifecycle + local room switchboard
+             │
+             └── src/mesh.mjs → optional tailnet QUIC/UDP mesh
+```
+
+The room is currently the source of truth while an instance is running; document persistence and
+cross-genesis conflict resolution remain engine-level follow-ups.
