@@ -5,9 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@react-three/fiber@9.6.1':
-    hash: 7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973
-    path: patches/@react-three__fiber@9.6.1.patch
+  '@react-three/fiber@9.6.1': 7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973
 
 importers:
 
@@ -108,8 +106,8 @@ importers:
         specifier: ^9
         version: 9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       loro-crdt:
-        specifier: ^1.13.6
-        version: 1.13.6
+        specifier: ^1.13.8
+        version: 1.13.8
       react:
         specifier: ^19
         version: 19.2.7
@@ -222,8 +220,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/react
       loro-crdt:
-        specifier: ^1.13.6
-        version: 1.13.6
+        specifier: ^1.13.8
+        version: 1.13.8
       react:
         specifier: ^19
         version: 19.2.7
@@ -268,8 +266,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
       '@vibecook/strata-ecs':
-        specifier: 0.10.0
-        version: 0.10.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.11.0
+        version: 0.11.0(loro-crdt@1.13.8)(react@19.2.7)
       react:
         specifier: ^19
         version: 19.2.7
@@ -362,16 +360,73 @@ importers:
 
   apps/widgetlab-desktop:
     dependencies:
+      '@ice/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ice/devtools':
+        specifier: workspace:*
+        version: link:../../packages/devtools
+      '@ice/dom':
+        specifier: workspace:*
+        version: link:../../packages/dom
+      '@ice/ground':
+        specifier: workspace:*
+        version: link:../../packages/ground
+      '@ice/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@ice/r3f':
+        specifier: workspace:*
+        version: link:../../packages/r3f
+      '@ice/react':
+        specifier: workspace:*
+        version: link:../../packages/react
+      '@react-three/drei':
+        specifier: ^10
+        version: 10.7.7(@react-three/fiber@9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1))(@types/react@19.2.17)(@types/three@0.185.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
+      '@react-three/fiber':
+        specifier: ^9
+        version: 9.6.1(patch_hash=7c46f42f7deca89f364ec3cc5d11d17bd6dd4cbe00090fbcf679e776da460973)(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(three@0.185.1)
       '@vibecook/truffle':
         specifier: 0.7.3
         version: 0.7.3(ws@8.21.0)
+      react:
+        specifier: ^19
+        version: 19.2.7
+      react-dom:
+        specifier: ^19
+        version: 19.2.7(react@19.2.7)
+      three:
+        specifier: ^0.185.0
+        version: 0.185.1
     devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.0.0
+        version: 4.3.2(vite@7.3.6(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0))
+      '@types/react':
+        specifier: ^19
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.2.3(@types/react@19.2.17)
+      '@types/three':
+        specifier: ^0.185.0
+        version: 0.185.1
       electron:
         specifier: ^43.1.0
         version: 43.1.1
+      happy-dom:
+        specifier: ^20.0.0
+        version: 20.10.6
       playwright-core:
         specifier: ^1.50.0
         version: 1.61.1
+      tailwindcss:
+        specifier: ^4.0.0
+        version: 4.3.2
+      vite:
+        specifier: ^7.0.0
+        version: 7.3.6(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)
@@ -382,11 +437,11 @@ importers:
         specifier: workspace:*
         version: link:../kernel
       '@vibecook/strata-ecs':
-        specifier: 0.10.0
-        version: 0.10.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.11.0
+        version: 0.11.0(loro-crdt@1.13.8)(react@19.2.7)
       loro-crdt:
-        specifier: ^1.13.6
-        version: 1.13.6
+        specifier: ^1.13.8
+        version: 1.13.8
 
   packages/devtools:
     dependencies:
@@ -394,8 +449,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@vibecook/strata-ecs':
-        specifier: 0.10.0
-        version: 0.10.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.11.0
+        version: 0.11.0(loro-crdt@1.13.8)(react@19.2.7)
     devDependencies:
       happy-dom:
         specifier: ^20.0.0
@@ -427,8 +482,8 @@ importers:
         specifier: ^0.185.0
         version: 0.185.1
       '@vibecook/strata-ecs':
-        specifier: 0.10.0
-        version: 0.10.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.11.0
+        version: 0.11.0(loro-crdt@1.13.8)(react@19.2.7)
       happy-dom:
         specifier: ^20.0.0
         version: 20.10.6
@@ -442,11 +497,11 @@ importers:
   packages/ice:
     dependencies:
       '@vibecook/strata-ecs':
-        specifier: 0.10.0
-        version: 0.10.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.11.0
+        version: 0.11.0(loro-crdt@1.13.8)(react@19.2.7)
       loro-crdt:
-        specifier: ^1.13.6
-        version: 1.13.6
+        specifier: ^1.13.8
+        version: 1.13.8
       rbush:
         specifier: ^3.0.1
         version: 3.0.1
@@ -532,8 +587,8 @@ importers:
         specifier: ^0.185.0
         version: 0.185.1
       '@vibecook/strata-ecs':
-        specifier: 0.10.0
-        version: 0.10.0(loro-crdt@1.13.6)(react@19.2.7)
+        specifier: 0.11.0
+        version: 0.11.0(loro-crdt@1.13.8)(react@19.2.7)
       react:
         specifier: ^19
         version: 19.2.7
@@ -1313,8 +1368,8 @@ packages:
     peerDependencies:
       react: '>= 16.8.0'
 
-  '@vibecook/strata-ecs@0.10.0':
-    resolution: {integrity: sha512-zigmXZ/5maK3r66HWp70SPxgn9ZpMvfOSZ3p5Wz3tbBssWY92Ngh0O9JSaEDTPMwC4TKmNxDwuwKwY1T9BDbMQ==}
+  '@vibecook/strata-ecs@0.11.0':
+    resolution: {integrity: sha512-Q/7tBK7Fo/ZBFFaJYJSSCYsplsqTv9qF4HO6vWubK7mHGlfw8J+CwkYqbQP7mJXbn/N7/52JYazj9Boyl+tFsg==}
     engines: {node: '>=20'}
     peerDependencies:
       loro-crdt: '>=1'
@@ -1793,8 +1848,8 @@ packages:
     resolution: {integrity: sha512-IXO6OCs9yg8tMKzfPZ1YmheJbZCiEsnBdcB03l0OcfK9prKnJb96siuHCr5Fl37/yo9DnKU+TLpxzTUspw9shg==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
-  loro-crdt@1.13.6:
-    resolution: {integrity: sha512-OsnKW64J+1XdCMafAqR+aASn/wQEgDzwcDwu6dDOVSxxbLPFgnU6LX8ja+hd5PnEcT+kuz9eXSagvlYXsRbQIw==}
+  loro-crdt@1.13.8:
+    resolution: {integrity: sha512-GfhD4Q7UU8lghobRjQhw19qH3B80h5ilRj3snv/QsfxK0hbiVfnDpHsvnEXg8+iMfg5S6cNMczgXJh3haxXTbA==}
 
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
@@ -2822,9 +2877,9 @@ snapshots:
       '@use-gesture/core': 10.3.1
       react: 19.2.7
 
-  '@vibecook/strata-ecs@0.10.0(loro-crdt@1.13.6)(react@19.2.7)':
+  '@vibecook/strata-ecs@0.11.0(loro-crdt@1.13.8)(react@19.2.7)':
     optionalDependencies:
-      loro-crdt: 1.13.6
+      loro-crdt: 1.13.8
       react: 19.2.7
 
   '@vibecook/truffle-native@0.7.3': {}
@@ -3283,7 +3338,7 @@ snapshots:
 
   load-tsconfig@0.2.5: {}
 
-  loro-crdt@1.13.6: {}
+  loro-crdt@1.13.8: {}
 
   loupe@3.2.1: {}
 

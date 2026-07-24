@@ -16,7 +16,7 @@
     "@ice/ground": "workspace:*",
     "@ice/kernel": "workspace:*",
     "@ice/react": "workspace:*",
-    "loro-crdt": "^1.13.6",
+    "loro-crdt": "^1.13.8",
     "react": "^19",
     "react-dom": "^19",
     "three": "^0.185.0"
