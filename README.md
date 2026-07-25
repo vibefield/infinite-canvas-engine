@@ -126,11 +126,47 @@ engine.ops.enterContainer(frame);                // camera memory + index rebuil
 Run the demos: `pnpm --filter graybox|cardboard|glboard|nodeboard|moodboard dev`
 (nodeboard/moodboard support `?room=x&relay=ws://localhost:9301` after `pnpm relay`).
 
+## Limits
+
+Measured, not estimated. The bench source in `packages/core/bench/` is the
+source of truth; [`docs/benchmarks.md`](docs/benchmarks.md) records the full
+output (Apple M1 Max, 2026-07-15).
+
+**Collaboration is the tightest ceiling — plan shared boards around ~3,000
+objects.** A local-only document scales to ~100k, but a collaboratively-edited
+one is bounded by how fast a peer applies an incoming edit, which still scales
+with document size: roughly **3,000 objects for an actively-editing peer**,
+**~40,000 for a receive-only one**. Partition large shared boards into containers.
+
+**Scale through containers, not flat boards.** Idle frames no longer scale with
+the board (872 µs at 100k entities, down from 25 ms before the churn gates).
+Camera gestures still can: nested boards stay cheap (276–460 µs at 10k,
+2.6–4.4 ms at 100k), but a **flat, all-active 100k board costs 40–64 ms per
+gesture frame** — the honest O(N) ceiling, since nothing can be skipped when
+everything is active. Containers let active-scoped queries skip whole chunks.
+
+**Opening a big document is a one-time cost**: full-document projection at
+attach is ~0.3–0.5 s at 10k rows, ~3.2–3.9 s at 100k. Envelope ≈ 100 B/row.
+
+**Deliberately out of scope** — each has a named extension seam rather than a
+hidden TODO: a general layout engine (beyond `ops.arrange`), rich text,
+comments/threads, and permissions. strata has no authority model, so multi-user
+trust is the application's to own.
+
+**Not yet built**: an engine-level focus model for widget keyboard exclusivity
+and wheel/scroll opt-out (design-007 is a reviewed proposal, no code). Native
+form controls already work — the keymap ignores keystrokes targeting an `input`,
+`textarea`, `select`, or `contenteditable` — but a widget wanting arrow keys or
+its own scrolling has no engine contract yet.
+
+**The substrate is pre-1.0**: `@vibecook/strata-ecs` minor versions may break
+APIs, and this repo tracks them closely (eight releases absorbed to date).
+
 ## Development
 
 ```sh
 pnpm install
-pnpm run ci        # typecheck + lint + tests (~440) + import walls — the merge gate
+pnpm run ci        # typecheck + lint + 754 tests + import walls — the merge gate
 ```
 
 - Design docs: the reviewed decision record lives in `draft/` (local branch);
@@ -138,8 +174,13 @@ pnpm run ci        # typecheck + lint + tests (~440) + import walls — the merg
 - Every counterintuitive behavior is a cited decision — check the design
   docs before "fixing" it (ports on-demand, stratified z, OS cursor, …).
 - Improvement asks against strata-ecs are petitions: `docs/strata-petitions.md`.
+- Release notes: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Status
+
+Current release: **0.2.0**. Documents written by 0.1.0 migrate automatically on
+open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0 build opening a
+migrated document still gets a correct read-only view. See the changelog.
 
 Engine v1 is complete: kernel math, the engine spine, the interaction stack,
 durable documents + per-gesture undo, the DOM widget runtime, GL islands, the

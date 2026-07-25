@@ -66,6 +66,7 @@ per-gesture undo, gesture-aware autosave, and live presence when you
 | `@vibecook/ice/react` | `<InfiniteCanvas>`, `<EngineProvider>`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useUndoStatus`, `usePresencePeers`, …), `attachKeymap`. |
 | `@vibecook/ice/r3f` | GL widget islands + virtual-texture compositor, `<GLViews>`, `useIslandFrame`, the GL pointer router. Peers: `three`, `@react-three/fiber`. |
 | `@vibecook/ice/dom` | DOM planes, adapters, and reflectors — for custom shells without React. |
+| `@vibecook/ice/ground` | The P0 ground stratum as one WebGPU canvas (grid, wires, snap guides) with automatic WebGL2 fallback. Passed to `<InfiniteCanvas ground={…}>`. Peer: `three`. |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)` — live pointers/gestures, planes, sovereignty, and loop tabs. |
 | `@vibecook/ice/kernel` | Pure math: coordinates, spatial index, snap, wire geometry, zoom bands. Zero dependencies beyond `rbush`. |
 
@@ -73,4 +74,38 @@ React, `react-dom`, `three`, and `@react-three/fiber` are **optional** peer
 dependencies — install only what your surfaces use. The core entry is fully
 headless.
 
-MIT © James Yong
+## Limits
+
+Measured, not estimated. The bench source in `packages/core/bench/` is the source
+of truth; [`docs/benchmarks.md`](https://github.com/jamesyong-42/infinite-canvas-engine/blob/main/docs/benchmarks.md)
+records the full output (Apple M1 Max, 2026-07-15).
+
+**Collaboration is the tightest ceiling — plan shared boards around ~3,000
+objects.** A local-only document scales to ~100k, but a collaboratively-edited one
+is bounded by how fast a peer applies an incoming edit, which still scales with
+document size: roughly **3,000 objects for an actively-editing peer**, **~40,000
+for a receive-only one**. Partition large shared boards into containers.
+
+**Scale through containers, not flat boards.** Idle frames no longer scale with the
+board (872 µs at 100k entities). Camera gestures still can: nested boards stay cheap
+(276–460 µs at 10k, 2.6–4.4 ms at 100k), but a **flat, all-active 100k board costs
+40–64 ms per gesture frame** — the honest O(N) ceiling, since nothing can be skipped
+when everything is active. Containers let active-scoped queries skip whole chunks.
+
+**Opening a big document is a one-time cost**: full-document projection at attach is
+~0.3–0.5 s at 10k rows, ~3.2–3.9 s at 100k. Envelope ≈ 100 B/row.
+
+**Deliberately out of scope** — each has a named extension seam rather than a hidden
+TODO: a general layout engine (beyond `ops.arrange`), rich text, comments/threads,
+and permissions. strata has no authority model, so multi-user trust is the
+application's to own.
+
+**Not yet built**: an engine-level focus model for widget keyboard exclusivity and
+wheel/scroll opt-out. Native form controls already work — the keymap ignores
+keystrokes targeting an `input`, `textarea`, `select`, or `contenteditable` — but a
+widget wanting arrow keys or its own scrolling has no engine contract yet.
+
+**The substrate is pre-1.0**: `@vibecook/strata-ecs` minor versions may break APIs.
+
+[Changelog](https://github.com/jamesyong-42/infinite-canvas-engine/blob/main/CHANGELOG.md)
+· MIT © James Yong
