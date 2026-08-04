@@ -4,6 +4,73 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [0.3.0] — 2026-08-04
+
+One feature: **the frame gate** — the frozen-world mode design-005 §4 named as a
+separate concept when stage holds landed in July, and deliberately left unbuilt
+until something needed it. Full-window chrome (a control-room overlay that
+covers the canvas outright) needed it: a stage hold quiets the compositor but
+the engine keeps ticking at display rate for pixels nobody can see.
+
+### Added
+
+- **`engine.frame` / `ce.frame` — freeze the engine, not just its rendering.**
+  `frame.freeze(name)` takes a refcounted NAMED freeze and returns an
+  idempotent thaw, exactly like `stage.background(name)`. While one is held the
+  host loop stops calling `step` entirely: no systems, no publish, no notify,
+  no reflectors — and no scheduled rAF, because a stopped engine should leave
+  the browser nothing queued. `FrameMode.freezeHolds` mirrors the count into
+  the world for inspection; `frame.holds()` names the holders.
+
+  **Which one to reach for**: `stage.background` for chrome that RECEDES the
+  canvas (a menu panel over a live board — undo, collab and tweens must still
+  land visibly behind it); `frame.freeze` for chrome that COVERS it. A freeze
+  under a partial overlay will read as broken, because the canvas becomes a
+  photograph until thaw. Stage holds are unchanged and did not stretch.
+
+- **The settle protocol** — `frame.settleWhile(name, busy)`. A freeze does not
+  park on the spot; it walks the loop until every registered reporter is quiet
+  and then takes one further step, so the frozen image is whole rather than
+  half-drawn. `<GLViews>` registers pending first-paints and mid-flight lift
+  eases; the facade registers the mid-gesture read. Bounded by `SETTLE_CAP`
+  (120 frames) with a dev warning naming whoever wedged it: a bad reporter
+  makes a freeze park late, never never.
+
+- **`useFrameFreeze(engine, active, name)`** in `@vibecook/ice/react` — the
+  `useStageHold` shape, where the effect cleanup is the thaw, so an overlay
+  that unmounts or crashes can never wedge the engine parked.
+
+- **`isMidGesture` / `anyGestureNonTerminal`** are exported from core now. The
+  predicate autosave used privately to defer a save (so it never captures a
+  half-applied interaction) is the same one the settle needs; one definition,
+  so the two cannot drift.
+
+### Behavior worth knowing
+
+- A freeze **cancels active gestures** at the transition. A parked loop never
+  reaches `JustEnded`, so a gesture frozen mid-flight would hold runtime edits
+  that never commit.
+- A thaw **drops whatever input queued while parked**. Adapters never stop
+  enqueuing; those facts describe a canvas nobody could interact with and carry
+  a `tMs` that is now minutes stale. Same posture as the adapter's window-blur
+  cancel (design-003 §8).
+- **Remote edits keep landing in the document while frozen** — they simply
+  reach the WORLD on thaw. Autosave is event-driven end to end
+  (`subscribeOutbound` on each sealed local commit, `subscribeRemote` after
+  each `applyRemote`, no polling), so a frozen engine cannot lose a document.
+- **Widget-owned animation is outside the gate.** A widget's own CSS animation
+  or playing media keeps running; the engine freezes engine-driven pixels.
+- Resume rides the existing 64 ms `dt` clamp, so an hour parked advances tweens
+  by one ordinary frame instead of teleporting them to their end.
+
+### Breaking
+
+- `Engine` gained a required `frame` member. Constructed engines
+  (`createEngine` / `createCanvasEngine`) get it for free and hosts need no
+  change — `startRafLoop(engine)` keeps its exact signature and reads the gate
+  off the engine it was already handed. Only a hand-rolled `Engine`
+  implementation would need updating.
+
 ## [0.2.0] — 2026-07-25
 
 Everything since 0.1.0 (2026-07-12): 79 commits spanning M8 (node editor,
