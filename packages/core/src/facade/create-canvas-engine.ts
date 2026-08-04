@@ -39,6 +39,8 @@ import {
 } from "../catalog";
 import { Active } from "../catalog/camera-derived";
 import { createEngine, type Engine } from "../engine/engine";
+import type { FrameControl } from "../engine/frame-control";
+import { isMidGesture } from "../interaction/gesture-status";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { guardedTransaction } from "../guards/guarded-tx";
 import { writeRuntimeResource } from "../guards/resource-writer";
@@ -200,6 +202,14 @@ export interface CanvasEngine {
   readonly ops: CanvasOps;
   readonly docs: CanvasDocs;
   readonly stage: StageControl;
+  /**
+   * The frame gate (2026-08-04) — `stage`'s stricter sibling. A background
+   * hold is presentation policy over a LIVE world; a freeze stops the host
+   * loop outright. Reach for `stage` when chrome RECEDES the canvas, `frame`
+   * when chrome COVERS it. Passthrough of `engine.frame`, so there is one gate
+   * whether you hold the facade or the raw engine.
+   */
+  readonly frame: FrameControl;
   readonly budgets: { readonly keepMounted: number; readonly fboBytes: number };
   /** step(now) passthrough — the app's rAF loop drives this. */
   step(now: number): void;
@@ -612,6 +622,29 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     holds: () => [...stageHolds.values()],
   };
 
+  // --- frame freeze wiring (the gate lives on the engine; these are its two
+  // stack-level consequences, installed once at construction) ---------------
+  //
+  // A gesture may not be left in flight across a freeze: its runtime edits are
+  // uncommitted until the recognizer reaches JustEnded, and a parked loop never
+  // gets there. So a freeze CANCELS between frames and the reporter below keeps
+  // the settle walking until the recognizers are terminal — cancellation is a
+  // one-tick resource the ctl:spawn sweep acts on NEXT tick, so this is a walk,
+  // never a single frame.
+  engine.frame.settleWhile("gestures", () => isMidGesture(world));
+  engine.frame.onChange(() => {
+    if (engine.frame.isFrozen()) {
+      cancelActiveGestures(world);
+      return;
+    }
+    // Thaw. The adapters never stopped enqueuing, so the queue holds facts
+    // about a canvas nobody could interact with, stamped with a `tMs` that is
+    // now minutes stale — replaying them would hand recognizers a burst of
+    // impossible history. Drop them, exactly as the adapter drops a pointer
+    // across a window blur (design-003 §8).
+    stack.queue.drain();
+  });
+
   return {
     world,
     engine,
@@ -621,6 +654,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     ops,
     docs,
     stage,
+    frame: engine.frame,
     budgets,
     step: (now) => engine.step(now),
     dispose() {

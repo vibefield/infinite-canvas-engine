@@ -92,6 +92,7 @@ export {
   type PublishHook,
   type SystemRunRecord,
 } from "./engine/engine";
+export { createFrameControl, SETTLE_CAP, type FrameControl } from "./engine/frame-control";
 
 // Write-path guards.
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";
@@ -140,6 +141,7 @@ export {
   type InteractionCoreOpts,
   type InteractionStack,
 } from "./interaction/install";
+export { anyGestureNonTerminal, isMidGesture } from "./interaction/gesture-status";
 export type { MarqueeBuffer } from "./systems/l3-marquee";
 export { DEFAULT_SPAWN_PROFILES, type SingleKindName, type SpawnProfiles } from "./systems/l2-recognize";
 export { createCursorSync } from "./systems/l4-cursor";

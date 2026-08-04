@@ -302,6 +302,8 @@ export function GLViews({
   // composite sum into one per-frame gpu figure.
   const statsCbRef = useRef(onFrameStats);
   statsCbRef.current = onFrameStats;
+  /** Work the last pass left owed — the freeze settle's GL reporter reads it. */
+  const paintsOwedRef = useRef(false);
   const gpuProfilerRef = useRef<GpuProfilerLike | null>(null);
   const gpuProfilerState = useRef<"idle" | "loading" | "ready" | "failed">("idle");
   useEffect(
@@ -471,7 +473,22 @@ export function GLViews({
     // otherwise the seam parks until the next requestFrame latch. The bridge's
     // r3fAdvance reflector consumes this on the engine's own loop — no timer.
     bridge.schedulePass(selfSustainPlan(stats, performance.now() - passStart, maxAnimationFps));
+    // Freeze settle (2026-08-04): a freeze must not park on a half-drawn
+    // board, so report the work this pass left OWED — islands still waiting
+    // for a first paint, a lift ease mid-flight. Both self-schedule a
+    // follow-up pass, which is what lets this ref drain to false instead of
+    // latching. Hot islands are deliberately not counted: an animated island
+    // is never "done", and stopping the clock on one is exactly what a freeze
+    // is for.
+    paintsOwedRef.current = stats.pendingPaints > 0 || stats.liftAnimating;
   }, 1);
+
+  // The reporter reads the ref, so a parked seam keeps its last answer — false,
+  // because the settle only ends on a pass that owed nothing.
+  useEffect(
+    () => engine.frame.settleWhile("gl-paints", () => paintsOwedRef.current),
+    [engine],
+  );
 
   // --- island membership (mount store → gl-surface islands) -----------------
   const entries = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);

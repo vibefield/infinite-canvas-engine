@@ -55,6 +55,25 @@ export function useStageHold(engine: CanvasEngine, active: boolean, name: string
   }, [engine, active, name]);
 }
 
+/**
+ * Freeze the engine while `active` (ce.frame, 2026-08-04) — {@link useStageHold}'s
+ * stricter sibling, same lifecycle sugar: the effect cleanup IS the thaw, so an
+ * overlay that unmounts (or crashes) can never wedge the engine parked.
+ *
+ * WHICH ONE. A stage hold quiets discretionary rendering over a world that
+ * keeps stepping — right for chrome that RECEDES the canvas, where undo,
+ * collab and tweens must still land visibly behind a partial overlay. A freeze
+ * stops the loop outright — right for chrome that COVERS the canvas, where
+ * every frame behind it is work nobody can see. Reaching for a freeze under a
+ * partial overlay will look broken: the canvas is a photograph until thaw.
+ */
+export function useFrameFreeze(engine: CanvasEngine, active: boolean, name: string): void {
+  useEffect(() => {
+    if (!active) return undefined;
+    return engine.frame.freeze(name);
+  }, [engine, active, name]);
+}
+
 let warnedUseWorld = false;
 
 /**

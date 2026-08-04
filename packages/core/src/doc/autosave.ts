@@ -32,18 +32,8 @@
  * they come back as `{ status: "quarantined", reason, bytes }` so the app can
  * stash the bytes aside and start fresh.
  */
-import { Any, defineQuery } from "@vibecook/strata-ecs";
 import type { World } from "@vibecook/strata-ecs";
-import {
-  Camera,
-  Drag,
-  GesturePhases,
-  LongPress,
-  Pinch,
-  Tap,
-  WheelPan,
-  WheelZoom,
-} from "../catalog";
+import { isMidGesture } from "../interaction/gesture-status";
 import { openDocSession, type DocSession, type DocSessionOpts } from "./doc-kit";
 import type { DocVersionReport } from "./version-gate";
 
@@ -106,33 +96,6 @@ export interface Autosave {
   state(): AutosaveState;
 }
 
-const gestureQ = defineQuery([Any(Tap, LongPress, Drag, Pinch, WheelPan, WheelZoom)]);
-const P = GesturePhases;
-
-/**
- * Any recognizer NOT in a terminal phase ⇒ a gesture is in flight (mirrors the
- * cleanup.ts terminal definition: Failed/Cancelled/Ended, plus Recognized-Tap).
- * A save while this holds could straddle a gesture's pre-commit runtime edits.
- */
-function anyGestureNonTerminal(world: World): boolean {
-  let active = false;
-  world.query(gestureQ).each((b) => {
-    for (const r of b) {
-      const e = b.entity(r);
-      const terminal =
-        world.hasTag(e, P.tags.Failed) ||
-        world.hasTag(e, P.tags.Cancelled) ||
-        world.hasTag(e, P.tags.Ended) ||
-        (world.hasTag(e, P.tags.Recognized) && world.has(e, Tap));
-      if (!terminal) {
-        active = true;
-        return;
-      }
-    }
-  });
-  return active;
-}
-
 function defaultSchedule(fn: () => void, ms: number): CancelScheduled {
   const id = setTimeout(fn, ms);
   return () => clearTimeout(id);
@@ -179,8 +142,7 @@ export function startAutosave(session: DocSession, opts: AutosaveOpts): Autosave
   let writing = false;
   let writeInFlight: Promise<void> = Promise.resolve();
 
-  const deferred = (): boolean =>
-    world.getResource(Camera)?.gesturing === true || anyGestureNonTerminal(world);
+  const deferred = (): boolean => isMidGesture(world);
 
   const clearTimer = (): void => {
     if (cancelTimer !== undefined) {

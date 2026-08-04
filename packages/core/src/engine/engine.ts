@@ -21,6 +21,7 @@
  */
 import type { World } from "@vibecook/strata-ecs";
 import type { AnySystem } from "./pipeline";
+import { createFrameControl, type FrameControl } from "./frame-control";
 import { setFrameInfo } from "./frame-info";
 import { createPipelineRegistry, type PhaseGroup } from "./pipeline";
 import { createReflectorRegistry, type ReflectorDef } from "./reflectors";
@@ -60,6 +61,16 @@ export interface Engine {
   onPublish(hook: PublishHook): () => void;
   /** Run one full frame. `now` in ms (rAF timestamp or a test counter). */
   step(now: number): void;
+  /**
+   * The frame gate (2026-08-04): freeze/thaw plus the settle protocol a host
+   * loop consults before each frame. It lives HERE, next to the step it
+   * governs, so every host gets it without a new argument — and so a
+   * subsystem holding only the `Engine` (the GL compositor) can report itself
+   * busy. `step()` itself stays unconditional: the gate governs the loop, not
+   * the primitive, which keeps headless hosts and traces driving frames by
+   * hand exactly as before.
+   */
+  readonly frame: FrameControl;
   /** Arm per-system run/skip + µs collection (idempotent; costs timer calls per system). */
   enableTelemetry(): void;
   /** The most recent completed frame's readout (undefined until telemetry armed + one step). */
@@ -73,6 +84,7 @@ export function createEngine(world: World, opts?: EngineOpts): Engine {
     opts?.onReflectorFault ? { onFault: opts.onReflectorFault } : undefined,
   );
   const publishHooks: PublishHook[] = [];
+  const frame = createFrameControl(world);
 
   let telemetryArmed = false;
   let last: FrameTelemetry | undefined;
@@ -84,6 +96,7 @@ export function createEngine(world: World, opts?: EngineOpts): Engine {
 
   return {
     world,
+    frame,
 
     addSystems(group, ...systems) {
       return pipeline.add(group, ...systems);

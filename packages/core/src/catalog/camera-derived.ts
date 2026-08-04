@@ -51,9 +51,32 @@ export const ActiveTool = defineResource("ActiveTool", { id: field("string", { d
  * NOT a full step-pause: a menu panel floats over a still-visible canvas,
  * and a frozen world would leave undo/collab visually stale (rev-2 decision,
  * recorded — a stricter frozen-world mode would be a separate concept).
+ * That separate concept is now BUILT (2026-08-04): see {@link FrameMode}.
+ * Holds keep their exact meaning — nothing here stretched.
  */
 export const StageMode = defineResource("StageMode", {
   backgroundHolds: field("u32", { default: 0 }),
+});
+
+/**
+ * Frame gate mirror (2026-08-04) — the stricter sibling {@link StageMode}'s
+ * rev-2 decision named and left for later.
+ *
+ * A background hold is presentation policy over a LIVE world. A freeze
+ * (`engine.frame.freeze(name)`) stops the host loop outright: no step, so no
+ * systems, no publish, no notify, no reflectors, no rAF — for chrome that
+ * COVERS the canvas, where every frame drawn behind it is work nobody can see.
+ * This resource is the world-truth mirror of that refcount; the tokens live on
+ * the control, out of ECS, exactly as stage holds do.
+ *
+ * Reading it tells you the engine is frozen. It cannot tell you a frame is
+ * coming, because while the count is non-zero none is — and for the same
+ * reason nothing can OBSERVE it while frozen (a parked world fires no
+ * observers). It exists for inspection: devtools, tests, and consumers that
+ * want the fact in hand on thaw.
+ */
+export const FrameMode = defineResource("FrameMode", {
+  freezeHolds: field("u32", { default: 0 }),
 });
 
 /** Global snap toggle + threshold in screen px (scaled by zoom at use, design-003 §5.2). */

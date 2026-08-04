@@ -19,6 +19,7 @@ export { WidgetRoot, type WidgetComponentProps, type WidgetHosts, type WidgetRoo
 export {
   EngineProvider,
   useCanvasEngine,
+  useFrameFreeze,
   useOps,
   useStageHold,
   useWorld,
