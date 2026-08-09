@@ -43,6 +43,7 @@ export interface ResourceMeta {
 }
 
 const componentMeta = new Map<Component, ComponentMeta>();
+const componentsByIceName = new Map<string, Component>();
 const tagNames = new Map<Tag, string>();
 const relationMeta = new Map<Relation, RelationMeta>();
 const resourceMeta = new Map<Resource, ResourceMeta>();
@@ -74,7 +75,32 @@ export function defineComponent<const Sch extends RawSchema>(
     eidFields: fields.filter(([, f]) => isEidField(f)).map(([k]) => k),
     requiredFields: fields.filter(([, f]) => !hasDefault(f)).map(([k]) => k),
   });
+  componentsByIceName.set(name, c as Component);
   return c;
+}
+
+/**
+ * Reuse-or-define by NAME (design-008 §3.1): strata's schema registry throws
+ * on duplicate identifiers (its registry.ts:38), and rename legacy components
+ * (`<oldType>:<group>`) can legitimately re-enter the process — a test that
+ * defined the old widget before resetting ice registries, or a hot-reload
+ * double-eval — while strata's global registry survives. An existing
+ * SAME-SHAPED component is the same component: reuse its handle. A mismatched
+ * shape under the same name is a real collision: throw. The shape compare is
+ * JSON-stringify over the recorded raw schema — sound here because both sides
+ * are built by the same `strataFieldOf` constructors in the same field order.
+ */
+export function ensureComponent<const Sch extends RawSchema>(
+  name: string,
+  schema: Sch,
+): Component {
+  const existing = componentsByIceName.get(name);
+  if (existing === undefined) return defineComponent(name, schema) as Component;
+  const recorded = componentMeta.get(existing);
+  if (recorded === undefined || JSON.stringify(recorded.schema) !== JSON.stringify(schema)) {
+    throw new Error(`ice: ensureComponent("${name}") — a component with this name exists with a DIFFERENT shape.`);
+  }
+  return existing;
 }
 
 export function defineTag(name: string): Tag {

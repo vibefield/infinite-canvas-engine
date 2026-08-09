@@ -193,12 +193,15 @@ export { p, type JsonShape, type PropSpec, type PropsDecl, type StandardSchemaV1
 export {
   WidgetEquipped,
   defineWidget,
+  renames,
   widgets,
   type SizeMode,
   type WidgetDef,
   type WidgetGroup,
   type WidgetInteraction,
   type WidgetPortDecl,
+  type WidgetRename,
+  type WidgetRenameEntry,
   type WidgetSurface,
   type WidgetType,
 } from "./widget/define-widget";

@@ -18,7 +18,8 @@
  * options (checked in the DSL), duplicate types rejected.
  */
 import { field, enumOf } from "@vibecook/strata-ecs";
-import type { Component, Tag } from "@vibecook/strata-ecs";
+import type { Component, FieldInput, Tag } from "@vibecook/strata-ecs";
+import { ensureComponent } from "../schema/meta";
 import {
   Accepts,
   ChildOf,
@@ -51,6 +52,34 @@ export interface WidgetPortDecl {
   readonly index?: number;
   /** Compatibility keys (empty = connects to anything). */
   readonly accepts?: readonly string[];
+}
+
+/**
+ * A prior durable id of this widget type (design-008 §3, petition I5). Docs
+ * written under the old id fold to this type at open (doc/rename.ts) and via
+ * the live zombie sweep (doc/rename-sweep.ts) — replicas converge through
+ * ordinary CRDT delivery, retiring offline byte surgery. Declares group-NAME
+ * continuity at the rename boundary (the pack runner's existing fence).
+ */
+export interface WidgetRename {
+  /** The old durable type id (`PrefabId.id` in pre-rename docs). */
+  readonly type: string;
+  /**
+   * The pack version old-build writers of `type` were at (default 1). Only
+   * the SWEEP consumes it — a late old-shape delivery carries no marker, so
+   * its values chain-fold from here; the open-path runner reads the version
+   * off the doc's own markers instead (design-008 §6.3).
+   */
+  readonly atVersion?: number;
+}
+
+/** A rename registry entry (doc/rename runner + sweep input). */
+export interface WidgetRenameEntry {
+  readonly widget: WidgetType;
+  readonly oldType: string;
+  readonly atVersion: number;
+  /** Legacy `<oldType>:<group>` components, index-aligned with `widget.groups`. */
+  readonly legacyGroups: readonly Component[];
 }
 
 export interface WidgetInteraction {
@@ -152,6 +181,13 @@ export interface WidgetDef {
    */
   readonly provides?: readonly string[];
   /**
+   * Prior durable ids folded to this type (design-008; petition I5). Additive:
+   * registers read-only LEGACY group components under the old names so
+   * pre-rename cells project, gates pre-rename docs "migrate" instead of
+   * read-only, and arms the live zombie sweep on every writable session.
+   */
+  readonly renamedFrom?: readonly WidgetRename[];
+  /**
    * fromVersion → idempotent absolute transform (M9's `runMigrations` runs the
    * chain at open; `prev`/return are flat prop records spanning every group).
    *
@@ -207,6 +243,7 @@ export interface WidgetType {
 export const WidgetEquipped = defineTag("WidgetEquipped");
 
 const registry = new Map<string, WidgetType>();
+const renameRegistry = new Map<string, WidgetRenameEntry>();
 
 export const widgets = {
   get(type: string): WidgetType | undefined {
@@ -214,6 +251,16 @@ export const widgets = {
   },
   all(): WidgetType[] {
     return [...registry.values()];
+  },
+};
+
+/** The rename registry (design-008 §3): old durable id → fold target. */
+export const renames = {
+  get(oldType: string): WidgetRenameEntry | undefined {
+    return renameRegistry.get(oldType);
+  },
+  all(): WidgetRenameEntry[] {
+    return [...renameRegistry.values()];
   },
 };
 
@@ -338,10 +385,41 @@ export function defineWidget(def: WidgetDef): WidgetType {
     fields[name] = spec;
   }
   const groups: WidgetGroup[] = [];
+  // Raw strata field specs per group, kept for rename legacy compilation —
+  // the legacy `<oldType>:<group>` components must be BYTE-IDENTICAL shapes.
+  const rawByGroup = new Map<string, Record<string, FieldInput>>();
   for (const [g, fields] of byGroup) {
     const raw: Record<string, ReturnType<typeof strataFieldOf>> = {};
     for (const [name, spec] of Object.entries(fields)) raw[name] = strataFieldOf(name, spec);
+    rawByGroup.set(g, raw);
     groups.push({ name: g, component: defineComponent(`${def.type}:${g}`, raw) as Component, fields });
+  }
+
+  // Rename declarations (design-008 §3): validate, then compile one legacy
+  // component per CURRENT group under each old id. `ensureComponent` makes
+  // re-evals (tests, hot reload) reuse instead of tripping strata's
+  // duplicate-name throw; a same-name different-shape collision still throws.
+  const renameDecls = def.renamedFrom ?? [];
+  const legacyByOld = new Map<string, Component[]>();
+  for (const decl of renameDecls) {
+    if (decl.type === def.type) {
+      throw new Error(`ice: widget "${def.type}" lists itself in renamedFrom.`);
+    }
+    if (registry.has(decl.type)) {
+      throw new Error(`ice: widget "${def.type}" renamedFrom "${decl.type}" — that type is still a registered widget.`);
+    }
+    const holder = renameRegistry.get(decl.type);
+    if (holder !== undefined && holder.widget.type !== def.type) {
+      throw new Error(`ice: widget "${def.type}" renamedFrom "${decl.type}" — already claimed by "${holder.widget.type}".`);
+    }
+    if (legacyByOld.has(decl.type)) {
+      throw new Error(`ice: widget "${def.type}" lists renamedFrom "${decl.type}" twice.`);
+    }
+    const legacy: Component[] = [];
+    for (const g of groups) {
+      legacy.push(ensureComponent(`${decl.type}:${g.name}`, rawByGroup.get(g.name) as Record<string, FieldInput>));
+    }
+    legacyByOld.set(decl.type, legacy);
   }
 
   // Essential set: geometry + every group at its defaults (+ container cells).
@@ -434,10 +512,19 @@ export function defineWidget(def: WidgetDef): WidgetType {
     ...(previewDecl.props !== undefined ? { previewProps: previewDecl.props } : {}),
   };
   registry.set(def.type, widget);
+  for (const decl of renameDecls) {
+    renameRegistry.set(decl.type, {
+      widget,
+      oldType: decl.type,
+      atVersion: decl.atVersion ?? 1,
+      legacyGroups: legacyByOld.get(decl.type) as Component[],
+    });
+  }
   return widget;
 }
 
 /** TEST-ONLY wipe (mirrors __resetPrefabsForTests; not on the barrel). */
 export function __resetWidgetsForTests(): void {
   registry.clear();
+  renameRegistry.clear();
 }

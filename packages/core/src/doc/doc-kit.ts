@@ -37,6 +37,8 @@ import {
 } from "./envelope";
 import { createDocCommitSink, createReadOnlyCommitSink } from "./doc-commit-sink";
 import { runMigrations } from "./migrate";
+import { runRenames } from "./rename";
+import { armRenameSweep } from "./rename-sweep";
 import { ensureBoardRoot, resolveBoardRoot, runSchemaMigrations } from "./schema-migrate";
 import { BoardRoot } from "../catalog/scene";
 import { writeRuntimeResource } from "../guards/resource-writer";
@@ -140,6 +142,10 @@ function makeSession(
     mayDiverge: makeDefaultMayDiverge(world),
     cellInDoc: (e, c) => store.getComponent(e, c) !== undefined,
   });
+  // The rename zombie sweep (design-008 §6): writable sessions fold stale
+  // pre-rename deliveries between frames; read-only sessions never write, so
+  // their zombies stay visible-but-inert until a writable open folds them.
+  const disarmRenameSweep = readOnly ? undefined : armRenameSweep(world, store);
   let closed = false;
   const remoteSubs = new Set<(bytes: Uint8Array) => void>();
 
@@ -172,6 +178,7 @@ function makeSession(
     close() {
       if (closed) return;
       closed = true;
+      disarmRenameSweep?.();
       cancelActiveGestures(world); // consumed by the next tick IF one runs pre-detach;
       // the reset below clears in-flight gesture state regardless — both paths safe.
       store.setHistoryHooks(null);
@@ -267,11 +274,21 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
     if (verdict === "migrate" && (opts.migrate ?? true)) {
       try {
         // Petition 8: STRUCTURAL schema steps run FIRST (they may spawn the board root and
-        // rewrite relations the pack runner's entities already carry), then the per-prefab
-        // pack runner, then ONE re-gate off the freshly stamped markers. SINGLE-WRITER LAW:
-        // this branch is the solo-open path only — a live-room joiner passes migrate:false
-        // (bootstrap) and stays read-only on an old-schema doc.
+        // rewrite relations the pack runner's entities already carry), then RENAMES
+        // (design-008 §5 — type folds must precede the pack runner so version chains
+        // operate on new-name cells; schema steps touch no pack markers, so the original
+        // report's renamedInDoc is still exact), then the per-prefab pack runner, then ONE
+        // re-gate off the freshly stamped markers. SINGLE-WRITER LAW: this branch is the
+        // solo-open path only — a live-room joiner passes migrate:false (bootstrap) and
+        // stays read-only on an old-schema doc.
         runSchemaMigrations({ store, world }, report);
+        const renamed = runRenames({ store, world }, report);
+        // A rename WRITES cells the pack runner READS through the world, and
+        // local transactions project only at the next sync — without this
+        // drain the chain would fold an empty record (the runners before it
+        // never had a write→read dependency, so this is the first sync the
+        // open path needs).
+        if (renamed.renamed.length > 0) world.sync();
         runMigrations({ store, world }, readDocVersionReport(doc));
         effectiveReport = readDocVersionReport(doc);
         readOnly = gateVerdict(effectiveReport) !== "ok";
