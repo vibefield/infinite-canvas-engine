@@ -373,4 +373,31 @@ describe("within-plane stacking = the frame's ChildOf sibling sequence (petition
     engine.step(0);
     expect(order(planes.content)).toEqual([String(ordinal), String(bare)]);
   });
+
+  it("marks a keyboard-claiming widget's host: data-canvas-keyboard + tabindex (design-007 §3.1)", () => {
+    defineWidget({
+      type: "dw:terminal",
+      surface: "dom",
+      component: () => null,
+      interaction: { keyboard: "exclusive", keyboardEscape: "widget" },
+      defaultSize: { w: 10, h: 10 },
+    });
+    const { world, engine, store, reflector } = setup();
+    const claiming = world.spawn({
+      components: [[Position, { x: 0, y: 0 }], [Size, { w: 10, h: 10 }], [PrefabId, { id: "dw:terminal" }]],
+    });
+    const plain = spawnBox(world, 20, 0, 10, 10); // no PrefabId — never marked
+    store.set([
+      { entity: claiming, hidden: false },
+      { entity: plain, hidden: false },
+    ]);
+    engine.step(0);
+
+    const claimHost = (reflector.hostFor(claiming) as HTMLElement).parentElement as HTMLElement;
+    expect(claimHost.getAttribute("data-canvas-keyboard")).toBe("escape"); // keyboardEscape:"widget"
+    expect(claimHost.tabIndex).toBe(-1); // click-focusable fallback node
+    const plainHost = (reflector.hostFor(plain) as HTMLElement).parentElement as HTMLElement;
+    expect(plainHost.hasAttribute("data-canvas-keyboard")).toBe(false);
+    expect(plainHost.hasAttribute("tabindex")).toBe(false);
+  });
 });

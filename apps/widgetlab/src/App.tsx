@@ -49,7 +49,7 @@ import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
 import { ground } from "@ice/ground";
 import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
-import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
+import { InfiniteCanvas, type InfiniteCanvasHandle, type KeymapEntry } from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -252,6 +252,32 @@ function spawnCommentAroundSelection(ce: CanvasEngine): void {
   });
   ce.ops.setSelection([comment]);
 }
+
+/**
+ * The C key, as a KEYMAP OVERRIDE (design-007 §5 M-d): with a selection, C
+ * wraps it in a comment; with none, C stays the connect-tool shortcut (the
+ * default this entry replaces — re-issued inside `run`). Replaces the
+ * capture-phase `stopPropagation` workaround this app carried since
+ * 2026-07-18: overrides ARE the engine's arbitration surface, so nobody races
+ * the window bubble anymore. Shift+C had no engine default — its entry keeps
+ * the old capture branch's comment-with-selection behavior.
+ */
+const COMMENT_KEYMAP_OVERRIDES: readonly KeymapEntry[] = [
+  {
+    key: "c",
+    run: (ce) => {
+      if (selectedEntities(ce.world).length > 0) spawnCommentAroundSelection(ce);
+      else ce.ops.setTool("connect");
+    },
+  },
+  {
+    key: "c",
+    shift: true,
+    run: (ce) => {
+      if (selectedEntities(ce.world).length > 0) spawnCommentAroundSelection(ce);
+    },
+  },
+];
 
 /** DEV-only console probe: `window.__iceDebug()` dumps the live snap state. */
 function installDebugProbe(ce: CanvasEngine): void {
@@ -537,14 +563,17 @@ export function App() {
 
   // Keyboard shortcuts. <InfiniteCanvas> already installs the engine default
   // keymap (packages/react/src/keymap.ts) — ⌘Z undo, ⇧⌘Z redo, ⌫/Delete
-  // deleteSelection (all skipping editable targets), and Esc →
-  // cancelActiveGestures. A second window listener for any of those would fire
-  // them TWICE (preventDefault does not stop the engine's listener; undo would
-  // step back two edits). The only piece the default keymap lacks is the
-  // nav-specific "Esc exits the current container when nested", so that is all
-  // this handler adds. The else-branch cancel is left to the keymap (keymap.ts
-  // line 79), and the editable-target guard mirrors keymap.ts isEditableTarget
-  // (line 42) so Esc inside a widget input never jumps out of the container.
+  // deleteSelection (all skipping editable targets), Esc →
+  // cancelActiveGestures — plus this app's C-key override (COMMENT_KEYMAP_
+  // OVERRIDES via the keymapOverrides prop; the 2026-07-18 capture-phase
+  // stopPropagation workaround is retired). A second window listener for any
+  // bound signature would fire it TWICE (preventDefault does not stop the
+  // engine's listener; undo would step back two edits). The only piece the
+  // keymap lacks is the nav-specific "Esc exits the current container when
+  // nested", so that is all this handler adds. The defaultPrevented gate is
+  // the design-007 widget input contract ("preventDefault = handled by
+  // content") — an Esc a widget consumed, or one the keymap spent releasing a
+  // keyboard-claiming widget's focus, must not ALSO pop the container.
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null): boolean => {
       if (!(target instanceof HTMLElement)) return false;
@@ -552,32 +581,15 @@ export function App() {
       return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || isEditableTarget(e.target)) return;
+      if (e.key !== "Escape" || e.defaultPrevented || isEditableTarget(e.target)) return;
       if (ce.nav.depth() > 0) {
         e.preventDefault();
         ce.ops.exitContainer();
       }
     };
-    // C — wrap the selection in a comment box (UE Blueprint, 2026-07-18).
-    // CAPTURE phase + stopPropagation: the engine keymap binds "c" to the
-    // CONNECT tool (tool shortcuts v/h/c) on window bubble — letting both
-    // fire silently flipped the tool, and every later widget drag routed to
-    // connect (gates.movable false): the whole board stopped dragging. With
-    // a selection C means COMMENT and the keymap never sees it; with none,
-    // C falls through and stays the connect-tool shortcut.
-    const onKeyDownCapture = (e: KeyboardEvent) => {
-      if ((e.key !== "c" && e.key !== "C") || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isEditableTarget(e.target)) return;
-      if (selectedEntities(ce.world).length === 0) return; // fall through → connect tool
-      e.preventDefault();
-      e.stopPropagation();
-      spawnCommentAroundSelection(ce);
-    };
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keydown", onKeyDownCapture, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keydown", onKeyDownCapture, true);
     };
   }, [ce]);
 
@@ -639,6 +651,7 @@ export function App() {
         ground={groundFactory}
         grid={effectiveGrid}
         glRoute={glRoute}
+        keymapOverrides={COMMENT_KEYMAP_OVERRIDES}
         onReady={onReady}
         className="h-full w-full"
       >

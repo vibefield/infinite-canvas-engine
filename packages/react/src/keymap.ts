@@ -13,15 +13,28 @@
  *   tool shortcuts  → ops.setTool (v/h/c + any registered tool's shortcut)
  *
  * Space-hold pan is ALREADY owned by the pointer adapter (design-003 §2) — it is
- * NOT rebound here. A keystroke is IGNORED when the event target is editable
- * (input/textarea/select/contenteditable) so typing into widget fields never
- * triggers a shortcut. `mod` = ⌘ on macOS, Ctrl elsewhere (metaKey || ctrlKey).
+ * NOT rebound here. `mod` = ⌘ on macOS, Ctrl elsewhere (metaKey || ctrlKey).
+ *
+ * The widget input contract (design-007, petition I1) — three gates, in order:
+ *  1. `event.defaultPrevented` → the widget's own handler consumed the key
+ *     ("preventDefault = handled by content"); the engine never competes.
+ *  2. Editable target (input/textarea/select/contentEditable — the shared
+ *     4-class predicate from @ice/dom) → ignored, so typing never triggers a
+ *     shortcut. Kept narrow so UNDECLARED widgets behave exactly as before.
+ *  3. The `data-canvas-keyboard` claim marker on the event-target chain (the
+ *     keydown target IS `document.activeElement` — browser focus is the one
+ *     page-global truth, so two engines on one page stand down together) →
+ *     EVERY entry cedes except Escape, the engine-reserved release gesture:
+ *     Escape blurs the claim (the NEXT press, with focus gone, falls through
+ *     to cancelActiveGestures). A widget that declared `keyboardEscape:
+ *     "widget"` receives even Escape — release is click-away or blurFocus().
  *
  * Overrides replace a default by its key-signature `key|mod|shift`; a signature
  * with no default is added. A matched entry `preventDefault()`s (the target was
  * already filtered to non-editable, so no typing is swallowed).
  */
 import { Position, guardedTransaction, selectedEntities, tools, type CanvasEngine } from "@ice/core";
+import { isEditableTarget, keyboardClaimOf } from "@ice/dom";
 
 export interface KeymapEntry {
   /** `event.key` to match (case-insensitive; e.g. "z", "Backspace", "ArrowUp"). */
@@ -38,12 +51,6 @@ type KeyTarget = Pick<Window, "addEventListener" | "removeEventListener">;
 
 const signature = (key: string, mod?: boolean, shift?: boolean): string =>
   `${key.toLowerCase()}|${mod ? 1 : 0}|${shift ? 1 : 0}`;
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (target === null || !(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
-}
 
 /** One nudge = one gesture-equivalent transaction (absolute Position writes). */
 function nudgeSelection(engine: CanvasEngine, dx: number, dy: number): void {
@@ -114,7 +121,19 @@ export function attachKeymap(
   for (const entry of overrides) map.set(signature(entry.key, entry.mod, entry.shift), entry);
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (isEditableTarget(event.target)) return;
+    if (event.defaultPrevented) return; // gate 1 — handled by content
+    if (isEditableTarget(event.target)) return; // gate 2 — typing
+    const claim = keyboardClaimOf(event.target);
+    if (claim.claimed) {
+      // Gate 3 — exclusive standdown. Escape stays engine-reserved as the
+      // release gesture (blur, no gesture-cancel THIS press) unless the widget
+      // owns it. Everything else flows to the widget, un-preventDefaulted.
+      if (event.key === "Escape" && !claim.ownsEscape) {
+        event.preventDefault();
+        if (event.target instanceof HTMLElement) event.target.blur();
+      }
+      return;
+    }
     const mod = event.metaKey || event.ctrlKey;
     const entry = map.get(signature(event.key, mod, event.shiftKey));
     if (entry === undefined) return;

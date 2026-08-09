@@ -31,6 +31,16 @@ export const SnapTarget = defineTag("SnapTarget");
  * path). Drag a member out and it simply stops being inside.
  */
 export const SweepsContained = defineTag("SweepsContained");
+/**
+ * `interaction.keyboard: "exclusive"` (design-007 §3.1, petitions I1/I4): while
+ * a node inside this widget holds browser focus, the engine's keyboard surfaces
+ * (keymap shortcuts, the adapter's Space pan modifier) stand down. The ROUTING
+ * truth is the DOM — the dom-widgets reflector writes a `data-canvas-keyboard`
+ * marker on the widget host and the keymap/adapter read the event-target chain
+ * against `document.activeElement`; this tag is the ECS-side mirror of the
+ * declaration (queryable by devtools/presence), never a routing input.
+ */
+export const KeyboardExclusive = defineTag("KeyboardExclusive");
 
 // --- ephemeral presence-peer prefab facets (components + tags only — no relations/resources) ---
 

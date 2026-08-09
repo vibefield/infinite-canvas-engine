@@ -13,9 +13,22 @@
  *  - `setPointerCapture` on down so a drag keeps delivering outside the element;
  *  - Space is the pan modifier (design-003 §4.4): tracked here and threaded onto
  *    every event's `mods.space`; keydown/keyup emit a `key` fact only when the
- *    modifier tuple actually changes, and Space `preventDefault`s to stop page scroll;
- *  - wheel `preventDefault`s: a ctrl-wheel / trackpad pinch becomes `wheel.pinch`
- *    (the zoom signal), a plain wheel becomes dx/dy (deltaMode lines → px ×16);
+ *    modifier tuple actually changes. Space's preventDefault/latch is OWNERSHIP-
+ *    AWARE (design-007 §3.4, petition I1): into an editable it neither latches
+ *    nor preventDefaults (Space must TYPE — the §1.6 live-bug fix); into a
+ *    `data-canvas-keyboard` claim it cedes the pan SEMANTICS but keeps killing
+ *    the page-scroll default (the key still reaches the widget's own listener —
+ *    preventDefault is not stopPropagation); elsewhere it pans, as ever;
+ *  - wheel: ctrl-wheel / trackpad pinch is ALWAYS `preventDefault` + the canvas
+ *    zoom signal (`wheel.pinch`) — a browser page-zoom over a widget is
+ *    catastrophic, claimed or not. A PLAIN wheel over a scroller-with-room
+ *    inside a claim/`data-canvas-interactive`/editable subtree (`wheelCede`,
+ *    design-007 §3.4/§3.5) is ceded: NO preventDefault (native scroll
+ *    proceeds), the fact still lands flagged `wheelHandled` so ingest stamps
+ *    the one-tick `WheelHandled` and the wheel recognizers skip the tick. At
+ *    the scroll bounds the predicate flips and the wheel falls through to
+ *    canvas pan/zoom. Everything else: `preventDefault`, dx/dy (deltaMode
+ *    lines → px ×16) — unchanged;
  *  - window blur enqueues a synthetic `cancel` for every pointer still down
  *    (design-003 §8) — the browser will not send the pointerups.
  *
@@ -40,6 +53,7 @@
  */
 import { NO_MODS, type InputEvent, type InputMods, type InputQueue } from "@ice/core";
 import type { CanvasHost } from "./host";
+import { isEditableTarget, keyboardClaimOf, wheelCede } from "./input-ownership";
 
 /**
  * The router GL path's adapter seam (design-004 §4). The GL plane is
@@ -279,12 +293,26 @@ export function attachPointerAdapter(
   const onPointerCancel = endPointer("cancel");
 
   const onWheel = (e: WheelEvent): void => {
-    e.preventDefault(); // own zoom/pan — never let the page scroll
     const { x, y } = relative(e.clientX, e.clientY);
     const scale = e.deltaMode === 1 ? WHEEL_LINE_PX : 1; // DOM_DELTA_LINE → px
-    const wheel = e.ctrlKey
-      ? { dx: 0, dy: 0, pinch: e.deltaY } // ctrl-wheel / trackpad pinch = zoom signal
-      : { dx: e.deltaX * scale, dy: e.deltaY * scale, pinch: 0 };
+    if (e.ctrlKey) {
+      // Pinch/ctrl-wheel: ALWAYS the canvas's zoom (design-007 F4) — the
+      // browser's page pinch-zoom must never fire, claimed content or not.
+      e.preventDefault();
+      queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel: { dx: 0, dy: 0, pinch: e.deltaY } });
+      return;
+    }
+    const wheel = { dx: e.deltaX * scale, dy: e.deltaY * scale, pinch: 0 };
+    if (wheelCede(e.target, container, e.deltaX, e.deltaY)) {
+      // Ceded to widget scroll (I4): no preventDefault — native scroll consumes
+      // the deltas. The fact still lands (the one input path is absolute),
+      // flagged so recognizers treat the tick as wheel silence. The room-check
+      // in wheelCede means an at-bounds scroller falls through to the branch
+      // below — and scroll-chaining can never escape to the page.
+      queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel, wheelHandled: true });
+      return;
+    }
+    e.preventDefault(); // own zoom/pan — never let the page scroll
     queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel });
   };
 
@@ -307,15 +335,32 @@ export function attachPointerAdapter(
   const isSpace = (e: KeyboardEvent): boolean => e.key === " " || e.code === "Space";
 
   const onKeyDown = (e: KeyboardEvent): void => {
-    if (isSpace(e)) {
-      e.preventDefault(); // Space would otherwise page-scroll
-      spaceHeld = true;
+    if (isSpace(e) && !e.defaultPrevented) {
+      // Ownership-aware Space (design-007 §3.4; the keydown target IS the
+      // focused node, so this reads browser focus — the one truth).
+      if (isEditableTarget(e.target)) {
+        // Space must TYPE into widget fields (§1.6 live-bug fix): no
+        // preventDefault, no pan latch.
+      } else if (keyboardClaimOf(e.target).claimed) {
+        // Cede the pan SEMANTICS to the claiming widget; keep suppressing the
+        // page-scroll default (§3.3 residual — preventDefault still lets the
+        // key reach the widget's own keydown listener).
+        e.preventDefault();
+      } else {
+        e.preventDefault(); // Space would otherwise page-scroll
+        spaceHeld = true;
+      }
     }
     emitKeyIfChanged(e);
   };
   const onKeyUp = (e: KeyboardEvent): void => {
     if (isSpace(e)) {
-      e.preventDefault();
+      if (!e.defaultPrevented && !isEditableTarget(e.target) && !keyboardClaimOf(e.target).claimed) {
+        e.preventDefault();
+      }
+      // Clear UNCONDITIONALLY: the down may have latched over canvas and the
+      // up can land after focus moved into a widget/editable — a skipped clear
+      // here would strand the pan modifier held.
       spaceHeld = false;
     }
     emitKeyIfChanged(e);

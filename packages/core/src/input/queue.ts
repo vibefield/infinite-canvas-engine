@@ -40,6 +40,15 @@ export interface InputEvent {
   /** GL-island opt-out (pinned widget-event contract, design-002 §8): fact still lands, recognizers skip. */
   readonly surfaceHandled?: boolean;
   /**
+   * Wheel-only opt-out (design-007 §3.5, petition I4): this wheel's deltas were
+   * ceded to scrollable widget content — the adapter skipped `preventDefault`
+   * and native scroll consumed them. The fact still lands (one input path);
+   * ingest stamps the one-tick `WheelHandled` tag so the wheel recognizers skip
+   * the tick. DISTINCT from `surfaceHandled` on purpose: the shared latch on
+   * the persistent mouse pointer would collide with a same-tick canvas down.
+   */
+  readonly wheelHandled?: boolean;
+  /**
    * Hover-time widget-boundary fact (design-002 §8 amendment, 2026-07-18): the
    * pointer is currently over content that would opt a down out — a native
    * interactive / `[data-canvas-interactive]` (DOM) or claim-capable island

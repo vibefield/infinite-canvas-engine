@@ -26,6 +26,7 @@ import {
   WentCancelled,
   WentDown,
   WentUp,
+  WheelHandled,
   WheelPan,
   WheelZoom,
 } from "../catalog";
@@ -67,6 +68,7 @@ export function createCleanupSystems(world: World): { recognizerReap: System; on
         if (ctx.hasTag(e, WentUp)) ctx.removeTag(e, WentUp);
         if (ctx.hasTag(e, WentCancelled)) ctx.removeTag(e, WentCancelled);
         if (ctx.hasTag(e, HandledByWidget)) ctx.removeTag(e, HandledByWidget);
+        if (ctx.hasTag(e, WheelHandled)) ctx.removeTag(e, WheelHandled);
         const w = ctx.read(e, PointerWheel);
         if (w.dx !== 0 || w.dy !== 0 || w.pinch !== 0) {
           ctx.edit(e).set(PointerWheel, { dx: 0, dy: 0, pinch: 0 });

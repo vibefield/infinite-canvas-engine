@@ -148,3 +148,115 @@ describe("attachPointerAdapter", () => {
     expect(key?.mods).toEqual({ ...NO_MODS }); // latched Space cleared, not stranded
   });
 });
+
+/**
+ * Widget input ownership (design-007 §3.4/§3.5, petitions I1/I4): Space and
+ * wheel read the target's ownership — editable, claim marker, scroller-with-
+ * room — before latching/preventDefaulting.
+ */
+describe("attachPointerAdapter — widget input ownership (design-007)", () => {
+  const spaceProps = { key: " ", code: "Space", shiftKey: false, ctrlKey: false, altKey: false, metaKey: false };
+
+  /** A claiming widget host inside the container with mocked scrollable content. */
+  function claimWithScroller(container: HTMLElement, scrollTop: number) {
+    const host = document.createElement("div");
+    host.setAttribute("data-canvas-keyboard", "");
+    const list = document.createElement("div");
+    list.style.overflowY = "auto";
+    Object.defineProperty(list, "clientHeight", { value: 100, configurable: true });
+    Object.defineProperty(list, "scrollHeight", { value: 400, configurable: true });
+    list.scrollTop = scrollTop;
+    host.appendChild(list);
+    container.appendChild(host);
+    return { host, list };
+  }
+
+  it("Space into an editable field TYPES: no preventDefault, no pan latch (§1.6 live-bug fix)", () => {
+    const { container, queue, detach } = setup();
+    const textarea = document.createElement("textarea");
+    container.appendChild(textarea);
+
+    const down = fire(textarea, "keydown", spaceProps);
+    expect(down.defaultPrevented).toBe(false);
+    // The pan modifier never latched: the next pointer fact carries space:false.
+    fire(container, "pointerdown", { pointerType: "mouse", pointerId: 1, clientX: 100, clientY: 100, buttons: 1 });
+    expect(queue.drain().find((e) => e.kind === "down")?.mods.space).toBe(false);
+    detach();
+  });
+
+  it("Space into a claiming widget cedes the pan semantics but keeps killing page-scroll", () => {
+    const { container, queue, detach } = setup();
+    const { host } = claimWithScroller(container, 0);
+
+    const down = fire(host, "keydown", spaceProps);
+    expect(down.defaultPrevented).toBe(true); // page must not scroll (§3.3 residual)
+    fire(container, "pointerdown", { pointerType: "mouse", pointerId: 1, clientX: 100, clientY: 100, buttons: 1 });
+    expect(queue.drain().find((e) => e.kind === "down")?.mods.space).toBe(false); // semantics ceded
+    detach();
+  });
+
+  it("Space keyup clears the latch even after focus moved into an editable", () => {
+    const { container, queue, detach } = setup();
+    const view = container.ownerDocument.defaultView as Window;
+    const textarea = document.createElement("textarea");
+    container.appendChild(textarea);
+
+    fire(view, "keydown", spaceProps); // latched over canvas
+    queue.drain();
+    const up = fire(textarea, "keyup", spaceProps); // up lands on the editable
+    expect(up.defaultPrevented).toBe(false);
+    fire(container, "pointerdown", { pointerType: "mouse", pointerId: 1, clientX: 100, clientY: 100, buttons: 1 });
+    expect(queue.drain().find((e) => e.kind === "down")?.mods.space).toBe(false); // not stranded
+    detach();
+  });
+
+  it("plain wheel over a scroller-with-room cedes: no preventDefault, fact flagged wheelHandled", () => {
+    const { container, queue, detach } = setup();
+    const { list } = claimWithScroller(container, 0);
+
+    const ev = fire(list, "wheel", { clientX: 100, clientY: 100, deltaX: 0, deltaY: 120, deltaMode: 0, ctrlKey: false });
+    expect(ev.defaultPrevented).toBe(false); // native scroll proceeds
+    const fact = queue.drain()[0];
+    expect(fact?.kind).toBe("wheel");
+    expect(fact?.wheelHandled).toBe(true);
+    expect(fact?.wheel).toEqual({ dx: 0, dy: 120, pinch: 0 }); // the fact still lands, truthfully
+    detach();
+  });
+
+  it("the same wheel at the scroll bottom falls through to canvas pan (at-bounds)", () => {
+    const { container, queue, detach } = setup();
+    const { list } = claimWithScroller(container, 300); // 300 + 100 = scrollHeight
+
+    const ev = fire(list, "wheel", { clientX: 100, clientY: 100, deltaX: 0, deltaY: 120, deltaMode: 0, ctrlKey: false });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(queue.drain()[0]?.wheelHandled).toBeUndefined();
+    detach();
+  });
+
+  it("ctrl/pinch over ceding content is STILL the canvas zoom (F4 — page pinch-zoom never fires)", () => {
+    const { container, queue, detach } = setup();
+    const { list } = claimWithScroller(container, 0);
+
+    const ev = fire(list, "wheel", { clientX: 100, clientY: 100, deltaX: 0, deltaY: -80, deltaMode: 0, ctrlKey: true });
+    expect(ev.defaultPrevented).toBe(true);
+    const fact = queue.drain()[0];
+    expect(fact?.wheel).toEqual({ dx: 0, dy: 0, pinch: -80 });
+    expect(fact?.wheelHandled).toBeUndefined();
+    detach();
+  });
+
+  it("a widget that already handled Space (defaultPrevented) is left alone", () => {
+    const { container, queue, detach } = setup();
+    const view = container.ownerDocument.defaultView as Window;
+    // A capture-phase content handler consumes Space before the adapter's
+    // window listener sees it ("preventDefault = handled by content").
+    const consume = (e: Event): void => e.preventDefault();
+    view.addEventListener("keydown", consume, true);
+    fire(view, "keydown", spaceProps);
+    view.removeEventListener("keydown", consume, true);
+
+    fire(container, "pointerdown", { pointerType: "mouse", pointerId: 1, clientX: 100, clientY: 100, buttons: 1 });
+    expect(queue.drain().find((e) => e.kind === "down")?.mods.space).toBe(false); // no latch
+    detach();
+  });
+});

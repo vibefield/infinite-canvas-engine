@@ -57,6 +57,7 @@ import {
   type WidgetMountStore,
   type World,
 } from "@ice/core";
+import { CLAIM_OWNS_ESCAPE, KEYBOARD_CLAIM_ATTR } from "../input-ownership";
 
 /** The two planes a host can live in (design-004 §1: P1 content, P3 lifted). */
 export interface DomWidgetsHost {
@@ -178,6 +179,23 @@ export function createDomWidgetsReflector(
     const el = doc.createElement("div");
     el.style.position = "absolute";
     el.setAttribute("data-ice-entity", String(e));
+
+    // Keyboard claim marker (design-007 §3.1, petition I1) — REGISTRY truth,
+    // read like `promotable` reads `surface` (no equip-tag timing to race).
+    // Static-on-host: the marker declares "this subtree claims keyboard when
+    // focused"; readers gate on the EVENT-TARGET chain, and a keydown targets
+    // `document.activeElement`, so the standdown engages exactly while focus
+    // is inside. `tabindex=-1` makes the host itself click-focusable (the
+    // fallback focus node when no proxy/editable is under the pointer);
+    // `outline:none` because the P4 selection chrome is the affordance, not a
+    // UA focus ring on a bare card div.
+    const claimType = world.get(e, PrefabId)?.id;
+    const claimWidget = typeof claimType === "string" ? widgets.get(claimType) : undefined;
+    if (claimWidget?.keyboard === "exclusive") {
+      el.setAttribute(KEYBOARD_CLAIM_ATTR, claimWidget.keyboardEscape === "widget" ? CLAIM_OWNS_ESCAPE : "");
+      el.tabIndex = -1;
+      el.style.outline = "none";
+    }
 
     const content = doc.createElement("div");
     content.setAttribute("data-ice-content", "");

@@ -28,6 +28,27 @@ export { startRafLoop } from "./loop";
 // The L0 pointer adapter (design-003 §2–§3): DOM events → InputQueue, nothing more.
 export { attachPointerAdapter, type GLRoute, type GLRouteVerdict, type PointerAdapterOpts } from "./pointer-adapter";
 
+// Input-ownership predicates (design-007 §4, petitions I1/I4): the shared
+// per-surface guard family — the keymap (@ice/react) reads these too.
+export {
+  CLAIM_OWNS_ESCAPE,
+  KEYBOARD_CLAIM_ATTR,
+  isEditableTarget,
+  keyboardClaimOf,
+  wheelCede,
+  type KeyboardClaim,
+} from "./input-ownership";
+
+// The focus driver (design-007 §2.3–§2.5): click-to-focus acquisition for
+// `keyboard: "exclusive"` widgets + the programmatic focusWidget/blurFocus
+// handle. Focus is VIEW state (design-007 §2.6) — it lives here, not in core.
+export {
+  FOCUS_PROXY_ATTR,
+  attachWidgetFocus,
+  type FocusHostLookup,
+  type WidgetFocusHandle,
+} from "./widget-focus";
+
 // L4 cursor projection output (design-003 §7: local cursor = OS cursor, one write).
 export { createCursorReflector } from "./reflectors/cursor";
 // P5 remote cursors (design-004 §1: screen-space pooled nodes; M9 presence).

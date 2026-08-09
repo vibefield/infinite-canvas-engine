@@ -40,6 +40,7 @@ import {
   WentCancelled,
   WentDown,
   WentUp,
+  WheelHandled,
 } from "../catalog";
 import { PointerVersion, bumpVersion } from "../helpers/version-stamps";
 import type { InputEvent, InputQueue } from "../input/queue";
@@ -75,6 +76,8 @@ interface Sample {
   wheelDy: number;
   wheelPinch: number;
   hasWheel: boolean;
+  /** Any wheel fact this tick was ceded to widget scroll (design-007 §3.5). */
+  wheelHandled: boolean;
 }
 
 export interface L0Systems {
@@ -162,6 +165,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
             wheelDy: 0,
             wheelPinch: 0,
             hasWheel: false,
+            wheelHandled: false,
           };
           samples.set(ev.pointerId, s);
         }
@@ -183,6 +187,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           s.wheelDy += ev.wheel.dy;
           s.wheelPinch += ev.wheel.pinch;
           s.hasWheel = true;
+          if (ev.wheelHandled === true) s.wheelHandled = true;
         }
         if (ev.surfaceHandled === true) s.handled = true;
         // Hover truth: last stamped fact wins; unstamped facts (wheel, blur
@@ -212,6 +217,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           if (s.wentUp) ctx.addTag(spawned, WentUp);
           if (s.wentCancelled) ctx.addTag(spawned, WentCancelled);
           if (s.handled) ctx.addTag(spawned, HandledByWidget);
+          if (s.wheelHandled) ctx.addTag(spawned, WheelHandled);
           if (s.overInteractive === true) ctx.addTag(spawned, OverInteractive);
           byId.set(id, spawned);
           continue;
@@ -238,6 +244,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
         if (s.wentUp) ctx.addTag(existing, WentUp);
         if (s.wentCancelled) ctx.addTag(existing, WentCancelled);
         if (s.handled) ctx.addTag(existing, HandledByWidget);
+        if (s.wheelHandled) ctx.addTag(existing, WheelHandled);
         // Persistent hover-boundary tag, change-only (interaction-rate law):
         // written only when a hover-bearing fact arrived AND the state flipped.
         if (s.overInteractive !== undefined && s.overInteractive !== ctx.hasTag(existing, OverInteractive)) {

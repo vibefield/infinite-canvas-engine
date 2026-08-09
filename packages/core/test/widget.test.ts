@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   Camera,
   Container,
+  KeyboardExclusive,
   Movable,
   Opacity,
   Position,
@@ -162,5 +163,24 @@ describe("spawnWidget → equip → mount store", () => {
     for (const e of inView) {
       expect(snap3.some((m) => m.entity === e)).toBe(false); // LRU-evicted
     }
+  });
+});
+
+describe("keyboard claim declaration (design-007 §3.1)", () => {
+  it("keyboard:'exclusive' stamps KeyboardExclusive and rides the registry", () => {
+    const Term = defineWidget({
+      type: "wt:terminal",
+      surface: "dom",
+      component: null,
+      interaction: { keyboard: "exclusive", keyboardEscape: "widget" },
+    });
+    expect(Term.capabilityTags).toContain(KeyboardExclusive);
+    expect(Term.keyboard).toBe("exclusive");
+    expect(Term.keyboardEscape).toBe("widget");
+
+    const Plain = defineWidget({ type: "wt:plain-card", surface: "dom", component: null });
+    expect(Plain.capabilityTags).not.toContain(KeyboardExclusive);
+    expect(Plain.keyboard).toBe("shared"); // the default — undeclared widgets unchanged
+    expect(Plain.keyboardEscape).toBe("release");
   });
 });

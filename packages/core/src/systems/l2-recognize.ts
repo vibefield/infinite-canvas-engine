@@ -59,6 +59,7 @@ import {
   WentCancelled,
   WentDown,
   WentUp,
+  WheelHandled,
   WheelPan,
   WheelZoom,
 } from "../catalog";
@@ -81,7 +82,10 @@ export const DEFAULT_SPAWN_PROFILES: SpawnProfiles = {
 const anyKindQ = defineQuery([Any(Tap, LongPress, Drag, Pinch, WheelPan, WheelZoom)]);
 const downQ = defineQuery([Pointer, WentDown, Not(HandledByWidget), LocalPointer]);
 const heldTouchQ = defineQuery([Pointer, PointerButtons, LocalPointer]);
-const wheelSourceQ = defineQuery([Pointer, PointerWheel, LocalPointer]);
+// `Not(WheelHandled)` mirrors downQ's `Not(HandledByWidget)` one line up — the
+// wheel-specific opt-out (design-007 §3.5): a ceded tick spawns no recognizer,
+// while a same-tick canvas DOWN on the same pointer is untouched.
+const wheelSourceQ = defineQuery([Pointer, PointerWheel, LocalPointer, Not(WheelHandled)]);
 const tapQ = defineQuery([Tap, Not(GestureSuspended)]);
 const longPressQ = defineQuery([LongPress, Not(GestureSuspended)]);
 const dragQ = defineQuery([Drag, Not(GestureSuspended)]);
@@ -642,7 +646,13 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         const screen = ctx.read(pointer, PointerScreen);
         const down = ctx.read(e, Down);
         const isZoom = ctx.has(e, WheelZoom);
-        const active = isZoom ? wheel.pinch !== 0 : wheel.dx !== 0 || wheel.dy !== 0;
+        // A ceded tick (WheelHandled — native scroll consumed the deltas) is
+        // wheel SILENCE to a live recognizer: don't feed the deltas into the
+        // camera, zero the per-frame values, let the end-silence timer run.
+        // The spawn gate alone can't cover this — a recognizer already live
+        // within `wheelEndSilenceMs` would otherwise pan from ceded deltas.
+        const ceded = ctx.hasTag(pointer, WheelHandled);
+        const active = !ceded && (isZoom ? wheel.pinch !== 0 : wheel.dx !== 0 || wheel.dy !== 0);
 
         if (active) {
           if (isZoom) {

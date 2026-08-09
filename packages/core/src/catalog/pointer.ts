@@ -66,6 +66,18 @@ export const WentCancelled = defineTag("WentCancelled");
 export const HandledByWidget = defineTag("HandledByWidget");
 
 /**
+ * ONE-TICK: this tick's wheel deltas were ceded to scrollable widget content
+ * (design-007 §3.5, petition I4) — the adapter let native scroll proceed and
+ * flagged the fact `wheelHandled`. Deliberately NOT the shared `HandledByWidget`
+ * latch: that tag rides the persistent mouse-pointer entity, and a same-tick
+ * wheel-over-widget + down-over-canvas collision would silently drop the
+ * legitimate canvas gesture (design-007 F6). Both wheel consumers honor it —
+ * `wheelSpawn` skips the tick, `wheelSystem` treats it as wheel silence.
+ * Cleared in cleanup like the Went* transition tags.
+ */
+export const WheelHandled = defineTag("WheelHandled");
+
+/**
  * PERSISTENT (not one-tick): the pointer is hovering content that would opt a
  * down out — a native interactive / `[data-canvas-interactive]` (DOM) or
  * claim-capable island content (GL). Written change-only by ingest from the

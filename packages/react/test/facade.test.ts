@@ -396,3 +396,96 @@ describe("<InfiniteCanvas>", () => {
     for (const spy of disposeSpies) expect(spy).toHaveBeenCalled();
   });
 });
+
+/**
+ * The widget input contract (design-007, petitions I1/I4): defaultPrevented
+ * gate, the data-canvas-keyboard standdown, Escape as the release gesture,
+ * and keymap overrides as the arbitration surface (the C-key retirement).
+ */
+describe("keymap standdown (design-007)", () => {
+  /** A claiming widget host as the dom-widgets reflector marks it. */
+  function claimedNode(escapeOwned = false): HTMLDivElement {
+    const el = document.createElement("div");
+    el.setAttribute("data-canvas-keyboard", escapeOwned ? "escape" : "");
+    el.tabIndex = -1;
+    document.body.appendChild(el);
+    cleanups.push(() => el.remove());
+    return el;
+  }
+
+  it("skips events a widget already handled (event.defaultPrevented — Stage 1)", () => {
+    const { engine, step } = makeEngine();
+    const e = spawnBox(engine, step);
+    engine.ops.setSelection([e]);
+    cleanups.push(attachKeymap(engine, window));
+    // Widget content consumed the key in its own (capture) handler.
+    const consume = (ev: Event): void => ev.preventDefault();
+    window.addEventListener("keydown", consume, true);
+    cleanups.push(() => window.removeEventListener("keydown", consume, true));
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    step();
+    expect(engine.world.isAlive(e)).toBe(true); // deleteSelection never fired
+  });
+
+  it("stands down for every entry while a claiming widget holds focus", () => {
+    const { engine, step } = makeEngine();
+    const e = spawnBox(engine, step);
+    engine.ops.setSelection([e]);
+    cleanups.push(attachKeymap(engine, window));
+    const node = claimedNode();
+    node.focus();
+
+    const del = new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true });
+    node.dispatchEvent(del);
+    step();
+    expect(engine.world.isAlive(e)).toBe(true); // selection survives — deleteSelection stood down
+    expect(del.defaultPrevented).toBe(false); // the key flowed to the widget untouched
+  });
+
+  it("Escape RELEASES the claim (blur, preventDefault) instead of cancelling gestures", () => {
+    const { engine } = makeEngine();
+    const spy = vi.spyOn(engine.ops, "cancelActiveGestures");
+    cleanups.push(attachKeymap(engine, window));
+    const node = claimedNode();
+    node.focus();
+    expect(document.activeElement).toBe(node);
+
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    node.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(true);
+    expect(document.activeElement).not.toBe(node); // blurred — the release gesture
+    expect(spy).not.toHaveBeenCalled(); // cancel waits for the NEXT, unclaimed Escape
+
+    // With focus gone, Escape falls through to cancelActiveGestures as ever.
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keyboardEscape:'widget' passes even Escape through (vim-grade terminals)", () => {
+    const { engine } = makeEngine();
+    const spy = vi.spyOn(engine.ops, "cancelActiveGestures");
+    cleanups.push(attachKeymap(engine, window));
+    const node = claimedNode(true); // marker value "escape"
+    node.focus();
+
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    node.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(false); // the widget receives it
+    expect(document.activeElement).toBe(node); // no engine release
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("overrides replace a default by signature — conditional dispatch lives in run()", () => {
+    const { engine, step } = makeEngine();
+    const e = spawnBox(engine, step);
+    engine.ops.setSelection([e]);
+    const ran = vi.fn();
+    cleanups.push(attachKeymap(engine, window, [{ key: "Backspace", run: ran }]));
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    step();
+    expect(ran).toHaveBeenCalledTimes(1);
+    expect(engine.world.isAlive(e)).toBe(true); // the default it replaced never fired
+  });
+});

@@ -23,6 +23,7 @@ import {
   Accepts,
   ChildOf,
   Container,
+  KeyboardExclusive,
   LongPressDrag,
   Movable,
   Opacity,
@@ -67,6 +68,25 @@ export interface WidgetInteraction {
    * membership — never reparenting). Default false.
    */
   readonly sweepContained?: boolean;
+  /**
+   * Keyboard claim (design-007 §3.1, petitions I1/I4). `"exclusive"`: while a
+   * node inside this widget holds browser focus, the engine keymap and the
+   * adapter's Space pan modifier stand down — keys flow to the widget's own
+   * handlers (the engine stops competing; it never delivers behavior). The
+   * dom-widgets reflector marks the host `data-canvas-keyboard` + `tabindex=-1`
+   * so a click anywhere in the widget acquires focus, and plain wheel over the
+   * widget's scrollable content cedes to native scroll (ctrl/pinch stays
+   * canvas zoom always). Default `"shared"` — today's behavior, byte-identical.
+   */
+  readonly keyboard?: "shared" | "exclusive";
+  /**
+   * Escape ownership under an exclusive claim (design-007 §3.3 / §7-Q1).
+   * `"release"` (default): Escape is the engine-reserved release gesture — it
+   * blurs the widget; the NEXT Escape, with focus gone, cancels gestures.
+   * `"widget"`: even Escape flows to the widget (vim-grade terminals); release
+   * is click-away or `blurFocus()`. Ignored unless `keyboard: "exclusive"`.
+   */
+  readonly keyboardEscape?: "release" | "widget";
 }
 
 export interface WidgetDef {
@@ -172,6 +192,10 @@ export interface WidgetType {
   readonly ports: readonly WidgetPortDecl[];
   /** Runtime capability tags the equip system stamps at projection. */
   readonly capabilityTags: readonly Tag[];
+  /** Keyboard claim (design-007): the dom layer reads THIS (registry truth), not the tag. */
+  readonly keyboard: "shared" | "exclusive";
+  /** Escape ownership under an exclusive claim ("release" = engine-reserved). */
+  readonly keyboardEscape: "release" | "widget";
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
   /** Normalized author preview component (opaque; react narrows). null = none declared. */
   readonly previewComponent: unknown;
@@ -382,6 +406,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if (interaction.solid === true) capabilityTags.push(Solid);
   if (interaction.dragOn === "longPress") capabilityTags.push(LongPressDrag);
   if (interaction.sweepContained === true) capabilityTags.push(SweepsContained);
+  if (interaction.keyboard === "exclusive") capabilityTags.push(KeyboardExclusive);
   const snap = interaction.snap ?? "target";
   if (snap === "source" || snap === "both") capabilityTags.push(SnapSource);
   if (snap === "target" || snap === "both") capabilityTags.push(SnapTarget);
@@ -402,6 +427,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
     animated: def.animated === true,
     ports: def.ports ?? [],
     capabilityTags,
+    keyboard: interaction.keyboard ?? "shared",
+    keyboardEscape: interaction.keyboardEscape ?? "release",
     migrate: def.migrate ?? {},
     previewComponent: previewDecl.component,
     ...(previewDecl.props !== undefined ? { previewProps: previewDecl.props } : {}),

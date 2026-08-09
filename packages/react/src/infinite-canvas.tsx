@@ -47,6 +47,7 @@ import {
 } from "@ice/core";
 import {
   attachPointerAdapter,
+  attachWidgetFocus,
   createCanvasHost,
   createChromeReflector,
   createCursorReflector,
@@ -60,10 +61,11 @@ import {
   type DomWidgetsReflector,
   type GLRoute,
   type Planes,
+  type WidgetFocusHandle,
 } from "@ice/dom";
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { EngineProvider } from "./engine-context";
-import { attachKeymap } from "./keymap";
+import { attachKeymap, type KeymapEntry } from "./keymap";
 import { WidgetRoot } from "./widget-root";
 
 /** Handed to {@link InfiniteCanvasProps.onReady} for app-side GL/devtools wiring. */
@@ -71,6 +73,13 @@ export interface InfiniteCanvasHandle {
   readonly engine: CanvasEngine;
   readonly host: CanvasHost;
   readonly planes: Planes;
+  /**
+   * Programmatic widget focus (design-007 §2.3): `focusWidget(entity)` /
+   * `blurFocus()` for `keyboard: "exclusive"` widgets. Focus is VIEW state
+   * (design-007 §2.6) — it rides this handle, not `engine.ops` (a headless
+   * engine correctly has no focus concept).
+   */
+  readonly focus: WidgetFocusHandle;
 }
 
 /**
@@ -123,6 +132,16 @@ export interface InfiniteCanvasProps {
    * re-attaching the adapter.
    */
   readonly glRoute?: GLRoute;
+  /**
+   * Keymap overrides plumbed to {@link attachKeymap} (design-007 §5 M-d — the
+   * declared alternative to capture-phase `stopPropagation` folklore; retires
+   * the widgetlab C-key hack). An entry replaces a default by its
+   * `key|mod|shift` signature; conditional behavior belongs INSIDE `run`
+   * (read engine state there — e.g. selection → comment, else the default's
+   * action). BOUND ONCE at mount, like the adapter: entries should read live
+   * state from the engine at run time, never close over render-time values.
+   */
+  readonly keymapOverrides?: readonly KeymapEntry[];
   readonly className?: string;
   readonly style?: CSSProperties;
   /** Overlays inside the viewport (toolbars, HUD) — rendered under the EngineProvider. */
@@ -136,6 +155,7 @@ export function InfiniteCanvas({
   ground,
   grid: gridConfig,
   glRoute,
+  keymapOverrides,
   className,
   style,
   children,
@@ -154,6 +174,10 @@ export function InfiniteCanvas({
   // and the app's real router typically arrives post-mount (onReady).
   const glRouteRef = useRef(glRoute);
   glRouteRef.current = glRoute;
+  // Overrides are bound once at mount (attachKeymap builds its map at attach);
+  // the ref keeps identity churn from re-booting the canvas.
+  const keymapOverridesRef = useRef(keymapOverrides);
+  keymapOverridesRef.current = keymapOverrides;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -199,7 +223,11 @@ export function InfiniteCanvas({
     );
     const detachMeasure =
       measureQueue !== undefined ? wireMeasurement(runtime.store, domWidgets, measureQueue) : undefined;
-    const detachKeymap = attachKeymap(engine);
+    const detachKeymap = attachKeymap(engine, undefined, keymapOverridesRef.current ?? []);
+    // Click-to-focus acquisition for keyboard-claiming widgets + the
+    // programmatic focus handle (design-007 §2.3; the reflector's hostFor
+    // resolves entity → content, the driver walks to the marked host).
+    const focus = attachWidgetFocus(host, domWidgets);
 
     const syncViewport = (): void => {
       const rect = container.getBoundingClientRect();
@@ -215,10 +243,11 @@ export function InfiniteCanvas({
 
     const stopLoop = startRafLoop(core);
     setHosts(domWidgets);
-    onReadyRef.current?.({ engine, host, planes });
+    onReadyRef.current?.({ engine, host, planes, focus });
 
     return () => {
       stopLoop();
+      focus.detach();
       detachKeymap();
       detachMeasure?.();
       detachPointer();
