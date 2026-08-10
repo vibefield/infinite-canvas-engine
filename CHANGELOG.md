@@ -4,6 +4,79 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [0.4.0] — 2026-08-09
+
+Three downstream petitions from VibeField land at once: the **focus model**
+(design-007 — petitions I1/I4, widget keyboard exclusivity + the wheel cede)
+and the **prefab rename migration** (design-008 — petition I5). Both were
+adversarially reviewed post-landing; the fixes are folded in below.
+
+### Added
+
+- **Widget keyboard exclusivity — `interaction.keyboard: "shared" |
+  "exclusive"`** (+ `keyboardEscape: "release" | "widget"`). While a node
+  inside a claiming widget holds browser focus, the engine keymap and the
+  adapter's Space pan modifier stand down — keys flow to the widget's own
+  handlers. The dom-widgets reflector marks claiming hosts
+  `data-canvas-keyboard` (+ `tabindex="-1"`), a capture-phase focus driver
+  makes click-anywhere acquire focus (declare a proxy with
+  `data-canvas-focus`; natively-focusable content is left to the browser),
+  and Escape is the engine-reserved release gesture — blur first, gesture
+  cancel on the next unclaimed press — unless the widget declares
+  `keyboardEscape: "widget"` (vim-grade terminals). Programmatic focus rides
+  the view: `InfiniteCanvasHandle.focus.focusWidget/blurFocus`
+  (`attachWidgetFocus` for imperative hosts). The widget input contract is
+  three gates, in order: `defaultPrevented` ("preventDefault = handled by
+  content" — zero-declaration widgets are covered), the claim standdown
+  (before the editable gate, so editable focus proxies keep the Escape
+  release), then the unchanged 4-class editable guard. Undeclared widgets
+  behave byte-identically.
+- **Wheel cede for scrollable widget content.** A plain wheel over a
+  scroller-with-room inside a claim / `[data-canvas-interactive]` / editable
+  subtree scrolls natively; at the scroll bounds it falls through to canvas
+  pan/zoom (the nested-scroll feel — and scroll-chaining can never reach the
+  page). ctrl-wheel / trackpad pinch is ALWAYS the canvas's zoom, claimed
+  content or not. The ceded fact still lands, flagged with a one-tick
+  `WheelHandled` that parks BOTH wheel consumers — recognizer spawn and the
+  live recognizer's feed — so a wheel gesture inside its silence window never
+  pans from ceded deltas, while a same-tick canvas down is untouched.
+- **`keymapOverrides` on `<InfiniteCanvas>`** — the keymap's override surface,
+  plumbed through the facade at last. Conditional dispatch belongs inside
+  `run()` (read engine state there); the capture-phase `stopPropagation`
+  folklore is retired — widgetlab's C-key workaround is deleted as the proof.
+  An override bound to Space warns at attach: the adapter owns Space
+  (design-003 §4.4) and such an entry is unreachable by construction.
+- **Prefab rename migration — `renamedFrom: [{ type, atVersion? }]` on
+  `defineWidget`.** Docs written under a prior type id fold in-band, retiring
+  offline byte surgery. The declaration registers same-shaped LEGACY group
+  components under the old names (projection is name-registry-driven, so old
+  cells read like any other value); the version gate stops bricking
+  pre-rename docs readOnly and gates them "migrate" instead, with
+  `engine.renamed.<old>` tombstones marking dead markers forever (meta has no
+  delete); the open-path runner folds under the single-writer law and stamps
+  a carried `engine.pack.<new>.<oldV>` so `migrate` version chains compose on
+  the new names; and an observer-armed zombie sweep on every writable session
+  converges stale pre-rename deliveries — late old-shape entities fold fully
+  (chain-folded from `atVersion`), resurrected old cells resolve NEW-WINS.
+  Envelope headers self-heal at the next save. No strata changes were needed.
+
+### Fixed
+
+- **Space types into widget fields again.** The adapter preventDefaulted
+  Space unconditionally as the pan modifier, eating it inside a widget's own
+  `<textarea>`/`<input>` unless the widget stopPropagation'd its keydown.
+  Space handling is now ownership-aware: it types in editables, cedes pan
+  semantics (while still suppressing page-scroll) under a keyboard claim, and
+  pans over canvas as ever.
+
+### Breaking, narrowly
+
+Same class as 0.3.0's `Engine.frame`: engine-constructed types gained required
+members, so only hand-rolled implementations are affected — consumers that
+merely read them need no change. `WidgetType` gained `keyboard`/
+`keyboardEscape`; `DocVersionReport` gained `renamedInDoc`;
+`InfiniteCanvasHandle` gained `focus`.
+
 ## [0.3.0] — 2026-08-04
 
 One feature: **the frame gate** — the frozen-world mode design-005 §4 named as a
