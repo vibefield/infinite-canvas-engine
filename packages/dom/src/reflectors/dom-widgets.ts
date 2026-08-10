@@ -266,13 +266,21 @@ export function createDomWidgetsReflector(
    * planes are nominally impossible post-migration). Reorder is change-only
    * (a DOM sequence already in order touches nothing) and skips a plane while
    * it contains the focused element (re-appending would blur a mid-rename
-   * input; the next dirt re-asserts the order).
+   * input — and, since design-007, the STEADY state of a focused
+   * keyboard-claiming host). Returns whether every plane applied: a skipped
+   * plane must keep the caller's dirt armed, or an order change landing while
+   * a terminal holds focus would be consumed-but-dropped and never re-assert
+   * at blur (2026-08-09 review finding).
    */
-  function updateOrder(): void {
+  function updateOrder(): boolean {
     const ordinals = order.ordinals();
+    let allApplied = true;
     for (const plane of [host.contentPlane, host.liftedPlane]) {
       const active = doc.activeElement;
-      if (active !== null && active !== doc.body && plane.contains(active)) continue;
+      if (active !== null && active !== doc.body && plane.contains(active)) {
+        allApplied = false; // blur-safety skip — retry on the next flush
+        continue;
+      }
       const mine: Array<{ el: HTMLDivElement; e: Entity }> = [];
       for (const [e, rec] of hosts) {
         if (rec.host.parentNode !== plane) continue;
@@ -295,6 +303,7 @@ export function createDomWidgetsReflector(
       if (inOrder && cursor === target.length) continue;
       for (const m of target) plane.appendChild(m.el); // moves, in sibling order
     }
+    return allApplied;
   }
 
   /** Change-only opacity rewrite over the live hosts (graybox pattern). */
@@ -371,10 +380,11 @@ export function createDomWidgetsReflector(
         updatePromote();
       }
       // AFTER promote: a re-parent appends last and must re-assert z order;
-      // a fresh mount (createHost appends last) rides membershipChanged.
+      // a fresh mount (createHost appends last) rides membershipChanged. A
+      // plane parked by the focused element keeps the dirt ARMED — the flush
+      // is `always`, so the first post-blur pass re-asserts the order.
       if (orderDirty || membershipChanged) {
-        orderDirty = false;
-        updateOrder();
+        orderDirty = !updateOrder();
       }
     },
     hostFor: (entity) => hosts.get(entity)?.content,

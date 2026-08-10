@@ -51,18 +51,21 @@ const RENAMED_PREFIX = "engine.renamed.";
 
 const prefabQ = defineQuery([PrefabId]);
 
-// Legacy queries interned per old id (defineQuery identity is the cache key;
-// sessions re-arm on the same process-global registries).
-const legacyQByOldId = new Map<string, Query>();
+// Legacy queries cached per REGISTRY ENTRY, not per old-id string (2026-08-09
+// review): a re-registration of the same old id (tests, hot reload) mints a
+// new entry with possibly different legacy components — a string-keyed cache
+// would keep watching the previous registration's cells. WeakMap lets dead
+// entries and their queries go with the registry reset.
+const legacyQByEntry = new WeakMap<WidgetRenameEntry, Query>();
 function legacyQueryOf(entry: WidgetRenameEntry): Query | undefined {
   if (entry.legacyGroups.length === 0) return undefined;
-  let q = legacyQByOldId.get(entry.oldType);
+  let q = legacyQByEntry.get(entry);
   if (q === undefined) {
     q =
       entry.legacyGroups.length === 1
         ? defineQuery([entry.legacyGroups[0] as Component])
         : defineQuery([Any(...(entry.legacyGroups as Component[]))]);
-    legacyQByOldId.set(entry.oldType, q);
+    legacyQByEntry.set(entry, q);
   }
   return q;
 }
@@ -144,12 +147,21 @@ export function armRenameSweep(world: World, store: DurableStore): () => void {
         plans.push({ e, rewriteId, folded, writeGroups, removeLegacy });
       };
 
-      world.query(prefabQ).each((batch) => {
-        for (const row of batch) {
-          const e = batch.entity(row);
-          if (world.read(e, PrefabId).id === oldType) consider(e);
-        }
-      });
+      // The full PrefabId walk runs ONLY for zero-prop renames (no legacy
+      // components to observe). For prop-bearing renames every reachable
+      // zombie shape carries a legacy cell — an old build writes PrefabId
+      // exactly once, at spawn, alongside its group cells, and no op it can
+      // emit rewrites the id afterward — so the legacy-component pass below
+      // is complete on its own and the O(entities) scan would be pure waste
+      // on every spawn (2026-08-09 review).
+      if (legacyGroups.length === 0) {
+        world.query(prefabQ).each((batch) => {
+          for (const row of batch) {
+            const e = batch.entity(row);
+            if (world.read(e, PrefabId).id === oldType) consider(e);
+          }
+        });
+      }
       const legacyQ = legacyQueryOf(entry);
       if (legacyQ !== undefined) {
         world.query(legacyQ).each((batch) => {
@@ -188,15 +200,24 @@ export function armRenameSweep(world: World, store: DurableStore): () => void {
   };
 
   const watchers: Array<() => void> = [];
+  let anyZeroProp = false;
   for (const entry of entries) {
     const q = legacyQueryOf(entry);
     if (q !== undefined) {
       watchers.push(world.reactive.observeQuery(q, schedule, { cols: [...(entry.legacyGroups as Component[])] }));
+    } else {
+      anyZeroProp = true;
     }
   }
-  // PrefabId writes are rare (spawns + renames) — one wide watcher covers the
-  // late-entity and id-zombie shapes for every registered rename.
-  watchers.push(world.reactive.observeQuery(prefabQ, schedule, { cols: [PrefabId] }));
+  // The wide PrefabId watcher arms ONLY when some rename has no legacy
+  // components to observe (a zero-prop widget's late entity carries nothing
+  // but PrefabId + geometry). For every prop-bearing rename the legacy
+  // watchers above are complete (see the sweep's reachability note), and
+  // arming this unconditionally made EVERY widget spawn schedule a full
+  // O(entities × renames) scan for the session's lifetime.
+  if (anyZeroProp) {
+    watchers.push(world.reactive.observeQuery(prefabQ, schedule, { cols: [PrefabId] }));
+  }
 
   return () => {
     disposed = true;

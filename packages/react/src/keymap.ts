@@ -18,20 +18,27 @@
  * The widget input contract (design-007, petition I1) — three gates, in order:
  *  1. `event.defaultPrevented` → the widget's own handler consumed the key
  *     ("preventDefault = handled by content"); the engine never competes.
- *  2. Editable target (input/textarea/select/contentEditable — the shared
- *     4-class predicate from @ice/dom) → ignored, so typing never triggers a
- *     shortcut. Kept narrow so UNDECLARED widgets behave exactly as before.
- *  3. The `data-canvas-keyboard` claim marker on the event-target chain (the
+ *  2. The `data-canvas-keyboard` claim marker on the event-target chain (the
  *     keydown target IS `document.activeElement` — browser focus is the one
  *     page-global truth, so two engines on one page stand down together) →
  *     EVERY entry cedes except Escape, the engine-reserved release gesture:
  *     Escape blurs the claim (the NEXT press, with focus gone, falls through
  *     to cancelActiveGestures). A widget that declared `keyboardEscape:
  *     "widget"` receives even Escape — release is click-away or blurFocus().
+ *     This gate runs BEFORE the editable gate on purpose (2026-08-09 review):
+ *     a claim whose focus node is an editable proxy (the Ghosttea-style
+ *     hidden textarea, design-007 §6) must still get the Escape release —
+ *     editable-first would shadow it and silently turn every such widget
+ *     into `keyboardEscape: "widget"`.
+ *  3. Editable target (input/textarea/select/contentEditable — the shared
+ *     4-class predicate from @ice/dom) → ignored, so typing never triggers a
+ *     shortcut. Kept narrow so UNDECLARED widgets behave exactly as before.
  *
  * Overrides replace a default by its key-signature `key|mod|shift`; a signature
  * with no default is added. A matched entry `preventDefault()`s (the target was
- * already filtered to non-editable, so no typing is swallowed).
+ * already filtered to non-editable, so no typing is swallowed). An override on
+ * Space warns at attach: the pointer adapter owns Space (the pan modifier,
+ * design-003 §4.4) and preventDefaults it before gate 1 can let it through.
  */
 import { Position, guardedTransaction, selectedEntities, tools, type CanvasEngine } from "@ice/core";
 import { isEditableTarget, keyboardClaimOf } from "@ice/dom";
@@ -118,22 +125,37 @@ export function attachKeymap(
 
   const map = new Map<string, KeymapEntry>();
   for (const entry of defaultEntries()) map.set(signature(entry.key, entry.mod, entry.shift), entry);
-  for (const entry of overrides) map.set(signature(entry.key, entry.mod, entry.shift), entry);
+  for (const entry of overrides) {
+    if (entry.key === " ") {
+      // Fail loud at attach, not silently at runtime: the adapter's window
+      // listener registers first and preventDefaults Space (pan modifier),
+      // so gate 1 makes this entry unreachable by construction.
+      console.warn(
+        "ice: attachKeymap — an override on Space can never fire: the pointer adapter owns Space as the pan modifier (design-003 §4.4) and preventDefaults it before the keymap's handled-by-content gate.",
+      );
+    }
+    map.set(signature(entry.key, entry.mod, entry.shift), entry);
+  }
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.defaultPrevented) return; // gate 1 — handled by content
-    if (isEditableTarget(event.target)) return; // gate 2 — typing
     const claim = keyboardClaimOf(event.target);
     if (claim.claimed) {
-      // Gate 3 — exclusive standdown. Escape stays engine-reserved as the
-      // release gesture (blur, no gesture-cancel THIS press) unless the widget
-      // owns it. Everything else flows to the widget, un-preventDefaulted.
+      // Gate 2 — exclusive standdown (BEFORE the editable gate, so editable
+      // focus proxies keep the release gesture — header note). Escape stays
+      // engine-reserved (blur, no gesture-cancel THIS press) unless the
+      // widget owns it. Everything else flows to the widget,
+      // un-preventDefaulted.
       if (event.key === "Escape" && !claim.ownsEscape) {
         event.preventDefault();
-        if (event.target instanceof HTMLElement) event.target.blur();
+        // SVG nodes are focusable too (tabindex) and are not HTMLElement —
+        // the release must never eat Escape without actually blurring.
+        const t = event.target;
+        if (t instanceof HTMLElement || t instanceof SVGElement) t.blur();
       }
       return;
     }
+    if (isEditableTarget(event.target)) return; // gate 3 — typing
     const mod = event.metaKey || event.ctrlKey;
     const entry = map.get(signature(event.key, mod, event.shiftKey));
     if (entry === undefined) return;

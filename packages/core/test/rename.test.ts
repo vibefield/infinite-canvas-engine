@@ -301,4 +301,44 @@ describe("zombie sweep (design-008 §6) — stale deliveries converge live", () 
     expect(lateFolded.length).toBe(1);
     expect(ce.world.get(lateFolded[0] as Entity, legacy as never)).toBeUndefined();
   });
+
+  it("zero-prop renames keep the wide PrefabId watcher (late id-only entity folds)", async () => {
+    // No props → no legacy components to observe: this is the ONE shape that
+    // still needs the PrefabId watcher after the 2026-08-09 narrowing (a late
+    // old-shape entity here carries nothing but PrefabId + geometry).
+    resetRegistries();
+    defineWidget({ type: "rn:zp-old", surface: "dom", component: null });
+    const a = makeEngine();
+    a.ce.docs.create();
+    a.ce.ops.spawnWidget("rn:zp-old", { x: 0, y: 0 });
+    a.step();
+    const bytes = a.ce.docs.current()?.exportEnvelope() as Uint8Array;
+    a.ce.docs.close();
+
+    resetRegistries();
+    defineWidget({ type: "rn:zp-new", surface: "dom", component: null, renamedFrom: [{ type: "rn:zp-old" }] });
+    const { ce, step } = makeEngine();
+    const res = ce.docs.open(bytes);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    step();
+    expect(widgetsOf(ce, "rn:zp-new").length).toBe(1);
+
+    const stale = new LoroDoc();
+    stale.import(res.session.exportSnapshot());
+    const entities = stale.getMap("entities");
+    const late = entities.setContainer("zzz:zp-late", new LoroMap());
+    late.set("exists", true);
+    late.set("comp:PrefabId", { id: "rn:zp-old" });
+    late.set("comp:Position", { x: 10, y: 10 });
+    late.set("comp:Size", { w: 50, h: 50 });
+    stale.commit();
+    res.session.applyRemote(stale.export({ mode: "snapshot" }));
+    step();
+    await flushMicrotasks();
+    step();
+
+    expect(widgetsOf(ce, "rn:zp-old").length).toBe(0);
+    expect(widgetsOf(ce, "rn:zp-new").length).toBe(2);
+  });
 });

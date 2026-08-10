@@ -400,4 +400,45 @@ describe("within-plane stacking = the frame's ChildOf sibling sequence (petition
     expect(plainHost.hasAttribute("data-canvas-keyboard")).toBe(false);
     expect(plainHost.hasAttribute("tabindex")).toBe(false);
   });
+
+  it("keeps order dirt ARMED while the focused host parks its plane (2026-08-09 review fix)", () => {
+    defineWidget({
+      type: "dw:kb-order",
+      surface: "dom",
+      component: () => null,
+      interaction: { keyboard: "exclusive" },
+      defaultSize: { w: 10, h: 10 },
+    });
+    const { world, engine, planes, store, reflector } = setup();
+    const root = makeRoot(world);
+    const a = world.spawn({
+      components: [[Position, { x: 0, y: 0 }], [Size, { w: 10, h: 10 }], [PrefabId, { id: "dw:kb-order" }]],
+    });
+    world.setRelation(a, ChildOf, root, "last");
+    const b = spawnBox(world, 20, 0, 10, 10);
+    world.setRelation(b, ChildOf, root, "last");
+    store.set([
+      { entity: a, hidden: false },
+      { entity: b, hidden: false },
+    ]);
+    engine.step(0);
+    expect(order(planes.content)).toEqual([String(a), String(b)]);
+
+    // Focus the claiming host — the steady state design-007 introduced.
+    const hostA = (reflector.hostFor(a) as HTMLElement).parentElement as HTMLElement;
+    hostA.focus();
+    expect(document.activeElement).toBe(hostA);
+
+    // Reorder while focused: the plane is parked (re-appending would blur),
+    // so the DOM sequence must NOT change yet…
+    world.setRelation(a, ChildOf, root, "last"); // move a above b
+    engine.step(1);
+    expect(order(planes.content)).toEqual([String(a), String(b)]);
+
+    // …and the dirt stays armed: after blur, the next flush re-asserts the
+    // order WITHOUT any new order write (the pre-fix bug dropped it here).
+    hostA.blur();
+    engine.step(2);
+    expect(order(planes.content)).toEqual([String(b), String(a)]);
+  });
 });

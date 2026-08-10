@@ -106,7 +106,8 @@ export function attachWidgetFocus(host: CanvasHost, lookup: FocusHostLookup): Wi
     },
     blurFocus() {
       const active = doc.activeElement;
-      if (!(active instanceof HTMLElement)) return false;
+      // SVG focus targets included — same rule as the keymap's Escape release.
+      if (!(active instanceof HTMLElement || active instanceof SVGElement)) return false;
       if (active.closest(`[${KEYBOARD_CLAIM_ATTR}]`) === null) return false;
       active.blur();
       return true;

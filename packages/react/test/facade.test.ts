@@ -476,6 +476,31 @@ describe("keymap standdown (design-007)", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("Escape releases an EDITABLE focus proxy inside a claim (gate order — 2026-08-09 review fix)", () => {
+    const { engine } = makeEngine();
+    const spy = vi.spyOn(engine.ops, "cancelActiveGestures");
+    cleanups.push(attachKeymap(engine, window));
+    const node = claimedNode();
+    const textarea = document.createElement("textarea");
+    node.appendChild(textarea);
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
+
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    textarea.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(true);
+    expect(document.activeElement).not.toBe(textarea); // released — editable-first would have shadowed this
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("warns at attach for an override bound to Space (the adapter owns the pan modifier)", () => {
+    const { engine } = makeEngine();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    cleanups.push(attachKeymap(engine, window, [{ key: " ", run: () => {} }]));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Space"));
+    warn.mockRestore();
+  });
+
   it("overrides replace a default by signature — conditional dispatch lives in run()", () => {
     const { engine, step } = makeEngine();
     const e = spawnBox(engine, step);
