@@ -20,6 +20,7 @@
 import { field, enumOf } from "@vibecook/strata-ecs";
 import type { Component, FieldInput, Tag } from "@vibecook/strata-ecs";
 import { ensureComponent } from "../schema/meta";
+import type { AnyBehaviorAttachSpec, AnyBehaviorDef } from "../behavior/types";
 import {
   Accepts,
   ChildOf,
@@ -81,6 +82,18 @@ export interface WidgetRenameEntry {
   readonly atVersion: number;
   /** Legacy `<oldType>:<group>` components, index-aligned with `widget.groups`. */
   readonly legacyGroups: readonly Component[];
+}
+
+/**
+ * A behavior pre-attachment on a widget type: the bare handle for defaults, or
+ * `Behavior.with({...})` for a starting value (design-009 §6).
+ */
+export type WidgetBehaviorDecl = AnyBehaviorDef | AnyBehaviorAttachSpec;
+
+/** Normalized pre-attachment (registry truth for the spawn + equip paths). */
+export interface WidgetBehaviorEntry {
+  readonly behavior: AnyBehaviorDef;
+  readonly data: Readonly<Record<string, unknown>>;
 }
 
 export interface WidgetInteraction {
@@ -189,6 +202,21 @@ export interface WidgetDef {
    */
   readonly renamedFrom?: readonly WidgetRename[];
   /**
+   * Behaviors every instance of this type carries (design-009 §6). The store
+   * class routes HOW, exactly as it routes everything else:
+   *  - `durable` behaviors are attached as post-spawn `addComponent` calls in
+   *    the SAME spawn transaction — document truth, so they sync and undo with
+   *    the widget. (Not spawn-init overrides: those hit the prefab's
+   *    all-builds eligibility throw in `instantiate.ts`.)
+   *  - `runtime` behaviors are stamped at PROJECTION by the equip system,
+   *    beside the capability tags. That is the only mechanism that also equips
+   *    a widget arriving from a remote peer or a restored file, which a rider
+   *    attached at spawn time would miss on every peer but the author's.
+   * Ephemeral behaviors are refused: an ephemeral instance IS the local
+   * presence peer, so it cannot ride a widget at all.
+   */
+  readonly behaviors?: readonly WidgetBehaviorDecl[];
+  /**
    * fromVersion → idempotent absolute transform (M9's `runMigrations` runs the
    * chain at open; `prev`/return are flat prop records spanning every group).
    *
@@ -234,6 +262,8 @@ export interface WidgetType {
   /** Escape ownership under an exclusive claim ("release" = engine-reserved). */
   readonly keyboardEscape: "release" | "widget";
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
+  /** Pre-attached behaviors, normalized (spawn tx for durable, equip for runtime). */
+  readonly behaviors: readonly WidgetBehaviorEntry[];
   /** Normalized author preview component (opaque; react narrows). null = none declared. */
   readonly previewComponent: unknown;
   /** Prop overrides for the default real-component preview mount (validated names). */
@@ -448,6 +478,31 @@ export function defineWidget(def: WidgetDef): WidgetType {
     essential.push(init(Provides, { list: JSON.stringify(def.provides) })); // leaf: no Container tag
   }
 
+  // Pre-attached behaviors: normalize the two authored forms and refuse the
+  // one store class that cannot ride an entity.
+  const behaviorEntries: WidgetBehaviorEntry[] = [];
+  for (const decl of def.behaviors ?? []) {
+    const entry: WidgetBehaviorEntry =
+      "behavior" in (decl as AnyBehaviorAttachSpec)
+        ? {
+            behavior: (decl as AnyBehaviorAttachSpec).behavior as AnyBehaviorDef,
+            data: ((decl as AnyBehaviorAttachSpec).data ?? {}) as Readonly<Record<string, unknown>>,
+          }
+        : { behavior: decl as AnyBehaviorDef, data: {} };
+    if (entry.behavior?.__behavior !== true) {
+      throw new Error(`ice: defineWidget("${def.type}") behaviors: entry is not a defineBehavior handle.`);
+    }
+    if (entry.behavior.store === "ephemeral") {
+      throw new Error(
+        `ice: defineWidget("${def.type}") lists ephemeral behavior "${entry.behavior.name}" — an ephemeral instance IS the local presence peer, so it cannot be pre-attached to a widget (design-009 §4.4).`,
+      );
+    }
+    if (behaviorEntries.some((x) => x.behavior === entry.behavior)) {
+      throw new Error(`ice: defineWidget("${def.type}") lists behavior "${entry.behavior.name}" twice.`);
+    }
+    behaviorEntries.push(entry);
+  }
+
   const version = def.version ?? 1;
   if (def.migrate !== undefined) validateMigrateChain(def.type, version, def.migrate);
 
@@ -509,6 +564,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     keyboard: interaction.keyboard ?? "shared",
     keyboardEscape: interaction.keyboardEscape ?? "release",
     migrate: def.migrate ?? {},
+    behaviors: behaviorEntries,
     previewComponent: previewDecl.component,
     ...(previewDecl.props !== undefined ? { previewProps: previewDecl.props } : {}),
   };

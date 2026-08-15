@@ -39,6 +39,12 @@ import {
   Viewport,
 } from "../catalog";
 import { Active } from "../catalog/camera-derived";
+import {
+  createBehaviorRuntime,
+  type BehaviorRuntime,
+  type BehaviorSession,
+} from "../behavior/runtime";
+import type { AnyBehaviorDef } from "../behavior/types";
 import { createEngine, type Engine } from "../engine/engine";
 import type { FrameControl } from "../engine/frame-control";
 import { isMidGesture } from "../interaction/gesture-status";
@@ -80,6 +86,13 @@ export interface CanvasEngineOpts {
   readonly widgets?: readonly { readonly type: string }[];
   /** Registered tools (definition happens at defineTool; validated). */
   readonly tools?: readonly Tool[];
+  /**
+   * Behaviors this engine runs (design-009). Definition is the import
+   * side-effect; listing them here COMPILES and installs them — a behavior that
+   * is defined but never registered costs nothing and does nothing, which is
+   * what makes "a plugin declared it" and "this engine runs it" separable.
+   */
+  readonly behaviors?: readonly AnyBehaviorDef[];
   readonly budgets?: {
     readonly keepMounted?: number;
     readonly fboBytes?: number;
@@ -197,6 +210,13 @@ export interface StageControl {
 export interface CanvasEngine {
   readonly world: World;
   readonly engine: Engine;
+  /**
+   * The behavior runtime (design-009 §6): attach/detach/has/read for
+   * runtime-class behaviors, plus `list()` for devtools and the doctor.
+   * DURABLE attachment is deliberately absent — it is a document op and goes
+   * through `tx.attach` inside a transaction, so it syncs and undoes.
+   */
+  readonly behaviors: BehaviorRuntime;
   readonly stack: InteractionStack;
   readonly runtime: WidgetRuntime & { uninstall(): void };
   readonly nav: NestedCanvas;
@@ -449,6 +469,18 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
   };
 
+  // --- the behavior runtime ---------------------------------------------------
+  // The session seam is FORWARDING, exactly like the commit sink above: a
+  // behavior's `ctx.commit` and its divergence-guarding live writer both have
+  // to follow the document across open/close, and the runtime itself must
+  // survive that (its instances are per-generation, not per-engine).
+  const behaviors = createBehaviorRuntime({
+    world,
+    engine,
+    session: () => session as BehaviorSession | undefined,
+  });
+  for (const b of opts.behaviors ?? []) behaviors.register(b);
+
   // --- ops catalog -------------------------------------------------------------
   const widgetQuery = (): Entity[] => {
     const out: Entity[] = [];
@@ -678,6 +710,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   return {
     world,
     engine,
+    behaviors,
     stack,
     runtime,
     nav,
@@ -689,6 +722,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     step: (now) => engine.step(now),
     dispose() {
       closeDoc();
+      // Behaviors before guests: their dispose hooks may still want a live
+      // world, and their breaker rows live in the guest registry that the next
+      // line tears down.
+      behaviors.dispose();
       // Guests first: their dispose may touch doc/runtime state, and a
       // suspended-but-registered guest still holds an instance to tear down.
       engine.disposeGuests();

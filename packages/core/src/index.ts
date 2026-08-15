@@ -119,6 +119,7 @@ export { behaviors, defineBehavior } from "./behavior/define-behavior";
 export {
   BEHAVIOR_DEFAULT_PHASE,
   BEHAVIOR_PHASES,
+  type AnyBehaviorAttachSpec,
   type AnyBehaviorDef,
   type BehaviorAttachSpec,
   type BehaviorChanges,
@@ -255,13 +256,15 @@ export {
   type WidgetGroup,
   type WidgetInteraction,
   type WidgetPortDecl,
+  type WidgetBehaviorDecl,
+  type WidgetBehaviorEntry,
   type WidgetRename,
   type WidgetRenameEntry,
   type WidgetSurface,
   type WidgetType,
 } from "./widget/define-widget";
 export { createWidgetEquipSystem } from "./widget/equip";
-export { attachSpawnParent, spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
+export { attachSpawnBehaviors, attachSpawnParent, spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
 export { setWidgetProps } from "./widget/set-props";
 export {
   createWidgetRuntime,

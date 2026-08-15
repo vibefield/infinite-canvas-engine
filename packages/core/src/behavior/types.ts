@@ -366,3 +366,13 @@ export interface BehaviorHandle<Data> {
 /** A behavior handle of unknown data shape (registries, `reads:` lists). */
 // biome-ignore lint/suspicious/noExplicitAny: the registry is data-shape-agnostic by construction.
 export type AnyBehaviorDef = BehaviorHandle<any>;
+
+/**
+ * A pre-attachment of unknown data shape — what a LIST of them has to be typed
+ * as. `BehaviorAttachSpec<never>` looks like the shape-agnostic form and is
+ * not: `Layout.with({gapX: 32})` produces `BehaviorAttachSpec<{gapX: number}>`,
+ * which is not assignable to it, so the documented `with()` form would not
+ * typecheck in `defineWidget({behaviors})` at all.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: same reason as AnyBehaviorDef.
+export type AnyBehaviorAttachSpec = BehaviorAttachSpec<any>;
