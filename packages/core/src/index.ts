@@ -144,6 +144,15 @@ export {
   type RuntimeBehaviorCtx,
 } from "./behavior/types";
 export { compileBehavior, isDurableEligible, type CompiledBehavior } from "./behavior/compile";
+export {
+  behaviorMarkerKey,
+  classifyBehaviorVersion,
+  docBehaviorVersion,
+  stampBehaviorMarker,
+  BEHAVIOR_MARKER_PREFIX,
+  type BehaviorMeta,
+  type BehaviorVerdict,
+} from "./behavior/migrate";
 
 // Write-path guards.
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";

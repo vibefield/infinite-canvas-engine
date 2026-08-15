@@ -47,6 +47,13 @@ import type { JsonSpec, PropSpec } from "../widget/props";
 import { compileBehavior, type BehaviorSystemHooks, type CompiledBehavior } from "./compile";
 import { diffOps, recordDerivedOps, replayOps } from "./differ";
 import {
+  classifyBehaviorVersion,
+  docBehaviorVersion,
+  runBehaviorMigration,
+  stampBehaviorMarker,
+  type BehaviorMeta,
+} from "./migrate";
+import {
   allowedQueryTerms,
   createBehaviorWorld,
   createQueryScope,
@@ -71,6 +78,9 @@ export interface BehaviorSession {
     keyOf(e: Entity): unknown;
     resolve(key: never): Entity | undefined;
     getComponent<S>(e: Entity, c: Component<S>): S | undefined;
+    /** The version-marker surface (behavior/migrate.ts). Absent = no markers. */
+    readonly snapshot?: BehaviorMeta;
+    metaTransaction?(fn: (meta: { get(key: string): unknown; set(key: string, value: string): void }) => void): void;
   };
 }
 
@@ -246,6 +256,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     readonly peersQuery: Query | undefined;
     /** Ephemeral only: the local peer this node last published a facet on. */
     private facetPeer: Entity | undefined;
+    /** The session whose version state has already been checked (§5.6). */
+    private checkedSession: unknown;
+    /**
+     * The doc holds NEWER data than this build understands. Projection is
+     * version-blind — a known name at a newer version projects straight into
+     * older hooks — so dormancy has to be ACTIVE, not free.
+     */
+    private dormant = false;
     readonly instances = new Map<Entity, Instance>();
     readonly fieldNames: readonly string[];
     readonly jsonFields: readonly string[];
@@ -399,6 +417,73 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           ...(this.compiled.systems as readonly never[]),
         );
       }
+    }
+
+    /** The version-marker surface for the current session, if it has one. */
+    private metaOf(session: BehaviorSession | undefined): BehaviorMeta | undefined {
+      const snapshot = session?.store.snapshot;
+      if (snapshot === undefined || typeof snapshot.readMeta !== "function") return undefined;
+      const metaTransaction = session?.store.metaTransaction;
+      if (typeof metaTransaction !== "function") return undefined;
+      return {
+        readMeta: (key) => snapshot.readMeta(key),
+        metaTransaction: (fn) => metaTransaction.call(session?.store, fn),
+      };
+    }
+
+    /** Classify this doc's version for this behavior, and act on the verdict. */
+    private syncVersion(session: BehaviorSession | undefined): void {
+      this.dormant = false;
+      if (this.b.store !== "durable" || session === undefined) return;
+      const meta = this.metaOf(session);
+      if (meta === undefined) return;
+      const docVersion = docBehaviorVersion(meta, this.b.name, this.b.version);
+      const verdict = classifyBehaviorVersion(this.b, docVersion);
+      switch (verdict.kind) {
+        case "ok":
+          return;
+        case "dormant":
+          this.dormant = true;
+          onLog(
+            this.b.name,
+            `the document holds v${verdict.docVersion} data and this build installs v${verdict.installed} — hook delivery is REFUSED for this behavior (its cells stay untouched). The document itself is unaffected and stays writable.`,
+            [],
+          );
+          return;
+        case "unreachable":
+          onLog(
+            this.b.name,
+            `the document holds v${verdict.from} data and this build's migrate chain cannot reach v${verdict.installed} — its cells stay at v${verdict.from}.`,
+            [],
+          );
+          return;
+        case "migrate": {
+          if (session.readOnly) return; // nothing to write to
+          const carriers: Entity[] = [];
+          world.query(this.ownQuery).each((b) => {
+            for (const row of b) carriers.push(b.entity(row));
+          });
+          const n = runBehaviorMigration(this.b, verdict.from, {
+            world,
+            meta,
+            store: session.store,
+            liveWriter: session.liveWriter,
+            carriers: () => carriers,
+          });
+          onLog(this.b.name, `migrated ${n} instance(s) from v${verdict.from} to v${verdict.installed}.`, []);
+          return;
+        }
+      }
+    }
+
+    /** Stamp this build's marker the first time a cell of ours enters the doc. */
+    private stampFirstAttach(): void {
+      if (this.b.store !== "durable") return;
+      const session = opts.session?.();
+      if (session === undefined || session.readOnly) return;
+      const meta = this.metaOf(session);
+      if (meta === undefined) return;
+      stampBehaviorMarker(meta, this.b.name, this.b.version);
     }
 
     /** Does `e` carry this behavior AS AN INSTANCE? (ephemeral: local peer only) */
@@ -676,9 +761,28 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         this.generation = new AbortController();
         this.seeded = false;
       }
+      // The version check is RE-ENTRANT by construction: it re-runs whenever
+      // the session identity changes, which covers doc open, doc switch, and
+      // (because a plugin host installs mid-session) a behavior registered long
+      // after the document was opened. "Migrate at open" alone would miss that
+      // last path entirely, which is the normal one for plugins.
+      const session = opts.session?.();
+      if (session !== this.checkedSession) {
+        this.checkedSession = session;
+        this.syncVersion(session);
+      }
+
       const work = this.stash;
       this.stash = undefined;
       const full = work?.full ?? true;
+
+      if (this.dormant) {
+        // Refuse hook delivery, but keep draining: the moment a build that
+        // understands this data opens the doc, its own runtime picks up where
+        // this one honestly declined to guess.
+        this.walker = undefined;
+        return;
+      }
 
       const appeared: Entity[] = [];
       const departed: Instance[] = [];
@@ -717,6 +821,10 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         });
       }
       if (appeared.length > 0 || departed.length > 0) this.parentsDirty = true;
+      // FIRST-ATTACH stamping (§5.6): not at doc create, where the behavior may
+      // not exist yet — a plugin installs later, and a marker for something the
+      // document has no cells of is a lie about what is in it.
+      if (appeared.length > 0) this.stampFirstAttach();
 
       // The instance SNAPSHOT: hooks below may attach or detach, and those
       // land next frame. Nothing after this line re-reads `this.instances` for
