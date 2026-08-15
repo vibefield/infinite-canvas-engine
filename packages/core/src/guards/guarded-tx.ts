@@ -13,6 +13,7 @@
  */
 import type { Component, Entity, OrderPlace, Relation, Resource, Tag, World } from "@vibecook/strata-ecs";
 import type { Mutator } from "@vibecook/strata-ecs/durable";
+import { behaviors } from "../behavior/define-behavior";
 import { Grab, Position, TransformTween } from "../catalog";
 import { instantiate } from "../engine/instantiate";
 import { schemaMeta } from "../schema/meta";
@@ -61,7 +62,7 @@ interface GuardedEditor {
 }
 
 interface TxDoc {
-  transaction(fn: (tx: Mutator) => void, opts?: { undoable?: boolean }): void;
+  transaction(fn: (tx: Mutator) => void, opts?: { undoable?: boolean; meta?: Record<string, unknown> }): void;
 }
 
 export interface GuardedTxOpts {
@@ -80,6 +81,15 @@ export interface GuardedTxOpts {
   /** Optional entity → doc-key probe; when absent every entity is treated as
    *  durable-if-Position-eligible. Used to skip runtime-only movers' tx write. */
   readonly keyOf?: (e: Entity) => string | undefined;
+  /**
+   * Per-commit PROVENANCE (strata 0.12.0, petition 9): a small record carried
+   * in-CRDT with the batch, so a receiving peer can say who wrote this and why.
+   * The behavior framework stamps `{ behavior, label }` on every `ctx.commit`
+   * (design-009 §4.4 — `label` is a stable machine id, never display text).
+   * Note that shallow saves erase provenance below the compaction boundary, so
+   * it is diagnostics, never a data dependency.
+   */
+  readonly meta?: Record<string, unknown>;
 }
 
 /**
@@ -139,6 +149,17 @@ export function guardedTransaction(
 
     const checkComponent = (e: Entity, c: Component, op: string): void => {
       if (!devGuardsEnabled()) return;
+      // BF-D6 (design-001 amendment): a registered DURABLE behavior's own data
+      // component is universally durable-eligible. Behaviors attach to any
+      // entity the host's write gate allows, so per-prefab eligibility cannot
+      // express them — and design-001's eligibility rationale ("typo/schema
+      // safety") is met a different way here, by definition-time name
+      // registration: an unregistered component simply is not a behavior.
+      //
+      // This branch is LOAD-BEARING IN PRODUCTION, not a dev nicety: guards are
+      // opt-OUT (guards/dev.ts), so without it every durable behavior write
+      // would throw in a shipped build.
+      if (behaviors.isBehaviorComponent(c) && behaviors.forComponent(c)?.store === "durable") return;
       const prefab = prefabOf(e);
       if (prefab && !prefab.eligible.has(c)) {
         const name = schemaMeta.component(c)?.name ?? "<component>";

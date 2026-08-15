@@ -40,8 +40,11 @@ import { FrameInfo } from "../engine/frame-info";
 import type { PhaseGroup } from "../engine/pipeline";
 import { devGuardsEnabled } from "../guards/dev";
 import type { LiveWriter } from "../guards/live-writer";
+import { guardedTransaction } from "../guards/guarded-tx";
+import type { GuardedTx } from "../guards/guarded-tx";
 import type { JsonSpec, PropSpec } from "../widget/props";
 import { compileBehavior, type BehaviorSystemHooks, type CompiledBehavior } from "./compile";
+import { diffOps, recordDerivedOps, replayOps } from "./differ";
 import {
   allowedQueryTerms,
   createBehaviorWorld,
@@ -55,6 +58,7 @@ import type {
   BehaviorChanges,
   BehaviorCtxBase,
   BehaviorFrame,
+  BehaviorTx,
 } from "./types";
 
 /** The slice of a doc session the runtime needs (structural: tests fake it). */
@@ -109,6 +113,12 @@ export interface BehaviorRuntime {
   read(e: Entity, b: AnyBehaviorDef): Record<string, unknown> | undefined;
   list(): readonly BehaviorStatus[];
   dispose(): void;
+}
+
+/** One entity's watched state at the moment a commit sealed (see `echo`). */
+interface EchoSnapshot {
+  readonly cells: readonly [Component, unknown][];
+  readonly tags: readonly [Tag, boolean][];
 }
 
 /** How many consecutive throws quarantine ONE instance (BF-D18). */
@@ -203,6 +213,30 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     private stash:
       | { full: boolean; ownChanged: readonly Entity[]; ownRemoved: readonly Entity[]; readsFired: boolean; readsChanged: readonly Entity[]; readsRemoved: readonly Entity[] }
       | undefined;
+
+    /**
+     * The ECHO snapshot (§3 own-write subtraction): for every entity this
+     * behavior's last commit wrote, the values of every component it watches,
+     * captured immediately after the seal.
+     *
+     * Why it exists: a derived commit journals the entities it just wrote, the
+     * next frame reads that as churn, recomputes, diffs everything away and
+     * commits nothing. One wasted full recompute per change event. Subtracting
+     * the echo makes a derived behavior quiesce in ONE frame.
+     *
+     * Why it stores VALUES and not just entity ids: the journal reports
+     * ENTITIES, not components, so an id-only subtraction cannot tell our own
+     * echo from a real write that landed on the same entity inside the same
+     * drain window — and it would DROP that real write permanently, since
+     * nothing will journal it again. Comparing the watched values answers the
+     * question exactly: unchanged everywhere means the entry was ours.
+     *
+     * "Watched" means EVERY subscription, tags included. Snapshotting only the
+     * components left a hole with the same shape as the one this whole memo
+     * exists to avoid: a tag in the reads set flipping on an entity we had just
+     * written looked identical to our own echo, and was swallowed.
+     */
+    private echo: Map<Entity, EchoSnapshot> = new Map();
 
     /** Poll state (relations and resources cannot journal — see §5.2). */
     private readonly resourceStamps = new Map<Resource, number>();
@@ -371,9 +405,40 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         (readsDelta?.reset ?? false) ||
         (readsDelta?.coarse.length ?? 0) > 0;
 
-      const ownChanged = ownDelta?.changed ?? [];
+      // The echo memo is consumed by INVALIDATION, not by a frame count.
+      // A one-drain window would in fact suffice for the ordinary case — a
+      // durable write journals twice (write-through now, batch re-projection at
+      // the following `world.sync()`) but both copies land inside one drain —
+      // so this is a margin, not a fix: it costs nothing, it does not depend on
+      // that timing holding, and the first genuine change on an entity fails
+      // the compare, wakes the behavior, and drops the entry anyway.
+      const echo = this.echo;
+      const isEcho = (e: Entity): boolean => {
+        const snap = echo.get(e);
+        if (snap === undefined) return false;
+        const alive = world.isAlive(e);
+        for (const [c, v] of snap.cells) {
+          const now = alive && world.has(e, c) ? world.get(e, c) : undefined;
+          const same = now === undefined || v === undefined ? now === v : valueEquals(c, now, v);
+          if (!same) {
+            echo.delete(e);
+            return false;
+          }
+        }
+        for (const [t, had] of snap.tags) {
+          if ((alive && world.hasTag(e, t)) !== had) {
+            echo.delete(e);
+            return false;
+          }
+        }
+        return true;
+      };
+      const keep = (list: readonly Entity[]): readonly Entity[] =>
+        echo.size === 0 || list.length === 0 ? list : list.filter((e) => !isEcho(e));
+
+      const ownChanged = keep(ownDelta?.changed ?? []);
       const ownRemoved = ownDelta?.removed ?? [];
-      const readsChanged = readsDelta?.changed ?? [];
+      const readsChanged = keep(readsDelta?.changed ?? []);
       const readsRemoved = readsDelta?.removed ?? [];
       const ownWork = ownChanged.length > 0 || ownRemoved.length > 0;
       const readsWork = pollFired || readsChanged.length > 0 || readsRemoved.length > 0;
@@ -738,6 +803,10 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           requireWalker("detach").removeComponent(e, node.own);
         };
       }
+      if (this.b.store === "durable" || this.b.store === "runtime") {
+        extra.commit = (label: string, fn: (tx: BehaviorTx<Record<string, unknown>>) => void, o?: { undoable?: boolean }) =>
+          node.commit(label, fn, o);
+      }
       return Object.assign(base, extra) as BehaviorCtxBase<Record<string, unknown>> & Record<string, unknown>;
     }
 
@@ -763,6 +832,141 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       const live = opts.session?.()?.liveWriter;
       if (live !== undefined) live.set(e, c as Component<unknown>, v);
       else world.edit(e).set(c as Component<unknown>, v);
+    }
+
+    /** `ctx.commit` — ONE labeled transaction, opened INSIDE the hook. */
+    private commit(
+      label: string,
+      fn: (tx: BehaviorTx<Record<string, unknown>>) => void,
+      o?: { undoable?: boolean },
+    ): void {
+      const session = opts.session?.();
+      if (session === undefined) {
+        throw new Error(
+          `ice: behavior "${this.b.name}" called ctx.commit("${label}") with no document attached — durable writes need a doc (engine.docs.create()/open()/join()).`,
+        );
+      }
+      if (session.readOnly) {
+        throw new Error(
+          `ice: behavior "${this.b.name}" called ctx.commit("${label}") on a READ-ONLY document (version gate) — writes are disabled.`,
+        );
+      }
+      const store = session.store as unknown as Parameters<typeof guardedTransaction>[0];
+      const keyOf = (e: Entity): string | undefined => {
+        const key = session.store.keyOf(e);
+        return typeof key === "string" ? key : undefined;
+      };
+      // `label` is a stable MACHINE id, never display text: it rides in-CRDT as
+      // provenance (strata 0.12.0 petition 9) and a receiving peer reads it.
+      const meta = { behavior: this.b.name, label };
+
+      if (!this.b.derived) {
+        guardedTransaction(store, world, (tx) => fn(this.wrapTx(tx)), {
+          ...(o?.undoable !== undefined ? { undoable: o.undoable } : {}),
+          live: session.liveWriter,
+          keyOf,
+          meta,
+        });
+        return;
+      }
+
+      // The derived path BUFFERS: `undoable` has to be decided before the
+      // transaction opens, and whether this commit is derived output or an
+      // authorial config edit is only knowable from its ops.
+      const recorded = recordDerivedOps(this.b.name, (rec) => fn(this.wrapTx(rec)));
+      const diff = diffOps(recorded, {
+        world,
+        docValue: (e, c) => session.store.getComponent(e, c),
+        writeTargets: new Set(this.b.writes as readonly Component[]),
+      });
+      if (diff.ops.length === 0) return; // zero ops opens NO transaction
+      guardedTransaction(store, world, (tx) => replayOps(diff.ops, tx), {
+        // ⌘Z must never un-derive. Output rides non-undoable; a commit that
+        // only touches the behavior's OWN data is authorial and keeps undo.
+        undoable: diff.derivedOutput ? false : (o?.undoable ?? true),
+        live: session.liveWriter,
+        keyOf,
+        meta,
+      });
+      this.captureEcho(diff.writtenEntities, diff.writtenValues);
+    }
+
+    /**
+     * Snapshot what the world will look like once this commit projects.
+     *
+     * Committed components take the value the COMMIT wrote — a durable write
+     * lands in the doc now and projects at the next `world.sync()`, so reading
+     * the world here would snapshot the value being replaced and every echo
+     * would then look like a real change. Everything else the behavior watches
+     * is read from the world, where it is already current.
+     */
+    private captureEcho(
+      entities: readonly Entity[],
+      committed: ReadonlyMap<Entity, ReadonlyMap<Component, unknown>>,
+    ): void {
+      const watched: Component[] = [this.own, ...this.compiled.readComponents];
+      this.echo = new Map();
+      for (const e of entities) {
+        const wrote = committed.get(e);
+        const alive = world.isAlive(e);
+        const cells: [Component, unknown][] = [];
+        for (const c of watched) {
+          const v = wrote?.get(c);
+          cells.push([c, v !== undefined ? v : alive && world.has(e, c) ? world.get(e, c) : undefined]);
+        }
+        const tags: [Tag, boolean][] = [];
+        for (const t of this.compiled.readTags) tags.push([t, alive && world.hasTag(e, t)]);
+        this.echo.set(e, { cells, tags });
+      }
+    }
+
+    /**
+     * The door's transaction. `setResource` is MASKED — the §9 resource-write
+     * fence made mechanical rather than doctrinal: `GuardedTx` structurally
+     * carries it, so leaving it reachable would make the fence a comment.
+     */
+    private wrapTx(tx: GuardedTx): BehaviorTx<Record<string, unknown>> {
+      const node = this;
+      const wrapped = {
+        ...tx,
+        spawnPrefab: tx.spawnPrefab.bind(tx),
+        spawn: tx.spawn.bind(tx),
+        destroy: tx.destroy.bind(tx),
+        addComponent: tx.addComponent.bind(tx),
+        removeComponent: tx.removeComponent.bind(tx),
+        edit: tx.edit.bind(tx),
+        addTag: tx.addTag.bind(tx),
+        removeTag: tx.removeTag.bind(tx),
+        setRelation: tx.setRelation.bind(tx),
+        addRelation: tx.addRelation.bind(tx),
+        removeRelation: tx.removeRelation.bind(tx),
+        moveRelation: tx.moveRelation.bind(tx),
+        move: tx.move.bind(tx),
+        setResource: () => {
+          throw new Error(
+            `ice: behavior "${node.b.name}" called tx.setResource — behaviors do not write resources (design-009 §4.4). A resource-backed behavior is the named "singleton" v1.1 shape.`,
+          );
+        },
+        write(e: Entity, patch: Record<string, unknown>) {
+          tx.edit(e).set(node.own as Component<unknown>, node.cellFor(e, patch));
+        },
+        attach(e: Entity, behavior: { component: unknown; defaults: unknown; name: string }, data?: Record<string, unknown>) {
+          const other = behavior as unknown as AnyBehaviorDef;
+          const cell = cellForBehavior(world, other, e, data ?? {});
+          // Attach-when-attached is an IDEMPOTENT no-op that preserves existing
+          // data (§6) — expressed as a value write, which the differ then sees
+          // as an ordinary value diff rather than a structural op.
+          if (world.has(e, other.component as Component)) {
+            tx.edit(e).set(other.component as Component<unknown>, cell);
+          } else {
+            tx.addComponent(e, other.component as Component<unknown>, cell);
+          }
+        },
+        detach(e: Entity, behavior: AnyBehaviorDef) {
+          tx.removeComponent(e, behavior.component as Component);
+        },
+      };
+      return wrapped as unknown as BehaviorTx<Record<string, unknown>>;
     }
 
     status(): BehaviorStatus {
