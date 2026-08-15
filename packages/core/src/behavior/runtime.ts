@@ -22,7 +22,7 @@
  * journals into collectors exactly like a local write, so `update` fires for a
  * remote peer's edit and for a local undo through the same path.
  */
-import { defineQuery, type Query } from "@vibecook/strata-ecs";
+import { Local, Not, defineQuery, type Query } from "@vibecook/strata-ecs";
 import { valueEquals } from "@vibecook/strata-ecs";
 import type {
   Batch,
@@ -74,6 +74,22 @@ export interface BehaviorSession {
   };
 }
 
+/**
+ * The slice of a presence session an ephemeral behavior needs. Structural so
+ * tests can fake it, and a FUNCTION on the opts so it can swap with the doc —
+ * presence attaches and detaches with `docs.join`, and a behavior installed
+ * before either must simply lie dormant until one exists.
+ */
+export interface BehaviorPresence {
+  /** The local peer entity. A GETTER upstream: a world reset re-mints it. */
+  readonly localPeer: Entity;
+  readonly eph: {
+    addComponent(e: Entity, c: Component<unknown>, v: unknown): void;
+    removeComponent(e: Entity, c: Component): void;
+    edit(e: Entity): { set(c: Component<unknown>, v: unknown): unknown };
+  };
+}
+
 export interface BehaviorRuntimeOpts {
   readonly world: World;
   readonly engine: {
@@ -83,6 +99,12 @@ export interface BehaviorRuntimeOpts {
   };
   /** The FORWARDING session seam — the target swaps per doc open/close. */
   readonly session?: () => BehaviorSession | undefined;
+  /**
+   * The presence seam. Absent (or returning undefined) leaves every ephemeral
+   * behavior DORMANT — installed, costing nothing, publishing nothing. That is
+   * honest state, not a failure: a presence-less engine has no peer to be.
+   */
+  readonly presence?: () => BehaviorPresence | undefined;
   readonly onLog?: (behavior: string, message: string, rest: readonly unknown[]) => void;
   /**
    * A contained hook fault. Defaults to `console.error`. Hosts route this: a
@@ -220,6 +242,10 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     readonly ownFields: Component<Record<string, unknown>>;
     readonly guest: DrivenGuest;
     readonly ownQuery: Query;
+    /** Ephemeral only: REMOTE peers' facets of this behavior (read-only). */
+    readonly peersQuery: Query | undefined;
+    /** Ephemeral only: the local peer this node last published a facet on. */
+    private facetPeer: Entity | undefined;
     readonly instances = new Map<Entity, Instance>();
     readonly fieldNames: readonly string[];
     readonly jsonFields: readonly string[];
@@ -299,7 +325,13 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // With no json fields the data view IS the raw cell — one object, no copy.
       this.scratchData = this.jsonFields.length === 0 ? this.scratchCell : {};
       this.scratchPrevData = {};
-      this.ownQuery = defineQuery([this.own]);
+      // An ephemeral behavior is a SINGLETON on the local peer, so remote
+      // peers' projected facets must never become instances — they are read
+      // through `ctx.peers()` instead. `Local` is strata's own marker for
+      // entities THIS peer minted, which is exactly the distinction.
+      this.ownQuery =
+        b.store === "ephemeral" ? defineQuery([this.own, Local]) : defineQuery([this.own]);
+      this.peersQuery = b.store === "ephemeral" ? defineQuery([this.own, Not(Local)]) : undefined;
 
       const hooks: BehaviorSystemHooks = {
         shouldDeliver: () => this.shouldDeliver(),
@@ -356,6 +388,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
             return;
           }
           this.guest.run(() => {
+            if (this.b.store === "ephemeral") this.ensureFacet();
             if (this.shouldDeliver()) this.runDeliver(publishWalker(world));
             this.publishTick();
           });
@@ -368,9 +401,43 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       }
     }
 
-    /** Does `e` carry this behavior AS AN INSTANCE? */
+    /** Does `e` carry this behavior AS AN INSTANCE? (ephemeral: local peer only) */
     private carries(e: Entity): boolean {
-      return world.isAlive(e) && world.has(e, this.own);
+      if (!world.isAlive(e) || !world.has(e, this.own)) return false;
+      return this.b.store !== "ephemeral" || world.hasTag(e, Local);
+    }
+
+    /**
+     * Mint (or re-mint) the local peer's facet. `localPeer` is a getter that a
+     * world reset replaces — the fresh peer carries NO facets, so the identity
+     * swap is what tells us to attach again rather than edit a dead entity.
+     */
+    private ensureFacet(): void {
+      const presence = opts.presence?.();
+      if (presence === undefined) {
+        this.facetPeer = undefined;
+        return; // dormant: no peer to be
+      }
+      const peer = presence.localPeer;
+      // A world reset kills the minted peer, and presence re-mints it a
+      // MICROTASK later (attaching an ephemeral store is illegal inside an
+      // observer emit). Between the two there is a window where `localPeer` is
+      // a dead handle — writing through it throws inside strata's projector,
+      // which the breaker then charges to a behavior that did nothing wrong.
+      // Skip the frame; the fresh peer arrives on the next one.
+      if (!world.isAlive(peer)) {
+        this.facetPeer = undefined;
+        return;
+      }
+      if (peer === this.facetPeer && world.has(peer, this.own)) return;
+      this.facetPeer = peer;
+      if (!world.has(peer, this.own)) {
+        presence.eph.addComponent(
+          peer,
+          this.own as Component<unknown>,
+          { ...(this.b.defaults as Record<string, unknown>) },
+        );
+      }
     }
 
     /** Throw away journaled churn nobody will read (see `onSuspendedFrame`). */
@@ -831,6 +898,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         }
       }
       this.instances.clear();
+      this.facetPeer = undefined;
       this.suppressed.clear();
       this.suppressedFrames.clear();
       this.carry.clear();
@@ -931,11 +999,44 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           requireWalker("detach").removeComponent(e, node.own);
         };
       }
+      if (this.b.store === "ephemeral") {
+        // No entity argument: the instance IS the local peer, and there is
+        // exactly one. Legal without a queue because ephemeral hooks run at the
+        // publish slot — post-tick, where eph mutation is allowed.
+        extra.write = (patch: Record<string, unknown>) => node.writeFacet(patch);
+        extra.peers = () => node.readPeers();
+      }
       if (this.b.store === "durable" || this.b.store === "runtime") {
         extra.commit = (label: string, fn: (tx: BehaviorTx<Record<string, unknown>>) => void, o?: { undoable?: boolean }) =>
           node.commit(label, fn, o);
       }
       return Object.assign(base, extra) as BehaviorCtxBase<Record<string, unknown>> & Record<string, unknown>;
+    }
+
+    /** `ctx.write(patch)` for the ephemeral class — publish THIS peer's facet. */
+    private writeFacet(patch: Record<string, unknown>): void {
+      const presence = opts.presence?.();
+      if (presence === undefined) return; // dormant
+      const peer = presence.localPeer;
+      if (!world.isAlive(peer)) return; // mid re-mint (see ensureFacet)
+      const cell = cellForBehavior(world, this.b, peer, patch);
+      if (world.has(peer, this.own)) presence.eph.edit(peer).set(this.own as Component<unknown>, cell);
+      else presence.eph.addComponent(peer, this.own as Component<unknown>, cell);
+    }
+
+    /** `ctx.peers()` — REMOTE peers' facets, read-only. The read side of presence. */
+    private readPeers(): { entity: Entity; data: Record<string, unknown> }[] {
+      const q = this.peersQuery;
+      if (q === undefined) return [];
+      const out: { entity: Entity; data: Record<string, unknown> }[] = [];
+      world.query(q).each((b) => {
+        for (const row of b) {
+          const e = b.entity(row);
+          const cell = this.readCell(e, {});
+          out.push({ entity: e, data: this.viewOf(cell, {}) });
+        }
+      });
+      return out;
     }
 
     /** `ctx.write` — own runtime data, immediate, through the armed guard. */

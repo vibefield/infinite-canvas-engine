@@ -41,6 +41,7 @@ import {
 import { Active } from "../catalog/camera-derived";
 import {
   createBehaviorRuntime,
+  type BehaviorPresence,
   type BehaviorRuntime,
   type BehaviorSession,
 } from "../behavior/runtime";
@@ -478,6 +479,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     world,
     engine,
     session: () => session as BehaviorSession | undefined,
+    // Presence attaches with `docs.join({presence})` and detaches with the
+    // document, so this reads through per publish: an ephemeral behavior
+    // installed before anyone joins simply lies dormant until there is a peer
+    // for it to be.
+    presence: () => presence as BehaviorPresence | undefined,
   });
   for (const b of opts.behaviors ?? []) behaviors.register(b);
 
