@@ -40,6 +40,7 @@ import {
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
+import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
 
 export type WidgetSurface = "dom" | "gl";
@@ -286,6 +287,10 @@ function strataFieldOf(name: string, spec: PropSpec) {
     }
     case "json":
       return field("string", { default: (spec as JsonSpec).default ?? "null" });
+    case "entityKey":
+      // A doc key is a string cell — `p.entityKey` is the DECLARED meaning, not
+      // a distinct storage type (design-009 §4.2).
+      return field("string", { default: spec.default ?? "" });
     default:
       throw new Error(`ice: defineWidget prop "${name}" has an unknown spec kind.`);
   }
@@ -433,11 +438,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
   ];
   for (const g of groups) {
     const defaults: Record<string, string | number | boolean> = {};
-    for (const [name, spec] of Object.entries(g.fields)) {
-      if (spec.kind === "json") defaults[name] = (spec as JsonSpec).default ?? "null";
-      else if (spec.kind === "enum") defaults[name] = spec.default ?? spec.options[0] ?? "";
-      else defaults[name] = spec.default ?? (spec.kind === "string" ? "" : spec.kind === "number" ? 0 : false);
-    }
+    for (const [name, spec] of Object.entries(g.fields)) defaults[name] = defaultValueOf(spec);
     essential.push([g.component, defaults] as ComponentInit);
   }
   if (def.container !== undefined) {

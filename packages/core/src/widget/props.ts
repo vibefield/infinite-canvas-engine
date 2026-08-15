@@ -32,7 +32,8 @@ export type PropSpec =
   | NumberSpec
   | BooleanSpec
   | EnumSpec
-  | JsonSpec;
+  | JsonSpec
+  | EntityKeySpec;
 
 export interface StringSpec extends StandardSchemaV1<unknown, string> {
   readonly kind: "string";
@@ -58,6 +59,19 @@ export interface JsonSpec extends StandardSchemaV1<unknown, unknown> {
   readonly kind: "json";
   readonly inner: JsonShape;
   /** Serialized default (derived from the inner root when not given). */
+  readonly default?: string;
+}
+/**
+ * A DURABLE entity reference (design-009 §4.2): the doc key of another entity,
+ * stored as a plain string cell. This is the ONLY legal cross-entity reference
+ * in behavior data — Law 7 bans `eid` from durable cells because a runtime
+ * handle means nothing to the peer that receives it, while a doc key survives
+ * the wire, the file, and a reload. Empty string = no reference; resolution is
+ * `ctx.entityFor(key)`, which may legitimately return undefined while the
+ * target is not yet projected.
+ */
+export interface EntityKeySpec extends StandardSchemaV1<unknown, string> {
+  readonly kind: "entityKey";
   readonly default?: string;
 }
 
@@ -203,6 +217,20 @@ export const p = {
     };
   },
 
+  /**
+   * A durable reference to another entity by DOC KEY (design-009 §4.2).
+   * Behavior-facing: `defineWidget` props have no use for it (a widget's
+   * references are relations), but nothing rejects it there either — it is an
+   * ordinary string cell with a declared meaning.
+   */
+  entityKey(opts: { default?: string } = {}): EntityKeySpec {
+    return {
+      kind: "entityKey",
+      default: opts.default ?? "",
+      "~standard": std((v) => (typeof v === "string" ? { value: v } : fail("expected an entity key (string)"))),
+    };
+  },
+
   // json-only inner shapes (validation, never components):
   array(item: JsonShape): JsonShape {
     return { kind: "array", item };
@@ -214,3 +242,30 @@ export const p = {
 
 /** A widget props declaration: top-level named specs (the compiler's input). */
 export type PropsDecl = Readonly<Record<string, PropSpec>>;
+
+/**
+ * The CELL default for a spec — the value a whole-component write fills in for
+ * an untouched field, and the value a generated strata field declares.
+ *
+ * One function, three callers (widget spawn defaults, `defineWidget`'s
+ * essential set, `defineBehavior`'s attach defaults): each used to carry its
+ * own else-if chain over `spec.kind`, and each chain had to be found and
+ * amended when `p.entityKey` was added — one of them by inspection rather than
+ * by a type error, since the chains end in a catch-all `else`. It lives here,
+ * beside the specs whose shape it reads.
+ */
+export function defaultValueOf(spec: PropSpec): string | number | boolean {
+  switch (spec.kind) {
+    case "json":
+      return spec.default ?? "null";
+    case "enum":
+      return spec.default ?? spec.options[0] ?? "";
+    case "string":
+    case "entityKey":
+      return spec.default ?? "";
+    case "number":
+      return spec.default ?? 0;
+    case "boolean":
+      return spec.default ?? false;
+  }
+}

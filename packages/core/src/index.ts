@@ -111,6 +111,39 @@ export {
   type GuestStatus,
 } from "./engine/guests";
 
+// --- The behavior framework (design-009): ICE's SECOND product surface -------
+// `defineWidget` (faces) · `defineBehavior` (logic + state) · `defineTool`
+// (input policy). `store:` routes everything — where data lives, who sees it,
+// what survives, which write vocabulary the hooks receive, at which cadence.
+export { behaviors, defineBehavior } from "./behavior/define-behavior";
+export {
+  BEHAVIOR_DEFAULT_PHASE,
+  BEHAVIOR_PHASES,
+  type AnyBehaviorDef,
+  type BehaviorAttachSpec,
+  type BehaviorChanges,
+  type BehaviorCtxBase,
+  type BehaviorCtxFor,
+  type BehaviorFrame,
+  type BehaviorHandle,
+  type BehaviorHooks,
+  type BehaviorPhase,
+  type BehaviorQuery,
+  type BehaviorQuerySpec,
+  type BehaviorRead,
+  type BehaviorSchema,
+  type BehaviorSpec,
+  type BehaviorStore,
+  type BehaviorTx,
+  type BehaviorWorld,
+  type DataOf,
+  type DurableBehaviorCtx,
+  type EphemeralBehaviorCtx,
+  type PeerFacet,
+  type RuntimeBehaviorCtx,
+} from "./behavior/types";
+export { compileBehavior, isDurableEligible, type CompiledBehavior } from "./behavior/compile";
+
 // Write-path guards.
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";
 export { createLiveWriter, type LiveWriter, type LiveWriterOpts } from "./guards/live-writer";

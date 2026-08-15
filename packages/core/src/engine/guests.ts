@@ -105,9 +105,55 @@ export interface GuestStatus {
   readonly budgetMs: number;
 }
 
+/**
+ * A guest whose CADENCE its owner drives (design-009 §7): compiled behaviors
+ * run as ordinary pipeline systems, in their declared phase, inside the tick —
+ * so nothing here can call their bodies. What they still need is everything
+ * ELSE a guest gets: one breaker, one ledger, one doctor row, one seam total.
+ * That is what this handle is — the breaker, detached from the scheduler.
+ */
+export interface DrivenGuest {
+  /** Breaker verdict. Cheap and never throws — poll it from a system `runIf`. */
+  suspended(): boolean;
+  /**
+   * Run `body` inside this guest's fault domain, ACCRUING its cost into the
+   * current frame's charge. Returns false when the guest is suspended (the
+   * body did not run) or the body threw (contained).
+   *
+   * Accrual, not per-call recording, is what makes the budget mean "per frame"
+   * for a CHUNKED body: a tick system's body runs once per matching chunk, and
+   * recording each chunk as its own invocation would compare a 2ms frame budget
+   * against a fraction of the work it was meant to bound. The accrued total is
+   * closed as ONE invocation at the guest slot, every frame.
+   */
+  run(body: () => void): boolean;
+  /**
+   * Report a fault the caller already CONTAINED — a per-instance hook throw
+   * that the delivery loop caught so one bad node cannot kill a 1000-node
+   * behavior (BF-D18). It takes the ordinary throw ladder.
+   */
+  fault(err: unknown): void;
+  /** Idempotent. */
+  remove(): void;
+}
+
+export interface DrivenGuestSpec {
+  readonly id: string;
+  readonly budgetMs?: number;
+  readonly ledger?: GuestLedgerRecord;
+  /** Owed-work reporter for the frame gate's settle walk. */
+  readonly busy?: () => boolean;
+}
+
 export interface GuestRegistry {
   /** Register a guest. Returns a remover (idempotent; disposes the instance). */
   add(spec: GuestSpec): () => void;
+  /**
+   * Register a guest the registry does NOT call (see {@link DrivenGuest}).
+   * Its cost still lands in this frame's seam total, its strikes in the same
+   * ledger, and its row in `list()`.
+   */
+  addDriven(spec: DrivenGuestSpec): DrivenGuest;
   /** Live status for devtools/doctor — never throws, safe to poll. */
   list(): readonly GuestStatus[];
   /** Fires whenever a guest's persistable breaker state changes. */
@@ -155,6 +201,15 @@ export const GUEST_BUDGET = {
 interface Entry {
   readonly spec: GuestSpec;
   readonly budgetMs: number;
+  /** Driven entries have no factory and no instance — their owner calls them. */
+  readonly driven: boolean;
+  /** Driven entries report owed work directly (there is no instance to ask). */
+  readonly busyFn: (() => boolean) | undefined;
+  /** ms accrued by `DrivenGuest.run` since the last settle (see the doc there). */
+  accruedMs: number;
+  accrued: boolean;
+  /** Any contained fault since the last settle — the ladder counts frames. */
+  faultedThisFrame: boolean;
   instance: GuestInstance | null;
   controller: AbortController | null;
   alive: boolean;
@@ -241,7 +296,7 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
   };
 
   const makeInstance = (e: Entry): void => {
-    if (e.suspended || !e.alive || disposed) return;
+    if (e.driven || e.suspended || !e.alive || disposed) return;
     const controller = new AbortController();
     try {
       const made = e.spec.make({ world, signal: controller.signal });
@@ -270,6 +325,10 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
   const rebuildGeneration = (): void => {
     for (const e of entries) disposeInstance(e);
     for (const e of entries) makeInstance(e);
+    // A driven guest keeps no instance to rebuild, but it DOES get a fresh
+    // warmup exemption: the first frame of a new generation pays the same
+    // first-touch costs (rebuilt caches, cold paths) that exempt hosted guests.
+    for (const e of entries) if (e.driven) e.warmupPending = true;
   };
 
   const p95 = (samples: readonly number[]): number => {
@@ -346,10 +405,15 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
     strike(e, why, true);
   };
 
-  const makeEntry = (spec: GuestSpec): Entry => ({
+  const makeEntry = (spec: GuestSpec, driven: boolean, busy: (() => boolean) | undefined): Entry => ({
     spec,
     // No guest may claim more than the whole seam.
     budgetMs: Math.max(0, Math.min(spec.budgetMs ?? GUEST_BUDGET.defaultBudgetMs, GUEST_BUDGET.seamCapMs)),
+    driven,
+    busyFn: busy,
+    accruedMs: 0,
+    accrued: false,
+    faultedThisFrame: false,
     instance: null,
     controller: null,
     alive: true,
@@ -377,7 +441,7 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
         throw new Error(`ice: guest "${spec.id}" is already registered`);
       }
 
-      const entry = makeEntry(spec);
+      const entry = makeEntry(spec, false, undefined);
       entries.push(entry);
       snapshotDirty = true;
       makeInstance(entry);
@@ -392,6 +456,65 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
       };
     },
 
+    addDriven(spec) {
+      if (disposed) throw new Error(`ice: guests.addDriven("${spec.id}") after the registry was disposed`);
+      if (entries.some((e) => e.spec.id === spec.id && e.alive)) {
+        throw new Error(`ice: guest "${spec.id}" is already registered`);
+      }
+      const entry = makeEntry(
+        { id: spec.id, make: DRIVEN_NO_FACTORY, ...(spec.budgetMs !== undefined ? { budgetMs: spec.budgetMs } : {}), ...(spec.ledger !== undefined ? { ledger: spec.ledger } : {}) },
+        true,
+        spec.busy,
+      );
+      entries.push(entry);
+      snapshotDirty = true;
+
+      return {
+        suspended: () => entry.suspended || !entry.alive || disposed,
+        run(body) {
+          if (entry.suspended || !entry.alive || disposed) return false;
+          const t0 = performance.now();
+          try {
+            body();
+            entry.accruedMs += performance.now() - t0;
+            entry.accrued = true;
+            return true;
+          } catch (err) {
+            entry.accruedMs += performance.now() - t0;
+            entry.accrued = true;
+            entry.faultedThisFrame = true;
+            entry.consecutiveThrows++;
+            onFault(entry.spec.id, err);
+            strike(
+              entry,
+              `${entry.consecutiveThrows} consecutive throws`,
+              entry.consecutiveThrows >= GUEST_BUDGET.consecutiveThrows,
+            );
+            return false;
+          }
+        },
+        fault(err) {
+          if (!entry.alive || disposed) return;
+          entry.faultedThisFrame = true;
+          entry.accrued = true; // ensure the settle pass sees this frame
+          entry.consecutiveThrows++;
+          onFault(entry.spec.id, err);
+          strike(
+            entry,
+            `${entry.consecutiveThrows} consecutive throws`,
+            entry.consecutiveThrows >= GUEST_BUDGET.consecutiveThrows,
+          );
+        },
+        remove() {
+          if (!entry.alive) return;
+          entry.alive = false;
+          const i = entries.indexOf(entry);
+          if (i !== -1) entries.splice(i, 1);
+          snapshotDirty = true;
+        },
+      };
+    },
+
     runAll(frame) {
       if (disposed) return;
       if (generationDirty) {
@@ -403,9 +526,27 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
         snapshotDirty = false;
       }
 
+      // Close out every driven guest's frame FIRST: they ran during the tick,
+      // so their cost is already spent by the time this slot opens, and the
+      // seam total below has to include it or the cap it enforces is fiction.
       let seamMs = 0;
       for (const e of snapshot) {
-        if (!e.alive || e.suspended || e.instance === null) continue;
+        if (!e.driven || !e.accrued) continue;
+        const ms = e.accruedMs;
+        e.accruedMs = 0;
+        e.accrued = false;
+        seamMs += ms;
+        // The throw ladder counts FRAMES, not calls: a chunked body runs many
+        // times per frame, and clearing the counter on the first clean chunk
+        // after a faulting one would mean three consecutive bad frames never
+        // add up to three.
+        if (!e.faultedThisFrame) e.consecutiveThrows = 0;
+        e.faultedThisFrame = false;
+        record(e, ms);
+      }
+
+      for (const e of snapshot) {
+        if (e.driven || !e.alive || e.suspended || e.instance === null) continue;
         const t0 = performance.now();
         try {
           const returned: unknown = e.instance.run(frame);
@@ -473,9 +614,11 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
 
     anyBusy() {
       for (const e of entries) {
-        if (!e.alive || e.suspended || e.instance?.busy === undefined) continue;
+        if (!e.alive || e.suspended) continue;
+        const busy = e.driven ? e.busyFn : e.instance?.busy;
+        if (busy === undefined) continue;
         try {
-          if (e.instance.busy()) return true;
+          if (busy()) return true;
         } catch (err) {
           // A throwing predicate must not wedge the settle walk at the cap.
           onFault(e.spec.id, err);
@@ -529,3 +672,8 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
     },
   };
 }
+
+/** Placeholder factory for driven entries — never called (see `makeInstance`). */
+const DRIVEN_NO_FACTORY: GuestFactory = () => {
+  throw new Error("ice: internal — a driven guest has no factory");
+};

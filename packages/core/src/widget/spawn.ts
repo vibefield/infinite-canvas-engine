@@ -13,6 +13,7 @@ import { guardedTransaction } from "../guards/guarded-tx";
 import { frameParent } from "../ops/sibling-order";
 import { init, type ComponentInit } from "../schema/prefab";
 import { widgets } from "./define-widget";
+import { defaultValueOf } from "./props";
 
 export interface SpawnWidgetOpts {
   readonly x: number;
@@ -87,11 +88,7 @@ export function widgetSpawnInits(type: string, opts: SpawnWidgetOpts): { prefab:
         value[name] = spec.kind === "json" ? JSON.stringify(given) : (given as string | number | boolean);
       } else {
         // group values are whole-component writes: fill from defaults
-        if (spec.kind === "json") value[name] = spec.default ?? "null";
-        else if (spec.kind === "enum") value[name] = spec.default ?? spec.options[0] ?? "";
-        else if (spec.kind === "string") value[name] = spec.default ?? "";
-        else if (spec.kind === "number") value[name] = spec.default ?? 0;
-        else value[name] = spec.default ?? false;
+        value[name] = defaultValueOf(spec);
       }
     }
     overrides.push([g.component, value] as ComponentInit);
