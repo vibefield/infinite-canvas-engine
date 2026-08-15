@@ -93,6 +93,23 @@ export {
   type SystemRunRecord,
 } from "./engine/engine";
 export { createFrameControl, SETTLE_CAP, type FrameControl } from "./engine/frame-control";
+// The guest runtime (petition I14): the named frame slot for work the engine
+// did not write, under a circuit breaker. The behavior framework compiles onto
+// it (design-009); hosts reach it as `engine.guests`.
+export {
+  createGuestRegistry,
+  GUEST_BUDGET,
+  type GuestFactory,
+  type GuestFrame,
+  type GuestGeneration,
+  type GuestInstance,
+  type GuestLedgerRecord,
+  type GuestRegistry,
+  type GuestRegistryOpts,
+  type GuestRun,
+  type GuestSpec,
+  type GuestStatus,
+} from "./engine/guests";
 
 // Write-path guards.
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";
@@ -106,7 +123,6 @@ export * from "./catalog";
 // Engine helpers: PhaseSet + Just* markers (design-003 §4.2), version stamps (design-002 §4).
 export * from "./helpers/phase-set";
 export * from "./helpers/version-stamps";
-
 // Catalog-adjacent ops (app-handler write paths).
 export * from "./ops/arrange";
 export * from "./ops/selection";

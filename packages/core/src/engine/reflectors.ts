@@ -55,11 +55,22 @@ export interface ReflectorRegistry {
   /** Every registered reflector, registration order (devtools enumeration —
    *  independent of telemetry; a reflector idle since boot still lists). */
   names(): readonly string[];
+  /** Arm flush timing (idempotent). Costs one `performance.now()` pair per
+   *  flushed reflector per frame, so it rides `engine.enableTelemetry()` and is
+   *  off by default — the same opt-in posture as per-system timing. */
+  armTelemetry(): void;
+  /** Total µs of the most recent `flushAll` (0 until armed). */
+  lastFlushMicros(): number;
+  /** Per-reflector µs of the most recent `flushAll` (empty until armed). */
+  lastFlushDetail(): ReadonlyMap<string, number>;
 }
 
 interface Entry {
   readonly def: ReflectorDef;
   dirty: boolean;
+  /** Cleared by the unregister so a reflector removed DURING a flush is not
+   *  flushed from that frame's snapshot (see `flushAll`). */
+  alive: boolean;
   readonly unsubs: (() => void)[];
 }
 
@@ -68,7 +79,15 @@ export function createReflectorRegistry(
   opts?: { onFault?: (name: string, err: unknown) => void },
 ): ReflectorRegistry {
   const entries: Entry[] = [];
+  // Snapshot + liveness, for the same reason as the publish-hook loop
+  // (engine.ts): `flushAll` iterated the live array, so a reflector whose flush
+  // unregistered itself — or an earlier one — skipped its neighbour that frame.
+  let snapshot: Entry[] = [];
+  let snapshotDirty = true;
   let flushed: string[] = [];
+  let telemetryArmed = false;
+  let flushMicros = 0;
+  let flushDetail = new Map<string, number>();
   const onFault =
     opts?.onFault ??
     ((name: string, err: unknown) => {
@@ -77,7 +96,7 @@ export function createReflectorRegistry(
 
   return {
     register(def) {
-      const entry: Entry = { def, dirty: true, unsubs: [] };
+      const entry: Entry = { def, dirty: true, alive: true, unsubs: [] };
       const wake = () => {
         entry.dirty = true;
       };
@@ -90,24 +109,45 @@ export function createReflectorRegistry(
         entry.unsubs.push(world.reactive.observeResource(res, wake));
       }
       entries.push(entry);
+      snapshotDirty = true;
       return () => {
+        if (!entry.alive) return;
+        entry.alive = false;
         for (const u of entry.unsubs) u();
         entry.unsubs.length = 0;
         const i = entries.indexOf(entry);
         if (i !== -1) entries.splice(i, 1);
+        snapshotDirty = true;
       };
     },
 
     flushAll() {
       flushed = [];
-      for (const entry of entries) {
+      if (snapshotDirty) {
+        snapshot = entries.slice();
+        snapshotDirty = false;
+      }
+      if (telemetryArmed) {
+        flushDetail = new Map();
+        flushMicros = 0;
+      }
+      for (const entry of snapshot) {
+        if (!entry.alive) continue;
         if (!entry.dirty && entry.def.always !== true) continue;
         entry.dirty = false;
+        const t0 = telemetryArmed ? performance.now() : 0;
         try {
           entry.def.flush(world);
           flushed.push(entry.def.name);
         } catch (err) {
           onFault(entry.def.name, err);
+        }
+        if (telemetryArmed) {
+          // Charged whether or not it threw — a faulting reflector's cost is
+          // real, and hiding it would make a slow-then-throwing one invisible.
+          const us = (performance.now() - t0) * 1000;
+          flushDetail.set(entry.def.name, (flushDetail.get(entry.def.name) ?? 0) + us);
+          flushMicros += us;
         }
       }
     },
@@ -118,6 +158,18 @@ export function createReflectorRegistry(
 
     names() {
       return entries.map((e) => e.def.name);
+    },
+
+    armTelemetry() {
+      telemetryArmed = true;
+    },
+
+    lastFlushMicros() {
+      return flushMicros;
+    },
+
+    lastFlushDetail() {
+      return flushDetail;
     },
   };
 }

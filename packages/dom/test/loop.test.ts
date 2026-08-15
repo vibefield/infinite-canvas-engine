@@ -142,3 +142,53 @@ describe("startRafLoop — the freeze gate", () => {
     expect(scheduled).toHaveLength(0);
   });
 });
+
+describe("startRafLoop — surviving a throwing step (petition I14)", () => {
+  it("keeps scheduling after a publish hook throws, and recovers on the next frame", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    let boom = true;
+    engine.onPublish(() => {
+      if (boom) throw new Error("hostile publish hook");
+    });
+    startRafLoop(engine);
+
+    // The faulting frame: the throw escapes to the rAF callback (loud, by
+    // design — publish throws are not swallowed) but the loop is NOT dead.
+    expect(() => scheduled.shift()?.(16)).toThrow(/hostile publish hook/);
+    expect(scheduled).toHaveLength(1);
+
+    // Before the fix this frame never existed: `handle` was never renewed and
+    // `wake` early-returned forever, so the canvas was gone until remount.
+    boom = false;
+    scheduled.shift()?.(32);
+    expect(world.getResource(FrameInfo)?.tick).toBe(2);
+    expect(scheduled).toHaveLength(1);
+  });
+
+  it("a step that throws EVERY frame stays alive rather than dying once", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    engine.onPublish(() => {
+      throw new Error("always");
+    });
+    startRafLoop(engine);
+
+    for (let i = 1; i <= 3; i++) {
+      expect(() => scheduled.shift()?.(i * 16)).toThrow(/always/);
+      expect(world.getResource(FrameInfo)?.tick).toBe(i); // still stepping
+      expect(scheduled).toHaveLength(1); // still scheduled
+    }
+  });
+
+  it("stop() called from INSIDE a step still wins over the finally reschedule", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    const loop: { stop?: () => void } = {};
+    engine.onPublish(() => loop.stop?.());
+    loop.stop = startRafLoop(engine);
+
+    scheduled.shift()?.(16);
+    expect(scheduled).toHaveLength(0); // no resurrection past its own stopper
+  });
+});

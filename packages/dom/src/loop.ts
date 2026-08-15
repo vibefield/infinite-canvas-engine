@@ -17,6 +17,15 @@
  * The dt clamp is what makes resume safe: a freeze that lasted an hour hands
  * `step` an enormous `now`, and core clamps the delta (frame-info.ts), so
  * tweens advance by one ordinary frame instead of teleporting to their end.
+ *
+ * THE LOOP OUTLIVES A THROWING STEP (2026-08-15, petition I14). Until this fix
+ * the reschedule sat on the line AFTER `engine.step(now)`, so ONE throw from a
+ * publish hook (which propagate loudly by design — engine.ts) escaped the rAF
+ * callback, left `handle` un-renewed, and killed the canvas PERMANENTLY: with
+ * `parked` still false, `wake` early-returns forever, so even freeze/thaw could
+ * not restart it. Recovery needed a fresh `startRafLoop`. The next frame is now
+ * scheduled in a `finally`, so a faulting frame is loud but survivable — the
+ * throw still reaches the browser's error handler; only the death is gone.
  */
 import type { Engine } from "@ice/core";
 
@@ -33,8 +42,14 @@ export function startRafLoop(engine: Engine): () => void {
       handle = 0;
       return;
     }
-    engine.step(now);
-    handle = requestAnimationFrame(tick);
+    try {
+      engine.step(now);
+    } finally {
+      // Re-checked AFTER the body: a `stop()` called from inside the step
+      // (a publish hook, a reflector) must still win, or the loop would
+      // resurrect itself past its own stopper.
+      if (!stopped) handle = requestAnimationFrame(tick);
+    }
   };
 
   const wake = (): void => {

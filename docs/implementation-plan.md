@@ -85,9 +85,91 @@ Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tes
 
 ---
 
+# Post-v1 — the behavior framework train (M11–M13)
+
+**Added 2026-08-15.** Source designs: `draft/design-009-behavior-framework.md` (rev 3,
+reviewed — the BF-D decisions) + the two ICE petitions it compiles onto
+(`vibe-field/draft/petitions/I14-ice-guest-runtime.md`, `I15-ice-tx-move.md`). Upstream
+prerequisites **DONE**: strata 0.12.0 (petitions 9+10 — `transaction(fn,{meta})`,
+`valueEquals`, `world.resourceStamp`) is pinned and CI-green as of the same day.
+
+Sequencing principle, inherited from M0–M10 and from the strata round: **riskiest-first,
+and bundle the release, not the fate.** M11 and M12 are independently valuable (each
+carries real bug fixes the field wants regardless of the framework), so they cut as
+**ICE 0.5.0** even if M13 slips; M13 cuts as **0.6.0**. Nothing in M13 may begin before
+M11's breaker exists — the framework's whole safety story is "compiled onto that
+substrate, never a second runtime" (BF-D12).
+
+## M11 — The guest runtime (petition I14) · 0.5.0 half 1 — **DONE 2026-08-15**
+
+*(As-built: 44 new traces, every fix mutation-probed — reverting it reds its own test and
+nothing else. Full CI green at 856 tests / 472 modules. design-002 §1.1 carries the
+as-built amendment. Two findings beyond the plan: the rAF fix also closed a latent
+`stop()`-during-step resurrection, and `EngineOpts` gained `onGuestFault`/`onGuestNotice`
+because a suspended derived guest is a product event a host must be able to route.)*
+
+- **M11a — the standing fixes** (ship-alone-able): a throwing publish hook must not kill
+  the `@ice/dom` rAF loop (reschedule-before-step or wrapped step); snapshot iteration for
+  the publish-hook loop AND `reflectors.flushAll()` (both iterate live arrays today —
+  a self-removing hook silently skips its neighbor); devtools' dead `"reflect"` lane
+  (reads a phase name that has never existed).
+- **M11b — `engine.guests`**: `add({id, make, budgetMs?, phase?, ledger?}) → Disposable`
+  with `make({world, signal}) → {run(frame), dispose?}`; a NAMED sub-step in the frame
+  contract (`tick → guests → publish hooks → notify → reflect`) so derived state settles
+  before presence I/O reads it; per-guest fault domain; deterministic add-order.
+  `phase?` accepts the publish slot in 0.5.0; pipeline-group values are wired in M13a.
+- **M11c — the circuit breaker, built once**: `performance.now()` bracket per guest (never
+  engine-wide telemetry); ladder = >30 of the last 120 over budget · 3 consecutive ≥4× ·
+  2 consecutive >50 ms (first invocation per generation warmup-exempt) · throw = max
+  strike, 3 consecutive throws suspend · thenable return = dev-throw + prod strike; seam
+  cap `min(budgetMs, 8)` with the worst offender suspended first; dev-leniency (devtools
+  attached ⇒ timing strikes log, never suspend); **host-injectable ledger** (seed in,
+  strike/suspension events out — engines are per-doc downstream, so an ICE-internal
+  ledger would silently reset every doc switch).
+- **M11d — observability**: `frame.settleWhile("guest-derive", …)`; per-guest devtools
+  profiler lanes; `engine.guests.list()` (id, status, last/p95 ms, strikes, suspension).
+
+**Design delta**: design-002 §1 gains the guest sub-step (amend the doc with the code).
+
+**Exit (traced, not asserted)**: a throwing guest never kills the loop, its neighbors, or
+the rAF loop — the rAF-death case is pinned as a regression trace · add/remove from
+inside a `run()` skips nobody (same trace for reflectors) · each ladder rule fires on a
+hostile fixture, warmup exemption and dev-leniency proven separately · an injected ledger
+keeps a suspended guest suspended across engine dispose→recreate · a freeze taken
+mid-guest-work settles through owed work and parks without walking `SETTLE_CAP` ·
+devtools reports per-guest lanes and a non-undefined reflect lane · **every existing M3–M10
+trace stays green** (the frame contract changed shape).
+
+## Release cut & downstream
+
+**0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
+consumes immediately for the fixes alone; the door's W2b adapter can land against it.
+**0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
+(spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
+assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,
+and the design amendments folded in the same commit as the code that earns them.
+
+## Post-v1 risks
+
+- **The frame contract changes shape in M11** — the M3–M10 trace suite is the guard; a red
+  trace there outranks any new feature.
+- **`coarse: false` is an engine-wide LAW, not a local option** (M13a): it attests that no
+  raw `batch.col()` write touches behavior-read components. A future engine system that
+  breaks it silently degrades every behavior's precision — needs the rule documented at the
+  attestation site and, ideally, a lint.
+- **The behavior compiler is the novel surface**; its SPLIT and access derivation are what
+  the review broke twice. Traces before ergonomics.
+- **Ephemeral is gated on M11** and on presence being attached — a presence-less engine
+  leaves those behaviors dormant, honestly.
+- **Two conflicting sources of truth for durable behavior schema** (manifest vs code)
+  arrive with the field re-cut, not here — BF-D13 names build-time manifest generation as
+  the anti-drift seam; decide it before third-party authoring, not after.
+
+---
+
 ## Cross-cutting
 
 - **Tests-as-traces**: every red-team frame trace and every design "Exit" metric lives in CI; a design amendment requires updating its trace.
 - **Benchmarks**: churn budget, pan O(1), pick latency, reactivity tax — tracked per milestone against the M3 baseline.
 - **Risks**: strata pre-1.0 drift (pinned; upgrade PRs re-run the full trace suite) · ~~global tag/rel version over-fire~~ (RESOLVED upstream in 0.3.0 — per-tag/relation observer precision; change-only writes remain stamp-volume hygiene) · access-declaration omissions (DEV throws early by design) · R3F version coupling in the router/islands (isolate in `r3f` package; the synthetic-event dispatcher is the only R3F-internal-adjacent code).
-- **Definition of "engine v1 done"**: M10 exit + the scope fence of design-005 §9 intact (nothing snuck in).
+- **Definition of "engine v1 done"**: M10 exit + the scope fence of design-005 §9 intact (nothing snuck in). *(MET 2026-07-11. M11+ is post-v1 work — the scope fence still binds: the behavior framework is a new AUTHORING surface over existing mechanics, and it adds no layout engine, rich text, comments, or permissions.)*

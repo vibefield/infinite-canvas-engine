@@ -37,6 +37,46 @@ describe("attachDevtools: strata observer + profiler lifecycle", () => {
     ce.dispose();
   });
 
+  it("the reflect lane REPORTS (it read a non-existent phase key and never fired until 2026-08-15)", () => {
+    const ce = createCanvasEngine();
+    const handle = attachDevtools(ce);
+    const lanes: Array<{ name: string; ms: number }> = [];
+    const profiler = handle.profiler;
+    if (profiler === null) throw new Error("profiler expected");
+    const realLane = profiler.lane.bind(profiler);
+    profiler.lane = (name: string, ms: number) => {
+      lanes.push({ name, ms });
+      realLane(name, ms);
+    };
+
+    ce.engine.registerReflector({
+      name: "spin",
+      always: true,
+      flush: () => {
+        const until = performance.now() + 2;
+        while (performance.now() < until) {
+          /* burn a measurable slice */
+        }
+      },
+    });
+
+    // Teardown in `finally`: a failing assertion here would otherwise leave the
+    // dock mounted and cascade into every later DOM-counting test.
+    try {
+      // Frame 1 flushes the reflector; the lane is read at the NEXT frame's
+      // publish (post-tick, pre-reflect), so it carries a one-frame lag.
+      ce.step(16);
+      ce.step(32);
+
+      const reflect = lanes.filter((l) => l.name === "reflect");
+      expect(reflect.length).toBeGreaterThan(0);
+      expect(reflect[0]?.ms ?? 0).toBeGreaterThan(0);
+    } finally {
+      handle.detach();
+      ce.dispose();
+    }
+  });
+
   it("observer/profiler flags omit their panel; lane() is a safe no-op without the profiler", () => {
     const ce = createCanvasEngine();
     const handle = attachDevtools(ce, { observer: false, profiler: false });

@@ -221,12 +221,28 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
   // The "reflect" lane: reflector flushes run POST-notify, invisible to
   // strata's in-world hooks. Publish runs before this frame's reflect, so the
   // hook reports the PREVIOUS frame's cost — a one-frame lag a HUD can carry.
+  //
+  // FIXED 2026-08-15 (petition I14): this read `phaseFlushMicros.get("reflect")`,
+  // a map keyed by strata PHASE names — and reflect is not a phase, so the
+  // lookup was always undefined and the lane NEVER reported since it shipped.
+  // `FrameTelemetry.reflectMicros` is the real source (engine.ts arms the
+  // reflector registry's own timing from `enableTelemetry`).
+  //
+  // The GUEST lanes (petition I14, 2026-08-15): guest work runs between the
+  // tick and the publish hooks, so — like reflect — no strata in-world hook can
+  // see it, and it was previously invisible to the profiler entirely. One lane
+  // per guest, reporting its own last invocation; suspended guests stop
+  // reporting rather than flatlining at zero, so a silent lane means "gone",
+  // which is exactly what the doctor's row says too.
   let removePublish: (() => void) | undefined;
   if (profiler !== null) {
     core.enableTelemetry();
     removePublish = core.onPublish(() => {
-      const us = core.lastFrame()?.phaseFlushMicros.get("reflect");
+      const us = core.lastFrame()?.reflectMicros;
       if (us !== undefined && us > 0) profiler.lane("reflect", us / 1000);
+      for (const g of core.guests.list()) {
+        if (g.status === "running" && g.lastMs > 0) profiler.lane(`guest:${g.id}`, g.lastMs);
+      }
     });
   }
 

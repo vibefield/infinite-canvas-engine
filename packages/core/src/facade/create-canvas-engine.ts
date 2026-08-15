@@ -659,6 +659,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     step: (now) => engine.step(now),
     dispose() {
       closeDoc();
+      // Guests first: their dispose may touch doc/runtime state, and a
+      // suspended-but-registered guest still holds an instance to tear down.
+      engine.disposeGuests();
       runtime.uninstall();
       stack.uninstall();
     },
