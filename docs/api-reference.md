@@ -12,7 +12,8 @@ unsupported and wall-checked.
 | Export | Shape | Notes |
 |---|---|---|
 | `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"`; `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. |
-| `p` | `p.string/number/boolean/enum/json` | Every field defaulted; `p.json` is the conflict-coarse escape hatch. Standard Schema v1. |
+| `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
+| `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
 | `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, widgetDrag, portDrag}`, `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
 | `definePrefab(id, def)` | → `Prefab` | The base primitive `defineWidget` sugars over; `store: "durable" \| "runtime" \| "ephemeral"`. |
 | `defineComponent/Tag/Relation/Resource` | strata wrappers | Record metadata for sovereignty/devtools; catalog in `@ice/core` ships the full engine vocabulary. |
@@ -20,8 +21,9 @@ unsupported and wall-checked.
 ### The facade
 
 ```ts
-const ce = createCanvasEngine({ widgets?, tools?, budgets?, settings?, policy?, measureQueue? });
-// ce: { world, engine, stack, runtime, nav, ops, docs, budgets, step(now), dispose() }
+const ce = createCanvasEngine({ widgets?, tools?, behaviors?, budgets?, settings?, policy?, measureQueue? });
+// ce: { world, engine, behaviors, stack, runtime, nav, ops, docs, stage, frame,
+//       budgets, step(now), dispose() }
 ```
 
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
@@ -48,6 +50,78 @@ const ce = createCanvasEngine({ widgets?, tools?, budgets?, settings?, policy?, 
 | `guardedTransaction(store, world, fn, {undoable?})` | Eligibility-guarded tx — the primitive under `useCommit` and every op. |
 | `cascadeDestroy(tx, world, root)` | Containment recursion + wire cascade, one tx. |
 
+### Behaviors
+
+The second product surface: `defineWidget` gives a widget a FACE, `defineBehavior`
+gives it LOGIC AND STATE, `defineTool` gives the canvas INPUT POLICY.
+
+```ts
+const Layout = defineBehavior("myplugin:layout", {
+  store: "durable",          // REQUIRED — see the routing table below
+  derived: true,             // output is computed, not authored
+  schema: { gapX: p.number({ default: 120 }) },
+  phase: "derive",
+  reads:  [Position, ChildOf],
+  writes: [Position],
+  on: { init, update, changed, tick, dispose },
+});
+```
+
+**`store:` routes everything.** It is the load-bearing word of every declaration:
+
+| `store` | data is | syncs | undo | write vocabulary | phases | attachment |
+|---|---|---|---|---|---|---|
+| `durable` | document truth (a named cell on the entity) | every peer; offline-merge | yes (see `derived`) | `ctx.commit(label, fn)` ONLY | `derive` | `tx.attach`/`tx.detach`, or `defineWidget({behaviors})` |
+| `runtime` | a session-local rider | no | no | `ctx.write` / `ctx.set` / `ctx.attach` / `ctx.detach`, plus `ctx.commit` | `simulate` · `derive` · `present` · `publish` | `engine.behaviors.attach`, hook-side `ctx.attach`, or `defineWidget({behaviors})` |
+| `ephemeral` | THIS peer's presence facet — an implicit SINGLETON on the local peer entity | live peers, while present; TTL | no | `ctx.write(patch)` (no entity — the instance IS the peer) + `ctx.peers()` | `publish` | none; presence-less engines leave it dormant |
+
+**Hooks**, delivered in this order at the behavior's phase, every frame:
+`init` (appeared) → `update` (own data changed, by ANY writer — including a
+remote peer and an undo) → `changed` (the reads set moved; ONCE per behavior,
+not per instance) → `tick` (per instance; opt-in cost) → `dispose` (departed).
+The instance list is a SNAPSHOT: a hook that attaches or detaches affects the
+NEXT frame.
+
+**`derived: true`** bundles three protections: output commits are forced
+non-undoable (⌘Z must never un-derive), a DIFFER drops every write that already
+equals the projection (a commit with zero remaining ops opens no transaction at
+all), and delivery is SUPPRESSED for instances under a live gesture claim —
+coalescing into one delivery against settled truth when the claim clears.
+`deriveDuringGesture: true` opts out.
+
+**Motion cookbook.** "How do I animate?" is every author's first question, and
+the answer depends on what is moving:
+
+| You want | Use | Why |
+|---|---|---|
+| Presentation motion (a hover lift, a pulse, a spring) | the behavior's OWN `runtime` data, composed by the face | It is not document truth. Nobody else should see it, and it must not enter undo or the wire. |
+| Document geometry that ends somewhere specific | `tx.move(e, to, { animateMs })` inside `ctx.commit` | ONE commit owns the capture, the durable final, and the glide. Retargets a glide in flight rather than restarting it. |
+| Per-frame writes to a durable cell | **nothing — this is refused** | The divergence law: durable cells are written live only under a gesture claim or a tween grant, and the framework does not mint a third. A `tick` hook that writes one throws through the armed live writer. |
+
+**`reads:` is a published surface.** The curated list — `Position`, `Size`,
+`MeasuredSize`, `Opacity`, `ChildOf`, `PrefabId`, `Accepts`, `Provides`,
+`Selected`, `Selectable`, `Movable`, `Resizable`, `Solid`, `Container`,
+`Visible`, `Culled`, `Camera`, `CameraLimits`, `Viewport` — is a stability
+promise. Reading anything else works but dev-warns: recognizers, claims and
+gesture bookkeeping are engine vocabulary and change with the interaction stack.
+One-tick markers (`WentDown`, `Just*`) are already cleared by the publish slot,
+so ephemeral behaviors can never see them.
+
+**Testing.** `createBehaviorHarness(B)` ships with the framework:
+`{ world, engine, step(n), spawn(), attach, detach, instances(), commits,
+claim(e), pair(), sync() }`. `claim(e)` fakes a live gesture (suppression is
+what authors get wrong); `pair()` gives a second engine on the same document
+(convergence bugs are invisible on one peer by definition).
+
+**Runtime surface.** `ce.behaviors` — `attach(e, B, data?) · detach(e, B) ·
+has(e, B) · read(e, B) · list()`. Durable attachment is deliberately absent: it
+is a document op and goes through `tx.attach` so it syncs and undoes. Every
+behavior appears in `ce.engine.guests.list()` under `behavior:<name>`, sharing
+one circuit breaker with every other guest.
+
+**Scale posture.** Designed for ≤~2k ticking instances. Beyond that, the idiom
+is ONE behavior on a carrier entity iterating its members — the mind-map shape.
+
 ### Extension seams
 
 `ce.engine.addSystems(phase, ...systems)` (11 fixed phases; `defineTickSystem`
@@ -62,6 +136,7 @@ the only output writers) · `ce.engine.onPublish(hook)` (presence I/O slot) ·
 | `<EngineProvider engine>` | Context root; all hooks require it. |
 | `<InfiniteCanvas engine measureQueue? onReady?>` | Mounts planes P0–P5, adapters, reflectors, keymap, rAF loop, WidgetRoot. Unmount detaches; the engine outlives it. GL islands + devtools attach app-side via `onReady` (import walls). |
 | `useCommit()` | `(fn: (tx: GuardedTx) => void, {undoable?}) => void` — THE widget write path; one call = one undo step. |
+| `useBehavior(world, entity, behavior)` | Live behavior data for one entity; `p.json` fields parsed; `undefined` when unattached (a legitimate render state). READ-ONLY — faces render behavior state, never write it. |
 | `useWidgetProps(world, entity, type, group?)` | Tier-3 subscription, json-parsed, frozen while the widget is hidden. |
 | `useSelected` / `useBreakpoint` / `useWorldComponent` | Equality-suppressed snapshots (strata `get()` returns fresh objects — the hooks cache by shallow-eq). |
 | `useTool()` / `useToolState(id)` | `[id, setTool]` over the `ActiveTool` resource. |

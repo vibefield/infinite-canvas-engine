@@ -169,6 +169,106 @@ held-cell self-heal is pinned so it cannot regress · a second `arrange` mid-gli
 instead of stranding · one undo entry when undoable, none under `undoable:false` · a
 spawn/despawn-mid-tween soak shows no `tweenStart` growth.
 
+## M13 — The behavior framework (design-009) · 0.6.0 — **DONE 2026-08-15**
+
+*(As-built: 9 slices, 67 new traces, full CI green at 525 core tests / 488 modules
+walls-clean. Six findings beyond the plan, each one a test catching a design or
+implementation gap — listed after the slices.)*
+
+Dependency order; each slice its own commit + traces. **a–d are the novel core** (kept
+in-house per the delegation-by-criticality rule); e–i are well-specified once the core
+lands.
+
+- **M13a — define + validate + compile**: `defineBehavior` with the §4.1 validation set;
+  schema → component through the meta registry (ensure-cached, namespaced); the **SPLIT
+  rule** (delivery system carries `access.write` = own + ALL `writes:` targets *including
+  durable ones*; a separate tick system carries own-component access only — a ticking
+  system with broad declared writes would stamp them every frame); `reads:` PARTITIONED
+  (components → access.read + collector; tags → collector only — the id-space trap);
+  framework collectors created `coarse: false`; wrap-once-at-registration (copy
+  name/access/runIf/query — strata memoizes access per system object).
+- **M13b — deliver**: the runtime loop — drain-stash `runIf` (∧ `instances > 0`), the
+  §4.3 delivery order, instance-list snapshot, appear/depart via `world.has` over the
+  drained set, `data`-snapshot reuse by default, the `ctx.world` WRAPPER (not a
+  `ReadonlyWorld` alias — that type keeps `.runtime`), reads-scoped `ctx.query`,
+  `orderStamp`/`resourceStamp` polls armed at first registration.
+- **M13c — durable class + the differ**: `ctx.commit` through the forwarding session seam
+  + `requireWritable`; `tx.setResource` masked; the differ on `valueEquals` (strata
+  0.12.0) with structural presence guards (`attach`-when-attached → value-diff,
+  `detach`-when-absent dropped, `spawn` under `derived` DEV-throws) and **own-write
+  subtraction** (one-frame quiescence, no echo recompute).
+- **M13d — suppression**: claim-scoped, INSTANCE-scoped delivery suppression for `derived`
+  behaviors; settle-reporter excludes suppressed derives; `deriveDuringGesture` opt-out;
+  the dev-warn after N suppressed frames.
+- **M13e — runtime class + attach surfaces**: `ctx.write`/`ctx.set` routed through the
+  forwarding `liveWriter` (this is what makes the divergence law ARMED rather than
+  aspirational); `engine.behaviors.attach/detach/has/read/list`; `defineWidget({behaviors})`
+  pre-attach as post-spawn `addComponent` in the spawn tx; **the BF-D6 eligibility
+  amendment** — one branch in `guards/guarded-tx.ts` `checkComponent` (guards are opt-OUT,
+  so this runs in prod too) + the design-001 errata row.
+- **M13f — ephemeral class** (needs M11): the local-peer SINGLETON facet, `ctx.peers()`,
+  `ctx.keyOf`/`entityFor`, re-mint through `session.localPeer` on `world.reset` (microtask
+  deferred — attach is illegal inside an observer emit).
+- **M13g — migration**: `engine.behavior.<name>.<v>` markers, a SEPARATE gate compare with
+  **absent-is-not-newer** (folding them into the pack compare would read-only a doc
+  because a plugin is missing — the design-008 bricking shape), first-attach stamping,
+  a re-entrant runner (plugins install mid-session), newer-data dormancy refusal.
+- **M13h — surfaces + docs**: `useBehavior` in `@ice/react`; `createBehaviorHarness`
+  (`attach/step/claim/pair`) shipped WITH the framework; the motion cookbook; the curated
+  public-component list for `reads:`.
+- **M13i — the consumer proof**: the mind-map layout as a `changed`-only derived behavior
+  in ICE's own tests against a recorded fixture of the pure layout fn.
+
+**Exit**: design-009 §14 in CI — compiler matrix · lifecycle tables · one-frame
+quiescence · differ + structural guards · suppression (incl. instance scope and the
+freeze interaction) · two-engine collab convergence with a definition-less peer keeping
+cells dormant · the divergence DEV-throw firing through the armed liveWriter · per-entity
+throw quarantine before behavior suspension · the anti-brick migration test (a doc with
+markers for an uninstalled behavior opens WRITABLE) · mid-session install triggers the
+runner · ephemeral singleton across two engines. **MET.**
+
+### As-built deltas (the six findings)
+
+1. **Own-write subtraction subtracts STATE, not entity ids.** The design's wording
+   ("subtract the write-set from the NEXT drain") is wrong in the worst way: an id-only
+   subtraction DROPS a real external write that lands on the same entity inside the
+   window — permanently, since nothing journals it again. The memo snapshots the watched
+   state (component values AND tag presence — a components-only version reopened the same
+   hole for tag flips) and subtracts only on a full match. Five traces red if it reverts.
+2. **`tx.move` IS diffed.** Rev 3 exempted it, reasoning that dropping a move could
+   strand a glide easing toward a stale target. Petition I15's two chokepoints already
+   make that impossible — every path that moves the durable value retargets live tweens —
+   and the exemption was not a small conservatism: the flagship path commits its whole
+   layout through `move`, so an undiffed move meant every peer that merely OPENED a
+   laid-out document immediately wrote the same layout back to it.
+3. **The SPLIT rule trips strata's same-phase writer-pair advisory.** Both compiled
+   systems write the own component in one phase. They attest `orderIndependent` on that
+   component ONLY (delivery-before-tick is framework-fixed and last-write-wins-safe);
+   declared `writes:` targets are never attested, because claiming order-tolerance on the
+   engine's behalf is not ours to do.
+4. **Two collectors, not one.** "update is about you, changed is about the world" is not
+   expressible with a single collector: the delta reports ENTITIES, not which component
+   moved, so a merged collector fires `changed` on every own-data write — precisely the
+   hook authors put whole-graph work in. The cost of honesty is one extra drain.
+5. **Ephemeral re-mint has a dead-handle window.** `presence.localPeer` is re-minted a
+   MICROTASK after `world.reset()` (attaching an ephemeral store is illegal inside an
+   observer emit). A frame landing inside that window wrote through a dead handle and
+   threw from strata's projector — charged by the breaker to a behavior that did nothing
+   wrong. The facet path is alive-guarded and skips the frame.
+6. **Durable-eligibility is a COMPILE-time refusal, not a definition-time one.** At
+   module-eval time the prefab registry may not yet hold the widget whose Position a
+   behavior writes, so the §3 static refusal would depend on import order — passing on the
+   developer's machine and failing in the bundle.
+
+Also landed with M13, because the framework needed them: `p.entityKey` (the only legal
+cross-entity reference in durable data) and `defaultValueOf` as ONE function (three
+call sites had their own `spec.kind` chains, each ending in a catch-all `else` that
+silently accepted a new spec kind); `GuardedTxOpts.meta` — ICE's first consumption of
+strata petition 9, stamping `{behavior, label}` provenance on every `ctx.commit`; and
+`guests.addDriven`, the breaker detached from the scheduler, so behaviors running as
+pipeline systems still share ONE ledger, one doctor row and one seam total with every
+other guest.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
