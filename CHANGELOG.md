@@ -4,6 +4,97 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [0.6.0] — 2026-08-15
+
+**`defineBehavior` — ICE's second product surface.** The userland API is now a
+triad: `defineWidget` gives a widget a FACE, `defineBehavior` gives it LOGIC AND
+STATE, `defineTool` gives the canvas INPUT POLICY. Design-009, built on the
+0.5.0 guest runtime rather than beside it.
+
+### Added
+
+- **`defineBehavior(name, spec)`** — one named declaration carrying a data
+  schema, a REQUIRED store class, and lifecycle hooks the engine runs on a
+  curated phase set. `store:` routes everything — where data lives, who sees
+  it, what survives, which write vocabulary the hooks receive, at which
+  cadence, and how attachment works:
+
+  | `store` | data is | syncs | undo | writes with | phases |
+  |---|---|---|---|---|---|
+  | `durable` | document truth | every peer; offline-merge | yes (see `derived`) | `ctx.commit` only | `derive` |
+  | `runtime` | a session-local rider | no | no | `ctx.write`/`ctx.set`/`ctx.attach` | `simulate`·`derive`·`present`·`publish` |
+  | `ephemeral` | THIS peer's presence facet — a SINGLETON on the local peer | live peers; TTL | no | `ctx.write(patch)` + `ctx.peers()` | `publish` |
+
+  The three hook contexts are three TYPES, not one with optional members: a
+  durable behavior cannot see `ctx.write` in autocomplete, so "store routes
+  everything" is a property of the object rather than a doc claim.
+- **Hooks** — `init` · `update` (own data changed, by ANY writer, including a
+  remote peer and undo) · `changed` (the reads set moved; once per behavior per
+  frame, not per instance) · `tick` (per instance, opt-in) · `dispose`. Change
+  delivery rides strata's real change detection, so every behavior is
+  collaboration-native with zero author code. The instance list is a SNAPSHOT:
+  a hook that attaches or detaches affects the NEXT frame.
+- **`derived: true`** bundles three protections that only make sense together —
+  output commits forced non-undoable (⌘Z must never un-derive), a DIFFER that
+  drops every write already equal to the projection (zero remaining ops opens
+  NO transaction), and claim-scoped delivery SUPPRESSION that goes quiet under
+  a live gesture and coalesces into one delivery against settled truth.
+  Equality is strata's own `valueEquals` — a hand-rolled one drifts on exactly
+  the cells reconcile considers settled.
+- **`engine.behaviors`** — `attach`/`detach`/`has`/`read`/`list`. Durable
+  attachment is deliberately absent: it is a document op and goes through
+  `tx.attach` so it syncs and undoes.
+- **`defineWidget({ behaviors })`** — pre-attachment, split by store class like
+  everything else: durable rides the spawn transaction, runtime is stamped at
+  PROJECTION by the equip pass (the only path that also equips a widget
+  arriving from a peer or restored from a file), ephemeral is refused.
+- **`createBehaviorHarness(B)`** — ships WITH the framework. `claim(e)` fakes a
+  gesture (suppression is what authors get wrong); `pair()` gives a second
+  engine on one document (convergence bugs are invisible on one peer by
+  definition); `commits` records what reached the store, which is how you tell
+  "the differ dropped it" from "it never ran".
+- **`useBehavior(world, entity, behavior)`** in `@ice/react` — live behavior
+  data, `p.json` parsed, read-only by construction.
+- **`p.entityKey()`** — the only legal cross-entity reference in durable data.
+- **Behavior schema evolution** — `engine.behavior.<name>.<v>` markers with
+  their OWN gate compare and the absent-is-not-newer rule. Behaviors ship in
+  plugins, so "no local counterpart" is the ordinary state of a shared
+  document; folding them into the pack compare would read-only a document
+  because a plugin is missing. Behavior version state NEVER affects a document's
+  verdict, and a test holds that.
+- **`GuardedTxOpts.meta`** — per-commit provenance in-CRDT (strata petition 9).
+  Every `ctx.commit` stamps `{behavior, label}`.
+- **`guests.addDriven`** — the breaker detached from the scheduler, so behaviors
+  running as pipeline systems still share one ledger, one doctor row and one
+  frame-wide seam with every hosted guest.
+
+### Behavior worth knowing
+
+- **The stamping tax.** A behavior compiles to up to TWO systems: delivery
+  (carrying every declared write, durable targets included) and, only if it
+  ticks, a tick system carrying its own component ONLY. strata blanket-stamps a
+  ran system's declared writes whether or not it wrote, so a ticking system
+  with broad writes would wake every downstream observer every frame. Declare
+  minimally.
+- **`reads:` is a published surface.** The curated list is a stability promise;
+  reading engine internals works but dev-warns. One-tick markers are cleared by
+  the publish slot, so ephemeral behaviors can never see them.
+- **Registration order is data-flow order.** If B derives from A and A is
+  registered first, B sees A's writes the same frame; the other way, next
+  frame. The framework will not order for you — devtools shows the order.
+- **An ordered relation in `reads:` costs O(instances) per frame.** Sibling
+  order never reaches a change collector, so it is polled, and the watch set is
+  instances ∪ their parents. Declare one only when you navigate it.
+- Scale posture: designed for ≤~2k ticking instances. Beyond that the idiom is
+  ONE behavior on a carrier entity iterating its members.
+
+### Fixed
+
+- **The `coarse: false` attestation is now enforced.** It has been an
+  engine-wide promise since M6 with nothing holding it; a raw `batch.col()`
+  write to a behavior-read component would silently stop every behavior reading
+  it from ever waking.
+
 ## [0.5.0] — 2026-08-15
 
 Two downstream petitions from VibeField, each carrying real bug fixes the field
