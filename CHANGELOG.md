@@ -4,6 +4,69 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [0.5.0] — 2026-08-15
+
+Two downstream petitions from VibeField, each carrying real bug fixes the field
+wants regardless of what they were asked for: the **guest runtime** (I14) and
+**animation-integrated writes** (I15). Cut on its own rather than folded into
+0.6.0 because its value does not depend on the behavior framework — the
+standing fixes below have been live bugs for weeks.
+
+### Added
+
+- **`engine.guests`** — a NAMED slot in the frame contract for work the engine
+  did not write (`setFrameInfo → sync → tick → GUESTS → publish → notify →
+  reflect`). Guests run before publish so derived state has settled when
+  presence I/O reads it, and before notify so the same frame reflects them.
+  Three properties the engine owes anything it hosts there: fault ISOLATION (a
+  throwing guest never kills the loop, its neighbours or the frame — engine
+  systems and publish hooks keep propagating loudly by design), SNAPSHOT
+  iteration (a guest that adds or removes guests mid-run skips nobody), and a
+  CIRCUIT BREAKER named honestly — a main-thread body cannot be preempted, so
+  what the breaker guarantees is that no guest hurts the canvas TWICE
+  sustained. The ledger is HOST-INJECTABLE: an engine is per-doc downstream, so
+  a registry-local one would reset on every doc switch and hand chronic
+  offenders a fresh probation forever. `guests.list()`, per-guest devtools
+  lanes, and `EngineOpts.onGuestFault`/`onGuestNotice` — a suspended derived
+  guest is a product event a host must be able to route, not a log line.
+- **`GuardedTx.move(entity, to, {animateMs})`** — capture, durable final and
+  glide in ONE commit, one undo entry, no double-write. Already-tweening
+  entities RETARGET rather than restart; `Grab`-held ones are skipped; and
+  `animateMs: 0` on an in-flight glide ENDS it (write-then-remove, so the stale
+  tween cannot fight the snap it just committed). `ops.arrange` is now a
+  pass-through over it — the recipe lives in the primitive it seeded.
+
+### Fixed
+
+- **A throwing publish hook no longer kills the canvas.** `@ice/dom`'s rAF loop
+  rescheduled only AFTER `step()`, so one throw anywhere in publish stopped the
+  loop permanently — no frames, no recovery, no message. Fixing it also closed
+  a latent resurrection in the other direction: a `stop()` called from inside
+  the step is re-checked after the body, so the loop cannot outlive its own
+  stopper.
+- **Self-removing publish hooks and reflectors no longer skip their
+  neighbours.** Both loops iterated live arrays, so a splice during iteration
+  shifted the next entry past the index.
+- **Devtools' "reflect" lane reports for the first time.** It read a phase name
+  that has never existed. `FrameTelemetry` gained `reflectMicros` and
+  `reflectorMicros`, which are the real source.
+- **Undo mid-glide no longer strands a cell permanently.** A glide holds the
+  runtime cell away from the document; if the durable value then changed by any
+  path other than the move, the tween landed on the stale target, strata's
+  `(own, value)` branch advanced the baseline alone and banked NOTHING, and the
+  cell was left diverged with an empty held-cell ledger — never reconciling,
+  and poisoned against every later remote write. Two chokepoints close it:
+  post-seal in `guardedTransaction` (a Position written by any other path
+  retargets the tween) and post-history in the facade (undo does not pass
+  through the tx path at all).
+- `tweenStart` is reaped for entities that die mid-tween, rather than only on
+  landing.
+
+### Added, minor
+
+- `makeChurnGuard` is on the barrel — the drain-in-runIf idiom every derived
+  consumer outside core would otherwise hand-roll.
+
 ## [0.4.0] — 2026-08-09
 
 Three downstream petitions from VibeField land at once: the **focus model**
