@@ -29,12 +29,24 @@
  *      divergence (a live tween IS the claim, design-001 §3 amendment), so
  *      the card glides while the document already holds the truth. The tween
  *      reconverges with the committed value on land; no commit-at-land
- *      machinery exists or is needed. (Undo DURING the ≤240ms glide is the
- *      same accepted divergence window fly-back already has.)
+ *      machinery exists or is needed.
  *
- * The user's hand always wins: widgets under a live Grab or an in-flight
- * TransformTween are skipped. Runtime-only widgets (no doc key) skip the tx
- * and are tweened/written directly — no doc cell, nothing to guard.
+ * **[AMENDED 2026-08-15, petition I15]** Two corrections, both from the door
+ * review:
+ *   - The parenthetical that used to sit here — "undo DURING the glide is the
+ *     same accepted divergence window fly-back already has" — was WRONG. It is
+ *     not a window: an undo mid-glide advanced the baseline alone (strata's
+ *     `(own, value)` branch banks nothing), the tween landed on the stale
+ *     target, and the cell stayed diverged FOREVER, poisoned against later
+ *     remote updates. The facade's history chokepoint now retargets live tweens
+ *     onto doc truth, so ⌘Z mid-glide converges by landing.
+ *   - Movers already tweening are RETARGETED, not skipped. Skipping them left a
+ *     second Clean Up gliding everyone else while the in-flight ones completed
+ *     at their previous, now-wrong targets.
+ *
+ * The user's hand still always wins: widgets under a live Grab are skipped.
+ * Runtime-only widgets (no doc key) skip the tx and are tweened/written
+ * directly — no doc cell, nothing to guard.
  */
 import { layerGraph, packLayout, type LayoutRect } from "@ice/kernel";
 import type { Entity, World } from "@vibecook/strata-ecs";
@@ -99,8 +111,9 @@ export function arrangeWidgets(
   const movable = targets.filter(
     (e) =>
       world.isAlive(e) &&
+      // Grab-held only: an in-flight tween is RETARGETED below (I15), not
+      // skipped — skipping stranded it at the previous run's target.
       !world.has(e, Grab) &&
-      !world.has(e, TransformTween) &&
       world.get(e, Position) !== undefined,
   );
   if (movable.length < 2) return [];
@@ -255,27 +268,18 @@ export function arrangeWidgets(
   }
   if (moves.length === 0) return [];
 
-  const durable = moves.filter((m) => store.keyOf(m.e) !== undefined);
-  if (durable.length > 0) {
-    guardedTransaction(store, world, (tx) => {
-      for (const m of durable) tx.edit(m.e).set(Position, { x: m.to.x, y: m.to.y });
-    });
-  }
-
+  // ONE transaction owns capture, the durable finals, and the glide — the
+  // write protocol above, now expressed in the primitive it seeded
+  // (`tx.move`, petition I15). Runtime-only movers are recognised by `keyOf`
+  // and skip the durable half without a second code path here.
   const dur = opts.durationMs ?? ARRANGE_MS;
-  if (dur > 0) {
-    for (const m of moves) {
-      world.addComponent(m.e, TransformTween, { toX: m.to.x, toY: m.to.y, durationMs: dur, elapsedMs: 0 });
-      liveWriter.set(m.e, Position, { x: m.from.x, y: m.from.y });
-    }
-  } else {
-    // No glide: the tx already snapped the durable movers; runtime-only
-    // movers still need their value write.
-    for (const m of moves) {
-      if (store.keyOf(m.e) === undefined) {
-        world.edit(m.e).set(Position, { x: m.to.x, y: m.to.y });
-      }
-    }
-  }
+  guardedTransaction(
+    store,
+    world,
+    (tx) => {
+      for (const m of moves) tx.move(m.e, m.to, { animateMs: dur });
+    },
+    { live: liveWriter, keyOf: (e) => store.keyOf(e) },
+  );
   return moves.map((m) => m.e);
 }

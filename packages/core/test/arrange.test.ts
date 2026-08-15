@@ -7,7 +7,7 @@
  *  - default mode glides: tween riders attached, runtime still at the old
  *    spot on the call frame, reconverged with the committed doc at land;
  *  - selection ≥2 scopes the arrange; bystanders never move;
- *  - a widget already carrying a TransformTween is skipped.
+ *  - a widget already carrying a TransformTween is RETARGETED (I15, 2026-08-15).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -229,14 +229,40 @@ describe("ops.arrange", () => {
     ce.dispose();
   });
 
-  it("a widget already in flight (TransformTween) is skipped", () => {
+  // [AMENDED 2026-08-15, petition I15] This asserted the OLD law — an in-flight
+  // widget was SKIPPED — which stranded it at the previous run's target while
+  // every other widget re-arranged around it. The law is now retarget: a second
+  // Clean Up re-aims live glides instead of abandoning them.
+  it("a widget already in flight (TransformTween) is RETARGETED, not skipped", () => {
     const { ce, all } = makeBoard();
     const b = all[1] as Entity;
-    const bBefore = { ...(ce.world.get(b, Position) as { x: number; y: number }) };
     ce.world.addComponent(b, TransformTween, { toX: 500, toY: 500, durationMs: 200, elapsedMs: 0 });
-    const movers = ce.ops.arrange({ durationMs: 0, gutter: GUTTER });
-    expect(movers.includes(b)).toBe(false);
-    expect(ce.world.get(b, Position)).toEqual(bBefore);
+
+    const movers = ce.ops.arrange({ durationMs: 200, gutter: GUTTER });
+    expect(movers.includes(b)).toBe(true);
+
+    // Its glide now aims at the NEW layout target, and the ease was not
+    // restarted (elapsedMs survives, so the motion continues from where it is).
+    const tw = ce.world.get(b, TransformTween) as { toX: number; toY: number };
+    const target = ce.docs.current()?.store.getComponent(b, Position) as { x: number; y: number };
+    expect({ x: tw.toX, y: tw.toY }).toEqual({ x: target.x, y: target.y });
+    expect(tw).not.toEqual({ toX: 500, toY: 500, durationMs: 200, elapsedMs: 0 });
+    ce.dispose();
+  });
+
+  it("durationMs 0 on an in-flight widget ENDS the glide instead of letting it fight the snap", () => {
+    const { ce, all } = makeBoard();
+    const b = all[1] as Entity;
+    ce.world.addComponent(b, TransformTween, { toX: 500, toY: 500, durationMs: 200, elapsedMs: 0 });
+
+    ce.ops.arrange({ durationMs: 0, gutter: GUTTER });
+
+    // No tween left to ease it back toward (500,500), and the runtime cell
+    // agrees with the document — nothing diverged, nothing to strand.
+    expect(ce.world.get(b, TransformTween)).toBeUndefined();
+    const live = ce.world.get(b, Position) as { x: number; y: number };
+    const doc = ce.docs.current()?.store.getComponent(b, Position) as { x: number; y: number };
+    expect(live).toEqual({ x: doc.x, y: doc.y });
     ce.dispose();
   });
 });

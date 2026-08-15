@@ -140,6 +140,35 @@ mid-guest-work settles through owed work and parks without walking `SETTLE_CAP` 
 devtools reports per-guest lanes and a non-undefined reflect lane · **every existing M3–M10
 trace stays green** (the frame contract changed shape).
 
+## M12 — Animation-integrated writes (petition I15) · 0.5.0 half 2 — **DONE 2026-08-15**
+
+*(As-built: `tx.move` + both chokepoints, each mutation-probed to red only its own trace;
+`ops.arrange` collapsed to a pass-through over it — the recipe now lives in the primitive
+it seeded. Two findings beyond the plan: `animateMs: 0` on an ALREADY-tweening entity had
+to end the glide (write-then-remove, so the stale tween cannot fight the snap), and the
+`tweenStart` memo now clears on destroy/reset rather than only on landing. design-001 §3
+carries the erratum — the "accepted divergence window" was never a window.)*
+
+- `GuardedTx.move(entity, to, {animateMs})` — capture `from` at call time, write the final
+  inside THIS transaction (inheriting `undoable`), install `TransformTween` + liveWriter
+  rewind after commit; already-tweening entities RETARGET (`toX/toY` rewrite), `Grab`-held
+  are skipped; `animateMs` 0/absent = snap with no tween attached.
+- **The two chokepoints** (the reason this is ICE-only): post-seal in `guardedTransaction`
+  — any Position written on a tweening entity without a same-tx `move` retargets that
+  tween; and facade `docs.undo()/redo()` — sweep live tweens onto the post-undo durable
+  value (undo does not pass through `guardedTransaction`).
+- `ops.arrange` reconciled onto retarget (drop the skip-if-tweening filter, keep the Grab
+  skip); `tweenStart` memo reaped for entities that die mid-tween.
+- Barrel: export `makeChurnGuard`; externalize arrange's write protocol as a documented
+  contract (it is the recipe every future consumer copies).
+
+**Exit**: **undo-mid-glide converges** — live lands on the undone Position,
+`cellEquals(runtime, baseline)` holds, no stranded-cell DEV warning, and a subsequent
+remote write applies (the permanent-divergence case is dead) · the remote-mid-glide
+held-cell self-heal is pinned so it cannot regress · a second `arrange` mid-glide re-aims
+instead of stranding · one undo entry when undoable, none under `undoable:false` · a
+spawn/despawn-mid-tween soak shows no `tweenStart` growth.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field

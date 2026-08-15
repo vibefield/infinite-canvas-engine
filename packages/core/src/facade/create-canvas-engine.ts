@@ -35,6 +35,7 @@ import {
   Size,
   SnapConfig,
   StageMode,
+  TransformTween,
   Viewport,
 } from "../catalog";
 import { Active } from "../catalog/camera-derived";
@@ -42,7 +43,7 @@ import { createEngine, type Engine } from "../engine/engine";
 import type { FrameControl } from "../engine/frame-control";
 import { isMidGesture } from "../interaction/gesture-status";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
-import { guardedTransaction } from "../guards/guarded-tx";
+import { guardedTransaction, retargetTweensToDoc } from "../guards/guarded-tx";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { installInteractionStack, type InteractionStack } from "../interaction/install";
 import { createNestedCanvas, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
@@ -228,6 +229,8 @@ function createForwardingSink(): CommitSink & { target: CommitSink | undefined }
 
 // Query singletons (module scope — defineQuery identity is the cache key).
 const selectableWidgetsQ = defineQuery([Position, Size, Selectable, Active, WidgetEquipped]);
+/** Live glides — the history chokepoint's sweep set (petition I15). */
+const tweenQ = defineQuery([Position, TransformTween]);
 
 export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   registerBuiltinTools();
@@ -331,6 +334,33 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     sink.target = undefined;
   };
 
+  /**
+   * Undo/redo + THE HISTORY CHOKEPOINT (petition I15). Undo does not pass
+   * through `guardedTransaction` — it is strata's own local batch — so a glide
+   * in flight when ⌘Z lands would otherwise complete at the PRE-undo target and
+   * strand the cell: runtime ≠ baseline with nothing banked, divergence that
+   * never reconciles and poisons the cell against later remote updates. After
+   * the history step, every live tween is retargeted onto its doc truth, so the
+   * glide finishes on the undone value and the cell reconverges by landing.
+   */
+  const historyStep = (which: "undo" | "redo"): boolean => {
+    const s = session;
+    if (s === undefined) return false;
+    const ok = which === "undo" ? s.store.undo() : s.store.redo();
+    if (!ok) return false;
+    const tweening: Entity[] = [];
+    world.query(tweenQ).each((b) => {
+      for (const r of b) tweening.push(b.entity(r));
+    });
+    if (tweening.length > 0) {
+      retargetTweensToDoc(world, tweening, (e) => {
+        const v = s.store.getComponent(e, Position);
+        return v === undefined ? undefined : { x: v.x, y: v.y };
+      });
+    }
+    return true;
+  };
+
   const gatePolicy: DocSessionOpts["onGate"] =
     opts.policy?.versionGate === undefined
       ? undefined
@@ -394,8 +424,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     close: closeDoc,
     // Read-only documents must not mutate through history either — undo/redo
     // write the store exactly like an op does.
-    undo: () => (session === undefined || session.readOnly ? false : session.store.undo()),
-    redo: () => (session === undefined || session.readOnly ? false : session.store.redo()),
+    undo: () => (session === undefined || session.readOnly ? false : historyStep("undo")),
+    redo: () => (session === undefined || session.readOnly ? false : historyStep("redo")),
     autosave(storage, o) {
       const s = requireSession("autosave");
       const inner = startAutosave(s, { storage, world, ...o });

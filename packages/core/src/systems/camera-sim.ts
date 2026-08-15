@@ -107,8 +107,21 @@ export function createCameraSystems(world: World): CameraSystems {
 
   // Per-entity tween start position: TransformTween carries only the target
   // (design-001 §5 minimal shape), so the eased lerp needs the fly-away origin
-  // captured on the attach frame. Cleaned on arrival.
+  // captured on the attach frame. Cleaned on arrival — and, since 2026-08-15
+  // (petition I15), on DEATH too: an entity destroyed mid-glide never reaches
+  // the landing branch, so its entry used to sit in this map for the world's
+  // whole life. Bounded and harmless (generation-tagged handles never collide),
+  // but a leak is a leak — and behaviors will make mid-glide despawns ordinary.
   const tweenStart = new Map<Entity, { x: number; y: number }>();
+  world.observe({
+    onDestroy: (e) => {
+      tweenStart.delete(e);
+    },
+    onReset: () => {
+      tweenStart.clear();
+      panMemo.clear();
+    },
+  });
 
   // Tick system (strata 0.5.0, petition 5): the scheduler owns cardinality —
   // the whole-frame aggregate runs EXACTLY once per frame by construction.

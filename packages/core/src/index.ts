@@ -123,6 +123,12 @@ export * from "./catalog";
 // Engine helpers: PhaseSet + Just* markers (design-003 §4.2), version stamps (design-002 §4).
 export * from "./helpers/phase-set";
 export * from "./helpers/version-stamps";
+// The drain-in-runIf idiom (petition I15): a change-collector gate that stashes
+// its delta for the body, so a skipped system stamps NOTHING (design-002 §4's
+// guard rule). Engine-internal since M6; exported because every derived
+// consumer outside core — plugin systems, and the behavior framework's own
+// delivery loop — needs exactly this and would otherwise hand-roll it.
+export * from "./helpers/churn-guard";
 // Catalog-adjacent ops (app-handler write paths).
 export * from "./ops/arrange";
 export * from "./ops/selection";
