@@ -274,6 +274,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     private generation = new AbortController();
     private generationDirty = false;
     private seeded = false;
+    /** Collectors detached because the breaker suspended us (see `goCold`). */
+    private cold = false;
     private removeSystems: (() => void) | undefined;
 
     /** Stashed by `shouldDeliver` for the body — the drain-and-stash idiom. */
@@ -358,7 +360,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         tickChunk: (batch, ctx) => this.tickChunk(batch, ctx),
         charge: (body) => this.guest.run(body),
         suspended: () => this.guest.suspended(),
-        onSuspendedFrame: () => this.discardJournal(),
+        onSuspendedFrame: () => this.goCold(),
       };
       this.compiled = compileBehavior(b, hooks);
       this.guest = opts.engine.guests.addDriven({
@@ -371,23 +373,70 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
 
     // --- installation ------------------------------------------------------
 
-    install(): void {
+    /**
+     * Attach this behavior's two collectors. Separate from `install` because
+     * suspension DETACHES them and resume re-attaches (see `goCold`/`goWarm`).
+     */
+    private installCollectors(): void {
       this.ownCollector = world.changes.collect({ components: [this.own], coarse: false });
-      if (this.compiled.readComponents.length > 0 || this.compiled.readTags.length > 0) {
+      // The reads collector subscribes to everything EXCEPT the own component,
+      // which the own collector already covers — so a behavior whose only
+      // declared read is itself gets no second collector at all, rather than
+      // one subscribed to nothing.
+      const readsComponents = this.compiled.readComponents.filter((c) => c !== this.own);
+      if (readsComponents.length > 0 || this.compiled.readTags.length > 0) {
         this.readsCollector = world.changes.collect({
-          components: this.compiled.readComponents.filter((c) => c !== this.own),
+          components: readsComponents,
           ...(this.compiled.readTags.length > 0 ? { tags: this.compiled.readTags } : {}),
           coarse: false,
         });
       }
-      // ARM THE POLLS AT REGISTRATION, not at first use. Both stamp families are
-      // dormant until their first read: a poll armed late reports its first
-      // compare as "unchanged" and silently misses every write before it.
-      // (`resourceStamp` arming is WORLD-WIDE — the first read of any resource
-      // starts collection for all — so this only matters for the first
-      // registration; `orderStamp` is per-relation.)
+    }
+
+    /**
+     * The breaker suspended us. DETACH the collectors — a suspended behavior
+     * that keeps them alive keeps costing: strata journals every subscribed
+     * write into buffers we then throw away, every frame, for as long as the
+     * suspension lasts. Suspension is supposed to stop the cost, not launder it.
+     */
+    private goCold(): void {
+      if (this.cold) return;
+      this.cold = true;
+      this.ownCollector?.dispose();
+      this.readsCollector?.dispose();
+      this.ownCollector = undefined;
+      this.readsCollector = undefined;
+    }
+
+    /**
+     * Resumed. Fresh collectors journal from NOW, so everything that happened
+     * during the suspension is invisible to them — which is exactly the state a
+     * newly registered behavior is in, and `seeded` already means "rebuild from
+     * the world rather than trust a delta". Without this, `guests.resume()` —
+     * the doctor's own repair action — hands back a behavior whose instance
+     * registry has silently lost everything attached while it was down.
+     */
+    private goWarm(): void {
+      if (!this.cold) return;
+      this.cold = false;
+      this.installCollectors();
+      this.seeded = false;
+    }
+
+    install(): void {
+      this.installCollectors();
+      // ARM THE POLLS AT REGISTRATION, not at first use. Both stamp families
+      // are dormant until their FIRST READ: a poll armed late reports its first
+      // compare as "unchanged" and silently misses every write before it. Both
+      // arming flags are WORLD-WIDE — one read of any resource, or of any
+      // ordered relation, starts collection for all of them — so the hazard
+      // applies to the first registration and not to later ones. The
+      // order-stamp read below is purely for its arming side effect, which is
+      // why the parent it names does not matter.
       for (const res of this.compiled.readResources) this.resourceStamps.set(res, world.resourceStamp(res));
-      if (this.compiled.readRelations.length > 0) world.orderStamp(0 as Entity, this.compiled.readRelations[0] as Relation);
+      if (this.compiled.readRelations.length > 0) {
+        world.orderStamp(0 as Entity, this.compiled.readRelations[0] as Relation);
+      }
 
       if (this.b.phase === "publish") {
         // The publish slot is not a pipeline phase: it is the post-tick step
@@ -402,7 +451,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         // seam CAP is what sees this one frame late.
         this.removeSystems = opts.engine.onPublish(() => {
           if (this.guest.suspended()) {
-            this.discardJournal();
+            this.goCold();
             return;
           }
           this.guest.run(() => {
@@ -525,12 +574,6 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       }
     }
 
-    /** Throw away journaled churn nobody will read (see `onSuspendedFrame`). */
-    private discardJournal(): void {
-      this.ownCollector?.clear();
-      this.readsCollector?.clear();
-    }
-
     /** The publish-slot twin of the tick SYSTEM (no query, no chunks). */
     private publishTick(): void {
       const on = this.b.on;
@@ -573,6 +616,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     // --- the gate ----------------------------------------------------------
 
     private shouldDeliver(): boolean {
+      // Reached only while NOT suspended, so this is the resume edge.
+      if (this.cold) this.goWarm();
       // The drain is UNCONDITIONAL even when the answer is "no work": a
       // collector nobody drains grows without bound, and the next real drain
       // would hand the body a delta describing a world several frames old.
@@ -717,6 +762,16 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       return fired;
     }
 
+    /**
+     * Poll the watched sequences. Sibling order is the one thing `reads:` can
+     * name that NEVER reaches a change collector, so this poll is not an
+     * optimization — it is the only mechanism there is.
+     *
+     * The per-parent value SUMS the stamps of every declared relation, which is
+     * sound only because the stamps come from one shared monotonic counter:
+     * they never decrease, so two relations cannot move in opposite directions
+     * and cancel to the same total.
+     */
     private pollOrder(): boolean {
       const rels = this.compiled.readRelations;
       if (rels.length === 0) return false;
@@ -730,23 +785,51 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           fired = true;
         }
       }
-      // A fired stamp usually means the membership under that parent moved, so
-      // the parent SET itself may be stale — rebuild next frame.
+      // A fired stamp usually means membership under that parent moved, so the
+      // watch SET itself may be stale. Rebuilding next frame (rather than now)
+      // is safe: the stamp we just banked is current, so nothing is missed in
+      // the gap.
       if (fired) this.parentsDirty = true;
       return fired;
     }
 
+    /**
+     * Rebuild the set of sequences this behavior watches.
+     *
+     * BOTH DIRECTIONS, and the second is the load-bearing one. An instance
+     * participates in an ordered relation two ways: as a CHILD (its own
+     * parent's sequence moved) or as the PARENT (its members were reordered
+     * under it). Watching only the first misses the flagship shape entirely — a
+     * mind map's carrier holds the behavior and its NODES are the children, so
+     * a pure reorder of those nodes would wake nothing at all.
+     *
+     * A CHILDLESS instance is watched too, and deliberately: its stamp reads 0
+     * until it gains a first child, and that transition is precisely what has
+     * to be detectable. Skipping childless parents would reintroduce the same
+     * blind spot one case down.
+     *
+     * COST, stated honestly because design-009 §5.2 says "O(distinct parents)"
+     * and this is not that: the watch set is instances ∪ instances' parents, so
+     * the poll is O(instances) map lookups per frame for a behavior that
+     * declares an ordered relation. Two consequences worth knowing — declare a
+     * relation only when you navigate it, and prefer the §10 carrier idiom,
+     * where the instance count is small by construction.
+     */
     private rebuildParents(): void {
       this.parentsDirty = false;
       this.parentStamps.clear();
+      if (this.compiled.readRelations.length === 0) return;
+      const watch = (parent: Entity): void => {
+        let total = 0;
+        for (const rr of this.compiled.readRelations) total += world.orderStamp(parent, rr);
+        this.parentStamps.set(parent, total);
+      };
       for (const e of this.instances.keys()) {
         if (!world.isAlive(e)) continue;
+        watch(e); // as a PARENT: its members' sequence
         for (const r of this.compiled.readRelations) {
           const parent = world.getRelation(e, r);
-          if (parent === undefined) continue;
-          let total = 0;
-          for (const rr of this.compiled.readRelations) total += world.orderStamp(parent, rr);
-          this.parentStamps.set(parent, total);
+          if (parent !== undefined) watch(parent); // as a CHILD: its own sequence
         }
       }
     }
@@ -820,7 +903,12 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           consecutiveThrows: 0,
         });
       }
-      if (appeared.length > 0 || departed.length > 0) this.parentsDirty = true;
+      // Rebuild the order-poll's watch set NOW, not lazily on the next poll:
+      // the stamps have to be banked in the same frame the instance set
+      // changed, or a reorder landing in between is compared against a stamp
+      // taken AFTER it — "late arming misses changes", at instance granularity.
+      // (No-op when the behavior declares no ordered relation.)
+      if (appeared.length > 0 || departed.length > 0) this.rebuildParents();
       // FIRST-ATTACH stamping (§5.6): not at doc create, where the behavior may
       // not exist yet — a plugin installs later, and a marker for something the
       // document has no cells of is a lie about what is in it.
@@ -1077,7 +1165,15 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         changedEntities: () => {
           if (node.changedEntitiesCache === undefined) {
             const out: Entity[] = [];
-            for (const e of node.changesView.changed) if (node.instances.has(e)) out.push(e);
+            // Instances MINUS the suppressed ones — the same set `ctx.entities()`
+            // reports, derived from the same two collections rather than from
+            // `visible`, which is per-PASS state (the tick pass resets it) and
+            // would make this answer depend on who asked. Reporting a suppressed
+            // instance here would invite the hook to act on exactly the instance
+            // suppression exists to leave alone.
+            for (const e of node.changesView.changed) {
+              if (node.instances.has(e) && !node.suppressed.has(e)) out.push(e);
+            }
             node.changedEntitiesCache = out;
           }
           return node.changedEntitiesCache;

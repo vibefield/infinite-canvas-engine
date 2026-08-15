@@ -410,6 +410,50 @@ describe("the frame contract", () => {
     expect(row?.status).toBe("running");
   });
 
+  it("a RESUMED behavior rebuilds — instances attached while it was down are not lost", () => {
+    const inits: Entity[] = [];
+    let boom = true;
+    const B = defineBehavior("brt:resume", {
+      store: "runtime",
+      phase: "simulate",
+      schema: { n: p.number({ default: 0 }) },
+      reads: [Tint],
+      on: {
+        init: (e) => inits.push(e),
+        changed: () => {
+          if (boom) throw new Error("boom");
+        },
+      },
+    });
+    runtime.register(B);
+    const a = world.spawn({ components: [[Tint, { v: 0 }]] });
+    runtime.attach(a, B);
+
+    // Three consecutive faulting frames trip the breaker's throw ladder.
+    for (let i = 0; i < 4; i++) {
+      world.edit(a).set(Tint, { v: i });
+      step();
+    }
+    const row = () => engine.guests.list().find((g) => g.id === "behavior:brt:resume");
+    expect(row()?.status).toBe("suspended");
+
+    // A second instance appears WHILE the behavior is down. Its journal entry
+    // is discarded (nobody is going to read it) and will never be re-journaled.
+    const b = world.spawn({ components: [[Tint, { v: 0 }]] });
+    runtime.attach(b, B);
+    step();
+    step();
+
+    boom = false;
+    engine.guests.resume("behavior:brt:resume");
+    step();
+
+    // So a resumed behavior must REBUILD, not trust a delta — otherwise the
+    // doctor's own repair action hands back a permanently stale registry.
+    expect(inits).toContain(b);
+    expect(runtime.list()[0]?.instances).toBe(2);
+  });
+
   it("uninstall removes the systems AND the guest row", () => {
     const spy = vi.fn();
     const B = defineBehavior("brt:uninstall", {

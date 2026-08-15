@@ -151,6 +151,25 @@ describe("the mind map as a derived behavior", () => {
     expect(members.map((m) => posOf(h, m).x)).toEqual([-180, -60, 60]);
   });
 
+  it("re-derives on a pure sibling REORDER, which no collector can see", () => {
+    const { h, stats, members } = build("bmm:reorder");
+    h.step();
+    const recomputes = stats.recomputes;
+
+    // No component value changes at all here — only the ChildOf SEQUENCE moves.
+    // Relations never reach a change collector, so the `orderStamp` poll armed
+    // by `reads: [ChildOf]` is the only thing that can wake this.
+    h.doc()?.store.transaction((tx) => tx.moveRelation(members[0] as Entity, ChildOf, "last"));
+    h.world.sync();
+    h.step();
+    h.step();
+
+    expect(stats.recomputes).toBeGreaterThan(recomputes);
+    // The moved member is now LAST in the row, which is the whole point of an
+    // ordered relation driving the layout.
+    expect(posOf(h, members[0] as Entity)).toEqual(FIXTURE_3[2]);
+  });
+
   it("goes quiet under a claim and coalesces once at the settle", () => {
     const { h, stats, members } = build("bmm:claim");
     h.step();

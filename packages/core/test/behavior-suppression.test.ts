@@ -194,6 +194,38 @@ describe("suppression", () => {
     expect(seen).toEqual([carrier]);
   });
 
+  it("keeps a suppressed instance out of ctx.changedEntities(), not just ctx.entities()", () => {
+    let reported: Entity[] = [];
+    const B = defineBehavior("bsup:changedentities", {
+      store: "durable",
+      derived: true,
+      schema: { n: p.number({ default: 0 }) },
+      reads: [Position],
+      writes: [Position],
+      on: {
+        changed: (ctx) => {
+          reported = [...ctx.changedEntities()];
+        },
+      },
+    });
+    runtime.register(B);
+    const a = spawn(0, 0);
+    const b = spawn(200, 0);
+    attach(a, B.component as never);
+    attach(b, B.component as never);
+    step();
+
+    const release = claim(a);
+    ce.world.edit(a).set(Position, { x: 1, y: 1 });
+    ce.world.edit(b).set(Position, { x: 2, y: 2 });
+    step();
+
+    // Reporting `a` here would invite the hook to act on exactly the instance
+    // suppression exists to leave alone.
+    expect(reported).toEqual([b]);
+    release();
+  });
+
   it("deriveDuringGesture opts OUT — live-follow, costs accepted", () => {
     const { B, seen } = makeDerived("bsup:optout", { deriveDuringGesture: true });
     runtime.register(B);
