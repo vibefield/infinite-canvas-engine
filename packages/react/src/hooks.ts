@@ -18,6 +18,7 @@ import {
   WidgetBreakpoint,
   defineQuery,
   widgets,
+  type AnyBehaviorDef,
   type Component,
   type Entity,
   type World,
@@ -94,6 +95,35 @@ export function useWidgetProps<T extends Record<string, unknown>>(
     }
     return out as T;
   }, [raw, g]);
+}
+
+/**
+ * Live behavior data for one entity (design-009 §6, Tier-3 — the
+ * `useWidgetProps` pattern). `p.json` fields come back parsed; the value is
+ * `undefined` when the behavior is not attached, which is a legitimate render
+ * state and not an error.
+ *
+ * READ-ONLY by construction. A face renders behavior state; it never writes it
+ * (Law 10) — writes go through `ctx` inside the behavior's own hooks, or
+ * through `engine.behaviors.attach` / a transaction from an app handler.
+ */
+export function useBehavior<T extends Record<string, unknown>>(
+  world: World,
+  entity: Entity,
+  behavior: AnyBehaviorDef,
+): T | undefined {
+  const raw = useWorldComponent(world, entity, behavior.component as Component) as
+    | Record<string, unknown>
+    | undefined;
+  return useMemo(() => {
+    if (raw === undefined) return undefined;
+    const out: Record<string, unknown> = {};
+    for (const [name, spec] of Object.entries(behavior.schema)) {
+      const v = raw[name];
+      out[name] = spec.kind === "json" && typeof v === "string" ? parseJsonCell(v, spec.default) : v;
+    }
+    return out as T;
+  }, [raw, behavior]);
 }
 
 /**

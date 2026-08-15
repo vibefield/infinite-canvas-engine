@@ -153,6 +153,13 @@ export {
   type BehaviorMeta,
   type BehaviorVerdict,
 } from "./behavior/migrate";
+// The testing rig ships WITH the framework, not after it (design-009 §7).
+export {
+  createBehaviorHarness,
+  type BehaviorHarness,
+  type BehaviorHarnessOpts,
+  type HarnessCommit,
+} from "./behavior/harness";
 
 // Write-path guards.
 export { devGuardsEnabled, setDevGuards } from "./guards/dev";

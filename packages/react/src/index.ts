@@ -9,6 +9,7 @@ export {
   WidgetHiddenContext,
   useBreakpoint,
   useSelected,
+  useBehavior,
   useWidgetProps,
   useWorldComponent,
 } from "./hooks";
