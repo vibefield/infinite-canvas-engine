@@ -36,6 +36,7 @@ import type {
   World,
 } from "@vibecook/strata-ecs";
 import type { DrivenGuest, GuestRegistry } from "../engine/guests";
+import { Captures, Drags, GestureActive } from "../catalog/gesture";
 import { FrameInfo } from "../engine/frame-info";
 import type { PhaseGroup } from "../engine/pipeline";
 import { devGuardsEnabled } from "../guards/dev";
@@ -123,6 +124,28 @@ interface EchoSnapshot {
 
 /** How many consecutive throws quarantine ONE instance (BF-D18). */
 const INSTANCE_THROW_LIMIT = 3;
+
+/** Suppressed frames before the dev-warn names the behavior and the claimant. */
+const SUPPRESSION_WARN_FRAMES = 600;
+
+/**
+ * Is `e` under a LIVE gesture claim right now?
+ *
+ * Deliberately NARROWER than `makeDefaultMayDiverge`: a `TransformTween` also
+ * grants divergence, but a glide is not a gesture — suppressing derives for the
+ * duration of every fly-back would stall exactly the reflow the fly-back is
+ * waiting for.
+ */
+function isClaimed(world: World, e: Entity): boolean {
+  if (!world.isAlive(e)) return false;
+  for (const claimant of world.getReverse(e, Captures)) {
+    if (world.hasTag(claimant, GestureActive)) return true;
+  }
+  for (const claimant of world.getReverse(e, Drags)) {
+    if (world.hasTag(claimant, GestureActive)) return true;
+  }
+  return false;
+}
 
 /**
  * A patch → the ABSOLUTE whole-cell value a write commits (Law 5). Fields the
@@ -252,6 +275,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     private readonly scratchPrevData: Record<string, unknown>;
 
     private snapshot: Entity[] = [];
+    /** What `ctx.entities()` reports for the CURRENTLY RUNNING pass. */
+    private visible: Entity[] = [];
+    /** Instances held back by a live claim (§5.3) — instance-scoped, always. */
+    private readonly suppressed = new Set<Entity>();
+    /** Consecutive suppressed frames per instance (the dev-warn's counter). */
+    private readonly suppressedFrames = new Map<Entity, number>();
+    /** Churn seen while suppressed — replayed in the coalesced delivery. */
+    private readonly carry = new Set<Entity>();
     private changesView: BehaviorChanges = { full: false, changed: [], removed: [] };
     private changedEntitiesCache: Entity[] | undefined;
     /** Set for the duration of a delivery/tick pass; see BehaviorWalker. */
@@ -447,12 +478,74 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // the very first attach arrives as own-component churn on a behavior that
       // has no instances yet, and gating that is how an installed behavior
       // never wakes up.
-      if (!full && !ownWork && !(readsWork && this.instances.size > 0)) {
+      // A claim clearing is WORK even on an otherwise silent frame: the
+      // gesture's own commit landed at `ctl:behave`, `derive` runs later the
+      // same frame, and the coalesced delivery has to happen against that
+      // settled truth or the reflow waits for unrelated churn to wake it.
+      const lifted = this.suppressionLifted();
+      if (!full && !ownWork && !lifted && !(readsWork && this.instances.size > 0)) {
+        if (this.suppressed.size > 0) {
+          for (const e of readsChanged) this.carry.add(e);
+          for (const e of ownChanged) this.carry.add(e);
+        }
         this.stash = undefined;
         return false;
       }
       this.stash = { full, ownChanged, ownRemoved, readsFired: readsWork, readsChanged, readsRemoved };
       return true;
+    }
+
+    /** Any suppressed instance whose claim has cleared since last frame. */
+    private suppressionLifted(): boolean {
+      if (this.suppressed.size === 0) return false;
+      for (const e of this.suppressed) {
+        if (!this.isSuppressible(e)) return true;
+      }
+      return false;
+    }
+
+    /**
+     * Is this instance held by a live claim? Two ways, and the second is what
+     * makes the flagship case work: the CARRIER of a mind map is never itself
+     * grabbed — its member node is. So a claimed entity that reaches an
+     * instance through one of the behavior's own DECLARED read relations
+     * suppresses that instance, and only that instance.
+     */
+    private isSuppressible(e: Entity): boolean {
+      if (isClaimed(world, e)) return true;
+      for (const r of this.compiled.readRelations) {
+        for (const child of world.getReverse(e, r)) {
+          if (isClaimed(world, child)) return true;
+        }
+      }
+      return false;
+    }
+
+    /** Recompute the suppressed set for this delivery (derived behaviors only). */
+    private updateSuppression(): void {
+      const gone: Entity[] = [];
+      for (const e of this.suppressed) if (!this.instances.has(e)) gone.push(e);
+      for (const e of gone) {
+        this.suppressed.delete(e);
+        this.suppressedFrames.delete(e);
+      }
+      for (const e of this.snapshot) {
+        if (this.isSuppressible(e)) {
+          this.suppressed.add(e);
+          const n = (this.suppressedFrames.get(e) ?? 0) + 1;
+          this.suppressedFrames.set(e, n);
+          if (n === SUPPRESSION_WARN_FRAMES) {
+            onLog(
+              this.b.name,
+              `derive suppressed for ${n} frames on entity ${e} — a gesture claim on it (or on one of its members) has not cleared. Derived state for that instance is frozen until it does.`,
+              [],
+            );
+          }
+          continue;
+        }
+        this.suppressed.delete(e);
+        this.suppressedFrames.delete(e);
+      }
     }
 
     private pollResources(): boolean {
@@ -563,7 +656,36 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // iteration.
       this.snapshot = [...this.instances.keys()];
 
+      // Claim-scoped delivery suppression (§5.3). It REPLACED a deferred-commit
+      // queue that re-ran a stale closure after the gesture's own commit — two
+      // commits, the first gliding to the pre-drag layout. Here the hook simply
+      // does not run while a claim is live, so closure freshness is structural
+      // and `ctx.commit` stays a plain write-now call.
+      const suppressing = this.b.derived && !this.b.deriveDuringGesture;
+      const wasSuppressed = suppressing ? new Set(this.suppressed) : undefined;
+      if (suppressing) this.updateSuppression();
+      this.visible =
+        suppressing && this.suppressed.size > 0
+          ? this.snapshot.filter((e) => !this.suppressed.has(e))
+          : this.snapshot;
+      // A claim CLEARING is itself the trigger for the coalesced delivery. On
+      // that frame there is usually no fresh churn at all — the gesture's last
+      // write landed frames ago — so without this the settle would sit waiting
+      // for unrelated churn to wake it.
+      const lifted =
+        wasSuppressed !== undefined && [...wasSuppressed].some((e) => !this.suppressed.has(e));
+
       let changedList = work?.readsChanged ?? [];
+      if (this.carry.size > 0) {
+        // Churn that arrived while suppressed, replayed ONCE at the settle so
+        // the coalesced delivery's `ctx.changes()` describes the whole gesture,
+        // not just its final frame.
+        const merged = new Set<Entity>(changedList);
+        for (const e of this.carry) merged.add(e);
+        this.carry.clear();
+        changedList = [...merged];
+      }
+      if (this.suppressed.size > 0) for (const e of changedList) this.carry.add(e);
       this.changesView = { full, changed: changedList, removed: work?.readsRemoved ?? [] };
       this.changedEntitiesCache = undefined;
 
@@ -594,6 +716,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         for (const e of candidates) {
           const inst = this.instances.get(e);
           if (inst === undefined || inst.failed || !inst.inited) continue;
+          if (this.suppressed.has(e)) continue; // held by a live claim
           // Just-appeared instances got current data in `init`; `prev` would be
           // that same value, so there is nothing to report.
           if (appeared.includes(e)) continue;
@@ -618,7 +741,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
 
       // 3. changed — ONCE per behavior, not per instance. N instances × one tag
       //    flip must not mean N journal scans.
-      if (on.changed !== undefined && (full || (work?.readsFired ?? false)) && this.instances.size > 0) {
+      const anyVisible = this.visible.length > 0;
+      if (on.changed !== undefined && (full || (work?.readsFired ?? false) || lifted) && anyVisible) {
         try {
           on.changed(this.ctx as never);
         } catch (err) {
@@ -656,6 +780,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         clock: info?.clock ?? 0,
       };
       const faulted = new Set<Entity>();
+      this.visible = this.snapshot;
       for (const row of batch) {
         const e = batch.entity(row);
         const inst = this.instances.get(e);
@@ -706,6 +831,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         }
       }
       this.instances.clear();
+      this.suppressed.clear();
+      this.suppressedFrames.clear();
+      this.carry.clear();
       this.parentStamps.clear();
       this.parentsDirty = true;
       // dispose FIRST, abort SECOND: a teardown that guards on
@@ -768,7 +896,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       const base: BehaviorCtxBase<Record<string, unknown>> = {
         world: behaviorWorld,
         query: (spec) => scopedQuery(requireWalker("query"), spec),
-        entities: () => node.snapshot,
+        entities: () => node.visible,
         changes: () => node.changesView,
         changedEntities: () => {
           if (node.changedEntitiesCache === undefined) {
