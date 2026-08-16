@@ -8,8 +8,8 @@ synced over CRDT, undoable per gesture.
 Built on [`@vibecook/strata-ecs`](https://www.npmjs.com/package/@vibecook/strata-ecs):
 an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 
-**Docs:** <https://jamesyong-42.github.io/infinite-canvas-engine/> ·
-**Source:** <https://github.com/jamesyong-42/infinite-canvas-engine>
+**Docs:** <https://vibefield.github.io/infinite-canvas-engine/> ·
+**Source:** <https://github.com/vibefield/infinite-canvas-engine>
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers
@@ -77,7 +77,7 @@ headless.
 ## Limits
 
 Measured, not estimated. The bench source in `packages/core/bench/` is the source
-of truth; [`docs/benchmarks.md`](https://github.com/jamesyong-42/infinite-canvas-engine/blob/main/docs/benchmarks.md)
+of truth; [`docs/benchmarks.md`](https://github.com/vibefield/infinite-canvas-engine/blob/main/docs/benchmarks.md)
 records the full output (Apple M1 Max, 2026-07-15).
 
 **Collaboration is the tightest ceiling — plan shared boards around ~3,000
@@ -107,5 +107,5 @@ widget wanting arrow keys or its own scrolling has no engine contract yet.
 
 **The substrate is pre-1.0**: `@vibecook/strata-ecs` minor versions may break APIs.
 
-[Changelog](https://github.com/jamesyong-42/infinite-canvas-engine/blob/main/CHANGELOG.md)
+[Changelog](https://github.com/vibefield/infinite-canvas-engine/blob/main/CHANGELOG.md)
 · MIT © James Yong

@@ -7,10 +7,10 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jamesyong-42/infinite-canvas-engine.git"
+    "url": "git+https://github.com/vibefield/infinite-canvas-engine.git"
   },
-  "homepage": "https://jamesyong-42.github.io/infinite-canvas-engine/",
-  "bugs": "https://github.com/jamesyong-42/infinite-canvas-engine/issues",
+  "homepage": "https://vibefield.github.io/infinite-canvas-engine/",
+  "bugs": "https://github.com/vibefield/infinite-canvas-engine/issues",
   "keywords": [
     "infinite-canvas",
     "canvas",

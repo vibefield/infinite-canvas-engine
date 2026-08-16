@@ -10,7 +10,7 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
 (presence) layers.
 
 **npm** [`@vibecook/ice`](https://www.npmjs.com/package/@vibecook/ice) ·
-**docs** <https://jamesyong-42.github.io/infinite-canvas-engine/> ·
+**docs** <https://vibefield.github.io/infinite-canvas-engine/> ·
 MIT license
 
 ```sh

@@ -7,7 +7,7 @@ the end-to-end smoke test depends on `apps/widgetlab` or a separate Vite server.
 
 The Electron main process is an IPC room switchboard. Every window is a collaborator, and
 `Cmd/Ctrl+N` opens another collaborator window. An optional
-[truffle](https://github.com/jamesyong-42/truffle) mesh lets app instances on the same tailnet join
+[truffle](https://github.com/vibecook-dev/truffle) mesh lets app instances on the same tailnet join
 the room without a central server.
 
 ## Run
