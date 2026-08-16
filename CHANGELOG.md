@@ -95,7 +95,13 @@ STATE, `defineTool` gives the canvas INPUT POLICY. Design-009, built on the
   write to a behavior-read component would silently stop every behavior reading
   it from ever waking.
 
-## [0.5.0] — 2026-08-15
+## [0.5.0] — 2026-08-15 · a git release point, NOT published to npm
+
+**Install 0.6.0 for everything below.** The split existed so this half could
+ship if the behavior framework slipped; it did not, and 0.6.0 landed the same
+day, so the registry goes 0.4.0 → 0.6.0. The commit remains a genuine release
+point — its tree contains no `behavior/` — which is why the entry stays rather
+than being folded upward.
 
 Two downstream petitions from VibeField, each carrying real bug fixes the field
 wants regardless of what they were asked for: the **guest runtime** (I14) and
