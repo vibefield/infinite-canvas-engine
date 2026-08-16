@@ -1,6 +1,6 @@
 {
   "name": "@vibecook/ice",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "ICE — infinite canvas engine. Figma-grade infinite-canvas UX as a framework: defineWidget turns React/R3F components into canvas citizens — selectable, movable, resizable, wired into node graphs, CRDT-synced, undoable per gesture.",
   "license": "MIT",
   "author": "James Yong <me@jamesyong42.com>",

@@ -4,6 +4,121 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [0.7.0] — 2026-08-16
+
+**The behavior host contract — petitions I16 + I17.** ICE 0.6.0 shipped
+`defineBehavior` and its first real embedder (VibeField's plugin runtime,
+PRC-4) immediately proved the framework runs but cannot be GOVERNED by a host
+that activates plugin code once per window while creating one engine per
+document — and that an ephemeral facet outlives its producer. The gaps were
+routing, composition, and one store-lifetime seam, not a new scheduler; every
+one was pinned red against the installed 0.6.0 artifact before this release
+made it green.
+
+### Added
+
+- **`engine.behaviors.register(B, {orderKey?, ledger?})`** — host policy at the
+  one place a host touches a behavior. The keyed lane runs in lexical order
+  BEFORE every unkeyed registration (ties and unkeyed keep registration order),
+  and both compiled pipeline systems and publish-slot hooks obey the same
+  order, so execution no longer depends on parallel plugin activation timing or
+  disable/re-enable history. Reordering reinstalls EXECUTION only: node state —
+  collectors, instances, guests, data — stays put, and `init` does not re-run
+  on unaffected behaviors. `ledger` seeds the driven guest's breaker state, so
+  a suspension survives the engine generation that recorded it; changes keep
+  streaming out the existing `guests.onLedgerChange` (no second mechanism). An
+  empty `orderKey` throws rather than silently sorting first.
+- **`createCanvasEngine({ onGuestFault?, onGuestNotice?, onBehaviorFault?,
+  onBehaviorLog? })`** — the facade finally forwards the routes that already
+  existed underneath it (`EngineOpts` for the guest pair, the behavior
+  runtime's own `onFault`/`onLog` for the behavior pair, hook + entity
+  provenance preserved). Before this, behavior faults defaulted to
+  `console.error` through the only construction path hosts use — and a
+  quarantined instance in a derived behavior means part of the document
+  silently stops updating, which reads to a user as a broken document.
+- **`describeBehavior(B)`** — the canonical, JSON-safe, process-independent
+  projection of a behavior declaration: id, store, derived flags, version,
+  phase, budget, tick visibility, schema field order with serial prop specs,
+  classified reads, write component names, migration sources, and hook presence
+  in lifecycle order. No validators, no function identity, no generated
+  component ids. Downstream build tools and runtimes compare manifest truth
+  against THIS instead of reimplementing ICE's definition identity.
+- **Thenable hook returns are faults.** Every `init`/`update`/`changed`/`tick`/
+  `dispose` return value is checked at the call boundary: a thenable gets a
+  catch observer (a later rejection cannot become unhandled), an attributed
+  behavior fault, and — unlike an ordinary single-instance throw, which stays
+  quarantined to its instance — a direct guest strike, because an async hook is
+  a definition bug every instance will repeat. `dispose` thenables are detected
+  and attributed but still swallowed: teardown must not stop teardown. The
+  Promise body itself cannot be cancelled; the guarantee is honest detection,
+  attribution, quarantine, and suspension — never preemption.
+
+- **Ephemeral facets withdraw when their producer stops (petition I17).** An
+  ephemeral behavior's facet is LIVE PUBLICATION — the local peer telling every
+  remote peer "this value is current" — so it is now reversed on every edge
+  where execution stops: unregister/disposal, guest suspension, and singleton
+  quarantine (the edge a host could never cover itself: a singleton's throws
+  cannot span instances, so quarantine emits no guest-ledger transition to
+  watch). The removal rides the PRESENCE writer, never `world.removeComponent`,
+  so remote projections get tombstone truth instead of a TTL wait. Resume
+  remints defaults for a value-suspended behavior; a QUARANTINED one stays
+  withdrawn until a fresh registration — the quarantine memo lives on the node
+  precisely because withdrawal makes the instance depart, and an
+  instance-keyed memo would re-mint into an infinite quarantine/remint
+  oscillation that never strikes the guest. Presence-less and mid-reset edges
+  are quiet no-ops.
+
+### Fixed
+
+- `GuestSpec.phase`'s comment no longer predicts a widening that M13 declined —
+  pipeline cadence is reached through `guests.addDriven`, and the publish-only
+  value is the settled shape, not a placeholder.
+
+### The pre-publish adversarial review (2026-08-16)
+
+An independent review pass ran against the release candidate before publish;
+six findings, all fixed in this release, three of them in the candidate's own
+new code:
+
+- **Unregistering from inside a hook is exception-safe again.** Facet
+  withdrawal is a STRUCTURAL ephemeral op, illegal mid-tick — the naive call
+  threw out of the remover mid-teardown and stranded the node: orphan
+  published facet, leaked guest, name permanently unregistrable. Withdrawal
+  now DEFERS to the publish slot (the step where eph structural ops are the
+  designed legality) whenever the world is mid-tick or mid-walk, and never
+  throws (failures route to `onBehaviorFault` as `"withdraw"`). Deferred
+  withdrawals flush BEFORE the publish passes, so an
+  unregister-then-re-register lands old-facet-out before new-facet-in.
+- **Publish behaviors ride ONE stable engine hook the runtime owns.**
+  Per-node `onPublish` hooks meant reorder churn invalidated the engine's
+  frame snapshot mid-pass — `register()` called from inside a publish hook
+  silently cost every not-yet-run publish behavior its whole slot that frame.
+  Reorder now touches only the runtime's own ordered list; the engine hook
+  never moves.
+- **Appending never reorders.** `reorderExecution` reinstalls only the SUFFIX
+  that must run after an out-of-order keyed insert; every unkeyed
+  registration and every ascending-key registration is a plain append, so
+  0.6.0's interleaving with host systems registered between behaviors is
+  preserved exactly, and registration cost returns to baseline. The ordering
+  contract, stated: behaviors order among THEMSELVES by the keyed lane;
+  position relative to host systems is registration order, disturbed only by
+  an out-of-order insert — and then only for the suffix.
+- **Strikes are bounded per frame.** A thenable hook across N instances
+  struck the guest N times in one frame — writing an instance-population
+  count into the cumulative `strikes` number hosts PERSIST across engine
+  generations (500 instances = 500 strikes, measured). One strike per frame
+  per reason now (attribution stays per-instance via `onBehaviorFault`), and
+  `guest.fault` is a no-op once suspended, so a runaway pass the breaker
+  cannot preempt stops inflating the ledger and spamming its subscribers.
+- **`describeBehavior` describes what RUNS.** Reads/writes validation is
+  dev-guard-gated, so a production build accepts (and runs) a behavior whose
+  unregistered read `partitionReads` silently drops — and `describeBehavior`
+  crashed on it. Unclassifiable entries are now skipped to mirror the
+  runtime; dev-guard validation still names the authoring error loudly.
+- **`BehaviorStatus.quarantined`.** Withdrawal makes a quarantined ephemeral
+  singleton DEPART, so `failed` read 0 and the quarantine was invisible —
+  indistinguishable from dormant. The node-level flag is now on `list()`.
+
 ## [0.6.0] — 2026-08-15
 
 **`defineBehavior` — ICE's second product surface.** The userland API is now a

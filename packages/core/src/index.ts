@@ -4,7 +4,7 @@
  * Import wall: strata-ecs + @ice/kernel ONLY — never react/dom/three (enforced).
  */
 // Informational only; must track packages/ice/package.json version on publish.
-export const CORE_VERSION = "0.6.0";
+export const CORE_VERSION = "0.7.0";
 
 export { defineSchemaOnce, hmrInvalidateOnSchemaChange } from "./boot/hmr";
 
