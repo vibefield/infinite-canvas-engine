@@ -36,6 +36,7 @@ function build(withPresence: boolean): void {
     engine,
     presence: () => presence as BehaviorPresence | undefined,
     onLog: () => {},
+    onFault: () => {}, // the I17 suite faults deliberately; keep the output clean
   });
   frame = 0;
 }
@@ -166,5 +167,154 @@ describe("declaration rules", () => {
     expect(() => defineBehavior("beph:badphase", { store: "ephemeral", phase: "simulate" })).toThrow(
       /not legal/,
     );
+  });
+});
+
+describe("facet withdrawal (petition I17)", () => {
+  // The remote half — that `presence.eph.removeComponent` encodes a tombstone
+  // remote projections honor — is the presence kit's own tested contract; what
+  // these tests pin at THIS boundary is that every producer-stops edge goes
+  // through that writer (never `world.removeComponent`) and that the facet is
+  // actually gone.
+
+  it("unregister withdraws the facet synchronously, through the PRESENCE writer", () => {
+    const writerRemovals: string[] = [];
+    const real = presence as PresenceSession;
+    const recording: BehaviorPresence = {
+      get localPeer() {
+        return real.localPeer;
+      },
+      eph: {
+        addComponent: (e, c, v) => real.eph.addComponent(e, c as never, v as never),
+        removeComponent: (e, c) => {
+          writerRemovals.push("eph");
+          real.eph.removeComponent(e, c as never);
+        },
+        edit: (e) => real.eph.edit(e),
+      },
+    };
+    runtime.dispose();
+    runtime = createBehaviorRuntime({
+      world,
+      engine,
+      presence: () => recording,
+      onLog: () => {},
+    });
+    const B = defineBehavior("beph:withdraw", {
+      store: "ephemeral",
+      schema: { tool: p.string({ default: "select" }) },
+    });
+    const remove = runtime.register(B);
+    step();
+    const peer = real.localPeer;
+    expect(world.has(peer, B.component)).toBe(true);
+
+    remove();
+    expect(world.has(peer, B.component)).toBe(false); // synchronous, not next-frame
+    expect(writerRemovals).toEqual(["eph"]);
+
+    // Re-registration remints declared defaults.
+    runtime.register(B);
+    step();
+    expect(world.get(peer, B.component)).toEqual({ tool: "select" });
+  });
+
+  it("withdraws on live suspension+quarantine, refuses resume-remint, remints on re-registration", () => {
+    // A thenable tick is the one fault a SINGLETON can commit that reaches the
+    // guest ladder (ordinary throws never span instances) — three frames buy
+    // suspension AND instance quarantine on the same edge.
+    const B = defineBehavior("beph:async-quarantine", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 5 }) },
+      on: {
+        async tick() {
+          await Promise.resolve();
+        },
+      },
+    });
+    const remove = runtime.register(B);
+    step();
+    const peer = (presence as PresenceSession).localPeer;
+    expect(world.has(peer, B.component)).toBe(true);
+
+    step();
+    step();
+    step();
+    expect(engine.guests.list()[0]).toMatchObject({ status: "suspended", strikes: 3 });
+    expect(world.has(peer, B.component)).toBe(false); // producer stopped ⇒ publication reversed
+
+    // The doctor resumes the GUEST — but the quarantine memo lives on the node,
+    // so the facet must NOT re-mint into an infinite quarantine/remint
+    // oscillation. It returns only with a fresh registration.
+    engine.guests.resume("behavior:beph:async-quarantine");
+    step();
+    step();
+    expect(world.has(peer, B.component)).toBe(false);
+
+    remove();
+    runtime.register(B);
+    step();
+    expect(world.get(peer, B.component)).toEqual({ n: 5 });
+  });
+
+  it("withdraws on synchronous-throw quarantine — the edge with NO guest-ledger transition", () => {
+    let inits = 0;
+    const B = defineBehavior("beph:sync-quarantine", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 2 }) },
+      on: {
+        init: () => {
+          inits++;
+        },
+        tick: () => {
+          throw new Error("boom");
+        },
+      },
+    });
+    const remove = runtime.register(B);
+    step(); // init + first faulting tick
+    step();
+    step(); // third consecutive throw ⇒ instance quarantine
+    const peer = (presence as PresenceSession).localPeer;
+    expect(world.has(peer, B.component)).toBe(false);
+    // The counterexample the petition pinned: a singleton's throws cannot span
+    // instances, so the guest saw NOTHING — a ledger-watching host could never
+    // have done this withdrawal itself.
+    expect(engine.guests.list()[0]).toMatchObject({ status: "running", strikes: 0 });
+
+    remove();
+    runtime.register(B);
+    step();
+    expect(world.has(peer, B.component)).toBe(true);
+    expect(inits).toBe(2); // once per registration, never from a remint loop
+  });
+
+  it("a ledger-seeded suspended registration never publishes; resume remints defaults", () => {
+    const B = defineBehavior("beph:seeded", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 9 }) },
+    });
+    runtime.register(B, { ledger: { strikes: 4, suspended: true } });
+    step();
+    step();
+    const peer = (presence as PresenceSession).localPeer;
+    expect(world.has(peer, B.component)).toBe(false); // suspended-at-birth: no facet, ever
+
+    // A VALUE-based suspension carries no quarantine, so the doctor's resume
+    // brings the facet back through the ordinary ensureFacet path.
+    engine.guests.resume("behavior:beph:seeded");
+    step();
+    expect(world.get(peer, B.component)).toEqual({ n: 9 });
+  });
+
+  it("stays a quiet no-op with no presence attached", () => {
+    build(false);
+    const B = defineBehavior("beph:noop", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 0 }) },
+    });
+    const remove = runtime.register(B);
+    step();
+    expect(() => remove()).not.toThrow();
   });
 });

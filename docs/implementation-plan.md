@@ -289,15 +289,25 @@ red against the installed 0.6.0 artifact by the petition's probes before landing
 - **M14d — thenable hook faults**: detection at every hook boundary, catch observer,
   attributed fault, direct guest strike (a thenable is a definition bug — unlike ordinary
   single-instance throws, which stay quarantined); `dispose` detected-but-swallowed.
+- **M14e — ephemeral facet withdrawal (petition I17)**: an ephemeral facet is LIVE
+  publication, so every producer-stops edge reverses it — unregister/disposal, guest
+  suspension (`goCold`), and singleton quarantine (the edge with no ledger transition) —
+  through the PRESENCE writer (tombstone truth for remote projections). Quarantine memo
+  on the NODE, not the instance (the instance departs after withdrawal — an
+  instance-keyed memo re-mints forever without ever striking the guest); resume remints
+  only value-suspended facets, quarantined ones wait for a fresh registration.
 
-**Exit**: the petition's six controls green as ICE tests + three host-side pins
-(keyed/unkeyed lane, empty-key refusal leaves no residue, async-dispose teardown
-completes) · full core suite + walls green. **MET** — 9/9 in
+**Exit**: I16's six controls green as ICE tests + three host-side pins (keyed/unkeyed
+lane, empty-key refusal leaves no residue, async-dispose teardown completes) — 9/9 in
 `behavior-host-contract.test.ts`, re-derived from PRC-4's proven candidate patch rather
-than blind-applied. Remaining from the same PRC-4 evidence round, deliberately NOT here:
-I17 (ephemeral facet withdrawal — needs its own presence-kit design pass) and I18 (split
-presence attach, P2) — both recorded OPEN in `docs/downstream-petitions.md`; neither
-gates durable/runtime plugin hosting.
+than blind-applied; I17's acceptance as 5 tests in `behavior-ephemeral.test.ts`
+(synchronous unregister withdrawal through the presence writer, suspension+quarantine
+withdrawal, the no-resume-remint oscillation pin, ledger-seeded suspended-at-birth,
+presence-less no-op) · full core suite + walls green. **MET.** Remaining from the same
+PRC-4 evidence round, deliberately NOT here: I18 (split presence attach, P2 — a public
+facade surface with a real document-bootstrap design question) — recorded OPEN in
+`docs/downstream-petitions.md`; it gates nothing in durable/runtime plugin hosting and
+only the last mile of the ephemeral profile for hosts that own their doc lifecycle.
 
 ## Release cut & downstream
 

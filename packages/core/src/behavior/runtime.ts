@@ -285,6 +285,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     readonly peersQuery: Query | undefined;
     /** Ephemeral only: the local peer this node last published a facet on. */
     private facetPeer: Entity | undefined;
+    /** The ephemeral singleton was quarantined THIS generation (I17). */
+    private singletonQuarantined = false;
     /** The session whose version state has already been checked (§5.6). */
     private checkedSession: unknown;
     /**
@@ -442,6 +444,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       this.readsCollector?.dispose();
       this.ownCollector = undefined;
       this.readsCollector = undefined;
+      // A suspended producer must also stop PUBLISHING (I17): the facet comes
+      // back through `ensureFacet` on the first post-resume run.
+      this.withdrawFacet();
     }
 
     /**
@@ -606,6 +611,19 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         this.facetPeer = undefined;
         return;
       }
+      // A quarantined singleton is a producer that STOPPED (I17): re-minting
+      // here would undo the withdrawal one frame after quarantine performed it,
+      // and remote peers would go right back to reading a value nobody
+      // maintains. The memo lives on the NODE, not the instance — withdrawal
+      // makes the instance DEPART on the next deliver, and an instance-keyed
+      // check would then forget the quarantine and re-mint into an infinite
+      // quarantine/remint oscillation that never even strikes the guest
+      // (a singleton's throws cannot span instances). The facet returns with a
+      // fresh generation or a fresh registration, never sooner.
+      if (this.singletonQuarantined) {
+        this.facetPeer = undefined;
+        return;
+      }
       if (peer === this.facetPeer && world.has(peer, this.own)) return;
       this.facetPeer = peer;
       if (!world.has(peer, this.own)) {
@@ -615,6 +633,30 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           { ...(this.b.defaults as Record<string, unknown>) },
         );
       }
+    }
+
+    /**
+     * Withdraw the published facet (petition I17). An ephemeral facet is LIVE
+     * PUBLICATION — the local peer telling every remote peer "this value is
+     * current" — so every edge where the producer stops executing must reverse
+     * the publication too, or a disabled, suspended, or quarantined behavior
+     * keeps asserting its last value forever (remote peers have no TTL for a
+     * peer that is still connected). Idempotent by construction: presence
+     * absent, a dead peer (mid re-mint window), and an already-gone facet are
+     * all quiet no-ops. The removal goes through the PRESENCE writer, never
+     * `world.removeComponent`, because only the presence path encodes a
+     * tombstone remote projections honor.
+     */
+    private withdrawFacet(): void {
+      if (this.b.store !== "ephemeral") return;
+      const presence = opts.presence?.();
+      if (presence !== undefined) {
+        const peer = presence.localPeer;
+        if (world.isAlive(peer) && world.has(peer, this.own)) {
+          presence.eph.removeComponent(peer, this.own);
+        }
+      }
+      this.facetPeer = undefined;
     }
 
     /** The publish-slot twin of the tick SYSTEM (no query, no chunks). */
@@ -1124,7 +1166,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       } catch (err) {
         inst.consecutiveThrows++;
         onFault(this.b.name, hook, inst.e, err);
-        if (inst.consecutiveThrows >= INSTANCE_THROW_LIMIT) inst.failed = true;
+        if (inst.consecutiveThrows >= INSTANCE_THROW_LIMIT) {
+          inst.failed = true;
+          // Quarantining the EPHEMERAL singleton stops the producer without any
+          // guest-ledger edge a host could react to — so the runtime itself
+          // must reverse the publication here (I17). Non-ephemeral: no-op.
+          if (this.b.store === "ephemeral") this.singletonQuarantined = true;
+          this.withdrawFacet();
+        }
         faulted.add(inst.e);
         if (err instanceof BehaviorHookThenableError || faulted.size > 1) {
           this.guest.fault(err);
@@ -1149,7 +1198,13 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         }
       }
       this.instances.clear();
-      this.facetPeer = undefined;
+      // After the dispose hooks, before ownership is forgotten (I17): on
+      // unregister this withdraws the live facet; on a world-reset generation
+      // end the old peer is already dead and this is a quiet no-op. The
+      // quarantine memo resets WITH the generation — same forgiveness the
+      // instance map always had (a fresh peer re-mints and re-inits).
+      this.withdrawFacet();
+      this.singletonQuarantined = false;
       this.suppressed.clear();
       this.suppressedFrames.clear();
       this.carry.clear();

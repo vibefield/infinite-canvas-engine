@@ -147,6 +147,14 @@ it did not write:
   unhandled, and escalated straight to the guest strike ladder (an async hook
   is a definition bug — every instance would do it). The continuation cannot be
   cancelled; the guarantee is honest detection, not preemption.
+- Ephemeral facets WITHDRAW when their producer stops (I17): unregister,
+  suspension, and singleton quarantine all remove the published facet through
+  the presence writer (remote tombstone truth, no TTL wait). Resume remints a
+  value-suspended facet with declared defaults; a quarantined one returns only
+  with a fresh registration. One registration disposer is therefore the
+  complete reversible effect for all three store classes — with their
+  different data lifetimes intact (durable cells stay document truth, runtime
+  riders stay dormant in-world).
 
 **Scale posture.** Designed for ≤~2k ticking instances. Beyond that, the idiom
 is ONE behavior on a carrier entity iterating its members — the mind-map shape.
