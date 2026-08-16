@@ -1,11 +1,14 @@
+import { defineComponent as strataDefineComponent, field } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
   createCanvasEngine,
   defineBehavior,
+  defineTickSystem,
   describeBehavior,
   p,
   type GuestLedgerRecord,
 } from "../src";
+import { setDevGuards } from "../src/guards/dev";
 
 function spawn(engine: ReturnType<typeof createCanvasEngine>) {
   return engine.world.spawn({});
@@ -271,10 +274,142 @@ describe("downstream behavior host contract", () => {
     await Promise.resolve();
     expect(continuations).toBe(2);
     expect(faults).toHaveLength(2);
+    // The asymmetry is deliberate and pinned: dispose thenables are attributed
+    // but never strike the breaker — teardown must not stop teardown.
+    expect(engine.engine.guests.list().some((g) => g.strikes > 0)).toBe(false);
     expect(faults.map((f) => f[1])).toEqual(["dispose", "dispose"]);
     expect(faults.map((f) => f[0])).toEqual(["host:async-dispose", "host:async-dispose"]);
     expect(String(faults[0]?.[3])).toContain("returned a thenable");
     expect(engine.behaviors.registered()).toHaveLength(0);
     engine.dispose();
+  });
+
+  // --- pre-publish adversarial review pins (findings 2–5) --------------------
+
+  it("register() from inside a publish hook never skips a later publish behavior that frame", () => {
+    const events: string[] = [];
+    const engine = createCanvasEngine();
+    const Late = defineBehavior("host:pub-late", {
+      store: "runtime",
+      phase: "publish",
+      on: { tick: () => events.push("late") },
+    });
+    const Newcomer = defineBehavior("host:pub-newcomer", {
+      store: "runtime",
+      phase: "publish",
+      on: { tick: () => events.push("newcomer") },
+    });
+    let registered = false;
+    const Early = defineBehavior("host:pub-early", {
+      store: "runtime",
+      phase: "publish",
+      on: {
+        tick: () => {
+          events.push("early");
+          if (!registered) {
+            registered = true;
+            engine.behaviors.register(Newcomer);
+          }
+        },
+      },
+    });
+    engine.behaviors.register(Early, { orderKey: "001" });
+    engine.behaviors.register(Late, { orderKey: "002" });
+    const e = spawn(engine);
+    engine.behaviors.attach(e, Early);
+    engine.behaviors.attach(e, Late);
+    engine.step(16);
+    // Under the per-node-hook shape this frame ran ["early"] only — the
+    // reorder killed Late's snapshot entry mid-pass.
+    expect(events).toEqual(["early", "late"]);
+
+    engine.behaviors.attach(e, Newcomer);
+    events.length = 0;
+    engine.step(32);
+    expect(events).toEqual(["early", "late", "newcomer"]);
+    engine.dispose();
+  });
+
+  it("appending behaviors never moves them past host systems registered between", () => {
+    // Review finding 3: reorderExecution must not re-append EVERYTHING on an
+    // ordinary registration — 0.6.0's interleaving with host systems holds
+    // for append-order registrations (the only reorder is an out-of-order
+    // keyed insert, and then only the suffix moves).
+    const order: string[] = [];
+    const A = defineBehavior("host:interleave-a", {
+      store: "runtime",
+      phase: "simulate",
+      on: { tick: () => order.push("behavior-a") },
+    });
+    const B = defineBehavior("host:interleave-b", {
+      store: "runtime",
+      phase: "simulate",
+      on: { tick: () => order.push("behavior-b") },
+    });
+    const engine = createCanvasEngine();
+    engine.behaviors.register(A);
+    engine.engine.addSystems(
+      "simulate",
+      defineTickSystem(() => order.push("host-between"), { name: "host-between" }),
+    );
+    engine.behaviors.register(B);
+    const e = spawn(engine);
+    engine.behaviors.attach(e, A);
+    engine.behaviors.attach(e, B);
+    engine.step(16);
+    expect(order).toEqual(["behavior-a", "host-between", "behavior-b"]);
+    engine.dispose();
+  });
+
+  it("a thenable across many instances strikes the guest ONCE per frame, not per instance", async () => {
+    // Review finding 4: strikes are a cumulative record hosts PERSIST across
+    // engine generations — one bad frame must not write the population count
+    // into the ledger. Attribution stays per-instance; the ladder counts
+    // frames.
+    const behaviorFaults: unknown[] = [];
+    const B = defineBehavior("host:thenable-flood", {
+      store: "runtime",
+      phase: "simulate",
+      on: {
+        async tick() {
+          await Promise.resolve();
+        },
+      },
+    });
+    const engine = createCanvasEngine({
+      onBehaviorFault: (...args) => behaviorFaults.push(args),
+      onGuestFault: () => {},
+      onGuestNotice: () => {},
+    });
+    engine.behaviors.register(B);
+    for (let i = 0; i < 5; i++) engine.behaviors.attach(spawn(engine), B);
+    engine.step(16);
+    expect(behaviorFaults).toHaveLength(5); // full per-instance attribution…
+    expect(engine.engine.guests.list()[0]).toMatchObject({ strikes: 1, status: "running" }); // …ONE strike
+    engine.step(32);
+    engine.step(48);
+    await Promise.resolve();
+    expect(engine.engine.guests.list()[0]).toMatchObject({ strikes: 3, status: "suspended" });
+    engine.dispose();
+  });
+
+  it("describes what RUNS: unclassifiable reads are skipped, never a production crash", () => {
+    // Review finding 5: reads/writes validation is dev-guard-gated, so a
+    // production build accepts (and runs) a behavior whose unregistered read
+    // partitionReads silently drops. describeBehavior must describe that
+    // reality, not crash the host's manifest build on it.
+    const raw = strataDefineComponent("host:raw-unregistered", { v: field("f32", { default: 0 }) });
+    setDevGuards(false);
+    try {
+      const B = defineBehavior("host:prod-describe", {
+        store: "runtime",
+        reads: [raw],
+        on: {},
+      });
+      const d = describeBehavior(B);
+      expect(d.reads).toEqual([]); // dropped, mirroring the runtime
+    } finally {
+      setDevGuards(true);
+    }
   });
 });

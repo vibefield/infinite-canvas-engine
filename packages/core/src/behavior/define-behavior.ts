@@ -35,6 +35,7 @@ import {
   type BehaviorHookName,
   type BehaviorHooks,
   type BehaviorPropDescription,
+  type BehaviorReadDescription,
   type BehaviorRead,
   type BehaviorSchema,
   type BehaviorSpec,
@@ -370,20 +371,25 @@ const DESCRIPTION_HOOK_ORDER: readonly BehaviorHookName[] = [
 ];
 
 export function describeBehavior(behavior: AnyBehaviorDef): BehaviorDescription {
-  const reads = behavior.reads.map((read) => {
+  // Unclassifiable entries are SKIPPED, mirroring the runtime: partitionReads
+  // silently drops what it cannot classify, so a dropped read never runs and
+  // never delivers — describing it would claim a subscription that does not
+  // exist. Throwing here was worse than either (review finding 5): the
+  // reads/writes validation is dev-guard-gated, so a production build ACCEPTS
+  // a behavior with an unregistered read and runs it fine — a host building
+  // its manifest from describeBehavior then crashed in production on a
+  // behavior that works. In dev, definition-time validation still names the
+  // authoring error loudly.
+  const reads: BehaviorReadDescription[] = [];
+  for (const read of behavior.reads) {
     const description = classifyRead(read);
-    if (description === undefined) {
-      throw new Error("ice: describeBehavior cannot classify a declared read");
-    }
-    return description;
-  });
-  const writes = behavior.writes.map((component) => {
+    if (description !== undefined) reads.push(description);
+  }
+  const writes: string[] = [];
+  for (const component of behavior.writes) {
     const meta = schemaMeta.component(component);
-    if (meta === undefined) {
-      throw new Error("ice: describeBehavior cannot classify a declared write");
-    }
-    return meta.name;
-  });
+    if (meta !== undefined) writes.push(meta.name);
+  }
   return {
     id: behavior.name,
     store: behavior.store,

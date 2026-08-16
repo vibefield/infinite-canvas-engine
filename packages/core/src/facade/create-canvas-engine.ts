@@ -97,7 +97,11 @@ export interface CanvasEngineOpts {
   /** Generic guest breaker routing for hosts that use the published facade. */
   readonly onGuestFault?: (id: string, error: unknown) => void;
   readonly onGuestNotice?: (message: string) => void;
-  /** Behavior-specific routing preserves hook and entity provenance. */
+  /** Behavior-specific routing preserves hook and entity provenance. The two
+   *  pairs are COMPLEMENTARY, not alternatives: a fault that also strikes the
+   *  breaker (a thenable hook; throws spanning instances) reaches BOTH the
+   *  behavior route and the guest route — pass both, or the guest half of
+   *  those events still lands on the console default. */
   readonly onBehaviorFault?: (
     behavior: string,
     hook: string,

@@ -130,7 +130,14 @@ it did not write:
   only — collectors, instances, guests and data stay put, and `init` does NOT
   re-run on unaffected behaviors. `ledger` seeds the driven guest's breaker
   state (strikes/suspension persisted by the host across engine generations);
-  changes stream out the existing `guests.onLedgerChange`.
+  changes stream out the existing `guests.onLedgerChange`. Ordering vs HOST
+  systems, stated: appending (any unkeyed registration; ascending keys — what
+  a manifest-ordered host produces) NEVER moves anything, so behaviors keep
+  their registration-order interleaving with host `addSystems` calls; only an
+  out-of-order keyed insert reinstalls its suffix, which then sits after any
+  host systems registered meanwhile. Publish-phase behaviors run from ONE
+  stable runtime-owned engine hook, so registering from inside a publish hook
+  never costs another behavior its slot.
 - `createCanvasEngine({ onGuestFault?, onGuestNotice?, onBehaviorFault?,
   onBehaviorLog? })` — the first pair forwards the `EngineOpts` routes through
   the facade; the behavior pair carries hook + entity provenance. Unrouted,

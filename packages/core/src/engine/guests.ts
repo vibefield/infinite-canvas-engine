@@ -498,6 +498,12 @@ export function createGuestRegistry(world: World, opts?: GuestRegistryOpts): Gue
         },
         fault(err) {
           if (!entry.alive || disposed) return;
+          // Suspended = the ladder already did its job. Further faults from
+          // the same runaway pass (a chunked body the breaker cannot preempt)
+          // must not keep inflating `strikes` — that number is a cumulative
+          // record hosts PERSIST across engine generations — nor spam
+          // onFault/ledger subscribers per instance (review finding 4).
+          if (entry.suspended) return;
           entry.faultedThisFrame = true;
           entry.accrued = true; // ensure the settle pass sees this frame
           entry.consecutiveThrows++;

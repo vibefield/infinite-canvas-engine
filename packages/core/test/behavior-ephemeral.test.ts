@@ -29,7 +29,9 @@ let frame = 0;
 
 function build(withPresence: boolean): void {
   world = createWorld();
-  engine = createEngine(world);
+  // Silence the guest registry defaults too — behavior faults that strike the
+  // breaker (thenables) reach BOTH routes, and the pair are complementary.
+  engine = createEngine(world, { onGuestFault: () => {}, onGuestNotice: () => {} });
   presence = withPresence ? attachPresence(world, { name: "me", color: "#f00" }) : undefined;
   runtime = createBehaviorRuntime({
     world,
@@ -281,6 +283,10 @@ describe("facet withdrawal (petition I17)", () => {
     // instances, so the guest saw NOTHING — a ledger-watching host could never
     // have done this withdrawal itself.
     expect(engine.guests.list()[0]).toMatchObject({ status: "running", strikes: 0 });
+    // Observability: withdrawal makes the instance depart, so `failed` reads 0
+    // — the node-level flag is the only honest signal the doctor has.
+    step();
+    expect(runtime.list()[0]).toMatchObject({ instances: 0, failed: 0, quarantined: true });
 
     remove();
     runtime.register(B);
@@ -316,5 +322,132 @@ describe("facet withdrawal (petition I17)", () => {
     const remove = runtime.register(B);
     step();
     expect(() => remove()).not.toThrow();
+  });
+
+  // --- the ctx.write re-publication doors (all three must stay shut) --------
+
+  it("a dispose hook's ctx.write cannot re-publish a quarantined facet", () => {
+    const B = defineBehavior("beph:dispose-write", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 1 }) },
+      on: {
+        tick: () => {
+          throw new Error("boom");
+        },
+        dispose: (_e, ctx) => {
+          // The departure dispose runs AFTER quarantine withdrew the facet —
+          // this write must be refused, or the facet returns permanently with
+          // nothing left to withdraw it.
+          (ctx as { write(p: Record<string, unknown>): void }).write({ n: 99 });
+        },
+      },
+    });
+    runtime.register(B);
+    step();
+    step();
+    step(); // third throw ⇒ quarantine + withdrawal
+    const peer = (presence as PresenceSession).localPeer;
+    step(); // departure processes; dispose fires its write
+    step();
+    expect(world.has(peer, B.component)).toBe(false);
+  });
+
+  it("a captured ctx.write goes inert after unregister", () => {
+    let publish: ((n: number) => void) | undefined;
+    const B = defineBehavior("beph:stale-closure", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 0 }) },
+      on: {
+        init: (_e, _d, ctx) => {
+          publish = (n) => ctx.write({ n });
+        },
+      },
+    });
+    const remove = runtime.register(B);
+    step();
+    const peer = (presence as PresenceSession).localPeer;
+    publish?.(7); // blessed outside-hook pattern, live producer: works
+    expect(world.get(peer, B.component)).toEqual({ n: 7 });
+
+    remove();
+    expect(world.has(peer, B.component)).toBe(false);
+    publish?.(8); // producer gone: must NOT re-create the facet
+    step();
+    expect(world.has(peer, B.component)).toBe(false);
+  });
+
+  it("unregistering from inside a hook mid-tick is exception-safe and still withdraws", () => {
+    // Review finding 1: withdrawal is a STRUCTURAL eph op, illegal mid-tick —
+    // the naive call threw out of the remover, stranding the node with an
+    // orphan published facet, a leaked guest, and a permanently-poisoned name.
+    const Eph = defineBehavior("beph:midtick-victim", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 1 }) },
+    });
+    const removeEph = runtime.register(Eph);
+    let armed = false;
+    let removed = false;
+    const Killer = defineBehavior("beph:midtick-killer", {
+      store: "runtime",
+      phase: "simulate",
+      on: {
+        tick: () => {
+          if (armed && !removed) {
+            removed = true;
+            removeEph();
+          }
+        },
+      },
+    });
+    const removeKiller = runtime.register(Killer);
+    const carrier = world.spawn({});
+    runtime.attach(carrier, Killer);
+    step(); // frame 1: the facet mints at the publish slot
+    const peer = (presence as PresenceSession).localPeer;
+    expect(world.has(peer, Eph.component)).toBe(true);
+    armed = true;
+
+    expect(() => step()).not.toThrow(); // the killer unregisters Eph mid-tick
+    // The deferred withdrawal flushed at the SAME frame's publish slot:
+    expect(world.has(peer, Eph.component)).toBe(false);
+    // Full teardown happened despite the mid-tick edge: no leaked guest, and
+    // the name is re-registrable.
+    expect(engine.guests.list().some((g) => g.id === "behavior:beph:midtick-victim")).toBe(false);
+    const again = runtime.register(Eph);
+    step();
+    expect(world.has(peer, Eph.component)).toBe(true);
+    again();
+    removeKiller();
+  });
+
+  it("a captured ctx.write is refused while suspended; a fresh registration publishes again", async () => {
+    let publish: ((n: number) => void) | undefined;
+    const B = defineBehavior("beph:suspended-closure", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 0 }) },
+      on: {
+        init: (_e, _d, ctx) => {
+          publish = (n) => ctx.write({ n });
+        },
+        async tick() {
+          await Promise.resolve();
+        },
+      },
+    });
+    const remove = runtime.register(B);
+    step();
+    step();
+    step(); // thenable ladder ⇒ suspended + quarantined + withdrawn
+    await Promise.resolve();
+    const peer = (presence as PresenceSession).localPeer;
+    expect(world.has(peer, B.component)).toBe(false);
+
+    publish?.(3); // stopped producer: refused
+    expect(world.has(peer, B.component)).toBe(false);
+
+    remove();
+    runtime.register(B);
+    step();
+    expect(world.get(peer, B.component)).toEqual({ n: 0 }); // fresh defaults, publishing again
   });
 });

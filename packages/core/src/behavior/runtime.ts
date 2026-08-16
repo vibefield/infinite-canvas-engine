@@ -133,6 +133,14 @@ export interface BehaviorStatus {
   readonly failed: number;
   readonly ticking: number;
   readonly suspended: boolean;
+  /**
+   * The EPHEMERAL singleton was quarantined this generation (I17): its facet
+   * is withdrawn and stays withdrawn until a fresh registration. Without this
+   * field a quarantined singleton is indistinguishable from a dormant one —
+   * withdrawal makes the instance depart, so `failed` reads 0. Always false
+   * for durable/runtime behaviors (their quarantine stays visible in `failed`).
+   */
+  readonly quarantined: boolean;
 }
 
 export interface BehaviorRegistrationOptions {
@@ -271,6 +279,58 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     },
   });
 
+  // --- the ONE stable publish hook (pre-publish review, finding 2) -----------
+  // Publish-phase nodes and deferred facet withdrawals both ride a SINGLE
+  // engine hook the runtime owns. Reorder mutates OUR array, never the
+  // engine's: under the per-node-hook shape, reorderExecution's
+  // unregister/re-register churn invalidated the engine's frame snapshot
+  // (`entry.alive = false`) for every not-yet-run publish behavior, costing
+  // each of them a whole publish slot whenever register() ran from inside a
+  // publish hook. Withdrawals flush FIRST, before the node passes: an
+  // unregister-then-re-register in one frame must remove the OLD facet before
+  // the fresh node's ensureFacet mints the new one, never after.
+  const publishOrder: Node[] = [];
+  const pendingWithdrawals: (() => void)[] = [];
+  let publishHookRemover: (() => void) | undefined;
+
+  function ensurePublishHook(): void {
+    if (publishHookRemover !== undefined) return;
+    publishHookRemover = opts.engine.onPublish(() => {
+      if (pendingWithdrawals.length > 0) {
+        const jobs = pendingWithdrawals.splice(0, pendingWithdrawals.length);
+        for (const job of jobs) job(); // each job guards + swallows for itself
+      }
+      if (publishOrder.length > 0) {
+        // Copy + stopped-gating mirrors the engine's own snapshot discipline:
+        // a node removed mid-pass is skipped, one added mid-pass starts next
+        // frame, and nobody ELSE is ever skipped for it.
+        const pass = publishOrder.slice();
+        for (const node of pass) if (!node.isStopped()) node.runPublish();
+      }
+      if (publishOrder.length === 0 && pendingWithdrawals.length === 0) {
+        // Self-reap on the frame AFTER the last consumer left — removing it
+        // eagerly at uninstall would drop the withdrawal that teardown just
+        // deferred.
+        publishHookRemover?.();
+        publishHookRemover = undefined;
+      }
+    });
+  }
+
+  function installPublishNode(node: Node): () => void {
+    publishOrder.push(node);
+    ensurePublishHook();
+    return () => {
+      const i = publishOrder.indexOf(node);
+      if (i !== -1) publishOrder.splice(i, 1);
+    };
+  }
+
+  function deferWithdrawal(job: () => void): void {
+    pendingWithdrawals.push(job);
+    ensurePublishHook();
+  }
+
   class Node {
     readonly b: AnyBehaviorDef;
     readonly orderKey: string | undefined;
@@ -287,6 +347,17 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     private facetPeer: Entity | undefined;
     /** The ephemeral singleton was quarantined THIS generation (I17). */
     private singletonQuarantined = false;
+    /** Uninstalled — a captured ctx.write closure must go inert (I17). */
+    private stopped = false;
+    /** Per-FRAME strike dedupe (review finding 4): the ladder counts FRAMES,
+     *  not calls — 500 async instances must cost ONE strike, not write 500
+     *  into a ledger hosts persist across engine generations. Keyed by
+     *  FrameInfo.tick because no single pass entry point runs every frame
+     *  (the delivery system is runIf-gated off on no-churn frames while the
+     *  tick system keeps running). */
+    private strikeFrame = -1;
+    private thenableStruckPass = false;
+    private spanStruckPass = false;
     /** The session whose version state has already been checked (§5.6). */
     private checkedSession: unknown;
     /**
@@ -484,31 +555,39 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (this.b.phase === "publish") {
         // The publish slot is not a pipeline phase: it is the post-tick step
         // where ephemeral mutation is legal and there is no iteration bracket.
-        // So no systems are registered — the node runs itself from the publish
-        // hook, with a walker that goes straight to the world.
+        // So no systems are registered — the node runs from the runtime's ONE
+        // stable publish hook (see ensurePublishHook), with a walker that goes
+        // straight to the world.
         //
         // Accounting note: a driven guest's accrual is closed at the GUEST
         // SLOT, which runs before publish hooks, so a publish behavior's cost
         // lands in the NEXT frame's seam total. The ladder counts invocations,
         // not wall alignment, so every trip rule still fires on schedule — the
         // seam CAP is what sees this one frame late.
-        this.removeSystems = opts.engine.onPublish(() => {
-          if (this.guest.suspended()) {
-            this.goCold();
-            return;
-          }
-          this.guest.run(() => {
-            if (this.b.store === "ephemeral") this.ensureFacet();
-            if (this.shouldDeliver()) this.runDeliver(publishWalker(world));
-            this.publishTick();
-          });
-        });
+        this.removeSystems = installPublishNode(this);
       } else {
         this.removeSystems = opts.engine.addSystems(
           this.b.phase as PhaseGroup,
           ...(this.compiled.systems as readonly never[]),
         );
       }
+    }
+
+    /** The publish-slot body — driven by the runtime's one stable hook. */
+    runPublish(): void {
+      if (this.guest.suspended()) {
+        this.goCold();
+        return;
+      }
+      this.guest.run(() => {
+        if (this.b.store === "ephemeral") this.ensureFacet();
+        if (this.shouldDeliver()) this.runDeliver(publishWalker(world));
+        this.publishTick();
+      });
+    }
+
+    isStopped(): boolean {
+      return this.stopped;
     }
 
     uninstallExecution(): void {
@@ -649,14 +728,53 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
      */
     private withdrawFacet(): void {
       if (this.b.store !== "ephemeral") return;
-      const presence = opts.presence?.();
-      if (presence !== undefined) {
-        const peer = presence.localPeer;
-        if (world.isAlive(peer) && world.has(peer, this.own)) {
-          presence.eph.removeComponent(peer, this.own);
-        }
-      }
       this.facetPeer = undefined;
+      const presence = opts.presence?.();
+      if (presence === undefined) return;
+      const peer = presence.localPeer;
+      if (!(world.isAlive(peer) && world.has(peer, this.own))) return;
+      // strata's own guard predicate for exactly this ("the layer consults a
+      // plain boolean" — world.ts): present in the 0.12.0 runtime, but its
+      // @internal tag strips it from the emitted d.ts, hence the cast. If a
+      // build ever lacks it, `?? false` degrades to the direct attempt, whose
+      // try/catch keeps teardown safe regardless. Publicizing the getter is
+      // recorded in docs/strata-petitions.md.
+      const midTick =
+        (world as World & { readonly inImmediateProjectionUnsafeContext?: boolean })
+          .inImmediateProjectionUnsafeContext ?? false;
+      if (midTick) {
+        // Structural eph ops THROW mid-tick/mid-walk (strata's projector
+        // guard), and withdrawal's call sites include mid-tick edges: an
+        // unregister from inside a hook, goCold from a driven runIf, a
+        // quarantine landing inside the delivery pass. Deferring to the
+        // publish slot — the post-tick step where eph structural ops are the
+        // designed legality — keeps every one of those exception-safe
+        // (review finding 1: the throw used to escape the remover
+        // mid-uninstall and strand the node with an orphan published facet).
+        const behaviorName = this.b.name;
+        const own = this.own;
+        deferWithdrawal(() => {
+          const p = opts.presence?.();
+          if (p === undefined) return;
+          // Same-peer check: a reset between defer and flush re-mints the
+          // peer; the old facet died with the old world and the NEW peer's
+          // facet (if any) belongs to whoever minted it, not to this job.
+          if (p.localPeer !== peer) return;
+          if (!(world.isAlive(peer) && world.has(peer, own))) return;
+          try {
+            p.eph.removeComponent(peer, own);
+          } catch (err) {
+            onFault(behaviorName, "withdraw", peer, err);
+          }
+        });
+        return;
+      }
+      try {
+        presence.eph.removeComponent(peer, this.own);
+      } catch (err) {
+        // Withdrawal must never abort a teardown (the guests.ts sweep rule).
+        onFault(this.b.name, "withdraw", peer, err);
+      }
     }
 
     /** The publish-slot twin of the tick SYSTEM (no query, no chunks). */
@@ -679,6 +797,10 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     }
 
     uninstall(): void {
+      // Before endGeneration, so a dispose hook's ctx.write is already inert
+      // (endGeneration's withdrawFacet is what makes dispose-then-withdraw
+      // safe on THIS path; the flag is for closures that outlive the node).
+      this.stopped = true;
       this.endGeneration();
       this.uninstallExecution();
       this.ownCollector?.dispose();
@@ -1175,7 +1297,24 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           this.withdrawFacet();
         }
         faulted.add(inst.e);
-        if (err instanceof BehaviorHookThenableError || faulted.size > 1) {
+        // ONE strike per frame per reason: onFault above keeps full per-entity
+        // attribution, but the guest ladder counts FRAMES, and strikes are a
+        // cumulative number hosts PERSIST — striking per instance wrote a
+        // 500-instance behavior's whole population into the ledger in one
+        // frame (review finding 4).
+        const frameTick = world.getResource(FrameInfo)?.tick ?? -1;
+        if (frameTick !== this.strikeFrame) {
+          this.strikeFrame = frameTick;
+          this.thenableStruckPass = false;
+          this.spanStruckPass = false;
+        }
+        if (err instanceof BehaviorHookThenableError) {
+          if (!this.thenableStruckPass) {
+            this.thenableStruckPass = true;
+            this.guest.fault(err);
+          }
+        } else if (faulted.size > 1 && !this.spanStruckPass) {
+          this.spanStruckPass = true;
           this.guest.fault(err);
         }
         return false;
@@ -1329,6 +1468,13 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
 
     /** `ctx.write(patch)` for the ephemeral class — publish THIS peer's facet. */
     private writeFacet(patch: Record<string, unknown>): void {
+      // A STOPPED producer must not publish (I17): the `addComponent` branch
+      // below would silently re-create a withdrawn facet — through a dispose
+      // hook running after quarantine, or through a captured `ctx.write`
+      // closure (a blessed outside-hook pattern) called after suspension or
+      // unregister — and nothing would ever withdraw it again. Same edges as
+      // `withdrawFacet`, refused rather than reversed.
+      if (this.stopped || this.cold || this.singletonQuarantined) return;
       const presence = opts.presence?.();
       if (presence === undefined) return; // dormant
       const peer = presence.localPeer;
@@ -1523,6 +1669,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         failed,
         ticking: this.b.on.tick === undefined ? 0 : this.instances.size - failed,
         suspended: this.guest.suspended(),
+        quarantined: this.singletonQuarantined,
       };
     }
   }
@@ -1539,9 +1686,27 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     });
   }
 
-  function reorderExecution(): void {
-    for (const node of nodes.values()) node.uninstallExecution();
-    for (const node of orderedNodes()) node.installExecution();
+  /**
+   * Bring `inserted` into execution at its sorted position. The COMMON case —
+   * the new node sorts last (every unkeyed registration; every host that
+   * registers in ascending key order, which a manifest-ordered host does by
+   * construction) — is a plain append: nobody else moves, so host systems
+   * registered between behaviors keep their interleaved positions exactly as
+   * under 0.6.0. Only a genuinely out-of-order keyed insert reinstalls the
+   * SUFFIX (the nodes that must run after it); the untouched prefix keeps its
+   * position relative to everything else in its phase groups (review
+   * finding 3 — reordering is the documented cost of asking for a reorder,
+   * never a tax on appending).
+   */
+  function reorderExecution(inserted: Node): void {
+    const order = orderedNodes();
+    const at = order.indexOf(inserted);
+    if (at === order.length - 1) {
+      inserted.installExecution();
+      return;
+    }
+    for (let i = order.length - 1; i > at; i--) order[i]?.uninstallExecution();
+    for (let i = at; i < order.length; i++) order[i]?.installExecution();
   }
 
   function safeParse(raw: string): unknown {
@@ -1566,7 +1731,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       const node = new Node(b, options, nextRegistrationSequence++);
       nodes.set(b.name, node);
       node.install();
-      reorderExecution();
+      reorderExecution(node);
       return () => {
         if (nodes.get(b.name) !== node) return;
         nodes.delete(b.name);
@@ -1620,6 +1785,15 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       stopResetWatch();
       for (const n of nodes.values()) n.uninstall();
       nodes.clear();
+      // Uninstalls may have deferred withdrawals; the publish slot that would
+      // flush them is not coming (the hook is about to go). Flush here — each
+      // job guards and swallows for itself — then drop the hook.
+      if (pendingWithdrawals.length > 0) {
+        const jobs = pendingWithdrawals.splice(0, pendingWithdrawals.length);
+        for (const job of jobs) job();
+      }
+      publishHookRemover?.();
+      publishHookRemover = undefined;
     },
   };
 }
