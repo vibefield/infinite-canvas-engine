@@ -1,8 +1,12 @@
 # Petition 10 — Framework primitives: export the canonical value equality + a public per-resource frame stamp
 
-**Filed:** 2026-08-14 · **Status:** OPEN (ratified as design-009 BF-D20; on the behavior
-framework's CRITICAL PATH — the differ and resource-reads are refused at definition until
-this lands) · **Scope:** additive, two small exports, zero cost when unused.
+**Filed:** 2026-08-14 · **Status:** LANDED in strata 0.12.0 (2026-08-15) — see
+`docs/strata-petitions.md` for the as-built deltas (reset BUMPS rather than clears; the
+unregistered-handle guard warns-but-arms for build invariance; arming is world-wide, not
+per-resource); consumed by ICE 0.6.0 (the design-009 differ imports `valueEquals`, the
+order/resource polls read `resourceStamp`). Was: OPEN (ratified as design-009 BF-D20; on
+the behavior framework's critical path) · **Scope:** additive, two small exports, zero
+cost when unused.
 
 Evidence pinned at strata-ecs 0.11.0 by the design-009 rev-3 adversarial review
 (2026-08-14). Re-check line numbers on posting if the repo moved.

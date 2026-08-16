@@ -269,10 +269,43 @@ strata petition 9, stamping `{behavior, label}` provenance on every `ctx.commit`
 pipeline systems still share ONE ledger, one doctor row and one seam total with every
 other guest.
 
+## M14 — The behavior host contract (petition I16) · 0.7.0 — **DONE 2026-08-16**
+
+The first real embedder (VibeField PRC-4) proved 0.6.0's framework runs but cannot be
+GOVERNED by a host that activates plugin code once per window while creating one engine
+per document. Four seams, all routing/composition, none a new scheduler — each pinned
+red against the installed 0.6.0 artifact by the petition's probes before landing:
+
+- **M14a — order + ledger at registration**: `behaviors.register(B, {orderKey?, ledger?})`;
+  lexical keyed lane before unkeyed; one order for pipeline systems AND publish hooks;
+  reorder reinstalls EXECUTION only (install/installExecution split — `init` never re-runs
+  on unaffected behaviors, pinned); `ledger` seeds the driven guest so suspensions survive
+  generations; empty key throws with no residue.
+- **M14b — facade diagnostic routing**: `createCanvasEngine({onGuestFault?, onGuestNotice?,
+  onBehaviorFault?, onBehaviorLog?})` forwarding the seams that already existed
+  (`EngineOpts` + the behavior runtime's `onFault`/`onLog`), provenance preserved.
+- **M14c — `describeBehavior`**: the canonical JSON-safe projection as the ONE
+  definition-identity surface (manifest emission + anti-drift downstream).
+- **M14d — thenable hook faults**: detection at every hook boundary, catch observer,
+  attributed fault, direct guest strike (a thenable is a definition bug — unlike ordinary
+  single-instance throws, which stay quarantined); `dispose` detected-but-swallowed.
+
+**Exit**: the petition's six controls green as ICE tests + three host-side pins
+(keyed/unkeyed lane, empty-key refusal leaves no residue, async-dispose teardown
+completes) · full core suite + walls green. **MET** — 9/9 in
+`behavior-host-contract.test.ts`, re-derived from PRC-4's proven candidate patch rather
+than blind-applied. Remaining from the same PRC-4 evidence round, deliberately NOT here:
+I17 (ephemeral facet withdrawal — needs its own presence-kit design pass) and I18 (split
+presence attach, P2) — both recorded OPEN in `docs/downstream-petitions.md`; neither
+gates durable/runtime plugin hosting.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
 consumes immediately for the fixes alone; the door's W2b adapter can land against it.
+**0.7.0 = M14** (SHIPPED 2026-08-16) — the host contract PRC-4b/4c gate on; vibe-field's
+pin advances from the 0.6.0 floor and the behaviors adapter proceeds against released
+types.
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,

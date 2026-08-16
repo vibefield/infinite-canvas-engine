@@ -19,6 +19,7 @@ import type {
   BooleanSpec,
   EntityKeySpec,
   EnumSpec,
+  JsonShape,
   JsonSpec,
   NumberSpec,
   PropSpec,
@@ -59,6 +60,49 @@ export const BEHAVIOR_DEFAULT_PHASE: Readonly<Record<BehaviorStore, BehaviorPhas
 
 /** A behavior's declared data: the SAME `p.*` DSL `defineWidget` uses. */
 export type BehaviorSchema = Readonly<Record<string, PropSpec>>;
+
+export type BehaviorHookName = "init" | "update" | "changed" | "tick" | "dispose";
+
+export type BehaviorPropDescription =
+  | { readonly kind: "string"; readonly default?: string }
+  | {
+      readonly kind: "number";
+      readonly default?: number;
+      readonly min?: number;
+      readonly max?: number;
+    }
+  | { readonly kind: "boolean"; readonly default?: boolean }
+  | {
+      readonly kind: "enum";
+      readonly options: readonly string[];
+      readonly default?: string;
+    }
+  | { readonly kind: "json"; readonly inner: JsonShape; readonly default?: string }
+  | { readonly kind: "entityKey"; readonly default?: string };
+
+export interface BehaviorReadDescription {
+  readonly kind: "behavior" | "component" | "tag" | "relation" | "resource";
+  readonly name: string;
+}
+
+export interface BehaviorDescription {
+  readonly id: string;
+  readonly store: BehaviorStore;
+  readonly derived: boolean;
+  readonly deriveDuringGesture: boolean;
+  readonly version: number;
+  readonly phase: BehaviorPhase;
+  readonly budgetMs?: number;
+  readonly tickWhile: "all" | "visible";
+  readonly schema: readonly {
+    readonly name: string;
+    readonly spec: BehaviorPropDescription;
+  }[];
+  readonly reads: readonly BehaviorReadDescription[];
+  readonly writes: readonly string[];
+  readonly migrationFrom: readonly number[];
+  readonly hooks: readonly BehaviorHookName[];
+}
 
 type ValueOfSpec<S extends PropSpec> = S extends NumberSpec
   ? number

@@ -115,7 +115,8 @@ export {
 // `defineWidget` (faces) · `defineBehavior` (logic + state) · `defineTool`
 // (input policy). `store:` routes everything — where data lives, who sees it,
 // what survives, which write vocabulary the hooks receive, at which cadence.
-export { behaviors, defineBehavior } from "./behavior/define-behavior";
+export { behaviors, defineBehavior, describeBehavior } from "./behavior/define-behavior";
+export type { BehaviorRegistrationOptions } from "./behavior/runtime";
 export {
   BEHAVIOR_DEFAULT_PHASE,
   BEHAVIOR_PHASES,
@@ -125,13 +126,17 @@ export {
   type BehaviorChanges,
   type BehaviorCtxBase,
   type BehaviorCtxFor,
+  type BehaviorDescription,
   type BehaviorFrame,
   type BehaviorHandle,
+  type BehaviorHookName,
   type BehaviorHooks,
   type BehaviorPhase,
+  type BehaviorPropDescription,
   type BehaviorQuery,
   type BehaviorQuerySpec,
   type BehaviorRead,
+  type BehaviorReadDescription,
   type BehaviorSchema,
   type BehaviorSpec,
   type BehaviorStore,

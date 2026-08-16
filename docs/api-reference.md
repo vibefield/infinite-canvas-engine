@@ -113,11 +113,40 @@ claim(e), pair(), sync() }`. `claim(e)` fakes a live gesture (suppression is
 what authors get wrong); `pair()` gives a second engine on the same document
 (convergence bugs are invisible on one peer by definition).
 
-**Runtime surface.** `ce.behaviors` — `attach(e, B, data?) · detach(e, B) ·
-has(e, B) · read(e, B) · list()`. Durable attachment is deliberately absent: it
-is a document op and goes through `tx.attach` so it syncs and undoes. Every
-behavior appears in `ce.engine.guests.list()` under `behavior:<name>`, sharing
-one circuit breaker with every other guest.
+**Runtime surface.** `ce.behaviors` — `register(B, {orderKey?, ledger?}?) ·
+attach(e, B, data?) · detach(e, B) · has(e, B) · read(e, B) · list()`. Durable
+attachment is deliberately absent: it is a document op and goes through
+`tx.attach` so it syncs and undoes. Every behavior appears in
+`ce.engine.guests.list()` under `behavior:<name>`, sharing one circuit breaker
+with every other guest.
+
+**Host contract (0.7.0, petition I16).** Everything a multi-generation host
+(one engine per document, plugin code activated once) needs to govern behaviors
+it did not write:
+
+- `register(B, {orderKey?, ledger?})` — the keyed lane runs in lexical
+  `orderKey` order BEFORE every unkeyed registration; ties and the unkeyed lane
+  keep registration order. Re-registering an earlier key reorders execution
+  only — collectors, instances, guests and data stay put, and `init` does NOT
+  re-run on unaffected behaviors. `ledger` seeds the driven guest's breaker
+  state (strikes/suspension persisted by the host across engine generations);
+  changes stream out the existing `guests.onLedgerChange`.
+- `createCanvasEngine({ onGuestFault?, onGuestNotice?, onBehaviorFault?,
+  onBehaviorLog? })` — the first pair forwards the `EngineOpts` routes through
+  the facade; the behavior pair carries hook + entity provenance. Unrouted,
+  faults still reach the console — but a suspended derived behavior means part
+  of the document silently stops updating, so hosts SHOULD route these.
+- `describeBehavior(B)` — the canonical JSON-safe projection (id, store,
+  flags, version, phase, budget, schema with prop specs, classified reads,
+  write names, migration sources, hook presence in lifecycle order; no
+  functions, no generated component ids, no process state). Build-time manifest
+  emission and runtime anti-drift compare against THIS, never a hand-rolled
+  serialization.
+- Thenable hook returns are FAULTS: detected at the call boundary, attributed
+  `(behavior, hook, entity)`, observed so a later rejection cannot go
+  unhandled, and escalated straight to the guest strike ladder (an async hook
+  is a definition bug — every instance would do it). The continuation cannot be
+  cancelled; the guarantee is honest detection, not preemption.
 
 **Scale posture.** Designed for ≤~2k ticking instances. Beyond that, the idiom
 is ONE behavior on a carrier entity iterating its members — the mind-map shape.

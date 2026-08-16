@@ -1,7 +1,11 @@
 # Petition 9 — Per-commit user metadata: `transaction(fn, { undoable, meta })`
 
-**Filed:** 2026-08-13 · **Status:** OPEN (drafted with VibeField's plugin ECS door rev 3
-§7-U3; awaiting James's bless) · **Scope:** additive, opt-in, zero cost when unused.
+**Filed:** 2026-08-13 · **Status:** LANDED in strata 0.12.0 (2026-08-15) — see
+`docs/strata-petitions.md` for the as-built deltas (strict-digit seq parse, the 4096
+receive bound + `__proto__` rejection both ways, serialize-at-entry); consumed by ICE
+0.6.0 (`GuardedTxOpts.meta` — every behavior `ctx.commit` stamps `{behavior, label}`).
+Was: OPEN (drafted with VibeField's plugin ECS door rev 3 §7-U3) · **Scope:** additive,
+opt-in, zero cost when unused.
 
 Evidence pinned at strata-ecs 0.11.0 source, re-verified 2026-08-13 by the door rev-3
 cross-layer review. Re-check line numbers on posting if the repo moved.

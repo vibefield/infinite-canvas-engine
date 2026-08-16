@@ -94,6 +94,21 @@ export interface CanvasEngineOpts {
    * what makes "a plugin declared it" and "this engine runs it" separable.
    */
   readonly behaviors?: readonly AnyBehaviorDef[];
+  /** Generic guest breaker routing for hosts that use the published facade. */
+  readonly onGuestFault?: (id: string, error: unknown) => void;
+  readonly onGuestNotice?: (message: string) => void;
+  /** Behavior-specific routing preserves hook and entity provenance. */
+  readonly onBehaviorFault?: (
+    behavior: string,
+    hook: string,
+    entity: Entity | undefined,
+    error: unknown,
+  ) => void;
+  readonly onBehaviorLog?: (
+    behavior: string,
+    message: string,
+    rest: readonly unknown[],
+  ) => void;
   readonly budgets?: {
     readonly keepMounted?: number;
     readonly fboBytes?: number;
@@ -269,7 +284,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   }
 
   const world = createWorld();
-  const engine = createEngine(world);
+  const engine = createEngine(world, {
+    ...(opts.onGuestFault === undefined ? {} : { onGuestFault: opts.onGuestFault }),
+    ...(opts.onGuestNotice === undefined ? {} : { onGuestNotice: opts.onGuestNotice }),
+  });
   const sink = createForwardingSink();
   const stack = installInteractionStack(engine, { sink });
   const budgets = {
@@ -484,6 +502,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     // installed before anyone joins simply lies dormant until there is a peer
     // for it to be.
     presence: () => presence as BehaviorPresence | undefined,
+    ...(opts.onBehaviorFault === undefined ? {} : { onFault: opts.onBehaviorFault }),
+    ...(opts.onBehaviorLog === undefined ? {} : { onLog: opts.onBehaviorLog }),
   });
   for (const b of opts.behaviors ?? []) behaviors.register(b);
 

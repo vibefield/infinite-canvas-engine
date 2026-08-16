@@ -17,7 +17,12 @@
 import type { Component, Relation, Resource, Tag } from "@vibecook/strata-ecs";
 import { devGuardsEnabled } from "../guards/dev";
 import { ensureComponent, schemaMeta } from "../schema/meta";
-import { defaultValueOf, type JsonSpec, type PropSpec } from "../widget/props";
+import {
+  defaultValueOf,
+  type JsonShape,
+  type JsonSpec,
+  type PropSpec,
+} from "../widget/props";
 import { isPublicRead } from "./public-reads";
 import { field } from "@vibecook/strata-ecs";
 import { enumOf } from "@vibecook/strata-ecs";
@@ -25,8 +30,11 @@ import {
   BEHAVIOR_DEFAULT_PHASE,
   BEHAVIOR_PHASES,
   type AnyBehaviorDef,
+  type BehaviorDescription,
   type BehaviorHandle,
+  type BehaviorHookName,
   type BehaviorHooks,
+  type BehaviorPropDescription,
   type BehaviorRead,
   type BehaviorSchema,
   type BehaviorSpec,
@@ -293,6 +301,112 @@ function validate(name: string, spec: BehaviorSpec<BehaviorStore, BehaviorSchema
 }
 
 // --- defineBehavior ----------------------------------------------------------
+
+function cloneJsonShape(shape: JsonShape): JsonShape {
+  switch (shape.kind) {
+    case "string":
+    case "number":
+    case "boolean":
+      return { kind: shape.kind };
+    case "enum":
+      return { kind: "enum", options: [...shape.options] };
+    case "array":
+      return { kind: "array", item: cloneJsonShape(shape.item) };
+    case "object":
+      return {
+        kind: "object",
+        fields: Object.fromEntries(
+          Object.entries(shape.fields).map(([name, field]) => [name, cloneJsonShape(field)]),
+        ),
+      };
+  }
+}
+
+function describeProp(spec: PropSpec): BehaviorPropDescription {
+  switch (spec.kind) {
+    case "string":
+      return {
+        kind: "string",
+        ...(spec.default === undefined ? {} : { default: spec.default }),
+      };
+    case "number":
+      return {
+        kind: "number",
+        ...(spec.default === undefined ? {} : { default: spec.default }),
+        ...(spec.min === undefined ? {} : { min: spec.min }),
+        ...(spec.max === undefined ? {} : { max: spec.max }),
+      };
+    case "boolean":
+      return {
+        kind: "boolean",
+        ...(spec.default === undefined ? {} : { default: spec.default }),
+      };
+    case "enum":
+      return {
+        kind: "enum",
+        options: [...spec.options],
+        ...(spec.default === undefined ? {} : { default: spec.default }),
+      };
+    case "json":
+      return {
+        kind: "json",
+        inner: cloneJsonShape(spec.inner),
+        ...(spec.default === undefined ? {} : { default: spec.default }),
+      };
+    case "entityKey":
+      return {
+        kind: "entityKey",
+        ...(spec.default === undefined ? {} : { default: spec.default }),
+      };
+  }
+}
+
+const DESCRIPTION_HOOK_ORDER: readonly BehaviorHookName[] = [
+  "init",
+  "update",
+  "changed",
+  "tick",
+  "dispose",
+];
+
+export function describeBehavior(behavior: AnyBehaviorDef): BehaviorDescription {
+  const reads = behavior.reads.map((read) => {
+    const description = classifyRead(read);
+    if (description === undefined) {
+      throw new Error("ice: describeBehavior cannot classify a declared read");
+    }
+    return description;
+  });
+  const writes = behavior.writes.map((component) => {
+    const meta = schemaMeta.component(component);
+    if (meta === undefined) {
+      throw new Error("ice: describeBehavior cannot classify a declared write");
+    }
+    return meta.name;
+  });
+  return {
+    id: behavior.name,
+    store: behavior.store,
+    derived: behavior.derived,
+    deriveDuringGesture: behavior.deriveDuringGesture,
+    version: behavior.version,
+    phase: behavior.phase,
+    ...(behavior.budgetMs === undefined ? {} : { budgetMs: behavior.budgetMs }),
+    tickWhile: behavior.tickWhile,
+    schema: Object.entries(behavior.schema).map(([name, spec]) => ({
+      name,
+      spec: describeProp(spec),
+    })),
+    reads,
+    writes,
+    migrationFrom: Object.keys(behavior.migrate)
+      .map(Number)
+      .sort((left, right) => left - right),
+    hooks: DESCRIPTION_HOOK_ORDER.filter(
+      (hook) => typeof behavior.on[hook] === "function",
+    ),
+  };
+}
 
 export function defineBehavior<const S extends BehaviorStore, const Sch extends BehaviorSchema = BehaviorSchema>(
   name: string,

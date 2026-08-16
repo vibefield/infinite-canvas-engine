@@ -35,7 +35,7 @@ import type {
   Tag,
   World,
 } from "@vibecook/strata-ecs";
-import type { DrivenGuest, GuestRegistry } from "../engine/guests";
+import type { DrivenGuest, GuestLedgerRecord, GuestRegistry } from "../engine/guests";
 import { Captures, Drags, GestureActive } from "../catalog/gesture";
 import { FrameInfo } from "../engine/frame-info";
 import type { PhaseGroup } from "../engine/pipeline";
@@ -135,9 +135,16 @@ export interface BehaviorStatus {
   readonly suspended: boolean;
 }
 
+export interface BehaviorRegistrationOptions {
+  /** Stable host policy key. Explicitly ordered registrations run before unkeyed registrations. */
+  readonly orderKey?: string;
+  /** Prior breaker state, normally persisted by a host across engine generations. */
+  readonly ledger?: GuestLedgerRecord;
+}
+
 export interface BehaviorRuntime {
   /** Compile + install a behavior. Returns an uninstaller. */
-  register(b: AnyBehaviorDef): () => void;
+  register(b: AnyBehaviorDef, options?: BehaviorRegistrationOptions): () => void;
   registered(): readonly AnyBehaviorDef[];
   /** Runtime/ephemeral attach from OUTSIDE a hook (the facade surface). */
   attach(e: Entity, b: AnyBehaviorDef, data?: Record<string, unknown>): void;
@@ -159,6 +166,25 @@ const INSTANCE_THROW_LIMIT = 3;
 
 /** Suppressed frames before the dev-warn names the behavior and the claimant. */
 const SUPPRESSION_WARN_FRAMES = 600;
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
+
+class BehaviorHookThenableError extends TypeError {}
+
+function invokeHook(behavior: string, hook: string, body: () => unknown): void {
+  const result = body();
+  if (!isThenable(result)) return;
+  void Promise.resolve(result).catch(() => undefined);
+  throw new BehaviorHookThenableError(
+    `ice: behavior "${behavior}" ${hook} returned a thenable; behavior hooks are synchronous`,
+  );
+}
 
 /**
  * Is `e` under a LIVE gesture claim right now?
@@ -224,6 +250,7 @@ interface Instance {
 export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntime {
   const { world } = opts;
   const nodes = new Map<string, Node>();
+  let nextRegistrationSequence = 0;
   const onFault =
     opts.onFault ??
     ((behavior: string, hook: string, entity: Entity | undefined, err: unknown) => {
@@ -246,6 +273,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
 
   class Node {
     readonly b: AnyBehaviorDef;
+    readonly orderKey: string | undefined;
+    readonly registrationSequence: number;
     readonly compiled: CompiledBehavior;
     readonly own: Component;
     /** The same handle, typed for `readField`'s keyof-based field parameter. */
@@ -335,8 +364,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     private walker: BehaviorWalker | undefined;
     private readonly ctx: BehaviorCtxBase<Record<string, unknown>> & Record<string, unknown>;
 
-    constructor(b: AnyBehaviorDef) {
+    constructor(
+      b: AnyBehaviorDef,
+      registration: BehaviorRegistrationOptions,
+      registrationSequence: number,
+    ) {
       this.b = b;
+      this.orderKey = registration.orderKey;
+      this.registrationSequence = registrationSequence;
       this.own = b.component as Component;
       this.ownFields = b.component as unknown as Component<Record<string, unknown>>;
       this.schema = b.schema;
@@ -366,6 +401,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       this.guest = opts.engine.guests.addDriven({
         id: `behavior:${b.name}`,
         ...(b.budgetMs !== undefined ? { budgetMs: b.budgetMs } : {}),
+        ...(registration.ledger === undefined ? {} : { ledger: registration.ledger }),
         busy: () => this.owed(),
       });
       this.ctx = this.buildCtx();
@@ -437,7 +473,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (this.compiled.readRelations.length > 0) {
         world.orderStamp(0 as Entity, this.compiled.readRelations[0] as Relation);
       }
+    }
 
+    installExecution(): void {
       if (this.b.phase === "publish") {
         // The publish slot is not a pipeline phase: it is the post-tick step
         // where ephemeral mutation is legal and there is no iteration bracket.
@@ -466,6 +504,11 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           ...(this.compiled.systems as readonly never[]),
         );
       }
+    }
+
+    uninstallExecution(): void {
+      this.removeSystems?.();
+      this.removeSystems = undefined;
     }
 
     /** The version-marker surface for the current session, if it has one. */
@@ -586,17 +629,16 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         const inst = this.instances.get(e);
         if (inst === undefined || inst.failed || !inst.inited) continue;
         const data = this.dataOf(e);
-        this.callHook("tick", inst, faulted, () => {
-          on.tick?.(e, data as never, frame, this.ctx as never);
-        });
+        this.callHook("tick", inst, faulted, () =>
+          on.tick?.(e, data as never, frame, this.ctx as never),
+        );
       }
       this.walker = undefined;
     }
 
     uninstall(): void {
       this.endGeneration();
-      this.removeSystems?.();
-      this.removeSystems = undefined;
+      this.uninstallExecution();
       this.ownCollector?.dispose();
       this.readsCollector?.dispose();
       this.ownCollector = undefined;
@@ -960,9 +1002,11 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         for (const e of appeared) {
           const inst = this.instances.get(e);
           if (inst === undefined || inst.failed) continue;
-          if (this.callHook("init", inst, faultedEntities, () => {
-            on.init?.(e, this.dataOf(e) as never, this.ctx as never);
-          })) {
+          if (
+            this.callHook("init", inst, faultedEntities, () =>
+              on.init?.(e, this.dataOf(e) as never, this.ctx as never),
+            )
+          ) {
             inst.inited = true;
           }
         }
@@ -993,9 +1037,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           if (valueEquals(this.own, this.scratchCell, inst.prevCell)) continue;
           const data = this.viewOf(this.scratchCell, this.scratchData);
           const prev = this.viewOf(inst.prevCell, this.scratchPrevData);
-          this.callHook("update", inst, faultedEntities, () => {
-            on.update?.(e, data as never, prev as never, this.ctx as never);
-          });
+          this.callHook("update", inst, faultedEntities, () =>
+            on.update?.(e, data as never, prev as never, this.ctx as never),
+          );
           // Bank the delivered value even when the hook threw: re-delivering
           // the same change to an instance that failed on it is a loop.
           this.copyInto(this.scratchCell, inst.prevCell);
@@ -1007,7 +1051,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       const anyVisible = this.visible.length > 0;
       if (on.changed !== undefined && (full || (work?.readsFired ?? false) || lifted) && anyVisible) {
         try {
-          on.changed(this.ctx as never);
+          invokeHook(this.b.name, "changed", () => on.changed?.(this.ctx as never));
         } catch (err) {
           // No entity to quarantine — this one is the behavior's.
           onFault(this.b.name, "changed", undefined, err);
@@ -1021,7 +1065,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (on.dispose !== undefined) {
         for (const inst of departed) {
           try {
-            on.dispose(inst.e, this.ctx as never);
+            invokeHook(this.b.name, "dispose", () =>
+              on.dispose?.(inst.e, this.ctx as never),
+            );
           } catch (err) {
             // Swallowed by contract (§4.3): teardown must not stop teardown.
             onFault(this.b.name, "dispose", inst.e, err);
@@ -1052,9 +1098,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         // "init runs before that instance's first tick".
         if (inst === undefined || inst.failed || !inst.inited) continue;
         const data = this.dataOf(e);
-        this.callHook("tick", inst, faulted, () => {
-          on.tick?.(e, data as never, frame, this.ctx as never);
-        });
+        this.callHook("tick", inst, faulted, () =>
+          on.tick?.(e, data as never, frame, this.ctx as never),
+        );
       }
       this.walker = undefined;
     }
@@ -1065,9 +1111,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
      * itself is only struck when throws SPAN instances. One bad node must not
      * kill a 1000-node layout.
      */
-    private callHook(hook: string, inst: Instance, faulted: Set<Entity>, body: () => void): boolean {
+    private callHook(
+      hook: string,
+      inst: Instance,
+      faulted: Set<Entity>,
+      body: () => unknown,
+    ): boolean {
       try {
-        body();
+        invokeHook(this.b.name, hook, body);
         inst.consecutiveThrows = 0;
         return true;
       } catch (err) {
@@ -1075,7 +1126,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         onFault(this.b.name, hook, inst.e, err);
         if (inst.consecutiveThrows >= INSTANCE_THROW_LIMIT) inst.failed = true;
         faulted.add(inst.e);
-        if (faulted.size > 1) this.guest.fault(err);
+        if (err instanceof BehaviorHookThenableError || faulted.size > 1) {
+          this.guest.fault(err);
+        }
         return false;
       }
     }
@@ -1087,7 +1140,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (on.dispose !== undefined) {
         for (const inst of this.instances.values()) {
           try {
-            on.dispose(inst.e, this.ctx as never);
+            invokeHook(this.b.name, "dispose", () =>
+              on.dispose?.(inst.e, this.ctx as never),
+            );
           } catch (err) {
             onFault(this.b.name, "dispose", inst.e, err);
           }
@@ -1417,6 +1472,23 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     }
   }
 
+  function orderedNodes(): Node[] {
+    return [...nodes.values()].sort((left, right) => {
+      if (left.orderKey !== undefined || right.orderKey !== undefined) {
+        if (left.orderKey === undefined) return 1;
+        if (right.orderKey === undefined) return -1;
+        if (left.orderKey < right.orderKey) return -1;
+        if (left.orderKey > right.orderKey) return 1;
+      }
+      return left.registrationSequence - right.registrationSequence;
+    });
+  }
+
+  function reorderExecution(): void {
+    for (const node of nodes.values()) node.uninstallExecution();
+    for (const node of orderedNodes()) node.installExecution();
+  }
+
   function safeParse(raw: string): unknown {
     try {
       return JSON.parse(raw);
@@ -1426,13 +1498,20 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
   }
 
   return {
-    register(b) {
+    register(b, options = {}) {
+      if (
+        options.orderKey !== undefined &&
+        (typeof options.orderKey !== "string" || options.orderKey.length === 0)
+      ) {
+        throw new TypeError("ice: behavior registration orderKey must be a non-empty string");
+      }
       if (nodes.has(b.name)) {
         throw new Error(`ice: behavior "${b.name}" is already registered with this engine.`);
       }
-      const node = new Node(b);
+      const node = new Node(b, options, nextRegistrationSequence++);
       nodes.set(b.name, node);
       node.install();
+      reorderExecution();
       return () => {
         if (nodes.get(b.name) !== node) return;
         nodes.delete(b.name);
@@ -1441,7 +1520,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     },
 
     registered() {
-      return [...nodes.values()].map((n) => n.b);
+      return orderedNodes().map((n) => n.b);
     },
 
     attach(e, b, data) {
@@ -1479,7 +1558,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     },
 
     list() {
-      return [...nodes.values()].map((n) => n.status());
+      return orderedNodes().map((n) => n.status());
     },
 
     dispose() {

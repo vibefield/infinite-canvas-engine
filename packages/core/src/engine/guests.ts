@@ -87,8 +87,11 @@ export interface GuestSpec {
   /** Per-invocation budget request; the effective budget is
    *  `min(budgetMs, seamCapMs)` — no single guest may claim the whole seam. */
   readonly budgetMs?: number;
-  /** RESERVED. v1 hosts the publish slot only; pipeline-group values arrive
-   *  with the behavior framework (design-009 M13a), wrapped by this breaker. */
+  /** RESERVED. Hosted guests run in the publish slot only — and that is now the
+   *  settled shape, not a v1 placeholder: M13 reached pipeline cadence through
+   *  `addDriven` (behaviors run as pipeline systems and CHARGE this breaker)
+   *  instead of widening this field. A wider value would mean a second way to
+   *  put foreign code in the tick that `addDriven` already provides. */
   readonly phase?: "publish";
   /** Seed prior breaker state (host-persisted across engine generations). */
   readonly ledger?: GuestLedgerRecord;
