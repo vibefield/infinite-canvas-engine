@@ -57,6 +57,54 @@ its own facade door.
   (design-003 §7's `derive` language covers the LOCAL L4 cursor; remote cursors
   were never phase-pinned.)
 
+### The pre-publish adversarial review (2026-08-16)
+
+Same protocol as 0.7.0 — independent reviewers over the diff, every finding
+execution-confirmed against main before fixing, every fix mutation-probed. Four
+lifecycle findings and one artifact-wide one, all fixed in this release:
+
+- **A throwing `onOutbound` subscriber during the leave flush aborted every
+  teardown path** — inverse, `docs.close()`, engine dispose — leaving a live
+  engine behind a "completed" dispose and permanently stranding the presence
+  binding (its `detached` flag latched before the throw; the keepalive/throttle
+  timers and the wasm store leaked unreclaimably). The canonical subscriber is
+  `ws.send`, which throws on a CLOSING socket — exactly the teardown moment;
+  the join sugar never saw it because its only subscriber is joinDoc's own
+  guarded send. Fixed at three layers, each pinned: per-subscriber fault
+  isolation in the fan-out (one bad transport no longer starves later
+  subscribers or the binding's timer callbacks), leave contained inside
+  `detach()` and the reset-heal microtask, and `releasePresence` clearing its
+  fields first then containing both halves — teardown never throws.
+- **A same-gap detach→reattach delivered the new peer's `init` before the old
+  peer's `dispose`, and the corpse's `ctx.write` landed on the fresh peer** —
+  resolving `localPeer` live, the departed instance's farewell value was
+  broadcast to every remote as current and never recomputed. Two complementary
+  fixes: `writeFacet` refuses when the running hook's instance is not the
+  current peer (`hookEntity`, set around every hook call), and `ensureFacet`
+  defers the new mint one publish while a prior peer's instance awaits
+  departure — dispose-before-init across a swap without touching the
+  documented per-deliver hook order; one publish of activation latency in
+  exactly that case.
+- **A rejected `docs.join` stranded the presence session it acquired** on a
+  doc-less engine: live seam, active ephemeral behaviors publishing into a room
+  joinDoc had already unsubscribed, and no inverse the caller ever received.
+  The join path releases presence on rejection when it still owns the flow;
+  supersede semantics unchanged.
+- **The inverse could burn itself on a failed teardown** — folded into the
+  first fix: `releasePresence` never throws and clears state first, so the
+  idempotency latch can no longer strand a live session behind a spent inverse.
+- **The published artifact's types were broken on six of seven entry points —
+  in every release since 0.2.0.** `tsc` preserves path-mapped specifiers in
+  declaration emit, so the shipped d.ts imported unpublished `@ice/*`
+  packages: TS2307 for `skipLibCheck: false` consumers, and silent `any`
+  across those seams for the `skipLibCheck: true` default — vibe-field
+  included. The build now rewrites all specifiers to relative paths as its
+  last step and FAILS if any quoted `@ice/*` specifier survives
+  (`packages/ice/scripts/fix-dts-specifiers.mjs`); all seven entries verified
+  to typecheck standalone under `skipLibCheck: false`. The same sweep found —
+  and fixed upstream, in strata 0.13.0 — dangling `LoroDoc`/
+  `ObserverEntityRecord` references in strata's own shipped d.ts.
+
 ### Upstream
 
 - **strata petition 11 filed + landed same day** (strata 0.13.0, unpublished at
@@ -64,6 +112,10 @@ its own facade door.
   `withdrawFacet` keeps its typed cast until the pin bump retires it — the cast
   compiles and behaves identically against 0.12.0 and 0.13.0
   (`docs/petitions/petition-11-projection-unsafe-context.md`).
+- **strata 0.13.0 also carries the d.ts fixes this review surfaced** (dangling
+  `LoroDoc` in the durable/ephemeral entries, `ObserverEntityRecord` dropped
+  from tools by a prose `@internal` in a banner comment) plus its own
+  build-step resolution guard.
 
 ## [0.7.0] — 2026-08-16
 
