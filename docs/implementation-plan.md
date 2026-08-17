@@ -363,7 +363,7 @@ deliver placement relative to the stack's derive systems, `selectionChrome`
 attestation, possibly a read-side attestation petition to strata — that deserves
 its own round, likely as design-009 errata + a strata petition candidate.
 
-## M16 — The ephemeral facet byte claim (petition I19) — **DONE 2026-08-17, release pending**
+## M16 — The ephemeral facet byte claim (petition I19) · 0.9.0 — **DONE 2026-08-17**
 
 The first RESOURCE claim on the declaration surface. VibeField's document-room
 presence lane fragments ICE frames over lossy 1,150-byte datagrams; PRC4-E22
@@ -403,8 +403,7 @@ measure, json-as-serialized, three strikes → quarantine + I17 withdrawal +
 no-remint, captured-closure refusal without ladder involvement, both audit
 refusal surfaces) · every enforcement point mutation-probed (six probes, each
 bit) · full core suite 589 green, `pnpm run ci` walls-clean · design-009 §17
-amendment + I19 registry row folded with the code. **MET** — awaiting the
-release cut.
+amendment + I19 registry row folded with the code. **MET.**
 
 ## Release cut & downstream
 
@@ -420,6 +419,12 @@ engine-side gate for doc-lifecycle-owning hosts. Rode beside strata 0.13.0 (peti
 across all six declaring manifests, the `withdrawFacet` cast retired for the typed
 getter, single-copy invariants + full trace suite green. Chore-grade release so
 vibe-field's pin advance lands on whole types on both sides.
+**0.9.0 = M16** (CUT 2026-08-17, publish pending) — the I19 facet byte claim. Cut by
+the vibe-field session at James's ask (CI re-verified green at the cut, pack dry-run
+0.9.0/197 files); on publish, vibe-field's consume advances the exact pin to 0.9.0,
+adds `maxFacetBytes` to its strict descriptor, imposes the aggregate window budget,
+builds the two-engine remote-tombstone witness, then retires
+`behavior-store-unsupported`.
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,
