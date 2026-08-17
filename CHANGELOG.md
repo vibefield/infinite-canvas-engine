@@ -29,7 +29,9 @@ its own facade door.
   `presence().onOutbound(send)` outbound — the standing `PresenceSession`
   contract. Returns an idempotent, IDENTITY-BOUND inverse: it detaches THIS
   attachment — leave tombstones flush through still-subscribed outbound before
-  the wiring dies — and cannot touch a replacement; `docs.close()` and engine
+  the wiring dies (best-effort per subscriber: one that THROWS forfeits its own
+  delivery and those peers fall back to TTL expiry — `PresenceOpts.onFault`
+  observes it) — and cannot touch a replacement; `docs.close()` and engine
   disposal run the same teardown automatically. Reattach mints a fresh peer and
   behavior DEFAULTS (a stale value does not survive the detach; pinned).
   `join({presence})` now rides the same internal acquisition and keeps its
@@ -104,6 +106,24 @@ lifecycle findings and one artifact-wide one, all fixed in this release:
   to typecheck standalone under `skipLibCheck: false`. The same sweep found —
   and fixed upstream, in strata 0.13.0 — dangling `LoroDoc`/
   `ObserverEntityRecord` references in strata's own shipped d.ts.
+
+The consolidated second round added three refinements: `remoteCursors` now
+attests `orderIndependent: [Position]` (its writes are its own pool's rows —
+and suppression of strata's double-writer advisory is conjunctive over ALL
+co-writers, so an un-attested engine system would make the warning
+unsilenceable for a `present`-phase userland behavior that attests correctly);
+presence faults became host-routable via `PresenceOpts.onFault`
+(`"outbound" | "leave" | "heal"` — every fault stays contained; this is
+observability, never control flow; default remains `console.error`), which
+`docs.attachPresence` hosts get with no extra plumbing since they already pass
+`PresenceOpts`; and the tombstone-flush wording above was qualified to
+best-effort-per-subscriber everywhere it appears. One documented-scope
+correction: the "zero access advisories" claim holds for the presence+facade
+suites this release touched — the behavior suites' deliberate derive-phase
+`Position` co-writers still trip the same two advisory shapes, and durable
+behaviors are derive-only so they cannot take the phase-move escape; that
+generic ordering/attestation question is recorded as an open post-0.8.0 item
+in the implementation plan, not papered over.
 
 ### Upstream
 

@@ -211,9 +211,12 @@ export interface CanvasDocs {
    * the standing `PresenceSession` contract). Refuses without a live document
    * and refuses while a presence session is already live (either sugar's).
    * Returns an idempotent, IDENTITY-BOUND inverse: it detaches THIS
-   * attachment (leave tombstones flush through still-subscribed outbound
-   * before wiring tears down) and cannot touch a replacement; `docs.close()`
-   * and engine disposal run the same teardown automatically.
+   * attachment — leave tombstones flush through still-subscribed outbound
+   * before wiring tears down (best-effort per subscriber: one that THROWS,
+   * e.g. `ws.send` on a closing socket, forfeits its own delivery and those
+   * peers fall back to TTL expiry; route `PresenceOpts.onFault` to observe) —
+   * and cannot touch a replacement; `docs.close()` and engine disposal run
+   * the same teardown automatically.
    */
   attachPresence(opts: PresenceOpts): () => void;
   /**

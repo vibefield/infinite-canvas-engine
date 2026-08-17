@@ -90,7 +90,15 @@ function createRemoteCursorsRig(world: World): RemoteCursorsRig {
     },
     {
       name: "remoteCursors",
-      access: { write: [Position, CursorVisual] },
+      // orderIndependent: every row this system writes is its OWN pool's
+      // cursor entity (one per remote peer) — row-disjoint from any other
+      // Position writer by construction. The attestation is what lets a
+      // userland `present`-phase behavior that co-writes Position silence
+      // strata's double-writer advisory from its own side: suppression is
+      // conjunctive over ALL co-writers, so an un-attested engine system
+      // would make the warning unsilenceable for authors doing it right
+      // (0.8.0 review finding).
+      access: { write: [Position, CursorVisual], orderIndependent: [Position] },
     },
   );
 

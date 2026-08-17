@@ -37,7 +37,9 @@ const ce = createCanvasEngine({ widgets?, tools?, behaviors?, budgets?, settings
   duplicate, exposes the session through `docs.presence()` (the seam the
   behavior runtime reads — a registered ephemeral behavior leaves dormancy on
   the next publish step), and returns an idempotent, identity-bound inverse
-  (leave tombstones flush through still-subscribed outbound; `close()`/dispose
+  (leave tombstones flush through still-subscribed outbound — best-effort per
+  subscriber: a throwing transport forfeits its own delivery and those peers
+  fall back to TTL, observable via `PresenceOpts.onFault`; `close()`/dispose
   run the same teardown). Transport is the caller's: `presence().wire.apply`
   inbound, `presence().onOutbound(send)` outbound.
 - `settings` seeds live-tunable resources: `GestureSettings`,

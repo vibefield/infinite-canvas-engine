@@ -208,6 +208,30 @@ describe("outbound fan-out fault isolation (0.8.0 review finding 1)", () => {
       errors.mockRestore();
     }
   });
+
+  it("PresenceOpts.onFault routes the fault to the host and silences the console default", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const world = createWorld();
+      const faults: string[] = [];
+      const session = attachPresence(world, {
+        name: "routed",
+        color: "#0ff",
+        onFault: (where) => faults.push(where),
+      });
+      sessions.push(session);
+      session.onOutbound(() => {
+        throw new Error("socket closed");
+      });
+      session.eph.addComponent(session.localPeer, PresenceCursor, { x: 3, y: 4, device: "mouse" });
+      const t0 = Date.now();
+      while (faults.length === 0 && Date.now() - t0 < 2000) await sleep(5);
+      expect(faults).toContain("outbound");
+      expect(errors).not.toHaveBeenCalled(); // routed means ROUTED — no console default
+    } finally {
+      errors.mockRestore();
+    }
+  });
 });
 
 // --- world.reset self-heal (2026-07-13 review: internal re-bootstrap) --------------------------------

@@ -46,6 +46,17 @@ export interface PresenceOpts {
   readonly color: string;
   /** Per-entry TTL (design §15.3), default {@link DEFAULT_PRESENCE_TTL_MS}. */
   readonly ttlMs?: number;
+  /**
+   * Contained presence faults, host-routable (0.8.0 review): `"outbound"` — a
+   * subscriber (canonically `ws.send` on a closing socket) threw and its bytes
+   * were dropped for that subscriber; `"leave"` — the leave flush failed
+   * during detach and remote peers will drop this peer at TTL instead of
+   * immediately; `"heal"` — the reset-heal's leave failed and stale keys age
+   * out at TTL. Every fault is contained either way — this is observability
+   * (telemetry, a "presence degraded" UI state), never control flow. Default:
+   * `console.error`.
+   */
+  readonly onFault?: (where: "outbound" | "leave" | "heal", error: unknown) => void;
 }
 
 export interface PresenceSession {
@@ -76,6 +87,17 @@ export interface PresenceSession {
 export function attachPresence(world: World, opts: PresenceOpts): PresenceSession {
   const peerId = opts.peerId ?? crypto.randomUUID();
   const ttlMs = opts.ttlMs ?? DEFAULT_PRESENCE_TTL_MS;
+  const onFault =
+    opts.onFault ??
+    ((where: "outbound" | "leave" | "heal", error: unknown) => {
+      const detail =
+        where === "outbound"
+          ? "presence outbound subscriber threw — bytes dropped for that subscriber (transport handlers must not throw)"
+          : where === "leave"
+            ? "presence leave failed — tearing the binding down anyway (remote peers drop us at TTL instead of immediately)"
+            : "presence reset-heal leave failed — rebinding anyway (stale keys age out at TTL)";
+      console.error(`[ice] ${detail}`, error);
+    });
 
   const loro = new LoroEphemeralStore(ttlMs);
   const source = new LoroEphemeralSnapshot(loro);
@@ -97,7 +119,7 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
         try {
           fn(bytes);
         } catch (err) {
-          console.error("[ice] presence outbound subscriber threw — bytes dropped for that subscriber (transport handlers must not throw)", err);
+          onFault("outbound", err);
         }
       }
     },
@@ -136,7 +158,7 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
         } catch (err) {
           // A throw here escapes into a bare microtask and strands the heal
           // half-done — report and keep healing (stale keys age out at TTL).
-          console.error("[ice] presence reset-heal leave failed — rebinding anyway", err);
+          onFault("heal", err);
         }
         attachment.detach();
         attachment = attachEphemeral(world, eph);
@@ -174,7 +196,7 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
       try {
         eph.leave();
       } catch (err) {
-        console.error("[ice] presence leave failed — tearing the binding down anyway (remote peers drop us at TTL instead of immediately)", err);
+        onFault("leave", err);
       }
       attachment.detach();
       outbound.clear();

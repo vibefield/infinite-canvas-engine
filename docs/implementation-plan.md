@@ -336,8 +336,11 @@ and presence entered ONLY through `join({presence})` — a standalone
 (gates + no-residue refusal, create/open attach, dormancy→activation with init-once,
 identity-bound idempotent inverse, outbound-live leave on inverse AND `close()`,
 dispose teardown with quiet stale inverse, reattach-remints-defaults, ghost-cursor
-reap on a still-open doc) · zero access advisories in the combined facade+presence
-suites · full core suite + walls green · **plus the pre-publish adversarial review
+reap on a still-open doc) · zero access advisories from the PRESENCE systems (the
+review measured the full core suite: nothing names `remoteCursors` or phase
+`present`; the behavior suites' deliberate derive-phase `Position` co-writers still
+trip the same two advisory shapes — see the open item below) · full core suite +
+walls green · **plus the pre-publish adversarial review
 round** (the M14 protocol): four execution-confirmed lifecycle findings fixed —
 throwing-transport teardown aborts, the same-gap swap's init/dispose inversion +
 corpse-write, the rejected-join presence strand, the burnable inverse — each
@@ -345,6 +348,20 @@ mutation-probed, +4 pinning tests; and the artifact-types defect (unresolvable
 `@ice/*` specifiers in the shipped d.ts of every release since 0.2.0) fixed with a
 build-step rewrite + guard, mirrored upstream by strata 0.13.0's own d.ts fixes.
 **MET.**
+
+**Open item recorded by the review (post-0.8.0, not a release gate):** any system
+late-registered into `derive` that writes `Position` trips strata's two access
+advisories against the stack's `selectionChrome` (co-writer) and `cull`
+(earlier reader) — and DURABLE behaviors are derive-only by design (types.ts), so
+unlike the presence system they cannot move phases, and advisory (b) has no
+attestation opt-out at all. A VibeField plugin author shipping a durable
+`writes: [Position]` behavior sees two dev advisories naming their behavior against
+engine internals on every boot. The advisory is partly HONEST (a derive-phase
+Position write after `cull`'s read genuinely means one-frame-stale culling for
+those rows), so the fix is an ordering/attestation design question — behavior
+deliver placement relative to the stack's derive systems, `selectionChrome`
+attestation, possibly a read-side attestation petition to strata — that deserves
+its own round, likely as design-009 errata + a strata petition candidate.
 
 ## Release cut & downstream
 
