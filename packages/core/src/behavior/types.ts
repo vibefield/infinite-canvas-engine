@@ -93,6 +93,12 @@ export interface BehaviorDescription {
   readonly version: number;
   readonly phase: BehaviorPhase;
   readonly budgetMs?: number;
+  /**
+   * The declared facet byte claim (petition I19), verbatim. ABSENT when the
+   * behavior attested no bound — hosts that require one can tell the two
+   * apart and refuse admission accordingly.
+   */
+  readonly maxFacetBytes?: number;
   readonly tickWhile: "all" | "visible";
   readonly schema: readonly {
     readonly name: string;
@@ -354,6 +360,19 @@ export interface BehaviorSpec<S extends BehaviorStore, Sch extends BehaviorSchem
   readonly phase?: BehaviorPhase;
   /** Per-frame budget request, ms. The breaker caps it at the seam ceiling. */
   readonly budgetMs?: number;
+  /**
+   * Ephemeral only — the producer's own resource claim (petition I19): a hard
+   * ceiling on the canonical UTF-8 JSON bytes of this behavior's COMPLETE
+   * facet cell after defaults/merge/serialization (the value placed in the
+   * local peer blob — not a wire-frame guess; hosts budget transport headroom
+   * separately). Enforced in PRODUCTION, not as a dev advisory: an over-budget
+   * default fails the definition before anything publishes, and an over-budget
+   * `ctx.write` throws before mutating presence — the prior facet stays
+   * intact, and in-hook the throw feeds the ordinary fault ladder (BF-D18
+   * attribution, three strikes, I17 withdrawal on quarantine). Identity-
+   * bearing: part of the definition signature and of `describeBehavior()`.
+   */
+  readonly maxFacetBytes?: number;
   readonly reads?: readonly BehaviorRead[];
   readonly writes?: readonly Component[];
   /**
@@ -385,6 +404,8 @@ export interface BehaviorHandle<Data> {
   readonly version: number;
   readonly phase: BehaviorPhase;
   readonly budgetMs: number | undefined;
+  /** The I19 facet byte claim; `undefined` = no bound attested. */
+  readonly maxFacetBytes: number | undefined;
   readonly schema: BehaviorSchema;
   /** The generated data component (`behavior:<name>`). Advanced read paths. */
   readonly component: Component<Record<string, string | number | boolean>>;

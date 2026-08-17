@@ -151,6 +151,24 @@ function defaultsOf(schema: BehaviorSchema): Record<string, string | number | bo
   return out;
 }
 
+// --- the facet byte measure (petition I19) ------------------------------------
+
+const utf8 = new TextEncoder();
+
+/**
+ * The canonical byte measure `maxFacetBytes` is enforced in: UTF-8 JSON of the
+ * COMPLETE raw cell (json fields already serialized to strings) with fields in
+ * schema declaration order — which is every cell's construction order
+ * (`cellForBehavior`, `defaultsOf` both iterate the schema), so a plain
+ * `JSON.stringify` is canonical without a key-sort pass. This measures the
+ * value placed in the local peer blob, deliberately NOT a wire-frame guess:
+ * the I19 division of labor has the host budget encoding/transport headroom
+ * on top of the sum of claims it admitted.
+ */
+export function facetBytesOf(cell: Record<string, unknown>): number {
+  return utf8.encode(JSON.stringify(cell)).length;
+}
+
 // --- the definition-shape signature (re-definition compare) ------------------
 
 /**
@@ -168,6 +186,11 @@ function signatureOf(spec: BehaviorSpec<BehaviorStore, BehaviorSchema>, phase: s
     version: spec.version ?? 1,
     phase,
     tickWhile: spec.tick?.while ?? "all",
+    // The I19 byte claim is IDENTITY-BEARING: a redefinition that changes only
+    // the claim is a different declaration (hosts compare descriptors; the
+    // ensure-cache must agree). `?? null` because JSON.stringify drops
+    // undefined-valued keys, which would alias "no claim" with "absent field".
+    maxFacetBytes: spec.maxFacetBytes ?? null,
     // Field ORDER is part of the shape: it is the generated component's column
     // order, which the durable cell layout depends on.
     schema: Object.entries(schema).map(([k, s]) => [k, s.kind, defaultValueOf(s)]),
@@ -226,6 +249,18 @@ function validate(name: string, spec: BehaviorSpec<BehaviorStore, BehaviorSchema
 
   if (spec.budgetMs !== undefined && (!Number.isFinite(spec.budgetMs) || spec.budgetMs <= 0)) {
     fail(name, `budgetMs must be a positive number (got ${String(spec.budgetMs)}).`);
+  }
+
+  if (spec.maxFacetBytes !== undefined) {
+    if (spec.store !== "ephemeral") {
+      fail(
+        name,
+        `"maxFacetBytes" is ephemeral-only — it bounds the published presence facet, and only ephemeral behaviors publish one (petition I19).`,
+      );
+    }
+    if (!Number.isSafeInteger(spec.maxFacetBytes) || spec.maxFacetBytes <= 0) {
+      fail(name, `maxFacetBytes must be a positive integer byte count (got ${String(spec.maxFacetBytes)}).`);
+    }
   }
 
   // Schema: every field must be a recognized p.* spec. That single check
@@ -398,6 +433,7 @@ export function describeBehavior(behavior: AnyBehaviorDef): BehaviorDescription 
     version: behavior.version,
     phase: behavior.phase,
     ...(behavior.budgetMs === undefined ? {} : { budgetMs: behavior.budgetMs }),
+    ...(behavior.maxFacetBytes === undefined ? {} : { maxFacetBytes: behavior.maxFacetBytes }),
     tickWhile: behavior.tickWhile,
     schema: Object.entries(behavior.schema).map(([name, spec]) => ({
       name,
@@ -438,6 +474,24 @@ export function defineBehavior<const S extends BehaviorStore, const Sch extends 
   }
 
   const schema = (spec.schema ?? {}) as BehaviorSchema;
+  const defaults = defaultsOf(schema);
+
+  // Petition I19, ask 4 — and deliberately OUTSIDE the dev-guard gate above:
+  // every `p.*` default is total and static, so the default facet is decidable
+  // RIGHT HERE, before a component exists to publish through. Enforcement is
+  // production behavior (ask 7): a production build that skipped this would
+  // let `ensureFacet` mint an over-budget cell the moment presence attaches.
+  // Failing the definition leaves no residue — no registry entry, no
+  // component, nothing for a registration to publish.
+  if (spec.maxFacetBytes !== undefined && spec.store === "ephemeral") {
+    const bytes = facetBytesOf(defaults);
+    if (bytes > spec.maxFacetBytes) {
+      throw new Error(
+        `ice: defineBehavior("${name}") — the default facet is ${bytes} bytes, over the behavior's own maxFacetBytes=${spec.maxFacetBytes} claim. Nothing was registered.`,
+      );
+    }
+  }
+
   const raw: Record<string, ReturnType<typeof strataFieldOf>> = {};
   for (const [fieldName, s] of Object.entries(schema)) raw[fieldName] = strataFieldOf(name, fieldName, s);
   const component = ensureComponent(behaviorComponentName(name), raw);
@@ -451,9 +505,10 @@ export function defineBehavior<const S extends BehaviorStore, const Sch extends 
     version: spec.version ?? 1,
     phase,
     budgetMs: spec.budgetMs,
+    maxFacetBytes: spec.maxFacetBytes,
     schema,
     component: component as Component<Record<string, string | number | boolean>>,
-    defaults: defaultsOf(schema) as unknown as Readonly<DataOf<Sch>>,
+    defaults: defaults as unknown as Readonly<DataOf<Sch>>,
     reads: spec.reads ?? [],
     writes: spec.writes ?? [],
     migrate: spec.migrate ?? {},

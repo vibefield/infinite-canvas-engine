@@ -45,6 +45,7 @@ import { guardedTransaction } from "../guards/guarded-tx";
 import type { GuardedTx } from "../guards/guarded-tx";
 import type { JsonSpec, PropSpec } from "../widget/props";
 import { compileBehavior, type BehaviorSystemHooks, type CompiledBehavior } from "./compile";
+import { facetBytesOf } from "./define-behavior";
 import { diffOps, recordDerivedOps, replayOps } from "./differ";
 import {
   classifyBehaviorVersion,
@@ -727,6 +728,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (peer === this.facetPeer && world.has(peer, this.own)) return;
       this.facetPeer = peer;
       if (!world.has(peer, this.own)) {
+        // No I19 re-measure here: an over-budget DEFAULT cell fails
+        // `defineBehavior` itself (unconditionally, not dev-gated), so a
+        // registered behavior's defaults are within claim by construction.
         presence.eph.addComponent(
           peer,
           this.own as Component<unknown>,
@@ -1517,6 +1521,25 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // peer, unchanged.
       if (this.hookEntity !== undefined && this.hookEntity !== peer) return;
       const cell = cellForBehavior(world, this.b, peer, patch);
+      // Petition I19: the producer's own byte claim, checked on the COMPLETE
+      // merged cell BEFORE any mutation — the prior facet stays intact and the
+      // throw is deliberate fail-loud (the silent returns above are lifecycle
+      // races; an over-budget write is an authoring contract violation).
+      // In-hook, `callHook` catches it: onFault attribution, one
+      // consecutiveThrows strike, and the BF-D18 third strike quarantines the
+      // singleton and withdraws the facet (I17). Outside a hook — the blessed
+      // captured-closure pattern — the throw reaches the captured caller
+      // synchronously; the write is refused either way, so the bound cannot be
+      // bypassed. Production behavior, not a DEV advisory (I19 ask 7).
+      const bound = this.b.maxFacetBytes;
+      if (bound !== undefined) {
+        const bytes = facetBytesOf(cell);
+        if (bytes > bound) {
+          throw new Error(
+            `ice: behavior "${this.b.name}" ctx.write produced a ${bytes}-byte facet, over its declared maxFacetBytes=${bound} — the write was refused and the prior facet left intact.`,
+          );
+        }
+      }
       if (world.has(peer, this.own)) presence.eph.edit(peer).set(this.own as Component<unknown>, cell);
       else presence.eph.addComponent(peer, this.own as Component<unknown>, cell);
     }
@@ -1678,6 +1701,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         },
         attach(e: Entity, behavior: { component: unknown; defaults: unknown; name: string }, data?: Record<string, unknown>) {
           const other = behavior as unknown as AnyBehaviorDef;
+          // An ephemeral behavior's component must never enter the DOCUMENT:
+          // its facet lives in the presence partition, minted by the runtime
+          // on the local peer only (I19 round's store-routing audit).
+          if (other.store === "ephemeral") {
+            throw new Error(
+              `ice: behavior "${node.b.name}" called tx.attach("${other.name}") — an ephemeral behavior's facet is presence data and cannot be attached into the document.`,
+            );
+          }
           const cell = cellForBehavior(world, other, e, data ?? {});
           // Attach-when-attached is an IDEMPOTENT no-op that preserves existing
           // data (§6) — expressed as a value write, which the differ then sees
@@ -1689,6 +1720,11 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           }
         },
         detach(e: Entity, behavior: AnyBehaviorDef) {
+          if (behavior.store === "ephemeral") {
+            throw new Error(
+              `ice: behavior "${node.b.name}" called tx.detach("${behavior.name}") — ephemeral facets are withdrawn by the runtime (I17) or the presence layer's tombstones, never through the document.`,
+            );
+          }
           tx.removeComponent(e, behavior.component as Component);
         },
       };
@@ -1786,6 +1822,16 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           `ice: engine.behaviors.attach("${b.name}") — durable attachment is a DOCUMENT op: use tx.attach inside a transaction so it syncs and undoes.`,
         );
       }
+      // An ephemeral instance IS the local presence peer (design-009 §4.4):
+      // a world-write attach here would put the facet component on an
+      // arbitrary entity, which `ctx.peers()` cannot tell from a projected
+      // REMOTE facet — a local spoof that is never published and never
+      // withdrawn, and a bypass of the I19 byte claim's two real mint paths.
+      if (b.store === "ephemeral") {
+        throw new Error(
+          `ice: engine.behaviors.attach("${b.name}") — an ephemeral behavior's facet is minted by the runtime on the local peer; it cannot be attached to an entity.`,
+        );
+      }
       const cell = cellForBehavior(world, b, e, data ?? {});
       if (world.has(e, b.component as Component)) world.edit(e).set(b.component as Component<unknown>, cell);
       else world.addComponent(e, b.component as Component<unknown>, cell);
@@ -1795,6 +1841,15 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (b.store === "durable") {
         throw new Error(
           `ice: engine.behaviors.detach("${b.name}") — durable detachment is a DOCUMENT op: use tx.detach inside a transaction.`,
+        );
+      }
+      // Symmetric with attach: a world-write removal of a facet component
+      // would silently delete a REMOTE peer's projected facet locally —
+      // withdrawal is the runtime's (I17) and tombstones are the presence
+      // layer's; neither goes through this surface.
+      if (b.store === "ephemeral") {
+        throw new Error(
+          `ice: engine.behaviors.detach("${b.name}") — ephemeral facets are withdrawn by the runtime (I17) or the presence layer's tombstones, never detached through the world.`,
         );
       }
       if (world.has(e, b.component as Component)) world.removeComponent(e, b.component as Component);
