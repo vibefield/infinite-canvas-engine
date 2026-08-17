@@ -82,12 +82,24 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
 
   // The binding's timers call `send`; fan it out to `onOutbound` subscribers so
   // a transport can bind AFTER attach (the doc-kit precedent — transport-free core).
+  // Each subscriber is FAULT-ISOLATED (review finding 1, 0.8.0): the canonical
+  // subscriber is `ws.send`, which throws on a CLOSING/CLOSED socket — exactly
+  // the moment a host tears presence down — and an unguarded throw here rode
+  // `eph.leave()` up through detach/close/dispose, aborting the whole teardown
+  // (and one bad subscriber starved every later one of bytes). The join sugar
+  // never saw it because its only subscriber is joinDoc's own guarded send.
   const outbound = new Set<(bytes: Uint8Array) => void>();
   const eph = createEphemeralStore(source, {
     peerId,
     ttlMs,
     send: (bytes) => {
-      for (const fn of [...outbound]) fn(bytes);
+      for (const fn of [...outbound]) {
+        try {
+          fn(bytes);
+        } catch (err) {
+          console.error("[ice] presence outbound subscriber threw — bytes dropped for that subscriber (transport handlers must not throw)", err);
+        }
+      }
     },
   });
   let attachment = attachEphemeral(world, eph);
@@ -119,7 +131,13 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
       queueMicrotask(() => {
         healQueued = false;
         if (detached) return;
-        eph.leave(); // needs the live seam + minted set — must precede detach
+        try {
+          eph.leave(); // needs the live seam + minted set — must precede detach
+        } catch (err) {
+          // A throw here escapes into a bare microtask and strands the heal
+          // half-done — report and keep healing (stale keys age out at TTL).
+          console.error("[ice] presence reset-heal leave failed — rebinding anyway", err);
+        }
         attachment.detach();
         attachment = attachEphemeral(world, eph);
         localPeer = spawnLocalPeer(); // fresh key (the mint counter only moves forward)
@@ -150,7 +168,14 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
       // it deletes our keys and flushes tombstones through `send` NOW (peers
       // despawn us immediately rather than waiting the TTL). detach() then
       // despawns projections + stops the timers; the minted set is already empty.
-      eph.leave();
+      // Teardown must never throw (the guests-sweep rule): `detached` is
+      // already latched, so a throw escaping here would strand the binding,
+      // its two timers, and the wasm store FOREVER — report and keep tearing.
+      try {
+        eph.leave();
+      } catch (err) {
+        console.error("[ice] presence leave failed — tearing the binding down anyway (remote peers drop us at TTL instead of immediately)", err);
+      }
       attachment.detach();
       outbound.clear();
       loro.destroy(); // we own the Loro store — clear its wasm cleanup timer

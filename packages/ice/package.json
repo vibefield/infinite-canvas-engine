@@ -43,7 +43,7 @@
   "publishConfig": { "access": "public" },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsup && tsc -p tsconfig.dts.json",
+    "build": "tsup && tsc -p tsconfig.dts.json && node scripts/fix-dts-specifiers.mjs",
     "prepack": "pnpm run build"
   },
   "dependencies": {

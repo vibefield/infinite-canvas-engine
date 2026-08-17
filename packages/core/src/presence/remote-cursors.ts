@@ -15,7 +15,8 @@
  * `SelectionSummary` facet queryable and leaves chrome rendering to the demo.
  *
  * `installPresence` is the seam: it registers the publish hook (publish.ts) and
- * this derive system, returning one uninstall.
+ * this system (in the `present` phase — presentation derivation, no in-tick
+ * consumers), returning one uninstall.
  */
 import { Not, defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
 import { Local } from "@vibecook/strata-ecs";
@@ -105,9 +106,10 @@ function createRemoteCursorsRig(world: World): RemoteCursorsRig {
 }
 
 /**
- * The derive tick system that pools + reaps remote cursor entities. Standalone
- * export for imperative rigs; `installPresence` builds its own rig so its
- * uninstall can reap the pool too.
+ * The tick system that pools + reaps remote cursor entities — standalone
+ * export for imperative rigs, which choose their own phase (`installPresence`
+ * registers its own copy in `present`, and builds it through a rig so its
+ * uninstall can reap the pool too).
  */
 export function createRemoteCursorsSystem(world: World): TickSystem {
   return createRemoteCursorsRig(world).system;
@@ -117,11 +119,11 @@ export type InstallPresenceOpts = PresencePublishOpts;
 
 /**
  * Wire a presence session into an engine: the publish hook (outbound facet
- * derivation) + the remote-cursor derive system. Returns an uninstall that
- * removes both AND reaps the system's pooled cursor entities — uninstalling on
- * a live document must not leave ghost cursors (see {@link RemoteCursorsRig.reap};
- * a between-frames call, like every teardown here). Does NOT own the session's
- * lifecycle — call `session.detach()` separately.
+ * derivation) + the remote-cursor system (`present` phase). Returns an
+ * uninstall that removes both AND destroys the system's pooled cursor
+ * entities — uninstalling on a live document must not leave ghost cursors
+ * (a between-frames call, like every teardown here). Does NOT own the
+ * session's lifecycle — call `session.detach()` separately.
  */
 export function installPresence(
   engine: Engine,

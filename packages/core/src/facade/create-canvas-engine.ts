@@ -395,11 +395,27 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     return p;
   };
 
+  // NEVER throws (review findings 1+4, 0.8.0): teardown must not stop
+  // teardown. The fields clear FIRST so the seam pair can't desynchronize
+  // under a throw and reentrant close/inverse calls see a settled state; each
+  // half is then contained on its own — a host transport throwing inside the
+  // leave flush must not abort the room leave, the session close, or the rest
+  // of engine disposal behind it.
   const releasePresence = (): void => {
-    uninstallPresence?.();
+    const uninstall = uninstallPresence;
+    const p = presence;
     uninstallPresence = undefined;
-    presence?.detach();
     presence = undefined;
+    try {
+      uninstall?.();
+    } catch (err) {
+      console.error("[ice] presence uninstall threw — teardown continues", err);
+    }
+    try {
+      p?.detach();
+    } catch (err) {
+      console.error("[ice] presence detach threw — teardown continues", err);
+    }
   };
 
   const closeDoc = (): void => {
@@ -471,24 +487,40 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       if (presenceOpts !== undefined) {
         acquirePresence({ name: presenceOpts.name, color: presenceOpts.color });
       }
-      const result = await joinDoc(world, channel, {
-        ...(gatePolicy !== undefined ? { docOpts: { onGate: gatePolicy } } : {}),
-        ...(presence !== undefined ? { presence } : {}),
-        ...joinOpts,
-        signal: ac.signal,
-        // Re-bootstrap swaps the session inside joinDoc (PendingImportError
-        // recovery) — re-target the forwarding sink or ops keep committing
-        // into the quarantined session.
-        onSession: (s) => {
-          if (joinAbort !== ac) return; // superseded — a newer doc owns the sink
-          if (s !== undefined) {
-            adoptSession(s);
-          } else {
-            session = undefined; // joinDoc already closed it
-            sink.target = undefined;
-          }
-        },
-      });
+      let result: JoinResult;
+      try {
+        result = await joinDoc(world, channel, {
+          ...(gatePolicy !== undefined ? { docOpts: { onGate: gatePolicy } } : {}),
+          ...(presence !== undefined ? { presence } : {}),
+          ...joinOpts,
+          signal: ac.signal,
+          // Re-bootstrap swaps the session inside joinDoc (PendingImportError
+          // recovery) — re-target the forwarding sink or ops keep committing
+          // into the quarantined session.
+          onSession: (s) => {
+            if (joinAbort !== ac) return; // superseded — a newer doc owns the sink
+            if (s !== undefined) {
+              adoptSession(s);
+            } else {
+              session = undefined; // joinDoc already closed it
+              sink.target = undefined;
+            }
+          },
+        });
+      } catch (err) {
+        // A REJECTED join must not strand the presence session it acquired
+        // (review finding 3, 0.8.0): the behavior runtime's seam reads
+        // `presence`, not `session`, so a leftover would keep ephemeral
+        // behaviors publishing into a room joinDoc already unsubscribed —
+        // on a doc-less engine, with no inverse the caller ever received.
+        // Release ONLY if this join still owns the flow: on a supersede the
+        // newer door's closeDoc released ours already and may own a fresh one.
+        if (joinAbort === ac) {
+          joinAbort = undefined;
+          releasePresence();
+        }
+        throw err;
+      }
       // The await gap: user code in the same task may have opened another doc
       // after our resolve was queued — that newer doc owns the engine now.
       if (joinAbort !== ac) {

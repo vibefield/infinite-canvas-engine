@@ -345,6 +345,15 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     readonly peersQuery: Query | undefined;
     /** Ephemeral only: the local peer this node last published a facet on. */
     private facetPeer: Entity | undefined;
+    /**
+     * The entity whose HOOK is currently executing (review finding 2, 0.8.0).
+     * `writeFacet` consults it so a hook writes only the peer whose instance
+     * it runs for — a same-gap presence swap otherwise lets the OLD peer's
+     * dispose resolve `localPeer` LIVE and land a corpse's farewell on the
+     * fresh peer. Unset outside hooks (captured `ctx.write` closures keep the
+     * blessed behavior: they publish the CURRENT peer).
+     */
+    private hookEntity: Entity | undefined;
     /** The ephemeral singleton was quarantined THIS generation (I17). */
     private singletonQuarantined = false;
     /** Uninstalled — a captured ctx.write closure must go inert (I17). */
@@ -700,6 +709,18 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // (a singleton's throws cannot span instances). The facet returns with a
       // fresh generation or a fresh registration, never sooner.
       if (this.singletonQuarantined) {
+        this.facetPeer = undefined;
+        return;
+      }
+      // A PRIOR peer's instance is still awaiting departure (a same-gap
+      // presence detach→reattach, or the publish straddling a world reset
+      // before the generation flip): minting now would put the new peer's
+      // `init` in the SAME deliver as — and, by the documented hook order
+      // (drain → init → … → dispose), BEFORE — the old instance's `dispose`.
+      // Skip this publish: the departure drains in it, and the mint lands on
+      // the next one. Dispose-before-init across a swap, at the cost of one
+      // publish of activation latency in exactly that case (review finding 2).
+      if (this.instances.size > 0 && !this.instances.has(peer)) {
         this.facetPeer = undefined;
         return;
       }
@@ -1230,6 +1251,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       //    the component the tick query matches on.
       if (on.dispose !== undefined) {
         for (const inst of departed) {
+          this.hookEntity = inst.e;
           try {
             invokeHook(this.b.name, "dispose", () =>
               on.dispose?.(inst.e, this.ctx as never),
@@ -1237,6 +1259,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           } catch (err) {
             // Swallowed by contract (§4.3): teardown must not stop teardown.
             onFault(this.b.name, "dispose", inst.e, err);
+          } finally {
+            this.hookEntity = undefined;
           }
         }
       }
@@ -1283,6 +1307,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       faulted: Set<Entity>,
       body: () => unknown,
     ): boolean {
+      this.hookEntity = inst.e;
       try {
         invokeHook(this.b.name, hook, body);
         inst.consecutiveThrows = 0;
@@ -1320,6 +1345,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           this.guest.fault(err);
         }
         return false;
+      } finally {
+        this.hookEntity = undefined;
       }
     }
 
@@ -1329,12 +1356,15 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       const on = this.b.on;
       if (on.dispose !== undefined) {
         for (const inst of this.instances.values()) {
+          this.hookEntity = inst.e;
           try {
             invokeHook(this.b.name, "dispose", () =>
               on.dispose?.(inst.e, this.ctx as never),
             );
           } catch (err) {
             onFault(this.b.name, "dispose", inst.e, err);
+          } finally {
+            this.hookEntity = undefined;
           }
         }
       }
@@ -1481,6 +1511,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (presence === undefined) return; // dormant
       const peer = presence.localPeer;
       if (!world.isAlive(peer)) return; // mid re-mint (see ensureFacet)
+      // A hook writes ONLY the peer whose instance it is running for (review
+      // finding 2, 0.8.0): across a same-gap presence detach→reattach the OLD
+      // instance's dispose still runs, and resolving `localPeer` live would
+      // land the corpse's farewell on the FRESH peer — broadcast to every
+      // remote as current, never recomputed. Outside a hook (`hookEntity`
+      // unset) the blessed captured-closure pattern publishes the current
+      // peer, unchanged.
+      if (this.hookEntity !== undefined && this.hookEntity !== peer) return;
       const cell = cellForBehavior(world, this.b, peer, patch);
       if (world.has(peer, this.own)) presence.eph.edit(peer).set(this.own as Component<unknown>, cell);
       else presence.eph.addComponent(peer, this.own as Component<unknown>, cell);

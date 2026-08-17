@@ -13,7 +13,7 @@
  * presence.test.ts rule), so cross-peer sequencing uses deadline-polling.
  * Names are file-unique ("i18:*").
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Entity } from "@vibecook/strata-ecs";
 import {
   Camera,
@@ -25,6 +25,7 @@ import {
   createCanvasEngine,
   createWorld,
   defineQuery,
+  type ByteChannel,
   type CanvasEngine,
   type PresenceSession,
 } from "../src";
@@ -272,10 +273,117 @@ describe("docs.attachPresence — derived residue on a still-open document", () 
     }
     const found = must(cursor, "projected remote cursor");
 
+    // Pin the LOAD-BEARING teardown order (uninstall-with-reap BEFORE detach):
+    // the leave flush is the last outbound traffic, so if the cursor is
+    // already dead when those bytes reach a subscriber, the reap ran first.
+    const aliveDuringFlush: boolean[] = [];
+    must(ce.docs.presence(), "presence for flush pin").onOutbound(() => {
+      aliveDuringFlush.push(ce.world.isAlive(found));
+    });
+    await sleep(5); // the tombstone must out-timestamp the last set
     off(); // detach on a STILL-OPEN doc — the document keeps running
+    expect(aliveDuringFlush.length).toBeGreaterThan(0);
+    expect(aliveDuringFlush.every((v) => v === false)).toBe(true);
     expect(ce.world.isAlive(found)).toBe(false); // reaped with the uninstall, not stranded
     expect(ce.docs.presence()).toBeUndefined();
     expect(ce.docs.current()).toBeDefined(); // the doc really did stay open
     step(); // and the engine keeps stepping cleanly without the presence systems
+  });
+});
+
+describe("docs.attachPresence — review pins (0.8.0 pre-publish)", () => {
+  it("a throwing outbound subscriber cannot abort ANY teardown path (finding 1)", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { ce, step } = makeRig();
+      ce.docs.create();
+      const off = ce.docs.attachPresence(OPTS);
+      must(ce.docs.presence(), "first").onOutbound(() => {
+        throw new Error("socket closed");
+      });
+      step();
+      // The inverse completes despite the throwing transport handler.
+      expect(() => off()).not.toThrow();
+      expect(ce.docs.presence()).toBeUndefined();
+
+      // docs.close() completes too — room/doc/sink all release behind it.
+      ce.docs.attachPresence(OPTS);
+      must(ce.docs.presence(), "second").onOutbound(() => {
+        throw new Error("socket closed");
+      });
+      expect(() => ce.docs.close()).not.toThrow();
+      expect(ce.docs.current()).toBeUndefined();
+      expect(ce.docs.presence()).toBeUndefined();
+
+      // And full engine disposal: the interaction stack and guests MUST come
+      // down (finding 1's observed damage was dispose aborting half-done).
+      ce.docs.create();
+      ce.docs.attachPresence(OPTS);
+      must(ce.docs.presence(), "third").onOutbound(() => {
+        throw new Error("socket closed");
+      });
+      engines.splice(engines.indexOf(ce), 1); // afterEach must not double-dispose
+      expect(() => ce.dispose()).not.toThrow();
+      expect(ce.docs.current()).toBeUndefined();
+      expect(ce.docs.presence()).toBeUndefined();
+      expect(errors).toHaveBeenCalled(); // contained, not swallowed silently
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("same-gap detach→reattach: dispose lands before the new init, and the corpse's write cannot reach the fresh peer (finding 2)", () => {
+    const log: string[] = [];
+    const B = defineBehavior("i18:swap", {
+      store: "ephemeral",
+      schema: { n: p.number({ default: 1 }) },
+      on: {
+        init: (e) => log.push(`init:${String(e)}`),
+        dispose: (e, ctx) => {
+          log.push(`dispose:${String(e)}`);
+          ctx.write({ n: -999 }); // the corpse's farewell — must not land on peer2
+        },
+      },
+    });
+    const { ce, step } = makeRig([B]);
+    ce.docs.create();
+    const off = ce.docs.attachPresence(OPTS);
+    step();
+    const peer1 = must(ce.docs.presence(), "s1").localPeer;
+    expect(log).toEqual([`init:${String(peer1)}`]);
+
+    off();
+    ce.docs.attachPresence(OPTS); // SAME between-frames gap — no step between
+    const peer2 = must(ce.docs.presence(), "s2").localPeer;
+    expect(peer2).not.toBe(peer1);
+
+    step(); // the old instance departs and disposes; the new mint is DEFERRED
+    step(); // the deferred mint lands; init runs for the fresh peer
+    expect(log).toEqual([
+      `init:${String(peer1)}`,
+      `dispose:${String(peer1)}`,
+      `init:${String(peer2)}`,
+    ]);
+    expect(ce.world.get(peer2, B.component)).toEqual({ n: 1 }); // defaults — never −999
+  });
+
+  it("a rejected join releases the presence it acquired — no live session strands on a doc-less engine (finding 3)", async () => {
+    const { ce } = makeRig();
+    const dead: ByteChannel = {
+      send: () => {},
+      subscribe: () => () => {},
+      ready: () => Promise.reject(new Error("wire down")),
+    };
+    await expect(
+      ce.docs.join(dead, { presence: { name: "x", color: "#000" } }),
+    ).rejects.toThrow();
+    expect(ce.docs.presence()).toBeUndefined();
+    expect(ce.docs.current()).toBeUndefined();
+
+    // The engine is fully reusable afterward — including the attach gate,
+    // whose "needs a live document" message is now TRUE again.
+    ce.docs.create();
+    ce.docs.attachPresence(OPTS);
+    expect(ce.docs.presence()).toBeDefined();
   });
 });
