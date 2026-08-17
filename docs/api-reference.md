@@ -31,7 +31,15 @@ const ce = createCanvasEngine({ widgets?, tools?, behaviors?, budgets?, settings
   zoomToFit/zoomTo/panTo · enterContainer/exitContainer · cancelActiveGestures`.
   Every op is one engine-owned write path (one tx / one resource write).
 - `ce.docs` — `create() · open(bytes) · join(channel, {presence?, seed?}) ·
-  current() · close() · undo() · redo() · autosave(storage)`.
+  attachPresence(opts) · presence() · current() · close() · undo() · redo() ·
+  autosave(storage)`. `attachPresence` (petition I18, 0.8.0) is presence for
+  hosts that own their document lifecycle: requires a live document, refuses a
+  duplicate, exposes the session through `docs.presence()` (the seam the
+  behavior runtime reads — a registered ephemeral behavior leaves dormancy on
+  the next publish step), and returns an idempotent, identity-bound inverse
+  (leave tombstones flush through still-subscribed outbound; `close()`/dispose
+  run the same teardown). Transport is the caller's: `presence().wire.apply`
+  inbound, `presence().onOutbound(send)` outbound.
 - `settings` seeds live-tunable resources: `GestureSettings`,
   `PointerSettings`, `CameraLimits`, `SnapConfig` (resource first, reviewed
   constants as fallback).
@@ -46,7 +54,7 @@ const ce = createCanvasEngine({ widgets?, tools?, behaviors?, budgets?, settings
 | `joinDoc(world, channel, opts)` | §6.5 bootstrap: hello → buffer → snapshot-as-causal-base → drain; 800 ms silence ⇒ seeder. Reconnect = re-join. |
 | `broadcastChannelByteChannel(name)` / `webSocketByteChannel(ws)` | `ByteChannel` adapters; anything carrying `Uint8Array` works. |
 | `startAutosave` / `restoreAutosave` | Debounce 800 ms, 10 s max-wait, gesture-deferred, quarantine-on-incompatible. |
-| `attachPresence` / `installPresence` | Ephemeral peer facets: `PresenceInfo`, `PresenceCursor`, `SelectionSummary`; remote peers project as `Not(Local)`. |
+| `attachPresence` / `installPresence` | Ephemeral peer facets: `PresenceInfo`, `PresenceCursor`, `SelectionSummary`; remote peers project as `Not(Local)`. `installPresence` registers the remote-cursor system in `present` (0.8.0) and its uninstall reaps the pooled cursor entities — detaching on a live document must not strand ghosts. Facade hosts should prefer `docs.attachPresence` (it feeds the behavior runtime's seam; a raw `attachPresence(world, …)` session is real but invisible to `docs.presence()`). |
 | `guardedTransaction(store, world, fn, {undoable?})` | Eligibility-guarded tx — the primitive under `useCommit` and every op. |
 | `cascadeDestroy(tx, world, root)` | Containment recursion + wire cascade, one tx. |
 

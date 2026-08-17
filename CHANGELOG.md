@@ -4,6 +4,67 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [0.8.0] — 2026-08-16
+
+**Facade presence for hosts that own their document lifecycle — petition I18.**
+VibeField opens and creates ICE documents from its own checkpoints and journals,
+so `docs.join()` — which would introduce a second bootstrap authority — never
+runs. But presence entered ONLY through `join({presence})`: the separately
+exported `attachPresence(world, …)` creates a real session the facade seam never
+sees, so `docs.presence()` stays undefined and every registered ephemeral
+behavior stays dormant (PRC4-E13 pinned all seven controls). Document bytes and
+live presence are two independent coeffects; this release gives the second one
+its own facade door.
+
+### Added
+
+- **`docs.attachPresence(opts): () => void`** — attach facade presence to an
+  ALREADY-live document. Requires `docs.current()` (refuses doc-less; refuses a
+  duplicate live attachment), creates the session with the existing public
+  `attachPresence(world, opts)`, installs the presence publish + remote-cursor
+  systems, and exposes the session through `docs.presence()` — the same seam the
+  behavior runtime forwards, so a registered ephemeral behavior leaves dormancy
+  on the next publish step (one facet, `init` once; pinned). Transport stays the
+  caller's: wire `presence().wire.apply(bytes)` inbound and
+  `presence().onOutbound(send)` outbound — the standing `PresenceSession`
+  contract. Returns an idempotent, IDENTITY-BOUND inverse: it detaches THIS
+  attachment — leave tombstones flush through still-subscribed outbound before
+  the wiring dies — and cannot touch a replacement; `docs.close()` and engine
+  disposal run the same teardown automatically. Reattach mints a fresh peer and
+  behavior DEFAULTS (a stale value does not survive the detach; pinned).
+  `join({presence})` now rides the same internal acquisition and keeps its
+  combined document/presence framing.
+
+### Fixed
+
+- **Detaching presence on a still-open document no longer strands ghost remote
+  cursors.** `installPresence`'s uninstall removed the remote-cursor derive
+  system but not its pooled `CursorVisual` entities — the reaper that would have
+  collected them is the system the uninstall just removed. The join path never
+  saw the strand because `docs.close()` follows presence teardown with an
+  in-place world reset; I18's inverse detaches while the document keeps running,
+  which is exactly where a ghost cursor would freeze on canvas. Uninstall now
+  reaps the pool (between frames, like every teardown here).
+- **Presence systems no longer trip strata's access advisories on a facade
+  engine.** The remote-cursor system registers into `present`, not `derive`:
+  installed late into `derive` it co-wrote `Position` after the interaction
+  stack's readers and co-writers (`cull`, `selectionChrome`), and both advisory
+  classes fired on every presence-attached facade engine in dev — row-disjoint
+  in truth (cursor entities are the system's own pool), but the
+  read-before-write advisory has no attestation opt-out. `present` is also the
+  honest phase: cursor visuals are presentation derivation with no in-tick
+  consumers — reflectors read them post-notify, same frame either way.
+  (design-003 §7's `derive` language covers the LOCAL L4 cursor; remote cursors
+  were never phase-pinned.)
+
+### Upstream
+
+- **strata petition 11 filed + landed same day** (strata 0.13.0, unpublished at
+  this cut): `world.inImmediateProjectionUnsafeContext` is public API. ICE's
+  `withdrawFacet` keeps its typed cast until the pin bump retires it — the cast
+  compiles and behaves identically against 0.12.0 and 0.13.0
+  (`docs/petitions/petition-11-projection-unsafe-context.md`).
+
 ## [0.7.0] — 2026-08-16
 
 **The behavior host contract — petitions I16 + I17.** ICE 0.6.0 shipped
