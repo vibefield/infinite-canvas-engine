@@ -5,6 +5,21 @@ evidence. One file per open petition in `docs/petitions/`.
 
 ## Landed
 
+**strata-ecs 0.13.0 (2026-08-16)** — petition 11, additive (filed and landed same day;
+npm publish pending at recording):
+
+11. **Publicize `world.inImmediateProjectionUnsafeContext`** → the `@internal` tag came off
+    the existing getter (the dts build's `stripInternal` was the whole stripping mechanism);
+    name and semantics byte-identical, doc comment rewritten for layer/framework authors,
+    `docs/api.html` + devwrite-matrix classification moved with it. Motivated by ICE 0.7.0's
+    deferred facet withdrawal (I17 review finding 1): "would a structural layer op throw right
+    now?" decides defer-to-publish-slot vs immediate, and ICE ships a typed cast with `?? false`
+    degradation until the pin bump. Stated boundary: the predicate deliberately excludes the
+    mid-observer-emit case (stores guard it separately) — deferred ops stay exception-safe
+    regardless. Engine adoption: on the 0.13.0 pin bump, delete the cast in
+    `packages/core/src/behavior/runtime.ts` `withdrawFacet`; keep try/catch + deferral.
+    Full text: [petitions/petition-11-projection-unsafe-context.md](petitions/petition-11-projection-unsafe-context.md).
+
 **strata-ecs 0.12.0 (2026-08-14)** — petitions 9 + 10, both additive, one release (the
 "bundle the release, not the fate" sequencing held; no breaking changes, loro peer range
 unchanged):
@@ -71,8 +86,7 @@ VibeField's S1, designed jointly, shipped upstream first):
 |---|-------|---------------|------|
 | 6 | ~~Public entity introspection~~ **LANDED in 0.9.0 (2026-07-19)**: `world.componentsOf(e)`/`world.tagsOf(e)` exhaustive readers, exactly as asked — and the promotion hardened them (a stale handle used to raw-TypeError in `componentsOf` and silently read the recycled slot's bits in `tagsOf`; both now generation-guarded `[]`). Pinned in ICE (94a6adc). Engine adoption: N/A-for-now — the original target (M10 devtools sovereignty eligible-set probe) was DELETED in the devtools rebuild (85ccb56) one commit after this petition was recorded; the wrapped strata observer already lists an entity's cells exhaustively, and the ICE-specific present-but-not-eligible anomaly badge is deferred until strata's observer grows an entity-detail annotation hook (future petition candidate, not filed) | M10 devtools | [petitions/petition-6-entity-introspection.md](petitions/petition-6-entity-introspection.md) |
 | 7 | ~~Change detection for eager derivation systems~~ **LANDED in 0.7.0 (2026-07-14)**: opt-in pull-based `ChangeCollector` (`world.changes.collect`; exact entity journal + coarse raw-write fallback with per-collector `coarse:false` attestation). Engine adoption: spatialSync is O(delta) — idle 103→0.8µs, one-mover 98→6µs at N=2000 | 2026-07-13 perf audit — spatialSync/cull/breakpoint walk all rows every frame to confirm nothing changed | [petitions/petition-7-changed-since-gate.md](petitions/petition-7-changed-since-gate.md) · [rec](petitions/petition-7-recommendation.md) |
-| — | *(none open — 9 and 10 landed in 0.12.0, see Landed above)* | | |
-| 11? | Publicize `world.inImmediateProjectionUnsafeContext` (drop the `@internal` that strips it from the d.ts) — candidate, not yet filed formally | ICE 0.7.0's deferred facet withdrawal (I17, review finding 1) needs "is a structural eph op legal right now"; the getter EXISTS in the 0.12.0 runtime and its own doc-comment says "the layer consults a plain boolean", but the type is stripped, so ICE ships a safe cast (`runtime.ts`, `withdrawFacet`) with `?? false` degradation. One-word change (remove `@internal`) or a public alias | ICE behavior runtime, 2026-08-16 | — |
+| — | *(none open — 9 and 10 landed in 0.12.0, 11 in 0.13.0; see Landed above)* | | |
 
 **Considered and NOT filed (2026-08-13, recorded so it is not re-walked):** dev-mode schema
 epochs ("redefine a name with a new shape; fresh internal id; live worlds keep functioning")

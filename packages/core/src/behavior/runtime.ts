@@ -737,8 +737,10 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // plain boolean" — world.ts): present in the 0.12.0 runtime, but its
       // @internal tag strips it from the emitted d.ts, hence the cast. If a
       // build ever lacks it, `?? false` degrades to the direct attempt, whose
-      // try/catch keeps teardown safe regardless. Publicizing the getter is
-      // recorded in docs/strata-petitions.md.
+      // try/catch keeps teardown safe regardless. Petition 11 publicized the
+      // getter (strata 0.13.0, docs/petitions/petition-11-projection-unsafe-context.md);
+      // the cast retires on the pin bump — keep the try/catch and deferral
+      // (they guard the in-emit boundary and teardown-never-throws, not the type).
       const midTick =
         (world as World & { readonly inImmediateProjectionUnsafeContext?: boolean })
           .inImmediateProjectionUnsafeContext ?? false;
