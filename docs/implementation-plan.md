@@ -363,6 +363,49 @@ deliver placement relative to the stack's derive systems, `selectionChrome`
 attestation, possibly a read-side attestation petition to strata — that deserves
 its own round, likely as design-009 errata + a strata petition candidate.
 
+## M16 — The ephemeral facet byte claim (petition I19) — **DONE 2026-08-17, release pending**
+
+The first RESOURCE claim on the declaration surface. VibeField's document-room
+presence lane fragments ICE frames over lossy 1,150-byte datagrams; PRC4-E22
+proved the admission gap on the released 0.8.1 pair (a legal 4 KiB-string
+behavior refutes one-datagram delivery; sixteen at the per-plugin cap emit a
+66 KB frame against a 64 KB logical cap; `ctx.write` can exceed anything the
+manifest promised, after admission; an oversize aggregate frame is
+unattributable and dropping it stales every OTHER facet). The behavior
+declaration — which already routes store, vocabulary, cadence, breaker —
+now carries the producer's own byte claim.
+
+- **M16a — `maxFacetBytes` on `defineBehavior`** (ephemeral-only, optional,
+  positive integer): canonical UTF-8 JSON bytes of the COMPLETE facet cell
+  after defaults/merge/serialization (schema declaration order IS cell
+  construction order — plain `JSON.stringify` is canonical by construction).
+  Identity-bearing: definition signature (claim-only change = DIFFERENT shape)
+  + `describeBehavior()` (absent = no bound attested; hosts can refuse).
+- **M16b — production enforcement at both mint paths**: over-budget DEFAULT
+  fails `defineBehavior` itself, unconditionally (the ONE validation outside
+  the dev-guard gate; no residue — `ensureFacet` needs no re-measure); an
+  over-budget `ctx.write` throws BEFORE mutation, prior facet intact — in-hook
+  it feeds the existing ladder (attribution, BF-D18 three strikes, I17
+  withdrawal on quarantine), the captured-closure path gets the refusal at the
+  caller. Cost: one stringify per write, ONLY for claiming behaviors.
+- **M16c — store-routing audit**: `engine.behaviors.attach`/`detach` and
+  `tx.attach`/`tx.detach` accepted ephemeral behaviors and world-wrote the
+  facet component (a local `ctx.peers()` remote-facet spoof — never published,
+  never withdrawn; a bypass of the claim's two real mint paths). All four
+  refuse now.
+
+**Exit**: the petition's acceptance list as 14 tests in
+`behavior-facet-budget.test.ts` (round-trip + unattested-absent, ensure-cache
+identity, ephemeral-only + shape validation, at-bound default publishes /
+one-over fails with no residue / in PRODUCTION with guards off, UTF-8-not-UTF-16,
+at-bound write publishes / one-over refused-attributed-intact, merged-cell
+measure, json-as-serialized, three strikes → quarantine + I17 withdrawal +
+no-remint, captured-closure refusal without ladder involvement, both audit
+refusal surfaces) · every enforcement point mutation-probed (six probes, each
+bit) · full core suite 589 green, `pnpm run ci` walls-clean · design-009 §17
+amendment + I19 registry row folded with the code. **MET** — awaiting the
+release cut.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field

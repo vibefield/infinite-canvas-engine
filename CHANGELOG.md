@@ -4,6 +4,49 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [Unreleased]
+
+**The ephemeral facet byte claim — petition I19.** VibeField's document-room
+presence lane fragments ICE presence frames over honestly-lossy 1,150-byte
+datagrams, and its probes (PRC4-E22) showed the admission gap: a legal
+ephemeral behavior's string/json cells have no byte bound, sixteen at the
+per-plugin cap emit a 66 KB presence frame against a 64 KB logical-message
+ceiling, and an oversize frame can neither be attributed to its producer nor
+dropped without going stale for every OTHER facet riding it. The behavior
+declaration — the place that already routes store, write vocabulary, cadence,
+and breaker — now carries the producer's own resource claim.
+
+### Added
+
+- **`maxFacetBytes` on `defineBehavior`** (ephemeral only; optional): a hard
+  ceiling on the canonical UTF-8 JSON bytes of the behavior's COMPLETE facet
+  cell after defaults/merge/serialization — the value placed in the local peer
+  blob, deliberately not a wire-frame guess (the host budgets encoding and
+  transport headroom on top of the claims it admits, and keeps its independent
+  transport cap). Enforced in PRODUCTION at both mint paths: an over-budget
+  DEFAULT fails the definition itself — unconditionally, outside the dev-guard
+  gate, leaving no residue — and an over-budget `ctx.write` throws BEFORE
+  mutating presence, leaving the prior facet intact. In-hook, the throw feeds
+  the existing fault ladder (per-entity `onFault` attribution, BF-D18 three
+  strikes, I17 withdrawal on quarantine); through the blessed captured-closure
+  path the caller gets the same refusal synchronously — the bound cannot be
+  bypassed. Identity-bearing: part of the definition signature (a redefinition
+  changing only the claim is a DIFFERENT shape) and of `describeBehavior()`
+  (absent = no bound attested, so hosts can refuse unattested declarations).
+  14 acceptance tests (`behavior-facet-budget.test.ts`), each enforcement
+  point mutation-probed.
+
+### Fixed
+
+- **Ephemeral store-routing holes** (the I19 round's audit): the imperative
+  `engine.behaviors.attach`/`detach` surface and the durable tx wrapper's
+  `tx.attach`/`tx.detach` accepted ephemeral behaviors and wrote their facet
+  component through the WORLD — never published, never withdrawn, and
+  indistinguishable from a projected remote facet to `ctx.peers()` (a local
+  spoof, and a bypass of the claim's two real mint paths). All four now refuse
+  with the store-routing rationale; the facet component's only writers are
+  `ensureFacet` and `ctx.write`, both presence-routed and both measured.
+
 ## [0.8.1] — 2026-08-16
 
 ### Changed

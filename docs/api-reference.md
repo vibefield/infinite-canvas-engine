@@ -92,6 +92,17 @@ not per instance) → `tick` (per instance; opt-in cost) → `dispose` (departed
 The instance list is a SNAPSHOT: a hook that attaches or detaches affects the
 NEXT frame.
 
+**`maxFacetBytes`** (ephemeral only, optional — petition I19): the behavior's
+own resource claim — a hard ceiling on the canonical UTF-8 JSON bytes of its
+COMPLETE facet cell after defaults/merge/serialization. Enforced in production
+at both mint paths: an over-budget default fails `defineBehavior` itself (no
+residue), and an over-budget `ctx.write` throws BEFORE mutating presence — the
+prior facet stays intact, and in-hook the throw rides the ordinary fault
+ladder (three strikes quarantine the singleton and withdraw the facet).
+Identity-bearing: part of the definition signature and of `describeBehavior()`
+(absent = no bound attested), so plugin hosts can require a claim at admission
+and budget their transport around the sum of admitted claims.
+
 **`derived: true`** bundles three protections: output commits are forced
 non-undoable (⌘Z must never un-derive), a DIFFER drops every write that already
 equals the projection (a commit with zero remaining ops opens no transaction at
