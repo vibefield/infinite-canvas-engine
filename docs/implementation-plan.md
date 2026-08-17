@@ -337,7 +337,14 @@ and presence entered ONLY through `join({presence})` — a standalone
 identity-bound idempotent inverse, outbound-live leave on inverse AND `close()`,
 dispose teardown with quiet stale inverse, reattach-remints-defaults, ghost-cursor
 reap on a still-open doc) · zero access advisories in the combined facade+presence
-suites · full core suite + walls green. **MET.**
+suites · full core suite + walls green · **plus the pre-publish adversarial review
+round** (the M14 protocol): four execution-confirmed lifecycle findings fixed —
+throwing-transport teardown aborts, the same-gap swap's init/dispose inversion +
+corpse-write, the rejected-join presence strand, the burnable inverse — each
+mutation-probed, +4 pinning tests; and the artifact-types defect (unresolvable
+`@ice/*` specifiers in the shipped d.ts of every release since 0.2.0) fixed with a
+build-step rewrite + guard, mirrored upstream by strata 0.13.0's own d.ts fixes.
+**MET.**
 
 ## Release cut & downstream
 
