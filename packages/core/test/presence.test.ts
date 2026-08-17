@@ -10,7 +10,7 @@
  * selection-empties removes the facet; leave() despawns the peer; the remote-cursor
  * derive system grows/reaps a CursorVisual "remote" entity following the peer.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Entity } from "@vibecook/strata-ecs";
 import {
   CursorVisual,
@@ -182,6 +182,31 @@ describe("remote-cursor derive system", () => {
     await converge(A, B, () => firstRemotePeer(B) === undefined);
     engineB.step(2);
     expect(B.world.firstOf(remoteCursorVisualQ)).toBeUndefined();
+  });
+});
+
+describe("outbound fan-out fault isolation (0.8.0 review finding 1)", () => {
+  it("a throwing subscriber is contained and LATER subscribers still receive the bytes", async () => {
+    // The canonical subscriber is ws.send, which throws on a closing socket.
+    // Without per-subscriber isolation the throw kills the fan-out loop
+    // (starving every later subscriber) and rides the binding's own TIMER
+    // callbacks — and, during a leave flush, the whole teardown path.
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const A = makePeer("Alice", "#f00");
+      A.session.onOutbound(() => {
+        throw new Error("socket closed");
+      });
+      const got: Uint8Array[] = [];
+      A.session.onOutbound((b) => got.push(b));
+      A.session.eph.addComponent(A.session.localPeer, PresenceCursor, { x: 1, y: 2, device: "mouse" });
+      const t0 = Date.now();
+      while (got.length === 0 && Date.now() - t0 < 2000) await sleep(5);
+      expect(got.length).toBeGreaterThan(0); // the subscriber AFTER the thrower still fed
+      expect(errors).toHaveBeenCalled(); // contained loudly, not swallowed silently
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
 
