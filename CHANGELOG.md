@@ -4,7 +4,7 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
-## [Unreleased]
+## [0.9.0] — 2026-08-17
 
 **The ephemeral facet byte claim — petition I19.** VibeField's document-room
 presence lane fragments ICE presence frames over honestly-lossy 1,150-byte
