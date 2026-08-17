@@ -5,8 +5,14 @@ evidence. One file per open petition in `docs/petitions/`.
 
 ## Landed
 
-**strata-ecs 0.13.0 (2026-08-16)** — petition 11, additive (filed and landed same day;
-npm publish pending at recording):
+**strata-ecs 0.13.0 (2026-08-16)** — petition 11, additive (filed, landed, PUBLISHED
+same day; engine adoption COMPLETE in ice 0.8.1 — the pin bump moved all six declaring
+manifests, and the `withdrawFacet` cast retired for the typed getter with try/catch +
+deferral kept. The release also carries the d.ts repairs ice 0.8.0's review found:
+dangling `LoroDoc` in the durable/ephemeral entries, `ObserverEntityRecord` dropped
+from tools by a prose `@internal` in a banner comment, plus `scripts/check-dts.mjs` —
+strata's build now proves its entry d.ts resolve standalone and pins the petition-11
+getter's presence):
 
 11. **Publicize `world.inImmediateProjectionUnsafeContext`** → the `@internal` tag came off
     the existing getter (the dts build's `stripInternal` was the whole stripping mechanism);

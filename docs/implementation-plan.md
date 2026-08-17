@@ -370,10 +370,13 @@ consumes immediately for the fixes alone; the door's W2b adapter can land agains
 **0.7.0 = M14** (SHIPPED 2026-08-16) — the host contract PRC-4b/4c gate on; vibe-field's
 pin advances from the 0.6.0 floor and the behaviors adapter proceeds against released
 types.
-**0.8.0 = M15** (CUT 2026-08-16) — facade presence attach; the ephemeral profile's
-engine-side gate for doc-lifecycle-owning hosts. Rides beside strata 0.13.0 (petition
-11, publicized guard getter) — independent releases, either publishable first; ICE's
-strata pin bump + cast retirement ride whichever release follows both publishes.
+**0.8.0 = M15** (SHIPPED 2026-08-16) — facade presence attach; the ephemeral profile's
+engine-side gate for doc-lifecycle-owning hosts. Rode beside strata 0.13.0 (petition
+11, publicized guard getter) — independent releases, both published 2026-08-16.
+**0.8.1 = the strata pin bump** (CUT 2026-08-16, same day) — strata 0.12.0 → 0.13.0
+across all six declaring manifests, the `withdrawFacet` cast retired for the typed
+getter, single-copy invariants + full trace suite green. Chore-grade release so
+vibe-field's pin advance lands on whole types on both sides.
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,

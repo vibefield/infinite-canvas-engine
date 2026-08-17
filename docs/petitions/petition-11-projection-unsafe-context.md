@@ -1,12 +1,18 @@
 # Petition 11 — Publicize `world.inImmediateProjectionUnsafeContext`
 
 **Filed:** 2026-08-16 · **Status:** LANDED in strata 0.13.0 (2026-08-16, same-day —
-strata commit `8b22221`; npm publish pending at filing). The ask was implemented
+strata commit `8b22221`), PUBLISHED the same day, and **ADOPTED in ice 0.8.1**: the
+pin bump moved all six declaring manifests to 0.13.0 (single-copy invariants
+verified), and the `withdrawFacet` cast retired for the typed getter — try/catch and
+deferral kept, exactly as the migration note below prescribed. The ask was implemented
 exactly as scoped: the `@internal` tag came off the existing getter (the dts build's
 `stripInternal` was the whole stripping mechanism), the doc comment was rewritten for
 layer/framework authors, and `docs/api.html` + the devwrite-matrix classification
 comment moved with it. Zero runtime change by construction — the property was always
-on the prototype; only the shipped `.d.ts` changes. · **Scope:** additive, one word
+on the prototype; only the shipped `.d.ts` changes. Strata's build now also PINS the
+getter's presence in the shipped types (`scripts/check-dts.mjs`) — a doc refactor
+re-adding `@internal` within stripInternal's reach fails the build instead of
+silently regressing the publicization. · **Scope:** additive, one word
 removed, no new API surface.
 
 Evidence pinned at strata-ecs 0.12.0 / ICE 0.7.0 (2026-08-16). Line numbers cited

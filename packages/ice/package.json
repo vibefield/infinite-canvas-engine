@@ -1,6 +1,6 @@
 {
   "name": "@vibecook/ice",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "ICE — infinite canvas engine. Figma-grade infinite-canvas UX as a framework: defineWidget turns React/R3F components into canvas citizens — selectable, movable, resizable, wired into node graphs, CRDT-synced, undoable per gesture.",
   "license": "MIT",
   "author": "James Yong <me@jamesyong42.com>",
@@ -47,7 +47,7 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@vibecook/strata-ecs": "0.12.0",
+    "@vibecook/strata-ecs": "0.13.0",
     "loro-crdt": "^1.13.8",
     "stats-gl": "^4.2.3",
     "rbush": "^3.0.1"

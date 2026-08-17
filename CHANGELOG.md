@@ -4,6 +4,24 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [0.8.1] — 2026-08-16
+
+### Changed
+
+- **strata-ecs 0.12.0 → 0.13.0** (published earlier today: petition 11 + the
+  d.ts repairs ice 0.8.0's own review surfaced). All six declaring manifests
+  move in lockstep — including `apps/*`, the second-copy trap — with the
+  single-copy invariants verified (exactly one `strata-ecs@0.13.0` and one
+  `loro-crdt@1.13.8` in the lockfile) and the full trace suite green at the
+  bump. The `withdrawFacet` cast against the `@internal`-stripped getter is
+  RETIRED: deferred facet withdrawal now reads
+  `world.inImmediateProjectionUnsafeContext` typed, exactly as petition 11's
+  migration note prescribed; the try/catch and the deferral stay (they guard
+  the mid-observer-emit boundary — deliberately outside the predicate — and
+  teardown-never-throws, not the type). Consumers also pick up strata's
+  repaired d.ts (the dangling `LoroDoc`/`ObserverEntityRecord` references)
+  transitively.
+
 ## [0.8.0] — 2026-08-16
 
 **Facade presence for hosts that own their document lifecycle — petition I18.**

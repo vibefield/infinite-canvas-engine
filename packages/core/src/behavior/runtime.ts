@@ -754,17 +754,14 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       if (presence === undefined) return;
       const peer = presence.localPeer;
       if (!(world.isAlive(peer) && world.has(peer, this.own))) return;
-      // strata's own guard predicate for exactly this ("the layer consults a
-      // plain boolean" — world.ts): present in the 0.12.0 runtime, but its
-      // @internal tag strips it from the emitted d.ts, hence the cast. If a
-      // build ever lacks it, `?? false` degrades to the direct attempt, whose
-      // try/catch keeps teardown safe regardless. Petition 11 publicized the
-      // getter (strata 0.13.0, docs/petitions/petition-11-projection-unsafe-context.md);
-      // the cast retires on the pin bump — keep the try/catch and deferral
-      // (they guard the in-emit boundary and teardown-never-throws, not the type).
-      const midTick =
-        (world as World & { readonly inImmediateProjectionUnsafeContext?: boolean })
-          .inImmediateProjectionUnsafeContext ?? false;
+      // strata's own guard predicate for exactly this — public API since
+      // strata 0.13.0 (petition 11, filed + landed 2026-08-16 from this exact
+      // call site; docs/petitions/petition-11-projection-unsafe-context.md.
+      // ICE 0.7.0–0.8.0 shipped a typed cast against the @internal-stripped
+      // 0.12.0 d.ts; the pin bump retired it). The try/catch and the deferral
+      // STAY: they guard the mid-observer-emit boundary — deliberately outside
+      // the predicate — and teardown-never-throws, not the type.
+      const midTick = world.inImmediateProjectionUnsafeContext;
       if (midTick) {
         // Structural eph ops THROW mid-tick/mid-walk (strata's projector
         // guard), and withdrawal's call sites include mid-tick edges: an
