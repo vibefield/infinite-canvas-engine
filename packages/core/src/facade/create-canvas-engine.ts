@@ -69,7 +69,7 @@ import { createDocSession, openDocSession, type DocSession, type DocSessionOpts,
 import { joinDoc, type JoinDocOpts, type JoinResult } from "../doc/bootstrap";
 import type { ByteChannel } from "../doc/channels";
 import { startAutosave, type Autosave, type AutosaveOpts, type AutosaveStorageWrite } from "../doc/autosave";
-import { attachPresence, type PresenceSession } from "../presence/presence-kit";
+import { attachPresence, type PresenceOpts, type PresenceSession } from "../presence/presence-kit";
 import { installPresence } from "../presence/remote-cursors";
 import type { MeasureQueue } from "../input/measure-queue";
 import {
@@ -199,11 +199,30 @@ export interface CanvasDocs {
   ): Promise<JoinResult>;
   current(): DocSession | undefined;
   /**
-   * The live presence session (the `join({presence})` sugar's attachment), or
-   * undefined when doc-less / presence-less. An INSPECTION seam — the devtools
-   * dock's ephemeral tab reads `presence().eph` (DevtoolsOpts.presence) —
-   * never a sync path; same contract as `DocSession.attachment`. Swaps with
-   * the doc lifecycle exactly like `current()`: set by join, cleared by close.
+   * Attach facade presence to an ALREADY-live document (petition I18) — for
+   * hosts that own their document lifecycle (`create()`/`open()` + their own
+   * transport) and therefore never call `join({presence})`. Creates the
+   * session with the public `attachPresence(world, opts)`, installs the
+   * presence publish + remote-cursor systems, and exposes it through
+   * `docs.presence()` — which is also the seam the behavior runtime reads, so
+   * a registered ephemeral behavior leaves dormancy on the next publish step.
+   * The caller wires the transport itself: `presence().wire.apply(bytes)`
+   * inbound, `presence().onOutbound(send)` outbound (transport-free core —
+   * the standing `PresenceSession` contract). Refuses without a live document
+   * and refuses while a presence session is already live (either sugar's).
+   * Returns an idempotent, IDENTITY-BOUND inverse: it detaches THIS
+   * attachment (leave tombstones flush through still-subscribed outbound
+   * before wiring tears down) and cannot touch a replacement; `docs.close()`
+   * and engine disposal run the same teardown automatically.
+   */
+  attachPresence(opts: PresenceOpts): () => void;
+  /**
+   * The live presence session (the `join({presence})` sugar's or
+   * `attachPresence`'s), or undefined when doc-less / presence-less. An
+   * INSPECTION seam — the devtools dock's ephemeral tab reads
+   * `presence().eph` (DevtoolsOpts.presence) — never a sync path; same
+   * contract as `DocSession.attachment`. Swaps with the doc lifecycle exactly
+   * like `current()`: set by join/attach, cleared by close.
    */
   presence(): PresenceSession | undefined;
   close(): void;
@@ -359,6 +378,30 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     return next;
   };
 
+  // ONE presence acquisition + ONE teardown, shared by the two doors (the
+  // `join({presence})` sugar and `docs.attachPresence`, petition I18) — the
+  // assignment is what the behavior runtime's forwarding reads per publish, so
+  // both doors activate ephemeral behaviors identically. Teardown order is
+  // load-bearing: systems out FIRST (no publish hook stages a facet into a
+  // session mid-leave; the uninstall also reaps the derived remote cursors —
+  // ghosts, on a still-open doc), THEN detach (leave tombstones flush through
+  // still-subscribed outbound before the session's wiring dies).
+  const acquirePresence = (o: PresenceOpts): PresenceSession => {
+    const p = attachPresence(world, o);
+    presence = p;
+    uninstallPresence = installPresence(engine, p, {
+      keyOf: (e) => session?.store.keyOf(e),
+    });
+    return p;
+  };
+
+  const releasePresence = (): void => {
+    uninstallPresence?.();
+    uninstallPresence = undefined;
+    presence?.detach();
+    presence = undefined;
+  };
+
   const closeDoc = (): void => {
     // A pending join dies here — left to resolve, it would attach a stale
     // session over whatever the caller opens next.
@@ -366,10 +409,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     joinAbort = undefined;
     for (const a of [...liveAutosaves]) a.stop(); // before close: no export of a detached session
     liveAutosaves.clear();
-    uninstallPresence?.();
-    uninstallPresence = undefined;
-    presence?.detach();
-    presence = undefined;
+    releasePresence();
     joined?.leave(); // leaves the ROOM: channel + outbound unsubs, then closes the session
     joined = undefined;
     session?.close(); // idempotent — a no-op when leave() above already closed it
@@ -429,10 +469,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       joinAbort = ac;
       const { presence: presenceOpts, ...joinOpts } = o;
       if (presenceOpts !== undefined) {
-        presence = attachPresence(world, { name: presenceOpts.name, color: presenceOpts.color });
-        uninstallPresence = installPresence(engine, presence, {
-          keyOf: (e) => session?.store.keyOf(e),
-        });
+        acquirePresence({ name: presenceOpts.name, color: presenceOpts.color });
       }
       const result = await joinDoc(world, channel, {
         ...(gatePolicy !== undefined ? { docOpts: { onGate: gatePolicy } } : {}),
@@ -463,6 +500,29 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       return result;
     },
     current: () => session,
+    attachPresence(o) {
+      if (session === undefined) {
+        throw new Error(
+          "ice: docs.attachPresence needs a live document — call docs.create()/open()/join() first.",
+        );
+      }
+      if (presence !== undefined) {
+        throw new Error(
+          "ice: docs.attachPresence — a presence session is already live (join({presence}) or a prior attach); detach it (its inverse, or docs.close()) before attaching another.",
+        );
+      }
+      const mine = acquirePresence(o);
+      let done = false;
+      return () => {
+        if (done) return; // idempotent
+        done = true;
+        // Identity-bound: after close/dispose (which already released) or a
+        // replacement attachment, this inverse owns nothing — a stale inverse
+        // must never detach someone else's live session.
+        if (presence !== mine) return;
+        releasePresence();
+      };
+    },
     presence: () => presence,
     close: closeDoc,
     // Read-only documents must not mutate through history either — undo/redo
@@ -501,10 +561,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     world,
     engine,
     session: () => session as BehaviorSession | undefined,
-    // Presence attaches with `docs.join({presence})` and detaches with the
-    // document, so this reads through per publish: an ephemeral behavior
-    // installed before anyone joins simply lies dormant until there is a peer
-    // for it to be.
+    // Presence attaches with `docs.join({presence})` OR `docs.attachPresence`
+    // (petition I18) and detaches with the document / the attach inverse, so
+    // this reads through per publish: an ephemeral behavior installed before
+    // there is a presence session simply lies dormant until there is a peer
+    // for it to be — and goes dormant again if the session detaches under it.
     presence: () => presence as BehaviorPresence | undefined,
     ...(opts.onBehaviorFault === undefined ? {} : { onFault: opts.onBehaviorFault }),
     ...(opts.onBehaviorLog === undefined ? {} : { onLog: opts.onBehaviorLog }),

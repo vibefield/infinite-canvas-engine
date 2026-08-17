@@ -1,5 +1,7 @@
 /**
- * Remote-cursor projection (design-001 §5.6, design-003 §7; `derive` phase).
+ * Remote-cursor projection (design-001 §5.6; design-003 §7 "remote cursors are
+ * always custom nodes" — the §7 PHASE language covers the LOCAL L4 cursor, not
+ * this system).
  *
  * A tick system that maintains one pooled cursor entity per REMOTE presence peer
  * carrying a `PresenceCursor` (`PresencePeer` + `Not(Local)`): `CursorVisual{kind:
@@ -31,15 +33,25 @@ interface PoolEntry {
   y: number;
 }
 
-/**
- * The derive tick system that pools + reaps remote cursor entities. `world` is
- * unused directly (iteration goes through `ctx`), kept for factory symmetry with
- * the other `create*System(world)` builders.
- */
-export function createRemoteCursorsSystem(_world: World): TickSystem {
+interface RemoteCursorsRig {
+  readonly system: TickSystem;
+  /**
+   * Destroy every pooled cursor entity and forget the pool (between frames —
+   * uninstall's slot). The tick body reaps a cursor when its PEER dies, but
+   * removing the SYSTEM removes the reaper: detaching presence on a
+   * still-open document (petition I18's inverse) would otherwise strand every
+   * pooled cursor as a ghost frozen on canvas. The join path never saw this —
+   * `docs.close()` follows its presence teardown with an in-place world reset
+   * that killed the strands before anyone looked.
+   */
+  reap(): void;
+}
+
+/** The pool + system + reap triple `installPresence` owns (pool lifetime = install lifetime). */
+function createRemoteCursorsRig(world: World): RemoteCursorsRig {
   const pool = new Map<Entity, PoolEntry>();
 
-  return defineTickSystem(
+  const system = defineTickSystem(
     (ctx) => {
       const live = new Set<Entity>();
       ctx.query(remotePeerCursorsQ).each((b) => {
@@ -80,6 +92,25 @@ export function createRemoteCursorsSystem(_world: World): TickSystem {
       access: { write: [Position, CursorVisual] },
     },
   );
+
+  return {
+    system,
+    reap() {
+      for (const [, entry] of pool) {
+        if (world.isAlive(entry.cursor)) world.destroy(entry.cursor);
+      }
+      pool.clear();
+    },
+  };
+}
+
+/**
+ * The derive tick system that pools + reaps remote cursor entities. Standalone
+ * export for imperative rigs; `installPresence` builds its own rig so its
+ * uninstall can reap the pool too.
+ */
+export function createRemoteCursorsSystem(world: World): TickSystem {
+  return createRemoteCursorsRig(world).system;
 }
 
 export type InstallPresenceOpts = PresencePublishOpts;
@@ -87,8 +118,10 @@ export type InstallPresenceOpts = PresencePublishOpts;
 /**
  * Wire a presence session into an engine: the publish hook (outbound facet
  * derivation) + the remote-cursor derive system. Returns an uninstall that
- * removes both. Does NOT own the session's lifecycle — call `session.detach()`
- * separately.
+ * removes both AND reaps the system's pooled cursor entities — uninstalling on
+ * a live document must not leave ghost cursors (see {@link RemoteCursorsRig.reap};
+ * a between-frames call, like every teardown here). Does NOT own the session's
+ * lifecycle — call `session.detach()` separately.
  */
 export function installPresence(
   engine: Engine,
@@ -96,9 +129,20 @@ export function installPresence(
   opts: InstallPresenceOpts = {},
 ): () => void {
   const removePublish = engine.onPublish(createPresencePublish(engine.world, session, opts));
-  const removeSystem = engine.addSystems("derive", createRemoteCursorsSystem(engine.world));
+  const rig = createRemoteCursorsRig(engine.world);
+  // "present", not "derive" (2026-08-16, with I18): cursor visuals are
+  // presentation derivation with NO in-tick consumers — only reflectors read
+  // them, post-notify, which sees present-phase writes the same frame. In
+  // "derive" the late-installed system co-wrote Position after the stack's
+  // readers/writers (selectionChrome, cull) and strata's access advisories
+  // fired on every presence-attached facade engine — row-disjoint in truth,
+  // but the read-before-write advisory has no attestation opt-out, and the
+  // phase that matches the system's meaning is also the one with no
+  // neighbours to misread it.
+  const removeSystem = engine.addSystems("present", rig.system);
   return () => {
     removePublish();
     removeSystem();
+    rig.reap();
   };
 }

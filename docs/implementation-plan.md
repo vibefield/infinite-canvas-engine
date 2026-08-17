@@ -305,9 +305,39 @@ than blind-applied; I17's acceptance as 5 tests in `behavior-ephemeral.test.ts`
 withdrawal, the no-resume-remint oscillation pin, ledger-seeded suspended-at-birth,
 presence-less no-op) · full core suite + walls green. **MET.** Remaining from the same
 PRC-4 evidence round, deliberately NOT here: I18 (split presence attach, P2 — a public
-facade surface with a real document-bootstrap design question) — recorded OPEN in
-`docs/downstream-petitions.md`; it gates nothing in durable/runtime plugin hosting and
-only the last mile of the ephemeral profile for hosts that own their doc lifecycle.
+facade surface with a real document-bootstrap design question) — deferred to M15.
+
+## M15 — Facade presence attach (petition I18) · 0.8.0 — **DONE 2026-08-16**
+
+The last of the PRC-4 evidence round. A host that owns its document lifecycle
+(VibeField: fieldd checkpoints/journals + its own transport) never calls `docs.join()`,
+and presence entered ONLY through `join({presence})` — a standalone
+`attachPresence(world, …)` session is real but invisible to the facade seam, so
+`docs.presence()` stays undefined and registered ephemeral behaviors stay dormant
+(PRC4-E13, 7/7 controls). The bootstrap design question resolved to: presence lifetime
+⊆ document lifetime, ONE internal acquisition/teardown pair shared by both doors.
+
+- **M15a — `docs.attachPresence(opts): () => void`**: session gate (refuses doc-less),
+  duplicate gate, existing `attachPresence(world, opts)` + `installPresence` under the
+  hood, seam assignment activates the behavior runtime's per-publish forwarding;
+  idempotent IDENTITY-BOUND inverse (a stale inverse cannot detach a replacement);
+  `close()`/dispose run the same teardown; leave tombstones flush through
+  still-subscribed outbound before wiring dies. `join({presence})` rides the same
+  acquisition, framing unchanged.
+- **M15b — derived-residue reap**: `installPresence`'s uninstall reaps the remote-cursor
+  pool — detaching on a STILL-OPEN document must not strand ghost cursors (the join
+  path never saw it; `close()`'s world reset hid the strand).
+- **M15c — advisory-clean phase**: the remote-cursor system registers in `present`
+  (presentation derivation, no in-tick consumers; reflectors read post-notify same
+  frame) — late-installed into `derive` it tripped both strata access advisory classes
+  against `cull`/`selectionChrome` on every presence-attached facade engine.
+
+**Exit**: the petition's acceptance list as 8 tests in `facade-presence.test.ts`
+(gates + no-residue refusal, create/open attach, dormancy→activation with init-once,
+identity-bound idempotent inverse, outbound-live leave on inverse AND `close()`,
+dispose teardown with quiet stale inverse, reattach-remints-defaults, ghost-cursor
+reap on a still-open doc) · zero access advisories in the combined facade+presence
+suites · full core suite + walls green. **MET.**
 
 ## Release cut & downstream
 
@@ -316,6 +346,10 @@ consumes immediately for the fixes alone; the door's W2b adapter can land agains
 **0.7.0 = M14** (SHIPPED 2026-08-16) — the host contract PRC-4b/4c gate on; vibe-field's
 pin advances from the 0.6.0 floor and the behaviors adapter proceeds against released
 types.
+**0.8.0 = M15** (CUT 2026-08-16) — facade presence attach; the ephemeral profile's
+engine-side gate for doc-lifecycle-owning hosts. Rides beside strata 0.13.0 (petition
+11, publicized guard getter) — independent releases, either publishable first; ICE's
+strata pin bump + cast retirement ride whichever release follows both publishes.
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,
