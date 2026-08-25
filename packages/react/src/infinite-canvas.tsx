@@ -39,6 +39,7 @@ import {
   Viewport,
   writeRuntimeResource,
   type CanvasEngine,
+  type Entity,
   type GridConfig,
   type MeasureQueue,
   type ReflectorDef,
@@ -98,6 +99,17 @@ export type GroundLayerFactory = (ctx: {
   readonly host: { readonly container: HTMLElement; readonly contentPlane: HTMLElement };
   readonly world: World;
   readonly readWirePreview: () => WirePreviewBuffer;
+  /**
+   * Broad-phase rect query over the interaction stack's spatial index (the
+   * magnet grid's widget sources, design-010 §3.2). Structural mirror of
+   * `@ice/ground`'s ReadSpatial — kernel AABB/SpatialEntry shapes inlined.
+   */
+  readonly readSpatial: (bounds: {
+    readonly minX: number;
+    readonly minY: number;
+    readonly maxX: number;
+    readonly maxY: number;
+  }) => ReadonlyArray<{ minX: number; minY: number; maxX: number; maxY: number; id: Entity }>;
 }) => GroundLayerHandle;
 
 export interface InfiniteCanvasProps {
@@ -195,7 +207,12 @@ export function InfiniteCanvas({
     // too, or a StrictMode remount stacks duplicates (the double-grid field
     // report, 2026-07-11).
     const groundLayer =
-      ground?.({ host, world, readWirePreview: () => stack.wirePreview }) ?? null;
+      ground?.({
+        host,
+        world,
+        readWirePreview: () => stack.wirePreview,
+        readSpatial: (bounds) => stack.index.search(bounds),
+      }) ?? null;
     groundRef.current = groundLayer;
     if (groundLayer !== null && gridConfigRef.current !== undefined) {
       groundLayer.configureGrid(gridConfigRef.current);

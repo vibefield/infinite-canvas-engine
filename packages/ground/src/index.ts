@@ -13,7 +13,9 @@ import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
 import { createGuidesPass } from "./passes/guides";
+import type { ReadSpatial } from "./passes/magnet-collect";
 import { createWiresPass } from "./passes/wires";
+import type { PoleSource } from "./poles";
 import { createGroundRenderer, type GroundRendererLike } from "./renderer";
 
 export type { GroundFrame, GroundPass } from "./pass";
@@ -22,12 +24,26 @@ export type { GroundRendererLike } from "./renderer";
 export { SoupBuilder, parseCssColor, type Rgba, type TriSoup } from "./passes/soup-collect";
 export { collectGuides } from "./passes/guides-collect";
 export { collectWires } from "./passes/wires-collect";
+// The magnet pole seam (design-010 §3.3) + canned wirings (D5: the pass
+// imports neither — the cursor dependency lives in the helper the app chose).
+export { cursorVisualPoles, localPointerPoles, type Pole, type PoleSource } from "./poles";
+export {
+  collectMagnetLevels,
+  collectMagnetSources,
+  magnetFieldScale,
+  resolveMagnet,
+  MAX_MAGNET_SOURCES,
+  type MagnetLevel,
+  type ReadSpatial,
+} from "./passes/magnet-collect";
 // Config vocabulary re-exported for app ergonomics (canonical home: @ice/core).
 export {
   DEFAULT_GRID_CONFIG,
+  DEFAULT_GRID_MAGNET_CONFIG,
   DEFAULT_SNAP_GUIDES_CONFIG,
   DEFAULT_WIRES_CONFIG,
   type GridConfig,
+  type GridMagnetConfig,
   type SnapGuidesConfig,
   type WiresConfig,
 } from "@ice/core";
@@ -37,6 +53,12 @@ export interface GroundContext {
   readonly world: World;
   /** Connect-drag preview reader (graph boards); omit on boards without wires. */
   readonly readWirePreview?: () => WirePreviewBuffer;
+  /**
+   * Broad-phase reader over the ONE spatial index (design-010 §3.2, the
+   * readWirePreview precedent) — the magnet grid's widget sources. Facades
+   * wire `stack.index.search`; omit ⇒ magnet renders a pole-only field.
+   */
+  readonly readSpatial?: ReadSpatial;
 }
 
 export interface GroundLayer {
@@ -50,6 +72,13 @@ export interface GroundOptions {
   readonly grid?: Partial<GridConfig>;
   readonly wires?: Partial<WiresConfig>;
   readonly guides?: Partial<SnapGuidesConfig>;
+  /**
+   * Magnet pole sources (design-010 §3.3) — live app-authored objects, so they
+   * live HERE, not in the plain-data GridConfig. Nothing wired ⇒ the magnet
+   * field (if enabled) is widget-only; with magnet off they cost one gated
+   * no-op subscription each.
+   */
+  readonly poles?: PoleSource | readonly PoleSource[];
   /** Extra app passes, rendered after the built-ins (renderOrder ≥ 3 is yours). */
   readonly passes?: readonly GroundPass[];
   /** Force the WebGL2 backend (debug / e2e A-B runs). */
@@ -70,7 +99,8 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
   return (ctx) => {
     const doc = ctx.host.container.ownerDocument;
     const renderer = opts.rendererOverride ?? createGroundRenderer(doc, { forceWebGL: opts.forceWebGL === true });
-    const grid = createGridPass(opts.grid ?? {});
+    const poles = opts.poles === undefined ? [] : Array.isArray(opts.poles) ? opts.poles : [opts.poles];
+    const grid = createGridPass(opts.grid ?? {}, { poles, ...(ctx.readSpatial !== undefined ? { readSpatial: ctx.readSpatial } : {}) });
     const wires = createWiresPass(opts.wires ?? {}, ctx.readWirePreview);
     const guides = createGuidesPass(opts.guides ?? {});
     const passes: GroundPass[] = [grid, wires, guides, ...(opts.passes ?? [])];

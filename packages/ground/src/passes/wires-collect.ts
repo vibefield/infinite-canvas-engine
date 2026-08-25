@@ -83,8 +83,9 @@ const TESSELLATION_TOLERANCE_PX = 0.25;
 const DASH_PX = 6;
 const GAP_PX = 4;
 
-/** Effective widget rect: non-zero MeasuredSize over Size (design-004 §2). */
-function readRect(world: World, e: Entity): Rect | undefined {
+/** Effective widget rect: non-zero MeasuredSize over Size (design-004 §2).
+ *  Exported for the magnet collector (design-010 §4) — ONE rect-reading rule. */
+export function readWidgetRect(world: World, e: Entity): Rect | undefined {
   const p = world.get(e, Position);
   if (p === undefined) return undefined;
   const measured = world.get(e, MeasuredSize);
@@ -110,7 +111,7 @@ function endpointAnchor(
   portId: string,
 ): { anchor: Rect; slot: PortSlot } | undefined {
   if (widget === undefined) return undefined;
-  const rect = readRect(world, widget);
+  const rect = readWidgetRect(world, widget);
   if (rect === undefined) return undefined;
   const type = world.get(widget, PrefabId)?.id;
   if (typeof type !== "string") return undefined;

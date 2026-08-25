@@ -405,6 +405,53 @@ refusal surfaces) · every enforcement point mutation-probed (six probes, each
 bit) · full core suite 589 green, `pnpm run ci` walls-clean · design-009 §17
 amendment + I19 registry row folded with the code. **MET.**
 
+## M17 — The magnet grid (design-010) — **BUILT 2026-08-24, perf exit pending**
+
+The dot grid's PIXELS replaced by a field-reactive lattice — its interfaces
+untouched. Ported from vibe-field `draft/magnet-grid` (WGSL → TSL) with the
+upgrades the experiment lacked: rbush broad-phase, N injected poles, config
+valves. Classic stays the default renderer and the pixel-exact baseline;
+magnet is a sibling mode inside the same `GridPass` behind the same
+`configureGrid`/react-`grid`-prop seam.
+
+- **M17a — config vocabulary**: `GridConfig.magnet?: Partial<GridMagnetConfig>`
+  + `DEFAULT_GRID_MAGNET_CONFIG`; `configure` deep-merges the `magnet` key one
+  level. `DEFAULT_GRID_CONFIG` deliberately does NOT carry the block — absence
+  is the off state (an explicit `{enabled:false}` rode widgetlab's
+  `{...DEFAULT_GRID_CONFIG}` state through the mount-time `configureGrid` and
+  clobbered the factory enable; found on the build's FIRST screenshot).
+- **M17b — pure collect** (`magnet-collect.ts`, core+kernel only, 16 tests):
+  lattice windows + fade/weight CPU-baked per level, 220k instance guard,
+  `magnetFieldScale` zoom valve (scale 0 skips the spatial query), source
+  packing with poles-first `maxSources` prioritization (largest screen area,
+  then viewport-center distance), the 5·reach·√strength halo query, and the
+  §5.4 coincidence skip (integer spacing ratios only).
+- **M17c — the TSL renderer** (`grid-magnet.ts`): three instanced-quad meshes,
+  sites from `instanceIndex` (no position buffer), ONE read-only storage
+  buffer (`setPBO(true)` — the same node graph compiles on the WebGL2
+  fallback, verified headless), poles as DEGENERATE rounded boxes (half=0,
+  r=0 ≡ the point-charge formula), needle/dot glyphs per the draft with dot
+  rest radius from `dotRadius[0]`. Classic extracted VERBATIM to
+  `grid-classic.ts`; the magnet material builds lazily on first enable.
+- **M17d — the seams**: `GroundContext.readSpatial` (facade wires
+  `stack.index.search` — the ONE spatial index, O(delta)-maintained;
+  `SpatialVersion` observer wakes re-collects) and `GroundOptions.poles`
+  (`PoleSource` protocol — `Pole{x,y,strength,space:"world"|"screen"}`; the
+  pass knows NO cursor vocabulary). Helpers `localPointerPoles` /
+  `cursorVisualPoles`; widgetlab ships the REFERENCE app adapter
+  (`cursor/halo-poles.ts`: morph scale → strength, `easeSettle` quiets wakes)
+  behind `?magnet` / `?magnet=dot` — the default demo byte-identical.
+
+**Exit**: 16 collector tests green (pole degeneracy, halo query, prioritization,
+fadeZoom, coincidence skip, MeasuredSize-over-Size) · full `pnpm run ci`
+walls-clean (513 modules) · headless verification on BOTH backends: needle
+starburst around the halo pole, needles wrapping card silhouettes, dot glyph,
+WebGL2-PBO path error-free, classic default visually unchanged with magnet off
+· design-010 amendments folded. **PENDING**: the §6.3 measured perf A-B
+(redraw counts + frame times, classic vs magnet at 0/50/128 sources) — the
+§6.2 estimate table must be re-issued with measurements before any release
+that advertises the mode.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field

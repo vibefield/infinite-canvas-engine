@@ -23,9 +23,72 @@ export interface GridConfig {
   dotRadius: [number, number];
   /** Per-level opacity weight: level i gets (base + i * step). */
   levelWeight: [number, number];
+  /**
+   * The magnet mode (design-010): a field-reactive lattice replacing the
+   * classic grid's PIXELS, not its interfaces. Absent or `enabled: false`
+   * ⇒ the classic analytic grid, byte-identical to pre-magnet builds.
+   * `configureGrid` deep-merges THIS key one level (design-010 §3.1) so a
+   * partial re-tune (e.g. `{ magnet: { reach: 80 } }`) never clobbers the
+   * rest of the block. Partial by declaration: the grid pass resolves it over
+   * {@link DEFAULT_GRID_MAGNET_CONFIG} — apps state only what they change.
+   */
+  magnet?: Partial<GridMagnetConfig>;
 }
 
-/** Verbatim from v1 GridRenderer.ts:27-35 (Apple Freeform / FigJam feel). */
+/**
+ * Magnet-grid field + glyph parameters (design-010 §3.1). Deliberately free of
+ * anything cursor-shaped: pole behavior (pressed-modulation, remote toggles,
+ * strength curves) lives in whichever `PoleSource` the app wired (D5).
+ */
+export interface GridMagnetConfig {
+  /** Master switch. false = classic analytic grid (the default). */
+  enabled: boolean;
+  /** Needles orient along the field; dots stay on the lattice and swell with |field|. */
+  glyph: "dot" | "needle";
+  /** CSS px at which a lone source has influence 0.5 (k = 0.5·reach²). */
+  reach: number;
+  /** +1 attract (needles point at sources) / −1 repel. */
+  polarity: 1 | -1;
+  /** Widget-silhouette SDF sources on/off (needs the readSpatial ctx seam). */
+  widgets: boolean;
+  /** Field strength of every widget source (per-widget override is a named §8 seam). */
+  widgetStrength: number;
+  /** Widget corner radius, CSS px (the engine cannot see CSS border-radius). */
+  widgetRadius: number;
+  /** Needles only: orient fully along the field at ANY magnitude. */
+  alwaysAlign: boolean;
+  /** Needle half-length, CSS px ("dot" glyph reads this as max swell radius). */
+  needleLength: number;
+  /** Needle half-width, CSS px. */
+  needleWidth: number;
+  /** Source-buffer cap (≤256); the broad-phase prioritizes within it (D2). */
+  maxSources: number;
+  /** Zoom below which the FIELD lerps to 0 — rest ticks remain (0 = never). */
+  fadeZoom: number;
+}
+
+/** Experiment-calibrated defaults (vibe-field draft/magnet-grid HUD values). */
+export const DEFAULT_GRID_MAGNET_CONFIG: GridMagnetConfig = {
+  enabled: false,
+  glyph: "needle",
+  reach: 60,
+  polarity: 1,
+  widgets: true,
+  widgetStrength: 1,
+  widgetRadius: 12,
+  alwaysAlign: false,
+  needleLength: 5,
+  needleWidth: 0.55,
+  maxSources: 256,
+  fadeZoom: 0,
+};
+
+/** Verbatim from v1 GridRenderer.ts:27-35 (Apple Freeform / FigJam feel).
+ *  Deliberately does NOT carry a `magnet` block: ABSENCE is the off state.
+ *  An explicit `{enabled: false}` here would ride every consumer that spreads
+ *  this default into its own grid state (the widgetlab/vibe-field shape) and
+ *  deep-merge "off" over a factory-level enable at the configureGrid seam —
+ *  found live on the M17 build's first screenshot (design-010 §3.1 amendment). */
 export const DEFAULT_GRID_CONFIG: GridConfig = {
   spacings: [20, 100, 500],
   dotColor: [0.75, 0.77, 0.8],

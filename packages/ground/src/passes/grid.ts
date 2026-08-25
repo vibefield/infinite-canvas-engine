@@ -1,125 +1,126 @@
 /**
- * The dot-grid pass — TSL port of the raw-WebGL grid (itself verbatim from v1
- * GridRenderer.ts; the fragment math below is that shader re-expressed as a
- * node graph, level loop unrolled in JS). Screen-space: a fullscreen triangle
- * whose vertex stage passes clip coords through; the fragment reconstructs
- * world position from `screenCoordinate` (top-left device px on BOTH backends
- * — three normalizes, so the old manual y-flip is gone) + camera uniforms.
+ * The grid pass — a MODE FACADE since design-010: the classic analytic dot
+ * grid (grid-classic.ts, the default — byte-identical to pre-magnet builds)
+ * and the magnet field lattice (grid-magnet.ts + magnet-collect.ts) behind
+ * ONE `GridPass` contract. `configure` deep-merges the `magnet` key one level
+ * (§3.1) so partial re-tunes never clobber the block.
  *
- * One deliberate re-expression: the GLSL if/else fade ladder became the
- * closed form `clamp(min(rise, fall), 0, 1)` — identical piecewise output
- * (rise 0→1 across fadeIn, plateau 1, fall 1→0 across fadeOut) with no
- * branching. Everything else (fract-distance dots, 0.5-device-px AA,
- * max-composited levels) matches term for term.
+ * Wake graph (all magnet wakes gated on `enabled` — the idle-scene zero-frame
+ * guarantee is untouched when off): camera/resize are layer-owned;
+ * `SpatialVersion` re-collects widget sources (gated on `widgets` too);
+ * injected pole sources wake through their own subscriptions (D5 — the pass
+ * observes no pointer/cursor/presence vocabulary). The magnet renderer is
+ * built LAZILY on first enable: classic-only apps pay zero magnet cost.
  */
-import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
 import {
-  clamp,
-  float,
-  fract,
-  length,
-  max,
-  min,
-  mix,
-  positionGeometry,
-  screenCoordinate,
-  smoothstep,
-  uniform,
-  vec4,
-} from "three/tsl";
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Mesh,
-  MeshBasicNodeMaterial,
-  Vector2,
-  Vector3,
-  type Node,
-} from "three/webgpu";
+  DEFAULT_GRID_CONFIG,
+  SpatialVersion,
+  type GridConfig,
+  type World,
+} from "@ice/core";
+import { Group } from "three/webgpu";
 import type { GroundFrame, GroundPass } from "../pass";
-
-const FULLSCREEN_TRIANGLE = new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]);
+import type { Pole, PoleSource } from "../poles";
+import { createClassicGrid, type ClassicGridRenderer } from "./grid-classic";
+import { createMagnetGrid, type MagnetGridRenderer } from "./grid-magnet";
+import {
+  MAGNET_SOURCE_FLOATS,
+  MAX_MAGNET_SOURCES,
+  collectMagnetLevels,
+  collectMagnetSources,
+  magnetFieldScale,
+  resolveMagnet,
+  type ReadSpatial,
+} from "./magnet-collect";
 
 export interface GridPass extends GroundPass {
   /** Live re-tune (the react `grid` prop seam) — partial merge over current values. */
   configure(cfg: Partial<GridConfig>): void;
 }
 
-export function createGridPass(initial: Partial<GridConfig> = {}): GridPass {
-  let cfg: GridConfig = { ...DEFAULT_GRID_CONFIG, ...initial };
+/** Injected magnet inputs (design-010 §3.2) — absent pieces disable their sources. */
+export interface GridPassDeps {
+  readonly poles?: readonly PoleSource[];
+  readonly readSpatial?: ReadSpatial;
+}
 
-  // Camera facts (layer-written each collect).
-  const uCamera = uniform(new Vector2(0, 0));
-  const uZoom = uniform(1);
-  const uDpr = uniform(1);
-  // Config (configure-written).
-  const uSpacings = uniform(new Vector3(...cfg.spacings));
-  const uDotColor = uniform(new Vector3(...cfg.dotColor));
-  const uDotAlpha = uniform(cfg.dotAlpha);
-  const uFadeIn = uniform(new Vector2(...cfg.fadeIn));
-  const uFadeOut = uniform(new Vector2(...cfg.fadeOut));
-  const uDotRadius = uniform(new Vector2(...cfg.dotRadius));
-  const uLevelWeight = uniform(new Vector2(...cfg.levelWeight));
+/** Shallow merge + one-level deep merge of the `magnet` block (design-010 §3.1). */
+function mergeGridConfig(base: GridConfig, next: Partial<GridConfig>): GridConfig {
+  const merged: GridConfig = { ...base, ...next };
+  if (next.magnet !== undefined) merged.magnet = { ...base.magnet, ...next.magnet };
+  return merged;
+}
 
-  const effZoom = uZoom.mul(uDpr);
-  const worldPos = screenCoordinate.xy.div(effZoom).add(uCamera);
+export function createGridPass(initial: Partial<GridConfig> = {}, deps: GridPassDeps = {}): GridPass {
+  let cfg = mergeGridConfig(DEFAULT_GRID_CONFIG, initial);
 
-  let total: Node<"float"> = float(0);
-  for (let i = 0; i < 3; i++) {
-    const spacing = i === 0 ? uSpacings.x : i === 1 ? uSpacings.y : uSpacings.z;
-    const cssSpacing = spacing.mul(uZoom);
-    // Fade ladder, closed form (see header).
-    const rise = cssSpacing.sub(uFadeIn.x).div(uFadeIn.y.sub(uFadeIn.x));
-    const fall = float(1).sub(cssSpacing.sub(uFadeOut.x).div(uFadeOut.y.sub(uFadeOut.x)));
-    const opacity = clamp(min(rise, fall), 0, 1);
-    // Distance to the nearest grid intersection, in device px.
-    const f = fract(worldPos.div(spacing).add(0.5)).sub(0.5);
-    const dist = length(f).mul(spacing).mul(effZoom);
-    // Radius optionally grows toward sparser levels (min==max ⇒ constant dots).
-    const t = clamp(cssSpacing.sub(uFadeIn.x).div(40), 0, 1);
-    const radius = mix(uDotRadius.x, uDotRadius.y, t).mul(uDpr);
-    // Anti-aliased dot (0.5 device-px smoothstep), max-composited across levels
-    // (additive stacking fattens joint intersections — the CAD tell).
-    const dot = smoothstep(radius.sub(0.5), radius.add(0.5), dist).oneMinus();
-    const weight = uLevelWeight.x.add(float(i).mul(uLevelWeight.y));
-    total = max(total, dot.mul(opacity).mul(weight));
-  }
+  const group = new Group();
+  const classic: ClassicGridRenderer = createClassicGrid(cfg);
+  group.add(classic.mesh);
+  let magnet: MagnetGridRenderer | null = null;
 
-  const material = new MeshBasicNodeMaterial();
-  material.vertexNode = vec4(positionGeometry.xy, 0, 1); // clip-space passthrough
-  material.fragmentNode = vec4(uDotColor, clamp(total.mul(uDotAlpha), 0, 1));
-  material.transparent = true;
-  material.depthTest = false;
-  material.depthWrite = false;
-
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(FULLSCREEN_TRIANGLE, 3));
-  const mesh = new Mesh(geometry, material);
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 0;
+  const poles = deps.poles ?? [];
+  const sourceScratch = new Float32Array(MAX_MAGNET_SOURCES * MAGNET_SOURCE_FLOATS);
+  const poleScratch: Pole[] = [];
 
   return {
     name: "grid",
-    object: mesh,
-    arm: () => [], // camera/resize dirt is layer-owned; config re-tunes call invalidate
-    collect(_world, frame: GroundFrame) {
-      uCamera.value.set(frame.camera.x, frame.camera.y);
-      uZoom.value = frame.camera.zoom;
-      uDpr.value = frame.dpr;
+    object: group,
+    arm(world: World, wake: () => void) {
+      // Gates read LIVE config so configure() re-tunes never re-arm.
+      const wakeIfWidgets = (): void => {
+        const m = resolveMagnet(cfg);
+        if (m.enabled && m.widgets && deps.readSpatial !== undefined) wake();
+      };
+      const wakeIfEnabled = (): void => {
+        if (resolveMagnet(cfg).enabled) wake();
+      };
+      const unsubs = [world.reactive.observeResource(SpatialVersion, wakeIfWidgets)];
+      for (const source of poles) unsubs.push(source.subscribe(world, wakeIfEnabled));
+      return unsubs;
+    },
+    collect(world: World, frame: GroundFrame) {
+      const m = resolveMagnet(cfg);
+      if (!m.enabled) {
+        classic.mesh.visible = true;
+        if (magnet !== null) magnet.group.visible = false;
+        classic.setCamera(frame);
+        return;
+      }
+      if (magnet === null) {
+        magnet = createMagnetGrid();
+        group.add(magnet.group);
+      }
+      classic.mesh.visible = false;
+      magnet.group.visible = true;
+
+      const fieldScale = magnetFieldScale(frame.camera.zoom, m.fadeZoom);
+      poleScratch.length = 0;
+      if (fieldScale > 0) {
+        for (const source of poles) poleScratch.push(...source.read(world));
+      }
+      const sourceCount = collectMagnetSources(
+        world,
+        frame,
+        m,
+        fieldScale,
+        poleScratch,
+        deps.readSpatial,
+        sourceScratch,
+      );
+      const levels = collectMagnetLevels(frame, cfg);
+      magnet.update(frame, cfg, m, levels, sourceScratch, sourceCount);
     },
     configure(next) {
-      cfg = { ...cfg, ...next };
-      uSpacings.value.set(...cfg.spacings);
-      uDotColor.value.set(...cfg.dotColor);
-      uDotAlpha.value = cfg.dotAlpha;
-      uFadeIn.value.set(...cfg.fadeIn);
-      uFadeOut.value.set(...cfg.fadeOut);
-      uDotRadius.value.set(...cfg.dotRadius);
-      uLevelWeight.value.set(...cfg.levelWeight);
+      cfg = mergeGridConfig(cfg, next);
+      classic.configure(cfg);
+      // Magnet uniforms are rewritten wholesale next collect (configureGrid
+      // calls invalidateAll) — no push needed here.
     },
     dispose() {
-      geometry.dispose();
-      material.dispose();
+      classic.dispose();
+      magnet?.dispose();
+      magnet = null;
     },
   };
 }
