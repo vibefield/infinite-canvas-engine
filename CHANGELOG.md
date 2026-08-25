@@ -4,7 +4,7 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
-## [Unreleased]
+## [0.10.0] — 2026-08-25
 
 **The magnet grid — design-010 / M17.** The dot grid's PIXELS become a
 field-reactive lattice; its interfaces do not change. Ported from the
