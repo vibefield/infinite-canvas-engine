@@ -57,6 +57,7 @@ import { PMREMGenerator, type Texture } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { hasDesktopBridge, startDesktopCollab } from "./collab/desktop";
 import { installCursorHalo } from "./cursor";
+import { haloPoles } from "./cursor/halo-poles";
 import { WidgetTray } from "./tray/WidgetTray";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
@@ -626,7 +627,17 @@ export function App() {
 
   // The P0 ground layer (grid + wires + snap guides, one WebGPU canvas) —
   // memoized: a new factory identity re-boots the canvas mount effect.
-  const groundFactory = useMemo(() => ground(), []);
+  // `?magnet` / `?magnet=dot` opts into the design-010 magnet grid with the
+  // cursor halo as the pole (halo-poles.ts, the reference PoleSource wiring);
+  // the default demo stays the classic analytic grid, byte-identical.
+  const groundFactory = useMemo(() => {
+    const magnetParam = new URLSearchParams(window.location.search).get("magnet");
+    if (magnetParam === null) return ground();
+    return ground({
+      grid: { magnet: { enabled: true, glyph: magnetParam === "dot" ? "dot" : "needle" } },
+      poles: haloPoles(),
+    });
+  }, []);
 
   // Widget tray open state lives HERE because the canvas itself reacts: the
   // reference design's recede — the whole board eases to 0.98 while the
