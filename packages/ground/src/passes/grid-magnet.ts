@@ -163,10 +163,15 @@ export function createMagnetGrid(): MagnetGridRenderer {
     const vertexNode = Fn(() => {
       const iid = float(instanceIndex);
       const cols = lu.dims.x;
-      const col = mod(iid, cols).floor();
-      const row = iid.div(cols).floor();
+      // .toVar() pins site reconstruction to the stack BEFORE the source loop:
+      // the builder emits expressions at first USE — inside the loop body — so
+      // a zero-source frame (fadeZoom valve, no poles, widgets off) would
+      // otherwise leave every position at the default-initialized origin and
+      // blank the rest lattice (design-010 §10.9).
+      const col = mod(iid, cols).floor().toVar();
+      const row = iid.div(cols).floor().toVar();
       const world = lu.origin.add(vec2(col, row)).mul(lu.spacing);
-      const screen = world.sub(uCam).mul(uZoom);
+      const screen = world.sub(uCam).mul(uZoom).toVar();
 
       // Field superposition over the source buffer (magnet.wgsl field_at).
       const field = vec2(0, 0).toVar();

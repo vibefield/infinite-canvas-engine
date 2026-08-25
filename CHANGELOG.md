@@ -4,6 +4,25 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [Unreleased]
+
+### Fixed
+
+- **Magnet grid: rest lattice survives zero-source frames.** The TSL builder
+  emits site reconstruction at first USE — inside the source loop — so a
+  frame with no packed sources (`fadeZoom` valve active, no poles, widgets
+  off) garbage-positioned every glyph. `col`/`row`/`screen` are now pinned
+  with `.toVar()` before the loop (design-010 §10.9).
+
+### Known issues
+
+- **The magnet grid's `glyph: "dot"` renders nothing** on either backend;
+  `"needle"` (the default) is verified on both. Both glyphs are fully ported;
+  the defect is in three r185's node-to-draw plumbing and is being reduced to
+  a standalone upstream repro — the full forensic fact table lives in
+  design-010 §10.9. Do not offer the dot glyph in product surfaces until it
+  resolves.
+
 ## [0.10.0] — 2026-08-25
 
 **The magnet grid — design-010 / M17.** The dot grid's PIXELS become a
