@@ -229,6 +229,36 @@ animation paths) · `createGLPointerRouter({world, bridge, index})` → the
 adapter's `glRoute`. Zero render→ECS writes, DEV-enforced via
 `world.devOnWrite`.
 
+## @ice/ground
+
+`ground(opts?)` → an opaque factory for the react `ground` prop (or call it
+with `{host, world, readWirePreview?, readSpatial?}` in imperative shells and
+register `layer.reflector`). One WebGPU canvas (WebGL2 fallback automatic)
+drawing the dot grid, wires, and snap guides as passes; `configureGrid`
+re-tunes live (the react `grid` prop forwards here).
+
+**The magnet grid (design-010, 0.10.0)**: `grid.magnet?: Partial<GridMagnetConfig>`
+swaps the classic analytic dot grid's PIXELS for a field-reactive lattice —
+same interfaces, classic remains the default and absence of the block is the
+off state (`configureGrid` deep-merges the `magnet` key one level).
+`GridMagnetConfig`: `enabled` · `glyph: "dot"|"needle"` · `reach` (CSS px at
+influence 0.5) · `polarity` · `widgets`/`widgetStrength`/`widgetRadius`
+(silhouette SDF sources via the spatial index) · `alwaysAlign` ·
+`needleLength`/`needleWidth` · `maxSources` (≤256, prioritized largest-first;
+poles never evicted) · `fadeZoom` (the field lerps out below this zoom; rest
+ticks remain). Widget sources need `GroundContext.readSpatial` (the react
+facade wires the interaction stack's index automatically).
+
+**`PoleSource`** (`GroundOptions.poles`): injected point sources — the pass
+knows no cursor vocabulary. `{read(world) => Pole[], subscribe(world, wake)}`
+with `Pole = {x, y, strength, space?: "world"|"screen"}`; poles pack as
+degenerate SDF boxes (≡ point charges). Canned wirings: `localPointerPoles()`
+(the local pointer entity) · `cursorVisualPoles()` (presence cursor entities —
+remote collaborators drive the field). Sources that ease should GATE their
+writing systems (`runIf` + `makeVersionGuard`) — strata blanket-stamps
+declared writes on every run, and an ungated easing system wakes the field's
+observer every tick (design-010 §10.7).
+
 ## @ice/devtools
 
 `attachDevtools(engine, {container?, intervalMs?, keyOf?, cellInDoc?,

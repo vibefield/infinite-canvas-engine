@@ -4,6 +4,58 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [Unreleased]
+
+**The magnet grid — design-010 / M17.** The dot grid's PIXELS become a
+field-reactive lattice; its interfaces do not change. Ported from the
+vibe-field `draft/magnet-grid` WebGPU experiment (WGSL → TSL) with the
+upgrades the experiment lacked: an rbush broad-phase over the ONE spatial
+index, N injected poles, and config valves. The classic analytic grid remains
+the default renderer — a consumer that never mentions `magnet` is
+byte-identical to 0.9.0.
+
+### Added
+
+- **`GridConfig.magnet?: Partial<GridMagnetConfig>`** (+
+  `DEFAULT_GRID_MAGNET_CONFIG`): the magnet mode — needle or dot glyphs over
+  a superposed field of widget-silhouette SDF sources (rounded rects; a large
+  card is a large magnet, needles wrap the silhouette) and injected point
+  poles. `configureGrid`/the react `grid` prop deep-merge the `magnet` key one
+  level, so partial re-tunes never clobber the block. ABSENCE of the block is
+  the off state — the default config deliberately does not carry an explicit
+  `enabled: false` (it would ride every consumer that spreads
+  `DEFAULT_GRID_CONFIG` into its own grid state and clobber a factory-level
+  enable at the configureGrid seam). Perf valves: `maxSources` (≤256,
+  largest-screen-area-first; poles never evicted) and `fadeZoom` (the FIELD
+  lerps out below a zoom threshold; rest ticks remain — scale 0 also skips
+  the spatial query). One read-only storage buffer, `setPBO` on the WebGL2
+  fallback — the same node graph compiles on both backends.
+- **`GroundOptions.poles` + the `PoleSource` protocol** (`Pole = {x, y,
+  strength, space?: "world"|"screen"}`): point sources are INJECTED — the
+  grid pass knows no cursor/presence vocabulary, and the cursor effect is
+  opt-in by construction. Poles pack as degenerate SDF boxes (half = 0,
+  r = 0 reduces exactly to the point-charge formula). Canned wirings:
+  `localPointerPoles()` and `cursorVisualPoles()`; apps with their own cursor
+  entities write a ~15-line adapter (widgetlab's `?magnet` halo adapter is
+  the reference).
+- **`GroundContext.readSpatial`**: broad-phase rect reader over the shared
+  spatial index (the `readWirePreview` precedent) — the magnet's widget
+  sources query viewport ∪ influence-halo instead of walking the document,
+  so total document size is irrelevant by construction. The react facade
+  wires `stack.index.search` automatically; `SpatialVersion` observation
+  wakes re-collects.
+
+### Notes
+
+- Measured (headless, both backends): settled-idle ground redraws are 0 with
+  magnet on at +0/+50/+128 widgets; a pointer sweep costs one redraw per
+  moved frame. An on-device GPU A-B is still owed before the mode is
+  ADVERTISED as default-on anywhere (design-010 §6.4).
+- Pole sources that ease (cursor springs) must gate their writing systems
+  (`runIf` + `makeVersionGuard`): strata blanket-stamps declared writes on
+  every RUN, and an ungated easing system wakes the field's observer every
+  tick (design-010 §10.7 — found by this release's redraw instrumentation).
+
 ## [0.9.0] — 2026-08-17
 
 **The ephemeral facet byte claim — petition I19.** VibeField's document-room
