@@ -39,7 +39,15 @@ export function haloPoles(): PoleSource {
       return out;
     },
     subscribe(world, wake) {
-      return world.reactive.observeQuery(curQ, wake, { cols: [Cur] });
+      const counted = import.meta.env.DEV
+        ? (): void => {
+            // Wake-cadence instrument for headless perf forensics (§6.3).
+            const w = window as unknown as { __poleWakes?: number };
+            w.__poleWakes = (w.__poleWakes ?? 0) + 1;
+            wake();
+          }
+        : wake;
+      return world.reactive.observeQuery(curQ, counted, { cols: [Cur] });
     },
   };
 }

@@ -405,7 +405,7 @@ refusal surfaces) · every enforcement point mutation-probed (six probes, each
 bit) · full core suite 589 green, `pnpm run ci` walls-clean · design-009 §17
 amendment + I19 registry row folded with the code. **MET.**
 
-## M17 — The magnet grid (design-010) — **BUILT 2026-08-24, perf exit pending**
+## M17 — The magnet grid (design-010) — **DONE 2026-08-25**
 
 The dot grid's PIXELS replaced by a field-reactive lattice — its interfaces
 untouched. Ported from vibe-field `draft/magnet-grid` (WGSL → TSL) with the
@@ -447,10 +447,19 @@ fadeZoom, coincidence skip, MeasuredSize-over-Size) · full `pnpm run ci`
 walls-clean (513 modules) · headless verification on BOTH backends: needle
 starburst around the halo pole, needles wrapping card silhouettes, dot glyph,
 WebGL2-PBO path error-free, classic default visually unchanged with magnet off
-· design-010 amendments folded. **PENDING**: the §6.3 measured perf A-B
-(redraw counts + frame times, classic vs magnet at 0/50/128 sources) — the
-§6.2 estimate table must be re-issued with measurements before any release
-that advertises the mode.
+· perf A-B MEASURED 2026-08-25 (design-010 §6.4): settled-idle redraws **0**
+classic AND magnet at +0/+50/+128 widgets — but only after the redraw counter
+exposed the halo systems' ungated blanket stamps (`access.write [Cur]` +
+run-every-tick = observer fire every tick, the `version-stamps.ts:7-9` guard
+rule violated) — fixed with per-system `makeVersionGuard(PointerVersion)`
+`runIf` + a settle-tail latch (`cursor/systems.ts`; **vibe-field's identical
+halo systems need the same fix in their port**); sweep = one redraw per moved
+frame as estimated; +128-source sweep ~+30% frame mean (the valves' corner),
+no cliff · design-010 amendments folded (§10 now records eight corrections).
+**MET** — with one honest rider: headless cannot time the GPU, so an
+on-device A-B is still owed before a RELEASE advertises the mode, and the
+§10.8 hover-flap (pointer parked ON a card redraws at tick rate — pre-existing
+widgetlab hover behavior, now visible) is a named widgetlab follow-up.
 
 ## Release cut & downstream
 

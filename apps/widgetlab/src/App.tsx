@@ -29,6 +29,8 @@ import {
   Selected,
   Size,
   SnapConfig,
+  PointerVersion,
+  SpatialVersion,
   SnapSource,
   SnapTarget,
   Viewport,
@@ -320,6 +322,9 @@ function installDebugProbe(ce: CanvasEngine): void {
       camera: world.getResource(Camera),
       viewport: world.getResource(Viewport),
       navDepth: ce.nav.depth(),
+      // Churn instruments (magnet-grid wake forensics, design-010 §6.3).
+      spatialVersion: world.getResource(SpatialVersion)?.v,
+      pointerVersion: world.getResource(PointerVersion)?.v,
       guides,
       widgets,
       wires,
@@ -632,11 +637,22 @@ export function App() {
   // the default demo stays the classic analytic grid, byte-identical.
   const groundFactory = useMemo(() => {
     const magnetParam = new URLSearchParams(window.location.search).get("magnet");
-    if (magnetParam === null) return ground();
-    return ground({
-      grid: { magnet: { enabled: true, glyph: magnetParam === "dot" ? "dot" : "needle" } },
-      poles: haloPoles(),
-    });
+    const inner =
+      magnetParam === null
+        ? ground()
+        : ground({
+            grid: { magnet: { enabled: true, glyph: magnetParam === "dot" ? "dot" : "needle" } },
+            poles: haloPoles(),
+          });
+    if (!import.meta.env.DEV) return inner;
+    // DEV probe: headless perf scripts read reflector.redraws() — the ground
+    // churn instrument (design-010 §6.3) — through the app-side wrapper; the
+    // factory stays opaque to the facade.
+    return ((ctx) => {
+      const layer = inner(ctx);
+      (window as unknown as { __groundLayer?: unknown }).__groundLayer = layer;
+      return layer;
+    }) as typeof inner;
   }, []);
 
   // Widget tray open state lives HERE because the canvas itself reacts: the
