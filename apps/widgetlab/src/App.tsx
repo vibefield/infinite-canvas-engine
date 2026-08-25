@@ -450,7 +450,17 @@ export function App() {
     return false;
   });
 
-  const [gridConfig, setGridConfig] = useState<GridConfig>({ ...DEFAULT_GRID_CONFIG });
+  const [gridConfig, setGridConfig] = useState<GridConfig>(() => {
+    // ?magnet / ?magnet=dot seeds the magnet block (design-010); ABSENT
+    // otherwise — absence is the off state (§10.1), and the Settings panel's
+    // Magnet Grid section adds the key on first touch.
+    const magnetParam = new URLSearchParams(window.location.search).get("magnet");
+    if (magnetParam === null) return { ...DEFAULT_GRID_CONFIG };
+    return {
+      ...DEFAULT_GRID_CONFIG,
+      magnet: { enabled: true, glyph: magnetParam === "dot" ? "dot" : "needle" },
+    };
+  });
   const [themeColors, setThemeColors] = useState<ThemeColors>(DEFAULT_THEME_COLORS);
   const [overlapGlow, setOverlapGlow] = useState<OverlapGlowConfig>(DEFAULT_OVERLAP_GLOW);
   const [overlapGlowThemeColors, setOverlapGlowThemeColors] = useState<OverlapGlowThemeColors>(
@@ -635,15 +645,12 @@ export function App() {
   // `?magnet` / `?magnet=dot` opts into the design-010 magnet grid with the
   // cursor halo as the pole (halo-poles.ts, the reference PoleSource wiring);
   // the default demo stays the classic analytic grid, byte-identical.
+  // The halo pole source is ALWAYS wired (inert until `grid.magnet` enables —
+  // the pass gates the subscription); magnet config itself lives in the
+  // gridConfig STATE (seeded from ?magnet, tunable in the Settings panel), so
+  // there is ONE source of truth and no factory-vs-configureGrid merge dance.
   const groundFactory = useMemo(() => {
-    const magnetParam = new URLSearchParams(window.location.search).get("magnet");
-    const inner =
-      magnetParam === null
-        ? ground()
-        : ground({
-            grid: { magnet: { enabled: true, glyph: magnetParam === "dot" ? "dot" : "needle" } },
-            poles: haloPoles(),
-          });
+    const inner = ground({ poles: haloPoles() });
     if (!import.meta.env.DEV) return inner;
     // DEV probe: headless perf scripts read reflector.redraws() — the ground
     // churn instrument (design-010 §6.3) — through the app-side wrapper; the
