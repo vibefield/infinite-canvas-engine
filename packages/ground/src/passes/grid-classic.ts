@@ -1,7 +1,7 @@
 /**
- * The CLASSIC dot-grid renderer — extracted VERBATIM from grid.ts when the
- * magnet mode arrived (design-010 D1: classic stays the default and the
- * pixel-exact baseline; the pass facade in grid.ts owns mode switching).
+ * The CLASSIC dot-grid renderer — extracted VERBATIM when the magnet grid
+ * arrived. It is the pixel-exact alternate implementation selected by the
+ * build-time wiring in grid.ts; there is no runtime mode switch.
  *
  * TSL port of the raw-WebGL grid (itself verbatim from v1 GridRenderer.ts;
  * the fragment math below is that shader re-expressed as a node graph, level

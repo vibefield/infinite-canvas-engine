@@ -24,8 +24,9 @@ export type { GroundRendererLike } from "./renderer";
 export { SoupBuilder, parseCssColor, type Rgba, type TriSoup } from "./passes/soup-collect";
 export { collectGuides } from "./passes/guides-collect";
 export { collectWires } from "./passes/wires-collect";
-// The magnet pole seam (design-010 §3.3) + canned wirings (D5: the pass
-// imports neither — the cursor dependency lives in the helper the app chose).
+// The magnet pole seam (design-010 §3.3) + canned wirings (D5: the grid
+// implementation imports neither helper — cursor vocabulary lives in the
+// helper the app chose).
 export { cursorVisualPoles, localPointerPoles, type Pole, type PoleSource } from "./poles";
 export {
   collectMagnetLevels,
@@ -75,8 +76,8 @@ export interface GroundOptions {
   /**
    * Magnet pole sources (design-010 §3.3) — live app-authored objects, so they
    * live HERE, not in the plain-data GridConfig. Nothing wired ⇒ the magnet
-   * field (if enabled) is widget-only; with magnet off they cost one gated
-   * no-op subscription each.
+   * field is widget-only. The classic implementation accepts this same
+   * GroundOptions contract and ignores the sources.
    */
   readonly poles?: PoleSource | readonly PoleSource[];
   /** Extra app passes, rendered after the built-ins (renderOrder ≥ 3 is yours). */

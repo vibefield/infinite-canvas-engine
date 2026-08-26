@@ -34,8 +34,8 @@ export interface PoleSource {
   /** Called during collect — read-only world access (GroundPass.collect rules). */
   read(world: World): readonly Pole[];
   /**
-   * Called during arm — `wake` marks the grid pass dirty (the pass gates it on
-   * `magnet.enabled`, so idle scenes stay at zero frames). Returns unsubscriber.
+   * Called during arm — `wake` marks the wired magnet grid dirty. The classic
+   * implementation never subscribes. Returns an unsubscriber.
    */
   subscribe(world: World, wake: () => void): () => void;
 }

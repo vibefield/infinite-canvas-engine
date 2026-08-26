@@ -24,13 +24,14 @@ export interface GridConfig {
   /** Per-level opacity weight: level i gets (base + i * step). */
   levelWeight: [number, number];
   /**
-   * The magnet mode (design-010): a field-reactive lattice replacing the
-   * classic grid's PIXELS, not its interfaces. Absent or `enabled: false`
-   * ⇒ the classic analytic grid, byte-identical to pre-magnet builds.
-   * `configureGrid` deep-merges THIS key one level (design-010 §3.1) so a
-   * partial re-tune (e.g. `{ magnet: { reach: 80 } }`) never clobbers the
-   * rest of the block. Partial by declaration: the grid pass resolves it over
-   * {@link DEFAULT_GRID_MAGNET_CONFIG} — apps state only what they change.
+   * Magnet-lattice tuning. The production grid implementation is selected at
+   * build time; this block never switches renderers at runtime. The magnet
+   * implementation resolves an absent/partial block over
+   * {@link DEFAULT_GRID_MAGNET_CONFIG}; the classic implementation accepts
+   * the same GridConfig contract and ignores this block.
+   *
+   * `configureGrid` deep-merges this key one level, so a partial re-tune such
+   * as `{ magnet: { reach: 80 } }` never clobbers the rest of the block.
    */
   magnet?: Partial<GridMagnetConfig>;
 }
@@ -41,8 +42,6 @@ export interface GridConfig {
  * strength curves) lives in whichever `PoleSource` the app wired (D5).
  */
 export interface GridMagnetConfig {
-  /** Master switch. false = classic analytic grid (the default). */
-  enabled: boolean;
   /** Needles orient along the field; dots stay on the lattice and swell with |field|. */
   glyph: "dot" | "needle";
   /** CSS px at which a lone source has influence 0.5 (k = 0.5·reach²). */
@@ -69,7 +68,6 @@ export interface GridMagnetConfig {
 
 /** Experiment-calibrated defaults (vibe-field draft/magnet-grid HUD values). */
 export const DEFAULT_GRID_MAGNET_CONFIG: GridMagnetConfig = {
-  enabled: false,
   glyph: "needle",
   reach: 60,
   polarity: 1,
@@ -83,12 +81,11 @@ export const DEFAULT_GRID_MAGNET_CONFIG: GridMagnetConfig = {
   fadeZoom: 0,
 };
 
-/** Verbatim from v1 GridRenderer.ts:27-35 (Apple Freeform / FigJam feel).
- *  Deliberately does NOT carry a `magnet` block: ABSENCE is the off state.
- *  An explicit `{enabled: false}` here would ride every consumer that spreads
- *  this default into its own grid state (the widgetlab/vibe-field shape) and
- *  deep-merge "off" over a factory-level enable at the configureGrid seam —
- *  found live on the M17 build's first screenshot (design-010 §3.1 amendment). */
+/**
+ * Shared visual defaults inherited from the original analytic grid. The
+ * magnet block stays optional so apps can state only the magnet values they
+ * tune; the wired implementation resolves the remainder independently.
+ */
 export const DEFAULT_GRID_CONFIG: GridConfig = {
   spacings: [20, 100, 500],
   dotColor: [0.75, 0.77, 0.8],

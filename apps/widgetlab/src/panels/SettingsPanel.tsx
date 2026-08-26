@@ -153,8 +153,8 @@ export function SettingsPanel({
     onGridChange({ ...gridConfig, [key]: value });
   }
 
-  // Magnet block (design-010): resolved over defaults for display; writes
-  // merge into the state's partial (the key appears on first touch).
+  // Magnet tuning (design-010): resolved over defaults for display; writes
+  // merge into the state's partial block. Renderer selection is build-time.
   const magnet = { ...DEFAULT_GRID_MAGNET_CONFIG, ...gridConfig.magnet };
   function setMagnet(patch: Partial<GridMagnetConfig>) {
     onGridChange({ ...gridConfig, magnet: { ...gridConfig.magnet, ...patch } });
@@ -351,21 +351,12 @@ export function SettingsPanel({
           </div>
         </div>
 
-        {/* Magnet grid (design-010): field-reactive lattice behind the classic
-            grid's interfaces. Controls write gridConfig.magnet — the key is
-            ADDED on first touch (absence is the off state, §10.1) and flows
-            through the same grid prop → configureGrid deep merge. */}
+        {/* Magnet grid (design-010): the production-wired grid implementation.
+            Controls write gridConfig.magnet and flow through the same grid
+            prop → configureGrid deep merge. */}
         <div className={borderCls}>
           <div className={sectionCls}>Magnet Grid (design-010)</div>
           <div className="space-y-1.5">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={magnet.enabled}
-                onChange={(e) => setMagnet({ enabled: e.target.checked })}
-              />
-              <span className={labelCls}>enabled (cursor halo drives the field)</span>
-            </label>
             <div className="flex items-center gap-2">
               <span className={`w-10 ${labelCls}`}>glyph</span>
               {(["needle", "dot"] as const).map((g) => (
@@ -374,7 +365,6 @@ export function SettingsPanel({
                     type="radio"
                     name="magnet-glyph"
                     checked={magnet.glyph === g}
-                    disabled={!magnet.enabled}
                     onChange={() => setMagnet({ glyph: g })}
                   />
                   <span className={labelCls}>{g}</span>
@@ -388,7 +378,6 @@ export function SettingsPanel({
                 min="10"
                 max="150"
                 step="5"
-                disabled={!magnet.enabled}
                 className="flex-1 accent-neutral-600 dark:accent-neutral-300"
                 value={magnet.reach}
                 onChange={(e) => setMagnet({ reach: Number(e.target.value) })}
@@ -404,7 +393,6 @@ export function SettingsPanel({
                 min="2"
                 max="20"
                 step="0.5"
-                disabled={!magnet.enabled}
                 className="flex-1 accent-neutral-600 dark:accent-neutral-300"
                 value={magnet.needleLength}
                 onChange={(e) => setMagnet({ needleLength: Number(e.target.value) })}
@@ -418,7 +406,6 @@ export function SettingsPanel({
                 <input
                   type="checkbox"
                   checked={magnet.alwaysAlign}
-                  disabled={!magnet.enabled}
                   onChange={(e) => setMagnet({ alwaysAlign: e.target.checked })}
                 />
                 <span className={labelCls}>always align</span>
@@ -427,7 +414,6 @@ export function SettingsPanel({
                 <input
                   type="checkbox"
                   checked={magnet.polarity === -1}
-                  disabled={!magnet.enabled}
                   onChange={(e) => setMagnet({ polarity: e.target.checked ? -1 : 1 })}
                 />
                 <span className={labelCls}>repel</span>

@@ -44,7 +44,6 @@ const frame = (over: Partial<GroundFrame> = {}): GroundFrame => ({
 
 const magnet = (over: Partial<GridMagnetConfig> = {}): GridMagnetConfig => ({
   ...DEFAULT_GRID_MAGNET_CONFIG,
-  enabled: true,
   ...over,
 });
 
@@ -268,8 +267,7 @@ describe("collectMagnetSources — widgets (broad-phase)", () => {
 
 describe("resolveMagnet / pole helpers", () => {
   it("resolves a partial block over the defaults", () => {
-    const m = resolveMagnet(grid({ magnet: { enabled: true, reach: 90 } }));
-    expect(m.enabled).toBe(true);
+    const m = resolveMagnet(grid({ magnet: { reach: 90 } }));
     expect(m.reach).toBe(90);
     expect(m.glyph).toBe(DEFAULT_GRID_MAGNET_CONFIG.glyph);
   });

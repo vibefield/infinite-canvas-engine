@@ -237,11 +237,17 @@ register `layer.reflector`). One WebGPU canvas (WebGL2 fallback automatic)
 drawing the dot grid, wires, and snap guides as passes; `configureGrid`
 re-tunes live (the react `grid` prop forwards here).
 
-**The magnet grid (design-010, 0.10.0)**: `grid.magnet?: Partial<GridMagnetConfig>`
-swaps the classic analytic dot grid's PIXELS for a field-reactive lattice —
-same interfaces, classic remains the default and absence of the block is the
-off state (`configureGrid` deep-merges the `magnet` key one level).
-`GridMagnetConfig`: `enabled` · `glyph: "dot"|"needle"` · `reach` (CSS px at
+**The magnet grid (design-010, 0.10.0; build-time wiring in 0.11.0)**:
+classic and magnet are separate `GridPassFactory` implementations over the
+same `GridConfig`/dependency contract. `passes/grid.ts` imports exactly one;
+the production package currently wires magnet, so classic has no runtime
+bundle edge. Rewiring the one re-export selects classic without changing
+`ground()`, `configureGrid`, or the react `grid` prop. This is not a runtime
+mode switch.
+
+`grid.magnet?: Partial<GridMagnetConfig>` live-tunes the selected magnet
+implementation and is deep-merged one level by `configureGrid`.
+`GridMagnetConfig`: `glyph: "dot"|"needle"` · `reach` (CSS px at
 influence 0.5) · `polarity` · `widgets`/`widgetStrength`/`widgetRadius`
 (silhouette SDF sources via the spatial index) · `alwaysAlign` ·
 `needleLength`/`needleWidth` · `maxSources` (≤256, prioritized largest-first;

@@ -410,9 +410,9 @@ amendment + I19 registry row folded with the code. **MET.**
 The dot grid's PIXELS replaced by a field-reactive lattice — its interfaces
 untouched. Ported from vibe-field `draft/magnet-grid` (WGSL → TSL) with the
 upgrades the experiment lacked: rbush broad-phase, N injected poles, config
-valves. Classic stays the default renderer and the pixel-exact baseline;
-magnet is a sibling mode inside the same `GridPass` behind the same
-`configureGrid`/react-`grid`-prop seam.
+valves. The original 0.10.0 build kept classic and magnet as runtime sibling
+modes; the 0.11.0 amendment below replaces that facade with build-time
+implementation wiring while preserving the same parent-facing seam.
 
 - **M17a — config vocabulary**: `GridConfig.magnet?: Partial<GridMagnetConfig>`
   + `DEFAULT_GRID_MAGNET_CONFIG`; `configure` deep-merges the `magnet` key one
@@ -441,6 +441,15 @@ magnet is a sibling mode inside the same `GridPass` behind the same
   `cursorVisualPoles`; widgetlab ships the REFERENCE app adapter
   (`cursor/halo-poles.ts`: morph scale → strength, `easeSettle` quiets wakes)
   behind `?magnet` / `?magnet=dot` — the default demo byte-identical.
+- **M17e — build-time implementation selection (0.11.0)**: runtime sibling
+  mode ownership is removed. `grid-contract.ts` owns the shared
+  `GridPassFactory`/config/dependency contract; `grid-classic-pass.ts` and
+  `grid-magnet-pass.ts` are complete interchangeable implementations; the
+  tiny `grid.ts` wiring re-exports only magnet. `GridMagnetConfig.enabled` and
+  the WidgetLab enable toggle are gone. The production `@vibecook/ice` graph
+  contains magnet only (classic is absent from JS, source maps and emitted
+  declarations); changing one re-export wires classic back with no parent
+  changes. Dot/needle remains a uniform within the magnet renderer.
 
 **Exit**: 16 collector tests green (pole degeneracy, halo query, prioritization,
 fadeZoom, coincidence skip, MeasuredSize-over-Size) · full `pnpm run ci`

@@ -11,8 +11,8 @@
  *    D4); the mouse uniform / `mouseOn` branch are deleted.
  *  - fade ladder, level weight and dotAlpha are CPU-baked into ONE per-level
  *    alpha (they are per-level constants per frame — magnet-collect owns them).
- *  - dot rest radius comes from `GridConfig.dotRadius[0]` (config continuity
- *    with the classic grid), not the WGSL's hardcoded `halfLen·0.16`.
+ *  - dot rest radius comes from `GridConfig.dotRadius[0]` (shared config
+ *    continuity), not the WGSL's hardcoded `halfLen·0.16`.
  *  - coincidence skip (§5.4): sites shared with a visible coarser level drop
  *    out (integer spacing ratios), replicating the classic max-composite look.
  *  - NDC is computed from CSS-px directly (the WGSL path) — glyph sizes are

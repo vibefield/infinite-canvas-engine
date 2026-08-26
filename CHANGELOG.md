@@ -4,7 +4,22 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
-## [0.10.1] — 2026-08-25
+## [0.11.0] — 2026-08-25
+
+### Changed
+
+- **Grid implementation selection is now build-time.** Classic and magnet
+  are independent `GridPassFactory` implementations over the same
+  `GridConfig`/`GridPassDeps` contract. The tiny `passes/grid.ts` wiring
+  module imports exactly one factory; production currently wires magnet, so
+  the classic renderer, material and declarations are unreachable from the
+  package entry graph and absent from the runtime bundle. Wiring classic back
+  is a single re-export change—there is no runtime renderer switch, retained
+  inactive material, or first-toggle compilation path.
+- **Magnet is the production grid.** `GridMagnetConfig.enabled` is removed;
+  dot/needle remains a live glyph uniform within the one magnet renderer.
+  WidgetLab now starts on magnet needle and keeps `?magnet=dot` only as a
+  dot-glyph verification preset.
 
 ### Fixed
 
