@@ -381,12 +381,6 @@ export function SettingsPanel({
                 </label>
               ))}
             </div>
-            {magnet.glyph === "dot" && (
-              <div className="rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-[10px] text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-400">
-                known issue: the dot glyph currently renders nothing (design-010
-                §10.9) — needle is the verified glyph
-              </div>
-            )}
             <label className="flex items-center gap-2">
               <span className={`w-10 ${labelCls}`}>reach</span>
               <input

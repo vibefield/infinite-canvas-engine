@@ -211,7 +211,10 @@ export function createMagnetGrid(): MagnetGridRenderer {
       const corner = positionGeometry.xy;
       // Dot: size encodes |field| — far sites rest at the classic dot radius.
       const dotRadius = mix(uRestRadius, uHalfLen.mul(1.05), influence);
-      const dotLocal = corner.mul(dotRadius);
+      // The screen→NDC conversion below flips Y. Reflect this symmetric glyph
+      // locally as well so its triangles stay CCW under FrontSide culling. The
+      // needle basis is already a reflection (det < 0), so it needs no flip.
+      const dotLocal = vec2(corner.x, corner.y.negate()).mul(dotRadius);
       // Needle: orient along the field (or rest-blended), length/width as cues.
       const dir = select(
         uAlwaysAlign.greaterThan(0.5),
