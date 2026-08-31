@@ -98,6 +98,13 @@ export class WebGpuRenderTargetPool {
   private entries = new Map<number, PoolEntry>();
   private totalBytes = 0;
   private pins = new Map<number, number>();
+  /**
+   * Targets replaced while PINNED — kept alive until the pin releases.
+   * A pin means something is sampling that texture right now (a retained
+   * outgoing quad holds it by reference through its own material), so
+   * disposing it on a resize would destroy the reader's texture mid-fade.
+   */
+  private retired = new Map<number, Array<{ rt: RenderTarget; bytes: number }>>();
   private disposed = false;
   private readonly now: () => number;
   private readonly rendererOf: () => WebGpuRendererLike | undefined;
@@ -127,8 +134,23 @@ export class WebGpuRenderTargetPool {
     }
 
     if (existing) {
-      existing.rt.dispose();
-      this.totalBytes -= existing.bytes;
+      if (this.isPinned(key)) {
+        // PINNED MEANS IN USE, and a resize is not a licence to destroy it.
+        // `release()` has always refused a pinned row and the compositor's
+        // eviction pass calls pinned targets immune, but the resize path here
+        // disposed one outright — and the reader it would take out is the
+        // retained quad of an outgoing nav frame, which samples this exact
+        // texture for the length of the fade. Retire it instead: the island
+        // gets its new target now, the clone keeps the pixels it is drawing,
+        // and the pin's release frees the old one. Its bytes stay counted
+        // until then, because it is still allocated.
+        const held = this.retired.get(key);
+        if (held === undefined) this.retired.set(key, [{ rt: existing.rt, bytes: existing.bytes }]);
+        else held.push({ rt: existing.rt, bytes: existing.bytes });
+      } else {
+        existing.rt.dispose();
+        this.totalBytes -= existing.bytes;
+      }
     }
 
     const rt = new RenderTarget(pixelWidth, pixelHeight, {
@@ -204,8 +226,18 @@ export class WebGpuRenderTargetPool {
         released = true;
         for (const key of retained) {
           const refs = this.pins.get(key) ?? 0;
-          if (refs <= 1) this.pins.delete(key);
-          else this.pins.set(key, refs - 1);
+          if (refs > 1) {
+            this.pins.set(key, refs - 1);
+            continue;
+          }
+          this.pins.delete(key);
+          // Last reader gone: anything this key outgrew while pinned is now
+          // free to go, and its bytes come back with it.
+          for (const stale of this.retired.get(key) ?? []) {
+            stale.rt.dispose();
+            this.totalBytes = Math.max(0, this.totalBytes - stale.bytes);
+          }
+          this.retired.delete(key);
         }
       },
     };
@@ -260,6 +292,8 @@ export class WebGpuRenderTargetPool {
   dispose(): void {
     if (this.disposed) return;
     for (const entry of this.entries.values()) entry.rt.dispose();
+    for (const held of this.retired.values()) for (const stale of held) stale.rt.dispose();
+    this.retired.clear();
     this.entries.clear();
     this.pins.clear();
     this.totalBytes = 0;

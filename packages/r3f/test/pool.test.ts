@@ -1,6 +1,6 @@
 import { SRGBColorSpace } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { RenderTargetPool } from "../src/pool";
+import { RenderTargetPool, renderTargetBytes } from "../src/pool";
 
 // A deterministic clock the tests advance by hand so `lastUsedMs` assertions do
 // not depend on wall time (design-004 §3 — the pool takes an injected `now`).
@@ -49,6 +49,27 @@ describe("RenderTargetPool", () => {
     expect(disposeSpy).toHaveBeenCalledTimes(1);
     expect(b.width).toBe(200);
     expect(pool.size()).toBe(1);
+  });
+
+  it("never destroys a PINNED target on a resize — it retires it until the pin drops", () => {
+    // The mirror of the WebGPU pool's rule, and for the same reason: a pinned
+    // row is being sampled by an outgoing retained quad, so a resize must not
+    // dispose it under the reader. `release()` already refused a pinned row;
+    // this path did not.
+    const pool = new RenderTargetPool(() => 0);
+    const before = pool.acquire(1, 100, 100, 1);
+    const disposed = vi.spyOn(before, "dispose");
+    const pin = pool.pin([1]);
+
+    const after = pool.acquire(1, 100, 100, 2);
+    expect(after).not.toBe(before);
+    expect(disposed).not.toHaveBeenCalled();
+    expect(pool.size()).toBe(1);
+    expect(pool.bytesUsed()).toBe(renderTargetBytes(100, 100) + renderTargetBytes(200, 200));
+
+    pin.release();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(pool.bytesUsed()).toBe(renderTargetBytes(200, 200));
   });
 
   it("charges the real MSAA allocation: 36 bytes/px (4 resolve + 16 colour + 16 depth) for a 4-sample RGBA8+depth target", () => {

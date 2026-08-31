@@ -11,7 +11,7 @@
  * Plus the half the WebGL pool cannot answer at all: the raw GPUTexture, the
  * actual format, and whether MSAA really survived.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RenderTarget, SRGBColorSpace } from "three";
 import {
   WEBGPU_ISLAND_SAMPLES,
@@ -114,6 +114,32 @@ describe("LRU + pins", () => {
     pin.release();
     expect(p.isPinned(1)).toBe(false);
     expect(p.release(1)).toBe(true);
+  });
+
+  it("never destroys a PINNED target on a resize — it retires it until the pin drops", () => {
+    // A pin means something is sampling that texture right now: the retained
+    // outgoing quad of a nav transition holds it by reference for the length
+    // of the fade. A band or DPR change in that window used to dispose it
+    // under the reader — and the window is real, because the transition
+    // outlives `NavTransition.active` (the fast-fade branch), which is exactly
+    // when the compositor unfreezes and repaints a band-stale island.
+    const { pool: p } = pool();
+    const before = p.acquire(1, 100, 100, 1);
+    const disposed = vi.spyOn(before, "dispose");
+    const pin = p.pin([1]);
+
+    const after = p.acquire(1, 100, 100, 2); // a band step: new pixel size
+    expect(after).not.toBe(before);
+    expect(disposed).not.toHaveBeenCalled();
+    expect(p.size()).toBe(1);
+    // Still allocated, so still charged.
+    expect(p.bytesUsed()).toBe(
+      webGpuRenderTargetBytes(100, 100) + webGpuRenderTargetBytes(200, 200),
+    );
+
+    pin.release();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(p.bytesUsed()).toBe(webGpuRenderTargetBytes(200, 200));
   });
 
   it("force releases through a pin (teardown)", () => {
