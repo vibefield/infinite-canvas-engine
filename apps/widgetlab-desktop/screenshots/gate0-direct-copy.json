@@ -1,0 +1,160 @@
+{
+  "host": {
+    "dpr": 2,
+    "deviceW": 320,
+    "deviceH": 192,
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) widgetlab-desktop/0.0.0 Chrome/150.0.7871.114 Electron/43.1.1 Safari/537.36",
+    "chrome": "150.0.7871.114",
+    "electron": "43.1.1",
+    "caps": {
+      "webgpu": true,
+      "requestPaint": true,
+      "getElementTransform": true,
+      "copyElementImageToTexture": true,
+      "copyElementImageToTextureArity": 2,
+      "drawElementImage": true
+    },
+    "layoutSubtree": {
+      "w": 160,
+      "h": 96,
+      "laidOut": true
+    },
+    "adapter": {
+      "vendor": "apple",
+      "architecture": "metal-3"
+    }
+  },
+  "signature": {
+    "arity": 2,
+    "attempts": [
+      {
+        "label": "({}, {})",
+        "ok": false,
+        "throw": "TypeError: Failed to execute 'copyElementImageToTexture' on 'GPUQueue': Failed to read the 'source' property from 'GPUCopyElementImageSource': Required member is undefined.",
+        "validation": null
+      },
+      {
+        "label": "({source}, {})",
+        "ok": false,
+        "throw": "TypeError: Failed to execute 'copyElementImageToTexture' on 'GPUQueue': Failed to read the 'destination' property from 'GPUCopyElementImageDestination': Required member is undefined.",
+        "validation": null
+      },
+      {
+        "label": "({source}, {destination: tex})",
+        "ok": false,
+        "throw": "TypeError: Failed to execute 'copyElementImageToTexture' on 'GPUQueue': Failed to read the 'destination' property from 'GPUCopyElementImageDestination': Failed to read the 'texture' property from 'GPUTexelCopyTextureInfo': Required member is undefined.",
+        "validation": null
+      },
+      {
+        "label": "BENCH ({source}, {destination:{texture}})",
+        "ok": true,
+        "throw": null,
+        "validation": null
+      },
+      {
+        "label": "({source}, {destination:{texture}, origin:{x,y}})",
+        "ok": true,
+        "throw": null,
+        "validation": null
+      },
+      {
+        "label": "({source}, {destination:{texture, origin:{x,y}}})",
+        "ok": true,
+        "throw": null,
+        "validation": null
+      },
+      {
+        "label": "({source}, {destination:{texture}, size:[w,h]})",
+        "ok": true,
+        "throw": null,
+        "validation": null
+      },
+      {
+        "label": "ADAPTER ({source}, {texture, origin}, {w,h,d})",
+        "ok": false,
+        "throw": "TypeError: Failed to execute 'copyElementImageToTexture' on 'GPUQueue': Failed to read the 'destination' property from 'GPUCopyElementImageDestination': Required member is undefined.",
+        "validation": null
+      },
+      {
+        "label": "({source}, {texture})",
+        "ok": false,
+        "throw": "TypeError: Failed to execute 'copyElementImageToTexture' on 'GPUQueue': Failed to read the 'destination' property from 'GPUCopyElementImageDestination': Required member is undefined.",
+        "validation": null
+      },
+      {
+        "label": "NESTED descendant (must fail)",
+        "ok": false,
+        "throw": "TypeError: Failed to execute 'copyElementImageToTexture' on 'GPUQueue': Only immediate children of the <canvas> element can be passed to copyElementImageToTexture().",
+        "validation": null
+      }
+    ],
+    "accepted": [
+      "BENCH ({source}, {destination:{texture}})",
+      "({source}, {destination:{texture}, origin:{x,y}})",
+      "({source}, {destination:{texture, origin:{x,y}}})",
+      "({source}, {destination:{texture}, size:[w,h]})"
+    ],
+    "nestedRefused": true,
+    "benchShapeAccepted": true,
+    "adapterShapeAccepted": false
+  },
+  "pixels": {
+    "copyValidationError": null,
+    "direct": {
+      "distinct": 159,
+      "ink": 33646,
+      "total": 61440,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 320,
+        "h": 192
+      }
+    },
+    "oracle": {
+      "distinct": 159,
+      "ink": 33646,
+      "total": 61440,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 320,
+        "h": 192
+      }
+    },
+    "oracleMatrix": {
+      "a": 1,
+      "b": 0,
+      "c": 0,
+      "d": 1,
+      "e": 0,
+      "f": 0
+    },
+    "compare": {
+      "differing": 0,
+      "maxDelta": 0,
+      "meanAbsDelta": 0,
+      "total": 61440
+    },
+    "directHasContent": true,
+    "oracleHasContent": true
+  },
+  "subrect": {
+    "origin": {
+      "x": 320,
+      "y": 192,
+      "z": 0
+    },
+    "threw": null,
+    "validationError": null,
+    "quadrants": {
+      "topLeft": 0,
+      "topRight": 0,
+      "bottomLeft": 0,
+      "bottomRight": 61440
+    },
+    "landedAtOrigin": true,
+    "ignoredOrigin": false
+  },
+  "notes": []
+}

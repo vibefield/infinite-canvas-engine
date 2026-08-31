@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HiC direct-copy gate</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101010; overflow: hidden; font: 13px/1.4 system-ui, sans-serif; color: #ddd; }
+    #stage { position: absolute; left: 12px; top: 12px; }
+    /* The L1 source canvas: layoutsubtree children lay out and hit-test but are
+       never conventionally painted. Sized in CSS px; its backing store is
+       device px. */
+    #src { width: 160px; height: 96px; display: block; }
+    #card { width: 160px; height: 96px; box-sizing: border-box; background: #1b3a5c; border: 4px solid #e8c547; display: flex; flex-direction: column; }
+    #card .bar { height: 24px; background: #d94f4f; }
+    #card .bar2 { height: 18px; background: #3fbf6f; margin: 6px 8px 0 8px; }
+    #card .txt { font: 700 15px/1.1 system-ui, sans-serif; color: #ffffff; padding: 6px 8px 0 8px; letter-spacing: 0.5px; }
+    #log { position: absolute; left: 12px; top: 140px; white-space: pre; font-family: ui-monospace, monospace; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="src" layoutsubtree>
+      <div id="card">
+        <div class="bar"></div>
+        <div class="txt">GATE0</div>
+        <div class="bar2"></div>
+      </div>
+    </canvas>
+  </div>
+  <div id="log">booting…</div>
+<script>
+/*
+ * GATE ZERO (design-012 plan §6 S0 finding 5): the direct-copy SIGNATURE was
+ * recovered on Chromium 152; this app pins Electron 43.1.1 / Chromium 150.
+ * Before S2 binds the atlas allocator to the real copy, the copy has to be
+ * proven HERE — shape, pixels, and the destination-`origin` sub-rect the paged
+ * atlas addresses slots with.
+ *
+ * Three questions, in order:
+ *   1. WHICH call shape does this Chromium accept? (walk them under a
+ *      validation error scope; the errors name the next missing member)
+ *   2. Are the copied pixels CORRECT? (byte-compare against the 2D
+ *      `drawElementImage` route — the bench's oracle, 0/451,584 differing on 152)
+ *   3. Does destination `origin` actually MOVE the copy? A member that
+ *      validates clean may still be ignored; the paged atlas would then write
+ *      every slot at (0,0) and silently composite garbage. Proven by pixels,
+ *      never by the absence of a validation error.
+ *
+ * Content guard throughout: a blank compares equal to a blank (the S1 landing-log
+ * lesson). Every readback is graded for distinct colours and ink before any
+ * diff is believed.
+ */
+
+// The card is 160x96 CSS px. At dpr 2 that is 320x192 device px, whose row
+// stride (320*4 = 1280) is a multiple of 256 — copyTextureToBuffer's alignment
+// requirement, so readback needs no row padding dance.
+const CSS_W = 160, CSS_H = 96;
+
+const $log = document.getElementById("log");
+const say = (m) => { $log.textContent = m; };
+
+/** Read an rgba8unorm texture back to bytes. Width must give a 256-aligned row. */
+async function readTexture(dev, tex, w, h) {
+  const bytesPerRow = w * 4;
+  if (bytesPerRow % 256 !== 0) throw new Error(`row stride ${bytesPerRow} is not 256-aligned`);
+  const buf = dev.createBuffer({ size: bytesPerRow * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc = dev.createCommandEncoder();
+  enc.copyTextureToBuffer(
+    { texture: tex },
+    { buffer: buf, bytesPerRow, rowsPerImage: h },
+    { width: w, height: h, depthOrArrayLayers: 1 },
+  );
+  dev.queue.submit([enc.finish()]);
+  await dev.queue.onSubmittedWorkDone();
+  await buf.mapAsync(GPUMapMode.READ);
+  const out = new Uint8Array(buf.getMappedRange()).slice();
+  buf.unmap();
+  buf.destroy();
+  return out;
+}
+
+/** Content guard + shape read: distinct colours, ink (non-modal px), ink bbox. */
+function stats(px, w, h) {
+  const counts = new Map();
+  for (let i = 0; i < px.length; i += 4) {
+    const k = (px[i] << 24) | (px[i + 1] << 16) | (px[i + 2] << 8) | px[i + 3];
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  let mode = 0, modeKey = 0;
+  for (const [k, n] of counts) if (n > mode) { mode = n; modeKey = k; }
+  let minX = w, minY = h, maxX = -1, maxY = -1, ink = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const k = (px[i] << 24) | (px[i + 1] << 16) | (px[i + 2] << 8) | px[i + 3];
+      if (k !== modeKey) {
+        ink++;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  return {
+    distinct: counts.size,
+    ink,
+    total: w * h,
+    bbox: maxX < 0 ? null : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 },
+  };
+}
+
+function diff(a, b) {
+  if (a.length !== b.length) return { error: `length ${a.length} vs ${b.length}` };
+  let differing = 0, maxDelta = 0, sum = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    let d = 0;
+    for (let c = 0; c < 4; c++) d = Math.max(d, Math.abs(a[i + c] - b[i + c]));
+    if (d > 0) differing++;
+    if (d > maxDelta) maxDelta = d;
+    sum += d;
+  }
+  return { differing, maxDelta, meanAbsDelta: sum / (a.length / 4), total: a.length / 4 };
+}
+
+window.__gate = {
+  run: async () => {
+    const out = { host: {}, signature: {}, pixels: {}, subrect: {}, notes: [] };
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(CSS_W * dpr), H = Math.round(CSS_H * dpr);
+    out.host = {
+      dpr, deviceW: W, deviceH: H,
+      ua: navigator.userAgent,
+      chrome: (navigator.userAgent.match(/Chrome\/([\d.]+)/) || [])[1] ?? null,
+      electron: (navigator.userAgent.match(/Electron\/([\d.]+)/) || [])[1] ?? null,
+    };
+
+    const srcCanvas = document.getElementById("src");
+    const card = document.getElementById("card");
+    srcCanvas.width = W;
+    srcCanvas.height = H;
+
+    // Capability surface, read the way the adapter reads it.
+    out.host.caps = {
+      webgpu: !!navigator.gpu,
+      requestPaint: typeof HTMLCanvasElement.prototype.requestPaint === "function",
+      getElementTransform: typeof HTMLCanvasElement.prototype.getElementTransform === "function",
+      copyElementImageToTexture: typeof window.GPUQueue?.prototype?.copyElementImageToTexture === "function",
+      copyElementImageToTextureArity: window.GPUQueue?.prototype?.copyElementImageToTexture?.length ?? null,
+    };
+
+    const ctx = srcCanvas.getContext("2d");
+    out.host.caps.drawElementImage = typeof ctx?.drawElementImage === "function";
+
+    // The layoutsubtree discriminator: a sized child of a plain <canvas> is
+    // fallback content and measures 0x0.
+    const r = card.getBoundingClientRect();
+    out.host.layoutSubtree = { w: r.width, h: r.height, laidOut: r.width > 0 && r.height > 0 };
+
+    if (!navigator.gpu) { out.notes.push("no WebGPU"); return out; }
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+    const dev = await adapter.requestDevice();
+    out.host.adapter = { vendor: adapter.info?.vendor ?? null, architecture: adapter.info?.architecture ?? null };
+
+    const TEX_USAGE = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT;
+    const mkTex = (w, h) => dev.createTexture({ size: { width: w, height: h }, format: "rgba8unorm", usage: TEX_USAGE });
+
+    // Let layout + style settle before anything reads the element's pixels.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    // ---- Q1: which shape does Chromium 150 accept? -------------------------
+    const q = dev.queue;
+    const probeTex = mkTex(W, H);
+    const attempts = [];
+    const tryCall = async (label, args) => {
+      dev.pushErrorScope("validation");
+      let threw = null;
+      try {
+        // Receiver-bound, always (the "Illegal invocation" lesson).
+        q.copyElementImageToTexture(...args);
+      } catch (e) { threw = String(e); }
+      const scoped = await dev.popErrorScope();
+      const rec = { label, ok: !threw && !scoped, throw: threw, validation: scoped ? scoped.message : null };
+      attempts.push(rec);
+      return rec;
+    };
+
+    await tryCall("({}, {})", [{}, {}]);
+    await tryCall("({source}, {})", [{ source: card }, {}]);
+    await tryCall("({source}, {destination: tex})", [{ source: card }, { destination: probeTex }]);
+    // THE BENCH SHAPE (recovered on Chromium 152), arity 2:
+    await tryCall("BENCH ({source}, {destination:{texture}})", [{ source: card }, { destination: { texture: probeTex } }]);
+    await tryCall("({source}, {destination:{texture}, origin:{x,y}})", [{ source: card }, { destination: { texture: probeTex }, origin: { x: 0, y: 0 } }]);
+    await tryCall("({source}, {destination:{texture, origin:{x,y}}})", [{ source: card }, { destination: { texture: probeTex, origin: { x: 0, y: 0 } } }]);
+    await tryCall("({source}, {destination:{texture}, size:[w,h]})", [{ source: card }, { destination: { texture: probeTex }, size: [W, H] }]);
+    // THE SHAPE THE S0 ADAPTER CURRENTLY CALLS (arity 3, copyExternalImage-shaped):
+    await tryCall("ADAPTER ({source}, {texture, origin}, {w,h,d})", [
+      { source: card },
+      { texture: probeTex, origin: { x: 0, y: 0, z: 0 } },
+      { width: W, height: H, depthOrArrayLayers: 1 },
+    ]);
+    await tryCall("({source}, {texture})", [{ source: card }, { texture: probeTex }]);
+
+    // A nested descendant must be REFUSED (immediate children only).
+    const nested = card.querySelector(".bar");
+    await tryCall("NESTED descendant (must fail)", [{ source: nested }, { destination: { texture: probeTex } }]);
+
+    out.signature = {
+      arity: q.copyElementImageToTexture?.length ?? null,
+      attempts,
+      accepted: attempts.filter((a) => a.ok && !a.label.startsWith("NESTED")).map((a) => a.label),
+      nestedRefused: attempts.find((a) => a.label.startsWith("NESTED"))?.ok === false,
+    };
+    probeTex.destroy();
+
+    const benchOk = attempts.find((a) => a.label.startsWith("BENCH"))?.ok === true;
+    const adapterOk = attempts.find((a) => a.label.startsWith("ADAPTER"))?.ok === true;
+    out.signature.benchShapeAccepted = benchOk;
+    out.signature.adapterShapeAccepted = adapterOk;
+
+    if (!benchOk && !adapterOk) {
+      out.notes.push("no known call shape accepted — STOP");
+      return out;
+    }
+
+    // The call the rest of the gate uses: prefer the bench shape.
+    const doCopy = benchOk
+      ? (el, tex, origin) => q.copyElementImageToTexture(
+          { source: el },
+          origin ? { destination: { texture: tex, origin } } : { destination: { texture: tex } },
+        )
+      : (el, tex, origin) => q.copyElementImageToTexture(
+          { source: el },
+          { texture: tex, origin: { x: origin?.x ?? 0, y: origin?.y ?? 0, z: 0 } },
+          { width: W, height: H, depthOrArrayLayers: 1 },
+        );
+
+    // ---- Q2: are the pixels correct? ---------------------------------------
+    // Oracle = the 2D route: drawElementImage into this same source canvas,
+    // then copyExternalImageToTexture. That is the route the bench compared
+    // against (0/451,584 differing on 152).
+    const directTex = mkTex(W, H);
+    dev.pushErrorScope("validation");
+    doCopy(card, directTex, null);
+    const copyErr = await dev.popErrorScope();
+    await q.onSubmittedWorkDone();
+    const directPx = await readTexture(dev, directTex, W, H);
+    const directStats = stats(directPx, W, H);
+
+    const oracleTex = mkTex(W, H);
+    let oracleMatrix = null;
+    if (out.host.caps.drawElementImage) {
+      ctx.clearRect(0, 0, W, H);
+      const m = ctx.drawElementImage(card, 0, 0);
+      oracleMatrix = m ? { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f } : null;
+      q.copyExternalImageToTexture({ source: srcCanvas }, { texture: oracleTex }, { width: W, height: H });
+      await q.onSubmittedWorkDone();
+    }
+    const oraclePx = await readTexture(dev, oracleTex, W, H);
+    const oracleStats = stats(oraclePx, W, H);
+
+    out.pixels = {
+      copyValidationError: copyErr ? copyErr.message : null,
+      direct: directStats,
+      oracle: oracleStats,
+      oracleMatrix,
+      compare: diff(directPx, oraclePx),
+      // The content guard: neither capture may be blank or flat, and the ink
+      // must fill roughly the card (a quarter-size draw = a dpr/scale defect,
+      // not a pass).
+      directHasContent: directStats.distinct > 4 && directStats.ink > W * H * 0.05,
+      oracleHasContent: oracleStats.distinct > 4 && oracleStats.ink > W * H * 0.05,
+    };
+    directTex.destroy();
+    oracleTex.destroy();
+
+    // ---- Q3: does destination `origin` actually MOVE the copy? -------------
+    // The paged atlas addresses slots by destination origin. If the member is
+    // accepted-but-ignored every slot writes at (0,0).
+    const PAGE_W = W * 2, PAGE_H = H * 2;              // 640x384; row 2560 = 256*10
+    const page = mkTex(PAGE_W, PAGE_H);
+    // Clear the page to a known colour so "did anything land here" is decidable.
+    {
+      const enc = dev.createCommandEncoder();
+      const pass = enc.beginRenderPass({
+        colorAttachments: [{ view: page.createView(), clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: "clear", storeOp: "store" }],
+      });
+      pass.end();
+      dev.queue.submit([enc.finish()]);
+      await q.onSubmittedWorkDone();
+    }
+    const originArg = { x: W, y: H, z: 0 };
+    dev.pushErrorScope("validation");
+    let originThrew = null;
+    try { doCopy(card, page, originArg); } catch (e) { originThrew = String(e); }
+    const originErr = await dev.popErrorScope();
+    await q.onSubmittedWorkDone();
+    const pagePx = await readTexture(dev, page, PAGE_W, PAGE_H);
+
+    // Quadrant ink: the copy must land in the BOTTOM-RIGHT quadrant only.
+    const quadrantInk = (qx, qy) => {
+      let ink = 0;
+      for (let y = qy * H; y < (qy + 1) * H; y++) {
+        for (let x = qx * W; x < (qx + 1) * W; x++) {
+          const i = (y * PAGE_W + x) * 4;
+          // Non-black = something landed (the page was cleared to opaque black).
+          if (pagePx[i] !== 0 || pagePx[i + 1] !== 0 || pagePx[i + 2] !== 0) ink++;
+        }
+      }
+      return ink;
+    };
+    const q00 = quadrantInk(0, 0), q10 = quadrantInk(1, 0), q01 = quadrantInk(0, 1), q11 = quadrantInk(1, 1);
+    out.subrect = {
+      origin: originArg,
+      threw: originThrew,
+      validationError: originErr ? originErr.message : null,
+      quadrants: { topLeft: q00, topRight: q10, bottomLeft: q01, bottomRight: q11 },
+      // The verdict: ink in the targeted quadrant, none in the others.
+      landedAtOrigin: q11 > W * H * 0.05 && q00 === 0 && q10 === 0 && q01 === 0,
+      ignoredOrigin: q00 > W * H * 0.05 && q11 === 0,
+    };
+    page.destroy();
+
+    dev.destroy?.();
+    return out;
+  },
+};
+
+say("ready");
+</script>
+</body>
+</html>
