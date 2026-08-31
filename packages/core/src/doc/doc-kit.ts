@@ -338,8 +338,17 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
   }
 
   const rawReport = readDocVersionReport(doc, opts.versionScope);
+  // The header mirror is OPTIONAL and coarse (envelope.ts:31, design-011 §13.2:
+  // "in-document metadata remains authoritative … older envelopes without the
+  // field remain readable"). Only a mirror that is PRESENT can disagree —
+  // reading its absence as disagreement gave every hand-rolled envelope, and
+  // every pre-mirror one, a permanent unoverridable rootIssue (no migrate path
+  // clears it and `constrainSemanticVerdict` blocks the override).
+  const mirrorDisagrees =
+    header.rootCanvas !== undefined &&
+    !sameCanvasIdentity(header.rootCanvas, rawReport.rootCanvas);
   const report: DocVersionReport =
-    rawReport.docSchema >= 3 && !sameCanvasIdentity(header.rootCanvas, rawReport.rootCanvas)
+    rawReport.docSchema >= 3 && mirrorDisagrees
       ? {
           ...rawReport,
           rootIssue:

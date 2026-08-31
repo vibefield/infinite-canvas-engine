@@ -304,3 +304,51 @@ describe("DocSession.liveWriter — the design-001 §3 step-2 guard, wired to th
     expect(world.read(draft, Position)).toEqual({ x: 9, y: 9 });
   });
 });
+
+/**
+ * The envelope's `rootCanvas` is an OPTIONAL coarse mirror (envelope.ts:31;
+ * design-011 §13.2 — "in-document metadata remains authoritative … older
+ * envelopes without the field remain readable"). `encodeEnvelope` and
+ * `EnvelopeHeader` are public, so a hand-rolled frame legitimately omits it.
+ */
+describe("envelope rootCanvas mirror (optional, in-document metadata is authoritative)", () => {
+  /** A genuine, healthy current-schema document — payload plus its own markers. */
+  function healthyDoc(): { payload: Uint8Array; prefabVersions: Record<string, number> } {
+    const world = createWorld();
+    const session = createDocSession(world);
+    return {
+      payload: session.exportSnapshot(),
+      prefabVersions: { ...session.versionReport().docPacks },
+    };
+  }
+
+  it("an ABSENT mirror is not disagreement — the document opens healthy and writable", () => {
+    const { payload, prefabVersions } = healthyDoc();
+    const bytes = encodeEnvelope({ engineSchema: ENGINE_SCHEMA_VERSION, prefabVersions }, payload);
+
+    const result = openDocSession(createWorld(), bytes);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.session.report?.rootIssue).toBeUndefined();
+    expect(result.session.readOnly).toBe(false);
+    expect(result.session.rootCanvas).toEqual(canvasIdentityOf(DefaultCanvasType));
+  });
+
+  it("a PRESENT mirror that conflicts with document metadata still raises the rootIssue", () => {
+    const { payload, prefabVersions } = healthyDoc();
+    const bytes = encodeEnvelope(
+      {
+        engineSchema: ENGINE_SCHEMA_VERSION,
+        prefabVersions,
+        rootCanvas: { id: "gate:not-the-stored-root", semanticVersion: 1 },
+      },
+      payload,
+    );
+
+    const result = openDocSession(createWorld(), bytes);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.session.report?.rootIssue).toMatch(/does not agree/);
+    expect(result.session.readOnly).toBe(true);
+  });
+});
