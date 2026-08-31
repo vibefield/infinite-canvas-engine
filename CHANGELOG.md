@@ -71,6 +71,16 @@ layer; the quad pass sweeps bind groups for textures nothing draws;
 outgrows its size is retired, not destroyed — a nav-crossfade clone keeps its
 pixels through the hold.
 
+- **Known issue (composited profile only, confirmed post-cut by a real-GPU
+  rig):** a dom card whose live zoom drifts above its atlas band (band
+  hysteresis tolerates up to 2×) rasterises larger than its slot, and the
+  extent-less copy writes past it — silently into the gutters and the
+  neighbouring slot while the raster still fits the page, and as a refused
+  (blank) copy when it does not. Reachable by zooming in while a card is
+  composited (grabbed, pinned, or resting composited) and then dirtying its
+  content. The fix is a pending band-policy ruling; the measurement and the
+  options live in `docs/implementation-plan.md` M18. The stratified profile
+  is unaffected.
 - The entries above are the consumer-visible surface of the design-012
   UNIFIED COMPOSITOR. `docs/implementation-plan.md` M18 carries the whole of
   it — the ladder, the profile model, the measured exits and the standing gaps

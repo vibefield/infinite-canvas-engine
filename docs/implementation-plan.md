@@ -675,14 +675,37 @@ tests). Notable for the record, beyond the fixes themselves:
   cannot reclaim and may evict a Dormant island early. Honest accounting was
   chosen over hiding live GPU memory; flip it only if that early eviction
   ever bites.
-- **Open, named rather than closed**: (a) an UNVERIFIED size-agreement
-  question — dom-writeback sizes hosts at world × LIVE zoom while the binder
-  slots at world × dpr × BAND, and hysteresis tolerates 2× between them; if
-  HiC rasterises at effective device size, the extent-less copy would write
-  past the slot. Needs a real-GPU rig; the binder header's "the two cannot
-  disagree" claim is flagged, not trusted. (b) the quad pass sweeps stale
-  bind groups on a 60-composite retention window because nothing lifecycles
-  its textures — an event-driven eviction seam is a design call, not a slice.
+- **Open, named rather than closed**: (a) the size-agreement question is now
+  **CONFIRMED by a real-GPU rig** (2026-08-31, `af23b71`/`6e7694c` — rerun:
+  `TMPDIR=/tmp pnpm run zoom-drift` in widgetlab-desktop): an L1 host
+  rasterises at CSS box × the SOURCE CANVAS's backing-store scale (measured
+  flat 2.000× at dpr 2 across zooms, 1.000× against a 1× bitmap — the bitmap
+  governs, not devicePixelRatio), so a card whose live zoom drifts above its
+  band (`isOutOfBand` tolerates up to 2.0×) writes past its slot SILENTLY —
+  at 1.9× drift: 40,272 escaped px, 13,632 into the neighbour, 516 into the
+  gutter, control 0/0/0; two witnesses agree to the pixel (probe-raster bbox
+  = escaped bbox, 304×183) and the arithmetic closes exactly. Refused=0 —
+  no validation error, it corrupts in silence, but ONLY while the oversized
+  raster still fits the page: a copy leaving the destination TEXTURE is
+  refused outright with 0 px written, which means the fix wave's clampToPage
+  path degrades to a BLANK card — a separable liveness bug. Reachability:
+  a card is safe at promotion (band ≥ zoom); the drift shape needs zoom to
+  RISE while composited — grab-then-zoom-in under the Q5 default, or just
+  "zoom in, then type" under a composited pin/restingMode. THE FIX IS A
+  RULING, deliberately not taken by the rig: (a) re-band upward at ratio>1
+  (restores slot ≥ raster always; ~2–4× atlas bytes — measure on a real
+  board first); (b) refuse the copy while oversized (zero memory, but a
+  parked drifted card goes content-stale — needs a third hold state);
+  (c) size hosts in BAND space, zoom in the placement matrix (free by the
+  transform-scale measurement — a host's own transform scale is NOT baked
+  into the raster — but @ice/dom would need the binder's held band, a
+  cross-package seam the walls forbid); (d) scratch-texture copy +
+  downscale blit (policy-free, correct, but a slice). Rig recommendation:
+  (a) with the bytes measured, (d) if they bite. Errata landed at source in
+  binder/atlas/adapter/source-canvas/writeback headers. (b) the quad pass
+  sweeps stale bind groups on a 60-composite retention window because
+  nothing lifecycles its textures — an event-driven eviction seam is a
+  design call, not a slice.
 
 ## Release cut & downstream
 
