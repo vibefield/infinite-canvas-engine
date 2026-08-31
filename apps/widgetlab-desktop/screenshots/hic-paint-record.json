@@ -83,5 +83,77 @@
         "total": 61440
       }
     }
+  ],
+  "placements": [
+    {
+      "label": "fully inside",
+      "at": {
+        "tx": 40,
+        "ty": 40
+      },
+      "threw": null,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      },
+      "ink": 23988
+    },
+    {
+      "label": "straddling the RIGHT edge",
+      "at": {
+        "tx": 1200,
+        "ty": 40
+      },
+      "threw": null,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      },
+      "ink": 23988
+    },
+    {
+      "label": "straddling the BOTTOM edge",
+      "at": {
+        "tx": 40,
+        "ty": 760
+      },
+      "threw": null,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      },
+      "ink": 23988
+    },
+    {
+      "label": "just outside the right edge",
+      "at": {
+        "tx": 1288,
+        "ty": 40
+      },
+      "threw": null,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      },
+      "ink": 23988
+    },
+    {
+      "label": "parked far off-viewport",
+      "at": {
+        "tx": -100000,
+        "ty": -100000
+      },
+      "threw": null,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      },
+      "ink": 23988
+    }
   ]
 }

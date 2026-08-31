@@ -66,6 +66,7 @@ import {
   createPlanes,
   createPresentationRegistry,
   createSourceCanvas,
+  type DomWritebackHosts,
 } from "@ice/dom";
 
 export type Variant = "stratified" | "composited";
@@ -181,6 +182,24 @@ export interface BoardRig {
   readCompositor(): Promise<Capture>;
   /** Composite with a quad corner radius and measure the covered area. */
   roundedArea(radiusCss: number, opacity: number): Promise<Record<string, number>>;
+  /** Does the transform REPLACE layout inside layoutsubtree? (§5 law 1) */
+  transformSemantics(): Promise<Record<string, unknown>>;
+  /** Stale-hit-region policies (§5 law 2). */
+  hitTest(policy: "visible-only" | "write-all" | "park"): Promise<Record<string, unknown>>;
+  /** Click accuracy WHILE the camera moves (§5 law 3). */
+  midGestureHits(samples: number): Promise<Record<string, number>>;
+  /** A pure pan must upload zero bytes (§4.2 guard). */
+  panUpload(frames: number): Promise<Record<string, number>>;
+  /** Screen rect of card `index`, for real input from the main process. */
+  targetRect(index: number): Record<string, unknown>;
+  /** Put a real <input> inside a composited card; returns its screen rect. */
+  addInput(index: number): Promise<Record<string, unknown>>;
+  /** Focus/value of that input — read after the runner sends real events. */
+  inputState(): Record<string, unknown>;
+  /** Paint-event and upload counters (the §4.2 characterisation). */
+  dirtCounters(): Record<string, number>;
+  /** What changedElements NAMES for a pure content edit. */
+  characterizeContentDirt(): Promise<Record<string, unknown>>;
   /** Compare a stored compositor readback against a supplied RGBA buffer. */
   idle(ms: number): Promise<Record<string, number>>;
   atlas(): Record<string, number>;
@@ -211,10 +230,40 @@ export function mountBoardRig(): BoardRig {
   const l1 = createSourceCanvas(
     container,
     { markAsSourceCanvas, onPaint, changedElements },
-    { onDirty: (hosts) => { paintEvents++; binder?.markDirtyHosts(hosts); } },
+    {
+      onDirty: (hosts, event) => {
+        paintEvents++;
+        if (rawTaps.size > 0) {
+          const raw = changedElements(event);
+          for (const tap of rawTaps) tap(raw);
+        }
+        // THE §4.2 GUARD. `changedElements` names the drawable, so "we moved
+        // it" and "its content changed" are indistinguishable in the event.
+        // The write-back knows which it is: it flags each host it writes, and
+        // this consumes ONE event per write. Anything left over is content.
+        const content: Element[] = [];
+        for (const host of hosts) {
+          if (writeback.consumeTransformWrite(host)) selfNamed++;
+          else content.push(host);
+        }
+        namedHosts += content.length;
+        binder?.markDirtyHosts(content);
+      },
+    },
   );
 
+  /** Extra listeners on the canvas's paint events, for characterisation. */
+  const rawTaps = new Set<(elements: readonly Element[]) => void>();
+  const rawPaintTap = (fn: (elements: readonly Element[]) => void) => {
+    rawTaps.add(fn);
+    return () => rawTaps.delete(fn);
+  };
+
   let paintEvents = 0;
+  /** Hosts named by paint events as CONTENT dirt (after the §4.2 filter). */
+  let namedHosts = 0;
+  /** Hosts named as themselves — the write-back's own paint events. */
+  let selfNamed = 0;
   /**
    * Quad corner radius, in CSS px, for the SDF probe. Zero for the parity arms:
    * a DOM card's own border-radius is rasterised INTO its atlas pixels, so
@@ -237,14 +286,12 @@ export function mountBoardRig(): BoardRig {
     store,
     { presentation, sources },
   );
-  const writeback = createDomWritebackReflector(
-    {
-      hostElementFor: (e) => domWidgets.hostElementFor(e),
-      compositedEntities: () => domWidgets.compositedEntities(),
-      compositedRevision: () => domWidgets.compositedRevision(),
-    },
-    world,
-  );
+  const hostsSeam: DomWritebackHosts = {
+    hostElementFor: (e) => domWidgets.hostElementFor(e),
+    compositedEntities: () => domWidgets.compositedEntities(),
+    compositedRevision: () => domWidgets.compositedRevision(),
+  };
+  const writeback = createDomWritebackReflector(hostsSeam, world);
 
   const cards: Card[] = [];
 
@@ -439,6 +486,360 @@ export function mountBoardRig(): BoardRig {
     };
   }
 
+
+  // ── S3 probes: the bench's regression corpus, on the real implementation ──
+
+  const viewSize = () => ({ w: container.clientWidth, h: container.clientHeight });
+
+  /** Where a card lands on screen, in CSS px, at a given camera. */
+  function screenRect(entity: Entity, cam: { x: number; y: number; zoom: number }) {
+    const pos = world.get(entity, Position);
+    const size = world.get(entity, Size);
+    return {
+      x: ((pos?.x ?? 0) - cam.x) * cam.zoom,
+      y: ((pos?.y ?? 0) - cam.y) * cam.zoom,
+      w: (size?.w ?? 0) * cam.zoom,
+      h: (size?.h ?? 0) * cam.zoom,
+    };
+  }
+
+  const setCamera = (c: { x: number; y: number; zoom: number }) =>
+    world.setResource(Camera, { ...c, gesturing: false });
+
+  /**
+   * `layoutsubtree` SEMANTICS (hic-bench §3, probes/transform-compose.js).
+   *
+   * Inside the source canvas the transform REPLACES layout instead of
+   * composing with it: with `transform:none` a host's rect is (0,0) no matter
+   * what `left`/`top` say. Every placement in this codebase is an ABSOLUTE
+   * screen position because of this, so it is worth a standing test rather
+   * than a comment — if it ever composed instead, every write-back would be
+   * doubly offset and the compositor would still look fine.
+   */
+  async function transformSemantics() {
+    const entity = cards[1]?.entity as Entity;
+    const el = domWidgets.hostElementFor(entity) as HTMLElement;
+    const read = () => {
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+    };
+    const saved = el.style.transform;
+    const savedLeft = el.style.left;
+    const savedTop = el.style.top;
+
+    el.style.left = "300px";
+    el.style.top = "200px";
+    el.style.transform = "";
+    await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    const noTransform = read();
+
+    el.style.transform = "matrix(1,0,0,1,120,60)";
+    await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    const translated = read();
+
+    el.style.transform = saved;
+    el.style.left = savedLeft;
+    el.style.top = savedTop;
+    await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    return { left: 300, top: 200, noTransform, translated };
+  }
+
+  /**
+   * STALE HIT REGIONS (hic-bench §3, probes/stale-hit-regions.js).
+   *
+   * Reproduces the bench's arm ordering exactly: every host is written at an
+   * END camera, the camera then moves to START, and the policy under test is
+   * applied. Off-screen hosts still holding END transforms land inside the
+   * START viewport and intercept clicks meant for the cards actually there.
+   */
+  async function hitTest(policy: "visible-only" | "write-all" | "park") {
+    const view = viewSize();
+    // The board is 4 columns tall, so ROWS are the variable. START shows the
+    // first seven rows — 28 cards, which is the bench's own probe count — and
+    // END is far enough down that rows 10-17 are the visible ones there. At
+    // START those hold END transforms that land squarely inside the viewport.
+    // The row pitch is CARD_H + GAP; an END offset that is an exact multiple of
+    // it makes each off-screen host land squarely on a visible card's CENTRE,
+    // which is where the probe clicks. An arbitrary offset (1200) intrudes into
+    // the viewport but lands BETWEEN centres and steals nothing — intrusion
+    // alone is not the defect.
+    const END = { x: 0, y: (CARD_H + GAP) * 10, zoom: 1 };
+    const START = { x: 0, y: 0, zoom: 1 };
+
+    // Seed: EVERY host placed at the END camera.
+    setCamera(END);
+    const seed = createDomWritebackReflector(hostsSeam, world, { park: false });
+    seed.flush(world);
+    seed.dispose();
+
+    setCamera(START);
+    if (policy === "visible-only") {
+      // The DEFECT, applied by hand: this policy is not something the
+      // reflector will do, so the rig has to stage it to prove it is wrong.
+      for (const entity of domWidgets.compositedEntities()) {
+        const r = screenRect(entity, START);
+        if (r.x + r.w < 0 || r.y + r.h < 0 || r.x > view.w || r.y > view.h) continue;
+        const el = domWidgets.hostElementFor(entity) as HTMLElement;
+        el.style.width = `${r.w}px`;
+        el.style.height = `${r.h}px`;
+        el.style.transform = `matrix(1,0,0,1,${r.x},${r.y})`;
+      }
+    } else {
+      const wb = createDomWritebackReflector(hostsSeam, world, { park: policy === "park" });
+      wb.flush(world);
+      wb.dispose();
+    }
+    await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+
+    // Probe every card whose CENTRE is on screen at START.
+    let checked = 0;
+    let correct = 0;
+    let stolenByOffscreen = 0;
+    let hitNothing = 0;
+    const examples: Array<Record<string, unknown>> = [];
+    for (const entity of domWidgets.compositedEntities()) {
+      const r = screenRect(entity, START);
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      if (!(cx > 0 && cy > 0 && cx < view.w && cy < view.h)) continue;
+      checked++;
+      const at = document.elementFromPoint(cx, cy);
+      const owner = at?.closest?.("[data-ice-entity]") ?? null;
+      const got = owner?.getAttribute("data-ice-entity") ?? null;
+      if (got === String(entity)) {
+        correct++;
+        continue;
+      }
+      if (got === null) hitNothing++;
+      else {
+        // Was the thief a card that is NOT on screen at this camera?
+        const thief = Number(got) as unknown as Entity;
+        const tr = screenRect(thief, START);
+        const onScreen = tr.x + tr.w > 0 && tr.y + tr.h > 0 && tr.x < view.w && tr.y < view.h;
+        if (!onScreen) stolenByOffscreen++;
+      }
+      if (examples.length < 3) examples.push({ want: String(entity), got, at: { cx, cy } });
+    }
+    // GRADE THE STAGING, not just the outcome. If no off-screen host is
+    // actually sitting inside the viewport, "visible-only passes" means the
+    // rig failed to reproduce the defect — not that the defect is gone.
+    let potentialThieves = 0;
+    for (const entity of domWidgets.compositedEntities()) {
+      const r = screenRect(entity, START);
+      const onScreen = r.x + r.w > 0 && r.y + r.h > 0 && r.x < view.w && r.y < view.h;
+      if (onScreen) continue;
+      const el = domWidgets.hostElementFor(entity) as HTMLElement;
+      const box = el.getBoundingClientRect();
+      const intrudes =
+        box.width > 0 && box.x + box.width > 0 && box.y + box.height > 0 && box.x < view.w && box.y < view.h;
+      if (intrudes) potentialThieves++;
+    }
+    return {
+      policy,
+      checked,
+      correct,
+      wrong: checked - correct,
+      stolenByOffscreen,
+      hitNothing,
+      potentialThieves,
+      examples,
+    };
+  }
+
+  /**
+   * MID-GESTURE ACCURACY (hic-bench §3): deferring the write-back to the end of
+   * a gesture costs every click for its duration (0/24, hit regions up to
+   * 881 px off). This pans, and clicks WHILE panning.
+   */
+  async function midGestureHits(samples: number) {
+    const view = viewSize();
+    let landed = 0;
+    let checked = 0;
+    let maxOffset = 0;
+    for (let i = 0; i < samples; i++) {
+      setCamera({ x: i * 12, y: i * 6, zoom: 1 });
+      engine.step(performance.now());
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      const cam = { x: i * 12, y: i * 6, zoom: 1 };
+      // Pick a card that is on screen at this instant.
+      const target = domWidgets.compositedEntities().find((e) => {
+        const r = screenRect(e, cam);
+        const cx = r.x + r.w / 2;
+        const cy = r.y + r.h / 2;
+        return cx > 40 && cy > 40 && cx < view.w - 40 && cy < view.h - 40;
+      });
+      if (target === undefined) continue;
+      const r = screenRect(target, cam);
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      checked++;
+      const el = domWidgets.hostElementFor(target) as HTMLElement;
+      const box = el.getBoundingClientRect();
+      maxOffset = Math.max(maxOffset, Math.abs(box.x - r.x), Math.abs(box.y - r.y));
+      const at = document.elementFromPoint(cx, cy);
+      const got = at?.closest?.("[data-ice-entity]")?.getAttribute("data-ice-entity") ?? null;
+      if (got === String(target)) landed++;
+    }
+    return { checked, landed, maxOffset };
+  }
+
+  /**
+   * THE §4.2 GUARD. A pure pan must upload ZERO bytes (hic-bench §3: camera
+   * motion costs zero paints and zero uploads), even though writing transforms
+   * back costs a fixed 2 paint events per frame. This measures both halves: the
+   * paint events the write-back provokes, how many hosts they NAME, and the
+   * copies that resulted.
+   */
+  async function panUpload(frames: number) {
+    // DRAIN FIRST. Earlier probes leave slots owed a copy, and the pan's first
+    // composite pays that debt — which reads as "the pan uploaded", when the
+    // pan did nothing of the sort. (Measured: exactly one copy, on frame 0,
+    // with zero refusals.) Same discipline as the bench draining its queue
+    // before timing: an arm that starts dirty is charged for the previous one.
+    for (let i = 0; i < 20 && (binder?.pending() ?? 0) > 0; i++) {
+      compositor?.mark("dom");
+      engine.step(performance.now());
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    }
+    const pendingAtStart = binder?.pending() ?? 0;
+    const copiesBefore = binder?.copies() ?? 0;
+    const paintsBefore = paintEvents;
+    const namedBefore = namedHosts;
+    const selfBefore = selfNamed;
+    const refusedBefore = binder?.refusedCopies() ?? 0;
+    const submitsBefore = instrument?.total() ?? 0;
+    // WHICH frame does a copy happen on, and was it preceded by a refusal?
+    // "one copy in 600 frames" is a number; the frame it lands on is a cause.
+    const copyFrames: number[] = [];
+    let running = copiesBefore;
+    for (let i = 0; i < frames; i++) {
+      setCamera({ x: i * 2, y: i, zoom: 1 });
+      engine.step(performance.now());
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      const now = binder?.copies() ?? 0;
+      if (now !== running) {
+        if (copyFrames.length < 8) copyFrames.push(i);
+        running = now;
+      }
+    }
+    return {
+      frames,
+      copies: (binder?.copies() ?? 0) - copiesBefore,
+      paintEvents: paintEvents - paintsBefore,
+      contentNamed: namedHosts - namedBefore,
+      selfNamed: selfNamed - selfBefore,
+      refused: (binder?.refusedCopies() ?? 0) - refusedBefore,
+      pendingAtStart,
+      firstCopyFrame: copyFrames.length === 0 ? -1 : (copyFrames[0] as number),
+      copyFrameCount: copyFrames.length,
+      submits: (instrument?.total() ?? 0) - submitsBefore,
+      writebacks: writeback.writes(),
+      parked: writeback.parked(),
+    };
+  }
+
+  /**
+   * NATIVE INPUT through a composited card (design-012 §5 "Input routing", §1.1
+   * interactive latency). The card's pixels are on the GPU; its DOM is an
+   * unpainted canvas child. Focus, typing and the caret must still work, with
+   * no router involved — that is the whole argument for L1 hosts.
+   *
+   * Input is driven ONLY through this app's own `webContents.sendInputEvent`
+   * from the runner. No OS-level injection.
+   */
+  async function addInput(index: number) {
+    // The camera may be anywhere after the pan probes, and a card that is
+    // off-screen is PARKED at (-100000,-100000) — where no click can reach it.
+    // Bring it back before aiming real input at it.
+    setCamera({ x: 0, y: 0, zoom: 1 });
+    await settle(3);
+    const entity = cards[index]?.entity as Entity;
+    const content = domWidgets.hostFor(entity) as HTMLElement;
+    let input = content.querySelector("input");
+    if (input === null) {
+      input = document.createElement("input");
+      input.id = "probe-input";
+      input.value = "";
+      input.style.cssText =
+        "width:120px;height:20px;margin:4px 10px;font:12px system-ui;box-sizing:border-box;";
+      content.appendChild(input);
+    }
+    // The mutation self-schedules a paint event, which re-copies the slot.
+    await settle(4);
+    const r = input.getBoundingClientRect();
+    return { entity: String(entity), x: r.x, y: r.y, w: r.width, h: r.height };
+  }
+
+  function inputState() {
+    const input = document.getElementById("probe-input") as HTMLInputElement | null;
+    const active = document.activeElement;
+    return {
+      exists: input !== null,
+      focused: input !== null && active === input,
+      value: input?.value ?? null,
+      activeTag: active?.tagName ?? null,
+      // Proof the focused element really is inside the L1 canvas subtree.
+      activeInsideCanvas: active !== null && l1.canvas.contains(active),
+    };
+  }
+
+  /**
+   * WHAT DOES `changedElements` NAME for a content edit?
+   *
+   * The §4.2 guard has to tell a placement write apart from a content change,
+   * and the two candidate discriminators need different code. If the platform
+   * reports the mutated DESCENDANT, the guard is structural (a host named as
+   * itself is a placement write). If it reports the DRAWABLE — the immediate
+   * canvas child — then no structural signal exists and the guard must be
+   * temporal (filter what we just wrote).
+   *
+   * hic-bench §2 says changedElements "names the right card", which is
+   * consistent with BOTH readings, so it is measured here instead.
+   */
+  async function characterizeContentDirt() {
+    const entity = cards[2]?.entity as Entity;
+    const content = domWidgets.hostFor(entity) as HTMLElement;
+    const host = domWidgets.hostElementFor(entity) as HTMLElement;
+    let label = content.querySelector<HTMLElement>("[data-probe-label]");
+    if (label === null) {
+      label = document.createElement("div");
+      label.setAttribute("data-probe-label", "");
+      label.style.cssText = "padding:0 10px;font:12px system-ui;color:#fff;";
+      content.appendChild(label);
+      await settle(3);
+    }
+
+    const seen: Array<{ raw: string; isHost: boolean; isDescendant: boolean }> = [];
+    const off = rawPaintTap((elements) => {
+      for (const el of elements) {
+        seen.push({
+          raw: el.tagName + (el.getAttribute("data-probe-label") === null ? "" : "[probe-label]"),
+          isHost: el === host,
+          isDescendant: el !== host && host.contains(el),
+        });
+      }
+    });
+    // A pure CONTENT edit: no transform, no size, deep inside the card.
+    label.textContent = `edit-${Date.now()}`;
+    await settle(4);
+    off();
+    return {
+      entity: String(entity),
+      named: seen.length,
+      namedTheHost: seen.filter((x) => x.isHost).length,
+      namedADescendant: seen.filter((x) => x.isDescendant).length,
+      samples: seen.slice(0, 5),
+    };
+  }
+
+  /** Where a card is on screen right now — the runner aims real input here. */
+  function targetRect(index: number) {
+    const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1 };
+    const entity = cards[index]?.entity as Entity;
+    const r = screenRect(entity, cam);
+    return { entity: String(entity), ...r };
+  }
+
   const store2 = new Map<string, Capture>();
 
   return {
@@ -489,6 +890,21 @@ export function mountBoardRig(): BoardRig {
     },
 
     roundedArea,
+    transformSemantics,
+    hitTest,
+    midGestureHits,
+    panUpload,
+    targetRect,
+    addInput,
+    inputState,
+    characterizeContentDirt,
+    dirtCounters: () => ({
+      paintEvents,
+      selfNamed,
+      contentNamed: namedHosts,
+      copies: binder?.copies() ?? 0,
+      refused: binder?.refusedCopies() ?? 0,
+    }),
 
     async idle(ms) {
       await ready;

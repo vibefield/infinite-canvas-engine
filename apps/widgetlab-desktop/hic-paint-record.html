@@ -139,6 +139,43 @@ window.__paintRecord = { run: async () => {
     };
   }
 
+  /**
+   * WHERE a host sits relative to the canvas box, with the bitmap correctly
+   * sized. S3's parking policy turns on this: it moves off-screen hosts far
+   * outside the viewport, and if a straddling host copies PARTIALLY (silently,
+   * as the undersized-bitmap arm did) then every card at a board edge would
+   * composite half-drawn during a pan.
+   */
+  async function placementArm(label, place) {
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("layoutsubtree", "");
+    canvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;background:transparent;";
+    canvas.getContext("2d");
+    document.body.appendChild(canvas);
+    canvas.width = Math.round(canvas.clientWidth * dpr);
+    canvas.height = Math.round(canvas.clientHeight * dpr);
+    const card = makeCard();
+    canvas.appendChild(card);
+    const { tx, ty } = place(canvas.clientWidth, canvas.clientHeight);
+    card.style.transform = `matrix(1,0,0,1,${tx},${ty})`;
+    await raf(); await raf();
+
+    const tex = dev.createTexture({ size: { width: W, height: H }, format: "rgba8unorm", usage });
+    let threw = null;
+    try {
+      dev.queue.copyElementImageToTexture({ source: card }, { destination: { texture: tex } });
+    } catch (e) { threw = String(e).replace(/^\w+Error: Failed to execute '\w+' on 'GPUQueue': /, ""); }
+    const px = threw ? null : await readTexture(dev, tex, W, H);
+    tex.destroy();
+    canvas.remove();
+    return {
+      label, at: { tx, ty }, threw,
+      pixels: px,
+      // "Full" against the fully-inside arm's own ink, measured in this run.
+      ink: px ? px.ink : 0,
+    };
+  }
+
   const results = [];
   // The rig's configuration, expected to reproduce the failure.
   results.push(await arm("rig-as-is (default backing, late attach, no pump)", { sizeBacking: false, pump: false, lateAttach: true }));
@@ -151,9 +188,17 @@ window.__paintRecord = { run: async () => {
   // The gate's configuration, as a positive control: it must still work.
   results.push(await arm("CONTROL gate-shaped (attached before insert)", { sizeBacking: true, pump: false, lateAttach: false }));
 
+  // Placement arms, all with a correctly sized bitmap.
+  const placements = [];
+  placements.push(await placementArm("fully inside", () => ({ tx: 40, ty: 40 })));
+  placements.push(await placementArm("straddling the RIGHT edge", (w) => ({ tx: w - CSS_W / 2, ty: 40 })));
+  placements.push(await placementArm("straddling the BOTTOM edge", (w, h) => ({ tx: 40, ty: h - CSS_H / 2 })));
+  placements.push(await placementArm("just outside the right edge", (w) => ({ tx: w + 8, ty: 40 })));
+  placements.push(await placementArm("parked far off-viewport", () => ({ tx: -100000, ty: -100000 })));
+
   dev.destroy?.();
   $log(results.map((r) => `${r.label}: threw=${r.threw ?? "no"} landed=${r.landed} paints=${r.paints}`).join("\n"));
-  return { dpr, W, H, results };
+  return { dpr, W, H, results, placements };
 } };
 </script>
 <div id="log">ready</div>

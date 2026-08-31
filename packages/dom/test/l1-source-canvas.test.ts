@@ -18,11 +18,13 @@
  *     survives a promotion (plan §2).
  */
 import {
+  Camera,
   Grab,
   MeasuredSize,
   NO_ENTITY,
   Position,
   Size,
+  Viewport,
   createCompositorSourceRegistry,
   createEngine,
   createWorld,
@@ -34,7 +36,10 @@ import { createCanvasHost } from "../src/host";
 import { createPlanes } from "../src/planes";
 import { createPresentationRegistry } from "../src/presentation-mode";
 import { createDomWidgetsReflector } from "../src/reflectors/dom-widgets";
-import { createDomWritebackReflector } from "../src/reflectors/dom-writeback";
+import {
+  createDomWritebackReflector,
+  type DomWritebackOptions,
+} from "../src/reflectors/dom-writeback";
 import { createSourceCanvas, type SourceCanvasEffects } from "../src/source-canvas";
 
 /** Minimal WidgetMountStore (the reflector consumes only these two methods). */
@@ -124,6 +129,26 @@ const spawnBox = (
   h: number,
 ): Entity => world.spawn({ components: [[Position, { x, y }], [Size, { w, h }]] });
 
+/** A rig with the placement reflector registered, and a camera to move. */
+function withWriteback(options: DomWritebackOptions = {}, viewport?: { w: number; h: number }) {
+  const s = setup();
+  if (viewport !== undefined) {
+    s.world.setResource(Viewport, { w: viewport.w, h: viewport.h, dpr: 1 });
+  }
+  s.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+  const writeback = createDomWritebackReflector(
+    {
+      hostElementFor: (e) => s.reflector.hostElementFor(e),
+      compositedEntities: () => s.reflector.compositedEntities(),
+      compositedRevision: () => s.reflector.compositedRevision(),
+    },
+    s.world,
+    options,
+  );
+  s.engine.registerReflector(writeback);
+  return { ...s, writeback };
+}
+
 describe("the L1 source canvas", () => {
   it("marks the canvas through the injected seam and parks it in the container", () => {
     const { container, l1, hic } = setup();
@@ -134,13 +159,13 @@ describe("the L1 source canvas", () => {
   });
 
   it("sizes its BACKING STORE, because that is where paint records are cached", () => {
-    // Measured 2026-08-31 (scripts/hic-paint-record.mjs): a host outside the
-    // canvas BITMAP has no paint record and cannot be copied at all
-    // ("InvalidStateError: No cached paint record for element"); one that
-    // straddles the edge copies a partial card while throwing nothing and
-    // raising no validation error. An earlier revision of source-canvas.ts
-    // left the default 300x150 to save memory, and that is what made the whole
-    // S2 board composite blank.
+    // Measured 2026-08-31 (scripts/hic-paint-record.mjs). The bitmap is what
+    // element paint records are recorded AGAINST: at the default 300x150 over
+    // a 1280x808 box a card copied 684 ink px of the 23,988 it copies at
+    // 2560x1616 — no throw, no validation error, just a degraded picture. An
+    // earlier revision left the default to save memory and made the whole S2
+    // board composite blank. (Host POSITION is not the variable: with the
+    // bitmap sized, straddling, outside and far-parked hosts all copy 100%.)
     const { l1 } = setup();
     l1?.resize(800, 600, 2);
     expect(l1?.canvas.width).toBe(1600);
@@ -375,20 +400,6 @@ describe("composited hosts", () => {
 });
 
 describe("domWriteback — absolute placements for canvas hosts", () => {
-  function withWriteback() {
-    const s = setup();
-    const writeback = createDomWritebackReflector(
-      {
-        hostElementFor: (e) => s.reflector.hostElementFor(e),
-        compositedEntities: () => s.reflector.compositedEntities(),
-        compositedRevision: () => s.reflector.compositedRevision(),
-      },
-      s.world,
-    );
-    s.engine.registerReflector(writeback);
-    return { ...s, writeback };
-  }
-
   it("writes an ABSOLUTE screen placement, not a delta from layout", () => {
     // Inside layoutsubtree the transform REPLACES layout (hic-bench §3), so a
     // camera write-back is the absolute screen position of the card.
@@ -473,5 +484,126 @@ describe("domWriteback — absolute placements for canvas hosts", () => {
     engine.step(2);
     expect(writeback.writes()).toBe(before + 1);
     expect(el.style.transform).toBe("matrix(1,0,0,1,3,4)");
+  });
+});
+
+/**
+ * PARKING (design-012 §5 law 2, hic-bench §3).
+ *
+ * The measured table is the whole reason this exists:
+ *
+ *   write only the visible hosts  →   3/28 clicks land   (25 stolen)
+ *   write all N every frame       →  28/28
+ *   park off-screen hosts         →  28/28
+ *
+ * So "visible only" is a correctness defect and the other two are complete
+ * fixes. Parking is the cheap one: one write per departure instead of
+ * 1.46 µs × N at 120 Hz. What must never happen is a host being left at a
+ * stale on-screen transform — which is what these tests actually check.
+ */
+describe("domWriteback — parking off-screen hosts", () => {
+  const spawnAt = (world: ReturnType<typeof createWorld>, x: number, y: number) =>
+    spawnBox(world, x, y, 100, 50);
+
+  it("parks an off-screen host with ONE write, then stops touching it", () => {
+    const { world, engine, store, presentation, reflector, writeback } = withWriteback({}, { w: 800, h: 600 });
+    const far = spawnAt(world, 5000, 5000);
+    store.set([{ entity: far, hidden: false }]);
+    presentation.set(far, "composited");
+    engine.step(0);
+
+    const el = reflector.hostElementFor(far) as HTMLElement;
+    expect(el.style.transform).toBe("matrix(1,0,0,1,-100000,-100000)");
+    expect(writeback.parked()).toBe(1);
+    const after = writeback.writes();
+
+    // Pan, repeatedly. The host stays off-screen, so it must cost nothing.
+    for (let i = 1; i <= 5; i++) {
+      world.setResource(Camera, { x: i * 10, y: 0, zoom: 1, gesturing: true });
+      engine.step(i);
+    }
+    expect(writeback.writes()).toBe(after);
+    expect(writeback.parkWrites()).toBe(1);
+  });
+
+  it("a parked host CANNOT hold a stale on-screen transform", () => {
+    // The defect the bench found: a host that was visible, then left, keeping
+    // the transform it had — sitting on top of the visible cards and stealing
+    // their clicks (25/28).
+    const { world, engine, store, presentation, reflector } = withWriteback({}, { w: 800, h: 600 });
+    const e = spawnAt(world, 100, 100);
+    store.set([{ entity: e, hidden: false }]);
+    presentation.set(e, "composited");
+    engine.step(0);
+    const el = reflector.hostElementFor(e) as HTMLElement;
+    expect(el.style.transform).toBe("matrix(1,0,0,1,100,100)");
+
+    // Pan far enough that the card leaves the viewport.
+    world.setResource(Camera, { x: 4000, y: 0, zoom: 1, gesturing: true });
+    engine.step(1);
+    expect(el.style.transform).toBe("matrix(1,0,0,1,-100000,-100000)");
+  });
+
+  it("restores a real placement when a parked host comes back into view", () => {
+    const { world, engine, store, presentation, reflector, writeback } = withWriteback({}, { w: 800, h: 600 });
+    const e = spawnAt(world, 100, 100);
+    store.set([{ entity: e, hidden: false }]);
+    presentation.set(e, "composited");
+    engine.step(0);
+    const el = reflector.hostElementFor(e) as HTMLElement;
+
+    world.setResource(Camera, { x: 4000, y: 0, zoom: 1, gesturing: true });
+    engine.step(1);
+    expect(writeback.parked()).toBe(1);
+
+    // Back to where it started: the cached tx/ty match the pre-park values, so
+    // a naive change-only guard would skip this write and leave it parked.
+    world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    engine.step(2);
+    expect(el.style.transform).toBe("matrix(1,0,0,1,100,100)");
+    expect(writeback.parked()).toBe(0);
+    expect(el.style.width).toBe("100px");
+  });
+
+  it("keeps a host straddling the edge LIVE, so a slow pan cannot flap it", () => {
+    const { world, engine, store, presentation, reflector } = withWriteback(
+      { parkMargin: 64 },
+      { w: 800, h: 600 },
+    );
+    const e = spawnAt(world, 790, 100); // 10px of a 100px card on screen
+    store.set([{ entity: e, hidden: false }]);
+    presentation.set(e, "composited");
+    engine.step(0);
+    expect(reflector.hostElementFor(e)?.style.transform).toBe("matrix(1,0,0,1,790,100)");
+  });
+
+  it("writes ALL N when parking is off — the other complete fix", () => {
+    const { world, engine, store, presentation, reflector, writeback } = withWriteback(
+      { park: false },
+      { w: 800, h: 600 },
+    );
+    const near = spawnAt(world, 10, 10);
+    const far = spawnAt(world, 5000, 5000);
+    store.set([
+      { entity: near, hidden: false },
+      { entity: far, hidden: false },
+    ]);
+    presentation.set(near, "composited");
+    presentation.set(far, "composited");
+    engine.step(0);
+    expect(writeback.writes()).toBe(2);
+    expect(writeback.parked()).toBe(0);
+    // Its true placement, not a park — off-screen but honestly positioned.
+    expect(reflector.hostElementFor(far)?.style.transform).toBe("matrix(1,0,0,1,5000,5000)");
+  });
+
+  it("never parks without a Viewport, because it cannot know what off-screen means", () => {
+    const { world, engine, store, presentation, reflector, writeback } = withWriteback({});
+    const far = spawnAt(world, 5000, 5000);
+    store.set([{ entity: far, hidden: false }]);
+    presentation.set(far, "composited");
+    engine.step(0);
+    expect(writeback.parked()).toBe(0);
+    expect(reflector.hostElementFor(far)?.style.transform).toBe("matrix(1,0,0,1,5000,5000)");
   });
 });

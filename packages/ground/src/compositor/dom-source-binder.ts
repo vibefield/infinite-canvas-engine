@@ -81,6 +81,8 @@ export function createDomSourceBinder(
   const budget = options.maxCopiesPerComposite ?? Number.POSITIVE_INFINITY;
   /** host element → entity, so a paint event's elements become slot ids. */
   const byHost = new Map<Element, Entity>();
+  /** What each entity was last PLACED at — the change guard in `sync`. */
+  const placed = new Map<Entity, { width: number; height: number; host: Element }>();
   let copies = 0;
 
   const hostOf = (source: CompositorSource): Element | undefined =>
@@ -102,7 +104,10 @@ export function createDomSourceBinder(
   /** Free slots for entities the registry no longer holds (demotion, despawn). */
   function reapDeparted(live: Set<Entity>): void {
     for (const slot of atlas.allocator.slots()) {
-      if (!live.has(slot.id)) atlas.free(slot.id);
+      if (!live.has(slot.id)) {
+        atlas.free(slot.id);
+        placed.delete(slot.id);
+      }
     }
   }
 
@@ -120,13 +125,31 @@ export function createDomSourceBinder(
         const g = geometry(entity);
         if (g === undefined || g.w <= 0 || g.h <= 0) continue;
         live.add(entity);
-        // Round UP — see the header. `place` re-slots when the size changed,
-        // so a zoom-band or DPR change re-slots at the new size rather than
-        // copying a bigger element into an older, smaller rect.
-        atlas.place(entity, host, {
-          width: Math.ceil(g.w * scale),
-          height: Math.ceil(g.h * scale),
-        });
+        // Round UP — see the header.
+        const width = Math.ceil(g.w * scale);
+        const height = Math.ceil(g.h * scale);
+
+        // PLACE ONLY ON CHANGE. `allocate` marks an existing resident slot
+        // STALE, which queues a re-copy — so calling it every frame would
+        // re-upload the entire board on every composite, which is precisely
+        // the full-board path design-012 §8 gate 2 makes structurally
+        // impossible (111 ms at N=200). A pure pan changes no slot size, so it
+        // must reach `place` for nobody at all.
+        //
+        // Content dirt does not come from here; it comes from paint events
+        // (`markDirtyHosts`), which name exactly the cards that changed.
+        const prev = placed.get(entity);
+        const stale =
+          prev === undefined ||
+          prev.width !== width ||
+          prev.height !== height ||
+          prev.host !== host ||
+          // A slot the refusal path released has to be re-placed to come back.
+          atlas.allocator.get(entity) === undefined;
+        if (stale) {
+          atlas.place(entity, host, { width, height });
+          placed.set(entity, { width, height, host });
+        }
       }
 
       reapDeparted(live);
@@ -141,7 +164,11 @@ export function createDomSourceBinder(
       if (refused.length > 0) {
         for (const host of refused) {
           const entity = byHost.get(host);
-          if (entity !== undefined) atlas.free(entity);
+          if (entity === undefined) continue;
+          atlas.free(entity);
+          // Drop the change guard too, or the retry would see an unchanged
+          // size and never re-place the slot it just released.
+          placed.delete(entity);
         }
       }
     },
@@ -184,6 +211,7 @@ export function createDomSourceBinder(
     dispose() {
       atlas.dispose();
       byHost.clear();
+      placed.clear();
     },
   };
 }

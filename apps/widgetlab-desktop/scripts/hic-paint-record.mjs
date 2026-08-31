@@ -30,6 +30,14 @@ try {
       `[paint-record] ${r.landed ? "LANDED" : "  ----"}  ${r.label}\n                 backing=${r.backing} paints=${r.paints} threw=${r.threw ?? "no"}${r.pixels ? ` distinct=${r.pixels.distinct} ink=${r.pixels.ink}/${r.pixels.total}` : ""}`,
     );
   }
+  const full = out.placements[0].ink || 1;
+  console.log("[paint-record] --- placement, with a correctly sized bitmap ---");
+  for (const p of out.placements) {
+    const pctFull = ((p.ink / full) * 100).toFixed(1);
+    console.log(
+      `[paint-record] ${p.threw ? "THREW " : p.ink >= full * 0.99 ? "FULL  " : "PARTIAL"}  ${p.label} at (${p.at.tx},${p.at.ty}) ink=${p.ink} (${pctFull}% of a fully-inside card)${p.threw ? `\n                 ${p.threw}` : ""}`,
+    );
+  }
 } catch (err) {
   console.error(err);
   process.exitCode = 1;
