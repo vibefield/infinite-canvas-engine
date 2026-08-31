@@ -61,6 +61,7 @@ import {
   createLiftDriver,
   createWorldQuadFacts,
   instrumentSubmits,
+  resolveVideoSource,
   markAsSourceCanvas,
   onPaint,
   resolveGlSource,
@@ -139,6 +140,97 @@ function CanvasProbe({ onMount }: { onMount: () => void }): null {
     onMount();
   }, [onMount]);
   return null;
+}
+
+
+/**
+ * THE FIXTURE LIVE SURFACE (plan §5 S7.1).
+ *
+ * An `OffscreenCanvas` redrawn on an interval, each redraw producing a
+ * `VideoFrame`. It stands in for a camera, a decoder or a downstream terminal
+ * mirror, and it owns its own RETENTION — which is the point of the seam:
+ * this fixture may hold its latest frame forever because nothing else wants
+ * it, while the real consumer runs under a producer lease and must copy once
+ * and close immediately. The compositor sees neither policy; it asks
+ * `frame()` and samples whatever comes back.
+ *
+ * The drawn content is deliberately ASYMMETRIC top to bottom (a bright band
+ * above, a dark one below) so the orientation question has an answer a
+ * symmetric pattern would hide — the same trap the island leg walked into.
+ * Between them runs a full-width band that CHANGES COLOUR every production,
+ * which is what separates "a frame is showing" from "the first frame is
+ * showing forever".
+ *
+ * That band was a 24 px marker sliding left to right, and it graded a working
+ * build broken: over the ~9 productions a probe run gets, `x = tick * 7` had
+ * travelled to x≈80 of 256 while the centre tap reads texels ~107–148, so the
+ * marker never once entered the coordinate its own check sampled (measured:
+ * `distinctCentreColours` 1). A witness whose subject has to arrive somewhere
+ * to be seen is a witness that can miss; a band that spans the tap at every
+ * production cannot, at any scale or run length.
+ */
+/**
+ * The liveness band's cycle. Six well-separated colours: enough that a probe
+ * run's productions land on several of them, and far enough apart that the
+ * sRGB round trip through the composite cannot collapse two into one.
+ */
+const LIVENESS_COLOURS = ["#e8c547", "#47e88a", "#c547e8", "#e85447", "#47a8e8", "#a8e847"];
+
+function createFixtureSurface(width: number, height: number, fps: number) {
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+  let latest: VideoFrame | undefined;
+  let timer: number | undefined;
+  let produced = 0;
+  let tick = 0;
+
+  const draw = (): void => {
+    ctx.fillStyle = "#101010";
+    ctx.fillRect(0, 0, width, height);
+    // TOP: bright. BOTTOM: dark. The orientation witness.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, Math.floor(height * 0.4));
+    ctx.fillStyle = "#1b3a5c";
+    ctx.fillRect(0, Math.floor(height * 0.6), width, height - Math.floor(height * 0.6));
+    // THE LIVENESS BAND: full width, so it covers the centre tap whatever the
+    // quad's scale, and a different colour every production, so "the
+    // compositor showed a frame" and "the compositor showed THIS frame" are
+    // different observations.
+    ctx.fillStyle = LIVENESS_COLOURS[tick % LIVENESS_COLOURS.length] as string;
+    ctx.fillRect(0, Math.floor(height * 0.45), width, Math.floor(height * 0.1));
+    tick++;
+  };
+
+  const produce = (): void => {
+    draw();
+    const next = new VideoFrame(canvas, { timestamp: produced * 1000 });
+    // THE FIXTURE'S retention policy, and nobody else's: hold the latest, close
+    // the one it replaces. A lease-bound consumer would do something different
+    // here and the compositor would never know.
+    latest?.close();
+    latest = next;
+    produced++;
+  };
+
+  return {
+    /** The registry source. `frame()` is all the compositor ever sees. */
+    source: { kind: "video" as const, frame: () => latest as object | undefined },
+    start() {
+      if (timer !== undefined) return;
+      produce();
+      timer = window.setInterval(produce, Math.round(1000 / fps));
+    },
+    stop() {
+      if (timer !== undefined) window.clearInterval(timer);
+      timer = undefined;
+    },
+    produced: () => produced,
+    dispose() {
+      this.stop();
+      latest?.close();
+      latest = undefined;
+    },
+  };
 }
 
 // --- plumbing ---------------------------------------------------------------
@@ -254,6 +346,13 @@ export interface AppRig {
   mixedZ(): Promise<Record<string, unknown>>;
   /** THE S6 WITNESS: drag a card UNDER a GL widget, sampling every frame. */
   dragUnder(steps: number): Promise<Record<string, unknown>>;
+  /**
+   * S7: the fixture live surface, graded for coverage, liveness, orientation.
+   * `register: false` is the control arm — the same grades with no source.
+   */
+  videoProbe(frames: number, flip: boolean, register?: boolean): Promise<Record<string, unknown>>;
+  /** S7: idle-zero with the surface paused. */
+  videoIdle(ms: number): Promise<Record<string, number>>;
   teardown(): void;
 }
 
@@ -297,6 +396,11 @@ export function mountCompositedApp(): AppRig {
   let root: Root | undefined;
   let lift: ReturnType<typeof createLiftDriver> | undefined;
   let quadPass: ReturnType<typeof createWidgetQuadPass> | undefined;
+  let video: Entity | undefined;
+  let videoUnregister: (() => void) | undefined;
+  /** Rig knob: the orientation is measured both ways, never assumed. */
+  let videoFlip = false;
+  const fixture = createFixtureSurface(256, 256, 30);
   /** Build the pass and keep a handle, so the rig can read drawn/skipped. */
   const buildQuadPass = (deps: Parameters<typeof createWidgetQuadPass>[0]) => {
     quadPass = createWidgetQuadPass(deps);
@@ -387,6 +491,7 @@ export function mountCompositedApp(): AppRig {
         facts: displayFacts,
         resolve: (entity, source) => {
           const s = source as CompositorSource;
+          if (s.kind === "video") return resolveVideoSource(s, { flipY: videoFlip });
           if (s.kind === "gl") {
             const resolved = resolveGlSource(s);
             // The rig's ONE deviation from production: it can ask the same
@@ -498,6 +603,134 @@ export function mountCompositedApp(): AppRig {
       h: Math.round((s?.h ?? 0) * scale),
     };
   };
+
+  /**
+   * THE VIDEO KIND (plan §5 S7).
+   *
+   * Registers the fixture as a `video` source on its own entity and grades
+   * three things a live surface can get wrong, each of which looks fine from
+   * the others' point of view:
+   *
+   *  - COVERAGE. The surface must appear on 100 % of PAINTED frames. The
+   *    spike's 15 %-defect was invisible to any single witness, so this checks
+   *    two — the compositor's own target read back, and the window as the OS
+   *    presented it — at one coordinate, per frame.
+   *  - LIVENESS. The fixture's centre band changes colour every production, so
+   *    "a frame is showing" and "the FIRST frame is showing forever" read
+   *    differently, which a static fixture cannot tell apart.
+   *  - ORIENTATION. Measured both ways, like the island leg, because the
+   *    inherited answer there turned out to be backwards.
+   *
+   * `register: false` runs every one of those measurements with NO source
+   * registered — the control that proves they can come out negative. Coverage
+   * is graded on CONTENT, not on alpha, for the same reason: an opaque tap
+   * says a quad drew, while the fixture's own top-to-bottom contrast says
+   * THIS quad drew, and only the second can tell the surface from a fill.
+   */
+  async function videoProbe(frames: number, flip: boolean, register = true) {
+    const videoE = video as Entity;
+    videoUnregister?.();
+    videoUnregister = register ? sources.register(videoE, fixture.source) : undefined;
+    videoFlip = flip;
+    order.length = 0;
+    order.push(videoE);
+    fixture.start();
+    await settle(6);
+
+    const rect = screenRect(videoE);
+    const centre = { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+    // A point in the TOP quarter and one in the BOTTOM quarter: the fixture
+    // draws bright above and dark below, so their difference is the answer.
+    const top = { x: centre.x, y: rect.y + rect.h * 0.15 };
+    const bottom = { x: centre.x, y: rect.y + rect.h * 0.85 };
+
+    const samples: Array<{ top: number[]; bottom: number[]; centre: number[] }> = [];
+    for (let i = 0; i < frames; i++) {
+      compositor?.mark("video");
+      engine.step(performance.now());
+      const texture = lastTexture;
+      if (texture === undefined) continue;
+      const [t, b, c] = await readRegions(texture, [
+        { x: top.x - 32, y: top.y - 8 },
+        { x: bottom.x - 32, y: bottom.y - 8 },
+        { x: centre.x - 32, y: centre.y - 8 },
+      ]);
+      samples.push({
+        top: modalColour(t as Uint8Array),
+        bottom: modalColour(b as Uint8Array),
+        centre: modalColour(c as Uint8Array),
+      });
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    }
+
+    const lum = (c: number[]): number =>
+      0.2126 * (c[0] as number) + 0.7152 * (c[1] as number) + 0.0722 * (c[2] as number);
+    // A frame "carries the surface" when the fixture's OWN contrast is in it:
+    // the top tap opaque, and top-to-bottom separated by far more than the
+    // codec round trip can move it. Alpha alone would grade a solid fill —
+    // or another kind's quad in the same place — as the surface being there,
+    // and averaging the contrast would hide a 15 % dropout in the mean. This
+    // is per frame, and `|Δ|` so the flipped arm is held to the same bar.
+    const contrast = (x: { top: number[]; bottom: number[] }): number =>
+      Math.abs(lum(x.top) - lum(x.bottom));
+    const covered = samples.filter((x) => (x.top[3] as number) > 200 && contrast(x) > 100).length;
+    const topMinusBottom =
+      samples.length === 0
+        ? 0
+        : samples.reduce((acc, x) => acc + lum(x.top) - lum(x.bottom), 0) / samples.length;
+    // Liveness: the centre band is a new colour every production, so a LIVE
+    // surface shows more than one distinct centre colour across the run and a
+    // surface frozen on its first frame shows exactly one.
+    const centreColours = new Set(samples.map((x) => x.centre.join(",")));
+
+    return {
+      flip,
+      registered: register,
+      frames: samples.length,
+      covered,
+      topMinusBottom,
+      distinctCentreColours: centreColours.size,
+      produced: fixture.produced(),
+      sample: samples[0] ?? null,
+      // Handed out so WITNESS TWO can sample the SAME COORDINATE in the
+      // window capture. Two witnesses that look at different places cannot
+      // disagree, and disagreement is the only thing that caught the spike's
+      // 15 %-defect — the canvas size travels with it so the caller scales
+      // into the capture's own resolution instead of assuming dpr.
+      taps: { top, bottom, centre },
+      canvas: { width: gpuCanvas.width, height: gpuCanvas.height },
+    };
+  }
+
+  /** Idle-zero with the surface PAUSED — §9 S7's second exit. */
+  async function videoIdle(ms: number) {
+    // REGISTERED and paused, never merely absent: an unregistered source costs
+    // zero submits for the uninteresting reason. This re-registers because the
+    // null control arm above deliberately leaves it off.
+    const videoE = video as Entity;
+    if (!sources.has(videoE)) videoUnregister = sources.register(videoE, fixture.source);
+    videoFlip = false;
+    fixture.stop();
+    await settle(4);
+    const before = instrument?.total() ?? 0;
+    let frames = 0;
+    const t0 = performance.now();
+    await new Promise<void>((resolve) => {
+      const tick = () => {
+        frames++;
+        engine.step(performance.now());
+        if (performance.now() - t0 >= ms) resolve();
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    return {
+      ms,
+      frames,
+      submits: (instrument?.total() ?? 0) - before,
+      registered: sources.has(videoE) ? 1 : 0,
+    };
+  }
 
   /**
    * Read SEVERAL small sub-rects of a texture in ONE submit.
@@ -740,6 +973,15 @@ export function mountCompositedApp(): AppRig {
           [Size, { w: 160, h: 100 }],
         ],
       });
+      video = world.spawn({
+        components: [
+          [Position, { x: 420, y: 120 }],
+          [Size, { w: 200, h: 200 }],
+        ],
+      });
+      world.addTag(video, Active);
+      world.addTag(video, Visible);
+
       // ACTIVE + VISIBLE, stamped by hand.
       //
       // The island phase machine reads exactly these two tags
@@ -907,6 +1149,8 @@ export function mountCompositedApp(): AppRig {
     },
 
     dragUnder,
+    videoProbe,
+    videoIdle,
 
     async mixedZ() {
       flipIslands = false;
@@ -941,6 +1185,8 @@ export function mountCompositedApp(): AppRig {
 
     teardown() {
       root?.unmount();
+      videoUnregister?.();
+      fixture.dispose();
       bridge?.uninstall();
       compositor?.dispose();
       binder?.dispose();

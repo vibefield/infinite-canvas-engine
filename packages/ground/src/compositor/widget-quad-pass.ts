@@ -71,7 +71,8 @@ export interface QuadFacts {
 
 /** Where a quad samples from. Resolved per kind; the shader sees only this. */
 export interface QuadTexture {
-  readonly texture: GPUTexture;
+  /** A sampled texture (dom atlas page, gl island target, ground's target). */
+  readonly texture?: GPUTexture;
   /** Source sub-rect in TEXELS. The full texture for gl/video; a slot for dom. */
   readonly rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly textureWidth: number;
@@ -80,6 +81,17 @@ export interface QuadTexture {
   readonly srgb?: boolean;
   /** The stored bytes already carry alpha. Default true. */
   readonly premultiplied?: boolean;
+  /**
+   * A `video` source's frame, imported as a `GPUExternalTexture` INSIDE this
+   * composite (design-012 §4). Mutually exclusive with `texture`.
+   *
+   * The import happens in `encode` and nowhere else, because an imported
+   * external texture is valid only for the task that imported it — carrying
+   * one across an `await` is the same class of mistake as holding a
+   * swap-chain texture across one. The source's own retention policy decides
+   * WHICH frame this is; the compositor only samples what it is handed.
+   */
+  readonly external?: object;
   /**
    * The source's rows run BOTTOM-UP relative to the compositor. three renders
    * y-up while the compositor is top-down, so island targets set this; HiC
@@ -182,7 +194,19 @@ function encodeMode(sourceSrgb: boolean, targetSrgb: boolean): number {
   return sourceSrgb ? ENCODE_LINEAR_TO_SRGB : ENCODE_SRGB_TO_LINEAR;
 }
 
-const SHADER = /* wgsl */ `
+/**
+ * ONE shader, two source bindings.
+ *
+ * A `video` source arrives as a `GPUExternalTexture`, which is a different
+ * WGSL type from a sampled texture (`texture_external`, sampled with
+ * `textureSampleBaseClampToEdge`) and needs its own bind-group layout entry
+ * and pipeline. Everything else about a video quad — the rect, the rounded
+ * corners, the sRGB lane, the premultiplied blend — is identical to a dom or
+ * gl one, so the two variants are GENERATED from one template rather than
+ * maintained as two files. A divergence between them would be a video quad
+ * that fades or rounds differently from the card beside it.
+ */
+const shaderSource = (external: boolean): string => /* wgsl */ `
 struct Frame {
   resolution : vec2f,
   _pad       : vec2f,
@@ -196,7 +220,7 @@ struct Quad {
 
 @group(0) @binding(0) var<uniform> frame : Frame;
 @group(0) @binding(1) var<storage, read> quads : array<Quad>;
-@group(0) @binding(2) var src : texture_2d<f32>;
+@group(0) @binding(2) var src : ${external ? "texture_external" : "texture_2d<f32>"};
 @group(0) @binding(3) var srcSampler : sampler;
 
 struct VsOut {
@@ -249,7 +273,9 @@ fn linearToSrgb(c : vec3f) -> vec3f {
 @fragment
 fn fs(in : VsOut) -> @location(0) vec4f {
   let q = quads[in.inst];
-  var color = textureSample(src, srcSampler, in.uv);
+  var color = ${external
+    ? "textureSampleBaseClampToEdge(src, srcSampler, in.uv)"
+    : "textureSample(src, srcSampler, in.uv)"};
 
   // Straight alpha in, premultiplied out — the blend state expects the latter.
   if (q.params.w < 0.5) {
@@ -288,6 +314,7 @@ fn fs(in : VsOut) -> @location(0) vec4f {
 }
 `;
 
+
 export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
   const { device, format, registry } = deps;
   const targetSrgb = isSrgbFormat(format);
@@ -300,6 +327,9 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
   // Built on first use and never while the registry is empty (the S1 law).
   let pipeline: GPURenderPipeline | undefined;
   let layout: GPUBindGroupLayout | undefined;
+  /** The `texture_external` variant — built only if a video source appears. */
+  let externalPipeline: GPURenderPipeline | undefined;
+  let externalLayout: GPUBindGroupLayout | undefined;
   let sampler: GPUSampler | undefined;
   let uniformBuffer: GPUBuffer | undefined;
   let storageBuffer: GPUBuffer | undefined;
@@ -308,11 +338,18 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
   /** Keyed by source texture; dropped whenever a bound buffer is replaced. */
   const bindGroups = new Map<GPUTexture, GPUBindGroup>();
 
-  function arm(): void {
-    if (pipeline !== undefined) return;
-    const module = device.createShaderModule({ label: "widget-quads", code: SHADER });
-    layout = device.createBindGroupLayout({
-      label: "widget-quads",
+  /**
+   * Build the pipeline for one source binding. Two variants exist because a
+   * `GPUExternalTexture` is a different WGSL type; everything else is shared,
+   * including the blend state, so a video quad composites by exactly the same
+   * rules as the card next to it.
+   */
+  function armVariant(external: boolean): void {
+    if ((external ? externalPipeline : pipeline) !== undefined) return;
+    const label = external ? "widget-quads-external" : "widget-quads";
+    const module = device.createShaderModule({ label, code: shaderSource(external) });
+    const bindLayout = device.createBindGroupLayout({
+      label,
       entries: [
         { binding: 0, visibility: ShaderStage.VERTEX, buffer: { type: "uniform" } },
         {
@@ -320,13 +357,15 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
           visibility: ShaderStage.VERTEX | ShaderStage.FRAGMENT,
           buffer: { type: "read-only-storage" },
         },
-        { binding: 2, visibility: ShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        external
+          ? { binding: 2, visibility: ShaderStage.FRAGMENT, externalTexture: {} }
+          : { binding: 2, visibility: ShaderStage.FRAGMENT, texture: { sampleType: "float" } },
         { binding: 3, visibility: ShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       ],
     });
-    pipeline = device.createRenderPipeline({
-      label: "widget-quads",
-      layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    const built = device.createRenderPipeline({
+      label,
+      layout: device.createPipelineLayout({ bindGroupLayouts: [bindLayout] }),
       vertex: { module, entryPoint: "vs" },
       fragment: {
         module,
@@ -345,6 +384,18 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
       primitive: { topology: "triangle-list" },
       // No depth buffer, no MSAA on the compositor target (§4).
     });
+    if (external) {
+      externalPipeline = built;
+      externalLayout = bindLayout;
+    } else {
+      pipeline = built;
+      layout = bindLayout;
+    }
+  }
+
+  function arm(): void {
+    armVariant(false);
+    if (sampler !== undefined) return;
     // Clamp-to-edge + linear: the atlas's 1–2 px gutters exist precisely so a
     // linear tap at a slot edge cannot reach a neighbour's pixels.
     sampler = device.createSampler({
@@ -393,6 +444,29 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
     return group;
   }
 
+  /**
+   * Import a video frame and bind it, FOR THIS COMPOSITE ONLY.
+   *
+   * `importExternalTexture` returns a handle that expires at the end of the
+   * task that imported it, so neither the texture nor its bind group is ever
+   * cached — the same rule that governs a swap-chain texture. This runs inside
+   * `encode`, which is inside the reflector's synchronous flush, so the import
+   * never crosses an await (design-012 §4, plan §5 S7.1).
+   */
+  function externalBindGroup(source: object): GPUBindGroup {
+    const external = device.importExternalTexture({ source: source as HTMLVideoElement });
+    return device.createBindGroup({
+      label: "widget-quads-external",
+      layout: externalLayout as GPUBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuffer as GPUBuffer } },
+        { binding: 1, resource: { buffer: storageBuffer as GPUBuffer } },
+        { binding: 2, resource: external },
+        { binding: 3, resource: sampler as GPUSampler },
+      ],
+    });
+  }
+
   const paintOrder = (): readonly Entity[] => {
     if (deps.order !== undefined) return deps.order();
     const out: Entity[] = [];
@@ -435,7 +509,13 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
 
       // --- gather, in paint order ------------------------------------------
       const scale = frame.camera.zoom * frame.dpr;
-      const runs: Array<{ texture: GPUTexture; first: number; count: number }> = [];
+      const runs: Array<{
+        texture?: GPUTexture;
+        /** A video frame, imported below in this same task. */
+        external?: object;
+        first: number;
+        count: number;
+      }> = [];
       let quadCount = 0;
       // Sized before the walk so `scratch` is stable while it is filled.
       // +1 for ground's own quad, which is not in the registry.
@@ -463,7 +543,7 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
         scratch[base + 9] = 1;
         scratch[base + 10] = encodeMode(ground.srgb === true, targetSrgb);
         scratch[base + 11] = ground.premultiplied === false ? 0 : 1;
-        runs.push({ texture: ground.texture, first: quadCount, count: 1 });
+        runs.push({ texture: ground.texture as GPUTexture, first: quadCount, count: 1 });
         quadCount++;
         drewBackground = true;
       }
@@ -511,11 +591,18 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
         scratch[base + 10] = encodeMode(tex.srgb === true, targetSrgb);
         scratch[base + 11] = tex.premultiplied === false ? 0 : 1;
 
-        // Runs keep paint order: a new draw call starts only when the texture
-        // changes, so interleaved pages stay correctly ordered.
+        // Runs keep paint order: a new draw call starts only when the source
+        // changes, so interleaved pages stay correctly ordered. A VIDEO source
+        // never merges — every frame is its own import and its own bind group,
+        // and two video quads are never the same external texture.
         const last = runs[runs.length - 1];
-        if (last !== undefined && last.texture === tex.texture) last.count++;
-        else runs.push({ texture: tex.texture, first: quadCount, count: 1 });
+        if (tex.external !== undefined) {
+          runs.push({ external: tex.external, first: quadCount, count: 1 });
+        } else if (last !== undefined && last.external === undefined && last.texture === tex.texture) {
+          last.count++;
+        } else {
+          runs.push({ texture: tex.texture as GPUTexture, first: quadCount, count: 1 });
+        }
         quadCount++;
       }
 
@@ -535,9 +622,22 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
         quadCount * BYTES_PER_QUAD,
       );
 
-      pass.setPipeline(pipeline as GPURenderPipeline);
+      let boundExternal: boolean | undefined;
       for (const run of runs) {
-        pass.setBindGroup(0, bindGroupFor(run.texture));
+        const isExternal = run.external !== undefined;
+        if (isExternal) armVariant(true);
+        // Set the pipeline only when the variant changes — a board of dom
+        // cards with one video card costs two switches, not one per quad.
+        if (boundExternal !== isExternal) {
+          pass.setPipeline((isExternal ? externalPipeline : pipeline) as GPURenderPipeline);
+          boundExternal = isExternal;
+        }
+        pass.setBindGroup(
+          0,
+          isExternal
+            ? externalBindGroup(run.external as object)
+            : bindGroupFor(run.texture as GPUTexture),
+        );
         // `instance_index` starts at `firstInstance`, so each run indexes its
         // own slice of the shared instance buffer.
         pass.draw(6, run.count, 0, run.first);
@@ -557,6 +657,8 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
       scratch = new Float32Array(0);
       pipeline = undefined;
       layout = undefined;
+      externalPipeline = undefined;
+      externalLayout = undefined;
       sampler = undefined;
       drawn = 0;
       batches = 0;

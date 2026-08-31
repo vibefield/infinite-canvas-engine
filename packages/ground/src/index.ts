@@ -37,6 +37,7 @@ import {
 import { createWorldQuadFacts } from "./compositor/quad-facts";
 import type { LiftDriver } from "./compositor/lift";
 import { resolveGlSource } from "./compositor/gl-source";
+import { resolveVideoSource, type VideoSourceOptions } from "./compositor/video-source";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
@@ -134,6 +135,10 @@ export {
 // The gl leg: an island target published by r3f, turned into a sampleable quad
 // (y-flipped, sRGB-guarded, premultiplied — all measured, see the module).
 export { resolveGlSource } from "./compositor/gl-source";
+// The video leg. Retention is the SOURCE's policy, never the compositor's —
+// see the module note; that seam is what lets the downstream lease protocol
+// arrive later without reopening it.
+export { resolveVideoSource, type VideoSourceOptions } from "./compositor/video-source";
 // The HiC seam (design-012 §8 gate 1): the adapter module is the ONLY place a
 // HiC symbol is named, and its probe is what a composited build refuses on.
 // (`GroundRendererLike` rides main's renderer export block above — re-exporting
@@ -314,6 +319,8 @@ export interface GroundOptions {
    * card's real geometry.
    */
   readonly lift?: LiftDriver;
+  /** Live-surface options — notably whether this producer's frames are flipped. */
+  readonly video?: VideoSourceOptions;
 }
 
 export type GroundFactory = (ctx: GroundContext) => GroundLayer;
@@ -418,6 +425,7 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
           resolve: (entity, source) => {
             const s = source as CompositorSource;
             if (s.kind === "gl") return resolveGlSource(s);
+            if (s.kind === "video") return resolveVideoSource(s, opts.video ?? {});
             return binder.resolve(entity, s);
           },
           ...(opts.order !== undefined ? { order: opts.order } : {}),

@@ -208,6 +208,129 @@ try {
     `EXIT: NO Z-POP — across ${covering.length} frames of the card crossing the GL widget, not one shows the card on top (${zPops.length} z-pop frames)`,
   );
 
+  // --- S7: the video kind ---------------------------------------------------
+  // ORDER MATTERS HERE. The as-is arm runs first and the window witness and
+  // the screenshot follow it immediately, so both see the SHIPPING
+  // orientation with the source registered; the two control arms — which
+  // deliberately leave the surface upside down and then unregistered — come
+  // after, and `videoIdle` re-registers for itself.
+  const vid = await page.evaluate(() => window.__appRig.videoProbe(24, false));
+  log(
+    `VIDEO as-is: frames=${vid.frames} covered=${vid.covered} produced=${vid.produced} ` +
+      `topMinusBottom=${vid.topMinusBottom.toFixed(1)} distinctCentreColours=${vid.distinctCentreColours}`,
+  );
+
+  // WITNESS TWO, at a different layer: the window as the OS presented it,
+  // sampled at the SAME COORDINATES as the readback. Two witnesses looking at
+  // different places cannot disagree, and disagreement is the whole mechanism
+  // — the spike's 15%-defect was caught by capturePage reading ground colour
+  // at the surface centre while a readback read surface colour there. It runs
+  // HERE, before the control arms, so it sees the shipping orientation.
+  const windowWitness = await app.evaluate(
+    async ({ BrowserWindow }, { taps, canvas }) => {
+      const img = await BrowserWindow.getAllWindows()[0].webContents.capturePage();
+      const size = img.getSize();
+      const buf = img.toBitmap(); // BGRA, `size` wide
+      // The capture's own resolution, never an assumed dpr.
+      const sx = size.width / canvas.width;
+      const sy = size.height / canvas.height;
+      const modal = (px, py) => {
+        const counts = new Map();
+        for (let y = Math.round(py * sy) - 4; y <= Math.round(py * sy) + 4; y++) {
+          for (let x = Math.round(px * sx) - 16; x <= Math.round(px * sx) + 16; x++) {
+            if (x < 0 || y < 0 || x >= size.width || y >= size.height) continue;
+            const i = (y * size.width + x) * 4;
+            const key = (buf[i + 2] << 16) | (buf[i + 1] << 8) | buf[i];
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+          }
+        }
+        let best = 0;
+        let bestN = -1;
+        for (const [k, n] of counts) {
+          if (n > bestN) {
+            best = k;
+            bestN = n;
+          }
+        }
+        return [(best >>> 16) & 0xff, (best >>> 8) & 0xff, best & 0xff];
+      };
+      const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      const top = modal(taps.top.x, taps.top.y);
+      const bottom = modal(taps.bottom.x, taps.bottom.y);
+      return { size, top, bottom, topMinusBottom: lum(top) - lum(bottom) };
+    },
+    { taps: vid.taps, canvas: vid.canvas },
+  );
+  log(
+    `VIDEO window witness (${windowWitness.size.width}x${windowWitness.size.height}): ` +
+      `top=${JSON.stringify(windowWitness.top)} bottom=${JSON.stringify(windowWitness.bottom)} ` +
+      `topMinusBottom=${windowWitness.topMinusBottom.toFixed(1)}`,
+  );
+  fs.writeFileSync(path.join(shotDir, "s7-video-composited.png"), await page.screenshot());
+
+  // --- the two control arms, which both leave the board in a wrong state ----
+  const vidFlipped = await page.evaluate(() => window.__appRig.videoProbe(12, true));
+  // THE NULL CONTROL: every grade above, run with NO source registered. A
+  // witness that cannot come out negative is not measuring anything, and the
+  // compositor clears its target on every dirty frame, so an absent surface
+  // has somewhere honest to read as absent.
+  const vidNone = await page.evaluate(() => window.__appRig.videoProbe(8, false, false));
+  log(
+    `VIDEO flipped (control): topMinusBottom=${vidFlipped.topMinusBottom.toFixed(1)} ` +
+      `covered=${vidFlipped.covered}/${vidFlipped.frames}`,
+  );
+  log(
+    `VIDEO unregistered (null control): covered=${vidNone.covered}/${vidNone.frames} ` +
+      `topMinusBottom=${vidNone.topMinusBottom.toFixed(1)} sample=${JSON.stringify(vidNone.sample)}`,
+  );
+
+  check(vid.produced > 1, `the fixture really produced frames (${vid.produced})`);
+  // THE COVERAGE EXIT. The spike's 15%-defect was invisible to any single
+  // witness; this is witness one, at one coordinate, every painted frame.
+  check(
+    vid.covered === vid.frames,
+    `EXIT: the live surface composites on 100% of painted frames (${vid.covered}/${vid.frames})`,
+  );
+  check(
+    vidNone.covered === 0,
+    `and with NO source registered it composites on NONE (${vidNone.covered}/${vidNone.frames}) — the coverage grade can fail`,
+  );
+  // LIVENESS: a surface frozen on its first frame would score 100% coverage.
+  // The colour-cycling centre band is what tells the two apart.
+  check(
+    vid.distinctCentreColours > 1,
+    `and it is LIVE, not one frame held forever (${vid.distinctCentreColours} distinct centre colours across the run)`,
+  );
+  // ORIENTATION, measured both ways rather than inherited.
+  check(
+    vid.topMinusBottom > 20,
+    `EXIT: the surface is the right way up — the fixture's bright band is on top (${vid.topMinusBottom.toFixed(1)})`,
+  );
+  check(
+    vidFlipped.topMinusBottom < -20,
+    `and flipping inverts it (${vidFlipped.topMinusBottom.toFixed(1)}) — the arms DISAGREE, so this measures the orientation`,
+  );
+
+  check(
+    windowWitness.topMinusBottom > 20,
+    `WITNESS TWO: the window capture AGREES at the same coordinates — bright band on top there too (${windowWitness.topMinusBottom.toFixed(1)} vs the readback's ${vid.topMinusBottom.toFixed(1)})`,
+  );
+
+  // Idle-zero with the surface PAUSED — the other half of the S7 exit.
+  const vidIdle = await page.evaluate(() => window.__appRig.videoIdle(2500));
+  log(
+    `VIDEO idle (paused): frames=${vidIdle.frames} submits=${vidIdle.submits} registered=${vidIdle.registered}`,
+  );
+  check(vidIdle.frames > 60, `the idle window ran frames (${vidIdle.frames})`);
+  check(
+    vidIdle.registered === 1,
+    `the surface is still REGISTERED across the idle window (${vidIdle.registered}) — idle-zero on an absent source proves nothing`,
+  );
+  check(
+    vidIdle.submits === 0,
+    `EXIT: a PAUSED live surface costs 0 submits (${vidIdle.submits}) — idle-zero survives the video kind`,
+  );
+
   await page.evaluate(() => window.__appRig.teardown());
 } catch (err) {
   console.error(err);
