@@ -69,6 +69,23 @@ export {
   GROUND_FRAME_CHILDREN_DEFAULT_LIMIT,
   GROUND_FRAME_CHILDREN_MAX_LIMIT,
 } from "./program";
+// The HiC seam (design-012 §8 gate 1): the adapter module is the ONLY place a
+// HiC symbol is named, and its probe is what a composited build refuses on.
+// (`GroundRendererLike` rides main's renderer export block above — re-exporting
+// it here too would be a duplicate.)
+export {
+  changedElements,
+  copyElementToTexture,
+  describeHicProbe,
+  drawElementImage,
+  getElementTransform,
+  markAsSourceCanvas,
+  onPaint,
+  probeHic,
+  requestPaint,
+  type HicCapabilities,
+  type HicProbeResult,
+} from "./hic-adapter";
 export { SoupBuilder, parseCssColor, type Rgba, type TriSoup } from "./passes/soup-collect";
 export { collectGuides } from "./passes/guides-collect";
 export { collectWires } from "./passes/wires-collect";

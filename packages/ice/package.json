@@ -50,7 +50,8 @@
     "@vibecook/strata-ecs": "0.13.0",
     "loro-crdt": "^1.13.8",
     "stats-gl": "^4.2.3",
-    "rbush": "^3.0.1"
+    "rbush": "^3.0.1",
+    "@webgpu/types": "^0.1.72"
   },
   "peerDependencies": {
     "@react-three/fiber": ">=9",

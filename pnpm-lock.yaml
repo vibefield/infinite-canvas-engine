@@ -17,6 +17,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      '@webgpu/types':
+        specifier: ^0.1.72
+        version: 0.1.72
       dependency-cruiser:
         specifier: ^16.6.0
         version: 16.10.4
@@ -499,6 +502,9 @@ importers:
       '@vibecook/strata-ecs':
         specifier: 0.13.0
         version: 0.13.0(loro-crdt@1.13.8)(react@19.2.7)
+      '@webgpu/types':
+        specifier: ^0.1.72
+        version: 0.1.72
       loro-crdt:
         specifier: ^1.13.8
         version: 1.13.8
@@ -1451,6 +1457,9 @@ packages:
 
   '@vitest/utils@3.2.7':
     resolution: {integrity: sha512-x6BDOd7dyo3PFLY3I9/HJ25X/6OurhGXk2/B9gOZNPF7XDVjeBK4k01lQE5uvDpbuheErh91qYuE1E2OEjK3Rw==}
+
+  '@webgpu/types@0.1.72':
+    resolution: {integrity: sha512-0cF7RFM2edNoiIS1ODJp0/Gzv4/xSXhwoR0YCza+OWpJWtn4wmo9DvK91aLlH9+uUnwIriP7ZiC3WitmyhuzBw==}
 
   acorn-jsx-walk@2.0.0:
     resolution: {integrity: sha512-uuo6iJj4D4ygkdzd6jPtcxs8vZgDX9YFIkqczGImoypX2fQ4dVImmu3UzA4ynixCIMTrEOWW+95M2HuBaCEOVA==}
@@ -2951,6 +2960,8 @@ snapshots:
       '@vitest/pretty-format': 3.2.7
       loupe: 3.2.1
       tinyrainbow: 2.0.0
+
+  '@webgpu/types@0.1.72': {}
 
   acorn-jsx-walk@2.0.0: {}
 

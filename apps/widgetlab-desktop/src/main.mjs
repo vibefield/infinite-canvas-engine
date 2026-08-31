@@ -55,6 +55,25 @@ const MESH_ENABLED = process.env.ICE_MESH !== "off";
 const RENDERER_DEBUG = process.env.ICE_RENDERER_DEBUG === "1";
 /** How long a fresh instance waits for a mesh link before opening windows anyway (see meshHold). */
 const LINK_GRACE_MS = 8_000;
+/**
+ * HTML-in-Canvas, the composited profile's platform requirement (design-012
+ * §3). Blink runtime feature `CanvasDrawElement` is status:"test": compiled
+ * into this Electron's Chromium but OFF by default, and origin-trial tokens
+ * cannot be redeemed by a `file://` app — so these switches are the ONLY path,
+ * and they must run before `app.whenReady()`.
+ *
+ * `ICE_HIC=off` is a TEST KNOB, not a fallback: it exists so the boot-time
+ * refusal (§11 Q2 — a probe failure is loud, never a silent swap to the
+ * stratified profile) can be witnessed on a host that would otherwise pass.
+ */
+const HIC_ENABLED = process.env.ICE_HIC !== "off";
+
+// BEFORE ready, at module scope: command-line switches appended after Chromium
+// has started reading them are ignored silently.
+if (HIC_ENABLED) {
+  app.commandLine.appendSwitch("enable-features", "CanvasDrawElement");
+  app.commandLine.appendSwitch("enable-blink-features", "CanvasDrawElement");
+}
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(srcDir, "..");
@@ -241,6 +260,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Per-window half of the CanvasDrawElement enablement: the command-line
+      // switches above turn the feature on for the process, this exposes the
+      // Blink runtime feature to THIS window's script context. Both are
+      // required — `experimentalFeatures: true` does NOT enable it.
+      ...(HIC_ENABLED ? { enableBlinkFeatures: "CanvasDrawElement" } : {}),
       // A fully-occluded Electron window reports `visibilityState: "hidden"` and
       // Chromium FREEZES its rAF loop — which is the engine's tick, so a covered
       // collaborator stops flushing presence AND stops applying inbound sync
@@ -280,6 +304,10 @@ app.whenReady().then(async () => {
     { role: "windowMenu" },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  const hicPosture = HIC_ENABLED ? "ON" : "OFF (ICE_HIC=off)";
+  console.log(
+    `[widgetlab-desktop] CanvasDrawElement switches ${hicPosture} — the renderer's own probe decides whether the composited build boots`,
+  );
   await meshHold(meshStart);
   createWindow();
   // STAGGERED, not simultaneous: two windows booting inside the same ~800ms
