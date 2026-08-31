@@ -115,9 +115,17 @@ try {
   await page.evaluate(() => window.__boardRig.animateCard(0, false));
 
   // --- boot staggering -------------------------------------------------------
+  // The frame ceiling is generous on purpose: the theoretical drain floor for
+  // this board is 7 frames, but under builder/host load the observed spread was
+  // 7, 48, 53, 54 and 60 frames across five runs (2026-08-31, the S7 finisher's
+  // measurement) — and the 60-frame run left 1 owed, failing the completion
+  // check for weather rather than a defect. 240 sits 4x above the observed slow
+  // mode; the check below still requires 0 owed AT the ceiling, so a genuinely
+  // stranded copy (the hazard: a compositor that goes quiet while owing work)
+  // still fails — it just cannot fail on scheduling luck.
   const stagger = await page.evaluate(
     ([budget, maxFrames]) => window.__boardRig.bootStagger(budget, maxFrames),
-    [4, 60],
+    [4, 240],
   );
   log(
     `STAGGER budget=${stagger.budget}: ${stagger.copied} copies over ${stagger.frames} frames, ` +
