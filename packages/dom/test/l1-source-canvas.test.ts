@@ -410,6 +410,45 @@ describe("composited hosts", () => {
     expect(sources.size()).toBe(0);
   });
 
+  it("clears the MODE when the widget leaves the store, not just the registration", () => {
+    // The registry is keyed by entity and OUTLIVES this reflector, so an entry
+    // left behind is one nothing will ever clear — it accumulates with every
+    // despawn for as long as the board is open.
+    const { world, engine, store, presentation } = setup();
+    const e = spawnBox(world, 0, 0, 30, 40);
+    store.set([{ entity: e, hidden: false }]);
+    presentation.set(e, "composited");
+    engine.step(0);
+    expect([...presentation.entries()]).toHaveLength(1);
+
+    store.set([]);
+    engine.step(1);
+    expect([...presentation.entries()]).toHaveLength(0);
+    expect(presentation.get(e)).toBe("live-dom");
+  });
+
+  it("hands a host that mounts again on that id the DEFAULT, not the vacated mode", () => {
+    // Why the leak above is a bug rather than a tidiness complaint: entity ids
+    // recycle, and a host mounting on a reused id reads the registry in
+    // `createHost` to pick its parent. A stale "composited" makes an
+    // undeclared card a canvas child on its first frame — and policy never
+    // demotes it, because policy demotes only what IT promoted. (The same path
+    // runs when the keep-mounted LRU evicts a live widget and it re-enters.)
+    const { world, engine, store, presentation, planes, sources, reflector } = setup();
+    const e = spawnBox(world, 0, 0, 30, 40);
+    store.set([{ entity: e, hidden: false }]);
+    presentation.set(e, "composited");
+    engine.step(0);
+    store.set([]);
+    engine.step(1);
+
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(2);
+    expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
+    expect(sources.size()).toBe(0);
+    expect(presentation.get(e)).toBe("live-dom");
+  });
+
   it("keeps a composited host out of the lifted plane while it is grabbed", () => {
     // Its lift is a per-quad GPU fact at true z (design-012 §7 retires P3), so
     // moving it to P3 would be the stratified answer to a solved question.

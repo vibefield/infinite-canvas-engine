@@ -391,6 +391,14 @@ export function createDomWidgetsReflector(
       if (rec.placement === "canvas") noteCompositedChange();
       rec.host.remove(); // React unmounts via the store; the host div goes too
       hosts.delete(e);
+      // The MODE goes with the host. The registry is keyed by entity and
+      // outlives this reflector, so a mode left behind is an entry nothing
+      // will ever clear: it grows with every despawn, and — because entity
+      // ids RECYCLE — a later widget can inherit a "composited" it never
+      // asked for and never demote out of it (policy demotes only what it
+      // promoted). `createHost` seeds a declared default on the way back in,
+      // so a kept-mounted host evicted by the LRU loses nothing here either.
+      opts.presentation?.clear(e);
       membershipChanged = true;
     }
     return membershipChanged;
