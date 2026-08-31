@@ -49,7 +49,12 @@ describe("acquire / resize / release", () => {
   it("reallocates when effective DPR changes the pixel size (the band/DPR path)", () => {
     const { pool: p } = pool();
     const a = p.acquire(1, 100, 50, 1);
+    const disposed = vi.spyOn(a, "dispose");
     const b = p.acquire(1, 100, 50, 2);
+    // UNPINNED is the ordinary path and must stay ordinary: the old target is
+    // disposed here and now. The retirement below is for pinned rows ONLY —
+    // retiring everything would leak a target per band crossing.
+    expect(disposed).toHaveBeenCalledTimes(1);
     // This is exactly why a registered source publishes a GETTER and not a
     // handle: crossing a zoom band swaps the object underneath it.
     expect(b).not.toBe(a);
@@ -132,6 +137,12 @@ describe("LRU + pins", () => {
     expect(after).not.toBe(before);
     expect(disposed).not.toHaveBeenCalled();
     expect(p.size()).toBe(1);
+    // The live island gets a target at the NEW band, and the retired one keeps
+    // its own pixels for the clone. Handing the pinned target back instead
+    // would satisfy "not disposed" while leaving the island at the old
+    // resolution — and `markPainted` would then record it as correctly banded.
+    expect(after.width).toBe(200);
+    expect(before.width).toBe(100);
     // Still allocated, so still charged.
     expect(p.bytesUsed()).toBe(
       webGpuRenderTargetBytes(100, 100) + webGpuRenderTargetBytes(200, 200),

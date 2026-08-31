@@ -65,6 +65,11 @@ describe("RenderTargetPool", () => {
     expect(after).not.toBe(before);
     expect(disposed).not.toHaveBeenCalled();
     expect(pool.size()).toBe(1);
+    // The live island still gets its new resolution; the clone keeps the old
+    // pixels. Returning the pinned target instead would pass "not disposed"
+    // and strand the island at the old size (see acquire's note).
+    expect(after.width).toBe(200);
+    expect(before.width).toBe(100);
     expect(pool.bytesUsed()).toBe(renderTargetBytes(100, 100) + renderTargetBytes(200, 200));
 
     pin.release();

@@ -144,6 +144,16 @@ export class WebGpuRenderTargetPool {
         // gets its new target now, the clone keeps the pixels it is drawing,
         // and the pin's release frees the old one. Its bytes stay counted
         // until then, because it is still allocated.
+        // WHY RETIRE RATHER THAN SIMPLY HAND THE PINNED TARGET BACK (the
+        // shorter fix, weighed and rejected 2026-08-31): the caller paints into
+        // whatever this returns and then stamps the size it ASKED for.
+        // `markPainted` writes the new band into `paintedAt` (island-state.ts)
+        // and `bandStale` reads exactly that field (compositor-pass.ts), so an
+        // old-size target handed back would go on record as correctly banded —
+        // and a Dormant retained island would then sit at the wrong resolution
+        // with nothing left to trigger the resize. It would also render INTO
+        // the texture the frozen outgoing clone is sampling, which is the one
+        // thing the pin exists to prevent.
         const held = this.retired.get(key);
         if (held === undefined) this.retired.set(key, [{ rt: existing.rt, bytes: existing.bytes }]);
         else held.push({ rt: existing.rt, bytes: existing.bytes });
