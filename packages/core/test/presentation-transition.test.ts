@@ -204,6 +204,85 @@ describe("presentation transition coordinator", () => {
     rig.coordinator.dispose();
   });
 
+  it("releases a PENDING retainer when its adapter unregisters before commit", () => {
+    // `unregister` swept only the ACTIVE transition. A preparation in flight
+    // holds its own retainer map, finished by the caller's commit/cancel —
+    // which is later, and under the public `prepare` API may be never. The
+    // detached adapter's release is what hands back what it retained (the DOM
+    // plane's returns the mount store's retention), so skipping it strands the
+    // hold and can still commit the retainer into a transition it cannot serve.
+    const rig = setup();
+    const releases: PresentationReleaseReason[] = [];
+    const detach = rig.coordinator.register({
+      id: "dom",
+      plane: "dom",
+      prepare: () => ({ update: () => {}, release: (reason) => releases.push(reason) }),
+    });
+    const prepared = rig.coordinator.prepare(descriptor);
+    expect(releases).toEqual([]);
+
+    detach();
+    expect(releases).toEqual(["detached"]);
+
+    // And the emptied preparation commits nothing.
+    publishNavCut(
+      rig.world,
+      "enter",
+      descriptor.fromCamera,
+      descriptor.toCamera,
+      descriptor,
+      descriptor.affine,
+    );
+    prepared.commit();
+    expect(rig.coordinator.stats()).toMatchObject({ active: false, retainers: 0 });
+    expect(releases).toEqual(["detached"]); // exactly once
+    rig.coordinator.dispose();
+  });
+
+  it("refuses to bank a retainer for an adapter that unregistered inside its own prepare", () => {
+    // The same defect one instant earlier, and the reachable one: `prepare` is
+    // a user-code boundary (the DOM adapter blurs focus and notifies the mount
+    // store there), so the mount owning the adapter can tear down mid-call.
+    // The retainer would then be banked a moment AFTER unregister swept the map.
+    const rig = setup();
+    const domReleases: PresentationReleaseReason[] = [];
+    const glReleases: PresentationReleaseReason[] = [];
+    let detach: () => void = () => {};
+    detach = rig.coordinator.register({
+      id: "dom",
+      plane: "dom",
+      prepare: () => {
+        detach(); // the mount goes away from inside the boundary
+        return { update: () => {}, release: (reason) => domReleases.push(reason) };
+      },
+    });
+    rig.coordinator.register({
+      id: "gl",
+      plane: "gl",
+      prepare: () => ({ update: () => {}, release: (reason) => glReleases.push(reason) }),
+    });
+
+    const prepared = rig.coordinator.prepare(descriptor);
+    expect(domReleases).toEqual(["detached"]);
+    expect(prepared.complete).toBe(false); // the dom plane did not prepare
+
+    // `continue`, not `break`: the planes that are still ours keep theirs.
+    publishNavCut(
+      rig.world,
+      "enter",
+      descriptor.fromCamera,
+      descriptor.toCamera,
+      descriptor,
+      descriptor.affine,
+    );
+    prepared.commit();
+    expect(rig.coordinator.stats()).toMatchObject({ active: true, retainers: 1 });
+    expect(glReleases).toEqual([]);
+    rig.coordinator.dispose();
+    expect(glReleases).toEqual(["detached"]);
+    expect(domReleases).toEqual(["detached"]); // never released twice
+  });
+
   it("uses a bounded non-geometric crossfade under reduced motion", () => {
     const rig = setup();
     const frames: PresentationTransitionFrame[] = [];

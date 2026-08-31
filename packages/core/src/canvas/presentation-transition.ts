@@ -118,6 +118,12 @@ type ActiveTransition = {
 
 type PendingTransition = {
   finish(reason: PresentationReleaseReason): void;
+  /**
+   * Release just one adapter's retainer, for an adapter that unregistered
+   * while this preparation was still in flight. `finish` is all-or-nothing and
+   * belongs to the navigation; this is the single-plane detach.
+   */
+  detach(id: string): void;
 };
 
 const CROSSFADE_MS = 160;
@@ -296,6 +302,13 @@ export function createPresentationTransitionCoordinator(
         if (!live) return;
         live = false;
         if (adapters.get(adapter.id) === adapter) adapters.delete(adapter.id);
+        // A preparation in flight holds its OWN retainer map — `active` is
+        // only the committed one — and that map is finished by the caller's
+        // commit/cancel, which may be arbitrarily later or never. Sweeping
+        // only `active` left a detached adapter's retainer to be committed
+        // into a transition it can no longer serve, and its `release` (the
+        // DOM plane's is what hands the mount store's retention back) unrun.
+        pending?.detach(adapter.id);
         const retained = active?.retainers.get(adapter.id);
         if (retained === undefined) return;
         active?.retainers.delete(adapter.id);
@@ -338,6 +351,16 @@ export function createPresentationTransitionCoordinator(
           }
           retainers.clear();
         },
+        detach(id) {
+          const retainer = retainers.get(id);
+          if (retainer === undefined) return;
+          retainers.delete(id);
+          try {
+            retainer.release("detached");
+          } catch (error) {
+            reportFault(id, error);
+          }
+        },
       };
       pending = pendingTransition;
       if (descriptor.requestedMotion) {
@@ -357,6 +380,23 @@ export function createPresentationTransitionCoordinator(
                 }
               }
               break;
+            }
+            // An adapter can unregister from INSIDE its own `prepare`: the DOM
+            // one blurs focus and notifies the mount store's subscribers there,
+            // both user-code boundaries, and one of them can tear down the
+            // mount that owns this adapter. Banking that retainer would put it
+            // in `pending` a moment after the unregister swept it — so release
+            // it here and let the plane count as unprepared, which is what it
+            // is. `continue`, not `break`: the other planes are still ours.
+            if (adapters.get(id) !== adapter) {
+              if (retainer !== null) {
+                try {
+                  retainer.release("detached");
+                } catch (error) {
+                  reportFault(id, error);
+                }
+              }
+              continue;
             }
             successfulPlanes.add(adapter.plane);
             if (retainer !== null) retainers.set(id, retainer);
