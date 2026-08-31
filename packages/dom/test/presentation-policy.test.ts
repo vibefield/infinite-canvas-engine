@@ -9,7 +9,16 @@
  * still pass every naive test while thrashing a slot free and a re-copy through
  * every re-grab.
  */
-import { Grab, NO_ENTITY, Position, Size, createEngine, createWorld } from "@ice/core";
+import {
+  Grab,
+  NO_ENTITY,
+  Position,
+  PrefabId,
+  Size,
+  createEngine,
+  createWorld,
+  defineWidget,
+} from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createPresentationRegistry } from "../src/presentation-mode";
 import { createPresentationPolicy } from "../src/presentation-policy";
@@ -17,7 +26,19 @@ import { createPresentationPolicy } from "../src/presentation-policy";
 const GRAB = { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 };
 const SETTLE = 250;
 
-function setup(options: { pinned?: (e: number) => boolean } = {}) {
+// Module scope: the widget registry is process-global and these names are
+// file-unique. The three declarations policy has to tell apart.
+defineWidget({ type: "pp:free", surface: "dom", component: null });
+defineWidget({ type: "pp:pinned-live", surface: "dom", component: null, presentation: { pin: "live-dom" } });
+defineWidget({
+  type: "pp:pinned-composited",
+  surface: "dom",
+  component: null,
+  presentation: { pin: "composited" },
+});
+defineWidget({ type: "pp:island", surface: "gl", component: null });
+
+function setup(options: { pinned?: (e: number) => boolean; type?: string } = {}) {
   const world = createWorld();
   const engine = createEngine(world);
   const presentation = createPresentationRegistry();
@@ -34,6 +55,7 @@ function setup(options: { pinned?: (e: number) => boolean } = {}) {
     components: [
       [Position, { x: 0, y: 0 }],
       [Size, { w: 100, h: 60 }],
+      ...(options.type !== undefined ? [[PrefabId, { id: options.type }] as const] : []),
     ],
   });
   let frame = 0;
@@ -135,6 +157,68 @@ describe("what the policy must not touch", () => {
     step(SETTLE + 1);
     expect(presentation.get(entity)).toBe("picture");
     void world;
+  });
+
+  it("reads a TYPE's pin itself — an app cannot forget to wire one", () => {
+    // The pin lives in `defineWidget({presentation:{pin}})`, and policy asks
+    // the registry rather than being handed a predicate. An app that never
+    // passed `pinned` still gets the declaration honoured.
+    const { presentation, entity, step, grab, release, policy } = setup({ type: "pp:pinned-live" });
+    step();
+    grab();
+    step();
+    // A pinned live-dom card keeps its native caret THROUGH the drag — the
+    // whole reason a text-heavy widget declares one.
+    expect(presentation.get(entity)).toBe("live-dom");
+    expect(policy.promotions()).toBe(0);
+    release();
+    step(SETTLE + 1);
+    expect(presentation.get(entity)).toBe("live-dom");
+    expect(policy.demotions()).toBe(0);
+  });
+
+  it("takes no ownership of a pinned type, even when the registry disagrees", () => {
+    // The pinned-composited direction, and the version of it that can actually
+    // fail. Seeding the declared mode is domWidgets' job (it happens where the
+    // host's parent is chosen), so policy meets this card BEFORE anything
+    // agrees with its pin. Without the pin it would promote on the grab, take
+    // ownership, and demote it to LIVE-DOM one settle window later — a
+    // pinned-composited card parked in the one mode it is pinned out of.
+    const { presentation, entity, step, grab, release, policy } = setup({
+      type: "pp:pinned-composited",
+    });
+    step();
+    grab();
+    step();
+    expect(policy.promotions()).toBe(0);
+    release();
+    step(SETTLE + 1);
+    expect(policy.demotions()).toBe(0);
+    expect(presentation.get(entity)).toBe("live-dom"); // untouched, not "corrected"
+  });
+
+  it("never promotes a GL widget — a promotion would EVICT its island source", () => {
+    // Not merely pointless. Island sources are registered by entity
+    // (r3f/webgpu-sources.ts) and a promotion moves the widget's chrome host
+    // under the L1 canvas, where domWidgets registers a `dom` source for the
+    // same entity — `register` replaces, so the island would be overwritten by
+    // its own card body.
+    const { presentation, entity, step, grab, policy } = setup({ type: "pp:island" });
+    step();
+    grab();
+    step();
+    expect(presentation.get(entity)).toBe("live-dom"); // untouched: policy never wrote
+    expect(policy.promotions()).toBe(0);
+  });
+
+  it("still promotes an entity with no widget type at all", () => {
+    // The guard refuses only what is KNOWN to have no live-dom mode. A
+    // typeless entity has no island source to protect, so it keeps the
+    // behaviour it always had.
+    const { presentation, entity, step, grab } = setup();
+    grab();
+    step();
+    expect(presentation.get(entity)).toBe("composited");
   });
 
   it("demotes only what IT promoted", () => {

@@ -286,7 +286,7 @@ export {
   type WidgetBehaviorEntry,
   type WidgetRename,
   type WidgetRenameEntry,
-  type WidgetSurface,
+  type WidgetSurfaceKind,
   type WidgetType,
 } from "./widget/define-widget";
 
@@ -574,10 +574,20 @@ export {
 export {
   DEFAULT_SURFACE_DEMAND,
   PAUSED_SURFACE_DEMAND,
+  createWidgetSurfaceView,
+  defaultPresentationFor,
   demandIntervalMs,
   foldDemand,
+  presentationIsLegal,
+  resolveSurfacePresentation,
+  surfacePresentationDeclError,
   toFpsBucket,
+  type ResolvedSurfacePresentation,
   type SurfaceDemand,
   type SurfaceFpsBucket,
   type SurfacePresentation,
+  type SurfacePresentationDecl,
+  type WidgetSurface,
+  type WidgetSurfaceSeams,
+  type WidgetSurfaceView,
 } from "./surface/contract";

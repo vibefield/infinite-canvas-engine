@@ -46,6 +46,19 @@ export {
   type PresentationPolicy,
   type PresentationPolicyOptions,
 } from "./presentation-policy";
+// The Widget Surface contract, answered once per presentation profile
+// (design-012 §6; the S8 extraction).
+export {
+  compositedSurfaces,
+  declaredPresentation,
+  presentationPinned,
+  stratifiedSurfaces,
+  widgetPresentationPins,
+  widgetSurfaceKind,
+  type CompositedSurfacesOptions,
+  type StratifiedSurfacesOptions,
+  type WidgetSurfaceDemandSeam,
+} from "./widget-surfaces";
 export {
   createDomWritebackReflector,
   type DomWritebackHosts,

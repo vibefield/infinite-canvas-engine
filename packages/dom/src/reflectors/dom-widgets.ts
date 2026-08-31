@@ -63,7 +63,7 @@ import {
 } from "@ice/core";
 import { planeCssTransform } from "@ice/kernel";
 import { CLAIM_OWNS_ESCAPE, KEYBOARD_CLAIM_ATTR } from "../input-ownership";
-import type { PresentationRegistry } from "../presentation-mode";
+import { DEFAULT_PRESENTATION, type PresentationRegistry } from "../presentation-mode";
 
 /**
  * Where a host can live (design-004 §1: P1 content, P3 lifted; design-012 §5:
@@ -309,12 +309,29 @@ export function createDomWidgetsReflector(
     // fallback focus node when no proxy/editable is under the pointer);
     // `outline:none` because the P4 selection chrome is the affordance, not a
     // UA focus ring on a bare card div.
-    const claimType = world.get(e, PrefabId)?.id;
-    const claimWidget = typeof claimType === "string" ? widgets.get(claimType) : undefined;
-    if (claimWidget?.keyboard === "exclusive") {
-      el.setAttribute(KEYBOARD_CLAIM_ATTR, claimWidget.keyboardEscape === "widget" ? CLAIM_OWNS_ESCAPE : "");
+    const typeId = world.get(e, PrefabId)?.id;
+    const widgetType = typeof typeId === "string" ? widgets.get(typeId) : undefined;
+    if (widgetType?.keyboard === "exclusive") {
+      el.setAttribute(KEYBOARD_CLAIM_ATTR, widgetType.keyboardEscape === "widget" ? CLAIM_OWNS_ESCAPE : "");
       el.tabIndex = -1;
       el.style.outline = "none";
+    }
+
+    // The DECLARED presentation (design-012 §6.3; `defineWidget({presentation})`
+    // landed at S8), applied here because `placementOf` is read four lines
+    // below: seeding the mode and choosing the parent become one step, so a
+    // pinned-composited card is a canvas child on its FIRST frame rather than
+    // being promoted on its second and reparented after one wasted paint.
+    //
+    // `dom` surfaces only. A GL widget's host is its DOM CHROME and belongs in
+    // the content plane under the island (design-004 §1's sandwich) — Q4's
+    // empty canvas host for gl/video kinds is specified but unbuilt, and
+    // seeding "composited" here would move the chrome under the L1 canvas,
+    // where `syncSource` would register it as a `dom` source over the top of
+    // the island's own `gl` registration (both are keyed by entity).
+    if (widgetType?.surface === "dom" && opts.presentation !== undefined) {
+      const declared = widgetType.presentation.default;
+      if (declared !== DEFAULT_PRESENTATION) opts.presentation.set(e, declared);
     }
 
     const content = doc.createElement("div");

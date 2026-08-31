@@ -41,12 +41,31 @@ import {
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
+import type { SurfaceKind } from "../surface/compositor-registry";
+import {
+  resolveSurfacePresentation,
+  surfacePresentationDeclError,
+  type ResolvedSurfacePresentation,
+  type SurfacePresentationDecl,
+} from "../surface/contract";
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
 import type { CanvasType } from "../canvas/define-canvas-type";
 import type { FrameProjection } from "../canvas/frame-projection";
 
-export type WidgetSurface = "dom" | "gl";
+/**
+ * Which kind of pixels a widget type is authored to produce.
+ *
+ * RENAMED from `WidgetSurface` at S8 (design-012 §11 Q7). Q7 ratifies
+ * `WidgetSurface` as the name of the PRESENTATION CONTRACT — the thing that
+ * owns pixels-or-DOM, demand and retention — and this two-value union was
+ * sitting on it while meaning something else entirely: not the surface, but the
+ * kind of surface. It is a strict subset of the compositor's `SurfaceKind`
+ * (`video` arrives from a producer, never from `defineWidget`; the terminal
+ * mirror joins later per Q6), and `Extract` says so rather than restating the
+ * strings, so a new kind cannot make the two lists silently disagree.
+ */
+export type WidgetSurfaceKind = Extract<SurfaceKind, "dom" | "gl">;
 export type SizeMode = "fixed" | "auto-height" | "auto";
 
 export interface WidgetPortDecl {
@@ -180,7 +199,32 @@ export interface WidgetDef {
   readonly props?: PropsDecl | { readonly kind: "object"; readonly fields: Readonly<Record<string, unknown>> };
   /** Conflict groups: group name → prop names. Ungrouped props → "props". */
   readonly groups?: Readonly<Record<string, readonly string[]>>;
-  readonly surface: WidgetSurface;
+  readonly surface: WidgetSurfaceKind;
+  /**
+   * How this widget type wants to present (design-012 §6.3, §11 Q5; the
+   * design-005 amendment S8 landed).
+   *
+   * Absent is the ratified default and should stay absent for almost every
+   * widget: `live-dom` at rest, promoted to `composited` under a gesture, back
+   * again one settle window after it ends. Declaring anything here opts a type
+   * OUT of a policy that was chosen with measurements, so it wants a reason:
+   *
+   *  - `{ pin: "live-dom" }` — a text-heavy card whose caret latency, native
+   *    selection or internal scroller must survive the drag (design-012 §5
+   *    "fidelity, stated": composited text is grayscale-AA and there is no
+   *    threaded scrolling inside the canvas). It never composites, so it also
+   *    never gains true z — it paints above the GPU layer at all times.
+   *  - `{ pin: "composited" }` — a card that must hold true z or a WGSL effect
+   *    while at rest, and has no text worth the seam.
+   *  - `{ default: … }` — the same starting mode WITHOUT taking policy out of
+   *    the decision; promotion and demotion still apply.
+   *
+   * Refused at definition time: `live-dom` on a `gl` surface (an island has no
+   * native paint to fall back to), and a `pin` beside a `default` (a pin
+   * already fixes the mode). GL widgets need declare nothing — their default
+   * is `composited` because it is their only mode.
+   */
+  readonly presentation?: SurfacePresentationDecl;
   /** Framework component (opaque to core — the react package narrows it). */
   readonly component: unknown;
   /**
@@ -291,7 +335,13 @@ export interface WidgetType {
   readonly prefab: Prefab;
   readonly groups: readonly WidgetGroup[];
   readonly propToGroup: Readonly<Record<string, string>>;
-  readonly surface: WidgetSurface;
+  readonly surface: WidgetSurfaceKind;
+  /**
+   * The declared presentation policy, resolved against the surface kind: the
+   * mode this type STARTS in, and the mode it is pinned to when policy may not
+   * choose (design-012 §6.3). `pin: undefined` is the ordinary case.
+   */
+  readonly presentation: ResolvedSurfacePresentation;
   readonly component: unknown;
   /** GL widgets: DOM chrome under the canvas (see WidgetDef.chrome). */
   readonly chrome: unknown;
@@ -559,6 +609,17 @@ export function defineWidget(def: WidgetDef): WidgetType {
   const version = def.version ?? 1;
   if (def.migrate !== undefined) validateMigrateChain(def.type, version, def.migrate);
 
+  // Presentation declaration: a definition error, so it throws rather than
+  // warning. An illegal mode does not degrade into a working widget — it would
+  // either be silently ignored (a pin nobody honours) or park a GL island in a
+  // mode that cannot draw it.
+  const presentationError =
+    def.presentation === undefined ? null : surfacePresentationDeclError(def.surface, def.presentation);
+  if (presentationError !== null) {
+    throw new Error(`ice: defineWidget("${def.type}") ${presentationError}.`);
+  }
+  const presentation = resolveSurfacePresentation(def.surface, def.presentation);
+
   // Preview declaration: fail FAST on unknown previewProps names — a typo
   // would otherwise surface as a spawn throw inside the preview host's error
   // boundary (a silent placeholder), the worst place to find it.
@@ -621,6 +682,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     groups,
     propToGroup,
     surface: def.surface,
+    presentation,
     component: def.component,
     chrome: def.chrome,
     sizeMode: def.sizeMode ?? "fixed",

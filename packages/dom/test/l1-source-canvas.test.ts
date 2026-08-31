@@ -23,11 +23,13 @@ import {
   MeasuredSize,
   NO_ENTITY,
   Position,
+  PrefabId,
   Size,
   Viewport,
   createCompositorSourceRegistry,
   createEngine,
   createWorld,
+  defineWidget,
   type Entity,
   type MountEntry,
 } from "@ice/core";
@@ -41,6 +43,17 @@ import {
   type DomWritebackOptions,
 } from "../src/reflectors/dom-writeback";
 import { createSourceCanvas, type SourceCanvasEffects } from "../src/source-canvas";
+
+// Module scope: the widget registry is process-global and these names are
+// file-unique. Three declarations the seeding step has to tell apart.
+defineWidget({
+  type: "l1:pinned-composited",
+  surface: "dom",
+  component: null,
+  presentation: { pin: "composited" },
+});
+defineWidget({ type: "l1:plain", surface: "dom", component: null });
+defineWidget({ type: "l1:island", surface: "gl", component: null });
 
 /** Minimal WidgetMountStore (the reflector consumes only these two methods). */
 function fakeStore() {
@@ -252,6 +265,55 @@ describe("presentation mode — the one door", () => {
     expect([...p.entries()]).toHaveLength(1);
     p.set(e, "live-dom");
     expect([...p.entries()]).toHaveLength(0);
+  });
+});
+
+describe("a widget type's DECLARED presentation", () => {
+  // `defineWidget({ presentation })`, landed at S8 (design-012 §6.3). Seeded
+  // where the host's parent is chosen, so a declared mode costs no promote
+  // pass and no reparent on a second frame.
+  const spawnTyped = (world: ReturnType<typeof createWorld>, type: string): Entity =>
+    world.spawn({
+      components: [
+        [Position, { x: 0, y: 0 }],
+        [Size, { w: 30, h: 40 }],
+        [PrefabId, { id: type }],
+      ],
+    });
+
+  it("puts a pinned-composited card on the canvas in its FIRST flush", () => {
+    const { world, engine, store, l1, sources, reflector, presentation } = setup();
+    const e = spawnTyped(world, "l1:pinned-composited");
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    // One step, and it is already a canvas child with a source registered —
+    // the mode and the parentage were decided together.
+    expect(reflector.hostElementFor(e)?.parentElement).toBe(l1?.canvas);
+    expect(sources.get(e)?.kind).toBe("dom");
+    expect(presentation.get(e)).toBe("composited");
+  });
+
+  it("leaves an undeclared card in the content plane — seeding is not blanket", () => {
+    // The control without which the test above passes for the wrong reason.
+    const { world, engine, store, planes, sources, reflector } = setup();
+    const e = spawnTyped(world, "l1:plain");
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
+    expect(sources.size()).toBe(0);
+  });
+
+  it("never seeds a GL widget onto the canvas, whatever its kind's default is", () => {
+    // A gl widget's host IS its DOM chrome and belongs under the island in the
+    // content plane (design-004 §1's sandwich). Seeding it canvas-side would
+    // register that chrome as a `dom` source on top of the island's own `gl`
+    // registration — both are keyed by entity, and `register` replaces.
+    const { world, engine, store, planes, sources, reflector } = setup();
+    const e = spawnTyped(world, "l1:island");
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
+    expect(sources.size()).toBe(0);
   });
 });
 

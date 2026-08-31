@@ -5,7 +5,7 @@ import {
   defineWidget,
   type WidgetDef,
   type WidgetPortalInsets,
-  type WidgetSurface,
+  type WidgetSurfaceKind,
   type WidgetType,
 } from "../widget/define-widget";
 
@@ -15,7 +15,7 @@ export interface ContainerIngressDef {
 }
 
 export type ContainerDef = Omit<WidgetDef, "surface" | "container" | "provides"> & {
-  readonly surface?: WidgetSurface;
+  readonly surface?: WidgetSurfaceKind;
   readonly canvas: CanvasType;
   /** Omission inherits the CanvasType's complete compiled legal placement set. */
   readonly drop?: ContainerIngressDef;
