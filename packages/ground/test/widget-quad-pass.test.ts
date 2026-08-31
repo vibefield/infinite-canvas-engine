@@ -434,3 +434,67 @@ describe("ground as the compositor's first quad", () => {
     expect(quads()[0]?.encodeMode).toBe(1); // linear -> sRGB
   });
 });
+
+describe("widget quad pass — what it keeps between composites", () => {
+  it("drops the bind group of a page nothing composites any more", () => {
+    // Source textures are not immortal: an atlas page GROWS into a new texture
+    // and destroys the old one, ground's target is reallocated on every
+    // viewport change, an island's FBO re-bands. Keyed by texture and never
+    // swept, each of those left a bind group, a texture view and a strong
+    // reference to a destroyed texture behind, for the life of the compositor.
+    const registry = createCompositorSourceRegistry();
+    const { device } = recordingDevice();
+    let page = texture("atlas-page-0");
+    const pass = createWidgetQuadPass({
+      device,
+      format: "bgra8unorm",
+      registry,
+      facts: () => ({ x: 0, y: 0, w: 100, h: 100 }),
+      resolve: () => ({
+        texture: page,
+        rect: { x: 0, y: 0, width: 200, height: 200 },
+        textureWidth: 512,
+        textureHeight: 512,
+      }),
+    });
+    registry.register(entity(1), { kind: "dom", host: {} as unknown as Element });
+
+    const target = fakePass();
+    pass.encode(target, frame);
+    expect(pass.bindGroupsHeld()).toBe(1);
+
+    // The page grows: same slot, same quad, a different GPUTexture.
+    page = texture("atlas-page-0-grown");
+    pass.encode(target, frame);
+    expect(pass.bindGroupsHeld()).toBe(2); // both, for now
+
+    // A second of composites later the dead page is not merely unused — it is
+    // unreferenced. The live one is untouched, and still cached.
+    for (let i = 0; i < 61; i++) pass.encode(target, frame);
+    expect(pass.bindGroupsHeld()).toBe(1);
+    expect(pass.drawn()).toBe(1);
+  });
+
+  it("keeps the group of a texture that is still being drawn", () => {
+    // The control: the sweep is a lifecycle, not a timer on everything.
+    const registry = createCompositorSourceRegistry();
+    const { device } = recordingDevice();
+    const page = texture("atlas-page-0");
+    const pass = createWidgetQuadPass({
+      device,
+      format: "bgra8unorm",
+      registry,
+      facts: () => ({ x: 0, y: 0, w: 100, h: 100 }),
+      resolve: () => ({
+        texture: page,
+        rect: { x: 0, y: 0, width: 200, height: 200 },
+        textureWidth: 512,
+        textureHeight: 512,
+      }),
+    });
+    registry.register(entity(1), { kind: "dom", host: {} as unknown as Element });
+    const target = fakePass();
+    for (let i = 0; i < 200; i++) pass.encode(target, frame);
+    expect(pass.bindGroupsHeld()).toBe(1);
+  });
+});

@@ -157,6 +157,12 @@ export interface WidgetQuadPass {
   batches(): number;
   /** Quads skipped because their source had no resident pixels yet. */
   skipped(): number;
+  /**
+   * Cached source bind groups (the leak instrument). Bounded by the number of
+   * textures actually composited lately — a number that climbs on a settled
+   * board means reallocated pages are being retained.
+   */
+  bindGroupsHeld(): number;
   /** True once GPU resources have actually been built — never, while empty. */
   armed(): boolean;
   /**
@@ -335,8 +341,26 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
   let storageBuffer: GPUBuffer | undefined;
   let storageCapacity = 0;
   let scratch = new Float32Array(0);
-  /** Keyed by source texture; dropped whenever a bound buffer is replaced. */
-  const bindGroups = new Map<GPUTexture, GPUBindGroup>();
+  /**
+   * Keyed by source texture; dropped whenever a bound buffer is replaced, and
+   * swept of textures nothing has composited lately.
+   *
+   * THE SWEEP IS NOT HOUSEKEEPING. A source texture is not immortal: an atlas
+   * page grows into a NEW texture and destroys the old one, a page is retired,
+   * ground's offscreen target is reallocated on every viewport/DPR change, an
+   * island's FBO re-bands. Each of those leaves a key here that nothing will
+   * ever draw again — a bind group, a texture view, and a strong reference
+   * keeping a destroyed texture reachable, one per reallocation, for the life
+   * of the compositor.
+   *
+   * There is no reallocation event to listen for (the pass is handed textures,
+   * not lifecycles), so the observable stands in for it: a texture that has
+   * not been composited in a whole second is either gone or cold enough that
+   * rebuilding its bind group costs nothing worth keeping it for.
+   */
+  const bindGroups = new Map<GPUTexture, { group: GPUBindGroup; lastUsed: number }>();
+  /** Encodes since construction — the sweep's clock. */
+  let encodes = 0;
 
   /**
    * Build the pipeline for one source binding. Two variants exist because a
@@ -429,7 +453,10 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
 
   function bindGroupFor(texture: GPUTexture): GPUBindGroup {
     const existing = bindGroups.get(texture);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      existing.lastUsed = encodes;
+      return existing.group;
+    }
     const group = device.createBindGroup({
       label: "widget-quads",
       layout: layout as GPUBindGroupLayout,
@@ -440,8 +467,23 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
         { binding: 3, resource: sampler as GPUSampler },
       ],
     });
-    bindGroups.set(texture, group);
+    bindGroups.set(texture, { group, lastUsed: encodes });
     return group;
+  }
+
+  /**
+   * Composites a texture may sit unused before its bind group is dropped —
+   * about a second at display rate. Long enough that a card pausing at the
+   * edge of the viewport keeps its group across the pan; short enough that a
+   * reallocated page is not retained in any sense that matters.
+   */
+  const BIND_GROUP_RETAIN_ENCODES = 60;
+
+  function sweepBindGroups(): void {
+    if (bindGroups.size === 0) return;
+    for (const [texture, entry] of bindGroups) {
+      if (encodes - entry.lastUsed > BIND_GROUP_RETAIN_ENCODES) bindGroups.delete(texture);
+    }
   }
 
   /**
@@ -479,10 +521,16 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
     drawn: () => drawn,
     batches: () => batches,
     skipped: () => skipped,
+    bindGroupsHeld: () => bindGroups.size,
     drewBackground: () => drewBackground,
     armed: () => pipeline !== undefined,
 
     encode(pass, frame) {
+      // The clock ticks and the sweep runs FIRST, before any early return: a
+      // board that goes empty must still release the pages it used to draw,
+      // and those are exactly the frames that never reach the draw loop.
+      encodes++;
+      sweepBindGroups();
       drawn = 0;
       batches = 0;
       skipped = 0;
