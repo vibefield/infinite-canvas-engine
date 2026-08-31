@@ -28,7 +28,6 @@
 import type {
   CanvasSessionValue,
   CanvasType,
-  CompositorSource,
   CompositorSourceRegistry,
   Entity,
   GpuAllocationLedger,
@@ -40,21 +39,17 @@ import type {
   PresentationTransitionCoordinator,
 } from "@ice/core";
 import { createCompositorSourceRegistry } from "@ice/core";
-import {
-  createCompositorReflector,
-  type CompositeTarget,
-  type CompositorReflector,
+import type {
+  CompositeTarget,
+  CompositorReflector,
 } from "./compositor/compositor-reflector";
-import { createWidgetQuadPass } from "./compositor/widget-quad-pass";
-import {
-  createDomSourceBinder,
-  type DomSourceBinder,
-  type DomSourceBinderOptions,
+import type {
+  DomSourceBinder,
+  DomSourceBinderOptions,
 } from "./compositor/dom-source-binder";
-import { createWorldQuadFacts } from "./compositor/quad-facts";
 import type { LiftDriver } from "./compositor/lift";
-import { resolveGlSource } from "./compositor/gl-source";
-import { resolveVideoSource, type VideoSourceOptions } from "./compositor/video-source";
+import type { VideoSourceOptions } from "./compositor/video-source";
+import { createCompositorWiring } from "./compositor/wiring";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
@@ -381,96 +376,25 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
     let sources: CompositorSourceRegistry | undefined;
     let domSources: DomSourceBinder | undefined;
     if (opts.device !== undefined) {
-      const device = opts.device;
       sources = opts.sources ?? createCompositorSourceRegistry();
-      // Facts and slot sizes come from the SAME read of the world, so a quad
-      // and its atlas slot can never disagree about how big a card is.
-      // TWO facts functions over one world, deliberately. The binder sizes
-      // atlas slots and must see the card's REAL size; the quad pass draws and
-      // must see the lifted one. Feeding the lifted geometry to the binder
-      // re-slots the card on every frame of the ease — see quad-facts.ts.
-      const facts = createWorldQuadFacts(ctx.world);
-      const displayFacts =
-        opts.lift === undefined ? facts : createWorldQuadFacts(ctx.world, { lift: opts.lift });
-      // The binder wakes the reflector and the reflector's `prepare` drives
-      // the binder, so both closures read the enclosing `compositor` binding
-      // rather than a value captured before it exists.
-      domSources = createDomSourceBinder(
-        device,
-        sources,
-        (entity) => facts(entity),
-        {
-          ...(opts.atlas ?? {}),
-          // Paint events are a compositor dirty source (§4). Without this wake
-          // the slot goes dirty and nothing ever composites it.
-          onDirt: () => compositor?.mark("dom"),
-        },
-      );
-      const binder = domSources;
-      compositor = createCompositorReflector({
+      // ONE wiring, shared with `groundHost` — see compositor/wiring.ts for
+      // why the seams live there and not in each factory.
+      const wired = createCompositorWiring({
         world: ctx.world,
+        device: opts.device,
         registry: sources,
-        quadPass: createWidgetQuadPass({
-          device,
-          // The target's ACTUAL format when there is one; the preferred canvas
-          // format otherwise. Never assumed — it guards the sRGB re-encode.
-          format: opts.target?.format ?? navigator.gpu.getPreferredCanvasFormat(),
-          registry: sources,
-          facts: displayFacts,
-          // ONE dispatch, by kind. dom sources go through the atlas (a slot,
-          // a copy, per-slot dirt); gl sources are already pixels in a texture
-          // three owns, so they need none of that. `video` joins at S7.
-          // Ground's own target, drawn before every widget. `undefined`
-          // until three has rendered into it once — the compositor then simply
-          // draws the widgets over whatever the clear left.
-          background: () => {
-            if (!groundOffscreen) return undefined;
-            const texture = renderer.targetTexture?.();
-            if (texture === undefined) return undefined;
-            return {
-              texture,
-              rect: { x: 0, y: 0, width: texture.width, height: texture.height },
-              textureWidth: texture.width,
-              textureHeight: texture.height,
-              // Ground's target is created by three like an island's, so it
-              // carries the same actual-format sRGB question and the same
-              // premultiplied answer.
-              srgb: texture.format.endsWith("-srgb"),
-              premultiplied: true,
-            };
-          },
-          resolve: (entity, source) => {
-            const s = source as CompositorSource;
-            if (s.kind === "gl") return resolveGlSource(s);
-            if (s.kind === "video") return resolveVideoSource(s, opts.video ?? {});
-            return binder.resolve(entity, s);
-          },
-          ...(opts.order !== undefined ? { order: opts.order } : {}),
-        }),
-        device,
-        // Slot copies are issued here — before the pass, after the dirt check.
-        //
-        // STAYING AWAKE IS PART OF THE BUDGET. `maxCopiesPerComposite` is what
-        // makes a bulk arrival stagger instead of stalling for 111 ms, but a
-        // budget without this is worse than no budget: the leftover copies
-        // would sit owed until something unrelated woke the compositor, and a
-        // board that went quiet mid-boot would stay half-drawn. Re-marking on
-        // `pending()` closes exactly that hole.
-        //
-        // ERRATA 2026-08-31: this note used to end "and it cannot spin,
-        // because a frame that owes nothing marks nothing". True of copies and
-        // false as stated — a paint event on a PAUSED card parked a mark no
-        // clock could ever make due, `pending()` counted it, and this line
-        // re-dirtied the compositor on every rAF frame for as long as the card
-        // animated out of sight. The claim holds again only because parked
-        // dirt now sits OUTSIDE `pending()`: the invariant is "everything
-        // pending has a due date", and it is enforced in the binder, not here.
-        prepare: (frame) => {
-          binder.sync(frame);
-          if (binder.pending() > 0) compositor?.mark("dom");
-        },
+        // Ground's own target, drawn before every widget. `undefined` until
+        // three has rendered into it once — the compositor then simply draws
+        // the widgets over whatever the clear left.
+        ...(groundOffscreen ? { groundTexture: () => renderer.targetTexture?.() } : {}),
         ...(opts.target !== undefined ? { target: opts.target } : {}),
+        ...(opts.order !== undefined ? { order: opts.order } : {}),
+        ...(opts.atlas !== undefined ? { atlas: opts.atlas } : {}),
+        ...(opts.lift !== undefined ? { lift: opts.lift } : {}),
+        ...(opts.video !== undefined ? { video: opts.video } : {}),
       });
+      compositor = wired.compositor;
+      domSources = wired.domSources;
     }
 
     return {

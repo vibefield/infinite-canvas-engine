@@ -47,12 +47,14 @@ import {
 } from "./renderer";
 import { createGuidesPass } from "./passes/guides";
 import { createWiresPass } from "./passes/wires";
-import {
-  createCompositorReflector,
-  type CompositeTarget,
-  type CompositorReflector,
-} from "./compositor/compositor-reflector";
-import { createWidgetQuadPass } from "./compositor/widget-quad-pass";
+import type { CompositeTarget, CompositorReflector } from "./compositor/compositor-reflector";
+import type {
+  DomSourceBinder,
+  DomSourceBinderOptions,
+} from "./compositor/dom-source-binder";
+import type { LiftDriver } from "./compositor/lift";
+import type { VideoSourceOptions } from "./compositor/video-source";
+import { createCompositorWiring } from "./compositor/wiring";
 
 const INTERNAL_NOOP_ID = "@ice/ground/transparent";
 const DEFAULT_INACTIVE_COUNT = 3;
@@ -72,19 +74,34 @@ export interface GroundHostOptions {
   readonly rendererOverride?: GroundRendererLike;
   readonly onProgramFault?: (id: string, error: unknown) => void;
   /**
-   * THE COMPOSITED PROFILE SWITCH (design-012 §4) — the same three options
+   * THE COMPOSITED PROFILE SWITCH (design-012 §4) — the same options
    * `ground()` takes, because which profile an app runs must not depend on
    * which ground factory it wired. The app-owned GPUDevice: three adopts it
    * instead of creating its own, and the layer additionally builds the
-   * compositor, so `compositorReflector` and `sources` appear on the layer.
+   * compositor, so `compositorReflector`, `sources` and `domSources` appear on
+   * the layer.
    *
    * Absent ⇒ the stratified profile, unchanged. There is no runtime toggle.
+   *
+   * That parity is now KEPT rather than promised: both factories build their
+   * compositor through `createCompositorWiring`. This note used to sit above a
+   * quad pass with no facts, resolve, order or background and no dom binder at
+   * all, so every registered source warned once per composite and nothing was
+   * ever drawn — and the shipping app is the one on this path.
    */
   readonly device?: GPUDevice;
   /** The compositor's source registry; omitted ⇒ private, read via `layer.sources`. */
   readonly sources?: CompositorSourceRegistry;
   /** The compositor's swap-chain target. Absent at S1 — ground still presents itself. */
   readonly target?: CompositeTarget;
+  /** Paint order for the widget quads, back to front (petition 8). */
+  readonly order?: () => readonly Entity[];
+  /** Tuning for the dom source atlas (page sizes, gutter, copy budget, demand). */
+  readonly atlas?: DomSourceBinderOptions;
+  /** The lift/fade driver (design-012 §7's "one lift"), advanced by the compositor. */
+  readonly lift?: LiftDriver;
+  /** Live-surface options — notably whether this producer's frames are flipped. */
+  readonly video?: VideoSourceOptions;
 }
 
 export interface GroundProgramControl {
@@ -228,32 +245,41 @@ function createProgramHostLayer(
 ): GroundHostLayer {
   const { world } = ctx;
   const doc = ctx.host.container.ownerDocument;
+  // S6b, exactly as in `ground()`: with a compositor TARGET present the host's
+  // programs render into an offscreen buffer the compositor draws first,
+  // instead of presenting onto this renderer's own canvas.
+  const groundOffscreen = opts.device !== undefined && opts.target !== undefined;
   const renderer =
     opts.rendererOverride ??
     createGroundRenderer(doc, {
       forceWebGL: opts.forceWebGL === true,
       profile: opts.profile === true,
       ...(opts.device !== undefined ? { device: opts.device } : {}),
+      ...(groundOffscreen ? { offscreen: true } : {}),
     });
   // The compositor exists only on the composited profile — no device, no
   // compositor, and everything below is the host as it always was.
   let compositor: CompositorReflector | undefined;
   let compositorSources: CompositorSourceRegistry | undefined;
+  let domSources: DomSourceBinder | undefined;
   if (opts.device !== undefined) {
     compositorSources = opts.sources ?? createCompositorSourceRegistry();
-    compositor = createCompositorReflector({
+    // ONE wiring, shared with `ground()` — the seams, the binder and the
+    // prepare all live in compositor/wiring.ts so the two factories cannot
+    // drift into building different compositors again.
+    const wired = createCompositorWiring({
       world,
-      registry: compositorSources,
-      quadPass: createWidgetQuadPass({
-        device: opts.device,
-        // The target's ACTUAL format when there is one; the preferred canvas
-        // format otherwise. Never assumed — it guards the sRGB re-encode.
-        format: opts.target?.format ?? navigator.gpu.getPreferredCanvasFormat(),
-        registry: compositorSources,
-      }),
       device: opts.device,
+      registry: compositorSources,
+      ...(groundOffscreen ? { groundTexture: () => renderer.targetTexture?.() } : {}),
       ...(opts.target !== undefined ? { target: opts.target } : {}),
+      ...(opts.order !== undefined ? { order: opts.order } : {}),
+      ...(opts.atlas !== undefined ? { atlas: opts.atlas } : {}),
+      ...(opts.lift !== undefined ? { lift: opts.lift } : {}),
+      ...(opts.video !== undefined ? { video: opts.video } : {}),
     });
+    compositor = wired.compositor;
+    domSources = wired.domSources;
   }
   const canvas = renderer.canvas;
   Object.assign(canvas.style, {
@@ -1274,6 +1300,7 @@ function createProgramHostLayer(
     programs: programControl,
     ...(compositor !== undefined ? { compositorReflector: compositor } : {}),
     ...(compositorSources !== undefined ? { sources: compositorSources } : {}),
+    ...(domSources !== undefined ? { domSources } : {}),
     device: () => renderer.device?.(),
     groundTargetLive: () => renderer.targetTexture?.() !== undefined,
     configureGrid(config: Partial<GridConfig>) {
@@ -1308,6 +1335,7 @@ function createProgramHostLayer(
       for (const record of [...records.values()]) disposeRecord(record);
       noop.dispose();
       compositor?.dispose();
+      domSources?.dispose();
       resizeObserver?.disconnect();
       renderer.dispose();
       canvas.remove();
