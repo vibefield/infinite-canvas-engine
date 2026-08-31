@@ -14,9 +14,17 @@
  * import, this file names no three symbol (the shapes below are structural),
  * and `core` already names `GPUTexture` for the source registry.
  *
- * r3f's `webgpu-backend.ts` still carries its own copy from S5, with the
- * island-specific probes (MSAA, sRGB) built on it. Converging the two is a
- * naming-pass question for S8, not a reason to churn a landed slice now.
+ * CONVERGED AT S8 (the naming pass's second ruling). From S6b to S8 two copies
+ * of the read existed — this one and r3f's `webgpu-backend.ts` — parked
+ * deliberately rather than churned into a landed slice. They are now one: r3f's
+ * module keeps its ISLAND VOCABULARY (`islandTexture`, `islandIsSrgb`,
+ * `islandIsMultisampled`, `hasWebGpuBackend`, `backendDevice`) and delegates
+ * every record read here. The probes separated cleanly because each is a
+ * question about an ISLAND — can this renderer host one, did that target get
+ * its MSAA — and none of them is a question core has any business answering.
+ *
+ * So "one file changes when three moves the record" is now true across both
+ * packages rather than aspirational in each. This is that file.
  *
  * Verified against three 0.185.1: `WebGPUTextureUtils.js:422` stamps
  * `textureData.textureDescriptorGPU` and `:376` sets its `.format` from

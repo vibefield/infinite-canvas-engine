@@ -14,6 +14,11 @@
  * NOT faked is the logic under test: these functions are the entire mechanism
  * by which a format reaches ground's re-encode guard.
  */
+import {
+  backendTexture,
+  backendTextureIsSrgb,
+  backendTextureRecord,
+} from "@ice/core";
 import { describe, expect, it } from "vitest";
 import {
   backendDevice,
@@ -147,5 +152,51 @@ describe("backend probes", () => {
     const device = { label: "app-owned" };
     expect(backendDevice(fakeRenderer(new Map(), device))).toBe(device);
     expect(backendDevice(fakeRenderer(new Map()))).toBeUndefined();
+  });
+});
+
+describe("the convergence with core (S8's naming-pass ruling)", () => {
+  /**
+   * From S6b to S8 there were TWO copies of the unsupported read — this
+   * package's and core's — and the whole justification for quarantining it was
+   * "one file changes when three moves the record", which two copies make
+   * false. They are now one: these probes are ISLAND VOCABULARY over core's
+   * reader.
+   *
+   * This is a fence against RE-FORKING rather than a test of today's
+   * delegation, which is true by construction. If someone re-implements a
+   * record read here and it drifts — a different optional-chaining depth, a
+   * format compared case-sensitively, a `msaaTexture` check that treats null
+   * differently — this reds where nothing else would.
+   */
+  it("agrees with core's reader on every record shape, field for field", () => {
+    const cases: Array<[string, BackendTextureRecord | undefined]> = [
+      [
+        "srgb + msaa",
+        {
+          texture: gpuTexture(),
+          msaaTexture: gpuTexture(),
+          textureDescriptorGPU: { format: "rgba8unorm-srgb" } as GPUTextureDescriptor,
+        },
+      ],
+      [
+        "linear, resolved only",
+        { texture: gpuTexture(), textureDescriptorGPU: { format: "bgra8unorm" } as GPUTextureDescriptor },
+      ],
+      ["allocated, no descriptor yet", { texture: gpuTexture() }],
+      ["record exists, nothing allocated", {}],
+      ["no record at all", undefined],
+    ];
+    for (const [name, record] of cases) {
+      const rt = texture();
+      const records = new Map<object, BackendTextureRecord>();
+      if (record !== undefined) records.set(rt, record);
+      const renderer = fakeRenderer(records);
+      expect(islandTexture(renderer, rt), name).toBe(backendTexture(renderer, rt));
+      expect(islandIsSrgb(renderer, rt), name).toBe(backendTextureIsSrgb(renderer, rt));
+      expect(islandFormat(renderer, rt), name).toBe(
+        backendTextureRecord(renderer, rt)?.textureDescriptorGPU?.format,
+      );
+    }
   });
 });

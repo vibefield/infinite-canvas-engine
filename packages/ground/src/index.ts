@@ -7,6 +7,23 @@
  * guides — future ground shaders/effects join the same pass registry.
  * (Selection chrome moved OFF the ground 2026-07-17: rings live with the
  * cards, the multi-select union box is P4 dom chrome — always on top.)
+ *
+ * ── THE PACKAGE KEEPS ITS NAME (design-012 §11 Q7, ruled at S8) ────────────
+ * The plan (§1) parked one question for the naming pass: now that the unified
+ * compositor lives here, should the package become `@ice/compositor`? The case
+ * FOR grew stronger as the ladder landed — since S6b ground renders into an
+ * offscreen target and the compositor draws it as its FIRST quad, so ground is
+ * one source among several rather than the headline.
+ *
+ * RULED: NO, and the reason is not that renames are expensive.
+ *
+ * This package ships BOTH presentation profiles. `ground(...)` without a
+ * `device` is the stratified profile's ground layer, in which no compositor
+ * exists at all — so `@ice/compositor` would misname the package for every
+ * stratified app, trading an understatement for a falsehood. `ground` is what
+ * this package is under either profile; the compositor is what it additionally
+ * becomes when an app hands it a device, and `src/compositor/` already says so
+ * at the only altitude where the distinction is real.
  */
 import type {
   CanvasSessionValue,

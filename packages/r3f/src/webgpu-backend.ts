@@ -1,30 +1,36 @@
 /**
- * The private-ish read, quarantined (design-012 plan §1 "the registry seam").
+ * The island half of the private-ish backend read (design-012 plan §1).
  *
- * The unified compositor needs the raw `GPUTexture` three resolved an island
- * into, and three exposes no public accessor for it. The one supported route is
+ * three exposes no public accessor for the raw `GPUTexture` it resolved a
+ * render target into; the one supported route is
  * `renderer.backend.get(renderTarget.texture)`, which returns the backend's
- * per-object record. That read is the ONLY unsupported thing in this slice, so
- * it lives here alone rather than being sprinkled through the pass: `ground`
- * never learns it exists (it receives a `texture()` getter through core's
- * registry), and if three moves the record, exactly one file changes.
+ * per-object record. S5 quarantined that read here, correctly — one file to fix
+ * when three moves the record. S6b then needed the SAME read for ground's
+ * offscreen target, and since `ground` may not import `r3f` (nor the reverse),
+ * it landed in `core/surface/backend-texture.ts` — the one package both import.
  *
- * STRUCTURAL, NOT IMPORTED. Nothing here imports `three/webgpu` — these are
- * interfaces describing a shape, so the stratified profile never pulls the node
- * material system into its bundle just because the composited profile exists
- * (three's `sideEffects: ["./src/nodes/**\/*"]` means a `three/webgpu` import
- * anywhere in the graph is NOT tree-shaken away). The one file that does import
- * it is `webgpu/island-renderer.ts`, behind the `@ice/r3f/webgpu` subpath.
+ * TWO COPIES EXISTED FROM S6B TO S8, deliberately parked ("not a reason to
+ * churn a landed slice"). S8's naming pass resolves it: THE READ LIVES IN CORE,
+ * and this module is the ISLAND VOCABULARY over it. Everything below now goes
+ * through `backendTextureRecord`, so "one file changes when three moves the
+ * record" is true across both packages instead of aspirational in each.
  *
- * Verified against three 0.185.1 in this worktree, not from the spike's notes:
+ * What stays here, and why it is not core's business: the probes below ask
+ * ISLAND questions. Whether a renderer can host islands at all, which device
+ * three settled on, whether a target actually got its MSAA — none of those are
+ * things ground asks, and answering them in core would put island policy in a
+ * package that has no islands.
  *
- *  - `WebGPUTextureUtils.js:422` stamps `textureData.textureDescriptorGPU`, and
- *    `:376` sets its `.format` from `getFormat(texture, device)` — so the format
- *    reported here is the format three ACTUALLY created, which is what the sRGB
- *    re-encode must be guarded on (design-012 §4 sRGB law). An `SRGBColorSpace`
- *    render target comes back `rgba8unorm-srgb`; the swap chain cannot be an
- *    `-srgb` format, so a compositor that assumes instead of asking reads
- *    washed out.
+ * STRUCTURAL, NOT IMPORTED. Nothing here imports `three/webgpu` — core's types
+ * describe a shape — so the stratified profile never pulls the node material
+ * system into its bundle just because the composited profile exists (three's
+ * `sideEffects: ["./src/nodes/**\/*"]` means a `three/webgpu` import anywhere in
+ * the graph is NOT tree-shaken away). The one file that does import it is
+ * `webgpu/island-renderer.ts`, behind the `@ice/r3f/webgpu` subpath.
+ *
+ * Verified against three 0.185.1 in this worktree, not from the spike's notes.
+ * The record's own shape is verified at core's module; what is island-specific:
+ *
  *  - MSAA: `WebGPUUtils.js:127-128` sets `primarySamples = 1` for a multisampled
  *    render target, so `textureData.texture` is created single-sample (`:374`)
  *    and the multisampled surface is a SEPARATE `msaaTexture` (`:413-416`).
@@ -34,37 +40,30 @@
  *  - Usage (`:352-364`) always includes `COPY_SRC`, which is what lets a witness
  *    read an island target back with `copyTextureToBuffer` and no quad pass.
  */
+import {
+  backendTexture,
+  backendTextureIsSrgb,
+  backendTextureRecord,
+  type BackendLike,
+  type BackendTextureRecord,
+  type RendererWithBackend,
+} from "@ice/core";
 
 /**
- * three's per-texture backend record. Every field is optional because the
- * record exists from the moment three first sees the texture, while the GPU
- * objects are allocated lazily on first render — reading before the first paint
- * is normal, not an error, and callers get `undefined` rather than a throw.
+ * three's per-texture backend record. Core's type, re-exported under the name
+ * this package's consumers already import — the same record, read in one place.
  */
-export interface BackendTextureRecord {
-  /** The resolved, single-sample, samplable image. See the header. */
-  texture?: GPUTexture;
-  /** Present only while the target is multisampled — the colour attachment. */
-  msaaTexture?: GPUTexture;
-  /** The descriptor three created `texture` from — the ACTUAL format lives here. */
-  textureDescriptorGPU?: GPUTextureDescriptor;
-  initialized?: boolean;
-}
+export type { BackendTextureRecord };
 
-/** The slice of `WebGPUBackend` this module reads. */
-export interface WebGpuBackendLike {
-  readonly device?: GPUDevice;
-  get(obj: object): BackendTextureRecord | undefined;
-}
+/** The slice of `WebGPUBackend` this package reads. Core's `BackendLike`. */
+export type WebGpuBackendLike = BackendLike;
 
 /**
  * The slice of `WebGPURenderer` this package reads. Structural so that
  * `gl-root` and the pool can be typed against a WebGPU renderer without
  * importing one — and so headless tests can hand in a plain object.
  */
-export interface WebGpuRendererLike {
-  readonly backend?: WebGpuBackendLike;
-}
+export type WebGpuRendererLike = RendererWithBackend;
 
 /** A three `RenderTarget`'s `.texture` — opaque here; only three interprets it. */
 export type RenderTargetTexture = object;
@@ -90,7 +89,7 @@ export function textureRecord(
   renderer: unknown,
   texture: RenderTargetTexture,
 ): BackendTextureRecord | undefined {
-  return (renderer as WebGpuRendererLike | null)?.backend?.get(texture);
+  return backendTextureRecord(renderer, texture);
 }
 
 /**
@@ -104,7 +103,7 @@ export function islandTexture(
   renderer: unknown,
   texture: RenderTargetTexture,
 ): GPUTexture | undefined {
-  return textureRecord(renderer, texture)?.texture;
+  return backendTexture(renderer, texture);
 }
 
 /** The ACTUAL GPU format three created the resolve texture with. */
@@ -112,7 +111,7 @@ export function islandFormat(
   renderer: unknown,
   texture: RenderTargetTexture,
 ): GPUTextureFormat | undefined {
-  return textureRecord(renderer, texture)?.textureDescriptorGPU?.format;
+  return backendTextureRecord(renderer, texture)?.textureDescriptorGPU?.format;
 }
 
 /**
@@ -126,7 +125,7 @@ export function islandFormat(
  * there is nothing to mis-encode.
  */
 export function islandIsSrgb(renderer: unknown, texture: RenderTargetTexture): boolean {
-  return islandFormat(renderer, texture)?.endsWith("-srgb") ?? false;
+  return backendTextureIsSrgb(renderer, texture);
 }
 
 /**
@@ -141,5 +140,5 @@ export function islandIsSrgb(renderer: unknown, texture: RenderTargetTexture): b
  * measurement of what the GPU actually holds.
  */
 export function islandIsMultisampled(renderer: unknown, texture: RenderTargetTexture): boolean {
-  return textureRecord(renderer, texture)?.msaaTexture !== undefined;
+  return backendTextureRecord(renderer, texture)?.msaaTexture !== undefined;
 }
