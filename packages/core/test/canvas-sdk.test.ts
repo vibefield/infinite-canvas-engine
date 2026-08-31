@@ -8,6 +8,7 @@ import {
   Camera,
   ChildOf,
   DefaultCanvasType,
+  ENGINE_SCHEMA_VERSION,
   PrefabId,
   Position,
   NavTransition,
@@ -258,6 +259,26 @@ const MigratingCanvas = defineCanvasType({
   presentation: { tools: { allowed: [select, pan], default: select } },
 });
 
+/**
+ * The legacy container sugar: `defineWidget({container})` with no `canvas`
+ * binds to `ice.default@1` (define-widget's normalization default), so its
+ * compiled dependency closure demands the canvas pack marker that only the
+ * schema 2→3 step writes.
+ */
+const LegacyFolder = defineWidget({
+  type: "canvas-sdk:legacy-folder",
+  surface: "dom",
+  component: null,
+  container: { accepts: ["board.item"] },
+});
+
+const LegacyHostCanvas = defineCanvasType({
+  id: "canvas-sdk:legacy-host",
+  semanticVersion: 1,
+  semantic: { placement: { widgets: [Sticky, LegacyFolder] } },
+  presentation: { tools: { allowed: [select, pan], default: select } },
+});
+
 const widgetQ = defineQuery([PrefabId]);
 
 function countType(engine: CanvasEngine, type: string): number {
@@ -344,6 +365,28 @@ function contentWithoutRequirementEnvelope(): Uint8Array {
     },
     payload,
   );
+}
+
+/**
+ * A GENUINE pre-design-011 document: schema 2, no `ice:rootCanvas`, and no
+ * canvas pack markers at all — the 2→3 structural step is the only writer of
+ * either. `packVersions` are the durable prefab markers such a doc carries.
+ */
+function legacySchema2Envelope(packVersions: Readonly<Record<string, number>>): Uint8Array {
+  const world = createWorld();
+  const loro = new LoroDoc();
+  const store = createDurableStore(loro);
+  store.metaTransaction((meta) => {
+    meta.set("engine.schema.2", true);
+    for (const [pack, version] of Object.entries(packVersions)) {
+      meta.set(`engine.pack.${pack}.${version}`, true);
+    }
+  });
+  const attachment = attachDurable(world, store);
+  ensureBoardRoot(world, store);
+  const payload = store.exportSnapshot();
+  attachment.detach();
+  return encodeEnvelope({ engineSchema: 2, prefabVersions: { ...packVersions } }, payload);
 }
 
 describe("Canvas SDK compilation", () => {
@@ -958,6 +1001,65 @@ describe("CanvasType semantic migration", () => {
       expect(opened.session.readOnly).toBe(true);
       expect(opened.session.report?.dependencyIssues).toEqual([
         `${canvasPackId(BehaviorCanvas.id)} requires ${frameBehaviorPackId(NormalizeFrame.id)}@1`,
+      ]);
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  it("lets a legacy schema-2 document reach the 2→3 migration that satisfies its closure", () => {
+    const engine = createCanvasEngine({
+      widgets: [Sticky, LegacyFolder],
+      tools: [select, pan],
+      presentationFallback: DefaultCanvasType,
+    });
+    try {
+      const opened = engine.docs.open(
+        legacySchema2Envelope({ [LegacyFolder.prefab.id]: LegacyFolder.prefab.version ?? 1 }),
+      );
+      expect(opened.ok).toBe(true);
+      if (!opened.ok) return;
+      // The container's closure demands @ice/canvas/ice.default@1, which ONLY
+      // the 2→3 step writes: a dependency-issue readOnly ahead of the migrate
+      // branch would strand this document read-only forever.
+      expect(opened.session.readOnly).toBe(false);
+      const report = opened.session.versionReport();
+      expect(report.docSchema).toBe(ENGINE_SCHEMA_VERSION);
+      expect(report.dependencyIssues).toEqual([]);
+      expect(report.docPacks[canvasPackId(DefaultCanvasType.id)]).toBe(1);
+      expect(opened.session.rootCanvas).toEqual({
+        id: DefaultCanvasType.id,
+        semanticVersion: 1,
+      });
+      // A real durable write lands: the pack the doc already enables.
+      expect(engine.ops.spawnWidget(LegacyFolder.type, { x: 0, y: 0 })).toBeTypeOf("number");
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  it("still gates a CURRENT-schema document read-only on an unsatisfiable closure", () => {
+    const engine = createCanvasEngine({
+      widgets: [Sticky, LegacyFolder],
+      tools: [select, pan],
+      canvasTypes: [LegacyHostCanvas],
+      rootCanvas: LegacyHostCanvas,
+      presentationFallback: DefaultCanvasType,
+    });
+    try {
+      // Schema 3, root satisfied, container marker present — but the canvas
+      // pack that container depends on is absent and nothing is left to
+      // migrate, so the closure is authoritative and the doc stays read-only.
+      const opened = engine.docs.open(
+        rootOnlyEnvelope(LegacyHostCanvas.id, 1, {
+          [LegacyFolder.prefab.id]: LegacyFolder.prefab.version ?? 1,
+        }),
+      );
+      expect(opened.ok).toBe(true);
+      if (!opened.ok) return;
+      expect(opened.session.readOnly).toBe(true);
+      expect(opened.session.report?.dependencyIssues).toEqual([
+        `${LegacyFolder.prefab.id} requires ${canvasPackId(DefaultCanvasType.id)}@1`,
       ]);
     } finally {
       engine.dispose();

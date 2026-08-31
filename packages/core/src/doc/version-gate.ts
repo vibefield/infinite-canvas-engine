@@ -65,7 +65,10 @@ export interface DocVersionReport {
   readonly rootCanvas?: CanvasTypeIdentity;
   /** A schema-3 root invariant failure. It can never be overridden into writable. */
   readonly rootIssue?: string;
-  /** Missing exact semantic dependency markers for otherwise-current packs. */
+  /**
+   * Missing exact semantic dependency markers for otherwise-current packs.
+   * Evaluated only on a CURRENT-schema document — see {@link dependencyIssues}.
+   */
   readonly dependencyIssues?: readonly string[];
 }
 
@@ -159,11 +162,23 @@ function compare(
 }
 
 function dependencyIssues(
+  docSchema: number,
   docPacks: Readonly<Record<string, number>>,
   localPacks: Readonly<Record<string, number>>,
   dependencies: DocVersionScope["packDependencies"],
 ): string[] {
   if (dependencies === undefined) return [];
+  // The compiled closure describes THIS schema's documents. A doc below the
+  // local schema has not run its structural migrations yet, and those steps are
+  // what install the markers the closure demands — schema-migrate's 2→3 step is
+  // the SOLE writer of the root canvas marker every `defineContainer` prefab
+  // depends on. Enforcing the closure here would decide `readOnly` before the
+  // gate could ever say `migrate` (and `constrainSemanticVerdict` would clamp
+  // an override), so the migration that clears the issue could never run. Same
+  // principle as the per-owner skip below, one level up: historical closures
+  // belong to historical migration code. The open path re-gates afterwards, so
+  // a closure the migration could NOT satisfy still lands read-only.
+  if (docSchema < ENGINE_SCHEMA_VERSION) return [];
   const issues: string[] = [];
   for (const [owner, required] of Object.entries(dependencies)) {
     // Historical dependency closures belong to historical migration code. We
@@ -250,7 +265,12 @@ export function readDocVersionReport(doc: LoroDoc, scope?: DocVersionScope): Doc
   const localPacks = { ...(scope?.localPacks ?? defaultPackVersions()) };
   const { docPacks, renamedInDoc } = foldRenames(rawPacks, tombstoned);
   const { newerInDoc, olderInDoc } = compare(docPacks, localPacks);
-  const missingDependencies = dependencyIssues(docPacks, localPacks, scope?.packDependencies);
+  const missingDependencies = dependencyIssues(
+    docSchema,
+    docPacks,
+    localPacks,
+    scope?.packDependencies,
+  );
   const root = rootFields(docSchema, meta.get(ROOT_CANVAS_META_KEY), docPacks, localPacks);
   return {
     docSchema,
@@ -278,7 +298,12 @@ export function readEnvelopeVersionReport(
   const localPacks = { ...(scope?.localPacks ?? defaultPackVersions()) };
   const { docPacks, renamedInDoc } = foldRenames(header.prefabVersions, new Set());
   const { newerInDoc, olderInDoc } = compare(docPacks, localPacks);
-  const missingDependencies = dependencyIssues(docPacks, localPacks, scope?.packDependencies);
+  const missingDependencies = dependencyIssues(
+    header.engineSchema,
+    docPacks,
+    localPacks,
+    scope?.packDependencies,
+  );
   const root = rootFields(header.engineSchema, header.rootCanvas, docPacks, localPacks);
   return {
     docSchema: header.engineSchema,
@@ -298,6 +323,10 @@ export function gateVerdict(report: DocVersionReport): GateVerdict {
   if (report.docSchema === 0) return "reject"; // not an engine doc (or pre-stamp corruption)
   if (report.docSchema > report.localSchema) return "readOnly"; // newer app wrote it
   if (report.rootIssue !== undefined) return "readOnly";
+  // Both semantic bars sit ABOVE the migrate branch, so both are meaningful
+  // only on a current-schema doc — which is exactly where `rootFields` and
+  // `dependencyIssues` raise them. A below-current doc reaches `migrate` and
+  // is re-gated against these bars after its structural chain has run.
   if ((report.dependencyIssues?.length ?? 0) > 0) return "readOnly";
   if (report.newerInDoc.length > 0) return "readOnly";
   if (
