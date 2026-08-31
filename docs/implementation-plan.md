@@ -550,7 +550,9 @@ dependency-cruiser enforces.
 - **S7 — the video kind** (`e3d01d3`): `importExternalTexture` from a retained
   latest, imported INSIDE the reflector's synchronous flush so it never crosses
   an await. A surface is STATE, not an event.
-- **S8 — extraction, the owed wiring, docs**: the Widget Surface contract
+- **S8 — extraction, the owed wiring, docs** (`f37d964` · `1bce632` ·
+  `07ed341` · `c11fe2d` · `d9810d7`; SHAs added at land time — the entry was
+  written pre-rebase): the Widget Surface contract
   finalised in `core/src/surface/` and answered by both profiles;
   `defineWidget({ presentation: { default?, pin? } })` honoured by the policy
   and by host placement; external-frame arrival made a real dirty source; and
