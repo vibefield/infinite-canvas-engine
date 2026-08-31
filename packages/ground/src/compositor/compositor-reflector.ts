@@ -44,6 +44,8 @@ import type { CompositeFrame, WidgetQuadPass } from "./widget-quad-pass";
 export type CompositorDirtSource =
   | "camera"
   | "viewport"
+  /** Ground repainted into its offscreen target — the first quad changed. */
+  | "ground"
   | "sibling-order"
   | "dom"
   | "island"

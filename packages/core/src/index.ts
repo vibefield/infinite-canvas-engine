@@ -561,6 +561,16 @@ export {
 } from "./surface/gpu-device";
 // Demand: what stops self-animating DOM from uploading at display rate
 // (hic-bench §5 measured a CSS-keyframe card at 239.9 paint events/s).
+// The ONE unsupported read of three's backend texture record, in the package
+// both `ground` and `r3f` import (S6b — see the module note).
+export {
+  backendTexture,
+  backendTextureIsSrgb,
+  backendTextureRecord,
+  type BackendLike,
+  type BackendTextureRecord,
+  type RendererWithBackend,
+} from "./surface/backend-texture";
 export {
   DEFAULT_SURFACE_DEMAND,
   PAUSED_SURFACE_DEMAND,

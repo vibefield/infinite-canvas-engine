@@ -324,3 +324,113 @@ describe("widget quad pass — the S2 instance contract", () => {
     expect(pass.encode(fakePass(), frame)).toBe(1);
   });
 });
+
+/**
+ * GROUND AS THE FIRST QUAD (design-012 §4, S6b).
+ *
+ * Route (a) of the one-present question: ground renders its own programs —
+ * GroundHost, the magnet TSL, the whole pass registry — into an offscreen
+ * target, and the compositor draws that target before any widget. What is
+ * pinned here is the ordering and the coordinate handling, because both are
+ * silent when wrong: a ground quad drawn last hides the board, and a ground
+ * quad given the camera twice slides the grid at double rate under a pan.
+ */
+describe("ground as the compositor's first quad", () => {
+  const groundTexture = texture("ground-target");
+  const groundQuad: QuadTexture = {
+    texture: groundTexture,
+    rect: { x: 0, y: 0, width: 2560, height: 1616 },
+    textureWidth: 2560,
+    textureHeight: 1616,
+  };
+
+  it("draws ground FIRST, before every widget", () => {
+    const registry = createCompositorSourceRegistry();
+    registry.register(entity(0), { kind: "dom", host: {} });
+    const { device } = recordingDevice();
+    const encoder = fakePass();
+    const pass = createWidgetQuadPass({
+      device,
+      format: "bgra8unorm",
+      registry,
+      order: () => [entity(0)],
+      facts: () => ({ x: 0, y: 0, w: 100, h: 50 }),
+      resolve: () => ({
+        texture: texture("atlas"),
+        rect: { x: 0, y: 0, width: 128, height: 64 },
+        textureWidth: 256,
+        textureHeight: 256,
+      }),
+      background: () => groundQuad,
+    });
+    expect(pass.encode(encoder, frame)).toBe(2);
+    expect(pass.drewBackground()).toBe(true);
+    // Instance 0 is ground; the widget follows. Painter's order IS the
+    // ordering contract, so ground last would simply hide the board.
+    expect(encoder.calls).toEqual([
+      { count: 1, first: 0 },
+      { count: 1, first: 1 },
+    ]);
+  });
+
+  it("gives ground the WHOLE viewport and does NOT apply the camera twice", () => {
+    // The grid was drawn at this camera when ground rendered into the target.
+    // Applying the camera again here would move it a second time — a pan would
+    // slide the grid at double rate against the cards sitting on it.
+    const registry = createCompositorSourceRegistry();
+    const { device, quads } = recordingDevice();
+    const pass = createWidgetQuadPass({
+      device,
+      format: "bgra8unorm",
+      registry,
+      background: () => groundQuad,
+    });
+    pass.encode(fakePass(), { width: 1600, height: 1200, dpr: 2, camera: { x: 900, y: 400, zoom: 3 } });
+    expect(quads()[0]?.dst).toEqual([0, 0, 1600, 1200]);
+    expect(quads()[0]?.radius).toBe(0);
+    expect(quads()[0]?.opacity).toBe(1);
+  });
+
+  it("draws ground even with an EMPTY registry — a board with no widgets is still a board", () => {
+    const registry = createCompositorSourceRegistry();
+    const { device } = recordingDevice();
+    const pass = createWidgetQuadPass({
+      device,
+      format: "bgra8unorm",
+      registry,
+      background: () => groundQuad,
+    });
+    expect(pass.encode(fakePass(), frame)).toBe(1);
+    expect(pass.drewBackground()).toBe(true);
+  });
+
+  it("still allocates NOTHING when there is neither ground nor a widget", () => {
+    // The S1 laziness law survives the new seam: a background getter that
+    // returns undefined must not arm the pipeline.
+    const registry = createCompositorSourceRegistry();
+    const { device, touched } = tripwireDevice();
+    const pass = createWidgetQuadPass({
+      device,
+      format: "bgra8unorm",
+      registry,
+      background: () => undefined,
+    });
+    for (let i = 0; i < 5; i++) pass.encode(fakePass(), frame);
+    expect(touched).toEqual([]);
+    expect(pass.armed()).toBe(false);
+    expect(pass.drewBackground()).toBe(false);
+  });
+
+  it("guards ground's sRGB on its ACTUAL format, like any other source", () => {
+    const registry = createCompositorSourceRegistry();
+    const { device, quads } = recordingDevice();
+    const pass = createWidgetQuadPass({
+      device,
+      format: "bgra8unorm",
+      registry,
+      background: () => ({ ...groundQuad, srgb: true }),
+    });
+    pass.encode(fakePass(), frame);
+    expect(quads()[0]?.encodeMode).toBe(1); // linear -> sRGB
+  });
+});

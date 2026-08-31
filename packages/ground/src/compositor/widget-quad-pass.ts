@@ -114,12 +114,33 @@ export interface WidgetQuadPassDeps {
    * sampling whatever used to live at its rect.
    */
   readonly resolve?: (entity: Entity, source: unknown) => QuadTexture | undefined;
+  /**
+   * GROUND, as the pass's FIRST quad (design-012 §4: "ground pipeline(s)
+   * first, then widget quads"; S6b).
+   *
+   * Ground renders its own programs — design-011's GroundHost, the magnet
+   * grid's TSL, the whole pass registry — into an offscreen target, and the
+   * compositor draws that target full-viewport before any widget. That is what
+   * collapses two presents into one: ground stops owning a swap chain, and the
+   * compositor reflector becomes the only `getCurrentTexture` caller.
+   *
+   * It is NOT a registry source, deliberately. Ground is not a widget: it has
+   * no entity, no sibling ordinal, no lift and no demand, and giving it a fake
+   * entity to ride the ordinal sort would put it one bad comparator away from
+   * painting over the board.
+   *
+   * Returning `undefined` (ground not ready, or a stratified build) simply
+   * draws no background — the widgets still composite.
+   */
+  readonly background?: () => QuadTexture | undefined;
 }
 
 export interface WidgetQuadPass {
   readonly name: string;
   /** Quads encoded by the most recent `encode` (0 on an empty registry). */
   drawn(): number;
+  /** True when the most recent `encode` drew ground's target first. */
+  drewBackground(): boolean;
   /** Draw calls issued by the most recent `encode` (one per texture run). */
   batches(): number;
   /** Quads skipped because their source had no resident pixels yet. */
@@ -274,6 +295,7 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
   let drawn = 0;
   let batches = 0;
   let skipped = 0;
+  let drewBackground = false;
 
   // Built on first use and never while the registry is empty (the S1 law).
   let pipeline: GPURenderPipeline | undefined;
@@ -383,22 +405,26 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
     drawn: () => drawn,
     batches: () => batches,
     skipped: () => skipped,
+    drewBackground: () => drewBackground,
     armed: () => pipeline !== undefined,
 
     encode(pass, frame) {
       drawn = 0;
       batches = 0;
       skipped = 0;
-      // Empty registry ⇒ draws nothing, allocates nothing, touches no GPU
-      // object. This is the S1 exit condition, kept.
-      if (registry.size() === 0) return 0;
+      drewBackground = false;
 
-      const order = paintOrder();
-      if (order.length === 0) return 0;
+      // Ground first — it is the background, and painter's order is the whole
+      // ordering contract here.
+      const ground = deps.background?.();
+      const order = registry.size() === 0 ? [] : paintOrder();
+      // Empty registry AND no ground ⇒ draws nothing, allocates nothing,
+      // touches no GPU object. The S1 exit condition, kept.
+      if (ground === undefined && order.length === 0) return 0;
 
       const resolve = deps.resolve;
       const facts = deps.facts;
-      if (resolve === undefined || facts === undefined) {
+      if (order.length > 0 && (resolve === undefined || facts === undefined)) {
         // A producer registered ahead of the wiring that can sample it. Say so
         // rather than drawing a wrong frame or silently skipping.
         console.warn(
@@ -412,9 +438,38 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
       const runs: Array<{ texture: GPUTexture; first: number; count: number }> = [];
       let quadCount = 0;
       // Sized before the walk so `scratch` is stable while it is filled.
-      ensureStorage(order.length);
+      // +1 for ground's own quad, which is not in the registry.
+      ensureStorage(order.length + 1);
+
+      // GROUND, at instance 0. Full viewport, no camera: the camera is already
+      // inside the pixels — ground's passes drew the grid at this camera when
+      // they rendered into the target. Applying it again here would move the
+      // grid twice.
+      if (ground !== undefined) {
+        const base = quadCount * FLOATS_PER_QUAD;
+        scratch[base + 0] = 0;
+        scratch[base + 1] = 0;
+        scratch[base + 2] = frame.width;
+        scratch[base + 3] = frame.height;
+        scratch[base + 4] = ground.rect.x / ground.textureWidth;
+        scratch[base + 5] = ground.flipY === true
+          ? (ground.rect.y + ground.rect.height) / ground.textureHeight
+          : ground.rect.y / ground.textureHeight;
+        scratch[base + 6] = ground.rect.width / ground.textureWidth;
+        scratch[base + 7] = ground.flipY === true
+          ? -ground.rect.height / ground.textureHeight
+          : ground.rect.height / ground.textureHeight;
+        scratch[base + 8] = 0; // no radius — ground is the whole viewport
+        scratch[base + 9] = 1;
+        scratch[base + 10] = encodeMode(ground.srgb === true, targetSrgb);
+        scratch[base + 11] = ground.premultiplied === false ? 0 : 1;
+        runs.push({ texture: ground.texture, first: quadCount, count: 1 });
+        quadCount++;
+        drewBackground = true;
+      }
 
       for (const entity of order) {
+        if (resolve === undefined || facts === undefined) break;
         const source = registry.get(entity);
         if (source === undefined) continue;
         const geom = facts(entity);

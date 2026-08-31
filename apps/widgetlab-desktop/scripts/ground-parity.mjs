@@ -123,9 +123,12 @@ try {
   const a1 = await runArm("stratified", "a1", "s1-ground-stratified.png");
   const a2 = await runArm("stratified", "a2", null);
   const b = await runArm("composited", "b", "s1-ground-composited.png");
+  // S6b: ground renders into an offscreen target and the COMPOSITOR presents
+  // it as its first quad — one present instead of two stacked canvases.
+  const c = await runArm("in-pass", "c", "s6b-ground-in-pass.png");
 
   // --- the blank guard: a pixel test that compares two empty images passes ---
-  for (const s of [a1, a2, b]) {
+  for (const s of [a1, a2, b, c]) {
     check(s.available === true, `${s.variant}[${s.id}]: the ground layer reported itself available`);
     check(s.redraws > 0, `${s.variant}[${s.id}]: ground actually painted (redraws=${s.redraws})`);
     check(
@@ -178,6 +181,50 @@ try {
     `EXIT: composited ground is pixel-identical to stratified ground (${compare.differingPct.toFixed(4)}% differ)`,
   );
 
+  // --- S6b: ground INSIDE the pass -----------------------------------------
+  const inPass = await page.evaluate(([x, y]) => window.__groundParityRig.diff(x, y), [a1.id, c.id]);
+  log(
+    `COMPARE stratified-vs-in-pass: ${inPass.differingPixels}/${inPass.totalPixels} px ` +
+      `(${inPass.differingPct.toFixed(4)}%) maxDelta=${inPass.maxChannelDelta} mean=${inPass.meanAbsDelta.toFixed(5)}`,
+  );
+  log(
+    `  in-pass: acquisitions=${c.acquisitions} groundTargetLive=${c.groundTargetLive} ` +
+      `redraws=${c.redraws} distinct=${c.distinctColors} ink=${c.inkPixels} hash=${c.hash}`,
+  );
+  log(`  stratified for comparison: distinct=${a1.distinctColors} ink=${a1.inkPixels} hash=${a1.hash}`);
+  check(
+    c.groundTargetLive === true,
+    "S6b: ground renders into an OFFSCREEN target — it no longer owns a swap chain",
+  );
+  check(
+    c.acquisitions > 0,
+    `S6b: the compositor reflector acquired the swap-chain texture (${c.acquisitions})`,
+  );
+  // The pixels are the point: a blit that lost the grid, or drew it in the
+  // wrong colour space, would still pass every count above. (Both happened:
+  // the first run was blank because ground's redraw did not wake the
+  // compositor, the second was 74/255 dark because three does not apply its
+  // output sRGB transform when rendering to a target.)
+  check(
+    c.inkPixels === a1.inkPixels,
+    `EXIT: ground in-pass draws exactly the same ink as ground presenting itself (${c.inkPixels} vs ${a1.inkPixels} px)`,
+  );
+  // NOT bit-identity, and the reason is worth stating rather than asserting
+  // away. Route (a) adds a hop: three writes sRGB into an `-srgb` target, the
+  // shader samples (auto-decode to linear), converts on UNPREMULTIPLIED colour
+  // and re-encodes. On a fully opaque pixel that round trip is exact; on an
+  // antialiased edge the unpremultiply/repremultiply costs up to 1-2 levels.
+  // The differing pixels are therefore a strict subset of the ink — the dot
+  // EDGES — and never the interiors or the background.
+  check(
+    inPass.maxChannelDelta <= 2,
+    `EXIT: within the 8-bit round trip the extra hop costs — maxDelta ${inPass.maxChannelDelta}/255, mean ${inPass.meanAbsDelta.toFixed(5)}`,
+  );
+  check(
+    inPass.differingPixels < c.inkPixels,
+    `and only ANTIALIASED EDGES differ: ${inPass.differingPixels} of ${c.inkPixels} ink px, none of the background`,
+  );
+
   // Witness 2, same two questions, at the window layer.
   const winControl = await diffWindows("a1", "a2");
   const winCompare = await diffWindows("a1", "b");
@@ -192,6 +239,22 @@ try {
   check(idle.frames > 100, `idle window actually ran frames (${idle.frames} in ${IDLE_MS}ms)`);
   check(idle.submits === 0, `EXIT: 0 submits across ${IDLE_MS}ms of idle (measured at queue.submit)`);
   check(idle.redraws === 0, "idle: ground drew zero frames (its own dirty union held)");
+
+  // --- S6b cost note --------------------------------------------------------
+  const cost = await page.evaluate(() => window.__groundParityRig.blitCost(12));
+  log(
+    `COST (in-pass, ${cost.rounds} interleaved rounds): composite median ${cost.compositeMedianMs.toFixed(4)} ms, ` +
+      `null-submit control ${cost.controlMedianMs.toFixed(4)} ms, delta ${cost.deltaMs.toFixed(4)} ms; ` +
+      `offscreen target ${(cost.targetBytes / 1e6).toFixed(1)} MB declared (batch ${cost.batch}/sample)`,
+  );
+  check(
+    cost.compositeMedianMs > 0 && cost.controlMedianMs > 0,
+    `COST: both arms measured above the clock's 100 us floor (composite ${cost.compositeMedianMs.toFixed(4)}, control ${cost.controlMedianMs.toFixed(4)})`,
+  );
+  check(
+    cost.deltaMs >= 0 && cost.deltaMs < 1,
+    `COST: the blit costs ${cost.deltaMs.toFixed(4)} ms over a null submit — well inside a 120 Hz frame, on the layer that already owns the fill-rate budget`,
+  );
 
   await page.evaluate(() => window.__groundParityRig.teardown());
 } catch (err) {

@@ -242,6 +242,14 @@ export interface GroundLayer {
    * latter. Rigs assert `layer.device() === engine.compositorDevice.device`.
    */
   device(): GPUDevice | undefined;
+  /**
+   * Is ground rendering into an OFFSCREEN target rather than presenting its own
+   * canvas (S6b)? A diagnostic seam in the same spirit as `device()`: it is the
+   * difference between "a target was passed" and "ground actually stopped
+   * owning a swap chain", and only the second one is the single presentation
+   * clock. `false` before three's first render and in every stratified build.
+   */
+  groundTargetLive(): boolean;
   /** Live grid re-tune (the react `grid` prop forwards here). */
   configureGrid(cfg: Partial<GridConfig>): void;
   dispose(): void;
@@ -319,21 +327,33 @@ export type GroundFactory = (ctx: GroundContext) => GroundLayer;
 export function ground(opts: GroundOptions = {}): GroundFactory {
   return (ctx) => {
     const doc = ctx.host.container.ownerDocument;
+    // S6b: with a compositor TARGET present, ground stops presenting itself
+    // and renders into an offscreen buffer the compositor draws first. Without
+    // one it presents to its own canvas exactly as it always has — which is
+    // both the stratified profile and every S1-S6 composited build.
+    const groundOffscreen = opts.device !== undefined && opts.target !== undefined;
     const renderer = opts.rendererOverride ?? createGroundRenderer(doc, {
       forceWebGL: opts.forceWebGL === true,
       profile: opts.profile === true,
       ...(opts.device !== undefined ? { device: opts.device } : {}),
+      ...(groundOffscreen ? { offscreen: true } : {}),
     });
+    let compositor: CompositorReflector | undefined;
     const poles = opts.poles === undefined ? [] : Array.isArray(opts.poles) ? opts.poles : [opts.poles];
     const grid = createGridPass(opts.grid ?? {}, { poles, ...(ctx.readSpatial !== undefined ? { readSpatial: ctx.readSpatial } : {}) });
     const wires = createWiresPass(opts.wires ?? {}, ctx.readWirePreview);
     const guides = createGuidesPass(opts.guides ?? {});
     const passes: GroundPass[] = [grid, wires, guides, ...(opts.passes ?? [])];
-    const layer = createLayer(ctx.host, ctx.world, renderer, passes);
+    // Late-bound: ground's redraw wakes the compositor, and the compositor
+    // draws ground's target — the cycle is resolved by the closure running
+    // after both exist.
+    const layer = createLayer(ctx.host, ctx.world, renderer, passes, {
+      onRedraw: () => compositor?.mark("ground"),
+    });
 
     // The compositor exists only on the composited profile — no device, no
     // compositor, and the stratified path below is the code it always was.
-    let compositor: CompositorReflector | undefined;
+    // (Declared before `createLayer` above closes over it.)
     let sources: CompositorSourceRegistry | undefined;
     let domSources: DomSourceBinder | undefined;
     if (opts.device !== undefined) {
@@ -376,6 +396,25 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
           // ONE dispatch, by kind. dom sources go through the atlas (a slot,
           // a copy, per-slot dirt); gl sources are already pixels in a texture
           // three owns, so they need none of that. `video` joins at S7.
+          // Ground's own target, drawn before every widget. `undefined`
+          // until three has rendered into it once — the compositor then simply
+          // draws the widgets over whatever the clear left.
+          background: () => {
+            if (!groundOffscreen) return undefined;
+            const texture = renderer.targetTexture?.();
+            if (texture === undefined) return undefined;
+            return {
+              texture,
+              rect: { x: 0, y: 0, width: texture.width, height: texture.height },
+              textureWidth: texture.width,
+              textureHeight: texture.height,
+              // Ground's target is created by three like an island's, so it
+              // carries the same actual-format sRGB question and the same
+              // premultiplied answer.
+              srgb: texture.format.endsWith("-srgb"),
+              premultiplied: true,
+            };
+          },
           resolve: (entity, source) => {
             const s = source as CompositorSource;
             if (s.kind === "gl") return resolveGlSource(s);
@@ -407,6 +446,7 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
       ...(sources !== undefined ? { sources } : {}),
       ...(domSources !== undefined ? { domSources } : {}),
       device: () => renderer.device?.(),
+      groundTargetLive: () => renderer.targetTexture?.() !== undefined,
       configureGrid(cfg) {
         grid.configure(cfg);
         layer.invalidateAll();

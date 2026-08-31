@@ -32,9 +32,21 @@ import {
   type EngineGpu,
   type GridConfig,
 } from "@ice/core";
-import { ground, instrumentSubmits, type SubmitInstrument } from "@ice/ground";
+import {
+  ground,
+  instrumentSubmits,
+  type CompositeTarget,
+  type SubmitInstrument,
+} from "@ice/ground";
 
-export type Variant = "stratified" | "composited";
+/**
+ * `in-pass` is S6b's arm: ground renders its programs into an OFFSCREEN target
+ * and the compositor draws that target as its first quad, so the compositor
+ * reflector is the only thing that ever calls `getCurrentTexture`. The other
+ * two arms present ground's own canvas — `composited` differing from
+ * `stratified` only in who created the device (S1's question).
+ */
+export type Variant = "stratified" | "composited" | "in-pass";
 
 /**
  * A deliberately high-contrast, deterministic ground: dot glyphs (needles
@@ -73,6 +85,10 @@ export interface CaptureStats {
   /** Did the ground layer report itself available, and how many times did it draw? */
   readonly available: boolean;
   readonly redraws: number;
+  /** Swap-chain acquisitions — "one present" stated as a count (S6b). */
+  readonly acquisitions: number;
+  /** Is ground rendering into an offscreen target rather than a canvas? */
+  readonly groundTargetLive: boolean;
   /** Composited runs only: device facts worth pinning. */
   readonly coreFeatures?: boolean;
   readonly deviceAdopted?: boolean;
@@ -111,6 +127,12 @@ interface Mount {
   step(): void;
   /** three's actual backend device (the ground layer's diagnostic seam). */
   adoptedDevice(): GPUDevice | undefined;
+  /** Swap-chain acquisitions — "one present" is a count, not an adjective. */
+  acquisitions(): number;
+  /** Is ground rendering into an offscreen target (the in-pass arm)? */
+  groundTargetLive(): boolean;
+  /** Force ONE composite without a ground repaint — i.e. just the blit. */
+  markCompositor(): void;
   submits?: SubmitInstrument;
   gpu?: EngineGpu;
   deviceAdopted?: boolean;
@@ -136,22 +158,68 @@ async function mount(variant: Variant): Promise<Mount> {
 
   let gpu: EngineGpu | undefined;
   let submits: SubmitInstrument | undefined;
-  if (variant === "composited") {
+  if (variant !== "stratified") {
     gpu = await acquireCompositorDevice();
     // Before three exists — the instrument must see three's submits too.
     submits = instrumentSubmits(gpu.device);
   }
 
+  // S6b: the in-pass arm gives the compositor a swap chain of its own and
+  // ground stops having one. Everything above ground's renderer — GroundHost,
+  // the magnet TSL, the pass registry — is byte-for-byte the same code.
+  let compositorCanvas: HTMLCanvasElement | undefined;
+  let target: CompositeTarget | undefined;
+  let acquisitions = 0;
+  if (variant === "in-pass" && gpu !== undefined) {
+    compositorCanvas = document.createElement("canvas");
+    compositorCanvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%";
+    const dpr = window.devicePixelRatio;
+    compositorCanvas.width = Math.round(window.innerWidth * dpr);
+    compositorCanvas.height = Math.round(window.innerHeight * dpr);
+    container.appendChild(compositorCanvas);
+    const context = compositorCanvas.getContext("webgpu") as GPUCanvasContext;
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    context.configure({
+      device: gpu.device,
+      format,
+      alphaMode: "premultiplied",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    target = {
+      format,
+      getCurrentTexture: () => {
+        // Counted: "one present" is the claim, and the only honest way to
+        // check it is that exactly one thing acquires a swap-chain texture.
+        acquisitions++;
+        return context.getCurrentTexture();
+      },
+      size: () => ({
+        width: (compositorCanvas as HTMLCanvasElement).width,
+        height: (compositorCanvas as HTMLCanvasElement).height,
+        dpr,
+      }),
+    };
+  }
+
   const layer = ground({
     grid: GRID,
     ...(gpu !== undefined ? { device: gpu.device } : {}),
+    ...(target !== undefined ? { target } : {}),
   })({ host: { container, contentPlane }, world });
 
   engine.registerReflector(layer.reflector);
   if (layer.compositorReflector !== undefined) engine.registerReflector(layer.compositorReflector);
 
-  const canvas = container.querySelector("canvas");
+  // In-pass presents on the COMPOSITOR's canvas; the other arms on ground's.
+  const canvas = compositorCanvas ?? container.querySelector("canvas");
   if (canvas === null) throw new Error("ground mounted no canvas");
+  if (compositorCanvas !== undefined) {
+    // Ground's own canvas must contribute nothing — it never presents now.
+    const groundCanvas = container.querySelector("canvas");
+    if (groundCanvas !== null && groundCanvas !== compositorCanvas) {
+      (groundCanvas as HTMLCanvasElement).style.display = "none";
+    }
+  }
 
   let now = 0;
   const m: Mount = {
@@ -171,6 +239,9 @@ async function mount(variant: Variant): Promise<Mount> {
       submits?.detach();
       gpu?.destroy();
     },
+    acquisitions: () => acquisitions,
+    groundTargetLive: () => layer.groundTargetLive(),
+    markCompositor: () => layer.compositorReflector?.mark("ground"),
     ...(submits !== undefined ? { submits } : {}),
     ...(gpu !== undefined ? { gpu } : {}),
   };
@@ -260,6 +331,11 @@ function statsOf(id: string, variant: Variant, cap: Capture, m: Mount): CaptureS
     hash: hash.toString(16).padStart(8, "0"),
     available: m.available(),
     redraws: m.redraws(),
+    // S6b: "one present" is a COUNT. In the in-pass arm the compositor
+    // reflector is the only thing that acquires a swap-chain texture, and
+    // ground has an offscreen target instead of a canvas of its own.
+    acquisitions: m.acquisitions(),
+    groundTargetLive: m.groundTargetLive(),
     ...(m.gpu !== undefined ? { coreFeatures: m.gpu.hasCoreFeatures } : {}),
     ...(m.deviceAdopted !== undefined ? { deviceAdopted: m.deviceAdopted } : {}),
     ...(adopted === undefined ? {} : { adoptedHasCoreFeatures: adopted.features.has("core-features-and-limits") }),
@@ -271,6 +347,8 @@ export interface Rig {
   diff(a: string, b: string): DiffResult;
   /** Submits over `ms` of genuine idleness on the LIVE composited mount. */
   idleSubmits(ms: number): Promise<{ submits: number; frames: number; redraws: number }>;
+  /** What route (a) costs: the blit, against a null-submit control (S6b). */
+  blitCost(rounds: number): Promise<Record<string, number>>;
   teardown(): void;
 }
 
@@ -343,6 +421,83 @@ const rig: Rig = {
       submits: m.submits.total(),
       frames,
       redraws: m.redraws() - redrawsBefore,
+    };
+  },
+
+  /**
+   * THE COST OF ROUTE (a), measured the way this repo measures.
+   *
+   * Wall-clock around a DRAINED queue — `onSubmittedWorkDone` resolves when all
+   * prior work finishes, so an arm starting on a dirty queue is charged for the
+   * previous one (the bench saw 19 ms become 0.09 ms once it drained). Arms are
+   * interleaved and their order rotated per round, and every round carries its
+   * own null-submit control, because this machine is loaded and a median
+   * against no control is a confident number about the weather.
+   */
+  async blitCost(rounds) {
+    const m = live;
+    if (m?.gpu === undefined) throw new Error("rig: blitCost needs the composited mount");
+    const device = m.gpu.device;
+    const composite: number[] = [];
+    const control: number[] = [];
+    // BATCHED, because a single composite is under the clock's resolution.
+    // `performance.now()` coarsens to 100 us without cross-origin isolation,
+    // and the first attempt read composite 0.1000 ms against a control of
+    // 0.2000 — a NEGATIVE delta, which is not a fast blit, it is a quantised
+    // one. Timing BATCH operations and dividing puts the sample above the
+    // floor; the control is batched identically so the floor cancels.
+    const BATCH = 50;
+    const time = async (fn: () => void): Promise<number> => {
+      await device.queue.onSubmittedWorkDone(); // drain FIRST
+      const t0 = performance.now();
+      for (let i = 0; i < BATCH; i++) fn();
+      await device.queue.onSubmittedWorkDone();
+      return (performance.now() - t0) / BATCH;
+    };
+    for (let i = 0; i < rounds; i++) {
+      const compositeFirst = i % 2 === 0;
+      const runComposite = async () => {
+        composite.push(
+          await time(() => {
+            // Mark the COMPOSITOR only — not ground. A `step()` on a quiet
+            // frame composites nothing (that is idle-zero working), so timing
+            // it measured 50 no-ops against 50 real submits and read NEGATIVE.
+            // Marking without a ground repaint isolates the thing being
+            // costed: one full-viewport quad, sampling the existing target.
+            m.markCompositor();
+            m.step();
+          }),
+        );
+      };
+      const runControl = async () => {
+        control.push(
+          await time(() => {
+            device.queue.submit([device.createCommandEncoder().finish()]);
+          }),
+        );
+      };
+      if (compositeFirst) {
+        await runComposite();
+        await runControl();
+      } else {
+        await runControl();
+        await runComposite();
+      }
+      await raf();
+    }
+    const median = (xs: number[]): number => {
+      const s = [...xs].sort((a, b) => a - b);
+      return s.length === 0 ? 0 : (s[s.length >> 1] as number);
+    };
+    const canvas = m.canvas;
+    return {
+      rounds,
+      compositeMedianMs: median(composite),
+      controlMedianMs: median(control),
+      deltaMs: median(composite) - median(control),
+      // The target is `viewport x dpr x 4` — the memory route (a) spends.
+      targetBytes: canvas.width * canvas.height * 4,
+      batch: 50,
     };
   },
 

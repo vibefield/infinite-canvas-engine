@@ -34,11 +34,13 @@
  * skipped; for a device three creates itself, arming it here is the only way
  * the layer sees its own GPU errors at all.
  */
+import { backendTexture } from "@ice/core";
 import {
   Mesh,
   MeshBasicNodeMaterial,
   PlaneGeometry,
   RenderTarget,
+  SRGBColorSpace,
   Scene,
   WebGPURenderer,
   type Camera,
@@ -110,6 +112,15 @@ export interface GroundRendererLike {
   onReady(cb: () => void): void;
   setSize(cssW: number, cssH: number, dpr: number): void;
   render(scene: Scene, camera: Camera): void;
+  /**
+   * The offscreen target's raw `GPUTexture`, in the composited profile.
+   *
+   * A GETTER, never a captured handle: a viewport or DPR change reallocates
+   * the target, and a stale handle is a frame of the wrong pixels with nothing
+   * to catch it. `undefined` before the first render, and on every renderer
+   * that is not offscreen.
+   */
+  targetTexture?(): GPUTexture | undefined;
   /** GPU-only capture; no readPixels/canvas/ImageBitmap path is permitted. */
   capture?(
     object: Object3D,
@@ -139,6 +150,22 @@ export interface GroundRendererOptions {
    * `uncapturederror` listener must already be armed by the owner.
    */
   readonly device?: GPUDevice;
+  /**
+   * COMPOSITED PROFILE (design-012 §4, S6b): render ground's passes into an
+   * OFFSCREEN target instead of presenting them to this renderer's canvas, so
+   * the unified compositor can draw them as its first quad.
+   *
+   * The point of the render-target route is that everything above it is
+   * untouched: design-011's GroundHost programs, the magnet grid's TSL, the
+   * pass registry and this file's own scene/camera all run exactly as they do
+   * in the stratified profile. The alternative — reimplementing those programs
+   * as raw WGSL inside the compositor's pass — would have discarded a ratified
+   * implementation to save a blit.
+   *
+   * Requires `device`: the target's texture has to live on the device the
+   * compositor samples from.
+   */
+  readonly offscreen?: boolean;
 }
 
 /** Normalize old/injected renderer seams into the public diagnostic shape. */
@@ -316,6 +343,40 @@ export function createGroundRenderer(
   let lastH = 0;
   let lastDpr = 0;
 
+  /**
+   * The offscreen colour target (composited profile). Sized in DEVICE pixels
+   * and reallocated on every viewport/DPR change, which is why consumers hold
+   * `targetTexture()` rather than its result.
+   */
+  const offscreen = opts.offscreen === true && opts.device !== undefined;
+  let target: RenderTarget | null = null;
+  const sizeTarget = (cssW: number, cssH: number, dpr: number): void => {
+    if (!offscreen) return;
+    const w = Math.max(1, Math.round(cssW * dpr));
+    const h = Math.max(1, Math.round(cssH * dpr));
+    if (target === null) {
+      // No depth, no stencil, no MSAA: ground draws flat 2D passes into a
+      // colour buffer the compositor samples. MSAA on this target would cost
+      // the fill rate design-012 §4 already names as the expensive mode and
+      // buy nothing — ground's own geometry is analytically antialiased.
+      target = new RenderTarget(w, h, { depthBuffer: false, stencilBuffer: false, samples: 0 });
+      // THE COLOUR SPACE IS NOT A DETAIL. Rendering to the canvas, three
+      // applies its output transform and writes sRGB-ENCODED values; rendering
+      // to a target it does not, and the target keeps LINEAR ones. Blitting
+      // those linear values to a non-sRGB swap chain darkens everything —
+      // measured at up to 74/255 on the grid's dots, with the geometry
+      // pixel-perfect, which reads as "the blit works, the colours are wrong".
+      //
+      // Asking three for an SRGB target makes it create an `-srgb` format, so
+      // the pixels ARE what the canvas had AND the compositor's sRGB guard
+      // reads `true` from the ACTUAL format for the right reason rather than
+      // being told to re-encode by hand.
+      target.texture.colorSpace = SRGBColorSpace;
+      return;
+    }
+    if (target.width !== w || target.height !== h) target.setSize(w, h);
+  };
+
   return {
     canvas,
     ready: () => isReady,
@@ -345,12 +406,20 @@ export function createGroundRenderer(
         renderer.setPixelRatio(dpr);
         // false: the layer owns the canvas CSS size (100% inset-0)
         renderer.setSize(Math.max(1, cssW), Math.max(1, cssH), false);
+        sizeTarget(cssW, cssH, dpr);
       } catch (error) {
         markFailure("backend", messageOf(error, "Ground renderer resize failed."));
       }
     },
     render(scene, camera) {
       if (renderer === null || !isReady || isFailed) return;
+      if (offscreen) {
+        // Set EVERY render, and never restore to null: the canvas must never
+        // become a present target again by accident. This is what makes the
+        // compositor reflector the only `getCurrentTexture` caller.
+        sizeTarget(lastW, lastH, lastDpr);
+        renderer.setRenderTarget(target);
+      }
       if (opts.profile !== true) {
         renderer.render(scene, camera);
         return;
@@ -383,6 +452,10 @@ export function createGroundRenderer(
           timestampResolvePending = false;
         });
       }
+    },
+    targetTexture() {
+      if (!offscreen || target === null || renderer === null) return undefined;
+      return backendTexture(renderer, target.texture);
     },
     capture(object, camera, captureOpts) {
       if (renderer === null || !isReady || isFailed) {

@@ -51,11 +51,29 @@ export interface GroundLayerInternals {
   dispose(): void;
 }
 
+export interface GroundLayerOptions {
+  /**
+   * Called after ground actually redraws (S6b).
+   *
+   * Ground repainting IS compositor dirt: in the composited profile its pixels
+   * are the compositor's first quad, so a frame where ground drew and the
+   * compositor did not is a frame showing the PREVIOUS grid. Measured before
+   * this existed: the compositor composited exactly once — its registry never
+   * changes on a widget-free board — and the canvas stayed blank while ground
+   * happily rendered into the target behind it.
+   *
+   * It fires only on a REAL redraw, so idle-zero is untouched: no ground
+   * repaint, no mark, no composite.
+   */
+  readonly onRedraw?: () => void;
+}
+
 export function createLayer(
   host: GroundLayerHost,
   world: World,
   renderer: GroundRendererLike,
   passes: readonly GroundPass[],
+  options: GroundLayerOptions = {},
 ): GroundLayerInternals {
   const doc = host.container.ownerDocument;
   const canvas = renderer.canvas;
@@ -151,6 +169,8 @@ export function createLayer(
       try {
         renderer.render(scene, camera);
         redraws++;
+        // Ground drew — the compositor owes a frame (see GroundLayerOptions).
+        options.onRedraw?.();
       } catch {
         // Legacy static ground has no program boundary to quarantine. Stop
         // this layer only; the engine and content planes remain live.

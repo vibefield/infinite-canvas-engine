@@ -1275,6 +1275,7 @@ function createProgramHostLayer(
     ...(compositor !== undefined ? { compositorReflector: compositor } : {}),
     ...(compositorSources !== undefined ? { sources: compositorSources } : {}),
     device: () => renderer.device?.(),
+    groundTargetLive: () => renderer.targetTexture?.() !== undefined,
     configureGrid(config: Partial<GridConfig>) {
       for (const definition of definitions.values()) definition.configureGrid?.(config);
       wakeProgram();
