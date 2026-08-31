@@ -80,6 +80,18 @@ export interface QuadTexture {
   readonly srgb?: boolean;
   /** The stored bytes already carry alpha. Default true. */
   readonly premultiplied?: boolean;
+  /**
+   * The source's rows run BOTTOM-UP relative to the compositor. three renders
+   * y-up while the compositor is top-down, so island targets set this; HiC
+   * atlas slots do not.
+   *
+   * Expressed in the UV RECT rather than in the shader: the packing emits the
+   * rect's bottom edge as the origin and a NEGATIVE height, so the existing
+   * `uv.xy + corner * uv.zw` interpolation walks the source upward. No branch
+   * in the fragment shader, no extra instance lane, and it stays exact — at a
+   * 1:1 mapping the flipped tap still lands on a texel centre.
+   */
+  readonly flipY?: boolean;
 }
 
 export interface WidgetQuadPassDeps {
@@ -429,10 +441,16 @@ export function createWidgetQuadPass(deps: WidgetQuadPassDeps): WidgetQuadPass {
         scratch[base + 1] = dy;
         scratch[base + 2] = dw;
         scratch[base + 3] = dh;
+        // The y-flip is a negative-height UV rect — see QuadTexture.flipY.
+        const flip = tex.flipY === true;
         scratch[base + 4] = tex.rect.x / tex.textureWidth;
-        scratch[base + 5] = tex.rect.y / tex.textureHeight;
+        scratch[base + 5] = flip
+          ? (tex.rect.y + tex.rect.height) / tex.textureHeight
+          : tex.rect.y / tex.textureHeight;
         scratch[base + 6] = tex.rect.width / tex.textureWidth;
-        scratch[base + 7] = tex.rect.height / tex.textureHeight;
+        scratch[base + 7] = flip
+          ? -tex.rect.height / tex.textureHeight
+          : tex.rect.height / tex.textureHeight;
         scratch[base + 8] = (geom.radius ?? 0) * scale;
         scratch[base + 9] = geom.opacity ?? 1;
         scratch[base + 10] = encodeMode(tex.srgb === true, targetSrgb);

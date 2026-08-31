@@ -35,6 +35,7 @@ import {
   type DomSourceBinderOptions,
 } from "./compositor/dom-source-binder";
 import { createWorldQuadFacts } from "./compositor/quad-facts";
+import { resolveGlSource } from "./compositor/gl-source";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
@@ -121,6 +122,9 @@ export {
   type DomSourceGeometry,
 } from "./compositor/dom-source-binder";
 export { createWorldQuadFacts, type WorldQuadFactsOptions } from "./compositor/quad-facts";
+// The gl leg: an island target published by r3f, turned into a sampleable quad
+// (y-flipped, sRGB-guarded, premultiplied — all measured, see the module).
+export { resolveGlSource } from "./compositor/gl-source";
 // The HiC seam (design-012 §8 gate 1): the adapter module is the ONLY place a
 // HiC symbol is named, and its probe is what a composited build refuses on.
 // (`GroundRendererLike` rides main's renderer export block above — re-exporting
@@ -348,9 +352,14 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
           format: opts.target?.format ?? navigator.gpu.getPreferredCanvasFormat(),
           registry: sources,
           facts,
-          // dom sources resolve through the atlas; gl/video resolve to
-          // `undefined` here and join at S5/S7 with their own kinds.
-          resolve: (entity, source) => binder.resolve(entity, source as CompositorSource),
+          // ONE dispatch, by kind. dom sources go through the atlas (a slot,
+          // a copy, per-slot dirt); gl sources are already pixels in a texture
+          // three owns, so they need none of that. `video` joins at S7.
+          resolve: (entity, source) => {
+            const s = source as CompositorSource;
+            if (s.kind === "gl") return resolveGlSource(s);
+            return binder.resolve(entity, s);
+          },
           ...(opts.order !== undefined ? { order: opts.order } : {}),
         }),
         device,

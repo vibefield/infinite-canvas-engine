@@ -19,7 +19,8 @@
     "test": "vitest run",
     "board": "pnpm run build && node scripts/composited-board.mjs",
     "input": "pnpm run build && node scripts/composited-input.mjs",
-    "demand": "pnpm run build && node scripts/composited-demand.mjs"
+    "demand": "pnpm run build && node scripts/composited-demand.mjs",
+    "app-witness": "pnpm run build && node scripts/composited-app.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

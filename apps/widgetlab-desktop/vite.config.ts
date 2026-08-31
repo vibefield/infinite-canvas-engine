@@ -21,11 +21,14 @@ export default defineConfig({
       //   composited-board — S2/S3/S4: dom widget quads against the stratified
       //                          render, plus the write-back, input and demand
       //                          probes that share its board.
+      //   composited-app   — the gl leg: a real <Canvas>/<GLViews> whose
+      //                          islands are drawn by the compositor's own pass.
       input: {
         index: "index.html",
         "ground-parity": "ground-parity.html",
         "island-parity": "island-parity.html",
         "composited-board": "composited-board.html",
+        "composited-app": "composited-app.html",
       },
     },
   },
