@@ -10,14 +10,17 @@ export default defineConfig({
   server: { open: false },
   build: {
     rollupOptions: {
-      // Two entries: the product, and the design-012 S1 parity rig
-      // (ground-parity.html — the composited/stratified pixel oracle). The rig
-      // is a separate PAGE rather than a mode of the product, deliberately:
-      // one profile ships per app (§11 Q2), so the product must not grow a
-      // runtime switch between them just to be measurable.
+      // The product, plus one page per design-012 exit rig. A rig is a separate
+      // PAGE rather than a mode of the product, deliberately: one profile ships
+      // per app (§11 Q2), so the product must not grow a runtime switch between
+      // the profiles just to be measurable.
+      //   ground-parity — S1: does device injection change ground's pixels?
+      //   island-parity — S5: do islands on the shared device match the WebGL
+      //                       ones, and did MSAA / sRGB / orientation survive?
       input: {
         index: "index.html",
         "ground-parity": "ground-parity.html",
+        "island-parity": "island-parity.html",
       },
     },
   },

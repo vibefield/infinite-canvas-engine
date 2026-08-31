@@ -85,7 +85,10 @@ module.exports = {
       name: "r3f-top-of-chain",
       comment:
         "design-002 §6: r3f is the top — react/dom/core/kernel + peers react|three|@react-three " +
-        "+ stats-gl (2026-07-13: the GL profiling seam's GPU-timer dep, dynamic-imported), nothing above.",
+        "+ stats-gl (2026-07-13: the GL profiling seam's GPU-timer dep, dynamic-imported), nothing above. " +
+        "Note what the design-012 S5 addition below does NOT open: r3f still may not import ground. " +
+        "Islands reach the unified compositor through core's CompositorSourceRegistry, which is the " +
+        "whole reason that seam lives in core.",
       severity: "error",
       from: { path: "^packages/r3f/src" },
       to: {
@@ -100,6 +103,14 @@ module.exports = {
           nm("@react-three"),
           nm("stats-gl"),
           "^stats-gl(/|$)", // dynamic import reports by specifier (the strata-subpath precedent)
+          // design-012 S5: `three/webgpu` (the WebGPURenderer incantation) resolves
+          // through three's exports map, which the cruiser reports by SPECIFIER
+          // rather than by node_modules path — the same allowance ground already
+          // carries. Confined to ONE file, src/webgpu/island-renderer.ts, behind
+          // the `@ice/r3f/webgpu` subpath, so a stratified app never pulls three's
+          // node material system (its `sideEffects: ["./src/nodes/**"]` makes that
+          // import survive tree-shaking).
+          "^three(/|$)",
         ],
       },
     },

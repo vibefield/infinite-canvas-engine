@@ -17,7 +17,38 @@ export {
   type QuadsLike,
   type TargetLike,
 } from "./compositor-pass";
-export { GLViews, type GLViewsProps, type GlFrameStats } from "./gl-root";
+// The composited profile's r3f half (design-012 §4 "island (gl)"). None of
+// these import `three/webgpu` — they read three's backend structurally — so the
+// barrel stays safe for stratified apps. THE INCANTATION itself
+// (`WebGPURenderer({ device })`) is the one thing that does, and it lives
+// behind the `@ice/r3f/webgpu` subpath instead. See src/webgpu/index.ts.
+export {
+  WebGpuRenderTargetPool,
+  webGpuRenderTargetBytes,
+  WEBGPU_ISLAND_SAMPLES,
+  type WebGpuRenderTargetPoolOpts,
+} from "./webgpu-pool";
+export {
+  createIslandSourceBinder,
+  type GlSourcePoolLike,
+  type IslandSourceBinder,
+  type IslandSourceBinderOpts,
+  type SourcesLike,
+} from "./webgpu-sources";
+export {
+  backendDevice,
+  hasWebGpuBackend,
+  islandFormat,
+  islandIsMultisampled,
+  islandIsSrgb,
+  islandTexture,
+  textureRecord,
+  type BackendTextureRecord,
+  type RenderTargetTexture,
+  type WebGpuBackendLike,
+  type WebGpuRendererLike,
+} from "./webgpu-backend";
+export { GLViews, type CompositorBinding, type GLViewsProps, type GlFrameStats } from "./gl-root";
 export { Island, type IslandProps } from "./island";
 export {
   IslandContext,

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:" />
+  <title>island parity rig (design-012 S5)</title>
+  <style>
+    /* The rig reads RENDER TARGETS, never the page, so nothing here can
+       contribute to a measurement — but a flat ground keeps a screenshot
+       readable when a run needs eyeballing. */
+    html, body { margin: 0; height: 100%; background: #101010; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <script type="module" src="./src/rigs/island-parity.ts"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@
     "smoke": "pnpm run build && node scripts/smoke.mjs",
     "hic:probe": "pnpm run build && node scripts/hic-probe.mjs",
     "parity": "pnpm run build && node scripts/ground-parity.mjs",
+    "island-parity": "pnpm run build && node scripts/island-parity.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
