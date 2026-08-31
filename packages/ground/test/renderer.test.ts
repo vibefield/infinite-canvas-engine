@@ -46,7 +46,7 @@ vi.mock("three/webgpu", async (importOriginal) => {
 });
 
 import { createGroundRenderer } from "../src/renderer";
-import { OrthographicCamera, Scene } from "three/webgpu";
+import { OrthographicCamera, RenderTarget, Scene } from "three/webgpu";
 
 type DeviceLostEmitter = {
   onDeviceLost(info: {
@@ -135,6 +135,24 @@ describe("ground renderer health", () => {
     renderer.onReady(ready);
     renderer.dispose();
     expect(ready).not.toHaveBeenCalled();
+  });
+
+  it("disposes the offscreen ground target it owns", async () => {
+    // The composited profile's ground target is created HERE, so three's own
+    // `dispose()` does not free it: a full-viewport RGBA8 buffer per teardown,
+    // and a document swap is a teardown.
+    const dispose = vi.spyOn(RenderTarget.prototype, "dispose");
+    const renderer = createGroundRenderer(document, {
+      device: {} as unknown as GPUDevice,
+      offscreen: true,
+    });
+    await Promise.resolve();
+    renderer.setSize(1920, 1080, 2); // allocates the target
+    expect(dispose).not.toHaveBeenCalled();
+
+    renderer.dispose();
+    expect(dispose).toHaveBeenCalledTimes(1);
+    dispose.mockRestore();
   });
 
   it("collects CPU/draw/GPU samples only when evidence profiling is explicit", async () => {

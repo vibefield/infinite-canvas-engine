@@ -517,6 +517,17 @@ export function createGroundRenderer(
       disposed = true;
       isReady = false;
       readyCbs.length = 0;
+      // The offscreen colour target is OURS. `renderer.dispose()` releases what
+      // THREE allocated, and this one was created here — so without this it
+      // simply leaked, a full-viewport RGBA8 buffer per teardown (~33 MB at
+      // 4K/dpr 2), and a document swap is a teardown. Disposed BEFORE the
+      // renderer, while the backend that holds its GPU objects is still alive.
+      try {
+        target?.dispose();
+      } catch {
+        /* already lost with the device */
+      }
+      target = null;
       try {
         // Disposes three's own resources. An INJECTED device survives this by
         // construction (:2903-2905) — the app owns its end of life.
