@@ -65,7 +65,24 @@ async function run(label, extraEnv) {
           const mounted = document.querySelector("[data-ice-canvas]") !== null;
           const refused = /cannot run on this host/i.test(document.body.innerText);
           if (!mounted && !refused) return null; // still booting
-          return { probe, mounted, refused, bodyText: document.body.innerText };
+          const gpu = window.__iceGpu;
+          return {
+            probe,
+            mounted,
+            refused,
+            bodyText: document.body.innerText,
+            // Proof the COMPOSITED profile actually came up through GroundHost:
+            // the device was acquired and the instrument saw real submits.
+            // "mounted" alone only proves React rendered something.
+            gpu:
+              gpu === undefined
+                ? null
+                : {
+                    coreFeatures: gpu.hasCoreFeatures,
+                    submits: gpu.submits(),
+                    errors: gpu.errors().length,
+                  },
+          };
         });
         return s ?? undefined;
       },
@@ -92,6 +109,11 @@ check(on.probe.capabilities.requestPaint === true, "flags ON: requestPaint prese
 check(on.probe.capabilities.webgpu === true, "flags ON: WebGPU present");
 check(on.mounted === true, "flags ON: the composited app MOUNTED");
 check(on.refused === false, "flags ON: no refusal screen");
+// The composited profile end to end through GroundHost, not just a React render.
+check(on.gpu !== null, "flags ON: the app-owned device was acquired (window.__iceGpu)");
+check(on.gpu?.coreFeatures === true, "flags ON: that device has core-features-and-limits");
+check((on.gpu?.submits ?? 0) > 0, `flags ON: the instrumented queue saw real submits (${on.gpu?.submits})`);
+check(on.gpu?.errors === 0, `flags ON: zero uncaptured GPU errors (${on.gpu?.errors})`);
 
 // --- arm 2: flags OFF — the composited build must refuse, loudly -------------
 log("arm 2/2: ICE_HIC=off (switches withheld)");

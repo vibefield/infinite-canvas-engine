@@ -67,6 +67,8 @@ import {
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { EngineProvider } from "./engine-context";
 import { attachKeymap, type KeymapEntry } from "./keymap";
+import type { PresentationProfile } from "./profiles/contract";
+import { stratifiedProfile } from "./profiles/stratified";
 import { WidgetRoot } from "./widget-root";
 
 /** Handed to {@link InfiniteCanvasProps.onReady} for app-side GL/devtools wiring. */
@@ -91,6 +93,12 @@ export interface InfiniteCanvasHandle {
  */
 export interface GroundLayerHandle {
   readonly reflector: ReflectorDef & { available(): boolean };
+  /**
+   * The unified compositor's reflector (design-012 §4), present only when the
+   * ground factory was built with the app-owned device. Opaque here, like the
+   * layer itself — this component registers it and never looks inside.
+   */
+  readonly compositorReflector?: ReflectorDef;
   configureGrid(cfg: Partial<GridConfig>): void;
   dispose(): void;
 }
@@ -161,6 +169,18 @@ export interface InfiniteCanvasProps {
    * state from the engine at run time, never close over render-time values.
    */
   readonly keymapOverrides?: readonly KeymapEntry[];
+  /**
+   * The PRESENTATION PROFILE (design-012 §3). Absent ⇒ `stratifiedProfile` —
+   * the six-plane model this component has always mounted, so every existing
+   * app is untouched. A composited build imports `compositedProfile` and
+   * passes it here; the unimported profile tree-shakes out of that app's
+   * bundle, which is what makes this a build-time selection rather than a
+   * runtime mode (the design-010 idiom).
+   *
+   * Bound ONCE at mount, like the adapters: changing it is a rebuild, not a
+   * re-render, and it is deliberately absent from the mount effect's deps.
+   */
+  readonly profile?: PresentationProfile;
   readonly className?: string;
   readonly style?: CSSProperties;
   /** Overlays inside the viewport (toolbars, HUD) — rendered under the EngineProvider. */
@@ -175,6 +195,7 @@ export function InfiniteCanvas({
   grid: gridConfig,
   glRoute,
   keymapOverrides,
+  profile,
   className,
   style,
   children,
@@ -197,6 +218,10 @@ export function InfiniteCanvas({
   // the ref keeps identity churn from re-booting the canvas.
   const keymapOverridesRef = useRef(keymapOverrides);
   keymapOverridesRef.current = keymapOverrides;
+  // The profile is bound once at mount (it decides the roster, which is built
+  // there); identity churn must not re-boot the canvas.
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -238,10 +263,30 @@ export function InfiniteCanvas({
     }
     const chrome = createChromeReflector(host, world, stack.marqueeBuffer);
 
-    // Registration order = flush order — node-board's proven sequence.
+    // The presentation profile's boot gate (design-012 §11 Q2). ONE profile
+    // ships per app, so there is nothing to fall back to: refuse loudly.
+    // Thrown BEFORE anything is registered, so a refused mount leaves no
+    // half-wired canvas behind.
+    const activeProfile = profileRef.current ?? stratifiedProfile;
+    const profileCtx = { engine, ground: groundLayer };
+    const refusal = activeProfile.check(profileCtx);
+    if (refusal !== null) {
+      groundLayer?.dispose();
+      groundRef.current = null;
+      chrome.dispose();
+      domWidgets.dispose();
+      remoteCursors.destroy();
+      planes.dispose();
+      host.dispose();
+      throw new Error(`ice: the ${activeProfile.name} profile cannot mount — ${refusal}`);
+    }
+
+    // Registration order = flush order — node-board's proven sequence, with
+    // the profile's own reflectors spliced in right after ground (plan §4.3).
     const unregister = [
       core.registerReflector(createPlaneTransformReflector(planeArgs)),
       ...(groundLayer !== null ? [core.registerReflector(groundLayer.reflector)] : []),
+      ...activeProfile.reflectorsAfterGround(profileCtx).map((r) => core.registerReflector(r)),
       core.registerReflector(domWidgets),
       core.registerReflector(chrome),
       core.registerReflector(createCursorReflector(host, stack.readCursor)),

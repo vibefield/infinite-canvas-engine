@@ -13,6 +13,26 @@
  * the static layer quarantines itself, while GroundHost can quarantine only
  * the active program and retry its fallback. Treating every shader fault as
  * permanent device loss would make one extension take down the renderer.
+ *
+ * DEVICE INJECTION (design-012 §4 / plan §5 S1.2). Passing `device` makes three
+ * ADOPT the app-owned device instead of creating its own. Two consequences,
+ * both verified against three r185 in this tree:
+ *
+ *  - three takes the device as-is (WebGPUBackend.js:250) and skips the adapter
+ *    request that would otherwise ask for `featureLevel: 'compatibility'`
+ *    (:213) — which is what preserves island MSAA, since a compatibility
+ *    device lacks `core-features-and-limits` and three force-sets
+ *    `renderer._samples = 0` when it is missing (:254-258).
+ *  - three never destroys a device it did not create (:2903-2905), so the
+ *    device outlives this layer and every rebuild of it.
+ *
+ * UNCAPTURED-ERROR POSTURE. three ASSIGNS `device.onuncapturederror` during
+ * init (:277), clobbering whatever was on that property. So this module never
+ * touches the property — it subscribes with `addEventListener`, which coexists
+ * with three's handler. For an INJECTED device the owner already armed its own
+ * listener before handing it over (`acquireCompositorDevice`), so this one is
+ * skipped; for a device three creates itself, arming it here is the only way
+ * the layer sees its own GPU errors at all.
  */
 import {
   Mesh,
@@ -96,7 +116,29 @@ export interface GroundRendererLike {
     camera: Camera,
     opts: GroundSnapshotCaptureOptions,
   ): GroundGpuSnapshot;
+  /**
+   * The device three ended up on, once init resolves — the injected one on the
+   * composited profile, three's own otherwise, `undefined` before ready and on
+   * the WebGL2 fallback. Optional, like `status`/`profile`, so existing test
+   * and third-party renderer seams stay structural.
+   *
+   * The seam that lets a rig assert adoption actually HAPPENED rather than
+   * trusting that the option was accepted.
+   */
+  device?(): GPUDevice | undefined;
   dispose(): void;
+}
+
+export interface GroundRendererOptions {
+  /** Force the WebGL2 backend (debug / e2e A-B runs). */
+  readonly forceWebGL?: boolean;
+  /** Arm render/GPU-timestamp sampling (`trackTimestamp` is constructor-only). */
+  readonly profile?: boolean;
+  /**
+   * The app-owned device three should adopt (composited profile). Its
+   * `uncapturederror` listener must already be armed by the owner.
+   */
+  readonly device?: GPUDevice;
 }
 
 /** Normalize old/injected renderer seams into the public diagnostic shape. */
@@ -118,9 +160,19 @@ function messageOf(error: unknown, fallback: string): string {
 
 export function createGroundRenderer(
   doc: Document,
-  opts: { forceWebGL?: boolean; profile?: boolean } = {},
+  opts: GroundRendererOptions = {},
 ): GroundRendererLike {
   const canvas = doc.createElement("canvas");
+  const injected = opts.device;
+
+  // A device and a forced WebGL2 backend are contradictory: the backend cannot
+  // use a GPUDevice, so honouring both would silently run the composited
+  // profile on a renderer that can share nothing — the silent swap design-012
+  // §11 Q2 forbids. The device wins, out loud.
+  const forceWebGL = opts.forceWebGL === true && injected === undefined;
+  if (opts.forceWebGL === true && injected !== undefined) {
+    console.warn("[ice] ground: forceWebGL ignored — an app-owned GPUDevice was injected");
+  }
   let renderer: WebGPURenderer | null = null;
   let isReady = false;
   let isFailed = false;
@@ -165,9 +217,10 @@ export function createGroundRenderer(
   // un-awaited promise — an unhandled rejection our init().catch never sees
   // (widgetlab app-mount test, 2026-07-16). The WebGL2 probe uses a SCRATCH
   // canvas: getContext('webgl2') on the real one would lock it out of a
-  // 'webgpu' context (contexts are exclusive per canvas).
+  // 'webgpu' context (contexts are exclusive per canvas). An injected device is
+  // itself proof of WebGPU, so it skips the probe entirely.
   const gpu = (globalThis.navigator as { gpu?: unknown } | undefined)?.gpu;
-  if (gpu == null || opts.forceWebGL === true) {
+  if (injected === undefined && (gpu == null || forceWebGL)) {
     let gl2: unknown = null;
     try {
       gl2 = doc.createElement("canvas").getContext("webgl2");
@@ -189,7 +242,8 @@ export function createGroundRenderer(
         alpha: true, // transparent clear — the page background shows through P0
         antialias: true,
         ...(opts.profile === true ? { trackTimestamp: true } : {}),
-        ...(opts.forceWebGL === true ? { forceWebGL: true } : {}),
+        ...(forceWebGL ? { forceWebGL: true } : {}),
+        ...(injected !== undefined ? { device: injected } : {}),
       });
       const currentRenderer = renderer;
       const defaultOnDeviceLost = currentRenderer.onDeviceLost;
@@ -218,6 +272,10 @@ export function createGroundRenderer(
           timestampSupported = opts.profile === true
             ? (currentRenderer.backend as { readonly trackTimestamp?: boolean }).trackTimestamp === true
             : undefined;
+          // Own device only: for an injected one the owner armed its listener
+          // before three could assign over the property, and a second listener
+          // would just double-report.
+          if (injected === undefined) armErrorListener();
           isReady = true;
           for (const cb of readyCbs.splice(0)) cb();
         })
@@ -230,6 +288,30 @@ export function createGroundRenderer(
     }
   }
 
+  /** The device three settled on; undefined pre-init or on the WebGL2 backend. */
+  const backendDevice = (): GPUDevice | undefined => {
+    const backendRef = (renderer as unknown as { backend?: { device?: GPUDevice } } | null)?.backend;
+    return backendRef?.device ?? undefined;
+  };
+
+  /**
+   * addEventListener, NEVER `device.onuncapturederror = …` — three owns that
+   * property (:277) and an assignment here would either lose our handler or
+   * silently take three's away.
+   */
+  function armErrorListener(): void {
+    const device = backendDevice();
+    if (device === undefined) return;
+    try {
+      device.addEventListener("uncapturederror", (event) => {
+        const err = (event as GPUUncapturedErrorEvent).error as { message?: string } | undefined;
+        console.error("[ice] ground: uncaptured GPU error", err?.message ?? "unknown");
+      });
+    } catch {
+      /* a backend without an EventTarget device (WebGL2) — nothing to arm */
+    }
+  }
+
   let lastW = 0;
   let lastH = 0;
   let lastDpr = 0;
@@ -238,6 +320,7 @@ export function createGroundRenderer(
     canvas,
     ready: () => isReady,
     failed: () => isFailed,
+    device: () => backendDevice(),
     status: () => Object.freeze({
       backend,
       ready: isReady,
@@ -362,6 +445,8 @@ export function createGroundRenderer(
       isReady = false;
       readyCbs.length = 0;
       try {
+        // Disposes three's own resources. An INJECTED device survives this by
+        // construction (:2903-2905) — the app owns its end of life.
         renderer?.dispose();
       } catch {
         /* already lost */

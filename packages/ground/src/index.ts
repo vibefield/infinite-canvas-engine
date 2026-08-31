@@ -11,6 +11,7 @@
 import type {
   CanvasSessionValue,
   CanvasType,
+  CompositorSourceRegistry,
   GpuAllocationLedger,
   GridConfig,
   SnapGuidesConfig,
@@ -19,6 +20,13 @@ import type {
   World,
   PresentationTransitionCoordinator,
 } from "@ice/core";
+import { createCompositorSourceRegistry } from "@ice/core";
+import {
+  createCompositorReflector,
+  type CompositeTarget,
+  type CompositorReflector,
+} from "./compositor/compositor-reflector";
+import { createWidgetQuadPass } from "./compositor/widget-quad-pass";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
@@ -69,6 +77,25 @@ export {
   GROUND_FRAME_CHILDREN_DEFAULT_LIMIT,
   GROUND_FRAME_CHILDREN_MAX_LIMIT,
 } from "./program";
+// The unified compositor (design-012 §4). `createWidgetQuadPass` and
+// `createCompositorReflector` are exported for tests and for imperative apps
+// that assemble their own roster; `ground({ device })` wires them for everyone
+// else. `instrumentSubmits` is the idle-zero instrument — install it right
+// after acquiring the device, before any consumer.
+export {
+  createCompositorReflector,
+  type CompositeTarget,
+  type CompositorDirtSource,
+  type CompositorReflector,
+  type CompositorReflectorOpts,
+} from "./compositor/compositor-reflector";
+export {
+  createWidgetQuadPass,
+  type CompositeFrame,
+  type WidgetQuadPass,
+  type WidgetQuadPassDeps,
+} from "./compositor/widget-quad-pass";
+export { instrumentSubmits, type SubmitInstrument } from "./compositor/submit-instrument";
 // The HiC seam (design-012 §8 gate 1): the adapter module is the ONLY place a
 // HiC symbol is named, and its probe is what a composited build refuses on.
 // (`GroundRendererLike` rides main's renderer export block above — re-exporting
@@ -154,6 +181,23 @@ export interface GroundContext {
 
 export interface GroundLayer {
   readonly reflector: GroundReflector;
+  /**
+   * The unified compositor's reflector — present ONLY when a `device` was
+   * injected (the composited profile). It registers immediately after
+   * `reflector` in the roster (plan §4.3), and its absence is exactly how the
+   * stratified profile stays byte-for-byte the code it always was.
+   */
+  readonly compositorReflector?: CompositorReflector;
+  /** The source registry the compositor consumes; producers register into it. */
+  readonly sources?: CompositorSourceRegistry;
+  /**
+   * The device three actually settled on, once init resolves — undefined
+   * before ready and on the WebGL2 fallback. A DIAGNOSTIC seam: it is the
+   * difference between "the `device` option was accepted" and "three adopted
+   * this exact device", and the composited profile's whole premise is the
+   * latter. Rigs assert `layer.device() === engine.compositorDevice.device`.
+   */
+  device(): GPUDevice | undefined;
   /** Live grid re-tune (the react `grid` prop forwards here). */
   configureGrid(cfg: Partial<GridConfig>): void;
   dispose(): void;
@@ -178,6 +222,30 @@ export interface GroundOptions {
   readonly profile?: boolean;
   /** TEST seam: inject a fake renderer (headless orchestration tests). */
   readonly rendererOverride?: GroundRendererLike;
+  /**
+   * THE COMPOSITED PROFILE SWITCH (design-012 §4). The app-owned GPUDevice
+   * (`engine.compositorDevice.device`): three adopts it rather than making its own, and
+   * the layer additionally builds the compositor — `compositorReflector` and
+   * `sources` appear on the returned layer.
+   *
+   * Absent ⇒ the stratified profile, unchanged: three makes its own device and
+   * no compositor exists. There is no runtime toggle between the two — which
+   * factory an app wires is a build-time fact (the design-010 idiom).
+   */
+  readonly device?: GPUDevice;
+  /**
+   * The compositor's source registry. Pass the SAME registry the producers
+   * (the L1 dom layer, r3f islands, the app's video sources) register into;
+   * omitted ⇒ the layer makes a private one and reaches it through
+   * `layer.sources`. Ignored without `device`.
+   */
+  readonly sources?: CompositorSourceRegistry;
+  /**
+   * The compositor's swap-chain target. Absent at S1 by design: ground still
+   * presents itself onto its own canvas, so the compositor tracks dirt and
+   * draws nothing (see compositor-reflector's header).
+   */
+  readonly target?: CompositeTarget;
 }
 
 export type GroundFactory = (ctx: GroundContext) => GroundLayer;
@@ -194,6 +262,7 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
     const renderer = opts.rendererOverride ?? createGroundRenderer(doc, {
       forceWebGL: opts.forceWebGL === true,
       profile: opts.profile === true,
+      ...(opts.device !== undefined ? { device: opts.device } : {}),
     });
     const poles = opts.poles === undefined ? [] : Array.isArray(opts.poles) ? opts.poles : [opts.poles];
     const grid = createGridPass(opts.grid ?? {}, { poles, ...(ctx.readSpatial !== undefined ? { readSpatial: ctx.readSpatial } : {}) });
@@ -201,13 +270,41 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
     const guides = createGuidesPass(opts.guides ?? {});
     const passes: GroundPass[] = [grid, wires, guides, ...(opts.passes ?? [])];
     const layer = createLayer(ctx.host, ctx.world, renderer, passes);
+
+    // The compositor exists only on the composited profile — no device, no
+    // compositor, and the stratified path below is the code it always was.
+    let compositor: CompositorReflector | undefined;
+    let sources: CompositorSourceRegistry | undefined;
+    if (opts.device !== undefined) {
+      sources = opts.sources ?? createCompositorSourceRegistry();
+      compositor = createCompositorReflector({
+        world: ctx.world,
+        registry: sources,
+        quadPass: createWidgetQuadPass({
+          device: opts.device,
+          // The target's ACTUAL format when there is one; the preferred canvas
+          // format otherwise. Never assumed — it guards the sRGB re-encode.
+          format: opts.target?.format ?? navigator.gpu.getPreferredCanvasFormat(),
+          registry: sources,
+        }),
+        device: opts.device,
+        ...(opts.target !== undefined ? { target: opts.target } : {}),
+      });
+    }
+
     return {
       reflector: layer.reflector,
+      ...(compositor !== undefined ? { compositorReflector: compositor } : {}),
+      ...(sources !== undefined ? { sources } : {}),
+      device: () => renderer.device?.(),
       configureGrid(cfg) {
         grid.configure(cfg);
         layer.invalidateAll();
       },
-      dispose: layer.dispose,
+      dispose() {
+        compositor?.dispose();
+        layer.dispose();
+      },
     };
   };
 }

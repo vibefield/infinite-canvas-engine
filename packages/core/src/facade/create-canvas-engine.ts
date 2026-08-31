@@ -132,6 +132,7 @@ import { startAutosave, type Autosave, type AutosaveOpts, type AutosaveStorageWr
 import { attachPresence, type PresenceOpts, type PresenceSession } from "../presence/presence-kit";
 import { installPresence } from "../presence/remote-cursors";
 import type { MeasureQueue } from "../input/measure-queue";
+import type { EngineGpu } from "../surface/gpu-device";
 import {
   CAMERA_DEFAULTS,
   CHROME_DEFAULTS,
@@ -208,6 +209,25 @@ export interface CanvasEngineOpts {
   };
   /** The dom measure adapter's queue (wireMeasurement provides; optional headless). */
   readonly measureQueue?: MeasureQueue;
+  /**
+   * The app-owned GPU device (design-012 §4 / plan §1 "Device ownership") —
+   * COMPOSITED PROFILE ONLY. Acquire it with `acquireCompositorDevice()`
+   * before constructing the engine and pass it here; ground's factory and
+   * r3f's mount both receive it from `engine.compositorDevice`, which is how
+   * ONE device ends up under the ground programs, the islands and the live
+   * surfaces.
+   *
+   * NOT `gpu` — that name belongs to design-011's {@link GpuAllocationLedger},
+   * which is budget ACCOUNTING over allocations. This is the device those
+   * allocations are made ON. Design-012 §11 Q7's ruling (keep the pool-handle
+   * layer and the presentation contract from conflating) applies to this pair
+   * exactly, so the two never share a name.
+   *
+   * Absent on the stratified profile and on headless engines: ground then
+   * creates its own device exactly as before. A composited build that finds
+   * this absent must refuse at boot rather than degrade (§11 Q2).
+   */
+  readonly compositorDevice?: EngineGpu;
 }
 
 export interface CanvasOps {
@@ -375,6 +395,16 @@ export interface CanvasEngine {
    * whether you hold the facade or the raw engine.
    */
   readonly frame: FrameControl;
+  /**
+   * The app-owned GPU device, on the composited profile only (design-012 §4).
+   * Undefined on the stratified profile and headless engines. `dispose()`
+   * deliberately does NOT destroy it: the device outlives layers by design,
+   * and its owner is the app that acquired it.
+   *
+   * Distinct from {@link CanvasEngine.gpu}, which is design-011's allocation
+   * LEDGER — accounting over allocations, not the device they are made on.
+   */
+  readonly compositorDevice?: EngineGpu;
   readonly budgets: {
     readonly keepMounted: number;
     readonly fboBytes: number;
@@ -1504,6 +1534,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     docs,
     stage,
     frame: engine.frame,
+    // exactOptionalPropertyTypes: a `compositorDevice: undefined` property is
+    // NOT the same as an absent one, and the optional field refuses the former.
+    ...(opts.compositorDevice !== undefined ? { compositorDevice: opts.compositorDevice } : {}),
     budgets,
     step: (now) => engine.step(now),
     dispose() {

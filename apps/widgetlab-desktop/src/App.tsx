@@ -43,6 +43,7 @@ import {
   spawnWidget,
   type CanvasEngine,
   type DocSession,
+  type EngineGpu,
   type Entity,
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
@@ -51,7 +52,12 @@ import { groundHost } from "@ice/ground";
 import { lineGridGroundProgram } from "@ice/ground/programs/line-grid";
 import { magnetGridGroundProgram } from "@ice/ground/programs/magnet-grid";
 import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
-import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
+import {
+  InfiniteCanvas,
+  compositedProfile,
+  stratifiedProfile,
+  type InfiniteCanvasHandle,
+} from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -143,7 +149,7 @@ const SCENE: Array<[string, number, number, number, number, Record<string, unkno
   ["orbit-cube-card", G6X, GY + (345 + 19) * 2, 329, 155],
 ];
 
-export function createDemoEngine(): CanvasEngine {
+export function createDemoEngine(gpu?: EngineGpu): CanvasEngine {
   const ce = createCanvasEngine({
     widgets: WIDGETS,
     tools: WIDGETLAB_TOOLS,
@@ -151,6 +157,10 @@ export function createDemoEngine(): CanvasEngine {
     rootCanvas: BoardCanvas,
     presentationFallback: BoardCanvas,
     catalogContributions: [WhiteboardCatalog],
+    // The app-owned device (design-012 §4), acquired in main.tsx before boot
+    // and threaded through here. Absent ⇒ the stratified profile, which is
+    // what every headless test in this package constructs.
+    ...(gpu !== undefined ? { compositorDevice: gpu } : {}),
     // snap on (2026-07-16): cards are snap "both"; guides render at P0 (ground).
     // chrome.liftScale mirrors CardShell's lift transform (1.05) so the
     // multi-select union box keeps wrapping a lifted member (2026-07-17).
@@ -390,8 +400,18 @@ const fabCls = (active: boolean) =>
       : "bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
   }`;
 
-export function App() {
-  const ce = useMemo(() => createDemoEngine(), []);
+export interface AppProps {
+  /**
+   * The app-owned GPU device (design-012 §4). Present ⇒ this is the COMPOSITED
+   * profile: three adopts the device, ground builds the compositor, and
+   * <InfiniteCanvas> registers its reflector. Absent ⇒ stratified, which is
+   * how this package's headless tests mount.
+   */
+  readonly gpu?: EngineGpu;
+}
+
+export function App({ gpu }: AppProps = {}) {
+  const ce = useMemo(() => createDemoEngine(gpu), [gpu]);
   // Diagnostics probe in an EFFECT, not inside createDemoEngine: StrictMode double-runs
   // the memo factory, and a factory-installed probe can close over the
   // ORPHANED twin engine (same seeds, zero frames — no equip tags, 0×0
@@ -633,6 +653,11 @@ export function App() {
 
   // The P0 ground layer (grid + wires + snap guides, one WebGPU canvas) —
   // memoized: a new factory identity re-boots the canvas mount effect.
+  //
+  // With a device it is ALSO the unified compositor's host (design-012 §4):
+  // three adopts the app-owned device instead of making its own, and the layer
+  // exposes the compositor reflector the composited profile registers. The
+  // device is the whole switch — there is no mode flag anywhere below this.
   const groundFactory = useMemo(
     () =>
       groundHost({
@@ -641,8 +666,9 @@ export function App() {
           lineGridGroundProgram({ id: WIDGETLAB_LINE_GROUND }),
         ],
         fallback: WIDGETLAB_DOT_GROUND,
+        ...(gpu !== undefined ? { device: gpu.device } : {}),
       }),
-    [],
+    [gpu],
   );
 
   // Widget tray open state lives HERE because the canvas itself reacts: the
@@ -669,6 +695,10 @@ export function App() {
         grid={effectiveGrid}
         glRoute={glRoute}
         onReady={onReady}
+        // BUILD-TIME profile selection (design-012 §3): this is a desktop
+        // build, so composited-first (§11 Q1). Without a device the profile
+        // refuses to mount rather than quietly rendering the stratified board.
+        profile={gpu !== undefined ? compositedProfile : stratifiedProfile}
         className="h-full w-full"
       >
         {/* Canvas pointerEvents none is LOAD-BEARING (glboard precedent):

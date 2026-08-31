@@ -11,11 +11,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    // Deliberately narrow: exactly ONE ambient @types package, never the
-    // implicit sweep. WebGPU is absent from TypeScript's DOM lib, and the
-    // unified compositor (design-012) names GPUDevice in `core`'s engine
-    // contract and throughout `ground`; a hand-rolled structural mirror of
-    // those would rot against the spec.
     "types": ["@webgpu/types"],
     "paths": {
       "@ice/kernel": ["./packages/kernel/src/index.ts"],

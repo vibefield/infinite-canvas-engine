@@ -154,6 +154,38 @@ module.exports = {
       to: { path: "^packages/devtools" },
     },
     {
+      name: "no-cross-profile-imports",
+      comment:
+        "design-012 §3: the composited and stratified presentation profiles are ALTERNATIVES, " +
+        "selected by an app's build wiring (the design-010 idiom — the unselected one is excluded " +
+        "from that app's graph). An import edge between them would put both in every bundle and " +
+        "turn a build-time selection into dead weight. They share vocabulary through " +
+        "profiles/contract.ts, never through each other.",
+      severity: "error",
+      from: { path: "^packages/react/src/profiles/composited" },
+      to: { path: "^packages/react/src/profiles/stratified" },
+    },
+    {
+      name: "no-cross-profile-imports-reverse",
+      comment: "The other direction of no-cross-profile-imports; see that rule.",
+      severity: "error",
+      from: { path: "^packages/react/src/profiles/stratified" },
+      to: { path: "^packages/react/src/profiles/composited" },
+    },
+    {
+      name: "hic-symbols-live-in-the-adapter",
+      comment:
+        "design-012 §8 gates 1+6: HTML-in-Canvas is an origin trial that has been renamed once " +
+        "and ends at M154. Everything HiC-touching sits behind ONE adapter module, so it dies in " +
+        "one place. No module may import ground's internals to reach around it.",
+      severity: "error",
+      // `from` binds on src dirs only — the file header's standing convention,
+      // which keeps ground's OWN test/ files (which must import the adapter to
+      // test it) out of every rule.
+      from: { path: "^packages/[^/]+/src", pathNot: "^packages/ground/src" },
+      to: { path: "^packages/ground/src/hic-adapter" },
+    },
+    {
       name: "nobody-imports-ground",
       comment:
         "design-002 §6 (2026-07-16): ground is a leaf like devtools — apps consume it directly; " +

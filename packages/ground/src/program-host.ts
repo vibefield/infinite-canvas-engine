@@ -5,10 +5,12 @@ import {
   PrefabId,
   Related,
   SpatialVersion,
+  createCompositorSourceRegistry,
   defineQuery,
   schemaMeta,
   type CanvasSessionValue,
   type CanvasType,
+  type CompositorSourceRegistry,
   type Entity,
   type FrameSwitchDescriptor,
   type GridConfig,
@@ -45,6 +47,12 @@ import {
 } from "./renderer";
 import { createGuidesPass } from "./passes/guides";
 import { createWiresPass } from "./passes/wires";
+import {
+  createCompositorReflector,
+  type CompositeTarget,
+  type CompositorReflector,
+} from "./compositor/compositor-reflector";
+import { createWidgetQuadPass } from "./compositor/widget-quad-pass";
 
 const INTERNAL_NOOP_ID = "@ice/ground/transparent";
 const DEFAULT_INACTIVE_COUNT = 3;
@@ -63,6 +71,20 @@ export interface GroundHostOptions {
   readonly profile?: boolean;
   readonly rendererOverride?: GroundRendererLike;
   readonly onProgramFault?: (id: string, error: unknown) => void;
+  /**
+   * THE COMPOSITED PROFILE SWITCH (design-012 §4) — the same three options
+   * `ground()` takes, because which profile an app runs must not depend on
+   * which ground factory it wired. The app-owned GPUDevice: three adopts it
+   * instead of creating its own, and the layer additionally builds the
+   * compositor, so `compositorReflector` and `sources` appear on the layer.
+   *
+   * Absent ⇒ the stratified profile, unchanged. There is no runtime toggle.
+   */
+  readonly device?: GPUDevice;
+  /** The compositor's source registry; omitted ⇒ private, read via `layer.sources`. */
+  readonly sources?: CompositorSourceRegistry;
+  /** The compositor's swap-chain target. Absent at S1 — ground still presents itself. */
+  readonly target?: CompositeTarget;
 }
 
 export interface GroundProgramControl {
@@ -211,7 +233,28 @@ function createProgramHostLayer(
     createGroundRenderer(doc, {
       forceWebGL: opts.forceWebGL === true,
       profile: opts.profile === true,
+      ...(opts.device !== undefined ? { device: opts.device } : {}),
     });
+  // The compositor exists only on the composited profile — no device, no
+  // compositor, and everything below is the host as it always was.
+  let compositor: CompositorReflector | undefined;
+  let compositorSources: CompositorSourceRegistry | undefined;
+  if (opts.device !== undefined) {
+    compositorSources = opts.sources ?? createCompositorSourceRegistry();
+    compositor = createCompositorReflector({
+      world,
+      registry: compositorSources,
+      quadPass: createWidgetQuadPass({
+        device: opts.device,
+        // The target's ACTUAL format when there is one; the preferred canvas
+        // format otherwise. Never assumed — it guards the sRGB re-encode.
+        format: opts.target?.format ?? navigator.gpu.getPreferredCanvasFormat(),
+        registry: compositorSources,
+      }),
+      device: opts.device,
+      ...(opts.target !== undefined ? { target: opts.target } : {}),
+    });
+  }
   const canvas = renderer.canvas;
   Object.assign(canvas.style, {
     position: "absolute",
@@ -1229,6 +1272,9 @@ function createProgramHostLayer(
   return {
     reflector,
     programs: programControl,
+    ...(compositor !== undefined ? { compositorReflector: compositor } : {}),
+    ...(compositorSources !== undefined ? { sources: compositorSources } : {}),
+    device: () => renderer.device?.(),
     configureGrid(config: Partial<GridConfig>) {
       for (const definition of definitions.values()) definition.configureGrid?.(config);
       wakeProgram();
@@ -1260,6 +1306,7 @@ function createProgramHostLayer(
       }
       for (const record of [...records.values()]) disposeRecord(record);
       noop.dispose();
+      compositor?.dispose();
       resizeObserver?.disconnect();
       renderer.dispose();
       canvas.remove();

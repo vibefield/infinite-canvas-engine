@@ -56,3 +56,14 @@ export {
   type InfiniteCanvasHandle,
   type InfiniteCanvasProps,
 } from "./infinite-canvas";
+
+// Presentation profiles (design-012 §3). An app imports exactly ONE of these
+// and passes it to <InfiniteCanvas profile={...}>; the other tree-shakes out of
+// that app's bundle. Absent ⇒ stratified, so every existing app is untouched.
+export type {
+  PresentationProfile,
+  PresentationProfileName,
+  ProfileBootContext,
+} from "./profiles/contract";
+export { stratifiedProfile } from "./profiles/stratified";
+export { compositedProfile } from "./profiles/composited";

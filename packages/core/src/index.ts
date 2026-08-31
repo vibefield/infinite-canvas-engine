@@ -539,3 +539,23 @@ export {
   type GpuReservation,
 } from "./engine/gpu-allocation-ledger";
 export { createDrawBehavior } from "./systems/l3-draw";
+
+// --- the widget-surface layer (design-012): the compositor's shared
+// vocabulary as plain data + types, so the composited and stratified profiles
+// never import each other and no producer gains an import of `ground`.
+export {
+  createCompositorSourceRegistry,
+  type CompositorSource,
+  type CompositorSourceDom,
+  type CompositorSourceGl,
+  type CompositorSourceRegistry,
+  type CompositorSourceVideo,
+  type SurfaceKind,
+} from "./surface/compositor-registry";
+export {
+  acquireCompositorDevice,
+  GpuUnavailableError,
+  type AcquireDeviceOpts,
+  type EngineGpu,
+  type GpuUncapturedError,
+} from "./surface/gpu-device";

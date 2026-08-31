@@ -8,6 +8,19 @@ export default defineConfig({
   base: "./",
   plugins: [tailwindcss()],
   server: { open: false },
+  build: {
+    rollupOptions: {
+      // Two entries: the product, and the design-012 S1 parity rig
+      // (ground-parity.html — the composited/stratified pixel oracle). The rig
+      // is a separate PAGE rather than a mode of the product, deliberately:
+      // one profile ships per app (§11 Q2), so the product must not grow a
+      // runtime switch between them just to be measurable.
+      input: {
+        index: "index.html",
+        "ground-parity": "ground-parity.html",
+      },
+    },
+  },
   esbuild: { jsx: "automatic", jsxImportSource: "react" },
   resolve: {
     dedupe: ["react", "react-dom", "three", "@react-three/fiber"],
