@@ -331,6 +331,38 @@ try {
     `EXIT: a PAUSED live surface costs 0 submits (${vidIdle.submits}) — idle-zero survives the video kind`,
   );
 
+  // --- S8: external-frame arrival as a REAL dirty source ---------------------
+  //
+  // Everything above marks `"video"` dirt by hand, on purpose — that is what
+  // lets composites outrun productions 3:1 while coverage is graded. So the
+  // wiring design-012 §4 asks for had never run. This arm marks NOTHING: the
+  // only thing that can wake the compositor in its live window is the source's
+  // own arrival hook. Two arms over ONE registration, and they must disagree —
+  // a single arm cannot tell "arrival wakes it" from "something else was
+  // waking it all along".
+  const arrival = await page.evaluate(() => window.__appRig.videoArrival(1500));
+  log(
+    `VIDEO arrival: produced=${arrival.produced} live=${arrival.liveFrames}f/${arrival.liveSubmits}s ` +
+      `paused=${arrival.pausedFrames}f/${arrival.pausedSubmits}s registered=${arrival.registered}`,
+  );
+  check(arrival.produced > 0, `the fixture produced frames in the live window (${arrival.produced})`);
+  check(
+    arrival.registered === 1,
+    `ONE registration spans both arms (${arrival.registered}) — the difference is production, not membership`,
+  );
+  check(
+    arrival.liveSubmits > 0,
+    `EXIT: a PRODUCING surface wakes the compositor BY ITSELF — ${arrival.liveSubmits} submits over ${arrival.liveFrames} frames with nothing hand-marking dirt`,
+  );
+  check(
+    arrival.pausedSubmits === 0,
+    `and a PAUSED one returns to idle-zero (${arrival.pausedSubmits} submits over ${arrival.pausedFrames} frames) — the arms DISAGREE, so this measures arrival`,
+  );
+  check(
+    arrival.liveSubmits <= arrival.produced + 2,
+    `and it composites PER ARRIVAL, not continuously (${arrival.liveSubmits} submits for ${arrival.produced} productions across ${arrival.liveFrames} frames) — a stuck-awake compositor would also pass the line above`,
+  );
+
   await page.evaluate(() => window.__appRig.teardown());
 } catch (err) {
   console.error(err);

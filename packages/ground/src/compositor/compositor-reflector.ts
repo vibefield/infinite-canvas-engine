@@ -21,6 +21,9 @@
  *    world via `mark()`. Per plan §4.2 this is presentation dirt, NOT world
  *    state: it is the same legality class as the r3f bridge's `requestFrame`
  *    latch, so it writes no ECS and the adapters-only-enqueue law is untouched.
+ *    Most of it arrives through a binder the producer already owns; VIDEO
+ *    FRAME ARRIVAL arrives through the source itself (`arrivals` below), the
+ *    S8 closure of §4's dirty-source list.
  *
  * Reflector contract (design-002 §5): post-notify, output-only, never writes
  * ECS, never reads layout in flush.
@@ -33,7 +36,7 @@
  * scheduling already be correct.
  */
 import { Camera, Viewport, type ReflectorDef, type World } from "@ice/core";
-import type { CompositorSourceRegistry } from "@ice/core";
+import type { CompositorSource, CompositorSourceRegistry } from "@ice/core";
 import type { CompositeFrame, WidgetQuadPass } from "./widget-quad-pass";
 
 /**
@@ -121,13 +124,55 @@ export function createCompositorReflector(opts: CompositorReflectorOpts): Compos
     if (!reasons.includes(source)) reasons.push(source);
   };
 
+  /**
+   * EXTERNAL-FRAME ARRIVAL (design-012 §4's last unbuilt dirty source, S8).
+   *
+   * A `video` source may carry an `onArrival` subscription, and this is what
+   * holds it: a producing surface wakes the compositor BY ITSELF instead of
+   * relying on something else being in motion. The subscriptions are keyed by
+   * SOURCE OBJECT, not by entity, because the registry's `register` REPLACES —
+   * re-registering an entity with a new source must drop the old producer's
+   * hook and take the new one's, and an entity-keyed map would keep the first.
+   *
+   * Reconciled from the same `onChange` that raises membership dirt, so there
+   * is one place that learns about a registry change and no ordering to get
+   * wrong between "the source is live" and "we are listening to it".
+   */
+  const arrivals = new Map<CompositorSource, () => void>();
+
+  const reconcileArrivals = (): void => {
+    if (disposed) return;
+    const live = new Set<CompositorSource>();
+    for (const [, source] of registry.entries()) {
+      live.add(source);
+      if (arrivals.has(source)) continue;
+      if (source.kind !== "video" || source.onArrival === undefined) continue;
+      arrivals.set(
+        source,
+        source.onArrival(() => mark("video")),
+      );
+    }
+    for (const [source, unsubscribe] of arrivals) {
+      if (live.has(source)) continue;
+      arrivals.delete(source);
+      unsubscribe();
+    }
+  };
+
   const unsubs: Array<() => void> = [
     world.reactive.observeResource(Camera, () => mark("camera")),
     world.reactive.observeResource(Viewport, () => mark("viewport")),
     // Membership and promotion both surface as registry changes: a promotion
     // registers or unregisters a source through the ONE `setPresentation` door.
-    registry.onChange(() => mark("promotion")),
+    registry.onChange(() => {
+      mark("promotion");
+      reconcileArrivals();
+    }),
   ];
+  // Sources registered BEFORE this reflector existed raise no onChange of their
+  // own — an app that builds its board and then its compositor is the ordinary
+  // case, not an edge one.
+  reconcileArrivals();
 
   const reflector: CompositorReflector = {
     name: "compositor",
@@ -191,6 +236,11 @@ export function createCompositorReflector(opts: CompositorReflectorOpts): Compos
       disposed = true;
       for (const u of unsubs) u();
       unsubs.length = 0;
+      // A producer outliving the compositor is normal (the fixture keeps its
+      // interval, the camera keeps decoding); a producer still holding a
+      // callback into a disposed compositor is not.
+      for (const unsubscribe of arrivals.values()) unsubscribe();
+      arrivals.clear();
       quadPass.dispose();
     },
   };

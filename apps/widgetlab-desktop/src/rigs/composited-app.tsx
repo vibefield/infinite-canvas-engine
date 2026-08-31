@@ -183,6 +183,8 @@ function createFixtureSurface(width: number, height: number, fps: number) {
   let timer: number | undefined;
   let produced = 0;
   let tick = 0;
+  /** Whoever wants telling that a frame arrived — the compositor, once. */
+  const arrivals = new Set<() => void>();
 
   const draw = (): void => {
     ctx.fillStyle = "#101010";
@@ -210,11 +212,27 @@ function createFixtureSurface(width: number, height: number, fps: number) {
     latest?.close();
     latest = next;
     produced++;
+    // ARRIVAL (S8). The producer announces; whether that wakes anything is the
+    // compositor's business, and the fixture keeps announcing to nobody when
+    // it is unregistered — exactly as a camera keeps decoding.
+    for (const cb of [...arrivals]) cb();
   };
 
   return {
-    /** The registry source. `frame()` is all the compositor ever sees. */
-    source: { kind: "video" as const, frame: () => latest as object | undefined },
+    /**
+     * The registry source. `frame()` is all the compositor ever samples;
+     * `onArrival` is all it ever subscribes to. Nothing here knows what a
+     * compositor is, which is what lets the real consumer register the same
+     * shape from outside this repo.
+     */
+    source: {
+      kind: "video" as const,
+      frame: () => latest as object | undefined,
+      onArrival: (cb: () => void) => {
+        arrivals.add(cb);
+        return () => arrivals.delete(cb);
+      },
+    },
     start() {
       if (timer !== undefined) return;
       produce();
@@ -353,6 +371,11 @@ export interface AppRig {
   videoProbe(frames: number, flip: boolean, register?: boolean): Promise<Record<string, unknown>>;
   /** S7: idle-zero with the surface paused. */
   videoIdle(ms: number): Promise<Record<string, number>>;
+  /**
+   * S8: external-frame arrival as a real dirty source. Two arms over ONE
+   * registration and NO hand-marking — producing must submit, paused must not.
+   */
+  videoArrival(ms: number): Promise<Record<string, number>>;
   teardown(): void;
 }
 
@@ -699,6 +722,77 @@ export function mountCompositedApp(): AppRig {
       // into the capture's own resolution instead of assuming dpr.
       taps: { top, bottom, centre },
       canvas: { width: gpuCanvas.width, height: gpuCanvas.height },
+    };
+  }
+
+  /**
+   * THE S8 WITNESS: does a PRODUCING surface wake the compositor BY ITSELF?
+   *
+   * design-012 §4 lists external-frame arrival as a dirty source, and until S8
+   * nothing raised it — `videoProbe` above marks `"video"` by hand, deliberately
+   * (that is what lets composites outrun productions 3:1, the 15 %-defect
+   * condition it grades coverage under). So the wiring had never been
+   * exercised, and a board with a live surface and a still camera would have
+   * frozen on whatever frame the last unrelated wake happened to catch.
+   *
+   * THIS PROBE MARKS NOTHING. The only thing that can wake the compositor
+   * during its live window is the source's own `onArrival`, so the submit count
+   * measures that wiring and nothing else. Both arms run over the SAME
+   * registration and the same rAF loop, and they must disagree: producing
+   * submits, paused does not. A single arm cannot tell "arrival wakes it" from
+   * "something else was waking it all along".
+   */
+  async function videoArrival(ms: number) {
+    const videoE = video as Entity;
+    videoUnregister?.();
+    videoUnregister = sources.register(videoE, fixture.source);
+    videoFlip = false;
+    order.length = 0;
+    order.push(videoE);
+    fixture.stop();
+    // Drain the registration's own membership dirt and anything the board
+    // still owed, so the live window starts from a genuinely quiet compositor.
+    await settle(6);
+
+    const window = async (): Promise<{ frames: number; submits: number }> => {
+      const before = instrument?.total() ?? 0;
+      let frames = 0;
+      const t0 = performance.now();
+      await new Promise<void>((resolve) => {
+        const tick = () => {
+          frames++;
+          engine.step(performance.now());
+          if (performance.now() - t0 >= ms) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return { frames, submits: (instrument?.total() ?? 0) - before };
+    };
+
+    // ARM ONE — producing, nothing else moving.
+    const producedBefore = fixture.produced();
+    fixture.start();
+    const live = await window();
+    const produced = fixture.produced() - producedBefore;
+
+    // ARM TWO — the same source, still registered, no longer producing.
+    fixture.stop();
+    await settle(6);
+    const paused = await window();
+
+    return {
+      ms,
+      produced,
+      liveFrames: live.frames,
+      liveSubmits: live.submits,
+      pausedFrames: paused.frames,
+      pausedSubmits: paused.submits,
+      registered: sources.has(videoE) ? 1 : 0,
+      // Named wake reasons at the end of the live window would be empty (a
+      // composite clears them), so what is reported instead is the count that
+      // can only have come from arrivals.
+      quadsDrawn: quadPass?.drawn() ?? 0,
     };
   }
 
@@ -1151,6 +1245,7 @@ export function mountCompositedApp(): AppRig {
     dragUnder,
     videoProbe,
     videoIdle,
+    videoArrival,
 
     async mixedZ() {
       flipIslands = false;

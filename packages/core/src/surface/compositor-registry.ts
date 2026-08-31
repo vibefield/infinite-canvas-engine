@@ -70,6 +70,33 @@ export interface CompositorSourceGl {
 export interface CompositorSourceVideo {
   readonly kind: "video";
   readonly frame: () => object | undefined;
+  /**
+   * "A new frame is in." Subscribe here and the compositor wakes itself when
+   * this producer delivers; returns an unsubscriber (the `onChange` shape).
+   *
+   * EXTERNAL-FRAME ARRIVAL IS ONE OF §4's DIRTY SOURCES, and until S8 it was
+   * the only one nothing raised: S7 shipped the video leg with its rig marking
+   * compositor dirt BY HAND, which made the coverage measurement honest (it let
+   * composites outrun productions 3:1, the exact 15 %-defect condition) and
+   * left the wiring unbuilt. A producing surface that cannot wake the
+   * compositor only draws while something ELSE is moving — correct-looking on
+   * any board with a camera in motion, frozen on a still one.
+   *
+   * OPTIONAL, and the asymmetry with the other kinds is deliberate. A `dom`
+   * source's dirt comes from HiC paint events through the binder's `onDirt`,
+   * and a `gl` source's from r3f's island binder `onPaint`; both of those
+   * producers live inside ICE and own a binder already. A `video` producer is
+   * the APP — downstream, outside this repo, under its own lease protocol — so
+   * its wake has to travel with the source it registers rather than through a
+   * seam it would have to find. A source that omits it still composites
+   * correctly; it just cannot wake anyone, which is what every S7 source did.
+   *
+   * The subscription is the COMPOSITOR's to hold and drop: it subscribes on
+   * registration and unsubscribes when the source is replaced or removed, so a
+   * producer that outlives its registration cannot keep waking a compositor
+   * that is no longer sampling it.
+   */
+  readonly onArrival?: (cb: () => void) => () => void;
 }
 
 export type CompositorSource = CompositorSourceDom | CompositorSourceGl | CompositorSourceVideo;
