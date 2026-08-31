@@ -689,6 +689,69 @@ describe("typed frame navigation and placement", () => {
   });
 });
 
+describe("selection scope", () => {
+  it("selects a widget spawned into the open frame before any derive tick", () => {
+    const engine = makeEngine();
+    try {
+      engine.docs.create();
+      // NO engine.step() between spawn and select: `Active` is stamped by the
+      // derive-phase membership tick, and ops run outside the tick.
+      const card = engine.ops.spawnWidget(BoardCard.type, { x: 0, y: 0 });
+      engine.ops.setSelection([card]);
+      expect(engine.world.hasTag(card, Selected)).toBe(true);
+
+      // Same inside a nested canvas, immediately after entering it.
+      const folder = engine.ops.spawnWidget(WhiteboardContainer.type, { x: 20, y: 30 });
+      engine.step(16);
+      engine.ops.enterContainer(folder, { transition: "none" });
+      const sticky = engine.ops.spawnWidget(Sticky.type, { x: 0, y: 0 });
+      engine.ops.setSelection([sticky]);
+      expect(engine.world.hasTag(sticky, Selected)).toBe(true);
+      engine.step(32);
+      expect(engine.world.hasTag(sticky, Selected)).toBe(true); // survives the tick
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  it("keeps foreign-canvas entities out of scope, spawned into one or left behind in one", () => {
+    const engine = makeEngine();
+    try {
+      engine.docs.create();
+      const folder = engine.ops.spawnWidget(WhiteboardContainer.type, { x: 20, y: 30 });
+      engine.step(16);
+
+      // Spawned into ANOTHER canvas by explicit parent while the root is open —
+      // never a member here, so the scope filter must drop it even pre-tick.
+      const foreignSticky = engine.ops.spawnWidget(Sticky.type, {
+        x: 0,
+        y: 0,
+        parent: folder,
+      });
+      engine.ops.setSelection([foreignSticky]);
+      expect(engine.world.hasTag(foreignSticky, Selected)).toBe(false);
+
+      // And left behind in a canvas the user has since exited.
+      engine.ops.enterContainer(folder, { transition: "none" });
+      const inner = engine.ops.spawnWidget(Sticky.type, { x: 40, y: 40 });
+      engine.step(32);
+      engine.ops.exitContainer({ transition: "none" });
+      engine.step(48);
+      engine.ops.setSelection([inner]);
+      expect(engine.world.hasTag(inner, Selected)).toBe(false);
+
+      // deleteSelection reads the same scope: an out-of-scope id survives.
+      const before = countType(engine, Sticky.type);
+      engine.world.addTag(inner, Selected);
+      engine.ops.deleteSelection();
+      engine.step(64);
+      expect(countType(engine, Sticky.type)).toBe(before);
+    } finally {
+      engine.dispose();
+    }
+  });
+});
+
 describe("semantic frame previews", () => {
   it("includes malformed effective descendants without crossing into nested frames", () => {
     const catalog = compileEngineCatalog({

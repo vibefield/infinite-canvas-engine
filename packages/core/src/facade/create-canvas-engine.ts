@@ -1281,7 +1281,28 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       const s = requireWritable("spawnWidget");
       const targetFrame = o.parent ?? requireCurrentFrame("spawnWidget");
       placement.assertPlace(type, targetFrame, "ops.spawnWidget");
-      return spawnWidget(s.store, world, type, { ...o, parent: targetFrame });
+      const spawned = spawnWidget(s.store, world, type, { ...o, parent: targetFrame });
+      // `Active` is DERIVED — `createActiveMembership` (nav/nested-canvas.ts)
+      // stamps it inside the tick, and ops run outside the tick, so a widget
+      // spawned into the open frame carries no membership until the next
+      // `step()`. Every scope-filtered op (setSelection, deleteSelection) would
+      // silently drop it in that window, and design-011 §16's `Selected ⇒
+      // Active` makes membership the right thing to establish rather than the
+      // filter the right thing to loosen. Stamp what the tick would compute for
+      // THIS spawn — the entity is a member of `targetFrame` by construction —
+      // and leave a spawn into a FOREIGN frame (an explicit `parent`) unstamped
+      // so it stays correctly out of scope. `nested-canvas.cutVisibility` writes
+      // these same tags from an op for the same reason; the next membership
+      // pass re-derives and corrects either way.
+      const current = canvasSession.current();
+      if (
+        current.state === "attached" &&
+        targetFrame === current.frame &&
+        !world.hasTag(spawned, Active)
+      ) {
+        world.addTag(spawned, Active);
+      }
+      return spawned;
     },
     insertByDrag(type, o) {
       // Writable-session gate UP FRONT: the ghost drag would otherwise run
