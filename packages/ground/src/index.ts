@@ -323,11 +323,19 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
       // Facts and slot sizes come from the SAME read of the world, so a quad
       // and its atlas slot can never disagree about how big a card is.
       const facts = createWorldQuadFacts(ctx.world);
+      // The binder wakes the reflector and the reflector's `prepare` drives
+      // the binder, so both closures read the enclosing `compositor` binding
+      // rather than a value captured before it exists.
       domSources = createDomSourceBinder(
         device,
         sources,
         (entity) => facts(entity),
-        opts.atlas ?? {},
+        {
+          ...(opts.atlas ?? {}),
+          // Paint events are a compositor dirty source (§4). Without this wake
+          // the slot goes dirty and nothing ever composites it.
+          onDirt: () => compositor?.mark("dom"),
+        },
       );
       const binder = domSources;
       compositor = createCompositorReflector({
@@ -347,7 +355,18 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
         }),
         device,
         // Slot copies are issued here — before the pass, after the dirt check.
-        prepare: (frame) => binder.sync(frame),
+        //
+        // STAYING AWAKE IS PART OF THE BUDGET. `maxCopiesPerComposite` is what
+        // makes a bulk arrival stagger instead of stalling for 111 ms, but a
+        // budget without this is worse than no budget: the leftover copies
+        // would sit owed until something unrelated woke the compositor, and a
+        // board that went quiet mid-boot would stay half-drawn. Re-marking on
+        // `pending()` closes exactly that hole — and it cannot spin, because a
+        // frame that owes nothing marks nothing.
+        prepare: (frame) => {
+          binder.sync(frame);
+          if (binder.pending() > 0) compositor?.mark("dom");
+        },
         ...(opts.target !== undefined ? { target: opts.target } : {}),
       });
     }

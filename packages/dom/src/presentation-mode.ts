@@ -26,9 +26,11 @@
  * yet an immediate child of the canvas would hand the compositor an element
  * the copy refuses.
  */
-import type { Entity } from "@ice/core";
+import type { Entity, SurfacePresentation } from "@ice/core";
 
-export type SurfacePresentation = "live-dom" | "composited" | "picture";
+// The vocabulary lives in core (design-012 plan §3) so both profiles and every
+// surface kind speak one; this module owns the MECHANISM, not the type.
+export type { SurfacePresentation };
 
 export interface PresentationRegistry {
   /** The entity's current mode; `live-dom` for anything never set (the default). */

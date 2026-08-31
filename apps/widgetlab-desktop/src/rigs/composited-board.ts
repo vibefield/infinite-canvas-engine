@@ -38,6 +38,7 @@ import {
   Opacity,
   Position,
   Size,
+  type SurfaceDemand,
   Viewport,
   acquireCompositorDevice,
   createCompositorSourceRegistry,
@@ -200,6 +201,16 @@ export interface BoardRig {
   dirtCounters(): Record<string, number>;
   /** What changedElements NAMES for a pure content edit. */
   characterizeContentDirt(): Promise<Record<string, unknown>>;
+  /** Add/remove a CSS-keyframe animation inside a card. */
+  animateCard(index: number, on: boolean): void;
+  /** Uploads vs paint events for an animating card at a demand bucket. */
+  animationProbe(
+    index: number,
+    bucket: 0 | 2 | 5 | 10 | 15 | 30 | 60,
+    ms: number,
+  ): Promise<Record<string, number>>;
+  /** Bulk arrival under a per-composite copy budget. */
+  bootStagger(budget: number, maxFrames: number): Promise<Record<string, number>>;
   /** Compare a stored compositor readback against a supplied RGBA buffer. */
   idle(ms: number): Promise<Record<string, number>>;
   atlas(): Record<string, number>;
@@ -262,6 +273,8 @@ export function mountBoardRig(): BoardRig {
   let paintEvents = 0;
   /** Hosts named by paint events as CONTENT dirt (after the §4.2 filter). */
   let namedHosts = 0;
+  /** Per-entity demand, set by the S4 probes. */
+  const demands = new Map<Entity, SurfaceDemand>();
   /** Hosts named as themselves — the write-back's own paint events. */
   let selfNamed = 0;
   /**
@@ -331,6 +344,10 @@ export function mountBoardRig(): BoardRig {
       // A board this size fits one page; the hint spares it the growth ladder
       // (the allocator's finding 6: six reallocations without it).
       firstPageSize: { width: 2048, height: 2048 },
+      demand: (e) => demands.get(e),
+      // Paint events are a compositor dirty source (§4) — the wake that makes
+      // dom dirt reach a composite at all.
+      onDirt: () => compositor?.mark("dom"),
     });
 
     const target: CompositeTarget = {
@@ -357,7 +374,13 @@ export function mountBoardRig(): BoardRig {
       }),
       device: gpu.device,
       target,
-      prepare: (frame) => (binder as NonNullable<typeof binder>).sync(frame),
+      prepare: (frame) => {
+        const b = binder as NonNullable<typeof binder>;
+        b.sync(frame);
+        // Stay awake while copies are owed — a budget without this strands
+        // them the moment the board goes quiet.
+        if (b.pending() > 0) compositor?.mark("dom");
+      },
       clearValue: { r: 0, g: 0, b: 0, a: 0 },
     });
 
@@ -832,6 +855,131 @@ export function mountBoardRig(): BoardRig {
     };
   }
 
+  /**
+   * DEMAND (design-012 §4, decision 7; hic-bench §5).
+   *
+   * A CSS-keyframe card self-invalidates at 239.9 paint events/s — 2 per
+   * display tick at 120 Hz — with nothing calling `requestPaint`. Uploading its
+   * slot at that rate is the whole reason demand governs dom sources and not
+   * only live video.
+   *
+   * The probe animates ONE card and counts UPLOADS, not paint events, because
+   * throttling cannot and does not stop the events: Chromium raises them
+   * either way and the main-thread paint cost stays. What demand buys is the
+   * GPU bandwidth.
+   */
+  function animateCard(index: number, on: boolean): void {
+    const entity = cards[index]?.entity as Entity;
+    const content = domWidgets.hostFor(entity) as HTMLElement;
+    let bar = content.querySelector<HTMLElement>("[data-anim]");
+    if (on && bar === null) {
+      const style = document.getElementById("rig-keyframes") ?? document.createElement("style");
+      style.id = "rig-keyframes";
+      // A PAINT-DIRTYING property, deliberately. An animation on `transform`
+      // or `opacity` runs on the compositor thread and never invalidates the
+      // display list: measured, it raised ~120 paint events/s while naming
+      // ZERO elements, so it cost no uploads at all and made a demand test
+      // look like it was working when nothing was being throttled.
+      // `background-color` cannot be compositor-animated, so it re-rasterises
+      // the card — which is the hazard demand exists for.
+      style.textContent =
+        "@keyframes rigpulse{from{background-color:#ffffff}to{background-color:#ff3355}}";
+      if (style.parentNode === null) document.head.appendChild(style);
+      bar = document.createElement("div");
+      bar.setAttribute("data-anim", "");
+      bar.style.cssText =
+        "width:30px;height:10px;background:#ffffff;animation:rigpulse 0.4s linear infinite alternate;";
+      content.appendChild(bar);
+    } else if (!on && bar !== null) {
+      bar.remove();
+    }
+  }
+
+  async function animationProbe(index: number, bucket: 0 | 2 | 5 | 10 | 15 | 30 | 60, ms: number) {
+    const entity = cards[index]?.entity as Entity;
+    if (bucket === 60) demands.delete(entity);
+    else demands.set(entity, { mode: "live", fpsBucket: bucket, interactive: false });
+
+    // Settle first so the arm is not charged for the previous one.
+    for (let i = 0; i < 10 && (binder?.pending() ?? 0) > 0; i++) {
+      engine.step(performance.now());
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    }
+    const copiesBefore = binder?.copies() ?? 0;
+    const paintsBefore = paintEvents;
+    const namedBefore = namedHosts;
+    const throttledBefore = binder?.throttled() ?? 0;
+    const t0 = performance.now();
+    let frames = 0;
+    await new Promise<void>((resolve) => {
+      const tick = () => {
+        frames++;
+        engine.step(performance.now());
+        if (performance.now() - t0 >= ms) resolve();
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const elapsed = performance.now() - t0;
+    const copies = (binder?.copies() ?? 0) - copiesBefore;
+    const paints = paintEvents - paintsBefore;
+    return {
+      bucket,
+      ms: elapsed,
+      frames,
+      copies,
+      paintEvents: paints,
+      // The two rates the doctrine distinguishes: what Chromium raises, and
+      // what the compositor chose to upload.
+      paintEventsPerSecond: (paints / elapsed) * 1000,
+      copiesPerSecond: (copies / elapsed) * 1000,
+      // Did those paint events NAME anything? A compositor-animated property
+      // raises events that name nothing, which is not the same as a throttle
+      // working — this is how the two are told apart.
+      namedHosts: namedHosts - namedBefore,
+      throttled: (binder?.throttled() ?? 0) - throttledBefore,
+    };
+  }
+
+  /**
+   * BOOT STAGGERING (design-012 §8 gate 2). A full-board repaint is 111 ms at
+   * N=200 — about 13 display frames — so bulk arrival must be BUDGETED rather
+   * than merely fast. This measures that the budget is honoured AND that the
+   * work still completes, which is the half a budget can quietly break: the
+   * compositor has to stay awake while copies are owed.
+   */
+  async function bootStagger(budget: number, maxFrames: number) {
+    const b = binder as NonNullable<typeof binder>;
+    b.setCopyBudget(budget);
+    // Force every slot to re-copy, the way a fresh boot would.
+    for (const c of cards) b.atlas.markDirty(c.entity);
+    const owedAtStart = b.pending();
+    const copiesBefore = b.copies();
+    const refusedBefore = b.refusedCopies();
+    let frames = 0;
+    let maxPerFrame = 0;
+    let previous = copiesBefore;
+    while (b.pending() > 0 && frames < maxFrames) {
+      compositor?.mark("dom");
+      engine.step(performance.now());
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      frames++;
+      const now = b.copies();
+      maxPerFrame = Math.max(maxPerFrame, now - previous);
+      previous = now;
+    }
+    b.setCopyBudget(Number.POSITIVE_INFINITY);
+    return {
+      budget,
+      owedAtStart,
+      frames,
+      copied: b.copies() - copiesBefore,
+      maxPerFrame,
+      stillOwed: b.pending(),
+      refused: b.refusedCopies() - refusedBefore,
+    };
+  }
+
   /** Where a card is on screen right now — the runner aims real input here. */
   function targetRect(index: number) {
     const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1 };
@@ -898,6 +1046,9 @@ export function mountBoardRig(): BoardRig {
     addInput,
     inputState,
     characterizeContentDirt,
+    animateCard,
+    animationProbe,
+    bootStagger,
     dirtCounters: () => ({
       paintEvents,
       selfNamed,

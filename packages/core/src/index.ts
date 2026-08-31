@@ -559,3 +559,15 @@ export {
   type EngineGpu,
   type GpuUncapturedError,
 } from "./surface/gpu-device";
+// Demand: what stops self-animating DOM from uploading at display rate
+// (hic-bench §5 measured a CSS-keyframe card at 239.9 paint events/s).
+export {
+  DEFAULT_SURFACE_DEMAND,
+  PAUSED_SURFACE_DEMAND,
+  demandIntervalMs,
+  foldDemand,
+  toFpsBucket,
+  type SurfaceDemand,
+  type SurfaceFpsBucket,
+  type SurfacePresentation,
+} from "./surface/contract";

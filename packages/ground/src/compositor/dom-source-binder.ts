@@ -27,17 +27,52 @@
  * structural, not merely avoided (§8 gate 2). The only bulk iteration is
  * `sync`, and its copies are budgeted per composite.
  */
-import type { CompositorSource, CompositorSourceRegistry, Entity } from "@ice/core";
+import {
+  DEFAULT_SURFACE_DEMAND,
+  demandIntervalMs,
+  type CompositorSource,
+  type CompositorSourceRegistry,
+  type Entity,
+  type SurfaceDemand,
+} from "@ice/core";
 import type { CompositeFrame, QuadTexture } from "./widget-quad-pass";
 import { createDomAtlas, type DomAtlas, type DomAtlasOptions } from "./dom-atlas";
 
 export interface DomSourceBinderOptions extends DomAtlasOptions {
   /**
-   * Copies allowed per composite. Boot staggering (S4) and any bulk arrival
-   * ride this budget rather than a full-board pass: at ~0.21 ms per dirty card
-   * the whole point is that a frame never owes more than it can pay.
+   * Copies allowed per composite. Boot staggering and any bulk arrival ride
+   * this budget rather than a full-board pass: at ~0.21 ms per dirty card the
+   * whole point is that a frame never owes more than it can pay, and the
+   * 111 ms/200-card full repaint is not a slow path but an absent one.
+   *
+   * A budget is only safe because the compositor stays awake while copies are
+   * owed — see `pending()`, which the reflector re-marks dirt on.
    */
   readonly maxCopiesPerComposite?: number;
+  /**
+   * Per-surface demand (design-012 §4). Absent ⇒ every surface is live at 60,
+   * which is the pre-demand behaviour.
+   *
+   * This throttles UPLOADS, not paint events: Chromium raises those either
+   * way, and a CSS-keyframe card still costs its 239.9 events/s of main-thread
+   * paint. What demand buys is that its slot stops being re-copied at that rate.
+   */
+  readonly demand?: (entity: Entity) => SurfaceDemand | undefined;
+  /** Clock seam, for tests. Defaults to `performance.now()`. */
+  readonly now?: () => number;
+  /**
+   * Called when a paint event produces work — a slot marked, or a mark
+   * deferred by a demand bucket.
+   *
+   * This is the WAKE, and it is not optional bookkeeping. HiC paint events are
+   * one of the compositor's named dirty sources (design-012 §4), and without
+   * this the chain silently breaks in the middle: the paint event marks the
+   * slot, the compositor never learns anything happened, `sync` never runs,
+   * and the card shows stale pixels forever while every counter says the dirt
+   * was received. Measured, before it was wired: a CSS-keyframe card named its
+   * host 301 times in 2.5 s and uploaded 0.
+   */
+  readonly onDirt?: () => void;
 }
 
 export interface DomSourceBinder {
@@ -63,6 +98,14 @@ export interface DomSourceBinder {
    * on a settled board is a real fault, not a warm-up.
    */
   refusedCopies(): number;
+  /**
+   * Dirty marks a demand bucket DEFERRED rather than dropped. A deferred mark
+   * is not lost: the slot is marked as soon as its bucket allows, so a
+   * throttled card is behind, never wrong.
+   */
+  throttled(): number;
+  /** Change the per-composite copy budget (boot staggering, demand pressure). */
+  setCopyBudget(limit: number): void;
   dispose(): void;
 }
 
@@ -78,7 +121,15 @@ export function createDomSourceBinder(
   options: DomSourceBinderOptions = {},
 ): DomSourceBinder {
   const atlas = createDomAtlas<Entity>(device, options);
-  const budget = options.maxCopiesPerComposite ?? Number.POSITIVE_INFINITY;
+  let budget = options.maxCopiesPerComposite ?? Number.POSITIVE_INFINITY;
+  const now = options.now ?? (() => performance.now());
+  const demandOf = (entity: Entity): SurfaceDemand =>
+    options.demand?.(entity) ?? DEFAULT_SURFACE_DEMAND;
+  /** When each slot was last marked dirty — the throttle's clock. */
+  const lastMarked = new Map<Entity, number>();
+  /** Entities whose dirt a demand bucket deferred; released when due. */
+  const deferred = new Map<Entity, number>();
+  let throttled = 0;
   /** host element → entity, so a paint event's elements become slot ids. */
   const byHost = new Map<Element, Entity>();
   /** What each entity was last PLACED at — the change guard in `sync`. */
@@ -107,6 +158,8 @@ export function createDomSourceBinder(
       if (!live.has(slot.id)) {
         atlas.free(slot.id);
         placed.delete(slot.id);
+        lastMarked.delete(slot.id);
+        deferred.delete(slot.id);
       }
     }
   }
@@ -153,6 +206,18 @@ export function createDomSourceBinder(
       }
 
       reapDeparted(live);
+
+      // Release any dirt a bucket deferred and that is now due. A throttled
+      // card is BEHIND, never wrong: nothing is dropped, only delayed.
+      if (deferred.size > 0) {
+        const t = now();
+        for (const [entity, due] of deferred) {
+          if (t < due) continue;
+          deferred.delete(entity);
+          if (atlas.markDirty(entity)) lastMarked.set(entity, t);
+        }
+      }
+
       copies += atlas.flush(budget);
 
       // A refused copy is normally a host the canvas has not painted yet — the
@@ -196,22 +261,56 @@ export function createDomSourceBinder(
 
     markDirtyHosts(hosts) {
       refreshHostMap();
+      const t = now();
       let marked = 0;
       for (const host of hosts) {
         const entity = byHost.get(host);
-        if (entity !== undefined && atlas.markDirty(entity)) marked++;
+        if (entity === undefined) continue;
+
+        // THE DEMAND THROTTLE. A CSS-keyframe card self-invalidates ~240
+        // times a second (hic-bench §5); without this its slot is re-copied at
+        // that rate forever. The mark is DEFERRED to the next moment its
+        // bucket allows, not discarded — so the card lags its own animation by
+        // at most one bucket interval and never shows something that never was.
+        const interval = demandIntervalMs(demandOf(entity));
+        if (interval !== 0) {
+          const since = t - (lastMarked.get(entity) ?? Number.NEGATIVE_INFINITY);
+          if (since < interval) {
+            // `Infinity` (paused, or bucket 0) parks it until demand changes.
+            const due = Number.isFinite(interval) ? t + (interval - since) : Number.POSITIVE_INFINITY;
+            if (!deferred.has(entity)) throttled++;
+            deferred.set(entity, due);
+            // Deferred work still has to be collected later, and `pending()`
+            // counts it — so the compositor must wake for this too.
+            options.onDirt?.();
+            continue;
+          }
+        }
+        if (atlas.markDirty(entity)) {
+          lastMarked.set(entity, t);
+          marked++;
+        }
       }
+      if (marked > 0) options.onDirt?.();
       return marked;
     },
 
     copies: () => copies,
-    pending: () => atlas.pendingCopies(),
+    // Deferred dirt is work still owed, so the compositor must stay awake for
+    // it exactly as it does for a pending copy.
+    pending: () => atlas.pendingCopies() + deferred.size,
     refusedCopies: () => atlas.copyFailures(),
+    throttled: () => throttled,
+    setCopyBudget(limit) {
+      budget = limit > 0 ? limit : Number.POSITIVE_INFINITY;
+    },
 
     dispose() {
       atlas.dispose();
       byHost.clear();
       placed.clear();
+      lastMarked.clear();
+      deferred.clear();
     },
   };
 }
