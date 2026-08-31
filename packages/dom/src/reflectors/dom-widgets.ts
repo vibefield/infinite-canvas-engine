@@ -36,6 +36,12 @@
  *    portal's container node does not remount it, so widget React state survives the
  *    lift. While ANY host is lifted, every host's content element is inerted
  *    (`pointer-events: none`, the pinned inert-during-drag contract, design-004 §4).
+ *    STRATIFIED ONLY, and deliberately: design-012 §7 retires "P3 lifted plane,
+ *    portal-preserving reparent, inert-during-drag class toggles" in the
+ *    composited profile, because there a drag is a per-quad GPU fact at true z
+ *    and card-level hit truth stays native on the L1 host (§5 Q4). A composited
+ *    card is therefore never `lifted` — see `placementOf` — so this clause
+ *    simply has nothing to fire on, which is the ratified answer and not a gap.
  *
  * Law 10: reflectors run post-notify, write output only, never read layout or
  * write ECS — this flush touches only host `<div>` style/attributes/parentage.
