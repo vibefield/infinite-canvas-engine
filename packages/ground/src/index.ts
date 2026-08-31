@@ -455,8 +455,16 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
         // budget without this is worse than no budget: the leftover copies
         // would sit owed until something unrelated woke the compositor, and a
         // board that went quiet mid-boot would stay half-drawn. Re-marking on
-        // `pending()` closes exactly that hole — and it cannot spin, because a
-        // frame that owes nothing marks nothing.
+        // `pending()` closes exactly that hole.
+        //
+        // ERRATA 2026-08-31: this note used to end "and it cannot spin,
+        // because a frame that owes nothing marks nothing". True of copies and
+        // false as stated — a paint event on a PAUSED card parked a mark no
+        // clock could ever make due, `pending()` counted it, and this line
+        // re-dirtied the compositor on every rAF frame for as long as the card
+        // animated out of sight. The claim holds again only because parked
+        // dirt now sits OUTSIDE `pending()`: the invariant is "everything
+        // pending has a due date", and it is enforced in the binder, not here.
         prepare: (frame) => {
           binder.sync(frame);
           if (binder.pending() > 0) compositor?.mark("dom");

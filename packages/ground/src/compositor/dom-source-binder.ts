@@ -121,7 +121,9 @@ export interface DomSourceBinder {
   /**
    * Dirty marks a demand bucket DEFERRED rather than dropped. A deferred mark
    * is not lost: the slot is marked as soon as its bucket allows, so a
-   * throttled card is behind, never wrong.
+   * throttled card is behind, never wrong. A PAUSED surface's mark is parked
+   * instead — same promise, no due date: it is released when demand returns to
+   * a live bucket rather than when a clock says so.
    */
   throttled(): number;
   /** Change the per-composite copy budget (boot staggering, demand pressure). */
@@ -151,6 +153,15 @@ export function createDomSourceBinder(
   const lastMarked = new Map<Entity, number>();
   /** Entities whose dirt a demand bucket deferred; released when due. */
   const deferred = new Map<Entity, number>();
+  /**
+   * Entities whose dirt a PAUSE parked — `demandIntervalMs` is `Infinity`, so
+   * no clock will ever make them due (paused, or fps bucket 0). Held apart
+   * from `deferred` for exactly that reason: `pending()` counts deferred work,
+   * and a dateless mark counted there would keep the compositor re-marking
+   * itself every frame for a card nobody can see. Released by `sync` when
+   * demand comes back to a live bucket, never by time.
+   */
+  const parked = new Set<Entity>();
   let throttled = 0;
   /** host element → entity, so a paint event's elements become slot ids. */
   const byHost = new Map<Element, Entity>();
@@ -185,6 +196,7 @@ export function createDomSourceBinder(
         bands.delete(slot.id);
         lastMarked.delete(slot.id);
         deferred.delete(slot.id);
+        parked.delete(slot.id);
       }
     }
   }
@@ -243,13 +255,21 @@ export function createDomSourceBinder(
 
       reapDeparted(live);
 
-      // Release any dirt a bucket deferred and that is now due. A throttled
+      // Release any dirt a bucket deferred and that is now due, plus any dirt a
+      // pause parked whose demand has come back to a live bucket. A throttled
       // card is BEHIND, never wrong: nothing is dropped, only delayed.
-      if (deferred.size > 0) {
+      if (deferred.size > 0 || parked.size > 0) {
         const t = now();
         for (const [entity, due] of deferred) {
           if (t < due) continue;
           deferred.delete(entity);
+          if (atlas.markDirty(entity)) lastMarked.set(entity, t);
+        }
+        for (const entity of parked) {
+          // Still paused ⇒ still parked. This is the ONLY door out: a paused
+          // surface's dirt has no due date, so it waits on demand, not a clock.
+          if (demandIntervalMs(demandOf(entity)) === Number.POSITIVE_INFINITY) continue;
+          parked.delete(entity);
           if (atlas.markDirty(entity)) lastMarked.set(entity, t);
         }
       }
@@ -309,13 +329,24 @@ export function createDomSourceBinder(
         // bucket allows, not discarded — so the card lags its own animation by
         // at most one bucket interval and never shows something that never was.
         const interval = demandIntervalMs(demandOf(entity));
+        // PAUSED, or bucket 0 — the surface keeps its last good picture and
+        // uploads nothing (§6.2). The mark is PARKED, and neither half of that
+        // is optional: parked dirt is outside `pending()`, so the reflector's
+        // pending-mark cannot re-dirty the compositor for work no clock will
+        // release, and no wake is raised, so a card animating off-screen costs
+        // no composites at all rather than one per paint event. Both together
+        // are what makes an invisible animating card genuinely free (§4)
+        // instead of merely un-uploaded.
+        if (interval === Number.POSITIVE_INFINITY) {
+          if (!parked.has(entity)) throttled++;
+          parked.add(entity);
+          continue;
+        }
         if (interval !== 0) {
           const since = t - (lastMarked.get(entity) ?? Number.NEGATIVE_INFINITY);
           if (since < interval) {
-            // `Infinity` (paused, or bucket 0) parks it until demand changes.
-            const due = Number.isFinite(interval) ? t + (interval - since) : Number.POSITIVE_INFINITY;
             if (!deferred.has(entity)) throttled++;
-            deferred.set(entity, due);
+            deferred.set(entity, t + (interval - since));
             // Deferred work still has to be collected later, and `pending()`
             // counts it — so the compositor must wake for this too.
             options.onDirt?.();
@@ -333,7 +364,9 @@ export function createDomSourceBinder(
 
     copies: () => copies,
     // Deferred dirt is work still owed, so the compositor must stay awake for
-    // it exactly as it does for a pending copy.
+    // it exactly as it does for a pending copy. PARKED dirt is not: it comes
+    // due on a demand change, not on a clock, and counting it here would keep
+    // the compositor awake forever for a card nobody can see.
     pending: () => atlas.pendingCopies() + deferred.size,
     refusedCopies: () => atlas.copyFailures(),
     throttled: () => throttled,
@@ -349,6 +382,7 @@ export function createDomSourceBinder(
       bands.clear();
       lastMarked.clear();
       deferred.clear();
+      parked.clear();
     },
   };
 }
