@@ -12,10 +12,28 @@
  *
  * 1. **The copy takes no extent.** `copyElementImageToTexture` writes the
  *    element's own device-pixel size at the destination origin (gate zero,
- *    2026-08-31). A slot smaller than its element would therefore write across
- *    the 2 px gutter into a neighbour. `allocate()` is called with the MEASURED
- *    size before every copy for exactly that reason — it re-slots on a size
- *    change, so the slot is never smaller than what will land in it.
+ *    2026-08-31). A slot smaller than its element therefore writes across the
+ *    2 px gutter into a neighbour. `allocate()` is called with the DERIVED size
+ *    before every copy for exactly that reason — it re-slots whenever that size
+ *    changes.
+ *
+ *    **ERRATA 2026-08-31** — this fact used to end "so the slot is never
+ *    smaller than what will land in it", and that conclusion is FALSE. The
+ *    derived size is `world × dpr × band` while the element rasterises at
+ *    `world × LIVE zoom × dpr`, and band hysteresis holds those apart by up to
+ *    2× in each axis. Measured on this Chromium
+ *    (`apps/widgetlab-desktop/scripts/zoom-drift.mjs`): a drifted card wrote
+ *    40,272 px outside its slot, 13,632 of them into the neighbour's, silently.
+ *    The invariant is the one the design WANTS; it is not the one the code has.
+ *    See `dom-source-binder.ts`'s errata for the numbers and why the repair is
+ *    a ruling rather than a patch.
+ *
+ *    What the platform DOES refuse is a copy that runs off the DESTINATION
+ *    TEXTURE: measured, `Texture copy range … touches outside of [Texture]`,
+ *    zero pixels written. So an oversized raster corrupts its neighbours while
+ *    it still fits the page and goes blank once it does not — which is also
+ *    what `clampToPage`'s page-limit backstop degrades to, since a clamp only
+ *    bites when the slot is already page-sized.
  *
  * 2. **Repack blanks what it moves** (allocator finding 3): moved slots come
  *    back `empty`, not `stale`. `empty` means the page does not hold this

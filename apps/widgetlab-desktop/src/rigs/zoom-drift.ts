@@ -137,6 +137,8 @@ export interface ContaminationRun {
   readonly slotB: { x: number; y: number; w: number; h: number };
   /** Host A's CSS box after the write-back, and the device raster it predicts. */
   readonly hostACss: { w: number; h: number };
+  /** Paint events between the drift write-back and the copy — the host repainted. */
+  readonly paintsDuringDrift: number;
   /** CONTENT GUARD — A's own slot, after the copy. */
   readonly slotAInk: number;
   readonly slotADistinct: number;
@@ -159,6 +161,8 @@ export interface ZoomDriftRig {
   host(): Record<string, unknown>;
   /** A1 — what does Chromium rasterise an L1 host to? */
   rasterExtent(): Promise<RasterExtentRow[]>;
+  /** A1b — what happens when that raster does not FIT the destination texture? */
+  overflowDestination(): Promise<RasterExtentRow[]>;
   /** A2 — one contamination run at `drift × band` live zoom. */
   contamination(drift: number): Promise<ContaminationRun>;
   /** The band arithmetic this host would use, reported so the rig cannot lie about it. */
@@ -361,6 +365,22 @@ export function mountZoomDriftRig(): ZoomDriftRig {
     world.setResource(Camera, { x: 0, y: 0, zoom, gesturing: false });
   };
 
+  /**
+   * Run the write-back for the current camera.
+   *
+   * `invalidate()` first, deliberately. In the product the reflector's `dirty`
+   * flag is raised by the reactive observers the engine's step drives; this rig
+   * has no engine, so without it the flush takes its quiet early-return and the
+   * hosts keep the size the previous camera gave them. `invalidate` is the
+   * reflector's own public door for exactly this ("a host changed custody"),
+   * and what it produces is the same placement write the product makes — the
+   * guard in `contamination` proves that against the arithmetic, every leg.
+   */
+  const placeHosts = (): void => {
+    writeback.invalidate();
+    writeback.flush(world);
+  };
+
   const ready = (async () => {
     dpr = window.devicePixelRatio || 1;
     const w = container.clientWidth;
@@ -404,6 +424,7 @@ export function mountZoomDriftRig(): ZoomDriftRig {
       cssW: number,
       cssH: number,
       bitmapScale: number,
+      transform = "matrix(1,0,0,1,24,24)",
     ): Promise<void> => {
       const cw = container.clientWidth;
       const ch = container.clientHeight;
@@ -412,7 +433,7 @@ export function mountZoomDriftRig(): ZoomDriftRig {
       l1.resize(cw, ch, bitmapScale);
       hostA.style.width = `${cssW}px`;
       hostA.style.height = `${cssH}px`;
-      hostA.style.transform = "matrix(1,0,0,1,24,24)";
+      hostA.style.transform = transform;
       await settle();
       await settle();
 
@@ -460,10 +481,98 @@ export function mountZoomDriftRig(): ZoomDriftRig {
     await measure("zoom 1 @ bitmap 1x", CARD_W, CARD_H, 1);
     await measure("zoom 1.9 @ bitmap 1x", CARD_W * 1.9, CARD_H * 1.9, 1);
 
+    // THE FIX-DIRECTION ROW. If a host's own transform SCALE is baked into its
+    // raster, then "size the host at the band and carry `zoom/band` in the
+    // placement matrix" is a closed route — the raster would grow with the
+    // scale exactly as it grows with the CSS box, and the slot would be no
+    // safer. If it is NOT baked in, that route pins the raster to the slot for
+    // free, and is worth a design round. Measured, because guessing which way
+    // `layoutsubtree`'s transform-replaces-layout composes here is exactly the
+    // class of assumption this rig exists to retire.
+    await measure(
+      "band box + 1.9 scale",
+      CARD_W,
+      CARD_H,
+      dpr,
+      "matrix(1.9,0,0,1.9,24,24)",
+    );
+
     // Restore the product configuration for A2.
     l1.resize(container.clientWidth, container.clientHeight, dpr);
     await settle();
     probe.destroy();
+    return rows;
+  }
+
+  /**
+   * What the platform does when the raster does NOT FIT the destination.
+   *
+   * This is the shape the fix wave's own `clampToPage` creates by construction:
+   * a card whose derived slot exceeds `maxPageSize − 2×gutter` is asked for at
+   * a SMALLER size, and its header says so plainly — "nothing here changes the
+   * ELEMENT's raster". Because the clamp only ever bites when the slot is
+   * page-sized, the oversized raster necessarily runs off the page too, so the
+   * question is not "whose pixels does it eat" but "does WebGPU refuse it".
+   *
+   * A refusal is a card that stays blank; a clip is a card that corrupts as far
+   * as the page edge. The two degrade very differently and the ledger should
+   * not guess between them.
+   */
+  async function overflowDestination(): Promise<RasterExtentRow[]> {
+    const device = (gpu as EngineGpu).device;
+    const rows: RasterExtentRow[] = [];
+    const SMALL = 128;
+    const small = device.createTexture({
+      label: "zoom-drift-small",
+      size: { width: SMALL, height: SMALL },
+      format: "rgba8unorm",
+      usage:
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.COPY_SRC |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    l1.resize(container.clientWidth, container.clientHeight, dpr);
+    hostA.style.width = `${CARD_W}px`;
+    hostA.style.height = `${CARD_H}px`;
+    hostA.style.transform = "matrix(1,0,0,1,24,24)";
+    await settle();
+    await settle();
+
+    // Raster is 160×96 at dpr 2; the destination is 128². The first row runs
+    // off the right edge only, the second off both.
+    for (const origin of [
+      { x: 0, y: 0 },
+      { x: 64, y: 16 },
+    ]) {
+      clearToSentinel(device, small);
+      device.pushErrorScope("validation");
+      let threw: string | null = null;
+      try {
+        copyElementToTexture(device.queue, hostA, small, origin);
+      } catch (error) {
+        threw = String(error);
+      }
+      const scoped = await device.popErrorScope();
+      await device.queue.onSubmittedWorkDone();
+      const px = await readTexture(device, small, SMALL, SMALL);
+      const { bbox, written, distinct } = writtenBounds(px, SMALL, SMALL);
+      rows.push({
+        label: `raster 160x96 → 128² @ origin ${origin.x},${origin.y}`,
+        cssW: CARD_W,
+        cssH: CARD_H,
+        dpr,
+        bitmapScale: dpr,
+        bbox,
+        written,
+        distinct,
+        scaleX: null,
+        scaleY: null,
+        validationError: threw ?? (scoped === null ? null : scoped.message),
+      });
+    }
+    small.destroy();
     return rows;
   }
 
@@ -521,7 +630,7 @@ export function mountZoomDriftRig(): ZoomDriftRig {
 
       // ── 1. At the band. Place both slots and land both copies. ────────────
       setZoom(band);
-      writeback.flush(world);
+      placeHosts();
       await settle();
       await settle();
       const frameAt = (zoom: number) => ({
@@ -566,14 +675,32 @@ export function mountZoomDriftRig(): ZoomDriftRig {
 
       // ── 3. Drift the live zoom. The write-back resizes A's host to
       //       `world × liveZoom`; the binder holds the band. ─────────────────
+      const paintsBefore = paintEvents;
       setZoom(liveZoom);
-      writeback.flush(world);
+      placeHosts();
       await settle();
       await settle();
       const hostACss = {
         w: Number.parseFloat(hostA.style.width),
         h: Number.parseFloat(hostA.style.height),
       };
+      // THE RIG'S OWN GUARD, and it has already earned its keep: the first
+      // version of this file drove the camera and never checked, the write-back
+      // sat behind its `dirty` gate, and the host stayed at its band size — so
+      // the contamination scan graded a card that had never drifted and read a
+      // confident, meaningless zero. A leg whose host did not actually resize
+      // is not a REFUTATION, it is a run that did not happen.
+      const expected = { w: CARD_W * liveZoom, h: CARD_H * liveZoom };
+      if (
+        Math.abs(hostACss.w - expected.w) > 0.01 ||
+        Math.abs(hostACss.h - expected.h) > 0.01
+      ) {
+        throw new Error(
+          `rig: the write-back did not resize host A — CSS ${hostACss.w}x${hostACss.h}, ` +
+            `expected ${expected.w}x${expected.h} at live zoom ${liveZoom}`,
+        );
+      }
+      const paintsDuringDrift = paintEvents - paintsBefore;
 
       // ── 4. ONE copy, A only, into the slot the band still owns. ───────────
       device.pushErrorScope("validation");
@@ -639,6 +766,7 @@ export function mountZoomDriftRig(): ZoomDriftRig {
         slotA,
         slotB,
         hostACss,
+        paintsDuringDrift,
         slotAInk,
         slotADistinct: slotAColours.size,
         escaped,
@@ -674,6 +802,7 @@ export function mountZoomDriftRig(): ZoomDriftRig {
       maxTextureDimension2D: gpu?.device.limits.maxTextureDimension2D ?? null,
     }),
     rasterExtent,
+    overflowDestination,
     contamination,
     bandMath,
     teardown() {

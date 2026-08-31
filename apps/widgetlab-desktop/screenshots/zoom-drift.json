@@ -1,0 +1,807 @@
+{
+  "host": {
+    "dpr": 2,
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) widgetlab-desktop/0.0.0 Chrome/150.0.7871.114 Electron/43.1.1 Safari/537.36",
+    "chrome": "150.0.7871.114",
+    "electron": "43.1.1",
+    "l1Bitmap": {
+      "width": 2560,
+      "height": 1616
+    },
+    "hostLaidOut": true,
+    "paintEvents": 2,
+    "device": true,
+    "maxTextureDimension2D": 8192
+  },
+  "raster": [
+    {
+      "label": "zoom 1 @ bitmap dpr",
+      "cssW": 80,
+      "cssH": 48,
+      "dpr": 2,
+      "bitmapScale": 2,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 160,
+        "h": 96
+      },
+      "written": 15360,
+      "distinct": 54,
+      "scaleX": 2,
+      "scaleY": 2,
+      "validationError": null
+    },
+    {
+      "label": "zoom 1.5 @ bitmap dpr",
+      "cssW": 120,
+      "cssH": 72,
+      "dpr": 2,
+      "bitmapScale": 2,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 240,
+        "h": 144
+      },
+      "written": 34560,
+      "distinct": 54,
+      "scaleX": 2,
+      "scaleY": 2,
+      "validationError": null
+    },
+    {
+      "label": "zoom 1.9 @ bitmap dpr",
+      "cssW": 152,
+      "cssH": 91.2,
+      "dpr": 2,
+      "bitmapScale": 2,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 304,
+        "h": 183
+      },
+      "written": 55632,
+      "distinct": 55,
+      "scaleX": 2,
+      "scaleY": 2.006578947368421,
+      "validationError": null
+    },
+    {
+      "label": "zoom 2.5 @ bitmap dpr",
+      "cssW": 200,
+      "cssH": 120,
+      "dpr": 2,
+      "bitmapScale": 2,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 400,
+        "h": 240
+      },
+      "written": 96000,
+      "distinct": 54,
+      "scaleX": 2,
+      "scaleY": 2,
+      "validationError": null
+    },
+    {
+      "label": "zoom 1 @ bitmap 1x",
+      "cssW": 80,
+      "cssH": 48,
+      "dpr": 2,
+      "bitmapScale": 1,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 80,
+        "h": 48
+      },
+      "written": 3840,
+      "distinct": 28,
+      "scaleX": 1,
+      "scaleY": 1,
+      "validationError": null
+    },
+    {
+      "label": "zoom 1.9 @ bitmap 1x",
+      "cssW": 152,
+      "cssH": 91.19999999999999,
+      "dpr": 2,
+      "bitmapScale": 1,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 152,
+        "h": 92
+      },
+      "written": 13984,
+      "distinct": 29,
+      "scaleX": 1,
+      "scaleY": 1.0087719298245614,
+      "validationError": null
+    },
+    {
+      "label": "band box + 1.9 scale",
+      "cssW": 80,
+      "cssH": 48,
+      "dpr": 2,
+      "bitmapScale": 2,
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "w": 160,
+        "h": 96
+      },
+      "written": 15360,
+      "distinct": 54,
+      "scaleX": 2,
+      "scaleY": 2,
+      "validationError": null
+    }
+  ],
+  "overflow": [
+    {
+      "label": "raster 160x96 → 128² @ origin 0,0",
+      "cssW": 80,
+      "cssH": 48,
+      "dpr": 2,
+      "bitmapScale": 2,
+      "bbox": null,
+      "written": 0,
+      "distinct": 0,
+      "scaleX": null,
+      "scaleY": null,
+      "validationError": "Texture copy range (origin: [Origin3D x:0, y:0, z:0], copySize: [Extent3D width:160, height:96, depthOrArrayLayers:1]) touches outside of [Texture \"zoom-drift-small\"] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).\n - While validating that the copy fits in the destination\n - While validating CopyTextureForBrowser from [Texture \"IOSurface(Gles2Read|RasterRead|WebgpuRead|RasterWrite)\"] to [Texture \"zoom-drift-small\"]\n"
+    },
+    {
+      "label": "raster 160x96 → 128² @ origin 64,16",
+      "cssW": 80,
+      "cssH": 48,
+      "dpr": 2,
+      "bitmapScale": 2,
+      "bbox": null,
+      "written": 0,
+      "distinct": 0,
+      "scaleX": null,
+      "scaleY": null,
+      "validationError": "Texture copy range (origin: [Origin3D x:64, y:16, z:0], copySize: [Extent3D width:160, height:96, depthOrArrayLayers:1]) touches outside of [Texture \"zoom-drift-small\"] mip level 0 size ([Extent3D width:128, height:128, depthOrArrayLayers:1]).\n - While validating that the copy fits in the destination\n - While validating CopyTextureForBrowser from [Texture \"IOSurface(Gles2Read|RasterRead|WebgpuRead|RasterWrite)\"] to [Texture \"zoom-drift-small\"]\n"
+    }
+  ],
+  "bandMath": {
+    "band": 1,
+    "liveZoom": 1.9,
+    "reBanded": false,
+    "slotW": 160,
+    "slotH": 96,
+    "predictedRasterW": 304,
+    "predictedRasterH": 182.39999999999998
+  },
+  "control": [
+    {
+      "drift": 1,
+      "band": 1,
+      "liveZoom": 1,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 80,
+        "h": 48
+      },
+      "paintsDuringDrift": 0,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 0,
+      "escapedBbox": null,
+      "intoNeighbour": 0,
+      "intoGutter": 0,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1,
+      "band": 1,
+      "liveZoom": 1,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 80,
+        "h": 48
+      },
+      "paintsDuringDrift": 0,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 0,
+      "escapedBbox": null,
+      "intoNeighbour": 0,
+      "intoGutter": 0,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1,
+      "band": 1,
+      "liveZoom": 1,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 80,
+        "h": 48
+      },
+      "paintsDuringDrift": 0,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 0,
+      "escapedBbox": null,
+      "intoNeighbour": 0,
+      "intoGutter": 0,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1,
+      "band": 1,
+      "liveZoom": 1,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 80,
+        "h": 48
+      },
+      "paintsDuringDrift": 0,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 0,
+      "escapedBbox": null,
+      "intoNeighbour": 0,
+      "intoGutter": 0,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1,
+      "band": 1,
+      "liveZoom": 1,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 80,
+        "h": 48
+      },
+      "paintsDuringDrift": 0,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 0,
+      "escapedBbox": null,
+      "intoNeighbour": 0,
+      "intoGutter": 0,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    }
+  ],
+  "drifted": [
+    {
+      "drift": 1.9,
+      "band": 1,
+      "liveZoom": 1.9,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 152,
+        "h": 91.2
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 40272,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 304,
+        "h": 183
+      },
+      "intoNeighbour": 13632,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1.9,
+      "band": 1,
+      "liveZoom": 1.9,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 152,
+        "h": 91.2
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 40272,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 304,
+        "h": 183
+      },
+      "intoNeighbour": 13632,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1.9,
+      "band": 1,
+      "liveZoom": 1.9,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 152,
+        "h": 91.2
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 40272,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 304,
+        "h": 183
+      },
+      "intoNeighbour": 13632,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1.9,
+      "band": 1,
+      "liveZoom": 1.9,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 152,
+        "h": 91.2
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 40272,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 304,
+        "h": 183
+      },
+      "intoNeighbour": 13632,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 1.9,
+      "band": 1,
+      "liveZoom": 1.9,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 152,
+        "h": 91.2
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 40272,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 304,
+        "h": 183
+      },
+      "intoNeighbour": 13632,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    }
+  ],
+  "boundary": [
+    {
+      "drift": 2,
+      "band": 1,
+      "liveZoom": 2,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 160,
+        "h": 96
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 46080,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 320,
+        "h": 192
+      },
+      "intoNeighbour": 15168,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 2,
+      "band": 1,
+      "liveZoom": 2,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 160,
+        "h": 96
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 46080,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 320,
+        "h": 192
+      },
+      "intoNeighbour": 15168,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 2,
+      "band": 1,
+      "liveZoom": 2,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 160,
+        "h": 96
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 46080,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 320,
+        "h": 192
+      },
+      "intoNeighbour": 15168,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 2,
+      "band": 1,
+      "liveZoom": 2,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 160,
+        "h": 96
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 46080,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 320,
+        "h": 192
+      },
+      "intoNeighbour": 15168,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    },
+    {
+      "drift": 2,
+      "band": 1,
+      "liveZoom": 2,
+      "reBanded": false,
+      "dpr": 2,
+      "page": {
+        "width": 512,
+        "height": 512
+      },
+      "slotA": {
+        "x": 2,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "slotB": {
+        "x": 164,
+        "y": 2,
+        "w": 160,
+        "h": 96
+      },
+      "hostACss": {
+        "w": 160,
+        "h": 96
+      },
+      "paintsDuringDrift": 1,
+      "slotAInk": 15360,
+      "slotADistinct": 54,
+      "escaped": 46080,
+      "escapedBbox": {
+        "x": 2,
+        "y": 2,
+        "w": 320,
+        "h": 192
+      },
+      "intoNeighbour": 15168,
+      "intoGutter": 516,
+      "copies": 5,
+      "refused": 0,
+      "copyError": null,
+      "validationError": null
+    }
+  ]
+}

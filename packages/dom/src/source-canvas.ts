@@ -48,6 +48,14 @@
  * S3's off-screen PARKING costs the atlas nothing and needs no interaction
  * with it. Position is irrelevant; resolution is everything.
  *
+ * CONFIRMED and sharpened 2026-08-31
+ * (`apps/widgetlab-desktop/scripts/zoom-drift.mjs`): this bitmap's SCALE is
+ * exactly the scale at which a host rasterises. Against a dpr-2 bitmap a host
+ * rasterised at 2.000× its CSS box at every size tested; the same host against
+ * a deliberately 1× bitmap rasterised at 1.000×. "Resolution is everything" is
+ * therefore not a figure of speech — `cssWidth × dpr` HERE is the device size
+ * the extent-less element copy will write into somebody's atlas slot.
+ *
  * The memory question this reopens is honest and unmeasured: a dpr-2
  * full-screen bitmap declares ~21 MB. That is NOT the 126.7 MB that
  * `hic-bench` §6 attributed to the prototype's 2D atlas canvas, which was

@@ -28,16 +28,42 @@
  *
  * ── Slot sizing without reading layout ─────────────────────────────────────
  * A reflector may never read layout during flush (law 10), so the slot size is
- * DERIVED, not measured: world size × zoom × dpr, which is exactly what
- * `domWriteback` wrote as the host's CSS width/height. No
- * `getBoundingClientRect`, no forced reflow, and the two cannot disagree
- * because they compute from the same cells.
+ * DERIVED, not measured: world size × dpr × BAND. No `getBoundingClientRect`,
+ * no forced reflow.
  *
  * The derived size is rounded UP. `copyElementImageToTexture` writes the
  * element's own rasterised size with no extent argument, so a slot one pixel
  * short of what Chromium rasterises would write past its rect. Rounding up,
  * plus the atlas's 2 px gutter — dead space no quad samples — absorbs a
- * sub-pixel disagreement without any chance of reaching a neighbour's pixels.
+ * SUB-PIXEL disagreement.
+ *
+ * ── ERRATA 2026-08-31 — "the two cannot disagree" WAS FALSE ───────────────
+ * This header used to say the slot was sized at "world size × zoom × dpr,
+ * which is exactly what `domWriteback` wrote as the host's CSS width/height …
+ * the two cannot disagree because they compute from the same cells". They do
+ * read the same cells, and they multiply them by DIFFERENT numbers: the
+ * write-back sizes the host at world × LIVE ZOOM, this sizes the slot at
+ * world × BAND, and the hysteresis above deliberately holds the band while the
+ * live zoom climbs to 2× it.
+ *
+ * MEASURED on the pinned Electron 43.1.1 / Chromium 150
+ * (`apps/widgetlab-desktop/scripts/zoom-drift.mjs`, the M18 fix wave's open
+ * item (a)): an L1 host rasterises at its CSS box × the L1 canvas's
+ * BACKING-STORE SCALE — a flat 2.000× at dpr 2 across every live zoom tested,
+ * and 1.000× against a deliberately 1× bitmap. So a card banded at 1 whose
+ * live zoom has drifted to 1.9 rasterises 304×183 device px into a 160×96 slot
+ * and writes 40,272 px PAST it — 516 into the gutter ring, 13,632 into the
+ * neighbouring card's slot — raising no validation error and no copy refusal.
+ * At the exact hysteresis boundary (zoom = 2× band, where `ratio > 2` is still
+ * false) it is 46,080 px, 15,168 of them the neighbour's. The A-vs-A control
+ * at zoom == band escapes 0 px, five runs of five. The rounding-up above
+ * absorbs a sub-pixel disagreement; it was never sized for this one.
+ *
+ * NOT FIXED HERE, deliberately. Every repair has to choose what a drifted card
+ * DOES — go stale, go absent, or re-slot at the live zoom — and that choice is
+ * the band-hysteresis policy itself, plus (for the re-slot answer) atlas bytes,
+ * which was a ratification argument for the atlas over the per-card pool. It
+ * wants a ruling, not a patch. The rig is the standing witness meanwhile.
  *
  * ── Dirt ──────────────────────────────────────────────────────────────────
  * Paint events name the changed hosts (`changedElements`, exact on Chromium

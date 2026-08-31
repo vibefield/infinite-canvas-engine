@@ -201,6 +201,17 @@ export function createDomWritebackReflector(
         const s = measured !== undefined && measured.w > 0 ? measured : world.get(entity, Size);
         // Screen CSS px. Device px are the compositor's business; the DOM's
         // own coordinate space is CSS, and the copy applies dpr itself.
+        //
+        // THIS SIZE IS ONE HALF OF A KNOWN DISAGREEMENT (2026-08-31). Measured
+        // (`apps/widgetlab-desktop/scripts/zoom-drift.mjs`), an L1 host
+        // rasterises at exactly this CSS box × the source canvas's backing
+        // scale — while the compositor sizes that host's atlas slot at
+        // world × dpr × BAND and holds the band while this zoom climbs to 2×
+        // it, so a drifted card's extent-less copy writes past its slot.
+        // Nothing here is wrong and nothing here is the fix: the host's CSS
+        // box IS its screen box, and it may not be anything else while it is
+        // the hit-testing truth. The errata and the open ruling live with the
+        // side that picks the slot — `ground/compositor/dom-source-binder`.
         const tx = ((p?.x ?? 0) - cam.x) * zoom;
         const ty = ((p?.y ?? 0) - cam.y) * zoom;
         const w = (s?.w ?? 0) * zoom;

@@ -43,6 +43,10 @@ const check = (ok, what) => {
   if (!ok) failures.push(what);
 };
 
+/** The rig's card, in device px at an unscaled placement — the A1 reference. */
+const CARD_DEVICE_W = (dpr) => 80 * dpr;
+const CARD_DEVICE_H = (dpr) => 48 * dpr;
+
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   const mid = s.length >> 1;
@@ -72,22 +76,30 @@ async function measureOnce() {
     if (host.hostLaidOut !== true) throw new Error("dead world: layoutsubtree did not lay out");
 
     const raster = await page.evaluate(() => window.__zoomDrift.rasterExtent());
+    const overflow = await page.evaluate(() => window.__zoomDrift.overflowDestination());
     const bandMath = await page.evaluate((d) => window.__zoomDrift.bandMath(d), DRIFT);
 
     const control = [];
     const drifted = [];
+    const boundary = [];
     for (let i = 0; i < RUNS; i++) {
       control.push(await page.evaluate(() => window.__zoomDrift.contamination(1)));
       drifted.push(await page.evaluate((d) => window.__zoomDrift.contamination(d), DRIFT));
+      // Exactly 2× the band — `isOutOfBand` tests `ratio > 2`, so this is the
+      // LAST zoom the hysteresis still holds, and the worst case inside the
+      // ladder rather than a number picked for being alarming.
+      boundary.push(await page.evaluate(() => window.__zoomDrift.contamination(2)));
     }
 
     // THE LIVENESS GUARD. A blank atlas contaminates nothing.
-    const alive = [...control, ...drifted].every((r) => r.slotAInk > 0 && r.slotADistinct > 2);
+    const alive = [...control, ...drifted, ...boundary].every(
+      (r) => r.slotAInk > 0 && r.slotADistinct > 2,
+    );
     if (!alive) throw new Error("dead world: card A's own slot carries no content");
 
     fs.mkdirSync(shotDir, { recursive: true });
     fs.writeFileSync(path.join(shotDir, "zoom-drift.png"), await page.screenshot());
-    return { host, raster, bandMath, control, drifted };
+    return { host, raster, overflow, bandMath, control, drifted, boundary };
   } finally {
     await app.close().catch(() => {});
   }
@@ -109,7 +121,7 @@ if (out === null) {
   console.error(lastError);
   failures.push(`no usable launch in ${MAX_LAUNCHES}: ${lastError?.message}`);
 } else {
-  const { host, raster, bandMath, control, drifted } = out;
+  const { host, raster, overflow, bandMath, control, drifted, boundary } = out;
   log(
     `host: Electron ${host.electron} / Chromium ${host.chrome} · dpr ${host.dpr} · ` +
       `L1 bitmap ${host.l1Bitmap.width}x${host.l1Bitmap.height} · maxTex ${host.maxTextureDimension2D}`,
@@ -138,6 +150,25 @@ if (out === null) {
   if (tracksCss) {
     log(`  ⇒ raster = CSS box × ${dprRows[0].scaleX.toFixed(3)} (dpr is ${host.dpr})`);
   }
+  const scaled = raster.find((r) => r.label === "band box + 1.9 scale");
+  if (scaled?.bbox) {
+    const baked = Math.abs(scaled.bbox.w - CARD_DEVICE_W(host.dpr) * 1.9) < 4;
+    log(
+      `  transform scale ${baked ? "IS" : "is NOT"} baked into the raster — ` +
+        `a band-sized box under a 1.9× placement matrix rasterised ${scaled.bbox.w}x${scaled.bbox.h} ` +
+        `(unscaled reference ${CARD_DEVICE_W(host.dpr)}x${CARD_DEVICE_H(host.dpr)})`,
+    );
+  }
+
+  // ── A1b — what the platform does when the raster overruns the destination ──
+  log("A1b — raster larger than the destination texture (the `clampToPage` shape):");
+  for (const r of overflow) {
+    log(
+      `  ${r.label.padEnd(34)} → written=${r.written} ` +
+        `bbox ${r.bbox ? `${r.bbox.x},${r.bbox.y} ${r.bbox.w}x${r.bbox.h}` : "NONE"}` +
+        `${r.validationError ? ` ERR ${r.validationError.slice(0, 160)}` : " no validation error"}`,
+    );
+  }
 
   // ── A2 — the control, then the claim ─────────────────────────────────────
   log(
@@ -155,7 +186,8 @@ if (out === null) {
     log(
       `  ${label}: slotA ${r0.slotA.w}x${r0.slotA.h} @ ${r0.slotA.x},${r0.slotA.y} · ` +
         `slotB ${r0.slotB.w}x${r0.slotB.h} @ ${r0.slotB.x},${r0.slotB.y} · ` +
-        `host CSS ${r0.hostACss.w}x${r0.hostACss.h} · reBanded=${r0.reBanded}`,
+        `host CSS ${r0.hostACss.w}x${r0.hostACss.h} · reBanded=${r0.reBanded} · ` +
+        `paints during drift ${r0.paintsDuringDrift}`,
     );
     log(
       `  ${label}: slotA ink=${r0.slotAInk}/${r0.slotA.w * r0.slotA.h} distinct=${r0.slotADistinct} · ` +
@@ -174,8 +206,13 @@ if (out === null) {
 
   const c = report("CONTROL (zoom == band)", control);
   const d = report(`DRIFT   (zoom == ${DRIFT}× band)`, drifted);
+  const b = report("BOUNDARY(zoom == 2.0× band)", boundary);
 
   check(c.escaped === 0, `CONTROL: zero pixels escape card A's slot (median ${c.escaped})`);
+  check(
+    b.escaped >= d.escaped,
+    `the worst case is AT the hysteresis boundary (2.0×: ${b.escaped} px ≥ ${DRIFT}×: ${d.escaped} px)`,
+  );
   log(
     d.escaped > 0
       ? `VERDICT: CONFIRMED — a drifted card writes ${d.escaped} px past its slot ` +

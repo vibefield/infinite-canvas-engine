@@ -262,9 +262,24 @@ export function changedElements(event: Event): readonly Element[] {
  *
  * The copy takes NO explicit extent: it writes the element's own device-pixel
  * size at `origin`. The caller therefore owes the atlas a slot allocated at
- * that same size — the dom source layer re-allocates (which re-slots on a size
- * change) before every copy, because a slot smaller than its element would
- * bleed across the 2 px gutter into a neighbour's pixels.
+ * that same size, because a slot smaller than its element bleeds across the
+ * 2 px gutter into a neighbour's pixels.
+ *
+ * WHAT THAT SIZE IS, measured 2026-08-31 on the pinned Chromium 150
+ * (`apps/widgetlab-desktop/scripts/zoom-drift.mjs`): the element's CSS box ×
+ * the SOURCE CANVAS'S BACKING-STORE SCALE. A flat 2.000× at dpr 2 across every
+ * CSS size tested, and 1.000× against a deliberately 1× bitmap — so it is the
+ * L1 bitmap that governs, not `devicePixelRatio` directly (they coincide only
+ * because `createSourceCanvas` sizes the bitmap at dpr). A host's own transform
+ * SCALE is NOT baked in: an 80×48 box under a `matrix(1.9,…)` placement
+ * rasterised 160×96, exactly as it does unscaled.
+ *
+ * The dom source layer does NOT in fact hold up its end of this bargain while
+ * a card's live zoom has drifted above its zoom band — see the errata in
+ * `compositor/dom-source-binder.ts`. What the platform refuses is only a copy
+ * that leaves the DESTINATION TEXTURE ("Texture copy range … touches outside
+ * of [Texture …]", zero pixels written); a copy that overruns its SLOT but
+ * still fits the page is accepted in silence.
  *
  * Returns false when the host lacks the method, so callers degrade rather than
  * throw; a composited build should never reach here (the boot probe refused).
