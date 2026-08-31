@@ -704,6 +704,19 @@ the vibe-field session at James's ask (CI re-verified green at the cut, pack dry
 adds `maxFacetBytes` to its strict descriptor, imposes the aggregate window budget,
 builds the two-engine remote-tombstone witness, then retires
 `behavior-store-unsupported`.
+**0.11.0 = M17** (SHIPPED 2026-08-25; this row backfilled at the 0.12.0 cut — the S8
+coda flagged that skipping it had become precedent) — build-time grid selection
+(`GridPassFactory`); magnet is the production grid.
+**0.12.0 = M18 + the fix wave** (CUT 2026-08-31, publish pending) — the unified
+compositor behind the presentation-profile contract, plus the same-day 15-defect fix
+wave (`12730e4..428c457`). The umbrella gains `./r3f/webgpu` at the cut (the S5 leg
+had no published subpath — caught by the cut's own export audit). On publish,
+vibe-field's exact pin advances 0.11.0 → 0.12.0 (the pin bump MUST read the 0.12.0
+CHANGELOG: the `WidgetSurface`→`WidgetSurfaceKind` type break, and preflight's
+PIN_EXPECTATIONS row moves with the pin — the 0.10.0 bump missed it and verify was
+red for a day); its consumption arc is the `video` kind via `presentLatest()`
+(copy-once/LSF-D8, never retain-the-VideoFrame), and the composited profile reaches
+it only with the Electron `CanvasDrawElement` flag rails.
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,

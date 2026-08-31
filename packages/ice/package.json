@@ -1,6 +1,6 @@
 {
   "name": "@vibecook/ice",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "ICE — infinite canvas engine. Figma-grade infinite-canvas UX as a framework: defineWidget turns React/R3F components into canvas citizens — selectable, movable, resizable, wired into node graphs, CRDT-synced, undoable per gesture.",
   "license": "MIT",
   "author": "James Yong <me@jamesyong42.com>",
@@ -35,6 +35,10 @@
     "./dom": { "types": "./dist/types/packages/ice/src/dom.d.ts", "default": "./dist/dom.js" },
     "./react": { "types": "./dist/types/packages/ice/src/react.d.ts", "default": "./dist/react.js" },
     "./r3f": { "types": "./dist/types/packages/ice/src/r3f.d.ts", "default": "./dist/r3f.js" },
+    "./r3f/webgpu": {
+      "types": "./dist/types/packages/ice/src/r3f-webgpu.d.ts",
+      "default": "./dist/r3f-webgpu.js"
+    },
     "./ground": { "types": "./dist/types/packages/ice/src/ground.d.ts", "default": "./dist/ground.js" },
     "./devtools": { "types": "./dist/types/packages/ice/src/devtools.d.ts", "default": "./dist/devtools.js" },
     "./package.json": "./package.json"

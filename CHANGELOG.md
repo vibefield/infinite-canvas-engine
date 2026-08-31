@@ -4,7 +4,7 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
-## [Unreleased]
+## [0.12.0] — 2026-08-31
 
 ### Breaking, narrowly
 
@@ -36,6 +36,13 @@ All notable changes to ICE are documented here. The format follows
   compositing only while something else happens to be dirty; the compositor
   holds the subscription and drops it when the source is replaced or removed.
   Optional, and a source that omits it composites exactly as it did before.
+- **`@vibecook/ice/r3f/webgpu`** — the WebGPU renderer leg (shared-device
+  `WebGPURenderer` adoption) now reaches the published package, mirroring the
+  workspace's `@ice/r3f/webgpu`. Deliberately its OWN subpath: importing it
+  pulls `three/webgpu`, which must never ride along with plain `./r3f`. Note
+  the declared `three >=0.160` peer range is the plain-r3f floor; the device
+  injection this subpath performs is verified against three r185 — treat
+  ~0.185 as its effective floor.
 
 ### Fixed
 
@@ -64,7 +71,7 @@ layer; the quad pass sweeps bind groups for textures nothing draws;
 outgrows its size is retired, not destroyed — a nav-crossfade clone keeps its
 pixels through the hold.
 
-- The three entries above are the consumer-visible surface of the design-012
+- The entries above are the consumer-visible surface of the design-012
   UNIFIED COMPOSITOR. `docs/implementation-plan.md` M18 carries the whole of
   it — the ladder, the profile model, the measured exits and the standing gaps
   — and `docs/downstream-petitions.md` records what it does and does not ask of

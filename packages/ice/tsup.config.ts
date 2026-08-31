@@ -14,6 +14,7 @@ export default defineConfig({
     dom: "src/dom.ts",
     react: "src/react.ts",
     r3f: "src/r3f.ts",
+    "r3f-webgpu": "src/r3f-webgpu.ts",
     ground: "src/ground.ts",
     devtools: "src/devtools.ts",
   },
