@@ -46,7 +46,7 @@
  * structural, not merely avoided (§8 gate 2). The only bulk iteration is
  * `sync`, and its copies are budgeted per composite.
  */
-import { fboPixelSize, isOutOfBand, selectBand } from "@ice/kernel";
+import { DEFAULT_ATLAS_GUTTER, fboPixelSize, isOutOfBand, selectBand } from "@ice/kernel";
 import {
   DEFAULT_SURFACE_DEMAND,
   demandIntervalMs,
@@ -55,6 +55,7 @@ import {
   type Entity,
   type SurfaceDemand,
 } from "@ice/core";
+import { DEFAULT_MAX_PAGE_SIZE } from "../atlas-allocator";
 import type { CompositeFrame, QuadTexture } from "./widget-quad-pass";
 import { createDomAtlas, type DomAtlas, type DomAtlasOptions } from "./dom-atlas";
 
@@ -138,6 +139,32 @@ export type DomSourceGeometry = (
   entity: Entity,
 ) => { readonly w: number; readonly h: number } | undefined;
 
+/**
+ * Hold a derived slot size inside what the allocator can actually place: a
+ * page may not exceed the device limit, and a slot must leave a gutter on each
+ * side of it (`initialPageSize` refuses anything bigger, which is the whole
+ * refusal path).
+ *
+ * Scaled UNIFORMLY, never per-axis. The quad maps the slot rect onto the
+ * card's rect, so a per-axis clamp would squash a wide card's picture; a
+ * uniform one only lowers its resolution, which is what a card past the
+ * device limit has to give up. Nothing here changes the ELEMENT's raster —
+ * this bounds what we ASK the atlas for, so an over-limit request can never
+ * become a refusal we then have to guess about.
+ */
+function clampToPage(
+  size: { readonly width: number; readonly height: number },
+  maxSlot: number,
+): { width: number; height: number } {
+  const longest = Math.max(size.width, size.height);
+  if (longest <= maxSlot) return { width: size.width, height: size.height };
+  const k = maxSlot / longest;
+  return {
+    width: Math.max(1, Math.floor(size.width * k)),
+    height: Math.max(1, Math.floor(size.height * k)),
+  };
+}
+
 export function createDomSourceBinder(
   device: GPUDevice,
   registry: CompositorSourceRegistry,
@@ -145,6 +172,11 @@ export function createDomSourceBinder(
   options: DomSourceBinderOptions = {},
 ): DomSourceBinder {
   const atlas = createDomAtlas<Entity>(device, options);
+  /** The largest slot a page can hold — the allocator's own limit, minus gutters. */
+  const maxSlot = Math.max(
+    1,
+    (options.maxPageSize ?? DEFAULT_MAX_PAGE_SIZE) - 2 * (options.gutter ?? DEFAULT_ATLAS_GUTTER),
+  );
   let budget = options.maxCopiesPerComposite ?? Number.POSITIVE_INFINITY;
   const now = options.now ?? (() => performance.now());
   const demandOf = (entity: Entity): SurfaceDemand =>
@@ -227,8 +259,12 @@ export function createDomSourceBinder(
         bands.set(entity, band);
 
         // `bounds × dpr × band` — the island pool's own formula, so the two
-        // kinds quantise identically.
-        const { width, height } = fboPixelSize(g.w, g.h, frame.dpr, band);
+        // kinds quantise identically — held inside the device limit, because a
+        // request the allocator must refuse is worse than a coarser slot.
+        const { width, height } = clampToPage(
+          fboPixelSize(g.w, g.h, frame.dpr, band),
+          maxSlot,
+        );
 
         // PLACE ONLY ON CHANGE. `allocate` marks an existing resident slot
         // STALE, which queues a re-copy — so calling it every frame would
@@ -248,8 +284,26 @@ export function createDomSourceBinder(
           // A slot the refusal path released has to be re-placed to come back.
           atlas.allocator.get(entity) === undefined;
         if (stale) {
-          atlas.place(entity, host, { width, height });
-          placed.set(entity, { width, height, host });
+          // THE REFUSAL IS AN ANSWER, not noise. `place` returns false when the
+          // allocator could not seat this size; it has then put the slot back
+          // at its PREVIOUS one, non-resident, which means the next flush would
+          // copy the element into a rect that is not the size anyone asked for
+          // — and the copy takes no extent, so it would land at that rect's
+          // origin at the element's own size, straight across the 2 px gutters
+          // into whatever is packed next door. Recording the change guard
+          // regardless made that permanent: the size "matched" from then on, so
+          // the slot was never re-placed.
+          //
+          // So on a refusal the slot is RELEASED (its quad is skipped — a card
+          // absent for a frame rather than a page corrupted for good) and the
+          // guard is dropped so the next `sync` tries again. The clamp above is
+          // what makes this the backstop it looks like rather than the path.
+          if (atlas.place(entity, host, { width, height })) {
+            placed.set(entity, { width, height, host });
+          } else {
+            atlas.free(entity);
+            placed.delete(entity);
+          }
         }
       }
 

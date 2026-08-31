@@ -93,6 +93,14 @@ export interface AtlasEffects<Source> {
   retirePage?(pageId: number): void;
 }
 
+/**
+ * The device limit assumed when an app injects none. 8192 is the floor every
+ * WebGPU adapter guarantees for `maxTextureDimension2D`; a real app passes its
+ * own. Named because the BINDER clamps its requests against the same number —
+ * two copies of it drifting apart is a slot the allocator refuses to place.
+ */
+export const DEFAULT_MAX_PAGE_SIZE = 8192;
+
 export interface AtlasAllocatorOptions {
   /** Slot separation in device px. Default 2 (design-012 §4 says 1–2). */
   readonly gutter?: number;
@@ -235,7 +243,7 @@ export function createAtlasAllocator<Id, Source>(
   options: AtlasAllocatorOptions = {},
 ): AtlasAllocator<Id, Source> {
   const gutter = options.gutter ?? DEFAULT_ATLAS_GUTTER;
-  const maxPageSize = options.maxPageSize ?? 8192;
+  const maxPageSize = options.maxPageSize ?? DEFAULT_MAX_PAGE_SIZE;
   const minPageSize = options.minPageSize ?? 256;
   const bytesPerPixel = options.bytesPerPixel ?? 4;
   const fragmentationThreshold = options.fragmentationThreshold ?? 0.2;
