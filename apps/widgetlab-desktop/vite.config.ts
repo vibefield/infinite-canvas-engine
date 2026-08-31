@@ -14,13 +14,18 @@ export default defineConfig({
       // PAGE rather than a mode of the product, deliberately: one profile ships
       // per app (§11 Q2), so the product must not grow a runtime switch between
       // the profiles just to be measurable.
-      //   ground-parity — S1: does device injection change ground's pixels?
-      //   island-parity — S5: do islands on the shared device match the WebGL
-      //                       ones, and did MSAA / sRGB / orientation survive?
+      //   ground-parity    — S1: does device injection change ground's pixels?
+      //   island-parity    — S5: do islands on the shared device match the
+      //                          WebGL ones, and did MSAA / sRGB / orientation
+      //                          survive?
+      //   composited-board — S2/S3/S4: dom widget quads against the stratified
+      //                          render, plus the write-back, input and demand
+      //                          probes that share its board.
       input: {
         index: "index.html",
         "ground-parity": "ground-parity.html",
         "island-parity": "island-parity.html",
+        "composited-board": "composited-board.html",
       },
     },
   },

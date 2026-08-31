@@ -16,7 +16,8 @@
     "parity": "pnpm run build && node scripts/ground-parity.mjs",
     "island-parity": "pnpm run build && node scripts/island-parity.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "board": "pnpm run build && node scripts/composited-board.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

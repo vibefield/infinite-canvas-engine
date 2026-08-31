@@ -35,12 +35,28 @@ interface HicCanvas {
   getElementTransform?: (element: Element) => DOMMatrix | undefined;
 }
 
-/** `GPUQueue.copyElementImageToTexture(source, destination, copySize)`. */
+/**
+ * `GPUQueue.copyElementImageToTexture(source, destination)` — ARITY 2.
+ *
+ * The shape below is the one the GATE ZERO probe recovered by walking the
+ * validation errors on this app's pinned Chromium 150 (2026-08-31,
+ * `apps/widgetlab-desktop/scripts/hic-copy-gate.mjs`), matching the Chromium
+ * 152 evidence in `hic-bench` FINDINGS §4. It is NOT the WebGPU
+ * `copyExternalImageToTexture` shape, which is the trap this interface exists
+ * to stop anyone falling into twice: the destination is a wrapper dictionary
+ * carrying a `destination` member, and the copy takes no third size argument.
+ *
+ * `origin` belongs INSIDE the inner texel-copy dictionary. It validates at the
+ * outer level too, but WebIDL silently ignores unknown dictionary members, so
+ * an outer `origin` is accepted and DISCARDED — every slot would then be
+ * written at (0,0). Proven by pixels, not by the absence of a validation
+ * error: gate zero landed a copy in the targeted quadrant (61,440 px) with
+ * zero ink in the other three.
+ */
 interface HicQueue {
   copyElementImageToTexture?: (
     source: { source: Element },
-    destination: { texture: GPUTexture; origin?: GPUOrigin3D },
-    copySize: GPUExtent3D,
+    destination: { destination: { texture: GPUTexture; origin?: GPUOrigin3D } },
   ) => void;
 }
 
@@ -238,6 +254,18 @@ export function changedElements(event: Event): readonly Element[] {
  * Hoisting this method off the queue and calling it bare throws "Illegal
  * invocation" — the lesson this whole module exists to hold in one place.
  *
+ * `element` MUST be an immediate child of the `layoutsubtree` source canvas.
+ * A deeper descendant is refused outright ("Only immediate children of the
+ * <canvas> element can be passed to copyElementImageToTexture()"), which is
+ * why the L1 layer parents composited hosts directly under the canvas rather
+ * than nesting them in a plane div.
+ *
+ * The copy takes NO explicit extent: it writes the element's own device-pixel
+ * size at `origin`. The caller therefore owes the atlas a slot allocated at
+ * that same size — the dom source layer re-allocates (which re-slots on a size
+ * change) before every copy, because a slot smaller than its element would
+ * bleed across the 2 px gutter into a neighbour's pixels.
+ *
  * Returns false when the host lacks the method, so callers degrade rather than
  * throw; a composited build should never reach here (the boot probe refused).
  */
@@ -245,15 +273,15 @@ export function copyElementToTexture(
   queue: GPUQueue,
   element: Element,
   texture: GPUTexture,
-  size: { readonly width: number; readonly height: number },
   origin: { readonly x: number; readonly y: number } = { x: 0, y: 0 },
 ): boolean {
   const q = queue as unknown as HicQueue;
   if (typeof q.copyElementImageToTexture !== "function") return false;
   q.copyElementImageToTexture(
     { source: element },
-    { texture, origin: { x: origin.x, y: origin.y, z: 0 } },
-    { width: size.width, height: size.height, depthOrArrayLayers: 1 },
+    // `origin` INSIDE `destination` — see the HicQueue note: the outer
+    // position validates and is then ignored.
+    { destination: { texture, origin: { x: origin.x, y: origin.y, z: 0 } } },
   );
   return true;
 }

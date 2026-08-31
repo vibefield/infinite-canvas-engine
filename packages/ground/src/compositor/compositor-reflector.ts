@@ -87,6 +87,18 @@ export interface CompositorReflectorOpts {
   readonly target?: CompositeTarget;
   /** Clear colour for the composite pass. Transparent by default. */
   readonly clearValue?: GPUColor;
+  /**
+   * Run just before the pass is encoded, on compositing frames only: where
+   * sources bring their pixels up to date (dom slot copies, island renders).
+   *
+   * It must be BEFORE `beginRenderPass`, not inside it, because these are
+   * QUEUE operations — the queue runs them in issue order relative to the
+   * submit that follows, which is what makes the pass sample this frame's
+   * pixels rather than last frame's.
+   *
+   * A quiet frame never reaches here: idle-zero is upstream of it.
+   */
+  readonly prepare?: (frame: CompositeFrame) => void;
 }
 
 export function createCompositorReflector(opts: CompositorReflectorOpts): CompositorReflector {
@@ -140,6 +152,10 @@ export function createCompositorReflector(opts: CompositorReflectorOpts): Compos
         dpr,
         camera: { x: cam.x, y: cam.y, zoom: cam.zoom },
       };
+
+      // Sources refresh their pixels first (queue operations, ordered ahead of
+      // the submit below).
+      opts.prepare?.(frame);
 
       acquisitions++;
       const view = target.getCurrentTexture().createView();

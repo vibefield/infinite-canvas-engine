@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HiC paint-record preconditions</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101010; overflow: hidden; font: 12px system-ui; color: #ccc; }
+    #log { position: absolute; left: 8px; bottom: 8px; white-space: pre; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+<script>
+/*
+ * WHY THIS EXISTS.
+ *
+ * The S2 board rig failed with `InvalidStateError: Failed to execute
+ * 'copyElementImageToTexture' on 'GPUQueue': No cached paint record for
+ * element.` — while GATE ZERO's copy of an identically-shaped element
+ * succeeded. So the copy has a PRECONDITION the gate happened to satisfy and
+ * the rig happened not to, and guessing which one would be guessing.
+ *
+ * The two candidates, and they are not the same fix:
+ *
+ *   A. THE BACKING STORE. Gate zero sized the source canvas's bitmap to the
+ *      card (320x192 device px). The rig leaves it at the default 300x150
+ *      while laying hosts out across a 1280x800 viewport — so a host may sit
+ *      outside the area the canvas records.
+ *   B. THE PAINT PUMP. Gate zero's card was a canvas child from page load and
+ *      had been through the first paint. The rig REPARENTS hosts in later and
+ *      never calls `requestPaint()`, so a freshly-arrived child may have no
+ *      record yet.
+ *
+ * Four arms, one variable at a time, each on its own freshly built canvas so
+ * no arm can inherit another's state. Every arm reports whether the copy threw
+ * AND whether the pixels actually landed — a copy that "succeeds" into a blank
+ * slot is the failure mode this whole exercise exists to avoid.
+ */
+const CSS_W = 160, CSS_H = 96;
+const $log = (m) => { document.body.querySelector("#log").textContent = m; };
+
+function makeCard() {
+  const card = document.createElement("div");
+  card.style.cssText =
+    `width:${CSS_W}px;height:${CSS_H}px;box-sizing:border-box;` +
+    "background:#1b3a5c;border:4px solid #e8c547;color:#fff;font:700 15px system-ui;";
+  const bar = document.createElement("div");
+  bar.style.cssText = "height:24px;background:#d94f4f;";
+  card.append(bar, document.createTextNode("PROBE"));
+  return card;
+}
+
+async function readTexture(dev, tex, w, h) {
+  const bytesPerRow = Math.ceil((w * 4) / 256) * 256;
+  const buf = dev.createBuffer({ size: bytesPerRow * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc = dev.createCommandEncoder();
+  enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow, rowsPerImage: h }, { width: w, height: h, depthOrArrayLayers: 1 });
+  dev.queue.submit([enc.finish()]);
+  await dev.queue.onSubmittedWorkDone();
+  await buf.mapAsync(GPUMapMode.READ);
+  const out = new Uint8Array(buf.getMappedRange()).slice();
+  buf.unmap(); buf.destroy();
+  const counts = new Map();
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * bytesPerRow + x * 4;
+    const k = (out[i] << 24) | (out[i+1] << 16) | (out[i+2] << 8) | out[i+3];
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  let mode = 0; for (const n of counts.values()) if (n > mode) mode = n;
+  return { distinct: counts.size, ink: w * h - mode, total: w * h };
+}
+
+const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+window.__paintRecord = { run: async () => {
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.round(CSS_W * dpr), H = Math.round(CSS_H * dpr);
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  const dev = await adapter.requestDevice();
+  const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT;
+
+  /**
+   * @param sizeBacking  size the canvas bitmap to the viewport (candidate A)
+   * @param pump         requestPaint + await the paint event (candidate B)
+   * @param lateAttach   append the card AFTER the canvas is in the document
+   */
+  async function arm(label, { sizeBacking, pump, lateAttach }) {
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("layoutsubtree", "");
+    canvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;background:transparent;";
+    canvas.getContext("2d");
+    const card = makeCard();
+    if (!lateAttach) canvas.appendChild(card);
+    document.body.appendChild(canvas);
+    if (sizeBacking) {
+      canvas.width = Math.round(canvas.clientWidth * dpr);
+      canvas.height = Math.round(canvas.clientHeight * dpr);
+    }
+    if (lateAttach) {
+      await raf();
+      canvas.appendChild(card);
+      // The rig's own placement: inside layoutsubtree the transform REPLACES
+      // layout, so a host is positioned absolutely and never by left/top.
+      card.style.transform = "matrix(1,0,0,1,40,40)";
+    }
+    await raf(); await raf();
+
+    let paints = 0;
+    const onPaint = () => { paints++; };
+    canvas.addEventListener("paint", onPaint);
+    if (pump) {
+      const seen = new Promise((resolve) => {
+        canvas.addEventListener("paint", () => resolve(), { once: true });
+      });
+      canvas.requestPaint?.();
+      await Promise.race([seen, new Promise((r) => setTimeout(r, 500))]);
+    }
+    await raf();
+
+    const tex = dev.createTexture({ size: { width: W, height: H }, format: "rgba8unorm", usage });
+    let threw = null;
+    dev.pushErrorScope("validation");
+    try {
+      dev.queue.copyElementImageToTexture({ source: card }, { destination: { texture: tex } });
+    } catch (e) { threw = String(e).replace(/^InvalidStateError: Failed to execute '\w+' on 'GPUQueue': /, ""); }
+    const scoped = await dev.popErrorScope();
+    const px = threw ? null : await readTexture(dev, tex, W, H);
+    tex.destroy();
+    canvas.removeEventListener("paint", onPaint);
+    canvas.remove();
+    return {
+      label, sizeBacking, pump, lateAttach,
+      backing: `${canvas.width}x${canvas.height}`,
+      paints,
+      threw,
+      validation: scoped ? scoped.message : null,
+      // A copy that does not throw but lands nothing is still a failure.
+      landed: px === null ? false : px.distinct > 4 && px.ink > W * H * 0.05,
+      pixels: px,
+    };
+  }
+
+  const results = [];
+  // The rig's configuration, expected to reproduce the failure.
+  results.push(await arm("rig-as-is (default backing, late attach, no pump)", { sizeBacking: false, pump: false, lateAttach: true }));
+  // Candidate A alone.
+  results.push(await arm("A: sized backing only", { sizeBacking: true, pump: false, lateAttach: true }));
+  // Candidate B alone.
+  results.push(await arm("B: paint pump only", { sizeBacking: false, pump: true, lateAttach: true }));
+  // Both.
+  results.push(await arm("A+B: sized backing + paint pump", { sizeBacking: true, pump: true, lateAttach: true }));
+  // The gate's configuration, as a positive control: it must still work.
+  results.push(await arm("CONTROL gate-shaped (attached before insert)", { sizeBacking: true, pump: false, lateAttach: false }));
+
+  dev.destroy?.();
+  $log(results.map((r) => `${r.label}: threw=${r.threw ?? "no"} landed=${r.landed} paints=${r.paints}`).join("\n"));
+  return { dpr, W, H, results };
+} };
+</script>
+<div id="log">ready</div>
+</body>
+</html>

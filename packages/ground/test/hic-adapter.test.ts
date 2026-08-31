@@ -133,7 +133,7 @@ describe("receiver binding (the Illegal-invocation law)", () => {
     };
     const el = document.createElement("div");
     const texture = { label: "atlas" } as unknown as GPUTexture;
-    const ok = copyElementToTexture(queue as unknown as GPUQueue, el, texture, { width: 8, height: 4 });
+    const ok = copyElementToTexture(queue as unknown as GPUQueue, el, texture);
     expect(ok).toBe(true);
     // A hoisted `const f = queue.copyElementImageToTexture; f(...)` would land
     // here with `this === undefined` — which is exactly the native
@@ -141,6 +141,24 @@ describe("receiver binding (the Illegal-invocation law)", () => {
     expect(receiver).toBe(queue);
   });
 
+  /**
+   * THE SHAPE, pinned to measurement rather than to memory.
+   *
+   * This assertion previously encoded the WebGPU `copyExternalImageToTexture`
+   * shape — `({source}, {texture, origin}, {width,height,depthOrArrayLayers})`
+   * — and passed, because it was written from the same wrong reading as the
+   * implementation it checked. Chromium rejects that arity-3 form outright
+   * ("Failed to read the 'destination' property from
+   * 'GPUCopyElementImageDestination': Required member is undefined"), so the
+   * green test was pinning a call that could never work. Nothing had exercised
+   * it: S1 shipped no WGSL and no dom source existed.
+   *
+   * The shape below is what `scripts/hic-copy-gate.mjs` recovered against the
+   * real Chromium 150, agreeing with the Chromium 152 evidence in hic-bench
+   * FINDINGS §4. `origin` sits INSIDE `destination`: at the outer level WebIDL
+   * accepts and then ignores it, which would silently write every atlas slot
+   * at (0,0).
+   */
   it("passes the destination origin through for atlas-slot sub-rect copies", () => {
     const calls: unknown[][] = [];
     const queue = {
@@ -149,15 +167,12 @@ describe("receiver binding (the Illegal-invocation law)", () => {
       },
     };
     const texture = {} as unknown as GPUTexture;
-    copyElementToTexture(
-      queue as unknown as GPUQueue,
-      document.createElement("div"),
-      texture,
-      { width: 128, height: 64 },
-      { x: 256, y: 512 },
-    );
-    expect(calls[0]?.[1]).toEqual({ texture, origin: { x: 256, y: 512, z: 0 } });
-    expect(calls[0]?.[2]).toEqual({ width: 128, height: 64, depthOrArrayLayers: 1 });
+    copyElementToTexture(queue as unknown as GPUQueue, document.createElement("div"), texture, {
+      x: 256,
+      y: 512,
+    });
+    expect(calls[0]).toHaveLength(2); // arity 2 — there is no third size argument
+    expect(calls[0]?.[1]).toEqual({ destination: { texture, origin: { x: 256, y: 512, z: 0 } } });
   });
 
   it("calls requestPaint and getElementTransform through their canvas", () => {
@@ -184,7 +199,7 @@ describe("receiver binding (the Illegal-invocation law)", () => {
     expect(requestPaint(canvas)).toBe(false);
     expect(getElementTransform(canvas, document.createElement("div"))).toBeUndefined();
     expect(
-      copyElementToTexture({} as GPUQueue, canvas, {} as GPUTexture, { width: 1, height: 1 }),
+      copyElementToTexture({} as GPUQueue, canvas, {} as GPUTexture),
     ).toBe(false);
     expect(drawElementImage({} as CanvasRenderingContext2D, canvas, 0, 0)).toBeUndefined();
   });

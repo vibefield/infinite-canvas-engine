@@ -11,7 +11,9 @@
 import type {
   CanvasSessionValue,
   CanvasType,
+  CompositorSource,
   CompositorSourceRegistry,
+  Entity,
   GpuAllocationLedger,
   GridConfig,
   SnapGuidesConfig,
@@ -27,6 +29,12 @@ import {
   type CompositorReflector,
 } from "./compositor/compositor-reflector";
 import { createWidgetQuadPass } from "./compositor/widget-quad-pass";
+import {
+  createDomSourceBinder,
+  type DomSourceBinder,
+  type DomSourceBinderOptions,
+} from "./compositor/dom-source-binder";
+import { createWorldQuadFacts } from "./compositor/quad-facts";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
@@ -92,10 +100,27 @@ export {
 export {
   createWidgetQuadPass,
   type CompositeFrame,
+  type QuadFacts,
+  type QuadTexture,
   type WidgetQuadPass,
   type WidgetQuadPassDeps,
 } from "./compositor/widget-quad-pass";
 export { instrumentSubmits, type SubmitInstrument } from "./compositor/submit-instrument";
+// The dom source atlas (design-012 §11 Q3): the pure allocator bound to a real
+// device and to HiC's direct element copy.
+export {
+  createDomAtlas,
+  type AtlasPlacement,
+  type DomAtlas,
+  type DomAtlasOptions,
+} from "./compositor/dom-atlas";
+export {
+  createDomSourceBinder,
+  type DomSourceBinder,
+  type DomSourceBinderOptions,
+  type DomSourceGeometry,
+} from "./compositor/dom-source-binder";
+export { createWorldQuadFacts, type WorldQuadFactsOptions } from "./compositor/quad-facts";
 // The HiC seam (design-012 §8 gate 1): the adapter module is the ONLY place a
 // HiC symbol is named, and its probe is what a composited build refuses on.
 // (`GroundRendererLike` rides main's renderer export block above — re-exporting
@@ -191,6 +216,12 @@ export interface GroundLayer {
   /** The source registry the compositor consumes; producers register into it. */
   readonly sources?: CompositorSourceRegistry;
   /**
+   * The dom source binder — the atlas behind the `dom` kind. Present with the
+   * compositor. The L1 layer routes paint events into `markDirtyHosts`, and
+   * the waste instrument reads from its atlas.
+   */
+  readonly domSources?: DomSourceBinder;
+  /**
    * The device three actually settled on, once init resolves — undefined
    * before ready and on the WebGL2 fallback. A DIAGNOSTIC seam: it is the
    * difference between "the `device` option was accepted" and "three adopted
@@ -246,6 +277,16 @@ export interface GroundOptions {
    * draws nothing (see compositor-reflector's header).
    */
   readonly target?: CompositeTarget;
+  /**
+   * Paint order for the widget quads: the entities to composite, back to
+   * front, in frame-parent sibling sequence (petition 8). The composited
+   * profile wires the L1 layer's `compositedEntities()`, which reads the
+   * canvas's own child sequence and is therefore sibling order by
+   * construction. Omitted ⇒ registry order, correct only while empty.
+   */
+  readonly order?: () => readonly Entity[];
+  /** Tuning for the dom source atlas (page sizes, gutter, copy budget). */
+  readonly atlas?: DomSourceBinderOptions;
 }
 
 export type GroundFactory = (ctx: GroundContext) => GroundLayer;
@@ -275,19 +316,38 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
     // compositor, and the stratified path below is the code it always was.
     let compositor: CompositorReflector | undefined;
     let sources: CompositorSourceRegistry | undefined;
+    let domSources: DomSourceBinder | undefined;
     if (opts.device !== undefined) {
+      const device = opts.device;
       sources = opts.sources ?? createCompositorSourceRegistry();
+      // Facts and slot sizes come from the SAME read of the world, so a quad
+      // and its atlas slot can never disagree about how big a card is.
+      const facts = createWorldQuadFacts(ctx.world);
+      domSources = createDomSourceBinder(
+        device,
+        sources,
+        (entity) => facts(entity),
+        opts.atlas ?? {},
+      );
+      const binder = domSources;
       compositor = createCompositorReflector({
         world: ctx.world,
         registry: sources,
         quadPass: createWidgetQuadPass({
-          device: opts.device,
+          device,
           // The target's ACTUAL format when there is one; the preferred canvas
           // format otherwise. Never assumed — it guards the sRGB re-encode.
           format: opts.target?.format ?? navigator.gpu.getPreferredCanvasFormat(),
           registry: sources,
+          facts,
+          // dom sources resolve through the atlas; gl/video resolve to
+          // `undefined` here and join at S5/S7 with their own kinds.
+          resolve: (entity, source) => binder.resolve(entity, source as CompositorSource),
+          ...(opts.order !== undefined ? { order: opts.order } : {}),
         }),
-        device: opts.device,
+        device,
+        // Slot copies are issued here — before the pass, after the dirt check.
+        prepare: (frame) => binder.sync(frame),
         ...(opts.target !== undefined ? { target: opts.target } : {}),
       });
     }
@@ -296,6 +356,7 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
       reflector: layer.reflector,
       ...(compositor !== undefined ? { compositorReflector: compositor } : {}),
       ...(sources !== undefined ? { sources } : {}),
+      ...(domSources !== undefined ? { domSources } : {}),
       device: () => renderer.device?.(),
       configureGrid(cfg) {
         grid.configure(cfg);
@@ -303,6 +364,7 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
       },
       dispose() {
         compositor?.dispose();
+        domSources?.dispose();
         layer.dispose();
       },
     };

@@ -1,0 +1,87 @@
+{
+  "dpr": 2,
+  "W": 320,
+  "H": 192,
+  "results": [
+    {
+      "label": "rig-as-is (default backing, late attach, no pump)",
+      "sizeBacking": false,
+      "pump": false,
+      "lateAttach": true,
+      "backing": "300x150",
+      "paints": 0,
+      "threw": null,
+      "validation": null,
+      "landed": false,
+      "pixels": {
+        "distinct": 41,
+        "ink": 684,
+        "total": 61440
+      }
+    },
+    {
+      "label": "A: sized backing only",
+      "sizeBacking": true,
+      "pump": false,
+      "lateAttach": true,
+      "backing": "2560x1616",
+      "paints": 0,
+      "threw": null,
+      "validation": null,
+      "landed": true,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      }
+    },
+    {
+      "label": "B: paint pump only",
+      "sizeBacking": false,
+      "pump": true,
+      "lateAttach": true,
+      "backing": "300x150",
+      "paints": 1,
+      "threw": null,
+      "validation": null,
+      "landed": false,
+      "pixels": {
+        "distinct": 41,
+        "ink": 684,
+        "total": 61440
+      }
+    },
+    {
+      "label": "A+B: sized backing + paint pump",
+      "sizeBacking": true,
+      "pump": true,
+      "lateAttach": true,
+      "backing": "2560x1616",
+      "paints": 1,
+      "threw": null,
+      "validation": null,
+      "landed": true,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      }
+    },
+    {
+      "label": "CONTROL gate-shaped (attached before insert)",
+      "sizeBacking": true,
+      "pump": false,
+      "lateAttach": false,
+      "backing": "2560x1616",
+      "paints": 0,
+      "threw": null,
+      "validation": null,
+      "landed": true,
+      "pixels": {
+        "distinct": 149,
+        "ink": 23988,
+        "total": 61440
+      }
+    }
+  ]
+}

@@ -19,8 +19,31 @@ export { createGrayboxReflector } from "./reflectors/graybox";
 export {
   createDomWidgetsReflector,
   type DomWidgetsHost,
+  type DomWidgetsOptions,
   type DomWidgetsReflector,
 } from "./reflectors/dom-widgets";
+
+// L1 — the composited profile's DOM interaction layer (design-012 §5). The
+// source canvas takes its HiC calls by INJECTION: @ice/dom may not import
+// @ice/ground, and @ice/ground's adapter is the only module allowed to name a
+// HiC symbol. Both walls hold at once.
+export {
+  createSourceCanvas,
+  type SourceCanvas,
+  type SourceCanvasEffects,
+  type SourceCanvasOptions,
+} from "./source-canvas";
+export {
+  DEFAULT_PRESENTATION,
+  createPresentationRegistry,
+  type PresentationRegistry,
+  type SurfacePresentation,
+} from "./presentation-mode";
+export {
+  createDomWritebackReflector,
+  type DomWritebackHosts,
+  type DomWritebackReflector,
+} from "./reflectors/dom-writeback";
 
 // The rAF frame loop (design-002 §1: the platform owns the loop).
 export { startRafLoop } from "./loop";

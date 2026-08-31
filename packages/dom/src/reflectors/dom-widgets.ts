@@ -51,6 +51,7 @@ import {
   createSiblingOrderIndex,
   defineQuery,
   widgets,
+  type CompositorSourceRegistry,
   type Entity,
   type MountEntry,
   type PresentationRetainer,
@@ -62,15 +63,45 @@ import {
 } from "@ice/core";
 import { planeCssTransform } from "@ice/kernel";
 import { CLAIM_OWNS_ESCAPE, KEYBOARD_CLAIM_ATTR } from "../input-ownership";
+import type { PresentationRegistry } from "../presentation-mode";
 
-/** The two planes a host can live in (design-004 §1: P1 content, P3 lifted). */
+/**
+ * Where a host can live (design-004 §1: P1 content, P3 lifted; design-012 §5:
+ * the L1 source canvas). `sourceCanvas` is present only in the composited
+ * profile — without it every host is a plane host and this file is the code it
+ * always was.
+ */
 export interface DomWidgetsHost {
   readonly contentPlane: HTMLElement;
   readonly liftedPlane: HTMLElement;
+  /**
+   * L1. Composited hosts become IMMEDIATE children of it — never nested in a
+   * wrapper — because `copyElementImageToTexture` refuses anything deeper
+   * ("Only immediate children of the <canvas> element can be passed").
+   */
+  readonly sourceCanvas?: HTMLElement;
+}
+
+/** The parent a host currently belongs to. */
+type HostPlacement = "content" | "lifted" | "canvas";
+
+export interface DomWidgetsOptions {
+  /**
+   * Per-widget presentation policy. Absent ⇒ every widget is `live-dom` and
+   * nothing reaches L1 — the stratified behaviour.
+   */
+  readonly presentation?: PresentationRegistry;
+  /**
+   * The compositor's source registry. A host is registered as a `dom` source
+   * in the SAME flush that parents it under the canvas, and unregistered in
+   * the same flush that takes it away — the two must not drift, or the
+   * compositor holds an element the copy will refuse.
+   */
+  readonly sources?: CompositorSourceRegistry;
 }
 
 interface HostRec {
-  /** The absolute-positioned, world-unit host div; re-parents content↔lifted on promote. */
+  /** The absolute-positioned host div; re-parents between the planes and L1. */
   readonly host: HTMLDivElement;
   /** The `data-ice-content` portal target (React mounts INTO this). */
   readonly content: HTMLDivElement;
@@ -81,10 +112,16 @@ interface HostRec {
   h: number;
   /** Last-applied `display:none` (culled-but-kept-mounted) state. */
   hidden: boolean;
-  /** Last-applied parent: true = lifted plane, false = content plane. */
-  lifted: boolean;
+  /** Last-applied parent. */
+  placement: HostPlacement;
   /** Last-applied `Opacity.a` (1 = the no-component default, style cleared). */
   opacity: number;
+  /**
+   * Live compositor-source registration, while this host is canvas-side.
+   * Explicitly `| undefined` rather than optional: `exactOptionalPropertyTypes`
+   * is on, and this field is cleared by assignment on every demotion.
+   */
+  unregister: (() => void) | undefined;
 }
 
 interface Geom {
@@ -109,6 +146,33 @@ function writeGeom(el: HTMLDivElement, x: number, y: number, w: number, h: numbe
 export interface DomWidgetsReflector extends ReflectorDef {
   /** The entity's content element (the `data-ice-content` portal target), or undefined if not hosted. */
   hostFor(entity: Entity): HTMLElement | undefined;
+  /**
+   * The entity's HOST element — the node that reparents between the planes and
+   * L1, and the one the compositor copies from. Distinct from `hostFor`, which
+   * is the inner portal target: the copy addresses immediate canvas children,
+   * so it must never be handed the content div.
+   */
+  hostElementFor(entity: Entity): HTMLElement | undefined;
+  /** Where each host currently lives (composited-profile instrument). */
+  canvasHostCount(): number;
+  /**
+   * The entities whose hosts are immediate children of L1 right now — the set
+   * `domWriteback` places and the compositor draws. In L1 CHILD ORDER, which
+   * is sibling order (petition 8), so a consumer that needs paint order gets
+   * it without re-deriving one.
+   */
+  compositedEntities(): Entity[];
+  /**
+   * Bumped whenever that set changes — a promotion, a demotion, or a
+   * composited host mounting or leaving.
+   *
+   * `domWriteback` is self-gated on camera/geometry dirt, and a promotion is
+   * NEITHER: a card promoted while the camera is still would otherwise sit
+   * unplaced (in `layoutsubtree`, with no transform, at (0,0)) until something
+   * unrelated moved. This is the O(1) wake for that, and it is a counter
+   * rather than a callback so a consumer can poll it inside its own gate.
+   */
+  compositedRevision(): number;
   /** Live host count (= mounted widgets, visible + kept-mounted). */
   hostCount(): number;
   /** Geometry writes so far — one per enter, one per changed host, zero for unchanged (churn instrument). */
@@ -123,8 +187,10 @@ export function createDomWidgetsReflector(
   host: DomWidgetsHost,
   world: World,
   store: WidgetMountStore,
+  opts: DomWidgetsOptions = {},
 ): DomWidgetsReflector {
   const doc = host.contentPlane.ownerDocument;
+  const sourceCanvas = host.sourceCanvas;
   const hosts = new Map<Entity, HostRec>();
   // The pull-based frame ordinal cache (petition 8): sibling sequence →
   // entity → position, stamp-checked so updateOrder rebuilds only when the
@@ -132,6 +198,8 @@ export function createDomWidgetsReflector(
   const order = createSiblingOrderIndex(world);
   let lastSnapshot: readonly MountEntry[] | undefined;
   let geometryWrites = 0;
+  /** Bumped whenever the canvas-side host set changes (see compositedRevision). */
+  let compositedRevision = 0;
   /** True while any host is lifted → all content is inerted (pinned drag contract). */
   let inert = false;
   const departingHosts = new Set<Entity>();
@@ -159,6 +227,11 @@ export function createDomWidgetsReflector(
     // keeps other-frame churn cheap.
     order.observe(() => { orderDirty = true; }),
   ];
+  // Presentation changes reparent exactly like a drag-promote does, so they
+  // arm the same flag and take the same path (plan §2: ONE door).
+  if (opts.presentation !== undefined) {
+    unsubs.push(opts.presentation.onChange(() => { promoteDirty = true; }));
+  }
 
   /**
    * GL widgets' hosts carry DOM CHROME that must stay in the content plane
@@ -169,6 +242,46 @@ export function createDomWidgetsReflector(
   function promotable(e: Entity): boolean {
     const type = world.get(e, PrefabId)?.id;
     return typeof type !== "string" || widgets.get(type)?.surface !== "gl";
+  }
+
+  /**
+   * Which parent this entity's host belongs under, right now.
+   *
+   * Composited wins over lifted: a composited card's lift is a per-quad GPU
+   * fact at true z (design-012 §7 — P3 is what the composited profile retires),
+   * so moving it into P3 would be the stratified answer to a question the
+   * compositor is already answering. Without a source canvas — the stratified
+   * profile — this collapses to the content/lifted decision it always was.
+   */
+  function placementOf(e: Entity): HostPlacement {
+    if (sourceCanvas !== undefined && opts.presentation?.get(e) === "composited") return "canvas";
+    return world.has(e, Grab) && promotable(e) ? "lifted" : "content";
+  }
+
+  function parentFor(placement: HostPlacement): HTMLElement {
+    if (placement === "canvas" && sourceCanvas !== undefined) return sourceCanvas;
+    return placement === "lifted" ? host.liftedPlane : host.contentPlane;
+  }
+
+  /**
+   * Register/unregister the host as a `dom` compositor source, in lockstep
+   * with its parentage. Called only where the node has ALREADY been moved:
+   * the compositor may hold an element only while that element is an immediate
+   * child of the canvas, or the copy is refused at the platform.
+   */
+  function syncSource(e: Entity, rec: HostRec): void {
+    const wantsSource = rec.placement === "canvas" && opts.sources !== undefined;
+    if (wantsSource && rec.unregister === undefined) {
+      rec.unregister = opts.sources?.register(e, { kind: "dom", host: rec.host });
+    } else if (!wantsSource && rec.unregister !== undefined) {
+      rec.unregister();
+      rec.unregister = undefined;
+    }
+  }
+
+  /** Every path that changes canvas membership routes through here. */
+  function noteCompositedChange(): void {
+    compositedRevision++;
   }
 
   function readGeom(e: Entity): Geom {
@@ -215,9 +328,24 @@ export function createDomWidgetsReflector(
     geometryWrites++;
     const opacity = readOpacity(e);
     if (opacity !== 1) el.style.opacity = String(opacity);
-    const lifted = world.has(e, Grab) && promotable(e);
-    (lifted ? host.liftedPlane : host.contentPlane).appendChild(el);
-    return { host: el, content, x: g.x, y: g.y, w: g.w, h: g.h, hidden: false, lifted, opacity };
+    const placement = placementOf(e);
+    parentFor(placement).appendChild(el);
+    const rec: HostRec = {
+      host: el,
+      content,
+      x: g.x,
+      y: g.y,
+      w: g.w,
+      h: g.h,
+      hidden: false,
+      placement,
+      opacity,
+      unregister: undefined,
+    };
+    // The node is parented; only now may it become a compositor source.
+    syncSource(e, rec);
+    if (placement === "canvas") noteCompositedChange();
+    return rec;
   }
 
   /** Enter/exit/hidden reconcile against the store snapshot. Returns whether membership changed. */
@@ -239,6 +367,11 @@ export function createDomWidgetsReflector(
     }
     for (const [e, rec] of hosts) {
       if (present.has(e)) continue;
+      // Drop the compositor's handle BEFORE the node leaves the document: a
+      // registered source whose element is detached is one the copy refuses.
+      rec.unregister?.();
+      rec.unregister = undefined;
+      if (rec.placement === "canvas") noteCompositedChange();
       rec.host.remove(); // React unmounts via the store; the host div goes too
       hosts.delete(e);
       membershipChanged = true;
@@ -246,10 +379,18 @@ export function createDomWidgetsReflector(
     return membershipChanged;
   }
 
-  /** Change-only geometry rewrite over the live hosts (graybox pattern). */
+  /**
+   * Change-only geometry rewrite over the live PLANE hosts (graybox pattern).
+   *
+   * Canvas-side hosts are skipped on purpose: inside a `layoutsubtree` canvas
+   * `left`/`top` do not position anything (the transform REPLACES layout —
+   * hic-bench §3), and the host must be sized in SCREEN CSS px rather than the
+   * world units a camera-transformed plane scales for it. Their whole geometry
+   * — placement and size — belongs to the `domWriteback` reflector.
+   */
   function updateGeometry(): void {
     for (const [e, rec] of hosts) {
-      if (departingHosts.has(e)) continue;
+      if (departingHosts.has(e) || rec.placement === "canvas") continue;
       const g = readGeom(e);
       if (g.x !== rec.x || g.y !== rec.y || g.w !== rec.w || g.h !== rec.h) {
         writeGeom(rec.host, g.x, g.y, g.w, g.h);
@@ -283,7 +424,14 @@ export function createDomWidgetsReflector(
   function updateOrder(): boolean {
     const ordinals = order.ordinals();
     let allApplied = true;
-    for (const plane of [host.contentPlane, host.liftedPlane]) {
+    // L1 joins the sorted parents: sibling order is the paint order the
+    // compositor reads (petition 8), and it reads it from the canvas's child
+    // sequence exactly as a plane's paint order is its child sequence.
+    const parents =
+      sourceCanvas === undefined
+        ? [host.contentPlane, host.liftedPlane]
+        : [host.contentPlane, host.liftedPlane, sourceCanvas];
+    for (const plane of parents) {
       const active = doc.activeElement;
       if (active !== null && active !== doc.body && plane.contains(active)) {
         allApplied = false; // blur-safety skip — retry on the next flush
@@ -327,20 +475,50 @@ export function createDomWidgetsReflector(
     }
   }
 
-  /** Re-parent promoted hosts content↔lifted and toggle the global inert state. */
+  /**
+   * Re-parent hosts between the content plane, the lifted plane and L1, and
+   * toggle the global inert state.
+   *
+   * The reparent is the promotion mechanism (plan §2): `appendChild` MOVES the
+   * existing node, and moving a portal's CONTAINER does not remount React, so
+   * a widget's state — scroll offset, uncommitted input, hook state — survives
+   * a promotion to composited exactly as it survives a drag-lift today. That
+   * is why promotion needs no remount path and why the same node is the hit
+   * truth in both modes.
+   */
   function updatePromote(): void {
     let anyLifted = false;
     for (const [e, rec] of hosts) {
       if (departingHosts.has(e)) continue;
       const grabbed = world.has(e, Grab);
-      const shouldLift = grabbed && promotable(e);
-      if (shouldLift) anyLifted = true;
-      if (shouldLift !== rec.lifted) {
-        rec.lifted = shouldLift;
-        // appendChild MOVES the existing node between planes — the React portal
-        // (targeting the content child) survives the move.
-        (shouldLift ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+      const placement = placementOf(e);
+      if (placement === "lifted") anyLifted = true;
+      const shouldLift = placement === "lifted";
+      if (placement !== rec.placement) {
+        // Unregister BEFORE the move when leaving the canvas, register AFTER
+        // it when arriving: the compositor must never hold an element that is
+        // not, at that moment, an immediate child of the canvas.
+        if (rec.placement === "canvas") {
+          rec.unregister?.();
+          rec.unregister = undefined;
+        }
+        const wasCanvas = rec.placement === "canvas";
+        rec.placement = placement;
+        parentFor(placement).appendChild(rec.host);
+        syncSource(e, rec);
+        if (wasCanvas || placement === "canvas") noteCompositedChange();
         orderDirty = true; // the move appended LAST — re-assert sibling order
+        // Hand geometry custody over cleanly. Each owner writes properties the
+        // other must not see left behind: a plane host with a stale absolute
+        // transform would sit at a screen position instead of a world one, and
+        // a canvas host with world-unit width/height would be copied at the
+        // wrong size.
+        if (wasCanvas !== (placement === "canvas")) {
+          rec.host.style.transform = "";
+          // Force the receiving owner to rewrite rather than trust its cache.
+          rec.x = Number.NaN;
+          geometryDirty = true;
+        }
       }
       // A grabbed GL widget's chrome host stays in P1 (see promotable) but must
       // still stack over its P1 NEIGHBORS while dragged — the within-plane
@@ -375,6 +553,20 @@ export function createDomWidgetsReflector(
         lastSnapshot = snapshot;
         membershipChanged = reconcile(snapshot);
       }
+      // PARENTAGE BEFORE GEOMETRY. A promotion or demotion changes WHICH
+      // writer owns a host's geometry — plane hosts are placed in world units
+      // by `updateGeometry`, canvas hosts in screen px by `domWriteback` — and
+      // it arms `geometryDirty` for the receiving writer. Running the geometry
+      // pass first would consume that dirt one flush too early and leave a
+      // demoted card at its old size for a frame, which is a visible flash on
+      // every demotion rather than a subtle bookkeeping detail.
+      //
+      // Membership changes can also add/remove a lifted host → recompute inert
+      // even without a Grab stamp (e.g. a lifted widget despawns mid-drag).
+      if (promoteDirty || membershipChanged) {
+        promoteDirty = false;
+        updatePromote();
+      }
       if (geometryDirty) {
         geometryDirty = false;
         updateGeometry();
@@ -382,12 +574,6 @@ export function createDomWidgetsReflector(
       if (opacityDirty) {
         opacityDirty = false;
         updateOpacity();
-      }
-      // Membership changes can add/remove a lifted host → recompute inert even
-      // without a Grab stamp (e.g. a lifted widget despawns mid-drag).
-      if (promoteDirty || membershipChanged) {
-        promoteDirty = false;
-        updatePromote();
       }
       // AFTER promote: a re-parent appends last and must re-assert z order;
       // a fresh mount (createHost appends last) rides membershipChanged. A
@@ -398,6 +584,29 @@ export function createDomWidgetsReflector(
       }
     },
     hostFor: (entity) => hosts.get(entity)?.content,
+    hostElementFor: (entity) => hosts.get(entity)?.host,
+    canvasHostCount: () => {
+      let n = 0;
+      for (const rec of hosts.values()) if (rec.placement === "canvas") n++;
+      return n;
+    },
+    compositedRevision: () => compositedRevision,
+    compositedEntities() {
+      const out: Entity[] = [];
+      if (sourceCanvas === undefined) return out;
+      // Read the DOM's own child sequence rather than the map's insertion
+      // order: `updateOrder` keeps that sequence in sibling order, so this is
+      // paint order by construction and cannot drift from what was sorted.
+      const byNode = new Map<Element, Entity>();
+      for (const [e, rec] of hosts) {
+        if (rec.placement === "canvas") byNode.set(rec.host, e);
+      }
+      for (const child of Array.from(sourceCanvas.children)) {
+        const e = byNode.get(child);
+        if (e !== undefined) out.push(e);
+      }
+      return out;
+    },
     hostCount: () => hosts.size,
     geometryWrites: () => geometryWrites,
     transitionAdapter() {
@@ -489,6 +698,12 @@ export function createDomWidgetsReflector(
               if (rec === undefined) continue;
               departingHosts.add(entity);
               moved.add(entity);
+              // A retained host leaves the canvas for the departing container,
+              // so it stops being a legal copy source for the duration. The
+              // outgoing frame is presented from the retainer's own CSS
+              // transform, which is the point of retention; `release` re-syncs.
+              rec.unregister?.();
+              rec.unregister = undefined;
               departing.appendChild(rec.host);
             }
             const initial = planeCssTransform(descriptor.fromCamera);
@@ -498,7 +713,8 @@ export function createDomWidgetsReflector(
               const rec = hosts.get(entity);
               if (rec === undefined) continue;
               departingHosts.delete(entity);
-              (rec.lifted ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+              parentFor(rec.placement).appendChild(rec.host);
+              syncSource(entity, rec);
             }
             departing.remove();
             hold.release();
@@ -518,7 +734,8 @@ export function createDomWidgetsReflector(
               if (rec === undefined) continue;
               rec.host.style.display = "none";
               departingHosts.delete(entity);
-              (rec.lifted ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+              parentFor(rec.placement).appendChild(rec.host);
+              syncSource(entity, rec);
             }
             departing.remove();
             host.contentPlane.style.opacity = "";
@@ -556,6 +773,13 @@ export function createDomWidgetsReflector(
     dispose() {
       for (const u of unsubs) u();
       unsubs.length = 0;
+      // The compositor outlives this reflector (the device does too), so a
+      // left-behind registration would keep it copying from hosts nothing
+      // owns any more.
+      for (const rec of hosts.values()) {
+        rec.unregister?.();
+        rec.unregister = undefined;
+      }
     },
   };
 }
