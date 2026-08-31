@@ -35,6 +35,7 @@ import {
   type DomSourceBinderOptions,
 } from "./compositor/dom-source-binder";
 import { createWorldQuadFacts } from "./compositor/quad-facts";
+import type { LiftDriver } from "./compositor/lift";
 import { resolveGlSource } from "./compositor/gl-source";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
@@ -122,6 +123,14 @@ export {
   type DomSourceGeometry,
 } from "./compositor/dom-source-binder";
 export { createWorldQuadFacts, type WorldQuadFactsOptions } from "./compositor/quad-facts";
+// One lift, one fade, one curve — the per-quad GPU facts that retire the
+// CSS-spring/engine-ease pair (design-012 §7).
+export {
+  createLiftDriver,
+  type LiftDriver,
+  type LiftDriverOptions,
+  type LiftFacts,
+} from "./compositor/lift";
 // The gl leg: an island target published by r3f, turned into a sampleable quad
 // (y-flipped, sRGB-guarded, premultiplied — all measured, see the module).
 export { resolveGlSource } from "./compositor/gl-source";
@@ -291,6 +300,12 @@ export interface GroundOptions {
   readonly order?: () => readonly Entity[];
   /** Tuning for the dom source atlas (page sizes, gutter, copy budget). */
   readonly atlas?: DomSourceBinderOptions;
+  /**
+   * The lift/fade driver (design-012 §7's "one lift"). Its facts reach the
+   * QUAD PASS only — never the atlas, which must keep sizing slots from the
+   * card's real geometry.
+   */
+  readonly lift?: LiftDriver;
 }
 
 export type GroundFactory = (ctx: GroundContext) => GroundLayer;
@@ -326,7 +341,13 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
       sources = opts.sources ?? createCompositorSourceRegistry();
       // Facts and slot sizes come from the SAME read of the world, so a quad
       // and its atlas slot can never disagree about how big a card is.
+      // TWO facts functions over one world, deliberately. The binder sizes
+      // atlas slots and must see the card's REAL size; the quad pass draws and
+      // must see the lifted one. Feeding the lifted geometry to the binder
+      // re-slots the card on every frame of the ease — see quad-facts.ts.
       const facts = createWorldQuadFacts(ctx.world);
+      const displayFacts =
+        opts.lift === undefined ? facts : createWorldQuadFacts(ctx.world, { lift: opts.lift });
       // The binder wakes the reflector and the reflector's `prepare` drives
       // the binder, so both closures read the enclosing `compositor` binding
       // rather than a value captured before it exists.
@@ -351,7 +372,7 @@ export function ground(opts: GroundOptions = {}): GroundFactory {
           // format otherwise. Never assumed — it guards the sRGB re-encode.
           format: opts.target?.format ?? navigator.gpu.getPreferredCanvasFormat(),
           registry: sources,
-          facts,
+          facts: displayFacts,
           // ONE dispatch, by kind. dom sources go through the atlas (a slot,
           // a copy, per-slot dirt); gl sources are already pixels in a texture
           // three owns, so they need none of that. `video` joins at S7.

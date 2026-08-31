@@ -35,7 +35,9 @@
 import {
   Active,
   Camera,
+  Grab,
   MeasuredSize,
+  NO_ENTITY,
   Position,
   PrefabId,
   Size,
@@ -56,6 +58,7 @@ import {
   createCompositorReflector,
   createDomSourceBinder,
   createWidgetQuadPass,
+  createLiftDriver,
   createWorldQuadFacts,
   instrumentSubmits,
   markAsSourceCanvas,
@@ -70,6 +73,7 @@ import {
   createDomWidgetsReflector,
   createDomWritebackReflector,
   createPlanes,
+  createPresentationPolicy,
   createPresentationRegistry,
   createSourceCanvas,
 } from "@ice/dom";
@@ -248,6 +252,8 @@ export interface AppRig {
   gradeIsland(flip: boolean): Promise<Record<string, unknown>>;
   /** Does a dom card ordered ABOVE the island cover it? (one pass, true z) */
   mixedZ(): Promise<Record<string, unknown>>;
+  /** THE S6 WITNESS: drag a card UNDER a GL widget, sampling every frame. */
+  dragUnder(steps: number): Promise<Record<string, unknown>>;
   teardown(): void;
 }
 
@@ -289,6 +295,13 @@ export function mountCompositedApp(): AppRig {
   let lastTexture: GPUTexture | undefined;
   let bridge: GLBridge | undefined;
   let root: Root | undefined;
+  let lift: ReturnType<typeof createLiftDriver> | undefined;
+  let quadPass: ReturnType<typeof createWidgetQuadPass> | undefined;
+  /** Build the pass and keep a handle, so the rig can read drawn/skipped. */
+  const buildQuadPass = (deps: Parameters<typeof createWidgetQuadPass>[0]) => {
+    quadPass = createWidgetQuadPass(deps);
+    return quadPass;
+  };
   /**
    * Rig knob: the two-orientation comparison drives the SAME pass both ways.
    * Production is `false` — see gl-source.ts's orientation note.
@@ -338,7 +351,16 @@ export function mountCompositedApp(): AppRig {
     world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
     world.setResource(Viewport, { w, h, dpr });
 
+    // ONE LIFT: the ease that replaces the CSS spring and the island's own.
+    // An explicit scale so the witness can SEE it; a product reads
+    // ChromeSettings.liftScale.
+    lift = createLiftDriver(world, { scale: 1.08 });
+    // TWO facts functions: the binder sizes slots from the card's REAL
+    // geometry, the quad pass draws the LIFTED one. Sharing the lifted
+    // function re-slots the card on every frame of the ease and composites it
+    // as nothing at all — see quad-facts.ts.
     const facts = createWorldQuadFacts(world);
+    const displayFacts = createWorldQuadFacts(world, { lift });
     binder = createDomSourceBinder(gpu.device, sources, (e) => facts(e), {
       firstPageSize: { width: 1024, height: 1024 },
       onDirt: () => compositor?.mark("dom"),
@@ -357,12 +379,12 @@ export function mountCompositedApp(): AppRig {
     compositor = createCompositorReflector({
       world,
       registry: sources,
-      quadPass: createWidgetQuadPass({
+      quadPass: buildQuadPass({
         device: gpu.device,
         format,
         registry: sources,
         order: () => order,
-        facts,
+        facts: displayFacts,
         resolve: (entity, source) => {
           const s = source as CompositorSource;
           if (s.kind === "gl") {
@@ -381,6 +403,10 @@ export function mountCompositedApp(): AppRig {
       target,
       prepare: (frame) => {
         const b = binder as NonNullable<typeof binder>;
+        // A lift is presentation dirt with no ECS stamp behind it: `Grab` is
+        // written once and the 180 ms that follows changes no cell. Re-marking
+        // on "still animating" is what keeps it moving.
+        if (lift?.advance() === true) compositor?.mark("promotion");
         b.sync(frame);
         if (b.pending() > 0) compositor?.mark("dom");
       },
@@ -391,6 +417,9 @@ export function mountCompositedApp(): AppRig {
     // compositor's — so an island repaints and is composited in the same
     // engine flush rather than one frame late.
     bridge = createGLBridge(engine, {});
+    // The Q5 default: promote on grab, demote one settle window after the
+    // drop. The drag witness relies on it — nothing promotes the card by hand.
+    engine.registerReflector(createPresentationPolicy(world, presentation, { settleMs: 250 }));
     engine.registerReflector(domWidgets);
     engine.registerReflector(writeback);
     engine.registerReflector(compositor);
@@ -469,6 +498,227 @@ export function mountCompositedApp(): AppRig {
       h: Math.round((s?.h ?? 0) * scale),
     };
   };
+
+  /**
+   * Read SEVERAL small sub-rects of a texture in ONE submit.
+   *
+   * Plural on purpose. `getCurrentTexture()` hands out a swap-chain texture
+   * that is destroyed once the frame presents, so a second read issued after
+   * the first one's `await` copies from a dead texture — "Destroyed texture
+   * [...WebgpuSwapChainTexture...] used in a submit", and the buffer comes back
+   * zeroed. Reading three points per frame that way made a correctly
+   * composited card look absent for the whole drag. Enqueue every copy first,
+   * submit once, then await the maps.
+   *
+   * 64 px wide is exactly `copyTextureToBuffer`'s 256-byte row alignment.
+   */
+  async function readRegions(
+    texture: GPUTexture,
+    points: Array<{ x: number; y: number }>,
+    size = 16,
+  ): Promise<Uint8Array[]> {
+    const device = (gpu as EngineGpu).device;
+    const bytesPerRow = 256;
+    const buffers = points.map(() =>
+      device.createBuffer({
+        size: bytesPerRow * size,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      }),
+    );
+    const encoder = device.createCommandEncoder();
+    points.forEach((pt, i) => {
+      encoder.copyTextureToBuffer(
+        {
+          texture,
+          origin: { x: Math.max(0, Math.round(pt.x)), y: Math.max(0, Math.round(pt.y)), z: 0 },
+        },
+        { buffer: buffers[i] as GPUBuffer, bytesPerRow, rowsPerImage: size },
+        { width: 64, height: size, depthOrArrayLayers: 1 },
+      );
+    });
+    device.queue.submit([encoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
+    const out: Uint8Array[] = [];
+    for (const buffer of buffers) {
+      await buffer.mapAsync(GPUMapMode.READ);
+      out.push(new Uint8Array(buffer.getMappedRange()).slice());
+      buffer.unmap();
+      buffer.destroy();
+    }
+    return out;
+  }
+
+  /** One region, for callers that are not reading a live swap-chain texture. */
+  async function readRegion(texture: GPUTexture, x: number, y: number, size = 16): Promise<Uint8Array> {
+    return (await readRegions(texture, [{ x, y }], size))[0] as Uint8Array;
+  }
+
+  /** The modal colour of a region — robust to a stray AA pixel at its edge. */
+  function modalColour(region: Uint8Array, bgra = format.startsWith("bgra")): number[] {
+    const counts = new Map<number, number>();
+    for (let i = 0; i < region.length; i += 4) {
+      const key =
+        ((region[i] as number) << 24) |
+        ((region[i + 1] as number) << 16) |
+        ((region[i + 2] as number) << 8) |
+        (region[i + 3] as number);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let best = 0;
+    let bestN = -1;
+    for (const [k, n] of counts) {
+      if (n > bestN) {
+        best = k;
+        bestN = n;
+      }
+    }
+    const c0 = (best >>> 24) & 0xff;
+    const c1 = (best >>> 16) & 0xff;
+    const c2 = (best >>> 8) & 0xff;
+    return bgra ? [c2, c1, c0, best & 0xff] : [c0, c1, c2, best & 0xff];
+  }
+
+  /**
+   * THE S6 WITNESS (design-012 §9 S6).
+   *
+   * A dragged DOM card passes UNDER a GL widget at its true sibling ordinal —
+   * the inverse of design-004 §1's named accepted consequence, where a
+   * picked-up card jumps to P3 and pops above every GL surface on the board.
+   *
+   * Two fixed screen sample points, because "the island wins" is only
+   * meaningful next to "the card is drawn at all":
+   *
+   *   P_ISLAND  the island's centre, which the card passes through. EVERY
+   *             frame must show the island — one frame of card colour is the
+   *             z-pop, which is why this is a sequence and not a screenshot.
+   *   P_SIDE    left of the island, on the card's path. Frames where the card
+   *             covers it must show the CARD. Without this, a card that never
+   *             composited at all would pass the z test perfectly.
+   */
+  async function dragUnder(steps: number) {
+    const islandE = island as Entity;
+    const cardE = card as Entity;
+    // Paint order: card FIRST, island second ⇒ the island is above. This is
+    // the ordering the stratified profile cannot honour for a dragged card.
+    order.length = 0;
+    order.push(cardE, islandE);
+
+    world.edit(cardE).set(Position, { x: -40, y: 170 });
+    await settle(4);
+
+    const dpr = window.devicePixelRatio || 1;
+    const P_ISLAND = { x: 440, y: 440 };
+    const P_SIDE = { x: 96, y: 440 };
+
+    // Pick it up. The POLICY promotes it — the rig never calls setPresentation.
+    world.addComponent(cardE, Grab, {
+      x: 0,
+      y: 0,
+      w: 160,
+      h: 100,
+      parent: NO_ENTITY,
+      prev: NO_ENTITY,
+      ord: 0,
+    });
+    await settle(3);
+    const promoted = presentation.get(cardE);
+    // DIAGNOSTIC: force one re-copy at the host's current, known-good state.
+    // If the card appears only after this, the slot was holding pixels captured
+    // in some earlier state and nothing had marked it dirty since.
+    const refusedBefore = binder?.refusedCopies() ?? 0;
+    binder?.atlas.markDirty(cardE);
+    compositor?.mark("dom");
+    await settle(3);
+    const refusedAfter = binder?.refusedCopies() ?? 0;
+
+    // THE SPLIT that matters: read the ATLAS PAGE at the card's own slot. If
+    // the slot is transparent the COPY captured nothing; if it is red the copy
+    // is fine and the DRAW is at fault. Guessing between those two has already
+    // cost three wrong hypotheses.
+    let slotSample = "no-slot";
+    const placement = binder?.atlas.placementOf(cardE);
+    if (placement !== undefined) {
+      const px = await readRegion(
+        placement.texture,
+        placement.rect.x + 16,
+        placement.rect.y + 16,
+        16,
+      );
+      slotSample = JSON.stringify(modalColour(px, false)); // atlas pages are rgba8unorm
+    }
+
+    const frames: Array<{
+      x: number;
+      island: number[];
+      side: number[];
+      cardCentre: number[];
+      cardRect: number[];
+      drawn: number;
+      skipped: number;
+      registered: boolean;
+      residency: string;
+      host: string;
+      slotRect: string;
+      coversIsland: boolean;
+      coversSide: boolean;
+      lift: number;
+    }> = [];
+
+    for (let i = 0; i < steps; i++) {
+      const worldX = -40 + (i * 420) / Math.max(1, steps - 1);
+      world.edit(cardE).set(Position, { x: worldX, y: 170 });
+      compositor?.mark("promotion");
+      engine.step(performance.now());
+      const texture = lastTexture;
+      if (texture === undefined) continue;
+      const cx = worldX * dpr;
+      const cw = 160 * dpr;
+      const cardCentreX0 = cx + cw / 2;
+      const cardCentreY0 = (170 + 50) * dpr;
+      const [islandRegion, sideRegion, cardRegion] = await readRegions(texture, [
+        { x: P_ISLAND.x - 32, y: P_ISLAND.y - 8 },
+        { x: P_SIDE.x - 32, y: P_SIDE.y - 8 },
+        { x: cardCentreX0 - 32, y: cardCentreY0 - 8 },
+      ]);
+      frames.push({
+        x: Math.round(worldX),
+        island: modalColour(islandRegion as Uint8Array),
+        side: modalColour(sideRegion as Uint8Array),
+        cardCentre: modalColour(cardRegion as Uint8Array),
+        cardRect: [Math.round(cx), Math.round(cardCentreY0 - 100), Math.round(cw), 200],
+        // Why is the card not there? These three split it: not registered, no
+        // resident slot, or drawn-but-invisible.
+        drawn: quadPass?.drawn() ?? -1,
+        skipped: quadPass?.skipped() ?? -1,
+        registered: sources.has(cardE),
+        residency: binder?.atlas.allocator.get(cardE)?.residency ?? "none",
+        host: (() => {
+          const el = domWidgets.hostElementFor(cardE);
+          if (el === undefined) return "no-host";
+          const r = el.getBoundingClientRect();
+          return `${el.style.width}x${el.style.height} ${el.style.transform} rect=${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)} kids=${el.firstElementChild?.childElementCount ?? -1} parent=${el.parentElement?.tagName ?? "none"}`;
+        })(),
+        slotRect: (() => {
+          const slot = binder?.atlas.allocator.get(cardE);
+          return slot === undefined ? "none" : `${slot.rect.width}x${slot.rect.height}@${slot.rect.x},${slot.rect.y}`;
+        })(),
+        coversIsland: cx <= P_ISLAND.x && cx + cw >= P_ISLAND.x,
+        coversSide: cx <= P_SIDE.x && cx + cw >= P_SIDE.x,
+        lift: Number((lift?.factsFor(cardE).scale ?? 1).toFixed(3)),
+      });
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    }
+
+    world.removeComponent(cardE, Grab);
+    await settle(4);
+    return {
+      promoted,
+      afterDrop: presentation.get(cardE),
+      refusedDuringPromote: refusedAfter - refusedBefore,
+      slotSample,
+      frames,
+    };
+  }
 
   return {
     ready,
@@ -655,6 +905,8 @@ export function mountCompositedApp(): AppRig {
         targetSize: target === null ? null : `${target.width}x${target.height}`,
       };
     },
+
+    dragUnder,
 
     async mixedZ() {
       flipIslands = false;

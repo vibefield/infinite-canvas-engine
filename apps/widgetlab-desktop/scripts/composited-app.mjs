@@ -152,6 +152,62 @@ try {
     `EXIT: a dom card at a later sibling ordinal covers the GL island in the SAME pass — true z across kinds (rgba ${r},${g},${b},${a})`,
   );
 
+  // --- THE S6 WITNESS: a dragged card passes UNDER a GL widget --------------
+  const drag = await page.evaluate(() => window.__appRig.dragUnder(24));
+  log(
+    `DRAG: promoted=${drag.promoted} afterDrop=${drag.afterDrop} frames=${drag.frames.length} ` +
+      `refusedDuringPromote=${drag.refusedDuringPromote} atlasSlotPixel=${drag.slotSample}`,
+  );
+  fs.writeFileSync(path.join(shotDir, "s6-drag-under-gl.png"), await page.screenshot());
+
+  const covering = drag.frames.filter((f) => f.coversIsland);
+  const onSide = drag.frames.filter((f) => f.coversSide);
+  const isCard = (c) => c[0] > 150 && c[1] < 120 && c[2] < 120 && c[3] > 200;
+  const zPops = covering.filter((f) => isCard(f.island));
+  const drewOnSide = onSide.filter((f) => isCard(f.side));
+  log(
+    `  frames over the island: ${covering.length}, of which z-pops: ${zPops.length}` +
+      ` | frames over P_SIDE: ${onSide.length}, of which show the card: ${drewOnSide.length}`,
+  );
+  log(`  island sample across the drag: ${JSON.stringify(covering.slice(0, 3).map((f) => f.island))}`);
+  log(`  card-centre sample: ${JSON.stringify(drag.frames.slice(0, 4).map((f) => f.cardCentre))}`);
+  log(`  card rect (device px): ${JSON.stringify(drag.frames.slice(0, 4).map((f) => f.cardRect))}`);
+  log(
+    `  pass state: ${JSON.stringify(
+        drag.frames.slice(0, 4).map((f) => ({
+          drawn: f.drawn,
+          skipped: f.skipped,
+          reg: f.registered,
+          res: f.residency,
+        })),
+      )}`,
+  );
+  log(`  host: ${drag.frames[0]?.host}`);
+  log(`  host (mid-drag): ${drag.frames[12]?.host}`);
+  log(`  slot: ${drag.frames[0]?.slotRect}`);
+  log(`  lift scale across the drag: ${JSON.stringify(drag.frames.slice(0, 6).map((f) => f.lift))}`);
+
+  // The POLICY promoted it — nothing in the rig called setPresentation.
+  check(drag.promoted === "composited", `grabbing the card PROMOTED it (${drag.promoted})`);
+  check(
+    drag.afterDrop === "composited",
+    `and dropping it does not demote on the release edge (${drag.afterDrop}) — the settle window is still open`,
+  );
+  // The lift ran as a per-quad fact: one ease, no CSS spring involved.
+  const lifted = drag.frames.some((f) => f.lift > 1.001);
+  check(lifted, `the lift ran as a per-quad fact (max scale ${Math.max(...drag.frames.map((f) => f.lift))})`);
+
+  check(covering.length > 4, `the card really crossed the island (${covering.length} frames over it)`);
+  // THE GUARD: if the card never drew anywhere, "the island wins" is vacuous.
+  check(
+    drewOnSide.length > 0,
+    `the dragged card IS composited — it paints where the island is not (${drewOnSide.length}/${onSide.length} frames)`,
+  );
+  check(
+    zPops.length === 0,
+    `EXIT: NO Z-POP — across ${covering.length} frames of the card crossing the GL widget, not one shows the card on top (${zPops.length} z-pop frames)`,
+  );
+
   await page.evaluate(() => window.__appRig.teardown());
 } catch (err) {
   console.error(err);

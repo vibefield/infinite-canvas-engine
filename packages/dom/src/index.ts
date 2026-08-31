@@ -39,6 +39,13 @@ export {
   type PresentationRegistry,
   type SurfacePresentation,
 } from "./presentation-mode";
+// The Q5 default as policy: live-dom at rest, composited on drag, with the
+// demotion debounced by one settle window (design-012 §6.3, plan §2).
+export {
+  createPresentationPolicy,
+  type PresentationPolicy,
+  type PresentationPolicyOptions,
+} from "./presentation-policy";
 export {
   createDomWritebackReflector,
   type DomWritebackHosts,

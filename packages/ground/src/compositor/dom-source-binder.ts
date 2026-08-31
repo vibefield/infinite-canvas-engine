@@ -7,6 +7,25 @@
  * binding), and the quad pass (WGSL). Its whole job is the bookkeeping those
  * three deliberately do not do.
  *
+ * ── ZOOM BANDS — the same ladder islands use ──────────────────────────────
+ * A slot is sized at `bounds × dpr × BAND`, not at the live zoom, and the band
+ * is held with hysteresis: it changes only when the zoom leaves
+ * `[band × 0.5, band × 2]`. Bands are powers of two, each covering a 4×
+ * display range (`@ice/kernel/zoom-bands`, ported from v1's RFC-002).
+ *
+ * That ladder is not re-derived here on purpose. design-004 §3's band
+ * semantics are the vocabulary for BOTH surface kinds, and r3f's island pool
+ * already allocates its FBOs through `fboPixelSize`/`isOutOfBand`. Two
+ * different quantisations would mean a dom card and a GL widget on one board
+ * re-rasterising at different moments during the same pinch — visibly, and for
+ * no reason anyone could name.
+ *
+ * Without bands, sizing from the live zoom re-slots and re-copies EVERY frame
+ * of a continuous zoom (each `ceil(size × zoom × dpr)` is a new size). With
+ * them, a zoom costs at most one re-copy per band edge crossed, and the quad
+ * simply samples its slot at a different scale in between — which is what the
+ * linear filter and the 2 px gutters were always for.
+ *
  * ── Slot sizing without reading layout ─────────────────────────────────────
  * A reflector may never read layout during flush (law 10), so the slot size is
  * DERIVED, not measured: world size × zoom × dpr, which is exactly what
@@ -27,6 +46,7 @@
  * structural, not merely avoided (§8 gate 2). The only bulk iteration is
  * `sync`, and its copies are budgeted per composite.
  */
+import { fboPixelSize, isOutOfBand, selectBand } from "@ice/kernel";
 import {
   DEFAULT_SURFACE_DEMAND,
   demandIntervalMs,
@@ -106,6 +126,8 @@ export interface DomSourceBinder {
   throttled(): number;
   /** Change the per-composite copy budget (boot staggering, demand pressure). */
   setCopyBudget(limit: number): void;
+  /** The zoom band a slot is currently sized for (0 when it has none). */
+  bandOf(entity: Entity): number;
   dispose(): void;
 }
 
@@ -134,6 +156,8 @@ export function createDomSourceBinder(
   const byHost = new Map<Element, Entity>();
   /** What each entity was last PLACED at — the change guard in `sync`. */
   const placed = new Map<Entity, { width: number; height: number; host: Element }>();
+  /** The zoom band each slot was last sized for; hysteresis holds it. */
+  const bands = new Map<Entity, number>();
   let copies = 0;
 
   const hostOf = (source: CompositorSource): Element | undefined =>
@@ -158,6 +182,7 @@ export function createDomSourceBinder(
       if (!live.has(slot.id)) {
         atlas.free(slot.id);
         placed.delete(slot.id);
+        bands.delete(slot.id);
         lastMarked.delete(slot.id);
         deferred.delete(slot.id);
       }
@@ -169,7 +194,6 @@ export function createDomSourceBinder(
 
     sync(frame) {
       refreshHostMap();
-      const scale = frame.camera.zoom * frame.dpr;
       const live = new Set<Entity>();
 
       for (const [entity, source] of registry.entries()) {
@@ -178,9 +202,21 @@ export function createDomSourceBinder(
         const g = geometry(entity);
         if (g === undefined || g.w <= 0 || g.h <= 0) continue;
         live.add(entity);
-        // Round UP — see the header.
-        const width = Math.ceil(g.w * scale);
-        const height = Math.ceil(g.h * scale);
+
+        // BAND, with hysteresis: keep the one this slot was sized for until
+        // the zoom leaves its 4× window, then step to the band for the current
+        // zoom. `isOutOfBand` returns false for a slot that has never been
+        // banded, so the `?? 0` first sight always takes the else branch.
+        const held = bands.get(entity);
+        const band =
+          held === undefined || isOutOfBand(frame.camera.zoom, held)
+            ? selectBand(frame.camera.zoom)
+            : held;
+        bands.set(entity, band);
+
+        // `bounds × dpr × band` — the island pool's own formula, so the two
+        // kinds quantise identically.
+        const { width, height } = fboPixelSize(g.w, g.h, frame.dpr, band);
 
         // PLACE ONLY ON CHANGE. `allocate` marks an existing resident slot
         // STALE, which queues a re-copy — so calling it every frame would
@@ -304,11 +340,13 @@ export function createDomSourceBinder(
     setCopyBudget(limit) {
       budget = limit > 0 ? limit : Number.POSITIVE_INFINITY;
     },
+    bandOf: (entity) => bands.get(entity) ?? 0,
 
     dispose() {
       atlas.dispose();
       byHost.clear();
       placed.clear();
+      bands.clear();
       lastMarked.clear();
       deferred.clear();
     },

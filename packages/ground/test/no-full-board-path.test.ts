@@ -105,14 +105,46 @@ describe("no full-board repaint path exists", () => {
     expect(binder.copies()).toBe(settled);
   });
 
-  it("DOES re-copy when a zoom band changes the slot size — the honest exception", () => {
-    // The counterpart to the test above: if nothing ever re-copied, the first
-    // test would pass for the wrong reason.
+  it("does not re-copy for a zoom INSIDE the band's window — hysteresis", () => {
+    // Bands are powers of two and each covers a 4x display range, so zooming
+    // from 1 to 2 stays in band: `isOutOfBand` is ratio > 2 || ratio < 0.5, and
+    // 2 is not > 2. The quad samples the same slot at a different scale, which
+    // is what the linear filter and the 2 px gutters are for. Before bands,
+    // every frame of a continuous zoom re-slotted and re-copied the board.
     const { binder } = board(12);
     binder.sync(frame);
     const settled = binder.copies();
-    binder.sync({ ...frame, camera: { x: 0, y: 0, zoom: 2 } });
-    expect(binder.copies()).toBeGreaterThan(settled);
+    for (const zoom of [1.1, 1.5, 1.9, 2]) {
+      binder.sync({ ...frame, camera: { x: 0, y: 0, zoom } });
+    }
+    expect(binder.copies()).toBe(settled);
+    expect(binder.bandOf(entity(0))).toBe(1);
+  });
+
+  it("DOES re-copy when the zoom leaves the band — the honest exception", () => {
+    // The counterpart: if nothing ever re-copied, the tests above would pass
+    // for the wrong reason. Crossing the edge re-bands and re-slots ONCE.
+    const { binder } = board(12);
+    binder.sync(frame);
+    const settled = binder.copies();
+    binder.sync({ ...frame, camera: { x: 0, y: 0, zoom: 3 } });
+    expect(binder.copies()).toBe(settled + 12);
+    expect(binder.bandOf(entity(0))).toBe(4);
+    // …and then holds the new band across the rest of the gesture.
+    const afterBand = binder.copies();
+    for (const zoom of [3.5, 4, 5, 6, 7.9]) {
+      binder.sync({ ...frame, camera: { x: 0, y: 0, zoom } });
+    }
+    expect(binder.copies()).toBe(afterBand);
+  });
+
+  it("sizes a slot at bounds x dpr x band, the island pool's own formula", () => {
+    const { binder } = board(1);
+    binder.sync(frame); // dpr 2, zoom 1 -> band 1
+    const slot = binder.atlas.allocator.get(entity(0));
+    // 100x60 world at dpr 2, band 1.
+    expect(slot?.rect.width).toBe(200);
+    expect(slot?.rect.height).toBe(120);
   });
 
   it("only copies the cards a paint event NAMED", () => {

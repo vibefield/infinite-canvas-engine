@@ -17,6 +17,7 @@
  * the compositor's own lift/effect chrome (S6).
  */
 import { Opacity, Position, Size, MeasuredSize, type Entity, type World } from "@ice/core";
+import type { LiftDriver } from "./lift";
 import type { QuadFacts } from "./widget-quad-pass";
 
 export interface WorldQuadFactsOptions {
@@ -25,6 +26,24 @@ export interface WorldQuadFactsOptions {
    * rectangle. Leave 0 for dom sources (see the header).
    */
   readonly radius?: (entity: Entity) => number;
+  /**
+   * The lift/fade driver (design-012 §7's "one lift"). Its scale expands the
+   * quad's rect ABOUT ITS CENTRE and its opacity multiplies the entity's own —
+   * so a card that is both faded by the app and lifted by a gesture composes
+   * the two rather than having one of them win.
+   *
+   * Absent ⇒ no lift, which is what every quad had before S6.
+   *
+   * THE LIFT IS DISPLAY-ONLY, and the split matters. A lifted facts function
+   * must feed the QUAD PASS and never the atlas binder: the binder sizes slots
+   * from the geometry it is given, so an easing scale would re-slot and
+   * re-rasterise the card on every frame of the 180 ms ease — and worse, a
+   * freshly re-slotted card is `empty`, so the quad is SKIPPED and a dragged
+   * card composites as nothing at all. (Measured: the card's centre read
+   * (0,0,0,0) for the whole drag before the two were separated.) A lift changes
+   * where pixels are drawn, never what they are.
+   */
+  readonly lift?: LiftDriver;
 }
 
 /**
@@ -46,12 +65,22 @@ export function createWorldQuadFacts(
     const s = measured !== undefined && measured.w > 0 ? measured : world.get(entity, Size);
     if (s === undefined || s.w <= 0 || s.h <= 0) return undefined;
     const radius = options.radius?.(entity) ?? 0;
+    const opacity = world.get(entity, Opacity)?.a ?? 1;
+    const lift = options.lift?.factsFor(entity);
+    if (lift === undefined || (lift.scale === 1 && lift.opacity === 1)) {
+      return { x: p.x, y: p.y, w: s.w, h: s.h, opacity, radius };
+    }
+    // A lift scales about the card's CENTRE: grow the rect and pull the origin
+    // back by half the growth, so the card swells in place instead of drifting
+    // down-right. Done here rather than in WGSL — see lift.ts.
+    const w = s.w * lift.scale;
+    const h = s.h * lift.scale;
     return {
-      x: p.x,
-      y: p.y,
-      w: s.w,
-      h: s.h,
-      opacity: world.get(entity, Opacity)?.a ?? 1,
+      x: p.x - (w - s.w) / 2,
+      y: p.y - (h - s.h) / 2,
+      w,
+      h,
+      opacity: opacity * lift.opacity,
       radius,
     };
   };

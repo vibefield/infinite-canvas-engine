@@ -16,3 +16,7 @@ export * from "./easing";
 export * from "./nav-flight";
 export * from "./layout";
 export * from "./atlas-pack";
+
+// The lift: ONE curve and ONE duration for every surface, so the composited
+// profile cannot drift from the DOM transition it replaces (design-012 §7).
+export { FADE_EASE, LIFT_DURATION_MS, LIFT_EASE, easedValue } from "./lift";
