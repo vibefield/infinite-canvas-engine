@@ -37,7 +37,32 @@ All notable changes to ICE are documented here. The format follows
   holds the subscription and drops it when the source is replaced or removed.
   Optional, and a source that omits it composites exactly as it did before.
 
-### Notes
+### Fixed
+
+Fifteen defects from a full-range review (2026-08-31), every fix carrying a
+regression test proven red against the pre-fix code. Document integrity: a
+legacy schema-2 document now reaches its 2→3 migration instead of gating
+read-only on a dependency closure only that migration can satisfy; an envelope
+whose optional `rootCanvas` mirror is ABSENT opens healthy (only a PRESENT,
+conflicting mirror disagrees); a runtime extension re-arms after a
+breaker-rolled-back fault, so its outputs recover on the next dispatch; a
+widget spawned into the open frame is selectable before the first `step()`.
+Presentation: settle-window demotion returns a card to its DECLARED
+`presentation.default` (one grab no longer strips `picture`); despawn clears
+the presentation entry, so a recycled entity id no longer inherits
+`composited`; a profile refusal in `<InfiniteCanvas>` unwinds cleanly and a
+remount reports the real reason instead of "plane already owned"; an adapter
+that unregisters while a transition is PREPARING gets its retainer released.
+Compositor: one paint on a paused/bucket-0 card no longer spins the compositor
+(idle-zero holds for parked demand); a slot the atlas cannot seat is clamped
+uniformly and its refusal answered — never a copy across the gutters;
+`groundHost` now composites at full parity with `ground()` via one shared
+wiring; `ground({ lift })` actually advances the lift and keeps compositing
+until the ease settles; the offscreen ground target is disposed with its
+layer; the quad pass sweeps bind groups for textures nothing draws;
+`freeRect` refuses a double free. Islands: a PINNED render target that
+outgrows its size is retired, not destroyed — a nav-crossfade clone keeps its
+pixels through the hold.
 
 - The three entries above are the consumer-visible surface of the design-012
   UNIFIED COMPOSITOR. `docs/implementation-plan.md` M18 carries the whole of

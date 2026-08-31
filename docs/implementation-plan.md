@@ -633,6 +633,47 @@ riders below.
   once before grading. And the compatibility-mode MSAA gotcha remains untested
   on a host that actually engages compatibility mode.
 
+**FIX WAVE (2026-08-31, same day as close).** A high-effort review of the whole
+unpushed range (design-011 + the S0–S8 ladder) confirmed 15 correctness defects;
+all 15 landed as 16 commits, `12730e4..428c457`, every fix with a
+mutation-checked regression test, full gate green on the merged tree (1,450
+tests). Notable for the record, beyond the fixes themselves:
+
+- **The ladder's two falsified exit claims are corrected at source.** "Idle-zero
+  holds at every slice" had a hole the rigs never exercised: one HiC paint on a
+  paused/bucket-0 card parked dirt inside `pending()` and span the compositor
+  every rAF frame (`76d82b3` — parked dirt now waits OUTSIDE pending, on
+  demand, not a clock). And `program-host.ts`'s factory-parity promise was
+  false: `groundHost` — the factory widgetlab-desktop SHIPS — built a quad
+  pass with none of the four seams and no binder, so its composited path drew
+  NOTHING; every rig passed because rigs hand-wired the binder. The wiring is
+  now extracted (`compositor/wiring.ts`) so both factories call one assembly
+  and cannot drift (`5a7e328`), and the witness goes through the factory.
+- **Two review findings were themselves corrected by the fix discipline.** The
+  extension-host rollback strands outputs only in the VALUE-restore shape (a
+  component REMOVAL journals the entity back into the collector and
+  self-recovers — measured with a probe; the first regression test used the
+  wrong shape and passed pre-fix). And the despawn presentation leak is
+  sharper than a growing map: a recycled entity id INHERITED the dead widget's
+  `composited` and mounted as a canvas child that policy would never demote.
+- **One adjudication REFUTED as ratified behavior**: composited-outranks-lifted
+  is design-012 §7's retirement of inert-during-drag ("drag is a per-quad GPU
+  fact at true z"), not a defect — the misleading unconditional header comment
+  now names the contract stratified-only.
+- **The pin-blind resize** (`428c457`): both island pools disposed a PINNED
+  target on size change while a retained crossfade clone still sampled it —
+  reachable in the fast-fade frames AFTER `NavTransition.active` flips false.
+  A pinned target is now RETIRED, not disposed; `release()` drains the
+  graveyard; retired bytes stay counted because they are still allocated.
+- **Open, named rather than closed**: (a) an UNVERIFIED size-agreement
+  question — dom-writeback sizes hosts at world × LIVE zoom while the binder
+  slots at world × dpr × BAND, and hysteresis tolerates 2× between them; if
+  HiC rasterises at effective device size, the extent-less copy would write
+  past the slot. Needs a real-GPU rig; the binder header's "the two cannot
+  disagree" claim is flagged, not trusted. (b) the quad pass sweeps stale
+  bind groups on a 60-composite retention window because nothing lifecycles
+  its textures — an event-driven eviction seam is a design call, not a slice.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
