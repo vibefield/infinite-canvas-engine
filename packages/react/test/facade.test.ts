@@ -28,6 +28,7 @@ import {
   EngineProvider,
   InfiniteCanvas,
   attachKeymap,
+  compositedProfile,
   useCommit,
   usePresencePeers,
   useTool,
@@ -263,6 +264,96 @@ describe("usePresencePeers", () => {
     const before = result.current;
     forceRender();
     expect(result.current).toBe(before); // membership-keyed cache → stable identity
+  });
+});
+
+describe("<InfiniteCanvas> — a refused profile", () => {
+  /**
+   * A `matchMedia` whose listeners can be counted. The reduced-motion listener
+   * lives for the life of the WINDOW, so one left behind by a refused mount
+   * outlives every engine it captured.
+   */
+  function countingMatchMedia(): { live: () => number } {
+    let live = 0;
+    const original = window.matchMedia;
+    cleanups.push(() => {
+      (window as unknown as { matchMedia: unknown }).matchMedia = original;
+    });
+    (window as unknown as { matchMedia: unknown }).matchMedia = () => ({
+      matches: false,
+      addEventListener: () => {
+        live += 1;
+      },
+      removeEventListener: () => {
+        live -= 1;
+      },
+    });
+    return { live: () => live };
+  }
+
+  /** Mount the composited profile on a device-less engine; return what it threw. */
+  function mountRefused(engine: CanvasEngine): unknown {
+    const mountEl = document.createElement("div");
+    document.body.appendChild(mountEl);
+    // React 19 reports an uncaught effect error as well as rethrowing it; the
+    // sink keeps this expected refusal out of the suite's console.
+    const root = createRoot(mountEl, { onUncaughtError: () => {} });
+    try {
+      act(() => {
+        root.render(createElement(InfiniteCanvas, { engine, profile: compositedProfile }));
+      });
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  it("surfaces the REAL reason on a remount, never 'plane already owned'", () => {
+    // A throwing effect returns no cleanup, so anything the refusal path had
+    // already claimed on the ENGINE — which outlives the mount — was claimed
+    // for good. Registering the dom transition adapter before the gate made
+    // the SECOND mount die inside `transitions.register`, masking the reason
+    // the developer actually needed to read.
+    const { engine } = makeEngine(); // no compositorDevice ⇒ composited refuses
+    const first = mountRefused(engine);
+    expect(String(first)).toMatch(/needs an app-owned GPUDevice/);
+
+    const second = mountRefused(engine);
+    expect(String(second)).toMatch(/needs an app-owned GPUDevice/);
+    expect(String(second)).not.toMatch(/already owned/);
+  });
+
+  it("claims nothing on the engine or the window on its way out", () => {
+    const media = countingMatchMedia();
+    const { engine } = makeEngine();
+    expect(mountRefused(engine)).toBeInstanceOf(Error);
+
+    expect(engine.transitions.stats().adapters).toBe(0); // the dom plane is free
+    expect(media.live()).toBe(0); // no window-lifetime listener survived
+  });
+
+  it("still wires and unwires both once the profile ACCEPTS", () => {
+    // The control: the gate's new position must not cost the passing path its
+    // adapter or its listener.
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+    const media = countingMatchMedia();
+    const { engine } = makeEngine();
+    const mountEl = document.createElement("div");
+    document.body.appendChild(mountEl);
+    const root = createRoot(mountEl);
+
+    act(() => {
+      root.render(createElement(InfiniteCanvas, { engine })); // stratified default
+    });
+    expect(engine.transitions.stats().adapters).toBe(1);
+    expect(media.live()).toBe(1);
+
+    act(() => {
+      root.unmount();
+    });
+    expect(engine.transitions.stats().adapters).toBe(0);
+    expect(media.live()).toBe(0);
   });
 });
 

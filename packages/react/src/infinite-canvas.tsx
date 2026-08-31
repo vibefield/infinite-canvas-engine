@@ -7,7 +7,9 @@
  * and the viewport sync — everything that must live next to a real container.
  *
  * Boot order (registration order = reflector flush order, mirrored exactly):
- *   host → planes → reflectors[ planeTransform · ground(P0, app-injected) ·
+ *   host → planes → ground → PROFILE GATE (everything before it is local and
+ *   disposable; everything after it is undone by the cleanup) →
+ *   reflectors[ planeTransform · ground(P0, app-injected) ·
  *   domWidgets(P1/P3) · chrome(P4) · cursor · remoteCursors(P5) ] →
  *   pointer adapter → measurement (optional) → keymap → rAF loop → viewport RO.
  *
@@ -232,15 +234,6 @@ export function InfiniteCanvas({
     const planes = createPlanes(host);
     const planeArgs = { contentPlane: planes.content, liftedPlane: planes.lifted };
     const domWidgets = createDomWidgetsReflector(planeArgs, world, runtime.store);
-    const detachDomTransition = engine.transitions.register(domWidgets.transitionAdapter());
-    const motionQuery = container.ownerDocument.defaultView?.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    );
-    const syncReducedMotion = (): void => {
-      engine.transitions.setReducedMotion(motionQuery?.matches === true);
-    };
-    syncReducedMotion();
-    motionQuery?.addEventListener("change", syncReducedMotion);
     const remoteCursors = createRemoteCursorsReflector(host, world);
 
     // Handles kept for teardown: unregistering only stops flushes — the DOM
@@ -265,8 +258,18 @@ export function InfiniteCanvas({
 
     // The presentation profile's boot gate (design-012 §11 Q2). ONE profile
     // ships per app, so there is nothing to fall back to: refuse loudly.
-    // Thrown BEFORE anything is registered, so a refused mount leaves no
-    // half-wired canvas behind.
+    //
+    // The gate runs before ANY engine-wide registration and before any
+    // listener attach, because a throwing effect returns no cleanup — React
+    // never runs one for a render that did not complete. Whatever this path
+    // has already claimed on the ENGINE (which outlives the mount) is claimed
+    // for good. Registering the dom transition adapter above the gate meant a
+    // refused mount kept the "dom" transition plane forever, and the NEXT
+    // mount died with `plane "dom" is already owned` instead of the real
+    // refusal reason — each cycle also pinning the dead engine through a
+    // window-lifetime matchMedia listener (2026-08-31 review finding).
+    // Everything constructed above is LOCAL and disposed right here, so a
+    // refused mount still leaves no half-wired canvas behind.
     const activeProfile = profileRef.current ?? stratifiedProfile;
     const profileCtx = { engine, ground: groundLayer };
     const refusal = activeProfile.check(profileCtx);
@@ -280,6 +283,17 @@ export function InfiniteCanvas({
       host.dispose();
       throw new Error(`ice: the ${activeProfile.name} profile cannot mount — ${refusal}`);
     }
+
+    // Past the gate: everything from here is undone by the cleanup below.
+    const detachDomTransition = engine.transitions.register(domWidgets.transitionAdapter());
+    const motionQuery = container.ownerDocument.defaultView?.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    );
+    const syncReducedMotion = (): void => {
+      engine.transitions.setReducedMotion(motionQuery?.matches === true);
+    };
+    syncReducedMotion();
+    motionQuery?.addEventListener("change", syncReducedMotion);
 
     // Registration order = flush order — node-board's proven sequence, with
     // the profile's own reflectors spliced in right after ground (plan §4.3).
