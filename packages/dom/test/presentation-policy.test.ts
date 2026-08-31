@@ -27,7 +27,7 @@ const GRAB = { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord
 const SETTLE = 250;
 
 // Module scope: the widget registry is process-global and these names are
-// file-unique. The three declarations policy has to tell apart.
+// file-unique. The declarations policy has to tell apart.
 defineWidget({ type: "pp:free", surface: "dom", component: null });
 defineWidget({ type: "pp:pinned-live", surface: "dom", component: null, presentation: { pin: "live-dom" } });
 defineWidget({
@@ -37,6 +37,14 @@ defineWidget({
   presentation: { pin: "composited" },
 });
 defineWidget({ type: "pp:island", surface: "gl", component: null });
+// A NON-PINNED declared default — legal on a dom surface (only pin AND default
+// together are refused), and the shape the demotion edge has to honour.
+defineWidget({
+  type: "pp:default-picture",
+  surface: "dom",
+  component: null,
+  presentation: { default: "picture" },
+});
 
 function setup(options: { pinned?: (e: number) => boolean; type?: string } = {}) {
   const world = createWorld();
@@ -230,6 +238,44 @@ describe("what the policy must not touch", () => {
     step(SETTLE + 1);
     expect(presentation.get(entity)).toBe("composited");
     expect(policy.demotions()).toBe(0);
+  });
+
+  it("returns a card to its type's DECLARED default — one grab cannot strip it", () => {
+    // The seed `domWidgets.createHost` writes at mount, reproduced here: this
+    // card's TYPE asked to rest as a picture, and a drag is not a request to
+    // change that. Demoting to a hardcoded live-dom would convert the card
+    // permanently — the seed runs once, the demotion runs after every gesture.
+    const { presentation, entity, step, grab, release, policy } = setup({
+      type: "pp:default-picture",
+    });
+    presentation.set(entity, "picture");
+    grab();
+    step();
+    expect(presentation.get(entity)).toBe("composited");
+    release();
+    step();
+    step(SETTLE + 1);
+    expect(presentation.get(entity)).toBe("picture");
+    expect(policy.demotions()).toBe(1);
+
+    // And it survives the SECOND gesture too — "permanently" is the claim.
+    grab();
+    step();
+    release();
+    step();
+    step(SETTLE + 1);
+    expect(presentation.get(entity)).toBe("picture");
+  });
+
+  it("still lands an undeclared card on live-dom — the Q5 default is the fallback", () => {
+    const { presentation, entity, step, grab, release } = setup({ type: "pp:free" });
+    grab();
+    step();
+    release();
+    step();
+    step(SETTLE + 1);
+    expect(presentation.get(entity)).toBe("live-dom");
+    expect([...presentation.entries()]).toHaveLength(0); // the default is not stored
   });
 
   it("forgets a card that despawned mid-settle instead of writing to it", () => {

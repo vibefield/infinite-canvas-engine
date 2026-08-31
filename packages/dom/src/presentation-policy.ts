@@ -36,6 +36,12 @@
  *    through a whole gesture instead of being restored after it.
  *  - Kinds with no live-dom mode. See `eligible` below; for a GL island this
  *    is not a no-op but a source eviction.
+ *
+ * And one it may decide only in the type's own terms: WHERE A DEMOTION LANDS
+ * is the declared `default` (`restingMode` below), not a fixed `live-dom`.
+ * `live-dom` is what an undeclared type resolves to, which is most of the
+ * board — but reading it from the type is what keeps a declared `picture` card
+ * from being silently converted by its first drag.
  */
 import {
   Grab,
@@ -43,9 +49,10 @@ import {
   presentationIsLegal,
   type Entity,
   type ReflectorDef,
+  type SurfacePresentation,
   type World,
 } from "@ice/core";
-import type { PresentationRegistry } from "./presentation-mode";
+import { DEFAULT_PRESENTATION, type PresentationRegistry } from "./presentation-mode";
 import { declaredPresentation, widgetSurfaceKind } from "./widget-surfaces";
 
 /** `Grab` IS the motion signal — the same cell the lift and P3 promote read. */
@@ -115,6 +122,24 @@ export function createPresentationPolicy(
     declaredPresentation(world, entity)?.pin !== undefined || options.pinned?.(entity) === true;
 
   /**
+   * Where a demotion RETURNS a card: the mode its widget type DECLARED as its
+   * default, or the Q5 `live-dom` for a type that declared nothing (and for a
+   * bare entity that has no type to ask).
+   *
+   * Read here rather than assumed, for the same reason `isPinned` is: a
+   * declared default is a widget-type fact, and the seed in `domWidgets`
+   * applies it exactly ONCE, at mount. Demoting to a hardcoded `live-dom`
+   * would therefore let ONE grab permanently strip a declared `picture` — the
+   * card would come back from its first drag in a mode its type never asked
+   * for, and nothing would ever put it back. A pin gets both-edge protection
+   * (§6.3); a default earns the same protection on the return edge, which is
+   * the only edge it has ("`default` moves the STARTING mode; policy may still
+   * promote and demote from it" — surface/contract.ts).
+   */
+  const restingMode = (entity: Entity): SurfacePresentation =>
+    declaredPresentation(world, entity)?.default ?? DEFAULT_PRESENTATION;
+
+  /**
    * Does this entity's kind have a live-dom↔composited choice to make at all?
    *
    * ONLY `dom` surfaces do. A GL island's pixels are a texture in every mode it
@@ -181,7 +206,7 @@ export function createPresentationPolicy(
           presentation.clear(entity);
           continue;
         }
-        if (presentation.set(entity, "live-dom")) demotions++;
+        if (presentation.set(entity, restingMode(entity))) demotions++;
       }
     },
 
