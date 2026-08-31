@@ -23,6 +23,7 @@ import {
   createFramePreviewStore,
   decodeEnvelope,
   defineCanvasRuntimeExtension,
+  defineResource,
   defineCanvasType,
   defineComponent,
   defineContainer,
@@ -32,12 +33,14 @@ import {
   defineWidget,
   encodeCanvasIdentity,
   encodeEnvelope,
+  field,
   frameBehaviorPackId,
   instantiate,
   p,
   resolvePortal,
   tools,
   widgetSpawnInits,
+  writeRuntimeResource,
   type CanvasEngine,
   type Entity,
 } from "../src";
@@ -136,6 +139,46 @@ const RuntimeCanvas = defineCanvasType({
 const RuntimeContainer = defineContainer({
   type: "canvas-sdk:runtime-container",
   canvas: RuntimeCanvas,
+  component: null,
+});
+
+/**
+ * A runtime extension whose faults are scripted, reading ONE resource so a
+ * single write is the whole frame's dirt — the dispatch after a faulting one
+ * then carries nothing of its own, which is exactly the window the rollback
+ * used to strand.
+ */
+const RuntimeDirt = defineResource("canvasSdkRuntimeDirt", {
+  n: field("f64", { default: 0 }),
+});
+let faultingRuns = 0;
+let faultingThrows = 0;
+const FaultingRuntimeExtension = defineCanvasRuntimeExtension({
+  id: "canvas-sdk:faulting-runtime-extension",
+  version: 1,
+  reads: [RuntimeDirt],
+  writesRuntime: [RuntimeMark],
+  run(ctx) {
+    faultingRuns += 1;
+    if (faultingThrows > 0) {
+      faultingThrows -= 1;
+      throw new Error("canvas-sdk scripted runtime extension fault");
+    }
+    for (const child of ctx.children) ctx.set(child, RuntimeMark, { marked: true });
+  },
+});
+const FaultingRuntimeCanvas = defineCanvasType({
+  id: "canvas-sdk:faulting-runtime-canvas",
+  semanticVersion: 1,
+  semantic: { placement: { widgets: [Sticky] } },
+  presentation: {
+    tools: { allowed: [select, pan, drawSticky], default: select },
+    runtimeExtensions: [FaultingRuntimeExtension],
+  },
+});
+const FaultingRuntimeContainer = defineContainer({
+  type: "canvas-sdk:faulting-runtime-container",
+  canvas: FaultingRuntimeCanvas,
   component: null,
 });
 
@@ -867,6 +910,110 @@ describe("governed Canvas SDK logic", () => {
 
       engine.ops.exitContainer({ transition: "none" });
       expect(engine.world.get(sticky, RuntimeMark)).toBeUndefined();
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  function faultingRuntimeEngine(onGuestFault: (error: unknown) => void): CanvasEngine {
+    return createCanvasEngine({
+      widgets: [Sticky, FaultingRuntimeContainer],
+      tools: [select, pan, drawSticky],
+      canvasTypes: [DefaultCanvasType, FaultingRuntimeCanvas],
+      rootCanvas: DefaultCanvasType,
+      presentationFallback: DefaultCanvasType,
+      canvasRuntimeExtensions: [FaultingRuntimeExtension],
+      onGuestFault: (_id, error) => onGuestFault(error),
+    });
+  }
+
+  /**
+   * Enter the faulting canvas with one child, settled and quiescent. The child
+   * carries the extension's output component ALREADY, so a rollback is a value
+   * restore rather than a component removal — the shape that genuinely strands:
+   * a removal moves the entity's archetype, which journals it back into the
+   * host's collector and would re-dispatch on its own.
+   */
+  function settledFaultingFrame(engine: CanvasEngine): Entity {
+    engine.docs.create();
+    const container = engine.ops.spawnWidget(FaultingRuntimeContainer.type, { x: 0, y: 0 });
+    engine.step(16);
+    engine.ops.enterContainer(container, { transition: "none" });
+    const sticky = engine.ops.spawnWidget(Sticky.type, { x: 0, y: 0 });
+    engine.world.addComponent(sticky, RuntimeMark, { marked: false });
+    engine.step(32);
+    engine.step(48);
+    return sticky;
+  }
+
+  it("re-arms a runtime extension after a transient fault so its outputs recover", () => {
+    faultingRuns = 0;
+    faultingThrows = 0;
+    const faults: unknown[] = [];
+    const engine = faultingRuntimeEngine((error) => faults.push(error));
+    try {
+      const sticky = settledFaultingFrame(engine);
+      expect(engine.world.get(sticky, RuntimeMark)).toEqual({ marked: true });
+
+      // Quiescent: nothing dirty, so nothing dispatches.
+      const settled = faultingRuns;
+      engine.step(64);
+      expect(faultingRuns).toBe(settled);
+
+      // ONE scripted throw, driven by ONE resource write (the reactive notify
+      // lands a frame after the write, so step until the fault is observed).
+      faultingThrows = 1;
+      writeRuntimeResource(engine.world, RuntimeDirt, { n: 1 });
+      let now = 64;
+      for (let i = 0; i < 8 && faults.length === 0; i++) {
+        now += 16;
+        engine.step(now);
+      }
+      expect(faults).toHaveLength(1);
+      expect(faultingRuns).toBeGreaterThan(settled);
+      const afterFault = faultingRuns;
+      expect(engine.world.get(sticky, RuntimeMark)).toEqual({ marked: false });
+
+      // Nothing has changed since that faulting dispatch — the collector was
+      // drained before the throw and the value restore journals nothing. Only
+      // the rollback's re-arm can dispatch again; without it the reverted
+      // outputs stay stale indefinitely.
+      now += 16;
+      engine.step(now);
+      expect(faultingRuns).toBe(afterFault + 1);
+      expect(engine.world.get(sticky, RuntimeMark)).toEqual({ marked: true });
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  it("does not spin a runtime extension the breaker has suspended", () => {
+    faultingRuns = 0;
+    faultingThrows = 0;
+    const faults: unknown[] = [];
+    const engine = faultingRuntimeEngine((error) => faults.push(error));
+    try {
+      const sticky = settledFaultingFrame(engine);
+      expect(engine.world.get(sticky, RuntimeMark)).toEqual({ marked: true });
+
+      // Throw on every dispatch: the re-arm feeds the breaker's throw ladder
+      // (GUEST_BUDGET.consecutiveThrows) rather than looping forever.
+      faultingThrows = Number.MAX_SAFE_INTEGER;
+      writeRuntimeResource(engine.world, RuntimeDirt, { n: 1 });
+      for (let i = 0; i < 12; i++) engine.step(112 + i * 16);
+
+      const guest = engine.engine.guests
+        .list()
+        .find((g) => g.id === `canvas-runtime:${FaultingRuntimeExtension.id}`);
+      expect(guest?.status).toBe("suspended");
+      expect(engine.world.get(sticky, RuntimeMark)).toEqual({ marked: false });
+
+      // Suspended means the body never runs again, however many frames pass.
+      const stopped = faultingRuns;
+      const faultsWhenStopped = faults.length;
+      for (let i = 0; i < 12; i++) engine.step(320 + i * 16);
+      expect(faultingRuns).toBe(stopped);
+      expect(faults).toHaveLength(faultsWhenStopped);
     } finally {
       engine.dispose();
     }

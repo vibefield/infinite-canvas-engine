@@ -312,7 +312,24 @@ export function installCanvasRuntimeExtensions(opts: {
         for (const activation of activations) {
           const breaker = driven.get(activation.extension.id);
           const ok = breaker?.run(() => runActivation(activation, session)) ?? false;
-          if (!ok) restoreOutputs(activation);
+          if (!ok) {
+            // A failed run rolled its outputs back, but `runActivation` already
+            // drained the collector and cleared full/externalDirty BEFORE the
+            // body threw — so the next dispatch would see an empty delta and
+            // skip, leaving the reverted outputs stale until some unrelated
+            // input changed. RE-ARM: the next dispatch recomputes from scratch.
+            //
+            // Not a hot loop. A throwing extension re-runs at most
+            // GUEST_BUDGET.consecutiveThrows times before the breaker suspends
+            // it — that ladder is the point (design-011 §13.3: clear outputs,
+            // breaker suspension, diagnostic). Once SUSPENDED, `breaker.run`
+            // short-circuits false without entering the body, restoreOutputs is
+            // a no-op over the already-cleared `prior`, and this flag simply
+            // stays armed — which is also how `guests.resume(id)` gets a full
+            // recompute on the first dispatch after it lets the guest back in.
+            restoreOutputs(activation);
+            activation.full = true;
+          }
         }
       },
       dispose: deactivate,
