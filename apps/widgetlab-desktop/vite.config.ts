@@ -23,12 +23,16 @@ export default defineConfig({
       //                          probes that share its board.
       //   composited-app   — the gl leg: a real <Canvas>/<GLViews> whose
       //                          islands are drawn by the compositor's own pass.
+      //   zoom-drift       — the M18 fix wave's open item (a): does a card
+      //                          whose LIVE zoom drifted above its band write
+      //                          past its atlas slot?
       input: {
         index: "index.html",
         "ground-parity": "ground-parity.html",
         "island-parity": "island-parity.html",
         "composited-board": "composited-board.html",
         "composited-app": "composited-app.html",
+        "zoom-drift": "zoom-drift.html",
       },
     },
   },
