@@ -31,6 +31,45 @@ petition 9 — every `ctx.commit` stamps `{behavior, label}` provenance). Both a
 Nothing upstream was needed; strata 0.12.0's `valueEquals` + `resourceStamp` were already
 in hand from petitions 9+10.
 
+## The unified compositor (M18/design-012) — no new petitions, one shaped seam
+
+design-012 landed 2026-08-31 asking NOTHING of the consumer: it is a
+presentation-layer redesign built on stable WebGPU plus a Chromium origin trial,
+and nothing in it needed a strata petition or a downstream change. Recorded here
+anyway, because two of its decisions were made ABOUT the consumer and one of
+them will reach it.
+
+**The `video` kind was shaped to fit the frozen `LiveSurfacePresentation` seam**
+(§6.4): demand in, one-latest-frame out. One nuance must NOT be ported naively
+from ICE's own fixture — the fixture retains a `VideoFrame` and lets the
+compositor re-import it every composite, because nothing else wants it, while a
+consumer under a PRODUCER LEASE PROTOCOL must copy once into a stable texture
+per new frame and close the frame immediately, or retained frames starve the
+producer's transfer budget. The lesson is the contract (a surface is STATE; the
+compositor samples a retained latest and neither caches nor closes); the
+retention MECHANISM is the consumer's. A consumer that copies into its own
+texture simply registers a `gl`-shaped source and the video leg is not involved.
+
+**Arrival is now a subscription on the source** (S8): `CompositorSourceVideo`
+carries an optional `onArrival(cb)`, so a producing surface wakes the compositor
+by itself instead of compositing only while something else moves. Optional by
+design, and the asymmetry with the other kinds is the downstream point — `dom`
+and `gl` producers live inside ICE and own binders already, while a video
+producer is the app, so its wake travels WITH the source it registers rather
+than through a seam it would have to find.
+
+**The terminal-mirror kind joins LATER, at its own slice** (§11 Q6) — named now
+as a future `kind`, with the consumer's just-stabilized custody deliberately
+untouched until a consumer needs the migration.
+
+**One breaking change rides this milestone, type-level only**: `WidgetSurface`
+in `@vibecook/ice` was the `"dom" | "gl"` union and is now `WidgetSurfaceKind`,
+because §11 Q7 ratifies `WidgetSurface` as the name of the presentation
+contract. A consumer that imports the type renames one identifier; one that only
+passes `surface: "dom"` to `defineWidget` is unaffected. It belongs in the
+CHANGELOG at the release that carries it, and is noted here so the consumer
+meets it before the pin advances rather than after.
+
 ## I5 — prefab rename migration (resolved)
 
 **The ask** (full text: `vibe-field/draft/petitions/I5-ice-rename-migration.md`):

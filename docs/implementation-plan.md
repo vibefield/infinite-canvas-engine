@@ -470,6 +470,163 @@ on-device A-B is still owed before a RELEASE advertises the mode, and the
 §10.8 hover-flap (pointer parked ON a card redraws at tick rate — pre-existing
 widgetlab hover behavior, now visible) is a named widgetlab follow-up.
 
+## M18 — The unified compositor (design-012) — **DONE 2026-08-31**
+
+*(Numbering note: design-011's canvas-types work landed on main without a
+milestone entry here; M18 is taken as the next free number, not as a claim that
+design-012 followed design-010.)*
+
+Presentation collapses from six planes to two layers plus a thin overlay. ONE
+WebGPU canvas on ONE app-owned `GPUDevice` draws the ground programs, every
+GPU-presented widget surface, and live video in a single render pass, in
+frame-parent sibling order,
+with lift and fade as per-quad GPU facts — while a never-painted
+`<canvas layoutsubtree>` holds the widget hosts and stays the hit-testing,
+focus, caret and accessibility truth. This reopened design-004 §1's locked
+"DOM/GL z-interleaving is a NON-GOAL", which was locked because interleaving
+was *impossible*; Chromium's HTML-in-Canvas made it possible, and two measured
+spikes made it credible before a line was written.
+
+**It is a PRESENTATION PROFILE, not a replacement.** Both profiles implement
+one contract: the **composited** profile needs Chromium + `CanvasDrawElement` +
+WebGPU, and the **stratified** profile (design-004, unchanged) is the answer
+everywhere else. An app selects one by importing that profile and passing it to
+`<InfiniteCanvas profile>`, bound once at mount — so the unimported profile
+tree-shakes out of the bundle and changing the choice is a rebuild, not a
+re-render. The EFFECT is design-010's build-time selection; the MECHANISM is a
+recorded deviation from its one-line re-export wiring, taken because two apps
+in this repo need two answers. There is no runtime toggle: one profile ships
+per packaged app, a capability-probe failure is a loud boot-time refusal rather
+than a silent swap, and the profiles never import each other — which
+dependency-cruiser enforces.
+
+- **S0 — flag rails, adapter, refusal** (`37b532a`): every HiC symbol confined
+  to `ground/src/hic-adapter.ts`; the capability probe wired into preflight; a
+  boot that refuses out loud with the flag off. BOTH switch halves are
+  load-bearing (command-line `--enable-features`/`--enable-blink-features`
+  before `whenReady` AND `enableBlinkFeatures` on the window) — either alone
+  reads as "flag set" while the renderer stays dark.
+- **The atlas-slot allocator** (`c7624e2` kernel shelf packing, `78e7e4f` the
+  paged allocator): pages that grow within device limits, 1–2 px gutters,
+  per-slot dirty, slot-mapped LRU, and a waste instrument. Retention has TWO
+  doors — `reclaimSlots` returns address space, `reclaimPages` returns memory,
+  since pixels commit per PAGE on first write — so any HUD memory number must
+  come from the page door.
+- **S1 — the device and the skeleton** (`2484072`): the app-owned device
+  (`compositorDevice`, renamed off `gpu` because design-011 landed
+  `GpuAllocationLedger` there first), three adopting it by injection, the
+  compositor reflector and its dirty union, idle-zero instrumented AT
+  `queue.submit` so three cannot hide work.
+- **GATE ZERO** (`830c242`): the direct `copyElementImageToTexture` proven on
+  the PINNED Electron 43.1.1 / Chromium 150 before anything CONSUMED it — and
+  it caught S0's adapter already encoding an arity-3 call Chromium REJECTS,
+  which had shipped unexercised precisely because S1 deliberately had no
+  consumer. An unexercised seam is an unverified seam.
+- **S2 — dom surfaces composite** (`6c33804`): L1 hosts, the atlas bound to the
+  device, the quad pass's WGSL with analytic rounded-rect AA validated against
+  MATHEMATICS (covered area `w·h − (4−π)r²` vs summed composited alpha: 637,450
+  measured against 637,452 expected).
+- **S3 — camera, write-backs, native input** (`51b065b`): absolute placements
+  (the transform REPLACES layout), parking as the default, and every hic-bench
+  §3/§5 row as a standing regression — stale hit regions, mid-gesture accuracy,
+  and a 600-frame pan that uploads zero bytes.
+- **S4 — dirty uploads and demand** (`31b4dd8`): `changedElements`-driven
+  per-slot uploads, demand buckets, boot staggering, and a full-board path
+  proven absent both behaviourally and by grep.
+- **S5 — islands on the shared device** (`6f3a0f8`): r3f renders islands into
+  targets on the app-owned device and publishes `gl` sources through core's
+  registry, importing no `ground`.
+- **The gl leg + the live-React witness** (`2f036fd`): design-012's premise
+  executed for the first time — in a real React app, a DOM card at a later
+  sibling ordinal COVERS a GL island inside the one pass.
+- **S6 — one lift, true z, the tax gone** (`87df06e`): `kernel/lift.ts` holds
+  ONE curve read by both profiles so they cannot drift by retyping; the Q5
+  presentation policy; zoom bands for dom sources on the islands' kernel
+  ladder.
+- **S6b — one present** (`8875682`): ground renders its unchanged GroundHost
+  and TSL programs into an offscreen target and the compositor draws it as its
+  FIRST quad. The `offscreen` flag reaches exactly ONE place — everything above
+  ground's renderer runs byte-for-byte as in the stratified profile.
+- **S7 — the video kind** (`e3d01d3`): `importExternalTexture` from a retained
+  latest, imported INSIDE the reflector's synchronous flush so it never crosses
+  an await. A surface is STATE, not an event.
+- **S8 — extraction, the owed wiring, docs**: the Widget Surface contract
+  finalised in `core/src/surface/` and answered by both profiles;
+  `defineWidget({ presentation: { default?, pin? } })` honoured by the policy
+  and by host placement; external-frame arrival made a real dirty source; and
+  the naming pass, which answered the two questions parked for it — the
+  `ground`↔compositor package rename (NO: this package ships both profiles, and
+  `@ice/compositor` would misname it for every stratified app) and the two
+  copies of three's backend-texture read (CONVERGED: r3f keeps the island
+  vocabulary and delegates the read to core).
+
+**Exit**: a composited text-free 12-card board is **0 of 4,136,960 px**
+different from the stratified render of the same board (control 0), and WITH
+text **4,682 px / 0.1132 %, maxDelta 6** — design-012 §5's fidelity seam is a
+NUMBER, and the two passes are split so a geometry error cannot hide inside an
+expected text difference · ONE PRESENT, proven as a count (only the compositor
+acquires the target; ground's canvas never presents), at 20,992/20,992 ink px
+and maxDelta 2/255 — honestly not bit-identity, since the extra hop is a
+decode/encode round trip exact on opaque pixels and ±1–2 levels on AA edges ·
+the blit costs **0.1860 ms** over a null-submit control for a 16.5 MB target,
+≈2 % of a 120 Hz frame · a dragged DOM card passes UNDER a GL widget at true z
+across 9 overlap frames with **0 z-pops**, with a guard pair proving on 5 of 5
+frames that the card IS composited where its ordinal puts it ON TOP — the
+reciprocal check, without which the rig's first version passed the z-test with
+an invisible card · the fixture live surface composites on **24 of 24** painted
+frames while productions are outrun 3:1, null control 0/8 · a PRODUCING surface
+wakes the compositor by itself — **46 submits for 46 productions across 181
+frames**, paused arm 0/181 · IDLE-ZERO HELD AT EVERY RUNG THAT MEASURED IT,
+instrumented at `queue.submit` so three cannot hide work — 0 submits across 481
+frames at S1, S2 and S6b, 301 frames at S7, and 181 in S8's paused arm · demand
+monotonic (unthrottled 47.9 uploads/s → 26.0 at 30 fps → 9.6 at 10 → 2.0 at 2)
+with the paint-event column deliberately UNMOVED, because demand throttles
+uploads and not paints · orientation MEASURED both ways at every
+kind: an island target and an `importExternalTexture` frame both arrive the
+compositor's way up, so **no flip is applied for either** — against the
+video-is-y-up folklore, and against an inherited instruction that was a
+reader-normalisation result mis-relayed as a pipeline one. **MET** — with the
+riders below.
+
+**Standing gaps, named rather than closed:**
+
+- **The live-dom↔composited fidelity seam is ACCEPTED, not eliminated.** The
+  Q5 default rests cards in `live-dom` and promotes them in motion, so at rest
+  a live-dom card paints above ALL GPU-composited content — one stratification
+  artifact survives in the rest state, and it replaces a drag-time z-pop that
+  no longer exists. The 0.1132 % is the size of the seam it trades against.
+- **The §7 deletions are PROFILE-DEAD CODE, not physical removals** (ruled
+  during S6). A composited host never enters P3, GLViews' own pass retired at
+  S5, and the CSS lift spring paints only in live-dom mode — but the stratified
+  profile still needs every one of them, and while one package set ships both
+  profiles, keeping them dead may simply stay tree-shaking's job.
+- **HiC is an origin trial (M148–M154), not Baseline**, and tokens cannot be
+  redeemed by `file://` or custom-scheme apps, so the flag is the only path for
+  a packaged app. The composited profile is therefore Chromium/Electron-first
+  BY CONSTRUCTION. Pin posture: every Electron bump re-runs the probe, and if
+  HiC dies the composited profile dies with a build-time error rather than a
+  runtime surprise — the surface contract, the shared device and the live
+  surface leg all survive it, because only the `dom` kind's texture source
+  depends on HiC.
+- **Q4's EMPTY L1 host for gl/video kinds is specified but unbuilt.** A gl
+  widget's host is still its DOM chrome in the content plane under the island,
+  in both profiles, so card-level hit-testing for gl widgets does not yet run
+  through an L1 host. Found at S8 with its sharp edge: island sources are keyed
+  by ENTITY, so promoting a grabbed GL widget would have registered its chrome
+  as a `dom` source over the island's own `gl` one. The policy now refuses
+  kinds that have no live-dom mode.
+- **Two memory questions are open, and neither is guessed at.** Nobody has
+  vmmap'd an undrawn-into `layoutsubtree` backing store (a full-viewport dpr-2
+  canvas DECLARES ~21 MB and is never drawn into), and the allocator's
+  growth-doubling overshoot is address space whose commitment is unproven,
+  since the bench measured never-written textures.
+- **Two platform findings whose mechanism was deliberately not guessed**: a
+  fresh `WebGPURenderer`'s FIRST island paint differs from every later one, and
+  synchronous extra paints do NOT converge it — ONE repaint on a later
+  event-loop turn converges it permanently, so a pixel witness must repaint
+  once before grading. And the compatibility-mode MSAA gotcha remains untested
+  on a host that actually engages compatibility mode.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field

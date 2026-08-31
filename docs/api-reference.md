@@ -11,7 +11,7 @@ unsupported and wall-checked.
 
 | Export | Shape | Notes |
 |---|---|---|
-| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"`; `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. |
+| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"` (the `WidgetSurfaceKind` union); `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. `presentation?: {default?, pin?}` opts a type out of the composited profile's live-dom-at-rest default — refused at definition time for `live-dom` on a `gl` surface, or a `default` beside a `pin`. Ignored by the stratified profile, which has no promotion. |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
 | `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, widgetDrag, portDrag}`, `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
