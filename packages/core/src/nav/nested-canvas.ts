@@ -641,10 +641,9 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
       // arrival camera, never the mid-flight pose; an aborted flight's resting
       // pose is user truth and saves as-is.
       const flight = world.getResource(NavTransition);
-      const returnCam =
-        flight !== undefined && flight.active
-          ? { x: flight.c1x, y: flight.c1y, zoom: flight.c1z }
-          : cam;
+      const returnCam = flight?.active
+        ? { x: flight.c1x, y: flight.c1y, zoom: flight.c1z }
+        : cam;
       const depth = (currentNavEntry(world) !== undefined ? world.read(currentNavEntry(world) as Entity, NavDepth).d : 0) + 1;
       if (depth > maxDepth) {
         throw new Error(`ice: enterContainer would exceed the maximum CanvasFrame depth ${maxDepth}.`);
