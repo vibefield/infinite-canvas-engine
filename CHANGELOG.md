@@ -4,6 +4,49 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [Unreleased]
+
+### Breaking, narrowly
+
+- **`WidgetSurface` is now `WidgetSurfaceKind`.** The `"dom" | "gl"` union that
+  types `defineWidget({ surface })` is renamed, because design-012 §11 Q7
+  ratifies `WidgetSurface` as the name of the PRESENTATION CONTRACT — the
+  per-widget view of kind, current presentation and demand — and the two
+  meanings cannot share one name. Migration is ONE identifier: import
+  `WidgetSurfaceKind` wherever you imported `WidgetSurface`. A consumer that
+  passes `surface: "dom"` to `defineWidget` without ever naming the type is
+  unaffected. The union is now DERIVED from the compositor's own kind list
+  (`Extract<SurfaceKind, "dom" | "gl">`), so adding a surface kind cannot let
+  the two lists silently disagree.
+
+### Added
+
+- **`defineWidget({ presentation })`** — a widget type may declare the mode it
+  starts in, or PIN one that policy may not change (design-012 §6.3):
+  `{ default?: SurfacePresentation; pin?: SurfacePresentation }`. Refused at
+  DEFINITION time when it cannot hold: `live-dom` on a `gl` surface (an island
+  has no native paint to fall back to), or a `default` beside a `pin` — the
+  latter even when the two AGREE, since a pin has already taken policy out of
+  the decision and a `default` beside it reads at the call site as an intent
+  that will be honoured. Absent is the ratified default and is right for almost
+  every widget; the stratified profile has no promotion and ignores it.
+- **`CompositorSourceVideo.onArrival`** — an optional
+  `(cb: () => void) => () => void` subscription carried by a registered live
+  surface. A producing surface now wakes the compositor BY ITSELF instead of
+  compositing only while something else happens to be dirty; the compositor
+  holds the subscription and drops it when the source is replaced or removed.
+  Optional, and a source that omits it composites exactly as it did before.
+
+### Notes
+
+- The three entries above are the consumer-visible surface of the design-012
+  UNIFIED COMPOSITOR. `docs/implementation-plan.md` M18 carries the whole of
+  it — the ladder, the profile model, the measured exits and the standing gaps
+  — and `docs/downstream-petitions.md` records what it does and does not ask of
+  a consumer. The compositor reaches an app only through the composited
+  presentation profile, which a build selects deliberately; a stratified build
+  is byte-for-byte the engine it already was.
+
 ## [0.11.0] — 2026-08-25
 
 ### Changed

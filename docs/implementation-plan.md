@@ -610,13 +610,17 @@ riders below.
   runtime surprise — the surface contract, the shared device and the live
   surface leg all survive it, because only the `dom` kind's texture source
   depends on HiC.
-- **Q4's EMPTY L1 host for gl/video kinds is specified but unbuilt.** A gl
-  widget's host is still its DOM chrome in the content plane under the island,
-  in both profiles, so card-level hit-testing for gl widgets does not yet run
-  through an L1 host. Found at S8 with its sharp edge: island sources are keyed
-  by ENTITY, so promoting a grabbed GL widget would have registered its chrome
-  as a `dom` source over the island's own `gl` one. The policy now refuses
-  kinds that have no live-dom mode.
+- **Q4's EMPTY L1 host for gl/video kinds: the RULING STANDS RATIFIED, the
+  IMPLEMENTATION IS DEFERRED.** Not a reversal and not a reopening — every
+  widget still gets an L1 host in the design, and it becomes its own slice when
+  island hit-testing is worth touching. As built today a gl widget's host is
+  its DOM chrome in the content plane under the island, in both profiles, so
+  card-level hit-testing for gl widgets does not yet run through an L1 host.
+  S8 found the sharp edge on the way past: island sources are keyed by ENTITY,
+  so promoting a grabbed GL widget would have registered its chrome as a `dom`
+  source over the island's own `gl` one. The policy now refuses kinds that have
+  no live-dom mode, which is the design's own line (plan §2) rather than a
+  special case.
 - **Two memory questions are open, and neither is guessed at.** Nobody has
   vmmap'd an undrawn-into `layoutsubtree` backing store (a full-viewport dpr-2
   canvas DECLARES ~21 MB and is never drawn into), and the allocator's

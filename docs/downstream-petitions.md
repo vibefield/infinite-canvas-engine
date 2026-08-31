@@ -66,9 +66,10 @@ untouched until a consumer needs the migration.
 in `@vibecook/ice` was the `"dom" | "gl"` union and is now `WidgetSurfaceKind`,
 because §11 Q7 ratifies `WidgetSurface` as the name of the presentation
 contract. A consumer that imports the type renames one identifier; one that only
-passes `surface: "dom"` to `defineWidget` is unaffected. It belongs in the
-CHANGELOG at the release that carries it, and is noted here so the consumer
-meets it before the pin advances rather than after.
+passes `surface: "dom"` to `defineWidget` is unaffected. It is recorded under
+`## [Unreleased]` in `CHANGELOG.md`, which is how the pin-bump ritual learns
+about it; it is repeated here so the consumer meets it while reading about the
+round rather than only at the cut.
 
 ## I5 — prefab rename migration (resolved)
 
