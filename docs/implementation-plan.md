@@ -662,9 +662,19 @@ tests). Notable for the record, beyond the fixes themselves:
   now names the contract stratified-only.
 - **The pin-blind resize** (`428c457`): both island pools disposed a PINNED
   target on size change while a retained crossfade clone still sampled it —
-  reachable in the fast-fade frames AFTER `NavTransition.active` flips false.
-  A pinned target is now RETIRED, not disposed; `release()` drains the
-  graveyard; retired bytes stay counted because they are still allocated.
+  reachable during the crossfade hold (~160 ms) AFTER `NavTransition.active`
+  flips false. A pinned target is now RETIRED, not disposed — the reviewer's
+  shorter hand-back fix was weighed and REFUSED on tree evidence: the caller
+  stamps the size it ASKED for into `paintedAt`, so a handed-back old-size
+  target goes on record as correctly banded and a Dormant island strands at
+  the wrong resolution; and the caller renders into whatever comes back,
+  which is the frozen clone's own texture. The pool tests refuse that design
+  by assertion (mutation-checked against it applied verbatim). `release()`
+  drains the graveyard; retired bytes stay counted because they are still
+  allocated — named rider: during the hold the eviction budget sees bytes it
+  cannot reclaim and may evict a Dormant island early. Honest accounting was
+  chosen over hiding live GPU memory; flip it only if that early eviction
+  ever bites.
 - **Open, named rather than closed**: (a) an UNVERIFIED size-agreement
   question — dom-writeback sizes hosts at world × LIVE zoom while the binder
   slots at world × dpr × BAND, and hysteresis tolerates 2× between them; if
