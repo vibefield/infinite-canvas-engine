@@ -21,7 +21,7 @@ import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { init } from "../schema/prefab";
 import { WireFrom, WirePorts, WirePrefab, WireTo } from "../catalog/graph";
 import { attachSpawnParent, widgetSpawnInits } from "../widget/spawn";
-import { widgets } from "../widget/define-widget";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { guardedTransaction } from "../guards/guarded-tx";
 
 /**
@@ -41,9 +41,20 @@ export function drainCreatedSelections(world: World): Entity[] {
   return list;
 }
 
-export function createDocCommitSink(store: DurableStore, world: World): CommitSink {
+export interface DocCommitSinkOpts {
+  /** Whole-intent final authority; undefined means reject without a transaction. */
+  readonly guard?: (intent: CommitIntent) => CommitIntent | undefined;
+}
+
+export function createDocCommitSink(
+  store: DurableStore,
+  world: World,
+  opts: DocCommitSinkOpts = {},
+): CommitSink {
   return {
-    commit(intent: CommitIntent): void {
+    commit(input: CommitIntent): boolean {
+      const intent = opts.guard?.(input) ?? (opts.guard === undefined ? input : undefined);
+      if (intent === undefined) return false;
       const liveWrites = intent.writes.filter((w) => store.keyOf(w.entity) !== undefined);
       const liveReparents = (intent.reparents ?? []).filter(
         (r) => store.keyOf(r.entity) !== undefined && store.keyOf(r.container) !== undefined,
@@ -66,7 +77,7 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
       // types are dropped too (never a throw inside the gesture's tx).
       const creates = (intent.creates ?? []).filter(
         (c) =>
-          widgets.get(c.type) !== undefined &&
+          widgetTypeFor(world, c.type) !== undefined &&
           (c.parent === undefined || store.keyOf(c.parent) !== undefined),
       );
       if (
@@ -76,7 +87,7 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
         liveWires.length === 0 &&
         creates.length === 0
       ) {
-        return;
+        return false;
       }
 
       guardedTransaction(store, world, (tx) => {
@@ -99,13 +110,15 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
         // explicit `parent` (consume-insert) hangs the edge on the container
         // instead — x/y are container-local by that convention.
         for (const c of creates) {
+          const widget = widgetTypeFor(world, c.type);
+          if (widget === undefined) continue;
           const { prefab, overrides } = widgetSpawnInits(c.type, {
             x: c.x,
             y: c.y,
             w: c.w,
             h: c.h,
             ...(c.props !== undefined ? { props: c.props } : {}),
-          });
+          }, widget);
           const spawned = tx.spawnPrefab(prefab, overrides);
           attachSpawnParent(tx, world, spawned, c.parent !== undefined ? { parent: c.parent } : undefined);
           if (c.select === true) {
@@ -126,6 +139,7 @@ export function createDocCommitSink(store: DurableStore, world: World): CommitSi
           tx.setRelation(wire, WireTo, w.to);
         }
       });
+      return true;
     },
   };
 }
@@ -137,6 +151,7 @@ export function createReadOnlyCommitSink(): CommitSink {
       console.warn(
         `ice: read-only document — dropped a "${intent.kind}" commit (${intent.writes.length} writes); runtime cells reconverge with the baseline.`,
       );
+      return false;
     },
   };
 }

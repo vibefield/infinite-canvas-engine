@@ -70,6 +70,12 @@ export interface CommitCreate {
   readonly select?: boolean;
 }
 
+/** Generation key captured by an interactive commit before final validation. */
+export interface CommitScope {
+  readonly documentEpoch: number;
+  readonly canvasEpoch: number;
+}
+
 export interface CommitIntent {
   /** Outcome kind — traces assert on it. */
   readonly kind: "move" | "consume" | "resize" | "connect" | "create" | "delete";
@@ -80,10 +86,13 @@ export interface CommitIntent {
   readonly orders?: readonly CommitOrder[];
   readonly wires?: readonly CommitWireSpawn[];
   readonly creates?: readonly CommitCreate[];
+  readonly scope?: CommitScope;
 }
 
 export interface CommitSink {
-  commit(intent: CommitIntent): void;
+  /** `false` asks gesture behavior to restore/fly back its runtime draft. */
+  // biome-ignore lint/suspicious/noConfusingVoidType: legacy observer sinks intentionally return nothing.
+  commit(intent: CommitIntent): boolean | void;
 }
 
 /** The M4 default: record intents for traces/devtools; commit nothing. */

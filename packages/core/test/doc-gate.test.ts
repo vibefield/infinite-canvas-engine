@@ -12,14 +12,19 @@ import {
   ENGINE_SCHEMA_VERSION,
   ENVELOPE_MAGIC,
   ENVELOPE_VERSION,
+  DefaultCanvasType,
   EnvelopeError,
+  ROOT_CANVAS_META_KEY,
   Position,
   Size,
   TransformTween,
   createDocSession,
+  canvasIdentityOf,
+  canvasPackId,
   decodeEnvelope,
   definePrefab,
   encodeEnvelope,
+  encodeCanvasIdentity,
   gateVerdict,
   init,
   openDocSession,
@@ -181,9 +186,13 @@ describe("version gate: verdicts against real LoroDocs", () => {
     });
     const doc = new LoroDoc();
     const meta = doc.getMap("meta");
-    // Stamp schema only (NOT stampEngineMeta, which would stamp the pack at ITS current version 2 —
-    // we need the doc-side pack marker to read as version 1, older than local).
+    const rootCanvas = canvasIdentityOf(DefaultCanvasType);
     meta.set(`engine.schema.${ENGINE_SCHEMA_VERSION}`, true);
+    meta.set(ROOT_CANVAS_META_KEY, encodeCanvasIdentity(rootCanvas));
+    meta.set(
+      `engine.pack.${canvasPackId(rootCanvas.id)}.${rootCanvas.semanticVersion}`,
+      true,
+    );
     meta.set(`engine.pack.${widget.id}.1`, true);
     doc.commit();
     const report = readDocVersionReport(doc);

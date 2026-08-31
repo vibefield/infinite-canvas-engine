@@ -3,11 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./programs/dot-grid": "./src/programs/dot-grid.ts",
+    "./programs/line-grid": "./src/programs/line-grid.ts",
+    "./programs/magnet-grid": "./src/programs/magnet-grid.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --dts --external three",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench": "BENCH=1 vitest run bench/"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

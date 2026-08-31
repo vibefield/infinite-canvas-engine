@@ -12,14 +12,32 @@ import { createLayer } from "../src/layer";
 import type { GroundFrame, GroundPass } from "../src/pass";
 import type { GroundRendererLike } from "../src/renderer";
 
-function fakeRenderer(doc: Document): GroundRendererLike & { makeReady(): void; renders: number } {
+function fakeRenderer(doc: Document): GroundRendererLike & {
+  makeReady(): void;
+  loseDevice(): void;
+  renders: number;
+} {
   let isReady = false;
+  let isFailed = false;
   const readyCbs: Array<() => void> = [];
   const self = {
     canvas: doc.createElement("canvas"),
     renders: 0,
     ready: () => isReady,
-    failed: () => false,
+    failed: () => isFailed,
+    status: () => isFailed
+      ? {
+          backend: "webgpu" as const,
+          ready: false,
+          failed: true,
+          failure: {
+            kind: "device-lost" as const,
+            backend: "webgpu" as const,
+            message: "simulated device loss",
+            api: "WebGPU" as const,
+          },
+        }
+      : { backend: "webgpu" as const, ready: isReady, failed: false },
     onReady: (cb: () => void) => {
       if (isReady) cb();
       else readyCbs.push(cb);
@@ -32,6 +50,11 @@ function fakeRenderer(doc: Document): GroundRendererLike & { makeReady(): void; 
     makeReady() {
       isReady = true;
       for (const cb of readyCbs.splice(0)) cb();
+    },
+    loseDevice() {
+      isReady = false;
+      isFailed = true;
+      readyCbs.length = 0;
     },
   };
   return self;
@@ -122,6 +145,25 @@ describe("ground layer", () => {
     step();
     expect(passA.collects).toBe(2);
     expect(passB.collects).toBe(2);
+  });
+
+  it("stops the whole ground and exposes diagnostics after device loss", () => {
+    const { world, renderer, layer, step } = setup();
+    renderer.makeReady();
+    step();
+    const rendersBeforeLoss = renderer.renders;
+
+    renderer.loseDevice();
+    world.setResource(Camera, { x: 100, y: 20, zoom: 1, gesturing: false });
+    step();
+
+    expect(renderer.renders).toBe(rendersBeforeLoss);
+    expect(layer.reflector.available()).toBe(false);
+    expect(layer.reflector.rendererStatus()).toMatchObject({
+      backend: "webgpu",
+      failed: true,
+      failure: { kind: "device-lost", api: "WebGPU" },
+    });
   });
 
   it("dispose removes the canvas and stops rendering", () => {

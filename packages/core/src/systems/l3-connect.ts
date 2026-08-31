@@ -41,11 +41,11 @@ import {
   Targets,
   Watches,
 } from "../catalog";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import type { CommitSink } from "../engine/commit-sink";
 import { portSlots } from "../ops/port-geometry";
 import type { WirePickSource } from "../ops/point-pick";
 import { PrefabId } from "../schema/prefab";
-import { widgets } from "../widget/define-widget";
 
 const P = GesturePhases;
 
@@ -82,16 +82,16 @@ const connectClaimQ = defineQuery([Drag, P.justTags.Active, RoutedConnect]);
 const connectDragQ = defineQuery([Drag, RoutedConnect]);
 
 /** Port declarations of a ported widget, or undefined (not a widget / no ports). */
-function declsOf(ctx: SystemCtx, e: Entity) {
+function declsOf(world: World, ctx: SystemCtx, e: Entity) {
   const type = ctx.get(e, PrefabId)?.id;
   if (typeof type !== "string") return undefined;
-  const decls = widgets.get(type)?.ports;
+  const decls = widgetTypeFor(world, type)?.ports;
   return decls !== undefined && decls.length > 0 ? decls : undefined;
 }
 
 /** World anchor of one port on a widget, or undefined if unresolvable. */
-function anchorOf(ctx: SystemCtx, widget: Entity, portId: string): { x: number; y: number } | undefined {
-  const decls = declsOf(ctx, widget);
+function anchorOf(world: World, ctx: SystemCtx, widget: Entity, portId: string): { x: number; y: number } | undefined {
+  const decls = declsOf(world, ctx, widget);
   if (decls === undefined) return undefined;
   const slot = portSlots(decls).get(portId);
   const pos = ctx.get(widget, Position);
@@ -115,7 +115,7 @@ function compatible(source: readonly string[], candidate: readonly string[]): bo
  * @param _wires reserved (the wire narrow-phase source; connect reads `Targets`).
  */
 export function createConnectSystems(
-  _world: World,
+  world: World,
   sink: CommitSink,
   _index: SpatialIndex<Entity>,
   _wires: WirePickSource,
@@ -139,9 +139,9 @@ export function createConnectSystems(
         const portId = ctx.get(srcPort, Port)?.id;
         const widget = ctx.getRelation(srcPort, PortOf);
         if (typeof portId !== "string" || widget === undefined) continue;
-        const anchor = anchorOf(ctx, widget, portId);
+        const anchor = anchorOf(world, ctx, widget, portId);
         if (anchor === undefined) continue;
-        const decls = declsOf(ctx, widget);
+        const decls = declsOf(world, ctx, widget);
         const accepts = decls?.find((d) => d.id === portId)?.accepts ?? [];
         sourceOf.set(rec, { widget, portId, ax: anchor.x, ay: anchor.y, accepts });
         previewBuffer.active = true;
@@ -176,10 +176,10 @@ export function createConnectSystems(
         targetWidget !== src.widget && // self-wire is never compatible
         typeof targetPortId === "string"
       ) {
-        const decls = declsOf(ctx, targetWidget);
+        const decls = declsOf(world, ctx, targetWidget);
         const accepts = decls?.find((d) => d.id === targetPortId)?.accepts ?? [];
         if (compatible(src.accepts, accepts)) {
-          const a = anchorOf(ctx, targetWidget, targetPortId);
+          const a = anchorOf(world, ctx, targetWidget, targetPortId);
           if (a !== undefined) {
             return { tx: a.x, ty: a.y, compatible: true, targetWidget, targetPortId };
           }

@@ -28,9 +28,19 @@ export {
   useIslandOpacity,
   type IslandContextValue,
 } from "./use-island-frame";
-export { RenderTargetPool, type PoolEntryInfo } from "./pool";
+export {
+  RenderTargetPool,
+  renderTargetBytes,
+  type PoolEntryInfo,
+  type PoolPin,
+} from "./pool";
 export { ResourceRegistry } from "./resource-registry";
 export { CompositeMaterial } from "./composite-material";
+export {
+  createRetainedQuadTransitionAdapter,
+  type RetainedQuadPool,
+  type RetainedQuadTransitionOptions,
+} from "./retained-quads";
 export { createRenderWriteTrap, type RenderWriteTrap } from "./dev-write-trap";
 export {
   createGLPointerRouter,

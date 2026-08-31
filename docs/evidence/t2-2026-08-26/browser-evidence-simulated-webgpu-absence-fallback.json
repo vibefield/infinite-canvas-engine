@@ -1,0 +1,106 @@
+{
+  "kind": "automatic-fallback",
+  "schema": 1,
+  "mechanism": "navigator.gpu removed at document start",
+  "navigatorGpu": "undefined",
+  "snapshot": {
+    "metadata": {
+      "recordedAt": "2026-08-27T06:55:08.357Z",
+      "groundVariant": "typed",
+      "requestedBackend": "auto",
+      "actualBackend": "webgl2",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "viewport": {
+        "width": 1200,
+        "height": 900,
+        "dpr": 2
+      },
+      "hardwareConcurrency": 10
+    },
+    "navDepth": 0,
+    "transition": {
+      "active": false,
+      "epoch": 0,
+      "retainers": 0,
+      "adapters": 3,
+      "reducedMotion": false
+    },
+    "gpu": {
+      "budgetBytes": 268435456,
+      "allocatorBytes": 8669304,
+      "reservedBytes": 0,
+      "usedBytes": 8669304,
+      "reservations": 0
+    },
+    "ground": {
+      "available": true,
+      "redraws": 3,
+      "renderer": {
+        "backend": "webgl2",
+        "ready": true,
+        "failed": false
+      },
+      "profile": {
+        "enabled": true,
+        "timestampSupported": true,
+        "samples": 3,
+        "gpuSamples": 1
+      },
+      "programs": {
+        "activeProgram": "widgetlab.board.magnet",
+        "instantiatedPrograms": 1,
+        "inactivePrograms": 0,
+        "sourceObservers": 2,
+        "redraws": 3,
+        "renderer": {
+          "backend": "webgl2",
+          "ready": true,
+          "failed": false
+        }
+      }
+    },
+    "mountEntries": 21,
+    "frozenMounts": 0,
+    "domHosts": 21,
+    "departingDomPlanes": 0,
+    "glIslands": 7,
+    "departingGlGroups": 0,
+    "gl": {
+      "cpuMs": 0.7000000476837158,
+      "gpuMs": 10.683122000000001,
+      "fps": 6,
+      "drawCalls": 20,
+      "triangles": 17128,
+      "points": 0,
+      "lines": 0,
+      "programs": 17,
+      "geometries": 18,
+      "textures": 9,
+      "renderTargets": 7,
+      "renderMegaPixels": 0.240814,
+      "fboBytes": 8669304,
+      "fboBudgetBytes": 268435456,
+      "retainedQuads": 0,
+      "islands": {
+        "total": 7,
+        "hot": 5,
+        "warm": 2,
+        "waking": 0,
+        "cold": 0,
+        "dormant": 0
+      },
+      "bandHistogram": {
+        "×0.5": 7
+      },
+      "repainted": 4,
+      "pendingPaints": 1,
+      "evicted": 0,
+      "zoom": 0.5,
+      "band": 0.5,
+      "effectiveDpr": 0.75,
+      "visibleWidgets": 21,
+      "culledWidgets": 0
+    },
+    "usedJsHeapBytes": 116084407
+  }
+}

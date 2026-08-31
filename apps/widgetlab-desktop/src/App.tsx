@@ -47,7 +47,9 @@ import {
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
-import { ground } from "@ice/ground";
+import { groundHost } from "@ice/ground";
+import { lineGridGroundProgram } from "@ice/ground/programs/line-grid";
+import { magnetGridGroundProgram } from "@ice/ground/programs/magnet-grid";
 import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import { InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -61,6 +63,14 @@ import { WidgetTray } from "./tray/WidgetTray";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
 import { WIDGETS } from "./widgets";
+import {
+  BoardCanvas,
+  WIDGETLAB_CANVASES,
+  WIDGETLAB_DOT_GROUND,
+  WIDGETLAB_TOOLS,
+  WhiteboardCatalog,
+} from "./canvases";
+import { WIDGETLAB_LINE_GROUND } from "./whiteboard-canvas";
 
 // === v1 theme constants (App.tsx verbatim) ===
 
@@ -136,6 +146,11 @@ const SCENE: Array<[string, number, number, number, number, Record<string, unkno
 export function createDemoEngine(): CanvasEngine {
   const ce = createCanvasEngine({
     widgets: WIDGETS,
+    tools: WIDGETLAB_TOOLS,
+    canvasTypes: WIDGETLAB_CANVASES,
+    rootCanvas: BoardCanvas,
+    presentationFallback: BoardCanvas,
+    catalogContributions: [WhiteboardCatalog],
     // snap on (2026-07-16): cards are snap "both"; guides render at P0 (ground).
     // chrome.liftScale mirrors CardShell's lift transform (1.05) so the
     // multi-select union box keeps wrapping a lifted member (2026-07-17).
@@ -469,7 +484,10 @@ export function App() {
       disposeHalo();
       haloRef.current = installCursorHalo(ce, handle.host.container);
       disposeGl(); // drop a prior mount's set before wiring a fresh one
-      const bridge = createGLBridge(ce.engine);
+      const bridge = createGLBridge(ce.engine, {
+        transitions: ce.transitions,
+        gpu: ce.gpu,
+      });
       // DEV-only forensics twin of __ice — headless scripts inspect islands.
       (window as unknown as { __iceBridge?: GLBridge }).__iceBridge = bridge;
       const router = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
@@ -615,7 +633,17 @@ export function App() {
 
   // The P0 ground layer (grid + wires + snap guides, one WebGPU canvas) —
   // memoized: a new factory identity re-boots the canvas mount effect.
-  const groundFactory = useMemo(() => ground(), []);
+  const groundFactory = useMemo(
+    () =>
+      groundHost({
+        programs: [
+          magnetGridGroundProgram({ id: WIDGETLAB_DOT_GROUND }),
+          lineGridGroundProgram({ id: WIDGETLAB_LINE_GROUND }),
+        ],
+        fallback: WIDGETLAB_DOT_GROUND,
+      }),
+    [],
+  );
 
   // Widget tray open state lives HERE because the canvas itself reacts: the
   // reference design's recede — the whole board eases to 0.98 while the

@@ -43,11 +43,22 @@ export interface MountEntry {
   readonly entity: Entity;
   /** Culled-but-kept-mounted: host hides, React state survives. */
   readonly hidden: boolean;
+  /** Presented by an outgoing T2 plane; subscriptions freeze while DOM stays visible. */
+  readonly frozen?: boolean;
+}
+
+export interface WidgetMountHold {
+  readonly entities: readonly Entity[];
+  release(): void;
 }
 
 export interface WidgetMountStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): readonly MountEntry[];
+  /** Synchronous T2 gate used by mounted view subscriptions before React commits. */
+  isFrozen?(entity: Entity): boolean;
+  /** Pin already-mounted entries for one bounded outgoing presentation. */
+  retainForTransition?(entities: readonly Entity[]): WidgetMountHold;
 }
 
 export interface WidgetRuntime {
@@ -172,11 +183,58 @@ export function createWidgetRuntime(
 
   // --- mount bookkeeping (engine-side LRU; closure state is derived cache) ---
   const mounted = new Map<Entity, { hidden: boolean }>();
+  const held = new Map<Entity, number>();
   const lastVisibleTick = new Map<Entity, number>();
   let tickCounter = 0;
   let snapshot: readonly MountEntry[] = [];
   let dirty = false;
   const listeners = new Set<() => void>();
+
+  const rebuildSnapshot = (): void => {
+    snapshot = [...mounted.entries()].map(([entity, value]) => {
+      const frozen = (held.get(entity) ?? 0) > 0;
+      return {
+        entity,
+        hidden: frozen ? false : value.hidden,
+        ...(frozen ? { frozen: true } : {}),
+      };
+    });
+    dirty = true;
+  };
+
+  const notifyNow = (): void => {
+    if (!dirty) return;
+    dirty = false;
+    for (const listener of [...listeners]) {
+      try {
+        listener();
+      } catch {
+        // External-store notification is a user-code boundary. In
+        // particular, a pre-cut T2 freeze must still notify later listeners
+        // and return its exact hold even when one subscriber is faulty.
+      }
+    }
+  };
+
+  const evictHidden = (): boolean => {
+    const hiddenEntries = [...mounted.entries()].filter(
+      ([entity, value]) => value.hidden && (held.get(entity) ?? 0) === 0,
+    );
+    const visibleUnheld = [...mounted.entries()].filter(
+      ([entity, value]) => !value.hidden && (held.get(entity) ?? 0) === 0,
+    ).length;
+    const hiddenBudget = Math.max(0, budget - visibleUnheld);
+    if (hiddenEntries.length <= hiddenBudget) return false;
+    hiddenEntries.sort(
+      (a, b2) =>
+        (lastVisibleTick.get(a[0]) ?? 0) - (lastVisibleTick.get(b2[0]) ?? 0),
+    );
+    for (const [entity] of hiddenEntries.slice(0, hiddenEntries.length - hiddenBudget)) {
+      mounted.delete(entity);
+      lastVisibleTick.delete(entity);
+    }
+    return true;
+  };
 
   const visibleWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Active, Visible]);
   const culledWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Not(Visible)]);
@@ -246,21 +304,10 @@ export function createWidgetRuntime(
       }
 
       // Keep-mounted LRU budget (only reachable when something flipped).
-      const hiddenEntries = [...mounted.entries()].filter(([, v]) => v.hidden);
-      const visibleCount = mounted.size - hiddenEntries.length;
-      const hiddenBudget = Math.max(0, budget - visibleCount);
-      if (hiddenEntries.length > hiddenBudget) {
-        hiddenEntries.sort((a, b2) => (lastVisibleTick.get(a[0]) ?? 0) - (lastVisibleTick.get(b2[0]) ?? 0));
-        for (const [e] of hiddenEntries.slice(0, hiddenEntries.length - hiddenBudget)) {
-          mounted.delete(e); // true unmount — session UI state is best-effort
-          lastVisibleTick.delete(e);
-          changed = true;
-        }
-      }
+      if (evictHidden()) changed = true;
 
       if (changed) {
-        snapshot = [...mounted.entries()].map(([entity, v]) => ({ entity, hidden: v.hidden }));
-        dirty = true;
+        rebuildSnapshot();
       }
     },
     { name: "widgetMount", runIf: mountGuard.runIf },
@@ -273,13 +320,52 @@ export function createWidgetRuntime(
         return () => listeners.delete(listener);
       },
       getSnapshot: () => snapshot,
+      isFrozen: (entity) => (held.get(entity) ?? 0) > 0,
+      retainForTransition(entities) {
+        const retained: Entity[] = [];
+        const seen = new Set<Entity>();
+        for (const entity of entities) {
+          if (seen.has(entity) || !mounted.has(entity)) continue;
+          seen.add(entity);
+          const alreadyHeld = (held.get(entity) ?? 0) > 0;
+          // The cap is global across adapters in the active epoch. DOM and GL
+          // may retain the same entity (ref-counted, no extra slot), but two
+          // disjoint adapter requests can never grow the outgoing union past
+          // `keepMounted`.
+          if (!alreadyHeld && held.size >= budget) continue;
+          retained.push(entity);
+          held.set(entity, (held.get(entity) ?? 0) + 1);
+        }
+        if (retained.length > 0) {
+          rebuildSnapshot();
+          // Pre-cut subscription freeze must be visible before authority and
+          // membership change; external-store listeners are therefore flushed
+          // synchronously only on this trusted operation path.
+          notifyNow();
+        }
+        let released = false;
+        return {
+          entities: Object.freeze(retained),
+          release() {
+            if (released) return;
+            released = true;
+            if (retained.length === 0) return;
+            for (const entity of retained) {
+              const refs = held.get(entity) ?? 0;
+              if (refs <= 1) held.delete(entity);
+              else held.set(entity, refs - 1);
+            }
+            evictHidden();
+            rebuildSnapshot();
+            notifyNow();
+          },
+        };
+      },
     },
     cullSystem,
     mountSystem,
     flush() {
-      if (!dirty) return;
-      dirty = false;
-      for (const l of listeners) l();
+      notifyNow();
     },
   };
 }
@@ -296,7 +382,7 @@ export function installWidgetRuntime(
   const removeSystems = engine.addSystems(
     "derive",
     createActiveMembership(engine.world), // membership BEFORE cull (design-004 §7)
-    createWidgetEquipSystem(),
+    createWidgetEquipSystem(engine.world),
     runtime.cullSystem,
     runtime.mountSystem,
     createBreakpointSystem(engine.world),

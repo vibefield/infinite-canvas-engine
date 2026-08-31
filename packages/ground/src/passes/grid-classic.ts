@@ -47,7 +47,7 @@ const FULLSCREEN_TRIANGLE = new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]);
 export interface ClassicGridRenderer {
   readonly mesh: Mesh;
   /** Layer-written each collect. */
-  setCamera(frame: GroundFrame): void;
+  setCamera(frame: GroundFrame, opacity?: number): void;
   /** Config-written (the configure seam). */
   configure(cfg: GridConfig): void;
   dispose(): void;
@@ -58,6 +58,7 @@ export function createClassicGrid(cfg: GridConfig): ClassicGridRenderer {
   const uCamera = uniform(new Vector2(0, 0));
   const uZoom = uniform(1);
   const uDpr = uniform(1);
+  const uPresentationOpacity = uniform(1);
   // Config (configure-written).
   const uSpacings = uniform(new Vector3(...cfg.spacings));
   const uDotColor = uniform(new Vector3(...cfg.dotColor));
@@ -93,7 +94,10 @@ export function createClassicGrid(cfg: GridConfig): ClassicGridRenderer {
 
   const material = new MeshBasicNodeMaterial();
   material.vertexNode = vec4(positionGeometry.xy, 0, 1); // clip-space passthrough
-  material.fragmentNode = vec4(uDotColor, clamp(total.mul(uDotAlpha), 0, 1));
+  material.fragmentNode = vec4(
+    uDotColor,
+    clamp(total.mul(uDotAlpha).mul(uPresentationOpacity), 0, 1),
+  );
   material.transparent = true;
   material.depthTest = false;
   material.depthWrite = false;
@@ -106,10 +110,11 @@ export function createClassicGrid(cfg: GridConfig): ClassicGridRenderer {
 
   return {
     mesh,
-    setCamera(frame) {
+    setCamera(frame, opacity = 1) {
       uCamera.value.set(frame.camera.x, frame.camera.y);
       uZoom.value = frame.camera.zoom;
       uDpr.value = frame.dpr;
+      uPresentationOpacity.value = opacity;
     },
     configure(next) {
       uSpacings.value.set(...next.spacings);

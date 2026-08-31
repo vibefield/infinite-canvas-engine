@@ -54,6 +54,8 @@ import {
   widgets,
   type Engine,
   type Entity,
+  type GpuAllocationLedger,
+  type PresentationTransitionCoordinator,
   type SiblingOrderIndex,
 } from "@ice/core";
 import { LIFT_DEFAULT_MS, createIslandStateStore, type IslandStateStore } from "./island-state";
@@ -75,12 +77,17 @@ export interface GLBridgeOpts {
    * stub — the pool's injected-`now` precedent). Default `performance.now`.
    */
   readonly now?: () => number;
+  /** Typed facade seams; omitted by legacy/bare-engine mounts. */
+  readonly transitions?: PresentationTransitionCoordinator;
+  readonly gpu?: GpuAllocationLedger;
 }
 
 export interface GLBridge {
   readonly engine: Engine;
   readonly state: IslandStateStore;
   readonly renderAssert: RenderWriteTrap;
+  readonly transitions?: PresentationTransitionCoordinator;
+  readonly gpu?: GpuAllocationLedger;
   /**
    * The frame ordinal cache (petition 8): the compositor pass reads quad
    * renderOrder from it, and its `ordinals()` read resets the staleness the
@@ -231,6 +238,8 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
     engine,
     state,
     renderAssert,
+    ...(opts.transitions === undefined ? {} : { transitions: opts.transitions }),
+    ...(opts.gpu === undefined ? {} : { gpu: opts.gpu }),
     order,
 
     registerIsland(entity, handle) {

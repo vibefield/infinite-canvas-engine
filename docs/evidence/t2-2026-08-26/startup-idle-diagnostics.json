@@ -1,0 +1,42 @@
+{
+  "kind": "startup-idle-diagnostics",
+  "schema": 1,
+  "acceptedPerformanceSetContainsTheseRows": false,
+  "reason": "Each row violated the predeclared settled-page or exact-zero idle-redraw gate.",
+  "observations": [
+    {
+      "configuration": "legacy-webgpu",
+      "protocol": "pre-crossover settled diagnostic",
+      "attempt": 5,
+      "quietGateFrames": 120,
+      "settled": true,
+      "settleMs": 1397.9000000953674,
+      "settleRedraws": 0,
+      "measuredIdleRedraws": 51,
+      "interpretation": "redraw activity resumed after a nominal quiet window"
+    },
+    {
+      "configuration": "legacy-webgl2",
+      "protocol": "balanced crossover pair 4",
+      "attempt": 1,
+      "quietGateFrames": 360,
+      "settled": true,
+      "settleMs": 2988.2000000476837,
+      "settleRedraws": 0,
+      "measuredIdleRedraws": 51,
+      "interpretation": "redraw activity resumed after a three-second quiet window"
+    },
+    {
+      "configuration": "legacy-webgl2",
+      "protocol": "balanced crossover pair 4",
+      "attempt": 2,
+      "quietGateFrames": 360,
+      "settled": false,
+      "stableFramesAtDeadline": 0,
+      "settleMs": 20029.5,
+      "settleRedraws": 1364,
+      "measuredIdleRedraws": 300,
+      "interpretation": "ground continued redrawing throughout the 20-second settle window and all 300 idle frames"
+    }
+  ]
+}

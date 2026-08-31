@@ -17,10 +17,15 @@ import { LoroDoc, LoroMap } from "loro-crdt";
 import { describe, expect, it } from "vitest";
 import {
   ENGINE_SCHEMA_VERSION,
+  DefaultCanvasType,
+  ROOT_CANVAS_META_KEY,
+  canvasIdentityOf,
+  canvasPackId,
   createWorld,
   defineQuery,
   defineWidget,
   encodeEnvelope,
+  encodeCanvasIdentity,
   gateVerdict,
   openDocSession,
   p,
@@ -99,11 +104,21 @@ function buildV1Envelope(opts: {
   const meta = doc.getMap("meta");
   meta.set(`engine.schema.${ENGINE_SCHEMA_VERSION}`, true);
   meta.set(`engine.pack.${opts.type}.${opts.packVersion}`, true);
+  const rootCanvas = canvasIdentityOf(DefaultCanvasType);
+  meta.set(ROOT_CANVAS_META_KEY, encodeCanvasIdentity(rootCanvas));
+  meta.set(
+    `engine.pack.${canvasPackId(rootCanvas.id)}.${rootCanvas.semanticVersion}`,
+    true,
+  );
   doc.commit();
 
   const header: EnvelopeHeader = {
     engineSchema: ENGINE_SCHEMA_VERSION,
-    prefabVersions: { [opts.type]: opts.packVersion },
+    prefabVersions: {
+      [opts.type]: opts.packVersion,
+      [canvasPackId(rootCanvas.id)]: rootCanvas.semanticVersion,
+    },
+    rootCanvas,
   };
   return encodeEnvelope(header, doc.export({ mode: "snapshot" }));
 }
@@ -295,10 +310,21 @@ function buildTwoTypeV1Envelope(): Uint8Array {
   meta.set(`engine.schema.${ENGINE_SCHEMA_VERSION}`, true);
   meta.set(`engine.pack.${CARD}.1`, true);
   meta.set(`engine.pack.${BOOM}.1`, true);
+  const rootCanvas = canvasIdentityOf(DefaultCanvasType);
+  meta.set(ROOT_CANVAS_META_KEY, encodeCanvasIdentity(rootCanvas));
+  meta.set(
+    `engine.pack.${canvasPackId(rootCanvas.id)}.${rootCanvas.semanticVersion}`,
+    true,
+  );
   doc.commit();
   const header: EnvelopeHeader = {
     engineSchema: ENGINE_SCHEMA_VERSION,
-    prefabVersions: { [CARD]: 1, [BOOM]: 1 },
+    prefabVersions: {
+      [CARD]: 1,
+      [BOOM]: 1,
+      [canvasPackId(rootCanvas.id)]: rootCanvas.semanticVersion,
+    },
+    rootCanvas,
   };
   return encodeEnvelope(header, doc.export({ mode: "snapshot" }));
 }

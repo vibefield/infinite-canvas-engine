@@ -53,10 +53,14 @@ import {
   widgets,
   type Entity,
   type MountEntry,
+  type PresentationRetainer,
+  type PresentationTransitionAdapter,
+  type PresentationTransitionFrame,
   type ReflectorDef,
   type WidgetMountStore,
   type World,
 } from "@ice/core";
+import { planeCssTransform } from "@ice/kernel";
 import { CLAIM_OWNS_ESCAPE, KEYBOARD_CLAIM_ATTR } from "../input-ownership";
 
 /** The two planes a host can live in (design-004 §1: P1 content, P3 lifted). */
@@ -109,6 +113,8 @@ export interface DomWidgetsReflector extends ReflectorDef {
   hostCount(): number;
   /** Geometry writes so far — one per enter, one per changed host, zero for unchanged (churn instrument). */
   geometryWrites(): number;
+  /** Trusted pre-cut T2 adapter over already-mounted host nodes only. */
+  transitionAdapter(): PresentationTransitionAdapter;
   /** Tear down the private observers (call when unregistering the reflector before the world dies). */
   dispose(): void;
 }
@@ -128,6 +134,7 @@ export function createDomWidgetsReflector(
   let geometryWrites = 0;
   /** True while any host is lifted → all content is inerted (pinned drag contract). */
   let inert = false;
+  const departingHosts = new Set<Entity>();
 
   // Private dirt flags — the store carries no ECS stamp, so geometry/promote work
   // is gated by observers rather than the registry's (unused under `always`) dirt.
@@ -242,6 +249,7 @@ export function createDomWidgetsReflector(
   /** Change-only geometry rewrite over the live hosts (graybox pattern). */
   function updateGeometry(): void {
     for (const [e, rec] of hosts) {
+      if (departingHosts.has(e)) continue;
       const g = readGeom(e);
       if (g.x !== rec.x || g.y !== rec.y || g.w !== rec.w || g.h !== rec.h) {
         writeGeom(rec.host, g.x, g.y, g.w, g.h);
@@ -309,6 +317,7 @@ export function createDomWidgetsReflector(
   /** Change-only opacity rewrite over the live hosts (graybox pattern). */
   function updateOpacity(): void {
     for (const [e, rec] of hosts) {
+      if (departingHosts.has(e)) continue;
       const o = readOpacity(e);
       if (o !== rec.opacity) {
         // 1 clears the property — the no-component host carries no inline style.
@@ -322,6 +331,7 @@ export function createDomWidgetsReflector(
   function updatePromote(): void {
     let anyLifted = false;
     for (const [e, rec] of hosts) {
+      if (departingHosts.has(e)) continue;
       const grabbed = world.has(e, Grab);
       const shouldLift = grabbed && promotable(e);
       if (shouldLift) anyLifted = true;
@@ -390,6 +400,159 @@ export function createDomWidgetsReflector(
     hostFor: (entity) => hosts.get(entity)?.content,
     hostCount: () => hosts.size,
     geometryWrites: () => geometryWrites,
+    transitionAdapter() {
+      return {
+        id: "@ice/dom/widgets",
+        plane: "dom",
+        prepare(descriptor) {
+          const retain = store.retainForTransition;
+          if (retain === undefined) {
+            throw new Error("ice: DOM transition retention needs a retainable mount store.");
+          }
+          const ordered: Entity[] = [];
+          const entityByHost = new Map<HTMLDivElement, Entity>();
+          for (const [entity, rec] of hosts) entityByHost.set(rec.host, entity);
+          for (const plane of [host.contentPlane, host.liftedPlane]) {
+            for (const child of Array.from(plane.children)) {
+              const entity = entityByHost.get(child as HTMLDivElement);
+              const rec = entity === undefined ? undefined : hosts.get(entity);
+              if (entity !== undefined && rec !== undefined && !rec.hidden && !departingHosts.has(entity)) {
+                ordered.push(entity);
+              }
+            }
+          }
+
+          // Revoke focus before taking ownership or moving a node. `blur` is a
+          // user-code boundary and can synchronously start another navigation;
+          // that newer prepare may move these hosts and mark them departing.
+          const activeElement = doc.activeElement;
+          if (activeElement !== null) {
+            for (const entity of ordered) {
+              const rec = hosts.get(entity);
+              if (rec?.host.contains(activeElement)) {
+                (activeElement as HTMLElement).blur?.();
+                break;
+              }
+            }
+          }
+          const eligible = ordered.filter((entity) => {
+            const rec = hosts.get(entity);
+            return rec !== undefined && !rec.hidden && !departingHosts.has(entity);
+          });
+          const hold = retain(eligible);
+          // `retain` synchronously notifies external-store subscribers. One
+          // may start a newer navigation that already took these hosts; never
+          // let this now-stale prepare steal them back from its departing
+          // plane when the callback returns.
+          const movable = hold.entities.filter((entity) => {
+            const rec = hosts.get(entity);
+            return rec !== undefined && !rec.hidden && !departingHosts.has(entity);
+          });
+          if (movable.length === 0) {
+            hold.release();
+            return null;
+          }
+
+          const departing = doc.createElement("div");
+          departing.setAttribute("data-ice-departing-dom", "");
+          departing.setAttribute("aria-hidden", "true");
+          departing.setAttribute("inert", "");
+          Object.assign(departing.style, {
+            position: "absolute",
+            left: "0",
+            top: "0",
+            transformOrigin: "0 0",
+            willChange: "transform, opacity",
+            pointerEvents: "none",
+            opacity: "1",
+          });
+          const retained = new Set(movable);
+          const moved = new Set<Entity>();
+          try {
+            if (descriptor.kind === "enter") {
+              const parent = host.contentPlane.parentNode;
+              if (parent === null) {
+                throw new Error("ice: cannot retain DOM presentation from a detached content plane.");
+              }
+              parent.insertBefore(departing, host.contentPlane);
+            } else {
+              departing.style.zIndex = "1";
+              const parent = host.liftedPlane.parentNode;
+              if (parent === null) {
+                throw new Error("ice: cannot retain DOM presentation from a detached lifted plane.");
+              }
+              parent.insertBefore(departing, host.liftedPlane);
+            }
+
+            for (const entity of movable) {
+              const rec = hosts.get(entity);
+              if (rec === undefined) continue;
+              departingHosts.add(entity);
+              moved.add(entity);
+              departing.appendChild(rec.host);
+            }
+            const initial = planeCssTransform(descriptor.fromCamera);
+            departing.style.transform = `translate(${initial.tx}px, ${initial.ty}px) scale(${initial.scale})`;
+          } catch (error) {
+            for (const entity of moved) {
+              const rec = hosts.get(entity);
+              if (rec === undefined) continue;
+              departingHosts.delete(entity);
+              (rec.lifted ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+            }
+            departing.remove();
+            hold.release();
+            orderDirty = true;
+            promoteDirty = true;
+            throw error;
+          }
+
+          let released = false;
+          const release = (): void => {
+            if (released) return;
+            released = true;
+            // Hide before moving back so a stale main-plane transform can
+            // never flash one outgoing host at destination coordinates.
+            for (const entity of retained) {
+              const rec = hosts.get(entity);
+              if (rec === undefined) continue;
+              rec.host.style.display = "none";
+              departingHosts.delete(entity);
+              (rec.lifted ? host.liftedPlane : host.contentPlane).appendChild(rec.host);
+            }
+            departing.remove();
+            host.contentPlane.style.opacity = "";
+            host.liftedPlane.style.opacity = "";
+            hold.release();
+            const snapshot = new Map(
+              store.getSnapshot().map((entry) => [entry.entity, entry] as const),
+            );
+            for (const entity of retained) {
+              const rec = hosts.get(entity);
+              if (rec === undefined) continue;
+              const entry = snapshot.get(entity);
+              rec.hidden = entry?.hidden ?? true;
+              rec.host.style.display = rec.hidden ? "none" : "";
+            }
+            orderDirty = true;
+            promoteDirty = true;
+          };
+
+          const retainer: PresentationRetainer = {
+            update(frame: PresentationTransitionFrame) {
+              const transform = planeCssTransform(frame.outgoingCamera);
+              departing.style.transform = `translate(${transform.tx}px, ${transform.ty}px) scale(${transform.scale})`;
+              departing.style.opacity = String(frame.outgoingOpacity);
+              const incoming = frame.incomingOpacity >= 1 ? "" : String(frame.incomingOpacity);
+              host.contentPlane.style.opacity = incoming;
+              host.liftedPlane.style.opacity = incoming;
+            },
+            release,
+          };
+          return retainer;
+        },
+      };
+    },
     dispose() {
       for (const u of unsubs) u();
       unsubs.length = 0;

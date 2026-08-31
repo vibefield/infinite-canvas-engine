@@ -12,11 +12,17 @@
 import { LoroDoc, LoroMap } from "loro-crdt";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DefaultCanvasType,
+  ENGINE_SCHEMA_VERSION,
   PrefabId,
+  ROOT_CANVAS_META_KEY,
+  canvasIdentityOf,
+  canvasPackId,
   createCanvasEngine,
   decodeEnvelope,
   defineQuery,
   defineWidget,
+  encodeCanvasIdentity,
   p,
   renames,
   widgets,
@@ -170,7 +176,13 @@ describe("version gate — rename aliasing + tombstones (design-008 §4)", () =>
 
     const doc = new LoroDoc();
     const meta = doc.getMap("meta");
-    meta.set("engine.schema.2", true);
+    const rootCanvas = canvasIdentityOf(DefaultCanvasType);
+    meta.set(`engine.schema.${ENGINE_SCHEMA_VERSION}`, true);
+    meta.set(ROOT_CANVAS_META_KEY, encodeCanvasIdentity(rootCanvas));
+    meta.set(
+      `engine.pack.${canvasPackId(rootCanvas.id)}.${rootCanvas.semanticVersion}`,
+      true,
+    );
     meta.set("engine.pack.rn:gate-unknown.1", true); // no rename registered
     doc.commit();
     let report = readDocVersionReport(doc);
@@ -179,7 +191,12 @@ describe("version gate — rename aliasing + tombstones (design-008 §4)", () =>
 
     const doc2 = new LoroDoc();
     const meta2 = doc2.getMap("meta");
-    meta2.set("engine.schema.2", true);
+    meta2.set(`engine.schema.${ENGINE_SCHEMA_VERSION}`, true);
+    meta2.set(ROOT_CANVAS_META_KEY, encodeCanvasIdentity(rootCanvas));
+    meta2.set(
+      `engine.pack.${canvasPackId(rootCanvas.id)}.${rootCanvas.semanticVersion}`,
+      true,
+    );
     meta2.set("engine.pack.rn:gate-old.1", true);
     doc2.commit();
     report = readDocVersionReport(doc2);
@@ -230,7 +247,12 @@ describe("open-path fold (design-008 §5) — rename × version chain", () => {
     // The next save's envelope carries ONLY the new id (self-heal, §7).
     const saved = res.session.exportEnvelope();
     const { header } = decodeEnvelope(saved);
-    expect(Object.keys(header.prefabVersions)).toEqual(["rn:open-new"]);
+    expect(header.prefabVersions).toMatchObject({
+      [canvasPackId(DefaultCanvasType.id)]: DefaultCanvasType.semanticVersion,
+      "rn:open-new": 2,
+      wire: 1,
+    });
+    expect(header.prefabVersions["rn:open-old"]).toBeUndefined();
     expect(header.prefabVersions["rn:open-new"]).toBe(2);
   });
 });

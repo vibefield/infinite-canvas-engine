@@ -8,7 +8,17 @@
  * (Selection chrome moved OFF the ground 2026-07-17: rings live with the
  * cards, the multi-select union box is P4 dom chrome — always on top.)
  */
-import type { GridConfig, SnapGuidesConfig, WirePreviewBuffer, WiresConfig, World } from "@ice/core";
+import type {
+  CanvasSessionValue,
+  CanvasType,
+  GpuAllocationLedger,
+  GridConfig,
+  SnapGuidesConfig,
+  WirePreviewBuffer,
+  WiresConfig,
+  World,
+  PresentationTransitionCoordinator,
+} from "@ice/core";
 import { createLayer, type GroundLayerHost, type GroundReflector } from "./layer";
 import type { GroundPass } from "./pass";
 import { createGridPass } from "./passes/grid";
@@ -20,7 +30,45 @@ import { createGroundRenderer, type GroundRendererLike } from "./renderer";
 
 export type { GroundFrame, GroundPass } from "./pass";
 export type { GroundReflector } from "./layer";
-export type { GroundRendererLike } from "./renderer";
+export {
+  readGroundRendererStatus,
+  type GroundRendererBackend,
+  type GroundRendererFailure,
+  type GroundRendererFailureKind,
+  type GroundRendererFrameProfile,
+  type GroundRendererLike,
+  type GroundRendererProfile,
+  type GroundRendererStatus,
+} from "./renderer";
+export {
+  groundHost,
+  type GroundHostLayer,
+  type GroundHostOptions,
+  type GroundProgramControl,
+} from "./program-host";
+export type {
+  FrozenGroundPresentation,
+  GroundActivationContext,
+  GroundFrameChildRow,
+  GroundFrameChildrenSnapshot,
+  GroundFrameChildrenSource,
+  GroundHostStats,
+  GroundPrepareContext,
+  GroundPresentation,
+  GroundProgramCacheOptions,
+  GroundProgramDefinition,
+  GroundProgramInput,
+  GroundProgramInstance,
+  GroundProgramStatus,
+  GroundProgramStatusState,
+  GroundProgramTransition,
+  GroundSourceDeclaration,
+} from "./program";
+export {
+  frameChildrenSource,
+  GROUND_FRAME_CHILDREN_DEFAULT_LIMIT,
+  GROUND_FRAME_CHILDREN_MAX_LIMIT,
+} from "./program";
 export { SoupBuilder, parseCssColor, type Rgba, type TriSoup } from "./passes/soup-collect";
 export { collectGuides } from "./passes/guides-collect";
 export { collectWires } from "./passes/wires-collect";
@@ -60,6 +108,16 @@ export interface GroundContext {
    * wire `stack.index.search`; omit ⇒ magnet renders a pole-only field.
    */
   readonly readSpatial?: ReadSpatial;
+  /** Headless current-CanvasType seam; GroundHost subscribes once to it. */
+  readonly canvas?: {
+    type(): CanvasType;
+    current?(): CanvasSessionValue;
+    subscribe(onChange: () => void): () => void;
+  };
+  /** Trusted T2 registration; absent in legacy/headless ground mounts. */
+  readonly transitions?: PresentationTransitionCoordinator;
+  /** Shared GPU accounting with R3F transition/island allocations. */
+  readonly gpu?: GpuAllocationLedger;
 }
 
 export interface GroundLayer {
@@ -84,6 +142,8 @@ export interface GroundOptions {
   readonly passes?: readonly GroundPass[];
   /** Force the WebGL2 backend (debug / e2e A-B runs). */
   readonly forceWebGL?: boolean;
+  /** Query-gated timestamp/CPU evidence; off by default (zero timer/query cost). */
+  readonly profile?: boolean;
   /** TEST seam: inject a fake renderer (headless orchestration tests). */
   readonly rendererOverride?: GroundRendererLike;
 }
@@ -99,7 +159,10 @@ export type GroundFactory = (ctx: GroundContext) => GroundLayer;
 export function ground(opts: GroundOptions = {}): GroundFactory {
   return (ctx) => {
     const doc = ctx.host.container.ownerDocument;
-    const renderer = opts.rendererOverride ?? createGroundRenderer(doc, { forceWebGL: opts.forceWebGL === true });
+    const renderer = opts.rendererOverride ?? createGroundRenderer(doc, {
+      forceWebGL: opts.forceWebGL === true,
+      profile: opts.profile === true,
+    });
     const poles = opts.poles === undefined ? [] : Array.isArray(opts.poles) ? opts.poles : [opts.poles];
     const grid = createGridPass(opts.grid ?? {}, { poles, ...(ctx.readSpatial !== undefined ? { readSpatial: ctx.readSpatial } : {}) });
     const wires = createWiresPass(opts.wires ?? {}, ctx.readWirePreview);

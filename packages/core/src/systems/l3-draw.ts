@@ -21,9 +21,8 @@ import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import { screenToWorld, type CameraState } from "@ice/kernel";
 import { Camera, Drag, GesturePhases, RoutedDraw } from "../catalog";
 import { ActiveTool } from "../catalog/camera-derived";
+import { resolveToolFor, widgetTypeFor } from "../canvas/engine-catalog";
 import type { CommitSink } from "../engine/commit-sink";
-import { tools } from "../tools/define-tool";
-import { widgets } from "../widget/define-widget";
 
 const P = GesturePhases;
 const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
@@ -41,9 +40,9 @@ export function createDrawBehavior(world: World, sink: CommitSink): System {
         const rec = b.entity(r);
         if (!ctx.hasTag(rec, P.justTags.Ended)) continue;
 
-        const tool = tools.resolve(ctx.getResource(ActiveTool)?.id ?? "select");
+        const tool = resolveToolFor(world, ctx.getResource(ActiveTool)?.id ?? "select");
         const type = tool.draw?.widgetType;
-        const widget = type !== undefined ? widgets.get(type) : undefined;
+        const widget = type !== undefined ? widgetTypeFor(world, type) : undefined;
         if (type === undefined || widget === undefined) continue; // route without a draw tool: no-op
 
         const d = ctx.read(rec, Drag);

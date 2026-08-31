@@ -15,30 +15,28 @@
  * are widgets too, so a folder drops into a folder — nesting was already
  * fully supported engine-side (membership walks the ChildOf chain), only the
  * missing Provides blocked the match. Double-click (or Enter/Space) descends
- * via ops.enterContainer. Child snapshot reads the `ChildOf` containment
- * edge (chrome-grade 250 ms poll, value-stable state).
+ * via ops.enterContainer. Its child picture is the Container SDK's bounded,
+ * demand-driven semantic preview; hidden folders own no timer or observer.
  *
  * size: large (329×345).
  */
 import {
-  CameraLimits,
-  ChildOf,
   FIT_DEFAULTS,
-  MeasuredSize,
-  Position,
-  PrefabId,
-  Size,
-  Viewport,
-  defineWidget,
+  defineContainer,
   p,
-  widgets,
   type Entity,
+  type FramePreviewSnapshot,
   type World,
 } from "@ice/core";
-import { useOps, useWidgetProps } from "@ice/react";
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from "react";
+import { useCanvasEngine, useFramePreview, useOps, useWidgetProps } from "@ice/react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactElement,
+} from "react";
 import { CARD_RADIUS, CardShell } from "./CardShell";
 import { FOLDER_BG, previewBackground } from "./preview";
+import { WhiteboardCanvas } from "../whiteboard-canvas";
 
 export const CARD_CONTAINER_SIZE = { w: 329, h: 345 };
 
@@ -53,22 +51,7 @@ const PORTAL = {
   h: CARD_CONTAINER_SIZE.h - FOLDER_PAD - FOLDER_BAR,
 };
 
-type Mini = { x: number; y: number; w: number; h: number; bg: string };
-
-function childrenSnapshot(world: World, entity: Entity): Mini[] {
-  const out: Mini[] = [];
-  for (const c of world.getReverse(entity, ChildOf)) {
-    const pos = world.get(c, Position);
-    const m = world.get(c, MeasuredSize);
-    const s = m !== undefined && m.w > 0 ? m : world.get(c, Size);
-    if (pos === undefined || s === undefined) continue;
-    const type = world.get(c, PrefabId)?.id;
-    const def = typeof type === "string" ? widgets.get(type) : undefined;
-    const bg = previewBackground(typeof type === "string" ? type : undefined, def?.surface);
-    out.push({ x: pos.x, y: pos.y, w: s.w, h: s.h, bg });
-  }
-  return out;
-}
+type Mini = { key: string; x: number; y: number; w: number; h: number; bg: string };
 
 /** Aspect-FIT affine mapping rect R onto rect K, centers aligned (mock fitAffine). */
 function fitAffine(
@@ -86,45 +69,44 @@ function fitAffine(
  * back to a plain bbox fit when no Viewport exists (headless/tests).
  */
 function miniRects(
-  minis: Mini[],
-  world: World,
+  snapshot: FramePreviewSnapshot,
+  background: (type: string) => string,
 ): Array<Mini & { left: number; top: number; width: number; height: number; radius: number }> {
+  const minis: Mini[] = snapshot.children.map((child) => ({
+    key: child.key,
+    x: child.rect.x,
+    y: child.rect.y,
+    w: child.rect.width,
+    h: child.rect.height,
+    bg: background(child.widgetType),
+  }));
   if (minis.length === 0) return [];
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  for (const c of minis) {
-    minX = Math.min(minX, c.x);
-    minY = Math.min(minY, c.y);
-    maxX = Math.max(maxX, c.x + c.w);
-    maxY = Math.max(maxY, c.y + c.h);
-  }
-  const pad = FIT_DEFAULTS.pad;
-  const vp = world.getResource(Viewport);
+  const { bounds, resolvedView: camera, viewport } = snapshot;
   let R: { x: number; y: number; w: number; h: number };
-  if (vp !== undefined && vp.w > 0 && vp.h > 0) {
-    // The arrival camera's NATURAL band (2026-07-18): FIT_DEFAULTS ∩
-    // CameraLimits — must match resolveArrivalCamera exactly or the enter
-    // flight lands on a different view than the portal promised.
-    const lim = world.getResource(CameraLimits);
-    const fitMin = Math.max(FIT_DEFAULTS.minZoom, lim?.minZoom ?? FIT_DEFAULTS.minZoom);
-    const fitMax = Math.min(FIT_DEFAULTS.maxZoom, lim?.maxZoom ?? FIT_DEFAULTS.maxZoom);
-    const bw = maxX - minX;
-    const bh = maxY - minY;
-    let zoom = Math.min(vp.w / (bw + pad * 2), vp.h / (bh + pad * 2));
-    zoom = Math.min(fitMax, Math.max(fitMin, zoom));
-    R = { x: minX + bw / 2 - vp.w / (2 * zoom), y: minY + bh / 2 - vp.h / (2 * zoom), w: vp.w / zoom, h: vp.h / zoom };
+  if (viewport.width > 0 && viewport.height > 0) {
+    R = {
+      x: camera.x,
+      y: camera.y,
+      w: viewport.width / camera.zoom,
+      h: viewport.height / camera.zoom,
+    };
   } else {
-    R = { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 };
+    R = {
+      x: bounds.x - FIT_DEFAULTS.pad,
+      y: bounds.y - FIT_DEFAULTS.pad,
+      w: Math.max(1, bounds.width + FIT_DEFAULTS.pad * 2),
+      h: Math.max(1, bounds.height + FIT_DEFAULTS.pad * 2),
+    };
   }
-  const M = fitAffine(R, PORTAL);
+  const portalWidth = snapshot.portal.width > 0 ? snapshot.portal.width : PORTAL.w;
+  const portalHeight = snapshot.portal.height > 0 ? snapshot.portal.height : PORTAL.h;
+  const M = fitAffine(R, { x: 0, y: 0, w: portalWidth, h: portalHeight });
   // Same silhouette as the card: the 22px corner scaled by the SAME affine.
   const radius = CARD_RADIUS * M.s;
   return minis.map((c) => ({
     ...c,
-    left: M.ox + c.x * M.s - PORTAL.x,
-    top: M.oy + c.y * M.s - PORTAL.y,
+    left: M.ox + c.x * M.s,
+    top: M.oy + c.y * M.s,
     width: c.w * M.s,
     height: c.h * M.s,
     radius,
@@ -134,21 +116,8 @@ function miniRects(
 function CardContainerView({ entity, world }: { entity: Entity; world: World }): ReactElement {
   const props = useWidgetProps<{ title: string; accent: string }>(world, entity, "card-container");
   const ops = useOps();
-  const [minis, setMinis] = useState<Mini[]>(() => childrenSnapshot(world, entity));
-  useEffect(() => {
-    // Seed from a fresh snapshot (not the state closure) — value-stable
-    // updates: setMinis fires only when the serialized snapshot changes.
-    let lastKey = JSON.stringify(childrenSnapshot(world, entity));
-    const id = setInterval(() => {
-      const next = childrenSnapshot(world, entity);
-      const key = JSON.stringify(next);
-      if (key !== lastKey) {
-        lastKey = key;
-        setMinis(next);
-      }
-    }, 250);
-    return () => clearInterval(id);
-  }, [world, entity]);
+  const engine = useCanvasEngine();
+  const snapshot = useFramePreview(entity);
 
   const title = props?.title ?? "Folder";
   const accent = props?.accent ?? "#7B96FF";
@@ -163,7 +132,10 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
       enterFolder();
     }
   };
-  const placed = miniRects(minis, world);
+  const placed = miniRects(snapshot, (type) => {
+    const def = engine.catalog.widget(type);
+    return previewBackground(type, def?.surface);
+  });
 
   // v1 note kept: a <div role="button"> rather than <button> — a real button
   // would be treated as a widget-internal control and make the whole surface
@@ -201,10 +173,9 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
             background: "radial-gradient(rgba(150,158,210,0.12) 1px, transparent 1px) 0 0 / 14px 14px, #14141F",
           }}
         >
-          {placed.map((c, i) => (
+          {placed.map((c) => (
             <div
-              // biome-ignore lint/suspicious/noArrayIndexKey: positional snapshot, order-stable per poll
-              key={i}
+              key={c.key}
               style={{
                 position: "absolute",
                 left: c.left,
@@ -275,7 +246,7 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
               boxSizing: "border-box",
             }}
           >
-            {placed.length}
+            {snapshot.totalChildren}
           </span>
         </div>
       </div>
@@ -283,8 +254,9 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
   );
 }
 
-export const CardContainer = defineWidget({
+export const CardContainer = defineContainer({
   type: "card-container",
+  canvas: WhiteboardCanvas,
   surface: "dom",
   props: {
     title: p.string({ default: "Folder" }),
@@ -298,5 +270,7 @@ export const CardContainer = defineWidget({
   // can never match another folder's accepts — folder-in-folder was silently
   // impossible. (For containers, Provides reads container.provides; the
   // top-level `provides` field is the LEAF path — define-widget.ts:292.)
-  container: { accepts: ["widget"], provides: ["widget"] },
+  drop: { accepts: ["widget"] },
+  provides: ["widget"],
+  portal: { top: FOLDER_PAD, right: FOLDER_PAD, bottom: FOLDER_BAR, left: FOLDER_PAD },
 });

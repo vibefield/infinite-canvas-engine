@@ -1,0 +1,234 @@
+{
+  "exportedAt": "2026-08-27T06:54:44.529Z",
+  "source": "isolated Chrome 152 GPU-loss profile",
+  "rows": [
+    {
+      "kind": "device-loss",
+      "schema": 1,
+      "triggered": false,
+      "pass": false,
+      "message": "No device/context loss was observed within 20000 ms.",
+      "after": {
+        "metadata": {
+          "recordedAt": "2026-08-27T06:44:44.590Z",
+          "groundVariant": "typed",
+          "requestedBackend": "auto",
+          "actualBackend": "webgpu",
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+          "viewport": {
+            "width": 1200,
+            "height": 900,
+            "dpr": 2
+          },
+          "hardwareConcurrency": 10
+        },
+        "navDepth": 0,
+        "transition": {
+          "active": false,
+          "epoch": 0,
+          "retainers": 0,
+          "adapters": 3,
+          "reducedMotion": false
+        },
+        "gpu": {
+          "budgetBytes": 268435456,
+          "allocatorBytes": 8669304,
+          "reservedBytes": 0,
+          "usedBytes": 8669304,
+          "reservations": 0
+        },
+        "ground": {
+          "available": true,
+          "redraws": 21,
+          "renderer": {
+            "backend": "webgpu",
+            "ready": true,
+            "failed": false
+          },
+          "profile": {
+            "enabled": true,
+            "timestampSupported": true,
+            "samples": 21,
+            "gpuSamples": 12
+          },
+          "programs": {
+            "activeProgram": "widgetlab.board.magnet",
+            "instantiatedPrograms": 1,
+            "inactivePrograms": 0,
+            "sourceObservers": 2,
+            "redraws": 21,
+            "renderer": {
+              "backend": "webgpu",
+              "ready": true,
+              "failed": false
+            }
+          }
+        },
+        "mountEntries": 21,
+        "frozenMounts": 0,
+        "domHosts": 21,
+        "departingDomPlanes": 0,
+        "glIslands": 7,
+        "departingGlGroups": 0,
+        "gl": {
+          "cpuMs": 0.39999985694885254,
+          "gpuMs": 1.4307049999999997,
+          "fps": 60,
+          "drawCalls": 20,
+          "triangles": 34708,
+          "points": 0,
+          "lines": 0,
+          "programs": 11,
+          "geometries": 18,
+          "textures": 9,
+          "renderTargets": 7,
+          "renderMegaPixels": 0.240814,
+          "fboBytes": 8669304,
+          "fboBudgetBytes": 268435456,
+          "retainedQuads": 0,
+          "islands": {
+            "total": 7,
+            "hot": 5,
+            "warm": 2,
+            "waking": 0,
+            "cold": 0,
+            "dormant": 0
+          },
+          "bandHistogram": {
+            "×0.5": 7
+          },
+          "repainted": 4,
+          "pendingPaints": 1,
+          "evicted": 0,
+          "zoom": 0.5,
+          "band": 0.5,
+          "effectiveDpr": 0.75,
+          "visibleWidgets": 21,
+          "culledWidgets": 0
+        },
+        "usedJsHeapBytes": 27992534
+      }
+    },
+    {
+      "kind": "device-loss",
+      "schema": 1,
+      "triggered": true,
+      "pass": true,
+      "message": "WebGPU loss reached the whole-ground unavailable posture.",
+      "after": {
+        "metadata": {
+          "recordedAt": "2026-08-27T06:45:52.585Z",
+          "groundVariant": "typed",
+          "requestedBackend": "auto",
+          "actualBackend": "webgpu",
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+          "viewport": {
+            "width": 1200,
+            "height": 900,
+            "dpr": 2
+          },
+          "hardwareConcurrency": 10
+        },
+        "navDepth": 0,
+        "transition": {
+          "active": false,
+          "epoch": 0,
+          "retainers": 0,
+          "adapters": 3,
+          "reducedMotion": false
+        },
+        "gpu": {
+          "budgetBytes": 268435456,
+          "allocatorBytes": 8669304,
+          "reservedBytes": 0,
+          "usedBytes": 8669304,
+          "reservations": 0
+        },
+        "ground": {
+          "available": false,
+          "redraws": 296,
+          "renderer": {
+            "backend": "webgpu",
+            "ready": false,
+            "failed": true,
+            "failure": {
+              "kind": "device-lost",
+              "backend": "webgpu",
+              "message": "A valid external Instance reference no longer exists.",
+              "api": "WebGPU",
+              "reason": "unknown"
+            }
+          },
+          "profile": {
+            "enabled": true,
+            "timestampSupported": true,
+            "samples": 296,
+            "gpuSamples": 266
+          },
+          "programs": {
+            "activeProgram": "widgetlab.board.magnet",
+            "instantiatedPrograms": 1,
+            "inactivePrograms": 0,
+            "sourceObservers": 2,
+            "redraws": 296,
+            "renderer": {
+              "backend": "webgpu",
+              "ready": false,
+              "failed": true,
+              "failure": {
+                "kind": "device-lost",
+                "backend": "webgpu",
+                "message": "A valid external Instance reference no longer exists.",
+                "api": "WebGPU",
+                "reason": "unknown"
+              }
+            }
+          }
+        },
+        "mountEntries": 21,
+        "frozenMounts": 0,
+        "domHosts": 21,
+        "departingDomPlanes": 0,
+        "glIslands": 7,
+        "departingGlGroups": 0,
+        "gl": {
+          "cpuMs": 0.40000009536743164,
+          "gpuMs": 13.327662999999998,
+          "fps": 61,
+          "drawCalls": 20,
+          "triangles": 23208,
+          "points": 0,
+          "lines": 0,
+          "programs": 11,
+          "geometries": 18,
+          "textures": 9,
+          "renderTargets": 7,
+          "renderMegaPixels": 0.240814,
+          "fboBytes": 8669304,
+          "fboBudgetBytes": 268435456,
+          "retainedQuads": 0,
+          "islands": {
+            "total": 7,
+            "hot": 5,
+            "warm": 2,
+            "waking": 0,
+            "cold": 0,
+            "dormant": 0
+          },
+          "bandHistogram": {
+            "×0.5": 7
+          },
+          "repainted": 4,
+          "pendingPaints": 1,
+          "evicted": 0,
+          "zoom": 0.5,
+          "band": 0.5,
+          "effectiveDpr": 0.75,
+          "visibleWidgets": 21,
+          "culledWidgets": 0
+        },
+        "usedJsHeapBytes": 31273649
+      }
+    }
+  ]
+}

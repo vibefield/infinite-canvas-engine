@@ -31,13 +31,12 @@ import {
   GhostRetiring,
   InsertGhost,
   defineQuery,
-  widgets as widgetRegistry,
   type CanvasEngine,
   type Entity,
   type WidgetType,
 } from "@ice/core";
 import { WidgetPreview, useStageHold } from "@ice/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { previewBackground } from "../widgets/preview";
 
 const ghostQ = defineQuery([InsertGhost]);
@@ -459,19 +458,27 @@ const TOOLS = [
 const SEG_W = 72;
 
 function ToolSwitcher({ ce }: { ce: CanvasEngine }) {
-  const [active, setActive] = useState("select");
-  useEffect(() => {
-    const id = setInterval(() => setActive(ce.world.getResource(ActiveTool)?.id ?? "select"), 120);
-    return () => clearInterval(id);
-  }, [ce]);
-  const idx = Math.max(0, TOOLS.findIndex((t) => t.id === active));
+  const subscribeActive = useCallback(
+    (onChange: () => void) => ce.world.reactive.observeResource(ActiveTool, onChange),
+    [ce],
+  );
+  const getActive = useCallback(
+    () => ce.world.getResource(ActiveTool)?.id ?? "select",
+    [ce],
+  );
+  const active = useSyncExternalStore(subscribeActive, getActive, getActive);
+  const subscribeTools = useCallback((onChange: () => void) => ce.canvas.subscribe(onChange), [ce]);
+  const available = useSyncExternalStore(subscribeTools, ce.canvas.tools, ce.canvas.tools);
+  const availableIds = useMemo(() => new Set(available.map((tool) => tool.id)), [available]);
+  const visibleTools = TOOLS.filter((tool) => availableIds.has(tool.id));
+  const idx = Math.max(0, visibleTools.findIndex((t) => t.id === active));
   return (
     <div className="relative flex rounded-full border border-black/5 bg-[#F2F2F7]/80 p-1 shadow-inner dark:border-white/5 dark:bg-black/40">
       <div
         className="absolute top-1 bottom-1 rounded-full border border-black/5 bg-white shadow-sm transition-transform duration-300 dark:border-white/10 dark:bg-[#2C2C2E]"
         style={{ width: SEG_W, transform: `translateX(${idx * SEG_W}px)`, transitionTimingFunction: EASE }}
       />
-      {TOOLS.map((t) => (
+      {visibleTools.map((t) => (
         <button
           key={t.id}
           type="button"
@@ -505,8 +512,31 @@ export function WidgetTray({
   const panelRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  const defs = useMemo(() => widgetRegistry.all(), []);
+  const subscribeCatalog = useCallback(
+    (onChange: () => void) => ce.canvas.subscribe(onChange),
+    [ce],
+  );
+  const catalog = useSyncExternalStore(
+    subscribeCatalog,
+    ce.canvas.catalog,
+    ce.canvas.catalog,
+  );
+  const defs = useMemo(() => {
+    const seen = new Set<string>();
+    return catalog.flatMap((section) =>
+      section.items.filter((widget) => {
+        if (seen.has(widget.type)) return false;
+        seen.add(widget.type);
+        return true;
+      }),
+    );
+  }, [catalog]);
   const shown = category === "All" ? defs : defs.filter((d) => categoryOf(d) === category);
+  useEffect(() => {
+    if (category !== "All" && !defs.some((def) => categoryOf(def) === category)) {
+      setCategory("All");
+    }
+  }, [category, defs]);
 
   // HANDOFF must release the pointer path SYNCHRONOUSLY: until React
   // re-renders `open=false`, the backdrop still has pointer-events auto and

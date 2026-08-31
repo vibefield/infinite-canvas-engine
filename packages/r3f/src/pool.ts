@@ -51,7 +51,7 @@ const DEPTH_BYTES_PER_PIXEL = 4;
 const SAMPLES = 4;
 
 /** GPU bytes for one target at the given pixel size — see the allocation model above. */
-function targetBytes(pixelWidth: number, pixelHeight: number): number {
+export function renderTargetBytes(pixelWidth: number, pixelHeight: number): number {
   const msaa = SAMPLES > 1;
   const colorBytes = COLOR_BYTES_PER_PIXEL * (msaa ? 1 + SAMPLES : 1);
   const depthBytes = DEPTH_BYTES_PER_PIXEL * (msaa ? SAMPLES : 1);
@@ -74,11 +74,18 @@ export interface PoolEntryInfo {
   key: number;
   bytes: number;
   lastUsedMs: number;
+  pinned: boolean;
+}
+
+export interface PoolPin {
+  readonly keys: readonly number[];
+  release(): void;
 }
 
 export class RenderTargetPool {
   private entries = new Map<number, PoolEntry>();
   private totalBytes = 0;
+  private pins = new Map<number, number>();
   private disposed = false;
   private readonly now: () => number;
 
@@ -124,7 +131,7 @@ export class RenderTargetPool {
     // writing here, so the FBO already holds display-ready values (design-004 §3;
     // the composite shader must NOT re-encode — see composite-material.ts).
     rt.texture.colorSpace = SRGBColorSpace;
-    const bytes = targetBytes(pixelWidth, pixelHeight);
+    const bytes = renderTargetBytes(pixelWidth, pixelHeight);
     this.entries.set(key, { rt, pixelWidth, pixelHeight, effectiveDpr, bytes, lastUsedMs: nowMs });
     this.totalBytes += bytes;
     return rt;
@@ -152,8 +159,9 @@ export class RenderTargetPool {
    * dispose — returns false rather than corrupting the byte counter or
    * double-disposing the target.
    */
-  release(key: number): boolean {
+  release(key: number, force = false): boolean {
     if (this.disposed) return false;
+    if (!force && (this.pins.get(key) ?? 0) > 0) return false;
     const entry = this.entries.get(key);
     if (!entry) return false;
     entry.rt.dispose();
@@ -168,9 +176,45 @@ export class RenderTargetPool {
     return this.totalBytes;
   }
 
+  /** Total pool bytes after acquiring/replacing this key at the requested size. */
+  projectedBytes(
+    key: number,
+    worldW: number,
+    worldH: number,
+    effectiveDpr: number,
+  ): number {
+    const pixelWidth = Math.max(1, Math.round(worldW * effectiveDpr));
+    const pixelHeight = Math.max(1, Math.round(worldH * effectiveDpr));
+    const existing = this.entries.get(key)?.bytes ?? 0;
+    return this.totalBytes - existing + renderTargetBytes(pixelWidth, pixelHeight);
+  }
+
   /** Number of FBOs currently held. */
   size(): number {
     return this.entries.size;
+  }
+
+  isPinned(key: number): boolean {
+    return (this.pins.get(key) ?? 0) > 0;
+  }
+
+  /** Pin existing textures for one outgoing GL presentation. */
+  pin(keys: readonly number[]): PoolPin {
+    const retained = [...new Set(keys)].filter((key) => this.entries.has(key));
+    for (const key of retained) this.pins.set(key, (this.pins.get(key) ?? 0) + 1);
+    let released = false;
+    return {
+      keys: Object.freeze(retained),
+      release: () => {
+        if (released) return;
+        released = true;
+        for (const key of retained) {
+          const refs = this.pins.get(key) ?? 0;
+          if (refs <= 1) this.pins.delete(key);
+          else this.pins.set(key, refs - 1);
+        }
+      },
+    };
   }
 
   /** True after `dispose()` — callers should re-create the pool instead of using it. */
@@ -190,7 +234,12 @@ export class RenderTargetPool {
   entryInfos(): PoolEntryInfo[] {
     const out: PoolEntryInfo[] = [];
     for (const [key, entry] of this.entries) {
-      out.push({ key, bytes: entry.bytes, lastUsedMs: entry.lastUsedMs });
+      out.push({
+        key,
+        bytes: entry.bytes,
+        lastUsedMs: entry.lastUsedMs,
+        pinned: this.isPinned(key),
+      });
     }
     return out;
   }
@@ -200,6 +249,7 @@ export class RenderTargetPool {
     if (this.disposed) return;
     for (const entry of this.entries.values()) entry.rt.dispose();
     this.entries.clear();
+    this.pins.clear();
     this.totalBytes = 0;
     this.disposed = true;
   }

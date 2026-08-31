@@ -167,10 +167,10 @@ describe("useTool", () => {
     expect(result.current[0]).toBe("select");
 
     act(() => {
-      engine.ops.setTool("hand");
+      engine.ops.setTool("pan");
     });
     step();
-    expect(result.current[0]).toBe("hand");
+    expect(result.current[0]).toBe("pan");
 
     // The returned setter routes through ops too.
     act(() => {

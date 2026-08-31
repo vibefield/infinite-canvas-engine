@@ -64,9 +64,10 @@ import {
   WheelZoom,
 } from "../catalog";
 import { ActiveTool } from "../catalog/camera-derived";
+import { toolTypeFor } from "../canvas/engine-catalog";
+import { CanvasIntentScope, CanvasSession } from "../canvas/session";
 import { FrameInfo } from "../engine/frame-info";
 import { GestureSettings } from "../catalog/settings-resources";
-import { tools } from "../tools/define-tool";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
 
 export type SingleKindName = "tap" | "longPress" | "drag";
@@ -171,7 +172,12 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
       const tool = ctx.getResource(ActiveTool)?.id ?? "select";
       // Explicit profiles (test/app override) → tool registry (design-005 §3)
       // → select. Tools parameterize L2 spawn purely through config.
-      const profile = profiles[tool] ?? tools.get(tool)?.spawnProfile ?? DEFAULT_SPAWN_PROFILES.select ?? [];
+      const profile =
+        profiles[tool] ??
+        toolTypeFor(world, tool)?.spawnProfile ??
+        toolTypeFor(world, "select")?.spawnProfile ??
+        DEFAULT_SPAWN_PROFILES.select ??
+        [];
 
       for (const r of b) {
         const pointer = b.entity(r);
@@ -562,6 +568,14 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
               velY: 0,
               zoomAtClaim: ctx.getResource(Camera)?.zoom ?? 1,
             });
+            const canvas = ctx.getResource(CanvasSession);
+            if (canvas?.state === "attached") {
+              ctx.addComponent(e, CanvasIntentScope, {
+                documentEpoch: canvas.documentEpoch,
+                canvasEpoch: canvas.epoch,
+                frame: canvas.frame,
+              });
+            }
             P.set(ctx, e, "Active");
           } else if (ctx.hasTag(pointer, WentUp)) {
             P.set(ctx, e, "Failed"); // released inside the dead zone

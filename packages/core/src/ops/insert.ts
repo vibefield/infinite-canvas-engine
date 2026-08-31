@@ -28,9 +28,10 @@ import type { Entity, World } from "@vibecook/strata-ecs";
 import { screenToWorld, type CameraState } from "@ice/kernel";
 import { Camera, ChildOf, InsertGhost, LongPressDrag, SweepsContained } from "../catalog";
 import { Active } from "../catalog/camera-derived";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { instantiate } from "../engine/instantiate";
 import { NO_MODS, type InputQueue } from "../input/queue";
-import { WidgetEquipped, widgets } from "../widget/define-widget";
+import { WidgetEquipped } from "../widget/define-widget";
 import { widgetSpawnInits } from "../widget/spawn";
 import { frameParent } from "./sibling-order";
 
@@ -70,7 +71,7 @@ export function insertByDrag(
   type: string,
   opts: InsertByDragOpts,
 ): Entity {
-  const widget = widgets.get(type);
+  const widget = widgetTypeFor(world, type);
   if (widget === undefined) throw new Error(`ice: insertByDrag — unknown widget type "${type}".`);
 
   const cam = world.getResource(Camera) ?? IDENTITY_CAM;
@@ -88,7 +89,7 @@ export function insertByDrag(
     w,
     h,
     ...(opts.props !== undefined ? { props: opts.props } : {}),
-  });
+  }, widget);
 
   const ghost = instantiate(prefab, { into: "world", world }, { draft: true, overrides });
   world.addComponent(ghost, InsertGhost, {

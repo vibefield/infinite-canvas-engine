@@ -244,8 +244,10 @@ export {
 } from "./doc/envelope";
 export {
   gateVerdict,
+  readEnvelopeVersionReport,
   readDocVersionReport,
   stampEngineMeta,
+  type DocVersionScope,
   type DocVersionReport,
   type GateVerdict,
 } from "./doc/version-gate";
@@ -276,6 +278,9 @@ export {
   type WidgetDef,
   type WidgetGroup,
   type WidgetInteraction,
+  type WidgetContainerDef,
+  type WidgetContainerEntry,
+  type WidgetPortalInsets,
   type WidgetPortDecl,
   type WidgetBehaviorDecl,
   type WidgetBehaviorEntry,
@@ -284,6 +289,128 @@ export {
   type WidgetSurface,
   type WidgetType,
 } from "./widget/define-widget";
+
+// --- Canvas SDK: typed frame definitions, engine authority, and placement ---
+export {
+  DefaultCanvasType,
+  ROOT_CANVAS_META_KEY,
+  canvasIdentityOf,
+  canvasPackId,
+  canvasTypes,
+  contributeCanvasCatalog,
+  defineCanvasType,
+  encodeCanvasIdentity,
+  parseCanvasIdentity,
+  sameCanvasIdentity,
+  type CanvasCatalogSection,
+  type CanvasCatalogContribution,
+  type CanvasPlacementDef,
+  type CanvasType,
+  type CanvasTypeDef,
+  type CanvasTypeIdentity,
+} from "./canvas/define-canvas-type";
+export {
+  defineContainer,
+  type ContainerDef,
+  type ContainerIngressDef,
+} from "./canvas/define-container";
+export {
+  bindEngineCatalog,
+  compileEngineCatalog,
+  engineCatalogFor,
+  resolveToolFor,
+  toolTypeFor,
+  widgetTypeFor,
+  type EngineCatalog,
+  type EngineCatalogCompileOpts,
+} from "./canvas/engine-catalog";
+export {
+  createPlacementAuthority,
+  type PlacementAuthority,
+  type PlacementAuthorityOpts,
+  type PlacementDecision,
+  type PlacementReason,
+} from "./canvas/placement";
+export {
+  CanvasIntentScope,
+  CanvasSession,
+  createCanvasSessionController,
+  type CanvasSessionController,
+  type CanvasSessionValue,
+} from "./canvas/session";
+export {
+  collectCanvasDiagnostics,
+  type CanvasDiagnostic,
+  type CanvasDiagnosticCode,
+  type CanvasDiagnosticSnapshot,
+} from "./canvas/diagnostics";
+export {
+  resolveFrameChildren,
+  resolveFrameView,
+  resolvePortal,
+  type CanvasRect,
+  type FrameChildrenOpts,
+  type ResolvedFrameView,
+  type ResolvedPortal,
+} from "./canvas/frame-view";
+export {
+  defineFrameProjection,
+  frameProjections,
+  type CanvasPreviewDeclaration,
+  type FrameProjection,
+  type FrameProjectionChildRef,
+  type FrameProjectionContext,
+  type FrameProjectionDef,
+  type FrameProjectionRelationRow,
+} from "./canvas/frame-projection";
+export {
+  createFramePreviewStore,
+  FRAME_PREVIEW_DEFAULT_BYTES,
+  FRAME_PREVIEW_DEFAULT_CHILDREN,
+  FRAME_PREVIEW_MAX_BYTES,
+  FRAME_PREVIEW_MAX_CHILDREN,
+  FRAME_PREVIEW_MIN_BYTES,
+  type FramePreviewBudgets,
+  type FramePreviewChild,
+  type FramePreviewSnapshot,
+  type FramePreviewStats,
+  type FramePreviewStore,
+  type FramePreviewStoreOpts,
+  type FramePreviewValidity,
+} from "./canvas/frame-preview";
+export {
+  createPresentationTransitionCoordinator,
+  type FrameSwitchDescriptor,
+  type FrameSwitchRequest,
+  type PreparedFrameSwitch,
+  type PresentationMotion,
+  type PresentationPlane,
+  type PresentationReleaseReason,
+  type PresentationRetainer,
+  type PresentationTransitionAdapter,
+  type PresentationTransitionCoordinator,
+  type PresentationTransitionFrame,
+  type PresentationTransitionStats,
+} from "./canvas/presentation-transition";
+export {
+  canvasRuntimeExtensions,
+  defineCanvasRuntimeExtension,
+  defineFrameBehavior,
+  frameBehaviorPackId,
+  frameBehaviors,
+  type CanvasReadFacet,
+  type CanvasRuntimeChanges,
+  type CanvasRuntimeExtension,
+  type CanvasRuntimeExtensionContext,
+  type CanvasRuntimeExtensionDef,
+  type CanvasScopedReader,
+  type CanvasSemanticMigration,
+  type CanvasSemanticMigrationContext,
+  type ExistingPlacementPosture,
+  type FrameBehavior,
+  type FrameBehaviorDef,
+  type FrameBehaviorWriteContext,
+} from "./canvas/extensions";
 export { createWidgetEquipSystem } from "./widget/equip";
 export { attachSpawnBehaviors, attachSpawnParent, spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
 export { setWidgetProps } from "./widget/set-props";
@@ -291,6 +418,7 @@ export {
   createWidgetRuntime,
   installWidgetRuntime,
   type MountEntry,
+  type WidgetMountHold,
   type WidgetMountStore,
   type WidgetRuntime,
 } from "./widget/mount-store";
@@ -347,7 +475,9 @@ export {
   createNavFlight,
   navFlightActive,
   NavTransition,
+  publishNavCut,
   startNavFlight,
+  type NavTransitionIdentity,
 } from "./systems/nav-flight";
 
 // --- M9 presence layer (design-005 §6.5, design-001 §5.6) ---
@@ -396,7 +526,16 @@ export {
   type CanvasDocs,
   type CanvasEngine,
   type CanvasEngineOpts,
+  type CurrentCanvasScope,
   type StageControl,
   type CanvasOps,
 } from "./facade/create-canvas-engine";
+export {
+  createGpuAllocationLedger,
+  type GpuAllocationLedger,
+  type GpuAllocationStats,
+  type GpuAllocatorHandle,
+  type GpuAllocatorRegistration,
+  type GpuReservation,
+} from "./engine/gpu-allocation-ledger";
 export { createDrawBehavior } from "./systems/l3-draw";

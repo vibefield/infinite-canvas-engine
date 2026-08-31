@@ -15,6 +15,7 @@ import {
   flightCamera,
   flightOctaves,
   invertAffine,
+  outgoingCamera,
   portalAffine,
   solveFlightStart,
   springStep,
@@ -64,6 +65,20 @@ describe("portalAffine", () => {
 });
 
 describe("solveFlightStart (continuity at the cut)", () => {
+  it("expresses the destination camera in departed coordinates", () => {
+    const A = { s: 0.25, ox: 120, oy: 80 };
+    const destination = { x: 180, y: 140, zoom: 2 };
+    const departed = outgoingCamera(A, destination);
+    expect(departed).toEqual({ x: 240, y: 240, zoom: 0.5 });
+    const q = { x: 300, y: 400 };
+    expect((A.ox + q.x * A.s - destination.x) * destination.zoom).toBeCloseTo(
+      (q.x - departed.x) * departed.zoom,
+    );
+    expect((A.oy + q.y * A.s - destination.y) * destination.zoom).toBeCloseTo(
+      (q.y - departed.y) * departed.zoom,
+    );
+  });
+
   it("departed content through A under c0 renders exactly as under camPre", () => {
     // Enter shape: A = M⁻¹ maps parent coords into the child frame.
     const arrivalCam: CameraState = { x: -420, y: -260, zoom: 1.48 };

@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   BoardRoot,
   ChildOf,
+  ENGINE_SCHEMA_VERSION,
   StackZ,
   createDocSession,
   createWorld,
@@ -69,7 +70,7 @@ describe("schema migration 1→2 (solo open)", () => {
     if (!result.ok) return;
     const { session } = result;
     expect(session.readOnly).toBe(false); // schema stamped + packs current → writable
-    expect(session.report?.docSchema).toBe(2);
+    expect(session.report?.docSchema).toBe(ENGINE_SCHEMA_VERSION);
 
     world.sync();
     const rootRes = world.getResource(BoardRoot);
@@ -108,7 +109,7 @@ describe("schema migration 1→2 (solo open)", () => {
     const second = openDocSession(world2, reexported);
     expect(second.ok).toBe(true);
     if (!second.ok) return;
-    expect(second.session.report?.docSchema).toBe(2);
+    expect(second.session.report?.docSchema).toBe(ENGINE_SCHEMA_VERSION);
     expect(second.session.readOnly).toBe(false);
     world2.sync();
     const root2 = (world2.getResource(BoardRoot) as { root: Parameters<typeof world2.isAlive>[0] }).root;

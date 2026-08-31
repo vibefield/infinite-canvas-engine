@@ -125,9 +125,19 @@ export class CompositeMaterial extends ShaderMaterial {
     this.mapUniform.value = map;
   }
 
+  /** Immutable capture seam for a retained transition quad. */
+  map(): Texture | null {
+    return this.mapUniform.value;
+  }
+
   /** Composite opacity. Pass-through — no clamping; callers pass valid 0..1. */
   setOpacity(opacity: number): void {
     this.opacityUniform.value = opacity;
+  }
+
+  /** Last drawn composite opacity, used only during synchronous T2 capture. */
+  currentOpacity(): number {
+    return this.opacityUniform.value;
   }
 
   /**

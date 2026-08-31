@@ -20,7 +20,7 @@
  */
 import type { Entity, System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { tools } from "../tools/define-tool";
+import { resolveToolFor } from "../canvas/engine-catalog";
 import {
   ActiveTool,
   CanvasSurface,
@@ -98,7 +98,7 @@ export function createCursorSync(world: World): System & { readCursor(): string 
       if (resolved === undefined) {
         // Tool cursor override from the registry (design-005 §3) — the pan
         // tool's "grab" now lives on its ToolDef; unknown ids have none.
-        const toolCursor = tools.resolve(ctx.getResource(ActiveTool)?.id ?? "select").cursor;
+        const toolCursor = resolveToolFor(world, ctx.getResource(ActiveTool)?.id ?? "select").cursor;
         if (toolCursor !== undefined) resolved = toolCursor;
       }
 

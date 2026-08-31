@@ -36,6 +36,8 @@ export interface GlPanelStats {
   readonly renderMegaPixels: number;
   readonly fboBytes: number;
   readonly fboBudgetBytes: number;
+  /** Optional for older producers; current @ice/r3f reports outgoing FBO pins. */
+  readonly retainedQuads?: number;
   readonly islands: {
     readonly total: number;
     readonly hot: number;
@@ -280,7 +282,7 @@ export function createGlPanel(opts: GlPanelOptions = {}): GlPanel {
     geosEl.textContent = fmtInt(s.geometries);
     texsEl.textContent = fmtInt(s.textures);
 
-    rtRow.textContent = `${s.renderTargets} targets · ${s.renderMegaPixels.toFixed(1)} MP total`;
+    rtRow.textContent = `${s.renderTargets} targets · ${s.renderMegaPixels.toFixed(1)} MP total · ${s.retainedQuads ?? 0} retained`;
     fboBar.fill.style.width = `${Math.min(100, (s.fboBytes / s.fboBudgetBytes) * 100)}%`;
     fboBar.fill.style.background = s.fboBytes > s.fboBudgetBytes * 0.85 ? "#ffa657" : "#58a6ff";
     fboBar.stat.textContent = `${fmtMB(s.fboBytes)} / ${fmtMB(s.fboBudgetBytes)}`;

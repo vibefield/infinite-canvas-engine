@@ -13,8 +13,8 @@
 import type { Component, Entity, World } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import { guardedTransaction, type GuardedTxOpts } from "../guards/guarded-tx";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { PrefabId } from "../schema/prefab";
-import { widgets } from "./define-widget";
 
 export function setWidgetProps(
   store: DurableStore,
@@ -24,7 +24,7 @@ export function setWidgetProps(
   opts?: GuardedTxOpts,
 ): void {
   const type = world.get(entity, PrefabId)?.id;
-  const widget = typeof type === "string" ? widgets.get(type) : undefined;
+  const widget = typeof type === "string" ? widgetTypeFor(world, type) : undefined;
   if (widget === undefined) {
     throw new Error(`ice: setWidgetProps — entity ${String(entity)} is not a defined widget.`);
   }

@@ -23,6 +23,15 @@
  */
 import type { LoroDoc } from "loro-crdt";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
+import {
+  DefaultCanvasType,
+  ROOT_CANVAS_META_KEY,
+  canvasIdentityOf,
+  canvasPackId,
+  encodeCanvasIdentity,
+  parseCanvasIdentity,
+  type CanvasTypeIdentity,
+} from "../canvas/define-canvas-type";
 import { prefabs } from "../schema/prefab";
 import { renames } from "../widget/define-widget";
 import { ENGINE_SCHEMA_VERSION, type EnvelopeHeader } from "./envelope";
@@ -52,6 +61,23 @@ export interface DocVersionReport {
    * would brick the doc `readOnly` via `newerInDoc` — the I5 failure mode.
    */
   readonly renamedInDoc: Readonly<Record<string, number>>;
+  /** Authoritative semantic identity for the document's BoardRoot. */
+  readonly rootCanvas?: CanvasTypeIdentity;
+  /** A schema-3 root invariant failure. It can never be overridden into writable. */
+  readonly rootIssue?: string;
+  /** Missing exact semantic dependency markers for otherwise-current packs. */
+  readonly dependencyIssues?: readonly string[];
+}
+
+/** Engine-scoped definition authority used by stamping and comparison. */
+export interface DocVersionScope {
+  /** Every pack/version this engine can understand while opening a document. */
+  readonly localPacks: Readonly<Record<string, number>>;
+  /** Exact capability manifest stamped on a newly created document. */
+  readonly initialPacks?: Readonly<Record<string, number>>;
+  readonly packDependencies?: Readonly<
+    Record<string, Readonly<Record<string, number>>>
+  >;
 }
 
 export type GateVerdict = "ok" | "readOnly" | "migrate" | "reject";
@@ -61,15 +87,32 @@ export type GateVerdict = "ok" | "readOnly" | "migrate" | "reject";
  * path; idempotent write-once; callable BEFORE attach — the order is
  * `createDurableStore(doc)` first, then stamp, then `attachDurable`).
  */
-export function stampEngineMeta(store: DurableStore): void {
+export function stampEngineMeta(
+  store: DurableStore,
+  scope?: DocVersionScope,
+  rootCanvas: CanvasTypeIdentity = canvasIdentityOf(DefaultCanvasType),
+): void {
+  const initialPacks = scope?.initialPacks ?? scope?.localPacks ?? defaultPackVersions();
+  const rootPack = canvasPackId(rootCanvas.id);
+  if (initialPacks[rootPack] !== rootCanvas.semanticVersion) {
+    throw new Error(
+      `ice: new-document manifest does not include root CanvasType pack "${rootPack}"@${rootCanvas.semanticVersion}.`,
+    );
+  }
   store.metaTransaction((meta) => {
     const stamp = (key: string): void => {
       if (meta.get(key) === undefined) meta.set(key, true);
     };
     stamp(`${SCHEMA_PREFIX}${ENGINE_SCHEMA_VERSION}`);
-    for (const p of prefabs.all()) {
-      if (p.store !== "durable") continue;
-      stamp(`${PACK_PREFIX}${p.id}.${p.version ?? 1}`);
+    for (const [id, version] of Object.entries(initialPacks)) {
+      stamp(`${PACK_PREFIX}${id}.${version}`);
+    }
+    const encoded = encodeCanvasIdentity(rootCanvas);
+    const existing = meta.get(ROOT_CANVAS_META_KEY);
+    if (existing === undefined) {
+      meta.set(ROOT_CANVAS_META_KEY, encoded);
+    } else if (existing !== encoded) {
+      throw new Error("ice: document root CanvasType identity is write-once and already differs.");
     }
   });
 }
@@ -115,16 +158,74 @@ function compare(
   return { newerInDoc, olderInDoc };
 }
 
-function localPackVersions(): Record<string, number> {
+function dependencyIssues(
+  docPacks: Readonly<Record<string, number>>,
+  localPacks: Readonly<Record<string, number>>,
+  dependencies: DocVersionScope["packDependencies"],
+): string[] {
+  if (dependencies === undefined) return [];
+  const issues: string[] = [];
+  for (const [owner, required] of Object.entries(dependencies)) {
+    // Historical dependency closures belong to historical migration code. We
+    // can enforce the compiled closure only once the owner itself is current.
+    if (docPacks[owner] === undefined || docPacks[owner] !== localPacks[owner]) continue;
+    for (const [id, version] of Object.entries(required)) {
+      if (docPacks[id] !== version) issues.push(`${owner} requires ${id}@${version}`);
+    }
+  }
+  return issues.sort();
+}
+
+function defaultPackVersions(): Record<string, number> {
   const localPacks: Record<string, number> = {};
   for (const p of prefabs.all()) {
     if (p.store === "durable") localPacks[p.id] = p.version ?? 1;
   }
+  localPacks[canvasPackId(DefaultCanvasType.id)] = DefaultCanvasType.semanticVersion;
   return localPacks;
 }
 
+function rootFields(
+  docSchema: number,
+  rawRoot: unknown,
+  docPacks: Readonly<Record<string, number>>,
+  localPacks: Readonly<Record<string, number>>,
+): Pick<DocVersionReport, "rootCanvas" | "rootIssue"> {
+  const rootCanvas =
+    typeof rawRoot === "string"
+      ? parseCanvasIdentity(rawRoot)
+      : rawRoot !== null && typeof rawRoot === "object"
+        ? (rawRoot as CanvasTypeIdentity)
+        : undefined;
+  if (docSchema < 3) return rootCanvas === undefined ? {} : { rootCanvas };
+  if (
+    rootCanvas === undefined ||
+    typeof rootCanvas.id !== "string" ||
+    rootCanvas.id.length === 0 ||
+    !Number.isSafeInteger(rootCanvas.semanticVersion) ||
+    rootCanvas.semanticVersion < 1
+  ) {
+    return { rootIssue: `schema-${docSchema} document has missing or malformed ${ROOT_CANVAS_META_KEY}` };
+  }
+  const packId = canvasPackId(rootCanvas.id);
+  if (docPacks[packId] !== rootCanvas.semanticVersion) {
+    return {
+      rootCanvas,
+      rootIssue: `root CanvasType ${rootCanvas.id}@${rootCanvas.semanticVersion} has no exact document requirement`,
+    };
+  }
+  const localVersion = localPacks[packId];
+  if (localVersion === undefined || rootCanvas.semanticVersion > localVersion) {
+    return {
+      rootCanvas,
+      rootIssue: `root CanvasType ${rootCanvas.id}@${rootCanvas.semanticVersion} is not available at a compatible semantic version in this engine`,
+    };
+  }
+  return { rootCanvas };
+}
+
 /** Read the marker keys off a raw (imported, unattached) doc and compare. */
-export function readDocVersionReport(doc: LoroDoc): DocVersionReport {
+export function readDocVersionReport(doc: LoroDoc, scope?: DocVersionScope): DocVersionReport {
   const meta = doc.getMap("meta");
   let docSchema = 0;
   const rawPacks: Record<string, number> = {};
@@ -146,10 +247,22 @@ export function readDocVersionReport(doc: LoroDoc): DocVersionReport {
     }
   }
 
-  const localPacks = localPackVersions();
+  const localPacks = { ...(scope?.localPacks ?? defaultPackVersions()) };
   const { docPacks, renamedInDoc } = foldRenames(rawPacks, tombstoned);
   const { newerInDoc, olderInDoc } = compare(docPacks, localPacks);
-  return { docSchema, localSchema: ENGINE_SCHEMA_VERSION, docPacks, localPacks, newerInDoc, olderInDoc, renamedInDoc };
+  const missingDependencies = dependencyIssues(docPacks, localPacks, scope?.packDependencies);
+  const root = rootFields(docSchema, meta.get(ROOT_CANVAS_META_KEY), docPacks, localPacks);
+  return {
+    docSchema,
+    localSchema: ENGINE_SCHEMA_VERSION,
+    docPacks,
+    localPacks,
+    newerInDoc,
+    olderInDoc,
+    renamedInDoc,
+    dependencyIssues: missingDependencies,
+    ...root,
+  };
 }
 
 /**
@@ -158,10 +271,15 @@ export function readDocVersionReport(doc: LoroDoc): DocVersionReport {
  * registry aliasing only. This preflight is coarse by design; the
  * authoritative in-document gate re-runs right after import.
  */
-export function readEnvelopeVersionReport(header: EnvelopeHeader): DocVersionReport {
-  const localPacks = localPackVersions();
+export function readEnvelopeVersionReport(
+  header: EnvelopeHeader,
+  scope?: DocVersionScope,
+): DocVersionReport {
+  const localPacks = { ...(scope?.localPacks ?? defaultPackVersions()) };
   const { docPacks, renamedInDoc } = foldRenames(header.prefabVersions, new Set());
   const { newerInDoc, olderInDoc } = compare(docPacks, localPacks);
+  const missingDependencies = dependencyIssues(docPacks, localPacks, scope?.packDependencies);
+  const root = rootFields(header.engineSchema, header.rootCanvas, docPacks, localPacks);
   return {
     docSchema: header.engineSchema,
     localSchema: ENGINE_SCHEMA_VERSION,
@@ -170,6 +288,8 @@ export function readEnvelopeVersionReport(header: EnvelopeHeader): DocVersionRep
     newerInDoc,
     olderInDoc,
     renamedInDoc,
+    dependencyIssues: missingDependencies,
+    ...root,
   };
 }
 
@@ -177,6 +297,8 @@ export function readEnvelopeVersionReport(header: EnvelopeHeader): DocVersionRep
 export function gateVerdict(report: DocVersionReport): GateVerdict {
   if (report.docSchema === 0) return "reject"; // not an engine doc (or pre-stamp corruption)
   if (report.docSchema > report.localSchema) return "readOnly"; // newer app wrote it
+  if (report.rootIssue !== undefined) return "readOnly";
+  if ((report.dependencyIssues?.length ?? 0) > 0) return "readOnly";
   if (report.newerInDoc.length > 0) return "readOnly";
   if (
     report.docSchema < report.localSchema ||

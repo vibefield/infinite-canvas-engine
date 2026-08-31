@@ -12,6 +12,25 @@ exist to catch regressions by eye across milestones, not to assert a
 threshold in a test. The bench source is the single source of truth; this
 file is its recorded output.
 
+## T2 — legacy ground vs typed GroundHost CPU proxy (2026-08-26)
+
+**Machine**: arm64 macOS 26.5.2, Node v26.5.0.
+
+Source: `packages/ground/bench/ground-host-parity.test.ts`
+(`pnpm --filter @ice/ground bench`). Three fresh invocations; each invocation
+uses seven alternating long-block repeats and the same magnet collector with a
+no-op renderer.
+
+| phase | legacy range | typed range | median paired delta | redraw parity |
+| --- | ---: | ---: | ---: | ---: |
+| idle | 0.464–0.492 µs/frame | 0.466–0.487 µs/frame | -1.0% | 0 / 0 |
+| camera motion | 2.040–2.181 µs/frame | 2.050–2.174 µs/frame | +0.4% | 70,000 / 70,000 |
+
+This isolates JavaScript orchestration/collection only. It is not a WebGPU or
+WebGL2 result and does not establish the near-zero-regression release claim.
+The hardware matrix and production-browser procedure live in
+`docs/t2-release-evidence.md`.
+
 ## M8 — nested-canvas membership at scale (2026-07-15)
 
 **Machine**: Apple M1 Max (arm64), Node v24.14.1, `@vibecook/strata-ecs` 0.7.0.

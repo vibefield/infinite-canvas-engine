@@ -24,8 +24,16 @@ import { LoroDoc } from "loro-crdt";
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { attachDurable, createDurableStore } from "@vibecook/strata-ecs/durable";
 import type { Attachment, DurableStore } from "@vibecook/strata-ecs/durable";
+import {
+  DefaultCanvasType,
+  canvasIdentityOf,
+  sameCanvasIdentity,
+  type CanvasTypeIdentity,
+} from "../canvas/define-canvas-type";
+import type { EngineCatalog } from "../canvas/engine-catalog";
+import { runCanvasSemanticMigrations } from "../canvas/migrate";
 import { Selected } from "../catalog";
-import type { CommitSink } from "../engine/commit-sink";
+import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { ensureCanvasSurface } from "../interaction/install";
 import { cancelActiveGestures } from "../ops/gestures";
 import { selectedEntities, setSelection } from "../ops/selection";
@@ -49,6 +57,7 @@ import {
   readEnvelopeVersionReport,
   readDocVersionReport,
   stampEngineMeta,
+  type DocVersionScope,
   type DocVersionReport,
   type GateVerdict,
 } from "./version-gate";
@@ -64,6 +73,14 @@ export interface DocSessionOpts {
    * "migrate" verdict attaches read-only, no upgrade).
    */
   readonly migrate?: boolean;
+  /** Low-level engine-scoped pack authority; the facade always supplies this. */
+  readonly versionScope?: DocVersionScope;
+  /** New-document identity only. Existing documents always use their stored value. */
+  readonly rootCanvas?: CanvasTypeIdentity;
+  /** Engine-owned final mutation guard; low-level unscoped sessions may omit it. */
+  readonly commitGuard?: (intent: CommitIntent) => CommitIntent | undefined;
+  /** Engine-scoped CanvasType definitions used by solo semantic migration. */
+  readonly canvasCatalog?: EngineCatalog;
 }
 
 export interface DocSession {
@@ -76,6 +93,8 @@ export interface DocSession {
    */
   readonly attachment: Attachment;
   readonly readOnly: boolean;
+  /** Authoritative stored root identity, absent only for malformed legacy/read-only data. */
+  readonly rootCanvas?: CanvasTypeIdentity;
   /**
    * The design-001 §3 step-2 DEV guard, wired to THIS doc: userland live
    * writes to doc cells go through it (throws without a claim/tween;
@@ -85,6 +104,10 @@ export interface DocSession {
   readonly liveWriter: LiveWriter;
   /** Present on the open path (the gate's evidence). */
   readonly report?: DocVersionReport;
+  /** Re-read current monotone requirements after remote/capability changes. */
+  versionReport(): DocVersionReport;
+  /** Solo/local capability grant: requirement markers land before any content. */
+  upgradePacks(packs: Readonly<Record<string, number>>): boolean;
   /** Envelope-framed snapshot for storage (autosave kit consumes this). */
   exportEnvelope(savedAt?: number): Uint8Array;
   /** Relay passthroughs (M5 dumb relay; M9 brings the bootstrap protocol). */
@@ -107,12 +130,23 @@ export type OpenDocResult =
   | { readonly ok: true; readonly session: DocSession }
   | { readonly ok: false; readonly reason: string; readonly report?: DocVersionReport };
 
+const constrainSemanticVerdict = (
+  report: DocVersionReport,
+  verdict: GateVerdict,
+): GateVerdict =>
+  (report.rootIssue !== undefined || (report.dependencyIssues?.length ?? 0) > 0) &&
+  verdict !== "reject"
+    ? "readOnly"
+    : verdict;
+
 function makeSession(
   world: World,
   doc: LoroDoc,
   store: DurableStore,
   attachment: Attachment,
   readOnly: boolean,
+  versionScope: DocVersionScope | undefined,
+  commitGuard: DocSessionOpts["commitGuard"],
   report?: DocVersionReport,
 ): DocSession {
   // Selection history hooks — capture keys, restore via resolve (skip dead).
@@ -136,7 +170,11 @@ function makeSession(
     },
   });
 
-  const sink = readOnly ? createReadOnlyCommitSink() : createDocCommitSink(store, world);
+  const sink = readOnly
+    ? createReadOnlyCommitSink()
+    : createDocCommitSink(store, world, {
+        ...(commitGuard === undefined ? {} : { guard: commitGuard }),
+      });
   const liveWriter = createLiveWriter(world, {
     keyOf: (e) => store.keyOf(e),
     mayDiverge: makeDefaultMayDiverge(world),
@@ -148,6 +186,7 @@ function makeSession(
   const disarmRenameSweep = readOnly ? undefined : armRenameSweep(world, store);
   let closed = false;
   const remoteSubs = new Set<(bytes: Uint8Array) => void>();
+  let currentVersionReport = report ?? readDocVersionReport(doc, versionScope);
 
   return {
     store,
@@ -155,12 +194,51 @@ function makeSession(
     attachment,
     readOnly,
     liveWriter,
+    ...(currentVersionReport.rootCanvas === undefined
+      ? {}
+      : { rootCanvas: currentVersionReport.rootCanvas }),
     ...(report !== undefined ? { report } : {}),
+    versionReport: () => currentVersionReport,
+    upgradePacks(packs) {
+      if (closed || readOnly || gateVerdict(currentVersionReport) !== "ok") {
+        throw new Error("ice: cannot upgrade capabilities on a closed or read-only document.");
+      }
+      const additions: Array<readonly [string, number]> = [];
+      for (const [id, version] of Object.entries(packs)) {
+        if (!Number.isSafeInteger(version) || version < 1) {
+          throw new Error(`ice: invalid capability pack version for "${id}".`);
+        }
+        if (currentVersionReport.localPacks[id] !== version) {
+          throw new Error(`ice: capability pack "${id}"@${version} is not compiled by this engine.`);
+        }
+        const existing = currentVersionReport.docPacks[id];
+        if (existing === undefined) additions.push([id, version]);
+        else if (existing !== version) {
+          throw new Error(
+            `ice: capability pack "${id}" already has version ${existing}; semantic upgrades require migration.`,
+          );
+        }
+      }
+      if (additions.length === 0) return false;
+      store.metaTransaction((meta) => {
+        for (const [id, version] of additions) {
+          const key = `engine.pack.${id}.${version}`;
+          if (meta.get(key) === undefined) meta.set(key, true);
+        }
+      });
+      currentVersionReport = readDocVersionReport(doc, versionScope);
+      if (gateVerdict(currentVersionReport) !== "ok") {
+        throw new Error("ice: capability upgrade left the document gate non-writable.");
+      }
+      return true;
+    },
     exportEnvelope(savedAt) {
-      const current = readDocVersionReport(doc);
+      const current = readDocVersionReport(doc, versionScope);
+      currentVersionReport = current;
       const header: EnvelopeHeader = {
         engineSchema: current.docSchema,
         prefabVersions: current.docPacks,
+        ...(current.rootCanvas === undefined ? {} : { rootCanvas: current.rootCanvas }),
         ...(savedAt !== undefined ? { savedAt } : {}),
       };
       return encodeEnvelope(header, store.exportSnapshot());
@@ -169,6 +247,7 @@ function makeSession(
     applyRemote(bytes) {
       if (closed) throw new Error("ice: cannot apply a remote update to a closed document");
       store.applyRemote(bytes); // a throw (PendingImportError et al.) skips notification
+      currentVersionReport = readDocVersionReport(doc, versionScope);
       for (const fn of [...remoteSubs]) fn(bytes);
     },
     subscribeRemote(fn) {
@@ -199,23 +278,36 @@ export function createDocSession(world: World, opts: DocSessionOpts = {}): DocSe
     doc,
     opts.maxUndoSteps !== undefined ? { maxUndoSteps: opts.maxUndoSteps } : undefined,
   );
-  stampEngineMeta(store);
+  const rootCanvas = opts.rootCanvas ?? canvasIdentityOf(DefaultCanvasType);
+  stampEngineMeta(store, opts.versionScope, rootCanvas);
   const attachment = attachDurable(world, store);
   // Petition 8: every schema-2 doc carries a board root from birth — root-level widgets hang
   // their ordered ChildOf edges on it. Runtime resource names it for the ops/renderers.
   const root = ensureBoardRoot(world, store);
   writeRuntimeResource(world, BoardRoot, { root });
-  return makeSession(world, doc, store, attachment, false);
+  const report = readDocVersionReport(doc, opts.versionScope);
+  return makeSession(
+    world,
+    doc,
+    store,
+    attachment,
+    false,
+    opts.versionScope,
+    opts.commitGuard,
+    report,
+  );
 }
 
 /** Open an envelope: gate BEFORE attach; quarantine is a return value, never a throw. */
 export function openDocSession(world: World, bytes: Uint8Array, opts: DocSessionOpts = {}): OpenDocResult {
   let payload: Uint8Array;
   let envelopeReport: DocVersionReport;
+  let header: EnvelopeHeader;
   try {
     const decoded = decodeEnvelope(bytes);
     payload = decoded.payload;
-    envelopeReport = readEnvelopeVersionReport(decoded.header);
+    header = decoded.header;
+    envelopeReport = readEnvelopeVersionReport(header, opts.versionScope);
   } catch (err) {
     const reason = err instanceof EnvelopeError ? err.message : String(err);
     return { ok: false, reason };
@@ -225,7 +317,11 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
   // authoritative and are checked again below; this fast path prevents a
   // policy-rejected future envelope from reaching Loro at all.
   try {
-    const preflight = (opts.onGate ?? ((_, v) => v))(envelopeReport, gateVerdict(envelopeReport));
+    const requested = (opts.onGate ?? ((_, v) => v))(
+      envelopeReport,
+      gateVerdict(envelopeReport),
+    );
+    const preflight = constrainSemanticVerdict(envelopeReport, requested);
     if (preflight === "reject") {
       return { ok: false, reason: "ice: version gate rejected the envelope", report: envelopeReport };
     }
@@ -241,10 +337,20 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
     return { ok: false, reason: `ice: payload import failed — ${String(err)}` };
   }
 
-  const report = readDocVersionReport(doc);
+  const rawReport = readDocVersionReport(doc, opts.versionScope);
+  const report: DocVersionReport =
+    rawReport.docSchema >= 3 && !sameCanvasIdentity(header.rootCanvas, rawReport.rootCanvas)
+      ? {
+          ...rawReport,
+          rootIssue:
+            rawReport.rootIssue ??
+            "envelope rootCanvas does not agree with authoritative document metadata",
+        }
+      : rawReport;
   let verdict: ReturnType<typeof gateVerdict>;
   try {
-    verdict = (opts.onGate ?? ((_, v) => v))(report, gateVerdict(report));
+    const requested = (opts.onGate ?? ((_, v) => v))(report, gateVerdict(report));
+    verdict = constrainSemanticVerdict(report, requested);
   } catch (err) {
     // A throwing policy callback must not break open()'s no-throw contract —
     // during network bootstrap it would escape an inbound channel callback and
@@ -289,8 +395,21 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
         // never had a write→read dependency, so this is the first sync the
         // open path needs).
         if (renamed.renamed.length > 0) world.sync();
-        runMigrations({ store, world }, readDocVersionReport(doc));
-        effectiveReport = readDocVersionReport(doc);
+        runMigrations({ store, world }, readDocVersionReport(doc, opts.versionScope));
+        world.sync();
+        if (opts.canvasCatalog !== undefined) {
+          const migrationRoot = resolveBoardRoot(world, store);
+          if (migrationRoot !== undefined) {
+            writeRuntimeResource(world, BoardRoot, { root: migrationRoot });
+          }
+          runCanvasSemanticMigrations(
+            store,
+            world,
+            opts.canvasCatalog,
+            readDocVersionReport(doc, opts.versionScope),
+          );
+        }
+        effectiveReport = readDocVersionReport(doc, opts.versionScope);
         readOnly = gateVerdict(effectiveReport) !== "ok";
       } catch {
         // A faulting transform must never brick open(): keep the doc, fall back
@@ -298,7 +417,7 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
         // report — runMigrations plans all types before writing, so a transform
         // throw leaves the doc untouched, but a write-phase fault may have
         // stamped earlier types; session.report must describe the doc AS IS.
-        effectiveReport = readDocVersionReport(doc);
+        effectiveReport = readDocVersionReport(doc, opts.versionScope);
         readOnly = true;
       }
     }
@@ -311,7 +430,19 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
     } else {
       writeRuntimeResource(world, BoardRoot, { root: ensureBoardRoot(world, store) });
     }
-    return { ok: true, session: makeSession(world, doc, store, attachment, readOnly, effectiveReport) };
+    return {
+      ok: true,
+      session: makeSession(
+        world,
+        doc,
+        store,
+        attachment,
+        readOnly,
+        opts.versionScope,
+        opts.commitGuard,
+        effectiveReport,
+      ),
+    };
   } catch (err) {
     // Store/attach residuals (already-attached world, pending-import state,
     // mid-emit) quarantine like everything else on this path — open() NEVER

@@ -14,7 +14,8 @@
  * The divergence predicate is injected — M4 wires claims + tween; tests stub.
  */
 import type { Component, Entity, World } from "@vibecook/strata-ecs";
-import { prefabs, PrefabId } from "../schema/prefab";
+import { PrefabId } from "../schema/prefab";
+import { durablePrefabFor } from "../canvas/engine-catalog";
 import { devGuardsEnabled } from "./dev";
 
 export interface LiveWriterOpts {
@@ -40,7 +41,8 @@ export function createLiveWriter(world: World, opts: LiveWriterOpts): LiveWriter
     set(e, component, value) {
       if (devGuardsEnabled() && opts.keyOf(e) !== undefined) {
         const prefabId = world.get(e, PrefabId)?.id;
-        const prefab = typeof prefabId === "string" ? prefabs.get(prefabId) : undefined;
+        const prefab =
+          typeof prefabId === "string" ? durablePrefabFor(world, prefabId) : undefined;
         if (!opts.cellInDoc && prefab === undefined) {
           // Fail CLOSED (review finding A5): a doc-bound entity whose prefab we
           // cannot resolve must not get free live writes — without eligibility

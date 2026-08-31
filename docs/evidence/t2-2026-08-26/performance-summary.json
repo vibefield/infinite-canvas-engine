@@ -1,0 +1,103 @@
+{
+  "kind": "performance-decision",
+  "schema": 1,
+  "protocol": {
+    "runsPerVariant": 5,
+    "order": "balanced crossover; pair order alternates legacy/typed",
+    "freshPagePerRun": true,
+    "quietGateFrames": 360,
+    "warmupFrames": 60,
+    "measuredFramesPerPhase": 300,
+    "viewport": { "width": 1728, "height": 996, "dpr": 2 },
+    "browser": "Chrome 151",
+    "observedRafCadenceMs": 8.3
+  },
+  "backends": {
+    "webgpu": {
+      "legacy": {
+        "idleRedraws": [0, 0, 0, 0, 0],
+        "cameraCpuP50Ms": 0.20000004768371582,
+        "cameraCpuP95Ms": 0.3000001907348633,
+        "cameraGpuP50Ms": 2.883584,
+        "cameraGpuP95Ms": 3.93216,
+        "cameraMissedFrameRatio": 0,
+        "cameraGpuSamples": 1461
+      },
+      "typed": {
+        "idleRedraws": [0, 0, 0, 0, 0],
+        "cameraCpuP50Ms": 0.2999999523162842,
+        "cameraCpuP95Ms": 0.39999985694885254,
+        "cameraGpuP50Ms": 3.080192,
+        "cameraGpuP95Ms": 4.128768,
+        "cameraMissedFrameRatio": 0,
+        "cameraGpuSamples": 1472
+      },
+      "typedMinusLegacy": {
+        "cameraCpuP50Ms": 0.09999990463256836,
+        "cameraCpuP95Ms": 0.09999966621398926,
+        "cameraGpuP50Ms": 0.19660800000000034,
+        "cameraGpuP95Ms": 0.19660800000000034,
+        "cameraMissedFrameRatio": 0
+      },
+      "allowedRegression": {
+        "cameraCpuP50Ms": 0.05,
+        "cameraCpuP95Ms": 0.1,
+        "cameraGpuP50Ms": 0.1441792,
+        "cameraGpuP95Ms": 0.393216,
+        "cameraMissedFrameRatio": 0.01
+      },
+      "pass": {
+        "idleRedraws": true,
+        "cameraCpuP50": false,
+        "cameraCpuP95": true,
+        "cameraGpuP50": false,
+        "cameraGpuP95": true,
+        "cameraMissedFrameRatio": true,
+        "overall": false
+      }
+    },
+    "webgl2": {
+      "legacy": {
+        "idleRedraws": [0, 0, 0, 0, 0],
+        "cameraCpuP50Ms": 0.20000004768371582,
+        "cameraCpuP95Ms": 0.39999985694885254,
+        "cameraGpuP50Ms": 6.253332,
+        "cameraGpuP95Ms": 9.050582,
+        "cameraMissedFrameRatio": 0.0033444816053511705,
+        "cameraGpuSamples": 1129
+      },
+      "typed": {
+        "idleRedraws": [0, 0, 0, 0, 0],
+        "cameraCpuP50Ms": 0.20000004768371582,
+        "cameraCpuP95Ms": 0.3000001907348633,
+        "cameraGpuP50Ms": 6.036332,
+        "cameraGpuP95Ms": 8.845790000000001,
+        "cameraMissedFrameRatio": 0,
+        "cameraGpuSamples": 1288
+      },
+      "typedMinusLegacy": {
+        "cameraCpuP50Ms": 0,
+        "cameraCpuP95Ms": -0.09999966621398926,
+        "cameraGpuP50Ms": -0.21700000000000053,
+        "cameraGpuP95Ms": -0.20479199999999986,
+        "cameraMissedFrameRatio": -0.0033444816053511705
+      },
+      "allowedRegression": {
+        "cameraCpuP50Ms": 0.05,
+        "cameraCpuP95Ms": 0.1,
+        "cameraGpuP50Ms": 0.3126666,
+        "cameraGpuP95Ms": 0.9050582,
+        "cameraMissedFrameRatio": 0.01
+      },
+      "pass": {
+        "idleRedraws": true,
+        "cameraCpuP50": true,
+        "cameraCpuP95": true,
+        "cameraGpuP50": true,
+        "cameraGpuP95": true,
+        "cameraMissedFrameRatio": true,
+        "overall": true
+      }
+    }
+  }
+}

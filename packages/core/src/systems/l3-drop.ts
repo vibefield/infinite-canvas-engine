@@ -38,6 +38,7 @@ import {
   SweepsContained,
 } from "../catalog";
 import { compareStackOrder, createSiblingOrderIndex } from "../ops/sibling-order";
+import { PrefabId } from "../schema/prefab";
 
 const dropDragQ = defineQuery([Drag, GestureActive, RoutedMove]);
 
@@ -52,7 +53,15 @@ function parseList(raw: string | null | undefined): string[] {
   }
 }
 
-export function createDropSystem(world: World, index: SpatialIndex<Entity>): System {
+export interface DropPlacementPolicy {
+  canIngress(widgetTypeId: string, targetContainer: Entity): boolean;
+}
+
+export function createDropSystem(
+  world: World,
+  index: SpatialIndex<Entity>,
+  placement?: DropPlacementPolicy,
+): System {
   // Frame ordinal map for the topmost-container compare (petition 8) — the
   // same pull-based source the pick systems read; candidates are same-frame
   // by construction (the spatial index is Active-gated).
@@ -125,13 +134,22 @@ export function createDropSystem(world: World, index: SpatialIndex<Entity>): Sys
 
         // accepts ∩ (union of dragged provides) — a widget with no Provides never
         // matches; a Solid non-container has no Accepts and always rejects.
-        const provided = new Set<string>();
-        for (const w of dragged) {
-          if (!ctx.isAlive(w)) continue;
-          for (const k of parseList(ctx.get(w, Provides)?.list)) provided.add(k);
+        let matches: boolean;
+        if (placement !== undefined && ctx.hasTag(container, Container)) {
+          matches = dragged.every((w) => {
+            if (!ctx.isAlive(w)) return false;
+            const typeId = ctx.get(w, PrefabId)?.id;
+            return typeof typeId === "string" && placement.canIngress(typeId, container as Entity);
+          });
+        } else {
+          const provided = new Set<string>();
+          for (const w of dragged) {
+            if (!ctx.isAlive(w)) continue;
+            for (const k of parseList(ctx.get(w, Provides)?.list)) provided.add(k);
+          }
+          const accepts = parseList(ctx.get(container, Accepts)?.list);
+          matches = accepts.some((k) => provided.has(k));
         }
-        const accepts = parseList(ctx.get(container, Accepts)?.list);
-        const matches = accepts.some((k) => provided.has(k));
 
         // Sweeper sets never fly back: a non-matching container is treated
         // like no container at all (release = plain move).

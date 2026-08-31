@@ -43,6 +43,8 @@ import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
+import type { CanvasType } from "../canvas/define-canvas-type";
+import type { FrameProjection } from "../canvas/frame-projection";
 
 export type WidgetSurface = "dom" | "gl";
 export type SizeMode = "fixed" | "auto-height" | "auto";
@@ -89,6 +91,45 @@ export interface WidgetRenameEntry {
  * `Behavior.with({...})` for a starting value (design-009 §6).
  */
 export type WidgetBehaviorDecl = AnyBehaviorDef | AnyBehaviorAttachSpec;
+
+export interface WidgetPortalInsets {
+  readonly top?: number;
+  readonly right?: number;
+  readonly bottom?: number;
+  readonly left?: number;
+}
+
+export interface WidgetContainerDef {
+  /** Compatibility-key projection written to the durable Accepts cell. */
+  readonly accepts: readonly string[];
+  readonly provides?: readonly string[];
+  /** Fixed CanvasType binding; omitted by legacy defineWidget({container}). */
+  readonly canvas?: CanvasType;
+  /** Explicit narrower ingress WidgetTypes, unioned with accepts keys. */
+  readonly widgets?: readonly WidgetType[];
+  /** Omitted drop policy inherits the complete CanvasType legal set. */
+  readonly inheritCanvasPlacement?: boolean;
+  /** Card-local portal insets; full widget body when absent. */
+  readonly portal?: WidgetPortalInsets;
+  /** Opaque instance-preview renderer declaration. */
+  readonly framePreview?: unknown;
+  /** Optional declared facet projection overriding the CanvasType default. */
+  readonly frameProjection?: FrameProjection;
+  /** Internal normalized distinction between defineContainer and legacy sugar. */
+  readonly typed?: boolean;
+}
+
+export interface WidgetContainerEntry {
+  readonly canvasTypeId: string;
+  readonly canvasSemanticVersion: number;
+  readonly accepts: readonly string[];
+  readonly widgetTypeIds: readonly string[];
+  readonly inheritCanvasPlacement: boolean;
+  readonly portal: Readonly<Required<WidgetPortalInsets>>;
+  readonly framePreview: unknown;
+  readonly frameProjection: FrameProjection | undefined;
+  readonly typed: boolean;
+}
 
 /** Normalized pre-attachment (registry truth for the spawn + equip paths). */
 export interface WidgetBehaviorEntry {
@@ -186,7 +227,13 @@ export interface WidgetDef {
    * Opaque to core — the react package narrows it (`component` precedent).
    */
   readonly preview?: unknown;
-  readonly container?: { readonly accepts: readonly string[]; readonly provides?: readonly string[] };
+  /**
+   * Curated live values exposed inside a container's semantic instance
+   * preview. This is distinct from the engine-free tray preview above: names
+   * are validated against declared props and observed only while subscribed.
+   */
+  readonly instancePreview?: { readonly props: readonly string[] };
+  readonly container?: WidgetContainerDef;
   /**
    * Provides-keys WITHOUT container semantics (nodeboard field finding): a
    * leaf that only offers itself to containers must not become a Container
@@ -257,6 +304,10 @@ export interface WidgetType {
   readonly ports: readonly WidgetPortDecl[];
   /** Runtime capability tags the equip system stamps at projection. */
   readonly capabilityTags: readonly Tag[];
+  /** Normalized capability advertisement; never re-read from durable cells. */
+  readonly provides: readonly string[];
+  /** Fixed nested-frame binding and ingress/portal metadata, when a container. */
+  readonly container: WidgetContainerEntry | undefined;
   /** Keyboard claim (design-007): the dom layer reads THIS (registry truth), not the tag. */
   readonly keyboard: "shared" | "exclusive";
   /** Escape ownership under an exclusive claim ("release" = engine-reserved). */
@@ -268,6 +319,8 @@ export interface WidgetType {
   readonly previewComponent: unknown;
   /** Prop overrides for the default real-component preview mount (validated names). */
   readonly previewProps?: Readonly<Record<string, unknown>>;
+  /** Validated prop names admitted to FramePreviewChild.previewModel. */
+  readonly instancePreviewProps: readonly string[];
 }
 
 /** Stamped by the equip system once a projected widget carries its capability tags. */
@@ -515,6 +568,21 @@ export function defineWidget(def: WidgetDef): WidgetType {
       throw new Error(`ice: defineWidget("${def.type}") preview.props names unknown prop "${name}".`);
     }
   }
+  const instancePreviewProps = [...(def.instancePreview?.props ?? [])];
+  const instancePreviewSeen = new Set<string>();
+  for (const name of instancePreviewProps) {
+    if (propToGroup[name] === undefined) {
+      throw new Error(
+        `ice: defineWidget("${def.type}") instancePreview.props names unknown prop "${name}".`,
+      );
+    }
+    if (instancePreviewSeen.has(name)) {
+      throw new Error(
+        `ice: defineWidget("${def.type}") instancePreview.props repeats "${name}".`,
+      );
+    }
+    instancePreviewSeen.add(name);
+  }
 
   const prefab = definePrefab(def.type, {
     store: "durable",
@@ -561,12 +629,33 @@ export function defineWidget(def: WidgetDef): WidgetType {
     animated: def.animated === true,
     ports: def.ports ?? [],
     capabilityTags,
+    provides: Object.freeze([...(def.container?.provides ?? def.provides ?? [])]),
+    container:
+      def.container === undefined
+        ? undefined
+        : Object.freeze({
+            canvasTypeId: def.container.canvas?.id ?? "ice.default",
+            canvasSemanticVersion: def.container.canvas?.semanticVersion ?? 1,
+            accepts: Object.freeze([...def.container.accepts]),
+            widgetTypeIds: Object.freeze((def.container.widgets ?? []).map((w) => w.type)),
+            inheritCanvasPlacement: def.container.inheritCanvasPlacement === true,
+            portal: Object.freeze({
+              top: def.container.portal?.top ?? 0,
+              right: def.container.portal?.right ?? 0,
+              bottom: def.container.portal?.bottom ?? 0,
+              left: def.container.portal?.left ?? 0,
+            }),
+            framePreview: def.container.framePreview,
+            frameProjection: def.container.frameProjection,
+            typed: def.container.typed === true,
+          }),
     keyboard: interaction.keyboard ?? "shared",
     keyboardEscape: interaction.keyboardEscape ?? "release",
     migrate: def.migrate ?? {},
     behaviors: behaviorEntries,
     previewComponent: previewDecl.component,
     ...(previewDecl.props !== undefined ? { previewProps: previewDecl.props } : {}),
+    instancePreviewProps: Object.freeze(instancePreviewProps),
   };
   registry.set(def.type, widget);
   for (const decl of renameDecls) {

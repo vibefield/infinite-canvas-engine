@@ -36,6 +36,17 @@ export {
   type PreviewImage,
 } from "./preview-snapshots";
 export { useTool, useToolState } from "./use-tool";
+export {
+  useCanvasCatalog,
+  useCanvasDiagnostics,
+  useCanvasTools,
+  useCurrentCanvas,
+  useFramePreview,
+} from "./canvas-hooks";
+export {
+  FramePreviewBoundary,
+  type FramePreviewBoundaryProps,
+} from "./frame-preview-boundary";
 export { usePresencePeers, type PresencePeerView } from "./use-presence";
 export { attachKeymap, type KeymapEntry } from "./keymap";
 export {

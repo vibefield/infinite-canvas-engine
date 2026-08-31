@@ -49,7 +49,9 @@ import {
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
-import { ground } from "@ice/ground";
+import { ground, groundHost, type GroundFactory } from "@ice/ground";
+import { lineGridGroundProgram } from "@ice/ground/programs/line-grid";
+import { magnetGridGroundProgram } from "@ice/ground/programs/magnet-grid";
 import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import { InfiniteCanvas, type InfiniteCanvasHandle, type KeymapEntry } from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -60,10 +62,26 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { hasDesktopBridge, startDesktopCollab } from "./collab/desktop";
 import { installCursorHalo } from "./cursor";
 import { haloPoles } from "./cursor/halo-poles";
+import {
+  installReleaseEvidence,
+  readReleaseEvidenceConfig,
+  type EvidenceGroundLayer,
+  type ReleaseEvidenceHarness,
+} from "./release-evidence";
 import { WidgetTray } from "./tray/WidgetTray";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
 import { WIDGETS } from "./widgets";
+import {
+  BoardCanvas,
+  WIDGETLAB_CANVASES,
+  WIDGETLAB_DOT_GROUND,
+  WIDGETLAB_TOOLS,
+  WhiteboardCatalog,
+} from "./canvases";
+import { WIDGETLAB_LINE_GROUND } from "./whiteboard-canvas";
+
+const RELEASE_EVIDENCE = readReleaseEvidenceConfig();
 
 // === v1 theme constants (App.tsx verbatim) ===
 
@@ -139,6 +157,11 @@ const SCENE: Array<[string, number, number, number, number, Record<string, unkno
 export function createDemoEngine(): CanvasEngine {
   const ce = createCanvasEngine({
     widgets: WIDGETS,
+    tools: WIDGETLAB_TOOLS,
+    canvasTypes: WIDGETLAB_CANVASES,
+    rootCanvas: BoardCanvas,
+    presentationFallback: BoardCanvas,
+    catalogContributions: [WhiteboardCatalog],
     // snap on (2026-07-16): cards are snap "both"; guides render at P0 (ground).
     // chrome.liftScale mirrors CardShell's lift transform (1.05) so the
     // multi-select union box keeps wrapping a lifted member (2026-07-17).
@@ -473,6 +496,8 @@ export function App() {
   // plane div (glboard disposes the same set in its boot handle's dispose()).
   const routerRef = useRef<GLPointerRouter | null>(null);
   const glRef = useRef<{ bridge: GLBridge; router: GLPointerRouter; plane: HTMLDivElement } | null>(null);
+  const groundLayerRef = useRef<EvidenceGroundLayer | null>(null);
+  const releaseEvidenceRef = useRef<ReleaseEvidenceHarness | null>(null);
   const [gl, setGl] = useState<{ bridge: GLBridge; plane: HTMLDivElement } | null>(null);
   const [envTex, setEnvTex] = useState<Texture | null>(null);
   const glRoute = useCallback(
@@ -495,6 +520,10 @@ export function App() {
     glRef.current = null;
     routerRef.current = null;
   }, []);
+  const disposeReleaseEvidence = useCallback(() => {
+    releaseEvidenceRef.current?.dispose();
+    releaseEvidenceRef.current = null;
+  }, []);
   // Cursor halo (2026-07-18): the pointerlab morph as an OS-cursor accent —
   // ring on canvas, zoomed-in ring over cards, solid dot over internal
   // interactives (the opt-out telegraph). Same StrictMode discipline as GL:
@@ -506,10 +535,14 @@ export function App() {
   }, []);
   const onReady = useCallback(
     (handle: InfiniteCanvasHandle) => {
+      disposeReleaseEvidence();
       disposeHalo();
       haloRef.current = installCursorHalo(ce, handle.host.container);
       disposeGl(); // drop a prior mount's set before wiring a fresh one
-      const bridge = createGLBridge(ce.engine);
+      const bridge = createGLBridge(ce.engine, {
+        transitions: ce.transitions,
+        gpu: ce.gpu,
+      });
       // DEV-only forensics twin of __ice — headless scripts inspect islands.
       (window as unknown as { __iceBridge?: GLBridge }).__iceBridge = bridge;
       const router = createGLPointerRouter({ world: ce.world, bridge, index: ce.stack.index });
@@ -521,11 +554,21 @@ export function App() {
       handle.host.container.insertBefore(plane, handle.planes.lifted);
       glRef.current = { bridge, router, plane };
       setGl({ bridge, plane });
+      if (RELEASE_EVIDENCE.enabled) {
+        releaseEvidenceRef.current = installReleaseEvidence({
+          engine: ce,
+          host: handle.host,
+          config: RELEASE_EVIDENCE,
+          getGround: () => groundLayerRef.current,
+          getBridge: () => glRef.current?.bridge ?? null,
+        });
+      }
     },
-    [ce, disposeGl, disposeHalo],
+    [ce, disposeGl, disposeHalo, disposeReleaseEvidence],
   );
   useEffect(() => disposeGl, [disposeGl]);
   useEffect(() => disposeHalo, [disposeHalo]);
+  useEffect(() => disposeReleaseEvidence, [disposeReleaseEvidence]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -632,6 +675,7 @@ export function App() {
   // timer queries are unsupported). Only wired while the ECS panel is open —
   // GLViews skips all measurement when the prop is absent.
   const onGlStats = useCallback((s: GlFrameStats) => {
+    releaseEvidenceRef.current?.recordGlFrame(s);
     const dt = devtoolsRef.current;
     if (dt === null) return;
     dt.lane("gl cpu", s.cpuMs);
@@ -646,14 +690,27 @@ export function App() {
   // gridConfig state and remains live-tunable; classic/magnet selection does
   // not. `?magnet=dot` remains only as a dot-glyph verification preset.
   const groundFactory = useMemo(() => {
-    const inner = ground({ poles: haloPoles() });
-    if (!import.meta.env.DEV) return inner;
-    // DEV probe: headless perf scripts read reflector.redraws() — the ground
-    // churn instrument (design-010 §6.3) — through the app-side wrapper; the
-    // factory stays opaque to the facade.
+    const forceWebGL = RELEASE_EVIDENCE.requestedBackend === "webgl2";
+    const inner: GroundFactory = RELEASE_EVIDENCE.groundVariant === "legacy"
+      ? ground({ poles: haloPoles(), forceWebGL, profile: RELEASE_EVIDENCE.enabled })
+      : groundHost({
+          programs: [
+            magnetGridGroundProgram({ id: WIDGETLAB_DOT_GROUND, poles: haloPoles() }),
+            lineGridGroundProgram({ id: WIDGETLAB_LINE_GROUND }),
+          ],
+          fallback: WIDGETLAB_DOT_GROUND,
+          forceWebGL,
+          profile: RELEASE_EVIDENCE.enabled,
+        });
+    // Query-gated production evidence and DEV forensics share the same opaque
+    // layer capture; ordinary production mounts pay neither profiling nor a
+    // window-global surface.
     return ((ctx) => {
       const layer = inner(ctx);
-      (window as unknown as { __groundLayer?: unknown }).__groundLayer = layer;
+      groundLayerRef.current = layer as EvidenceGroundLayer;
+      if (import.meta.env.DEV || RELEASE_EVIDENCE.enabled) {
+        (window as unknown as { __groundLayer?: unknown }).__groundLayer = layer;
+      }
       return layer;
     }) as typeof inner;
   }, []);
@@ -703,7 +760,7 @@ export function App() {
                 bridge={gl.bridge}
                 store={ce.runtime.store}
                 environment={envTex}
-                {...(showEcs ? { onFrameStats: onGlStats } : {})}
+                {...(showEcs || RELEASE_EVIDENCE.enabled ? { onFrameStats: onGlStats } : {})}
               />
             </Canvas>,
             gl.plane,

@@ -183,6 +183,8 @@ describe("breakpoint gate (design-004 §8 × the 2026-07-15 runIf)", () => {
 
     world.setResource(NavTransition, {
       active: true, kind: "enter", p: 0, v: 0, frozen: false, epoch: 1, durMul: 1,
+      documentEpoch: 0, fromFrame: 0 as Entity, toFrame: 0 as Entity,
+      fromTypeId: "", toTypeId: "",
       c0x: 0, c0y: 0, c0z: 0.2, c1x: 0, c1y: 0, c1z: 0.3, as: 1, aox: 0, aoy: 0,
     });
     world.setResource(Camera, { x: 0, y: 0, zoom: 0.3, gesturing: false }); // mid-flight sweep

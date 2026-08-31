@@ -29,9 +29,9 @@ import {
   Size,
   Watches,
 } from "../catalog";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import type { CommitSink, CommitWrite } from "../engine/commit-sink";
 import { PrefabId } from "../schema/prefab";
-import { widgets } from "../widget/define-widget";
 
 const P = GesturePhases;
 const resizeDragQ = defineQuery([Drag, RoutedResize]);
@@ -131,7 +131,7 @@ export function createResizeBehavior(world: World, sink: CommitSink): System {
   // resizables (no `PrefabId`) keep the historical 1×1.
   const minSizeOf = (ctx: SystemCtx, w: Entity): { w: number; h: number } => {
     const type = ctx.get(w, PrefabId)?.id;
-    const widget = typeof type === "string" ? widgets.get(type) : undefined;
+    const widget = typeof type === "string" ? widgetTypeFor(world, type) : undefined;
     return widget?.minSize ?? { w: 1, h: 1 };
   };
 

@@ -22,12 +22,66 @@ import type { Entity, World } from "@vibecook/strata-ecs";
 import { createWorld, defineQuery } from "@vibecook/strata-ecs";
 import { fitCamera, zoomAtPoint } from "@ice/kernel";
 import {
+  canvasIdentityOf,
+  canvasPackId,
+  type CanvasCatalogContribution,
+  type CanvasType,
+} from "../canvas/define-canvas-type";
+import {
+  bindEngineCatalog,
+  compileEngineCatalog,
+  type EngineCatalog,
+} from "../canvas/engine-catalog";
+import {
+  createPlacementAuthority,
+  type PlacementAuthority,
+} from "../canvas/placement";
+import {
+  CanvasIntentScope,
+  CanvasSession,
+  createCanvasSessionController,
+  type CanvasSessionValue,
+} from "../canvas/session";
+import type {
+  CanvasRuntimeExtension,
+  FrameBehavior,
+} from "../canvas/extensions";
+import type { FrameProjection } from "../canvas/frame-projection";
+import {
+  installCanvasRuntimeExtensions,
+  type CanvasRuntimeExtensionHost,
+} from "../canvas/runtime-extension-host";
+import {
+  installFrameBehaviors,
+  type FrameBehaviorHost,
+} from "../canvas/frame-behavior-host";
+import {
+  collectCanvasDiagnostics,
+  type CanvasDiagnostic,
+  type CanvasDiagnosticSnapshot,
+} from "../canvas/diagnostics";
+import {
+  createFramePreviewStore,
+  FRAME_PREVIEW_DEFAULT_BYTES,
+  FRAME_PREVIEW_DEFAULT_CHILDREN,
+  type FramePreviewStore,
+} from "../canvas/frame-preview";
+import {
+  createPresentationTransitionCoordinator,
+  type PresentationPlane,
+  type PresentationTransitionCoordinator,
+} from "../canvas/presentation-transition";
+import type { CanvasCatalogSection } from "../canvas/define-canvas-type";
+import {
   ActiveTool,
+  BoardRoot,
   Camera,
   CameraLimits,
   ChildOf,
   ChromeSettings,
+  Container,
   GestureSettings,
+  InsertGhost,
   MeasuredSize,
   PointerSettings,
   Position,
@@ -37,6 +91,7 @@ import {
   StageMode,
   TransformTween,
   Viewport,
+  Wire,
 } from "../catalog";
 import { Active } from "../catalog/camera-derived";
 import {
@@ -48,6 +103,10 @@ import {
 import type { AnyBehaviorDef } from "../behavior/types";
 import { createEngine, type Engine } from "../engine/engine";
 import type { FrameControl } from "../engine/frame-control";
+import {
+  createGpuAllocationLedger,
+  type GpuAllocationLedger,
+} from "../engine/gpu-allocation-ledger";
 import { isMidGesture } from "../interaction/gesture-status";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { guardedTransaction, retargetTweensToDoc } from "../guards/guarded-tx";
@@ -62,10 +121,11 @@ import { clearSelection, selectedEntities, setSelection } from "../ops/selection
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
 import { setWidgetProps } from "../widget/set-props";
-import { WidgetEquipped, widgets } from "../widget/define-widget";
-import { registerBuiltinTools, tools, type Tool } from "../tools/define-tool";
+import { WidgetEquipped } from "../widget/define-widget";
+import { registerBuiltinTools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
 import { createDocSession, openDocSession, type DocSession, type DocSessionOpts, type OpenDocResult } from "../doc/doc-kit";
+import { gateVerdict } from "../doc/version-gate";
 import { joinDoc, type JoinDocOpts, type JoinResult } from "../doc/bootstrap";
 import type { ByteChannel } from "../doc/channels";
 import { startAutosave, type Autosave, type AutosaveOpts, type AutosaveStorageWrite } from "../doc/autosave";
@@ -87,6 +147,20 @@ export interface CanvasEngineOpts {
   readonly widgets?: readonly { readonly type: string }[];
   /** Registered tools (definition happens at defineTool; validated). */
   readonly tools?: readonly Tool[];
+  /** Explicit Canvas SDK definitions. Supplying any typed field enables typed mode. */
+  readonly canvasTypes?: readonly CanvasType[];
+  /** New-document root only; existing documents retain their durable identity. */
+  readonly rootCanvas?: CanvasType;
+  /** Presentation-only fallback for unknown/incompatible document semantics. */
+  readonly presentationFallback?: CanvasType;
+  /** Presentation-only sections merged deterministically at compilation. */
+  readonly catalogContributions?: readonly CanvasCatalogContribution[];
+  /** Governed current-frame runtime definitions compiled by this engine. */
+  readonly canvasRuntimeExtensions?: readonly CanvasRuntimeExtension[];
+  /** Governed view-independent semantic frame definitions compiled by this engine. */
+  readonly frameBehaviors?: readonly FrameBehavior[];
+  /** Bounded read-only instance-preview projections compiled by this engine. */
+  readonly frameProjections?: readonly FrameProjection[];
   /**
    * Behaviors this engine runs (design-009). Definition is the import
    * side-effect; listing them here COMPILES and installs them — a behavior that
@@ -116,6 +190,9 @@ export interface CanvasEngineOpts {
   readonly budgets?: {
     readonly keepMounted?: number;
     readonly fboBytes?: number;
+    /** Portal-preview limits may be lowered from 128 children / 256 KiB. */
+    readonly framePreviewChildren?: number;
+    readonly framePreviewBytes?: number;
   };
   readonly settings?: {
     readonly zoom?: { readonly min?: number; readonly max?: number };
@@ -198,6 +275,8 @@ export interface CanvasDocs {
     },
   ): Promise<JoinResult>;
   current(): DocSession | undefined;
+  /** Add compiled widget capability requirements before creating their content. */
+  upgradeCapabilities(widgetTypeIds: readonly string[]): boolean;
   /**
    * Attach facade presence to an ALREADY-live document (petition I18) — for
    * hosts that own their document lifecycle (`create()`/`open()` + their own
@@ -249,9 +328,28 @@ export interface StageControl {
   holds(): readonly string[];
 }
 
+/** Headless current-canvas surface consumed by trays, keymaps, and adapters. */
+export interface CurrentCanvasScope {
+  current(): CanvasSessionValue;
+  type(): CanvasType;
+  catalog(): readonly CanvasCatalogSection[];
+  tools(): readonly Tool[];
+  /** Stable, locally derived compatibility/policy diagnostics for the attached document. */
+  diagnostics(): readonly CanvasDiagnostic[];
+  subscribe(onChange: () => void): () => void;
+}
+
 export interface CanvasEngine {
   readonly world: World;
   readonly engine: Engine;
+  /** Immutable definition authority for this engine instance. */
+  readonly catalog: EngineCatalog;
+  /** The one semantic authority used by all local placement paths. */
+  readonly placement: PlacementAuthority;
+  /** Resource-backed current CanvasType/catalog/tool projection. */
+  readonly canvas: CurrentCanvasScope;
+  /** Demand-driven semantic projections for visible container previews. */
+  readonly previews: FramePreviewStore;
   /**
    * The behavior runtime (design-009 §6): attach/detach/has/read for
    * runtime-class behaviors, plus `list()` for devtools and the doctor.
@@ -261,6 +359,10 @@ export interface CanvasEngine {
   readonly behaviors: BehaviorRuntime;
   readonly stack: InteractionStack;
   readonly runtime: WidgetRuntime & { uninstall(): void };
+  /** Trusted cross-package retention seam for cut-first canvas transitions. */
+  readonly transitions: PresentationTransitionCoordinator;
+  /** Shared accounting for R3F pools and bounded ground transition targets. */
+  readonly gpu: GpuAllocationLedger;
   readonly nav: NestedCanvas;
   readonly ops: CanvasOps;
   readonly docs: CanvasDocs;
@@ -273,18 +375,45 @@ export interface CanvasEngine {
    * whether you hold the facade or the raw engine.
    */
   readonly frame: FrameControl;
-  readonly budgets: { readonly keepMounted: number; readonly fboBytes: number };
+  readonly budgets: {
+    readonly keepMounted: number;
+    readonly fboBytes: number;
+    readonly framePreviewChildren: number;
+    readonly framePreviewBytes: number;
+  };
   /** step(now) passthrough — the app's rAF loop drives this. */
   step(now: number): void;
   dispose(): void;
 }
 
-/** Sink whose target swaps per doc session (records nothing when doc-less). */
-function createForwardingSink(): CommitSink & { target: CommitSink | undefined } {
+/** Sink whose target swaps per doc and stamps one generation-safe intent scope. */
+function createForwardingSink(
+  world: World,
+  current: () => CanvasSessionValue,
+): CommitSink & { target: CommitSink | undefined } {
   return {
     target: undefined,
     commit(intent: CommitIntent) {
-      this.target?.commit(intent);
+      const session = current();
+      if (session.state !== "attached" || this.target === undefined) return false;
+      const captured = world.get(intent.gesture, CanvasIntentScope);
+      const targetFrame = captured?.frame ?? session.frame;
+      const normalized: CommitIntent = {
+        ...intent,
+        scope: intent.scope ?? {
+          documentEpoch: captured?.documentEpoch ?? session.documentEpoch,
+          canvasEpoch: captured?.canvasEpoch ?? session.epoch,
+        },
+        ...(intent.creates === undefined
+          ? {}
+          : {
+              creates: intent.creates.map((create) => ({
+                ...create,
+                parent: create.parent ?? targetFrame,
+              })),
+            }),
+      };
+      return this.target.commit(normalized);
     },
   };
 }
@@ -293,40 +422,202 @@ function createForwardingSink(): CommitSink & { target: CommitSink | undefined }
 const selectableWidgetsQ = defineQuery([Position, Size, Selectable, Active, WidgetEquipped]);
 /** Live glides — the history chokepoint's sweep set (petition I15). */
 const tweenQ = defineQuery([Position, TransformTween]);
+const insertGhostQ = defineQuery([InsertGhost]);
 
 export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   registerBuiltinTools();
-  // Validate the declared lists against the registries (definition is the
-  // import side-effect; the lists exist so a typo fails at construction).
-  for (const w of opts.widgets ?? []) {
-    if (widgets.get(w.type) === undefined) {
-      throw new Error(`ice: createCanvasEngine — widget type "${w.type}" is not defined.`);
-    }
-  }
-  for (const t of opts.tools ?? []) {
-    if (tools.get(t.id) === undefined) {
-      throw new Error(`ice: createCanvasEngine — tool "${t.id}" is not defined.`);
-    }
-  }
+  const catalog = compileEngineCatalog({
+    ...(opts.widgets === undefined ? {} : { widgets: opts.widgets }),
+    ...(opts.tools === undefined ? {} : { tools: opts.tools }),
+    ...(opts.canvasTypes === undefined ? {} : { canvasTypes: opts.canvasTypes }),
+    ...(opts.rootCanvas === undefined ? {} : { rootCanvas: opts.rootCanvas }),
+    ...(opts.presentationFallback === undefined
+      ? {}
+      : { presentationFallback: opts.presentationFallback }),
+    ...(opts.catalogContributions === undefined
+      ? {}
+      : { catalogContributions: opts.catalogContributions }),
+    ...(opts.canvasRuntimeExtensions === undefined
+      ? {}
+      : { canvasRuntimeExtensions: opts.canvasRuntimeExtensions }),
+    ...(opts.frameBehaviors === undefined ? {} : { frameBehaviors: opts.frameBehaviors }),
+    ...(opts.frameProjections === undefined ? {} : { frameProjections: opts.frameProjections }),
+  });
 
   const world = createWorld();
+  const unbindCatalog = bindEngineCatalog(world, catalog);
+  let session: DocSession | undefined;
+  const canvasSession = createCanvasSessionController(world);
+  const packEnabled = (id: string, version: number): boolean =>
+    session?.versionReport().docPacks[id] === version;
   const engine = createEngine(world, {
     ...(opts.onGuestFault === undefined ? {} : { onGuestFault: opts.onGuestFault }),
     ...(opts.onGuestNotice === undefined ? {} : { onGuestNotice: opts.onGuestNotice }),
   });
-  const sink = createForwardingSink();
-  const stack = installInteractionStack(engine, { sink });
+  const runtimeExtensionHost: CanvasRuntimeExtensionHost = installCanvasRuntimeExtensions({
+    world,
+    engine,
+    catalog,
+    session: () => canvasSession.current(),
+  });
+  const frameBehaviorHost: FrameBehaviorHost = installFrameBehaviors({
+    world,
+    engine,
+    catalog,
+    session: () => session,
+    onAvailabilityChange: () => {
+      if (canvasSession.current().state === "attached") canvasSession.bumpCapabilities();
+    },
+  });
+  const placement = createPlacementAuthority({
+    world,
+    catalog,
+    rootCanvasTypeId: () => {
+      const report = session?.versionReport();
+      return report?.rootIssue === undefined ? report?.rootCanvas?.id : undefined;
+    },
+    packEnabled,
+    canvasWritable: (canvasTypeId) => frameBehaviorHost.isCanvasWritable(canvasTypeId),
+  });
+  const sink = createForwardingSink(world, () => canvasSession.current());
+  const stack = installInteractionStack(engine, {
+    sink,
+    placement: {
+      canIngress: (widgetTypeId, targetContainer) =>
+        placement.canIngress(widgetTypeId, targetContainer).ok,
+    },
+  });
   const budgets = {
     keepMounted: opts.budgets?.keepMounted ?? RUNTIME_BUDGETS.keepMountedWidgets,
     fboBytes: opts.budgets?.fboBytes ?? RUNTIME_BUDGETS.fboBytes,
+    framePreviewChildren:
+      opts.budgets?.framePreviewChildren ?? FRAME_PREVIEW_DEFAULT_CHILDREN,
+    framePreviewBytes: opts.budgets?.framePreviewBytes ?? FRAME_PREVIEW_DEFAULT_BYTES,
   };
   const runtime = installWidgetRuntime(engine, {
     keepMounted: budgets.keepMounted,
     ...(opts.measureQueue !== undefined ? { measureQueue: opts.measureQueue } : {}),
   });
+  const gpu = createGpuAllocationLedger(budgets.fboBytes);
+  const transitions = createPresentationTransitionCoordinator(world, engine, {
+    ...(opts.onGuestFault === undefined
+      ? {}
+      : {
+          onFault: (id: string, error: unknown) =>
+            opts.onGuestFault?.(`presentation-transition:${id}`, error),
+        }),
+  });
+  const navIdentity = (
+    frame: Entity | undefined,
+    role: "from" | "to",
+  ): { frame: Entity; typeId: string } => {
+    const current = canvasSession.current();
+    // An integrity pop may observe an already-cleared NavFrame edge. The
+    // session still owns the exact departed entity/type until onSwitch runs.
+    if (role === "from" && current.state === "attached") {
+      if (frame === undefined || frame === current.frame) {
+        return { frame: current.frame, typeId: current.typeId };
+      }
+    }
+    if (frame === undefined) {
+      return {
+        frame: world.getResource(BoardRoot)?.root ?? (0 as Entity),
+        typeId: session?.versionReport().rootCanvas?.id ?? "",
+      };
+    }
+    const widgetTypeId = world.get(frame, PrefabId)?.id;
+    return {
+      frame,
+      typeId:
+        typeof widgetTypeId === "string"
+          ? catalog.canvasForContainer(widgetTypeId)?.id ?? ""
+          : "",
+    };
+  };
   const nav = createNestedCanvas(world, {
     index: stack.index,
     clearSpatialCaches: () => stack.clearCaches(),
+    isContainer: (entity) => {
+      if (!world.isAlive(entity) || !world.hasTag(entity, Container)) return false;
+      const typeId = world.get(entity, PrefabId)?.id;
+      return typeof typeId === "string" && catalog.widget(typeId)?.container !== undefined;
+    },
+    beforeSwitch: () => {
+      runtimeExtensionHost.invalidate();
+      cancelActiveGestures(world);
+      stack.queue.drain();
+      const ghosts: Entity[] = [];
+      world.query(insertGhostQ).each((batch) => {
+        for (const row of batch) ghosts.push(batch.entity(row));
+      });
+      for (const ghost of ghosts) world.destroy(ghost);
+      clearSelection(world);
+    },
+    prepareTransition: (request) => {
+      const fromProgram =
+        catalog.canvasType(request.fromTypeId)?.presentation?.ground?.program ?? "";
+      const toProgram =
+        catalog.canvasType(request.toTypeId)?.presentation?.ground?.program ?? "";
+      const required = new Set<PresentationPlane>();
+      if (fromProgram.length > 0 || toProgram.length > 0) required.add("ground");
+      for (const entry of runtime.store.getSnapshot()) {
+        if (entry.hidden || !world.isAlive(entry.entity)) continue;
+        const widgetTypeId = world.get(entry.entity, PrefabId)?.id;
+        const widget =
+          typeof widgetTypeId === "string" ? catalog.widget(widgetTypeId) : undefined;
+        if (widget?.surface === "gl") required.add("gl");
+        if (widget?.component != null || widget?.chrome != null) required.add("dom");
+      }
+      return transitions.prepare(
+        Object.freeze({
+          ...request,
+          requiresFullT2: request.fromTypeId !== request.toTypeId,
+          requiredPlanes: Object.freeze([...required]),
+        }),
+      );
+    },
+    abortTransition: (reason) => transitions.abort(reason),
+    transitionIdentity: (fromFrame, toFrame) => {
+      const from = navIdentity(fromFrame, "from");
+      const to = navIdentity(toFrame, "to");
+      return {
+        documentEpoch: canvasSession.current().documentEpoch,
+        fromFrame: from.frame,
+        toFrame: to.frame,
+        fromTypeId: from.typeId,
+        toTypeId: to.typeId,
+      };
+    },
+    onSwitch: (frame, depth, restoreTool) => {
+      cancelActiveGestures(world);
+      const targetFrame = frame ?? world.getResource(BoardRoot)?.root;
+      if (targetFrame === undefined || !world.isAlive(targetFrame)) {
+        transitions.abort("detached");
+        canvasSession.detach();
+        return;
+      }
+      const typeId =
+        frame === undefined
+          ? session?.versionReport().rootCanvas?.id ?? ""
+          : (() => {
+              const widgetTypeId = world.get(frame, PrefabId)?.id;
+              return typeof widgetTypeId === "string"
+                ? catalog.canvasForContainer(widgetTypeId)?.id ?? ""
+                : "";
+            })();
+      canvasSession.switchFrame(targetFrame, typeId, depth);
+      const legal = canvas.tools();
+      const currentTool = world.getResource(ActiveTool)?.id ?? "select";
+      const preferred = restoreTool ?? currentTool;
+      const nextTool =
+        legal.find((tool) => tool.id === preferred) ??
+        legal.find((tool) => tool.id === catalog.defaultToolFor(typeId).id) ??
+        legal.find((tool) => tool.id === "select") ??
+        catalog.tool("select");
+      if (nextTool !== undefined && nextTool.id !== currentTool) {
+        writeRuntimeResource(world, ActiveTool, { id: nextTool.id });
+      }
+    },
   });
   engine.addSystems("react", nav.navIntegrity);
 
@@ -349,9 +640,135 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     liftScale: st.chrome?.liftScale ?? CHROME_DEFAULTS.liftScale,
   });
 
+  const resolvedCanvasType = (): CanvasType => {
+    const current = canvasSession.current();
+    if (current.state === "attached") {
+      const resolved = catalog.canvasType(current.typeId);
+      if (
+        resolved !== undefined &&
+        packEnabled(canvasPackId(resolved.id), resolved.semanticVersion)
+      ) {
+        return resolved;
+      }
+    }
+    return catalog.presentationFallback;
+  };
+
+  let diagnosticSnapshot: CanvasDiagnosticSnapshot = Object.freeze({
+    diagnostics: Object.freeze([]),
+  });
+  let diagnosticsDirty = false;
+  const refreshCanvasDiagnostics = (): boolean => {
+    const previous = JSON.stringify(diagnosticSnapshot.diagnostics.map((d) => [d.key, d.code, d.message]));
+    diagnosticSnapshot =
+      session === undefined
+        ? Object.freeze({ diagnostics: Object.freeze([]) })
+        : collectCanvasDiagnostics({
+            world,
+            store: session.store,
+            catalog,
+            report: session.versionReport(),
+          });
+    diagnosticsDirty = false;
+    const next = JSON.stringify(diagnosticSnapshot.diagnostics.map((d) => [d.key, d.code, d.message]));
+    return previous !== next;
+  };
+
+  let effectiveSurfaceKey = "";
+  let effectiveCatalog: readonly CanvasCatalogSection[] = Object.freeze([]);
+  let effectiveTools: readonly Tool[] = Object.freeze([]);
+  const rebuildEffectiveSurface = (): void => {
+    const current = canvasSession.current();
+    const key = `${current.documentEpoch}:${current.epoch}:${current.typeId}`;
+    if (key === effectiveSurfaceKey) return;
+    effectiveSurfaceKey = key;
+    if (current.state !== "attached") {
+      effectiveCatalog = Object.freeze([]);
+      effectiveTools = Object.freeze(
+        catalog
+          .toolsFor(catalog.presentationFallback.id)
+          .filter((tool) => tool.draw === undefined),
+      );
+      return;
+    }
+    const resolved = catalog.canvasType(current.typeId);
+    if (resolved === undefined || resolved !== resolvedCanvasType()) {
+      effectiveCatalog = Object.freeze([]);
+      effectiveTools = Object.freeze(
+        catalog
+          .toolsFor(catalog.presentationFallback.id)
+          .filter((tool) => tool.draw === undefined),
+      );
+      return;
+    }
+    effectiveCatalog = Object.freeze(
+      catalog.catalogFor(resolved.id).map((section) =>
+        Object.freeze({
+          ...section,
+          items: Object.freeze(
+            section.items.filter((widget) =>
+              packEnabled(widget.prefab.id, widget.prefab.version ?? 1),
+            ),
+          ),
+        }),
+      ),
+    );
+    effectiveTools = Object.freeze(
+      catalog.toolsFor(resolved.id).filter((tool) => {
+        const widget = tool.draw === undefined ? undefined : catalog.widget(tool.draw.widgetType);
+        return widget === undefined || packEnabled(widget.prefab.id, widget.prefab.version ?? 1);
+      }),
+    );
+  };
+
+  const canvas: CurrentCanvasScope = {
+    current: () => canvasSession.current(),
+    type: resolvedCanvasType,
+    catalog() {
+      rebuildEffectiveSurface();
+      return effectiveCatalog;
+    },
+    tools() {
+      rebuildEffectiveSurface();
+      return effectiveTools;
+    },
+    diagnostics() {
+      return diagnosticSnapshot.diagnostics;
+    },
+    subscribe: (onChange) => world.reactive.observeResource(CanvasSession, onChange),
+  };
+
+  const removeDiagnosticPublish = engine.onPublish(() => {
+    if (!diagnosticsDirty) return;
+    const changed = refreshCanvasDiagnostics();
+    if (changed && canvasSession.current().state === "attached") {
+      canvasSession.bumpCapabilities();
+    }
+  });
+
+  const previews = createFramePreviewStore({
+    world,
+    catalog,
+    session: () => ({
+      documentEpoch: canvasSession.current().documentEpoch,
+      ...(session === undefined ? {} : { store: session.store }),
+    }),
+    diagnostics: () => diagnosticSnapshot.diagnostics,
+    budgets: {
+      children: budgets.framePreviewChildren,
+      bytes: budgets.framePreviewBytes,
+    },
+    ...(opts.onGuestFault === undefined
+      ? {}
+      : {
+          onFault: (id: string, error: unknown) =>
+            opts.onGuestFault?.(`frame-projection:${id}`, error),
+        }),
+  });
+
   // --- doc lifecycle ---------------------------------------------------------
-  let session: DocSession | undefined;
   let presence: PresenceSession | undefined;
+  let sessionVersionUnsub: (() => void) | undefined;
   let uninstallPresence: (() => void) | undefined;
   let joined: JoinResult | undefined; // the room handle — closeDoc must LEAVE, not just close
   let joinAbort: AbortController | undefined; // kills an in-flight join on supersede
@@ -369,15 +786,161 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   // undo/redo edit — and broadcast — a version-gated document).
   const requireWritable = (op: string): DocSession => {
     const s = requireSession(op);
-    if (s.readOnly) {
+    if (
+      s.readOnly ||
+      gateVerdict(s.versionReport()) !== "ok" ||
+      diagnosticsDirty ||
+      diagnosticSnapshot.authorityIssue !== undefined
+    ) {
       throw new Error(`ice: ops.${op} — the document is read-only (version gate); writes are disabled.`);
     }
     return s;
   };
 
+  const requireCurrentFrame = (op: string): Entity => {
+    const current = canvasSession.current();
+    if (
+      current.state !== "attached" ||
+      !world.isAlive(current.frame) ||
+      current.typeId.length === 0
+    ) {
+      throw new Error(`ice: ops.${op} needs an attached, semantically resolved CanvasSession.`);
+    }
+    return current.frame;
+  };
+
+  const assertEditablePlacement = (entity: Entity, op: string): Entity => {
+    if (!world.isAlive(entity) || !world.hasTag(entity, Active)) {
+      throw new Error(`ice: ops.${op} only accepts entities in the current active CanvasFrame.`);
+    }
+    const parent = world.getRelation(entity, ChildOf);
+    if (parent === undefined) {
+      throw new Error(`ice: ops.${op} — entity has no direct CanvasFrame parent.`);
+    }
+    placement.assertReparent(entity, parent, `ops.${op}`);
+    return parent;
+  };
+  const inCurrentSelectionScope = (entity: Entity): boolean =>
+    world.isAlive(entity) &&
+    (world.hasTag(entity, Active) || world.hasTag(entity, Wire));
+
+  const versionScope = Object.freeze({
+    localPacks: catalog.localPacks(),
+    initialPacks: catalog.initialPacks(),
+    packDependencies: catalog.packDependencies(),
+  });
+
+  const rejectCommit = (message: string): undefined => {
+    opts.onGuestNotice?.(`Canvas placement rejected: ${message}`);
+    return undefined;
+  };
+
+  const commitGuard = (intent: CommitIntent): CommitIntent | undefined => {
+    const current = canvasSession.current();
+    if (current.state !== "attached") return rejectCommit("no CanvasSession is attached");
+    if (
+      intent.scope === undefined ||
+      intent.scope.documentEpoch !== current.documentEpoch ||
+      intent.scope.canvasEpoch !== current.epoch
+    ) {
+      return rejectCommit("the intent belongs to a stale CanvasSession epoch");
+    }
+    if (
+      session === undefined ||
+      session.readOnly ||
+      gateVerdict(session.versionReport()) !== "ok" ||
+      diagnosticsDirty ||
+      diagnosticSnapshot.authorityIssue !== undefined
+    ) {
+      return rejectCommit("the document capability gate is not writable");
+    }
+    const root = world.getResource(BoardRoot)?.root;
+    const interactiveTarget = (target: Entity): boolean =>
+      target === current.frame ||
+      (world.hasTag(target, Active) && world.getRelation(target, ChildOf) === current.frame);
+    for (const create of intent.creates ?? []) {
+      if (create.parent === undefined) return rejectCommit("create has no explicit target frame");
+      if (!interactiveTarget(create.parent)) {
+        return rejectCommit("create target is outside the gesture's active CanvasFrame");
+      }
+      const decision =
+        create.parent === root
+          ? placement.canPlace(create.type, create.parent)
+          : placement.canIngress(create.type, create.parent);
+      if (!decision.ok) return rejectCommit(decision.message);
+    }
+    for (const reparent of intent.reparents ?? []) {
+      if (!interactiveTarget(reparent.container)) {
+        return rejectCommit("reparent target is outside the gesture's active CanvasFrame");
+      }
+      const decision = placement.validateReparent(reparent.entity, reparent.container);
+      if (!decision.ok) return rejectCommit(decision.message);
+    }
+    for (const order of intent.orders ?? []) {
+      if (order.parent !== current.frame) {
+        return rejectCommit("sibling order target is not the gesture's active CanvasFrame");
+      }
+      const decision = placement.validateReparent(order.entity, order.parent);
+      if (!decision.ok) return rejectCommit(decision.message);
+    }
+    const checked = new Set<Entity>();
+    for (const write of intent.writes) {
+      if (checked.has(write.entity) || world.get(write.entity, PrefabId) === undefined) continue;
+      checked.add(write.entity);
+      if (!world.hasTag(write.entity, Active)) {
+        return rejectCommit("edited widget is no longer active in the gesture's CanvasFrame");
+      }
+      const parent = world.getRelation(write.entity, ChildOf);
+      if (parent === undefined) return rejectCommit("edited widget has no direct frame parent");
+      const decision = placement.validateReparent(write.entity, parent);
+      if (!decision.ok) return rejectCommit(decision.message);
+    }
+    return intent;
+  };
+
+  const scopedDocOpts = (o: DocSessionOpts | undefined): DocSessionOpts => ({
+    ...o,
+    versionScope,
+    rootCanvas: canvasIdentityOf(catalog.rootCanvas),
+    commitGuard,
+    canvasCatalog: catalog,
+  });
+
   const adoptSession = (next: DocSession): DocSession => {
+    const alreadyAdopted = session === next;
     session = next;
     sink.target = next.sink;
+    if (alreadyAdopted) return next;
+    sessionVersionUnsub?.();
+    let versionSignature = JSON.stringify(next.versionReport());
+    sessionVersionUnsub = next.subscribeRemote(() => {
+      diagnosticsDirty = true;
+      const report = next.versionReport();
+      const signature = JSON.stringify(report);
+      if (signature === versionSignature || session !== next) return;
+      versionSignature = signature;
+      const current = canvasSession.current();
+      if (current.state !== "attached") return;
+      if (current.depth === 0) {
+        canvasSession.switchFrame(current.frame, report.rootCanvas?.id ?? "", 0);
+      } else {
+        canvasSession.bumpCapabilities();
+      }
+      const legal = canvas.tools();
+      const activeId = world.getResource(ActiveTool)?.id ?? "select";
+      if (!legal.some((tool) => tool.id === activeId)) {
+        const fallback = legal.find((tool) => tool.id === "select") ?? legal[0];
+        if (fallback !== undefined) writeRuntimeResource(world, ActiveTool, { id: fallback.id });
+      }
+    });
+    const root = world.getResource(BoardRoot)?.root;
+    if (root === undefined || !world.isAlive(root)) {
+      canvasSession.detach();
+    } else {
+      canvasSession.attach(root, next.rootCanvas?.id ?? "");
+    }
+    refreshCanvasDiagnostics();
+    previews.rebind();
     return next;
   };
 
@@ -428,12 +991,25 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     joinAbort = undefined;
     for (const a of [...liveAutosaves]) a.stop(); // before close: no export of a detached session
     liveAutosaves.clear();
+    transitions.abort("detached");
     releasePresence();
+    sessionVersionUnsub?.();
+    sessionVersionUnsub = undefined;
+    if (session !== undefined || joined !== undefined) {
+      runtimeExtensionHost.invalidate();
+      canvasSession.detach();
+    }
     joined?.leave(); // leaves the ROOM: channel + outbound unsubs, then closes the session
     joined = undefined;
     session?.close(); // idempotent — a no-op when leave() above already closed it
     session = undefined;
+    diagnosticsDirty = false;
+    diagnosticSnapshot = Object.freeze({ diagnostics: Object.freeze([]) });
     sink.target = undefined;
+    // DocSession.close/reset clears resources; the engine-owned monotone
+    // counters live outside ECS and must be republished immediately.
+    canvasSession.republish();
+    previews.rebind();
   };
 
   /**
@@ -471,29 +1047,34 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   const docs: CanvasDocs = {
     create(o) {
       closeDoc();
-      return adoptSession(createDocSession(world, o));
+      return adoptSession(createDocSession(world, scopedDocOpts(o)));
     },
     open(bytes, o) {
       closeDoc();
       const result = openDocSession(world, bytes, {
         ...(gatePolicy !== undefined ? { onGate: gatePolicy } : {}),
         ...o,
+        ...scopedDocOpts(undefined),
       });
       if (result.ok) adoptSession(result.session);
+      else canvasSession.republish();
       return result;
     },
     async join(channel, o = {}) {
       closeDoc();
       const ac = new AbortController();
       joinAbort = ac;
-      const { presence: presenceOpts, ...joinOpts } = o;
+      const { presence: presenceOpts, docOpts: requestedDocOpts, ...joinOpts } = o;
       if (presenceOpts !== undefined) {
         acquirePresence({ name: presenceOpts.name, color: presenceOpts.color });
       }
       let result: JoinResult;
       try {
         result = await joinDoc(world, channel, {
-          ...(gatePolicy !== undefined ? { docOpts: { onGate: gatePolicy } } : {}),
+          docOpts: scopedDocOpts({
+            ...(gatePolicy !== undefined ? { onGate: gatePolicy } : {}),
+            ...requestedDocOpts,
+          }),
           ...(presence !== undefined ? { presence } : {}),
           ...joinOpts,
           signal: ac.signal,
@@ -505,8 +1086,13 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
             if (s !== undefined) {
               adoptSession(s);
             } else {
+              transitions.abort("detached");
+              canvasSession.detach();
+              sessionVersionUnsub?.();
+              sessionVersionUnsub = undefined;
               session = undefined; // joinDoc already closed it
               sink.target = undefined;
+              canvasSession.republish();
             }
           },
         });
@@ -535,6 +1121,28 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       return result;
     },
     current: () => session,
+    upgradeCapabilities(widgetTypeIds) {
+      const s = requireWritable("upgradeCapabilities");
+      if (joined !== undefined) {
+        throw new Error(
+          "ice: docs.upgradeCapabilities is unavailable during a live room until peer capability negotiation is attached.",
+        );
+      }
+      const packs: Record<string, number> = {};
+      for (const typeId of widgetTypeIds) {
+        const requirements = catalog.requirementsForWidget(typeId);
+        if (requirements === undefined) {
+          throw new Error(`ice: docs.upgradeCapabilities — unknown widget type "${typeId}".`);
+        }
+        Object.assign(packs, requirements);
+      }
+      const changed = s.upgradePacks(packs);
+      if (changed) {
+        refreshCanvasDiagnostics();
+        canvasSession.bumpCapabilities();
+      }
+      return changed;
+    },
     attachPresence(o) {
       if (session === undefined) {
         throw new Error(
@@ -562,8 +1170,22 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     close: closeDoc,
     // Read-only documents must not mutate through history either — undo/redo
     // write the store exactly like an op does.
-    undo: () => (session === undefined || session.readOnly ? false : historyStep("undo")),
-    redo: () => (session === undefined || session.readOnly ? false : historyStep("redo")),
+    undo: () =>
+      session === undefined ||
+      session.readOnly ||
+      gateVerdict(session.versionReport()) !== "ok" ||
+      diagnosticsDirty ||
+      diagnosticSnapshot.authorityIssue !== undefined
+        ? false
+        : historyStep("undo"),
+    redo: () =>
+      session === undefined ||
+      session.readOnly ||
+      gateVerdict(session.versionReport()) !== "ok" ||
+      diagnosticsDirty ||
+      diagnosticSnapshot.authorityIssue !== undefined
+        ? false
+        : historyStep("redo"),
     autosave(storage, o) {
       const s = requireSession("autosave");
       const inner = startAutosave(s, { storage, world, ...o });
@@ -618,26 +1240,37 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
 
   const ops: CanvasOps = {
     setTool(id) {
+      const legal = canvas.tools();
+      if (!legal.some((tool) => tool.id === id)) {
+        throw new Error(`ice: ops.setTool — tool "${id}" is not legal in the current CanvasType.`);
+      }
       cancelActiveGestures(world);
       writeRuntimeResource(world, ActiveTool, { id });
     },
     spawnWidget(type, o) {
       const s = requireWritable("spawnWidget");
-      return spawnWidget(s.store, world, type, o);
+      const targetFrame = o.parent ?? requireCurrentFrame("spawnWidget");
+      placement.assertPlace(type, targetFrame, "ops.spawnWidget");
+      return spawnWidget(s.store, world, type, { ...o, parent: targetFrame });
     },
     insertByDrag(type, o) {
       // Writable-session gate UP FRONT: the ghost drag would otherwise run
       // beautifully and silently drop its create at commit (read-only sink).
       requireWritable("insertByDrag");
+      const targetFrame = requireCurrentFrame("insertByDrag");
+      placement.assertPlace(type, targetFrame, "ops.insertByDrag");
       return insertByDrag(world, stack.queue, type, o);
     },
     setWidgetProps(entity, props) {
       const s = requireWritable("setWidgetProps");
+      assertEditablePlacement(entity, "setWidgetProps");
       setWidgetProps(s.store, world, entity, props);
     },
     deleteSelection() {
       const s = requireWritable("deleteSelection");
-      const doomed = selectedEntities(world).filter((e) => s.store.keyOf(e) !== undefined);
+      const doomed = selectedEntities(world).filter(
+        (e) => inCurrentSelectionScope(e) && s.store.keyOf(e) !== undefined,
+      );
       if (doomed.length === 0) return;
       s.store.transaction((tx) => {
         for (const e of doomed) cascadeDestroy(tx, world, e);
@@ -645,13 +1278,16 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     duplicateSelection() {
       const s = requireWritable("duplicateSelection");
-      const sources = selectedEntities(world).filter((e) => s.store.keyOf(e) !== undefined);
+      const sources = selectedEntities(world).filter(
+        (e) => world.hasTag(e, Active) && s.store.keyOf(e) !== undefined,
+      );
       if (sources.length === 0) return [];
+      for (const source of sources) assertEditablePlacement(source, "duplicateSelection");
       const clones: Entity[] = [];
       guardedTransaction(s.store, world, (tx) => {
         for (const src of sources) {
           const type = world.get(src, PrefabId)?.id;
-          const widget = typeof type === "string" ? widgets.get(type) : undefined;
+          const widget = typeof type === "string" ? catalog.widget(type) : undefined;
           if (widget === undefined) continue;
           const pos = world.get(src, Position) ?? { x: 0, y: 0 };
           const size = world.get(src, Size);
@@ -669,7 +1305,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
           // clone would be unordered entirely, the pre-flip latent bug). A
           // source without an edge (legacy doc) has nothing to inherit.
           const parent = world.getRelation(src, ChildOf);
-          if (parent !== undefined) tx.setRelation(clone, ChildOf, parent, { after: src });
+          if (parent !== undefined) {
+            placement.assertPlace(widget.type, parent, "ops.duplicateSelection");
+            tx.setRelation(clone, ChildOf, parent, { after: src });
+          }
           clones.push(clone);
         }
       });
@@ -678,7 +1317,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       return clones;
     },
     setSelection(ids, mode = "replace") {
-      setSelection(world, [...ids], mode);
+      setSelection(
+        world,
+        ids.filter(inCurrentSelectionScope),
+        mode,
+      );
     },
     clearSelection() {
       clearSelection(world);
@@ -698,6 +1341,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       guardedTransaction(s.store, world, (tx) => {
         for (const e of ids) {
           if (s.store.keyOf(e) === undefined) continue;
+          if (!world.hasTag(e, Active)) continue;
+          assertEditablePlacement(e, "reorder");
           // No ChildOf edge (legacy doc) — no sequence to move within.
           if (world.getRelation(e, ChildOf) === undefined) continue;
           tx.moveRelation(e, ChildOf, mode === "top" ? "last" : "first");
@@ -706,7 +1351,16 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     arrange(opts) {
       const s = requireWritable("arrange");
-      return arrangeWidgets(s.store, s.liveWriter, world, opts);
+      const scoped =
+        opts?.ids === undefined
+          ? opts
+          : {
+              ...opts,
+              ids: opts.ids.filter(
+                (entity) => world.isAlive(entity) && world.hasTag(entity, Active),
+              ),
+            };
+      return arrangeWidgets(s.store, s.liveWriter, world, scoped);
     },
     zoomToFit(ids) {
       const targets = ids !== undefined && ids.length > 0 ? [...ids] : widgetQuery();
@@ -836,9 +1490,15 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   return {
     world,
     engine,
+    catalog,
+    placement,
+    canvas,
+    previews,
     behaviors,
     stack,
     runtime,
+    transitions,
+    gpu,
     nav,
     ops,
     docs,
@@ -847,16 +1507,23 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     budgets,
     step: (now) => engine.step(now),
     dispose() {
+      previews.dispose();
       closeDoc();
+      transitions.dispose();
       // Behaviors before guests: their dispose hooks may still want a live
       // world, and their breaker rows live in the guest registry that the next
       // line tears down.
       behaviors.dispose();
+      removeDiagnosticPublish();
+      runtimeExtensionHost.dispose();
+      frameBehaviorHost?.dispose();
       // Guests first: their dispose may touch doc/runtime state, and a
       // suspended-but-registered guest still holds an instance to tear down.
       engine.disposeGuests();
       runtime.uninstall();
       stack.uninstall();
+      gpu.dispose();
+      unbindCatalog();
     },
   };
 }

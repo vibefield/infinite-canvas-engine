@@ -21,12 +21,16 @@ import {
   type AnyBehaviorDef,
   type Component,
   type Entity,
+  type WidgetMountStore,
   type World,
 } from "@ice/core";
 import { createContext, useCallback, useContext, useMemo, useRef, useSyncExternalStore } from "react";
 
 /** Per-portal hidden flag (WidgetRoot provides it; defaults to live). */
 export const WidgetHiddenContext = createContext(false);
+
+/** Internal live gate: transition holds suppress callbacks before React commits the frozen snapshot. */
+export const WidgetMountStoreContext = createContext<WidgetMountStore | undefined>(undefined);
 
 const selectedQ = defineQuery([Selected]);
 
@@ -52,20 +56,27 @@ function shallowEq(a: unknown, b: unknown): boolean {
  */
 export function useWorldComponent<S>(world: World, entity: Entity, component: Component<S>): S | undefined {
   const hidden = useContext(WidgetHiddenContext);
+  const mountStore = useContext(WidgetMountStoreContext);
+  const frozenNow = useCallback(
+    () => hidden || mountStore?.isFrozen?.(entity) === true,
+    [hidden, mountStore, entity],
+  );
   const last = useRef<S | undefined>(undefined);
   const subscribe = useCallback(
     (onChange: () => void) => {
-      if (hidden) return () => {}; // frozen while hidden — no wakeups, no renders
-      return world.reactive.observeValue(entity, component, onChange);
+      if (frozenNow()) return () => {}; // frozen while hidden — no wakeups, no renders
+      return world.reactive.observeValue(entity, component, () => {
+        if (!frozenNow()) onChange();
+      });
     },
-    [world, entity, component, hidden],
+    [world, entity, component, frozenNow],
   );
   const getSnapshot = useCallback(() => {
-    if (hidden) return last.current; // stable snapshot while frozen
+    if (frozenNow()) return last.current; // stable snapshot while frozen
     const v = world.isAlive(entity) ? world.get(entity, component) : undefined;
     if (!shallowEq(v, last.current)) last.current = v;
     return last.current;
-  }, [world, entity, component, hidden]);
+  }, [world, entity, component, frozenNow]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
@@ -150,19 +161,26 @@ function parseJsonCell(cell: string, serializedDefault: string | undefined): unk
  */
 export function useSelected(world: World, entity: Entity): boolean {
   const hidden = useContext(WidgetHiddenContext);
+  const mountStore = useContext(WidgetMountStoreContext);
+  const frozenNow = useCallback(
+    () => hidden || mountStore?.isFrozen?.(entity) === true,
+    [hidden, mountStore, entity],
+  );
   const last = useRef(false);
   const subscribe = useCallback(
     (onChange: () => void) => {
-      if (hidden) return () => {};
-      return world.reactive.observeQuery(selectedQ, onChange);
+      if (frozenNow()) return () => {};
+      return world.reactive.observeQuery(selectedQ, () => {
+        if (!frozenNow()) onChange();
+      });
     },
-    [world, hidden],
+    [world, frozenNow],
   );
   const getSnapshot = useCallback(() => {
-    if (hidden) return last.current;
+    if (frozenNow()) return last.current;
     last.current = world.isAlive(entity) && world.hasTag(entity, Selected);
     return last.current;
-  }, [world, entity, hidden]);
+  }, [world, entity, frozenNow]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 

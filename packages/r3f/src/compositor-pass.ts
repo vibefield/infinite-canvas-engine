@@ -87,7 +87,18 @@ export interface PoolLike {
   touch(key: number): void;
   release(key: number): void;
   bytesUsed(): number;
-  entryInfos(): readonly { key: number; bytes: number; lastUsedMs: number }[];
+  projectedBytes?(
+    key: number,
+    worldW: number,
+    worldH: number,
+    effectiveDpr: number,
+  ): number;
+  entryInfos(): readonly {
+    key: number;
+    bytes: number;
+    lastUsedMs: number;
+    pinned?: boolean;
+  }[];
 }
 
 export interface QuadLike {
@@ -163,6 +174,8 @@ export interface PassContext {
    */
   readonly maxPaintDpr: number;
   readonly dtMs: number;
+  /** T2 fade channel for destination quads; defaults to fully visible. */
+  readonly incomingOpacity?: number;
 }
 
 export interface PassStats {
@@ -281,6 +294,32 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     const size = world.isAlive(e) ? world.get(e, Size) : undefined;
     if (handle === undefined || s === undefined || size === undefined || size.w <= 0 || size.h <= 0) continue;
 
+    if (pool.projectedBytes !== undefined) {
+      let projected = pool.projectedBytes(e, size.w, size.h, effectiveDpr);
+      if (projected > ctx.maxFboBytes) {
+        const reclaimable = pool
+          .entryInfos()
+          .filter((info) => {
+            if (info.key === e || info.pinned === true) return false;
+            return (bridge.state.get(info.key)?.phase ?? "Dormant") === "Dormant";
+          })
+          .sort((a, b) => a.lastUsedMs - b.lastUsedMs || a.key - b.key);
+        for (const candidate of reclaimable) {
+          if (projected <= ctx.maxFboBytes) break;
+          pool.release(candidate.key);
+          bridge.state.markEvicted(candidate.key);
+          stats.evicted += 1;
+          projected = pool.projectedBytes(e, size.w, size.h, effectiveDpr);
+        }
+      }
+      if (projected > ctx.maxFboBytes) {
+        // Hot/Waking/pinned targets are immune. Defer this first/repaint until
+        // an exact release creates room; never allocate above the shared cap.
+        stats.pendingPaints += 1;
+        continue;
+      }
+    }
+
     // Hot content ticks exactly when it paints — the attribution contract —
     // and receives the FULL time owed since its last tick (its own pass dt
     // plus any stagger-deferred passes' dt banked above).
@@ -310,6 +349,7 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   if (pool.bytesUsed() > ctx.maxFboBytes) {
     const candidates: EvictionCandidate<number>[] = [];
     for (const info of pool.entryInfos()) {
+      if (info.pinned === true) continue;
       const s = bridge.state.get(info.key);
       // Phases RECOMPUTED post-paint: an island that woke and painted this
       // very pass is Warm now, not Waking — the stage-2 snapshot would grant
@@ -412,7 +452,12 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     // channel (absent cell = 1). Clamped: CompositeMaterial passes through
     // unclamped, and userland cells are raw f32s.
     const baseOpacity = world.get(e as Entity, Opacity)?.a ?? 1;
-    quad.setOpacity(Math.min(1, Math.max(0, baseOpacity * s.compositeOpacity)));
+    quad.setOpacity(
+      Math.min(
+        1,
+        Math.max(0, baseOpacity * s.compositeOpacity * (ctx.incomingOpacity ?? 1)),
+      ),
+    );
     const grabbed = world.get(e as Entity, Grab) !== undefined;
     // Sibling ordinal, else the legacy StackZ fallback (pre-schema-2 read-only
     // docs are ALL-fallback; mixed frames are nominally impossible, and the

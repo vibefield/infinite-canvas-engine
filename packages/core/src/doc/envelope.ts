@@ -9,23 +9,26 @@
  *   bytes 0..3   magic "ICE1"
  *   byte  4      envelope version (1)
  *   bytes 5..8   u32 header length
- *   ...          header JSON: { engineSchema, prefabVersions, savedAt? }
+ *   ...          header JSON: { engineSchema, prefabVersions, rootCanvas?, savedAt? }
  *   ...          payload: Loro snapshot bytes (opaque here)
  *
  * WHERE bytes go (fs/IndexedDB/cloud) is app-owned; WHAT they are is this file.
  */
+import type { CanvasTypeIdentity } from "../canvas/define-canvas-type";
 
 export const ENVELOPE_MAGIC = "ICE1";
 export const ENVELOPE_VERSION = 1;
 export const MAX_ENVELOPE_HEADER_BYTES = 1024 * 1024;
 
 /** The document-format version this build writes (gate compares against it). */
-export const ENGINE_SCHEMA_VERSION = 2; // 2 = ordered relations (petition 8): board-root + ChildOf sibling sequences
+export const ENGINE_SCHEMA_VERSION = 3; // 3 = durable root CanvasType identity + canvas pack gate
 
 export interface EnvelopeHeader {
   readonly engineSchema: number;
   /** Per-prefab pack versions at save time ({ [prefabId]: version }). */
   readonly prefabVersions: Readonly<Record<string, number>>;
+  /** Coarse pre-import mirror; in-document ice:rootCanvas remains authoritative. */
+  readonly rootCanvas?: CanvasTypeIdentity;
   /** App-supplied wall-clock ms (the engine never reads a clock). */
   readonly savedAt?: number;
 }
@@ -78,6 +81,13 @@ export function decodeEnvelope(bytes: Uint8Array): { header: EnvelopeHeader; pay
     header.prefabVersions === null ||
     Array.isArray(header.prefabVersions) ||
     typeof header.prefabVersions !== "object" ||
+    (header.rootCanvas !== undefined &&
+      (header.rootCanvas === null ||
+        typeof header.rootCanvas !== "object" ||
+        typeof header.rootCanvas.id !== "string" ||
+        header.rootCanvas.id.length === 0 ||
+        !Number.isSafeInteger(header.rootCanvas.semanticVersion) ||
+        header.rootCanvas.semanticVersion < 1)) ||
     (header.savedAt !== undefined &&
       (!Number.isSafeInteger(header.savedAt) || header.savedAt < 0))
   ) {

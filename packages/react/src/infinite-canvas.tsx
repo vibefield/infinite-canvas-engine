@@ -110,6 +110,13 @@ export type GroundLayerFactory = (ctx: {
     readonly maxX: number;
     readonly maxY: number;
   }) => ReadonlyArray<{ minX: number; minY: number; maxX: number; maxY: number; id: Entity }>;
+  readonly canvas: {
+    type(): ReturnType<CanvasEngine["canvas"]["type"]>;
+    current(): ReturnType<CanvasEngine["canvas"]["current"]>;
+    subscribe(onChange: () => void): () => void;
+  };
+  readonly transitions: CanvasEngine["transitions"];
+  readonly gpu: CanvasEngine["gpu"];
 }) => GroundLayerHandle;
 
 export interface InfiniteCanvasProps {
@@ -200,6 +207,15 @@ export function InfiniteCanvas({
     const planes = createPlanes(host);
     const planeArgs = { contentPlane: planes.content, liftedPlane: planes.lifted };
     const domWidgets = createDomWidgetsReflector(planeArgs, world, runtime.store);
+    const detachDomTransition = engine.transitions.register(domWidgets.transitionAdapter());
+    const motionQuery = container.ownerDocument.defaultView?.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    );
+    const syncReducedMotion = (): void => {
+      engine.transitions.setReducedMotion(motionQuery?.matches === true);
+    };
+    syncReducedMotion();
+    motionQuery?.addEventListener("change", syncReducedMotion);
     const remoteCursors = createRemoteCursorsReflector(host, world);
 
     // Handles kept for teardown: unregistering only stops flushes — the DOM
@@ -212,6 +228,9 @@ export function InfiniteCanvas({
         world,
         readWirePreview: () => stack.wirePreview,
         readSpatial: (bounds) => stack.index.search(bounds),
+        canvas: engine.canvas,
+        transitions: engine.transitions,
+        gpu: engine.gpu,
       }) ?? null;
     groundRef.current = groundLayer;
     if (groundLayer !== null && gridConfigRef.current !== undefined) {
@@ -273,6 +292,9 @@ export function InfiniteCanvas({
       remoteCursors.destroy();
       groundLayer?.dispose();
       groundRef.current = null;
+      motionQuery?.removeEventListener("change", syncReducedMotion);
+      engine.transitions.setReducedMotion(false);
+      detachDomTransition();
       domWidgets.dispose();
       chrome.dispose();
       planes.dispose();

@@ -13,7 +13,7 @@
  * `dragRoute` — the ONE pan/marquee/move decision, latched at Drag activation
  * via route tags; the route never changes mid-gesture (design-003 §4.4).
  */
-import type { Entity, System, SystemCtx, Tag } from "@vibecook/strata-ecs";
+import type { Entity, System, SystemCtx, Tag, World } from "@vibecook/strata-ecs";
 import { Any, Not, defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import {
   CanvasSurface,
@@ -46,6 +46,7 @@ import {
   WheelZoom,
 } from "../catalog";
 import { ActiveTool } from "../catalog/camera-derived";
+import { resolveToolFor } from "../canvas/engine-catalog";
 import { devGuardsEnabled } from "../guards/dev";
 import { tools } from "../tools/define-tool";
 
@@ -74,7 +75,7 @@ function priorityOf(ctx: SystemCtx, e: Entity): number {
   return 1; // Tap
 }
 
-export function createArbitrationSystems(): { arbitration: System; dragRoute: System } {
+export function createArbitrationSystems(world?: World): { arbitration: System; dragRoute: System } {
   const arbitration = defineSystem(
     claimCandidateQ,
     (b, ctx) => {
@@ -136,7 +137,8 @@ export function createArbitrationSystems(): { arbitration: System; dragRoute: Sy
       // tool's config decides canvas/widget/port drag routes; unknown ids
       // resolve to select semantics (tools.resolve). Device conventions
       // (space / middle / one-finger touch → pan) sit ABOVE tool policy.
-      const tool = tools.resolve(ctx.getResource(ActiveTool)?.id ?? "select");
+      const toolId = ctx.getResource(ActiveTool)?.id ?? "select";
+      const tool = world === undefined ? tools.resolve(toolId) : resolveToolFor(world, toolId);
       const spaceHeld = ctx.getResource(Keyboard)?.space === true;
       const routeTag = (route: string): Tag | undefined => {
         switch (route) {

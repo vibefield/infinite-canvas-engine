@@ -17,9 +17,10 @@ import { behaviors } from "../behavior/define-behavior";
 import { Grab, Position, TransformTween } from "../catalog";
 import { instantiate } from "../engine/instantiate";
 import { schemaMeta } from "../schema/meta";
-import { prefabs, PrefabId, type ComponentInit, type Prefab } from "../schema/prefab";
+import { PrefabId, type ComponentInit, type Prefab } from "../schema/prefab";
 import { devGuardsEnabled } from "./dev";
 import type { LiveWriter } from "./live-writer";
+import { durablePrefabFor } from "../canvas/engine-catalog";
 
 export interface GuardedTx {
   spawnPrefab(prefab: Prefab, overrides?: readonly ComponentInit[]): Entity;
@@ -144,7 +145,7 @@ export function guardedTransaction(
       const local = spawned.get(e);
       if (local) return local;
       const id = world.get(e, PrefabId)?.id;
-      return typeof id === "string" ? prefabs.get(id) : undefined;
+      return typeof id === "string" ? durablePrefabFor(world, id) : undefined;
     };
 
     const checkComponent = (e: Entity, c: Component, op: string): void => {

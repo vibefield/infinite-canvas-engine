@@ -58,7 +58,6 @@ import { defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
 import type { CameraState, PortalAffine, SpatialIndex } from "@ice/kernel";
 import {
   composeAffine,
-  fitCamera,
   invertAffine,
   portalAffine,
   solveFlightStart,
@@ -66,28 +65,43 @@ import {
 } from "@ice/kernel";
 import {
   Camera,
-  CameraLimits,
+  ActiveTool,
   Container,
   Culled,
-  MeasuredSize,
   NavCamera,
   NavDepth,
   NavFrame,
+  NavTool,
   Position,
   Size,
   Viewport,
   Visible,
+  Selected,
 } from "../catalog";
-import { abortNavFlight, startNavFlight } from "../systems/nav-flight";
+import {
+  NavTransition,
+  abortNavFlight,
+  publishNavCut,
+  startNavFlight,
+  type NavTransitionIdentity,
+} from "../systems/nav-flight";
 import { Active } from "../catalog/camera-derived";
 import { PrefabId } from "../schema/prefab";
 import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
+import { SelectionVersion } from "../helpers/version-stamps";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { ChildOf } from "../catalog/scene";
-import { CAMERA_DEFAULTS, FIT_DEFAULTS } from "../settings/defaults";
-import { WidgetEquipped, widgets } from "../widget/define-widget";
+import { WidgetEquipped } from "../widget/define-widget";
+import { engineCatalogFor, widgetTypeFor } from "../canvas/engine-catalog";
+import { resolveFrameView, resolvePortal } from "../canvas/frame-view";
+import type {
+  FrameSwitchRequest,
+  PreparedFrameSwitch,
+  PresentationReleaseReason,
+} from "../canvas/presentation-transition";
 
 const navEntryQ = defineQuery([NavDepth, NavCamera]);
+const selectedQ = defineQuery([Selected]);
 // Keyed on PrefabId (present AT SPAWN — same flush as equip's WidgetEquipped
 // stamp), so Active lands the same tick projection does and the M6 mount
 // timing is unchanged. Chrome/pointers lack PrefabId; wires lack Position.
@@ -134,7 +148,7 @@ function isContainerForMembership(world: World, e: Entity): boolean {
   if (world.hasTag(e, WidgetEquipped)) return false; // equipped: the tag is truth
   const id = world.get(e, PrefabId)?.id;
   if (typeof id !== "string") return false;
-  return widgets.get(id)?.capabilityTags.includes(Container) ?? false;
+  return widgetTypeFor(world, id)?.capabilityTags.includes(Container) ?? false;
 }
 
 /** First container ancestor on the ChildOf chain (undefined = root-level). */
@@ -174,6 +188,31 @@ export interface NestedCanvasOpts {
    * stale entries still exist).
    */
   readonly clearSpatialCaches: () => void;
+  /** EngineCatalog-backed container validity; legacy rigs may omit it. */
+  readonly isContainer?: (entity: Entity) => boolean;
+  /** Runs synchronously before an explicit enter/exit visibility cut. */
+  readonly beforeSwitch?: () => void;
+  /** Presentation gate: false forces an atomic cut (for example, cross-ground before T2). */
+  readonly transitionAllowed?: (
+    fromFrame: Entity | undefined,
+    toFrame: Entity | undefined,
+  ) => boolean;
+  /** Trusted synchronous pre-cut presentation capture. It cannot veto the cut. */
+  readonly prepareTransition?: (request: FrameSwitchRequest) => PreparedFrameSwitch;
+  /** Integrity/doc recovery releases any adapter holds without animation. */
+  readonly abortTransition?: (reason: PresentationReleaseReason) => void;
+  /** Capture stable frame/type/document identity before the authority cut. */
+  readonly transitionIdentity?: (
+    fromFrame: Entity | undefined,
+    toFrame: Entity | undefined,
+  ) => NavTransitionIdentity;
+  /** One publication per completed switch or integrity pop. */
+  readonly onSwitch?: (
+    frame: Entity | undefined,
+    depth: number,
+    restoreTool: string | undefined,
+  ) => void;
+  readonly maxDepth?: number;
 }
 
 /**
@@ -318,10 +357,13 @@ export function createActiveMembership(world: World): TickSystem {
   );
 }
 
-export function createNestedCanvas(world: World, opts: NestedCanvasOpts): NestedCanvas {
+export function createNestedCanvas(world: World, config: NestedCanvasOpts): NestedCanvas {
+  const maxDepth = config.maxDepth ?? 64;
+  const validContainer = (entity: Entity): boolean =>
+    config.isContainer?.(entity) ?? world.hasTag(entity, Container);
   const rebuildIndex = (): void => {
-    opts.index.clear();
-    opts.clearSpatialCaches();
+    config.index.clear();
+    config.clearSpatialCaches();
     bumpVersion(world, SpatialVersion);
   };
 
@@ -363,37 +405,12 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
    * rider (design-006).
    */
   const resolveArrivalCamera = (frame: Entity): CameraState => {
-    const lim = world.getResource(CameraLimits) ?? CAMERA_DEFAULTS;
-    // Band ∩ hard limits — when they don't overlap (e.g. minZoom 3), the
-    // HARD limit wins: clamp each band edge into [lim.min, lim.max].
-    const minZoom = Math.min(Math.max(FIT_DEFAULTS.minZoom, lim.minZoom), lim.maxZoom);
-    const maxZoom = Math.max(Math.min(FIT_DEFAULTS.maxZoom, lim.maxZoom), lim.minZoom);
-    let minX = Number.POSITIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-    let any = false;
-    for (const child of world.getReverse(frame, ChildOf)) {
-      const p = world.get(child, Position);
-      const m = world.get(child, MeasuredSize);
-      const s = m !== undefined && m.w > 0 ? m : world.get(child, Size);
-      if (p === undefined || s === undefined) continue;
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x + s.w);
-      maxY = Math.max(maxY, p.y + s.h);
-      any = true;
-    }
-    const vp = world.getResource(Viewport);
-    if (!any || vp === undefined || vp.w === 0) {
-      return { x: 0, y: 0, zoom: Math.min(maxZoom, Math.max(minZoom, 1)) };
-    }
-    return fitCamera(
-      { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-      vp.w,
-      vp.h,
-      { pad: FIT_DEFAULTS.pad, minZoom, maxZoom },
-    );
+    const frameTypeId = world.get(frame, PrefabId)?.id;
+    const canvas =
+      typeof frameTypeId === "string"
+        ? engineCatalogFor(world)?.canvasForContainer(frameTypeId)
+        : undefined;
+    return resolveFrameView(world, frame, canvas, { isContainer: validContainer }).camera;
   };
 
   const snapCamera = (c: CameraState): void => {
@@ -401,18 +418,50 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
   };
 
   /** Flights need a real viewport and no opt-out; headless snaps (pre-T1 behavior). */
-  const flightable = (opts: NavOpts | undefined): boolean => {
+  const flightable = (
+    opts: NavOpts | undefined,
+    fromFrame: Entity | undefined,
+    toFrame: Entity | undefined,
+  ): boolean => {
     const vp = world.getResource(Viewport);
-    return opts?.transition !== "none" && vp !== undefined && vp.w > 0 && vp.h > 0;
+    return (
+      opts?.transition !== "none" &&
+      (config.transitionAllowed?.(fromFrame, toFrame) ?? true) &&
+      vp !== undefined &&
+      vp.w > 0 &&
+      vp.h > 0
+    );
   };
 
   /** Container body rect in its parent frame's coords — the portal (§8.5: full body for now). */
   const containerRect = (c: Entity): { x: number; y: number; width: number; height: number } | undefined => {
-    const p = world.get(c, Position);
-    const s = world.get(c, Size);
-    if (p === undefined || s === undefined) return undefined;
-    return { x: p.x, y: p.y, width: s.w, height: s.h };
+    const typeId = world.get(c, PrefabId)?.id;
+    const binding = typeof typeId === "string" ? widgetTypeFor(world, typeId)?.container : undefined;
+    return resolvePortal(world, c, binding)?.parent;
   };
+
+  const prepareSwitch = (
+    kind: "enter" | "exit",
+    fromCamera: CameraState,
+    toCamera: CameraState,
+    A: PortalAffine | undefined,
+    identity: NavTransitionIdentity | undefined,
+    requestedMotion: boolean,
+  ): PreparedFrameSwitch | undefined =>
+    config.prepareTransition?.(
+      Object.freeze({
+        kind,
+        documentEpoch: identity?.documentEpoch ?? 0,
+        fromFrame: identity?.fromFrame ?? (0 as Entity),
+        toFrame: identity?.toFrame ?? (0 as Entity),
+        fromTypeId: identity?.fromTypeId ?? "",
+        toTypeId: identity?.toTypeId ?? "",
+        fromCamera,
+        toCamera,
+        affine: A ?? { s: 1, ox: 0, oy: 0 },
+        requestedMotion,
+      }),
+    );
 
   const activeMembership = createActiveMembership(world);
 
@@ -427,26 +476,46 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
         for (const r of b) {
           const e = b.entity(r);
           const frame = world.getRelation(e, NavFrame);
-          if (frame === undefined || !world.isAlive(frame)) {
+          if (frame === undefined || !world.isAlive(frame) || !validContainer(frame)) {
             deadAt = Math.min(deadAt, world.read(e, NavDepth).d);
           }
         }
       });
       if (!Number.isFinite(deadAt)) return;
+      const fromFrame = currentNavFrame(world);
+      const fromCamera = world.getResource(Camera) ?? {
+        x: 0,
+        y: 0,
+        zoom: 1,
+        gesturing: false,
+      };
       abortNavFlight(world); // integrity is never blocked on animation (design-006 §4)
+      config.abortTransition?.("interrupted");
       let restore: { x: number; y: number; zoom: number } | undefined;
+      let restoreTool: string | undefined;
+      let targetFrame: Entity | undefined;
+      let targetDepth = 0;
       ctx.query(navEntryQ).each((b) => {
         for (const r of b) {
           const e = b.entity(r);
           const d = world.read(e, NavDepth).d;
-          if (d < deadAt) continue;
-          if (d === deadAt) {
-            const cam = world.read(e, NavCamera);
-            restore = { x: cam.x, y: cam.y, zoom: cam.zoom };
+          if (d >= deadAt) {
+            if (d === deadAt) {
+              const cam = world.read(e, NavCamera);
+              restore = { x: cam.x, y: cam.y, zoom: cam.zoom };
+              restoreTool = world.get(e, NavTool)?.id ?? undefined;
+            }
+            ctx.destroy(e);
+          } else if (d > targetDepth) {
+            const frame = world.getRelation(e, NavFrame);
+            if (frame !== undefined && world.isAlive(frame) && validContainer(frame)) {
+              targetDepth = d;
+              targetFrame = frame;
+            }
           }
-          ctx.destroy(e);
         }
       });
+      const arrival = restore ?? fromCamera;
       if (restore !== undefined) writeRuntimeResource(world, Camera, { ...restore, gesturing: false });
       // The same visibility cut the ops make (via ctx — this is a system):
       // an integrity pop swaps frames too, and stale content under the
@@ -459,7 +528,23 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
           if (!ctx.hasTag(e, Culled)) ctx.addTag(e, Culled);
         }
       });
+      let clearedSelection = false;
+      ctx.query(selectedQ).each((b) => {
+        for (const r of b) {
+          ctx.removeTag(b.entity(r), Selected);
+          clearedSelection = true;
+        }
+      });
+      if (clearedSelection) bumpVersion(world, SelectionVersion);
       rebuildIndex();
+      publishNavCut(
+        world,
+        "exit",
+        fromCamera,
+        arrival,
+        config.transitionIdentity?.(fromFrame, targetFrame),
+      );
+      config.onSwitch?.(targetFrame, targetDepth, restoreTool);
     },
     {
       name: "navIntegrity",
@@ -487,15 +572,20 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
     // The shallowest doomed entry's saved camera is the restore point (the
     // camera as it was the moment that level was entered).
     const restore = world.read(shallowest.e, NavCamera);
+    const restoreTool = world.get(shallowest.e, NavTool)?.id ?? undefined;
     const c1: CameraState = { x: restore.x, y: restore.y, zoom: restore.zoom };
     const camPre = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
+    const fromFrame = currentNavFrame(world);
+    const targetEntry = entries.find((entry) => entry.d === targetDepth);
+    const targetFrame =
+      targetEntry === undefined ? undefined : world.getRelation(targetEntry.e, NavFrame);
 
     // Compose the portal chain from CURRENT rects (containers move), outermost
     // first: A maps the departed frame's coords into the TARGET frame's. Any
     // dead/rect-less link degrades the whole jump to a snap — never half-fly.
     let A: PortalAffine | undefined;
-    if (flightable(opts)) {
-      const vp = world.getResource(Viewport) as { w: number; h: number };
+    const vp = world.getResource(Viewport);
+    if (vp !== undefined && vp.w > 0 && vp.h > 0) {
       for (const { e } of doomed) {
         const frame = world.getRelation(e, NavFrame);
         const K = frame !== undefined && world.isAlive(frame) ? containerRect(frame) : undefined;
@@ -507,42 +597,95 @@ export function createNestedCanvas(world: World, opts: NestedCanvasOpts): Nested
         A = A === undefined ? M : composeAffine(A, M);
       }
     }
+    const identity = config.transitionIdentity?.(fromFrame, targetFrame);
+    const requestedMotion = A !== undefined && flightable(opts, fromFrame, targetFrame);
 
-    for (const { e } of doomed) world.destroy(e); // ops run OUTSIDE the tick — structural world.* is legal here
-    cutVisibility(); // BEFORE the camera write (see enterContainer)
-    if (A !== undefined) startNavFlight(world, "exit", A, solveFlightStart(A, camPre), c1);
-    else snapCamera(c1);
-    rebuildIndex();
+    config.beforeSwitch?.();
+    const prepared = prepareSwitch("exit", camPre, c1, A, identity, requestedMotion);
+    let authorityMutated = false;
+    try {
+      for (const { e } of doomed) {
+        // ops run OUTSIDE the tick — structural world.* is legal here. Once
+        // one entry is gone this attempt cannot be treated as a pre-cut
+        // presentation rollback, even if a later operation faults.
+        world.destroy(e);
+        authorityMutated = true;
+      }
+      cutVisibility(); // BEFORE the camera write (see enterContainer)
+      authorityMutated = true;
+      if (A !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
+        startNavFlight(world, "exit", A, solveFlightStart(A, camPre), c1, identity);
+      } else {
+        snapCamera(c1);
+        publishNavCut(world, "exit", camPre, c1, identity, A);
+      }
+      rebuildIndex();
+      config.onSwitch?.(targetFrame, targetDepth, restoreTool);
+      prepared?.commit();
+    } catch (error) {
+      prepared?.cancel(authorityMutated ? "fault" : "cancelled");
+      throw error;
+    }
   };
 
   return {
     activeMembership,
     navIntegrity,
     enterContainer(container, opts) {
-      if (!world.isAlive(container) || !world.hasTag(container, Container)) {
+      if (!world.isAlive(container) || !validContainer(container)) {
         throw new Error("ice: enterContainer target is not a live container.");
       }
+      const fromFrame = currentNavFrame(world);
       const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
+      // §6.2 rev 2: the saved return pose is SETTLED — a driving flight saves its
+      // arrival camera, never the mid-flight pose; an aborted flight's resting
+      // pose is user truth and saves as-is.
+      const flight = world.getResource(NavTransition);
+      const returnCam =
+        flight !== undefined && flight.active
+          ? { x: flight.c1x, y: flight.c1y, zoom: flight.c1z }
+          : cam;
       const depth = (currentNavEntry(world) !== undefined ? world.read(currentNavEntry(world) as Entity, NavDepth).d : 0) + 1;
-      const entry = world.spawn({
-        components: [
-          [NavDepth, { d: depth }],
-          [NavCamera, { x: cam.x, y: cam.y, zoom: cam.zoom }],
-        ],
-      });
-      world.setRelation(entry, NavFrame, container);
+      if (depth > maxDepth) {
+        throw new Error(`ice: enterContainer would exceed the maximum CanvasFrame depth ${maxDepth}.`);
+      }
       const c1 = resolveArrivalCamera(container);
       const K = containerRect(container);
-      cutVisibility(); // BEFORE the camera write — no frame may render old content under the new camera
-      if (flightable(opts) && K !== undefined) {
-        const vp = world.getResource(Viewport) as { w: number; h: number };
-        // A = M⁻¹: parent (departed) coords → child (destination) coords.
-        const A = invertAffine(portalAffine(visibleRect(c1, vp.w, vp.h), K));
-        startNavFlight(world, "enter", A, solveFlightStart(A, cam), c1);
-      } else {
-        snapCamera(c1);
+      const vp = world.getResource(Viewport);
+      const A =
+        K !== undefined && vp !== undefined && vp.w > 0 && vp.h > 0
+          ? invertAffine(portalAffine(visibleRect(c1, vp.w, vp.h), K))
+          : undefined;
+      const identity = config.transitionIdentity?.(fromFrame, container);
+      const requestedMotion = A !== undefined && flightable(opts, fromFrame, container);
+      config.beforeSwitch?.();
+      const prepared = prepareSwitch("enter", cam, c1, A, identity, requestedMotion);
+      let authorityMutated = false;
+      try {
+        const entry = world.spawn({
+          components: [
+            [NavDepth, { d: depth }],
+            [NavCamera, { x: returnCam.x, y: returnCam.y, zoom: returnCam.zoom }],
+            [NavTool, { id: world.getResource(ActiveTool)?.id ?? "select" }],
+          ],
+        });
+        authorityMutated = true;
+        world.setRelation(entry, NavFrame, container);
+        cutVisibility(); // BEFORE the camera write — no frame may render old content under the new camera
+        if (A !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
+          // A = M⁻¹: parent (departed) coords → child (destination) coords.
+          startNavFlight(world, "enter", A, solveFlightStart(A, cam), c1, identity);
+        } else {
+          snapCamera(c1);
+          publishNavCut(world, "enter", cam, c1, identity, A);
+        }
+        rebuildIndex();
+        config.onSwitch?.(container, depth, undefined);
+        prepared?.commit();
+      } catch (error) {
+        prepared?.cancel(authorityMutated ? "fault" : "cancelled");
+        throw error;
       }
-      rebuildIndex();
     },
     exitContainer(opts) {
       const entry = currentNavEntry(world);

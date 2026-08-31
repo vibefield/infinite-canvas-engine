@@ -11,6 +11,7 @@ import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import { ChildOf, Position, Size } from "../catalog";
 import { guardedTransaction, type GuardedTx } from "../guards/guarded-tx";
 import type { AnyBehaviorDef } from "../behavior/types";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { frameParent } from "../ops/sibling-order";
 import { init, type ComponentInit } from "../schema/prefab";
 import { widgets, type WidgetType } from "./define-widget";
@@ -56,8 +57,12 @@ export function attachSpawnParent(
  * whole-group prop values). Shared by `spawnWidget` and the doc sink's
  * create-intent execution (draw tool) so the two can never diverge.
  */
-export function widgetSpawnInits(type: string, opts: SpawnWidgetOpts): { prefab: import("../schema/prefab").Prefab; overrides: ComponentInit[] } {
-  const widget = widgets.get(type);
+export function widgetSpawnInits(
+  type: string,
+  opts: SpawnWidgetOpts,
+  resolvedWidget?: WidgetType,
+): { prefab: import("../schema/prefab").Prefab; overrides: ComponentInit[] } {
+  const widget = resolvedWidget ?? widgets.get(type);
   if (widget === undefined) throw new Error(`ice: spawnWidget — unknown widget type "${type}".`);
 
   // Fold prop overrides into whole-group values (defaults + overrides).
@@ -137,7 +142,9 @@ export function spawnWidget(
   type: string,
   opts: SpawnWidgetOpts,
 ): Entity {
-  const { prefab, overrides } = widgetSpawnInits(type, opts);
+  const widget = widgetTypeFor(world, type);
+  if (widget === undefined) throw new Error(`ice: spawnWidget — unknown widget type "${type}".`);
+  const { prefab, overrides } = widgetSpawnInits(type, opts, widget);
   let spawned: Entity | undefined;
   guardedTransaction(
     store,
@@ -145,7 +152,7 @@ export function spawnWidget(
     (tx) => {
       spawned = tx.spawnPrefab(prefab, overrides);
       attachSpawnParent(tx, world, spawned, opts);
-      attachSpawnBehaviors(tx, widgets.get(type) as WidgetType, spawned);
+      attachSpawnBehaviors(tx, widget, spawned);
     },
     opts.undoable === false ? { undoable: false } : undefined,
   );

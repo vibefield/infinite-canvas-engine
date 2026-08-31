@@ -185,6 +185,11 @@ export const NavCamera = defineComponent("NavCamera", {
   zoom: field("f32", { default: 1 }),
 });
 
+/** Tool active in the departed frame, restored when this nav entry is popped. */
+export const NavTool = defineComponent("NavTool", {
+  id: field("string", { default: "select" }),
+});
+
 /** nav entry → container widget. */
 export const NavFrame = defineRelation("NavFrame", { arity: "one" });
 

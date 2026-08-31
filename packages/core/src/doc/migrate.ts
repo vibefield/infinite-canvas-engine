@@ -47,8 +47,9 @@
 import type { Component, Entity, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { PrefabId } from "../schema/prefab";
-import { widgets } from "../widget/define-widget";
+import type { WidgetType } from "../widget/define-widget";
 import type { DocVersionReport } from "./version-gate";
 
 /** Same reserved prefix as version-gate's markers (that module owns the read side). */
@@ -81,7 +82,7 @@ interface EntityPlan {
 
 interface TypePlan {
   readonly id: string;
-  readonly widget: NonNullable<ReturnType<typeof widgets.get>>;
+  readonly widget: WidgetType;
   readonly localV: number;
   readonly plans: EntityPlan[];
 }
@@ -104,7 +105,7 @@ export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): Migr
   // --- plan pass: every type's reads + chain folds, NO writes yet ---
   const typePlans: TypePlan[] = [];
   for (const id of report.olderInDoc) {
-    const widget = widgets.get(id);
+    const widget = widgetTypeFor(world, id);
     const chain = widget?.migrate;
     if (widget === undefined || chain === undefined || Object.keys(chain).length === 0) {
       skipped.push(id); // no widget or no chain → cannot upgrade; the re-gate keeps it read-only

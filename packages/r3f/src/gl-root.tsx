@@ -39,7 +39,13 @@ import {
   useSyncExternalStore,
   type ReactElement,
 } from "react";
-import { Mesh, OrthographicCamera, PlaneGeometry, type Texture, type WebGLRenderTarget } from "three";
+import {
+  Mesh,
+  OrthographicCamera,
+  PlaneGeometry,
+  type Texture,
+  type WebGLRenderTarget,
+} from "three";
 import { selectBand } from "@ice/kernel";
 import {
   Camera,
@@ -51,6 +57,7 @@ import {
   widgets,
   type Engine,
   type Entity,
+  type GpuAllocatorHandle,
   type WidgetMountStore,
 } from "@ice/core";
 import type { GLBridge } from "./bridge";
@@ -64,6 +71,7 @@ import {
 } from "./compositor-pass";
 import { Island } from "./island";
 import { RenderTargetPool } from "./pool";
+import { createRetainedQuadTransitionAdapter } from "./retained-quads";
 import { selfSustainPlan } from "./self-sustain";
 
 export interface GLViewsProps {
@@ -135,6 +143,8 @@ export interface GlFrameStats {
   readonly renderMegaPixels: number;
   readonly fboBytes: number;
   readonly fboBudgetBytes: number;
+  /** Outgoing transition quads; each owns one ref-counted FBO pin. */
+  readonly retainedQuads: number;
   /** Island phase census (the demand/retention state machine, design-004 §3/§7). */
   readonly islands: {
     readonly total: number;
@@ -169,6 +179,7 @@ interface GpuProfilerLike {
 // Scene-population census (profiling only — never queried when the seam is off).
 const visibleWidgetsQ = defineQuery([Visible]);
 const culledWidgetsQ = defineQuery([Culled]);
+let allocatorSequence = 0;
 
 export function GLViews({
   engine,
@@ -195,6 +206,10 @@ export function GLViews({
     poolRef.current = new RenderTargetPool();
   }
   const pool = poolRef.current;
+  const incomingOpacityRef = useRef(1);
+  const retainedQuadsRef = useRef(0);
+  const allocatorHandleRef = useRef<GpuAllocatorHandle | null>(null);
+  const allocatorId = useMemo(() => `@ice/r3f/pool:${++allocatorSequence}`, []);
 
   const quadGeometry = useMemo(() => new PlaneGeometry(1, 1), []);
   const compCamera = useMemo(() => new OrthographicCamera(0, 1, 0, -1, 0.1, 10000), []);
@@ -252,6 +267,59 @@ export function GLViews({
     }),
     [scene, quadGeometry],
   );
+
+  useEffect(() => {
+    const ledger = bridge.gpu;
+    if (ledger === undefined) return;
+    const handle = ledger.registerAllocator({
+      id: allocatorId,
+      usedBytes: () => pool.bytesUsed(),
+      reclaim(bytesNeeded) {
+        let reclaimed = 0;
+        const candidates = pool
+          .entryInfos()
+          .filter((info) => {
+            if (info.pinned) return false;
+            return (bridge.state.get(info.key)?.phase ?? "Dormant") === "Dormant";
+          })
+          .sort((a, b) => a.lastUsedMs - b.lastUsedMs || a.key - b.key);
+        for (const candidate of candidates) {
+          if (reclaimed >= bytesNeeded) break;
+          if (!pool.release(candidate.key)) continue;
+          bridge.state.markEvicted(candidate.key);
+          reclaimed += candidate.bytes;
+        }
+        if (reclaimed > 0) bridge.requestFrame();
+        return reclaimed;
+      },
+    });
+    allocatorHandleRef.current = handle;
+    return () => {
+      allocatorHandleRef.current = null;
+      handle.unregister();
+    };
+  }, [allocatorId, bridge, pool]);
+
+  useEffect(() => {
+    const transitions = bridge.transitions;
+    if (transitions === undefined) return;
+    return transitions.register(
+      createRetainedQuadTransitionAdapter({
+        scene,
+        geometry: quadGeometry,
+        sources: quadsRef.current,
+        pool,
+        store,
+        requestFrame: bridge.requestFrame,
+        setIncomingOpacity: (opacity) => {
+          incomingOpacityRef.current = opacity;
+        },
+        onRetainedCountChange: (count) => {
+          retainedQuadsRef.current = count;
+        },
+      }),
+    );
+  }, [bridge, pool, quadGeometry, scene, store]);
 
   // Renderer adapter (explicit clear color: transparent black, v1 contract).
   const glLike: GlLike = useMemo(
@@ -391,10 +459,14 @@ export function GLViews({
           };
         },
         compositeScene: scene,
-        maxFboBytes,
+        maxFboBytes: Math.min(
+          maxFboBytes,
+          allocatorHandleRef.current?.limitBytes() ?? maxFboBytes,
+        ),
         maxRepaintsPerFrame,
         maxPaintDpr,
         dtMs: delta * 1000,
+        incomingOpacity: incomingOpacityRef.current,
       });
     } finally {
       bridge.renderAssert.end();
@@ -456,6 +528,7 @@ export function GLViews({
         renderMegaPixels: pixels / 1e6,
         fboBytes: pool.bytesUsed(),
         fboBudgetBytes: maxFboBytes,
+        retainedQuads: retainedQuadsRef.current,
         islands: { total, hot, warm, waking, cold, dormant },
         bandHistogram,
         repainted: stats.repainted,
@@ -494,7 +567,7 @@ export function GLViews({
   const entries = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const islands: ReactElement[] = [];
   for (const entry of entries) {
-    if (entry.hidden) continue; // culled: island unmounts, FBO stays pooled
+    if (entry.hidden || entry.frozen === true) continue; // culled/T2-frozen: FBO stays pooled
     if (!world.isAlive(entry.entity)) continue;
     const type = world.get(entry.entity, PrefabId)?.id;
     const widget = typeof type === "string" ? widgets.get(type) : undefined;

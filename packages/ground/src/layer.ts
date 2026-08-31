@@ -21,7 +21,12 @@
 import { Camera, type ReflectorDef, type World } from "@ice/core";
 import { OrthographicCamera, Scene } from "three/webgpu";
 import type { GroundFrame, GroundPass } from "./pass";
-import type { GroundRendererLike } from "./renderer";
+import {
+  readGroundRendererStatus,
+  type GroundRendererLike,
+  type GroundRendererProfile,
+  type GroundRendererStatus,
+} from "./renderer";
 
 export interface GroundLayerHost {
   readonly container: HTMLElement;
@@ -33,6 +38,10 @@ export interface GroundReflector extends ReflectorDef {
   available(): boolean;
   /** Whole-canvas renders so far (the churn instrument — 0 on an idle scene). */
   redraws(): number;
+  /** Backend identity plus initialization/device-loss diagnostics. */
+  rendererStatus(): GroundRendererStatus;
+  /** Empty/disabled unless the factory explicitly enabled evidence profiling. */
+  rendererProfile(): GroundRendererProfile;
 }
 
 export interface GroundLayerInternals {
@@ -119,6 +128,7 @@ export function createLayer(
   }
 
   let redraws = 0;
+  let renderFailed = false;
 
   const reflector: GroundReflector = {
     name: "ground",
@@ -126,7 +136,7 @@ export function createLayer(
     // cost is one boolean check.
     always: true,
     flush(w: World) {
-      if (!anyDirty || renderer.failed()) return;
+      if (!anyDirty || renderer.failed() || renderFailed) return;
       if (!renderer.ready()) return; // init pending — flags stay armed, retry next frame
       const cam = w.getResource(Camera);
       if (cam === undefined) return;
@@ -138,11 +148,19 @@ export function createLayer(
           pass.collect(w, frame);
         }
       }
-      redraws++;
-      renderer.render(scene, camera);
+      try {
+        renderer.render(scene, camera);
+        redraws++;
+      } catch {
+        // Legacy static ground has no program boundary to quarantine. Stop
+        // this layer only; the engine and content planes remain live.
+        renderFailed = true;
+      }
     },
-    available: () => renderer.ready() && !renderer.failed(),
+    available: () => renderer.ready() && !renderer.failed() && !renderFailed,
     redraws: () => redraws,
+    rendererStatus: () => readGroundRendererStatus(renderer),
+    rendererProfile: () => renderer.profile?.() ?? Object.freeze({ enabled: false, samples: [] }),
   };
 
   return {

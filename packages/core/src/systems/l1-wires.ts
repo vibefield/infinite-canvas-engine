@@ -23,12 +23,12 @@ import type { Component, Entity, TickSystem, World } from "@vibecook/strata-ecs"
 import { defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
 import { type AABB, type Cubic, type SpatialIndex, cubicAABB, portAnchor, wireCubic } from "@ice/kernel";
 import { Camera, Position, Size, Wire, WireFrom, WirePorts, WireTo } from "../catalog";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
 import { portSlotOf } from "../ops/port-geometry";
 import type { WirePickSource } from "../ops/point-pick";
 import { PrefabId } from "../schema/prefab";
 import { GRAPH_PICK_DEFAULTS } from "../settings/defaults";
-import { widgets } from "../widget/define-widget";
 
 /** The structural read the endpoint resolver needs (World and SystemCtx both satisfy it). */
 interface AnchorReader {
@@ -57,6 +57,7 @@ const wireQ = defineQuery([Wire, WirePorts]);
 /** Endpoint anchor (world) for a wire's end, or undefined if unresolvable. */
 function endpointAnchor(
   reader: AnchorReader,
+  world: World,
   widget: Entity | undefined,
   portId: string,
 ): { x: number; y: number; side: string } | undefined {
@@ -65,7 +66,7 @@ function endpointAnchor(
   const size = reader.get(widget, Size);
   if (pos === undefined || size === undefined) return undefined;
   const type = reader.get(widget, PrefabId)?.id;
-  const decls = typeof type === "string" ? widgets.get(type)?.ports : undefined;
+  const decls = typeof type === "string" ? widgetTypeFor(world, type)?.ports : undefined;
   if (decls === undefined) return undefined;
   const slot = portSlotOf(decls, portId);
   if (slot === undefined) return undefined;
@@ -87,8 +88,8 @@ export function createWireSync(world: World, index: SpatialIndex<Entity>): WireS
         for (const row of batch) {
           const wire = batch.entity(row);
           const ports = ctx.read(wire, WirePorts);
-          const from = endpointAnchor(ctx, ctx.getRelation(wire, WireFrom), ports.from ?? "");
-          const to = endpointAnchor(ctx, ctx.getRelation(wire, WireTo), ports.to ?? "");
+          const from = endpointAnchor(ctx, world, ctx.getRelation(wire, WireFrom), ports.from ?? "");
+          const to = endpointAnchor(ctx, world, ctx.getRelation(wire, WireTo), ports.to ?? "");
           if (from === undefined || to === undefined) {
             // Unresolvable this frame — drop from the index (renderer draws nothing).
             if (cache.has(wire)) {

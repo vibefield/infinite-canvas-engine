@@ -242,6 +242,24 @@ export function createSelectMoveBehaviors(
     }
   };
 
+  const rejectCommit = (ctx: SystemCtx, dragged: readonly Entity[]): void => {
+    for (const w of dragged) {
+      if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
+      if (ctx.has(w, InsertGhost)) {
+        ghostFlyBack(ctx, w);
+        continue;
+      }
+      const g = ctx.read(w, Grab);
+      ctx.addComponent(w, TransformTween, {
+        toX: g.x,
+        toY: g.y,
+        durationMs: FLY_BACK_MS,
+        elapsedMs: 0,
+      });
+    }
+    restoreOrder(ctx, dragged);
+  };
+
   const moveBehavior = defineSystem(
     moveDragQ,
     (b, ctx) => {
@@ -327,6 +345,7 @@ export function createSelectMoveBehaviors(
             const writes: CommitWrite[] = [];
             const reparents: { entity: Entity; container: Entity }[] = [];
             const creates: CommitCreate[] = [];
+            const promotingGhosts: Entity[] = [];
             const containerPos = ctx.get(container, Position) ?? { x: 0, y: 0 };
             // Free-slot placement (2026-07-17, James: folder drops "pile up on
             // each other"): the raw drop point maps everyone who aimed at the
@@ -366,20 +385,22 @@ export function createSelectMoveBehaviors(
                   parent: container,
                   select: true,
                 });
-                ctx.addTag(w, GhostCommitted);
+                promotingGhosts.push(w);
                 continue;
               }
               writes.push({ entity: w, component: Position, value: slot });
               reparents.push({ entity: w, container });
             }
             if (writes.length > 0 || creates.length > 0) {
-              sink.commit({
+              const accepted = sink.commit({
                 kind: "consume",
                 gesture: rec,
                 writes,
                 reparents,
                 ...(creates.length > 0 ? { creates } : {}),
               });
+              if (accepted === false) rejectCommit(ctx, dragged);
+              else for (const ghost of promotingGhosts) ctx.addTag(ghost, GhostCommitted);
             }
           } else {
             // Plain move commit: final Position per live edge + the elevated
@@ -389,6 +410,7 @@ export function createSelectMoveBehaviors(
             // §3): same single transaction, selected at projection.
             const writes: CommitWrite[] = [];
             const creates: CommitCreate[] = [];
+            const promotingGhosts: Entity[] = [];
             for (const w of dragged) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
               const g = ctx.read(w, Grab);
@@ -405,19 +427,21 @@ export function createSelectMoveBehaviors(
                   ...(props !== undefined ? { props } : {}),
                   select: true,
                 });
-                ctx.addTag(w, GhostCommitted);
+                promotingGhosts.push(w);
                 continue;
               }
               writes.push({ entity: w, component: Position, value: { x: g.x + wx, y: g.y + wy } });
             }
             if (writes.length > 0 || creates.length > 0) {
-              sink.commit({
+              const accepted = sink.commit({
                 kind: creates.length > 0 && writes.length === 0 ? "create" : "move",
                 gesture: rec,
                 writes,
                 orders: commitOrders(ctx, dragged),
                 ...(creates.length > 0 ? { creates } : {}),
               });
+              if (accepted === false) rejectCommit(ctx, dragged);
+              else for (const ghost of promotingGhosts) ctx.addTag(ghost, GhostCommitted);
             }
           }
           clearGestureState(ctx, rec, dragged);

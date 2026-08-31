@@ -19,7 +19,7 @@ import { PrefabId, widgets, type Entity, type World, type WidgetMountStore } fro
 import { createElement, type ComponentType, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useSyncExternalStore } from "react";
-import { WidgetHiddenContext } from "./hooks";
+import { WidgetHiddenContext, WidgetMountStoreContext } from "./hooks";
 
 export interface WidgetHosts {
   /** The dom-widgets reflector's lookup (content element per entity). */
@@ -59,7 +59,7 @@ export function WidgetRoot({ world, store, hosts }: WidgetRootProps): ReactEleme
       createPortal(
         createElement(
           WidgetHiddenContext.Provider,
-          { value: entry.hidden },
+          { value: entry.hidden || entry.frozen === true },
           createElement(View, { entity: entry.entity, world }),
         ),
         target,
@@ -67,5 +67,9 @@ export function WidgetRoot({ world, store, hosts }: WidgetRootProps): ReactEleme
       ),
     );
   }
-  return createElement("div", { "data-ice-widget-root": "" }, portals);
+  return createElement(
+    WidgetMountStoreContext.Provider,
+    { value: store },
+    createElement("div", { "data-ice-widget-root": "" }, portals),
+  );
 }

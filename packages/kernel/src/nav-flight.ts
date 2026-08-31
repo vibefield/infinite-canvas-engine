@@ -84,6 +84,19 @@ export function solveFlightStart(A: PortalAffine, camPre: CameraState): CameraSt
   };
 }
 
+/**
+ * Destination camera expressed in departed-frame coordinates. Rendering a
+ * procedural outgoing program with this camera is pixel-equivalent to first
+ * mapping its points through A and then rendering under `destination`.
+ */
+export function outgoingCamera(A: PortalAffine, destination: CameraState): CameraState {
+  return {
+    x: (destination.x - A.ox) / A.s,
+    y: (destination.y - A.oy) / A.s,
+    zoom: A.s * destination.zoom,
+  };
+}
+
 /** Zoom distance in octaves — the flight-length measure (design-006 §4/§5). */
 export function flightOctaves(from: CameraState, to: CameraState): number {
   return Math.abs(Math.log2(to.zoom / from.zoom));

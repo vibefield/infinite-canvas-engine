@@ -53,6 +53,7 @@ import {
   Viewport,
   Watches,
 } from "../catalog";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { ActiveTool } from "../catalog/camera-derived";
 import { FrameInfo } from "../engine/frame-info";
 import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
@@ -60,7 +61,6 @@ import { portSlots } from "../ops/port-geometry";
 import { PrefabId } from "../schema/prefab";
 import { GRAPH_PICK_DEFAULTS, RUNTIME_BUDGETS } from "../settings/defaults";
 import type { WidgetPortDecl } from "../widget/define-widget";
-import { widgets } from "../widget/define-widget";
 
 /** A materialized port: its entity + last-written anchor (change-only bookkeeping). */
 interface PortRec {
@@ -90,10 +90,14 @@ const portedQ = defineQuery([Pointer, LocalPointer]);
 const connectDragQ = defineQuery([Drag, RoutedConnect, GestureActive]);
 
 /** The port declarations of a ported widget, or undefined (not a widget / no ports). */
-function portedDeclsOf(ctx: SystemCtx, e: Entity): readonly WidgetPortDecl[] | undefined {
+function portedDeclsOf(
+  world: World,
+  ctx: SystemCtx,
+  e: Entity,
+): readonly WidgetPortDecl[] | undefined {
   const type = ctx.get(e, PrefabId)?.id;
   if (typeof type !== "string") return undefined;
-  const decls = widgets.get(type)?.ports;
+  const decls = widgetTypeFor(world, type)?.ports;
   return decls !== undefined && decls.length > 0 ? decls : undefined;
 }
 
@@ -153,7 +157,7 @@ export function createPortMaterialize(world: World, index: SpatialIndex<Entity>)
         const keepBand: AABB = { minX: tl.x - keep, minY: tl.y - keep, maxX: br.x + keep, maxY: br.y + keep };
         for (const entry of index.search(keepBand)) {
           const w = entry.id;
-          const decls = portedDeclsOf(ctx, w);
+          const decls = portedDeclsOf(world, ctx, w);
           if (decls === undefined) continue;
           keepAlive.add(w); // in the keep band → hysteresis holds it
           if (!intersectsAABB(entry, spawnBand)) continue;
@@ -172,7 +176,7 @@ export function createPortMaterialize(world: World, index: SpatialIndex<Entity>)
           const p = b.entity(r);
           const t = ctx.getRelation(p, Targets);
           if (t === undefined) continue;
-          const decls = portedDeclsOf(ctx, t);
+          const decls = portedDeclsOf(world, ctx, t);
           if (decls === undefined) continue;
           const rect = rectOf(t);
           if (rect === undefined) continue;
@@ -194,7 +198,7 @@ export function createPortMaterialize(world: World, index: SpatialIndex<Entity>)
           const srcWidget = ctx.getRelation(srcPort, PortOf);
           if (srcWidget === undefined) continue;
           const srcId = ctx.get(srcPort, Port)?.id;
-          const srcDecls = portedDeclsOf(ctx, srcWidget);
+          const srcDecls = portedDeclsOf(world, ctx, srcWidget);
           const srcAccepts =
             srcDecls?.find((d) => d.id === srcId)?.accepts ?? ([] as readonly string[]);
           keepAlive.add(srcWidget); // keep the source's ports so Captures never dangles
@@ -209,7 +213,7 @@ export function createPortMaterialize(world: World, index: SpatialIndex<Entity>)
           for (const entry of index.search({ minX: pw.x - R, minY: pw.y - R, maxX: pw.x + R, maxY: pw.y + R })) {
             const w = entry.id;
             if (w === srcWidget) continue;
-            const decls = portedDeclsOf(ctx, w);
+            const decls = portedDeclsOf(world, ctx, w);
             if (decls === undefined) continue;
             const rect = rectOf(w);
             if (rect === undefined) continue;
@@ -245,7 +249,7 @@ export function createPortMaterialize(world: World, index: SpatialIndex<Entity>)
         if (budget <= 0) break;
         const wp = getWP(req.widget);
         if (wp.ports.has(req.portId)) continue; // already materialized
-        const decls = portedDeclsOf(ctx, req.widget);
+        const decls = portedDeclsOf(world, ctx, req.widget);
         const slot = decls !== undefined ? portSlots(decls).get(req.portId) : undefined;
         if (slot === undefined) continue;
         const port = ctx.spawn({
@@ -275,7 +279,7 @@ export function createPortMaterialize(world: World, index: SpatialIndex<Entity>)
           reap.push(widget);
           continue;
         }
-        const slots = portSlots(portedDeclsOf(ctx, widget) ?? []);
+        const slots = portSlots(portedDeclsOf(world, ctx, widget) ?? []);
         for (const [portId, rec] of wp.ports) {
           const slot = slots.get(portId);
           if (slot === undefined || !ctx.isAlive(rec.entity)) continue;

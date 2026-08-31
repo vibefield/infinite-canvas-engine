@@ -1,5 +1,5 @@
 /**
- * STRUCTURAL schema migrations (petition 8; engineSchema 1 → 2).
+ * STRUCTURAL schema migrations (engineSchema 1 → current).
  *
  * The per-prefab runner (migrate.ts) folds per-entity group values — it cannot spawn entities,
  * see siblings, write relations, or stamp `engine.schema`, so a schema-version bump used to
@@ -31,6 +31,15 @@
 import type { Entity, EntityKey, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
+import {
+  DefaultCanvasType,
+  ROOT_CANVAS_META_KEY,
+  canvasIdentityOf,
+  canvasPackId,
+  encodeCanvasIdentity,
+  parseCanvasIdentity,
+  sameCanvasIdentity,
+} from "../canvas/define-canvas-type";
 import { ChildOf, StackZ } from "../catalog/scene";
 import { PrefabId } from "../schema/prefab";
 import type { MigrationCtx } from "./migrate";
@@ -38,6 +47,7 @@ import { ENGINE_SCHEMA_VERSION } from "./envelope";
 import type { DocVersionReport } from "./version-gate";
 
 const SCHEMA_PREFIX = "engine.schema.";
+const PACK_PREFIX = "engine.pack.";
 /** Meta key holding the board-root's EntityKey (a VALUE key, unlike the presence markers). */
 const BOARD_ROOT_META = "engine.boardRoot";
 
@@ -126,9 +136,27 @@ function migrateToOrderedRelations(ctx: MigrationCtx): void {
   );
 }
 
+/** Step 2→3: bind every legacy document to the deterministic default CanvasType. */
+function migrateToDurableRootCanvas(ctx: MigrationCtx): void {
+  const identity = canvasIdentityOf(DefaultCanvasType);
+  const encoded = encodeCanvasIdentity(identity);
+  const packMarker = `${PACK_PREFIX}${canvasPackId(identity.id)}.${identity.semanticVersion}`;
+  ctx.store.metaTransaction((meta) => {
+    const existing = meta.get(ROOT_CANVAS_META_KEY);
+    if (existing !== undefined && !sameCanvasIdentity(parseCanvasIdentity(existing), identity)) {
+      throw new Error(
+        `ice: schema 2→3 cannot overwrite conflicting ${ROOT_CANVAS_META_KEY} metadata.`,
+      );
+    }
+    if (existing === undefined) meta.set(ROOT_CANVAS_META_KEY, encoded);
+    if (meta.get(packMarker) === undefined) meta.set(packMarker, true);
+  });
+}
+
 /** Structural steps keyed by the schema version they migrate FROM. */
 const STEPS: Record<number, (ctx: MigrationCtx) => void> = {
   1: migrateToOrderedRelations,
+  2: migrateToDurableRootCanvas,
 };
 
 /**

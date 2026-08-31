@@ -31,7 +31,7 @@ import { createL2Systems, type SpawnProfiles } from "../systems/l2-recognize";
 import { createSelectMoveBehaviors } from "../systems/l3-behave";
 import { createClaimSystems } from "../systems/l3-claim";
 import { createConnectSystems, type WirePreviewBuffer } from "../systems/l3-connect";
-import { createDropSystem } from "../systems/l3-drop";
+import { createDropSystem, type DropPlacementPolicy } from "../systems/l3-drop";
 import { createMarqueeBehavior, type MarqueeBuffer } from "../systems/l3-marquee";
 import { createPortMaterialize } from "../systems/l3-ports";
 import { createResizeBehavior } from "../systems/l3-resize";
@@ -54,6 +54,8 @@ export interface InteractionCoreOpts {
   readonly queue?: InputQueue;
   readonly sink?: CommitSink;
   readonly profiles?: SpawnProfiles;
+  /** Typed Canvas SDK placement truth; omission retains compatibility cells. */
+  readonly placement?: DropPlacementPolicy;
 }
 
 export interface InteractionCore {
@@ -72,7 +74,7 @@ export function installInteractionCore(engine: Engine, opts: InteractionCoreOpts
 
   const l0 = createL0Systems(world, queue);
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
-  const arb = createArbitrationSystems();
+  const arb = createArbitrationSystems(world);
   const claims = createClaimSystems(world);
   const behaviors = createSelectMoveBehaviors(world, sink);
   const cleanup = createCleanupSystems(world);
@@ -144,11 +146,11 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   const { wireSync, wires } = createWireSync(world, index);
   const pick = createPickingSystems(world, index, wires);
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
-  const arb = createArbitrationSystems();
+  const arb = createArbitrationSystems(world);
   const claims = createClaimSystems(world);
   const behaviors = createSelectMoveBehaviors(world, sink);
   const snap = createSnapSystem(world, index);
-  const drop = createDropSystem(world, index);
+  const drop = createDropSystem(world, index, opts.placement);
   const resize = createResizeBehavior(world, sink);
   const marquee = createMarqueeBehavior(world, index);
   const connect = createConnectSystems(world, sink, index, wires);

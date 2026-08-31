@@ -24,7 +24,7 @@
  *   `frozen` ride the resource for T2's departing-plane reflector; T1's camera
  *   math only needs c0/c1.
  */
-import type { TickSystem, World } from "@vibecook/strata-ecs";
+import type { Entity, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineTickSystem, enumOf, field } from "@vibecook/strata-ecs";
 import type { CameraState, PortalAffine } from "@ice/kernel";
 import { capFlightStart, flightCamera, flightOctaves, springStep } from "@ice/kernel";
@@ -48,6 +48,12 @@ export const NavTransition = defineResource("NavTransition", {
   frozen: field("bool", { default: false }),
   /** Bumps on every flight start; T2 distinguishes retarget from resume. */
   epoch: field("u32", { default: 0 }),
+  /** CanvasSession/document identity captured at the authority cut. */
+  documentEpoch: field("u32", { default: 0 }),
+  fromFrame: field("eid", { default: 0 as Entity }),
+  toFrame: field("eid", { default: 0 as Entity }),
+  fromTypeId: field("string", { default: "" }),
+  toTypeId: field("string", { default: "" }),
   /** Response multiplier from octave distance (locked at start; §4). */
   durMul: field("f32", { default: 1 }),
   c0x: field("f64", { default: 0 }),
@@ -60,6 +66,30 @@ export const NavTransition = defineResource("NavTransition", {
   as: field("f64", { default: 1 }),
   aox: field("f64", { default: 0 }),
   aoy: field("f64", { default: 0 }),
+});
+
+export interface NavTransitionIdentity {
+  readonly documentEpoch: number;
+  readonly fromFrame: Entity;
+  readonly toFrame: Entity;
+  readonly fromTypeId: string;
+  readonly toTypeId: string;
+}
+
+const identityFields = (
+  identity: NavTransitionIdentity | undefined,
+): {
+  documentEpoch: number;
+  fromFrame: Entity;
+  toFrame: Entity;
+  fromTypeId: string;
+  toTypeId: string;
+} => ({
+  documentEpoch: identity?.documentEpoch ?? 0,
+  fromFrame: identity?.fromFrame ?? (0 as Entity),
+  toFrame: identity?.toFrame ?? (0 as Entity),
+  fromTypeId: identity?.fromTypeId ?? "",
+  toTypeId: identity?.toTypeId ?? "",
 });
 
 /**
@@ -75,6 +105,7 @@ export function startNavFlight(
   A: PortalAffine,
   exact: CameraState,
   c1: CameraState,
+  identity?: NavTransitionIdentity,
 ): void {
   const vp = world.getResource(Viewport);
   const vpW = vp?.w ?? 0;
@@ -90,6 +121,7 @@ export function startNavFlight(
     v: 0,
     frozen: capped,
     epoch: (prev?.epoch ?? 0) + 1,
+    ...identityFields(identity),
     durMul: 1 + NAV.durationPerOctave * Math.max(0, octaves - NAV.baseOctaves),
     c0x: c0.x,
     c0y: c0.y,
@@ -97,6 +129,37 @@ export function startNavFlight(
     c1x: c1.x,
     c1y: c1.y,
     c1z: c1.zoom,
+    as: A.s,
+    aox: A.ox,
+    aoy: A.oy,
+  });
+}
+
+/** Publish an epoch-bound logical switch even when geometry is deliberately cut. */
+export function publishNavCut(
+  world: World,
+  kind: "enter" | "exit",
+  from: CameraState,
+  to: CameraState,
+  identity?: NavTransitionIdentity,
+  A: PortalAffine = { s: 1, ox: 0, oy: 0 },
+): void {
+  const prev = world.getResource(NavTransition);
+  world.setResource(NavTransition, {
+    active: false,
+    kind,
+    p: 1,
+    v: 0,
+    frozen: false,
+    epoch: (prev?.epoch ?? 0) + 1,
+    ...identityFields(identity),
+    durMul: 1,
+    c0x: from.x,
+    c0y: from.y,
+    c0z: from.zoom,
+    c1x: to.x,
+    c1y: to.y,
+    c1z: to.zoom,
     as: A.s,
     aox: A.ox,
     aoy: A.oy,

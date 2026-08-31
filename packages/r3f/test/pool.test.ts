@@ -86,7 +86,20 @@ describe("RenderTargetPool", () => {
     const pool = new RenderTargetPool(clock.now);
     pool.acquire(5, 10, 10, 1);
     const infos = pool.entryInfos();
-    expect(infos).toEqual([{ key: 5, bytes: 3600, lastUsedMs: 42 }]);
+    expect(infos).toEqual([{ key: 5, bytes: 3600, lastUsedMs: 42, pinned: false }]);
+  });
+
+  it("pins retained targets against release until the exact inverse runs", () => {
+    const pool = new RenderTargetPool(() => 42);
+    const target = pool.acquire(5, 10, 10, 1);
+    const pin = pool.pin([5, 5, 99]);
+    expect(pin.keys).toEqual([5]);
+    expect(pool.entryInfos()[0]?.pinned).toBe(true);
+    expect(pool.release(5)).toBe(false);
+    expect(pool.get(5)).toBe(target);
+    pin.release();
+    pin.release();
+    expect(pool.release(5)).toBe(true);
   });
 
   it("release() disposes the target, removes it, and decrements bytesUsed", () => {

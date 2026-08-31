@@ -198,4 +198,66 @@ describe("cull + mount gates", () => {
     expect(t.entry(a)).toBeUndefined(); // evicted for real
     expect(t.entry(b)).toEqual({ entity: b, hidden: true });
   });
+
+  it("pins a globally capped outgoing set, freezes it synchronously, then resumes LRU exactly once", () => {
+    const t = rig({ keepMounted: 1 });
+    const a = t.spawn(100, 100);
+    const b = t.spawn(300, 100);
+    t.step(3);
+    let notifications = 0;
+    t.runtime.store.subscribe(() => {
+      notifications += 1;
+    });
+
+    const domHold = t.runtime.store.retainForTransition?.([a, b]);
+    if (domHold === undefined) throw new Error("expected transition retention");
+    expect(domHold.entities).toEqual([a]);
+    expect(t.entry(a)).toEqual({ entity: a, hidden: false, frozen: true });
+    expect(notifications).toBe(1); // trusted pre-cut freeze is synchronous
+
+    // A second adapter can share A's slot but cannot grow the global outgoing
+    // union past keepMounted with disjoint B.
+    const glHold = t.runtime.store.retainForTransition?.([a, b]);
+    if (glHold === undefined) throw new Error("expected transition retention");
+    expect(glHold.entities).toEqual([a]);
+
+    t.world.edit(a).set(Position, { x: 100_000, y: 0 });
+    t.world.edit(b).set(Position, { x: 100_000, y: 100_000 });
+    t.step(2);
+    expect(t.entry(a)).toEqual({ entity: a, hidden: false, frozen: true });
+    expect(t.entry(b)).toEqual({ entity: b, hidden: true });
+
+    domHold.release();
+    expect(t.entry(a)?.frozen).toBe(true); // GL still owns the shared pin
+    glHold.release();
+    expect(t.entry(a)).toBeUndefined(); // normal hidden LRU ran immediately
+    expect(t.entry(b)).toEqual({ entity: b, hidden: true });
+    const afterRelease = notifications;
+    glHold.release();
+    domHold.release();
+    expect(notifications).toBe(afterRelease);
+  });
+
+  it("isolates a throwing pre-cut subscriber without stranding the mount hold", () => {
+    const t = rig({ keepMounted: 1 });
+    const entity = t.spawn(100, 100);
+    t.step(3);
+    let laterNotifications = 0;
+    t.runtime.store.subscribe(() => {
+      throw new Error("bad external-store subscriber");
+    });
+    t.runtime.store.subscribe(() => {
+      laterNotifications += 1;
+    });
+
+    const hold = t.runtime.store.retainForTransition?.([entity]);
+    if (hold === undefined) throw new Error("expected transition retention");
+    expect(hold.entities).toEqual([entity]);
+    expect(t.entry(entity)).toEqual({ entity, hidden: false, frozen: true });
+    expect(laterNotifications).toBe(1);
+
+    expect(() => hold.release()).not.toThrow();
+    expect(t.entry(entity)).toEqual({ entity, hidden: false });
+    expect(laterNotifications).toBe(2);
+  });
 });

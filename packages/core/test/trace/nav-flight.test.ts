@@ -26,9 +26,17 @@ import {
   installInteractionStack,
   startNavFlight,
   type Entity,
+  type FrameSwitchRequest,
+  type PreparedFrameSwitch,
 } from "../../src";
 
-function makeRig(opts: { viewport?: boolean } = {}) {
+function makeRig(
+  opts: {
+    viewport?: boolean;
+    prepareTransition?: (request: FrameSwitchRequest) => PreparedFrameSwitch;
+    onSwitch?: (frame: Entity | undefined, depth: number, restoreTool?: string) => void;
+  } = {},
+) {
   const world = createWorld();
   const engine = createEngine(world);
   const sink = createRecordingCommitSink();
@@ -39,6 +47,10 @@ function makeRig(opts: { viewport?: boolean } = {}) {
   const nav = createNestedCanvas(world, {
     index: stack.index,
     clearSpatialCaches: () => stack.clearCaches(),
+    ...(opts.prepareTransition === undefined
+      ? {}
+      : { prepareTransition: opts.prepareTransition }),
+    ...(opts.onSwitch === undefined ? {} : { onSwitch: opts.onSwitch }),
   });
   engine.addSystems("react", nav.navIntegrity);
   engine.addSystems("derive", nav.activeMembership);
@@ -114,6 +126,32 @@ describe("trace: nav flight (design-006 T1)", () => {
     headless.nav.enterContainer(f2); // default transition, but nothing to fly on
     expect(headless.world.getResource(NavTransition)?.active ?? false).toBe(false);
     expect(headless.nav.depth()).toBe(1);
+  });
+
+  it("releases prepared presentation as a fault when onSwitch throws after the cut", () => {
+    const releases: string[] = [];
+    let commits = 0;
+    const rig = makeRig({
+      prepareTransition: () => ({
+        complete: true,
+        allowFlight: true,
+        commit: () => {
+          commits += 1;
+        },
+        cancel: (reason = "cancelled") => releases.push(reason),
+      }),
+      onSwitch: () => {
+        throw new Error("session publication fault");
+      },
+    });
+    const folder = rig.spawnBox(300, 100, { container: true });
+    rig.spawnBox(10, 10, { parent: folder });
+    rig.step(2);
+
+    expect(() => rig.nav.enterContainer(folder)).toThrow(/session publication fault/);
+    expect(rig.nav.depth()).toBe(1);
+    expect(commits).toBe(0);
+    expect(releases).toEqual(["fault"]);
   });
 
   it("exitTo pops multi-level in ONE flight; the cut is instant, the landing is the saved root camera", () => {

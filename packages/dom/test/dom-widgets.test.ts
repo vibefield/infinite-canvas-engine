@@ -20,7 +20,9 @@ import {
   defineWidget,
   writeRuntimeResource,
   type Entity,
+  type FrameSwitchDescriptor,
   type MountEntry,
+  type PresentationTransitionFrame,
   type World,
 } from "@ice/core";
 import { describe, expect, it } from "vitest";
@@ -30,18 +32,55 @@ import { createDomWidgetsReflector } from "../src/reflectors/dom-widgets";
 
 /** Minimal WidgetMountStore: snapshot identity changes only when the test replaces it. */
 function fakeStore() {
+  let base: readonly MountEntry[] = [];
   let snapshot: readonly MountEntry[] = [];
+  const held = new Map<Entity, number>();
   const listeners = new Set<() => void>();
+  const rebuild = () => {
+    snapshot = base.map((entry) =>
+      (held.get(entry.entity) ?? 0) > 0
+        ? { entity: entry.entity, hidden: false, frozen: true }
+        : entry,
+    );
+  };
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
   return {
     subscribe(l: () => void) {
       listeners.add(l);
       return () => listeners.delete(l);
     },
     getSnapshot: () => snapshot,
+    heldCount: () => held.size,
+    listenerCount: () => listeners.size,
     /** Test control — replace the snapshot (new identity) and notify. */
     set(entries: readonly MountEntry[]) {
-      snapshot = entries;
-      for (const l of listeners) l();
+      base = entries;
+      rebuild();
+      notify();
+    },
+    retainForTransition(entities: readonly Entity[]) {
+      const mounted = new Set(base.map((entry) => entry.entity));
+      const retained = [...new Set(entities)].filter((entity) => mounted.has(entity));
+      for (const entity of retained) held.set(entity, (held.get(entity) ?? 0) + 1);
+      rebuild();
+      notify();
+      let released = false;
+      return {
+        entities: Object.freeze(retained),
+        release() {
+          if (released) return;
+          released = true;
+          for (const entity of retained) {
+            const refs = held.get(entity) ?? 0;
+            if (refs <= 1) held.delete(entity);
+            else held.set(entity, refs - 1);
+          }
+          rebuild();
+          notify();
+        },
+      };
     },
   };
 }
@@ -440,5 +479,208 @@ describe("within-plane stacking = the frame's ChildOf sibling sequence (petition
     hostA.blur();
     engine.step(2);
     expect(order(planes.content)).toEqual([String(b), String(a)]);
+  });
+
+  it("pre-cut retains real hosts in an inert plane, blurs focus, and restores hidden truth exactly", () => {
+    const { world, engine, planes, store, reflector } = setup();
+    const entity = spawnBox(world, 20, 30, 100, 80);
+    store.set([{ entity, hidden: false }]);
+    engine.step(0);
+    const content = reflector.hostFor(entity) as HTMLElement;
+    const widgetHost = content.parentElement as HTMLElement;
+    const input = document.createElement("input");
+    content.appendChild(input);
+    let planeExistedDuringBlur = false;
+    input.addEventListener("blur", () => {
+      planeExistedDuringBlur =
+        planes.content.parentElement?.querySelector("[data-ice-departing-dom]") !== null;
+    });
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    const descriptor = Object.freeze({
+      kind: "enter" as const,
+      documentEpoch: 1,
+      fromFrame: 1 as Entity,
+      toFrame: 2 as Entity,
+      fromTypeId: "board",
+      toTypeId: "whiteboard",
+      fromCamera: { x: 10, y: 15, zoom: 1 },
+      toCamera: { x: 100, y: 120, zoom: 2 },
+      affine: { s: 0.5, ox: 25, oy: 30 },
+      requestedMotion: true,
+      requiresFullT2: true,
+      requiredPlanes: ["dom"] as const,
+    }) satisfies FrameSwitchDescriptor;
+    const retainer = reflector.transitionAdapter().prepare(descriptor);
+    if (retainer === null) throw new Error("expected a retained DOM plane");
+
+    const departing = planes.content.parentElement?.querySelector(
+      "[data-ice-departing-dom]",
+    ) as HTMLElement | null;
+    expect(departing).not.toBeNull();
+    expect(departing?.getAttribute("aria-hidden")).toBe("true");
+    expect(departing?.hasAttribute("inert")).toBe(true);
+    expect(departing?.style.pointerEvents).toBe("none");
+    expect(departing?.contains(widgetHost)).toBe(true);
+    expect(document.activeElement).not.toBe(input);
+    expect(planeExistedDuringBlur).toBe(false);
+
+    const frame = Object.freeze({
+      epoch: 1,
+      descriptor,
+      motion: "flight" as const,
+      camera: { x: 50, y: 60, zoom: 1.5 },
+      outgoingCamera: { x: 4, y: 5, zoom: 2 },
+      progress: 0.5,
+      outgoingOpacity: 0.4,
+      incomingOpacity: 0.35,
+      frozen: false,
+    }) satisfies PresentationTransitionFrame;
+    retainer.update(frame);
+    expect(departing?.style.transform).toBe("translate(-8px, -10px) scale(2)");
+    expect(departing?.style.opacity).toBe("0.4");
+    expect(planes.content.style.opacity).toBe("0.35");
+    expect(planes.lifted.style.opacity).toBe("0.35");
+
+    // The authority cut can hide the live entry while its held presentation
+    // remains visible. Release restores the latest store truth, not stale
+    // pre-cut visibility.
+    store.set([{ entity, hidden: true }]);
+    expect(store.getSnapshot()[0]).toMatchObject({ hidden: false, frozen: true });
+    retainer.release("settled");
+    expect(departing?.isConnected).toBe(false);
+    expect(widgetHost.parentElement).toBe(planes.content);
+    expect(widgetHost.style.display).toBe("none");
+    expect(planes.content.style.opacity).toBe("");
+    expect(planes.lifted.style.opacity).toBe("");
+    retainer.release("settled");
+  });
+
+  it("rolls back its mount hold when the host plane is detached during preparation", () => {
+    const { world, engine, planes, store, reflector } = setup();
+    const entity = spawnBox(world, 20, 30, 100, 80);
+    store.set([{ entity, hidden: false }]);
+    engine.step(0);
+    const widgetHost = (reflector.hostFor(entity) as HTMLElement).parentElement as HTMLElement;
+    planes.content.remove();
+    const descriptor = Object.freeze({
+      kind: "enter" as const,
+      documentEpoch: 1,
+      fromFrame: 1 as Entity,
+      toFrame: 2 as Entity,
+      fromTypeId: "board",
+      toTypeId: "whiteboard",
+      fromCamera: { x: 0, y: 0, zoom: 1 },
+      toCamera: { x: 10, y: 10, zoom: 2 },
+      affine: { s: 0.5, ox: 5, oy: 5 },
+      requestedMotion: true,
+      requiresFullT2: true,
+      requiredPlanes: ["dom"] as const,
+    }) satisfies FrameSwitchDescriptor;
+
+    expect(() => reflector.transitionAdapter().prepare(descriptor)).toThrow(/detached content plane/);
+    expect(widgetHost.parentElement).toBe(planes.content);
+    expect(store.getSnapshot()).toEqual([{ entity, hidden: false }]);
+  });
+
+  it("does not let a stale outer prepare steal hosts captured by a re-entrant hold subscriber", () => {
+    const { world, engine, planes, store, reflector } = setup();
+    const entity = spawnBox(world, 20, 30, 100, 80);
+    store.set([{ entity, hidden: false }]);
+    engine.step(0);
+    const widgetHost = (reflector.hostFor(entity) as HTMLElement).parentElement as HTMLElement;
+    const descriptor = Object.freeze({
+      kind: "enter" as const,
+      documentEpoch: 1,
+      fromFrame: 1 as Entity,
+      toFrame: 2 as Entity,
+      fromTypeId: "board",
+      toTypeId: "whiteboard",
+      fromCamera: { x: 0, y: 0, zoom: 1 },
+      toCamera: { x: 10, y: 10, zoom: 2 },
+      affine: { s: 0.5, ox: 5, oy: 5 },
+      requestedMotion: true,
+      requiresFullT2: true,
+      requiredPlanes: ["dom"] as const,
+    }) satisfies FrameSwitchDescriptor;
+    const adapter = reflector.transitionAdapter();
+    let reentered = false;
+    let inner: ReturnType<typeof adapter.prepare> | undefined;
+    store.subscribe(() => {
+      if (reentered) return;
+      reentered = true;
+      inner = adapter.prepare(descriptor);
+    });
+
+    const outer = adapter.prepare(descriptor);
+
+    expect(outer).toBeNull();
+    expect(inner).not.toBeNull();
+    const departing = planes.content.parentElement?.querySelector(
+      "[data-ice-departing-dom]",
+    );
+    expect(departing?.contains(widgetHost)).toBe(true);
+    inner?.release("cancelled");
+    expect(widgetHost.parentElement).toBe(planes.content);
+  });
+
+  it("leaves no held mounts or departing planes after 200 rapid release paths", () => {
+    const { world, engine, planes, store, reflector } = setup();
+    const entities = [
+      spawnBox(world, 0, 0, 80, 60),
+      spawnBox(world, 100, 0, 80, 60),
+      spawnBox(world, 200, 0, 80, 60),
+    ];
+    store.set(entities.map((entity) => ({ entity, hidden: false })));
+    engine.step(0);
+    const descriptor = Object.freeze({
+      kind: "enter" as const,
+      documentEpoch: 1,
+      fromFrame: 1 as Entity,
+      toFrame: 2 as Entity,
+      fromTypeId: "board",
+      toTypeId: "whiteboard",
+      fromCamera: { x: 0, y: 0, zoom: 1 },
+      toCamera: { x: 10, y: 20, zoom: 2 },
+      affine: { s: 0.5, ox: 25, oy: 30 },
+      requestedMotion: true,
+      requiresFullT2: true,
+      requiredPlanes: ["dom"] as const,
+    }) satisfies FrameSwitchDescriptor;
+    const adapter = reflector.transitionAdapter();
+
+    for (let i = 0; i < 200; i += 1) {
+      const retainer = adapter.prepare(descriptor);
+      if (retainer === null) throw new Error(`missing DOM retainer at cycle ${i}`);
+      retainer.update({
+        epoch: i + 1,
+        descriptor,
+        motion: "flight",
+        camera: descriptor.toCamera,
+        outgoingCamera: descriptor.fromCamera,
+        progress: 0.5,
+        outgoingOpacity: 0.5,
+        incomingOpacity: 0.5,
+        frozen: false,
+      });
+      expect(store.heldCount()).toBe(entities.length);
+      expect(document.querySelectorAll("[data-ice-departing-dom]")).toHaveLength(1);
+      retainer.release(i % 3 === 0 ? "cancelled" : i % 3 === 1 ? "interrupted" : "settled");
+      retainer.release("settled");
+
+      expect(store.heldCount()).toBe(0);
+      expect(document.querySelectorAll("[data-ice-departing-dom]")).toHaveLength(0);
+      expect(planes.content.children).toHaveLength(entities.length);
+      expect(planes.content.style.opacity).toBe("");
+      expect(planes.lifted.style.opacity).toBe("");
+      expect(reflector.hostCount()).toBe(entities.length);
+    }
+
+    // The reflector polls immutable snapshot identity in its cheap always
+    // flush; it must never add an external-store listener of its own.
+    expect(store.listenerCount()).toBe(0);
+    reflector.dispose();
+    expect(store.listenerCount()).toBe(0);
   });
 });

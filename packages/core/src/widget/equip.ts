@@ -10,10 +10,11 @@
  *
  * This generalizes the graybox demo's equipSceneBoxes into the engine.
  */
-import { Not, defineQuery, defineSystem, type Component, type System } from "@vibecook/strata-ecs";
+import { Not, defineQuery, defineSystem, type Component, type System, type World } from "@vibecook/strata-ecs";
 import type { AnyBehaviorDef } from "../behavior/types";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 import { PrefabId } from "../schema/prefab";
-import { WidgetEquipped, widgets } from "./define-widget";
+import { WidgetEquipped } from "./define-widget";
 
 /** Defaults ∪ the declared pre-attach data, serialized for the cell. */
 function runtimeBehaviorCell(b: AnyBehaviorDef, data: Readonly<Record<string, unknown>>): Record<string, unknown> {
@@ -27,14 +28,14 @@ function runtimeBehaviorCell(b: AnyBehaviorDef, data: Readonly<Record<string, un
 
 const unequippedQ = defineQuery([PrefabId, Not(WidgetEquipped)]);
 
-export function createWidgetEquipSystem(): System {
+export function createWidgetEquipSystem(world: World): System {
   return defineSystem(
     unequippedQ,
     (b, ctx) => {
       for (const r of b) {
         const e = b.entity(r);
         const type = ctx.read(e, PrefabId).id;
-        const widget = typeof type === "string" ? widgets.get(type) : undefined;
+        const widget = typeof type === "string" ? widgetTypeFor(world, type) : undefined;
         // Non-widget prefabs still get the Equipped mark so this row never
         // re-scans; widgets get their capability tags.
         if (widget !== undefined) {
