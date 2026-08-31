@@ -242,6 +242,22 @@ export function freeRect(page: ShelfPage, rect: Rect): boolean {
   const shelf = page.shelves.find((s) => s.y === rect.y);
   if (shelf === undefined) return false;
   const g = page.gutter;
+  // ALREADY FREE. The doc above has always promised `false` for a rect this
+  // page no longer holds, and the shelf lookup alone cannot tell: a second
+  // free of the same rect finds the same shelf, subtracts its area a second
+  // time — `usedArea` goes negative, and every waste ratio derived from it
+  // goes with it — and pushes a duplicate hole that coalescing then hands out
+  // as space twice. Two cheap checks decide it, and both are properties of a
+  // LIVE rect: it lies inside the shelf's occupied band, and it is not inside
+  // a hole.
+  if (rect.x + rect.width + g > shelf.cursorX) return false;
+  if (
+    page.holes.some(
+      (h) => h.y === shelf.y && rect.x >= h.x && rect.x + rect.width <= h.x + h.width,
+    )
+  ) {
+    return false;
+  }
   page.usedArea -= rect.width * rect.height;
 
   if (rect.x + rect.width + g === shelf.cursorX) {

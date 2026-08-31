@@ -177,6 +177,40 @@ describe("freeRect — holes, cursor retraction, coalescing", () => {
     expect(freeRect(page, { x: G, y: 900, width: 100, height: 100 })).toBe(false);
   });
 
+  it("refuses a SECOND free of the same interior rect, accounting intact", () => {
+    // The caller's bookkeeping is wrong either way; the page must not make it
+    // worse. Unguarded, this subtracted the area twice and pushed a second
+    // hole over the first — space the packer would then hand out twice.
+    const page = createShelfPage(1024, 1024);
+    packRect(page, sq(100));
+    const b = packRect(page, sq(100)) as Rect;
+    packRect(page, sq(100));
+    expect(freeRect(page, b)).toBe(true);
+    const holes = page.holes.map((h) => ({ ...h }));
+    const used = page.usedArea;
+
+    expect(freeRect(page, b)).toBe(false);
+    expect(page.usedArea).toBe(used);
+    expect(page.holes).toEqual(holes);
+    // …and the space is still handed out exactly once.
+    expect(packRect(page, sq(100))?.x).toBe(b.x);
+    expect(packRect(page, sq(100))?.x).not.toBe(b.x);
+  });
+
+  it("refuses a SECOND free of the tail rect, cursor intact", () => {
+    const page = createShelfPage(1024, 1024);
+    packRect(page, sq(100));
+    const b = packRect(page, sq(100)) as Rect;
+    expect(freeRect(page, b)).toBe(true);
+    const cursor = page.shelves[0]?.cursorX;
+    const used = page.usedArea;
+
+    expect(freeRect(page, b)).toBe(false);
+    expect(page.shelves[0]?.cursorX).toBe(cursor);
+    expect(page.usedArea).toBe(used);
+    expect(page.holes).toHaveLength(0);
+  });
+
   it("reuses a hole before extending into fresh space", () => {
     const page = createShelfPage(1024, 1024);
     packRect(page, sq(100));
