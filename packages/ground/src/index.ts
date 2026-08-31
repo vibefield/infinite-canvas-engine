@@ -96,6 +96,21 @@ export {
   type SnapGuidesConfig,
   type WiresConfig,
 } from "@ice/core";
+// The atlas-slot allocator for dom sources (design-012 §11 Q3). Pure logic
+// over kernel shelf math with every effect injected — wave-2 binds it to the
+// device; it names no GPU, HiC or DOM symbol.
+export {
+  createAtlasAllocator,
+  type AtlasAllocator,
+  type AtlasAllocatorOptions,
+  type AtlasEffects,
+  type AtlasMove,
+  type AtlasPageView,
+  type AtlasRepackPlan,
+  type AtlasSlot,
+  type AtlasWasteReport,
+  type SlotResidency,
+} from "./atlas-allocator";
 
 export interface GroundContext {
   readonly host: GroundLayerHost;
