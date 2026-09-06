@@ -191,6 +191,14 @@ export interface LayerWasteReport {
 
 export interface LayerAllocator {
   /**
+   * The side of every layer, in device px. Exposed because the Residency
+   * system's byte budget counts a layer as `layerSize² × bytesPerPixel` from
+   * its first allocation, and a second copy of this number living in the
+   * system's options is the "two writers of one number" class (§7) waiting to
+   * happen.
+   */
+  readonly layerSize: number;
+  /**
    * Place a slot. `null` when the size does not `fits()` (no layer is opened —
    * the caller is expected to have checked, and to take an `own` texture
    * instead, §9 Q10's oversize rule), or when no live layer has room and
@@ -315,6 +323,8 @@ export function createLayerAllocator(options: LayerAllocatorOptions = {}): Layer
   }
 
   return {
+    layerSize,
+
     allocate(key, size) {
       if (!fitsSize(size)) return null;
       const held = slots.get(key);

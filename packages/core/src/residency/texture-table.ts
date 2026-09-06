@@ -57,14 +57,13 @@
  * would rot.
  */
 import type { Entity } from "@vibecook/strata-ecs";
+import { NO_TEXTURE } from "../catalog/surface";
 import { DEFAULT_LAYER_SIZE } from "./layer-allocator";
 
-// TODO(A2 part 2): once A1a has landed, delete this local constant and
-// `import { NO_TEXTURE } from "../catalog/surface"` instead — the catalog is
-// its home (D2). Keep it UNEXPORTED either way: `core/index.ts` re-exports both
-// the catalog and this module with `export *`, and two exported bindings of one
-// name collide there.
-const NO_TEXTURE = 0;
+// `NO_TEXTURE` is the catalog's (A1a, design-013 D2) — the sentinel belongs
+// beside the component whose field it sentinels. It is imported and NOT
+// re-exported: `core/index.ts` re-exports both the catalog and this module with
+// `export *`, and two exported bindings of one name collide there.
 
 /** A u32 handle into the table, counting from 1. `0` means no destination. */
 export type TextureHandle = number;
