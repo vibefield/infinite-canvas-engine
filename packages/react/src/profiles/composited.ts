@@ -75,6 +75,11 @@ export const compositedProfile: PresentationProfile = {
   install(ctx) {
     // `ctx.engine` is the FACADE; the phase-group registry lives on the raw
     // engine it wraps.
-    return installSurfaceInfra(ctx.engine.engine);
+    // Residency too (design-013 A2, plan §2 A2.4): the facts in the world are
+    // complete only with `TextureRef`, and the system's budget is the
+    // placeholder default until B3 measures one. Nothing reads `TextureRef`
+    // before B3; installing it here is what makes the S6 witness and the real
+    // app run the allocator under live frames rather than only under vitest.
+    return installSurfaceInfra(ctx.engine.engine, { residency: {} });
   },
 };

@@ -406,7 +406,10 @@ export function mountCompositedApp(): AppRig {
   const behaviors = createBehaviorRuntime({ world, engine });
   registerStandardSurfaceBehaviors(behaviors);
   // Band + Demand, in `present:infra`, after every kind behaviour has spoken.
-  installSurfaceInfra(engine);
+  // With Residency (design-013 A2): the S6 drag now allocates a slot on the
+  // promote and frees it at the demotion, under real frames. No pixel reads it
+  // before B3 — a throw in the system is what this would catch.
+  installSurfaceInfra(engine, { residency: {} });
 
   const gpuCanvas = document.createElement("canvas");
   gpuCanvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;";
