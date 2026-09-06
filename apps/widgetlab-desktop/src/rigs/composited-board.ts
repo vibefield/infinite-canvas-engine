@@ -38,6 +38,8 @@ import {
   Opacity,
   Position,
   Size,
+  SurfaceKind,
+  SurfaceTarget,
   type SurfaceDemandValue,
   Viewport,
   acquireCompositorDevice,
@@ -65,7 +67,6 @@ import {
   createDomWidgetsReflector,
   createDomWritebackReflector,
   createPlanes,
-  createPresentationRegistry,
   createSourceCanvas,
   type DomWritebackHosts,
 } from "@ice/dom";
@@ -228,7 +229,6 @@ export function mountBoardRig(): BoardRig {
   const host = createCanvasHost(container);
   const planes = createPlanes(host);
   const store = makeStore();
-  const presentation = createPresentationRegistry();
   const sources = createCompositorSourceRegistry();
 
   // L0's canvas goes in FIRST so it paints under the content plane; in the
@@ -297,7 +297,7 @@ export function mountBoardRig(): BoardRig {
     { contentPlane: planes.content, liftedPlane: planes.lifted, sourceCanvas: l1.canvas },
     world,
     store,
-    { presentation, sources },
+    { sources },
   );
   const hostsSeam: DomWritebackHosts = {
     hostElementFor: (e) => domWidgets.hostElementFor(e),
@@ -399,6 +399,13 @@ export function mountBoardRig(): BoardRig {
         components: [
           [Position, { x: MARGIN + col * (CARD_W + GAP), y: MARGIN + row * (CARD_H + GAP) }],
           [Size, { w: CARD_W, h: CARD_H }],
+          // The two facts `domWidgets` reads to place a host (design-013 §5).
+          // `widgetEquip` stamps these on a real widget; this rig spawns bare
+          // entities into a hand-rolled store, so it stamps them itself. It
+          // needs no kind behaviour: the ARM is the variable here, written by
+          // `run()` below, and a behaviour would be a second writer of it.
+          [SurfaceKind, { kind: "dom" }],
+          [SurfaceTarget, { target: "dom" }],
         ],
       });
       cards.push({ entity, title: `CARD ${String(i).padStart(2, "0")}` });
@@ -996,7 +1003,12 @@ export function mountBoardRig(): BoardRig {
     async run(variant, n = 12, text = true) {
       await ready;
       spawn(n);
-      for (const c of cards) presentation.set(c.entity, variant === "composited" ? "composited" : "live-dom");
+      // The ARM, written straight onto the world — rig setup, outside the
+      // tick, which is legal (the one-writer law binds systems, and no kind
+      // behaviour is attached here precisely so this rig owns the fact).
+      for (const c of cards) {
+        world.edit(c.entity).set(SurfaceTarget, { target: variant === "composited" ? "gpu" : "dom" });
+      }
       await settle();
       // Fill each host's portal target once — the same nodes in both arms.
       for (const [i, c] of cards.entries()) {

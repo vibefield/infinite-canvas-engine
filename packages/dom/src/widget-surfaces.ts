@@ -18,34 +18,45 @@
  * answered `undefined` for every live-dom widget on the board, which is most
  * of them at rest.
  *
- * ── WHERE THE TWO PROFILES ACTUALLY DIFFER ────────────────────────────────
- * Only in the presentation answer, and only because one of them has a choice:
+ * ── ERRATA 2026-09-06 (A1b, design-013 §5) ────────────────────────────────
+ * This header used to say the profiles differ because "COMPOSITED reads the
+ * live `PresentationRegistry` — the ONE door `setPresentation` writes", and
+ * this module exported `declaredPresentation`, `presentationPinned` and
+ * `widgetPresentationPins` for the policy that drove it. The registry, the
+ * policy and the `defineWidget({ presentation })` declaration behind those
+ * three are DELETED. Where a card presents is the world's `SurfaceTarget`,
+ * written by the entity's kind behaviour and read through `effectiveTarget`.
  *
- *  - COMPOSITED reads the live `PresentationRegistry` — the ONE door
- *    `setPresentation` writes, which policy drives and pins fix.
- *  - STRATIFIED derives it from the kind, because there is nothing to read: a
- *    dom widget's pixels come from a natively painted P1 host (`live-dom`) and
- *    a gl widget's from a P2 island texture (`composited`). Neither can change
- *    at runtime — the profile has no promotion — so a registry would be a map
- *    that never has an entry in it. `picture` never appears: the far-zoom LOD
- *    and tray tiers are design-004 §11's recorded vNext, unbuilt in that
- *    profile, and reporting a mode it cannot enter would be a lie the type
- *    system would happily carry.
+ * ── WHERE THE TWO PROFILES ACTUALLY DIFFER ────────────────────────────────
+ * Only in the target answer, and only because one of them has a choice:
+ *
+ *  - COMPOSITED reads the world's `SurfaceTarget` — the kind behaviour's
+ *    choice, which a grab moves and a settle window moves back.
+ *  - STRATIFIED derives it from the KIND, because it has no promotion to
+ *    read: a dom widget's pixels come from a natively painted P1 host and a
+ *    gl widget's from a P2 island texture, and neither changes at runtime.
+ *    That is `effectiveTarget(kind, "dom")` — the same coercion every reader
+ *    goes through, applied to equip's own resting default — so the two
+ *    profiles cannot drift about what a kind rests on. The standard
+ *    behaviours DO still run in a stratified app and still write
+ *    `SurfaceTarget` on a grab; nothing there observes it, and this view
+ *    deliberately does not report a promotion the profile cannot perform.
  */
 import {
+  PAUSED_SURFACE_DEMAND,
   PrefabId,
+  SurfaceDemand,
+  SurfaceKind,
+  SurfaceTarget,
   createWidgetSurfaceView,
-  resolveSurfacePresentation,
+  effectiveTarget,
   widgets,
   type Entity,
-  type ResolvedSurfacePresentation,
   type SurfaceDemandValue,
   type SurfaceKindValue,
-  type SurfacePresentation,
   type WidgetSurfaceView,
   type World,
 } from "@ice/core";
-import { DEFAULT_PRESENTATION, type PresentationRegistry } from "./presentation-mode";
 
 /**
  * The widget type behind an entity, or `undefined` for anything that is not a
@@ -62,37 +73,32 @@ export function widgetSurfaceKind(world: World, entity: Entity): SurfaceKindValu
 }
 
 /**
- * What this entity's TYPE declared about presentation — the compiled
- * `defineWidget({ presentation })`, resolved against its kind.
+ * The entity's kind as the WORLD holds it, defaulting to `dom`.
  *
- * `undefined` for a non-widget entity. A widget that declared nothing still
- * gets an answer (the Q5 default for its kind, `pin: undefined`), because
- * "declared nothing" and "declared the default" must behave identically —
- * every widget on a board is in the first case and the policy may not have two
- * paths through it.
+ * `SurfaceKind` is stamped at equip, so an entity that has not been equipped —
+ * or is not a widget at all — carries none. `dom` is the honest default there:
+ * it is the one kind `effectiveTarget` lets choose, so a bare entity keeps the
+ * behaviour it always had, and no reader has to invent its own fallback.
  */
-export function declaredPresentation(
-  world: World,
-  entity: Entity,
-): ResolvedSurfacePresentation | undefined {
-  return widgetTypeOf(world, entity)?.presentation;
+function kindInWorld(world: World, entity: Entity): "dom" | "gl" | "video" {
+  const kind = world.get(entity, SurfaceKind)?.kind;
+  return kind === "gl" || kind === "video" ? kind : "dom";
 }
 
-/**
- * Is this entity's presentation PINNED by its widget type?
- *
- * Shaped for `createPresentationPolicy({ pinned })`, which is the one consumer:
- * policy skips a pinned entity on both edges — it neither promotes it on grab
- * nor demotes it after the settle window — so a pin holds through a whole
- * gesture rather than being restored after one.
- */
-export function presentationPinned(world: World, entity: Entity): boolean {
-  return declaredPresentation(world, entity)?.pin !== undefined;
+/** The declared target as the world holds it; equip's `dom` when unstamped. */
+function targetInWorld(world: World, entity: Entity): "dom" | "gpu" {
+  return world.get(entity, SurfaceTarget)?.target === "gpu" ? "gpu" : "dom";
 }
 
-/** `pinned` for a world, curried — `createPresentationPolicy({ pinned: … })`. */
-export function widgetPresentationPins(world: World): (entity: Entity) => boolean {
-  return (entity) => presentationPinned(world, entity);
+/** The CLAMP as the world holds it; equip's paused default when unstamped. */
+function demandInWorld(world: World, entity: Entity): SurfaceDemandValue {
+  const cell = world.get(entity, SurfaceDemand);
+  if (cell === undefined) return PAUSED_SURFACE_DEMAND;
+  return {
+    mode: cell.mode === "live" ? "live" : "paused",
+    fpsBucket: cell.fpsBucket as SurfaceDemandValue["fpsBucket"],
+    interactive: cell.interactive,
+  };
 }
 
 export interface WidgetSurfaceDemandSeam {
@@ -102,19 +108,23 @@ export interface WidgetSurfaceDemandSeam {
   readonly requestDemand?: (entity: Entity, demand: SurfaceDemandValue) => void;
 }
 
-export interface CompositedSurfacesOptions extends WidgetSurfaceDemandSeam {
+export interface CompositedSurfacesOptions extends Partial<WidgetSurfaceDemandSeam> {
   readonly world: World;
-  /** The live mode registry — the ONE `setPresentation` door's state. */
-  readonly presentation: PresentationRegistry;
 }
 
-/** The composited profile's answers: presentation is read, never derived. */
+/**
+ * The composited profile's answers: the target is READ from the world, never
+ * derived, and the demand is the CLAMP the Demand system wrote rather than an
+ * app callback. `demandOf` stays overridable for a host that throttles from
+ * somewhere else; omitted, the world answers.
+ */
 export function compositedSurfaces(opts: CompositedSurfacesOptions): WidgetSurfaceView {
-  const { world, presentation } = opts;
+  const { world } = opts;
+  const demandOf = opts.demandOf ?? ((entity: Entity) => demandInWorld(world, entity));
   return createWidgetSurfaceView({
     kindOf: (entity) => widgetSurfaceKind(world, entity),
-    presentationOf: (entity) => presentation.get(entity),
-    demandOf: opts.demandOf,
+    targetOf: (entity) => effectiveTarget(kindInWorld(world, entity), targetInWorld(world, entity)),
+    demandOf,
     ...(opts.requestDemand !== undefined ? { requestDemand: opts.requestDemand } : {}),
   });
 }
@@ -124,25 +134,16 @@ export interface StratifiedSurfacesOptions extends WidgetSurfaceDemandSeam {
 }
 
 /**
- * The stratified profile's answers: presentation is DERIVED from the kind.
- *
- * `resolveSurfacePresentation(kind, undefined)` is reused rather than a literal
- * so the two profiles cannot drift apart on what a kind's resting mode is —
- * the same function that gives a composited dom widget its `live-dom` default
- * is what tells this profile a P1 host paints natively. A declared `default`
- * or `pin` is deliberately NOT consulted: this profile cannot honour one, and
- * reporting a pin it will not act on is worse than reporting the truth.
+ * The stratified profile's answers: the target is DERIVED from the kind (see
+ * the header). It keeps its app-supplied demand seam — this profile has no
+ * compositor to clamp for, so what throttles a self-animating card is the
+ * app's business, exactly as it was.
  */
 export function stratifiedSurfaces(opts: StratifiedSurfacesOptions): WidgetSurfaceView {
   const { world } = opts;
   return createWidgetSurfaceView({
     kindOf: (entity) => widgetSurfaceKind(world, entity),
-    presentationOf: (entity) => {
-      const kind = widgetSurfaceKind(world, entity);
-      return kind === undefined
-        ? DEFAULT_PRESENTATION
-        : (resolveSurfacePresentation(kind, undefined).default satisfies SurfacePresentation);
-    },
+    targetOf: (entity) => effectiveTarget(kindInWorld(world, entity), "dom"),
     demandOf: opts.demandOf,
     ...(opts.requestDemand !== undefined ? { requestDemand: opts.requestDemand } : {}),
   });

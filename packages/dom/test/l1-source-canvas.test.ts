@@ -25,6 +25,8 @@ import {
   Position,
   PrefabId,
   Size,
+  SurfaceKind,
+  SurfaceTarget,
   Viewport,
   createCompositorSourceRegistry,
   createEngine,
@@ -36,7 +38,6 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { createCanvasHost } from "../src/host";
 import { createPlanes } from "../src/planes";
-import { createPresentationRegistry } from "../src/presentation-mode";
 import { createDomWidgetsReflector } from "../src/reflectors/dom-widgets";
 import {
   createDomWritebackReflector,
@@ -45,15 +46,14 @@ import {
 import { createSourceCanvas, type SourceCanvasEffects } from "../src/source-canvas";
 
 // Module scope: the widget registry is process-global and these names are
-// file-unique. Three declarations the seeding step has to tell apart.
-defineWidget({
-  type: "l1:pinned-composited",
-  surface: "dom",
-  component: null,
-  presentation: { pin: "composited" },
-});
+// file-unique. Two declarations the placement decision has to tell apart.
 defineWidget({ type: "l1:plain", surface: "dom", component: null });
 defineWidget({ type: "l1:island", surface: "gl", component: null });
+
+function setTarget(world: ReturnType<typeof createWorld>, e: Entity, target: "dom" | "gpu"): void {
+  if (world.has(e, SurfaceTarget)) world.edit(e).set(SurfaceTarget, { target });
+  else world.addComponent(e, SurfaceTarget, { target });
+}
 
 /** Minimal WidgetMountStore (the reflector consumes only these two methods). */
 function fakeStore() {
@@ -113,7 +113,6 @@ function setup(options: { withCanvas?: boolean } = {}) {
   const world = createWorld();
   const engine = createEngine(world);
   const store = fakeStore();
-  const presentation = createPresentationRegistry();
   const sources = createCompositorSourceRegistry();
   const hic = fakeEffects();
   const dirty: Array<readonly Element[]> = [];
@@ -128,10 +127,21 @@ function setup(options: { withCanvas?: boolean } = {}) {
     },
     world,
     store,
-    { presentation, sources },
+    { sources },
   );
   engine.registerReflector(reflector);
-  return { container, world, engine, planes, store, reflector, presentation, sources, l1, hic, dirty };
+  /**
+   * The kind behaviour's write, by hand — these tests drive the REFLECTOR, so
+   * they stand in for the behaviour that owns `SurfaceTarget` (design-013 §5).
+   * `addComponent` on first use is what `widgetEquip` would have done at
+   * projection; after that it is a value write, as the law requires.
+   */
+  const surface = {
+    promote: (e: Entity) => setTarget(world, e, "gpu"),
+    demote: (e: Entity) => setTarget(world, e, "dom"),
+    target: (e: Entity) => world.get(e, SurfaceTarget)?.target,
+  };
+  return { container, world, engine, planes, store, reflector, surface, sources, l1, hic, dirty };
 }
 
 const spawnBox = (
@@ -237,79 +247,60 @@ describe("the L1 source canvas", () => {
   });
 });
 
-describe("presentation mode — the one door", () => {
-  it("defaults to live-dom and reports whether a write actually changed anything", () => {
-    const p = createPresentationRegistry();
-    const e = 7 as unknown as Entity;
-    expect(p.get(e)).toBe("live-dom");
-    expect(p.set(e, "composited")).toBe(true);
-    expect(p.set(e, "composited")).toBe(false); // an unchanged write is not dirt
-    expect(p.get(e)).toBe("composited");
-  });
-
-  it("wakes listeners only on real changes", () => {
-    const p = createPresentationRegistry();
-    const seen = vi.fn();
-    p.onChange(seen);
-    const e = 1 as unknown as Entity;
-    p.set(e, "composited");
-    p.set(e, "composited");
-    expect(seen).toHaveBeenCalledTimes(1);
-    expect(p.revision()).toBe(1);
-  });
-
-  it("stores nothing for the default, so entries track what is promoted", () => {
-    const p = createPresentationRegistry();
-    const e = 1 as unknown as Entity;
-    p.set(e, "composited");
-    expect([...p.entries()]).toHaveLength(1);
-    p.set(e, "live-dom");
-    expect([...p.entries()]).toHaveLength(0);
-  });
-});
-
-describe("a widget type's DECLARED presentation", () => {
-  // `defineWidget({ presentation })`, landed at S8 (design-012 §6.3). Seeded
-  // where the host's parent is chosen, so a declared mode costs no promote
-  // pass and no reparent on a second frame.
-  const spawnTyped = (world: ReturnType<typeof createWorld>, type: string): Entity =>
-    world.spawn({
+describe("the world's target decides the parent, from the FIRST flush", () => {
+  // The registry and the `defineWidget({ presentation })` seed this describe
+  // used to grade are DELETED (design-013 A1b). What replaces them: equip
+  // stamps `SurfaceTarget` and the kind's behaviour writes it, both before
+  // this reflector ever runs, so a card that is already `gpu` at mount is a
+  // canvas child on its first flush with no promote pass and no second-frame
+  // reparent — and this reflector seeds nothing of its own.
+  const spawnTyped = (world: ReturnType<typeof createWorld>, type: string, target: "dom" | "gpu"): Entity => {
+    const e = world.spawn({
       components: [
         [Position, { x: 0, y: 0 }],
         [Size, { w: 30, h: 40 }],
         [PrefabId, { id: type }],
+        [SurfaceKind, { kind: type === "l1:island" ? "gl" : "dom" }],
+        [SurfaceTarget, { target }],
       ],
     });
+    return e;
+  };
 
-  it("puts a pinned-composited card on the canvas in its FIRST flush", () => {
-    const { world, engine, store, l1, sources, reflector, presentation } = setup();
-    const e = spawnTyped(world, "l1:pinned-composited");
+  it("puts a card whose target already reads gpu on the canvas in its FIRST flush", () => {
+    const { world, engine, store, l1, sources, reflector, surface } = setup();
+    const e = spawnTyped(world, "l1:plain", "gpu");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
-    // One step, and it is already a canvas child with a source registered —
-    // the mode and the parentage were decided together.
+    // One step, and it is already a canvas child with a source registered.
     expect(reflector.hostElementFor(e)?.parentElement).toBe(l1?.canvas);
     expect(sources.get(e)?.kind).toBe("dom");
-    expect(presentation.get(e)).toBe("composited");
+    expect(surface.target(e)).toBe("gpu");
   });
 
-  it("leaves an undeclared card in the content plane — seeding is not blanket", () => {
+  it("leaves a resting card in the content plane — promotion is not blanket", () => {
     // The control without which the test above passes for the wrong reason.
     const { world, engine, store, planes, sources, reflector } = setup();
-    const e = spawnTyped(world, "l1:plain");
+    const e = spawnTyped(world, "l1:plain", "dom");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
     expect(sources.size()).toBe(0);
   });
 
-  it("never seeds a GL widget onto the canvas, whatever its kind's default is", () => {
-    // A gl widget's host IS its DOM chrome and belongs under the island in the
-    // content plane (design-004 §1's sandwich). Seeding it canvas-side would
-    // register that chrome as a `dom` source on top of the island's own `gl`
-    // registration — both are keyed by entity, and `register` replaces.
+  it("NEVER puts a GL widget on the canvas, even though its target reads gpu", () => {
+    // The guard that survives the deletion, and the reason it must. Equip
+    // stamps every gl widget `SurfaceTarget = gpu` — it is the only target the
+    // kind has — and `effectiveTarget` coerces a gl card to `gpu` whatever the
+    // cell says, so a promote decision that read the target ALONE would move
+    // every island's host under L1 on its first frame. A gl widget's host IS
+    // its DOM chrome and belongs under the island in the content plane
+    // (design-004 §1's sandwich); canvas-side, `syncSource` would register
+    // that chrome as a `dom` source on top of the island's own `gl`
+    // registration — both keyed by entity, and `register` replaces — so the
+    // compositor would atlas-copy a card body where the 3D content was.
     const { world, engine, store, planes, sources, reflector } = setup();
-    const e = spawnTyped(world, "l1:island");
+    const e = spawnTyped(world, "l1:island", "gpu");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
@@ -319,13 +310,13 @@ describe("a widget type's DECLARED presentation", () => {
 
 describe("composited hosts", () => {
   it("parents a composited host as an IMMEDIATE child of the canvas", () => {
-    const { world, engine, store, presentation, l1, reflector } = setup();
+    const { world, engine, store, surface, l1, reflector } = setup();
     const e = spawnBox(world, 10, 20, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     const hostEl = reflector.hostElementFor(e) as HTMLElement;
 
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(1);
 
     expect(hostEl.parentElement).toBe(l1?.canvas);
@@ -335,13 +326,13 @@ describe("composited hosts", () => {
   });
 
   it("registers the HOST element as a dom source, in the flush that parents it", () => {
-    const { world, engine, store, presentation, sources, reflector } = setup();
+    const { world, engine, store, surface, sources, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     expect(sources.size()).toBe(0); // live-dom registers nothing
 
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(1);
     const source = sources.get(e);
     expect(source?.kind).toBe("dom");
@@ -351,14 +342,14 @@ describe("composited hosts", () => {
   });
 
   it("unregisters and reparents on demotion", () => {
-    const { world, engine, store, presentation, sources, planes, reflector } = setup();
+    const { world, engine, store, surface, sources, planes, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     expect(sources.size()).toBe(1);
 
-    presentation.set(e, "live-dom");
+    surface.demote(e);
     engine.step(1);
     expect(sources.size()).toBe(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
@@ -371,7 +362,7 @@ describe("composited hosts", () => {
     // widget's state survives promotion. If this node were ever recreated, the
     // card would remount on every promote and lose scroll, caret and hook
     // state — the whole reason promotion can be automatic.
-    const { world, engine, store, presentation, reflector, l1, planes } = setup();
+    const { world, engine, store, surface, reflector, l1, planes } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
@@ -383,14 +374,14 @@ describe("composited hosts", () => {
     mounted.textContent = "widget state";
     contentBefore.appendChild(mounted);
 
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(1);
     expect(reflector.hostFor(e)).toBe(contentBefore);
     expect(reflector.hostElementFor(e)).toBe(hostBefore);
     expect(contentBefore.contains(mounted)).toBe(true);
     expect(hostBefore.parentElement).toBe(l1?.canvas);
 
-    presentation.set(e, "live-dom");
+    surface.demote(e);
     engine.step(2);
     expect(reflector.hostFor(e)).toBe(contentBefore);
     expect(contentBefore.contains(mounted)).toBe(true);
@@ -398,10 +389,10 @@ describe("composited hosts", () => {
   });
 
   it("drops the registration when the widget leaves the store", () => {
-    const { world, engine, store, presentation, sources } = setup();
+    const { world, engine, store, surface, sources } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     expect(sources.size()).toBe(1);
 
@@ -410,52 +401,43 @@ describe("composited hosts", () => {
     expect(sources.size()).toBe(0);
   });
 
-  it("clears the MODE when the widget leaves the store, not just the registration", () => {
-    // The registry is keyed by entity and OUTLIVES this reflector, so an entry
-    // left behind is one nothing will ever clear — it accumulates with every
-    // despawn for as long as the board is open.
-    const { world, engine, store, presentation } = setup();
+  it("takes the target with the entity — a despawn leaves nothing to clear", () => {
+    // The bug this replaces: the registry was keyed by entity and OUTLIVED the
+    // reflector, so an entry left behind was one nothing would ever clear. It
+    // accumulated with every despawn, and — because entity ids RECYCLE — a
+    // host mounting on a reused id read that stale "composited" and became a
+    // canvas child on its first frame, which policy then never demoted
+    // (policy demoted only what IT promoted). A COMPONENT cannot do that: it
+    // dies with the entity, and this is the case that says so.
+    const { world, engine, store, surface, planes, sources, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
-    expect([...presentation.entries()]).toHaveLength(1);
+    expect(sources.size()).toBe(1);
 
     store.set([]);
+    world.destroy(e);
     engine.step(1);
-    expect([...presentation.entries()]).toHaveLength(0);
-    expect(presentation.get(e)).toBe("live-dom");
-  });
-
-  it("hands a host that mounts again on that id the DEFAULT, not the vacated mode", () => {
-    // Why the leak above is a bug rather than a tidiness complaint: entity ids
-    // recycle, and a host mounting on a reused id reads the registry in
-    // `createHost` to pick its parent. A stale "composited" makes an
-    // undeclared card a canvas child on its first frame — and policy never
-    // demotes it, because policy demotes only what IT promoted. (The same path
-    // runs when the keep-mounted LRU evicts a live widget and it re-enters.)
-    const { world, engine, store, presentation, planes, sources, reflector } = setup();
-    const e = spawnBox(world, 0, 0, 30, 40);
-    store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
-    engine.step(0);
-    store.set([]);
-    engine.step(1);
-
-    store.set([{ entity: e, hidden: false }]);
-    engine.step(2);
-    expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
     expect(sources.size()).toBe(0);
-    expect(presentation.get(e)).toBe("live-dom");
+    expect(surface.target(e)).toBeUndefined();
+
+    // A fresh entity — the recycled-id case, as far as one world can show it —
+    // mounts in the content plane, because nothing carried a mode over.
+    const again = spawnBox(world, 0, 0, 30, 40);
+    store.set([{ entity: again, hidden: false }]);
+    engine.step(2);
+    expect(reflector.hostElementFor(again)?.parentElement).toBe(planes.content);
+    expect(sources.size()).toBe(0);
   });
 
   it("keeps a composited host out of the lifted plane while it is grabbed", () => {
     // Its lift is a per-quad GPU fact at true z (design-012 §7 retires P3), so
     // moving it to P3 would be the stratified answer to a solved question.
-    const { world, engine, store, presentation, l1, reflector } = setup();
+    const { world, engine, store, surface, l1, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
 
     world.addComponent(e, Grab, { x: 0, y: 0, w: 30, h: 40, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
@@ -464,13 +446,13 @@ describe("composited hosts", () => {
   });
 
   it("leaves plane hosts and the whole stratified path untouched without a canvas", () => {
-    const { world, engine, store, presentation, sources, planes, reflector } = setup({
+    const { world, engine, store, surface, sources, planes, reflector } = setup({
       withCanvas: false,
     });
     const e = spawnBox(world, 5, 6, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     // Even asking for composited cannot promote: there is nowhere to promote to.
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
     expect(sources.size()).toBe(0);
@@ -480,21 +462,21 @@ describe("composited hosts", () => {
   it("stops writing plane geometry for a canvas host, and resumes on demotion", () => {
     // Inside layoutsubtree, left/top are inert and the host must be sized in
     // SCREEN px, not world units — so plane geometry must not keep writing it.
-    const { world, engine, store, presentation, reflector } = setup();
+    const { world, engine, store, surface, reflector } = setup();
     const e = spawnBox(world, 10, 20, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     const el = reflector.hostElementFor(e) as HTMLElement;
     expect(el.style.width).toBe("30px");
 
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(1);
     world.edit(e).set(Size, { w: 99, h: 99 });
     engine.step(2);
     // Untouched by the plane writer: domWriteback owns this host's geometry.
     expect(el.style.width).toBe("30px");
 
-    presentation.set(e, "live-dom");
+    surface.demote(e);
     engine.step(3);
     expect(el.style.width).toBe("99px");
   });
@@ -504,10 +486,10 @@ describe("domWriteback — absolute placements for canvas hosts", () => {
   it("writes an ABSOLUTE screen placement, not a delta from layout", () => {
     // Inside layoutsubtree the transform REPLACES layout (hic-bench §3), so a
     // camera write-back is the absolute screen position of the card.
-    const { world, engine, store, presentation, reflector } = withWriteback();
+    const { world, engine, store, surface, reflector } = withWriteback();
     const e = spawnBox(world, 100, 50, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     const el = reflector.hostElementFor(e) as HTMLElement;
     // Camera at the origin, zoom 1 ⇒ the world position IS the screen position.
@@ -516,10 +498,10 @@ describe("domWriteback — absolute placements for canvas hosts", () => {
   });
 
   it("sizes the host in SCREEN px so the copy rasterises at the zoomed size", () => {
-    const { world, engine, store, presentation, reflector } = withWriteback();
+    const { world, engine, store, surface, reflector } = withWriteback();
     const e = spawnBox(world, 10, 10, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     const el = reflector.hostElementFor(e) as HTMLElement;
     expect(el.style.width).toBe("30px");
@@ -527,11 +509,11 @@ describe("domWriteback — absolute placements for canvas hosts", () => {
   });
 
   it("prefers a non-zero MeasuredSize, exactly as the host pipeline does", () => {
-    const { world, engine, store, presentation, reflector } = withWriteback();
+    const { world, engine, store, surface, reflector } = withWriteback();
     const e = spawnBox(world, 0, 0, 30, 40);
     world.addComponent(e, MeasuredSize, { w: 55, h: 66 });
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     const el = reflector.hostElementFor(e) as HTMLElement;
     expect(el.style.width).toBe("55px");
@@ -542,24 +524,24 @@ describe("domWriteback — absolute placements for canvas hosts", () => {
     // Visible-only write-backs leave stale off-screen hit regions that steal
     // clicks — 25 of 28 in hic-bench §3. Parking is the other complete fix and
     // lands at S3; until then, all N.
-    const { world, engine, store, presentation, writeback } = withWriteback();
+    const { world, engine, store, surface, writeback } = withWriteback();
     const near = spawnBox(world, 0, 0, 30, 40);
     const faraway = spawnBox(world, 50_000, 50_000, 30, 40);
     store.set([
       { entity: near, hidden: false },
       { entity: faraway, hidden: false },
     ]);
-    presentation.set(near, "composited");
-    presentation.set(faraway, "composited");
+    surface.promote(near);
+    surface.promote(faraway);
     engine.step(0);
     expect(writeback.writes()).toBe(2);
   });
 
   it("is change-only: a still camera and a still board write nothing", () => {
-    const { world, engine, store, presentation, writeback } = withWriteback();
+    const { world, engine, store, surface, writeback } = withWriteback();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     const after = writeback.writes();
     engine.step(1);
@@ -569,19 +551,19 @@ describe("domWriteback — absolute placements for canvas hosts", () => {
   });
 
   it("forgets a host that leaves L1, so a later promotion rewrites it", () => {
-    const { world, engine, store, presentation, reflector, writeback } = withWriteback();
+    const { world, engine, store, surface, reflector, writeback } = withWriteback();
     const e = spawnBox(world, 3, 4, 30, 40);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     const el = reflector.hostElementFor(e) as HTMLElement;
 
-    presentation.set(e, "live-dom");
+    surface.demote(e);
     engine.step(1);
     el.style.transform = ""; // the plane owner clears it
     const before = writeback.writes();
 
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(2);
     expect(writeback.writes()).toBe(before + 1);
     expect(el.style.transform).toBe("matrix(1,0,0,1,3,4)");
@@ -607,10 +589,10 @@ describe("domWriteback — parking off-screen hosts", () => {
     spawnBox(world, x, y, 100, 50);
 
   it("parks an off-screen host with ONE write, then stops touching it", () => {
-    const { world, engine, store, presentation, reflector, writeback } = withWriteback({}, { w: 800, h: 600 });
+    const { world, engine, store, surface, reflector, writeback } = withWriteback({}, { w: 800, h: 600 });
     const far = spawnAt(world, 5000, 5000);
     store.set([{ entity: far, hidden: false }]);
-    presentation.set(far, "composited");
+    surface.promote(far);
     engine.step(0);
 
     const el = reflector.hostElementFor(far) as HTMLElement;
@@ -631,10 +613,10 @@ describe("domWriteback — parking off-screen hosts", () => {
     // The defect the bench found: a host that was visible, then left, keeping
     // the transform it had — sitting on top of the visible cards and stealing
     // their clicks (25/28).
-    const { world, engine, store, presentation, reflector } = withWriteback({}, { w: 800, h: 600 });
+    const { world, engine, store, surface, reflector } = withWriteback({}, { w: 800, h: 600 });
     const e = spawnAt(world, 100, 100);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     const el = reflector.hostElementFor(e) as HTMLElement;
     expect(el.style.transform).toBe("matrix(1,0,0,1,100,100)");
@@ -646,10 +628,10 @@ describe("domWriteback — parking off-screen hosts", () => {
   });
 
   it("restores a real placement when a parked host comes back into view", () => {
-    const { world, engine, store, presentation, reflector, writeback } = withWriteback({}, { w: 800, h: 600 });
+    const { world, engine, store, surface, reflector, writeback } = withWriteback({}, { w: 800, h: 600 });
     const e = spawnAt(world, 100, 100);
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     const el = reflector.hostElementFor(e) as HTMLElement;
 
@@ -667,19 +649,19 @@ describe("domWriteback — parking off-screen hosts", () => {
   });
 
   it("keeps a host straddling the edge LIVE, so a slow pan cannot flap it", () => {
-    const { world, engine, store, presentation, reflector } = withWriteback(
+    const { world, engine, store, surface, reflector } = withWriteback(
       { parkMargin: 64 },
       { w: 800, h: 600 },
     );
     const e = spawnAt(world, 790, 100); // 10px of a 100px card on screen
     store.set([{ entity: e, hidden: false }]);
-    presentation.set(e, "composited");
+    surface.promote(e);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.style.transform).toBe("matrix(1,0,0,1,790,100)");
   });
 
   it("writes ALL N when parking is off — the other complete fix", () => {
-    const { world, engine, store, presentation, reflector, writeback } = withWriteback(
+    const { world, engine, store, surface, reflector, writeback } = withWriteback(
       { park: false },
       { w: 800, h: 600 },
     );
@@ -689,8 +671,8 @@ describe("domWriteback — parking off-screen hosts", () => {
       { entity: near, hidden: false },
       { entity: far, hidden: false },
     ]);
-    presentation.set(near, "composited");
-    presentation.set(far, "composited");
+    surface.promote(near);
+    surface.promote(far);
     engine.step(0);
     expect(writeback.writes()).toBe(2);
     expect(writeback.parked()).toBe(0);
@@ -699,10 +681,10 @@ describe("domWriteback — parking off-screen hosts", () => {
   });
 
   it("never parks without a Viewport, because it cannot know what off-screen means", () => {
-    const { world, engine, store, presentation, reflector, writeback } = withWriteback({});
+    const { world, engine, store, surface, reflector, writeback } = withWriteback({});
     const far = spawnAt(world, 5000, 5000);
     store.set([{ entity: far, hidden: false }]);
-    presentation.set(far, "composited");
+    surface.promote(far);
     engine.step(0);
     expect(writeback.parked()).toBe(0);
     expect(reflector.hostElementFor(far)?.style.transform).toBe("matrix(1,0,0,1,5000,5000)");

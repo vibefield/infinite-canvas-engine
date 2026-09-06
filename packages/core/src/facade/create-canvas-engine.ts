@@ -101,6 +101,7 @@ import {
   type BehaviorSession,
 } from "../behavior/runtime";
 import type { AnyBehaviorDef } from "../behavior/types";
+import { registerStandardSurfaceBehaviors } from "../surface/standard-behaviors";
 import { createEngine, type Engine } from "../engine/engine";
 import type { FrameControl } from "../engine/frame-control";
 import {
@@ -1257,6 +1258,19 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     ...(opts.onBehaviorFault === undefined ? {} : { onFault: opts.onBehaviorFault }),
     ...(opts.onBehaviorLog === undefined ? {} : { onLog: opts.onBehaviorLog }),
   });
+  // The engine's OWN kind behaviours, FIRST (design-013 D7). They decide
+  // `SurfaceTarget` and `RequestedDemand` for every widget whose type named no
+  // behaviour of its own — which is almost every widget — and they are
+  // registered here rather than left to the app because until this line the
+  // shipping React composited profile had NO promotion at all:
+  // `infinite-canvas.tsx` built `domWidgets` without a presentation registry
+  // and nothing in `@ice/react` created the policy, so every card was live-dom
+  // forever and only the rigs, which hand-wired both, ever saw a promotion.
+  // That is the fix wave's "copied wiring" class — a boot sequence an app was
+  // expected to reproduce — and the answer is that there is nothing left for
+  // an app to reproduce. Before `opts.behaviors` so an app's own behaviour
+  // registered after them also runs after them within the phase group.
+  registerStandardSurfaceBehaviors(behaviors);
   for (const b of opts.behaviors ?? []) behaviors.register(b);
 
   // --- ops catalog -------------------------------------------------------------

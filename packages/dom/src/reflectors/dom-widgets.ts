@@ -43,6 +43,22 @@
  *    card is therefore never `lifted` — see `placementOf` — so this clause
  *    simply has nothing to fire on, which is the ratified answer and not a gap.
  *
+ * ── ERRATA 2026-09-06 (A1b, design-013 §5; design-012 §6.3 / plan §2) ─────
+ * This file used to reparent hosts through "the ONE `setPresentation` door" —
+ * a `PresentationRegistry` map beside the world, seeded here from
+ * `defineWidget({ presentation })` and driven by `createPresentationPolicy`.
+ * That door is RETIRED, and with it the class of defect where a map beside
+ * the world disagrees with the world. **The one writer of `SurfaceTarget` is
+ * the entity's kind behaviour; this reflector only READS it**, through
+ * `effectiveTarget` like every other reader, and seeds nothing.
+ *
+ *  - **promote/demote**: `SurfaceTarget = gpu` parents the host under L1 (a
+ *    `dom` kind only — see `canvasEligible`); `dom` brings it back.
+ *  - **the wake**: an `observeQuery([SurfaceTarget], { cols: [SurfaceTarget] })`
+ *    replaces the registry's `onChange` callback, so a promotion arms the same
+ *    dirt flag a drag does and takes the same path.
+ *  - **despawn**: nothing to clear — the component dies with the entity.
+ *
  * Law 10: reflectors run post-notify, write output only, never read layout or
  * write ECS — this flush touches only host `<div>` style/attributes/parentage.
  */
@@ -53,9 +69,12 @@ import {
   Position,
   PrefabId,
   Size,
+  SurfaceKind,
+  SurfaceTarget,
   compareStackOrder,
   createSiblingOrderIndex,
   defineQuery,
+  effectiveTarget,
   widgets,
   type CompositorSourceRegistry,
   type Entity,
@@ -69,7 +88,6 @@ import {
 } from "@ice/core";
 import { planeCssTransform } from "@ice/kernel";
 import { CLAIM_OWNS_ESCAPE, KEYBOARD_CLAIM_ATTR } from "../input-ownership";
-import { DEFAULT_PRESENTATION, type PresentationRegistry } from "../presentation-mode";
 
 /**
  * Where a host can live (design-004 §1: P1 content, P3 lifted; design-012 §5:
@@ -92,11 +110,6 @@ export interface DomWidgetsHost {
 type HostPlacement = "content" | "lifted" | "canvas";
 
 export interface DomWidgetsOptions {
-  /**
-   * Per-widget presentation policy. Absent ⇒ every widget is `live-dom` and
-   * nothing reaches L1 — the stratified behaviour.
-   */
-  readonly presentation?: PresentationRegistry;
   /**
    * The compositor's source registry. A host is registered as a `dom` source
    * in the SAME flush that parents it under the canvas, and unregistered in
@@ -140,6 +153,7 @@ interface Geom {
 const geometryQuery = defineQuery([Position, Size]);
 const measuredQuery = defineQuery([MeasuredSize]);
 const grabQuery = defineQuery([Grab]);
+const targetQuery = defineQuery([SurfaceTarget]);
 const opacityQuery = defineQuery([Opacity]);
 
 function writeGeom(el: HTMLDivElement, x: number, y: number, w: number, h: number): void {
@@ -222,6 +236,11 @@ export function createDomWidgetsReflector(
     // would require it in the query and drop widgets without the rider.
     world.reactive.observeQuery(measuredQuery, () => { geometryDirty = true; }, { cols: [MeasuredSize] }),
     world.reactive.observeQuery(grabQuery, () => { promoteDirty = true; }, { cols: [] }),
+    // The kind behaviour's choice. `SurfaceTarget` is stamped at equip and
+    // value-written thereafter (design-013 D2), so membership never moves and
+    // the VALUE is what this has to watch — hence `cols`, not a bare
+    // membership wake like Grab's above.
+    world.reactive.observeQuery(targetQuery, () => { promoteDirty = true; }, { cols: [SurfaceTarget] }),
     // Opacity is an optional rider like MeasuredSize: membership (attach/detach)
     // and value changes both arm the flag; detach resets the host to the
     // default via the `?? 1` read.
@@ -233,11 +252,6 @@ export function createDomWidgetsReflector(
     // keeps other-frame churn cheap.
     order.observe(() => { orderDirty = true; }),
   ];
-  // Presentation changes reparent exactly like a drag-promote does, so they
-  // arm the same flag and take the same path (plan §2: ONE door).
-  if (opts.presentation !== undefined) {
-    unsubs.push(opts.presentation.onChange(() => { promoteDirty = true; }));
-  }
 
   /**
    * GL widgets' hosts carry DOM CHROME that must stay in the content plane
@@ -251,6 +265,48 @@ export function createDomWidgetsReflector(
   }
 
   /**
+   * Does this entity's host belong on L1 at all when its target says `gpu`?
+   *
+   * ONLY `dom` surfaces do — and this guard is load-bearing, not a tidiness
+   * check. Equip stamps every `gl` and `video` widget `SurfaceTarget = gpu`
+   * (it is the only target those kinds have), and `effectiveTarget` coerces
+   * them to `gpu` whatever the cell says, so a promote decision that read the
+   * target alone would move EVERY island's host under L1 on its first frame.
+   * Island sources are registered in the compositor's source registry KEYED BY
+   * ENTITY (`r3f/webgpu-sources.ts`) and `syncSource` would then register a
+   * `dom` source for the same entity — `register` replaces, so the island's
+   * `gl` source would be evicted by its own chrome host and the compositor
+   * would atlas-copy a card body where the 3D content used to be. A gl host is
+   * DOM CHROME and belongs in the content plane, UNDER the island
+   * (design-004 §1's sandwich).
+   *
+   * Carried, with its reason, from `createPresentationPolicy`'s `eligible()`
+   * and `createHost`'s seeding guard — the two deleted places that used to
+   * hold this line. Design-013 §6.8 gives gl/video kinds empty L1 hosts at B3;
+   * until then they have none, and that is what this returns.
+   */
+  function canvasEligible(e: Entity): boolean {
+    const kind = world.get(e, SurfaceKind)?.kind;
+    // Refuses only what is KNOWN to have no live-dom half. An entity with no
+    // kind (never equipped, or not a widget) keeps the behaviour it always
+    // had: it has no island source to evict either.
+    return kind !== "gl" && kind !== "video";
+  }
+
+  /** The layer this entity's kind behaviour chose, read the one legal way. */
+  function targetOf(e: Entity): "dom" | "gpu" {
+    const kind = world.get(e, SurfaceKind)?.kind;
+    const target = world.get(e, SurfaceTarget)?.target;
+    // A missing component reads as `dom` — a bare entity in a test rig, a port
+    // or a ghost is not a promotion candidate, and inventing `gpu` for it
+    // would put things the compositor has no source for on the canvas.
+    return effectiveTarget(
+      kind === "gl" || kind === "video" ? kind : "dom",
+      target === "gpu" ? "gpu" : "dom",
+    );
+  }
+
+  /**
    * Which parent this entity's host belongs under, right now.
    *
    * Composited wins over lifted: a composited card's lift is a per-quad GPU
@@ -260,7 +316,7 @@ export function createDomWidgetsReflector(
    * profile — this collapses to the content/lifted decision it always was.
    */
   function placementOf(e: Entity): HostPlacement {
-    if (sourceCanvas !== undefined && opts.presentation?.get(e) === "composited") return "canvas";
+    if (sourceCanvas !== undefined && canvasEligible(e) && targetOf(e) === "gpu") return "canvas";
     return world.has(e, Grab) && promotable(e) ? "lifted" : "content";
   }
 
@@ -323,22 +379,13 @@ export function createDomWidgetsReflector(
       el.style.outline = "none";
     }
 
-    // The DECLARED presentation (design-012 §6.3; `defineWidget({presentation})`
-    // landed at S8), applied here because `placementOf` is read four lines
-    // below: seeding the mode and choosing the parent become one step, so a
-    // pinned-composited card is a canvas child on its FIRST frame rather than
-    // being promoted on its second and reparented after one wasted paint.
-    //
-    // `dom` surfaces only. A GL widget's host is its DOM CHROME and belongs in
-    // the content plane under the island (design-004 §1's sandwich) — Q4's
-    // empty canvas host for gl/video kinds is specified but unbuilt, and
-    // seeding "composited" here would move the chrome under the L1 canvas,
-    // where `syncSource` would register it as a `dom` source over the top of
-    // the island's own `gl` registration (both are keyed by entity).
-    if (widgetType?.surface === "dom" && opts.presentation !== undefined) {
-      const declared = widgetType.presentation.default;
-      if (declared !== DEFAULT_PRESENTATION) opts.presentation.set(e, declared);
-    }
+    // No mode is SEEDED here any more (2026-09-06, design-013 A1b). The
+    // declared `defineWidget({ presentation })` this used to read is retired:
+    // equip stamps `SurfaceTarget` with the kind's safe default and the kind's
+    // behaviour writes it from `init`, both before this reflector ever runs,
+    // so `placementOf` below already reads the answer. A seed here would be a
+    // SECOND writer of the same fact, which is the class the whole slice
+    // exists to remove.
 
     const content = doc.createElement("div");
     content.setAttribute("data-ice-content", "");
@@ -397,14 +444,11 @@ export function createDomWidgetsReflector(
       if (rec.placement === "canvas") noteCompositedChange();
       rec.host.remove(); // React unmounts via the store; the host div goes too
       hosts.delete(e);
-      // The MODE goes with the host. The registry is keyed by entity and
-      // outlives this reflector, so a mode left behind is an entry nothing
-      // will ever clear: it grows with every despawn, and — because entity
-      // ids RECYCLE — a later widget can inherit a "composited" it never
-      // asked for and never demote out of it (policy demotes only what it
-      // promoted). `createHost` seeds a declared default on the way back in,
-      // so a kept-mounted host evicted by the LRU loses nothing here either.
-      opts.presentation?.clear(e);
+      // Nothing to forget: the target is a COMPONENT and it dies with the
+      // entity. The registry this used to clear was keyed by entity and
+      // outlived the reflector, so a mode left behind grew with every despawn
+      // and — because entity ids RECYCLE — could hand a later widget a
+      // "composited" it never asked for. A component cannot do that.
       membershipChanged = true;
     }
     return membershipChanged;

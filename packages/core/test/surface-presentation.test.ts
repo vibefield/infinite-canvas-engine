@@ -1,139 +1,116 @@
 /**
- * The declared presentation policy and the finalised Widget Surface contract
- * (design-012 §6.3 + §11 Q5/Q7; the design-005 `defineWidget` amendment S8
- * landed).
+ * THE MIGRATION off `defineWidget({ presentation })`, and the Widget Surface
+ * contract that outlived it (design-013 §0, §5, A1b; design-012 §6/§11 Q7).
  *
- * Two things are pinned here. First, that a widget type can OPT OUT of the Q5
- * default and that the opt-out is refused when it names a mode the kind does
- * not have — a pin nobody can honour is worse than no pin, because it reads at
- * the call site as a guarantee. Second, that a `WidgetSurface` READS THROUGH to
- * its seams: a surface that snapshotted its presentation would answer about the
- * frame it was made in, which is exactly the frame a caller is not asking about.
+ * This file used to grade the declared presentation policy: a three-valued
+ * `SurfacePresentation`, a `default`/`pin` declaration, and the resolver that
+ * refused impossible pairs. All of that is DELETED — where a card presents is
+ * a world fact with one writer, and which layer a KIND wants is a behaviour.
+ * So the cases here are the ones that replace it:
+ *
+ *  - a definition that declares nothing gets its kind's default behaviour, so
+ *    the ratified default is not something an app can forget to wire;
+ *  - a definition that named its own gets ONLY its own, because two writers of
+ *    one entity's `SurfaceTarget` is the class §5's table forbids;
+ *  - the retired field THROWS rather than being ignored, because an ignored
+ *    pin degrades into a perfectly plausible widget that silently does not do
+ *    what it says.
+ *
+ * The `WidgetSurface` view cases survive unchanged in substance: a surface that
+ * snapshotted its target would answer about the frame it was made in, which is
+ * exactly the frame a caller is not asking about.
  */
 import { describe, expect, it } from "vitest";
 import {
+  alwaysDom,
+  alwaysGpu,
   createWidgetSurfaceView,
-  defaultPresentationFor,
+  defineBehavior,
   defineWidget,
-  presentationIsLegal,
-  resolveSurfacePresentation,
-  surfacePresentationDeclError,
+  domAtRest,
+  SurfaceTarget,
   type Entity,
   type SurfaceDemandValue,
-  type SurfacePresentation,
 } from "../src";
 
-describe("what a kind's modes are", () => {
-  it("rests a dom surface in live-dom and a gl surface in composited", () => {
-    // The Q5 default is a DOM answer: native caret, selection and threaded
-    // scroll while the user reads and types. An island has no native paint to
-    // rest into — its pixels are a texture in every mode it has.
-    expect(defaultPresentationFor("dom")).toBe("live-dom");
-    expect(defaultPresentationFor("gl")).toBe("composited");
-    expect(defaultPresentationFor("video")).toBe("composited");
-  });
+/** The behaviours a compiled type pre-attaches, by name. */
+const attached = (w: { behaviors: readonly { behavior: { name: string } }[] }): string[] =>
+  w.behaviors.map((b) => b.behavior.name);
 
-  it("gives live-dom to dom surfaces and to nothing else", () => {
-    expect(presentationIsLegal("dom", "live-dom")).toBe(true);
-    expect(presentationIsLegal("gl", "live-dom")).toBe(false);
-    expect(presentationIsLegal("video", "live-dom")).toBe(false);
-    // Every kind can hold a retained picture — that is what a tray preview and
-    // a far-zoom tier are, whatever produced the pixels.
-    expect(presentationIsLegal("gl", "picture")).toBe(true);
-  });
-});
-
-describe("resolving a declaration", () => {
-  it("treats 'declared nothing' and 'declared the default' identically", () => {
-    // Every widget on a board is in the first case. If the two resolved
-    // differently, policy would need two paths through it.
-    expect(resolveSurfacePresentation("dom", undefined)).toEqual({
-      default: "live-dom",
-      pin: undefined,
-    });
-    expect(resolveSurfacePresentation("dom", { default: "live-dom" })).toEqual({
-      default: "live-dom",
-      pin: undefined,
-    });
-  });
-
-  it("makes a pin the starting mode as well as the fixed one", () => {
-    // A pinned card must not spend its first frame in a mode it is pinned out
-    // of and get corrected on its second.
-    expect(resolveSurfacePresentation("dom", { pin: "composited" })).toEqual({
-      default: "composited",
-      pin: "composited",
-    });
-  });
-
-  it("moves the starting mode without taking policy out of the decision", () => {
-    const resolved = resolveSurfacePresentation("dom", { default: "composited" });
-    expect(resolved.default).toBe("composited");
-    expect(resolved.pin).toBeUndefined(); // still promotable and demotable
-  });
-});
-
-describe("declarations that are refused", () => {
-  it("refuses live-dom on a kind that has no native paint", () => {
-    expect(surfacePresentationDeclError("gl", { pin: "live-dom" })).toContain(
-      'presentation.pin is "live-dom"',
-    );
-    expect(surfacePresentationDeclError("gl", { default: "live-dom" })).toContain(
-      'presentation.default is "live-dom"',
-    );
-    expect(surfacePresentationDeclError("dom", { pin: "live-dom" })).toBeNull();
-  });
-
-  it("refuses a default beside a pin — including a default that AGREES", () => {
-    // The agreeing one is the trap: it reads at the call site as an intent
-    // policy will honour, when the pin has already taken policy out of it.
-    expect(surfacePresentationDeclError("dom", { pin: "composited", default: "composited" })).toContain(
-      "drop the default",
-    );
-    expect(surfacePresentationDeclError("dom", { pin: "composited", default: "live-dom" })).toContain(
-      "can never apply",
-    );
-  });
-});
-
-describe("defineWidget carries the declaration", () => {
-  it("compiles the Q5 default for a widget that declares nothing", () => {
+describe("the kind's default behaviour, when a definition declares nothing", () => {
+  it("gives a dom widget domAtRest — live DOM at rest, GPU on a gesture", () => {
     const w = defineWidget({ type: "sp:plain", surface: "dom", component: null });
-    expect(w.presentation).toEqual({ default: "live-dom", pin: undefined });
+    expect(attached(w)).toEqual([domAtRest.name]);
   });
 
-  it("compiles a pin, and a gl widget's composited-only default", () => {
-    const pinned = defineWidget({
-      type: "sp:editor",
+  it("gives a gl widget alwaysGpu, the only mode its kind has", () => {
+    const w = defineWidget({ type: "sp:island", surface: "gl", component: null });
+    expect(attached(w)).toEqual([alwaysGpu.name]);
+  });
+
+  it("leaves a definition's OTHER behaviours alone and appends beside them", () => {
+    const Note = defineBehavior("sp:note", { store: "runtime", schema: {} });
+    const w = defineWidget({ type: "sp:withNote", surface: "dom", component: null, behaviors: [Note] });
+    expect(attached(w)).toEqual(["sp:note", domAtRest.name]);
+  });
+});
+
+describe("a definition that chose for itself", () => {
+  it("is not given a second one — alwaysDom suppresses the dom default", () => {
+    const w = defineWidget({ type: "sp:pinnedDom", surface: "dom", component: null, behaviors: [alwaysDom] });
+    expect(attached(w)).toEqual([alwaysDom.name]);
+  });
+
+  it("keeps the data on a .with() form (the old `picture`)", () => {
+    const w = defineWidget({
+      type: "sp:picture",
       surface: "dom",
       component: null,
-      presentation: { pin: "live-dom" },
+      behaviors: [alwaysGpu.with({ paused: true })],
     });
-    expect(pinned.presentation).toEqual({ default: "live-dom", pin: "live-dom" });
-
-    const island = defineWidget({ type: "sp:island", surface: "gl", component: null });
-    expect(island.presentation).toEqual({ default: "composited", pin: undefined });
+    expect(attached(w)).toEqual([alwaysGpu.name]);
+    expect(w.behaviors[0]?.data).toEqual({ paused: true });
   });
 
-  it("THROWS at definition time rather than ignoring an impossible declaration", () => {
-    // A definition error, not a warning: an ignored pin degrades into a
-    // perfectly plausible widget that silently does not do what it says.
+  it("suppresses the default for a PACK's own kind behaviour, not just ice:surface.*", () => {
+    // design-013 §0's whole point is that a kind may write its own behaviour.
+    // Appending `domAtRest` beside one would put TWO writers on one entity's
+    // `SurfaceTarget`, which §5's table forbids — so the question the check
+    // asks is "does anything here already own the target", and a behaviour
+    // that declares `SurfaceTarget` in its `writes:` answers yes.
+    const Kiosk = defineBehavior("sppack:surface.kiosk", {
+      store: "runtime",
+      phase: "present",
+      schema: {},
+      writes: [SurfaceTarget],
+      on: { init() {} },
+    });
+    const w = defineWidget({ type: "sp:kiosk", surface: "dom", component: null, behaviors: [Kiosk] });
+    expect(attached(w)).toEqual(["sppack:surface.kiosk"]);
+  });
+});
+
+describe("the retired declaration", () => {
+  it("THROWS, naming the door that replaced it", () => {
+    // TypeScript already refuses the field; this is the JS caller and the
+    // stale build, which would otherwise pass an object nothing reads and get
+    // a card that silently ignores its own pin.
     expect(() =>
       defineWidget({
-        type: "sp:bad-island",
-        surface: "gl",
-        component: null,
-        presentation: { pin: "live-dom" },
-      }),
-    ).toThrow(/sp:bad-island.*live-dom/);
-    expect(() =>
-      defineWidget({
-        type: "sp:bad-pair",
+        type: "sp:legacy",
         surface: "dom",
         component: null,
-        presentation: { pin: "composited", default: "live-dom" },
-      }),
-    ).toThrow(/can never apply/);
+        presentation: { pin: "live-dom" },
+      } as never),
+    ).toThrow(/presentation is retired \(design-013 A1\)/);
+    expect(() =>
+      defineWidget({
+        type: "sp:legacy2",
+        surface: "gl",
+        component: null,
+        presentation: { default: "picture" },
+      } as never),
+    ).toThrow(/alwaysGpu\.with\(\{ paused: true \}\) through behaviors:/);
   });
 });
 
@@ -141,23 +118,23 @@ describe("the WidgetSurface view", () => {
   const ENTITY = 7 as Entity;
   const LIVE: SurfaceDemandValue = { mode: "live", fpsBucket: 60, interactive: false };
 
-  it("reads presentation THROUGH the seam, never a snapshot", () => {
-    let mode: SurfacePresentation = "live-dom";
+  it("reads the target THROUGH the seam, never a snapshot", () => {
+    let target: "dom" | "gpu" = "dom";
     const view = createWidgetSurfaceView({
       kindOf: () => "dom",
-      presentationOf: () => mode,
+      targetOf: () => target,
       demandOf: () => LIVE,
     });
     const surface = view.get(ENTITY);
-    expect(surface?.presentation).toBe("live-dom");
-    mode = "composited"; // a promotion, one flush later
-    expect(surface?.presentation).toBe("composited");
+    expect(surface?.target).toBe("dom");
+    target = "gpu"; // a promotion, one frame later
+    expect(surface?.target).toBe("gpu");
   });
 
   it("answers undefined for an entity that is not a widget", () => {
     const view = createWidgetSurfaceView({
       kindOf: () => undefined,
-      presentationOf: () => "live-dom",
+      targetOf: () => "dom",
       demandOf: () => LIVE,
     });
     expect(view.get(ENTITY)).toBeUndefined();
@@ -168,7 +145,7 @@ describe("the WidgetSurface view", () => {
     // throttle that was never installed reads as a throttle that is not working.
     const view = createWidgetSurfaceView({
       kindOf: () => "dom",
-      presentationOf: () => "live-dom",
+      targetOf: () => "dom",
       demandOf: () => LIVE,
     });
     expect(() => view.get(ENTITY)?.setDemand(LIVE)).toThrow(/no demand consumer/);
@@ -178,7 +155,7 @@ describe("the WidgetSurface view", () => {
     const seen: Array<[Entity, SurfaceDemandValue]> = [];
     const view = createWidgetSurfaceView({
       kindOf: () => "dom",
-      presentationOf: () => "live-dom",
+      targetOf: () => "dom",
       demandOf: () => LIVE,
       requestDemand: (entity, demand) => seen.push([entity, demand]),
     });

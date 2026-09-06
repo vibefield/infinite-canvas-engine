@@ -42,12 +42,8 @@ import {
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
 import type { SurfaceKindValue } from "../surface/compositor-registry";
-import {
-  resolveSurfacePresentation,
-  surfacePresentationDeclError,
-  type ResolvedSurfacePresentation,
-  type SurfacePresentationDecl,
-} from "../surface/contract";
+import { SurfaceTarget } from "../catalog/surface";
+import { alwaysGpu, domAtRest } from "../surface/standard-behaviors";
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
 import type { CanvasType } from "../canvas/define-canvas-type";
@@ -200,31 +196,6 @@ export interface WidgetDef {
   /** Conflict groups: group name → prop names. Ungrouped props → "props". */
   readonly groups?: Readonly<Record<string, readonly string[]>>;
   readonly surface: WidgetSurfaceKind;
-  /**
-   * How this widget type wants to present (design-012 §6.3, §11 Q5; the
-   * design-005 amendment S8 landed).
-   *
-   * Absent is the ratified default and should stay absent for almost every
-   * widget: `live-dom` at rest, promoted to `composited` under a gesture, back
-   * again one settle window after it ends. Declaring anything here opts a type
-   * OUT of a policy that was chosen with measurements, so it wants a reason:
-   *
-   *  - `{ pin: "live-dom" }` — a text-heavy card whose caret latency, native
-   *    selection or internal scroller must survive the drag (design-012 §5
-   *    "fidelity, stated": composited text is grayscale-AA and there is no
-   *    threaded scrolling inside the canvas). It never composites, so it also
-   *    never gains true z — it paints above the GPU layer at all times.
-   *  - `{ pin: "composited" }` — a card that must hold true z or a WGSL effect
-   *    while at rest, and has no text worth the seam.
-   *  - `{ default: … }` — the same starting mode WITHOUT taking policy out of
-   *    the decision; promotion and demotion still apply.
-   *
-   * Refused at definition time: `live-dom` on a `gl` surface (an island has no
-   * native paint to fall back to), and a `pin` beside a `default` (a pin
-   * already fixes the mode). GL widgets need declare nothing — their default
-   * is `composited` because it is their only mode.
-   */
-  readonly presentation?: SurfacePresentationDecl;
   /** Framework component (opaque to core — the react package narrows it). */
   readonly component: unknown;
   /**
@@ -336,12 +307,6 @@ export interface WidgetType {
   readonly groups: readonly WidgetGroup[];
   readonly propToGroup: Readonly<Record<string, string>>;
   readonly surface: WidgetSurfaceKind;
-  /**
-   * The declared presentation policy, resolved against the surface kind: the
-   * mode this type STARTS in, and the mode it is pinned to when policy may not
-   * choose (design-012 §6.3). `pin: undefined` is the ordinary case.
-   */
-  readonly presentation: ResolvedSurfacePresentation;
   readonly component: unknown;
   /** GL widgets: DOM chrome under the canvas (see WidgetDef.chrome). */
   readonly chrome: unknown;
@@ -606,19 +571,41 @@ export function defineWidget(def: WidgetDef): WidgetType {
     behaviorEntries.push(entry);
   }
 
+  // `presentation` is RETIRED (design-013 A1, §5). Where a card presents is a
+  // world fact written by its kind's behaviour, so the declaration moved onto
+  // the behaviours door — the same door a pack uses. TypeScript already
+  // refuses the field; this is for the JS callers and the stale build that
+  // would otherwise pass an object nothing reads and get a card that silently
+  // ignores its own pin.
+  if ((def as { presentation?: unknown }).presentation !== undefined) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") presentation is retired (design-013 A1) — attach ice:surface.alwaysDom / alwaysGpu / alwaysGpu.with({ paused: true }) through behaviors:`,
+    );
+  }
+
+  // The kind's DEFAULT behaviour, when the definition named none.
+  //
+  // "Named none" is broader than "listed no `ice:surface.*`", deliberately:
+  // the question is whether anything already owns this entity's
+  // `SurfaceTarget`, and design-013 §0's whole point is that a kind may write
+  // its OWN behaviour rather than take a standard one. Appending `domAtRest`
+  // beside a pack's `mypack:surface.kiosk` would put TWO writers on one
+  // component of one entity, which §5's table forbids. So a listed behaviour
+  // suppresses the default if it is one of the standard three OR declares
+  // `SurfaceTarget` in its `writes:`.
+  const choosesTarget = behaviorEntries.some(
+    (x) => x.behavior.name.startsWith("ice:surface.") || x.behavior.writes.includes(SurfaceTarget),
+  );
+  if (!choosesTarget) {
+    // dom rests in the DOM and promotes under a gesture (design-012 §11 Q5,
+    // re-read by design-013 §0 as a default rather than a law); every other
+    // kind IS a GPU texture and has no second mode to choose between.
+    behaviorEntries.push({ behavior: def.surface === "dom" ? domAtRest : alwaysGpu, data: {} });
+  }
+
   const version = def.version ?? 1;
   if (def.migrate !== undefined) validateMigrateChain(def.type, version, def.migrate);
 
-  // Presentation declaration: a definition error, so it throws rather than
-  // warning. An illegal mode does not degrade into a working widget — it would
-  // either be silently ignored (a pin nobody honours) or park a GL island in a
-  // mode that cannot draw it.
-  const presentationError =
-    def.presentation === undefined ? null : surfacePresentationDeclError(def.surface, def.presentation);
-  if (presentationError !== null) {
-    throw new Error(`ice: defineWidget("${def.type}") ${presentationError}.`);
-  }
-  const presentation = resolveSurfacePresentation(def.surface, def.presentation);
 
   // Preview declaration: fail FAST on unknown previewProps names — a typo
   // would otherwise surface as a spawn throw inside the preview host's error
@@ -682,7 +669,6 @@ export function defineWidget(def: WidgetDef): WidgetType {
     groups,
     propToGroup,
     surface: def.surface,
-    presentation,
     component: def.component,
     chrome: def.chrome,
     sizeMode: def.sizeMode ?? "fixed",

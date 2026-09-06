@@ -33,27 +33,19 @@ export {
   type SourceCanvasEffects,
   type SourceCanvasOptions,
 } from "./source-canvas";
-export {
-  DEFAULT_PRESENTATION,
-  createPresentationRegistry,
-  type PresentationRegistry,
-  type SurfacePresentation,
-} from "./presentation-mode";
-// The Q5 default as policy: live-dom at rest, composited on drag, with the
-// demotion debounced by one settle window (design-012 §6.3, plan §2).
-export {
-  createPresentationPolicy,
-  type PresentationPolicy,
-  type PresentationPolicyOptions,
-} from "./presentation-policy";
+// The presentation REGISTRY and its POLICY are gone (2026-09-06, design-013
+// A1b): `createPresentationRegistry`, `createPresentationPolicy`,
+// `DEFAULT_PRESENTATION`, `declaredPresentation`, `presentationPinned` and
+// `widgetPresentationPins` were a session-local map beside the world plus the
+// app-wired policy that drove it. Where a card presents is now the world's
+// `SurfaceTarget`, written by its kind behaviour (`@ice/core`'s
+// `ice:surface.*`) and read here through `effectiveTarget`.
+//
 // The Widget Surface contract, answered once per presentation profile
 // (design-012 §6; the S8 extraction).
 export {
   compositedSurfaces,
-  declaredPresentation,
-  presentationPinned,
   stratifiedSurfaces,
-  widgetPresentationPins,
   widgetSurfaceKind,
   type CompositedSurfacesOptions,
   type StratifiedSurfacesOptions,

@@ -17,10 +17,12 @@
  * What stays outside is what genuinely differs — the renderer, the passes, the
  * layer.
  */
+import { SurfaceDemand } from "@ice/core";
 import type {
   CompositorSource,
   CompositorSourceRegistry,
   Entity,
+  SurfaceDemandValue,
   World,
 } from "@ice/core";
 import {
@@ -85,8 +87,29 @@ export function createCompositorWiring(opts: CompositorWiringOptions): Composito
   const displayFacts =
     opts.lift === undefined ? facts : createWorldQuadFacts(world, { lift: opts.lift });
 
+  // DEMAND COMES FROM THE WORLD (design-013 D10, 2026-09-06). The binder used
+  // to take an app callback and, absent one, throttle nothing — so the leg's
+  // parking depended on an app remembering to wire a seam. `SurfaceDemand` is
+  // the CLAMP the Demand system writes in `present:infra` (visibility folded
+  // in at the source), so the parking now follows it by default. A caller that
+  // genuinely throttles from somewhere else still passes `atlas.demand` and
+  // wins; `demand-parking.test.ts` keeps that seam. `undefined` for an entity
+  // the clamp has never written leaves the binder's own live-at-60 default,
+  // which is what an un-equipped entity got before this line.
+  const atlas = opts.atlas ?? {};
+  const demandFromWorld = (entity: Entity): SurfaceDemandValue | undefined => {
+    const cell = world.get(entity, SurfaceDemand);
+    if (cell === undefined) return undefined;
+    return {
+      mode: cell.mode === "live" ? "live" : "paused",
+      fpsBucket: cell.fpsBucket as SurfaceDemandValue["fpsBucket"],
+      interactive: cell.interactive,
+    };
+  };
+
   const domSources = createDomSourceBinder(device, registry, (entity) => facts(entity), {
-    ...(opts.atlas ?? {}),
+    ...atlas,
+    demand: atlas.demand ?? demandFromWorld,
     // Paint events are a compositor dirty source (§4). Without this wake the
     // slot goes dirty and nothing ever composites it.
     onDirt: () => held.compositor?.mark("dom"),

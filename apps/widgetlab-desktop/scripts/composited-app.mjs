@@ -187,10 +187,12 @@ try {
   log(`  slot: ${drag.frames[0]?.slotRect}`);
   log(`  lift scale across the drag: ${JSON.stringify(drag.frames.slice(0, 6).map((f) => f.lift))}`);
 
-  // The POLICY promoted it — nothing in the rig called setPresentation.
-  check(drag.promoted === "composited", `grabbing the card PROMOTED it (${drag.promoted})`);
+  // The card's KIND BEHAVIOUR promoted it — the rig writes no target during
+  // the drag. The vocabulary is the world's now (design-013 A1b): `gpu` and
+  // `dom` where this used to read "composited" and "live-dom".
+  check(drag.promoted === "gpu", `grabbing the card PROMOTED it (${drag.promoted})`);
   check(
-    drag.afterDrop === "composited",
+    drag.afterDrop === "gpu",
     `and dropping it does not demote on the release edge (${drag.afterDrop}) — the settle window is still open`,
   );
   // The lift ran as a per-quad fact: one ease, no CSS spring involved.

@@ -200,8 +200,10 @@ describe("downstream behavior host contract", () => {
     expect(guestFaults).toHaveLength(3);
     expect(guestNotices).toHaveLength(1);
     expect(String(faults[0]?.[3])).toContain("returned a thenable");
-    expect(engine.behaviors.list()[0]?.failed).toBe(1);
-    expect(engine.engine.guests.list()[0]).toMatchObject({
+    // By NAME, not by index: the engine registers its own three behaviours
+    // (`ice:surface.*`, design-013 D7) before any host's.
+    expect(engine.behaviors.list().find((r) => r.name === Behavior.name)?.failed).toBe(1);
+    expect(engine.engine.guests.list().find((g) => g.id === `behavior:${Behavior.name}`)).toMatchObject({
       status: "suspended",
       strikes: 3,
     });
@@ -280,7 +282,8 @@ describe("downstream behavior host contract", () => {
     expect(faults.map((f) => f[1])).toEqual(["dispose", "dispose"]);
     expect(faults.map((f) => f[0])).toEqual(["host:async-dispose", "host:async-dispose"]);
     expect(String(faults[0]?.[3])).toContain("returned a thenable");
-    expect(engine.behaviors.registered()).toHaveLength(0);
+    // The host's registration is gone; the engine's own three remain (D7).
+    expect(engine.behaviors.registered().filter((b) => !b.name.startsWith("ice:"))).toHaveLength(0);
     engine.dispose();
   });
 
@@ -385,11 +388,12 @@ describe("downstream behavior host contract", () => {
     for (let i = 0; i < 5; i++) engine.behaviors.attach(spawn(engine), B);
     engine.step(16);
     expect(behaviorFaults).toHaveLength(5); // full per-instance attribution…
-    expect(engine.engine.guests.list()[0]).toMatchObject({ strikes: 1, status: "running" }); // …ONE strike
+    const row = () => engine.engine.guests.list().find((g) => g.id === `behavior:${B.name}`);
+    expect(row()).toMatchObject({ strikes: 1, status: "running" }); // …ONE strike
     engine.step(32);
     engine.step(48);
     await Promise.resolve();
-    expect(engine.engine.guests.list()[0]).toMatchObject({ strikes: 3, status: "suspended" });
+    expect(row()).toMatchObject({ strikes: 3, status: "suspended" });
     engine.dispose();
   });
 

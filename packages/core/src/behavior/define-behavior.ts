@@ -291,7 +291,19 @@ function validate(name: string, spec: BehaviorSpec<BehaviorStore, BehaviorSchema
     // shape moves whenever the interaction stack does. Warn rather than throw —
     // engine-grade code legitimately reaches past the list, and turning that
     // into an error would make the escape hatch a wall.
-    if (kind.kind !== "behavior" && !isPublicRead(r as Component)) {
+    //
+    // The `ice:` namespace is EXEMPT (2026-09-06, design-013 A1b). The warning
+    // says "this shape is engine vocabulary and may change without notice",
+    // and the engine's own behaviours ship in the same package as the
+    // vocabulary they read: `ice:surface.domAtRest` reads `Grab`,
+    // `SurfaceKind` and `FrameInfo` because design-013 §5's table says a kind
+    // behaviour reads exactly those. Warning about it addresses nobody — an
+    // app cannot act on it — and three lines on every engine import is how
+    // people learn to ignore warnings. Third-party behaviours still hear it,
+    // which is who it was written for. This does NOT widen `PUBLIC_READS`:
+    // the presentation components stay off the published surface until packs
+    // are meant to write kind behaviours of their own.
+    if (kind.kind !== "behavior" && !isPublicRead(r as Component) && !name.startsWith("ice:")) {
       console.warn(
         `ice: defineBehavior("${name}") reads "${kind.name}", which is not on the published behavior read surface (design-009 §9). It works, but its shape is engine vocabulary and may change without notice.`,
       );

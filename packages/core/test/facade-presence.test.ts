@@ -135,7 +135,8 @@ describe("docs.attachPresence — the ephemeral behavior door (the petition's he
     const peer = must(ce.docs.presence(), "presence").localPeer;
     expect(inits).toEqual([peer]);
     expect(ce.world.get(peer, B.component)).toEqual({ n: 7 });
-    expect(ce.behaviors.list()[0]?.instances).toBe(1);
+    // By NAME: the engine's own three surface behaviours register first (D7).
+    expect(ce.behaviors.list().find((r) => r.name === B.name)?.instances).toBe(1);
   });
 
   it("reattach remints a fresh peer and behavior DEFAULTS once — a stale value does not survive detach", () => {

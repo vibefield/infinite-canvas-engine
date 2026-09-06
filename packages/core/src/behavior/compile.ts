@@ -214,10 +214,27 @@ export function compileBehavior(b: AnyBehaviorDef, hooks: BehaviorSystemHooks): 
   // Without this, every ticking behavior would print a strata advisory at
   // registration — a framework must not make its users read a warning that
   // describes its own deliberate design.
+  // ONE exception to "declared writes are never attested" (2026-09-06,
+  // design-013 A1b): the engine's own KIND behaviours, `ice:surface.*`. All
+  // three write `SurfaceTarget` and `RequestedDemand` in `present`, so they
+  // are each other's co-writers and strata's advisory fires on every engine
+  // boot — 200 lines across a CI run, describing ICE's own deliberate design.
+  // Here the caveat above does not apply, because the co-writers ARE ours and
+  // the writes are row-disjoint by law: an entity has ONE kind, that kind's
+  // behaviour is the sole writer of its choice components (design-013 §5), and
+  // `defineWidget` attaches exactly one. This says nothing on anyone else's
+  // behalf — a pack's own kind behaviour is an unattested co-writer and strata
+  // will say so, which is right until an author-facing attestation earns its
+  // way into design-009.
+  const attested: Component[] = b.on.tick !== undefined ? [own] : [];
+  if (b.name.startsWith("ice:surface.")) {
+    for (const c of writeSet) if (c !== own && !attested.includes(c)) attested.push(c);
+    if (b.on.tick !== undefined && !attested.includes(own)) attested.push(own);
+  }
   const deliveryAccess: SystemAccess = {
     write: [...writeSet],
     ...(declaredRead.length > 0 ? { read: declaredRead } : {}),
-    ...(b.on.tick !== undefined ? { orderIndependent: [own] } : {}),
+    ...(attested.length > 0 ? { orderIndependent: attested } : {}),
   };
 
   const collect: CollectOptions = {

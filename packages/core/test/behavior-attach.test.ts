@@ -150,7 +150,9 @@ describe("engine.behaviors", () => {
     const e = spawn();
     ce.behaviors.attach(e, Loose);
     step();
-    const rows = ce.behaviors.list();
+    // The engine registers its OWN three (`ice:surface.*`, design-013 D7), so
+    // the app's behaviours are what is left after those.
+    const rows = ce.behaviors.list().filter((r) => !r.name.startsWith("ice:"));
     expect(rows.map((r) => r.name).sort()).toEqual(["batt:hover", "batt:loose", "batt:sticky"]);
     const loose = rows.find((r) => r.name === "batt:loose");
     expect(loose?.store).toBe("runtime");
@@ -165,7 +167,15 @@ describe("engine.behaviors", () => {
     // nothing and does nothing — "a plugin declared it" and "this engine runs
     // it" are deliberately separable.
     const solo = createCanvasEngine({ widgets: [CARD] });
-    expect(solo.behaviors.list()).toEqual([]);
+    expect(solo.behaviors.list().filter((r) => !r.name.startsWith("ice:"))).toEqual([]);
+    // …and what the ENGINE registered is there whether an app asked or not:
+    // the standard surface behaviours are the kind's default choice, and a
+    // boot that could omit them is the "copied wiring" class (D7).
+    expect(solo.behaviors.list().map((r) => r.name).sort()).toEqual([
+      "ice:surface.alwaysDom",
+      "ice:surface.alwaysGpu",
+      "ice:surface.domAtRest",
+    ]);
     solo.dispose();
   });
 });

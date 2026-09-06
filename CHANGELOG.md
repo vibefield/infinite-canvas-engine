@@ -4,6 +4,106 @@ All notable changes to ICE are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org) (pre-1.0: minor versions may break APIs).
 
+## [Unreleased]
+
+design-013 Phase A — the presentation FACTS move into the world, and the
+decision about them moves onto the behaviours door. Where a card presents used
+to be a session-local map beside the world (`PresentationRegistry`) driven by
+an app-wired policy; it is now a component with one writer, and that writer is
+the entity's own kind behaviour.
+
+### Breaking
+
+- **`defineWidget({ presentation })` is RETIRED.** The three-valued
+  `SurfacePresentation` (`live-dom | composited | picture`) it declared is gone
+  with it — `picture` was never a third place for pixels to come from but a
+  paused demand on a GPU target. A definition still passing the field throws at
+  definition time rather than being quietly ignored. Migration, one line each:
+
+  | was | now |
+  | --- | --- |
+  | `presentation: { pin: "live-dom" }` | `behaviors: [alwaysDom]` |
+  | `presentation: { pin: "composited" }` | `behaviors: [alwaysGpu]` |
+  | `presentation: { default: "picture" }` or `{ pin: "picture" }` | `behaviors: [alwaysGpu.with({ paused: true })]` |
+  | `presentation: { default: "composited" }` | `behaviors: [alwaysGpu]` |
+
+  The last row is not exact and says so: a `default` without a `pin` was
+  promotion-eligible from a composited start, and no standard behaviour has
+  that shape. A kind that wants it writes its own behaviour, which is
+  design-013 §0's whole point. **Declaring nothing is still right for almost
+  every widget** — a definition that names no surface behaviour is given its
+  kind's default (`domAtRest` for `surface: "dom"`, `alwaysGpu` otherwise), so
+  the ratified default is no longer something an app can fail to wire.
+
+- **`@vibecook/ice/dom` loses the presentation registry and its policy:**
+  `createPresentationRegistry`, `createPresentationPolicy`,
+  `DEFAULT_PRESENTATION`, `PresentationRegistry`, `PresentationPolicy`,
+  `PresentationPolicyOptions`, `declaredPresentation`, `presentationPinned`,
+  `widgetPresentationPins`. `createDomWidgetsReflector` no longer takes a
+  `presentation` option — it reads `SurfaceTarget` from the world.
+- **Core loses the `SurfacePresentation` family:** the type itself plus
+  `SurfacePresentationDecl`, `ResolvedSurfacePresentation`,
+  `defaultPresentationFor`, `presentationIsLegal`,
+  `surfacePresentationDeclError`, `resolveSurfacePresentation`.
+  `WidgetType.presentation` is gone.
+- **`WidgetSurface.presentation` → `WidgetSurface.target`** (`"dom" | "gpu"`),
+  and the seam `WidgetSurfaceSeams.presentationOf` → `targetOf`. Both profiles'
+  factories answer it: `compositedSurfaces` from the world's `SurfaceTarget`,
+  `stratifiedSurfaces` from the kind. `compositedSurfaces` also drops its
+  required `presentation` option and makes `demandOf` optional — absent, it
+  answers from the `SurfaceDemand` clamp.
+- **The type `SurfaceDemand` is now `SurfaceDemandValue`, and the type
+  `SurfaceKind` is now `SurfaceKindValue`** (landed with A1a). design-013 §5
+  gives both bare names to COMPONENTS, and a value and a type of one name
+  re-exported from two modules collide at the package surface without a
+  compile error. Migration is one identifier each.
+
+### Added
+
+- **The presentation facts** (design-013 §5): components `SurfaceKind` ·
+  `SurfaceTarget` · `RequestedDemand` · `SurfaceDemand` · `SurfaceBand` ·
+  `TextureRef`, the tag `Retained`, the `NO_TEXTURE` sentinel, and
+  `effectiveTarget(kind, target)` — the one function every reader of
+  `SurfaceTarget` goes through, so a `gl` or `video` surface can only ever
+  answer `gpu`. All six are stamped at EQUIP with safe defaults and
+  value-written thereafter; no component is added or removed at interaction
+  rate. `DragBounds` joins them on the Drag recognizer, written by `dropSystem`.
+- **The three standard surface behaviours** — `ice:surface.domAtRest`,
+  `ice:surface.alwaysGpu`, `ice:surface.alwaysDom` — exported as `domAtRest`,
+  `alwaysGpu`, `alwaysDom`, with `STANDARD_SURFACE_BEHAVIORS` and
+  `registerStandardSurfaceBehaviors(runtime)`. `createCanvasEngine` registers
+  all three before `opts.behaviors`, so a facade app needs no wiring at all.
+  `domAtRest` is the ratified dom default: live DOM at rest, GPU the same frame
+  as the grab, back one settle window after the release — and the window now
+  expires on `FrameInfo.clock`, the engine's clamped-dt human clock, rather
+  than `performance.now()`.
+- **`present:infra`** — a twelfth pipeline group, after `present`, so a kind
+  behaviour registered long after boot still reaches the clamp in the frame it
+  writes. `installSurfaceInfra(engine)` installs the Band and Demand systems
+  into it as ONE call returning one remover, and `PresentationProfile.install`
+  is where a React profile makes that call.
+- **`geometry()`** (`@ice/kernel`) — `(size, band, dpr, zoom, raster)` to
+  `{ cssSize, backingScale, rasterSize, slotSize, written, placement }`, the
+  one call that gives a copy size and its uv together.
+- **`createBehaviorRuntime`** is exported from core, with `BehaviorRuntime`,
+  `BehaviorRuntimeOpts`, `BehaviorSession` and `BehaviorPresence`. A facade app
+  never names it; an imperative host that drives the raw engine needs a runtime
+  to register behaviours into.
+
+### Fixed
+
+- **The React composited profile now promotes on drag — for the first time.**
+  `infinite-canvas.tsx` built `domWidgets` without a `PresentationRegistry` and
+  nothing in `@ice/react` created the policy, so every card in a React
+  composited app was live-dom forever; the rigs hand-wired both and were the
+  only thing that ever saw a promotion. The standard behaviours are
+  engine-registered and the DOM layer reads the world, so there is no wiring
+  left for an app to forget.
+- **The old composited leg's demand parking follows the clamp.** When a caller
+  passes no `atlas.demand`, `createCompositorWiring` feeds the dom source
+  binder from the `SurfaceDemand` component instead of throttling nothing. A
+  host that genuinely throttles from elsewhere still passes its own callback.
+
 ## [0.12.0] — 2026-08-31
 
 ### Breaking, narrowly

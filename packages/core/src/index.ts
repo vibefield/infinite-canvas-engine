@@ -116,7 +116,19 @@ export {
 // (input policy). `store:` routes everything — where data lives, who sees it,
 // what survives, which write vocabulary the hooks receive, at which cadence.
 export { behaviors, defineBehavior, describeBehavior } from "./behavior/define-behavior";
-export type { BehaviorRegistrationOptions } from "./behavior/runtime";
+// The runtime itself, for IMPERATIVE hosts (2026-09-06, design-013 D7).
+// `createCanvasEngine` builds one and registers the standard surface
+// behaviours into it, so a facade app never names this; a host that drives the
+// raw engine — the rigs, a headless trace — needs the factory to have a
+// runtime to register into at all.
+export { createBehaviorRuntime } from "./behavior/runtime";
+export type {
+  BehaviorPresence,
+  BehaviorRegistrationOptions,
+  BehaviorRuntime,
+  BehaviorRuntimeOpts,
+  BehaviorSession,
+} from "./behavior/runtime";
 export {
   BEHAVIOR_DEFAULT_PHASE,
   BEHAVIOR_PHASES,
@@ -575,18 +587,11 @@ export {
   DEFAULT_SURFACE_DEMAND,
   PAUSED_SURFACE_DEMAND,
   createWidgetSurfaceView,
-  defaultPresentationFor,
   demandIntervalMs,
   foldDemand,
-  presentationIsLegal,
-  resolveSurfacePresentation,
-  surfacePresentationDeclError,
   toFpsBucket,
-  type ResolvedSurfacePresentation,
   type SurfaceDemandValue,
   type SurfaceFpsBucket,
-  type SurfacePresentation,
-  type SurfacePresentationDecl,
   type WidgetSurface,
   type WidgetSurfaceSeams,
   type WidgetSurfaceView,
@@ -600,3 +605,17 @@ export {
 export { createSurfaceBandSystem } from "./systems/surface-band";
 export { createSurfaceDemandSystem } from "./systems/surface-demand";
 export { installSurfaceInfra, type SurfaceInfraOpts } from "./surface/install";
+
+// --- design-013 A1b: the three standard surface behaviours -----------------
+// The DOOR (§0): the engine's own kind behaviours, shipped through
+// `defineBehavior` like any pack's. `createCanvasEngine` registers all three
+// before `opts.behaviors`, so a React app needs none of this; an imperative
+// host that builds its own behaviour runtime calls
+// `registerStandardSurfaceBehaviors(runtime)` — one line.
+export {
+  STANDARD_SURFACE_BEHAVIORS,
+  alwaysDom,
+  alwaysGpu,
+  domAtRest,
+  registerStandardSurfaceBehaviors,
+} from "./surface/standard-behaviors";

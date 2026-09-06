@@ -27,13 +27,25 @@
  *  2. The interface is a VIEW built over seams (`createWidgetSurfaceView`)
  *     rather than an object each widget owns. Nothing in either profile has a
  *     per-widget object to hang it on: a composited widget's kind lives in the
- *     widget-type registry, its presentation in the dom layer's registry, its
- *     demand in whatever the app throttles from. Inventing an owner for them
- *     would have meant a fourth place that can disagree with the other three.
- *     The contract is therefore the QUESTION SET both profiles must be able to
- *     answer, and `dom/widget-surfaces.ts` answers it twice.
+ *     widget-type registry, its target in the world, its demand in whatever
+ *     the app throttles from. Inventing an owner for them would have meant a
+ *     fourth place that can disagree with the other three. The contract is
+ *     therefore the QUESTION SET both profiles must be able to answer, and
+ *     `dom/widget-surfaces.ts` answers it twice.
  *
- * ── Why demand governs DOM at all ─────────────────────────────────────────
+ * ── ERRATA 2026-09-06 (A1b, design-013 §5, D5) — the presentation family ───
+ * This module used to own `SurfacePresentation` (`live-dom | composited |
+ * picture`), the `defineWidget({ presentation })` declaration and its
+ * resolver. All of it is DELETED. Where a card presents is now the world's
+ * `SurfaceTarget` (`dom | gpu`), written by the entity's kind behaviour and
+ * read by every consumer through `effectiveTarget` (`catalog/surface.ts`);
+ * `picture` was never a third place for pixels to come from but a paused
+ * demand on a GPU target, which `SurfaceDemand` already says. The delta above
+ * therefore reads "its target in the world" where it once said "its
+ * presentation in the dom layer's registry" — that registry is gone, and with
+ * it the class of defect where a map beside the world disagrees with the
+ * world.
+ *
  * ── Why demand governs DOM at all ─────────────────────────────────────────
  * hic-bench §5 measured the idle paint-event floor by content type, each arm
  * with its own null control:
@@ -60,9 +72,6 @@
 
 import type { Entity } from "@vibecook/strata-ecs";
 import type { SurfaceKindValue } from "./compositor-registry";
-
-/** Where a widget's pixels come from right now (design-012 §6.3). */
-export type SurfacePresentation = "live-dom" | "composited" | "picture";
 
 /**
  * The buckets demand is quantised to. Quantised rather than continuous so a
@@ -138,86 +147,6 @@ export function foldDemand(
   return { ...wanted, interactive };
 }
 
-// --- Declared presentation policy (design-005 amendment; §6.3 "may pin") -----
-
-/**
- * What a widget TYPE declares about how it wants to present — `defineWidget`'s
- * `presentation` field (design-012 §6.3: "a widget type may pin either mode").
- *
- * `default` moves the STARTING mode; policy may still promote and demote from
- * it. `pin` fixes the mode and takes policy out of the decision entirely — the
- * text-editor card that must keep its native caret through a drag, and the
- * always-composited card that must keep true z at rest, are the two shapes it
- * exists for.
- */
-export interface SurfacePresentationDecl {
-  readonly default?: SurfacePresentation;
-  readonly pin?: SurfacePresentation;
-}
-
-/** A declaration resolved against its kind's legal modes; `pin` absent = free. */
-export interface ResolvedSurfacePresentation {
-  readonly default: SurfacePresentation;
-  readonly pin: SurfacePresentation | undefined;
-}
-
-/**
- * The Q5 default, by kind. `dom` rests in `live-dom` (native caret, selection
- * and threaded scroll while the user reads and types); every other kind has no
- * live-dom mode at all — a GL island and a live surface ARE GPU textures, and
- * plan §2 gives them empty L1 hosts precisely because there is nothing to paint
- * natively.
- */
-export function defaultPresentationFor(kind: SurfaceKindValue): SurfacePresentation {
-  return kind === "dom" ? "live-dom" : "composited";
-}
-
-/** Can a surface of this kind present this way at all? See the note above. */
-export function presentationIsLegal(kind: SurfaceKindValue, mode: SurfacePresentation): boolean {
-  return kind === "dom" || mode !== "live-dom";
-}
-
-/**
- * Why this declaration cannot stand, or `null`. Returns a message rather than
- * throwing so the caller can name the widget type in it — `defineWidget` knows
- * the type, this module does not.
- */
-export function surfacePresentationDeclError(
-  kind: SurfaceKindValue,
-  decl: SurfacePresentationDecl,
-): string | null {
-  for (const [field, mode] of [
-    ["default", decl.default],
-    ["pin", decl.pin],
-  ] as const) {
-    if (mode !== undefined && !presentationIsLegal(kind, mode)) {
-      return `presentation.${field} is "${mode}", which a "${kind}" surface has no mode for`;
-    }
-  }
-  // A pin IS the mode, so a default beside it is either redundant or a
-  // contradiction. Both are worth refusing: the redundant one because it reads
-  // as an intent policy will honour, and the contradictory one because it is
-  // two answers to one question.
-  if (decl.pin !== undefined && decl.default !== undefined) {
-    return decl.default === decl.pin
-      ? `presentation declares pin "${decl.pin}" and the same default — a pin already fixes the mode, so drop the default`
-      : `presentation declares pin "${decl.pin}" and default "${decl.default}" — a pin fixes the mode, so the default can never apply`;
-  }
-  return null;
-}
-
-/** Resolve a declaration (possibly absent) into the two facts policy reads. */
-export function resolveSurfacePresentation(
-  kind: SurfaceKindValue,
-  decl: SurfacePresentationDecl | undefined,
-): ResolvedSurfacePresentation {
-  const pin = decl?.pin;
-  return {
-    default: pin ?? decl?.default ?? defaultPresentationFor(kind),
-    pin,
-  };
-}
-
 // --- The surface itself ------------------------------------------------------
 
 /**
@@ -243,8 +172,16 @@ export function resolveSurfacePresentation(
 export interface WidgetSurface {
   /** The kind its pixels come in — the widget type's declared surface. */
   readonly kind: SurfaceKindValue;
-  /** CURRENT, never declared (plan §3). In the stratified profile, derived. */
-  readonly presentation: SurfacePresentation;
+  /**
+   * Which layer presents it RIGHT NOW — current, never declared (plan §3).
+   *
+   * As of design-013 A1b this is the world's `SurfaceTarget`, read through
+   * `effectiveTarget` so a `gl` or `video` kind can only ever answer `gpu`.
+   * The old three-valued `SurfacePresentation` is retired: `live-dom` is
+   * `dom`, `composited` is `gpu`, and `picture` was never a mode at all —
+   * it is `gpu` with a paused demand, which `demand` below already says.
+   */
+  readonly target: "dom" | "gpu";
   /** The demand it is under right now. */
   readonly demand: SurfaceDemandValue;
   /** Ask for a different one. What honours it is the profile's business. */
@@ -258,14 +195,15 @@ export interface WidgetSurfaceView {
 
 /**
  * The seams a profile must supply to answer the contract. Every one of them is
- * a READ THROUGH, never a captured value: presentation changes under the
- * policy's feet, and a surface object that snapshotted it would be answering
- * about the frame it was made in.
+ * a READ THROUGH, never a captured value: the target changes under the kind
+ * behaviour's feet, and a surface object that snapshotted it would be
+ * answering about the frame it was made in.
  */
 export interface WidgetSurfaceSeams {
   /** The entity's surface kind, or `undefined` if it is not a widget. */
   readonly kindOf: (entity: Entity) => SurfaceKindValue | undefined;
-  readonly presentationOf: (entity: Entity) => SurfacePresentation;
+  /** The layer it presents on now — through `effectiveTarget`, never raw. */
+  readonly targetOf: (entity: Entity) => "dom" | "gpu";
   readonly demandOf: (entity: Entity) => SurfaceDemandValue;
   /**
    * Where a demand request goes. Optional: a profile with nothing that reads
@@ -282,8 +220,8 @@ export function createWidgetSurfaceView(seams: WidgetSurfaceSeams): WidgetSurfac
       if (kind === undefined) return undefined;
       return {
         kind,
-        get presentation() {
-          return seams.presentationOf(entity);
+        get target() {
+          return seams.targetOf(entity);
         },
         get demand() {
           return seams.demandOf(entity);

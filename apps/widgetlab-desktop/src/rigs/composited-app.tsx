@@ -40,14 +40,24 @@ import {
   NO_ENTITY,
   Position,
   PrefabId,
+  RequestedDemand,
   Size,
+  SurfaceBand,
+  SurfaceDemand,
+  SurfaceKind,
+  SurfaceTarget,
+  TextureRef,
   Viewport,
   Visible,
   acquireCompositorDevice,
+  createBehaviorRuntime,
   createCompositorSourceRegistry,
   createEngine,
   createWorld,
   defineWidget,
+  domAtRest,
+  installSurfaceInfra,
+  registerStandardSurfaceBehaviors,
   type CompositorSource,
   type Entity,
   type EngineGpu,
@@ -74,8 +84,6 @@ import {
   createDomWidgetsReflector,
   createDomWritebackReflector,
   createPlanes,
-  createPresentationPolicy,
-  createPresentationRegistry,
   createSourceCanvas,
 } from "@ice/dom";
 import { GLViews, createGLBridge, type GLBridge } from "@ice/r3f";
@@ -389,8 +397,16 @@ export function mountCompositedApp(): AppRig {
   const host = createCanvasHost(container);
   const planes = createPlanes(host);
   const store = makeStore();
-  const presentation = createPresentationRegistry();
   const sources = createCompositorSourceRegistry();
+  // The behaviours door (design-013 A1b). A product gets this from
+  // `createCanvasEngine`, which registers the standard three itself; this rig
+  // drives the RAW engine, so it owes the one line the facade would have run.
+  // A boot that forgets it gets cards that never promote — which is exactly
+  // what `dragUnder` below measures.
+  const behaviors = createBehaviorRuntime({ world, engine });
+  registerStandardSurfaceBehaviors(behaviors);
+  // Band + Demand, in `present:infra`, after every kind behaviour has spoken.
+  installSurfaceInfra(engine);
 
   const gpuCanvas = document.createElement("canvas");
   gpuCanvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;";
@@ -441,7 +457,7 @@ export function mountCompositedApp(): AppRig {
     { contentPlane: planes.content, liftedPlane: planes.lifted, sourceCanvas: l1.canvas },
     world,
     store,
-    { presentation, sources },
+    { sources },
   );
   const writeback = createDomWritebackReflector(
     {
@@ -545,9 +561,10 @@ export function mountCompositedApp(): AppRig {
     // compositor's — so an island repaints and is composited in the same
     // engine flush rather than one frame late.
     bridge = createGLBridge(engine, {});
-    // The Q5 default: promote on grab, demote one settle window after the
-    // drop. The drag witness relies on it — nothing promotes the card by hand.
-    engine.registerReflector(createPresentationPolicy(world, presentation, { settleMs: 250 }));
+    // The Q5 default now rides `ice:surface.domAtRest`, registered above with
+    // the rest of the standard set: promote on grab, demote one settle window
+    // after the drop, on the engine's own clock. The drag witness relies on
+    // it — nothing promotes the card by hand.
     engine.registerReflector(domWidgets);
     engine.registerReflector(writeback);
     engine.registerReflector(compositor);
@@ -937,7 +954,8 @@ export function mountCompositedApp(): AppRig {
     const P_ISLAND = { x: 440, y: 440 };
     const P_SIDE = { x: 96, y: 440 };
 
-    // Pick it up. The POLICY promotes it — the rig never calls setPresentation.
+    // Pick it up. The card's KIND BEHAVIOUR promotes it — the rig writes no
+    // target from here on, and the behaviour takes ownership on this grab.
     world.addComponent(cardE, Grab, {
       x: 0,
       y: 0,
@@ -948,7 +966,7 @@ export function mountCompositedApp(): AppRig {
       ord: 0,
     });
     await settle(3);
-    const promoted = presentation.get(cardE);
+    const promoted = world.get(cardE, SurfaceTarget)?.target;
     // DIAGNOSTIC: force one re-copy at the host's current, known-good state.
     // If the card appears only after this, the slot was holding pixels captured
     // in some earlier state and nothing had marked it dirty since.
@@ -1040,11 +1058,21 @@ export function mountCompositedApp(): AppRig {
     await settle(4);
     return {
       promoted,
-      afterDrop: presentation.get(cardE),
+      afterDrop: world.get(cardE, SurfaceTarget)?.target,
       refusedDuringPromote: refusedAfter - refusedBefore,
       slotSample,
       frames,
     };
+  }
+
+  /** What `widgetEquip` would have stamped (design-013 D2's safe defaults). */
+  function equipSurface(e: Entity, kind: "dom" | "gl" | "video", target: "dom" | "gpu"): void {
+    world.addComponent(e, SurfaceKind, { kind });
+    world.addComponent(e, SurfaceTarget, { target });
+    world.addComponent(e, RequestedDemand, { mode: "live", fpsBucket: 60, interactive: false });
+    world.addComponent(e, SurfaceDemand, { mode: "paused", fpsBucket: 0, interactive: false });
+    world.addComponent(e, SurfaceBand, { band: 0 });
+    world.addComponent(e, TextureRef, { texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
   }
 
   return {
@@ -1094,6 +1122,19 @@ export function mountCompositedApp(): AppRig {
       world.addTag(island, Visible);
       world.addTag(card, Active);
       world.addTag(card, Visible);
+
+      // THE PRESENTATION FACTS, stamped by hand — the same debt as the tags
+      // above. In a product `widgetEquip` adds all six at projection
+      // (design-013 D2) and `defineWidget` pre-attaches the kind's behaviour;
+      // this rig spawns bare entities into a hand-rolled mount store, so it
+      // owes both. The island gets a `gl` kind and the only target a gl
+      // surface has: its DOM chrome must still stay in the content plane under
+      // the island, which is what `domWidgets.canvasEligible` refuses on.
+      equipSurface(island, "gl", "gpu");
+      equipSurface(card, "dom", "dom");
+      // The card's kind behaviour: live DOM at rest, GPU while grabbed, back
+      // one settle window later. `dragUnder` measures exactly this.
+      behaviors.attach(card, domAtRest);
       // Paint order: island FIRST, dom card second ⇒ the card is on top. This
       // ordering is the whole point of one pass — a dom card at its sibling
       // ordinal over a GL widget, in true z.
@@ -1102,7 +1143,13 @@ export function mountCompositedApp(): AppRig {
         { entity: island, hidden: false },
         { entity: card, hidden: false },
       ]);
-      presentation.set(card, "composited");
+      // Held composited for the STATIC probes (`gradeIsland`, `mixedZ`): they
+      // grade a dom card drawn as a quad at true z, so the card has to be on
+      // L1 before any gesture. A direct world write, in rig SETUP and outside
+      // the tick, which is legal — the one-writer law binds systems, and this
+      // is the same debt as the tags above. `domAtRest` leaves it alone (it
+      // demotes only what IT promoted), and takes ownership on the first grab.
+      world.edit(card).set(SurfaceTarget, { target: "gpu" });
 
       root = createRoot(reactHost);
       root.render(
