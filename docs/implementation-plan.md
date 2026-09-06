@@ -707,6 +707,72 @@ tests). Notable for the record, beyond the fixes themselves:
   nothing lifecycles its textures — an event-driven eviction seam is a
   design call, not a slice.
 
+## M19 — Surface geometry + the ground port (design-013) — **IN PROGRESS (Phase A started 2026-09-06)**
+
+*(Numbering note: next free after M18. design-013 rev 5 was ratified 2026-09-06 with
+all eleven questions ruled at their leans; rev 6 folded the ground's heat and live
+portals; the Phase A grading decisions D1–D10 are rev 7. The task-grade plan is
+`draft/design-013-implementation-plan.md` — local-dev only, like every design doc.)*
+
+Presentation FACTS move into the world as runtime, derived components with exactly one
+writer each (design-013 §3 amends design-002 §5 / design-004 §7, bounded by design-001
+§7's older law: discrete facts change-only on events; continuous state stays in side
+tables). Infra provides mechanisms — the DOM layer, the GPU layer, residency, band, the
+demand clamp — and never decides when a card is on which layer; KINDS choose, through the
+behaviours door, and the engine ships three standard choices (`ice:surface.domAtRest`,
+`alwaysGpu`, `alwaysDom`) as defaults, not laws. The compose step is `draft/ground`'s card
+frame pass with a content term — chrome ⊕ content in one fragment — which enters ICE
+exactly once, into its final home (Phase B), beside the old composited leg until the new
+profile passes the pixel exits, and the old leg is deleted in one commit (B8).
+
+**The ladder:** A (facts + residency in the world; no renderer touched) → B (the new
+composited profile on the raw ground: B1 the move [GROUND PORT] · B2 the profile switch ·
+B3 compose · B4 DomRender · B5 IslandRender · B6 VideoIngest · B7 the flight [GROUND
+PORT] · B8 the deletion) → C (three leaves the ground: wires/guides/soup/line-grid raw ·
+stratified ground · the cut).
+
+**Phase A slices** (each: mutation-probed tests, comments corrected at source, the gate
+verbatim, the churn bench before/after):
+
+- **A1a — the vocabulary** (**LANDED 2026-09-06**, `1a34239` + `74a31fa` the grading fix;
+  as-built: the TS types `SurfaceDemand`/`SurfaceKind` became `SurfaceDemandValue`/
+  `SurfaceKindValue` because a type-only re-export SHADOWS a star-exported value of the same
+  name at `core/index.ts` — silent; `geometry()` throws on band 0 (kernel has no dev switch);
+  `placement` is CSS px — the plan's device-px fixture was the slip, corrected at grading;
+  the Band guard collects `SurfaceTarget` + the Visible/Culled flips, not `Size`. **D2's
+  price, measured** (interleaved A/B, 3 pairs, no overlap): the flat-100k membership arm
+  +9.2 % zoom / +8.8 % pan — six more components widen the archetype so cull's and
+  breakpoint's O(N) walks touch more chunks, ~42 ns per widget per zoom frame; the nested
+  arms and the behaviour churn bench are unchanged. Accepted; the lever if a real board
+  ever shows it is a lazy attach of the four gpu-only components at first promotion.
+  Nothing reads the facts yet.): `SurfaceKind · SurfaceTarget · RequestedDemand ·
+  SurfaceDemand · SurfaceBand · TextureRef · Retained` stamped at equip with safe
+  defaults (`TextureRef.texture = 0` = no destination); `DragBounds` on the Drag
+  recognizer, written change-only by `dropSystem` (the heat's fact); the `present:infra`
+  pipeline group (design-002 §2 amendment: behaviour systems register at
+  behaviour-registration time, so infra that must run after every kind behaviour needs
+  its own settle point); `geometry()` in kernel (raster = CSS box × dpr, ceil; `band`
+  sizes the host in band space, `crisp` at the live zoom); the Band and Demand systems
+  (the binder's hysteresis rule with ONE writer; `foldDemand` as the clamp);
+  `installSurfaceInfra` + `PresentationProfile.install` (a profile IS the system-set it
+  installs — Q6's first use).
+- **A1b — the door and the deletions** (pending): the three `ice:surface.*` behaviours
+  (settle via the `changed` hook polling `FrameInfo`, expiring on `clock`);
+  `defineWidget.presentation` retired onto them (migration table in the CHANGELOG); the
+  dom `PresentationRegistry` + policy DELETED; `domWidgets` reads `SurfaceTarget`; the old
+  binder's demand callback reads `SurfaceDemand`; rigs rewired. **Finding recorded at
+  grading (D7):** the shipping React composited profile had NO promotion —
+  `infinite-canvas.tsx` built `domWidgets` without a registry and nothing created the
+  policy; only the rigs wired it. A1b closes it by construction (facade-registered
+  behaviours; the DOM layer reads the world).
+- **A2 — residency** (pending): `core/residency/` — fixed 2048² layers over the kernel
+  shelf math (Q10; oversize → own texture; repack NOT ported — layer retirement is the
+  memory door), the texture table (u32 handles from 1; the video kind registers a
+  stable texture, Q5), the Residency system writing `TextureRef` change-only with one
+  LRU over `(entity, band)` honouring `Retained`; GPU realisation deferred to the
+  Phase B reflectors. Exit: the §6.4 invariant as a seeded property, and a frame-by-frame
+  `TextureRef` timeline under the S6 drag script.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field

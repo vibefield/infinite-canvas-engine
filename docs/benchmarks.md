@@ -12,6 +12,29 @@ exist to catch regressions by eye across milestones, not to assert a
 threshold in a test. The bench source is the single source of truth; this
 file is its recorded output.
 
+## M19 A1a — the equip stamp's price (2026-09-06)
+
+design-013 D2 stamps six presentation components on every widget at equip (value-written
+thereafter, never added or removed). Interleaved A/B on the loaded host, the equip stamp
+the only variable, medians; the naive single before/after pair had read +29 %/+89 % because
+load arrived mid-run and was discarded.
+
+| arm | with the stamp | without | delta |
+| --- | --- | --- | --- |
+| behaviour churn bench `ticking2k` (4 pairs) | 0.1719 ms/frame | 0.1733 | noise |
+| behaviour churn bench `register40` (4 pairs) | 0.2065 ms | 0.2140 | noise |
+| membership flat-100k, zoom frame (3 pairs) | 49 994.7 µs | 45 790.0 | **+9.2 %** |
+| membership flat-100k, pan frame (3 pairs) | 29 754.9 µs | 27 345.2 | **+8.8 %** |
+| membership nested-10k / nested-100k | — | — | unchanged |
+
+The flat-100k arm is the stress shape (100,000 widgets in one frame): a wider archetype
+means cull's and breakpoint's O(N) walks touch more chunks, ~42 ns per widget per zoom
+frame. Accepted as D2's standing price. The lever, if a real board ever shows it: a lazy
+attach of the four gpu-only components (`RequestedDemand`, `SurfaceDemand`, `SurfaceBand`,
+`TextureRef`) at a card's first promotion — not taken. Note: `pnpm --filter @ice/core bench`
+exits 1 on this machine with a vitest-worker RPC timeout during the 85 s nested-100k arm
+even when every test passes; read the numbers, not the exit code.
+
 ## T2 — legacy ground vs typed GroundHost CPU proxy (2026-08-26)
 
 **Machine**: arm64 macOS 26.5.2, Node v26.5.0.
