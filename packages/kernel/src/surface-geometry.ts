@@ -55,16 +55,36 @@
  * island formula `fboPixelSize` rounds instead of ceils; it is retired when B5
  * adopts this function, and nothing changes for islands before then.
  *
- * ── Units ──────────────────────────────────────────────────────────────────
- * `cssSize` is CSS px. `rasterSize`, `slotSize`, `written` and `placement` are
- * DEVICE px. `placement` is the camera transform's own product `size × zoom`
- * carried into device space by the backing scale, so it is directly comparable
- * to `written`: under `crisp` the two agree to within the ceil, and under
- * `band` their ratio IS the `zoom / band` the placement matrix carries. (D9
- * states the placement formula in CSS space, `size × zoom`, and its worked
- * fixture in device space, 304×182.4 for an 80×48 card at zoom 1.9 / dpr 2.
- * The fixture is the binding one: a placement that could not be held beside
- * `written` in the same units would answer no question anyone has.)
+ * ── Units — stated per field, because mixing them IS the defect ───────────
+ *
+ *   cssSize      CSS px    the host's CSS box
+ *   backingScale ratio     device px per CSS px (no unit of its own)
+ *   rasterSize   DEVICE px what the platform rasters that box into
+ *   slotSize     DEVICE px the destination residency holds; equals rasterSize
+ *   written      DEVICE px what the copy writes — the uv numerator; equals rasterSize
+ *   placement    CSS px    the card's on-screen extent at the live zoom
+ *
+ * The device/CSS line falls exactly where the platform's does. Only the COPY
+ * and the DESTINATION are counted in device pixels, because those are the two
+ * things `copyElementImageToTexture` measures. Everything a layout or a
+ * transform touches is CSS px: `draft/ground`'s `View.box` and card rects are
+ * CSS px with the dpr carried in a uniform and applied by the shader, and
+ * DomCompose positions hosts in CSS px. A device-px `placement` would have to
+ * be divided back down by every one of its consumers, and the first one to
+ * forget is the next drift.
+ *
+ * The two are one multiply apart when you need to compare them: under `crisp`,
+ * `written == ceil(placement × dpr)` on each axis, which is what makes crisp
+ * crisp. Under `band`, `placement × dpr / slotSize` is the `zoom / band` residue
+ * the placement matrix carries, held inside [0.5, 2] by the hysteresis.
+ *
+ * (ERRATUM 2026-09-06, corrected before A1a landed: this returned `placement`
+ * in DEVICE px for one revision. design-013 D9 states the formula in CSS space
+ * and its worked fixture in device space — 304×182.4 for an 80×48 card at zoom
+ * 1.9 / dpr 2 — and I read the fixture as binding. The formula was right and
+ * the fixture was the slip: 304×182.4 is `placement × dpr`, and the CSS answer
+ * is 152×91.2. James, on the grading. The fixture's device numbers are still
+ * asserted in the test, derived.)
  *
  * ── band 0 throws, unconditionally ─────────────────────────────────────────
  * `SurfaceBand.band = 0` means "never banded" (design-013 D2's safe default),
@@ -98,7 +118,11 @@ export interface SurfaceGeometry {
   readonly slotSize: SurfaceExtent;
   /** What the copy actually writes — the uv numerator. Device px; equals `rasterSize`. */
   readonly written: SurfaceExtent;
-  /** The card's on-screen extent at the live zoom. Device px, exact (no ceil). */
+  /**
+   * The card's on-screen extent at the live zoom. CSS px, exact (no ceil) —
+   * a layout number, for the transform and the host box. Multiply by
+   * `backingScale` to compare it against `written`.
+   */
   readonly placement: SurfaceExtent;
 }
 
@@ -143,6 +167,8 @@ export function geometry(
     // the uv divides — a copy writes its whole raster, never a sub-rect.
     slotSize: rasterSize,
     written: rasterSize,
-    placement: { w: size.w * zoom * dpr, h: size.h * zoom * dpr },
+    // CSS px — the camera transform's own product, in the units every layout
+    // consumer already works in. Not ceiled: a placement matrix must not round.
+    placement: { w: size.w * zoom, h: size.h * zoom },
   };
 }

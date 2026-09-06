@@ -35,14 +35,25 @@ describe("the zoom-drift fixture", () => {
     expect(g.written.h - g.slotSize.h).toBe(0);
   });
 
-  it("band: placement is the live-zoom extent, and its ratio to the slot IS zoom/band", () => {
+  it("band: placement is the live-zoom extent in CSS px; the slot is device px", () => {
     const g = geometry(CARD, 1, DPR, DRIFTED_ZOOM, "band");
-    expect(g.placement.w).toBeCloseTo(304, 10);
-    expect(g.placement.h).toBeCloseTo(182.4, 10);
-    // The residue the placement matrix carries. The hysteresis holds it in
-    // [0.5, 2], which is why a band-space texture is never scaled absurdly.
-    expect(g.placement.w / g.slotSize.w).toBeCloseTo(DRIFTED_ZOOM / 1, 10);
-    expect(g.placement.h / g.slotSize.h).toBeCloseTo(DRIFTED_ZOOM / 1, 10);
+    // CSS px, because every consumer of placement is a layout: draft/ground's
+    // View.box and card rects are CSS px with dpr carried in a uniform and
+    // applied by the shader, and DomCompose positions hosts in CSS px. A
+    // device-px placement would have to be divided back down by each of them,
+    // and the first consumer to forget is the next drift.
+    expect(g.placement.w).toBeCloseTo(152, 10);
+    expect(g.placement.h).toBeCloseTo(91.2, 10);
+    // The rig's measured device-px extent, DERIVED — one multiply away, so the
+    // 304×182.4 the zoom-drift rig reported still appears in the test rather
+    // than only in prose.
+    expect(g.placement.w * g.backingScale).toBeCloseTo(304, 10);
+    expect(g.placement.h * g.backingScale).toBeCloseTo(182.4, 10);
+    // The residue the placement matrix carries, compared in ONE unit. The
+    // hysteresis holds it in [0.5, 2], so a band-space texture is never scaled
+    // absurdly.
+    expect((g.placement.w * g.backingScale) / g.slotSize.w).toBeCloseTo(DRIFTED_ZOOM / 1, 10);
+    expect((g.placement.h * g.backingScale) / g.slotSize.h).toBeCloseTo(DRIFTED_ZOOM / 1, 10);
   });
 
   it("crisp: the host is sized at the LIVE zoom, so written is the rig's measured 304×183", () => {
@@ -55,11 +66,15 @@ describe("the zoom-drift fixture", () => {
     expect(g.slotSize).toEqual(g.written);
   });
 
-  it("crisp: written and placement agree to within the ceil — that is what crisp buys", () => {
+  it("crisp: written == ceil(placement × dpr) — that is what crisp buys", () => {
+    // The two live in different units, so the relation is stated with the
+    // multiply in it. Sub-pixel on each axis is the whole margin.
     const g = geometry(CARD, 1, DPR, DRIFTED_ZOOM, "crisp");
-    expect(g.written.w - g.placement.w).toBe(0);
-    expect(g.written.h - g.placement.h).toBeCloseTo(0.6, 10); // ceil(182.4) − 182.4
-    expect(g.written.h - g.placement.h).toBeLessThan(1);
+    expect(g.written.w).toBe(Math.ceil(g.placement.w * g.backingScale));
+    expect(g.written.h).toBe(Math.ceil(g.placement.h * g.backingScale));
+    expect(g.written.w - g.placement.w * g.backingScale).toBe(0);
+    expect(g.written.h - g.placement.h * g.backingScale).toBeCloseTo(0.6, 10); // ceil(182.4) − 182.4
+    expect(g.written.h - g.placement.h * g.backingScale).toBeLessThan(1);
   });
 });
 
@@ -122,7 +137,7 @@ describe("ceil, and the floor of one pixel", () => {
   it("leaves cssSize and placement EXACT — the placement matrix must not lie", () => {
     const g = geometry({ w: 33, h: 17 }, 1, 1.5, 0.5, "band");
     expect(g.cssSize).toEqual({ w: 33, h: 17 });
-    expect(g.placement).toEqual({ w: 33 * 0.5 * 1.5, h: 17 * 0.5 * 1.5 });
+    expect(g.placement).toEqual({ w: 33 * 0.5, h: 17 * 0.5 }); // CSS px: size × zoom, no dpr
   });
 });
 

@@ -180,6 +180,30 @@ describe("the hysteresis invariant, under a seeded zoom walk", () => {
 });
 
 describe("what the system leaves alone", () => {
+  it("a SIZE write never enters the body — the band is not a function of size", () => {
+    // The plan's collect list named `Size`; it was an over-subscription,
+    // corrected at the grading. A resize drag writes Size every frame, and a
+    // declared write blanket-stamps for any system that RUNS — so collecting it
+    // would stamp `SurfaceBand` on every frame of every resize, for a number
+    // that cannot have moved. Size belongs to `geometry()` and to Residency.
+    const { world, step, card, bandOf, ran } = rig();
+    const e = card();
+    step();
+    expect(ran()).toBe(true); // first sight
+    const band = bandOf(e);
+
+    const collector = world.changes.collect({ components: [SurfaceBand], coarse: false });
+    collector.drain();
+    for (let i = 0; i < 4; i++) {
+      world.edit(e).set(Size, { w: 100 + i * 10, h: 60 + i * 5 });
+      step();
+      expect(ran()).toBe(false); // the guard's runIf said no
+    }
+    expect(collector.drain().changed).toEqual([]); // and nothing was written
+    collector.dispose();
+    expect(bandOf(e)).toBe(band);
+  });
+
   it("a pure PAN never enters the body — the gate is a real runIf", () => {
     // A declared write blanket-stamps for any system that RUNS, so an
     // early-out in the body would cost a stamp per pan frame. The gate has to
@@ -220,8 +244,8 @@ describe("what the system leaves alone", () => {
     // The full path is protected by the query, which is `Visible`-termed. The
     // DELTA path re-reads journaled entities one by one, so it needs its own
     // check — and the way to reach it is to journal a culled card while the
-    // zoom sits still, which is what a resize or a remote edit does.
-    const { world, step, card, bandOf, zoomTo } = rig();
+    // zoom sits still, which a re-written `SurfaceTarget` does.
+    const { world, step, card, bandOf, zoomTo, ran } = rig();
     const e = card();
     zoomTo(4);
     step();
@@ -233,10 +257,12 @@ describe("what the system leaves alone", () => {
     step();
     expect(bandOf(e)).toBe(4);
 
-    // Zoom now still. Journal the culled card by writing its Size: the guard
-    // fires with a DELTA, not `full`, and the body sees this entity by id.
-    world.edit(e).set(Size, { w: 120, h: 90 });
+    // Zoom now still. A `SurfaceTarget` write journals the culled card, so the
+    // guard fires with a DELTA rather than `full` and the body sees this entity
+    // by id — which is the path the `Visible` check in it exists for.
+    world.edit(e).set(SurfaceTarget, { target: "gpu" });
     step();
+    expect(ran()).toBe(true); // the body really did run this frame
     expect(bandOf(e)).toBe(4);
   });
 

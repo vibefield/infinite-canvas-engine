@@ -12,8 +12,13 @@
  * and is the sole ordering contract (Law: phases/sub-phases only — never
  * registration-time coupling between groups).
  *
- * ── `present:infra` — design-002 §2 amendment, 2026-09-06 (design-013 D1) ──
+ * ── `present:infra` — design-002 §2 AMENDED, 2026-09-06 (design-013 D1) ────
  * ERRATUM to the paragraph above, which said ELEVEN phases: it is twelve.
+ *
+ * design-002 §2 is not merely cited here. Its table was AMENDED on the same day
+ * — a `present:infra` row, and a note on decision 2 — so the doc and this file
+ * are one statement of the phase list, changed together. A reader who finds
+ * them disagreeing should trust neither until it is fixed at both ends.
  *
  * design-013 §6 orders the present sub-phase as behaviours → Band → Demand →
  * Residency: the kind's behaviour chooses a target, and infra then clamps,

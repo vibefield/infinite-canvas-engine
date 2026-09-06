@@ -40,18 +40,25 @@
  *  - Kind strategy does NOT enter here. Band is the retention key for `band`
  *    and `crisp` alike; `geometry()` is where the strategies differ (D9).
  *
- * ── The gate ───────────────────────────────────────────────────────────────
+ * ── The gate, and what it deliberately does NOT collect ───────────────────
  * The guard is a real `runIf` (`helpers/churn-guard.ts`), never a body
  * early-out: this system declares `access.write`, and strata blanket-stamps a
  * declared write for any system that RUNS — including one that returns
  * immediately. A pan changes neither zoom nor dpr nor any subscribed component,
  * so a pan frame does not enter the body at all.
+ *
+ * The band is a function of the ZOOM (through the ladder), the effective TARGET
+ * and VISIBILITY. It is not a function of `Size`. The plan's collect list named
+ * `Size` and that was an over-subscription, corrected at the grading
+ * (2026-09-06, James): collecting it makes every frame of a resize drag run
+ * this body and blanket-stamp `SurfaceBand` for a number that cannot have
+ * moved. Size belongs to `geometry()`, which turns a band into pixels, and to
+ * Residency, which re-slots when those pixels change — neither of them here.
  */
 import type { Entity, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineTickSystem } from "@vibecook/strata-ecs";
 import { isOutOfBand, selectBand } from "@ice/kernel";
 import { Camera, Culled, Viewport, Visible } from "../catalog/camera-derived";
-import { Size } from "../catalog/scene";
 import {
   SurfaceBand,
   SurfaceKind,
@@ -72,7 +79,7 @@ export function createSurfaceBandSystem(world: World): TickSystem {
   let lastDpr: number | undefined;
   const guard = makeChurnGuard(
     world,
-    { components: [Size, SurfaceTarget], tags: [Visible, Culled], coarse: false },
+    { components: [SurfaceTarget], tags: [Visible, Culled], coarse: false },
     () => {
       const zoom = world.getResource(Camera)?.zoom;
       const dpr = world.getResource(Viewport)?.dpr;
