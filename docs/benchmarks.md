@@ -12,6 +12,21 @@ exist to catch regressions by eye across milestones, not to assert a
 threshold in a test. The bench source is the single source of truth; this
 file is its recorded output.
 
+## M19 A2 — the fixed-layer allocator's packing waste (2026-09-06)
+
+design-013 §4 replaces the paged, growing atlas with fixed 2048² layers of one
+`texture_2d_array` (§9 Q10), keyed `(entity, band)`, repack not ported (D8). The waste
+instrument is areas only — a fixed layer's memory is `layerSize² × 4` from first
+allocation, so packing quality and bytes are different questions.
+
+| board | layers | packing waste | the paged allocator (M18) |
+| --- | --- | --- | --- |
+| 36 × 336² slots (168×168 dpr 2), one full layer | 1 | **2.24 %** | bound 12 %, measured 9.45 % on a hinted page |
+| the 100-card bench board | 3 | **4.16 %** | 13.55 % (`board` rig, 12 cards) |
+
+D8's revisit threshold: a realistic board above 30 % on a layer brings repack back as its
+own slice, against that number.
+
 ## M19 A1a — the equip stamp's price (2026-09-06)
 
 design-013 D2 stamps six presentation components on every widget at equip (value-written
@@ -34,6 +49,25 @@ attach of the four gpu-only components (`RequestedDemand`, `SurfaceDemand`, `Sur
 `TextureRef`) at a card's first promotion — not taken. Note: `pnpm --filter @ice/core bench`
 exits 1 on this machine with a vitest-worker RPC timeout during the 85 s nested-100k arm
 even when every test passes; read the numbers, not the exit code.
+
+## M19 A1b — the standard behaviour's idle tax (2026-09-06)
+
+`ice:surface.domAtRest` is attached to every dom widget and its settle window polls
+`FrameInfo` from the `changed` hook. The hook body is O(grabbed + settling), but the poll
+makes the behaviour runtime's delivery walk report `full` every frame, so the WALK is
+O(instances). Interleaved A/B pairs, every other system unchanged; a probe removing
+`FrameInfo` from `reads` drops the row out of the idle top five entirely.
+
+| board | `behavior:ice:surface.domAtRest:deliver`, idle | for scale |
+| --- | --- | --- |
+| 10k widgets | +18 µs/frame | — |
+| 100k widgets | +163–165 µs/frame | `widgetEquip` 231 µs · `marqueeBehavior` 179 µs on the same board |
+
+Accepted as the design's cost (the settle needs the clock). The lever, if a real board
+shows it: a design-009 poll hook that delivers once per behaviour per frame without an
+instance walk. `ticking2k` 0.1732 → 0.2234 in the naive pair was NOT a regression — three
+interleaved pairs read 0.1753/0.1741, 0.1712/0.1727, 0.1731/0.1724 (that bench builds a raw
+engine with its own runtime; nothing here is on its path).
 
 ## T2 — legacy ground vs typed GroundHost CPU proxy (2026-08-26)
 

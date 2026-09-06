@@ -756,7 +756,22 @@ verbatim, the churn bench before/after):
   (the binder's hysteresis rule with ONE writer; `foldDemand` as the clamp);
   `installSurfaceInfra` + `PresentationProfile.install` (a profile IS the system-set it
   installs — Q6's first use).
-- **A1b — the door and the deletions** (pending): the three `ice:surface.*` behaviours
+- **A1b — the door and the deletions** (**LANDED 2026-09-06**, `a8358fb`; as-built: the
+  gl-eviction guard survives as `canvasEligible()` in `domWidgets` — equip stamps every gl
+  widget `gpu`, so a promote read of the target alone would move every island's chrome host
+  under L1 and register a `dom` source over the island's own; `defineWidget` suppresses the
+  default for any listed behaviour that writes `SurfaceTarget`, not only `ice:surface.*`;
+  `compileBehavior` attests `orderIndependent` on the `ice:surface.*` writes only (strata's
+  same-phase advisory printed 213 lines per CI run otherwise — OPEN: a pack's own kind
+  behaviour still trips it; the honest fix is an author-facing attestation in design-009);
+  `domAtRest`'s side tables are a WeakMap keyed by the generation's signal. Three findings:
+  the `FrameInfo` poll makes the delivery WALK O(instances) — 18 µs/frame idle at 10k
+  widgets, 165 µs at 100k (D6's "O(grabbed + settling)" is true of the hook body only;
+  corrected at source); `alwaysGpu.with({paused:true})` yields `{paused, 60}` — the mode
+  governs, nothing uploads; and the S6 drag witness had never witnessed a promotion (the rig
+  forced the old registry's value at mount, so the policy never took ownership) — it does
+  now. OWED: a live witness for the D7 closure in the REAL React app (the convergence smoke
+  has no drag; `composited-app` hand-wires the engine).): the three `ice:surface.*` behaviours
   (settle via the `changed` hook polling `FrameInfo`, expiring on `clock`);
   `defineWidget.presentation` retired onto them (migration table in the CHANGELOG); the
   dom `PresentationRegistry` + policy DELETED; `domWidgets` reads `SurfaceTarget`; the old
@@ -765,7 +780,23 @@ verbatim, the churn bench before/after):
   `infinite-canvas.tsx` built `domWidgets` without a registry and nothing created the
   policy; only the rigs wired it. A1b closes it by construction (facade-registered
   behaviours; the DOM layer reads the world).
-- **A2 — residency** (pending): `core/residency/` — fixed 2048² layers over the kernel
+- **A2 — residency** (**LANDED 2026-09-06**, `865f361` · `260762c` · `87c1686` + two landing
+  commits; as-built: layer ids are DENSE array indices with lowest-free reuse (the first
+  build's monotonic ids were reversed at grading — `TextureRef.layer` is what the shader
+  samples, and the stale-index hazard is closed by the system writing `texture = 0` on every
+  key it frees); four build corrections — cull must NOT free (`Visible ∨ Retained` gates
+  allocation only; the budget, a target flip or death frees — a spec slip in the plan,
+  fixed there), death released the reference the `TextureRef` itself held via a side table,
+  a refused re-slot no longer leaks a slot, heat has ONE writer (the touch pass; `place()`
+  had silently shadowed it); `allocator.layerSize` on the interface; `maxLayers` derived
+  from the budget; the guard subscribes to `Camera.zoom` only when a kind rasters `crisp`.
+  66 cases: the §6.4 invariant as a 220-op seeded walk checked against the allocator and
+  the table with the uv re-derived from the rect; a `ChangeCollector` counts WRITES; the
+  12-card rehearsal frame by frame. 51 probes, 13 of them deletions verified at blob
+  level. Packing waste 2.24 % on one full layer, 4.16 % on the 100-card board (the paged
+  allocator's bound was 12 %). The build left `installSurfaceInfra`'s residency option
+  unset in the profile and the rig; wired at landing so the system runs under live
+  frames. Nothing reads `TextureRef` until B3.): `core/residency/` — fixed 2048² layers over the kernel
   shelf math (Q10; oversize → own texture; repack NOT ported — layer retirement is the
   memory door), the texture table (u32 handles from 1; the video kind registers a
   stable texture, Q5), the Residency system writing `TextureRef` change-only with one
