@@ -619,3 +619,9 @@ export {
   domAtRest,
   registerStandardSurfaceBehaviors,
 } from "./surface/standard-behaviors";
+// --- residency (design-013 §4) ----------------------------------------------
+// The module that replaces "atlasing": the pure layer allocator over the kernel
+// shelf math, and the texture table a `TextureRef.texture` handle indexes into.
+// The Residency SYSTEM that writes `TextureRef` lands beside them; nothing here
+// touches the world or a GPU.
+export * from "./residency";
