@@ -24,9 +24,23 @@
  * presents. `domWriteback` (S3) and the L1 hosts (S2) join this list as their
  * slices land; the reflector's own dirty union is already live.
  *
+ * SYSTEMS (design-013 Q6, first use — 2026-09-06): this profile also INSTALLS
+ * the surface infra set, and that is the whole of its `install`. A profile IS
+ * the system-set it installs. The alternative — publishing a list of systems an
+ * app registers itself — is the "copied wiring" class the fix wave named: the
+ * blank `groundHost` came from a boot sequence an app was expected to
+ * reproduce, and a partial reproduction renders a plausible screen that is
+ * quietly the wrong one. There is one call, and forgetting it is not something
+ * an app can do.
+ *
+ * The infra set writes `SurfaceBand` and `SurfaceDemand` in `present:infra`; it
+ * does NOT decide when a card promotes. That decision is the kind behaviour's,
+ * through the behaviours door, and it is A1b's (nothing reads these facts yet —
+ * the old composited leg still runs on the registry).
+ *
  * MUST NOT import the stratified profile — dependency-cruiser enforces it.
  */
-import type { ReflectorDef } from "@ice/core";
+import { installSurfaceInfra, type ReflectorDef } from "@ice/core";
 import type { PresentationProfile, ProfileBootContext } from "./contract";
 
 /** Structural read of the opaque ground handle's compositor slot. */
@@ -57,5 +71,10 @@ export const compositedProfile: PresentationProfile = {
   reflectorsAfterGround(ctx) {
     const compositor = compositorOf(ctx);
     return compositor === undefined ? [] : [compositor];
+  },
+  install(ctx) {
+    // `ctx.engine` is the FACADE; the phase-group registry lives on the raw
+    // engine it wraps.
+    return installSurfaceInfra(ctx.engine.engine);
   },
 };

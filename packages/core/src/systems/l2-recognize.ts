@@ -33,6 +33,7 @@ import {
   ClaimedBy,
   Down,
   Drag,
+  DragBounds,
   GesturePhases,
   GestureSuspended,
   HadCapture,
@@ -286,6 +287,9 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
                   { startX: screen.x, startY: screen.y, totalX: 0, totalY: 0, velX: 0, velY: 0, zoomAtClaim: 1 },
                 ],
                 [SnapState, { dx: 0, dy: 0 }], // essential at spawn — writers never race an attach
+                // The heat's fact (design-013 §5, GLOW.md §3), on the same
+                // discipline: dropSystem fills it from the post-move union.
+                [DragBounds, { minX: 0, minY: 0, maxX: 0, maxY: 0 }],
                 [Down, { x: screen.x, y: screen.y, ms: downMs }],
               ],
               tags: [...tags],

@@ -31,3 +31,7 @@ export * from "./insert";
 export * from "./selection-presence";
 export * from "./camera-derived";
 export * from "./settings-resources";
+// Presentation facts (design-013 §5, A1a) — kind, target, the two demands, the
+// band, the texture reference and retention, all stamped at equip and
+// value-written change-only by the one writer each names.
+export * from "./surface";

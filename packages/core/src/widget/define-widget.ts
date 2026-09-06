@@ -41,7 +41,7 @@ import {
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
-import type { SurfaceKind } from "../surface/compositor-registry";
+import type { SurfaceKindValue } from "../surface/compositor-registry";
 import {
   resolveSurfacePresentation,
   surfacePresentationDeclError,
@@ -60,12 +60,12 @@ import type { FrameProjection } from "../canvas/frame-projection";
  * `WidgetSurface` as the name of the PRESENTATION CONTRACT — the thing that
  * owns pixels-or-DOM, demand and retention — and this two-value union was
  * sitting on it while meaning something else entirely: not the surface, but the
- * kind of surface. It is a strict subset of the compositor's `SurfaceKind`
+ * kind of surface. It is a strict subset of the compositor's `SurfaceKindValue`
  * (`video` arrives from a producer, never from `defineWidget`; the terminal
  * mirror joins later per Q6), and `Extract` says so rather than restating the
  * strings, so a new kind cannot make the two lists silently disagree.
  */
-export type WidgetSurfaceKind = Extract<SurfaceKind, "dom" | "gl">;
+export type WidgetSurfaceKind = Extract<SurfaceKindValue, "dom" | "gl">;
 export type SizeMode = "fixed" | "auto-height" | "auto";
 
 export interface WidgetPortDecl {

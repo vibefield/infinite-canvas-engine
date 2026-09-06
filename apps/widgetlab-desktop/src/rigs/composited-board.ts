@@ -38,7 +38,7 @@ import {
   Opacity,
   Position,
   Size,
-  type SurfaceDemand,
+  type SurfaceDemandValue,
   Viewport,
   acquireCompositorDevice,
   createCompositorSourceRegistry,
@@ -274,7 +274,7 @@ export function mountBoardRig(): BoardRig {
   /** Hosts named by paint events as CONTENT dirt (after the §4.2 filter). */
   let namedHosts = 0;
   /** Per-entity demand, set by the S4 probes. */
-  const demands = new Map<Entity, SurfaceDemand>();
+  const demands = new Map<Entity, SurfaceDemandValue>();
   /** Hosts named as themselves — the write-back's own paint events. */
   let selfNamed = 0;
   /**

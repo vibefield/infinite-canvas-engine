@@ -17,6 +17,14 @@
  * relation version, and any churn wakes every row-filtered observer world-wide
  * (design-002 §4). Both clear when no container is under the bounds; the move
  * behavior clears them on every terminal path.
+ *
+ * THIRD SIGNAL (2026-09-06, design-013 §5 rev 6 / GLOW.md §3): `DragBounds` on
+ * the recognizer — the same post-move union this system computes for its
+ * spatial query, published instead of discarded. The overlap glow is cast light
+ * from the lifted set's own SDF, so the compose reflector needs its rect; there
+ * is no second computation and no new walk. Change-only over all four fields,
+ * for the same reason the other two are: a value write stamps, and a still
+ * frame must cost nothing.
  */
 import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
@@ -25,6 +33,7 @@ import {
   Accepts,
   Container,
   Drag,
+  DragBounds,
   Drags,
   DropTarget,
   GestureActive,
@@ -98,6 +107,25 @@ export function createDropSystem(
           maxX = Math.max(maxX, p.x + s.w);
           maxY = Math.max(maxY, p.y + s.h);
           any = true;
+        }
+
+        // Publish the union (design-013 §5). Only when the walk found a live
+        // dragged widget: with `any` false the four accumulators are still
+        // ±Infinity, and writing those would put a number in the world that no
+        // reader could tell from a real rect. A resize drag never populates
+        // `Drags`, so its recognizer keeps the spawn zeros — which is the
+        // honest answer, since there is no lifted set to cast light.
+        if (any) {
+          const cur = ctx.get(rec, DragBounds);
+          if (
+            cur === undefined ||
+            cur.minX !== minX ||
+            cur.minY !== minY ||
+            cur.maxX !== maxX ||
+            cur.maxY !== maxY
+          ) {
+            ctx.edit(rec).set(DragBounds, { minX, minY, maxX, maxY });
+          }
         }
 
         const prev = ctx.getRelation(rec, DropTarget);
@@ -174,6 +202,6 @@ export function createDropSystem(
         }
       }
     },
-    { name: "dropSystem" },
+    { name: "dropSystem", access: { write: [DragBounds] } },
   );
 }

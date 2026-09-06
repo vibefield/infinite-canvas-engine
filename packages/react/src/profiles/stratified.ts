@@ -12,6 +12,14 @@
  * domWidgets → chrome → cursors. Its check never refuses; a stratified build
  * runs anywhere the engine runs, including headless with no ground at all.
  *
+ * It installs no SYSTEMS either (2026-09-06, design-013 Q6): `present:infra`
+ * exists to feed a compositor and this profile has none, so the group stays
+ * empty and `assemble()` omits it — a stratified app pays nothing for its
+ * existence. The presentation FACTS are still on its widgets, because they are
+ * world facts, not a profile's private state (design-013 §1): equip stamps the
+ * six, the standard kind behaviours write `SurfaceTarget` here too, and nothing
+ * observes them — no reflector arms them, so there is no stamping tax either.
+ *
  * MUST NOT import the composited profile (dependency-cruiser enforces it): the
  * two are alternatives, and an import edge between them would put both in every
  * app's bundle and quietly turn a build-time selection into dead weight.

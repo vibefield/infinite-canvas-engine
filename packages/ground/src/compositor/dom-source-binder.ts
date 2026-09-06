@@ -79,7 +79,7 @@ import {
   type CompositorSource,
   type CompositorSourceRegistry,
   type Entity,
-  type SurfaceDemand,
+  type SurfaceDemandValue,
 } from "@ice/core";
 import { DEFAULT_MAX_PAGE_SIZE } from "../atlas-allocator";
 import type { CompositeFrame, QuadTexture } from "./widget-quad-pass";
@@ -104,7 +104,7 @@ export interface DomSourceBinderOptions extends DomAtlasOptions {
    * way, and a CSS-keyframe card still costs its 239.9 events/s of main-thread
    * paint. What demand buys is that its slot stops being re-copied at that rate.
    */
-  readonly demand?: (entity: Entity) => SurfaceDemand | undefined;
+  readonly demand?: (entity: Entity) => SurfaceDemandValue | undefined;
   /** Clock seam, for tests. Defaults to `performance.now()`. */
   readonly now?: () => number;
   /**
@@ -205,7 +205,7 @@ export function createDomSourceBinder(
   );
   let budget = options.maxCopiesPerComposite ?? Number.POSITIVE_INFINITY;
   const now = options.now ?? (() => performance.now());
-  const demandOf = (entity: Entity): SurfaceDemand =>
+  const demandOf = (entity: Entity): SurfaceDemandValue =>
     options.demand?.(entity) ?? DEFAULT_SURFACE_DEMAND;
   /** When each slot was last marked dirty — the throttle's clock. */
   const lastMarked = new Map<Entity, number>();

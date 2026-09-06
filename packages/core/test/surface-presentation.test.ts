@@ -19,7 +19,7 @@ import {
   resolveSurfacePresentation,
   surfacePresentationDeclError,
   type Entity,
-  type SurfaceDemand,
+  type SurfaceDemandValue,
   type SurfacePresentation,
 } from "../src";
 
@@ -139,7 +139,7 @@ describe("defineWidget carries the declaration", () => {
 
 describe("the WidgetSurface view", () => {
   const ENTITY = 7 as Entity;
-  const LIVE: SurfaceDemand = { mode: "live", fpsBucket: 60, interactive: false };
+  const LIVE: SurfaceDemandValue = { mode: "live", fpsBucket: 60, interactive: false };
 
   it("reads presentation THROUGH the seam, never a snapshot", () => {
     let mode: SurfacePresentation = "live-dom";
@@ -175,14 +175,14 @@ describe("the WidgetSurface view", () => {
   });
 
   it("routes a request to the consumer the profile did wire", () => {
-    const seen: Array<[Entity, SurfaceDemand]> = [];
+    const seen: Array<[Entity, SurfaceDemandValue]> = [];
     const view = createWidgetSurfaceView({
       kindOf: () => "dom",
       presentationOf: () => "live-dom",
       demandOf: () => LIVE,
       requestDemand: (entity, demand) => seen.push([entity, demand]),
     });
-    const paused: SurfaceDemand = { mode: "paused", fpsBucket: 0, interactive: false };
+    const paused: SurfaceDemandValue = { mode: "paused", fpsBucket: 0, interactive: false };
     view.get(ENTITY)?.setDemand(paused);
     expect(seen).toEqual([[ENTITY, paused]]);
   });

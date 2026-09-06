@@ -550,7 +550,7 @@ export {
   type CompositorSourceGl,
   type CompositorSourceRegistry,
   type CompositorSourceVideo,
-  type SurfaceKind,
+  type SurfaceKindValue,
 } from "./surface/compositor-registry";
 export {
   acquireCompositorDevice,
@@ -583,7 +583,7 @@ export {
   surfacePresentationDeclError,
   toFpsBucket,
   type ResolvedSurfacePresentation,
-  type SurfaceDemand,
+  type SurfaceDemandValue,
   type SurfaceFpsBucket,
   type SurfacePresentation,
   type SurfacePresentationDecl,
@@ -591,3 +591,12 @@ export {
   type WidgetSurfaceSeams,
   type WidgetSurfaceView,
 } from "./surface/contract";
+
+// --- design-013 A1a: the surface infra system-set --------------------------
+// The presentation FACTS themselves ride the catalog re-export above
+// (`catalog/surface.ts` — the six components, `Retained`, `NO_TEXTURE`,
+// `effectiveTarget`). These are the systems that write two of them, and the one
+// call a profile makes to install the set into `present:infra`.
+export { createSurfaceBandSystem } from "./systems/surface-band";
+export { createSurfaceDemandSystem } from "./systems/surface-demand";
+export { installSurfaceInfra, type SurfaceInfraOpts } from "./surface/install";

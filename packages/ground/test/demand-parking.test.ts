@@ -26,7 +26,7 @@ import {
   Viewport,
   type CompositorSource,
   type Entity,
-  type SurfaceDemand,
+  type SurfaceDemandValue,
 } from "@ice/core";
 import { describe, expect, it, vi } from "vitest";
 import { createCompositorReflector, type CompositeTarget } from "../src/compositor/compositor-reflector";
@@ -70,7 +70,7 @@ const frame: CompositeFrame = {
 
 const entity = (n: number): Entity => n as unknown as Entity;
 
-function board(demandOf: () => SurfaceDemand) {
+function board(demandOf: () => SurfaceDemandValue) {
   const registry = createCompositorSourceRegistry();
   const host = { id: 0 };
   registry.register(entity(0), { kind: "dom", host });
@@ -117,7 +117,7 @@ describe("a paused surface's dirt is parked, not pending", () => {
   });
 
   it("flushes the parked dirt EXACTLY ONCE when demand returns to a live bucket", () => {
-    let demand: SurfaceDemand = PAUSED_SURFACE_DEMAND;
+    let demand: SurfaceDemandValue = PAUSED_SURFACE_DEMAND;
     const { binder, host, advance } = board(() => demand);
     binder.sync(frame);
     const settled = binder.copies();

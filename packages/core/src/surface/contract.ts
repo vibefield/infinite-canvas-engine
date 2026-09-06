@@ -3,8 +3,18 @@
  *
  * Plain types and pure functions, in `core`, so both presentation profiles and
  * every surface kind speak one vocabulary without importing each other. S4 took
- * the half it needed (`SurfaceDemand`, because demand is what stops
+ * the half it needed (`SurfaceDemandValue`, because demand is what stops
  * self-animating DOM from free-running); this is the whole of it.
+ *
+ * ── ERRATA 2026-09-06 (A1a, design-013 D3) — the demand type was `SurfaceDemand`
+ * design-013 §5 gives that name to the COMPONENT the Demand system writes, and
+ * a value and a type of one name re-exported from two modules collide at
+ * `core/index.ts` (the explicit type export shadows the star-exported value, so
+ * the component vanishes from the package surface without a compile error). The
+ * plain shape is therefore `SurfaceDemandValue` and the component keeps the
+ * design's name. `foldDemand`, `toFpsBucket`, `demandIntervalMs` and the two
+ * constants are unchanged apart from the type they name — the clamp the Demand
+ * system runs is this one, verbatim, not a second implementation.
  *
  * ── WHAT S8 FINALISED, AND WHERE IT DEPARTS FROM PLAN §3 ──────────────────
  * Plan §3 sketched `WidgetSurface` as `{ kind, presentation, setDemand }` and
@@ -49,7 +59,7 @@
  */
 
 import type { Entity } from "@vibecook/strata-ecs";
-import type { SurfaceKind } from "./compositor-registry";
+import type { SurfaceKindValue } from "./compositor-registry";
 
 /** Where a widget's pixels come from right now (design-012 §6.3). */
 export type SurfacePresentation = "live-dom" | "composited" | "picture";
@@ -61,7 +71,7 @@ export type SurfacePresentation = "live-dom" | "composited" | "picture";
  */
 export type SurfaceFpsBucket = 0 | 2 | 5 | 10 | 15 | 30 | 60;
 
-export interface SurfaceDemand {
+export interface SurfaceDemandValue {
   /** `paused` keeps the last good picture and uploads nothing (§6.2). */
   readonly mode: "live" | "paused";
   /** Upload cadence ceiling. 0 means "only when something else forces it". */
@@ -71,14 +81,14 @@ export interface SurfaceDemand {
 }
 
 /** Live at display rate — what a surface gets when nobody has said otherwise. */
-export const DEFAULT_SURFACE_DEMAND: SurfaceDemand = {
+export const DEFAULT_SURFACE_DEMAND: SurfaceDemandValue = {
   mode: "live",
   fpsBucket: 60,
   interactive: false,
 };
 
 /** A surface that is off-screen, or showing a retained picture. */
-export const PAUSED_SURFACE_DEMAND: SurfaceDemand = {
+export const PAUSED_SURFACE_DEMAND: SurfaceDemandValue = {
   mode: "paused",
   fpsBucket: 0,
   interactive: false,
@@ -103,7 +113,7 @@ export function toFpsBucket(fps: number): SurfaceFpsBucket {
  * The minimum gap between uploads this demand allows, in ms.
  * `Infinity` when the surface is paused or its bucket is 0 — nothing is owed.
  */
-export function demandIntervalMs(demand: SurfaceDemand): number {
+export function demandIntervalMs(demand: SurfaceDemandValue): number {
   if (demand.mode === "paused" || demand.fpsBucket === 0) return Number.POSITIVE_INFINITY;
   return 1000 / demand.fpsBucket;
 }
@@ -117,9 +127,9 @@ export function demandIntervalMs(demand: SurfaceDemand): number {
  * typed into while scrolled off-screen still has no pixels anyone can see.
  */
 export function foldDemand(
-  wanted: SurfaceDemand,
+  wanted: SurfaceDemandValue,
   facts: { readonly visible: boolean; readonly interactive?: boolean },
-): SurfaceDemand {
+): SurfaceDemandValue {
   if (!facts.visible) return PAUSED_SURFACE_DEMAND;
   const interactive = facts.interactive === true || wanted.interactive;
   if (interactive && wanted.mode === "live") {
@@ -158,12 +168,12 @@ export interface ResolvedSurfacePresentation {
  * plan §2 gives them empty L1 hosts precisely because there is nothing to paint
  * natively.
  */
-export function defaultPresentationFor(kind: SurfaceKind): SurfacePresentation {
+export function defaultPresentationFor(kind: SurfaceKindValue): SurfacePresentation {
   return kind === "dom" ? "live-dom" : "composited";
 }
 
 /** Can a surface of this kind present this way at all? See the note above. */
-export function presentationIsLegal(kind: SurfaceKind, mode: SurfacePresentation): boolean {
+export function presentationIsLegal(kind: SurfaceKindValue, mode: SurfacePresentation): boolean {
   return kind === "dom" || mode !== "live-dom";
 }
 
@@ -173,7 +183,7 @@ export function presentationIsLegal(kind: SurfaceKind, mode: SurfacePresentation
  * the type, this module does not.
  */
 export function surfacePresentationDeclError(
-  kind: SurfaceKind,
+  kind: SurfaceKindValue,
   decl: SurfacePresentationDecl,
 ): string | null {
   for (const [field, mode] of [
@@ -198,7 +208,7 @@ export function surfacePresentationDeclError(
 
 /** Resolve a declaration (possibly absent) into the two facts policy reads. */
 export function resolveSurfacePresentation(
-  kind: SurfaceKind,
+  kind: SurfaceKindValue,
   decl: SurfacePresentationDecl | undefined,
 ): ResolvedSurfacePresentation {
   const pin = decl?.pin;
@@ -232,13 +242,13 @@ export function resolveSurfacePresentation(
  */
 export interface WidgetSurface {
   /** The kind its pixels come in — the widget type's declared surface. */
-  readonly kind: SurfaceKind;
+  readonly kind: SurfaceKindValue;
   /** CURRENT, never declared (plan §3). In the stratified profile, derived. */
   readonly presentation: SurfacePresentation;
   /** The demand it is under right now. */
-  readonly demand: SurfaceDemand;
+  readonly demand: SurfaceDemandValue;
   /** Ask for a different one. What honours it is the profile's business. */
-  setDemand(demand: SurfaceDemand): void;
+  setDemand(demand: SurfaceDemandValue): void;
 }
 
 /** The per-entity lookup. `undefined` = not a widget this view knows. */
@@ -254,15 +264,15 @@ export interface WidgetSurfaceView {
  */
 export interface WidgetSurfaceSeams {
   /** The entity's surface kind, or `undefined` if it is not a widget. */
-  readonly kindOf: (entity: Entity) => SurfaceKind | undefined;
+  readonly kindOf: (entity: Entity) => SurfaceKindValue | undefined;
   readonly presentationOf: (entity: Entity) => SurfacePresentation;
-  readonly demandOf: (entity: Entity) => SurfaceDemand;
+  readonly demandOf: (entity: Entity) => SurfaceDemandValue;
   /**
    * Where a demand request goes. Optional: a profile with nothing that reads
    * demand must say so by omitting it, and callers then get a surface whose
    * `setDemand` throws rather than one that silently accepts and forgets.
    */
-  readonly requestDemand?: (entity: Entity, demand: SurfaceDemand) => void;
+  readonly requestDemand?: (entity: Entity, demand: SurfaceDemandValue) => void;
 }
 
 export function createWidgetSurfaceView(seams: WidgetSurfaceSeams): WidgetSurfaceView {

@@ -9,6 +9,9 @@ export * from "./coords";
 export * from "./snap";
 export * from "./spatial-index";
 export * from "./zoom-bands";
+// The ONE call that answers every size question about a card's pixels — copy
+// size, slot size and uv numerator together (design-013 §7 row one, D9).
+export * from "./surface-geometry";
 export * from "./eviction";
 export * from "./anchors";
 export * from "./bezier";

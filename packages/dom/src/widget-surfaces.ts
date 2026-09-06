@@ -39,8 +39,8 @@ import {
   widgets,
   type Entity,
   type ResolvedSurfacePresentation,
-  type SurfaceDemand,
-  type SurfaceKind,
+  type SurfaceDemandValue,
+  type SurfaceKindValue,
   type SurfacePresentation,
   type WidgetSurfaceView,
   type World,
@@ -57,7 +57,7 @@ function widgetTypeOf(world: World, entity: Entity) {
 }
 
 /** An entity's authored surface kind. */
-export function widgetSurfaceKind(world: World, entity: Entity): SurfaceKind | undefined {
+export function widgetSurfaceKind(world: World, entity: Entity): SurfaceKindValue | undefined {
   return widgetTypeOf(world, entity)?.surface;
 }
 
@@ -97,9 +97,9 @@ export function widgetPresentationPins(world: World): (entity: Entity) => boolea
 
 export interface WidgetSurfaceDemandSeam {
   /** What this entity is held to now. Defaults are the caller's to decide. */
-  readonly demandOf: (entity: Entity) => SurfaceDemand;
+  readonly demandOf: (entity: Entity) => SurfaceDemandValue;
   /** Where a request goes. Omit when the profile has no consumer for one. */
-  readonly requestDemand?: (entity: Entity, demand: SurfaceDemand) => void;
+  readonly requestDemand?: (entity: Entity, demand: SurfaceDemandValue) => void;
 }
 
 export interface CompositedSurfacesOptions extends WidgetSurfaceDemandSeam {

@@ -22,11 +22,22 @@
  * `revision()` and fire `onChange` — that is the compositor's "sibling-order
  * staleness / promotion changes" input (plan §4.3), and it is PRESENTATION
  * dirt, never ECS state.
+ *
+ * ── ERRATA 2026-09-06 (A1a) — this union was called `SurfaceKind` ─────────
+ * design-013 §5 gives that name to the COMPONENT that carries a card's kind in
+ * the world, and `core/index.ts` re-exports both. A type-only re-export and a
+ * star-exported value of one name do not merge there: TypeScript's explicit
+ * export SHADOWS the star's, so the component would have been silently
+ * unreachable from `@ice/core` while the type resolved fine — a build that
+ * compiles and a symbol that is gone. The plain union is therefore
+ * `SurfaceKindValue`, exactly as D3 renamed the plain demand type to
+ * `SurfaceDemandValue` and for exactly the same reason. The component is the
+ * world fact; this is the value shape its `kind` field takes.
  */
 import type { Entity } from "@vibecook/strata-ecs";
 
 /** The surface kinds the compositor can sample. Terminal joins later (§11 Q6). */
-export type SurfaceKind = "dom" | "gl" | "video";
+export type SurfaceKindValue = "dom" | "gl" | "video";
 
 /**
  * A DOM widget's L1 host — an immediate child of the `layoutsubtree` source

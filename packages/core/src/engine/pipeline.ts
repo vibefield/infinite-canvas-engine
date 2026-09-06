@@ -1,7 +1,7 @@
 /**
  * The phase-group pipeline (design-002 §2).
  *
- * Seven canonical GROUPS over eleven strata phases — a strata phase boundary
+ * Seven canonical GROUPS over twelve strata phases — a strata phase boundary
  * (command-buffer flush) is the only structural settle point, so every stage
  * that must SEE the previous stage's spawns/tags/relations within one frame is
  * a separate strata phase. The `ctl:*` sub-phases are the control sweep's
@@ -11,6 +11,32 @@
  * Registration order within a group is run order; group order is fixed here
  * and is the sole ordering contract (Law: phases/sub-phases only — never
  * registration-time coupling between groups).
+ *
+ * ── `present:infra` — design-002 §2 amendment, 2026-09-06 (design-013 D1) ──
+ * ERRATUM to the paragraph above, which said ELEVEN phases: it is twelve.
+ *
+ * design-013 §6 orders the present sub-phase as behaviours → Band → Demand →
+ * Residency: the kind's behaviour chooses a target, and infra then clamps,
+ * bands and allocates from that choice. But the behaviour runtime appends a
+ * behaviour's systems to its phase group WHEN THE BEHAVIOUR REGISTERS
+ * (`behavior/runtime.ts`, `installExecution → engine.addSystems(phase, …)`), so
+ * a pack's kind behaviour registered after boot would run AFTER an infra trio
+ * that had registered into `present` at profile install. Its `SurfaceTarget =
+ * gpu` on grab would reach Residency one frame late and the card would draw
+ * plate-only for a frame — the "absent for a frame" class, and silent.
+ *
+ * Registration order within a group is not a contract the engine can hold
+ * across a plugin boundary. A sub-phase is: it is a real strata phase boundary,
+ * the same settle point the `ctl:*` groups exist to give the control sweep. So
+ * the infra trio gets its own group after `present`, and the order holds no
+ * matter when a behaviour shows up.
+ *
+ * `BehaviorPhase` (behavior/types.ts) is deliberately UNCHANGED, and its
+ * validation table must not admit this group: `present:infra` is engine
+ * vocabulary, like `ctl:*`, `input` and `react`. A behaviour that wants to run
+ * before infra declares `present`, which is where it already belongs. An empty
+ * group is omitted by `assemble()` below, so a stratified app — which installs
+ * no infra — pays nothing for its existence.
  */
 import { phase } from "@vibecook/strata-ecs";
 import type { Pipeline, System, TickSystem } from "@vibecook/strata-ecs";
@@ -18,7 +44,7 @@ import type { Pipeline, System, TickSystem } from "@vibecook/strata-ecs";
 /** Either system form (strata 0.5.0): chunk-bodied or once-per-dispatch tick. */
 export type AnySystem = System | TickSystem;
 
-/** The eleven strata phases, in run order (design-002 §2 table). */
+/** The twelve strata phases, in run order (design-002 §2 table + the D1 amendment). */
 export const PHASE_GROUPS = [
   "input",
   "react",
@@ -30,6 +56,9 @@ export const PHASE_GROUPS = [
   "simulate",
   "derive",
   "present",
+  // The surface infra trio (Band → Demand → Residency), after every kind
+  // behaviour has spoken. Engine vocabulary: behaviours may not declare it.
+  "present:infra",
   "cleanup",
 ] as const;
 

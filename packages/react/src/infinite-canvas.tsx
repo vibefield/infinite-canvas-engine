@@ -307,6 +307,13 @@ export function InfiniteCanvas({
       core.registerReflector(remoteCursors.reflector),
     ];
 
+    // The profile's SYSTEMS, after its reflectors (design-013 Q6). Order
+    // matters in one direction only: a reflector arms reactivity for the
+    // world's life, and these systems write components those reflectors
+    // observe, so the observers exist before the first frame that could stamp
+    // them. Undone below, with everything else past the gate.
+    const uninstallProfile = activeProfile.install?.(profileCtx);
+
     const detachPointer = attachPointerAdapter(
       host,
       stack.queue,
@@ -347,6 +354,7 @@ export function InfiniteCanvas({
       detachMeasure?.();
       detachPointer();
       resizeObserver?.disconnect();
+      uninstallProfile?.();
       for (const unreg of unregister) unreg();
       remoteCursors.destroy();
       groundLayer?.dispose();

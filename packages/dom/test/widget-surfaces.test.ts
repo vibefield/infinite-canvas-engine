@@ -17,7 +17,7 @@ import {
   createWorld,
   defineWidget,
   type Entity,
-  type SurfaceDemand,
+  type SurfaceDemandValue,
   type World,
 } from "@ice/core";
 import { describe, expect, it } from "vitest";
@@ -35,7 +35,7 @@ defineWidget({ type: "ws:card", surface: "dom", component: null });
 defineWidget({ type: "ws:island", surface: "gl", component: null });
 defineWidget({ type: "ws:editor", surface: "dom", component: null, presentation: { pin: "live-dom" } });
 
-const LIVE: SurfaceDemand = { mode: "live", fpsBucket: 60, interactive: false };
+const LIVE: SurfaceDemandValue = { mode: "live", fpsBucket: 60, interactive: false };
 
 const spawn = (world: World, type?: string): Entity =>
   world.spawn({
@@ -86,14 +86,14 @@ describe("the composited profile's answers", () => {
 
   it("routes setDemand to the consumer the app wired", () => {
     const world = createWorld();
-    const asked: SurfaceDemand[] = [];
+    const asked: SurfaceDemandValue[] = [];
     const view = compositedSurfaces({
       world,
       presentation: createPresentationRegistry(),
       demandOf: () => LIVE,
       requestDemand: (_e, d) => asked.push(d),
     });
-    const paused: SurfaceDemand = { mode: "paused", fpsBucket: 0, interactive: false };
+    const paused: SurfaceDemandValue = { mode: "paused", fpsBucket: 0, interactive: false };
     view.get(spawn(world, "ws:card"))?.setDemand(paused);
     expect(asked).toEqual([paused]);
   });

@@ -9,7 +9,8 @@
  * runtime toggle — a boolean here would mean two live architectures forever,
  * which decision 1 rejected on maintenance grounds.
  *
- * A profile contributes exactly two things at this stage:
+ * A profile contributes exactly three things (the third added 2026-09-06,
+ * design-013 Q6 — an ERRATUM to this header's former "exactly two"):
  *
  *  1. A BOOT CHECK. One profile ships per packaged app (§11 Q2), so a
  *     composited build that finds no device has nothing honest to render and
@@ -17,6 +18,11 @@
  *     check returns the reason; the mount turns it into a throw.
  *  2. The reflectors it adds to the roster, flushed immediately after the
  *     ground layer's own (plan §4.3).
+ *  3. The SYSTEMS it installs — {@link PresentationProfile.install}. A profile
+ *     IS the system-set it installs (design-013 Q6, first use): the fix wave's
+ *     "copied wiring" class is an app being handed a boot sequence to
+ *     reproduce, and the answer is that there is nothing left for an app to
+ *     reproduce.
  *
  * The profiles never import each other — dependency-cruiser enforces it.
  */
@@ -44,4 +50,15 @@ export interface PresentationProfile {
    * immediately after the ground layer's reflector.
    */
   reflectorsAfterGround(ctx: ProfileBootContext): readonly ReflectorDef[];
+  /**
+   * Systems this profile installs into the engine, as ONE call returning ONE
+   * remover (design-013 Q6). Called by the mount AFTER the reflector roster is
+   * registered — a reflector arms reactivity, and the systems installed here
+   * write components those reflectors observe, so the observers must exist
+   * before the first frame that could stamp them.
+   *
+   * Optional: a profile with no systems of its own says so by omitting it,
+   * which is what the stratified profile does.
+   */
+  install?(ctx: ProfileBootContext): () => void;
 }

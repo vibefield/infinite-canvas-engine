@@ -236,6 +236,35 @@ export const SnapState = defineComponent("SnapState", {
 });
 
 /**
+ * The dragged set's POST-MOVE UNION BOUNDS, on the Drag RECOGNIZER — the heat's
+ * one world fact (design-013 §5 rev 6; `draft/ground` GLOW.md §3).
+ *
+ * The overlap glow is CAST LIGHT: the lifted card's own SDF lights the target
+ * beneath it, so the compose reflector needs to know where the lifted set IS.
+ * That is not a new computation — `dropSystem` already unions the dragged
+ * widgets' post-move `Position + Size` every frame to run its spatial query,
+ * and then throws the number away. It writes it here instead, change-only over
+ * all four fields, and the heat gets its geometry for free.
+ *
+ * The rest of the heat needs no component at all: the tier is the tags
+ * `dropSystem` already writes (`OverlapCandidate` accept / `OverlapRejected`
+ * reject), the target is the `DropTarget` relation, and the presence spring and
+ * the held source are FLUX in the compose reflector's per-entity motion cache
+ * (§3) — never in the world.
+ *
+ * In the Drag prefab's essential set beside {@link SnapState}: present from
+ * spawn, zeroed, so writers never race an attach. Nothing clears it — the
+ * recognizer is reaped at terminal + 1 (`systems/cleanup.ts`), and the
+ * component dies with the entity.
+ */
+export const DragBounds = defineComponent("DragBounds", {
+  minX: field("f64", { default: 0 }),
+  minY: field("f64", { default: 0 }),
+  maxX: field("f64", { default: 0 }),
+  maxY: field("f64", { default: 0 }),
+});
+
+/**
  * The down point + timestamp latched on the recognizer at spawn (design-003 §4.1). Bare: it must
  * carry the real down sample.
  */
