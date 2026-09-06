@@ -269,6 +269,12 @@ export function createDomSourceBinder(
       for (const [entity, source] of registry.entries()) {
         const host = hostOf(source);
         if (host === undefined) continue;
+        // NB (errata 2026-09-06, design-013 A2): `geometry` here is this
+        // binder's INJECTED `DomSourceGeometry` seam (the world size — see the
+        // option above), NOT `@ice/kernel`'s `geometry()`, which this file
+        // deliberately does not import. A grep for the kernel function's callers
+        // hits this line and reads backwards: B4 is where the kernel function
+        // replaces this binder.
         const g = geometry(entity);
         if (g === undefined || g.w <= 0 || g.h <= 0) continue;
         live.add(entity);

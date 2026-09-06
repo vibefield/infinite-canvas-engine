@@ -110,7 +110,7 @@ function rig(opts: RigOpts = {}) {
         [Position, { x: 0, y: 0 }],
         [Size, { w: o.w ?? 80, h: o.h ?? 48 }],
         [SurfaceKind, { kind: o.kind ?? "dom" }],
-        [SurfaceTarget, { target: o.target ?? (o.kind === undefined || o.kind === "dom" ? "gpu" : "gpu") }],
+        [SurfaceTarget, { target: o.target ?? "gpu" }],
         [SurfaceBand, { band: 0 }],
         [TextureRef, { texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 }],
       ],
