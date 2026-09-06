@@ -52,10 +52,29 @@
  *   Unlike the paged allocator, no layer is kept standing: an empty atlas
  *   should cost nothing.
  *
- * Layer ids are monotonic and never reused, so a held layer never renumbers and
- * a `TextureRef.layer` left behind by a freed key can never come to name a live
- * layer's content — the "entity-keyed store outliving the entity" class §7
- * retires.
+ * ## Layer ids are array indices
+ *
+ * `TextureRef.layer` is the index the compose pass samples in the one bound
+ * `texture_2d_array` (§4, §10.4), so the live id set has to stay DENSE. An id
+ * space that only grew would leave holes the GPU array must still span and
+ * would never shrink — the memory door would return nothing, which is the whole
+ * point of `retireEmpty`. So a retired id is REUSED: a new layer takes the
+ * lowest id no live layer holds, and `layers().length` is the array's layer
+ * count. Held layers still never renumber, and `retireEmpty` only ever takes a
+ * layer with no held slots, so no held slot's layer id can be reissued
+ * underneath it.
+ *
+ * The lowest free id is DERIVED from the live set rather than kept in a free
+ * pool: one source of truth cannot drift from the other, because there is no
+ * other.
+ *
+ * What reuse does NOT reopen is a stale `TextureRef.layer` naming a reused
+ * layer's content. The one-writer discipline closes that: the Residency system
+ * writes `texture = 0` on every key it frees, in the same body, so a freed key
+ * leaves no live index behind. Whether a slot's TEXELS are valid yet is a
+ * separate, flux-side question — a "written" status the B-phase reflectors keep
+ * outside the world — and it exists for every newly allocated slot on every
+ * layer, reused or not.
  */
 import {
   createShelfPage,
@@ -195,7 +214,10 @@ export interface LayerAllocator {
   /** Held slots, across every layer. */
   held(): number;
   layers(): LayerView[];
-  /** The memory door: retire every layer with no held slots; returns their ids, ascending. */
+  /**
+   * The memory door: retire every layer with no held slots; returns their ids,
+   * ascending. A retired id returns to the pool a new layer draws from.
+   */
   retireEmpty(): number[];
   waste(): LayerWasteReport;
 }
@@ -221,16 +243,23 @@ export function createLayerAllocator(options: LayerAllocatorOptions = {}): Layer
 
   const layers: LayerRecord[] = [];
   const slots = new Map<ResidencyKey, SlotRecord>();
-  let nextLayerId = 0;
 
   const view = (slot: SlotRecord): LayerPlacement => ({ layer: slot.layer, rect: { ...slot.rect } });
 
   const fitsSize = (size: SlotSize): boolean =>
     size.width > 0 && size.height > 0 && size.width <= maxSlotSide && size.height <= maxSlotSide;
 
+  /** The lowest index no live layer holds — see the header on dense ids. */
+  function freeLayerId(): number {
+    const used = new Set(layers.map((l) => l.id));
+    let id = 0;
+    while (used.has(id)) id++;
+    return id;
+  }
+
   function openLayer(): LayerRecord {
     const layer: LayerRecord = {
-      id: nextLayerId++,
+      id: freeLayerId(),
       page: createShelfPage(layerSize, layerSize, gutter),
       slots: new Set<ResidencyKey>(),
     };
@@ -323,7 +352,9 @@ export function createLayerAllocator(options: LayerAllocatorOptions = {}): Layer
     },
 
     layers() {
-      return layers.map((layer) => {
+      // Ordered by id, not by fill order: an id is an array index, so a dense
+      // set reads as `layers()[i].id === i`.
+      return [...layers].sort((a, b) => a.id - b.id).map((layer) => {
         const waste = pageWaste(layer.page);
         return {
           id: layer.id,

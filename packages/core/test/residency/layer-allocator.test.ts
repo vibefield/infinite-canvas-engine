@@ -209,7 +209,7 @@ describe("the two doors", () => {
     expect(alloc.layers()).toMatchObject([{ id: 0, heldSlots: 0, usedArea: 0 }]);
   });
 
-  it("retireEmpty drops only the layers holding nothing, and never renumbers the rest", () => {
+  it("retireEmpty drops only the layers holding nothing, and never renumbers a held one", () => {
     const alloc = createLayerAllocator({ layerSize: 512 });
     for (let i = 0; i < 12; i++) alloc.allocate(key(i + 1), sq(250));
     expect(alloc.layers().map((l) => l.id)).toEqual([0, 1, 2]);
@@ -224,8 +224,32 @@ describe("the two doors", () => {
     expect(alloc.held()).toBe(8);
     expect(checkInvariants(alloc, [key(1), key(9)], 512)).toBeNull();
 
-    // Ids are monotonic: a retired id is never handed out again.
-    expect(alloc.allocate(key(13), sq(250))?.layer).toBe(3);
+    // An id is an array index: the hole layer 1 left is filled before the set
+    // ever grows, so the live ids come back to exactly `0..n-1`.
+    expect(alloc.allocate(key(13), sq(250))?.layer).toBe(1);
+    expect(alloc.layers().map((l) => l.id)).toEqual([0, 1, 2]);
+  });
+
+  it("re-issues the lowest free id, and only grows the set once no id is free", () => {
+    const alloc = createLayerAllocator({ layerSize: 512 });
+    for (let i = 0; i < 16; i++) alloc.allocate(key(i + 1), sq(250)); // layers 0..3
+    expect(alloc.layers().map((l) => l.id)).toEqual([0, 1, 2, 3]);
+
+    // Empty layers 1 and 2 (keys 5..12), and retire both.
+    for (let i = 4; i < 12; i++) alloc.free(key(i + 1));
+    expect(alloc.retireEmpty()).toEqual([1, 2]);
+    expect(alloc.layers().map((l) => l.id)).toEqual([0, 3]);
+
+    // Lowest free first: 1, then 2, and only then does the set grow to 4.
+    expect(alloc.allocate(key(17), sq(250))?.layer).toBe(1);
+    expect(alloc.allocate(key(18), sq(250))?.layer).toBe(1); // layer 1 has room
+    for (let i = 0; i < 2; i++) alloc.allocate(key(19 + i), sq(250)); // fills layer 1
+    expect(alloc.allocate(key(21), sq(250))?.layer).toBe(2);
+    expect(alloc.layers().map((l) => l.id)).toEqual([0, 1, 2, 3]);
+
+    // Dense: `layers().length` is the array's layer count, indices and all.
+    const ids = alloc.layers().map((l) => l.id);
+    expect(ids).toEqual(ids.map((_, i) => i));
   });
 
   it("retires every empty layer, keeping none standing", () => {
@@ -235,8 +259,8 @@ describe("the two doors", () => {
     expect(alloc.retireEmpty()).toEqual([0, 1]);
     expect(alloc.layers()).toEqual([]);
     expect(alloc.waste().layerArea).toBe(0);
-    // …and the emptied allocator still works.
-    expect(alloc.allocate(key(1), sq(250))?.layer).toBe(2);
+    // …and the emptied allocator still works, from index 0 again.
+    expect(alloc.allocate(key(1), sq(250))?.layer).toBe(0);
   });
 });
 
@@ -330,8 +354,19 @@ describe("the sweep", () => {
       height: 16 + Math.floor(rand() * 400),
     });
 
+    /** The lowest index not in `ids` — what a fresh layer must take. */
+    const mex = (ids: readonly number[]): number => {
+      const used = new Set(ids);
+      let id = 0;
+      while (used.has(id)) id++;
+      return id;
+    };
+    const everSeen = new Set<number>();
+    let reusedEver = 0;
+
     const OPS = 300;
     for (let op = 0; op < OPS; op++) {
+      const idsBefore = alloc.layers().map((l) => l.id);
       const roll = rand();
       const band = ZOOM_BANDS[Math.floor(rand() * ZOOM_BANDS.length)] as number;
       if (roll < 0.5) {
@@ -351,6 +386,24 @@ describe("the sweep", () => {
         retiredEver += alloc.retireEmpty().length;
       }
 
+      // Dense ids, on EVERY op: a fresh layer takes the lowest index no live
+      // layer holds, so no index is ever skipped and the set only grows once
+      // every hole is filled.
+      const idsAfter = alloc.layers().map((l) => l.id);
+      expect(idsAfter, `op ${op}: the view is ordered by id`).toEqual([...idsAfter].sort((a, b) => a - b));
+      const fresh = idsAfter.filter((id) => !idsBefore.includes(id));
+      expect(fresh.length, `op ${op}: more than one layer opened`).toBeLessThanOrEqual(1);
+      if (fresh.length === 1) {
+        expect(fresh[0], `op ${op}: a fresh layer took ${fresh[0]}, not the lowest free id`).toBe(
+          mex(idsBefore),
+        );
+        if (everSeen.has(fresh[0] as number)) reusedEver++;
+      }
+      for (const id of idsAfter) everSeen.add(id);
+      expect([...everSeen].sort((a, b) => a - b), `op ${op}: an index was skipped`).toEqual(
+        [...everSeen].map((_, i) => i),
+      );
+
       // Every fourth op, and always the last: nothing repairs an overlap on its
       // own, so a violation survives until it is looked for, and the pairwise
       // sweep is quadratic.
@@ -365,5 +418,9 @@ describe("the sweep", () => {
     expect(live.size).toBeGreaterThan(10);
     expect(alloc.layers().length).toBeGreaterThan(1);
     expect(retiredEver).toBeGreaterThan(0);
+    // Ids were REUSED, not merely handed out: a fresh layer took an index that
+    // had been live and retired earlier in the sweep. A monotonic counter
+    // scores zero here.
+    expect(reusedEver).toBeGreaterThan(0);
   });
 });
