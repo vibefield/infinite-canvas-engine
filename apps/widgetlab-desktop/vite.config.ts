@@ -10,50 +10,32 @@ export default defineConfig({
   server: { open: false },
   build: {
     rollupOptions: {
-      // The product, plus one page per design-012 exit rig. A rig is a separate
+      // The product, plus one page per design-013 exit rig. A rig is a separate
       // PAGE rather than a mode of the product, deliberately: one profile ships
       // per app (§11 Q2), so the product must not grow a runtime switch between
       // the profiles just to be measurable.
-      //   ground-parity    — S1: does device injection change ground's pixels?
-      //   island-parity    — S5: do islands on the shared device match the
-      //                          WebGL ones, and did MSAA / sRGB / orientation
-      //                          survive?
-      //   composited-board — S2/S3/S4: dom widget quads against the stratified
-      //                          render, plus the write-back, input and demand
-      //                          probes that share its board.
-      //   composited-app   — the gl leg: a real <Canvas>/<GLViews> whose
-      //                          islands are drawn by the compositor's own pass.
-      //   composited-next  — design-013 B2: the NEW composited profile boots to the
-      //                          ground's own canvas (no cards), idle-zero, alive.
-      //   composited-next-video — design-013 B6: a live surface on the new profile —
-      //                          a producer registers a stable texture and each arriving
-      //                          frame is one copy and one compose frame.
-      //   composited-next-islands
-      //                    — design-013 B5: a `gl` island rendered into the PRIVATE
-      //                          target Residency named, drawn by the ground in `own`
-      //                          mode; parity against a WebGL render of the same scene.
-      //   zoom-drift       — the M18 fix wave's open item (a): does a card
-      //                          whose LIVE zoom drifted above its band write
-      //                          past its atlas slot?
+      //   composited        — B2: the composited profile boots to the ground's own
+      //                          canvas (no cards), idle-zero, alive.
+      //   composited-render — B4: DomRender — the promote witness (D7), the demand
+      //                          clamp's rate and bucket ladder, and the drift
+      //                          readback under both raster strategies.
+      //   composited-input  — B8 R7 (the old `input` rig, ported): transform compose
+      //                          inside layoutsubtree, stale hit regions, a zero-byte
+      //                          pan, and native focus/typing through a promoted card.
+      //   composited-islands— B5: a `gl` island rendered into the PRIVATE target
+      //                          Residency named, drawn by the ground in `own` mode;
+      //                          parity against a WebGL render of the same scene, and
+      //                          the cross-kind z check.
+      //   composited-video  — B6: a live surface — a producer registers a stable
+      //                          texture and each arriving frame is one copy and one
+      //                          compose frame.
       input: {
         index: "index.html",
-        "ground-parity": "ground-parity.html",
-        "island-parity": "island-parity.html",
-        "composited-board": "composited-board.html",
-        "composited-app": "composited-app.html",
-        "composited-next": "composited-next.html",
-        "composited-next-video": "composited-next-video.html",
-        "composited-next-islands": "composited-next-islands.html",
-        //   composited-next-render — design-013 B4: DomRender under the new
-        //                          profile — the promote witness (D7), the
-        //                          demand clamp's rate, and the drift readback
-        //                          under both raster strategies.
-        "composited-next-render": "composited-next-render.html",
-        //   composited-next-input  — design-013 B8 R7: the old `input` rig ported —
-        //                          transform compose, stale hit regions, a zero-byte pan,
-        //                          and native focus/typing through a promoted card.
-        "composited-next-input": "composited-next-input.html",
-        "zoom-drift": "zoom-drift.html",
+        composited: "composited.html",
+        "composited-render": "composited-render.html",
+        "composited-input": "composited-input.html",
+        "composited-islands": "composited-islands.html",
+        "composited-video": "composited-video.html",
       },
     },
   },

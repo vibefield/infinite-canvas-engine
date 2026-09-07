@@ -8,7 +8,8 @@
  *
  * ## What replaced what
  *
- * design-012's `ground/src/atlas-allocator.ts` kept PAGES that grew with
+ * design-012's `ground/src/atlas-allocator.ts` (deleted with the old leg at B8;
+ * this module is what replaced it) kept PAGES that grew with
  * content: a page opened at the smallest power of two that held its first slot,
  * doubled toward `maxTextureDimension2D`, and a fragmented page was repacked in
  * place. design-013 §4 replaces that with LAYERS of one FIXED size (§9 Q10

@@ -409,9 +409,25 @@ describe("the destinations, per kind", () => {
       kind: "own",
       width: geo.rasterSize.w,
       height: geo.rasterSize.h,
-      srgb: false,
+      // THE KIND'S OWN FACT (B8 R9a): an island target IS `-srgb` — three's
+      // WebGPU renderer makes it so, and the desktop `islands` rig reads
+      // `srgb === true` back off the realised texture's ACTUAL format. Before
+      // B8 this field was hardcoded `false` on every own handle, so the table
+      // said one thing and the pixels another; it only ever held because the
+      // ground reads the format rather than the table.
+      srgb: true,
     });
     expect(r.allocator.held()).toBe(0); // an island shares no page
+  });
+
+  it("an OVERSIZE dom card's private texture is NOT sRGB — the same fact, the other kind (B8 R9a)", () => {
+    // The counterpart, without which the arm above passes for the wrong reason:
+    // Q10's oversize slot is a plain colour buffer the element copy writes, and
+    // it must not inherit the island's format.
+    const r = rig();
+    const e = r.card({ w: 400, h: 400 }); // 800² device — past a 512 layer
+    r.step(2);
+    expect(r.table.describe(r.refOf(e).texture)).toMatchObject({ kind: "own", width: 800, srgb: false });
   });
 
   it("a video surface holds nothing until its producer registers, then the stable handle", () => {

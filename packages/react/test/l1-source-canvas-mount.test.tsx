@@ -72,7 +72,7 @@ function groundOf(parts: GroundParts, log: string[]) {
 }
 
 const profileOf = (roster: readonly ReflectorDef[], hostsBeforeRoster: boolean): PresentationProfile => ({
-  name: "composited-next",
+  name: "composited",
   hostsBeforeRoster,
   check: () => null,
   reflectorsAfterGround: () => roster,

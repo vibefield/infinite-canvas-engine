@@ -21,7 +21,6 @@
  * builds no L1 — none of it fires and the file below is the file it always was.
  */
 import {
-  createCompositorSourceRegistry,
   createEngine,
   createWorld,
   defineWidget,
@@ -80,7 +79,6 @@ function setup(opts: { l1: boolean; pointerEvents?: "auto" | "none" }) {
   const world = createWorld();
   const engine = createEngine(world);
   const store = fakeStore();
-  const sources = createCompositorSourceRegistry();
   const reflector = createDomWidgetsReflector(
     {
       contentPlane: planes.content,
@@ -89,7 +87,7 @@ function setup(opts: { l1: boolean; pointerEvents?: "auto" | "none" }) {
     },
     world,
     store,
-    { sources },
+    {},
   );
   engine.registerReflector(reflector);
   return { world, engine, planes, l1, store, reflector, container };
@@ -144,7 +142,7 @@ describe("L1 placement (B4)", () => {
     engine.step(1);
     expect(hostEl.style.transform).toBe(""); // the plane's placement does not follow it onto L1
 
-    // The L1 owner (`compose/dom-render.ts` under composited-next, `domWriteback`
+    // The L1 owner (`compose/dom-render.ts` under composited, `domWriteback`
     // under the old profile) sizes and places it while it is canvas-side.
     hostEl.style.width = "19px";
     hostEl.style.height = "19px";

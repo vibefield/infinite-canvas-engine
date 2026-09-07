@@ -52,7 +52,10 @@ texture simply registers a `gl`-shaped source and the video leg is not involved.
 
 **Arrival is now a subscription on the source** (S8): `CompositorSourceVideo`
 carries an optional `onArrival(cb)`, so a producing surface wakes the compositor
-by itself instead of compositing only while something else moves. Optional by
+by itself instead of compositing only while something else moves. *(2026-09-07,
+design-013 B8: that source shape and its registry are deleted. The petition's
+point survives in `@ice/ground/compose`'s `VideoIngest` — `arrive(frame)` is the
+producer's push, and the copy it schedules IS the wake.)* Optional by
 design, and the asymmetry with the other kinds is the downstream point — `dom`
 and `gl` producers live inside ICE and own binders already, while a video
 producer is the app, so its wake travels WITH the source it registers rather

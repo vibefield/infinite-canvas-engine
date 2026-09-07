@@ -56,7 +56,7 @@ export {
   type InfiniteCanvasProps,
 } from "./infinite-canvas";
 // The mounted ground's CONTENT seam (design-013 §5/§6, B5): the residency a render
-// reflector realises handles into, and the three render slots the composited-next profile
+// reflector realises handles into, and the three render slots the composited profile
 // forwards. Structural mirrors of `@ice/ground/compose` — react may not import ground, and
 // `@ice/r3f` imports these rather than restating them.
 export {
@@ -80,4 +80,3 @@ export type {
 } from "./profiles/contract";
 export { stratifiedProfile } from "./profiles/stratified";
 export { compositedProfile } from "./profiles/composited";
-export { compositedNextProfile } from "./profiles/composited-next";

@@ -96,7 +96,7 @@ the entity's own kind behaviour.
   | a paused card still handed frames over | `SurfaceDemand paused` ⇒ the arrival is dropped and closed, no copy and no compose frame; an fps bucket is a ceiling on copies |
 
   `CompositorSourceVideo` itself and the `texture_external` pipeline variant in
-  `widget-quad-pass` are UNCHANGED for now and retire with the old profile at B8 — the ground
+  `widget-quad-pass` were UNCHANGED and retired with the old profile at B8 — the ground
   deliberately has none, and the retain-and-import path becomes the rig's own mechanism.
 - **`defineWidget({ surface: "video" })` is legal, and a video widget may not carry a
   `component`** (design-013 B6). `WidgetSurfaceKind` used to exclude `video` on the ground
@@ -106,6 +106,67 @@ the entity's own kind behaviour.
   `SurfaceTarget = gpu`. A `component` is refused at definition time: nothing mounts one for
   a non-dom kind but `GLViews`, which takes only `gl`, so it would be silently dead. `chrome`
   is still yours.
+
+<!-- design-013 B8 (2026-09-07) -->
+
+- **THE OLD COMPOSITED LEG IS DELETED** (design-013 §8 B8, §10.8), in one commit, and the
+  profile design-013 built beside it takes the name. `compositedProfile` IS the new one now;
+  `compositedNextProfile` is gone with the name `"composited-next"`, and
+  `PresentationProfileName` is `"stratified" | "composited"` again. A composited app wires
+  `ground={groundCompose({ device, theme })}` from `@ice/ground/compose` — the profile refuses
+  a `ground()`/`groundHost()` layer by name, which is what makes the swap loud instead of a
+  plausible blank screen.
+- **`@ice/ground`'s barrel loses the compositor.** Removed: `createCompositorReflector`,
+  `createWidgetQuadPass`, `createDomAtlas`, `createDomSourceBinder`, `createWorldQuadFacts`,
+  `createLiftDriver`, `resolveGlSource`, `resolveVideoSource`, `createAtlasAllocator` and
+  every type they carried (`CompositeTarget`, `CompositeFrame`, `QuadFacts`, `QuadTexture`,
+  `WidgetQuadPass*`, `DomAtlas*`, `DomSourceBinder*`, `LiftDriver*`, `AtlasAllocator*`,
+  `AtlasSlot`, `AtlasWasteReport`, `SlotResidency` …). `GroundLayer` loses
+  `compositorReflector`, `sources`, `domSources` and `groundTargetLive()`; `GroundOptions` and
+  `GroundHostOptions` lose `device`, `sources`, `target`, `order`, `atlas`, `lift` and `video`.
+  What the barrel IS, now: the stratified ground, unchanged, plus the two kept LEAVES both legs
+  share — `hic-adapter` and `instrumentSubmits` (which MOVED from `src/compositor/` to
+  `src/submit-instrument.ts` and is exported from `@ice/ground/compose` as well).
+- **`@ice/core` loses the compositor SOURCE REGISTRY.** `createCompositorSourceRegistry`,
+  `CompositorSource`, `CompositorSourceDom`, `CompositorSourceGl`, `CompositorSourceVideo` and
+  `CompositorSourceRegistry` are gone — the meeting point they existed to be is now the world
+  itself (`TextureRef`, written by Residency) and, for a live surface, `VideoIngest`'s door.
+  `SurfaceKindValue` survives the file and moves to `core/src/surface/contract.ts`; the export
+  from `@ice/core` is unchanged. `createDomWidgetsReflector`'s `sources` option goes with it.
+- **`@ice/r3f` loses the old pool and the composited arm.** Removed:
+  `WebGpuRenderTargetPool`/`WebGpuRenderTargetPoolOpts`, `createIslandSourceBinder` and its
+  types (`GlSourcePoolLike`, `IslandSourceBinder`, `IslandSourceBinderOpts`, `SourcesLike`),
+  `CompositorBinding` and `GLViews`'s `compositor` prop, `createRetainedQuadTransitionAdapter`
+  with `RetainedQuadPool`/`RetainedQuadTransitionOptions`, `PassContext.sources`, and
+  `GlFrameStats.retainedQuads`. `WEBGPU_ISLAND_SAMPLES` and `webGpuRenderTargetBytes` now come
+  from `./island-target` (the same values). An island under the composited profile is
+  `createIslandRender` (B5) and nothing else. The retained-quad transition was the STRATIFIED
+  profile's outgoing frame; that profile has none until Phase C moves it onto the ground, where
+  a departed frame is the flight's second slot (B7).
+- **The old profile's rigs are retired**, and what replaced each:
+  `board` → `render` (the promote witness, D7) + the `no-full-board-path` unit test carried onto
+  Residency + DomRender · `input` → `input`, PORTED to the new profile (it found two real
+  defects; see Fixed) · `demand` → `render`'s bucket ladder (30/10/2 fps) · `app-witness` →
+  `islands` + `video`, and `islands` gains the cross-kind z check · `island-parity` → `islands`
+  (the same method, tighter numbers, in `docs/benchmarks.md`) · `zoom-drift` → `render`'s drift
+  readback, 0 px past the slot by construction under both raster strategies. ACCEPTED LOSSES,
+  named: `board`'s atlas-waste report (the M19 A2 allocator bench is the unit witness now),
+  `parity`'s S1 A/B (moot — the ground IS the compositor), and `demand`'s boot stagger (DomRender
+  has no per-frame copy budget yet — owed).
+- **`GroundProgram.transition` is NOT deleted here.** §10.8 listed it; that was a scoping error
+  and this is its correction. `packages/ground/src/programs/magnet-grid.ts` declares
+  `transition: "snapshot"` and is the shipping STRATIFIED grid, so the three outgoing strategies,
+  the snapshot ledger and `renderer.capture()` retire at **C2**, with the grid, when design-011's
+  `GroundProgram` contract is reshaped. What `renderer.ts` did lose is the composited leg's
+  OFFSCREEN target and blit (`offscreen`, `targetTexture()`, the colour target).
+- **`defineWidget({ presentation })`** — retired earlier in this same block; B8 is where the last
+  code that could have read it goes.
+- **`@vibecook/ice` gains three subpaths**: `./ground/compose`, `./ground/packs` and
+  `./ground/engine`. The mat pack's blue-noise tile now SHIPS — generated into
+  `src/assets/blue-noise.gen.ts` and exported from the packs entry as `blueNoise()` — because a
+  published consumer has `dist/` only and a `?url` import of `assets/blue-noise.rgba` reaches
+  nothing (D-B8.1; `packages/ice/tools/audit-pack.mjs` is the standing witness). `@ice/ground`'s
+  `gen:check` covers the generated module.
 
 ### Added
 
@@ -143,7 +204,9 @@ the entity's own kind behaviour.
   build its own ordinals. Four core tests (`nav-flight.test.ts`), three ground tests
   (`flight.test.ts` — the flight's `c0` equals `portalAt` on the preview's arrival bit for
   bit, on ICE's own data); design-006 amended (§9). The old ground's three outgoing
-  strategies go unused under the new profile and B8 deletes them; Q13 (the zoom-through) is
+  strategies go unused under the new profile (B8 did NOT delete them: `programs/magnet-grid`
+  declares `transition: "snapshot"` and is the shipping stratified grid, so design-011's
+  `GroundProgram` contract is reshaped at C2 with that grid, not here); Q13 (the zoom-through) is
   not taken here.
 - **IslandRender — the island half of composited-next, design-013 B5** (2026-09-07). A
   `gl` island now renders into the PRIVATE target Residency allocated for it, and the
@@ -161,7 +224,7 @@ the entity's own kind behaviour.
   submit). One authority decides what is sampled — the current `TextureRef` — so the
   **pin-blind-resize class dissolves rather than being fixed**: there is no refcount to be
   blind to. `Retained` (which B7 writes) is honoured by Residency's LRU alone; the old
-  pools' `pin`/`isPinned`/`retired` refcounts stay until B8 deletes that leg with them.
+  pools' `pin`/`isPinned`/`retired` refcounts stayed until B8 deleted that leg with them.
 
   **The demand clamp the old pass never read** (design-013 D10): `SurfaceDemand.mode ===
   "paused" ` renders nothing at all, and a live card's fps bucket is a ceiling on how often
@@ -266,8 +329,10 @@ the entity's own kind behaviour.
   is a drag handle, the corner is the canvas. **`useChromeOwner()`** (`@ice/react`, from the
   profile's `chromeOwner`: `ground` for composited-next, `dom` otherwise) lets an app's card
   shell render bare under the ground — widgetlab's CardShell and its folder view do, so the
-  folder's face is the ground's live portal and its DOM minis retire; the old profiles keep
-  their CSS chrome until B8. The `next-boot` rig's boundary phase: every card's clip written
+  folder's face is the ground's live portal and its DOM minis retire; the STRATIFIED profile keeps
+  its CSS chrome (corrected at B8: the deletion took the old COMPOSITED leg, not the stratified
+  one, and widgetlab-desktop keeps a stratified fallback for hosts without WebGPU — CardShell's
+  dual path retires with that profile in Phase C). The `next-boot` rig's boundary phase: every card's clip written
   as a polygon; the ring band and the shadow skirt read the same on the page with the DOM
   hosts shown and hidden (chrome once), the title differs (content above), the folder's face
   is the portal; a click on the ground-drawn close button reaches `onPart("close")` and
@@ -351,7 +416,8 @@ the entity's own kind behaviour.
 - **`@ice/ground/compose` — the ground moves in** (design-013 §8 B1 [GROUND PORT],
   2026-09-07). `vibe-field/draft/ground` enters ICE once, into its final home, as a second
   entry of `@ice/ground` beside the old composited leg — which imports none of it and is
-  deleted at B8; dependency-cruiser holds the wall both ways. What it is: the raw-WebGPU
+  deleted at B8 (done); dependency-cruiser holds the wall both ways, now as the Phase-C fence.
+  What it is: the raw-WebGPU
   engine (`@ice/ground/engine`: device, surface, targets, pipelines, shader composition,
   struct layouts), the magnet field on the decade lattice and the cutting mat with its two
   lights, the SDF card frame with the content term and the §7 heat, the live portal's slot
@@ -458,6 +524,41 @@ the entity's own kind behaviour.
   Breaking only for code that read the stamped value before the first clamp.
 
 ### Fixed
+
+<!-- design-013 B8 (2026-09-07) -->
+
+- **A promoted card's L1 host now tracks the camera.** `DomRender`'s `placeHost`
+  was reachable only through the copy path, so a card that owed no copy was never
+  re-placed and its host stayed where the last copy left it. An L1 host is never
+  painted, so nothing LOOKED wrong — but it is the hit-test, focus, caret and IME
+  truth for a promoted card, and a pan walked it off the card it belongs to. Found
+  by the `input` rig, ported to this profile at B8: **7 of 24 mid-gesture hits
+  landed, the host up to 540 px from its card.** DomRender now runs a placement
+  pass at the end of every flush over the hosts it owns, change-only. After:
+  **24/24, max offset 0.000 px over 120 frames**, and idle-zero unchanged (0
+  submits, 0 copies, 0 DOM writes over 361 frames with three promoted cards).
+- **…and a pure pan still uploads nothing.** With placement running every frame,
+  a 600-frame pan re-uploaded the whole promoted board — 1,404 copies — because
+  the placement write raises a paint event naming the host, which
+  `changedElements` reports identically to a content edit. `@ice/dom`'s
+  `source-canvas.ts` header names the remedy and B8 implements it on this leg: a
+  TEMPORAL guard kept by the writer that knows what it wrote. `DomRenderStats`
+  gains **`selfDirt`** — the marks dropped as this module's own placement writes.
+  After: **0 copies over 600 frames, all 3,606 marks attributed**, and typing
+  still reaches the copy path (a filter, not a mute).
+- **`promotable()` and `canvasEligible()` are ONE predicate** (`@ice/dom`). They
+  disagreed about a `video` card: `promotable` asked the widget definition for
+  `!== "gl"` and missed `video` entirely, while `canvasEligible` asked the world
+  and excluded both — so a grabbed video widget took the `lifted` branch that
+  `canvasEligible` was written to refuse. Reachable since B6 made
+  `defineWidget({ surface: "video" })` legal. The one predicate reads the world's
+  `SurfaceKind` stamp when it exists and the definition when it does not, which
+  neither reader did alone.
+- **An `own` texture's `srgb` is the KIND's fact, not a default** (`@ice/core`).
+  `ownFor` minted every private handle `srgb: false`, so the table said `false`
+  for an island target that IS `-srgb` — a lie that only held because the ground
+  reads the texture's actual format rather than the table. `gl` now mints `true`
+  and Q10's oversize `dom` slot `false`.
 
 - **A React composited app now DECIDES to promote on drag — the decision half,
   not the pixels.** `infinite-canvas.tsx` built `domWidgets` without a

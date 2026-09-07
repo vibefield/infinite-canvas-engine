@@ -41,7 +41,7 @@ import {
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
-import type { SurfaceKindValue } from "../surface/compositor-registry";
+import type { SurfaceKindValue } from "../surface/contract";
 import { SurfaceTarget } from "../catalog/surface";
 import { STANDARD_SURFACE_BEHAVIOR_NAMES } from "../surface/standard-behavior-names";
 import { alwaysGpu, domAtRest } from "../surface/standard-behaviors";

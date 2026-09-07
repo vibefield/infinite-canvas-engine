@@ -12,10 +12,10 @@ exist to catch regressions by eye across milestones, not to assert a
 threshold in a test. The bench source is the single source of truth; this
 file is its recorded output.
 
-## design-013 B5 — island parity under composited-next (2026-09-07)
+## design-013 B5 — island parity under composited (2026-09-07)
 
-The first island numbers in this file. `pnpm --filter widgetlab-desktop next-islands` runs a
-`gl` island through the whole new leg — `<InfiniteCanvas profile={compositedNext}>` on the
+The first island numbers in this file. `pnpm --filter widgetlab-desktop islands` runs a
+`gl` island through the whole new leg — `<InfiniteCanvas profile={compositedProfile}>` on the
 app-owned device, a real `<Canvas gl={islandRendererFactory}>`/`<GLViews>`, IslandRender in
 the roster's island slot, the ground sampling the result in `own` mode — and grades it the
 way `island-parity` graded S5: the CONTROL first, then everything read against it.
@@ -28,7 +28,7 @@ MSAA and the rasteriser matter.
 Target 480×320 (a 240×160 card at band 1, dpr 2 — `geometry().rasterSize`, which is exactly
 what Residency sized the handle to).
 
-| measurement | composited-next | stratified (WebGL) |
+| measurement | composited | stratified (WebGL) |
 | --- | --- | --- |
 | noise floor (two warm repaints) | 0 / 153,600 px | 0 / 153,600 px |
 | first-paint transient (cold vs warm) | 0 / 153,600 px, maxΔ 0 | n/a |
@@ -42,7 +42,7 @@ what Residency sized the handle to).
 a lit torus knot) and recorded it as a finding about three. Here cold and warm are bit-
 identical. The honest reading is narrow: this scene is three unlit quads, S5's was a lit knot
 with an environment map, so what is measured is that **the transient does not appear on flat
-unlit geometry under composited-next** — not that three no longer has one. A slice that
+unlit geometry under composited** — not that three no longer has one. A slice that
 depends on the first paint being final should re-measure on its own content.
 
 The cross-backend 0.1283 % is entirely the rotated edge: WebGL and WebGPU resolve 4× MSAA
@@ -57,10 +57,10 @@ clamped) and its paint-attributed callback ticked 38 times with it; paused, 0 re
 uncaptured GPU errors.
 ## M19 B4 — DomRender: the promote, the clamp, the drift (2026-09-07)
 
-`apps/widgetlab-desktop` `pnpm --filter widgetlab-desktop next-render`, on the pinned
+`apps/widgetlab-desktop` `pnpm --filter widgetlab-desktop render`, on the pinned
 Electron 43.1.1 / Chromium 150, one window, 1280×808 at dpr 2. A board of six TEXT-FREE
 cards (200×130 world units, opaque fill + one block, no glyphs) through the real React path
-under `compositedNextProfile`; page screenshots for the pixels, a `copyTextureToBuffer`
+under `compositedProfile`; page screenshots for the pixels, a `copyTextureToBuffer`
 readback of the page array for the drift.
 
 | measurement | number |
@@ -69,7 +69,7 @@ readback of the page array for the drift.
 | D7 — the same card's whole rect, chrome included (inset 3 px) | 1,312 of 100,076 px, max Δ 135, reaching 11 px in |
 | D7 — the chrome band 2 px inside the top edge | 0 (identical rgb) |
 | the way back (demote) | max Δ **0** |
-| S8 parity — interior, composited-next vs a stratified twin PAGE | **0** of 70,176 px |
+| S8 parity — interior, composited vs a stratified twin PAGE | **0** of 70,176 px |
 | S8 parity — the A-vs-A control (browser-painted, both profiles) | **0** of 100,076 px |
 | idle-zero with 3 promoted cards, 6 s | **0** submits, **0** copies, **0** paint marks |
 | one CSS-keyframe card, 5 s | **23.3 copies/s** against 59.8 paint marks/s |
@@ -393,3 +393,48 @@ system scanning all 10k rows to move one — deliberately naive; M4's real
 behaviors iterate the live `Drags` edges instead. Run-to-run: the delegated
 build measured pan 0.21/0.39 µs and drag 59.96/72.15 µs on the same machine —
 counters identical, µs within noise.
+
+## design-013 B8 — the ported `input` rig: hit truth and the cost of a pan (2026-09-07)
+
+`pnpm --filter widgetlab-desktop input`, on the pinned Electron 43.1.1 / Chromium 150, one
+window, 1280×808 at dpr 2. Six cards (260×150 world units) each carrying a real `<input>`,
+all promoted, through the real React path under `compositedProfile`. The rig is the old
+leg's `input` rig re-expressed against `groundCompose` + DomRender; it found both defects
+below, which is why the before column exists.
+
+| measurement | before | after |
+|---|---|---|
+| mid-gesture hits landing on the moving card | 7 / 24 | **24 / 24** |
+| worst host offset from its card, over 120 pan frames | 540 px | **0.000 px** |
+| copies over a 600-frame pure pan | 1,404 | **0** |
+| paint marks in that pan, and how many were placement writes | — | 3,606, **all 3,606** |
+| host box error against the card's screen size | — | **0.000 px** |
+
+The two numbers are one story. Placement was reachable only through the copy path, so a
+settled card's L1 host never moved — never visible, because an L1 host is never painted, and
+never harmless, because that host IS the hit-test, focus, caret and IME truth. Making
+placement unconditional fixed the hits and immediately cost 1,404 uploads, because the
+placement write raises a paint event that `changedElements` reports exactly as it reports a
+content edit. The remedy was already written down (`@ice/dom`'s `source-canvas.ts`): a
+temporal guard kept by the writer that knows what it wrote. `selfDirt` is its instrument.
+
+Native input through the unpainted host, unchanged and re-graded: a synthesised click focuses
+the real `<input>` inside the promoted card, `document.activeElement` is inside the L1 canvas
+subtree, and typing `hello42` arrives verbatim — and still reaches the copy path, so the
+guard is a filter rather than a mute.
+
+## design-013 B8 — the demand bucket ladder (2026-09-07)
+
+`pnpm --filter widgetlab-desktop render`, same host. One card whose content self-invalidates
+from a CSS keyframe, at three demand ceilings. Ported from the old `demand` rig.
+
+| requested bucket | copies/s | paint marks/s |
+|---|---|---|
+| 30 fps | 13.0 | 59.8 |
+| 10 fps | 4.8 | 59.8 |
+| 2 fps | 1.0 | 59.8 |
+| paused | 0 | 59.8 |
+
+The paint rate is a constant of the animation; the copy rate is the clamp's. Each rate sits
+under its ceiling rather than on it because the interval is measured from the last copy
+against a 60 Hz flush clock, so a 30 fps bucket lands every other frame minus jitter.

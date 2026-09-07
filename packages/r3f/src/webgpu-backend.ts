@@ -95,9 +95,10 @@ export function textureRecord(
 /**
  * The raw resolved `GPUTexture` for a render target's texture.
  *
- * `undefined` until three has rendered into the target at least once — the
- * getter shape in `CompositorSourceGl` exists precisely so a compositor asking
- * early gets nothing to draw instead of a stale or wrong handle.
+ * `undefined` until three has rendered into the target at least once. The GETTER
+ * shape exists precisely so a consumer asking early gets nothing to draw instead
+ * of a stale or wrong handle — it was `CompositorSourceGl`'s until B8 deleted the
+ * old leg, and it is IslandRender's realisation now.
  */
 export function islandTexture(
   renderer: unknown,

@@ -23,7 +23,7 @@
  * The remover also disposes the texture table WHEN THIS FUNCTION BUILT IT, and
  * never one the caller passed. Ownership decides: a store built here is
  * unreachable once the systems are gone, so nothing else could ever free it;
- * a store the caller passed is the caller's. The composited-next profile DOES
+ * a store the caller passed is the caller's. The composited profile DOES
  * pass its own table and allocator and keep the references (B4a) — its render
  * reflectors need the table to turn a handle into a `GPUTexture`, and they
  * outlive a system swap. Every other profile still passes `{}` and this

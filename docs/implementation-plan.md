@@ -676,8 +676,9 @@ tests). Notable for the record, beyond the fixes themselves:
   chosen over hiding live GPU memory; flip it only if that early eviction
   ever bites.
 - **Open, named rather than closed**: (a) the size-agreement question is now
-  **CONFIRMED by a real-GPU rig** (2026-08-31, `af23b71`/`6e7694c` — rerun:
-  `TMPDIR=/tmp pnpm run zoom-drift` in widgetlab-desktop): an L1 host
+  **CONFIRMED by a real-GPU rig** (2026-08-31, `af23b71`/`6e7694c`; that rig
+  retired at B8 — `TMPDIR=/tmp pnpm run render` in widgetlab-desktop is where
+  the same drift is measured now, and it reads 0): an L1 host
   rasterises at CSS box × the SOURCE CANVAS's backing-store scale (measured
   flat 2.000× at dpr 2 across zooms, 1.000× against a 1× bitmap — the bitmap
   governs, not devicePixelRatio), so a card whose live zoom drifts above its
@@ -723,7 +724,8 @@ behaviours door, and the engine ships three standard choices (`ice:surface.domAt
 `alwaysGpu`, `alwaysDom`) as defaults, not laws. The compose step is `draft/ground`'s card
 frame pass with a content term — chrome ⊕ content in one fragment — which enters ICE
 exactly once, into its final home (Phase B), beside the old composited leg until the new
-profile passes the pixel exits, and the old leg is deleted in one commit (B8).
+profile passed the pixel exits — and the old leg was deleted in one commit (B8, 2026-09-07),
+which is also where the new profile took the name `composited`.
 
 **The ladder:** A (facts + residency in the world; no renderer touched) → B (the new
 composited profile on the raw ground: B1 the move [GROUND PORT] · B2 the profile switch ·
@@ -849,10 +851,11 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   terms; the cutting mat's row and its two lights — written into VibeField's DESIGN.md,
   uncommitted, for James). Then `groundCompose()` in `@ice/ground/compose` — the ground as
   the L0 layer, one canvas, GpuCompose drawing the empty board on camera/viewport change
-  and never otherwise — and `compositedNextProfile` in `@ice/react`, registering §6's
+  and never otherwise — and `compositedProfile` in `@ice/react`, registering §6's
   roster in order (four inert stubs, GpuCompose last), refusing the old leg's ground by
   name, walled from the old profile both ways (D-B2.2 as-built: the name is
-  `composited-next`; the rig arm is its own page and script, `next-boot`, rather than a
+  `composited` (B8 shortened the name this slice shipped it under; the CHANGELOG's B8 Breaking
+  block records the rename); the rig arm is its own page and script, `boot`, rather than a
   flag on the old rigs — one profile per page, §11 Q2's law). Exit: the `next-boot` rig
   through the REAL React path — one canvas, one redraw, one submit, 0 GPU errors at boot;
   0 submits and 0 redraws over 481 idle frames; one frame for a camera write; the walls
@@ -939,7 +942,7 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   `video` slot copies it ONCE (`copyExternalImageToTexture`, premultiplied, no flip) into that
   texture, closes it, and says the destination was written — which is the wake. The old
   retain-and-import path (`compositor/video-source.ts`, the quad pass's `texture_external`
-  variant) is untouched and retires with the old profile at B8; the ground deliberately has
+  variant) was untouched here and went with the old profile at B8; the ground deliberately has
   no external variant, and the fixture that used to retain its frames became the RIG's
   producer. The demand clamp bites at the door (paused ⇒ dropped and closed, no copy and no
   frame; a bucket ⇒ one copy per `demandIntervalMs`), and `defineWidget({ surface: "video" })`
@@ -1000,6 +1003,38 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   0/70,176 px against a stratified twin page with an A-vs-A control at 0. Plus 27 node tests
   (16 dom-render, 6 L1 placement, 5 mount), 11 mutation probes red, the oracle's 47 renders
   byte-identical, `pnpm run ci` green.
+
+### B8 — the deletion — **LANDED 2026-09-07** (`<sha>`)
+  The old composited leg leaves in one commit and the new profile takes the name. DELETED:
+  `ground/src/compositor/*` (10 files), `atlas-allocator.ts`, `renderer.ts`'s offscreen target
+  and blit, `GroundLayer`'s composited surface and `GroundOptions`/`GroundHostOptions`'
+  `device`/`sources`/`target`/`order`/`atlas`/`lift`/`video`, `react`'s old profile, r3f's
+  `webgpu-pool` · `retained-quads` · `webgpu-sources` and the `compositor` binding, core's
+  `compositor-registry.ts` whole (`SurfaceKindValue` rehomed into `surface/contract.ts`), the
+  quad pass's `texture_external` variant, seven rigs and 16 test files. RENAMED:
+  `compositedNextProfile` → `compositedProfile`, `"composited-next"` → `"composited"`, the
+  `next-*` rigs to `boot` · `render` · `input` · `islands` · `video`. SCOPING CORRECTION to
+  §10.8: `GroundProgram.transition` and the three outgoing strategies STAY — `programs/
+  magnet-grid.ts` declares `"snapshot"` and is the shipping stratified grid, so they retire at
+  C2 with it. CARRIED, each with a mutation probe: the no-full-board-repaint claim (grep
+  re-pointed at `src/compose/`, behaviour re-expressed against Residency + DomRender), the
+  quiet-frame ordering claim (a fake `Ground` counting `surface.view()`), the parking LOOP, and
+  factory parity (split across the package wall: the mount fills every slot; the profile leaves
+  no stub). PORTED: the `input` rig, which FOUND TWO DEFECTS — a settled promoted card's L1 host
+  never tracked the camera (7/24 mid-gesture hits landed, the host 540 px out; now 24/24 at
+  0.000 px), and once placement ran every frame a pure pan re-uploaded the board (1,404 copies;
+  the §4.2 temporal guard now drops 3,606 self-writes and copies 0). ALIGNED: `ownFor` takes the
+  kind's sRGB fact; `promotable()` and `canvasEligible()` are one predicate reading both the
+  world's stamp and the definition. SHIPPED: `@vibecook/ice` gains `./ground/compose`,
+  `./ground/packs`, `./ground/engine`, and the mat's blue-noise tile is generated into the
+  bundle. Exit: `pnpm run ci` green · `gen:check` fresh · the oracle's 47 renders byte-identical
+  (roll-up sha unchanged) · every rig ALL PASS (`boot`, `render`, `input`, `islands`, `video`,
+  `hic:copy-gate`, `smoke`; groundlab's `rig:parity` and `rig:nav` as untouched controls) · the
+  pack audit's four answers PASS. OWED: the desktop product's `<Canvas>` still uses three's own
+  WebGL renderer, so its GL islands draw nothing under the composited profile — GLViews says so
+  loudly; moving it needs the app's `PMREMGenerator`/`RoomEnvironment` environment path, which
+  is WebGL-only. Also owed: a per-frame copy budget on DomRender (the old `demand` rig's boot
+  stagger).
 
 ## Release cut & downstream
 

@@ -556,18 +556,13 @@ export {
 } from "./engine/gpu-allocation-ledger";
 export { createDrawBehavior } from "./systems/l3-draw";
 
-// --- the widget-surface layer (design-012): the compositor's shared
-// vocabulary as plain data + types, so the composited and stratified profiles
-// never import each other and no producer gains an import of `ground`.
-export {
-  createCompositorSourceRegistry,
-  type CompositorSource,
-  type CompositorSourceDom,
-  type CompositorSourceGl,
-  type CompositorSourceRegistry,
-  type CompositorSourceVideo,
-  type SurfaceKindValue,
-} from "./surface/compositor-registry";
+// --- the widget-surface layer (design-012, design-013): the surface
+// vocabulary as plain data + types, so no producer gains an import of
+// `ground`. The old composited leg's SOURCE REGISTRY lived here until B8
+// (design-013 §8) and went with it — the ground reads the world's
+// `TextureRef` now, and a producer's door is `@ice/ground/compose`'s
+// `VideoIngest` rather than a registry in core.
+export type { SurfaceKindValue } from "./surface/contract";
 export {
   acquireCompositorDevice,
   GpuUnavailableError,

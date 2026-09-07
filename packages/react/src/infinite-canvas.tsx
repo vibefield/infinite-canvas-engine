@@ -123,7 +123,7 @@ export interface GroundLayerHandle {
   readonly compositorReflector?: ReflectorDef;
   /**
    * The ground's COMPOSE handle (design-013, `groundCompose(…)`), present only on the new
-   * leg. Opaque here as well: the composited-next profile reads its reflectors off it, and
+   * leg. Opaque here as well: the composited profile reads its reflectors off it, and
    * this component reads its content seam through {@link surfaceContentOf} — never by
    * importing the package.
    */

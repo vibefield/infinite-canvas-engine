@@ -50,6 +50,9 @@ import {
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
 import { groundHost } from "@ice/ground";
+import { groundCompose } from "@ice/ground/compose";
+import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
+import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { lineGridGroundProgram } from "@ice/ground/programs/line-grid";
 import { magnetGridGroundProgram } from "@ice/ground/programs/magnet-grid";
 import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
@@ -152,7 +155,7 @@ const SCENE: Array<[string, number, number, number, number, Record<string, unkno
 
 export function createDemoEngine(gpu?: EngineGpu, extraWidgets: readonly WidgetType[] = []): CanvasEngine {
   const ce = createCanvasEngine({
-    // `extraWidgets` is for RIGS only (design-013 B4's `next-render` needs a
+    // `extraWidgets` is for RIGS only (design-013 B4's `render` rig needs a
     // text-free card the product has no use for): the demo palette is `WIDGETS`
     // and stays it, so nothing a rig defines can reach the product.
     widgets: [...WIDGETS, ...extraWidgets],
@@ -655,23 +658,37 @@ export function App({ gpu }: AppProps = {}) {
     dt.glStats(s); // the full GL panel: renderer counts, VT census, LOD bands, culls
   }, []);
 
-  // The P0 ground layer (grid + wires + snap guides, one WebGPU canvas) —
-  // memoized: a new factory identity re-boots the canvas mount effect.
+  // THE GROUND, and which one is the PROFILE (design-013 §8 B8).
   //
-  // With a device it is ALSO the unified compositor's host (design-012 §4):
-  // three adopts the app-owned device instead of making its own, and the layer
-  // exposes the compositor reflector the composited profile registers. The
-  // device is the whole switch — there is no mode flag anywhere below this.
+  // With a device: `groundCompose` — the ground IS the compositor. One WebGPU
+  // canvas draws the field, every card's frame, the DOM boundary and the
+  // flight's second slot, from the world, and the composited profile
+  // recognises it by the handle's `compose` field. Without one: `groundHost`,
+  // design-011's stratified layer, unchanged and Phase C's to move.
+  //
+  // Until B8 both arms were `groundHost` and the composited profile took a
+  // `device` option here; that option, the compositor it built and the profile
+  // that registered its reflector are all deleted, so an app that kept passing
+  // it would now be refused at the boot gate rather than quietly running the
+  // wrong leg — which is the refusal working.
+  //
+  // Memoized: a new factory identity re-boots the canvas mount effect.
   const groundFactory = useMemo(
     () =>
-      groundHost({
-        programs: [
-          magnetGridGroundProgram({ id: WIDGETLAB_DOT_GROUND }),
-          lineGridGroundProgram({ id: WIDGETLAB_LINE_GROUND }),
-        ],
-        fallback: WIDGETLAB_DOT_GROUND,
-        ...(gpu !== undefined ? { device: gpu.device } : {}),
-      }),
+      gpu !== undefined
+        ? groundCompose({
+            device: gpu.device,
+            theme: THEMES.dark,
+            card: vfFrame(),
+            grids: [needleGlyph, cuttingMat],
+          })
+        : groundHost({
+            programs: [
+              magnetGridGroundProgram({ id: WIDGETLAB_DOT_GROUND }),
+              lineGridGroundProgram({ id: WIDGETLAB_LINE_GROUND }),
+            ],
+            fallback: WIDGETLAB_DOT_GROUND,
+          }),
     [gpu],
   );
 
@@ -714,6 +731,18 @@ export function App({ gpu }: AppProps = {}) {
             <Canvas
               orthographic
               frameloop="never"
+              // OWED (B8): under the composited profile this Canvas must be
+              // built with `islandRendererFactory({ device: gpu.device })` from
+              // `@ice/r3f/webgpu` — an island renders into the target Residency
+              // named and the ground samples that texture, and a WebGL renderer
+              // here renders into targets nothing can sample. GLViews says so
+              // loudly at mount rather than drawing a plausible blank, which is
+              // the honest state until this app's environment path moves too:
+              // `PMREMGenerator`/`RoomEnvironment` (EnvLoader, and the tray's
+              // preview capture) are WebGL-only and throw on a WebGPU renderer.
+              // The rigs already run the WebGPU Canvas — `composited-islands`
+              // is the witness for the island half. The product's own GL
+              // widgets are what this line still owes.
               gl={{ alpha: true, antialias: false }}
               style={{ pointerEvents: "none", position: "absolute", inset: 0 }}
             >

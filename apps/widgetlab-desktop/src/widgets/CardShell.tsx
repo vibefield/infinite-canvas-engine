@@ -16,6 +16,17 @@
  *    `Grab`bed widget's rect (no new ECS state). CSS-var knobs (--ic-glow-*,
  *    --ic-rim-*) stay live for the settings panel.
  * All signals are chrome-grade: a ~60 ms poll, no ECS writes.
+ *
+ * WHEN THIS FILE RETIRES (corrected at B8, design-013 §8). Under the COMPOSITED
+ * profile the chrome is already the ground's: `useChromeOwner()` reads `ground`
+ * and this shell renders its children bare, polls nothing, and every pixel below
+ * is dead code on that path. It is not dead code on the STRATIFIED one, which
+ * this app still ships as a fallback for a host without WebGPU
+ * (`profile={gpu ? compositedProfile : stratifiedProfile}` in App.tsx) — so the
+ * CSS branch, `use-drag-lift`, `GlLiftGroup` and `GlCardChrome` retire with the
+ * stratified profile in PHASE C, not with the old composited leg at B8. B3b's
+ * note said B8; it assumed this app would drop its stratified arm, and it does
+ * not.
  */
 import {
   Grab,

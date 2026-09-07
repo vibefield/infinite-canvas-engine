@@ -30,14 +30,11 @@ export {
 // barrel stays safe for stratified apps. THE INCANTATION itself
 // (`WebGPURenderer({ device })`) is the one thing that does, and it lives
 // behind the `@ice/r3f/webgpu` subpath instead. See src/webgpu/index.ts.
-export {
-  WebGpuRenderTargetPool,
-  webGpuRenderTargetBytes,
-  WEBGPU_ISLAND_SAMPLES,
-  type WebGpuRenderTargetPoolOpts,
-} from "./webgpu-pool";
-export { createIslandTarget } from "./island-target";
-// design-013 §8 B5: the composited-next leg's island half — a reflector in the ground's
+// The island TARGET (design-013 §8 B5): the pool that owned it — the old
+// composited leg's `WebGpuRenderTargetPool` — is deleted at B8; a target is
+// minted per handle by IslandRender now, and Residency owns its lifetime.
+export { createIslandTarget, webGpuRenderTargetBytes, WEBGPU_ISLAND_SAMPLES } from "./island-target";
+// design-013 §8 B5: the composited leg's island half — a reflector in the ground's
 // `renders.island` slot, rendering into the PRIVATE target Residency named.
 export {
   createIslandRender,
@@ -46,13 +43,6 @@ export {
   type IslandRenderOpts,
   type IslandRenderStats,
 } from "./island-render";
-export {
-  createIslandSourceBinder,
-  type GlSourcePoolLike,
-  type IslandSourceBinder,
-  type IslandSourceBinderOpts,
-  type SourcesLike,
-} from "./webgpu-sources";
 export {
   backendDevice,
   hasWebGpuBackend,
@@ -66,7 +56,7 @@ export {
   type WebGpuBackendLike,
   type WebGpuRendererLike,
 } from "./webgpu-backend";
-export { GLViews, type CompositorBinding, type GLViewsProps, type GlFrameStats } from "./gl-root";
+export { GLViews, type GLViewsProps, type GlFrameStats } from "./gl-root";
 export { Island, type IslandProps } from "./island";
 export {
   IslandContext,
@@ -85,11 +75,6 @@ export {
 } from "./pool";
 export { ResourceRegistry } from "./resource-registry";
 export { CompositeMaterial } from "./composite-material";
-export {
-  createRetainedQuadTransitionAdapter,
-  type RetainedQuadPool,
-  type RetainedQuadTransitionOptions,
-} from "./retained-quads";
 export { createRenderWriteTrap, type RenderWriteTrap } from "./dev-write-trap";
 export {
   createGLPointerRouter,

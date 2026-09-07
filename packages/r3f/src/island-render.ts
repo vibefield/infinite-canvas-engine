@@ -1,5 +1,5 @@
 /**
- * IslandRender — the composited-next leg's island half (design-013 §8 B5,
+ * IslandRender — the composited leg's island half (design-013 §8 B5,
  * §6 reflector 6, §9 Q9 path (a)).
  *
  * An island's pixels live where RESIDENCY put them. Core's Residency system

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:" />
+  <title>render rig (DomRender — the copy the world asked for, B4)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101010; overflow: hidden; }
+    #root { position: absolute; inset: 0; }
+    /* A card whose CONTENT self-invalidates: the demand clamp's subject.
+       ~240 paint events/s in the old bench; the copies must follow the BUCKET. */
+    @keyframes b4-spin-frames { from { opacity: 1; } to { opacity: 0.35; } }
+    .b4-spin { animation: b4-spin-frames 0.5s linear infinite alternate; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="./src/rigs/composited-render.tsx"></script>
+</body>
+</html>

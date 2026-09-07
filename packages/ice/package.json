@@ -1,7 +1,7 @@
 {
   "name": "@vibecook/ice",
   "version": "0.12.0",
-  "description": "ICE — infinite canvas engine. Figma-grade infinite-canvas UX as a framework: defineWidget turns React/R3F components into canvas citizens — selectable, movable, resizable, wired into node graphs, CRDT-synced, undoable per gesture.",
+  "description": "ICE \u2014 infinite canvas engine. Figma-grade infinite-canvas UX as a framework: defineWidget turns React/R3F components into canvas citizens \u2014 selectable, movable, resizable, wired into node graphs, CRDT-synced, undoable per gesture.",
   "license": "MIT",
   "author": "James Yong <me@jamesyong42.com>",
   "type": "module",
@@ -26,29 +26,69 @@
     "three",
     "gestures"
   ],
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/types/packages/ice/src/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/types/packages/ice/src/index.d.ts", "default": "./dist/index.js" },
-    "./kernel": { "types": "./dist/types/packages/ice/src/kernel.d.ts", "default": "./dist/kernel.js" },
-    "./dom": { "types": "./dist/types/packages/ice/src/dom.d.ts", "default": "./dist/dom.js" },
-    "./react": { "types": "./dist/types/packages/ice/src/react.d.ts", "default": "./dist/react.js" },
-    "./r3f": { "types": "./dist/types/packages/ice/src/r3f.d.ts", "default": "./dist/r3f.js" },
+    ".": {
+      "types": "./dist/types/packages/ice/src/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./kernel": {
+      "types": "./dist/types/packages/ice/src/kernel.d.ts",
+      "default": "./dist/kernel.js"
+    },
+    "./dom": {
+      "types": "./dist/types/packages/ice/src/dom.d.ts",
+      "default": "./dist/dom.js"
+    },
+    "./react": {
+      "types": "./dist/types/packages/ice/src/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./r3f": {
+      "types": "./dist/types/packages/ice/src/r3f.d.ts",
+      "default": "./dist/r3f.js"
+    },
     "./r3f/webgpu": {
       "types": "./dist/types/packages/ice/src/r3f-webgpu.d.ts",
       "default": "./dist/r3f-webgpu.js"
     },
-    "./ground": { "types": "./dist/types/packages/ice/src/ground.d.ts", "default": "./dist/ground.js" },
-    "./devtools": { "types": "./dist/types/packages/ice/src/devtools.d.ts", "default": "./dist/devtools.js" },
+    "./ground": {
+      "types": "./dist/types/packages/ice/src/ground.d.ts",
+      "default": "./dist/ground.js"
+    },
+    "./ground/compose": {
+      "types": "./dist/types/packages/ice/src/ground-compose.d.ts",
+      "default": "./dist/ground-compose.js"
+    },
+    "./ground/packs": {
+      "types": "./dist/types/packages/ice/src/ground-packs.d.ts",
+      "default": "./dist/ground-packs.js"
+    },
+    "./ground/engine": {
+      "types": "./dist/types/packages/ice/src/ground-engine.d.ts",
+      "default": "./dist/ground-engine.js"
+    },
+    "./devtools": {
+      "types": "./dist/types/packages/ice/src/devtools.d.ts",
+      "default": "./dist/devtools.js"
+    },
     "./package.json": "./package.json"
   },
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsup && tsc -p tsconfig.dts.json && node scripts/fix-dts-specifiers.mjs",
-    "prepack": "pnpm run build"
+    "prepack": "pnpm run build",
+    "pack:audit": "pnpm run build && node tools/audit-pack.mjs"
   },
   "dependencies": {
     "@vibecook/strata-ecs": "0.13.0",
@@ -64,10 +104,18 @@
     "three": ">=0.160.0"
   },
   "peerDependenciesMeta": {
-    "@react-three/fiber": { "optional": true },
-    "react": { "optional": true },
-    "react-dom": { "optional": true },
-    "three": { "optional": true }
+    "@react-three/fiber": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "three": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@ice/core": "workspace:*",

@@ -17,7 +17,6 @@ import {
   StackZ,
   SurfaceKind,
   SurfaceTarget,
-  createCompositorSourceRegistry,
   createEngine,
   createWorld,
   defineWidget,
@@ -319,6 +318,47 @@ describe("GL widgets' chrome hosts never promote (v1 CardChrome sandwich, 2026-0
     engine.step(2);
     expect(hostDiv.style.zIndex).toBe(""); // pop cleared on release
   });
+
+  it("a Grabbed VIDEO-surface widget's host stays put too — one predicate, both kinds (B8 R9b)", () => {
+    // Reachable since B6 made `defineWidget({ surface: "video" })` legal. Until
+    // B8 `promotable` asked the widget definition for `!== "gl"` and
+    // `canvasEligible` asked the world for `!== "gl" && !== "video"`, so the two
+    // disagreed about exactly this card: it took the `lifted` branch that
+    // `canvasEligible` was written to refuse. They are one predicate now.
+    defineWidget({
+      type: "dw:video-card",
+      surface: "video",
+      component: null,   // a video card's pixels are a producer's; only its chrome is DOM
+      defaultSize: { w: 10, h: 10 },
+    });
+    const { world, engine, planes, store, reflector } = setup();
+    const e = world.spawn({
+      components: [[Position, { x: 0, y: 0 }], [Size, { w: 10, h: 10 }], [PrefabId, { id: "dw:video-card" }]],
+    });
+    store.set([{ entity: e, hidden: false }]);
+    engine.step(0);
+    const hostDiv = (reflector.hostFor(e) as HTMLElement).parentElement as HTMLElement;
+    expect(hostDiv.parentElement).toBe(planes.content);
+
+    world.addComponent(e, Grab, { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+    engine.step(1);
+    expect(hostDiv.parentElement).toBe(planes.content); // NOT lifted to P3
+    expect(hostDiv.style.zIndex).toBe("1000");          // …but it still pops in place
+
+    // …and the WORLD's stamp reaches the same answer when it exists, which is
+    // the production path (equip writes it before the first flush).
+    const stamped = world.spawn({
+      components: [
+        [Position, { x: 0, y: 0 }],
+        [Size, { w: 10, h: 10 }],
+        [SurfaceKind, { kind: "video" }],
+        [Grab, { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 }],
+      ],
+    });
+    store.set([{ entity: e, hidden: false }, { entity: stamped, hidden: false }]);
+    engine.step(2);
+    expect((reflector.hostFor(stamped) as HTMLElement).parentElement?.parentElement).toBe(planes.content);
+  });
 });
 
 describe("the target is READ from the world (design-013 A1b)", () => {
@@ -339,15 +379,14 @@ describe("the target is READ from the world (design-013 A1b)", () => {
     const world = createWorld();
     const engine = createEngine(world);
     const store = fakeStore();
-    const sources = createCompositorSourceRegistry();
     const reflector = createDomWidgetsReflector(
       { contentPlane: planes.content, liftedPlane: planes.lifted, sourceCanvas: canvas },
       world,
       store,
-      { sources },
+      {},
     );
     engine.registerReflector(reflector);
-    return { world, engine, planes, canvas, store, sources, reflector };
+    return { world, engine, planes, canvas, store, reflector };
   }
 
   const spawnTyped = (world: World, type: string, kind: "dom" | "gl"): Entity =>
@@ -362,53 +401,52 @@ describe("the target is READ from the world (design-013 A1b)", () => {
     });
 
   it("reparents under the source canvas on gpu, and back on dom", () => {
-    const { world, engine, canvas, planes, store, sources, reflector } = compositedSetup();
+    const { world, engine, canvas, planes, store, reflector } = compositedSetup();
     const e = spawnTyped(world, "dw:target-card", "dom");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     const hostEl = reflector.hostElementFor(e) as HTMLElement;
     expect(hostEl.parentElement).toBe(planes.content);
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
 
     // The kind behaviour's write. The reflector's own observer is what wakes
     // it — nothing else changed in the world this frame.
     world.edit(e).set(SurfaceTarget, { target: "gpu" });
     engine.step(1);
-    expect(hostEl.parentElement).toBe(canvas);
-    expect(sources.get(e)?.kind).toBe("dom"); // registered in the SAME flush
+    expect(hostEl.parentElement).toBe(canvas); // parented in the SAME flush
+    expect(reflector.canvasHostCount()).toBe(1);
 
     world.edit(e).set(SurfaceTarget, { target: "dom" });
     engine.step(2);
-    expect(hostEl.parentElement).toBe(planes.content);
-    expect(sources.size()).toBe(0); // and unregistered in the same flush
+    expect(hostEl.parentElement).toBe(planes.content); // and returned in the same flush
+    expect(reflector.canvasHostCount()).toBe(0);
   });
 
-  it("drops the host and its registration when the entity leaves the store", () => {
-    const { world, engine, store, sources, reflector } = compositedSetup();
+  it("drops the host when the entity leaves the store", () => {
+    const { world, engine, store, reflector } = compositedSetup();
     const e = spawnTyped(world, "dw:target-card", "dom");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     world.edit(e).set(SurfaceTarget, { target: "gpu" });
     engine.step(1);
-    expect(sources.size()).toBe(1);
+    expect(reflector.canvasHostCount()).toBe(1);
 
     store.set([]);
     engine.step(2);
     expect(reflector.hostElementFor(e)).toBeUndefined();
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
   });
 
   it("keeps a gl widget's chrome host off the canvas though its target reads gpu", () => {
     // Equip stamps every gl widget `gpu` and `effectiveTarget` coerces one
     // anyway, so the target ALONE would put every island's chrome under L1 —
-    // where `syncSource` would register it as a `dom` source over the island's
-    // own `gl` registration (both keyed by entity; `register` replaces).
-    const { world, engine, planes, store, sources, reflector } = compositedSetup();
+    // where it would be copied as a card body over the island's own picture.
+    const { world, engine, planes, store, reflector } = compositedSetup();
     const e = spawnTyped(world, "dw:target-island", "gl");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
   });
 });
 

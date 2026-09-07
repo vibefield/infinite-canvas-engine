@@ -55,7 +55,6 @@ import {
   Visible,
   defineQuery,
   widgets,
-  type CompositorSourceRegistry,
   type Engine,
   type Entity,
   type GpuAllocatorHandle,
@@ -74,61 +73,13 @@ import {
 import { createIslandRender, type IslandRender } from "./island-render";
 import { Island } from "./island";
 import { RenderTargetPool } from "./pool";
-import { createRetainedQuadTransitionAdapter } from "./retained-quads";
 import { selfSustainPlan } from "./self-sustain";
 import { hasWebGpuBackend, type WebGpuRendererLike } from "./webgpu-backend";
-import { WebGpuRenderTargetPool } from "./webgpu-pool";
-import { createIslandSourceBinder, type IslandSourceBinder } from "./webgpu-sources";
-
-/**
- * Wiring for the COMPOSITED presentation profile (design-012 §3). Present ⇒
- * this GLViews renders islands onto the app-owned device and publishes them to
- * the unified compositor; absent ⇒ the stratified P2 behaviour, unchanged.
- *
- * It is a PROP rather than a flag or a context read because which profile an
- * app runs is a build-time fact (§3, the design-010 precedent): the app that
- * wired `acquireCompositorDevice` and a WebGPU renderer is the same app that
- * passes this, and an app that did neither cannot accidentally acquire it.
- */
-export interface CompositorBinding {
-  /**
-   * Core's source registry — the meeting point with ground, which nobody may
-   * import. Islands are published here as `gl` sources.
-   */
-  readonly registry: CompositorSourceRegistry;
-  /**
-   * Latch island PAINT dirt on the compositor reflector
-   * (`compositorReflector.mark("island")`). Membership dirt needs no wiring —
-   * the registry raises that itself — but a repaint into an already-registered
-   * texture changes nothing observable, so without this an animating island
-   * would show its first frame forever.
-   */
-  readonly markPainted?: () => void;
-}
 
 export interface GLViewsProps {
   readonly engine: Engine;
   readonly bridge: GLBridge;
   readonly store: WidgetMountStore;
-  /**
-   * COMPOSITED PROFILE ONLY (design-012 §4 "island (gl)", plan §5 S5).
-   *
-   * Supplying this changes three things and nothing else: island targets are
-   * WebGPU render targets on the shared device, each is published to the
-   * compositor as a `gl` source, and THIS COMPONENT STOPS PRESENTING — no
-   * composite quads, no composite scene, no backbuffer render, because the
-   * unified compositor owns the one present now (plan §4.3). Everything the
-   * pool constitution governs — bands, paint-DPR caps, the phase machine,
-   * stagger, dt-banking, LRU eviction to budget — carries over untouched, which
-   * is design-012 §7's "API swapped beneath" being literally true.
-   *
-   * REQUIRES the enclosing `<Canvas>` to have been given a WebGPURenderer built
-   * on `engine.compositorDevice.device` (`@ice/r3f/webgpu`'s
-   * `islandRendererFactory`). A WebGL renderer here would publish sources whose
-   * textures never resolve — an empty compositor that looks exactly like a
-   * working one — so the mount refuses instead.
-   */
-  readonly compositor?: CompositorBinding;
   /** FBO byte budget (default `RUNTIME_BUDGETS.fboBytes`, 256 MB). */
   readonly maxFboBytes?: number;
   /** Repaint stagger per composited frame (v1 default 4). */
@@ -201,8 +152,6 @@ export interface GlFrameStats {
   readonly renderMegaPixels: number;
   readonly fboBytes: number;
   readonly fboBudgetBytes: number;
-  /** Outgoing transition quads; each owns one ref-counted FBO pin. */
-  readonly retainedQuads: number;
   /** Island phase census (the demand/retention state machine, design-004 §3/§7). */
   readonly islands: {
     readonly total: number;
@@ -243,7 +192,6 @@ export function GLViews({
   engine,
   bridge,
   store,
-  compositor,
   maxFboBytes = RUNTIME_BUDGETS.fboBytes,
   maxRepaintsPerFrame = 4,
   maxAnimationFps = 60,
@@ -260,21 +208,14 @@ export function GLViews({
   const frameloop = useThree((s) => s.frameloop);
   const clock = useThree((s) => s.clock);
 
-  // The profile, decided once per mount. Read into a ref as well so the
-  // frame pass and the teardown effect see a stable answer even if the prop
-  // identity churns — an app cannot legitimately switch profiles at runtime
-  // (§3: one profile ships per packaged app), and half-switching mid-frame
-  // would strand published sources against a disposed pool.
-  const composited = compositor !== undefined;
-
-  // COMPOSITED-NEXT (design-013 §8 B5). The ground's content seam, published by
+  // THE COMPOSITED PROFILE (design-013 §8 B5). The ground's content seam, published by
   // <InfiniteCanvas> when the mounted layer is `groundCompose(…)`. Present ⇒ this GLViews
   // renders islands into the PRIVATE targets Residency named and installs itself in the
   // roster's island slot; there is no pool, no quad, no source binder and no frame pass here,
   // because the ground's GpuCompose owns the one present.
   //
-  // Latched at the FIRST render, like `compositor` above: an app cannot legitimately switch
-  // profiles at runtime, and half-switching mid-frame would strand a pool against a slot. The
+  // Latched at the FIRST render: an app cannot legitimately switch profiles at runtime,
+  // and half-switching mid-frame would strand a pool against a slot. The
   // context is published in the same batch as `onReady`, which is where the wall makes an app
   // mount its GL root — a mount that beats it gets the loud refusal below rather than a
   // plausible board drawn twice.
@@ -289,42 +230,29 @@ export function GLViews({
   // capturing it — a value read at construction would be undefined forever.
   const glRef = useRef(gl);
   glRef.current = gl;
-  const poolRef = useRef<RenderTargetPool | WebGpuRenderTargetPool | null>(null);
+  const poolRef = useRef<RenderTargetPool | null>(null);
   if (!nextProfile && (poolRef.current === null || poolRef.current.isDisposed())) {
-    poolRef.current = composited
-      ? new WebGpuRenderTargetPool({ renderer: () => glRef.current as unknown as object })
-      : new RenderTargetPool();
+    poolRef.current = new RenderTargetPool();
   }
-  // `null` under composited-next: an island target there is keyed by the Residency HANDLE the
-  // world names, so there is nothing for a pool to key, evict or pin (design-013 §4).
+  // `null` under the composited profile: an island target there is keyed by the Residency
+  // HANDLE the world names, so there is nothing for a pool to key, evict or pin
+  // (design-013 §4).
   const pool = poolRef.current;
 
-  // The outbound seam: islands → core's registry → ground's WidgetQuadPass.
-  // Created once per mount alongside the pool, because its published entries
-  // are only meaningful while that pool's targets exist.
-  const sourcesRef = useRef<IslandSourceBinder | null>(null);
-  if (compositor !== undefined && sourcesRef.current === null) {
-    sourcesRef.current = createIslandSourceBinder({
-      registry: compositor.registry,
-      pool: poolRef.current as WebGpuRenderTargetPool,
-      ...(compositor.markPainted !== undefined ? { onPaint: compositor.markPainted } : {}),
-    });
-  }
-
   // The silent-stratified trap, one layer in (§11 Q2): a WebGL renderer under
-  // this profile publishes sources whose `texture()` never resolves, and an
-  // empty compositor renders a perfectly plausible blank. Say so loudly.
+  // this profile renders islands into targets nothing can sample, and an empty
+  // ground draws a perfectly plausible blank. Say so loudly.
   useEffect(() => {
-    if (!composited && !nextProfile) return;
+    if (!nextProfile) return;
     if (!hasWebGpuBackend(gl)) {
       console.error(
-        "[ice/r3f] GLViews received a `compositor` binding but the Canvas renderer has no WebGPU " +
-          "backend — island sources will never resolve a GPUTexture and the compositor will draw " +
+        "[ice/r3f] GLViews is under the composited profile but the Canvas renderer has no WebGPU " +
+          "backend — an island target will never resolve a GPUTexture and the ground will draw " +
           "nothing. Build the Canvas with islandRendererFactory({ device: engine.compositorDevice.device }) " +
           "from @ice/r3f/webgpu.",
       );
     }
-  }, [composited, nextProfile, gl]);
+  }, [nextProfile, gl]);
 
   // The mirror trap: a GL root that mounted BEFORE the ground published its content seam
   // would run the legacy path forever under a profile that has no compositor to draw it —
@@ -333,13 +261,12 @@ export function GLViews({
     if (contentFromContext !== undefined && !nextProfile) {
       console.error(
         "[ice/r3f] GLViews mounted before <InfiniteCanvas> published the ground's content " +
-          "residency, so it is running the stratified path under the composited-next profile. " +
+          "residency, so it is running the stratified path under the composited profile. " +
           "Mount the <Canvas>/<GLViews> tree from InfiniteCanvas's onReady callback.",
       );
     }
   }, [contentFromContext, nextProfile]);
   const incomingOpacityRef = useRef(1);
-  const retainedQuadsRef = useRef(0);
   const allocatorHandleRef = useRef<GpuAllocatorHandle | null>(null);
   const allocatorId = useMemo(() => `@ice/r3f/pool:${++allocatorSequence}`, []);
 
@@ -432,34 +359,13 @@ export function GLViews({
     };
   }, [allocatorId, bridge, pool]);
 
-  useEffect(() => {
-    const transitions = bridge.transitions;
-    if (transitions === undefined) return;
-    // Composited profile: T2 presentation transitions are per-QUAD facts the
-    // unified compositor owns (design-012 §6/§7 — "dual lift implementations →
-    // one compositor ease"), and this adapter's mechanism is adding retained
-    // MESHES to a composite scene that no longer exists. Registering it here
-    // would build a second, invisible presentation. It lands compositor-side at
-    // S6 with lift/fade/drag-float; until then a composited board simply has no
-    // outgoing-quad transition, which is honest rather than half-drawn.
-    if (composited || pool === null) return;
-    return transitions.register(
-      createRetainedQuadTransitionAdapter({
-        scene,
-        geometry: quadGeometry,
-        sources: quadsRef.current,
-        pool,
-        store,
-        requestFrame: bridge.requestFrame,
-        setIncomingOpacity: (opacity) => {
-          incomingOpacityRef.current = opacity;
-        },
-        onRetainedCountChange: (count) => {
-          retainedQuadsRef.current = count;
-        },
-      }),
-    );
-  }, [bridge, composited, pool, quadGeometry, scene, store]);
+  // THE RETAINED-QUAD TRANSITION ADAPTER IS GONE (B8, design-013 §8). It built
+  // the outgoing frame of a nav flight out of retained composite MESHES in this
+  // component's scene — a second presentation, only ever visible on the
+  // stratified profile, and the thing design-013 §6/§7 replaced. On the
+  // composited profile the departed frame is the ground's own second slot,
+  // prepared from the world every frame (B7); the stratified profile has no
+  // outgoing-quad transition until Phase C moves it onto the same ground.
 
   // Renderer adapter (explicit clear color: transparent black, v1 contract).
   const glLike: GlLike = useMemo(
@@ -533,19 +439,12 @@ export function GLViews({
         (mesh.material as CompositeMaterial).dispose();
       }
       quadMap.clear();
-      // Withdraw every published source BEFORE the pool dies. Ordering is
-      // load-bearing: a source outliving its target hands the compositor a
-      // getter over disposed render targets, and `texture()` would then return
-      // a destroyed GPUTexture rather than undefined — a validation error per
-      // composite, not a blank quad.
-      sourcesRef.current?.dispose();
-      sourcesRef.current = null;
       pool?.dispose();
       for (const [key] of bridge.state.all()) bridge.state.markEvicted(key);
     };
   }, [scene, pool, bridge]);
 
-  // --- composited-next: the island render, in the roster's island slot ------
+  // --- composited: the island render, in the roster's island slot ------
   // Installed as a REFLECTOR rather than driven from this component's frame loop
   // (design-013 §6, B5 R1): the profile forwards `renders.island` between DomRender and
   // VideoIngest, so three's submits land after the ECS has settled and before GpuCompose
@@ -608,22 +507,15 @@ export function GLViews({
     const passStart = performance.now(); // profiling cpuMs + the rate cap's schedule anchor
     bridge.renderAssert.begin();
     let stats: ReturnType<typeof runCompositorPass>;
-    // Exactly one presentation is wired, and WHICH ONE IS THE PROFILE. Built as
-    // a union rather than as two optional fields so the shape itself rules out
-    // a composited mount quietly falling back to quads — a board that renders
-    // perfectly and composites nothing is the silent-stratified trap (§11 Q2),
-    // and it is invisible in a screenshot.
-    const binder = sourcesRef.current;
-    const presentation = binder !== null ? { sources: binder } : { quads };
     try {
       stats = runCompositorPass({
         world,
         bridge,
         pool,
-        // `quads` reconciles composite meshes and renders them to the
-        // backbuffer; `sources` publishes island targets and presents nothing,
-        // because ground's compositor owns the one present (plan §4.3).
-        ...presentation,
+        // The stratified present: reconcile composite meshes and render them to
+        // the backbuffer. Under the composited profile this pass never runs —
+        // IslandRender is installed in the roster's island slot instead.
+        quads,
         gl: glLike,
         compCamera: {
           raw: compCamera, // the REAL camera — gl.render instanceof-checks it
@@ -719,7 +611,6 @@ export function GLViews({
         renderMegaPixels: pixels / 1e6,
         fboBytes: pool.bytesUsed(),
         fboBudgetBytes: maxFboBytes,
-        retainedQuads: retainedQuadsRef.current,
         islands: { total, hot, warm, waking, cold, dormant },
         bandHistogram,
         repainted: stats.repainted,

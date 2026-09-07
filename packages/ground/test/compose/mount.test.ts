@@ -114,7 +114,7 @@ function withHic(): void {
   const proto = globalThis.HTMLCanvasElement.prototype as unknown as Record<string, unknown>;
   proto.requestPaint = () => {};
   proto.getElementTransform = () => new DOMMatrix();
-  vi.spyOn(globalThis.HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawElementImage: () => {} } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(globalThis.HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawElementImage: () => {} } as unknown as GPUCanvasContext);
   vi.stubGlobal("GPUQueue", { prototype: { copyElementImageToTexture: () => {} } });
   // `probeLayoutSubtree` measures a sized child of a `layoutsubtree` canvas;
   // happy-dom lays nothing out, so the discriminator has to be supplied.

@@ -1,15 +1,15 @@
 /**
- * The S3 exit (design-012 §9 S3): camera, absolute write-backs, parking, and
- * native input through a composited card.
+ * INPUT through a promoted card — the old leg's `input` rig, PORTED to the new
+ * profile at B8 (design-013 §8 B8, R7). The old driver graded design-012's S3
+ * exit through `createDomSourceBinder` and the write-back; these rows ask the
+ * same questions of `groundCompose` + `compositedProfile`, where the L1
+ * host's geometry belongs to DomRender (B4 R6):
  *
- * Every row here is a `hic-bench` result turned into a standing regression
- * test against the REAL implementation rather than the spike's rig:
- *
- *   §3 transform-compose  — inside layoutsubtree the transform REPLACES layout
- *   §3 stale hit regions  — visible-only 3/28, write-all 28/28, park 28/28
- *   §3 mid-gesture        — never defer; deferring landed 0/24
- *   §3 camera overhead    — a pure pan uploads ZERO bytes
- *   §5 interactive        — focus and typing work through the unpainted host
+ *   transform compose  — inside layoutsubtree the matrix REPLACES layout
+ *   stale hit regions  — every mid-gesture click lands, max offset < 1 px
+ *   camera overhead    — a 600-frame pure pan uploads ZERO bytes
+ *   native input       — focus and typing work through the unpainted host
+ *   the guard is a FILTER — typing still reaches the copy path
  *
  * Input is driven ONLY through this app's own `webContents.sendInputEvent`.
  * No OS-level injection: nothing here touches the machine's real input stack.
@@ -26,8 +26,9 @@ const { _electron } = require("playwright-core");
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const shotDir = path.join(appDir, "screenshots");
-const CARDS = Number(process.env.BOARD_CARDS ?? "100");
+const CARDS = Number(process.env.BOARD_CARDS ?? "6");
 const PAN_FRAMES = Number(process.env.PAN_FRAMES ?? "600");
+const TRACK_FRAMES = 120;
 const GESTURE_SAMPLES = 24;
 
 const log = (m) => console.log(`[input] ${m}`);
@@ -46,130 +47,67 @@ const app = await _electron.launch({
 try {
   const page = await app.firstWindow();
   page.on("pageerror", (e) => console.error(`  [renderer:error] ${e.message}`));
-  page.on("console", (m) => {
-    if (m.type() === "error") console.log(`  [renderer] ${m.text()}`);
-  });
+  page.on("console", (m) => { const t = m.text(); if (m.type() === "error" || t.startsWith("[ice")) console.log(`  [renderer] ${t}`); });
 
-  await page.goto(`file://${path.join(appDir, "dist", "composited-board.html")}`);
-  await page.waitForFunction(() => window.__boardRig !== undefined, null, { timeout: 30_000 });
-  await page.evaluate(() => window.__boardRig.ready);
-  const board = await page.evaluate((n) => window.__boardRig.run("composited", n, true), CARDS);
-  log(`board: ${board.cards} cards, ${board.canvasHosts} canvas-side, ${board.copies} copies`);
-  check(board.canvasHosts === CARDS, `all ${CARDS} cards are composited (${board.canvasHosts})`);
-  fs.mkdirSync(shotDir, { recursive: true });
+  await page.goto(`file://${path.join(appDir, "dist", "composited-input.html")}`);
+  await page.waitForFunction(() => window.__inputRig !== undefined, null, { timeout: 30_000 });
+  await page.evaluate(() => window.__inputRig.ready);
 
-  // --- §5 law 1: the transform REPLACES layout ------------------------------
-  const sem = await page.evaluate(() => window.__boardRig.transformSemantics());
-  log(`SEMANTICS left/top ${sem.left},${sem.top} → no-transform rect ${JSON.stringify(sem.noTransform)}`);
-  log(`          matrix(1,0,0,1,120,60) → rect ${JSON.stringify(sem.translated)}`);
-  check(
-    sem.noTransform.x === 0 && sem.noTransform.y === 0,
-    `left/top are INERT inside layoutsubtree — a host with no transform sits at (0,0), not at its left/top (got ${sem.noTransform.x},${sem.noTransform.y})`,
-  );
-  check(
-    sem.translated.x === 120 && sem.translated.y === 60,
-    `the transform REPLACES layout rather than composing with it (got ${sem.translated.x},${sem.translated.y}, would be ${120 + 300},${60 + 200} if it composed)`,
-  );
+  // ---- boot
+  const mounted = await page.evaluate(() => window.__inputRig.mount());
+  log(`mount: ${JSON.stringify(mounted)}`);
+  check(mounted.profile === "composited", `the NEW profile mounted (${mounted.profile})`);
+  check(mounted.sourceCanvases === 1, `ONE L1 source canvas (${mounted.sourceCanvases})`);
+  check(mounted.canvases === 1, `and ONE ground canvas beside it (${mounted.canvases})`);
+  check(mounted.available === true, "Ground.create resolved on the app-owned device");
+  check(mounted.gpuErrors === 0, `no uncaptured GPU errors (${mounted.gpuErrors})`);
 
-  // --- §5 law 2: stale hit regions ------------------------------------------
-  const policies = {};
-  for (const policy of ["visible-only", "write-all", "park"]) {
-    const r = await page.evaluate((p) => window.__boardRig.hitTest(p), policy);
-    policies[policy] = r;
-    log(
-      `HIT ${policy.padEnd(12)}: ${r.correct}/${r.checked} land` +
-        ` (stolen by off-screen cards: ${r.stolenByOffscreen}, hit nothing: ${r.hitNothing},` +
-        ` off-screen hosts intruding into the viewport: ${r.potentialThieves})`,
-    );
-    if (r.examples.length > 0) log(`     e.g. ${JSON.stringify(r.examples[0])}`);
-  }
-  // The DEFECT must reproduce, or the two fixes below prove nothing: a rig
-  // where every policy passes is a rig that is not staging the problem.
-  // Grade the STAGING first: if no off-screen host intrudes, "visible-only
-  // passed" means the rig failed to reproduce the defect, and the two fixes
-  // below would then be proving nothing.
-  check(
-    policies["visible-only"].potentialThieves > 0,
-    `the rig reproduces the stale-region setup — ${policies["visible-only"].potentialThieves} off-screen hosts sit inside the viewport`,
-  );
-  check(
-    policies["visible-only"].correct < policies["visible-only"].checked,
-    `visible-only write-back IS a defect on this implementation too (${policies["visible-only"].correct}/${policies["visible-only"].checked} land)`,
-  );
-  check(
-    policies.park.potentialThieves === 0,
-    `parking removes every intruder (${policies.park.potentialThieves} left)`,
-  );
-  check(
-    policies["write-all"].correct === policies["write-all"].checked,
-    `write-all-N is a complete fix (${policies["write-all"].correct}/${policies["write-all"].checked})`,
-  );
-  check(
-    policies.park.correct === policies.park.checked,
-    `PARKING is a complete fix (${policies.park.correct}/${policies.park.checked})`,
-  );
+  const board = await page.evaluate((n) => window.__inputRig.board(n), CARDS);
+  log(`board: ${JSON.stringify(board)}`);
+  check(board.promoted === CARDS, `all ${CARDS} cards asked for the GPU (${board.promoted})`);
+  check(board.onCanvas === CARDS, `and all ${CARDS} hosts are immediate children of the L1 canvas (${board.onCanvas})`);
+  check(board.copies >= CARDS, `each was copied at least once (${board.copies} copies)`);
 
-  // --- §5 law 3: never defer during a gesture -------------------------------
-  const mid = await page.evaluate((n) => window.__boardRig.midGestureHits(n), GESTURE_SAMPLES);
-  log(`MID-GESTURE: ${mid.landed}/${mid.checked} clicks land while panning, max host offset ${mid.maxOffset.toFixed(1)}px`);
+  // ---- 1: the transform REPLACES layout, and tracks the camera
+  const tracked = await page.evaluate((n) => window.__inputRig.transformTracks(n), TRACK_FRAMES);
+  log(`TRACK ${tracked.frames} frames: maxOffset ${tracked.maxOffset.toFixed(3)}px, maxSizeError ${tracked.maxSizeError.toFixed(3)}px, inert rect ${JSON.stringify(tracked.inertRect)}`);
   check(
-    mid.checked >= GESTURE_SAMPLES - 2,
-    `the gesture probe actually sampled (${mid.checked}/${GESTURE_SAMPLES})`,
+    tracked.inertRect.x === 0 && tracked.inertRect.y === 0,
+    `left/top are INERT inside layoutsubtree — a host with no placement matrix sits at the canvas origin, not at its left/top (got ${tracked.inertRect.x},${tracked.inertRect.y})`,
   );
-  check(
-    mid.landed === mid.checked,
-    `EXIT: every mid-gesture click lands (${mid.landed}/${mid.checked}) — deferring the write-back scored 0/24`,
-  );
-  check(mid.maxOffset < 1, `hit regions track the camera exactly (max ${mid.maxOffset.toFixed(2)}px off)`);
+  check(tracked.sampled === TRACK_FRAMES, `the sweep sampled every frame (${tracked.sampled}/${TRACK_FRAMES})`);
+  check(tracked.maxOffset < 1, `the placement matrix tracks the camera exactly: max ${tracked.maxOffset.toFixed(3)}px off over ${tracked.frames} frames`);
+  check(tracked.maxSizeError < 1, `and the host's box stays the card's screen size: max ${tracked.maxSizeError.toFixed(3)}px off`);
 
-  // --- what does changedElements actually NAME? -----------------------------
-  const dirtShape = await page.evaluate(() => window.__boardRig.characterizeContentDirt());
+  // ---- 2: stale hit regions
+  const mid = await page.evaluate((n) => window.__inputRig.midGestureHits(n), GESTURE_SAMPLES);
+  log(`MID-GESTURE: ${mid.landed}/${mid.checked} hits land while panning, max host offset ${mid.maxOffset.toFixed(3)}px`);
+  if (mid.examples.length > 0) log(`     misses e.g. ${JSON.stringify(mid.examples)}`);
+  check(mid.checked >= GESTURE_SAMPLES - 2, `the gesture probe actually sampled (${mid.checked}/${GESTURE_SAMPLES})`);
+  check(mid.landed === mid.checked, `EXIT: every mid-gesture hit lands on the moving card (${mid.landed}/${mid.checked}) — deferring the write-back scored 0/24 on the old leg`);
+  check(mid.maxOffset < 1, `hit regions track the camera exactly (max ${mid.maxOffset.toFixed(3)}px off)`);
+
+  // ---- 3: a pure pan uploads nothing
+  const pan = await page.evaluate((n) => window.__inputRig.panUpload(n), PAN_FRAMES);
   log(
-    `CONTENT DIRT: a pure content edit named ${dirtShape.named} element(s) — ` +
-      `the host itself ${dirtShape.namedTheHost}x, a descendant ${dirtShape.namedADescendant}x`,
+    `PAN ${pan.frames} frames: copies=${pan.copies} dirtied=${pan.dirtied} (selfDirt ${pan.selfDirt}) resized=${pan.resized} ` +
+      `redraws=${pan.redraws} submits=${pan.submits} parked=${pan.parked} refused=${pan.refused}`,
   );
-  log(`              samples: ${JSON.stringify(dirtShape.samples)}`);
-  check(dirtShape.named > 0, `a content edit raises a paint event naming something (${dirtShape.named})`);
-  // This is what forces the guard to be temporal rather than structural: there
-  // is no descendant in the event to key off.
+  check(pan.pendingAtStart === 0, `the pan starts on a drained board (${pan.pendingAtStart} copies owed)`);
+  check(pan.redraws > 0, `the pan did redraw the ground (${pan.redraws} frames, ${pan.submits} submits) — a still screen would prove nothing`);
+  check(pan.copies === 0, `EXIT: a ${pan.frames}-frame pure pan uploads ZERO bytes (${pan.copies} copies)`);
+  // The guard is LOAD-BEARING, not decorative: the placement writes really do
+  // raise paint events naming the hosts, and every one of them was dropped.
   check(
-    dirtShape.namedADescendant === 0 && dirtShape.namedTheHost > 0,
-    `changedElements names the DRAWABLE, never the mutated descendant (host ${dirtShape.namedTheHost}x, descendant ${dirtShape.namedADescendant}x)`,
+    pan.selfDirt > 0 && pan.selfDirt === pan.dirtied,
+    `and the §4.2 guard is what made it zero: all ${pan.dirtied} paint marks of the pan were this module's own placement writes (${pan.selfDirt} dropped)`,
   );
+  check(pan.resized === 0, `and no host was re-sized by it (${pan.resized}) — a pan changes the matrix, never the box`);
 
-  // --- §4.2 guard: a pure pan uploads nothing -------------------------------
-  const pan = await page.evaluate((n) => window.__boardRig.panUpload(n), PAN_FRAMES);
-  log(
-    `PAN ${pan.frames} frames: copies=${pan.copies} paintEvents=${pan.paintEvents} ` +
-      `namedAsSelf=${pan.selfNamed} namedAsContent=${pan.contentNamed} ` +
-      `submits=${pan.submits} parked=${pan.parked} refused=${pan.refused} ` +
-      `firstCopyOnFrame=${pan.firstCopyFrame} framesWithCopies=${pan.copyFrameCount}`,
-  );
-  check(
-    pan.pendingAtStart === 0,
-    `the pan starts on a drained atlas (${pan.pendingAtStart} copies owed) — an arm that starts dirty is charged for the previous one`,
-  );
-  check(
-    pan.copies === 0,
-    `EXIT: a ${pan.frames}-frame pan uploads ZERO bytes (${pan.copies} copies)`,
-  );
-  // The characterisation §4.2 asked for: the write-back's paint events DO name
-  // the hosts it wrote. They are filtered structurally (named-as-self), not by
-  // a timing window.
-  check(
-    pan.selfNamed > 0,
-    `§4.2 characterised: the write-back's own paint events DO name the hosts it wrote (${pan.selfNamed}) — the guard is load-bearing, not decorative`,
-  );
-  check(
-    pan.contentNamed === 0,
-    `§4.2 guard: none of them reach the upload path as content dirt (${pan.contentNamed})`,
-  );
-  check(pan.submits > 0, `the pan did composite (${pan.submits} submits) — a still frame would prove nothing`);
-
-  // --- §5: native focus and typing through the unpainted host ---------------
-  const target = await page.evaluate(() => window.__boardRig.addInput(0));
+  // ---- 4: native focus and typing through the unpainted host
+  const target = await page.evaluate(() => window.__inputRig.focusTarget(0));
   log(`INPUT target at ${JSON.stringify(target)}`);
-  check(target.w > 0 && target.h > 0, `the input has a real hit rect inside the composited card (${target.w}x${target.h})`);
+  check(target.w > 0 && target.h > 0, `the input has a real hit rect inside the promoted card (${target.w}x${target.h})`);
 
   const cx = Math.round(target.x + target.w / 2);
   const cy = Math.round(target.y + target.h / 2);
@@ -184,38 +122,28 @@ try {
     { type: "mouseDown", x: cx, y: cy, button: "left", clickCount: 1 },
     { type: "mouseUp", x: cx, y: cy, button: "left", clickCount: 1 },
   ]);
-  const focused = await page.evaluate(() => window.__boardRig.inputState());
+  const focused = await page.evaluate(() => window.__inputRig.inputState());
   log(`INPUT after click: ${JSON.stringify(focused)}`);
-  check(focused.focused === true, "a synthesised click FOCUSES the real input inside the composited card");
-  check(
-    focused.activeInsideCanvas === true,
-    "the focused element is inside the L1 canvas subtree — hit-testing is native, with no router",
-  );
+  check(focused.focused === true, "a synthesised click FOCUSES the real input inside the promoted card");
+  check(focused.activeInsideCanvas === true, "the focused element is inside the L1 canvas subtree — hit-testing is native, with no router");
 
+  const before = await page.evaluate(() => window.__inputRig.dirtCounters());
   const typed = "hello42";
   await sendInput([...typed].map((ch) => ({ type: "char", keyCode: ch })));
-  const after = await page.evaluate(() => window.__boardRig.inputState());
+  const after = await page.evaluate(() => window.__inputRig.inputState());
   log(`INPUT after typing: ${JSON.stringify(after)}`);
   check(after.value === typed, `typing reaches the real input through the unpainted host ("${after.value}")`);
 
-  // THE OTHER HALF OF THE GUARD. A filter that suppressed everything would also
-  // pass the zero-upload check, so prove real content still uploads: typing
-  // changes a DESCENDANT, which must reach the atlas.
-  const afterTyping = await page.evaluate(() => window.__boardRig.dirtCounters());
-  log(`DIRT after typing: namedAsContent=${afterTyping.contentNamed} copies=${afterTyping.copies}`);
+  // ---- 5: the guard is a FILTER, not a mute
+  const afterTyping = await page.evaluate(() => window.__inputRig.dirtCounters());
+  log(`DIRT across the typing: dirtied ${before.dirtied} → ${afterTyping.dirtied}, copies ${before.copies} → ${afterTyping.copies}`);
   check(
-    afterTyping.contentNamed > 0,
-    `the guard is a FILTER, not a mute: typing named a descendant and reached the upload path (${afterTyping.contentNamed})`,
+    afterTyping.copies > before.copies,
+    `the pan guard is a FILTER, not a mute: typing is content and it reached the copy path (${afterTyping.copies - before.copies} copies)`,
   );
 
-  // The typed text must also reach the PIXELS: the mutation self-schedules a
-  // paint event, the slot is re-copied, and the card composites with it.
-  await page.evaluate(() => window.__boardRig.readCompositor());
-  fs.writeFileSync(path.join(shotDir, "s3-composited-input.png"), await page.screenshot());
-  const afterTypeBoard = await page.evaluate(() => window.__boardRig.atlas());
-  log(`atlas after typing: pages=${afterTypeBoard.pages} slots=${afterTypeBoard.slots}`);
-
-  await page.evaluate(() => window.__boardRig.teardown());
+  fs.mkdirSync(shotDir, { recursive: true });
+  fs.writeFileSync(path.join(shotDir, "composited-input.png"), await page.screenshot());
 } catch (err) {
   console.error(err);
   failures.push(`threw: ${err.message}`);
@@ -223,9 +151,5 @@ try {
   await app.close().catch(() => {});
 }
 
-console.log(
-  failures.length === 0
-    ? "[input] ALL PASS"
-    : `[input] ${failures.length} FAILED:\n  - ${failures.join("\n  - ")}`,
-);
-process.exitCode = failures.length === 0 ? 0 : 1;
+log(failures.length === 0 ? "ALL PASS" : `${failures.length} FAILED:\n  - ${failures.join("\n  - ")}`);
+process.exit(failures.length === 0 ? 0 : 1);

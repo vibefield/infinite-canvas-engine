@@ -21,8 +21,9 @@
     "test": "vitest run",
     "bench": "BENCH=1 vitest run bench/",
     "gen:shaders": "node tools/wgsl-to-ts.mjs",
-    "gen:check": "node tools/wgsl-to-ts.mjs --check",
-    "oracle": "tsx oracle/render.mjs"
+    "gen:check": "node tools/wgsl-to-ts.mjs --check && node tools/noise-to-ts.mjs --check",
+    "oracle": "tsx oracle/render.mjs",
+    "gen:noise": "node tools/noise-to-ts.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

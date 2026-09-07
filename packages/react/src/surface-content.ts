@@ -12,7 +12,7 @@
  * This module is that way, and it is deliberately STRUCTURAL: `@ice/react`
  * may not import `@ice/ground` (`nobody-imports-ground`), so what follows
  * MIRRORS `GroundCompose.residency` / `GroundCompose.renders` the same way
- * `GroundLayerHandle` mirrors the layer itself and `profiles/composited-next`
+ * `GroundLayerHandle` mirrors the layer itself and `profiles/composited`
  * mirrors the handle's `compose` field. `@ice/r3f` sits above react and
  * imports these types rather than restating them: one mirror, checked where
  * the app wires the real object into `<InfiniteCanvas ground={…}>`.
@@ -89,7 +89,7 @@ export interface SurfaceContent {
 
 /**
  * Published by `<InfiniteCanvas>` when the ground layer it mounted carries a
- * compose handle (the composited-next profile). `undefined` under every other
+ * compose handle (the composited profile). `undefined` under every other
  * profile — which is exactly how a GL root selects its arm.
  */
 export const SurfaceContentContext = createContext<SurfaceContent | undefined>(undefined);
@@ -110,7 +110,7 @@ interface ComposeSlot {
 /**
  * Read the content seam off an opaque ground layer handle. `undefined` for the
  * old leg's `ground()` (no compose field) and for no ground at all — the same
- * structural read the composited-next profile makes of the same object.
+ * structural read the composited profile makes of the same object.
  */
 export function surfaceContentOf(handle: unknown): SurfaceContent | undefined {
   const compose = (handle as ComposeSlot | null | undefined)?.compose;

@@ -268,7 +268,11 @@ export function installReleaseEvidence(opts: {
       domHosts: host.container.querySelectorAll("[data-ice-entity]").length,
       departingDomPlanes: host.container.querySelectorAll("[data-ice-departing-dom]").length,
       glIslands: bridge === null ? 0 : [...bridge.islands()].length,
-      departingGlGroups: gl?.retainedQuads ?? 0,
+      // The retained-quad transition (and its stat) died with the old composited
+      // leg at B8: an outgoing frame is the ground's own second slot now, and the
+      // stratified profile has none until Phase C. Reported as 0 so the evidence
+      // schema keeps its shape rather than losing a row.
+      departingGlGroups: 0,
       ...(gl !== undefined ? { gl } : {}),
       ...(heap !== undefined ? { usedJsHeapBytes: heap } : {}),
     });

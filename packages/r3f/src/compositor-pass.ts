@@ -55,7 +55,6 @@ import {
 } from "@ice/core";
 import type { GLBridge } from "./bridge";
 import { islandPaintable } from "./island-state";
-import type { SourcesLike } from "./webgpu-sources";
 
 /** Render order far above any sane sibling ordinal or legacy z — the grabbed quad draws last. */
 const GRABBED_RENDER_ORDER = 1e9;
@@ -158,31 +157,17 @@ export interface PassContext {
   readonly bridge: GLBridge;
   readonly pool: PoolLike;
   /**
-   * STRATIFIED PROFILE: the composite quads this pass reconciles and then
-   * renders to the backbuffer. Omitted in the composited profile, where there
-   * is no second three scene to draw — see {@link PassContext.sources}.
+   * The composite quads this pass reconciles and then renders to the
+   * backbuffer.
+   *
+   * OPTIONAL still, and now for one reason only: this pass is the STRATIFIED
+   * profile's. The composited leg that used to select itself here by supplying
+   * `sources` instead of `quads` — publishing island targets into a source
+   * registry and presenting nothing — was deleted at B8 (design-013 §8). The
+   * composited profile's islands are `@ice/r3f`'s `createIslandRender`, which
+   * renders into the private target Residency named and never runs this pass.
    */
   readonly quads?: QuadsLike;
-  /**
-   * COMPOSITED PROFILE (design-012 §4, plan §5 S5.3): island targets are
-   * published as `gl` sources for the unified compositor, and THIS PASS NO
-   * LONGER PRESENTS. Supplying `sources` is what selects that profile.
-   *
-   * The steps above are untouched — camera, phases, the staggered paint pass at
-   * band × paint-DPR, dt-banking, eviction to budget all carry over verbatim,
-   * which is design-012 §7's "texture pool constitution: survives unchanged
-   * (API swapped beneath)" being literally true. What changes is only the last
-   * two steps: quad reconcile becomes source reconcile, and the composite
-   * render to the backbuffer is deleted, because ground's `WidgetQuadPass`
-   * owns the one present now (plan §4.3: "its ADVANCE collapses into the
-   * compositorReflector's single present").
-   *
-   * Geometry is deliberately NOT published: an island's rect, opacity and paint
-   * order are ECS facts (Position/Size/Opacity + the sibling-order index) that
-   * the compositor reads for itself, so publishing them here would be a second
-   * source of truth for what petition 8 already settled.
-   */
-  readonly sources?: SourcesLike;
   readonly gl: GlLike;
   readonly compCamera: CompCameraLike;
   /** Adapt an island's ortho camera (three or fake) for frustum writes. */
@@ -217,10 +202,6 @@ export interface PassStats {
 
 export function runCompositorPass(ctx: PassContext): PassStats {
   const { world, bridge, pool, gl } = ctx;
-  // The profile, derived from what the caller wired rather than from a flag:
-  // `sources` present ⇒ the unified compositor presents, this pass does not.
-  const sources = ctx.sources;
-  const compositedProfile = sources !== undefined;
   const stats: PassStats = {
     repainted: 0,
     pendingPaints: 0,
@@ -365,12 +346,6 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     }
     const px = fboPixelSize(size.w, size.h, effectiveDpr, 1);
     bridge.state.markPainted(e, { w: px.width, h: px.height, dpr: effectiveDpr, band });
-    // Composited profile: new pixels in a texture the compositor is ALREADY
-    // sampling change nothing about the registry, so nothing would otherwise
-    // fire — an animating island would show its first frame forever. This is
-    // the paint half of the two-level invalidation, raised at the one place
-    // that knows a repaint really happened.
-    sources?.painted(e);
     stats.repainted += 1;
   }
 
@@ -439,35 +414,12 @@ export function runCompositorPass(ctx: PassContext): PassStats {
     return { fbo, pos, size };
   };
 
-  // --- 6a. COMPOSITED PROFILE: reconcile SOURCES, and present nothing --------
-  // The whole of steps 6 and 7 in this profile. Ground's WidgetQuadPass draws
-  // these sources inside the compositor's one pass, reading each island's rect,
-  // opacity and paint order from the ECS itself — so there is no quad to
-  // transform here, no composite scene to render, and no backbuffer to clear.
-  if (compositedProfile) {
-    const publishedNow = new Set<number>();
-    for (const [e, s] of bridge.state.all()) {
-      if (presentable(e, s) === null) continue;
-      publishedNow.add(e);
-      sources.publish(e);
-      // Still-Warm textures must not look LRU-stale just because they did not
-      // repaint — the same reason the quad path touches every composited quad.
-      pool.touch(e);
-    }
-    for (const key of sources.keys()) {
-      if (!publishedNow.has(key)) sources.withdraw(key);
-    }
-    stats.fboBytes = pool.bytesUsed();
-    if (backgrounded) stats.anyHot = false;
-    return stats;
-  }
-
-  // --- 6b. STRATIFIED PROFILE: reconcile QUADS, then composite --------------
+  // --- 6. reconcile QUADS, then composite -----------------------------------
   const quads = ctx.quads;
   if (quads === undefined) {
     throw new Error(
-      "runCompositorPass: the stratified profile needs `quads` (and the composited profile " +
-        "needs `sources`) — one of the two must be wired, or the pass has nothing to present.",
+      "runCompositorPass: this pass needs `quads` — it is the stratified profile's present, " +
+        "and without them it has nothing to draw.",
     );
   }
   for (const key of quads.keys()) {

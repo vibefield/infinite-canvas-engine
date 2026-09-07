@@ -2,7 +2,7 @@
 // canvas in the L0 slot, one reflector — GpuCompose — drawing into the swap
 // chain straight from the world. The factory has the shape the React facade's
 // `ground` prop expects (`GroundLayerFactory`, mirrored structurally — this
-// package may not import react) and returns a handle the `compositedNext`
+// package may not import react) and returns a handle the `composited`
 // profile recognises by its `compose` field.
 //
 // What it draws (B3a): the world's cards — every widget Active in the nav

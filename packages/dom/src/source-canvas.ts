@@ -164,7 +164,7 @@ export interface SourceCanvas {
  * stay on the content plane, under this canvas, and a full-bleed pointer
  * target at `z-index: 3` swallows every hit meant for them. So `pointerEvents`
  * is now an OPTION — `"auto"` by default (the old leg's rigs are unchanged),
- * `"none"` for the composited-next mount, whose promoted hosts set
+ * `"none"` for the composited mount, whose promoted hosts set
  * `pointer-events: auto` on themselves in the same flush that adopts them.
  */
 const CANVAS_STYLE: Readonly<Record<string, string>> = {

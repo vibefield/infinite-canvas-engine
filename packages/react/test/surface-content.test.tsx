@@ -9,7 +9,7 @@
  * once, exactly like `<GLViews compositor>`).
  *
  * Driven headless (happy-dom) against a REAL `createCanvasEngine` and the REAL
- * composited-next profile, with a fake ground layer standing in for
+ * composited profile, with a fake ground layer standing in for
  * `groundCompose(…)` — the one thing this package may not import.
  */
 import {
@@ -26,7 +26,7 @@ import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  compositedNextProfile,
+  compositedProfile,
   InfiniteCanvas,
   useSurfaceContent,
   type ContentRenderSlots,
@@ -80,7 +80,7 @@ function fakeGround(withCompose: boolean) {
   return { factory, residency, renders, disposed: () => disposed };
 }
 
-/** The app-owned device the composited-next profile's gate asks for, as a stand-in. */
+/** The app-owned device the composited profile's gate asks for, as a stand-in. */
 const FAKE_GPU = { device: { limits: { maxTextureDimension2D: 4096 } } } as unknown as EngineGpu;
 
 function makeEngine(withDevice: boolean): CanvasEngine {
@@ -94,7 +94,7 @@ function makeEngine(withDevice: boolean): CanvasEngine {
 function mount(
   engine: CanvasEngine,
   ground: () => unknown,
-  profile?: typeof compositedNextProfile,
+  profile?: typeof compositedProfile,
 ): { seen: { current: SurfaceContent | undefined }; unmount: () => void } {
   vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
   vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
@@ -135,10 +135,10 @@ function mount(
 }
 
 describe("the ground's content seam reaches the tree", () => {
-  it("publishes the compose handle's residency and render slots under composited-next", () => {
+  it("publishes the compose handle's residency and render slots under composited", () => {
     const engine = makeEngine(true);
     const ground = fakeGround(true);
-    const { seen } = mount(engine, ground.factory, compositedNextProfile);
+    const { seen } = mount(engine, ground.factory, compositedProfile);
 
     const content = seen.current;
     if (content === undefined) throw new Error("the context published nothing");
@@ -199,7 +199,7 @@ describe("the ground's content seam reaches the tree", () => {
         root.render(
           createElement(
             InfiniteCanvas,
-            { engine, ground: g.factory as never, profile: compositedNextProfile },
+            { engine, ground: g.factory as never, profile: compositedProfile },
             createElement(Probe),
           ),
         );

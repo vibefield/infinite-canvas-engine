@@ -76,8 +76,8 @@ import {
   defineQuery,
   effectiveTarget,
   widgets,
-  type CompositorSourceRegistry,
   type Entity,
+  type SurfaceKindValue,
   type MountEntry,
   type PresentationRetainer,
   type PresentationTransitionAdapter,
@@ -109,15 +109,15 @@ export interface DomWidgetsHost {
 /** The parent a host currently belongs to. */
 type HostPlacement = "content" | "lifted" | "canvas";
 
-export interface DomWidgetsOptions {
-  /**
-   * The compositor's source registry. A host is registered as a `dom` source
-   * in the SAME flush that parents it under the canvas, and unregistered in
-   * the same flush that takes it away — the two must not drift, or the
-   * compositor holds an element the copy will refuse.
-   */
-  readonly sources?: CompositorSourceRegistry;
-}
+/**
+ * Nothing yet. The one option this used to take — the old composited leg's
+ * source registry, into which a canvas-side host registered itself — went with
+ * that leg at B8 (design-013 §8). On the composited profile a promoted host is
+ * addressed by DomRender through `hostOf`, off the world's own `TextureRef`,
+ * so there is no second membership to keep in lockstep with parentage.
+ */
+// biome-ignore lint/suspicious/noEmptyInterface: the shape is the seam; B8 emptied it and Phase C fills it again.
+export interface DomWidgetsOptions {}
 
 interface HostRec {
   /** The absolute-positioned host div; re-parents between the planes and L1. */
@@ -135,12 +135,6 @@ interface HostRec {
   placement: HostPlacement;
   /** Last-applied `Opacity.a` (1 = the no-component default, style cleared). */
   opacity: number;
-  /**
-   * Live compositor-source registration, while this host is canvas-side.
-   * Explicitly `| undefined` rather than optional: `exactOptionalPropertyTypes`
-   * is on, and this field is cleared by assignment on every demotion.
-   */
-  unregister: (() => void) | undefined;
 }
 
 interface Geom {
@@ -254,14 +248,45 @@ export function createDomWidgetsReflector(
   ];
 
   /**
+   * May this entity's host be lifted to the P3 plane on a Grab?
+   *
    * GL widgets' hosts carry DOM CHROME that must stay in the content plane
-   * (P1, UNDER the GL canvas) even while grabbed — promoting to P3 would
-   * cover the widget's own 3D content with its opaque card. The GL side pops
-   * the grabbed quad renderOrder-top within P2 instead (design-004 §1).
+   * (P1, UNDER the GL canvas) even while grabbed — promoting to P3 would cover
+   * the widget's own 3D content with its opaque card. The GL side pops the
+   * grabbed quad renderOrder-top within P2 instead (design-004 §1). A `video`
+   * surface is the same case for the same reason: it has no live-dom half, so
+   * its host is chrome over a picture somebody else draws.
+   *
+   * ONE PREDICATE (B8 R9b). This used to read the widget DEFINITION
+   * (`widgets.get(type).surface`) and to miss `video` entirely, while
+   * `canvasEligible` read the WORLD (`SurfaceKind`) and excluded both — so a
+   * grabbed video widget took the `lifted` branch that `canvasEligible` was
+   * written to refuse. Since B6 made `defineWidget({ surface: "video" })`
+   * legal, that was reachable. Both questions are now the same question, asked
+   * of the same fact: `canvasEligible` IS the answer, and there is no
+   * equip-tag timing for the two to race over.
    */
   function promotable(e: Entity): boolean {
+    return canvasEligible(e);
+  }
+
+  /**
+   * A card's surface kind, from the world's stamp when it exists and from the
+   * widget DEFINITION when it does not.
+   *
+   * BOTH, deliberately (B8 R9b). The stamp is the fact — equip writes
+   * `SurfaceKind` once and it never changes — but it does not exist before
+   * equip, and a bare spawn (a test rig, an entity assembled by hand) may
+   * never be equipped at all. Reading the world alone made every such entity
+   * read `dom`; reading the definition alone missed an entity that has no
+   * `PrefabId`. The divergence between the two readers is what this fixes, so
+   * the fix cannot be to pick one of them.
+   */
+  function kindOf(e: Entity): SurfaceKindValue | undefined {
+    const stamped = world.get(e, SurfaceKind)?.kind;
+    if (stamped !== undefined) return stamped as SurfaceKindValue;
     const type = world.get(e, PrefabId)?.id;
-    return typeof type !== "string" || widgets.get(type)?.surface !== "gl";
+    return typeof type === "string" ? widgets.get(type)?.surface : undefined;
   }
 
   /**
@@ -272,13 +297,13 @@ export function createDomWidgetsReflector(
    * (it is the only target those kinds have), and `effectiveTarget` coerces
    * them to `gpu` whatever the cell says, so a promote decision that read the
    * target alone would move EVERY island's host under L1 on its first frame.
-   * Island sources are registered in the compositor's source registry KEYED BY
-   * ENTITY (`r3f/webgpu-sources.ts`) and `syncSource` would then register a
-   * `dom` source for the same entity — `register` replaces, so the island's
-   * `gl` source would be evicted by its own chrome host and the compositor
-   * would atlas-copy a card body where the 3D content used to be. A gl host is
-   * DOM CHROME and belongs in the content plane, UNDER the island
-   * (design-004 §1's sandwich).
+   * The old leg made the cost concrete: island sources were registered in the
+   * compositor's source registry KEYED BY ENTITY, so parenting an island's
+   * chrome host under L1 registered a `dom` source for the same entity and
+   * evicted the island's own `gl` one — the compositor then atlas-copied a card
+   * body where the 3D content used to be. That registry is gone at B8, but the
+   * rule it enforced is not: a gl host is DOM CHROME and belongs in the content
+   * plane, UNDER the island (design-004 §1's sandwich).
    *
    * Carried, with its reason, from `createPresentationPolicy`'s `eligible()`
    * and `createHost`'s seeding guard — the two deleted places that used to
@@ -286,10 +311,10 @@ export function createDomWidgetsReflector(
    * until then they have none, and that is what this returns.
    */
   function canvasEligible(e: Entity): boolean {
-    const kind = world.get(e, SurfaceKind)?.kind;
+    const kind = kindOf(e);
     // Refuses only what is KNOWN to have no live-dom half. An entity with no
-    // kind (never equipped, or not a widget) keeps the behaviour it always
-    // had: it has no island source to evict either.
+    // kind at all (not a widget, no stamp and no definition) keeps the
+    // behaviour it always had.
     return kind !== "gl" && kind !== "video";
   }
 
@@ -323,22 +348,6 @@ export function createDomWidgetsReflector(
   function parentFor(placement: HostPlacement): HTMLElement {
     if (placement === "canvas" && sourceCanvas !== undefined) return sourceCanvas;
     return placement === "lifted" ? host.liftedPlane : host.contentPlane;
-  }
-
-  /**
-   * Register/unregister the host as a `dom` compositor source, in lockstep
-   * with its parentage. Called only where the node has ALREADY been moved:
-   * the compositor may hold an element only while that element is an immediate
-   * child of the canvas, or the copy is refused at the platform.
-   */
-  function syncSource(e: Entity, rec: HostRec): void {
-    const wantsSource = rec.placement === "canvas" && opts.sources !== undefined;
-    if (wantsSource && rec.unregister === undefined) {
-      rec.unregister = opts.sources?.register(e, { kind: "dom", host: rec.host });
-    } else if (!wantsSource && rec.unregister !== undefined) {
-      rec.unregister();
-      rec.unregister = undefined;
-    }
   }
 
   /** Every path that changes canvas membership routes through here. */
@@ -411,10 +420,7 @@ export function createDomWidgetsReflector(
       hidden: false,
       placement,
       opacity,
-      unregister: undefined,
     };
-    // The node is parented; only now may it become a compositor source.
-    syncSource(e, rec);
     if (placement === "canvas") noteCompositedChange();
     return rec;
   }
@@ -438,10 +444,6 @@ export function createDomWidgetsReflector(
     }
     for (const [e, rec] of hosts) {
       if (present.has(e)) continue;
-      // Drop the compositor's handle BEFORE the node leaves the document: a
-      // registered source whose element is detached is one the copy refuses.
-      rec.unregister?.();
-      rec.unregister = undefined;
       if (rec.placement === "canvas") noteCompositedChange();
       rec.host.remove(); // React unmounts via the store; the host div goes too
       hosts.delete(e);
@@ -464,7 +466,7 @@ export function createDomWidgetsReflector(
    * measured in rather than the world units a camera-transformed plane scales
    * for it. Their whole geometry — placement and size — belongs to whichever
    * reflector owns the copy: `domWriteback` under the old composited profile
-   * (screen px, `Size × zoom`), `compose/dom-render.ts` under composited-next
+   * (screen px, `Size × zoom`), `compose/dom-render.ts` under composited
    * (design-013 D9's `geometry().cssSize` — band space, with `zoom / band` on
    * the placement matrix — so the extent-less element copy writes exactly the
    * slot Residency placed). Exactly one of the two is registered per app.
@@ -576,13 +578,6 @@ export function createDomWidgetsReflector(
       if (placement === "lifted") anyLifted = true;
       const shouldLift = placement === "lifted";
       if (placement !== rec.placement) {
-        // Unregister BEFORE the move when leaving the canvas, register AFTER
-        // it when arriving: the compositor must never hold an element that is
-        // not, at that moment, an immediate child of the canvas.
-        if (rec.placement === "canvas") {
-          rec.unregister?.();
-          rec.unregister = undefined;
-        }
         const wasCanvas = rec.placement === "canvas";
         rec.placement = placement;
         parentFor(placement).appendChild(rec.host);
@@ -591,7 +586,6 @@ export function createDomWidgetsReflector(
         // card), so the host it adopts is what takes the hits. Set on the host
         // and cleared when it leaves: on a plane the property is the plane's.
         rec.host.style.pointerEvents = placement === "canvas" ? "auto" : "";
-        syncSource(e, rec);
         if (wasCanvas || placement === "canvas") noteCompositedChange();
         orderDirty = true; // the move appended LAST — re-assert sibling order
         // Hand geometry custody over cleanly. Each owner writes properties the
@@ -784,12 +778,9 @@ export function createDomWidgetsReflector(
               if (rec === undefined) continue;
               departingHosts.add(entity);
               moved.add(entity);
-              // A retained host leaves the canvas for the departing container,
-              // so it stops being a legal copy source for the duration. The
-              // outgoing frame is presented from the retainer's own CSS
-              // transform, which is the point of retention; `release` re-syncs.
-              rec.unregister?.();
-              rec.unregister = undefined;
+              // A retained host leaves the canvas for the departing container.
+              // The outgoing frame is presented from the retainer's own CSS
+              // transform, which is the point of retention.
               departing.appendChild(rec.host);
             }
             const initial = planeCssTransform(descriptor.fromCamera);
@@ -800,7 +791,6 @@ export function createDomWidgetsReflector(
               if (rec === undefined) continue;
               departingHosts.delete(entity);
               parentFor(rec.placement).appendChild(rec.host);
-              syncSource(entity, rec);
             }
             departing.remove();
             hold.release();
@@ -821,7 +811,6 @@ export function createDomWidgetsReflector(
               rec.host.style.display = "none";
               departingHosts.delete(entity);
               parentFor(rec.placement).appendChild(rec.host);
-              syncSource(entity, rec);
             }
             departing.remove();
             host.contentPlane.style.opacity = "";
@@ -859,13 +848,6 @@ export function createDomWidgetsReflector(
     dispose() {
       for (const u of unsubs) u();
       unsubs.length = 0;
-      // The compositor outlives this reflector (the device does too), so a
-      // left-behind registration would keep it copying from hosts nothing
-      // owns any more.
-      for (const rec of hosts.values()) {
-        rec.unregister?.();
-        rec.unregister = undefined;
-      }
     },
   };
 }

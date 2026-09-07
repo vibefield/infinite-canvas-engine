@@ -1,9 +1,10 @@
 /**
  * Shelf packing for the atlas-slot allocator (design-012 §4, Q3 RATIFIED
  * 2026-08-31) — pure rect math over a plain page struct. No ids, no sources,
- * no GPU: `ground/atlas-allocator.ts` owns identity, residency and effects;
- * this module owns only where a rect may sit, what it costs, and when a page
- * should grow.
+ * no GPU: the caller owns identity, residency and effects; this module owns only
+ * where a rect may sit, what it costs, and when a page should grow. That caller
+ * was `ground/atlas-allocator.ts` until B8 deleted the old leg; it is
+ * `@ice/core`'s `createLayerAllocator` now, over fixed 2048² layers.
  *
  * **Gutters.** Every placed rect is separated from its neighbours AND from the
  * page edge by at least `gutter` px, so a linear tap at a slot's border never

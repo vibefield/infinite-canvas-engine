@@ -91,7 +91,7 @@ describe("the hysteresis invariant, under a seeded zoom walk", () => {
   it("every visible gpu card's held band brackets the zoom: band/2 ≤ zoom ≤ 2·band", () => {
     const { step, card, bandOf, zoomTo, world } = rig();
     const cards = [card(), card(), card()];
-    // The repo's LCG (kernel/test/prng.ts, ground/test/atlas-allocator.test.ts).
+    // The repo's LCG (kernel/test/prng.ts).
     let seed = 20260906;
     const rand = (): number => {
       seed = (seed * 1664525 + 1013904223) >>> 0;

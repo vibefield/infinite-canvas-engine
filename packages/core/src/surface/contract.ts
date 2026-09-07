@@ -71,7 +71,27 @@
  */
 
 import type { Entity } from "@vibecook/strata-ecs";
-import type { SurfaceKindValue } from "./compositor-registry";
+
+/**
+ * The surface kinds a card's pixels can come from.
+ *
+ * ── WHERE THIS LIVES, AND WHY IT IS NOT `SurfaceKind` ─────────────────────
+ * Moved here at B8 (design-013 §8) from `surface/compositor-registry.ts`, the
+ * old composited leg's producer seam, which the deletion took whole. It was
+ * always plain surface vocabulary rather than registry machinery, and this
+ * file is where the rest of that vocabulary lives.
+ *
+ * The name keeps its 2026-09-06 erratum: design-013 §5 gives `SurfaceKind` to
+ * the COMPONENT that carries a card's kind in the world, and `core/index.ts`
+ * re-exports both. A type-only re-export and a star-exported value of one name
+ * do not merge there — TypeScript's explicit export SHADOWS the star's, so the
+ * component would be silently unreachable from `@ice/core` while the type
+ * resolved fine: a build that compiles and a symbol that is gone. The plain
+ * union is therefore `SurfaceKindValue`, exactly as the plain demand type is
+ * `SurfaceDemandValue`, and for the same reason. The component is the world
+ * fact; this is the value shape its `kind` field takes.
+ */
+export type SurfaceKindValue = "dom" | "gl" | "video";
 
 /**
  * The buckets demand is quantised to. Quantised rather than continuous so a

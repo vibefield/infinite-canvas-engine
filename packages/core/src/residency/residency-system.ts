@@ -88,8 +88,9 @@
  * pass maps the whole texture onto the card's rect, so a per-axis clamp would
  * SQUASH a wide card's picture while a uniform one only lowers its resolution.
  * The default, 8192, is the floor `maxTextureDimension2D` is guaranteed to
- * reach on every WebGPU adapter (the `DEFAULT_MAX_PAGE_SIZE` precedent in
- * `ground/src/atlas-allocator.ts`); a profile that has queried its real adapter
+ * reach on every WebGPU adapter (the `DEFAULT_MAX_PAGE_SIZE` precedent, from the
+ * old leg's `ground/src/atlas-allocator.ts` — deleted at B8, the number kept);
+ * a profile that has queried its real adapter
  * limit should pass it. B5/B6 may replace the clamp with a TILED destination if
  * a rig shows the resolution loss matters — the clamp is the honest floor until
  * one does, not the final answer.
@@ -145,7 +146,8 @@ export const DEFAULT_RESIDENCY_BUDGET_BYTES = 256 * 1024 * 1024;
  * The largest `own` texture either axis may ask for, in device px (D11). 8192
  * is the floor `maxTextureDimension2D` is guaranteed to reach on every WebGPU
  * adapter — the same number and the same reason as `DEFAULT_MAX_PAGE_SIZE` in
- * `ground/src/atlas-allocator.ts`. A profile that has queried its real adapter
+ * the old leg's `ground/src/atlas-allocator.ts` (deleted at B8). A profile that
+ * has queried its real adapter
  * limit should pass it instead.
  */
 export const DEFAULT_MAX_TEXTURE_SIZE = 8192;
@@ -384,6 +386,7 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
     band: number,
     width: number,
     height: number,
+    srgb: boolean,
   ): TextureHandle {
     const { width: w, height: h } = clampToDevice(width, height, maxTextureSize);
     const slot = held.get(key);
@@ -392,7 +395,14 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
     }
     const heat = slot?.lastUsedMs; // a re-size keeps the key's heat, as above
     releaseKey(key);
-    const handle = table.own(w, h, false);
+    // THE KIND'S sRGB FACT, not a default (B8 R9a). An island target IS
+    // `-srgb` — three's WebGPU renderer makes it so, and `composited-islands`
+    // asserts `boot.srgb === true` off the realised texture's ACTUAL format —
+    // so a table entry saying `false` for an island handle was a lie that only
+    // held because the ground reads the format rather than the table. An
+    // oversize `dom` slot is not: it is a plain colour buffer the element copy
+    // writes. One fact, one writer, both readers agreeing.
+    const handle = table.own(w, h, srgb);
     table.retain(handle); // the KEY's reference — see the header on two holders
     held.set(key, {
       entity: e,
@@ -490,14 +500,14 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
 
     if (kind === "gl") {
       const { w, h } = geo.rasterSize;
-      const handle = ownFor(key, e, band, w, h);
+      const handle = ownFor(key, e, band, w, h, true);   // the island target is `-srgb`
       writeRef(ctx, e, { texture: handle, layer: 0, ...WHOLE });
       return;
     }
 
     const { w, h } = geo.slotSize;
     if (!allocator.fits({ width: w, height: h })) {
-      const handle = ownFor(key, e, band, w, h); // Q10: oversize takes a private texture
+      const handle = ownFor(key, e, band, w, h, false); // Q10: oversize takes a private texture — a plain colour buffer
       writeRef(ctx, e, { texture: handle, layer: 0, ...WHOLE });
       return;
     }

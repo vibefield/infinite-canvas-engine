@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * IslandRender — the composited-next leg's island half (design-013 §8 B5).
+ * IslandRender — the composited leg's island half (design-013 §8 B5).
  *
  * The rig is high-fidelity where it matters: a REAL world + engine with the
  * REAL surface infra installed (Band · Demand · Residency), so the handles this

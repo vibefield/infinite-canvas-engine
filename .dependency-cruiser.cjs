@@ -184,22 +184,6 @@ module.exports = {
       to: { path: "^packages/react/src/profiles/composited" },
     },
     {
-      name: "no-old-new-profile-imports",
-      comment:
-        "design-013 §8 (B2, 2026-09-07): the NEW composited profile is built fresh beside the old one and " +
-        "bridges to nothing slated for deletion; the two share vocabulary through profiles/contract.ts only.",
-      severity: "error",
-      from: { path: "^packages/react/src/profiles/composited-next" },
-      to: { path: "^packages/react/src/profiles/composited\\.ts" },
-    },
-    {
-      name: "no-old-new-profile-imports-reverse",
-      comment: "The other direction of no-old-new-profile-imports; see that rule.",
-      severity: "error",
-      from: { path: "^packages/react/src/profiles/composited\\.ts" },
-      to: { path: "^packages/react/src/profiles/composited-next" },
-    },
-    {
       name: "hic-symbols-live-in-the-adapter",
       comment:
         "design-012 §8 gates 1+6: HTML-in-Canvas is an origin trial that has been renamed once " +
@@ -224,22 +208,24 @@ module.exports = {
     {
       name: "ground-compose-imports-no-old-leg",
       comment:
-        "design-013 §8 (B1, 2026-09-07): the ground enters ICE once, into its final home — the compose " +
-        "entry (engine · lattice · field · card · nav · mat · theme · compose · shaders) imports nothing " +
-        "from the old composited leg, which B8 deletes in one commit. `hic-adapter` LEFT this list at B4 " +
-        "(2026-09-07): it is a kept LEAF — it imports nothing, it is on no deletion list, and it is the one " +
-        "HiC module, imported by BOTH legs until B8 and by the compose leg after it.",
+        "design-013 §8: the ground entered ICE at B1 into its final home — the compose entry " +
+        "(engine · lattice · field · card · nav · packs · theme · compose · shaders) imports nothing from " +
+        "the STRATIFIED leg. Until B8 (2026-09-07) that leg also held the old compositor and the atlas " +
+        "allocator, and this wall was the deletion's fence; both are gone, and the wall is now the PHASE-C " +
+        "fence — three's renderer, the pass registry, the programs and the poles are what C1-C3 move onto " +
+        "the engine. The kept LEAVES (`hic-adapter`, `submit-instrument`) are on NEITHER side: they import " +
+        "nothing, they are on no deletion list, and both legs use them.",
       severity: "error",
       from: { path: "^packages/ground/src/(engine|lattice|field|card|nav|packs|compose|theme\\.ts|shaders)" },
-      to: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|atlas-allocator|index)" },
+      to: { path: "^packages/ground/src/(passes|programs|program-host|renderer|layer|pass|poles|index)" },
     },
     {
       name: "old-leg-imports-no-ground-compose",
       comment:
-        "the reverse wall: nothing bridges the old leg to the ground (no adapter is ever written to a structure " +
-        "slated for deletion). `hic-adapter` is NOT on this side either — see the rule above.",
+        "the reverse wall: nothing bridges the stratified leg to the ground. The kept leaves are on " +
+        "neither side — see the rule above.",
       severity: "error",
-      from: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|atlas-allocator|index)" },
+      from: { path: "^packages/ground/src/(passes|programs|program-host|renderer|layer|pass|poles|index)" },
       to: { path: "^packages/ground/src/(engine|lattice|field|card|nav|packs|compose|theme\\.ts|shaders)" },
     },
   ],

@@ -28,7 +28,6 @@ import {
   SurfaceKind,
   SurfaceTarget,
   Viewport,
-  createCompositorSourceRegistry,
   createEngine,
   createWorld,
   defineWidget,
@@ -113,7 +112,6 @@ function setup(options: { withCanvas?: boolean } = {}) {
   const world = createWorld();
   const engine = createEngine(world);
   const store = fakeStore();
-  const sources = createCompositorSourceRegistry();
   const hic = fakeEffects();
   const dirty: Array<readonly Element[]> = [];
   const l1 = withCanvas
@@ -127,7 +125,7 @@ function setup(options: { withCanvas?: boolean } = {}) {
     },
     world,
     store,
-    { sources },
+    {},
   );
   engine.registerReflector(reflector);
   /**
@@ -141,7 +139,7 @@ function setup(options: { withCanvas?: boolean } = {}) {
     demote: (e: Entity) => setTarget(world, e, "dom"),
     target: (e: Entity) => world.get(e, SurfaceTarget)?.target,
   };
-  return { container, world, engine, planes, store, reflector, surface, sources, l1, hic, dirty };
+  return { container, world, engine, planes, store, reflector, surface, l1, hic, dirty };
 }
 
 const spawnBox = (
@@ -268,24 +266,24 @@ describe("the world's target decides the parent, from the FIRST flush", () => {
   };
 
   it("puts a card whose target already reads gpu on the canvas in its FIRST flush", () => {
-    const { world, engine, store, l1, sources, reflector, surface } = setup();
+    const { world, engine, store, l1, reflector, surface } = setup();
     const e = spawnTyped(world, "l1:plain", "gpu");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
-    // One step, and it is already a canvas child with a source registered.
+    // One step, and it is already a canvas child.
     expect(reflector.hostElementFor(e)?.parentElement).toBe(l1?.canvas);
-    expect(sources.get(e)?.kind).toBe("dom");
+    expect(reflector.canvasHostCount()).toBe(1);
     expect(surface.target(e)).toBe("gpu");
   });
 
   it("leaves a resting card in the content plane — promotion is not blanket", () => {
     // The control without which the test above passes for the wrong reason.
-    const { world, engine, store, planes, sources, reflector } = setup();
+    const { world, engine, store, planes, reflector } = setup();
     const e = spawnTyped(world, "l1:plain", "dom");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
   });
 
   it("NEVER puts a GL widget on the canvas, even though its target reads gpu", () => {
@@ -295,16 +293,17 @@ describe("the world's target decides the parent, from the FIRST flush", () => {
     // cell says, so a promote decision that read the target ALONE would move
     // every island's host under L1 on its first frame. A gl widget's host IS
     // its DOM chrome and belongs under the island in the content plane
-    // (design-004 §1's sandwich); canvas-side, `syncSource` would register
-    // that chrome as a `dom` source on top of the island's own `gl`
-    // registration — both keyed by entity, and `register` replaces — so the
-    // compositor would atlas-copy a card body where the 3D content was.
-    const { world, engine, store, planes, sources, reflector } = setup();
+    // (design-004 §1's sandwich). On the OLD leg the cost was concrete: the
+    // chrome host registered as a `dom` source on top of the island's own `gl`
+    // registration — both keyed by entity, and `register` replaced — so the
+    // compositor atlas-copied a card body where the 3D content was. That
+    // registry died at B8; the rule it enforced is still the rule.
+    const { world, engine, store, planes, reflector } = setup();
     const e = spawnTyped(world, "l1:island", "gpu");
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
   });
 });
 
@@ -325,33 +324,37 @@ describe("composited hosts", () => {
     expect(reflector.hostFor(e)?.parentElement).toBe(hostEl);
   });
 
-  it("registers the HOST element as a dom source, in the flush that parents it", () => {
-    const { world, engine, store, surface, sources, reflector } = setup();
+  it("parents the HOST element, never the content div, in the flush that promotes it", () => {
+    // The node identity matters and always did: only an IMMEDIATE child of the
+    // canvas is addressable by the element copy — a nested descendant is
+    // refused by the platform, and the content div is exactly that. Until B8
+    // this was also asserted through the old leg's source registry, which
+    // recorded the same element; the registry is gone and the DOM is the
+    // record.
+    const { world, engine, store, surface, l1, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     engine.step(0);
-    expect(sources.size()).toBe(0); // live-dom registers nothing
+    expect(reflector.canvasHostCount()).toBe(0); // live-dom parents nothing to L1
 
     surface.promote(e);
     engine.step(1);
-    const source = sources.get(e);
-    expect(source?.kind).toBe("dom");
-    // The host, not the content div: a nested descendant is refused by the
-    // platform, and the content div is exactly that.
-    expect((source as { host: unknown }).host).toBe(reflector.hostElementFor(e));
+    const host = reflector.hostElementFor(e);
+    expect(host?.parentElement).toBe(l1?.canvas);
+    expect(reflector.hostFor(e)).not.toBe(host); // the content div is a DESCENDANT, not the child
+    expect(reflector.canvasHostCount()).toBe(1);
   });
 
-  it("unregisters and reparents on demotion", () => {
-    const { world, engine, store, surface, sources, planes, reflector } = setup();
+  it("reparents on demotion", () => {
+    const { world, engine, store, surface, planes, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     surface.promote(e);
     engine.step(0);
-    expect(sources.size()).toBe(1);
+    expect(reflector.canvasHostCount()).toBe(1);
 
     surface.demote(e);
     engine.step(1);
-    expect(sources.size()).toBe(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
     expect(reflector.canvasHostCount()).toBe(0);
   });
@@ -388,17 +391,17 @@ describe("composited hosts", () => {
     expect(hostBefore.parentElement).toBe(planes.content);
   });
 
-  it("drops the registration when the widget leaves the store", () => {
-    const { world, engine, store, surface, sources } = setup();
+  it("drops the canvas host when the widget leaves the store", () => {
+    const { world, engine, store, surface, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     surface.promote(e);
     engine.step(0);
-    expect(sources.size()).toBe(1);
+    expect(reflector.canvasHostCount()).toBe(1);
 
     store.set([]);
     engine.step(1);
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
   });
 
   it("takes the target with the entity — a despawn leaves nothing to clear", () => {
@@ -409,17 +412,17 @@ describe("composited hosts", () => {
     // canvas child on its first frame, which policy then never demoted
     // (policy demoted only what IT promoted). A COMPONENT cannot do that: it
     // dies with the entity, and this is the case that says so.
-    const { world, engine, store, surface, planes, sources, reflector } = setup();
+    const { world, engine, store, surface, planes, reflector } = setup();
     const e = spawnBox(world, 0, 0, 30, 40);
     store.set([{ entity: e, hidden: false }]);
     surface.promote(e);
     engine.step(0);
-    expect(sources.size()).toBe(1);
+    expect(reflector.canvasHostCount()).toBe(1);
 
     store.set([]);
     world.destroy(e);
     engine.step(1);
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
     expect(surface.target(e)).toBeUndefined();
 
     // A fresh entity — the recycled-id case, as far as one world can show it —
@@ -428,7 +431,7 @@ describe("composited hosts", () => {
     store.set([{ entity: again, hidden: false }]);
     engine.step(2);
     expect(reflector.hostElementFor(again)?.parentElement).toBe(planes.content);
-    expect(sources.size()).toBe(0);
+    expect(reflector.canvasHostCount()).toBe(0);
   });
 
   it("keeps a composited host out of the lifted plane while it is grabbed", () => {
@@ -446,7 +449,7 @@ describe("composited hosts", () => {
   });
 
   it("leaves plane hosts and the whole stratified path untouched without a canvas", () => {
-    const { world, engine, store, surface, sources, planes, reflector } = setup({
+    const { world, engine, store, surface, planes, reflector } = setup({
       withCanvas: false,
     });
     const e = spawnBox(world, 5, 6, 30, 40);
@@ -455,7 +458,6 @@ describe("composited hosts", () => {
     surface.promote(e);
     engine.step(0);
     expect(reflector.hostElementFor(e)?.parentElement).toBe(planes.content);
-    expect(sources.size()).toBe(0);
     expect(reflector.canvasHostCount()).toBe(0);
   });
 

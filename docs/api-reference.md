@@ -202,12 +202,21 @@ the only output writers) · `ce.engine.onPublish(hook)` (presence I/O slot) ·
 
 ## @ice/react
 
-**Presentation profiles (design-012 §3; design-013 B2):** `stratifiedProfile`,
-`compositedProfile` (the old composited leg — `ground({ device })`), and
-`compositedNextProfile` (design-013's new one — `groundCompose({ device, theme })` from
-`@ice/ground/compose`, the ground itself the compositor; refuses a device-less engine and
-the old leg's ground by name; installs the surface infra set). An app imports exactly one and
-passes it to `<InfiniteCanvas profile={…}>`; the others tree-shake out.
+**Presentation profiles (design-012 §3; design-013 §8):** `stratifiedProfile` and
+`compositedProfile`. The composited one is the ground's — `<InfiniteCanvas
+ground={groundCompose({ device, theme })} profile={compositedProfile}>`, the ground itself the
+compositor (`@ice/ground/compose`). It refuses a device-less engine, a missing ground and a
+`ground()`/`groundHost()` layer BY NAME rather than rendering a plausible screen that is
+quietly the stratified one; it installs the surface infra set (Band · Demand · Residency) and
+registers §6's roster: DomRender · IslandRender · VideoIngest · DomCompose · GpuCompose. An app
+imports exactly one profile and passes it to `<InfiniteCanvas profile={…}>`; the other
+tree-shakes out. (B8, 2026-09-07: the old composited leg and its profile are deleted, and
+`compositedProfile` took this name.)
+
+**`useChromeOwner()`** — `"ground"` under the composited profile, `"dom"` otherwise. A card
+shell renders bare under the ground (the plate, ring, shadow, lift and glow are drawn there);
+under the stratified profile it draws its own CSS chrome, and that branch retires with that
+profile in Phase C.
 
 
 | Export | Notes |
@@ -254,15 +263,23 @@ adapter's `glRoute`. Zero render→ECS writes, DEV-enforced via
 
 ## @ice/ground
 
+**`@ice/ground/compose` IS this package's main entry** (design-013; the ground became the
+compositor at B8, 2026-09-07). Everything under that heading below is what a composited app
+uses. This root barrel is the STRATIFIED ground — three's WebGPURenderer presenting its own
+canvas, the pass registry, the programs and the poles — which Phase C moves onto the same
+engine. The two entries import nothing from each other (dependency-cruiser holds the wall);
+`instrumentSubmits` and the HiC adapter's exports are the leaves both share.
+
 `ground(opts?)` → an opaque factory for the react `ground` prop (or call it
 with `{host, world, readWirePreview?, readSpatial?}` in imperative shells and
 register `layer.reflector`). One WebGPU canvas (WebGL2 fallback automatic)
 drawing the dot grid, wires, and snap guides as passes; `configureGrid`
-re-tunes live (the react `grid` prop forwards here).
+re-tunes live (the react `grid` prop forwards here). `groundHost(...)` is
+design-011's program host over the same renderer.
 
-**`@ice/ground/compose` (design-013 B1, 2026-09-07)** — the ground that becomes the
-composited profile's compositor at B2/B3, moved in from `vibe-field/draft/ground` and wired
-into no profile yet. `Ground.create({ device, canvas, field, frames, fill })` on a device the
+**`@ice/ground/compose`** — the ground as design-013's compositor: the magnet field and the
+cutting mat, the SDF card frame with its content term and the heat, the live portal's slot
+tree and the flight's second slot. `Ground.create({ device, canvas, field, frames, fill })` on a device the
 host owns (`acquireCompositorDevice().device`; `GROUND_SHADERS` supplies the three shader
 sets); `ground.render(inputs)` draws one frame — the root slot, a nested slot per live
 portal, a flight's departed slot — and returns its stats; `prepareFrame` / `drawFrame` /
@@ -273,7 +290,7 @@ palette, grid)` builds the `GroundTheme` the passes read — the palette is the 
 `ENGINE_GRID` and the mat's `MAT_LIGHT` are the engine's own. `@ice/ground/engine` is the
 raw-WebGPU boilerplate alone. **`groundCompose({ device, theme, config?, maxDpr? })`** (B2)
 is the ground as a LAYER: a factory with the shape of the react `ground` prop, returning a
-handle whose `compose.gpuCompose` reflector the `compositedNextProfile` registers last (after
+handle whose `compose.gpuCompose` reflector the `compositedProfile` registers last (after
 the renders, design-013 §6); `configureGrid` maps the react `grid` prop onto the field
 (`fieldConfigOf`), `compose.setTheme` swaps the host's projection, `compose.redraws()` is the
 churn instrument, `compose.available()` says whether the pipelines compiled. **B3a — the
@@ -339,7 +356,7 @@ queue op in the profile's `video` render slot (§6's reflector 7, before GpuComp
 one per arrival, premultiplied and unflipped, and it wakes the frame through the content
 residency — never a retained frame re-imported per composite. `SurfaceDemand` bites at the
 door: paused drops, and a bucket allows one copy per `demandIntervalMs`. The witness is the
-`next-video` rig. The pixel witnesses are the package's oracle
+`video` rig. The pixel witnesses are the package's oracle
 `useChromeOwner()`; an app's card shell renders bare under `ground`. **DomRender (design-013
 B4)**: `compose.residency` is the content residency (B4a) and `compose.renders.dom` is §6's
 reflector-5 slot; the ground fills it with **`createDomRender({ device, world, residency,
