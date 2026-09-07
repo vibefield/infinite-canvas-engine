@@ -35,6 +35,10 @@ export default defineConfig({
       //   composited-app    — C0: the PRODUCT's board — the demo seed, the App's own
       //                          <Canvas> wiring, and the seven lit GL cards graded
       //                          against a WebGL control on the same Scene objects.
+      //   overlay-parity    — C1: the wires/guides overlays on the engine against the
+      //                          SAME scene through the old three renderer, in one page,
+      //                          with an A-vs-A control. A one-time witness: it goes with
+      //                          the old leg at C2.
       input: {
         index: "index.html",
         composited: "composited.html",
@@ -44,6 +48,7 @@ export default defineConfig({
         "composited-video": "composited-video.html",
         "composited-app": "composited-app.html",
         "line-grid-ab": "line-grid-ab.html",
+        "overlay-parity": "overlay-parity.html",
       },
     },
   },

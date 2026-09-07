@@ -13,7 +13,12 @@
 // a camera or viewport change, or while a spring still moves; and never
 // otherwise (idle-zero: a quiet frame does not touch the swap chain). B3b
 // takes the DOM boundary — chrome-less hosts clipped by the same `resolve()`
-// — and the router's frame hit test. The reflector's PLACE in the roster is
+// — and the router's frame hit test. C1 adds the ROOT slot's two OVERLAYS
+// (`compose/overlays.ts`): the wires under the cards and the guides over them,
+// collected in screen px under the live camera, gated by the canvas type, and
+// carried by no other slot (design-011 §7.3's destination-frame truth — a
+// portal's inside and a flight's departed frame see a different camera).
+// The reflector's PLACE in the roster is
 // the profile's to fix (§6: the renders' queue ops before GpuCompose's submit,
 // by registration order), so the handle's own `reflector` is an inert slot and
 // GpuCompose is handed to the profile through `compose`, to be registered last.
@@ -22,7 +27,7 @@
 // ECS, never reads layout — the viewport comes from the `Viewport` resource
 // the facade's ResizeObserver writes, never from the container; the frame's dt
 // from `FrameInfo` (clamped by the engine), never from a clock of its own.
-import { Camera, type Entity, FrameInfo, type FramePickSlot, type FramePreviewStore, type GridConfig, NavTransition, PartTap, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type World } from "@ice/core";
+import { Camera, type CanvasType, type Entity, FrameInfo, type FramePickSlot, type FramePreviewStore, type GridConfig, NavTransition, PartTap, type PresentationTransitionAdapter, type ReflectorDef, type SnapGuidesConfig, Viewport, type WirePreviewBuffer, type WiresConfig, type World } from "@ice/core";
 import type { RasterStrategy } from "@ice/kernel";
 import { shellProgram } from "../card/program";
 import { LINES } from "../theme";
@@ -40,6 +45,7 @@ import { GROUND_SHADERS } from "../shaders";
 import type { GroundTheme } from "../theme";
 import { createFrameBuilder, type FlightInputs, type FrameBuilderOptions, type FrameBuilderStats, type WakeReason } from "./frame-inputs";
 import { Ground, type GroundFrameInputs } from "./ground";
+import { createOverlays, type OverlayStats } from "./overlays";
 
 export interface GroundComposeOptions {
   /** The app-owned device (`acquireCompositorDevice().device`); three adopts the same one for islands. */
@@ -64,6 +70,15 @@ export interface GroundComposeOptions {
    * calls `geometry()` with it — one strategy, two readers, nothing to drift. Default `band`.
    */
   readonly raster?: (kind: "dom" | "gl" | "video") => RasterStrategy;
+  /**
+   * The wires OVERLAY's look (design-013 C1): core's `WiresConfig` partial, the same
+   * vocabulary the old leg's `ground({ wires })` and the react prop take. The overlay is
+   * registered either way — the canvas type's `presentation.ground.wires` is what turns it
+   * off — so this is the colours and the widths, never the switch.
+   */
+  readonly wires?: Partial<WiresConfig>;
+  /** The snap guides overlay's look; `presentation.ground.guides` is its switch. */
+  readonly guides?: Partial<SnapGuidesConfig>;
 }
 
 /** The mount context the React facade hands a `ground` factory — the fields this layer needs, mirrored structurally. */
@@ -89,6 +104,15 @@ export interface GroundComposeContext {
    * frame, so the adapter prepares instantly and retains nothing. Absent = no registration.
    */
   readonly transitions?: { register(adapter: PresentationTransitionAdapter): () => void };
+  /**
+   * The current canvas type and its switch (`engine.canvas`), for the overlay GATE
+   * (design-013 C1, D-C1.3): `presentation.ground.wires` / `.guides`, both defaulting to
+   * on. The facade already hands this to every ground factory; absent (a headless mount,
+   * a lab) = both overlays on.
+   */
+  readonly canvas?: { type(): CanvasType | undefined; subscribe(onChange: () => void): () => void };
+  /** The connect-drag preview buffer (`stack.wirePreview`) — the wires overlay's preview stroke. Absent = none. */
+  readonly readWirePreview?: () => WirePreviewBuffer;
 }
 
 /** The compose layer's instruments: the ground's redraws and the last build's counts. */
@@ -134,6 +158,8 @@ export interface GroundComposeStats extends FrameBuilderStats {
    * textured card really is interleaved in z with plate ones rather than drawn beside them.
    */
   readonly runs: number;
+  /** The root slot's overlays as last collected (design-013 C1): the two soups' vertex counts and their gate. */
+  readonly overlays: OverlayStats;
 }
 
 export interface GroundCompose {
@@ -235,6 +261,14 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     const video = createVideoIngest({ device: opts.device, world, residency });
     renders.video.current = video.reflector;
     const builder = createFrameBuilder(world, { ...(opts.cards ?? {}), ...(opts.card !== undefined ? { program: opts.card } : {}), ...(ctx.previews !== undefined ? { previews: ctx.previews } : {}), residency });
+    // The ROOT slot's overlays (design-013 C1): the wires under the cards, the guides over them,
+    // gated by the canvas type and collected in screen px on the frames whose facts or camera moved.
+    const overlays = createOverlays(world, {
+      ...(opts.wires !== undefined ? { wires: opts.wires } : {}),
+      ...(opts.guides !== undefined ? { guides: opts.guides } : {}),
+      ...(ctx.canvas !== undefined ? { canvas: ctx.canvas } : {}),
+      ...(ctx.readWirePreview !== undefined ? { readWirePreview: ctx.readWirePreview } : {}),
+    });
     const doc = host.container.ownerDocument;
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
@@ -287,7 +321,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     // The frame's build happens ONCE per tick, in the first of the ground's reflectors to run
     // (DomCompose when the profile registers it, else GpuCompose); the other draws what was built.
     let builtTick = -1;
-    let pending: { readonly view: { camX: number; camY: number; zoom: number; width: number; height: number; dpr: number }; readonly built: ReturnType<typeof builder.build>; readonly flight: FlightInputs | null } | null = null;
+    let pending: { readonly view: { camX: number; camY: number; zoom: number; width: number; height: number; dpr: number }; readonly built: ReturnType<typeof builder.build>; readonly flight: FlightInputs | null; readonly overlays: ReturnType<typeof overlays.build> } | null = null;
     let lastFlight: GroundComposeStats["outgoing"] = null;
     let lastInputs: GroundFrameInputs | null = null;
     const ensureBuilt = (w: World): boolean => {
@@ -295,8 +329,12 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       const tick = w.getResource(FrameInfo)?.tick ?? -1;
       if (tick >= 0 && builtTick === tick) return pending !== null;
       builtTick = tick;
-      // the world's dirt is PULLED every frame (the journal drains); the out-of-world wakes set `dirty`
-      if (builder.changed()) dirty = true;
+      // the world's dirt is PULLED every frame (the journal drains); the out-of-world wakes set `dirty`.
+      // BOTH pulls run unconditionally — a short-circuit would leave the overlays' journal undrained
+      // and their next `changed()` would answer for two frames at once.
+      const builderDirt = builder.changed();
+      const overlayDirt = overlays.changed();
+      if (builderDirt || overlayDirt) dirty = true;
       if (!dirty) { pending = null; return false; }
       const cam = w.getResource(Camera);
       const vp = w.getResource(Viewport);
@@ -311,7 +349,9 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       const built = builder.build({ x: cam.x, y: cam.y, zoom: cam.zoom }, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, ground.fieldConfig);
       // a nav flight's second slot (B7): the departed frame beside the arriving one
       const flight = builder.flight({ x: cam.x, y: cam.y, zoom: cam.zoom }, { width: vp.w, height: vp.h, dpr }, theme, ground.fieldConfig);
-      pending = { view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr }, built, flight };
+      // the root's overlays, in the LIVE camera's screen px (D-C1.3): the frame the collectors see is this one
+      const over = overlays.build({ width: vp.w, height: vp.h, dpr, camera: { x: cam.x, y: cam.y, zoom: cam.zoom } });
+      pending = { view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr }, built, flight, overlays: over };
       if (builder.live()) dirty = true;   // a spring still moves: the next frame paints too
       return true;
     };
@@ -327,7 +367,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     };
     if (framePick !== undefined) framePick.current = pickSource;
 
-    Ground.create({ device: opts.device, canvas, ...GROUND_SHADERS, ...(opts.card !== undefined ? { card: opts.card } : {}), ...(opts.grids !== undefined ? { grids: opts.grids } : {}) }).then(
+    Ground.create({ device: opts.device, canvas, ...GROUND_SHADERS, ...(opts.card !== undefined ? { card: opts.card } : {}), ...(opts.grids !== undefined ? { grids: opts.grids } : {}), overlays: overlays.programs }).then(
       (g) => {
         // Disposed while the pipelines compiled (StrictMode's double mount, HMR): the ground is nobody's — release it here, or it leaks whole.
         if (disposed) { g.dispose(); return; }
@@ -351,6 +391,8 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       // a flight writes its progress every tick (and the camera): the departed slot moves
       world.reactive.observeResource(NavTransition, () => { dirty = true; }),
       builder.observe(() => { dirty = true; }),
+      // a canvas switch flips the overlay gate: the next frame repaints without them (or with them)
+      overlays.observe(() => { dirty = true; }),
       // a tap on a card program's PART (B3b): the router hands it over as a resource; the app's action is `onPart`
       world.reactive.observeResource(PartTap, () => {
         const t = world.getResource(PartTap);
@@ -381,7 +423,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         // The destroy list is drained on EVERY roster tick, drawn or not: a render slot can realise (and so retire) textures on a frame that
         // paints nothing — a hidden or zero-size canvas — and what a retired texture was last sampled by is an earlier frame's submit, already issued.
         if (!ensureBuilt(w) || ground === null || pending === null) { residency.collect(); return; }
-        const { view, built, flight } = pending;
+        const { view, built, flight, overlays: over } = pending;
         pending = null;
         // the page array every `page` card samples — rebound only when the residency re-realised it (growth, D-B4.1)
         const pages = residency.pagesView();
@@ -392,6 +434,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
           sources: built.sources,
           frames: built.frames,
           ...(built.portals.length ? { portals: built.portals } : {}),
+          ...(over !== undefined ? { overlays: over } : {}),
           ...(flight !== null ? { present: flight.present, outgoing: flight.outgoing, lodZoom: flight.lodZoom } : {}),
           theme,
         };
@@ -420,6 +463,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         domRender?.dispose();
         writer?.dispose();
         builder.dispose();
+        overlays.dispose();
         if (renders.video.current === video.reflector) renders.video.current = null;
         video.dispose();
         residency.dispose();
@@ -440,7 +484,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         available: () => ground !== null && !failed,
         redraws: () => redraws,
         setTheme(next) { theme = next; dirty = true; },
-        stats: () => ({ redraws, outgoing: lastFlight, runs: ground?.frames.runCount ?? 0, ...builder.stats() }),
+        stats: () => ({ redraws, outgoing: lastFlight, runs: ground?.frames.runCount ?? 0, overlays: overlays.stats(), ...builder.stats() }),
         wakes: () => builder.wakes(),
         domWrites: () => ({ writes: domWrites, clips: writer?.clips ?? 0 }),
         geometryOf: (e) => builder.geometryOf(e),

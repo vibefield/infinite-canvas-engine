@@ -32,6 +32,8 @@ import { portalContent, testResidency, TEST_PLATE } from "../src/card/content.ts
 import { sdInner as sdInnerOf, pick } from "../src/packs/vf-frame/sdf.ts";
 import { FillPass, fillShaders, FILL_SHADER_FILES } from "../src/nav/fill-pass.ts";
 import { drawFrame, prepareFrame, SlotPool } from "../src/compose/ground.ts";
+import { soupOverlay, soupShaders, SOUP_SHADER_FILES } from "../src/compose/overlay.ts";
+import { SoupBuilder } from "../src/compose/soup.ts";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt, flightOpacity } from "../src/nav/flight.ts";
 import { clipOf, faceRadius, faceRect, FOLDER_FACE, PORTAL_CAP, PORTAL_GATE, portalOf } from "../src/nav/portal.ts";
 import { newMotion, pinMotion, toMotion } from "../src/card/motion.ts";
@@ -76,10 +78,16 @@ matPass.setPlate("c", hostRaw("gobo-c.rgba")); matPass.setPlate("b", hostRaw("go
 const plateBytes = hostRaw("content-test.rgba");
 const residency = testResidency(device, plateBytes);
 frames.setPages(residency.pagesView);
+// The OVERLAYS (design-013 C1): the wires `under` the cards and the guides `over` them, registered on
+// every slot set. A scene with no `overlays` gives them no data, so they prepare nothing and draw
+// nothing — which is why the 47 scenes that predate the seam render byte for byte as they did.
+const soupSet = soupShaders(texts(SOUP_SHADER_FILES));
+const overlayPrograms = [soupOverlay("wires", "under", soupSet), soupOverlay("guides", "over", soupSet)];
+const overlays = await Promise.all(overlayPrograms.map(async (o) => ({ name: o.name, stage: o.stage, pass: await o.create(device, FORMAT) })));
 // The slots beyond the root — the departed frame's, the live portals' — from the same pool the ground keeps.
-const rootSlot = { field, frames, fill };
+const rootSlot = { field, frames, fill, overlays };
 const pool = new SlotPool(rootSlot);
-const shellSlot = { field, frames: shellFrames, fill };
+const shellSlot = { field, frames: shellFrames, fill, overlays };
 const shellPool = new SlotPool(shellSlot);
 const W = VIEW.cssW * VIEW.dpr;
 const H = VIEW.cssH * VIEW.dpr;
@@ -171,6 +179,61 @@ function navOf(s, style) {
   return { f, cam, outCam, clip, arriving, departed, arrivingSpecs, departedSpecs, presentIn, presentOut, order: f.kind === "enter" ? "under" : "over", at };
 }
 const matOf = (s) => ({ time: s.mat?.time ?? 0, goboTime: s.mat?.goboTime ?? 0, goboMatrix: HERO_MATRIX, noise: s.mat?.noise ?? [0, 0] });
+
+/**
+ * A scene's hand-built overlay soups (design-013 C1). The spec names the same
+ * primitives the collectors emit — `rect` · `segment` · `polyline` · `disc`,
+ * through the copied `SoupBuilder` — plus `tri`, a RAW triangle the builder has
+ * no method for: the two windings D-C1.2's cull-none claim needs, appended to
+ * the same arrays so they ride the same buffer and the same pipeline.
+ */
+function soupOf(spec) {
+  const b = new SoupBuilder();
+  const raw = [];
+  for (const item of spec) {
+    if (item.rect) b.rect(...item.rect);
+    else if (item.segment) b.segment(...item.segment);
+    else if (item.polyline) b.polyline(item.polyline[0], item.polyline[1], item.polyline[2]);
+    else if (item.disc) b.disc(...item.disc);
+    else if (item.tri) raw.push(item.tri);
+    else throw new Error(`oracle: unknown soup primitive ${JSON.stringify(item)}`);
+  }
+  const built = b.build();
+  if (raw.length === 0) return built;
+  const n = built.vertexCount + raw.length * 3;
+  const positions = new Float32Array(n * 3);
+  const colors = new Float32Array(n * 4);
+  positions.set(built.positions); colors.set(built.colors);
+  raw.forEach((t, i) => {
+    const c = t[6];
+    for (let k = 0; k < 3; k++) {
+      const v = built.vertexCount + i * 3 + k;
+      positions[v * 3] = t[k * 2]; positions[v * 3 + 1] = t[k * 2 + 1]; positions[v * 3 + 2] = 0;
+      for (let j = 0; j < 4; j++) colors[v * 4 + j] = c[j];
+    }
+  });
+  return { positions, colors, vertexCount: n };
+}
+/** A scene's overlay inputs by name, in the ground's own shape. */
+const soupsOf = (spec) => Object.fromEntries(Object.entries(spec).map(([k, v]) => [k, soupOf(v)]));
+/** The soups' triangles in DRAW order (wires `under` first, then guides `over`) — what the CPU raster composites. */
+function trianglesOf(spec) {
+  const out = [];
+  for (const name of ["wires", "guides"]) {
+    const soup = spec[name] === undefined ? null : soupOf(spec[name]);
+    if (soup === null) continue;
+    for (let t = 0; t < soup.vertexCount / 3; t++) {
+      const p = [0, 1, 2].map((k) => [soup.positions[(t * 3 + k) * 3], soup.positions[(t * 3 + k) * 3 + 1]]);
+      const c = [0, 1, 2, 3].map((k) => soup.colors[t * 3 * 4 + k]);
+      // every primitive here is one colour per triangle; the raster below assumes it, so say so loudly
+      for (let k = 1; k < 3; k++) for (let j = 0; j < 4; j++) {
+        if (soup.colors[(t * 3 + k) * 4 + j] !== c[j]) throw new Error(`oracle: soup triangle ${t} of ${name} is not flat-coloured`);
+      }
+      out.push({ name, p, c });
+    }
+  }
+  return out;
+}
 let cfgTheme = null;
 function cfgFor(s, glyph, inkAlpha) {
   const theme = cfgTheme;
@@ -223,7 +286,7 @@ async function render(s, opts = {}) {
     const holesOut = new Set(dp.holes);
     if (nav.at !== undefined) holesOut.add(nav.at);
     inputs = {
-      view: viewOf(cam), pointer, ext: { [MAT_GLYPH]: mat }, present: nav.presentIn, theme,
+      view: viewOf(cam), pointer, ext: { [MAT_GLYPH]: mat }, present: nav.presentIn, theme, ...(s.overlays ? { overlays: soupsOf(s.overlays) } : {}),
       ...(s.dress === false ? {} : { lodZoom: nav.f.c1.zoom }),   // the arriving frame is dressed for its landing, the departed for the cut (PORTAL.md §9)
       config: cfgFor(s, set.glyph), sources, frames: drawFrames ? framesOf(set, opts, holesIn) : [],
       ...(ap.inputs.length ? { portals: ap.inputs } : {}),
@@ -239,7 +302,7 @@ async function render(s, opts = {}) {
     set = setOf(s.cards, style, s.glyph ?? "dot"); cam = { x: s.camX, y: s.camY, zoom: s.zoom };
     sources = sourcesOf(set, cam);
     const rp = portalsOf(s.cards, set, cam, s, style);
-    inputs = { view: viewOf(cam), pointer, ext: { [MAT_GLYPH]: mat }, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), config: cfgFor(s, set.glyph, s.rootInkAlpha), sources, frames: drawFrames ? framesOf(set, opts, rp.holes) : [], ...(rp.inputs.length ? { portals: rp.inputs } : {}) };
+    inputs = { view: viewOf(cam), pointer, ext: { [MAT_GLYPH]: mat }, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), config: cfgFor(s, set.glyph, s.rootInkAlpha), sources, frames: drawFrames ? framesOf(set, opts, rp.holes) : [], ...(rp.inputs.length ? { portals: rp.inputs } : {}), ...(s.overlays ? { overlays: soupsOf(s.overlays) } : {}) };
   }
   const prepared = prepareFrame(encoder, slot, slotPool, inputs);
   const pass = beginPass(encoder, out.view, [bg[0], bg[1], bg[2], 1]);
@@ -637,6 +700,157 @@ async function nightCheck(sc) {
   return ok;
 }
 
+/**
+ * The OVERLAY SOUP, as pixels (design-013 C1, D-C1.2). The pass has no
+ * multisampling, so a triangle covers a device pixel exactly when the pixel's
+ * CENTRE is inside it — which makes the whole frame predictable on the CPU, not
+ * merely its interiors: composite every triangle whose centre-test says inside,
+ * in draw order, straight-alpha "source over", onto the SAME scene rendered with
+ * no overlay data at all. Nothing is excluded up front — instead every pixel
+ * that disagrees by more than 1/255 is MEASURED against the nearest triangle
+ * edge, and the check passes only if all of them sit inside the border band
+ * where the rasteriser's top-left fill rule and a centre test may legitimately
+ * differ (measured 2026-09-07: 12 px of 3,840,000, every one of them sitting
+ * exactly ON an edge — under 1e-6 CSS px from it).
+ *
+ * The last two triangles of the wires soup are the CULL-NONE claim: one wound
+ * clockwise in y-down screen px and one counter-clockwise. Under three that
+ * needed `DoubleSide`; here both must simply land, so the check counts their
+ * covered pixels separately and fails if either is empty.
+ */
+/** A mismatch is only excusable at a triangle's BORDER: half a device pixel, in CSS px. */
+const EDGE_BAND = 0.5 / VIEW.dpr;
+async function soupCheck(sc) {
+  const s = sc.scene;
+  const { px: B } = await render(s);
+  const { px: A } = await render({ ...s, overlays: undefined });
+  const tris = trianglesOf(s.overlays);
+  const edge = (a, b, x, y) => (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+  const len = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+  let bad = 0;
+  let maxErr = 0;
+  let painted = 0;
+  let deepest = 0;
+  const cover = new Array(tris.length).fill(0);
+  const wrong = [];
+  for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) {
+    const px = (X + 0.5) / VIEW.dpr;
+    const py = (Y + 0.5) / VIEW.dpr;
+    const o = (Y * W + X) * 4;
+    const hits = [];
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < tris.length; i++) {
+      const t = tris[i];
+      const e = [edge(t.p[0], t.p[1], px, py), edge(t.p[1], t.p[2], px, py), edge(t.p[2], t.p[0], px, py)];
+      const L = [len(t.p[0], t.p[1]), len(t.p[1], t.p[2]), len(t.p[2], t.p[0])];
+      for (let k = 0; k < 3; k++) if (L[k] > 0) nearest = Math.min(nearest, Math.abs(e[k]) / L[k]);
+      if ((e[0] >= 0 && e[1] >= 0 && e[2] >= 0) || (e[0] <= 0 && e[1] <= 0 && e[2] <= 0)) { hits.push(i); cover[i]++; }
+    }
+    const dst = [A[o] / 255, A[o + 1] / 255, A[o + 2] / 255];
+    for (const i of hits) {
+      const t = tris[i];
+      if (t.c[3] < 0.002) continue;   // the shader's discard
+      for (let k = 0; k < 3; k++) dst[k] = t.c[k] * t.c[3] + dst[k] * (1 - t.c[3]);
+    }
+    if (hits.length > 0) painted++;
+    let err = 0;
+    for (let k = 0; k < 3; k++) err = Math.max(err, Math.abs(B[o + k] - Math.round(Math.min(1, Math.max(0, dst[k])) * 255)));
+    if (err <= 1) { if (err > maxErr) maxErr = err; continue; }
+    // A mismatch: the ONLY place one may live is a triangle's border, where the
+    // rasteriser's top-left fill rule and this centre test can disagree about a
+    // pixel whose centre sits on an edge. Measure how far in it reaches.
+    bad++;
+    if (nearest > deepest) deepest = nearest;
+    if (wrong.length < 4) wrong.push(`(${X},${Y}) ${nearest.toFixed(6)} px from an edge, ${hits.length} hits: got ${B[o]},${B[o + 1]},${B[o + 2]} want ${dst.map((v) => Math.round(v * 255)).join(",")}`);
+  }
+  const cw = cover[cover.length - 2];
+  const ccw = cover[cover.length - 1];
+  const ok = deepest < EDGE_BAND && painted > 0 && cw > 0 && ccw > 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  soup       ${sc.name.padEnd(24)} ${tris.length} triangles over ${(W * H).toLocaleString()} px vs the CPU raster (no MSAA ⇒ the centre rule IS the rasteriser): maxΔ ${maxErr} everywhere but ${bad} px, each within ${deepest.toFixed(6)} CSS px of a triangle edge (the fill-rule band, ${EDGE_BAND} allowed) · ${painted.toLocaleString()} px carry soup · cull none: clockwise ${cw.toLocaleString()} px, counter-clockwise ${ccw.toLocaleString()} px${wrong.length ? `\n         ${wrong.join("\n         ")}` : ""}`);
+  return ok;
+}
+
+/**
+ * The two STAGES, as pixels (D-C1.1). The same board with a wires soup and a
+ * guides soup crossing the cards: `under` means a card HIDES the wires (those
+ * pixels equal the no-overlay frame byte for byte), `over` means the guides
+ * paint on top of it (those pixels differ). Off the cards both soups show, so
+ * the wires are not merely invisible.
+ */
+async function soupStackCheck(sc) {
+  const s = sc.scene;
+  const { px: B, f } = await render(s);
+  const { px: A } = await render({ ...s, overlays: undefined });
+  const wires = trianglesOf({ wires: s.overlays.wires });
+  const guides = trianglesOf({ guides: s.overlays.guides });
+  const edge = (a, b, x, y) => (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+  const inside = (tris, x, y) => tris.some((t) => {
+    const e = [edge(t.p[0], t.p[1], x, y), edge(t.p[1], t.p[2], x, y), edge(t.p[2], t.p[0], x, y)];
+    return (e[0] >= 0 && e[1] >= 0 && e[2] >= 0) || (e[0] <= 0 && e[1] <= 0 && e[2] <= 0);
+  });
+  const MARGIN = 3 / (s.zoom * VIEW.dpr);   // world units: clear of every card's edge AA and its hairline
+  let hidden = 0;
+  let hiddenBad = 0;
+  let shown = 0;
+  let shownSame = 0;
+  let free = 0;
+  let freeSame = 0;
+  for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) {
+    const sx = (X + 0.5) / VIEW.dpr;
+    const sy = (Y + 0.5) / VIEW.dpr;
+    const wx = sx / s.zoom + s.camX;
+    const wy = sy / s.zoom + s.camY;
+    const onWire = inside(wires, sx, sy);
+    const onGuide = inside(guides, sx, sy);
+    if (!onWire && !onGuide) continue;
+    const o = (Y * W + X) * 4;
+    const same = A[o] === B[o] && A[o + 1] === B[o + 1] && A[o + 2] === B[o + 2];
+    // deep inside a card (past its edge band), or clear of every card by the same margin
+    const over = f.geoms.some((G) => sdOuter(G, wx, wy) < -MARGIN);
+    const clear = f.geoms.every((G) => sdOuter(G, wx, wy) > MARGIN);
+    if (over && onWire && !onGuide) { hidden++; if (!same) hiddenBad++; }
+    else if (over && onGuide) { shown++; if (same) shownSame++; }
+    else if (clear) { free++; if (same) freeSame++; }
+  }
+  const ok = hidden > 0 && hiddenBad === 0 && shown > 0 && shownSame === 0 && free > 0 && freeSame === 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  stages     ${sc.name.padEnd(24)} \`under\`: a card hides the wires on all ${hidden.toLocaleString()} px it covers (${hiddenBad} showed through) · \`over\`: the guides paint on the cards on ${shown.toLocaleString()} px (${shownSame} unchanged) · clear of every card both soups show on ${free.toLocaleString()} px (${freeSame} unchanged)`);
+  return ok;
+}
+
+/**
+ * The portal CHAIN over an overlay (D-C1.2). A flight's ARRIVING frame is seen
+ * only through the container's face, and its overlays must be too: with a soup
+ * that spans the whole viewport on the root slot, every pixel that changed lies
+ * inside the face — the scissor and `portal_cover` between them, exactly as for
+ * the field. Three device px of margin for the face's AA ramp.
+ */
+async function soupClipCheck(sc) {
+  const s = sc.scene;
+  const { px: B, nav } = await render(s);
+  const { px: A } = await render({ ...s, overlays: undefined });
+  const c = nav.clip;
+  const d = VIEW.dpr;
+  const hx = c.hx * d;
+  const hy = c.hy * d;
+  const r = Math.min(c.r * d, hx, hy);
+  const sd = (x, y) => { const qx = Math.abs(x - c.cx * d) - hx + r; const qy = Math.abs(y - c.cy * d) - hy + r; return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r; };
+  const MARGIN = 3;
+  let outside = 0;
+  let leaked = 0;
+  let inside = 0;
+  let drew = 0;
+  for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) {
+    const o = (Y * W + X) * 4;
+    const dist = sd(X + 0.5, Y + 0.5);
+    const same = A[o] === B[o] && A[o + 1] === B[o + 1] && A[o + 2] === B[o + 2];
+    if (dist > MARGIN) { outside++; if (!same) leaked++; }
+    else if (dist < -MARGIN) { inside++; if (!same) drew++; }
+  }
+  const ok = leaked === 0 && drew > 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  soup clip  ${sc.name.padEnd(24)} the arriving slot's soup stays inside the face: ${leaked} of ${outside.toLocaleString()} px outside it changed · inside it ${drew.toLocaleString()} of ${inside.toLocaleString()} px did`);
+  return ok;
+}
+
 if (process.argv[2] === "mirror") {
   // One large card, exact path, no shadow, flat colours: every pixel's frame,
   // content and selection-ring coverage is predicted by the CPU mirror.
@@ -688,6 +902,9 @@ if (process.argv[2] === "mirror") {
   for (const sc of ORACLE_SCENES) if (sc.content) { if (!(await contentCheck(sc))) failed += 1; }
   for (const sc of ORACLE_SCENES) if (sc.heat) { if (!(await heatCheck(sc))) failed += 1; }
   for (const sc of ORACLE_SCENES) if (sc.night) { if (!(await nightCheck(sc))) failed += 1; }
+  for (const sc of ORACLE_SCENES) if (sc.soup) { if (!(await soupCheck(sc))) failed += 1; }
+  for (const sc of ORACLE_SCENES) if (sc.soupStack) { if (!(await soupStackCheck(sc))) failed += 1; }
+  for (const sc of ORACLE_SCENES) if (sc.soupClip) { if (!(await soupClipCheck(sc))) failed += 1; }
   if (failed) { console.log(`${failed} check(s) FAILED`); process.exitCode = 1; }
 }
 device.destroy();

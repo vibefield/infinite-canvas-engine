@@ -286,6 +286,59 @@ the entity's own kind behaviour.
   (peak 85), and the old line is 0.55·dpr device px of half-width against the new's 0.5. At
   zoom 0.5 they part, as the ruling says they must: the old holds a 20 device px grid at
   27.75 % ink, the new promotes a decade to 200 device px at 2.98 %.
+<!-- design-013 C1 (2026-09-07) -->
+
+- **The overlays — wires, guides and the tri-soup on the engine, design-013 C1**
+  (2026-09-07). The ground's slot had two passes, the field and the frames, and no room for
+  anything else. It has a THIRD now, and it is the app's: an OVERLAY is a named pass with a
+  STAGE — `under` (after the field, before the cards) or `over` (after them) — created once
+  and spawned per slot, exactly as a grid program's surface pass is.
+  `Ground.create({ overlays })` / `groundCompose({ overlays })` register them; each slot's
+  data rides `SlotInputs.overlays` by name, the `ext` convention. **With none registered
+  nothing changes at all:** all 47 of the oracle's existing renders are byte-identical with
+  the seam in place and the two overlays registered on every slot set, which is the seam's
+  own witness (`packages/ground/test/compose/overlays.test.ts` records the draw calls and
+  compares them to a slot built the old way).
+  - **The soup pass** (`compose/overlay.ts`): one WGSL entry — a vertex is `xy` in the
+    slot's screen px plus `rgba`, the slot's view maps px → clip, `BLEND_OVER`, no depth,
+    `cullMode: "none"`. The `DoubleSide` winding find of 2026-07-16 evaporates: WebGPU culls
+    nothing by default, and the oracle's `overlay-soup-z1` scene asserts a clockwise and a
+    counter-clockwise triangle both land. Its vertex buffers grow by the old `soup-mesh.ts`
+    policy and never shrink, and a frame whose soup did not re-collect re-uploads only the
+    uniform. The slot's scissor and its portal CHAIN apply as they do to the field: an
+    arriving frame's overlays are clipped to the container's face (`overlay-clip-enter-p0.5`).
+  - **Wires and guides** are the compose host's two root-slot overlays (`compose/overlays.ts`),
+    collected in SCREEN px under the LIVE camera on frames whose facts or camera moved. The
+    dirt is PULLED — a change collector over the same components and tags the old
+    `passes/wires.ts` and `passes/guides.ts` armed observers on, one for one — so a still
+    board wakes nothing however many frames pass. The GATE is the canvas type's
+    (`presentation.ground.wires` / `.guides`, both defaulting to on), read at the mount and on
+    every canvas switch. Their look still comes from core's `WiresConfig` /
+    `SnapGuidesConfig`, now through `groundCompose({ wires, guides })` — the same partials the
+    old `ground({ wires, guides })` and the react props take.
+  - **Destination-frame truth** (design-011 §7.3): a nested portal slot carries no overlays
+    and neither does a flight's departed slot — they cut at the switch, like the stratified
+    islands. The departed frame's wires are OWED (a world-space soup whose widths are
+    re-collected per frame).
+  - The pure halves — `SoupBuilder`, `collectWires`, `collectGuides` — were COPIED across the
+    Phase-C wall into `compose/`, since the new leg may not import the old one.
+    `packages/ground/test/overlay-collectors.test.ts` runs both implementations over the same
+    world and asserts the soups agree element for element, so the copy cannot drift before C2
+    deletes the original.
+
+- **A colour-chain difference between the two grounds, measured** (design-013 C1). The new
+  `overlay-parity` rig (`apps/widgetlab-desktop`, one Electron page, headless) draws one
+  wires-and-guides world through the OLD `ground()` and through the new `Ground`, predicts
+  both from the same triangles on the CPU, and reports each against an A-vs-A control. The
+  geometry agrees exactly — neither renderer leaves bare a pixel the raster says carries
+  soup, over 110k–135k interior pixels — and the new pass matches the colour its config names
+  BYTE FOR BYTE. **The old leg does not, and never did:** three composites the overlays in
+  LINEAR light and encodes on output, so a wire at `rgba(120, 132, 145, 0.9)` has always been
+  drawn lighter than that, and two translucent layers over one another have been drawn a
+  different colour entirely — up to 87/255 apart from the configured value. The old chain is
+  reproduced exactly by the rig (deep-band maxΔ 1, the encode's own rounding), so the
+  difference is named rather than guessed. C2 settles which chain the stratified profile
+  keeps. The rig retires with the old leg.
 
 - **The flight on the ground — design-013, B7** (2026-09-07). Under the composited-next
   profile a nav flight is the ground's SECOND SLOT: the departed frame drawn beside the

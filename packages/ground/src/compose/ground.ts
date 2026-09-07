@@ -29,6 +29,13 @@
 //
 // Slots beyond the root come from a POOL spawned on first use — no compile,
 // no clock — and cost nothing while no portal is on screen and no flight is on.
+//
+// A slot also carries OVERLAYS (design-013 C1, D-C1.1): passes an app
+// registers, each drawn either between the field and the frames (`under`:
+// wires) or after them (`over`: guides). They are the ground's third draw
+// layer and the only optional one — with none registered a slot allocates
+// nothing for them and `drawSlot` calls nothing extra, so every scene renders
+// byte for byte as it did before the seam existed (`compose/overlay.ts`).
 
 import { surface, type Surface } from "../engine/device";
 import { beginPass } from "../engine/target";
@@ -41,6 +48,7 @@ import { type CardProgram, shellProgram } from "../card/program";
 import { FillPass, type FillShaders } from "../nav/fill-pass";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "../nav/portal";
 import { boxOf } from "../lattice/lod";
+import type { OverlayInputs, OverlayPass, OverlayProgram, OverlayStage } from "./overlay";
 import type { GroundTheme, RGB } from "../theme";
 
 export interface GroundOptions {
@@ -59,6 +67,13 @@ export interface GroundOptions {
   readonly card?: CardProgram<ShellGeometry>;
   /** Grid programs beyond the engine's dot (`needleGlyph`, `cuttingMat`). */
   readonly grids?: readonly GlyphProgram[];
+  /**
+   * Overlay passes (design-013 C1): the wires and the guides, or an app's own.
+   * Each is created once and spawned per slot; each slot's data rides
+   * `SlotInputs.overlays` under the overlay's name. None = the ground has no
+   * overlay stage at all.
+   */
+  readonly overlays?: readonly OverlayProgram[];
 }
 
 /** One frame's ground: its camera, grid, sources, cards and presentation — the root's, a departed frame's, or a container's inside. */
@@ -69,6 +84,13 @@ export interface SlotInputs extends FieldFrame {
   readonly frames: readonly FrameInstance[];
   /** The live portals among THIS frame's containers (PORTAL.md): each drawn before the container it belongs to. */
   readonly portals?: readonly PortalInputs[];
+  /**
+   * This slot's overlay data by name (design-013 C1): the wires' and the guides'
+   * `TriSoup`s for the root, nothing for a nested portal slot or a flight's
+   * departed slot (D-C1.3 — they cut at the switch). A name the ground has no
+   * registered overlay for is ignored; an overlay with no entry draws nothing.
+   */
+  readonly overlays?: OverlayInputs;
 }
 
 /**
@@ -128,13 +150,30 @@ export interface DrawSlot {
   readonly fill?: FillPass | undefined;
   /** Nested slots, each drawn before the parent's card `at` (PORTAL.md §2.2). */
   readonly children?: readonly { readonly at: number; readonly slot: DrawSlot }[] | undefined;
+  /** The overlays this slot prepared something for, by stage (D-C1.1). Absent = none registered, or none with data this frame. */
+  readonly overlays?: SlotOverlays | undefined;
+}
+
+/** One slot's prepared overlays, split by stage so the draw is two loops and no test. */
+export interface SlotOverlays {
+  readonly under: readonly OverlayPass[];
+  readonly over: readonly OverlayPass[];
 }
 
 /** A slot at opacity 0 draws nothing: "source over" with alpha 0 leaves every pixel as it was, in both blend modes. */
 export const visible = (p: Presentation | undefined): boolean => (p?.opacity ?? 1) > 0;
 
+/** An overlay INSTANCE in a slot: the program's identity, this slot's pass. */
+export interface SlotOverlay { readonly name: string; readonly stage: OverlayStage; readonly pass: OverlayPass }
+
 /** The passes one slot owns. The root's are the ground's; the pool spawns the rest on the same pipelines. */
-export interface SlotSet { readonly field: Field; readonly frames: FramePass; readonly fill: FillPass }
+export interface SlotSet {
+  readonly field: Field;
+  readonly frames: FramePass;
+  readonly fill: FillPass;
+  /** The registered overlays, one instance per slot; absent (or empty) = none. */
+  readonly overlays?: readonly SlotOverlay[];
+}
 
 /** Slots beyond the root, spawned on first use and reused every frame: `reset()` then `acquire()` per slot the frame needs. */
 export class SlotPool {
@@ -144,19 +183,28 @@ export class SlotPool {
   constructor(root: SlotSet) { this.root = root; }
   reset(): void { this.used = 0; }
   acquire(): SlotSet {
-    if (this.used === this.slots.length) this.slots.push({ field: this.root.field.spawn(), frames: this.root.frames.spawn(), fill: this.root.fill.spawn() });
+    if (this.used === this.slots.length) {
+      const overlays = this.root.overlays ?? [];
+      this.slots.push({
+        field: this.root.field.spawn(), frames: this.root.frames.spawn(), fill: this.root.fill.spawn(),
+        ...(overlays.length ? { overlays: overlays.map((o) => ({ name: o.name, stage: o.stage, pass: o.pass.spawn() })) } : {}),
+      });
+    }
     return this.slots[this.used++] as SlotSet;
   }
   /** Slots spawned so far — the churn instrument. */
   get size(): number { return this.slots.length; }
-  dispose(): void { for (const s of this.slots) { s.field.dispose(); s.frames.dispose(); s.fill.dispose(); } this.slots.length = 0; this.used = 0; }
+  dispose(): void { for (const s of this.slots) { s.field.dispose(); s.frames.dispose(); s.fill.dispose(); for (const o of s.overlays ?? []) o.pass.dispose(); } this.slots.length = 0; this.used = 0; }
 }
 
 /**
  * Draw one slot into an open render pass: scissored to its portal (nothing
  * outside it is shaded), opaque through it (its `fill`), skipped outright at
  * opacity 0, its frames drawn in paint order around its nested slots, each
- * of which restores the parent's scissor after itself. Returns whether it drew.
+ * of which restores the parent's scissor after itself, and its overlays at
+ * their two stages — `under` between the field and the frames, `over` after
+ * the last of them (the parent's scissor is back in force by then). Returns
+ * whether it drew.
  */
 export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, slot: DrawSlot): boolean {
   if (!visible(slot.present)) return false;
@@ -165,6 +213,7 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   pass.setScissorRect(x, y, w, h);
   if (slot.present?.portal) slot.fill?.draw(pass);
   slot.field.draw(pass);
+  for (const o of slot.overlays?.under ?? []) o.draw(pass);
   let from = 0;
   const kids = slot.children ? [...slot.children].sort((a, b) => a.at - b.at) : [];
   for (const k of kids) {
@@ -173,6 +222,7 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
     if (drawSlot(pass, size, dpr, k.slot)) pass.setScissorRect(x, y, w, h);
   }
   slot.frames.drawRange(pass, from, Number.MAX_SAFE_INTEGER);
+  for (const o of slot.overlays?.over ?? []) o.draw(pass);
   return true;
 }
 
@@ -237,6 +287,16 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     tuneFrom(root.frames, s.frames);
     s.field.prepare(encoder, inp, inp.sources, theme);
     const n = s.frames.prepare(inp.view, theme, inp.frames, inp.present);
+    // The overlays this slot has DATA for (D-C1.1). An overlay with no entry under its name — every
+    // nested portal slot and the flight's departed slot, by D-C1.3 — is not prepared and not drawn.
+    const under: OverlayPass[] = [];
+    const over: OverlayPass[] = [];
+    for (const o of s.overlays ?? []) {
+      const data = inp.overlays?.[o.name];
+      if (data === undefined || !o.pass.prepare(encoder, inp, data, theme)) continue;
+      (o.stage === "under" ? under : over).push(o.pass);
+    }
+    const overlays: SlotOverlays | undefined = under.length || over.length ? { under, over } : undefined;
     let fill: FillPass | undefined;
     if (fillPresent?.portal && visible(fillPresent)) { s.fill.prepare(inp.view, fillColour, fillPresent, grow); fill = s.fill; }
     const children: { at: number; slot: DrawSlot }[] = [];
@@ -257,7 +317,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
       children.push({ at: p.at, slot: child.slot });
       portals += 1;
     }
-    return { n, slot: { field: s.field, frames: s.frames, present: inp.present, fill, ...(children.length ? { children } : {}) } };
+    return { n, slot: { field: s.field, frames: s.frames, present: inp.present, fill, ...(children.length ? { children } : {}), ...(overlays ? { overlays } : {}) } };
   };
   // ENTER through a live portal: the arriving frame is drawn beneath the departed frame's hole, so its fill grows like any nested slot's.
   const enterTree = inputs.outgoing !== undefined && inputs.outgoing.at !== undefined && inputs.outgoing.order === "under";
@@ -281,22 +341,27 @@ export class Ground {
   readonly field: Field;
   readonly frames: FramePass;
   readonly fill: FillPass;
+  /** The root slot's overlay instances, in registration order (design-013 C1); empty = none registered. */
+  readonly overlays: readonly SlotOverlay[];
   /** Slots beyond the root — the departed frame's, the live portals' — spawned on first use. */
   readonly pool: SlotPool;
 
-  private constructor(device: GPUDevice, surface: Surface, field: Field, frames: FramePass, fill: FillPass) {
-    this.device = device; this.surface = surface; this.field = field; this.frames = frames; this.fill = fill;
-    this.pool = new SlotPool({ field, frames, fill });
+  private constructor(device: GPUDevice, surface: Surface, field: Field, frames: FramePass, fill: FillPass, overlays: readonly SlotOverlay[]) {
+    this.device = device; this.surface = surface; this.field = field; this.frames = frames; this.fill = fill; this.overlays = overlays;
+    this.pool = new SlotPool({ field, frames, fill, ...(overlays.length ? { overlays } : {}) });
   }
 
   static async create(opts: GroundOptions): Promise<Ground> {
     const surf = surface(opts.device, opts.canvas);
-    const [field, frames, fill] = await Promise.all([
+    const programs = opts.overlays ?? [];
+    const [field, frames, fill, ...passes] = await Promise.all([
       Field.create(opts.device, surf.format, { ...opts.field, glyphs: [...opts.field.glyphs, ...(opts.grids ?? [])] }),
       FramePass.create(opts.device, surf.format, opts.frames, opts.card ?? shellProgram),
       FillPass.create(opts.device, surf.format, opts.fill),
+      ...programs.map((o) => o.create(opts.device, surf.format)),
     ]);
-    return new Ground(opts.device, surf, field, frames, fill);
+    const overlays = programs.map((o, i) => ({ name: o.name, stage: o.stage, pass: passes[i] as OverlayPass }));
+    return new Ground(opts.device, surf, field, frames, fill, overlays);
   }
 
   /** The card program the frames draw through. */
@@ -313,7 +378,7 @@ export class Ground {
   /** Render one frame now. Synchronous submit; the caller owns the cadence. */
   render(inputs: GroundFrameInputs): GroundStats {
     const encoder = this.device.createCommandEncoder({ label: "ground" });
-    const prepared = prepareFrame(encoder, { field: this.field, frames: this.frames, fill: this.fill }, this.pool, inputs);
+    const prepared = prepareFrame(encoder, { field: this.field, frames: this.frames, fill: this.fill, ...(this.overlays.length ? { overlays: this.overlays } : {}) }, this.pool, inputs);
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
@@ -322,5 +387,5 @@ export class Ground {
     return { ...drawn.incoming, frames: prepared.frames, outgoing: drawn.outgoing ? { ...drawn.outgoing, frames: prepared.outFrames } : null, portals: prepared.portals };
   }
 
-  dispose(): void { this.pool.dispose(); this.fill.dispose(); this.field.dispose(); this.frames.dispose(); }
+  dispose(): void { this.pool.dispose(); this.fill.dispose(); this.field.dispose(); this.frames.dispose(); for (const o of this.overlays) o.pass.dispose(); }
 }

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:" />
+  <title>overlay-parity rig (wires and guides, old renderer vs new — C1)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101010; overflow: hidden; }
+    /* The two hosts sit SIDE BY SIDE at their own natural size and are read back
+       through the canvases themselves, never through a page screenshot — so the
+       window may be smaller than the pair and nothing about the layout matters
+       beyond each container having its own real box. */
+    #root { position: absolute; left: 0; top: 0; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="./src/rigs/overlay-parity.tsx"></script>
+</body>
+</html>

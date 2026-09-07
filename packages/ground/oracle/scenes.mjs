@@ -162,3 +162,39 @@ export const PORTAL_SCENES = [
   { name: "portal-face-z1", sealed: true, scene: { ...portalBase, zoom: 1, cards: [{ x: 200, y: 150, w: 150, h: 90, r: 14, strength: 1 }, folder(600, 400, 329, 345, insideOf("dot")), { x: 1000, y: 700, w: 155, h: 155, r: 22, strength: 1, surface: "note" }] } },
 ];
 ORACLE_SCENES.push(...PORTAL_SCENES.map((s) => ({ ...s, pages: ["ground"] })));
+
+// The OVERLAYS (design-013 C1): the ground's third draw layer — a triangle soup in the slot's
+// screen CSS px, drawn `under` the cards (wires) or `over` them (guides). The soups here are
+// HAND-BUILT through the same `SoupBuilder` the collectors use, so the scene names its geometry
+// and the checks can raster the very same triangles on the CPU. The last two `wires` entries are
+// raw triangles of opposite winding — the cull-none claim, which three needed `DoubleSide` for.
+// `pages: []`: no browser page draws these, they are the overlay's own baseline.
+const SOUP = {
+  wires: [
+    { rect: [100, 100, 220, 60, [0.28, 0.56, 0.85, 1]] },
+    { segment: [140, 320, 520, 470, 9, [0.9, 0.35, 0.35, 0.85]] },
+    { polyline: [[200, 600, 340, 540, 480, 620, 620, 560], 6, [0.2, 0.8, 0.5, 0.7]] },
+    { disc: [820, 180, 40, [1, 0.85, 0.2, 0.9]] },
+    { tri: [900, 420, 1060, 420, 980, 560, [0.55, 0.35, 0.9, 1]] },   // clockwise in y-down screen px
+    { tri: [900, 640, 980, 780, 1060, 640, [0.1, 0.7, 0.9, 1]] },     // counter-clockwise
+  ],
+  guides: [
+    { rect: [0, 700, 1200, 3, [1, 0, 1, 0.55]] },
+    { rect: [640, 0, 3, 800, [1, 0, 1, 0.55]] },
+    { rect: [90, 90, 260, 4, [1, 0, 1, 0.55]] },   // crosses the wires rect: the composite ORDER, wires then guides
+  ],
+};
+// The STAGE scene: six cards with a wires soup and a guides soup crossing their interiors.
+const STACK = {
+  wires: [{ rect: [0, 250, 1200, 24, [0.28, 0.56, 0.85, 1]] }, { rect: [560, 0, 24, 800, [0.9, 0.35, 0.35, 1]] }],
+  guides: [{ rect: [0, 300, 1200, 24, [1, 0, 1, 0.85]] }, { rect: [640, 0, 24, 800, [1, 0, 1, 0.85]] }],
+};
+// The CHAIN scene: an enter mid-flight, a soup spanning the whole viewport on the ARRIVING slot —
+// which is seen only through the container's face, and so its overlay must be too.
+const SPAN = { wires: [{ rect: [0, 0, 1200, 800, [0.28, 0.56, 0.85, 0.6]] }] };
+export const OVERLAY_SCENES = [
+  { name: "overlay-soup-z1", soup: true, pages: [], scene: { ...base, cards: makeCards(48), zoom: 1, mouseOn: false, drawFrames: false, overlays: SOUP } },
+  { name: "overlay-stack-z1", soupStack: true, pages: [], scene: { ...base, cards: makeCards(6), zoom: 1, mouseOn: false, style: "product", overlays: STACK } },
+  { name: "overlay-clip-enter-p0.5", soupClip: true, pages: [], scene: { ...navBase, zoom: 1, nav: { kind: "enter", container: FOLDER, child: childOf("mat"), p: 0.5 }, overlays: SPAN } },
+];
+ORACLE_SCENES.push(...OVERLAY_SCENES);
