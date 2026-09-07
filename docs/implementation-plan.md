@@ -803,6 +803,26 @@ verbatim, the churn bench before/after):
   LRU over `(entity, band)` honouring `Retained`; GPU realisation deferred to the
   Phase B reflectors. Exit: the §6.4 invariant as a seeded property, and a frame-by-frame
   `TextureRef` timeline under the S6 drag script.
+- **A3 — the Phase A review fixes** (**LANDED 2026-09-07**, `9e79425` residency side +
+  `65d7fcb` behaviour side; James: "review the phase A implementation first" → two opus
+  reviewers plus the orchestrator's pass, every headline claim verified against the code
+  before dispatch). Blocker fixed: Residency published `layers().length` while
+  `retireEmpty()` leaves holes, so a card could name an array index the array did not have
+  (`layerCount()` published). Also: the `world.reset()` leak (dead-entity sweep), the memory
+  door that only opened under budget pressure, dead unrealised handles accumulating, a
+  register wake, D11 (the device clamp, `maxTextureSize` 8192 uniform), the `SurfaceDemand`
+  default → `live/60` (D2 amended — the "frame gap" argument was wrong and `paused` parked
+  every card in an unwired host); `domAtRest` owns only what it changed (a hand-held gpu
+  target survives a drag), refuses non-dom kinds at init, one `SurfaceTarget` writer per
+  widget (definition-time throw), the `ice:` namespace reserved (exact-name attestation +
+  an engine-only mark); the idle tax's REAL cause was the behaviour runtime's per-delivery
+  instance snapshot spread, not a `full` walk — cached, `domAtRest`'s idle row at 100k
+  widgets 164 → 2 µs/frame, flat in N, whole flat-100k idle frame −19.8 %. The CHANGELOG's
+  "React now promotes" claim was FALSE (the React composited profile has no source canvas;
+  A1b fixed the decision half; pixels move at B3/B4) — corrected with the facade and
+  behaviours comments; A2 got its CHANGELOG entry; the api-reference's stale
+  `presentation`; bare entities no longer promotable, listed. 48 probes across both
+  slices red their own test.)
 
 ## Release cut & downstream
 

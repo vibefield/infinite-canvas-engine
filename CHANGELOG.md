@@ -122,7 +122,23 @@ the entity's own kind behaviour.
   measures one on a real device.** Allocation is computed purely and written to
   the world; nothing is realised on a GPU and **nothing reads `TextureRef`
   before B3**, by design.
-  <!-- A3a: SurfaceDemand default; maxTextureSize -->
+- **`ResidencySystemOptions.maxTextureSize`** (also on `ResidencyOptions`, threaded
+  through `installSurfaceInfra`), default 8192 — the floor every WebGPU adapter guarantees
+  for `maxTextureDimension2D`. An `own` texture request larger than it on either axis is
+  scaled down UNIFORMLY — never refused, never squashed per axis; the compose maps the
+  whole texture onto the card — and the clamped size is what the residency budget counts.
+  Closes design-013 D11: under `band`, `geometry()` asks for `size × band × dpr`, so a
+  2000-unit card at band 16 on a dpr-2 display asked for 64,000²; it is 8192×4096 now.
+
+### Changed
+
+- **`SurfaceDemand`'s equip default is `live/60/false`** (was `paused/0/false`;
+  `RequestedDemand` is unchanged). design-013 D2 chose `paused` to spare "the frame
+  between equip and the first clamp", but that frame does not exist — equip's adds land at
+  the derive flush and the clamp runs in `present:infra` in the same tick — while the
+  default's one real effect is in a host that installs no Demand system, where `paused`
+  parked every equipped card forever and `live/60` is exactly the pre-A1a behaviour.
+  Breaking only for code that read the stamped value before the first clamp.
 
 ### Fixed
 
@@ -162,6 +178,16 @@ the entity's own kind behaviour.
   a list that had not changed. `ctx.entities()` semantics are unchanged: it is
   still the membership as of phase entry, and a hook that attaches or detaches
   still affects the next frame.
+- **Residency review fixes (A3a).** The published atlas layer count now spans the live
+  layer ids (`LayerAllocator.layerCount()`, max id + 1 — `retireEmpty()` can leave holes,
+  and a card must never name an array index the array does not have); a `world.reset()`
+  no longer strands held slots, pinned references or stable registrations (a dead-entity
+  sweep on every full walk; `TextureTable.stableOwners()`); an empty layer retires after any
+  frame that gave an ATLAS slot back, not only under budget pressure (only an atlas slot
+  can empty a layer, and a layer costs its full `layerSize² × bytesPerPixel` from first
+  allocation, so retiring an emptied one is what actually returns memory); a producer's `register()` /
+  `unregister()` wakes Residency (`TextureTable.revision()`); an unrealised handle is
+  forgotten the moment its count reaches zero — only realised handles wait in `drain()`.
 
 ## [0.12.0] — 2026-08-31
 
