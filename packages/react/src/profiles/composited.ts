@@ -1,9 +1,9 @@
 /**
- * The NEW composited profile (design-013 §8 B2 — beside the old one until B8
- * deletes it and this one takes the name `composited`).
+ * The composited profile (design-013 §8 B2; it took the name `composited` at
+ * B8, when the old leg was deleted).
  *
- * It requires of its host what the old profile does — the app-owned device —
- * and one thing more: the ground layer must be the ground's OWN
+ * It requires of its host the app-owned device and one thing more: the ground
+ * layer must be the ground's OWN
  * (`groundCompose({ device, theme })` from `@ice/ground/compose`), which this
  * profile recognises by the handle's `compose` field. `groundField()` — the
  * stratified profile's ground — is refused: it has no GpuCompose to register,
