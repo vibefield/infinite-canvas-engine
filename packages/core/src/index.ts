@@ -604,7 +604,14 @@ export {
 // call a profile makes to install the set into `present:infra`.
 export { createSurfaceBandSystem } from "./systems/surface-band";
 export { createSurfaceDemandSystem } from "./systems/surface-demand";
-export { installSurfaceInfra, type SurfaceInfraOpts } from "./surface/install";
+// `ResidencyOptions` rides out with them: it is the shape a profile fills in to
+// hand Residency its table, allocator, budget and device ceiling, and a caller
+// that cannot name the type cannot build one outside a literal at the call site.
+export {
+  installSurfaceInfra,
+  type ResidencyOptions,
+  type SurfaceInfraOpts,
+} from "./surface/install";
 
 // --- design-013 A1b: the three standard surface behaviours -----------------
 // The DOOR (§0): the engine's own kind behaviours, shipped through

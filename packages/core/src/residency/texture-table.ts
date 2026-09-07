@@ -27,25 +27,33 @@
  *   registration IS a reference: registering twice for one entity replaces the
  *   first and releases it, so the old handle drains once nothing else holds it.
  *
- * ## The refcount and the drain rule
+ * ## The refcount, the drain rule, and the forget rule
  *
  * A handle is retained by whoever writes it into a `TextureRef` and released
- * when that reference changes. **`drain()` returns every handle whose count
- * REACHED zero since the last drain, each exactly once, and forgets them.** Two
- * consequences, both deliberate:
+ * when that reference changes. The drain is the DESTROY LIST — the GPU objects
+ * B's render reflectors must destroy — so what enters it is exactly what has a
+ * GPU object behind it:
  *
- * - A handle re-retained before the drain is NOT drained. It never became
- *   garbage: a card that loses its slot and takes it back inside one frame must
- *   not have its texture destroyed underneath it.
+ * - **Realised, count reaches zero → `drain()`, once, then forgotten.** B
+ *   destroys the `GPUTexture` the entry names and the entry goes with it, so no
+ *   drained handle can be handed back out.
+ * - **Never realised, count reaches zero → FORGOTTEN IMMEDIATELY**, and it
+ *   never appears in `drain()`. There is no GPU object to destroy, and keeping
+ *   the entry alive for a destroy list that has nothing to do is how the table
+ *   grows without bound: `ownFor` re-mints on every size change, so a resize
+ *   drag on a gl island minted one dead entry per frame — one per frame that
+ *   nothing in Phase A would ever drain, because Phase A has no reflector.
+ * - A handle re-retained before it reaches zero is neither drained nor
+ *   forgotten. It never became garbage: a card that loses its slot and takes it
+ *   back inside one frame must not have its texture destroyed underneath it. A
+ *   REALISED handle re-retained after reaching zero leaves the drain list too
+ *   (`retain` un-zeroes it), which is the same promise one step later.
  * - A handle that was never retained is never drained either. Only a
  *   TRANSITION to zero enters the list, so minting is not itself a death.
  *
- * The drain is the destroy list: B's render reflectors destroy the GPU objects
- * it names, and the entry is gone from the table with them, so no drained
- * handle can be handed back out. `pages` cannot appear there (see above), an
- * `own` handle is only ever the one `own()` just returned, and a `stable`
- * handle is only reachable through `stableOf`, which by then names its
- * replacement.
+ * `pages` cannot appear there (see above), an `own` handle is only ever the one
+ * `own()` just returned, and a `stable` handle is only reachable through
+ * `stableOf`, which by then names its replacement.
  *
  * ## Realisation is Phase B's
  *
@@ -123,12 +131,32 @@ export interface TextureTable {
   unregister(entity: Entity): boolean;
   /** The entity's registered handle, or `0`. */
   stableOf(entity: Entity): TextureHandle;
+  /**
+   * Every entity holding a registration. The table is keyed by entity and has
+   * no view of the world, so a caller that must reconcile registrations against
+   * LIFE — Residency's `world.reset()` sweep, whose dead entities never reach
+   * the removal journal — needs the owner list to unregister from.
+   */
+  stableOwners(): Entity[];
   describe(handle: TextureHandle): TextureEntry | undefined;
   refs(handle: TextureHandle): number;
+  /**
+   * Bumped by `register` and by an `unregister` that dropped something. A
+   * producer's registration is not a world change, so nothing journals it and a
+   * change-gated consumer would never wake for it; comparing this number is how
+   * Residency's guard notices (design-013 §9 Q5's door, from the other side).
+   */
+  revision(): number;
   /** Returns the new count. `0` for `NO_TEXTURE` and for an unknown handle. */
   retain(handle: TextureHandle): number;
   release(handle: TextureHandle): number;
-  /** Handles whose count reached zero since the last drain, in the order they died. */
+  /**
+   * Handles whose count reached zero since the last drain, in the order they
+   * died — the destroy list. **REALISED handles only**: one that never gained a
+   * `GPUTexture` is forgotten the moment its count hits zero and never appears
+   * here, because there is nothing for a reflector to destroy (the forget rule,
+   * in the module header).
+   */
   drain(): TextureHandle[];
   /** Phase B's seam. `false` for an unknown handle. Never called in Phase A. */
   realize(handle: TextureHandle, texture: GPUTexture): boolean;
@@ -152,6 +180,7 @@ export function createTextureTable(options: TextureTableOptions = {}): TextureTa
 
   let nextHandle: TextureHandle = 1;
   let pagesHandle: TextureHandle = NO_TEXTURE;
+  let rev = 0;
 
   function mint(entry: TextureEntry, refs: number): TextureHandle {
     const handle = nextHandle++;
@@ -160,13 +189,25 @@ export function createTextureTable(options: TextureTableOptions = {}): TextureTa
     return handle;
   }
 
+  function forget(handle: TextureHandle): void {
+    entries.delete(handle);
+    counts.delete(handle);
+    realizations.delete(handle);
+  }
+
   function releaseHandle(handle: TextureHandle): number {
     if (handle === NO_TEXTURE) return 0;
     const current = counts.get(handle);
     if (current === undefined || current <= 0) return 0;
     const next = current - 1;
     counts.set(handle, next);
-    if (next === 0) zeroed.add(handle);
+    // The forget rule (header): only a REALISED handle is a destroy list entry.
+    // An unrealised one has no GPU object behind it, so holding it for a drain
+    // that will never destroy anything just grows the table.
+    if (next === 0) {
+      if (realizations.has(handle)) zeroed.add(handle);
+      else forget(handle);
+    }
     return next;
   }
 
@@ -198,6 +239,7 @@ export function createTextureTable(options: TextureTableOptions = {}): TextureTa
       );
       stable.set(entity, handle);
       if (previous !== undefined) releaseHandle(previous);
+      rev++;
       return handle;
     },
 
@@ -206,11 +248,16 @@ export function createTextureTable(options: TextureTableOptions = {}): TextureTa
       if (handle === undefined) return false;
       stable.delete(entity);
       releaseHandle(handle);
+      rev++;
       return true;
     },
 
     stableOf(entity) {
       return stable.get(entity) ?? NO_TEXTURE;
+    },
+
+    stableOwners() {
+      return [...stable.keys()];
     },
 
     describe(handle) {
@@ -219,6 +266,10 @@ export function createTextureTable(options: TextureTableOptions = {}): TextureTa
 
     refs(handle) {
       return counts.get(handle) ?? 0;
+    },
+
+    revision() {
+      return rev;
     },
 
     retain(handle) {
@@ -239,11 +290,7 @@ export function createTextureTable(options: TextureTableOptions = {}): TextureTa
     drain() {
       const drained = [...zeroed];
       zeroed.clear();
-      for (const handle of drained) {
-        entries.delete(handle);
-        counts.delete(handle);
-        realizations.delete(handle);
-      }
+      for (const handle of drained) forget(handle);
       return drained;
     },
 
@@ -264,6 +311,10 @@ export function createTextureTable(options: TextureTableOptions = {}): TextureTa
       stable.clear();
       zeroed.clear();
       pagesHandle = NO_TEXTURE;
+      // Dropping every registration is a registration change. `rev` counts up
+      // past a dispose for the same reason handles do: a consumer holding a
+      // stale number must never read it as "nothing happened".
+      rev++;
     },
   };
 }

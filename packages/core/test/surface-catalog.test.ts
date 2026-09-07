@@ -122,9 +122,17 @@ describe("the six components, as declared", () => {
     expect(defaultOf(RequestedDemand, "mode")).toBe("live");
     expect(defaultOf(RequestedDemand, "fpsBucket")).toBe(60);
     expect(defaultOf(RequestedDemand, "interactive")).toBe(false);
-    // The CLAMP starts owing nothing: a card is not visible until cull says so.
-    expect(defaultOf(SurfaceDemand, "mode")).toBe("paused");
-    expect(defaultOf(SurfaceDemand, "fpsBucket")).toBe(0);
+    // The CLAMP defaults to live too (the Phase A review's erratum on D2, in
+    // `catalog/surface.ts`). D2 chose `paused` to spare "the frame between
+    // equip and the first clamp" — a frame that does not exist, since equip's
+    // adds land at the derive flush and the clamp runs in `present:infra` in
+    // the SAME tick, and on the equip frame cull has not tagged the card
+    // `Visible` so the clamp yields paused whatever the default was. What the
+    // default actually decides is the host that installs NO Demand system,
+    // where `paused` parks every card forever and `live/60` is exactly the
+    // pre-A1a behaviour.
+    expect(defaultOf(SurfaceDemand, "mode")).toBe("live");
+    expect(defaultOf(SurfaceDemand, "fpsBucket")).toBe(60);
     expect(defaultOf(SurfaceDemand, "interactive")).toBe(false);
     // 0 = never banded — NOT band 1, which is a real band the hysteresis would
     // then hold, leaving a card at the wrong resolution rather than at none.
@@ -172,7 +180,9 @@ describe("equip stamps the six — and only on widgets", () => {
     expect(world.get(e, SurfaceKind)?.kind).toBe("dom");
     expect(world.get(e, SurfaceTarget)?.target).toBe("dom");
     expect(world.get(e, RequestedDemand)).toEqual({ mode: "live", fpsBucket: 60, interactive: false });
-    expect(world.get(e, SurfaceDemand)).toEqual({ mode: "paused", fpsBucket: 0, interactive: false });
+    // Both demand components, at the pre-demand behaviour — see the erratum
+    // above. A host that installs the clamp overwrites this in the same tick.
+    expect(world.get(e, SurfaceDemand)).toEqual({ mode: "live", fpsBucket: 60, interactive: false });
     expect(world.get(e, SurfaceBand)?.band).toBe(0);
     expect(world.get(e, TextureRef)).toEqual({ texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
   });

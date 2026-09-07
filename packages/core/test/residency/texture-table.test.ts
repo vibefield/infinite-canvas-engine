@@ -76,10 +76,17 @@ describe("the pages singleton", () => {
   });
 });
 
+/** A REALISED own texture — the only kind the drain list carries (the forget rule). */
+function realisedOwn(table: ReturnType<typeof createTextureTable>, w: number, h: number): TextureHandle {
+  const handle = table.own(w, h);
+  table.realize(handle, fakeTexture(`own ${w}x${h}`));
+  return handle;
+}
+
 describe("refcounting and the drain", () => {
-  it("lands a handle in drain() exactly once when its count reaches zero", () => {
+  it("lands a REALISED handle in drain() exactly once when its count reaches zero", () => {
     const table = createTextureTable();
-    const own = table.own(128, 128);
+    const own = realisedOwn(table, 128, 128);
     expect(table.refs(own)).toBe(0);
 
     expect(table.retain(own)).toBe(1);
@@ -100,9 +107,9 @@ describe("refcounting and the drain", () => {
     expect(table.describe(own)).toBeDefined();
   });
 
-  it("does not drain a handle re-retained before the drain", () => {
+  it("does not drain a realised handle re-retained before the drain", () => {
     const table = createTextureTable();
-    const own = table.own(128, 128);
+    const own = realisedOwn(table, 128, 128);
     table.retain(own);
     table.release(own);
     expect(table.retain(own)).toBe(1); // taken back inside the frame
@@ -116,8 +123,8 @@ describe("refcounting and the drain", () => {
 
   it("drains in the order the handles died", () => {
     const table = createTextureTable();
-    const a = table.own(1, 1);
-    const b = table.own(2, 2);
+    const a = realisedOwn(table, 1, 1);
+    const b = realisedOwn(table, 2, 2);
     for (const h of [a, b]) table.retain(h);
     table.release(b);
     table.release(a);
@@ -142,6 +149,56 @@ describe("refcounting and the drain", () => {
   });
 });
 
+/**
+ * THE FORGET RULE. `drain()` is the DESTROY list, so what enters it is what has
+ * a `GPUTexture` behind it. Everything else has to leave the table the moment
+ * it dies, because in Phase A nothing drains at all: `ownFor` re-mints on every
+ * size change, so a resize drag on a gl island minted one dead entry per frame
+ * that no reflector would ever collect.
+ */
+describe("the forget rule — an unrealised handle is not a destroy-list entry", () => {
+  it("forgets an unrealised handle the moment its count reaches zero", () => {
+    const table = createTextureTable();
+    const own = table.own(128, 128);
+    table.retain(own);
+    expect(table.release(own)).toBe(0);
+
+    expect(table.describe(own), "gone, not queued").toBeUndefined();
+    expect(table.refs(own)).toBe(0);
+    expect(table.drain(), "nothing for a reflector to destroy").toEqual([]);
+  });
+
+  it("a realised one in the same run still drains — the control", () => {
+    // Without this the case above passes for a table that simply drains nothing.
+    const table = createTextureTable();
+    const bare = table.own(8, 8);
+    const realised = realisedOwn(table, 8, 8);
+    for (const h of [bare, realised]) table.retain(h);
+    table.release(bare);
+    table.release(realised);
+    expect(table.drain()).toEqual([realised]);
+    expect(table.describe(bare)).toBeUndefined();
+  });
+
+  it("does not grow across a re-mint churn: 40 dead own textures leave 0 entries", () => {
+    // The table exposes no size, so count what it still ANSWERS for — the same
+    // question a leak would make loud. Handles count from 1, so the probe range
+    // covers every handle this loop could have minted.
+    const table = createTextureTable();
+    let previous = 0;
+    for (let i = 0; i < 40; i++) {
+      const next = table.own(64 + i, 64);
+      table.retain(next);
+      if (previous !== 0) table.release(previous);
+      previous = next;
+    }
+    const live = Array.from({ length: 128 }, (_, i) => i + 1).filter(
+      (h) => table.describe(h) !== undefined,
+    );
+    expect(live, "only the handle still referenced").toEqual([previous]);
+  });
+});
+
 describe("registered stable textures (Q5)", () => {
   it("answers stableOf, and 0 for an entity that registered nothing", () => {
     const table = createTextureTable();
@@ -154,6 +211,7 @@ describe("registered stable textures (Q5)", () => {
   it("registering twice replaces the first and drains it", () => {
     const table = createTextureTable();
     const first = table.register(ent(3), { width: 640, height: 480, srgb: false });
+    table.realize(first, fakeTexture("stable")); // a producer's texture is realised by definition
     const second = table.register(ent(3), { width: 1280, height: 720, srgb: true });
 
     expect(second).not.toBe(first);
@@ -164,9 +222,18 @@ describe("registered stable textures (Q5)", () => {
     expect(table.describe(second)).toMatchObject({ width: 1280, srgb: true });
   });
 
+  it("forgets a replaced registration that was never realised", () => {
+    const table = createTextureTable();
+    const first = table.register(ent(3), { width: 640, height: 480, srgb: false });
+    table.register(ent(3), { width: 1280, height: 720, srgb: true });
+    expect(table.describe(first)).toBeUndefined();
+    expect(table.drain()).toEqual([]);
+  });
+
   it("holds the old handle while a card still references it", () => {
     const table = createTextureTable();
     const first = table.register(ent(3), { width: 640, height: 480, srgb: false });
+    table.realize(first, fakeTexture("stable"));
     table.retain(first); // a TextureRef names it
     table.register(ent(3), { width: 1280, height: 720, srgb: true });
     expect(table.refs(first)).toBe(1);
@@ -179,10 +246,73 @@ describe("registered stable textures (Q5)", () => {
   it("unregister drops the entity and releases its reference", () => {
     const table = createTextureTable();
     const handle = table.register(ent(3), { width: 640, height: 480, srgb: false });
+    table.realize(handle, fakeTexture("stable"));
     expect(table.unregister(ent(3))).toBe(true);
     expect(table.unregister(ent(3))).toBe(false);
     expect(table.stableOf(ent(3))).toBe(NONE);
     expect(table.drain()).toEqual([handle]);
+  });
+
+  /**
+   * The table is keyed by entity and has no view of the world, so a caller that
+   * must reconcile registrations against LIFE — Residency's `world.reset()`
+   * sweep, whose dead entities never reach the removal journal — needs the
+   * owners to iterate.
+   */
+  it("names every entity holding a registration, and forgets one on unregister", () => {
+    const table = createTextureTable();
+    expect(table.stableOwners()).toEqual([]);
+    table.register(ent(3), { width: 8, height: 8, srgb: false });
+    table.register(ent(9), { width: 8, height: 8, srgb: false });
+    expect(new Set(table.stableOwners())).toEqual(new Set([ent(3), ent(9)]));
+
+    table.register(ent(3), { width: 16, height: 16, srgb: false }); // replace, not add
+    expect(new Set(table.stableOwners())).toEqual(new Set([ent(3), ent(9)]));
+    table.unregister(ent(3));
+    expect(table.stableOwners()).toEqual([ent(9)]);
+  });
+});
+
+/**
+ * A registration is not a world change — nothing journals it — so a
+ * change-gated consumer needs a number to compare. Residency's guard compares
+ * this one; without it a producer's `register` reached the world only when some
+ * unrelated write happened to wake the walk.
+ */
+describe("the revision counter", () => {
+  it("counts registers and unregisters, and nothing else", () => {
+    const table = createTextureTable();
+    const at0 = table.revision();
+
+    const handle = table.register(ent(3), { width: 8, height: 8, srgb: false });
+    expect(table.revision()).not.toBe(at0);
+    const afterRegister = table.revision();
+
+    // Everything that is NOT a registration leaves it alone.
+    table.pages();
+    table.own(16, 16);
+    table.retain(handle);
+    table.release(handle);
+    table.setPageLayers(3);
+    table.drain();
+    expect(table.revision()).toBe(afterRegister);
+
+    table.register(ent(3), { width: 16, height: 16, srgb: false }); // a replace counts
+    const afterReplace = table.revision();
+    expect(afterReplace).not.toBe(afterRegister);
+
+    expect(table.unregister(ent(9))).toBe(false); // dropped nothing…
+    expect(table.revision(), "an unregister that dropped nothing is not a change").toBe(afterReplace);
+    table.unregister(ent(3));
+    expect(table.revision()).not.toBe(afterReplace);
+  });
+
+  it("counts up past a dispose, so a stale number never reads as unchanged", () => {
+    const table = createTextureTable();
+    table.register(ent(3), { width: 8, height: 8, srgb: false });
+    const before = table.revision();
+    table.dispose();
+    expect(table.revision()).not.toBe(before);
   });
 });
 

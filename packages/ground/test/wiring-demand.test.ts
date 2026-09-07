@@ -17,11 +17,16 @@ import {
   Camera,
   PAUSED_SURFACE_DEMAND,
   Position,
+  PrefabId,
   Size,
   SurfaceDemand,
   Viewport,
   createCompositorSourceRegistry,
+  createEngine,
+  createWidgetEquipSystem,
   createWorld,
+  defineWidget,
+  p,
   type Entity,
   type SurfaceDemandValue,
 } from "@ice/core";
@@ -153,5 +158,80 @@ describe("the binder's demand, when the caller wires none", () => {
       wired.domSources.sync(frame);
     }
     expect(wired.domSources.copies()).toBe(settled);
+  });
+});
+
+// Module scope: strata's schema registry is process-global and throws on a
+// duplicate name.
+const EquippedCard = defineWidget({
+  type: "wd:equipped",
+  props: { title: p.string({ default: "" }) },
+  surface: "dom",
+  component: null,
+});
+
+/**
+ * THE EQUIP DEFAULT, WHERE IT IS OBSERVABLE (the Phase A review's erratum on
+ * D2). The clamp's default used to be `paused`, and this is the host where that
+ * mattered: no Demand system is installed, so nothing ever writes the component
+ * again, and the binder read a real `paused` off an equipped card and parked it
+ * FOREVER. The wiring's `undefined` branch could not save it — `undefined`
+ * means "no component", and an equipped widget has one.
+ *
+ * `live/60` is what such a host got before A1a existed, so this is also the
+ * no-regression statement for the composited profile's predecessor.
+ */
+describe("an equipped card in a host that installs no Demand system", () => {
+  it("is live at 60 through the binder, not parked", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    engine.addSystems("derive", createWidgetEquipSystem(world));
+    world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    world.setResource(Viewport, { w: 800, h: 600, dpr: 2 });
+
+    const card = world.spawn({
+      components: [
+        [PrefabId, { id: EquippedCard.prefab.id }],
+        [Position, { x: 0, y: 0 }],
+        [Size, { w: 100, h: 60 }],
+      ],
+    });
+    engine.step(16); // equip stamps the six at the derive flush
+
+    const stamped = world.get(card, SurfaceDemand);
+    expect(stamped, "the card really is equipped").toBeDefined();
+    expect(stamped).toEqual({ mode: "live", fpsBucket: 60, interactive: false });
+
+    const registry = createCompositorSourceRegistry();
+    const host = { id: 0 };
+    registry.register(card, { kind: "dom", host });
+    // A driven clock, so "live at 60" is a bucket the test can actually clear
+    // rather than a race with `performance.now()`.
+    let clock = 0;
+    const wired = createCompositorWiring({
+      world,
+      device: fakeDevice(),
+      registry,
+      target: {
+        format: "bgra8unorm",
+        getCurrentTexture: () => ({ createView: () => ({}) }) as unknown as GPUTexture,
+        size: () => ({ width: 800, height: 600, dpr: 2 }),
+      },
+      atlas: { firstPageSize: { width: 1024, height: 1024 }, now: () => clock },
+    });
+
+    wired.domSources.sync(frame);
+    const settled = wired.domSources.copies();
+    expect(settled).toBe(1);
+
+    // A repaint is honoured, over and over: this card is not parked. Under the
+    // old `paused` default this loop ended at `copies() === settled`, forever.
+    for (let i = 0; i < 5; i++) {
+      clock += 20; // past the 60 fps bucket
+      wired.domSources.markDirtyHosts([host as unknown as Element]);
+      wired.domSources.sync(frame);
+    }
+    expect(wired.domSources.copies()).toBe(settled + 5);
+    expect(wired.domSources.throttled(), "and nothing was ever throttled").toBe(0);
   });
 });

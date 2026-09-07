@@ -166,12 +166,16 @@ describe("the 12-card rehearsal: grab → move → release → settle", () => {
     expect(b.allocator.held()).toBe(1);
 
     // ── The window expires. The demotion gives the slot back and zeroes the ref
-    // in one step, and the atlas comes back to nothing.
+    // in one step, and the atlas comes back to nothing — layer included. A run
+    // that freed a slot opens the memory door itself, so the board that emptied
+    // is not still holding a layer nobody is in (the Phase A review's fix: the
+    // budget loop could never open it at the default settings).
     b.demote(dragged);
     b.step();
     expect(b.refOf(dragged)).toEqual({ texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
     expect(b.allocator.held()).toBe(0);
-    expect(b.allocator.retireEmpty(), "the emptied layer is reclaimable").toEqual([0]);
+    expect(b.allocator.layers(), "the emptied layer was reclaimed in the step").toHaveLength(0);
+    expect(b.allocator.retireEmpty(), "…so there is nothing left to retire").toEqual([]);
     for (const e of b.cards) expect(b.holds(e)).toBe(false);
   });
 
@@ -216,16 +220,17 @@ describe("the 12-card rehearsal: grab → move → release → settle", () => {
     const rects = b.cards.map((e) => JSON.stringify(b.refOf(e)));
     expect(new Set(rects).size).toBe(CARDS);
 
-    // The table's `pages` entry tracks the allocator's layer count, which is
-    // what tells B how many array layers to realise.
+    // The table's `pages` entry tracks the allocator's layer COUNT — the array
+    // length, which is what tells B how many array layers to realise.
     const pages = b.refOf(b.cards[0] as Entity).texture;
     expect(b.table.describe(pages)).toMatchObject({ kind: "pages", size: 2048, layers: 1 });
 
     for (const e of b.cards) b.demote(e);
     b.step();
     expect(b.allocator.held()).toBe(0);
-    expect(b.table.describe(pages), "the layer is empty but not yet retired").toMatchObject({
-      layers: 1,
+    expect(b.allocator.layers(), "the emptied layer is retired in the same step").toHaveLength(0);
+    expect(b.table.describe(pages), "and the published array shrinks with it").toMatchObject({
+      layers: 0,
     });
   });
 });

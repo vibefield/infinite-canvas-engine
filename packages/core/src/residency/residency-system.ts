@@ -35,6 +35,16 @@
  * key whose entity is `Visible` or `Retained` — `Retained` being the one tag
  * that replaced both pools' pin refcounts (§4).
  *
+ * The MEMORY door opens on two triggers, not one. The budget loop retires
+ * emptied layers as it evicts — and by itself that is a door that never opens
+ * at rest: `createResidencyStore` derives `maxLayers` from the budget, so a
+ * full atlas is exactly at the budget and never above it (sixteen 16 MB layers
+ * under 256 MB), and an idle board whose cards all demote would hold every
+ * empty layer for the session. So a body run that gave a slot BACK also calls
+ * `retireEmpty()` once, after the walk. A demoted board costs nothing, which is
+ * what "an empty atlas should cost nothing" (the allocator's header) has to
+ * mean for a board that emptied without ever being over budget.
+ *
  * Heat has exactly one writer — the touch pass, which stamps every held key
  * whose entity is `Visible`. A re-place is NOT a use: re-stamping there would
  * make the heat "when residency last looked at this key" rather than "when this
@@ -64,6 +74,26 @@
  * for a card the budget already cannot afford) would answer the budget by
  * exceeding it.
  *
+ * ── The device ceiling (D11, ruled at the Phase A review) ──────────────────
+ * §9 Q10 covers whether a slot FITS A LAYER; it says nothing about whether the
+ * destination can exist at all. Under the `band` strategy `geometry()` asks for
+ * `size × band × dpr`, and a 2000-unit card at band 16 on a dpr-2 display asks
+ * for 64,000² — past `maxTextureDimension2D` on every adapter there is, and 16
+ * GB in `committedBytes()` for a texture no device would create. So an `own`
+ * request larger than {@link ResidencySystemOptions.maxTextureSize} on either
+ * axis is CLAMPED, and the budget counts the clamped size.
+ *
+ * Clamped UNIFORMLY, never per-axis — the old binder's `clampToPage` rule
+ * (`ground/src/compositor/dom-source-binder.ts`), for its reason: the compose
+ * pass maps the whole texture onto the card's rect, so a per-axis clamp would
+ * SQUASH a wide card's picture while a uniform one only lowers its resolution.
+ * The default, 8192, is the floor `maxTextureDimension2D` is guaranteed to
+ * reach on every WebGPU adapter (the `DEFAULT_MAX_PAGE_SIZE` precedent in
+ * `ground/src/atlas-allocator.ts`); a profile that has queried its real adapter
+ * limit should pass it. B5/B6 may replace the clamp with a TILED destination if
+ * a rig shows the resolution loss matters — the clamp is the honest floor until
+ * one does, not the final answer.
+ *
  * ── The gate ───────────────────────────────────────────────────────────────
  * A real `runIf` over the churn guard, never a body early-out: this system
  * declares `access.write`, and strata blanket-stamps a declared write for any
@@ -73,6 +103,15 @@
  * when any kind rasters `crisp`, whose `slotSize` is a function of the live
  * zoom (under the default `band` strategy it is not, and a pan or a zoom inside
  * a band must not wake this system at all).
+ *
+ * It also fires on the TABLE's revision. A producer calling `table.register`
+ * changes no cell and no tag, so nothing journals it — the video card whose
+ * destination has just appeared would sit at `texture = 0` until an unrelated
+ * write happened to wake the walk (§9 Q5's door opens from OUTSIDE the world).
+ * Comparing `table.revision()` is how it is noticed. The death pass's own
+ * `unregister` bumps it too, so a despawned video surface costs one extra full
+ * walk on the following frame — a walk that writes nothing, and the price of
+ * one number instead of a second journal.
  */
 import { geometry, ZOOM_BANDS, type RasterStrategy } from "@ice/kernel";
 import type { Entity, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
@@ -102,8 +141,35 @@ export const DEFAULT_BYTES_PER_PIXEL = 4;
  */
 export const DEFAULT_RESIDENCY_BUDGET_BYTES = 256 * 1024 * 1024;
 
+/**
+ * The largest `own` texture either axis may ask for, in device px (D11). 8192
+ * is the floor `maxTextureDimension2D` is guaranteed to reach on every WebGPU
+ * adapter — the same number and the same reason as `DEFAULT_MAX_PAGE_SIZE` in
+ * `ground/src/atlas-allocator.ts`. A profile that has queried its real adapter
+ * limit should pass it instead.
+ */
+export const DEFAULT_MAX_TEXTURE_SIZE = 8192;
+
 type SurfaceKindLabel = "dom" | "gl" | "video";
 const KINDS: readonly SurfaceKindLabel[] = ["dom", "gl", "video"];
+
+/**
+ * Hold a request inside what a device can actually create, scaled UNIFORMLY —
+ * the old binder's `clampToPage` rule (`dom-source-binder.ts`) and its reason:
+ * the compose pass maps the WHOLE texture onto the card's rect, so a per-axis
+ * clamp squashes the picture while a uniform one only lowers its resolution,
+ * which is what a card past the device limit has to give up.
+ */
+function clampToDevice(
+  width: number,
+  height: number,
+  maxSide: number,
+): { readonly width: number; readonly height: number } {
+  const longest = Math.max(width, height);
+  if (longest <= maxSide) return { width, height };
+  const k = maxSide / longest;
+  return { width: Math.max(1, Math.floor(width * k)), height: Math.max(1, Math.floor(height * k)) };
+}
 
 export interface ResidencySystemOptions {
   readonly table: TextureTable;
@@ -111,6 +177,12 @@ export interface ResidencySystemOptions {
   /** Evict cold keys until committed bytes fit. Default {@link DEFAULT_RESIDENCY_BUDGET_BYTES}. */
   readonly budgetBytes?: number;
   readonly bytesPerPixel?: number;
+  /**
+   * Device ceiling for an `own` texture, per axis, in device px (D11). Default
+   * {@link DEFAULT_MAX_TEXTURE_SIZE}. A larger request is scaled down
+   * uniformly and the budget counts the clamped size — see the header.
+   */
+  readonly maxTextureSize?: number;
   /**
    * LRU heat. Defaults to a per-run counter rather than a wall clock: the LRU
    * needs an ORDER, not a time, and a counter is monotonic by construction and
@@ -152,6 +224,7 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
   const { table, allocator } = opts;
   const budgetBytes = opts.budgetBytes ?? DEFAULT_RESIDENCY_BUDGET_BYTES;
   const bytesPerPixel = opts.bytesPerPixel ?? DEFAULT_BYTES_PER_PIXEL;
+  const maxTextureSize = opts.maxTextureSize ?? DEFAULT_MAX_TEXTURE_SIZE;
   const raster = opts.raster ?? ((): RasterStrategy => "band");
   const layerBytes = allocator.layerSize * allocator.layerSize * bytesPerPixel;
 
@@ -176,6 +249,7 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
 
   let lastDpr: number | undefined;
   let lastZoom: number | undefined;
+  let lastRevision: number | undefined;
   const guard = makeChurnGuard(
     world,
     {
@@ -186,12 +260,28 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
     () => {
       const dpr = world.getResource(Viewport)?.dpr;
       const zoom = world.getResource(Camera)?.zoom;
-      const changed = dpr !== lastDpr || (zoomMatters && zoom !== lastZoom);
+      // A registration is not a world change — see the header on the gate.
+      const revision = table.revision();
+      const changed =
+        dpr !== lastDpr || (zoomMatters && zoom !== lastZoom) || revision !== lastRevision;
       lastDpr = dpr;
       lastZoom = zoom;
+      lastRevision = revision;
       return changed;
     },
   );
+
+  /**
+   * Whether this body run gave an ATLAS slot back. Only an atlas slot can empty
+   * a layer, and only an emptied layer is memory the door can return — so this
+   * is what decides whether `retireEmpty()` is worth a call after the walk.
+   */
+  let freedSlot = false;
+
+  /** The slot door, with the memory door's trigger. */
+  function freeAtlasSlot(key: ResidencyKey): void {
+    if (allocator.free(key)) freedSlot = true;
+  }
 
   /** Give up a key's destination: its atlas slot, or its private texture's reference. */
   function releaseKey(key: ResidencyKey): void {
@@ -199,18 +289,34 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
     if (slot === undefined) return;
     held.delete(key);
     if (slot.own !== NO_TEXTURE) table.release(slot.own);
-    else allocator.free(key);
+    else freeAtlasSlot(key);
   }
 
   function releaseEveryKeyOf(e: Entity): void {
     for (const band of ZOOM_BANDS) releaseKey(packKey(e, band));
   }
 
+  /** A private texture's own bytes; 0 for an atlas slot, whose layer is charged whole. */
+  function ownBytes(slot: HeldSlot | undefined): number {
+    if (slot === undefined || slot.own === NO_TEXTURE) return 0;
+    return slot.width * slot.height * bytesPerPixel;
+  }
+
+  /**
+   * Walks every live layer and every held key, so it is counted ONCE per body
+   * run: the budget loop then subtracts what each eviction gave back (exactly
+   * `ownBytes` of the victim, plus `layerBytes` per layer the retire took),
+   * rather than recomputing this — `allocator.layers()` builds a view and a
+   * `pageWaste` per layer, which is an instrument, not a loop condition.
+   *
+   * LIVE layers, not `layerCount()`: pixels commit per layer on first write, so
+   * the hole a retire can leave in the id set costs nothing. `layerCount()` is
+   * the ARRAY LENGTH — what a card's `layer` indexes — and that is published,
+   * not charged.
+   */
   function committedBytes(): number {
     let bytes = allocator.layers().length * layerBytes;
-    for (const slot of held.values()) {
-      if (slot.own !== NO_TEXTURE) bytes += slot.width * slot.height * bytesPerPixel;
-    }
+    for (const slot of held.values()) bytes += ownBytes(slot);
     return bytes;
   }
 
@@ -266,8 +372,20 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
     ctx.edit(e).set(TextureRef, { ...next });
   }
 
-  /** Mint or reuse this key's private texture, sized in device px. */
-  function ownFor(key: ResidencyKey, e: Entity, band: number, w: number, h: number): TextureHandle {
+  /**
+   * Mint or reuse this key's private texture, sized in device px and held
+   * inside the device ceiling (D11 — the header's "device ceiling" note). The
+   * CLAMPED size is what the key records, so the reuse test, the budget and the
+   * table entry all name one number.
+   */
+  function ownFor(
+    key: ResidencyKey,
+    e: Entity,
+    band: number,
+    width: number,
+    height: number,
+  ): TextureHandle {
+    const { width: w, height: h } = clampToDevice(width, height, maxTextureSize);
     const slot = held.get(key);
     if (slot !== undefined && slot.own !== NO_TEXTURE && slot.width === w && slot.height === h) {
       return slot.own;
@@ -303,7 +421,7 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
       // A refused RE-slot restores the key at its old size (the allocator's own
       // contract), so the allocator can still be holding it. Give it back
       // explicitly rather than leaving a slot no side table knows about.
-      allocator.free(key);
+      freeAtlasSlot(key);
       held.delete(key);
       return NO_DESTINATION; // honest: no destination this frame
     }
@@ -391,6 +509,7 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
       const work = guard.take();
       if (work === undefined) return; // runIf false — unreachable with the guard wired
       frame++;
+      freedSlot = false;
 
       // Death first: a despawned entity's components are gone, so there is no
       // ref to zero — only destinations to give back, and the producer's
@@ -408,6 +527,26 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
       }
 
       if (work.full) {
+        // THE RESET SWEEP. `world.reset()` reports `reset: true` and NO
+        // removals — strata subsumes the journal into one flag — and the guard
+        // collapses that into `full`, so the death pass above never sees the
+        // generation that just died. Without this, every key, every `refHandle`
+        // reference and every registration of the old world survives it: the
+        // allocator's slots, the table's counts and the layers they committed
+        // are pinned for the session, by entity handles that can never come
+        // back (a reset bumps every generation). So a full run reconciles the
+        // side tables against LIFE, and releases exactly what a death releases.
+        for (const [key, slot] of [...held]) {
+          if (!ctx.isAlive(slot.entity)) releaseKey(key);
+        }
+        for (const [e, handle] of [...refHandle]) {
+          if (ctx.isAlive(e)) continue;
+          table.release(handle);
+          refHandle.delete(e);
+        }
+        for (const owner of table.stableOwners()) {
+          if (!ctx.isAlive(owner)) table.unregister(owner);
+        }
         ctx.query(residentQ).each((b) => {
           for (const r of b) resolve(ctx, b.entity(r));
         });
@@ -418,19 +557,33 @@ export function createResidencySystem(world: World, opts: ResidencySystemOptions
         }
       }
 
+      // The memory door, on the walk's own account. The budget loop below can
+      // never open it at the default settings — `maxLayers` is derived FROM the
+      // budget, so a full atlas sits exactly at it and never above — and an
+      // idle board whose cards all demoted would hold every empty layer for the
+      // session. A run that gave a slot back gets one retire.
+      if (freedSlot) allocator.retireEmpty();
+
       // Heat, then the budget. Touching first is what keeps this frame's own
       // work off the eviction list.
       const stamp = now();
       for (const slot of held.values()) {
         if (ctx.isAlive(slot.entity) && ctx.hasTag(slot.entity, Visible)) slot.lastUsedMs = stamp;
       }
-      while (committedBytes() > budgetBytes) {
+      let committed = committedBytes();
+      while (committed > budgetBytes) {
         const victim = coldestEvictable(ctx);
         if (victim === undefined) break;
+        const freed = ownBytes(held.get(victim));
         evict(ctx, victim);
-        allocator.retireEmpty(); // the memory door: only a retired layer gives bytes back
+        // The memory door: only a retired layer gives bytes back. Both terms
+        // are exact, which is what lets the total be carried instead of rebuilt.
+        committed -= freed + allocator.retireEmpty().length * layerBytes;
       }
-      table.setPageLayers(allocator.layers().length);
+      // The ARRAY LENGTH the GPU needs, not the live count: a retire can leave
+      // the live ids sparse, and a card naming layer 2 of a two-layer array
+      // samples out of bounds without a word.
+      table.setPageLayers(allocator.layerCount());
     },
     { name: "residency", access: { write: [TextureRef] }, runIf: guard.runIf },
   );

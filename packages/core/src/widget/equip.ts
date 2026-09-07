@@ -66,14 +66,20 @@ export function createWidgetEquipSystem(world: World): System {
           for (const tag of widget.capabilityTags) ctx.addTag(e, tag);
           // The presentation facts, at their safe defaults (design-013 D2).
           // Only the two the TYPE decides carry real values: the kind, and the
-          // target that kind can actually present on. Everything else starts
-          // claiming nothing — demand paused/0 so the clamp owes no uploads
-          // before cull has spoken, band 0 ("never banded"), texture 0 (= no
-          // destination, the NO_ENTITY precedent).
+          // target that kind can actually present on. Band starts at 0 ("never
+          // banded") and the texture at 0 (no destination, the NO_ENTITY
+          // precedent) — both states that claim nothing.
+          //
+          // BOTH demand components start `live/60`, which is what a card got
+          // before demand existed (the erratum in `catalog/surface.ts` — D2's
+          // `paused` clamp default named a frame between equip and the first
+          // clamp that does not exist, and parked every card in a host that
+          // installs no Demand system). A host that DOES install it overwrites
+          // this in `present:infra`, in this same tick.
           ctx.addComponent(e, SurfaceKind, { kind: widget.surface });
           ctx.addComponent(e, SurfaceTarget, { target: widget.surface === "dom" ? "dom" : "gpu" });
           ctx.addComponent(e, RequestedDemand, { mode: "live", fpsBucket: 60, interactive: false });
-          ctx.addComponent(e, SurfaceDemand, { mode: "paused", fpsBucket: 0, interactive: false });
+          ctx.addComponent(e, SurfaceDemand, { mode: "live", fpsBucket: 60, interactive: false });
           ctx.addComponent(e, SurfaceBand, { band: 0 });
           ctx.addComponent(e, TextureRef, { texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
           // RUNTIME pre-attached behaviors (design-009 §6) are riders, exactly

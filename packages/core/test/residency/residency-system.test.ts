@@ -420,13 +420,33 @@ describe("the destinations, per kind", () => {
     r.step(2);
     expect(r.refOf(e).texture).toBe(0);
 
+    // NOTHING ELSE CHANGES. A `register` is not a world change — no cell, no
+    // tag, nothing journals — so the guard notices it through the table's own
+    // revision or not at all. (This test used to write `Size` to force the
+    // walk; that workaround WAS the defect, standing in for the wake.)
     const handle = r.table.register(e, { width: 1920, height: 1080, srgb: true });
-    r.world.edit(e).set(Size, { w: 81, h: 48 }); // any journaled change wakes the walk
     r.step();
     const ref = r.refOf(e);
+    expect(r.ran("residency"), "the registration woke it").toBe(true);
     expect(ref.texture).toBe(handle);
     expect([ref.u0, ref.v0, ref.u1, ref.v1]).toEqual([0, 0, 1, 1]);
     expect(r.allocator.held()).toBe(0); // the producer owns it; residency allocates nothing
+
+    // …and an unregister takes it back the same way.
+    r.table.unregister(e);
+    r.step();
+    expect(r.refOf(e).texture).toBe(0);
+  });
+
+  it("a settled board with no registration does not wake for one that never comes", () => {
+    // The control: the revision compare must not become a per-frame wake.
+    const r = rig();
+    r.card({ kind: "video" });
+    r.card({ w: 8, h: 8 });
+    r.step(4);
+    expect(r.ran("residency")).toBe(false);
+    r.step(3);
+    expect(r.ran("residency")).toBe(false);
   });
 
   it("a dom-target card holds nothing, and gives back every key when it flips", () => {
@@ -442,6 +462,58 @@ describe("the destinations, per kind", () => {
     r.step();
     expect(r.refOf(e)).toEqual({ texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
     expect(r.allocator.held()).toBe(0); // EVERY key, not just the current band's
+  });
+
+  /**
+   * The DEVICE ceiling (D11), which is a different question from Q10's layer
+   * FIT. Under `band`, `geometry()` asks for `size × band × dpr`, so a big card
+   * at a deep zoom asks for a texture no adapter can create — and, before the
+   * clamp, charged the budget for it.
+   */
+  it("clamps an own texture to the device limit, uniformly", () => {
+    const r = rig();
+    const e = r.card({ w: 2000, h: 1000 });
+    r.zoomTo(16); // band 16, dpr 2 → 64,000 × 32,000 asked for
+    r.step(3);
+    expect(r.bandOf(e)).toBe(16);
+
+    const ref = r.refOf(e);
+    // 8192/64000 on BOTH axes — the aspect ratio survives, the resolution does
+    // not. A per-axis clamp would give 8192 × 8192 and squash the picture, and
+    // the compose pass maps the whole texture onto the card's rect.
+    expect(r.table.describe(ref.texture)).toEqual({
+      kind: "own",
+      width: 8192,
+      height: 4096,
+      srgb: false,
+    });
+    expect([ref.u0, ref.v0, ref.u1, ref.v1]).toEqual([0, 0, 1, 1]);
+    expect(r.checkInvariant(e)).toBeNull();
+  });
+
+  it("charges the budget the CLAMPED size, not the asked-for one", () => {
+    // 64,000 × 32,000 × 4 is 8.2 GB; the clamped texture is 8192 × 4096 × 4 =
+    // 134 MB. Under a 512 MB budget the first number is over and the second is
+    // not, so this fails unless the clamp reached the ACCOUNTING and not just
+    // the mint. The card is culled, which is the only state the budget may take.
+    const r = rig({ budgetBytes: 512 * 1024 * 1024 });
+    const e = r.card({ w: 2000, h: 1000 });
+    r.zoomTo(16);
+    r.step(3);
+    const held = r.refOf(e).texture;
+    expect(r.table.describe(held)).toMatchObject({ width: 8192, height: 4096 });
+
+    r.cull(e);
+    r.step(3);
+    expect(r.refOf(e).texture, "134 MB fits the budget; 8.2 GB would not").toBe(held);
+  });
+
+  it("leaves a request inside the limit exactly as asked", () => {
+    // The control: the clamp must be a ceiling, not a resize.
+    const r = rig();
+    const e = r.card({ kind: "gl", w: 300, h: 100 });
+    r.step(2);
+    expect(r.table.describe(r.refOf(e).texture)).toMatchObject({ width: 600, height: 200 });
   });
 
   it("a resize at the same band re-slots in place", () => {
@@ -555,6 +627,91 @@ describe("the budget, and what it may never take", () => {
     }
   });
 
+  /**
+   * THE MEMORY DOOR AT THE DEFAULT BUDGET. `createResidencyStore` derives
+   * `maxLayers` from the budget, so a full atlas sits exactly AT the budget and
+   * never above it — sixteen 16 MB layers under 256 MB — and a door that only
+   * opens inside `while (committed > budget)` therefore never opens at all. An
+   * idle board whose cards all demoted held every empty layer for the session.
+   */
+  it("retires the layers a demoted board emptied, with no budget pressure at all", () => {
+    const r = rig({ maxLayers: 8, budgetBytes: GENEROUS });
+    const cards = Array.from({ length: 12 }, () => r.card({ w: 125, h: 125 }));
+    r.step(2);
+    expect(r.allocator.layers(), "four 250² slots to a 512² layer").toHaveLength(3);
+    expect(r.allocator.layerCount()).toBe(3);
+
+    for (const e of cards) r.setTarget(e, "dom");
+    r.step();
+
+    expect(r.allocator.held()).toBe(0);
+    expect(r.allocator.layers(), "an empty atlas costs nothing").toHaveLength(0);
+    expect(r.allocator.layerCount()).toBe(0);
+    expect(r.table.describe(r.table.pages())).toMatchObject({ layers: 0 });
+  });
+
+  it("takes only EMPTY layers — a partly-freed one stays, cards and all", () => {
+    // The control on the door: opening it on every run that freed a slot is
+    // only safe because it takes nothing that is still in use. A retire is a
+    // realloc for whoever realises these layers.
+    const r = rig({ maxLayers: 8 });
+    const cards = [r.card({ w: 125, h: 125 }), r.card({ w: 125, h: 125 })];
+    r.step(2);
+    expect(r.allocator.layers()).toHaveLength(1);
+    const survivor = r.refOf(cards[1] as Entity);
+
+    r.setTarget(cards[0] as Entity, "dom"); // one slot back; the layer still holds the other
+    r.step();
+    expect(r.allocator.held()).toBe(1);
+    expect(r.allocator.layers(), "the layer is not empty, so it stays").toHaveLength(1);
+    expect(r.refOf(cards[1] as Entity), "and the card on it is untouched").toEqual(survivor);
+    expect(r.checkInvariant(cards[1] as Entity)).toBeNull();
+  });
+
+  /**
+   * The budget loop stops at "under budget", and a RETIRE is what brings it
+   * there — so the loop's running total has to fall by exactly the layer the
+   * retire took, or it evicts past the point it needed to. Cold keys are the
+   * whole value of retention: taking one more than the budget asked for throws
+   * away a cache hit for nothing.
+   */
+  it("stops the moment a retire brings it under budget, and takes no cold key past that", () => {
+    // Two 512² layers cost 2 MiB; the budget is 1.5. FIVE cold keys are on
+    // offer when the loop finally runs — layer 1's four, and one on layer 0 —
+    // and emptying layer 1 retires it, which is what brings the total under.
+    // The fifth must survive: a cold key IS the cache hit retention exists for.
+    const r = rig({ maxLayers: 2, budgetBytes: 1.5 * 1024 * 1024 });
+    const cards = Array.from({ length: 8 }, () => r.card({ w: 125, h: 125 }));
+    r.step(2);
+    expect(r.allocator.layers()).toHaveLength(2);
+    const onLayer1 = cards.filter((e) => r.refOf(e).layer === 1);
+    const coldOnLayer0 = cards.find((e) => r.refOf(e).layer === 0) as Entity;
+    expect(onLayer1).toHaveLength(4);
+
+    // `Retained` holds the whole board while the heat is staggered, so the
+    // budget loop cannot run PIECEMEAL as each card goes cold — it has to face
+    // all five at once, which is the only arrangement where "one eviction too
+    // many" is visible at all.
+    for (const e of cards) r.world.addTag(e, Retained);
+    r.step();
+    for (const e of onLayer1) r.cull(e); // layer 1's four freeze coldest…
+    r.step(3);
+    r.cull(coldOnLayer0); // …and this one freezes warmer
+    r.step(2);
+    const survivor = r.refOf(coldOnLayer0);
+    expect(survivor.texture, "still held: Retained is never evicted").not.toBe(0);
+
+    for (const e of cards) r.world.removeTag(e, Retained);
+    r.step(2);
+
+    expect(r.allocator.layers().map((l) => l.id), "layer 1 retired").toEqual([0]);
+    for (const e of onLayer1) expect(r.refOf(e).texture, "the four that paid for it").toBe(0);
+    expect(
+      r.refOf(coldOnLayer0),
+      "1 MiB is under the budget, so the loop had no reason to take this one",
+    ).toEqual(survivor);
+  });
+
   it("a card the budget cannot serve gets no destination, not a private texture", () => {
     // Every slot belongs to a Visible card, so there is nothing to evict and
     // nothing to open. The honest answer is texture 0, retried next change.
@@ -568,6 +725,54 @@ describe("the budget, and what it may never take", () => {
     expect(r.refOf(late).texture).toBe(0);
     expect(r.table.describe(r.refOf(late).texture)).toBeUndefined();
     expect(r.allocator.held(), "and it took nobody's slot").toBe(4);
+  });
+});
+
+/**
+ * `TextureRef.layer` is the index the compose pass samples in the ONE bound
+ * `texture_2d_array`, and `TextureTable.setPageLayers` is what tells a realiser
+ * how long that array is. Publishing the LIVE layer count is therefore wrong
+ * the moment a retire leaves the ids sparse: two live layers `{0, 2}` and a
+ * card holding layer 2 is an out-of-bounds sample, with nothing anywhere to say
+ * so — no validation error, no refusal, just whatever layer 2 does not hold.
+ */
+describe("the published layer count", () => {
+  it("spans the highest live id after a middle layer retires", () => {
+    // 125 world px at band 1, dpr 2 = 250² device: four to a 512² layer, so
+    // twelve cards make layers 0, 1 and 2. One layer is 1 MiB; the budget sits
+    // between two and three of them, so the loop evicts until one retires.
+    const r = rig({ maxLayers: 8, budgetBytes: 2.5 * 1024 * 1024 });
+    const cards = Array.from({ length: 12 }, () => r.card({ w: 125, h: 125 }));
+    r.step(2);
+    expect(r.allocator.layers().map((l) => l.id)).toEqual([0, 1, 2]);
+
+    const onLayer = (id: number): Entity[] =>
+      cards.filter((e) => r.refOf(e).layer === id && r.refOf(e).texture !== 0);
+    const middle = onLayer(1);
+    expect(middle, "the fixture wants exactly four cards on layer 1").toHaveLength(4);
+
+    // Cull exactly those four: the only keys the LRU is allowed to take. It
+    // takes them, layer 1 empties, and the retire is what brings the bytes
+    // under budget — the ids are now {0, 2}.
+    for (const e of middle) r.cull(e);
+    r.step(3);
+
+    expect(r.allocator.layers().map((l) => l.id)).toEqual([0, 2]);
+    expect(r.allocator.layers(), "two layers live…").toHaveLength(2);
+    expect(r.allocator.layerCount(), "…spanning three array indices").toBe(3);
+
+    const highestNamed = Math.max(
+      ...cards.map((e) => (r.refOf(e).texture === 0 ? -1 : r.refOf(e).layer)),
+    );
+    expect(highestNamed, "a live card still names layer 2").toBe(2);
+
+    const pages = r.table.describe(r.table.pages());
+    const published = pages?.kind === "pages" ? pages.layers : -1;
+    expect(published, "the array must span every layer a live card names").toBeGreaterThanOrEqual(
+      highestNamed + 1,
+    );
+    expect(published).toBe(3);
+    for (const e of cards) expect(r.checkInvariant(e)).toBeNull();
   });
 });
 
@@ -627,9 +832,55 @@ describe("the states nothing else visits", () => {
     const second = r.refOf(e).texture;
     expect(second).not.toBe(first);
     expect(r.table.describe(second)).toMatchObject({ kind: "own", width: 1000 });
-    // Both references to the old handle are gone: the key's and the ref's.
+    // Both references to the old handle are gone: the key's and the ref's — and
+    // with nothing holding it and no realisation behind it, the table forgets it
+    // outright rather than queueing a destroy for a GPU object that never
+    // existed (the forget rule). A resize DRAG is thirty of these a second.
     expect(r.table.refs(first)).toBe(0);
-    expect(r.table.drain(), "the replaced texture is destroyable").toContain(first);
+    expect(r.table.describe(first), "the replaced texture is gone").toBeUndefined();
+    expect(r.table.drain(), "nothing to destroy — it was never realised").toEqual([]);
+  });
+
+  /**
+   * The leak this closes. Nothing drains the table in Phase A (no reflector
+   * exists yet) and `ownFor` re-mints on every size change, so a resize drag on
+   * a gl island used to add one dead entry per frame — to `entries`, `counts`
+   * AND `zeroed`, forever. The table exposes no size, so this counts what it
+   * still ANSWERS for, which is the same question a leak makes loud.
+   */
+  it("a 30-frame resize drag on a gl island leaves the table at one live entry", () => {
+    const r = rig();
+    const e = r.card({ kind: "gl", w: 40, h: 40 });
+    r.step(2);
+
+    for (let f = 0; f < 30; f++) {
+      r.world.edit(e).set(Size, { w: 40 + f, h: 40 });
+      r.step();
+    }
+
+    const live = Array.from({ length: 256 }, (_, i) => i + 1).filter(
+      (h) => r.table.describe(h) !== undefined,
+    );
+    // The island's current own texture, and nothing else. `pages` is never
+    // minted here — an island shares no page.
+    expect(live).toEqual([r.refOf(e).texture]);
+    expect(r.table.drain(), "and none of the dead ones is a destroy-list entry").toEqual([]);
+  });
+
+  it("a REALISED handle released to zero still reaches drain() exactly once", () => {
+    // The control for the case above: the forget rule must not swallow the
+    // destroy list B's reflectors depend on.
+    const r = rig();
+    const e = r.card({ kind: "gl", w: 40, h: 40 });
+    r.step(2);
+    const first = r.refOf(e).texture;
+    r.table.realize(first, { label: "island" } as unknown as GPUTexture);
+
+    r.world.edit(e).set(Size, { w: 90, h: 90 });
+    r.step(2);
+    expect(r.refOf(e).texture).not.toBe(first);
+    expect(r.table.drain()).toEqual([first]);
+    expect(r.table.drain(), "exactly once").toEqual([]);
   });
 });
 
@@ -647,6 +898,12 @@ describe("death", () => {
     const glHandle = r.refOf(gl).texture;
     expect(r.allocator.held()).toBe(2);
     expect(r.table.stableOf(vid)).toBe(stable);
+    // Realise both, which is what B's reflectors do, so the destroy list is
+    // what this asserts. Unrealised they would simply be forgotten — correct,
+    // and a weaker statement about the death path.
+    for (const h of [glHandle, stable]) {
+      r.table.realize(h, { label: `h${h}` } as unknown as GPUTexture);
+    }
 
     for (const e of [dom, gl, vid]) r.world.destroy(e);
     r.step();
@@ -656,6 +913,72 @@ describe("death", () => {
     const drained = r.table.drain();
     expect(drained).toContain(glHandle);
     expect(drained).toContain(stable);
+  });
+
+  /**
+   * `world.reset()` is DEATH THAT REPORTS NO REMOVALS. Strata subsumes the
+   * journal into one `reset: true` flag (`changes.ts` Patch Note 004) and the
+   * churn guard collapses that into `full`, so the death pass never runs for
+   * the generation that just died: without the full-run sweep, every atlas
+   * slot, every private texture's two references and every producer
+   * registration of the old world survive it — pinned for the session by
+   * entity handles a reset guarantees can never come back.
+   */
+  it("world.reset() gives back every key, reference and registration", () => {
+    const r = rig();
+    const doms = [r.card({ w: 8, h: 8 }), r.card({ w: 8, h: 8 }), r.card({ w: 8, h: 8 })];
+    const gls = [r.card({ kind: "gl", w: 40, h: 40 }), r.card({ kind: "gl", w: 40, h: 40 })];
+    const vid = r.card({ kind: "video" });
+    const stable = r.table.register(vid, { width: 640, height: 480, srgb: false });
+    r.step(2);
+
+    // What the old world holds: three atlas slots on one layer, two private
+    // textures each held TWICE (the key's reference and the ref's), and one
+    // registration.
+    const glHandles = gls.map((e) => r.refOf(e).texture);
+    expect(r.allocator.held()).toBe(3);
+    expect(r.allocator.layers()).toHaveLength(1);
+    for (const h of glHandles) expect(r.table.refs(h)).toBe(2);
+    expect(r.table.stableOwners()).toEqual([vid]);
+    expect(doms.every((e) => r.refOf(e).texture !== 0)).toBe(true);
+
+    r.world.reset(); // outside tick, as strata requires
+    // A reset clears RESOURCES too, so the board comes back to a world that has
+    // a camera again — which is what a real re-open does.
+    r.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    r.world.setResource(Viewport, { w: 800, h: 600, dpr: 2 });
+    r.step(3);
+
+    expect(r.allocator.held(), "every atlas slot went back").toBe(0);
+    expect(r.allocator.layers(), "and the emptied layer with it").toHaveLength(0);
+    expect(r.allocator.layerCount()).toBe(0);
+    for (const h of glHandles) {
+      // 0 proves BOTH references were given back: the key's, and the one the
+      // dead entity's own `TextureRef` held (which no read could recover — the
+      // component died with the entity).
+      expect(r.table.refs(h), "no reference outlived the world").toBe(0);
+      expect(r.table.describe(h), "and the entry went with them").toBeUndefined();
+    }
+    expect(r.table.stableOwners(), "the producer's registration too").toEqual([]);
+    expect(r.table.stableOf(vid)).toBe(0);
+  });
+
+  it("…and the world that follows a reset allocates from scratch", () => {
+    // Without this, the case above passes for a sweep that broke residency
+    // outright: the point is that the side tables are EMPTY, not dead.
+    const r = rig();
+    r.card({ w: 8, h: 8 });
+    r.step(2);
+    r.world.reset();
+    r.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    r.world.setResource(Viewport, { w: 800, h: 600, dpr: 2 });
+    r.step(2);
+
+    const fresh = r.card({ w: 8, h: 8 });
+    r.step(2);
+    expect(r.refOf(fresh).texture).not.toBe(0);
+    expect(r.allocator.held()).toBe(1);
+    expect(r.checkInvariant(fresh)).toBeNull();
   });
 });
 
@@ -671,6 +994,40 @@ describe("the schedule", () => {
     expect(band).toBeGreaterThanOrEqual(0);
     expect(demand).toBeGreaterThan(band);
     expect(residency).toBeGreaterThan(demand);
+  });
+
+  /**
+   * The remover owns what it BUILT. A store `installSurfaceInfra` made is
+   * unreachable once its systems are gone, so nothing else could free it; a
+   * store the caller passed is the caller's — B2's composited profile will pass
+   * its own table and keep the reference, because its render reflectors turn
+   * handles into `GPUTexture`s and outlive a system swap.
+   */
+  it("the remover never disposes a table the caller passed", () => {
+    const world: World = createWorld();
+    const engine = createEngine(world);
+    engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
+    const table = createTextureTable({ pageSize: 512 });
+    const remove = installSurfaceInfra(engine, {
+      residency: { table, allocator: createLayerAllocator({ layerSize: 512, maxLayers: 2 }) },
+    });
+    engine.enableTelemetry();
+    world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+    world.setResource(Viewport, { w: 800, h: 600, dpr: 2 });
+    engine.step(16);
+
+    const pages = table.pages();
+    const own = table.own(64, 64);
+    remove();
+
+    expect(table.describe(pages), "the caller's atlas survives its systems").toBeDefined();
+    expect(table.describe(own)).toBeDefined();
+    expect(table.stableOf(0 as Entity)).toBe(0);
+    // …and the systems really did go.
+    engine.step(32);
+    expect((engine.lastFrame()?.systems ?? []).map((s) => s.system as string)).not.toContain(
+      "residency",
+    );
   });
 
   it("omitting the residency option installs Band and Demand alone", () => {

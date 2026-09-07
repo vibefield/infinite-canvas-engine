@@ -93,9 +93,16 @@ export function createCompositorWiring(opts: CompositorWiringOptions): Composito
   // the CLAMP the Demand system writes in `present:infra` (visibility folded
   // in at the source), so the parking now follows it by default. A caller that
   // genuinely throttles from somewhere else still passes `atlas.demand` and
-  // wins; `demand-parking.test.ts` keeps that seam. `undefined` for an entity
-  // the clamp has never written leaves the binder's own live-at-60 default,
-  // which is what an un-equipped entity got before this line.
+  // wins; `demand-parking.test.ts` keeps that seam.
+  //
+  // `undefined` here means NO COMPONENT, which means a NON-WIDGET — a port, a
+  // ghost, a chrome entity, anything `widget/equip.ts` does not stamp. Those
+  // keep the binder's own live-at-60 default, which is what they got before
+  // this line. It is NOT the fallback for an equipped card in a host that
+  // installs no Demand system: that card HAS the component, at the equip
+  // default, and the equip default is `live/60` for exactly this reason (the
+  // erratum in `core/catalog/surface.ts`, the Phase A review — it was `paused`,
+  // which parked every card in such a host forever).
   const atlas = opts.atlas ?? {};
   const demandFromWorld = (entity: Entity): SurfaceDemandValue | undefined => {
     const cell = world.get(entity, SurfaceDemand);

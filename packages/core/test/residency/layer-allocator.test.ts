@@ -252,6 +252,56 @@ describe("the two doors", () => {
     expect(ids).toEqual(ids.map((_, i) => i));
   });
 
+  /**
+   * The id set is dense across ALLOCATIONS and not across RETIRES, so the two
+   * numbers are genuinely different and only one of them is the GPU's.
+   * `layers().length` is the LIVE count — what the budget charges for, since a
+   * layer commits its pixels on first write — and `layerCount()` is the ARRAY
+   * LENGTH that spans every id a live slot can name. Publishing the live count
+   * lets a card name index 2 in a two-layer array: an out-of-bounds sample with
+   * nothing to say so.
+   */
+  it("layerCount spans the live ids even when a retire leaves them sparse", () => {
+    const alloc = createLayerAllocator({ layerSize: 512 });
+    expect(alloc.layerCount(), "no layer, no array").toBe(0);
+
+    for (let i = 0; i < 12; i++) alloc.allocate(key(i + 1), sq(250)); // layers 0, 1, 2
+    expect(alloc.layers().map((l) => l.id)).toEqual([0, 1, 2]);
+    expect(alloc.layerCount()).toBe(3);
+
+    // Empty the MIDDLE layer and retire it: {0, 2} live, and the highest live
+    // id is still 2, so the array must still be three long.
+    for (let i = 4; i < 8; i++) alloc.free(key(i + 1));
+    expect(alloc.retireEmpty()).toEqual([1]);
+    expect(alloc.layers().map((l) => l.id)).toEqual([0, 2]);
+    expect(alloc.layers()).toHaveLength(2);
+    expect(alloc.layerCount(), "the array still has to span layer 2").toBe(3);
+
+    // Retiring the TOP layer does shrink it — that is the memory door working.
+    for (let i = 8; i < 12; i++) alloc.free(key(i + 1));
+    expect(alloc.retireEmpty()).toEqual([2]);
+    expect(alloc.layerCount()).toBe(1);
+  });
+
+  it("returns retired ids ASCENDING even when the open order is not id order", () => {
+    // Reuse makes `layers` an OPEN-ordered list, so walking it backwards is not
+    // walking the ids downwards — the doc says ascending, so it sorts.
+    const alloc = createLayerAllocator({ layerSize: 512 });
+    for (let i = 0; i < 16; i++) alloc.allocate(key(i + 1), sq(250)); // layers 0..3
+    for (let i = 4; i < 12; i++) alloc.free(key(i + 1));
+    expect(alloc.retireEmpty()).toEqual([1, 2]); // live {0, 3}, open order [0, 3]
+
+    for (let i = 16; i < 20; i++) alloc.allocate(key(i + 1), sq(250)); // reopens id 1, appended
+    for (let i = 20; i < 24; i++) alloc.allocate(key(i + 1), sq(250)); // reopens id 2, appended
+    expect(alloc.layerCount()).toBe(4);
+
+    // Open order is now [0, 3, 1, 2]; empty ids 3 and 1, which sit at array
+    // positions 1 and 2 — a backwards walk names them 1 then 3.
+    for (let i = 12; i < 20; i++) alloc.free(key(i + 1));
+    expect(alloc.retireEmpty()).toEqual([1, 3]);
+    expect(alloc.layers().map((l) => l.id)).toEqual([0, 2]);
+  });
+
   it("retires every empty layer, keeping none standing", () => {
     const alloc = createLayerAllocator({ layerSize: 512 });
     for (let i = 0; i < 8; i++) alloc.allocate(key(i + 1), sq(250));

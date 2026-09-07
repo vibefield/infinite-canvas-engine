@@ -59,10 +59,20 @@
  * space that only grew would leave holes the GPU array must still span and
  * would never shrink — the memory door would return nothing, which is the whole
  * point of `retireEmpty`. So a retired id is REUSED: a new layer takes the
- * lowest id no live layer holds, and `layers().length` is the array's layer
- * count. Held layers still never renumber, and `retireEmpty` only ever takes a
- * layer with no held slots, so no held slot's layer id can be reissued
- * underneath it.
+ * lowest id no live layer holds. Held layers still never renumber, and
+ * `retireEmpty` only ever takes a layer with no held slots, so no held slot's
+ * layer id can be reissued underneath it.
+ *
+ * **The id set is dense across ALLOCATIONS, not across RETIRES.** Lowest-free
+ * reuse means a fresh layer never opens a hole; retiring one can, and does —
+ * `retireEmpty` takes every empty layer, so emptying the middle of `{0, 1, 2}`
+ * leaves `{0, 2}` live until the next allocation fills the gap. So
+ * `layers().length` is the count of LIVE layers (what the budget charges for,
+ * since a layer commits its pixels on first write) and {@link
+ * LayerAllocator.layerCount} — `max(live id) + 1` — is the ARRAY LENGTH the GPU
+ * needs, the one number that always spans every id a live `TextureRef` can
+ * name. Publish `layerCount()`, never `layers().length`: a card holding layer 2
+ * in a two-layer array is an out-of-bounds sample, silently.
  *
  * The lowest free id is DERIVED from the live set rather than kept in a free
  * pool: one source of truth cannot drift from the other, because there is no
@@ -107,9 +117,19 @@ export const DEFAULT_LAYER_SIZE = 2048;
 /** A packed `(entity, band)` slot key. See the module note on why it is arithmetic. */
 export type ResidencyKey = number;
 
+/**
+ * Band → its index in `ZOOM_BANDS`, built once. `indexOf` over a nine-entry
+ * array is cheap in isolation and not in aggregate: `releaseEveryKeyOf` packs
+ * a key per band on every dom-target visit, so a board demoting on a settle
+ * edge paid nine linear scans per card per frame.
+ */
+const BAND_INDEX: ReadonlyMap<number, number> = new Map(
+  (ZOOM_BANDS as readonly number[]).map((band, index) => [band, index]),
+);
+
 /** The index of a band in `ZOOM_BANDS`. Throws on a value that is not a band. */
 export function bandIndexOf(band: number): number {
-  const index = (ZOOM_BANDS as readonly number[]).indexOf(band);
+  const index = BAND_INDEX.get(band) ?? -1;
   if (index < 0) {
     throw new Error(
       `residency: ${band} is not a zoom band — keys are (entity, band) over [${ZOOM_BANDS.join(", ")}]`,
@@ -221,7 +241,16 @@ export interface LayerAllocator {
   fits(size: SlotSize): boolean;
   /** Held slots, across every layer. */
   held(): number;
+  /** The LIVE layers, ordered by id. Sparse after a retire — see `layerCount`. */
   layers(): LayerView[];
+  /**
+   * `max(live id) + 1`, and `0` when no layer is live: the length of the
+   * `texture_2d_array` that spans every id a live slot can name. This is the
+   * number a compositor allocates and the number Residency publishes through
+   * `TextureTable.setPageLayers` — `layers().length` is the live COUNT, which
+   * a retire can leave below the highest live id.
+   */
+  layerCount(): number;
   /**
    * The memory door: retire every layer with no held slots; returns their ids,
    * ascending. A retired id returns to the pool a new layer draws from.
@@ -377,6 +406,12 @@ export function createLayerAllocator(options: LayerAllocatorOptions = {}): Layer
       });
     },
 
+    layerCount() {
+      let highest = -1;
+      for (const layer of layers) if (layer.id > highest) highest = layer.id;
+      return highest + 1;
+    },
+
     retireEmpty() {
       const retired: number[] = [];
       for (let i = layers.length - 1; i >= 0; i--) {
@@ -385,7 +420,10 @@ export function createLayerAllocator(options: LayerAllocatorOptions = {}): Layer
         layers.splice(i, 1);
         retired.push(layer.id);
       }
-      return retired.reverse();
+      // ASCENDING, as the doc says. `layers` is in OPEN order, not id order —
+      // lowest-free reuse puts a reissued id wherever it was opened — so
+      // walking it backwards is not walking the ids downwards.
+      return retired.sort((a, b) => a - b);
     },
 
     waste() {

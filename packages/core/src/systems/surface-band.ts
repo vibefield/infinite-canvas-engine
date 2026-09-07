@@ -39,6 +39,10 @@
  *    back a cache hit.
  *  - Kind strategy does NOT enter here. Band is the retention key for `band`
  *    and `crisp` alike; `geometry()` is where the strategies differ (D9).
+ *  - Because the query requires `Visible`, D5's dev throw fires only for a card
+ *    ON SCREEN: an illegal `gl` + `dom` pair on a culled card is silent until it
+ *    is shown. Production coerces either way (`effectiveTarget`), so the throw
+ *    is a developer's alarm, never a correctness gate.
  *
  * ── The gate, and what it deliberately does NOT collect ───────────────────
  * The guard is a real `runIf` (`helpers/churn-guard.ts`), never a body

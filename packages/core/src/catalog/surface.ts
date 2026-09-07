@@ -54,9 +54,9 @@
  *     is the only target a gl or video card HAS (see `effectiveTarget`)
  *   RequestedDemand = live/60/false — a kind that has said nothing wants what
  *     it would have got before demand existed
- *   SurfaceDemand = paused/0/false — the CLAMP starts owing nothing. A card is
- *     not visible until cull says so, and a default of live would upload a
- *     board's worth of pixels for the frame between equip and the first clamp
+ *   SurfaceDemand = live/60/false — same reason, one layer down. See the
+ *     erratum below: "safe" here is not "claims nothing", it is "behaves as it
+ *     did before this component existed"
  *   SurfaceBand.band = 0 — "never banded". Not band 1: 1 is a real band the
  *     hysteresis would then hold, and a card would sit at the wrong resolution
  *     rather than obviously at none
@@ -64,6 +64,26 @@
  *     `NO_ENTITY` precedent (catalog/gesture.ts). §5's "ABSENT = no
  *     destination" and §6.4's "a dom card with SurfaceTarget = dom holds none"
  *     both read as `texture === 0`, because the component is never absent.
+ *
+ * ── ERRATUM 2026-09-06 (the Phase A review): SurfaceDemand defaults to LIVE ─
+ * D2 rev 7 chose `paused/0/false` for `SurfaceDemand`, on the argument that a
+ * default of live "would upload a board's worth of pixels for the frame between
+ * equip and the first clamp". THAT FRAME DOES NOT EXIST. Equip's `addComponent`
+ * lands at the `derive` flush and the Demand clamp runs in `present:infra` in
+ * the SAME tick, so no frame is ever composited between the stamp and the first
+ * clamp. And on the equip frame cull has not tagged the card `Visible` yet, so
+ * the clamp yields `paused` for an off-screen card whatever the default was —
+ * the argument's own outcome comes from the clamp, not from the default.
+ *
+ * What the default DOES decide is the one case where the clamp never runs: a
+ * host that installs no Demand system. There `paused` parks every equipped card
+ * FOREVER — the binder reads the component, finds a real `paused`, and throttles
+ * a card nothing will ever un-pause. (The wiring's `undefined` fallback cannot
+ * save it: `undefined` means "no component", and an equipped widget has one.)
+ * `live/60/false` is exactly the pre-A1a behaviour for that host, and costs a
+ * host that DOES install the clamp nothing at all. So both demand components
+ * default to `live/60/false`, and the safe side is the state that changes
+ * nothing, not the state that claims nothing.
  */
 import { enumOf, field } from "@vibecook/strata-ecs";
 import { defineComponent, defineTag } from "../schema/meta";
@@ -116,10 +136,15 @@ export const RequestedDemand = defineComponent("RequestedDemand", {
  * `SurfaceDemandValue`; D3). Culled ⇒ paused ⇒ the producer stops capturing,
  * which is what makes an off-screen animating card genuinely free rather than
  * merely cheap.
+ *
+ * Defaults to `live/60/false`, NOT to the clamp's own resting `paused/0` — the
+ * dated erratum in this module's header has the argument. In one sentence: a
+ * host that installs the Demand system overwrites this in the equip tick, and a
+ * host that does not would park every card forever.
  */
 export const SurfaceDemand = defineComponent("SurfaceDemand", {
-  mode: field(enumOf(["live", "paused"]), { default: "paused" }),
-  fpsBucket: field("u8", { default: 0 }),
+  mode: field(enumOf(["live", "paused"]), { default: "live" }),
+  fpsBucket: field("u8", { default: 60 }),
   interactive: field("bool", { default: false }),
 });
 

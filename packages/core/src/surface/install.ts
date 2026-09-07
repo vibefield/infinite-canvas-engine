@@ -19,6 +19,15 @@
  * what it needs, and both live there (`CanvasEngine.engine`). Returns ONE
  * remover that unregisters every system it added, so an unmounting host undoes
  * the whole set rather than remembering the parts.
+ *
+ * The remover also disposes the texture table WHEN THIS FUNCTION BUILT IT, and
+ * never one the caller passed. Ownership decides: a store built here is
+ * unreachable once the systems are gone, so nothing else could ever free it;
+ * a store the caller passed is the caller's, and B2's composited profile will
+ * pass its own table and allocator and keep the references — its render
+ * reflectors need the table to turn a handle into a `GPUTexture`, and they
+ * outlive a system swap. (Today's React profile passes `{}`, so this function
+ * owns its store, which is correct for a Phase A that realises nothing.)
  */
 import type { RasterStrategy } from "@ice/kernel";
 import type { Engine } from "../engine/engine";
@@ -51,6 +60,12 @@ export interface ResidencyOptions {
   readonly budgetBytes?: number;
   readonly bytesPerPixel?: number;
   readonly layerSize?: number;
+  /**
+   * Device ceiling for an `own` texture, per axis, in device px (D11). Default
+   * {@link DEFAULT_MAX_TEXTURE_SIZE} (8192). A profile that has queried its
+   * adapter's real `maxTextureDimension2D` should pass it.
+   */
+  readonly maxTextureSize?: number;
   readonly now?: () => number;
   /** Per-kind raster strategy. Default `band` (§9 Q1); B gives it a `defineWidget` field. */
   readonly raster?: (kind: "dom" | "gl" | "video") => RasterStrategy;
@@ -66,23 +81,33 @@ export function installSurfaceInfra(engine: Engine, opts?: SurfaceInfraOpts): ()
   const systems = [createSurfaceBandSystem(world), createSurfaceDemandSystem(world)];
 
   const residency = opts?.residency;
+  /** Set only when the table below is OURS — see the header on ownership. */
+  let ownedTable: TextureTable | undefined;
   if (residency !== undefined) {
     const store = createResidencyStore({
       ...(residency.layerSize === undefined ? {} : { layerSize: residency.layerSize }),
       ...(residency.budgetBytes === undefined ? {} : { budgetBytes: residency.budgetBytes }),
       ...(residency.bytesPerPixel === undefined ? {} : { bytesPerPixel: residency.bytesPerPixel }),
     });
+    if (residency.table === undefined) ownedTable = store.table;
     systems.push(
       createResidencySystem(world, {
         table: residency.table ?? store.table,
         allocator: residency.allocator ?? store.allocator,
         ...(residency.budgetBytes === undefined ? {} : { budgetBytes: residency.budgetBytes }),
         ...(residency.bytesPerPixel === undefined ? {} : { bytesPerPixel: residency.bytesPerPixel }),
+        ...(residency.maxTextureSize === undefined
+          ? {}
+          : { maxTextureSize: residency.maxTextureSize }),
         ...(residency.now === undefined ? {} : { now: residency.now }),
         ...(residency.raster === undefined ? {} : { raster: residency.raster }),
       }),
     );
   }
 
-  return engine.addSystems("present:infra", ...systems);
+  const remove = engine.addSystems("present:infra", ...systems);
+  return () => {
+    remove();
+    ownedTable?.dispose();
+  };
 }
