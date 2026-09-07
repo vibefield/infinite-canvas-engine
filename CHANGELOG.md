@@ -107,6 +107,39 @@ the entity's own kind behaviour.
   a non-dom kind but `GLViews`, which takes only `gl`, so it would be silently dead. `chrome`
   is still yours.
 
+<!-- design-013 C0 (2026-09-07) -->
+
+- **The product's GL cards draw on the ground's device** (design-013 §8 Phase C, C0).
+  `apps/widgetlab-desktop` built its R3F `<Canvas>` with three's WebGL renderer under the
+  composited profile, so `GLViews` refused at mount and every island rendered into targets
+  the ground cannot sample — the board's seven GL cards drew nothing. B8 left it owed and
+  named one blocker: the environment. `three`'s `PMREMGenerator.fromScene` reads
+  `renderer.state.buffers`, which a `WebGPURenderer` has not got ("Cannot read properties of
+  undefined (reading 'buffers')"). `three/webgpu` ships its OWN generator with the same
+  surface, so the Canvas and the environment both move, and the branch is on the BACKEND
+  (`hasWebGpuBackend`), not on the profile — the stratified arm this package's headless tests
+  mount is unchanged.
+- **`BoardGLCanvas` — the board's GL root as a component** (`apps/widgetlab-desktop/src`),
+  so the new `app` rig mounts the SHIPPING wiring rather than a copy of it. It owns the
+  Canvas, the environment loader and `<GLViews>`, takes the app-owned device as a prop, and
+  LEASES its renderer: R3F disposes a WebGPU renderer nowhere
+  (`unmountComponentAtNode` touches only `renderLists`/`forceContextLoss`), so an unmounted
+  board canvas would park one on the shared device forever. Disposal is deferred by a task so
+  a StrictMode remount re-retains instead of killing a live renderer, and it is safe on an
+  injected device — three destroys a device only when it made it.
+- **The tray's preview capture needed no change and now says so.** `captureWidgetPreviews`
+  builds its own WebGL root on its own canvas and hands THAT renderer to the environment
+  factory, so the WebGL `PMREMGenerator` is correct there on both profiles. The App comment
+  claiming the whole environment path was WebGL-only was over-broad and is corrected at source.
+- **A new rig, `pnpm --filter widgetlab-desktop app`** (`composited-app`): the real demo board
+  seeded through the App's own `seedDemoScene`, the seven GL cards each rendering into the
+  private target Residency named, and the two lit ones graded against a WebGL control that
+  renders THE SAME `Scene` object — not a description of it — with both noise floors read
+  first and the environment proved load-bearing by a control with it switched off. The
+  seeder is exported for that: every rig page runs inside the Electron shell, where
+  `hasDesktopBridge()` is true and `createDemoEngine` leaves seeding to a switchboard join a
+  one-window harness never makes.
+
 <!-- design-013 B9 (2026-09-07) — the Phase B review's blockers -->
 
 - **A card is clickable from the moment it exists** (B9, review blocker 1). The ground armed

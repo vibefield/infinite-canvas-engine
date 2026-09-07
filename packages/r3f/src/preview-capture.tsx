@@ -47,6 +47,13 @@ export interface CapturePreviewOpts {
    * metals). The factory receives the capture renderer and builds the env
    * there (e.g. `(gl) => new PMREMGenerator(gl).fromScene(new RoomEnvironment(), 0.04).texture`).
    * A plain Texture is accepted for same-renderer/CPU-backed cases.
+   *
+   * That `PMREMGenerator` is three's WEBGL one, on BOTH profiles, and the type
+   * says so: this capture builds its own WebGL root on its own canvas
+   * (`createRoot` below), so the renderer handed to the factory is a
+   * `WebGLRenderer` whatever the board is running. The composited profile's
+   * board canvas takes `three/webgpu`'s generator instead — a different
+   * renderer, a different class, and not this one's business.
    */
   readonly environment?: Texture | ((gl: WebGLRenderer) => Texture | null) | null;
   /** Pixel density of the capture (default: fit 512px on the long side, ≤2). */

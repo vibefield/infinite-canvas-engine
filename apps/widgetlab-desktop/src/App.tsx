@@ -55,18 +55,17 @@ import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { lineGridGroundProgram } from "@ice/ground/programs/line-grid";
 import { magnetGridGroundProgram } from "@ice/ground/programs/magnet-grid";
-import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
+import { captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import {
   InfiniteCanvas,
   compositedProfile,
   stratifiedProfile,
   type InfiniteCanvasHandle,
 } from "@ice/react";
-import { Canvas, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { PMREMGenerator, type Texture } from "three";
+import { PMREMGenerator } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { BoardGLCanvas } from "./BoardGLCanvas";
 import { hasDesktopBridge, startDesktopCollab } from "./collab/desktop";
 import { installCursorHalo } from "./cursor";
 import { WidgetTray } from "./tray/WidgetTray";
@@ -194,8 +193,14 @@ export function createDemoEngine(gpu?: EngineGpu, extraWidgets: readonly WidgetT
  * `session.store` directly — NOT `ce.ops`: joinDoc's seeder callback runs
  * BEFORE the facade adopts the session (ops would throw "needs a document"
  * there), and the local boot uses the same path so the two stay one seed.
+ *
+ * EXPORTED for the rigs (design-013 C0): every rig page runs inside the Electron
+ * shell, so `hasDesktopBridge()` is true there and `createDemoEngine` leaves the
+ * seeding to a switchboard join that a one-window harness never makes. A rig that
+ * wants the REAL board calls this on a document of its own — the shipping seed,
+ * not a copy of the SCENE table.
  */
-function seedDemoScene(ce: CanvasEngine, session: DocSession): void {
+export function seedDemoScene(ce: CanvasEngine, session: DocSession): void {
   for (const [type, x, y, w, h, props] of SCENE) {
     spawnWidget(session.store, ce.world, type, { x, y, w, h, undoable: false, ...(props !== undefined ? { props } : {}) });
   }
@@ -332,28 +337,6 @@ function installDebugProbe(ce: CanvasEngine): void {
   };
 }
 
-/**
- * v1's `r3fRoot={<Environment preset="apartment"/>}` equivalent — but
- * DETERMINISTIC: three's built-in RoomEnvironment through PMREM instead of
- * drei's CDN HDR (a slow/blocked fetch left the metallic cards silhouetted —
- * field-verified 2026-07-12). Near-identical neutral studio look, zero
- * network. <GLViews environment> stamps it on every island scene.
- */
-function EnvLoader({ onTex }: { onTex: (t: Texture | null) => void }) {
-  const gl = useThree((s) => s.gl);
-  const tex = useMemo(() => {
-    const pmrem = new PMREMGenerator(gl);
-    const t = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    pmrem.dispose();
-    return t;
-  }, [gl]);
-  useEffect(() => {
-    onTex(tex);
-    return () => onTex(null);
-  }, [tex, onTex]);
-  return null;
-}
-
 // === chrome bits ===
 
 function ZoomPill({ ce }: { ce: CanvasEngine }) {
@@ -476,7 +459,6 @@ export function App({ gpu }: AppProps = {}) {
   const routerRef = useRef<GLPointerRouter | null>(null);
   const glRef = useRef<{ bridge: GLBridge; router: GLPointerRouter; plane: HTMLDivElement } | null>(null);
   const [gl, setGl] = useState<{ bridge: GLBridge; plane: HTMLDivElement } | null>(null);
-  const [envTex, setEnvTex] = useState<Texture | null>(null);
   const glRoute = useCallback(
     (kind: "down" | "move" | "up" | "cancel", x: number, y: number, e: PointerEvent) => {
       const router = routerRef.current;
@@ -541,9 +523,16 @@ export function App({ gpu }: AppProps = {}) {
   // IDLE time — never on the boot path (the "cached after first capture"
   // contract). The environment is a FACTORY, built ON the capture renderer:
   // PMREM textures don't cross renderers (no CPU image — the main canvas's
-  // envTex reads black there), so the capture mirrors EnvLoader instead.
+  // env reads black there), so the capture mirrors BoardGLCanvas's own
+  // EnvLoader instead.
   // Skip-if-captured + coalescing live in the capturer, so StrictMode
   // double-fires cost nothing.
+  //
+  // WebGL, on BOTH profiles, and that is not a gap (design-013 C0, D-C0.3):
+  // captureWidgetPreviews builds its own WebGL root on its own canvas and
+  // hands THAT renderer to this factory, so the WebGL `PMREMGenerator` is the
+  // right one here whatever the board is running. Only the BOARD canvas had to
+  // move (BoardGLCanvas branches on the backend).
   useEffect(() => {
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number;
@@ -722,41 +711,29 @@ export function App({ gpu }: AppProps = {}) {
         profile={gpu !== undefined ? compositedProfile : stratifiedProfile}
         className="h-full w-full"
       >
-        {/* Canvas pointerEvents none is LOAD-BEARING (glboard precedent):
-            without it the R3F canvas swallows every pointer event over the
-            whole viewport — DOM widgets lose hover/click while the engine
-            keeps working via container bubbling (field report 2026-07-12). */}
-        {gl !== null &&
-          createPortal(
-            <Canvas
-              orthographic
-              frameloop="never"
-              // OWED (B8): under the composited profile this Canvas must be
-              // built with `islandRendererFactory({ device: gpu.device })` from
-              // `@ice/r3f/webgpu` — an island renders into the target Residency
-              // named and the ground samples that texture, and a WebGL renderer
-              // here renders into targets nothing can sample. GLViews says so
-              // loudly at mount rather than drawing a plausible blank, which is
-              // the honest state until this app's environment path moves too:
-              // `PMREMGenerator`/`RoomEnvironment` (EnvLoader, and the tray's
-              // preview capture) are WebGL-only and throw on a WebGPU renderer.
-              // The rigs already run the WebGPU Canvas — `composited-islands`
-              // is the witness for the island half. The product's own GL
-              // widgets are what this line still owes.
-              gl={{ alpha: true, antialias: false }}
-              style={{ pointerEvents: "none", position: "absolute", inset: 0 }}
-            >
-              <EnvLoader onTex={setEnvTex} />
-              <GLViews
-                engine={ce.engine}
-                bridge={gl.bridge}
-                store={ce.runtime.store}
-                environment={envTex}
-                {...(showEcs ? { onFrameStats: onGlStats } : {})}
-              />
-            </Canvas>,
-            gl.plane,
-          )}
+        {/* The board's GL root, portalled into the P2 plane. It is a CHILD of
+            <InfiniteCanvas> and not a sibling because GLViews reads the ground's
+            content seam off the React context — a mount outside it would run the
+            stratified island path under a composited profile and draw nothing.
+
+            Under the composited profile the Canvas is built on the app-owned
+            device (design-013 C0, D-C0.2): an island renders into the target
+            Residency named and the ground samples that texture, where a WebGL
+            renderer would render into targets nothing can sample. B8 left this
+            owed because the environment path went with it — `three`'s
+            `PMREMGenerator.fromScene` reads `renderer.state.buffers`, which a
+            `WebGPURenderer` has not got. `three/webgpu` ships its own generator,
+            so BoardGLCanvas branches on the BACKEND and both arms are live. */}
+        {gl !== null && (
+          <BoardGLCanvas
+            engine={ce.engine}
+            bridge={gl.bridge}
+            store={ce.runtime.store}
+            plane={gl.plane}
+            {...(gpu !== undefined ? { gpu } : {})}
+            {...(showEcs ? { onFrameStats: onGlStats } : {})}
+          />
+        )}
       </InfiniteCanvas>
       </div>
 

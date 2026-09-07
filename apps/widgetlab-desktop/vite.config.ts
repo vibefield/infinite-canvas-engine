@@ -29,6 +29,9 @@ export default defineConfig({
       //   composited-video  — B6: a live surface — a producer registers a stable
       //                          texture and each arriving frame is one copy and one
       //                          compose frame.
+      //   composited-app    — C0: the PRODUCT's board — the demo seed, the App's own
+      //                          <Canvas> wiring, and the seven lit GL cards graded
+      //                          against a WebGL control on the same Scene objects.
       input: {
         index: "index.html",
         composited: "composited.html",
@@ -36,6 +39,7 @@ export default defineConfig({
         "composited-input": "composited-input.html",
         "composited-islands": "composited-islands.html",
         "composited-video": "composited-video.html",
+        "composited-app": "composited-app.html",
       },
     },
   },
