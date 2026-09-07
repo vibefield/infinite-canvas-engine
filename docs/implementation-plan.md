@@ -905,6 +905,20 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   moves the card — ALL PASS; 4 core tests through the full stack; `pnpm run ci` green.
   Deferred to B4: D7 and the parity redefinition (they need drawn content); the P4 resize
   grips stay DOM chrome; `Hover` remains unbuilt.
+- **B4a — the content term reads the world** (design-013 §4/§5/§10.2, **LANDED 2026-09-07**):
+  the trunk B4 ∥ B5 ∥ B6 build on. `ContentResidency` (`compose.residency`) is what a
+  `TextureRef` handle IS on the ground's device — `realize` (every realisation; a re-realised
+  handle retires its earlier texture at the next `collect`, after the submit — D-B4.1),
+  `wrote` (a write owed per destination, keyed by the ref: `empty` is never sampled),
+  `touch` (the dirt latch outside the world → `WakeReason "content"`), `contentOf`
+  (`page`/`own`/plate; the sRGB variant from the texture's actual format), `pagesView` (→
+  `Ground.setPages`), `collect` (the table's drain as the destroy list; `onForget`). The
+  profile owns its texture table (attached at install, disposed last) and registers a
+  FORWARDER per render slot (`compose.renders.{dom,island,video}`) in §6's order, so a
+  render installed after the mount runs in its place. The builder journals
+  `SurfaceTarget`/`TextureRef` and emits every card's content term. Exit: 7 residency tests
+  on a real engine + the infra; the profile test pins the table's ownership; the oracle's 47
+  renders byte-identical; `next-boot` ALL PASS at B3b's numbers; `pnpm run ci` green.
 
 ## Release cut & downstream
 

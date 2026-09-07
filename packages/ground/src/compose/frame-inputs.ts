@@ -51,7 +51,9 @@ import {
   PrefabId,
   Selected,
   Size,
+  SurfaceTarget,
   Targets,
+  TextureRef,
   compareStackOrder,
   createSiblingOrderIndex,
   defineQuery,
@@ -60,7 +62,7 @@ import {
   type FramePreviewStore,
   type World,
 } from "@ice/core";
-import { type PortalFace, portalContent } from "../card/content";
+import { PLATE, type PortalFace, portalContent } from "../card/content";
 import type { FrameInstance } from "../card/frame-pass";
 import { IDLE, type Material, MATERIAL, SHELL_RADIUS, type ShellGeometry } from "../card/geometry";
 import { MAX_FRAMES } from "../card/layout";
@@ -72,6 +74,7 @@ import type { CameraState, Rect } from "../nav/flight";
 import { FOLDER_FACE, type LivePortal, PORTAL_CAP, PORTAL_GATE, portalAt } from "../nav/portal";
 import type { GroundTheme } from "../theme";
 import type { PortalInputs } from "./ground";
+import { type ContentResidency, targetOf } from "./residency";
 
 export interface FrameBuilderOptions {
   /** The card program (design-014) the cards resolve through; the engine's shell by default. */
@@ -101,6 +104,12 @@ export interface FrameBuilderOptions {
    * portal. Absent = containers draw as plates and no portal exists.
    */
   readonly previews?: FramePreviewStore;
+  /**
+   * The content residency (B4a): a card's `TextureRef` as its content term — `page` or
+   * `own` once a render reflector realised and wrote it, the plate until then. Absent =
+   * every card is a plate.
+   */
+  readonly residency?: ContentResidency;
 }
 
 /** The viewport a frame is built for: CSS px and the dpr the canvas is at. */
@@ -117,6 +126,8 @@ export interface FrameBuilderStats {
   readonly portals: number;
   /** Cards inside those portals, from the preview snapshots. */
   readonly inside: number;
+  /** Cards drawn from a texture this build (`page` or `own`) rather than the plate. */
+  readonly textured: number;
   /** Cards dropped at the record cap this build (`MAX_FRAMES`). */
   readonly capped: number;
   /** Portals whose preview was truncated by its budget (design-013 §7 D-B3.2 owes the child entity). */
@@ -166,14 +177,14 @@ export interface FrameBuilder {
   dispose(): void;
 }
 
-/** What can dirty the builder: a journaled world write (`world`), a despawn, a document reset, the sibling order, a settings write, a container's preview. */
-export type WakeReason = "world" | "removed" | "reset" | "order" | "chrome" | "preview";
-const WAKE_REASONS: readonly WakeReason[] = ["world", "removed", "reset", "order", "chrome", "preview"];
+/** What can dirty the builder: a journaled world write (`world`), a despawn, a document reset, the sibling order, a settings write, a container's preview, a texture written outside the world (`content`). */
+export type WakeReason = "world" | "removed" | "reset" | "order" | "chrome" | "preview" | "content";
+const WAKE_REASONS: readonly WakeReason[] = ["world", "removed", "reset", "order", "chrome", "preview", "content"];
 
 /** A card's silhouette as the field and the heat see it: centre, half extents, corner radius (world units). */
 export interface LightSilhouette { readonly x: number; readonly y: number; readonly hx: number; readonly hy: number; readonly r: number }
 
-const EMPTY_STATS: FrameBuilderStats = { active: 0, cards: 0, containers: 0, portals: 0, inside: 0, capped: 0, truncated: 0, live: false };
+const EMPTY_STATS: FrameBuilderStats = { active: 0, cards: 0, containers: 0, portals: 0, inside: 0, textured: 0, capped: 0, truncated: 0, live: false };
 
 // Widgets carry PrefabId (the preview store's own membership test); Active = a ChildOf root in the current nav frame.
 const widgetsQ = defineQuery([Position, Size, PrefabId, Active]);
@@ -268,6 +279,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
   const gate = opts.gate ?? PORTAL_GATE;
   const cap = opts.portalCap ?? PORTAL_CAP;
   const previews = opts.previews;
+  const residency = opts.residency;
   const order = createSiblingOrderIndex(world);
   const states = new Map<Entity, CardState>();
   let wake: ((reason: WakeReason) => void) | null = null;
@@ -302,11 +314,13 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
   };
   const wakes = Object.fromEntries(WAKE_REASONS.map((r) => [r, 0])) as Record<WakeReason, number>;
   const woke = (reason: WakeReason): void => { wakes[reason] += 1; wake?.(reason); };
+  // pixels written outside the world (a copy, a render, an arrival) are the residency's wake
+  const unsubTouch = residency !== undefined ? residency.onTouch(() => woke("content")) : null;
   // The journal of every fact a build reads — value writes, adds, removals and despawns of the
   // components, membership flips of the tags. `coarse: false`: no writer of these pokes raw columns.
   const collector = world.changes.collect({
     // the part channel is NOT journaled (a pointer's first pick would be a frame): `changed()` compares its signature instead
-    components: [Position, Size, MeasuredSize, Grab, DragBounds, ...(program.reads?.components ?? [])],
+    components: [Position, Size, MeasuredSize, Grab, DragBounds, SurfaceTarget, TextureRef, ...(program.reads?.components ?? [])],
     tags: [Selected, OverlapCandidate, OverlapRejected, Active, Container, ...(program.reads?.tags ?? [])],
     coarse: false,
   });
@@ -405,7 +419,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
         } else if (st.unsub !== undefined) { st.unsub(); st.unsub = undefined; }
         const row: Row = { e, G, portal };
         rows.push(row);
-        nextEntries.push({ entity: e, G, w: size.w, h: size.h });
+        nextEntries.push({ entity: e, G, w: size.w, h: size.h, target: targetOf(world, e) });
         if (portal !== undefined) cands.push({ row, area: portal.live.clip.hx * portal.live.clip.hy });
       }
       // A card the builder no longer sees forgets its flux.
@@ -421,6 +435,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       const portals: PortalInputs[] = [];
       let capped = 0;
       let inside = 0;
+      let textured = 0;
       const limit = Math.min(MAX_FRAMES, MAX_SOURCES);
       for (const row of rows) {
         if (frames.length >= limit) { capped += 1; continue; }
@@ -445,13 +460,16 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
           });
           frames.push({ geometry: row.G, surface: theme.card, content: portalContent(portalFaceOf(p.K, p.r)) });
         } else {
-          frames.push({ geometry: row.G, surface: theme.card });
+          // the content term (B4a): the card's `TextureRef` once a render realised and wrote it, else the plate
+          const content = residency?.contentOf(row.e) ?? PLATE;
+          if (content.mode !== "plate") textured += 1;
+          frames.push({ geometry: row.G, surface: theme.card, content });
         }
         sources.push(fieldSourceOf(row.G, cam, strength));
       }
       entries = nextEntries;
       if (capped > 0) console.warn(`[ice] ground/compose: ${capped} card${capped === 1 ? "" : "s"} past the ${limit}-record cap were not drawn`);
-      stats = { active: list.length, cards: frames.length, containers, portals: portals.length, inside, capped, truncated, live };
+      stats = { active: list.length, cards: frames.length, containers, portals: portals.length, inside, textured, capped, truncated, live };
       return { sources, frames, portals, stats };
     },
     live: () => stats.live,
@@ -480,6 +498,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
     dispose() {
       disposed = true;
       collector.dispose();
+      unsubTouch?.();
       for (const [e, st] of states) forget(e, st);
       wake = null;
     },

@@ -80,6 +80,31 @@ the entity's own kind behaviour.
 
 ### Added
 
+- **The content term reads the world — design-013, B4a** (2026-09-07). The trunk B4, B5
+  and B6 build on: under the composited-next profile the ground now draws a card from the
+  TEXTURE its `TextureRef` names — `page` (the layer and the written rect, through the one
+  page-array binding) or `own` (the run's texture, the sRGB pipeline chosen by the texture's
+  ACTUAL format) — once a render reflector has realised the handle and written the
+  destination; the plate until then (`empty` is never sampled: a fresh slot, a re-slot after
+  an eviction, a promoted card whose copy has not landed all draw the plate — a write is owed
+  per destination, keyed by the ref's own values). **`ContentResidency`**
+  (`@ice/ground/compose`, `compose.residency`): `attach(table)` · `realize(handle, texture,
+  { owned? })` — every realisation goes through it, a re-realisation of the same handle
+  (a page array that grew, D-B4.1) retires the earlier texture at the next `collect`, after
+  the submit · `wrote(entity)` · `touch()` (the dirt latch outside the world; the builder
+  wakes on it, `WakeReason "content"`) · `contentOf(entity)` · `pagesView()` (the host
+  rebinds `Ground.setPages` when it changes) · `collect()` (the table's drain as the destroy
+  list, `onForget` for a producer's own object) · `stats()`. **The profile owns its texture
+  table** (`createResidencyStore` at install, attached to the ground, passed to the surface
+  infra with the device's `maxTextureDimension2D`, disposed last). **Three render slots**
+  (`compose.renders.{dom,island,video}`): the profile registers a forwarder for each in §6's
+  order (5–7, before DomCompose and GpuCompose), so a render installed after the mount — the
+  ground's DomRender, the r3f island root, a video producer — runs in its place. The frame
+  builder journals `SurfaceTarget`/`TextureRef`, emits every card's content term, counts
+  `textured`, and names each host entry's `target`. Seven tests on a real engine with the
+  surface infra installed; the profile test pins the table's ownership; the oracle's 47
+  renders byte-identical; `next-boot` at B3b's numbers. No pixel changes until B4 realises
+  the first texture.
 - **The DOM boundary — design-014, B3b** (2026-09-07). Under the composited-next profile a
   DOM card's host is CONTENT only: chrome exists once, on the ground. **DomCompose**
   (`groundCompose`'s `compose.domCompose`, registered by the profile just before GpuCompose)

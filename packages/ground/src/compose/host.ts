@@ -26,6 +26,7 @@ import { Camera, type Entity, FrameInfo, type FramePickSlot, type FramePreviewSt
 import { shellProgram } from "../card/program";
 import { LINES } from "../theme";
 import { createDomHostWriter } from "./dom-compose";
+import { type ContentResidency, createContentResidency } from "./residency";
 import type { ShellGeometry } from "../card/geometry";
 import type { CardMotion } from "../card/motion";
 import type { CardProgram } from "../card/program";
@@ -68,6 +69,22 @@ export interface GroundComposeContext {
 }
 
 /** The compose layer's instruments: the ground's redraws and the last build's counts. */
+/**
+ * A render's place in the roster (design-013 §6 reflectors 5–7), filled AFTER the mount by
+ * whoever owns the source: the ground itself (DomRender, B4), the r3f island root
+ * (IslandRender, B5), the producer (VideoIngest, B6). The profile registers a forwarder for
+ * each slot in §6's order, so a render installed later still runs before GpuCompose's submit.
+ * `flush` follows the reflector contract: post-notify, never writes ECS, never reads layout.
+ */
+export interface RenderSlot {
+  current: { readonly name: string; flush(world: World): void } | null;
+}
+export interface RenderSlots {
+  readonly dom: RenderSlot;
+  readonly island: RenderSlot;
+  readonly video: RenderSlot;
+}
+
 export interface GroundComposeStats extends FrameBuilderStats {
   readonly redraws: number;
 }
@@ -82,6 +99,14 @@ export interface GroundCompose {
    * content element; GpuCompose then draws the same geometry. Present only with `hosts`.
    */
   readonly domCompose?: ReflectorDef;
+  /**
+   * The content residency (B4a): the render reflectors realise the texture table's handles
+   * here and say what they wrote; the builder draws `page`/`own` from it. The profile attaches
+   * its table at install.
+   */
+  readonly residency: ContentResidency;
+  /** The three render slots (§6 reflectors 5–7); the profile forwards each in order. */
+  readonly renders: RenderSlots;
   /** The canvas in the L0 slot. */
   readonly canvas: HTMLCanvasElement;
   /** `Ground.create` resolved; false while the pipelines compile or after a failure. */
@@ -135,7 +160,9 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
   return (ctx) => {
     const { host, world } = ctx;
     const maxDpr = opts.maxDpr ?? 2;
-    const builder = createFrameBuilder(world, { ...(opts.cards ?? {}), ...(opts.card !== undefined ? { program: opts.card } : {}), ...(ctx.previews !== undefined ? { previews: ctx.previews } : {}) });
+    const residency = createContentResidency(world);
+    const renders: RenderSlots = { dom: { current: null }, island: { current: null }, video: { current: null } };
+    const builder = createFrameBuilder(world, { ...(opts.cards ?? {}), ...(opts.card !== undefined ? { program: opts.card } : {}), ...(ctx.previews !== undefined ? { previews: ctx.previews } : {}), residency });
     const doc = host.container.ownerDocument;
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
@@ -152,6 +179,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     let failed = false;
     let dirty = true;
     let redraws = 0;
+    let lastPages: GPUTextureView | null = null;
     let theme = opts.theme;
     let gridPending: Partial<GridConfig> | null = null;
     const program = opts.card ?? shellProgram;
@@ -232,6 +260,9 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         if (!ensureBuilt(w) || ground === null || pending === null) return;
         const { view, built } = pending;
         pending = null;
+        // the page array every `page` card samples — rebound only when the residency re-realised it (growth, D-B4.1)
+        const pages = residency.pagesView();
+        if (pages !== lastPages) { ground.setPages(pages); lastPages = pages; }
         ground.render({
           view,
           pointer: { x: 0, y: 0, on: false },
@@ -241,6 +272,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
           theme,
         });
         redraws += 1;
+        residency.collect();   // the destroy list, after this frame's submit
       },
     };
 
@@ -257,12 +289,15 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         if (framePick !== undefined && framePick.current === pickSource) framePick.current = null;
         writer?.dispose();
         builder.dispose();
+        residency.dispose();
         canvas.remove();
         ground?.dispose();
         ground = null;
       },
       compose: {
         gpuCompose,
+        residency,
+        renders,
         ...(writer !== null ? { domCompose } : {}),
         canvas,
         available: () => ground !== null && !failed,

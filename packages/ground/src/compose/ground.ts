@@ -304,6 +304,8 @@ export class Ground {
 
   set fieldConfig(cfg: FieldConfig) { this.field.config = cfg; }
   get fieldConfig(): FieldConfig { return this.field.config; }
+  /** The page array every `page` card samples (design-013 §10.4), shared by every slot; `null` = none. A slot rebinds at its next prepare. */
+  setPages(view: GPUTextureView | null): void { this.frames.setPages(view); }
 
   /** Size the canvas to its CSS box; returns the CSS size and dpr the frame should use. (A host may size the canvas itself instead.) */
   fit(maxDpr = 2) { return this.surface.fit(maxDpr); }

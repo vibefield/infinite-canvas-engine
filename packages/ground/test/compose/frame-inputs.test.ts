@@ -176,7 +176,7 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     const { build, builder } = makeBoard();
     const f = build({ x: 0, y: 0, zoom: 0.2 });              // the face's short side: 299 × 0.2 ≈ 60 CSS px < 80
     expect(f.portals).toHaveLength(0);
-    expect(f.frames.every((fr) => fr.content === undefined)).toBe(true);
+    expect(f.frames.every((fr) => fr.content === undefined || fr.content.mode === "plate")).toBe(true);   // B4a: the content term is explicit, and a plate
     expect(builder.stats().containers).toBe(1);
   });
 

@@ -53,8 +53,8 @@ export function clipPathOf(program: CardProgram<ShellGeometry>, G: ShellGeometry
   return `polygon(${pts.join(", ")})`;
 }
 
-/** One card's content rect (unscaled) beside its resolved geometry. */
-export interface HostEntry { readonly entity: Entity; readonly G: ShellGeometry; readonly w: number; readonly h: number }
+/** One card's content rect (unscaled) beside its resolved geometry, and the target it presents on (B4a: `gpu` = its pixels are a texture the ground samples). */
+export interface HostEntry { readonly entity: Entity; readonly G: ShellGeometry; readonly w: number; readonly h: number; readonly target: "dom" | "gpu" }
 
 export interface DomHostWriter {
   /** Write the boundary for every card on screen; returns the number of DOM properties written this call. */
