@@ -127,6 +127,8 @@ export type GroundLayerFactory = (ctx: {
   };
   readonly transitions: CanvasEngine["transitions"];
   readonly gpu: CanvasEngine["gpu"];
+  /** The preview store (`engine.previews`): a container's inside for the ground's live portals (design-013 §8 B3). */
+  readonly previews: CanvasEngine["previews"];
 }) => GroundLayerHandle;
 
 export interface InfiniteCanvasProps {
@@ -249,6 +251,7 @@ export function InfiniteCanvas({
         canvas: engine.canvas,
         transitions: engine.transitions,
         gpu: engine.gpu,
+        previews: engine.previews,
       }) ?? null;
     groundRef.current = groundLayer;
     if (groundLayer !== null && gridConfigRef.current !== undefined) {

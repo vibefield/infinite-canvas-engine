@@ -80,6 +80,34 @@ the entity's own kind behaviour.
 
 ### Added
 
+- **The composited-next profile draws the world's cards — B3a, compose in plate mode**
+  (design-013 §8 B3, 2026-09-07). `groundCompose()`'s GpuCompose now builds every frame
+  from the world through the frame builder (`createFrameBuilder`, `@ice/ground/compose`):
+  every widget Active in the nav frame, in sibling order, becomes a card frame over the
+  theme's plate and a field source; `Selected` runs the reveal, `Grab` IS the lift (scaled
+  by `ChromeSettings.liftScale`, read live), the drop pair `OverlapCandidate` /
+  `OverlapRejected` with the recognizer's `DragBounds` is the heat — the springs live in the
+  builder, never in the world, and a card out of sight forgets them; a container whose face
+  passes the gate carries a live portal from `engine.previews` (the snapshot's
+  `resolvedView` IS the flight's arrival: `portalAt()` — new — is `portalOf()` past the
+  gate on a solved arrival, bit-identical, so the enter cut stays exact on ICE's own data)
+  and its frame is a hole cut to the face. The reflector's dirt is PULLED: a strata change
+  collector (`coarse: false`, the attestation core's churn guard already makes) journals the
+  facts a build reads, the sibling order's own stamp and two out-of-world wakes (a settings
+  write, a preview change) complete it — a Tier-1 `observeQuery` on Position/Size woke every
+  frame a selection existed, because the selection chrome declares a Position/Size write and
+  that is a column-wide stamp. `compose.stats()`, `compose.wakes()`, `compose.geometryOf(e)`
+  and `compose.motionOf(e)` are the instruments; `groundCompose({ cards })` tunes the
+  builder; the react `ground` factory's context gains `previews`. The `next-boot` rig grows
+  a board phase: 6 real widgets and a folder with 3 inside through `spawnWidget`, pixels
+  read back off the ground canvas (a card's centre is `--vf-card`, a gap is
+  `--vf-canvas-bg`, the folder's face is its inside's ground — a hole — while its bar is the
+  plate), idle-zero with cards on the board and again after a selection settles, the lift on
+  Grab (scale 1.05 and back), the heat (presence 1 at the accept tier, the plate under the
+  light brighter, fade-out on clear) — ALL PASS. Depth-one portals only (a preview child
+  carries no entity — D-B3.2 owed); the DOM hosts still paint their own chrome and the
+  folder its DOM preview above the ground — B3b takes the DOM boundary (chrome-less hosts,
+  `clip-path`), the router's frame hit test and the redefined parity.
 - **`compositedNextProfile` and `groundCompose()` — the NEW composited profile, beside
   the old one** (design-013 §8 B2, 2026-09-07). `<InfiniteCanvas profile={compositedNextProfile}
   ground={groundCompose({ device, theme })}>` boots the ground's own canvas as the L0

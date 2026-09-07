@@ -37,6 +37,7 @@ export * from "../mat/projector";
 export * from "../mat/shaders";
 export * from "../mat/tilt";
 export * from "../compose/ground";
+export * from "../compose/frame-inputs";
 export * from "../compose/host";
 export * from "../theme";
 export * from "../shaders";

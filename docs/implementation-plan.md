@@ -858,6 +858,26 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   0 submits and 0 redraws over 481 idle frames; one frame for a camera write; the walls
   hold (depcruise clean); `pnpm run ci` green; groundlab parity 44/44 and mat 16/16 on the
   suffix-stripped tree.
+- **B3a — compose in plate mode, the ground half** (**LANDED 2026-09-07**): the frame
+  builder (`packages/ground/src/compose/frame-inputs.ts`) turns the world into the ground's
+  records — Active widgets in sibling order as plate frames and field sources; the reveal
+  on `Selected`, the lift on `Grab` × `ChromeSettings.liftScale`, the heat on the drop pair
+  + `DragBounds` (D-B3.1 as built: the springs are the builder's flux, never a world fact,
+  forgotten when a card leaves sight); a live portal per gated container from
+  `engine.previews` (`portalAt` on the snapshot's `resolvedView` ≡ `portalOf` on the
+  flight's arrival, bit for bit — the cut stays exact); depth-one (D-B3.2 owed: a preview
+  child carries no entity). The dirty union as planned did NOT survive contact: a Tier-1
+  `observeQuery` on Position/Size wakes every frame a selection exists (the selection
+  chrome's declared write access is a column-wide stamp — 181 redraws over 181 idle
+  frames, named by the new `wakes()` instrument) — the dirt is PULLED instead through a
+  strata change collector (`coarse: false`), the order index's `stale()`, and two
+  out-of-world wakes (0 over 181). Exit: the `next-boot` rig's board phase — 6 widgets + a
+  folder with 3 inside, pixels off the ground canvas (a card's plate · the ground in a gap
+  · the face a hole · the bar a plate), idle-zero with cards and after a selection settles,
+  the lift, the heat lighting the plate and fading out — ALL PASS; 16 builder tests on a
+  real engine; the oracle's 44 renders byte-identical after the `portalAt` extraction;
+  `pnpm run ci` green. B3b next: DomCompose's chrome-less hosts and `clip-path`, the
+  router's `pick()`, `Hover`, the parity redefinition, the D7 witness.
 
 ## Release cut & downstream
 

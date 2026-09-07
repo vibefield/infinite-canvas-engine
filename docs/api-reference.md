@@ -267,7 +267,24 @@ is the ground as a LAYER: a factory with the shape of the react `ground` prop, r
 handle whose `compose.gpuCompose` reflector the `compositedNextProfile` registers last (after
 the renders, design-013 §6); `configureGrid` maps the react `grid` prop onto the field
 (`fieldConfigOf`), `compose.setTheme` swaps the host's projection, `compose.redraws()` is the
-churn instrument, `compose.available()` says whether the pipelines compiled. The pixel witnesses are the package's oracle
+churn instrument, `compose.available()` says whether the pipelines compiled. **B3a — the
+world's cards**: GpuCompose builds each frame through **`createFrameBuilder(world, opts)`**,
+the `FrameBuilder` — `build(cam, vp, dtSeconds, theme, config)` returns the `{ sources,
+frames, portals, stats }` `Ground.render` takes (Active widgets in sibling order as plate
+frames and field sources; the reveal on `Selected`, the lift on `Grab` × the live
+`ChromeSettings.liftScale`, the heat on `OverlapCandidate`/`OverlapRejected` + the
+recognizer's `DragBounds`; a live portal per gated container from the preview store, its
+children at rest under the flight's exact camera); `changed()` PULLS the world's dirt (a
+change collector, `coarse: false`, plus the sibling order's stamp — call it every frame);
+`observe(wake)` arms the out-of-world wakes (`ChromeSettings`, a container's preview);
+`live()` while a spring still moves; `geometryOf(e)`, `motionOf(e)`, `stats()`, `wakes()`.
+`groundCompose({ cards })` passes the builder's options (`style`, `material`, `motion`,
+`liftScale`, `sourceStrength`, `radius`, `faceRadius`, `gate`, `portalCap`); the mount
+context's `previews` (`engine.previews`, which the react facade passes) feeds the portals;
+the handle adds `compose.stats()`, `compose.wakes()`, `compose.geometryOf(e)`,
+`compose.motionOf(e)`. **`portalAt(K, radius, arrival, cam, vp, gate?)`** is `portalOf`
+past the gate on an arrival already solved (the preview's `resolvedView`) — the same
+record, bit for bit. The pixel witnesses are the package's oracle
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 

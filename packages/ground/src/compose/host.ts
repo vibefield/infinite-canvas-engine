@@ -5,22 +5,30 @@
 // package may not import react) and returns a handle the `compositedNext`
 // profile recognises by its `compose` field.
 //
-// What B2 draws: an EMPTY board — the field under ICE's own defaults and the
-// theme's clear colour — on a camera or viewport change and never otherwise
-// (idle-zero: a quiet frame does not touch the swap chain). B3 fills the frame
-// from the world: the cards, the side tables, the portals from the preview
-// store. The reflector's PLACE in the roster is the profile's to fix (§6: the
-// renders' queue ops before GpuCompose's submit, by registration order), so the
-// handle's own `reflector` is an inert slot and GpuCompose is handed to the
-// profile through `compose`, to be registered last.
+// What it draws (B3a): the world's cards — every widget Active in the nav
+// frame as a card frame in plate mode over the theme's surface, with the
+// springs (reveal on `Selected`, the lift on `Grab`, the heat on the drop
+// pair), and a live portal for every container past the gate, its inside from
+// ICE's preview store — on the frame builder's dirty union (`frame-inputs.ts`),
+// a camera or viewport change, or while a spring still moves; and never
+// otherwise (idle-zero: a quiet frame does not touch the swap chain). B3b
+// takes the DOM boundary — chrome-less hosts clipped by the same `resolve()`
+// — and the router's frame hit test. The reflector's PLACE in the roster is
+// the profile's to fix (§6: the renders' queue ops before GpuCompose's submit,
+// by registration order), so the handle's own `reflector` is an inert slot and
+// GpuCompose is handed to the profile through `compose`, to be registered last.
 //
 // Reflector contract (design-002 §5): post-notify, output-only, never writes
 // ECS, never reads layout — the viewport comes from the `Viewport` resource
-// the facade's ResizeObserver writes, never from the container.
-import { Camera, type GridConfig, type ReflectorDef, Viewport, type World } from "@ice/core";
+// the facade's ResizeObserver writes, never from the container; the frame's dt
+// from `FrameInfo` (clamped by the engine), never from a clock of its own.
+import { Camera, type Entity, FrameInfo, type FramePreviewStore, type GridConfig, type ReflectorDef, Viewport, type World } from "@ice/core";
+import type { Geometry } from "../card/choreography";
+import type { CardMotion } from "../card/motion";
 import type { FieldConfig } from "../field/layout";
 import { GROUND_SHADERS } from "../shaders";
 import type { GroundTheme } from "../theme";
+import { createFrameBuilder, type FrameBuilderOptions, type FrameBuilderStats, type WakeReason } from "./frame-inputs";
 import { Ground } from "./ground";
 
 export interface GroundComposeOptions {
@@ -32,12 +40,21 @@ export interface GroundComposeOptions {
   readonly config?: FieldConfig;
   /** The device-pixel ratio the canvas is capped at. */
   readonly maxDpr?: number;
+  /** The frame builder's knobs (style, material, lift, gate, cap …); the product's by default. */
+  readonly cards?: Omit<FrameBuilderOptions, "previews">;
 }
 
-/** The mount context the React facade hands a `ground` factory — the two fields this layer needs, mirrored structurally. */
+/** The mount context the React facade hands a `ground` factory — the fields this layer needs, mirrored structurally. */
 export interface GroundComposeContext {
   readonly host: { readonly container: HTMLElement; readonly contentPlane: HTMLElement };
   readonly world: World;
+  /** ICE's preview store (`engine.previews`): a container's inside for its live portal. Absent = no portals. */
+  readonly previews?: FramePreviewStore;
+}
+
+/** The compose layer's instruments: the ground's redraws and the last build's counts. */
+export interface GroundComposeStats extends FrameBuilderStats {
+  readonly redraws: number;
 }
 
 export interface GroundCompose {
@@ -51,6 +68,14 @@ export interface GroundCompose {
   redraws(): number;
   /** The host's projection changed (a theme switch): the next frame re-renders. */
   setTheme(theme: GroundTheme): void;
+  /** The redraw count and the last build's counts (cards, portals, the cap). */
+  stats(): GroundComposeStats;
+  /** What woke the builder, and how often, since the mount — names the fact behind a churning frame. */
+  wakes(): Readonly<Record<WakeReason, number>>;
+  /** A card's geometry as last drawn (the rig's witness; B3b's hit test). */
+  geometryOf(e: Entity): Geometry | undefined;
+  /** A card's springs as last stepped — flux, never a world fact. */
+  motionOf(e: Entity): CardMotion | undefined;
 }
 
 /** What the factory returns: the facade's `GroundLayerHandle` shape, plus `compose`. */
@@ -86,6 +111,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
   return (ctx) => {
     const { host, world } = ctx;
     const maxDpr = opts.maxDpr ?? 2;
+    const builder = createFrameBuilder(world, { ...(opts.cards ?? {}), ...(ctx.previews !== undefined ? { previews: ctx.previews } : {}) });
     const doc = host.container.ownerDocument;
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
@@ -117,13 +143,17 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     const unsubs: Array<() => void> = [
       world.reactive.observeResource(Camera, () => { dirty = true; }),
       world.reactive.observeResource(Viewport, () => { dirty = true; }),
+      builder.observe(() => { dirty = true; }),
     ];
 
     const gpuCompose: ReflectorDef = {
       name: "ground/gpu-compose",
       always: true,
       flush(w) {
-        if (!dirty || ground === null) return;
+        if (ground === null) return;
+        // the world's dirt is PULLED every frame (the journal drains); the out-of-world wakes set `dirty`
+        if (builder.changed()) dirty = true;
+        if (!dirty) return;
         const cam = w.getResource(Camera);
         const vp = w.getResource(Viewport);
         if (cam === undefined || vp === undefined || vp.w <= 0 || vp.h <= 0) return;   // no viewport yet: stay dirty, paint when it exists
@@ -132,14 +162,19 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         const height = Math.max(1, Math.round(vp.h * dpr));
         if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
         dirty = false;
+        // the frame's dt, ms clamped by the engine (design-002 §1) — a first frame before FrameInfo exists steps one nominal frame
+        const dtMs = w.getResource(FrameInfo)?.dt ?? 16;
+        const built = builder.build({ x: cam.x, y: cam.y, zoom: cam.zoom }, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, ground.fieldConfig);
         ground.render({
           view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr },
           pointer: { x: 0, y: 0, on: false },
-          sources: [],
-          frames: [],
+          sources: built.sources,
+          frames: built.frames,
+          ...(built.portals.length ? { portals: built.portals } : {}),
           theme,
         });
         redraws += 1;
+        if (builder.live()) dirty = true;   // a spring still moves: the next frame paints too
       },
     };
 
@@ -153,6 +188,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       dispose() {
         for (const u of unsubs) u();
         unsubs.length = 0;
+        builder.dispose();
         canvas.remove();
         ground?.dispose();
         ground = null;
@@ -163,6 +199,10 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         available: () => ground !== null && !failed,
         redraws: () => redraws,
         setTheme(next) { theme = next; dirty = true; },
+        stats: () => ({ redraws, ...builder.stats() }),
+        wakes: () => builder.wakes(),
+        geometryOf: (e) => builder.geometryOf(e),
+        motionOf: (e) => builder.motionOf(e),
       },
     };
   };

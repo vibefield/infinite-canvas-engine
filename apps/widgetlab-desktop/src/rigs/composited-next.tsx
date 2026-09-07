@@ -1,23 +1,48 @@
 /**
- * The B2 exit witness (design-013 §8 B2): the NEW composited profile boots through the
+ * The B2 + B3a exit witness (design-013 §8): the NEW composited profile boots through the
  * REAL React path — `<InfiniteCanvas profile={compositedNextProfile} ground={groundCompose(…)}>`
- * — on the app-owned device, to a ground with no cards. Three claims, each measured:
+ * — on the app-owned device, and the ground draws the WORLD's cards. Measured, in order:
  *
+ *  B2 (kept):
  *  1. it mounts: one canvas in the L0 slot, the ground available, at least one redraw and
  *     one real submit, zero uncaptured GPU errors;
  *  2. idle-zero: over a quiet window it submits nothing (the instrument counts at
  *     `queue.submit`, so nothing can hide work);
  *  3. it is alive: a camera write is one more redraw and one more submit.
  *
+ *  B3a:
+ *  4. a board of real widgets (`spawnWidget` through a fresh document) is drawn: the
+ *     builder's counts, and PIXELS read back off the ground canvas — a card's centre is the
+ *     plate, a gap is the ground, a folder's face shows its inside's ground (a hole, not a
+ *     plate) while its bar is the plate; idle-zero holds with cards on the board;
+ *  5. selection is a spring: the reveal reaches 1, the ring arrives, and once settled the
+ *     board is idle-zero again;
+ *  6. Grab IS the lift: the card scales by ChromeSettings.liftScale and sets down when it goes;
+ *  7. the heat: the drop pair on a target with a recognizer's DragBounds lights the target
+ *     (the plate under the light reads brighter), and clearing it fades out.
+ *
  * Mounted from `composited-next.html`, driven by `scripts/composited-next.mjs`.
  */
-import { acquireCompositorDevice, Camera, type EngineGpu } from "@ice/core";
+import {
+  acquireCompositorDevice,
+  Camera,
+  DragBounds,
+  DropTarget,
+  type EngineGpu,
+  type Entity,
+  Grab,
+  NO_ENTITY,
+  OverlapCandidate,
+  spawnWidget,
+} from "@ice/core";
 import { instrumentSubmits, type SubmitInstrument } from "@ice/ground";
 import { groundCompose, type GroundComposeContext, type GroundComposeHandle } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { compositedNextProfile, InfiniteCanvas } from "@ice/react";
 import { createRoot } from "react-dom/client";
 import { createDemoEngine } from "../App";
+
+type RGB = readonly [number, number, number];
 
 interface Mounted {
   readonly profile: string;
@@ -28,15 +53,84 @@ interface Mounted {
   readonly gpuErrors: number;
   readonly viewport: string;
 }
+interface Board {
+  readonly zoom: number;
+  readonly active: number;
+  readonly cards: number;
+  readonly containers: number;
+  readonly portals: number;
+  readonly inside: number;
+  readonly capped: number;
+  readonly redraws: number;
+  readonly submits: number;
+  readonly gpuErrors: number;
+  /** Modal colours of 9×9 device-px patches off the ground canvas. */
+  readonly pixels: { readonly card: RGB; readonly gap: RGB; readonly face: RGB; readonly bar: RGB };
+  readonly expect: { readonly card: RGB; readonly bg: RGB };
+  readonly note?: string;
+}
+interface Selected { readonly reveal: number; readonly ring: number; readonly live: boolean; readonly redraws: number }
+interface Grabbed { readonly lift: number; readonly scale: number; readonly shadowSigma: number; readonly liftAfter: number; readonly scaleAfter: number }
+interface Heated {
+  readonly hot: number; readonly tier: number; readonly at: readonly [number, number]; readonly half: readonly [number, number]; readonly r: number;
+  /** The target's plate under the light vs the same plate cold (modal 9×9 patches). */
+  readonly lit: RGB; readonly cold: RGB;
+  readonly hotAfter: number;
+}
 interface NextRig {
   readonly ready: Promise<void>;
   mount(): Promise<Mounted>;
-  idle(ms: number): Promise<{ frames: number; submits: number; redraws: number }>;
+  idle(ms: number): Promise<{ frames: number; submits: number; redraws: number; wakes: Record<string, number> }>;
   nudge(): Promise<{ submits: number; redraws: number }>;
+  board(): Promise<Board>;
+  select(i: number): Promise<Selected>;
+  grab(i: number): Promise<Grabbed>;
+  heat(target: number, source: number): Promise<Heated>;
 }
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const frames = async (n: number) => { for (let i = 0; i < n; i++) await frame(); };
+const bytes = (c: RGB): RGB => [Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255)];
+
+/** The board in world units: six cards in a 3×2 grid and a folder with three cards inside. */
+const CARD = { w: 220, h: 150 } as const;
+const GRID = { x: 40, y: 40, dx: 250, dy: 180 } as const;
+const FOLDER = { x: 800, y: 40, w: 329, h: 345, pad: 10, bar: 36 } as const;
+const BOARD = { w: FOLDER.x + FOLDER.w + 40, h: FOLDER.y + FOLDER.h + 40 } as const;
+const cardRect = (i: number) => ({ x: GRID.x + (i % 3) * GRID.dx, y: GRID.y + Math.floor(i / 3) * GRID.dy, w: CARD.w, h: CARD.h });
+
+/**
+ * Pixels off a LIVE WebGPU canvas: `drawImage` from it is silently blank, but
+ * `toDataURL` → decode → draw → `getImageData` works (the 2026-09 finding).
+ */
+async function readback(canvas: HTMLCanvasElement): Promise<ImageData> {
+  const url = canvas.toDataURL("image/png");
+  const img = new Image();
+  await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("readback decode")); img.src = url; });
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext("2d");
+  if (g === null) throw new Error("readback 2d");
+  g.drawImage(img, 0, 0);
+  return g.getImageData(0, 0, c.width, c.height);
+}
+/** The modal colour of a 9×9 patch centred at device px (x, y) — a dot glyph cannot outvote the ground. */
+function modal(img: ImageData, x: number, y: number): RGB {
+  const counts = new Map<number, number>();
+  for (let dy = -4; dy <= 4; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const px = Math.min(Math.max(Math.round(x + dx), 0), img.width - 1);
+      const py = Math.min(Math.max(Math.round(y + dy), 0), img.height - 1);
+      const i = (py * img.width + px) * 4;
+      const key = ((img.data[i] as number) << 16) | ((img.data[i + 1] as number) << 8) | (img.data[i + 2] as number);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  let best = 0;
+  let bestN = -1;
+  for (const [k, n] of counts) if (n > bestN) { best = k; bestN = n; }
+  return [(best >> 16) & 255, (best >> 8) & 255, best & 255];
+}
 
 function mountNextRig(): NextRig {
   let gpu: EngineGpu | undefined;
@@ -44,12 +138,15 @@ function mountNextRig(): NextRig {
   let handle: GroundComposeHandle | null = null;
   let engine: ReturnType<typeof createDemoEngine> | undefined;
   const rootEl = document.getElementById("root") as HTMLElement;
+  const theme = THEMES.dark;
+  let cards: Entity[] = [];
+  let zoom = 1;
 
   const ready = (async () => {
     gpu = await acquireCompositorDevice();
     instrument = instrumentSubmits(gpu.device);
     engine = createDemoEngine(gpu);
-    const factory = groundCompose({ device: gpu.device, theme: THEMES.dark });
+    const factory = groundCompose({ device: gpu.device, theme });
     const ground = (ctx: GroundComposeContext) => { handle = factory(ctx); return handle; };
     createRoot(rootEl).render(
       <InfiniteCanvas engine={engine} ground={ground} profile={compositedNextProfile} className="h-full w-full" />,
@@ -57,41 +154,144 @@ function mountNextRig(): NextRig {
     await frames(2);
   })();
 
+  const must = <T,>(v: T | null | undefined, what: string): T => { if (v === null || v === undefined) throw new Error(`rig: no ${what}`); return v; };
+  const ce = () => must(engine, "engine");
+  const compose = () => must(handle, "ground handle").compose;
+  const submits = () => instrument?.total() ?? 0;
+  const redraws = () => handle?.compose.redraws() ?? 0;
+  /** World → device px under the rig's camera (at the origin, `zoom`). */
+  const dpx = (wx: number, wy: number): [number, number] => { const dpr = Math.min(window.devicePixelRatio || 1, 2); return [wx * zoom * dpr, wy * zoom * dpr]; };
+  const sampleAt = async (points: Record<string, [number, number]>) => {
+    const img = await readback(compose().canvas);
+    const out: Record<string, RGB> = {};
+    for (const [k, [wx, wy]] of Object.entries(points)) { const [x, y] = dpx(wx, wy); out[k] = modal(img, x, y); }
+    return out;
+  };
   const snapshot = (): Mounted => ({
     profile: compositedNextProfile.name,
     canvases: rootEl.querySelectorAll("canvas").length,
     available: handle?.compose.available() ?? false,
-    redraws: handle?.compose.redraws() ?? 0,
-    submits: instrument?.total() ?? 0,
+    redraws: redraws(),
+    submits: submits(),
     gpuErrors: gpu?.errors().length ?? 0,
     viewport: `${rootEl.clientWidth}x${rootEl.clientHeight}`,
   });
+  /** Wait (bounded) until a predicate holds, a frame at a time. */
+  const until = async (p: () => boolean, max = 300) => { for (let i = 0; i < max && !p(); i++) await frame(); return p(); };
 
   return {
     ready,
     async mount() {
       await ready;
       // the pipelines compile asynchronously; wait for the first real paint (bounded)
-      for (let i = 0; i < 300 && !(handle?.compose.available() && (handle?.compose.redraws() ?? 0) > 0); i++) await frame();
+      await until(() => (handle?.compose.available() ?? false) && redraws() > 0);
       return snapshot();
     },
     async idle(ms) {
-      const submits0 = instrument?.total() ?? 0;
-      const redraws0 = handle?.compose.redraws() ?? 0;
+      const submits0 = submits();
+      const redraws0 = redraws();
+      const wakes0: Record<string, number> = { ...(handle?.compose.wakes() ?? {}) };
       const t0 = performance.now();
       let n = 0;
       while (performance.now() - t0 < ms) { await frame(); n++; }
-      return { frames: n, submits: (instrument?.total() ?? 0) - submits0, redraws: (handle?.compose.redraws() ?? 0) - redraws0 };
+      // what woke the builder over the window, by fact — only the facts that did
+      const wakes: Record<string, number> = {};
+      for (const [k, v] of Object.entries(handle?.compose.wakes() ?? {})) { const d = v - (wakes0[k] ?? 0); if (d > 0) wakes[k] = d; }
+      return { frames: n, submits: submits() - submits0, redraws: redraws() - redraws0, wakes };
     },
     async nudge() {
-      const submits0 = instrument?.total() ?? 0;
-      const redraws0 = handle?.compose.redraws() ?? 0;
-      const world = (engine as NonNullable<typeof engine>).world;
+      const submits0 = submits();
+      const redraws0 = redraws();
+      const world = ce().world;
       const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
       // a rig SETUP write, outside the tick — the same debt the S6 rig carries
       world.setResource(Camera, { ...cam, x: cam.x + 40 });
       await frames(6);
-      return { submits: (instrument?.total() ?? 0) - submits0, redraws: (handle?.compose.redraws() ?? 0) - redraws0 };
+      return { submits: submits() - submits0, redraws: redraws() - redraws0 };
+    },
+    async board() {
+      const e = ce();
+      const world = e.world;
+      // a fresh document: whatever the boot seeded is closed; the board below is the whole world
+      const session = e.docs.create();
+      // the camera at the origin, zoomed so the whole board fits (the folder's face must clear the gate: 299 × zoom ≥ 120)
+      zoom = Math.min(1, (rootEl.clientWidth - 20) / BOARD.w, (rootEl.clientHeight - 20) / BOARD.h);
+      world.setResource(Camera, { x: 0, y: 0, zoom, gesturing: false });
+      cards = [];
+      for (let i = 0; i < 6; i++) { const r = cardRect(i); cards.push(spawnWidget(session.store, world, "clock-card", { ...r, undoable: false })); }
+      const folder = spawnWidget(session.store, world, "card-container", { x: FOLDER.x, y: FOLDER.y, w: FOLDER.w, h: FOLDER.h, undoable: false, props: { title: "Folder", accent: "#7B96FF" } });
+      world.sync();
+      await frames(2);   // the container compiles on a tick before it takes children
+      for (const [x, y] of [[0, 0], [260, 0], [0, 200]] as const) spawnWidget(session.store, world, "clock-card", { x, y, w: CARD.w, h: CARD.h, parent: folder, undoable: false });
+      world.sync();
+      const ok = await until(() => { const s = compose().stats(); return s.cards >= 7 && s.portals >= 1; });
+      await frames(3);
+      const s = compose().stats();
+      const r0 = cardRect(0);
+      const r1 = cardRect(1);
+      const face = { x: FOLDER.x + FOLDER.pad, y: FOLDER.y + FOLDER.pad, w: FOLDER.w - 2 * FOLDER.pad, h: FOLDER.h - FOLDER.pad - FOLDER.bar };
+      const px = await sampleAt({
+        card: [r0.x + r0.w / 2, r0.y + r0.h / 2],
+        gap: [(r0.x + r0.w + r1.x) / 2, r0.y + r0.h / 2],
+        face: [face.x + face.w / 2, face.y + face.h / 2],
+        bar: [FOLDER.x + FOLDER.w / 2, FOLDER.y + FOLDER.h - FOLDER.bar / 2],
+      });
+      return {
+        zoom, active: s.active, cards: s.cards, containers: s.containers, portals: s.portals, inside: s.inside, capped: s.capped,
+        redraws: redraws(), submits: submits(), gpuErrors: gpu?.errors().length ?? 0,
+        pixels: { card: must(px.card, "card px"), gap: must(px.gap, "gap px"), face: must(px.face, "face px"), bar: must(px.bar, "bar px") },
+        expect: { card: bytes(theme.card), bg: bytes(theme.canvasBg) },
+        ...(ok ? {} : { note: "board never reached 7 cards + 1 portal" }),
+      };
+    },
+    async select(i) {
+      const e = ce();
+      const card = must(cards[i], `card ${i}`);
+      e.ops.setSelection([card]);
+      await until(() => (compose().motionOf(card)?.reveal ?? 0) >= 1 && !compose().stats().live, 240);
+      const m = must(compose().motionOf(card), "motion");
+      const G = must(compose().geometryOf(card), "geometry");
+      return { reveal: m.reveal, ring: G.ring, live: compose().stats().live, redraws: redraws() };
+    },
+    async grab(i) {
+      const world = ce().world;
+      const card = must(cards[i], `card ${i}`);
+      const r = cardRect(i);
+      // a rig SETUP write: the claim system's own attach, done by hand (no pointer here)
+      world.addComponent(card, Grab, { x: r.x, y: r.y, w: r.w, h: r.h, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+      await until(() => (compose().motionOf(card)?.lift ?? 0) >= 1 && !compose().stats().live, 240);
+      const m = must(compose().motionOf(card), "motion");
+      const G = must(compose().geometryOf(card), "geometry");
+      const lifted = { lift: m.lift, scale: G.scale, shadowSigma: G.shadowSigma };
+      world.removeComponent(card, Grab);
+      await until(() => (compose().motionOf(card)?.lift ?? 1) <= 0 && !compose().stats().live, 240);
+      const m2 = must(compose().motionOf(card), "motion");
+      const G2 = must(compose().geometryOf(card), "geometry");
+      return { ...lifted, liftAfter: m2.lift, scaleAfter: G2.scale };
+    },
+    async heat(target, source) {
+      const world = ce().world;
+      const t = must(cards[target], `card ${target}`);
+      const rt = cardRect(target);
+      const rs = cardRect(source);
+      // the plate cold: a point 30 world px inside the target's left edge, mid-height — where the light will land
+      const probe: [number, number] = [rt.x + 30, rt.y + rt.h / 2];
+      const cold = must((await sampleAt({ p: probe })).p, "cold px");
+      // the dragged set's post-move union: the source card moved over the target's left half
+      const dx = rt.x - rs.x - rs.w / 2;
+      const dy = rt.y - rs.y;
+      const rec = world.spawn({ components: [[DragBounds, { minX: rs.x + dx, minY: rs.y + dy, maxX: rs.x + dx + rs.w, maxY: rs.y + dy + rs.h }]] });
+      world.setRelation(rec, DropTarget, t);
+      world.addTag(t, OverlapCandidate);
+      await until(() => (compose().motionOf(t)?.hot ?? 0) >= 1 && !compose().stats().live, 240);
+      // the motion record is LIVE (the builder mutates it in place): copy the numbers now, before the clear below
+      const m = must(compose().motionOf(t), "motion");
+      const hot = { hot: m.hot, tier: m.tierK, at: [m.hotAt[0], m.hotAt[1]] as const, half: [m.hotHalf[0], m.hotHalf[1]] as const, r: m.hotR };
+      const lit = must((await sampleAt({ p: probe })).p, "lit px");
+      world.removeTag(t, OverlapCandidate);
+      world.removeRelation(rec, DropTarget);
+      await until(() => (compose().motionOf(t)?.hot ?? 1) <= 0 && !compose().stats().live, 240);
+      return { ...hot, lit, cold, hotAfter: compose().motionOf(t)?.hot ?? -1 };
     },
   };
 }

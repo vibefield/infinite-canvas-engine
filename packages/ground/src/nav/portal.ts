@@ -158,6 +158,26 @@ export function portalOf(K: Rect, radius: number, content: Rect | null | (() => 
   const presence = portalPresence(clip, gate);
   if (presence <= 0) return null;
   const arrival = arrivalCamera(typeof content === "function" ? content() : content, vp, fit);
+  return portalFrom(K, arrival, cam, vp, clip, presence);
+}
+
+/**
+ * The same portal from an ARRIVAL already solved — ICE's preview store hands a
+ * container's `resolvedView` (its own fit, its own limits), so the ground never
+ * re-derives what the flight will land on. Everything after the gate is
+ * `portalOf`'s own arithmetic (`portalFrom`): the two agree bit for bit on
+ * the same arrival.
+ */
+export function portalAt(K: Rect, radius: number, arrival: CameraState, cam: CameraState, vp: Viewport, gate: readonly [number, number] = PORTAL_GATE): LivePortal | null {
+  if (!(K.width > 0) || !(K.height > 0)) return null;
+  const clip = clipOf(K, radius, cam);
+  const presence = portalPresence(clip, gate);
+  if (presence <= 0) return null;
+  return portalFrom(K, arrival, cam, vp, clip, presence);
+}
+
+/** The record past the gate: the embedding, the inside's camera, the box — one place, so `portalOf` and `portalAt` cannot drift. */
+function portalFrom(K: Rect, arrival: CameraState, cam: CameraState, vp: Viewport, clip: PortalClip, presence: number): LivePortal {
   const M = portalAffine(visibleRect(arrival, vp.width, vp.height), K);
   return { arrival, M, cam: outgoingCamera(M, cam), clip, presence, box: boxOfPortal(clip, vp) };
 }
