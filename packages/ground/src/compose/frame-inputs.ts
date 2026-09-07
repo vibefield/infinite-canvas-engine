@@ -36,6 +36,7 @@
 import {
   Active,
   Captures,
+  ChildOf,
   ChromeSettings,
   Container,
   DownPart,
@@ -43,6 +44,7 @@ import {
   DropTarget,
   Grab,
   MeasuredSize,
+  NavTransition,
   OverlapCandidate,
   OverlapRejected,
   Pointer,
@@ -54,9 +56,11 @@ import {
   SurfaceTarget,
   Targets,
   TextureRef,
+  buildOrdinals,
   compareStackOrder,
   createSiblingOrderIndex,
   defineQuery,
+  departedCameraOf,
   type Entity,
   type FramePreviewSnapshot,
   type FramePreviewStore,
@@ -70,10 +74,10 @@ import { type CardMotion, MOTION_DEFAULTS, type MotionTuning, newMotion, stepMot
 import { type CardProgram, NO_PART, type PartState, shellProgram } from "../card/program";
 import type { HostEntry } from "./dom-compose";
 import { type FieldConfig, type FieldSource, fieldReachPx, MAX_SOURCES } from "../field/layout";
-import type { CameraState, Rect } from "../nav/flight";
-import { FOLDER_FACE, type LivePortal, PORTAL_CAP, PORTAL_GATE, portalAt } from "../nav/portal";
+import { type CameraState, flightOpacity, type Rect } from "../nav/flight";
+import { clipOf, FOLDER_FACE, type LivePortal, PORTAL_CAP, PORTAL_GATE, portalAt, type Presentation } from "../nav/portal";
 import type { GroundTheme } from "../theme";
-import type { PortalInputs } from "./ground";
+import type { OutgoingInputs, PortalInputs } from "./ground";
 import { type ContentResidency, targetOf } from "./residency";
 
 export interface FrameBuilderOptions {
@@ -136,6 +140,19 @@ export interface FrameBuilderStats {
   readonly live: boolean;
 }
 
+/** A nav flight's second slot (B7): what the ground draws BESIDE the arriving frame, and how the arriving one presents. */
+export interface FlightInputs {
+  readonly kind: "enter" | "exit";
+  readonly p: number;
+  readonly frozen: boolean;
+  /** The arriving frame's presentation: its opacity, and on enter the portal clip it is seen through. */
+  readonly present: Presentation;
+  /** The departed frame's ground under `departedCameraOf`: its cards at rest with their content, its own live portals, the container a hole on enter. */
+  readonly outgoing: OutgoingInputs;
+  /** The arriving frame is dressed for its landing (PORTAL.md §9). */
+  readonly lodZoom: number;
+}
+
 export interface BuiltFrame {
   readonly sources: FieldSource[];
   readonly frames: FrameInstance[];
@@ -150,6 +167,14 @@ export interface FrameBuilder {
    * `config` (the ground's field config) dresses each portal's inside.
    */
   build(cam: CameraState, vp: BuildViewport, dt: number, theme: GroundTheme, config: FieldConfig): BuiltFrame;
+  /**
+   * The flight's second slot this frame (B7), from the `NavTransition` resource: the DEPARTED
+   * frame's cards at rest under `departedCameraOf` (the pre-cut camera itself at p = 0 and while
+   * frozen — the cut changes no pixel), with their content, its own live portals, and the
+   * container as a hole on enter (`at`) — one tree through the container; an exit draws the
+   * departed inside OVER the parent. `null` at rest.
+   */
+  flight(cam: CameraState, vp: BuildViewport, theme: GroundTheme, config: FieldConfig): FlightInputs | null;
   /** True while a spring is still moving after the last build — the host paints again. */
   live(): boolean;
   /**
@@ -188,6 +213,8 @@ const EMPTY_STATS: FrameBuilderStats = { active: 0, cards: 0, containers: 0, por
 
 // Widgets carry PrefabId (the preview store's own membership test); Active = a ChildOf root in the current nav frame.
 const widgetsQ = defineQuery([Position, Size, PrefabId, Active]);
+// Every widget, Active or not — the departed frame's cards during a flight are culled, not Active.
+const allWidgetsQ = defineQuery([Position, Size, PrefabId]);
 // The router's part channel (design-014, B3b): pointers over a part, recognizers pressing one.
 const pointersQ = defineQuery([Pointer, PointerPart]);
 const pressesQ = defineQuery([DownPart]);
@@ -237,6 +264,18 @@ export function faceOfSnapshot(pos: { readonly x: number; readonly y: number }, 
 export function fieldSourceOf(G: ShellGeometry, cam: CameraState, strength: number): FieldSource {
   const z = cam.zoom;
   return { cx: (G.centre[0] - cam.x) * z, cy: (G.centre[1] - cam.y) * z, hx: G.half[0] * z, hy: G.half[1] * z, r: G.outerR * z, strength };
+}
+
+/** The nav frame a widget belongs to: its first `Container` ancestor on the `ChildOf` chain; `undefined` = the root (core's membership rule). */
+export function navFrameOf(world: World, e: Entity): Entity | undefined {
+  let cur = world.getRelation(e, ChildOf);
+  let hops = 0;
+  while (cur !== undefined && hops < 64) {
+    if (world.hasTag(cur, Container)) return cur;
+    cur = world.getRelation(cur, ChildOf);
+    hops += 1;
+  }
+  return undefined;
 }
 
 /** The hole's face in the card's own frame (content.ts `PortalFace`). */
@@ -342,6 +381,26 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
     states.delete(e);
   };
 
+  /** A live portal's slot inputs: its inside under the portal's camera, dressed for its arrival (PORTAL.md §9), clipped and faded by its presence, drawn just before the container at `at`. */
+  const portalInputsOf = (lp: LivePortal, in_: { frames: FrameInstance[]; sources: FieldSource[] }, vp: BuildViewport, config: FieldConfig, theme: GroundTheme, at: number): PortalInputs => ({
+    view: { camX: lp.cam.x, camY: lp.cam.y, zoom: lp.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr, box: lp.box },
+    pointer: { x: 0, y: 0, on: false },
+    lodZoom: lp.arrival.zoom,
+    present: { opacity: lp.presence, portal: lp.clip },
+    config,
+    sources: in_.sources,
+    frames: in_.frames,
+    at,
+    plate: theme.card,
+  });
+  /** A container's face in its parent frame's coords, from its preview's insets (or its body without a store). */
+  const faceOf = (c: Entity): { readonly K: Rect; readonly r: number } | null => {
+    const pos = world.get(c, Position);
+    const size = sizeOf(world, c);
+    if (pos === undefined || size === undefined || !(size.w > 0) || !(size.h > 0)) return null;
+    if (previews === undefined) return { K: { x: pos.x, y: pos.y, width: size.w, height: size.h }, r: radius };
+    return faceOfSnapshot(pos, size, previews.snapshot(c), radius, faceR);
+  };
   /** A portal's inside at rest (unrevealed) from its snapshot: the children's frames and sources under the slot's camera. */
   const insideOf = (snap: FramePreviewSnapshot, cam: CameraState, theme: GroundTheme): { frames: FrameInstance[]; sources: FieldSource[] } => {
     const frames: FrameInstance[] = [];
@@ -446,18 +505,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
           const in_ = insideOf(p.snap, lp.cam, theme);
           inside += in_.frames.length;
           if (p.snap.truncated) truncated += 1;
-          portals.push({
-            view: { camX: lp.cam.x, camY: lp.cam.y, zoom: lp.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr, box: lp.box },
-            pointer: { x: 0, y: 0, on: false },
-            // dressed for its arrival: the inside as it will look when entered, scaled (PORTAL.md §9)
-            lodZoom: lp.arrival.zoom,
-            present: { opacity: lp.presence, portal: lp.clip },
-            config,
-            sources: in_.sources,
-            frames: in_.frames,
-            at,
-            plate: theme.card,
-          });
+          portals.push(portalInputsOf(lp, in_, vp, config, theme, at));
           frames.push({ geometry: row.G, surface: theme.card, content: portalContent(portalFaceOf(p.K, p.r)) });
         } else {
           // the content term (B4a): the card's `TextureRef` once a render realised and wrote it, else the plate
@@ -471,6 +519,83 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       if (capped > 0) console.warn(`[ice] ground/compose: ${capped} card${capped === 1 ? "" : "s"} past the ${limit}-record cap were not drawn`);
       stats = { active: list.length, cards: frames.length, containers, portals: portals.length, inside, textured, capped, truncated, live };
       return { sources, frames, portals, stats };
+    },
+    flight(cam, vp, theme, config) {
+      if (disposed) return null;
+      const t = world.getResource(NavTransition);
+      if (t === undefined || !t.active) return null;
+      const enter = t.kind === "enter";
+      const outCam = departedCameraOf(t, cam);
+      const op = flightOpacity(t.kind, t.p, t.frozen);
+      // the container: entered on enter (the destination frame), left on exit (the departed frame) — its face in the PARENT frame's coords
+      const container = enter ? t.toFrame : t.fromFrame;
+      const face = world.isAlive(container) ? faceOf(container) : null;
+      // a frozen (depth-capped) flight has no portal: two whole slots, a dissolve (design-006 §5)
+      const clip = t.frozen || face === null ? null : clipOf(face.K, face.r, enter ? outCam : cam);
+      // the departed frame's cards: the parent's on enter, the inside's on exit — culled, not Active, so the plain query
+      const frameOf = world.isAlive(t.fromFrame) && world.hasTag(t.fromFrame, Container) ? t.fromFrame : undefined;
+      // the DEPARTED frame's own paint order: its parent's sibling sequence (the builder's index follows the CURRENT frame,
+      // which is the arriving one after the cut — a card raised by a drag must stay on top as it fades)
+      const ordinals = world.isAlive(t.fromFrame) ? buildOrdinals(world, t.fromFrame) : order.ordinals();
+      const list: Entity[] = [];
+      world.query(allWidgetsQ).each((batch) => { for (const row of batch) { const e = batch.entity(row); if (navFrameOf(world, e) === frameOf) list.push(e); } });
+      list.sort((a, b) => compareStackOrder(world, ordinals, a, b));
+      const margin = marginOf(config, outCam.zoom);
+      const frames: FrameInstance[] = [];
+      const sources: FieldSource[] = [];
+      const portals: PortalInputs[] = [];
+      let at: number | undefined;
+      const limit = Math.min(MAX_FRAMES, MAX_SOURCES);
+      for (const e of list) {
+        if (frames.length >= limit) break;
+        const pos = world.get(e, Position);
+        const size = sizeOf(world, e);
+        if (pos === undefined || size === undefined || !(size.w > 0) || !(size.h > 0)) continue;
+        const centre: readonly [number, number] = [pos.x + size.w / 2, pos.y + size.h / 2];
+        const contentHalf: readonly [number, number] = [size.w / 2, size.h / 2];
+        if (offscreen(centre, contentHalf, margin, outCam, vp)) continue;
+        // at rest and unrevealed: the frame we leave keeps no selection ring while it fades (a nav cut hides chrome)
+        const G = program.resolve({ card: { centre, contentHalf, radius }, motion: IDLE, material, dt: 0, part: NO_PART });
+        const index = frames.length;
+        if (enter && clip !== null && e === container && face !== null) {
+          // the entered container is a HOLE in the departed frame: the arriving slot draws through it (one tree, `at`)
+          at = index;
+          frames.push({ geometry: G, surface: theme.card, content: portalContent(portalFaceOf(face.K, face.r)) });
+        } else if (world.hasTag(e, Container) && previews !== undefined) {
+          // the departed frame's OTHER live portals keep showing their insides under the departed camera
+          const f = faceOf(e);
+          const snap = previews.snapshot(e);
+          const lp = f === null ? null : portalAt(f.K, f.r, snap.resolvedView, outCam, vp, gate);
+          if (lp !== null && f !== null && portals.length < cap) {
+            portals.push(portalInputsOf(lp, insideOf(snap, lp.cam, theme), vp, config, theme, index));
+            frames.push({ geometry: G, surface: theme.card, content: portalContent(portalFaceOf(f.K, f.r)) });
+          } else frames.push({ geometry: G, surface: theme.card, content: residency?.contentOf(e) ?? PLATE });
+        } else {
+          // the departed slot's records carry their textures: content in both frames (§10.5)
+          frames.push({ geometry: G, surface: theme.card, content: residency?.contentOf(e) ?? PLATE });
+        }
+        sources.push(fieldSourceOf(G, outCam, strength));
+      }
+      return {
+        kind: t.kind,
+        p: t.p,
+        frozen: t.frozen,
+        present: { opacity: op.incoming, ...(clip !== null && enter ? { portal: clip } : {}) },
+        outgoing: {
+          view: { camX: outCam.x, camY: outCam.y, zoom: outCam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr },
+          pointer: { x: 0, y: 0, on: false },
+          // the departed frame keeps the dressing it had at the cut (PORTAL.md §9)
+          lodZoom: t.fromZ,
+          present: { opacity: op.outgoing, ...(clip !== null && !enter ? { portal: clip } : {}) },
+          config,
+          sources,
+          frames,
+          ...(portals.length ? { portals } : {}),
+          order: enter ? "under" : "over",
+          ...(at !== undefined ? { at } : {}),
+        },
+        lodZoom: t.c1z,
+      };
     },
     live: () => stats.live,
     changed() {

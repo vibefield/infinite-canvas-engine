@@ -919,6 +919,20 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   `SurfaceTarget`/`TextureRef` and emits every card's content term. Exit: 7 residency tests
   on a real engine + the infra; the profile test pins the table's ownership; the oracle's 47
   renders byte-identical; `next-boot` ALL PASS at B3b's numbers; `pnpm run ci` green.
+- **B7 — the flight** (design-013 §8 B7, D-B7.1, design-006 §9, **LANDED 2026-09-07**): the
+  flight is the ground's second slot. `NavTransition` carries the pre-cut camera;
+  `departedCameraOf` is the one rule (the pre-cut camera itself at p = 0 and while frozen)
+  read by the ground's departed slot AND the DOM's departing plane; `enterContainer` starts
+  from the live portal's exact camera (`outgoingCamera(M, camPre)`); the first tick after the
+  cut holds at p = 0 (one product frame IS the cut frame); `Retained` written on the departed
+  set and released at the landing/yield/abort; `FrameBuilder.flight` builds the departed
+  frame at rest in its own paint order with its content and portals — a hole at the entered
+  container (one tree) on enter, the inside over the parent on exit; the compose layer owns
+  the `ground` presentation plane. Exit: the `next-boot` nav phase — the enter cut maxΔ 0 over
+  the whole canvas, both slots mid-flight, exact landing, idle-zero inside, the exit cut maxΔ 0
+  whole frame, exact landing, the round trip pixel for pixel — ALL PASS; 4 core + 3 ground
+  tests; the oracle's 47 renders byte-identical; `pnpm run ci` green. Findings: the pack's
+  button springs now snap at settle; the departed frame builds its own ordinals.
 
 ## Release cut & downstream
 

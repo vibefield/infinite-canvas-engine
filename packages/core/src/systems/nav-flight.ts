@@ -25,14 +25,18 @@
  *   math only needs c0/c1.
  */
 import type { Entity, TickSystem, World } from "@vibecook/strata-ecs";
-import { defineTickSystem, enumOf, field } from "@vibecook/strata-ecs";
+import { defineQuery, defineTickSystem, enumOf, field } from "@vibecook/strata-ecs";
 import type { CameraState, PortalAffine } from "@ice/kernel";
-import { capFlightStart, flightCamera, flightOctaves, springStep } from "@ice/kernel";
+import { capFlightStart, flightCamera, flightOctaves, outgoingCamera, springStep } from "@ice/kernel";
 import { Camera, Viewport } from "../catalog/camera-derived";
+import { Container } from "../catalog/graph";
+import { ChildOf, Position, Size } from "../catalog/scene";
 import { NavTransitionSettings } from "../catalog/settings-resources";
+import { Retained } from "../catalog/surface";
 import { FrameInfo } from "../engine/frame-info";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { defineResource } from "../schema/meta";
+import { PrefabId } from "../schema/prefab";
 import { NAV_TRANSITION_DEFAULTS } from "../settings/defaults";
 
 const NAV = NAV_TRANSITION_DEFAULTS;
@@ -56,6 +60,21 @@ export const NavTransition = defineResource("NavTransition", {
   toTypeId: field("string", { default: "" }),
   /** Response multiplier from octave distance (locked at start; §4). */
   durMul: field("f32", { default: 1 }),
+  /**
+   * The DEPARTED frame's camera at the cut (design-013 §8 B7, D-B7.1): what it renders under
+   * at p = 0 — bit for bit, never through the affine and back — and throughout a frozen
+   * flight. `departedCameraOf` is the one reader.
+   */
+  fromX: field("f64", { default: 0 }),
+  fromY: field("f64", { default: 0 }),
+  fromZ: field("f64", { default: 1 }),
+  /**
+   * Ticks the spring has stepped. The FIRST tick after the cut holds at p = 0 (B7): one frame
+   * is drawn with the camera at the exact `c0` — the arriving frame IS the portal's last frame,
+   * the departed frame IS its pre-cut frame — so the cut changes no pixel and the motion begins
+   * from a frame that exists. The oracle's `p = 0` still is a product frame, not a fiction.
+   */
+  ticks: field("u32", { default: 0 }),
   c0x: field("f64", { default: 0 }),
   c0y: field("f64", { default: 0 }),
   c0z: field("f64", { default: 1 }),
@@ -92,9 +111,79 @@ const identityFields = (
   toTypeId: identity?.toTypeId ?? "",
 });
 
+/** The one in-flight transition's field values, as `departedCameraOf` reads them. */
+export interface DepartedCameraInputs {
+  readonly frozen: boolean;
+  readonly c0x: number;
+  readonly c0y: number;
+  readonly c0z: number;
+  readonly fromX: number;
+  readonly fromY: number;
+  readonly fromZ: number;
+  readonly as: number;
+  readonly aox: number;
+  readonly aoy: number;
+}
+
+/**
+ * The camera the DEPARTED frame renders under this frame (design-013 §8 B7, D-B7.1; the
+ * ground's `departedCamera`, moved onto the resource). Riding the flight through the affine
+ * (`outgoingCamera`) — except at the cut itself, where it is the pre-cut camera bit for bit
+ * (the affine and its inverse round-trip to within an ulp, and at zoom 1 an ulp is the other
+ * side of a decade), and throughout a FROZEN flight, where the departed frame stays at its
+ * pre-cut appearance and fades (design-006 §5: the cap broke the geometry, so the story is a
+ * dissolve, not a portal). Every presenter of the departed frame — the ground's second slot,
+ * the DOM's departing plane — reads this one rule, so they agree to the bit.
+ */
+export function departedCameraOf(t: DepartedCameraInputs, cam: CameraState): CameraState {
+  if (t.frozen || (cam.x === t.c0x && cam.y === t.c0y && cam.zoom === t.c0z)) return { x: t.fromX, y: t.fromY, zoom: t.fromZ };
+  return outgoingCamera({ s: t.as, ox: t.aox, oy: t.aoy }, cam);
+}
+
+// Every equipped widget, Active or not — the departed frame's cards are culled at the cut.
+const widgetsQ = defineQuery([Position, Size, PrefabId]);
+const retainedQ = defineQuery([Retained]);
+
+/** The nav frame a widget belongs to: its first `Container` ancestor on the `ChildOf` chain; `undefined` = the root (nested-canvas's membership rule). */
+function navFrameOf(world: World, e: Entity): Entity | undefined {
+  let cur = world.getRelation(e, ChildOf);
+  let hops = 0;
+  while (cur !== undefined && hops < 64) {
+    if (world.hasTag(cur, Container)) return cur;
+    cur = world.getRelation(cur, ChildOf);
+    hops += 1;
+  }
+  return undefined;
+}
+
+/**
+ * Pin the DEPARTED frame's cards for the flight (design-013 §4, §5: `Retained` — "the nav
+ * crossfade" writes it; Residency's LRU never evicts a retained key, so the departed slot's
+ * records keep their textures until the landing). An op-time write: `startNavFlight` runs
+ * outside the tick. `fromFrame` is the departed frame — a container, or the board root.
+ */
+function retainDeparted(world: World, fromFrame: Entity | undefined): number {
+  if (fromFrame === undefined || fromFrame === (0 as Entity)) return 0;
+  const frame = world.isAlive(fromFrame) && world.hasTag(fromFrame, Container) ? fromFrame : undefined;
+  const set: Entity[] = [];
+  world.query(widgetsQ).each((b) => { for (const r of b) { const e = b.entity(r); if (navFrameOf(world, e) === frame) set.push(e); } });
+  for (const e of set) if (!world.hasTag(e, Retained)) world.addTag(e, Retained);
+  return set.length;
+}
+
+/** The flight is over (settled, aborted, yielded): nothing is retained any more. Two-phase — collect, then mutate. */
+function releaseRetained(w: { query: World["query"] }, untag: (e: Entity) => void): number {
+  const set: Entity[] = [];
+  w.query(retainedQ).each((b) => { for (const r of b) set.push(b.entity(r)); });
+  for (const e of set) untag(e);
+  return set.length;
+}
+
 /**
  * Arm a flight from the already-cut world: continuity-solve was done by the
- * caller (`exact` = c0 in destination-frame coords), the arrival `c1` is
+ * caller (`exact` = c0 in destination-frame coords — from a LIVE PORTAL the
+ * camera the inside was already rendering under, `outgoingCamera(M, camPre)`,
+ * so the cut changes no pixel; D-B7.1), the arrival `c1` is
  * already clamped. Applies the depth cap (§5), snaps the camera to c0, and
  * activates the resource. Callers guarantee a live Viewport — headless/no-
  * viewport paths snap to the arrival instead and never reach here.
@@ -113,6 +202,10 @@ export function startNavFlight(
   const { c0, capped } = capFlightStart(exact, c1, vpW, vpH, NAV.freezeOctaves, NAV.capFactor);
   const octaves = flightOctaves(c0, c1);
   const prev = world.getResource(NavTransition);
+  // the departed frame's camera at the cut: the Camera resource BEFORE this write (the cut itself moves it to c0)
+  const pre = world.getResource(Camera);
+  const from: CameraState = pre === undefined ? c0 : { x: pre.x, y: pre.y, zoom: pre.zoom };
+  retainDeparted(world, identity?.fromFrame);
   writeRuntimeResource(world, Camera, { x: c0.x, y: c0.y, zoom: c0.zoom, gesturing: false });
   world.setResource(NavTransition, {
     active: true,
@@ -123,6 +216,10 @@ export function startNavFlight(
     epoch: (prev?.epoch ?? 0) + 1,
     ...identityFields(identity),
     durMul: 1 + NAV.durationPerOctave * Math.max(0, octaves - NAV.baseOctaves),
+    fromX: from.x,
+    fromY: from.y,
+    fromZ: from.zoom,
+    ticks: 0,
     c0x: c0.x,
     c0y: c0.y,
     c0z: c0.zoom,
@@ -154,6 +251,10 @@ export function publishNavCut(
     epoch: (prev?.epoch ?? 0) + 1,
     ...identityFields(identity),
     durMul: 1,
+    fromX: from.x,
+    fromY: from.y,
+    fromZ: from.zoom,
+    ticks: 1,
     c0x: from.x,
     c0y: from.y,
     c0z: from.zoom,
@@ -170,6 +271,7 @@ export function publishNavCut(
 export function abortNavFlight(world: World): void {
   const t = world.getResource(NavTransition);
   if (t?.active) world.setResource(NavTransition, { ...t, active: false });
+  releaseRetained(world, (e) => world.removeTag(e, Retained));
 }
 
 /**
@@ -187,14 +289,16 @@ export function navFlightActive(world: World): boolean {
 
 export function createNavFlight(world: World): TickSystem {
   return defineTickSystem(
-    () => {
+    (ctx) => {
       const t = world.getResource(NavTransition);
       if (t === undefined || !t.active) return;
+      const release = (): void => { releaseRetained(ctx, (e) => ctx.removeTag(e, Retained)); };
       const cam = world.getResource(Camera);
       if (cam?.gesturing === true) {
         // Touch always wins (§4): yield instantly; the camera stays wherever
         // the flight left it and the gesture composes from there.
         world.setResource(NavTransition, { ...t, active: false });
+        release();
         return;
       }
       const vp = world.getResource(Viewport);
@@ -203,6 +307,12 @@ export function createNavFlight(world: World): TickSystem {
         // Viewport died mid-flight (teardown) — settle instantly.
         writeRuntimeResource(world, Camera, { ...c1, gesturing: false });
         world.setResource(NavTransition, { ...t, p: 1, v: 0, active: false });
+        release();
+        return;
+      }
+      if (t.ticks === 0) {
+        // the cut frame (B7): held at p = 0 with the camera at the exact c0 — drawn once, then the spring runs
+        world.setResource(NavTransition, { ...t, ticks: 1 });
         return;
       }
       const dtMs = world.getResource(FrameInfo)?.dt ?? 16;
@@ -215,12 +325,13 @@ export function createNavFlight(world: World): TickSystem {
       if (p > NAV.settleP && Math.abs(v) < NAV.settleV) {
         writeRuntimeResource(world, Camera, { ...c1, gesturing: false }); // land EXACTLY
         world.setResource(NavTransition, { ...t, p: 1, v: 0, active: false });
+        release();
         return;
       }
       const c0: CameraState = { x: t.c0x, y: t.c0y, zoom: t.c0z };
       const c = flightCamera(c0, c1, Math.min(1, Math.max(0, p)), vp.w, vp.h);
       writeRuntimeResource(world, Camera, { x: c.x, y: c.y, zoom: c.zoom, gesturing: false });
-      world.setResource(NavTransition, { ...t, p, v });
+      world.setResource(NavTransition, { ...t, p, v, ticks: t.ticks + 1 });
     },
     {
       name: "navFlight",

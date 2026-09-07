@@ -22,7 +22,7 @@
 // ECS, never reads layout — the viewport comes from the `Viewport` resource
 // the facade's ResizeObserver writes, never from the container; the frame's dt
 // from `FrameInfo` (clamped by the engine), never from a clock of its own.
-import { Camera, type Entity, FrameInfo, type FramePickSlot, type FramePreviewStore, type GridConfig, PartTap, type ReflectorDef, Viewport, type World } from "@ice/core";
+import { Camera, type Entity, FrameInfo, type FramePickSlot, type FramePreviewStore, type GridConfig, NavTransition, PartTap, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type World } from "@ice/core";
 import { shellProgram } from "../card/program";
 import { LINES } from "../theme";
 import { createDomHostWriter } from "./dom-compose";
@@ -34,8 +34,8 @@ import type { FieldConfig } from "../field/layout";
 import type { GlyphProgram } from "../field/program";
 import { GROUND_SHADERS } from "../shaders";
 import type { GroundTheme } from "../theme";
-import { createFrameBuilder, type FrameBuilderOptions, type FrameBuilderStats, type WakeReason } from "./frame-inputs";
-import { Ground } from "./ground";
+import { createFrameBuilder, type FlightInputs, type FrameBuilderOptions, type FrameBuilderStats, type WakeReason } from "./frame-inputs";
+import { Ground, type GroundFrameInputs } from "./ground";
 
 export interface GroundComposeOptions {
   /** The app-owned device (`acquireCompositorDevice().device`); three adopts the same one for islands. */
@@ -66,6 +66,14 @@ export interface GroundComposeContext {
   readonly hosts?: { contentOf(entity: Entity): HTMLElement | undefined };
   /** The interaction stack's frame pick slot: the ground's hit test over its last-drawn geometry goes here (B3b). Absent = the boxes pick. */
   readonly framePick?: FramePickSlot;
+  /**
+   * The presentation transition coordinator (`engine.transitions`): the ground OWNS the `ground`
+   * plane (B7). A cross-type flight is gated on every required plane preparing, and a canvas
+   * type with a ground program requires this one — without an owner every enter into a folder
+   * is a snap. The ground needs no preparation: its second slot is built from the world each
+   * frame, so the adapter prepares instantly and retains nothing. Absent = no registration.
+   */
+  readonly transitions?: { register(adapter: PresentationTransitionAdapter): () => void };
 }
 
 /** The compose layer's instruments: the ground's redraws and the last build's counts. */
@@ -87,6 +95,8 @@ export interface RenderSlots {
 
 export interface GroundComposeStats extends FrameBuilderStats {
   readonly redraws: number;
+  /** The flight's second slot as last drawn (B7): its kind, progress and record count; `null` at rest. */
+  readonly outgoing: { readonly kind: "enter" | "exit"; readonly p: number; readonly frozen: boolean; readonly frames: number; readonly at: number | null } | null;
 }
 
 export interface GroundCompose {
@@ -125,6 +135,8 @@ export interface GroundCompose {
   geometryOf(e: Entity): ShellGeometry | undefined;
   /** A card's springs as last stepped — flux, never a world fact. */
   motionOf(e: Entity): CardMotion | undefined;
+  /** The inputs of the last render, as handed to `Ground.render` — the rig's witness for what a frame was built from. */
+  lastInputs(): GroundFrameInputs | null;
 }
 
 /** What the factory returns: the facade's `GroundLayerHandle` shape, plus `compose`. */
@@ -188,7 +200,9 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     // The frame's build happens ONCE per tick, in the first of the ground's reflectors to run
     // (DomCompose when the profile registers it, else GpuCompose); the other draws what was built.
     let builtTick = -1;
-    let pending: { readonly view: { camX: number; camY: number; zoom: number; width: number; height: number; dpr: number }; readonly built: ReturnType<typeof builder.build> } | null = null;
+    let pending: { readonly view: { camX: number; camY: number; zoom: number; width: number; height: number; dpr: number }; readonly built: ReturnType<typeof builder.build>; readonly flight: FlightInputs | null } | null = null;
+    let lastFlight: GroundComposeStats["outgoing"] = null;
+    let lastInputs: GroundFrameInputs | null = null;
     const ensureBuilt = (w: World): boolean => {
       if (ground === null) return false;
       const tick = w.getResource(FrameInfo)?.tick ?? -1;
@@ -208,7 +222,9 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       // the frame's dt, ms clamped by the engine (design-002 §1) — a first frame before FrameInfo exists steps one nominal frame
       const dtMs = w.getResource(FrameInfo)?.dt ?? 16;
       const built = builder.build({ x: cam.x, y: cam.y, zoom: cam.zoom }, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, ground.fieldConfig);
-      pending = { view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr }, built };
+      // a nav flight's second slot (B7): the departed frame beside the arriving one
+      const flight = builder.flight({ x: cam.x, y: cam.y, zoom: cam.zoom }, { width: vp.w, height: vp.h, dpr }, theme, ground.fieldConfig);
+      pending = { view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr }, built, flight };
       if (builder.live()) dirty = true;   // a spring still moves: the next frame paints too
       return true;
     };
@@ -229,10 +245,14 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       },
       (e: unknown) => { failed = true; console.error("[ice] ground/compose: Ground.create failed", e); },
     );
+    // the ground plane's transition adapter (B7): prepared the moment it is asked — the flight IS the second slot
+    const detachTransition = ctx.transitions?.register({ id: "@ice/ground/compose", plane: "ground", prepare: () => null }) ?? null;
     let lastTap = 0;
     const unsubs: Array<() => void> = [
       world.reactive.observeResource(Camera, () => { dirty = true; }),
       world.reactive.observeResource(Viewport, () => { dirty = true; }),
+      // a flight writes its progress every tick (and the camera): the departed slot moves
+      world.reactive.observeResource(NavTransition, () => { dirty = true; }),
       builder.observe(() => { dirty = true; }),
       // a tap on a card program's PART (B3b): the router hands it over as a resource; the app's action is `onPart`
       world.reactive.observeResource(PartTap, () => {
@@ -258,19 +278,23 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       always: true,
       flush(w) {
         if (!ensureBuilt(w) || ground === null || pending === null) return;
-        const { view, built } = pending;
+        const { view, built, flight } = pending;
         pending = null;
         // the page array every `page` card samples — rebound only when the residency re-realised it (growth, D-B4.1)
         const pages = residency.pagesView();
         if (pages !== lastPages) { ground.setPages(pages); lastPages = pages; }
-        ground.render({
+        const inputs: GroundFrameInputs = {
           view,
           pointer: { x: 0, y: 0, on: false },
           sources: built.sources,
           frames: built.frames,
           ...(built.portals.length ? { portals: built.portals } : {}),
+          ...(flight !== null ? { present: flight.present, outgoing: flight.outgoing, lodZoom: flight.lodZoom } : {}),
           theme,
-        });
+        };
+        lastInputs = inputs;
+        ground.render(inputs);
+        lastFlight = flight === null ? null : { kind: flight.kind, p: flight.p, frozen: flight.frozen, frames: flight.outgoing.frames.length, at: flight.outgoing.at ?? null };
         redraws += 1;
         residency.collect();   // the destroy list, after this frame's submit
       },
@@ -287,6 +311,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         for (const u of unsubs) u();
         unsubs.length = 0;
         if (framePick !== undefined && framePick.current === pickSource) framePick.current = null;
+        detachTransition?.();
         writer?.dispose();
         builder.dispose();
         residency.dispose();
@@ -303,11 +328,12 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         available: () => ground !== null && !failed,
         redraws: () => redraws,
         setTheme(next) { theme = next; dirty = true; },
-        stats: () => ({ redraws, ...builder.stats() }),
+        stats: () => ({ redraws, outgoing: lastFlight, ...builder.stats() }),
         wakes: () => builder.wakes(),
         domWrites: () => ({ writes: domWrites, clips: writer?.clips ?? 0 }),
         geometryOf: (e) => builder.geometryOf(e),
         motionOf: (e) => builder.motionOf(e),
+        lastInputs: () => lastInputs,
       },
     };
   };

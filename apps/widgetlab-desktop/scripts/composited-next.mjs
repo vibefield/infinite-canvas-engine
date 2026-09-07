@@ -166,6 +166,27 @@ try {
   check(luma(heat.lit) > luma(heat.cold) + 1, `the plate under the light reads brighter: lit ${rgb(heat.lit)} vs cold ${rgb(heat.cold)}`);
   check(heat.hotAfter === 0, `clearing the pair fades the light out (presence ${heat.hotAfter})`);
 
+  // B7 — the flight: the second slot from the live portal's exact camera. The pointer leaves the board first: the
+  // departed frame is a STILL at rest (no hover, no selection — the lab's rule), so a parked pointer's hover would differ.
+  // far from every card's widened pick (card 0 sits at x 12 after the band drag; the pick pads by the chrome's reach)
+  const vpSize = page.viewportSize() ?? { width: 1280, height: 808 };
+  await page.mouse.move(vpSize.width - 6, vpSize.height - 6);
+  await page.waitForTimeout(160);
+  const nav = await page.evaluate(() => window.__nextRig.nav());
+  log(`nav: ${JSON.stringify(nav)}`);
+  check(nav.cut.active && nav.cut.p === 0 && nav.cut.ticks === 1, `enter: the first frame after the cut is held at p = 0 (ticks ${nav.cut.ticks})`);
+  check(nav.cut.maxDelta === 0, `the cut changes no pixel on the ground: maxΔ ${nav.cut.maxDelta} over ${nav.size.w}×${nav.size.h} (the arriving frame IS the portal's last frame, the departed IS its pre-cut frame)`);
+  // the folder's index in the departed frame's PAINT order (the drag raised card 0 above it — the departed frame keeps its own order)
+  check(nav.cut.outgoing !== null && nav.cut.outgoing.kind === "enter" && nav.cut.outgoing.frames === 7 && nav.cut.outgoing.at !== null && nav.cut.outgoing.at >= 0 && nav.cut.outgoing.at < 7, `the departed frame draws beside the arriving one — one tree through the folder at its own paint index: ${JSON.stringify(nav.cut.outgoing)}`);
+  check(nav.mid.p > 0 && nav.mid.outgoing, `mid-flight both slots draw (p ${nav.mid.p.toFixed(3)})`);
+  check(nav.landed < 1e-9, `the flight lands EXACTLY on the arrival (|cam − c1| ${nav.landed})`);
+  check(!nav.afterLanding.outgoing && nav.afterLanding.submits === 0, `at rest inside: one slot, idle-zero (${nav.afterLanding.submits} submits over ${nav.afterLanding.frames} frames)`);
+  check(nav.exit.kind === "exit" && nav.exit.p === 0 && nav.exit.outgoing, "exit: the cut frame is held at p = 0 with the departed inside drawn over the parent");
+  check(nav.exit.maxDeltaInset === 0, `the exit cut changes no pixel inside the face: maxΔ ${nav.exit.maxDeltaInset} inset (whole frame ${nav.exit.maxDelta})`);
+  check(nav.landed2 < 1e-9, `the exit lands EXACTLY on the saved camera (|cam − c1| ${nav.landed2})`);
+  check(nav.roundTripOutsideFolder === 0, `the round trip returns the board pixel for pixel outside the folder: maxΔ ${nav.roundTripOutsideFolder} (whole frame ${nav.roundTrip} — the folder's inside is measured for the first time on entry)`);
+  check(nav.gpuErrors === 0, `no uncaptured GPU errors through the flight (${nav.gpuErrors})`);
+
   fs.mkdirSync(shotDir, { recursive: true });
   fs.writeFileSync(path.join(shotDir, "composited-next.png"), await page.screenshot());
 } finally {

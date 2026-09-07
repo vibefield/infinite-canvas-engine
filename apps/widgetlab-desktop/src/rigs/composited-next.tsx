@@ -44,6 +44,7 @@ import {
   Selected,
   spawnWidget,
   TransformTween,
+  NavTransition,
 } from "@ice/core";
 import { instrumentSubmits, type SubmitInstrument } from "@ice/ground";
 import { groundCompose, type GroundComposeContext, type GroundComposeHandle, type ShellGeometry } from "@ice/ground/compose";
@@ -102,6 +103,24 @@ interface Boundary {
   readonly clip: string;
 }
 interface CardState { readonly selected: boolean; readonly grabbed: boolean; readonly x: number; readonly y: number; readonly taps: { entity: number; part: string }[] }
+/** The flight (B7): the enter cut, the flight, the landing, the exit cut, the round trip — pixels off the ground canvas at each. */
+interface NavFlight {
+  readonly size: { w: number; h: number };
+  /** The cut frame: held at p = 0, the camera at c0 — and its pixels vs the rest frame before the call. */
+  readonly cut: { p: number; ticks: number; active: boolean; maxDelta: number; outgoing: { kind: string; frames: number; at: number | null } | null };
+  readonly mid: { p: number; outgoing: boolean };
+  readonly landed: number;
+  readonly afterLanding: { outgoing: boolean; submits: number; frames: number };
+  /** The exit's cut frame vs the inside at rest: whole frame, and inset by a band (the rim). */
+  readonly exit: { p: number; kind: string; order: string; maxDelta: number; maxDeltaInset: number; outgoing: boolean };
+  readonly landed2: number;
+  /** The round trip vs the rest frame before it: whole frame, and outside the folder (whose inside is MEASURED for the first time on entry, so its portal may legitimately change). */
+  readonly roundTrip: number;
+  readonly roundTripOutsideFolder: number;
+  /** Where the enter cut and the round trip differ, in WORLD units (device px / zoom / dpr): the evidence. */
+  readonly where: { cut: { box: number[] | null; count: number }; roundTrip: { box: number[] | null; count: number } };
+  readonly gpuErrors: number;
+}
 interface NextRig {
   readonly ready: Promise<void>;
   mount(): Promise<Mounted>;
@@ -113,6 +132,7 @@ interface NextRig {
   heat(target: number, source: number): Promise<Heated>;
   boundary(i: number): Promise<Boundary>;
   cardState(i: number): Promise<CardState>;
+  nav(): Promise<NavFlight>;
 }
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -130,6 +150,27 @@ const cardRect = (i: number) => ({ x: GRID.x + (i % 3) * GRID.dx, y: GRID.y + Ma
  * Pixels off a LIVE WebGPU canvas: `drawImage` from it is silently blank, but
  * `toDataURL` → decode → draw → `getImageData` works (the 2026-09 finding).
  */
+/** The largest per-channel difference between two readbacks of the same size, over the whole frame or inset by `inset` px on every side. */
+function maxDelta(a: ImageData, b: ImageData, inset = 0, skip?: { x0: number; y0: number; x1: number; y1: number }): number {
+  return diffOf(a, b, inset, skip).max;
+}
+/** The largest difference and the device-px bounding box of every differing pixel (the rig's evidence). */
+function diffOf(a: ImageData, b: ImageData, inset = 0, skip?: { x0: number; y0: number; x1: number; y1: number }): { max: number; box: [number, number, number, number] | null; count: number } {
+  if (a.width !== b.width || a.height !== b.height) return { max: 255, box: null, count: -1 };
+  let max = 0;
+  let count = 0;
+  let x0 = Number.POSITIVE_INFINITY; let y0 = Number.POSITIVE_INFINITY; let x1 = -1; let y1 = -1;
+  for (let y = inset; y < a.height - inset; y++) {
+    for (let x = inset; x < a.width - inset; x++) {
+      if (skip !== undefined && x >= skip.x0 && x < skip.x1 && y >= skip.y0 && y < skip.y1) continue;
+      const i = (y * a.width + x) * 4;
+      let d = 0;
+      for (let k = 0; k < 3; k++) { const dk = Math.abs((a.data[i + k] as number) - (b.data[i + k] as number)); if (dk > d) d = dk; }
+      if (d > 0) { count += 1; if (d > max) max = d; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+    }
+  }
+  return { max, box: count > 0 ? [x0, y0, x1, y1] : null, count };
+}
 async function readback(canvas: HTMLCanvasElement): Promise<ImageData> {
   const url = canvas.toDataURL("image/png");
   const img = new Image();
@@ -167,6 +208,7 @@ function mountNextRig(): NextRig {
   const rootEl = document.getElementById("root") as HTMLElement;
   const theme = THEMES.dark;
   let cards: Entity[] = [];
+  let folder: Entity | null = null;
   let zoom = 1;
   const taps: { entity: number; part: string }[] = [];
 
@@ -256,10 +298,11 @@ function mountNextRig(): NextRig {
       world.setResource(Camera, { x: 0, y: 0, zoom, gesturing: false });
       cards = [];
       for (let i = 0; i < 6; i++) { const r = cardRect(i); cards.push(spawnWidget(session.store, world, "clock-card", { ...r, undoable: false })); }
-      const folder = spawnWidget(session.store, world, "card-container", { x: FOLDER.x, y: FOLDER.y, w: FOLDER.w, h: FOLDER.h, undoable: false, props: { title: "Folder", accent: "#7B96FF" } });
+      const f = spawnWidget(session.store, world, "card-container", { x: FOLDER.x, y: FOLDER.y, w: FOLDER.w, h: FOLDER.h, undoable: false, props: { title: "Folder", accent: "#7B96FF" } });
+      folder = f;
       world.sync();
       await frames(2);   // the container compiles on a tick before it takes children
-      for (const [x, y] of [[0, 0], [260, 0], [0, 200]] as const) spawnWidget(session.store, world, "clock-card", { x, y, w: CARD.w, h: CARD.h, parent: folder, undoable: false });
+      for (const [x, y] of [[0, 0], [260, 0], [0, 200]] as const) spawnWidget(session.store, world, "clock-card", { x, y, w: CARD.w, h: CARD.h, parent: f, undoable: false });
       world.sync();
       const ok = await until(() => { const s = compose().stats(); return s.cards >= 7 && s.portals >= 1; });
       await frames(3);
@@ -340,6 +383,61 @@ function mountNextRig(): NextRig {
       await frames(3);
       const p = world.get(card, Position) ?? { x: Number.NaN, y: Number.NaN };
       return { selected: world.hasTag(card, Selected), grabbed: world.has(card, Grab), x: p.x, y: p.y, taps: [...taps] };
+    },
+    async nav() {
+      const e = ce();
+      const world = e.world;
+      const f = must(folder, "the folder");
+      const canvas = compose().canvas;
+      const t = () => must(world.getResource(NavTransition), "NavTransition");
+      const camOf = () => { const c = must(world.getResource(Camera), "camera"); return { x: c.x, y: c.y, zoom: c.zoom }; };
+      const outOf = () => compose().stats().outgoing;
+      // the rest frame: no selection, every spring settled (a fading ring would differ from the departed frame's IDLE resolve)
+      // a rig SETUP write: every card unselected (the departed frame draws at rest — a ring at the cut would be a pop, as in the lab)
+      for (const c of cards) if (world.hasTag(c, Selected)) world.removeTag(c, Selected);
+      await until(() => cards.every((c) => (compose().motionOf(c)?.reveal ?? 0) <= 0) && !compose().stats().live, 300);
+      await frames(4);
+      const r0 = await readback(canvas);
+      // ENTER: the op cuts the world and snaps the camera to c0; the first tick holds at p = 0 — the cut frame
+      e.ops.enterContainer(f);
+      await until(() => t().ticks >= 1, 30);
+      const cutT = t();
+      const r1 = await readback(canvas);
+      const o0 = outOf();
+      const cut = { p: cutT.p, ticks: cutT.ticks, active: cutT.active, maxDelta: maxDelta(r0, r1), outgoing: o0 === null ? null : { kind: o0.kind, frames: o0.frames, at: o0.at } };
+      await frames(3);
+      const mid = { p: t().p, outgoing: outOf() !== null };
+      await until(() => !t().active, 600);
+      const tl = t();
+      const cl = camOf();
+      const landed = Math.max(Math.abs(cl.x - tl.c1x), Math.abs(cl.y - tl.c1y), Math.abs(cl.zoom - tl.c1z));
+      await frames(3);
+      const submits0 = submits();
+      await frames(70);
+      const afterLanding = { outgoing: outOf() !== null, submits: submits() - submits0, frames: 70 };
+      const r2 = await readback(canvas);
+      // EXIT: the departed inside over the parent, clipped by the face under the arriving camera — at the cut the face fills the view
+      e.ops.exitContainer();
+      await until(() => t().ticks >= 1 && t().kind === "exit", 30);
+      const xt = t();
+      const r3 = await readback(canvas);
+      const xo = outOf();
+      const inset = Math.round(24 * Math.min(window.devicePixelRatio || 1, 2));
+      const exit = { p: xt.p, kind: xt.kind, order: xo?.kind === "exit" ? "over" : "?", maxDelta: maxDelta(r2, r3), maxDeltaInset: maxDelta(r2, r3, inset), outgoing: xo !== null };
+      await until(() => !t().active, 600);
+      const t2 = t();
+      const c2 = camOf();
+      const landed2 = Math.max(Math.abs(c2.x - t2.c1x), Math.abs(c2.y - t2.c1y), Math.abs(c2.zoom - t2.c1z));
+      await frames(4);
+      const r4 = await readback(canvas);
+      // the folder and its reach (the shadow, the lift) in device px
+      const [fx0, fy0] = dpx(FOLDER.x - 60, FOLDER.y - 60);
+      const [fx1, fy1] = dpx(FOLDER.x + FOLDER.w + 60, FOLDER.y + FOLDER.h + 60);
+      const skip = { x0: Math.floor(fx0), y0: Math.floor(fy0), x1: Math.ceil(fx1), y1: Math.ceil(fy1) };
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cutDiff = diffOf(r0, r1);
+      const toWorld = (d: { box: [number, number, number, number] | null; count: number }) => ({ box: d.box === null ? null : d.box.map((v) => Math.round(v / zoom / dpr)), count: d.count });
+      return { size: { w: r0.width, h: r0.height }, cut, mid, landed, afterLanding, exit, landed2, roundTrip: maxDelta(r0, r4), roundTripOutsideFolder: maxDelta(r0, r4, 0, skip), where: { cut: toWorld(cutDiff), roundTrip: toWorld(diffOf(r0, r4)) }, gpuErrors: gpu?.errors().length ?? 0 };
     },
     async heat(target, source) {
       const world = ce().world;

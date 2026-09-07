@@ -80,6 +80,42 @@ the entity's own kind behaviour.
 
 ### Added
 
+- **The flight on the ground — design-013, B7** (2026-09-07). Under the composited-next
+  profile a nav flight is the ground's SECOND SLOT: the departed frame drawn beside the
+  arriving one, from the world, every frame. **The descriptor** (`NavTransition`) now carries
+  the departed frame's camera at the cut (`fromX/fromY/fromZ`) and `departedCameraOf(t, cam)`
+  is the one rule for what the departed frame renders under — that camera ITSELF at p = 0 and
+  while frozen, `outgoingCamera` through the affine otherwise; the DOM's departing plane
+  (`PresentationTransitionFrame.outgoingCamera`) reads the same rule, so the two agree to the
+  bit. **An enter starts from the live portal's exact camera**: `enterContainer` passes
+  `outgoingCamera(M, camPre)` — the camera the container's face was already showing its inside
+  under — not the continuity solve's ulp-off twin. **The first tick after the cut holds at
+  p = 0** (`NavTransition.ticks`): one product frame is drawn at the exact `c0`, so the cut
+  changes no pixel on the ground and the motion begins from a frame that exists. **`Retained`**
+  is written at last: `startNavFlight` tags the departed frame's cards (the parent's on enter,
+  the inside's on exit) and the tick releases them at the landing, on a gesture's yield and on
+  abort — Residency keeps their textures for the flight. **The ground's side**
+  (`FrameBuilder.flight`, `compose.stats().outgoing`): the departed frame's cards at rest in
+  ITS OWN paint order (`buildOrdinals` of the departed parent — a card raised by a drag stays
+  on top as it fades), with their content (`page`/`own` from the residency: the departed slot's
+  records carry their textures), its own live portals, the entered container a HOLE the
+  arriving slot draws through (one tree, `at`) on enter, the departed inside drawn OVER the
+  parent on exit; the arriving frame dressed for its landing, the departed for the cut. The
+  compose layer owns the `ground` presentation plane (an adapter that prepares instantly —
+  without an owner a cross-type enter was gated to a snap). The `next-boot` rig's nav phase,
+  through the real React path: the enter cut changes no pixel on the ground (maxΔ 0 over
+  2560×1616 — the rest frame vs the held cut frame), one tree through the folder, both slots
+  mid-flight, an exact landing, idle-zero inside, the exit's cut frame pixel-identical to the
+  inside at rest (maxΔ 0, whole frame), an exact landing on the saved camera, the round trip
+  pixel for pixel — ALL PASS. Two findings on the way, both fixed at source: the vf-frame
+  pack's button springs reported settled without SNAPPING (a −1e-31 residue read as "hovered"
+  to the shader's sign test — a card at rest must resolve exactly as a still of it does), and
+  the builder's sibling-order index follows the CURRENT frame, so the departed frame must
+  build its own ordinals. Four core tests (`nav-flight.test.ts`), three ground tests
+  (`flight.test.ts` — the flight's `c0` equals `portalAt` on the preview's arrival bit for
+  bit, on ICE's own data); design-006 amended (§9). The old ground's three outgoing
+  strategies go unused under the new profile and B8 deletes them; Q13 (the zoom-through) is
+  not taken here.
 - **The content term reads the world — design-013, B4a** (2026-09-07). The trunk B4, B5
   and B6 build on: under the composited-next profile the ground now draws a card from the
   TEXTURE its `TextureRef` names — `page` (the layer and the written rect, through the one

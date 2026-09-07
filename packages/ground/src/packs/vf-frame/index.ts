@@ -131,13 +131,17 @@ export function stepVfSprings(s: VfSprings, dt: number, part: { readonly hover: 
   const pc = buttonsLive && part.press === VF_PARTS.close ? 1 : 0;
   const hk = buttonsLive && part.hover === VF_PARTS.lock ? 1 : 0;
   const pk = buttonsLive && part.press === VF_PARTS.lock ? 1 : 0;
+  // A settled spring SNAPS to its target (the engine's `stepMotion` rule): a residue of −1e-31 in a button's
+  // hover reads as "hovered" to a sign test in the shader, and a card at rest must resolve exactly as a still
+  // of it does (the flight's departed frame, B7 — the cut changes no pixel).
   [s.hoverC, s.hoverCV] = spring(s.hoverC, s.hoverCV, hc, 5.5, 0.75, dt);
+  if (settled(s.hoverC, s.hoverCV, hc)) { s.hoverC = hc; s.hoverCV = 0; } else live = true;
   [s.pressC, s.pressCV] = spring(s.pressC, s.pressCV, pc, 9.0, 1.0, dt);
+  if (settled(s.pressC, s.pressCV, pc)) { s.pressC = pc; s.pressCV = 0; } else live = true;
   [s.hoverK, s.hoverKV] = spring(s.hoverK, s.hoverKV, hk, 5.5, 0.75, dt);
+  if (settled(s.hoverK, s.hoverKV, hk)) { s.hoverK = hk; s.hoverKV = 0; } else live = true;
   [s.pressK, s.pressKV] = spring(s.pressK, s.pressKV, pk, 9.0, 1.0, dt);
-  for (const [x, v, tg] of [[s.hoverC, s.hoverCV, hc], [s.pressC, s.pressCV, pc], [s.hoverK, s.hoverKV, hk], [s.pressK, s.pressKV, pk]] as const) {
-    if (!settled(x, v, tg)) live = true;
-  }
+  if (settled(s.pressK, s.pressKV, pk)) { s.pressK = pk; s.pressKV = 0; } else live = true;
   return live;
 }
 

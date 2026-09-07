@@ -309,7 +309,15 @@ program provides for it. The ground registers a `FramePickSource` on the interac
 `framePick` slot (core: `InteractionStack.framePick`; `picking` writes `PointerPart` on the
 pointer, recognizers carry `DownPart`, a part tap lands in the `PartTap` resource). In
 `@ice/react`, `PresentationProfile.chromeOwner` (`dom` | `ground`) reaches widgets as
-`useChromeOwner()`; an app's card shell renders bare under `ground`. The pixel witnesses are the package's oracle
+`useChromeOwner()`; an app's card shell renders bare under `ground`. **The flight (design-013, B7)**: a nav
+flight is the ground's second slot — `FrameBuilder.flight(cam, vp, theme, config)` builds the departed
+frame from the `NavTransition` resource (`{ present, outgoing, lodZoom }` for `Ground.render`), the host
+passes it and reports `compose.stats().outgoing` and `compose.lastInputs()`; the compose layer owns the
+`ground` presentation plane when the mount context carries `transitions`. In core, `NavTransition`
+carries the pre-cut camera (`fromX/fromY/fromZ`) and `ticks`; `departedCameraOf(t, cam)` is the one rule
+for the departed frame's camera (the pre-cut camera itself at p = 0 and while frozen); an enter starts
+from the live portal's exact camera and holds its first tick at p = 0; `Retained` is written on the
+departed frame's cards for the flight. The pixel witnesses are the package's oracle
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 

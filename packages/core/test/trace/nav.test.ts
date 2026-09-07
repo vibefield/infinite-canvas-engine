@@ -107,7 +107,10 @@ describe("trace: active membership (design-004 §7)", () => {
     const inner = rig.spawnBox(120, 120, { parent: folder }); // overlaps folder in world coords
     rig.step(2);
 
-    rig.nav.enterContainer(folder);
+    // a CUT, not a flight: a flight would rewrite the camera every tick and the identity pin below would
+    // never hold (it never did — the tap used to land by the spring's timing alone; B7's held first tick
+    // moved that timing by one frame and the coincidence broke). The test is about the rebuild, not motion.
+    rig.nav.enterContainer(folder, { transition: "none" });
     // Zoom-to-fit moved the camera; put it back to identity for screen==world.
     rig.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
     rig.step(2); // spatialSync repopulates the cleared index from the Active set

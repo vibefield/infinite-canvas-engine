@@ -487,6 +487,8 @@ export {
 export {
   abortNavFlight,
   createNavFlight,
+  departedCameraOf,
+  type DepartedCameraInputs,
   navFlightActive,
   NavTransition,
   publishNavCut,

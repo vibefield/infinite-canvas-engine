@@ -6,11 +6,11 @@
  * receive a World and cannot delay or veto the authority cut.
  */
 import type { Entity, World } from "@vibecook/strata-ecs";
-import { outgoingCamera, type CameraState, type PortalAffine } from "@ice/kernel";
+import type { CameraState, PortalAffine } from "@ice/kernel";
 import { Camera } from "../catalog";
 import type { Engine } from "../engine/engine";
 import { FrameInfo } from "../engine/frame-info";
-import { NavTransition } from "../systems/nav-flight";
+import { departedCameraOf, NavTransition } from "../systems/nav-flight";
 
 export type PresentationPlane = "ground" | "dom" | "gl";
 export type PresentationReleaseReason =
@@ -255,7 +255,8 @@ export function createPresentationTransitionCoordinator(
       descriptor: current.descriptor,
       motion: current.motion,
       camera,
-      outgoingCamera: outgoingCamera(current.descriptor.affine, camera),
+      // the ONE rule every presenter of the departed frame reads (B7): the pre-cut camera itself at p = 0 and while frozen
+      outgoingCamera: departedCameraOf(transition, camera),
       progress,
       outgoingOpacity,
       incomingOpacity,

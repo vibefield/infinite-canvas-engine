@@ -59,6 +59,7 @@ import type { CameraState, PortalAffine, SpatialIndex } from "@ice/kernel";
 import {
   composeAffine,
   invertAffine,
+  outgoingCamera,
   portalAffine,
   solveFlightStart,
   visibleRect,
@@ -651,10 +652,12 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
       const c1 = resolveArrivalCamera(container);
       const K = containerRect(container);
       const vp = world.getResource(Viewport);
-      const A =
+      // M: the child's arrival view onto the container's face (the live portal's own affine); A = M⁻¹.
+      const M =
         K !== undefined && vp !== undefined && vp.w > 0 && vp.h > 0
-          ? invertAffine(portalAffine(visibleRect(c1, vp.w, vp.h), K))
+          ? portalAffine(visibleRect(c1, vp.w, vp.h), K)
           : undefined;
+      const A = M === undefined ? undefined : invertAffine(M);
       const identity = config.transitionIdentity?.(fromFrame, container);
       const requestedMotion = A !== undefined && flightable(opts, fromFrame, container);
       config.beforeSwitch?.();
@@ -671,9 +674,11 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
         authorityMutated = true;
         world.setRelation(entry, NavFrame, container);
         cutVisibility(); // BEFORE the camera write — no frame may render old content under the new camera
-        if (A !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
-          // A = M⁻¹: parent (departed) coords → child (destination) coords.
-          startNavFlight(world, "enter", A, solveFlightStart(A, cam), c1, identity);
+        if (M !== undefined && A !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
+          // A = M⁻¹: parent (departed) coords → child (destination) coords. The flight STARTS from the
+          // live portal's exact camera — `outgoingCamera(M, cam)`, the camera the inside was already
+          // rendering under, not the continuity solve's ulp-off twin (design-013 §8 B7, D-B7.1).
+          startNavFlight(world, "enter", A, outgoingCamera(M, cam), c1, identity);
         } else {
           snapCamera(c1);
           publishNavCut(world, "enter", cam, c1, identity, A);

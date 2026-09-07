@@ -368,6 +368,7 @@ function world_setFlight(rig: GLRig, active: boolean): void {
     active, kind: "enter", p: 0, v: 0, frozen: false, epoch: 1, durMul: 1,
     documentEpoch: 0, fromFrame: NO_ENTITY, toFrame: NO_ENTITY,
     fromTypeId: "", toTypeId: "",
+    fromX: 0, fromY: 0, fromZ: 0.2, ticks: 1,
     c0x: 0, c0y: 0, c0z: 0.2, c1x: 0, c1y: 0, c1z: 1, as: 1, aox: 0, aoy: 0,
   });
 }
