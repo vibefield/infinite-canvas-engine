@@ -49,12 +49,10 @@ import {
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
-import { groundHost } from "@ice/ground";
+import { groundField } from "@ice/ground";
 import { groundCompose } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
-import { lineGridGroundProgram } from "@ice/ground/programs/line-grid";
-import { magnetGridGroundProgram } from "@ice/ground/programs/magnet-grid";
 import { captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import {
   InfiniteCanvas,
@@ -75,11 +73,9 @@ import { WIDGETS } from "./widgets";
 import {
   BoardCanvas,
   WIDGETLAB_CANVASES,
-  WIDGETLAB_DOT_GROUND,
   WIDGETLAB_TOOLS,
   WhiteboardCatalog,
 } from "./canvases";
-import { WIDGETLAB_LINE_GROUND } from "./whiteboard-canvas";
 
 // === v1 theme constants (App.tsx verbatim) ===
 
@@ -222,7 +218,8 @@ export function seedDemoScene(ce: CanvasEngine, session: DocSession): void {
  * `WirePorts{from,to}` + the endpoint relations; geometry never stores a port
  * entity).
  */
-function seedWire(session: DocSession, from: Entity, fromPort: string, to: Entity, toPort: string): void {
+/** A pre-seeded wire between two ports, written through the session's store like the seeds (exported for the `stratified` rig's overlay witness). */
+export function seedWire(session: DocSession, from: Entity, fromPort: string, to: Entity, toPort: string): void {
   session.store.transaction(
     (tx) => {
       const wire = tx.spawn({
@@ -647,13 +644,17 @@ export function App({ gpu }: AppProps = {}) {
     dt.glStats(s); // the full GL panel: renderer counts, VT census, LOD bands, culls
   }, []);
 
-  // THE GROUND, and which one is the PROFILE (design-013 §8 B8).
+  // THE GROUND, and which one is the PROFILE (design-013 §8 B8, C2).
   //
   // With a device: `groundCompose` — the ground IS the compositor. One WebGPU
   // canvas draws the field, every card's frame, the DOM boundary and the
   // flight's second slot, from the world, and the composited profile
-  // recognises it by the handle's `compose` field. Without one: `groundHost`,
-  // design-011's stratified layer, unchanged and Phase C's to move.
+  // recognises it by the handle's `compose` field. Without one: `groundField`,
+  // the same engine on a device of its own drawing the field, the portals,
+  // the flight and the overlays under the DOM planes — the stratified
+  // profile's ground since C2 (design-011's three-based `groundHost` is
+  // deleted). Each canvas type declares its own glyph (`canvases.ts`,
+  // `whiteboard-canvas.ts`); the packs are the same on both arms.
   //
   // Until B8 both arms were `groundHost` and the composited profile took a
   // `device` option here; that option, the compositor it built and the profile
@@ -671,12 +672,9 @@ export function App({ gpu }: AppProps = {}) {
             card: vfFrame(),
             grids: [needleGlyph, cuttingMat],
           })
-        : groundHost({
-            programs: [
-              magnetGridGroundProgram({ id: WIDGETLAB_DOT_GROUND }),
-              lineGridGroundProgram({ id: WIDGETLAB_LINE_GROUND }),
-            ],
-            fallback: WIDGETLAB_DOT_GROUND,
+        : groundField({
+            theme: THEMES.dark,
+            grids: [needleGlyph, cuttingMat],
           }),
     [gpu],
   );

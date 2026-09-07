@@ -585,12 +585,13 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       clearSelection(world);
     },
     prepareTransition: (request) => {
-      const fromProgram =
-        catalog.canvasType(request.fromTypeId)?.presentation?.ground?.program ?? "";
-      const toProgram =
-        catalog.canvasType(request.toTypeId)?.presentation?.ground?.program ?? "";
+      // A canvas type that DECLARES a ground (design-013 C2: a field declaration, not a program
+      // id) requires the `ground` plane to prepare — the ground host of either profile registers
+      // the plane's adapter, and without an owner every enter into a folder is a snap.
+      const fromGround = catalog.canvasType(request.fromTypeId)?.presentation?.ground;
+      const toGround = catalog.canvasType(request.toTypeId)?.presentation?.ground;
       const required = new Set<PresentationPlane>();
-      if (fromProgram.length > 0 || toProgram.length > 0) required.add("ground");
+      if (fromGround !== undefined || toGround !== undefined) required.add("ground");
       for (const entry of runtime.store.getSnapshot()) {
         if (entry.hidden || !world.isAlive(entry.entity)) continue;
         const widgetTypeId = world.get(entry.entity, PrefabId)?.id;

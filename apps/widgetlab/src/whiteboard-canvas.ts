@@ -4,7 +4,8 @@ const select = tools.get("select");
 const pan = tools.get("pan");
 if (select === undefined || pan === undefined) throw new Error("missing built-in canvas tools");
 
-export const WIDGETLAB_LINE_GROUND = "widgetlab.whiteboard.lines";
+/** The whiteboard's ground GLYPH (design-013 C1d/C2): the engine's line grid. */
+export const WIDGETLAB_LINE_GROUND = "line";
 
 /** Folder interiors are the whiteboard proof CanvasType. */
 export const WhiteboardCanvas = defineCanvasType({
@@ -13,7 +14,7 @@ export const WhiteboardCanvas = defineCanvasType({
   semantic: { placement: { accepts: ["widget"] } },
   presentation: {
     tools: { allowed: [select, pan], default: select },
-    ground: { program: WIDGETLAB_LINE_GROUND, wires: false, guides: true },
+    ground: { glyph: WIDGETLAB_LINE_GROUND, wires: false, guides: true },
     camera: { arrival: "fit", padding: 64, minZoom: 0.25, maxZoom: 2 },
     preview: {
       background: {

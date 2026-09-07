@@ -374,9 +374,9 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
     ) {
       throw new Error(`ice: CanvasType "${canvas.id}" has invalid finite camera limits.`);
     }
-    const groundProgram = canvas.presentation?.ground?.program;
-    if (groundProgram !== undefined && groundProgram.length === 0) {
-      throw new Error(`ice: CanvasType "${canvas.id}" has an empty ground program id.`);
+    const groundGlyph = canvas.presentation?.ground?.glyph;
+    if (groundGlyph !== undefined && groundGlyph.length === 0) {
+      throw new Error(`ice: CanvasType "${canvas.id}" has an empty ground glyph name.`);
     }
     const legal = new Set<string>();
     if (canvas.id === DefaultCanvasType.id) {

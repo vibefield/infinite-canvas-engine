@@ -5,9 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./programs/dot-grid": "./src/programs/dot-grid.ts",
-    "./programs/line-grid": "./src/programs/line-grid.ts",
-    "./programs/magnet-grid": "./src/programs/magnet-grid.ts",
     "./compose": "./src/compose/index.ts",
     "./engine": "./src/engine/index.ts",
     "./packs": "./src/packs/index.ts",

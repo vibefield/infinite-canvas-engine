@@ -12,6 +12,9 @@
  *    REINFORCES the handoff instead of fighting it.
  *  - `easeSettle` stops writing once settled, so the observeQuery wake goes
  *    quiet ~100ms after motion ends — hover redraws self-terminate.
+ *  - the halo IS the local pointer (design-013 C2, D-C2.2): flagged `pointer`,
+ *    it rides the field's analytic cursor term with its morph strength, so a
+ *    hover gesture redraws the glyphs and never re-bakes the atlas.
  */
 import { defineQuery, type World } from "@ice/core";
 import type { Pole, PoleSource } from "@ice/ground";
@@ -33,7 +36,7 @@ export function haloPoles(): PoleSource {
           const c = world.read(b.entity(r), Cur);
           const strength = strengthFromScale(c.scale);
           if (strength <= 0) continue;
-          out.push({ x: c.x, y: c.y, strength, space: "screen" });
+          out.push({ x: c.x, y: c.y, strength, space: "screen", pointer: true });
         }
       });
       return out;

@@ -366,7 +366,7 @@ export function GLViews({
   // stratified profile, and the thing design-013 §6/§7 replaced. On the
   // composited profile the departed frame is the ground's own second slot,
   // prepared from the world every frame (B7); the stratified profile has no
-  // outgoing-quad transition until Phase C moves it onto the same ground.
+  // outgoing-quad transition: the stratified islands' outgoing quads stay OWED (design-013 D-C2.5).
 
   // Renderer adapter (explicit clear color: transparent black, v1 contract).
   const glLike: GlLike = useMemo(

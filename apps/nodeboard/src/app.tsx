@@ -81,7 +81,7 @@ import {
   createRemoteCursorsReflector,
   startRafLoop,
 } from "@ice/dom";
-import { ground, type GroundLayer } from "@ice/ground";
+import { ENGINE_PALETTE, type GroundFieldHandle, groundField, themeFrom } from "@ice/ground";
 import type { RemoteCursorsReflector } from "@ice/dom";
 import { WidgetRoot } from "@ice/react";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
@@ -393,12 +393,13 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     runtime.store,
   );
   engine.registerReflector(createPlaneTransformReflector({ contentPlane: planes.content, liftedPlane: planes.lifted }));
-  // P0 = ONE WebGPU canvas (@ice/ground): grid + WIRES (under content; the
-  // connect preview reads the stack's out-of-ECS buffer) + snap guides.
-  // Headless boots (mount:false — the exit tests) skip it entirely, like the
-  // old grid; graph logic never depended on the render layer.
-  const groundLayer: GroundLayer | null = mount
-    ? ground()({ host, world, readWirePreview: () => stack.wirePreview })
+  // P0 = ONE WebGPU canvas (@ice/ground, the engine since design-013 C2): the
+  // field + WIRES (under content; the connect preview reads the stack's
+  // out-of-ECS buffer) + snap guides. Opaque, cleared to the page's #14161a
+  // through its theme. Headless boots (mount:false — the exit tests) skip it
+  // entirely, like the old grid; graph logic never depended on the render layer.
+  const groundLayer: GroundFieldHandle | null = mount
+    ? groundField({ theme: themeFrom("dark", { ...ENGINE_PALETTE.dark, canvasBg: { token: "nodeboard index.html body background", css: "#14161a" } }) })({ host, world, readWirePreview: () => stack.wirePreview })
     : null;
   if (groundLayer !== null) engine.registerReflector(groundLayer.reflector);
   engine.registerReflector(domWidgets);

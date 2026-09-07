@@ -117,11 +117,12 @@ module.exports = {
     {
       name: "ground-only-core-kernel-three",
       comment:
-        "design-002 §6 (amended 2026-07-16, the @ice/ground extraction): the P0 ground layer " +
-        "renders with three's WebGPURenderer + TSL — core + kernel + three ONLY (never react/" +
-        "@react-three or a stray dep). Off the react chain: react must NOT import ground (its own " +
-        "allowlist enforces that); apps inject the layer through the InfiniteCanvas `ground` " +
-        "factory prop or register its reflector directly.",
+        "design-002 §6 (amended 2026-07-16, the @ice/ground extraction): the P0 ground layer — " +
+        "core + kernel ONLY since design-013 C2 (2026-09-07) deleted the three-based leg; the " +
+        "`three` allowance below is what C3 removes (no `three` import outside packages/r3f), and " +
+        "nothing in ground's src exercises it any more. Off the react chain: react must NOT " +
+        "import ground (its own allowlist enforces that); apps inject the layer through the " +
+        "InfiniteCanvas `ground` factory prop or register its reflector directly.",
       severity: "error",
       from: { path: "^packages/ground/src" },
       to: {
@@ -205,29 +206,11 @@ module.exports = {
       from: { path: "^packages/(kernel|core|dom|react|r3f|devtools)/src" },
       to: { path: "^packages/ground" },
     },
-    {
-      name: "ground-compose-imports-no-old-leg",
-      comment:
-        "design-013 §8: the ground entered ICE at B1 into its final home — the compose entry " +
-        "(engine · lattice · field · card · nav · packs · theme · compose · shaders) imports nothing from " +
-        "the STRATIFIED leg. Until B8 (2026-09-07) that leg also held the old compositor and the atlas " +
-        "allocator, and this wall was the deletion's fence; both are gone, and the wall is now the PHASE-C " +
-        "fence — three's renderer, the pass registry, the programs and the poles are what C1-C3 move onto " +
-        "the engine. The kept LEAVES (`hic-adapter`, `submit-instrument`) are on NEITHER side: they import " +
-        "nothing, they are on no deletion list, and both legs use them.",
-      severity: "error",
-      from: { path: "^packages/ground/src/(engine|lattice|field|card|nav|packs|compose|theme\\.ts|shaders)" },
-      to: { path: "^packages/ground/src/(passes|programs|program-host|renderer|layer|pass|poles|index)" },
-    },
-    {
-      name: "old-leg-imports-no-ground-compose",
-      comment:
-        "the reverse wall: nothing bridges the stratified leg to the ground. The kept leaves are on " +
-        "neither side — see the rule above.",
-      severity: "error",
-      from: { path: "^packages/ground/src/(passes|programs|program-host|renderer|layer|pass|poles|index)" },
-      to: { path: "^packages/ground/src/(engine|lattice|field|card|nav|packs|compose|theme\\.ts|shaders)" },
-    },
+    // The two Phase-B/C leg walls (`ground-compose-imports-no-old-leg` and its reverse) left with
+    // the old stratified leg at design-013 C2 (2026-09-07): `packages/ground/src` is ONE leg now —
+    // the barrel (`index.ts`) is the engine's stratified face and imports from `compose/`; the
+    // paths the walls named (`passes`, `programs`, `program-host`, `renderer`, `layer`, `pass`,
+    // `poles`) no longer exist, so a wall between them would bind on nothing.
   ],
   options: {
     doNotFollow: { path: "node_modules" },

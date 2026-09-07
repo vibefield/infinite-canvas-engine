@@ -100,7 +100,7 @@ describe("widgetlab panels", () => {
     );
 
     expect(container?.textContent).toContain("Settings");
-    expect(container?.textContent).toContain("Grid Spacings");
+    expect(container?.textContent).toContain("Fade In");
     expect(container?.textContent).toContain("Zoom Range");
     // Controlled: the grid inputs render (a spacing value from the default cfg).
     const numberInputs = container?.querySelectorAll('input[type="number"]');

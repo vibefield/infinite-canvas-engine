@@ -56,7 +56,7 @@ import {
   createPlanes,
   startRafLoop,
 } from "@ice/dom";
-import { ground, type GroundLayer } from "@ice/ground";
+import { ENGINE_PALETTE, type GroundFieldHandle, groundField, themeFrom } from "@ice/ground";
 import { WidgetRoot } from "@ice/react";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { type GLBridge, type GLPointerRouter, GLViews, createGLBridge, createGLPointerRouter } from "@ice/r3f";
@@ -252,8 +252,11 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
     runtime.store,
   );
   engine.registerReflector(createPlaneTransformReflector({ contentPlane: planes.content, liftedPlane: planes.lifted }));
-  const groundLayer: GroundLayer | null = mount ? ground()({ host, world }) : null;
-  if (groundLayer !== null) engine.registerReflector(groundLayer.reflector); // P0: one WebGPU canvas
+  // P0: one WebGPU canvas — the field on the engine (design-013 C2), opaque, cleared to the page's #14161a through its theme.
+  const groundLayer: GroundFieldHandle | null = mount
+    ? groundField({ theme: themeFrom("dark", { ...ENGINE_PALETTE.dark, canvasBg: { token: "glboard index.html body background", css: "#14161a" } }) })({ host, world })
+    : null;
+  if (groundLayer !== null) engine.registerReflector(groundLayer.reflector);
   engine.registerReflector(domWidgets);
   engine.registerReflector(createChromeReflector(host, world, stack.marqueeBuffer));
   engine.registerReflector(createCursorReflector(host, stack.readCursor));

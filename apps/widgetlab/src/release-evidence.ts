@@ -6,30 +6,23 @@ import {
   type Entity,
 } from "@ice/core";
 import type { CanvasHost } from "@ice/dom";
-import type {
-  GroundHostStats,
-  GroundRendererProfile,
-  GroundRendererStatus,
-} from "@ice/ground";
+import type { GroundFieldHandle, GroundFieldStats, GroundFieldStatus } from "@ice/ground";
 import type { GLBridge, GlFrameStats } from "@ice/r3f";
 
+/**
+ * The T2 release-evidence harness (`?evidence=1`). Since design-013 C2 the
+ * ground it measures is `groundField` on the engine: the old `?ground=legacy`
+ * vs typed arms and the `?groundBackend=webgl2` arm compared two renderers
+ * that no longer exist, and the ground's own timestamp profile went with
+ * three's renderer — what remains is the reflector's CPU time from the
+ * engine's telemetry, the redraw count and the field host's stats.
+ */
 export interface ReleaseEvidenceConfig {
   readonly enabled: boolean;
-  readonly groundVariant: "legacy" | "typed";
-  readonly requestedBackend: "auto" | "webgl2";
 }
 
-export interface EvidenceGroundLayer {
-  readonly reflector: {
-    available(): boolean;
-    redraws(): number;
-    rendererStatus(): GroundRendererStatus;
-    rendererProfile(): GroundRendererProfile;
-  };
-  readonly programs?: {
-    stats(): GroundHostStats;
-  };
-}
+/** The ground as the evidence reads it: the stratified handle's face (structural — the App captures the real one). */
+export type EvidenceGroundLayer = Pick<GroundFieldHandle, "reflector" | "field">;
 
 interface Distribution {
   readonly count: number;
@@ -42,9 +35,8 @@ interface Distribution {
 
 interface EvidenceMetadata {
   readonly recordedAt: string;
-  readonly groundVariant: ReleaseEvidenceConfig["groundVariant"];
-  readonly requestedBackend: ReleaseEvidenceConfig["requestedBackend"];
-  readonly actualBackend: GroundRendererStatus["backend"] | "missing";
+  /** The ground's state at the record: pending, ready or failed (with its message). */
+  readonly ground: GroundFieldStatus | "missing";
   readonly userAgent: string;
   readonly viewport: { readonly width: number; readonly height: number; readonly dpr: number };
   readonly hardwareConcurrency?: number;
@@ -58,14 +50,8 @@ interface EvidenceSnapshot {
   readonly ground?: {
     readonly available: boolean;
     readonly redraws: number;
-    readonly renderer: GroundRendererStatus;
-    readonly profile: {
-      readonly enabled: boolean;
-      readonly timestampSupported?: boolean;
-      readonly samples: number;
-      readonly gpuSamples: number;
-    };
-    readonly programs?: GroundHostStats;
+    readonly status: GroundFieldStatus;
+    readonly field: GroundFieldStats;
   };
   readonly mountEntries: number;
   readonly frozenMounts: number;
@@ -83,9 +69,6 @@ interface PhaseEvidence {
   readonly engineMicros: Distribution;
   readonly reflectMicros: Distribution;
   readonly groundMicros: Distribution;
-  readonly groundRenderCpuMs: Distribution;
-  readonly groundGpuMs: Distribution;
-  readonly groundDrawCalls: Distribution;
   readonly rafIntervalMs: Distribution;
   /** Intervals above 1.5× this phase's median display interval. */
   readonly missedFrameRatio: number;
@@ -95,9 +78,6 @@ interface PhaseEvidence {
     readonly engineMicros: readonly number[];
     readonly reflectMicros: readonly number[];
     readonly groundMicros: readonly number[];
-    readonly groundRenderCpuMs: readonly number[];
-    readonly groundGpuMs: readonly number[];
-    readonly groundDrawCalls: readonly number[];
     readonly rafIntervalMs: readonly number[];
     readonly glCpuMs: readonly number[];
     readonly glGpuMs: readonly number[];
@@ -122,7 +102,8 @@ export interface RapidNavigationEvidence {
   readonly before: EvidenceSnapshot;
   readonly after: EvidenceSnapshot;
   readonly deltas: {
-    readonly sourceObservers: number;
+    /** The ground's pole wakes over the cycles — a leak shows as wakes that keep counting after the warmup settles. */
+    readonly poleWakes: number;
     readonly mountEntries: number;
     readonly domHosts: number;
     readonly glIslands: number;
@@ -148,9 +129,7 @@ export interface ReleaseEvidenceHarness {
   snapshot(): EvidenceSnapshot;
   measurePerformance(opts?: { readonly frames?: number; readonly warmupFrames?: number }): Promise<PerformanceEvidence>;
   runRapidNavigation(opts?: { readonly cycles?: number; readonly warmupCycles?: number }): Promise<RapidNavigationEvidence>;
-  /** Destructive for this mount: GroundHost intentionally stays unavailable after loss. */
-  triggerWebglContextLoss(): Promise<DeviceLossEvidence>;
-  /** Wait while a human/device tool induces a WebGPU or WebGL context loss. */
+  /** Wait while a human/device tool induces a WebGPU device loss; the field host stays unavailable after it, by design. */
   awaitDeviceLoss(timeoutMs?: number): Promise<DeviceLossEvidence>;
   recordGlFrame(stats: GlFrameStats): void;
   save(value: PerformanceEvidence | RapidNavigationEvidence | DeviceLossEvidence): string;
@@ -163,14 +142,10 @@ const STORAGE_PREFIX = "ice:t2-release-evidence:";
 
 export function readReleaseEvidenceConfig(): ReleaseEvidenceConfig {
   if (typeof window === "undefined") {
-    return { enabled: false, groundVariant: "typed", requestedBackend: "auto" };
+    return { enabled: false };
   }
   const params = new URLSearchParams(window.location.search);
-  return Object.freeze({
-    enabled: params.get("evidence") === "1",
-    groundVariant: params.get("ground") === "legacy" ? "legacy" : "typed",
-    requestedBackend: params.get("groundBackend") === "webgl2" ? "webgl2" : "auto",
-  });
+  return Object.freeze({ enabled: params.get("evidence") === "1" });
 }
 
 function distribution(values: readonly number[]): Distribution {
@@ -213,12 +188,9 @@ export function installReleaseEvidence(opts: {
 
   const metadata = (): EvidenceMetadata => {
     const ground = opts.getGround();
-    const renderer = ground?.reflector.rendererStatus();
     return Object.freeze({
       recordedAt: new Date().toISOString(),
-      groundVariant: config.groundVariant,
-      requestedBackend: config.requestedBackend,
-      actualBackend: renderer?.backend ?? "missing",
+      ground: ground?.field.status() ?? "missing",
       userAgent: navigator.userAgent,
       viewport: Object.freeze({
         width: window.innerWidth,
@@ -247,20 +219,9 @@ export function installReleaseEvidence(opts: {
         : {
             ground: Object.freeze({
               available: ground.reflector.available(),
-              redraws: ground.reflector.redraws(),
-              renderer: ground.reflector.rendererStatus(),
-              profile: (() => {
-                const profile = ground.reflector.rendererProfile();
-                return Object.freeze({
-                  enabled: profile.enabled,
-                  ...(profile.timestampSupported !== undefined
-                    ? { timestampSupported: profile.timestampSupported }
-                    : {}),
-                  samples: profile.samples.length,
-                  gpuSamples: profile.samples.filter((sample) => sample.gpuMs !== undefined).length,
-                });
-              })(),
-              ...(ground.programs !== undefined ? { programs: ground.programs.stats() } : {}),
+              redraws: ground.field.redraws(),
+              status: ground.field.status(),
+              field: ground.field.stats(),
             }),
           }),
       mountEntries: mounts.length,
@@ -269,9 +230,10 @@ export function installReleaseEvidence(opts: {
       departingDomPlanes: host.container.querySelectorAll("[data-ice-departing-dom]").length,
       glIslands: bridge === null ? 0 : [...bridge.islands()].length,
       // The retained-quad transition (and its stat) died with the old composited
-      // leg at B8: an outgoing frame is the ground's own second slot now, and the
-      // stratified profile has none until Phase C. Reported as 0 so the evidence
-      // schema keeps its shape rather than losing a row.
+      // leg at B8: an outgoing frame is the ground's own second slot now — under
+      // both profiles since C2 — and the stratified GL islands' outgoing quads stay
+      // owed (D-C2.5). Reported as 0 so the evidence schema keeps its shape rather
+      // than losing a row.
       departingGlGroups: 0,
       ...(gl !== undefined ? { gl } : {}),
       ...(heap !== undefined ? { usedJsHeapBytes: heap } : {}),
@@ -284,8 +246,7 @@ export function installReleaseEvidence(opts: {
     const groundMicros: number[] = [];
     const rafIntervalMs: number[] = [];
     const glStart = glFrames.length;
-    const profileStart = opts.getGround()?.reflector.rendererProfile().samples.at(-1)?.sequence ?? 0;
-    const startRedraws = opts.getGround()?.reflector.redraws() ?? 0;
+    const startRedraws = opts.getGround()?.field.redraws() ?? 0;
     const original = engine.world.getResource(Camera);
     let priorRaf: number | undefined;
     for (let i = 0; i < frames; i += 1) {
@@ -299,18 +260,11 @@ export function installReleaseEvidence(opts: {
       if (telemetry !== undefined) {
         engineMicros.push(telemetry.totalMicros);
         reflectMicros.push(telemetry.reflectMicros);
-        groundMicros.push(
-          (telemetry.reflectorMicros.get("ground") ?? 0) +
-            (telemetry.reflectorMicros.get("ground-host") ?? 0),
-        );
+        // the field host's reflector, by the name it registers under (`ground/field`)
+        groundMicros.push(telemetry.reflectorMicros.get("ground/field") ?? 0);
       }
     }
-    const endRedraws = opts.getGround()?.reflector.redraws() ?? startRedraws;
-    // Timestamp query resolution is asynchronous. Give the already-submitted
-    // queries one task window before taking the immutable sample snapshot.
-    await new Promise((resolve) => window.setTimeout(resolve, 25));
-    const groundFrames = (opts.getGround()?.reflector.rendererProfile().samples ?? [])
-      .filter((sample) => sample.sequence > profileStart);
+    const endRedraws = opts.getGround()?.field.redraws() ?? startRedraws;
     if (moveCamera && original !== undefined) {
       engine.ops.panTo(original.x, original.y);
       await nextFrame();
@@ -318,11 +272,6 @@ export function installReleaseEvidence(opts: {
     const phaseGl = glFrames.slice(glStart);
     const glCpuMs = phaseGl.map((value) => value.cpuMs);
     const glGpuMs = phaseGl.map((value) => value.gpuMs).filter((value) => value > 0);
-    const groundRenderCpuMs = groundFrames.map((value) => value.cpuMs);
-    const groundGpuMs = groundFrames
-      .map((value) => value.gpuMs)
-      .filter((value): value is number => value !== undefined && value >= 0);
-    const groundDrawCalls = groundFrames.map((value) => value.drawCalls);
     const rafSummary = distribution(rafIntervalMs);
     const missedFrameRatio = rafIntervalMs.length === 0 || rafSummary.p50 <= 0
       ? 0
@@ -333,9 +282,6 @@ export function installReleaseEvidence(opts: {
       engineMicros: distribution(engineMicros),
       reflectMicros: distribution(reflectMicros),
       groundMicros: distribution(groundMicros),
-      groundRenderCpuMs: distribution(groundRenderCpuMs),
-      groundGpuMs: distribution(groundGpuMs),
-      groundDrawCalls: distribution(groundDrawCalls),
       rafIntervalMs: rafSummary,
       missedFrameRatio,
       glCpuMs: distribution(glCpuMs),
@@ -344,9 +290,6 @@ export function installReleaseEvidence(opts: {
         engineMicros: Object.freeze(engineMicros),
         reflectMicros: Object.freeze(reflectMicros),
         groundMicros: Object.freeze(groundMicros),
-        groundRenderCpuMs: Object.freeze(groundRenderCpuMs),
-        groundGpuMs: Object.freeze(groundGpuMs),
-        groundDrawCalls: Object.freeze(groundDrawCalls),
         rafIntervalMs: Object.freeze(rafIntervalMs),
         glCpuMs: Object.freeze(glCpuMs),
         glGpuMs: Object.freeze(glGpuMs),
@@ -416,14 +359,14 @@ export function installReleaseEvidence(opts: {
       const before = snapshot();
       await runCycles(cycles, true);
       const after = snapshot();
-      const beforeObservers = before.ground?.programs?.sourceObservers ?? 0;
-      const afterObservers = after.ground?.programs?.sourceObservers ?? 0;
+      const beforeWakes = before.ground?.field.poles.wakes ?? 0;
+      const afterWakes = after.ground?.field.poles.wakes ?? 0;
       const beforeFbo = before.gl?.fboBytes ?? 0;
       const afterFbo = after.gl?.fboBytes ?? 0;
       const beforeHeap = before.usedJsHeapBytes;
       const afterHeap = after.usedJsHeapBytes;
       const deltas = Object.freeze({
-        sourceObservers: afterObservers - beforeObservers,
+        poleWakes: afterWakes - beforeWakes,
         mountEntries: after.mountEntries - before.mountEntries,
         domHosts: after.domHosts - before.domHosts,
         glIslands: after.glIslands - before.glIslands,
@@ -439,7 +382,8 @@ export function installReleaseEvidence(opts: {
       if (after.frozenMounts !== 0) failures.push("mount holds remain frozen");
       if (after.departingDomPlanes !== 0) failures.push("departing DOM plane remains");
       if (after.departingGlGroups !== 0) failures.push("departing GL group remains");
-      if (deltas.sourceObservers !== 0) failures.push("ground source-observer count changed after warmup");
+      // a pole wake per cycle is the halo settling as the camera lands; more than that is a leak
+      if (deltas.poleWakes > cycles * 4) failures.push("ground pole wakes kept counting past the cycles");
       if (deltas.mountEntries !== 0) failures.push("mount-entry count changed after warmup");
       if (deltas.domHosts !== 0) failures.push("DOM-host count changed after warmup");
       if (deltas.glIslands !== 0) failures.push("GL-island count changed after warmup");
@@ -457,48 +401,18 @@ export function installReleaseEvidence(opts: {
         failures: Object.freeze(failures),
       });
     },
-    async triggerWebglContextLoss() {
-      const ground = opts.getGround();
-      if (ground?.reflector.rendererStatus().backend !== "webgl2") {
-        return Object.freeze({
-          kind: "device-loss" as const,
-          schema: 1 as const,
-          triggered: false,
-          pass: false,
-          message: "Open with ?evidence=1&groundBackend=webgl2 before invoking this destructive probe.",
-          after: snapshot(),
-        });
-      }
-      const canvas = Array.from(host.container.children).find(
-        (child): child is HTMLCanvasElement => child instanceof HTMLCanvasElement,
-      );
-      const gl = canvas?.getContext("webgl2");
-      const extension = gl?.getExtension("WEBGL_lose_context");
-      if (extension === null || extension === undefined) {
-        return Object.freeze({
-          kind: "device-loss" as const,
-          schema: 1 as const,
-          triggered: false,
-          pass: false,
-          message: "WEBGL_lose_context is unavailable on the ground canvas.",
-          after: snapshot(),
-        });
-      }
-      extension.loseContext();
-      return harness.awaitDeviceLoss(5_000);
-    },
     async awaitDeviceLoss(timeoutMs = 30_000) {
       const deadline = performance.now() + Math.max(0, timeoutMs);
       while (performance.now() <= deadline) {
-        const status = opts.getGround()?.reflector.rendererStatus();
-        if (status?.failure?.kind === "device-lost") {
+        const status = opts.getGround()?.field.status();
+        if (status?.state === "failed") {
           const after = snapshot();
           return Object.freeze({
             kind: "device-loss" as const,
             schema: 1 as const,
             triggered: true,
-            pass: after.ground?.available === false && status.failed && !status.ready,
-            message: `${status.failure.api ?? status.backend} loss reached the whole-ground unavailable posture.`,
+            pass: after.ground?.available === false,
+            message: `${status.message ?? "the device was lost"} — the whole-ground unavailable posture.`,
             after,
           });
         }
@@ -518,7 +432,7 @@ export function installReleaseEvidence(opts: {
       if (glFrames.length > 2_000) glFrames.splice(0, glFrames.length - 2_000);
     },
     save(value) {
-      const key = `${STORAGE_PREFIX}${Date.now()}:${value.kind}:${config.groundVariant}`;
+      const key = `${STORAGE_PREFIX}${Date.now()}:${value.kind}:field`;
       localStorage.setItem(key, JSON.stringify(value));
       return key;
     },

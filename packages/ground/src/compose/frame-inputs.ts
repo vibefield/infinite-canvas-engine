@@ -114,6 +114,13 @@ export interface FrameBuilderOptions {
    * every card is a plate.
    */
   readonly residency?: ContentResidency;
+  /**
+   * A live portal's field config from its INSIDE (design-013 C2, D-C2.4): called per
+   * portal slot with the container and the config the build was asked for (the root's,
+   * or a departed frame's); the host answers with the inside canvas type's declaration
+   * resolved. Absent = a portal's inside draws with the config its parent was built with.
+   */
+  readonly insideConfig?: (container: Entity, config: FieldConfig) => FieldConfig;
 }
 
 /** The viewport a frame is built for: CSS px and the dpr the canvas is at. */
@@ -319,6 +326,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
   const cap = opts.portalCap ?? PORTAL_CAP;
   const previews = opts.previews;
   const residency = opts.residency;
+  const insideConfig = opts.insideConfig ?? ((_c: Entity, config: FieldConfig): FieldConfig => config);
   const order = createSiblingOrderIndex(world);
   const states = new Map<Entity, CardState>();
   let wake: ((reason: WakeReason) => void) | null = null;
@@ -507,7 +515,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
           const in_ = insideOf(p.snap, lp.cam, theme);
           inside += in_.frames.length;
           if (p.snap.truncated) truncated += 1;
-          portals.push(portalInputsOf(lp, in_, vp, config, theme, at));
+          portals.push(portalInputsOf(lp, in_, vp, insideConfig(row.e, config), theme, at));
           frames.push({ geometry: row.G, surface: theme.card, content: portalContent(portalFaceOf(p.K, p.r)) });
         } else {
           // the content term (B4a): the card's `TextureRef` once a render realised and wrote it, else the plate
@@ -569,7 +577,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
           const snap = previews.snapshot(e);
           const lp = f === null ? null : portalAt(f.K, f.r, snap.resolvedView, outCam, vp, gate);
           if (lp !== null && f !== null && portals.length < cap) {
-            portals.push(portalInputsOf(lp, insideOf(snap, lp.cam, theme), vp, config, theme, index));
+            portals.push(portalInputsOf(lp, insideOf(snap, lp.cam, theme), vp, insideConfig(e, config), theme, index));
             frames.push({ geometry: G, surface: theme.card, content: portalContent(portalFaceOf(f.K, f.r)) });
           } else frames.push({ geometry: G, surface: theme.card, content: residency?.contentOf(e) ?? PLATE });
         } else {

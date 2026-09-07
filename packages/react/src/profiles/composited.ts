@@ -5,10 +5,11 @@
  * It requires of its host what the old profile does — the app-owned device —
  * and one thing more: the ground layer must be the ground's OWN
  * (`groundCompose({ device, theme })` from `@ice/ground/compose`), which this
- * profile recognises by the handle's `compose` field. `ground()` — the old
- * leg's layer — is refused: it has no GpuCompose to register, and a device-
- * less or old-leg ground under this profile would render a plausible screen
- * that is quietly the wrong one (the class §7 of design-013 names).
+ * profile recognises by the handle's `compose` field. `groundField()` — the
+ * stratified profile's ground — is refused: it has no GpuCompose to register,
+ * and a device-less or stratified ground under this profile would render a
+ * plausible screen that is quietly the wrong one (the class §7 of design-013
+ * names).
  *
  * ROSTER (design-013 §6, reflectors 5–9, by registration order — the queue-op-
  * before-submit law): DomRender · IslandRender · VideoIngest · DomCompose ·
@@ -78,7 +79,7 @@ export const compositedProfile: PresentationProfile = {
     if (composeOf(ctx) === undefined) {
       return (
         "the ground layer is not the ground's own — wire groundCompose({ device: engine.compositorDevice.device, theme }) " +
-        "from @ice/ground/compose, not ground()"
+        "from @ice/ground/compose, not groundField()"
       );
     }
     return null;

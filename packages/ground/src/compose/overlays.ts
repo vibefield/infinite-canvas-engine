@@ -19,16 +19,16 @@
 //
 // The GATE is the canvas type's (`presentation.ground.wires` / `.guides`,
 // core's `define-canvas-type.ts`) — the same booleans the old program host
-// reconciled its two shared passes on, defaulting to ON. It is read at the
-// mount and again on every canvas switch, never inside a flush.
+// reconciled its two shared passes on (deleted at C2), defaulting to ON. It is
+// read at the mount and again on every canvas switch, never inside a flush.
 //
-// COLOURS. The old collectors take theirs from core's `WiresConfig` /
-// `SnapGuidesConfig` — plain-data vocabulary an app passes in (`ground({ wires,
-// guides })`, the react props), NOT from `GroundTheme` and not from
-// `ChromeSettings`. That is kept: the same partials reach `groundCompose({
-// wires, guides })`, so an app that themed its wires under the old leg themes
-// them the same way here. Nothing about them is a colour literal in this
-// package, so the theme test has nothing to say.
+// COLOURS. The collectors take theirs from core's `WiresConfig` /
+// `SnapGuidesConfig` — plain-data vocabulary an app passes in (`groundField({
+// wires, guides })` / `groundCompose({ wires, guides })`, what the old leg's
+// `ground({ wires, guides })` took before C2), NOT from `GroundTheme` and not
+// from `ChromeSettings`. So an app that themed its wires under the old leg
+// themes them the same way here. Nothing about them is a colour literal in
+// this package, so the theme test has nothing to say.
 
 import {
   Active,

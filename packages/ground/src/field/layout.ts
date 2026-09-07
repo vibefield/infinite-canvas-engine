@@ -19,7 +19,7 @@ export const Uniforms = defineStruct("Uniforms", [
   ["needleRange", "vec4f"], // needle half-length min, max · half-width min, max (CSS px)
   ["field", "vec4f"],  // k, eps, polarity, alwaysAlign
   ["color", "vec4f"],  // ink r, g, b, base alpha
-  ["flags", "vec4f"],  // sourceCount, pointerOn, unused ×2
+  ["flags", "vec4f"],  // sourceCount, pointerOn, pointerStrength (1 = the plain cursor), unused
   ["lod", "vec4f"],    // fadeIn lo, hi (a rung's own cell, CSS px), unused ×2
   ["portals", PORTAL_CHAIN_TYPE], // the portal CHAIN (nav/portal.ts): each face's centre xy, half extents xy (CSS px)
   ["clips", PORTAL_CHAIN_TYPE],   // each face's corner radius, on (0/1 — a 0 ends the chain), unused ×2
@@ -88,7 +88,13 @@ export interface FieldConfig {
 
 export interface FieldFrame {
   readonly view: View & { readonly dpr: number };
-  readonly pointer: { readonly x: number; readonly y: number; readonly on: boolean };
+  /**
+   * The analytic cursor (magnet.wgsl `field_at_site`): screen CSS px, on/off, and — since
+   * design-013 C2 (D-C2.2) — its STRENGTH, so a host's pointer pole (widgetlab's halo, whose
+   * strength follows its morph) rides this term instead of the source buffer. Absent = 1, the
+   * plain cursor the shader always drew: `k · polarity · 1 / r²` is the old expression exactly.
+   */
+  readonly pointer: { readonly x: number; readonly y: number; readonly on: boolean; readonly strength?: number };
   /**
    * The zoom this slot's grid is DRESSED for (PORTAL.md §9): its fade-in window and glyph
    * size presets scale by `view.zoom / lodZoom`, so the grid looks like the grid at
@@ -166,7 +172,7 @@ export function uniformValues(f: FieldFrame, cfg: FieldConfig, sourceCount: numb
     needleRange: [...normaliseRange(cfg.needleHalfLen), ...normaliseRange(cfg.needleHalfWidth)],
     field: [k, 25, cfg.polarity, cfg.alwaysAlign ? 1 : 0],
     color: [cfg.ink[0], cfg.ink[1], cfg.ink[2], cfg.inkAlpha * (f.present?.opacity ?? 1)],
-    flags: [sourceCount, f.pointer.on ? 1 : 0, 0, 0],
+    flags: [sourceCount, f.pointer.on ? 1 : 0, f.pointer.strength ?? 1, 0],
     lod: [cfg.fadeIn[0], Math.max(cfg.fadeIn[1], cfg.fadeIn[0] + 1e-3), 0, 0],
     ...portalValues(f.present),
     box: boxValues(f.view),

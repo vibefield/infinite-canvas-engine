@@ -26,19 +26,20 @@ export default defineConfig({
       //                          Residency named, drawn by the ground in `own` mode;
       //                          parity against a WebGL render of the same scene, and
       //                          the cross-kind z check.
-      //   line-grid-ab      — C1d: the RECORDED A/B — the old TSL line grid and the
-      //                          engine's new `line` glyph at three zooms, one device,
-      //                          with an A-vs-A control per arm.
       //   composited-video  — B6: a live surface — a producer registers a stable
       //                          texture and each arriving frame is one copy and one
       //                          compose frame.
       //   composited-app    — C0: the PRODUCT's board — the demo seed, the App's own
       //                          <Canvas> wiring, and the seven lit GL cards graded
       //                          against a WebGL control on the same Scene objects.
-      //   overlay-parity    — C1: the wires/guides overlays on the engine against the
-      //                          SAME scene through the old three renderer, in one page,
-      //                          with an A-vs-A control. A one-time witness: it goes with
-      //                          the old leg at C2.
+      //   stratified        — C2: the STRATIFIED profile's ground on the engine —
+      //                          `groundField` on a device of its own: the grid draws under
+      //                          the DOM cards (no plate on the ground), the overlays gate by
+      //                          the type, the flight is the ground's second slot, the local
+      //                          pointer never re-bakes and a remote pole does, idle-zero.
+      //                          (C1's `overlay-parity` and C1d's `line-grid-ab` drew the OLD
+      //                          three leg beside the engine; they went with it at C2 — their
+      //                          numbers live in the plan's landing logs.)
       input: {
         index: "index.html",
         composited: "composited.html",
@@ -47,8 +48,7 @@ export default defineConfig({
         "composited-islands": "composited-islands.html",
         "composited-video": "composited-video.html",
         "composited-app": "composited-app.html",
-        "line-grid-ab": "line-grid-ab.html",
-        "overlay-parity": "overlay-parity.html",
+        stratified: "stratified.html",
       },
     },
   },

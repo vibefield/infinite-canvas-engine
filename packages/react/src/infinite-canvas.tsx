@@ -26,11 +26,13 @@
  *  - GL / R3F: the `@ice/r3f` wall forbids `@ice/react` importing three, so a
  *    GL layer (GLViews) mounts APP-SIDE. Use {@link onReady} to receive the host
  *    + planes and mount it yourself (like apps/glboard).
- *  - The GROUND layer (P0: dot grid, wires, snap guides — @ice/ground, three's
- *    WebGPURenderer) rides the same wall: pass its factory through the OPAQUE
- *    {@link InfiniteCanvasProps.ground} prop (`ground={ground({...})}`); this
- *    component types it structurally and never imports the package. No factory
- *    ⇒ no ground layer (headless/test boots).
+ *  - The GROUND layer (P0: the magnet field, the live portals, the flight's
+ *    second slot, wires, snap guides — @ice/ground on the engine's own WebGPU
+ *    canvas) rides the same wall: pass its factory through the OPAQUE
+ *    {@link InfiniteCanvasProps.ground} prop (`ground={groundField({...})}` under
+ *    the stratified profile, `groundCompose({...})` under the composited one);
+ *    this component types it structurally and never imports the package. No
+ *    factory ⇒ no ground layer (headless/test boots).
  *  - Devtools: the import wall forbids `@ice/react` importing `@ice/devtools`.
  *    Wire the panel app-side against `engine.engine` (also via {@link onReady}).
  *  - Measurement: auto-sized widgets need a `MeasureQueue` passed to BOTH
@@ -92,12 +94,6 @@ export interface InfiniteCanvasHandle {
 }
 
 /**
- * STRUCTURAL mirror of `@ice/ground`'s GroundLayer/GroundFactory (the
- * `WidgetDef.component`-style opaque seam: react never imports the package —
- * the wall forbids three here). `@ice/ground.ground(...)` returns a function
- * assignable to this type.
- */
-/**
  * STRUCTURAL mirror of `@ice/ground/compose`'s `SourceCanvasSlot` (B4). The L1
  * `<canvas layoutsubtree>` is THIS component's to build — it owns the container
  * and the viewport the bitmap must track — while the two things only the HiC
@@ -113,13 +109,20 @@ interface GroundComposeMirror {
   readonly sourceCanvas?: GroundSourceCanvasSlot | null;
 }
 
+/**
+ * STRUCTURAL mirror of `@ice/ground`'s two layer handles (`GroundFieldHandle`,
+ * `GroundComposeHandle` — the `WidgetDef.component`-style opaque seam: react
+ * never imports the package). `groundField(...)` and `groundCompose(...)` both
+ * return a function assignable to {@link GroundLayerFactory}.
+ */
 export interface GroundLayerHandle {
   readonly reflector: ReflectorDef & { available(): boolean };
   /**
-   * The ground's COMPOSE handle (design-013, `groundCompose(…)`), present only on the new
-   * leg. Opaque here as well: the composited profile reads its reflectors off it, and
-   * this component reads its content seam through {@link surfaceContentOf} — never by
-   * importing the package.
+   * The ground's COMPOSE handle (design-013, `groundCompose(…)`), present only on the
+   * composited profile's ground. Opaque here as well: the composited profile reads its
+   * reflectors off it, and this component reads its content seam through
+   * {@link surfaceContentOf} — never by importing the package. The stratified ground's
+   * `field` handle is not mirrored: nothing here reads it.
    */
   readonly compose?: unknown;
   configureGrid(cfg: Partial<GridConfig>): void;
@@ -131,23 +134,20 @@ export type GroundLayerFactory = (ctx: {
   readonly world: World;
   readonly readWirePreview: () => WirePreviewBuffer;
   /**
-   * Broad-phase rect query over the interaction stack's spatial index (the
-   * magnet grid's widget sources, design-010 §3.2). Structural mirror of
-   * `@ice/ground`'s ReadSpatial — kernel AABB/SpatialEntry shapes inlined.
+   * The current canvas type and its switch (`engine.canvas`): the ground resolves its ROOT
+   * slot's field config and its overlay gates off it (design-013 C2, D-C2.4).
    */
-  readonly readSpatial: (bounds: {
-    readonly minX: number;
-    readonly minY: number;
-    readonly maxX: number;
-    readonly maxY: number;
-  }) => ReadonlyArray<{ minX: number; minY: number; maxX: number; maxY: number; id: Entity }>;
   readonly canvas: {
     type(): ReturnType<CanvasEngine["canvas"]["type"]>;
     current(): ReturnType<CanvasEngine["canvas"]["current"]>;
     subscribe(onChange: () => void): () => void;
   };
+  /**
+   * The engine's catalog (`engine.catalog`): a live PORTAL slot's field config is the
+   * container's inside canvas type, which is the catalog's binding (D-C2.4).
+   */
+  readonly catalog: CanvasEngine["catalog"];
   readonly transitions: CanvasEngine["transitions"];
-  readonly gpu: CanvasEngine["gpu"];
   /** The preview store (`engine.previews`): a container's inside for the ground's live portals (design-013 §8 B3). */
   readonly previews: CanvasEngine["previews"];
   /**
@@ -175,17 +175,20 @@ export interface InfiniteCanvasProps {
   /** Called once after the host/reflectors/loop are live (app-side GL/devtools). */
   readonly onReady?: (handle: InfiniteCanvasHandle) => void;
   /**
-   * The P0 ground layer (dot grid, wires, snap guides — one WebGPU canvas).
-   * Pass `ground(opts)` from `@ice/ground`; received opaquely (see
-   * {@link GroundLayerFactory}). Memoize in the caller — a new identity
-   * re-boots the canvas mount effect. Absent ⇒ no ground layer renders.
+   * The P0 ground layer (the field, the portals, the flight, wires, snap guides
+   * — one WebGPU canvas). Pass `groundField(opts)` from `@ice/ground` (the
+   * stratified profile) or `groundCompose(opts)` from `@ice/ground/compose`
+   * (the composited one); received opaquely (see {@link GroundLayerFactory}).
+   * Memoize in the caller — a new identity re-boots the canvas mount effect.
+   * Absent ⇒ no ground layer renders.
    */
   readonly ground?: GroundLayerFactory;
   /**
-   * Dot-grid tuning (theme dot color, spacing, fades). Applied live via the
-   * ground layer's `configureGrid` — changing it never re-boots the canvas
-   * (memoize in the caller to avoid redundant same-value redraws). No-op
-   * when {@link ground} is absent.
+   * Grid tuning (the ink and its alpha, the fade-in window, the magnet block).
+   * Applied live via the ground layer's `configureGrid` — a re-tune lands on
+   * top of the canvas type's own declaration and never re-boots the canvas
+   * (memoize in the caller to avoid redundant same-value redraws). No-op when
+   * {@link ground} is absent.
    */
   readonly grid?: Partial<GridConfig>;
   /**
@@ -291,10 +294,9 @@ export function InfiniteCanvas({
         host,
         world,
         readWirePreview: () => stack.wirePreview,
-        readSpatial: (bounds) => stack.index.search(bounds),
         canvas: engine.canvas,
+        catalog: engine.catalog,
         transitions: engine.transitions,
-        gpu: engine.gpu,
         previews: engine.previews,
         hosts: { contentOf: (e) => domWidgets?.hostFor(e), hostOf: (e) => domWidgets?.hostElementFor(e) },
         framePick: stack.framePick,

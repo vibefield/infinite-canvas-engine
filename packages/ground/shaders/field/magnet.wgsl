@@ -89,12 +89,15 @@ fn cover_needle(screen: vec2f, site: vec2f, dir: vec2f, hl: f32, hw: f32, aa: f3
 // Field at one lattice site: the baked CARD field from the atlas (a textureLoad
 // that lands exactly on the texel written for this site — no filtering) plus
 // the CURSOR, added analytically so pointer motion never invalidates the atlas.
+// The cursor's STRENGTH is `u.flags.z` (design-013 C2, D-C2.2: a host's pointer
+// pole rides this term, strength and all); a plain cursor is 1, and `× 1.0` is
+// the old expression bit for bit.
 fn field_at_site(u: Uniforms, atlas_tex: texture_2d<f32>, atlas_idx: vec2f, screen: vec2f) -> vec3f {
   var f = vec2f(0.0);
   if (u.flags.y > 0.5) {
     let to_pole = u.view.zw - screen;
     let r2 = dot(to_pole, to_pole) + u.field.y;
-    f += safe_normalize(to_pole, rest_dir(u)) * (u.field.x * u.field.z / r2);
+    f += safe_normalize(to_pole, rest_dir(u)) * (u.field.x * u.field.z * u.flags.z / r2);
   }
   let t = vec2i(round(atlas_idx - u.atlas.xy));
   let dims = vec2i(u.atlas.zw);

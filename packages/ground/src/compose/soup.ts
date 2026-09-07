@@ -6,7 +6,7 @@
  * This is the COPY of `passes/soup-collect.ts` across the Phase-C wall (C1,
  * 2026-09-07): the new leg may not import the old one, so the pure code moved
  * by copy and `test/overlay-collectors.test.ts` asserts the two emit
- * byte-identical soups. `passes/soup-collect.ts` dies with the old leg at C2 and
+ * byte-identical soups. `passes/soup-collect.ts` died with the old leg at C2 and
  * this file is what survives — the two must not drift meanwhile.
  *
  * THREE deliberate differences from the original. (1) `TriSoup`'s arrays are

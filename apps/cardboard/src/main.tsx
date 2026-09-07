@@ -56,7 +56,7 @@ import {
   startRafLoop,
   wireMeasurement,
 } from "@ice/dom";
-import { ground } from "@ice/ground";
+import { ENGINE_PALETTE, groundField, themeFrom } from "@ice/ground";
 import { WidgetRoot } from "@ice/react";
 import { attachDevtools } from "@ice/devtools";
 import { createElement } from "react";
@@ -190,7 +190,11 @@ async function boot(): Promise<void> {
   // (design-004 §2). Feeds measureQueue, which installWidgetRuntime drains.
   wireMeasurement(runtime.store, domWidgets, measureQueue);
   engine.registerReflector(createPlaneTransformReflector({ contentPlane: planes.content, liftedPlane: planes.lifted }));
-  engine.registerReflector(ground()({ host, world }).reflector); // P0: one WebGPU canvas (grid pass)
+  // P0: one WebGPU canvas — the field on the engine (design-013 C2). The ground is OPAQUE and
+  // clears to its theme's ground, so the page's #1b1c1e rides the theme rather than showing through.
+  engine.registerReflector(
+    groundField({ theme: themeFrom("dark", { ...ENGINE_PALETTE.dark, canvasBg: { token: "cardboard index.html body background", css: "#1b1c1e" } }) })({ host, world }).reflector,
+  );
   engine.registerReflector(domWidgets);
   engine.registerReflector(createChromeReflector(host, world, stack.marqueeBuffer));
   engine.registerReflector(createCursorReflector(host, stack.readCursor));

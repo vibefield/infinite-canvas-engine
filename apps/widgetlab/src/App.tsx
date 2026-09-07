@@ -49,9 +49,7 @@ import {
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
-import { ground, groundHost, type GroundFactory } from "@ice/ground";
-import { lineGridGroundProgram } from "@ice/ground/programs/line-grid";
-import { magnetGridGroundProgram } from "@ice/ground/programs/magnet-grid";
+import { ENGINE_PALETTE, type GroundFieldFactory, type GroundTheme, groundField, themeFrom } from "@ice/ground";
 import { GLViews, captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import { InfiniteCanvas, type InfiniteCanvasHandle, type KeymapEntry } from "@ice/react";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -75,11 +73,9 @@ import { WIDGETS } from "./widgets";
 import {
   BoardCanvas,
   WIDGETLAB_CANVASES,
-  WIDGETLAB_DOT_GROUND,
   WIDGETLAB_TOOLS,
   WhiteboardCatalog,
 } from "./canvases";
-import { WIDGETLAB_LINE_GROUND } from "./whiteboard-canvas";
 
 const RELEASE_EVIDENCE = readReleaseEvidenceConfig();
 
@@ -618,6 +614,24 @@ export function App() {
     () => ({ ...gridConfig, dotColor: hexToRgb01(dark ? themeColors.dotDark : themeColors.dotLight) }),
     [gridConfig, dark, themeColors],
   );
+  // The ground's THEME (design-013 C2): the engine's canvas is opaque and clears to its
+  // theme's ground, so the app's `--canvas-bg` pair is projected into it — the same numbers
+  // the CSS variable carries above, by the same state. The factory reads it through a ref
+  // at the mount, and the effect below re-projects it live (a theme switch never re-boots).
+  const groundTheme = useMemo<GroundTheme>(
+    () =>
+      themeFrom(dark ? "dark" : "light", {
+        ...ENGINE_PALETTE[dark ? "dark" : "light"],
+        canvasBg: { token: "widgetlab --canvas-bg", css: dark ? themeColors.bgDark : themeColors.bgLight },
+        fieldInk: { token: "widgetlab ThemeColors.dot", css: dark ? themeColors.dotDark : themeColors.dotLight },
+      }),
+    [dark, themeColors],
+  );
+  const groundThemeRef = useRef(groundTheme);
+  groundThemeRef.current = groundTheme;
+  useEffect(() => {
+    groundLayerRef.current?.field.setTheme(groundTheme);
+  }, [groundTheme]);
 
   // Keyboard shortcuts. <InfiniteCanvas> already installs the engine default
   // keymap (packages/react/src/keymap.ts) — ⌘Z undo, ⇧⌘Z redo, ⌫/Delete
@@ -683,31 +697,23 @@ export function App() {
     dt.glStats(s); // the full GL panel: renderer counts, VT census, LOD bands, culls
   }, []);
 
-  // The P0 ground layer (grid + wires + snap guides, one WebGPU canvas) —
-  // memoized: a new factory identity re-boots the canvas mount effect.
-  // The build-time-selected magnet grid uses the cursor halo as its pole
-  // (halo-poles.ts, the reference PoleSource wiring). Magnet config lives in
-  // gridConfig state and remains live-tunable; classic/magnet selection does
-  // not. `?magnet=dot` remains only as a dot-glyph verification preset.
+  // The P0 ground layer (the field + wires + snap guides, one WebGPU canvas on
+  // the engine — design-013 C2) — memoized: a new factory identity re-boots the
+  // canvas mount effect. ONE factory now: `groundField`, the stratified
+  // profile's ground, whose glyph comes from each canvas type's declaration
+  // (`canvases.ts`: the dot; `whiteboard-canvas.ts`: the line) and whose
+  // magnet config lives in gridConfig state and remains live-tunable
+  // (`?magnet=dot` remains as a dot-glyph verification preset). The cursor
+  // halo is its POLE (halo-poles.ts, the reference PoleSource wiring) and
+  // rides the field's analytic cursor term (D-C2.2). The old `?ground=legacy`
+  // and `?groundBackend=webgl2` arms measured a renderer that no longer exists.
   const groundFactory = useMemo(() => {
-    const forceWebGL = RELEASE_EVIDENCE.requestedBackend === "webgl2";
-    const inner: GroundFactory = RELEASE_EVIDENCE.groundVariant === "legacy"
-      ? ground({ poles: haloPoles(), forceWebGL, profile: RELEASE_EVIDENCE.enabled })
-      : groundHost({
-          programs: [
-            magnetGridGroundProgram({ id: WIDGETLAB_DOT_GROUND, poles: haloPoles() }),
-            lineGridGroundProgram({ id: WIDGETLAB_LINE_GROUND }),
-          ],
-          fallback: WIDGETLAB_DOT_GROUND,
-          forceWebGL,
-          profile: RELEASE_EVIDENCE.enabled,
-        });
+    const inner: GroundFieldFactory = (ctx) => groundField({ theme: groundThemeRef.current, poles: haloPoles() })(ctx);
     // Query-gated production evidence and DEV forensics share the same opaque
-    // layer capture; ordinary production mounts pay neither profiling nor a
-    // window-global surface.
+    // layer capture; ordinary production mounts pay no window-global surface.
     return ((ctx) => {
       const layer = inner(ctx);
-      groundLayerRef.current = layer as EvidenceGroundLayer;
+      groundLayerRef.current = layer;
       if (import.meta.env.DEV || RELEASE_EVIDENCE.enabled) {
         (window as unknown as { __groundLayer?: unknown }).__groundLayer = layer;
       }

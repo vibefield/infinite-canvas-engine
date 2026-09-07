@@ -281,25 +281,6 @@ export function SettingsPanel({
           </div>
         </div>
 
-        {/* Grid: Spacings */}
-        <div className={borderCls}>
-          <div className={sectionCls}>Grid Spacings (world px)</div>
-          <div className="flex gap-1.5">
-            {(["fine", "medium", "coarse"] as const).map((label, i) => (
-              <label key={label} className="flex flex-1 flex-col items-center gap-0.5">
-                <span className={labelCls}>{label}</span>
-                <input
-                  type="number"
-                  step="1"
-                  className={inputCls}
-                  value={gridConfig.spacings[i]}
-                  onChange={(e) => setGridTuple("spacings", i, Number(e.target.value))}
-                />
-              </label>
-            ))}
-          </div>
-        </div>
-
         {/* Grid: Dot Appearance */}
         <div>
           <div className={sectionCls}>Dot Appearance</div>
@@ -377,7 +358,9 @@ export function SettingsPanel({
 
         {/* Grid: Fade Curve */}
         <div>
-          <div className={sectionCls}>Fade Curve (CSS px)</div>
+          {/* design-013 C2 (D-C2.1): the engine's lattice fades a rung IN by its own cell and never out;
+              the classic grid's spacings, fade-out and level weights retired with it. */}
+          <div className={sectionCls}>Fade In (CSS px, a rung's own cell)</div>
           <div className="grid grid-cols-2 gap-1.5">
             <label className="flex items-center gap-1">
               <span className={`w-12 ${labelCls}`}>in start</span>
@@ -397,53 +380,6 @@ export function SettingsPanel({
                 className={inputCls}
                 value={gridConfig.fadeIn[1]}
                 onChange={(e) => setGridTuple("fadeIn", 1, Number(e.target.value))}
-              />
-            </label>
-            <label className="flex items-center gap-1">
-              <span className={`w-12 ${labelCls}`}>out start</span>
-              <input
-                type="number"
-                step="10"
-                className={inputCls}
-                value={gridConfig.fadeOut[0]}
-                onChange={(e) => setGridTuple("fadeOut", 0, Number(e.target.value))}
-              />
-            </label>
-            <label className="flex items-center gap-1">
-              <span className={`w-12 ${labelCls}`}>out end</span>
-              <input
-                type="number"
-                step="10"
-                className={inputCls}
-                value={gridConfig.fadeOut[1]}
-                onChange={(e) => setGridTuple("fadeOut", 1, Number(e.target.value))}
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* Grid: Level Weights */}
-        <div>
-          <div className={sectionCls}>Level Weight</div>
-          <div className="flex gap-2">
-            <label className="flex flex-1 items-center gap-1">
-              <span className={labelCls}>base</span>
-              <input
-                type="number"
-                step="0.1"
-                className={inputCls}
-                value={gridConfig.levelWeight[0]}
-                onChange={(e) => setGridTuple("levelWeight", 0, Number(e.target.value))}
-              />
-            </label>
-            <label className="flex flex-1 items-center gap-1">
-              <span className={labelCls}>step</span>
-              <input
-                type="number"
-                step="0.1"
-                className={inputCls}
-                value={gridConfig.levelWeight[1]}
-                onChange={(e) => setGridTuple("levelWeight", 1, Number(e.target.value))}
               />
             </label>
           </div>

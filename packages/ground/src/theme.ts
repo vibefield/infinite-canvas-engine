@@ -93,7 +93,7 @@ export const LIFT = { scale: 1.05, opacity: 0.75 } as const;
  * (lab/theme.ts, from canvas-appearance.ts); the passes boot on these.
  */
 export const ENGINE_GRID = {
-  /** design-014's ruling: the engine's default is the DOT; the needle is a pack (ICE's old-leg default stays "needle" until B8). */
+  /** design-014's ruling: the engine's default is the DOT; the needle is a pack (`GridMagnetConfig.glyph` still defaults to "needle" — a re-tune's word, not the engine's). */
   glyph: "dot" as "dot" | "needle",
   reach: 60,
   polarity: 1 as 1 | -1,
@@ -139,6 +139,35 @@ export const LINE_GRID: {
     dark: { token: "ICE DEFAULT_GRID_CONFIG.dotColor (the old TSL line grid's ink)", rgb: ENGINE_GRID.ink.rgb },
   },
   law: { thin: 0.5, thick: 0.5, alphaThin: 0.42, alphaThick: 0.42 },
+};
+
+/**
+ * The ENGINE's own palette (design-013 C2): what `groundField` draws with when a
+ * host projects none, and the base a host overrides a role of (pointerlab keeps
+ * its `#0d1117`; the widgetlab apps their `--canvas-bg`). ICE ships no design
+ * system, so every role names the ICE number it is: the ground and the dark
+ * ink are widgetlab's two `ThemeColors` pairs (`App.tsx`, the v1 playground's
+ * defaults), the light ink is `DEFAULT_GRID_CONFIG.dotColor` (`ENGINE_GRID.ink`
+ * above, in hex), the select accent is `DEFAULT_WIRES_CONFIG.selectedColor`.
+ * The card and the hairline are the neutral pair a plate under a DOM card is
+ * never seen as (the stratified profile draws no frames), kept legal for the
+ * compose host all the same.
+ */
+export const ENGINE_PALETTE: Readonly<Record<ThemeName, Palette>> = {
+  light: {
+    canvasBg: { token: "ICE widgetlab ThemeColors.bgLight", css: "#fafafa" },
+    fieldInk: { token: "ICE DEFAULT_GRID_CONFIG.dotColor (widgetlab dotLight)", css: "#bfc4cc" },
+    card: { token: "ICE engine card (white)", css: "#ffffff" },
+    hairline: { token: "ICE engine hairline", css: "rgba(0, 0, 0, 0.08)" },
+    select: { token: "ICE DEFAULT_WIRES_CONFIG.selectedColor", css: "#4a90d9" },
+  },
+  dark: {
+    canvasBg: { token: "ICE widgetlab ThemeColors.bgDark", css: "#171717" },
+    fieldInk: { token: "ICE widgetlab ThemeColors.dotDark", css: "#595e66" },
+    card: { token: "ICE engine card (neutral-800)", css: "#262626" },
+    hairline: { token: "ICE engine hairline", css: "rgba(255, 255, 255, 0.1)" },
+    select: { token: "ICE DEFAULT_WIRES_CONFIG.selectedColor", css: "#4a90d9" },
+  },
 };
 
 /** Everything the passes read, as numbers: the HEAD every program shares, and one section per registered pack (`packs`, by the pack's name). */
@@ -191,3 +220,9 @@ export function themeFrom<P extends Palette>(name: ThemeName, p: P, grid: { read
     packs: sections,
   };
 }
+
+/** The engine's two themes from its own palette (`ENGINE_PALETTE`): `groundField`'s default, and a host's base to override a role of. */
+export const ENGINE_THEMES: Readonly<Record<ThemeName, GroundTheme>> = {
+  light: themeFrom("light", ENGINE_PALETTE.light),
+  dark: themeFrom("dark", ENGINE_PALETTE.dark),
+};

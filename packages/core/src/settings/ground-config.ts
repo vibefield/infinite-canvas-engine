@@ -8,27 +8,35 @@
  * Freeform / FigJam), wires + snap-guides from their 2026 dom reflectors.
  */
 
+/**
+ * The grid's plain-data tuning — the react `grid` prop, `configureGrid`, and a
+ * canvas type's `presentation.ground.grid` all take a partial of this.
+ *
+ * design-013 C2 (D-C2.1): the ground draws on the ENGINE's lattice — a derived
+ * decade ladder (`mid = 20·10^k`, fine = mid/10, coarse = mid·10) that fades a
+ * rung IN by its own cell size and never out — so the classic grid's three
+ * fixed `spacings`, its `fadeOut` window and its per-level `levelWeight`
+ * retired with the classic grid. They had no field meaning (the compose host
+ * dropped them silently since B2); a partial still naming them is a type
+ * error now, not a no-op.
+ */
 export interface GridConfig {
-  /** World-unit spacings for up to 3 grid levels [fine, medium, coarse]. */
-  spacings: [number, number, number];
-  /** Dot RGB color as [r, g, b] in 0-1 range. */
+  /** Dot RGB color as [r, g, b] in 0-1 range — the field's ink. */
   dotColor: [number, number, number];
   /** Base dot opacity multiplier (0-1). */
   dotAlpha: number;
-  /** CSS-pixel range where a grid level fades in: [start, end]. */
+  /** CSS-pixel range a rung fades in over, by its own cell size: [start, end]. */
   fadeIn: [number, number];
-  /** CSS-pixel range where a grid level fades out: [start, end]. */
-  fadeOut: [number, number];
   /** Dot radius range in CSS pixels [min, max]. Scaled by DPR internally. */
   dotRadius: [number, number];
-  /** Per-level opacity weight: level i gets (base + i * step). */
-  levelWeight: [number, number];
   /**
-   * Magnet-lattice tuning. The production grid implementation is selected at
-   * build time; this block never switches renderers at runtime. The magnet
-   * implementation resolves an absent/partial block over
-   * {@link DEFAULT_GRID_MAGNET_CONFIG}; the classic implementation accepts
-   * the same GridConfig contract and ignores this block.
+   * Magnet-field tuning (design-010 §3.1). The ground's field is the engine's
+   * one implementation since design-013; this block resolves over
+   * {@link DEFAULT_GRID_MAGNET_CONFIG} and maps onto the field's config
+   * (`fieldConfigOf` in `@ice/ground/compose`): `glyph`, `reach`, `polarity`,
+   * `alwaysAlign`, `needleLength`, `needleWidth` — the rest of the block is
+   * the old magnet grid's vocabulary with no field reader (named in C2's
+   * landing log).
    *
    * `configureGrid` deep-merges this key one level, so a partial re-tune such
    * as `{ magnet: { reach: 80 } }` never clobbers the rest of the block.
@@ -48,7 +56,7 @@ export interface GridMagnetConfig {
   reach: number;
   /** +1 attract (needles point at sources) / −1 repel. */
   polarity: 1 | -1;
-  /** Widget-silhouette SDF sources on/off (needs the readSpatial ctx seam). */
+  /** Widget-silhouette SDF sources on/off — no field reader since design-013 C2 (every on-screen card is a source). */
   widgets: boolean;
   /** Field strength of every widget source (per-widget override is a named §8 seam). */
   widgetStrength: number;
@@ -82,18 +90,15 @@ export const DEFAULT_GRID_MAGNET_CONFIG: GridMagnetConfig = {
 };
 
 /**
- * Shared visual defaults inherited from the original analytic grid. The
- * magnet block stays optional so apps can state only the magnet values they
- * tune; the wired implementation resolves the remainder independently.
+ * Shared visual defaults inherited from the original analytic grid (the keys
+ * that survived D-C2.1). The magnet block stays optional so apps can state only
+ * the magnet values they tune; the field resolves the remainder itself.
  */
 export const DEFAULT_GRID_CONFIG: GridConfig = {
-  spacings: [20, 100, 500],
   dotColor: [0.75, 0.77, 0.8],
   dotAlpha: 1.0,
   fadeIn: [8, 16],
-  fadeOut: [120, 200],
   dotRadius: [0.75, 0.75],
-  levelWeight: [1.0, 0.0],
 };
 
 /** Minimal-neutral wire styling (design-004 §6: chrome is subdued; wires defer to content). */

@@ -258,7 +258,7 @@ function fakeCanvas(initial: CanvasType | undefined) {
   };
 }
 const typeWith = (ground: { wires?: boolean; guides?: boolean }): CanvasType =>
-  ({ id: "t", semanticVersion: 1, semantic: { placement: { widgets: [] } }, presentation: { ground: { program: "magnet", ...ground } }, __canvasType: true }) as unknown as CanvasType;
+  ({ id: "t", semanticVersion: 1, semantic: { placement: { widgets: [] } }, presentation: { ground: { glyph: "dot", ...ground } }, __canvasType: true }) as unknown as CanvasType;
 
 describe("the overlay seam · the driver", () => {
   it("collects both soups on the first build, under the names the ground knows", () => {

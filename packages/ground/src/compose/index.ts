@@ -1,9 +1,11 @@
-// @ice/ground/compose — the ground as design-013's compositor: the magnet field
+// @ice/ground/compose — the ground as design-013's engine: the magnet field
 // and the cutting mat, the SDF card frame with its content term and the heat,
-// the live portal's slot tree and the flight's second slot, the theme's engine
-// half, and `Ground` itself. Moved from vibe-field/draft/ground at B1
-// (2026-09-07); the old leg (`@ice/ground`'s barrel) imports none of this and
-// this imports none of it — dependency-cruiser holds the wall until B8.
+// the live portal's slot tree and the flight's second slot, the overlays, the
+// poles, the theme's engine half, both hosts (`groundCompose` for the
+// composited profile, `groundField` for the stratified one — C2) and `Ground`
+// itself. Moved from vibe-field/draft/ground at B1 (2026-09-07); since C2 the
+// whole package is this leg — `@ice/ground` (the barrel) is its stratified
+// face and imports from here.
 export * from "../engine/device";
 export * from "../engine/pipeline";
 export * from "../engine/shader";
@@ -34,6 +36,7 @@ export * from "../compose/ground";
 export * from "../compose/overlay";
 export * from "../compose/soup";
 export * from "../compose/overlays";
+export * from "../compose/poles";
 export { collectGuides } from "../compose/guides-collect";
 export { collectWires } from "../compose/wires-collect";
 export * from "../compose/dom-compose";

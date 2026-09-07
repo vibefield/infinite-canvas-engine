@@ -78,6 +78,75 @@ the entity's own kind behaviour.
   report of a second writer on a component. Rename to your own namespace; a name
   that merely starts with the same letters (`iceberg:x`) is unaffected.
 
+<!-- design-013 C2 (2026-09-07) -->
+- **The stratified profile's ground is the ENGINE's, and the three-based leg is deleted**
+  (design-013 §8 Phase C, C2 — D-C2.1…D-C2.6). `@ice/ground` (`@vibecook/ice/ground`) no longer
+  exports `ground()`, `groundHost`, `GroundLayer`, `GroundFactory`, `GroundContext`,
+  `GroundOptions`, `GroundHostLayer`, `GroundHostOptions`, `GroundProgramControl`,
+  `GroundHostStats`, design-011's `GroundProgramDefinition` / `GroundProgramInstance` /
+  `GroundProgramInput` / `GroundSourceDeclaration` / `GroundProgramTransition` /
+  `GroundPrepareContext` / `GroundProgramStatus` / `GroundProgramCacheOptions` /
+  `FrozenGroundPresentation` / `GroundPresentation` / `GroundActivationContext`,
+  `frameChildrenSource` and its two limits, `GroundFrameChildren*`, `GroundPass` / `GroundFrame`
+  / `GroundReflector`, the renderer's `readGroundRendererStatus` and every `GroundRenderer*`
+  type, `collectMagnetLevels` / `collectMagnetSources` / `magnetFieldScale` / `resolveMagnet` /
+  `MAX_MAGNET_SOURCES` / `MagnetLevel` / `ReadSpatial`; the workspace subpaths
+  `@ice/ground/programs/{dot-grid,line-grid,magnet-grid}` (`dotGridGroundProgram`,
+  `lineGridGroundProgram`, `magnetGridGroundProgram`) are gone. What replaces them, one
+  factory: **`groundField(opts?)`** — the same engine host `groundCompose` is (one host, two
+  factories, D-C2.3), acquiring its OWN WebGPU device, drawing the field, the live portals, the
+  flight's second slot and the two overlays under the DOM planes, and NO cards (the DOM draws
+  them). Migration:
+
+  | was | now |
+  | --- | --- |
+  | `ground({ grid, wires, guides, poles, passes, forceWebGL, profile, rendererOverride })` | `groundField({ grid, wires, guides, poles, theme?, config?, grids?, gpu?, onDevice? })` — no WebGL2 fallback, no timestamp profile, no extra `passes` (an overlay is `Ground.create({ overlays })`'s) |
+  | `groundHost({ programs, fallback, cache, onProgramFault })` | `groundField(…)` — the canvas type declares its glyph (below); there is no program to prepare, cache, fall back to or quarantine |
+  | `layer.reflector.rendererStatus()` / `.rendererProfile()` / `.redraws()`, `layer.device()`, `layer.programs.*` | `layer.field.status()` / `.device()` / `.redraws()` / `.stats()` / `.config()` / `.setTheme()` |
+  | `magnetGridGroundProgram({ poles })` | `groundField({ poles })` — a pole flagged `pointer: true` rides the field's analytic cursor (D-C2.2) |
+
+  **The ground is OPAQUE now.** The old canvas cleared to transparent and the page's CSS
+  background showed through it; the engine clears to its theme's `canvasBg` and writes the
+  bytes the theme and the config name — straight alpha over that ground, in the sRGB swap
+  chain, no linear-light compositing and no encode on output (D-C2.6: a configured byte is the
+  drawn byte). Pass `theme` (a `GroundTheme` — `themeFrom(name, palette)` over
+  `ENGINE_PALETTE[name]` with your page's background as `canvasBg`, or a product's own
+  projection); with none, `ENGINE_THEMES.light` (`#fafafa`). The stratified colours therefore
+  CHANGE on screen by the amounts C1 and C1d recorded: a wire at `rgba(120, 132, 145, 0.9)`
+  now lands at that colour over the ground rather than lighter, and the line grid's ink
+  `[0.75, 0.77, 0.8]` at 85 rather than 157 — lift `lineInk` and the `WiresConfig` colours if
+  you want the old look; never a second chain.
+- **`presentation.ground` on a canvas type is a FIELD DECLARATION, not a program id**
+  (D-C2.4). `{ program: string; wires?; guides? }` became
+  `{ glyph?: string; grid?: Partial<GridConfig>; wires?: boolean; guides?: boolean }`: `glyph`
+  names the engine's `dot` or `line` or a registered grid program's (`needle`, `mat` —
+  `@ice/ground/packs`; an unknown name draws as the dot), `grid` is the same partial the react
+  `grid` prop takes and the prop's re-tunes land on top of it. The host resolves it per slot:
+  the ROOT slot from the current type at every switch, a live PORTAL's slot from the
+  container's inside type (the catalog's binding), and the flight's departed slot keeps the
+  config it was drawn with at the cut. A definition still naming `program` throws at
+  definition time with the migration in the message; an empty `glyph` is refused by the
+  catalog where an empty program id was. A type that declares a ground (any of the four
+  fields) requires the `ground` presentation plane to prepare before a flight, as a program id
+  did.
+- **`GridConfig` loses `spacings`, `fadeOut` and `levelWeight`** (D-C2.1). The ground draws on
+  the engine's lattice — a derived decade ladder (`mid = 20·10^k`, fine = mid/10, coarse =
+  mid·10) that fades a rung IN by its own cell size and never out — so the classic grid's three
+  fixed spacings, its fade-out window and its per-level weights retired with the classic grid.
+  `fieldConfigOf` had dropped them silently since B2; a partial naming them is a type error
+  now. `DEFAULT_GRID_CONFIG` is `{ dotColor, dotAlpha, fadeIn, dotRadius }`. The magnet block's
+  `widgets`, `widgetStrength`, `widgetRadius`, `maxSources` and `fadeZoom` stay declared and
+  have no field reader (every on-screen card is a source at strength 1; named as owed).
+- **`InfiniteCanvas`'s `GroundLayerFactory` context loses `readSpatial` and `gpu`, gains
+  `catalog`.** The magnet grid's broad-phase seam and the snapshot strategy's GPU ledger went
+  with the old leg; the engine's catalog is how the ground resolves a portal's inside type. A
+  factory written against the old context that reads either field gets `undefined`.
+- **`@ice/ground`'s `Pole` gains `pointer?: boolean`** and `FieldFrame.pointer` a
+  `strength?: number` (D-C2.2). `localPointerPoles()` flags its poles; `cursorVisualPoles()`
+  does not; an app's own `PoleSource` (widgetlab's `haloPoles`) flags the one that is the local
+  cursor. The magnet shader's cursor term scales by the strength (`u.flags.z`; 1 by default —
+  the oracle's 53 renders are byte-identical).
+
 <!-- design-013 C1d (2026-09-07) -->
 - **`GroundTheme` carries a `lineInk`** (design-013 D-C1.4). The engine's new `line` glyph
   paints in a theme role of its own, so the head every pass reads gained one field. `themeFrom`
@@ -262,6 +331,43 @@ the entity's own kind behaviour.
   `gen:check` covers the generated module.
 
 ### Added
+
+<!-- design-013 C2 (2026-09-07) -->
+- **`groundField` — the stratified profile's ground on the engine** (design-013 §8 C2,
+  D-C2.3). One WebGPU canvas on a device the layer acquires itself (`navigator.gpu`, or a
+  `gpu` handed in), the same frame builder `groundCompose` runs — for the SOURCES (every
+  on-screen card's silhouette bends the lattice, as the old magnet grid's `readSpatial`
+  sources did), the live portals with their inside's own field config, the flight's second
+  slot (the departed frame's field under the departed camera, in the config it was drawn with
+  at the cut — design-006 §9 on the stratified profile for the first time, dual-live, no
+  snapshot), the wires and the guides gated by the canvas type — and no card frames in any
+  slot. A refused adapter, a failed compile or a lost device is a console error and an
+  unavailable layer (`field.status()`), never a throw in the frame; the app steps on with the
+  DOM board. `onDevice` hands the device over before the first frame (a rig's
+  `instrumentSubmits`). Witnesses: `packages/ground/test/compose/{field-host,field-dirty,
+  poles}.test.ts` (the switch, the gates, the re-tune, the portal's inside config, the departed
+  config, the refusal, idle-zero and the dirty union on a stub device, D-C2.2's bake count on a
+  REAL `Field`), and the desktop `stratified` rig (`pnpm --filter widgetlab-desktop
+  stratified`): the real DOM board over the engine's ground, the flight's cut at maxΔ 0
+  inside the face and out, a 60-step pointer gesture at 0 bakes, a remote pole at one bake per
+  move.
+- **Poles on the engine — `packPoles`, `PoleSource`, `localPointerPoles`, `cursorVisualPoles`**
+  (`@ice/ground`, `@ice/ground/compose`; D-C2.2). A pole flagged as the local pointer rides the
+  field's analytic cursor term with its strength — its motion redraws and never re-bakes the
+  atlas; every other pole is a degenerate `FieldSource` (`{ cx, cy, hx: 0, hy: 0, r: 0,
+  strength }`, the old `[cx, cy, 0, 0, 0, strength, 0, 0]` record) and its move is one bake.
+  `groundCompose({ poles })` takes them too.
+- **`ENGINE_PALETTE` / `ENGINE_THEMES`** (`@ice/ground`): the engine's own two themes, for a
+  host that projects none and as the base a host overrides a role of (`themeFrom(name, {
+  ...ENGINE_PALETTE[name], canvasBg })`). ICE ships no design system, so every role names the
+  ICE number it is.
+- **`slotFieldConfig` / `mergeGridConfig`** (`@ice/ground`): a canvas type's declaration and
+  the `grid` re-tunes onto a slot's `FieldConfig`, and `configureGrid`'s one-level merge on
+  the magnet block, as pure functions.
+- **The composited profile's per-slot configs, for free**: `groundCompose` resolves the root
+  slot from the canvas type at every switch and a portal's slot from its inside type through
+  the same host (`GroundComposeContext.catalog`, which `<InfiniteCanvas>` now passes) — the
+  desktop board's folder draws its whiteboard's `line` grid inside its face.
 
 <!-- design-013 C1d (2026-09-07) -->
 - **`line` — the engine's second built-in glyph** (design-013 §8 C1d, D-C1.4). The classic

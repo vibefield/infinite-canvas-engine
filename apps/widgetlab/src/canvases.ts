@@ -14,7 +14,8 @@ function builtin(id: string): Tool {
   return tool;
 }
 
-export const WIDGETLAB_DOT_GROUND = "widgetlab.board.magnet";
+/** The board's ground GLYPH (design-013 C2): the engine's dot — the needle is the `magnet.glyph` re-tune's, through the react `grid` prop. */
+export const WIDGETLAB_DOT_GROUND = "dot";
 export const WIDGETLAB_TOOLS = [builtin("select"), builtin("pan"), builtin("connect")] as const;
 
 export const BoardCanvas = defineCanvasType({
@@ -24,7 +25,7 @@ export const BoardCanvas = defineCanvasType({
   presentation: {
     catalog: { sections: [{ id: "all", order: 0, items: WIDGETS }] },
     tools: { allowed: WIDGETLAB_TOOLS, default: WIDGETLAB_TOOLS[0] },
-    ground: { program: WIDGETLAB_DOT_GROUND, wires: true, guides: true },
+    ground: { glyph: WIDGETLAB_DOT_GROUND, wires: true, guides: true },
   },
 });
 

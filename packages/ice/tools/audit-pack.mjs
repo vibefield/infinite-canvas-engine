@@ -133,7 +133,7 @@ say(
   threeEdges.length === 0,
   "the compose entry's graph is THREE-FREE",
   threeEdges.length === 0
-    ? `${compose.modules.size} modules reachable from src/compose/index.ts, 0 edges to three (externals: ${[...compose.external.keys()].sort().join(", ")}). The package's \`three\` peer STAYS declared — the stratified leg (@vibecook/ice/ground) still needs it, and Phase C is what moves that`
+    ? `${compose.modules.size} modules reachable from src/compose/index.ts, 0 edges to three (externals: ${[...compose.external.keys()].sort().join(", ")}). The package's \`three\` peer STAYS declared for the islands (./r3f, ./r3f/webgpu) — the stratified ground moved onto the engine at design-013 C2, so no ground entry needs it; C3 widens this walk to the whole non-r3f graph`
     : threeEdges.map(([spec, from]) => `${spec} from ${from.slice(repo.length + 1)}`).join(", "),
 );
 

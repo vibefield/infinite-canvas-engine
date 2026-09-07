@@ -2,8 +2,9 @@
  * The view — v2 CursorLayer.tsx ported to v3: the loop body is now a
  * REGISTERED REFLECTOR (the engine's only sanctioned DOM writer, post-notify),
  * and `startRafLoop(engine)` drives the frame contract instead of a hand
- *-rolled tick. The dot grid is @ice/dom's grid reflector — v1's shader
- * verbatim, tuned for #0d1117 exactly like the prototype.
+ *-rolled tick. The dot grid is @ice/ground's field on the engine (design-013
+ * C2) — its ink tuned for #0d1117 exactly like the prototype, and its ground
+ * the page's #0d1117 itself: the canvas is opaque, so the theme carries it.
  *
  * Coordinate note (unchanged from v2): the LOCAL cursor follows my own screen
  * pointer and is drawn directly; REMOTE cursors are WORLD-anchored (shared
@@ -30,7 +31,7 @@ import {
   type World,
 } from "@ice/core";
 import { attachPointerAdapter, createCanvasHost, startRafLoop } from "@ice/dom";
-import { ground } from "@ice/ground";
+import { ENGINE_PALETTE, groundField, themeFrom } from "@ice/ground";
 import { attachDevtools } from "@ice/devtools";
 import { worldToScreen } from "@ice/kernel";
 import { zoomToFit } from "./camera";
@@ -81,7 +82,10 @@ export function CursorLayer() {
     const host = createCanvasHost(stage);
 
     // dot grid — the @ice/ground layer (P0: one WebGPU canvas), tuned for #0d1117.
-    const grid = ground({ grid: { dotColor: [0.42, 0.45, 0.5] } })({ host, world });
+    const grid = groundField({
+      theme: themeFrom("dark", { ...ENGINE_PALETTE.dark, canvasBg: { token: "pointerlab index.html body background", css: "#0d1117" } }),
+      grid: { dotColor: [0.42, 0.45, 0.5] },
+    })({ host, world });
     const unregGrid = engine.registerReflector(grid.reflector);
 
     let fitted = false;
@@ -267,7 +271,7 @@ export function CursorLayer() {
       removeAdapter();
       unregStage();
       unregGrid();
-      grid.dispose(); // unregister stops flushes; dispose removes the canvas + RO (StrictMode double-grid)
+      grid.dispose(); // unregister stops flushes; dispose removes the canvas and destroys the layer's device (StrictMode double-grid)
       ro.disconnect();
       for (const node of nodes.values()) node.el.remove();
       nodes.clear();

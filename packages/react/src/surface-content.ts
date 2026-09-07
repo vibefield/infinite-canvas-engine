@@ -109,7 +109,7 @@ interface ComposeSlot {
 
 /**
  * Read the content seam off an opaque ground layer handle. `undefined` for the
- * old leg's `ground()` (no compose field) and for no ground at all — the same
+ * stratified `groundField()` (no compose field) and for no ground at all — the same
  * structural read the composited profile makes of the same object.
  */
 export function surfaceContentOf(handle: unknown): SurfaceContent | undefined {

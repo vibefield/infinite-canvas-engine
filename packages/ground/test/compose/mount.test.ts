@@ -93,7 +93,7 @@ function fakeGround() {
     frames: { runCount: 3 },
     surface: { view: () => { self.acquired += 1; return {} as GPUTextureView; } },
     setPages: () => { self.pagesSet += 1; },
-    render: () => { self.surface.view(); },
+    render: () => { self.surface.view(); return { frames: 0 }; },
     dispose: () => { self.disposed = true; },
   };
   return self;

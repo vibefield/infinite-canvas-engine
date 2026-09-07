@@ -1,6 +1,10 @@
 /**
- * Pure collector tests — the ECS→triangles halves of the guides/wires passes
- * (no three import, no GPU; the render path is Playwright e2e territory).
+ * Pure collector tests — the ECS→triangles halves of the wires and guides
+ * overlays (no GPU; the render path is the oracle's overlay scenes and the
+ * desktop rigs). Written against the old leg's `passes/*-collect.ts`; C1 copied
+ * those across the wall into `compose/` and pinned the copy to its original,
+ * C2 deleted the originals and re-pointed this file — the tests themselves are
+ * unchanged, which is the point: the copy is the collector.
  */
 import {
   Active,
@@ -19,10 +23,9 @@ import {
   widgets,
 } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import type { GroundFrame } from "../src/pass";
-import { collectGuides } from "../src/passes/guides-collect";
-import { SoupBuilder, parseCssColor } from "../src/passes/soup-collect";
-import { collectWires } from "../src/passes/wires-collect";
+import { collectGuides } from "../src/compose/guides-collect";
+import { type OverlayFrame as GroundFrame, SoupBuilder, parseCssColor } from "../src/compose/soup";
+import { collectWires } from "../src/compose/wires-collect";
 
 const frame = (over: Partial<GroundFrame> = {}): GroundFrame => ({
   width: 800,

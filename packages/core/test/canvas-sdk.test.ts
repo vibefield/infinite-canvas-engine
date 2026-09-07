@@ -77,7 +77,7 @@ const WhiteboardCanvas = defineCanvasType({
   semantic: { placement: { widgets: [Sticky] } },
   presentation: {
     tools: { allowed: [select, pan, drawSticky], default: select },
-    ground: { program: "line-grid" },
+    ground: { glyph: "line" },
     camera: { arrival: "fit", padding: 48, minZoom: 0.25, maxZoom: 2 },
   },
 });
@@ -100,7 +100,7 @@ const BoardCanvas = defineCanvasType({
       sections: [{ id: "board", order: 10, items: [BoardCard, WhiteboardContainer] }],
     },
     tools: { allowed: [select, pan, drawBoardCard], default: select },
-    ground: { program: "dot-grid" },
+    ground: { glyph: "dot" },
   },
 });
 

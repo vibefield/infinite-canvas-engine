@@ -21,8 +21,7 @@
     "islands": "pnpm run build && node scripts/composited-islands.mjs",
     "video": "pnpm run build && node scripts/composited-video.mjs",
     "app": "pnpm run build && node scripts/composited-app.mjs",
-    "line-ab": "pnpm run build && node scripts/line-grid-ab.mjs",
-    "parity": "pnpm run build && node scripts/overlay-parity.mjs"
+    "stratified": "pnpm run build && node scripts/stratified.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
