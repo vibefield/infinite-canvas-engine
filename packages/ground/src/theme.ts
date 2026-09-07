@@ -10,12 +10,15 @@
 // per registered pack — design-014); and the materials whose numbers are the
 // engine's own, each with its lineage named — the shell's lines, shadow and
 // lift (the CardShell's recipe, which DESIGN.md §5/§7 transcribe and
-// tokens.css carries as `--ic-*`), and the magnet field's defaults (ICE's
+// tokens.css carries as `--ic-*`), the LINE grid's ink and law (`LINE_GRID`,
+// the `line` glyph's — design-013 D-C1.4), and the magnet field's defaults (ICE's
 // `DEFAULT_GRID_MAGNET_CONFIG`, with the glyph ruled to the dot at design-014).
 // A product's palette, its committed surfaces and its reviewed grid are the
 // product's: they reach the passes through `GroundTheme` and `FieldConfig`,
 // never from here. The cutting mat's material and lights are the mat pack's
 // (`packs/mat/theme.ts`); the frame's inks and the heat are the frame pack's.
+
+import type { LineLaw } from "./lattice/line";
 
 export type RGB = readonly [number, number, number];
 export type RGBA = readonly [number, number, number, number];
@@ -105,6 +108,39 @@ export const ENGINE_GRID = {
   fadeIn: [10, 20] as const,
 } as const;
 
+/**
+ * The engine's LINE GRID — the `line` glyph's ink and law (design-013 §8,
+ * D-C1.4; field/line-glyph.ts). The glyph is the ENGINE's, so its ink is the
+ * engine's to ship: one entry per theme, and both start from the OLD leg's
+ * number. The TSL line grid drew its lines in `GridConfig.dotColor` — the very
+ * field the dots use (`programs/line-grid-renderer.ts` `uColor`, from
+ * `core/settings/ground-config.ts` `DEFAULT_GRID_CONFIG.dotColor`, which is
+ * `ENGINE_GRID.ink` above) — and that config carries no theme, so the old grid
+ * drew ONE colour under both. They are two entries here because a theme is
+ * where a product would part them; until one does they are the same number,
+ * and this paragraph is why.
+ *
+ * The law is `lattice/line.ts`'s `LineLaw`, with both of its decade terms
+ * deliberately FLAT. The width is one device px at every zoom and every rung
+ * (D-C1.4) — `thin === thick`, and the number is the cutting mat's `thin`
+ * (`packs/mat/theme.ts` MAT_GRID.line), the reference's hairline. The weight is
+ * the old grid's fixed `0.42`: `line-grid-renderer.ts` multiplies its coverage
+ * by `dotAlpha · 0.42`, and `levelWeight [1, 0]` gives every level the same
+ * weight — so `alphaThin === alphaThick`. The mat's own law thickens and
+ * darkens over the decade; a host that wants that hierarchy here passes its own
+ * law through `FieldConfig.ext.line` (`LineConfig`).
+ */
+export const LINE_GRID: {
+  readonly ink: Readonly<Record<ThemeName, { readonly token: string; readonly rgb: RGB }>>;
+  readonly law: LineLaw;
+} = {
+  ink: {
+    light: { token: "ICE DEFAULT_GRID_CONFIG.dotColor (the old TSL line grid's ink)", rgb: ENGINE_GRID.ink.rgb },
+    dark: { token: "ICE DEFAULT_GRID_CONFIG.dotColor (the old TSL line grid's ink)", rgb: ENGINE_GRID.ink.rgb },
+  },
+  law: { thin: 0.5, thick: 0.5, alphaThin: 0.42, alphaThick: 0.42 },
+};
+
 /** Everything the passes read, as numbers: the HEAD every program shares, and one section per registered pack (`packs`, by the pack's name). */
 export interface GroundTheme {
   readonly name: ThemeName;
@@ -114,6 +150,8 @@ export interface GroundTheme {
   readonly card: RGB;
   readonly hairline: RGBA;
   readonly select: RGB;
+  /** The `line` glyph's ink for this theme — the engine's own material (`LINE_GRID`), not a palette role. */
+  readonly lineInk: RGB;
   /** §5 shadow strength multiplier; 1 = the recipe as written. */
   readonly shadow: number;
   /** A pack's section under its name — a card program's (`vf-frame`) or a grid program's (`mat`); what its `theme()` projected. */
@@ -148,6 +186,7 @@ export function themeFrom<P extends Palette>(name: ThemeName, p: P, grid: { read
     card: rgb(p.card.css),
     hairline: cssColor(p.hairline.css),
     select: rgb(p.select.css),
+    lineInk: LINE_GRID.ink[name].rgb,
     shadow: 1,
     packs: sections,
   };

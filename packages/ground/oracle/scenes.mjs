@@ -39,6 +39,24 @@ export const ORACLE_SCENES = [
 
 export const VIEW = { cssW: 1200, cssH: 800, dpr: 2 };
 
+// The engine's LINE grid — its second built-in glyph (design-013 D-C1.4,
+// field/line-glyph.ts): the lattice's LINES instead of a glyph at each of its
+// sites, one device px wide at every zoom, on the same three rungs and the same
+// fade-in window. Three states of the decade ladder, because the ladder is what
+// there is to pin: the mid and coarse rungs alone with the fine rung exactly at
+// the window's floor (zoom 0.5 → a 10 px fine cell, the bottom of [10, 20]:
+// alpha 0, nothing drawn); the identity decade on the LIGHT theme; and the fine
+// rung mid-fade under the product's frames (zoom 6.31 → a 12.6 px fine cell).
+// No cards in the first two: a surface glyph reads no atlas, so a source would
+// change nothing — the scene is the law and nothing else.
+export const LINE_SCENES = [
+  { name: "line-z0.5", scene: { ...base, cards: [], zoom: 0.5, glyph: "line", mouseOn: false, drawFrames: false } },
+  { name: "line-light-z1", scene: { ...base, theme: "light", cards: [], zoom: 1, glyph: "line", mouseOn: false, drawFrames: false } },
+  // the camera framed on makeCards(6)[0] (world 723.5, 592.4) so a card is on screen at this zoom
+  { name: "line-z6.31", scene: { ...base, cards: makeCards(6), camX: 628.4, camY: 529.0, zoom: 6.31, glyph: "line", mouseOn: false, style: "product" } },
+];
+ORACLE_SCENES.push(...LINE_SCENES.map((s) => ({ ...s, pages: ["ground"] })));
+
 // The portal flight — a STILL at one progress, both frames drawn (nav/flight.ts is the
 // geometry, the same in the lab and here): a dot root flying into a mat folder at the
 // cut, midway and near landing; the way back out; a mat root into a dot folder; a

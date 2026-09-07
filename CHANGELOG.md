@@ -78,6 +78,12 @@ the entity's own kind behaviour.
   report of a second writer on a component. Rename to your own namespace; a name
   that merely starts with the same letters (`iceberg:x`) is unaffected.
 
+<!-- design-013 C1d (2026-09-07) -->
+- **`GroundTheme` carries a `lineInk`** (design-013 D-C1.4). The engine's new `line` glyph
+  paints in a theme role of its own, so the head every pass reads gained one field. `themeFrom`
+  fills it from `LINE_GRID.ink[name]` — a host that builds its theme through it needs no
+  change; one that writes the object by hand must add the field.
+
 <!-- design-013 B6 (2026-09-07) -->
 - **The video kind's contract is a REGISTERED STABLE-TEXTURE HANDLE** (design-013 §9 Q5
   RULED, B6). A live surface's producer no longer publishes a source the compositor samples;
@@ -256,6 +262,30 @@ the entity's own kind behaviour.
   `gen:check` covers the generated module.
 
 ### Added
+
+<!-- design-013 C1d (2026-09-07) -->
+- **`line` — the engine's second built-in glyph** (design-013 §8 C1d, D-C1.4). The classic
+  line grid is no longer a three `Object3D` program with its own TSL shader and its own decade
+  ladder: it is a `SurfaceGlyph` beside the dot in `fieldShaders`, so `glyph: "line"` draws
+  with no app registration. It shades the ENGINE's lattice — the same three rungs, the same
+  `fadeIn` window by a rung's own cell — through `lattice/line.ts`'s law, which is the cutting
+  mat's mechanism without the mat's material: no gobo, no grain, no colour chain. One device
+  pixel wide at every zoom and every rung, in the theme's line ink (`LINE_GRID`, projected from
+  the old grid's `GridConfig.dotColor`) at the field config's alpha. A host that wants the
+  mat's decade hierarchy passes its own `LineLaw` through `FieldConfig.ext.line`. Pinned by
+  three oracle scenes (`line-z0.5` · `line-light-z1` · `line-z6.31`), which `rig:parity`
+  renders identically in Chrome and in Dawn, and by `test/compose/line-glyph.test.ts`, which
+  drives the real `Field` on a device stub.
+- **The old-vs-new line grid, RECORDED** (design-013 D-C2.1). The new glyph's LOD is the
+  engine's lattice and not the old ladder, so the two are compared, not reconciled:
+  `pnpm --filter widgetlab-desktop line-ab` draws both in one headless Electron page, on one
+  device, at zooms 0.5 · 1 · 2.5, each arm captured twice as its own control (maxΔ 0). At zoom
+  1 and 2.5 the two ladders coincide — same pitch, same phase to the pixel, the same 14.44 %
+  and 5.91 % of the frame inked — and the whole difference is colour and width: three's output
+  pass encodes the old grid's ink to sRGB (peak 157) where the new writes the theme's bytes
+  (peak 85), and the old line is 0.55·dpr device px of half-width against the new's 0.5. At
+  zoom 0.5 they part, as the ruling says they must: the old holds a 20 device px grid at
+  27.75 % ink, the new promotes a decade to 200 device px at 2.98 %.
 
 - **The flight on the ground — design-013, B7** (2026-09-07). Under the composited-next
   profile a nav flight is the ground's SECOND SLOT: the departed frame drawn beside the

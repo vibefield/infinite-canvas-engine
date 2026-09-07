@@ -1,7 +1,9 @@
 // A GRID PROGRAM — the pack seam for the field (design-014 §"the three seams").
 //
 // The engine owns the lattice, the LOD ladder, the field bake (the atlas that
-// makes the ground react to card silhouettes) and one glyph, the DOT. A grid
+// makes the ground react to card silhouettes) and two glyphs — the DOT at
+// each site (instanced) and the LINE grid on the same lattice (surface,
+// field/line-glyph.ts). A grid
 // program is a glyph the app registers, of one of two kinds:
 //
 //   instanced  — a glyph drawn over the engine's lattice and bake, like the

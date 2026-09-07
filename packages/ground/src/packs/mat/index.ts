@@ -2,7 +2,7 @@
 // the engine's lattice by one law, the gobo projected onto the desk, the tilt,
 // the Sun by day and the Moon by night. Registered by an app
 // (`groundCompose({ grids: [cuttingMat] })`, `Ground.create({ grids })`); the
-// engine's own glyph is the dot. Its config rides `FieldConfig.ext.mat`
+// engine's own are the dot and the line grid. Its config rides `FieldConfig.ext.mat`
 // (`MatConfig`), its clocks `FieldFrame.ext.mat` (`MatFrame`), its light the
 // theme's `mat` section.
 

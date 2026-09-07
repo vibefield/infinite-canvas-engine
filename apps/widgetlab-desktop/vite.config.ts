@@ -26,6 +26,9 @@ export default defineConfig({
       //                          Residency named, drawn by the ground in `own` mode;
       //                          parity against a WebGL render of the same scene, and
       //                          the cross-kind z check.
+      //   line-grid-ab      — C1d: the RECORDED A/B — the old TSL line grid and the
+      //                          engine's new `line` glyph at three zooms, one device,
+      //                          with an A-vs-A control per arm.
       //   composited-video  — B6: a live surface — a producer registers a stable
       //                          texture and each arriving frame is one copy and one
       //                          compose frame.
@@ -40,6 +43,7 @@ export default defineConfig({
         "composited-islands": "composited-islands.html",
         "composited-video": "composited-video.html",
         "composited-app": "composited-app.html",
+        "line-grid-ab": "line-grid-ab.html",
       },
     },
   },

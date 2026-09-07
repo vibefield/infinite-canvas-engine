@@ -20,7 +20,8 @@
     "input": "pnpm run build && node scripts/composited-input.mjs",
     "islands": "pnpm run build && node scripts/composited-islands.mjs",
     "video": "pnpm run build && node scripts/composited-video.mjs",
-    "app": "pnpm run build && node scripts/composited-app.mjs"
+    "app": "pnpm run build && node scripts/composited-app.mjs",
+    "line-ab": "pnpm run build && node scripts/line-grid-ab.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

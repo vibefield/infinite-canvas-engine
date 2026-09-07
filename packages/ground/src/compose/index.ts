@@ -16,6 +16,7 @@ export * from "../field/field";
 export * from "../field/glyph-pass";
 export * from "../field/glyph-size";
 export * from "../field/layout";
+export * from "../field/line-glyph";
 export * from "../field/program";
 export * from "../field/shaders";
 export * from "../card/content";
