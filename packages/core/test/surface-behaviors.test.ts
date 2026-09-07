@@ -53,6 +53,7 @@ import {
   domAtRest,
   installSurfaceInfra,
   registerStandardSurfaceBehaviors,
+  setDevGuards,
 } from "../src";
 import { PrefabId } from "../src/schema/prefab";
 
@@ -72,6 +73,11 @@ defineWidget({ type: "sb:pinnedDom", surface: "dom", component: null, behaviors:
 defineWidget({ type: "sb:picture", surface: "dom", component: null, behaviors: [alwaysGpu.with({ paused: true })] });
 /** A gl widget that (wrongly) asks for the DOM — the D5 refusal's subject. */
 defineWidget({ type: "sb:badIsland", surface: "gl", component: null, behaviors: [alwaysDom] });
+/**
+ * The OTHER way to ask a texture for the DOM: `domAtRest` demotes to `dom`
+ * after the settle, so on a gl kind it is the same refusal one gesture later.
+ */
+defineWidget({ type: "sb:glAtRest", surface: "gl", component: null, behaviors: [domAtRest] });
 
 /**
  * A PACK's own kind behaviour (design-013 §0) — DEFINED here, REGISTERED late
@@ -110,12 +116,15 @@ function rig() {
   const world = createWorld();
   const engine = createEngine(world);
   const faults: Fault[] = [];
+  /** What a behaviour said through `ctx.log` — the production half of D5. */
+  const logs: string[] = [];
   engine.addSystems("derive", createWidgetEquipSystem(world));
   const behaviors = createBehaviorRuntime({
     world,
     engine,
     onFault: (behavior, hook, _entity, err) =>
       faults.push({ behavior, hook, message: err instanceof Error ? err.message : String(err) }),
+    onLog: (_behavior, message) => logs.push(message),
   });
   registerStandardSurfaceBehaviors(behaviors);
   installSurfaceInfra(engine);
@@ -140,16 +149,27 @@ function rig() {
     world.addTag(e, Visible);
     return e;
   };
+  const target = (e: Entity): string | undefined => world.get(e, SurfaceTarget)?.target;
   return {
     world,
     engine,
     behaviors,
     faults,
+    logs,
     step,
     spawn,
-    target: (e: Entity) => world.get(e, SurfaceTarget)?.target,
+    target,
     grab: (e: Entity) => world.addComponent(e, Grab, GRAB),
     release: (e: Entity) => world.removeComponent(e, Grab),
+    /** Step `n` frames, sampling the target after each — end states hide thrash. */
+    sample: (e: Entity, n: number): (string | undefined)[] => {
+      const seen: (string | undefined)[] = [];
+      for (let i = 0; i < n; i++) {
+        step();
+        seen.push(target(e));
+      }
+      return seen;
+    },
   };
 }
 
@@ -255,16 +275,48 @@ describe("demotion", () => {
     expect(r.target(card)).toBe("dom");
   });
 
-  it("demotes only what IT promoted", () => {
+  it("demotes only what IT promoted — a hand-held gpu card survives a DRAG", () => {
     // A host that put a card on the GPU by hand keeps it there: the behaviour
     // owns its own promotions and nothing else. (The composited rig does
     // exactly this to hold a card composited for its static probes.)
+    //
+    // THE GRAB IS THE CASE. Without one this grades only "the behaviour does
+    // not demote a card it never saw", which was true of the broken code too:
+    // the promote loop took ownership of every grabbed instance whether or not
+    // it changed anything, so the hand-held card came back from its first drag
+    // and 250 ms later was silently demoted to `dom` — for good, since nothing
+    // re-promotes a card that is not being dragged. The old policy's rule was
+    // "own what `set()` actually changed", and this is that rule.
     const r = rig();
     const card = r.spawn("sb:card");
     r.step(2);
     r.world.edit(card).set(SurfaceTarget, { target: "gpu" });
-    r.step(STEPS_PAST_SETTLE);
+    r.step();
     expect(r.target(card)).toBe("gpu");
+
+    r.grab(card);
+    r.step();
+    r.release(card);
+    // Sampled every frame: a behaviour that owned it would demote exactly once,
+    // at the due time, and an end-state assertion taken too early would miss it.
+    const seen = r.sample(card, STEPS_PAST_SETTLE);
+    expect(seen.filter((t) => t !== "gpu")).toEqual([]);
+    expect(r.target(card)).toBe("gpu");
+  });
+
+  it("still demotes the card it DID promote, in the same rig", () => {
+    // The other half of the pair, so "owns nothing" cannot pass by doing
+    // nothing at all.
+    const r = rig();
+    const card = r.spawn("sb:card");
+    r.step(2);
+    expect(r.target(card)).toBe("dom");
+    r.grab(card);
+    r.step();
+    expect(r.target(card)).toBe("gpu");
+    r.release(card);
+    r.step(STEPS_PAST_SETTLE);
+    expect(r.target(card)).toBe("dom");
   });
 
   it("writes nothing for a card that despawned mid-settle", () => {
@@ -352,6 +404,70 @@ describe("which behaviour a widget type gets", () => {
     expect(demandIntervalMs(r.world.get(picture, SurfaceDemand) as never)).toBe(
       Number.POSITIVE_INFINITY,
     );
+  });
+
+  it("REFUSES domAtRest on a gl kind at init, naming the widget type", () => {
+    // The same D5 refusal as `alwaysDom`'s, and for the same reason one
+    // gesture later: `domAtRest` writes `dom` at DEMOTION. Before this, the
+    // behaviour declared `SurfaceKind` in its reads and never looked at it —
+    // so a gl widget that named it was accepted, presented correctly, and then
+    // 250 ms after its first drop wrote `dom` on a texture. What a developer
+    // saw was the Band system's dev throw a frame later, naming an entity id
+    // and no cause.
+    const r = rig();
+    const island = r.spawn("sb:glAtRest");
+    r.step(2);
+    expect(r.faults).toHaveLength(1);
+    expect(r.faults[0]?.behavior).toBe(domAtRest.name);
+    expect(r.faults[0]?.hook).toBe("init");
+    expect(r.faults[0]?.message).toContain("sb:glAtRest");
+    expect(r.faults[0]?.message).toContain("no live-DOM mode");
+    expect(r.target(island)).toBe("gpu");
+  });
+
+  it("in PRODUCTION, domAtRest on a gl kind logs and writes nothing across a whole drag", () => {
+    // Dev guards off is where a user is: the throw becomes a log, and the
+    // behaviour must then hold the line by itself. Sampled every frame through
+    // grab, release and the settle window — the broken code's only visible
+    // moment was the demotion, one full window after the drop.
+    setDevGuards(false);
+    try {
+      const r = rig();
+      const island = r.spawn("sb:glAtRest");
+      r.step(2);
+      expect(r.faults).toEqual([]);
+      expect(r.logs.filter((m) => m.includes("sb:glAtRest"))).toHaveLength(1);
+
+      r.grab(island);
+      const held = r.sample(island, 2);
+      r.release(island);
+      const after = r.sample(island, STEPS_PAST_SETTLE);
+      expect([...held, ...after].filter((t) => t !== "gpu")).toEqual([]);
+    } finally {
+      setDevGuards(true);
+    }
+  });
+
+  it("does not LAUNDER a gl card another writer left on dom — it writes neither value", () => {
+    // The property, stated whole: `domAtRest` never writes the target of a kind
+    // it is not for. A `dom` cell on a gl card is already illegal — every read
+    // goes through `effectiveTarget`, which answers `gpu` regardless, and the
+    // Band system's dev guard is what reports the real writer. Promoting it to
+    // `gpu` on the grab would repair the symptom and hide that writer, and the
+    // demotion 250 ms later would put it straight back.
+    setDevGuards(false);
+    try {
+      const r = rig();
+      const island = r.spawn("sb:glAtRest");
+      r.step(2);
+      r.world.edit(island).set(SurfaceTarget, { target: "dom" });
+      r.step();
+      r.grab(island);
+      const seen = r.sample(island, 2);
+      expect(seen.filter((t) => t !== "dom")).toEqual([]);
+    } finally {
+      setDevGuards(true);
+    }
   });
 
   it("REFUSES alwaysDom on a gl kind at init, naming the widget type", () => {

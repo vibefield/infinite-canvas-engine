@@ -11,10 +11,18 @@
  */
 import { createWorld, field } from "@vibecook/strata-ecs";
 import type { Component, Tag } from "@vibecook/strata-ecs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { compileBehavior, partitionReads, type BehaviorSystemHooks } from "../src/behavior/compile";
-import { __resetBehaviorsForTests, defineBehavior } from "../src/behavior/define-behavior";
+import {
+  behaviors,
+  __resetBehaviorsForTests,
+  defineBehavior,
+  defineEngineBehavior,
+} from "../src/behavior/define-behavior";
 import { Culled, Position } from "../src/catalog";
+import { Grab } from "../src/catalog/gesture";
+import { RequestedDemand, SurfaceTarget } from "../src/catalog/surface";
+import { alwaysDom, alwaysGpu, domAtRest } from "../src/surface/standard-behaviors";
 import { defineComponent, defineRelation, defineResource, defineTag, schemaMeta } from "../src/schema/meta";
 import { definePrefab, init, __resetPrefabsForTests } from "../src/schema/prefab";
 import { p } from "../src/widget/props";
@@ -45,6 +53,60 @@ describe("definition-time validation (§4.1)", () => {
       expect(() => defineBehavior(bad, { store: "runtime" })).toThrow(/namespace/);
     }
     expect(() => defineBehavior("bd.ok:name-1", { store: "runtime" })).not.toThrow();
+  });
+
+  it("RESERVES the ice: namespace — a pack may not define into it", () => {
+    // `ice:` carries two privileges: the compiler's `orderIndependent`
+    // attestation on declared writes, and an exemption from the
+    // published-read-surface warning. Both were keyed on the string PREFIX, so
+    // a pack that called itself `ice:surface.kiosk` inherited the engine's own
+    // promises — including the one that silences strata's report of a second
+    // writer on `SurfaceTarget`, which is the advisory such a pack most needs.
+    expect(() =>
+      defineBehavior("ice:surface.kiosk", {
+        store: "runtime",
+        phase: "present",
+        writes: [Glow],
+        on: { init() {} },
+      }),
+    ).toThrow(/RESERVED/);
+    // Any `ice:` name, not just a surface one — and nothing is registered.
+    expect(() => defineBehavior("ice:anything", { store: "runtime" })).toThrow(/RESERVED/);
+    expect(behaviors.get("ice:anything")).toBeUndefined();
+    // A namespace that merely STARTS with the same letters is fine.
+    expect(() => defineBehavior("iceberg:x", { store: "runtime" })).not.toThrow();
+  });
+
+  it("lets the ENGINE's own door in, and exempts it from the read-surface warning", () => {
+    // `defineEngineBehavior` is the reserved namespace's only key — the same
+    // door with the engine's mark on it, deliberately off the package barrel.
+    // The read-surface exemption keys on that MARK and not on the name, which
+    // is the difference that matters: the exemption means "this declaration
+    // came from inside the engine", and a string prefix cannot say that.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const Engine = defineEngineBehavior("ice:test.exempt", {
+        store: "runtime",
+        reads: [Grab], // deliberately OFF the published read surface
+      });
+      expect(Engine.name).toBe("ice:test.exempt");
+      expect(behaviors.get("ice:test.exempt")).toBe(Engine);
+      expect(warn).not.toHaveBeenCalled();
+
+      // And the MARK is what carries it, not the name: an engine behaviour is
+      // exempt wherever the engine puts it. Keyed on the prefix, this one would
+      // warn — which is the difference the two spellings actually have.
+      defineEngineBehavior("bd:markedNotIce", { store: "runtime", reads: [Grab] });
+      expect(warn).not.toHaveBeenCalled();
+
+      // A pack reading the same handle still hears it — that is who the
+      // warning was written for.
+      defineBehavior("bd:notExempt", { store: "runtime", reads: [Grab] });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain("published behavior read surface");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("refuses durable-only keys on non-durable behaviors", () => {
@@ -180,6 +242,37 @@ describe("the SPLIT rule (BF-D16/BF-D17)", () => {
   it("a non-ticking behavior makes no attestation at all", () => {
     const B = defineBehavior("bd:noattest", { store: "runtime", on: { changed: () => {} } });
     const c = compileBehavior(B, NO_HOOKS);
+    expect(c.delivery.access?.orderIndependent).toBeUndefined();
+  });
+
+  it("attests DECLARED writes for the engine's three kind behaviours, by exact name", () => {
+    // The one exception to "declared writes are never attested" (design-013
+    // A1b): the three write `SurfaceTarget` and `RequestedDemand` in `present`
+    // and are each other's co-writers, so without it strata's advisory fires
+    // on every engine boot describing ICE's own deliberate design.
+    for (const b of [domAtRest, alwaysGpu, alwaysDom]) {
+      const c = compileBehavior(b, NO_HOOKS);
+      expect(c.delivery.access?.orderIndependent).toEqual(
+        expect.arrayContaining([SurfaceTarget, RequestedDemand]),
+      );
+    }
+  });
+
+  it("does NOT attest a pack's kind behaviour, however it is named", () => {
+    // The attestation says "these co-writers are ICE's and row-disjoint by
+    // law" — a promise ICE cannot make on a pack's behalf. Keyed on the
+    // `ice:surface.` PREFIX, a pack that named itself into it inherited the
+    // promise and silenced the advisory its author needed. `defineBehavior`
+    // refuses that name now; this grades the second lock, which holds in a
+    // production build where the refusal (dev-guarded) does not.
+    const Kiosk = defineBehavior("bdpack:surface.kiosk", {
+      store: "runtime",
+      phase: "present",
+      writes: [SurfaceTarget],
+      on: { changed: () => {} },
+    });
+    const c = compileBehavior(Kiosk, NO_HOOKS);
+    expect(c.delivery.access?.write).toEqual([Kiosk.component, SurfaceTarget]);
     expect(c.delivery.access?.orderIndependent).toBeUndefined();
   });
 });

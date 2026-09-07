@@ -57,6 +57,26 @@ the entity's own kind behaviour.
   gives both bare names to COMPONENTS, and a value and a type of one name
   re-exported from two modules collide at the package surface without a
   compile error. Migration is one identifier each.
+- **A bare entity in the mount store is no longer promotable on grab.** The old
+  policy promoted anything it was handed and refused only what it knew had no
+  live-dom mode; the target is now a component, and `targetOf` reads a missing
+  one as `dom`. So a mount entry with no widget type — a hand-built rig entity,
+  a port, a ghost — stays in the content plane through a grab where it used to
+  reach the canvas. This is the intended reading (there is no compositor source
+  for such a thing either), and it is listed because a rig that leaned on the
+  old behaviour will see the difference.
+- **`defineWidget` refuses a type that lists TWO behaviours writing
+  `SurfaceTarget`** (one of the standard three, or any behaviour declaring it in
+  `writes:`). It used to accept them and attach both. An entity has one kind and
+  that kind's behaviour is the sole writer of its target (design-013 §5), so
+  `behaviors: [alwaysDom, alwaysGpu]` now throws at definition time naming both.
+- **The `ice:` behaviour namespace is RESERVED for the engine.**
+  `defineBehavior("ice:anything", …)` throws. The namespace carries two
+  privileges — the compiler's `orderIndependent` attestation on declared writes,
+  and an exemption from the published-read-surface warning — and a pack that
+  named itself into it inherited both, including the one that silences strata's
+  report of a second writer on a component. Rename to your own namespace; a name
+  that merely starts with the same letters (`iceberg:x`) is unaffected.
 
 ### Added
 
@@ -89,20 +109,59 @@ the entity's own kind behaviour.
   `BehaviorRuntimeOpts`, `BehaviorSession` and `BehaviorPresence`. A facade app
   never names it; an imperative host that drives the raw engine needs a runtime
   to register behaviours into.
+- **Residency** (design-013 §4) — the module that replaces "atlasing", and the
+  third system of the `present:infra` trio. `createLayerAllocator` seats slots
+  in fixed 2048² layers keyed `(entity, band)`; `createTextureTable` is what a
+  `TextureRef.texture` handle means (`pages` · `own` · a producer's registered
+  `stable` texture), refcounted; `createResidencySystem` is the one writer of
+  `TextureRef`, gating allocation on `Visible ∨ Retained` and taking cold keys
+  only under budget pressure; `createResidencyStore` builds the pair a host
+  installs. `installSurfaceInfra(engine, { residency })` (`ResidencyOptions`)
+  installs it, and the React composited profile passes it.
+  `DEFAULT_RESIDENCY_BUDGET_BYTES` is 256 MB — **a placeholder until B3
+  measures one on a real device.** Allocation is computed purely and written to
+  the world; nothing is realised on a GPU and **nothing reads `TextureRef`
+  before B3**, by design.
+  <!-- A3a: SurfaceDemand default; maxTextureSize -->
 
 ### Fixed
 
-- **The React composited profile now promotes on drag — for the first time.**
-  `infinite-canvas.tsx` built `domWidgets` without a `PresentationRegistry` and
-  nothing in `@ice/react` created the policy, so every card in a React
-  composited app was live-dom forever; the rigs hand-wired both and were the
-  only thing that ever saw a promotion. The standard behaviours are
-  engine-registered and the DOM layer reads the world, so there is no wiring
-  left for an app to forget.
+- **A React composited app now DECIDES to promote on drag — the decision half,
+  not the pixels.** `infinite-canvas.tsx` built `domWidgets` without a
+  `PresentationRegistry` and nothing in `@ice/react` created the policy, so no
+  React app had a promotion decision at all; the rigs hand-wired both and were
+  the only thing that ever saw one. The standard behaviours are
+  engine-registered and the DOM layer reads the world, so there is no decision
+  wiring left for an app to forget: a drag flips `SurfaceTarget` to `gpu` and
+  every reader sees it. **No pixels move there yet.** `infinite-canvas.tsx`
+  still builds the DOM reflector with no source canvas, so `placementOf` never
+  answers `canvas`, no host is reparented, and nothing is composited — the L1
+  host path for React lands with design-013 B3/B4. The rigs remain the only
+  place a promotion reaches the screen.
 - **The old composited leg's demand parking follows the clamp.** When a caller
   passes no `atlas.demand`, `createCompositorWiring` feeds the dom source
   binder from the `SurfaceDemand` component instead of throttling nothing. A
   host that genuinely throttles from elsewhere still passes its own callback.
+- **`domAtRest` demotes only what it promoted.** It took ownership of every
+  grabbed card whether or not it changed anything, so a card a host had put on
+  the GPU by hand came back from its first drag owned — and 250 ms after the
+  release was demoted to `dom` for good, since nothing re-promotes a card that
+  is not being dragged. Ownership now follows a real change, which is the rule
+  the policy this behaviour replaced always had.
+- **`domAtRest` refuses a non-dom kind at `init`.** It declared `SurfaceKind` in
+  its reads and never looked at it, so a `gl` or `video` widget that named it
+  was accepted, presented correctly, and then wrote `dom` on a texture at the
+  first demotion — which surfaced as the Band system's dev throw a frame later,
+  naming an entity id and no cause. It now refuses exactly as `alwaysDom` does
+  (a dev throw naming the widget type; in production a log and no write), and
+  never writes the target of a kind it is not for.
+- **The behaviour runtime rebuilds its instance snapshot only when membership
+  moves.** Every delivery spread the whole instance map into a fresh array, and
+  a behaviour that reads a resource delivers every frame — so `domAtRest`,
+  attached to every dom widget, paid one O(instances) spread per idle frame for
+  a list that had not changed. `ctx.entities()` semantics are unchanged: it is
+  still the membership as of phase entry, and a hook that attaches or detaches
+  still affects the next frame.
 
 ## [0.12.0] — 2026-08-31
 

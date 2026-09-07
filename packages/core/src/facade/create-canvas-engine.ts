@@ -1267,9 +1267,17 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   // and nothing in `@ice/react` created the policy, so every card was live-dom
   // forever and only the rigs, which hand-wired both, ever saw a promotion.
   // That is the fix wave's "copied wiring" class — a boot sequence an app was
-  // expected to reproduce — and the answer is that there is nothing left for
-  // an app to reproduce. Before `opts.behaviors` so an app's own behaviour
+  // expected to reproduce — and the answer is that there is no DECISION left
+  // for an app to reproduce. Before `opts.behaviors` so an app's own behaviour
   // registered after them also runs after them within the phase group.
+  //
+  // ERRATUM 2026-09-06 (A3b): this comment used to end "there is nothing left
+  // for an app to reproduce", which claimed the whole fix. What A1b closed is
+  // the decision half — the facts are world facts and the behaviours are
+  // engine-registered, so `SurfaceTarget` flips on the grab in a React app
+  // too. The PRESENTATION half is still missing there: `infinite-canvas.tsx`
+  // builds `domWidgets` with no source canvas, so nothing reparents a host and
+  // no pixels move. That path lands with design-013 B3/B4.
   registerStandardSurfaceBehaviors(behaviors);
   for (const b of opts.behaviors ?? []) behaviors.register(b);
 

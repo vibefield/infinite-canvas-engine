@@ -55,6 +55,28 @@ const STORES: readonly BehaviorStore[] = ["durable", "runtime", "ephemeral"];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*:[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
+ * The RESERVED namespace (2026-09-06, A3b fix 4). `ice:` names were given two
+ * privileges nothing else had — the compiler's `orderIndependent` attestation
+ * on their declared writes, and an exemption from the published-read-surface
+ * warning — and BOTH were keyed on the string prefix, so a pack that called
+ * itself `ice:surface.kiosk` was handed the engine's own promises. The
+ * attestation is the sharp end: it says "these co-writers of `SurfaceTarget`
+ * are ICE's and row-disjoint by law", which silences precisely the advisory a
+ * second writer of one entity's target needed to hear.
+ *
+ * So the namespace is the engine's alone. The mark is a module-private symbol
+ * — not exported, not on the spec type, unforgeable from outside this file —
+ * supplied only by `defineEngineBehavior` below, which only
+ * `surface/standard-behaviors.ts` calls.
+ */
+const ENGINE_MARK = Symbol("ice.engineBehavior");
+const RESERVED_NAMESPACE = "ice:";
+
+function isEngineSpec(spec: object): boolean {
+  return (spec as Record<symbol, unknown>)[ENGINE_MARK] === true;
+}
+
+/**
  * The generated component's name. Prefixed so a behavior can never collide
  * with `defineWidget`'s `<type>:<group>` components — and, because this string
  * is the DURABLE key that projection is driven by, it is a permanent wire
@@ -215,6 +237,12 @@ function validate(name: string, spec: BehaviorSpec<BehaviorStore, BehaviorSchema
       'names are "<namespace>:<name>" (letters, digits, dot, dash, underscore; exactly one colon) — the namespace is what a plugin host validates against the declaring plugin id.',
     );
   }
+  if (name.startsWith(RESERVED_NAMESPACE) && !isEngineSpec(spec)) {
+    fail(
+      name,
+      `the "${RESERVED_NAMESPACE}" namespace is RESERVED for the engine's own behaviors. It carries privileges a pack must not inherit — the compiler's orderIndependent attestation on declared writes, and an exemption from the published-read-surface warning — so a behavior named into it would silence the very advisory that reports a second writer of one component. Namespace yours after your pack.`,
+    );
+  }
   if (!STORES.includes(spec.store)) {
     fail(name, `store must be one of ${STORES.join(" | ")} — it is REQUIRED and it routes everything (§3).`);
   }
@@ -292,9 +320,9 @@ function validate(name: string, spec: BehaviorSpec<BehaviorStore, BehaviorSchema
     // engine-grade code legitimately reaches past the list, and turning that
     // into an error would make the escape hatch a wall.
     //
-    // The `ice:` namespace is EXEMPT (2026-09-06, design-013 A1b). The warning
-    // says "this shape is engine vocabulary and may change without notice",
-    // and the engine's own behaviours ship in the same package as the
+    // The ENGINE's own behaviors are EXEMPT (2026-09-06, design-013 A1b). The
+    // warning says "this shape is engine vocabulary and may change without
+    // notice", and the engine's own behaviours ship in the same package as the
     // vocabulary they read: `ice:surface.domAtRest` reads `Grab`,
     // `SurfaceKind` and `FrameInfo` because design-013 §5's table says a kind
     // behaviour reads exactly those. Warning about it addresses nobody — an
@@ -303,7 +331,13 @@ function validate(name: string, spec: BehaviorSpec<BehaviorStore, BehaviorSchema
     // which is who it was written for. This does NOT widen `PUBLIC_READS`:
     // the presentation components stay off the published surface until packs
     // are meant to write kind behaviours of their own.
-    if (kind.kind !== "behavior" && !isPublicRead(r as Component) && !name.startsWith("ice:")) {
+    //
+    // Keyed on the MARK, not on the name (A3b fix 4): a pack that named itself
+    // into `ice:` used to inherit the exemption. That path is refused above
+    // now, but the exemption still keys on the thing it is actually about —
+    // "this declaration came from inside the engine" — rather than on a string
+    // anyone can type.
+    if (kind.kind !== "behavior" && !isPublicRead(r as Component) && !isEngineSpec(spec)) {
       console.warn(
         `ice: defineBehavior("${name}") reads "${kind.name}", which is not on the published behavior read surface (design-009 §9). It works, but its shape is engine vocabulary and may change without notice.`,
       );
@@ -536,6 +570,30 @@ export function defineBehavior<const S extends BehaviorStore, const Sch extends 
   byComponent.set(component, handle as AnyBehaviorDef);
   signatures.set(name, signature);
   return handle;
+}
+
+/**
+ * `defineBehavior` for the ENGINE's own behaviours — the only way into the
+ * reserved `ice:` namespace (A3b fix 4).
+ *
+ * Deliberately NOT on the package barrel: it is not a second public door but
+ * the same door with the engine's key in it. `surface/standard-behaviors.ts`
+ * is its only caller today; anything else the engine ships in `ice:` uses it
+ * for the same two reasons — the compiler's attestation and the read-surface
+ * exemption both mean "ICE wrote this", and a string prefix cannot say that.
+ */
+export function defineEngineBehavior<
+  const S extends BehaviorStore,
+  const Sch extends BehaviorSchema = BehaviorSchema,
+>(name: string, spec: BehaviorSpec<S, Sch>): BehaviorHandle<DataOf<Sch>> {
+  // A copy, so the mark never lands on a caller's object — and a symbol key,
+  // so nothing that walks string keys (`signatureOf`, `describeBehavior`, a
+  // host's manifest) ever sees it. Stamped after the copy rather than in the
+  // literal: the mark is deliberately absent from `BehaviorSpec`, which is the
+  // point — a caller cannot write it.
+  const marked: BehaviorSpec<S, Sch> = { ...spec };
+  (marked as unknown as Record<symbol, unknown>)[ENGINE_MARK] = true;
+  return defineBehavior(name, marked);
 }
 
 /**

@@ -23,16 +23,19 @@
  * now: the facts are world facts and the behaviours are engine-registered.
  *
  * ── The names ──────────────────────────────────────────────────────────────
- * `ice:surface.domAtRest` · `ice:surface.alwaysGpu` · `ice:surface.alwaysDom`.
- * Dots are legal in a behaviour name (`define-behavior.ts`'s NAME_RE), and the
- * `ice:` namespace is the engine's own.
+ * `ice:surface.domAtRest` · `ice:surface.alwaysGpu` · `ice:surface.alwaysDom`,
+ * spelled ONCE in `standard-behavior-names.ts` and read from there by both this
+ * file and the compiler's attestation, so the two cannot drift. Dots are legal
+ * in a behaviour name (`define-behavior.ts`'s NAME_RE), and `ice:` is the
+ * engine's own namespace — RESERVED since A3b: `defineEngineBehavior` is the
+ * only door into it, and a pack that names itself there is refused.
  *
  * `picture` is NOT a mode (§5): it is `alwaysGpu.with({ paused: true })` — a
  * GPU target whose demand is paused, so the last good picture stays on screen
  * and nothing is uploaded again.
  */
 import type { Entity } from "@vibecook/strata-ecs";
-import { defineBehavior } from "../behavior/define-behavior";
+import { defineEngineBehavior } from "../behavior/define-behavior";
 import type { AnyBehaviorDef, RuntimeBehaviorCtx } from "../behavior/types";
 import type { BehaviorRuntime } from "../behavior/runtime";
 import { Grab } from "../catalog/gesture";
@@ -42,6 +45,9 @@ import { devGuardsEnabled } from "../guards/dev";
 import { PrefabId } from "../schema/prefab";
 import { p } from "../widget/props";
 import { toFpsBucket } from "./contract";
+import { STANDARD_SURFACE_BEHAVIOR_NAMES } from "./standard-behavior-names";
+
+const [DOM_AT_REST, ALWAYS_GPU, ALWAYS_DOM] = STANDARD_SURFACE_BEHAVIOR_NAMES;
 
 /** The demand fields every standard behaviour carries — a kind's cadence ask. */
 const demandSchema = {
@@ -69,6 +75,46 @@ function projectDemand(
 function typeNameOf(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity): string {
   const id = ctx.world.get(e, PrefabId)?.id;
   return typeof id === "string" ? id : `entity ${e}`;
+}
+
+/**
+ * The entity's surface kind. ABSENT reads as `dom` — a hand-built entity in a
+ * rig that carries a behaviour but never went through equip is not a thing to
+ * refuse, and `dom` is the permissive answer that leaves it alone.
+ */
+function kindOf(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity): string {
+  return ctx.world.get(e, SurfaceKind)?.kind ?? "dom";
+}
+
+/**
+ * THE D5 REFUSAL, shared by the two behaviours that can only mean `dom`.
+ *
+ * A `gl` island and a `video` surface ARE GPU textures: they have no live-DOM
+ * mode to fall back to, and design-012 plan §2 gives them empty L1 hosts
+ * precisely because there is nothing to paint natively. So a behaviour that
+ * would write `dom` on one is an authoring error, and in dev it throws naming
+ * the widget type — because the alternative is a card that never bands, never
+ * allocates and draws plate-only forever with nothing to explain why. Worse
+ * for `domAtRest` specifically: the `dom` it writes at DEMOTION trips the Band
+ * system's own dev throw a frame later, which names an entity id and no cause.
+ *
+ * In production it logs and leaves the target alone: `effectiveTarget` coerces
+ * every read, so the card presents correctly regardless — production coerces
+ * and never blanks.
+ *
+ * @returns true when the kind was refused and the caller must not write.
+ */
+function refuseNonDomKind(
+  ctx: RuntimeBehaviorCtx<Record<string, unknown>>,
+  e: Entity,
+  behavior: string,
+): boolean {
+  const kind = kindOf(ctx, e);
+  if (kind === "dom") return false;
+  const message = `ice: behavior "${behavior}" is attached to "${typeNameOf(ctx, e)}", whose surface kind is "${kind}" — a "${kind}" surface has no live-DOM mode (design-013 D5). Attach ice:surface.alwaysGpu instead.`;
+  if (devGuardsEnabled()) throw new Error(message);
+  ctx.log(message);
+  return true;
 }
 
 // --- ice:surface.domAtRest ---------------------------------------------------
@@ -155,7 +201,7 @@ function settleState(ctx: RuntimeBehaviorCtx<Record<string, unknown>>): SettleSt
  * A `tick` would be N instances per frame for a decision that concerns the
  * handful of cards under a gesture.
  */
-export const domAtRest = defineBehavior("ice:surface.domAtRest", {
+export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
   store: "runtime",
   phase: "present",
   schema: {
@@ -168,14 +214,24 @@ export const domAtRest = defineBehavior("ice:surface.domAtRest", {
     settleMs: p.number({ default: 250, min: 0 }),
     ...demandSchema,
   },
-  reads: [Grab, SurfaceKind, FrameInfo],
+  reads: [Grab, SurfaceKind, PrefabId, FrameInfo],
   writes: [SurfaceTarget, RequestedDemand],
   on: {
     init(e, data, ctx) {
+      // The cadence ask is legitimate whatever the kind is, so it lands before
+      // the refusal below can stop this hook (`alwaysDom`'s order, same
+      // reason).
+      projectDemand(ctx, e, "live", data);
+      // ATTACHING THIS TO A NON-DOM KIND IS REFUSED (D5, A3b fix 2). It used
+      // to be accepted silently — this behaviour declared `SurfaceKind` in its
+      // reads and never looked at it — and the card then presented correctly
+      // right up to its first drop, when the demotion wrote `dom` on a texture
+      // and the Band system's dev throw fired a frame later naming an entity
+      // id. Refused here, the message names the widget type instead.
+      refuseNonDomKind(ctx, e, DOM_AT_REST);
       // The TARGET is deliberately untouched: equip already stamped the kind's
       // safe default (D2), and writing it again here would make the first
       // frame of every card a promote/demote decision instead of a fact.
-      projectDemand(ctx, e, "live", data);
     },
     update(e, data, _prev, ctx) {
       projectDemand(ctx, e, "live", data);
@@ -186,14 +242,42 @@ export const domAtRest = defineBehavior("ice:surface.domAtRest", {
 
       // The grabbed INSTANCES — the self term keeps the walk to this
       // behaviour's own cards, and `Grab` carriers are few either way.
+      //
+      // NON-DOM KINDS ARE FILTERED OUT HERE (D5, A3b fix 2), and this is the
+      // only place they need to be: `owned` is populated from this set alone
+      // and `settling` from `owned`, so an island that got this behaviour by
+      // mistake reaches neither loop below and nothing writes `dom` on it.
+      // `init` already refused it loudly in dev; this is the same refusal
+      // holding in a production build, where the throw is a log.
       const grabbed = new Set<Entity>();
-      ctx.query({ all: [Grab, domAtRest] }).each((e) => grabbed.add(e));
+      ctx.query({ all: [Grab, domAtRest] }).each((e) => {
+        if (kindOf(ctx, e) === "dom") grabbed.add(e);
+      });
 
       for (const e of grabbed) {
         // A re-grab inside the window cancels the pending demotion, whether or
         // not this behaviour still owns the card.
         state.settling.delete(e);
-        if (state.owned.has(e)) continue;
+        // OWN ONLY WHAT THIS BEHAVIOUR CHANGED (A3b fix 1) — the old policy's
+        // rule, restored. There, ownership followed the return of
+        // `presentation.set(...)`, which was true only on a REAL change; here
+        // the same question is asked of the world. A card a host put on the
+        // GPU by hand (the composited rig's static probe does exactly that) is
+        // therefore not this behaviour's to bring back, and used to be: one
+        // drag was enough to make it `owned`, and 250 ms after the release it
+        // was demoted to `dom` for good, with nothing to say why.
+        //
+        // Reading the target rather than consulting `owned` also keeps the
+        // write CHANGE-ONLY: a `ctx.set` per grabbed card per frame would
+        // stamp `SurfaceTarget` through the whole drag and wake every observer
+        // on it. And a card demoted by hand MID-drag is re-promoted, which is
+        // what the old policy did too — the state that decides is the world's,
+        // not a memo of what we did last.
+        //
+        // `SurfaceTarget` is this behaviour's own write target, read back
+        // rather than declared in `reads:`: declaring it would put our own
+        // writes into our own wake set.
+        if (ctx.world.get(e, SurfaceTarget)?.target === "gpu") continue;
         ctx.set(e, SurfaceTarget, { target: "gpu" });
         state.owned.add(e);
       }
@@ -244,7 +328,7 @@ function settleMsOf(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity)
  * effective demand, so the retained picture stays and nothing re-uploads. That
  * is the whole of what `picture` was — §5's "picture is not a mode".
  */
-export const alwaysGpu = defineBehavior("ice:surface.alwaysGpu", {
+export const alwaysGpu = defineEngineBehavior(ALWAYS_GPU, {
   store: "runtime",
   phase: "present",
   schema: {
@@ -281,17 +365,11 @@ function writeGpuTarget(
  * there is no threaded scrolling inside the canvas). It never composites, so
  * it also never gains true z.
  *
- * ATTACHING IT TO A NON-DOM KIND IS REFUSED (D5). A `gl` island and a `video`
- * surface ARE GPU textures — they have no live-DOM mode to fall back to, and
- * design-012 plan §2 gives them empty L1 hosts precisely because there is
- * nothing to paint natively. In dev that is a throw naming the widget type,
- * because the alternative is a card that never bands, never allocates and
- * draws plate-only forever with nothing to explain why. In production it logs
- * once and leaves the target alone: `effectiveTarget` coerces every read, so
- * the card presents correctly regardless — production coerces and never
- * blanks.
+ * ATTACHING IT TO A NON-DOM KIND IS REFUSED (D5) — see `refuseNonDomKind`,
+ * which `domAtRest` shares: the two behaviours that can write `dom` refuse the
+ * same kinds with the same words.
  */
-export const alwaysDom = defineBehavior("ice:surface.alwaysDom", {
+export const alwaysDom = defineEngineBehavior(ALWAYS_DOM, {
   store: "runtime",
   phase: "present",
   schema: { ...demandSchema },
@@ -302,13 +380,9 @@ export const alwaysDom = defineBehavior("ice:surface.alwaysDom", {
       // The cadence ask is legitimate whatever the kind is, so it lands before
       // the refusal below can stop this hook.
       projectDemand(ctx, e, "live", data);
-      const kind = ctx.world.get(e, SurfaceKind)?.kind ?? "dom";
-      if (kind !== "dom") {
-        const message = `ice: behavior "ice:surface.alwaysDom" is attached to "${typeNameOf(ctx, e)}", whose surface kind is "${kind}" — a "${kind}" surface has no live-DOM mode (design-013 D5). Attach ice:surface.alwaysGpu instead.`;
-        if (devGuardsEnabled()) throw new Error(message);
-        ctx.log(message);
-        return; // leave the target: equip's default is already the only legal one
-      }
+      // Refused ⇒ leave the target: equip's default is already the only legal
+      // one for that kind.
+      if (refuseNonDomKind(ctx, e, ALWAYS_DOM)) return;
       ctx.set(e, SurfaceTarget, { target: "dom" });
     },
     update(e, data, _prev, ctx) {
@@ -334,10 +408,18 @@ export const STANDARD_SURFACE_BEHAVIORS: readonly AnyBehaviorDef[] = [
 /**
  * Register the engine's standard surface behaviours into a behaviour runtime,
  * BEFORE the app's own (D7): `createCanvasEngine` calls this at runtime
- * creation, so a React composited app promotes on drag with no wiring at all.
- * An imperative host that builds its own runtime calls it directly — one line,
- * and a boot that forgets it gets cards that never promote, which the drag
- * witness catches.
+ * creation, so a React composited app DECIDES to promote on drag with no
+ * wiring at all. An imperative host that builds its own runtime calls it
+ * directly — one line, and a boot that forgets it gets cards that never
+ * promote, which the drag witness catches.
+ *
+ * **ERRATUM 2026-09-06 (A3b):** this comment used to end "…promotes on drag
+ * with no wiring at all", which is more than A1b delivered. The DECISION half
+ * is world-driven and engine-registered — `SurfaceTarget` flips on the grab in
+ * a React app, and every reader sees it. The PIXELS do not move there yet:
+ * `infinite-canvas.tsx` builds the DOM reflector with no source canvas, so
+ * `placementOf` never answers `canvas` and no host is reparented. The L1 host
+ * path for React lands with design-013 B3/B4.
  *
  * Returns ONE remover that unregisters all three.
  */

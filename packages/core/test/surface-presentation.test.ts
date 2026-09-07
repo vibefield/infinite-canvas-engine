@@ -90,6 +90,72 @@ describe("a definition that chose for itself", () => {
   });
 });
 
+describe("two writers of one target", () => {
+  it("REFUSES two standard behaviours on one type, naming both", () => {
+    // This was ACCEPTED. `defineWidget` asked "did anything choose?" with
+    // `.some()`, so a list that chose TWICE satisfied it and both behaviours
+    // were attached — each writing `SurfaceTarget` in `present`, on the same
+    // rows, every frame. Strata's same-phase writer-pair advisory is the thing
+    // that reports exactly this, and the compiler's `orderIndependent`
+    // attestation for the standard three silences it, so the pair was quiet as
+    // well as wrong: the card's target was whichever behaviour ran last.
+    expect(() =>
+      defineWidget({
+        type: "sp:twoStandard",
+        surface: "dom",
+        component: null,
+        behaviors: [alwaysDom, alwaysGpu],
+      }),
+    ).toThrow(/2 behaviors that write SurfaceTarget/);
+    expect(() =>
+      defineWidget({
+        type: "sp:twoStandard2",
+        surface: "dom",
+        component: null,
+        behaviors: [alwaysDom, alwaysGpu],
+      }),
+    ).toThrow(/"ice:surface\.alwaysDom", "ice:surface\.alwaysGpu"/);
+  });
+
+  it("REFUSES a pack's kind behaviour beside a standard one", () => {
+    // The mixed pair is the likelier accident: an app adds its own kiosk
+    // behaviour to a type that already pins `alwaysGpu`, and neither door says
+    // anything. A pack co-writer is unattested, so strata WOULD warn at
+    // registration — but a runtime advisory is not where this belongs, and the
+    // definition is where the author can act on it.
+    const Kiosk = defineBehavior("sppack:surface.kiosk2", {
+      store: "runtime",
+      phase: "present",
+      schema: {},
+      writes: [SurfaceTarget],
+      on: { init() {} },
+    });
+    expect(() =>
+      defineWidget({
+        type: "sp:mixedPair",
+        surface: "dom",
+        component: null,
+        behaviors: [Kiosk, alwaysGpu],
+      }),
+    ).toThrow(/an entity has ONE kind/);
+  });
+
+  it("still accepts ONE target writer beside any number of other behaviours", () => {
+    // The refusal counts target WRITERS, not behaviours — a type may carry as
+    // many ordinary behaviours as it likes, and the default is still suppressed
+    // by the one chooser among them.
+    const NoteA = defineBehavior("sp:noteA", { store: "runtime", schema: {} });
+    const NoteB = defineBehavior("sp:noteB", { store: "runtime", schema: {} });
+    const w = defineWidget({
+      type: "sp:oneWriterManyNotes",
+      surface: "dom",
+      component: null,
+      behaviors: [NoteA, alwaysGpu, NoteB],
+    });
+    expect(attached(w)).toEqual(["sp:noteA", alwaysGpu.name, "sp:noteB"]);
+  });
+});
+
 describe("the retired declaration", () => {
   it("THROWS, naming the door that replaced it", () => {
     // TypeScript already refuses the field; this is the JS caller and the

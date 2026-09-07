@@ -11,7 +11,7 @@ unsupported and wall-checked.
 
 | Export | Shape | Notes |
 |---|---|---|
-| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"` (the `WidgetSurfaceKind` union); `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. `presentation?: {default?, pin?}` opts a type out of the composited profile's live-dom-at-rest default — refused at definition time for `live-dom` on a `gl` surface, or a `default` beside a `pin`. Ignored by the stratified profile, which has no promotion. |
+| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"` (the `WidgetSurfaceKind` union); `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. Where a card presents is chosen through `behaviors: [alwaysDom \| alwaysGpu \| alwaysGpu.with({ paused: true })]` — a definition naming none gets its kind's default (`domAtRest` for `dom`, `alwaysGpu` otherwise), exactly one behaviour may write `SurfaceTarget`, and the retired `presentation` field throws (migration table in the CHANGELOG). |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
 | `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, widgetDrag, portDrag}`, `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
@@ -76,6 +76,12 @@ const Layout = defineBehavior("myplugin:layout", {
   on: { init, update, changed, tick, dispose },
 });
 ```
+
+**Names are `<namespace>:<name>`**, and the namespace is what a plugin host
+validates against the declaring plugin id. **`ice:` is RESERVED for the engine's
+own behaviours** — it carries the compiler's `orderIndependent` attestation on
+declared writes and an exemption from the published-read-surface warning, so
+`defineBehavior` refuses any name in it.
 
 **`store:` routes everything.** It is the load-bearing word of every declaration:
 

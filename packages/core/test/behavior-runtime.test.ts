@@ -15,6 +15,7 @@ import type { Entity, World } from "@vibecook/strata-ecs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetBehaviorsForTests, defineBehavior } from "../src/behavior/define-behavior";
 import { createBehaviorRuntime, type BehaviorRuntime } from "../src/behavior/runtime";
+import { Camera } from "../src/catalog/camera-derived";
 import { createEngine, type Engine } from "../src/engine/engine";
 import { defineComponent, defineResource, defineTag } from "../src/schema/meta";
 import { p } from "../src/widget/props";
@@ -148,6 +149,126 @@ describe("delivery order and lifecycle", () => {
 
     step();
     expect(inits).toEqual([first, later.neighbour]);
+  });
+
+  it("REUSES the instance snapshot while membership holds, and rebuilds it when it moves", () => {
+    // The idle tax A1b recorded, and its real cause. A behaviour that reads a
+    // RESOURCE polls it every frame — `ice:surface.domAtRest` reads
+    // `FrameInfo` for its settle window — so its delivery runs on every idle
+    // frame. Every walk inside delivery is O(changed), but the instance
+    // snapshot was rebuilt unconditionally: one array spread per behaviour per
+    // frame over every instance, 18 µs at 10k and 165 µs at 100k, for a list
+    // that had not changed since the frame before.
+    //
+    // Array IDENTITY is the observable proxy for "was it rebuilt". The
+    // contract is the same either way: `ctx.entities()` is a snapshot taken at
+    // phase entry and must not be retained past the hook.
+    const seen: (readonly Entity[])[] = [];
+    const B = defineBehavior("brt:snapshotCache", {
+      store: "runtime",
+      phase: "simulate",
+      schema: { n: p.number({ default: 0 }) },
+      reads: [Camera], // a resource poll: this behaviour delivers every frame
+      on: { changed: (ctx) => seen.push(ctx.entities()) },
+    });
+    runtime.register(B);
+    const first = world.spawn({ components: [[Tint, { v: 0 }]] });
+    runtime.attach(first, B);
+
+    const churnCamera = (): void => {
+      world.setResource(Camera, { x: frame, y: 0, zoom: 1, gesturing: false });
+      step();
+    };
+
+    churnCamera(); // `first` appears — the snapshot is built here
+    churnCamera(); // idle
+    churnCamera(); // idle
+    expect(seen).toHaveLength(3);
+    expect([...(seen[0] ?? [])]).toEqual([first]);
+    expect(seen[1]).toBe(seen[0]);
+    expect(seen[2]).toBe(seen[0]);
+
+    // Membership MOVES: the new instance has to be in the list, so the array
+    // is built again.
+    const second = world.spawn({ components: [[Tint, { v: 1 }]] });
+    runtime.attach(second, B);
+    churnCamera();
+    expect(seen[3]).not.toBe(seen[0]);
+    expect([...(seen[3] ?? [])]).toEqual([first, second]);
+
+    // And when one DEPARTS.
+    runtime.detach(first, B);
+    churnCamera();
+    expect(seen[4]).not.toBe(seen[3]);
+    expect([...(seen[4] ?? [])]).toEqual([second]);
+  });
+
+  it("drops the whole snapshot when a generation ends with nothing in it", () => {
+    // `endGeneration` is the third place `instances` is mutated, and the only
+    // one outside the delivery pass. A `world.reset()` that leaves no carriers
+    // behind produces no appear and no depart — so a cache keyed only on those
+    // two would hand the next generation the DEAD generation's entities, and
+    // `changed` would run on a list of destroyed handles.
+    const seen: Entity[][] = [];
+    const B = defineBehavior("brt:snapshotReset", {
+      store: "runtime",
+      phase: "simulate",
+      schema: { n: p.number({ default: 0 }) },
+      reads: [Camera],
+      on: { changed: (ctx) => seen.push([...ctx.entities()]) },
+    });
+    runtime.register(B);
+    const e = world.spawn({ components: [[Tint, { v: 0 }]] });
+    runtime.attach(e, B);
+
+    world.setResource(Camera, { x: 1, y: 0, zoom: 1, gesturing: false });
+    step();
+    expect(seen).toEqual([[e]]);
+
+    world.reset();
+    world.setResource(Camera, { x: 2, y: 0, zoom: 1, gesturing: false });
+    step();
+    world.setResource(Camera, { x: 3, y: 0, zoom: 1, gesturing: false });
+    step();
+    // Nothing was re-attached, so `changed` has no visible instance to run for
+    // — and above all it never reports the entity the reset destroyed.
+    expect(seen.flat()).toEqual([e]);
+  });
+
+  it("hands a hook the membership as of phase entry, cache or no cache", () => {
+    // The semantics the cache must not move. A hook that attaches during
+    // delivery still sees the OLD list for the rest of that frame and the new
+    // one next frame — the live-array lesson, which is why the snapshot exists
+    // at all. Graded beside the identity case because a cache that rebuilt too
+    // EAGERLY would satisfy that one and break this.
+    const seen: Entity[][] = [];
+    const later: { neighbour?: Entity } = {};
+    const B = defineBehavior("brt:snapshotEntry", {
+      store: "runtime",
+      phase: "simulate",
+      schema: { n: p.number({ default: 0 }) },
+      reads: [Camera],
+      on: {
+        changed: (ctx) => {
+          seen.push([...ctx.entities()]);
+          if (later.neighbour !== undefined && !ctx.entities().includes(later.neighbour)) {
+            ctx.attach(later.neighbour);
+          }
+        },
+      },
+    });
+    runtime.register(B);
+    const first = world.spawn({ components: [[Tint, { v: 0 }]] });
+    later.neighbour = world.spawn({ components: [[Tint, { v: 1 }]] });
+    runtime.attach(first, B);
+
+    for (let i = 0; i < 3; i++) {
+      world.setResource(Camera, { x: frame, y: 0, zoom: 1, gesturing: false });
+      step();
+    }
+    expect(seen[0]).toEqual([first]);
+    expect(seen[1]).toEqual([first, later.neighbour]);
+    expect(seen[2]).toEqual([first, later.neighbour]);
   });
 
   it("quarantines ONE instance after three consecutive throws, leaving its neighbours alone", () => {

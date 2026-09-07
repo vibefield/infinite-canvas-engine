@@ -43,6 +43,7 @@ import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
 import type { SurfaceKindValue } from "../surface/compositor-registry";
 import { SurfaceTarget } from "../catalog/surface";
+import { STANDARD_SURFACE_BEHAVIOR_NAMES } from "../surface/standard-behavior-names";
 import { alwaysGpu, domAtRest } from "../surface/standard-behaviors";
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
@@ -583,20 +584,36 @@ export function defineWidget(def: WidgetDef): WidgetType {
     );
   }
 
-  // The kind's DEFAULT behaviour, when the definition named none.
+  // WHO WRITES THIS TYPE'S `SurfaceTarget` — exactly one behaviour, always.
   //
-  // "Named none" is broader than "listed no `ice:surface.*`", deliberately:
-  // the question is whether anything already owns this entity's
+  // "Chose for itself" is broader than "listed an `ice:surface.*`",
+  // deliberately: the question is whether anything already owns this entity's
   // `SurfaceTarget`, and design-013 §0's whole point is that a kind may write
   // its OWN behaviour rather than take a standard one. Appending `domAtRest`
   // beside a pack's `mypack:surface.kiosk` would put TWO writers on one
   // component of one entity, which §5's table forbids. So a listed behaviour
-  // suppresses the default if it is one of the standard three OR declares
+  // counts as a chooser if it is one of the standard three OR declares
   // `SurfaceTarget` in its `writes:`.
-  const choosesTarget = behaviorEntries.some(
-    (x) => x.behavior.name.startsWith("ice:surface.") || x.behavior.writes.includes(SurfaceTarget),
+  const standardNames: readonly string[] = STANDARD_SURFACE_BEHAVIOR_NAMES;
+  const targetWriters = behaviorEntries.filter(
+    (x) => standardNames.includes(x.behavior.name) || x.behavior.writes.includes(SurfaceTarget),
   );
-  if (!choosesTarget) {
+  // TWO of them is the same defect from the other side, and it was ACCEPTED
+  // (A3b fix 3): `behaviors: [alwaysDom, alwaysGpu]` compiled, both wrote
+  // `SurfaceTarget` in `present`, and the compiler's own `orderIndependent`
+  // attestation for the standard three silenced the strata advisory that
+  // would otherwise have reported the pair. The card's target was then
+  // whichever behaviour happened to run last. An entity has ONE kind and that
+  // kind's behaviour is the sole writer of its choice components (§5), so the
+  // second one is refused where it was written, not diagnosed at runtime.
+  if (targetWriters.length > 1) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") lists ${targetWriters.length} behaviors that write SurfaceTarget (${targetWriters
+        .map((x) => `"${x.behavior.name}"`)
+        .join(", ")}) — an entity has ONE kind and that kind's behavior is the sole writer of its target (design-013 §5). Keep one.`,
+    );
+  }
+  if (targetWriters.length === 0) {
     // dom rests in the DOM and promotes under a gesture (design-012 §11 Q5,
     // re-read by design-013 §0 as a default rather than a law); every other
     // kind IS a GPU texture and has no second mode to choose between.

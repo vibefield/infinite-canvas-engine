@@ -50,24 +50,64 @@ attach of the four gpu-only components (`RequestedDemand`, `SurfaceDemand`, `Sur
 exits 1 on this machine with a vitest-worker RPC timeout during the 85 s nested-100k arm
 even when every test passes; read the numbers, not the exit code.
 
-## M19 A1b — the standard behaviour's idle tax (2026-09-06)
+## M19 A1b — the standard behaviour's idle tax (2026-09-06; MECHANISM CORRECTED and FIXED, A3b)
 
 `ice:surface.domAtRest` is attached to every dom widget and its settle window polls
-`FrameInfo` from the `changed` hook. The hook body is O(grabbed + settling), but the poll
-makes the behaviour runtime's delivery walk report `full` every frame, so the WALK is
-O(instances). Interleaved A/B pairs, every other system unchanged; a probe removing
-`FrameInfo` from `reads` drops the row out of the idle top five entirely.
+`FrameInfo` from the `changed` hook. `FrameInfo` is a RESOURCE, so the poll fires every
+frame and the behaviour's delivery runs every frame — idle or not. That much is the
+design: the settle expires on a clock, and nothing writes ECS when 250 ms pass.
 
-| board | `behavior:ice:surface.domAtRest:deliver`, idle | for scale |
+**Erratum (2026-09-06, A3b).** This section first said the poll "makes the delivery walk
+report `full` every frame, so the WALK is O(instances)". That is not what the code does.
+`full` is computed in `shouldDeliver` from `generationDirty`, `!seeded` and the two
+collectors' `reset`/`coarse` only; the poll sets `readsFired`, and on an idle frame the
+`update` walk is skipped and `changed` runs once for the behaviour. The one unconditional
+O(instances) statement in the delivery path was the instance-SNAPSHOT spread
+(`runtime.ts`, `this.snapshot = [...this.instances.keys()]`) — one fresh array per
+behaviour per frame over a membership that had not moved, ≈1.6 ns an element, which is
+exactly the shape of the measured rows below. The snapshot is now rebuilt only when
+instances appeared or departed or the generation reset.
+
+Instrument: `packages/core/bench/behavior-idle-snapshot.test.ts` (`BENCH=1`) — a flat board
+of N dom cards on the real facade, median of the
+`behavior:ice:surface.domAtRest:deliver` system row over 5 × 200 idle frames. Three
+INTERLEAVED A/B process pairs, one file swapped between arms (`behavior/runtime.ts`),
+every other system unchanged.
+
+| board | before | after | for scale (same board, idle) |
+| --- | --- | --- | --- |
+| 10k dom cards | **17.5 µs/frame** (17.3 · 17.5 · 17.7) | **1.6 µs** (1.6 · 1.7 · 1.6) | `widgetEquip` 23 µs · `marqueeBehavior` 20 µs |
+| 100k dom cards | **163.8 µs/frame** (163.8 · 164.0 · 163.2) | **2.0 µs** (1.9 · 2.2 · 2.0) | `widgetEquip` 232 µs · `marqueeBehavior` 179 µs |
+
+The before arm reproduces A1b's originally recorded 18 µs / 163–165 µs on a different
+board shape, which is the evidence that both were measuring the spread. After the cache
+the row is flat in N (1.6 µs at 10k, 2.0 µs at 100k) — what is left is the drain, the two
+polls and one `changed` call, which is what the design says it should be. The design-009
+poll hook named as the lever is therefore NOT needed.
+
+**Second witness, on A1b's own instrument.** The same row appears in
+`bench/membership-scale.test.ts`'s idle top-five, and two interleaved pairs of its
+`flat-100k` arm read:
+
+| flat-100k (100,000 widgets) | before | after |
 | --- | --- | --- |
-| 10k widgets | +18 µs/frame | — |
-| 100k widgets | +163–165 µs/frame | `widgetEquip` 231 µs · `marqueeBehavior` 179 µs on the same board |
+| `domAtRest:deliver` row | 163 µs | **2 µs** |
+| whole idle frame | 931.8 µs | **747.2 µs** (−19.8 %) |
+| zoom frame | 52 069.9 µs | 49 568.4 µs (−4.8 %) |
+| pan frame | 31 568.8 µs | 30 001.5 µs (−5.0 %) |
 
-Accepted as the design's cost (the settle needs the clock). The lever, if a real board
-shows it: a design-009 poll hook that delivers once per behaviour per frame without an
-instance walk. `ticking2k` 0.1732 → 0.2234 in the naive pair was NOT a regression — three
-interleaved pairs read 0.1753/0.1741, 0.1712/0.1727, 0.1731/0.1724 (that bench builds a raw
-engine with its own runtime; nothing here is on its path).
+The idle frame sheds almost exactly what the row shed. The camera arms improve slightly
+for the same reason — the poll fires on those frames too. `nested-10k` reads 18 → 2 µs and
+`nested-100k` 164 → 2 µs on the same row.
+
+**A naive pair on this host is worth nothing, again.** One un-interleaved before/after read
+the flat-100k PAN frame as 29.9 → 52.8 ms, which the change cannot cause — it only removes
+work. Interleaved, the same arm reads 30.2 / 31.6 against 30.0 / 29.4. Same lesson as
+A1a's equip-stamp row; the numbers above are all interleaved medians.
+
+`ticking2k` 0.1732 → 0.2234 in A1b's naive pair was NOT a regression — three interleaved
+pairs read 0.1753/0.1741, 0.1712/0.1727, 0.1731/0.1724 (that bench builds a raw engine with
+its own runtime; nothing here is on its path). It reads 0.1791 → 0.1778 across A3b.
 
 ## T2 — legacy ground vs typed GroundHost CPU proxy (2026-08-26)
 

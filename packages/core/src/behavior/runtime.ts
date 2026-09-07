@@ -433,6 +433,15 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     private readonly scratchPrevData: Record<string, unknown>;
 
     private snapshot: Entity[] = [];
+    /**
+     * Does `snapshot` still describe `instances`? (A3b fix 5 — the idle tax.)
+     *
+     * `this.instances` is mutated in exactly THREE places: the departed and
+     * appeared loops in `runDeliver`, both above the rebuild, and
+     * `endGeneration`'s `clear()`. Each of the three sets this flag, and the
+     * rebuild reads it. Everything else in this class only reads the map.
+     */
+    private snapshotDirty = true;
     /** What `ctx.entities()` reports for the CURRENTLY RUNNING pass. */
     private visible: Entity[] = [];
     /** Instances held back by a live claim (§5.3) — instance-scoped, always. */
@@ -1133,6 +1142,9 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
           consecutiveThrows: 0,
         });
       }
+      // The two mutation sites above, and `endGeneration`'s clear, are the
+      // only three — see `snapshotDirty`.
+      if (appeared.length > 0 || departed.length > 0) this.snapshotDirty = true;
       // Rebuild the order-poll's watch set NOW, not lazily on the next poll:
       // the stamps have to be banked in the same frame the instance set
       // changed, or a reorder landing in between is compared against a stamp
@@ -1147,7 +1159,25 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // The instance SNAPSHOT: hooks below may attach or detach, and those
       // land next frame. Nothing after this line re-reads `this.instances` for
       // iteration.
-      this.snapshot = [...this.instances.keys()];
+      //
+      // CACHED (A3b fix 5) — and this is the whole of the idle tax A1b
+      // recorded. `ice:surface.domAtRest` reads `FrameInfo`, a resource, so
+      // its poll fires every frame and delivery runs every frame; the walks
+      // inside are all O(changed), but this spread was O(instances)
+      // unconditionally: 18 µs at 10k, 165 µs at 100k, ≈1.6 ns an element for
+      // an array whose contents had not moved since the frame before. The
+      // membership it describes changes only where `snapshotDirty` is set, so
+      // that is when it is rebuilt.
+      //
+      // The array is REPLACED, never filled in place: `this.visible` aliases
+      // it and `ctx.entities()` hands that to hooks. The documented semantics
+      // are unchanged — the list is still the membership as of phase entry,
+      // and a hook that attaches or detaches still affects the NEXT frame,
+      // because the flag it sets is read on the next delivery.
+      if (this.snapshotDirty) {
+        this.snapshot = [...this.instances.keys()];
+        this.snapshotDirty = false;
+      }
 
       // Claim-scoped delivery suppression (§5.3). It REPLACED a deferred-commit
       // queue that re-ran a stale closure after the gesture's own commit — two
@@ -1370,6 +1400,11 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         }
       }
       this.instances.clear();
+      // The third mutation site (see `snapshotDirty`). The generation that
+      // follows usually rebuilds anyway — `full` is forced and every carrier
+      // reappears — but a generation that ends with NO carriers at all would
+      // otherwise leave the previous generation's entities in the cache.
+      this.snapshotDirty = true;
       // After the dispose hooks, before ownership is forgotten (I17): on
       // unregister this withdraws the live facet; on a world-reset generation
       // end the old peer is already dead and this is a quiet no-op. The
