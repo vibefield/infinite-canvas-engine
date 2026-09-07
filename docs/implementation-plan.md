@@ -1074,6 +1074,20 @@ PIN_EXPECTATIONS row moves with the pin — the 0.10.0 bump missed it and verify
 red for a day); its consumption arc is the `video` kind via `presentLatest()`
 (copy-once/LSF-D8, never retain-the-VideoFrame), and the composited profile reaches
 it only with the Electron `CanvasDrawElement` flag rails.
+**0.13.0 = design-013** (CUT 2026-09-07, publish pending) — surface geometry: the
+presentation FACTS in the world behind the behaviours door (Phase A), the ground as the
+COMPOSITOR with the old composited leg deleted (Phase B), and the stratified ground moved
+onto the same engine with `three` struck from `@ice/ground` (Phase C). This is the FIRST
+PUBLISH SINCE 0.11.0 — 0.12.0 was cut (`903f892`) and never published, so one publish
+carries both and the CHANGELOG's `[0.13.0]` head says which breaks come from which. The
+umbrella gains `./ground/compose`, `./ground/packs` and `./ground/engine` (B8); the pack
+grows 259 → 317 files, the growth entirely ground types (31 → 63) plus core's residency
+and surface-behaviour tree. The `three` peer STAYS, optional, floor raised
+`>=0.160.0` → `>=0.185.0` for `three/webgpu` and C0's `PMREMGenerator` path — it exists
+for the GL islands alone now, and `pack:audit` + the `three-only-in-r3f` depcruise rule
+are the two witnesses. On publish, vibe-field's pin advance is a MIGRATION, not a version
+edit: `ground()` → `groundField()`, `PoleSource` gains `Pole.pointer`, and
+`localPointerPoles` is screen-space (design-013 §C4 defers it out of Phase C).
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,

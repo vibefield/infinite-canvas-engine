@@ -6,6 +6,52 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-09-07
+
+**The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
+never published to npm — the registry's `latest` is still 0.11.0. Its dated section
+stays below as history and everything in it ships here, so an upgrading consumer must
+read BOTH sections: 0.12.0's break (`WidgetSurface` → `WidgetSurfaceKind`) is as real
+as this one's.
+
+### Breaking, at a glance
+
+design-013 rebuilt the presentation layer in three phases, and each one broke
+something. In the order an upgrade meets them:
+
+- **Phase A — where a card presents is a FACT, not a policy.**
+  `defineWidget({ presentation })` and the whole `SurfacePresentation` family are
+  RETIRED; a kind's own behaviour is the one writer of `SurfaceTarget`, and declaring
+  nothing is still right for almost every widget. `@vibecook/ice/dom` loses the
+  presentation registry and its policy. The `ice:` behaviour namespace is reserved.
+- **Phase B — the ground IS the compositor.** The old composited leg is deleted:
+  `compositedNextProfile` is now `compositedProfile` and the profile name is
+  `"composited"`; core's `compositor-registry.ts`, r3f's `webgpu-pool` /
+  `retained-quads` / `webgpu-sources`, and ground's `compositor/*` and
+  `atlas-allocator` are gone. The package gained `./ground/compose`,
+  `./ground/packs` and `./ground/engine`.
+- **Phase C — the stratified ground is that same engine, and `three` leaves.**
+  `ground()`, `groundHost` and design-011's `GroundProgramDefinition` with its
+  transition ladder are deleted; **`groundField()`** replaces them.
+  `presentation.ground` on a canvas type is a FIELD DECLARATION
+  (`{ glyph, grid, wires, guides }`), and a `program` id is refused BY NAME at
+  definition time with the migration in the message. `GridConfig` loses `spacings`,
+  `fadeOut` and `levelWeight`; the workspace subpaths
+  `@ice/ground/programs/{dot-grid,line-grid,magnet-grid}` are gone. **The ground is
+  OPAQUE now** and writes the bytes the theme and the config name, so the stratified
+  profile's colours change on screen by the amounts C1 and C1d measured.
+  `@ice/ground` no longer declares `three` at all, and the `three` peer floor rises
+  to `>=0.185.0`.
+
+**`three` is still a declared peer, and it is still optional.** "The cut" does not
+mean ICE stopped needing three — it means nothing outside `./r3f` and `./r3f/webgpu`
+needs it. The GL ISLANDS are the whole reason, `three/webgpu`'s renderer and its own
+`PMREMGenerator` are why the floor moved to 0.185, and the pack audit measures the
+claim on every build rather than asserting it (252 modules over the nine non-island
+entries, 0 edges to `three`). An app that imports no islands can install none.
+
+Every item above is spelled out with its migration in the sections that follow.
+
 design-013 Phase A — the presentation FACTS move into the world, and the
 decision about them moves onto the behaviours door. Where a card presents used
 to be a session-local map beside the world (`PresentationRegistry`) driven by
@@ -905,7 +951,13 @@ the entity's own kind behaviour.
   `unregister()` wakes Residency (`TextureTable.revision()`); an unrealised handle is
   forgotten the moment its count reaches zero — only realised handles wait in `drain()`.
 
-## [0.12.0] — 2026-08-31
+## [0.12.0] — 2026-08-31 · a git release point, NOT published to npm
+
+**Install 0.13.0 for everything below.** The cut was real (`903f892`, CI green,
+pack dry-run 259 files) and the entry stays rather than being folded upward, but
+design-013's Phase A landed before a publish went out and the registry goes
+0.11.0 → 0.13.0 in one step. The `WidgetSurface` → `WidgetSurfaceKind` break
+below is part of that upgrade.
 
 ### Breaking, narrowly
 
