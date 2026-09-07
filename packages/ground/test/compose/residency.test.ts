@@ -191,6 +191,30 @@ describe("the content residency · what a handle is on the ground (B4a)", () => 
     expect(log).toEqual(["destroy island", "destroy pages"]);
   });
 
+  it("a private texture's written debt survives a lost ref (a culled card comes back owing nothing); a page slot's does not", () => {
+    const { ce, world, step, store, residency, ref, island, promoted } = makeBoard();
+    residency.attach(store.table);
+    const log: string[] = [];
+    residency.realize(ref(island).texture, fakeTexture("rgba8unorm", log, "island"));
+    residency.realize(store.table.pages(), fakeTexture("rgba8unorm", log, "pages"));
+    residency.wrote(island);
+    residency.wrote(promoted);
+    const ownKey = ref(island);
+    // both cards scroll off: Residency writes no destination for the video/gl path when not Visible… a gl card KEEPS
+    // its held key while culled, so force the ref away as an eviction would, then bring the same destination back
+    world.edit(island).set(TextureRef, { texture: NO_TEXTURE, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
+    world.edit(promoted).set(TextureRef, { texture: NO_TEXTURE, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
+    ce.world.sync();
+    residency.collect();
+    expect(residency.stats().written).toBe(1);                              // the island's debt survives; the page slot's is dropped
+    world.edit(island).set(TextureRef, { ...ownKey });
+    ce.world.sync();
+    expect(residency.isWritten(island)).toBe(true);
+    expect(residency.contentOf(island).mode).toBe("own");
+    step();
+    void promoted;
+  });
+
   it("refKeyOf names every field of a ref, so a new destination is a new debt", () => {
     expect(refKeyOf({ texture: 3, layer: 1, u0: 0.5, v0: 0.25, u1: 0.75, v1: 0.5 })).toBe("3|1|0.5|0.25|0.75|0.5");
     expect(refKeyOf({ texture: 3, layer: 2, u0: 0.5, v0: 0.25, u1: 0.75, v1: 0.5 })).not.toBe(refKeyOf({ texture: 3, layer: 1, u0: 0.5, v0: 0.25, u1: 0.75, v1: 0.5 }));

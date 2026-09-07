@@ -189,10 +189,18 @@ export function createContentResidency(world: World): ContentResidency {
           for (const cb of forgetters) cb(h);
         }
       }
-      // a card that lost its destination (or died) owes nothing any more
+      // The written debt outlives a lost ref only where the pixels do: a PRIVATE texture (`own`, `stable`) is
+      // nobody else's, so a culled card that comes back to the same destination owes nothing (a paused live
+      // surface scrolled off and back would otherwise draw the plate forever, with no next frame to pay with —
+      // B6's finding). A `pages` slot is shared: once the ref is gone the slot may be someone else's, and the
+      // same rect returning is a new debt. A key whose handle the table forgot is dropped with it.
       for (const [e, key] of written) {
         const ref = refOf(e);
-        if (ref === undefined || ref.texture === NO_TEXTURE || refKeyOf(ref) !== key) written.delete(e);
+        const handle = Number(key.slice(0, key.indexOf("|")));
+        const r = realised.get(handle);
+        if (r === undefined) { written.delete(e); continue; }
+        if (ref !== undefined && ref.texture !== NO_TEXTURE) { if (refKeyOf(ref) !== key) written.delete(e); continue; }
+        if (r.kind === "pages") written.delete(e);
       }
       destroyed += n;
       return n;
