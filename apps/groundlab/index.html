@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>groundlab — the ground's lab</title>
+<link rel="icon" href="data:," />
+<style>
+  /* VibeField tokens, verbatim from packages/design-kit/src/tokens.css (the
+     doc moves first, then tokens.css, then this copy — test/theme.test.ts
+     diffs it). Light on :root; dark on the `.dark` class AND `data-theme`,
+     stamped together, exactly as the product's theme.ts does (03·A §6). */
+  :root {
+    color-scheme: light;
+    --vf-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --vf-font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --vf-canvas-bg: #fafafa;
+    --vf-canvas-dot: rgba(0, 0, 0, 0.16);
+    --vf-foreground: #1c1c1e;
+    --vf-text-primary: rgb(28 28 30 / 85%);
+    --vf-text-secondary: rgb(28 28 30 / 70%);
+    --vf-text-tertiary: rgb(28 28 30 / 45%);
+    --vf-hairline: rgb(0 0 0 / 5%);
+    --vf-chrome-surface: rgb(255 255 255 / 90%);
+    --vf-select: #4a90d9;
+    --vf-orange: #ff9f0a;
+    --vf-text-faint: rgb(28 28 30 / 30%);
+    --vf-fill: #f2f2f7;
+    --vf-fill-hover: #e5e5ea;
+    --vf-hairline-strong: rgb(0 0 0 / 10%);
+    --vf-chrome-solid: #ffffff;
+    --vf-shadow-island: 0 8px 30px rgb(0 0 0 / 8%);
+    --vf-radius-island: 32px;
+    --vf-radius-control: 9px;
+  }
+  :root.dark, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --vf-canvas-bg: #171717;
+    --vf-canvas-dot: rgba(255, 255, 255, 0.08);
+    --vf-foreground: #f5f5f7;
+    --vf-text-primary: rgb(245 245 247 / 85%);
+    --vf-text-secondary: rgb(245 245 247 / 70%);
+    --vf-text-tertiary: rgb(245 245 247 / 45%);
+    --vf-text-faint: rgb(245 245 247 / 30%);
+    --vf-hairline: rgb(255 255 255 / 10%);
+    --vf-chrome-surface: rgb(28 28 30 / 90%);
+    --vf-fill: #2c2c2e;
+    --vf-fill-hover: #2c2c2e;
+    --vf-hairline-strong: rgb(255 255 255 / 15%);
+    --vf-chrome-solid: #1c1c1e;
+    --vf-shadow-island: 0 8px 30px rgb(0 0 0 / 40%);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--vf-canvas-bg); font-family: var(--vf-font-sans); color: var(--vf-text-primary); }
+  #gpu { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #stats { position: fixed; left: 16px; top: 14px; right: 16px; font: 400 11px/1.5 var(--vf-font-mono); color: var(--vf-text-tertiary); pointer-events: none; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
+  #legend { position: fixed; left: 16px; bottom: 14px; font: 400 11px/1.6 var(--vf-font-mono); color: var(--vf-text-tertiary); pointer-events: none; }
+  #fail { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; font: 400 13px/1.6 var(--vf-font-mono); color: var(--vf-text-primary); background: var(--vf-canvas-bg); text-align: center; white-space: pre-wrap; }
+  #fail[hidden] { display: none; }   /* an ID selector outranks the UA [hidden] rule */
+
+  /* The tweak panel — sheet material (DESIGN.md §5), hairline, the text ramp, mono values. */
+  #panel { position: fixed; top: 16px; right: 16px; bottom: 16px; width: 340px; overflow-y: auto; overscroll-behavior: contain;
+    background: var(--vf-chrome-surface); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+    border: 1px solid var(--vf-hairline); border-radius: calc(var(--vf-radius-island) / 2); box-shadow: var(--vf-shadow-island);
+    padding: 10px 14px 18px; font: 400 11px/1.4 var(--vf-font-sans); color: var(--vf-text-primary); scrollbar-width: none; }
+  #panel::-webkit-scrollbar { display: none; }
+  #panel[hidden] { display: none; }
+  #panel h1 { margin: 6px 2px 10px; font: 500 11px/1 var(--vf-font-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--vf-text-tertiary); }
+  .p-section { border-top: 1px solid var(--vf-hairline); padding: 4px 0 8px; }
+  .p-title { cursor: pointer; padding: 8px 2px; font: 500 11px/1 var(--vf-font-sans); letter-spacing: 0.05em; text-transform: uppercase; color: var(--vf-text-secondary); list-style: none; user-select: none; }
+  .p-title::-webkit-details-marker { display: none; }
+  .p-title::before { content: "▸"; display: inline-block; width: 12px; color: var(--vf-text-faint); transition: transform 120ms ease; }
+  .p-section[open] > .p-title::before { transform: rotate(90deg); }
+  .p-row { display: grid; grid-template-columns: 118px 56px 20px 1fr; align-items: center; gap: 6px; padding: 2px 2px; }
+  .p-row.p-select, .p-row.p-color { grid-template-columns: 118px 1fr; }
+  .p-row.p-toggle, .p-row.p-actions, .p-row.p-note { grid-template-columns: 1fr; }
+  .p-label { color: var(--vf-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .p-num, .p-select { font: 400 11px/1.2 var(--vf-font-mono); font-variant-numeric: tabular-nums; color: var(--vf-text-primary);
+    background: var(--vf-fill); border: 1px solid transparent; border-radius: 6px; padding: 3px 5px; min-width: 0; width: 100%; }
+  .p-num:focus, .p-select:focus, .p-color:focus { outline: none; border-color: var(--vf-select); }
+  .p-num::-webkit-inner-spin-button { opacity: 0.4; }
+  .p-unit { color: var(--vf-text-tertiary); font: 400 10px/1 var(--vf-font-mono); }
+  .p-slider { width: 100%; height: 14px; margin: 0; accent-color: var(--vf-select); }
+  .p-color { width: 100%; height: 22px; padding: 0; border: 1px solid var(--vf-hairline); border-radius: 6px; background: var(--vf-fill); }
+  .p-row.p-color { grid-template-columns: 118px 1fr 56px; }
+  .p-btn { font: 500 11px/1 var(--vf-font-sans); color: var(--vf-text-primary); background: var(--vf-fill); border: 1px solid var(--vf-hairline); border-radius: 999px; padding: 6px 10px; margin: 2px 6px 2px 0; cursor: pointer; }
+  .p-btn:hover { background: var(--vf-fill-hover); }
+  .p-btn:active { transform: scale(0.95); }
+  .p-note { color: var(--vf-orange); font: 400 10px/1.4 var(--vf-font-mono); white-space: pre-wrap; padding: 2px 2px 4px; }
+  .p-note[hidden] { display: none; }
+  input[type="checkbox"] { accent-color: var(--vf-select); }
+</style>
+<script>
+  // Stamp the OS theme before first paint so the page never flashes the other
+  // ground; main.ts takes over from here (`d` toggles, and pins).
+  (function () {
+    var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  })();
+</script>
+</head>
+<body>
+  <canvas id="gpu"></canvas>
+  <div id="stats">booting…</div>
+  <div id="legend">drag field to pan · wheel to zoom · drag a card (it lifts; over a folder it glows accept, over a deep card reject) · click a card to select · a folder shows its inside through its face — double-click it to fly in (or zoom until its face fills the view), empty field to fly out (⏎ / esc, or zoom out past the face) · o glyph (dot · needle · mat) · n add · ⌫ delete · c surface · i content (plate · page · own) · s scatter 48 · S scatter 256 · m cursor · p pin · t polarity · a align · f fine schedule · g glyph range preset/open · d theme · r reset · ` panel</div>
+  <div id="fail" hidden></div>
+  <aside id="panel" hidden><h1>ground · parameters</h1></aside>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

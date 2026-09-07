@@ -7,13 +7,20 @@
     ".": "./src/index.ts",
     "./programs/dot-grid": "./src/programs/dot-grid.ts",
     "./programs/line-grid": "./src/programs/line-grid.ts",
-    "./programs/magnet-grid": "./src/programs/magnet-grid.ts"
+    "./programs/magnet-grid": "./src/programs/magnet-grid.ts",
+    "./compose": "./src/compose/index.ts",
+    "./engine": "./src/engine/index.ts",
+    "./oracle/*": "./oracle/*",
+    "./assets/*": "./assets/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --dts --external three",
     "test": "vitest run",
-    "bench": "BENCH=1 vitest run bench/"
+    "bench": "BENCH=1 vitest run bench/",
+    "gen:shaders": "node tools/wgsl-to-ts.mjs",
+    "gen:check": "node tools/wgsl-to-ts.mjs --check",
+    "oracle": "tsx oracle/render.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
@@ -27,6 +34,8 @@
     "@vibecook/strata-ecs": "0.13.0",
     "happy-dom": "^20.0.0",
     "three": "^0.185.0",
-    "vitest": "^3"
+    "tsx": "^4.20.0",
+    "vitest": "^3",
+    "webgpu": "0.4.0"
   }
 }

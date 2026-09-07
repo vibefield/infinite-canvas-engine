@@ -1,0 +1,38 @@
+{
+  "name": "groundlab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The ground's lab \u2014 draft/ground's tweak-panel lab moved into ICE at B1; its Chrome harnesses are the rig scripts.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "rig:parity": "tsx scripts/ab.mjs oracle",
+    "rig:mat": "tsx scripts/mat.mjs",
+    "rig:nav": "tsx scripts/nav.mjs",
+    "rig:portal": "tsx scripts/portal.mjs",
+    "rig:panel": "tsx scripts/panel.mjs",
+    "rig:content": "tsx scripts/content.mjs",
+    "rig:glow": "tsx scripts/glow.mjs",
+    "rig:interact": "tsx scripts/interact.mjs",
+    "rig:reveal": "tsx scripts/reveal.mjs",
+    "rig:corner": "tsx scripts/corner.mjs",
+    "rig:zoom": "tsx scripts/zoom.mjs",
+    "rig:range": "tsx scripts/range.mjs",
+    "rig:themes": "tsx scripts/themes.mjs",
+    "rig:probe": "tsx scripts/probe.mjs"
+  },
+  "dependencies": {
+    "@ice/core": "workspace:*",
+    "@ice/ground": "workspace:*",
+    "@ice/kernel": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.72",
+    "tsx": "^4.20.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
+  }
+}

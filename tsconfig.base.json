@@ -19,7 +19,10 @@
       "@ice/ground": ["./packages/ground/src/index.ts"],
       "@ice/react": ["./packages/react/src/index.ts"],
       "@ice/r3f": ["./packages/r3f/src/index.ts"],
-      "@ice/devtools": ["./packages/devtools/src/index.ts"]
+      "@ice/devtools": ["./packages/devtools/src/index.ts"],
+      "@ice/ground/compose": ["./packages/ground/src/compose/index.ts"],
+      "@ice/ground/engine": ["./packages/ground/src/engine/index.ts"],
+      "@ice/ground/oracle/*": ["./packages/ground/oracle/*"]
     }
   }
 }

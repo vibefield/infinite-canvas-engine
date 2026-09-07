@@ -9,6 +9,7 @@ packages:
 # skip and `electron .` / createMeshNode fail at runtime.
 allowBuilds:
   "@biomejs/biome": true
+  webgpu: true
   esbuild: true
   electron: true
   "@vibecook/truffle": true
@@ -18,6 +19,7 @@ allowBuilds:
 # 2026-07-20). Normally moot: package.json pins packageManager to pnpm 11.
 onlyBuiltDependencies:
   - "@biomejs/biome"
+  - webgpu
   - esbuild
   - electron
   - "@vibecook/truffle"

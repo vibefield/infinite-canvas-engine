@@ -205,6 +205,23 @@ module.exports = {
       from: { path: "^packages/(kernel|core|dom|react|r3f|devtools)/src" },
       to: { path: "^packages/ground" },
     },
+    {
+      name: "ground-compose-imports-no-old-leg",
+      comment:
+        "design-013 §8 (B1, 2026-09-07): the ground enters ICE once, into its final home — the compose " +
+        "entry (engine · lattice · field · card · nav · mat · theme · compose · shaders) imports nothing " +
+        "from the old composited leg, which B8 deletes in one commit.",
+      severity: "error",
+      from: { path: "^packages/ground/src/(engine|lattice|field|card|nav|mat|compose|theme\\.ts|shaders)" },
+      to: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|hic-adapter|atlas-allocator|index)" },
+    },
+    {
+      name: "old-leg-imports-no-ground-compose",
+      comment: "the reverse wall: nothing bridges the old leg to the ground (no adapter is ever written to a structure slated for deletion).",
+      severity: "error",
+      from: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|hic-adapter|atlas-allocator|index)" },
+      to: { path: "^packages/ground/src/(engine|lattice|field|card|nav|mat|compose|theme\\.ts|shaders)" },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },

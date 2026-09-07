@@ -80,6 +80,25 @@ the entity's own kind behaviour.
 
 ### Added
 
+- **`@ice/ground/compose` — the ground moves in** (design-013 §8 B1 [GROUND PORT],
+  2026-09-07). `vibe-field/draft/ground` enters ICE once, into its final home, as a second
+  entry of `@ice/ground` beside the old composited leg — which imports none of it and is
+  deleted at B8; dependency-cruiser holds the wall both ways. What it is: the raw-WebGPU
+  engine (`@ice/ground/engine`: device, surface, targets, pipelines, shader composition,
+  struct layouts), the magnet field on the decade lattice and the cutting mat with its two
+  lights, the SDF card frame with the content term and the §7 heat, the live portal's slot
+  tree (the chain, the face, the grown fill), the flight's second slot, the theme's engine
+  half, and `Ground` itself — `Ground.create({ device, canvas, ...GROUND_SHADERS })` on a
+  device the HOST owns (`acquireCompositorDevice()`). The flight's maths import
+  `@ice/kernel`'s `nav-flight` (the copy the draft carried is gone; the ported tests pin the
+  kernel's functions to the same numbers). WGSL stays the source under
+  `packages/ground/shaders/`; `gen:shaders` writes the string module the entry ships and
+  `gen:check` gates its freshness. Wired into NO profile yet — B2 registers the new one.
+  With it: the Node oracle (`pnpm --filter @ice/ground oracle` — Dawn through `webgpu@0.4.0`,
+  EL8-pinned, run by `tsx` because the kernel's imports are extensionless; 44 scenes and 12
+  self-checks) whose renders are byte-identical to a stash taken in the draft before the
+  move, and the `groundlab` app (`apps/groundlab`: the tweak-panel lab and thirteen Chrome
+  rigs, `pnpm --filter groundlab rig:<name>`). The old barrel is untouched.
 - **The presentation facts** (design-013 §5): components `SurfaceKind` ·
   `SurfaceTarget` · `RequestedDemand` · `SurfaceDemand` · `SurfaceBand` ·
   `TextureRef`, the tag `Retained`, the `NO_TEXTURE` sentinel, and

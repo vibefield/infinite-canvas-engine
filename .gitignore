@@ -12,4 +12,8 @@ apps/widgetlab-desktop/tsnet/
 # Design drafts are version-controlled ONLY on the `local-dev` branch (never pushed).
 # On main they stay present-but-untracked. See CLAUDE.md "Draft workflow".
 /draft/
+
+# The ground's pixel witnesses (design-013 B1): the oracle's renders and the lab rigs' stills are results, never sources.
+packages/ground/oracle/results/
+apps/groundlab/results/
 docs/.local-*.html

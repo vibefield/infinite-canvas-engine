@@ -243,6 +243,21 @@ register `layer.reflector`). One WebGPU canvas (WebGL2 fallback automatic)
 drawing the dot grid, wires, and snap guides as passes; `configureGrid`
 re-tunes live (the react `grid` prop forwards here).
 
+**`@ice/ground/compose` (design-013 B1, 2026-09-07)** — the ground that becomes the
+composited profile's compositor at B2/B3, moved in from `vibe-field/draft/ground` and wired
+into no profile yet. `Ground.create({ device, canvas, field, frames, fill })` on a device the
+host owns (`acquireCompositorDevice().device`; `GROUND_SHADERS` supplies the three shader
+sets); `ground.render(inputs)` draws one frame — the root slot, a nested slot per live
+portal, a flight's departed slot — and returns its stats; `prepareFrame` / `drawFrame` /
+`SlotPool` are the seams the oracle drives. `resolve()` turns a card's rect and motion into
+the `Geometry` the frame records and `pick()` hit-tests alike; `portalOf()` gives a
+container's face its camera (`outgoingCamera`, the flight's exact `c0`); `themeFrom(name,
+palette, grid)` builds the `GroundTheme` the passes read — the palette is the host's,
+`ENGINE_GRID` and the mat's `MAT_LIGHT` are the engine's own. `@ice/ground/engine` is the
+raw-WebGPU boilerplate alone. The pixel witnesses are the package's oracle
+(`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
+`vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
+
 **The magnet grid (design-010, 0.10.0; build-time wiring in 0.11.0)**:
 classic and magnet are separate `GridPassFactory` implementations over the
 same `GridConfig`/dependency contract. `passes/grid.ts` imports exactly one;

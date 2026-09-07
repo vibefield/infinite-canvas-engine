@@ -824,6 +824,24 @@ verbatim, the churn bench before/after):
   `presentation`; bare entities no longer promotable, listed. 48 probes across both
   slices red their own test.)
 
+**Phase B slices** (`vibe-field/draft/ground/FOLD.md` is the ground-side task grading;
+its decisions D-B1.1–D-B1.6 stand as the build took them):
+
+- **B1 [GROUND PORT] — the move** (**LANDED 2026-09-07**): `vibe-field/draft/ground` →
+  `@ice/ground/compose` (+ `/engine`), wired into no profile. The flight's maths import the
+  kernel's `nav-flight` — the ported tests pin them to the same numbers, the witness that the
+  two were one. WGSL stays the source with a generated, freshness-gated string module
+  (D-B1.3). The oracle lives in the package on Dawn (`webgpu@0.4.0`, Q11) and runs through
+  `tsx`: the kernel's extensionless imports rule out raw Node (D-B1.4 as-built). The lab and
+  its thirteen Chrome harnesses are `apps/groundlab` and its rigs (D-B1.5); the product's
+  palette and the gobo plates are the oracle's fixtures (D-B1.6); dependency-cruiser walls
+  both ways between the old leg and the new modules (D-B1.2). The ported code was brought
+  to ICE's lint — 122 declarators split, the tests' `!` replaced by a `must()` helper that
+  throws, one cast, two parameter locals — and none of it moved a pixel: the 44 oracle
+  renders are byte-identical to a stash taken in the draft before the move, Chrome = Node
+  44/44 at maxΔ 0, every rig green (nav 18 · portal 16 · mat 16 · panel 10 with 150 rows ·
+  content 7 · glow 15), `pnpm run ci` green. `draft/ground` is frozen with a pointer.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
