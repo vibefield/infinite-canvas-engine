@@ -91,6 +91,18 @@ const LIFTED = { x: 740, y: 470, w: 150, h: 90, r: 14, strength: 1, held: true }
 const LIFTED_BR = { x: 800, y: 540, w: 150, h: 90, r: 14, strength: 1, held: true };     // a corner-only contact
 const LIFTED_TL = { x: 460, y: 320, w: 150, h: 90, r: 14, strength: 1, held: true };     // over the top-left corner
 const FAR = [{ x: 180, y: 160, w: 150, h: 90, r: 14, strength: 1 }, { x: 1020, y: 640, w: 155, h: 155, r: 22, strength: 1, surface: "note" }];
+/**
+ * The SHELL (design-014): the engine's own card program — a rounded plate at the card's radius, the §5 shadow,
+ * a hairline, the ring on selection, and the drop cue on the accept tier. Rendered with NO pack registered.
+ * No browser page draws the shell yet (`pages: []`): these are the shell's baseline, not a parity scene.
+ */
+export const SHELL_SCENES = [
+  { name: "shell-z1-idle-24", pages: [], scene: { ...base, program: "shell", cards: makeCards(24), zoom: 1, mouseOn: false } },
+  { name: "shell-z2.5-selected", pages: [], scene: { ...base, program: "shell", cards: makeCards(6).map((c, i) => (i === 3 ? { ...c, selected: true } : c)), camX: 204.97, camY: 670.16, zoom: 2.5, mouseOn: false } },
+  { name: "shell-light-heat-z1", pages: [], scene: { ...base, program: "shell", theme: "light", zoom: 1, mouseOn: false, cards: [FAR[0], { ...TARGET, hot: srcOf(LIFTED, 1) }, LIFTED, { ...FAR[1], hot: srcOf(LIFTED_BR, 0) }] } },
+];
+ORACLE_SCENES.push(...SHELL_SCENES);
+
 export const HEAT_SCENES = [
   { name: "heat-accept-z1", scene: { ...heatBase, zoom: 1, cards: [...FAR, { ...TARGET, hot: srcOf(LIFTED, 1) }, LIFTED] } },
   { name: "heat-reject-z1", scene: { ...heatBase, zoom: 1, cards: [...FAR, { ...TARGET, surface: "deep", hot: srcOf(LIFTED, 0) }, LIFTED] } },

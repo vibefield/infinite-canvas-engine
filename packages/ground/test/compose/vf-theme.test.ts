@@ -9,7 +9,9 @@ import { must } from "./must";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HEAT, type RGB, type RGBA, SHADOW, cssColor } from "../../src/theme";
+import { matLightOf } from "../../src/packs/mat";
+import { HEAT, vfSectionOf } from "../../src/packs/vf-frame";
+import { type RGB, type RGBA, SHADOW, cssColor } from "../../src/theme";
 import { CARD_SURFACES, PALETTE, PRODUCT_GRID, THEMES } from "../../oracle/fixtures/vf-theme";
 
 const ground = resolve(import.meta.dirname, "../..");
@@ -44,22 +46,25 @@ describe("VibeField's projection", () => {
   it("keeps the ground legible in both themes: the frame is the lightest chrome on dark, the card is dark on both", () => {
     const lum = (c: RGB | RGBA) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
     const { dark, light } = THEMES;
-    expect(lum(dark.frame)).toBeGreaterThan(lum(dark.card));
-    expect(lum(dark.frame)).toBeGreaterThan(lum(dark.canvasBg));
-    expect(lum(light.frame)).toBeGreaterThan(lum(light.canvasBg));
+    // design-014: the head carries the ground's five roles; the frame's ten and the mat's
+    // light are the PACKS' sections, read through the pack that owns them
+    expect(lum(vfSectionOf(dark).frame)).toBeGreaterThan(lum(dark.card));
+    expect(lum(vfSectionOf(dark).frame)).toBeGreaterThan(lum(dark.canvasBg));
+    expect(lum(vfSectionOf(light).frame)).toBeGreaterThan(lum(light.canvasBg));
     expect(lum(light.card)).toBeLessThan(0.15);
     expect(lum(dark.card)).toBeLessThan(0.15);
     expect(dark.card).toEqual(light.card);                       // §2.2: the default card surface, both themes
     expect(dark.select).toEqual(light.select);                   // §2.5: one meaning, one value
     expect(dark.hairline[3]).toBeGreaterThan(light.hairline[3]); // §2.3: white/10 on dark, black/5 on light
-    expect(light.matLight.night).toBe(0); expect(dark.matLight.night).toBe(1);   // the mat: the Sun by day, the Moon by night (MAT.md)
+    expect(matLightOf(light).night).toBe(0); expect(matLightOf(dark).night).toBe(1);   // the mat: the Sun by day, the Moon by night (MAT.md)
     for (const t of [dark, light]) {
-      expect(lum(t.glow)).toBeGreaterThan(lum(t.card));           // §7: a glow is lighter than the card it lights
-      expect(lum(t.rim)).toBeGreaterThan(lum(t.card));
-      expect(t.inkStrong[3]).toBe(1);
-      expect(t.ink[3]).toBeCloseTo(0.7, 9);                     // §2.4 the ramp
-      expect(t.inkMuted[3]).toBeCloseTo(0.45, 9);
-      expect(t.fillHover[3]).toBeGreaterThan(t.fill[3]);         // §7 fills step up on hover
+      const s = vfSectionOf(t);
+      expect(lum(s.glow)).toBeGreaterThan(lum(t.card));           // §7: a glow is lighter than the card it lights
+      expect(lum(s.rim)).toBeGreaterThan(lum(t.card));
+      expect(s.inkStrong[3]).toBe(1);
+      expect(s.ink[3]).toBeCloseTo(0.7, 9);                     // §2.4 the ramp
+      expect(s.inkMuted[3]).toBeCloseTo(0.45, 9);
+      expect(s.fillHover[3]).toBeGreaterThan(s.fill[3]);         // §7 fills step up on hover
       expect(t.fieldInkAlpha).toBe(PRODUCT_GRID.dotAlpha);
     }
   });

@@ -23,9 +23,11 @@
 // the facade's ResizeObserver writes, never from the container; the frame's dt
 // from `FrameInfo` (clamped by the engine), never from a clock of its own.
 import { Camera, type Entity, FrameInfo, type FramePreviewStore, type GridConfig, type ReflectorDef, Viewport, type World } from "@ice/core";
-import type { Geometry } from "../card/choreography";
+import type { ShellGeometry } from "../card/geometry";
 import type { CardMotion } from "../card/motion";
+import type { CardProgram } from "../card/program";
 import type { FieldConfig } from "../field/layout";
+import type { GlyphProgram } from "../field/program";
 import { GROUND_SHADERS } from "../shaders";
 import type { GroundTheme } from "../theme";
 import { createFrameBuilder, type FrameBuilderOptions, type FrameBuilderStats, type WakeReason } from "./frame-inputs";
@@ -40,8 +42,14 @@ export interface GroundComposeOptions {
   readonly config?: FieldConfig;
   /** The device-pixel ratio the canvas is capped at. */
   readonly maxDpr?: number;
-  /** The frame builder's knobs (style, material, lift, gate, cap …); the product's by default. */
-  readonly cards?: Omit<FrameBuilderOptions, "previews">;
+  /** The card program (design-014): the engine's shell unless the app registers its own (`vfFrame()` from `@ice/ground/packs`). */
+  readonly card?: CardProgram<ShellGeometry>;
+  /** Grid programs beyond the engine's dot (`needleGlyph`, `cuttingMat` from `@ice/ground/packs`). */
+  readonly grids?: readonly GlyphProgram[];
+  /** A release on a card program's PART (`close`, `lock` …): the app's action. Routed at B3b. */
+  readonly onPart?: (entity: Entity, part: string) => void;
+  /** The frame builder's knobs (material, lift, gate, cap …); the product's by default. */
+  readonly cards?: Omit<FrameBuilderOptions, "previews" | "program">;
 }
 
 /** The mount context the React facade hands a `ground` factory — the fields this layer needs, mirrored structurally. */
@@ -72,8 +80,8 @@ export interface GroundCompose {
   stats(): GroundComposeStats;
   /** What woke the builder, and how often, since the mount — names the fact behind a churning frame. */
   wakes(): Readonly<Record<WakeReason, number>>;
-  /** A card's geometry as last drawn (the rig's witness; B3b's hit test). */
-  geometryOf(e: Entity): Geometry | undefined;
+  /** A card's geometry as last drawn (the rig's witness; B3b's hit test) — the program's, on the engine's head. */
+  geometryOf(e: Entity): ShellGeometry | undefined;
   /** A card's springs as last stepped — flux, never a world fact. */
   motionOf(e: Entity): CardMotion | undefined;
 }
@@ -111,7 +119,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
   return (ctx) => {
     const { host, world } = ctx;
     const maxDpr = opts.maxDpr ?? 2;
-    const builder = createFrameBuilder(world, { ...(opts.cards ?? {}), ...(ctx.previews !== undefined ? { previews: ctx.previews } : {}) });
+    const builder = createFrameBuilder(world, { ...(opts.cards ?? {}), ...(opts.card !== undefined ? { program: opts.card } : {}), ...(ctx.previews !== undefined ? { previews: ctx.previews } : {}) });
     const doc = host.container.ownerDocument;
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
@@ -131,7 +139,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     let theme = opts.theme;
     let gridPending: Partial<GridConfig> | null = null;
 
-    Ground.create({ device: opts.device, canvas, ...GROUND_SHADERS }).then(
+    Ground.create({ device: opts.device, canvas, ...GROUND_SHADERS, ...(opts.card !== undefined ? { card: opts.card } : {}), ...(opts.grids !== undefined ? { grids: opts.grids } : {}) }).then(
       (g) => {
         if (opts.config) g.fieldConfig = opts.config;
         if (gridPending) { g.fieldConfig = fieldConfigOf(g.fieldConfig, gridPending); gridPending = null; }

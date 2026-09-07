@@ -3,8 +3,9 @@
 //
 //   camera / sources / reach changed  →  bake (PASS 1) + draw
 //   pointer / glyph / theme changed   →  draw only (PASS 2)
-//   glyph = mat                       →  no bake at all: the wind pass when its
-//                                        clock moved, then one fullscreen draw
+//   glyph = a SURFACE program         →  no bake at all: the program's own
+//   (the mat, packs/mat)                 prepare (its wind pass when its clock
+//                                        moved), then its one fullscreen draw
 //
 // The cursor is analytic inside PASS 2, so pointer motion never re-bakes.
 // `prepare()` uploads and bakes; `draw()` records the glyphs into a render
@@ -17,17 +18,17 @@
 import { storageBuffer, uniformBuffer } from "../engine/pipeline";
 import type { ShaderPart } from "../engine/shader";
 import { atlasGeom, fineAlpha, fineSchedule, lod, rungCounts, type Lod, type RungCount } from "../lattice/lod";
+import type { GroundTheme } from "../theme";
 import { BakePass } from "./bake-pass";
-import { GlyphPass, type GlyphSources } from "./glyph-pass";
+import { GlyphPass } from "./glyph-pass";
 import { Card, DEFAULT_FIELD_CONFIG, dressConfig, MAX_SOURCES, Uniforms, packSources, uniformValues, type FieldConfig, type FieldFrame, type FieldSource, glyphReachPx } from "./layout";
-import { STILL_MAT_FRAME } from "../mat/layout";
-import { MatPass } from "../mat/mat-pass";
-import type { MatShaders } from "../mat/shaders";
-import type { MatLight } from "../mat/night";
+import type { GlyphProgram, InstancedGlyph, SurfaceGlyph, SurfacePass } from "./program";
 
-export interface FieldShaders extends GlyphSources {
+/** The field's shader set: the shared modules (the portal chain, the field maths), the bake, and the glyph programs — the engine's dot, plus whatever an app registered. */
+export interface FieldShaders {
+  readonly modules: readonly ShaderPart[];
   readonly bake: ShaderPart;
-  readonly mat: MatShaders;
+  readonly glyphs: readonly GlyphProgram[];
 }
 
 export interface FieldStats {
@@ -40,9 +41,9 @@ export interface FieldStats {
   readonly sources: number;
   readonly k0: number;
   readonly fade: number;
-  /** The mat drew this frame (glyph "mat"); `wind` = its wind pass ran too. */
-  readonly mat: boolean;
-  readonly wind: boolean;
+  /** A SURFACE program drew this frame (by glyph name; the mat's); `aux` = its auxiliary pass ran too (the wind). */
+  readonly surface: string | null;
+  readonly aux: boolean;
 }
 
 export class Field {
@@ -54,16 +55,17 @@ export class Field {
   private bakeKey = Number.NaN;
   private bakes = 0;
   private forceBake = true;
-  private pending: { l: Lod; counts: readonly [RungCount, RungCount, RungCount]; baked: boolean; n: number; w: number; h: number; fineLive: number; mat: boolean; wind: boolean } | null = null;
-  private last: FieldStats = { baked: false, bakes: 0, instances: 0, fine: "off", atlasW: 0, atlasH: 0, sources: 0, k0: 0, fade: 0, mat: false, wind: false };
+  private pending: { l: Lod; counts: readonly [RungCount, RungCount, RungCount]; baked: boolean; n: number; w: number; h: number; fineLive: number; surface: string | null; aux: boolean } | null = null;
+  private last: FieldStats = { baked: false, bakes: 0, instances: 0, fine: "off", atlasW: 0, atlasH: 0, sources: 0, k0: 0, fade: 0, surface: null, aux: false };
 
   private readonly device: GPUDevice;
   readonly bake: BakePass;
   readonly glyphs: GlyphPass;
-  readonly mat: MatPass;
+  /** The registered SURFACE programs' slots, by glyph name (the mat's, `packs/mat` — `matPassOf(field)` reaches its plates). */
+  readonly surfaces: ReadonlyMap<string, SurfacePass>;
 
-  private constructor(device: GPUDevice, bake: BakePass, glyphs: GlyphPass, mat: MatPass) {
-    this.device = device; this.bake = bake; this.glyphs = glyphs; this.mat = mat;
+  private constructor(device: GPUDevice, bake: BakePass, glyphs: GlyphPass, surfaces: ReadonlyMap<string, SurfacePass>) {
+    this.device = device; this.bake = bake; this.glyphs = glyphs; this.surfaces = surfaces;
     this.uniformBuf = uniformBuffer(device, Uniforms.size, "field/uniforms");
     this.sourceBuf = storageBuffer(device, Card.size * MAX_SOURCES, "field/sources");
     bake.bind(this.uniformBuf, this.sourceBuf);
@@ -71,17 +73,21 @@ export class Field {
   }
 
   static async create(device: GPUDevice, format: GPUTextureFormat, shaders: FieldShaders, opts: { readableAtlas?: boolean } = {}): Promise<Field> {
-    const [bake, glyphs, mat] = await Promise.all([
+    const instanced = shaders.glyphs.filter((g): g is InstancedGlyph => g.kind === "instanced");
+    const surfaces = shaders.glyphs.filter((g): g is SurfaceGlyph => g.kind === "surface");
+    const seen = new Set<string>();
+    for (const g of shaders.glyphs) { if (seen.has(g.glyph)) throw new Error(`Field: the glyph "${g.glyph}" is registered twice`); seen.add(g.glyph); }
+    const [bake, glyphs, ...passes] = await Promise.all([
       BakePass.create(device, shaders.modules, shaders.bake, { readable: opts.readableAtlas ?? false }),
-      GlyphPass.create(device, format, shaders),
-      MatPass.create(device, format, shaders.mat),
+      GlyphPass.create(device, format, { modules: shaders.modules, glyphs: instanced }),
+      ...surfaces.map((s) => s.create(device, format, shaders.modules)),
     ]);
-    return new Field(device, bake, glyphs, mat);
+    return new Field(device, bake, glyphs, new Map(surfaces.map((s, i) => [s.glyph, passes[i] as SurfacePass])));
   }
 
-  /** A second slot on the same pipelines (no compile): its own buffers, atlas, wind target and bind groups; the plates are shared. */
+  /** A second slot on the same pipelines (no compile): its own buffers, atlas, surface slots and bind groups; the assets are shared. */
   spawn(): Field {
-    const f = new Field(this.device, this.bake.spawn(), this.glyphs.spawn(), this.mat.spawn());
+    const f = new Field(this.device, this.bake.spawn(), this.glyphs.spawn(), new Map([...this.surfaces].map(([k, s]) => [k, s.spawn()])));
     f.config = this.config;
     return f;
   }
@@ -91,8 +97,8 @@ export class Field {
 
   get stats(): FieldStats { return this.last; }
 
-  /** Upload this frame's uniforms and sources; re-bake the atlas if anything it depends on changed. `light` is the mat's (the theme's Sun or Moon); absent = the day. */
-  prepare(encoder: GPUCommandEncoder, frame: FieldFrame, sources: readonly FieldSource[], light?: MatLight): void {
+  /** Upload this frame's uniforms and sources; re-bake the atlas if anything it depends on changed. `theme` reaches a surface program's section (the mat's light). */
+  prepare(encoder: GPUCommandEncoder, frame: FieldFrame, sources: readonly FieldSource[], theme: GroundTheme): void {
     // the grid dressed for the slot's LOD zoom (a portal's arrival, a flight's landing or cut) — the identity for the root at rest
     const cfg = dressConfig(this.config, frame.view.zoom, frame.lodZoom);
     const l = lod(frame.view);
@@ -100,12 +106,13 @@ export class Field {
     const geom = atlasGeom(frame.view, l, glyphReachPx(cfg), fineLive);
     const counts = rungCounts(frame.view, l);
 
-    if (cfg.glyph === "mat") {
-      // The mat reads no atlas: nothing is packed, nothing is baked. The next
-      // glyph frame re-bakes whatever it finds.
-      const wind = this.mat.prepare(encoder, frame.view, cfg.fadeIn, cfg.mat, frame.mat ?? STILL_MAT_FRAME, frame.present, light);
+    const surface = this.surfaces.get(cfg.glyph);
+    if (surface !== undefined) {
+      // A surface program reads no atlas: nothing is packed, nothing is baked.
+      // The next glyph frame re-bakes whatever it finds.
+      const aux = surface.prepare(encoder, frame, cfg, theme);
       this.forceBake = true;
-      this.pending = { l, counts, baked: false, n: 0, w: this.bake.atlas.width, h: this.bake.atlas.height, fineLive, mat: true, wind };
+      this.pending = { l, counts, baked: false, n: 0, w: this.bake.atlas.width, h: this.bake.atlas.height, fineLive, surface: cfg.glyph, aux };
       return;
     }
 
@@ -129,31 +136,35 @@ export class Field {
       this.forceBake = false;
       this.bakes += 1;
     }
-    this.pending = { l, counts, baked: mustBake, n, w: geom.w, h: geom.h, fineLive, mat: false, wind: false };
+    this.pending = { l, counts, baked: mustBake, n, w: geom.w, h: geom.h, fineLive, surface: null, aux: false };
   }
 
   /** Record the glyphs into an open render pass. */
   draw(pass: GPURenderPassEncoder): FieldStats {
     const p = this.pending;
     if (!p) throw new Error("Field: prepare() before draw()");
-    if (p.mat) {
-      this.mat.draw(pass);
-      this.last = { baked: false, bakes: this.bakes, instances: 0, fine: "off", atlasW: p.w, atlasH: p.h, sources: 0, k0: p.l.k0, fade: p.l.fade, mat: true, wind: p.wind };
+    if (p.surface !== null) {
+      const s = this.surfaces.get(p.surface);
+      if (s === undefined) throw new Error(`Field: no surface program "${p.surface}"`);
+      s.draw(pass);
+      this.last = { baked: false, bakes: this.bakes, instances: 0, fine: "off", atlasW: p.w, atlasH: p.h, sources: 0, k0: p.l.k0, fade: p.l.fade, surface: p.surface, aux: p.aux };
       return this.last;
     }
-    const glyph = this.config.glyph === "needle" ? "needle" : "dot";
+    // an unregistered glyph name draws as the engine's dot — the ground never refuses a frame
+    const glyph = this.glyphs.has(this.config.glyph) ? this.config.glyph : "dot";
     const fine = fineSchedule(p.l, p.counts, this.config.fineSchedule, p.fineLive);
     // (the dressed fade-in already decided `fineLive` in prepare; the schedule and the glyph are the config's)
     this.glyphs.record(pass, { glyph, fine, counts: p.counts });
     this.last = {
       baked: p.baked, bakes: this.bakes, instances: this.glyphs.instances, fine,
-      atlasW: p.w, atlasH: p.h, sources: p.n, k0: p.l.k0, fade: p.l.fade, mat: false, wind: false,
+      atlasW: p.w, atlasH: p.h, sources: p.n, k0: p.l.k0, fade: p.l.fade, surface: null, aux: false,
     };
     return this.last;
   }
 
   dispose(): void {
-    this.bake.dispose(); this.glyphs.dispose(); this.mat.dispose();
+    this.bake.dispose(); this.glyphs.dispose();
+    for (const s of this.surfaces.values()) s.dispose();
     this.uniformBuf.destroy(); this.sourceBuf.destroy();
   }
 }

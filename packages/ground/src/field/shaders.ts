@@ -1,37 +1,41 @@
 // Assemble the field's shader parts from raw text. Both hosts call this — the
-// browser with `?raw` imports, the Node oracle with readFileSync — so the
-// composed WGSL is byte-identical between them.
+// browser with the generated text, the Node oracle with readFileSync — so the
+// composed WGSL is byte-identical between them. The engine's set carries ONE
+// glyph, the dot (design-014); the needle and the mat are packs an app
+// registers (`Ground.create({ grids })`).
 
 import type { ShaderPart } from "../engine/shader";
 import type { FieldShaders } from "./field";
-import { MAT_SHADER_FILES, type MatShaderText, matShaders } from "../mat/shaders";
+import type { InstancedGlyph } from "./program";
 
-export interface FieldShaderText extends MatShaderText {
+export interface FieldShaderText {
+  /** shaders/portal.wgsl — the portal clip every pass includes. */
+  readonly portal: string;
   readonly magnet: string;
   readonly bake: string;
   readonly glyphDot: string;
-  readonly glyphNeedle: string;
   readonly fineDot: string;
-  readonly fineNeedle: string;
 }
 
 export const FIELD_SHADER_FILES: Record<keyof FieldShaderText, string> = {
+  portal: "portal.wgsl",
   magnet: "field/magnet.wgsl",
   bake: "field/atlas-bake.wgsl",
   glyphDot: "field/glyph-dot.wgsl",
-  glyphNeedle: "field/glyph-needle.wgsl",
   fineDot: "field/fine-dot.wgsl",
-  fineNeedle: "field/fine-needle.wgsl",
-  ...MAT_SHADER_FILES,
 };
 
+const part = (label: string, text: string): ShaderPart => ({ label, text });
+
+/** The engine's glyph: the dot. */
+export const dotGlyph = (t: Pick<FieldShaderText, "glyphDot" | "fineDot">): InstancedGlyph => ({
+  kind: "instanced", glyph: "dot", entry: part("field/glyph-dot.wgsl", t.glyphDot), fine: part("field/fine-dot.wgsl", t.fineDot),
+});
+
 export function fieldShaders(t: FieldShaderText): FieldShaders {
-  const part = (label: string, text: string): ShaderPart => ({ label, text });
   return {
     modules: [part("portal.wgsl", t.portal), part("field/magnet.wgsl", t.magnet)],
     bake: part("field/atlas-bake.wgsl", t.bake),
-    glyph: { dot: part("field/glyph-dot.wgsl", t.glyphDot), needle: part("field/glyph-needle.wgsl", t.glyphNeedle) },
-    fine: { dot: part("field/fine-dot.wgsl", t.fineDot), needle: part("field/fine-needle.wgsl", t.fineNeedle) },
-    mat: matShaders(t),
+    glyphs: [dotGlyph(t)],
   };
 }

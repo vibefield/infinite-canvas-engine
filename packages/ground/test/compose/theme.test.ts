@@ -31,7 +31,7 @@ describe("theme (the engine's half)", () => {
     expect(() => cssColor("neutral-800")).toThrow();
   });
 
-  it("a colour literal has two homes — src/theme.ts (the engine's) and oracle/fixtures/vf-theme.ts (the product's, a fixture) — and none in the rest of src/, shaders/, the oracle and the groundlab app", () => {
+  it("a colour literal has three homes — src/theme.ts (the engine's), a pack's src/packs/*/theme.ts (design-014) and oracle/fixtures/vf-theme.ts (the product's, a fixture) — and none in the rest of src/, shaders/, the oracle and the groundlab app", () => {
     const offenders: string[] = [];
     const scan = (p: string) => {
       const text = readFileSync(p, "utf8");
@@ -43,7 +43,9 @@ describe("theme (the engine's half)", () => {
       });
     };
     // the ported tree only — the old composited leg beside it is B8's to delete, not this gate's to police
-    for (const d of ["engine", "lattice", "field", "card", "nav", "mat", "compose"]) for (const p of files(join(ground, "src", d), /\.ts$/)) scan(p);
+    // (a pack's own theme file IS a home: design-014 moved the mat's and the frame's colours there)
+    const packTheme = /[\\/]packs[\\/][^\\/]+[\\/]theme\.ts$/;
+    for (const d of ["engine", "lattice", "field", "card", "nav", "packs", "compose"]) for (const p of files(join(ground, "src", d), /\.ts$/)) if (!packTheme.test(p)) scan(p);
     scan(join(ground, "src/shaders.ts"));
     for (const p of files(join(ground, "shaders"), /\.wgsl$/)) scan(p);
     for (const p of files(resolve(ground, "../../apps/groundlab/src"), /\.ts$/)) scan(p);
@@ -51,13 +53,16 @@ describe("theme (the engine's half)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("names no colour inside the frame shader: every rgb it paints is a uniform or the record's surface", () => {
-    const wgsl = readFileSync(join(ground, "shaders/card/frame.wgsl"), "utf8").replace(/\/\/.*$/gm, "");
-    // a vec3f/vec4f literal with three equal non-zero components is a grey someone typed
-    // (black is the §5 shadow's colour and transparent is an accumulator's start — both are 0)
-    const greys = [...wgsl.matchAll(/vec[34]f\(\s*(\d*\.\d+)\s*,\s*\1\s*,\s*\1/g)].map((m) => m[1]).filter((v) => Number(v) !== 0);
-    expect(greys).toEqual([]);
-    expect(wgsl).not.toMatch(/vec3f\(\s*1\.0\s*\)/);
+  it("names no colour inside a card program's shader: every rgb it paints is a uniform or the record's surface", () => {
+    // the pack's frame (design-014 moved it under shaders/packs/) and the engine's own shell
+    for (const rel of ["shaders/packs/vf-frame/frame.wgsl", "shaders/card/shell.wgsl"]) {
+      const wgsl = readFileSync(join(ground, rel), "utf8").replace(/\/\/.*$/gm, "");
+      // a vec3f/vec4f literal with three equal non-zero components is a grey someone typed
+      // (black is the §5 shadow's colour and transparent is an accumulator's start — both are 0)
+      const greys = [...wgsl.matchAll(/vec[34]f\(\s*(\d*\.\d+)\s*,\s*\1\s*,\s*\1/g)].map((m) => m[1]).filter((v) => Number(v) !== 0);
+      expect(greys, rel).toEqual([]);
+      expect(wgsl, rel).not.toMatch(/vec3f\(\s*1\.0\s*\)/);
+    }
   });
 
   it("the presets and the window are the ground's own laws, derived from the needle", () => {
@@ -75,9 +80,12 @@ describe.skipIf(!existsSync(iceConfig))("the engine's grid defaults are ICE's ow
   const num = (b: string, key: string) => Number(must(new RegExp(`${key}:\\s*([-\\d.]+)`).exec(b))[1]);
   const str = (b: string, key: string) => must(new RegExp(`${key}:\\s*"([^"]+)"`).exec(b))[1];
 
-  it("DEFAULT_GRID_MAGNET_CONFIG: the glyph, the reach, the polarity, the alignment and the needle are ICE's", () => {
+  it("DEFAULT_GRID_MAGNET_CONFIG: the reach, the polarity, the alignment and the needle are ICE's — the GLYPH is the dot, ICE's old leg still the needle", () => {
     const b = block("DEFAULT_GRID_MAGNET_CONFIG");
-    expect(str(b, "glyph")).toBe(ENGINE_GRID.glyph);
+    // design-014 ruled the engine's default glyph to the DOT; the needle became a pack, and
+    // ICE's old-leg config keeps saying "needle" until B8 deletes that leg
+    expect(ENGINE_GRID.glyph).toBe("dot");
+    expect(str(b, "glyph")).toBe("needle");
     expect(num(b, "reach")).toBe(ENGINE_GRID.reach);
     expect(num(b, "polarity")).toBe(ENGINE_GRID.polarity);
     expect(/alwaysAlign:\s*false/.test(b)).toBe(!ENGINE_GRID.alwaysAlign);

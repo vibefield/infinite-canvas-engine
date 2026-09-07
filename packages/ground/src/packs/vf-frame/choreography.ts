@@ -1,23 +1,22 @@
-// The one place the card frame's motion design lives.
+// The one place VibeField's card frame motion design lives — the `vf-frame`
+// pack's choreography (design-014).
 //
 // Every window, easing and constant for the reveal, the delete, the lock and
 // the two buttons is here, and `resolve()` turns a card's motion state into the
-// GEOMETRY to draw this frame — plain floats. The shader never evaluates a
-// curve; the CPU hit-test and the tests call this same function, so nothing
-// can drift. (Lineage: research/sdf-card/src/motion/choreography.js.)
+// GEOMETRY to draw this frame — the engine's HEAD (geometry.ts `ShellGeometry`)
+// plus this pack's corner and button numbers, plain floats. The shader never
+// evaluates a curve; the CPU hit-test (sdf.ts) and the tests call this same
+// function, so nothing can drift. (Lineage: research/sdf-card/src/motion/
+// choreography.js; the engine's card/choreography.ts before design-014.)
 //
 // Units are card units (= world units here). reveal r: 0 idle → 1 selected.
 // delete d: 0 → 1 gone.
 
-import { LIFT, SHADOW } from "../theme";
+import { clamp01, easeInCubic, easeInOutCubic, easeOutBack, easeOutCubic, MATERIAL, type Material, mix, type Motion, REST, type ShellGeometry, win } from "../../card/geometry";
 import type { Corner4, FrameStyle } from "./sheet";
 
-/** The §5 shadow recipe and the §7 lift numbers, as `resolve()` reads them — theme.ts's by default, a host's tweak otherwise. */
-export interface Material {
-  readonly shadow: { readonly rest: { readonly sigma: number; readonly offset: number; readonly alpha: number }; readonly lifted: { readonly sigma: number; readonly offset: number; readonly alpha: number } };
-  readonly lift: { readonly scale: number; readonly opacity: number };
-}
-export const MATERIAL: Material = { shadow: SHADOW, lift: LIFT };
+export type { CardRect, Material, Motion } from "../../card/geometry";
+export { MATERIAL, REST, IDLE, win, easeOutCubic, easeInCubic, easeInOutCubic, easeOutBack } from "../../card/geometry";
 
 export const REVEAL = {
   thickness: [0.0, 0.5] as const,            // the border grows out of nothing
@@ -42,93 +41,33 @@ export const DELETE = {
 
 export const BUTTON = { hoverSwell: 0.07, pressSquash: 0.06, glyphDesignR: 35.2 };
 
-export const win = (r: number, lo: number, hi: number) => Math.min(Math.max((r - lo) / Math.max(hi - lo, 1e-4), 0), 1);
-export const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
-export const easeInCubic = (x: number) => x * x * x;
-export const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
-export const easeOutBack = (x: number) => { const c1 = 1.70158; const c3 = c1 + 1; const u = x - 1; return 1 + c3 * u ** 3 + c1 * u ** 2; };
-const mix = (a: number, b: number, t: number) => a + (b - a) * t;
-const clamp01 = (x: number) => Math.min(Math.max(x, 0), 1);
-
-export interface Motion {
-  readonly reveal: number;
-  readonly del: number;
-  readonly grow: number;      // 1: content pinned, chrome blooms outward; 0: outer pinned
-  readonly stagger: number;
+/** The engine's motion plus this pack's own springs: the two buttons' hover and press, the lock's state. */
+export interface VfMotion extends Motion {
   readonly hoverC: number;    // close button hover 0..1
   readonly pressC: number;
   readonly hoverK: number;    // lock button hover 0..1
   readonly pressK: number;
   readonly lockOpen: number;  // 0 locked .. 1 open
   readonly lockVel: number;   // squash-and-stretch source
-  /**
-   * §7 lift, 0 resting → 1 held (grab or armed hold). Drives the §5 shadow
-   * recipe (resting → lifted) and the 0.75 hold opacity; `lift` below is the
-   * scale the host derived from the same number.
-   */
-  readonly held: number;
-  /**
-   * Scale about the centre. 1 at rest — an idle card IS its rect. The study's
-   * 0.985→1 reveal scale is retired: lift belongs to the host's lift driver
-   * (ChromeSettings.liftScale), the one number the DOM card and the compositor
-   * quad already share, and it is fed in here so the frame cannot disagree.
-   */
-  readonly lift: number;
-  /**
-   * §7 the overlap HEAT (GLOW.md) — the light a lifted card casts on this one.
-   * `hot` is the light's presence 0..1 (a spring on the drop signal), `hotTier`
-   * 0 reject … 1 accept, and the SOURCE is the lifted card's silhouette in card
-   * units — centre `hotAt`, half extents `hotHalf`, corner radius `hotR` — held
-   * on clear so the fade-out has a place.
-   */
-  readonly hot: number;
-  readonly hotTier: number;
-  readonly hotAt: readonly [number, number];
-  readonly hotHalf: readonly [number, number];
-  readonly hotR: number;
 }
 
-export const REST: Motion = Object.freeze({
-  reveal: 1, del: 0, grow: 1, stagger: 1,
-  hoverC: 0, pressC: 0, hoverK: 0, pressK: 0, lockOpen: 0, lockVel: 0, held: 0, lift: 1,
-  hot: 0, hotTier: 0, hotAt: [0, 0] as const, hotHalf: [0, 0] as const, hotR: 0,
-});
+export const VF_REST: VfMotion = Object.freeze({ ...REST, hoverC: 0, pressC: 0, hoverK: 0, pressK: 0, lockOpen: 0, lockVel: 0 });
+export const VF_IDLE: VfMotion = Object.freeze({ ...VF_REST, reveal: 0 });
 
-export const IDLE: Motion = Object.freeze({ ...REST, reveal: 0 });
-
-export interface CardRect {
-  readonly centre: readonly [number, number];
-  /** The CONTENT half extents — the widget's own rect. The chrome grows around it. */
-  readonly contentHalf: readonly [number, number];
-  /** The content's corner radius; the style's `baseR` when absent. */
-  readonly radius?: number;
-}
-
-/** Resolved geometry: everything the frame shader reads, all in card units. */
-export interface Geometry {
-  readonly centre: readonly [number, number];
-  readonly half: readonly [number, number];
-  readonly outerR: number;
-  readonly ih: readonly [number, number];
+/** Resolved geometry: the engine's head, and everything this pack's shader reads from its tail, all in card units. */
+export interface VfGeometry extends ShellGeometry {
   readonly baseR: Corner4;
-  readonly scale: number;
   readonly nw: Corner4; readonly nh: Corner4; readonly rho: Corner4; readonly rfH: Corner4; readonly rfV: Corner4;
   readonly closeC: readonly [number, number];
   readonly closeR: number; readonly closeGlyphW: number; readonly closeGlyphR: number;
   readonly lockC: readonly [number, number];
   readonly lockR: number; readonly lockGlyphScale: number; readonly lockOpen: number; readonly lockSquash: number;
   readonly hoverC: number; readonly hoverK: number;
-  readonly shadowSigma: number; readonly shadowOffset: number; readonly shadowAlpha: number;
-  readonly frameAlpha: number;
-  /** The §7 sole-selection ring's presence, 0..1. */
-  readonly ring: number;
-  /** The §7 heat as the record carries it: the source's centre xy (card units), presence, tier — `Motion`'s, clamped. */
-  readonly hot: readonly [number, number, number, number];
-  /** The source's silhouette: half extents xy, corner radius, 0. */
-  readonly src: readonly [number, number, number, number];
 }
+/** The pack's geometry under the name the tests, the oracle and the lab have always used. */
+export type Geometry = VfGeometry;
 
-export function resolve(P: FrameStyle, card: CardRect, m: Motion = REST, mat: Material = MATERIAL): Geometry {
+export function resolve(P: FrameStyle, card: { readonly centre: readonly [number, number]; readonly contentHalf: readonly [number, number]; readonly radius?: number }, m: VfMotion = VF_REST, mat: Material = MATERIAL): VfGeometry {
   const r = m.reveal;
   const d = m.del;
   const grow = m.grow;
@@ -201,7 +140,7 @@ export function resolve(P: FrameStyle, card: CardRect, m: Motion = REST, mat: Ma
   const ring = retract * easeOutCubic(win(r, ...REVEAL.ring));
 
   return {
-    centre: card.centre, half, outerR, ih, baseR: baseRs, scale,
+    centre: card.centre, half, outerR, ih, radius: baseRs[0], baseR: baseRs, scale,
     nw: corner(P.nw), nh: corner(P.nh), rho: corner(P.rho), rfH: corner(P.rfH), rfV: corner(P.rfV),
     closeC, closeR: P.btn.radius * bs * scale,
     closeGlyphW: P.btn.glyphW * bs * scale, closeGlyphR: P.btn.glyphR * bs * scale,
@@ -212,7 +151,21 @@ export function resolve(P: FrameStyle, card: CardRect, m: Motion = REST, mat: Ma
     shadowSigma, shadowOffset, shadowAlpha,
     frameAlpha: mix(1, mat.lift.opacity, held),
     ring,
+    hover: clamp01(m.hover),
     hot: [m.hotAt[0], m.hotAt[1], clamp01(m.hot), clamp01(m.hotTier)],
     src: [m.hotHalf[0], m.hotHalf[1], m.hotR, 0],
   };
 }
+
+/** The pack's TAIL, packed in the order frame.wgsl reads it (10 vec4 slots). */
+export function tailOf(G: VfGeometry): number[] {
+  return [
+    ...G.nw, ...G.nh, ...G.rho, ...G.rfH, ...G.rfV, ...G.baseR,
+    G.closeC[0], G.closeC[1], G.closeR, G.closeGlyphW,
+    G.lockC[0], G.lockC[1], G.lockR, G.lockGlyphScale,
+    G.closeGlyphR, G.lockOpen, G.lockSquash, G.hoverC,
+    G.hoverK, 0, 0, 0,
+  ];
+}
+/** The tail's slot count — what `CardProgram.ext` declares. */
+export const VF_EXT = 10;

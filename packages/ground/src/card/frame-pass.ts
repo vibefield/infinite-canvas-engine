@@ -6,14 +6,21 @@
 // first (`spawn()` — a nav flight's departed frames). `prepare()` uploads
 // this frame's records and splits them into runs; `draw()` records the runs
 // into an open render pass.
+//
+// The pass is compiled for ONE card program (design-014): the record and the
+// uniform block are built for its tail and uniform slots, its WGSL part is
+// composed in beside the engine's, and `prepare` packs each record's tail
+// and the uniform slots through it. The engine's program is the shell.
 
 import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
 import { compile, compose, type ShaderPart } from "../engine/shader";
-import type { Geometry } from "./choreography";
+import type { StructBuffer, StructDef } from "../engine/struct";
 import type { Presentation } from "../nav/portal";
-import { HEAT, LINES, type GroundTheme, type Heat, type RGB } from "../theme";
+import { LINES, type GroundTheme, type RGB } from "../theme";
 import { type FrameContent, type FrameRun, runsOf } from "./content";
-import { Frame, FrameUniforms, MAX_FRAMES, frameUniformValues, frameValues } from "./layout";
+import type { ShellGeometry } from "./geometry";
+import { CARD_ABI, type CardProgram, shellProgram } from "./program";
+import { type FrameField, type FrameUniformsField, frameStruct, frameUniformStruct, MAX_FRAMES, frameUniformValues, frameValues } from "./layout";
 
 /** Premultiplied "source over". */
 const BLEND_PREMUL: GPUBlendState = {
@@ -22,20 +29,24 @@ const BLEND_PREMUL: GPUBlendState = {
 };
 
 export interface FrameShaders {
-  readonly modules: readonly ShaderPart[];   // portal, primitives, frame
-  readonly entry: ShaderPart;                // frame-pass
+  readonly modules: readonly ShaderPart[];   // portal, primitives, card
+  readonly entry: ShaderPart;                // card-pass
 }
 
-export interface FrameInstance {
-  readonly geometry: Geometry;
+export interface FrameInstance<G extends ShellGeometry = ShellGeometry> {
+  /** The card's geometry as the pass's program resolved it — the head the engine packs, and whatever the program packs into its tail. */
+  readonly geometry: G;
   /** The card's committed surface (§2.2) — its own colour in either theme; the PLATE under any content. */
   readonly surface: RGB;
   /** What the interior shows (content.ts); absent = the plate. */
   readonly content?: FrameContent | undefined;
 }
 
-/** What every slot shares: the pipelines, the sampler, the page array (versioned — a slot rebinds when it changes), the own-texture groups. */
+/** What every slot shares: the program and its structs, the pipelines, the sampler, the page array (versioned — a slot rebinds when it changes), the own-texture groups. */
 interface FrameShared {
+  readonly program: CardProgram<ShellGeometry>;
+  readonly frame: StructDef<FrameField>;
+  readonly uniformsDef: StructDef<FrameUniformsField>;
   readonly layout0: GPUBindGroupLayout;
   readonly layout1: GPUBindGroupLayout;
   readonly pipeline: { readonly plain: GPURenderPipeline; readonly srgb: GPURenderPipeline };
@@ -50,8 +61,8 @@ interface FrameShared {
 
 export class FramePass {
   readonly name = "card/frames";
-  private readonly uniforms = FrameUniforms.alloc(1);
-  private readonly records = Frame.alloc(MAX_FRAMES);
+  private readonly uniforms: StructBuffer<FrameUniformsField>;
+  private readonly records: StructBuffer<FrameField>;
   private readonly uniformBuf: GPUBuffer;
   private readonly recordBuf: GPUBuffer;
   private group0!: GPUBindGroup;
@@ -61,19 +72,25 @@ export class FramePass {
   exact = false;
   /** §2.3 / §7 line weights, card units — theme.ts's unless a host tweaks them. */
   lines: { readonly hairline: number; readonly ring: number } = LINES;
-  /** §7 the overlap heat's knobs (GLOW.md) — theme.ts's unless a host tweaks them. */
-  heat: Heat = HEAT;
   private readonly device: GPUDevice;
   private readonly shared: FrameShared;
 
   private constructor(device: GPUDevice, shared: FrameShared) {
     this.device = device; this.shared = shared;
-    this.uniformBuf = uniformBuffer(device, FrameUniforms.size, "card/uniforms");
-    this.recordBuf = storageBuffer(device, Frame.size * MAX_FRAMES, "card/frames");
+    this.uniforms = shared.uniformsDef.alloc(1);
+    this.records = shared.frame.alloc(MAX_FRAMES);
+    this.uniformBuf = uniformBuffer(device, shared.uniformsDef.size, "card/uniforms");
+    this.recordBuf = storageBuffer(device, shared.frame.size * MAX_FRAMES, "card/frames");
     this.rebind();
   }
 
-  static async create(device: GPUDevice, format: GPUTextureFormat, src: FrameShaders): Promise<FramePass> {
+  /** The card program this pass was compiled for. */
+  get program(): CardProgram<ShellGeometry> { return this.shared.program; }
+
+  static async create(device: GPUDevice, format: GPUTextureFormat, src: FrameShaders, program: CardProgram<ShellGeometry> = shellProgram): Promise<FramePass> {
+    if (program.abi !== CARD_ABI) throw new Error(`card/frames: the program "${program.name}" was written against record ABI ${program.abi}; this engine is ${CARD_ABI}`);
+    const frame = frameStruct(program.ext);
+    const uniformsDef = frameUniformStruct(program.uniforms);
     const layout0 = bindLayout(device, [
       { binding: 0, stages: ["vertex", "fragment"], buffer: "uniform" },
       { binding: 1, stages: ["vertex", "fragment"], buffer: "read-only-storage" },
@@ -81,7 +98,7 @@ export class FramePass {
       { binding: 3, stages: ["fragment"], sampler: "filtering" },
     ], "card/frames");
     const layout1 = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }], "card/own");
-    const module = await compile(device, compose({ structs: [Frame, FrameUniforms], modules: src.modules, entry: src.entry }));
+    const module = await compile(device, compose({ structs: [frame, uniformsDef], modules: [...src.modules, program.shader], entry: src.entry }));
     const layout = device.createPipelineLayout({ bindGroupLayouts: [layout0, layout1] });
     const [plain, srgb] = await Promise.all([
       renderPipeline(device, { label: "card/frames", layout, module, format, blend: BLEND_PREMUL, constants: { ENCODE_SRGB: 0 } }),
@@ -94,6 +111,7 @@ export class FramePass {
     device.queue.writeTexture({ texture: dummyOwnTex }, clear, { bytesPerRow: 4 }, [1, 1]);
     const dummyPages = dummyPagesTex.createView({ dimension: "2d-array" });
     const shared: FrameShared = {
+      program, frame, uniformsDef,
       layout0, layout1, pipeline: { plain, srgb },
       sampler: device.createSampler({ label: "card/content", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
       dummyPages, dummyOwn: dummyOwnTex.createView(), pages: dummyPages, version: 0, ownGroups: new WeakMap(),
@@ -101,10 +119,10 @@ export class FramePass {
     return new FramePass(device, shared);
   }
 
-  /** A second record buffer on the same pipelines — a nav flight's DEPARTED frames. Copies the tuning; shares the pages. */
+  /** A second record buffer on the same pipelines — a nav flight's DEPARTED frames. Copies the tuning; shares the pages and the program. */
   spawn(): FramePass {
     const p = new FramePass(this.device, this.shared);
-    p.exact = this.exact; p.lines = this.lines; p.heat = this.heat;
+    p.exact = this.exact; p.lines = this.lines;
     return p;
   }
 
@@ -134,8 +152,9 @@ export class FramePass {
   prepare(view: { camX: number; camY: number; zoom: number; dpr: number; width: number; height: number }, theme: GroundTheme, instances: readonly FrameInstance[], present?: Presentation): number {
     this.rebind();
     const n = Math.min(instances.length, MAX_FRAMES);
-    for (let i = 0; i < n; i++) { const f = instances[i] as FrameInstance; this.records.set(frameValues(f.geometry, f.surface, f.content), i); }
-    this.uniforms.set(frameUniformValues(view, theme, this.exact, this.lines, present, this.heat));
+    const program = this.shared.program;
+    for (let i = 0; i < n; i++) { const f = instances[i] as FrameInstance; this.records.set(frameValues(f.geometry, f.surface, f.content, program.tail(f.geometry)), i); }
+    this.uniforms.set(frameUniformValues(view, theme, this.exact, this.lines, present, program.uniformValues(theme)));
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
     if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
     this.count = n;

@@ -16,9 +16,13 @@
 // chrome and mat materials — is `src/theme.ts`. Transcribed 2026-09-01; split
 // out 2026-09-07.
 
+import { MAT_THEME_SOURCE } from "../../src/packs/mat";
+import { VF_THEME_SOURCE, type VfPalette } from "../../src/packs/vf-frame";
 import { ENGINE_GRID, type GroundTheme, type Palette, type RGB, rgb, themeFrom, type ThemeName } from "../../src/theme";
 
-export const PALETTE: Record<ThemeName, Palette> = {
+/** VibeField's palette: the head's five roles and the frame pack's ten. */
+export type VfFullPalette = Palette & VfPalette;
+export const PALETTE: Record<ThemeName, VfFullPalette> = {
   light: {
     canvasBg: { token: "--vf-canvas-bg", css: "#fafafa" },
     fieldInk: { token: "--vf-canvas-magnet-ink", css: "#a6a6a6" },
@@ -98,7 +102,9 @@ export const PRODUCT_GRID = {
 } as const;
 
 /** VibeField's two themes, as the passes read them. */
+/** The product's packs, for the theme: the frame's inks and heat colours, the mat's two lights. */
+export const VF_PACKS = [VF_THEME_SOURCE, MAT_THEME_SOURCE] as const;
 export const THEMES: Record<ThemeName, GroundTheme> = {
-  light: themeFrom("light", PALETTE.light, PRODUCT_GRID),
-  dark: themeFrom("dark", PALETTE.dark, PRODUCT_GRID),
+  light: themeFrom("light", PALETTE.light, PRODUCT_GRID, VF_PACKS),
+  dark: themeFrom("dark", PALETTE.dark, PRODUCT_GRID, VF_PACKS),
 };

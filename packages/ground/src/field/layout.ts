@@ -5,7 +5,6 @@
 import { defineStruct } from "../engine/struct";
 import { atlasGeom, boxValues, type FadeIn, fineAlpha, lod, rungCounts, type View } from "../lattice/lod";
 import { ENGINE_GRID, type RGB } from "../theme";
-import { DEFAULT_MAT_CONFIG, type MatConfig, type MatFrame } from "../mat/layout";
 import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../nav/portal";
 
 export const Uniforms = defineStruct("Uniforms", [
@@ -56,8 +55,8 @@ export function normaliseRange(r: GlyphRange): GlyphRange {
   return [lo, hi];
 }
 
-/** The three grids: two glyphs on the magnet lattice, and the cutting mat (lines on the same lattice, no field). */
-export type GridGlyph = "dot" | "needle" | "mat";
+/** A glyph by name: the engine's `dot`, or a registered grid program's (`needle`, `mat` — packs/). */
+export type GridGlyph = string;
 
 export interface FieldConfig {
   readonly glyph: GridGlyph;
@@ -83,8 +82,8 @@ export interface FieldConfig {
   /** The product's `dotAlpha`; the glyph shaders scale their rest/field alphas by it. */
   readonly inkAlpha: number;
   readonly fineSchedule: "auto" | "instanced" | "fullscreen";
-  /** The cutting mat's tuning (mat/layout.ts) — theme.ts's numbers unless a host tweaks them. */
-  readonly mat: MatConfig;
+  /** A grid program's own config, by glyph name (the mat's gobo, plate and wind: `ext.mat`); absent = the program's defaults. */
+  readonly ext?: Readonly<Record<string, unknown>>;
 }
 
 export interface FieldFrame {
@@ -98,8 +97,8 @@ export interface FieldFrame {
    * view's zoom: the root at rest, dressed for where it is.
    */
   readonly lodZoom?: number;
-  /** The mat's clocks and tilt for this frame; absent = a still (STILL_MAT_FRAME). */
-  readonly mat?: MatFrame;
+  /** A grid program's per-frame clocks, by glyph name (the mat's time, gobo time, tilt: `ext.mat`); absent = a still. */
+  readonly ext?: Readonly<Record<string, unknown>>;
   /** Opacity and the portal clip (nav/portal.ts); absent = everything, at full strength. */
   readonly present?: Presentation;
 }
@@ -111,7 +110,6 @@ export const DEFAULT_FIELD_CONFIG: FieldConfig = {
   fadeIn: ENGINE_GRID.fadeIn,
   polarity: ENGINE_GRID.polarity, alwaysAlign: ENGINE_GRID.alwaysAlign,
   ink: ENGINE_GRID.ink.rgb, inkAlpha: ENGINE_GRID.dotAlpha, fineSchedule: "auto",
-  mat: DEFAULT_MAT_CONFIG,
 };
 
 /** The floors a dressed preset keeps, CSS px: a glyph never vanishes into the AA (dot radius, needle half-length, half-width). */

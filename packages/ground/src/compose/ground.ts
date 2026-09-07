@@ -34,7 +34,10 @@ import { surface, type Surface } from "../engine/device";
 import { beginPass } from "../engine/target";
 import { Field, type FieldShaders, type FieldStats } from "../field/field";
 import type { FieldConfig, FieldFrame, FieldSource } from "../field/layout";
+import type { GlyphProgram } from "../field/program";
 import { FramePass, type FrameInstance, type FrameShaders } from "../card/frame-pass";
+import type { ShellGeometry } from "../card/geometry";
+import { type CardProgram, shellProgram } from "../card/program";
 import { FillPass, type FillShaders } from "../nav/fill-pass";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "../nav/portal";
 import { boxOf } from "../lattice/lod";
@@ -52,6 +55,10 @@ export interface GroundOptions {
   readonly frames: FrameShaders;
   /** The portal fill (nav/fill-pass.ts). */
   readonly fill: FillShaders;
+  /** The card program (design-014): the engine's shell unless an app registers its own (`vfFrame()`). */
+  readonly card?: CardProgram<ShellGeometry>;
+  /** Grid programs beyond the engine's dot (`needleGlyph`, `cuttingMat`). */
+  readonly grids?: readonly GlyphProgram[];
 }
 
 /** One frame's ground: its camera, grid, sources, cards and presentation — the root's, a departed frame's, or a container's inside. */
@@ -209,7 +216,7 @@ export interface PreparedFrame {
 }
 
 /** The tuning every slot copies from the root's frame pass each frame. */
-const tuneFrom = (from: FramePass, to: FramePass): void => { to.exact = from.exact; to.lines = from.lines; to.heat = from.heat; };
+const tuneFrom = (from: FramePass, to: FramePass): void => { to.exact = from.exact; to.lines = from.lines; };
 
 /**
  * Upload one frame's records into its slots — the root's, each live portal's
@@ -228,7 +235,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
   const prepare = (s: SlotSet, inp: SlotInputs, fillColour: RGB, fillPresent: Presentation | undefined, grow: number, skipAt?: number): { n: number; slot: DrawSlot } => {
     if (inp.config) s.field.config = inp.config;
     tuneFrom(root.frames, s.frames);
-    s.field.prepare(encoder, inp, inp.sources, theme.matLight);
+    s.field.prepare(encoder, inp, inp.sources, theme);
     const n = s.frames.prepare(inp.view, theme, inp.frames, inp.present);
     let fill: FillPass | undefined;
     if (fillPresent?.portal && visible(fillPresent)) { s.fill.prepare(inp.view, fillColour, fillPresent, grow); fill = s.fill; }
@@ -285,12 +292,15 @@ export class Ground {
   static async create(opts: GroundOptions): Promise<Ground> {
     const surf = surface(opts.device, opts.canvas);
     const [field, frames, fill] = await Promise.all([
-      Field.create(opts.device, surf.format, opts.field),
-      FramePass.create(opts.device, surf.format, opts.frames),
+      Field.create(opts.device, surf.format, { ...opts.field, glyphs: [...opts.field.glyphs, ...(opts.grids ?? [])] }),
+      FramePass.create(opts.device, surf.format, opts.frames, opts.card ?? shellProgram),
       FillPass.create(opts.device, surf.format, opts.fill),
     ]);
     return new Ground(opts.device, surf, field, frames, fill);
   }
+
+  /** The card program the frames draw through. */
+  get card(): CardProgram<ShellGeometry> { return this.frames.program; }
 
   set fieldConfig(cfg: FieldConfig) { this.field.config = cfg; }
   get fieldConfig(): FieldConfig { return this.field.config; }

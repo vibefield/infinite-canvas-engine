@@ -55,12 +55,12 @@ import {
   type FramePreviewStore,
   type World,
 } from "@ice/core";
-import { type Geometry, type Material, MATERIAL, REST, resolve } from "../card/choreography";
 import { type PortalFace, portalContent } from "../card/content";
 import type { FrameInstance } from "../card/frame-pass";
+import { type Material, MATERIAL, REST, SHELL_RADIUS, type ShellGeometry } from "../card/geometry";
 import { MAX_FRAMES } from "../card/layout";
-import { type CardMotion, MOTION_DEFAULTS, type MotionInputs, type MotionTuning, newMotion, stepMotion, toMotion } from "../card/motion";
-import { type FrameStyle, PRODUCT, PRODUCT_CORNER } from "../card/sheet";
+import { type CardMotion, MOTION_DEFAULTS, type MotionTuning, newMotion, stepMotion, toMotion } from "../card/motion";
+import { type CardProgram, NO_PART, shellProgram } from "../card/program";
 import { type FieldConfig, type FieldSource, fieldReachPx, MAX_SOURCES } from "../field/layout";
 import type { CameraState, Rect } from "../nav/flight";
 import { FOLDER_FACE, type LivePortal, PORTAL_CAP, PORTAL_GATE, portalAt } from "../nav/portal";
@@ -68,8 +68,8 @@ import type { GroundTheme } from "../theme";
 import type { PortalInputs } from "./ground";
 
 export interface FrameBuilderOptions {
-  /** The card frame's style; the product's composed corners by default. */
-  readonly style?: FrameStyle;
+  /** The card program (design-014) the cards resolve through; the engine's shell by default. */
+  readonly program?: CardProgram<ShellGeometry>;
   /** The §5 shadow recipe and the §7 lift numbers; theme.ts's by default. */
   readonly material?: Material;
   /** The springs' tuning; `MOTION_DEFAULTS`. */
@@ -82,7 +82,7 @@ export interface FrameBuilderOptions {
   readonly liftScale?: number;
   /** Every card's field strength; 1. */
   readonly sourceStrength?: number;
-  /** The card's content corner radius, card units; `PRODUCT_CORNER.radius`. */
+  /** The card's content corner radius, card units; the shell's `SHELL_RADIUS`. */
   readonly radius?: number;
   /** The face's corner radius when a container authors portal insets; `FOLDER_FACE.radius`. */
   readonly faceRadius?: number;
@@ -150,8 +150,8 @@ export interface FrameBuilder {
   observe(wake: (reason: WakeReason) => void): () => void;
   /** How many times each fact has dirtied the builder since creation — the churn instrument's other half. */
   wakes(): Readonly<Record<WakeReason, number>>;
-  /** The last build's geometry for an entity (the rig's witness; the hit test at B3b). */
-  geometryOf(e: Entity): Geometry | undefined;
+  /** The last build's geometry for an entity (the rig's witness; the hit test at B3b) — the program's, on the engine's head. */
+  geometryOf(e: Entity): ShellGeometry | undefined;
   /** The last build's motion state for an entity — flux, never a world fact. */
   motionOf(e: Entity): CardMotion | undefined;
   stats(): FrameBuilderStats;
@@ -163,9 +163,8 @@ export type WakeReason = "world" | "removed" | "reset" | "order" | "chrome" | "p
 const WAKE_REASONS: readonly WakeReason[] = ["world", "removed", "reset", "order", "chrome", "preview"];
 
 /** A card's silhouette as the field and the heat see it: centre, half extents, corner radius (world units). */
-export interface Silhouette { readonly x: number; readonly y: number; readonly hx: number; readonly hy: number; readonly r: number }
+export interface LightSilhouette { readonly x: number; readonly y: number; readonly hx: number; readonly hy: number; readonly r: number }
 
-const NO_BUTTONS: MotionInputs = { hoverClose: false, hoverLock: false, pressClose: false, pressLock: false };
 const EMPTY_STATS: FrameBuilderStats = { active: 0, cards: 0, containers: 0, portals: 0, inside: 0, capped: 0, truncated: 0, live: false };
 
 // Widgets carry PrefabId (the preview store's own membership test); Active = a ChildOf root in the current nav frame.
@@ -186,16 +185,15 @@ export function sizeOf(world: World, e: Entity): { readonly w: number; readonly 
  * union is one source (design-013 Q14's lean). `null` when no recognizer
  * targets the card or the bounds are empty (a stale tag mid-teardown).
  */
-export function heatSourceOf(world: World, target: Entity, style: FrameStyle, radius: number, lift: number): Silhouette | null {
+export function heatSourceOf(world: World, target: Entity, program: CardProgram<ShellGeometry>, radius: number, lift: number): LightSilhouette | null {
   for (const rec of world.getReverse(target, DropTarget)) {
     const b = world.get(rec, DragBounds);
     if (b === undefined) continue;
     const w = b.maxX - b.minX;
     const h = b.maxY - b.minY;
     if (!(w > 0) || !(h > 0)) continue;
-    const T = style.thickness;
-    const Ro = style.outerR ?? radius + T;
-    return { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, hx: (w / 2 + T) * lift, hy: (h / 2 + T) * lift, r: Ro * lift };
+    const s = program.source(w, h, lift, radius);
+    return { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, hx: s.hx, hy: s.hy, r: s.r };
   }
   return null;
 }
@@ -214,7 +212,7 @@ export function faceOfSnapshot(pos: { readonly x: number; readonly y: number }, 
 }
 
 /** A geometry's silhouette as a field source under `cam` — screen CSS px (field/layout.ts `FieldSource`). */
-export function fieldSourceOf(G: Geometry, cam: CameraState, strength: number): FieldSource {
+export function fieldSourceOf(G: ShellGeometry, cam: CameraState, strength: number): FieldSource {
   const z = cam.zoom;
   return { cx: (G.centre[0] - cam.x) * z, cy: (G.centre[1] - cam.y) * z, hx: G.half[0] * z, hy: G.half[1] * z, r: G.outerR * z, strength };
 }
@@ -238,23 +236,23 @@ export function offscreen(centre: readonly [number, number], contentHalf: readon
 
 interface CardState {
   readonly motion: CardMotion;
-  geometry: Geometry | null;
+  geometry: ShellGeometry | null;
   /** The preview subscription, while the card is a container the builder watches. */
   unsub?: (() => void) | undefined;
 }
 
 interface Row {
   readonly e: Entity;
-  readonly G: Geometry;
+  readonly G: ShellGeometry;
   readonly portal?: { readonly K: Rect; readonly r: number; readonly live: LivePortal; readonly snap: FramePreviewSnapshot } | undefined;
 }
 
 export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {}): FrameBuilder {
-  const style = opts.style ?? PRODUCT;
+  const program = opts.program ?? shellProgram;
   const material = opts.material ?? MATERIAL;
   const tuning = opts.motion ?? MOTION_DEFAULTS;
   const strength = opts.sourceStrength ?? 1;
-  const radius = opts.radius ?? PRODUCT_CORNER.radius;
+  const radius = opts.radius ?? SHELL_RADIUS;
   const faceR = opts.faceRadius ?? FOLDER_FACE.radius;
   const gate = opts.gate ?? PORTAL_GATE;
   const cap = opts.portalCap ?? PORTAL_CAP;
@@ -267,8 +265,8 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
   // The journal of every fact a build reads — value writes, adds, removals and despawns of the
   // components, membership flips of the tags. `coarse: false`: no writer of these pokes raw columns.
   const collector = world.changes.collect({
-    components: [Position, Size, MeasuredSize, Grab, DragBounds],
-    tags: [Selected, OverlapCandidate, OverlapRejected, Active, Container],
+    components: [Position, Size, MeasuredSize, Grab, DragBounds, ...(program.reads?.components ?? [])],
+    tags: [Selected, OverlapCandidate, OverlapRejected, Active, Container, ...(program.reads?.tags ?? [])],
     coarse: false,
   });
   let stats: FrameBuilderStats = EMPTY_STATS;
@@ -276,15 +274,16 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
 
   const liftScale = (): number => opts.liftScale ?? world.getResource(ChromeSettings)?.liftScale ?? 1;
 
-  /** The cull margin, world units: the lifted shadow's reach or the field's, whichever is wider. */
+  /** The cull margin, world units: the lifted shadow's reach or the field's, whichever is wider (a band's thickness rides the program's source). */
   const marginOf = (config: FieldConfig, zoom: number): number => {
-    const shadow = material.shadow.lifted.sigma * 3 + material.shadow.lifted.offset + style.thickness;
+    const shadow = material.shadow.lifted.sigma * 3 + material.shadow.lifted.offset + program.source(0, 0, 1, radius).hx;
     const reach = fieldReachPx(config.reach) / zoom;
     return Math.max(shadow, reach);
   };
 
   const forget = (e: Entity, st: CardState): void => {
     st.unsub?.();
+    program.release?.(e);
     states.delete(e);
   };
 
@@ -296,7 +295,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       if (frames.length >= MAX_FRAMES) break;
       const r = c.rect;
       if (!(r.width > 0) || !(r.height > 0)) continue;
-      const G = resolve(style, { centre: [r.x + r.width / 2, r.y + r.height / 2], contentHalf: [r.width / 2, r.height / 2], radius }, REST, material);
+      const G = program.resolve({ card: { centre: [r.x + r.width / 2, r.y + r.height / 2], contentHalf: [r.width / 2, r.height / 2], radius }, motion: REST, material, dt: 0, part: NO_PART });
       frames.push({ geometry: G, surface: theme.card });
       sources.push(fieldSourceOf(G, cam, strength));
     }
@@ -329,8 +328,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
         if (offscreen(centre, contentHalf, margin, cam, vp)) continue;
         seen.add(e);
         let st = states.get(e);
-        // locked (the closed padlock) as the lab's and the oracle's cards rest — REST's `lockOpen: 0`; ICE has no lock fact yet
-        if (st === undefined) { st = { motion: newMotion(world.hasTag(e, Selected), true), geometry: null }; states.set(e, st); }
+        if (st === undefined) { st = { motion: newMotion(world.hasTag(e, Selected)), geometry: null }; states.set(e, st); }
         const m = st.motion;
         m.selected = world.hasTag(e, Selected);
         m.held = world.has(e, Grab);
@@ -339,11 +337,14 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
         m.hotTarget = accept || reject;
         if (m.hotTarget) {
           m.hotTier = accept ? 1 : 0;
-          const src = heatSourceOf(world, e, style, radius, lift);
+          const src = heatSourceOf(world, e, program, radius, lift);
           if (src !== null) { m.hotAt = [src.x, src.y]; m.hotHalf = [src.hx, src.hy]; m.hotR = src.r; }
         }
-        if (stepMotion(m, dt, NO_BUTTONS, tuning)) live = true;
-        const G = resolve(style, { centre, contentHalf, radius }, toMotion(m, lift), material);
+        if (stepMotion(m, dt, tuning)) live = true;
+        // the program resolves the head (and its own tail); its own springs report through `out`
+        const out = { live: false };
+        const G = program.resolve({ card: { centre, contentHalf, radius }, motion: toMotion(m, lift), material, dt, part: NO_PART, key: e, out });
+        if (out.live) live = true;
         st.geometry = G;
         let portal: Row["portal"];
         if (world.hasTag(e, Container)) {

@@ -2,9 +2,9 @@
 // a style survives tweaks → build → tweaks, and a saved snapshot restores onto
 // fresh defaults without letting unknown keys in.
 import { describe, expect, it } from "vitest";
-import { MOTION_DEFAULTS } from "@ice/ground/compose";
-import { PRODUCT, REFERENCE, STYLES, styleViolations } from "@ice/ground/compose";
-import { SHADOW } from "@ice/ground/compose";
+import { MOTION_DEFAULTS, SHADOW } from "@ice/ground/compose";
+// the frame's style sheet and its theme section are the `vf-frame` pack's (design-014), not the engine's
+import { type FrameStyle, PRODUCT, REFERENCE, STYLES, styleViolations, vfSectionOf } from "@ice/ground/packs";
 import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { buildStyle, composeTweaks, defaultParams, PARAMS_VERSION, restoreParams, snapshotParams, styleTweaksOf, themeWith } from "../src/params";
 
@@ -21,8 +21,8 @@ describe("lab params", () => {
   });
 
   it("a style round-trips through its tweaks for every shipped base", () => {
-    for (const [name, style] of Object.entries(STYLES)) {
-      const rebuilt = buildStyle(styleTweaksOf(style, name as keyof typeof STYLES));
+    for (const [name, style] of Object.entries(STYLES) as [keyof typeof STYLES, FrameStyle][]) {
+      const rebuilt = buildStyle(styleTweaksOf(style, name));
       // the panel edits one number per row: corners collapse to TL's value, the BR shelf keeps its own
       expect(rebuilt.thickness).toBe(style.thickness);
       expect(rebuilt.nw[2]).toBe(style.nw[2]);
@@ -63,10 +63,12 @@ describe("lab params", () => {
     expect(p.style.corner.thickness).toBe(8);
   });
 
-  it("colour overrides sit on top of the theme and nothing else moves", () => {
-    const t = themeWith("dark", { dark: { frame: [1, 0, 0] }, light: {} });
-    expect(t.frame).toEqual([1, 0, 0]);
-    expect(t.canvasBg).toEqual(THEMES.dark.canvasBg);
+  it("colour overrides land in the right home — the head's on the head, the frame's in its pack's section", () => {
+    const t = themeWith("dark", { dark: { frame: [1, 0, 0], canvasBg: [0, 1, 0] }, light: {} });
+    expect(vfSectionOf(t).frame).toEqual([1, 0, 0]);
+    expect(vfSectionOf(t).ink).toEqual(vfSectionOf(THEMES.dark).ink);   // the rest of the section is untouched
+    expect(t.canvasBg).toEqual([0, 1, 0]);
+    expect(t.card).toEqual(THEMES.dark.card);
     expect(themeWith("light", { dark: { frame: [1, 0, 0] }, light: {} })).toEqual(THEMES.light);
   });
 });

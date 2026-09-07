@@ -284,7 +284,21 @@ context's `previews` (`engine.previews`, which the react facade passes) feeds th
 the handle adds `compose.stats()`, `compose.wakes()`, `compose.geometryOf(e)`,
 `compose.motionOf(e)`. **`portalAt(K, radius, arrival, cam, vp, gate?)`** is `portalOf`
 past the gate on an arrival already solved (the preview's `resolvedView`) — the same
-record, bit for bit. The pixel witnesses are the package's oracle
+record, bit for bit. **The pack seam (design-014, B3s)**: the engine's ground is the dot
+grid and the SHELL card; a look is a pack. **`@ice/ground/packs`** exports `needleGlyph`
+and `cuttingMat` (`GlyphProgram`s — `instanced` over the engine's bake, or `surface` with
+its own `SurfacePass`; the mat's config and clocks ride `FieldConfig.ext.mat` /
+`FieldFrame.ext.mat` via `withMat` / `withMatFrame`, its light the theme's `mat` section
+via `matLightOf`, its plates through `matPassOf(field)`) and `vfFrame(opts?)` (a
+`CardProgram`: `resolve(ctx)` → a `VfGeometry`, `tail(G)`, `uniformValues(theme)`,
+`pick(G, x, y)`, `source(w, h, lift, radius)`, plus `style` and `heat` settable, and
+`springsOf(key)` / `setLocked(key, locked)` for its own buttons and lock). Register them
+with `Ground.create({ card, grids })` or `groundCompose({ card, grids, onPart })`; omit
+them and the shell draws. The record is a HEAD (`ShellGeometry` + the content binding,
+`FRAME_HEAD_BYTES` = 144) plus the program's `ext` slots, built by `frameStruct(ext)`;
+`frameUniformStruct(uext)` likewise; `CARD_ABI` pins the head. The theme is a head
+(`canvasBg · fieldInk · card · hairline · select · shadow`) plus `packs[name]`, built by
+`themeFrom(name, palette, grid, packs)`. `ENGINE_GRID.glyph` is `"dot"`. The pixel witnesses are the package's oracle
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 

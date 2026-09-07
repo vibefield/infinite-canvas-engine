@@ -63,7 +63,7 @@ try {
       await q(`window.__ground.setScene(${JSON.stringify(s)}); ${hide}`);
       const bytes = await shot(name);
       const st = await q("window.__ground.render()");
-      check(st.mat && bytes > 60_000, `${name.padEnd(12)} mat drawn${st.wind ? " (wind pass ran)" : ""} · ${(bytes / 1024).toFixed(0)} KB png · k0 ${st.k0}`);
+      check(st.surface === "mat" && bytes > 60_000, `${name.padEnd(12)} mat drawn${st.aux ? " (wind pass ran)" : ""} · ${(bytes / 1024).toFixed(0)} KB png · k0 ${st.k0}`);
     }
     // a live mat: wind on → the loop stays awake and the gobo time advances
     await q(`window.__ground.setScene(${JSON.stringify({ ...base, cards: makeCards(6), zoom: 1, mat: { ...still, wind: 5 } })}); ${hide}`);
@@ -80,7 +80,7 @@ try {
     const bakes0 = await q("window.__ground.render().bakes");
     await q("window.__ground.params.field.glyph = 'dot'; window.__ground.apply()"); await sleep(200);
     const st = await q("window.__ground.render()");
-    check(!st.mat && st.bakes > bakes0 && st.instances > 0, `back to dots: ${st.bakes - bakes0} bake(s) on the switch, ${st.instances} instances`);
+    check(!st.surface && st.bakes > bakes0 && st.instances > 0, `back to dots: ${st.bakes - bakes0} bake(s) on the switch, ${st.instances} instances`);
   }
 
   // ---- throughput: dot vs the day's mat vs the night's, same view, saturated batches

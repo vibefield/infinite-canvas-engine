@@ -3,7 +3,9 @@
 // it without a DOM. Every default is the product's (theme.ts) or the
 // prototype's (choreography / motion), so "reset" IS the product.
 
-import { type CornerSpec, EIGENGRAU, FIT, type FadeIn, type FieldConfig, type FitBand, type FlightTuning, type FrameStyle, type GlyphRange, type GroundTheme, HEAT, LINES, MATERIAL, MAT_COLORS, MAT_GRID, MOTION_DEFAULTS, type MatConfig, type MatLight, type Material, type MotionTuning, NAV, NIGHT, PORTAL_CAP, PORTAL_GATE, PRODUCT, PRODUCT_CORNER, type PlateName, type RGB, type RGBA, type STYLES, type ThemeName, composeStyle, dayLuminance, nightLight } from "@ice/ground/compose";
+import { FIT, type FadeIn, type FieldConfig, type FitBand, type FlightTuning, type GlyphRange, type GroundTheme, LINES, MATERIAL, MOTION_DEFAULTS, type Material, type MotionTuning, NAV, PORTAL_CAP, PORTAL_GATE, type RGB, type RGBA, type ThemeName } from "@ice/ground/compose";
+// The product's look is in the PACKS (design-014): the frame's style sheet and heat, the mat's material and its night.
+import { type CornerSpec, EIGENGRAU, type FrameStyle, HEAT, MAT_COLORS, MAT_GLYPH, MAT_GRID, type MatConfig, type MatLight, NIGHT, PRODUCT, PRODUCT_CORNER, type PlateName, type STYLES, VF_FRAME, type VfThemeSection, composeStyle, dayLuminance, nightLight, vfSectionOf } from "@ice/ground/packs";
 import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 
 /**
@@ -79,10 +81,25 @@ export function buildStyle(t: StyleTweaks): FrameStyle {
   };
 }
 
-/** The colour roles the panel exposes, per theme, as the theme object carries them. */
-export type ColorRole = "canvasBg" | "fieldInk" | "card" | "frame" | "hairline" | "select" | "destructive" | "ink" | "inkStrong" | "inkMuted" | "fill" | "fillHover";
+/**
+ * The colour roles the panel exposes, per theme. Since design-014 they live in
+ * two places: the HEAD every program reads (`theme.canvasBg` …) and the frame
+ * pack's section (`theme.packs["vf-frame"]` — its inks and button fills).
+ * `FRAME_ROLES` says which is which; `themeColor` reads one back.
+ */
+export type HeadRole = "canvasBg" | "fieldInk" | "card" | "hairline" | "select";
+export type FrameRole = "frame" | "destructive" | "ink" | "inkStrong" | "inkMuted" | "fill" | "fillHover";
+export type ColorRole = HeadRole | FrameRole;
 export const COLOR_ROLES: readonly ColorRole[] = ["canvasBg", "fieldInk", "card", "frame", "hairline", "select", "destructive", "ink", "inkStrong", "inkMuted", "fill", "fillHover"];
+export const FRAME_ROLES: ReadonlySet<ColorRole> = new Set<ColorRole>(["frame", "destructive", "ink", "inkStrong", "inkMuted", "fill", "fillHover"]);
 export type ColorOverrides = Record<ThemeName, Partial<Record<ColorRole, RGB | RGBA>>>;
+
+/** A role's colour in a shipped theme — from the head, or from the frame pack's section. */
+export function themeColor(name: ThemeName, role: ColorRole): readonly number[] {
+  const t = THEMES[name];
+  const from = FRAME_ROLES.has(role) ? (vfSectionOf(t) as unknown as Record<string, readonly number[]>) : (t as unknown as Record<string, readonly number[]>);
+  return from[role] ?? [0, 0, 0];
+}
 
 /** Deep-mutable: the panel writes into what the engine only reads. */
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly number[] ? T[K] : T[K] extends object ? Mutable<T[K]> : T[K] };
@@ -232,9 +249,25 @@ export function defaultParams(): Params {
   };
 }
 
-/** The theme in force with the panel's colour overrides applied — and, for the dark theme, its night as the panel has it (over the panel's mat ground). */
+/**
+ * The theme in force with the panel's colour overrides applied — the head's
+ * roles on the head, the frame's in the `vf-frame` pack's section — and, for
+ * the dark theme, its night as the panel has it (over the panel's mat ground)
+ * in the `mat` pack's.
+ */
 export function themeWith(name: ThemeName, colors: ColorOverrides, night?: NightTweaks, ground: RGB = MAT_COLORS.ground): GroundTheme {
-  return { ...THEMES[name], ...colors[name], ...(night && name === "dark" ? { matLight: nightLightOf(night, ground) } : {}) } as GroundTheme;
+  const base = THEMES[name];
+  const head: Record<string, RGB | RGBA> = {};
+  const frame: Record<string, RGB | RGBA> = {};
+  for (const role of COLOR_ROLES) {
+    const c = colors[name][role];
+    if (c === undefined) continue;
+    if (FRAME_ROLES.has(role)) frame[role] = c; else head[role] = c;
+  }
+  const packs: Record<string, unknown> = { ...base.packs };
+  if (Object.keys(frame).length > 0) packs[VF_FRAME] = { ...vfSectionOf(base), ...frame } as VfThemeSection;
+  if (night && name === "dark") packs[MAT_GLYPH] = { light: nightLightOf(night, ground) };
+  return { ...base, ...head, packs } as GroundTheme;
 }
 
 /** Deep-merge a saved snapshot onto fresh defaults: unknown keys are dropped, missing keys stay default. */

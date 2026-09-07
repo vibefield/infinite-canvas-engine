@@ -9,11 +9,11 @@ import { must } from "./must";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CONTENT_MODE, contentValues, PLATE, PORTAL, portalContent, runsOf } from "../../src/card/content";
-import { Frame, FrameUniforms, frameValues } from "../../src/card/layout";
-import { MatUniforms } from "../../src/mat/layout";
+import { frameStruct, frameUniformStruct, frameValues } from "../../src/card/layout";
+import { DEFAULT_MAT_CONFIG, matConfigOf, withMat } from "../../src/packs/mat";
+import { MatUniforms } from "../../src/packs/mat/layout";
 import { FillUniforms } from "../../src/nav/fill-pass";
-import { MATERIAL, REST, resolve } from "../../src/card/choreography";
-import { PRODUCT } from "../../src/card/sheet";
+import { MATERIAL, PRODUCT, resolve, VF_EXT, VF_REST, VF_UNIFORMS } from "../../src/packs/vf-frame";
 import { DEFAULT_FIELD_CONFIG, DRESS_FLOOR, dressConfig, Uniforms, packSources, uniformValues } from "../../src/field/layout";
 import { atlasGeom, boxOf, boxValues, lod, rungCounts } from "../../src/lattice/lod";
 import { drawFrame, drawSlot, prepareFrame, SlotPool, type DrawSlot, type SlotSet } from "../../src/compose/ground";
@@ -26,6 +26,9 @@ const CAM = { x: 13.7, y: -21.3, zoom: 1.37 };
 const K = { x: 412.5, y: 233.25, width: 329, height: 345 };
 const CONTENT = { x: -40, y: -20, width: 700, height: 300 };
 const view = (box?: { x: number; y: number; w: number; h: number }) => ({ camX: 13.7, camY: -21.3, zoom: 1.37, width: 1200, height: 800, ...(box ? { box } : {}) });
+// both structs are BUILT per card program since design-014; these are the vf-frame pack's
+const Frame = frameStruct(VF_EXT);
+const FrameUniforms = frameUniformStruct(VF_UNIFORMS);
 
 describe("the slot's box (PORTAL.md §2.3)", () => {
   it("absent, the box is the attachment: every lattice number is the root's", () => {
@@ -132,7 +135,9 @@ describe("the dressing (§9) and the zoom-through (§8)", () => {
     expect(d.dotRadius[0]).toBe(Math.max(cfg.dotRadius[0] * 0.25, DRESS_FLOOR.dot));
     expect(d.needleHalfWidth[0]).toBeGreaterThanOrEqual(DRESS_FLOOR.wid);
     expect(d.reach).toBe(cfg.reach * 0.25);   // the bend round a miniature card is a miniature bend (§10)
-    expect(d.glyph).toBe(cfg.glyph); expect(d.mat).toBe(cfg.mat);
+    // a grid PROGRAM's own config rides `ext` since design-014, and the dressing leaves it alone
+    expect(d.glyph).toBe(cfg.glyph);
+    expect(matConfigOf(dressConfig(withMat(cfg, DEFAULT_MAT_CONFIG), 0.25, 1))).toBe(DEFAULT_MAT_CONFIG);
     const up = dressConfig(cfg, 4, 1);     // a departed parent magnified 4× keeps the cut's rungs, bigger
     expect(up.fadeIn[0]).toBe(cfg.fadeIn[0] * 4); expect(up.dotRadius[1]).toBeCloseTo(cfg.dotRadius[1] * 4, 12);
   });
@@ -164,7 +169,7 @@ describe("the dressing (§9) and the zoom-through (§8)", () => {
 
 describe("the hole, the tree, the pool", () => {
   it("mode portal is 3 with no uv; the record carries it; a hole rides a z-run like a plate", () => {
-    const G = resolve(PRODUCT, { centre: [0, 0], contentHalf: [64, 32], radius: 12 }, REST, MATERIAL);
+    const G = resolve(PRODUCT, { centre: [0, 0], contentHalf: [64, 32], radius: 12 }, VF_REST, MATERIAL);
     expect(CONTENT_MODE.portal).toBe(3);
     expect(contentValues(G, PORTAL)).toEqual({ mode: 3, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih });
     expect(frameValues(G, [0, 0, 0], PORTAL).mode).toBe(3);
@@ -308,7 +313,7 @@ describe("§10 — the chain, the face, the fill's growth (the review's two defe
     // ICE's resolvePortal: insets that leave no area are ignored — the whole body, the card's own radius (a tiny folder's frozen flight still flies)
     const tiny = { ...K, width: 40, height: 40 };
     expect(faceRect(tiny, FOLDER_FACE)).toBe(tiny); expect(faceRadius(tiny, FOLDER_FACE, 22)).toBe(22);
-    const G = resolve(PRODUCT, { centre: [50, 20], contentHalf: [164.5, 172.5], radius: 22 }, REST, MATERIAL);
+    const G = resolve(PRODUCT, { centre: [50, 20], contentHalf: [164.5, 172.5], radius: 22 }, VF_REST, MATERIAL);
     const face = { cx: 50, cy: 7, hx: 154.5, hy: 149.5, r: 7 };
     expect(contentValues(G, portalContent(face))).toEqual({ mode: 3, layer: 0, uv: [0, -13, 7, 1], chalf: [154.5, 149.5] });
     expect(contentValues(G, PORTAL)).toEqual({ mode: 3, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih });   // no face: the whole interior, as before

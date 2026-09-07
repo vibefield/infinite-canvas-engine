@@ -1,13 +1,14 @@
 // Open only the ground lab, set a scene with one selected card, and report what
 // the CPU thinks that card's frame is — then screenshot it up close.
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
 import { makeCards } from "@ice/ground/oracle/scene.mjs";
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");   // the server root is the REPO: the app's dist and the package's oracle results are both under it
+mkdirSync(resolve(app, "results"), { recursive: true });   // every other rig makes it; a fresh checkout has none
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
 const chrome = await launchChrome({ port: 9471, headless: !process.env.GROUND_HEADED });
@@ -31,7 +32,7 @@ try {
     st.camX = c.x - 600 / st.zoom; st.camY = c.y - 400 / st.zoom; st.needsDraw = true; })()`);
   await sleep(900);
   const info = await tab.evaluate(`(() => { const c = window.__ground.cards[3]; const G = c.geometry; const st = window.__ground.state;
-    return { motion: { selected: c.motion.selected, reveal: c.motion.reveal, lockA: c.motion.lockA }, style: st.style.name,
+    return { motion: { selected: c.motion.selected, reveal: c.motion.reveal, lockA: window.__ground.springs(3).lockA }, style: st.style.name,
       G: G && { centre: G.centre, half: G.half, ih: G.ih, outerR: G.outerR, closeR: G.closeR, closeC: G.closeC, lockR: G.lockR, nw: G.nw, nh: G.nh, rho: G.rho, rfH: G.rfH, rfV: G.rfV, baseR: G.baseR, shadowSigma: G.shadowSigma, frameAlpha: G.frameAlpha },
       screen: G && [(G.centre[0] - st.camX) * st.zoom, (G.centre[1] - st.camY) * st.zoom],
       stats: document.getElementById('stats').textContent }; })()`, { timeoutMs: 20000 });

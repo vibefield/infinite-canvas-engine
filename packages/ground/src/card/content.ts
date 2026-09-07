@@ -10,7 +10,7 @@
 // and the raw-bytes uploads a host (ICE's Residency) uses to put pixels where
 // the record says they are.
 
-import type { Geometry } from "./choreography";
+import type { ShellGeometry } from "./geometry";
 
 /** The WRITTEN rect inside a layer or a texture, normalised — design-013 §5's `u0 v0 u1 v1`. */
 export interface UvRect { readonly u0: number; readonly v0: number; readonly u1: number; readonly v1: number }
@@ -41,7 +41,7 @@ export function uvOf(x: number, y: number, w: number, h: number, texW: number, t
 }
 
 /** The record's `uv` (min xy, size xy), `layer`, `mode` and `chalf` for a content, on a resolved geometry. */
-export function contentValues(G: Geometry, c: FrameContent = PLATE): { mode: number; layer: number; uv: number[]; chalf: readonly [number, number] } {
+export function contentValues(G: ShellGeometry, c: FrameContent = PLATE): { mode: number; layer: number; uv: number[]; chalf: readonly [number, number] } {
   // a hole's FACE rides the content slots: uv = its centre from the card's, its radius, 1 (on); chalf = its half extents (frame.wgsl)
   if (c.mode === "portal" && c.face) return { mode: CONTENT_MODE.portal, layer: 0, uv: [c.face.cx - G.centre[0], c.face.cy - G.centre[1], c.face.r, 1], chalf: [c.face.hx, c.face.hy] };
   const uv = c.mode === "plate" || c.mode === "portal" ? [0, 0, 0, 0] : [c.uv.u0, c.uv.v0, c.uv.u1 - c.uv.u0, c.uv.v1 - c.uv.v0];

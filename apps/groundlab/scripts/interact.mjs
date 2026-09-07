@@ -49,7 +49,8 @@ try {
   const G = await q("(() => { const c = window.__ground.cards[window.__ground.cards.length - 1]; return { closeC: c.geometry.closeC, closeR: c.geometry.closeR, lockC: c.geometry.lockC }; })()");
   const [bx, by] = await screenOf(G.closeC[0], G.closeC[1]);
   await mouse("mouseMoved", bx, by); await sleep(400);
-  const hov = await q("(() => { const c = window.__ground.cards[window.__ground.cards.length - 1]; return { h: c.motion.hoverC, cursor: document.getElementById('gpu').style.cursor }; })()");
+  // the buttons' and the lock's springs are the card PROGRAM's now (design-014) — `__ground.springs(i)`, not the engine's motion
+  const hov = await q("(() => { const s = window.__ground.springs(window.__ground.cards.length - 1); return { h: s.hoverC, cursor: document.getElementById('gpu').style.cursor }; })()");
   console.log("-- hover close --");
   check(hov.h > 0.9, `hover spring reached ${hov.h.toFixed(2)}`);
   check(hov.cursor === "pointer", `cursor is "${hov.cursor}"`);
@@ -58,9 +59,9 @@ try {
   const [lx, ly] = await screenOf(G.lockC[0], G.lockC[1]);
   await mouse("mouseMoved", lx, ly); await sleep(50); await mouse("mousePressed", lx, ly); await sleep(60); await mouse("mouseReleased", lx, ly);
   const lockTrace = []; let peak = 0;
-  for (let t = 0; t <= 400; t += 100) { const v = await q("window.__ground.cards[window.__ground.cards.length - 1].motion.lockA"); lockTrace.push(v.toFixed(2)); peak = Math.max(peak, v); await sleep(100); }
+  for (let t = 0; t <= 400; t += 100) { const v = await q("window.__ground.springs(window.__ground.cards.length - 1).lockA"); lockTrace.push(v.toFixed(2)); peak = Math.max(peak, v); await sleep(100); }
   console.log(`-- lock --\n  lockA 0..400ms: ${lockTrace.join("  ")}`);
-  const lk = await q("(() => { const c = window.__ground.cards[window.__ground.cards.length - 1]; return { locked: c.motion.locked, a: c.motion.lockA }; })()");
+  const lk = await q("(() => { const s = window.__ground.springs(window.__ground.cards.length - 1); return { locked: s.locked, a: s.lockA }; })()");
   check(!lk.locked && lk.a > 0.95, `lock toggled open (lockA ${lk.a.toFixed(3)})`);
   check(peak > 1.005, `under-damped: peaked at ${peak.toFixed(3)} and settled`);
 

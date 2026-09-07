@@ -3,11 +3,12 @@
 // mat pass. `matUniformValues()` fills it by name from the frame, the config
 // and the theme's numbers; nothing is hand-indexed.
 
-import { defineStruct } from "../engine/struct";
-import { boxValues, type FadeIn, lod, type View } from "../lattice/lod";
-import type { LineLaw } from "../lattice/line";
-import { MAT_COLORS, MAT_GRID, type RGB } from "../theme";
-import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../nav/portal";
+import { defineStruct } from "../../engine/struct";
+import { boxValues, type FadeIn, lod, type View } from "../../lattice/lod";
+import type { LineLaw } from "../../lattice/line";
+import type { RGB } from "../../theme";
+import { MAT_COLORS, MAT_GRID } from "./theme";
+import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../../nav/portal";
 import { HERO_PROJECTOR, type Mat4, projectorMatrix } from "./projector";
 import { DAY_LIGHT, lightValues, type MatLight } from "./night";
 

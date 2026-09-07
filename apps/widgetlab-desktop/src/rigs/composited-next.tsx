@@ -38,6 +38,7 @@ import {
 import { instrumentSubmits, type SubmitInstrument } from "@ice/ground";
 import { groundCompose, type GroundComposeContext, type GroundComposeHandle } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
+import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { compositedNextProfile, InfiniteCanvas } from "@ice/react";
 import { createRoot } from "react-dom/client";
 import { createDemoEngine } from "../App";
@@ -146,7 +147,8 @@ function mountNextRig(): NextRig {
     gpu = await acquireCompositorDevice();
     instrument = instrumentSubmits(gpu.device);
     engine = createDemoEngine(gpu);
-    const factory = groundCompose({ device: gpu.device, theme });
+    // the app's own choice (design-014): VibeField's frame as the card program, the needle and the mat as grids
+    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame(), grids: [needleGlyph, cuttingMat] });
     const ground = (ctx: GroundComposeContext) => { handle = factory(ctx); return handle; };
     createRoot(rootEl).render(
       <InfiniteCanvas engine={engine} ground={ground} profile={compositedNextProfile} className="h-full w-full" />,

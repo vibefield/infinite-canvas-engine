@@ -14,9 +14,11 @@
 // the ~420 ms the flight lasts (src/nav/flight.ts, ground.ts). The host owns
 // the flight's clock, as it owns every other.
 
-import { CONTENT_CHOICES, type CameraState, type CardMotion, type ContentChoice, DEFAULT_FIELD_CONFIG, FOLDER_FACE, type FaceInsets, type FadeIn, type FieldConfig, type FieldSource, type Flight, type FrameStyle, GROUND_SHADERS, type Geometry, type GlyphRange, type GridGlyph, Ground, HERO_MATRIX, type Hit, type HotPin, type LivePortal, OPEN_RANGE, type OutgoingInputs, PORTAL_CHAIN, type PlateName, type PortalInputs, type Presentation, type RGB, type Rect, STYLES, THROUGH_IN, THROUGH_OUT, type TestResidency, type ThemeName, ZOOM_MAX, ZOOM_MIN, acquire, arrivalCamera, boundsOf, clipOf, departedCamera, enterFlight, exitFlight, faceCovers, faceRadius as faceRadiusOf, faceRect, flightAt, flightOpacity, newMotion, overlaps, pick, pinMotion, portalAffine, portalContent, portalOf, resolve, secondOrder, solveFlightStart, stepFlight, stepMotion, stepSecondOrder, styleViolations, testResidency, tilted, toMotion, visibleRect } from "@ice/ground/compose";
+import { CONTENT_CHOICES, type CameraState, type CardMotion, type ContentChoice, DEFAULT_FIELD_CONFIG, FOLDER_FACE, type FaceInsets, type FadeIn, type FieldConfig, type FieldSource, type Flight, GROUND_SHADERS, type GlyphRange, type GridGlyph, Ground, type HotPin, type LivePortal, NO_PART, OPEN_RANGE, type OutgoingInputs, PORTAL_CHAIN, type PartState, type PortalInputs, type Presentation, type RGB, type Rect, THROUGH_IN, THROUGH_OUT, type TestResidency, type ThemeName, ZOOM_MAX, ZOOM_MIN, acquire, arrivalCamera, boundsOf, clipOf, departedCamera, enterFlight, exitFlight, faceCovers, faceRadius as faceRadiusOf, faceRect, flightAt, flightOpacity, newMotion, pinMotion, portalAffine, portalContent, portalOf, solveFlightStart, stepFlight, stepMotion, testResidency, toMotion, visibleRect } from "@ice/ground/compose";
+// The product's look is in the PACKS (design-014): the lab registers all three — the needle and the cutting mat as grid programs, VibeField's frame as the card program.
+import { type FrameStyle, type Geometry, HERO_MATRIX, type Hit, MAT_GLYPH, type PlateName, STYLES, type VfFramePack, cuttingMat, matLightOf, matPassOf, needleGlyph, overlaps, pick, secondOrder, stepSecondOrder, styleViolations, tilted, vfFrame, withMat } from "@ice/ground/packs";
 import { PRODUCT_GRID, THEMES, surface, type SurfaceName } from "@ice/ground/oracle/fixtures/vf-theme";
-import { buildStyle, COLOR_ROLES, composeTweaks, defaultHeatTweaks, defaultMatTweaks, defaultNavTweaks, defaultNightTweaks, defaultParams, defaultPortalTweaks, fitBand, flightTuning, matConfigOf, type Params, restoreParams, snapshotParams, styleTweaksOf, themeWith } from "./params";
+import { buildStyle, COLOR_ROLES, composeTweaks, defaultHeatTweaks, defaultMatTweaks, defaultNavTweaks, defaultNightTweaks, defaultParams, defaultPortalTweaks, fitBand, flightTuning, matConfigOf, type Params, restoreParams, snapshotParams, styleTweaksOf, themeColor, themeWith } from "./params";
 import { mountPanel, type Section } from "./panel";
 // The gobo plates and the content-test plate are the HOST's assets (the product's look, a fixture in the package's oracle; the compose entry ships none of it); the blue noise is the engine's.
 import goboCUrl from "@ice/ground/oracle/fixtures/assets/gobo-c.rgba?url";
@@ -78,6 +80,7 @@ const state = {
   needsDraw: true,
   fps: 0, frames: 0, fpsStamp: performance.now(), cpuMs: 0, lastTick: performance.now(),
   frameCount: 0,        // monotonic — what a harness counts; `frames` is the fps window's
+  stepDt: 0,            // this frame's dt, for the springs the card program steps inside `resolve`
 };
 /**
  * THE tunables (lab/params.ts): the product's grid, the size presets, the rung mode, the
@@ -86,6 +89,20 @@ const state = {
  */
 const STORE = "ground-lab-params";
 let P: Params = (() => { try { const raw = localStorage.getItem(STORE); return raw ? restoreParams(JSON.parse(raw)) : defaultParams(); } catch { return defaultParams(); } })();
+/**
+ * VibeField's frame as the ground's CARD PROGRAM (design-014): made once and
+ * kept, because it owns each card's own springs — the two buttons' hover and
+ * press, and the lock — under the card object as their key. Its `style` and
+ * `heat` are settable, and the panel writes them through `apply()`. The lock's
+ * spring tuning reads the live panel rows.
+ */
+const pack: VfFramePack = vfFrame({
+  style: state.style,
+  heat: P.heat,
+  tuning: { get lockHz() { return P.motion.lockHz; }, get lockDamp() { return P.motion.lockDamp; } },
+});
+/** The effective frame style, in both places that read it: the lab's state (the panel note, the stats line) and the pack that draws it. */
+function setStyle(s: FrameStyle) { state.style = s; pack.style = s; }
 /** The root frame; `scene` is the frame the camera is in, `cards` ITS array (the one every hit-test and draw reads). */
 const root: Scene = { cards: [], glyph: null };
 let scene: Scene = root;
@@ -114,7 +131,7 @@ const setGlyph = (s: Scene, g: GridGlyph) => { if (s === root) P.field.glyph = g
 function configFor(glyph: GridGlyph): FieldConfig {
   const f = P.field;
   const open = f.range === "open";
-  return {
+  return withMat({
     ...DEFAULT_FIELD_CONFIG,
     glyph, reach: f.reach, halfLen: f.halfLen, halfWidth: f.halfWidth,
     polarity: f.polarity, alwaysAlign: f.alwaysAlign,
@@ -122,14 +139,14 @@ function configFor(glyph: GridGlyph): FieldConfig {
     dotRadius: open ? OPEN_RANGE : f.dotRadius, needleHalfLen: open ? OPEN_RANGE : f.needleHalfLen, needleHalfWidth: open ? OPEN_RANGE : f.needleHalfWidth,
     fadeIn: f.fadeIn,
     fineSchedule: f.fineSchedule,
-    mat: matConfigOf(P.mat),
-  };
+  }, matConfigOf(P.mat));
 }
 const config = () => configFor(glyphOf(scene));
 
 /** Project the params into what the passes read; called by the panel and the keys. */
 function apply() {
-  state.style = buildStyle(P.style);
+  setStyle(buildStyle(P.style));
+  pack.heat = P.heat;
   try { localStorage.setItem(STORE, JSON.stringify(P)); } catch { /* private mode */ }
   markDraw();
 }
@@ -166,7 +183,7 @@ function makeCard(p: CardSpec, at: { x: number; y: number }, i: number): Card {
   return {
     x: p.x ?? at.x + (i % 5) * 34, y: p.y ?? at.y + (i % 4) * 26,
     w: p.w ?? IOS.sizes[1][0], h: p.h ?? IOS.sizes[1][1], r: p.r ?? IOS.radius, strength: p.strength ?? P.field.strength,
-    surface: surface(name), surfaceName: name, motion: pinMotion(newMotion(p.selected ?? false, true), p), geometry: null, content: p.content ?? "plate",
+    surface: surface(name), surfaceName: name, motion: pinMotion(newMotion(p.selected ?? false), p), geometry: null, content: p.content ?? "plate",
     ...(name === "folder" ? { face: FOLDER_FACE } : {}),
     // a scene states a folder's inside, at any depth (the oracle's nested scene); the interactive lab makes one on first use
     ...(p.inside ? { child: makeChild(P.field.glyph, p.inside.cards, p.inside.glyph) } : {}),
@@ -178,8 +195,12 @@ function addCard(p: CardSpec = {}): Card {
   serial += 1; cards.push(card); markDraw(); return card;
 }
 
+/** A scene's cards leave the board: the pack forgets their springs, so its table never grows past what is on screen. */
+function forgetScene(s: Scene) { for (const c of s.cards) { pack.forget(c); if (c.child) forgetScene(c.child); } }
+
 /** Lay n cards out on the §4 size grid: one card per 2×2-cell slot, centred on the view. */
 function scatter(n: number) {
+  forgetScene(scene);
   cards.length = 0;
   const c = centreWorld();
   const slot = IOS.pitch * 2;
@@ -195,11 +216,39 @@ function scatter(n: number) {
   }
 }
 
-/** Resolve a list's geometry for THIS frame from each card's motion state. */
-function resolveList(list: readonly Card[]): void {
-  for (const c of list) c.geometry = resolve(state.style, { centre: [c.x, c.y], contentHalf: [c.w * 0.5, c.h * 0.5], radius: c.r }, toMotion(c.motion, P.material.lift.scale), P.material);
+/**
+ * The card program's PART channel for one card (card/program.ts `PartState`):
+ * what the pointer is over and what it pressed, by the pack's own part names.
+ * Hit-tested against the geometry ON SCREEN — last frame's, as it always was.
+ */
+function partOf(c: Card, w: { readonly x: number; readonly y: number }): PartState {
+  const G = c.geometry;
+  const h = G ? pick(G, w.x, w.y) : "outside";
+  const hover = h === "close" || h === "lock" ? h : null;
+  const press = state.pointerDown && armed?.card === c && (armed.hit === "close" || armed.hit === "lock") ? armed.hit : null;
+  return { hover, press };
 }
-const resolveAll = () => resolveList(cards);
+
+/**
+ * Resolve a list's geometry for THIS frame — the pack's `resolve`, which also
+ * steps that card's own springs by `dt` toward the part channel's targets. So
+ * it runs EXACTLY once per card per frame: the interactive frame with the
+ * tick's dt and the live part channel, every other list (a portal's inside,
+ * the departed frame, a harness still) at rest.
+ */
+function resolveList(list: readonly Card[], opts: { dt?: number; live?: boolean; out?: { live: boolean } } = {}): void {
+  const dt = opts.dt ?? 0;
+  const w = opts.live ? hoverWorld() : null;
+  for (const c of list) {
+    c.geometry = pack.resolve({
+      card: { centre: [c.x, c.y], contentHalf: [c.w * 0.5, c.h * 0.5], radius: c.r },
+      motion: toMotion(c.motion, P.material.lift.scale),
+      material: P.material,
+      dt, part: w ? partOf(c, w) : NO_PART, key: c,
+      ...(opts.out ? { out: opts.out } : {}),
+    });
+  }
+}
 
 function hitAt(wx: number, wy: number): { card: Card; hit: Hit } | null {
   for (let i = cards.length - 1; i >= 0; i--) {
@@ -237,6 +286,8 @@ const framesOf = (list: readonly Card[], holes?: ReadonlySet<Card>) => state.dra
 const indexIn = (list: readonly Card[], card: Card): number => list.filter((c) => c.geometry && !c.motion.gone).indexOf(card);
 /** The mat's clocks this frame — the root's; a portal's mat rides them, so it is a still while the root is (PORTAL.md §2.8). */
 const matFrame = () => ({ time: state.matTime, goboTime: state.goboTime, goboMatrix: state.goboMatrix, noise: state.noise });
+/** …in the field frame's pack slot: a grid program's per-frame clocks ride `ext[glyph]` (design-014). */
+const matExt = () => ({ [MAT_GLYPH]: matFrame() });
 
 /**
  * The zoom a frame's grid is dressed for right now (PORTAL.md §9): `to` — the arrival for a
@@ -359,7 +410,7 @@ function portalsOf(list: readonly Card[], parent: Scene, cam: CameraState, exclu
     inputs.push({
       view: { camX: live.cam.x, camY: live.cam.y, zoom: live.cam.zoom, width: state.cssW, height: state.cssH, dpr: state.dpr, box: live.box },
       pointer: { x: 0, y: 0, on: false },
-      mat: matFrame(),
+      ext: matExt(),
       // dressed for its arrival: the inside as it will look when entered, scaled (PORTAL.md §9)
       ...(P.portal.dress ? { lodZoom: lodZoomOf(inside, live.arrival.zoom) } : {}),
       present: { opacity: live.presence, portal: live.clip },
@@ -493,7 +544,7 @@ function flightInputs(): { present?: Presentation; outgoing?: OutgoingInputs } {
     outgoing: {
       view: { camX: outCam.x, camY: outCam.y, zoom: outCam.zoom, width: state.cssW, height: state.cssH, dpr: state.dpr },
       pointer: { x: 0, y: 0, on: false },
-      mat: matFrame(),
+      ext: matExt(),
       // the departed frame keeps the dressing it had at the cut (PORTAL.md §9)
       ...(P.portal.dress ? { lodZoom: f.camPre.zoom } : {}),
       present: { opacity: op.outgoing, ...(clip && !enter ? { portal: clip } : {}) },
@@ -527,7 +578,7 @@ function bindInput() {
       const h = hitAt(w.x, w.y);
       if (h && h.card === armed.card && h.hit === armed.hit) {
         if (h.hit === "close") { armed.card.motion.deleting = true; }
-        else if (h.hit === "lock") { armed.card.motion.locked = !armed.card.motion.locked; }
+        else if (h.hit === "lock") { pack.setLocked(armed.card, !pack.springsOf(armed.card).locked); }   // the lock is the pack's now, not the engine's motion (design-014)
       }
       armed = null;
     }
@@ -600,13 +651,18 @@ async function start() {
     ground = await Ground.create({
       device: gpu.device, canvas,
       ...GROUND_SHADERS,
+      // the three packs the product's look is made of (design-014): the frame as the card program, the needle and the mat beside the engine's dot
+      card: pack, grids: [needleGlyph, cuttingMat],
     });
   } catch (e) { fail(e); return; }
 
   // The mat's assets — raw rgba bytes, the same the Node oracle reads from disk.
   const bytesOf = async (url: string) => { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`); return new Uint8Array(await r.arrayBuffer()); };
   Promise.all([bytesOf(goboCUrl), bytesOf(goboBUrl), bytesOf(noiseUrl)]).then(([c, b, n]) => {
-    ground.field.mat.setPlate("c", c); ground.field.mat.setPlate("b", b); ground.field.mat.setNoise(n);
+    // the mat's pass behind the field's surface slot — the pack owns it, the host uploads through it
+    const mat = matPassOf(ground.field);
+    if (!mat) throw new Error("the cutting mat pack is not registered — Ground.create({ grids })");
+    mat.setPlate("c", c); mat.setPlate("b", b); mat.setNoise(n);
     state.assetsReady = true; markDraw();
   }).catch(fail);
   // The content term's test residency — the same bytes, the same layers and uvs, as the Node oracle builds.
@@ -623,22 +679,19 @@ async function start() {
     markDraw();
   }
 
-  /** Advance every card's springs by dt; returns true while any is still moving. */
+  /**
+   * Advance every card's ENGINE springs by dt — the reveal, the lift, the
+   * hover and the §7 heat; returns true while any is still moving. The pack's
+   * own springs (the buttons, the lock) step in `resolveList` instead, since
+   * `pack.resolve` runs them, and `state.stepDt` carries this frame's dt there.
+   */
   function step(dt: number): boolean {
-    const w = hoverWorld();
     let live = false;
-    for (const c of cards) {
-      const G = c.geometry;
-      const h = G ? pick(G, w.x, w.y) : "outside";
-      const pressed = state.pointerDown && armed?.card === c;
-      live = stepMotion(c.motion, dt, {
-        hoverClose: h === "close", hoverLock: h === "lock",
-        pressClose: pressed && armed?.hit === "close", pressLock: pressed && armed?.hit === "lock",
-      }, P.motion) || live;
-    }
+    state.stepDt = dt;
+    for (const c of cards) live = stepMotion(c.motion, dt, P.motion) || live;
     // the light SOURCE follows the dragged card's silhouette as it lifts and reveals — its springs run on after the last move
     if (drag) { const d = drag.card; const G = d.geometry; for (const c of cards) if (c.motion.hotTarget) { c.motion.hotAt = [d.x, d.y]; if (G) { c.motion.hotHalf = [G.half[0], G.half[1]]; c.motion.hotR = G.outerR; } } }
-    for (let i = cards.length - 1; i >= 0; i--) if ((cards[i] as Card).motion.gone) cards.splice(i, 1);
+    for (let i = cards.length - 1; i >= 0; i--) { const c = cards[i] as Card; if (c.motion.gone) { pack.forget(c); cards.splice(i, 1); } }
     return live;
   }
 
@@ -675,8 +728,12 @@ async function start() {
     ground.fieldConfig = config();
     ground.frames.exact = state.exactFrames;
     ground.frames.lines = P.lines;
-    ground.frames.heat = P.heat;
-    resolveAll();
+    // the card program's own tuning rides the pack, not the pass (design-014); a scene or a poked param can't leave it stale
+    pack.style = state.style; pack.heat = P.heat;
+    // the interactive frame is the one list whose own springs step: this frame's dt, the live part channel, and a sink that keeps the loop awake while they move
+    const springs = { live: false };
+    resolveList(cards, { dt: state.stepDt, live: true, out: springs });
+    if (springs.live) state.needsDraw = true;
     const cam = camera();
     const nav = flightInputs();
     // this frame's live portals (during an exit the container's is among them: the departed inside lands on it)
@@ -687,7 +744,7 @@ async function start() {
     return ground.render({
       view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: state.cssW, height: state.cssH, dpr: state.dpr },
       pointer: { x: state.pointerX, y: state.pointerY, on: state.pointerOn },
-      mat: matFrame(),
+      ext: matExt(),
       ...(rootLod !== undefined ? { lodZoom: rootLod } : {}),
       ...(nav.present ? { present: nav.present } : {}),
       ...(nav.outgoing ? { outgoing: nav.outgoing } : {}),
@@ -704,8 +761,9 @@ async function start() {
     num(`${label} min`, () => get()[0], (v) => set([v, get()[1]]), min, max, step), num(`${label} max`, () => get()[1], (v) => set([get()[0], v]), min, max, step)];
   const contentHalf = () => { const c = cards.find((c) => c.motion.selected) ?? cards[0]; return c ? [c.w / 2, c.h / 2] as const : [120, 70] as const; };
   const colorRows = (t: ThemeName) => COLOR_ROLES.map((role) => ({
-    kind: "color" as const, label: role, alpha: (THEMES[t][role] as readonly number[]).length === 4,
-    get: () => (P.colors[t][role] ?? THEMES[t][role]) as readonly number[],
+    // a role lives on the theme's head or in the frame pack's section (design-014); `themeColor` knows which
+    kind: "color" as const, label: role, alpha: themeColor(t, role).length === 4,
+    get: () => (P.colors[t][role] ?? themeColor(t, role)) as readonly number[],
     set: (v: number[]) => { P.colors[t][role] = v as [number, number, number] | [number, number, number, number]; },
   }));
   const sections: Section[] = [
@@ -903,17 +961,23 @@ async function start() {
     if (now - state.fpsStamp >= 500) { state.fps = (state.frames * 1000) / (now - state.fpsStamp); state.frames = 0; state.fpsStamp = now; }
     const z = state.zoom >= 1000 || state.zoom <= 0.001 ? state.zoom.toExponential(2) : state.zoom.toFixed(3);
     const g = glyphOf(scene);
+    const night = matLightOf(theme()).night;   // the mat's light rides the theme's `mat` section now (design-014)
     statsEl.textContent =
       `ground · ${state.fps.toFixed(0)} fps · ${state.cpuMs.toFixed(2)} ms cpu · z ${z} · k0 ${s.k0} fade ${s.fade.toFixed(2)} · ` +
       `atlas ${s.atlasW}×${s.atlasH} (${(s.atlasW * s.atlasH).toLocaleString()} texels)${s.baked ? " ← baked" : ""} · ` +
-      `${s.instances.toLocaleString()} instances · fine ${s.fine} · ${s.sources}/${cards.length} cards · ${s.frames} frames in ${ground.frames.runCount} run${ground.frames.runCount === 1 ? "" : "s"} · ${s.portals} portal${s.portals === 1 ? "" : "s"} · ${s.bakes} bakes · ${g}${s.mat ? ` (plate ${P.mat.plate} · wind ${P.mat.wind}${s.wind ? " ← blew" : ""} · gobo ${P.mat.opacity} · ${theme().matLight.night >= 1 ? "the Moon" : theme().matLight.night > 0 ? `night ${theme().matLight.night.toFixed(2)}` : "the Sun"}${state.assetsReady ? "" : " · plates loading"})` : ""} · ` +
+      `${s.instances.toLocaleString()} instances · fine ${s.fine} · ${s.sources}/${cards.length} cards · ${s.frames} frames in ${ground.frames.runCount} run${ground.frames.runCount === 1 ? "" : "s"} · ${s.portals} portal${s.portals === 1 ? "" : "s"} · ${s.bakes} bakes · ${g}${s.surface ? ` (plate ${P.mat.plate} · wind ${P.mat.wind}${s.aux ? " ← blew" : ""} · gobo ${P.mat.opacity} · ${night >= 1 ? "the Moon" : night > 0 ? `night ${night.toFixed(2)}` : "the Sun"}${state.assetsReady ? "" : " · plates loading"})` : ""} · ` +
       `depth ${stack.length}${flight ? ` · ${flight.f.kind} p ${flight.f.p.toFixed(2)} → ${glyphOf(flight.departed)} ${s.outgoing ? `(${s.outgoing.instances.toLocaleString()} instances · ${s.outgoing.frames} frames)` : ""}` : ""} · ` +
       `${state.style.name}${state.exactFrames ? " · exact" : ""} · ${state.theme} · ${rangeLabel()} · fade-in ${fmt(P.field.fadeIn)} px · \` panel`;
   }
   requestAnimationFrame(tick);
 
   (window as unknown as { __ground: unknown }).__ground = {
-    state, ground, addCard, scatter, zoomAt, select, render, resolveAll, hitAt, setTheme,
+    state, ground, addCard, scatter, zoomAt, select, render, hitAt, setTheme,
+    /** Resolve the frame's geometry without stepping anything — a harness that wants the numbers before a paint. */
+    resolveAll: () => resolveList(cards),
+    /** The card program in force, and one card's own springs (design-014): the buttons' hover and press, the lock. */
+    pack,
+    springs: (index: number) => { const c = cards[index]; return c ? pack.springsOf(c) : null; },
     get cards() { return cards; },
     setContent: (index: number, choice: ContentChoice) => { const c = cards[index]; if (c) setContent(c, choice); },
     /** The §7 heat by hand — a card lit by a source without a drag (a harness's cost row), and the drop policy. */
@@ -946,8 +1010,9 @@ async function start() {
     },
     setScene(s: { cards: Array<{ x: number; y: number; w: number; h: number; r: number; strength: number; surface?: SurfaceName; selected?: boolean; content?: ContentChoice; inside?: { cards: CardSpec[]; glyph: GridGlyph } } & Pins>; portals?: boolean; portalGate?: [number, number]; camX: number; camY: number; zoom: number; mouseX: number; mouseY: number; mouseOn: boolean; reach: number; halfLen: number; inkAlpha?: number; range?: "preset" | "open"; fadeIn?: FadeIn; dotRadius?: GlyphRange; needleHalfLen?: GlyphRange; needleHalfWidth?: GlyphRange; theme: ThemeName; glyph?: GridGlyph; fine?: FieldConfig["fineSchedule"]; style?: keyof typeof STYLES; exact?: boolean; drawFrames?: boolean; mat?: { time?: number; goboTime?: number; noise?: [number, number]; opacity?: number; plate?: PlateName; wind?: number }; nav?: { kind: "enter" | "exit"; container: number; child: { cards: CardSpec[]; glyph: GridGlyph }; p: number; innerCam?: { x: number; y: number; zoom: number } } }) {
       abortFlight(); stack.length = 0; scene = root; cards = root.cards; state.navPinned = false; state.dropPolicy = "surface";
+      forgetScene(root);   // the outgoing board's springs leave with it
       cards.length = 0;
-      for (const c of s.cards) cards.push({ x: c.x, y: c.y, w: c.w, h: c.h, r: c.r, strength: c.strength, surface: surface(c.surface ?? "card"), surfaceName: c.surface ?? "card", motion: pinMotion(newMotion(c.selected ?? false, true), c), geometry: null, content: c.content ?? "plate", ...(c.surface === "folder" ? { face: FOLDER_FACE } : {}) });
+      for (const c of s.cards) cards.push({ x: c.x, y: c.y, w: c.w, h: c.h, r: c.r, strength: c.strength, surface: surface(c.surface ?? "card"), surfaceName: c.surface ?? "card", motion: pinMotion(newMotion(c.selected ?? false), c), geometry: null, content: c.content ?? "plate", ...(c.surface === "folder" ? { face: FOLDER_FACE } : {}) });
       state.camX = s.camX; state.camY = s.camY; state.zoom = s.zoom;
       state.pointerX = s.mouseX; state.pointerY = s.mouseY; state.pinned = true; state.pointerOn = s.mouseOn;
       // a scene is a fresh parameter set: the product's, with the scene's own field settings on top
@@ -968,7 +1033,8 @@ async function start() {
       state.matTime = s.mat?.time ?? 0; state.goboTime = s.mat?.goboTime ?? 0; state.noise = s.mat?.noise ?? [0, 0]; state.goboMatrix = HERO_MATRIX;
       state.matPinned = (s.glyph === "mat" || s.nav !== undefined) && (s.mat?.wind ?? 0) === 0;
       if (s.style) P.style = styleTweaksOf(STYLES[s.style], s.style);
-      state.style = buildStyle(P.style);
+      setStyle(buildStyle(P.style));
+      pack.heat = P.heat;
       state.exactFrames = s.exact ?? false;
       state.drawFrames = s.drawFrames ?? true;
       // a flight, pinned at one progress: the same geometry the Node oracle computes (nav/flight.ts)

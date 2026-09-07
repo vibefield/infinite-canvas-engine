@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
-import { composeStyle, PRODUCT_CORNER } from "@ice/ground/compose";
+import { composeStyle, PRODUCT_CORNER } from "@ice/ground/packs";
 import { cornerTweaksOf, styleTweaksOf } from "../src/params.ts";
 const here = import.meta.dirname;
 const app = resolve(here, "..");

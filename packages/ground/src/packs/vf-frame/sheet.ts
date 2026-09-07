@@ -11,7 +11,7 @@
 // edge were authored constants in the reference; width and the vertical fillet
 // are what vary (BR's wide notch is the shelf).
 
-import { LINES } from "../theme";
+import { LINES } from "../../theme";
 
 export type Corner4 = readonly [number, number, number, number];
 

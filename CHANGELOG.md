@@ -80,6 +80,37 @@ the entity's own kind behaviour.
 
 ### Added
 
+- **The ground's pack seam — design-014, B3s** (2026-09-07). The ground engine now ships
+  only what every infinite canvas needs and what depends on a world fact: the lattice and
+  the field bake, the DOT glyph, the slot tree and the compositor, the SHELL card (a
+  rounded plate at the card's radius, the §5 shadow, a hairline, the ring on selection —
+  which is also the drop cue on the accept tier), and the springs on `Selected` / `Grab` /
+  the drop pair. Everything that is a LOOK is a pack an app registers through
+  **`@ice/ground/packs`**: `needleGlyph` and `cuttingMat` (grid programs — `instanced`
+  over the engine's bake, or `surface` with a pass of its own) and `vfFrame()` (a card
+  program — VibeField's composed corners, buttons, delete morph and cast light). Three
+  seams and no more: a grid program (`field/program.ts`), a card program
+  (`card/program.ts` — the record is a HEAD every program shares plus `ext` tail slots the
+  program owns, built per program by `frameStruct`; the pass composes one `card.wgsl`
+  that calls the program's `shade_card` below the content and `shade_over` above it, so
+  the additive seam law is the engine's), and the theme (a head plus one section per
+  pack, `themeFrom(name, palette, grid, packs)`; a pack's colour literals live in its own
+  `theme.ts`, a home the literal gate accepts). `Ground.create({ card, grids })` and
+  `groundCompose({ card, grids, onPart })` register them; the frame builder resolves
+  through the program, journals its extra facts, and lets it report a live spring. The
+  engine's default glyph is the DOT (ICE's old-leg `DEFAULT_GRID_MAGNET_CONFIG` keeps the
+  needle until B8). Moved out of `@ice/ground/compose` into the packs entry: `resolve`,
+  `STYLES`/`PRODUCT`/`composeStyle`, `pick`/`sdInner`, the heat's `HEAT`/`irradiance`,
+  and every `mat/*` export with `MAT`, `MAT_GRID`, `NIGHT`, `MAT_LIGHT`; `Frame` /
+  `FrameUniforms` became `frameStruct(ext)` / `frameUniformStruct(uext)`; `FieldConfig.mat`
+  became `ext.mat` (`withMat`, `matConfigOf`); `stepMotion` lost its button inputs (the
+  pack's `stepVfSprings`); `GroundTheme` lost the frame's inks and `matLight`
+  (`vfSectionOf(theme)`, `matLightOf(theme)`). Witnesses: the oracle's 44 renders through
+  the relocated pack are byte-identical to the pre-fold stash; three new shell scenes are
+  the engine card's own baseline; the `next-boot` rig with the packs registered is ALL
+  PASS at the same numbers; 380 tests. widgetlab registers all three packs as its own
+  choice; VibeField registers them through the pin. The DOM boundary (chrome-less hosts,
+  CardShell's retirement) is B3b.
 - **The composited-next profile draws the world's cards — B3a, compose in plate mode**
   (design-013 §8 B3, 2026-09-07). `groundCompose()`'s GpuCompose now builds every frame
   from the world through the frame builder (`createFrameBuilder`, `@ice/ground/compose`):

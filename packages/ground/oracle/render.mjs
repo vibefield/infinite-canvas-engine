@@ -20,23 +20,27 @@ import { beginPass, Target, readback } from "../src/engine/target.ts";
 import { Field } from "../src/field/field.ts";
 import { fieldShaders, FIELD_SHADER_FILES } from "../src/field/shaders.ts";
 import { DEFAULT_FIELD_CONFIG, OPEN_RANGE } from "../src/field/layout.ts";
-import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../src/mat/layout.ts";
+import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../src/packs/mat/layout.ts";
+import { cuttingMat, MAT_GLYPH, matPassOf } from "../src/packs/mat/index.ts";
+import { needleGlyph } from "../src/packs/needle/index.ts";
+import { vfFrame, vfSectionOf } from "../src/packs/vf-frame/index.ts";
+import { MATERIAL } from "../src/card/geometry.ts";
+import { NO_PART, shellProgram } from "../src/card/program.ts";
 import { FramePass } from "../src/card/frame-pass.ts";
 import { frameShaders, FRAME_SHADER_FILES } from "../src/card/shaders.ts";
 import { portalContent, testResidency, TEST_PLATE } from "../src/card/content.ts";
-import { sdInner as sdInnerOf, pick } from "../src/card/sdf.ts";
+import { sdInner as sdInnerOf, pick } from "../src/packs/vf-frame/sdf.ts";
 import { FillPass, fillShaders, FILL_SHADER_FILES } from "../src/nav/fill-pass.ts";
 import { drawFrame, prepareFrame, SlotPool } from "../src/compose/ground.ts";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt, flightOpacity } from "../src/nav/flight.ts";
 import { clipOf, faceRadius, faceRect, FOLDER_FACE, PORTAL_CAP, PORTAL_GATE, portalOf } from "../src/nav/portal.ts";
-import { resolve as resolveFrame } from "../src/card/choreography.ts";
 import { newMotion, pinMotion, toMotion } from "../src/card/motion.ts";
-import { STYLES } from "../src/card/sheet.ts";
-import { sdFrame, sdInner, sdOuter, sdRoundBox } from "../src/card/sdf.ts";
-import { irradiance } from "../src/card/heat.ts";
+import { STYLES } from "../src/packs/vf-frame/sheet.ts";
+import { sdFrame, sdInner, sdOuter, sdRoundBox } from "../src/packs/vf-frame/sdf.ts";
+import { irradiance } from "../src/packs/vf-frame/heat.ts";
 import { LINES } from "../src/theme.ts";
 import { THEMES, surface } from "./fixtures/vf-theme.ts";
-import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../src/mat/night.ts";
+import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../src/packs/mat/night.ts";
 
 Object.assign(globalThis, globals);   // GPUBufferUsage & friends, which the browser has for free
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,15 +55,23 @@ const t0 = performance.now();
 const gpu = await acquire({ gpu: create([]), label: "oracle" });
 console.log(`device ${(performance.now() - t0).toFixed(0)} ms · ${gpu.info.description || gpu.info.vendor}`);
 const device = gpu.device;
-const field = await Field.create(device, FORMAT, fieldShaders(texts(FIELD_SHADER_FILES)));
-const frames = await FramePass.create(device, FORMAT, frameShaders(texts(FRAME_SHADER_FILES)));
+// The engine's sets from disk, plus the packs the product registers (design-014): the needle and the mat as grids, VibeField's frame as the card program.
+const fieldSet = fieldShaders(texts(FIELD_SHADER_FILES));
+const pack = vfFrame();
+const field = await Field.create(device, FORMAT, { ...fieldSet, glyphs: [...fieldSet.glyphs, needleGlyph, cuttingMat] });
+const frames = await FramePass.create(device, FORMAT, frameShaders(texts(FRAME_SHADER_FILES)), pack);
+// The engine's own card, the SHELL, on the same set — the scenes that say `program: "shell"` draw through it (design-014).
+const shellFrames = await FramePass.create(device, FORMAT, frameShaders(texts(FRAME_SHADER_FILES)), shellProgram);
+/** The card program the scene being rendered resolves through — `setOf` reads it. */
+let program = pack;
 const fill = await FillPass.create(device, FORMAT, fillShaders(texts(FILL_SHADER_FILES)));
 // The mat's assets, the same bytes the lab fetches.
 // The engine's assets (assets/: the blue noise) and the HOST's (oracle/fixtures/assets/: the gobo plates, the content-test plate — the product's look, a fixture here) — raw rgba8 either way.
 const bytesOf = (dir, rel) => { const b = readFileSync(resolve(root, dir, rel)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
 const raw = (rel) => bytesOf("assets", rel);
 const hostRaw = (rel) => bytesOf("oracle/fixtures/assets", rel);
-field.mat.setPlate("c", hostRaw("gobo-c.rgba")); field.mat.setPlate("b", hostRaw("gobo-b.rgba")); field.mat.setNoise(raw("blue-noise.rgba"));
+const matPass = matPassOf(field);
+matPass.setPlate("c", hostRaw("gobo-c.rgba")); matPass.setPlate("b", hostRaw("gobo-b.rgba")); matPass.setNoise(raw("blue-noise.rgba"));
 // The content term's test residency — the same bytes, layers and uvs the lab builds (card/content.ts).
 const plateBytes = hostRaw("content-test.rgba");
 const residency = testResidency(device, plateBytes);
@@ -67,6 +79,8 @@ frames.setPages(residency.pagesView);
 // The slots beyond the root — the departed frame's, the live portals' — from the same pool the ground keeps.
 const rootSlot = { field, frames, fill };
 const pool = new SlotPool(rootSlot);
+const shellSlot = { field, frames: shellFrames, fill };
+const shellPool = new SlotPool(shellSlot);
 const W = VIEW.cssW * VIEW.dpr;
 const H = VIEW.cssH * VIEW.dpr;
 const out = new Target(device, { format: FORMAT, label: "oracle", readable: true }, W, H);
@@ -81,8 +95,9 @@ const viewOf = (cam) => ({ camX: cam.x, camY: cam.y, zoom: cam.zoom, width: VIEW
 
 /** A frame's cards resolved at rest — surfaces, motion, geometry. Exactly what lab/main.ts does per frame, minus the DOM. */
 function setOf(specs, style, glyph) {
-  const cards = specs.map((c) => ({ ...c, surface: surface(c.surface ?? "card"), motion: pinMotion(newMotion(c.selected ?? false, true), c) }));
-  const geoms = cards.map((c) => resolveFrame(style, { centre: [c.x, c.y], contentHalf: [c.w * 0.5, c.h * 0.5], radius: c.r }, toMotion(c.motion)));
+  pack.style = style;   // the pack resolves with the scene's style; a keyless resolve is a still — the lock closed, the buttons at rest
+  const cards = specs.map((c) => ({ ...c, surface: surface(c.surface ?? "card"), motion: pinMotion(newMotion(c.selected ?? false), c) }));
+  const geoms = cards.map((c) => program.resolve({ card: { centre: [c.x, c.y], contentHalf: [c.w * 0.5, c.h * 0.5], radius: c.r }, motion: toMotion(c.motion), material: MATERIAL, dt: 0, part: NO_PART }));
   return { cards, geoms, glyph };
 }
 const sourcesOf = (set, cam) => set.geoms.map((G, i) => ({ cx: (G.centre[0] - cam.x) * cam.zoom, cy: (G.centre[1] - cam.y) * cam.zoom, hx: G.half[0] * cam.zoom, hy: G.half[1] * cam.zoom, r: G.outerR * cam.zoom, strength: set.cards[i].strength }));
@@ -114,7 +129,7 @@ function portalsOf(specs, set, cam, s, style, exclude = -1, depth = 0) {
     const sub = portalsOf(inside.cards, insideSet, live.cam, s, style, -1, depth + 1);
     holes.add(i);
     inputs.push({
-      view: { ...viewOf(live.cam), box: live.box }, pointer: { x: 0, y: 0, on: false }, mat: matOf(s),
+      view: { ...viewOf(live.cam), box: live.box }, pointer: { x: 0, y: 0, on: false }, ext: { [MAT_GLYPH]: matOf(s) },
       ...(s.dress === false ? {} : { lodZoom: live.arrival.zoom }),   // dressed for its arrival (PORTAL.md §9)
       present: { opacity: live.presence, portal: live.clip },
       config: cfgFor(s, inside.glyph), sources: sourcesOf(insideSet, live.cam), frames: framesOf(insideSet, {}, sub.holes),
@@ -166,7 +181,7 @@ function cfgFor(s, glyph, inkAlpha) {
     needleHalfLen: open ? OPEN_RANGE : s.needleHalfLen ?? DEFAULT_FIELD_CONFIG.needleHalfLen,
     needleHalfWidth: open ? OPEN_RANGE : s.needleHalfWidth ?? DEFAULT_FIELD_CONFIG.needleHalfWidth,
     fadeIn: s.fadeIn ?? DEFAULT_FIELD_CONFIG.fadeIn,
-    mat: { ...DEFAULT_MAT_CONFIG, gobo: { ...DEFAULT_MAT_CONFIG.gobo, opacity: s.mat?.opacity ?? DEFAULT_MAT_CONFIG.gobo.opacity, plate: s.mat?.plate ?? DEFAULT_MAT_CONFIG.gobo.plate } },
+    ext: { [MAT_GLYPH]: { ...DEFAULT_MAT_CONFIG, gobo: { ...DEFAULT_MAT_CONFIG.gobo, opacity: s.mat?.opacity ?? DEFAULT_MAT_CONFIG.gobo.opacity, plate: s.mat?.plate ?? DEFAULT_MAT_CONFIG.gobo.plate } } },
   };
 }
 
@@ -180,10 +195,15 @@ async function render(s, opts = {}) {
   const style = STYLES[s.style ?? "product"];
   const theme = opts.theme ?? THEMES[s.theme];
   cfgTheme = theme;
+  const shell = s.program === "shell";
+  program = shell ? shellProgram : pack;
+  const slot = shell ? shellSlot : rootSlot;
+  const slotPool = shell ? shellPool : pool;
+  const framesPass = slot.frames;
   const mat = matOf(s);
   const pointer = { x: s.mouseX, y: s.mouseY, on: s.mouseOn };
   const drawFrames = s.drawFrames ?? true;
-  frames.exact = s.exact ?? false;
+  framesPass.exact = s.exact ?? false;
   const bg = theme.canvasBg;
   const encoder = device.createCommandEncoder();
   let set;
@@ -203,12 +223,12 @@ async function render(s, opts = {}) {
     const holesOut = new Set(dp.holes);
     if (nav.at !== undefined) holesOut.add(nav.at);
     inputs = {
-      view: viewOf(cam), pointer, mat, present: nav.presentIn, theme,
+      view: viewOf(cam), pointer, ext: { [MAT_GLYPH]: mat }, present: nav.presentIn, theme,
       ...(s.dress === false ? {} : { lodZoom: nav.f.c1.zoom }),   // the arriving frame is dressed for its landing, the departed for the cut (PORTAL.md §9)
       config: cfgFor(s, set.glyph), sources, frames: drawFrames ? framesOf(set, opts, holesIn) : [],
       ...(ap.inputs.length ? { portals: ap.inputs } : {}),
       outgoing: {
-        view: viewOf(nav.outCam), pointer: { x: 0, y: 0, on: false }, mat, present: nav.presentOut,
+        view: viewOf(nav.outCam), pointer: { x: 0, y: 0, on: false }, ext: { [MAT_GLYPH]: mat }, present: nav.presentOut,
         ...(s.dress === false ? {} : { lodZoom: nav.f.camPre.zoom }),
         config: cfgFor(s, nav.departed.glyph), sources: sourcesOf(nav.departed, nav.outCam), frames: drawFrames ? framesOf(nav.departed, opts, holesOut) : [],
         ...(dp.inputs.length ? { portals: dp.inputs } : {}),
@@ -219,15 +239,15 @@ async function render(s, opts = {}) {
     set = setOf(s.cards, style, s.glyph ?? "dot"); cam = { x: s.camX, y: s.camY, zoom: s.zoom };
     sources = sourcesOf(set, cam);
     const rp = portalsOf(s.cards, set, cam, s, style);
-    inputs = { view: viewOf(cam), pointer, mat, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), config: cfgFor(s, set.glyph, s.rootInkAlpha), sources, frames: drawFrames ? framesOf(set, opts, rp.holes) : [], ...(rp.inputs.length ? { portals: rp.inputs } : {}) };
+    inputs = { view: viewOf(cam), pointer, ext: { [MAT_GLYPH]: mat }, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), config: cfgFor(s, set.glyph, s.rootInkAlpha), sources, frames: drawFrames ? framesOf(set, opts, rp.holes) : [], ...(rp.inputs.length ? { portals: rp.inputs } : {}) };
   }
-  const prepared = prepareFrame(encoder, rootSlot, pool, inputs);
+  const prepared = prepareFrame(encoder, slot, slotPool, inputs);
   const pass = beginPass(encoder, out.view, [bg[0], bg[1], bg[2], 1]);
-  if (opts.framesOnly) frames.draw(pass);
+  if (opts.framesOnly) framesPass.draw(pass);
   else drawFrame(pass, { w: W, h: H }, VIEW.dpr, prepared.incoming, prepared.outgoing);
   pass.end();
   device.queue.submit([encoder.finish()]);
-  return { px: await readback(device, out.texture, 4), f: { geoms: set.geoms, sources, cards: set.cards }, n: prepared.frames, theme, nav, runs: frames.runCount, portals: prepared.portals };
+  return { px: await readback(device, out.texture, 4), f: { geoms: set.geoms, sources, cards: set.cards }, n: prepared.frames, theme, nav, runs: framesPass.runCount, portals: prepared.portals };
 }
 
 /**
@@ -328,7 +348,7 @@ async function heatCheck(sc) {
   const { px: A } = await render({ ...s, cards: s.cards.map((c) => ({ ...c, hot: undefined })) });
   const { px: C } = await render({ ...s, cards: s.cards.map((c) => (c.hot ? { ...c, hot: { ...c.hot, tier: 1 - c.hot.tier } } : c)) });
   const G = f.geoms[idx];
-  const K = frames.heat;
+  const K = pack.heat;
   const tier = S.tier;
   const pxScale = 1 / (s.zoom * VIEW.dpr);
   const mix = (a, b, t) => a + (b - a) * t;
@@ -361,7 +381,7 @@ async function heatCheck(sc) {
     const gA = ga * lit * (cF + cI);
     const rA = ra * lit * insideLine(dO, K.rim.width);
     let err = 0;
-    for (let k = 0; k < 3; k++) err = Math.max(err, Math.abs(B[o + k] - Math.min(255, A[o + k] + 255 * (theme.glow[k] * gA + theme.rim[k] * rA))));
+    for (let k = 0; k < 3; k++) err = Math.max(err, Math.abs(B[o + k] - Math.min(255, A[o + k] + 255 * (vfSectionOf(theme).glow[k] * gA + vfSectionOf(theme).rim[k] * rA))));
     const interior = dO < -2 * pxScale;
     if (interior) { inner++; if (err > innerMax) innerMax = err; } else { band++; if (err > bandMax) bandMax = err; }
     if (err > (interior ? 1.5 : 2.5)) { badN++; if (bad.length < 3) bad.push(`(${X},${Y}) dO ${dO.toFixed(2)}: got ${B[o]},${B[o + 1]},${B[o + 2]} vs cold ${A[o]},${A[o + 1]},${A[o + 2]} err ${err.toFixed(2)}`); }
@@ -567,15 +587,15 @@ async function nightCheck(sc) {
   const s = sc.scene;
   const { px: N, theme: night } = await render(s);
   const { px: D } = await render({ ...s, theme: "light" });
-  const { px: D2 } = await render(s, { theme: { ...THEMES.dark, matLight: DAY_LIGHT } });
+  const { px: D2 } = await render(s, { theme: { ...THEMES.dark, packs: { ...THEMES.dark.packs, [MAT_GLYPH]: { light: DAY_LIGHT } } } });
   const z = s.zoom * VIEW.dpr;
   const band = 4;   // device px round each card: the hairline and its AA
   const inCard = (x, y) => s.cards.some((c) => Math.abs(x - (c.x - s.camX) * z) <= (c.w / 2) * z + band && Math.abs(y - (c.y - s.camY) * z) <= (c.h / 2) * z + band);
   const lum = (o, P) => 0.2126 * P[o] + 0.7152 * P[o + 1] + 0.0722 * P[o + 2];
   const LIN = Float32Array.from({ length: 256 }, (_, i) => srgbToLinear(i / 255));   // the one scale is a rule in LINEAR light
   const lin = (o, P) => 0.2126 * LIN[P[o]] + 0.7152 * LIN[P[o + 1]] + 0.0722 * LIN[P[o + 2]];
-  const eig = night.matLight.eigengrau.map((v) => Math.round(linearToSrgb(v) * 255));
-  const floor = eig.map((v) => v - Math.ceil((night.matLight.snow * 255) / 2) - 1);
+  const eig = night.packs[MAT_GLYPH].light.eigengrau.map((v) => Math.round(linearToSrgb(v) * 255));
+  const floor = eig.map((v) => v - Math.ceil((night.packs[MAT_GLYPH].light.snow * 255) / 2) - 1);
   let mat = 0;
   let dayDiff = 0;
   let notDarker = 0;
@@ -658,7 +678,7 @@ if (process.argv[2] === "mirror") {
     let ink = 0; for (let i = 0; i < px.length; i += 4) if (Math.abs(px[i] - bg) + Math.abs(px[i + 1] - bg) + Math.abs(px[i + 2] - bg) > 12) ink++;
     writeFileSync(resolve(results, `oracle-${sc.name}.rgba`), px);
     const flight = nav ? ` · ${nav.f.kind} p ${sc.scene.nav.p}${nav.f.frozen ? " FROZEN" : ""} · ${nav.departed.glyph} → ${nav.arriving.glyph} · out ${nav.presentOut.opacity.toFixed(2)} in ${nav.presentIn.opacity.toFixed(2)}` : "";
-    console.log(`${sc.name.padEnd(28)} ${f.sources.length} sources · ${n} frames · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · ink ${(100 * ink / (W * H)).toFixed(1)}%${field.stats.mat ? ` · mat${field.stats.wind ? " ← wind" : ""}` : ""}${flight}`);
+    console.log(`${sc.name.padEnd(28)} ${f.sources.length} sources · ${n} frames · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · ink ${(100 * ink / (W * H)).toFixed(1)}%${field.stats.surface ? ` · ${field.stats.surface}${field.stats.aux ? " ← aux" : ""}` : ""}${flight}`);
   }
   let failed = 0;
   for (const sc of ORACLE_SCENES) if (sc.continuity) { if (!(await continuity(sc))) failed += 1; }

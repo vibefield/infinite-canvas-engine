@@ -13,7 +13,7 @@
 //   disp = eigengrau + see · exposure     the dark's own grey under it; the appearance's scale
 //   out  = sRGB(disp) + snow              encoded, then the rods' own noise
 
-import type { RGB } from "../theme";
+import type { RGB } from "../../theme";
 
 /** What the mat is lit by — a theme's light. `night` 0 is the reference's day chain, bit for bit. */
 export interface MatLight {

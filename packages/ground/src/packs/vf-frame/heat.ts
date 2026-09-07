@@ -14,11 +14,28 @@
 // reads nothing but its own record (never a uniform of the picked card: N
 // drags, and the fade-out after a drop has no dragged card left to read).
 
-import type { Rect } from "../nav/flight";
-import { HEAT, type Heat, type RGB } from "../theme";
+import type { Rect } from "../../nav/flight";
+import { type RGB, SHADOW } from "../../theme";
 import type { Geometry } from "./choreography";
 
 export const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+/**
+ * §7 the overlap glow and rim — a drop target's HEAT (GLOW.md): the LIFTED card is
+ * an emitting surface floating `height` above the target, and the target receives
+ * its light through the source's own distance field. `height` is the §5 lift
+ * recipe's own number — the lifted shadow's 30 px offset is how far the card
+ * floats. The colours and the tier alphas [reject `c`, accept `t`] and the rim's
+ * width are the CardShell's `--ic-glow-*` / `--ic-rim-*` tokens by name; the
+ * CardShell's blur, offset and radial (a hot-POINT anatomy, what CSS could do)
+ * are retired by the light. Card units: they ride the card's transform, as LINES do.
+ */
+export interface Heat {
+  readonly height: number;
+  readonly alpha: readonly [number, number];
+  readonly rim: { readonly width: number; readonly alpha: readonly [number, number] };
+}
+export const HEAT: Heat = { height: SHADOW.lifted.offset, alpha: [0.25, 0.5], rim: { width: 1.5, alpha: [0.55, 0.85] } };
 
 /** A light source: a rounded rect in card units — the lifted card's silhouette. */
 export interface LightSource { readonly x: number; readonly y: number; readonly hx: number; readonly hy: number; readonly r: number }

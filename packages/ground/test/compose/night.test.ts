@@ -1,13 +1,15 @@
 // @vitest-environment node
-// The NIGHT (MAT.md): the physics in src/mat/night.ts against known numbers,
-// the theme's night against its rules and its pinned colours, the shader
-// against the CPU mirror's constants. No GPU.
+// The NIGHT (MAT.md): the physics in src/packs/mat/night.ts against known
+// numbers, the pack's night against its rules and its pinned colours, the
+// shader against the CPU mirror's constants. No GPU.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MAT_CONFIG, MatUniforms, STILL_MAT_FRAME, matUniformValues } from "../../src/mat/layout";
-import { D65, DAY_LIGHT, dayLuminance, degreeOfAdaptation, hueTint, lightValues, linear, linearToSrgb, luminance, mesopicWeight, nightAppearance, nightReport, planckianXY, rodSignal, scotopic, spectralXY, xyToLinear } from "../../src/mat/night";
-import { MAT, MAT_COLORS, MAT_GRID, MAT_LIGHT, NIGHT, type RGB, rgb } from "../../src/theme";
+import { DEFAULT_MAT_CONFIG, MatUniforms, STILL_MAT_FRAME, matUniformValues } from "../../src/packs/mat/layout";
+import { D65, DAY_LIGHT, dayLuminance, degreeOfAdaptation, hueTint, lightValues, linear, linearToSrgb, luminance, mesopicWeight, nightAppearance, nightReport, planckianXY, rodSignal, scotopic, spectralXY, xyToLinear } from "../../src/packs/mat/night";
+import { matLightOf } from "../../src/packs/mat";
+import { MAT, MAT_COLORS, MAT_GRID, MAT_LIGHT, NIGHT } from "../../src/packs/mat/theme";
+import { type RGB, rgb } from "../../src/theme";
 import { THEMES } from "../../oracle/fixtures/vf-theme";
 
 const ground = resolve(import.meta.dirname, "../..");
@@ -75,7 +77,8 @@ describe("the theme's night", () => {
   const cream = linear(MAT_COLORS.line);
 
   it("is the dark theme's light; the light theme's is the day, and the day is inert", () => {
-    expect(THEMES.dark.matLight).toBe(L); expect(THEMES.light.matLight).toBe(DAY_LIGHT);
+    // design-014: the light rides the theme's `mat` section, read through the pack
+    expect(matLightOf(THEMES.dark)).toBe(L); expect(matLightOf(THEMES.light)).toBe(DAY_LIGHT);
     expect(L.night).toBe(1); expect(DAY_LIGHT.night).toBe(0);
     expect(lightValues(DAY_LIGHT).night).toEqual([0, 0, 0, 0]);
   });
@@ -131,9 +134,9 @@ describe("the theme's night", () => {
     expect(u.eigengrau.slice(0, 3)).toEqual([...L.eigengrau]);
     expect(() => MatUniforms.alloc(1).set(u)).not.toThrow();
     expect(matUniformValues(view, [10, 20], DEFAULT_MAT_CONFIG, STILL_MAT_FRAME, 1).night).toEqual([0, 0, 0, 0]);
-    const wgsl = readFileSync(join(ground, "shaders/mat/mat.wgsl"), "utf8");
+    const wgsl = readFileSync(join(ground, "shaders/packs/mat/mat.wgsl"), "utf8");
     for (const k of ["0.767 + 0.3334", "1.33 * (1.0 + (Y + Z)", "- 1.68", "0.3183098862", "0.4342944819", "0.0031308"]) expect(wgsl).toContain(k);
     expect(wgsl).toContain("if (u.night.x <= 0.0) { return shade_mat(u, albedo, gobo); }");
-    expect(readFileSync(join(ground, "shaders/mat/mat-pass.wgsl"), "utf8")).toContain("mat_colour(u, albedo, gobo, bn.y)");
+    expect(readFileSync(join(ground, "shaders/packs/mat/mat-pass.wgsl"), "utf8")).toContain("mat_colour(u, albedo, gobo, bn.y)");
   });
 });

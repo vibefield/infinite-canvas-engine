@@ -5,13 +5,14 @@
 // where the own texture changes), the record's layout, and the test
 // residency's numbers — the fixture both hosts build from the same bytes.
 import { describe, expect, it } from "vitest";
-import { MATERIAL, REST, resolve } from "../../src/card/choreography";
 import { CONTENT_MODE, FULL_UV, PLATE, TEST_PLATE, contentValues, runsOf, uvOf, type FrameContent } from "../../src/card/content";
-import { Frame, frameValues } from "../../src/card/layout";
-import { PRODUCT } from "../../src/card/sheet";
+import { frameStruct, frameValues } from "../../src/card/layout";
+import { MATERIAL, PRODUCT, resolve, VF_EXT, VF_REST } from "../../src/packs/vf-frame";
 
 const view = (tag: string) => ({ tag }) as unknown as GPUTextureView;
-const G = resolve(PRODUCT, { centre: [100, 50], contentHalf: [64, 32], radius: 12 }, REST, MATERIAL);
+const G = resolve(PRODUCT, { centre: [100, 50], contentHalf: [64, 32], radius: 12 }, VF_REST, MATERIAL);
+// the record struct is BUILT per card program since design-014; this is the vf-frame pack's
+const Frame = frameStruct(VF_EXT);
 
 describe("content — the record", () => {
   it("uvOf normalises a written rect; FULL_UV is the whole texture", () => {

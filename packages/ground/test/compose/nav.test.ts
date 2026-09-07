@@ -7,9 +7,10 @@
 // two nav ops as geometry, the flight a host drives, and the portal records.
 import { must } from "./must";
 import { describe, expect, it } from "vitest";
-import { FrameUniforms } from "../../src/card/layout";
+import { frameUniformStruct } from "../../src/card/layout";
 import { Uniforms } from "../../src/field/layout";
-import { MatUniforms } from "../../src/mat/layout";
+import { MatUniforms } from "../../src/packs/mat/layout";
+import { VF_UNIFORMS } from "../../src/packs/vf-frame";
 import {
   FIT, NAV, arrivalCamera, boundsOf, capFlightStart, composeAffine, enterFlight, exitFlight, fitCamera, flightAt, flightCamera, flightOctaves, flightOpacity,
   departedCamera, invertAffine, outgoingCamera, portalAffine, solveFlightStart, springStep, startFlight, stepFlight, visibleRect,
@@ -202,8 +203,10 @@ describe("the portal records", () => {
     expect(scissorOf({ opacity: 1, portal: { cx: 1190, cy: 790, hx: 100, hy: 100, r: 0 } }, 2, { w: 2400, h: 1600 })).toEqual([2179, 1379, 221, 221]);
   });
   it("every uniform block carries the portal chain — portals and clips — by name", () => {
-    for (const s of [Uniforms, MatUniforms, FrameUniforms]) {
-      const names = s.fields.map(([name]) => name);
+    // the frame's block is BUILT per card program (design-014): the chain is in the HEAD,
+    // so a program's own slots (the vf-frame pack's twelve) cannot displace it
+    for (const s of [Uniforms, MatUniforms, frameUniformStruct(0), frameUniformStruct(VF_UNIFORMS)]) {
+      const names = (s.fields as ReadonlyArray<readonly [string, string]>).map(([name]) => name);
       expect(names).toContain("portals"); expect(names).toContain("clips");
       expect(s.size % 16).toBe(0);
     }

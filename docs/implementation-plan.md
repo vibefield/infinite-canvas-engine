@@ -878,6 +878,19 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   real engine; the oracle's 44 renders byte-identical after the `portalAt` extraction;
   `pnpm run ci` green. B3b next: DomCompose's chrome-less hosts and `clip-path`, the
   router's `pick()`, `Hover`, the parity redefinition, the D7 witness.
+- **B3s — the pack seam** (design-014, **LANDED 2026-09-07**): what is generic stays in
+  the engine (the lattice and bake, the dot, the slot tree and compositor, the SHELL card,
+  the springs on engine facts); what is a look is a pack the app registers
+  (`@ice/ground/packs`: `needleGlyph`, `cuttingMat`, `vfFrame()`). Three seams — a grid
+  program, a card program (the record's head + `ext` tail, `card.wgsl`'s `shade_card` /
+  `shade_over` contract), the theme's per-pack sections. The six leans ruled (D1 reference
+  packs · D2 the ring as the drop cue · D3 `CARD_ABI` · D4 one-release CardShell window ·
+  D5 no morph in the shell · D6 hover ignored). As built: the head's geometry is written
+  by the program's resolve (the shell's or the pack's), the content binding by the engine.
+  Exit: the oracle's 44 renders byte-identical through the relocated pack; three shell
+  scenes as the engine card's baseline; `next-boot` ALL PASS with the packs at B3a's
+  numbers; 380 tests; groundlab and its rigs through the packs; `pnpm run ci` green.
+  B3b next.
 
 ## Release cut & downstream
 

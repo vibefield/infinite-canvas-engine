@@ -27,8 +27,9 @@ import {
   widgets,
   type Entity,
 } from "@ice/core";
-import { MATERIAL, REST, resolve } from "../../src/card/choreography";
-import { PRODUCT, PRODUCT_CORNER } from "../../src/card/sheet";
+import { MATERIAL, REST, resolveShell, SHELL_RADIUS } from "../../src/card/geometry";
+import { NO_PART, shellProgram } from "../../src/card/program";
+import { PRODUCT, PRODUCT_CORNER, VF_EXT, vfFrame, type VfGeometry } from "../../src/packs/vf-frame";
 import { createFrameBuilder, faceOfSnapshot, heatSourceOf, offscreen, portalFaceOf, sizeOf } from "../../src/compose/frame-inputs";
 import { DEFAULT_FIELD_CONFIG } from "../../src/field/layout";
 import { arrivalCamera, boundsOf, FIT } from "../../src/nav/flight";
@@ -111,11 +112,30 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     const { build, builder, a } = makeBoard();
     build();
     const G = must(builder.geometryOf(a));
-    const rest = resolve(PRODUCT, { centre: [200, 160], contentHalf: [100, 60], radius: PRODUCT_CORNER.radius }, { ...REST, reveal: 0 }, MATERIAL);
+    // the builder's default card program is the engine's SHELL (design-014); a pack is opt-in
+    const rest = resolveShell({ centre: [200, 160], contentHalf: [100, 60], radius: SHELL_RADIUS }, { ...REST, reveal: 0 }, MATERIAL);
     expect(G).toEqual(rest);
     expect(G.ring).toBe(0);
     expect(G.scale).toBe(1);
     expect(G.shadowSigma).toBe(MATERIAL.shadow.rest.sigma);
+    expect(G).not.toHaveProperty("nw");   // the shell has no tail
+  });
+
+  it("a builder given a card PROGRAM resolves through it: the vf-frame pack's geometry and its ten tail slots", () => {
+    const { ce, a } = makeBoard();
+    const pack = vfFrame();
+    const builder = createFrameBuilder(ce.world, { previews: ce.previews, program: pack });
+    const f = builder.build(CAM, VP, DT, THEMES.dark, DEFAULT_FIELD_CONFIG);
+    expect(f.stats.cards).toBe(3);
+    const G = must(builder.geometryOf(a)) as VfGeometry;
+    // the pack resolving the same card at the same motion, bit for bit — the builder adds nothing
+    expect(G).toEqual(pack.resolve({ card: { centre: [200, 160], contentHalf: [100, 60], radius: SHELL_RADIUS }, motion: { ...REST, reveal: 0 }, material: MATERIAL, dt: 0, part: NO_PART }));
+    // the head is the shell's; the tail is the pack's — the composed corners and the two buttons
+    expect(G.half).toEqual([100, 60]);
+    expect(G.nw).toHaveLength(4);
+    expect(G.closeC).toEqual([200 + G.half[0] - PRODUCT.btn.insetX, 160 - G.half[1] + PRODUCT.btn.insetY]);
+    expect(pack.tail(G)).toHaveLength(4 * VF_EXT);
+    builder.dispose();
   });
 
   it("the container is a HOLE cut to its face, and its portal is the preview's inside at rest under the flight's exact camera", () => {
@@ -133,7 +153,7 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     expect(p.frames).toHaveLength(2);
     expect(p.sources).toHaveLength(2);
     // the inside at REST: each child's geometry is the resting resolve of its rect in the inside's frame
-    const r1 = resolve(PRODUCT, { centre: [100, 60], contentHalf: [100, 60], radius: PRODUCT_CORNER.radius }, REST, MATERIAL);
+    const r1 = resolveShell({ centre: [100, 60], contentHalf: [100, 60], radius: SHELL_RADIUS }, REST, MATERIAL);
     expect(must(p.frames[0]).geometry).toEqual(r1);
     expect(must(p.frames[1]).geometry.centre).toEqual([400, 260]);
     // the flight's own camera: `portalOf` on the same content bounds lands on the same record, bit for bit
@@ -199,7 +219,7 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     expect(m.lift).toBe(1);
     const G = must(builder.geometryOf(a));
     expect(G.scale).toBeCloseTo(1.05, 12);
-    expect(G.half).toEqual([100 * 1.05, 60 * 1.05]);   // unrevealed: no chrome band yet, the outer box IS the content box, lifted
+    expect(G.half).toEqual([100 * 1.05, 60 * 1.05]);   // the shell has no chrome band: the outer box IS the content box, lifted
     expect(G.shadowSigma).toBeCloseTo(MATERIAL.shadow.lifted.sigma * 1.05, 12);
     expect(G.frameAlpha).toBe(MATERIAL.lift.opacity);
     world.removeComponent(a, Grab);
@@ -222,12 +242,12 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     expect(m.hot).toBe(1);
     expect(m.tierK).toBe(1);
     expect(m.hotAt).toEqual([480, 150]);
-    const T = PRODUCT.thickness;
-    expect(m.hotHalf).toEqual([(100 + T) * 1.05, (60 + T) * 1.05]);
-    expect(m.hotR).toBe((PRODUCT.outerR ?? PRODUCT_CORNER.radius + T) * 1.05);
+    // the SHELL's source is the dragged union as drawn — no chrome band to grow by, its own radius
+    expect(m.hotHalf).toEqual([100 * 1.05, 60 * 1.05]);
+    expect(m.hotR).toBe(SHELL_RADIUS * 1.05);
     const G = must(builder.geometryOf(b));
     expect(G.hot).toEqual([480, 150, 1, 1]);
-    expect(G.src).toEqual([(100 + T) * 1.05, (60 + T) * 1.05, m.hotR, 0]);
+    expect(G.src).toEqual([100 * 1.05, 60 * 1.05, m.hotR, 0]);
     expect(builder.motionOf(a)?.hotTarget).toBe(false);
     // the source follows the drag: a DragBounds write moves the light
     world.edit(rec).set(DragBounds, { minX: 400, minY: 100, maxX: 600, maxY: 220 });
@@ -356,15 +376,19 @@ describe("the frame builder · the pure parts", () => {
     expect(offscreen([500, 300], [100, 50], 0, { x: 0, y: 0, zoom: 0.5 }, vp)).toBe(false);
   });
 
-  it("heatSourceOf: the union grown by the thickness, scaled by the lift, at the revealed outer radius; empty bounds → null", () => {
+  it("heatSourceOf: the union as the PROGRAM draws it, scaled by the lift; empty bounds → null", () => {
     const { world, b } = makeBoard();
-    expect(heatSourceOf(world, b, PRODUCT, 22, 1.05)).toBeNull();
+    const pack = vfFrame();
+    expect(heatSourceOf(world, b, shellProgram, SHELL_RADIUS, 1.05)).toBeNull();
     const rec = world.spawn({ components: [[DragBounds, { minX: 0, minY: 0, maxX: 0, maxY: 0 }]] });
     world.setRelation(rec, DropTarget, b);
-    expect(heatSourceOf(world, b, PRODUCT, 22, 1.05)).toBeNull();
+    expect(heatSourceOf(world, b, shellProgram, SHELL_RADIUS, 1.05)).toBeNull();
     world.edit(rec).set(DragBounds, { minX: 10, minY: 20, maxX: 110, maxY: 80 });
+    // the shell: the union itself, at its own radius
+    expect(heatSourceOf(world, b, shellProgram, SHELL_RADIUS, 1.05)).toEqual({ x: 60, y: 50, hx: 50 * 1.05, hy: 30 * 1.05, r: SHELL_RADIUS * 1.05 });
+    // the vf-frame pack: grown by the thickness, at the revealed outer radius
     const T = PRODUCT.thickness;
-    expect(heatSourceOf(world, b, PRODUCT, 22, 1.05)).toEqual({ x: 60, y: 50, hx: (50 + T) * 1.05, hy: (30 + T) * 1.05, r: (PRODUCT.outerR ?? 22 + T) * 1.05 });
+    expect(heatSourceOf(world, b, pack, 22, 1.05)).toEqual({ x: 60, y: 50, hx: (50 + T) * 1.05, hy: (30 + T) * 1.05, r: (PRODUCT.outerR ?? PRODUCT_CORNER.radius + T) * 1.05 });
   });
 
   it("sizeOf prefers a positive MeasuredSize rider", () => {
