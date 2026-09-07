@@ -317,7 +317,20 @@ passes it and reports `compose.stats().outgoing` and `compose.lastInputs()`; the
 carries the pre-cut camera (`fromX/fromY/fromZ`) and `ticks`; `departedCameraOf(t, cam)` is the one rule
 for the departed frame's camera (the pre-cut camera itself at p = 0 and while frozen); an enter starts
 from the live portal's exact camera and holds its first tick at p = 0; `Retained` is written on the
-departed frame's cards for the flight. The pixel witnesses are the package's oracle
+departed frame's cards for the flight. **A live surface (design-013 B6,
+§9 Q5)**: the handle's **`compose.video`** is the producer's door — `register(entity, {
+width, height, srgb? })` claims the STABLE TEXTURE Residency names in that card's
+`TextureRef` (a `video` widget: `defineWidget({ surface: "video", component: null })`, whose
+pixels are the producer's and whose `component` is therefore refused), `arrive(entity,
+source)` hands over a `VideoFrame` / `ImageBitmap` / canvas / video element and OWNS it from
+then on (closed by the copy, by the arrival that supersedes it, by the demand clamp that
+refuses it, or by `dispose` — once, never twice), `unregister`, `stats()` (`registered ·
+arrivals · copies · dropped · paused`, and `arrivals === copies + dropped`). The copy is a
+queue op in the profile's `video` render slot (§6's reflector 7, before GpuCompose's submit),
+one per arrival, premultiplied and unflipped, and it wakes the frame through the content
+residency — never a retained frame re-imported per composite. `SurfaceDemand` bites at the
+door: paused drops, and a bucket allows one copy per `demandIntervalMs`. The witness is the
+`next-video` rig. The pixel witnesses are the package's oracle
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 

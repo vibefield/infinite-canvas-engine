@@ -95,8 +95,14 @@ import { defineComponent, defineTag } from "../schema/meta";
  * from `PrefabId → widgets.get(type).surface`, so putting it in the document
  * would sync a fact every peer can compute — D4).
  *
- * `video` never arrives from `defineWidget` (whose `surface` is `dom | gl`); it
- * comes from a producer that registers a stable texture.
+ * `video` is declared like any other kind (`defineWidget({ surface: "video" })`)
+ * and stamped here by equip — Band, Demand and Residency all key off it, and
+ * nothing else can write it. What arrives from a PRODUCER is the pixels: it
+ * registers a stable texture with VideoIngest and Residency names that handle
+ * in the card's `TextureRef` (design-013 §9 Q5, B6). Erratum, 2026-09-07: this
+ * line used to read "`video` never arrives from `defineWidget` (whose `surface`
+ * is `dom | gl`)", which left the kind unspeakable and a live surface
+ * unspawnable — see `WidgetSurfaceKind`'s own erratum.
  */
 export const SurfaceKind = defineComponent("SurfaceKind", {
   kind: field(enumOf(["dom", "gl", "video"]), { default: "dom" }),

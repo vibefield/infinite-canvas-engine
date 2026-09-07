@@ -55,14 +55,23 @@ import type { FrameProjection } from "../canvas/frame-projection";
  *
  * RENAMED from `WidgetSurface` at S8 (design-012 §11 Q7). Q7 ratifies
  * `WidgetSurface` as the name of the PRESENTATION CONTRACT — the thing that
- * owns pixels-or-DOM, demand and retention — and this two-value union was
- * sitting on it while meaning something else entirely: not the surface, but the
- * kind of surface. It is a strict subset of the compositor's `SurfaceKindValue`
- * (`video` arrives from a producer, never from `defineWidget`; the terminal
+ * owns pixels-or-DOM, demand and retention — and this union was sitting on it
+ * while meaning something else entirely: not the surface, but the kind of
+ * surface. It is a subset of the compositor's `SurfaceKindValue` (the terminal
  * mirror joins later per Q6), and `Extract` says so rather than restating the
  * strings, so a new kind cannot make the two lists silently disagree.
+ *
+ * ERRATUM (design-013 B6, 2026-09-07): `video` USED to be excluded here, on the
+ * ground that it "arrives from a producer, never from `defineWidget`". Half of
+ * that is still true — the PIXELS arrive from a producer, which registers a
+ * stable texture with VideoIngest — but the CARD does not: Band, Demand and
+ * Residency all key off `SurfaceKind = video`, and only equip stamps that, from
+ * the type's static recipe. With the kind unspeakable at the door there was no
+ * way to spawn a live surface at all. So a video widget is declared like any
+ * other and equip gives it `SurfaceTarget = gpu` (the only target it has); what
+ * it may not carry is a `component`, because nothing would ever mount one.
  */
-export type WidgetSurfaceKind = Extract<SurfaceKindValue, "dom" | "gl">;
+export type WidgetSurfaceKind = Extract<SurfaceKindValue, "dom" | "gl" | "video">;
 export type SizeMode = "fixed" | "auto-height" | "auto";
 
 export interface WidgetPortDecl {
@@ -581,6 +590,18 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if ((def as { presentation?: unknown }).presentation !== undefined) {
     throw new Error(
       `ice: defineWidget("${def.type}") presentation is retired (design-013 A1) — attach ice:surface.alwaysDom / alwaysGpu / alwaysGpu.with({ paused: true }) through behaviors:`,
+    );
+  }
+
+  // A VIDEO widget has no view of its own (design-013 §9 Q5, B6): its pixels are
+  // a producer's, copied into the stable texture it registered with VideoIngest.
+  // Nothing mounts a `component` for it — `WidgetRoot` portals the CHROME for
+  // every non-dom kind and `GLViews` takes only `gl` — so a component passed here
+  // would be silently dead code, which is the same class as the `presentation`
+  // above: a declaration that compiles, reads as wired, and is never consulted.
+  if (def.surface === "video" && def.component !== null && def.component !== undefined) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") is a video surface and carries a component — a video card's pixels come from a producer's registered texture, and nothing mounts its component. Pass component: null (chrome: is still yours).`,
     );
   }
 

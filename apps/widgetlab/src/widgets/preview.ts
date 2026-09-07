@@ -43,10 +43,16 @@ const CARD_PREVIEW: Record<string, string> = {
   ...NODE_BG,
 };
 
-/** Background for a mini: the card's real look, else the shell default. */
+/**
+ * Background for a mini: the card's real look, else the shell default.
+ *
+ * `surface` is the widget type's kind — `WidgetSurfaceKind`, which gained `video` at
+ * design-013 B6. A live surface's tile is a plain card: its pixels are a producer's and there
+ * is nothing to preview until one arrives, so only `gl` keeps the floating look.
+ */
 export function previewBackground(
   type: string | undefined,
-  surface: "dom" | "gl" | undefined,
+  surface: "dom" | "gl" | "video" | undefined,
 ): string {
   if (type !== undefined) {
     const hit = CARD_PREVIEW[type];

@@ -77,6 +77,14 @@ export interface CompositorSourceGl {
  * composite is the RIG's mechanism; a consumer under a producer lease protocol
  * must instead copy once into a stable texture and close the frame immediately.
  * The contract here is the lesson, not that mechanism.
+ *
+ * SUPERSEDED for the new profile (design-013 §9 Q5 RULED, B6, 2026-09-07): this
+ * whole shape is the OLD leg's and retires with it at B8. A producer now states
+ * its size once and hands over frames — `compose.video.register(entity, { width,
+ * height })` then `arrive(entity, frame)` (`@ice/ground/compose`'s VideoIngest)
+ * — and the copy-once-and-close above is the mechanism the engine performs,
+ * not advice a consumer is left to follow. The `texture_external` pipeline
+ * variant leaves the product with `widget-quad-pass`; the ground has none.
  */
 export interface CompositorSourceVideo {
   readonly kind: "video";

@@ -34,6 +34,7 @@ export * from "../compose/dom-compose";
 export * from "../compose/frame-inputs";
 export * from "../compose/host";
 export * from "../compose/residency";
+export * from "../compose/video-ingest";
 export * from "../theme";
 export * from "../shaders";
 export { WGSL, type WgslFile } from "../shaders.gen";

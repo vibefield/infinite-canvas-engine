@@ -25,6 +25,9 @@ export default defineConfig({
       //                          islands are drawn by the compositor's own pass.
       //   composited-next  — design-013 B2: the NEW composited profile boots to the
       //                          ground's own canvas (no cards), idle-zero, alive.
+      //   composited-next-video — design-013 B6: a live surface on the new profile —
+      //                          a producer registers a stable texture and each arriving
+      //                          frame is one copy and one compose frame.
       //   zoom-drift       — the M18 fix wave's open item (a): does a card
       //                          whose LIVE zoom drifted above its band write
       //                          past its atlas slot?
@@ -35,6 +38,7 @@ export default defineConfig({
         "composited-board": "composited-board.html",
         "composited-app": "composited-app.html",
         "composited-next": "composited-next.html",
+        "composited-next-video": "composited-next-video.html",
         "zoom-drift": "zoom-drift.html",
       },
     },

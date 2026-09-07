@@ -933,6 +933,27 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   whole frame, exact landing, the round trip pixel for pixel — ALL PASS; 4 core + 3 ground
   tests; the oracle's 47 renders byte-identical; `pnpm run ci` green. Findings: the pack's
   button springs now snap at settle; the departed frame builds its own ordinals.
+- **B6 — VideoIngest** (design-013 §6 reflector 7 / §9 Q5, **LANDED 2026-09-07**): the video
+  kind's contract becomes a REGISTERED STABLE-TEXTURE HANDLE. A producer states its size once
+  (`compose.video.register`) and hands each frame over (`arrive`); the render in the profile's
+  `video` slot copies it ONCE (`copyExternalImageToTexture`, premultiplied, no flip) into that
+  texture, closes it, and says the destination was written — which is the wake. The old
+  retain-and-import path (`compositor/video-source.ts`, the quad pass's `texture_external`
+  variant) is untouched and retires with the old profile at B8; the ground deliberately has
+  no external variant, and the fixture that used to retain its frames became the RIG's
+  producer. The demand clamp bites at the door (paused ⇒ dropped and closed, no copy and no
+  frame; a bucket ⇒ one copy per `demandIntervalMs`), and `defineWidget({ surface: "video" })`
+  is now legal — only equip stamps `SurfaceKind`, so with the kind unspeakable the card could
+  not exist at all (erratum recorded at both sources). FOUND: `collect()`'s written-set sweep
+  is right for an atlas slot and wrong for a stable texture (the producer's pixels do not go
+  away when a culled card loses its ref), so the ingest re-asserts the write when the same
+  destination comes back — without it a PAUSED live surface that scrolls off and back draws
+  the plate forever. Exit: `next-video` ALL PASS — 33 productions = 33 arrivals = 33 copies =
+  33 submits over 181 frames; 6 distinct liveness colours over 8 productions; the fixture's
+  top-left marker top-left on the ground's own pixels (both axes); paused 0 copies / 0 submits
+  over 181 frames with the producer still producing (33 dropped by the clamp); idle-zero over
+  362 frames; the null control on the plate. 11 ingest tests (16 mutation probes), `pnpm run
+  ci` green.
 
 ## Release cut & downstream
 

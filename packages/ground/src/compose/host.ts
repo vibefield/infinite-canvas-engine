@@ -27,6 +27,7 @@ import { shellProgram } from "../card/program";
 import { LINES } from "../theme";
 import { createDomHostWriter } from "./dom-compose";
 import { type ContentResidency, createContentResidency } from "./residency";
+import { createVideoIngest, type VideoIngest } from "./video-ingest";
 import type { ShellGeometry } from "../card/geometry";
 import type { CardMotion } from "../card/motion";
 import type { CardProgram } from "../card/program";
@@ -115,6 +116,13 @@ export interface GroundCompose {
    * its table at install.
    */
   readonly residency: ContentResidency;
+  /**
+   * VideoIngest (B6) — the producer's door for a live surface: `register` claims the stable
+   * texture Residency will name, `arrive` hands over each frame, and the copy happens in the
+   * `video` render slot before GpuCompose's submit. Installed at the mount; a board with no
+   * live surface costs it nothing.
+   */
+  readonly video: VideoIngest;
   /** The three render slots (§6 reflectors 5–7); the profile forwards each in order. */
   readonly renders: RenderSlots;
   /** The canvas in the L0 slot. */
@@ -174,6 +182,10 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     const maxDpr = opts.maxDpr ?? 2;
     const residency = createContentResidency(world);
     const renders: RenderSlots = { dom: { current: null }, island: { current: null }, video: { current: null } };
+    // The video render is the ground's own (B6): the producer drives it from outside, so its
+    // slot is filled here rather than after the mount like the dom and island renders.
+    const video = createVideoIngest({ device: opts.device, world, residency });
+    renders.video.current = video.reflector;
     const builder = createFrameBuilder(world, { ...(opts.cards ?? {}), ...(opts.card !== undefined ? { program: opts.card } : {}), ...(ctx.previews !== undefined ? { previews: ctx.previews } : {}), residency });
     const doc = host.container.ownerDocument;
     const canvas = doc.createElement("canvas");
@@ -314,6 +326,8 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         detachTransition?.();
         writer?.dispose();
         builder.dispose();
+        if (renders.video.current === video.reflector) renders.video.current = null;
+        video.dispose();
         residency.dispose();
         canvas.remove();
         ground?.dispose();
@@ -322,6 +336,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       compose: {
         gpuCompose,
         residency,
+        video,
         renders,
         ...(writer !== null ? { domCompose } : {}),
         canvas,

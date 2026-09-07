@@ -78,6 +78,35 @@ the entity's own kind behaviour.
   report of a second writer on a component. Rename to your own namespace; a name
   that merely starts with the same letters (`iceberg:x`) is unaffected.
 
+<!-- design-013 B6 (2026-09-07) -->
+- **The video kind's contract is a REGISTERED STABLE-TEXTURE HANDLE** (design-013 §9 Q5
+  RULED, B6). A live surface's producer no longer publishes a source the compositor samples;
+  it states its size once and hands frames over, and the engine copies each ONE time into the
+  texture the handle names and closes it. The old shape retained the latest `VideoFrame` and
+  re-imported it (`device.importExternalTexture`) on every composite, which is legal only for
+  a producer that owns its frames: under a lease protocol the frames are a small pool and a
+  held one starves the producer. Migration, on the new profile:
+
+  | was (`CompositorSourceVideo`) | now (`compose.video`, `@ice/ground/compose`) |
+  | --- | --- |
+  | `sources.register(e, { kind: "video", frame: () => latest, onArrival })` | `compose.video.register(e, { width, height })` once, then `compose.video.arrive(e, frame)` per frame |
+  | the consumer retains `latest` and closes the one it replaces | `arrive` owns the frame: it is closed by the copy, by the next arrival that supersedes it, by the demand clamp that refuses it, or by `dispose` — exactly once |
+  | `onArrival` wakes the compositor | the copy touches the content residency, which wakes the builder (`WakeReason "content"`) |
+  | the source is sampled every composite | the card samples its own stable texture; a frameless frame shows the last good pixels, unchanged |
+  | a paused card still handed frames over | `SurfaceDemand paused` ⇒ the arrival is dropped and closed, no copy and no compose frame; an fps bucket is a ceiling on copies |
+
+  `CompositorSourceVideo` itself and the `texture_external` pipeline variant in
+  `widget-quad-pass` are UNCHANGED for now and retire with the old profile at B8 — the ground
+  deliberately has none, and the retain-and-import path becomes the rig's own mechanism.
+- **`defineWidget({ surface: "video" })` is legal, and a video widget may not carry a
+  `component`** (design-013 B6). `WidgetSurfaceKind` used to exclude `video` on the ground
+  that it "arrives from a producer, never from `defineWidget`" — but only equip stamps
+  `SurfaceKind`, and Band, Demand and Residency all key off it, so the kind was unspeakable
+  and a live surface unspawnable. It is declared like any other kind now and equip gives it
+  `SurfaceTarget = gpu`. A `component` is refused at definition time: nothing mounts one for
+  a non-dom kind but `GLViews`, which takes only `gl`, so it would be silently dead. `chrome`
+  is still yours.
+
 ### Added
 
 - **The flight on the ground — design-013, B7** (2026-09-07). Under the composited-next
@@ -309,6 +338,30 @@ the entity's own kind behaviour.
   whole texture onto the card — and the clamped size is what the residency budget counts.
   Closes design-013 D11: under `band`, `geometry()` asks for `size × band × dpr`, so a
   2000-unit card at band 16 on a dpr-2 display asked for 64,000²; it is 8192×4096 now.
+
+<!-- design-013 B6 (2026-09-07) -->
+- **VideoIngest — a live surface on the composited-next profile, design-013 B6**
+  (2026-09-07). `groundCompose`'s handle gains **`compose.video`**
+  (`createVideoIngest`, `@ice/ground/compose`), installed at the mount into the profile's
+  `video` render slot (§6's reflector 7, before DomCompose and GpuCompose):
+  `register(entity, { width, height, srgb? })` mints the stable handle Residency names in the
+  card's `TextureRef` (whole uv) and realises an `rgba8unorm` (or `-srgb`) texture with
+  `COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT` against it; `arrive(entity, source)` queues
+  the latest frame (`VideoFrame`, `ImageBitmap`, a canvas, a video element) and closes what it
+  supersedes; the reflector copies each queued frame once
+  (`copyExternalImageToTexture`, premultiplied, no flip) and says the destination was written,
+  which is what wakes the builder; `unregister`, `stats()` (`registered · arrivals · copies ·
+  dropped · paused`, with `arrivals === copies + dropped`) and `dispose`. The demand clamp is
+  honoured at the door: a paused card's arrival is dropped and closed, and an fps bucket
+  allows one copy per `demandIntervalMs`. A registered card whose destination goes away and
+  comes back — culled and scrolled back — owes NO new copy: the texture is the producer's, its
+  pixels are still in it, and the ingest re-asserts the write (without which a paused live
+  surface would draw the plate forever, having no next frame to pay the debt with).
+  **Exit rig `next-video`** (`pnpm --filter widgetlab-desktop next-video`): every production is
+  one copy and one compose frame (33/33/33 over 181 frames), the fixture's top-left marker
+  lands top-left, six distinct liveness colours over eight productions, a paused card at 0
+  copies and 0 submits over 181 frames while its producer keeps producing, idle-zero over
+  362 frames, and a registered-but-never-fed card on the plate.
 
 ### Changed
 
