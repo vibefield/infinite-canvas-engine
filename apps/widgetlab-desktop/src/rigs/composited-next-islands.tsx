@@ -580,7 +580,8 @@ function mountRig(): IslandsRig {
       await until(() => (ground?.compose.available() ?? false) && redraws() > 0);
       return {
         profile: compositedNextProfile.name,
-        canvases: rootEl.querySelectorAll("canvas").length,
+        // the ground's own and (islands) the never-presenting island Canvas — never the L1 source canvas B4 mounts for the copies
+        canvases: rootEl.querySelectorAll("canvas:not([data-ice-source-canvas])").length,
         available: ground?.compose.available() ?? false,
         redraws: redraws(),
         gpuErrors: gpu?.errors().length ?? 0,
