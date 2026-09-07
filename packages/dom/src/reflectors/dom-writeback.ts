@@ -212,6 +212,14 @@ export function createDomWritebackReflector(
         // box IS its screen box, and it may not be anything else while it is
         // the hit-testing truth. The errata and the open ruling live with the
         // side that picks the slot — `ground/compositor/dom-source-binder`.
+        //
+        // ANSWERED ELSEWHERE 2026-09-07 (design-013 D9, B4): the new leg's L1
+        // owner (`ground/compose/dom-render.ts`) writes the host at
+        // `geometry().cssSize` — band space — and carries `zoom / band` on the
+        // placement matrix, so the host's screen box and its raster box stop
+        // being the same number and stop having to be. This reflector belongs
+        // to the OLD composited profile, keeps the disagreement, and is
+        // deleted with that profile at B8.
         const tx = ((p?.x ?? 0) - cam.x) * zoom;
         const ty = ((p?.y ?? 0) - cam.y) * zoom;
         const w = (s?.w ?? 0) * zoom;

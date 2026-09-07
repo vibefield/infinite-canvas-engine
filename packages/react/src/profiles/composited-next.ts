@@ -23,6 +23,7 @@
  * old profile (dependency-cruiser holds the wall).
  */
 import { createResidencyStore, installSurfaceInfra, type ReflectorDef, type TextureTable, type World } from "@ice/core";
+import type { RasterStrategy } from "@ice/kernel";
 import type { PresentationProfile, ProfileBootContext } from "./contract";
 
 /** Structural read of the opaque ground handle's `compose` field (`GroundCompose` in `@ice/ground/compose`, mirrored — react may not import ground). */
@@ -33,6 +34,13 @@ interface Compose {
   readonly residency?: { attach(table: TextureTable): void };
   /** The render slots (B4a): filled after the mount by each source's owner; forwarded here in §6's order. */
   readonly renders?: { readonly [k in "dom" | "island" | "video"]: { current: { flush(world: World): void } | null } };
+  /**
+   * The raster strategy the ground was built with (B4, §9 Q1). It is declared ONCE — on
+   * `groundCompose({ raster })` — because two readers need it and they must never disagree:
+   * Residency sizes the slot with it, and DomRender sizes the L1 host with it. This profile
+   * carries it from the one to the other; absent ⇒ Residency's own `band` default.
+   */
+  readonly raster?: (kind: "dom" | "gl" | "video") => RasterStrategy;
 }
 interface ComposeSlot {
   readonly compose?: Compose;
@@ -51,6 +59,12 @@ export const compositedNextProfile: PresentationProfile = {
   name: "composited-next",
   // design-014, B3b: the ground draws every card's chrome; the DOM host is content only.
   chromeOwner: "ground",
+  // B4: the dom reflector MOUNTS and REPARENTS hosts by target, and DomRender copies from a
+  // host that must already be an immediate child of the L1 canvas. Registered after this
+  // profile's roster, a promotion would reach the copy one flush late and the card would show
+  // its plate for a frame on every grab. Only this profile asks for the swap: the old leg's
+  // `domWriteback` sits INSIDE its roster and wants today's order.
+  hostsBeforeRoster: true,
   check(ctx) {
     if (ctx.engine.compositorDevice === undefined) {
       return (
@@ -90,12 +104,21 @@ export const compositedNextProfile: PresentationProfile = {
     // The texture table is the PROFILE's (design-013 §5): Residency writes handles into it, the
     // ground's residency realises them, and both outlive a system swap — so the profile builds
     // the store, hands the table to the ground (B4a) and to the infra, and disposes it last.
+    const c = composeOf(ctx);
     const store = createResidencyStore({});
-    composeOf(ctx)?.residency?.attach(store.table);
+    c?.residency?.attach(store.table);
     const limit = ctx.engine.compositorDevice?.device.limits.maxTextureDimension2D;
     // `ctx.engine` is the FACADE; the phase-group registry lives on the raw engine it wraps.
     const remove = installSurfaceInfra(ctx.engine.engine, {
-      residency: { table: store.table, allocator: store.allocator, ...(limit !== undefined ? { maxTextureSize: limit } : {}) },
+      residency: {
+        table: store.table,
+        allocator: store.allocator,
+        ...(limit !== undefined ? { maxTextureSize: limit } : {}),
+        // ONE raster strategy, carried from the ground's own declaration to the system that
+        // sizes the slot — the other reader, DomRender, calls `geometry()` with the same
+        // function, which is what makes the copy and the slot the same number (B4, §9 Q1).
+        ...(c?.raster !== undefined ? { raster: c.raster } : {}),
+      },
     });
     return () => { remove(); store.table.dispose(); };
   },

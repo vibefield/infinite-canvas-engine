@@ -45,6 +45,7 @@ import {
   type DocSession,
   type EngineGpu,
   type Entity,
+  type WidgetType,
 } from "@ice/core";
 import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
@@ -149,9 +150,12 @@ const SCENE: Array<[string, number, number, number, number, Record<string, unkno
   ["orbit-cube-card", G6X, GY + (345 + 19) * 2, 329, 155],
 ];
 
-export function createDemoEngine(gpu?: EngineGpu): CanvasEngine {
+export function createDemoEngine(gpu?: EngineGpu, extraWidgets: readonly WidgetType[] = []): CanvasEngine {
   const ce = createCanvasEngine({
-    widgets: WIDGETS,
+    // `extraWidgets` is for RIGS only (design-013 B4's `next-render` needs a
+    // text-free card the product has no use for): the demo palette is `WIDGETS`
+    // and stays it, so nothing a rig defines can reach the product.
+    widgets: [...WIDGETS, ...extraWidgets],
     tools: WIDGETLAB_TOOLS,
     canvasTypes: WIDGETLAB_CANVASES,
     rootCanvas: BoardCanvas,

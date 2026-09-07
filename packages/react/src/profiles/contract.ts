@@ -49,6 +49,17 @@ export interface PresentationProfile {
    */
   readonly chromeOwner?: "dom" | "ground";
   /**
+   * Does the DOM host reflector (`domWidgets`) run BEFORE this profile's roster
+   * (design-013 §6, B4)? It MOUNTS hosts and REPARENTS them by `SurfaceTarget`,
+   * and a render that copies a promoted host needs that reparent to have
+   * already happened this flush — otherwise the card's first frame on the GPU
+   * finds its host still on the content plane, copies nothing, and shows its
+   * plate for a frame on every grab. Absent = false: the stratified and old
+   * composited profiles keep today's order, where `domWriteback` sits inside
+   * the roster and must follow the reparent, not precede it.
+   */
+  readonly hostsBeforeRoster?: boolean;
+  /**
    * Boot-time gate. Return a human-readable reason to REFUSE, or null to
    * proceed. The reason reaches the developer as a thrown error from the mount
    * — the same posture as the app's own capability refusal, one layer in.

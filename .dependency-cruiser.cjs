@@ -226,16 +226,20 @@ module.exports = {
       comment:
         "design-013 §8 (B1, 2026-09-07): the ground enters ICE once, into its final home — the compose " +
         "entry (engine · lattice · field · card · nav · mat · theme · compose · shaders) imports nothing " +
-        "from the old composited leg, which B8 deletes in one commit.",
+        "from the old composited leg, which B8 deletes in one commit. `hic-adapter` LEFT this list at B4 " +
+        "(2026-09-07): it is a kept LEAF — it imports nothing, it is on no deletion list, and it is the one " +
+        "HiC module, imported by BOTH legs until B8 and by the compose leg after it.",
       severity: "error",
       from: { path: "^packages/ground/src/(engine|lattice|field|card|nav|packs|compose|theme\\.ts|shaders)" },
-      to: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|hic-adapter|atlas-allocator|index)" },
+      to: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|atlas-allocator|index)" },
     },
     {
       name: "old-leg-imports-no-ground-compose",
-      comment: "the reverse wall: nothing bridges the old leg to the ground (no adapter is ever written to a structure slated for deletion).",
+      comment:
+        "the reverse wall: nothing bridges the old leg to the ground (no adapter is ever written to a structure " +
+        "slated for deletion). `hic-adapter` is NOT on this side either — see the rule above.",
       severity: "error",
-      from: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|hic-adapter|atlas-allocator|index)" },
+      from: { path: "^packages/ground/src/(compositor|passes|programs|program-host|renderer|layer|pass|poles|atlas-allocator|index)" },
       to: { path: "^packages/ground/src/(engine|lattice|field|card|nav|packs|compose|theme\\.ts|shaders)" },
     },
   ],

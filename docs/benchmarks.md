@@ -55,6 +55,45 @@ frames); an animating island at the 15 fps bucket rendered 38 times in 2.50 s (2
 clamped) and its paint-attributed callback ticked 38 times with it; paused, 0 renders over
 2.51 s. A 30-frame resize drag minted 31 handles, disposed 30, left 0 stale targets and 0
 uncaptured GPU errors.
+## M19 B4 — DomRender: the promote, the clamp, the drift (2026-09-07)
+
+`apps/widgetlab-desktop` `pnpm --filter widgetlab-desktop next-render`, on the pinned
+Electron 43.1.1 / Chromium 150, one window, 1280×808 at dpr 2. A board of six TEXT-FREE
+cards (200×130 world units, opaque fill + one block, no glyphs) through the real React path
+under `compositedNextProfile`; page screenshots for the pixels, a `copyTextureToBuffer`
+readback of the page array for the drift.
+
+| measurement | number |
+| --- | --- |
+| D7 — a card's INTERIOR across a promote (inset 28 px past the chrome) | **0** of 70,176 px |
+| D7 — the same card's whole rect, chrome included (inset 3 px) | 1,312 of 100,076 px, max Δ 135, reaching 11 px in |
+| D7 — the chrome band 2 px inside the top edge | 0 (identical rgb) |
+| the way back (demote) | max Δ **0** |
+| S8 parity — interior, composited-next vs a stratified twin PAGE | **0** of 70,176 px |
+| S8 parity — the A-vs-A control (browser-painted, both profiles) | **0** of 100,076 px |
+| idle-zero with 3 promoted cards, 6 s | **0** submits, **0** copies, **0** paint marks |
+| one CSS-keyframe card, 5 s | **23.3 copies/s** against 59.8 paint marks/s |
+| the same card, demand paused | **0** copies over 5 s (300 paint marks) |
+| drift @ zoom 1.9, `band` (band 2, slot 800×520) | **0** px past the slot of 10,624 sampled; 102,897 texels of ink inside |
+| drift @ zoom 1.9, `crisp` (slot 760×494) | **0** px past the slot of 10,096 sampled; 102,947 texels of ink inside |
+
+Read together with `compositor/dom-source-binder.ts`'s errata, which measured **40,272 px
+past the slot** at the same zoom on the old leg. The repair is not a patch: the host's CSS
+box and the slot now come from ONE `geometry()` call on the same world facts, so there is no
+second multiplier to drift (design-013 D9).
+
+The 1,312-px whole-card figure is CHROME, and its shape says so: every differing pixel lies
+within 14 px of the card's rect edge, which is where the DOM `clip-path` polygon and the
+ground's SDF coverage filter the same silhouette by different means. The interior number is
+the exit. The parity control is what makes the parity number a measurement rather than a
+coincidence — the browser-painted card is byte-identical under both profiles, so the same
+1,312-px boundary set appears in both comparisons for one reason, not two.
+
+The 23.3 copies/s is the demand clamp working: `demandIntervalMs` at bucket 60 allows one
+copy per 16.7 ms and the rig's own frame loop shares that budget, so a card the browser
+repaints 59.8 times a second uploads 23.3 — behind, never wrong. The paused row is the
+other half: a parked card raises no wake at all, so it costs nothing rather than merely
+uploading nothing.
 
 ## M19 A2 — the fixed-layer allocator's packing waste (2026-09-06)
 

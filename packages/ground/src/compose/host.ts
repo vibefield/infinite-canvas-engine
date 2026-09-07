@@ -23,9 +23,11 @@
 // the facade's ResizeObserver writes, never from the container; the frame's dt
 // from `FrameInfo` (clamped by the engine), never from a clock of its own.
 import { Camera, type Entity, FrameInfo, type FramePickSlot, type FramePreviewStore, type GridConfig, NavTransition, PartTap, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type World } from "@ice/core";
+import type { RasterStrategy } from "@ice/kernel";
 import { shellProgram } from "../card/program";
 import { LINES } from "../theme";
 import { createDomHostWriter } from "./dom-compose";
+import { createDomRender, type DomRender, type DomRenderStats } from "./dom-render";
 import { type ContentResidency, createContentResidency } from "./residency";
 import { createVideoIngest, type VideoIngest } from "./video-ingest";
 import type { ShellGeometry } from "../card/geometry";
@@ -33,6 +35,7 @@ import type { CardMotion } from "../card/motion";
 import type { CardProgram } from "../card/program";
 import type { FieldConfig } from "../field/layout";
 import type { GlyphProgram } from "../field/program";
+import { changedElements, markAsSourceCanvas, onPaint, probeHic } from "../hic-adapter";
 import { GROUND_SHADERS } from "../shaders";
 import type { GroundTheme } from "../theme";
 import { createFrameBuilder, type FlightInputs, type FrameBuilderOptions, type FrameBuilderStats, type WakeReason } from "./frame-inputs";
@@ -55,6 +58,12 @@ export interface GroundComposeOptions {
   readonly onPart?: (entity: Entity, part: string) => void;
   /** The frame builder's knobs (material, lift, gate, cap …); the product's by default. */
   readonly cards?: Omit<FrameBuilderOptions, "previews" | "program">;
+  /**
+   * How each surface kind wants its pixels rastered (design-013 §9 Q1). Declared ONCE, here:
+   * the profile reads it off this handle and hands the SAME function to Residency, and DomRender
+   * calls `geometry()` with it — one strategy, two readers, nothing to drift. Default `band`.
+   */
+  readonly raster?: (kind: "dom" | "gl" | "video") => RasterStrategy;
 }
 
 /** The mount context the React facade hands a `ground` factory — the fields this layer needs, mirrored structurally. */
@@ -63,8 +72,13 @@ export interface GroundComposeContext {
   readonly world: World;
   /** ICE's preview store (`engine.previews`): a container's inside for its live portal. Absent = no portals. */
   readonly previews?: FramePreviewStore;
-  /** The DOM hosts' content elements by entity (the dom reflector's `hostFor`): DomCompose clips, lifts and fades them (B3b). Absent = no DOM writes. */
-  readonly hosts?: { contentOf(entity: Entity): HTMLElement | undefined };
+  /**
+   * The DOM hosts by entity, both halves (B3b + B4): `contentOf` is the dom reflector's `hostFor`
+   * (the inner `data-ice-content` portal target) — DomCompose clips, lifts and fades it; `hostOf`
+   * is `hostElementFor`, the OUTER host that reparents onto L1 and the node the element copy
+   * addresses. Absent = no DOM writes; `hostOf` absent = no DomRender.
+   */
+  readonly hosts?: { contentOf(entity: Entity): HTMLElement | undefined; hostOf?(entity: Entity): HTMLElement | undefined };
   /** The interaction stack's frame pick slot: the ground's hit test over its last-drawn geometry goes here (B3b). Absent = the boxes pick. */
   readonly framePick?: FramePickSlot;
   /**
@@ -92,6 +106,22 @@ export interface RenderSlots {
   readonly dom: RenderSlot;
   readonly island: RenderSlot;
   readonly video: RenderSlot;
+}
+
+/**
+ * The L1 source canvas's half of the ground (B4). `@ice/dom` may not import `@ice/ground`, and
+ * `hic-adapter` is the only module allowed to name a HiC symbol — so the canvas is the facade's
+ * to build and the ADAPTER's to configure, meeting at this shape (the same injection
+ * `SourceCanvasEffects` already uses).
+ */
+export interface SourceCanvasSlot {
+  readonly effects: {
+    markAsSourceCanvas(canvas: HTMLCanvasElement): void;
+    onPaint(canvas: HTMLCanvasElement, handler: (event: Event) => void): () => void;
+    changedElements(event: Event): readonly Element[];
+  };
+  /** A paint event named these immediate canvas children: they owe a copy. */
+  onDirty(hosts: readonly Element[]): void;
 }
 
 export interface GroundComposeStats extends FrameBuilderStats {
@@ -131,6 +161,18 @@ export interface GroundCompose {
   readonly video: VideoIngest;
   /** The three render slots (§6 reflectors 5–7); the profile forwards each in order. */
   readonly renders: RenderSlots;
+  /**
+   * What the L1 SOURCE CANVAS needs and only the HiC adapter can supply (B4): the injected
+   * effects `@ice/dom`'s `createSourceCanvas` takes, and the dirt latch a paint event feeds.
+   * The facade builds the canvas from this and passes it to the dom reflector, which parents
+   * every `gpu`-target host under it. `null` when the host has no HTML-in-Canvas: nothing is
+   * refused, DomRender simply never copies and every card draws its plate.
+   */
+  readonly sourceCanvas: SourceCanvasSlot | null;
+  /** DomRender's instruments (B4) — copies, refusals, the clamp's parked/deferred sets, the page array. Present only with `hosts.hostOf`. */
+  readonly domRender: { stats(): DomRenderStats } | null;
+  /** The raster strategy this ground was built with — the profile hands the SAME function to Residency (§9 Q1). */
+  readonly raster?: (kind: "dom" | "gl" | "video") => RasterStrategy;
   /** The canvas in the L0 slot. */
   readonly canvas: HTMLCanvasElement;
   /** `Ground.create` resolved; false while the pipelines compile or after a failure. */
@@ -215,6 +257,32 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     const program = opts.card ?? shellProgram;
     const writer = ctx.hosts !== undefined ? createDomHostWriter(program, ctx.hosts.contentOf) : null;
     let domWrites = 0;
+    // DomRender (B4, §6 reflector 5). Built EAGERLY — the dirt latch has to be
+    // able to take a paint event from the first one — but installed into its
+    // roster slot only once `Ground.create` resolves, so nothing copies into a
+    // page array that no frame can yet sample. Its debt is kept meanwhile.
+    const hostOf = ctx.hosts?.hostOf;
+    const domRender: DomRender | null =
+      hostOf === undefined
+        ? null
+        : createDomRender({
+            device: opts.device,
+            world,
+            residency,
+            hosts: { hostOf },
+            ...(opts.raster !== undefined ? { raster: opts.raster } : {}),
+          });
+    // The L1 source canvas is the FACADE's to build (it owns the container and
+    // the viewport it must be resized with); what only this package can supply
+    // is the adapter's effects and the dirt latch. `null` when the host has no
+    // HTML-in-Canvas — including the `layoutsubtree` capability, which
+    // `probeHic` reports but does not require: a canvas whose children do not
+    // lay out would host every promoted card at 0×0.
+    const probe = probeHic(doc);
+    const sourceCanvas: SourceCanvasSlot | null =
+      domRender === null || !probe.supported || !probe.capabilities.layoutSubtree
+        ? null
+        : { effects: { markAsSourceCanvas, onPaint, changedElements }, onDirty: (els) => domRender.markDirtyHosts(els) };
     // The frame's build happens ONCE per tick, in the first of the ground's reflectors to run
     // (DomCompose when the profile registers it, else GpuCompose); the other draws what was built.
     let builtTick = -1;
@@ -259,6 +327,10 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         if (opts.config) g.fieldConfig = opts.config;
         if (gridPending) { g.fieldConfig = fieldConfigOf(g.fieldConfig, gridPending); gridPending = null; }
         ground = g;
+        // The render is the ground's own, and it takes §6's slot 5 — before
+        // DomCompose and GpuCompose, so its copies are queue ops already
+        // ordered against the submit that samples them.
+        if (domRender !== null) renders.dom.current = domRender;
         dirty = true;   // the deferred pre-ready flushes are owed one paint
       },
       (e: unknown) => { failed = true; console.error("[ice] ground/compose: Ground.create failed", e); },
@@ -330,6 +402,8 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         unsubs.length = 0;
         if (framePick !== undefined && framePick.current === pickSource) framePick.current = null;
         detachTransition?.();
+        if (renders.dom.current === domRender) renders.dom.current = null;
+        domRender?.dispose();
         writer?.dispose();
         builder.dispose();
         if (renders.video.current === video.reflector) renders.video.current = null;
@@ -344,6 +418,9 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         residency,
         video,
         renders,
+        sourceCanvas,
+        domRender,
+        ...(opts.raster !== undefined ? { raster: opts.raster } : {}),
         ...(writer !== null ? { domCompose } : {}),
         canvas,
         available: () => ground !== null && !failed,

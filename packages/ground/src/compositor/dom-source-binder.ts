@@ -65,6 +65,15 @@
  * which was a ratification argument for the atlas over the per-card pool. It
  * wants a ruling, not a patch. The rig is the standing witness meanwhile.
  *
+ * ANSWERED ELSEWHERE 2026-09-07 (design-013 D9, B4). The new leg does not repair
+ * this; it removes the second multiplier. `compose/dom-render.ts` sizes the L1
+ * host at `geometry().cssSize` — BAND space, with `zoom / band` on the placement
+ * matrix — and Residency reserves `geometry().slotSize` from the same call, so
+ * the copy's extent and the slot are one number. Measured by the `next-render`
+ * rig at the same zoom 1.9 this errata was measured at: 0 px past the slot,
+ * under `band` and under `crisp`. This binder keeps the defect until B8 deletes
+ * it; nothing here changed.
+ *
  * ── Dirt ──────────────────────────────────────────────────────────────────
  * Paint events name the changed hosts (`changedElements`, exact on Chromium
  * 150/152), and this maps those elements back to entities and marks their
@@ -273,8 +282,10 @@ export function createDomSourceBinder(
         // binder's INJECTED `DomSourceGeometry` seam (the world size — see the
         // option above), NOT `@ice/kernel`'s `geometry()`, which this file
         // deliberately does not import. A grep for the kernel function's callers
-        // hits this line and reads backwards: B4 is where the kernel function
-        // replaces this binder.
+        // hits this line and reads backwards: B4 BUILT the replacement beside
+        // this one (`compose/dom-render.ts`, 2026-09-07) — the kernel function
+        // sizes both the host and the slot there. This binder is untouched and
+        // stays the old leg's until B8 deletes it.
         const g = geometry(entity);
         if (g === undefined || g.w <= 0 || g.h <= 0) continue;
         live.add(entity);

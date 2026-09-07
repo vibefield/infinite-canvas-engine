@@ -231,7 +231,16 @@ passes it to `<InfiniteCanvas profile={…}>`; the others tree-shake out.
 `wireMeasurement`) · reflectors (`createPlaneTransformReflector`,
 `createGridReflector`, `createWiresReflector`, `createDomWidgetsReflector`,
 `createChromeReflector`, `createCursorReflector`,
-`createRemoteCursorsReflector`) · `startRafLoop`. `<InfiniteCanvas>` wires
+`createRemoteCursorsReflector`) · `startRafLoop` · `createSourceCanvas(container, effects,
+opts?)` — the L1 `<canvas layoutsubtree>` whose immediate children are `gpu`-target hosts
+(`effects` is the HiC adapter's injected `{markAsSourceCanvas, onPaint, changedElements}`;
+`opts.onDirty(hosts, event)` is the per-slot dirty latch; **`opts.pointerEvents: "auto" |
+"none"`** — `"none"` for a MIXED board, where `dom`-target cards live under this canvas and
+the hosts it adopts set `pointer-events: auto` themselves; `resize(w, h, dpr)` must be called
+on every viewport change, the bitmap being what paint records are recorded against).
+`createDomWidgetsReflector` parents a host by `effectiveTarget(SurfaceKind, SurfaceTarget)`
+when a `sourceCanvas` is present; `hostFor(e)` is the inner portal target and
+`hostElementFor(e)` the outer host the copy addresses. `<InfiniteCanvas>` wires
 all of this; direct use is for custom shells.
 
 ## @ice/r3f
@@ -331,6 +340,21 @@ one per arrival, premultiplied and unflipped, and it wakes the frame through the
 residency — never a retained frame re-imported per composite. `SurfaceDemand` bites at the
 door: paused drops, and a bucket allows one copy per `demandIntervalMs`. The witness is the
 `next-video` rig. The pixel witnesses are the package's oracle
+`useChromeOwner()`; an app's card shell renders bare under `ground`. **DomRender (design-013
+B4)**: `compose.residency` is the content residency (B4a) and `compose.renders.dom` is §6's
+reflector-5 slot; the ground fills it with **`createDomRender({ device, world, residency,
+hosts, raster?, now?, copy? })`** once `Ground.create` resolves — HiC copies a promoted card's
+L1 host into the layer its `TextureRef` names (`origin = { x: u0·side, y: v0·side, z: layer }`;
+`copyElementToTexture`'s `origin` grew the `z`), then `residency.wrote(e)`. It also OWNS the L1
+host's geometry while the host is canvas-side: the box is `geometry().cssSize` and the
+placement matrix carries `zoom / band`. `compose.domRender.stats()` → `{ copies, dirtied,
+refused, unavailable, parked, deferred, pending, resized, pagesLayers, growths }`.
+**`groundCompose({ raster })`** declares the per-kind raster strategy ONCE — the profile
+carries the same function to Residency, so the slot and the host box come from one call — and
+**`compose.sourceCanvas`** is `{ effects, onDirty } | null`: what the react facade needs to
+build the L1 `<canvas layoutsubtree>` (null when `probeHic` finds no trial, or no
+`layoutsubtree`). The mount context's `hosts` gained `hostOf(entity)` (the OUTER host, beside
+`contentOf`). The pixel witnesses are the package's oracle
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 

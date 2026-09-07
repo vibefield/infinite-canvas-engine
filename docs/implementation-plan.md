@@ -974,6 +974,32 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   clamped) and 0 over 2.51 s paused; a 30-frame resize drag = 31 handles, 30 disposals, 0
   stale targets, 0 GPU errors. 16 r3f tests + 5 react tests, 13 mutation probes; `pnpm run
   ci` green.
+- **B4 — DomRender** (design-013 §8 B4, §6 reflector 5, **LANDED 2026-09-07**): a promoted
+  DOM card's pixels reach the GPU. `compose/dom-render.ts` copies its L1 host into the
+  destination `TextureRef` names (`hic-adapter` reused verbatim, its `origin` grown a `z`
+  for the array layer) and calls `residency.wrote`, so the ground draws `page` where it drew
+  the plate. The L1 `layoutsubtree` source canvas is wired in PRODUCTION for the first time:
+  the facade builds it when the ground's handle carries the adapter's effects
+  (`compose.sourceCanvas`), sizes its bitmap from the same rect the `Viewport` resource
+  comes from, and `dom-widgets` parents every `gpu`-target host under it. THE SIZE IS ONE
+  CALL: the host's CSS box is `geometry().cssSize` and the slot is `geometry().slotSize`
+  from the same pure function on the same facts, with the profile carrying the ground's
+  `raster` strategy to Residency so the two readers cannot disagree — which is what makes
+  the drift exit 0 px by construction rather than a number that came out right. The demand
+  clamp is carried in behaviour from the old binder (paused PARKS — no copy, no wake, outside
+  `pending`; a bucket DEFERS; 0 copies now), the unpainted-host throw is counted and the debt
+  KEPT, and the page array grows by realloc + per-layer copy + a new realisation (D-B4.1).
+  Rulings: `hic-adapter` left both wall lists (a kept leaf, imported by both legs);
+  `hostsBeforeRoster` on the profile contract puts the dom reflector before the roster for
+  this profile only; the L1 canvas is pointer-transparent on a MIXED board and its hosts opt
+  back in. Exit — the new `next-render` rig, ALL PASS: D7's promote diffs 0/70,176 px on the
+  card's interior and again on the way back; idle-zero holds with promoted cards (0 submits,
+  0 copies, 0 paint marks over 361 frames); an animating card copies 23.3/s against 59.8
+  paint marks/s and a paused one 0; the drift readback finds 0 px past the slot under BOTH
+  raster strategies at zoom 1.9 (the old leg wrote 40,272); S8's parity, redefined, is
+  0/70,176 px against a stratified twin page with an A-vs-A control at 0. Plus 27 node tests
+  (16 dom-render, 6 L1 placement, 5 mount), 11 mutation probes red, the oracle's 47 renders
+  byte-identical, `pnpm run ci` green.
 
 ## Release cut & downstream
 

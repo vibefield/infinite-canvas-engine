@@ -73,6 +73,8 @@ try {
   log(`mount: ${JSON.stringify(mounted)}`);
   check(mounted.profile === "composited-next", `the NEW profile mounted through <InfiniteCanvas> (${mounted.profile})`);
   check(mounted.canvases === 1, `one canvas in the L0 slot — the ground's own (${mounted.canvases})`);
+  // B4: the mount also carries the L1 source canvas (`layoutsubtree`, unpainted).
+  check(mounted.sourceCanvases === 1, `and one L1 source canvas beside it (${mounted.sourceCanvases})`);
   check(mounted.available === true, "Ground.create resolved on the app-owned device");
   check(mounted.redraws >= 1, `the ground drew (${mounted.redraws} redraw${mounted.redraws === 1 ? "" : "s"})`);
   check(mounted.submits >= 1, `and submitted real work (${mounted.submits} submits)`);

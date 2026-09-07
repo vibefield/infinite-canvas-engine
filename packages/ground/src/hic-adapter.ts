@@ -248,7 +248,11 @@ export function changedElements(event: Event): readonly Element[] {
 /**
  * Copy one element's pixels straight into a GPUTexture (design-012 decision 3
  * — the route that deletes the 2D atlas canvas, which WAS the memory: 126.7 MB
- * at n=100). `origin` addresses a slot inside the paged atlas (Q3).
+ * at n=100). `origin` addresses a slot inside the paged atlas (Q3) — and its
+ * `z` is the LAYER of a `texture_2d_array` destination (design-013 §4: the
+ * residency's page array is one array texture, and `TextureRef.layer` names
+ * which layer this card's slot is in). Defaults to 0, which is what every
+ * single-layer destination wants.
  *
  * Receiver-bound BY CONSTRUCTION: called as `queue.copyElementImageToTexture(…)`.
  * Hoisting this method off the queue and calling it bare throws "Illegal
@@ -274,12 +278,17 @@ export function changedElements(event: Event): readonly Element[] {
  * SCALE is NOT baked in: an 80×48 box under a `matrix(1.9,…)` placement
  * rasterised 160×96, exactly as it does unscaled.
  *
- * The dom source layer does NOT in fact hold up its end of this bargain while
- * a card's live zoom has drifted above its zoom band — see the errata in
- * `compositor/dom-source-binder.ts`. What the platform refuses is only a copy
- * that leaves the DESTINATION TEXTURE ("Texture copy range … touches outside
- * of [Texture …]", zero pixels written); a copy that overruns its SLOT but
- * still fits the page is accepted in silence.
+ * The OLD dom source layer does not hold up its end of this bargain while a
+ * card's live zoom has drifted above its zoom band — see the errata in
+ * `compositor/dom-source-binder.ts`. The NEW leg does (2026-09-07, design-013
+ * D9): `compose/dom-render.ts` writes the host's CSS box from the same
+ * `geometry()` call that sized the slot, so there is no second multiplier to
+ * drift, and the `next-render` rig reads 0 px past the slot at zoom 1.9 under
+ * both raster strategies. What the platform refuses is only a copy that leaves
+ * the DESTINATION TEXTURE ("Texture copy range … touches outside of
+ * [Texture …]", zero pixels written); a copy that overruns its SLOT but still
+ * fits the page is accepted in silence, which is why the caller owes the
+ * bargain rather than the platform.
  *
  * Returns false when the host lacks the method, so callers degrade rather than
  * throw; a composited build should never reach here (the boot probe refused).
@@ -288,7 +297,7 @@ export function copyElementToTexture(
   queue: GPUQueue,
   element: Element,
   texture: GPUTexture,
-  origin: { readonly x: number; readonly y: number } = { x: 0, y: 0 },
+  origin: { readonly x: number; readonly y: number; readonly z?: number } = { x: 0, y: 0 },
 ): boolean {
   const q = queue as unknown as HicQueue;
   if (typeof q.copyElementImageToTexture !== "function") return false;
@@ -296,7 +305,7 @@ export function copyElementToTexture(
     { source: element },
     // `origin` INSIDE `destination` — see the HicQueue note: the outer
     // position validates and is then ignored.
-    { destination: { texture, origin: { x: origin.x, y: origin.y, z: 0 } } },
+    { destination: { texture, origin: { x: origin.x, y: origin.y, z: origin.z ?? 0 } } },
   );
   return true;
 }

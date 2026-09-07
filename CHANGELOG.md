@@ -181,6 +181,48 @@ the entity's own kind behaviour.
   `<GLViews onIslandRender>` prop for rigs. `GroundComposeStats` gains `runs` — the last
   frame's z-run count, the witness that two own textures really interleave in one pass.
 
+- **DomRender — the pixels move, design-013 B4** (2026-09-07). A promoted DOM card's
+  content now reaches the GPU. **`createDomRender`** (`@ice/ground/compose`, filling §6's
+  reflector-5 slot `compose.renders.dom` once `Ground.create` resolves) copies the card's L1
+  host with HTML-in-Canvas straight into the destination its `TextureRef` names — the page
+  array's layer at `origin { x: u0·side, y: v0·side, z: layer }`, or a Q10 oversize card's
+  own texture — and tells the content residency it WROTE that destination, so the ground
+  draws `page` where it drew the plate. `copyElementToTexture`'s `origin` gained a `z` (the
+  array layer); nothing else in the adapter changed.
+  - **The L1 source canvas is wired in production** for the first time. The react facade
+    builds it when the ground's handle carries the adapter's effects
+    (`compose.sourceCanvas`, `null` on a host without the origin trial or without a working
+    `layoutsubtree`), resizes its bitmap from the same rect `Viewport` comes from, and hands
+    it to the dom reflector, which parents every `gpu`-target host under it and brings it
+    back on demotion — portal-preserving, as a drag-lift always was. On a MIXED board the
+    canvas is pointer-transparent (`createSourceCanvas({ pointerEvents: "none" })`) and the
+    hosts it adopts set `pointer-events: auto` on themselves, so `dom`-target cards under it
+    keep their hits.
+  - **One `geometry()` call sizes both ends.** DomRender owns the L1 host's box while the
+    host is canvas-side and writes `geometry().cssSize` — band space under `band`, live-zoom
+    space under `crisp` — with `zoom / band` on the placement matrix; Residency reserved
+    `geometry().slotSize` from the same pure function on the same facts. `groundCompose({
+    raster })` declares the per-kind strategy once and the profile carries that same function
+    to Residency, so the two readers cannot disagree. Measured: **0 px written past the slot**
+    at zoom 1.9 under both strategies, where the old leg's binder wrote 40,272.
+  - **The demand clamp is carried in behaviour** from the old binder: a paused card is
+    PARKED (no copy, no wake, outside `pending` — it costs nothing rather than merely
+    uploading nothing, and its plate is honest), a bucket DEFERS to the moment it allows
+    (behind, never wrong), 0 copies now. An unpainted host's `InvalidStateError` is counted
+    and the debt KEPT. `compose.domRender.stats()` reports `{ copies, dirtied, refused,
+    unavailable, parked, deferred, pending, resized, pagesLayers, growths }`.
+  - **The page array grows** by realloc + a per-layer `copyTextureToTexture` in one encoder
+    + a new realisation, the old array dying at the next `collect` — after the submit
+    (D-B4.1).
+  - `PresentationProfile.hostsBeforeRoster` (opt-in, composited-next only) runs the dom host
+    reflector BEFORE the profile's roster, so a promotion is reparented in the same flush the
+    render copies from. `hic-adapter` left both dependency-cruiser wall lists: it is a kept
+    leaf imported by both legs, not old leg.
+  - Exit — the new `next-render` rig: D7's promote diffs **0 of 70,176 px** on the card's
+    interior and again on the way back; S8's parity, redefined, is **0 of 70,176 px** against
+    a stratified twin page with an A-vs-A control at 0; idle-zero holds with promoted cards
+    (0 submits, 0 copies over 361 frames); an animating card copies 23.3/s against 59.8 paint
+    marks/s, a paused one 0. Plus 27 node tests and 11 mutation probes.
 - **The content term reads the world — design-013, B4a** (2026-09-07). The trunk B4, B5
   and B6 build on: under the composited-next profile the ground now draws a card from the
   TEXTURE its `TextureRef` names — `page` (the layer and the written rect, through the one

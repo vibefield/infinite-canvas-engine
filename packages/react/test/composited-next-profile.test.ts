@@ -2,10 +2,16 @@
 // The new composited profile's boot gate and roster (design-013 §8 B2): it refuses a
 // device-less engine, a missing ground and the OLD leg's ground; with the ground's own
 // layer it registers the five reflectors of §6 in order — the four stubs, then GpuCompose.
-import { createCanvasEngine, type ReflectorDef, type TextureTable } from "@ice/core";
+import { alwaysGpu, Camera, createCanvasEngine, defineCanvasType, defineWidget, type ReflectorDef, TextureRef, type TextureTable, tools, Viewport, widgets } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { compositedNextProfile } from "../src/profiles/composited-next";
 import type { ProfileBootContext } from "../src/profiles/contract";
+
+// A promoted dom card, for the raster-strategy measurement below.
+const CARD = widgets.get("cnp:card") ?? defineWidget({ type: "cnp:card", surface: "dom", component: null, defaultSize: { w: 100, h: 60 }, behaviors: [alwaysGpu] });
+const CARD_ROOT = defineCanvasType({ id: "cnp:root", semanticVersion: 1, semantic: { placement: { widgets: [CARD] } }, presentation: { camera: { arrival: "identity" } } });
+function need<T>(v: T | undefined, what: string): T { if (v === undefined) throw new Error(`expected ${what}`); return v; }
+const PROFILE_TOOLS = [need(tools.get("select"), "the select tool"), need(tools.get("pan"), "the pan tool")];
 
 const gpuCompose: ReflectorDef = { name: "ground/gpu-compose", always: true, flush() {} };
 const slot: ReflectorDef & { available(): boolean } = { name: "ground/compose-slot", always: false, flush() {}, available: () => true };
@@ -50,6 +56,36 @@ describe("compositedNextProfile", () => {
     expect(table.describe(pages)).toMatchObject({ kind: "pages", size: 2048 });
     remove();
     expect(table.describe(pages)).toBeUndefined();   // disposed with the profile
+  });
+  it("carries the ground's raster strategy to Residency (B4, §9 Q1) — declared once, read by two, MEASURED on the slot", () => {
+    // The strategy reaches the system that sizes the slot; DomRender calls
+    // `geometry()` with the SAME function, which is what makes the host box and
+    // the slot one number rather than two that happen to agree. Measured by the
+    // slot Residency actually reserves at a zoom where the two strategies
+    // disagree: at zoom 3 the band is 4 (`selectBand`), so `band` reserves
+    // `Size × 4 × dpr` and `crisp` reserves `Size × 3 × dpr`.
+    const slotFor = (raster?: () => "band" | "crisp"): number => {
+      const ce = createCanvasEngine({ widgets: [CARD], canvasTypes: [CARD_ROOT], rootCanvas: CARD_ROOT, presentationFallback: CARD_ROOT, tools: PROFILE_TOOLS });
+      ce.docs.create();
+      ce.world.setResource(Viewport, { w: 1600, h: 900, dpr: 1 });
+      ce.world.setResource(Camera, { x: 0, y: 0, zoom: 3, gesturing: false });
+      const ctx = {
+        engine: { engine: ce.engine, compositorDevice: { device: { limits: { maxTextureDimension2D: 4096 } } } },
+        ground: { reflector: slot, configureGrid() {}, dispose() {}, compose: { gpuCompose, residency: { attach() {} }, ...(raster !== undefined ? { raster } : {}) } },
+      } as unknown as ProfileBootContext;
+      const remove = must(compositedNextProfile.install)(ctx);
+      const card = ce.ops.spawnWidget("cnp:card", { x: 0, y: 0, w: 100, h: 60, undoable: false });
+      ce.world.sync();
+      for (let i = 1; i <= 6; i++) ce.step(i * 16);
+      const ref = ce.world.get(card, TextureRef);
+      remove();
+      if (ref === undefined) throw new Error("no TextureRef");
+      // The slot's width in texels, read back off the uv over the layer side.
+      return Math.round((ref.u1 - ref.u0) * 2048);
+    };
+    expect(slotFor()).toBe(400);                              // band 4 — the default
+    expect(slotFor(() => "band")).toBe(400);
+    expect(slotFor(() => "crisp")).toBe(300);                 // the live zoom, the ground's choice
   });
 });
 const must = <T>(v: T | undefined): T => { if (v === undefined) throw new Error("expected a value"); return v; };

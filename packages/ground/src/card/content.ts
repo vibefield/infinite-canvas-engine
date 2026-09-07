@@ -75,8 +75,13 @@ export function runsOf(contents: ReadonlyArray<FrameContent | undefined>): Frame
 
 // ---------------------------------------------------------------- pixels, where the record says
 
-/** HiC's destination usage (design-013 §4): a page is copied into, sampled, copied out of, and rendered to. */
-const PAGE_USAGE = () => GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT;
+/**
+ * HiC's destination usage (design-013 §4): a page is copied into, sampled, copied out of, and rendered to.
+ * A function, not a constant: `GPUTextureUsage` is a browser global and this module loads in Node.
+ * Exported at B4 for the ONE other destination that takes an element copy — a Q10 oversize card's own
+ * texture, which is the same usage at a size no page can hold (`compose/dom-render.ts`).
+ */
+export const PAGE_USAGE = () => GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT;
 
 /** A page ARRAY: `layers` layers of one fixed `size` (design-013 §4, Q10 — the layer size is Residency's parameter). */
 export function createPages(device: GPUDevice, size: number, layers: number, label = "content/pages"): GPUTexture {

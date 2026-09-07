@@ -57,12 +57,15 @@ import {
   createPlaneTransformReflector,
   createPlanes,
   createRemoteCursorsReflector,
+  createSourceCanvas,
   startRafLoop,
   wireMeasurement,
   type CanvasHost,
   type DomWidgetsReflector,
   type GLRoute,
   type Planes,
+  type SourceCanvas,
+  type SourceCanvasEffects,
   type WidgetFocusHandle,
 } from "@ice/dom";
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
@@ -94,6 +97,22 @@ export interface InfiniteCanvasHandle {
  * the wall forbids three here). `@ice/ground.ground(...)` returns a function
  * assignable to this type.
  */
+/**
+ * STRUCTURAL mirror of `@ice/ground/compose`'s `SourceCanvasSlot` (B4). The L1
+ * `<canvas layoutsubtree>` is THIS component's to build — it owns the container
+ * and the viewport the bitmap must track — while the two things only the HiC
+ * adapter can supply come from the ground: the injected effects, and the dirt
+ * latch a paint event feeds. `@ice/react` may import neither `@ice/ground` nor
+ * its adapter, so the seam is read structurally, exactly as `compose` is.
+ */
+interface GroundSourceCanvasSlot {
+  readonly effects: SourceCanvasEffects;
+  onDirty(hosts: readonly Element[]): void;
+}
+interface GroundComposeMirror {
+  readonly sourceCanvas?: GroundSourceCanvasSlot | null;
+}
+
 export interface GroundLayerHandle {
   readonly reflector: ReflectorDef & { available(): boolean };
   /**
@@ -137,8 +156,16 @@ export type GroundLayerFactory = (ctx: {
   readonly gpu: CanvasEngine["gpu"];
   /** The preview store (`engine.previews`): a container's inside for the ground's live portals (design-013 §8 B3). */
   readonly previews: CanvasEngine["previews"];
-  /** The DOM hosts' content elements, by entity — what a DomCompose clips and lifts (design-014, B3b). */
-  readonly hosts: { contentOf(entity: Entity): HTMLElement | undefined };
+  /**
+   * The DOM hosts by entity: `contentOf` is the inner `data-ice-content` node a DomCompose clips
+   * and lifts (design-014, B3b); `hostOf` is the OUTER host — the node that reparents onto L1 and
+   * the one an element copy addresses (design-013 B4). Both are lazy: the dom reflector is built
+   * AFTER the ground, because the ground is what says whether there is an L1 canvas to build.
+   */
+  readonly hosts: {
+    contentOf(entity: Entity): HTMLElement | undefined;
+    hostOf(entity: Entity): HTMLElement | undefined;
+  };
   /** The interaction stack's frame pick slot: the ground sets its hit test here at mount, clears it at dispose (design-014, B3b). */
   readonly framePick: InteractionStack["framePick"];
 }) => GroundLayerHandle;
@@ -251,9 +278,15 @@ export function InfiniteCanvas({
 
     const host = createCanvasHost(container);
     const planes = createPlanes(host);
-    const planeArgs = { contentPlane: planes.content, liftedPlane: planes.lifted };
-    const domWidgets = createDomWidgetsReflector(planeArgs, world, runtime.store);
     const remoteCursors = createRemoteCursorsReflector(host, world);
+
+    // ORDER (B4): the ground is built BEFORE the dom reflector, because the
+    // ground is what says whether this host has HTML-in-Canvas and therefore
+    // whether there is an L1 source canvas for `gpu`-target hosts to live
+    // under — and `createDomWidgetsReflector` binds its planes once, at
+    // construction. The two `hosts` lookups the ground takes are thunks and
+    // stay thunks; nothing calls them before the mount finishes.
+    let domWidgets: DomWidgetsReflector | undefined;
 
     // Handles kept for teardown: unregistering only stops flushes — the DOM
     // these factories inserted (ground canvas, chrome plane) must be disposed
@@ -269,10 +302,35 @@ export function InfiniteCanvas({
         transitions: engine.transitions,
         gpu: engine.gpu,
         previews: engine.previews,
-        hosts: { contentOf: (e) => domWidgets.hostFor(e) },
+        hosts: { contentOf: (e) => domWidgets?.hostFor(e), hostOf: (e) => domWidgets?.hostElementFor(e) },
         framePick: stack.framePick,
       }) ?? null;
     groundRef.current = groundLayer;
+
+    // L1 (design-012 §5, wired in production at B4): one `<canvas layoutsubtree>`
+    // whose IMMEDIATE children are the promoted hosts — laid out, hit-tested,
+    // never painted by the browser, and copyable by the element copy. It exists
+    // only when the ground's layer offers the adapter's effects, so a host
+    // without the origin trial simply has no L1 and every card draws its plate.
+    const sourceSlot = (groundLayer as (GroundLayerHandle & { readonly compose?: GroundComposeMirror }) | null)?.compose?.sourceCanvas;
+    const sourceCanvas: SourceCanvas | undefined =
+      sourceSlot == null
+        ? undefined
+        : createSourceCanvas(host.container, sourceSlot.effects, {
+            // The canvas paints nothing of its own and, unlike the old leg's
+            // all-composited board, it now sits above a content plane that
+            // still holds every `dom`-target card. It must not swallow their
+            // hits, so the box is transparent to the pointer and each host it
+            // adopts turns pointer events back on (`dom-widgets`).
+            pointerEvents: "none",
+            onDirty: (hosts) => sourceSlot.onDirty(hosts),
+          });
+    const planeArgs = {
+      contentPlane: planes.content,
+      liftedPlane: planes.lifted,
+      ...(sourceCanvas !== undefined ? { sourceCanvas: sourceCanvas.canvas } : {}),
+    };
+    domWidgets = createDomWidgetsReflector(planeArgs, world, runtime.store);
     if (groundLayer !== null && gridConfigRef.current !== undefined) {
       groundLayer.configureGrid(gridConfigRef.current);
     }
@@ -300,6 +358,7 @@ export function InfiniteCanvas({
       groundRef.current = null;
       chrome.dispose();
       domWidgets.dispose();
+      sourceCanvas?.dispose();
       remoteCursors.destroy();
       planes.dispose();
       host.dispose();
@@ -319,11 +378,19 @@ export function InfiniteCanvas({
 
     // Registration order = flush order — node-board's proven sequence, with
     // the profile's own reflectors spliced in right after ground (plan §4.3).
+    // `domWidgets` MOUNTS and REPARENTS hosts. A profile whose roster reads
+    // those hosts — design-013's DomRender copies from one that must already be
+    // an immediate child of L1 — asks for it first (`hostsBeforeRoster`), or a
+    // promotion reaches the copy one flush late and the card shows its plate
+    // for a frame. Everyone else keeps today's order, where the old leg's
+    // `domWriteback` sits inside the roster and must FOLLOW the reparent.
+    const hostsFirst = activeProfile.hostsBeforeRoster === true;
     const unregister = [
       core.registerReflector(createPlaneTransformReflector(planeArgs)),
       ...(groundLayer !== null ? [core.registerReflector(groundLayer.reflector)] : []),
+      ...(hostsFirst ? [core.registerReflector(domWidgets)] : []),
       ...activeProfile.reflectorsAfterGround(profileCtx).map((r) => core.registerReflector(r)),
-      core.registerReflector(domWidgets),
+      ...(hostsFirst ? [] : [core.registerReflector(domWidgets)]),
       core.registerReflector(chrome),
       core.registerReflector(createCursorReflector(host, stack.readCursor)),
       core.registerReflector(remoteCursors.reflector),
@@ -357,6 +424,10 @@ export function InfiniteCanvas({
       const rect = container.getBoundingClientRect();
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
       writeRuntimeResource(world, Viewport, { w: rect.width, h: rect.height, dpr });
+      // THE BACKING STORE IS LOAD-BEARING (`source-canvas.ts`): the bitmap is
+      // what element paint records are recorded against, and an undersized one
+      // degrades every copy silently. One layout read, here, never in a flush.
+      sourceCanvas?.resize(rect.width, rect.height, dpr);
     };
     syncViewport();
     let resizeObserver: ResizeObserver | undefined;
@@ -386,6 +457,7 @@ export function InfiniteCanvas({
       engine.transitions.setReducedMotion(false);
       detachDomTransition();
       domWidgets.dispose();
+      sourceCanvas?.dispose();
       chrome.dispose();
       planes.dispose();
       host.dispose();

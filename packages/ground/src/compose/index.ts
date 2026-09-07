@@ -31,6 +31,7 @@ export * from "../nav/flight";
 export * from "../nav/portal";
 export * from "../compose/ground";
 export * from "../compose/dom-compose";
+export * from "../compose/dom-render";
 export * from "../compose/frame-inputs";
 export * from "../compose/host";
 export * from "../compose/residency";

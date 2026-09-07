@@ -44,6 +44,11 @@ export default defineConfig({
         "composited-next": "composited-next.html",
         "composited-next-video": "composited-next-video.html",
         "composited-next-islands": "composited-next-islands.html",
+        //   composited-next-render — design-013 B4: DomRender under the new
+        //                          profile — the promote witness (D7), the
+        //                          demand clamp's rate, and the drift readback
+        //                          under both raster strategies.
+        "composited-next-render": "composited-next-render.html",
         "zoom-drift": "zoom-drift.html",
       },
     },

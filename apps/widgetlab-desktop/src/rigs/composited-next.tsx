@@ -59,6 +59,8 @@ type RGB = readonly [number, number, number];
 interface Mounted {
   readonly profile: string;
   readonly canvases: number;
+  /** The L1 source canvas (B4) — 1 wherever HTML-in-Canvas is present. */
+  readonly sourceCanvases: number;
   readonly available: boolean;
   readonly redraws: number;
   readonly submits: number;
@@ -248,7 +250,12 @@ function mountNextRig(): NextRig {
   };
   const snapshot = (): Mounted => ({
     profile: compositedNextProfile.name,
-    canvases: rootEl.querySelectorAll("canvas").length,
+    // The GROUND's canvas, not every canvas: since B4 the composited-next mount
+    // also carries the L1 `layoutsubtree` SOURCE canvas, which paints nothing
+    // and is the hit/copy surface for promoted hosts. Counting both would make
+    // this assertion fail for a reason that is the design working.
+    canvases: rootEl.querySelectorAll("canvas:not([data-ice-source-canvas])").length,
+    sourceCanvases: rootEl.querySelectorAll("canvas[data-ice-source-canvas]").length,
     available: handle?.compose.available() ?? false,
     redraws: redraws(),
     submits: submits(),

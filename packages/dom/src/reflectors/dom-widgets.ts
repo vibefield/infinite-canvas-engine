@@ -399,6 +399,7 @@ export function createDomWidgetsReflector(
     const opacity = readOpacity(e);
     if (opacity !== 1) el.style.opacity = String(opacity);
     const placement = placementOf(e);
+    if (placement === "canvas") el.style.pointerEvents = "auto"; // see updatePromote: the L1 box may be pointer-transparent
     parentFor(placement).appendChild(el);
     const rec: HostRec = {
       host: el,
@@ -459,9 +460,14 @@ export function createDomWidgetsReflector(
    *
    * Canvas-side hosts are skipped on purpose: inside a `layoutsubtree` canvas
    * `left`/`top` do not position anything (the transform REPLACES layout —
-   * hic-bench §3), and the host must be sized in SCREEN CSS px rather than the
-   * world units a camera-transformed plane scales for it. Their whole geometry
-   * — placement and size — belongs to the `domWriteback` reflector.
+   * hic-bench §3), and the host must be sized in the CSS px its raster is
+   * measured in rather than the world units a camera-transformed plane scales
+   * for it. Their whole geometry — placement and size — belongs to whichever
+   * reflector owns the copy: `domWriteback` under the old composited profile
+   * (screen px, `Size × zoom`), `compose/dom-render.ts` under composited-next
+   * (design-013 D9's `geometry().cssSize` — band space, with `zoom / band` on
+   * the placement matrix — so the extent-less element copy writes exactly the
+   * slot Residency placed). Exactly one of the two is registered per app.
    */
   function updateGeometry(): void {
     for (const [e, rec] of hosts) {
@@ -580,6 +586,11 @@ export function createDomWidgetsReflector(
         const wasCanvas = rec.placement === "canvas";
         rec.placement = placement;
         parentFor(placement).appendChild(rec.host);
+        // A mixed board's L1 canvas is transparent to the pointer (B4 — it now
+        // sits above a content plane that still holds every `dom`-target
+        // card), so the host it adopts is what takes the hits. Set on the host
+        // and cleared when it leaves: on a plane the property is the plane's.
+        rec.host.style.pointerEvents = placement === "canvas" ? "auto" : "";
         syncSource(e, rec);
         if (wasCanvas || placement === "canvas") noteCompositedChange();
         orderDirty = true; // the move appended LAST — re-assert sibling order

@@ -101,7 +101,24 @@ export interface SourceCanvasOptions {
    * Never measured during a flush — reflectors may not read layout.
    */
   size?: { readonly width: number; readonly height: number; readonly dpr: number };
-/**
+  /**
+   * Is the CANVAS BOX itself a pointer target? (B4, design-013.)
+   *
+   * `"auto"` (the default, and what the old leg's rigs measured) keeps the
+   * behaviour the header below describes: the canvas takes hits and its
+   * children take theirs. That is right when EVERY host is composited, which
+   * is what the old profile assumed.
+   *
+   * `"none"` is design-013's mixed board: `dom`-target cards stay on the
+   * content plane, UNDER this canvas, and a full-bleed pointer target at
+   * `z-index: 3` would swallow every hit meant for them. With `none` the box
+   * is transparent to the pointer and the hosts this canvas adopts turn
+   * pointer events back on individually (`dom-widgets` does it in the same
+   * flush that reparents them) — the ordinary overlay-pane arrangement, which
+   * leaves `layoutsubtree`'s hit truth exactly where it was: on the children.
+   */
+  pointerEvents?: "auto" | "none";
+  /**
    * Called with the hosts a paint event named — the per-slot dirty signal that
    * makes the ~100× upload path possible (441 KB / 0.21 ms against 43.5 MB /
    * 7.9 ms), and the reason no full-board path exists.
@@ -132,9 +149,23 @@ export interface SourceCanvas {
 /**
  * L1 sits ABOVE L0 and below the overlay, and it paints nothing — so it must
  * not occlude the ground canvas visually while still receiving hits for its
- * children. `pointer-events: none` on the canvas itself with `auto` restored
- * per host would break `layoutsubtree`'s whole point, so the canvas keeps
- * pointer events and simply has no pixels of its own.
+ * children. By default the canvas keeps pointer events and simply has no
+ * pixels of its own.
+ *
+ * ── ERRATUM 2026-09-07 (B4, design-013) ───────────────────────────────────
+ * This comment used to end "`pointer-events: none` on the canvas itself with
+ * `auto` restored per host would break `layoutsubtree`'s whole point". That
+ * was a guess, and it was never measured; the arrangement it dismissed is the
+ * ordinary overlay-pane one, and hit-testing on `layoutsubtree` children is
+ * the children's, not the box's.
+ *
+ * It also assumed the old profile's board, where EVERY host is composited so
+ * nothing lives underneath. design-013's board is mixed: `dom`-target cards
+ * stay on the content plane, under this canvas, and a full-bleed pointer
+ * target at `z-index: 3` swallows every hit meant for them. So `pointerEvents`
+ * is now an OPTION — `"auto"` by default (the old leg's rigs are unchanged),
+ * `"none"` for the composited-next mount, whose promoted hosts set
+ * `pointer-events: auto` on themselves in the same flush that adopts them.
  */
 const CANVAS_STYLE: Readonly<Record<string, string>> = {
   position: "absolute",
@@ -142,6 +173,9 @@ const CANVAS_STYLE: Readonly<Record<string, string>> = {
   top: "0",
   width: "100%",
   height: "100%",
+  // Default: the canvas is a pointer target (see `pointerEvents` above; a
+  // mixed board asks for "none" and its hosts opt back in).
+  pointerEvents: "auto",
   // Above the content/lifted planes; the P4 chrome + P5 cursor overlay still
   // stack above this by DOM order.
   zIndex: "3",
@@ -158,6 +192,7 @@ export function createSourceCanvas(
   const canvas = doc.createElement("canvas");
   Object.assign(canvas.style, CANVAS_STYLE);
   canvas.setAttribute("data-ice-source-canvas", "");
+  if (options.pointerEvents === "none") canvas.style.pointerEvents = "none";
   effects.markAsSourceCanvas(canvas);
   // See the header: the proven configuration. The result is intentionally
   // unused — nothing is ever drawn through it.
