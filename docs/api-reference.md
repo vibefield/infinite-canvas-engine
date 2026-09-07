@@ -206,8 +206,9 @@ the only output writers) · `ce.engine.onPublish(hook)` (presence I/O slot) ·
 `compositedProfile`. The composited one is the ground's — `<InfiniteCanvas
 ground={groundCompose({ device, theme })} profile={compositedProfile}>`, the ground itself the
 compositor (`@ice/ground/compose`). It refuses a device-less engine, a missing ground and a
-`ground()`/`groundHost()` layer BY NAME rather than rendering a plausible screen that is
-quietly the stratified one; it installs the surface infra set (Band · Demand · Residency) and
+`groundField()` layer BY SHAPE — a `GroundFieldHandle` carries no `compose`, so there is no
+GpuCompose to register — rather than rendering a plausible screen that is quietly the
+stratified one; it installs the surface infra set (Band · Demand · Residency) and
 registers §6's roster: DomRender · IslandRender · VideoIngest · DomCompose · GpuCompose. An app
 imports exactly one profile and passes it to `<InfiniteCanvas profile={…}>`; the other
 tree-shakes out. (B8, 2026-09-07: the old composited leg and its profile are deleted, and
@@ -215,8 +216,10 @@ tree-shakes out. (B8, 2026-09-07: the old composited leg and its profile are del
 
 **`useChromeOwner()`** — `"ground"` under the composited profile, `"dom"` otherwise. A card
 shell renders bare under the ground (the plate, ring, shadow, lift and glow are drawn there);
-under the stratified profile it draws its own CSS chrome, and that branch retires with that
-profile in Phase C.
+under the stratified profile it draws its own CSS chrome. That branch does NOT retire in
+Phase C, contrary to what this line said before C3 (2026-09-07): C2 moved the stratified
+ground onto the same engine rather than deleting the profile, so the ground draws no cards
+under it and the CSS chrome stays the fallback.
 
 
 | Export | Notes |
@@ -265,17 +268,25 @@ adapter's `glRoute`. Zero render→ECS writes, DEV-enforced via
 
 **`@ice/ground/compose` IS this package's main entry** (design-013; the ground became the
 compositor at B8, 2026-09-07). Everything under that heading below is what a composited app
-uses. This root barrel is the STRATIFIED ground — three's WebGPURenderer presenting its own
-canvas, the pass registry, the programs and the poles — which Phase C moves onto the same
-engine. The two entries import nothing from each other (dependency-cruiser holds the wall);
-`instrumentSubmits` and the HiC adapter's exports are the leaves both share.
+uses. This root barrel is the STRATIFIED ground, which is the SAME engine since C2
+(2026-09-07): one internal host in two modes, sharing the canvas, the builder, the overlays,
+the poles and the flight. three's `WebGPURenderer`, TSL, `ground()`, `groundHost` and
+design-011's program contract were deleted with the old leg, and C3 struck `three` from the
+package's dependencies entirely — the whole non-r3f graph is three-free and the pack audit
+measures it. `instrumentSubmits` and the HiC adapter's exports are exported from both entries.
 
-`ground(opts?)` → an opaque factory for the react `ground` prop (or call it
-with `{host, world, readWirePreview?, readSpatial?}` in imperative shells and
-register `layer.reflector`). One WebGPU canvas (WebGL2 fallback automatic)
-drawing the dot grid, wires, and snap guides as passes; `configureGrid`
-re-tunes live (the react `grid` prop forwards here). `groundHost(...)` is
-design-011's program host over the same renderer.
+`groundField(opts?)` → an opaque factory for the react `ground` prop (or call it with the
+mount context in imperative shells and register `layer.reflector`). It acquires its OWN
+WebGPU device (`gpu`/`onDevice` override and observe it) and draws, under the DOM planes, the
+field, the live portals, the flight's second slot, the wires and the snap guides — and NO
+cards: the DOM draws those under this profile. `groundField({ grid, wires, guides, poles,
+theme?, config?, grids?, gpu?, onDevice? })`; `configureGrid` re-tunes live (the react `grid`
+prop forwards here), `layer.field` is the handle (`status` · `device` · `redraws` · `stats` ·
+`config` · `setTheme`). There is no WebGL2 fallback, no timestamp profile and no extra
+`passes` — an overlay is `Ground.create({ overlays })`'s. **The ground is OPAQUE**: it clears
+to its theme's `canvasBg` and writes the bytes the theme and the config name, so a host
+projects its page background into the theme (`themeFrom(name, palette)` over
+`ENGINE_PALETTE[name]`; `ENGINE_THEMES.light` with none).
 
 **`@ice/ground/compose`** — the ground as design-013's compositor: the magnet field and the
 cutting mat, the SDF card frame with its content term and the heat, the live portal's slot
@@ -375,29 +386,30 @@ build the L1 `<canvas layoutsubtree>` (null when `probeHic` finds no trial, or n
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 
-**The magnet grid (design-010, 0.10.0; build-time wiring in 0.11.0)**:
-classic and magnet are separate `GridPassFactory` implementations over the
-same `GridConfig`/dependency contract. `passes/grid.ts` imports exactly one;
-the production package currently wires magnet, so classic has no runtime
-bundle edge. Rewiring the one re-export selects classic without changing
-`ground()`, `configureGrid`, or the react `grid` prop. This is not a runtime
-mode switch.
+**The magnet grid (design-010, 0.10.0; build-time wiring in 0.11.0; ONE implementation
+since design-013 C2)**: the `GridPassFactory` seam and its classic/magnet pair went with the
+old leg. The engine's field IS the magnet field, and the glyph is a per-canvas-type
+declaration (`presentation.ground = { glyph: "dot" | "line", grid, wires, guides }`) rather
+than a build-time re-export. Selecting classic is design-013's owed `classic-line` glyph, not
+a rewiring.
 
-`grid.magnet?: Partial<GridMagnetConfig>` live-tunes the selected magnet
-implementation and is deep-merged one level by `configureGrid`.
-`GridMagnetConfig`: `glyph: "dot"|"needle"` · `reach` (CSS px at
-influence 0.5) · `polarity` · `widgets`/`widgetStrength`/`widgetRadius`
-(silhouette SDF sources via the spatial index) · `alwaysAlign` ·
-`needleLength`/`needleWidth` · `maxSources` (≤256, prioritized largest-first;
-poles never evicted) · `fadeZoom` (the field lerps out below this zoom; rest
-ticks remain). Widget sources need `GroundContext.readSpatial` (the react
-facade wires the interaction stack's index automatically).
+`grid.magnet?: Partial<GridMagnetConfig>` live-tunes the field and is deep-merged one level by
+`configureGrid`. SIX of its keys map onto the engine's field: `glyph: "dot"|"needle"` ·
+`reach` (CSS px at influence 0.5) · `polarity` · `alwaysAlign` · `needleLength`/`needleWidth`.
+The rest — `widgets`/`widgetStrength`/`widgetRadius`, `maxSources`, `fadeZoom` — are the old
+magnet grid's vocabulary and have **no field reader** since C2 (every on-screen card is a
+source at strength 1); they stay declared, and core's doc comments say so at each key. There
+is no `GroundContext.readSpatial` any more: the frame builder reads the cards from the world.
 
-**`PoleSource`** (`GroundOptions.poles`): injected point sources — the pass
-knows no cursor vocabulary. `{read(world) => Pole[], subscribe(world, wake)}`
-with `Pole = {x, y, strength, space?: "world"|"screen"}`; poles pack as
-degenerate SDF boxes (≡ point charges). Canned wirings: `localPointerPoles()`
-(the local pointer entity) · `cursorVisualPoles()` (presence cursor entities —
+**`PoleSource`** (`groundField({ poles })` / `groundCompose({ poles })`): injected point
+sources — the field knows no cursor vocabulary. `{read(world) => Pole[], subscribe(world,
+wake)}` with `Pole = {x, y, strength, space?: "world"|"screen", pointer?: boolean}`. A pole
+flagged `pointer` rides the field's ANALYTIC cursor term (D-C2.2) — its motion redraws but
+never re-bakes the source buffer, and the first flagged pole in read order wins; every other
+pole packs as a degenerate SDF box (≡ a point charge). The same packed set goes to every slot,
+because a screen point is slot-invariant. Canned wirings: `localPointerPoles()` (the local
+pointer entity, a SCREEN-space pole on `PointerScreen` since C2 — `PointerWorld` is rewritten
+every tick and lags the spawn by one) · `cursorVisualPoles()` (presence cursor entities —
 remote collaborators drive the field). Sources that ease should GATE their
 writing systems (`runIf` + `makeVersionGuard`) — strata blanket-stamps
 declared writes on every run, and an ungated easing system wakes the field's

@@ -7,24 +7,29 @@
  * backend's per-object record.
  *
  * S5 quarantined that read inside `@ice/r3f` for islands, correctly: one file
- * to fix when three moves the record. S6b needs the SAME read for ground's
- * offscreen target — and `ground` may not import `r3f`, nor `r3f` `ground`.
- * Duplicating an unsupported read into a second package is how it becomes
- * three copies, so it lands here instead: `core` is the one package both
- * import, this file names no three symbol (the shapes below are structural),
- * and `core` already names `GPUTexture` for the source registry.
+ * to fix when three moves the record. S6b needed the SAME read for ground's
+ * offscreen target — and `ground` may not import `r3f`, nor `r3f` `ground` —
+ * so rather than duplicate an unsupported read into a second package it landed
+ * here: `core` is the one package both import, this file names no three symbol
+ * (the shapes below are structural), and `core` already names `GPUTexture` for
+ * the source registry.
  *
- * CONVERGED AT S8 (the naming pass's second ruling). From S6b to S8 two copies
- * of the read existed — this one and r3f's `webgpu-backend.ts` — parked
- * deliberately rather than churned into a landed slice. They are now one: r3f's
- * module keeps its ISLAND VOCABULARY (`islandTexture`, `islandIsSrgb`,
+ * CONVERGED AT S8 (the naming pass's second ruling): r3f's `webgpu-backend.ts`
+ * kept its ISLAND VOCABULARY (`islandTexture`, `islandIsSrgb`,
  * `islandIsMultisampled`, `hasWebGpuBackend`, `backendDevice`) and delegates
  * every record read here. The probes separated cleanly because each is a
  * question about an ISLAND — can this renderer host one, did that target get
  * its MSAA — and none of them is a question core has any business answering.
  *
- * So "one file changes when three moves the record" is now true across both
- * packages rather than aspirational in each. This is that file.
+ * ERRATA, design-013 C3 (2026-09-07): "one file changes across BOTH packages"
+ * is a ONE-COPY claim now. The ground's own reason for this read is gone —
+ * design-013 B8 deleted the offscreen target and the blit, C2 deleted three's
+ * renderer from `@ice/ground` altogether, and C3 struck `three` from that
+ * package's dependencies — so `packages/r3f/src/webgpu-backend.ts` is the sole
+ * consumer of everything below. It stays HERE rather than moving back into r3f
+ * because the shapes are structural and core is where `GPUTexture` already
+ * lives; if that ever stops paying, moving it is a one-file change and this
+ * paragraph is the record of why it did not happen at the cut.
  *
  * Verified against three 0.185.1: `WebGPUTextureUtils.js:422` stamps
  * `textureData.textureDescriptorGPU` and `:376` sets its `.format` from

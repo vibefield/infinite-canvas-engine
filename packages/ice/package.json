@@ -101,7 +101,7 @@
     "@react-three/fiber": ">=9",
     "react": ">=19",
     "react-dom": ">=19",
-    "three": ">=0.160.0"
+    "three": ">=0.185.0"
   },
   "peerDependenciesMeta": {
     "@react-three/fiber": {
@@ -128,9 +128,7 @@
     "@types/rbush": "^3.0.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/three": "^0.185.0",
     "react": "^19",
-    "react-dom": "^19",
-    "three": "^0.185.0"
+    "react-dom": "^19"
   }
 }

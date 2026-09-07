@@ -52,7 +52,7 @@ root.render(
 
 ## Entry points
 
-One npm package, six entry points (the repo develops them as workspace
+One npm package, eleven entry points (the repo develops them as workspace
 packages; `packages/ice` bundles them for publish):
 
 | Entry | Contents | May import |
@@ -61,7 +61,12 @@ packages; `packages/ice` bundles them for publish):
 | `@vibecook/ice` | The engine: ECS catalog, frame contract, interaction stack, widget runtime, node graph, nested canvas, doc kit, presence, bootstrap, migrations, `createCanvasEngine` facade | strata-ecs, kernel, loro-crdt |
 | `@vibecook/ice/dom` | DOM planes + reflectors (grid, widgets, wires, chrome, cursors), pointer/measure adapters | core, kernel |
 | `@vibecook/ice/react` | `<InfiniteCanvas>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap | dom, core, kernel + react/react-dom |
-| `@vibecook/ice/r3f` | GL widget islands + virtual-texture compositor, GL pointer router | react + three/@react-three/fiber peers |
+| `@vibecook/ice/r3f` | GL widget islands, GL pointer router | react + three/@react-three/fiber peers |
+| `@vibecook/ice/r3f/webgpu` | The islands' WebGPU renderer leg — pulls `three/webgpu`, never rides along with `./r3f` | r3f + the same peers |
+| `@vibecook/ice/ground` | `groundField()` — the stratified profile's ground: one raw-WebGPU canvas under the DOM planes drawing the magnet field, the live portals, the flight's second slot, wires and snap guides | core, kernel; **no three** |
+| `@vibecook/ice/ground/compose` | `groundCompose()` and `Ground` — the composited profile's ground, which is also the COMPOSITOR (it draws the cards) | core, kernel; **no three** |
+| `@vibecook/ice/ground/packs` | The ground's shipped packs: needle · cutting mat · vf-frame | ground |
+| `@vibecook/ice/ground/engine` | The raw-WebGPU boilerplate alone (device, surface, passes) | — |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)` — pointers/recognizers, planes, sovereignty, loop tabs | core only; **nobody imports devtools** |
 
 Import walls are dependency-cruiser-enforced and CI-fatal.

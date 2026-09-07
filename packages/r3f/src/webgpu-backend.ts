@@ -11,9 +11,16 @@
  *
  * TWO COPIES EXISTED FROM S6B TO S8, deliberately parked ("not a reason to
  * churn a landed slice"). S8's naming pass resolves it: THE READ LIVES IN CORE,
- * and this module is the ISLAND VOCABULARY over it. Everything below now goes
+ * and this module is the ISLAND VOCABULARY over it. Everything below goes
  * through `backendTextureRecord`, so "one file changes when three moves the
- * record" is true across both packages instead of aspirational in each.
+ * record" is true rather than aspirational.
+ *
+ * ERRATA, design-013 C3 (2026-09-07): "across both packages" is a ONE-package
+ * claim now — ground stopped asking. B8 deleted its offscreen target and blit,
+ * C2 deleted three's renderer from `@ice/ground`, and C3 struck `three` from
+ * that package's deps, so THIS module is core's only consumer of the read. The
+ * split stays as-is: the read is structural and core already names `GPUTexture`;
+ * folding it back here would be a one-file change and is not worth churning.
  *
  * What stays here, and why it is not core's business: the probes below ask
  * ISLAND questions. Whether a renderer can host islands at all, which device

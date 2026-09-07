@@ -16,11 +16,20 @@
  *      absent, every downstream cutting mat is undithered.
  *   3. THE WGSL TEXT must be PRESENT. `src/shaders.gen.ts` is how the compose
  *      entry ships its shaders with no bundler loader (D-B1.3).
- *   4. THE COMPOSE ENTRY'S GRAPH must have ZERO edges to `three`. The ground
- *      draws in raw WebGPU; three belongs to the STRATIFIED leg, which the same
- *      package still ships (`@vibecook/ice/ground`) and which Phase C moves. So
- *      the honest claim is not "the package is three-free" — the peer is still
- *      declared, and correctly — it is "the compose entry's graph is".
+ *   4. THE WHOLE NON-r3f GRAPH must have ZERO edges to `three` (widened from
+ *      "the compose entry's graph" at design-013 C3, 2026-09-07). Both grounds
+ *      draw in raw WebGPU now: C2 put the stratified leg on the same engine and
+ *      deleted three's renderer, and C3 struck `three` from `@ice/ground`'s peer
+ *      and dev deps entirely. The package's `three` peer STAYS declared — the
+ *      honest claim is still not "the package is three-free" — but its reason is
+ *      now exactly ONE thing, the GL ISLANDS (`./r3f`, `./r3f/webgpu`). So the
+ *      walk covers every published entry but those two, and any three edge it
+ *      finds is a leak of the islands' peer into a graph that must not need it.
+ *
+ *      The walker follows `@ice/*` specifiers as well as relative ones, because
+ *      tsup bundles the workspace (`noExternal: [/^@ice\//]`) — an `@ice/r3f`
+ *      edge from a non-r3f entry would put three in the SHIPPED chunk while a
+ *      relative-only walk reported it as an untraced external.
  *
  * Run: `node packages/ice/tools/audit-pack.mjs`
  */
@@ -91,15 +100,37 @@ say(
     : `missing: ${wgslIn.filter((r) => r.files.length === 0).map((r) => r.n).join(", ")}`,
 );
 
-// --- 4. three in the compose entry's graph --------------------------------
-/** Every module reachable from a source entry, following relative specifiers. */
-function walk(entry) {
+// --- 4. three in the whole non-r3f graph -----------------------------------
+/**
+ * Every import/export specifier a module names. THREE patterns, because one
+ * regex over ES module syntax misses two whole shapes and the audit's answer is
+ * only as good as its graph:
+ *
+ *  - the `from` form, spanning NEWLINES. The original `[^;\n]*?` could not
+ *    cross a line, so every biome-wrapped `export {\n  a,\n  b,\n} from "x"`
+ *    was invisible — 187 of the tree's 1,339 source edges across 80 of its 274
+ *    files, `packages/ground/src/index.ts` (the `@vibecook/ice/ground` ENTRY)
+ *    among them at 5 of its 11. `[^;"']*?` crosses lines but not a `;` or a
+ *    quote, so it cannot run past a statement into the next one's specifier
+ *    the way a bare `[\s\S]*?` can.
+ *  - the BARE side-effect import (`import "three"`), which has no `from` at all.
+ *  - the DYNAMIC `import("…")`, which is how the r3f entry reaches stats-gl and
+ *    is how a lazy three edge would hide from both patterns above.
+ */
+const SPECIFIER_PATTERNS = [
+  /(?:^|\n)\s*(?:import|export)\s[^;"']*?from\s+["']([^"']+)["']/g,
+  /(?:^|\n)\s*import\s+["']([^"']+)["']/g,
+  /\bimport\(\s*["']([^"']+)["']\s*\)/g,
+];
+
+/** Every module reachable from a source entry, following relative + `@ice/*`. */
+function walk(entries) {
   const seen = new Set();
   const external = new Map(); // specifier -> the file that imported it
-  const queue = [resolve(entry)];
-  const resolveTs = (from, spec) => {
-    const base = resolve(dirname(from), spec);
-    for (const c of [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")]) {
+  const queue = entries.map((e) => resolve(e));
+  const candidates = (base) => [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")];
+  const firstFile = (paths) => {
+    for (const c of paths) {
       try {
         if (statSync(c).isFile()) return c;
       } catch {
@@ -108,32 +139,49 @@ function walk(entry) {
     }
     return null;
   };
+  const resolveSpec = (from, spec) => {
+    if (spec.startsWith(".")) return firstFile(candidates(resolve(dirname(from), spec)));
+    // tsup bundles the workspace, so an `@ice/*` edge is an edge in the SHIPPED
+    // chunk — follow it rather than parking it as an untraced external.
+    const ice = /^@ice\/([^/]+)(?:\/(.+))?$/.exec(spec);
+    if (ice === null) return null;
+    const base = resolve(repo, "packages", ice[1], "src", ice[2] ?? "");
+    return firstFile(candidates(base));
+  };
   while (queue.length > 0) {
     const file = queue.pop();
     if (file === undefined || seen.has(file)) continue;
     seen.add(file);
     const text = readFileSync(file, "utf8");
-    for (const m of text.matchAll(/(?:^|\n)\s*(?:import|export)[^;\n]*?from\s+"([^"]+)"/g)) {
-      const spec = m[1];
-      if (spec === undefined) continue;
-      if (spec.startsWith(".")) {
-        const next = resolveTs(file, spec);
-        if (next !== null) queue.push(next);
-        continue;
+    for (const re of SPECIFIER_PATTERNS) {
+      for (const m of text.matchAll(re)) {
+        const spec = m[1];
+        if (spec === undefined) continue;
+        const next = resolveSpec(file, spec);
+        if (next !== null) {
+          queue.push(next);
+          continue;
+        }
+        if (!external.has(spec)) external.set(spec, file);
       }
-      if (!external.has(spec)) external.set(spec, file);
     }
   }
   return { modules: seen, external };
 }
 
-const compose = walk(join(groundSrc, "compose/index.ts"));
-const threeEdges = [...compose.external.entries()].filter(([spec]) => /^three(\/|$)/.test(spec));
+/** The published entries, minus the two the `three` peer exists FOR. */
+const iceSrc = resolve(repo, "packages/ice/src");
+const ISLAND_ENTRIES = new Set(["r3f.ts", "r3f-webgpu.ts"]);
+const nonR3fEntries = readdirSync(iceSrc)
+  .filter((n) => n.endsWith(".ts") && !ISLAND_ENTRIES.has(n))
+  .sort();
+const graph = walk(nonR3fEntries.map((n) => join(iceSrc, n)));
+const threeEdges = [...graph.external.entries()].filter(([spec]) => /^three(\/|$)/.test(spec));
 say(
   threeEdges.length === 0,
-  "the compose entry's graph is THREE-FREE",
+  "the non-r3f graph is THREE-FREE",
   threeEdges.length === 0
-    ? `${compose.modules.size} modules reachable from src/compose/index.ts, 0 edges to three (externals: ${[...compose.external.keys()].sort().join(", ")}). The package's \`three\` peer STAYS declared for the islands (./r3f, ./r3f/webgpu) — the stratified ground moved onto the engine at design-013 C2, so no ground entry needs it; C3 widens this walk to the whole non-r3f graph`
+    ? `${graph.modules.size} modules reachable from the ${nonR3fEntries.length} non-island entries (${nonR3fEntries.join(", ")}), 0 edges to three (externals: ${[...graph.external.keys()].sort().join(", ")}). The package's \`three\` peer STAYS declared, optional, at >=0.185.0 — for the ISLANDS alone (./r3f, ./r3f/webgpu) since design-013 C3 struck it from @ice/ground`
     : threeEdges.map(([spec, from]) => `${spec} from ${from.slice(repo.length + 1)}`).join(", "),
 );
 

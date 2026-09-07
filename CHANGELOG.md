@@ -78,6 +78,26 @@ the entity's own kind behaviour.
   report of a second writer on a component. Rename to your own namespace; a name
   that merely starts with the same letters (`iceberg:x`) is unaffected.
 
+<!-- design-013 C3 (2026-09-07) -->
+- **The `three` peer floor rises from `>=0.160.0` to `>=0.185.0`** (design-013 §8 Phase C,
+  C3 — D-C3.1). The peer is still OPTIONAL and still declared, but the versions it is
+  declared against are now only the ones the GL islands actually run on: `./r3f/webgpu`
+  builds `three/webgpu`'s `WebGPURenderer`, and the desktop board's environment path needs
+  that module's own `PMREMGenerator` (C0), neither of which exists at 0.160. A consumer
+  pinned below 0.185 was already broken on those two subpaths; the manifest now says so
+  instead of promising a floor it could not meet. Consumers who never import `./r3f` or
+  `./r3f/webgpu` need no `three` at all — see below.
+- **`three` is gone from the ground.** `@ice/ground` (`@vibecook/ice/ground`,
+  `./ground/compose`, `./ground/packs`, `./ground/engine`) declared `three` as a peer and a
+  dev dep for the stratified leg's `WebGPURenderer` + TSL; C2 deleted that leg and C3 struck
+  the declarations. **The `three` peer of `@vibecook/ice` now exists for ONE reason: the GL
+  ISLANDS.** "The cut" does not mean ICE stopped needing three — it means nothing outside
+  `./r3f` and `./r3f/webgpu` does, and the pack audit measures that rather than asserting it:
+  252 modules reachable from the nine non-island entries, 0 edges to `three`, externals
+  exactly `@vibecook/strata-ecs` (+ its `durable`/`ephemeral`/`tools` subpaths), `loro-crdt`,
+  `rbush`, `react` and `react-dom`. A dependency-cruiser rule (`three-only-in-r3f`) makes it a
+  CI failure for any of kernel/core/dom/react/ground/devtools/ice to import three again.
+
 <!-- design-013 C2 (2026-09-07) -->
 - **The stratified profile's ground is the ENGINE's, and the three-based leg is deleted**
   (design-013 §8 Phase C, C2 — D-C2.1…D-C2.6). `@ice/ground` (`@vibecook/ice/ground`) no longer

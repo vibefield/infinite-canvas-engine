@@ -506,18 +506,12 @@ importers:
         specifier: workspace:*
         version: link:../kernel
     devDependencies:
-      '@types/three':
-        specifier: ^0.185.0
-        version: 0.185.1
       '@vibecook/strata-ecs':
         specifier: 0.13.0
         version: 0.13.0(loro-crdt@1.13.8)(react@19.2.7)
       happy-dom:
         specifier: ^20.0.0
         version: 20.10.6
-      three:
-        specifier: ^0.185.0
-        version: 0.185.1
       tsx:
         specifier: ^4.20.0
         version: 4.23.13
@@ -545,6 +539,9 @@ importers:
       stats-gl:
         specifier: ^4.2.3
         version: 4.2.3(three@0.185.1)
+      three:
+        specifier: '>=0.185.0'
+        version: 0.185.1
     devDependencies:
       '@ice/core':
         specifier: workspace:*
@@ -576,18 +573,12 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.2.3(@types/react@19.2.17)
-      '@types/three':
-        specifier: ^0.185.0
-        version: 0.185.1
       react:
         specifier: ^19
         version: 19.2.7
       react-dom:
         specifier: ^19
         version: 19.2.7(react@19.2.7)
-      three:
-        specifier: ^0.185.0
-        version: 0.185.1
 
   packages/kernel:
     dependencies:

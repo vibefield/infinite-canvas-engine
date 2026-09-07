@@ -115,28 +115,18 @@ module.exports = {
       },
     },
     {
-      name: "ground-only-core-kernel-three",
+      name: "ground-only-core-kernel",
       comment:
-        "design-002 §6 (amended 2026-07-16, the @ice/ground extraction): the P0 ground layer — " +
-        "core + kernel ONLY since design-013 C2 (2026-09-07) deleted the three-based leg; the " +
-        "`three` allowance below is what C3 removes (no `three` import outside packages/r3f), and " +
-        "nothing in ground's src exercises it any more. Off the react chain: react must NOT " +
-        "import ground (its own allowlist enforces that); apps inject the layer through the " +
+        "design-002 §6 (amended 2026-07-16, the @ice/ground extraction; three struck out at " +
+        "design-013 C3, 2026-09-07): the P0 ground layer draws in RAW WebGPU — core + kernel " +
+        "ONLY. C2 deleted the three-based stratified leg (the WebGPURenderer, TSL, the pass " +
+        "registry, the programs) and C3 struck the `three` allowance this rule carried for it, " +
+        "along with the package's `three` peer and dev deps. Off the react chain: react must " +
+        "NOT import ground (its own allowlist enforces that); apps inject the layer through the " +
         "InfiniteCanvas `ground` factory prop or register its reflector directly.",
       severity: "error",
       from: { path: "^packages/ground/src" },
-      to: {
-        pathNot: [
-          "^packages/ground/src",
-          "^packages/core",
-          "^packages/kernel",
-          nm("three"),
-          // "three/webgpu" and "three/tsl" resolve through the package exports
-          // map, which the cruiser reports by SPECIFIER (the strata-subpath
-          // precedent) — allow the specifier form alongside node_modules paths.
-          "^three(/|$)",
-        ],
-      },
+      to: { pathNot: ["^packages/ground/src", "^packages/core", "^packages/kernel"] },
     },
     {
       name: "devtools-only-core-kernel-strata",
@@ -205,6 +195,23 @@ module.exports = {
       severity: "error",
       from: { path: "^packages/(kernel|core|dom|react|r3f|devtools)/src" },
       to: { path: "^packages/ground" },
+    },
+    {
+      name: "three-only-in-r3f",
+      comment:
+        "design-013 §8 Phase C (D-C3.1, 2026-09-07): `three` left @ice/ground with the " +
+        "stratified leg's renderer, so `packages/r3f` is the ONLY package that may name it — " +
+        "the GL islands and their WebGPU renderer are what the published `three` peer is FOR, " +
+        "and the peer stays declared (optional) for exactly them. Belt and braces over the " +
+        "per-package allowlists above: it also binds on `packages/ice/src`, the publish " +
+        "bundle's entry modules, which have no allowlist of their own — so a three edge cannot " +
+        "re-enter the graph through the umbrella. BOTH path forms are listed because the " +
+        "cruiser reports a bare `three` by its resolved node_modules path and an exports-map " +
+        "subpath (`three/webgpu`, `three/tsl`) by SPECIFIER; either alone leaves half the door " +
+        "open (the probe that proved it: a temporary `import \"three\"` in ground's theme.ts).",
+      severity: "error",
+      from: { path: "^packages/(kernel|core|dom|react|ground|devtools|ice)/src" },
+      to: { path: ["^three(/|$)", nm("three")] },
     },
     // The two Phase-B/C leg walls (`ground-compose-imports-no-old-leg` and its reverse) left with
     // the old stratified leg at design-013 C2 (2026-09-07): `packages/ground/src` is ONE leg now —

@@ -644,11 +644,16 @@ tests). Notable for the record, beyond the fixes themselves:
   paused/bucket-0 card parked dirt inside `pending()` and span the compositor
   every rAF frame (`76d82b3` — parked dirt now waits OUTSIDE pending, on
   demand, not a clock). And `program-host.ts`'s factory-parity promise was
-  false: `groundHost` — the factory widgetlab-desktop SHIPS — built a quad
-  pass with none of the four seams and no binder, so its composited path drew
-  NOTHING; every rig passed because rigs hand-wired the binder. The wiring is
-  now extracted (`compositor/wiring.ts`) so both factories call one assembly
-  and cannot drift (`5a7e328`), and the witness goes through the factory.
+  false: `groundHost` — the factory widgetlab-desktop SHIPPED at the time —
+  built a quad pass with none of the four seams and no binder, so its composited
+  path drew NOTHING; every rig passed because rigs hand-wired the binder. The
+  wiring was extracted (`compositor/wiring.ts`) so both factories called one
+  assembly and could not drift (`5a7e328`), and the witness went through the
+  factory. *(Errata, design-013 C3, 2026-09-07: past tense throughout now.
+  `groundHost`, `program-host.ts` and `compositor/wiring.ts` are all deleted —
+  B8 took the old composited leg, C2 took the stratified one. The finding is
+  kept for the CLASS it names: a factory whose product no rig exercises without
+  hand-wiring around it.)*
 - **Two review findings were themselves corrected by the fix discipline.** The
   extension-host rollback strands outputs only in the VALUE-restore shape (a
   component REMOVAL journals the entity back into the collector and
