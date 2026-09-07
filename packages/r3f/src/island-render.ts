@@ -108,6 +108,13 @@ export interface IslandRenderStats {
   readonly skippedPaused: number;
   /** Renders skipped because the card's fps bucket was not due yet. */
   readonly skippedBudget: number;
+  /**
+   * Renders whose resolve texture the backend had not allocated yet (the renderer resolves
+   * asynchronously) or whose handle the table refused: NOT painted. The target is dropped so the
+   * destination is fresh again and the next flush renders — an island marked painted with no
+   * realised texture would sit Warm on the plate for good (B9 review).
+   */
+  readonly unrealised: number;
 }
 
 export interface IslandRenderOpts {
@@ -150,6 +157,7 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
   let disposed = 0;
   let skippedPaused = 0;
   let skippedBudget = 0;
+  let unrealised = 0;
   let lastFlushMs: number | null = null;
 
   const disposeTarget = (handle: TextureHandle): void => {
@@ -295,10 +303,12 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
         // PRODUCER's object: the residency only forgets it, and `onForget`
         // above is where it dies.
         const texture = islandTexture(opts.renderer(), rt.texture);
-        if (texture !== undefined) {
-          sink.realize(handle, texture, { owned: false });
-          sink.wrote(e); // every render: this IS the touch that wakes the ground
+        if (texture === undefined || !sink.realize(handle, texture, { owned: false })) {
+          disposeTarget(handle); // fresh again: the next flush renders, nothing is marked painted
+          unrealised += 1;
+          continue;
         }
+        sink.wrote(e); // every render: this IS the touch that wakes the ground
         lastRenderAt.set(e, t);
         const band = world.get(e, SurfaceBand)?.band ?? selectBand(cam.zoom);
         bridge.state.markPainted(e, {
@@ -319,7 +329,7 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
 
   return {
     reflector,
-    stats: () => ({ rendered, targets: targets.size, disposed, skippedPaused, skippedBudget }),
+    stats: () => ({ rendered, targets: targets.size, disposed, skippedPaused, skippedBudget, unrealised }),
     targetOf: (handle) => targets.get(handle),
     dispose() {
       unforget();

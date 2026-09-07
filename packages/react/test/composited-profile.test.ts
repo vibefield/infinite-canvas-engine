@@ -18,7 +18,7 @@ const slot: ReflectorDef & { available(): boolean } = { name: "ground/compose-sl
 const ctxOf = (device: boolean, ground: "none" | "old" | "compose"): ProfileBootContext => ({
   engine: { compositorDevice: device ? {} : undefined } as unknown as ProfileBootContext["engine"],
   ground: ground === "none" ? null : ground === "old"
-    ? { reflector: slot, compositorReflector: { name: "compositor", always: true, flush() {} }, configureGrid() {}, dispose() {} }
+    ? { reflector: slot, configureGrid() {}, dispose() {} }
     : ({ reflector: slot, configureGrid() {}, dispose() {}, compose: { gpuCompose } } as unknown as ProfileBootContext["ground"]),
 });
 

@@ -249,13 +249,14 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
 
     let ground: Ground | null = null;
     let failed = false;
+    let disposed = false;
     let dirty = true;
     let redraws = 0;
     let lastPages: GPUTextureView | null = null;
     let theme = opts.theme;
     let gridPending: Partial<GridConfig> | null = null;
     const program = opts.card ?? shellProgram;
-    const writer = ctx.hosts !== undefined ? createDomHostWriter(program, ctx.hosts.contentOf) : null;
+    const writer = ctx.hosts !== undefined ? createDomHostWriter(program, ctx.hosts.contentOf, (e) => world.isAlive(e)) : null;
     let domWrites = 0;
     // DomRender (B4, §6 reflector 5). Built EAGERLY — the dirt latch has to be
     // able to take a paint event from the first one — but installed into its
@@ -315,15 +316,21 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       return true;
     };
     // The frame pick source (B3b): the router asks the ground what is under a point on a card — its last-drawn geometry through the program's own hit test.
+    // A card the builder has no geometry for (before the first build, before its first draw, after a failed creation) answers `undefined`, never `outside`:
+    // the router keeps the box tier's hit, so a card is clickable from the moment it exists (B9 review blocker 1).
     const framePick = ctx.framePick;
     const pickSource = {
       pad: () => program.source(0, 0, 1, opts.cards?.radius ?? 0).hx + LINES.ring + 2,
-      hit: (e: Entity, x: number, y: number): string => { const G = builder.geometryOf(e); return G === undefined ? "outside" : program.pick(G, x, y); },
+      hit: (e: Entity, x: number, y: number): string | undefined => { const G = builder.geometryOf(e); return G === undefined ? undefined : program.pick(G, x, y); },
+      // a spring still moves: the geometry under a STILL pointer is changing, so the router picks again (B9 review)
+      live: () => builder.live(),
     };
     if (framePick !== undefined) framePick.current = pickSource;
 
     Ground.create({ device: opts.device, canvas, ...GROUND_SHADERS, ...(opts.card !== undefined ? { card: opts.card } : {}), ...(opts.grids !== undefined ? { grids: opts.grids } : {}) }).then(
       (g) => {
+        // Disposed while the pipelines compiled (StrictMode's double mount, HMR): the ground is nobody's — release it here, or it leaks whole.
+        if (disposed) { g.dispose(); return; }
         if (opts.config) g.fieldConfig = opts.config;
         if (gridPending) { g.fieldConfig = fieldConfigOf(g.fieldConfig, gridPending); gridPending = null; }
         ground = g;
@@ -349,7 +356,11 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         const t = world.getResource(PartTap);
         if (t === undefined || t.seq === lastTap) return;
         lastTap = t.seq;
-        opts.onPart?.(t.target, t.part ?? "");
+        // Handed to the app OUTSIDE the notify — on a microtask, after this frame's synchronous step has returned. The app's
+        // action is an op (a close button despawns), and a structural write inside an observer's emit is ignored by strata's
+        // dev build (a console error) and unguarded in prod (B9 review).
+        const { target, part } = t;
+        queueMicrotask(() => { if (!disposed) opts.onPart?.(target, part ?? ""); });
       }),
     ];
 
@@ -367,7 +378,9 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       name: "ground/gpu-compose",
       always: true,
       flush(w) {
-        if (!ensureBuilt(w) || ground === null || pending === null) return;
+        // The destroy list is drained on EVERY roster tick, drawn or not: a render slot can realise (and so retire) textures on a frame that
+        // paints nothing — a hidden or zero-size canvas — and what a retired texture was last sampled by is an earlier frame's submit, already issued.
+        if (!ensureBuilt(w) || ground === null || pending === null) { residency.collect(); return; }
         const { view, built, flight } = pending;
         pending = null;
         // the page array every `page` card samples — rebound only when the residency re-realised it (growth, D-B4.1)
@@ -398,6 +411,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         dirty = true;
       },
       dispose() {
+        disposed = true;
         for (const u of unsubs) u();
         unsubs.length = 0;
         if (framePick !== undefined && framePick.current === pickSource) framePick.current = null;

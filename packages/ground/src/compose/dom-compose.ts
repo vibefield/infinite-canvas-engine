@@ -69,7 +69,7 @@ export interface DomHostWriter {
 interface Written { key: string; clip: string; transform: string; opacity: string; origin: boolean }
 
 /** The writer of a DOM card's boundary: `contentOf` is the dom reflector's content-element lookup. */
-export function createDomHostWriter(program: CardProgram<ShellGeometry>, contentOf: (entity: Entity) => HTMLElement | undefined): DomHostWriter {
+export function createDomHostWriter(program: CardProgram<ShellGeometry>, contentOf: (entity: Entity) => HTMLElement | undefined, isAlive: (entity: Entity) => boolean = () => true): DomHostWriter {
   const last = new Map<Entity, Written>();
   let clips = 0;
   const keyOf = (G: ShellGeometry, w: number, h: number): string => `${w}|${h}|${program.clipKey?.(G) ?? (G.radius / (G.scale > 0 ? G.scale : 1)).toFixed(3)}`;
@@ -77,7 +77,7 @@ export function createDomHostWriter(program: CardProgram<ShellGeometry>, content
     get clips() { return clips; },
     write(entries) {
       let writes = 0;
-      for (const { entity, G, w, h } of entries) {
+      for (const { entity, G, w, h, target } of entries) {
         const el = contentOf(entity);
         if (el === undefined) continue;
         let rec = last.get(entity);
@@ -90,11 +90,18 @@ export function createDomHostWriter(program: CardProgram<ShellGeometry>, content
           rec.key = key;
           if (clip !== rec.clip) { el.style.clipPath = clip; rec.clip = clip; writes++; }
         }
-        const transform = G.scale !== 1 ? `scale(${G.scale.toFixed(5)})` : "";
+        // The lift and the hold are the DOM's to apply only on a `dom` target: a `gpu` target's raster is copied from this
+        // element and the ground applies both to the sample, so a transform or opacity written here would be applied TWICE —
+        // and the per-frame transform write would paint the L1 source canvas past DomRender's self-write guard (B9 review
+        // blocker 3). Written as empty, so a promotion clears what the card carried as a dom target, and a demotion restores it.
+        const composed = target !== "gpu";
+        const transform = composed && G.scale !== 1 ? `scale(${G.scale.toFixed(5)})` : "";
         if (transform !== rec.transform) { el.style.transform = transform; rec.transform = transform; writes++; }
-        const opacity = G.frameAlpha !== 1 ? G.frameAlpha.toFixed(4) : "";
+        const opacity = composed && G.frameAlpha !== 1 ? G.frameAlpha.toFixed(4) : "";
         if (opacity !== rec.opacity) { el.style.opacity = opacity; rec.opacity = opacity; writes++; }
       }
+      // The entity-keyed store's sweep (§7): a record whose card is gone is dropped here, on the writer's own tick.
+      for (const e of last.keys()) if (!isAlive(e)) last.delete(e);
       return writes;
     },
     forget(entity) { last.delete(entity); },

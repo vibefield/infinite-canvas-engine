@@ -136,9 +136,9 @@ import { createTextureTable, type TextureHandle, type TextureTable } from "./tex
 export const DEFAULT_BYTES_PER_PIXEL = 4;
 
 /**
- * 256 MB. A PLACEHOLDER, deliberately: the number to be replaced by a measured
- * one at B3, when pixels are the witness. At the default 2048² layer it is
- * sixteen layers.
+ * 256 MB. STILL A PLACEHOLDER (Phase B closed without measuring it — the B3 rigs
+ * witnessed pixels, not pressure): the number a Phase C residency-pressure rig
+ * replaces with a measured one. At the default 2048² layer it is sixteen layers.
  */
 export const DEFAULT_RESIDENCY_BUDGET_BYTES = 256 * 1024 * 1024;
 

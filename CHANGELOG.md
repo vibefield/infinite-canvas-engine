@@ -107,6 +107,60 @@ the entity's own kind behaviour.
   a non-dom kind but `GLViews`, which takes only `gl`, so it would be silently dead. `chrome`
   is still yours.
 
+<!-- design-013 B9 (2026-09-07) — the Phase B review's blockers -->
+
+- **A card is clickable from the moment it exists** (B9, review blocker 1). The ground armed
+  its frame pick source at mount and answered `outside` for any card it had no geometry for —
+  before its pipelines compiled, before a card's first draw, and for good when `Ground.create`
+  rejected — which the router took as a miss: every card unclickable, a tap clearing the
+  selection. `FramePickSource.hit` may now return `undefined` ("no geometry"), and
+  `pickFrame` keeps the box tier's answer there (`packages/core/test/frame-pick.test.ts`).
+- **The clamped oversize destination is refused, never claimed** (blocker 2). Residency clamps
+  a Q10 private texture to the device limit uniformly; the L1 copy writes the element's whole
+  raster. DomRender now compares `geometry().written` with the destination and counts an
+  oversize copy (`DomRenderStats.oversize`) instead of copying past the edge and claiming
+  the write — the card draws the plate until its band changes. Projecting the clamp into the
+  uv (D11) is owed. A page-array growth the table refuses no longer returns the OLD array to
+  a copy that names a layer it lacks; the refused texture is destroyed.
+- **A promoted card gets the lift and the hold ONCE** (blocker 3). `DomCompose` wrote
+  `scale()`/`opacity` on every card's content element; a `gpu` target's raster baked them and
+  the ground applied them again, and the per-frame transform write painted the L1 source
+  canvas past DomRender's self-write guard. The writer skips both on `gpu` targets (written
+  as empty, so a promotion clears and a demotion restores). `createDomHostWriter` takes an
+  `isAlive` predicate and sweeps its entity-keyed store on its own tick.
+- **`Retained` cannot leak past a cut** (blocker 4). `publishNavCut` releases the departed
+  set (a cut mid-flight ends the flight, and the tick that owned the release never ran for
+  an inactive resource), and `startNavFlight` releases the earlier set before pinning the new
+  one.
+- **The `gl` presentation plane has an owner again** (blocker 5). B8 deleted the retained-quad
+  adapter that owned it on the stratified profile and the composited leg never had one, so a
+  cross-type enter with any island on the board was gated to a SNAP on both. `GLViews`
+  registers `GL_PLANE_ADAPTER` (`@ice/r3f`; prepares instantly, no visual of its own) on both
+  profiles: under `composited` the ground's departed slot draws the islands from the
+  residency; under `stratified` the islands cut at the switch — their outgoing-quad
+  transition is owed.
+- **`onPart` reaches the app OUTSIDE the notify.** The compose layer called the app back from
+  inside a resource observer, and the app's action is an op — a close button despawns. A
+  structural write inside an observer's emit is IGNORED in strata's dev build (a console
+  error) and unguarded in prod; the callback now runs on a microtask, after the frame's
+  synchronous step has returned.
+- **The hover part is attributed to the EXACT hit.** The router writes `PointerPart` from the
+  exact pick, but the builder paired it with `Targets` — the dead-band relation — so a pointer
+  crossing from card A onto B's close button inside A's 4 px release band lit A's button. It
+  pairs with `TouchesExact` now.
+- **Picking re-runs while a card's geometry moves under a still pointer.** `FramePickSource`
+  gains `live?()`; the picking system runs while the source says its geometry is moving, so a
+  close button that reveals under a motionless pointer is hovered when it arrives, not one
+  pixel of movement later.
+- Also from the review: a `Ground` resolved after its compose layer was disposed (StrictMode,
+  HMR) is disposed rather than leaked; an island render whose resolve texture the backend
+  had not allocated yet is NOT marked painted — the target is dropped and the next flush
+  renders (`IslandRenderStats.unrealised`); the residency's destroy list is drained on every
+  roster tick, drawn or not (a hidden canvas no longer mints textures it never destroys);
+  `GroundLayerHandle.compositorReflector` (dead since B8) is gone; the boot rig asserts the
+  exit cut over the WHOLE frame, as the docs claim (it was, and is, 0 — the check said inset);
+  `pnpm run ci` runs `gen:check`, so the committed WGSL/noise modules are the gate's.
+
 <!-- design-013 B8 (2026-09-07) -->
 
 - **THE OLD COMPOSITED LEG IS DELETED** (design-013 §8 B8, §10.8), in one commit, and the
@@ -567,7 +621,9 @@ the entity's own kind behaviour.
   the only thing that ever saw one. The standard behaviours are
   engine-registered and the DOM layer reads the world, so there is no decision
   wiring left for an app to forget: a drag flips `SurfaceTarget` to `gpu` and
-  every reader sees it. **No pixels move there yet.** `infinite-canvas.tsx`
+  every reader sees it. **No pixels move there yet** (errata 2026-09-07: true of
+  this entry's commit only — DomRender copies a promoted card's pixels since B4,
+  see the B4 entry above). `infinite-canvas.tsx`
   still builds the DOM reflector with no source canvas, so `placementOf` never
   answers `canvas`, no host is reparented, and nothing is composited — the L1
   host path for React lands with design-013 B3/B4. The rigs remain the only

@@ -184,7 +184,7 @@ try {
   check(nav.landed < 1e-9, `the flight lands EXACTLY on the arrival (|cam − c1| ${nav.landed})`);
   check(!nav.afterLanding.outgoing && nav.afterLanding.submits === 0, `at rest inside: one slot, idle-zero (${nav.afterLanding.submits} submits over ${nav.afterLanding.frames} frames)`);
   check(nav.exit.kind === "exit" && nav.exit.p === 0 && nav.exit.outgoing, "exit: the cut frame is held at p = 0 with the departed inside drawn over the parent");
-  check(nav.exit.maxDeltaInset === 0, `the exit cut changes no pixel inside the face: maxΔ ${nav.exit.maxDeltaInset} inset (whole frame ${nav.exit.maxDelta})`);
+  check(nav.exit.maxDelta === 0, `the exit cut changes no pixel over the whole frame: maxΔ ${nav.exit.maxDelta} (inset by the rim ${nav.exit.maxDeltaInset})`);
   check(nav.landed2 < 1e-9, `the exit lands EXACTLY on the saved camera (|cam − c1| ${nav.landed2})`);
   check(nav.roundTripOutsideFolder === 0, `the round trip returns the board pixel for pixel outside the folder: maxΔ ${nav.roundTripOutsideFolder} (whole frame ${nav.roundTrip} — the folder's inside is measured for the first time on entry)`);
   check(nav.gpuErrors === 0, `no uncaptured GPU errors through the flight (${nav.gpuErrors})`);

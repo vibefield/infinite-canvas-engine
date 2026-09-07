@@ -12,7 +12,8 @@
     "test": "pnpm -r --if-present run test",
     "lint": "biome check .",
     "depcruise": "depcruise packages --config .dependency-cruiser.cjs",
-    "ci": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run depcruise",
+    "gen:check": "pnpm -r --if-present run gen:check",
+    "ci": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run depcruise && pnpm run gen:check",
     "relay": "node scripts/ws-relay.mjs"
   },
   "devDependencies": {

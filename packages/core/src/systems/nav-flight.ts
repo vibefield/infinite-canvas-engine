@@ -205,6 +205,10 @@ export function startNavFlight(
   // the departed frame's camera at the cut: the Camera resource BEFORE this write (the cut itself moves it to c0)
   const pre = world.getResource(Camera);
   const from: CameraState = pre === undefined ? c0 : { x: pre.x, y: pre.y, zoom: pre.zoom };
+  // A flight interrupted by a flight: the earlier departed set is let go before the new one is
+  // pinned — the tick's release runs only for the flight that is active, so an earlier set left
+  // tagged here would stay `Retained` for the session (B9 review blocker 4).
+  releaseRetained(world, (e) => world.removeTag(e, Retained));
   retainDeparted(world, identity?.fromFrame);
   writeRuntimeResource(world, Camera, { x: c0.x, y: c0.y, zoom: c0.zoom, gesturing: false });
   world.setResource(NavTransition, {
@@ -232,7 +236,12 @@ export function startNavFlight(
   });
 }
 
-/** Publish an epoch-bound logical switch even when geometry is deliberately cut. */
+/**
+ * Publish an epoch-bound logical switch even when geometry is deliberately cut. A cut that
+ * lands mid-flight ENDS that flight: its departed set is released here, because the tick that
+ * owns the release never runs for an inactive resource (B9 review blocker 4 — `Retained` leaked
+ * for the session, and Residency never evicted those keys).
+ */
 export function publishNavCut(
   world: World,
   kind: "enter" | "exit",
@@ -241,6 +250,7 @@ export function publishNavCut(
   identity?: NavTransitionIdentity,
   A: PortalAffine = { s: 1, ox: 0, oy: 0 },
 ): void {
+  releaseRetained(world, (e) => world.removeTag(e, Retained));
   const prev = world.getResource(NavTransition);
   world.setResource(NavTransition, {
     active: false,

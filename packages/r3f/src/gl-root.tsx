@@ -70,6 +70,7 @@ import {
   type QuadsLike,
   type TargetLike,
 } from "./compositor-pass";
+import { GL_PLANE_ADAPTER } from "./gl-plane";
 import { createIslandRender, type IslandRender } from "./island-render";
 import { Island } from "./island";
 import { RenderTargetPool } from "./pool";
@@ -443,6 +444,14 @@ export function GLViews({
       for (const [key] of bridge.state.all()) bridge.state.markEvicted(key);
     };
   }, [scene, pool, bridge]);
+
+  // The `gl` presentation plane (design-006 §9): owned by this component on BOTH profiles, prepared the
+  // moment it is asked. The facade requires the plane for every mounted GL widget, so without an owner a
+  // cross-type enter with any island is gated to a SNAP — which is what B8 left when it deleted the
+  // retained-quad adapter that used to own it (B9 review blocker 5). Composited: the ground's departed
+  // slot draws the islands from the residency. Stratified: the islands cut (their outgoing-quad
+  // transition is owed, see the plan) — a flight with a cut is honest, a snap for a plane nobody draws is not.
+  useEffect(() => bridge.transitions?.register(GL_PLANE_ADAPTER), [bridge]);
 
   // --- composited: the island render, in the roster's island slot ------
   // Installed as a REFLECTOR rather than driven from this component's frame loop

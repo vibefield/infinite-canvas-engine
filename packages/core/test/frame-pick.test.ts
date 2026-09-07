@@ -131,6 +131,56 @@ describe("the frame pick source (design-014, B3b)", () => {
     expect(rig.world.getResource(PartTap)).toBeUndefined();
   });
 
+  it("a source with NO GEOMETRY for the card answers undefined, and the box tier stands: the card is clickable before the ground's first build", () => {
+    // B9 review blocker 1: the ground arms its source at mount, before its pipelines compile; a card it has no
+    // geometry for is still a card. `outside` there made every card unclickable and a tap cleared the selection.
+    const rig = makeRig(false);
+    rig.stack.framePick.current = { pad: () => BAND, hit: () => undefined };
+    rig.mouse("down", 200, 160, 1);   // inside the content rect
+    rig.step();
+    expect(rig.exactOf()).toBe(rig.card);
+    expect(rig.pointerPart()).toBe("");
+    rig.mouse("up", 200, 160, 0);
+    rig.step(2);
+    expect(rig.world.hasTag(rig.card, Selected)).toBe(true);   // a tap selects, as it always did
+    // and with no geometry there is no chrome band to reach: the band is the canvas
+    rig.mouse("down", 96, 160, 1);
+    rig.step();
+    expect(rig.exactOf()).not.toBe(rig.card);
+  });
+
+  it("a source whose geometry is MOVING re-picks under a still pointer: a control that reveals under the pointer is hovered when it arrives", () => {
+    // B9 review: picking ran only on pointer input or a spatial change, and the springs are outside the world — the
+    // reveal grew the close disc under a motionless pointer and `PointerPart` stayed empty until the pointer moved.
+    const rig = makeRig(false);
+    let closeR = 0;
+    let live = false;
+    rig.stack.framePick.current = {
+      pad: () => BAND,
+      live: () => live,
+      hit: (e, wx, wy) => {
+        const p = rig.world.get(e, Position);
+        const s = rig.world.get(e, Size);
+        if (p === undefined || s === undefined) return "outside";
+        if (closeR > 0 && Math.hypot(wx - (p.x + s.w), wy - p.y) <= closeR) return "close";
+        return wx >= p.x && wx <= p.x + s.w && wy >= p.y && wy <= p.y + s.h ? "content" : "outside";
+      },
+    };
+    rig.mouse("move", 300, 100, 0);   // resting where the close disc will appear
+    rig.step();
+    expect(rig.pointerPart()).toBe("");
+    closeR = 13;                         // the reveal grew the disc, and nothing in the world moved
+    rig.step(2);
+    expect(rig.pointerPart()).toBe(""); // a still source: no re-pick (the pointer and the index are the only wakes)
+    live = true;
+    rig.step();
+    expect(rig.pointerPart()).toBe("close");
+    live = false;
+    closeR = 0;
+    rig.step(2);
+    expect(rig.pointerPart()).toBe("close"); // settled: stale until the next wake, by design
+  });
+
   it("without a source nothing changes: the band is the canvas, no part is ever written", () => {
     const rig = makeRig(false);
     rig.mouse("down", 96, 160, 1);

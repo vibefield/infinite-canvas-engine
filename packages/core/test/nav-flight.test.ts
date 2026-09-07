@@ -128,6 +128,41 @@ describe("the flight's descriptor (B7)", () => {
     r.ce.dispose();
   });
 
+  it("a CUT mid-flight ends the flight and releases its departed set — the tick never runs again for it (B9 review blocker 4)", () => {
+    const r = rig();
+    r.ce.ops.enterContainer(r.folder);
+    r.step(2);
+    expect(r.nav().active).toBe(true);
+    expect(r.retained(r.a)).toBe(true);
+    r.ce.ops.exitContainer({ transition: "none" });
+    expect(r.nav().active).toBe(false);
+    expect(r.nav().kind).toBe("exit");
+    expect(r.retained(r.a)).toBe(false);
+    expect(r.retained(r.b)).toBe(false);
+    expect(r.retained(r.folder)).toBe(false);
+    expect(r.retained(r.inner)).toBe(false);
+    r.step(3);
+    expect(r.retained(r.a)).toBe(false);
+    r.ce.dispose();
+  });
+
+  it("a flight interrupted by a flight lets the earlier departed set go before the new one is pinned", () => {
+    const r = rig();
+    r.ce.ops.enterContainer(r.folder);
+    r.step(2);
+    expect(r.retained(r.a)).toBe(true);
+    r.ce.ops.exitContainer(); // a second flight, mid-flight: the inside is the departed frame now
+    const t = r.nav();
+    expect(t.active).toBe(true);
+    expect(t.kind).toBe("exit");
+    expect(r.retained(r.inner)).toBe(true);
+    expect(r.retained(r.a)).toBe(false);
+    expect(r.retained(r.b)).toBe(false);
+    r.settle();
+    expect(r.retained(r.inner)).toBe(false);
+    r.ce.dispose();
+  });
+
   it("an abort releases the retained set (a gesture's yield takes the same path inside the tick)", () => {
     // `Camera.gesturing` is the camera-sim system's fact (a raw resource write is overwritten before the
     // nav tick reads it), so the yield is not driven here; it releases through the tick's one `release()`.

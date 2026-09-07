@@ -708,7 +708,7 @@ tests). Notable for the record, beyond the fixes themselves:
   nothing lifecycles its textures — an event-driven eviction seam is a
   design call, not a slice.
 
-## M19 — Surface geometry + the ground port (design-013) — **IN PROGRESS (Phase A started 2026-09-06)**
+## M19 — Surface geometry + the ground port (design-013) — **IN PROGRESS (Phase A 2026-09-06 · Phase B landed 2026-09-07, reviewed, B9 the review fixes · Phase C next)**
 
 *(Numbering note: next free after M18. design-013 rev 5 was ratified 2026-09-06 with
 all eleven questions ruled at their leans; rev 6 folded the ground's heat and live
@@ -1004,7 +1004,7 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   (16 dom-render, 6 L1 placement, 5 mount), 11 mutation probes red, the oracle's 47 renders
   byte-identical, `pnpm run ci` green.
 
-### B8 — the deletion — **LANDED 2026-09-07** (`<sha>`)
+### B8 — the deletion — **LANDED 2026-09-07** (`97c2b48` the carry · `b5400a5` the deletion)
   The old composited leg leaves in one commit and the new profile takes the name. DELETED:
   `ground/src/compositor/*` (10 files), `atlas-allocator.ts`, `renderer.ts`'s offscreen target
   and blit, `GroundLayer`'s composited surface and `GroundOptions`/`GroundHostOptions`'

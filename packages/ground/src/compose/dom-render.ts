@@ -130,6 +130,16 @@ export interface DomRenderStats {
    * good. Should be 0 wherever `probeHic().supported` is true.
    */
   readonly unavailable: number;
+  /**
+   * Copies refused because the destination is SMALLER than the host's raster (`geometry().written`):
+   * the Q10 oversize path clamps a private texture to the device limit while the L1 copy writes the
+   * element's whole raster, and a copy past the texture's edge is a validation error whose write
+   * must not be claimed (B9 review blocker 2 — the drift class, reopened). The debt is dropped: the
+   * card draws the plate until its band changes and Residency names a destination that fits. The
+   * real answer projects the clamp into the uv (D11); until then a non-zero count here is a card at
+   * a band its device cannot hold.
+   */
+  readonly oversize: number;
   /** Cards whose dirt a pause has parked right now (outside `pending`). */
   readonly parked: number;
   /** Cards whose dirt a bucket has deferred right now. */
@@ -232,6 +242,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
   let selfDirt = 0;
   let refused = 0;
   let unavailable = 0;
+  let oversize = 0;
   let resized = 0;
   let growths = 0;
   let pagesLayers = 0;
@@ -330,7 +341,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     const current = residency.textureOf(handle);
     if (current === undefined) {
       const next = createPages(device, size, need);
-      if (!residency.realize(handle, next)) return undefined;
+      if (!residency.realize(handle, next)) { next.destroy(); return undefined; }
       pagesHandle = handle;
       pagesLayers = need;
       return next;
@@ -346,7 +357,8 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       );
     }
     device.queue.submit([encoder.finish()]);
-    if (!residency.realize(handle, next)) return current;
+    // Refused: the grown array is nobody's — destroy it, and copy NOTHING this flush (the old array lacks the layer the ref names).
+    if (!residency.realize(handle, next)) { next.destroy(); return undefined; }
     growths += 1;
     pagesHandle = handle;
     pagesLayers = need;
@@ -363,7 +375,8 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       format: "rgba8unorm",
       usage: PAGE_USAGE(),
     });
-    return residency.realize(handle, next) ? next : undefined;
+    if (!residency.realize(handle, next)) { next.destroy(); return undefined; }
+    return next;
   };
 
   /**
@@ -396,18 +409,25 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     if (entry === undefined) return false;
     let texture: GPUTexture | undefined;
     let origin: { x: number; y: number; z: number };
+    let dest: { w: number; h: number };
     if (entry.kind === "pages") {
       texture = ensurePages(ref.texture, entry.size, entry.layers);
       // The written rect's origin in texels: the uv Residency derived from the
       // allocator's rect over the layer's side, read back through that side.
       origin = { x: Math.round(ref.u0 * entry.size), y: Math.round(ref.v0 * entry.size), z: ref.layer };
+      dest = { w: Math.round((ref.u1 - ref.u0) * entry.size), h: Math.round((ref.v1 - ref.v0) * entry.size) };
     } else if (entry.kind === "own") {
       texture = ensureOwn(ref.texture, entry.width, entry.height);
       origin = { x: 0, y: 0, z: 0 };
+      dest = { w: entry.width, h: entry.height };
     } else {
       return true; // a `stable` handle is a video producer's (B6), never copied from a host
     }
     if (texture === undefined) return false;
+    if (geo.written.w > dest.w || geo.written.h > dest.h) {
+      oversize += 1;
+      return true; // refused, and NOT claimed: the copy would run past the destination's edge
+    }
 
     try {
       if (!copy(device.queue, el, texture, origin)) {
@@ -533,6 +553,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       selfDirt,
       refused,
       unavailable,
+      oversize,
       parked: parked.size,
       deferred: deferred.size,
       pending: dirty.size + deferred.size,

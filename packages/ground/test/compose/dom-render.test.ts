@@ -121,6 +121,10 @@ interface BoardOpts {
   readonly zoom?: number;
   /** Entities whose copy throws the unpainted-host error. */
   readonly unpainted?: Set<Entity>;
+  /** The page side (a card past it takes a private `own` texture — the Q10 path). */
+  readonly pageSide?: number;
+  /** The device limit Residency clamps an `own` texture to. */
+  readonly maxTextureSize?: number;
 }
 
 function makeBoard(o: BoardOpts = {}) {
@@ -129,9 +133,9 @@ function makeBoard(o: BoardOpts = {}) {
   ce.docs.create();
   ce.world.setResource(Viewport, { w: 1600, h: 900, dpr });
   ce.world.setResource(Camera, { x: 0, y: 0, zoom: o.zoom ?? 1, gesturing: false });
-  const store = createResidencyStore({});
+  const store = createResidencyStore(o.pageSide === undefined ? {} : { layerSize: o.pageSide });
   const raster = o.raster ?? "band";
-  installSurfaceInfra(ce.engine, { residency: { table: store.table, allocator: store.allocator, raster: () => raster } });
+  installSurfaceInfra(ce.engine, { residency: { table: store.table, allocator: store.allocator, raster: () => raster, ...(o.maxTextureSize === undefined ? {} : { maxTextureSize: o.maxTextureSize }) } });
 
   const log: string[] = [];
   const gpu = fakeDevice(log);
@@ -214,6 +218,30 @@ describe("DomRender · the copy the world asked for (B4)", () => {
     b.flush();
     expect(b.stats()).toMatchObject({ copies: 1, refused: 0, unavailable: 0, pending: 0, parked: 0, deferred: 0, growths: 0 });
     expect(b.stats().pagesLayers).toBeGreaterThanOrEqual(1);
+  });
+
+  it("a destination SMALLER than the host's raster is refused, counted, and never claimed — the clamped Q10 texture (B9 review blocker 2)", () => {
+    // A card past the page side takes a private texture; Residency clamps it to the device limit UNIFORMLY, while
+    // the L1 copy writes the element's whole raster (`geometry().written`). Copying past the edge is a validation
+    // error, and claiming that write would draw garbage for good — the drift class, reopened.
+    const b = makeBoard({ pageSide: 256, maxTextureSize: 300 });
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    expect(b.stats().copies).toBe(1); // a page slot first: 200×120 fits a 256 page
+    b.world.edit(card).set(Size, { w: 400, h: 260 }); // past the page: an own texture, clamped 400×260 → 300×195
+    b.step(3);
+    const entry = must(b.store.table.describe(b.ref(card).texture), "the own entry");
+    if (entry.kind !== "own") throw new Error(`expected an own entry, got ${entry.kind}`);
+    expect([entry.width, entry.height]).toEqual([300, 195]);
+    expect(b.residency.isWritten(card)).toBe(false);
+    b.flush(); // the host's box moved: placed this flush, copied on the next
+    b.flush();
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 1, oversize: 1, refused: 0, pending: 0 });
+    expect(b.residency.isWritten(card)).toBe(false); // never claimed: the card draws the plate, not garbage
+    expect(b.residency.contentOf(card).mode).toBe("plate");
   });
 
   it("a re-slot is a new destination and therefore a new copy — the debt is per DESTINATION, not per card", () => {

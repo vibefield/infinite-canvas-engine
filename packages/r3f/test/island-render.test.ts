@@ -157,6 +157,8 @@ interface Rig {
   /** Every render call, with the target that was bound. */
   renders: { scene: object; target: RenderTarget | null }[];
   clock: { ms: number };
+  /** While `on`, the backend allocates nothing on render — the renderer that has not resolved yet. */
+  hold: { on: boolean };
   card(o?: CardOpts): Entity;
   mount(e: Entity): () => void;
   step(n?: number): void;
@@ -190,6 +192,7 @@ function rig(backendSrgb = true): Rig {
     renders: { dom: { current: null }, island: { current: null }, video: { current: null } },
   };
   const clock = { ms: 0 };
+  const hold = { on: false };
   const render = createIslandRender({
     gl: {
       setRenderTarget(t) {
@@ -199,7 +202,7 @@ function rig(backendSrgb = true): Rig {
       render(scene) {
         renders.push({ scene, target: bound });
         // three allocates the backing GPUTexture on first render into a target.
-        if (bound !== null && backend.textureOf(bound.texture) === undefined) backend.allocate(bound.texture);
+        if (bound !== null && !hold.on && backend.textureOf(bound.texture) === undefined) backend.allocate(bound.texture);
       },
     },
     renderer: () => backend.renderer as never,
@@ -219,6 +222,7 @@ function rig(backendSrgb = true): Rig {
     backend,
     renders,
     clock,
+    hold,
     card(o: CardOpts = {}) {
       return world.spawn({
         components: [
@@ -336,6 +340,31 @@ describe("an island renders into the target Residency named", () => {
     expect(r.render.stats().rendered).toBe(2);
     // The same handle, so the same target — a repaint is not a reallocation.
     expect(r.render.stats().targets).toBe(1);
+    r.destroy();
+  });
+});
+
+describe("a render the backend could not resolve (B9 review)", () => {
+  it("is NOT painted: the target is dropped, the next flush renders again, and the first resolved render is realised", () => {
+    const r = rig();
+    const e = r.card();
+    r.mount(e);
+    r.step(3);
+    r.hold.on = true; // the renderer has not resolved: no GPUTexture behind the target yet
+    r.frame();
+    expect(r.renders.length).toBe(1);
+    expect(r.sink.realizeCalls.length).toBe(0);
+    expect(r.render.stats()).toMatchObject({ rendered: 0, unrealised: 1, targets: 0 });
+    expect(r.bridge.state.get(e)?.fboGeneration).toBe(-1); // never marked painted: Waking, not Warm on the plate
+    expect(r.sink.isWritten(e)).toBe(false);
+    r.hold.on = false;
+    r.frame(); // fresh again: rendered without any content dirt
+    expect(r.renders.length).toBe(2);
+    expect(r.sink.realizeCalls.length).toBe(1);
+    expect(r.render.stats()).toMatchObject({ rendered: 1, unrealised: 1, targets: 1 });
+    expect(r.sink.isWritten(e)).toBe(true);
+    r.frame();
+    expect(r.renders.length).toBe(2); // and still: a still island is idle-zero
     r.destroy();
   });
 });

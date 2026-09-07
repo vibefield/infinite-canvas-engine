@@ -83,7 +83,12 @@ const pointerQ = defineQuery([Pointer, PointerScreen, PointerRadius, LocalPointe
  * The FRAME pick source (design-014, B3b): the ground's answer to "what is
  * under this world point on card `e`" — `content`, `frame` (the chrome band
  * outside the content rect), `outside`, or a PART the registered card program
- * names (`close`, `lock` …). `pad()` is how far the chrome reaches past the
+ * names (`close`, `lock` …) — or `undefined`: the source has NO GEOMETRY for the card
+ * (the ground's pipelines are still compiling, the card has not been drawn yet, or
+ * creation failed), and the box tier's answer stands. `undefined` is not `outside`: a
+ * card the ground cannot see is still a card (B9 review blocker 1 — a source that
+ * answered `outside` there made every card unclickable until the first build, and for
+ * good when `Ground.create` rejected). `pad()` is how far the chrome reaches past the
  * content rect, world units: the spatial index holds content rects, so
  * `picking` widens its search by it and asks the source about candidates the
  * boxes missed. Set on the interaction stack by the ground layer at mount;
@@ -91,7 +96,13 @@ const pointerQ = defineQuery([Pointer, PointerScreen, PointerRadius, LocalPointe
  */
 export interface FramePickSource {
   pad(): number;
-  hit(e: Entity, wx: number, wy: number): string;
+  hit(e: Entity, wx: number, wy: number): string | undefined;
+  /**
+   * The source's geometry is MOVING under a still pointer (a reveal growing a control, a lift): `picking` runs
+   * every frame this answers true, so the part under a motionless pointer is the part that is there now. Absent
+   * = never; the pointer and the spatial index are then the only wakes (B9 review).
+   */
+  live?(): boolean;
 }
 
 /** The stack's slot for the frame pick source — a mutable box, so the ground can arrive after install. */
@@ -231,6 +242,7 @@ export function createPickingSystems(
     const partOf = (h: string): string => (h === "content" || h === "frame" || h === "outside" ? "" : h);
     if (boxHit !== undefined && isWidget(boxHit)) {
       const h = src.hit(boxHit, wx, wy);
+      if (h === undefined) return { e: boxHit, part: "" }; // no geometry for it yet: the box tier stands
       if (h !== "outside") return { e: boxHit, part: partOf(h) };
     } else if (boxHit !== undefined) {
       return { e: boxHit, part: "" }; // chrome, a port, a wire: the box tier's answer stands
@@ -244,13 +256,14 @@ export function createPickingSystems(
       if (!ctx.isAlive(e) || !isWidget(e) || e === boxHit) continue;
       if (best !== undefined && compareStackOrder(ctx, ordinals, e, best) < 0) continue;
       const h = src.hit(e, wx, wy);
-      if (h === "outside") continue;
+      if (h === undefined || h === "outside") continue; // no geometry: no chrome band to reach
       best = e;
       bestPart = partOf(h);
     }
     return { e: best, part: bestPart };
   };
 
+  const versions = makeVersionGuard(world, [PointerVersion, SpatialVersion]);
   const picking = defineSystem(
     pointerQ,
     (b, ctx) => {
@@ -300,7 +313,9 @@ export function createPickingSystems(
         }
       }
     },
-    { name: "picking", runIf: makeVersionGuard(world, [PointerVersion, SpatialVersion]) },
+    // `PointerPart` is this system's to write (change-only, through `edit().set` after the first `addComponent`): declared, or
+    // strata's dev build throws on the first hover that crosses from content onto a control (B9 — found by the re-pick test).
+    { name: "picking", access: { write: [PointerPart] }, runIf: () => versions() || frames.current?.live?.() === true },
   );
 
   // clearCaches (nav seam, design-004 §7): re-arm the seed — the next tick

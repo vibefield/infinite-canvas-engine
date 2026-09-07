@@ -54,7 +54,7 @@ import {
   Selected,
   Size,
   SurfaceTarget,
-  Targets,
+  TouchesExact,
   TextureRef,
   buildOrdinals,
   compareStackOrder,
@@ -337,7 +337,9 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       for (const row of batch) {
         const p = batch.entity(row);
         const part = world.get(p, PointerPart)?.part ?? "";
-        const target = world.getRelation(p, Targets);
+        // the part is the EXACT pick's (the router writes it from `TouchesExact`), so its card is the exact hit — never `Targets`,
+        // the dead-band relation, which still holds the card the pointer just left (B9 review)
+        const target = world.getRelation(p, TouchesExact);
         if (part !== "" && target !== undefined) { hover.set(target, part); bits.push(`h${target}:${part}`); }
       }
     });

@@ -116,12 +116,6 @@ interface GroundComposeMirror {
 export interface GroundLayerHandle {
   readonly reflector: ReflectorDef & { available(): boolean };
   /**
-   * The unified compositor's reflector (design-012 §4), present only when the
-   * ground factory was built with the app-owned device. Opaque here, like the
-   * layer itself — this component registers it and never looks inside.
-   */
-  readonly compositorReflector?: ReflectorDef;
-  /**
    * The ground's COMPOSE handle (design-013, `groundCompose(…)`), present only on the new
    * leg. Opaque here as well: the composited profile reads its reflectors off it, and
    * this component reads its content seam through {@link surfaceContentOf} — never by

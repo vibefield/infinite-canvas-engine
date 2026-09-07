@@ -17,7 +17,11 @@ import {
   NO_ENTITY,
   OverlapCandidate,
   OverlapRejected,
+  Pointer,
+  PointerPart,
   Position,
+  Targets,
+  TouchesExact,
   Viewport,
   createCanvasEngine,
   defineCanvasType,
@@ -86,6 +90,24 @@ function makeBoard() {
   const settle = (cam = CAM): number => { let n = 0; do { build(cam); n += 1; } while (builder.live() && n < 600); return n; };
   return { ce, world: ce.world, step, builder, build, settle, a, b, far, folder, c1, c2 };
 }
+
+describe("the frame builder · the hover part (B9 review)", () => {
+  it("pairs the part with the EXACT hit, never with the dead-band target the pointer just left", () => {
+    const { ce, world, a, b } = makeBoard();
+    const seen = new Map<Entity, string | null>();
+    const recording = { ...shellProgram, resolve: (args: Parameters<typeof shellProgram.resolve>[0]) => { seen.set(args.key as Entity, args.part.hover); return shellProgram.resolve(args); } };
+    const builder = createFrameBuilder(world, { previews: ce.previews, program: recording });
+    // the pointer crossed from a onto b's close button inside a's release band: the exact tier says b, the dead band still holds a
+    const p = world.spawn({ components: [[Pointer, { id: "mouse", device: "mouse" }], [PointerPart, { part: "close" }]] });
+    world.setRelation(p, TouchesExact, b);
+    world.setRelation(p, Targets, a);
+    world.sync();
+    builder.build(CAM, VP, DT, THEMES.dark, DEFAULT_FIELD_CONFIG);
+    expect(seen.get(b)).toBe("close");
+    expect(seen.get(a)).toBeNull();
+    builder.dispose();
+  });
+});
 
 describe("the frame builder · the board (design-013 §8 B3a)", () => {
   it("draws every Active card on screen in paint order, over the theme's plate, with a source each; the far card is culled", () => {
