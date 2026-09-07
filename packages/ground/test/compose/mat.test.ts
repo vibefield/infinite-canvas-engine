@@ -3,9 +3,9 @@
 // produced for the same inputs (research/tree-shadow/prototype, three 0.178),
 // the line law's shape and continuity, the mouse follower, the GPU layout with
 // its mat4x4f, and the defaults being the theme's.
-import { must } from "./must.ts";
+import { must } from "./must";
 import { describe, expect, it } from "vitest";
-import { defineStruct } from "../../src/engine/struct.ts";
+import { defineStruct } from "../../src/engine/struct";
 import { lineWeight } from "../../src/lattice/line";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX, MatUniforms, STILL_MAT_FRAME, matUniformValues } from "../../src/mat/layout";
 import { HERO_PROJECTOR, blurRatio, perspective, project, projectorMatrix, quatFromEuler, tilted } from "../../src/mat/projector";

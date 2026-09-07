@@ -7,13 +7,13 @@
 // this frame's records and splits them into runs; `draw()` records the runs
 // into an open render pass.
 
-import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline.ts";
-import { compile, compose, type ShaderPart } from "../engine/shader.ts";
-import type { Geometry } from "./choreography.ts";
-import type { Presentation } from "../nav/portal.ts";
-import { HEAT, LINES, type GroundTheme, type Heat, type RGB } from "../theme.ts";
-import { type FrameContent, type FrameRun, runsOf } from "./content.ts";
-import { Frame, FrameUniforms, MAX_FRAMES, frameUniformValues, frameValues } from "./layout.ts";
+import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
+import { compile, compose, type ShaderPart } from "../engine/shader";
+import type { Geometry } from "./choreography";
+import type { Presentation } from "../nav/portal";
+import { HEAT, LINES, type GroundTheme, type Heat, type RGB } from "../theme";
+import { type FrameContent, type FrameRun, runsOf } from "./content";
+import { Frame, FrameUniforms, MAX_FRAMES, frameUniformValues, frameValues } from "./layout";
 
 /** Premultiplied "source over". */
 const BLEND_PREMUL: GPUBlendState = {

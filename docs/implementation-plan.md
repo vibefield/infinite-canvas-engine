@@ -841,6 +841,23 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   renders are byte-identical to a stash taken in the draft before the move, Chrome = Node
   44/44 at maxΔ 0, every rig green (nav 18 · portal 16 · mat 16 · panel 10 with 150 rows ·
   content 7 · glow 15), `pnpm run ci` green. `draft/ground` is frozen with a pointer.
+  *(B2 addendum: D-B1.1 reversed — the ported imports lost their `.ts` suffixes, 163 in 43
+  files, because every consumer app's typecheck and a bundled `.d.ts` would otherwise need
+  the flag; the oracle through `tsx` never needed them. 44/44 renders still byte-identical.)*
+- **B2 — the profile switch** (**LANDED 2026-09-07**): DESIGN.md first (D-B2.1 — the
+  composited profile draws the card's material on the ground; the §7 states as the frame's
+  terms; the cutting mat's row and its two lights — written into VibeField's DESIGN.md,
+  uncommitted, for James). Then `groundCompose()` in `@ice/ground/compose` — the ground as
+  the L0 layer, one canvas, GpuCompose drawing the empty board on camera/viewport change
+  and never otherwise — and `compositedNextProfile` in `@ice/react`, registering §6's
+  roster in order (four inert stubs, GpuCompose last), refusing the old leg's ground by
+  name, walled from the old profile both ways (D-B2.2 as-built: the name is
+  `composited-next`; the rig arm is its own page and script, `next-boot`, rather than a
+  flag on the old rigs — one profile per page, §11 Q2's law). Exit: the `next-boot` rig
+  through the REAL React path — one canvas, one redraw, one submit, 0 GPU errors at boot;
+  0 submits and 0 redraws over 481 idle frames; one frame for a camera write; the walls
+  hold (depcruise clean); `pnpm run ci` green; groundlab parity 44/44 and mat 16/16 on the
+  suffix-stripped tree.
 
 ## Release cut & downstream
 

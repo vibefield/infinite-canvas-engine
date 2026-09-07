@@ -1,7 +1,7 @@
 // @vitest-environment node
-import { must } from "./must.ts";
+import { must } from "./must";
 import { describe, expect, it } from "vitest";
-import { defineStruct, typeInfo } from "../../src/engine/struct.ts";
+import { defineStruct, typeInfo } from "../../src/engine/struct";
 
 // Hand-checked against the WGSL host-shareable layout rules. These are the
 // cases that go wrong in hand-packed code: vec3 tails, vec4 realignment, and

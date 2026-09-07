@@ -9,8 +9,8 @@
 // Units are card units (= world units here). reveal r: 0 idle → 1 selected.
 // delete d: 0 → 1 gone.
 
-import { LIFT, SHADOW } from "../theme.ts";
-import type { Corner4, FrameStyle } from "./sheet.ts";
+import { LIFT, SHADOW } from "../theme";
+import type { Corner4, FrameStyle } from "./sheet";
 
 /** The §5 shadow recipe and the §7 lift numbers, as `resolve()` reads them — theme.ts's by default, a host's tweak otherwise. */
 export interface Material {

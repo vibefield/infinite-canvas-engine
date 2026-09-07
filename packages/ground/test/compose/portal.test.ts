@@ -5,7 +5,7 @@
 // renders under at rest IS the enter flight's start, so a flight that begins
 // from it cuts bit for bit; an exit's affine is the same M. Then the hole
 // mode, the draw tree's order through a fake pass, and the pool.
-import { must } from "./must.ts";
+import { must } from "./must";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CONTENT_MODE, contentValues, PLATE, PORTAL, portalContent, runsOf } from "../../src/card/content";
@@ -16,10 +16,10 @@ import { MATERIAL, REST, resolve } from "../../src/card/choreography";
 import { PRODUCT } from "../../src/card/sheet";
 import { DEFAULT_FIELD_CONFIG, DRESS_FLOOR, dressConfig, Uniforms, packSources, uniformValues } from "../../src/field/layout";
 import { atlasGeom, boxOf, boxValues, lod, rungCounts } from "../../src/lattice/lod";
-import { drawFrame, drawSlot, prepareFrame, SlotPool, type DrawSlot, type SlotSet } from "../../src/compose/ground.ts";
+import { drawFrame, drawSlot, prepareFrame, SlotPool, type DrawSlot, type SlotSet } from "../../src/compose/ground";
 import { departedCamera, enterFlight, exitFlight, FIT, flightAt, outgoingCamera, solveFlightStart, invertAffine } from "../../src/nav/flight";
 import { boxOfPortal, chainOf, clipOf, faceCovers, faceRadius, faceRect, FOLDER_FACE, intersectBox, PORTAL_CAP, PORTAL_CHAIN, PORTAL_CHAIN_TYPE, PORTAL_GATE, portalOf, portalPresence, portalValues, scissorOf, THROUGH_IN, THROUGH_OUT } from "../../src/nav/portal";
-import { THEMES } from "../../oracle/fixtures/vf-theme.ts";
+import { THEMES } from "../../oracle/fixtures/vf-theme";
 
 const VP = { width: 1200, height: 800 };
 const CAM = { x: 13.7, y: -21.3, zoom: 1.37 };

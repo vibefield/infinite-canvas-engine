@@ -5,8 +5,8 @@
 // glyph will measure before drawing one. Size depends on the cell and the
 // field only — every rung draws the same size (lod.ts).
 
-import { rungAlpha } from "../lattice/lod.ts";
-import { type FieldConfig, normaliseRange } from "./layout.ts";
+import { rungAlpha } from "../lattice/lod";
+import { type FieldConfig, normaliseRange } from "./layout";
 
 export { rungAlpha };
 

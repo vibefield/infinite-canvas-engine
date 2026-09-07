@@ -5,12 +5,12 @@
 // two themes must keep the ground legible. The cross-checks run when the
 // vibe-field repo is beside us (it is, in draft/), and skip honestly when it is
 // not — at the fold this file follows lab/theme.ts to the product side.
-import { must } from "./must.ts";
+import { must } from "./must";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HEAT, type RGB, type RGBA, SHADOW, cssColor } from "../../src/theme";
-import { CARD_SURFACES, PALETTE, PRODUCT_GRID, THEMES } from "../../oracle/fixtures/vf-theme.ts";
+import { CARD_SURFACES, PALETTE, PRODUCT_GRID, THEMES } from "../../oracle/fixtures/vf-theme";
 
 const ground = resolve(import.meta.dirname, "../..");
 const repo = resolve(ground, "../../../vibe-field");   // beside ICE when it is; the cross-checks skip honestly otherwise

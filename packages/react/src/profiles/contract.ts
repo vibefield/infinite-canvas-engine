@@ -29,7 +29,7 @@
 import type { CanvasEngine, ReflectorDef } from "@ice/core";
 import type { GroundLayerHandle } from "../infinite-canvas";
 
-export type PresentationProfileName = "stratified" | "composited";
+export type PresentationProfileName = "stratified" | "composited" | "composited-next";
 
 export interface ProfileBootContext {
   readonly engine: CanvasEngine;

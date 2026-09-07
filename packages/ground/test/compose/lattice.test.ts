@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { must } from "./must.ts";
+import { must } from "./must";
 import { describe, expect, it } from "vitest";
 import { atlasGeom, fineSchedule, lod, rungCounts, fineAlpha } from "../../src/lattice/lod";
 

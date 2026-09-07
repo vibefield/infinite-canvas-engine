@@ -2,10 +2,10 @@
 // specialised by the RUNG override) and two fullscreen ones for the dense fine
 // branch. The glyph is a pipeline choice; no glyph flag ever reaches a shader.
 
-import { BLEND_OVER, bindGroup, bindLayout, renderPipeline } from "../engine/pipeline.ts";
-import { compile, compose, type ShaderPart } from "../engine/shader.ts";
-import type { RungCount } from "../lattice/lod.ts";
-import { Card, Uniforms } from "./layout.ts";
+import { BLEND_OVER, bindGroup, bindLayout, renderPipeline } from "../engine/pipeline";
+import { compile, compose, type ShaderPart } from "../engine/shader";
+import type { RungCount } from "../lattice/lod";
+import { Card, Uniforms } from "./layout";
 
 export type Glyph = "dot" | "needle";
 export interface GlyphSources {

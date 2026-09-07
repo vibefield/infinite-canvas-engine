@@ -16,7 +16,7 @@
 // chrome and mat materials — is `src/theme.ts`. Transcribed 2026-09-01; split
 // out 2026-09-07.
 
-import { ENGINE_GRID, type GroundTheme, type Palette, type RGB, rgb, themeFrom, type ThemeName } from "../../src/theme.ts";
+import { ENGINE_GRID, type GroundTheme, type Palette, type RGB, rgb, themeFrom, type ThemeName } from "../../src/theme";
 
 export const PALETTE: Record<ThemeName, Palette> = {
   light: {

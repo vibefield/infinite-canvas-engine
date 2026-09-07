@@ -14,9 +14,9 @@
 // reads nothing but its own record (never a uniform of the picked card: N
 // drags, and the fade-out after a drop has no dragged card left to read).
 
-import type { Rect } from "../nav/flight.ts";
-import { HEAT, type Heat, type RGB } from "../theme.ts";
-import type { Geometry } from "./choreography.ts";
+import type { Rect } from "../nav/flight";
+import { HEAT, type Heat, type RGB } from "../theme";
+import type { Geometry } from "./choreography";
 
 export const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 

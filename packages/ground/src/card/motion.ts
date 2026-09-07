@@ -3,9 +3,9 @@
 // `resolve()` as plain numbers. (Lineage: research/sdf-card/src/motion/machines.js,
 // generalised from one lab card to N.)
 
-import { LIFT } from "../theme.ts";
-import type { Motion } from "./choreography.ts";
-import { settled, spring } from "./springs.ts";
+import { LIFT } from "../theme";
+import type { Motion } from "./choreography";
+import { settled, spring } from "./springs";
 
 export interface CardMotion {
   selected: boolean;

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { glyphSize, rawGlyphSize, rungAlpha } from "../../src/field/glyph-size";
 import { fineAlpha, lod, atlasGeom, fineSchedule, rungCounts } from "../../src/lattice/lod";
 import { DEFAULT_FIELD_CONFIG, OPEN_RANGE, glyphReachPx, normaliseRange, uniformValues } from "../../src/field/layout";
-import { PRODUCT_GRID } from "../../oracle/fixtures/vf-theme.ts";
+import { PRODUCT_GRID } from "../../oracle/fixtures/vf-theme";
 
 const CELLS = [2, 4, 8, 12, 20, 40, 120, 200, 2000];   // CSS px — the fine rung lives in 2..20, mid 20..200, coarse beyond
 const INFLUENCES = [0, 0.05, 0.3, 0.7, 1];

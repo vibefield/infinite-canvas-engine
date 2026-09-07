@@ -1,7 +1,7 @@
 // Assemble the mat's shader parts from raw text — the browser with `?raw`
 // imports, the Node oracle with readFileSync; byte-identical either way.
 
-import type { ShaderPart } from "../engine/shader.ts";
+import type { ShaderPart } from "../engine/shader";
 
 export interface MatShaders {
   readonly modules: readonly ShaderPart[];   // portal.wgsl, mat.wgsl

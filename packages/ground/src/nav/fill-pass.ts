@@ -7,11 +7,11 @@
 // portal, the arriving frame through the container) fills its face grown by a
 // device px, so the hole's edge partitions with the plate (PORTAL.md §10).
 
-import { BLEND_OVER, bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline.ts";
-import { compile, compose, type ShaderPart } from "../engine/shader.ts";
-import { defineStruct } from "../engine/struct.ts";
-import type { RGB } from "../theme.ts";
-import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "./portal.ts";
+import { BLEND_OVER, bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
+import { compile, compose, type ShaderPart } from "../engine/shader";
+import { defineStruct } from "../engine/struct";
+import type { RGB } from "../theme";
+import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "./portal";
 
 export const FillUniforms = defineStruct("FillUniforms", [
   ["view", "vec4f"],    // cssW, cssH, dpr, presentation opacity

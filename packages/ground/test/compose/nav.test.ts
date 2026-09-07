@@ -5,7 +5,7 @@
 // camera, the depth cap, the log-zoom path, the closed-form spring, the fit
 // band — and the opacity ramps of core's presentation coordinator. Then the
 // two nav ops as geometry, the flight a host drives, and the portal records.
-import { must } from "./must.ts";
+import { must } from "./must";
 import { describe, expect, it } from "vitest";
 import { FrameUniforms } from "../../src/card/layout";
 import { Uniforms } from "../../src/field/layout";

@@ -15,7 +15,7 @@
 // the passes through `GroundTheme` and `FieldConfig`, never from here.
 // Split from the one-file projection on 2026-09-07, before B1 (the move).
 
-import { DAY_LIGHT, dayLuminance, type MatLight, nightLight } from "./mat/night.ts";
+import { DAY_LIGHT, dayLuminance, type MatLight, nightLight } from "./mat/night";
 
 export type RGB = readonly [number, number, number];
 export type RGBA = readonly [number, number, number, number];

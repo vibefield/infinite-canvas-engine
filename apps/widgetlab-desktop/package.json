@@ -21,7 +21,8 @@
     "input": "pnpm run build && node scripts/composited-input.mjs",
     "demand": "pnpm run build && node scripts/composited-demand.mjs",
     "app-witness": "pnpm run build && node scripts/composited-app.mjs",
-    "zoom-drift": "pnpm run build && node scripts/zoom-drift.mjs"
+    "zoom-drift": "pnpm run build && node scripts/zoom-drift.mjs",
+    "next-boot": "pnpm run build && node scripts/composited-next.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

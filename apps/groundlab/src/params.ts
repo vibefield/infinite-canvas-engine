@@ -4,7 +4,7 @@
 // prototype's (choreography / motion), so "reset" IS the product.
 
 import { type CornerSpec, EIGENGRAU, FIT, type FadeIn, type FieldConfig, type FitBand, type FlightTuning, type FrameStyle, type GlyphRange, type GroundTheme, HEAT, LINES, MATERIAL, MAT_COLORS, MAT_GRID, MOTION_DEFAULTS, type MatConfig, type MatLight, type Material, type MotionTuning, NAV, NIGHT, PORTAL_CAP, PORTAL_GATE, PRODUCT, PRODUCT_CORNER, type PlateName, type RGB, type RGBA, type STYLES, type ThemeName, composeStyle, dayLuminance, nightLight } from "@ice/ground/compose";
-import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme.ts";
+import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 
 /**
  * The corner composition as the panel edits it (sheet.ts `CornerSpec`, every

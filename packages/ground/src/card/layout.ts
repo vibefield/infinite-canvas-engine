@@ -5,13 +5,13 @@
 // is what all cards share for a frame: the camera and the theme, as
 // `theme.ts` projects it.
 
-import { defineStruct } from "../engine/struct.ts";
-import { boxValues, type View } from "../lattice/lod.ts";
-import { HEAT, LINES, type GroundTheme, type Heat, type RGB } from "../theme.ts";
-import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../nav/portal.ts";
-import type { Geometry } from "./choreography.ts";
-import { contentValues, type FrameContent } from "./content.ts";
-import { heatValues } from "./heat.ts";
+import { defineStruct } from "../engine/struct";
+import { boxValues, type View } from "../lattice/lod";
+import { HEAT, LINES, type GroundTheme, type Heat, type RGB } from "../theme";
+import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../nav/portal";
+import type { Geometry } from "./choreography";
+import { contentValues, type FrameContent } from "./content";
+import { heatValues } from "./heat";
 
 // vec2s first, then scalars, then vec4s: packs tight under the alignment rules.
 export const Frame = defineStruct("Frame", [

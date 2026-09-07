@@ -11,7 +11,7 @@ import { Frame, FrameUniforms, frameUniformValues, frameValues } from "../../src
 import { MOTION_DEFAULTS, newMotion, pinMotion, stepMotion, toMotion, type CardMotion } from "../../src/card/motion";
 import { PRODUCT } from "../../src/card/sheet";
 import { HEAT, LIFT } from "../../src/theme";
-import { THEMES } from "../../oracle/fixtures/vf-theme.ts";
+import { THEMES } from "../../oracle/fixtures/vf-theme";
 
 describe("heat — the light", () => {
   it("is the half-plane irradiance: 1 deep under the source, ½ at its silhouette, h²/4d² far away, monotone", () => {

@@ -67,3 +67,4 @@ export type {
 } from "./profiles/contract";
 export { stratifiedProfile } from "./profiles/stratified";
 export { compositedProfile } from "./profiles/composited";
+export { compositedNextProfile } from "./profiles/composited-next";

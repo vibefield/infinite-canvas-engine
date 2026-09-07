@@ -14,16 +14,16 @@
 // own buffers, atlas, wind target and bind groups — which is how a nav flight
 // draws the departed frame's ground live beside the arriving one (ground.ts).
 
-import { storageBuffer, uniformBuffer } from "../engine/pipeline.ts";
-import type { ShaderPart } from "../engine/shader.ts";
-import { atlasGeom, fineAlpha, fineSchedule, lod, rungCounts, type Lod, type RungCount } from "../lattice/lod.ts";
-import { BakePass } from "./bake-pass.ts";
-import { GlyphPass, type GlyphSources } from "./glyph-pass.ts";
-import { Card, DEFAULT_FIELD_CONFIG, dressConfig, MAX_SOURCES, Uniforms, packSources, uniformValues, type FieldConfig, type FieldFrame, type FieldSource, glyphReachPx } from "./layout.ts";
-import { STILL_MAT_FRAME } from "../mat/layout.ts";
-import { MatPass } from "../mat/mat-pass.ts";
-import type { MatShaders } from "../mat/shaders.ts";
-import type { MatLight } from "../mat/night.ts";
+import { storageBuffer, uniformBuffer } from "../engine/pipeline";
+import type { ShaderPart } from "../engine/shader";
+import { atlasGeom, fineAlpha, fineSchedule, lod, rungCounts, type Lod, type RungCount } from "../lattice/lod";
+import { BakePass } from "./bake-pass";
+import { GlyphPass, type GlyphSources } from "./glyph-pass";
+import { Card, DEFAULT_FIELD_CONFIG, dressConfig, MAX_SOURCES, Uniforms, packSources, uniformValues, type FieldConfig, type FieldFrame, type FieldSource, glyphReachPx } from "./layout";
+import { STILL_MAT_FRAME } from "../mat/layout";
+import { MatPass } from "../mat/mat-pass";
+import type { MatShaders } from "../mat/shaders";
+import type { MatLight } from "../mat/night";
 
 export interface FieldShaders extends GlyphSources {
   readonly bake: ShaderPart;

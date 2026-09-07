@@ -3,7 +3,7 @@
 // is handed, so what you click is what is drawn, mid-animation included.
 // (Lineage: research/sdf-card/src/sdf.js.)
 
-import type { Geometry } from "./choreography.ts";
+import type { Geometry } from "./choreography";
 
 const hypot = Math.hypot;
 

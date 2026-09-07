@@ -184,6 +184,22 @@ module.exports = {
       to: { path: "^packages/react/src/profiles/composited" },
     },
     {
+      name: "no-old-new-profile-imports",
+      comment:
+        "design-013 §8 (B2, 2026-09-07): the NEW composited profile is built fresh beside the old one and " +
+        "bridges to nothing slated for deletion; the two share vocabulary through profiles/contract.ts only.",
+      severity: "error",
+      from: { path: "^packages/react/src/profiles/composited-next" },
+      to: { path: "^packages/react/src/profiles/composited\\.ts" },
+    },
+    {
+      name: "no-old-new-profile-imports-reverse",
+      comment: "The other direction of no-old-new-profile-imports; see that rule.",
+      severity: "error",
+      from: { path: "^packages/react/src/profiles/composited\\.ts" },
+      to: { path: "^packages/react/src/profiles/composited-next" },
+    },
+    {
       name: "hic-symbols-live-in-the-adapter",
       comment:
         "design-012 §8 gates 1+6: HTML-in-Canvas is an origin trial that has been renamed once " +

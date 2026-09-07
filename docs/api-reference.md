@@ -202,6 +202,14 @@ the only output writers) · `ce.engine.onPublish(hook)` (presence I/O slot) ·
 
 ## @ice/react
 
+**Presentation profiles (design-012 §3; design-013 B2):** `stratifiedProfile`,
+`compositedProfile` (the old composited leg — `ground({ device })`), and
+`compositedNextProfile` (design-013's new one — `groundCompose({ device, theme })` from
+`@ice/ground/compose`, the ground itself the compositor; refuses a device-less engine and
+the old leg's ground by name; installs the surface infra set). An app imports exactly one and
+passes it to `<InfiniteCanvas profile={…}>`; the others tree-shake out.
+
+
 | Export | Notes |
 |---|---|
 | `<EngineProvider engine>` | Context root; all hooks require it. |
@@ -254,7 +262,12 @@ the `Geometry` the frame records and `pick()` hit-tests alike; `portalOf()` give
 container's face its camera (`outgoingCamera`, the flight's exact `c0`); `themeFrom(name,
 palette, grid)` builds the `GroundTheme` the passes read — the palette is the host's,
 `ENGINE_GRID` and the mat's `MAT_LIGHT` are the engine's own. `@ice/ground/engine` is the
-raw-WebGPU boilerplate alone. The pixel witnesses are the package's oracle
+raw-WebGPU boilerplate alone. **`groundCompose({ device, theme, config?, maxDpr? })`** (B2)
+is the ground as a LAYER: a factory with the shape of the react `ground` prop, returning a
+handle whose `compose.gpuCompose` reflector the `compositedNextProfile` registers last (after
+the renders, design-013 §6); `configureGrid` maps the react `grid` prop onto the field
+(`fieldConfigOf`), `compose.setTheme` swaps the host's projection, `compose.redraws()` is the
+churn instrument, `compose.available()` says whether the pipelines compiled. The pixel witnesses are the package's oracle
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 

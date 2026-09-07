@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { MOTION_DEFAULTS } from "@ice/ground/compose";
 import { PRODUCT, REFERENCE, STYLES, styleViolations } from "@ice/ground/compose";
 import { SHADOW } from "@ice/ground/compose";
-import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme.ts";
-import { buildStyle, composeTweaks, defaultParams, PARAMS_VERSION, restoreParams, snapshotParams, styleTweaksOf, themeWith } from "../src/params.ts";
+import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
+import { buildStyle, composeTweaks, defaultParams, PARAMS_VERSION, restoreParams, snapshotParams, styleTweaksOf, themeWith } from "../src/params";
 
 describe("lab params", () => {
   it("defaults are the product: grid, presets, rung mode, style, springs, material", () => {

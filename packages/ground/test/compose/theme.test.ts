@@ -6,7 +6,7 @@
 // ICE repo when it is beside us; skipped honestly when not). The product's
 // cross-checks against tokens.css, DESIGN.md and canvas-appearance.ts are
 // test/vf-theme.test.ts.
-import { must } from "./must.ts";
+import { must } from "./must";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";

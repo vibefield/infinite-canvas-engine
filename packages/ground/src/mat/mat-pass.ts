@@ -13,15 +13,15 @@
 // Until a host uploads a plate the gobo reads a 1×1 white plate — a lit mat,
 // never a blank — and the blue noise is a 1×1 mid-grey (one blur angle).
 
-import { BLEND_OVER, bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline.ts";
-import { compile, compose } from "../engine/shader.ts";
-import { beginPass, Target } from "../engine/target.ts";
-import type { FadeIn, View } from "../lattice/lod.ts";
-import type { Presentation } from "../nav/portal.ts";
-import { MAT_GRID } from "../theme.ts";
-import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NOISE_SIZE, PLATE_SIZE, type PlateName } from "./layout.ts";
-import { DAY_LIGHT, type MatLight } from "./night.ts";
-import type { MatShaders } from "./shaders.ts";
+import { BLEND_OVER, bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
+import { compile, compose } from "../engine/shader";
+import { beginPass, Target } from "../engine/target";
+import type { FadeIn, View } from "../lattice/lod";
+import type { Presentation } from "../nav/portal";
+import { MAT_GRID } from "../theme";
+import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NOISE_SIZE, PLATE_SIZE, type PlateName } from "./layout";
+import { DAY_LIGHT, type MatLight } from "./night";
+import type { MatShaders } from "./shaders";
 
 const PLATE_NAMES: readonly PlateName[] = ["c", "b"];
 

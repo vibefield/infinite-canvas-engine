@@ -2,9 +2,9 @@
 // browser with `?raw` imports, the Node oracle with readFileSync — so the
 // composed WGSL is byte-identical between them.
 
-import type { ShaderPart } from "../engine/shader.ts";
-import type { FieldShaders } from "./field.ts";
-import { MAT_SHADER_FILES, type MatShaderText, matShaders } from "../mat/shaders.ts";
+import type { ShaderPart } from "../engine/shader";
+import type { FieldShaders } from "./field";
+import { MAT_SHADER_FILES, type MatShaderText, matShaders } from "../mat/shaders";
 
 export interface FieldShaderText extends MatShaderText {
   readonly magnet: string;

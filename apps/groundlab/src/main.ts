@@ -15,9 +15,9 @@
 // the flight's clock, as it owns every other.
 
 import { CONTENT_CHOICES, type CameraState, type CardMotion, type ContentChoice, DEFAULT_FIELD_CONFIG, FOLDER_FACE, type FaceInsets, type FadeIn, type FieldConfig, type FieldSource, type Flight, type FrameStyle, GROUND_SHADERS, type Geometry, type GlyphRange, type GridGlyph, Ground, HERO_MATRIX, type Hit, type HotPin, type LivePortal, OPEN_RANGE, type OutgoingInputs, PORTAL_CHAIN, type PlateName, type PortalInputs, type Presentation, type RGB, type Rect, STYLES, THROUGH_IN, THROUGH_OUT, type TestResidency, type ThemeName, ZOOM_MAX, ZOOM_MIN, acquire, arrivalCamera, boundsOf, clipOf, departedCamera, enterFlight, exitFlight, faceCovers, faceRadius as faceRadiusOf, faceRect, flightAt, flightOpacity, newMotion, overlaps, pick, pinMotion, portalAffine, portalContent, portalOf, resolve, secondOrder, solveFlightStart, stepFlight, stepMotion, stepSecondOrder, styleViolations, testResidency, tilted, toMotion, visibleRect } from "@ice/ground/compose";
-import { PRODUCT_GRID, THEMES, surface, type SurfaceName } from "@ice/ground/oracle/fixtures/vf-theme.ts";
-import { buildStyle, COLOR_ROLES, composeTweaks, defaultHeatTweaks, defaultMatTweaks, defaultNavTweaks, defaultNightTweaks, defaultParams, defaultPortalTweaks, fitBand, flightTuning, matConfigOf, type Params, restoreParams, snapshotParams, styleTweaksOf, themeWith } from "./params.ts";
-import { mountPanel, type Section } from "./panel.ts";
+import { PRODUCT_GRID, THEMES, surface, type SurfaceName } from "@ice/ground/oracle/fixtures/vf-theme";
+import { buildStyle, COLOR_ROLES, composeTweaks, defaultHeatTweaks, defaultMatTweaks, defaultNavTweaks, defaultNightTweaks, defaultParams, defaultPortalTweaks, fitBand, flightTuning, matConfigOf, type Params, restoreParams, snapshotParams, styleTweaksOf, themeWith } from "./params";
+import { mountPanel, type Section } from "./panel";
 // The gobo plates and the content-test plate are the HOST's assets (the product's look, a fixture in the package's oracle; the compose entry ships none of it); the blue noise is the engine's.
 import goboCUrl from "@ice/ground/oracle/fixtures/assets/gobo-c.rgba?url";
 import goboBUrl from "@ice/ground/oracle/fixtures/assets/gobo-b.rgba?url";

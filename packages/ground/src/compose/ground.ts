@@ -30,15 +30,15 @@
 // Slots beyond the root come from a POOL spawned on first use — no compile,
 // no clock — and cost nothing while no portal is on screen and no flight is on.
 
-import { surface, type Surface } from "../engine/device.ts";
-import { beginPass } from "../engine/target.ts";
-import { Field, type FieldShaders, type FieldStats } from "../field/field.ts";
-import type { FieldConfig, FieldFrame, FieldSource } from "../field/layout.ts";
-import { FramePass, type FrameInstance, type FrameShaders } from "../card/frame-pass.ts";
-import { FillPass, type FillShaders } from "../nav/fill-pass.ts";
-import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "../nav/portal.ts";
-import { boxOf } from "../lattice/lod.ts";
-import type { GroundTheme, RGB } from "../theme.ts";
+import { surface, type Surface } from "../engine/device";
+import { beginPass } from "../engine/target";
+import { Field, type FieldShaders, type FieldStats } from "../field/field";
+import type { FieldConfig, FieldFrame, FieldSource } from "../field/layout";
+import { FramePass, type FrameInstance, type FrameShaders } from "../card/frame-pass";
+import { FillPass, type FillShaders } from "../nav/fill-pass";
+import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "../nav/portal";
+import { boxOf } from "../lattice/lod";
+import type { GroundTheme, RGB } from "../theme";
 
 export interface GroundOptions {
   /**

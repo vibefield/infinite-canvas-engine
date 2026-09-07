@@ -8,7 +8,7 @@
 // PARAMETERS, so the same module text serves every entry that imports it and
 // the entry alone decides the binding layout.
 
-import type { StructDef } from "./struct.ts";
+import type { StructDef } from "./struct";
 
 export interface ShaderPart {
   readonly label: string;

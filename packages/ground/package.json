@@ -11,7 +11,8 @@
     "./compose": "./src/compose/index.ts",
     "./engine": "./src/engine/index.ts",
     "./oracle/*": "./oracle/*",
-    "./assets/*": "./assets/*"
+    "./assets/*": "./assets/*",
+    "./oracle/fixtures/vf-theme": "./oracle/fixtures/vf-theme.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

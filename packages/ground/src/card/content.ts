@@ -10,7 +10,7 @@
 // and the raw-bytes uploads a host (ICE's Residency) uses to put pixels where
 // the record says they are.
 
-import type { Geometry } from "./choreography.ts";
+import type { Geometry } from "./choreography";
 
 /** The WRITTEN rect inside a layer or a texture, normalised — design-013 §5's `u0 v0 u1 v1`. */
 export interface UvRect { readonly u0: number; readonly v0: number; readonly u1: number; readonly v1: number }

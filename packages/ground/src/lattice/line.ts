@@ -9,7 +9,7 @@
 // so it draws the same line; the old coarse rung's lines are every tenth of the
 // new coarse rung's and already carry the saturated weight — nothing pops.
 
-import { type FadeIn, smoothstep } from "./lod.ts";
+import { type FadeIn, smoothstep } from "./lod";
 
 export interface LineLaw {
   /** Half-widths at the window's top and a decade above it, DEVICE px (the reference's hairlines). */

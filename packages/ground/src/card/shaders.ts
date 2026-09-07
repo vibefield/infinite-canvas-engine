@@ -1,8 +1,8 @@
 // Assemble the frame pass's shader parts from raw text — same in the browser
 // (`?raw`) and in the Node oracle (readFileSync).
 
-import type { ShaderPart } from "../engine/shader.ts";
-import type { FrameShaders } from "./frame-pass.ts";
+import type { ShaderPart } from "../engine/shader";
+import type { FrameShaders } from "./frame-pass";
 
 export interface FrameShaderText {
   /** shaders/portal.wgsl — the portal clip every pass includes. */

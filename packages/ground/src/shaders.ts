@@ -2,10 +2,10 @@
 // host hands `Ground.create` — `Ground.create({ device, canvas, ...GROUND_SHADERS })`.
 // The oracle composes the same sets from the .wgsl files on disk, so the two
 // hosts render byte-identical programs.
-import { FRAME_SHADER_FILES, frameShaders } from "./card/shaders.ts";
-import { FIELD_SHADER_FILES, fieldShaders } from "./field/shaders.ts";
-import { FILL_SHADER_FILES, fillShaders } from "./nav/fill-pass.ts";
-import { WGSL, type WgslFile } from "./shaders.gen.ts";
+import { FRAME_SHADER_FILES, frameShaders } from "./card/shaders";
+import { FIELD_SHADER_FILES, fieldShaders } from "./field/shaders";
+import { FILL_SHADER_FILES, fillShaders } from "./nav/fill-pass";
+import { WGSL, type WgslFile } from "./shaders.gen";
 
 /** The text of every file a shader-file map names, by the map's keys. */
 export function shaderText<T extends Record<string, string>>(files: T): { readonly [K in keyof T]: string } {

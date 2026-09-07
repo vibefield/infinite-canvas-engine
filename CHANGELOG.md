@@ -80,6 +80,20 @@ the entity's own kind behaviour.
 
 ### Added
 
+- **`compositedNextProfile` and `groundCompose()` — the NEW composited profile, beside
+  the old one** (design-013 §8 B2, 2026-09-07). `<InfiniteCanvas profile={compositedNextProfile}
+  ground={groundCompose({ device, theme })}>` boots the ground's own canvas as the L0
+  layer on the app-owned device and registers design-013 §6's roster in order — DomRender ·
+  IslandRender · VideoIngest · DomCompose (inert stubs holding their place until B3–B6) ·
+  GpuCompose, the ground's, last — plus the surface infra set the old profile installs. At
+  B2 it draws an EMPTY board (the field under ICE's own defaults, the theme's clear colour)
+  on a camera or viewport change and nothing otherwise: the `next-boot` rig
+  (`apps/widgetlab-desktop`, `pnpm --filter widgetlab-desktop next-boot`) mounts it through
+  the real React path and measures one redraw and one submit at boot, 0 submits over 4 s
+  idle, and one frame for a camera write. The profile refuses a device-less engine and the
+  old leg's `ground()` layer by name; dependency-cruiser walls it from the old profile both
+  ways. `groundCompose`'s handle maps the react `grid` prop onto the field
+  (`fieldConfigOf`) and takes a new theme (`compose.setTheme`). The old profile is untouched.
 - **`@ice/ground/compose` — the ground moves in** (design-013 §8 B1 [GROUND PORT],
   2026-09-07). `vibe-field/draft/ground` enters ICE once, into its final home, as a second
   entry of `@ice/ground` beside the old composited leg — which imports none of it and is
@@ -150,6 +164,12 @@ the entity's own kind behaviour.
   2000-unit card at band 16 on a dpr-2 display asked for 64,000²; it is 8192×4096 now.
 
 ### Changed
+
+- **The ported ground's imports lost their `.ts` suffixes** (B2, 2026-09-07 — design-013
+  B1's D-B1.1 reversed): every consumer app that typechecks would otherwise need
+  `allowImportingTsExtensions`, and a bundled `.d.ts` would carry the suffixes to the
+  package's users. The Node oracle already ran through `tsx`, so the suffixes bought
+  nothing. 163 specifiers in 43 files; the 44 oracle renders stayed byte-identical.
 
 - **`SurfaceDemand`'s equip default is `live/60/false`** (was `paused/0/false`;
   `RequestedDemand` is unchanged). design-013 D2 chose `paused` to spare "the frame

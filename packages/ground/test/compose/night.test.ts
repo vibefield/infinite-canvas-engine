@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MAT_CONFIG, MatUniforms, STILL_MAT_FRAME, matUniformValues } from "../../src/mat/layout";
 import { D65, DAY_LIGHT, dayLuminance, degreeOfAdaptation, hueTint, lightValues, linear, linearToSrgb, luminance, mesopicWeight, nightAppearance, nightReport, planckianXY, rodSignal, scotopic, spectralXY, xyToLinear } from "../../src/mat/night";
 import { MAT, MAT_COLORS, MAT_GRID, MAT_LIGHT, NIGHT, type RGB, rgb } from "../../src/theme";
-import { THEMES } from "../../oracle/fixtures/vf-theme.ts";
+import { THEMES } from "../../oracle/fixtures/vf-theme";
 
 const ground = resolve(import.meta.dirname, "../..");
 const close = (a: number, b: number, eps: number) => expect(Math.abs(a - b), `${a} vs ${b}`).toBeLessThan(eps);

@@ -2,10 +2,10 @@
 // pipeline, and its bind group. Records one fullscreen triangle into the atlas
 // when asked; the decision to ask is the field's (dirty flags live there).
 
-import { bindGroup, bindLayout, renderPipeline } from "../engine/pipeline.ts";
-import { compile, compose, type ShaderPart } from "../engine/shader.ts";
-import { beginPass, Target } from "../engine/target.ts";
-import { Card, Uniforms } from "./layout.ts";
+import { bindGroup, bindLayout, renderPipeline } from "../engine/pipeline";
+import { compile, compose, type ShaderPart } from "../engine/shader";
+import { beginPass, Target } from "../engine/target";
+import { Card, Uniforms } from "./layout";
 
 export const ATLAS_FORMAT: GPUTextureFormat = "rgba32float";
 

@@ -2,11 +2,11 @@
 // prepended to every field shader by the engine; `uniformValues()` and
 // `packSources()` fill them by name. There is no hand-indexed float anywhere.
 
-import { defineStruct } from "../engine/struct.ts";
-import { atlasGeom, boxValues, type FadeIn, fineAlpha, lod, rungCounts, type View } from "../lattice/lod.ts";
-import { ENGINE_GRID, type RGB } from "../theme.ts";
-import { DEFAULT_MAT_CONFIG, type MatConfig, type MatFrame } from "../mat/layout.ts";
-import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../nav/portal.ts";
+import { defineStruct } from "../engine/struct";
+import { atlasGeom, boxValues, type FadeIn, fineAlpha, lod, rungCounts, type View } from "../lattice/lod";
+import { ENGINE_GRID, type RGB } from "../theme";
+import { DEFAULT_MAT_CONFIG, type MatConfig, type MatFrame } from "../mat/layout";
+import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../nav/portal";
 
 export const Uniforms = defineStruct("Uniforms", [
   ["cam", "vec4f"],    // camX, camY (world), zoom, dpr

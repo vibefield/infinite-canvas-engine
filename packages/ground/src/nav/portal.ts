@@ -10,8 +10,8 @@
 // ground also scissors the slot's draws to the chain's bounding box so nothing
 // outside it is shaded.
 
-import type { Box } from "../lattice/lod.ts";
-import { arrivalCamera, type CameraState, type FitBand, FIT, outgoingCamera, type PortalAffine, portalAffine, type Rect, type Viewport, visibleRect } from "./flight.ts";
+import type { Box } from "../lattice/lod";
+import { arrivalCamera, type CameraState, type FitBand, FIT, outgoingCamera, type PortalAffine, portalAffine, type Rect, type Viewport, visibleRect } from "./flight";
 
 /** A rounded rect in screen CSS px: centre, half extents, corner radius. */
 export interface PortalClip { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly r: number }
