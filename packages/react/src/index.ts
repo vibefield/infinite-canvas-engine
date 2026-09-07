@@ -55,6 +55,20 @@ export {
   type InfiniteCanvasHandle,
   type InfiniteCanvasProps,
 } from "./infinite-canvas";
+// The mounted ground's CONTENT seam (design-013 §5/§6, B5): the residency a render
+// reflector realises handles into, and the three render slots the composited-next profile
+// forwards. Structural mirrors of `@ice/ground/compose` — react may not import ground, and
+// `@ice/r3f` imports these rather than restating them.
+export {
+  SurfaceContentContext,
+  surfaceContentOf,
+  useSurfaceContent,
+  type ContentRenderSlot,
+  type ContentRenderSlots,
+  type ContentSink,
+  type SurfaceContent,
+  type TextureDescription,
+} from "./surface-content";
 
 // Presentation profiles (design-012 §3). An app imports exactly ONE of these
 // and passes it to <InfiniteCanvas profile={...}>; the other tree-shakes out of

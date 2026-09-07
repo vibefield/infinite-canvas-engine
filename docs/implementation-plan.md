@@ -953,6 +953,26 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   top-left marker top-left on the ground's own pixels (both axes); paused 0 copies / 0 submits
   over 181 frames with the producer still producing (33 dropped by the clamp); idle-zero over
   362 frames; the null control on the plate. 11 ingest tests (16 mutation probes), `pnpm run
+- **B5 — IslandRender** (design-013 §8 B5, §6 reflector 6, §9 Q9 path (a), **LANDED
+  2026-09-07**): a `gl` island renders into the PRIVATE target Residency named for it, and
+  the ground samples it in `own` mode. `createIslandRender` (`@ice/r3f`) installs into the
+  compose handle's `renders.island` slot and runs in the roster, never in R3F's loop;
+  `<GLViews>` selects that arm from a new `@ice/react` context (`useSurfaceContent`),
+  published by `<InfiniteCanvas>` from the same effect that builds the ground — structural
+  mirrors both ways, because neither package may import ground. Targets are keyed by
+  HANDLE: a resize mints one and the old one dies at `onForget`, after the submit, so the
+  pin-blind-resize class has no pin to be blind to. Eligibility is the old pass's own
+  predicate, extracted (`islandPaintable`); what is added is the demand clamp (D10) —
+  paused renders nothing, a bucket is a ceiling, dt is banked, and a fresh destination
+  outranks the clamp. **Exit** (`next-islands`, ALL PASS): two islands and two dom cards on
+  a real `<InfiniteCanvas>` + `<Canvas>` + `<GLViews>`; targets 480×320 = `rasterSize`,
+  content mode `own` with `srgb: true`, 2 z-runs; the ink at the card's centre and the
+  PLATE where the island is transparent, the top-left mark top-left; ground-drawn pixel vs
+  the island's own texel maxΔ 0; noise floor 0 on both arms, first-paint transient 0,
+  cross-backend 0.1283 % beyond 1/255 (maxΔ 64, all on the one rotated edge); idle-zero 0
+  submits / 0 renders over 362 frames; 38 renders in 2.50 s at the 15 fps bucket (263
+  clamped) and 0 over 2.51 s paused; a 30-frame resize drag = 31 handles, 30 disposals, 0
+  stale targets, 0 GPU errors. 16 r3f tests + 5 react tests, 13 mutation probes; `pnpm run
   ci` green.
 
 ## Release cut & downstream

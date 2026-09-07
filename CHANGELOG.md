@@ -145,6 +145,42 @@ the entity's own kind behaviour.
   bit, on ICE's own data); design-006 amended (§9). The old ground's three outgoing
   strategies go unused under the new profile and B8 deletes them; Q13 (the zoom-through) is
   not taken here.
+- **IslandRender — the island half of composited-next, design-013 B5** (2026-09-07). A
+  `gl` island now renders into the PRIVATE target Residency allocated for it, and the
+  ground draws that texture as the card's content in `own` mode, on the device three
+  already adopts. `createIslandRender({ gl, renderer, bridge, world, content })`
+  (`@ice/r3f`) installs itself into the compose handle's `renders.island` slot, so it runs
+  in design-013 §6's roster order — after the ECS settles, before GpuCompose's submit —
+  and never in R3F's own loop, which stays `frameloop="never"` and presents nothing.
+  `<GLViews>` selects that arm by reading the ground's content seam off a new React
+  context; nothing about the old composited or stratified profiles changes.
+
+  **Targets are keyed by HANDLE, not by entity.** Residency mints a new handle whenever a
+  card's destination changes, so a resize allocates a new target and the old one is
+  disposed when the table forgets it (`ContentResidency.onForget`, fired after the frame's
+  submit). One authority decides what is sampled — the current `TextureRef` — so the
+  **pin-blind-resize class dissolves rather than being fixed**: there is no refcount to be
+  blind to. `Retained` (which B7 writes) is honoured by Residency's LRU alone; the old
+  pools' `pin`/`isPinned`/`retired` refcounts stay until B8 deletes that leg with them.
+
+  **The demand clamp the old pass never read** (design-013 D10): `SurfaceDemand.mode ===
+  "paused" ` renders nothing at all, and a live card's fps bucket is a ceiling on how often
+  it renders — with the animation time still BANKED and delivered whole, so a clamped
+  bucket changes cadence and never speed. A destination with no target yet outranks the
+  clamp: a card that resized must not show its plate for an interval. Eligibility itself is
+  unchanged and now shared — `islandPaintable` is the old pass's own predicate, extracted
+  to `island-state.ts` so both legs ask one question. The island target's recipe (4× MSAA,
+  depth, the sRGB REQUEST whose ANSWER the compose re-encodes on) moved to
+  `island-target.ts` for the same reason.
+
+  New in `@ice/react`: `useSurfaceContent()`, `SurfaceContentContext`, `surfaceContentOf`
+  and the structural `ContentSink` / `ContentRenderSlot(s)` / `SurfaceContent` /
+  `TextureDescription` mirrors of `@ice/ground/compose` (react may not import ground, and
+  `@ice/r3f` imports these rather than restating them). New in `@ice/r3f`:
+  `createIslandRender`, `createIslandTarget`, `islandPaintable`, and a
+  `<GLViews onIslandRender>` prop for rigs. `GroundComposeStats` gains `runs` — the last
+  frame's z-run count, the witness that two own textures really interleave in one pass.
+
 - **The content term reads the world — design-013, B4a** (2026-09-07). The trunk B4, B5
   and B6 build on: under the composited-next profile the ground now draws a card from the
   TEXTURE its `TextureRef` names — `page` (the layer and the written rect, through the one

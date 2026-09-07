@@ -28,6 +28,10 @@ export default defineConfig({
       //   composited-next-video — design-013 B6: a live surface on the new profile —
       //                          a producer registers a stable texture and each arriving
       //                          frame is one copy and one compose frame.
+      //   composited-next-islands
+      //                    — design-013 B5: a `gl` island rendered into the PRIVATE
+      //                          target Residency named, drawn by the ground in `own`
+      //                          mode; parity against a WebGL render of the same scene.
       //   zoom-drift       — the M18 fix wave's open item (a): does a card
       //                          whose LIVE zoom drifted above its band write
       //                          past its atlas slot?
@@ -39,6 +43,7 @@ export default defineConfig({
         "composited-app": "composited-app.html",
         "composited-next": "composited-next.html",
         "composited-next-video": "composited-next-video.html",
+        "composited-next-islands": "composited-next-islands.html",
         "zoom-drift": "zoom-drift.html",
       },
     },

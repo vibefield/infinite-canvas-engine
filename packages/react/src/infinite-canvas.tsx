@@ -71,6 +71,7 @@ import { attachKeymap, type KeymapEntry } from "./keymap";
 import type { PresentationProfile } from "./profiles/contract";
 import { stratifiedProfile } from "./profiles/stratified";
 import { ChromeOwnerContext } from "./hooks";
+import { SurfaceContentContext, surfaceContentOf, type SurfaceContent } from "./surface-content";
 import { WidgetRoot } from "./widget-root";
 
 /** Handed to {@link InfiniteCanvasProps.onReady} for app-side GL/devtools wiring. */
@@ -101,6 +102,13 @@ export interface GroundLayerHandle {
    * layer itself — this component registers it and never looks inside.
    */
   readonly compositorReflector?: ReflectorDef;
+  /**
+   * The ground's COMPOSE handle (design-013, `groundCompose(…)`), present only on the new
+   * leg. Opaque here as well: the composited-next profile reads its reflectors off it, and
+   * this component reads its content seam through {@link surfaceContentOf} — never by
+   * importing the package.
+   */
+  readonly compose?: unknown;
   configureGrid(cfg: Partial<GridConfig>): void;
   dispose(): void;
 }
@@ -210,6 +218,11 @@ export function InfiniteCanvas({
 }: InfiniteCanvasProps): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hosts, setHosts] = useState<DomWidgetsReflector | undefined>(undefined);
+  // The mounted ground's CONTENT seam (design-013 §5, B5): its residency and the three
+  // render slots, published to the tree so a render mounted app-side (the R3F island root —
+  // the wall keeps three out of this package) can reach them. Set beside `hosts`, in the same
+  // batch as `onReady`, so a GL root mounted from that callback sees it on its first render.
+  const [content, setContent] = useState<SurfaceContent | undefined>(undefined);
   // Keep onReady out of the effect deps (identity churn must not re-boot).
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -354,6 +367,7 @@ export function InfiniteCanvas({
 
     const stopLoop = startRafLoop(core);
     setHosts(domWidgets);
+    setContent(surfaceContentOf(groundLayer));
     onReadyRef.current?.({ engine, host, planes, focus });
 
     return () => {
@@ -376,6 +390,7 @@ export function InfiniteCanvas({
       planes.dispose();
       host.dispose();
       setHosts(undefined);
+      setContent(undefined);
     };
   }, [engine, measureQueue, ground]);
 
@@ -389,12 +404,14 @@ export function InfiniteCanvas({
   return (
     <EngineProvider engine={engine}>
       <ChromeOwnerContext.Provider value={profile?.chromeOwner ?? "dom"}>
-        <div ref={containerRef} className={className} style={{ width: "100%", height: "100%", ...style }} data-ice-canvas="">
-          {hosts !== undefined ? (
-            <WidgetRoot world={engine.world} store={engine.runtime.store} hosts={hosts} />
-          ) : null}
-          {children}
-        </div>
+        <SurfaceContentContext.Provider value={content}>
+          <div ref={containerRef} className={className} style={{ width: "100%", height: "100%", ...style }} data-ice-canvas="">
+            {hosts !== undefined ? (
+              <WidgetRoot world={engine.world} store={engine.runtime.store} hosts={hosts} />
+            ) : null}
+            {children}
+          </div>
+        </SurfaceContentContext.Provider>
       </ChromeOwnerContext.Provider>
     </EngineProvider>
   );

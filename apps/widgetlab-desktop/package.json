@@ -23,7 +23,8 @@
     "app-witness": "pnpm run build && node scripts/composited-app.mjs",
     "zoom-drift": "pnpm run build && node scripts/zoom-drift.mjs",
     "next-boot": "pnpm run build && node scripts/composited-next.mjs",
-    "next-video": "pnpm run build && node scripts/composited-next-video.mjs"
+    "next-video": "pnpm run build && node scripts/composited-next-video.mjs",
+    "next-islands": "pnpm run build && node scripts/composited-next-islands.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

@@ -23,11 +23,11 @@
  * The remover also disposes the texture table WHEN THIS FUNCTION BUILT IT, and
  * never one the caller passed. Ownership decides: a store built here is
  * unreachable once the systems are gone, so nothing else could ever free it;
- * a store the caller passed is the caller's, and B2's composited profile will
- * pass its own table and allocator and keep the references — its render
+ * a store the caller passed is the caller's. The composited-next profile DOES
+ * pass its own table and allocator and keep the references (B4a) — its render
  * reflectors need the table to turn a handle into a `GPUTexture`, and they
- * outlive a system swap. (Today's React profile passes `{}`, so this function
- * owns its store, which is correct for a Phase A that realises nothing.)
+ * outlive a system swap. Every other profile still passes `{}` and this
+ * function owns the store, which is correct where nothing realises.
  */
 import type { RasterStrategy } from "@ice/kernel";
 import type { Engine } from "../engine/engine";

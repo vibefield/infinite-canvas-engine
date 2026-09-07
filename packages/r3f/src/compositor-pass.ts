@@ -31,7 +31,6 @@ import {
   compositeCameraFrustum,
   cubicBezierEase,
   fboPixelSize,
-  isOutOfBand,
   selectBand,
   selectEvictions,
   worldRectToComposite,
@@ -55,6 +54,7 @@ import {
   type World,
 } from "@ice/core";
 import type { GLBridge } from "./bridge";
+import { islandPaintable } from "./island-state";
 import type { SourcesLike } from "./webgpu-sources";
 
 /** Render order far above any sane sibling ordinal or legacy z — the grabbed quad draws last. */
@@ -279,17 +279,10 @@ export function runCompositorPass(ctx: PassContext): PassStats {
   const toPaint: Entity[] = [];
   for (const [e, s] of bridge.state.all()) {
     if (bridge.islandFor(e as Entity) === undefined) continue; // unmounted: retained texture only
-    const wantsPhase = s.phase === "Hot" || s.phase === "Waking";
-    const genDirty = s.paintGeneration > s.fboGeneration;
-    const bandStale = !inMotion && s.fboGeneration >= 0 && isOutOfBand(cam.zoom, s.paintedAt.band);
-    // FLIGHT FREEZE (design-006 §8.2): islands with a retained texture go
-    // COLD for the flight — no Hot repaints (their `useIslandFrame` ticks are
-    // paint-attributed, so animation pauses with them), no props repaints,
-    // no band chasing; the composite stretches the stale FBO (the accepted
-    // gesture transient). NEVER-PAINTED islands (fboGeneration < 0) still get
-    // their first paint — an empty quad through a 400 ms enter reads as
-    // missing content, not as motion.
-    const paintable = frozen ? wantsPhase && s.fboGeneration < 0 : wantsPhase || genDirty || bandStale;
+    // The three paint reasons and the flight freeze live in ONE function
+    // (`islandPaintable`, island-state.ts) — B5's IslandRender asks the same
+    // question, and a second copy of it would drift into a second policy.
+    const paintable = islandPaintable(s, { zoom: cam.zoom, inMotion, frozen });
     if (paintable) {
       toPaint.push(e as Entity);
       // Animation time is owed to every paint-ELIGIBLE Hot island, painted

@@ -13,7 +13,7 @@
  * Pure state + counters; no three.js, no ECS, no timing — the GLViews frame
  * pass reads/writes it synchronously.
  */
-import type { IslandPhase } from "@ice/kernel";
+import { isOutOfBand, type IslandPhase } from "@ice/kernel";
 
 /** Resolution + band an island's FBO was last painted at (v1 `paintedAt`). */
 export interface PaintedAt {
@@ -114,6 +114,44 @@ export interface IslandStateStore {
   setAnimatedDecl(key: number, animated: boolean): void;
   drop(key: number): void;
   clear(): void;
+}
+
+/** The island facts the paint test reads — the subset both legs' render states carry. */
+export interface IslandPaintFacts {
+  readonly phase: IslandPhase;
+  readonly paintGeneration: number;
+  readonly fboGeneration: number;
+  readonly paintedAt: PaintedAt;
+}
+
+/** The camera's posture this frame, as both legs derive it. */
+export interface IslandPaintContext {
+  readonly zoom: number;
+  /** A user gesture OR a nav flight — both sweep the camera per frame. */
+  readonly inMotion: boolean;
+  /** A flight or a stage background hold: retained textures stretch, only first paints run. */
+  readonly frozen: boolean;
+}
+
+/**
+ * Does this island owe a paint this frame? (design-004 §3 step 4.)
+ *
+ * Extracted from `compositor-pass.ts` at B5 so the new leg's IslandRender asks the SAME
+ * question rather than a plausible fork of it: three reasons to paint — the phase wants it
+ * (Hot or Waking), the content is dirtier than the texture, or the zoom left the band the
+ * texture was painted at (never while the camera is sweeping — the stretch is the accepted
+ * gesture transient, picked up on the first idle frame).
+ *
+ * FLIGHT FREEZE (design-006 §8.2): a frozen island with a texture goes cold — no Hot
+ * repaints (their `useIslandFrame` ticks are paint-attributed, so animation pauses with
+ * them), no props repaints, no band chasing. NEVER-PAINTED islands still get their first
+ * paint: an empty quad through a 400 ms enter reads as missing content, not as motion.
+ */
+export function islandPaintable(s: IslandPaintFacts, ctx: IslandPaintContext): boolean {
+  const wantsPhase = s.phase === "Hot" || s.phase === "Waking";
+  const genDirty = s.paintGeneration > s.fboGeneration;
+  const bandStale = !ctx.inMotion && s.fboGeneration >= 0 && isOutOfBand(ctx.zoom, s.paintedAt.band);
+  return ctx.frozen ? wantsPhase && s.fboGeneration < 0 : wantsPhase || genDirty || bandStale;
 }
 
 export function createIslandStateStore(): IslandStateStore {

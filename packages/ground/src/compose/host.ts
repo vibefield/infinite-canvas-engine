@@ -98,6 +98,12 @@ export interface GroundComposeStats extends FrameBuilderStats {
   readonly redraws: number;
   /** The flight's second slot as last drawn (B7): its kind, progress and record count; `null` at rest. */
   readonly outgoing: { readonly kind: "enter" | "exit"; readonly p: number; readonly frozen: boolean; readonly frames: number; readonly at: number | null } | null;
+  /**
+   * Z-runs in the LAST frame drawn (B5). A run breaks only where the `own` texture changes,
+   * so this counts the card pass's bind-group switches — and > 1 is the witness that a
+   * textured card really is interleaved in z with plate ones rather than drawn beside them.
+   */
+  readonly runs: number;
 }
 
 export interface GroundCompose {
@@ -343,7 +349,7 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
         available: () => ground !== null && !failed,
         redraws: () => redraws,
         setTheme(next) { theme = next; dirty = true; },
-        stats: () => ({ redraws, outgoing: lastFlight, ...builder.stats() }),
+        stats: () => ({ redraws, outgoing: lastFlight, runs: ground?.frames.runCount ?? 0, ...builder.stats() }),
         wakes: () => builder.wakes(),
         domWrites: () => ({ writes: domWrites, clips: writer?.clips ?? 0 }),
         geometryOf: (e) => builder.geometryOf(e),

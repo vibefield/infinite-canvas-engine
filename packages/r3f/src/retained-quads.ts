@@ -13,6 +13,12 @@ import { Group, Mesh, type BufferGeometry, type Scene, type Texture } from "thre
 import { CompositeMaterial } from "./composite-material";
 import type { PoolPin } from "./pool";
 
+/**
+ * The pool half a retained quad needs. The `pin` here is the refcount design-013 §4 retires:
+ * under the new composited leg a crossfade holds its pixels with the `Retained` TAG, which
+ * Residency's LRU honours, and a target is keyed by the handle the world names — so nothing
+ * has to be pinned against a resize. This adapter (stratified-only since S6) goes at B8.
+ */
 export interface RetainedQuadPool {
   get(key: number): { readonly texture: Texture } | null;
   pin(keys: readonly number[]): PoolPin;

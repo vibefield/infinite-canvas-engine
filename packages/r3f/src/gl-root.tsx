@@ -61,6 +61,7 @@ import {
   type GpuAllocatorHandle,
   type WidgetMountStore,
 } from "@ice/core";
+import { useSurfaceContent } from "@ice/react";
 import type { GLBridge } from "./bridge";
 import { CompositeMaterial } from "./composite-material";
 import {
@@ -70,11 +71,12 @@ import {
   type QuadsLike,
   type TargetLike,
 } from "./compositor-pass";
+import { createIslandRender, type IslandRender } from "./island-render";
 import { Island } from "./island";
 import { RenderTargetPool } from "./pool";
 import { createRetainedQuadTransitionAdapter } from "./retained-quads";
 import { selfSustainPlan } from "./self-sustain";
-import { hasWebGpuBackend } from "./webgpu-backend";
+import { hasWebGpuBackend, type WebGpuRendererLike } from "./webgpu-backend";
 import { WebGpuRenderTargetPool } from "./webgpu-pool";
 import { createIslandSourceBinder, type IslandSourceBinder } from "./webgpu-sources";
 
@@ -164,6 +166,13 @@ export interface GLViewsProps {
    * devtools profiler HUD as lanes (`devtools.lane("gpu", s.gpuMs)`).
    */
   readonly onFrameStats?: (stats: GlFrameStats) => void;
+  /**
+   * COMPOSITED-NEXT ONLY (design-013 §8 B5). Handed the IslandRender this mount installed
+   * into the ground's `renders.island` slot, and `null` on teardown — the instruments
+   * (`stats()`, `targetOf()`) a rig grades the leg with. There is no equivalent for the old
+   * profiles: their island targets belong to a pool this component owns.
+   */
+  readonly onIslandRender?: (render: IslandRender | null) => void;
 }
 
 /**
@@ -241,6 +250,7 @@ export function GLViews({
   maxPaintDpr = 1.5,
   environment,
   onFrameStats,
+  onIslandRender,
 }: GLViewsProps): ReactElement {
   const world = engine.world;
   const gl = useThree((s) => s.gl);
@@ -257,6 +267,22 @@ export function GLViews({
   // would strand published sources against a disposed pool.
   const composited = compositor !== undefined;
 
+  // COMPOSITED-NEXT (design-013 §8 B5). The ground's content seam, published by
+  // <InfiniteCanvas> when the mounted layer is `groundCompose(…)`. Present ⇒ this GLViews
+  // renders islands into the PRIVATE targets Residency named and installs itself in the
+  // roster's island slot; there is no pool, no quad, no source binder and no frame pass here,
+  // because the ground's GpuCompose owns the one present.
+  //
+  // Latched at the FIRST render, like `compositor` above: an app cannot legitimately switch
+  // profiles at runtime, and half-switching mid-frame would strand a pool against a slot. The
+  // context is published in the same batch as `onReady`, which is where the wall makes an app
+  // mount its GL root — a mount that beats it gets the loud refusal below rather than a
+  // plausible board drawn twice.
+  const contentFromContext = useSurfaceContent();
+  const contentRef = useRef(contentFromContext);
+  const content = contentRef.current;
+  const nextProfile = content !== undefined;
+
   // --- context-lifetime resources (lazy + disposed-aware, v1 pattern) ------
   // The renderer arrives asynchronously (R3F awaits three's `init()` before it
   // commits), so the WebGPU pool reads it through a getter rather than
@@ -264,11 +290,13 @@ export function GLViews({
   const glRef = useRef(gl);
   glRef.current = gl;
   const poolRef = useRef<RenderTargetPool | WebGpuRenderTargetPool | null>(null);
-  if (poolRef.current === null || poolRef.current.isDisposed()) {
+  if (!nextProfile && (poolRef.current === null || poolRef.current.isDisposed())) {
     poolRef.current = composited
       ? new WebGpuRenderTargetPool({ renderer: () => glRef.current as unknown as object })
       : new RenderTargetPool();
   }
+  // `null` under composited-next: an island target there is keyed by the Residency HANDLE the
+  // world names, so there is nothing for a pool to key, evict or pin (design-013 §4).
   const pool = poolRef.current;
 
   // The outbound seam: islands → core's registry → ground's WidgetQuadPass.
@@ -287,7 +315,7 @@ export function GLViews({
   // this profile publishes sources whose `texture()` never resolves, and an
   // empty compositor renders a perfectly plausible blank. Say so loudly.
   useEffect(() => {
-    if (!composited) return;
+    if (!composited && !nextProfile) return;
     if (!hasWebGpuBackend(gl)) {
       console.error(
         "[ice/r3f] GLViews received a `compositor` binding but the Canvas renderer has no WebGPU " +
@@ -296,7 +324,20 @@ export function GLViews({
           "from @ice/r3f/webgpu.",
       );
     }
-  }, [composited, gl]);
+  }, [composited, nextProfile, gl]);
+
+  // The mirror trap: a GL root that mounted BEFORE the ground published its content seam
+  // would run the legacy path forever under a profile that has no compositor to draw it —
+  // invisible in a screenshot, which is the class §7 of design-013 names. Say so.
+  useEffect(() => {
+    if (contentFromContext !== undefined && !nextProfile) {
+      console.error(
+        "[ice/r3f] GLViews mounted before <InfiniteCanvas> published the ground's content " +
+          "residency, so it is running the stratified path under the composited-next profile. " +
+          "Mount the <Canvas>/<GLViews> tree from InfiniteCanvas's onReady callback.",
+      );
+    }
+  }, [contentFromContext, nextProfile]);
   const incomingOpacityRef = useRef(1);
   const retainedQuadsRef = useRef(0);
   const allocatorHandleRef = useRef<GpuAllocatorHandle | null>(null);
@@ -361,7 +402,7 @@ export function GLViews({
 
   useEffect(() => {
     const ledger = bridge.gpu;
-    if (ledger === undefined) return;
+    if (ledger === undefined || pool === null) return;
     const handle = ledger.registerAllocator({
       id: allocatorId,
       usedBytes: () => pool.bytesUsed(),
@@ -401,7 +442,7 @@ export function GLViews({
     // would build a second, invisible presentation. It lands compositor-side at
     // S6 with lift/fade/drag-float; until then a composited board simply has no
     // outgoing-quad transition, which is honest rather than half-drawn.
-    if (composited) return;
+    if (composited || pool === null) return;
     return transitions.register(
       createRetainedQuadTransitionAdapter({
         scene,
@@ -499,13 +540,47 @@ export function GLViews({
       // composite, not a blank quad.
       sourcesRef.current?.dispose();
       sourcesRef.current = null;
-      pool.dispose();
+      pool?.dispose();
       for (const [key] of bridge.state.all()) bridge.state.markEvicted(key);
     };
   }, [scene, pool, bridge]);
 
+  // --- composited-next: the island render, in the roster's island slot ------
+  // Installed as a REFLECTOR rather than driven from this component's frame loop
+  // (design-013 §6, B5 R1): the profile forwards `renders.island` between DomRender and
+  // VideoIngest, so three's submits land after the ECS has settled and before GpuCompose
+  // samples them. Cleared on unmount, which also disposes every target it minted.
+  const onIslandRenderRef = useRef(onIslandRender);
+  onIslandRenderRef.current = onIslandRender;
+  useEffect(() => {
+    if (content === undefined) return;
+    const render = createIslandRender({
+      gl: {
+        setRenderTarget: (t) => gl.setRenderTarget(t as WebGLRenderTarget | null),
+        clear: () => {
+          gl.setClearColor(0x000000, 0);
+          gl.clear(true, true, false);
+        },
+        render: (sc, cam) => gl.render(sc as never, cam as never),
+      },
+      renderer: () => glRef.current as unknown as WebGpuRendererLike,
+      bridge,
+      world,
+      content,
+    });
+    onIslandRenderRef.current?.(render);
+    return () => {
+      onIslandRenderRef.current?.(null);
+      render.dispose();
+    };
+  }, [content, gl, bridge, world]);
+
   // The pass. Priority 1 suppresses R3F's default render — we own the frame.
   useFrame((_, delta) => {
+    // COMPOSITED-NEXT: nothing to do here, and PRIORITY 1 is the point — it suppresses R3F's
+    // default render, so the <Canvas> presents nothing of its own. The islands are rendered by
+    // the reflector below, in the roster slot, before GpuCompose's submit.
+    if (pool === null) return;
     const profiling = statsCbRef.current !== undefined;
     if (profiling) {
       if (gpuProfilerState.current === "idle") {

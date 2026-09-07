@@ -17,14 +17,25 @@
  * have to pretend otherwise. They meet at `PoolLike` in `compositor-pass.ts`,
  * which is the seam the frame pass actually needs, and nowhere else.
  *
- * `RenderTarget` comes from the `three` ROOT entry (`Three.Core.js:92`), not
- * from `three/webgpu`: it is the backend-neutral base class, so this file adds
- * no `three/webgpu` edge to the module graph. That matters — three declares
+ * The TARGET ITSELF is no longer minted here: `island-target.ts` owns the recipe
+ * (`createIslandTarget`) and the cost model, because B5's IslandRender mints the same
+ * target keyed by Residency HANDLE and may not import this file — design-013 §10.8 deletes
+ * the pool at B8. This module keeps the POLICY and re-exports the two constants.
+ *
+ * PINS, and their end date (design-013 §4, B5): `pin`/`isPinned`/`retired` below are the
+ * refcounts the `Retained` TAG replaces. Residency's LRU honours that tag directly, and the
+ * new leg has no pin at all — a target there is keyed by the handle the world names, so a
+ * resize MINTS a handle rather than mutating one and there is nothing for a reader to be
+ * blind to. These stay until B8 deletes the old leg with them.
+ *
+ * `RenderTarget` is a TYPE here (the recipe moved). It came from the `three` ROOT entry, not
+ * from `three/webgpu`: the backend-neutral base class, so neither file adds a
+ * `three/webgpu` edge to the module graph. That matters — three declares
  * `sideEffects: ["./src/nodes/**\/*"]`, so a `three/webgpu` import is not
  * tree-shaken, and putting one here would push the node material system into
  * every stratified app's bundle.
  */
-import { RenderTarget, SRGBColorSpace } from "three";
+import type { RenderTarget } from "three";
 import {
   islandIsMultisampled,
   islandIsSrgb,
@@ -33,39 +44,13 @@ import {
   type WebGpuRendererLike,
 } from "./webgpu-backend";
 import type { PoolEntryInfo, PoolPin } from "./pool";
+import { createIslandTarget, WEBGPU_ISLAND_SAMPLES, webGpuRenderTargetBytes } from "./island-target";
 
-/**
- * MSAA sample count inside island targets — the same 4 the WebGL pool uses.
- *
- * design-012 §4: "MSAA lives inside island render targets only", and the
- * compositor target itself stays MSAA-free (its quad edges are analytic
- * rounded-rect AA, and the ground lattice is smoothstepped). So this number is
- * the ONLY MSAA in the composited profile, which is why
- * `acquireCompositorDevice`'s rule 1 (never ask for a compatibility adapter)
- * is load-bearing rather than defensive: on a compatibility device three sets
- * `renderer._samples = 0` and this 4 silently becomes 1.
- */
-export const WEBGPU_ISLAND_SAMPLES = 4;
-
-/**
- * GPU bytes for one WebGPU island target.
- *
- * Same three-surface allocation model as the WebGL pool, re-derived against
- * what three actually creates rather than carried over on faith:
- *   - the resolve texture, single-sample (`WebGPUTextureUtils.js:374` with
- *     `primarySamples = 1` from `WebGPUUtils.js:128`) — 4 bytes/px;
- *   - `msaaTexture` at `sampleCount = samples` (`:413-416`) — 4 × samples;
- *   - the depth texture, also multisampled — 4 × samples.
- * At 4 samples that is 4 + 16 + 16 = 36 bytes/px, identical to the WebGL
- * figure, so the two profiles are graded against the same budget and a
- * cross-profile memory comparison stays honest.
- */
-export function webGpuRenderTargetBytes(pixelWidth: number, pixelHeight: number): number {
-  const msaa = WEBGPU_ISLAND_SAMPLES > 1;
-  const colorBytes = 4 * (msaa ? 1 + WEBGPU_ISLAND_SAMPLES : 1);
-  const depthBytes = 4 * (msaa ? WEBGPU_ISLAND_SAMPLES : 1);
-  return pixelWidth * pixelHeight * (colorBytes + depthBytes);
-}
+// The target recipe and its cost model moved to `island-target.ts` at B5 so IslandRender —
+// which mints the SAME target, keyed by Residency handle instead of by entity — could share
+// them without importing this pool, which design-013 §10.8 deletes at B8. Re-exported here
+// because this module's consumers (the pool tests, the barrel) already name them.
+export { WEBGPU_ISLAND_SAMPLES, webGpuRenderTargetBytes };
 
 interface PoolEntry {
   rt: RenderTarget;
@@ -163,21 +148,9 @@ export class WebGpuRenderTargetPool {
       }
     }
 
-    const rt = new RenderTarget(pixelWidth, pixelHeight, {
-      samples: WEBGPU_ISLAND_SAMPLES,
-      depthBuffer: true,
-      stencilBuffer: false,
-    });
-    // Declaring the colour space is what makes three's materials sRGB-ENCODE on
-    // write, so the target holds display-ready values — the same contract the
-    // WebGL pool states. The consequence differs though, and it is the sRGB law
-    // (design-012 §4): three backs an SRGBColorSpace target with an `-srgb` GPU
-    // format, whose sampler DECODES to linear on read, while the swap chain
-    // cannot be `-srgb`. So the compositor MUST re-encode — guarded by the
-    // format `islandIsSrgb()` reads back, never by this line, because this line
-    // is a request and that one is the answer.
-    rt.texture.colorSpace = SRGBColorSpace;
-    rt.texture.name = `ice:island:${key}`;
+    // The recipe — MSAA, depth, and the sRGB REQUEST whose ANSWER is the format
+    // `isSrgb()` reads back — is `island-target.ts`'s, shared with IslandRender.
+    const rt = createIslandTarget(pixelWidth, pixelHeight, `ice:island:${key}`);
     const bytes = webGpuRenderTargetBytes(pixelWidth, pixelHeight);
     this.entries.set(key, { rt, pixelWidth, pixelHeight, effectiveDpr, bytes, lastUsedMs: nowMs });
     this.totalBytes += bytes;

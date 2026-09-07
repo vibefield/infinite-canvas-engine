@@ -42,7 +42,9 @@
  *   the entry alive for a destroy list that has nothing to do is how the table
  *   grows without bound: `ownFor` re-mints on every size change, so a resize
  *   drag on a gl island minted one dead entry per frame — one per frame that
- *   nothing in Phase A would ever drain, because Phase A has no reflector.
+ *   nothing would ever drain, because Phase A had no reflector. (B5's IslandRender is the
+ *   first one: it keys its render target by HANDLE, so this rule is what keeps a resize
+ *   drag at one live target instead of one per frame.)
  * - A handle re-retained before it reaches zero is neither drained nor
  *   forgotten. It never became garbage: a card that loses its slot and takes it
  *   back inside one frame must not have its texture destroyed underneath it. A
@@ -58,8 +60,11 @@
  * ## Realisation is Phase B's
  *
  * `realize` / `realized` are the seam where a handle gains an actual
- * `GPUTexture`. **Neither is called in Phase A** — A2 computes allocation and
- * writes `TextureRef`; no renderer reads it yet (plan §3). `GPUTexture` is
+ * `GPUTexture`. Phase A never called them — A2 computed allocation and wrote
+ * `TextureRef` with no renderer reading it. **Since B4a the ground's
+ * `ContentResidency` is the one caller**, and every render goes through IT rather
+ * than through these, so a realisation the forget rule can report always exists
+ * (a texture the table never heard of would leak). `GPUTexture` is
  * named here for the same reason `surface/compositor-registry.ts` names it:
  * WebGPU is not DOM, it exists in workers, and a hand-rolled structural mirror
  * would rot.
@@ -158,7 +163,12 @@ export interface TextureTable {
    * in the module header).
    */
   drain(): TextureHandle[];
-  /** Phase B's seam. `false` for an unknown handle. Never called in Phase A. */
+  /**
+   * Phase B's seam, LIVE since B4a: the ground's `ContentResidency` is the one caller, and
+   * every render (DomRender, IslandRender, VideoIngest) realises THROUGH it rather than here,
+   * so the forget rule above always sees a realisation it can report. `false` for an unknown
+   * handle.
+   */
   realize(handle: TextureHandle, texture: GPUTexture): boolean;
   realized(handle: TextureHandle): GPUTexture | undefined;
   /**

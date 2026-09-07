@@ -4,7 +4,15 @@
  * chain: r3f → react → dom → core → kernel.
  */
 export { createGLBridge, type GLBridge, type GLBridgeOpts, type IslandHandle, type IslandFrameCallback } from "./bridge";
-export { createIslandStateStore, type IslandRenderState, type IslandStateStore, type PaintedAt } from "./island-state";
+export {
+  createIslandStateStore,
+  islandPaintable,
+  type IslandPaintContext,
+  type IslandPaintFacts,
+  type IslandRenderState,
+  type IslandStateStore,
+  type PaintedAt,
+} from "./island-state";
 export {
   runCompositorPass,
   type CompCameraLike,
@@ -28,6 +36,16 @@ export {
   WEBGPU_ISLAND_SAMPLES,
   type WebGpuRenderTargetPoolOpts,
 } from "./webgpu-pool";
+export { createIslandTarget } from "./island-target";
+// design-013 §8 B5: the composited-next leg's island half — a reflector in the ground's
+// `renders.island` slot, rendering into the PRIVATE target Residency named.
+export {
+  createIslandRender,
+  type IslandGlLike,
+  type IslandRender,
+  type IslandRenderOpts,
+  type IslandRenderStats,
+} from "./island-render";
 export {
   createIslandSourceBinder,
   type GlSourcePoolLike,

@@ -12,6 +12,50 @@ exist to catch regressions by eye across milestones, not to assert a
 threshold in a test. The bench source is the single source of truth; this
 file is its recorded output.
 
+## design-013 B5 — island parity under composited-next (2026-09-07)
+
+The first island numbers in this file. `pnpm --filter widgetlab-desktop next-islands` runs a
+`gl` island through the whole new leg — `<InfiniteCanvas profile={compositedNext}>` on the
+app-owned device, a real `<Canvas gl={islandRendererFactory}>`/`<GLViews>`, IslandRender in
+the roster's island slot, the ground sampling the result in `own` mode — and grades it the
+way `island-parity` graded S5: the CONTROL first, then everything read against it.
+
+The scene is three flat quads, one of them ROTATED. That is deliberate: everything else is
+axis-aligned on whole device pixels, so its edges carry no partial coverage and the two
+backends agree bit for bit — a parity number about nothing. The rotated edge is what makes
+MSAA and the rasteriser matter.
+
+Target 480×320 (a 240×160 card at band 1, dpr 2 — `geometry().rasterSize`, which is exactly
+what Residency sized the handle to).
+
+| measurement | composited-next | stratified (WebGL) |
+| --- | --- | --- |
+| noise floor (two warm repaints) | 0 / 153,600 px | 0 / 153,600 px |
+| first-paint transient (cold vs warm) | 0 / 153,600 px, maxΔ 0 | n/a |
+| ink pixels | 44,882 | 44,860 |
+| ink centroid (x, y) | 0.4910, 0.3891 | 0.4910, 0.3889 |
+| cross-backend, beyond 1/255 | 197 / 153,600 px = 0.1283 % (maxΔ 64, mean 0.033) | — |
+| ground-drawn pixel vs the island's own texel | maxΔ 0 | — |
+
+**THE FIRST-PAINT TRANSIENT DID NOT REPRODUCE.** S5 found that a freshly built
+`WebGPURenderer`'s first island paint differed from every later one (84 opaque-interior px on
+a lit torus knot) and recorded it as a finding about three. Here cold and warm are bit-
+identical. The honest reading is narrow: this scene is three unlit quads, S5's was a lit knot
+with an environment map, so what is measured is that **the transient does not appear on flat
+unlit geometry under composited-next** — not that three no longer has one. A slice that
+depends on the first paint being final should re-measure on its own content.
+
+The cross-backend 0.1283 % is entirely the rotated edge: WebGL and WebGPU resolve 4× MSAA
+coverage differently, which is what `island-parity`'s 2 % tolerance exists for. Both arms are
+internally deterministic (noise floor 0), both place the ink mass at the same spot to within
+0.0002 of the frame, and the ground draws the island's own texel exactly.
+
+Churn, same run: idle-zero holds with a still island (0 submits, 0 island renders over 362
+frames); an animating island at the 15 fps bucket rendered 38 times in 2.50 s (263 frames
+clamped) and its paint-attributed callback ticked 38 times with it; paused, 0 renders over
+2.51 s. A 30-frame resize drag minted 31 handles, disposed 30, left 0 stale targets and 0
+uncaptured GPU errors.
+
 ## M19 A2 — the fixed-layer allocator's packing waste (2026-09-06)
 
 design-013 §4 replaces the paged, growing atlas with fixed 2048² layers of one
