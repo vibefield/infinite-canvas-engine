@@ -28,7 +28,7 @@ import {
   type FramePreviewSnapshot,
   type World,
 } from "@ice/core";
-import { useCanvasEngine, useFramePreview, useOps, useWidgetProps } from "@ice/react";
+import { useCanvasEngine, useChromeOwner, useFramePreview, useOps, useWidgetProps } from "@ice/react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -118,6 +118,9 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
   const ops = useOps();
   const engine = useCanvasEngine();
   const snapshot = useFramePreview(entity);
+  // design-014, B3b: under the ground profile the face is the ground's live portal (its inside drawn
+  // at rest through the hole) — the DOM keeps only the bar; the minis would cover the portal.
+  const owner = useChromeOwner();
 
   const title = props?.title ?? "Folder";
   const accent = props?.accent ?? "#7B96FF";
@@ -161,7 +164,8 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
         title={`Double-click to open ${title}`}
       >
         {/* Preview portal: dot-grid backdrop + live minis of the children. */}
-        <div
+        {owner === "dom" ? (
+          <div
           style={{
             position: "absolute",
             left: PORTAL.x,
@@ -205,6 +209,7 @@ function CardContainerView({ entity, world }: { entity: Entity; world: World }):
             </div>
           )}
         </div>
+        ) : null}
 
         {/* Bottom bar: accent folder icon · name · count pill (mock .bar). */}
         <div

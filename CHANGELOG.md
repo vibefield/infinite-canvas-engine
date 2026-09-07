@@ -80,6 +80,33 @@ the entity's own kind behaviour.
 
 ### Added
 
+- **The DOM boundary — design-014, B3b** (2026-09-07). Under the composited-next profile a
+  DOM card's host is CONTENT only: chrome exists once, on the ground. **DomCompose**
+  (`groundCompose`'s `compose.domCompose`, registered by the profile just before GpuCompose)
+  runs the frame's build and writes each card's content element change-only — `clip-path`
+  as a polygon marched from the card program's inner distance field (`CardProgram.inner`,
+  recomputed only when `clipKey` says the shape moved: the reveal's ~300 ms, never a pan or
+  a lift), the lift on `transform`, the hold's opacity — and GpuCompose draws the same
+  geometry. **The router's part channel**: the interaction stack carries a `framePick` slot
+  (`FramePickSource { pad, hit }`) the ground fills at mount with its last-drawn geometry
+  through the program's `pick()`; `picking` widens the hit past the content rect by the
+  chrome's reach and asks the source, writing `PointerPart` on the pointer change-only; a
+  recognizer spawned on a part carries `DownPart`, arbitration withholds the move route from
+  it (a press on a control never lifts the card), the select behaviour hands the tap over as
+  the `PartTap` resource instead of selecting, and `groundCompose({ onPart })` is the app's
+  action. A rounded corner's void and a press on the chrome band now pick as drawn: the band
+  is a drag handle, the corner is the canvas. **`useChromeOwner()`** (`@ice/react`, from the
+  profile's `chromeOwner`: `ground` for composited-next, `dom` otherwise) lets an app's card
+  shell render bare under the ground — widgetlab's CardShell and its folder view do, so the
+  folder's face is the ground's live portal and its DOM minis retire; the old profiles keep
+  their CSS chrome until B8. The `next-boot` rig's boundary phase: every card's clip written
+  as a polygon; the ring band and the shadow skirt read the same on the page with the DOM
+  hosts shown and hidden (chrome once), the title differs (content above), the folder's face
+  is the portal; a click on the ground-drawn close button reaches `onPart("close")` and
+  neither grabs nor deselects; a drag begun on the band moves the card — ALL PASS. Four core
+  tests drive the pick through the full stack. A portal's inside now resolves unrevealed
+  (`IDLE`), as an unselected card is. Deferred to B4: the D7 promote witness and the parity
+  redefinition (both need content the compositor draws); the P4 resize grips stay DOM chrome.
 - **The ground's pack seam — design-014, B3s** (2026-09-07). The ground engine now ships
   only what every infinite canvas needs and what depends on a world fact: the lattice and
   the field bake, the DOT glyph, the slot tree and the compositor, the SHELL card (a

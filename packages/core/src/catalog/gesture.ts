@@ -270,6 +270,15 @@ export const DragBounds = defineComponent("DragBounds", {
  */
 export const Down = defineComponent("Down", { x: "f64", y: "f64", ms: "f64" });
 
+/**
+ * The card program's PART the pointer was on at the down (design-014, B3b) —
+ * attached at recognizer spawn from the pointer's `PointerPart` when it names
+ * one. Arbitration withholds the move route from a recognizer that carries
+ * it (a press on a control never lifts the card); the tap behaviour hands the
+ * tap to the app as a `PartTap` instead of selecting.
+ */
+export const DownPart = defineComponent("DownPart", { part: "string" });
+
 /** On widgets, toggled O(1) when the drop candidate changes (design-001 §5.5). */
 export const OverlapCandidate = defineTag("OverlapCandidate");
 

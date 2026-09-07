@@ -28,6 +28,7 @@ import {
   type Entity,
   type World,
 } from "@ice/core";
+import { useChromeOwner } from "@ice/react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useDragLift } from "./use-drag-lift";
 
@@ -100,6 +101,9 @@ export function CardShell({
   /** Omitted for GL cards — their content floats in the island above (GlCardChrome). */
   children?: ReactNode;
 }) {
+  // Who draws the chrome (design-014, B3b): under the ground profile the plate, shadow, ring,
+  // lift and glow are the ground's — this shell renders its children bare, runs no poll.
+  const owner = useChromeOwner();
   // Lift signal + scale: the shared hook (use-drag-lift.ts, 2026-07-18) —
   // Grab-or-armed-hold truth, ChromeSettings.liftScale for the number.
   const { lifted, scale } = useDragLift(world, entity);
@@ -110,6 +114,7 @@ export function CardShell({
   const [hot, setHot] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
 
   useEffect(() => {
+    if (owner === "ground") return; // the ground reads these facts itself; no poll
     const id = setInterval(() => {
       // Sole selection → the in-card ring; ≥2 → the engine's P4 union box.
       let selCount = 0;
@@ -131,7 +136,13 @@ export function CardShell({
       }
     }, 60); // snappy — the lift must read as an immediate response to the hold
     return () => clearInterval(id);
-  }, [world, entity]);
+  }, [world, entity, owner]);
+  if (owner === "ground") {
+    // CONTENT only, TRANSPARENT: the plate is the ground's (a container's face shows the live portal
+    // beneath); a card that wants a tint paints it as content. The host is clipped, lifted and faded
+    // by DomCompose from the same resolve() the ground drew.
+    return <div style={{ position: "relative", width: "100%", height: "100%" }}>{children}</div>;
+  }
 
   const baseShadow = lifted
     ? "0 30px 60px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.06)"

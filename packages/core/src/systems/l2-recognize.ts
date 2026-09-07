@@ -32,6 +32,7 @@ import {
   Captures,
   ClaimedBy,
   Down,
+  DownPart,
   Drag,
   DragBounds,
   GesturePhases,
@@ -48,6 +49,7 @@ import {
   Pinch,
   Pointer,
   PointerButtons,
+  PointerPart,
   PointerScreen,
   PointerWheel,
   RequiresFail,
@@ -189,6 +191,9 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
 
         const screen = ctx.read(pointer, PointerScreen);
         const captureTarget = ctx.getRelation(pointer, TouchesExact);
+        // The part under the down (design-014, B3b): copied onto every recognizer this down spawns.
+        const downPart = ctx.get(pointer, PointerPart)?.part ?? "";
+
         // Gesture timing anchors on the CLOCK at ingest. The 2026-07-12
         // event-timestamp anchor is retired (2026-07-17): event.timeStamp and
         // rAF now are DIFFERENT clocks under throttling (measured seconds of
@@ -296,6 +301,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
             });
           }
           ctx.addRelation(rec, Watches, pointer);
+          if (downPart !== "") ctx.addComponent(rec, DownPart, { part: downPart });
           if (captureTarget !== undefined) {
             ctx.setRelation(rec, Captures, captureTarget);
             ctx.addTag(rec, HadCapture);

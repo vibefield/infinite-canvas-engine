@@ -35,18 +35,23 @@
 
 import {
   Active,
+  Captures,
   ChromeSettings,
   Container,
+  DownPart,
   DragBounds,
   DropTarget,
   Grab,
   MeasuredSize,
   OverlapCandidate,
   OverlapRejected,
+  Pointer,
+  PointerPart,
   Position,
   PrefabId,
   Selected,
   Size,
+  Targets,
   compareStackOrder,
   createSiblingOrderIndex,
   defineQuery,
@@ -57,10 +62,11 @@ import {
 } from "@ice/core";
 import { type PortalFace, portalContent } from "../card/content";
 import type { FrameInstance } from "../card/frame-pass";
-import { type Material, MATERIAL, REST, SHELL_RADIUS, type ShellGeometry } from "../card/geometry";
+import { IDLE, type Material, MATERIAL, SHELL_RADIUS, type ShellGeometry } from "../card/geometry";
 import { MAX_FRAMES } from "../card/layout";
 import { type CardMotion, MOTION_DEFAULTS, type MotionTuning, newMotion, stepMotion, toMotion } from "../card/motion";
-import { type CardProgram, NO_PART, shellProgram } from "../card/program";
+import { type CardProgram, NO_PART, type PartState, shellProgram } from "../card/program";
+import type { HostEntry } from "./dom-compose";
 import { type FieldConfig, type FieldSource, fieldReachPx, MAX_SOURCES } from "../field/layout";
 import type { CameraState, Rect } from "../nav/flight";
 import { FOLDER_FACE, type LivePortal, PORTAL_CAP, PORTAL_GATE, portalAt } from "../nav/portal";
@@ -154,6 +160,8 @@ export interface FrameBuilder {
   geometryOf(e: Entity): ShellGeometry | undefined;
   /** The last build's motion state for an entity — flux, never a world fact. */
   motionOf(e: Entity): CardMotion | undefined;
+  /** The last build's on-screen cards with their content rects — what DomCompose writes the DOM boundary for. */
+  entries(): readonly HostEntry[];
   stats(): FrameBuilderStats;
   dispose(): void;
 }
@@ -169,6 +177,9 @@ const EMPTY_STATS: FrameBuilderStats = { active: 0, cards: 0, containers: 0, por
 
 // Widgets carry PrefabId (the preview store's own membership test); Active = a ChildOf root in the current nav frame.
 const widgetsQ = defineQuery([Position, Size, PrefabId, Active]);
+// The router's part channel (design-014, B3b): pointers over a part, recognizers pressing one.
+const pointersQ = defineQuery([Pointer, PointerPart]);
+const pressesQ = defineQuery([DownPart]);
 
 /** A widget's drawn size: the `MeasuredSize` rider when it has one (auto-sized dom cards), else `Size` — the preview store's rule. */
 export function sizeOf(world: World, e: Entity): { readonly w: number; readonly h: number } | undefined {
@@ -260,11 +271,41 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
   const order = createSiblingOrderIndex(world);
   const states = new Map<Entity, CardState>();
   let wake: ((reason: WakeReason) => void) | null = null;
+  let entries: HostEntry[] = [];
+  let partsSig = "";
+  /**
+   * The part channel this frame: for each pointer over a part, the card it targets → the part
+   * (hover); for each live recognizer that pressed a part, the card it captured → the part
+   * (press). And a signature of both, so a change wakes a build (`changed()`).
+   */
+  const partsNow = (): { hover: Map<Entity, string>; press: Map<Entity, string>; sig: string } => {
+    const hover = new Map<Entity, string>();
+    const press = new Map<Entity, string>();
+    const bits: string[] = [];
+    world.query(pointersQ).each((batch) => {
+      for (const row of batch) {
+        const p = batch.entity(row);
+        const part = world.get(p, PointerPart)?.part ?? "";
+        const target = world.getRelation(p, Targets);
+        if (part !== "" && target !== undefined) { hover.set(target, part); bits.push(`h${target}:${part}`); }
+      }
+    });
+    world.query(pressesQ).each((batch) => {
+      for (const row of batch) {
+        const rec = batch.entity(row);
+        const part = world.get(rec, DownPart)?.part ?? "";
+        const target = world.getRelation(rec, Captures);
+        if (part !== "" && target !== undefined) { press.set(target, part); bits.push(`p${target}:${part}`); }
+      }
+    });
+    return { hover, press, sig: bits.join("|") };
+  };
   const wakes = Object.fromEntries(WAKE_REASONS.map((r) => [r, 0])) as Record<WakeReason, number>;
   const woke = (reason: WakeReason): void => { wakes[reason] += 1; wake?.(reason); };
   // The journal of every fact a build reads — value writes, adds, removals and despawns of the
   // components, membership flips of the tags. `coarse: false`: no writer of these pokes raw columns.
   const collector = world.changes.collect({
+    // the part channel is NOT journaled (a pointer's first pick would be a frame): `changed()` compares its signature instead
     components: [Position, Size, MeasuredSize, Grab, DragBounds, ...(program.reads?.components ?? [])],
     tags: [Selected, OverlapCandidate, OverlapRejected, Active, Container, ...(program.reads?.tags ?? [])],
     coarse: false,
@@ -287,7 +328,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
     states.delete(e);
   };
 
-  /** A portal's inside at REST from its snapshot: the children's frames and sources under the slot's camera. */
+  /** A portal's inside at rest (unrevealed) from its snapshot: the children's frames and sources under the slot's camera. */
   const insideOf = (snap: FramePreviewSnapshot, cam: CameraState, theme: GroundTheme): { frames: FrameInstance[]; sources: FieldSource[] } => {
     const frames: FrameInstance[] = [];
     const sources: FieldSource[] = [];
@@ -295,7 +336,8 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       if (frames.length >= MAX_FRAMES) break;
       const r = c.rect;
       if (!(r.width > 0) || !(r.height > 0)) continue;
-      const G = program.resolve({ card: { centre: [r.x + r.width / 2, r.y + r.height / 2], contentHalf: [r.width / 2, r.height / 2], radius }, motion: REST, material, dt: 0, part: NO_PART });
+      // at rest AND unrevealed: a preview carries no selection, and an unselected card shows no chrome band, ring or controls
+      const G = program.resolve({ card: { centre: [r.x + r.width / 2, r.y + r.height / 2], contentHalf: [r.width / 2, r.height / 2], radius }, motion: IDLE, material, dt: 0, part: NO_PART });
       frames.push({ geometry: G, surface: theme.card });
       sources.push(fieldSourceOf(G, cam, strength));
     }
@@ -307,6 +349,8 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       if (disposed) return { sources: [], frames: [], portals: [], stats: EMPTY_STATS };
       const lift = liftScale();
       const margin = marginOf(config, cam.zoom);
+      const parts = partsNow();
+      partsSig = parts.sig;
       const ordinals = order.ordinals();
       const list: Entity[] = [];
       world.query(widgetsQ).each((batch) => { for (const row of batch) list.push(batch.entity(row)); });
@@ -315,6 +359,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       // Pass 1 — every on-screen card's flux and geometry, and the portal candidates.
       const seen = new Set<Entity>();
       const rows: Row[] = [];
+      const nextEntries: HostEntry[] = [];
       const cands: { row: Row; area: number }[] = [];
       let live = false;
       let containers = 0;
@@ -343,7 +388,8 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
         if (stepMotion(m, dt, tuning)) live = true;
         // the program resolves the head (and its own tail); its own springs report through `out`
         const out = { live: false };
-        const G = program.resolve({ card: { centre, contentHalf, radius }, motion: toMotion(m, lift), material, dt, part: NO_PART, key: e, out });
+        const part: PartState = { hover: parts.hover.get(e) ?? null, press: parts.press.get(e) ?? null };
+        const G = program.resolve({ card: { centre, contentHalf, radius }, motion: toMotion(m, lift), material, dt, part, key: e, out });
         if (out.live) live = true;
         st.geometry = G;
         let portal: Row["portal"];
@@ -359,6 +405,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
         } else if (st.unsub !== undefined) { st.unsub(); st.unsub = undefined; }
         const row: Row = { e, G, portal };
         rows.push(row);
+        nextEntries.push({ entity: e, G, w: size.w, h: size.h });
         if (portal !== undefined) cands.push({ row, area: portal.live.clip.hx * portal.live.clip.hy });
       }
       // A card the builder no longer sees forgets its flux.
@@ -402,6 +449,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
         }
         sources.push(fieldSourceOf(row.G, cam, strength));
       }
+      entries = nextEntries;
       if (capped > 0) console.warn(`[ice] ground/compose: ${capped} card${capped === 1 ? "" : "s"} past the ${limit}-record cap were not drawn`);
       stats = { active: list.length, cards: frames.length, containers, portals: portals.length, inside, capped, truncated, live };
       return { sources, frames, portals, stats };
@@ -415,6 +463,8 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       if (delta.changed.length > 0 || delta.coarse.length > 0) { wakes.world += 1; any = true; }
       if (delta.removed.length > 0) { wakes.removed += 1; any = true; }
       if (order.stale()) { wakes.order += 1; any = true; }
+      // the part channel is read, not journaled: a pointer moving between two parts of the same name is a change
+      if (partsNow().sig !== partsSig) { wakes.world += 1; any = true; }
       return any;
     },
     observe(cb) {
@@ -425,6 +475,7 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
     wakes: () => ({ ...wakes }),
     geometryOf: (e) => states.get(e)?.geometry ?? undefined,
     motionOf: (e) => states.get(e)?.motion,
+    entries: () => entries,
     stats: () => stats,
     dispose() {
       disposed = true;

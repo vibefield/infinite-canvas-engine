@@ -11,8 +11,7 @@ export {
   useSelected,
   useBehavior,
   useWidgetProps,
-  useWorldComponent,
-} from "./hooks";
+  useWorldComponent, ChromeOwnerContext, type ChromeOwner, useChromeOwner } from "./hooks";
 export { WidgetRoot, type WidgetComponentProps, type WidgetHosts, type WidgetRootProps } from "./widget-root";
 
 // M10 React facade (design-005 §5): engine context, commit seam, hooks, keymap,

@@ -28,6 +28,19 @@ import { createContext, useCallback, useContext, useMemo, useRef, useSyncExterna
 
 /** Per-portal hidden flag (WidgetRoot provides it; defaults to live). */
 export const WidgetHiddenContext = createContext(false);
+/**
+ * Who draws a card's chrome (design-014, B3b): `dom` — the app's shell does, in
+ * CSS; `ground` — the ground draws the plate, shadow, ring, lift and controls,
+ * and the host is content only. `<InfiniteCanvas>` provides it from the
+ * profile; a shell reads it with {@link useChromeOwner} and renders bare
+ * under `ground`. Defaults to `dom`.
+ */
+export type ChromeOwner = "dom" | "ground";
+export const ChromeOwnerContext = createContext<ChromeOwner>("dom");
+/** Who draws this widget's chrome under the mounted profile — `dom` (the app's shell) or `ground` (the ground). */
+export function useChromeOwner(): ChromeOwner {
+  return useContext(ChromeOwnerContext);
+}
 
 /** Internal live gate: transition holds suppress callbacks before React commits the frozen snapshot. */
 export const WidgetMountStoreContext = createContext<WidgetMountStore | undefined>(undefined);

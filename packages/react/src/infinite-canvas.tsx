@@ -46,8 +46,7 @@ import {
   type MeasureQueue,
   type ReflectorDef,
   type WirePreviewBuffer,
-  type World,
-} from "@ice/core";
+  type World, type InteractionStack } from "@ice/core";
 import {
   attachPointerAdapter,
   attachWidgetFocus,
@@ -71,6 +70,7 @@ import { EngineProvider } from "./engine-context";
 import { attachKeymap, type KeymapEntry } from "./keymap";
 import type { PresentationProfile } from "./profiles/contract";
 import { stratifiedProfile } from "./profiles/stratified";
+import { ChromeOwnerContext } from "./hooks";
 import { WidgetRoot } from "./widget-root";
 
 /** Handed to {@link InfiniteCanvasProps.onReady} for app-side GL/devtools wiring. */
@@ -129,6 +129,10 @@ export type GroundLayerFactory = (ctx: {
   readonly gpu: CanvasEngine["gpu"];
   /** The preview store (`engine.previews`): a container's inside for the ground's live portals (design-013 §8 B3). */
   readonly previews: CanvasEngine["previews"];
+  /** The DOM hosts' content elements, by entity — what a DomCompose clips and lifts (design-014, B3b). */
+  readonly hosts: { contentOf(entity: Entity): HTMLElement | undefined };
+  /** The interaction stack's frame pick slot: the ground sets its hit test here at mount, clears it at dispose (design-014, B3b). */
+  readonly framePick: InteractionStack["framePick"];
 }) => GroundLayerHandle;
 
 export interface InfiniteCanvasProps {
@@ -252,6 +256,8 @@ export function InfiniteCanvas({
         transitions: engine.transitions,
         gpu: engine.gpu,
         previews: engine.previews,
+        hosts: { contentOf: (e) => domWidgets.hostFor(e) },
+        framePick: stack.framePick,
       }) ?? null;
     groundRef.current = groundLayer;
     if (groundLayer !== null && gridConfigRef.current !== undefined) {
@@ -382,12 +388,14 @@ export function InfiniteCanvas({
 
   return (
     <EngineProvider engine={engine}>
-      <div ref={containerRef} className={className} style={{ width: "100%", height: "100%", ...style }} data-ice-canvas="">
-        {hosts !== undefined ? (
-          <WidgetRoot world={engine.world} store={engine.runtime.store} hosts={hosts} />
-        ) : null}
-        {children}
-      </div>
+      <ChromeOwnerContext.Provider value={profile?.chromeOwner ?? "dom"}>
+        <div ref={containerRef} className={className} style={{ width: "100%", height: "100%", ...style }} data-ice-canvas="">
+          {hosts !== undefined ? (
+            <WidgetRoot world={engine.world} store={engine.runtime.store} hosts={hosts} />
+          ) : null}
+          {children}
+        </div>
+      </ChromeOwnerContext.Provider>
     </EngineProvider>
   );
 }

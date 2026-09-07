@@ -66,6 +66,26 @@ export const WentCancelled = defineTag("WentCancelled");
 export const HandledByWidget = defineTag("HandledByWidget");
 
 /**
+ * The PART of a card program under the pointer's exact hit (design-014, B3b):
+ * a control the ground draws — `close`, `lock`, whatever the registered
+ * program names — or `""` for the content, the frame band, the canvas. Written
+ * change-only by `picking` from the interaction stack's frame pick source (the
+ * ground's `pick()` over its last-drawn geometry); absent while no source is
+ * registered. A press that lands on a part is a CLICK on a control, never a
+ * move — the recognizer copies it into `DownPart` at spawn.
+ */
+export const PointerPart = defineComponent("PointerPart", { part: field("string", { default: "" }) });
+
+/**
+ * A tap that landed on a card program's PART (design-014, B3b): the select
+ * behaviour writes this instead of selecting — `seq` advances per tap, so a
+ * reflector (the ground's) observing it hands `(target, part)` to the app's
+ * `onPart`. One record: two part taps in one frame keep the last (a
+ * frame-rate event, accepted).
+ */
+export const PartTap = defineResource("PartTap", { seq: "u32", target: "eid", part: "string" });
+
+/**
  * ONE-TICK: this tick's wheel deltas were ceded to scrollable widget content
  * (design-007 §3.5, petition I4) — the adapter let native scroll proceed and
  * flagged the fact `wheelHandled`. Deliberately NOT the shared `HandledByWidget`

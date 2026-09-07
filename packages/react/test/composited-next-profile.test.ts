@@ -24,6 +24,12 @@ describe("compositedNextProfile", () => {
     expect(compositedNextProfile.check(ctxOf(true, "old"))).toMatch(/groundCompose/);
     expect(compositedNextProfile.check(ctxOf(true, "compose"))).toBeNull();
   });
+  it("owns the chrome (design-014, B3b) and takes the ground's DomCompose into the roster when the handle carries it", () => {
+    expect(compositedNextProfile.chromeOwner).toBe("ground");
+    const domCompose: ReflectorDef = { name: "ground/dom-compose", always: true, flush() {} };
+    const ctx = { ...ctxOf(true, "compose"), ground: { reflector: slot, configureGrid() {}, dispose() {}, compose: { gpuCompose, domCompose } } as unknown as ProfileBootContext["ground"] };
+    expect(compositedNextProfile.reflectorsAfterGround(ctx).map((r) => r.name)).toEqual(["dom-render", "island-render", "video-ingest", "ground/dom-compose", "ground/gpu-compose"]);
+  });
   it("registers §6's roster in order, GpuCompose last; nothing for a foreign ground", () => {
     const names = compositedNextProfile.reflectorsAfterGround(ctxOf(true, "compose")).map((r) => r.name);
     expect(names).toEqual(["dom-render", "island-render", "video-ingest", "dom-compose", "ground/gpu-compose"]);

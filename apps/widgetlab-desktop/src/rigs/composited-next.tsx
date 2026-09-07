@@ -21,6 +21,13 @@
  *  7. the heat: the drop pair on a target with a recognizer's DragBounds lights the target
  *     (the plate under the light reads brighter), and clearing it fades out.
  *
+ *  B3b — the DOM boundary (design-014):
+ *  8. chrome exists ONCE: at a selected card's ring band and in its shadow skirt the page's
+ *     screenshot equals the ground canvas's own pixel (the DOM shell paints nothing there),
+ *     while over the card's title the screenshot differs (the DOM content IS above the plate);
+ *  9. a click on the ground-drawn close button reaches the app as `onPart("close")` and
+ *     neither grabs nor deselects the card; a drag begun on the frame band moves the card.
+ *
  * Mounted from `composited-next.html`, driven by `scripts/composited-next.mjs`.
  */
 import {
@@ -33,10 +40,13 @@ import {
   Grab,
   NO_ENTITY,
   OverlapCandidate,
+  Position,
+  Selected,
   spawnWidget,
+  TransformTween,
 } from "@ice/core";
 import { instrumentSubmits, type SubmitInstrument } from "@ice/ground";
-import { groundCompose, type GroundComposeContext, type GroundComposeHandle } from "@ice/ground/compose";
+import { groundCompose, type GroundComposeContext, type GroundComposeHandle, type ShellGeometry } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { compositedNextProfile, InfiniteCanvas } from "@ice/react";
@@ -70,7 +80,7 @@ interface Board {
   readonly expect: { readonly card: RGB; readonly bg: RGB };
   readonly note?: string;
 }
-interface Selected { readonly reveal: number; readonly ring: number; readonly live: boolean; readonly redraws: number }
+interface SelectResult { readonly reveal: number; readonly ring: number; readonly live: boolean; readonly redraws: number }
 interface Grabbed { readonly lift: number; readonly scale: number; readonly shadowSigma: number; readonly liftAfter: number; readonly scaleAfter: number }
 interface Heated {
   readonly hot: number; readonly tier: number; readonly at: readonly [number, number]; readonly half: readonly [number, number]; readonly r: number;
@@ -78,15 +88,31 @@ interface Heated {
   readonly lit: RGB; readonly cold: RGB;
   readonly hotAfter: number;
 }
+interface Boundary {
+  /** CSS px on the page for: the ring band just inside the top edge, the shadow skirt below the card, the close control, the title's area. */
+  readonly band: { sx: number; sy: number };
+  readonly shadow: { sx: number; sy: number };
+  readonly close: { sx: number; sy: number };
+  /** The folder's face centre — the ground's live portal, which the DOM must not cover. */
+  readonly face: { sx: number; sy: number };
+  readonly title: { sx: number; sy: number; w: number; h: number };
+  /** The ground canvas's own pixels at the band and shadow points (exact device px), and the plate. */
+  readonly canvas: { band: RGB; shadow: RGB; plate: RGB };
+  readonly domWrites: { writes: number; clips: number };
+  readonly clip: string;
+}
+interface CardState { readonly selected: boolean; readonly grabbed: boolean; readonly x: number; readonly y: number; readonly taps: { entity: number; part: string }[] }
 interface NextRig {
   readonly ready: Promise<void>;
   mount(): Promise<Mounted>;
   idle(ms: number): Promise<{ frames: number; submits: number; redraws: number; wakes: Record<string, number> }>;
   nudge(): Promise<{ submits: number; redraws: number }>;
   board(): Promise<Board>;
-  select(i: number): Promise<Selected>;
+  select(i: number): Promise<SelectResult>;
   grab(i: number): Promise<Grabbed>;
   heat(target: number, source: number): Promise<Heated>;
+  boundary(i: number): Promise<Boundary>;
+  cardState(i: number): Promise<CardState>;
 }
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -142,13 +168,14 @@ function mountNextRig(): NextRig {
   const theme = THEMES.dark;
   let cards: Entity[] = [];
   let zoom = 1;
+  const taps: { entity: number; part: string }[] = [];
 
   const ready = (async () => {
     gpu = await acquireCompositorDevice();
     instrument = instrumentSubmits(gpu.device);
     engine = createDemoEngine(gpu);
     // the app's own choice (design-014): VibeField's frame as the card program, the needle and the mat as grids
-    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame(), grids: [needleGlyph, cuttingMat] });
+    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame(), grids: [needleGlyph, cuttingMat], onPart: (entity, part) => { taps.push({ entity: Number(entity), part }); } });
     const ground = (ctx: GroundComposeContext) => { handle = factory(ctx); return handle; };
     createRoot(rootEl).render(
       <InfiniteCanvas engine={engine} ground={ground} profile={compositedNextProfile} className="h-full w-full" />,
@@ -163,6 +190,14 @@ function mountNextRig(): NextRig {
   const redraws = () => handle?.compose.redraws() ?? 0;
   /** World → device px under the rig's camera (at the origin, `zoom`). */
   const dpx = (wx: number, wy: number): [number, number] => { const dpr = Math.min(window.devicePixelRatio || 1, 2); return [wx * zoom * dpr, wy * zoom * dpr]; };
+  /** The exact device pixel at a world point (no patch): the ring band is 3 device px wide. */
+  const pixelAt = (img: ImageData, wx: number, wy: number): RGB => {
+    const [x, y] = dpx(wx, wy);
+    const px = Math.min(Math.max(Math.round(x), 0), img.width - 1);
+    const py = Math.min(Math.max(Math.round(y), 0), img.height - 1);
+    const i = (py * img.width + px) * 4;
+    return [img.data[i] as number, img.data[i + 1] as number, img.data[i + 2] as number];
+  };
   const sampleAt = async (points: Record<string, [number, number]>) => {
     const img = await readback(compose().canvas);
     const out: Record<string, RGB> = {};
@@ -270,6 +305,41 @@ function mountNextRig(): NextRig {
       const m2 = must(compose().motionOf(card), "motion");
       const G2 = must(compose().geometryOf(card), "geometry");
       return { ...lifted, liftAfter: m2.lift, scaleAfter: G2.scale };
+    },
+    async boundary(i) {
+      const card = must(cards[i], `card ${i}`);
+      const G = must(compose().geometryOf(card), "geometry") as ShellGeometry & { closeC?: readonly [number, number] };
+      const r = cardRect(i);
+      const [cx, cy] = G.centre;
+      const [hx, hy] = G.half;
+      // world points on WHOLE device pixels (the page's screenshot and the canvas readback must sample the same one):
+      // the ring band 1 px inside the top edge; the shadow skirt 14 px under the bottom edge; the close control's centre
+      // 40 px right of the top-centre: the engine's P4 resize grip sits at the centre of each edge
+      const band: [number, number] = [Math.round(cx) + 40, Math.round(cy - hy) + 1];
+      const shadow: [number, number] = [Math.round(cx), Math.round(cy + hy) + 14];
+      const close = G.closeC ?? [cx + hx - 21, cy - hy + 21];
+      const img = await readback(compose().canvas);
+      const content = document.querySelector(`[data-ice-entity="${String(card)}"] [data-ice-content]`) as HTMLElement | null;
+      const toScreen = (wx: number, wy: number) => ({ sx: wx * zoom, sy: wy * zoom });
+      return {
+        band: toScreen(band[0], band[1]),
+        shadow: toScreen(shadow[0], shadow[1]),
+        close: toScreen(close[0], close[1]),
+        face: toScreen(Math.round(FOLDER.x + FOLDER.pad + (FOLDER.w - 2 * FOLDER.pad) / 2), Math.round(FOLDER.y + FOLDER.pad + (FOLDER.h - FOLDER.pad - FOLDER.bar) / 2)),
+        title: { ...toScreen(r.x + 16, r.y + 14), w: 60 * zoom, h: 12 * zoom },
+        canvas: { band: pixelAt(img, band[0], band[1]), shadow: pixelAt(img, shadow[0], shadow[1]), plate: bytes(theme.card) },
+        domWrites: compose().domWrites(),
+        clip: content?.style.clipPath ?? "",
+      };
+    },
+    async cardState(i) {
+      const world = ce().world;
+      const card = must(cards[i], `card ${i}`);
+      // let a drop's glide or fly-back land before reading (bounded)
+      await until(() => !world.has(card, TransformTween) && !world.has(card, Grab), 120);
+      await frames(3);
+      const p = world.get(card, Position) ?? { x: Number.NaN, y: Number.NaN };
+      return { selected: world.hasTag(card, Selected), grabbed: world.has(card, Grab), x: p.x, y: p.y, taps: [...taps] };
     },
     async heat(target, source) {
       const world = ce().world;

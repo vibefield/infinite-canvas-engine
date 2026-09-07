@@ -25,6 +25,7 @@ import {
   Camera,
   Captures,
   ChildOf,
+  DownPart,
   Drag,
   Drags,
   DropTarget,
@@ -37,6 +38,7 @@ import {
   NO_ENTITY,
   OverlapCandidate,
   OverlapRejected,
+  PartTap,
   PointerMods,
   Position,
   RoutedMove,
@@ -218,6 +220,13 @@ export function createSelectMoveBehaviors(
         const pointer = ctx.getRelations(rec, Watches)[0];
         const shift = pointer !== undefined && ctx.get(pointer, PointerMods)?.shift === true;
         const captured = ctx.getRelation(rec, Captures);
+        // A tap on a card program's PART (design-014, B3b) is the app's: hand it over, select nothing.
+        const part = ctx.get(rec, DownPart)?.part ?? "";
+        if (part !== "" && captured !== undefined) {
+          const prev = world.getResource(PartTap);
+          world.setResource(PartTap, { seq: (prev?.seq ?? 0) + 1, target: captured, part });
+          continue;
+        }
         const selectable =
           captured !== undefined &&
           (ctx.hasTag(captured, Selectable) || ctx.hasTag(captured, Wire));

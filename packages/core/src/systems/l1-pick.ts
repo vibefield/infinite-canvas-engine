@@ -52,6 +52,7 @@ import {
   HandledByWidget,
   LocalPointer,
   Pointer,
+  PointerPart,
   PointerRadius,
   PointerScreen,
   Position,
@@ -63,7 +64,7 @@ import { Active } from "../catalog/camera-derived";
 import { WidgetEquipped } from "../widget/define-widget";
 import { PointerVersion, SpatialVersion, bumpVersion, makeVersionGuard } from "../helpers/version-stamps";
 import { distPointToBox, pickTopAt, type WirePickSource } from "../ops/point-pick";
-import { createSiblingOrderIndex } from "../ops/sibling-order";
+import { compareStackOrder, createSiblingOrderIndex } from "../ops/sibling-order";
 import { PointerSettings } from "../catalog/settings-resources";
 import { POINTER_DEFAULTS } from "../settings/defaults";
 
@@ -77,6 +78,24 @@ const canvasSurfaceQ = defineQuery([CanvasSurface]);
 const widgetAabbQ = defineQuery([Position, Size, WidgetEquipped, Active]);
 const chromeAabbQ = defineQuery([Position, Size, Not(WidgetEquipped)]);
 const pointerQ = defineQuery([Pointer, PointerScreen, PointerRadius, LocalPointer, Not(HandledByWidget)]);
+
+/**
+ * The FRAME pick source (design-014, B3b): the ground's answer to "what is
+ * under this world point on card `e`" — `content`, `frame` (the chrome band
+ * outside the content rect), `outside`, or a PART the registered card program
+ * names (`close`, `lock` …). `pad()` is how far the chrome reaches past the
+ * content rect, world units: the spatial index holds content rects, so
+ * `picking` widens its search by it and asks the source about candidates the
+ * boxes missed. Set on the interaction stack by the ground layer at mount;
+ * `null` = every hit is the box's (the stratified profile).
+ */
+export interface FramePickSource {
+  pad(): number;
+  hit(e: Entity, wx: number, wy: number): string;
+}
+
+/** The stack's slot for the frame pick source — a mutable box, so the ground can arrive after install. */
+export interface FramePickSlot { current: FramePickSource | null }
 
 export interface PickingSystems {
   spatialSync: TickSystem;
@@ -92,6 +111,7 @@ export function createPickingSystems(
   world: World,
   index: SpatialIndex<Entity> = new SpatialIndex<Entity>(),
   wires?: WirePickSource,
+  frames: FramePickSlot = { current: null },
 ): PickingSystems {
   // The change journal (petition 7 / strata 0.7.0). Subscribing here is the
   // whole trick: Position/Size writes, Active/WidgetEquipped flips, spawns
@@ -197,6 +217,39 @@ export function createPickingSystems(
    *  before the wire slice installs ⇒ wire index entries are skipped by pickTopAt. */
   const pickTop = (ctx: SystemCtx, wx: number, wy: number, rWorld: number): Entity | undefined =>
     pickTopAt(ctx, index, wx, wy, rWorld, wires, order.ordinals());
+  /**
+   * The frame tier (design-014, B3b): with a source registered, a widget hit by
+   * its content box is asked what is under the point — a rounded corner's
+   * void is `outside` and falls through; and when the boxes miss, the topmost
+   * widget whose CHROME the source says is under the point (within `pad`) is
+   * the hit. Returns the entity and the part (`""` for content and frame).
+   */
+  const pickFrame = (ctx: SystemCtx, wx: number, wy: number, rWorld: number, boxHit: Entity | undefined): { e: Entity | undefined; part: string } => {
+    const src = frames.current;
+    if (src === null) return { e: boxHit, part: "" };
+    const isWidget = (e: Entity): boolean => ctx.hasTag(e, WidgetEquipped) && ctx.hasTag(e, Active);
+    const partOf = (h: string): string => (h === "content" || h === "frame" || h === "outside" ? "" : h);
+    if (boxHit !== undefined && isWidget(boxHit)) {
+      const h = src.hit(boxHit, wx, wy);
+      if (h !== "outside") return { e: boxHit, part: partOf(h) };
+    } else if (boxHit !== undefined) {
+      return { e: boxHit, part: "" }; // chrome, a port, a wire: the box tier's answer stands
+    }
+    // the boxes missed (or the box hit was a corner's void): the chrome band of the topmost widget within reach
+    const ordinals = order.ordinals();
+    let best: Entity | undefined;
+    let bestPart = "";
+    for (const entry of index.searchPoint(wx, wy, rWorld + src.pad())) {
+      const e = entry.id;
+      if (!ctx.isAlive(e) || !isWidget(e) || e === boxHit) continue;
+      if (best !== undefined && compareStackOrder(ctx, ordinals, e, best) < 0) continue;
+      const h = src.hit(e, wx, wy);
+      if (h === "outside") continue;
+      best = e;
+      bestPart = partOf(h);
+    }
+    return { e: best, part: bestPart };
+  };
 
   const picking = defineSystem(
     pointerQ,
@@ -214,13 +267,20 @@ export function createPickingSystems(
         const rWorld = (ctx.get(p, PointerRadius)?.r ?? 0) / zoom;
 
         // TouchesExact — precise point pick, no dead-band ("grab is precise").
-        const exact = pickTop(ctx, w.x, w.y, 0) ?? canvas;
+        const exactFrame = pickFrame(ctx, w.x, w.y, 0, pickTop(ctx, w.x, w.y, 0));
+        const exact = exactFrame.e ?? canvas;
         if (exact !== undefined && ctx.getRelation(p, TouchesExact) !== exact) {
           ctx.setRelation(p, TouchesExact, exact);
         }
+        // The part under the exact hit (design-014, B3b) — change-only, present only with a source.
+        if (frames.current !== null) {
+          const cur = ctx.get(p, PointerPart);
+          if (cur === undefined) ctx.addComponent(p, PointerPart, { part: exactFrame.part });
+          else if (cur.part !== exactFrame.part) ctx.edit(p).set(PointerPart, { part: exactFrame.part });
+        }
 
         // Targets — radiused pick with a dead-band hysteresis ("hover is forgiving").
-        let target = pickTop(ctx, w.x, w.y, rWorld);
+        let target = pickFrame(ctx, w.x, w.y, rWorld, pickTop(ctx, w.x, w.y, rWorld)).e;
         const cur = ctx.getRelation(p, Targets);
         if (
           cur !== undefined &&

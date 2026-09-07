@@ -76,6 +76,15 @@ export interface CardProgram<G extends ShellGeometry = ShellGeometry> {
   theme?(palette: unknown, name: ThemeName): unknown;
   /** A card left sight or the board: forget any state kept under its key. */
   release?(key: unknown): void;
+  /**
+   * The signed distance from a world point to the INNER boundary (the content's
+   * edge, negative inside) — the CPU mirror of the shader's interior. DomCompose
+   * marches it for a DOM host's `clip-path` (design-014, B3b). Absent = the
+   * host clips to the rounded content rect.
+   */
+  inner?(G: G, x: number, y: number): number;
+  /** A string that changes exactly when the inner SHAPE changes (not its position or lift): DomCompose recomputes the clip on it. */
+  clipKey?(G: G): string;
 }
 
 /** The engine's own card: the shell. */
@@ -96,4 +105,11 @@ export const shellProgram: CardProgram<ShellGeometry> = {
     return d < 0 ? "content" : "outside";
   },
   source: (w, h, lift, radius) => ({ hx: (w / 2) * lift, hy: (h / 2) * lift, r: radius * lift }),
+  inner(G, x, y) {
+    const rr = Math.min(Math.max(G.radius, 0), Math.min(G.ih[0], G.ih[1]));
+    const qx = Math.abs(x - G.centre[0]) - G.ih[0] + rr;
+    const qy = Math.abs(y - G.centre[1]) - G.ih[1] + rr;
+    return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
+  },
+  clipKey: (G) => { const s = G.scale > 0 ? G.scale : 1; return `${(G.ih[0] / s).toFixed(3)},${(G.ih[1] / s).toFixed(3)},${(G.radius / s).toFixed(3)}`; },
 };

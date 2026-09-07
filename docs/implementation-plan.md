@@ -891,6 +891,20 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   scenes as the engine card's baseline; `next-boot` ALL PASS with the packs at B3a's
   numbers; 380 tests; groundlab and its rigs through the packs; `pnpm run ci` green.
   B3b next.
+- **B3b — the DOM boundary** (design-013 §10.6 Q8, design-014, **LANDED 2026-09-07**): the
+  host is content only. DomCompose (the ground's, registered before GpuCompose) runs the
+  build and writes each content element's `clip-path` (a polygon marched from the program's
+  inner field, recomputed on `clipKey` — the reveal only), the lift on `transform` and the
+  hold's opacity; the router's part channel — the stack's `framePick` slot the ground fills,
+  `PointerPart` on the pointer, `DownPart` on the recognizer, the move route withheld and the
+  tap handed over as `PartTap` → `onPart`; `useChromeOwner()` from the profile's
+  `chromeOwner`, widgetlab's CardShell and folder view bare under `ground`. Exit: the
+  `next-boot` boundary phase — clips written, chrome once (page pixels equal with the hosts
+  shown and hidden at the ring band and the shadow skirt; the title differs; the folder's face
+  is the portal), the close button → `onPart("close")` without grab or deselect, a band drag
+  moves the card — ALL PASS; 4 core tests through the full stack; `pnpm run ci` green.
+  Deferred to B4: D7 and the parity redefinition (they need drawn content); the P4 resize
+  grips stay DOM chrome; `Hover` remains unbuilt.
 
 ## Release cut & downstream
 

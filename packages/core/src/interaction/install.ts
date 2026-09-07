@@ -24,7 +24,7 @@ import { createCameraSystems } from "../systems/camera-sim";
 import { createCleanupSystems } from "../systems/cleanup";
 import { createL0Systems } from "../systems/l0-input";
 import { createNavFlight } from "../systems/nav-flight";
-import { createPickingSystems } from "../systems/l1-pick";
+import { createPickingSystems, type FramePickSlot } from "../systems/l1-pick";
 import { createWireSync } from "../systems/l1-wires";
 import { createArbitrationSystems } from "../systems/l2-arbitrate";
 import { createL2Systems, type SpawnProfiles } from "../systems/l2-recognize";
@@ -119,6 +119,8 @@ export interface InteractionStack extends InteractionCore {
   readonly marqueeBuffer: MarqueeBuffer;
   /** Connect preview render buffer (out-of-ECS — design-004 §6; M8). */
   readonly wirePreview: WirePreviewBuffer;
+  /** The frame pick source's slot (design-014, B3b): the ground layer sets `current` at mount, clears it at dispose. */
+  readonly framePick: FramePickSlot;
   /** Nav-op seam (design-004 §7): forget spatialSync's last-known AABBs. */
   clearCaches(): void;
   /** L4 cursor readout for the DOM cursor reflector. */
@@ -144,7 +146,9 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   // consumer of that source) can both bind it before either installs.
   const index = new SpatialIndex<Entity>();
   const { wireSync, wires } = createWireSync(world, index);
-  const pick = createPickingSystems(world, index, wires);
+  // The frame pick source's slot (design-014, B3b): the ground layer fills it at mount.
+  const framePick: FramePickSlot = { current: null };
+  const pick = createPickingSystems(world, index, wires, framePick);
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
   const arb = createArbitrationSystems(world);
   const claims = createClaimSystems(world);
@@ -213,6 +217,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     index,
     marqueeBuffer: marquee.buffer,
     wirePreview: connect.previewBuffer,
+    framePick,
     clearCaches: () => pick.clearCaches(),
     readCursor: cursor.readCursor,
     uninstall() {

@@ -298,7 +298,18 @@ them and the shell draws. The record is a HEAD (`ShellGeometry` + the content bi
 `FRAME_HEAD_BYTES` = 144) plus the program's `ext` slots, built by `frameStruct(ext)`;
 `frameUniformStruct(uext)` likewise; `CARD_ABI` pins the head. The theme is a head
 (`canvasBg · fieldInk · card · hairline · select · shadow`) plus `packs[name]`, built by
-`themeFrom(name, palette, grid, packs)`. `ENGINE_GRID.glyph` is `"dot"`. The pixel witnesses are the package's oracle
+`themeFrom(name, palette, grid, packs)`. `ENGINE_GRID.glyph` is `"dot"`. **The DOM boundary
+(design-014, B3b)**: `groundCompose({ onPart })` — the app's action for a tap on a card
+program's PART (`close`, `lock` …); the handle's `compose.domCompose` reflector (present when
+the mount context carries `hosts`) writes each DOM card's content element from the same
+geometry the ground draws — `clip-path` marched from `CardProgram.inner` (`clipPathOf`,
+`createDomHostWriter`, `compose.domWrites()` the instrument), the lift on `transform`, the
+hold's opacity; `CardProgram.inner(G, x, y)` and `clipKey(G)` are the two optional hooks a
+program provides for it. The ground registers a `FramePickSource` on the interaction stack's
+`framePick` slot (core: `InteractionStack.framePick`; `picking` writes `PointerPart` on the
+pointer, recognizers carry `DownPart`, a part tap lands in the `PartTap` resource). In
+`@ice/react`, `PresentationProfile.chromeOwner` (`dom` | `ground`) reaches widgets as
+`useChromeOwner()`; an app's card shell renders bare under `ground`. The pixel witnesses are the package's oracle
 (`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
 `vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
 

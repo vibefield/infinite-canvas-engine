@@ -22,7 +22,10 @@
 // ECS, never reads layout — the viewport comes from the `Viewport` resource
 // the facade's ResizeObserver writes, never from the container; the frame's dt
 // from `FrameInfo` (clamped by the engine), never from a clock of its own.
-import { Camera, type Entity, FrameInfo, type FramePreviewStore, type GridConfig, type ReflectorDef, Viewport, type World } from "@ice/core";
+import { Camera, type Entity, FrameInfo, type FramePickSlot, type FramePreviewStore, type GridConfig, PartTap, type ReflectorDef, Viewport, type World } from "@ice/core";
+import { shellProgram } from "../card/program";
+import { LINES } from "../theme";
+import { createDomHostWriter } from "./dom-compose";
 import type { ShellGeometry } from "../card/geometry";
 import type { CardMotion } from "../card/motion";
 import type { CardProgram } from "../card/program";
@@ -58,6 +61,10 @@ export interface GroundComposeContext {
   readonly world: World;
   /** ICE's preview store (`engine.previews`): a container's inside for its live portal. Absent = no portals. */
   readonly previews?: FramePreviewStore;
+  /** The DOM hosts' content elements by entity (the dom reflector's `hostFor`): DomCompose clips, lifts and fades them (B3b). Absent = no DOM writes. */
+  readonly hosts?: { contentOf(entity: Entity): HTMLElement | undefined };
+  /** The interaction stack's frame pick slot: the ground's hit test over its last-drawn geometry goes here (B3b). Absent = the boxes pick. */
+  readonly framePick?: FramePickSlot;
 }
 
 /** The compose layer's instruments: the ground's redraws and the last build's counts. */
@@ -68,6 +75,13 @@ export interface GroundComposeStats extends FrameBuilderStats {
 export interface GroundCompose {
   /** GpuCompose — the profile registers it LAST (after the renders): design-013 §6's order. */
   readonly gpuCompose: ReflectorDef;
+  /**
+   * DomCompose (B3b) — the profile registers it just BEFORE GpuCompose: it runs the frame's
+   * build (the world's dirt, the springs) and writes every DOM card's boundary — `clip-path`
+   * from the program's inner shape, the lift on `transform`, the hold's opacity — on the
+   * content element; GpuCompose then draws the same geometry. Present only with `hosts`.
+   */
+  readonly domCompose?: ReflectorDef;
   /** The canvas in the L0 slot. */
   readonly canvas: HTMLCanvasElement;
   /** `Ground.create` resolved; false while the pipelines compile or after a failure. */
@@ -80,6 +94,8 @@ export interface GroundCompose {
   stats(): GroundComposeStats;
   /** What woke the builder, and how often, since the mount — names the fact behind a churning frame. */
   wakes(): Readonly<Record<WakeReason, number>>;
+  /** DOM boundary writes so far, and clip polygons computed (B3b's churn instruments). */
+  domWrites(): { readonly writes: number; readonly clips: number };
   /** A card's geometry as last drawn (the rig's witness; B3b's hit test) — the program's, on the engine's head. */
   geometryOf(e: Entity): ShellGeometry | undefined;
   /** A card's springs as last stepped — flux, never a world fact. */
@@ -138,6 +154,43 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
     let redraws = 0;
     let theme = opts.theme;
     let gridPending: Partial<GridConfig> | null = null;
+    const program = opts.card ?? shellProgram;
+    const writer = ctx.hosts !== undefined ? createDomHostWriter(program, ctx.hosts.contentOf) : null;
+    let domWrites = 0;
+    // The frame's build happens ONCE per tick, in the first of the ground's reflectors to run
+    // (DomCompose when the profile registers it, else GpuCompose); the other draws what was built.
+    let builtTick = -1;
+    let pending: { readonly view: { camX: number; camY: number; zoom: number; width: number; height: number; dpr: number }; readonly built: ReturnType<typeof builder.build> } | null = null;
+    const ensureBuilt = (w: World): boolean => {
+      if (ground === null) return false;
+      const tick = w.getResource(FrameInfo)?.tick ?? -1;
+      if (tick >= 0 && builtTick === tick) return pending !== null;
+      builtTick = tick;
+      // the world's dirt is PULLED every frame (the journal drains); the out-of-world wakes set `dirty`
+      if (builder.changed()) dirty = true;
+      if (!dirty) { pending = null; return false; }
+      const cam = w.getResource(Camera);
+      const vp = w.getResource(Viewport);
+      if (cam === undefined || vp === undefined || vp.w <= 0 || vp.h <= 0) { pending = null; return false; }   // no viewport yet: stay dirty, paint when it exists
+      const dpr = Math.min(vp.dpr > 0 ? vp.dpr : 1, maxDpr);
+      const width = Math.max(1, Math.round(vp.w * dpr));
+      const height = Math.max(1, Math.round(vp.h * dpr));
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+      dirty = false;
+      // the frame's dt, ms clamped by the engine (design-002 §1) — a first frame before FrameInfo exists steps one nominal frame
+      const dtMs = w.getResource(FrameInfo)?.dt ?? 16;
+      const built = builder.build({ x: cam.x, y: cam.y, zoom: cam.zoom }, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, ground.fieldConfig);
+      pending = { view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr }, built };
+      if (builder.live()) dirty = true;   // a spring still moves: the next frame paints too
+      return true;
+    };
+    // The frame pick source (B3b): the router asks the ground what is under a point on a card — its last-drawn geometry through the program's own hit test.
+    const framePick = ctx.framePick;
+    const pickSource = {
+      pad: () => program.source(0, 0, 1, opts.cards?.radius ?? 0).hx + LINES.ring + 2,
+      hit: (e: Entity, x: number, y: number): string => { const G = builder.geometryOf(e); return G === undefined ? "outside" : program.pick(G, x, y); },
+    };
+    if (framePick !== undefined) framePick.current = pickSource;
 
     Ground.create({ device: opts.device, canvas, ...GROUND_SHADERS, ...(opts.card !== undefined ? { card: opts.card } : {}), ...(opts.grids !== undefined ? { grids: opts.grids } : {}) }).then(
       (g) => {
@@ -148,33 +201,39 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       },
       (e: unknown) => { failed = true; console.error("[ice] ground/compose: Ground.create failed", e); },
     );
+    let lastTap = 0;
     const unsubs: Array<() => void> = [
       world.reactive.observeResource(Camera, () => { dirty = true; }),
       world.reactive.observeResource(Viewport, () => { dirty = true; }),
       builder.observe(() => { dirty = true; }),
+      // a tap on a card program's PART (B3b): the router hands it over as a resource; the app's action is `onPart`
+      world.reactive.observeResource(PartTap, () => {
+        const t = world.getResource(PartTap);
+        if (t === undefined || t.seq === lastTap) return;
+        lastTap = t.seq;
+        opts.onPart?.(t.target, t.part ?? "");
+      }),
     ];
+
+    // DomCompose (B3b): the build, then the DOM boundary of every card on screen.
+    const domCompose: ReflectorDef = {
+      name: "ground/dom-compose",
+      always: true,
+      flush(w) {
+        if (!ensureBuilt(w) || writer === null) return;
+        domWrites += writer.write(builder.entries());
+      },
+    };
 
     const gpuCompose: ReflectorDef = {
       name: "ground/gpu-compose",
       always: true,
       flush(w) {
-        if (ground === null) return;
-        // the world's dirt is PULLED every frame (the journal drains); the out-of-world wakes set `dirty`
-        if (builder.changed()) dirty = true;
-        if (!dirty) return;
-        const cam = w.getResource(Camera);
-        const vp = w.getResource(Viewport);
-        if (cam === undefined || vp === undefined || vp.w <= 0 || vp.h <= 0) return;   // no viewport yet: stay dirty, paint when it exists
-        const dpr = Math.min(vp.dpr > 0 ? vp.dpr : 1, maxDpr);
-        const width = Math.max(1, Math.round(vp.w * dpr));
-        const height = Math.max(1, Math.round(vp.h * dpr));
-        if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
-        dirty = false;
-        // the frame's dt, ms clamped by the engine (design-002 §1) — a first frame before FrameInfo exists steps one nominal frame
-        const dtMs = w.getResource(FrameInfo)?.dt ?? 16;
-        const built = builder.build({ x: cam.x, y: cam.y, zoom: cam.zoom }, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, ground.fieldConfig);
+        if (!ensureBuilt(w) || ground === null || pending === null) return;
+        const { view, built } = pending;
+        pending = null;
         ground.render({
-          view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr },
+          view,
           pointer: { x: 0, y: 0, on: false },
           sources: built.sources,
           frames: built.frames,
@@ -182,7 +241,6 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
           theme,
         });
         redraws += 1;
-        if (builder.live()) dirty = true;   // a spring still moves: the next frame paints too
       },
     };
 
@@ -196,6 +254,8 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       dispose() {
         for (const u of unsubs) u();
         unsubs.length = 0;
+        if (framePick !== undefined && framePick.current === pickSource) framePick.current = null;
+        writer?.dispose();
         builder.dispose();
         canvas.remove();
         ground?.dispose();
@@ -203,12 +263,14 @@ export function groundCompose(opts: GroundComposeOptions): (ctx: GroundComposeCo
       },
       compose: {
         gpuCompose,
+        ...(writer !== null ? { domCompose } : {}),
         canvas,
         available: () => ground !== null && !failed,
         redraws: () => redraws,
         setTheme(next) { theme = next; dirty = true; },
         stats: () => ({ redraws, ...builder.stats() }),
         wakes: () => builder.wakes(),
+        domWrites: () => ({ writes: domWrites, clips: writer?.clips ?? 0 }),
         geometryOf: (e) => builder.geometryOf(e),
         motionOf: (e) => builder.motionOf(e),
       },

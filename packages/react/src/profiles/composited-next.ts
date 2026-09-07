@@ -27,9 +27,9 @@ import type { PresentationProfile, ProfileBootContext } from "./contract";
 
 /** Structural read of the opaque ground handle's `compose` field. */
 interface ComposeSlot {
-  readonly compose?: { readonly gpuCompose: ReflectorDef };
+  readonly compose?: { readonly gpuCompose: ReflectorDef; readonly domCompose?: ReflectorDef };
 }
-function composeOf(ctx: ProfileBootContext): { readonly gpuCompose: ReflectorDef } | undefined {
+function composeOf(ctx: ProfileBootContext): { readonly gpuCompose: ReflectorDef; readonly domCompose?: ReflectorDef } | undefined {
   return (ctx.ground as ComposeSlot | null)?.compose;
 }
 
@@ -38,6 +38,8 @@ const stub = (name: string): ReflectorDef => ({ name, always: false, flush() {} 
 
 export const compositedNextProfile: PresentationProfile = {
   name: "composited-next",
+  // design-014, B3b: the ground draws every card's chrome; the DOM host is content only.
+  chromeOwner: "ground",
   check(ctx) {
     if (ctx.engine.compositorDevice === undefined) {
       return (
@@ -59,7 +61,9 @@ export const compositedNextProfile: PresentationProfile = {
   reflectorsAfterGround(ctx) {
     const c = composeOf(ctx);
     if (c === undefined) return [];
-    return [stub("dom-render"), stub("island-render"), stub("video-ingest"), stub("dom-compose"), c.gpuCompose];
+    // DomCompose is the ground's when the handle carries it (B3b): it runs the frame's build and writes the
+    // hosts' clip, lift and opacity BEFORE GpuCompose draws the same geometry (§6's order, kept).
+    return [stub("dom-render"), stub("island-render"), stub("video-ingest"), c.domCompose ?? stub("dom-compose"), c.gpuCompose];
   },
   install(ctx) {
     // `ctx.engine` is the FACADE; the phase-group registry lives on the raw engine it wraps.

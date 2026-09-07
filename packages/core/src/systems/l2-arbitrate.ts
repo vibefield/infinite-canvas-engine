@@ -19,6 +19,7 @@ import {
   CanvasSurface,
   Captures,
   ClaimedBy,
+  DownPart,
   Drag,
   GesturePhases,
   GestureSuspended,
@@ -182,9 +183,11 @@ export function createArbitrationSystems(world?: World): { arbitration: System; 
           // non-movable widget's drag claims the pointer — no pan-through —
           // but drives no behavior).
           const route = tool.route.widgetDrag;
+          // A press on a card program's PART (design-014, B3b) is a click on a control, never a move.
+          const onPart = (ctx.get(e, DownPart)?.part ?? "") !== "";
           if (route === "move") {
-            if (tool.gates.movable && ctx.hasTag(captured, Movable)) ctx.addTag(e, RoutedMove);
-          } else {
+            if (!onPart && tool.gates.movable && ctx.hasTag(captured, Movable)) ctx.addTag(e, RoutedMove);
+          } else if (!onPart) {
             const t = routeTag(route);
             if (t !== undefined) ctx.addTag(e, t);
           }

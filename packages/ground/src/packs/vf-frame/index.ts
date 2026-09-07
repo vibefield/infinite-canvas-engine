@@ -16,7 +16,7 @@ import { WGSL } from "../../shaders.gen";
 import { cssColor, type GroundTheme, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../../theme";
 import { resolve, tailOf, VF_EXT, type VfGeometry, type VfMotion } from "./choreography";
 import { HEAT, type Heat, heatValues } from "./heat";
-import { pick } from "./sdf";
+import { pick, sdInner } from "./sdf";
 import { type FrameStyle, PRODUCT } from "./sheet";
 
 export * from "./choreography";
@@ -181,6 +181,13 @@ export function vfFrame(opts: VfFrameOptions = {}): VfFramePack {
       return { hx: (w / 2 + T) * lift, hy: (h / 2 + T) * lift, r: Ro * lift };
     },
     theme: VF_THEME_SOURCE.theme,
+    inner: (G, x, y) => sdInner(G, x, y),
+    // the shape in UNSCALED card units: the inner box, the corners' notches and fillets, the content radii
+    clipKey(G) {
+      const s = G.scale > 0 ? G.scale : 1;
+      const f = (v: number): string => (v / s).toFixed(3);
+      return [G.ih[0], G.ih[1], ...G.nw, ...G.nh, ...G.rho, ...G.rfH, ...G.rfV, ...G.baseR].map(f).join(",");
+    },
   };
   return pack;
 }

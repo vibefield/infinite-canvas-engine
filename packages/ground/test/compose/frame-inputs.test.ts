@@ -27,7 +27,7 @@ import {
   widgets,
   type Entity,
 } from "@ice/core";
-import { MATERIAL, REST, resolveShell, SHELL_RADIUS } from "../../src/card/geometry";
+import { MATERIAL, REST, resolveShell, SHELL_RADIUS, IDLE } from "../../src/card/geometry";
 import { NO_PART, shellProgram } from "../../src/card/program";
 import { PRODUCT, PRODUCT_CORNER, VF_EXT, vfFrame, type VfGeometry } from "../../src/packs/vf-frame";
 import { createFrameBuilder, faceOfSnapshot, heatSourceOf, offscreen, portalFaceOf, sizeOf } from "../../src/compose/frame-inputs";
@@ -152,8 +152,8 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     expect(present.portal).toEqual({ cx: 864.5, cy: 259.5, hx: 154.5, hy: 149.5, r: FOLDER_FACE.radius });
     expect(p.frames).toHaveLength(2);
     expect(p.sources).toHaveLength(2);
-    // the inside at REST: each child's geometry is the resting resolve of its rect in the inside's frame
-    const r1 = resolveShell({ centre: [100, 60], contentHalf: [100, 60], radius: SHELL_RADIUS }, REST, MATERIAL);
+    // the inside at rest, unrevealed (IDLE): each child's geometry is the resting resolve of its rect in the inside's frame
+    const r1 = resolveShell({ centre: [100, 60], contentHalf: [100, 60], radius: SHELL_RADIUS }, IDLE, MATERIAL);
     expect(must(p.frames[0]).geometry).toEqual(r1);
     expect(must(p.frames[1]).geometry.centre).toEqual([400, 260]);
     // the flight's own camera: `portalOf` on the same content bounds lands on the same record, bit for bit

@@ -425,6 +425,8 @@ export {
 } from "./canvas/extensions";
 export { createWidgetEquipSystem } from "./widget/equip";
 export { attachSpawnBehaviors, attachSpawnParent, spawnWidget, widgetSpawnInits, type SpawnWidgetOpts } from "./widget/spawn";
+// The frame pick source (design-014, B3b): the ground layer's hit test on the interaction stack.
+export type { FramePickSlot, FramePickSource } from "./systems/l1-pick";
 export { setWidgetProps } from "./widget/set-props";
 export {
   createWidgetRuntime,

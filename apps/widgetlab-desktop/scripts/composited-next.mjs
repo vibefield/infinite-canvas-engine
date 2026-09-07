@@ -10,6 +10,43 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
+
+/** Decode an 8-bit non-interlaced PNG (what Playwright writes) into { width, height, rgb(x, y) }. */
+function decodePng(buf) {
+  let off = 8;
+  let width = 0; let height = 0; let channels = 4;
+  const idat = [];
+  while (off < buf.length) {
+    const len = buf.readUInt32BE(off); const type = buf.toString("ascii", off + 4, off + 8); const data = buf.subarray(off + 8, off + 8 + len);
+    if (type === "IHDR") { width = data.readUInt32BE(0); height = data.readUInt32BE(4); const ct = data[9]; channels = ct === 6 ? 4 : ct === 2 ? 3 : ct === 4 ? 2 : 1; if (data[8] !== 8 || data[12] !== 0) throw new Error("png: 8-bit non-interlaced only"); }
+    else if (type === "IDAT") idat.push(data);
+    off += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * channels;
+  const out = Buffer.alloc(height * stride);
+  const paeth = (a, b, c) => { const p = a + b - c; const pa = Math.abs(p - a); const pb = Math.abs(p - b); const pc = Math.abs(p - c); return pa <= pb && pa <= pc ? a : pb <= pc ? b : c; };
+  for (let y = 0; y < height; y++) {
+    const f = raw[y * (stride + 1)];
+    const src = y * (stride + 1) + 1;
+    const dst = y * stride;
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? out[dst + x - channels] : 0;
+      const b = y > 0 ? out[dst - stride + x] : 0;
+      const c = x >= channels && y > 0 ? out[dst - stride + x - channels] : 0;
+      let v = raw[src + x];
+      if (f === 1) v += a; else if (f === 2) v += b; else if (f === 3) v += (a + b) >> 1; else if (f === 4) v += paeth(a, b, c);
+      out[dst + x] = v & 255;
+    }
+  }
+  return { width, height, rgb: (x, y) => { const i = y * stride + x * channels; return [out[i], out[i + 1], out[i + 2]]; } };
+}
+/** The page's pixel at CSS point (sx, sy): a 4×4 CSS px clip decoded, its centre pixel. */
+async function pagePixel(page, sx, sy) {
+  const png = decodePng(await page.screenshot({ type: "png", clip: { x: sx - 2, y: sy - 2, width: 4, height: 4 } }));
+  return png.rgb(Math.floor(png.width / 2), Math.floor(png.height / 2));
+}
 
 const require = createRequire(import.meta.url);
 const { _electron } = require("playwright-core");
@@ -73,6 +110,50 @@ try {
   const idleSel = await page.evaluate(() => window.__nextRig.idle(1500));
   log(`idle 1.5 s after the reveal: ${JSON.stringify(idleSel)}`);
   check(idleSel.submits === 0, `idle-zero after the spring settles: ${idleSel.submits} submits over ${idleSel.frames} frames (woken by ${JSON.stringify(idleSel.wakes)})`);
+
+  // ---- B3b: the DOM boundary — chrome exists once, the controls are the ground's, the band is a handle
+  const b = await page.evaluate(() => window.__nextRig.boundary(0));
+  log(`boundary: ${JSON.stringify(b)}`);
+  check(b.domWrites.clips >= 7 && b.clip.startsWith("polygon("), `DomCompose wrote every card's clip from the program's inner shape (${b.domWrites.clips} clips, ${b.domWrites.writes} writes; card 0: ${b.clip.slice(0, 40)}…)`);
+  // Chrome ONCE: the page with the DOM hosts hidden must equal the page with them shown at the ring band and in
+  // the shadow skirt (the shell paints nothing there), and differ over the title (the content IS the DOM's).
+  // Two page screenshots, one colour space — a canvas readback is in the swap chain's sRGB bytes while the
+  // capture is display-managed, so those two cannot be compared byte for byte off a saturated ring.
+  const bandShown = await pagePixel(page, b.band.sx, b.band.sy);
+  const shadowShown = await pagePixel(page, b.shadow.sx, b.shadow.sy);
+  const faceShown = await pagePixel(page, b.face.sx, b.face.sy);
+  const hideHosts = (hidden) => page.evaluate((h) => { for (const el of document.querySelectorAll("[data-ice-entity]")) el.style.visibility = h ? "hidden" : ""; }, hidden);
+  await hideHosts(true);
+  await page.waitForTimeout(50);
+  const bandHidden = await pagePixel(page, b.band.sx, b.band.sy);
+  const shadowHidden = await pagePixel(page, b.shadow.sx, b.shadow.sy);
+  const faceHidden = await pagePixel(page, b.face.sx, b.face.sy);
+  const titleHiddenPng = decodePng(await page.screenshot({ type: "png", clip: { x: b.title.sx, y: b.title.sy, width: b.title.w, height: b.title.h } }));
+  await hideHosts(false);
+  await page.waitForTimeout(50);
+  check(near(bandShown, bandHidden, 2), `chrome once — the ring band reads the same with the DOM hosts shown and hidden: ${rgb(bandShown)} vs ${rgb(bandHidden)} (the ground's own, ${rgb(b.canvas.band)} in swap-chain bytes)`);
+  check(near(faceShown, faceHidden, 2), `the folder's face is the ground's live portal, uncovered by its DOM host: ${rgb(faceShown)} vs hosts hidden ${rgb(faceHidden)}`);
+  check(near(shadowShown, shadowHidden, 2), `chrome once — the shadow skirt reads the same with the DOM hosts shown and hidden (no CSS box-shadow): ${rgb(shadowShown)} vs ${rgb(shadowHidden)}`);
+  const titlePng = decodePng(await page.screenshot({ type: "png", clip: { x: b.title.sx, y: b.title.sy, width: b.title.w, height: b.title.h } }));
+  let titleMax = 0;
+  for (let y = 0; y < titlePng.height; y++) for (let x = 0; x < titlePng.width; x++) { const c = titlePng.rgb(x, y); const h = titleHiddenPng.rgb(x, y); titleMax = Math.max(titleMax, Math.abs(c[0] - h[0]) + Math.abs(c[1] - h[1]) + Math.abs(c[2] - h[2])); }
+  check(titleMax > 60, `the DOM content IS above the plate: the title area differs with the hosts hidden by up to ${titleMax}/765`);
+  const before = await page.evaluate(() => window.__nextRig.cardState(0));
+  await page.mouse.click(b.close.sx, b.close.sy);
+  const afterClick = await page.evaluate(() => window.__nextRig.cardState(0));
+  log(`close click: ${JSON.stringify({ before: { selected: before.selected, taps: before.taps.length }, after: { selected: afterClick.selected, grabbed: afterClick.grabbed, taps: afterClick.taps } })}`);
+  check(afterClick.taps.length === before.taps.length + 1 && afterClick.taps.at(-1)?.part === "close", `a click on the ground-drawn close button reaches the app as onPart("close") (${JSON.stringify(afterClick.taps.at(-1))})`);
+  check(afterClick.selected === before.selected && afterClick.grabbed === false, `and it neither grabs nor changes the selection (selected ${afterClick.selected}, grabbed ${afterClick.grabbed})`);
+  // a frame between moves, so the drag recognizer sees a gesture rather than one coalesced sample
+  // LEFT, away from every neighbour: a release over a solid card is a rejected drop and flies back
+  await page.mouse.move(b.band.sx - 20, b.band.sy + 3);
+  await page.mouse.down();
+  await page.waitForTimeout(40);
+  for (let k = 1; k <= 6; k++) { await page.mouse.move(b.band.sx - 20 - k * 7, b.band.sy + 3); await page.waitForTimeout(40); }
+  await page.mouse.up();
+  const afterDrag = await page.evaluate(() => window.__nextRig.cardState(0));
+  log(`band drag: x ${before.x} → ${afterDrag.x}`);
+  check(afterDrag.x <= before.x - 20, `a drag begun on the frame band (outside the content rect) moves the card: x ${before.x} → ${afterDrag.x}`);
 
   const grab = await page.evaluate(() => window.__nextRig.grab(1));
   log(`grab: ${JSON.stringify(grab)}`);

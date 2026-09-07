@@ -40,6 +40,15 @@ export interface ProfileBootContext {
 export interface PresentationProfile {
   readonly name: PresentationProfileName;
   /**
+   * Who draws a card's CHROME under this profile (design-014, B3b): `dom` —
+   * the app's card shell paints its plate, shadow, ring and lift in CSS (the
+   * stratified and the old composited profiles); `ground` — the ground draws
+   * all of it and the DOM host is content only, clipped by the same
+   * `resolve()`. Reaches widgets as `useChromeOwner()`; an app's shell renders
+   * bare under `ground`. Absent = `dom`.
+   */
+  readonly chromeOwner?: "dom" | "ground";
+  /**
    * Boot-time gate. Return a human-readable reason to REFUSE, or null to
    * proceed. The reason reaches the developer as a thrown error from the mount
    * — the same posture as the app's own capability refusal, one layer in.
