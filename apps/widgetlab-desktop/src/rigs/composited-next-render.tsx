@@ -167,6 +167,8 @@ interface RenderRig {
   demote(i: number): Promise<{ target: string; onCanvas: boolean; mode: string }>;
   spin(i: number, on: boolean): Promise<void>;
   pause(i: number, on: boolean): Promise<void>;
+  /** Ask a card's kind for a live bucket at `fps` — the clamp's ceiling on its copies (B8 R7, ported from the old `demand` rig). */
+  bucket(i: number, fps: number): Promise<{ requested: number; granted: string }>;
   copies(): number;
   drift(): Promise<DriftResult>;
 }
@@ -372,6 +374,16 @@ function mountRenderRig(): RenderRig {
       const cur = world.get(card, group.component) as { index: number; spin: boolean } | undefined;
       world.edit(card).set(group.component, { index: cur?.index ?? i, spin: on });
       await frames(4);
+    },
+    async bucket(i, fps) {
+      const world = ce().world;
+      const card = must(cards[i], `card ${i}`);
+      // A rig SETUP write of the kind's own request, as `pause` does.
+      world.edit(card).set(RequestedDemand, { mode: "live", fpsBucket: fps, interactive: false });
+      await until(() => (world.get(card, SurfaceDemand)?.fpsBucket ?? -1) === fps, 60);
+      await frames(2);
+      const d = world.get(card, SurfaceDemand);
+      return { requested: fps, granted: `${d?.mode ?? "?"}@${d?.fpsBucket ?? -1}` };
     },
     async pause(i, on) {
       const world = ce().world;

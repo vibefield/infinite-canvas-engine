@@ -5,7 +5,7 @@
  * drained iterable would silently submit nothing.
  */
 import { describe, expect, it } from "vitest";
-import { instrumentSubmits } from "../src/compositor/submit-instrument";
+import { instrumentSubmits } from "../src/submit-instrument";
 
 function fakeDevice() {
   const received: unknown[][] = [];

@@ -120,7 +120,7 @@ export {
   type WidgetQuadPass,
   type WidgetQuadPassDeps,
 } from "./compositor/widget-quad-pass";
-export { instrumentSubmits, type SubmitInstrument } from "./compositor/submit-instrument";
+export { instrumentSubmits, type SubmitInstrument } from "./submit-instrument";
 // The dom source atlas (design-012 §11 Q3): the pure allocator bound to a real
 // device and to HiC's direct element copy.
 export {

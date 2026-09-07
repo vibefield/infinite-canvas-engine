@@ -423,6 +423,17 @@ interface Resize {
   readonly currentLive: boolean;
 }
 
+interface CrossKindZ {
+  readonly samples: number;
+  /** Samples on which the probe point was NOT the island's ink — i.e. the dom card covered it. */
+  readonly covered: number;
+  /** The island's own colour at that point, read before the cover existed (the control). */
+  readonly islandInk: RGB;
+  readonly seen: readonly string[];
+  readonly runs: number;
+  readonly plate: RGB;
+  readonly gpuErrors: number;
+}
 interface IslandsRig {
   readonly ready: Promise<void>;
   mount(): Promise<Mounted>;
@@ -437,6 +448,12 @@ interface IslandsRig {
   animate(bucket: number, ms: number): Promise<Demand>;
   pause(ms: number): Promise<Demand>;
   resize(frames: number): Promise<Resize>;
+  /**
+   * CROSS-KIND Z (B8 R7, ported from the old `app-witness` rig): a DOM card at a
+   * LATER ordinal must cover a GL island in the same pass, on every frame — the
+   * two kinds share one z order, or a card pops out from under another.
+   */
+  crossKindZ(samples: number): Promise<CrossKindZ>;
 }
 
 const frame = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -746,6 +763,52 @@ function mountRig(): IslandsRig {
         skippedBudget: after.skippedBudget - before.skippedBudget,
         skippedPaused: after.skippedPaused - before.skippedPaused,
         ticks: 0,
+      };
+    },
+
+    async crossKindZ(samples) {
+      const e = ce();
+      const world = e.world;
+      const card = must(islandCard, "island card");
+      // A point inside the island's picture, in the RIGHT half — where the
+      // covering card will sit. Sampled first WITHOUT it: the control, without
+      // which "the island is hidden" could just mean "the island never drew".
+      const probe: readonly [number, number] = [40, 25];
+      const p0 = islandToDevice(card, probe[0], probe[1]);
+      const islandInk = modal(await groundReadback(compose().canvas), p0[0], p0[1]);
+
+      // The cover: a plain DOM card, spawned LAST, overlapping the island's
+      // right half. Its ordinal is later, so it is above — and a dom card at
+      // rest is the ground's PLATE, a different colour from the island's ink.
+      e.ops.spawnWidget("b5:card", { x: 460, y: 40, w: CARD.w, h: CARD.h, undoable: false });
+      world.sync();
+      await frames(8);
+
+      let covered = 0;
+      let n = 0;
+      const seen: string[] = [];
+      for (let i = 0; i < samples; i++) {
+        // Nudge the camera so the ground really redraws each sample: a z order
+        // that only holds on a static frame is not a z order.
+        world.setResource(Camera, { x: (i % 2) * 0.5, y: 0, zoom, gesturing: false });
+        await frames(2);
+        const img = await groundReadback(compose().canvas);
+        const [x, y] = islandToDevice(card, probe[0], probe[1]);
+        const c = modal(img, x, y);
+        n++;
+        if (c[0] !== islandInk[0] || c[1] !== islandInk[1] || c[2] !== islandInk[2]) covered++;
+        if (seen.length < 3) seen.push(`(${c.join(",")})`);
+      }
+      world.setResource(Camera, { x: 0, y: 0, zoom, gesturing: false });
+      await frames(2);
+      return {
+        samples: n,
+        covered,
+        islandInk,
+        seen,
+        runs: compose().stats().runs,
+        plate: bytes(theme.card),
+        gpuErrors: gpu?.errors().length ?? 0,
       };
     },
 

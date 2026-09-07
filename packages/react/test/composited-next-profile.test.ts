@@ -42,6 +42,40 @@ describe("compositedNextProfile", () => {
     expect(compositedNextProfile.reflectorsAfterGround(ctxOf(true, "compose")).at(-1)).toBe(gpuCompose);
     expect(compositedNextProfile.reflectorsAfterGround(ctxOf(true, "old"))).toEqual([]);
   });
+  it("leaves NO stub behind when the handle is complete — every place in §6's roster is a live forwarder (carried from factory-parity at B8)", () => {
+    // The other half of the factory-parity claim (`@ice/ground`'s
+    // `test/compose/mount.test.ts` holds the first: the mount fills every slot).
+    // A stub holds a PLACE and does nothing, and it is `always: false` — so a
+    // roster that still carries one after the renders are installed is a
+    // reflector that will never run, which is exactly how the old leg's
+    // hand-assembled rigs stayed green over an inert factory.
+    const ran: string[] = [];
+    const render = (name: string) => ({ current: { name, flush: () => { ran.push(name); } } });
+    const domCompose: ReflectorDef = { name: "ground/dom-compose", always: true, flush() { ran.push("dom-compose"); } };
+    const ctx = {
+      engine: { compositorDevice: {} },
+      ground: {
+        reflector: slot,
+        configureGrid() {},
+        dispose() {},
+        compose: {
+          gpuCompose,
+          domCompose,
+          residency: { attach() {} },
+          renders: { dom: render("dom-render"), island: render("island-render"), video: render("video-ingest") },
+        },
+      },
+    } as unknown as ProfileBootContext;
+    const roster = compositedNextProfile.reflectorsAfterGround(ctx);
+    expect(roster.map((r) => r.name)).toEqual(["dom-render", "island-render", "video-ingest", "ground/dom-compose", "ground/gpu-compose"]);
+    // Not one of them is a stub…
+    expect(roster.map((r) => r.always)).toEqual([true, true, true, true, true]);
+    // …and each really reaches the render behind its slot, IN §6's order.
+    const world = null as unknown as Parameters<ReflectorDef["flush"]>[0];
+    for (const r of roster) r.flush(world);
+    expect(ran).toEqual(["dom-render", "island-render", "video-ingest", "dom-compose"]);
+  });
+
   it("owns the texture table (B4a): install attaches it to the ground's residency, sizes own textures to the device, and disposes it last", () => {
     const ce = createCanvasEngine();
     let attached: TextureTable | null = null;

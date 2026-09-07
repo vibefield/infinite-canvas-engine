@@ -49,6 +49,10 @@ export default defineConfig({
         //                          demand clamp's rate, and the drift readback
         //                          under both raster strategies.
         "composited-next-render": "composited-next-render.html",
+        //   composited-next-input  — design-013 B8 R7: the old `input` rig ported —
+        //                          transform compose, stale hit regions, a zero-byte pan,
+        //                          and native focus/typing through a promoted card.
+        "composited-next-input": "composited-next-input.html",
         "zoom-drift": "zoom-drift.html",
       },
     },

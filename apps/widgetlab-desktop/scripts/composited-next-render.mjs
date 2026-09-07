@@ -227,6 +227,27 @@ try {
   check(spinning.copies > 0, `an animating card's content reaches the GPU (${spinning.copies} copies)`);
   check(rate <= 70, `and its rate is the demand bucket's, not its paint rate: ${rate.toFixed(1)} copies/s against ${dirtRate.toFixed(1)} paint marks/s`);
 
+  // The BUCKET SWEEP, ported from the old `demand` rig at B8 (R7): the same
+  // self-invalidating card at three ceilings. The paint rate is a constant of
+  // the CSS animation; the copy rate has to be the clamp's, and each step down
+  // has to actually cost less.
+  const buckets = [];
+  for (const fps of [30, 10, 2]) {
+    const g = await page.evaluate((f) => window.__renderRig.bucket(1, f), fps);
+    const r = await page.evaluate(() => window.__renderRig.idle(2500));
+    const secs = r.frames / 60;
+    const row = { fps, granted: g.granted, copies: r.copies, rate: r.copies / secs, dirt: r.dirtied / secs };
+    buckets.push(row);
+    log(`bucket ${String(fps).padStart(2)} fps (${g.granted}): ${row.copies} copies over ${r.frames} frames ⇒ ${row.rate.toFixed(1)} copies/s from ${row.dirt.toFixed(1)} paint marks/s`);
+    check(row.rate <= fps * 1.35 + 1, `${fps} fps: the copy rate is the bucket's ceiling, not the paint rate (${row.rate.toFixed(1)} copies/s against ${row.dirt.toFixed(1)} marks/s)`);
+    check(row.copies > 0, `${fps} fps: and the card still reaches the GPU (${row.copies} copies)`);
+  }
+  check(
+    buckets[0].rate > buckets[1].rate && buckets[1].rate > buckets[2].rate,
+    `each step down the ladder really costs less: ${buckets.map((b) => `${b.fps}fps=${b.rate.toFixed(1)}/s`).join(" > ")}`,
+  );
+  await page.evaluate(() => window.__renderRig.bucket(1, 60));
+
   await page.evaluate(() => window.__renderRig.pause(1, true));
   const paused = await page.evaluate(() => window.__renderRig.idle(2500));
   log(`paused, still animating: ${JSON.stringify(paused)}`);

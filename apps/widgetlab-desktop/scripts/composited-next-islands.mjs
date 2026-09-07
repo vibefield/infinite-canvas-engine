@@ -198,6 +198,19 @@ try {
   check(resize.liveEveryFrame === true, "no frame sampled a disposed texture — the current ref always named a live target");
   check(resize.gpuErrors === 0, `no uncaptured GPU errors through the drag (${resize.gpuErrors})`);
 
+  // ---- 7. cross-kind z (ported from `app-witness` at B8, R7)
+  const z = await page.evaluate((n) => window.__b5Rig.crossKindZ(n), 12);
+  log(`cross-kind z: ${JSON.stringify(z)}`);
+  check(
+    z.islandInk[0] !== z.plate[0] || z.islandInk[1] !== z.plate[1] || z.islandInk[2] !== z.plate[2],
+    `the control discriminates: the island's ink (${z.islandInk.join(",")}) is not the plate a dom card draws (${z.plate.join(",")})`,
+  );
+  check(
+    z.covered === z.samples,
+    `a DOM card at a later ordinal covers a GL island on EVERY frame — no z-pop (${z.covered}/${z.samples}; saw ${z.seen.join(" ")})`,
+  );
+  check(z.gpuErrors === 0, `no uncaptured GPU errors through the sweep (${z.gpuErrors})`);
+
   fs.mkdirSync(shotDir, { recursive: true });
   fs.writeFileSync(path.join(shotDir, "composited-next-islands.png"), await page.screenshot());
 } catch (err) {

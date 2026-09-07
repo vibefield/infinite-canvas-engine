@@ -108,6 +108,14 @@ export interface DomRenderStats {
    */
   readonly dirtied: number;
   /**
+   * Of those, the ones this module's OWN placement write caused, dropped by the
+   * §4.2 guard (B8 R7). `dirtied − selfDirt` is the content dirt rate. A pan
+   * over N promoted cards raises N of these per frame and must copy none of
+   * them; a standing `selfDirt` of 0 during a gesture means the guard has
+   * stopped being load-bearing and the pan is uploading again.
+   */
+  readonly selfDirt: number;
+  /**
    * Copies the platform THREW on — `InvalidStateError: No cached paint record
    * for element`, the frame after a host is reparented onto L1. The debt is
    * kept and the next flush copies: a card is briefly absent, never
@@ -194,6 +202,23 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
   const lastCopy = new Map<Entity, number>();
   /** The host box this module last wrote, per card. */
   const placed = new Map<Entity, Placed>();
+  /**
+   * THE §4.2 GUARD, on this leg (B8 R7).
+   *
+   * A placement write raises a paint event, and `changedElements` reports the
+   * DRAWABLE — the immediate canvas child — never the descendant that mutated
+   * (measured 2026-08-31; `@ice/dom`'s `source-canvas.ts` header carries the
+   * numbers). So a host's own placement write and a content edit inside it are
+   * INDISTINGUISHABLE by shape: both arrive as the same element. The header
+   * says what follows — the guard has to be TEMPORAL, and it has to live with
+   * the writer that knows what it wrote. This is that writer's copy.
+   *
+   * The value is the flush ordinal at which the placement was written; a mark
+   * is consumed only while it is at most one flush old, so a placement whose
+   * paint event never arrived cannot swallow a real content change later.
+   */
+  const selfWrote = new Map<Element, number>();
+  let flushes = 0;
 
   // The world's half of the debt: a card's DESTINATION changed (a promotion,
   // a re-slot after an eviction, a re-size). `coarse: false` — `TextureRef` is
@@ -204,6 +229,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
 
   let copies = 0;
   let dirtied = 0;
+  let selfDirt = 0;
   let refused = 0;
   let unavailable = 0;
   let resized = 0;
@@ -218,6 +244,8 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     parked.delete(e);
     lastCopy.delete(e);
     placed.delete(e);
+    const el = hosts.hostOf(e);
+    if (el !== undefined) selfWrote.delete(el);
   };
 
   /** The card's geometry this frame, or undefined when it has no destination to be sized for. */
@@ -255,7 +283,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
    * right box in the common case (band space at band 1 IS world units), and a
    * cache miss there would cost every promotion a frame on the plate.
    */
-  const placeHost = (e: Entity, el: HTMLElement, geo: SurfaceGeometry): boolean => {
+  const placeHost = (e: Entity, el: HTMLElement, geo: SurfaceGeometry, guard: boolean): boolean => {
     const cam = world.getResource(Camera);
     const p = world.get(e, Position);
     const zoom = cam?.zoom ?? 1;
@@ -278,6 +306,14 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     el.style.transformOrigin = "0 0";
     el.style.transform = `matrix(${k},0,0,${k},${tx},${ty})`;
     placed.set(e, { w, h, k, tx, ty });
+    // ARM THE GUARD only for a write the PLACEMENT PASS made — a card whose
+    // pixels nobody asked for, moved because the camera moved. When `attempt`
+    // writes, the same flush takes the copy anyway, and swallowing that write's
+    // paint event would risk eating a real content edit in the one window where
+    // content is most likely to be changing: the promotion the user just made.
+    // The cost of not arming it there is at most one redundant copy per
+    // promotion or resize, which the debt bookkeeping already absorbs.
+    if (guard) selfWrote.set(el, flushes);
     return boxMoved;
   };
 
@@ -354,7 +390,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     if (el === undefined) return false; // not hosted yet — keep the debt
     const geo = geometryOf(e);
     if (geo === undefined) return false;
-    if (placeHost(e, el, geo)) return false; // the box moved: copy on the next flush, off the new paint record
+    if (placeHost(e, el, geo, false)) return false; // the box moved: copy on the next flush, off the new paint record
 
     const entry = table.describe(ref.texture);
     if (entry === undefined) return false;
@@ -399,11 +435,25 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
         const e = entityOfHost(el);
         if (e === undefined) continue;
         dirtied += 1;
+        // A paint event this module's own placement write caused. Counted (it
+        // is real dirt on the wire) and dropped: the camera moving is not the
+        // card changing, and without this a pan re-uploads the whole promoted
+        // board every frame. A BOX change is not lost with it — the placement
+        // pass adds that debt itself, by hand.
+        const wroteAt = selfWrote.get(el);
+        if (wroteAt !== undefined) {
+          selfWrote.delete(el);
+          if (flushes - wroteAt <= 1) {
+            selfDirt += 1;
+            continue;
+          }
+        }
         dirty.add(e);
       }
     },
     flush() {
       if (disposed || residency.table === null) return;
+      flushes += 1;
       // The world's half of the debt, drained every flush (the journal is
       // pull-based, so a frame that skips this would lose the record).
       const delta = collector.drain();
@@ -431,32 +481,56 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
           dirty.add(e);
         }
       }
-      if (dirty.size === 0) return;
-
-      for (const e of [...dirty]) {
-        const interval = demandIntervalMs(demandOf(world, e));
-        if (interval === Number.POSITIVE_INFINITY) {
-          // PAUSED. No copy and no wake — and a card that has never been
-          // copied stays on the plate, which is the honest picture of a
-          // paused card with no pixels yet (design-013 D3).
-          dirty.delete(e);
-          parked.add(e);
-          continue;
-        }
-        if (interval !== 0) {
-          const since = t - (lastCopy.get(e) ?? Number.NEGATIVE_INFINITY);
-          if (since < interval) {
+      if (dirty.size > 0) {
+        for (const e of [...dirty]) {
+          const interval = demandIntervalMs(demandOf(world, e));
+          if (interval === Number.POSITIVE_INFINITY) {
+            // PAUSED. No copy and no wake — and a card that has never been
+            // copied stays on the plate, which is the honest picture of a
+            // paused card with no pixels yet (design-013 D3).
             dirty.delete(e);
-            deferred.set(e, t + (interval - since));
+            parked.add(e);
             continue;
           }
+          if (interval !== 0) {
+            const since = t - (lastCopy.get(e) ?? Number.NEGATIVE_INFINITY);
+            if (since < interval) {
+              dirty.delete(e);
+              deferred.set(e, t + (interval - since));
+              continue;
+            }
+          }
+          if (attempt(e, t)) dirty.delete(e);
         }
-        if (attempt(e, t)) dirty.delete(e);
+      }
+      // PLACEMENT IS NOT A FUNCTION OF THE COPY DEBT (B8 R7).
+      //
+      // Until B8 `placeHost` was reached only through `attempt`, so a card that
+      // owed nothing was never re-placed and its host stayed where the last
+      // copy left it. Nothing LOOKS wrong — an L1 host is never painted — but
+      // the host IS the hit-test, focus, caret and IME truth for a promoted
+      // card, so a pan walks it off the card it belongs to. The ported `input`
+      // rig measured it before this pass existed: 7 of 24 mid-gesture hits
+      // landed, the host up to 540 px from its card.
+      //
+      // Runs LAST so `attempt` has already placed everything that copied. The
+      // write is change-only against `placed`, so an idle board writes nothing
+      // and idle-zero is untouched; a pan costs one style write per promoted
+      // host, which is what the old leg's `dom-writeback` paid for the same
+      // truth. A BOX change found here owes a fresh copy — off the paint record
+      // the NEXT layout makes, never this one's.
+      for (const e of placed.keys()) {
+        const el = hosts.hostOf(e);
+        if (el === undefined) continue;
+        const geo = geometryOf(e);
+        if (geo === undefined) continue;
+        if (placeHost(e, el, geo, true)) dirty.add(e);
       }
     },
     stats: () => ({
       copies,
       dirtied,
+      selfDirt,
       refused,
       unavailable,
       parked: parked.size,
@@ -474,6 +548,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       parked.clear();
       lastCopy.clear();
       placed.clear();
+      selfWrote.clear();
     },
   };
 }

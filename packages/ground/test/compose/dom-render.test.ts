@@ -258,6 +258,40 @@ describe("DomRender · the copy the world asked for (B4)", () => {
     expect(b.residency.contentOf(card).mode).toBe("page");
   });
 
+  it("a paused surface's paint must not spin the ground — over a HUNDRED ticks, not one flush (carried from demand-parking at B8)", () => {
+    // The old leg's `demand-parking.test.ts` was written for a real defect: a
+    // dateless mark counted as PENDING turned one off-screen paint into a
+    // composite on every rAF, forever. A single flush cannot see that class —
+    // the cost is per frame and the state that carries it is `pending`. So the
+    // loop, with a live card beside the paused one so the board is genuinely
+    // running rather than empty.
+    const b = makeBoard();
+    const paused = b.spawn("dr:paused", 100);
+    const live = b.spawn("dr:promoted", 400);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    const settled = b.stats().copies;   // the live card's first copy
+    expect(settled).toBe(1);
+    const touches = b.residency.stats().touches;
+
+    let maxPending = 0;
+    for (let i = 0; i < 120; i++) {
+      b.step();
+      b.render.markDirtyHosts([b.paintOf(paused)]);   // an off-screen paint, every frame
+      b.flush();
+      maxPending = Math.max(maxPending, b.stats().pending);
+    }
+    // THE PROPERTY: nothing is ever owed, so nothing keeps the ground awake.
+    expect(maxPending).toBe(0);
+    expect(b.stats()).toMatchObject({ copies: settled, parked: 1, deferred: 0, pending: 0 });
+    expect(b.residency.stats().touches).toBe(touches);
+    // …and the marks really did arrive: 120 of them, all clamped.
+    expect(b.stats().dirtied).toBeGreaterThanOrEqual(120);
+    expect(b.residency.contentOf(paused).mode).toBe("plate");
+    expect(b.residency.contentOf(live).mode).toBe("page");
+  });
+
   it("a bucket DEFERS the copy to the moment it allows, and counts it pending until then", () => {
     const b = makeBoard();
     const card = b.spawn("dr:slow", 100); // 5 fps ⇒ 200 ms between copies
@@ -333,6 +367,64 @@ describe("DomRender · the copy the world asked for (B4)", () => {
     expect(b.log).toEqual([]); // nothing destroyed under a command that reads it
     expect(b.residency.collect()).toBe(1);
     expect(b.log).toEqual([`destroy ${first.name}`]);
+  });
+
+  it("a settled card's host still tracks the camera — placement is NOT a function of the copy debt (B8 R7)", () => {
+    // Found by the ported `input` rig: until B8 `placeHost` was reached only
+    // through `attempt`, so a card owing no copy was never re-placed and its
+    // host stayed where the last copy left it. An L1 host is never painted, so
+    // nothing looked wrong — but it IS the hit-test, focus and IME truth, and
+    // the rig measured 7 of 24 mid-gesture hits landing, the host up to 540 px
+    // from its card.
+    const b = makeBoard();
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    expect(b.stats().copies).toBe(1);
+    expect(b.styleOf(card).transform).toBe("matrix(1,0,0,1,100,100)");
+    expect(b.stats().pending).toBe(0); // nothing owes a copy from here on
+
+    b.world.setResource(Camera, { x: 40, y: 25, zoom: 1, gesturing: true });
+    b.step();
+    b.flush();
+    expect(b.styleOf(card).transform).toBe("matrix(1,0,0,1,60,75)"); // (pos − cam) × zoom
+    expect(b.stats().copies).toBe(1); // …and moving a card is not re-rasterising it
+    expect(b.stats().resized).toBe(0); // a pan changes the matrix, never the box
+  });
+
+  it("this module's OWN placement write never becomes a copy — but a content mark still does (the §4.2 guard, B8 R7)", () => {
+    // A placement write raises a paint event, and `changedElements` names the
+    // DRAWABLE — the host — never the descendant that mutated. So a placement
+    // and a content edit are indistinguishable in SHAPE, and the guard has to
+    // be temporal, kept by the writer that knows what it wrote.
+    const b = makeBoard();
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    const settled = b.stats().copies;
+    for (let i = 1; i <= 30; i++) {
+      b.world.setResource(Camera, { x: i * 4, y: 0, zoom: 1, gesturing: true });
+      b.step();
+      b.flush();
+      b.render.markDirtyHosts([b.paintOf(card)]); // the placement write's own paint event
+    }
+    b.flush();
+    expect(b.stats().copies).toBe(settled); // THE PROPERTY: a pan uploads nothing
+    expect(b.stats().selfDirt).toBe(30); // …and it is the GUARD that made it zero
+    expect(b.stats().dirtied).toBe(30); // the marks really arrived
+    expect(b.stats().pending).toBe(0);
+
+    // The window is ONE flush: a placement whose paint event never arrived
+    // cannot swallow a real content change later. The camera is still now, so
+    // nothing is re-placed and the last entry simply ages out.
+    b.flush();
+    b.flush();
+    b.render.markDirtyHosts([b.paintOf(card)]);
+    b.flush();
+    expect(b.stats().copies).toBe(settled + 1); // a FILTER, not a mute
+    expect(b.stats().selfDirt).toBe(30);
   });
 
   it("a DEMOTED card is forgotten — every side table goes with it, so a later promotion starts clean", () => {
