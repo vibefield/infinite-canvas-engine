@@ -1048,7 +1048,7 @@ recorded here is the review of them and the wave it produced:
 
 - **C4 — the Phase C review fixes** (two blockers: the desktop app's light mode under the
   opaque ground; the departed slot's stale config — and the should-fix list) — **LANDED
-  `<sha>`**, 2026-09-08. Four builders in parallel off `c5fa789`, landing a → b → c → d.
+  `6a93523` (C4d) · `beb319b` + `2c7fed4` (C4c) · `8debfe7` + `9a232c3` + `1ad0ebd` (C4b) · `7aa9bb5` + `2a47b95` (C4a)**, 2026-09-08. Four builders in parallel off `c5fa789`; landed d → c → b → a (the witnesses first, so every later landing ran `gate:landing`), each with `pnpm run ci`, the seven desktop rigs and the landing gate on the rebased tree, then ci on main.
   **C4a, the ground:** the departed slot's config snapshotted at every canvas-session change
   (D-C4.2), a lost device ENDS the layer (D-C4.3), `groundField()`'s theme defaults from
   `prefers-color-scheme` (D-C4.4), the overlays cache guard that made an ordinary board

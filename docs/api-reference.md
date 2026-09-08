@@ -266,7 +266,7 @@ all of this; direct use is for custom shells.
 
 ## @ice/r3f
 
-`createGLBridge(engine, {transitions?, devAssertRenderWrites?})` · `<GLViews engine bridge
+`createGLBridge(engine | canvasEngine, {transitions?, gpu?, devAssertRenderWrites?})` (a `CanvasEngine` supplies both seams; the options override) · `<GLViews engine bridge
 store>` (mount inside an R3F `<Canvas frameloop="demand">` on the P2 plane) ·
 `useIslandFrame(cb)` / `useIslandInvalidate()` (the ONLY sanctioned island
 animation paths) · `createGLPointerRouter({world, bridge, index})` → the
@@ -396,7 +396,7 @@ hosts, raster?, now?, copy? })`** once `Ground.create` resolves — HiC copies a
 L1 host into the layer its `TextureRef` names (`origin = { x: u0·side, y: v0·side, z: layer }`;
 `copyElementToTexture`'s `origin` grew the `z`), then `residency.wrote(e)`. Two more doors on
 `ContentResidency` (design-013 C4, D-C4.7): **`unwrote(e)`** CLEARS a card's standing write, and
-**`revision()`** is a counter that moves whenever Residency names a new handle. Together they are
+**`revision()`** is the texture table's revision — it moves when a handle is realised, evicted or forgotten (a NEW handle for the entity is the other retry key). Together they are
 the backoff: a refused `realize` skips that entity until `revision()` moves rather than
 allocating, rendering and destroying a full target every frame; and an oversize card that copied
 once and then grew past the device limit inside its band calls `unwrote(e)`, so it draws the
