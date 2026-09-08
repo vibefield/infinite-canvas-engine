@@ -10,9 +10,16 @@ All notable changes to ICE are documented here. The format follows
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
 never published to npm — the registry's `latest` is still 0.11.0. Its dated section
-stays below as history and everything in it ships here, so an upgrading consumer must
-read BOTH sections: 0.12.0's break (`WidgetSurface` → `WidgetSurfaceKind`) is as real
-as this one's.
+stays below as history, and its BREAK ships here: `WidgetSurface` →
+`WidgetSurfaceKind` is as real as this section's, so an upgrading consumer must read
+both. **Its `### Added` and `### Fixed` items do NOT ship here** — design-013 superseded
+them inside the same unpublished window, so an upgrader who adopts them from that
+section writes code 0.13.0 refuses. `defineWidget({ presentation })` is RETIRED by
+Phase A (a kind's own behaviour is the one writer of `SurfaceTarget`);
+`CompositorSourceVideo.onArrival` left with the compositor source registry at Phase B;
+and 0.12.0's fixes to `ground()`, `groundHost` and `ground({ lift })` describe three
+functions Phase C deleted. Read that Added and that Fixed as the history of a cut
+nobody installed, never as this release's surface.
 
 ### Breaking, at a glance
 
@@ -46,11 +53,55 @@ something. In the order an upgrade meets them:
 **`three` is still a declared peer, and it is still optional.** "The cut" does not
 mean ICE stopped needing three — it means nothing outside `./r3f` and `./r3f/webgpu`
 needs it. The GL ISLANDS are the whole reason, `three/webgpu`'s renderer and its own
-`PMREMGenerator` are why the floor moved to 0.185, and the pack audit measures the
-claim on every build rather than asserting it (252 modules over the nine non-island
-entries, 0 edges to `three`). An app that imports no islands can install none.
+`PMREMGenerator` are why the floor moved to 0.185, and the pack audit MEASURES the
+claim rather than asserting it — at every publish (`prepack` runs it) and at every
+landing (`pnpm run gate:landing`), 252 modules over the nine non-island entries, 0 edges
+to `three`. An app that imports no islands can install none.
 
 Every item above is spelled out with its migration in the sections that follow.
+
+### Review fixes before publish (C4, 2026-09-08)
+
+0.13.0 was CUT on 2026-09-07 and never published, so the Phase C review's fixes fold into
+this section rather than into a 0.13.1 — the version stamp is unchanged and there is no
+release for a patch to correct (D-C4.1; 0.12.0 above set the precedent that an unpublished
+cut is history, not a contract). What changed after the cut is below; everything else in
+this section is as it was written on the 7th.
+
+<!-- design-013 C4a · C4b · C4c blocks land under this heading -->
+
+<!-- design-013 C4d (2026-09-08) -->
+
+- **The pixel witnesses now have exit codes** (D-C4.11). The Phase C review found four
+  checks that could not fail; these four bullets are them.
+  `apps/groundlab/scripts/ab.mjs oracle` (the `rig:parity` harness) ASSERTS maxΔ 0 per
+  page scene, prints PASS or FAIL with the numbers, and exits with the number of scenes that
+  missed — it used to print a maxΔ nobody read and `process.exit(0)` unconditionally, which
+  is how it reported success against a dist that had never been built. It also preflights
+  before Chrome starts: a missing `apps/groundlab/dist/index.html` or a missing
+  `packages/ground/oracle/results/oracle-<scene>.rgba` names the command that produces it and
+  exits 1. A boot failure or a throw is 1. (The Dawn oracle already exited non-zero on a
+  failed check; verified by corrupting one expectation, not by reading the code.)
+- **`pnpm run gate:landing`** — the new root script: the Dawn oracle → the lab's build →
+  `rig:parity` → `pack:audit`, in that order, each gating the next. It is REQUIRED at every
+  landing and is deliberately NOT part of `pnpm run ci`: the oracle needs Dawn, which the CI
+  runner has not been probed for (D-B1.4's finding is carried, not resolved).
+- **`npm publish` runs the pack audit.** `packages/ice`'s `prepack` was `build`; it is
+  `pack:audit` now (which builds first), so the "0 edges to `three` outside the island
+  entries" claim above is measured on the bytes being published, by the publish itself.
+- **A type-only import is a dependency-cruiser EDGE** (`tsPreCompilationDeps: true`). Without
+  it, `import type { X } from "three"` was invisible to the `three-only-in-r3f` wall, which
+  stood only because `@types/three` happens to be absent from every walled package. Turning
+  type edges on made 21 TYPE-ONLY import cycles visible in `@ice/core` and `@ice/react`
+  (`behavior/types.ts` ⇄ `guards/guarded-tx.ts` is the shape — both sides `import type`);
+  `no-circular` now carries `viaOnly: { dependencyTypesNot: ["type-only"] }` so it keeps
+  meaning what it always meant, a RUNTIME cycle. It also surfaced a latent one: `depcruise
+  packages` was walking `packages/ice/dist`, so the cruise answered differently depending on
+  whether anything had built (483 modules on a clean tree, 778 after) — and the `.d.ts`
+  barrel cycles tsc emits by design would have turned `pnpm run ci` red for anyone who ran
+  `gate:landing`, a publish or a build first. This repo's own build output is excluded now
+  (`^packages/[^/]+/dist/`, anchored so a DEPENDENCY's `dist` stays in the graph where the
+  walls can see it) and the cruise is hermetic. No consumer-visible surface changes.
 
 design-013 Phase A — the presentation FACTS move into the world, and the
 decision about them moves onto the behaviours door. Where a card presents used
@@ -148,8 +199,8 @@ the entity's own kind behaviour.
 - **The stratified profile's ground is the ENGINE's, and the three-based leg is deleted**
   (design-013 §8 Phase C, C2 — D-C2.1…D-C2.6). `@ice/ground` (`@vibecook/ice/ground`) no longer
   exports `ground()`, `groundHost`, `GroundLayer`, `GroundFactory`, `GroundContext`,
-  `GroundOptions`, `GroundHostLayer`, `GroundHostOptions`, `GroundProgramControl`,
-  `GroundHostStats`, design-011's `GroundProgramDefinition` / `GroundProgramInstance` /
+  `GroundHostLayer`, `GroundProgramControl`, design-011's
+  `GroundProgramDefinition` / `GroundProgramInstance` /
   `GroundProgramInput` / `GroundSourceDeclaration` / `GroundProgramTransition` /
   `GroundPrepareContext` / `GroundProgramStatus` / `GroundProgramCacheOptions` /
   `FrozenGroundPresentation` / `GroundPresentation` / `GroundActivationContext`,
@@ -158,8 +209,14 @@ the entity's own kind behaviour.
   type, `collectMagnetLevels` / `collectMagnetSources` / `magnetFieldScale` / `resolveMagnet` /
   `MAX_MAGNET_SOURCES` / `MagnetLevel` / `ReadSpatial`; the workspace subpaths
   `@ice/ground/programs/{dot-grid,line-grid,magnet-grid}` (`dotGridGroundProgram`,
-  `lineGridGroundProgram`, `magnetGridGroundProgram`) are gone. What replaces them, one
-  factory: **`groundField(opts?)`** — the same engine host `groundCompose` is (one host, two
+  `lineGridGroundProgram`, `magnetGridGroundProgram`) are gone.
+  **Three names are REPURPOSED rather than deleted, which is the quieter break:**
+  `GroundHostOptions` (`compose/host.ts:91`) and `GroundHostStats` (`:224`) are now the
+  ENGINE host's options and instruments — the pair `groundField` and `groundCompose` share —
+  and `GroundOptions` (`compose/ground.ts:54`) is `Ground.create`'s. An old import of any of
+  the three still COMPILES and means something else, so a stale annotation goes wrong at the
+  first field you read rather than at the import. What replaces the factories, one of them:
+  **`groundField(opts?)`** — the same engine host `groundCompose` is (one host, two
   factories, D-C2.3), acquiring its OWN WebGPU device, drawing the field, the live portals, the
   flight's second slot and the two overlays under the DOM planes, and NO cards (the DOM draws
   them). Migration:
@@ -177,7 +234,9 @@ the entity's own kind behaviour.
   chain, no linear-light compositing and no encode on output (D-C2.6: a configured byte is the
   drawn byte). Pass `theme` (a `GroundTheme` — `themeFrom(name, palette)` over
   `ENGINE_PALETTE[name]` with your page's background as `canvasBg`, or a product's own
-  projection); with none, `ENGINE_THEMES.light` (`#fafafa`). The stratified colours therefore
+  projection); with none, the engine's light or dark theme by `prefers-color-scheme` at the
+  mount — light where `matchMedia` is absent, as in Node or a lab (D-C4.4). Pass your own:
+  the read is a guess at your page, not knowledge of it. The stratified colours therefore
   CHANGE on screen by the amounts C1 and C1d recorded: a wire at `rgba(120, 132, 145, 0.9)`
   now lands at that colour over the ground rather than lighter, and the line grid's ink
   `[0.75, 0.77, 0.8]` at 85 rather than 157 — lift `lineInk` and the `WiresConfig` colours if
@@ -342,8 +401,10 @@ the entity's own kind behaviour.
   `compositedNextProfile` is gone with the name `"composited-next"`, and
   `PresentationProfileName` is `"stratified" | "composited"` again. A composited app wires
   `ground={groundCompose({ device, theme })}` from `@ice/ground/compose` — the profile refuses
-  a `ground()`/`groundHost()` layer by name, which is what makes the swap loud instead of a
-  plausible blank screen.
+  a `ground()`/`groundHost()` layer BY SHAPE — a ground handle that carries no `compose`
+  (`packages/react/src/profiles/composited.ts:79-85`) — which is what makes the swap loud
+  instead of a plausible blank screen. By shape, not by name: any layer without the compose
+  seam is refused, whatever produced it.
 - **`@ice/ground`'s barrel loses the compositor.** Removed: `createCompositorReflector`,
   `createWidgetQuadPass`, `createDomAtlas`, `createDomSourceBinder`, `createWorldQuadFacts`,
   `createLiftDriver`, `resolveGlSource`, `resolveVideoSource`, `createAtlasAllocator` and
@@ -752,7 +813,8 @@ the entity's own kind behaviour.
   (`apps/widgetlab-desktop`, `pnpm --filter widgetlab-desktop next-boot`) mounts it through
   the real React path and measures one redraw and one submit at boot, 0 submits over 4 s
   idle, and one frame for a camera write. The profile refuses a device-less engine and the
-  old leg's `ground()` layer by name; dependency-cruiser walls it from the old profile both
+  old leg's `ground()` layer BY SHAPE (a handle with no `compose`, `composited.ts:79-85`);
+  dependency-cruiser walls it from the old profile both
   ways. `groundCompose`'s handle maps the react `grid` prop onto the field
   (`fieldConfigOf`) and takes a new theme (`compose.setTheme`). The old profile is untouched.
 - **`@ice/ground/compose` — the ground moves in** (design-013 §8 B1 [GROUND PORT],

@@ -87,7 +87,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsup && tsc -p tsconfig.dts.json && node scripts/fix-dts-specifiers.mjs",
-    "prepack": "pnpm run build",
+    "prepack": "pnpm run pack:audit",
     "pack:audit": "pnpm run build && node tools/audit-pack.mjs"
   },
   "dependencies": {

@@ -26,7 +26,22 @@ const nm = (pkg) => `node_modules/${pkg}(/|$)`;
 
 module.exports = {
   forbidden: [
-    { name: "no-circular", severity: "error", from: {}, to: { circular: true } },
+    {
+      name: "no-circular",
+      // `viaOnly` keeps this rule on RUNTIME cycles, which is the only kind it
+      // ever caught: before `tsPreCompilationDeps` (design-013 C4, 2026-09-08)
+      // a type-only import was invisible to the cruiser, so every cycle it
+      // reported closed through real, emitted edges. Turning type edges on to
+      // seal `three-only-in-r3f` also made 21 TYPE-ONLY cycles visible in core
+      // and react (`behavior/types.ts` ⇄ `guards/guarded-tx.ts` is the shape:
+      // both sides `import type`). Those are erased by `tsc` — no emitted
+      // require, no initialisation order to get wrong — so reporting them would
+      // change what this rule means, not what the code does. A cycle with even
+      // ONE runtime edge still fails.
+      severity: "error",
+      from: {},
+      to: { circular: true, viaOnly: { dependencyTypesNot: ["type-only"] } },
+    },
     {
       name: "kernel-imports-nothing",
       comment:
@@ -221,6 +236,33 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: "node_modules" },
+    // THIS REPO'S BUILD OUTPUT IS NOT SOURCE. `depcruise packages` walks the
+    // directory, so `packages/ice/dist` joined the graph whenever anything had
+    // built it — the module count swung 483 (clean tree) to 778 (after a
+    // build), which is why two sessions reported different numbers for the same
+    // commit. Harmless while type edges were invisible; with
+    // `tsPreCompilationDeps` below, the `.d.ts` barrel cycles tsc emits BY
+    // DESIGN became 9 `no-circular` errors, so `pnpm run ci` went red purely
+    // because `pnpm run gate:landing` (or a publish, or `pnpm run build`) had
+    // run first. Every rule binds on `packages/*/src`; nothing wants the emitted
+    // tree. Excluding it makes the cruise hermetic — the same answer before and
+    // after a build.
+    //
+    // ANCHORED AT `packages/` ON PURPOSE. A bare `(^|/)dist/` also swallows a
+    // DEPENDENCY's own dist (strata-ecs, vitest, fiber, stats-gl, tsup — five
+    // modules), and an excluded target takes its edges with it: an import of
+    // `some-pkg/dist/thing` would stop being a wall violation and start being
+    // invisible. The allowlists work by seeing the node_modules target, so it
+    // must stay in the graph.
+    exclude: { path: "^packages/[^/]+/dist/" },
     tsConfig: { fileName: "tsconfig.base.json" },
+    // A `import type { X } from "three"` is an EDGE (design-013 C4, D-C4.11).
+    // Without this the cruiser walks the emitted JS, where a type-only import is
+    // erased — so `three-only-in-r3f` could not see one, and the wall stood only
+    // because `@types/three` happens to be absent from every walled package's
+    // node_modules. That is a resolution accident, not a wall. The probe that
+    // proved it: a temporary `import type { Vector3 } from "three"` in ground's
+    // theme.ts passes without this flag and is a violation with it.
+    tsPreCompilationDeps: true,
   },
 };

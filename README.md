@@ -171,8 +171,12 @@ APIs, and this repo tracks them closely (eight releases absorbed to date).
 
 ```sh
 pnpm install
-pnpm run ci        # typecheck + lint + 754 tests + import walls — the merge gate
+pnpm run ci            # typecheck + lint + 1,709 tests + import walls — the merge gate
+pnpm run gate:landing  # the pixel gate: Dawn oracle → lab build → rig:parity → pack:audit
 ```
+
+`ci` is the merge gate; `gate:landing` is required at every landing and is kept out
+of `ci` because its oracle needs Dawn (design-013 D-C4.11).
 
 - Design docs: the reviewed decision record lives in `draft/` (local branch);
   `docs/implementation-plan.md` tracks milestones M0–M10 with exit criteria.

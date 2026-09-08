@@ -713,7 +713,7 @@ tests). Notable for the record, beyond the fixes themselves:
   nothing lifecycles its textures — an event-driven eviction seam is a
   design call, not a slice.
 
-## M19 — Surface geometry + the ground port (design-013) — **IN PROGRESS (Phase A 2026-09-06 · Phase B landed 2026-09-07, reviewed, B9 the review fixes · Phase C next)**
+## M19 — Surface geometry + the ground port (design-013) — **LANDED (Phase A 2026-09-06 · Phase B 2026-09-07, reviewed, B9 the review fixes · Phase C 2026-09-07, C0–C3 · the 0.13.0 cut 2026-09-07, publish pending · C4 the Phase C review fixes 2026-09-08)**
 
 *(Numbering note: next free after M18. design-013 rev 5 was ratified 2026-09-06 with
 all eleven questions ruled at their leans; rev 6 folded the ground's heat and live
@@ -1041,6 +1041,32 @@ its decisions D-B1.1–D-B1.6 stand as the build took them):
   is WebGL-only. Also owed: a per-frame copy budget on DomRender (the old `demand` rig's boot
   stagger).
 
+**Phase C slices.** C0–C3 landed 2026-09-07 in a parallel session, with the 0.13.0 cut on
+the same day; their as-built detail is in the CHANGELOG's `[0.13.0]` blocks and in
+`draft/design-013-implementation-plan.md` (local-dev only), not as rows here. What IS
+recorded here is the review of them and the wave it produced:
+
+- **C4 — the Phase C review fixes** (two blockers: the desktop app's light mode under the
+  opaque ground; the departed slot's stale config — and the should-fix list) — **LANDED
+  `<sha>`**, 2026-09-08. Four builders in parallel off `c5fa789`, landing a → b → c → d.
+  **C4a, the ground:** the departed slot's config snapshotted at every canvas-session change
+  (D-C4.2), a lost device ENDS the layer (D-C4.3), `groundField()`'s theme defaults from
+  `prefers-color-scheme` (D-C4.4), the overlays cache guard that made an ordinary board
+  re-collect both soups every painted frame, a refused realise that backs off and an oversize
+  refusal that clears its write (D-C4.7's ground half), DomCompose's cache keyed by the
+  ELEMENT (D-C4.8), `PoleSource.changed()` off the hot column (D-C4.9), the `line` glyph's
+  law in CSS px (D-C4.10), and the B9 halves that had no test. **C4b, core + r3f:** the
+  facade re-seeds `Camera` and `Viewport` after a document close (D-C4.5), the coordinator
+  answers `ownerOf(plane)` and `<GLViews>` registers only when unowned (D-C4.6),
+  IslandRender's backoff. **C4c, the desktop app:** both ground arms take the app's theme,
+  the renderer lease drops a resolved renderer that is not the current one and disposes its
+  PMREM target (D-C4.12). **C4d, the witnesses and this record** (D-C4.11): the parity
+  script asserts per scene and exits with the count, a root `gate:landing` runs the oracle
+  → the lab's build → parity → `pack:audit`, `prepack` runs the pack audit so the publish
+  itself is gated, and `tsPreCompilationDeps` makes a type-only import an edge. The rule
+  the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
+  by reverting the hunk, not asserted.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
@@ -1085,9 +1111,38 @@ grows 259 → 317 files, the growth entirely ground types (31 → 63) plus core'
 and surface-behaviour tree. The `three` peer STAYS, optional, floor raised
 `>=0.160.0` → `>=0.185.0` for `three/webgpu` and C0's `PMREMGenerator` path — it exists
 for the GL islands alone now, and `pack:audit` + the `three-only-in-r3f` depcruise rule
-are the two witnesses. On publish, vibe-field's pin advance is a MIGRATION, not a version
-edit: `ground()` → `groundField()`, `PoleSource` gains `Pole.pointer`, and
-`localPointerPoles` is screen-space (design-013 §C4 defers it out of Phase C).
+are the two witnesses — both of them RUN at C4: the audit on every publish (`prepack`) and
+the rule on every `pnpm run ci`, with `tsPreCompilationDeps` on so a type-only `three`
+import is an edge the rule can see.
+
+On publish, vibe-field's pin advance is a MIGRATION, not a version edit, and it is FOUR
+breaks, not three. (1) `ground()` → `groundField()` — and because the ground is OPAQUE now,
+the call must carry a `theme` whose `canvasBg` IS the page's background; with none it takes
+the engine's light or dark theme by `prefers-color-scheme` at the mount (D-C4.4), which is
+a guess, not the product's colour. (2) `PoleSource` gains `Pole.pointer` for the local
+cursor. (3) `localPointerPoles` is screen-space (design-013 §C4 defers it out of Phase C).
+(4) **`GridConfig` loses `spacings`, `fadeOut` and `levelWeight`** — which vibe-field
+projects into ICE's config today. Verified read-only 2026-09-08: the three keys are declared
+on `WorldGridAppearance` (`packages/field-app/src/field/canvas-appearance.ts:20-25`) with the
+product's values at `:54-59`, and `canvasGridConfig` spreads `values.worldGrid` into a
+`GridConfig` at `:84-92`; they are written and parsed by the appearance document
+(`packages/field-app/src/appearance/product-appearance-document.ts:33-38` and `:133-138` —
+note the path, `src/appearance/`, not `src/field/appearance/`), edited by Studio's tweak
+panel (`design-system/tweaks/VisualTweakControls.tsx:118-190`) and shown by its ground
+workbench (`design-system/CanvasGroundWorkbench.tsx:51`), asserted by three tests
+(`test/canvas-appearance.test.ts`, `test/visual-tweak-document.test.ts`,
+`test/visual-tweak-controls.test.tsx`), and named as the ground projection's numbers in
+`DESIGN.md:65-67`. The SPREAD is what makes this the dangerous one: a fresh `GridConfig`
+literal is a type error at the pin bump, a spread is a silent drop.
+
+**And the pin lives in THREE places**, which move together or not at all:
+`scripts/preflight.mjs:57-61` (the PIN_EXPECTATIONS row — the 0.10.0 bump missed it and
+verify was red for a day), `pnpm-workspace.yaml:92` (the override every package resolves
+through, since the packages ask for `"*"`), and `pnpm-workspace.yaml:169`
+(`minimumReleaseAgeExclude`, or the install refuses a same-day publish). All three verified
+present 2026-09-08. Verified too: vibe-field already installs `three` 0.185.1 and
+`@react-three/fiber` 9.6.1, so the raised peer floor costs it nothing.
+
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,

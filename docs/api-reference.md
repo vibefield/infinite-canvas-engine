@@ -5,6 +5,15 @@ barrel (`packages/*/src/index.ts`); design citations in the JSDoc. Everything
 listed here is importable from the package ROOT — deep imports are
 unsupported and wall-checked.
 
+**What a landing must pass** (design-013 C4, D-C4.11): `pnpm run ci` (typecheck ·
+lint · tests · the import walls · `gen:check`), the desktop rigs, and
+**`pnpm run gate:landing`** — the Dawn oracle, the lab's build, `rig:parity`
+(Chrome against the oracle's bytes, maxΔ 0 asserted per scene) and `pack:audit`.
+The landing gate is separate from `ci` because the oracle needs Dawn, which the
+CI runner has not been probed for. A RELEASE adds the audit again from the other
+side: `packages/ice`'s `prepack` runs `pack:audit`, so `npm publish` measures the
+published bytes rather than trusting the last local build.
+
 ## @ice/core
 
 ### Definition primitives
@@ -257,12 +266,21 @@ all of this; direct use is for custom shells.
 
 ## @ice/r3f
 
-`createGLBridge(engine, {devAssertRenderWrites?})` · `<GLViews engine bridge
+`createGLBridge(engine, {transitions?, devAssertRenderWrites?})` · `<GLViews engine bridge
 store>` (mount inside an R3F `<Canvas frameloop="demand">` on the P2 plane) ·
 `useIslandFrame(cb)` / `useIslandInvalidate()` (the ONLY sanctioned island
 animation paths) · `createGLPointerRouter({world, bridge, index})` → the
 adapter's `glRoute`. Zero render→ECS writes, DEV-enforced via
 `world.devOnWrite`.
+
+**The `gl` presentation plane** (design-013 C4, D-C4.6). The coordinator answers
+**`ownerOf(plane): string | undefined`** — the id of whatever owns that plane, or `undefined`
+when it is free. `<GLViews>` consults it and **registers the `gl` plane only when it is
+unowned**, so a second `<GLViews>` on one engine neither throws nor takes the plane from the
+first; `register` still throws on a plane already owned, which inside an effect used to unmount
+the tree. `createGLBridge` **defaults `transitions` from the engine it is handed**, so a bridge
+built without the option still registers its adapter — glboard's did not, and a cross-type
+enter with an island snapped.
 
 ## @ice/ground
 
@@ -286,7 +304,12 @@ prop forwards here), `layer.field` is the handle (`status` · `device` · `redra
 `passes` — an overlay is `Ground.create({ overlays })`'s. **The ground is OPAQUE**: it clears
 to its theme's `canvasBg` and writes the bytes the theme and the config name, so a host
 projects its page background into the theme (`themeFrom(name, palette)` over
-`ENGINE_PALETTE[name]`; `ENGINE_THEMES.light` with none).
+`ENGINE_PALETTE[name]`). **With no `theme`, the mount reads `prefers-color-scheme`** and takes
+the engine's light or dark theme accordingly, falling back to light where `matchMedia` is
+absent (Node, a lab) — D-C4.4. That is a guess at the page, not knowledge of it: a product with
+its own background passes `theme` and gets its own bytes. Before C4 the default was
+`ENGINE_THEMES.light` unconditionally, so a dark app porting `ground()` → `groundField()`
+verbatim got a white viewport.
 
 **`@ice/ground/compose`** — the ground as design-013's compositor: the magnet field and the
 cutting mat, the SDF card frame with its content term and the heat, the live portal's slot
@@ -367,13 +390,17 @@ queue op in the profile's `video` render slot (§6's reflector 7, before GpuComp
 one per arrival, premultiplied and unflipped, and it wakes the frame through the content
 residency — never a retained frame re-imported per composite. `SurfaceDemand` bites at the
 door: paused drops, and a bucket allows one copy per `demandIntervalMs`. The witness is the
-`video` rig. The pixel witnesses are the package's oracle
-`useChromeOwner()`; an app's card shell renders bare under `ground`. **DomRender (design-013
-B4)**: `compose.residency` is the content residency (B4a) and `compose.renders.dom` is §6's
+`video` rig. **DomRender (design-013 B4)**: `compose.residency` is the content residency (B4a) and `compose.renders.dom` is §6's
 reflector-5 slot; the ground fills it with **`createDomRender({ device, world, residency,
 hosts, raster?, now?, copy? })`** once `Ground.create` resolves — HiC copies a promoted card's
 L1 host into the layer its `TextureRef` names (`origin = { x: u0·side, y: v0·side, z: layer }`;
-`copyElementToTexture`'s `origin` grew the `z`), then `residency.wrote(e)`. It also OWNS the L1
+`copyElementToTexture`'s `origin` grew the `z`), then `residency.wrote(e)`. Two more doors on
+`ContentResidency` (design-013 C4, D-C4.7): **`unwrote(e)`** CLEARS a card's standing write, and
+**`revision()`** is a counter that moves whenever Residency names a new handle. Together they are
+the backoff: a refused `realize` skips that entity until `revision()` moves rather than
+allocating, rendering and destroying a full target every frame; and an oversize card that copied
+once and then grew past the device limit inside its band calls `unwrote(e)`, so it draws the
+PLATE instead of its stale raster stretched to the new box. It also OWNS the L1
 host's geometry while the host is canvas-side: the box is `geometry().cssSize` and the
 placement matrix carries `zoom / band`. `compose.domRender.stats()` → `{ copies, dirtied,
 refused, unavailable, parked, deferred, pending, resized, pagesLayers, growths }`.
@@ -391,7 +418,12 @@ since design-013 C2)**: the `GridPassFactory` seam and its classic/magnet pair w
 old leg. The engine's field IS the magnet field, and the glyph is a per-canvas-type
 declaration (`presentation.ground = { glyph: "dot" | "line", grid, wires, guides }`) rather
 than a build-time re-export. Selecting classic is design-013's owed `classic-line` glyph, not
-a rewiring.
+a rewiring. **The `line` glyph's width is a law in CSS px**, scaled by dpr at upload (design-013
+C4, D-C4.10) — the same weight on every monitor, which is the old grid's unit and D-C1.4's
+intent. Read literally, C1's one-device-pixel rule made the line 1 CSS px on a 1× monitor and
+0.5 on retina, and at dpr 1 the peak alpha swung 0.42 → 0.31 with sub-pixel phase: a shimmer
+under a pan. `lineInk` stays the theme's bytes — its brightness is a colour choice, not this
+defect. The cutting mat's own line law is separate and untouched.
 
 `grid.magnet?: Partial<GridMagnetConfig>` live-tunes the field and is deep-merged one level by
 `configureGrid`. SIX of its keys map onto the engine's field: `glyph: "dot"|"needle"` ·
@@ -414,6 +446,14 @@ remote collaborators drive the field). Sources that ease should GATE their
 writing systems (`runIf` + `makeVersionGuard`) — strata blanket-stamps
 declared writes on every run, and an ungated easing system wakes the field's
 observer every tick (design-010 §10.7).
+
+**`changed?(world): boolean`** (optional, design-013 C4, D-C4.9) — a PULLED dirt check the host
+drains every tick, beside the frame builder's own. A source that can answer "did my poles move
+since you last asked?" from the world should implement it and skip `subscribe`'s wake:
+`cursorVisualPoles()` uses it, over its own `coarse: false` collector on `Position`, because a
+Tier-1 observer on `Position` is a subscription to the hot column every declared writer stamps —
+it woke the ground on EVERY frame a remote cursor existed. `subscribe` stays, and stays right,
+for a source whose dirt is not in the world at all (a halo's ease, a clock).
 
 ## @ice/devtools
 

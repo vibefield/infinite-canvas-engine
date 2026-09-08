@@ -9,11 +9,28 @@
 // maxΔ 0 on all 32 was recorded on 2026-09-01; the Node oracle is the pixel
 // witness now.) Headless by default; GROUND_HEADED=1 for a window.
 //
-// Serves vibe-field/draft so both pages share one COOP/COEP origin. Lessons
+// THE EXIT CODE IS THE VERDICT. Oracle mode asserts maxΔ 0 per page scene and
+// exits with the number that missed; a boot failure, a throw or a failed
+// preflight exits 1. `pnpm run gate:landing` runs it as a gate, so a silent 0
+// on an unbuilt dist (what this script did until 2026-09-08) is a green light
+// nobody earned.
+//
+// Serves the ICE REPO ROOT so both pages share one COOP/COEP origin. Lessons
 // baked in: bring a tab to front before any frame wait (a hidden tab never
 // fires rAF), bound every evaluate, carry a watchdog (macOS has no `timeout`).
+//
+// ERRATUM (2026-09-08, C4d): the line above said "serves vibe-field/draft",
+// which stopped being true at B1 — the server root is this repo. The RAW page
+// (`/magnet-grid/claude-agent-experiment/prototype/index.html`) still lives in
+// `vibe-field/draft` and is therefore UNREACHABLE from here, so `smoke` and
+// `perf` — the two modes that open it — have not worked since the move. Oracle
+// mode opens `ground` alone and is unaffected; it is the mode `rig:parity` and
+// the landing gate run. Whether the raw prototype comes into the repo, moves to
+// a second server root or retires with the A/B it served is a call for the
+// ground's owner, not a silent fix here. Until then the exit code says so
+// instead of printing THREW and exiting 0.
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
 import { makeCards } from "@ice/ground/oracle/scene.mjs";
@@ -25,6 +42,42 @@ const results = resolve(app, "results");
 mkdirSync(results, { recursive: true });
 const mode = process.argv[2] ?? "smoke";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── Preflight, before a browser exists ────────────────────────────────────────
+// Both pages this harness compares are FILES ON DISK: the lab is its own built
+// `dist`, and oracle mode diffs Chrome against the Dawn renders under
+// `packages/ground/oracle/results`. Either one missing used to read as a GREEN
+// run — the script printed THREW (or a fetch 404 per scene) and exited 0
+// regardless (design-013 Phase C review, 2026-09-07: "witnesses that cannot
+// fail"). Now the missing thing is named with the command that produces it, and
+// the exit code is 1 before Chrome is ever launched. `ORACLE_SCENES` is imported
+// dynamically and only in oracle mode: `scenes.mjs` pulls a `.ts` module, which
+// needs `tsx` — smoke and perf still run under plain `node`.
+const die = (what, cmd) => {
+  console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`);
+  process.exit(1);
+};
+if (!existsSync(resolve(repo, "apps/groundlab/dist/index.html"))) {
+  die("the lab's build is missing (apps/groundlab/dist/index.html)", "pnpm --filter ./apps/groundlab build");
+}
+let ORACLE_SCENES = null;
+if (mode === "oracle") {
+  ({ ORACLE_SCENES } = await import("@ice/ground/oracle/scenes.mjs"));
+  const scored = ORACLE_SCENES.filter((sc) => sc.pages.length > 0);
+  const missing = scored.filter((sc) => !existsSync(resolve(repo, `packages/ground/oracle/results/oracle-${sc.name}.rgba`)));
+  if (missing.length) {
+    die(
+      `${missing.length} of ${scored.length} oracle render(s) missing from packages/ground/oracle/results (first: oracle-${missing[0].name}.rgba)`,
+      "pnpm --filter ./packages/ground oracle",
+    );
+  }
+}
+
+// Every failure this run saw: a scene off the oracle, a boot that failed, a
+// throw. The process exits with the count (a throw exits 1), so a caller —
+// `pnpm run gate:landing` — can tell a green run from a run that happened.
+let failures = 0;
+let threw = false;
 
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
@@ -144,7 +197,7 @@ try {
   }
 
   if (mode === "oracle") {
-    const { ORACLE_SCENES } = await import("@ice/ground/oracle/scenes.mjs");
+    let scenes = 0;
     for (const sc of ORACLE_SCENES) for (const name of sc.pages) {
       const p = pages[name];
       await p.tab.evaluate(sceneJs(p.api, sc.scene)); await settle(p.tab); await new Promise((r) => setTimeout(r, 400)); await settle(p.tab);
@@ -159,8 +212,17 @@ try {
         for (let i = 0; i < n; i++) { const o = i * 4; const d = Math.max(Math.abs(a[o] - b[o]), Math.abs(a[o + 1] - b[o + 1]), Math.abs(a[o + 2] - b[o + 2])); if (d > maxD) maxD = d; if (d > 4) over4++; }
         return { maxD, over4Pct: +(100 * over4 / n).toFixed(4) };
       })()`, { awaitPromise: true, timeoutMs: 60000 });
-      console.log(`node oracle ${sc.name.padEnd(22)} vs ${name.padEnd(6)}: ${JSON.stringify(r)}`);
+      // THE ASSERTION. maxΔ 0 is the standing claim for every page scene (Chrome
+      // = Dawn to the byte); `over4Pct` is redundant under it and printed
+      // because a regression's SHAPE — one hot pixel or a whole surface — is the
+      // first thing the next reader wants.
+      scenes += 1;
+      const ok = r.error === undefined && r.maxD === 0 && r.over4Pct === 0;
+      if (!ok) failures += 1;
+      const detail = r.error === undefined ? `maxΔ ${r.maxD} · over4 ${r.over4Pct}%` : `ERROR ${r.error}`;
+      console.log(`${ok ? "PASS" : "FAIL"}  node oracle ${sc.name.padEnd(22)} vs ${name.padEnd(6)}: ${detail}`);
     }
+    console.log(`\n${scenes} scene${scenes === 1 ? "" : "s"} checked · ${failures} FAILED`);
   }
 
   if (mode === "perf") {
@@ -199,7 +261,10 @@ try {
   for (const p of Object.values(pages)) if (p.logs.length) console.log(`\n${p.name} logs:\n  ${p.logs.slice(0, 8).join("\n  ")}`);
 } catch (err) {
   console.log("THREW:", String(err.stack ?? err));
+  threw = true;
 } finally {
   await cleanup();
 }
-process.exit(0);
+// A throw (a failed boot included) is 1; otherwise the number of scenes that
+// missed the oracle, clamped because an exit code is one byte.
+process.exit(threw ? 1 : Math.min(failures, 250));
