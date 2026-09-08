@@ -184,6 +184,10 @@ export class SlotPool {
   reset(): void { this.used = 0; }
   acquire(): SlotSet {
     if (this.used === this.slots.length) {
+      // The overlay instances are spawned here but allocate NOTHING until their first `prepare`
+      // with data (`overlay.ts` `SoupPass.bind`): by D-C1.3 a pooled slot — every live portal, the
+      // flight's departed frame — never carries wires or guides, so the uniform buffer and bind
+      // group each one used to mint at acquisition were never bound to a draw.
       const overlays = this.root.overlays ?? [];
       this.slots.push({
         field: this.root.field.spawn(), frames: this.root.frames.spawn(), fill: this.root.fill.spawn(),

@@ -115,8 +115,15 @@ class SoupPass implements OverlayPass {
   private readonly pipeline: GPURenderPipeline;
   private readonly layout: GPUBindGroupLayout;
   private readonly uniforms = SoupUniforms.alloc(1);
-  private readonly uniformBuf: GPUBuffer;
-  private readonly group: GPUBindGroup;
+  /**
+   * The uniform buffer and its bind group, spawned on the first `prepare` WITH DATA (D-C4's lazy
+   * instances). A slot is pooled per portal and per flight, and every one of them used to allocate
+   * a uniform buffer and a bind group per registered overlay at acquisition — for the wires and the
+   * guides, which by D-C1.3 no nested or departed slot ever carries data for. An overlay that never
+   * draws now costs the pool one object and no GPU memory.
+   */
+  private uniformBuf: GPUBuffer | null = null;
+  private group: GPUBindGroup | null = null;
   private positions: GPUBuffer | null = null;
   private colors: GPUBuffer | null = null;
   private capacity = 0;
@@ -131,8 +138,15 @@ class SoupPass implements OverlayPass {
     this.device = device;
     this.pipeline = pipeline;
     this.layout = layout;
-    this.uniformBuf = uniformBuffer(device, SoupUniforms.size, "overlay/soup");
-    this.group = bindGroup(device, layout, [this.uniformBuf], "overlay/soup");
+  }
+
+  /** The uniform buffer and bind group, on first use. */
+  private bind(): GPUBuffer {
+    if (this.uniformBuf === null) {
+      this.uniformBuf = uniformBuffer(this.device, SoupUniforms.size, "overlay/soup");
+      this.group = bindGroup(this.device, this.layout, [this.uniformBuf], "overlay/soup");
+    }
+    return this.uniformBuf;
   }
 
   /** Vertices the buffers hold room for — the churn instrument (it only ever grows). */
@@ -170,12 +184,12 @@ class SoupPass implements OverlayPass {
     } else this.skipped += 1;
     const view = frame.view;
     this.uniforms.set({ view: [view.width, view.height, view.dpr, frame.present?.opacity ?? 1], ...portalValues(frame.present) });
-    this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
+    this.device.queue.writeBuffer(this.bind(), 0, this.uniforms.view());
     return true;
   }
 
   draw(pass: GPURenderPassEncoder): void {
-    if (this.count === 0 || this.positions === null || this.colors === null) return;
+    if (this.count === 0 || this.positions === null || this.colors === null || this.group === null) return;
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.group);
     pass.setVertexBuffer(0, this.positions);
@@ -186,7 +200,9 @@ class SoupPass implements OverlayPass {
   spawn(): OverlayPass { return new SoupPass(this.device, this.pipeline, this.layout); }
 
   dispose(): void {
-    this.uniformBuf.destroy();
+    this.uniformBuf?.destroy();
+    this.uniformBuf = null;
+    this.group = null;
     this.positions?.destroy();
     this.colors?.destroy();
     this.positions = null;

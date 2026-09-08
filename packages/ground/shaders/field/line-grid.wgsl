@@ -36,9 +36,11 @@ fn line_grid2(p: vec2f, spacing: f32, half_width: f32, px: f32) -> f32 {
 // lattice/line.ts `lineWeight`, on the engine's window (`u.lod`) and the config's
 // law: a rung fades in by its OWN cell — the same smoothstep every glyph fades by
 // (magnet.wgsl `rung_alpha`), so a decade wrap is continuous by construction — and
-// then thickens and darkens over the next decade. x = half-width (DEVICE px),
-// y = alpha. The ENGINE's law is flat in both decade terms (theme.ts LINE_GRID):
-// one width and one weight at every rung, which is what the old TSL grid drew.
+// then thickens and darkens over the next decade. x = half-width (DEVICE px —
+// `lineUniformValues` converts the law's CSS px by the frame's dpr at upload,
+// D-C4.10), y = alpha. The ENGINE's law is flat in both decade terms (theme.ts
+// LINE_GRID): one width and one weight at every rung, which is what the old TSL
+// grid drew.
 fn line_weight(u: Uniforms, law: vec4f, cell_px: f32) -> vec2f {
   let s = smoothstep(u.lod.x, u.lod.y, cell_px);
   let t = saturate(log(max(cell_px, 1e-9) / u.lod.y) / 2.302585093);

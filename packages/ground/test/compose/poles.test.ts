@@ -11,6 +11,7 @@
  */
 import { CursorVisual, createWorld, LocalPointer, Pointer, PointerScreen, PointerWorld, Position } from "@ice/core";
 import { describe, expect, it } from "vitest";
+import { must } from "./must";
 import { Card, DEFAULT_FIELD_CONFIG, packSources, uniformValues } from "../../src/field/layout";
 import { cursorVisualPoles, localPointerPoles, NO_POINTER, packPoles, type Pole } from "../../src/compose/poles";
 
@@ -78,6 +79,19 @@ describe("the field's packer takes a degenerate source as the point charge", () 
     expect(near).toBe(1);
     expect(far).toBe(0);
   });
+
+  // The packer truncates AT THE CAP, in order (`MAX_SOURCES` in the field's buffer, two here) —
+  // so the order the host hands them in decides who survives a crowded board. D-C4.9 puts the
+  // poles first: the cards at the far end drop, never the cursor the user is looking at.
+  it("past the cap the LAST sources are the ones dropped", () => {
+    const into = Card.alloc(2);
+    const pole = { cx: 10, cy: 10, hx: 0, hy: 0, r: 0, strength: 1 };
+    const cards = [1, 2, 3].map((i) => ({ cx: 100 * i, cy: 200, hx: 50, hy: 30, r: 8, strength: 1 }));
+    expect(packSources([pole, ...cards], { width: 800, height: 600 }, 60, into)).toBe(2);
+    const f32 = new Float32Array(into.bytes, 0, 2 * (Card.size / 4));
+    expect([...f32.slice(0, 4)]).toEqual([10, 10, 0, 0]);            // the pole survived, first
+    expect([...f32.slice(8, 12)]).toEqual([100, 200, 50, 30]);       // and one card behind it
+  });
 });
 
 describe("the pointer's strength rides the uniforms (magnet.wgsl `u.flags.z`)", () => {
@@ -115,5 +129,26 @@ describe("the canned wirings (D5: the host imports neither)", () => {
     off();
     off2();
     expect(woke).toBe(0);
+  });
+
+  // D-C4.9. `Position` is the hot column: a system that DECLARES a write on it stamps the column
+  // on every tick it runs, and a Tier-1 `observeQuery` fires for the stamp. So this source PULLS.
+  it("cursorVisualPoles PULLS its dirt: `changed` drains a collector, and `subscribe` observes nothing", () => {
+    const world = createWorld();
+    const source = cursorVisualPoles();
+    let woke = 0;
+    const off = must(source.subscribe, "subscribe")(world, () => { woke += 1; });
+    const changed = () => must(source.changed, "changed")(world);
+    const cursor = world.spawn({ components: [[Position, { x: 7, y: 8 }], [CursorVisual, { kind: "remote", pressed: false }]] });
+
+    expect(changed()).toBe(true);          // the spawn is dirt, drained here
+    expect(changed()).toBe(false);         // …and it is a PULL: the same frame twice is not two facts
+    for (let i = 0; i < 60; i++) expect(changed()).toBe(false);
+
+    world.edit(cursor).set(Position, { x: 9, y: 8 });
+    expect(changed()).toBe(true);
+    expect(changed()).toBe(false);
+    expect(woke).toBe(0);                  // …and the wake was never armed: nothing observes
+    off();
   });
 });

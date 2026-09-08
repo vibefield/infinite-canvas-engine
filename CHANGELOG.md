@@ -21,6 +21,70 @@ and 0.12.0's fixes to `ground()`, `groundHost` and `ground({ lift })` describe t
 functions Phase C deleted. Read that Added and that Fixed as the history of a cut
 nobody installed, never as this release's surface.
 
+### Review fixes before publish (C4, 2026-09-08)
+
+The Phase C review's findings, folded into this unpublished cut rather than shipped as a
+patch on top of it. Every one carries a test that fails without it.
+
+<!-- design-013 C4a (2026-09-08) -->
+
+#### Fixed — `@vibecook/ice/ground`
+
+- **A nav cut no longer pops the departed grid.** The flight's second slot took its field
+  config only when the canvas TYPE changed, so a `grid` re-tune (the react prop) and a
+  same-type enter — a board inside a board — left it drawing in a stale config. The config
+  is now snapshotted at every canvas-session change, and a re-tune at rest moves it too (one
+  mid-flight still does not: the departed frame keeps what the cut left it with).
+- **A lost device ends the ground layer** instead of leaving the last frame painted while the
+  DOM pans above it: the ground is disposed, the canvas removed so the page shows through,
+  `available()` false and `status()` `failed`. Both profiles — the stratified layer's own
+  device and the composited profile's app-owned one.
+- **An ordinary board no longer re-collects its overlays every painted frame.** With no wires
+  and no guides the empty result was also the cache's "nothing cached" sentinel, so both
+  collectors ran on every frame; an empty collection is now a cached answer.
+- **A promoted card that outgrows its destination draws its plate, not a stretched raster.**
+  A card that copied once and then grew inside its band kept its texture ref, so the refused
+  copy left the old pixels stretched over it; the refusal now clears the standing write.
+- **A refused destination is no longer re-minted every frame.** All three of DomRender's
+  realise paths allocated a full texture and destroyed it again on each flush while the
+  texture table refused; they now back off until the handle or the table's revision moves,
+  keeping the debt.
+- **A remounted content element gets its boundary back.** DomCompose's change-only cache was
+  keyed by the entity, so a React remount of a card's content kept the record from the old
+  element and never wrote the clip, the lift or the hold on the new one.
+- **A live remote cursor no longer wakes the ground every frame.** `cursorVisualPoles` watched
+  `Position` with a Tier-1 query observer, and a system that merely DECLARES a write on that
+  column stamps it every tick it runs; it now pulls a change collector, like the overlays.
+- **Past the source cap the far cards drop, never the cursor:** poles pack before the cards.
+- **The `line` glyph is one CSS pixel wide on every monitor.** Its law was read as device px,
+  so a retina screen drew a half-pixel line whose peak alpha swung with the sub-pixel phase
+  and shimmered under a pan.
+- **`parseCssColor` takes every CSS hex form** — `#rgb`, `#rgba` and the eight-digit form with
+  its alpha, beside `#rrggbb`, `rgb()` and `rgba()`. Three of them used to come out mid-gray,
+  silently; an unparsable colour now says so once per distinct string.
+- **A glyph name nothing registered says so** (once per name) instead of falling back to the
+  dot in silence, and a live portal whose inside canvas type does not resolve is counted
+  (`GroundHostStats.portalsUnresolved`) rather than silently drawn in its parent's config.
+- **A pooled slot's overlays cost no GPU memory until they draw.** Every portal slot and the
+  flight's departed slot minted a uniform buffer and a bind group per registered overlay at
+  acquisition, for data they never carry.
+- **The world's journals drain from the first tick**, not from the first tick after the device
+  and the pipelines resolved: the pre-ready return sat above the pulls.
+
+#### Changed — `@vibecook/ice/ground`
+
+- **`groundField()` with no `theme` follows `prefers-color-scheme` at the mount** (light where
+  `matchMedia` is absent — Node, a lab) instead of always the light palette; a dark product
+  that ported `ground()` across verbatim got a white viewport. A later switch is still the
+  app's `setTheme`. The new `defaultTheme()` is exported from `@vibecook/ice/ground/compose`.
+- `lineUniformValues(cfg, theme, dpr?)` takes the frame's device-pixel ratio and uploads the
+  law's widths in device px; `LineLaw`'s widths are the unit its owner authors in (the cutting
+  mat's stay device px, the `line` glyph's are CSS px).
+- `ContentResidency` gains `unwrote(entity)` and `revision()`. `DomHostWriter` loses `forget()`
+  (it had no callers) and `createDomHostWriter`'s third `isAlive` argument (the cache is a
+  `WeakMap` keyed by the element, so it needs neither a liveness oracle nor a sweep).
+- `DomRenderStats` gains `backedOff`; `GroundHostStats` gains `portalsUnresolved`.
+
 ### Breaking, at a glance
 
 design-013 rebuilt the presentation layer in three phases, and each one broke

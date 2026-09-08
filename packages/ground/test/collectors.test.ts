@@ -22,7 +22,7 @@ import {
   defineWidget,
   widgets,
 } from "@ice/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { collectGuides } from "../src/compose/guides-collect";
 import { type OverlayFrame as GroundFrame, SoupBuilder, parseCssColor } from "../src/compose/soup";
 import { collectWires } from "../src/compose/wires-collect";
@@ -64,6 +64,32 @@ describe("parseCssColor", () => {
     expect(parseCssColor("rgb(255, 0, 0)")).toEqual([1, 0, 0, 1]);
     expect(parseCssColor("#4a90d9")[2]).toBeCloseTo(217 / 255, 6);
     expect(parseCssColor("salmon")).toEqual([0.5, 0.5, 0.5, 1]);
+  });
+
+  // The four hex forms CSS Color 4 has. An app themes its wires in whatever its design system
+  // writes, and three of these used to come out mid-gray — a silent one, which is the other half.
+  it("takes every hex form, short ones doubled per digit and the alpha honoured — byte for byte", () => {
+    expect(parseCssColor("#abc")).toEqual([170 / 255, 187 / 255, 204 / 255, 1]);
+    expect(parseCssColor("#abcd")).toEqual([170 / 255, 187 / 255, 204 / 255, 221 / 255]);
+    expect(parseCssColor("#4a90d9")).toEqual([74 / 255, 144 / 255, 217 / 255, 1]);
+    expect(parseCssColor("#4a90d980")).toEqual([74 / 255, 144 / 255, 217 / 255, 128 / 255]);
+    // the eight-digit form's opaque end is the six-digit form's colour exactly
+    expect(parseCssColor("#4a90d9ff")).toEqual(parseCssColor("#4a90d9"));
+    // and a length CSS has no form for is junk, not a silent misread
+    expect(parseCssColor("#4a90d")).toEqual([0.5, 0.5, 0.5, 1]);
+  });
+
+  it("says an unparsable colour ONCE per distinct string, and keeps drawing the gray", () => {
+    const warn = vi.spyOn(globalThis.console, "warn").mockImplementation(() => {});
+    expect(parseCssColor("var(--wire-ink)")).toEqual([0.5, 0.5, 0.5, 1]);
+    expect(parseCssColor("var(--wire-ink)")).toEqual([0.5, 0.5, 0.5, 1]);
+    expect(parseCssColor("var(--wire-ink)")).toEqual([0.5, 0.5, 0.5, 1]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("var(--wire-ink)"));
+    // a DIFFERENT string is a different fact, and says itself
+    expect(parseCssColor("color-mix(in srgb, red, blue)")).toEqual([0.5, 0.5, 0.5, 1]);
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 });
 

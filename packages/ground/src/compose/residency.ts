@@ -82,6 +82,14 @@ export interface ContentResidency {
    * the card draws from it. `false` when the card has no destination. Touches.
    */
   wrote(e: Entity): boolean;
+  /**
+   * The INVERSE of `wrote` (D-C4.7): the card's standing write is dropped, so it draws its PLATE
+   * again from this frame. The oversize refusal is the caller — a card that copied once and then
+   * grew past its destination inside the same band keeps its `TextureRef`, so the write would stand
+   * and the card would draw the stale raster STRETCHED. Touches (the pixels a frame shows change),
+   * so the builder wakes and the frame repaints.
+   */
+  unwrote(e: Entity): void;
   /** Is the card's current destination written? */
   isWritten(e: Entity): boolean;
   /** Pixels changed outside the world (a copy, a render, a frame's arrival): the next frame draws. */
@@ -98,6 +106,12 @@ export interface ContentResidency {
   contentOf(e: Entity): FrameContent;
   /** The realised page array's `2d-array` view — a NEW view when the array was re-realised (growth); `null` while none. */
   pagesView(): GPUTextureView | null;
+  /**
+   * The attached table's `revision()` — bumped by a producer's `register`/`unregister`, which no
+   * world journal carries (core's `TextureTable`). A render that was REFUSED a realisation backs
+   * off until this number or its handle moves (D-C4.7). `0` before a table is attached.
+   */
+  revision(): number;
   /** Drain the table's dead handles and destroy the textures this module owns; sweep the written set. Returns the textures destroyed. Call after the frame's submit. */
   collect(): number;
   stats(): ContentResidencyStats;
@@ -158,6 +172,7 @@ export function createContentResidency(world: World): ContentResidency {
       touch();
       return true;
     },
+    unwrote(e) { if (written.delete(e)) touch(); },
     isWritten(e) {
       const ref = refOf(e);
       return ref !== undefined && ref.texture !== NO_TEXTURE && written.get(e) === refKeyOf(ref);
@@ -175,6 +190,7 @@ export function createContentResidency(world: World): ContentResidency {
       return r.kind === "pages" ? { mode: "page", layer: ref.layer, uv } : { mode: "own", texture: r.view, srgb: r.srgb, uv };
     },
     pagesView: () => realised.get(pagesHandle)?.view ?? null,
+    revision: () => table?.revision() ?? 0,
     collect() {
       let n = 0;
       for (const t of retired) { t.destroy(); n += 1; }

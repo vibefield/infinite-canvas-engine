@@ -12,7 +12,13 @@
 import { type FadeIn, smoothstep } from "./lod";
 
 export interface LineLaw {
-  /** Half-widths at the window's top and a decade above it, DEVICE px (the reference's hairlines). */
+  /**
+   * Half-widths at the window's top and a decade above it, in the unit ITS OWNER uploads (the
+   * reference's hairlines). The cutting mat's law is DEVICE px, as the reference authored it; the
+   * engine's `line` glyph authors its own in CSS px and multiplies by the frame's dpr at upload
+   * (D-C4.10), so one line is one CSS px on every monitor. `lineWeight` below is pure: it returns
+   * whatever unit it was given.
+   */
   readonly thin: number;
   readonly thick: number;
   /** Coverage alphas at the same two points. */
@@ -21,7 +27,7 @@ export interface LineLaw {
 }
 
 export interface LineWeight {
-  readonly halfWidth: number;   // device px
+  readonly halfWidth: number;   // the law's own unit (the mat: device px; the `line` glyph: CSS px)
   readonly alpha: number;
 }
 

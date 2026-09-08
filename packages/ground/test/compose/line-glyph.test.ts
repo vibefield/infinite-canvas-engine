@@ -37,8 +37,8 @@ interface Recorded {
  * shader modules that compile clean, pipelines that remember their label,
  * buffers and textures. Nothing renders — the branch taken is what is measured.
  */
-function stubDevice(): { device: GPUDevice; writes: number } {
-  const state = { writes: 0 };
+function stubDevice(): { device: GPUDevice; writes: number; payloads: Float32Array[] } {
+  const state = { writes: 0, payloads: [] as Float32Array[] };
   const device = {
     createBindGroupLayout: (d: GPUBindGroupLayoutDescriptor) => ({ label: d.label }) as unknown as GPUBindGroupLayout,
     createPipelineLayout: () => ({}) as unknown as GPUPipelineLayout,
@@ -53,9 +53,14 @@ function stubDevice(): { device: GPUDevice; writes: number } {
       const size = d.size as number[];
       return { width: size[0] ?? 1, height: size[1] ?? 1, createView: () => ({}) as GPUTextureView, destroy: () => {} } as unknown as GPUTexture;
     },
-    queue: { writeBuffer: () => { state.writes += 1; } },
+    queue: {
+      writeBuffer: (_b: GPUBuffer, _o: number, data: ArrayBufferView) => {
+        state.writes += 1;
+        state.payloads.push(new Float32Array(data.buffer, data.byteOffset, Math.floor(data.byteLength / 4)).slice());
+      },
+    },
   } as unknown as GPUDevice;
-  return { device, get writes() { return state.writes; } };
+  return { device, get writes() { return state.writes; }, get payloads() { return state.payloads; } };
 }
 
 /** An encoder whose render passes record which pipeline drew what. */
@@ -81,15 +86,15 @@ const FRAME: FieldFrame = {
   pointer: { x: 640, y: 400, on: false },
 };
 
-/** One prepare + draw of a field whose glyph is `glyph`; the stats and what the pass saw. */
-async function drawWith(glyph: string): Promise<{ stats: ReturnType<Field["draw"]>; seen: Recorded; field: Field }> {
-  const { device } = stubDevice();
-  const field = await Field.create(device, "rgba8unorm", SHADERS);
+/** One prepare + draw of a field whose glyph is `glyph`; the stats, what the pass saw, and every buffer write. */
+async function drawWith(glyph: string, frame: FieldFrame = FRAME): Promise<{ stats: ReturnType<Field["draw"]>; seen: Recorded; field: Field; payloads: Float32Array[] }> {
+  const gpu = stubDevice();
+  const field = await Field.create(gpu.device, "rgba8unorm", SHADERS);
   const seen: Recorded = { pipelines: [], draws: [] };
   field.config = { ...DEFAULT_FIELD_CONFIG, glyph };
-  field.prepare(stubEncoder(seen), FRAME, [], THEMES.dark);
+  field.prepare(stubEncoder(seen), frame, [], THEMES.dark);
   const stats = field.draw(stubPass(seen));
-  return { stats, seen, field };
+  return { stats, seen, field, payloads: gpu.payloads };
 }
 
 beforeAll(() => {
@@ -145,9 +150,49 @@ describe("a FieldConfig naming it resolves to the line pass, not to the dot", ()
   });
 
   it("still draws an UNREGISTERED name as the dot — the ground never refuses a frame", async () => {
-    const { stats, seen } = await drawWith("no-such-glyph");
+    const warn = vi.spyOn(globalThis.console, "warn").mockImplementation(() => {});
+    const { stats, seen, field } = await drawWith("no-such-glyph");
     expect(stats.surface).toBeNull();
     expect(seen.pipelines.some((p) => p.startsWith("field/dot/"))).toBe(true);
+    // …and it SAYS SO, once per name: a canvas type naming a glyph its pack never registered used
+    // to fall back in silence, and a board drawn in the wrong grid looks like a design decision.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("no-such-glyph"));
+    field.prepare(stubEncoder({ pipelines: [], draws: [] }), FRAME, [], THEMES.dark);
+    field.draw(stubPass({ pipelines: [], draws: [] }));
+    expect(warn).toHaveBeenCalledTimes(1);   // a second frame is the same fact
+    warn.mockRestore();
+  });
+});
+
+// D-C4.10. Read as device px the law drew ONE device pixel: a full CSS px on a 1× monitor and half
+// of one on a retina, where the peak alpha swung 0.42 → 0.31 with the sub-pixel phase and a pan
+// shimmered. The number is a design's, so its unit is the design's: CSS px, converted at upload.
+describe("its law is authored in CSS px and uploaded in device px", () => {
+  it("multiplies the widths by the frame's dpr, and the alphas by nothing", () => {
+    const cfg: FieldConfig = { ...DEFAULT_FIELD_CONFIG, glyph: LINE_GLYPH };
+    expect(lineUniformValues(cfg, THEMES.light, 1).law).toEqual([0.5, 0.5, 0.42, 0.42]);
+    expect(lineUniformValues(cfg, THEMES.light, 2).law).toEqual([1, 1, 0.42, 0.42]);
+    expect(lineUniformValues(cfg, THEMES.light, 3).law).toEqual([1.5, 1.5, 0.42, 0.42]);
+    // a host's own law rides the same conversion
+    const own = withLine(cfg, { law: { thin: 0.5, thick: 1.5, alphaThin: 0.1, alphaThick: 0.3 } });
+    expect(lineUniformValues(own, THEMES.dark, 2).law).toEqual([1, 3, 0.1, 0.3]);
+    // …and a nonsense dpr is one, never zero: a zero-width line is no grid at all
+    expect(lineUniformValues(cfg, THEMES.light, 0).law).toEqual([0.5, 0.5, 0.42, 0.42]);
+  });
+
+  it("the PASS uploads the frame's own dpr — the same law is 2× the bytes at dpr 2", async () => {
+    const at2 = await drawWith(LINE_GLYPH, { ...FRAME, view: { ...FRAME.view, dpr: 2 } });
+    const at1 = await drawWith(LINE_GLYPH, { ...FRAME, view: { ...FRAME.view, dpr: 1 } });
+    // the pass writes its two blocks in order: the engine's `Uniforms`, then `LineUniforms`
+    const lawOf = (payloads: readonly Float32Array[]) => [...must(payloads.at(-1), "the line uniforms").slice(4, 8)];
+    // the widths are exact in f32; the alphas are the same bytes at both dprs, whatever f32 makes of 0.42
+    expect(lawOf(at1.payloads).slice(0, 2)).toEqual([0.5, 0.5]);
+    expect(lawOf(at2.payloads).slice(0, 2)).toEqual([1, 1]);
+    expect(lawOf(at2.payloads).slice(2)).toEqual(lawOf(at1.payloads).slice(2));
+    expect(lawOf(at1.payloads)[2]).toBeCloseTo(0.42, 6);
+    at1.field.dispose();
+    at2.field.dispose();
   });
 });
 

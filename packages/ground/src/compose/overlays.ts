@@ -78,7 +78,12 @@ export interface OverlayStats {
   /** The gate as the canvas type last set it. */
   readonly wiresOn: boolean;
   readonly guidesOn: boolean;
-  /** Collections run since the mount — one per painted frame whose facts or camera moved, never one per frame. */
+  /**
+   * Collections run since the mount — one per painted frame whose facts or camera moved, never one
+   * per frame. An EMPTY collection is a VALID cached result (D-C4's overlays guard): the ordinary
+   * board — no wires, no guides — collects once and then reads its cache, where the `undefined`
+   * sentinel used to re-collect both soups on every painted frame.
+   */
   readonly collects: number;
 }
 
@@ -123,6 +128,8 @@ export function createOverlays(world: World, opts: OverlayDriverOptions = {}): O
   let disposed = false;
   let collects = 0;
   let last: OverlayInputs | undefined;
+  /** The cache's VALIDITY, held apart from `last`: an empty result is `undefined` and is still cached. */
+  let collected = false;
   let lastKey = "";
   let wiresSoup: TriSoup = EMPTY;
   let guidesSoup: TriSoup = EMPTY;
@@ -166,8 +173,9 @@ export function createOverlays(world: World, opts: OverlayDriverOptions = {}): O
       // pan re-maps every triangle. Fold them into the key so a frame painted for
       // an unrelated reason (a spring still moving) re-uses the last soups.
       const key = `${frame.camera.x},${frame.camera.y},${frame.camera.zoom},${frame.width},${frame.height},${frame.dpr}`;
-      if (!dirty && key === lastKey && last !== undefined) return last;
+      if (!dirty && collected && key === lastKey) return last;
       dirty = false;
+      collected = true;
       lastKey = key;
       collects += 1;
       wiresSoup = wiresOn ? collectWires(world, frame, wiresConfig, opts.readWirePreview?.()) : EMPTY;
@@ -183,6 +191,7 @@ export function createOverlays(world: World, opts: OverlayDriverOptions = {}): O
       disposed = true;
       collector.dispose();
       last = undefined;
+      collected = false;
     },
   };
 }

@@ -121,9 +121,10 @@ export const ENGINE_GRID = {
  * and this paragraph is why.
  *
  * The law is `lattice/line.ts`'s `LineLaw`, with both of its decade terms
- * deliberately FLAT. The width is one device px at every zoom and every rung
- * (D-C1.4) — `thin === thick`, and the number is the cutting mat's `thin`
- * (`packs/mat/theme.ts` MAT_GRID.line), the reference's hairline. The weight is
+ * deliberately FLAT. The width is one CSS px at every zoom, every rung and every
+ * dpr (D-C1.4, in the unit D-C4.10 fixed) — `thin === thick`, and the number is
+ * the cutting mat's `thin` (`packs/mat/theme.ts` MAT_GRID.line), the reference's
+ * hairline, read here in CSS px where the mat reads it in device px. The weight is
  * the old grid's fixed `0.42`: `line-grid-renderer.ts` multiplies its coverage
  * by `dotAlpha · 0.42`, and `levelWeight [1, 0]` gives every level the same
  * weight — so `alphaThin === alphaThick`. The mat's own law thickens and
@@ -138,6 +139,10 @@ export const LINE_GRID: {
     light: { token: "ICE DEFAULT_GRID_CONFIG.dotColor (the old TSL line grid's ink)", rgb: ENGINE_GRID.ink.rgb },
     dark: { token: "ICE DEFAULT_GRID_CONFIG.dotColor (the old TSL line grid's ink)", rgb: ENGINE_GRID.ink.rgb },
   },
+  // The widths are CSS px (D-C4.10): `LinePass` multiplies them by the frame's dpr at upload, so
+  // 0.5 is a half CSS px either side — ONE CSS px wide at every zoom and on every monitor, which is
+  // the old TSL grid's unit. Read as device px they were 1 px on a 1× monitor and half a px on a
+  // retina one, where the peak alpha swung with the sub-pixel phase and a pan shimmered.
   law: { thin: 0.5, thick: 0.5, alphaThin: 0.42, alphaThick: 0.42 },
 };
 

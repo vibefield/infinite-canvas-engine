@@ -103,10 +103,16 @@ export class SoupBuilder {
   }
 }
 
+/** Colour strings this parser could make nothing of, so each one is said ONCE (a reflector path may not spam a frame's console). */
+const unparsed = new Set<string>();
+
 /**
- * `rgba(r, g, b, a)` / `rgb(…)` / `#rrggbb` → [r,g,b,a] 0-1 (the WiresConfig
- * colors are CSS strings — v1/2D-canvas heritage). Unknown formats fall back
- * to opaque mid-gray rather than throwing in a reflector path.
+ * `rgba(r, g, b, a)` / `rgb(…)` and every hex form CSS has — three, four, six
+ * and eight digits, the short forms doubled per digit and the alpha honoured —
+ * to [r,g,b,a] 0-1 (the WiresConfig colors are CSS strings: v1/2D-canvas
+ * heritage). An unknown format falls back to opaque mid-gray rather than
+ * throwing in a reflector path, and says so once per distinct string: the
+ * silent gray was a colour an app thought it had set.
  */
 export function parseCssColor(css: string): Rgba {
   const rgba = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(css);
@@ -118,10 +124,24 @@ export function parseCssColor(css: string): Rgba {
       rgba[4] === undefined ? 1 : Number(rgba[4]),
     ];
   }
-  const hex = /^#([0-9a-f]{6})$/i.exec(css);
-  if (hex !== null) {
-    const v = Number.parseInt(hex[1] as string, 16);
-    return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255, 1];
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(css);
+  const digits = hex === null ? "" : (hex[1] as string);
+  // The short forms are each digit doubled (CSS Color 4): the byte masks are written in decimal,
+  // as this file's header says and `theme.ts`'s own parser writes them.
+  if (digits.length === 3 || digits.length === 4) {
+    const v = Number.parseInt(digits, 16);
+    const n = digits.length === 4 ? 4 : 3;
+    const at = (i: number) => (((v >> (4 * (n - 1 - i))) & 15) * 17) / 255;
+    return [at(0), at(1), at(2), n === 4 ? at(3) : 1];
+  }
+  if (digits.length === 6 || digits.length === 8) {
+    const v = Number.parseInt(digits.slice(0, 6), 16);
+    const a = digits.length === 8 ? Number.parseInt(digits.slice(6), 16) / 255 : 1;
+    return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255, a];
+  }
+  if (!unparsed.has(css)) {
+    unparsed.add(css);
+    console.warn(`[ice] ground: cannot parse the CSS colour ${JSON.stringify(css)} — drawing mid-gray`);
   }
   return [0.5, 0.5, 0.5, 1];
 }

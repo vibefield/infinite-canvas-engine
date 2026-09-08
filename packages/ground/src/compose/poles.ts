@@ -51,8 +51,23 @@ export interface Pole {
 export interface PoleSource {
   /** Called on a dirty frame — read-only world access (the reflector contract: never writes ECS). */
   read(world: World): readonly Pole[];
-  /** Called once at the mount — `wake` marks the ground dirty. Returns the unsubscriber. */
+  /**
+   * Called once at the mount — `wake` marks the ground dirty. Returns the unsubscriber. An
+   * OUT-OF-WORLD source (a halo's ease, a socket's cursor) is what this is for; a source whose
+   * poles are world facts should PULL instead (`changed`) and return an inert disarm here.
+   */
   subscribe(world: World, wake: () => void): () => void;
+  /**
+   * The world's dirt for this source, PULLED (D-C4.9): the host drains it EVERY tick, beside the
+   * builder's and the overlays', and a `true` marks the ground dirty. Optional — a source with no
+   * world facts to watch has nothing to answer.
+   *
+   * It exists because a Tier-1 `observeQuery` on the hot columns is not a wake but a heartbeat: a
+   * system that DECLARES a write on `Position` stamps the whole column every tick it runs, whether
+   * or not it wrote, and every Tier-1 observer of that column then fires. A change collector sees
+   * the writes themselves.
+   */
+  changed?(world: World): boolean;
 }
 
 /** The analytic cursor's inputs for one frame (`FieldFrame.pointer`): screen CSS px, on/off, its strength. */
@@ -132,6 +147,8 @@ export function localPointerPoles(opts: { readonly strength?: number } = {}): Po
       return out;
     },
     subscribe(world, wake) {
+      // The pointer's cell is EVENT-written (ingest writes it only when the adapter delivered one),
+      // so this observer is idle-zero by construction and stays an observer (D-C4.9).
       return world.reactive.observeQuery(localPointerQ, wake, { cols: [PointerScreen] });
     },
   };
@@ -147,6 +164,18 @@ const cursorVisualQ = defineQuery([Position, CursorVisual]);
  */
 export function cursorVisualPoles(opts: { readonly strength?: number } = {}): PoleSource {
   const strength = opts.strength ?? 1;
+  // The dirt is PULLED, never observed (D-C4.9). `Position` is the hot column: a chrome or drag
+  // system that DECLARES a write on it stamps the column on every tick it runs, so a Tier-1
+  // `observeQuery` here woke the ground every frame a selection existed — idle-zero with a live
+  // remote cursor was witnessed nowhere. A `coarse: false` collector sees the WRITES. It is
+  // deliberately not narrowed to the cursor entities: a card's move journals here too, and that is
+  // a frame the builder was going to draw anyway — the same shape `compose/overlays.ts` collects on.
+  type Collector = ReturnType<World["changes"]["collect"]>;
+  let collector: Collector | null = null;
+  const collect = (world: World): Collector => {
+    collector ??= world.changes.collect({ components: [Position, CursorVisual], coarse: false });
+    return collector;
+  };
   return {
     read(world) {
       const out: Pole[] = [];
@@ -158,8 +187,14 @@ export function cursorVisualPoles(opts: { readonly strength?: number } = {}): Po
       });
       return out;
     },
-    subscribe(world, wake) {
-      return world.reactive.observeQuery(cursorVisualQ, wake, { cols: [Position] });
+    changed(world) {
+      const d = collect(world).drain();
+      return d.reset || d.changed.length > 0 || d.coarse.length > 0 || d.removed.length > 0;
+    },
+    /** No observer — the host PULLS `changed` every tick. The mount's call is where the collector is armed, and the disarm is where it is released. */
+    subscribe(world) {
+      collect(world);
+      return () => { collector?.dispose(); collector = null; };
     },
   };
 }

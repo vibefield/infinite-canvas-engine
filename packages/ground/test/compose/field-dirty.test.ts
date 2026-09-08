@@ -17,6 +17,8 @@ import {
   createCanvasEngine,
   CursorVisual,
   defineCanvasType,
+  defineQuery,
+  defineTickSystem,
   defineWidget,
   LocalPointer,
   Pointer,
@@ -133,6 +135,51 @@ describe("groundField · idle-zero and the dirty union", () => {
     m.step(3);
     expect(m.redraws()).toBe(settled + 5);
     expect(m.gpu.submits).toBe(m.redraws());
+    m.handle.dispose();
+  });
+
+  // D-C4.9, the premise the fix rests on, MEASURED here: `Position` is the column the chrome, drag
+  // and tween systems DECLARE a write on, and a system that declares it and walks the column stamps
+  // the whole column on every tick it runs — whether or not it wrote a byte. A Tier-1 `observeQuery`
+  // on it is therefore a heartbeat, not a wake: with a remote cursor on screen the ground redrew
+  // every frame, and no rig saw it because the cursor rig destroys its cursor before the idle check.
+  //
+  // The shape matters and is the measured one (2026-09-08): a system that declares the write and
+  // never queries stamps NOTHING — 0 redraws over 60 ticks. Iterating the column is what stamps it,
+  // writing or not, which is exactly what `chrome.ts`'s selection pass does every frame a selection
+  // exists.
+  it("a remote cursor on screen is still idle-zero while a system DECLARES a write on Position", async () => {
+    const m = await mount();
+    const cursor = m.world.spawn({ components: [[Position, { x: 300, y: 300 }], [CursorVisual, { kind: "remote", pressed: false }]] });
+    // a chrome-shaped system: it declares the write, walks the column, and writes nothing
+    const walk = defineQuery([Position]);
+    m.ce.engine.addSystems(
+      "simulate",
+      defineTickSystem((ctx) => { ctx.query(walk).each((b) => { for (const r of b) void b.entity(r); }); }, { name: "fd:declares-position", access: { write: [Position] } }),
+    );
+    m.step(3);
+    const before = m.redraws();
+    m.step(60);
+    expect(m.redraws()).toBe(before);              // 60 ticks, one cursor, no frame
+    expect(m.gpu.submits).toBe(m.redraws());
+    // …and the cursor really is live: its own move is one redraw
+    m.world.edit(cursor).set(Position, { x: 320, y: 300 });
+    m.step(3);
+    expect(m.redraws()).toBe(before + 1);
+    m.handle.dispose();
+  });
+
+  // D-C4.9. `packSources` truncates at `MAX_SOURCES` IN ORDER, and the poles used to be appended
+  // after the cards — so the sources a crowded board dropped were the poles, which is to say the
+  // cursor the user is looking at, while a card at the far end of the board kept its place.
+  it("the POLES pack BEFORE the cards", async () => {
+    const m = await mount();
+    m.world.spawn({ components: [[Position, { x: 500, y: 500 }], [CursorVisual, { kind: "remote", pressed: false }]] });
+    m.step(3);
+    const inputs = must(m.ground().renders.at(-1), "a render");
+    expect(inputs.sources).toHaveLength(2);
+    expect(inputs.sources[0]).toEqual({ cx: 500, cy: 500, hx: 0, hy: 0, r: 0, strength: 1 });   // the pole, first
+    expect(must(inputs.sources[1], "the card's source").hx).toBeGreaterThan(0);                 // the card behind it
     m.handle.dispose();
   });
 

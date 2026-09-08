@@ -23,7 +23,7 @@
  *     `surface.view()`, so a fake Ground counting that call is the same
  *     instrument the old test pointed at its fake target.
  */
-import { Camera, createCanvasEngine, defineCanvasType, defineWidget, alwaysGpu, type Entity, tools, Viewport, widgets, FrameInfo } from "@ice/core";
+import { Camera, createCanvasEngine, defineCanvasType, defineWidget, alwaysGpu, type Entity, type FramePickSlot, PartTap, Selected, tools, Viewport, widgets, FrameInfo } from "@ice/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -51,11 +51,13 @@ const ROOT = defineCanvasType({
 });
 const TOOLS = [must(tools.get("select"), "the select tool"), must(tools.get("pan"), "the pan tool")];
 
-/** A GPUDevice stand-in: it hands back textures and swallows every encode. */
-function fakeDevice(): GPUDevice {
+/** A GPUDevice stand-in: it hands back textures and swallows every encode. The app owns it, and `lose` is what a driver reset does to it under the composited profile (D-C4.3). */
+function fakeDevice(): { device: GPUDevice; lose(): Promise<void> } {
   let n = 0;
-  return {
+  let loseDevice: (info: GPUDeviceLostInfo) => void = () => {};
+  const device = {
     limits: { maxTextureDimension2D: 4096 },
+    lost: new Promise<GPUDeviceLostInfo>((resolve) => { loseDevice = resolve; }),
     createTexture(d: GPUTextureDescriptor) {
       const size = d.size as number[];
       const name = `${String(d.label ?? "tex")}#${n++}`;
@@ -76,6 +78,13 @@ function fakeDevice(): GPUDevice {
     }) as unknown as GPUCommandEncoder,
     queue: { submit: () => {}, copyExternalImageToTexture: () => {} },
   } as unknown as GPUDevice;
+  return {
+    device,
+    lose() {
+      loseDevice({ reason: "unknown", message: "the app's device was lost" } as unknown as GPUDeviceLostInfo);
+      return new Promise<void>((r) => setTimeout(r, 0));
+    },
+  };
 }
 
 /**
@@ -104,6 +113,9 @@ interface Mounted {
   readonly ground: ReturnType<typeof fakeGround>;
   readonly ce: ReturnType<typeof createCanvasEngine>;
   readonly container: HTMLElement;
+  readonly gpu: ReturnType<typeof fakeDevice>;
+  readonly framePick: FramePickSlot;
+  readonly parts: { entity: Entity; part: string }[];
   step(n?: number): void;
   flush(): void;
 }
@@ -137,10 +149,14 @@ async function mount(opts: { hic?: boolean; hosts?: boolean } = {}): Promise<Mou
   document.body.appendChild(container);
 
   const els = new Map<Entity, HTMLElement>();
-  const factory = groundCompose({ device: fakeDevice(), theme: THEMES.dark });
+  const gpu = fakeDevice();
+  const framePick: FramePickSlot = { current: null };
+  const parts: { entity: Entity; part: string }[] = [];
+  const factory = groundCompose({ device: gpu.device, theme: THEMES.dark, onPart: (entity, part) => { parts.push({ entity, part }); } });
   const handle = factory({
     host: { container, contentPlane },
     world: ce.world,
+    framePick,
     ...(opts.hosts === false ? {} : { hosts: { contentOf: (e: Entity) => els.get(e), hostOf: (e: Entity) => els.get(e) } }),
   });
   await Promise.resolve();   // let `Ground.create`'s `then` run
@@ -152,6 +168,9 @@ async function mount(opts: { hic?: boolean; hosts?: boolean } = {}): Promise<Mou
     ground,
     ce,
     container,
+    gpu,
+    framePick,
+    parts,
     step: (n = 1) => { for (let i = 0; i < n; i++) { frame += 16; ce.step(frame); } },
     flush: () => { handle.compose.gpuCompose.flush(ce.world); },
   };
@@ -291,6 +310,108 @@ describe("groundCompose · the reflector contract", () => {
     expect(rects).not.toHaveBeenCalled();
     // the flush changed no world fact: the tick is the world's own clock, untouched
     expect(must(m.ce.world.getResource(FrameInfo), "FrameInfo").tick).toBe(tick);
+    m.handle.dispose();
+  });
+});
+
+describe("groundCompose · the halves B9 left untested", () => {
+  it("the frame pick answers `undefined` before the first build, and its `live` is the builder's", async () => {
+    const m = await mount({ hic: true });
+    const card = m.ce.ops.spawnWidget("mt:card", { x: 0, y: 0, w: 200, h: 120, undoable: false }) as Entity;
+    m.ce.world.sync();
+    const pick = must(m.framePick.current, "the frame pick source");
+    // BEFORE the first build the ground has no geometry for the card. `undefined` — never
+    // "outside" — is what keeps the router on the box tier's hit, so a card is clickable from the
+    // moment it exists (B9 review blocker 1).
+    expect(pick.hit(card, 100, 60)).toBeUndefined();
+    expect(pick.live?.()).toBe(false);
+
+    m.step();
+    m.flush();
+    expect(pick.hit(card, 100, 60)).toBe("content");   // its own geometry, through the program's hit test
+    expect(pick.hit(card, 5000, 5000)).toBe("outside");
+    expect(pick.live?.()).toBe(false);                 // a settled board: the last pick still stands
+
+    // …and `live` is the BUILDER's: a card mid-spring means the geometry under a still pointer is
+    // changing, so the router must pick again (B9 review).
+    m.ce.world.addTag(card, Selected);
+    m.step();
+    m.flush();
+    expect(pick.live?.()).toBe(true);
+    m.handle.dispose();
+    expect(m.framePick.current).toBeNull();
+  });
+
+  it("a Ground that resolves AFTER the dispose is disposed, not kept", async () => {
+    let resolve: (g: Ground) => void = () => {};
+    const ground = fakeGround();
+    vi.spyOn(Ground, "create").mockReturnValue(new Promise<Ground>((r) => { resolve = r as (g: Ground) => void; }));
+    const ce = createCanvasEngine({ widgets: [CARD], canvasTypes: [ROOT], rootCanvas: ROOT, presentationFallback: ROOT, tools: TOOLS });
+    ce.docs.create();
+    const container = document.createElement("div");
+    const contentPlane = document.createElement("div");
+    container.appendChild(contentPlane);
+    document.body.appendChild(container);
+    const handle = groundCompose({ device: fakeDevice().device, theme: THEMES.dark })({ host: { container, contentPlane }, world: ce.world });
+
+    // the order the other row does not take: dispose FIRST, while the pipelines are still compiling
+    handle.dispose();
+    resolve(ground as unknown as Ground);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ground.disposed).toBe(true);          // released, not leaked whole
+    expect(handle.compose.available()).toBe(false);
+  });
+
+  it("the residency's destroy list is drained on a tick that draws NOTHING", async () => {
+    const m = await mount({ hic: true });
+    m.step(2);
+    m.flush();
+    const collect = vi.spyOn(m.handle.compose.residency, "collect");
+    // a quiet tick: nothing is dirty, so nothing is drawn — and a render can still have retired a
+    // texture on it (a hidden or zero-size canvas), whose last reader is an earlier frame's submit
+    m.step();
+    m.flush();
+    expect(m.handle.compose.redraws()).toBe(m.ground.acquired);
+    expect(collect).toHaveBeenCalledTimes(1);
+    m.handle.dispose();
+  });
+
+  it("a PART tap reaches the app on a microtask — never inside the observer, and never after dispose", async () => {
+    const m = await mount({ hic: true });
+    const card = m.ce.ops.spawnWidget("mt:card", { x: 0, y: 0, w: 200, h: 120, undoable: false }) as Entity;
+    m.ce.world.sync();
+    m.step();
+    m.ce.world.setResource(PartTap, { seq: 1, target: card, part: "close" });
+    m.step();
+    expect(m.parts).toEqual([]);            // NOT synchronously: a despawn inside an emit is unguarded in prod
+    await Promise.resolve();
+    expect(m.parts).toEqual([{ entity: card, part: "close" }]);
+
+    // …and one queued as the layer goes down never reaches the app at all
+    m.ce.world.setResource(PartTap, { seq: 2, target: card, part: "lock" });
+    m.step();
+    m.handle.dispose();
+    await Promise.resolve();
+    expect(m.parts).toHaveLength(1);
+  });
+
+  it("a LOST app device ends the composited layer too (D-C4.3)", async () => {
+    const m = await mount({ hic: true });
+    m.step(2);
+    m.flush();
+    const drawn = m.ground.acquired;
+    expect(drawn).toBeGreaterThan(0);
+
+    await m.gpu.lose();
+
+    expect(m.handle.compose.available()).toBe(false);
+    expect(m.ground.disposed).toBe(true);
+    expect(m.handle.compose.canvas.parentElement).toBeNull();
+    m.ce.world.setResource(Camera, { x: 300, y: 0, zoom: 1, gesturing: false });
+    m.step(5);
+    m.flush();
+    expect(m.ground.acquired).toBe(drawn);   // the app's device is the app's; this ground is over
     m.handle.dispose();
   });
 });

@@ -229,8 +229,15 @@ export interface GroundHostStats extends FrameBuilderStats {
   readonly outgoing: { readonly kind: "enter" | "exit"; readonly p: number; readonly frozen: boolean; readonly frames: number; readonly at: number | null } | null;
   /** The root slot's overlays as last collected (design-013 C1): the two soups' vertex counts and their gate. */
   readonly overlays: OverlayStats;
-  /** The poles as last packed: sources appended to the builder's, whether one rode the analytic pointer, and the pole wakes so far. */
+  /** The poles as last packed: sources PREPENDED to the builder's, whether one rode the analytic pointer, and the pole wakes so far. */
   readonly poles: { readonly sources: number; readonly pointer: boolean; readonly wakes: number };
+  /**
+   * Live portal slots whose INSIDE canvas type did not resolve, cumulative (D-C4.4's neighbour in
+   * the C4 wave): the slot fell back to its parent's config — the old silent behaviour, now counted.
+   * A climbing count with a catalog attached is a container whose `canvasForContainer` binding is
+   * missing, drawn in the wrong grid rather than refused.
+   */
+  readonly portalsUnresolved: number;
 }
 
 export interface GroundComposeStats extends GroundHostStats {
@@ -405,6 +412,18 @@ export function slotFieldConfig(base: FieldConfig, declaration: GroundDeclaratio
   return cfg;
 }
 
+/**
+ * The theme `groundField()` falls back to when a host projects none (D-C4.4): the OS
+ * preference AT THE MOUNT, read once. A dark product that ported `ground()` to
+ * `groundField()` verbatim used to get a white viewport; it now gets its own end of the
+ * pair. Not live-tracked — a switch while the app runs is the app's `setTheme`, which is
+ * the only place that knows what else moves with it. Light where `matchMedia` is absent
+ * (Node, a lab, the oracle).
+ */
+export function defaultTheme(): GroundTheme {
+  return globalThis.matchMedia?.("(prefers-color-scheme: dark)")?.matches === true ? ENGINE_THEMES.dark : ENGINE_THEMES.light;
+}
+
 // ---------------------------------------------------------------- the host
 
 /** How the one host is built: the composited profile's (a device handed in, the cards drawn) or the stratified profile's (its own device, sources only). */
@@ -478,11 +497,13 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
   let rootConfig = configFor(rootType);
   // the config the departed frame was drawn with at the cut — the flight's second slot keeps it (a switch flips the root's)
   let departedConfig = rootConfig;
-  /** A live portal's config from its container's INSIDE type (the catalog's binding); the parent's when nothing resolves. */
+  /** A live portal's config from its container's INSIDE type (the catalog's binding); the parent's when nothing resolves — COUNTED, never silent. */
+  let portalsUnresolved = 0;
   const insideConfig = (container: Entity, config: FieldConfig): FieldConfig => {
     const id = world.get(container, PrefabId)?.id;
     const type = typeof id === "string" ? ctx.catalog?.canvasForContainer(id) : undefined;
-    return type === undefined ? config : configFor(type);
+    if (type === undefined) { portalsUnresolved += 1; return config; }
+    return configFor(type);
   };
 
   // ---- the content pipeline (composited only): the residency, the renders, the video door
@@ -521,6 +542,8 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
   host.container.insertBefore(canvas, host.contentPlane);
 
   let ground: Ground | null = null;
+  /** The device was lost: the layer is over for good (D-C4.3) — nothing renders, and a late `Ground.create` is released. */
+  let ended = false;
   let status: GroundFieldStatus = { state: "pending" };
   let ownDevice: GPUDevice | null = null;
   let disposed = false;
@@ -528,8 +551,9 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
   let redraws = 0;
   let poleWakes = 0;
   let lastPages: GPUTextureView | null = null;
-  let theme: GroundTheme = opts.theme ?? ENGINE_THEMES.light;
-  const writer = composited && ctx.hosts !== undefined ? createDomHostWriter(program, ctx.hosts.contentOf, (e) => world.isAlive(e)) : null;
+  let theme: GroundTheme = opts.theme ?? defaultTheme();
+  // The boundary writer is keyed by the ELEMENT (D-C4.8), so it needs no liveness oracle and no sweep.
+  const writer = composited && ctx.hosts !== undefined ? createDomHostWriter(program, ctx.hosts.contentOf) : null;
   let domWrites = 0;
   // DomRender (B4, §6 reflector 5). Built EAGERLY — the dirt latch has to be
   // able to take a paint event from the first one — but installed into its
@@ -566,16 +590,23 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
   let lastPoles: PackedPoles = { pointer: NO_POINTER, sources: [] };
   let drawnFrames = 0;
   const ensureBuilt = (w: World): boolean => {
-    if (ground === null) return false;
     const tick = w.getResource(FrameInfo)?.tick ?? -1;
-    if (tick >= 0 && builtTick === tick) return pending !== null;
-    builtTick = tick;
-    // the world's dirt is PULLED every frame (the journal drains); the out-of-world wakes set `dirty`.
-    // BOTH pulls run unconditionally — a short-circuit would leave the overlays' journal undrained
-    // and their next `changed()` would answer for two frames at once.
-    const builderDirt = builder.changed();
-    const overlayDirt = overlays.changed();
-    if (builderDirt || overlayDirt) dirty = true;
+    const first = !(tick >= 0 && builtTick === tick);
+    if (first) {
+      builtTick = tick;
+      // The world's dirt is PULLED every frame (the journal drains); the out-of-world wakes set
+      // `dirty`. ALL THREE pulls run unconditionally, and ABOVE the pre-ready return (D-C4.9's
+      // third pull; the return used to skip every one of them): a short-circuit would leave a
+      // journal undrained and its next `changed()` would answer for two frames at once.
+      const builderDirt = builder.changed();
+      const overlayDirt = overlays.changed();
+      let poleDirt = false;
+      for (const s of poles) if (s.changed?.(w) === true) poleDirt = true;
+      if (poleDirt) poleWakes += 1;   // a pulled pole move is the same fact the subscription reports
+      if (builderDirt || overlayDirt || poleDirt) dirty = true;
+    }
+    if (ground === null || ended) return false;   // pre-ready, or the layer is over (D-C4.3)
+    if (!first) return pending !== null;
     if (!dirty) { pending = null; return false; }
     const cam = w.getResource(Camera);
     const vp = w.getResource(Viewport);
@@ -619,6 +650,22 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
     status = { state: "failed", message: `${what}: ${e instanceof Error ? e.message : String(e)}` };
     console.error(`[ice] ground/${composited ? "compose" : "field"}: ${what}`, e);
   };
+  /**
+   * THE LAYER IS OVER (D-C4.3). A lost device cannot draw, and the ground kept rendering into a
+   * dead one: the last opaque frame stayed painted while the DOM panned above it. The layer ends
+   * instead — the ground disposed and nulled (so no `render` ever runs again, including one
+   * resolving after the loss), the canvas removed so the page shows through, `available()` false
+   * and `status()` `failed` for the facade to read. Idempotent; NOT a dispose (the host's
+   * subscriptions and its own device are `dispose()`'s, whoever mounted it).
+   */
+  const endLayer = (): void => {
+    if (ended) return;
+    ended = true;
+    const g = ground;
+    ground = null;
+    g?.dispose();
+    canvas.remove();
+  };
   const createOn = (device: GPUDevice): Promise<Ground> =>
     Ground.create({ device, canvas, ...GROUND_SHADERS, ...(compose?.card !== undefined ? { card: compose.card } : {}), ...(opts.grids !== undefined ? { grids: opts.grids } : {}), overlays: overlays.programs });
   const acquireOwn = (own: GroundFieldOptions): Promise<GPUDevice> => {
@@ -627,7 +674,7 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
     return acquire({
       gpu,
       label: "ground/field",
-      onLost: (info) => { if (!disposed) fail("the device was lost", new Error(`${info.reason}: ${info.message}`)); },
+      onLost: (info) => { if (disposed || ended) return; fail("the device was lost", new Error(`${info.reason}: ${info.message}`)); endLayer(); },
       onError: (error) => { console.error("[ice] ground/field: uncaptured GPU error", error.message); },
     }).then((g) => {
       ownDevice = g.device;
@@ -637,13 +684,23 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
       return g.device;
     });
   };
+  // The COMPOSITED device is the app's — subscribing to its loss is free and the layer's end is the
+  // same (D-C4.3). The app owns the device itself; what ends here is this ground on it.
+  if (compose !== null) {
+    void compose.device.lost?.then((info) => {
+      if (disposed || ended) return;
+      fail("the device was lost", new Error(`${info.reason}: ${info.message}`));
+      endLayer();
+    });
+  }
   // the composited path calls `Ground.create` synchronously (its device is in hand); the field path first acquires its own
   const created: Promise<Ground> = mode.kind === "composited" ? createOn(mode.opts.device) : acquireOwn(mode.opts).then(createOn);
   created
     .then(
       (g) => {
-        // Disposed while the pipelines compiled (StrictMode's double mount, HMR): the ground is nobody's — release it here, or it leaks whole.
-        if (disposed) { g.dispose(); return; }
+        // Disposed while the pipelines compiled (StrictMode's double mount, HMR), or the device was
+        // lost while they did (D-C4.3): the ground is nobody's — release it here, or it leaks whole.
+        if (disposed || ended) { g.dispose(); return; }
         g.fieldConfig = rootConfig;
         ground = g;
         status = { state: "ready" };
@@ -666,17 +723,21 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
     builder.observe(() => { dirty = true; }),
     // a canvas switch flips the overlay gate: the next frame repaints without them (or with them)
     overlays.observe(() => { dirty = true; }),
-    // a canvas switch re-resolves the ROOT slot's config (D-C2.4); the departed slot keeps the one it had
+    // A canvas switch re-resolves the ROOT slot's config (D-C2.4). The departed slot's config is
+    // snapshotted at EVERY canvas-session change and BEFORE the root re-resolves (D-C4.2): the cut
+    // takes the config the departed frame was drawn with, and a SAME-TYPE enter (board → board) is
+    // a cut like any other. Taking it only past the type test left the second slot drawing in the
+    // config from before the last type change, and the enter popped.
     ...(ctx.canvas !== undefined
       ? [ctx.canvas.subscribe(() => {
           if (disposed) return;
+          departedConfig = rootConfig;
+          dirty = true;
           const next = currentType();
           if (next === rootType) return;
-          departedConfig = rootConfig;
           rootType = next;
           rootConfig = configFor(rootType);
           if (ground !== null) ground.fieldConfig = rootConfig;
-          dirty = true;
         })]
       : []),
     // a pole's move is an out-of-world wake (a pointer entity's write, a halo's ease, a remote cursor)
@@ -726,7 +787,9 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
       const frames = composited ? built.frames : NO_FRAMES;
       const portals = built.portals.map((p) => dressSlot(p, pointer, composited));
       const outgoing = flight === null ? null : dressSlot(flight.outgoing, pointer, composited);
-      const sources: readonly FieldSource[] = packed.sources.length === 0 ? built.sources : [...built.sources, ...packed.sources];
+      // The poles come FIRST (D-C4.9): `packSources` truncates at `MAX_SOURCES` in order, so past
+      // the cap a crowded board drops its far CARDS and never the cursor that is being looked at.
+      const sources: readonly FieldSource[] = packed.sources.length === 0 ? built.sources : [...packed.sources, ...built.sources];
       const inputs: GroundFrameInputs = {
         view,
         pointer,
@@ -768,6 +831,7 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
       drawnFrames,
       overlays: overlays.stats(),
       poles: { sources: lastPoles.sources.length, pointer: lastPoles.pointer.on, wakes: poleWakes },
+      portalsUnresolved,
       ...builder.stats(),
     }),
     wakes: () => builder.wakes(),
@@ -779,6 +843,10 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
     configureGrid(cfg) {
       overrides = mergeGridConfig(overrides, cfg);
       rootConfig = configFor(rootType);
+      // At REST the departed slot's config and the root's are one config, so a re-tune moves both
+      // (D-C4.2). Mid-flight it must not: the second slot draws the frame that departed, in the
+      // config the cut left it with.
+      if (world.getResource(NavTransition)?.active !== true) departedConfig = rootConfig;
       if (ground !== null) ground.fieldConfig = rootConfig;
       dirty = true;
     },

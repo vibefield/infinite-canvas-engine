@@ -34,10 +34,11 @@ import {
   Viewport,
   widgets,
 } from "@ice/core";
+import type { TextureHandle } from "@ice/core";
 import { geometry, type RasterStrategy } from "@ice/kernel";
 import { describe, expect, it } from "vitest";
 import { createDomRender, type ElementCopy, entityOfHost } from "../../src/compose/dom-render";
-import { createContentResidency } from "../../src/compose/residency";
+import { type ContentResidency, createContentResidency } from "../../src/compose/residency";
 import { FIT } from "../../src/nav/flight";
 import { must } from "./must";
 
@@ -125,6 +126,35 @@ interface BoardOpts {
   readonly pageSide?: number;
   /** The device limit Residency clamps an `own` texture to. */
   readonly maxTextureSize?: number;
+  /** Wrap the residency the render is handed (the refusal rig above). */
+  readonly wrap?: (base: ContentResidency) => ContentResidency;
+}
+
+/**
+ * The board's residency with `realize` REFUSED for the handles `refuse` names — the table's own
+ * answer for a handle it does not know. It deliberately does not destroy the texture the way the
+ * real `realize` does on a refusal: DomRender's three `next.destroy()` calls are exactly what these
+ * rows measure, and a second destroy would hide whether they ran.
+ */
+function refusingResidency(base: ContentResidency, refuse: (h: TextureHandle) => boolean, revision: () => number): ContentResidency {
+  return {
+    get table() { return base.table; },
+    attach: (t) => base.attach(t),
+    realize: (h, tex, opts) => (refuse(h) ? false : base.realize(h, tex, opts)),
+    textureOf: (h) => base.textureOf(h),
+    wrote: (e) => base.wrote(e),
+    unwrote: (e) => base.unwrote(e),
+    isWritten: (e) => base.isWritten(e),
+    touch: () => base.touch(),
+    onTouch: (cb) => base.onTouch(cb),
+    onForget: (cb) => base.onForget(cb),
+    contentOf: (e) => base.contentOf(e),
+    pagesView: () => base.pagesView(),
+    revision,
+    collect: () => base.collect(),
+    stats: () => base.stats(),
+    dispose: () => base.dispose(),
+  };
 }
 
 function makeBoard(o: BoardOpts = {}) {
@@ -139,8 +169,9 @@ function makeBoard(o: BoardOpts = {}) {
 
   const log: string[] = [];
   const gpu = fakeDevice(log);
-  const residency = createContentResidency(ce.world);
-  residency.attach(store.table);
+  const base = createContentResidency(ce.world);
+  base.attach(store.table);
+  const residency = o.wrap?.(base) ?? base;
 
   const els = new Map<Entity, HTMLElement>();
   const styleOf = (e: Entity) => (must(els.get(e), "a host").style as unknown as Record<string, string>);
@@ -242,6 +273,148 @@ describe("DomRender · the copy the world asked for (B4)", () => {
     expect(b.stats()).toMatchObject({ copies: 1, oversize: 1, refused: 0, pending: 0 });
     expect(b.residency.isWritten(card)).toBe(false); // never claimed: the card draws the plate, not garbage
     expect(b.residency.contentOf(card).mode).toBe("plate");
+  });
+
+  // D-C4.7. The row above changes DESTINATION on the way (a page slot, then a private texture), so
+  // the write it does not claim was never owed. This is the case the B9 review actually named: a
+  // card that COPIED, then grew INSIDE its band. `ownFor` clamps the bigger size back to the same
+  // numbers, so the handle, the uv and therefore the whole `TextureRef` are identical — nothing in
+  // the world says the raster stopped fitting, and the standing write drew the old pixels
+  // STRETCHED over the card for as long as it stayed that size.
+  it("an oversize refusal CLEARS a standing write — a card that grew inside its band draws its plate, not a stale raster stretched", () => {
+    const b = makeBoard({ pageSide: 256, maxTextureSize: 300 });
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.world.edit(card).set(Size, { w: 300, h: 260 });   // past the 256 page: a private texture, unclamped at 300
+    b.step(3);
+    const entry = must(b.store.table.describe(b.ref(card).texture), "the own entry");
+    if (entry.kind !== "own") throw new Error(`expected an own entry, got ${entry.kind}`);
+    expect([entry.width, entry.height]).toEqual([300, 260]);
+    b.flush();   // the host's box moved: placed this flush
+    b.flush();   // …and copied on the next, off the new paint record
+    expect(b.stats()).toMatchObject({ copies: 1, oversize: 0 });
+    expect(b.residency.isWritten(card)).toBe(true);
+    expect(b.residency.contentOf(card).mode).toBe("own");
+
+    const before = { ...b.ref(card) };
+    b.world.edit(card).set(Size, { w: 600, h: 520 });   // clamped back to 300×260: the SAME handle
+    b.step(3);
+    expect({ ...b.ref(card) }).toEqual(before);          // the world says nothing changed
+    expect(b.residency.isWritten(card)).toBe(true);      // …so the write still stands here
+    b.flush();   // the box moved with the card
+    b.flush();   // the copy is refused: 600×520 of raster into a 300×260 destination
+    expect(b.stats()).toMatchObject({ copies: 1, oversize: 1 });
+    expect(b.residency.isWritten(card)).toBe(false);
+    expect(b.residency.contentOf(card).mode).toBe("plate");
+  });
+
+  it("the PAGES arm refuses too: a destination rect smaller than the host's raster is never copied into", () => {
+    const b = makeBoard();
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 1, oversize: 0 });
+    // A page slot HALF the rect Residency placed. The allocator never writes one (the slot is
+    // `geometry().slotSize`, the same call the copy sizes itself from) — this is the arm's proof
+    // that the guard is on `dest`, not on the entry's kind.
+    const r = b.ref(card);
+    b.world.edit(card).set(TextureRef, { ...r, u1: r.u0 + (r.u1 - r.u0) / 2 });
+    b.advance(50);   // past the bucket, so the new debt is due rather than deferred
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 1, oversize: 1 });
+    expect(b.residency.isWritten(card)).toBe(false);
+  });
+});
+
+describe("DomRender · a refused realisation backs off (D-C4.7)", () => {
+  // Every flush used to mint a full destination and destroy it again while the table refused —
+  // a page array per frame, for as long as the refusal stood. `realize` is a function of the
+  // handle and the table's state, so while neither moves there is nothing to try.
+  it("mints ONCE over five flushes, destroys what it minted, and keeps the debt", () => {
+    let rev = 0;
+    const b = makeBoard({ wrap: (base) => refusingResidency(base, () => true, () => rev) });
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    for (let i = 0; i < 5; i++) b.flush();
+    const minted = must(b.gpu.made[0], "the page array the first flush minted");
+    expect(b.gpu.made).toHaveLength(1);
+    expect(b.log).toEqual([`destroy ${minted.name}`]);   // `ensurePages`' own hand, on the create path
+    expect(b.stats()).toMatchObject({ copies: 0, backedOff: 4, pending: 1 });
+    expect(b.residency.isWritten(card)).toBe(false);
+
+    // The table's revision is the door: a producer registering is not a world change, so nothing
+    // journals it — this number is how the render hears about it.
+    rev += 1;
+    b.flush();
+    expect(b.gpu.made).toHaveLength(2);
+    b.flush();
+    b.flush();
+    expect(b.gpu.made).toHaveLength(2);   // …and then it backs off again
+    expect(b.stats()).toMatchObject({ copies: 0, backedOff: 6 });
+  });
+
+  it("a new HANDLE is a new answer: a re-slot retries without waiting for the revision", () => {
+    const b = makeBoard({ wrap: (base) => refusingResidency(base, () => true, () => 0) });
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    b.flush();
+    expect(b.gpu.made).toHaveLength(1);
+    // a re-size past the page takes a private `own` handle — a destination the refusal never named
+    b.world.edit(card).set(Size, { w: 4000, h: 2600 });
+    b.step(3);
+    b.flush();
+    b.flush();
+    expect(b.gpu.made.length).toBeGreaterThan(1);
+    expect(must(b.gpu.made[1], "the own texture").label).toContain("own");
+  });
+
+  it("the GROWTH path destroys the array it grew when the realisation is refused, and grows no more", () => {
+    let refuseAfter = false;
+    const b = makeBoard({ wrap: (base) => refusingResidency(base, () => refuseAfter, () => 0) });
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    const first = must(b.gpu.made[0], "the first page array");
+    expect(b.stats()).toMatchObject({ copies: 1, growths: 0 });
+
+    refuseAfter = true;
+    b.store.table.setPageLayers(3);
+    b.advance(50);
+    b.render.markDirtyHosts([b.paintOf(card)]);
+    b.flush();
+    const grown = must(b.gpu.made[1], "the grown page array");
+    expect(grown.depthOrArrayLayers).toBe(3);
+    expect(b.log).toEqual([`destroy ${grown.name}`]);   // the grown array is nobody's
+    expect(b.stats()).toMatchObject({ growths: 0, copies: 1 });
+    expect(b.log).not.toContain(`destroy ${first.name}`);
+    // and the layer copy is not paid for again on the next flushes
+    b.flush();
+    b.flush();
+    expect(b.gpu.made).toHaveLength(2);
+    expect(b.stats().backedOff).toBe(2);
+  });
+
+  it("the OWN path destroys its refused texture, once", () => {
+    const b = makeBoard({ pageSide: 256, wrap: (base) => refusingResidency(base, (h) => base.table?.describe(h)?.kind === "own", () => 0) });
+    const card = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.world.edit(card).set(Size, { w: 400, h: 260 });   // past the page side: a private texture
+    b.step(3);
+    b.flush();
+    b.flush();
+    b.flush();
+    const own = must(b.gpu.made.find((t) => t.name.includes("own")), "the own texture");
+    expect(b.gpu.made.filter((t) => t.name.includes("own"))).toHaveLength(1);
+    expect(b.log).toEqual([`destroy ${own.name}`]);
+    // three flushes: the first placed the resized host, the second minted and was refused, the third backed off
+    expect(b.stats()).toMatchObject({ copies: 0, backedOff: 1, pending: 1 });
   });
 
   it("a re-slot is a new destination and therefore a new copy — the debt is per DESTINATION, not per card", () => {

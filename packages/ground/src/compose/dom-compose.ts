@@ -13,6 +13,15 @@
 // properties change-only, recomputing the clip only when the program's
 // `clipKey` says the shape moved (the reveal's ~300 ms; never while a card
 // is merely lifted or panned).
+//
+// THE CACHE IS KEYED BY THE ELEMENT (D-C4.8), in a `WeakMap`. What the record
+// remembers is what is written ON that element, so the element is what it
+// belongs to: an entity-keyed record survives a REMOUNT of the content element
+// and suppresses the clip, the transform and the opacity on the new one, which
+// since B9 made the cache authoritative for two more properties meant a
+// remounted card kept none of its boundary. The element keys it, the collector
+// sweeps it — no liveness oracle, no O(every card ever seen) sweep per write,
+// and no `forget()` door (it had no callers).
 
 import type { Entity } from "@ice/core";
 import type { ShellGeometry } from "../card/geometry";
@@ -59,8 +68,6 @@ export interface HostEntry { readonly entity: Entity; readonly G: ShellGeometry;
 export interface DomHostWriter {
   /** Write the boundary for every card on screen; returns the number of DOM properties written this call. */
   write(entries: Iterable<HostEntry>): number;
-  /** The card left the board: forget its last-written state. */
-  forget(entity: Entity): void;
   /** Clip polygons computed so far — the churn instrument. */
   readonly clips: number;
   dispose(): void;
@@ -69,8 +76,8 @@ export interface DomHostWriter {
 interface Written { key: string; clip: string; transform: string; opacity: string; origin: boolean }
 
 /** The writer of a DOM card's boundary: `contentOf` is the dom reflector's content-element lookup. */
-export function createDomHostWriter(program: CardProgram<ShellGeometry>, contentOf: (entity: Entity) => HTMLElement | undefined, isAlive: (entity: Entity) => boolean = () => true): DomHostWriter {
-  const last = new Map<Entity, Written>();
+export function createDomHostWriter(program: CardProgram<ShellGeometry>, contentOf: (entity: Entity) => HTMLElement | undefined): DomHostWriter {
+  const last = new WeakMap<HTMLElement, Written>();
   let clips = 0;
   const keyOf = (G: ShellGeometry, w: number, h: number): string => `${w}|${h}|${program.clipKey?.(G) ?? (G.radius / (G.scale > 0 ? G.scale : 1)).toFixed(3)}`;
   return {
@@ -80,8 +87,8 @@ export function createDomHostWriter(program: CardProgram<ShellGeometry>, content
       for (const { entity, G, w, h, target } of entries) {
         const el = contentOf(entity);
         if (el === undefined) continue;
-        let rec = last.get(entity);
-        if (rec === undefined) { rec = { key: "", clip: "", transform: "", opacity: "", origin: false }; last.set(entity, rec); }
+        let rec = last.get(el);
+        if (rec === undefined) { rec = { key: "", clip: "", transform: "", opacity: "", origin: false }; last.set(el, rec); }
         if (!rec.origin) { el.style.transformOrigin = "50% 50%"; rec.origin = true; writes++; }
         const key = keyOf(G, w, h);
         if (key !== rec.key) {
@@ -100,11 +107,11 @@ export function createDomHostWriter(program: CardProgram<ShellGeometry>, content
         const opacity = composed && G.frameAlpha !== 1 ? G.frameAlpha.toFixed(4) : "";
         if (opacity !== rec.opacity) { el.style.opacity = opacity; rec.opacity = opacity; writes++; }
       }
-      // The entity-keyed store's sweep (§7): a record whose card is gone is dropped here, on the writer's own tick.
-      for (const e of last.keys()) if (!isAlive(e)) last.delete(e);
       return writes;
     },
-    forget(entity) { last.delete(entity); },
-    dispose() { last.clear(); },
+    // Nothing to clear: the records are held weakly by the elements they describe, so a card that
+    // left the board takes its record with its element (§7's "entity-keyed store outliving the
+    // entity" class, ended at the key).
+    dispose() {},
   };
 }

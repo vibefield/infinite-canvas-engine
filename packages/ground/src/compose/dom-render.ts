@@ -135,11 +135,20 @@ export interface DomRenderStats {
    * the Q10 oversize path clamps a private texture to the device limit while the L1 copy writes the
    * element's whole raster, and a copy past the texture's edge is a validation error whose write
    * must not be claimed (B9 review blocker 2 — the drift class, reopened). The debt is dropped: the
-   * card draws the plate until its band changes and Residency names a destination that fits. The
-   * real answer projects the clamp into the uv (D11); until then a non-zero count here is a card at
-   * a band its device cannot hold.
+   * card draws the plate until its band changes and Residency names a destination that fits — and
+   * its STANDING write is cleared with the refusal (`residency.unwrote`, D-C4.7), or a card that
+   * copied once and then grew inside the same band would keep its ref and draw the stale raster
+   * stretched. The real answer projects the clamp into the uv (D11); until then a non-zero count
+   * here is a card at a band its device cannot hold.
    */
   readonly oversize: number;
+  /**
+   * Copies skipped because the TABLE refused the destination's realisation and neither the handle
+   * nor the table's revision has moved since (D-C4.7). The debt is KEPT — it retries the moment
+   * either moves — and nothing is minted meanwhile: the unbacked-off path allocated a full texture
+   * and destroyed it again on every flush, for as long as the refusal stood.
+   */
+  readonly backedOff: number;
   /** Cards whose dirt a pause has parked right now (outside `pending`). */
   readonly parked: number;
   /** Cards whose dirt a bucket has deferred right now. */
@@ -228,6 +237,13 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
    * paint event never arrived cannot swallow a real content change later.
    */
   const selfWrote = new Map<Element, number>();
+  /**
+   * A realisation the table REFUSED, per card: the destination it was refused for and the table's
+   * revision at the time (D-C4.7). While both stand there is nothing to try — `realize` is a pure
+   * function of the handle and the table's state — so the copy is skipped and the debt kept. A new
+   * handle (a re-slot) or a bumped revision (a producer registered) retires the record.
+   */
+  const refusedRealize = new Map<Entity, { readonly handle: TextureHandle; readonly revision: number }>();
   let flushes = 0;
 
   // The world's half of the debt: a card's DESTINATION changed (a promotion,
@@ -243,6 +259,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
   let refused = 0;
   let unavailable = 0;
   let oversize = 0;
+  let backedOff = 0;
   let resized = 0;
   let growths = 0;
   let pagesLayers = 0;
@@ -255,6 +272,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     parked.delete(e);
     lastCopy.delete(e);
     placed.delete(e);
+    refusedRealize.delete(e);
     const el = hosts.hostOf(e);
     if (el !== undefined) selfWrote.delete(el);
   };
@@ -407,6 +425,13 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
 
     const entry = table.describe(ref.texture);
     if (entry === undefined) return false;
+    // BACKED OFF (D-C4.7): the table refused this destination's realisation and nothing that
+    // decides the answer has moved. Keep the debt, mint nothing.
+    const back = refusedRealize.get(e);
+    if (back !== undefined) {
+      if (back.handle === ref.texture && back.revision === residency.revision()) { backedOff += 1; return false; }
+      refusedRealize.delete(e);
+    }
     let texture: GPUTexture | undefined;
     let origin: { x: number; y: number; z: number };
     let dest: { w: number; h: number };
@@ -423,10 +448,20 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     } else {
       return true; // a `stable` handle is a video producer's (B6), never copied from a host
     }
-    if (texture === undefined) return false;
+    // The realisation was refused (all three paths above destroy what they minted): remember the
+    // destination and the revision, so the next flushes cost nothing until one of them moves.
+    if (texture === undefined) {
+      refusedRealize.set(e, { handle: ref.texture, revision: residency.revision() });
+      return false;
+    }
     if (geo.written.w > dest.w || geo.written.h > dest.h) {
       oversize += 1;
-      return true; // refused, and NOT claimed: the copy would run past the destination's edge
+      // NOT claimed — and any STANDING claim is dropped (D-C4.7). A card that copied once and then
+      // grew past its destination inside the same band keeps its ref (`ownFor` clamps to the same
+      // numbers and `writeRef` early-returns), so the old write would stand and the card would draw
+      // the stale raster STRETCHED. It draws its plate instead, which is honest.
+      residency.unwrote(e);
+      return true; // refused: the copy would run past the destination's edge
     }
 
     try {
@@ -554,6 +589,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       refused,
       unavailable,
       oversize,
+      backedOff,
       parked: parked.size,
       deferred: deferred.size,
       pending: dirty.size + deferred.size,
@@ -570,6 +606,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       lastCopy.clear();
       placed.clear();
       selfWrote.clear();
+      refusedRealize.clear();
     },
   };
 }

@@ -74,6 +74,36 @@ function makeBoard() {
   return { ce, world: ce.world, step, store, uninstall, residency, builder, build, ref, dom, promoted, island };
 }
 
+describe("the content residency · the two doors the C4 backoff needs (D-C4.7)", () => {
+  it("`unwrote` is the inverse of `wrote`: the card draws its plate again, and the frame is told", () => {
+    const { store, residency, ref, island } = makeBoard();
+    residency.attach(store.table);
+    residency.realize(ref(island).texture, fakeTexture("rgba8unorm", [], "island"));
+    expect(residency.wrote(island)).toBe(true);
+    expect(residency.contentOf(island).mode).toBe("own");
+    let woke = 0;
+    const off = residency.onTouch(() => { woke += 1; });
+    residency.unwrote(island);
+    expect(residency.isWritten(island)).toBe(false);
+    expect(residency.contentOf(island).mode).toBe("plate");
+    expect(woke).toBe(1);                       // the pixels a frame shows changed: the builder wakes
+    residency.unwrote(island);
+    expect(woke).toBe(1);                       // …and a card that owed nothing is not a change
+    off();
+  });
+
+  it("`revision` is the table's — the number a producer's registration moves, which no journal carries", () => {
+    const { store, residency, island } = makeBoard();
+    expect(residency.revision()).toBe(0);       // before the attach there is no table to ask
+    residency.attach(store.table);
+    const before = residency.revision();
+    expect(before).toBe(store.table.revision());
+    store.table.register(island, { width: 8, height: 8, srgb: false });
+    expect(residency.revision()).toBe(store.table.revision());
+    expect(residency.revision()).toBeGreaterThan(before);
+  });
+});
+
 describe("the content residency · what a handle is on the ground (B4a)", () => {
   it("names the target through effectiveTarget: dom stays dom, gl is gpu, a card without surface facts is dom", () => {
     const { world, dom, promoted, island } = makeBoard();

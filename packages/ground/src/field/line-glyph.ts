@@ -28,11 +28,14 @@ export const LINE_GLYPH = "line";
 
 /** The line grid's own config — what `FieldConfig.ext.line` carries. */
 export interface LineConfig {
-  /** Half-widths (DEVICE px) and coverage alphas at the fade-in window's top and a decade above it (lattice/line.ts). */
+  /**
+   * Half-widths (CSS px — D-C4.10; `lineUniformValues` scales them by the frame's dpr at upload)
+   * and coverage alphas at the fade-in window's top and a decade above it (lattice/line.ts).
+   */
   readonly law: LineLaw;
 }
 
-/** The engine's law: one device px wide and one weight at every rung and every zoom (theme.ts `LINE_GRID`). */
+/** The engine's law: one CSS px wide and one weight at every rung, every zoom and every dpr (theme.ts `LINE_GRID`). */
 export const DEFAULT_LINE_CONFIG: LineConfig = { law: LINE_GRID.law };
 
 export const lineConfigOf = (cfg: FieldConfig): LineConfig =>
@@ -44,15 +47,22 @@ export const withLine = (cfg: FieldConfig, line: LineConfig): FieldConfig => ({ 
 /** The line grid's own uniforms; everything else it reads is the engine's `Uniforms` block. */
 export const LineUniforms = defineStruct("LineUniforms", [
   ["ink", "vec4f"],   // the theme's line ink (sRGB), unused ×1 — the ALPHA is the engine's `Uniforms.color.w`
-  ["law", "vec4f"],   // half-width thin, thick (DEVICE px), alpha thin, thick (lattice/line.ts `LineLaw`)
+  ["law", "vec4f"],   // half-width thin, thick (DEVICE px: the law's CSS px × dpr), alpha thin, thick (lattice/line.ts `LineLaw`)
 ] as const);
 
-/** The numbers the pass uploads for a frame: the theme's ink, and the config's law. */
-export function lineUniformValues(cfg: FieldConfig, theme: GroundTheme) {
+/**
+ * The numbers the pass uploads for a frame: the theme's ink, and the config's law with its WIDTHS
+ * IN DEVICE PX (D-C4.10). The law is authored in CSS px — the unit a design has an opinion in — and
+ * the shader measures in device px (`px = 1 / (zoom · dpr)` world units per device pixel), so the
+ * dpr conversion belongs here, once, where the frame is known. The alphas are pure coverage and
+ * scale by nothing.
+ */
+export function lineUniformValues(cfg: FieldConfig, theme: GroundTheme, dpr = 1) {
   const { law } = lineConfigOf(cfg);
+  const d = dpr > 0 ? dpr : 1;
   return {
     ink: [theme.lineInk[0], theme.lineInk[1], theme.lineInk[2], 0],
-    law: [law.thin, law.thick, law.alphaThin, law.alphaThick],
+    law: [law.thin * d, law.thick * d, law.alphaThin, law.alphaThick],
   };
 }
 
@@ -104,9 +114,10 @@ export class LinePass implements SurfacePass {
 
   /** Upload the frame. The line grid has no auxiliary pass, so this never reports one. */
   prepare(_encoder: GPUCommandEncoder, frame: FieldFrame, cfg: FieldConfig, theme: GroundTheme): boolean {
+    // the law's widths are CSS px; the frame's dpr converts them for the shader (D-C4.10)
     this.uniforms.set(uniformValues(frame, cfg, 0));
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
-    this.line.set(lineUniformValues(cfg, theme));
+    this.line.set(lineUniformValues(cfg, theme, frame.view.dpr));
     this.device.queue.writeBuffer(this.lineBuf, 0, this.line.view());
     return false;
   }

@@ -20,10 +20,20 @@ export interface StubDevice {
   readonly submits: number;
   /** `destroy()` calls so far. */
   readonly destroyed: number;
+  /** `createBuffer` calls so far — what a lazily-allocated pass is measured by. */
+  readonly buffers: number;
+  /** `createBindGroup` calls so far. */
+  readonly bindGroups: number;
+  /**
+   * Lose the device: resolves `device.lost`, which is what a real driver reset does and what the
+   * layer's end hangs off (D-C4.3). The returned promise settles after the handlers have run.
+   */
+  lose(reason?: string, message?: string): Promise<void>;
 }
 
 export function stubDevice(): StubDevice {
-  const state = { writes: 0, submits: 0, destroyed: 0 };
+  const state = { writes: 0, submits: 0, destroyed: 0, buffers: 0, bindGroups: 0 };
+  let loseDevice: (info: GPUDeviceLostInfo) => void = () => {};
   const device = {
     createBindGroupLayout: (d: GPUBindGroupLayoutDescriptor) => ({ label: d.label }) as unknown as GPUBindGroupLayout,
     createPipelineLayout: () => ({}) as unknown as GPUPipelineLayout,
@@ -32,8 +42,8 @@ export function stubDevice(): StubDevice {
       getCompilationInfo: async () => ({ messages: [] }),
     }) as unknown as GPUShaderModule,
     createRenderPipelineAsync: async (d: GPURenderPipelineDescriptor) => ({ label: d.label }) as unknown as GPURenderPipeline,
-    createBuffer: () => ({ getMappedRange: () => new ArrayBuffer(0), destroy: () => {} }) as unknown as GPUBuffer,
-    createBindGroup: (d: GPUBindGroupDescriptor) => ({ label: d.label }) as unknown as GPUBindGroup,
+    createBuffer: () => { state.buffers += 1; return { getMappedRange: () => new ArrayBuffer(0), destroy: () => {} } as unknown as GPUBuffer; },
+    createBindGroup: (d: GPUBindGroupDescriptor) => { state.bindGroups += 1; return { label: d.label } as unknown as GPUBindGroup; },
     createTexture: (d: GPUTextureDescriptor) => {
       const size = d.size as number[];
       return { width: size[0] ?? 1, height: size[1] ?? 1, createView: () => ({}) as GPUTextureView, destroy: () => {} } as unknown as GPUTexture;
@@ -42,11 +52,22 @@ export function stubDevice(): StubDevice {
     queue: { writeBuffer: () => { state.writes += 1; }, submit: () => { state.submits += 1; } },
     limits: { maxTextureDimension2D: 4096 },
     features: new Set<string>(),
-    lost: new Promise<GPUDeviceLostInfo>(() => {}),
+    lost: new Promise<GPUDeviceLostInfo>((resolve) => { loseDevice = resolve; }),
     addEventListener: () => {},
     destroy: () => { state.destroyed += 1; },
   } as unknown as GPUDevice;
-  return { device, get writes() { return state.writes; }, get submits() { return state.submits; }, get destroyed() { return state.destroyed; } };
+  return {
+    device,
+    get writes() { return state.writes; },
+    get submits() { return state.submits; },
+    get destroyed() { return state.destroyed; },
+    get buffers() { return state.buffers; },
+    get bindGroups() { return state.bindGroups; },
+    lose(reason = "unknown", message = "the stub device was lost") {
+      loseDevice({ reason, message } as unknown as GPUDeviceLostInfo);
+      return new Promise<void>((r) => setTimeout(r, 0));
+    },
+  };
 }
 
 /** An encoder whose render passes record which pipeline drew what. */

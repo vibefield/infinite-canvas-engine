@@ -37,9 +37,11 @@ import type { FieldFrame } from "../../src/field/layout";
 import type { FramePass } from "../../src/card/frame-pass";
 import type { FillPass } from "../../src/nav/fill-pass";
 import { drawFrame, prepareFrame, SlotPool, type GroundFrameInputs, type SlotOverlay, type SlotSet } from "../../src/compose/ground";
-import type { OverlayPass, OverlayStage } from "../../src/compose/overlay";
+import { type OverlayPass, type OverlayStage, wiresOverlay } from "../../src/compose/overlay";
 import { createOverlays } from "../../src/compose/overlays";
 import { THEMES } from "../../oracle/fixtures/vf-theme";
+import { must } from "./must";
+import { installGpuGlobals, stubDevice } from "./stub-gpu";
 
 // ---------------------------------------------------------------- §1 the slot
 
@@ -260,6 +262,40 @@ function fakeCanvas(initial: CanvasType | undefined) {
 const typeWith = (ground: { wires?: boolean; guides?: boolean }): CanvasType =>
   ({ id: "t", semanticVersion: 1, semantic: { placement: { widgets: [] } }, presentation: { ground: { glyph: "dot", ...ground } }, __canvasType: true }) as unknown as CanvasType;
 
+describe("the overlay seam · a pooled slot's overlay allocates lazily", () => {
+  // D-C1.3 gives a nested portal slot and the flight's departed slot NO overlay data, ever — and
+  // every one of them used to mint a uniform buffer and a bind group per registered overlay the
+  // moment the pool spawned it. A board flying into a folder pays that for wires and guides it
+  // will not draw. The instance is the slot's; the MEMORY is the first prepare with data.
+  it("acquiring a pooled slot mints nothing; the first prepare WITH data mints the buffer and the group, once", async () => {
+    installGpuGlobals();
+    const gpu = stubDevice();
+    const root = await wiresOverlay().create(gpu.device, "rgba8unorm");
+    expect([gpu.buffers, gpu.bindGroups]).toEqual([0, 0]);   // the root pass itself allocates nothing at create
+
+    const log: Log = [];
+    const pool = new SlotPool(slotSet(log, "root", [{ name: "wires", stage: "under", pass: root }]));
+    const slot = pool.acquire();
+    const spawned = must(slot.overlays?.[0], "the pooled slot's wires instance").pass;
+    expect(spawned).not.toBe(root);
+    expect([gpu.buffers, gpu.bindGroups]).toEqual([0, 0]);   // …and neither does the slot it spawned
+
+    // a slot with no data prepares nothing and still allocates nothing
+    expect(spawned.prepare(encoder, { view: VIEW, pointer: POINTER }, undefined, THEME)).toBe(false);
+    expect([gpu.buffers, gpu.bindGroups]).toEqual([0, 0]);
+
+    // the first prepare with data: the two vertex buffers, the uniform buffer, one bind group
+    expect(spawned.prepare(encoder, { view: VIEW, pointer: POINTER }, SOUP, THEME)).toBe(true);
+    expect(gpu.buffers).toBe(3);
+    expect(gpu.bindGroups).toBe(1);
+    // and never again for the same soup
+    expect(spawned.prepare(encoder, { view: VIEW, pointer: POINTER }, SOUP, THEME)).toBe(true);
+    expect([gpu.buffers, gpu.bindGroups]).toEqual([3, 1]);
+    spawned.dispose();
+    root.dispose();
+  });
+});
+
 describe("the overlay seam · the driver", () => {
   it("collects both soups on the first build, under the names the ground knows", () => {
     const { world } = boardWorld();
@@ -371,5 +407,31 @@ describe("the overlay seam · the driver", () => {
     world.edit(a).set(Position, { x: 999, y: 0 });
     expect(d.changed()).toBe(false);
     expect(d.build(FRAME)).toBeUndefined();
+  });
+});
+
+describe("the overlay seam · an EMPTY board is a cached answer", () => {
+  // The ordinary board has no wires and no guides. `undefined` is its collection's honest result,
+  // and it was also the cache's "nothing cached" sentinel — so both soups were re-collected on
+  // EVERY painted frame, for as long as the board stayed empty. `collects`'s own doc said it never
+  // ran once per frame.
+  it("collects ONCE over a hundred painted frames, and still re-collects when the camera or a fact moves", () => {
+    const world = createWorld();
+    const d = createOverlays(world);
+    d.changed();
+    expect(d.build(FRAME)).toBeUndefined();
+    expect(d.stats().collects).toBe(1);
+    for (let i = 0; i < 100; i++) expect(d.build(FRAME)).toBeUndefined();
+    expect(d.stats().collects).toBe(1);
+
+    // the cache is still a cache, not a latch: the camera is half the input
+    expect(d.build({ ...FRAME, camera: { x: 40, y: 0, zoom: 1 } })).toBeUndefined();
+    expect(d.stats().collects).toBe(2);
+    // …and a guide appearing on the empty board is collected and drawn
+    world.spawn({ components: [[GuideLine, { axis: "x", at: 150, from: 0, to: 0 }]] });
+    expect(d.changed()).toBe(true);
+    expect(Object.keys(d.build(FRAME) ?? {})).toEqual(["guides"]);
+    expect(d.stats().collects).toBe(3);
+    d.dispose();
   });
 });

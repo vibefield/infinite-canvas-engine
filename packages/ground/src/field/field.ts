@@ -57,6 +57,8 @@ export class Field {
   private forceBake = true;
   private pending: { l: Lod; counts: readonly [RungCount, RungCount, RungCount]; baked: boolean; n: number; w: number; h: number; fineLive: number; surface: string | null; aux: boolean } | null = null;
   private last: FieldStats = { baked: false, bakes: 0, instances: 0, fine: "off", atlasW: 0, atlasH: 0, sources: 0, k0: 0, fade: 0, surface: null, aux: false };
+  /** Glyph names nothing registered, said ONCE each: a frame draws the dot instead, and never in silence. */
+  private readonly unknownGlyphs = new Set<string>();
 
   private readonly device: GPUDevice;
   readonly bake: BakePass;
@@ -150,8 +152,18 @@ export class Field {
       this.last = { baked: false, bakes: this.bakes, instances: 0, fine: "off", atlasW: p.w, atlasH: p.h, sources: 0, k0: p.l.k0, fade: p.l.fade, surface: p.surface, aux: p.aux };
       return this.last;
     }
-    // an unregistered glyph name draws as the engine's dot — the ground never refuses a frame
-    const glyph = this.glyphs.has(this.config.glyph) ? this.config.glyph : "dot";
+    // An unregistered glyph name draws as the engine's dot — the ground never refuses a frame — and
+    // says so once per name: a canvas type naming a glyph its pack did not register used to fall
+    // back in silence, and a board in the wrong grid looks like a design decision.
+    const named = this.config.glyph;
+    let glyph = named;
+    if (!this.glyphs.has(named)) {
+      if (!this.unknownGlyphs.has(named)) {
+        this.unknownGlyphs.add(named);
+        console.warn(`[ice] ground/field: no glyph ${JSON.stringify(named)} is registered — drawing the dot`);
+      }
+      glyph = "dot";
+    }
     const fine = fineSchedule(p.l, p.counts, this.config.fineSchedule, p.fineLive);
     // (the dressed fade-in already decided `fineLive` in prepare; the schedule and the glyph are the config's)
     this.glyphs.record(pass, { glyph, fine, counts: p.counts });
