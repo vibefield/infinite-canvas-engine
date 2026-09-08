@@ -21,10 +21,54 @@ and 0.12.0's fixes to `ground()`, `groundHost` and `ground({ lift })` describe t
 functions Phase C deleted. Read that Added and that Fixed as the history of a cut
 nobody installed, never as this release's surface.
 
+### Breaking, at a glance
+
+design-013 rebuilt the presentation layer in three phases, and each one broke
+something. In the order an upgrade meets them:
+
+- **Phase A — where a card presents is a FACT, not a policy.**
+  `defineWidget({ presentation })` and the whole `SurfacePresentation` family are
+  RETIRED; a kind's own behaviour is the one writer of `SurfaceTarget`, and declaring
+  nothing is still right for almost every widget. `@vibecook/ice/dom` loses the
+  presentation registry and its policy. The `ice:` behaviour namespace is reserved.
+- **Phase B — the ground IS the compositor.** The old composited leg is deleted:
+  `compositedNextProfile` is now `compositedProfile` and the profile name is
+  `"composited"`; core's `compositor-registry.ts`, r3f's `webgpu-pool` /
+  `retained-quads` / `webgpu-sources`, and ground's `compositor/*` and
+  `atlas-allocator` are gone. The package gained `./ground/compose`,
+  `./ground/packs` and `./ground/engine`.
+- **Phase C — the stratified ground is that same engine, and `three` leaves.**
+  `ground()`, `groundHost` and design-011's `GroundProgramDefinition` with its
+  transition ladder are deleted; **`groundField()`** replaces them.
+  `presentation.ground` on a canvas type is a FIELD DECLARATION
+  (`{ glyph, grid, wires, guides }`), and a `program` id is refused BY NAME at
+  definition time with the migration in the message. `GridConfig` loses `spacings`,
+  `fadeOut` and `levelWeight`; the workspace subpaths
+  `@ice/ground/programs/{dot-grid,line-grid,magnet-grid}` are gone. **The ground is
+  OPAQUE now** and writes the bytes the theme and the config name, so the stratified
+  profile's colours change on screen by the amounts C1 and C1d measured.
+  `@ice/ground` no longer declares `three` at all, and the `three` peer floor rises
+  to `>=0.185.0`.
+
+**`three` is still a declared peer, and it is still optional.** "The cut" does not
+mean ICE stopped needing three — it means nothing outside `./r3f` and `./r3f/webgpu`
+needs it. The GL ISLANDS are the whole reason, `three/webgpu`'s renderer and its own
+`PMREMGenerator` are why the floor moved to 0.185, and the pack audit MEASURES the
+claim rather than asserting it — at every publish (`prepack` runs it) and at every
+landing (`pnpm run gate:landing`), 252 modules over the nine non-island entries, 0 edges
+to `three`. An app that imports no islands can install none.
+
+Every item above is spelled out with its migration in the sections that follow.
+
 ### Review fixes before publish (C4, 2026-09-08)
 
-The Phase C review's findings, folded into this unpublished cut rather than shipped as a
-patch on top of it. Every one carries a test that fails without it.
+0.13.0 was CUT on 2026-09-07 and never published, so the Phase C review's fixes fold into
+this section rather than into a 0.13.1 — the version stamp is unchanged and there is no
+release for a patch to correct (D-C4.1; 0.12.0 above set the precedent that an unpublished
+cut is history, not a contract). What changed after the cut is below; everything else in
+this section is as it was written on the 7th.
+
+<!-- design-013 C4a · C4b · C4c blocks land under this heading -->
 
 <!-- design-013 C4a (2026-09-08) -->
 
@@ -84,55 +128,6 @@ patch on top of it. Every one carries a test that fails without it.
   (it had no callers) and `createDomHostWriter`'s third `isAlive` argument (the cache is a
   `WeakMap` keyed by the element, so it needs neither a liveness oracle nor a sweep).
 - `DomRenderStats` gains `backedOff`; `GroundHostStats` gains `portalsUnresolved`.
-
-### Breaking, at a glance
-
-design-013 rebuilt the presentation layer in three phases, and each one broke
-something. In the order an upgrade meets them:
-
-- **Phase A — where a card presents is a FACT, not a policy.**
-  `defineWidget({ presentation })` and the whole `SurfacePresentation` family are
-  RETIRED; a kind's own behaviour is the one writer of `SurfaceTarget`, and declaring
-  nothing is still right for almost every widget. `@vibecook/ice/dom` loses the
-  presentation registry and its policy. The `ice:` behaviour namespace is reserved.
-- **Phase B — the ground IS the compositor.** The old composited leg is deleted:
-  `compositedNextProfile` is now `compositedProfile` and the profile name is
-  `"composited"`; core's `compositor-registry.ts`, r3f's `webgpu-pool` /
-  `retained-quads` / `webgpu-sources`, and ground's `compositor/*` and
-  `atlas-allocator` are gone. The package gained `./ground/compose`,
-  `./ground/packs` and `./ground/engine`.
-- **Phase C — the stratified ground is that same engine, and `three` leaves.**
-  `ground()`, `groundHost` and design-011's `GroundProgramDefinition` with its
-  transition ladder are deleted; **`groundField()`** replaces them.
-  `presentation.ground` on a canvas type is a FIELD DECLARATION
-  (`{ glyph, grid, wires, guides }`), and a `program` id is refused BY NAME at
-  definition time with the migration in the message. `GridConfig` loses `spacings`,
-  `fadeOut` and `levelWeight`; the workspace subpaths
-  `@ice/ground/programs/{dot-grid,line-grid,magnet-grid}` are gone. **The ground is
-  OPAQUE now** and writes the bytes the theme and the config name, so the stratified
-  profile's colours change on screen by the amounts C1 and C1d measured.
-  `@ice/ground` no longer declares `three` at all, and the `three` peer floor rises
-  to `>=0.185.0`.
-
-**`three` is still a declared peer, and it is still optional.** "The cut" does not
-mean ICE stopped needing three — it means nothing outside `./r3f` and `./r3f/webgpu`
-needs it. The GL ISLANDS are the whole reason, `three/webgpu`'s renderer and its own
-`PMREMGenerator` are why the floor moved to 0.185, and the pack audit MEASURES the
-claim rather than asserting it — at every publish (`prepack` runs it) and at every
-landing (`pnpm run gate:landing`), 252 modules over the nine non-island entries, 0 edges
-to `three`. An app that imports no islands can install none.
-
-Every item above is spelled out with its migration in the sections that follow.
-
-### Review fixes before publish (C4, 2026-09-08)
-
-0.13.0 was CUT on 2026-09-07 and never published, so the Phase C review's fixes fold into
-this section rather than into a 0.13.1 — the version stamp is unchanged and there is no
-release for a patch to correct (D-C4.1; 0.12.0 above set the precedent that an unpublished
-cut is history, not a contract). What changed after the cut is below; everything else in
-this section is as it was written on the 7th.
-
-<!-- design-013 C4a · C4b · C4c blocks land under this heading -->
 
 <!-- design-013 C4b (2026-09-08) -->
 **core + r3f.**
