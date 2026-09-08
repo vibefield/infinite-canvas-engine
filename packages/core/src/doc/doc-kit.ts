@@ -139,6 +139,21 @@ const constrainSemanticVerdict = (
     ? "readOnly"
     : verdict;
 
+/**
+ * WHICH SESSION A WORLD IS PROJECTING (D-C4.14). A world has one binding, but
+ * strata's double-attach guard is per STORE, not per world — attaching a second
+ * session to the same world does NOT throw, it silently supersedes the first.
+ * The superseded session then still holds a live handle, and its `close()`
+ * ends in `world.reset()`: it would wipe the NEWER document's entities and
+ * every resource on the world.
+ *
+ * So the reset is the OWNER's. Every session records itself here when it
+ * attaches, and `close()` resets only while the world still points at it; a
+ * superseded session tears down its own binding and nothing else. Keyed weakly
+ * so a discarded world is collectable.
+ */
+const worldOwner = new WeakMap<World, symbol>();
+
 function makeSession(
   world: World,
   doc: LoroDoc,
@@ -149,6 +164,11 @@ function makeSession(
   commitGuard: DocSessionOpts["commitGuard"],
   report?: DocVersionReport,
 ): DocSession {
+  // Claimed at construction — `makeSession` is the one choke point both
+  // `createDocSession` and `openDocSession` pass through, immediately after
+  // their `attachDurable`, so the token and the live binding move together.
+  const ownership = Symbol("ice:doc-session");
+  worldOwner.set(world, ownership);
   // Selection history hooks — capture keys, restore via resolve (skip dead).
   store.setHistoryHooks({
     capture: () => {
@@ -257,12 +277,22 @@ function makeSession(
     close() {
       if (closed) return;
       closed = true;
+      // Does the world still point at THIS session (D-C4.14)? Read it before
+      // anything runs; a superseded session owns its own teardown and nothing
+      // on the world. Nothing below can change the answer.
+      const owns = worldOwner.get(world) === ownership;
       disarmRenameSweep?.();
-      cancelActiveGestures(world); // consumed by the next tick IF one runs pre-detach;
-      // the reset below clears in-flight gesture state regardless — both paths safe.
+      if (owns) {
+        cancelActiveGestures(world); // consumed by the next tick IF one runs pre-detach;
+        // the reset below clears in-flight gesture state regardless — both paths safe.
+      }
       store.setHistoryHooks(null);
       remoteSubs.clear();
       attachment.detach();
+      // The reset is the OWNER's: for a superseded session it would destroy the
+      // entities and resources of whatever document attached after it.
+      if (!owns) return;
+      worldOwner.delete(world);
       world.reset(); // in place: observers/systems survive (R3); entities die
       ensureCanvasSurface(world); // the interaction stack's anchor must exist again
     },

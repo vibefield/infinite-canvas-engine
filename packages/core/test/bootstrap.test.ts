@@ -613,6 +613,65 @@ describe("bootstrap: lifecycle hygiene (review 2026-07-13)", () => {
     expect(swapped).toBe(res.session); // facade and result getter agree
   });
 
+  /**
+   * D-C4.14, the facade half. `join`'s supersede branch calls `result.leave()`
+   * on a room a NEWER document has already replaced, and `leave()` closes that
+   * session. Two independent guards keep that from resetting the newer
+   * document's world — `closeDoc` aborts the pending join (joinDoc tears down
+   * and latches `left`), and it closes the session `onSession` already adopted
+   * (`DocSession.close` is idempotent) — and MEASURED, either alone suffices:
+   * disabling one keeps these green, disabling both turns the first one red.
+   * Neither was pinned before. The doc-kit ownership check behind them is in
+   * `doc-lifecycle.test.ts`.
+   */
+  it("facade: a doc created while a resolved join awaits its continuation keeps its entities (D-C4.14)", async () => {
+    const busA = new Bus();
+    const { clock, advance } = makeClock();
+    const ce = createCanvasEngine();
+    cleanups.push(() => ce.dispose());
+
+    const pA = ce.docs.join(busA.endpoint(), { clock });
+    busA.deliverAll();
+    // A RESOLVES here (lone joiner → seeder), and `onSession` has already
+    // adopted its session. The `await` continuation is a queued microtask that
+    // has not run, so `joinAbort` still points at A.
+    advance(800);
+
+    // Same synchronous task: a newer document supersedes A before that
+    // continuation gets to look.
+    const created = ce.docs.create();
+    const e = ce.world.spawn({ components: [[Position, { x: 7, y: 9 }]] });
+
+    // Now the continuation runs, takes the supersede branch and calls leave().
+    await expect(pA).rejects.toThrow(/superseded/);
+
+    expect(ce.docs.current()).toBe(created);
+    expect(ce.world.isAlive(e)).toBe(true); // the NEWER document's entity
+  });
+
+  it("facade: join B supersedes join A, A resolves last — B keeps its session and entities (D-C4.14)", async () => {
+    const busA = new Bus();
+    const busB = new Bus();
+    const { clock, advance } = makeClock();
+    const ce = createCanvasEngine();
+    cleanups.push(() => ce.dispose());
+
+    const pA = ce.docs.join(busA.endpoint(), { clock });
+    busA.deliverAll();
+    advance(800); // A resolves; continuation queued, not run
+
+    const pB = ce.docs.join(busB.endpoint(), { clock }); // supersedes A, same task
+    const rejA = expect(pA).rejects.toThrow(/superseded/);
+    busB.deliverAll();
+    advance(800); // B resolves
+    const rB = await pB;
+    await rejA; // A's leave() lands AFTER B owns the world
+
+    const e = ce.world.spawn({ components: [[Position, { x: 3, y: 4 }]] });
+    expect(ce.docs.current()).toBe(rB.session);
+    expect(ce.world.isAlive(e)).toBe(true);
+  });
+
   it("facade: the ENGINE's own resources survive a join and an internal re-bootstrap (D-C4.5)", async () => {
     const doc = makeGappedDoc();
     cleanups.push(doc.close);

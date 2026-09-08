@@ -1107,6 +1107,15 @@ Every one carries a test that fails without it.
 - Corrected at source: glboard's bridge has no `transitions` and is owed none — it
   builds a bare engine and has no nested-canvas nav, so no switch ever asks for the
   plane. The review read it as a missing owner.
+- **Only the world's OWNER resets it** (`DocSession.close()`). Strata's double-attach
+  guard is per STORE, not per world, so attaching a second session to one world does
+  not throw — it silently supersedes the first, and the first session's `close()` then
+  reset the SECOND one's entities and every resource out of existence. A session now
+  claims the world when it attaches and resets only while the world still points at
+  it; a superseded session tears down its own binding and stops. The facade never
+  reached this (two independent guards in `closeDoc`, neither of which was pinned —
+  they are now), but `createDocSession`/`openDocSession`/`close` are exported and the
+  ordering hazard was one edit away.
 
 ## [0.12.0] — 2026-08-31 · a git release point, NOT published to npm
 
