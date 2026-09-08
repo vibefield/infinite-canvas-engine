@@ -5,7 +5,9 @@
  * page over its title is not), draws the wires and the guides in their configured bytes and
  * gates them by the type, flies the ground's own second slot (the enter cut moves no pixel
  * inside the face nor outside it), and — D-C2.2 — a local-pointer gesture never re-bakes the
- * atlas while a remote pole's move does. Run: `pnpm --filter widgetlab-desktop stratified`.
+ * atlas while a remote pole's move does. Since C4c it also flips to LIGHT MODE: the opaque
+ * ground's clear colour follows the page's `--canvas-bg` because one state projects both.
+ * Run: `pnpm --filter widgetlab-desktop stratified`.
  */
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -152,7 +154,34 @@ try {
   check(ov.wirePixels > 100, `the wire's stroke core IS its configured colour over the ground: ${ov.wirePixels} px of ${rgb(ov.wireExpect)}`);
   check(ov.gpuErrors === 0, `no uncaptured GPU errors with the overlays (${ov.gpuErrors})`);
 
-  // ---- 7. idle-zero at the end
+  // ---- 7. LIGHT MODE (C4c, D-C4.12): the opaque ground follows the page's background
+  const th = await page.evaluate(() => window.__stratifiedRig.theme());
+  log(`theme: ${JSON.stringify(th)}`);
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  check(th.gpuErrors === 0, `no uncaptured GPU errors through the theme flips (${th.gpuErrors})`);
+  check(
+    same(th.before.wholeCanvasModal, th.expect.dark) && th.before.page.toLowerCase() === th.expect.pageDark.toLowerCase(),
+    `CONTROL: before the flip the ground is the DARK background ${rgb(th.before.wholeCanvasModal)} and the page says "${th.before.page}"`,
+  );
+  check(
+    same(th.light.wholeCanvasModal, th.expect.light) && same(th.light.ground, th.expect.light),
+    `EXIT: in LIGHT mode the ground clears to ${rgb(th.expect.light)} — probe ${rgb(th.light.ground)}, whole-canvas modal ${rgb(th.light.wholeCanvasModal)}. A ground hardcoded to the dark theme reads ${rgb(th.expect.dark)} here`,
+  );
+  check(
+    th.light.page.toLowerCase() === th.expect.pageLight.toLowerCase(),
+    `…and the PAGE agrees: --canvas-bg is "${th.light.page}" — one state, both surfaces`,
+  );
+  check(
+    !same(th.light.wholeCanvasModal, th.before.wholeCanvasModal),
+    `the flip MOVED the ground (${rgb(th.before.wholeCanvasModal)} → ${rgb(th.light.wholeCanvasModal)})`,
+  );
+  check(
+    same(th.after.wholeCanvasModal, th.expect.dark) && th.after.page.toLowerCase() === th.expect.pageDark.toLowerCase(),
+    `and the flip back restores both (${rgb(th.after.wholeCanvasModal)}, "${th.after.page}")`,
+  );
+  check(th.redrawsGrew && th.stillAvailable, `the switch rode setTheme, not a re-boot (available=${th.stillAvailable}, redraws grew=${th.redrawsGrew})`);
+
+  // ---- 8. idle-zero at the end
   const idleEnd = await page.evaluate(() => window.__stratifiedRig.idle(1500));
   log(`idle 1.5 s at the end: ${JSON.stringify(idleEnd)}`);
   check(idleEnd.submits === 0, `idle-zero after everything: ${idleEnd.submits} submits over ${idleEnd.frames} frames`);

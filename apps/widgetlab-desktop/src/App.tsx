@@ -51,7 +51,6 @@ import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
 import { groundField } from "@ice/ground";
 import { groundCompose } from "@ice/ground/compose";
-import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import {
@@ -66,6 +65,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { BoardGLCanvas } from "./BoardGLCanvas";
 import { hasDesktopBridge, startDesktopCollab } from "./collab/desktop";
 import { installCursorHalo } from "./cursor";
+import { type AppGroundFactory, type AppGroundHandle, DEFAULT_THEME_COLORS, useAppTheme } from "./ground-theme";
 import { WidgetTray } from "./tray/WidgetTray";
 import { InspectorPanel, NavigationBreadcrumbs, SettingsPanel } from "./panels";
 import type { OverlapGlowConfig, OverlapGlowThemeColors, ThemeColors } from "./panels";
@@ -78,13 +78,8 @@ import {
 } from "./canvases";
 
 // === v1 theme constants (App.tsx verbatim) ===
-
-const DEFAULT_THEME_COLORS: ThemeColors = {
-  dotLight: "#BFC4CC",
-  dotDark: "#595E66",
-  bgLight: "#FAFAFA",
-  bgDark: "#171717",
-};
+// `DEFAULT_THEME_COLORS` moved to `ground-theme.ts` at C4c: the ground's theme is
+// projected from the same pair the page paints, so the pair lives with the projection.
 
 const DEFAULT_OVERLAP_GLOW_THEME_COLORS: OverlapGlowThemeColors = {
   glowLight: "#808080",
@@ -548,10 +543,11 @@ export function App({ gpu }: AppProps = {}) {
     };
   }, []);
 
-  // --canvas-bg from theme (v1); the glow CSS vars feed CardShell's inset glow.
+  // The glow CSS vars feed CardShell's inset glow. `--canvas-bg` is NOT written
+  // here: it is the ground's `canvasBg` too, and one state must paint both or the
+  // opaque ground contradicts the page (C4c) — `useAppTheme` below owns it.
   useEffect(() => {
     const root = document.documentElement;
-    root.style.setProperty("--canvas-bg", dark ? themeColors.bgDark : themeColors.bgLight);
     // Union-box corner radius = CardShell RADIUS (world px; the P4 chrome
     // reflector zoom-scales it) — the group box wraps rounded cards.
     root.style.setProperty("--ic-selection-radius", "22px");
@@ -560,12 +556,20 @@ export function App({ gpu }: AppProps = {}) {
     root.style.setProperty("--ic-glow-size-t", `${overlapGlow.glowSize[1]}px`);
     root.style.setProperty("--ic-glow-alpha-c", String(overlapGlow.glowAlpha[0]));
     root.style.setProperty("--ic-glow-alpha-t", String(overlapGlow.glowAlpha[1]));
-  }, [dark, themeColors, overlapGlow, overlapGlowThemeColors]);
+  }, [dark, overlapGlow, overlapGlowThemeColors]);
 
   const effectiveGrid = useMemo<Partial<GridConfig>>(
     () => ({ ...gridConfig, dotColor: hexToRgb01(dark ? themeColors.dotDark : themeColors.dotLight) }),
     [gridConfig, dark, themeColors],
   );
+
+  // THE THEME (design-013 C4, D-C4.12): the ground's canvas is OPAQUE and clears to
+  // its theme's ground, so the app's `--canvas-bg` pair is projected into it — the
+  // same numbers, from the same state, painted in the same effect (`ground-theme.ts`).
+  // The layer handle arrives from the factory below; the effect re-projects it live,
+  // so a theme switch never re-boots the canvas.
+  const groundLayerRef = useRef<AppGroundHandle | null>(null);
+  const groundThemeRef = useAppTheme(dark, themeColors, groundLayerRef);
 
   // Keyboard shortcuts. <InfiniteCanvas> already installs the engine default
   // keymap (packages/react/src/keymap.ts) — ⌘Z undo, ⇧⌘Z redo, ⌫/Delete
@@ -662,22 +666,33 @@ export function App({ gpu }: AppProps = {}) {
   // it would now be refused at the boot gate rather than quietly running the
   // wrong leg — which is the refusal working.
   //
-  // Memoized: a new factory identity re-boots the canvas mount effect.
-  const groundFactory = useMemo(
-    () =>
-      gpu !== undefined
-        ? groundCompose({
-            device: gpu.device,
-            theme: THEMES.dark,
-            card: vfFrame(),
-            grids: [needleGlyph, cuttingMat],
-          })
-        : groundField({
-            theme: THEMES.dark,
-            grids: [needleGlyph, cuttingMat],
-          }),
-    [gpu],
-  );
+  // Memoized on `gpu` ALONE: a new factory identity re-boots the canvas mount
+  // effect, so the theme is read from `groundThemeRef` at the MOUNT (the web
+  // widgetlab's pattern) and every later switch rides `setTheme` — a dark toggle
+  // must not tear down the ground. The handle is captured on the way out so the
+  // theme effect above can re-project the live layer.
+  const groundFactory = useMemo<AppGroundFactory>(() => {
+    const device = gpu?.device;
+    const inner: AppGroundFactory =
+      device !== undefined
+        ? (ctx) =>
+            groundCompose({
+              device,
+              theme: groundThemeRef.current,
+              card: vfFrame(),
+              grids: [needleGlyph, cuttingMat],
+            })(ctx)
+        : (ctx) =>
+            groundField({
+              theme: groundThemeRef.current,
+              grids: [needleGlyph, cuttingMat],
+            })(ctx);
+    return (ctx) => {
+      const handle = inner(ctx);
+      groundLayerRef.current = handle;
+      return handle;
+    };
+  }, [gpu, groundThemeRef]);
 
   // Widget tray open state lives HERE because the canvas itself reacts: the
   // reference design's recede — the whole board eases to 0.98 while the

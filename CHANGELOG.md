@@ -1013,6 +1013,52 @@ the entity's own kind behaviour.
   `unregister()` wakes Residency (`TextureTable.revision()`); an unrealised handle is
   forgotten the moment its count reaches zero — only realised handles wait in `drain()`.
 
+### Review fixes before publish (C4, 2026-09-08)
+
+0.13.0 was cut on 2026-09-07 and never published, so the Phase C review's findings
+fold into this section rather than into a 0.13.1 nobody could have installed. The
+version stamp does not move.
+
+<!-- design-013 C4c (2026-09-08) -->
+
+**The desktop lab's light mode, and two leaks under its board Canvas
+(`apps/widgetlab-desktop`).** No package API changed here — this is the app that
+mounts the two grounds, and every fix is in it or in the rigs that grade it.
+
+- **Light mode was a dark board.** The app painted its page from a dark/light toggle
+  and handed BOTH ground arms a hardcoded dark theme, so the OPAQUE ground cleared to
+  `#171717` under a `#FAFAFA` page (the composited arm since B8, the stratified arm
+  since C2). One projection now feeds both surfaces — `src/ground-theme.ts`, the app's
+  background and dot ink substituted into the product palette while the card, the
+  frame, the hairline, the accent and the `vf-frame` pack section stay as `THEMES` has
+  them — and a `setTheme` effect re-projects the live layer, so a switch never re-boots
+  the canvas. **Apps that pass a theme to `groundCompose`/`groundField` should project
+  their own page background into it the same way:** the ground is opaque, so its
+  `canvasBg` IS what the user sees behind the cards.
+- **The renderer lease kept a stale build.** A real unmount swept while a build was in
+  flight; the remount started a second one; the first arrived, passed the old
+  `everRetained && retained === 0` guard, was installed and then overwritten — a
+  `WebGPURenderer` parked on the app-owned device for the process. Every build now
+  carries a generation and the sweep count it began under. The lease is also keyed on
+  the device and rebuilt when it changes, and its `dispose()` frees a live renderer at
+  once and an in-flight one on arrival.
+- **The PMREM environment target leaked per Canvas mount.** three 0.185.1's
+  `PMREMGenerator.fromScene` returns a render target the CALLER owns and the
+  generator's own `dispose()` frees its internals only; the cleanup was `onTex(null)`,
+  a dropped reference. Since C0 that target sits on the app-owned device, so it lived
+  for the process. An env slot owns it and disposes it on cleanup and on a renderer
+  change.
+- **The counters moved off the module.** Renderer and PMREM-target censuses live on
+  the lease and the env slot and reach the rigs through the board Canvas's
+  `onInstruments` hook, so two mounts cannot stomp each other's numbers.
+- **Witnesses.** The `app` and `stratified` rigs each gained a LIGHT-MODE phase that
+  flips the app's own `dark` state and reads the ground canvas beside the page's
+  `--canvas-bg`, with the pre-flip byte as the control; the `app` rig's cross-backend
+  compare now asserts the two arms are actually different images (pixels AND hashes),
+  its `diffCaptures` refuses two captures of different dimensions instead of shearing
+  them, and its remount phase counts PMREM targets as well as renderers. 21 new unit
+  tests carry the code fixes, each proved red with its fix reverted.
+
 ## [0.12.0] — 2026-08-31 · a git release point, NOT published to npm
 
 **Install 0.13.0 for everything below.** The cut was real (`903f892`, CI green,

@@ -23,7 +23,11 @@
  *     glyph is the whiteboard's `line`;
  *  6. D-C2.2: a 60-step gesture of the REAL pointer (Playwright's mouse, one step per
  *     frame) is a redraw per step and 0 bakes; a remote cursor pole moved 5 times is 5 bakes;
- *  7. idle-zero after every settle, 0 GPU errors throughout.
+ *  7. LIGHT MODE (C4c, D-C4.12): the app's `dark` state paints the page's `--canvas-bg`
+ *     and projects the ground's theme through ONE module, so a flip moves the opaque
+ *     ground's clear colour to the light background the page names, and the flip back
+ *     restores the byte the phase opened on;
+ *  8. idle-zero after every settle, 0 GPU errors throughout.
  *
  * ONE document for the whole run (the `boot` rig's shape): a second `docs.create()` closes
  * the first with an in-place `world.reset()`, which clears the runtime resources — `Viewport`
@@ -46,12 +50,13 @@ import {
   Wire,
   defineQuery,
 } from "@ice/core";
-import { type GroundFieldContext, type GroundFieldHandle, groundField, instrumentSubmits, localPointerPoles, cursorVisualPoles, type SubmitInstrument } from "@ice/ground";
-import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
+import { type GroundFieldContext, type GroundFieldFactory, type GroundFieldHandle, type GroundTheme, groundField, instrumentSubmits, localPointerPoles, cursorVisualPoles, type SubmitInstrument } from "@ice/ground";
 import { cuttingMat, needleGlyph } from "@ice/ground/packs";
 import { InfiniteCanvas, stratifiedProfile } from "@ice/react";
+import { type ReactElement, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createDemoEngine, seedWire } from "../App";
+import { DEFAULT_THEME_COLORS, groundThemeFor, pageBackground, useAppTheme } from "../ground-theme";
 
 type RGB = readonly [number, number, number];
 
@@ -134,9 +139,29 @@ interface RemotePole {
   readonly sources: number;
   readonly gpuErrors: number;
 }
+/** The light-mode phase (C4c, D-C4.12): one `dark` state, the page and the ground read back together. */
+interface ThemePhase {
+  readonly expect: {
+    readonly dark: RGB;
+    readonly light: RGB;
+    readonly pageDark: string;
+    readonly pageLight: string;
+  };
+  /** The ground canvas (a probe at the viewport centre and the whole-canvas modal) and the page's `--canvas-bg`. */
+  readonly before: { readonly ground: RGB; readonly page: string; readonly wholeCanvasModal: RGB };
+  readonly light: { readonly ground: RGB; readonly page: string; readonly wholeCanvasModal: RGB };
+  readonly after: { readonly ground: RGB; readonly page: string; readonly wholeCanvasModal: RGB };
+  readonly canvas: readonly [number, number];
+  /** The switch rode `setTheme`: the layer redrew and never stopped being available. */
+  readonly redrawsGrew: boolean;
+  readonly stillAvailable: boolean;
+  readonly gpuErrors: number;
+}
+
 interface StratifiedRig {
   readonly ready: Promise<void>;
   mount(): Promise<Mounted>;
+  theme(): Promise<ThemePhase>;
   idle(ms: number): Promise<{ frames: number; submits: number; redraws: number }>;
   nudge(): Promise<{ submits: number; redraws: number }>;
   board(): Promise<Board>;
@@ -230,13 +255,51 @@ function over(css: string, bg: RGB): RGB {
 
 const wireQ = defineQuery([Wire]);
 
+/** The rig's dark toggle — C4c's light-mode phase, through the state the page paints from. */
+let setDarkExternal: ((v: boolean) => void) | null = null;
+
+/**
+ * The app's theme wiring around the stratified mount: ONE `dark` state paints the
+ * page's `--canvas-bg` and projects the ground's theme (`ground-theme.ts`, the
+ * shipping module), the factory reads it at the mount, and a switch rides
+ * `field.setTheme` — never a re-boot. The App does exactly this; a copy here would
+ * grade the copy.
+ */
+function RigRoot({
+  engine,
+  build,
+  onHandle,
+}: {
+  engine: ReturnType<typeof createDemoEngine>;
+  build: (theme: GroundTheme) => GroundFieldFactory;
+  onHandle: (h: GroundFieldHandle) => void;
+}): ReactElement {
+  const [dark, setDark] = useState(true);
+  useEffect(() => {
+    setDarkExternal = setDark;
+    return () => {
+      setDarkExternal = null;
+    };
+  }, []);
+  const layerRef = useRef<GroundFieldHandle | null>(null);
+  const themeRef = useAppTheme(dark, DEFAULT_THEME_COLORS, layerRef);
+  const ground = useRef((ctx: GroundFieldContext) => {
+    const h = build(themeRef.current)(ctx);
+    layerRef.current = h;
+    onHandle(h);
+    return h;
+  });
+  return <InfiniteCanvas engine={engine} ground={ground.current} profile={stratifiedProfile} className="h-full w-full" />;
+}
+
 function mountRig(): StratifiedRig {
   let instrument: SubmitInstrument | undefined;
   let handle: GroundFieldHandle | null = null;
   let engine: ReturnType<typeof createDemoEngine> | undefined;
   const gpuErrors: GPUError[] = [];
   const rootEl = document.getElementById("root") as HTMLElement;
-  const theme = THEMES.dark;
+  /** The rig's expectations come from the SAME projection the mount is built with (C4c). */
+  const theme = groundThemeFor(true, DEFAULT_THEME_COLORS);
   let cards: Entity[] = [];
   let folder: Entity | null = null;
   let zoom = 1;
@@ -248,17 +311,17 @@ function mountRig(): StratifiedRig {
     // makes. ONE local document, empty: every phase spawns into it (see the header).
     if (ce.docs.current() === undefined) ce.docs.create();
     engine = ce;
-    const factory = groundField({
-      theme,
-      grids: [needleGlyph, cuttingMat],
-      poles: [localPointerPoles(), cursorVisualPoles()],
-      onDevice: (device) => {
-        instrument = instrumentSubmits(device);
-        device.addEventListener("uncapturederror", (ev) => { gpuErrors.push((ev as GPUUncapturedErrorEvent).error); });
-      },
-    });
-    const ground = (ctx: GroundFieldContext) => { handle = factory(ctx); return handle; };
-    createRoot(rootEl).render(<InfiniteCanvas engine={ce} ground={ground} profile={stratifiedProfile} className="h-full w-full" />);
+    const build = (t: GroundTheme): GroundFieldFactory =>
+      groundField({
+        theme: t,
+        grids: [needleGlyph, cuttingMat],
+        poles: [localPointerPoles(), cursorVisualPoles()],
+        onDevice: (device) => {
+          instrument = instrumentSubmits(device);
+          device.addEventListener("uncapturederror", (ev) => { gpuErrors.push((ev as GPUUncapturedErrorEvent).error); });
+        },
+      });
+    createRoot(rootEl).render(<RigRoot engine={ce} build={build} onHandle={(h) => { handle = h; }} />);
     await frames(2);
   })();
 
@@ -447,6 +510,59 @@ function mountRig(): StratifiedRig {
       await frames(2);
       const s = field().stats();
       return { redraws: redraws(), bakes: s.bakes, submits: submits(), pointerOn: s.poles.pointer, sources: s.poles.sources, gpuErrors: gpuErrors.length };
+    },
+    /**
+     * LIGHT MODE (C4c, D-C4.12). The stratified ground is OPAQUE too: its canvas
+     * clears to the theme's ground and every DOM card sits above it, so a hardcoded
+     * dark theme under a light page is a dark board — the review's blocker 1, the
+     * stratified half. One `dark` state drives both, and both are read back.
+     *
+     * The probe is the WHOLE-CANVAS MODAL as well as a point: this profile draws no
+     * card frames on the ground, so the most common colour on that canvas IS the
+     * background, and no single unlucky pixel can decide the phase. The control is
+     * the byte before the flip.
+     */
+    async theme() {
+      const canvas = field().canvas;
+      const page = (): string => document.documentElement.style.getPropertyValue("--canvas-bg").trim();
+      const wholeModal = (img: ImageData): RGB => {
+        const counts = new Map<number, number>();
+        for (let i = 0; i < img.data.length; i += 4) {
+          const key = ((img.data[i] as number) << 16) | ((img.data[i + 1] as number) << 8) | (img.data[i + 2] as number);
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        let best = 0;
+        let bestN = -1;
+        for (const [k, n] of counts) if (n > bestN) { best = k; bestN = n; }
+        return [(best >> 16) & 255, (best >> 8) & 255, best & 255];
+      };
+      const read = async () => {
+        const img = await readback(canvas);
+        return { ground: modal(img, img.width / 2, img.height / 2), page: page(), wholeCanvasModal: wholeModal(img) };
+      };
+      const before = await read();
+      const redraws0 = redraws();
+      must(setDarkExternal, "the rig's dark toggle")(false);
+      await frames(10);
+      const light = await read();
+      must(setDarkExternal, "the rig's dark toggle")(true);
+      await frames(10);
+      const after = await read();
+      return {
+        expect: {
+          dark: bytes(groundThemeFor(true, DEFAULT_THEME_COLORS).canvasBg),
+          light: bytes(groundThemeFor(false, DEFAULT_THEME_COLORS).canvasBg),
+          pageDark: pageBackground(true, DEFAULT_THEME_COLORS),
+          pageLight: pageBackground(false, DEFAULT_THEME_COLORS),
+        },
+        before,
+        light,
+        after,
+        canvas: [canvas.width, canvas.height] as const,
+        redrawsGrew: redraws() > redraws0,
+        stillAvailable: field().available(),
+        gpuErrors: gpuErrors.length,
+      };
     },
     async remote() {
       const world = ce().world;

@@ -10,7 +10,9 @@
  * WebGL control rendering THE SAME `Scene` object, noise floors first, and the
  * environment proved load-bearing by a control with it switched off) · ground (what
  * the compose draws is what three rendered) · idle-zero · strict (a StrictMode
- * double mount builds ONE renderer; a real unmount disposes it).
+ * double mount builds ONE renderer; a real unmount disposes it, and the PMREM
+ * targets are counted with them) · theme (light mode: the opaque ground follows the
+ * page's `--canvas-bg` because one state projects both — C4c, D-C4.12).
  *
  * THE CONTROL COMES FIRST, as everywhere in this suite: both noise floors are read
  * before any cross-arm number, and a blank guard runs before both — two empty
@@ -186,6 +188,14 @@ try {
 
     const cross = await page.evaluate(([x, y]) => window.__c0Rig.diff(x, y), [a1.id, b1.id]);
     report(`${type} COMPARE composited vs WebGL control`, cross);
+    // The comparison HAPPENED (C4c): two arms of the same scene on two backends are
+    // never bit-identical, so a zero here is a broken control — the same capture
+    // handed to both sides, or an arm that stopped rendering — and every tolerance
+    // below would read as a perfect pass. The FNV hashes are the second witness.
+    check(
+      cross.differingPixels > 0 && a1.hash !== b1.hash,
+      `${type}: the two arms are DIFFERENT images (${cross.differingPixels} px differ; hashes ${a1.hash} vs ${b1.hash}) — a control that had collapsed onto the composited arm would read 0 and pass every ceiling below`,
+    );
     const dy = Math.abs(a1.inkCentroidY - b1.inkCentroidY);
     const dx = Math.abs(a1.inkCentroidX - b1.inkCentroidX);
     check(dy < 0.02 && dx < 0.02, `${type}: both backends place the card's mass at the same spot (Δy=${dy.toFixed(4)}, Δx=${dx.toFixed(4)})`);
@@ -251,6 +261,63 @@ try {
     `the board draws again after the remount — the SECOND mount's own IslandRender counter (${re.renderedAgain} renders, ${re.texturedAgain} textured)`,
   );
   check(re.gpuErrors === 0, `no uncaptured GPU errors through the remount (${re.gpuErrors})`);
+
+  // The PMREM targets across the same cycle (C4c). three 0.185.1's
+  // `PMREMGenerator.fromScene` returns a render target the CALLER owns, and since C0
+  // that target lives on the APP-OWNED device — one per Canvas mount, for the life of
+  // the process, if nothing disposes it. `live ≤ 1` is the whole claim; `disposed ≥
+  // created − 1` allows exactly the one the live Canvas is using.
+  const envAfterUnmount = re.envAfterUnmount;
+  const envAfterRemount = re.envAfterRemount;
+  log(`env targets: after unmount ${JSON.stringify(envAfterUnmount)} · after remount ${JSON.stringify(envAfterRemount)}`);
+  check(
+    envAfterUnmount.created >= 1,
+    `the environment was built at all (${envAfterUnmount.created} PMREM targets by the unmount)`,
+  );
+  check(
+    envAfterUnmount.disposed >= envAfterUnmount.created - 1 && envAfterUnmount.created - envAfterUnmount.disposed <= 1,
+    `a real unmount frees the PMREM target it allocated (created ${envAfterUnmount.created}, disposed ${envAfterUnmount.disposed}, live ${envAfterUnmount.created - envAfterUnmount.disposed} ≤ 1)`,
+  );
+  check(
+    envAfterRemount.created > envAfterUnmount.created &&
+      envAfterRemount.disposed >= envAfterRemount.created - 1 &&
+      envAfterRemount.created - envAfterRemount.disposed <= 1,
+    `and the remount's own target is the only one live (created ${envAfterRemount.created}, disposed ${envAfterRemount.disposed}, live ${envAfterRemount.created - envAfterRemount.disposed} ≤ 1)`,
+  );
+
+  // ---- 9. LIGHT MODE (C4c, D-C4.12): the ground is opaque, so it must follow the page
+  const th = await page.evaluate(() => window.__c0Rig.theme());
+  log(`theme: ${JSON.stringify(th)}`);
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  check(th.gpuErrors === 0, `no uncaptured GPU errors through the theme flips (${th.gpuErrors})`);
+  check(
+    same(th.before.ground, th.expect.dark) && same(th.before.wholeCanvasModal, th.expect.dark),
+    `CONTROL: before the flip the ground is the DARK background ${rgb(th.before.ground)} (whole-canvas modal ${rgb(th.before.wholeCanvasModal)}), the byte the theme projects ${rgb(th.expect.dark)}`,
+  );
+  check(
+    th.before.page.toLowerCase() === th.expect.pageDark.toLowerCase(),
+    `…and the page says the same thing ("${th.before.page}" vs "${th.expect.pageDark}")`,
+  );
+  check(
+    same(th.light.ground, th.expect.light) && same(th.light.wholeCanvasModal, th.expect.light),
+    `EXIT: in LIGHT mode the ground clears to ${rgb(th.expect.light)} — read ${rgb(th.light.ground)} at the probe, ${rgb(th.light.wholeCanvasModal)} over the whole canvas. A ground hardcoded to the dark theme reads ${rgb(th.expect.dark)} here, which is the blocker this phase exists for`,
+  );
+  check(
+    th.light.page.toLowerCase() === th.expect.pageLight.toLowerCase(),
+    `…and the PAGE agrees: --canvas-bg is "${th.light.page}" while the ground is that same colour — one state, both surfaces`,
+  );
+  check(
+    !same(th.light.ground, th.before.ground),
+    `the flip MOVED the ground (${rgb(th.before.ground)} → ${rgb(th.light.ground)}) — a probe that always read light would pass without this`,
+  );
+  check(
+    same(th.after.ground, th.expect.dark) && th.after.page.toLowerCase() === th.expect.pageDark.toLowerCase(),
+    `and the flip back restores both (${rgb(th.after.ground)}, "${th.after.page}")`,
+  );
+  check(
+    th.redrawsGrew && th.stillAvailable,
+    `the switch rode setTheme, not a re-boot: the layer stayed available and redrew (available=${th.stillAvailable}, redraws grew=${th.redrawsGrew})`,
+  );
 
   fs.mkdirSync(shotDir, { recursive: true });
   fs.writeFileSync(path.join(shotDir, "composited-app.png"), await page.screenshot());

@@ -30,7 +30,13 @@
  *  5. ground  — what the compose DRAWS at the card's centre is what three RENDERED;
  *  6. idle    — a settled board with every island's demand paused submits nothing;
  *  7. strict  — the StrictMode double mount built ONE renderer, and a real unmount
- *               → remount disposes it and builds one more (D-C0.4).
+ *               → remount disposes it and builds one more (D-C0.4), with the PMREM
+ *               targets counted beside them (C4c: the caller owns them);
+ *  8. theme   — LIGHT MODE (C4c, D-C4.12): the app's `dark` state drives the page's
+ *               `--canvas-bg` AND the ground's theme through one projection
+ *               (`ground-theme.ts`, the shipping module — not a copy), so the ground
+ *               at a gap reads the light background while the page says the same
+ *               string, and the flip back restores the byte the phase opened on.
  *
  * Mounted from `composited-app.html`, driven by `scripts/composited-app.mjs`.
  */
@@ -55,7 +61,6 @@ import {
   type GroundComposeContext,
   type GroundComposeHandle,
 } from "@ice/ground/compose";
-import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { createGLBridge, type GLBridge, type IslandRender } from "@ice/r3f";
 import { compositedProfile, InfiniteCanvas, type InfiniteCanvasHandle } from "@ice/react";
@@ -70,7 +75,14 @@ import {
 } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { createDemoEngine, seedDemoScene } from "../App";
-import { BoardGLCanvas, envGeneratorBackend, islandRendererCensus } from "../BoardGLCanvas";
+import {
+  BoardGLCanvas,
+  type BoardGlInstruments,
+  type EnvTargetCensus,
+  type IslandRendererCensus,
+} from "../BoardGLCanvas";
+import { DEFAULT_THEME_COLORS, groundThemeFor, pageBackground, useAppTheme } from "../ground-theme";
+import { type Capture, type CaptureStats, type DiffResult, diffCaptures, flipRows, statsOf } from "./capture";
 
 type RGB = readonly [number, number, number];
 
@@ -92,42 +104,6 @@ const GRADED = [
 ] as const;
 
 // --- capture + grading (the islands rig's method, on C0's two arms) ----------
-
-interface Capture {
-  readonly width: number;
-  readonly height: number;
-  readonly data: Uint8ClampedArray;
-}
-interface CaptureStats {
-  readonly id: string;
-  readonly type: string;
-  readonly arm: string;
-  readonly width: number;
-  readonly height: number;
-  readonly distinctColors: number;
-  readonly inkPixels: number;
-  readonly meanLuma: number;
-  readonly inkCentroidX: number;
-  readonly inkCentroidY: number;
-  readonly hash: string;
-}
-interface DiffResult {
-  readonly totalPixels: number;
-  readonly differingPixels: number;
-  readonly differingBeyond1: number;
-  /**
-   * Pixels differing by more than 16/255 — the SHARP number. A metallic clearcoat's
-   * specular comes off a mip chain the two backends build with different filters, so
-   * `beyond1` counts a broad haze of last-bit disagreement; `beyond16` counts pixels
-   * that are actually a different colour, which is the claim worth gating.
-   */
-  readonly differingBeyond16: number;
-  readonly maxChannelDelta: number;
-  readonly meanAbsDelta: number;
-  readonly differingPct: number;
-  readonly beyond1Pct: number;
-  readonly beyond16Pct: number;
-}
 
 const captures = new Map<string, Capture>();
 let captureSeq = 0;
@@ -153,88 +129,6 @@ async function readTexture(device: GPUDevice, texture: GPUTexture): Promise<Capt
   buffer.unmap();
   buffer.destroy();
   return { width, height, data };
-}
-
-/** WebGL reads BOTTOM-UP; every capture in this rig is normalised to row 0 = top. */
-function flipRows(data: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
-  const out = new Uint8ClampedArray(data.length);
-  const stride = width * 4;
-  for (let y = 0; y < height; y++) {
-    out.set(data.subarray((height - 1 - y) * stride, (height - y) * stride), y * stride);
-  }
-  return out;
-}
-
-function statsOf(id: string, type: string, arm: string, cap: Capture): CaptureStats {
-  const colours = new Set<number>();
-  let ink = 0;
-  let sx = 0;
-  let sy = 0;
-  let luma = 0;
-  let hash = 2166136261;
-  for (let y = 0; y < cap.height; y++) {
-    for (let x = 0; x < cap.width; x++) {
-      const i = (y * cap.width + x) * 4;
-      const r = cap.data[i] as number;
-      const g = cap.data[i + 1] as number;
-      const b = cap.data[i + 2] as number;
-      const a = cap.data[i + 3] as number;
-      colours.add((r << 24) | (g << 16) | (b << 8) | a);
-      if (a > 8) {
-        ink += 1;
-        sx += x;
-        sy += y;
-        luma += 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      }
-      hash = Math.imul(hash ^ r, 16777619) ^ g;
-      hash = Math.imul(hash ^ b, 16777619) ^ a;
-    }
-  }
-  return {
-    id,
-    type,
-    arm,
-    width: cap.width,
-    height: cap.height,
-    distinctColors: colours.size,
-    inkPixels: ink,
-    meanLuma: ink === 0 ? 0 : luma / ink,
-    inkCentroidX: ink === 0 ? -1 : sx / ink / cap.width,
-    inkCentroidY: ink === 0 ? -1 : sy / ink / cap.height,
-    hash: (hash >>> 0).toString(16),
-  };
-}
-
-function diffCaptures(a: Capture, b: Capture): DiffResult {
-  const total = Math.min(a.width * a.height, b.width * b.height);
-  let differing = 0;
-  let beyond1 = 0;
-  let beyond16 = 0;
-  let maxDelta = 0;
-  let sum = 0;
-  for (let i = 0; i < total * 4; i += 4) {
-    let worst = 0;
-    for (let c = 0; c < 4; c++) {
-      const d = Math.abs((a.data[i + c] as number) - (b.data[i + c] as number));
-      sum += d;
-      if (d > worst) worst = d;
-    }
-    if (worst > 0) differing += 1;
-    if (worst > 1) beyond1 += 1;
-    if (worst > 16) beyond16 += 1;
-    if (worst > maxDelta) maxDelta = worst;
-  }
-  return {
-    totalPixels: total,
-    differingPixels: differing,
-    differingBeyond1: beyond1,
-    differingBeyond16: beyond16,
-    maxChannelDelta: maxDelta,
-    meanAbsDelta: sum / (total * 4),
-    differingPct: total === 0 ? 0 : (differing / total) * 100,
-    beyond1Pct: total === 0 ? 0 : (beyond1 / total) * 100,
-    beyond16Pct: total === 0 ? 0 : (beyond16 / total) * 100,
-  };
 }
 
 // --- the ground canvas readback (2026-09 finding: toDataURL, never drawImage) ---
@@ -278,6 +172,8 @@ function modal(img: ImageData, x: number, y: number): RGB {
 
 /** The rig toggles the GL root off and on — D-C0.4's real unmount → remount. */
 let setGlMountedExternal: ((v: boolean) => void) | null = null;
+/** …and the app's dark toggle — C4c's light-mode phase, through the state the page paints from. */
+let setDarkExternal: ((v: boolean) => void) | null = null;
 
 function RigApp({
   engine,
@@ -285,32 +181,41 @@ function RigApp({
   onGround,
   onIsland,
   onBridge,
+  onInstruments,
 }: {
   engine: CanvasEngine;
   gpu: EngineGpu;
   onGround: (h: GroundComposeHandle) => void;
   onIsland: (r: IslandRender | null) => void;
   onBridge: (b: GLBridge) => void;
+  onInstruments: (i: BoardGlInstruments | null) => void;
 }): ReactElement {
   const [gl, setGl] = useState<{ bridge: GLBridge; plane: HTMLDivElement } | null>(null);
   const [glMounted, setGlMounted] = useState(true);
+  const [dark, setDark] = useState(true);
   useEffect(() => {
     setGlMountedExternal = setGlMounted;
+    setDarkExternal = setDark;
     return () => {
       setGlMountedExternal = null;
+      setDarkExternal = null;
     };
   }, []);
+  // The App's own theme wiring, the SHIPPING module (`ground-theme.ts`): the page's
+  // `--canvas-bg` and the ground's `canvasBg` from one `dark` state, the factory
+  // reading the theme at the mount and the effect re-projecting it live. A copy of
+  // it here would grade the copy (`docs/UI_SYSTEM.md`).
+  const groundLayerRef = useRef<GroundComposeHandle | null>(null);
+  const themeRef = useAppTheme(dark, DEFAULT_THEME_COLORS, groundLayerRef);
   // The App's own ground options, verbatim (App.tsx's `groundFactory`).
-  const factory = useRef(
-    groundCompose({
+  const ground = useRef((ctx: GroundComposeContext) => {
+    const handle = groundCompose({
       device: gpu.device,
-      theme: THEMES.dark,
+      theme: themeRef.current,
       card: vfFrame(),
       grids: [needleGlyph, cuttingMat],
-    }),
-  );
-  const ground = useRef((ctx: GroundComposeContext) => {
-    const handle = factory.current(ctx);
+    })(ctx);
+    groundLayerRef.current = handle;
     onGround(handle);
     return handle;
   });
@@ -339,6 +244,7 @@ function RigApp({
           plane={gl.plane}
           gpu={gpu}
           onIslandRender={onIsland}
+          onInstruments={onInstruments}
         />
       )}
     </InfiniteCanvas>
@@ -407,11 +313,35 @@ interface GroundVsIsland {
   readonly realised: boolean;
 }
 interface Remount {
-  readonly afterUnmount: ReturnType<typeof islandRendererCensus>;
-  readonly afterRemount: ReturnType<typeof islandRendererCensus>;
+  readonly afterUnmount: IslandRendererCensus;
+  readonly afterRemount: IslandRendererCensus;
+  /** The PMREM targets across the same cycle: the caller owns them, so an undisposed one is the C0 leak (C4c). */
+  readonly envAfterUnmount: EnvTargetCensus;
+  readonly envAfterRemount: EnvTargetCensus;
   readonly islandGone: boolean;
   readonly renderedAgain: number;
   readonly texturedAgain: number;
+  readonly gpuErrors: number;
+}
+/** The light-mode phase (C4c): one `dark` state, the page and the ground read back together. */
+interface ThemePhase {
+  /** The theme's own answer for each mode — what `groundThemeFor` projected, in bytes, and the page string beside it. */
+  readonly expect: {
+    readonly dark: RGB;
+    readonly light: RGB;
+    readonly pageDark: string;
+    readonly pageLight: string;
+  };
+  /** The ground canvas at a gap, and the page's `--canvas-bg`, before the flip · in light · after the flip back. */
+  readonly before: { readonly ground: RGB; readonly page: string; readonly wholeCanvasModal: RGB };
+  readonly light: { readonly ground: RGB; readonly page: string; readonly wholeCanvasModal: RGB };
+  readonly after: { readonly ground: RGB; readonly page: string; readonly wholeCanvasModal: RGB };
+  /** The probe point on the ground canvas, in device px, and the canvas size. */
+  readonly probe: readonly [number, number];
+  readonly canvas: readonly [number, number];
+  /** The layer never re-booted across the flips: `redraws` climbs, `available` never drops. */
+  readonly redrawsGrew: boolean;
+  readonly stillAvailable: boolean;
   readonly gpuErrors: number;
 }
 
@@ -427,8 +357,10 @@ interface AppRig {
   diff(a: string, b: string): DiffResult;
   groundVsIsland(type: string): Promise<GroundVsIsland>;
   idle(ms: number): Promise<Idle>;
-  census(): ReturnType<typeof islandRendererCensus>;
+  census(): IslandRendererCensus;
+  envCensus(): EnvTargetCensus;
   remountGl(): Promise<Remount>;
+  theme(): Promise<ThemePhase>;
 }
 
 const frame = (): Promise<void> => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -454,6 +386,37 @@ function mountRig(): AppRig {
   const rootEl = document.getElementById("root") as HTMLElement;
   const byType = new Map<string, Entity>();
   const widgetQ = defineQuery([PrefabId]);
+  /**
+   * Every Canvas mount's instruments, kept after its unmount (C4c: the counters
+   * live on the lease and the env slot, not on the module). The process-wide number
+   * the D-C0.4 phases grade is the SUM, computed here where the mounts are known —
+   * an object still readable after its mount is gone, so the deferred disposal that
+   * lands post-unmount is still counted.
+   */
+  const mounts: BoardGlInstruments[] = [];
+  const censusTotal = (): IslandRendererCensus =>
+    mounts.reduce<IslandRendererCensus>(
+      (acc, m) => {
+        const c = m.census();
+        return { created: acc.created + c.created, disposed: acc.disposed + c.disposed, live: acc.live + c.live };
+      },
+      { created: 0, disposed: 0, live: 0 },
+    );
+  const envTotal = (): EnvTargetCensus =>
+    mounts.reduce<EnvTargetCensus>(
+      (acc, m) => {
+        const c = m.envTargets();
+        return { created: acc.created + c.created, disposed: acc.disposed + c.disposed };
+      },
+      { created: 0, disposed: 0 },
+    );
+  const envBackend = (): "webgpu" | "webgl" | null => {
+    for (let i = mounts.length - 1; i >= 0; i--) {
+      const b = mounts[i]?.envBackend() ?? null;
+      if (b !== null) return b;
+    }
+    return null;
+  };
 
   const ready = (async () => {
     gpu = await acquireCompositorDevice();
@@ -480,6 +443,9 @@ function mountRig(): AppRig {
           }}
           onBridge={(b) => {
             bridge = b;
+          }}
+          onInstruments={(i) => {
+            if (i !== null && !mounts.includes(i)) mounts.push(i);
           }}
         />
       </StrictMode>,
@@ -672,14 +638,14 @@ function mountRig(): AppRig {
       await ready;
       await until(() => (ground?.compose.available() ?? false) && redraws() > 0);
       // The env generator runs inside the Canvas's first commit; give it a beat.
-      await until(() => envGeneratorBackend() !== null, 300);
+      await until(() => envBackend() !== null, 300);
       return {
         profile: compositedProfile.name,
         // the ground's own and the never-presenting island Canvas — never the L1 source canvas B4 mounts
         canvases: rootEl.querySelectorAll("canvas:not([data-ice-source-canvas])").length,
         available: ground?.compose.available() ?? false,
         redraws: redraws(),
-        envBackend: envGeneratorBackend(),
+        envBackend: envBackend(),
         gpuErrors: gpu?.errors().length ?? 0,
       };
     },
@@ -840,7 +806,8 @@ function mountRig(): AppRig {
       return { frames: n, submits: submits() - s0, redraws: redraws() - r0, rendered: isl().stats().rendered - i0 };
     },
 
-    census: () => islandRendererCensus(),
+    census: () => censusTotal(),
+    envCensus: () => envTotal(),
 
     async remountGl() {
       // Off the freeze first: a paused card renders nothing, so a remount that had to
@@ -851,7 +818,8 @@ function mountRig(): AppRig {
       // cannot kill a live renderer; a REAL unmount must therefore be waited out.
       await frames(6);
       await new Promise<void>((r) => setTimeout(r, 60));
-      const afterUnmount = islandRendererCensus();
+      const afterUnmount = censusTotal();
+      const envAfterUnmount = envTotal();
       const islandGone = island === null;
       must(setGlMountedExternal, "the rig's GL mount switch")(true);
       await frames(6);
@@ -862,10 +830,82 @@ function mountRig(): AppRig {
       await frames(8);
       return {
         afterUnmount,
-        afterRemount: islandRendererCensus(),
+        afterRemount: censusTotal(),
+        envAfterUnmount,
+        envAfterRemount: envTotal(),
         islandGone,
         renderedAgain: island?.stats().rendered ?? 0,
         texturedAgain: compose().stats().textured,
+        gpuErrors: gpu?.errors().length ?? 0,
+      };
+    },
+
+    /**
+     * LIGHT MODE (C4c, D-C4.12). The ground is OPAQUE, so its clear colour IS the
+     * page's background — one state must set both or light mode is a dark board
+     * under a light page, which is what shipped. The flip goes through the app's
+     * `dark` state, and both surfaces are read: the ground canvas at a card gap and
+     * on the whole-canvas modal, and `--canvas-bg` off the document element.
+     *
+     * The CONTROL is the byte before the flip: without it a probe that always read
+     * the light background (a stuck light theme) would pass.
+     */
+    async theme() {
+      const world = ce().world;
+      // A gap: the board is framed, so put the camera somewhere with no card under
+      // the probe — the viewport centre after a pan far off the board's right edge.
+      const cam = must(world.getResource(Camera), "camera");
+      ce().ops.panTo(cam.x + 4000, cam.y);
+      await frames(8);
+      const canvas = compose().canvas;
+      const probe = [canvas.width >> 1, canvas.height >> 1] as const;
+      const page = (): string => document.documentElement.style.getPropertyValue("--canvas-bg").trim();
+      const wholeModal = (img: ImageData): RGB => {
+        // The most common colour on the whole canvas: the field's glyphs are sparse,
+        // so this is the ground itself and no single probe point can be unlucky.
+        const counts = new Map<number, number>();
+        for (let i = 0; i < img.data.length; i += 4) {
+          const key = ((img.data[i] as number) << 16) | ((img.data[i + 1] as number) << 8) | (img.data[i + 2] as number);
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        let best = 0;
+        let bestN = -1;
+        for (const [k, n] of counts) if (n > bestN) [best, bestN] = [k, n];
+        return [(best >> 16) & 255, (best >> 8) & 255, best & 255];
+      };
+      const read = async (): Promise<{ ground: RGB; page: string; wholeCanvasModal: RGB }> => {
+        const img = await groundReadback(canvas);
+        // The readback is the canvas's own pixels: its size is the device size, so
+        // the probe is already in its coordinates.
+        return { ground: modal(img, probe[0], probe[1]), page: page(), wholeCanvasModal: wholeModal(img) };
+      };
+      const bytesOf = (c: readonly [number, number, number]): RGB => [
+        Math.round(c[0] * 255),
+        Math.round(c[1] * 255),
+        Math.round(c[2] * 255),
+      ];
+      const before = await read();
+      const redraws0 = redraws();
+      must(setDarkExternal, "the rig's dark toggle")(false);
+      await frames(10);
+      const light = await read();
+      must(setDarkExternal, "the rig's dark toggle")(true);
+      await frames(10);
+      const after = await read();
+      return {
+        expect: {
+          dark: bytesOf(groundThemeFor(true, DEFAULT_THEME_COLORS).canvasBg),
+          light: bytesOf(groundThemeFor(false, DEFAULT_THEME_COLORS).canvasBg),
+          pageDark: pageBackground(true, DEFAULT_THEME_COLORS),
+          pageLight: pageBackground(false, DEFAULT_THEME_COLORS),
+        },
+        before,
+        light,
+        after,
+        probe,
+        canvas: [canvas.width, canvas.height] as const,
+        redrawsGrew: redraws() > redraws0,
+        stillAvailable: compose().available(),
         gpuErrors: gpu?.errors().length ?? 0,
       };
     },
