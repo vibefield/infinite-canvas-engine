@@ -15,10 +15,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Entity, World } from "@vibecook/strata-ecs";
 import {
+  Camera,
   Position,
   PresenceCursor,
   PresencePeer,
   Size,
+  Viewport,
   attachPresence,
   broadcastChannelByteChannel,
   createCanvasEngine,
@@ -609,6 +611,44 @@ describe("bootstrap: lifecycle hygiene (review 2026-07-13)", () => {
     const swapped = must(ce.docs.current(), "re-adopted session");
     expect(swapped).not.toBe(first); // finding 3: the facade used to stay on the quarantined session
     expect(swapped).toBe(res.session); // facade and result getter agree
+  });
+
+  it("facade: the ENGINE's own resources survive a join and an internal re-bootstrap (D-C4.5)", async () => {
+    const doc = makeGappedDoc();
+    cleanups.push(doc.close);
+    const bus = new Bus();
+    const { clock } = makeClock();
+    const ce = createCanvasEngine();
+    cleanups.push(() => ce.dispose());
+    // A MOUNTED canvas: the host's box and the user's view, neither of which
+    // belongs to the document being joined.
+    ce.world.setResource(Viewport, { w: 1440, h: 900, dpr: 2 });
+    ce.ops.panTo(120, -45);
+    const viewport = ce.world.getResource(Viewport);
+    const camera = ce.world.getResource(Camera);
+
+    const server = bus.endpoint();
+    const p = ce.docs.join(bus.endpoint(), { clock });
+    bus.deliverAll();
+    server.send(frame(K.SNAPSHOT_OFFER, doc.base));
+    bus.deliverAll();
+    await p;
+    // `docs.join` closes whatever was open first — one `world.reset()`.
+    expect(ce.world.getResource(Viewport)).toEqual(viewport);
+    expect(ce.world.getResource(Camera)).toEqual(camera);
+
+    // The causal gap quarantines the session, and joinDoc closes it INSIDE the
+    // join — a second reset the facade never called and must still survive.
+    server.send(frame(K.UPDATE, doc.update2));
+    bus.deliverAll();
+    expect(ce.world.getResource(Viewport)).toEqual(viewport);
+    expect(ce.world.getResource(Camera)).toEqual(camera);
+
+    server.send(frame(K.SNAPSHOT_OFFER, doc.full()));
+    bus.deliverAll();
+    expect(ce.docs.current()).toBeDefined();
+    expect(ce.world.getResource(Viewport)).toEqual(viewport);
+    expect(ce.world.getResource(Camera)).toEqual(camera);
   });
 });
 

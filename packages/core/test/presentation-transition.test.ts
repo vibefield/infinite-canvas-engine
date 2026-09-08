@@ -489,3 +489,38 @@ describe("presentation transition coordinator", () => {
     rig.coordinator.dispose();
   });
 });
+
+describe("ownerOf (D-C4.6): who holds a plane", () => {
+  const adapter = (id: string, plane: "ground" | "dom" | "gl") =>
+    Object.freeze({ id, plane, prepare: () => null });
+
+  it("names the registered adapter, answers undefined for a free plane, and frees it on unregister", () => {
+    const rig = setup();
+    expect(rig.coordinator.ownerOf("gl")).toBeUndefined();
+
+    const unregister = rig.coordinator.register(adapter("@ice/r3f/gl", "gl"));
+    expect(rig.coordinator.ownerOf("gl")).toBe("@ice/r3f/gl");
+    expect(rig.coordinator.ownerOf("dom")).toBeUndefined();
+
+    unregister();
+    expect(rig.coordinator.ownerOf("gl")).toBeUndefined();
+    rig.coordinator.dispose();
+  });
+
+  it("is the question `register`'s throw answers — and the message names the same owner", () => {
+    const rig = setup();
+    rig.coordinator.register(adapter("first", "gl"));
+    expect(() => rig.coordinator.register(adapter("second", "gl"))).toThrowError(
+      /plane "gl" is already owned by "first"/,
+    );
+    expect(rig.coordinator.ownerOf("gl")).toBe("first");
+    rig.coordinator.dispose();
+  });
+
+  it("a disposed coordinator owns nothing", () => {
+    const rig = setup();
+    rig.coordinator.register(adapter("@ice/r3f/gl", "gl"));
+    rig.coordinator.dispose();
+    expect(rig.coordinator.ownerOf("gl")).toBeUndefined();
+  });
+});

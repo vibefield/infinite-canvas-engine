@@ -115,6 +115,14 @@ export interface IslandRenderStats {
    * realised texture would sit Warm on the plate for good (B9 review).
    */
   readonly unrealised: number;
+  /**
+   * Renders NOT attempted because the table already refused this exact handle and nothing has
+   * moved since (D-C4.7). Without the backoff a persistently refusing handle is an allocate →
+   * render → destroy of a full target on every single flush, forever, spending Hot content's
+   * owed animation time on frames nobody will ever see. A climbing counter here with a still
+   * `unrealised` is the honest shape of "the table will not take this card".
+   */
+  readonly skippedRefused: number;
 }
 
 export interface IslandRenderOpts {
@@ -153,11 +161,20 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
   const lastRenderAt = new Map<Entity, number>();
   /** entity → animation time owed to its paint-attributed callbacks. */
   const owed = new Map<Entity, number>();
+  /**
+   * THE REFUSAL BACKOFF (D-C4.7): entity → the handle the table refused and the
+   * residency's revision at that moment. While the world still names that same
+   * handle and the revision has not moved, the card is skipped ENTIRELY — not
+   * rendered, not allocated, not marked painted — so it keeps drawing the
+   * plate and costs nothing. It retries the moment either term changes.
+   */
+  const refused = new Map<Entity, { readonly handle: TextureHandle; readonly revision: number | undefined }>();
   let rendered = 0;
   let disposed = 0;
   let skippedPaused = 0;
   let skippedBudget = 0;
   let unrealised = 0;
+  let skippedRefused = 0;
   let lastFlushMs: number | null = null;
 
   const disposeTarget = (handle: TextureHandle): void => {
@@ -170,7 +187,13 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
   // The ONLY disposal path while mounted. A target dies when the TABLE has let
   // its handle go — after the frame's submit, because the residency collects
   // there — so nothing is ever destroyed under a command that reads it.
-  const unforget = sink.onForget(disposeTarget);
+  const unforget = sink.onForget((handle) => {
+    disposeTarget(handle);
+    // A forgotten handle is the table letting go: any backoff standing against
+    // it is spent (D-C4.7). Keeping it would hold a card off a handle the
+    // residency no longer knows about.
+    for (const [e, back] of refused) if (back.handle === handle) refused.delete(e);
+  });
 
   const ensureTarget = (handle: TextureHandle, entry: TextureDescription): RenderTarget | undefined => {
     const existing = targets.get(handle);
@@ -231,6 +254,22 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
         if (handle === NO_TEXTURE) continue; // no destination this frame
         const entry = table.describe(handle);
         if (entry === undefined || entry.kind !== "own") continue; // not a private target: not ours
+
+        // BACKED OFF (D-C4.7). The table refused this exact handle and neither
+        // it nor the residency's revision has moved since, so the render below
+        // would allocate a full target, paint it, be refused again and destroy
+        // it — every flush, forever. Skip the card whole: it stays UNPAINTED
+        // and draws the plate, which is the honest picture, and it retries the
+        // moment the world names a new handle or the residency says something
+        // changed.
+        const back = refused.get(e);
+        if (back !== undefined) {
+          if (back.handle === handle && back.revision === sink.revision?.()) {
+            skippedRefused += 1;
+            continue;
+          }
+          refused.delete(e); // a new handle, or the residency moved: try again
+        }
 
         const demand = world.get(e, SurfaceDemand);
         if (demand?.mode === "paused") {
@@ -303,11 +342,26 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
         // PRODUCER's object: the residency only forgets it, and `onForget`
         // above is where it dies.
         const texture = islandTexture(opts.renderer(), rt.texture);
-        if (texture === undefined || !sink.realize(handle, texture, { owned: false })) {
+        if (texture === undefined) {
+          // NOT a refusal — the backend has not resolved this render target
+          // yet, and resolving is exactly what the next frames are for. No
+          // backoff here: nothing bumps a revision when an async allocation
+          // lands, so backing off would strand the island on the plate for
+          // good (the B9 arm, unchanged).
           disposeTarget(handle); // fresh again: the next flush renders, nothing is marked painted
           unrealised += 1;
           continue;
         }
+        if (!sink.realize(handle, texture, { owned: false })) {
+          // THE TABLE REFUSED (D-C4.7): a decision, not a delay. Repeating it
+          // per frame buys nothing, so record the handle + revision and stand
+          // down until one of them moves.
+          disposeTarget(handle);
+          unrealised += 1;
+          refused.set(e, { handle, revision: sink.revision?.() });
+          continue;
+        }
+        refused.delete(e); // realised: whatever was refused here is history
         sink.wrote(e); // every render: this IS the touch that wakes the ground
         lastRenderAt.set(e, t);
         const band = world.get(e, SurfaceBand)?.band ?? selectBand(cam.zoom);
@@ -329,7 +383,15 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
 
   return {
     reflector,
-    stats: () => ({ rendered, targets: targets.size, disposed, skippedPaused, skippedBudget, unrealised }),
+    stats: () => ({
+      rendered,
+      targets: targets.size,
+      disposed,
+      skippedPaused,
+      skippedBudget,
+      unrealised,
+      skippedRefused,
+    }),
     targetOf: (handle) => targets.get(handle),
     dispose() {
       unforget();
@@ -337,6 +399,7 @@ export function createIslandRender(opts: IslandRenderOpts): IslandRender {
       for (const handle of [...targets.keys()]) disposeTarget(handle);
       lastRenderAt.clear();
       owed.clear();
+      refused.clear();
     },
   };
 }

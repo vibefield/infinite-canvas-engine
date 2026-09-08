@@ -3,7 +3,14 @@
  * The ONLY package that touches three/@react-three (as peers). Top of the
  * chain: r3f → react → dom → core → kernel.
  */
-export { createGLBridge, type GLBridge, type GLBridgeOpts, type IslandHandle, type IslandFrameCallback } from "./bridge";
+export {
+  createGLBridge,
+  type GLBridge,
+  type GLBridgeHost,
+  type GLBridgeOpts,
+  type IslandHandle,
+  type IslandFrameCallback,
+} from "./bridge";
 export {
   createIslandStateStore,
   islandPaintable,
@@ -34,7 +41,7 @@ export {
 // composited leg's `WebGpuRenderTargetPool` — is deleted at B8; a target is
 // minted per handle by IslandRender now, and Residency owns its lifetime.
 export { createIslandTarget, webGpuRenderTargetBytes, WEBGPU_ISLAND_SAMPLES } from "./island-target";
-export { GL_PLANE_ADAPTER } from "./gl-plane";
+export { GL_PLANE_ADAPTER, claimGlPlane } from "./gl-plane";
 // design-013 §8 B5: the composited leg's island half — a reflector in the ground's
 // `renders.island` slot, rendering into the PRIVATE target Residency named.
 export {

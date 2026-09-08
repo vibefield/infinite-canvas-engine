@@ -96,6 +96,13 @@ export interface PresentationTransitionStats {
 
 export interface PresentationTransitionCoordinator {
   register(adapter: PresentationTransitionAdapter): () => void;
+  /**
+   * The id of the adapter that owns `plane`, or `undefined` when the plane is
+   * free (D-C4.6). A plane is single-owner and {@link register} THROWS on a
+   * second claim — inside a `useEffect` that unmounts the React tree — so a
+   * host that may be mounted twice on one engine asks here first.
+   */
+  ownerOf(plane: PresentationPlane): string | undefined;
   prepare(descriptor: FrameSwitchDescriptor): PreparedFrameSwitch;
   abort(reason?: PresentationReleaseReason): void;
   setReducedMotion(value: boolean): void;
@@ -286,14 +293,20 @@ export function createPresentationTransitionCoordinator(
     },
   });
 
+  // One lookup, two callers: the throw below and the public question a host
+  // asks before it registers (D-C4.6). `dispose()` clears the map, so a
+  // disposed coordinator answers `undefined` for every plane.
+  const ownerOf = (plane: PresentationPlane): string | undefined =>
+    [...adapters.values()].find((candidate) => candidate.plane === plane)?.id;
+
   return {
     register(adapter) {
       if (disposed) throw new Error("ice: presentation transition coordinator is disposed.");
-      const planeOwner = [...adapters.values()].find((candidate) => candidate.plane === adapter.plane);
+      const planeOwner = ownerOf(adapter.plane);
       if (adapter.id.length === 0 || adapters.has(adapter.id) || planeOwner !== undefined) {
         throw new Error(
           planeOwner !== undefined
-            ? `ice: presentation transition plane "${adapter.plane}" is already owned by "${planeOwner.id}".`
+            ? `ice: presentation transition plane "${adapter.plane}" is already owned by "${planeOwner}".`
             : `ice: presentation transition adapter id "${adapter.id}" is empty or already registered.`,
         );
       }
@@ -320,6 +333,7 @@ export function createPresentationTransitionCoordinator(
         }
       };
     },
+    ownerOf,
     prepare(descriptor) {
       const sequence = ++prepareSequence;
       const deadPrepared = (): PreparedFrameSwitch => ({

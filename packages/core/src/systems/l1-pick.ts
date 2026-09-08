@@ -315,6 +315,17 @@ export function createPickingSystems(
     },
     // `PointerPart` is this system's to write (change-only, through `edit().set` after the first `addComponent`): declared, or
     // strata's dev build throws on the first hover that crosses from content onto a control (B9 — found by the re-pick test).
+    //
+    // WHAT THAT DECLARATION COSTS A CONSUMER (Phase C review; no fix owed here).
+    // A declared write is a COLUMN-WIDE stamp, taken whenever the system runs
+    // rather than when a value changes — and `live()` runs this every frame a
+    // spring is moving. A Tier-1 observer of `PointerPart` would therefore wake
+    // on every one of those frames, for a hover that never moved. Nothing
+    // inside ICE observes the column that way (the overlay collector and
+    // `world.get` both PULL), so idle-zero holds here; a consumer that
+    // subscribes Tier-1 to `PointerPart` is the one who pays, and wants a
+    // `{ coarse: false }` collector instead — the same shape as the `Position`
+    // finding against `cursorVisualPoles` (D-C4.9).
     { name: "picking", access: { write: [PointerPart] }, runIf: () => versions() || frames.current?.live?.() === true },
   );
 

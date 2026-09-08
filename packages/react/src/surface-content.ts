@@ -64,6 +64,19 @@ export interface ContentSink {
   isWritten(entity: Entity): boolean;
   /** Arm a callback for a handle the residency forgets (its table entry drained); returns the disarm. */
   onForget(cb: (handle: TextureHandle) => void): () => void;
+  /**
+   * A counter the residency bumps whenever an earlier {@link ContentSink.realize}
+   * refusal might now succeed — a budget freed, an eviction, a table swap
+   * (D-C4.7). A producer that was refused BACKS OFF: it stops re-rendering
+   * that card until the world names it a different handle or this number
+   * moves, instead of allocating, painting and destroying a target per frame
+   * for a refusal that is not going to change.
+   *
+   * OPTIONAL: a residency that does not publish one is simply never retried
+   * on that second condition — the handle changing is still a retry. Producers
+   * MUST treat the whole thing as advisory (`sink.revision?.()`).
+   */
+  revision?(): number;
 }
 
 /**

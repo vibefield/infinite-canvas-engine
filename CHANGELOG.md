@@ -1054,6 +1054,60 @@ the entity's own kind behaviour.
   `unregister()` wakes Residency (`TextureTable.revision()`); an unrealised handle is
   forgotten the moment its count reaches zero — only realised handles wait in `drain()`.
 
+### Review fixes before publish (C4, 2026-09-08)
+
+The Phase C adversarial review (2026-09-07) is taken in full, before 0.13.0 ever
+reaches the registry — so these are corrections INSIDE this section, not a 0.13.1.
+Every one carries a test that fails without it.
+
+<!-- design-013 C4b (2026-09-08) -->
+**core + r3f.**
+
+- **`docs.close()` no longer takes the host's viewport and the user's camera with
+  it.** `DocSession.close()` is a strata `world.reset()`, and a reset clears
+  RESOURCES as well as entities — so a `docs.create()` / `docs.open()` / `docs.join()`
+  on a MOUNTED canvas came out the far side with `Camera`, `Viewport`, `ActiveTool`,
+  `CameraLimits`, `GestureSettings`, `PointerSettings`, `SnapConfig`, `ChromeSettings`
+  and `StageMode` all `undefined`, and neither ground host could build until the next
+  ResizeObserver fire. `createCanvasEngine` now seeds those through one function and
+  re-seeds after every close, carrying the LIVE values across: the box, the view, a
+  host's tuned settings and a held stage background are the engine's, never the
+  document's. The join re-bootstrap path (a `PendingImportError` quarantine, whose
+  reset happens inside `joinDoc`) re-seeds too.
+- **`PresentationTransitionCoordinator.ownerOf(plane)`** (new) answers the id of the
+  adapter holding a plane, or `undefined`. `register` still throws on a second claim,
+  and this is the question that throw answers.
+- **A second `<GLViews>` over one engine no longer unmounts the React tree.** The `gl`
+  plane registration ran inside a `useEffect` with no guard, so the second mount threw
+  from an effect. `claimGlPlane(transitions)` (new export) claims the plane only when
+  it is free and returns the unregister — or `undefined`, claiming nothing. One owner,
+  no throw, and the plane is freed for the next mount either way.
+- **`createGLBridge` accepts the `CanvasEngine` itself** (`GLBridgeHost = Engine |
+  CanvasEngine`, new type) and takes `transitions` and `gpu` from it; the options stay
+  as overrides. Every host used to repeat `{ transitions: ce.transitions, gpu: ce.gpu }`,
+  and one that forgot got a GL plane with no owner and a snap instead of a flight, with
+  nothing saying why. A bare `Engine` still works and carries neither seam.
+- **A refused realise BACKS OFF** (`IslandRender`). A handle the residency's table
+  refuses was re-rendered every flush — allocate a full target, paint it, be refused,
+  destroy it, forever, spending Hot content's owed animation time on frames nobody
+  sees. The card is now skipped whole (it draws the plate, which is honest) until the
+  world names a different handle or the residency's revision moves. A backend that has
+  not RESOLVED the target yet is unchanged: that is a delay, not a decision, and it
+  still retries next frame.
+- **`ContentSink.revision?(): number`** (new, optional) is that second retry
+  condition — the residency saying "a refusal might land now". A residency that
+  publishes none is retried on a new handle alone.
+- **`IslandRenderStats.skippedRefused`** (new) counts the flushes the backoff skipped;
+  a climbing `skippedRefused` beside a still `unrealised` is what "the table will not
+  take this card" looks like from outside.
+- Recorded, no code change: `picking`'s declared `access.write: [PointerPart]` is a
+  column-wide stamp taken every frame `live()` runs, so a CONSUMER's Tier-1 observer of
+  that column would wake on every spring frame. Nothing inside ICE observes it that
+  way. The note is at the declaration.
+- Corrected at source: glboard's bridge has no `transitions` and is owed none — it
+  builds a bare engine and has no nested-canvas nav, so no switch ever asks for the
+  plane. The review read it as a missing owner.
+
 ## [0.12.0] — 2026-08-31 · a git release point, NOT published to npm
 
 **Install 0.13.0 for everything below.** The cut was real (`903f892`, CI green,

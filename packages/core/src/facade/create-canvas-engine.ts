@@ -18,7 +18,7 @@
  * for the GL layer (GLViews reads it via the react facade). Port budgets
  * remain reviewed constants (RUNTIME_BUDGETS) in v1 — recorded.
  */
-import type { Entity, World } from "@vibecook/strata-ecs";
+import type { Entity, Resource, World } from "@vibecook/strata-ecs";
 import { createWorld, defineQuery } from "@vibecook/strata-ecs";
 import { fitCamera, zoomAtPoint } from "@ice/kernel";
 import {
@@ -417,6 +417,9 @@ export interface CanvasEngine {
   dispose(): void;
 }
 
+/** The value a resource declaration carries (the facade's own resource mirror). */
+type ResourceValue<R> = R extends Resource<infer S> ? S : never;
+
 /** Sink whose target swaps per doc and stamps one generation-safe intent scope. */
 function createForwardingSink(
   world: World,
@@ -654,23 +657,80 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   engine.addSystems("react", nav.navIntegrity);
 
   // Settings resources (design-005 §4): construction seeds; live-tunable after.
+  //
+  // THE FACADE OWNS THESE, NOT THE DOCUMENT (D-C4.5, Phase C review). A
+  // document close runs `DocSession.close()` → strata `world.reset()`, whose
+  // contract clears RESOURCES as well as entities — so every seed below has
+  // to be written again on the far side of a close, or a mounted engine comes
+  // out of a `docs.create()`/`open()` with no `Viewport` and no `Camera` and
+  // neither ground host can build until the next ResizeObserver fire. The
+  // values that come back are the LIVE ones, not the construction seeds: the
+  // host's box and the user's view are not the document's, and the settings
+  // are seeds that a host may have tuned since. `facadeResources` is that
+  // mirror — it trails the world and only ever advances on a DEFINED read, so
+  // a capture taken after a reset (`docs.join`'s re-bootstrap, where the reset
+  // happens inside `joinDoc`) keeps the last good values instead of erasing
+  // them.
   const st = opts.settings ?? {};
-  world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
-  world.setResource(Viewport, { w: 0, h: 0, dpr: 1 });
-  world.setResource(ActiveTool, { id: "select" });
-  world.setResource(CameraLimits, {
-    minZoom: st.zoom?.min ?? CAMERA_DEFAULTS.minZoom,
-    maxZoom: st.zoom?.max ?? CAMERA_DEFAULTS.maxZoom,
-  });
-  world.setResource(GestureSettings, { ...GESTURE_DEFAULTS, ...st.gestures });
-  world.setResource(PointerSettings, { ...POINTER_DEFAULTS, ...st.pointers });
-  world.setResource(SnapConfig, {
-    enabled: st.snap?.enabled ?? SNAP_DEFAULTS.enabled,
-    thresholdPx: st.snap?.thresholdPx ?? SNAP_DEFAULTS.thresholdPx,
-  });
-  world.setResource(ChromeSettings, {
-    liftScale: st.chrome?.liftScale ?? CHROME_DEFAULTS.liftScale,
-  });
+  const facadeResources: {
+    camera: ResourceValue<typeof Camera>;
+    viewport: ResourceValue<typeof Viewport>;
+    activeTool: ResourceValue<typeof ActiveTool>;
+    cameraLimits: ResourceValue<typeof CameraLimits>;
+    gestures: ResourceValue<typeof GestureSettings>;
+    pointers: ResourceValue<typeof PointerSettings>;
+    snap: ResourceValue<typeof SnapConfig>;
+    chrome: ResourceValue<typeof ChromeSettings>;
+    stage: ResourceValue<typeof StageMode> | undefined;
+  } = {
+    camera: { x: 0, y: 0, zoom: 1, gesturing: false },
+    viewport: { w: 0, h: 0, dpr: 1 },
+    activeTool: { id: "select" },
+    cameraLimits: {
+      minZoom: st.zoom?.min ?? CAMERA_DEFAULTS.minZoom,
+      maxZoom: st.zoom?.max ?? CAMERA_DEFAULTS.maxZoom,
+    },
+    gestures: { ...GESTURE_DEFAULTS, ...st.gestures },
+    pointers: { ...POINTER_DEFAULTS, ...st.pointers },
+    snap: {
+      enabled: st.snap?.enabled ?? SNAP_DEFAULTS.enabled,
+      thresholdPx: st.snap?.thresholdPx ?? SNAP_DEFAULTS.thresholdPx,
+    },
+    chrome: {
+      liftScale: st.chrome?.liftScale ?? CHROME_DEFAULTS.liftScale,
+    },
+    // StageMode's truth is the out-of-ECS `stageHolds` map below, so the
+    // mirror starts ABSENT: at construction nothing holds and the resource is
+    // legitimately unset (every reader defaults to 0). It is captured and
+    // restored like the rest once a hold exists — a doc switch under a live
+    // overlay must not silently un-freeze the background.
+    stage: undefined,
+  };
+  /** Read the world into the mirror. MUST run before a `world.reset()`. */
+  const captureFacadeResources = (): void => {
+    facadeResources.camera = world.getResource(Camera) ?? facadeResources.camera;
+    facadeResources.viewport = world.getResource(Viewport) ?? facadeResources.viewport;
+    facadeResources.activeTool = world.getResource(ActiveTool) ?? facadeResources.activeTool;
+    facadeResources.cameraLimits = world.getResource(CameraLimits) ?? facadeResources.cameraLimits;
+    facadeResources.gestures = world.getResource(GestureSettings) ?? facadeResources.gestures;
+    facadeResources.pointers = world.getResource(PointerSettings) ?? facadeResources.pointers;
+    facadeResources.snap = world.getResource(SnapConfig) ?? facadeResources.snap;
+    facadeResources.chrome = world.getResource(ChromeSettings) ?? facadeResources.chrome;
+    facadeResources.stage = world.getResource(StageMode) ?? facadeResources.stage;
+  };
+  /** Write the mirror into the world: construction, and after every reset. */
+  const seedFacadeResources = (): void => {
+    world.setResource(Camera, facadeResources.camera);
+    world.setResource(Viewport, facadeResources.viewport);
+    world.setResource(ActiveTool, facadeResources.activeTool);
+    world.setResource(CameraLimits, facadeResources.cameraLimits);
+    world.setResource(GestureSettings, facadeResources.gestures);
+    world.setResource(PointerSettings, facadeResources.pointers);
+    world.setResource(SnapConfig, facadeResources.snap);
+    world.setResource(ChromeSettings, facadeResources.chrome);
+    if (facadeResources.stage !== undefined) world.setResource(StageMode, facadeResources.stage);
+  };
+  seedFacadeResources();
 
   const resolvedCanvasType = (): CanvasType => {
     const current = canvasSession.current();
@@ -1017,6 +1077,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   };
 
   const closeDoc = (): void => {
+    // BEFORE the close below resets the world: the facade's own resources are
+    // not the document's (D-C4.5), so read the live values out first.
+    captureFacadeResources();
     // A pending join dies here — left to resolve, it would attach a stale
     // session over whatever the caller opens next.
     joinAbort?.abort(new Error("ice: docs.join superseded — another document was opened while joining."));
@@ -1039,9 +1102,13 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     diagnosticSnapshot = Object.freeze({ diagnostics: Object.freeze([]) });
     sink.target = undefined;
     // DocSession.close/reset clears resources; the engine-owned monotone
-    // counters live outside ECS and must be republished immediately.
+    // counters live outside ECS and must be republished immediately, and the
+    // facade's own seeds re-written with the values captured above (D-C4.5) —
+    // a mounted engine keeps its viewport, its camera, its tool, its tuned
+    // settings and its stage holds straight through the switch.
     canvasSession.republish();
     previews.rebind();
+    seedFacadeResources();
   };
 
   /**
@@ -1125,6 +1192,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
               session = undefined; // joinDoc already closed it
               sink.target = undefined;
               canvasSession.republish();
+              // That close was a `world.reset()` INSIDE joinDoc, so the
+              // facade's own resources are gone here too (D-C4.5). The mirror
+              // only advances on a defined read, so it still carries the
+              // values from before the re-bootstrap.
+              seedFacadeResources();
             }
           },
         });

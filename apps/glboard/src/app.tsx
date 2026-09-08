@@ -275,6 +275,12 @@ export async function boot(options: BootOptions = {}): Promise<BootHandle> {
   }
 
   // --- the GL seam: bridge (engine↔R3F) + router (event-time GL hit path) ---
+  // NO `transitions` HERE, and none is owed (D-C4.6, correcting the Phase C
+  // review): this app builds a BARE engine (`createEngine(world)` above), not
+  // the `createCanvasEngine` facade — there is no presentation coordinator to
+  // default from and no nested-canvas nav to prepare a switch, so the `gl`
+  // plane has no owner and nothing asks for one. A facade host gets the seams
+  // for free by handing `createGLBridge` the CanvasEngine itself.
   const bridge = createGLBridge(engine, { devAssertRenderWrites: true });
   const router = createGLPointerRouter({ world, bridge, index: stack.index });
 

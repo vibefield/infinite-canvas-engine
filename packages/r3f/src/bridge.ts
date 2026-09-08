@@ -52,6 +52,7 @@ import {
   Viewport,
   createSiblingOrderIndex,
   widgets,
+  type CanvasEngine,
   type Engine,
   type Entity,
   type GpuAllocationLedger,
@@ -77,10 +78,26 @@ export interface GLBridgeOpts {
    * stub — the pool's injected-`now` precedent). Default `performance.now`.
    */
   readonly now?: () => number;
-  /** Typed facade seams; omitted by legacy/bare-engine mounts. */
+  /**
+   * Typed facade seams. OVERRIDES only: hand {@link createGLBridge} the
+   * `CanvasEngine` itself and both are taken from it (D-C4.6) — a bare-engine
+   * mount (glboard) has neither, and passes neither.
+   */
   readonly transitions?: PresentationTransitionCoordinator;
   readonly gpu?: GpuAllocationLedger;
 }
+
+/**
+ * What a bridge is built over: the bare {@link Engine}, or the whole
+ * {@link CanvasEngine} facade. Hand it the facade and the typed seams come
+ * with it — before D-C4.6 every host repeated `{ transitions: ce.transitions,
+ * gpu: ce.gpu }`, and a host that forgot got a GL plane with no owner, which
+ * gates a cross-type enter carrying an island to a SNAP.
+ */
+export type GLBridgeHost = Engine | CanvasEngine;
+
+const facadeOf = (host: GLBridgeHost): CanvasEngine | undefined =>
+  (host as Partial<CanvasEngine>).engine === undefined ? undefined : (host as CanvasEngine);
 
 export interface GLBridge {
   readonly engine: Engine;
@@ -151,7 +168,13 @@ export interface GLBridge {
   uninstall(): void;
 }
 
-export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridge {
+export function createGLBridge(host: GLBridgeHost, opts: GLBridgeOpts = {}): GLBridge {
+  // The seams DEFAULT from the facade when one was handed over (D-C4.6); an
+  // explicit option still wins, and a bare engine carries neither.
+  const facade = facadeOf(host);
+  const engine: Engine = facade?.engine ?? (host as Engine);
+  const transitions = opts.transitions ?? facade?.transitions;
+  const gpu = opts.gpu ?? facade?.gpu;
   const world = engine.world;
   const state = createIslandStateStore();
   const islands = new Map<Entity, IslandHandle>();
@@ -238,8 +261,8 @@ export function createGLBridge(engine: Engine, opts: GLBridgeOpts = {}): GLBridg
     engine,
     state,
     renderAssert,
-    ...(opts.transitions === undefined ? {} : { transitions: opts.transitions }),
-    ...(opts.gpu === undefined ? {} : { gpu: opts.gpu }),
+    ...(transitions === undefined ? {} : { transitions }),
+    ...(gpu === undefined ? {} : { gpu }),
     order,
 
     registerIsland(entity, handle) {

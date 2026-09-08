@@ -5,7 +5,7 @@
 import { Camera, createEngine, createPresentationTransitionCoordinator, type FrameSwitchDescriptor, Viewport } from "@ice/core";
 import { createWorld, type Entity } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
-import { GL_PLANE_ADAPTER } from "../src/gl-plane";
+import { GL_PLANE_ADAPTER, claimGlPlane } from "../src/gl-plane";
 
 const descriptor: FrameSwitchDescriptor = Object.freeze({
   kind: "enter" as const,
@@ -53,5 +53,52 @@ describe("the gl plane's adapter", () => {
   it("names its plane and prepares with no outgoing visual of its own", () => {
     expect(GL_PLANE_ADAPTER.plane).toBe("gl");
     expect(GL_PLANE_ADAPTER.prepare(descriptor)).toBeNull();
+  });
+});
+
+describe("claimGlPlane (D-C4.6): GLViews' mount effect", () => {
+  it("claims a free plane and names GLViews as the owner", () => {
+    const { coordinator } = setup();
+    expect(coordinator.ownerOf("gl")).toBeUndefined();
+
+    const release = claimGlPlane(coordinator);
+
+    expect(release).toBeTypeOf("function");
+    expect(coordinator.ownerOf("gl")).toBe("@ice/r3f/gl");
+    coordinator.dispose();
+  });
+
+  it("the unmount cleanup frees the plane, and the next mount claims it again", () => {
+    const { coordinator } = setup();
+    const release = claimGlPlane(coordinator);
+    release?.();
+    expect(coordinator.ownerOf("gl")).toBeUndefined();
+
+    const second = claimGlPlane(coordinator);
+    expect(second).toBeTypeOf("function");
+    expect(coordinator.ownerOf("gl")).toBe("@ice/r3f/gl");
+    second?.();
+    coordinator.dispose();
+  });
+
+  it("TWO GLViews over one engine: the second stands down instead of throwing", () => {
+    const { coordinator } = setup();
+    const first = claimGlPlane(coordinator);
+
+    // Before D-C4.6 this threw — inside a useEffect, which unmounts the tree.
+    let second: (() => void) | undefined;
+    expect(() => {
+      second = claimGlPlane(coordinator);
+    }).not.toThrow();
+
+    expect(second).toBeUndefined(); // no claim ⇒ no cleanup to run
+    expect(coordinator.ownerOf("gl")).toBe("@ice/r3f/gl"); // exactly one owner
+    first?.();
+    expect(coordinator.ownerOf("gl")).toBeUndefined(); // and the first still owns its release
+    coordinator.dispose();
+  });
+
+  it("a bare-engine mount (no coordinator) claims nothing and asks for no cleanup", () => {
+    expect(claimGlPlane(undefined)).toBeUndefined();
   });
 });

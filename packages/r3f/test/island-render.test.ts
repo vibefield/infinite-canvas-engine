@@ -86,17 +86,24 @@ interface FakeResidency extends ContentSink {
   /** What the host does after the frame's submit: drain the table, fire `onForget`. */
   collect(): TextureHandle[];
   readonly realizeCalls: { handle: TextureHandle; owned: boolean }[];
+  /** While true, `realize` REFUSES every handle — the table's decision (D-C4.7). */
+  refuse: boolean;
+  /** The residency saying "a refusal might land now": bumps the advisory revision. */
+  bumpRevision(): void;
 }
 
 /**
  * The ground's `ContentResidency`, restated against the same table. Only the
  * `ContentSink` half exists here — that is exactly the half a render uses.
+ * `withRevision: false` models a residency that publishes no `revision()` (the
+ * method is optional): a refused producer then retries on a new handle only.
  */
-function fakeResidency(table: TextureTable, world: World): FakeResidency {
+function fakeResidency(table: TextureTable, world: World, withRevision = true): FakeResidency {
   const realised = new Map<TextureHandle, GPUTexture>();
   const written = new Map<Entity, string>();
   const forgetters = new Set<(h: TextureHandle) => void>();
   const realizeCalls: { handle: TextureHandle; owned: boolean }[] = [];
+  let rev = 0;
   const keyOf = (e: Entity): string => {
     const r = world.get(e, TextureRef);
     return r === undefined ? "" : `${r.texture}|${r.layer}|${r.u0}|${r.v0}|${r.u1}|${r.v1}`;
@@ -104,8 +111,14 @@ function fakeResidency(table: TextureTable, world: World): FakeResidency {
   return {
     table,
     realizeCalls,
+    refuse: false,
+    bumpRevision() {
+      rev += 1;
+    },
+    ...(withRevision ? { revision: (): number => rev } : {}),
     realize(handle, texture, opts) {
       realizeCalls.push({ handle, owned: opts?.owned ?? true });
+      if (this.refuse) return false;
       if (!table.realize(handle, texture)) return false;
       realised.set(handle, texture);
       return true;
@@ -168,7 +181,7 @@ interface Rig {
   destroy(): void;
 }
 
-function rig(backendSrgb = true): Rig {
+function rig(backendSrgb = true, withRevision = true): Rig {
   const world: World = createWorld();
   const engine = createEngine(world);
   // A reflector arms reactivity — without one nothing journals and the churn
@@ -184,7 +197,7 @@ function rig(backendSrgb = true): Rig {
   // The trap is ARMED: a reflector that writes the world fails these tests.
   const bridge = createGLBridge(engine, { devAssertRenderWrites: true });
   const backend = fakeBackend(backendSrgb);
-  const sink = fakeResidency(table, world);
+  const sink = fakeResidency(table, world, withRevision);
   const renders: { scene: object; target: RenderTarget | null }[] = [];
   let bound: RenderTarget | null = null;
   const content: SurfaceContent = {
@@ -627,5 +640,98 @@ describe("the target recipe, shared with the old leg", () => {
     expect(rt.texture.colorSpace).toBe("srgb");
     expect(rt.texture.name).toBe("ice:island:test");
     rt.dispose();
+  });
+});
+
+describe("a handle the table REFUSED (D-C4.7)", () => {
+  it("is not painted: the render happened, the target was dropped, nothing was marked or written", () => {
+    const r = rig();
+    const e = r.card();
+    r.mount(e);
+    r.step(3);
+    r.sink.refuse = true; // the TABLE's decision, not the backend's delay
+
+    r.frame();
+
+    expect(r.renders.length).toBe(1); // it rendered, then was refused the realise
+    expect(r.sink.realizeCalls.length).toBe(1);
+    expect(r.render.stats()).toMatchObject({ rendered: 0, unrealised: 1, targets: 0 });
+    expect(r.bridge.state.get(e)?.fboGeneration).toBe(-1); // markPainted NOT called
+    expect(r.sink.isWritten(e)).toBe(false); // wrote() never ran
+    r.destroy();
+  });
+
+  it("BACKS OFF: five flushes against a refusing table cost one render and one target, not five", () => {
+    const r = rig();
+    const e = r.card();
+    r.mount(e);
+    r.step(3);
+    r.sink.refuse = true;
+
+    for (let i = 0; i < 5; i++) {
+      r.frame();
+      r.step();
+    }
+
+    // Before the backoff: 5 renders, 5 allocations, 5 disposals, `unrealised` 5.
+    expect(r.renders.length).toBe(1);
+    expect(r.render.stats()).toMatchObject({
+      rendered: 0,
+      unrealised: 1,
+      disposed: 1,
+      skippedRefused: 4,
+      targets: 0,
+    });
+    expect(r.sink.realizeCalls.length).toBe(1);
+    r.destroy();
+  });
+
+  it("retries once the residency's revision moves — and lands when the table takes it", () => {
+    const r = rig();
+    const e = r.card();
+    r.mount(e);
+    r.step(3);
+    r.sink.refuse = true;
+    r.frame();
+    r.frame();
+    expect(r.renders.length).toBe(1); // backed off
+
+    r.sink.bumpRevision(); // "something changed — a refusal might land now"
+    r.frame();
+    expect(r.renders.length).toBe(2); // exactly ONE more attempt
+    expect(r.render.stats()).toMatchObject({ rendered: 0, unrealised: 2 });
+    r.frame();
+    expect(r.renders.length).toBe(2); // backed off again, against the NEW revision
+
+    r.sink.refuse = false;
+    r.sink.bumpRevision();
+    r.frame();
+    expect(r.renders.length).toBe(3);
+    expect(r.render.stats()).toMatchObject({ rendered: 1, unrealised: 2 });
+    expect(r.sink.isWritten(e)).toBe(true);
+    r.destroy();
+  });
+
+  it("retries when the world names a NEW handle — with no revision() published at all", () => {
+    const r = rig(true, false); // a residency that publishes no revision
+    const e = r.card({ w: 40, h: 40 });
+    r.mount(e);
+    r.step(3);
+    r.sink.refuse = true;
+    const first = r.handleOf(e);
+    r.frame();
+    r.frame();
+    r.frame();
+    expect(r.renders.length).toBe(1); // the handle alone is the retry condition
+
+    r.world.edit(e).set(Size, { w: 96, h: 96 }); // a resize MINTS a new handle
+    r.step(2);
+    expect(r.handleOf(e)).not.toBe(first);
+
+    r.frame();
+    expect(r.renders.length).toBe(2);
+    r.frame();
+    expect(r.renders.length).toBe(2); // and backs off against the new one too
+    r.destroy();
   });
 });
