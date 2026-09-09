@@ -17,4 +17,7 @@ apps/widgetlab-desktop/tsnet/
 # The ground's pixel witnesses (design-013 B1): the oracle's renders and the lab rigs' stills are results, never sources.
 packages/ground/oracle/results/
 apps/groundlab/results/
+# The HiC cost probes' results (2026-09-09): a trace is 240 MB of events, a micro run a JSON of numbers.
+apps/widgetlab-desktop/screenshots/hic-trace/
+apps/widgetlab-desktop/screenshots/hic-micro/
 docs/.local-*.html

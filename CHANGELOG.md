@@ -1212,6 +1212,39 @@ the entity's own kind behaviour.
   50 ms pickup, carry at 118 fps on 24 copies total; 96 cards likewise with a 167 ms pickup
   (about 1.7 ms per card) and 96 copies; both come back to the live DOM after the settle.
 
+### The copy's cost, named (2026-09-09)
+
+<!-- the HiC pipeline investigation; no package code changed -->
+- **Why the always-GPU arm loses to live DOM, measured three ways** (Chromium 150's source,
+  a Chrome trace of the composited app, a no-engine micro-benchmark): every
+  `copyElementImageToTexture` is a FIXED cost per CALL on the GPU process's main thread —
+  about 0.58 ms plus about 0.05 ms per card of content, unchanged across a 44× range of
+  texels, the destination and the card count. Per call that thread creates and destroys one
+  IOSurface-backed shared image, rasterises the cached paint record through OOP raster as a
+  Skia Graphite recording with its own Metal submit (56 % of the copy; four render passes for
+  the rig's card, whose translucent groups each open one), wraps the surface for Dawn and
+  blits it with `CopyTextureForBrowser` (16 %), across 8 GPU-channel requests and 4
+  command-buffer flushes (16 %); the shared image's create and destroy are the other 12 %.
+  It saturates at ≈3,000–3,800 calls/s raw (≈2,800 through the engine, whose own
+  bookkeeping is 0.03–0.05 ms of main thread per copy), and past saturation the renderer's
+  main thread blocks in command-buffer flow control (`GpuChannel::WaitForGetOffsetInRange`,
+  43 % of every frame at 192 cards) — the time a CPU profile reports "inside" the copy call.
+  Live DOM never enters this pipeline: a compositor-driven animation repaints nothing and a
+  paint-driven one rasterises only invalidated tiles, batched on the raster workers, into
+  surfaces that persist.
+- **The lever is the number of calls.** One call per wrapper element (an immediate child of
+  the source canvas holding many cards) carries 23,000 cards/s at a display-capped 120 fps
+  against 2,900 one call per card — eight times — with the cost curve fitted from a sweep
+  of cards per call. Not adopted: a card's host is laid out at its on-screen position because
+  it IS the card's hit-test, focus and caret truth, and a wrapper copies its children where
+  they are laid out; the trade is recorded in the draft plan ("HiC pipeline — 2026-09-09")
+  and the stress report, undecided.
+- Two probes ship in `apps/widgetlab-desktop`: `hic:trace` (`scripts/hic-trace.mjs`: a
+  Chrome trace of the stress rig's gpu arm through `contentTracing`) and `hic:micro`
+  (`hic-micro.html` + `scripts/hic-micro.mjs`: the no-engine copy with knobs for size,
+  content, destination, cards per call, the viewport-sized copy and the 2D
+  `drawElementImage` route). Their results directories are gitignored.
+
 ## [0.12.0] — 2026-08-31 · a git release point, NOT published to npm
 
 **Install 0.13.0 for everything below.** The cut was real (`903f892`, CI green,

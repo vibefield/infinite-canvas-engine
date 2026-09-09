@@ -13,6 +13,8 @@
     "smoke": "pnpm run build && node scripts/smoke.mjs",
     "hic:probe": "pnpm run build && node scripts/hic-probe.mjs",
     "hic:copy-gate": "node scripts/hic-copy-gate.mjs",
+    "hic:micro": "node scripts/hic-micro.mjs",
+    "hic:trace": "pnpm run build && node scripts/hic-trace.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "boot": "pnpm run build && node scripts/composited.mjs",
