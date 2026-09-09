@@ -24,9 +24,13 @@
 
 // --- the trial surface, structurally (nothing else may name these) ----------
 
-/** `CanvasRenderingContext2D.drawElementImage(element, x, y)` → placement matrix. */
+/**
+ * `CanvasRenderingContext2D.drawElementImage(element, x, y[, dwidth, dheight])` → placement
+ * matrix. The 5-argument form (Chromium 150's `BaseRenderingContext2D::drawElementImage`
+ * overloads) draws the element's cached record scaled to `dwidth × dheight` canvas units.
+ */
 interface HicContext2D {
-  drawElementImage?: (element: Element, x: number, y: number) => DOMMatrix | undefined;
+  drawElementImage?: (element: Element, x: number, y: number, dwidth?: number, dheight?: number) => DOMMatrix | undefined;
 }
 
 /** `HTMLCanvasElement` additions: the paint pump and the transform reader. */
@@ -312,22 +316,36 @@ export function copyElementToTexture(
 
 /**
  * The 2D route: draw an element into a 2D context, returning the placement
- * matrix the caller writes back onto the element (design-012 §5 law 1 — inside
- * a `layoutsubtree` canvas the transform REPLACES layout, so a write-back is an
- * absolute placement, never a delta).
+ * matrix a classic caller writes back onto the element (design-012 §5 law 1 —
+ * inside a `layoutsubtree` canvas the transform REPLACES layout, so a write-back
+ * is an absolute placement, never a delta). The matrix is COMPUTED, never
+ * applied by the platform: a caller that positions its hosts itself (DomRender)
+ * ignores it, and the host stays where its own transform put it.
  *
- * Kept beside the direct copy as the diagnostic/probe path; the compositor's
- * dom sources use {@link copyElementToTexture} (identical pixels — 0/451,584
- * bytes differ — without the atlas canvas).
+ * Since 2026-09-09 this is also the BATCHED copy's raster (`compose/dom-render.ts`,
+ * strategy `batched`): drawn into the SOURCE canvas's own 2D context — the only
+ * context the platform accepts, the element's parent canvas's — the cached
+ * record lands in the canvas's recording, so N draws raster as ONE recording
+ * with one submit, where N element copies each mint a surface and submit
+ * (measured 0.58 ms of GPU-process CPU per call against ≈0.1 per draw). With
+ * `dwidth`/`dheight` the record is scaled to that many canvas units — pass the
+ * slot's own texel size and the raster is 1:1, whatever the bitmap's scale.
+ *
+ * Throws what the platform throws (`InvalidStateError: No cached paint record
+ * for element` for a host reparented this frame); returns `undefined` only when
+ * the host lacks the method.
  */
 export function drawElementImage(
   ctx: CanvasRenderingContext2D,
   element: Element,
   x: number,
   y: number,
+  dwidth?: number,
+  dheight?: number,
 ): DOMMatrix | undefined {
   const c = ctx as unknown as HicContext2D;
   if (typeof c.drawElementImage !== "function") return undefined;
+  if (dwidth !== undefined && dheight !== undefined) return c.drawElementImage(element, x, y, dwidth, dheight);
   return c.drawElementImage(element, x, y);
 }
 

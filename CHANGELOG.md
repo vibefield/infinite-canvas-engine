@@ -1212,6 +1212,62 @@ the entity's own kind behaviour.
   50 ms pickup, carry at 118 fps on 24 copies total; 96 cards likewise with a 167 ms pickup
   (about 1.7 ms per card) and 96 copies; both come back to the live DOM after the settle.
 
+### The levers, built and measured — the copy budget and the batched route (S2, 2026-09-09)
+
+<!-- the levers; James: "try 1 and 2 see how much they improve" -->
+- **`groundCompose({ dom })` tunes DomRender** — `{ strategy?, budget?, costs? }` (`DomRenderTuning`,
+  exported from `@vibecook/ice/ground/compose`). Absent, DomRender behaves exactly as before: one
+  element copy per dirty card, no budget. Both levers are OFF by default in this release; the
+  numbers below are the case for turning them on.
+- **The copy budget (`budget`).** At most K cards copy per flush, FIFO over the dirty set (a served
+  card re-dirtied goes to the back, behind every card still waiting), a gesture's stills first. A
+  number is a fixed cap; an object is the adaptive controller: a feed-forward cap keeps the served
+  cards' estimated GPU-process time to `target` (0.5) of the frame period it measures from its own
+  cadence, the cap shrinks hard when a flush spends over 3 ms of main thread inside its copies (the
+  flow-control signature of a saturated GPU process) or when two of the last three flushes came late
+  while the copies could be their cause, and it grows by one only after four on-time flushes with
+  cards still waiting. The reason it exists: `copyElementImageToTexture` is a fixed ≈0.58 ms of the
+  GPU process's ONE main thread per call, and a board past ≈2,800 calls/s stalls the whole app —
+  pans, the ground, the lifted card — where a budget keeps the app at the display's rate and lets
+  only the promoted cards' cadence degrade. Measured on the stress rig (gpu arm, every card animating,
+  M1 Max, 120 Hz; fps at 96 / 192 / 384 cards): **base 48 / 12 / 6 → budget 120 / 88 / 43**, the
+  pan 33 / 12 / 6 → 120 / 80 / 38, GPU process 150 % → 65–80 %, each card refreshing ≈8 times a
+  second at 96 cards (down from 24 at 48 fps). Past 192 cards the limit is no longer the copies but
+  the main thread's own per-frame paint of every animating host inside the source canvas (11 ms at
+  192, 23 ms at 384) — a cost the live-DOM arm never pays, and the next thing to look at.
+- **The batched route (`strategy: "batched"`).** The served cards of one page layer raster as ONE
+  recording: each `drawElementImage`d into the source canvas's own 2D context at its slot inside a
+  staging tile cut to the canvas's bitmap at slot boundaries, the tile landed in the page layer by
+  one `copyExternalImageToTexture` — where the element route mints a surface, rasters, wraps and
+  blits per card. The hosts stay where they are (hit-test, focus, caret, IME untouched), the slot
+  atlas stays (a pan still copies nothing), and the staging is cleared right after each copy, so the
+  canvas — which IS painted, only its children are not — presents nothing. A tile's copy overwrites
+  every slot inside its box, so the WRITTEN neighbours it covers are drawn too; a single dirty card,
+  a card the bitmap cannot hold, a refused draw, a failed copy, or a tile the cost model says would
+  lose (`costs`: draw 0.1, canvas copy 0.9, element copy 0.58 ms) takes the element route instead.
+  Measured: **twice the cards per second at a third of the GPU-process CPU** (96 / 192 / 384 cards:
+  3,209 / 2,876 / 4,128 cards/s at 57 / 43 / 56 % against 2,349 / 2,287 / 2,189 at 150 %), fps
+  48 / 12 / 6 → 67 / 21 / 11 on its own — its limit is GPU TIME, the render passes the card's
+  translucent groups open — and, with the budget, **the budget's frame rates at three times its
+  cadence** (120 / 85 / 42 fps with each card refreshing 23 / 11 / 5 times a second against
+  8 / 4 / 2). Cost: ≈50–130 MB more GPU-process memory while animating (the 2D surface, its
+  copy-on-write duplicates, and Chromium's 128 MB two-second recyclable cache of tile-sized
+  intermediates). Witnessed on the live app by the texel readback, the compositor frame stream and
+  the overlap pixel on every cell.
+- **What neither lever touches: the gesture set's pickup.** With every host promoted at once, the
+  longest frame stays 167–185 ms at 96 cards and 322–336 at 192 under every variant — the budget
+  spreads the copies over twelve frames and the frame does not move. That frame is the REPARENT of
+  every host onto the source canvas and their first layout and paint records, not the copies (the
+  S1 note's "the reparent and the first copy" was right about the total and wrong about the split).
+  Recorded as owed with the trace that names it.
+- New `DomRenderStats` fields: `budget`, `throttled`, `batches`, `draws`, `fallbacks`, `copyMs`;
+  the stress rig takes `?copy=element|batched&budget=off|adaptive|<n>` (`STRESS_COPY`,
+  `STRESS_BUDGET` on the driver) and the trace recorder `TRACE_COPY`/`TRACE_BUDGET`/`TRACE_PHASE=drag`.
+  Witnesses: `packages/ground/test/compose/dom-render.test.ts` "the levers" (13 cases: the FIFO
+  queue and the stills' priority, the controller's cap, growth, both shrinks and its recovery from
+  the floor, the tile, the neighbours, the cost model, the refused draw, the failed copy, the
+  tiling, the composition of the two levers).
+
 ### The copy's cost, named (2026-09-09)
 
 <!-- the HiC pipeline investigation; no package code changed -->

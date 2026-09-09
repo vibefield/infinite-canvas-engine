@@ -37,7 +37,7 @@ import {
 import type { TextureHandle } from "@ice/core";
 import { geometry, type RasterStrategy } from "@ice/kernel";
 import { describe, expect, it } from "vitest";
-import { createDomRender, type ElementCopy, entityOfHost } from "../../src/compose/dom-render";
+import { type CanvasCopy, createDomRender, type DomRenderTuning, type ElementCopy, type ElementDraw, entityOfHost } from "../../src/compose/dom-render";
 import { type ContentResidency, createContentResidency } from "../../src/compose/residency";
 import { FIT } from "../../src/nav/flight";
 import { must } from "./must";
@@ -128,6 +128,12 @@ interface BoardOpts {
   readonly maxTextureSize?: number;
   /** Wrap the residency the render is handed (the refusal rig above). */
   readonly wrap?: (base: ContentResidency) => ContentResidency;
+  /** The levers (2026-09-09). */
+  readonly tuning?: DomRenderTuning;
+  /** The fake source canvas's bitmap (the batched route's tiling reads it); 2560×1616 by default. */
+  readonly bitmap?: { readonly w: number; readonly h: number };
+  /** Milliseconds the fake element copy advances the clock by — the budget controller's signal. */
+  readonly copyCostMs?: number;
 }
 
 /**
@@ -178,15 +184,36 @@ function makeBoard(o: BoardOpts = {}) {
   const hostOf = (e: Entity): HTMLElement | undefined => els.get(e);
   const copies: CopyRecord[] = [];
   let refuse = false;
+  let clock = 0;
   const copy: ElementCopy = (_queue, element, texture, origin) => {
     const e = must(entityOfHost(element), "the host's entity");
     if (o.unpainted?.has(e) === true) throw new Error("InvalidStateError: No cached paint record for element");
     if (refuse) return false;
+    clock += o.copyCostMs ?? 0;
     copies.push({ entity: e, texture: (texture as FakeTexture).name, x: origin.x, y: origin.y, z: origin.z ?? 0 });
     return true;
   };
+  // The batched route's fakes: the source canvas (the hosts' parent, with a bitmap), its 2D
+  // context (clears recorded), the draw (throws for an unpainted host, like the platform) and the
+  // canvas copy (recorded, never refused unless asked).
+  const canvas = { width: o.bitmap?.w ?? 2560, height: o.bitmap?.h ?? 1616 } as unknown as HTMLCanvasElement;
+  const clears: { x: number; y: number; w: number; h: number }[] = [];
+  const ctx = { clearRect: (x: number, y: number, w: number, h: number) => { clears.push({ x, y, w, h }); } } as unknown as CanvasRenderingContext2D;
+  const draws: { entity: Entity; x: number; y: number; w: number; h: number }[] = [];
+  const draw: ElementDraw = (_ctx, element, x, y, w, h) => {
+    const e = must(entityOfHost(element), "the host's entity");
+    if (o.unpainted?.has(e) === true) throw new Error("InvalidStateError: No cached paint record for element");
+    draws.push({ entity: e, x, y, w, h });
+    return true;
+  };
+  const rectCopies: { texture: string; src: { x: number; y: number }; dst: { x: number; y: number; z: number }; size: { w: number; h: number } }[] = [];
+  let refuseCanvasCopy = false;
+  const canvasCopy: CanvasCopy = (_queue, _canvas, src, texture, dst, size) => {
+    if (refuseCanvasCopy) return false;
+    rectCopies.push({ texture: (texture as FakeTexture).name, src: { ...src }, dst: { ...dst }, size: { ...size } });
+    return true;
+  };
 
-  let clock = 0;
   const render = createDomRender({
     device: gpu.device,
     world: ce.world,
@@ -195,16 +222,20 @@ function makeBoard(o: BoardOpts = {}) {
     raster: () => raster,
     now: () => clock,
     copy,
+    draw,
+    canvasCopy,
+    context2d: () => ctx,
+    ...(o.tuning === undefined ? {} : { tuning: o.tuning }),
   });
 
-  const spawn = (type: string, x: number): Entity => {
-    const e = ce.ops.spawnWidget(type, { x, y: 100, w: 200, h: 120, undoable: false }) as Entity;
+  const spawn = (type: string, x: number, y = 100): Entity => {
+    const e = ce.ops.spawnWidget(type, { x, y, w: 200, h: 120, undoable: false }) as Entity;
     // The dom reflector writes a host's WORLD-unit box the moment it creates it
     // (`createHost` → `writeGeom`); the fake mirrors that, so a card whose band
     // space IS world units (band 1) is copyable on the first flush, as in
     // production, and one whose box really moves waits a frame for the relayout.
     const style: Record<string, string> = { width: "200px", height: "120px" };
-    els.set(e, { style, getAttribute: (k: string) => (k === "data-ice-entity" ? String(e) : null) } as unknown as HTMLElement);
+    els.set(e, { style, parentElement: canvas, getAttribute: (k: string) => (k === "data-ice-entity" ? String(e) : null) } as unknown as HTMLElement);
     return e;
   };
 
@@ -224,9 +255,13 @@ function makeBoard(o: BoardOpts = {}) {
     ce, world: ce.world, store, residency, render, gpu, log, copies, ref, spawn, step, flush, styleOf, paintOf, side,
     dpr,
     raster,
+    draws, rectCopies, clears,
     advance: (ms: number) => { clock += ms; },
     setRefuse: (v: boolean) => { refuse = v; },
+    setRefuseCanvasCopy: (v: boolean) => { refuseCanvasCopy = v; },
     stats: () => render.stats(),
+    /** A card's slot in texels, off its own ref. */
+    rect: (e: Entity) => { const r = must(ce.world.get(e, TextureRef), "a TextureRef"); const sd = (side as { size: number }).size; return { x: Math.round(r.u0 * sd), y: Math.round(r.v0 * sd), w: Math.round((r.u1 - r.u0) * sd), h: Math.round((r.v1 - r.v0) * sd), z: r.layer }; },
   };
 }
 
@@ -729,4 +764,253 @@ describe("DomRender · the host box IS the slot (the zoom-drift proof, design-01
       });
     }
   }
+});
+
+describe("DomRender · the levers (2026-09-09): the copy budget", () => {
+  /** N promoted cards in a grid INSIDE the viewport (the fit camera stays at zoom 1, so every box is right on the first flush), all owing their first copy together. */
+  const promoted = (b: ReturnType<typeof makeBoard>, n: number): Entity[] => {
+    const cards: Entity[] = [];
+    for (let i = 0; i < n; i++) cards.push(b.spawn("dr:promoted", 100 + (i % 8) * 190, 100 + Math.floor(i / 8) * 160));
+    b.ce.world.sync();
+    b.step(5);
+    return cards;
+  };
+
+  it("a fixed budget serves that many cards per flush, FIFO, and counts the ones it left waiting", () => {
+    const b = makeBoard({ tuning: { budget: 2 } });
+    const cards = promoted(b, 5);
+    b.flush();
+    expect(b.copies.map((c) => c.entity)).toEqual(cards.slice(0, 2));
+    expect(b.stats()).toMatchObject({ copies: 2, throttled: 3, budget: 2, pending: 3 });
+    b.flush();
+    expect(b.copies.map((c) => c.entity)).toEqual(cards.slice(0, 4));
+    b.flush();
+    expect(b.copies.map((c) => c.entity)).toEqual(cards);
+    expect(b.stats()).toMatchObject({ copies: 5, throttled: 4, pending: 0 });
+    for (const c of cards) expect(b.residency.isWritten(c)).toBe(true);
+  });
+
+  it("a served card re-dirtied goes to the BACK of the queue, behind every card still waiting", () => {
+    const b = makeBoard({ tuning: { budget: 1 } });
+    const [a, c2, c3] = promoted(b, 3) as [Entity, Entity, Entity];
+    b.flush(); // a
+    expect(b.copies.map((c) => c.entity)).toEqual([a]);
+    b.render.markDirtyHosts([b.paintOf(a)]); // a changes again while c2 and c3 still wait
+    b.advance(50);
+    b.flush(); // c2, not a
+    b.flush(); // c3
+    b.flush(); // a, at last
+    expect(b.copies.map((c) => c.entity)).toEqual([a, c2, c3, a]);
+  });
+
+  it("the stills go FIRST: a paused card's first picture is served before a live card's next one", () => {
+    const b = makeBoard({ tuning: { budget: 1 } });
+    const live = b.spawn("dr:promoted", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush(); // the live card's first copy
+    const still = b.spawn("dr:paused", 400);
+    b.ce.world.sync();
+    b.step(3);
+    b.render.markDirtyHosts([b.paintOf(live)]); // the live card owes again, and it was dirty FIRST
+    b.advance(50);
+    b.flush();
+    expect(b.copies.map((c) => c.entity)).toEqual([live, still]);
+    expect(b.stats()).toMatchObject({ stills: 1, throttled: 1 });
+    b.flush();
+    expect(b.copies.map((c) => c.entity)).toEqual([live, still, live]);
+  });
+
+  it("the adaptive budget is CAPPED to half the frame period of copies, GROWS by one after a calm run while cards wait, SHRINKS hard when a flush spends its budget blocked, and SHRINKS on late flushes only while the copies could be their cause", () => {
+    // Calm: flushes 8 ms apart (a 120 Hz cadence), copies free. The cap at 8 ms is floor(8 × 0.5 / 0.58) = 6 element copies; growth waits for four calm flushes and stops at the cap.
+    const b = makeBoard({ tuning: { budget: { start: 4, min: 2, max: 16 } } });
+    const cards = promoted(b, 40);
+    let served = 0;
+    const flushAt8 = () => { b.advance(8); b.flush(); served = b.copies.length; };
+    flushAt8(); flushAt8(); flushAt8(); flushAt8();
+    expect(b.stats().budget).toBe(4);   // four flushes: the cadence is only now known to be calm
+    flushAt8();
+    expect(b.stats().budget).toBe(5);   // the fifth flush grows by one
+    flushAt8();
+    expect(b.stats().budget).toBe(6);   // …and the sixth reaches the cap
+    flushAt8(); flushAt8();
+    expect(b.stats().budget).toBe(6);   // where it stays
+    expect(served).toBeGreaterThan(0);
+    for (const c of cards.slice(0, 4)) expect(b.residency.isWritten(c)).toBe(true);
+    // A budget at the FLOOR recovers: two calm flushes at a time, it grows by one after the calm run (the guard that trapped it is gone).
+    const floor = makeBoard({ tuning: { budget: { start: 2, min: 2, max: 16 } } });
+    promoted(floor, 40);
+    for (let i = 0; i < 4; i++) { floor.advance(8); floor.flush(); }
+    expect(floor.stats().budget).toBe(2); // the first flush has no cadence; three calm flushes are not yet a calm run
+    floor.advance(8); floor.flush();
+    expect(floor.stats().budget).toBe(3); // the fourth calm flush grows by one
+    floor.advance(8); floor.flush();
+    expect(floor.stats().budget).toBe(4);
+    // The cap follows the period: a start above it is cut to it on the first flush whose cadence is known.
+    const capped = makeBoard({ tuning: { budget: { start: 12, min: 2, max: 32 } } });
+    promoted(capped, 40);
+    capped.flush();                       // no cadence yet: 12 served
+    expect(capped.stats()).toMatchObject({ copies: 12, budget: 12 });
+    capped.advance(8); capped.flush();    // the period is 8 ms: the cap is 6
+    expect(capped.stats().budget).toBe(6);
+    // `target` moves the cap: a whole period of copies is floor(8 / 0.58) = 13.
+    const wide = makeBoard({ tuning: { budget: { start: 20, min: 2, max: 32, target: 1 } } });
+    promoted(wide, 40);
+    wide.flush(); wide.advance(8); wide.flush();
+    expect(wide.stats().budget).toBe(13);
+    // Blocked: each copy costs 1 ms of main thread (the flow-control signature): 10 copies = 10 ms > HIGH → floor(10 × 0.7) = 7.
+    const slow = makeBoard({ tuning: { budget: { start: 10, min: 2, max: 16 } }, copyCostMs: 1 });
+    promoted(slow, 12);
+    slow.flush();
+    expect(slow.stats()).toMatchObject({ copies: 10, budget: 7 });
+    expect(slow.stats().copyMs).toBe(10);
+    // Late: flushes 30 ms apart against a 9 ms period (8 ms of advance plus the ten 0.1 ms copies of the first flush,
+    // which is what the period reads). At the cap (7 copies ≈ 4.1 ms of GPU process, over the 3.2 ms gate) two late
+    // of three shrink to 4; at 4 (2.3 ms, under the gate) more late flushes do NOT shrink further — the lateness is not
+    // the copies'.
+    const late = makeBoard({ tuning: { budget: { start: 10, min: 2, max: 16 } }, copyCostMs: 0.1 });
+    promoted(late, 40);
+    late.advance(8); late.flush(); late.advance(8); late.flush(); // the period is learnt at 9: the cap is 7
+    expect(late.stats().budget).toBe(7);
+    late.advance(30); late.flush(); // one late flush: not yet
+    expect(late.stats().budget).toBe(7);
+    late.advance(30); late.flush(); // two of three: shrink to floor(7 × 0.7) = 4
+    expect(late.stats().budget).toBe(4);
+    late.advance(30); late.flush(); late.advance(30); late.flush();
+    expect(late.stats().budget).toBe(4); // under the gate: the copies are not the cause, the budget holds
+  });
+
+  it("without a budget nothing changes: every dirty card copies in the flush, `budget` reads Infinity", () => {
+    const b = makeBoard();
+    promoted(b, 7);
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 7, throttled: 0, budget: Number.POSITIVE_INFINITY });
+  });
+});
+
+describe("DomRender · the levers (2026-09-09): the batched route", () => {
+  const promoted = (b: ReturnType<typeof makeBoard>, n: number): Entity[] => {
+    const cards: Entity[] = [];
+    for (let i = 0; i < n; i++) cards.push(b.spawn("dr:promoted", 100 + i * 260));
+    b.ce.world.sync();
+    b.step(5);
+    return cards;
+  };
+  const bbox = (rs: { x: number; y: number; w: number; h: number }[]) => {
+    const x0 = Math.min(...rs.map((r) => r.x)); const y0 = Math.min(...rs.map((r) => r.y));
+    const x1 = Math.max(...rs.map((r) => r.x + r.w)); const y1 = Math.max(...rs.map((r) => r.y + r.h));
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  };
+
+  it("six cards owing a copy on one layer raster as six draws and land in ONE canvas copy of their box; every card is written", () => {
+    const b = makeBoard({ tuning: { strategy: "batched" } });
+    const cards = promoted(b, 6);
+    b.flush();
+    const rects = cards.map((c) => b.rect(c));
+    expect(new Set(rects.map((r) => r.z)).size).toBe(1); // one layer
+    const box = bbox(rects);
+    expect(b.stats()).toMatchObject({ copies: 6, batches: 1, draws: 6, fallbacks: 0, pending: 0 });
+    expect(b.copies).toEqual([]); // no element copy at all
+    expect(b.rectCopies).toEqual([{ texture: b.gpu.made[0]?.name, src: { x: 0, y: 0 }, dst: { x: box.x, y: box.y, z: rects[0]?.z ?? 0 }, size: { w: box.w, h: box.h } }]);
+    // each draw sits at its slot's offset inside the box, at the slot's own size
+    for (const c of cards) {
+      const r = b.rect(c);
+      expect(b.draws.find((d) => d.entity === c)).toEqual({ entity: c, x: r.x - box.x, y: r.y - box.y, w: r.w, h: r.h });
+      expect(b.residency.isWritten(c)).toBe(true);
+    }
+    // the staging was cleared after the copy: the last clear is the whole box
+    expect(b.clears[b.clears.length - 1]).toEqual({ x: 0, y: 0, w: box.w, h: box.h });
+  });
+
+  it("a single dirty card takes the element route — a batch of one would cost more than it saves", () => {
+    const b = makeBoard({ tuning: { strategy: "batched" } });
+    const [card] = promoted(b, 1) as [Entity];
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 1, batches: 0, draws: 0, fallbacks: 0 });
+    expect(b.copies.map((c) => c.entity)).toEqual([card]);
+    expect(b.rectCopies).toEqual([]);
+  });
+
+  it("a tile's box covers WRITTEN neighbours, so they are drawn too and their debts are paid; two scattered cards whose box would cost more than two element copies are not batched", () => {
+    const b = makeBoard({ tuning: { strategy: "batched" } });
+    const cards = promoted(b, 6);
+    b.flush(); // the first pictures, one batch
+    expect(b.stats()).toMatchObject({ batches: 1, draws: 6 });
+    // three non-adjacent cards change: their box covers the written neighbours between them, which are drawn too
+    const [c0, , c2, , c4] = cards as [Entity, Entity, Entity, Entity, Entity, Entity];
+    const covered = (dirty: Entity[]): Entity[] => {
+      const box = bbox(dirty.map((c) => b.rect(c)));
+      return cards.filter((c) => { if (dirty.includes(c)) return false; const r = b.rect(c); return !(r.x >= box.x + box.w || r.x + r.w <= box.x || r.y >= box.y + box.h || r.y + r.h <= box.y); });
+    };
+    const extras3 = covered([c0, c2, c4]);
+    expect(extras3.length).toBeGreaterThan(0);
+    expect((3 + extras3.length) * 0.1 + 0.9).toBeLessThan(3 * 0.58); // the cost model says batch
+    b.render.markDirtyHosts([b.paintOf(c0), b.paintOf(c2), b.paintOf(c4)]);
+    b.advance(50);
+    b.flush();
+    expect(b.stats()).toMatchObject({ batches: 2, draws: 6 + 3 + extras3.length, copies: 9, fallbacks: 0 });
+    expect(b.copies).toEqual([]);
+    for (const x of extras3) expect(b.draws.filter((d) => d.entity === x).length).toBe(2); // drawn as an extra, after its own first picture
+    // two non-adjacent cards: (2 + the covered neighbour) × 0.1 + 0.9 ≥ 2 × 0.58 — the cost model says no, so two element copies
+    const extras2 = covered([c0, c2]);
+    expect((2 + extras2.length) * 0.1 + 0.9).toBeGreaterThanOrEqual(2 * 0.58);
+    b.render.markDirtyHosts([b.paintOf(c0), b.paintOf(c2)]);
+    b.advance(50);
+    b.flush();
+    expect(b.stats()).toMatchObject({ batches: 2, fallbacks: 1, copies: 11 });
+    expect(b.copies.map((c) => c.entity)).toEqual([c0, c2]);
+  });
+
+  it("a draw the platform refuses discards the tile's staging and falls its cards back to element copies; the unpainted card keeps its debt", () => {
+    const b0 = makeBoard({ tuning: { strategy: "batched" } });
+    const probe = promoted(b0, 1);
+    void probe;
+    const unpainted = new Set<Entity>();
+    const b = makeBoard({ tuning: { strategy: "batched" }, unpainted });
+    const cards = promoted(b, 4);
+    unpainted.add(cards[2] as Entity);
+    b.flush();
+    // the tile was staged (draws for the cards before the refusal), then discarded: no canvas copy, element copies for the rest
+    expect(b.rectCopies).toEqual([]);
+    expect(b.stats()).toMatchObject({ batches: 0, fallbacks: 1, copies: 3, refused: 1, pending: 1 });
+    expect(b.copies.map((c) => c.entity)).toEqual([cards[0], cards[1], cards[3]]);
+    expect(b.residency.isWritten(cards[2] as Entity)).toBe(false);
+    // the staging was cleared before the fallback
+    expect(b.clears.some((c) => c.x === 0 && c.y === 0 && c.w > 0)).toBe(true);
+  });
+
+  it("a canvas copy that fails falls the tile back to element copies", () => {
+    const b = makeBoard({ tuning: { strategy: "batched" } });
+    const cards = promoted(b, 3);
+    b.setRefuseCanvasCopy(true);
+    b.flush();
+    expect(b.stats()).toMatchObject({ batches: 0, fallbacks: 1, copies: 3, draws: 3 });
+    expect(b.copies.map((c) => c.entity)).toEqual(cards);
+  });
+
+  it("tiles are cut to the canvas's bitmap at slot boundaries: a 1200-texel row on a 500-wide bitmap lands in three copies of two cards each", () => {
+    const b = makeBoard({ tuning: { strategy: "batched" }, bitmap: { w: 500, h: 200 } });
+    const cards = promoted(b, 6);
+    const rects = cards.map((c) => b.rect(c));
+    expect(new Set(rects.map((r) => r.y)).size).toBe(1); // one shelf row
+    b.flush();
+    expect(b.stats()).toMatchObject({ batches: 3, draws: 6, copies: 6, fallbacks: 0 });
+    for (const rc of b.rectCopies) {
+      expect(rc.size.w).toBeLessThanOrEqual(500);
+      expect(rc.size.h).toBeLessThanOrEqual(200);
+    }
+    // two slots and the packer's gutter between them, three times over
+    const pair = (rects[1]?.x ?? 0) + (rects[1]?.w ?? 0) - (rects[0]?.x ?? 0);
+    expect(pair).toBeGreaterThan(400);
+    expect(b.rectCopies.map((rc) => rc.size.w)).toEqual([pair, pair, pair]);
+  });
+
+  it("the batched route and the budget compose: the budget's cap is cards, and the tile is what the cap served", () => {
+    const b = makeBoard({ tuning: { strategy: "batched", budget: 4 } });
+    promoted(b, 6);
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 4, batches: 1, draws: 4, throttled: 2 });
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 6, batches: 2, draws: 6, pending: 0 });
+  });
 });

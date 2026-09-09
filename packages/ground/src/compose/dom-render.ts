@@ -47,6 +47,51 @@
 // is a hole, not a picture, so the first copy is owed and a paint mark still
 // buys nothing.
 //
+// THE BUDGET (2026-09-09, the levers): at most `budget` cards copy per flush,
+// FIFO over the dirty set (a served card re-dirtied goes to the back, behind
+// every card still waiting) with the stills ahead of the live cards. The
+// reason is the pipeline's shape, named the same day: `copyElementImageToTexture`
+// is a FIXED cost per CALL on the GPU process's one main thread (≈0.58 ms +
+// ≈0.05 per card of content, whatever the texels), so a board past ≈2,800
+// calls/s stalls the WHOLE app — the renderer's main thread blocks in
+// command-buffer flow control until the GPU process catches up — where a
+// budget keeps the app at the display's rate and lets only the promoted cards'
+// cadence degrade (K × fps ÷ N each): "behind, never wrong", D3's own words,
+// applied to the board. The controller reads two signals: the main-thread wall
+// of the copy calls per flush (0.03 ms per card unsaturated, ten times that
+// blocked in flow control) and the flush's own cadence against the display
+// period it estimates (a saturated GPU process presents late before the copy
+// calls block, because the ground's own submit shares that thread) — the
+// second only while the copies' estimated GPU time is a real share of that
+// period, since a board can run late for reasons of its own. A feed-forward
+// cap keeps that estimate to half the period; the budget shrinks on either
+// signal and grows by one only after a calm run with cards still waiting.
+// Off unless `tuning.budget` says otherwise (the measurement commit keeps the
+// old behaviour the default).
+//
+// THE BATCH (2026-09-09, the other lever): strategy `batched` rasters the
+// served cards of one page layer as ONE recording — each drawn into the SOURCE
+// canvas's own 2D context (`drawElementImage`, the only context the platform
+// accepts: the host's parent canvas's) at its slot's position within a staging
+// tile, then the tile landed in the page layer by ONE `copyExternalImageToTexture`
+// of the canvas — where the element route mints a surface, rasters, wraps and
+// blits PER CARD. Measured without the engine: 0.1 ms of GPU-process CPU per
+// draw against 0.58 per element copy, 6,400 cards/s against 3,400 for the same
+// card. The hosts stay exactly where they are (hit-test, focus, caret, IME) and
+// the slot atlas stays (a pan still copies nothing): the draw takes an (x, y).
+// Tiles are cut to the bitmap the canvas already has (no resize, no explicit
+// copy size), at slot boundaries, so a copy never leaves the bitmap or the
+// page. A tile's copy overwrites every slot inside its box, so the WRITTEN
+// residents whose slots intersect it are drawn too (`extras`); an unwritten
+// slot is never sampled and may be overwritten. Any refusal in a tile (a draw
+// throwing on an unpainted host, a missing host, a copy that returns false)
+// discards the staged pixels and falls the tile's cards back to element copies,
+// and a tile whose cost model says the batch would lose (one dirty card on a
+// page: 0.1 + 0.9 against 0.58) is never staged at all. The staged pixels are
+// cleared right after the copy — the copy snapshots at the call — so the
+// canvas, which IS painted to the screen (only its children are not), presents
+// nothing.
+//
 // Reflector contract (design-002 §5): post-notify, output-only. It writes DOM
 // (the host's box and placement) and GPU queue ops, never the ECS, and it
 // reads no layout — every size comes from world facts through `geometry()`.
@@ -73,7 +118,7 @@ import {
 } from "@ice/core";
 import { geometry, type RasterStrategy, type SurfaceGeometry } from "@ice/kernel";
 import { createPages, PAGE_USAGE } from "../card/content";
-import { copyElementToTexture } from "../hic-adapter";
+import { copyElementToTexture, drawElementImage } from "../hic-adapter";
 import type { ContentResidency } from "./residency";
 import { targetOf } from "./residency";
 
@@ -90,6 +135,35 @@ export type ElementCopy = (
   origin: { readonly x: number; readonly y: number; readonly z?: number },
 ) => boolean;
 
+/** The batched route's raster: one card's cached record drawn into the source canvas's 2D context at `(x, y)`, scaled to `w × h`. Injectable so the unit tests need no origin trial. */
+export type ElementDraw = (ctx: CanvasRenderingContext2D, element: Element, x: number, y: number, w: number, h: number) => boolean;
+
+/** The batched route's landing: a `src`-origined `size` rect of the canvas copied to `dst` in `texture` (`z` the layer). Injectable. */
+export type CanvasCopy = (
+  queue: GPUQueue,
+  canvas: HTMLCanvasElement,
+  src: { readonly x: number; readonly y: number },
+  texture: GPUTexture,
+  dst: { readonly x: number; readonly y: number; readonly z: number },
+  size: { readonly w: number; readonly h: number },
+) => boolean;
+
+/** The two levers (2026-09-09; the header). Everything defaults to the behaviour before them. */
+export interface DomRenderTuning {
+  /** `element` (one HiC copy per card — the default) or `batched` (the 2D draws + one canvas copy per tile, with the element copy as the fallback). */
+  readonly strategy?: "element" | "batched";
+  /**
+   * The per-flush copy budget: `false`/absent for none; a number for a fixed cap; an object for the
+   * adaptive controller (start 16, min 2, max 256, `target` 0.5 — the share of the frame period the
+   * copies' estimated GPU-process time is capped to; 0.5 held 120 fps with no dropped frame on the
+   * stress rig, and a higher target buys card cadence on a mid-size board at the price of the
+   * controller probing the knee with an occasional late frame).
+   */
+  readonly budget?: false | number | { readonly start?: number; readonly min?: number; readonly max?: number; readonly target?: number };
+  /** The batched route's cost model, ms of GPU-process CPU (measured 2026-09-09): a draw, a canvas copy, an element copy. */
+  readonly costs?: { readonly draw?: number; readonly canvasCopy?: number; readonly elementCopy?: number };
+}
+
 export interface DomRenderOptions {
   /** The ground's device — every destination texture is created on it. */
   readonly device: GPUDevice;
@@ -104,6 +178,14 @@ export interface DomRenderOptions {
   readonly now?: () => number;
   /** The element copy; the HiC adapter's by default. */
   readonly copy?: ElementCopy;
+  /** The levers; off by default. */
+  readonly tuning?: DomRenderTuning;
+  /** The batched route's draw; the HiC adapter's `drawElementImage` by default. */
+  readonly draw?: ElementDraw;
+  /** The batched route's canvas copy; `queue.copyExternalImageToTexture` by default. */
+  readonly canvasCopy?: CanvasCopy;
+  /** The source canvas's 2D context; `canvas.getContext("2d")` by default (the context `@ice/dom`'s source canvas acquired at creation). */
+  readonly context2d?: (canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null;
 }
 
 export interface DomRenderStats {
@@ -176,6 +258,18 @@ export interface DomRenderStats {
   readonly pagesLayers: number;
   /** Page-array growths (realloc + per-layer copy + a new realisation) — D-B4.1. */
   readonly growths: number;
+  /** The copy budget in force (cards per flush); `Infinity` without one. */
+  readonly budget: number;
+  /** Cards a flush left waiting because the budget was spent, cumulative. */
+  readonly throttled: number;
+  /** Batched tiles landed (one canvas copy each), cumulative. */
+  readonly batches: number;
+  /** 2D draws made for batches (the served cards and the written neighbours their tiles covered), cumulative. */
+  readonly draws: number;
+  /** Tiles abandoned for element copies (a refusal, a missing host, or a cost model that said so), cumulative. */
+  readonly fallbacks: number;
+  /** Main-thread ms spent inside the copy calls (element, draw and canvas copies), cumulative — the budget's signal. */
+  readonly copyMs: number;
 }
 
 export interface DomRender {
@@ -421,62 +515,139 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     return next;
   };
 
+  // ── the levers (the header) ────────────────────────────────────────────────
+  const tuning = opts.tuning ?? {};
+  const strategy = tuning.strategy ?? "element";
+  const COSTS = { draw: tuning.costs?.draw ?? 0.1, canvasCopy: tuning.costs?.canvasCopy ?? 0.9, elementCopy: tuning.costs?.elementCopy ?? 0.58 };
+  const draw: ElementDraw = opts.draw ?? ((ctx, el, x, y, w, h) => drawElementImage(ctx, el, x, y, w, h) !== undefined);
+  const canvasCopy: CanvasCopy =
+    opts.canvasCopy ??
+    ((queue, canvas, src, texture, dst, size) => {
+      queue.copyExternalImageToTexture(
+        { source: canvas, origin: { x: src.x, y: src.y } },
+        { texture, origin: { x: dst.x, y: dst.y, z: dst.z } },
+        { width: size.w, height: size.h, depthOrArrayLayers: 1 },
+      );
+      return true;
+    });
+  const context2d = opts.context2d ?? ((canvas: HTMLCanvasElement) => canvas.getContext("2d"));
+  const budgetOpt = tuning.budget;
+  const budgetOn = budgetOpt !== undefined && budgetOpt !== false;
+  const budgetFixed = typeof budgetOpt === "number";
+  const budgetMin = typeof budgetOpt === "object" ? (budgetOpt.min ?? 2) : 2;
+  const budgetMax = typeof budgetOpt === "object" ? (budgetOpt.max ?? 256) : 256;
+  let budget = !budgetOn ? Number.POSITIVE_INFINITY : budgetFixed ? budgetOpt : typeof budgetOpt === "object" ? (budgetOpt.start ?? 16) : 16;
+  /** The controller's thresholds: the copies' main-thread wall per flush (ms). */
+  const BUDGET_HIGH_MS = 3;
+  const BUDGET_LOW_MS = 1;
   /**
-   * One card's copy attempt. Returns whether the debt is DISCHARGED — a
-   * refusal, a missing host or a resize keeps it, because a card that owes a
-   * copy and forgets it is a card that shows the plate for good.
+   * The controller's SECOND signal (measured on the live app, 2026-09-09): the GPU process can
+   * be saturated — the display compositor on its main thread presenting late — while the copy
+   * calls do not yet block, because the ground's own per-frame submit shares that thread and
+   * the command buffer has room. So the flush watches its own cadence: the inter-flush interval
+   * against a running estimate of the display period (a minimum that decays upward slowly, so
+   * it follows a 60 Hz or 120 Hz host and snaps to the fastest recent frame). A LATE flush is
+   * one past 1.6 × that period; two late in the last three shrink the budget, and it grows only
+   * after `CALM_FLUSHES` on-time flushes in a row, so it hovers just under the knee.
    */
-  const attempt = (e: Entity, t: number): boolean => {
+  const LATE_FACTOR = 1.6;
+  const CALM_FLUSHES = 4;
+  /**
+   * The FEED-FORWARD cap (measured 2026-09-09, the third revision): the copies' estimated
+   * GPU-process time per flush is kept to `TARGET` of the frame period, and a late frame counts
+   * against the budget only while that estimate is at least `LATE_GATE` of the period — a board
+   * of 384 animating cards runs late on the main thread's own paint of the canvas children,
+   * and a controller that read every late frame as the copies' fault starved them to the floor.
+   */
+  const TARGET = typeof budgetOpt === "object" && budgetOpt.target !== undefined && budgetOpt.target > 0 ? budgetOpt.target : 0.5;
+  const LATE_GATE = 0.35;
+  /** GPU-process ms per served card: the element copy's fixed cost, or a draw plus a tile's copy amortised over about eight cards. */
+  const gpuMsPerCard = strategy === "batched" ? COSTS.draw + COSTS.canvasCopy / 8 : COSTS.elementCopy;
+  let lastFlushT = Number.NaN;
+  let periodEst = 50;
+  let lateBits = 0;
+  let calm = 0;
+  let throttled = 0;
+  let batches = 0;
+  let draws = 0;
+  let fallbacks = 0;
+  let copyMs = 0;
+
+  /** One served card, checked and addressed, waiting for its copy. */
+  interface Job {
+    readonly e: Entity;
+    readonly el: HTMLElement;
+    readonly texture: GPUTexture;
+    readonly handle: TextureHandle;
+    readonly origin: { readonly x: number; readonly y: number; readonly z: number };
+    readonly dest: { readonly w: number; readonly h: number };
+    /** The page side, for the neighbours' rects; 0 for an `own` destination. */
+    readonly side: number;
+    readonly still: boolean;
+  }
+  type Prepared = { readonly kind: "discharge" } | { readonly kind: "keep" } | { readonly kind: "ready"; readonly job: Job };
+  const DISCHARGE: Prepared = { kind: "discharge" };
+  const KEEP: Prepared = { kind: "keep" };
+
+  /**
+   * One card's checks, up to the copy. `discharge`: the debt is over without a copy (not on
+   * the GPU, no destination, a producer's stable handle, an oversize refusal — the old
+   * `attempt`'s `true` paths); `keep`: not this flush (no host yet, a box that moved, a
+   * refused realisation, a backed-off one); `ready`: the job the strategy commits.
+   */
+  const prepare = (e: Entity, still: boolean): Prepared => {
     const table = residency.table;
-    if (table === null) return false;
+    if (table === null) return KEEP;
     // Not on the GPU (a demotion): nothing to copy, and every side table of
     // this card goes with it — a later promotion starts clean.
     if (targetOf(world, e) !== "gpu") {
       forget(e);
-      return true;
+      return DISCHARGE;
     }
     const ref = world.get(e, TextureRef);
     // No destination this frame (culled and unheld, or refused by the
     // allocator). Residency journals the ref it eventually writes, so the debt
     // comes back named rather than being carried blind.
-    if (ref === undefined || ref.texture === NO_TEXTURE) return true;
+    if (ref === undefined || ref.texture === NO_TEXTURE) return DISCHARGE;
 
     const el = hosts.hostOf(e);
-    if (el === undefined) return false; // not hosted yet — keep the debt
+    if (el === undefined) return KEEP; // not hosted yet — keep the debt
     const geo = geometryOf(e);
-    if (geo === undefined) return false;
-    if (placeHost(e, el, geo, false)) return false; // the box moved: copy on the next flush, off the new paint record
+    if (geo === undefined) return KEEP;
+    if (placeHost(e, el, geo, false)) return KEEP; // the box moved: copy on the next flush, off the new paint record
 
     const entry = table.describe(ref.texture);
-    if (entry === undefined) return false;
+    if (entry === undefined) return KEEP;
     // BACKED OFF (D-C4.7): the table refused this destination's realisation and nothing that
     // decides the answer has moved. Keep the debt, mint nothing.
     const back = refusedRealize.get(e);
     if (back !== undefined) {
-      if (back.handle === ref.texture && back.revision === residency.revision()) { backedOff += 1; return false; }
+      if (back.handle === ref.texture && back.revision === residency.revision()) { backedOff += 1; return KEEP; }
       refusedRealize.delete(e);
     }
     let texture: GPUTexture | undefined;
     let origin: { x: number; y: number; z: number };
     let dest: { w: number; h: number };
+    let side = 0;
     if (entry.kind === "pages") {
       texture = ensurePages(ref.texture, entry.size, entry.layers);
       // The written rect's origin in texels: the uv Residency derived from the
       // allocator's rect over the layer's side, read back through that side.
       origin = { x: Math.round(ref.u0 * entry.size), y: Math.round(ref.v0 * entry.size), z: ref.layer };
       dest = { w: Math.round((ref.u1 - ref.u0) * entry.size), h: Math.round((ref.v1 - ref.v0) * entry.size) };
+      side = entry.size;
     } else if (entry.kind === "own") {
       texture = ensureOwn(ref.texture, entry.width, entry.height);
       origin = { x: 0, y: 0, z: 0 };
       dest = { w: entry.width, h: entry.height };
     } else {
-      return true; // a `stable` handle is a video producer's (B6), never copied from a host
+      return DISCHARGE; // a `stable` handle is a video producer's (B6), never copied from a host
     }
     // The realisation was refused (all three paths above destroy what they minted): remember the
     // destination and the revision, so the next flushes cost nothing until one of them moves.
     if (texture === undefined) {
       refusedRealize.set(e, { handle: ref.texture, revision: residency.revision() });
-      return false;
+      return KEEP;
     }
     if (geo.written.w > dest.w || geo.written.h > dest.h) {
       oversize += 1;
@@ -485,13 +656,27 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       // numbers and `writeRef` early-returns), so the old write would stand and the card would draw
       // the stale raster STRETCHED. It draws its plate instead, which is honest.
       residency.unwrote(e);
-      return true; // refused: the copy would run past the destination's edge
+      return DISCHARGE; // refused: the copy would run past the destination's edge
     }
+    return { kind: "ready", job: { e, el, texture, handle: ref.texture, origin, dest, side, still } };
+  };
 
+  /** A job's pixels landed: the card draws from its destination now. */
+  const landed = (job: Job, t: number): void => {
+    copies += 1;
+    lastCopy.set(job.e, t);
+    residency.wrote(job.e); // the card draws from its destination now — and this touches, so the ground redraws
+    if (job.still && residency.isWritten(job.e)) stills += 1;
+    dirty.delete(job.e);
+    worldDebt.delete(job.e);
+  };
+
+  /** The element route: one HiC copy for one card. A refusal keeps the debt. */
+  const commitElement = (job: Job, t: number): void => {
     try {
-      if (!copy(device.queue, el, texture, origin)) {
+      if (!copy(device.queue, job.el, job.texture, job.origin)) {
         unavailable += 1; // no method: the trial is absent, and no retry will find one
-        return false;
+        return;
       }
     } catch {
       // `InvalidStateError: No cached paint record for element` — the frame
@@ -499,12 +684,166 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       // retried; never propagated, or one unrecorded card throws away the
       // whole frame (the old atlas's lesson, `compositor/dom-atlas.ts`).
       refused += 1;
-      return false;
+      return;
     }
-    copies += 1;
-    lastCopy.set(e, t);
-    residency.wrote(e); // the card draws from its destination now — and this touches, so the ground redraws
-    return true;
+    landed(job, t);
+  };
+
+  /**
+   * The batched route for the jobs of ONE page layer (the header): tiles cut to the canvas's
+   * bitmap at slot boundaries, each drawn and landed with one copy. Returns the jobs that must
+   * fall back to element copies.
+   */
+  const batchLayer = (group: readonly Job[], canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, t: number): Job[] => {
+    const W = canvas.width;
+    const H = canvas.height;
+    const first = group[0];
+    if (first === undefined) return [];
+    const { handle, texture, side } = first;
+    const z = first.origin.z;
+    const fallback: Job[] = [];
+    // A card the bitmap cannot hold takes the element route.
+    const fit = group.filter((j) => {
+      const ok = j.dest.w > 0 && j.dest.h > 0 && j.dest.w <= W && j.dest.h <= H;
+      if (!ok) fallback.push(j);
+      return ok;
+    });
+    // Bands by y (≤ H tall), tiles by x within a band (≤ W wide): every tile's box fits the bitmap.
+    fit.sort((a, b) => a.origin.y - b.origin.y || a.origin.x - b.origin.x);
+    const bands: Job[][] = [];
+    let band: Job[] = [];
+    let top = 0;
+    for (const j of fit) {
+      if (band.length > 0 && j.origin.y + j.dest.h <= top + H) { band.push(j); continue; }
+      top = j.origin.y;
+      band = [j];
+      bands.push(band);
+    }
+    const tiles: Job[][] = [];
+    for (const b of bands) {
+      b.sort((a, c) => a.origin.x - c.origin.x);
+      let tile: Job[] = [];
+      let left = 0;
+      for (const j of b) {
+        if (tile.length > 0 && j.origin.x + j.dest.w <= left + W) { tile.push(j); continue; }
+        left = j.origin.x;
+        tile = [j];
+        tiles.push(tile);
+      }
+    }
+    for (const tile of tiles) {
+      let x0 = Number.POSITIVE_INFINITY;
+      let y0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
+      for (const j of tile) {
+        if (j.origin.x < x0) x0 = j.origin.x;
+        if (j.origin.y < y0) y0 = j.origin.y;
+        if (j.origin.x + j.dest.w > x1) x1 = j.origin.x + j.dest.w;
+        if (j.origin.y + j.dest.h > y1) y1 = j.origin.y + j.dest.h;
+      }
+      // The tile's copy overwrites every slot in its box: the WRITTEN residents of this layer whose
+      // slots intersect it are drawn too, or they would lose their picture. An unwritten slot is
+      // never sampled and may be overwritten. A written resident with no host cannot be drawn —
+      // the tile is not safe, and its cards take the element route.
+      const served = new Set<Entity>();
+      for (const j of tile) served.add(j.e);
+      const extras: { e: Entity; el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
+      let unsafe = false;
+      for (const e of placed.keys()) {
+        if (served.has(e)) continue;
+        const ref = world.get(e, TextureRef);
+        if (ref === undefined || ref.texture !== handle || ref.layer !== z) continue;
+        const rx = Math.round(ref.u0 * side);
+        const ry = Math.round(ref.v0 * side);
+        const rw = Math.round((ref.u1 - ref.u0) * side);
+        const rh = Math.round((ref.v1 - ref.v0) * side);
+        if (rx >= x1 || rx + rw <= x0 || ry >= y1 || ry + rh <= y0) continue; // disjoint
+        if (!residency.isWritten(e)) continue;
+        const el = hosts.hostOf(e);
+        if (el === undefined) { unsafe = true; break; }
+        extras.push({ e, el, x: rx, y: ry, w: rw, h: rh });
+      }
+      if (unsafe || (tile.length + extras.length) * COSTS.draw + COSTS.canvasCopy >= tile.length * COSTS.elementCopy) {
+        fallbacks += 1;
+        fallback.push(...tile);
+        continue;
+      }
+      const bw = x1 - x0;
+      const bh = y1 - y0;
+      let ok = true;
+      let drawn = 0;
+      try {
+        for (const j of tile) {
+          ctx.clearRect(j.origin.x - x0, j.origin.y - y0, j.dest.w, j.dest.h);
+          if (!draw(ctx, j.el, j.origin.x - x0, j.origin.y - y0, j.dest.w, j.dest.h)) { ok = false; break; }
+          drawn += 1;
+        }
+        if (ok) {
+          for (const x of extras) {
+            ctx.clearRect(x.x - x0, x.y - y0, x.w, x.h);
+            if (!draw(ctx, x.el, x.x - x0, x.y - y0, x.w, x.h)) { ok = false; break; }
+            drawn += 1;
+          }
+        }
+      } catch {
+        ok = false; // a host without a paint record yet: the tile is discarded, its cards retried per card
+      }
+      draws += drawn;
+      if (!ok) {
+        ctx.clearRect(0, 0, bw, bh);
+        fallbacks += 1;
+        fallback.push(...tile);
+        continue;
+      }
+      let copied = false;
+      try {
+        copied = canvasCopy(device.queue, canvas, { x: 0, y: 0 }, texture, { x: x0, y: y0, z }, { w: bw, h: bh });
+      } catch {
+        copied = false;
+      }
+      // The copy snapshotted the canvas at the call: the staging is cleared so the canvas presents nothing.
+      ctx.clearRect(0, 0, bw, bh);
+      if (!copied) {
+        fallbacks += 1;
+        fallback.push(...tile);
+        continue;
+      }
+      batches += 1;
+      for (const j of tile) landed(j, t);
+      for (const x of extras) {
+        // A fresh picture, for free: whatever it owed is paid.
+        lastCopy.set(x.e, t);
+        deferred.delete(x.e);
+        dirty.delete(x.e);
+        worldDebt.delete(x.e);
+        residency.wrote(x.e);
+      }
+    }
+    return fallback;
+  };
+
+  /** The batched route over every served job: page jobs grouped by layer, `own` jobs and singles per card. */
+  const commitBatched = (jobs: readonly Job[], t: number): void => {
+    const groups = new Map<string, Job[]>();
+    const rest: Job[] = [];
+    for (const j of jobs) {
+      if (j.side === 0) { rest.push(j); continue; }
+      const k = `${j.handle}|${j.origin.z}`;
+      let g = groups.get(k);
+      if (g === undefined) { g = []; groups.set(k, g); }
+      g.push(j);
+    }
+    for (const g of groups.values()) {
+      const first = g[0];
+      if (g.length < 2 || first === undefined) { rest.push(...g); continue; }
+      const parent = first.el.parentElement as HTMLCanvasElement | null;
+      const canvas = parent !== null && typeof parent.width === "number" && typeof parent.height === "number" ? parent : null;
+      const ctx = canvas === null ? null : context2d(canvas);
+      if (canvas === null || ctx === null) { rest.push(...g); continue; }
+      rest.push(...batchLayer(g, canvas, ctx, t));
+    }
+    for (const j of rest) commitElement(j, t);
   };
 
   return {
@@ -547,6 +886,15 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       // is written CHANGE-ONLY, so every new debt — a promotion, a re-slot
       // after an eviction, a re-size — arrives through that journal, named.
       const t = now();
+      // The cadence signal (the controller's second signal, above).
+      const dt = Number.isFinite(lastFlushT) ? t - lastFlushT : Number.NaN;
+      lastFlushT = t;
+      if (dt > 0) {
+        periodEst = Math.min(dt, periodEst + 0.25);
+        const late = dt > periodEst * LATE_FACTOR;
+        lateBits = ((lateBits << 1) | (late ? 1 : 0)) & 0b111;
+        calm = late ? 0 : calm + 1;
+      }
       if (parked.size > 0) {
         for (const e of [...parked]) {
           // The ONLY door out of parked: demand came back to a live bucket.
@@ -563,6 +911,11 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
         }
       }
       if (dirty.size > 0) {
+        // THE QUEUE: the stills first (a gesture's pickup), then the live cards, each in the dirty
+        // set's own order — FIFO, because a served card is deleted and re-added at the back by its
+        // next paint mark, behind every card still waiting (the budget's fairness, the header).
+        const stillQueue: Entity[] = [];
+        const liveQueue: Entity[] = [];
         for (const e of [...dirty]) {
           const interval = demandIntervalMs(demandOf(world, e));
           if (interval === Number.POSITIVE_INFINITY) {
@@ -571,14 +924,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
             // a re-slot, a re-size) and the picture it owes is the first one, taken once and
             // then held — see the header. A refusal keeps the debt for the next flush, as it
             // does for a live card.
-            if (worldDebt.has(e) && !residency.isWritten(e)) {
-              if (attempt(e, t)) {
-                dirty.delete(e);
-                worldDebt.delete(e);
-                if (residency.isWritten(e)) stills += 1;
-              }
-              continue;
-            }
+            if (worldDebt.has(e) && !residency.isWritten(e)) { stillQueue.push(e); continue; }
             dirty.delete(e);
             parked.add(e);
             continue;
@@ -591,10 +937,46 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
               continue;
             }
           }
-          if (attempt(e, t)) {
-            dirty.delete(e);
-            worldDebt.delete(e);
+          liveQueue.push(e);
+        }
+        const queued = stillQueue.length + liveQueue.length;
+        // The feed-forward cap, once the cadence is known (the estimate starts high and snaps down).
+        const capByPeriod = Math.max(budgetMin, Math.min(budgetMax, Math.floor((periodEst * TARGET) / gpuMsPerCard)));
+        if (budgetOn && !budgetFixed && budget > capByPeriod) budget = capByPeriod;
+        const cap = Math.max(0, Math.floor(budget));
+        const jobs: Job[] = [];
+        let served = 0;
+        const take = (list: readonly Entity[], still: boolean): void => {
+          for (const e of list) {
+            if (served >= cap) return;
+            served += 1;
+            const p = prepare(e, still);
+            if (p.kind === "discharge") {
+              dirty.delete(e);
+              worldDebt.delete(e);
+            } else if (p.kind === "ready") jobs.push(p.job);
+            // `keep`: the debt stays in the set, in its place
           }
+        };
+        take(stillQueue, true);
+        take(liveQueue, false);
+        throttled += queued - served;
+        const t0 = now();
+        if (strategy === "batched") commitBatched(jobs, t);
+        else for (const j of jobs) commitElement(j, t);
+        const spent = now() - t0;
+        copyMs += spent;
+        // THE CONTROLLER (the header): the copies' main-thread wall per flush is the first
+        // saturation signal — ten times its unsaturated value once the GPU process is behind and
+        // the calls block in flow control — and a late flush cadence the second (above). Shrink
+        // hard on either, grow by one only after a calm run while cards were waiting.
+        // Runs for ANY served count: a guard of "enough samples" here trapped the budget at its floor
+        // (measured 2026-09-09 — the mount's burst shrank it below the guard, and nothing could grow it).
+        if (budgetOn && !budgetFixed && served > 0) {
+          const lateCount = (lateBits & 1) + ((lateBits >> 1) & 1) + ((lateBits >> 2) & 1);
+          const estimate = served * gpuMsPerCard;
+          if (spent > BUDGET_HIGH_MS || (lateCount >= 2 && estimate >= LATE_GATE * periodEst)) budget = Math.max(budgetMin, Math.floor(budget * 0.7));
+          else if (spent < BUDGET_LOW_MS && queued > served && lateCount === 0 && calm >= CALM_FLUSHES) budget = Math.min(capByPeriod, budget + 1);
         }
       }
       // PLACEMENT IS NOT A FUNCTION OF THE COPY DEBT (B8 R7).
@@ -607,7 +989,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       // rig measured it before this pass existed: 7 of 24 mid-gesture hits
       // landed, the host up to 540 px from its card.
       //
-      // Runs LAST so `attempt` has already placed everything that copied. The
+      // Runs LAST so the commit has already placed everything that copied. The
       // write is change-only against `placed`, so an idle board writes nothing
       // and idle-zero is untouched; a pan costs one style write per promoted
       // host, which is what the old leg's `dom-writeback` paid for the same
@@ -636,6 +1018,12 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       resized,
       pagesLayers: residency.textureOf(pagesHandle) === undefined ? 0 : pagesLayers,
       growths,
+      budget,
+      throttled,
+      batches,
+      draws,
+      fallbacks,
+      copyMs,
     }),
     dispose() {
       disposed = true;

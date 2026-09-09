@@ -55,7 +55,13 @@ const STREAM_MS = Math.max(500, Number(process.env.STRESS_STREAM_MS ?? "1500") |
 const log = (m) => console.log(`[stress] ${m}`);
 const failures = [];
 const check = (ok, what) => { log(`${ok ? "PASS" : "FAIL"}  ${what}`); if (!ok) failures.push(what); };
-const pageUrl = (arm, n) => `file://${path.join(appDir, DIST, "stress.html")}?arm=${arm}&n=${n}`;
+/**
+ * THE LEVERS (2026-09-09): `STRESS_COPY=element|batched` and `STRESS_BUDGET=off|adaptive|<n>` reach
+ * the rig page as `copy` and `budget` and select DomRender's tuning; unset, the engine's defaults
+ * run (the behaviour before the levers — the control). Recorded in the JSON's `config.tuning`.
+ */
+const TUNING = { copy: process.env.STRESS_COPY ?? null, budget: process.env.STRESS_BUDGET ?? null };
+const pageUrl = (arm, n) => `file://${path.join(appDir, DIST, "stress.html")}?arm=${arm}&n=${n}${TUNING.copy ? `&copy=${TUNING.copy}` : ""}${TUNING.budget ? `&budget=${TUNING.budget}` : ""}`;
 const median = (xs) => { const s = xs.filter((x) => typeof x === "number" && Number.isFinite(x)).sort((a, b) => a - b); return s.length === 0 ? Number.NaN : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
 const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : "—");
 const f2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : "—");
@@ -236,7 +242,7 @@ async function cell(arm, n, round, wantShot) {
         for (const e of w.clipFields.early ?? []) log(`[${arm} n=${n} r${round}] ${name}: frame ${e.frame} moved ${e.changed.map((k) => `${k} ${e.from[k]} → ${e.to[k]}`).join("; ")}`);
       }
       if (w.cameraDrifts || w.foreignCameraWrites) log(`[${arm} n=${n} r${round}] ${name}: camera drifts so far ${w.cameraDrifts}, foreign Camera writes so far ${w.foreignCameraWrites}`);
-      log(`[${arm} n=${n} r${round}] ${name.padEnd(22)} fps ${f1(w.fps)} (p50 ${f1(w.interval.p50)} p95 ${f1(w.interval.p95)} max ${f1(w.interval.max)} ms; >25ms ${w.interval.over25}) · rAF ${f2(w.rafMsPerFrame)} ms/frame (max ${f1(w.rafMaxMs)}) · copies/s ${f1(row.perSecond.copies)} submits/s ${f1(row.perSecond.submits)} dirt/s ${f1(row.perSecond.dirtied)} · cpu renderer ${f1(cpu.renderer)}% gpu ${f1(cpu.gpu)}% · long ${w.delta.longTasks}/${f1(w.delta.longTaskMs)}ms · anims ${a.animations}${w.zoomRange ? ` · zoom ${f2(w.zoomRange.from)}→${f2(w.zoomRange.to)} band ${w.zoomRange.bandFrom}→${w.zoomRange.bandTo}` : ""}`);
+      log(`[${arm} n=${n} r${round}] ${name.padEnd(22)} fps ${f1(w.fps)} (p50 ${f1(w.interval.p50)} p95 ${f1(w.interval.p95)} max ${f1(w.interval.max)} ms; >25ms ${w.interval.over25}) · rAF ${f2(w.rafMsPerFrame)} ms/frame (max ${f1(w.rafMaxMs)}) · copies/s ${f1(row.perSecond.copies)} submits/s ${f1(row.perSecond.submits)} dirt/s ${f1(row.perSecond.dirtied)} · cpu renderer ${f1(cpu.renderer)}% gpu ${f1(cpu.gpu)}% · long ${w.delta.longTasks}/${f1(w.delta.longTaskMs)}ms · anims ${a.animations} · budget ${Number.isFinite(w.gauges.budget) ? w.gauges.budget : "∞"} throttled ${w.delta.throttled} batches ${w.delta.batches} draws ${w.delta.draws} fallbacks ${w.delta.fallbacks} copyMs ${f1(w.delta.copyMs)}${w.zoomRange ? ` · zoom ${f2(w.zoomRange.from)}→${f2(w.zoomRange.to)} band ${w.zoomRange.bandFrom}→${w.zoomRange.bandTo}` : ""}`);
       return row;
     };
 
@@ -416,19 +422,19 @@ for (const n of NS) for (const arm of ARMS) for (const ph of phaseNames) {
   summary.push({
     arm, n, phase: ph, rounds: rows.length,
     fps: median(rows.map((r) => r.fps)),
-    p50: median(rows.map((r) => r.interval.p50)),
-    p95: median(rows.map((r) => r.interval.p95)),
-    max: median(rows.map((r) => r.interval.max)),
-    over12: median(rows.map((r) => r.interval.over12)),
-    over25: median(rows.map((r) => r.interval.over25)),
+    p50: median(rows.map((r) => r.interval?.p50)),
+    p95: median(rows.map((r) => r.interval?.p95)),
+    max: median(rows.map((r) => r.interval?.max)),
+    over12: median(rows.map((r) => r.interval?.over12)),
+    over25: median(rows.map((r) => r.interval?.over25)),
     rafMsPerFrame: median(rows.map((r) => r.rafMsPerFrame)),
     rafMaxMs: median(rows.map((r) => r.rafMaxMs)),
-    copiesPerS: median(rows.map((r) => r.perSecond.copies)),
-    submitsPerS: median(rows.map((r) => r.perSecond.submits)),
-    dirtPerS: median(rows.map((r) => r.perSecond.dirtied)),
-    cpuRenderer: median(rows.map((r) => r.cpu.renderer)),
-    cpuGpu: median(rows.map((r) => r.cpu.gpu)),
-    longTasks: median(rows.map((r) => r.delta.longTasks)),
+    copiesPerS: median(rows.map((r) => r.perSecond?.copies)),
+    submitsPerS: median(rows.map((r) => r.perSecond?.submits)),
+    dirtPerS: median(rows.map((r) => r.perSecond?.dirtied)),
+    cpuRenderer: median(rows.map((r) => r.cpu?.renderer)),
+    cpuGpu: median(rows.map((r) => r.cpu?.gpu)),
+    longTasks: median(rows.map((r) => r.delta?.longTasks)),
   });
 }
 const memory = [];
@@ -449,7 +455,7 @@ for (const m of memory) log(`memory ${m.arm} n=${m.n}: GPU process ${f1(m.gpuAft
 
 fs.mkdirSync(outDir, { recursive: true });
 const stamp = started.toISOString().replace(/[:.]/g, "-");
-const out = { started: started.toISOString(), finished: new Date().toISOString(), host: { cpus: os.cpus().length, model: os.cpus()[0]?.model, cpu: cpuCalibration, mem: os.totalmem(), platform: `${os.platform()} ${os.release()}`, loadavgStart: runs[0]?.loadavg ?? null, loadavgEnd: os.loadavg() }, config: { arms: ARMS, ns: NS, rounds: ROUNDS, windowMs: WINDOW_MS, settleMs: SETTLE_MS, buckets: BUCKETS }, summary, memory, runs, failures };
+const out = { started: started.toISOString(), finished: new Date().toISOString(), host: { cpus: os.cpus().length, model: os.cpus()[0]?.model, cpu: cpuCalibration, mem: os.totalmem(), platform: `${os.platform()} ${os.release()}`, loadavgStart: runs[0]?.loadavg ?? null, loadavgEnd: os.loadavg() }, config: { arms: ARMS, ns: NS, rounds: ROUNDS, windowMs: WINDOW_MS, settleMs: SETTLE_MS, buckets: BUCKETS, tuning: TUNING }, summary, memory, runs, failures };
 fs.writeFileSync(path.join(outDir, `stress-${stamp}.json`), `${JSON.stringify(out, null, 2)}\n`);
 fs.writeFileSync(path.join(outDir, "stress-latest.json"), `${JSON.stringify(out, null, 2)}\n`);
 log(`wrote ${path.join(outDir, `stress-${stamp}.json`)}`);

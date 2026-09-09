@@ -69,7 +69,7 @@ import type { RasterStrategy } from "@ice/kernel";
 import { shellProgram } from "../card/program";
 import { ENGINE_THEMES, LINES } from "../theme";
 import { createDomHostWriter } from "./dom-compose";
-import { createDomRender, type DomRender, type DomRenderStats } from "./dom-render";
+import { createDomRender, type DomRender, type DomRenderStats, type DomRenderTuning } from "./dom-render";
 import { type ContentResidency, createContentResidency } from "./residency";
 import { createVideoIngest, type VideoIngest } from "./video-ingest";
 import type { ShellGeometry } from "../card/geometry";
@@ -133,6 +133,12 @@ export interface GroundComposeOptions extends GroundHostOptions {
    * calls `geometry()` with it — one strategy, two readers, nothing to drift. Default `band`.
    */
   readonly raster?: (kind: "dom" | "gl" | "video") => RasterStrategy;
+  /**
+   * DomRender's levers (2026-09-09; `compose/dom-render.ts` header): the per-flush copy
+   * budget and the batched 2D route. Absent ⇒ one element copy per dirty card, no budget —
+   * the behaviour before them.
+   */
+  readonly dom?: DomRenderTuning;
 }
 
 export interface GroundFieldOptions extends GroundHostOptions {
@@ -569,6 +575,7 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
           residency,
           hosts: { hostOf },
           ...(compose.raster !== undefined ? { raster: compose.raster } : {}),
+          ...(compose.dom !== undefined ? { tuning: compose.dom } : {}),
         });
   // The L1 source canvas is the FACADE's to build (it owns the container and
   // the viewport it must be resized with); what only this package can supply

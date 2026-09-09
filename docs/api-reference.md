@@ -403,11 +403,28 @@ once and then grew past the device limit inside its band calls `unwrote(e)`, so 
 PLATE instead of its stale raster stretched to the new box. It also OWNS the L1
 host's geometry while the host is canvas-side: the box is `geometry().cssSize` and the
 placement matrix carries `zoom / band`. `compose.domRender.stats()` → `{ copies, stills, dirtied,
-refused, unavailable, parked, deferred, pending, resized, pagesLayers, growths }` — `stills`
+refused, unavailable, parked, deferred, pending, resized, pagesLayers, growths, budget, throttled,
+batches, draws, fallbacks, copyMs }` — `stills`
 (S1, 2026-09-09) counts the FIRST pictures taken for PAUSED cards: a paused card whose current
 destination has never been written copies once when the world names it (a promotion, a
 re-slot, a re-size) and then parks; a paint mark buys nothing. Until S1 such a card stayed on
-the plate.
+the plate. The last six are THE LEVERS' (2026-09-09): `budget` is the copy budget in force
+(cards per flush; `Infinity` without one), `throttled` the cards flushes left waiting for it,
+`batches` the tiles the batched route landed (one canvas copy each), `draws` its 2D draws,
+`fallbacks` the tiles it abandoned for element copies, and `copyMs` the main thread's
+milliseconds inside the copy calls — the budget controller's own signal.
+**`groundCompose({ dom })`** (2026-09-09) tunes DomRender — `{ strategy?: "element" | "batched",
+budget?: false | number | { start?, min?, max? }, costs? }`. `budget` caps the cards copied per
+flush, FIFO with a gesture's stills first; a number is a fixed cap, an object the adaptive
+controller (start 16, min 2, max 256), which shrinks the cap hard when a flush spends more than
+3 ms of main thread inside its copies (the flow-control signature of a saturated GPU process)
+and grows it by one while cards wait and a flush spent under 1 ms. `strategy: "batched"` rasters
+the served cards of one page layer as ONE recording — each `drawElementImage`d into the source
+canvas's own 2D context at its slot inside a staging tile cut to the canvas's bitmap, the tile
+landed in the page by ONE `copyExternalImageToTexture` — with the element copy as the fallback
+for a single card, a card the bitmap cannot hold, a refused draw or a tile the cost model
+(`costs`, ms of GPU-process CPU: draw 0.1, canvas copy 0.9, element copy 0.58) says would lose.
+Absent, DomRender copies one element per dirty card with no budget, as before.
 **`groundCompose({ raster })`** declares the per-kind raster strategy ONCE — the profile
 carries the same function to Residency, so the slot and the host box come from one call — and
 **`compose.sourceCanvas`** is `{ effects, onDirty } | null`: what the react facade needs to

@@ -49,7 +49,7 @@ import {
   spawnWidget,
 } from "@ice/core";
 import { instrumentSubmits, probeHic, type SubmitInstrument } from "@ice/ground";
-import { groundCompose, type GroundComposeContext, type GroundComposeHandle } from "@ice/ground/compose";
+import { type DomRenderTuning, groundCompose, type GroundComposeContext, type GroundComposeHandle } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { compositedProfile, InfiniteCanvas, useWidgetProps, type WidgetComponentProps } from "@ice/react";
@@ -150,6 +150,12 @@ interface Counters {
   readonly backedOff: number;
   readonly resized: number;
   readonly growths: number;
+  /** The levers' counters (2026-09-09): cards a flush left waiting, tiles landed, 2D draws, tiles abandoned, main-thread ms in copy calls. */
+  readonly throttled: number;
+  readonly batches: number;
+  readonly draws: number;
+  readonly fallbacks: number;
+  readonly copyMs: number;
   readonly domWrites: number;
   readonly clips: number;
   readonly touches: number;
@@ -164,6 +170,8 @@ interface Gauges {
   readonly deferred: number;
   readonly pending: number;
   readonly pagesLayers: number;
+  /** The copy budget in force (cards per flush; Infinity without one). */
+  readonly budget: number;
   readonly realized: number;
   readonly written: number;
   readonly textured: number;
@@ -284,6 +292,17 @@ function mountStressRig(): StressRig {
   const params = new URLSearchParams(window.location.search);
   const arm: Arm = params.get("arm") === "gpu" ? "gpu" : "dom";
   const n = Math.max(1, Number(params.get("n") ?? "48") || 48);
+  /**
+   * THE LEVERS (2026-09-09): `copy=element|batched` and `budget=off|adaptive|<cards per flush>`
+   * select DomRender's tuning (`compose/dom-render.ts` header). Absent ⇒ the engine's defaults,
+   * which are the behaviour before the levers, so a run without them is the control.
+   */
+  const copyParam = params.get("copy");
+  const budgetParam = params.get("budget");
+  const tuning: DomRenderTuning = {
+    ...(copyParam === "batched" || copyParam === "element" ? { strategy: copyParam } : {}),
+    ...(budgetParam === null || budgetParam === "off" ? {} : budgetParam === "adaptive" ? { budget: {} } : Number(budgetParam) > 0 ? { budget: Number(budgetParam) } : {}),
+  };
   const type = arm === "gpu" ? "stress-gpu" : "stress-dom";
   let gpu: EngineGpu | undefined;
   let instrument: SubmitInstrument | undefined;
@@ -312,7 +331,7 @@ function mountStressRig(): StressRig {
     instrument = instrumentSubmits(gpu.device);
     engine = createDemoEngine(gpu, [StressDom, StressGpu]);
     armCameraWatch();
-    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame(), grids: [needleGlyph, cuttingMat] });
+    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame(), grids: [needleGlyph, cuttingMat], dom: tuning });
     const ground = (ctx: GroundComposeContext) => { handle = factory(ctx); return handle; };
     createRoot(rootEl).render(<InfiniteCanvas engine={engine} ground={ground} profile={compositedProfile} className="h-full w-full" />);
     await frames(2);
@@ -363,6 +382,11 @@ function mountStressRig(): StressRig {
       backedOff: st?.backedOff ?? 0,
       resized: st?.resized ?? 0,
       growths: st?.growths ?? 0,
+      throttled: st?.throttled ?? 0,
+      batches: st?.batches ?? 0,
+      draws: st?.draws ?? 0,
+      fallbacks: st?.fallbacks ?? 0,
+      copyMs: st?.copyMs ?? 0,
       domWrites: dw?.writes ?? 0,
       clips: dw?.clips ?? 0,
       touches: handle?.compose.residency.stats().touches ?? 0,
@@ -382,6 +406,7 @@ function mountStressRig(): StressRig {
       deferred: st?.deferred ?? 0,
       pending: st?.pending ?? 0,
       pagesLayers: st?.pagesLayers ?? 0,
+      budget: st?.budget ?? Number.POSITIVE_INFINITY,
       realized: rs?.realized ?? 0,
       written: rs?.written ?? 0,
       textured: gs?.textured ?? 0,
@@ -404,6 +429,11 @@ function mountStressRig(): StressRig {
       backedOff: b.backedOff - a.backedOff,
       resized: b.resized - a.resized,
       growths: b.growths - a.growths,
+      throttled: b.throttled - a.throttled,
+      batches: b.batches - a.batches,
+      draws: b.draws - a.draws,
+      fallbacks: b.fallbacks - a.fallbacks,
+      copyMs: b.copyMs - a.copyMs,
       domWrites: b.domWrites - a.domWrites,
       clips: b.clips - a.clips,
       touches: b.touches - a.touches,
@@ -439,6 +469,7 @@ function mountStressRig(): StressRig {
         dpr: window.devicePixelRatio,
         refreshHz,
         crossOriginIsolated: window.crossOriginIsolated === true,
+        tuning,
       };
     },
     async board() {

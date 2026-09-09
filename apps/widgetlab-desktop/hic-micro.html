@@ -264,7 +264,39 @@ async function ink(i = 0) {
   return { ink: inkN, total, first };
 }
 
-window.__micro = { ready: boot(), setup, run, drain, ink, host: () => ({ dpr: DPR, chrome: navigator.userAgent.match(/Chrome\/([\d.]+)/)?.[1], hasCopy: typeof GPUQueue.prototype.copyElementImageToTexture === "function", hasDraw: typeof CanvasRenderingContext2D.prototype.drawElementImage === "function" }) };
+/**
+ * Does the element copy honour an explicit destination `width`/`height` (Chromium 150's
+ * `GPUCopyElementImageDestination { destination, width, height }`)? Copy card 0 at half its
+ * texel size into a fresh texture and read the ink's bounding box. A copy that ignores the
+ * members writes the full raster (the bbox is the slot); one that honours them writes half.
+ */
+async function probeSize() {
+  const c = cards[0];
+  const tw = Math.ceil(cfg.w * DPR), th = Math.ceil(cfg.h * DPR);
+  const hw = Math.floor(tw / 2), hh = Math.floor(th / 2);
+  const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT;
+  const t = device.createTexture({ label: "probe", size: [tw, th], format: "rgba8unorm", usage });
+  const enc0 = device.createCommandEncoder();
+  enc0.clearBuffer && 0;
+  queue.submit([enc0.finish()]);
+  let error = null;
+  device.pushErrorScope("validation");
+  try { queue.copyElementImageToTexture({ source: c }, { destination: { texture: t, origin: { x: 0, y: 0, z: 0 } }, width: hw, height: hh }); } catch (e) { error = String(e); }
+  const v = await device.popErrorScope();
+  const bytesPerRow = Math.ceil(tw * 4 / 256) * 256;
+  const buf = device.createBuffer({ size: bytesPerRow * th, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc = device.createCommandEncoder();
+  enc.copyTextureToBuffer({ texture: t }, { buffer: buf, bytesPerRow, rowsPerImage: th }, { width: tw, height: th, depthOrArrayLayers: 1 });
+  queue.submit([enc.finish()]);
+  await buf.mapAsync(GPUMapMode.READ);
+  const px = new Uint8Array(buf.getMappedRange());
+  let minX = tw, minY = th, maxX = -1, maxY = -1, ink = 0;
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { const o = y * bytesPerRow + x * 4; if (px[o + 3] !== 0) { ink += 1; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; } }
+  buf.unmap(); buf.destroy(); t.destroy();
+  return { asked: { w: hw, h: hh }, slot: { w: tw, h: th }, bbox: maxX < 0 ? null : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 }, ink, validation: v ? v.message : null, error };
+}
+
+window.__micro = { ready: boot(), setup, run, drain, ink, probeSize, host: () => ({ dpr: DPR, chrome: navigator.userAgent.match(/Chrome\/([\d.]+)/)?.[1], hasCopy: typeof GPUQueue.prototype.copyElementImageToTexture === "function", hasDraw: typeof CanvasRenderingContext2D.prototype.drawElementImage === "function" }) };
 </script>
 </body>
 </html>
