@@ -40,6 +40,11 @@ export default defineConfig({
       //                          (C1's `overlay-parity` and C1d's `line-grid-ab` drew the OLD
       //                          three leg beside the engine; they went with it at C2 — their
       //                          numbers live in the plan's landing logs.)
+      //   stress            — 2026-09-09: many DOM cards with looping CSS animations under
+      //                          `domAtRest` (live DOM at rest) against `alwaysGpu` (always
+      //                          through the HiC copy): frames, main-thread ms, copies, submits;
+      //                          the driver adds per-process CPU and footprints. One arm and one
+      //                          board size per page load.
       input: {
         index: "index.html",
         composited: "composited.html",
@@ -49,6 +54,7 @@ export default defineConfig({
         "composited-video": "composited-video.html",
         "composited-app": "composited-app.html",
         stratified: "stratified.html",
+        stress: "stress.html",
       },
     },
   },

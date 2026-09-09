@@ -1,6 +1,6 @@
 {
   "files": {
-    "ignore": ["**/dist/**", "**/node_modules/**", "draft/**", "docs/**", ".dependency-cruiser.cjs"]
+    "ignore": ["**/dist/**", "**/dist-profile/**", "**/node_modules/**", "draft/**", "docs/**", ".dependency-cruiser.cjs"]
   },
   "linter": {
     "enabled": true,

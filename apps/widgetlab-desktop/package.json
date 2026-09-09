@@ -21,7 +21,8 @@
     "islands": "pnpm run build && node scripts/composited-islands.mjs",
     "video": "pnpm run build && node scripts/composited-video.mjs",
     "app": "pnpm run build && node scripts/composited-app.mjs",
-    "stratified": "pnpm run build && node scripts/stratified.mjs"
+    "stratified": "pnpm run build && node scripts/stratified.mjs",
+    "stress": "pnpm run build && node scripts/stress.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
