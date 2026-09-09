@@ -437,7 +437,19 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       const ordinals = order.ordinals();
       const list: Entity[] = [];
       world.query(widgetsQ).each((batch) => { for (const row of batch) list.push(batch.entity(row)); });
-      list.sort((a, b) => compareStackOrder(world, ordinals, a, b));
+      // PAINT ORDER: the stack order, and HELD cards last (S1, 2026-09-09). `Grab` is the lift
+      // signal (design-004 §1: P3, the lifted plane, paints above P1) — the stratified DOM
+      // re-parents a grabbed host onto the lifted plane and back, and this is the same rule
+      // on the ground, where paint order is the only z there is. Without it a carried card
+      // slid UNDER every later sibling it crossed. Held cards keep their own stack order among
+      // themselves; a release returns the card to its ordinal (what the DOM's return to the
+      // content plane did), and a product that wants "drop on top" reorders the siblings.
+      list.sort((a, b) => {
+        const ha = world.has(a, Grab);
+        const hb = world.has(b, Grab);
+        if (ha !== hb) return ha ? 1 : -1;
+        return compareStackOrder(world, ordinals, a, b);
+      });
 
       // Pass 1 — every on-screen card's flux and geometry, and the portal candidates.
       const seen = new Set<Entity>();

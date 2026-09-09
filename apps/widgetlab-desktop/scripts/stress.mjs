@@ -288,6 +288,27 @@ async function cell(arm, n, round, wantShot) {
     if (wantShot) { fs.mkdirSync(outDir, { recursive: true }); shot = path.join(outDir, `stress-${arm}-${n}-compositor.png`); fs.writeFileSync(shot, await page.screenshot()); }
     await run("paint", "paint", {});
     const barMotion = await motion(page, rects.card);
+    // THE DRAG (the gesture set, 2026-09-09): grab card 0, carry it onto card 1, read the overlap's pixel, release, settle.
+    await page.evaluate((m) => window.__stressRig.anim(m), "none");
+    await page.evaluate((ms) => window.__stressRig.window(ms), SETTLE_MS);
+    await metrics();
+    const drag = await page.evaluate((ms) => window.__stressRig.drag(ms), 2500);
+    const dragCpu = fold(await metrics());
+    const px = decodePng(await page.screenshot({ type: "png", clip: { x: Math.floor(drag.over.sample.x) - 1, y: Math.floor(drag.over.sample.y) - 1, width: 3, height: 3 } }));
+    const mid = ((1 * px.width) + 1) * px.channels;
+    const rgb = [px.data[mid], px.data[mid + 1], px.data[mid + 2]];
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    const overlapCarried = dist(rgb, drag.over.expectRgb) < dist(rgb, drag.over.underRgb);
+    const release = await page.evaluate((ms) => window.__stressRig.release(ms), 600);
+    const plates = drag.plateFrames.filter((f) => f.textured < f.cards).length;
+    phases.drag = { ...drag, cpu: dragCpu, overlap: { rgb, carried: overlapCarried }, plates, release };
+    log(`[${arm} n=${n} r${round}] drag: after the grab ${drag.targets.gpu}/${n} on the GPU, ${drag.demand.paused}/${n} paused · pickup longest frame ${f1(drag.pickupMaxMs)} ms · plate frames ${plates} of ${drag.plateFrames.length} (${drag.plateFrames.slice(0, 6).map((f) => `${f.textured}/${f.cards}`).join(" ")}) · carry ${f1(drag.fps)} fps (p95 ${f1(drag.interval.p95)} max ${f1(drag.interval.max)} ms) · copies ${drag.delta.copies} (stills ${drag.stills}) submits ${drag.delta.submits} · rAF ${f2(drag.rafMsPerFrame)} ms/frame · cpu renderer ${f1(dragCpu.renderer)}% gpu ${f1(dragCpu.gpu)}% · overlap pixel rgb(${rgb.join(",")}) ${overlapCarried ? "IS the carried card" : "is the card UNDER it"} · release+600 ms: ${release.targets.dom}/${n} on the DOM, ${release.demand.live}/${n} live, ${release.delta.copies} copies`);
+    if (arm === "dom") {
+      check(drag.targets.gpu === n && drag.demand.paused === n, `[${arm} n=${n} r${round}] a grab promotes the BOARD as stills (${drag.targets.gpu}/${n} gpu, ${drag.demand.paused}/${n} paused)`);
+      check(drag.delta.copies <= n + 4 && drag.delta.copies >= n, `[${arm} n=${n} r${round}] the carry costs one copy per card and no more (${drag.delta.copies} copies for ${n} cards over ${drag.frames} frames)`);
+      check(release.targets.dom === n && release.demand.live === n, `[${arm} n=${n} r${round}] the set comes back after the settle (${release.targets.dom}/${n} dom, ${release.demand.live}/${n} live)`);
+    }
+    check(overlapCarried, `[${arm} n=${n} r${round}] the CARRIED card draws ABOVE the card it overlaps (overlap pixel rgb(${rgb.join(",")}), carried ${drag.over.expectRgb.join(",")} vs under ${drag.over.underRgb.join(",")})`);
     const fpA = footprints(await metrics());
     log(`[${arm} n=${n} r${round}] footprint after the animation phases (before the camera moves): ${JSON.stringify(fpA)}`);
     await run("compositor+pan", "compositor", { pan: true });
@@ -316,7 +337,8 @@ async function cell(arm, n, round, wantShot) {
     check(barMotion.max > 0, `[${arm} n=${n} r${round}] card 0 moves under the paint animation (whole-card crop) (${barMotion.series.join("/")} of ${barMotion.total} px)`);
     if (arm === "dom") {
       check(board.targets.gpu === 0 && board.textured === 0, `[${arm} n=${n} r${round}] every card is on the live DOM (gpu targets ${board.targets.gpu}, textured ${board.textured})`);
-      check(Object.values(phases).every((p) => p.delta.copies === 0), `[${arm} n=${n} r${round}] the dom arm copied nothing in any phase`);
+      // Every phase but the drag: the gesture set (S1) copies each card once at the pickup, by design.
+      check(Object.entries(phases).filter(([k]) => k !== "drag").every(([, p]) => p.delta.copies === 0), `[${arm} n=${n} r${round}] the dom arm copied nothing outside the drag`);
     } else {
       check(board.targets.gpu === n && board.written === n, `[${arm} n=${n} r${round}] every card is on the GPU and written (targets ${board.targets.gpu}/${n}, written ${board.written}/${n})`);
       check(phases.compositor.delta.copies > 0 && phases.paint.delta.copies > 0, `[${arm} n=${n} r${round}] the gpu arm copies while animating (${phases.compositor.delta.copies} / ${phases.paint.delta.copies})`);
@@ -387,7 +409,7 @@ for (let round = 0; round < ROUNDS; round++) {
 
 // ---- the summary: medians across rounds per (arm, n, phase) ---------------
 const summary = [];
-const phaseNames = ["idle", "compositor-one", "compositor", "paint", "compositor+pan", "compositor+zoomcross", ...BUCKETS.map((b) => `compositor@${b}`)];
+const phaseNames = ["idle", "compositor-one", "compositor", "paint", "drag", "compositor+pan", "compositor+zoomcross", ...BUCKETS.map((b) => `compositor@${b}`)];
 for (const n of NS) for (const arm of ARMS) for (const ph of phaseNames) {
   const rows = runs.filter((r) => r.arm === arm && r.n === n && r.phases?.[ph]).map((r) => r.phases[ph]);
   if (rows.length === 0) continue;

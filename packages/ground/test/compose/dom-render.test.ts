@@ -440,23 +440,50 @@ describe("DomRender · a refused realisation backs off (D-C4.7)", () => {
     expect(b.residency.isWritten(card)).toBe(true);
   });
 
-  it("a PAUSED demand parks the card: no copy, no touch, and nothing pending for a clock to release", () => {
+  it("a PAUSED card takes its FIRST picture when the world names its destination, then parks: paint marks buy nothing", () => {
+    // THE STILL (2026-09-09): `domAtRest` holds the board on the GPU for a drag as paused
+    // cards, and a paused card with no pixels must show the picture it had, not the plate.
+    // The first copy is owed to the WORLD's debt (the promotion journaled through
+    // `TextureRef`); after it the card is as parked as it ever was.
     const b = makeBoard();
     const card = b.spawn("dr:paused", 100);
     b.ce.world.sync();
     b.step(5);
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 1, stills: 1, parked: 0, deferred: 0, pending: 0 });
+    expect(b.residency.contentOf(card).mode).toBe("page");
     const touches = b.residency.stats().touches;
+    // A paint mark on the still: parked, no copy, no wake.
+    b.render.markDirtyHosts([b.paintOf(card)]);
     b.flush();
     b.flush();
-    expect(b.stats()).toMatchObject({ copies: 0, parked: 1, deferred: 0, pending: 0 });
-    expect(b.residency.stats().touches).toBe(touches); // no wake for a card nobody can see
-    expect(b.residency.contentOf(card).mode).toBe("plate"); // the plate is the honest picture
-    // The ONE door out: demand comes back to a live bucket.
+    expect(b.stats()).toMatchObject({ copies: 1, stills: 1, parked: 1, deferred: 0, pending: 0 });
+    expect(b.residency.stats().touches).toBe(touches);
+    // The ONE door out of parked: demand comes back to a live bucket.
     b.world.edit(card).set(RequestedDemand, { mode: "live", fpsBucket: 60, interactive: false });
     b.step(3);
     b.flush();
-    expect(b.stats()).toMatchObject({ copies: 1, parked: 0 });
-    expect(b.residency.contentOf(card).mode).toBe("page");
+    expect(b.stats()).toMatchObject({ copies: 2, stills: 1, parked: 0 });
+  });
+
+  it("a paused card RE-SLOTTED by the world takes one new picture; a paint mark still does not", () => {
+    const b = makeBoard();
+    const card = b.spawn("dr:paused", 100);
+    b.ce.world.sync();
+    b.step(5);
+    b.flush();
+    expect(b.stats().copies).toBe(1);
+    // A resize is a re-slot: Residency names a new destination, DomRender re-boxes the host
+    // and copies off the next paint record — the still's rule owes exactly that one picture.
+    b.world.edit(card).set(Size, { w: 300, h: 120 });
+    b.step(2);
+    b.flush();   // the box moves; the copy waits for the relayout
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 2, stills: 2 });
+    expect(b.residency.isWritten(card)).toBe(true);
+    b.render.markDirtyHosts([b.paintOf(card)]);
+    b.flush();
+    expect(b.stats()).toMatchObject({ copies: 2, parked: 1 });
   });
 
   it("a paused surface's paint must not spin the ground — over a HUNDRED ticks, not one flush (carried from demand-parking at B8)", () => {
@@ -472,8 +499,9 @@ describe("DomRender · a refused realisation backs off (D-C4.7)", () => {
     b.ce.world.sync();
     b.step(5);
     b.flush();
-    const settled = b.stats().copies;   // the live card's first copy
-    expect(settled).toBe(1);
+    const settled = b.stats().copies;   // the live card's first copy, and the paused card's FIRST PICTURE (the still's rule)
+    expect(settled).toBe(2);
+    expect(b.stats().stills).toBe(1);
     const touches = b.residency.stats().touches;
 
     let maxPending = 0;
@@ -489,7 +517,7 @@ describe("DomRender · a refused realisation backs off (D-C4.7)", () => {
     expect(b.residency.stats().touches).toBe(touches);
     // …and the marks really did arrive: 120 of them, all clamped.
     expect(b.stats().dirtied).toBeGreaterThanOrEqual(120);
-    expect(b.residency.contentOf(paused).mode).toBe("plate");
+    expect(b.residency.contentOf(paused).mode).toBe("page"); // the still it took at promotion, held
     expect(b.residency.contentOf(live).mode).toBe("page");
   });
 

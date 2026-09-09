@@ -1170,6 +1170,48 @@ the entity's own kind behaviour.
   `unregister()` wakes Residency (`TextureTable.revision()`); an unrealised handle is
   forgotten the moment its count reaches zero — only realised handles wait in `drain()`.
 
+### The drag promotes the board, as stills (S1, 2026-09-09)
+
+<!-- design-013 S1 -->
+- **`ice:surface.domAtRest` promotes the GESTURE SET.** A grab on any dom card carrying the
+  behaviour promotes every dom card carrying it, in the same step, and the whole set demotes
+  one settle window after the last release (one window for the set, opened at the last
+  release, cancelled by any grab). The reason is stacking: the ground draws a lifted card
+  BELOW every resting card the DOM still paints above the canvas (design-012 §6.3's
+  rest-state artifact), and under a drag that is the wrong picture for the whole gesture.
+  The behaviour still owns only what it changed — a card another writer holds on the GPU is
+  neither paused nor demoted. Two new instance fields: `promoteBoard` (default `true`; `false`
+  keeps the old one-card promotion, read from the grabbed card) and `stillWhileGrabbed`
+  (default `true`; see next).
+- **The promoted set are STILLS.** Every card the behaviour promotes for a gesture — the
+  grabbed one included — gets `RequestedDemand { mode: "paused" }` for the gesture and its own
+  cadence ask back at demotion, so the carry costs the board one copy per card at the pickup
+  and none after. `stillWhileGrabbed: false` keeps a card live at its bucket while carried.
+- **DomRender: a paused card takes its FIRST picture.** A paused card whose current
+  destination has never been written copies ONCE when the world names that destination (a
+  promotion, a re-slot, a re-size — the `TextureRef`/`SurfaceTarget` journal), then parks; a
+  paint mark still buys nothing. Until now a paused card with no pixels stayed on the plate
+  ("honest", design-013 D3) — a plate under a drag is a hole. `alwaysGpu.with({ paused: true })`,
+  the old `picture` mode, therefore shows a picture from its first frame. New instrument:
+  `DomRenderStats.stills`, the first pictures taken for paused cards.
+- **The ground paints HELD cards last.** Paint order on the ground is the stack order, and
+  `Grab` is the lift signal (design-004 §1: the lifted plane paints above the content plane;
+  the stratified DOM re-parents a grabbed host onto it and back). The compositor had no
+  equivalent, so a carried card slid UNDER every later sibling it crossed — invisible while
+  only the grabbed card was on the GPU (the DOM neighbours were above it anyway), and the
+  first thing the gesture set's overlap witness caught. Held cards now sort after unheld ones
+  in the frame builder, keeping their own order among themselves; a release returns the card
+  to its ordinal, and "drop on top" stays the product's sibling reorder.
+- Witnesses: `packages/core/test/surface-behaviors.test.ts` "the gesture set" (6 cases),
+  `packages/ground/test/compose/dom-render.test.ts` the still's first picture and the
+  re-slot's new picture (all proven red against the previous sources); the desktop stress
+  rig's new `drag` phase (`pnpm --filter widgetlab-desktop stress`) grabs a card on a live
+  composited board, reads the overlap's pixel, counts the copies of the carry and the plate
+  frames of the pickup, and watches the set come back after the settle. Measured on the
+  desktop app at 120 Hz: 24 cards promote as stills in one step with one plate frame and a
+  50 ms pickup, carry at 118 fps on 24 copies total; 96 cards likewise with a 167 ms pickup
+  (about 1.7 ms per card) and 96 copies; both come back to the live DOM after the settle.
+
 ## [0.12.0] — 2026-08-31 · a git release point, NOT published to npm
 
 **Install 0.13.0 for everything below.** The cut was real (`903f892`, CI green,

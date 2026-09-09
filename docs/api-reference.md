@@ -20,7 +20,7 @@ published bytes rather than trusting the last local build.
 
 | Export | Shape | Notes |
 |---|---|---|
-| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"` (the `WidgetSurfaceKind` union); `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. Where a card presents is chosen through `behaviors: [alwaysDom \| alwaysGpu \| alwaysGpu.with({ paused: true })]` — a definition naming none gets its kind's default (`domAtRest` for `dom`, `alwaysGpu` otherwise), exactly one behaviour may write `SurfaceTarget`, and the retired `presentation` field throws (migration table in the CHANGELOG). |
+| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"` (the `WidgetSurfaceKind` union); `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. Where a card presents is chosen through `behaviors: [alwaysDom \| alwaysGpu \| alwaysGpu.with({ paused: true })]` — a definition naming none gets its kind's default (`domAtRest` for `dom`, `alwaysGpu` otherwise), exactly one behaviour may write `SurfaceTarget`, and the retired `presentation` field throws (migration table in the CHANGELOG). **`domAtRest` promotes the GESTURE SET, as stills (S1, 2026-09-09):** a grab on any dom card carrying it lifts every dom card carrying it to the GPU in the same step (the ground would otherwise draw the carried card BELOW every resting card the DOM paints above the canvas), pauses each promoted card's demand for the gesture (one picture at promotion, held — the grabbed card included), and demotes the whole set one settle window after the last release, every card's own cadence ask restored; it owns only what it changed. `domAtRest.with({ promoteBoard: false })` keeps the one-card promotion, `.with({ stillWhileGrabbed: false })` keeps a carried card live at its bucket. The ground paints HELD cards last (the lifted plane's rule on the ground), so the carried card draws above what it crosses. |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
 | `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, widgetDrag, portDrag}`, `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
@@ -402,8 +402,12 @@ allocating, rendering and destroying a full target every frame; and an oversize 
 once and then grew past the device limit inside its band calls `unwrote(e)`, so it draws the
 PLATE instead of its stale raster stretched to the new box. It also OWNS the L1
 host's geometry while the host is canvas-side: the box is `geometry().cssSize` and the
-placement matrix carries `zoom / band`. `compose.domRender.stats()` → `{ copies, dirtied,
-refused, unavailable, parked, deferred, pending, resized, pagesLayers, growths }`.
+placement matrix carries `zoom / band`. `compose.domRender.stats()` → `{ copies, stills, dirtied,
+refused, unavailable, parked, deferred, pending, resized, pagesLayers, growths }` — `stills`
+(S1, 2026-09-09) counts the FIRST pictures taken for PAUSED cards: a paused card whose current
+destination has never been written copies once when the world names it (a promotion, a
+re-slot, a re-size) and then parks; a paint mark buys nothing. Until S1 such a card stayed on
+the plate.
 **`groundCompose({ raster })`** declares the per-kind raster strategy ONCE — the profile
 carries the same function to Residency, so the slot and the host box come from one call — and
 **`compose.sourceCanvas`** is `{ effects, onDirty } | null`: what the react facade needs to

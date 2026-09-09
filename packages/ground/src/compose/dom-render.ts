@@ -34,9 +34,18 @@
 // bucket 0) PARKS the card: no copy, no wake, and no entry in `pending()`, so
 // a card animating off-screen costs nothing at all rather than one composite
 // per paint event; a finite interval DEFERS the copy to the moment its bucket
-// allows, so a throttled card is BEHIND, never wrong; 0 copies now. A paused
-// card that has never been copied stays on the plate, and that is honest —
-// the plate is a real picture of a card with no pixels yet.
+// allows, so a throttled card is BEHIND, never wrong; 0 copies now.
+//
+// THE STILL (2026-09-09, the gesture set): a paused card whose CURRENT
+// destination has never been written takes ONE picture — when its debt is the
+// WORLD's (a promotion, a re-slot, a re-size, journaled through `TextureRef`
+// and `SurfaceTarget`), never for a paint mark — and then parks like any other
+// paused card. That is what "paused" has to mean for a card `domAtRest` holds
+// on the GPU for a drag: the picture it had when the gesture began, held for
+// the gesture, instead of the plate. Until this rule a paused card with no
+// pixels stayed on the plate and D3 called that honest; a plate under a drag
+// is a hole, not a picture, so the first copy is owed and a paint mark still
+// buys nothing.
 //
 // Reflector contract (design-002 §5): post-notify, output-only. It writes DOM
 // (the host's box and placement) and GPU queue ops, never the ECS, and it
@@ -100,6 +109,12 @@ export interface DomRenderOptions {
 export interface DomRenderStats {
   /** Element copies that landed. */
   readonly copies: number;
+  /**
+   * Of those, the FIRST pictures taken for PAUSED cards (the still's rule, 2026-09-09): a paused
+   * card whose destination the world just named copies once and then parks. `copies − stills`
+   * is what live demand paid for.
+   */
+  readonly stills: number;
   /**
    * Hosts a paint event named, cumulative — the RAW dirt rate, before the
    * demand clamp. The pair (`dirtied`, `copies`) is what says whether a busy
@@ -219,6 +234,13 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
   const parked = new Set<Entity>();
   /** When each card was last copied — the throttle's clock. */
   const lastCopy = new Map<Entity, number>();
+  /**
+   * Cards whose debt came from the WORLD (the `TextureRef`/`SurfaceTarget` journal: a
+   * promotion, a re-slot, a re-size), as opposed to a paint mark. A paused card owes its
+   * FIRST picture only for these — the still's rule — and the set is cleared by the copy
+   * that discharges the debt, by a demotion, and by death.
+   */
+  const worldDebt = new Set<Entity>();
   /** The host box this module last wrote, per card. */
   const placed = new Map<Entity, Placed>();
   /**
@@ -254,6 +276,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
   const collector = world.changes.collect({ components: [TextureRef, SurfaceTarget], coarse: false });
 
   let copies = 0;
+  let stills = 0;
   let dirtied = 0;
   let selfDirt = 0;
   let refused = 0;
@@ -270,6 +293,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     dirty.delete(e);
     deferred.delete(e);
     parked.delete(e);
+    worldDebt.delete(e);
     lastCopy.delete(e);
     placed.delete(e);
     refusedRealize.delete(e);
@@ -514,8 +538,10 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       const delta = collector.drain();
       for (const e of delta.removed) forget(e);
       for (const e of delta.changed) {
-        if (targetOf(world, e) === "gpu") dirty.add(e);
-        else forget(e);
+        if (targetOf(world, e) === "gpu") {
+          dirty.add(e);
+          worldDebt.add(e);
+        } else forget(e);
       }
       // Nothing else scans the board for unwritten destinations: `TextureRef`
       // is written CHANGE-ONLY, so every new debt — a promotion, a re-slot
@@ -540,9 +566,19 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
         for (const e of [...dirty]) {
           const interval = demandIntervalMs(demandOf(world, e));
           if (interval === Number.POSITIVE_INFINITY) {
-            // PAUSED. No copy and no wake — and a card that has never been
-            // copied stays on the plate, which is the honest picture of a
-            // paused card with no pixels yet (design-013 D3).
+            // PAUSED. A paint mark buys nothing; the card parks. The one exception is the
+            // STILL: the world named a destination this card has never written (a promotion,
+            // a re-slot, a re-size) and the picture it owes is the first one, taken once and
+            // then held — see the header. A refusal keeps the debt for the next flush, as it
+            // does for a live card.
+            if (worldDebt.has(e) && !residency.isWritten(e)) {
+              if (attempt(e, t)) {
+                dirty.delete(e);
+                worldDebt.delete(e);
+                if (residency.isWritten(e)) stills += 1;
+              }
+              continue;
+            }
             dirty.delete(e);
             parked.add(e);
             continue;
@@ -555,7 +591,10 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
               continue;
             }
           }
-          if (attempt(e, t)) dirty.delete(e);
+          if (attempt(e, t)) {
+            dirty.delete(e);
+            worldDebt.delete(e);
+          }
         }
       }
       // PLACEMENT IS NOT A FUNCTION OF THE COPY DEBT (B8 R7).
@@ -584,6 +623,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     },
     stats: () => ({
       copies,
+      stills,
       dirtied,
       selfDirt,
       refused,
@@ -607,6 +647,7 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       placed.clear();
       selfWrote.clear();
       refusedRealize.clear();
+      worldDebt.clear();
     },
   };
 }

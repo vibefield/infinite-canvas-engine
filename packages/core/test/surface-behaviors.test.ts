@@ -71,6 +71,10 @@ defineWidget({ type: "sb:card", surface: "dom", component: null });
 defineWidget({ type: "sb:island", surface: "gl", component: null });
 defineWidget({ type: "sb:pinnedDom", surface: "dom", component: null, behaviors: [alwaysDom] });
 defineWidget({ type: "sb:picture", surface: "dom", component: null, behaviors: [alwaysGpu.with({ paused: true })] });
+/** The one-card promotion of before the gesture set (2026-09-09): only the grabbed card moves. */
+defineWidget({ type: "sb:solo", surface: "dom", component: null, behaviors: [domAtRest.with({ promoteBoard: false })] });
+/** A card that stays LIVE at its bucket while it is carried — no still. */
+defineWidget({ type: "sb:liveHeld", surface: "dom", component: null, behaviors: [domAtRest.with({ stillWhileGrabbed: false })] });
 /** A gl widget that (wrongly) asks for the DOM — the D5 refusal's subject. */
 defineWidget({ type: "sb:badIsland", surface: "gl", component: null, behaviors: [alwaysDom] });
 /**
@@ -332,6 +336,107 @@ describe("demotion", () => {
     // real property here and not a tautology.
     expect(() => r.step(STEPS_PAST_SETTLE)).not.toThrow();
     expect(r.faults).toEqual([]);
+  });
+});
+
+describe("the gesture set (2026-09-09)", () => {
+  it("a grab promotes EVERY dom card of the behaviour in the same step, and pauses each of them", () => {
+    // The lifted card is drawn by the ground; a resting card the DOM still paints sits
+    // ABOVE the canvas (design-012 §6.3's artifact). Under a drag that is the wrong
+    // stacking for the whole gesture, so the board goes to the GPU together — and as
+    // STILLS: one picture each at promotion, held until the demotion.
+    const r = rig();
+    const a = r.spawn("sb:card");
+    const b = r.spawn("sb:card");
+    const c = r.spawn("sb:card");
+    r.step(2);
+    r.grab(a);
+    r.step();
+    expect([r.target(a), r.target(b), r.target(c)]).toEqual(["gpu", "gpu", "gpu"]);
+    for (const e of [a, b, c]) {
+      expect(r.world.get(e, RequestedDemand)).toMatchObject({ mode: "paused" });
+      // The clamp keeps a paused ask paused, grabbed or not: interaction outranks a low
+      // bucket, never a pause.
+      expect(r.world.get(e, SurfaceDemand)).toMatchObject({ mode: "paused" });
+    }
+  });
+
+  it("the set comes back together one settle window after the release, every card's own cadence restored", () => {
+    const r = rig();
+    const a = r.spawn("sb:card");
+    const b = r.spawn("sb:card");
+    r.step(2);
+    r.grab(a);
+    r.step();
+    r.release(a);
+    r.step();
+    // The release edge demotes nothing, for either card.
+    expect([r.target(a), r.target(b)]).toEqual(["gpu", "gpu"]);
+    r.step(STEPS_PAST_SETTLE);
+    expect([r.target(a), r.target(b)]).toEqual(["dom", "dom"]);
+    for (const e of [a, b]) expect(r.world.get(e, RequestedDemand)).toMatchObject({ mode: "live", fpsBucket: 60, interactive: false });
+  });
+
+  it("a card another writer put on the GPU is neither paused by the set nor demoted with it", () => {
+    const r = rig();
+    const a = r.spawn("sb:card");
+    const held = r.spawn("sb:card");
+    r.step(2);
+    r.world.edit(held).set(SurfaceTarget, { target: "gpu" });
+    r.step();
+    r.grab(a);
+    r.step();
+    expect(r.world.get(held, RequestedDemand)).toMatchObject({ mode: "live" });
+    r.release(a);
+    r.step(STEPS_PAST_SETTLE);
+    expect(r.target(a)).toBe("dom");
+    expect(r.target(held)).toBe("gpu");
+  });
+
+  it("a grab of a DIFFERENT card inside the window keeps the whole set on the GPU", () => {
+    // One window for the set: it opens at the last release and any grab cancels it.
+    const r = rig();
+    const a = r.spawn("sb:card");
+    const b = r.spawn("sb:card");
+    r.step(2);
+    const seen: string[] = [];
+    const sample = (n: number): void => {
+      for (let i = 0; i < n; i++) {
+        r.step();
+        seen.push(`${r.target(a)}/${r.target(b)}`);
+      }
+    };
+    r.grab(a);
+    sample(1);
+    r.release(a);
+    sample(Math.floor(STEPS_PAST_SETTLE / 2));
+    r.grab(b);
+    sample(STEPS_PAST_SETTLE);
+    expect(seen.filter((t) => t !== "gpu/gpu")).toEqual([]);
+  });
+
+  it("`promoteBoard: false` keeps the one-card promotion", () => {
+    const r = rig();
+    const a = r.spawn("sb:solo");
+    const b = r.spawn("sb:solo");
+    r.step(2);
+    r.grab(a);
+    r.step();
+    expect([r.target(a), r.target(b)]).toEqual(["gpu", "dom"]);
+    // …and the grabbed card is still a still.
+    expect(r.world.get(a, RequestedDemand)).toMatchObject({ mode: "paused" });
+    expect(r.world.get(b, RequestedDemand)).toMatchObject({ mode: "live" });
+  });
+
+  it("`stillWhileGrabbed: false` keeps the carried card live at its bucket, interactive", () => {
+    const r = rig();
+    const a = r.spawn("sb:liveHeld");
+    r.step(2);
+    r.grab(a);
+    r.step();
+    expect(r.target(a)).toBe("gpu");
+    expect(r.world.get(a, RequestedDemand)).toMatchObject({ mode: "live", fpsBucket: 60 });
+    expect(r.world.get(a, SurfaceDemand)).toMatchObject({ mode: "live", fpsBucket: 60, interactive: true });
   });
 });
 

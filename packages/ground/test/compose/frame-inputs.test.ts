@@ -230,6 +230,27 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     expect(must(builder.motionOf(a)).reveal).toBe(0);
   });
 
+  it("a HELD card paints LAST — the lifted plane's rule on the ground (S1, 2026-09-09); released, it returns to its ordinal", () => {
+    // Paint order is the only z the ground has. Card `a` is the first sibling and `b` the
+    // second, so at rest `a` paints first; grabbed, `a` must paint after every unheld card
+    // — the stratified DOM did this by re-parenting the host onto the lifted plane, and a
+    // compositor that sorted by stack order alone slid a carried card under every later
+    // sibling it crossed (the stress rig's overlap witness caught it).
+    const { world, build, settle, a } = makeBoard();
+    const centreOf = (frames: readonly { geometry: { centre: readonly [number, number] } }[], i: number) => must(frames[i]).geometry.centre;
+    const rest = build();
+    expect(centreOf(rest.frames, 0)).toEqual([200, 160]);                       // `a` first at rest
+    world.addComponent(a, Grab, { x: 100, y: 100, w: 200, h: 120, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+    settle();
+    const held = build();
+    expect(centreOf(held.frames, held.frames.length - 1)).toEqual([200, 160]);   // `a` LAST while held
+    expect(centreOf(held.frames, 0)).toEqual([500, 160]);                       // `b` moved up, in its own order
+    world.removeComponent(a, Grab);
+    settle();
+    const back = build();
+    expect(centreOf(back.frames, 0)).toEqual([200, 160]);                       // released: its ordinal again
+  });
+
   it("Grab IS the lift: the card scales by ChromeSettings.liftScale and takes the lifted shadow; losing Grab sets it down", () => {
     const { world, build, builder, settle, a } = makeBoard();
     build();

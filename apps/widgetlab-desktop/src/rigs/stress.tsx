@@ -36,6 +36,9 @@ import {
   Camera,
   type EngineGpu,
   type Entity,
+  Grab,
+  NO_ENTITY,
+  Position,
   RequestedDemand,
   SurfaceBand,
   SurfaceDemand,
@@ -226,6 +229,15 @@ interface StressRig {
   window(ms: number, opts?: { pan?: boolean; zoomCross?: boolean }): Promise<WindowResult>;
   /** Every card's cadence ask, for the gpu arm's lever. */
   bucket(fps: number): Promise<{ requested: number; granted: string; cards: number }>;
+  /**
+   * THE DRAG (2026-09-09, the gesture set): grab card 0 and carry it onto card 1 over `ms`,
+   * as the standard `domAtRest` behaviour sees it (a `Grab` rider, a `Position` walk). Reports
+   * the pickup (targets and demand modes after the grab, the frames whose build still drew
+   * plates, the longest early frame), the carry (copies, submits, fps) and where card 0 ended,
+   * so the driver can read the overlap's pixel. `release()` drops it and waits out the settle.
+   */
+  drag(ms: number): Promise<DragResult>;
+  release(settleMs: number): Promise<ReleaseResult>;
   /** Screen rects for the motion witness: the whole card, its spinner, its bar. */
   rects(i: number): { card: Rect; spin: Rect; bar: Rect };
   /**
@@ -238,6 +250,27 @@ interface StressRig {
   counters(): Counters;
 }
 interface Rect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+interface DragResult {
+  readonly targets: { dom: number; gpu: number };
+  readonly demand: { live: number; paused: number };
+  /** `stats().textured` and `cards` on each of the first 12 frames after the grab: a frame with textured < cards drew plates. */
+  readonly plateFrames: { frame: number; textured: number; cards: number }[];
+  readonly pickupMaxMs: number;
+  readonly frames: number;
+  readonly fps: number;
+  readonly interval: { p50: number; p95: number; max: number };
+  readonly delta: Counters;
+  readonly stills: number;
+  readonly rafMsPerFrame: number;
+  /** Card 0's final screen rect (over card 1) and a plain-background sample point inside it, for the overlap witness. */
+  readonly over: { card: Rect; sample: { x: number; y: number }; expectRgb: [number, number, number]; underRgb: [number, number, number] };
+}
+interface ReleaseResult {
+  readonly targets: { dom: number; gpu: number };
+  readonly demand: { live: number; paused: number };
+  readonly delta: Counters;
+  readonly frames: number;
+}
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const frames = async (n: number) => { for (let i = 0; i < n; i++) await frame(); };
@@ -570,6 +603,83 @@ function mountStressRig(): StressRig {
       await frames(2);
       const d = cards[0] === undefined ? undefined : world.get(cards[0], SurfaceDemand);
       return { requested: fps, granted: `${d?.mode ?? "?"}@${d?.fpsBucket ?? -1}`, cards: cards.length };
+    },
+    async drag(ms) {
+      guardCamera();
+      const world = ce().world;
+      const card = must(cards[0], "card 0");
+      const r0 = cardWorld(0);
+      const r1 = cardWorld(1);
+      const c0 = counters();
+      const s0 = handle?.compose.domRender?.stats().stills ?? 0;
+      raf.maxMs = 0;
+      const count = () => {
+        const targets = { dom: 0, gpu: 0 };
+        const demand = { live: 0, paused: 0 };
+        for (const c of cards) {
+          if (world.get(c, SurfaceTarget)?.target === "gpu") targets.gpu += 1; else targets.dom += 1;
+          if (world.get(c, RequestedDemand)?.mode === "paused") demand.paused += 1; else demand.live += 1;
+        }
+        return { targets, demand };
+      };
+      // THE GRAB — a rig setup write of the gesture's rider, exactly what the render rig does.
+      world.addComponent(card, Grab, { x: r0.x, y: r0.y, w: r0.w, h: r0.h, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+      const plateFrames: DragResult["plateFrames"] = [];
+      const intervals: number[] = [];
+      const t0 = performance.now();
+      let last = t0;
+      let i = 0;
+      while (performance.now() - t0 < ms) {
+        const u = Math.min(1, (performance.now() - t0) / (ms * 0.6));
+        // the carry: card 0 walks onto card 1's rect and stays there
+        world.edit(card).set(Position, { x: r0.x + (r1.x - r0.x) * u, y: r0.y + (r1.y - r0.y) * u });
+        await frame();
+        const now = performance.now();
+        intervals.push(now - last);
+        last = now;
+        if (i < 12) { const g = handle?.compose.stats(); plateFrames.push({ frame: i, textured: g?.textured ?? 0, cards: g?.cards ?? 0 }); }
+        i++;
+      }
+      const wall = last - t0;
+      const c1 = counters();
+      const z = cam().zoom;
+      const o = toScreen(r1.x, r1.y);
+      const idx0 = 0 % PALETTE.length;
+      const idx1 = 1 % PALETTE.length;
+      const hex = (h: string): [number, number, number] => [Number.parseInt(h.slice(1, 3), 16), Number.parseInt(h.slice(3, 5), 16), Number.parseInt(h.slice(5, 7), 16)];
+      return {
+        ...count(),
+        plateFrames,
+        pickupMaxMs: intervals.slice(0, 12).reduce((m, x) => Math.max(m, x), 0),
+        frames: intervals.length,
+        fps: intervals.length / (wall / 1000),
+        interval: { p50: quantile(intervals, 0.5), p95: quantile(intervals, 0.95), max: intervals.length ? Math.max(...intervals) : 0 },
+        delta: diff(c0, c1),
+        stills: (handle?.compose.domRender?.stats().stills ?? 0) - s0,
+        rafMsPerFrame: intervals.length ? diff(c0, c1).rafMs / intervals.length : 0,
+        // a plain-background point of the carried card: right of the title, above the bar (card px 135, 18)
+        over: { card: { x: o.x, y: o.y, w: r1.w * z, h: r1.h * z }, sample: { x: o.x + 135 * z, y: o.y + 18 * z }, expectRgb: hex(PALETTE[idx0] as string), underRgb: hex(PALETTE[idx1] as string) },
+      };
+    },
+    async release(settleMs) {
+      const world = ce().world;
+      const card = must(cards[0], "card 0");
+      const c0 = counters();
+      world.removeComponent(card, Grab);
+      const t0 = performance.now();
+      let n = 0;
+      while (performance.now() - t0 < settleMs) { await frame(); n++; }
+      const targets = { dom: 0, gpu: 0 };
+      const demand = { live: 0, paused: 0 };
+      for (const c of cards) {
+        if (world.get(c, SurfaceTarget)?.target === "gpu") targets.gpu += 1; else targets.dom += 1;
+        if (world.get(c, RequestedDemand)?.mode === "paused") demand.paused += 1; else demand.live += 1;
+      }
+      // put card 0 back where it was, for the phases that follow
+      const r0 = cardWorld(0);
+      world.edit(card).set(Position, { x: r0.x, y: r0.y });
+      await frames(4);
+      return { targets, demand, delta: diff(c0, counters()), frames: n };
     },
     rects(i) {
       guardCamera();

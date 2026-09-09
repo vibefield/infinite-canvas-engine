@@ -136,8 +136,14 @@ function refuseNonDomKind(
 interface SettleState {
   /** Entities THIS behaviour promoted — it demotes only what it promoted. */
   readonly owned: Set<Entity>;
-  /** entity → the `FrameInfo.clock` reading its settle window expires at. */
-  readonly settling: Map<Entity, number>;
+  /** Of `owned`, the cards whose demand this behaviour PAUSED for the gesture (the stills) — restored at demotion. */
+  readonly stills: Set<Entity>;
+  /**
+   * The `FrameInfo.clock` reading the GESTURE's settle window expires at; `null` while a card is
+   * grabbed or nothing is owned. One window for the whole set (2026-09-09): the set was promoted
+   * together for one reason, the z-order under a drag, and comes back together.
+   */
+  settleAt: number | null;
 }
 const settleTables = new WeakMap<AbortSignal, SettleState>();
 
@@ -145,7 +151,7 @@ function settleState(ctx: RuntimeBehaviorCtx<Record<string, unknown>>): SettleSt
   const signal = ctx.signal;
   let state = settleTables.get(signal);
   if (state === undefined) {
-    state = { owned: new Set<Entity>(), settling: new Map<Entity, number>() };
+    state = { owned: new Set<Entity>(), stills: new Set<Entity>(), settleAt: null };
     settleTables.set(signal, state);
     // `dispose` runs for every instance BEFORE the signal aborts (§4.3), so
     // this only ever clears what a torn-down generation left behind.
@@ -164,6 +170,21 @@ function settleState(ctx: RuntimeBehaviorCtx<Record<string, unknown>>): SettleSt
  * THE DOM DEFAULT (design-012 §11 Q5, re-read by design-013 §0 as the standard
  * behaviour the engine ships for dom kinds rather than as a law): live DOM at
  * rest, GPU while grabbed, back one settle window after the release.
+ *
+ * ── The gesture set (2026-09-09) ──────────────────────────────────────────
+ * A grab promotes THE BOARD, not the card: every dom card carrying this
+ * behaviour goes to the GPU together, because a lifted card the ground draws
+ * would otherwise sit UNDER every resting card the DOM still paints above the
+ * canvas (design-012 §6.3's rest-state artifact, which must not appear in the
+ * middle of a drag — overlap and stacking would read wrong for the whole
+ * gesture). And the set goes as STILLS: each promoted card's demand is paused
+ * for the gesture, so it takes one picture at promotion (DomRender's still
+ * rule) and holds it, and the drag costs the board no copies at all after the
+ * pickup. The grabbed card is a still too: nothing inside it changes while it
+ * is carried, and the lift is the ground's. One settle window after the last
+ * release the whole set comes back to the live DOM and every card's own
+ * cadence ask is restored. `promoteBoard: false` keeps the old one-card
+ * promotion; `stillWhileGrabbed: false` keeps a card live at its bucket.
  *
  * ── Why demotion is debounced and promotion is not ────────────────────────
  * (Carried verbatim from `dom/src/presentation-policy.ts`, the file this
@@ -212,6 +233,10 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
      * anyone reaches for it.
      */
     settleMs: p.number({ default: 250, min: 0 }),
+    /** A grab promotes every dom card of this behaviour (the gesture set), not only the grabbed one. */
+    promoteBoard: p.boolean({ default: true }),
+    /** A card this behaviour holds on the GPU for a gesture is a STILL: one picture at promotion, held until the demotion. */
+    stillWhileGrabbed: p.boolean({ default: true }),
     ...demandSchema,
   },
   reads: [Grab, SurfaceKind, PrefabId, FrameInfo],
@@ -234,6 +259,8 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
       // frame of every card a promote/demote decision instead of a fact.
     },
     update(e, data, _prev, ctx) {
+      // A still keeps its pause through a schema write; the restore at demotion reads the cell.
+      if (settleState(ctx).stills.has(e)) return;
       projectDemand(ctx, e, "live", data);
     },
     changed(ctx) {
@@ -254,56 +281,101 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
         if (kindOf(ctx, e) === "dom") grabbed.add(e);
       });
 
-      for (const e of grabbed) {
-        // A re-grab inside the window cancels the pending demotion, whether or
-        // not this behaviour still owns the card.
-        state.settling.delete(e);
-        // OWN ONLY WHAT THIS BEHAVIOUR CHANGED (A3b fix 1) — the old policy's
-        // rule, restored. There, ownership followed the return of
-        // `presentation.set(...)`, which was true only on a REAL change; here
-        // the same question is asked of the world. A card a host put on the
-        // GPU by hand (the composited rig's static probe does exactly that) is
-        // therefore not this behaviour's to bring back, and used to be: one
-        // drag was enough to make it `owned`, and 250 ms after the release it
-        // was demoted to `dom` for good, with nothing to say why.
-        //
-        // Reading the target rather than consulting `owned` also keeps the
-        // write CHANGE-ONLY: a `ctx.set` per grabbed card per frame would
-        // stamp `SurfaceTarget` through the whole drag and wake every observer
-        // on it. And a card demoted by hand MID-drag is re-promoted, which is
-        // what the old policy did too — the state that decides is the world's,
-        // not a memo of what we did last.
-        //
-        // `SurfaceTarget` is this behaviour's own write target, read back
-        // rather than declared in `reads:`: declaring it would put our own
-        // writes into our own wake set.
-        if (ctx.world.get(e, SurfaceTarget)?.target === "gpu") continue;
-        ctx.set(e, SurfaceTarget, { target: "gpu" });
-        state.owned.add(e);
+      if (grabbed.size > 0) {
+        // A grab inside the window cancels the pending demotion — for the whole set.
+        state.settleAt = null;
+        // THE GESTURE SET: the grabbed cards, and — unless every grabbed instance opted
+        // out — every dom card of this behaviour in the world. Walked while grabbed and
+        // written change-only, so a held drag writes nothing after its first frame.
+        let board = false;
+        for (const e of grabbed) {
+          if (cellOf(ctx, e)?.promoteBoard !== false) {
+            board = true;
+            break;
+          }
+        }
+        const set = new Set<Entity>(grabbed);
+        if (board) {
+          ctx.query({ all: [domAtRest] }).each((e) => {
+            if (kindOf(ctx, e) === "dom") set.add(e);
+          });
+        }
+        for (const e of set) {
+          // OWN ONLY WHAT THIS BEHAVIOUR CHANGED (A3b fix 1) — the old policy's rule,
+          // restored, now for the set: a card a host put on the GPU by hand (the composited
+          // rig's static probe) is not this behaviour's to bring back, nor to pause. Reading
+          // the target rather than consulting `owned` keeps the write CHANGE-ONLY: a
+          // `ctx.set` per card per frame would stamp `SurfaceTarget` through the whole drag
+          // and wake every observer on it. `SurfaceTarget` is this behaviour's own write
+          // target, read back rather than declared in `reads:`: declaring it would put our
+          // own writes into our own wake set.
+          if (ctx.world.get(e, SurfaceTarget)?.target !== "gpu") {
+            ctx.set(e, SurfaceTarget, { target: "gpu" });
+            state.owned.add(e);
+          }
+          // THE STILL: one picture at promotion, held for the gesture (DomRender's still
+          // rule copies a paused card once when the world names its destination). Only a
+          // card this behaviour promoted, only once per gesture, and only if its instance
+          // did not opt out.
+          if (state.owned.has(e) && !state.stills.has(e) && cellOf(ctx, e)?.stillWhileGrabbed !== false) {
+            const asked = ctx.world.get(e, RequestedDemand);
+            ctx.set(e, RequestedDemand, {
+              mode: "paused",
+              fpsBucket: asked?.fpsBucket ?? 60,
+              interactive: asked?.interactive ?? false,
+            });
+            state.stills.add(e);
+          }
+        }
+        return;
       }
 
+      if (state.owned.size === 0) return;
+      if (state.settleAt === null) {
+        // The window opens at the LAST release, gesture-wide, on the longest settle any
+        // owned instance asks for.
+        let settle = 0;
+        for (const e of state.owned) settle = Math.max(settle, settleMsOf(ctx, e));
+        state.settleAt = clock + settle;
+        return;
+      }
+      if (clock < state.settleAt) return;
       for (const e of state.owned) {
-        if (grabbed.has(e) || state.settling.has(e)) continue;
-        state.settling.set(e, clock + settleMsOf(ctx, e));
-      }
-
-      if (state.settling.size === 0) return;
-      for (const [e, due] of state.settling) {
-        if (clock < due) continue;
-        state.settling.delete(e);
-        state.owned.delete(e);
         // A card that despawned mid-settle needs no demotion: its components
         // died with it, and writing one would throw on a dead handle.
-        if (ctx.world.isAlive(e)) ctx.set(e, SurfaceTarget, { target: "dom" });
+        if (!ctx.world.isAlive(e)) continue;
+        ctx.set(e, SurfaceTarget, { target: "dom" });
+        if (state.stills.has(e)) {
+          const cell = cellOf(ctx, e);
+          projectDemand(ctx, e, "live", {
+            requestedFps: cell?.requestedFps ?? (domAtRest.defaults.requestedFps as number),
+            interactive: cell?.interactive ?? (domAtRest.defaults.interactive as boolean),
+          });
+        }
       }
+      state.owned.clear();
+      state.stills.clear();
+      state.settleAt = null;
     },
     dispose(e, ctx) {
       const state = settleState(ctx);
       state.owned.delete(e);
-      state.settling.delete(e);
+      state.stills.delete(e);
     },
   },
 });
+
+/** The instance's cell — the truth an `update` writes; nothing here caches a copy of it. */
+interface DomAtRestCell {
+  readonly settleMs?: number;
+  readonly promoteBoard?: boolean;
+  readonly stillWhileGrabbed?: boolean;
+  readonly requestedFps?: number;
+  readonly interactive?: boolean;
+}
+function cellOf(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity): DomAtRestCell | undefined {
+  return ctx.world.get(e, domAtRest.component) as DomAtRestCell | undefined;
+}
 
 /**
  * The instance's own `settleMs`, read from its cell rather than cached beside
@@ -311,8 +383,7 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
  * thing that can disagree with it.
  */
 function settleMsOf(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity): number {
-  const cell = ctx.world.get(e, domAtRest.component);
-  const held = cell?.settleMs;
+  const held = cellOf(ctx, e)?.settleMs;
   return typeof held === "number" ? held : (domAtRest.defaults.settleMs as number);
 }
 
