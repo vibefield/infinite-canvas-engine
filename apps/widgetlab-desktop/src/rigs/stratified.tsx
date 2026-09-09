@@ -356,10 +356,14 @@ function mountRig(): StratifiedRig {
     async idle(ms) {
       const submits0 = submits();
       const redraws0 = redraws();
+      // What woke the builder during the window, by reason — a red idle names its writer.
+      const w0: Record<string, number> = { ...(handle?.field.wakes() ?? {}) };
       const t0 = performance.now();
       let n = 0;
       while (performance.now() - t0 < ms) { await frame(); n++; }
-      return { frames: n, submits: submits() - submits0, redraws: redraws() - redraws0 };
+      const wakes: Record<string, number> = {};
+      for (const [k, v] of Object.entries(handle?.field.wakes() ?? {})) { const d = v - (w0[k] ?? 0); if (d > 0) wakes[k] = d; }
+      return { frames: n, submits: submits() - submits0, redraws: redraws() - redraws0, wakes };
     },
     async nudge() {
       const submits0 = submits();
