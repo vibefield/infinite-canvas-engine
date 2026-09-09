@@ -34,8 +34,10 @@
  * with knobs for what the source suggests should and should not matter:
  *   n, w×h (CSS px; texels = ×dpr), content (flat | stress | text), anim (none | compositor),
  *   mode: copy (one call per card) | wrapper (cards inside page-sized wrappers, one call per
- *   wrapper) | own (one private destination texture per card) | draw2d (drawElementImage into
- *   the source canvas's 2D context, then ONE copyExternalImageToTexture of the canvas).
+ *   wrapper; `wrapCap` cards per wrapper) | screen (one viewport-sized wrapper) | own (one
+ *   private destination texture per card) | draw2d (drawElementImage into the source canvas's
+ *   2D context, then ONE copyExternalImageToTexture of the canvas); `budget`: at most that many
+ *   copies per frame, round-robin (mode copy).
  * Per run: frames, fps, copies/s, main-thread ms inside the copy loop per frame and per copy.
  */
 const $log = document.getElementById("log");
@@ -48,6 +50,7 @@ const MAX_LAYERS = 24;
 
 let device = null, queue = null, pages = null, own = [], ctx2d = null;
 let cards = [], wrappers = [], cfg = null, slots = [], wrapOrigin = [];
+let cursor = 0; // the copy budget's round-robin position
 let gpuErrors = 0;
 
 async function boot() {
@@ -183,11 +186,15 @@ function copyFrame() {
     }
     queue.copyExternalImageToTexture({ source: src }, { texture: pages, origin: { x: 0, y: 0, z: 0 } }, [PAGE, PAGE, 1]);
   } else {
-    for (let i = 0; i < cards.length; i++) {
+    // `budget`: at most that many copies per frame, round-robin over the cards (a card's cadence = budget × fps / n)
+    const k = cfg.budget && cfg.budget > 0 ? Math.min(cfg.budget, cards.length) : cards.length;
+    for (let j = 0; j < k; j++) {
+      const i = (cursor + j) % cards.length;
       const s = slots[i];
       queue.copyElementImageToTexture({ source: cards[i] }, { destination: { texture: pages, origin: { x: s.x, y: s.y, z: s.z } } });
       issued += 1;
     }
+    cursor = (cursor + k) % cards.length;
   }
   return issued;
 }

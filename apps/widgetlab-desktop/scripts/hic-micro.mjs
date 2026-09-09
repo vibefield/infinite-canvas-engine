@@ -18,6 +18,9 @@
  *
  * Run: `pnpm --filter widgetlab-desktop hic:micro`
  *   MICRO_MS=2000  MICRO_OUT=<dir> (default screenshots/hic-micro/)  MICRO_ONLY=<regex on config name>
+ *   MICRO_ELECTRON=<electron binary>  MICRO_APP=<dir with a main that opens a window> — run the same page
+ *   on another Electron (a Chromium comparison); MICRO_SWITCHES="name=value;…" reaches such a main as
+ *   HIC_SWITCHES (e.g. `disable-features=AllowAcceleratedTexElement`, the unaccelerated element path).
  */
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -36,6 +39,9 @@ const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : "—");
 const f2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : "—");
 const f3 = (x) => (Number.isFinite(x) ? x.toFixed(3) : "—");
 const CPU_SCALE = 10;
+const ELECTRON = process.env.MICRO_ELECTRON ?? require("electron");
+const LAUNCH_DIR = process.env.MICRO_APP ? path.resolve(process.env.MICRO_APP) : appDir;
+const SWITCHES = process.env.MICRO_SWITCHES ?? "";
 
 const S = { n: 192, w: 150, h: 100, content: "stress", anim: "none", mode: "copy" };
 const CONFIGS = [
@@ -53,6 +59,8 @@ const CONFIGS = [
   { name: "wrapper 192 flat", ...S, mode: "wrapper", content: "flat" },
   { name: "draw2d 192 @150x100 (N draws + 1 copy)", ...S, mode: "draw2d" },
   { name: "draw2d 192 +anim", ...S, mode: "draw2d", anim: "compositor" },
+  { name: "draw2d 192 flat", ...S, mode: "draw2d", content: "flat" },
+  { name: "draw2d 384 @150x100", ...S, n: 384, mode: "draw2d" },
   { name: "n 24 @150x100", ...S, n: 24 },
   { name: "n 96 @150x100", ...S, n: 96 },
   { name: "n 384 @150x100", ...S, n: 384 },
@@ -67,9 +75,17 @@ const CONFIGS = [
   { name: "screen 384 (one viewport copy)", ...S, n: 384, mode: "screen" },
   { name: "screen 192 +anim", ...S, mode: "screen", anim: "compositor" },
   { name: "wrapcap 192 ×13 @300x200", ...S, w: 300, h: 200, mode: "wrapper", wrapCap: 6 },
+  { name: "budget 192 ×8 per frame", ...S, budget: 8 },
+  { name: "budget 192 ×16 per frame", ...S, budget: 16 },
+  { name: "budget 192 ×20 per frame", ...S, budget: 20 },
+  { name: "budget 192 ×24 per frame", ...S, budget: 24 },
+  { name: "budget 192 ×32 per frame", ...S, budget: 32 },
+  { name: "budget 384 ×16 per frame", ...S, n: 384, budget: 16 },
+  { name: "budget 384 ×16 +anim", ...S, n: 384, budget: 16, anim: "compositor" },
 ];
 
-const app = await _electron.launch({ executablePath: require("electron"), args: [appDir], env: { ...process.env, ICE_URL: "", ICE_MESH: "off", ICE_WINDOWS: "1" } });
+const app = await _electron.launch({ executablePath: ELECTRON, args: [LAUNCH_DIR], env: { ...process.env, ICE_URL: "", ICE_MESH: "off", ICE_WINDOWS: "1", HIC_SWITCHES: SWITCHES } });
+log(`electron ${ELECTRON}${SWITCHES ? ` · switches ${SWITCHES}` : ""} · main ${LAUNCH_DIR}`);
 const results = [];
 try {
   const page = await app.firstWindow();
@@ -78,7 +94,8 @@ try {
   await page.goto(`file://${path.join(appDir, "hic-micro.html")}`);
   await page.waitForFunction(() => window.__micro !== undefined, null, { timeout: 30_000 });
   await page.evaluate(() => window.__micro.ready);
-  const host = await page.evaluate(() => window.__micro.host());
+  const features = await app.evaluate(({ app: a }) => a.getGPUFeatureStatus());
+  const host = { ...(await page.evaluate(() => window.__micro.host())), electron: ELECTRON, switches: SWITCHES, gpu: { graphite: features.skia_graphite, rasterization: features.rasterization, compositing: features.gpu_compositing, webgpu: features.webgpu } };
   log(`host: ${JSON.stringify(host)}`);
   const metrics = async () => app.evaluate(({ app: a }) => a.getAppMetrics().map((m) => ({ type: m.type, cpu: m.cpu.percentCPUUsage })));
   const fold = (ms) => { const o = { renderer: 0, gpu: 0 }; for (const m of ms) { if (m.type === "Tab") o.renderer += m.cpu * CPU_SCALE; if (m.type === "GPU") o.gpu += m.cpu * CPU_SCALE; } return o; };
@@ -97,9 +114,10 @@ try {
     const cardsPerS = c.mode === "wrapper" || c.mode === "draw2d" ? cards * w.fps : w.copiesPerS;
     const gpuMsPerCard = (cpu.gpu / 100) * 1000 / cardsPerS;
     const gpuMsPerCall = (cpu.gpu / 100) * 1000 / w.copiesPerS;
-    const row = { ...c, board, window: w, cpu, drainMs: drain, ink: inkA, inkLast: inkZ, cardsPerS, gpuMsPerCard, gpuMsPerCall };
+    const cadence = cardsPerS / cards; // copies per card per second — the animation rate a card gets
+    const row = { ...c, board, window: w, cpu, drainMs: drain, ink: inkA, inkLast: inkZ, cardsPerS, cadence, gpuMsPerCard, gpuMsPerCall };
     results.push(row);
-    log(`${c.name.padEnd(42)} texels ${String(board.texels).padStart(7)} layers ${String(board.layers).padStart(2)} · ${f1(w.fps).padStart(5)} fps · calls/s ${f1(w.copiesPerS).padStart(7)} cards/s ${f1(cardsPerS).padStart(7)} · main ${f3(w.mainMsPerCopy)} ms/call ${f2(w.copyMsPerFrame)} ms/frame · cpu renderer ${f1(cpu.renderer)}% gpu ${f1(cpu.gpu)}% → gpu ${f3(gpuMsPerCall)} ms/call ${f3(gpuMsPerCard)} ms/card · drain ${f1(drain)} ms · ink ${inkA ? `${inkA.ink}/${inkA.total}` : "—"} last ${inkZ ? `${inkZ.ink}/${inkZ.total}` : "—"} · errors ${w.gpuErrors}`);
+    log(`${c.name.padEnd(42)} texels ${String(board.texels).padStart(7)} layers ${String(board.layers).padStart(2)} · ${f1(w.fps).padStart(5)} fps · calls/s ${f1(w.copiesPerS).padStart(7)} cards/s ${f1(cardsPerS).padStart(7)} (${f1(cadence)}/card/s) · main ${f3(w.mainMsPerCopy)} ms/call ${f2(w.copyMsPerFrame)} ms/frame · cpu renderer ${f1(cpu.renderer)}% gpu ${f1(cpu.gpu)}% → gpu ${f3(gpuMsPerCall)} ms/call ${f3(gpuMsPerCard)} ms/card · drain ${f1(drain)} ms · ink ${inkA ? `${inkA.ink}/${inkA.total}` : "—"} last ${inkZ ? `${inkZ.ink}/${inkZ.total}` : "—"} · errors ${w.gpuErrors}`);
   }
   fs.writeFileSync(path.join(outDir, `micro-${new Date().toISOString().replace(/[:.]/g, "-")}.json`), JSON.stringify({ host, ms: MS, results }, null, 1));
 } finally {
