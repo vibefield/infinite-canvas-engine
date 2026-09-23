@@ -1,24 +1,35 @@
 // The card frame's parameter sheet — a STYLE, not a card. Geometry that belongs
-// to one card (centre, content size) arrives at resolve() time; everything here
-// is what all cards of a style share. (Lineage: research/sdf-card/src/params.js,
-// whose numbers came from a least-squares fit against the reference image.)
+// to one card (centre, content size, its own radius) arrives at resolve() time;
+// everything here is what all cards of a style share.
+//
+// THE SOCKET (2026-09-23, James's direction — the shell turned inside out):
 //
 //   frame = outer \ inner
-//   outer = rounded rect
-//   inner = rounded rect with a rounded-rect NOTCH cut flush into each corner
+//   inner = the content's own rounded rect — never cut, never covered
+//   outer = the content grown by `thickness` on every side, its corner
+//           concentric (radius + thickness)
 //
-// Corners are TL TR BR BL. Notch height and the fillet against the horizontal
-// edge were authored constants in the reference; width and the vertical fillet
-// are what vary (BR's wide notch is the shelf).
+// The ring between them is the space the card RISES into: the lift grows the
+// content by `thickness`, so a lifted card is exactly the socket's outer
+// silhouette and the ring is gone while the card moves (choreography.ts). The
+// selection chrome and the lift's footprint are one shape, so a selected card
+// never claims more of the board than a lifted one does.
+//
+// A control (the close, the lock) cannot live inside a ring the width of the
+// lift — a 26 px button in an 8 px ring — so a style that wants them carries
+// EARS: a lobe of chrome per corner, OUTSIDE the content, tangent to its
+// corner arc, the control at its centre with `clearance` of chrome all round.
+// The product's socket has none (DESIGN.md §8's card anatomy carries no
+// corner controls); `EARS` is the style with them, for the lab and the rigs
+// that exercise the part channel. (Lineage: research/sdf-card/src/params.js's
+// notched frame, whose corner bays bit into the content — retired here.)
 
 import { LINES } from "../../theme";
 
 export type Corner4 = readonly [number, number, number, number];
 
 export interface ButtonSpec {
-  /** Centre inset from the OUTER corner, in card units. */
-  readonly insetX: number;
-  readonly insetY: number;
+  /** The control's radius (half the spec's diameter). */
   readonly radius: number;
   readonly glyphW: number;
   readonly glyphR: number;
@@ -26,174 +37,101 @@ export interface ButtonSpec {
 
 export interface FrameStyle {
   readonly name: string;
-  /** Border thickness — constant on all four edges. */
+  /** The socket ring's width — and the lift's rise — constant on all four edges. */
   readonly thickness: number;
-  readonly nw: Corner4;
-  readonly nh: Corner4;
-  /** Concave fillet radius of the notch. */
-  readonly rho: Corner4;
-  /** Convex fillet against the horizontal / vertical inner edge. */
-  readonly rfH: Corner4;
-  readonly rfV: Corner4;
-  /**
-   * Default CONTENT corner radius per corner, used when a card does not carry
-   * its own. The outer radius is always content radius + thickness — the
-   * reference fit already satisfies that (44.25 + 23.06 = 67.31).
-   */
-  readonly baseR: Corner4;
-  /**
-   * The REVEALED outer corner radius. Absent = concentric with the content
-   * (content radius + thickness), which is right when the corner is a plain
-   * rounded corner. A composed corner sets it to the ear's radius instead — the
-   * button's centre is the arc's centre, so the chrome around the button is a
-   * ring of one width (see `composeStyle`).
-   */
-  readonly outerR?: number;
+  /** The content's resting corner radius when a card carries none (`--vf-radius-card`). */
+  readonly radius: number;
+  /** Control DIAMETER at the ears; 0 = no ears and no controls. */
+  readonly control: number;
+  /** Control edge → the ear's edge, and → the content's edge: the ring of chrome around a control. */
+  readonly clearance: number;
+  /** The concave blend where an ear meets the ring's outer edge. */
+  readonly fillet: number;
   readonly btn: ButtonSpec;
 }
 
-/** The fit, in reference pixels (a 1942.84 × 939.52 card). */
-export const REFERENCE: FrameStyle = {
-  name: "reference fit",
-  thickness: 23.06,
-  nw: [100.91, 93.11, 515.77, 100.92],
-  nh: [92.19, 92.51, 92.26, 92.31],
-  rho: [56.21, 53.82, 56.30, 56.41],
-  rfH: [33.30, 33.00, 33.47, 33.36],
-  rfV: [32.51, 27.67, 41.60, 32.36],
-  baseR: [44.25, 44.25, 44.25, 44.25],
-  btn: { insetX: 62.57, insetY: 64.07, radius: 35.20, glyphW: 25.0, glyphR: 2.5 },
-};
-
-/** Same card, authored numbers. Visually identical; what one would ship at that scale. */
-export const CLEAN: FrameStyle = {
-  ...REFERENCE, name: "clean",
-  thickness: 23,
-  nw: [101, 93, 516, 101], nh: [92, 92, 92, 92], rho: [56, 54, 56, 56],
-  rfH: [33, 33, 33, 33], rfV: [33, 28, 42, 33], baseR: [44, 44, 44, 44],
-};
-
-/** No notches: a constant-width rounded frame. */
-export const PLAIN: FrameStyle = { ...REFERENCE, name: "plain", nw: [0, 0, 0, 0], nh: [0, 0, 0, 0] };
-
-/** Reference card size, for tests and the compare view. */
-export const REFERENCE_CARD = { centre: [1000.147, 532.194] as const, outerHalf: [971.42, 469.76] as const };
-
-/** Uniformly scale a style — every number is a length, so this is exact. */
-export function scaleStyle(s: FrameStyle, k: number, name = `${s.name} ×${k}`): FrameStyle {
-  const c = (v: Corner4): Corner4 => [v[0] * k, v[1] * k, v[2] * k, v[3] * k];
-  return {
-    name, thickness: s.thickness * k,
-    nw: c(s.nw), nh: c(s.nh), rho: c(s.rho), rfH: c(s.rfH), rfV: c(s.rfV), baseR: c(s.baseR),
-    ...(s.outerR === undefined ? {} : { outerR: s.outerR * k }),
-    btn: { insetX: s.btn.insetX * k, insetY: s.btn.insetY * k, radius: s.btn.radius * k, glyphW: s.btn.glyphW * k, glyphR: s.btn.glyphR * k },
-  };
-}
-
-/**
- * The corner COMPOSITION — how a corner that houses a control is built, in the
- * order a designer would draw it. The control is the centre of everything:
- *
- *   ear  = control/2 + clearance      the plate's outer corner arc, centred ON the control
- *   bay  = control/2 + bayClearance   the arc cut into the card, centred on the control too
- *   inset = ear                       so the button clears the outer edge by `clearance`
- *                                     in EVERY direction — along both edges and on the diagonal
- *   fillet = ear − thickness          the concave turn where the card's edge enters the bay,
- *                                     tangent to the bay's arc (no straight wall between them)
- *   notch  = ear + bay − thickness    the rounded-rect notch that realises the bay
- *
- * A control, a ring of chrome `clearance` wide, and the card shaped around it —
- * which is the reference image (its fit has the button 5 px off the arc's
- * centre and the bay 0.83× the ear; the composition makes both exact) and the
- * card-redesign v3 shell (control 26 · clearance 8 · fillet 10 · card 22). The
- * whole corner follows from three numbers; nothing can collide.
- */
-export interface CornerSpec {
+/** A socket, as a designer states it — the three numbers, and the controls if any. */
+export interface SocketSpec {
   readonly name?: string;
-  /** The plate band, all four edges. Must not exceed `ear` (the fillet would go negative). */
+  /** The ring = the lift's rise, CSS px at zoom 1. */
   readonly thickness: number;
-  /** Control DIAMETER (the v3 token: 26 at card scale; §8's 40 is window chrome). */
-  readonly control: number;
-  /** Control edge → the plate's outer edge, every direction. */
-  readonly clearance: number;
-  /** Control edge → the bay's arc; default = `clearance` (a uniform ring). */
-  readonly bayClearance?: number;
-  /** The concave fillet; default = tangent (`ear − thickness`). Smaller leaves a straight wall. */
-  readonly fillet?: number;
-  /** BR: extra straight run — the capsule that holds more controls. 0 = a round bay like the others. */
-  readonly shelf?: number;
-  /** The card's RESTING radius (`--vf-radius-card`); the content's corner where no bay is cut. */
+  /** The card's RESTING radius (`--vf-radius-card`). */
   readonly radius: number;
+  /** Control diameter (the v3 token: 26 at card scale); absent or 0 = no ears. */
+  readonly control?: number;
+  /** Chrome around a control, every direction; default 8 (v3's bay clearance). */
+  readonly clearance?: number;
+  /** The ear's blend into the ring; default = `clearance`. */
+  readonly fillet?: number;
 }
 
-export function composeStyle(c: CornerSpec): FrameStyle {
-  const rb = c.control / 2;
-  const ear = rb + c.clearance;
-  const bay = rb + (c.bayClearance ?? c.clearance);
-  const fillet = c.fillet ?? ear - c.thickness;
-  const notch = ear + bay - c.thickness;
-  const shelf = c.shelf ?? 0;
+export function socketStyle(s: SocketSpec): FrameStyle {
+  const control = Math.max(s.control ?? 0, 0);
+  const clearance = s.clearance ?? 8;
+  const rb = control / 2;
   return {
-    name: c.name ?? "composed",
-    thickness: c.thickness,
-    outerR: ear,
-    nw: [notch, notch, notch + shelf, notch],
-    nh: [notch, notch, notch, notch],
-    rho: [bay, bay, bay, bay],
-    rfH: [fillet, fillet, fillet, fillet],
-    rfV: [fillet, fillet, fillet, fillet],
-    baseR: [c.radius, c.radius, c.radius, c.radius],
+    name: s.name ?? "socket",
+    thickness: s.thickness,
+    radius: s.radius,
+    control,
+    clearance,
+    fillet: s.fillet ?? clearance,
     // the × is 44% of the button across its box (the reference's 30/70), stroke 2 px at a 26 px control
-    btn: { insetX: ear, insetY: ear, radius: rb, glyphW: rb * 0.72, glyphR: rb * 0.077 },
+    btn: { radius: rb, glyphW: rb * 0.72, glyphR: rb * 0.077 },
   };
 }
 
+/** An ear's radius: the control plus its ring of chrome; 0 without controls. */
+export const earOf = (s: FrameStyle): number => (s.control > 0 ? s.control / 2 + s.clearance : 0);
+
 /**
- * The PRODUCT corner, CSS px at zoom 1: DESIGN.md's card radius, the v3 shell's
- * control and clearance, and a plate the reference's proportion of the ear
- * (23 : 124 ≈ 0.19 → 8 of 42). NOT a pure scale of the reference — at the
- * product's card size its 12 px button is under the pointer floor.
+ * How far an ear reaches beyond the content rect, along an edge: the control's
+ * centre sits on the corner's diagonal, `clearance` clear of the content's arc,
+ * so its per-axis offset from the arc's centre is (radius + control/2 +
+ * clearance)/√2, and the lobe extends `ear` past it. Negative when a large
+ * radius tucks the whole ear inside the corner's pocket.
  */
-export const PRODUCT_CORNER: CornerSpec = {
-  name: "product",
-  thickness: 8,
-  control: 26,
-  clearance: 8,
-  radius: 22,
-};
-export const PRODUCT: FrameStyle = composeStyle(PRODUCT_CORNER);
+export function earReachOf(s: FrameStyle, radius: number = s.radius): number {
+  if (s.control <= 0) return 0;
+  return (radius + s.control / 2 + s.clearance) / Math.SQRT2 - radius + earOf(s);
+}
 
-export const STYLES = { reference: REFERENCE, clean: CLEAN, plain: PLAIN, product: PRODUCT } as const;
+/** The farthest the chrome extends beyond the content rect at rest: the ring, or an ear past it. */
+export const reachOf = (s: FrameStyle, radius: number = s.radius): number => Math.max(s.thickness, earReachOf(s, radius));
 
 /**
- * The constraints that keep a style from self-intersecting (README §8 of the
- * study). Returns the violations, empty when valid.
+ * The PRODUCT socket, CSS px at zoom 1: DESIGN.md's card radius and the
+ * reference's plate proportion (8 of the old 42 px ear), which is also the
+ * lift's rise — a card at rest and the same card held differ by this ring.
+ */
+export const PRODUCT_SOCKET: SocketSpec = { name: "product", thickness: 8, radius: 22 };
+export const PRODUCT: FrameStyle = socketStyle(PRODUCT_SOCKET);
+
+/** The socket with the two controls in ears — the v3 token (26) and clearance (8). */
+export const EARS_SOCKET: SocketSpec = { ...PRODUCT_SOCKET, name: "ears", control: 26, clearance: 8 };
+export const EARS: FrameStyle = socketStyle(EARS_SOCKET);
+
+export const STYLES = { product: PRODUCT, ears: EARS } as const;
+
+/**
+ * The constraints that keep a style drawable. Returns the violations, empty
+ * when valid.
  */
 export function styleViolations(s: FrameStyle, contentHalf: readonly [number, number], lines: { readonly ring: number } = LINES): string[] {
   const out: string[] = [];
   const [hx, hy] = contentHalf;
-  const eps = 1e-6;   // a composed corner is tangent by construction: rf + rho == nw to the last bit
-  if (!(s.thickness < Math.min(hx, hy))) out.push(`thickness ${s.thickness} ≥ min content half ${Math.min(hx, hy)}`);
-  for (const i of [0, 1, 2, 3] as const) {
-    if (s.nw[i] <= 0 || s.nh[i] <= 0) continue;
-    if (s.nw[i] > hx) out.push(`corner ${i}: nw ${s.nw[i]} > content half ${hx}`);
-    if (s.nh[i] > hy) out.push(`corner ${i}: nh ${s.nh[i]} > content half ${hy}`);
-    if (s.rfH[i] + s.rho[i] > s.nh[i] + eps) out.push(`corner ${i}: rfH + rho ${s.rfH[i] + s.rho[i]} > nh ${s.nh[i]}`);
-    if (s.rfV[i] + s.rho[i] > s.nw[i] + eps) out.push(`corner ${i}: rfV + rho ${s.rfV[i] + s.rho[i]} > nw ${s.nw[i]}`);
+  if (!(s.thickness > 0)) out.push(`thickness ${s.thickness} must be positive: the ring is the lift's rise`);
+  if (s.thickness < lines.ring) out.push(`thickness ${s.thickness} is under the selection ring's width ${lines.ring}: the ring would sit on the content`);
+  if (!(s.radius >= 0)) out.push(`radius ${s.radius} must not be negative`);
+  if (s.radius > Math.min(hx, hy)) out.push(`radius ${s.radius} exceeds the content's half extent ${Math.min(hx, hy)}`);
+  if (s.control > 0) {
+    if (s.clearance < 0) out.push(`clearance ${s.clearance} must not be negative`);
+    if (s.control / 2 < 12) out.push(`control radius ${s.control / 2} is under the 12 px pointer floor`);
+    // two ears on one edge must not meet: their centres are 2·(half − radius + offset) apart, each `ear` wide
+    const off = (s.radius + s.control / 2 + s.clearance) / Math.SQRT2;
+    const ear = earOf(s);
+    if (hx - s.radius + off < ear) out.push(`the top ears merge: half width ${hx} is under ${ear - off + s.radius}`);
+    if (hy - s.radius + off < ear) out.push(`the left ears merge: half height ${hy} is under ${ear - off + s.radius}`);
   }
-  if (s.nw[0] + s.nw[1] >= 2 * hx) out.push(`top notches merge: ${s.nw[0]} + ${s.nw[1]} ≥ ${2 * hx}`);
-  if (s.nw[3] + s.nw[2] >= 2 * hx) out.push(`bottom notches merge: ${s.nw[3]} + ${s.nw[2]} ≥ ${2 * hx}`);
-  // The button must clear the OUTER edge by at least the §7 selection ring's
-  // width — along both edges and across the corner arc. (The old product
-  // style failed this: card radius 22 + 3.5 put the arc's centre 10 px from
-  // the button's, leaving 0.65 px on the diagonal, and the 1.5 px ring cut
-  // straight through the button.)
-  const Ro = s.outerR ?? s.baseR[0] + s.thickness;
-  const { insetX, insetY, radius } = s.btn;
-  const straight = Math.min(insetX, insetY) - radius;
-  const arc = Ro - Math.hypot(Math.max(Ro - insetX, 0), Math.max(Ro - insetY, 0)) - radius;
-  const need = lines.ring;
-  if (straight < need - eps) out.push(`button within the ring's width of the outer edge: ${straight.toFixed(2)} < ${need}`);
-  if (arc < need - eps) out.push(`button within the ring's width of the outer corner arc: ${arc.toFixed(2)} < ${need} (outer radius ${Ro}, inset ${insetX}×${insetY})`);
   return out;
 }

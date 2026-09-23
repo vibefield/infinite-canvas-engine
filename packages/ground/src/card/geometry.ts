@@ -43,9 +43,12 @@ export interface Motion {
    */
   readonly held: number;
   /**
-   * Scale about the centre. 1 at rest — an idle card IS its rect. Lift belongs
-   * to the host's lift driver (ChromeSettings.liftScale), fed in here so the
-   * frame cannot disagree with the DOM host's transform.
+   * Scale about the centre. 1 at rest — an idle card IS its rect. The host's lift
+   * driver's number (ChromeSettings.liftScale), fed in here for the SHELL, which
+   * scales by it. A pack may lift another way — VibeField's socket (packs/vf-frame)
+   * rises by its ring's thickness and ignores this — and cannot disagree with the
+   * DOM host either way: the DOM boundary writes the host's transform from the
+   * resolved inner box (`ih`), never from a number of its own.
    */
   readonly lift: number;
   /** A hover fact's presence, 0..1 — 0 until ICE has one. The shell ignores it (D6); a pack may not. */

@@ -378,9 +378,9 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
 
   const liftScale = (): number => opts.liftScale ?? world.getResource(ChromeSettings)?.liftScale ?? 1;
 
-  /** The cull margin, world units: the lifted shadow's reach or the field's, whichever is wider (a band's thickness rides the program's source). */
+  /** The cull margin, world units: the lifted shadow's reach or the field's, whichever is wider (the chrome's own reach beyond the content rides the program's `reach`, or its source's band). */
   const marginOf = (config: FieldConfig, zoom: number): number => {
-    const shadow = material.shadow.lifted.sigma * 3 + material.shadow.lifted.offset + program.source(0, 0, 1, radius).hx;
+    const shadow = material.shadow.lifted.sigma * 3 + material.shadow.lifted.offset + (program.reach?.(radius) ?? program.source(0, 0, 1, radius).hx);
     const reach = fieldReachPx(config.reach) / zoom;
     return Math.max(shadow, reach);
   };

@@ -1,22 +1,21 @@
-// The corner composition, rendered: one selected medium card and one small card,
-// close-up, dark and light, for a list of corner specs — the eyes judge the
-// composition, the harness only draws it. The first entry is the OLD product
-// style (raw numbers) as the "before".
+// The socket, rendered: one selected medium card and one small card, close-up,
+// dark and light, for a list of socket specs (sheet.ts `SocketSpec`) — the eyes
+// judge the frame, the harness only draws it. The shipped styles first: the
+// product's socket, then the one with ears.
 //   node test/harness/corner.mjs            → results/corner-<name>-{medium,small}.png
-//   node test/harness/corner.mjs '[{"name":"x","thickness":8,"control":26,"clearance":8,"radius":22}]'
+//   node test/harness/corner.mjs '[{"name":"x","thickness":10,"radius":22,"control":26,"clearance":8}]'
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
-import { composeStyle, PRODUCT_CORNER } from "@ice/ground/packs";
-import { cornerTweaksOf, styleTweaksOf } from "../src/params.ts";
+import { EARS_SOCKET, PRODUCT_SOCKET, socketStyle } from "@ice/ground/packs";
+import { styleTweaksOf } from "../src/params.ts";
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");   // the server root is the REPO: the app's dist and the package's oracle results are both under it
 mkdirSync(resolve(app, "results"), { recursive: true });
-const OLD = { base: "product", corner: cornerTweaksOf(PRODUCT_CORNER), thickness: 3.5, notchW: 30, shelfW: 96, notchH: 28, rho: 12, rfH: 7, rfV: 7, rfVShelf: 9, baseR: 22, outerR: 0, btnInset: 15, btnRadius: 10, btnGlyphW: 7, btnGlyphR: 0.9 };
-const specs = process.argv[2] ? JSON.parse(process.argv[2]) : [PRODUCT_CORNER];
-const tweaks = [["old", OLD], ...specs.map((c) => [c.name ?? "spec", styleTweaksOf(composeStyle(c), "product", cornerTweaksOf(c))])];
+const specs = process.argv[2] ? JSON.parse(process.argv[2]) : [PRODUCT_SOCKET, EARS_SOCKET];
+const tweaks = specs.map((c) => [c.name ?? "spec", styleTweaksOf(socketStyle(c), "product")]);
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
 const chrome = await launchChrome({ port: 9487, headless: !process.env.GROUND_HEADED });
@@ -42,8 +41,9 @@ try {
       await q(`window.__ground.setScene(${JSON.stringify(scene)}); for (const el of document.querySelectorAll('#legend')) el.style.visibility = 'hidden';`);
       await q(`window.__ground.params.style = ${JSON.stringify(t)}; window.__ground.apply(); window.__ground.panel.refresh();`);
       await sleep(700);   // the reveal spring
-      const close = await q("(() => { const g = window.__ground, st = g.state, G = g.cards[0].geometry; return [(G.closeC[0] - st.camX) * st.zoom, (G.closeC[1] - st.camY) * st.zoom]; })()");
-      await mouse("mouseMoved", close[0], close[1]); await sleep(450);
+      // hover the close button when the style has one (the ears); the product socket has nothing to hover
+      const close = await q("(() => { const g = window.__ground, st = g.state, G = g.cards[0].geometry; return G.closeR > 0.05 ? [(G.closeC[0] - st.camX) * st.zoom, (G.closeC[1] - st.camY) * st.zoom] : null; })()");
+      if (close) { await mouse("mouseMoved", close[0], close[1]); await sleep(450); }
       await shot(`${name}-${s.tag}`);
       await mouse("mouseMoved", 20, 780); await sleep(200);
       const v = await q(`(() => { const g = window.__ground; return g.hitAt ? (document.querySelector('#panel .p-note:not([hidden])')?.textContent ?? '') : ''; })()`);

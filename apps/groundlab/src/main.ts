@@ -18,7 +18,7 @@ import { CONTENT_CHOICES, type CameraState, type CardMotion, type ContentChoice,
 // The product's look is in the PACKS (design-014): the lab registers all three — the needle and the cutting mat as grid programs, VibeField's frame as the card program.
 import { type FrameStyle, type Geometry, HERO_MATRIX, type Hit, MAT_GLYPH, type PlateName, STYLES, type VfFramePack, cuttingMat, matLightOf, matPassOf, needleGlyph, overlaps, pick, secondOrder, stepSecondOrder, styleViolations, tilted, vfFrame, withMat } from "@ice/ground/packs";
 import { PRODUCT_GRID, THEMES, surface, type SurfaceName } from "@ice/ground/oracle/fixtures/vf-theme";
-import { buildStyle, COLOR_ROLES, composeTweaks, defaultHeatTweaks, defaultMatTweaks, defaultNavTweaks, defaultNightTweaks, defaultParams, defaultPortalTweaks, fitBand, flightTuning, matConfigOf, type Params, restoreParams, snapshotParams, styleTweaksOf, themeColor, themeWith } from "./params";
+import { buildStyle, COLOR_ROLES, defaultHeatTweaks, defaultMatTweaks, defaultNavTweaks, defaultNightTweaks, defaultParams, defaultPortalTweaks, fitBand, flightTuning, matConfigOf, type Params, restoreParams, snapshotParams, styleTweaksOf, themeColor, themeWith } from "./params";
 import { mountPanel, type Section } from "./panel";
 // The gobo plates and the content-test plate are the HOST's assets (the product's look, a fixture in the package's oracle; the compose entry ships none of it); the blue noise is the engine's.
 import goboCUrl from "@ice/ground/oracle/fixtures/assets/gobo-c.rgba?url";
@@ -840,33 +840,13 @@ async function start() {
       num("snow (/255, peak to peak)", () => P.night.snow * 255, (v) => { P.night.snow = v / 255; }, 0, 16, 0.5, ""),
       { kind: "actions", items: [{ label: "reset night", run: () => { P.night = defaultNightTweaks(); } }] },
     ] },
-    { title: "frame style · the corner composition", rows: [
+    { title: "frame style · the socket", rows: [
       { kind: "select", label: "base", options: Object.keys(STYLES), get: () => P.style.base, set: (v) => { P.style = styleTweaksOf(STYLES[v as keyof typeof STYLES], v as keyof typeof STYLES); } },
-      num("plate thickness", () => P.style.corner.thickness, (v) => { P.style.corner.thickness = v; P.style = composeTweaks(P.style); }, 0.5, 40, 0.5),
-      num("control (diameter)", () => P.style.corner.control, (v) => { P.style.corner.control = v; P.style = composeTweaks(P.style); }, 8, 60, 1),
-      num("clearance (to the edge)", () => P.style.corner.clearance, (v) => { P.style.corner.clearance = v; P.style = composeTweaks(P.style); }, 0, 30, 0.5),
-      num("bay clearance", () => P.style.corner.bayClearance, (v) => { P.style.corner.bayClearance = v; P.style = composeTweaks(P.style); }, 0, 30, 0.5),
-      { kind: "toggle", label: "fillet tangent to the bay", get: () => P.style.corner.tangent, set: (v) => { P.style.corner.tangent = v; P.style = composeTweaks(P.style); } },
-      num("fillet", () => P.style.corner.fillet, (v) => { P.style.corner.fillet = v; P.style.corner.tangent = false; P.style = composeTweaks(P.style); }, 0, 40, 0.5),
-      num("BR shelf run", () => P.style.corner.shelf, (v) => { P.style.corner.shelf = v; P.style = composeTweaks(P.style); }, 0, 300, 1),
-      num("card radius (resting)", () => P.style.corner.radius, (v) => { P.style.corner.radius = v; P.style = composeTweaks(P.style); }, 0, 60, 0.5),
-      { kind: "note", get: () => styleViolations(state.style, contentHalf()).map((v) => `⚠ ${v}`).join("\n") },
-    ] },
-    { title: "frame style · raw (the composition writes these)", rows: [
-      num("thickness", () => P.style.thickness, (v) => { P.style.thickness = v; }, 0, 60, 0.1),
-      num("notch width", () => P.style.notchW, (v) => { P.style.notchW = v; }, 0, 600, 0.5),
-      num("shelf width (BR)", () => P.style.shelfW, (v) => { P.style.shelfW = v; }, 0, 900, 0.5),
-      num("notch height", () => P.style.notchH, (v) => { P.style.notchH = v; }, 0, 200, 0.5),
-      num("notch fillet ρ", () => P.style.rho, (v) => { P.style.rho = v; }, 0, 120, 0.25),
-      num("edge fillet H", () => P.style.rfH, (v) => { P.style.rfH = v; }, 0, 80, 0.25),
-      num("edge fillet V", () => P.style.rfV, (v) => { P.style.rfV = v; }, 0, 80, 0.25),
-      num("shelf fillet V", () => P.style.rfVShelf, (v) => { P.style.rfVShelf = v; }, 0, 80, 0.25),
-      num("content corner radius", () => P.style.baseR, (v) => { P.style.baseR = v; }, 0, 120, 0.25),
-      num("outer radius (0 = concentric)", () => P.style.outerR, (v) => { P.style.outerR = v; }, 0, 160, 0.25),
-      num("button inset", () => P.style.btnInset, (v) => { P.style.btnInset = v; }, 0, 120, 0.25),
-      num("button radius", () => P.style.btnRadius, (v) => { P.style.btnRadius = v; }, 1, 80, 0.25),
-      num("close glyph width", () => P.style.btnGlyphW, (v) => { P.style.btnGlyphW = v; }, 0, 60, 0.25),
-      num("close glyph rounding", () => P.style.btnGlyphR, (v) => { P.style.btnGlyphR = v; }, 0, 8, 0.05),
+      num("ring = the lift's rise", () => P.style.thickness, (v) => { P.style.thickness = v; }, 1, 40, 0.5),
+      num("card radius (resting)", () => P.style.radius, (v) => { P.style.radius = v; }, 0, 60, 0.5),
+      num("control (diameter; 0 = no ears)", () => P.style.control, (v) => { P.style.control = v; }, 0, 60, 1),
+      num("clearance (around a control)", () => P.style.clearance, (v) => { P.style.clearance = v; }, 0, 30, 0.5),
+      num("ear fillet (into the ring)", () => P.style.fillet, (v) => { P.style.fillet = v; }, 0, 40, 0.5),
       { kind: "note", get: () => styleViolations(state.style, contentHalf()).map((v) => `⚠ ${v}`).join("\n") },
     ] },
     { title: "motion", rows: [

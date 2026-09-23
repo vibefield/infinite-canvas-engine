@@ -644,7 +644,7 @@ function createGroundHost(mode: HostMode, ctx: GroundComposeContext): HostIntern
   // keeps the box tier's hit, so a card is clickable from the moment it exists (B9 review blocker 1).
   const framePick = composited ? ctx.framePick : undefined;
   const pickSource = {
-    pad: () => program.source(0, 0, 1, opts.cards?.radius ?? 0).hx + LINES.ring + 2,
+    pad: () => { const r = opts.cards?.radius ?? 0; return (program.reach?.(r) ?? program.source(0, 0, 1, r).hx) + LINES.ring + 2; },
     hit: (e: Entity, x: number, y: number): string | undefined => { const G = builder.geometryOf(e); return G === undefined ? undefined : program.pick(G, x, y); },
     // a spring still moves: the geometry under a STILL pointer is changing, so the router picks again (B9 review)
     live: () => builder.live(),

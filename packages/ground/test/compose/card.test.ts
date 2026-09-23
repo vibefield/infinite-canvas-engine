@@ -1,325 +1,361 @@
 // @vitest-environment node
+// The SOCKET (packs/vf-frame, 2026-09-23): the frame is the ring between a card at rest and the
+// same card lifted — its inner edge the content's own rounded rect, never cut; its outer edge the
+// content grown by the ring; the lift that same growth, so a held card fills the socket and the
+// ring is gone while it moves. These pin the law, the reveal, the ears, the delete morph, the
+// material, and the CPU mirror that hit-tests what the shader draws.
 import { describe, expect, it } from "vitest";
-import { resolve, VF_IDLE, VF_REST } from "../../src/packs/vf-frame/choreography";
-import { LIFT, SHADOW } from "../../src/theme";
+import { LIFT as LIFT_HIDE, resolve, VF_IDLE, VF_REST } from "../../src/packs/vf-frame/choreography";
+import { LIFT, LINES, SHADOW } from "../../src/theme";
 import { pick, sdFrame, sdInner, sdOuter } from "../../src/packs/vf-frame/sdf";
-import { newVfSprings, stepVfSprings, VF_PARTS, VF_TUNING } from "../../src/packs/vf-frame";
-import { composeStyle, PRODUCT, PRODUCT_CORNER, REFERENCE, REFERENCE_CARD, STYLES, styleViolations } from "../../src/packs/vf-frame/sheet";
+import { newVfSprings, stepVfSprings, VF_PARTS, VF_TUNING, vfFrame } from "../../src/packs/vf-frame";
+import { EARS, earOf, earReachOf, PRODUCT, PRODUCT_SOCKET, reachOf, socketStyle, STYLES, styleViolations } from "../../src/packs/vf-frame/sheet";
 import { settled, spring } from "../../src/card/springs";
 
-const refCard = {
-  centre: REFERENCE_CARD.centre,
-  contentHalf: [REFERENCE_CARD.outerHalf[0] - REFERENCE.thickness, REFERENCE_CARD.outerHalf[1] - REFERENCE.thickness] as const,
-};
+const T = PRODUCT.thickness;
+const medium = { centre: [400, 300] as const, contentHalf: [164.5, 77.5] as const, radius: 22 };
+const small = { centre: [0, 0] as const, contentHalf: [77.5, 77.5] as const, radius: 22 };
+const held = { ...VF_REST, held: 1, lift: LIFT.scale };
 
-describe("resolve", () => {
-  it("reproduces the reference geometry at full reveal", () => {
-    const G = resolve(REFERENCE, refCard, VF_REST);
-    expect(G.half[0]).toBeCloseTo(971.42, 6);
-    expect(G.half[1]).toBeCloseTo(469.76, 6);
-    expect(G.outerR).toBeCloseTo(67.31, 6);
-    expect(G.ih[0]).toBeCloseTo(971.42 - 23.06, 6);
-    expect(G.nw[2]).toBeCloseTo(515.77, 6);
-    expect(G.closeR).toBeCloseTo(35.2, 6);
-    expect(G.closeC[0]).toBeCloseTo(1000.147 + 971.42 - 62.57, 6);
+describe("the socket law", () => {
+  it("idle: a plain rounded card — the content IS the card, no ring, no ears, no buttons", () => {
+    const G = resolve(PRODUCT, medium, VF_IDLE);
+    expect(G.half).toEqual([164.5, 77.5]);
+    expect(G.ih).toEqual([164.5, 77.5]);
+    expect(G.outerR).toBe(22);
+    expect(G.radius).toBe(22);
+    expect(G.band).toBe(0);
+    expect(G.ring).toBe(0);
+    expect(G.earR.every((v) => v === 0)).toBe(true);
+    expect(G.closeR).toBe(0);
+    expect(G.lockR).toBe(0);
+    expect(G.scale).toBe(1);
   });
 
-  it("is a plain rounded card at idle: no border, no notches, no buttons, content pinned", () => {
-    const G = resolve(REFERENCE, refCard, VF_IDLE);
-    expect(G.half[0] - G.ih[0]).toBeLessThan(1e-6);       // thickness 0
-    expect(G.nw.every((v) => v === 0)).toBe(true);
-    // easeOutBack(0) is 1 − (c1+1) + c1: zero up to floating point. The shader
-    // guards the buttons with `> 0.05`, so a 1e-15 radius is idle.
-    expect(G.closeR).toBeCloseTo(0, 9);
-    expect(G.lockR).toBeCloseTo(0, 9);
-    // grow = 1 pins the CONTENT rect: an idle card IS its rect, exactly
-    expect(G.ih[0]).toBeCloseTo(refCard.contentHalf[0], 9);
-    expect(G.half[0]).toBeCloseTo(refCard.contentHalf[0], 9);
-    expect(G.outerR).toBeCloseTo(REFERENCE.baseR[0], 9);
+  it("selected at rest: the ring grows OUT of the content — outer = content + T, concentric; the content is pinned and never cut", () => {
+    const G = resolve(PRODUCT, medium, VF_REST);
+    expect(G.half).toEqual([164.5 + T, 77.5 + T]);
+    expect(G.outerR).toBe(22 + T);
+    expect(G.ih).toEqual([164.5, 77.5]);          // the content, exactly
+    expect(G.radius).toBe(22);
+    expect(G.band).toBe(T);
+    expect(G.ring).toBe(1);
   });
 
-  it("keeps every corner self-consistent across the reveal (rfH + rho ≤ nh, rfV + rho ≤ nw)", () => {
-    for (const style of [REFERENCE, PRODUCT]) {
-      const card = style === PRODUCT ? { centre: [0, 0] as const, contentHalf: [120, 70] as const } : refCard;
-      for (const r of [0, 0.1, 0.3, 0.5, 0.6, 0.8, 0.95, 1]) {
-        const G = resolve(style, card, { ...VF_REST, reveal: r });
-        for (const i of [0, 1, 2, 3] as const) {
-          if (G.nw[i] <= 0) continue;
-          expect(G.rfH[i] + G.rho[i]).toBeLessThanOrEqual(G.nh[i] + 1e-9);
-          expect(G.rfV[i] + G.rho[i]).toBeLessThanOrEqual(G.nw[i] + 1e-9);
-        }
-      }
+  it("held: the content rises by T into the ring, the outer edge does not move, the ring is gone", () => {
+    const rest = resolve(PRODUCT, medium, VF_REST);
+    const up = resolve(PRODUCT, medium, held);
+    expect(up.half).toEqual(rest.half);                  // the socket's outer edge IS the lifted silhouette
+    expect(up.outerR).toBe(rest.outerR);
+    expect(up.ih).toEqual(up.half);                      // …and the content fills it
+    expect(up.radius).toBe(up.outerR);
+    expect(up.band).toBe(0);
+    expect(up.ring).toBe(0);
+  });
+
+  it("a grabbed card that was not selected simply rises: content and outer edge one, T bigger than its rect", () => {
+    const G = resolve(PRODUCT, medium, { ...VF_IDLE, held: 1, lift: LIFT.scale });
+    expect(G.half).toEqual([164.5 + T, 77.5 + T]);
+    expect(G.ih).toEqual(G.half);
+    expect(G.outerR).toBe(22 + T);
+    expect(G.radius).toBe(22 + T);
+    expect(G.band).toBe(0);
+    expect(G.ring).toBe(0);
+  });
+
+  it("the lift is a RISE, not a scale: the host's lift scale changes nothing; a big card and a small one rise the same 8 px", () => {
+    for (const scale of [1, 1.05, 1.3]) {
+      const G = resolve(PRODUCT, medium, { ...VF_REST, held: 1, lift: scale });
+      expect(G.ih).toEqual([164.5 + T, 77.5 + T]);
+    }
+    const s = resolve(PRODUCT, small, held);
+    expect(s.ih[0] - small.contentHalf[0]).toBe(T);
+    const m = resolve(PRODUCT, medium, held);
+    expect(m.ih[1] - medium.contentHalf[1]).toBe(T);
+  });
+
+  it("mid-lift of a selected card: the band narrows as the content grows; the ring fades with it", () => {
+    let prev = T;
+    for (const h of [0.2, 0.5, 0.8]) {
+      const G = resolve(PRODUCT, medium, { ...VF_REST, held: h, lift: 1 + 0.05 * h });
+      expect(G.half).toEqual([164.5 + T, 77.5 + T]);    // the outer edge never moves
+      expect(G.band).toBeCloseTo(T * (1 - h), 9);
+      expect(G.band).toBeLessThan(prev);
+      expect(G.ring).toBeCloseTo(1 - h, 9);
+      prev = G.band;
     }
   });
 
-  it("lift scales every length about the centre and nothing else", () => {
-    const a = resolve(REFERENCE, refCard, VF_REST);
-    const b = resolve(REFERENCE, refCard, { ...VF_REST, lift: 1.05 });
-    expect(b.half[0]).toBeCloseTo(a.half[0] * 1.05, 6);
-    expect(b.outerR).toBeCloseTo(a.outerR * 1.05, 6);
-    expect(b.nw[2]).toBeCloseTo(a.nw[2] * 1.05, 6);
-    expect(b.closeR).toBeCloseTo(a.closeR * 1.05, 6);
-    expect(b.centre).toEqual(a.centre);
+  it("released while still selected: the content settles back and the ring re-emerges — the same frames in reverse", () => {
+    const a = resolve(PRODUCT, medium, { ...VF_REST, held: 0.4, lift: 1.02 });
+    const b = resolve(PRODUCT, medium, { ...VF_REST, held: 0.4, lift: 1.02 });
+    expect(a).toEqual(b);                                  // pure in the motion
+    expect(resolve(PRODUCT, medium, { ...VF_REST, held: 0, lift: 1 })).toEqual(resolve(PRODUCT, medium, VF_REST));
+  });
+
+  it("a deselect while held keeps the lifted silhouette: no ring can appear under a moving card", () => {
+    for (const r of [1, 0.6, 0.3, 0]) {
+      const G = resolve(PRODUCT, medium, { ...VF_REST, reveal: r, held: 1, lift: LIFT.scale });
+      expect(G.half).toEqual([164.5 + T, 77.5 + T]);
+      expect(G.band).toBe(0);
+      expect(G.ring).toBe(0);
+    }
+  });
+
+  it("the reveal: the ring arrives over the first half, easing out; the outer radius stays concentric throughout", () => {
+    let prev = -1;
+    for (const r of [0, 0.1, 0.25, 0.4, 0.5, 0.75, 1]) {
+      const G = resolve(PRODUCT, medium, { ...VF_REST, reveal: r });
+      expect(G.band).toBeGreaterThanOrEqual(prev);
+      expect(G.outerR - G.radius).toBeCloseTo(G.band, 9);
+      expect(G.ih).toEqual([164.5, 77.5]);
+      prev = G.band;
+    }
+    expect(resolve(PRODUCT, medium, { ...VF_REST, reveal: 0.5 }).band).toBeCloseTo(T, 9);
   });
 
   it("collapses to a disc on delete and is gone at d = 1", () => {
-    const mid = resolve(REFERENCE, refCard, { ...VF_REST, del: 0.74 });
+    const mid = resolve(PRODUCT, medium, { ...VF_REST, del: 0.74 });
     expect(mid.half[0]).toBeCloseTo(mid.half[1], 3);          // a square box…
     expect(mid.outerR).toBeCloseTo(mid.half[0], 3);           // …with full radius: a circle
-    const gone = resolve(REFERENCE, refCard, { ...VF_REST, del: 1 });
+    const gone = resolve(PRODUCT, medium, { ...VF_REST, del: 1 });
     expect(gone.half[0]).toBeLessThan(1e-6);
     expect(gone.shadowAlpha).toBeLessThan(1e-6);
   });
 
   it("wears the §5 shadow recipe by LIFT, not by selection: resting idle or selected, lifted when held", () => {
     for (const m of [VF_IDLE, VF_REST]) {
-      const G = resolve(REFERENCE, refCard, m);
+      const G = resolve(PRODUCT, medium, m);
       expect(G.shadowSigma).toBeCloseTo(SHADOW.rest.sigma, 9);
       expect(G.shadowOffset).toBeCloseTo(SHADOW.rest.offset, 9);
       expect(G.shadowAlpha).toBeCloseTo(SHADOW.rest.alpha, 9);
       expect(G.frameAlpha).toBe(1);
     }
-    const held = resolve(REFERENCE, refCard, { ...VF_REST, held: 1, lift: LIFT.scale });
-    expect(held.shadowSigma).toBeCloseTo(SHADOW.lifted.sigma * LIFT.scale, 9);   // the shadow rides the scaled card
-    expect(held.shadowOffset).toBeCloseTo(SHADOW.lifted.offset * LIFT.scale, 9);
-    expect(held.shadowAlpha).toBeCloseTo(SHADOW.lifted.alpha, 9);
-    expect(held.frameAlpha).toBeCloseTo(LIFT.opacity, 9);
+    const up = resolve(PRODUCT, medium, held);
+    expect(up.shadowSigma).toBeCloseTo(SHADOW.lifted.sigma, 9);   // the recipe as written: no scale rides it
+    expect(up.shadowOffset).toBeCloseTo(SHADOW.lifted.offset, 9);
+    expect(up.shadowAlpha).toBeCloseTo(SHADOW.lifted.alpha, 9);
+    expect(up.frameAlpha).toBeCloseTo(LIFT.opacity, 9);
   });
 
-  it("the §7 selection ring arrives with the border and leaves with the delete", () => {
-    expect(resolve(REFERENCE, refCard, VF_IDLE).ring).toBe(0);
-    expect(resolve(REFERENCE, refCard, VF_REST).ring).toBe(1);
-    const half = resolve(REFERENCE, refCard, { ...VF_REST, reveal: 0.25 });
+  it("the §7 selection ring arrives with the border, leaves with the delete, fades with the lift", () => {
+    expect(resolve(PRODUCT, medium, VF_IDLE).ring).toBe(0);
+    expect(resolve(PRODUCT, medium, VF_REST).ring).toBe(1);
+    const half = resolve(PRODUCT, medium, { ...VF_REST, reveal: 0.25 });
     expect(half.ring).toBeGreaterThan(0.5);
     expect(half.ring).toBeLessThan(1);
-    expect(resolve(REFERENCE, refCard, { ...VF_REST, del: 0.5 }).ring).toBe(0);
+    expect(resolve(PRODUCT, medium, { ...VF_REST, del: 0.5 }).ring).toBe(0);
+    expect(resolve(PRODUCT, medium, { ...VF_REST, held: 0.5, lift: 1.025 }).ring).toBeCloseTo(0.5, 9);
+  });
+
+  it("a card's own radius is the content's; the style's is the default", () => {
+    const own = resolve(PRODUCT, { centre: [0, 0], contentHalf: [50, 40], radius: 6 }, VF_REST);
+    expect(own.radius).toBe(6);
+    expect(own.outerR).toBe(6 + T);
+    const def = resolve(PRODUCT, { centre: [0, 0], contentHalf: [50, 40] }, VF_REST);
+    expect(def.radius).toBe(PRODUCT.radius);
+  });
+});
+
+describe("the ears (a style with controls)", () => {
+  const rb = EARS.control / 2;
+  const cl = EARS.clearance;
+
+  it("the product socket has none: every corner's ear is 0 at every reveal, and so are the buttons", () => {
+    for (const r of [0, 0.5, 1]) {
+      const G = resolve(PRODUCT, medium, { ...VF_REST, reveal: r });
+      expect(G.earR).toEqual([0, 0, 0, 0]);
+      expect(G.closeR).toBe(0);
+      expect(G.lockR).toBe(0);
+    }
+    expect(earOf(PRODUCT)).toBe(0);
+    expect(earReachOf(PRODUCT)).toBe(0);
+    expect(reachOf(PRODUCT)).toBe(T);
+  });
+
+  it("an ear is the control plus its ring of chrome, OUTSIDE the content and tangent to its corner arc", () => {
+    const G = resolve(EARS, medium, VF_REST);
+    const ear = rb + cl;
+    expect(G.earR).toEqual([ear, ear, ear, ear]);
+    // TL: the corner arc's centre, the ear's centre on the diagonal past it
+    const arc: readonly [number, number] = [medium.centre[0] - medium.contentHalf[0] + 22, medium.centre[1] - medium.contentHalf[1] + 22];
+    const d = Math.hypot(G.earX[0] - arc[0], G.earY[0] - arc[1]);
+    expect(d).toBeCloseTo(22 + rb + cl, 9);                       // the control clears the content by `clearance`
+    expect(d - ear).toBeCloseTo(22, 9);                            // the lobe touches the arc: tangent, never over the content
+    // the lobe's inner point lies ON the content boundary; the control's edge is `clearance` off it
+    const ux = (arc[0] - G.earX[0]) / d; const uy = (arc[1] - G.earY[0]) / d;
+    expect(sdInner(G, G.earX[0] + ux * ear, G.earY[0] + uy * ear)).toBeCloseTo(0, 6);
+    expect(sdInner(G, G.earX[0] + ux * rb, G.earY[0] + uy * rb)).toBeCloseTo(cl, 6);
+    // the four ears are the content's four corners, mirrored
+    expect(G.earX[1] - medium.centre[0]).toBeCloseTo(medium.centre[0] - G.earX[0], 9);
+    expect(G.earY[3] - medium.centre[1]).toBeCloseTo(medium.centre[1] - G.earY[0], 9);
+    // the buttons sit at the ears' centres: the lock TL, the close TR
+    expect(G.lockC).toEqual([G.earX[0], G.earY[0]]);
+    expect(G.closeC).toEqual([G.earX[1], G.earY[1]]);
+    expect(G.closeR).toBeCloseTo(rb, 9);
+    expect(G.lockR).toBeCloseTo(rb, 9);
+    expect(reachOf(EARS)).toBeGreaterThan(T);
+    expect(reachOf(EARS)).toBeCloseTo(earReachOf(EARS), 9);
+  });
+
+  it("the ears bloom with the reveal, staggered, from the ring's corner; the buttons pop after them", () => {
+    let prev = 0;
+    for (const r of [0, 0.1, 0.2, 0.3, 0.45, 0.6, 1]) {
+      const G = resolve(EARS, medium, { ...VF_REST, reveal: r });
+      expect(G.earR[0]).toBeGreaterThanOrEqual(prev);
+      prev = G.earR[0];
+      if (G.earR[0] === 0) { expect(G.lockR).toBe(0); }
+    }
+    const early = resolve(EARS, medium, { ...VF_REST, reveal: 0.35 });
+    expect(early.earR[0]).toBeGreaterThan(0);
+    expect(early.earR[2]).toBeLessThan(early.earR[0]);   // BR runs longest
+    expect(early.lockR).toBe(0);                         // the buttons come after
+    expect(resolve(EARS, medium, { ...VF_REST, reveal: 1 }).earR[2]).toBeCloseTo(rb + cl, 9);
+  });
+
+  it("the lift retracts the ears and takes the buttons first — a lifted card is the socket's outer edge and nothing more", () => {
+    const G = resolve(EARS, medium, held);
+    expect(G.earR).toEqual([0, 0, 0, 0]);
+    expect(G.closeR).toBe(0);
+    expect(G.lockR).toBe(0);
+    expect(G.half).toEqual([164.5 + T, 77.5 + T]);
+    const mid = resolve(EARS, medium, { ...VF_REST, held: LIFT_HIDE.buttons[1], lift: 1.02 });
+    expect(mid.closeR).toBe(0);
+    expect(mid.earR[0]).toBeGreaterThan(0);              // the lobe is still going
+    expect(mid.earR[0]).toBeLessThan(rb + cl);
+  });
+
+  it("retract early on delete, before the box gets small", () => {
+    expect(resolve(EARS, medium, { ...VF_REST, del: 0.3 }).earR[0]).toBe(0);
+    expect(resolve(EARS, medium, { ...VF_REST, del: 0.3 }).closeR).toBe(0);
+  });
+});
+
+describe("the CPU mirror — sdf.ts, what the router picks", () => {
+  const G = resolve(PRODUCT, medium, VF_REST);
+  const [cx, cy] = medium.centre;
+  const [hx, hy] = medium.contentHalf;
+
+  it("partitions the plane: content inside the inner box, frame in the ring, outside past it", () => {
+    expect(pick(G, cx, cy)).toBe("content");
+    expect(pick(G, cx + hx - 1, cy)).toBe("content");
+    expect(pick(G, cx + hx + T / 2, cy)).toBe("frame");
+    expect(pick(G, cx, cy - hy - T / 2)).toBe("frame");
+    expect(pick(G, cx + hx + T + 1, cy)).toBe("outside");
+    expect(sdInner(G, cx + hx, cy)).toBeCloseTo(0, 9);
+    expect(sdOuter(G, cx + hx + T, cy)).toBeCloseTo(0, 9);
+    expect(sdFrame(G, cx + hx + T / 2, cy)).toBeCloseTo(-T / 2, 9);
+  });
+
+  it("the ring's corners are concentric: the frame is T wide along the diagonal too", () => {
+    const ax = cx + hx - 22; const ay = cy + hy - 22;   // BR arc centre
+    const u = Math.SQRT1_2;
+    expect(sdInner(G, ax + u * 22, ay + u * 22)).toBeCloseTo(0, 9);
+    expect(sdOuter(G, ax + u * (22 + T), ay + u * (22 + T))).toBeCloseTo(0, 9);
+    expect(pick(G, ax + u * (22 + T / 2), ay + u * (22 + T / 2))).toBe("frame");
+  });
+
+  it("a lifted card picks as content out to the socket's edge — no ring to hit", () => {
+    const up = resolve(PRODUCT, medium, held);
+    expect(pick(up, cx + hx + T / 2, cy)).toBe("content");
+    expect(pick(up, cx + hx + T + 1, cy)).toBe("outside");
+  });
+
+  it("an idle card picks as content to its own edge and outside past it", () => {
+    const idle = resolve(PRODUCT, medium, VF_IDLE);
+    expect(pick(idle, cx + hx - 0.5, cy)).toBe("content");
+    expect(pick(idle, cx + hx + 0.5, cy)).toBe("outside");
+  });
+
+  it("the ears: their buttons pick by position, the lobe picks as frame, and the lobe never covers content", () => {
+    const E = resolve(EARS, medium, VF_REST);
+    expect(pick(E, E.lockC[0], E.lockC[1])).toBe("lock");
+    expect(pick(E, E.closeC[0], E.closeC[1])).toBe("close");
+    const ear = E.earR[1];
+    // a point in the lobe's chrome ring, past the button, on the diagonal outward
+    expect(pick(E, E.closeC[0] + (ear - 2) * Math.SQRT1_2, E.closeC[1] - (ear - 2) * Math.SQRT1_2)).toBe("frame");
+    expect(pick(E, E.closeC[0] + (ear + 3) * Math.SQRT1_2, E.closeC[1] - (ear + 3) * Math.SQRT1_2)).toBe("outside");
+    // sweep the content's boundary: the outer field is never inside there (an ear that bit the content would make it so)
+    for (let k = 0; k < 360; k += 3) {
+      const a = (k * Math.PI) / 180;
+      const px = cx + Math.cos(a) * (hx + 40); const py = cy + Math.sin(a) * (hy + 40);
+      // walk inward to the content edge along the ray and check the frame lies outside it
+      let lo = 0; let hi = 1;
+      for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (sdInner(E, cx + (px - cx) * m, cy + (py - cy) * m) < 0) lo = m; else hi = m; }
+      const bx = cx + (px - cx) * lo; const by = cy + (py - cy) * lo;
+      expect(sdFrame(E, bx, by)).toBeGreaterThanOrEqual(-1e-6);   // the frame's inner boundary is the content's
+    }
+  });
+
+  it("a point-sized ear must not bulge the corner: no ear, the outer field is the plain rounded rect", () => {
+    const plain = resolve(PRODUCT, medium, { ...VF_REST, reveal: 0.2 });
+    const eared = resolve(EARS, medium, { ...VF_REST, reveal: 0.05 });   // before the first ear window opens
+    expect(eared.earR[0]).toBe(0);
+    const ax = cx - hx + 22; const ay = cy - hy + 22;
+    const p = [ax - Math.SQRT1_2 * (22 + plain.band), ay - Math.SQRT1_2 * (22 + plain.band)] as const;
+    expect(Math.abs(sdOuter(eared, p[0], p[1]) - sdOuter({ ...eared, earR: [0, 0, 0, 0] as const }, p[0], p[1]))).toBeLessThan(1e-9);
   });
 });
 
 describe("styles", () => {
-  it("the shipped styles satisfy their own constraints", () => {
-    expect(styleViolations(REFERENCE, refCard.contentHalf)).toEqual([]);
-    expect(styleViolations(PRODUCT, [120, 70])).toEqual([]);
-    expect(styleViolations(STYLES.plain, refCard.contentHalf)).toEqual([]);
+  it("the shipped styles satisfy their own constraints on the product's card sizes", () => {
+    for (const s of Object.values(STYLES)) {
+      expect(styleViolations(s, [164.5, 77.5])).toEqual([]);
+      expect(styleViolations(s, [77.5, 77.5])).toEqual([]);
+    }
   });
 
-  it("the product style's buttons keep a hit-target floor the reference scaled down would not", () => {
-    expect(PRODUCT.btn.radius).toBeGreaterThanOrEqual(12);   // the smallest control this system has is 24 px
-    // and the pocket houses the button: inset + radius inside the notch
-    expect(PRODUCT.btn.insetY + PRODUCT.btn.radius).toBeLessThan(PRODUCT.nh[0] + PRODUCT.thickness);
+  it("the product socket is the three numbers: the lift's rise, the card radius, no controls", () => {
+    expect(PRODUCT_SOCKET).toEqual({ name: "product", thickness: 8, radius: 22 });
+    expect(PRODUCT.control).toBe(0);
+    expect(PRODUCT.btn.radius).toBe(0);
+    expect(EARS.control).toBe(26);
+    expect(EARS.btn.radius).toBe(13);
+    expect(EARS.clearance).toBe(8);
+    expect(EARS.fillet).toBe(8);
+    expect(earOf(EARS)).toBe(21);
   });
 
-  it("catches a button crossing the outer corner arc — the old product numbers under a 22 px card", () => {
-    const { outerR: _ear, ...rest } = PRODUCT;
-    const old = { ...rest, baseR: [22, 22, 22, 22] as const, thickness: 3.5, btn: { insetX: 15, insetY: 15, radius: 10, glyphW: 7, glyphR: 0.9 } };
-    const v = styleViolations(old, [120, 70]);
-    expect(v.some((m) => m.includes("outer corner arc"))).toBe(true);   // 0.65 px left for a 1.5 px ring
-    expect(styleViolations({ ...old, outerR: 15 }, [120, 70])).toEqual([]);   // concentric with the button: clear
+  it("catches a ring thinner than the selection line, a control under the pointer floor, and ears that merge on a narrow card", () => {
+    expect(styleViolations(socketStyle({ thickness: 1, radius: 22 }), [100, 60]).some((m) => m.includes("selection ring"))).toBe(true);
+    expect(styleViolations(socketStyle({ thickness: 0, radius: 22 }), [100, 60]).some((m) => m.includes("positive"))).toBe(true);
+    expect(styleViolations(socketStyle({ thickness: 8, radius: 22, control: 16 }), [100, 60]).some((m) => m.includes("pointer floor"))).toBe(true);
+    expect(styleViolations(EARS, [10, 60]).some((m) => m.includes("merge"))).toBe(true);
+    expect(styleViolations(EARS, [LINES.ring, LINES.ring]).length).toBeGreaterThan(0);
+  });
+
+  it("the pack's reach is the ring, or an ear past it; its source is the socket's outer silhouette", () => {
+    const pack = vfFrame();
+    expect(pack.reach?.(22)).toBe(T);
+    expect(pack.source(100, 60, 1.05, 22)).toEqual({ hx: 50 + T, hy: 30 + T, r: 22 + T });
+    const ears = vfFrame({ style: EARS });
+    expect(ears.reach?.(22)).toBeCloseTo(earReachOf(EARS, 22), 9);
+    expect(ears.reach?.(22)).toBeGreaterThan(T);
+    expect(ears.source(100, 60, 1, 22)).toEqual({ hx: 50 + T, hy: 30 + T, r: 22 + T });   // a dragged set casts the socket, never its ears
+    expect(pack.inner).toBeUndefined();                                                      // the content is never cut: no clip march
   });
 });
 
-describe("the product corner composition", () => {
-  const medium = { centre: [0, 0] as const, contentHalf: [164.5, 77.5] as const, radius: 22 };
-  const small = { centre: [0, 0] as const, contentHalf: [77.5, 77.5] as const, radius: 22 };
-  const rb = PRODUCT_CORNER.control / 2;
-  const cl = PRODUCT_CORNER.clearance;
-
-  it("derives every corner number from control · clearance · thickness", () => {
-    const ear = PRODUCT.outerR ?? Number.NaN;
-    expect(PRODUCT.btn.radius).toBe(rb);
-    expect(ear).toBe(rb + cl);                                 // the ear
-    expect(PRODUCT.btn.insetX).toBe(ear);                      // the button IS the arc's centre
-    expect(PRODUCT.rho[0]).toBe(rb + cl);                      // the bay: a uniform ring
-    expect(PRODUCT.rfH[0]).toBe(ear - PRODUCT.thickness);      // tangent fillet
-    expect(PRODUCT.nw).toEqual(PRODUCT.nh);                    // no shelf: four equal ears
-    expect(PRODUCT.baseR[0]).toBe(22);                         // --vf-radius-card
-    expect(styleViolations(PRODUCT, small.contentHalf)).toEqual([]);
-    expect(styleViolations(composeStyle({ ...PRODUCT_CORNER, shelf: 60 }), medium.contentHalf)).toEqual([]);
-  });
-
-  it("is concentric: outer arc, bay arc and button share a centre; the ring is `clearance` wide all round", () => {
-    const G = resolve(PRODUCT, medium, VF_REST);
-    expect(G.outerR).toBeCloseTo(rb + cl, 9);
-    expect(G.closeC[0]).toBeCloseTo(G.centre[0] + G.half[0] - G.outerR, 9);
-    expect(G.closeC[1]).toBeCloseTo(G.centre[1] - G.half[1] + G.outerR, 9);
-    expect(G.lockC[0]).toBeCloseTo(G.centre[0] - G.half[0] + G.outerR, 9);
-    expect(G.closeR).toBeCloseTo(rb, 9);
-    // from the button's centre: `ear` to the outer edge, `bay` to the content
-    expect(-sdOuter(G, G.closeC[0], G.closeC[1])).toBeCloseTo(rb + cl, 9);
-    expect(sdInner(G, G.closeC[0], G.closeC[1])).toBeCloseTo(rb + cl, 9);
-    // walk the button's rim: never nearer than `clearance` to either boundary…
-    let minOut = 1e9;
-    let minIn = 1e9;
-    for (let a = 0; a < Math.PI * 2; a += Math.PI / 90) {
-      const x = G.closeC[0] + rb * Math.cos(a);
-      const y = G.closeC[1] + rb * Math.sin(a);
-      minOut = Math.min(minOut, -sdOuter(G, x, y));
-      minIn = Math.min(minIn, sdInner(G, x, y));
-    }
-    expect(minOut).toBeCloseTo(cl, 6);
-    expect(minIn).toBeCloseTo(cl, 6);
-    // …and exactly `clearance` across the corner diagonal, where the old style clipped
-    const d = rb * Math.SQRT1_2;
-    expect(-sdOuter(G, G.closeC[0] + d, G.closeC[1] - d)).toBeCloseTo(cl, 6);
-    expect(sdInner(G, G.closeC[0] - d, G.closeC[1] + d)).toBeCloseTo(cl, 6);
-    // the pop's overshoot and the hover swell stay inside the ring
-    expect(rb * 1.1 * 1.07).toBeLessThan(rb + cl);
-  });
-
-  it("the revealed outer radius is the ear's, the idle one the card's; the reveal turns one into the other", () => {
-    expect(resolve(PRODUCT, medium, VF_IDLE).outerR).toBeCloseTo(22, 9);
-    expect(resolve(PRODUCT, medium, VF_REST).outerR).toBeCloseTo(rb + cl, 9);
-    let prev = 22;
-    for (let r = 0; r <= 1; r += 0.05) {
-      const o = resolve(PRODUCT, medium, { ...VF_REST, reveal: r }).outerR;
-      expect(o).toBeLessThanOrEqual(prev + 1e-9); prev = o;   // monotone, no bounce
-    }
-    // plain corners stay concentric with the content: radius + thickness
-    expect(resolve(STYLES.plain, refCard, VF_REST).outerR).toBeCloseTo(REFERENCE.baseR[0] + REFERENCE.thickness, 9);
-  });
-
-  it("the bay blooms out of the card's own rounded corner: the content boundary never jumps", () => {
-    // Sample the inner field on a lattice over the TL corner for a dense reveal
-    // sweep. The boundary moves continuously (≤ ~1 px per step at this Δr);
-    // the old model snapped a 22 px arc to a square corner at the notch's onset —
-    // a 6.4 px jump on the diagonal.
-    const pts: [number, number][] = [];
-    for (let i = 0; i <= 12; i++) for (let j = 0; j <= 12; j++) pts.push([-medium.contentHalf[0] + i * 4, -medium.contentHalf[1] + j * 4]);
-    let worst = 0;
-    let prev: number[] | null = null;
-    for (let r = 0; r <= 1.0001; r += 0.004) {
-      const G = resolve(PRODUCT, medium, { ...VF_REST, reveal: r });
-      const vals = pts.map(([x, y]) => sdInner(G, x, y));
-      if (prev) for (let k = 0; k < vals.length; k++) worst = Math.max(worst, Math.abs((vals[k] as number) - (prev[k] as number)));
-      prev = vals;
-    }
-    expect(worst).toBeLessThan(1.5);
-    // and fully revealed the intersection is the notched card exactly: the corner arc is inside the bay
-    const G = resolve(PRODUCT, medium, VF_REST);
-    const cx = -medium.contentHalf[0] + 22 * (1 - Math.SQRT1_2);
-    const cy = -medium.contentHalf[1] + 22 * (1 - Math.SQRT1_2);   // a point ON the idle arc
-    expect(sdInner(G, cx, cy)).toBeGreaterThan(5);   // deep in the bay
-  });
-});
-
-describe("sdf mirror", () => {
-  const G = resolve(REFERENCE, refCard, VF_REST);
-
-  // The metric property itself: |d(p) − d(q)| ≤ |p − q| for any two points.
-  // (Not hypot-of-secants — across a crease those legitimately exceed 1 even
-  // for a true SDF, because two axis secants straddling a kink are not a gradient.)
-  it("is 1-Lipschitz on the exact path: |Δd| never exceeds |Δp|", () => {
-    let worst = 0;
-    let seed = 7;
-    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-    for (let i = 0; i < 6000; i++) {
-      const x = 1000 + (rnd() - 0.5) * 2400;
-      const y = 532 + (rnd() - 0.5) * 1300;
-      const a = rnd() * Math.PI * 2;
-      const len = 0.5 + rnd() * 60;
-      const qx = x + Math.cos(a) * len;
-      const qy = y + Math.sin(a) * len;
-      worst = Math.max(worst, Math.abs(sdFrame(G, x, y) - sdFrame(G, qx, qy)) / len);
-    }
-    expect(worst).toBeLessThanOrEqual(1.0005);
-  });
-
-  it("frame and inner coverages cannot crack: inside the border dFrame == -dInner", () => {
-    const x = G.centre[0];
-    const y = G.centre[1] - G.half[1] + REFERENCE.thickness * 0.5;   // mid-border, top edge
-    expect(sdFrame(G, x, y)).toBeCloseTo(-sdInner(G, x, y), 9);
-  });
-
-  it("routes a click by position: lock, close, content, frame, outside", () => {
-    expect(pick(G, G.lockC[0], G.lockC[1])).toBe("lock");
-    expect(pick(G, G.closeC[0], G.closeC[1])).toBe("close");
-    expect(pick(G, G.centre[0], G.centre[1])).toBe("content");
-    expect(pick(G, G.centre[0], G.centre[1] - G.half[1] + 5)).toBe("frame");
-    expect(pick(G, G.centre[0], G.centre[1] - G.half[1] - 5)).toBe("outside");
-    // the BR shelf is frame, not content
-    expect(pick(G, G.centre[0] + G.half[0] - 200, G.centre[1] + G.half[1] - 50)).toBe("frame");
-  });
-
-  it("fast and exact paths share a silhouette", () => {
-    for (const [x, y] of [[300, 100], [1700, 900], [1000, 60], [1955, 532], [1500, 880]] as const) {
-      expect(Math.sign(sdInner(G, x, y, true))).toBe(Math.sign(sdInner(G, x, y, false)));
-    }
-    expect(sdOuter(G, G.centre[0], G.centre[1])).toBeLessThan(0);
-  });
-});
-
-describe("spring", () => {
-  it("is critically damped: reaches the target with no overshoot and settles", () => {
-    let x = 0;
-    let v = 0;
-    let peak = 0;
-    for (let t = 0; t < 1.5; t += 1 / 120) { [x, v] = spring(x, v, 1, 2.4, 1, 1 / 120); peak = Math.max(peak, x); }
-    expect(peak).toBeLessThanOrEqual(1 + 1e-6);
+describe("the pack's springs", () => {
+  it("a settled spring snaps to its target — a card at rest resolves exactly as a still of it", () => {
+    const s = newVfSprings();
+    for (let i = 0; i < 400; i++) stepVfSprings(s, 1 / 120, { hover: VF_PARTS.close, press: null }, true, VF_TUNING);
+    expect(s.hoverC).toBe(1);
+    expect(s.hoverCV).toBe(0);
+    for (let i = 0; i < 400; i++) stepVfSprings(s, 1 / 120, { hover: null, press: null }, true, VF_TUNING);
+    expect(s.hoverC).toBe(0);
+    let [x, v] = [0, 0];
+    for (let i = 0; i < 400; i++) [x, v] = spring(x, v, 1, 5.5, 0.75, 1 / 120);
     expect(settled(x, v, 1)).toBe(true);
   });
 
-  it("reverses from mid-flight without a snap", () => {
-    let x = 0;
-    let v = 0;
-    for (let i = 0; i < 20; i++) [x, v] = spring(x, v, 1, 2.4, 1, 1 / 120);
-    const before = x;
-    [x, v] = spring(x, v, 0, 2.4, 1, 1 / 120);
-    expect(Math.abs(x - before)).toBeLessThan(0.05);
-  });
-
-  it("underdamped overshoots and settles — the lock's nod", () => {
-    let x = 0;
-    let v = 0;
-    let peak = 0;
-    for (let t = 0; t < 1.2; t += 1 / 120) { [x, v] = spring(x, v, 1, 3.6, 0.72, 1 / 120); peak = Math.max(peak, x); }
-    expect(peak).toBeGreaterThan(1.01);
-    expect(settled(x, v, 1, 5e-3)).toBe(true);
-  });
-});
-
-// The two buttons and the lock are the PACK's springs since design-014 — the
-// engine's `stepMotion` no longer takes a button input, `stepVfSprings` reads
-// the router's part channel instead. The claims that rode that argument live here.
-describe("the pack's own springs", () => {
-  const NOTHING = { hover: null, press: null } as const;
-  const run = (s: ReturnType<typeof newVfSprings>, seconds: number, part: { hover: string | null; press: string | null } = NOTHING, live = true, dt = 1 / 120) => {
-    let moving = false;
-    for (let t = 0; t < seconds; t += dt) moving = stepVfSprings(s, dt, part, live);
-    return moving;
-  };
-
-  it("a card is made LOCKED, and the lock nods open on the pack's own tuning", () => {
-    const s = newVfSprings();
-    expect(s.locked).toBe(true); expect(s.lockA).toBe(0);
-    expect(newVfSprings(false).lockA).toBe(1);
-    expect(VF_TUNING).toEqual({ lockHz: 3.6, lockDamp: 0.72 });
-    s.locked = false;
-    let peak = 0;
-    for (let t = 0; t < 1.2; t += 1 / 120) { stepVfSprings(s, 1 / 120, NOTHING, true); peak = Math.max(peak, s.lockA); }
-    expect(peak).toBeGreaterThan(1.01);          // the nod: underdamped, as the lock's spring always was
-    expect(s.lockA).toBe(1);
-    s.locked = true;
-    run(s, 1.2);
-    expect(s.lockA).toBe(0);
-  });
-
-  it("the part channel drives the two buttons apart: hover swells the one under the pointer, press squashes the one held", () => {
-    const s = newVfSprings();
-    expect(run(s, 0.05, { hover: VF_PARTS.close, press: null })).toBe(true);   // mid-flight: the host paints again
-    run(s, 0.4, { hover: VF_PARTS.close, press: null });
-    expect(s.hoverC).toBeGreaterThan(0.9); expect(s.hoverK).toBe(0);
-    expect(s.pressC).toBe(0); expect(s.pressK).toBe(0);
-    run(s, 0.6, { hover: VF_PARTS.lock, press: VF_PARTS.lock });
-    expect(s.hoverK).toBeGreaterThan(0.9); expect(s.pressK).toBeGreaterThan(0.9);
-    expect(s.hoverC).toBeLessThan(1e-3);         // a button's spring decays to rest; only the lock's snaps
-    run(s, 0.6);
-    expect(s.hoverK).toBeLessThan(1e-3); expect(s.pressK).toBeLessThan(1e-3);
-    expect(run(s, 1 / 120)).toBe(false);          // everything settled: the host may stop painting
-  });
-
-  it("buttons that are not live ignore the channel — a deleting or unrevealed card has none", () => {
-    const s = newVfSprings();
-    run(s, 0.4, { hover: VF_PARTS.close, press: VF_PARTS.close }, false);
-    expect(s.hoverC).toBe(0); expect(s.pressC).toBe(0);
+  it("the buttons are dead while the card is lifted: a hover mid-drag does not swell them", () => {
+    const pack = vfFrame({ style: EARS });
+    const out = { live: false };
+    const ctx = { card: medium, material: { shadow: SHADOW, lift: LIFT }, dt: 1 / 60, part: { hover: VF_PARTS.close, press: null }, key: "k", out };
+    for (let i = 0; i < 60; i++) pack.resolve({ ...ctx, motion: { ...VF_REST, held: 1, lift: LIFT.scale } });
+    expect(pack.springsOf("k").hoverC).toBe(0);
+    for (let i = 0; i < 60; i++) pack.resolve({ ...ctx, motion: VF_REST });
+    expect(pack.springsOf("k").hoverC).toBeGreaterThan(0.5);
   });
 });

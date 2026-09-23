@@ -1,97 +1,50 @@
-// VibeField's card frame — a CARD PROGRAM pack (design-014): the composed
-// corners with their bays, the close and lock buttons with their glyphs, the
-// §7 selection ring, the §2.3 hairline and the §7 overlap heat, on the engine's
-// record HEAD plus this pack's TAIL. A PURE module: the record, the pass
-// uniforms and the pixel scale are parameters. Every geometric number was
-// resolved on the CPU this frame (choreography.ts) — no curve is evaluated
-// here — and every colour comes in through the uniform slots this pack fills
-// from its theme section: this file names no colour. (Lineage: research/
-// sdf-card/src/sdf/card.wgsl, glyphs.wgsl and render.wgsl; the engine's
-// frame.wgsl before design-014 split the seam.)
+// VibeField's card frame — a CARD PROGRAM pack (design-014): the SOCKET (the
+// ring a selected card rests in and a held card rises into), the close and
+// lock buttons in their ears with their glyphs, the §7 selection ring, the
+// §2.3 hairline and the §7 overlap heat, on the engine's record HEAD plus this
+// pack's TAIL. A PURE module: the record, the pass uniforms and the pixel
+// scale are parameters. Every geometric number was resolved on the CPU this
+// frame (choreography.ts) — no curve is evaluated here — and every colour
+// comes in through the uniform slots this pack fills from its theme section:
+// this file names no colour. (Lineage: research/sdf-card/src/sdf/card.wgsl,
+// glyphs.wgsl and render.wgsl; the notched frame before the socket.)
 //
 //   frame = outer \ inner
-//   outer = rounded rect
-//   inner = rounded rect with a rounded-rect NOTCH cut flush into each corner
+//   inner = the content's rounded rect, grown by the lift — never cut
+//   outer = the socket's rounded rect (the content grown by the ring), with
+//           an EAR blended into a corner where the style houses a control
 //
-// The TAIL (packs/vf-frame/index.ts packs it): ext[0..5] nw · nh · rho · rfH ·
-// rfV · baseR (per corner, TL TR BR BL); ext[6] closeC.xy · closeR · closeGlyphW;
-// ext[7] lockC.xy · lockR · lockGlyphScale; ext[8] closeGlyphR · lockOpen ·
-// lockSquash · hoverC; ext[9] hoverK. The UNIFORM slots: uext[0] colFrame ·
-// [1] colBtn · [2] colBtnHover · [3] colDestructive · [4] colInk · [5]
-// colInkStrong · [6] colInkMuted · [7] colOnSolid · [8] colGlow · [9] colRim ·
-// [10] glowK (height, alpha reject, alpha accept) · [11] rimK (width, alpha
-// reject, alpha accept).
+// The TAIL (packs/vf-frame/index.ts packs it): ext[0] earX · [1] earY · [2]
+// earR · [3] earFillet (per corner, TL TR BR BL; earR 0 = no ear); ext[4]
+// closeC.xy · closeR · closeGlyphW; ext[5] lockC.xy · lockR · lockGlyphScale;
+// ext[6] closeGlyphR · lockOpen · lockSquash · hoverC; ext[7] hoverK · band.
+// The UNIFORM slots: uext[0] colFrame · [1] colBtn · [2] colBtnHover · [3]
+// colDestructive · [4] colInk · [5] colInkStrong · [6] colInkMuted · [7]
+// colOnSolid · [8] colGlow · [9] colRim · [10] glowK (height, alpha reject,
+// alpha accept) · [11] rimK (width, alpha reject, alpha accept).
 
-fn vf_nw(G: Frame) -> vec4f { return G.ext[0]; }
-fn vf_nh(G: Frame) -> vec4f { return G.ext[1]; }
-fn vf_rho(G: Frame) -> vec4f { return G.ext[2]; }
-fn vf_rfH(G: Frame) -> vec4f { return G.ext[3]; }
-fn vf_rfV(G: Frame) -> vec4f { return G.ext[4]; }
-fn vf_baseR(G: Frame) -> vec4f { return G.ext[5]; }
-
-// One-hot corner mask, TL TR BR BL, from the sign of p.
-fn corner_mask(p: vec2f) -> vec4f {
-  let a = select(0.0, 1.0, p.x >= 0.0);
-  let b = select(0.0, 1.0, p.y >= 0.0);
-  return vec4f((1.0 - a) * (1.0 - b), a * (1.0 - b), a * b, (1.0 - a) * b);
-}
-
-// One corner's constraint region: the quadrant that corner owns, minus its
-// notch. Every rounding joins two PERPENDICULAR half-planes, the condition
-// under which the fillet operators are exact rather than plausible.
-fn corner_sd(p: vec2f, ih: vec2f, s: vec2f,
-             nw: f32, nh: f32, rho: f32, rfH: f32, rfV: f32, br: f32) -> f32 {
-  let u  = p * s;
-  let bx = u.x - ih.x;
-  let by = u.y - ih.y;
-  let dR = op_isect_round(bx, by, br);         // the card's own rounded corner
-  if (nw <= 0.001 || nh <= 0.001) { return dR; }
-  let nx = u.x - (ih.x - nw);
-  let ny = u.y - (ih.y - nh);
-  let dN = op_isect_round(-nx, -ny, rho);      // the notch, concave corner rounded by rho
-  // The content is the ROUNDED card with the notch cut from it. While the
-  // notch is smaller than the corner's own arc it bites nothing — the arc
-  // lies outside it — so the bay blooms out of the rounded corner instead of
-  // out of a square one; fully revealed, the notch contains the arc and the
-  // intersection is the notched card exactly.
-  // INSIDE: the intersection form — max is exact inside.
-  let din = max(max(op_isect_round(by, -dN, rfH),
-                    op_isect_round(bx, -dN, rfV)), dR);
-  if (din <= 0.0) { return din; }
-  // OUTSIDE: the same region as a union of two rounded quadrants — min is
-  // exact outside. Both forms share the zero set, so switching on the sign is seamless.
-  let f1 = op_isect_round(by, nx, rfH);
-  let f2 = op_isect_round(bx, ny, rfV);
-  return max(op_union_round(f1, f2, rho), dR);
-}
-
+// The INNER boundary: the content's rounded rect (`ih`, `radius` carry the
+// lift). `exact` is the notched frame's old switch, kept in the signature so
+// card.wgsl's contract stands; a rounded rect has one field.
 fn frame_inner(G: Frame, pw: vec2f, exact: bool) -> f32 {
-  let p  = pw - G.centre;
-  let ih = G.ih;
-  let nw = vf_nw(G);
-  let nh = vf_nh(G);
-  let rho = vf_rho(G);
-  let rfH = vf_rfH(G);
-  let rfV = vf_rfV(G);
-  let baseR = vf_baseR(G);
-  if (exact) {
-    // Intersect all four corner regions: a real distance field over the whole plane.
-    var d =    corner_sd(p, ih, vec2f(-1.0, -1.0), nw.x, nh.x, rho.x, rfH.x, rfV.x, baseR.x);
-    d = max(d, corner_sd(p, ih, vec2f( 1.0, -1.0), nw.y, nh.y, rho.y, rfH.y, rfV.y, baseR.y));
-    d = max(d, corner_sd(p, ih, vec2f( 1.0,  1.0), nw.z, nh.z, rho.z, rfH.z, rfV.z, baseR.z));
-    d = max(d, corner_sd(p, ih, vec2f(-1.0,  1.0), nw.w, nh.w, rho.w, rfH.w, rfV.w, baseR.w));
-    return d;
-  }
-  // FAST: fold by the sign of p and evaluate only the owning corner. Identical
-  // silhouette; exact within min(nw, nh) of the outline, which covers AA, the
-  // border, the shadow and hit-testing.
-  let m = corner_mask(p);
-  let s = vec2f(select(-1.0, 1.0, p.x >= 0.0), select(-1.0, 1.0, p.y >= 0.0));
-  return corner_sd(p, ih, s, dot(nw, m), dot(nh, m), dot(rho, m),
-                   dot(rfH, m), dot(rfV, m), dot(baseR, m));
+  return sdf_round_box(pw - G.centre, G.ih, G.radius);
 }
 
-fn frame_outer(G: Frame, p: vec2f) -> f32 { return sdf_round_box(p - G.centre, G.half, G.outerR); }
+// The OUTER silhouette: the socket, and each ear blended in by its fillet. A
+// corner without an ear costs a compare — and a point-sized ear must not be
+// blended at all, or the rounded union would bulge the corner by 0.41 × fillet.
+fn frame_outer(G: Frame, pw: vec2f) -> f32 {
+  var d = sdf_round_box(pw - G.centre, G.half, G.outerR);
+  let ex = G.ext[0];
+  let ey = G.ext[1];
+  let er = G.ext[2];
+  let ef = G.ext[3];
+  if (er.x > 0.001) { d = op_union_round(d, length(pw - vec2f(ex.x, ey.x)) - er.x, ef.x); }
+  if (er.y > 0.001) { d = op_union_round(d, length(pw - vec2f(ex.y, ey.y)) - er.y, ef.y); }
+  if (er.z > 0.001) { d = op_union_round(d, length(pw - vec2f(ex.z, ey.z)) - er.z, ef.z); }
+  if (er.w > 0.001) { d = op_union_round(d, length(pw - vec2f(ex.w, ey.w)) - er.w, ef.w); }
+  return d;
+}
 
 // Padlock, in units where the button radius is the design radius. `open` swings
 // the shackle about the base of its LEFT leg; `sq` is squash-and-stretch.
@@ -133,7 +86,7 @@ fn shade_card(G: Frame, u: FrameUniforms, p: vec2f, px: f32) -> Shade {
   s.chrome = u.uext[0].rgb;
   // More than a pixel outside the outer box, nothing but the shadow can paint
   // (every coverage below is 0 there) — and the shadow skirt is most of the
-  // quad, so the notched inner field is never evaluated for it. Exact, not a
+  // quad, so the inner field is never evaluated for it. Exact, not a
   // heuristic: cov(d, px) is identically 0 for d ≥ px/2.
   if (dO > px) { s.dI = dO; s.cF = 0.0; s.cI = 0.0; s.skip = true; return s; }
 
@@ -160,8 +113,8 @@ fn shade_over(G: Frame, u: FrameUniforms, p: vec2f, px: f32, s: Shade, acc_in: v
   let dO = s.dO;
   let cF = s.cF;
   let cI = s.cI;
-  let e8 = G.ext[8];
-  let e9 = G.ext[9];
+  let e8 = G.ext[6];
+  let e9 = G.ext[7];
   let hoverC = e8.w;
   let hoverK = e9.x;
 
@@ -193,7 +146,7 @@ fn shade_over(G: Frame, u: FrameUniforms, p: vec2f, px: f32, s: Shade, acc_in: v
 
   // The lock: a §7 fill that steps on hover; the glyph wears the text ramp —
   // secondary locked, tertiary open, foreground on hover.
-  let lock = G.ext[7];
+  let lock = G.ext[5];
   if (lock.z > 0.05) {
     let lp = p - lock.xy;
     let cB = cov(sdf_circle(lp, lock.z), px);
@@ -203,7 +156,7 @@ fn shade_over(G: Frame, u: FrameUniforms, p: vec2f, px: f32, s: Shade, acc_in: v
   }
   // The close: colourless at rest like every other chrome; §2.5 red the moment
   // it is armed — destructive is visually distinct BEFORE the act.
-  let close = G.ext[6];
+  let close = G.ext[4];
   if (close.z > 0.05) {
     let bp = p - close.xy;
     let cB = cov(sdf_circle(bp, close.z), px);

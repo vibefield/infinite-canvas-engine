@@ -857,7 +857,10 @@ if (process.argv[2] === "mirror") {
   // bg 0.2 · frame 1 · surface 0 · ring 1 (white, so it reads in the red channel) · hairline and buttons off.
   const style = STYLES.product;
   const s = { cards: [{ x: 0, y: 0, w: 400, h: 240, r: 14, strength: 1, selected: true }], camX: -300, camY: -200, zoom: 2, mouseX: 0, mouseY: 0, mouseOn: false, reach: 140, halfLen: 5.5, theme: "dark", style: "product", exact: true };
-  const flat = { ...THEMES.dark, canvasBg: [0.2, 0.2, 0.2], shadow: 0, frame: [1, 1, 1], hairline: [0, 0, 0, 0], select: [1, 1, 1], fill: [0, 0, 0, 0], fillHover: [0, 0, 0, 0] };
+  // The flat colours live in two homes since design-014: the head (bg, hairline, ring) and the frame PACK's own
+  // section (the chrome, the button fills) — a `frame` on the head is a key nothing reads, and the mirror then
+  // predicts a white band the shader paints in the theme's chrome (a 217/255 miss over the whole ring).
+  const flat = { ...THEMES.dark, canvasBg: [0.2, 0.2, 0.2], shadow: 0, hairline: [0, 0, 0, 0], select: [1, 1, 1], packs: { ...THEMES.dark.packs, "vf-frame": { ...vfSectionOf(THEMES.dark), frame: [1, 1, 1], fill: [0, 0, 0, 0], fillHover: [0, 0, 0, 0] } } };
   const { px, f } = await render(s, { theme: flat, framesOnly: true, surface: [0, 0, 0] });
   const G = f.geoms[0];
   const pxScale = 1 / (s.zoom * VIEW.dpr);

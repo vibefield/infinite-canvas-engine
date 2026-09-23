@@ -17,7 +17,7 @@
  *     plate) while its bar is the plate; idle-zero holds with cards on the board;
  *  5. selection is a spring: the reveal reaches 1, the ring arrives, and once settled the
  *     board is idle-zero again;
- *  6. Grab IS the lift: the card scales by ChromeSettings.liftScale and sets down when it goes;
+ *  6. Grab IS the lift: the card RISES by the socket's ring (the frame's thickness) and sets down when it goes;
  *  7. the heat: the drop pair on a target with a recognizer's DragBounds lights the target
  *     (the plate under the light reads brighter), and clearing it fades out.
  *
@@ -49,7 +49,7 @@ import {
 import { instrumentSubmits, type SubmitInstrument } from "@ice/ground";
 import { groundCompose, type GroundComposeContext, type GroundComposeHandle, type ShellGeometry } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
-import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
+import { cuttingMat, needleGlyph, STYLES, vfFrame } from "@ice/ground/packs";
 import { compositedProfile, InfiniteCanvas } from "@ice/react";
 import { createRoot } from "react-dom/client";
 import { createDemoEngine } from "../App";
@@ -84,7 +84,8 @@ interface Board {
   readonly note?: string;
 }
 interface SelectResult { readonly reveal: number; readonly ring: number; readonly live: boolean; readonly redraws: number }
-interface Grabbed { readonly lift: number; readonly scale: number; readonly shadowSigma: number; readonly liftAfter: number; readonly scaleAfter: number }
+/** The lift as the socket frame draws it: `rise` = how far the content's edge moved out (the ring's `thickness`), per axis. */
+interface Grabbed { readonly lift: number; readonly rise: readonly [number, number]; readonly thickness: number; readonly shadowSigma: number; readonly liftAfter: number; readonly riseAfter: readonly [number, number] }
 interface Heated {
   readonly hot: number; readonly tier: number; readonly at: readonly [number, number]; readonly half: readonly [number, number]; readonly r: number;
   /** The target's plate under the light vs the same plate cold (modal 9×9 patches). */
@@ -219,7 +220,7 @@ function mountNextRig(): NextRig {
     instrument = instrumentSubmits(gpu.device);
     engine = createDemoEngine(gpu);
     // the app's own choice (design-014): VibeField's frame as the card program, the needle and the mat as grids
-    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame(), grids: [needleGlyph, cuttingMat], onPart: (entity, part) => { taps.push({ entity: Number(entity), part }); } });
+    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame({ style: STYLES.ears }), grids: [needleGlyph, cuttingMat], onPart: (entity, part) => { taps.push({ entity: Number(entity), part }); } });
     const ground = (ctx: GroundComposeContext) => { handle = factory(ctx); return handle; };
     createRoot(rootEl).render(
       <InfiniteCanvas engine={engine} ground={ground} profile={compositedProfile} className="h-full w-full" />,
@@ -349,12 +350,14 @@ function mountNextRig(): NextRig {
       await until(() => (compose().motionOf(card)?.lift ?? 0) >= 1 && !compose().stats().live, 240);
       const m = must(compose().motionOf(card), "motion");
       const G = must(compose().geometryOf(card), "geometry");
-      const lifted = { lift: m.lift, scale: G.scale, shadowSigma: G.shadowSigma };
+      // THE SOCKET (2026-09-23): the lift is a RISE by the ring's thickness, read off the inner box — not a scale
+      const riseOf = (g: ShellGeometry): readonly [number, number] => [g.ih[0] - r.w / 2, g.ih[1] - r.h / 2];
+      const lifted = { lift: m.lift, rise: riseOf(G), thickness: STYLES.ears.thickness, shadowSigma: G.shadowSigma };
       world.removeComponent(card, Grab);
       await until(() => (compose().motionOf(card)?.lift ?? 1) <= 0 && !compose().stats().live, 240);
       const m2 = must(compose().motionOf(card), "motion");
       const G2 = must(compose().geometryOf(card), "geometry");
-      return { ...lifted, liftAfter: m2.lift, scaleAfter: G2.scale };
+      return { ...lifted, liftAfter: m2.lift, riseAfter: riseOf(G2) };
     },
     async boundary(i) {
       const card = must(cards[i], `card ${i}`);

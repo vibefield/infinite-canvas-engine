@@ -72,6 +72,12 @@ export interface CardProgram<G extends ShellGeometry = ShellGeometry> {
   pick(G: G, x: number, y: number): Hit;
   /** The silhouette a dragged set of content size `w × h` casts as the heat's light source, lifted by `lift`. */
   source(w: number, h: number, lift: number, radius: number): Silhouette;
+  /**
+   * How far the chrome reaches beyond the content rect at rest, card units — the cull margin
+   * and the router's pick pad grow by it. Absent = `source(0, 0, 1, radius).hx`, the band a
+   * program grows around a dragged set.
+   */
+  reach?(radius: number): number;
   /** The theme section this program reads, projected from a host's palette; absent = the program reads only the head. */
   theme?(palette: unknown, name: ThemeName): unknown;
   /** A card left sight or the board: forget any state kept under its key. */

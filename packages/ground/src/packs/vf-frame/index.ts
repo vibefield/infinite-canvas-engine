@@ -1,13 +1,14 @@
 // `vf-frame` — VibeField's card frame as a CARD PROGRAM pack (design-014): the
-// composed corners with their bays, the close and lock buttons, the delete
-// morph, the §7 overlap heat as cast light. Registered by an app
-// (`groundCompose({ card: vfFrame() })`, `Ground.create({ card })`); the
-// engine's own card is the shell. This file is the seam's CPU half: the
-// program object — its style (settable, the lab's panel edits it), its heat
-// knobs, its own per-card springs (the two buttons' hover and press, the
-// lock's state — the engine's motion carries the reveal, the lift and the
-// heat), the tail packer, the uniform slots from the theme's `vf-frame`
-// section, the hit test, and the light source a dragged set casts.
+// SOCKET — the ring a selected card rests in and a held card rises into — with
+// the close and lock buttons in optional ears, the delete morph, the §7 overlap
+// heat as cast light. Registered by an app (`groundCompose({ card: vfFrame() })`,
+// `Ground.create({ card })`); the engine's own card is the shell. This file is
+// the seam's CPU half: the program object — its style (settable, the lab's
+// panel edits it), its heat knobs, its own per-card springs (the two buttons'
+// hover and press, the lock's state — the engine's motion carries the reveal,
+// the lift and the heat), the tail packer, the uniform slots from the theme's
+// `vf-frame` section, the hit test, the reach the chrome claims beyond the
+// content, and the light source a dragged set casts.
 
 import { type CardContext, type CardProgram, type Hit, CARD_ABI, type Silhouette } from "../../card/program";
 import { spring, settled } from "../../card/springs";
@@ -16,8 +17,8 @@ import { WGSL } from "../../shaders.gen";
 import { cssColor, type GroundTheme, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../../theme";
 import { resolve, tailOf, VF_EXT, type VfGeometry, type VfMotion } from "./choreography";
 import { HEAT, type Heat, heatValues } from "./heat";
-import { pick, sdInner } from "./sdf";
-import { type FrameStyle, PRODUCT } from "./sheet";
+import { pick } from "./sdf";
+import { type FrameStyle, PRODUCT, reachOf } from "./sheet";
 
 export * from "./choreography";
 export * from "./heat";
@@ -100,7 +101,7 @@ export const VF_TUNING = { lockHz: 3.6, lockDamp: 0.72 } as const;
 export const VF_PARTS = { close: "close", lock: "lock" } as const;
 
 export interface VfFrameOptions {
-  /** The frame style; the product's composed corners by default. */
+  /** The frame style; the product's socket (no ears) by default — `STYLES.ears` carries the two controls. */
   readonly style?: FrameStyle;
   /** The heat's knobs (height, the tier alphas, the rim); theme.ts's `HEAT` by default. */
   readonly heat?: Heat;
@@ -171,7 +172,7 @@ export function vfFrame(opts: VfFrameOptions = {}): VfFramePack {
     resolve(ctx) {
       // a card without a key (a still: the oracle) resolves at rest — fresh springs, the lock closed
       const s = ctx.key === undefined ? newVfSprings() : pack.springsOf(ctx.key);
-      const buttonsLive = ctx.motion.del <= 0 && ctx.motion.reveal > 0.5;
+      const buttonsLive = ctx.motion.del <= 0 && ctx.motion.reveal > 0.5 && ctx.motion.held < 0.5;
       if (stepVfSprings(s, ctx.dt, ctx.part, buttonsLive, tuning) && ctx.out) ctx.out.live = true;
       return resolve(pack.style, ctx.card, vfMotionOf(ctx.motion, s), ctx.material);
     },
@@ -179,19 +180,16 @@ export function vfFrame(opts: VfFrameOptions = {}): VfFramePack {
     release: (key) => { table.delete(key); },
     uniformValues: (theme) => vfUniformValues(vfSectionOf(theme), pack.heat),
     pick: (G, x, y): Hit => pick(G, x, y),
-    source(w, h, lift, radius): Silhouette {
+    // THE SOCKET LAW: a lifted card's silhouette is the socket's outer edge — the content grown by the ring,
+    // whatever scale the host's lift driver holds (`lift` is the shell's number; this pack rises by its thickness).
+    source(w, h, _lift, radius): Silhouette {
       const T = pack.style.thickness;
-      const Ro = pack.style.outerR ?? radius + T;
-      return { hx: (w / 2 + T) * lift, hy: (h / 2 + T) * lift, r: Ro * lift };
+      return { hx: w / 2 + T, hy: h / 2 + T, r: radius + T };
     },
+    reach: (radius) => reachOf(pack.style, radius),
     theme: VF_THEME_SOURCE.theme,
-    inner: (G, x, y) => sdInner(G, x, y),
-    // the shape in UNSCALED card units: the inner box, the corners' notches and fillets, the content radii
-    clipKey(G) {
-      const s = G.scale > 0 ? G.scale : 1;
-      const f = (v: number): string => (v / s).toFixed(3);
-      return [G.ih[0], G.ih[1], ...G.nw, ...G.nh, ...G.rho, ...G.rfH, ...G.rfV, ...G.baseR].map(f).join(",");
-    },
+    // No `inner`: the content is never cut, so a DOM host clips to its own rounded rect (dom-compose.ts's
+    // fallback) — no ray march, no clip key, and the pickup pays nothing for the reveal.
   };
   return pack;
 }

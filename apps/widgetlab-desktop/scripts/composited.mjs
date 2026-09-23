@@ -116,7 +116,8 @@ try {
   // ---- B3b: the DOM boundary — chrome exists once, the controls are the ground's, the band is a handle
   const b = await page.evaluate(() => window.__nextRig.boundary(0));
   log(`boundary: ${JSON.stringify(b)}`);
-  check(b.domWrites.clips >= 7 && b.clip.startsWith("polygon("), `DomCompose wrote every card's clip from the program's inner shape (${b.domWrites.clips} clips, ${b.domWrites.writes} writes; card 0: ${b.clip.slice(0, 40)}…)`);
+  // THE SOCKET (2026-09-23): the content is never cut, so the clip is the rounded content rect in ONE inset — no polygon march
+  check(b.domWrites.clips >= 7 && /^inset\(0(px)? round 22(\.00)?px\)$/.test(b.clip), `DomCompose wrote every card's clip as the rounded content rect, no march (${b.domWrites.clips} clips, ${b.domWrites.writes} writes; card 0: ${b.clip})`);
   // Chrome ONCE: the page with the DOM hosts hidden must equal the page with them shown at the ring band and in
   // the shadow skirt (the shell paints nothing there), and differ over the title (the content IS the DOM's).
   // Two page screenshots, one colour space — a canvas readback is in the swap chain's sRGB bytes while the
@@ -159,8 +160,8 @@ try {
 
   const grab = await page.evaluate(() => window.__nextRig.grab(1));
   log(`grab: ${JSON.stringify(grab)}`);
-  check(grab.lift === 1 && Math.abs(grab.scale - 1.05) < 1e-6, `Grab lifts: lift ${grab.lift}, scale ${grab.scale.toFixed(4)} (ChromeSettings.liftScale 1.05)`);
-  check(grab.liftAfter === 0 && grab.scaleAfter === 1, `losing Grab sets it down: lift ${grab.liftAfter}, scale ${grab.scaleAfter}`);
+  check(grab.lift === 1 && Math.abs(grab.rise[0] - grab.thickness) < 1e-6 && Math.abs(grab.rise[1] - grab.thickness) < 1e-6, `Grab lifts: lift ${grab.lift}, the content rose ${grab.rise[0].toFixed(2)}×${grab.rise[1].toFixed(2)} px into the socket (its ring is ${grab.thickness})`);
+  check(grab.liftAfter === 0 && grab.riseAfter[0] === 0 && grab.riseAfter[1] === 0, `losing Grab sets it down: lift ${grab.liftAfter}, rise ${grab.riseAfter.join("×")}`);
 
   const heat = await page.evaluate(() => window.__nextRig.heat(2, 1));
   log(`heat: ${JSON.stringify(heat)}`);

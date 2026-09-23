@@ -5,80 +5,30 @@
 
 import { FIT, type FadeIn, type FieldConfig, type FitBand, type FlightTuning, type GlyphRange, type GroundTheme, LINES, MATERIAL, MOTION_DEFAULTS, type Material, type MotionTuning, NAV, PORTAL_CAP, PORTAL_GATE, type RGB, type RGBA, type ThemeName } from "@ice/ground/compose";
 // The product's look is in the PACKS (design-014): the frame's style sheet and heat, the mat's material and its night.
-import { type CornerSpec, EIGENGRAU, type FrameStyle, HEAT, MAT_COLORS, MAT_GLYPH, MAT_GRID, type MatConfig, type MatLight, NIGHT, PRODUCT, PRODUCT_CORNER, type PlateName, type STYLES, VF_FRAME, type VfThemeSection, composeStyle, dayLuminance, nightLight, vfSectionOf } from "@ice/ground/packs";
+import { EIGENGRAU, type FrameStyle, HEAT, MAT_COLORS, MAT_GLYPH, MAT_GRID, type MatConfig, type MatLight, NIGHT, PRODUCT, type PlateName, type STYLES, VF_FRAME, type VfThemeSection, dayLuminance, nightLight, socketStyle, vfSectionOf } from "@ice/ground/packs";
 import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 
 /**
- * The corner composition as the panel edits it (sheet.ts `CornerSpec`, every
- * field explicit). `tangent` means the fillet is derived (ear − thickness);
- * off, `fillet` is the number.
- */
-export interface CornerTweaks {
-  thickness: number;
-  control: number;
-  clearance: number;
-  bayClearance: number;
-  fillet: number;
-  tangent: boolean;
-  shelf: number;
-  radius: number;
-}
-export function cornerTweaksOf(c: CornerSpec): CornerTweaks {
-  return {
-    thickness: c.thickness, control: c.control, clearance: c.clearance, bayClearance: c.bayClearance ?? c.clearance,
-    fillet: c.fillet ?? c.control / 2 + c.clearance - c.thickness, tangent: c.fillet === undefined, shelf: c.shelf ?? 0, radius: c.radius,
-  };
-}
-export function cornerSpecOf(t: CornerTweaks, name = "composed"): CornerSpec {
-  return { name, thickness: t.thickness, control: t.control, clearance: t.clearance, bayClearance: t.bayClearance, ...(t.tangent ? {} : { fillet: t.fillet }), shelf: t.shelf, radius: t.radius };
-}
-
-/**
- * A style as the panel edits it. The RAW rows are the truth `buildStyle` reads
- * (one number per row, the BR shelf its own); `corner` is the composition that
- * generated them — editing it regenerates every raw row (`composeTweaks`),
- * editing a raw row leaves the composition behind.
+ * The SOCKET as the panel edits it (sheet.ts `SocketSpec`, every field explicit):
+ * the ring = the lift's rise, the card's resting radius, and the controls if any
+ * (a control diameter of 0 is a socket without ears). `buildStyle` is
+ * `socketStyle`; the base names the shipped style the tweaks started from.
  */
 export interface StyleTweaks {
   base: keyof typeof STYLES;
-  corner: CornerTweaks;
   thickness: number;
-  notchW: number;       // TL TR BL
-  shelfW: number;       // BR — the wide notch
-  notchH: number;
-  rho: number;
-  rfH: number;
-  rfV: number;
-  rfVShelf: number;
-  baseR: number;
-  /** The revealed outer radius; 0 = concentric with the content (baseR + thickness). */
-  outerR: number;
-  btnInset: number;
-  btnRadius: number;
-  btnGlyphW: number;
-  btnGlyphR: number;
+  radius: number;
+  control: number;
+  clearance: number;
+  fillet: number;
 }
 
-export function styleTweaksOf(s: FrameStyle, base: keyof typeof STYLES, corner: CornerTweaks = cornerTweaksOf(PRODUCT_CORNER)): StyleTweaks {
-  return {
-    base, corner: { ...corner }, thickness: s.thickness, notchW: s.nw[0], shelfW: s.nw[2], notchH: s.nh[0], rho: s.rho[0],
-    rfH: s.rfH[0], rfV: s.rfV[0], rfVShelf: s.rfV[2], baseR: s.baseR[0], outerR: s.outerR ?? 0,
-    btnInset: s.btn.insetX, btnRadius: s.btn.radius, btnGlyphW: s.btn.glyphW, btnGlyphR: s.btn.glyphR,
-  };
+export function styleTweaksOf(s: FrameStyle, base: keyof typeof STYLES): StyleTweaks {
+  return { base, thickness: s.thickness, radius: s.radius, control: s.control, clearance: s.clearance, fillet: s.fillet };
 }
-
-/** Regenerate the raw rows from the composition. */
-export const composeTweaks = (t: StyleTweaks): StyleTweaks => styleTweaksOf(composeStyle(cornerSpecOf(t.corner, t.base)), t.base, t.corner);
 
 export function buildStyle(t: StyleTweaks): FrameStyle {
-  return {
-    name: t.base, thickness: t.thickness,
-    nw: [t.notchW, t.notchW, t.shelfW, t.notchW], nh: [t.notchH, t.notchH, t.notchH, t.notchH],
-    rho: [t.rho, t.rho, t.rho, t.rho], rfH: [t.rfH, t.rfH, t.rfH, t.rfH], rfV: [t.rfV, t.rfV, t.rfVShelf, t.rfV],
-    baseR: [t.baseR, t.baseR, t.baseR, t.baseR],
-    ...(t.outerR > 0 ? { outerR: t.outerR } : {}),
-    btn: { insetX: t.btnInset, insetY: t.btnInset, radius: t.btnRadius, glyphW: t.btnGlyphW, glyphR: t.btnGlyphR },
-  };
+  return socketStyle({ name: t.base, thickness: t.thickness, radius: t.radius, control: t.control, clearance: t.clearance, fillet: t.fillet });
 }
 
 /**
@@ -200,7 +150,7 @@ export interface HeatTweaks { height: number; alpha: [number, number]; rim: { wi
 export const defaultHeatTweaks = (): HeatTweaks => ({ height: HEAT.height, alpha: [...HEAT.alpha], rim: { width: HEAT.rim.width, alpha: [...HEAT.rim.alpha] } });
 
 /** Bumped when a saved snapshot's meaning changes; an old snapshot is dropped, not merged. */
-export const PARAMS_VERSION = 3;
+export const PARAMS_VERSION = 4;
 
 export interface Params {
   version: number;

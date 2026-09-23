@@ -4,15 +4,20 @@
 // shape by `clip-path` from the same `resolve()` the ground drew, scaled by
 // the lift on its transform, faded by the hold's opacity. Chrome exists once.
 //
-// This file is the pure part and the writer. `clipPathOf` marches the
-// program's inner distance field from the card's centre (a notched, rounded
-// card is star-shaped about its centre, so one ray per angle finds one
+// This file is the pure part and the writer. `clipPathOf` marches a program's
+// inner distance field, when it has one, from the card's centre (a notched,
+// rounded card is star-shaped about its centre, so one ray per angle finds one
 // boundary point) and returns a CSS `polygon()` in the content element's own
 // px — the element is the UNSCALED content rect, so the lift divides out and
-// the clip is invariant under it. `createDomHostWriter` writes the three
-// properties change-only, recomputing the clip only when the program's
-// `clipKey` says the shape moved (the reveal's ~300 ms; never while a card
-// is merely lifted or panned).
+// the clip is invariant under it. A program without one (the shell; the socket
+// frame since 2026-09-23, whose content is never cut) clips to the rounded
+// content rect in one `inset()`, no march. `createDomHostWriter` writes the
+// three properties change-only, recomputing the clip only when the program's
+// `clipKey` says the shape moved (the reveal's ~300 ms; never while a card is
+// merely lifted or panned). THE LIFT IS READ OFF THE GEOMETRY: the host's
+// transform is the resolved inner box over the content rect, per axis — a
+// scale for the shell, a rise for the socket — so the DOM and the ground
+// cannot disagree on where a lifted card's edge is.
 //
 // THE CACHE IS KEYED BY THE ELEMENT (D-C4.8), in a `WeakMap`. What the record
 // remembers is what is written ON that element, so the element is what it
@@ -32,6 +37,14 @@ export const CLIP_RAYS = 720;
 /** Bisection steps per ray: the boundary to 1/65536 of the ray's length. */
 const CLIP_STEPS = 16;
 
+/** The lift per axis: the resolved inner box over the content rect — 1 at rest, the shell's scale, the socket's rise. */
+export function liftOf(G: ShellGeometry, w: number, h: number): readonly [number, number] {
+  return [w > 0 ? (2 * G.ih[0]) / w : 1, h > 0 ? (2 * G.ih[1]) / h : 1];
+}
+
+/** The content's corner radius in the element's own px: the resolved radius, the lift divided out. */
+export const contentRadiusOf = (G: ShellGeometry, w: number): number => G.radius / Math.max(liftOf(G, w, w)[0], 1e-6);
+
 /**
  * The content element's clip for a resolved geometry: the program's inner
  * shape in the element's px (origin its top-left, unscaled). A program with
@@ -40,7 +53,7 @@ const CLIP_STEPS = 16;
 export function clipPathOf(program: CardProgram<ShellGeometry>, G: ShellGeometry, w: number, h: number, rays = CLIP_RAYS): string {
   const s = G.scale > 0 ? G.scale : 1;
   const inner = program.inner;
-  if (inner === undefined) return `inset(0 round ${(G.radius / s).toFixed(2)}px)`;
+  if (inner === undefined) return `inset(0 round ${contentRadiusOf(G, w).toFixed(2)}px)`;
   const [cx, cy] = G.centre;
   if (inner(G, cx, cy) >= 0) return "inset(50%)";   // a vanished card (the delete morph's end): nothing shows
   const reach = Math.hypot(G.half[0], G.half[1]) + 4;
@@ -79,7 +92,7 @@ interface Written { key: string; clip: string; transform: string; opacity: strin
 export function createDomHostWriter(program: CardProgram<ShellGeometry>, contentOf: (entity: Entity) => HTMLElement | undefined): DomHostWriter {
   const last = new WeakMap<HTMLElement, Written>();
   let clips = 0;
-  const keyOf = (G: ShellGeometry, w: number, h: number): string => `${w}|${h}|${program.clipKey?.(G) ?? (G.radius / (G.scale > 0 ? G.scale : 1)).toFixed(3)}`;
+  const keyOf = (G: ShellGeometry, w: number, h: number): string => `${w}|${h}|${program.clipKey?.(G) ?? contentRadiusOf(G, w).toFixed(2)}`;
   return {
     get clips() { return clips; },
     write(entries) {
@@ -102,7 +115,9 @@ export function createDomHostWriter(program: CardProgram<ShellGeometry>, content
         // and the per-frame transform write would paint the L1 source canvas past DomRender's self-write guard (B9 review
         // blocker 3). Written as empty, so a promotion clears what the card carried as a dom target, and a demotion restores it.
         const composed = target !== "gpu";
-        const transform = composed && G.scale !== 1 ? `scale(${G.scale.toFixed(5)})` : "";
+        const [sx, sy] = liftOf(G, w, h);
+        const lifted = Math.abs(sx - 1) > 1e-6 || Math.abs(sy - 1) > 1e-6;
+        const transform = composed && lifted ? (Math.abs(sx - sy) < 1e-6 ? `scale(${sx.toFixed(5)})` : `scale(${sx.toFixed(5)}, ${sy.toFixed(5)})`) : "";
         if (transform !== rec.transform) { el.style.transform = transform; rec.transform = transform; writes++; }
         const opacity = composed && G.frameAlpha !== 1 ? G.frameAlpha.toFixed(4) : "";
         if (opacity !== rec.opacity) { el.style.opacity = opacity; rec.opacity = opacity; writes++; }
