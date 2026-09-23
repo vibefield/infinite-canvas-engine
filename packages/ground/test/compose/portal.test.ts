@@ -171,7 +171,7 @@ describe("the hole, the tree, the pool", () => {
   it("mode portal is 3 with no uv; the record carries it; a hole rides a z-run like a plate", () => {
     const G = resolve(PRODUCT, { centre: [0, 0], contentHalf: [64, 32], radius: 12 }, VF_REST, MATERIAL);
     expect(CONTENT_MODE.portal).toBe(3);
-    expect(contentValues(G, PORTAL)).toEqual({ mode: 3, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih });
+    expect(contentValues(G, PORTAL)).toEqual({ mode: 3, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih, face: [0, 0, 0, 0], faceR: 0 });
     expect(frameValues(G, [0, 0, 0], PORTAL).mode).toBe(3);
     const b = Frame.alloc(1); b.set(frameValues(G, [0, 0, 0], PORTAL), 0);
     expect(new Uint32Array(b.bytes, Frame.slots.mode.byte, 1)[0]).toBe(3);
@@ -315,8 +315,8 @@ describe("§10 — the chain, the face, the fill's growth (the review's two defe
     expect(faceRect(tiny, FOLDER_FACE)).toBe(tiny); expect(faceRadius(tiny, FOLDER_FACE, 22)).toBe(22);
     const G = resolve(PRODUCT, { centre: [50, 20], contentHalf: [164.5, 172.5], radius: 22 }, VF_REST, MATERIAL);
     const face = { cx: 50, cy: 7, hx: 154.5, hy: 149.5, r: 7 };
-    expect(contentValues(G, portalContent(face))).toEqual({ mode: 3, layer: 0, uv: [0, -13, 7, 1], chalf: [154.5, 149.5] });
-    expect(contentValues(G, PORTAL)).toEqual({ mode: 3, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih });   // no face: the whole interior, as before
+    expect(contentValues(G, portalContent(face))).toEqual({ mode: 3, layer: 0, uv: [0, -13, 7, 1], chalf: [154.5, 149.5], face: [0, 0, 0, 0], faceR: 0 });
+    expect(contentValues(G, PORTAL)).toEqual({ mode: 3, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih, face: [0, 0, 0, 0], faceR: 0 });   // no face: the whole interior, as before
     const b = Frame.alloc(1); b.set(frameValues(G, [0, 0, 0], portalContent(face)), 0);
     expect(Array.from(new Float32Array(b.bytes, Frame.slots.uv.byte, 4))).toEqual([0, -13, 7, 1]);
   });

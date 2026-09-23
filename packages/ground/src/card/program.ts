@@ -24,8 +24,8 @@ import type { GroundTheme, ThemeName } from "../theme";
 import { WGSL } from "../shaders.gen";
 import { type CardRect, type Material, type Motion, resolveShell, type ShellGeometry } from "./geometry";
 
-/** The record HEAD's layout version a program was written against; a mismatch refuses at `Ground.create` (D3). */
-export const CARD_ABI = 1;
+/** The record HEAD's layout version a program was written against; a mismatch refuses at `Ground.create` (D3). 2 since 2026-09-23: the pane's face rides the head. */
+export const CARD_ABI = 2;
 
 /** What is under a world point: the card's content, its chrome (the frame band), nothing — or a program's PART by name (`close`, `lock` …). */
 export type Hit = "content" | "frame" | "outside" | (string & { readonly part?: never });

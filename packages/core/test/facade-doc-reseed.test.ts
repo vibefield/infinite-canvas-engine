@@ -84,7 +84,7 @@ function mounted(): { ce: CanvasEngine; release: () => void } {
     hitSlopPx: 7,
   } as never);
   writeRuntimeResource(ce.world, SnapConfig, { enabled: true, thresholdPx: 11 });
-  writeRuntimeResource(ce.world, ChromeSettings, { liftScale: 1.42 });
+  writeRuntimeResource(ce.world, ChromeSettings, { liftScale: 1.42, selectionReach: 0 });
   const release = ce.stage.background("reseed-overlay");
   return { ce, release };
 }

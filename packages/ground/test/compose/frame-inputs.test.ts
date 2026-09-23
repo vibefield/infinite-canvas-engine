@@ -9,31 +9,12 @@
 // the reveal, the lift and the heat as springs on world facts; the dirty
 // union; a card out of sight forgets its flux; dispose lets the preview go.
 import { describe, expect, it } from "vitest";
-import {
-  ChromeSettings,
-  DragBounds,
-  DropTarget,
-  Grab,
-  NO_ENTITY,
-  OverlapCandidate,
-  OverlapRejected,
-  Pointer,
-  PointerPart,
-  Position,
-  Targets,
-  TouchesExact,
-  Viewport,
-  createCanvasEngine,
-  defineCanvasType,
-  defineContainer,
-  defineWidget,
-  tools,
-  widgets,
-  type Entity,
-} from "@ice/core";
+import { ChromeSettings, createCanvasEngine, defineCanvasType, defineContainer, defineWidget, DragBounds, DropTarget, Grab, NO_ENTITY, OverlapCandidate, OverlapRejected, Pointer, PointerPart, Position, Selected, Targets, tools, TouchesExact, type Entity, Viewport, widgets } from "@ice/core";
 import { MATERIAL, REST, resolveShell, SHELL_RADIUS, IDLE } from "../../src/card/geometry";
 import { NO_PART, shellProgram } from "../../src/card/program";
 import { cornersOf, PRODUCT, VF_EXT, vfFrame, type VfGeometry } from "../../src/packs/vf-frame";
+import { PLATE } from "../../src/card/content";
+import type { ContentResidency } from "../../src/compose/residency";
 import { createFrameBuilder, faceOfSnapshot, heatSourceOf, offscreen, portalFaceOf, sizeOf } from "../../src/compose/frame-inputs";
 import { DEFAULT_FIELD_CONFIG } from "../../src/field/layout";
 import { arrivalCamera, boundsOf, FIT } from "../../src/nav/flight";
@@ -160,6 +141,24 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     builder.dispose();
   });
 
+  it("a container the GPU holds draws a PANE: its own picture around the face, the face still the hole its inside shows through (2026-09-23)", () => {
+    const { ce, folder } = makeBoard();
+    // a residency that says the folder's picture is written on page 2 — what a gesture's still or a shield leaves behind
+    const residency = { contentOf: (e: Entity) => (e === folder ? { mode: "page", layer: 2, uv: { u0: 0.1, v0: 0.2, u1: 0.5, v1: 0.6 } } : PLATE), onTouch: () => () => {} } as unknown as ContentResidency;
+    const builder = createFrameBuilder(ce.world, { previews: ce.previews, residency });
+    const f = builder.build(CAM, VP, DT, THEMES.dark, DEFAULT_FIELD_CONFIG);
+    const pane = must(f.frames[must(f.portals[0]).at]);
+    const content = must(pane.content);
+    expect(content.mode).toBe("pane");
+    if (content.mode !== "pane") return;
+    expect(content.layer).toBe(2);
+    expect(content.uv).toEqual({ u0: 0.1, v0: 0.2, u1: 0.5, v1: 0.6 });
+    expect(content.face).toEqual({ cx: 864.5, cy: 259.5, hx: 154.5, hy: 149.5, r: FOLDER_FACE.radius });   // the same face the hole cuts
+    expect(f.stats.textured).toBe(1);
+    expect(f.portals).toHaveLength(1);                                                            // the portal beneath is still drawn
+    builder.dispose();
+  });
+
   it("the container is a HOLE cut to its face, and its portal is the preview's inside at rest under the flight's exact camera", () => {
     const { ce, build, folder, c1, c2 } = makeBoard();
     const f = build();
@@ -228,6 +227,24 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     step();
     settle();
     expect(must(builder.motionOf(a)).reveal).toBe(0);
+  });
+
+  it("a SELECTED card paints after every unselected one (S4, 2026-09-23) — its chrome reaches past its rect — and a held card after it", () => {
+    const { world, build, a, b } = makeBoard();
+    const centreOf = (frames: readonly { geometry: { centre: readonly [number, number] } }[], i: number) => must(frames[i]).geometry.centre;
+    // at rest `a` (the first sibling) paints first
+    expect(centreOf(build().frames, 0)).toEqual([200, 160]);
+    world.addTag(a, Selected);
+    const sel = build();
+    expect(centreOf(sel.frames, sel.frames.length - 1)).toEqual([200, 160]);   // `a` LAST while selected
+    // held beats selected: grab `b` with `a` still selected — `b` paints last, `a` just before it
+    world.addComponent(b, Grab, { x: 400, y: 100, w: 200, h: 120, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+    const held = build();
+    expect(centreOf(held.frames, held.frames.length - 1)).toEqual([500, 160]);
+    expect(centreOf(held.frames, held.frames.length - 2)).toEqual([200, 160]);
+    world.removeComponent(b, Grab);
+    world.removeTag(a, Selected);
+    expect(centreOf(build().frames, 0)).toEqual([200, 160]);                   // back to the sibling order
   });
 
   it("a HELD card paints LAST — the lifted plane's rule on the ground (S1, 2026-09-09); released, it returns to its ordinal", () => {
@@ -337,7 +354,7 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     // the out-of-world wake: a settings write
     let wakes = 0;
     const off = builder.observe(() => { wakes += 1; });
-    expect(fire(() => world.setResource(ChromeSettings, { liftScale: 1.1 }))).toBe(false);
+    expect(fire(() => world.setResource(ChromeSettings, { liftScale: 1.1, selectionReach: 0 }))).toBe(false);
     expect(wakes).toBe(1);
     off();
     expect(builder.wakes().world).toBeGreaterThan(0);

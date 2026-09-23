@@ -38,7 +38,11 @@ import type { Entity } from "@vibecook/strata-ecs";
 import { defineEngineBehavior } from "../behavior/define-behavior";
 import type { AnyBehaviorDef, RuntimeBehaviorCtx } from "../behavior/types";
 import type { BehaviorRuntime } from "../behavior/runtime";
+import { MeasuredSize } from "../catalog/camera-derived";
 import { Grab } from "../catalog/gesture";
+import { Position, Size } from "../catalog/scene";
+import { Selected } from "../catalog/selection-presence";
+import { ChromeSettings } from "../catalog/settings-resources";
 import { RequestedDemand, SurfaceKind, SurfaceTarget } from "../catalog/surface";
 import { FrameInfo } from "../engine/frame-info";
 import { devGuardsEnabled } from "../guards/dev";
@@ -134,10 +138,17 @@ function refuseNonDomKind(
  * with it even if the abort listener never runs.
  */
 interface SettleState {
-  /** Entities THIS behaviour promoted — it demotes only what it promoted. */
+  /** Entities THIS behaviour promoted for a GESTURE — it demotes only what it promoted. */
   readonly owned: Set<Entity>;
   /** Of `owned`, the cards whose demand this behaviour PAUSED for the gesture (the stills) — restored at demotion. */
   readonly stills: Set<Entity>;
+  /**
+   * THE SHIELD (S4, 2026-09-23): the dom cards this behaviour lifted because a SELECTED card's chrome
+   * reaches over them (`ChromeSettings.selectionReach`) — live at their own cadence, never stills —
+   * and, per card, the clock reading its release expires at once the overlap ends.
+   */
+  readonly shielded: Set<Entity>;
+  readonly shieldRelease: Map<Entity, number>;
   /**
    * The `FrameInfo.clock` reading the GESTURE's settle window expires at; `null` while a card is
    * grabbed or nothing is owned. One window for the whole set (2026-09-09): the set was promoted
@@ -151,7 +162,7 @@ function settleState(ctx: RuntimeBehaviorCtx<Record<string, unknown>>): SettleSt
   const signal = ctx.signal;
   let state = settleTables.get(signal);
   if (state === undefined) {
-    state = { owned: new Set<Entity>(), stills: new Set<Entity>(), settleAt: null };
+    state = { owned: new Set<Entity>(), stills: new Set<Entity>(), shielded: new Set<Entity>(), shieldRelease: new Map<Entity, number>(), settleAt: null };
     settleTables.set(signal, state);
     // `dispose` runs for every instance BEFORE the signal aborts (§4.3), so
     // this only ever clears what a torn-down generation left behind.
@@ -239,7 +250,7 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
     stillWhileGrabbed: p.boolean({ default: true }),
     ...demandSchema,
   },
-  reads: [Grab, SurfaceKind, PrefabId, FrameInfo],
+  reads: [Grab, SurfaceKind, PrefabId, FrameInfo, Selected, Position, Size, MeasuredSize, ChromeSettings],
   writes: [SurfaceTarget, RequestedDemand],
   on: {
     init(e, data, ctx) {
@@ -266,34 +277,42 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
     changed(ctx) {
       const state = settleState(ctx);
       const clock = ctx.world.getResource(FrameInfo)?.clock ?? 0;
+      // THE SHIELD'S NEED, computed first: the gesture's demotion hands a card the shield still
+      // wants straight over, rather than dropping it to the DOM for one frame and lifting it again.
+      const need = shieldNeed(ctx);
 
-      // The grabbed INSTANCES — the self term keeps the walk to this
-      // behaviour's own cards, and `Grab` carriers are few either way.
+      // THE GESTURE: ANY grab on the board (S4, 2026-09-23). The ground draws a lifted card beneath
+      // every resting host the DOM still paints above the canvas, whatever KIND the lifted card is —
+      // an island carried over dom cards rode under them (2026-09-23) because only a grab on one of
+      // this behaviour's own cards used to count. So every `Grab` carrier is the trigger; the SET
+      // is still this behaviour's dom cards alone.
       //
-      // NON-DOM KINDS ARE FILTERED OUT HERE (D5, A3b fix 2), and this is the
-      // only place they need to be: `owned` is populated from this set alone
-      // and `settling` from `owned`, so an island that got this behaviour by
-      // mistake reaches neither loop below and nothing writes `dom` on it.
-      // `init` already refused it loudly in dev; this is the same refusal
-      // holding in a production build, where the throw is a log.
+      // NON-DOM KINDS NEVER ENTER THE SET (D5, A3b fix 2): `owned` is populated from this
+      // behaviour's dom cards alone and `settling` from `owned`, so an island that got this
+      // behaviour by mistake reaches neither loop below and nothing writes `dom` on it. `init`
+      // already refused it loudly in dev; this is the same refusal holding in a production build.
       const grabbed = new Set<Entity>();
-      ctx.query({ all: [Grab, domAtRest] }).each((e) => {
-        if (kindOf(ctx, e) === "dom") grabbed.add(e);
+      let anyGrab = false;
+      let board = false;
+      ctx.query({ all: [Grab] }).each((e) => {
+        anyGrab = true;
+        const cell = cellOf(ctx, e);
+        if (cell !== undefined && kindOf(ctx, e) === "dom") {
+          grabbed.add(e);
+          if (cell.promoteBoard !== false) board = true;
+        } else {
+          // a grab on a card that is not ours — an island, a video, a card another behaviour
+          // owns — lifts the board: it is exactly the card the DOM would otherwise paint over
+          board = true;
+        }
       });
 
-      if (grabbed.size > 0) {
+      if (anyGrab) {
         // A grab inside the window cancels the pending demotion — for the whole set.
         state.settleAt = null;
         // THE GESTURE SET: the grabbed cards, and — unless every grabbed instance opted
         // out — every dom card of this behaviour in the world. Walked while grabbed and
         // written change-only, so a held drag writes nothing after its first frame.
-        let board = false;
-        for (const e of grabbed) {
-          if (cellOf(ctx, e)?.promoteBoard !== false) {
-            board = true;
-            break;
-          }
-        }
         const set = new Set<Entity>(grabbed);
         if (board) {
           ctx.query({ all: [domAtRest] }).each((e) => {
@@ -303,8 +322,9 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
         for (const e of set) {
           // OWN ONLY WHAT THIS BEHAVIOUR CHANGED (A3b fix 1) — the old policy's rule,
           // restored, now for the set: a card a host put on the GPU by hand (the composited
-          // rig's static probe) is not this behaviour's to bring back, nor to pause. Reading
-          // the target rather than consulting `owned` keeps the write CHANGE-ONLY: a
+          // rig's static probe) is not this behaviour's to bring back, nor to pause. A card
+          // the SHIELD holds is already on the GPU and stays the shield's: live, not a still.
+          // Reading the target rather than consulting `owned` keeps the write CHANGE-ONLY: a
           // `ctx.set` per card per frame would stamp `SurfaceTarget` through the whole drag
           // and wake every observer on it. `SurfaceTarget` is this behaviour's own write
           // target, read back rather than declared in `reads:`: declaring it would put our
@@ -330,40 +350,119 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
         return;
       }
 
-      if (state.owned.size === 0) return;
-      if (state.settleAt === null) {
-        // The window opens at the LAST release, gesture-wide, on the longest settle any
-        // owned instance asks for.
-        let settle = 0;
-        for (const e of state.owned) settle = Math.max(settle, settleMsOf(ctx, e));
-        state.settleAt = clock + settle;
+      if (state.owned.size > 0) {
+        if (state.settleAt === null) {
+          // The window opens at the LAST release, gesture-wide, on the longest settle any
+          // owned instance asks for.
+          let settle = 0;
+          for (const e of state.owned) settle = Math.max(settle, settleMsOf(ctx, e));
+          state.settleAt = clock + settle;
+        } else if (clock >= state.settleAt) {
+          for (const e of state.owned) {
+            // A card that despawned mid-settle needs no demotion: its components
+            // died with it, and writing one would throw on a dead handle.
+            if (!ctx.world.isAlive(e)) continue;
+            if (state.stills.has(e)) {
+              const cell = cellOf(ctx, e);
+              projectDemand(ctx, e, "live", {
+                requestedFps: cell?.requestedFps ?? (domAtRest.defaults.requestedFps as number),
+                interactive: cell?.interactive ?? (domAtRest.defaults.interactive as boolean),
+              });
+            }
+            // the shield takes over a card it still needs: on the GPU it stays, live
+            if (need.has(e)) {
+              state.shielded.add(e);
+              continue;
+            }
+            ctx.set(e, SurfaceTarget, { target: "dom" });
+          }
+          state.owned.clear();
+          state.stills.clear();
+          state.settleAt = null;
+        }
+        // the shield waits for the gesture to settle: its cards are the gesture's meanwhile
         return;
       }
-      if (clock < state.settleAt) return;
-      for (const e of state.owned) {
-        // A card that despawned mid-settle needs no demotion: its components
-        // died with it, and writing one would throw on a dead handle.
-        if (!ctx.world.isAlive(e)) continue;
-        ctx.set(e, SurfaceTarget, { target: "dom" });
-        if (state.stills.has(e)) {
-          const cell = cellOf(ctx, e);
-          projectDemand(ctx, e, "live", {
-            requestedFps: cell?.requestedFps ?? (domAtRest.defaults.requestedFps as number),
-            interactive: cell?.interactive ?? (domAtRest.defaults.interactive as boolean),
-          });
+
+      // THE SHIELD (S4): a selected card's chrome — the frame the ground draws around it — reaches
+      // `selectionReach` past its rect, BENEATH every resting host the DOM paints above the canvas.
+      // The dom cards it overlaps go to the GPU, live at their own cadence, while it shows; they come
+      // back one settle window after the overlap ends, so clicking around a board does not flap them.
+      for (const e of need) {
+        state.shieldRelease.delete(e);
+        if (state.shielded.has(e)) continue;
+        if (ctx.world.get(e, SurfaceTarget)?.target !== "gpu") {
+          ctx.set(e, SurfaceTarget, { target: "gpu" });
+          state.shielded.add(e);
         }
       }
-      state.owned.clear();
-      state.stills.clear();
-      state.settleAt = null;
+      for (const e of state.shielded) {
+        if (need.has(e)) continue;
+        if (!ctx.world.isAlive(e)) {
+          state.shielded.delete(e);
+          state.shieldRelease.delete(e);
+          continue;
+        }
+        const at = state.shieldRelease.get(e);
+        if (at === undefined) {
+          state.shieldRelease.set(e, clock + settleMsOf(ctx, e));
+          continue;
+        }
+        if (clock < at) continue;
+        state.shieldRelease.delete(e);
+        state.shielded.delete(e);
+        ctx.set(e, SurfaceTarget, { target: "dom" });
+      }
     },
     dispose(e, ctx) {
       const state = settleState(ctx);
       state.owned.delete(e);
       state.stills.delete(e);
+      state.shielded.delete(e);
+      state.shieldRelease.delete(e);
     },
   },
 });
+
+/** A card's world rect: its position and its measured size when the DOM has one, its declared size otherwise. */
+function rectOf(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity): { x: number; y: number; w: number; h: number } | undefined {
+  const p = ctx.world.get(e, Position);
+  if (p === undefined) return undefined;
+  const m = ctx.world.get(e, MeasuredSize);
+  const s = m !== undefined && m.w > 0 && m.h > 0 ? m : ctx.world.get(e, Size);
+  if (s === undefined || !(s.w > 0) || !(s.h > 0)) return undefined;
+  return { x: p.x, y: p.y, w: s.w, h: s.h };
+}
+
+/**
+ * The dom cards a selected card's chrome reaches over (S4): every SELECTED card's rect grown by
+ * `ChromeSettings.selectionReach` on every side, against every dom card of this behaviour that is
+ * not itself selected (a selected card sits inside its own chrome, on top of it). Empty when the
+ * reach is 0 — a host with no such chrome shields nothing.
+ */
+function shieldNeed(ctx: RuntimeBehaviorCtx<Record<string, unknown>>): Set<Entity> {
+  const need = new Set<Entity>();
+  const reach = ctx.world.getResource(ChromeSettings)?.selectionReach ?? 0;
+  if (!(reach > 0)) return need;
+  const plates: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  ctx.query({ all: [Selected] }).each((s) => {
+    const r = rectOf(ctx, s);
+    if (r !== undefined) plates.push({ x0: r.x - reach, y0: r.y - reach, x1: r.x + r.w + reach, y1: r.y + r.h + reach });
+  });
+  if (plates.length === 0) return need;
+  ctx.query({ all: [domAtRest] }).each((d) => {
+    if (kindOf(ctx, d) !== "dom" || ctx.world.hasTag(d, Selected)) return;
+    const r = rectOf(ctx, d);
+    if (r === undefined) return;
+    for (const p of plates) {
+      if (r.x < p.x1 && p.x0 < r.x + r.w && r.y < p.y1 && p.y0 < r.y + r.h) {
+        need.add(d);
+        break;
+      }
+    }
+  });
+  return need;
+}
 
 /** The instance's cell — the truth an `update` writes; nothing here caches a copy of it. */
 interface DomAtRestCell {

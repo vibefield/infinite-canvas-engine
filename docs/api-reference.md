@@ -367,8 +367,17 @@ and the pick pad grow by it); a program without `inner` clips its DOM hosts with
 `inset(0 round r)`, and the DOM boundary writes a host's lift from the resolved inner box per
 axis (`liftOf`, `contentRadiusOf`). Register them
 with `Ground.create({ card, grids })` or `groundCompose({ card, grids, onPart })`; omit
-them and the shell draws. The record is a HEAD (`ShellGeometry` + the content binding,
-`FRAME_HEAD_BYTES` = 144) plus the program's `ext` slots, built by `frameStruct(ext)`;
+them and the shell draws. **The shield (S4, 2026-09-23):** the ground paints beneath every
+resting DOM host, so `ice:surface.domAtRest` lifts to the GPU the dom cards a selected card's
+chrome overlaps — `ChromeSettings.selectionReach` says how far that chrome reaches, and an app
+passes its frame pack's `reachOf(style)` through `createCanvasEngine({ settings: { chrome: {
+selectionReach } } })`; any `Grab` on the board lifts the gesture set; and DomRender carries band
+space with CSS `zoom` on a host that keeps the widget's own box. A container the GPU holds draws
+as a PANE (`FrameContent` mode `pane`, `paneContent(page, face)`): its own picture around its
+face over the plate, nothing inside the face — the hole's inside shows through — so its bar keeps
+its text while lifted. The record is a HEAD (`ShellGeometry` + the content binding,
+`FRAME_HEAD_BYTES` = 160 since the pane's face joined it — `CARD_ABI` 2, 2026-09-23) plus the
+program's `ext` slots, built by `frameStruct(ext)`;
 `frameUniformStruct(uext)` likewise; `CARD_ABI` pins the head. The theme is a head
 (`canvasBg · fieldInk · card · hairline · select · shadow`) plus `packs[name]`, built by
 `themeFrom(name, palette, grid, packs)`. `ENGINE_GRID.glyph` is `"dot"`. **The DOM boundary

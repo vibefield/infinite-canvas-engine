@@ -21,7 +21,13 @@ export type FrameContent =
   | { readonly mode: "page"; readonly layer: number; readonly uv: UvRect }
   | { readonly mode: "own"; readonly texture: GPUTextureView; readonly srgb: boolean; readonly uv: UvRect }
   /** A HOLE (PORTAL.md §2.2, §10): the container's inside was drawn beneath, through its FACE — inside it nothing paints, outside it the plate; no face = the whole interior. */
-  | { readonly mode: "portal"; readonly face?: PortalFace };
+  | { readonly mode: "portal"; readonly face?: PortalFace }
+  /**
+   * A PANE (2026-09-23): a page seen AROUND a hole — a promoted container's own pixels (its bar, its
+   * hairline) over the plate outside its face, and nothing inside the face, where the inside drawn
+   * beneath shows as through the hole. Without it a container lifted to the GPU lost its bar's text.
+   */
+  | { readonly mode: "pane"; readonly layer: number; readonly uv: UvRect; readonly face: PortalFace };
 
 /** The face a container shows its inside through, in the card's own frame (world units): centre, half extents, corner radius — `faceRect` of the content rect, as the hole is cut. */
 export interface PortalFace { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly r: number }
@@ -31,9 +37,11 @@ export const PLATE: FrameContent = { mode: "plate" };
 export const PORTAL: FrameContent = { mode: "portal" };
 /** The hole cut to a face. */
 export const portalContent = (face: PortalFace): FrameContent => ({ mode: "portal", face });
+/** A page around a face: the container's own picture outside it, the hole inside. */
+export const paneContent = (page: { readonly layer: number; readonly uv: UvRect }, face: PortalFace): FrameContent => ({ mode: "pane", layer: page.layer, uv: page.uv, face });
 
 /** The record's `mode` — a pipeline reads it per instance; the sRGB variant is an `override`, never a mode. */
-export const CONTENT_MODE = { plate: 0, page: 1, own: 2, portal: 3 } as const;
+export const CONTENT_MODE = { plate: 0, page: 1, own: 2, portal: 3, pane: 4 } as const;
 
 /** A written rect in texels as the record's normalised uv. */
 export function uvOf(x: number, y: number, w: number, h: number, texW: number, texH: number): UvRect {
@@ -41,13 +49,16 @@ export function uvOf(x: number, y: number, w: number, h: number, texW: number, t
 }
 
 /** The record's `uv` (min xy, size xy), `layer`, `mode` and `chalf` for a content, on a resolved geometry. */
-export function contentValues(G: ShellGeometry, c: FrameContent = PLATE): { mode: number; layer: number; uv: number[]; chalf: readonly [number, number] } {
+export function contentValues(G: ShellGeometry, c: FrameContent = PLATE): { mode: number; layer: number; uv: number[]; chalf: readonly [number, number]; face: number[]; faceR: number } {
+  const noFace = { face: [0, 0, 0, 0], faceR: 0 };
   // a hole's FACE rides the content slots: uv = its centre from the card's, its radius, 1 (on); chalf = its half extents (frame.wgsl)
-  if (c.mode === "portal" && c.face) return { mode: CONTENT_MODE.portal, layer: 0, uv: [c.face.cx - G.centre[0], c.face.cy - G.centre[1], c.face.r, 1], chalf: [c.face.hx, c.face.hy] };
+  if (c.mode === "portal" && c.face) return { mode: CONTENT_MODE.portal, layer: 0, uv: [c.face.cx - G.centre[0], c.face.cy - G.centre[1], c.face.r, 1], chalf: [c.face.hx, c.face.hy], ...noFace };
   const uv = c.mode === "plate" || c.mode === "portal" ? [0, 0, 0, 0] : [c.uv.u0, c.uv.v0, c.uv.u1 - c.uv.u0, c.uv.v1 - c.uv.v0];
+  // a pane's face rides its own head slots (`face`, `faceR`): the page keeps `uv` and `chalf`
+  const face = c.mode === "pane" ? { face: [c.face.cx - G.centre[0], c.face.cy - G.centre[1], c.face.hx, c.face.hy], faceR: c.face.r } : noFace;
   // chalf = the inner box: under grow = 1 the content is pinned, so it IS the widget's own rect × the lift scale
   // (COMPOSE.md); mid-delete it follows the shrinking interior, which is the zoom the morph wants.
-  return { mode: CONTENT_MODE[c.mode], layer: c.mode === "page" ? c.layer : 0, uv, chalf: G.ih };
+  return { mode: CONTENT_MODE[c.mode], layer: c.mode === "page" || c.mode === "pane" ? c.layer : 0, uv, chalf: G.ih, ...face };
 }
 
 /** One instanced draw of the card pass: `draw(6, count, 0, first)` against ONE own texture (or none). */

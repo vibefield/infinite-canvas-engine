@@ -24,15 +24,18 @@ export const FRAME_HEAD: ReadonlyArray<readonly [FrameHeadField, FieldType]> = [
   ["outerR", "f32"], ["radius", "f32"],
   ["shadowSigma", "f32"], ["shadowOffset", "f32"], ["shadowAlpha", "f32"],
   ["frameAlpha", "f32"], ["ring", "f32"], ["hover", "f32"],
-  ["mode", "u32"],           // 0 plate · 1 page · 2 own · 3 portal (a hole)
-  ["layer", "i32"],          // the page array layer (page); ignored otherwise
+  ["mode", "u32"],           // 0 plate · 1 page · 2 own · 3 portal (a hole) · 4 pane (a page around a hole)
+  ["layer", "i32"],          // the page array layer (page, pane); ignored otherwise
+  ["faceR", "f32"],          // a pane's face: its corner radius (the two f32s fill the padding before `surface`)
+  ["spare", "f32"],
   ["surface", "vec4f"],
   ["uv", "vec4f"],           // the WRITTEN rect inside the layer / own texture, normalised: min xy, size xy — or the hole's face
+  ["face", "vec4f"],         // a pane's face: centre xy from the card's, half extents xy (card units); zero otherwise
   ["hot", "vec4f"],          // the §7 heat (GLOW.md): the light SOURCE's centre xy (card units), the glow's presence, the tier 0 reject … 1 accept
   ["src", "vec4f"],          // the source's silhouette: half extents xy, corner radius, unused — the lifted card as drawn
 ];
 
-export type FrameHeadField = "centre" | "half" | "ih" | "chalf" | "outerR" | "radius" | "shadowSigma" | "shadowOffset" | "shadowAlpha" | "frameAlpha" | "ring" | "hover" | "mode" | "layer" | "surface" | "uv" | "hot" | "src";
+export type FrameHeadField = "centre" | "half" | "ih" | "chalf" | "outerR" | "radius" | "shadowSigma" | "shadowOffset" | "shadowAlpha" | "frameAlpha" | "ring" | "hover" | "mode" | "layer" | "faceR" | "spare" | "surface" | "uv" | "face" | "hot" | "src";
 export type FrameField = FrameHeadField | "ext";
 
 /** The head's byte size — the number a program's ABI pins (D3). */
@@ -77,9 +80,9 @@ export function frameValues(G: ShellGeometry, surface: readonly [number, number,
     outerR: G.outerR, radius: G.radius,
     shadowSigma: G.shadowSigma, shadowOffset: G.shadowOffset, shadowAlpha: G.shadowAlpha,
     frameAlpha: G.frameAlpha, ring: G.ring, hover: G.hover,
-    mode: c.mode, layer: c.layer,
+    mode: c.mode, layer: c.layer, faceR: c.faceR, spare: 0,
     surface: [surface[0], surface[1], surface[2], 1],
-    uv: c.uv,
+    uv: c.uv, face: c.face,
     hot: G.hot, src: G.src,
     ...(tail.length > 0 ? { ext: tail } : {}),
   };

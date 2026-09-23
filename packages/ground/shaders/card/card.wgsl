@@ -64,7 +64,7 @@ fn encode_srgb(c: vec4f) -> vec4f {
 }
 
 // The CONTENT term (content.ts, design-013 §10.2–10.3): the interior colour at
-// card point `p`. `plate` is the surface colour — today's card. `page` and
+// card point `p` (a pane samples its page like a page does). `plate` is the surface colour — today's card. `page` and
 // `own` sample a premultiplied texel and lay it OVER the plate (an island's
 // transparent pixels show the surface): a second `over` INSIDE the content
 // layer, legal — the seam law concerns frame vs content only. The content
@@ -75,12 +75,13 @@ fn encode_srgb(c: vec4f) -> vec4f {
 fn content_rgb(G: Frame, p: vec2f, pages: texture_2d_array<f32>, own: texture_2d<f32>, samp: sampler) -> vec3f {
   let plate = G.surface.rgb;
   if (G.mode == 0u) { return plate; }
-  let dims = select(vec2f(textureDimensions(own)), vec2f(textureDimensions(pages)), G.mode == 1u);
+  let paged = G.mode == 1u || G.mode == 4u;   // a page, or a pane (a page around a hole)
+  let dims = select(vec2f(textureDimensions(own)), vec2f(textureDimensions(pages)), paged);
   let eps = 0.5 / max(G.uv.zw * dims, vec2f(1.0));
   let t = clamp((p - G.centre) / (2.0 * G.chalf) + vec2f(0.5), eps, vec2f(1.0) - eps);
   let uv = G.uv.xy + t * G.uv.zw;
   var c = vec4f(0.0);
-  if (G.mode == 1u) { c = textureSampleLevel(pages, samp, uv, G.layer, 0.0); }
+  if (paged) { c = textureSampleLevel(pages, samp, uv, G.layer, 0.0); }
   else {
     c = textureSampleLevel(own, samp, uv, 0.0);
     if (ENCODE_SRGB) { c = encode_srgb(c); }
@@ -113,11 +114,18 @@ fn shade_frame(G: Frame, u: FrameUniforms, p: vec2f, px: f32, pages: texture_2d_
   // is the fill's own filter, so at the edge the plate and the hole partition the pixel and
   // nothing under the container ever shows. (The §5 shadow is outside the silhouette only.)
   let hole = G.mode == 3u;
+  let pane = G.mode == 4u;
   var content = G.surface.rgb;
   var cC = s.cI;
   if (hole) {
     let covF = select(1.0, cov(sdf_round_box(p - G.centre - G.uv.xy, G.chalf, G.uv.z), px), G.uv.w > 0.5);
     cC = s.cI * (1.0 - covF);
+  } else if (pane) {
+    // A PANE: the card's own picture (a promoted container's bar) over the plate OUTSIDE its face —
+    // inside the face nothing paints, and the inside drawn beneath shows as through the hole.
+    let covF = cov(sdf_round_box(p - G.centre - G.face.xy, G.face.zw, G.faceR), px);
+    cC = s.cI * (1.0 - covF);
+    if (cC > 0.0) { content = content_rgb(G, p, pages, own, samp); }
   } else if (s.cI > 0.0) { content = content_rgb(G, p, pages, own, samp); }
   acc = over(vec4f(s.chrome * s.cF + content * cC, s.cF + cC), acc);
   acc = shade_over(G, u, p, px, s, acc);

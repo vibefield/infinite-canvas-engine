@@ -71,6 +71,27 @@ async function pageRect(page, r) {
  * `edge` number — the greatest distance any differing pixel sits from the
  * nearest border of the inset region — is the one that says "boundary only".
  */
+/**
+ * The bounding box and count of the INK in a captured card: every pixel that differs from the FILL, sampled at the
+ * card's centre-bottom (the block sits in the top-left; the fill is everywhere else), inside an inset that clears the
+ * rounded corners and the chrome's edge lines. `inset` and the sample are in the capture's own pixels (device px).
+ */
+function inkBox(png, inset) {
+  const bg = png.rgb(Math.round(png.width / 2), Math.round(png.height * 0.85));
+  const box = { x0: Number.POSITIVE_INFINITY, y0: Number.POSITIVE_INFINITY, x1: -1, y1: -1, count: 0, fill: bg };
+  for (let y = inset; y < png.height - inset; y++) {
+    for (let x = inset; x < png.width - inset; x++) {
+      const p = png.rgb(x, y);
+      if (Math.max(Math.abs(p[0] - bg[0]), Math.abs(p[1] - bg[1]), Math.abs(p[2] - bg[2])) <= 40) continue;
+      box.count++;
+      if (x < box.x0) box.x0 = x;
+      if (y < box.y0) box.y0 = y;
+      if (x > box.x1) box.x1 = x;
+      if (y > box.y1) box.y1 = y;
+    }
+  }
+  return box;
+}
 function rectDiff(a, b, inset) {
   if (a.width !== b.width || a.height !== b.height) return { error: `${a.width}x${a.height} vs ${b.width}x${b.height}`, differing: -1, max: -1, total: 0 };
   let differing = 0;
@@ -294,6 +315,32 @@ try {
   log(`parity interior (inset ${INTERIOR_INSET} px): ${JSON.stringify(parity)}`);
   check(parity.error === null, parity.error ?? "the two arms captured the same rect");
   check(parity.max === 0, `S8 redefined — a text-free card's INTERIOR is identical promoted (composited) and live-DOM (stratified): ${parity.differing}/${parity.total} px differ, max ${parity.max} (with the chrome unmasked: ${parityWhole.differing}/${parityWhole.total}, reaching ${parityWhole.edge} px in)`);
+
+  // ---- band space (S4, 2026-09-23): at zoom 0.7 the host is copied at band 0.5. The widget's block is laid out in
+  // FIXED pixels, so a host whose box was shrunk to band space was copied as the widget's top-left corner, enlarged
+  // (James's live test). The host keeps its own box and CSS `zoom` scales it, so the promoted card's block must sit
+  // where the live one's does, at the same size — resampled by the ground's 1.4× upscale, never cropped.
+  await open("");
+  await page.evaluate(() => window.__renderRig.board(6));
+  await page.evaluate(() => window.__renderRig.zoomTo(0.7));
+  const zPts = await page.evaluate(() => window.__renderRig.points(0));
+  const zpr = await page.evaluate(() => window.__renderRig.promote(0));
+  check(zpr.mode === "page", `band arm: the card at zoom 0.7 is drawn from its page layer (${zpr.mode})`);
+  const zRect = await pageRect(page, zPts.rect);
+  if (process.env.RENDER_DUMP) fs.writeFileSync(path.join(process.env.RENDER_DUMP, "band-space-promoted.png"), await page.screenshot({ type: "png", clip: { x: zPts.rect.sx, y: zPts.rect.sy, width: zPts.rect.w, height: zPts.rect.h } }));
+  await open("?profile=stratified");
+  await page.evaluate(() => window.__renderRig.board(6));
+  await page.evaluate(() => window.__renderRig.zoomTo(0.7));
+  const zStrat = await pageRect(page, zPts.rect);
+  if (process.env.RENDER_DUMP) fs.writeFileSync(path.join(process.env.RENDER_DUMP, "band-space-live.png"), await page.screenshot({ type: "png", clip: { x: zPts.rect.sx, y: zPts.rect.sy, width: zPts.rect.w, height: zPts.rect.h } }));
+  // 8 CSS px in, in the capture's own pixels: past the rounded corners (radius 22 × 0.7, ~4.5 px deep on the diagonal) and the edge lines
+  const zInset = Math.round((8 * zRect.width) / zPts.rect.w);
+  const inkA = inkBox(zRect, zInset);
+  const inkB = inkBox(zStrat, zInset);
+  log(`band space at zoom 0.7 — the block's box: promoted ${JSON.stringify(inkA)} vs live ${JSON.stringify(inkB)}`);
+  const edges = inkA.count > 0 && inkB.count > 0 ? Math.max(Math.abs(inkA.x0 - inkB.x0), Math.abs(inkA.y0 - inkB.y0), Math.abs(inkA.x1 - inkB.x1), Math.abs(inkA.y1 - inkB.y1)) : Number.POSITIVE_INFINITY;
+  const ratio = inkB.count > 0 ? inkA.count / inkB.count : 0;
+  check(edges <= 3 && ratio > 0.85 && ratio < 1.15, `band space at zoom 0.7: the promoted card's block is the live one's — the WHOLE widget copied at band 0.5, not its top-left corner (edges off by ${edges} px, area ${ratio.toFixed(3)}×)`);
 } finally {
   await app.close();
 }

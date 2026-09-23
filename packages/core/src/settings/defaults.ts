@@ -60,6 +60,12 @@ export const SNAP_DEFAULTS = {
  */
 export const CHROME_DEFAULTS = {
   liftScale: 1,
+  /**
+   * How far a SELECTED card's chrome reaches beyond its rect, world units (S4, 2026-09-23): the
+   * ground draws that chrome beneath every resting DOM host, so `ice:surface.domAtRest` lifts the
+   * dom cards it overlaps to the GPU while the selection shows. 0 = no such chrome, nothing lifts.
+   */
+  selectionReach: 0,
 } as const;
 
 /** Zoom clamp (design-003 §5 item 9 cameraControl) and frame dt clamp (design-002 §1). */

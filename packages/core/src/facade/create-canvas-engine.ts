@@ -201,8 +201,13 @@ export interface CanvasEngineOpts {
     readonly gestures?: Partial<Record<keyof typeof GESTURE_DEFAULTS, number>>;
     readonly pointers?: Partial<Record<keyof typeof POINTER_DEFAULTS, number>>;
     readonly snap?: { readonly enabled?: boolean; readonly thresholdPx?: number };
-    /** Selection-chrome knobs: liftScale = the app's visual drag-lift scale (union box wraps it). */
-    readonly chrome?: { readonly liftScale?: number };
+    /**
+     * Selection-chrome knobs: liftScale = the app's visual drag-lift scale (union box wraps it);
+     * selectionReach = how far a selected card's chrome reaches beyond its rect, world units
+     * (the composited profile's frame draws it beneath the DOM, so `domAtRest` lifts the dom
+     * cards it overlaps to the GPU while it shows; 0 = nothing to shield).
+     */
+    readonly chrome?: { readonly liftScale?: number; readonly selectionReach?: number };
   };
   readonly policy?: {
     /** The gate verdict a "migrate"-classified doc downgrades to when migration is off/fails. */
@@ -698,6 +703,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     chrome: {
       liftScale: st.chrome?.liftScale ?? CHROME_DEFAULTS.liftScale,
+      selectionReach: st.chrome?.selectionReach ?? CHROME_DEFAULTS.selectionReach,
     },
     // StageMode's truth is the out-of-ECS `stageHolds` map below, so the
     // mirror starts ABSENT: at construction nothing holds and the resource is

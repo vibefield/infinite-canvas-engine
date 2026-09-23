@@ -66,7 +66,7 @@ import {
   type FramePreviewStore,
   type World,
 } from "@ice/core";
-import { PLATE, type PortalFace, portalContent } from "../card/content";
+import { PLATE, paneContent, type PortalFace, portalContent } from "../card/content";
 import type { FrameInstance } from "../card/frame-pass";
 import { IDLE, type Material, MATERIAL, SHELL_RADIUS, type ShellGeometry } from "../card/geometry";
 import { MAX_FRAMES } from "../card/layout";
@@ -444,10 +444,15 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       // slid UNDER every later sibling it crossed. Held cards keep their own stack order among
       // themselves; a release returns the card to its ordinal (what the DOM's return to the
       // content plane did), and a product that wants "drop on top" reorders the siblings.
+      // And SELECTED cards after unselected ones (S4, 2026-09-23): a selected card's chrome reaches
+      // past its rect, and a later sibling painted over it hid the frame's rim (James's live test).
       list.sort((a, b) => {
         const ha = world.has(a, Grab);
         const hb = world.has(b, Grab);
         if (ha !== hb) return ha ? 1 : -1;
+        const sa = world.hasTag(a, Selected);
+        const sb = world.hasTag(b, Selected);
+        if (sa !== sb) return sa ? 1 : -1;
         return compareStackOrder(world, ordinals, a, b);
       });
 
@@ -528,7 +533,13 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
           inside += in_.frames.length;
           if (p.snap.truncated) truncated += 1;
           portals.push(portalInputsOf(lp, in_, vp, insideConfig(row.e, config), theme, at));
-          frames.push({ geometry: row.G, surface: theme.card, content: portalContent(portalFaceOf(p.K, p.r)) });
+          // A container the GPU holds (a gesture's still, a shield) keeps its own picture — its bar, its
+          // hairline — as a PANE around the face; a container the DOM still paints is a hole under it.
+          const own = residency?.contentOf(row.e);
+          const face = portalFaceOf(p.K, p.r);
+          const content = own !== undefined && own.mode === "page" ? paneContent(own, face) : portalContent(face);
+          if (content.mode === "pane") textured += 1;
+          frames.push({ geometry: row.G, surface: theme.card, content });
         } else {
           // the content term (B4a): the card's `TextureRef` once a render realised and wrote it, else the plate
           const content = residency?.contentOf(row.e) ?? PLATE;

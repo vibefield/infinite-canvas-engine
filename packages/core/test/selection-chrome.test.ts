@@ -147,7 +147,7 @@ describe("selectionChrome pool", () => {
 
   it("a Grab-bed member inflates the box by ChromeSettings.liftScale (wraps the lifted card)", () => {
     const { world, step, entities } = rig();
-    world.setResource(ChromeSettings, { liftScale: 1.2 });
+    world.setResource(ChromeSettings, { liftScale: 1.2, selectionReach: 0 });
     const a = world.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 100, h: 100 }]] });
     const b = world.spawn({
       components: [

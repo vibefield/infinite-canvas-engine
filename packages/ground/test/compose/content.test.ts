@@ -5,7 +5,7 @@
 // where the own texture changes), the record's layout, and the test
 // residency's numbers — the fixture both hosts build from the same bytes.
 import { describe, expect, it } from "vitest";
-import { CONTENT_MODE, FULL_UV, PLATE, TEST_PLATE, contentValues, runsOf, uvOf, type FrameContent } from "../../src/card/content";
+import { CONTENT_MODE, FULL_UV, PLATE, TEST_PLATE, contentValues, paneContent, runsOf, uvOf, type FrameContent } from "../../src/card/content";
 import { frameStruct, frameValues } from "../../src/card/layout";
 import { MATERIAL, PRODUCT, resolve, VF_EXT, VF_REST } from "../../src/packs/vf-frame";
 
@@ -20,12 +20,12 @@ describe("content — the record", () => {
     expect(uvOf(0, 0, 128, 128, 128, 128)).toEqual(FULL_UV);
   });
   it("contentValues: plate is mode 0 with no uv; page carries its layer; own does not; uv is min + size; chalf is the inner box", () => {
-    expect(contentValues(G)).toEqual({ mode: 0, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih });
+    expect(contentValues(G)).toEqual({ mode: 0, layer: 0, uv: [0, 0, 0, 0], chalf: G.ih, face: [0, 0, 0, 0], faceR: 0 });
     expect(contentValues(G, PLATE).mode).toBe(CONTENT_MODE.plate);
     const page: FrameContent = { mode: "page", layer: 1, uv: uvOf(256, 128, 128, 128, 512, 512) };
-    expect(contentValues(G, page)).toEqual({ mode: 1, layer: 1, uv: [0.5, 0.25, 0.25, 0.25], chalf: G.ih });
+    expect(contentValues(G, page)).toEqual({ mode: 1, layer: 1, uv: [0.5, 0.25, 0.25, 0.25], chalf: G.ih, face: [0, 0, 0, 0], faceR: 0 });
     const own: FrameContent = { mode: "own", texture: view("a"), srgb: true, uv: FULL_UV };
-    expect(contentValues(G, own)).toEqual({ mode: 2, layer: 0, uv: [0, 0, 1, 1], chalf: G.ih });
+    expect(contentValues(G, own)).toEqual({ mode: 2, layer: 0, uv: [0, 0, 1, 1], chalf: G.ih, face: [0, 0, 0, 0], faceR: 0 });
     // at rest under the product style the content is pinned: the inner box IS the widget's rect
     expect(G.ih).toEqual([64, 32]);
   });
@@ -41,6 +41,37 @@ describe("content — the record", () => {
     expect(new Uint32Array(b.bytes, Frame.slots.mode.byte, 1)[0]).toBe(1);
     expect(new Int32Array(b.bytes, Frame.slots.layer.byte, 1)[0]).toBe(1);
     expect(frameValues(G, [0, 0, 0]).mode).toBe(0);   // absent content = the plate
+  });
+});
+
+describe("content — the pane (2026-09-23)", () => {
+  const G = resolve(PRODUCT, { centre: [100, 50], contentHalf: [64, 32], radius: 12 }, VF_REST, MATERIAL);
+  it("a pane is a page around a face: the page keeps uv, chalf and layer; the face rides its own head slots", () => {
+    const face = { cx: 100, cy: 40, hx: 50, hy: 20, r: 7 };
+    const c = contentValues(G, paneContent({ layer: 1, uv: uvOf(256, 128, 128, 128, 512, 512) }, face));
+    expect(c.mode).toBe(CONTENT_MODE.pane);
+    expect(c.layer).toBe(1);
+    expect(c.uv).toEqual([0.5, 0.25, 0.25, 0.25]);
+    expect(c.chalf).toEqual(G.ih);
+    expect(c.face).toEqual([0, -10, 50, 20]);     // the face's centre from the card's, its half extents
+    expect(c.faceR).toBe(7);
+  });
+  it("every other mode carries no face", () => {
+    for (const c of [PLATE, { mode: "page", layer: 0, uv: FULL_UV } as FrameContent, { mode: "portal" } as FrameContent]) {
+      const v = contentValues(G, c);
+      expect(v.face).toEqual([0, 0, 0, 0]);
+      expect(v.faceR).toBe(0);
+    }
+  });
+  it("the record carries the face after `uv` and before the heat: the head is 160 B", () => {
+    const Frame = frameStruct(VF_EXT);
+    expect(Frame.slots.face.byte).toBe(Frame.slots.uv.byte + 16);
+    expect(Frame.slots.hot.byte).toBe(Frame.slots.face.byte + 16);
+    expect(Frame.slots.faceR.byte).toBe(Frame.slots.layer.byte + 4);
+    const v = frameValues(G, [0, 0, 0], paneContent({ layer: 0, uv: FULL_UV }, { cx: 100, cy: 50, hx: 10, hy: 10, r: 3 }));
+    expect(v.face).toEqual([0, 0, 10, 10]);
+    expect(v.faceR).toBe(3);
+    expect(v.mode).toBe(4);
   });
 });
 

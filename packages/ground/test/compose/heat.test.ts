@@ -54,8 +54,8 @@ describe("heat — the record and the uniforms", () => {
   it("the record carries `hot` and `src` as the HEAD's last two vec4s; the pack's uniform slots carry the two colours and the two knob vectors", () => {
     expect(frameValues(G, [0, 0, 0]).hot).toEqual([120, 60, 0.5, 1]); expect(frameValues(G, [0, 0, 0]).src).toEqual([40, 20, 7, 0]);
     expect(Frame.slots.hot.type).toBe("vec4f"); expect(Frame.slots.src.type).toBe("vec4f");
-    // the two vec4s are the head's last 32 B (112 → 144), and the pack's ten tail slots follow
-    expect(FRAME_HEAD_BYTES).toBe(144);
+    // the two vec4s are the head's last 32 B (128 → 160 since the pane's face joined the head, 2026-09-23), and the pack's tail slots follow
+    expect(FRAME_HEAD_BYTES).toBe(160);
     expect(Frame.slots.hot.byte).toBe(FRAME_HEAD_BYTES - 32); expect(Frame.slots.src.byte).toBe(FRAME_HEAD_BYTES - 16);
     expect(Frame.size).toBe(FRAME_HEAD_BYTES + 16 * VF_EXT);
     // the heat's four vectors left the uniform HEAD for the pack's `uext`: slots 8..11

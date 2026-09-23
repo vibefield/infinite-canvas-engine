@@ -170,6 +170,8 @@ interface RenderRig {
   /** Ask a card's kind for a live bucket at `fps` — the clamp's ceiling on its copies (B8 R7, ported from the old `demand` rig). */
   bucket(i: number, fps: number): Promise<{ requested: number; granted: string }>;
   copies(): number;
+  /** Set the camera's zoom (about the origin) and let the band system and the hosts settle on it. */
+  zoomTo(z: number): Promise<{ zoom: number }>;
   drift(): Promise<DriftResult>;
 }
 
@@ -394,6 +396,12 @@ function mountRenderRig(): RenderRig {
       await frames(2);
     },
     copies,
+    async zoomTo(z) {
+      zoom = z;
+      ce().world.setResource(Camera, { x: 0, y: 0, zoom, gesturing: false });
+      await frames(6);
+      return { zoom };
+    },
     async drift() {
       const world = ce().world;
       const device = must(gpu, "gpu").device;

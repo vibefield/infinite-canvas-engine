@@ -27,6 +27,8 @@ import {
  */
 export const ChromeSettings = defineResource("ChromeSettings", {
   liftScale: field("f32", { default: CHROME_DEFAULTS.liftScale }),
+  /** A selected card's chrome reach beyond its rect, world units — what `domAtRest` shields (S4). */
+  selectionReach: field("f32", { default: CHROME_DEFAULTS.selectionReach }),
 });
 
 /** Recognizer timing/slop live mirror (design-003 §4.2 kind table; inertia constants §5 item 9). */

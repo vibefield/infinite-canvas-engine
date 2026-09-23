@@ -1347,6 +1347,64 @@ gesture set promotes only on a grab of a dom card), and a promoted widget laid o
 pixels is copied as its top-left corner at zoom < 1 (band space shrinks the host's box —
 the band-space reflow owed since the first report).
 
+### What the DOM covers, the GPU takes — the shield, any grab, and band space by `zoom` (S4, 2026-09-23)
+
+James's live test of the shell, the same hour, named three defects around it. All three are one
+fact about the composited profile: the ground paints beneath every card the DOM still paints
+above the canvas at rest, so anything the ground draws — a selected card's plate, a carried
+island — rides under those hosts unless they move to the GPU while it shows.
+
+- **The shield (`ice:surface.domAtRest`).** A selected card's chrome reaches
+  `ChromeSettings.selectionReach` past its rect (new, f32, default 0; `createCanvasEngine({
+  settings: { chrome: { selectionReach } } })` — widgetlab passes the frame pack's `reachOf(PRODUCT)`,
+  44). The dom cards that reach overlaps go to the GPU while the selection shows — LIVE at their
+  own cadence, never stills — and come back one settle window after the overlap ends, so clicking
+  around a board does not flap them. The selected card itself stays on the DOM, inside its own
+  shell. A gesture's demotion hands a card the shield still wants straight over rather than
+  dropping it to the DOM for a frame. The behaviour reads `Selected`, `Position`, `Size`,
+  `MeasuredSize` and `ChromeSettings` for it.
+- **Any grab lifts the board.** The gesture set used to promote only on a grab of one of the
+  behaviour's own dom cards, so a carried island (an R3F card, a video) rode under every DOM card
+  it crossed. Every `Grab` carrier is the trigger now; the SET is still the behaviour's dom cards.
+- **The frame pass paints selected cards after unselected ones**, held cards last (S1's rule): a
+  later sibling no longer paints over a selected card's rim.
+- **Band space rides CSS `zoom`, not a smaller box.** DomRender laid a promoted host out in band
+  space by shrinking its CSS box, and a widget laid out in fixed pixels did not reflow: at zoom < 1
+  the copy was the widget's top-left corner, enlarged (James's live test; the band-space reflow
+  owed since the first report). The host keeps the widget's own box and `zoom` scales it — content
+  and all — to `geometry().cssSize`, the layout box the extent-less copy writes; the placement
+  matrix is unchanged; the zoom is cleared when custody returns to the reflector. The render rig
+  gains the witness: at zoom 0.7 (band 0.5) a fixed-pixel block on a promoted card sits where the
+  live card's does, at its size (edges off by 0 px, area 1.000×).
+- **The PANE — a promoted container keeps its bar (`CARD_ABI` 2).** A container the GPU holds
+  (a gesture's still, a shield) was drawn as a hole in a plain plate, and its bar's title — the
+  DOM host's — vanished for the drag (James's live test). A fifth content mode, `pane`, draws
+  the container's own picture (its bar, its hairline) around its face over the plate, and
+  nothing inside the face, where the inside drawn beneath shows as through the hole. The face
+  rides two new head slots (`face` centre + half extents, `faceR` in the padding after `layer`):
+  the head is 160 B (was 144), `CARD_ABI` moves to 2, `frameValues` packs them, `paneContent(page,
+  face)` builds one, and the frame builder draws a live-portal container as a pane whenever
+  residency has its page. The boot rig holds a card and checks the folder's title contrast is
+  the same held as at rest, with the folder on the GPU and its picture written.
+- **Rigs.** The boot rig's selection now waits for the shield's pictures and checks that exactly
+  the three dom cards the plate overlaps lift (30 px gaps, a 44 px reach) and no other; the
+  render rig's `zoomTo` and the band-space pass above.
+
+Witnessed: `pnpm run ci` green in every package (ground 349, core 860, dom 152 — the two 5 s
+timeouts S3b hit under load did not recur; host load 199–232 over the chain's last phase);
+`gate:landing` green (47 oracle scenes at maxΔ 0, the pack audit); the seven desktop rigs green —
+the boot rig lifts exactly the three clocks a selection's plate overlaps and reads their ticks as
+the only work after the reveal (3 copies for 3 content marks over 181 frames, 1 submit, self-dirt
+0), holds the folder and reads its bar title's contrast 227 held against 227 at rest with the
+folder on the GPU and its picture written, and finds it back on the DOM after the settle; the
+render rig's band-space pass at zoom 0.7 puts the promoted block on the live one's (edges off by
+0 px, area 1.000×); the stress rig's grab at 96 cards on the gpu arm: pickup longest frame
+9.7 ms, the carry at 120.6 fps (p95 9.2 ms, max 10.5), the pan recomputing 0 clip polygons.
+
+Owed: DESIGN.md §5 and §7 still describe the notched frame as the selection chrome (the shell
+and the shield replace it; the doc is James's); core's selection union box pads by `liftScale`,
+an approximation of the shell's reach.
+
 ### The copy's cost, named (2026-09-09)
 
 <!-- the HiC pipeline investigation; no package code changed -->

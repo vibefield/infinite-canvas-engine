@@ -51,7 +51,7 @@ import { attachDevtools, type DevtoolsHandle } from "@ice/devtools";
 import { DEFAULT_GRID_CONFIG, type GridConfig } from "@ice/core";
 import { groundField } from "@ice/ground";
 import { groundCompose } from "@ice/ground/compose";
-import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
+import { cuttingMat, needleGlyph, PRODUCT, reachOf, vfFrame } from "@ice/ground/packs";
 import { captureWidgetPreviews, createGLBridge, createGLPointerRouter, type GLBridge, type GLPointerRouter, type GlFrameStats } from "@ice/r3f";
 import {
   InfiniteCanvas,
@@ -161,10 +161,12 @@ export function createDemoEngine(gpu?: EngineGpu, extraWidgets: readonly WidgetT
     // snap on (2026-07-16): cards are snap "both"; guides render at P0 (ground).
     // chrome.liftScale mirrors CardShell's lift transform (1.05) so the
     // multi-select union box keeps wrapping a lifted member (2026-07-17).
+    // chrome.selectionReach is the frame pack's reach (S4, 2026-09-23): the well and the rim a
+    // selected card's shell claims past its rect, which `domAtRest` shields the dom cards under.
     settings: {
       zoom: { min: 0.25, max: 3 },
       snap: { enabled: true, thresholdPx: 5 },
-      chrome: { liftScale: 1.05 },
+      chrome: { liftScale: 1.05, selectionReach: reachOf(PRODUCT) },
     },
   });
   // Desktop shell (widgetlab-desktop, 2026-07-20): the ROOM owns the document —

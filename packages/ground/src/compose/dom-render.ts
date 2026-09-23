@@ -16,7 +16,7 @@
 // multiplier to drift, which is what makes the drift exit "0 px by
 // construction" rather than a number that happened to come out right:
 //
-//   the host's CSS box  := geometry().cssSize      (this file writes it)
+//   the host's CSS box  := the widget's own, × CSS `zoom` = geometry().cssSize   (this file writes both)
 //   the copy's extent   =  cssSize × backingScale  (the platform; the L1
 //                          bitmap's scale, measured flat at dpr)
 //   the slot            =  geometry().slotSize     (Residency, same call)
@@ -392,7 +392,11 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     placed.delete(e);
     refusedRealize.delete(e);
     const el = hosts.hostOf(e);
-    if (el !== undefined) selfWrote.delete(el);
+    if (el !== undefined) {
+      selfWrote.delete(el);
+      // custody goes back to the reflector, which knows nothing of the band's zoom: clear it here
+      if (el.style.zoom !== "") el.style.zoom = "";
+    }
   };
 
   /** The card's geometry this frame, or undefined when it has no destination to be sized for. */
@@ -441,13 +445,25 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     const ty = ((p?.y ?? 0) - (cam?.y ?? 0)) * zoom;
     const prev = placed.get(e);
     if (prev !== undefined && prev.w === w && prev.h === h && prev.k === k && prev.tx === tx && prev.ty === ty) return false;
-    const width = `${w}px`;
-    const height = `${h}px`;
+    // THE BOX STAYS THE WIDGET'S OWN (S4, 2026-09-23 — the band-space reflow owed since the first
+    // report): a widget laid out in fixed pixels does not reflow into a smaller box, and a host
+    // whose box WAS band space was copied as the widget's top-left corner at zoom < 1 (James's
+    // live test). So the host keeps its world-unit box and CSS `zoom` scales it — with everything
+    // inside it — to `cssSize`: the layout box the extent-less copy writes is band space still,
+    // the paint record is the whole widget, smaller.
+    const own = world.get(e, Size);
+    const w0 = own !== undefined && own.w > 0 ? own.w : w;
+    const h0 = own !== undefined && own.h > 0 ? own.h : h;
+    const width = `${w0}px`;
+    const height = `${h0}px`;
+    const scale = w0 > 0 ? w / w0 : 1;
+    const zoomCss = Math.abs(scale - 1) < 1e-6 ? "" : scale.toFixed(6);
     // Reading an INLINE style is a string lookup, never a layout read.
-    const boxMoved = el.style.width !== width || el.style.height !== height;
+    const boxMoved = el.style.width !== width || el.style.height !== height || (el.style.zoom ?? "") !== zoomCss;
     if (boxMoved) {
       el.style.width = width;
       el.style.height = height;
+      el.style.zoom = zoomCss;
       resized += 1;
     }
     el.style.transformOrigin = "0 0";

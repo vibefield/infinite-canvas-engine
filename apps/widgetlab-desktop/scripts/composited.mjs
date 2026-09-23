@@ -109,9 +109,18 @@ try {
   const sel = await page.evaluate(() => window.__nextRig.select(0));
   log(`select: ${JSON.stringify(sel)}`);
   check(sel.reveal === 1 && sel.ring === 1 && sel.live === false, `selection reveals: reveal ${sel.reveal}, ring ${sel.ring}, settled ${!sel.live}`);
+  // THE SHIELD (S4): the plate reaches 44 px past card 0, over cards 1, 3 and 4 of the 3×2 grid (30 px gaps); those three
+  // are lifted to the GPU while the selection shows, so the ground draws them UNDER the plate; the other two and the
+  // folder stay on the DOM, and card 0 itself stays on the DOM inside its own shell.
+  check(sel.shielded === 3, `the selection's shield lifts the 3 dom cards the plate overlaps and no other (${sel.shielded} on the GPU)`);
   const idleSel = await page.evaluate(() => window.__nextRig.idle(1500));
   log(`idle 1.5 s after the reveal: ${JSON.stringify(idleSel)}`);
-  check(idleSel.submits === 0, `idle-zero after the spring settles: ${idleSel.submits} submits over ${idleSel.frames} frames (woken by ${JSON.stringify(idleSel.wakes)})`);
+  // THE SHIELD'S COST (S4): the three cards under the plate are CLOCKS, live on the GPU while the selection shows, so each
+  // tick is a copy and a submit — at most two ticks per clock in 1.5 s, every copy a content mark, nothing else awake
+  // (no placement write of DomRender's own, no self-dirt). That is the board at rest under a selection: the chrome
+  // costs nothing per frame; the clocks under it cost their ticks, as they would on the GPU anywhere.
+  const onlyContent = Object.keys(idleSel.wakes).every((k) => k === "content");
+  check(onlyContent && idleSel.selfDirt === 0 && idleSel.copies === idleSel.dirtied && idleSel.copies <= 2 * sel.shielded && idleSel.submits <= idleSel.copies, `after the reveal only the shielded clocks tick: ${idleSel.copies} copies for ${idleSel.dirtied} content marks over ${idleSel.frames} frames (≤ 2 ticks × ${sel.shielded} clocks), ${idleSel.submits} submits, self-dirt ${idleSel.selfDirt}, woken by ${JSON.stringify(idleSel.wakes)}`);
 
   // ---- B3b: the DOM boundary — chrome exists once, the controls are the ground's, the band is a handle
   const b = await page.evaluate(() => window.__nextRig.boundary(0));
@@ -157,6 +166,19 @@ try {
   const afterDrag = await page.evaluate(() => window.__nextRig.cardState(0));
   log(`band drag: x ${before.x} → ${afterDrag.x}`);
   check(afterDrag.x <= before.x - 20, `a drag begun on the frame band (outside the content rect) moves the card: x ${before.x} → ${afterDrag.x}`);
+
+  // THE PANE (2026-09-23): a grab lifts the folder with the board; its bar's title must stay — the folder's own
+  // picture drawn around its face, the face still the hole its inside shows through (James's live test: the text vanished).
+  const heldAtRest = await page.evaluate(() => window.__nextRig.folderTitle());
+  const spreadOf = (png) => { const lo = [255, 255, 255]; const hi = [0, 0, 0]; for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) { const c = png.rgb(x, y); for (let k = 0; k < 3; k++) { if (c[k] < lo[k]) lo[k] = c[k]; if (c[k] > hi[k]) hi[k] = c[k]; } } return Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]); };
+  const titleRest = spreadOf(decodePng(await page.screenshot({ type: "png", clip: { x: heldAtRest.sx, y: heldAtRest.sy, width: heldAtRest.w, height: heldAtRest.h } })));
+  const held = await page.evaluate(() => window.__nextRig.hold(1));
+  const titleHeld = spreadOf(decodePng(await page.screenshot({ type: "png", clip: { x: heldAtRest.sx, y: heldAtRest.sy, width: heldAtRest.w, height: heldAtRest.h } })));
+  const dropped = await page.evaluate(() => window.__nextRig.drop(1));
+  log(`folder while the board is held: ${JSON.stringify(held)} · title contrast at rest ${titleRest}, held ${titleHeld} · after the drop ${JSON.stringify(dropped)}`);
+  check(held.folderOnGpu && held.folderWritten, `a grab lifts the folder with the board and it takes its picture (gpu ${held.folderOnGpu}, written ${held.folderWritten})`);
+  check(titleRest > 60 && titleHeld > 60, `the folder's bar keeps its title while it is held — a PANE around the face: contrast ${titleHeld} held vs ${titleRest} at rest`);
+  check(dropped.folderOnGpu === false, "and the folder comes back to the DOM after the settle");
 
   const grab = await page.evaluate(() => window.__nextRig.grab(1));
   log(`grab: ${JSON.stringify(grab)}`);

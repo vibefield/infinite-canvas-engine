@@ -56,6 +56,8 @@ import {
   setDevGuards,
 } from "../src";
 import { PrefabId } from "../src/schema/prefab";
+import { ChromeSettings } from "../src/catalog/settings-resources";
+import { Selected } from "../src/catalog/selection-presence";
 
 const GRAB = { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 };
 /** The behaviour's own default, and the number the cases below step against. */
@@ -642,5 +644,121 @@ describe("the clamp sees the choice in the SAME step (design-013 D1)", () => {
     // The REQUEST survives being off-screen — that is why demand is two
     // components (§5): coming back must not have to reconstruct the wish.
     expect(r.world.get(card, RequestedDemand)?.mode).toBe("live");
+  });
+});
+
+
+describe("S4 (2026-09-23): any grab lifts the board, and a selected card's chrome shields what it covers", () => {
+  /** A card at a place: the rig's spawn puts everything at the origin, and the shield is about rects. */
+  const at = (r: ReturnType<typeof rig>, type: string, x: number, y: number): Entity => {
+    const e = r.spawn(type);
+    r.world.edit(e).set(Position, { x, y });
+    return e;
+  };
+
+  it("a grab on an ISLAND promotes the gesture set: every dom card goes to the GPU in the same step, as a still, and comes back one settle window after the release", () => {
+    const r = rig();
+    const a = r.spawn("sb:card");
+    const b = r.spawn("sb:card");
+    const island = r.spawn("sb:island");
+    r.step();
+    expect(r.target(a)).toBe("dom");
+    expect(r.target(island)).toBe("gpu");
+    r.grab(island);
+    r.step();
+    expect(r.target(a)).toBe("gpu");
+    expect(r.target(b)).toBe("gpu");
+    expect(r.world.get(a, RequestedDemand)?.mode).toBe("paused");
+    r.release(island);
+    r.step(STEPS_PAST_SETTLE);
+    expect(r.target(a)).toBe("dom");
+    expect(r.target(b)).toBe("dom");
+    expect(r.world.get(a, RequestedDemand)?.mode).toBe("live");
+    expect(r.target(island)).toBe("gpu");
+    expect(r.faults).toEqual([]);
+  });
+
+  it("the shield: with a selection reach, a selected card lifts the dom cards its chrome overlaps — live, not stills — and leaves the rest and itself alone", () => {
+    const r = rig();
+    r.world.setResource(ChromeSettings, { liftScale: 1, selectionReach: 44 });
+    const s = at(r, "sb:card", 0, 0);         // 100×60
+    const near = at(r, "sb:card", 130, 0);    // 30 px gap: inside the 44 px reach
+    const far = at(r, "sb:card", 300, 0);     // 200 px away
+    const below = at(r, "sb:card", 0, 90);    // 30 px under: inside the reach
+    r.step();
+    r.world.addTag(s, Selected);
+    r.step();
+    expect(r.target(near)).toBe("gpu");
+    expect(r.target(below)).toBe("gpu");
+    expect(r.target(far)).toBe("dom");
+    expect(r.target(s)).toBe("dom");          // the selected card sits inside its own chrome, on top of it
+    expect(r.world.get(near, RequestedDemand)?.mode).toBe("live");
+    // held while the selection lasts
+    r.step(STEPS_PAST_SETTLE);
+    expect(r.target(near)).toBe("gpu");
+    // and back one settle window after it ends — not on the edge
+    r.world.removeTag(s, Selected);
+    r.step();
+    expect(r.target(near)).toBe("gpu");
+    r.step(STEPS_PAST_SETTLE);
+    expect(r.target(near)).toBe("dom");
+    expect(r.target(below)).toBe("dom");
+    expect(r.faults).toEqual([]);
+  });
+
+  it("a reach of 0 — the default — shields nothing", () => {
+    const r = rig();
+    const s = at(r, "sb:card", 0, 0);
+    const near = at(r, "sb:card", 110, 0);
+    r.step();
+    r.world.addTag(s, Selected);
+    r.step(3);
+    expect(r.target(near)).toBe("dom");
+  });
+
+  it("a selection moving across the board re-aims the shield: the card no longer covered comes back after the settle, the newly covered one lifts at once", () => {
+    const r = rig();
+    r.world.setResource(ChromeSettings, { liftScale: 1, selectionReach: 44 });
+    const s = at(r, "sb:card", 0, 0);
+    const near = at(r, "sb:card", 130, 0);
+    const other = at(r, "sb:card", 600, 0);
+    const otherNear = at(r, "sb:card", 730, 0);
+    r.step();
+    r.world.addTag(s, Selected);
+    r.step();
+    expect(r.target(near)).toBe("gpu");
+    expect(r.target(otherNear)).toBe("dom");
+    r.world.removeTag(s, Selected);
+    r.world.addTag(other, Selected);
+    r.step();
+    expect(r.target(otherNear)).toBe("gpu");
+    expect(r.target(near)).toBe("gpu");      // its window is open
+    r.step(STEPS_PAST_SETTLE);
+    expect(r.target(near)).toBe("dom");
+    expect(r.target(otherNear)).toBe("gpu");
+  });
+
+  it("a shield survives a gesture: grabbed and released with the selection held, the covered neighbour stays on the GPU through the gesture's settle — no drop to the DOM for a frame", () => {
+    const r = rig();
+    r.world.setResource(ChromeSettings, { liftScale: 1, selectionReach: 44 });
+    const s = at(r, "sb:card", 0, 0);
+    const near = at(r, "sb:card", 130, 0);
+    const far = at(r, "sb:card", 500, 0);
+    r.step();
+    r.world.addTag(s, Selected);
+    r.step();
+    expect(r.target(near)).toBe("gpu");
+    r.grab(s);
+    r.step();
+    expect(r.target(far)).toBe("gpu");       // the gesture set lifts the board
+    expect(r.world.get(near, RequestedDemand)?.mode).toBe("live");   // the shield's card stays live, never a still
+    r.release(s);
+    const seen = r.sample(near, STEPS_PAST_SETTLE + 2);
+    expect(seen.every((t) => t === "gpu")).toBe(true);
+    expect(r.target(far)).toBe("dom");       // the gesture's own card came back
+    r.world.removeTag(s, Selected);
+    r.step(STEPS_PAST_SETTLE + 1);
+    expect(r.target(near)).toBe("dom");
+    expect(r.faults).toEqual([]);
   });
 });

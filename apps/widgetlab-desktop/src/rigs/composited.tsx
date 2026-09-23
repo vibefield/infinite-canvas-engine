@@ -30,22 +30,7 @@
  *
  * Mounted from `composited.html`, driven by `scripts/composited.mjs`.
  */
-import {
-  acquireCompositorDevice,
-  Camera,
-  DragBounds,
-  DropTarget,
-  type EngineGpu,
-  type Entity,
-  Grab,
-  NO_ENTITY,
-  OverlapCandidate,
-  Position,
-  Selected,
-  spawnWidget,
-  TransformTween,
-  NavTransition,
-} from "@ice/core";
+import { acquireCompositorDevice, Camera, DragBounds, DropTarget, Grab, NavTransition, NO_ENTITY, OverlapCandidate, Position, Selected, spawnWidget, SurfaceTarget, TransformTween, type EngineGpu, type Entity } from "@ice/core";
 import { instrumentSubmits, type SubmitInstrument } from "@ice/ground";
 import { groundCompose, type GroundComposeContext, type GroundComposeHandle, type ShellGeometry } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
@@ -83,7 +68,14 @@ interface Board {
   readonly expect: { readonly card: RGB; readonly bg: RGB };
   readonly note?: string;
 }
-interface SelectResult { readonly reveal: number; readonly ring: number; readonly live: boolean; readonly redraws: number }
+interface SelectResult { readonly reveal: number; readonly ring: number; readonly live: boolean; readonly redraws: number
+  /** The OTHER board cards on the GPU after the selection settles — the ones its plate overlaps (S4). */
+  readonly shielded: number;
+  /** Frames after the reveal until the copies were quiet for a second, and what landed meanwhile. */
+  readonly settleFrames: number;
+  readonly copiesToSettle: number;
+  readonly dirtiedToSettle: number;
+}
 /** The lift as the frame draws it: `scale` = the content's box over its rect (the shell is un-revealed by the lift). */
 interface Grabbed { readonly lift: number; readonly scale: number; readonly shell: number; readonly shadowSigma: number; readonly liftAfter: number; readonly scaleAfter: number }
 interface Heated {
@@ -129,10 +121,16 @@ interface NavFlight {
 interface NextRig {
   readonly ready: Promise<void>;
   mount(): Promise<Mounted>;
-  idle(ms: number): Promise<{ frames: number; submits: number; redraws: number; wakes: Record<string, number> }>;
+  idle(ms: number): Promise<{ frames: number; submits: number; redraws: number; wakes: Record<string, number>; copies: number; dirtied: number; selfDirt: number }>;
   nudge(): Promise<{ submits: number; redraws: number }>;
   board(): Promise<Board>;
   select(i: number): Promise<SelectResult>;
+  /** Grab card i and hold it: the gesture set lifts the board, the folder included; resolves once the folder's picture is written. */
+  hold(i: number): Promise<{ folderOnGpu: boolean; folderWritten: boolean }>;
+  /** Let card i go and wait out the settle. */
+  drop(i: number): Promise<{ folderOnGpu: boolean }>;
+  /** The folder's bar title on the page (CSS px): the rect the text occupies, and the plate colour it sits on. */
+  folderTitle(): { sx: number; sy: number; w: number; h: number; plate: RGB };
   grab(i: number): Promise<Grabbed>;
   heat(target: number, source: number): Promise<Heated>;
   boundary(i: number): Promise<Boundary>;
@@ -277,6 +275,7 @@ function mountNextRig(): NextRig {
       return snapshot();
     },
     async idle(ms) {
+      const st0 = compose().domRender?.stats();
       const submits0 = submits();
       const redraws0 = redraws();
       const wakes0: Record<string, number> = { ...(handle?.compose.wakes() ?? {}) };
@@ -286,7 +285,8 @@ function mountNextRig(): NextRig {
       // what woke the builder over the window, by fact — only the facts that did
       const wakes: Record<string, number> = {};
       for (const [k, v] of Object.entries(handle?.compose.wakes() ?? {})) { const d = v - (wakes0[k] ?? 0); if (d > 0) wakes[k] = d; }
-      return { frames: n, submits: submits() - submits0, redraws: redraws() - redraws0, wakes };
+      const st1 = compose().domRender?.stats();
+      return { frames: n, submits: submits() - submits0, redraws: redraws() - redraws0, wakes, copies: (st1?.copies ?? 0) - (st0?.copies ?? 0), dirtied: (st1?.dirtied ?? 0) - (st0?.dirtied ?? 0), selfDirt: (st1?.selfDirt ?? 0) - (st0?.selfDirt ?? 0) };
     },
     async nudge() {
       const submits0 = submits();
@@ -336,12 +336,51 @@ function mountNextRig(): NextRig {
     },
     async select(i) {
       const e = ce();
+      const world = e.world;
       const card = must(cards[i], `card ${i}`);
       e.ops.setSelection([card]);
       await until(() => (compose().motionOf(card)?.reveal ?? 0) >= 1 && !compose().stats().live, 240);
+      // THE SHIELD (S4, 2026-09-23): the selection lifts the dom cards its 44 px plate overlaps to the GPU, and
+      // each takes one picture. Wait for those pictures to land — the copy count quiet for 20 frames — so the
+      // idle-zero that follows measures a board at rest, not the selection's own work still arriving.
+      const c0 = compose().domRender?.stats().copies ?? 0;
+      const d0 = compose().domRender?.stats().dirtied ?? 0;
+      let quiet = 0;
+      let last = c0;
+      let settleFrames = 0;
+      // (20 quiet frames: the pictures land in ~17; a shielded CLOCK ticks every second after that, which is not the tail)
+      await until(() => { settleFrames += 1; const c = compose().domRender?.stats().copies ?? 0; quiet = c === last ? quiet + 1 : 0; last = c; return quiet >= 20; }, 480);
       const m = must(compose().motionOf(card), "motion");
       const G = must(compose().geometryOf(card), "geometry");
-      return { reveal: m.reveal, ring: G.ring, live: compose().stats().live, redraws: redraws() };
+      let shielded = 0;
+      for (const other of cards) if (other !== card && world.get(other, SurfaceTarget)?.target === "gpu") shielded += 1;
+      const st = compose().domRender?.stats();
+      return { reveal: m.reveal, ring: G.ring, live: compose().stats().live, redraws: redraws(), shielded, settleFrames: settleFrames - 20, copiesToSettle: (st?.copies ?? 0) - c0, dirtiedToSettle: (st?.dirtied ?? 0) - d0 };
+    },
+    async hold(i) {
+      const world = ce().world;
+      const card = must(cards[i], `card ${i}`);
+      const r = cardRect(i);
+      world.addComponent(card, Grab, { x: r.x, y: r.y, w: r.w, h: r.h, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+      const f = must(folder, "folder");
+      await until(() => (compose().motionOf(card)?.lift ?? 0) >= 1 && compose().residency.isWritten(f) === true, 300);
+      await frames(4);
+      return { folderOnGpu: world.get(f, SurfaceTarget)?.target === "gpu", folderWritten: compose().residency.isWritten(f) === true };
+    },
+    async drop(i) {
+      const world = ce().world;
+      const card = must(cards[i], `card ${i}`);
+      world.removeComponent(card, Grab);
+      const f = must(folder, "folder");
+      await until(() => world.get(f, SurfaceTarget)?.target !== "gpu", 300);
+      await frames(4);
+      return { folderOnGpu: world.get(f, SurfaceTarget)?.target === "gpu" };
+    },
+    folderTitle() {
+      // the bar's title: after the 12 px padding and the 14 px icon + 8 px gap; 60 × 14 px of text
+      const x = FOLDER.x + 12 + 14 + 8;
+      const y = FOLDER.y + FOLDER.h - FOLDER.bar / 2 - 7;
+      return { sx: x * zoom, sy: y * zoom, w: 60 * zoom, h: 14 * zoom, plate: bytes(theme.card) };
     },
     async grab(i) {
       const world = ce().world;

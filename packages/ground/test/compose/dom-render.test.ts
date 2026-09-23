@@ -13,7 +13,7 @@
 //  · a refused copy (the unpainted host's `InvalidStateError`) is counted and the debt KEPT;
 //  · growth (D-B4.1): a bigger array, every live layer copied in one encoder, the new array
 //    realised, the old one destroyed only at `collect`;
-//  · the zoom-drift proof, as arithmetic: the host box this module writes is `geometry().cssSize`
+//  · the zoom-drift proof, as arithmetic: the host box this module writes is the widget's own × CSS `zoom` = `geometry().cssSize`
 //    and `ceil(cssSize × dpr)` is `geometry().written`, which is the slot Residency placed — under
 //    BOTH raster strategies, at three zooms, from one function.
 import {
@@ -750,8 +750,13 @@ describe("DomRender · the host box IS the slot (the zoom-drift proof, design-01
         const band = must(b.world.get(card, SurfaceBand), "SurfaceBand").band;
         const geo = geometry({ w: size.w, h: size.h }, band, 2, zoom, raster);
         const style = b.styleOf(card);
-        expect(style.width).toBe(`${geo.cssSize.w}px`);
-        expect(style.height).toBe(`${geo.cssSize.h}px`);
+        // THE BOX IS THE WIDGET'S OWN and CSS `zoom` carries band space (S4, 2026-09-23): a widget laid
+        // out in fixed pixels does not reflow into a smaller box, so the host keeps its world-unit box
+        // and `zoom` scales it — content and all — to geometry().cssSize, the layout box the copy writes.
+        expect(style.width).toBe(`${size.w}px`);
+        expect(style.height).toBe(`${size.h}px`);
+        const zoomCss = Math.abs(geo.cssSize.w / size.w - 1) < 1e-6 ? "" : (geo.cssSize.w / size.w).toFixed(6);
+        expect(style.zoom ?? "").toBe(zoomCss);
         // The copy takes NO extent: it writes the box × the L1 bitmap's scale.
         expect({ w: Math.ceil(geo.cssSize.w * geo.backingScale), h: Math.ceil(geo.cssSize.h * geo.backingScale) }).toEqual(geo.written);
         // …and that is exactly the rect Residency reserved, read back off the uv.
