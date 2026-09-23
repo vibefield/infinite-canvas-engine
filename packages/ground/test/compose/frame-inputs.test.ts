@@ -33,7 +33,7 @@ import {
 } from "@ice/core";
 import { MATERIAL, REST, resolveShell, SHELL_RADIUS, IDLE } from "../../src/card/geometry";
 import { NO_PART, shellProgram } from "../../src/card/program";
-import { EARS, PRODUCT, VF_EXT, vfFrame, type VfGeometry } from "../../src/packs/vf-frame";
+import { cornersOf, PRODUCT, VF_EXT, vfFrame, type VfGeometry } from "../../src/packs/vf-frame";
 import { createFrameBuilder, faceOfSnapshot, heatSourceOf, offscreen, portalFaceOf, sizeOf } from "../../src/compose/frame-inputs";
 import { DEFAULT_FIELD_CONFIG } from "../../src/field/layout";
 import { arrivalCamera, boundsOf, FIT } from "../../src/nav/flight";
@@ -145,17 +145,17 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
 
   it("a builder given a card PROGRAM resolves through it: the vf-frame pack's geometry and its ten tail slots", () => {
     const { ce, a } = makeBoard();
-    const pack = vfFrame({ style: EARS });
+    const pack = vfFrame();
     const builder = createFrameBuilder(ce.world, { previews: ce.previews, program: pack });
     const f = builder.build(CAM, VP, DT, THEMES.dark, DEFAULT_FIELD_CONFIG);
     expect(f.stats.cards).toBe(3);
     const G = must(builder.geometryOf(a)) as VfGeometry;
     // the pack resolving the same card at the same motion, bit for bit — the builder adds nothing
     expect(G).toEqual(pack.resolve({ card: { centre: [200, 160], contentHalf: [100, 60], radius: SHELL_RADIUS }, motion: { ...REST, reveal: 0 }, material: MATERIAL, dt: 0, part: NO_PART }));
-    // the head is the shell's; the tail is the pack's — the socket's ears and the two buttons (idle: none of them out yet)
+    // the head is the shell's; the tail is the pack's — the well's bays and the two buttons (idle: none of them out yet)
     expect(G.half).toEqual([100, 60]);
-    expect(G.earR).toHaveLength(4);
-    expect(G.closeC).toEqual([G.earX[1], G.earY[1]]);
+    expect(G.nw).toHaveLength(4);
+    expect(G.closeC).toEqual([200 + G.half[0] - cornersOf(PRODUCT).ear, 160 - G.half[1] + cornersOf(PRODUCT).ear]);
     expect(pack.tail(G)).toHaveLength(4 * VF_EXT);
     builder.dispose();
   });
@@ -419,7 +419,7 @@ describe("the frame builder · the pure parts", () => {
     expect(offscreen([500, 300], [100, 50], 0, { x: 0, y: 0, zoom: 0.5 }, vp)).toBe(false);
   });
 
-  it("heatSourceOf: the union as the PROGRAM draws it — the shell scaled by the lift, the socket grown by its ring; empty bounds → null", () => {
+  it("heatSourceOf: the union as the PROGRAM draws it, scaled by the lift; empty bounds → null", () => {
     const { world, b } = makeBoard();
     const pack = vfFrame();
     expect(heatSourceOf(world, b, shellProgram, SHELL_RADIUS, 1.05)).toBeNull();
@@ -429,9 +429,8 @@ describe("the frame builder · the pure parts", () => {
     world.edit(rec).set(DragBounds, { minX: 10, minY: 20, maxX: 110, maxY: 80 });
     // the shell: the union itself, at its own radius
     expect(heatSourceOf(world, b, shellProgram, SHELL_RADIUS, 1.05)).toEqual({ x: 60, y: 50, hx: 50 * 1.05, hy: 30 * 1.05, r: SHELL_RADIUS * 1.05 });
-    // the vf-frame pack: the SOCKET's outer silhouette — grown by the ring, concentric — whatever the host's lift scale
-    const T = PRODUCT.thickness;
-    expect(heatSourceOf(world, b, pack, 22, 1.05)).toEqual({ x: 60, y: 50, hx: 50 + T, hy: 30 + T, r: 22 + T });
+    // the vf-frame pack: the LIFTED CONTENT — the shell is un-revealed by the lift, so a dragged set casts the card alone
+    expect(heatSourceOf(world, b, pack, 22, 1.05)).toEqual({ x: 60, y: 50, hx: 50 * 1.05, hy: 30 * 1.05, r: 22 * 1.05 });
   });
 
   it("sizeOf prefers a positive MeasuredSize rider", () => {

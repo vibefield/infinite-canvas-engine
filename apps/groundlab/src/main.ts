@@ -840,13 +840,15 @@ async function start() {
       num("snow (/255, peak to peak)", () => P.night.snow * 255, (v) => { P.night.snow = v / 255; }, 0, 16, 0.5, ""),
       { kind: "actions", items: [{ label: "reset night", run: () => { P.night = defaultNightTweaks(); } }] },
     ] },
-    { title: "frame style · the socket", rows: [
+    { title: "frame style · the shell", rows: [
       { kind: "select", label: "base", options: Object.keys(STYLES), get: () => P.style.base, set: (v) => { P.style = styleTweaksOf(STYLES[v as keyof typeof STYLES], v as keyof typeof STYLES); } },
-      num("ring = the lift's rise", () => P.style.thickness, (v) => { P.style.thickness = v; }, 1, 40, 0.5),
+      num("rim (the plate's band)", () => P.style.band, (v) => { P.style.band = v; }, 1, 40, 0.5),
+      num("well (around the content)", () => P.style.well, (v) => { P.style.well = v; }, 0, 80, 0.5),
       num("card radius (resting)", () => P.style.radius, (v) => { P.style.radius = v; }, 0, 60, 0.5),
-      num("control (diameter; 0 = no ears)", () => P.style.control, (v) => { P.style.control = v; }, 0, 60, 1),
-      num("clearance (around a control)", () => P.style.clearance, (v) => { P.style.clearance = v; }, 0, 30, 0.5),
-      num("ear fillet (into the ring)", () => P.style.fillet, (v) => { P.style.fillet = v; }, 0, 40, 0.5),
+      num("control (diameter; 0 = no bays)", () => P.style.control, (v) => { P.style.control = v; }, 0, 60, 1),
+      num("clearance (to the outer edge)", () => P.style.clearance, (v) => { P.style.clearance = v; }, 0, 30, 0.5),
+      num("bay clearance", () => P.style.bayClearance, (v) => { P.style.bayClearance = v; }, 0, 30, 0.5),
+      num("fillet", () => P.style.fillet, (v) => { P.style.fillet = v; }, 0, 40, 0.5),
       { kind: "note", get: () => styleViolations(state.style, contentHalf()).map((v) => `⚠ ${v}`).join("\n") },
     ] },
     { title: "motion", rows: [

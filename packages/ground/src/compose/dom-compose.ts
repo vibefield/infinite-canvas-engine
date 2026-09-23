@@ -9,15 +9,15 @@
 // rounded card is star-shaped about its centre, so one ray per angle finds one
 // boundary point) and returns a CSS `polygon()` in the content element's own
 // px — the element is the UNSCALED content rect, so the lift divides out and
-// the clip is invariant under it. A program without one (the shell; the socket
-// frame since 2026-09-23, whose content is never cut) clips to the rounded
-// content rect in one `inset()`, no march. `createDomHostWriter` writes the
+// the clip is invariant under it. A program without one (the engine's shell; the
+// vf-frame shell since 2026-09-23, whose content is never cut) clips to the
+// rounded content rect in one `inset()`, no march. `createDomHostWriter` writes the
 // three properties change-only, recomputing the clip only when the program's
 // `clipKey` says the shape moved (the reveal's ~300 ms; never while a card is
 // merely lifted or panned). THE LIFT IS READ OFF THE GEOMETRY: the host's
-// transform is the resolved inner box over the content rect, per axis — a
-// scale for the shell, a rise for the socket — so the DOM and the ground
-// cannot disagree on where a lifted card's edge is.
+// transform is the resolved inner box over the content rect, per axis — so the
+// DOM and the ground cannot disagree on where a lifted card's edge is, whatever
+// a program makes of the lift.
 //
 // THE CACHE IS KEYED BY THE ELEMENT (D-C4.8), in a `WeakMap`. What the record
 // remembers is what is written ON that element, so the element is what it
@@ -37,7 +37,7 @@ export const CLIP_RAYS = 720;
 /** Bisection steps per ray: the boundary to 1/65536 of the ray's length. */
 const CLIP_STEPS = 16;
 
-/** The lift per axis: the resolved inner box over the content rect — 1 at rest, the shell's scale, the socket's rise. */
+/** The lift per axis: the resolved inner box over the content rect — 1 at rest, the lift scale when a program scales by it. */
 export function liftOf(G: ShellGeometry, w: number, h: number): readonly [number, number] {
   return [w > 0 ? (2 * G.ih[0]) / w : 1, h > 0 ? (2 * G.ih[1]) / h : 1];
 }

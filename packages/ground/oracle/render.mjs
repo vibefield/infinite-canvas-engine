@@ -38,7 +38,7 @@ import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, 
 import { clipOf, faceRadius, faceRect, FOLDER_FACE, PORTAL_CAP, PORTAL_GATE, portalOf } from "../src/nav/portal.ts";
 import { newMotion, pinMotion, toMotion } from "../src/card/motion.ts";
 import { STYLES } from "../src/packs/vf-frame/sheet.ts";
-import { sdFrame, sdInner, sdOuter, sdRoundBox } from "../src/packs/vf-frame/sdf.ts";
+import { sdFrame, sdInner, sdOuter, sdRoundBox, sdWell } from "../src/packs/vf-frame/sdf.ts";
 import { irradiance } from "../src/packs/vf-frame/heat.ts";
 import { LINES } from "../src/theme.ts";
 import { THEMES, surface } from "./fixtures/vf-theme.ts";
@@ -878,15 +878,17 @@ if (process.argv[2] === "mirror") {
     const dO = sdOuter(G, wx, wy);
     const cF = cov(sdFrame(G, wx, wy));
     const cI = cov(sdInner(G, wx, wy));
+    const cW = cov(sdWell(G, wx, wy));                                 // the well wears the card's surface (black here), the rim the frame (white)
+    const chrome = 1 * (1 - cW) + 0 * cW;
     const ring = (cov(dO) - cov(dO + LINES.ring)) * G.ring;          // the §7 ring band, inside the outer edge
-    const base = 0.2 * (1 - cF - cI) + 1 * cF;                        // premultiplied over the bg
+    const base = 0.2 * (1 - cF - cI) + chrome * cF;                   // premultiplied over the bg
     const expected = 1 * ring + base * (1 - ring);                    // then the ring over that; the swap chain's 8-bit
     const got = px[(y * W + x) * 4] / 255;
     const err = Math.abs(got - expected) * 255;
     if (err > maxErr) maxErr = err; if (err > 2) over2++; sum += err; n++;
   }
   console.log(`frame shader vs CPU mirror: ${n.toLocaleString()} px · mean |err| ${(sum / n).toFixed(4)}/255 · max ${maxErr.toFixed(2)} · >2: ${over2} (${(100 * over2 / n).toFixed(4)}%)`);
-  console.log(`seam check at the border: ${(cov(sdFrame(G, G.centre[0], G.centre[1] - G.half[1] + style.thickness / 2)) + cov(sdInner(G, G.centre[0], G.centre[1] - G.half[1] + style.thickness / 2))).toFixed(9)} (must be 1)`);
+  console.log(`seam check at the border: ${(cov(sdFrame(G, G.centre[0], G.centre[1] - G.ih[1])) + cov(sdInner(G, G.centre[0], G.centre[1] - G.ih[1]))).toFixed(9)} (must be 1) · style ${style.name}`);
 } else {
   for (const sc of ORACLE_SCENES) {
     const t1 = performance.now();

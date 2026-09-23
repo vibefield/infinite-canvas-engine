@@ -353,16 +353,19 @@ via `matLightOf`, its plates through `matPassOf(field)`) and `vfFrame(opts?)` (a
 `CardProgram`: `resolve(ctx)` → a `VfGeometry`, `tail(G)`, `uniformValues(theme)`,
 `pick(G, x, y)`, `source(w, h, lift, radius)`, `reach(radius)`, plus `style` and `heat`
 settable, and `springsOf(key)` / `setLocked(key, locked)` for its own buttons and lock).
-**The frame is the SOCKET (2026-09-23):** the ring between a card at rest and the same card
-lifted — `inner` the content's own rounded rect, never cut; `outer` the content grown by the
-style's `thickness` (8), concentric; the lift that same growth, a rise on every side rather
-than a scale (the shell still scales by `ChromeSettings.liftScale`; the pack ignores it). A
-style is `socketStyle({ thickness, radius, control?, clearance?, fillet? })`; `PRODUCT` has no
-controls, `EARS` houses the close and the lock in lobes outside the content (`STYLES`). A
-program's optional `reach(radius)` is how far its chrome extends beyond the content at rest
-(the cull margin and the pick pad grow by it); a program without `inner` clips its DOM hosts
-with one `inset(0 round r)`, and the DOM boundary writes a host's lift from the resolved inner
-box per axis (`liftOf`, `contentRadiusOf`). Register them
+**The frame is the SHELL (2026-09-23):** three nested shapes — the CONTENT, the widget's own
+rounded rect, never cut; the WELL, a recess in the card's own surface `well` wide around it,
+its corners notched into bays for the close and the lock; the PLATE, a rim of solid chrome
+`band` wide whose outer corners are the ear's arc centred on each control. Selection reveals
+the shell out of the content's edge; the lift UN-REVEALS it while the card scales by
+`ChromeSettings.liftScale`, so a lifted card's silhouette is the plate's outer edge and
+nothing of the shell shows while it moves. A style is `shellStyle({ band, well, radius,
+control?, clearance?, bayClearance?, fillet? })`; `PRODUCT` carries the two controls, `PLAIN`
+none (`STYLES`); `cornersOf` gives the ear, the bay and the notch. A program's optional
+`reach(radius)` is how far its chrome extends beyond the content at rest (the cull margin
+and the pick pad grow by it); a program without `inner` clips its DOM hosts with one
+`inset(0 round r)`, and the DOM boundary writes a host's lift from the resolved inner box per
+axis (`liftOf`, `contentRadiusOf`). Register them
 with `Ground.create({ card, grids })` or `groundCompose({ card, grids, onPart })`; omit
 them and the shell draws. The record is a HEAD (`ShellGeometry` + the content binding,
 `FRAME_HEAD_BYTES` = 144) plus the program's `ext` slots, built by `frameStruct(ext)`;

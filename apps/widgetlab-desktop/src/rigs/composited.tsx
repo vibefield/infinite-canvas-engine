@@ -17,7 +17,7 @@
  *     plate) while its bar is the plate; idle-zero holds with cards on the board;
  *  5. selection is a spring: the reveal reaches 1, the ring arrives, and once settled the
  *     board is idle-zero again;
- *  6. Grab IS the lift: the card RISES by the socket's ring (the frame's thickness) and sets down when it goes;
+ *  6. Grab IS the lift: the card scales by ChromeSettings.liftScale, the shell is un-revealed, and it sets down when it goes;
  *  7. the heat: the drop pair on a target with a recognizer's DragBounds lights the target
  *     (the plate under the light reads brighter), and clearing it fades out.
  *
@@ -49,7 +49,7 @@ import {
 import { instrumentSubmits, type SubmitInstrument } from "@ice/ground";
 import { groundCompose, type GroundComposeContext, type GroundComposeHandle, type ShellGeometry } from "@ice/ground/compose";
 import { THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
-import { cuttingMat, needleGlyph, STYLES, vfFrame } from "@ice/ground/packs";
+import { cuttingMat, needleGlyph, vfFrame } from "@ice/ground/packs";
 import { compositedProfile, InfiniteCanvas } from "@ice/react";
 import { createRoot } from "react-dom/client";
 import { createDemoEngine } from "../App";
@@ -84,8 +84,8 @@ interface Board {
   readonly note?: string;
 }
 interface SelectResult { readonly reveal: number; readonly ring: number; readonly live: boolean; readonly redraws: number }
-/** The lift as the socket frame draws it: `rise` = how far the content's edge moved out (the ring's `thickness`), per axis. */
-interface Grabbed { readonly lift: number; readonly rise: readonly [number, number]; readonly thickness: number; readonly shadowSigma: number; readonly liftAfter: number; readonly riseAfter: readonly [number, number] }
+/** The lift as the frame draws it: `scale` = the content's box over its rect (the shell is un-revealed by the lift). */
+interface Grabbed { readonly lift: number; readonly scale: number; readonly shell: number; readonly shadowSigma: number; readonly liftAfter: number; readonly scaleAfter: number }
 interface Heated {
   readonly hot: number; readonly tier: number; readonly at: readonly [number, number]; readonly half: readonly [number, number]; readonly r: number;
   /** The target's plate under the light vs the same plate cold (modal 9×9 patches). */
@@ -95,6 +95,8 @@ interface Heated {
 interface Boundary {
   /** CSS px on the page for: the ring band just inside the top edge, the shadow skirt below the card, the close control, the title's area. */
   readonly band: { sx: number; sy: number };
+  /** A pointer-down here begins a drag on the chrome: the rim's middle, in the column gap. */
+  readonly grip: { sx: number; sy: number };
   readonly shadow: { sx: number; sy: number };
   readonly close: { sx: number; sy: number };
   /** The folder's face centre — the ground's live portal, which the DOM must not cover. */
@@ -220,7 +222,7 @@ function mountNextRig(): NextRig {
     instrument = instrumentSubmits(gpu.device);
     engine = createDemoEngine(gpu);
     // the app's own choice (design-014): VibeField's frame as the card program, the needle and the mat as grids
-    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame({ style: STYLES.ears }), grids: [needleGlyph, cuttingMat], onPart: (entity, part) => { taps.push({ entity: Number(entity), part }); } });
+    const factory = groundCompose({ device: gpu.device, theme, card: vfFrame(), grids: [needleGlyph, cuttingMat], onPart: (entity, part) => { taps.push({ entity: Number(entity), part }); } });
     const ground = (ctx: GroundComposeContext) => { handle = factory(ctx); return handle; };
     createRoot(rootEl).render(
       <InfiniteCanvas engine={engine} ground={ground} profile={compositedProfile} className="h-full w-full" />,
@@ -350,14 +352,15 @@ function mountNextRig(): NextRig {
       await until(() => (compose().motionOf(card)?.lift ?? 0) >= 1 && !compose().stats().live, 240);
       const m = must(compose().motionOf(card), "motion");
       const G = must(compose().geometryOf(card), "geometry");
-      // THE SOCKET (2026-09-23): the lift is a RISE by the ring's thickness, read off the inner box — not a scale
-      const riseOf = (g: ShellGeometry): readonly [number, number] => [g.ih[0] - r.w / 2, g.ih[1] - r.h / 2];
-      const lifted = { lift: m.lift, rise: riseOf(G), thickness: STYLES.ears.thickness, shadowSigma: G.shadowSigma };
+      // THE SHELL (2026-09-23): the lift scales the content by ChromeSettings.liftScale and un-reveals the shell,
+      // so the plate's outer edge IS the scaled content while the card is held
+      const scaleOf = (g: ShellGeometry): number => g.ih[0] / (r.w / 2);
+      const lifted = { lift: m.lift, scale: scaleOf(G), shell: G.half[0] - G.ih[0], shadowSigma: G.shadowSigma };
       world.removeComponent(card, Grab);
       await until(() => (compose().motionOf(card)?.lift ?? 1) <= 0 && !compose().stats().live, 240);
       const m2 = must(compose().motionOf(card), "motion");
       const G2 = must(compose().geometryOf(card), "geometry");
-      return { ...lifted, liftAfter: m2.lift, riseAfter: riseOf(G2) };
+      return { ...lifted, liftAfter: m2.lift, scaleAfter: scaleOf(G2) };
     },
     async boundary(i) {
       const card = must(cards[i], `card ${i}`);
@@ -365,17 +368,23 @@ function mountNextRig(): NextRig {
       const r = cardRect(i);
       const [cx, cy] = G.centre;
       const [hx, hy] = G.half;
-      // world points on WHOLE device pixels (the page's screenshot and the canvas readback must sample the same one):
-      // the ring band 1 px inside the top edge; the shadow skirt 14 px under the bottom edge; the close control's centre
-      // 40 px right of the top-centre: the engine's P4 resize grip sits at the centre of each edge
-      const band: [number, number] = [Math.round(cx) + 40, Math.round(cy - hy) + 1];
-      const shadow: [number, number] = [Math.round(cx), Math.round(cy + hy) + 14];
-      const close = G.closeC ?? [cx + hx - 21, cy - hy + 21];
+      // world points on WHOLE device pixels (the page's screenshot and the canvas readback must sample the same one).
+      // THE SHELL (2026-09-23): the plate reaches 44 px past the card — above the viewport at this top-left card, and
+      // under the next row's DOM hosts along its bottom rim — so both samples sit in the COLUMN GAP, which no host
+      // covers: the rim 2 px inside the plate's bottom edge, and the shadow skirt 14 px under that edge. The close
+      // control is where the geometry puts it (the TR bay).
+      const gapX = Math.round(r.x + r.w + (GRID.dx - CARD.w) / 2);
+      const band: [number, number] = [gapX, Math.round(cy + hy) - 2];
+      const shadow: [number, number] = [gapX, Math.round(cy + hy) + 14];
+      // where a drag on the chrome begins: the rim's middle, in the gap — a pointer down here hits no DOM host
+      const grip: [number, number] = [gapX, Math.round(cy + hy) - 5];
+      const close = G.closeC ?? [cx + hx - 26, cy - hy + 26];
       const img = await readback(compose().canvas);
       const content = document.querySelector(`[data-ice-entity="${String(card)}"] [data-ice-content]`) as HTMLElement | null;
       const toScreen = (wx: number, wy: number) => ({ sx: wx * zoom, sy: wy * zoom });
       return {
         band: toScreen(band[0], band[1]),
+        grip: toScreen(grip[0], grip[1]),
         shadow: toScreen(shadow[0], shadow[1]),
         close: toScreen(close[0], close[1]),
         face: toScreen(Math.round(FOLDER.x + FOLDER.pad + (FOLDER.w - 2 * FOLDER.pad) / 2), Math.round(FOLDER.y + FOLDER.pad + (FOLDER.h - FOLDER.pad - FOLDER.bar) / 2)),

@@ -34,11 +34,10 @@ describe("heat — the light", () => {
     for (const hh of [10, 30, 90]) expect(irradiance(hh, hh)).toBeCloseTo(0.5 * (1 - Math.SQRT1_2), 12);
     expect(irradiance(0, 0)).toBe(0.5);                                         // a zero height is guarded
   });
-  it("the source is the lifted card's OUTER silhouette as drawn — the socket's edge: the content grown by the ring", () => {
+  it("the source is the lifted card's OUTER silhouette as drawn — the content scaled by the lift; the shell is un-revealed", () => {
     const rect = { centre: [100, 50] as const, contentHalf: [75, 45] as const, radius: 14 };
     const S = sourceOf(resolve(PRODUCT, rect, { ...VF_REST, reveal: 0, held: 1, lift: LIFT.scale }, MATERIAL));
-    const T = PRODUCT.thickness;
-    expect(S).toEqual({ x: 100, y: 50, hx: 75 + T, hy: 45 + T, r: 14 + T });
+    expect(S).toEqual({ x: 100, y: 50, hx: 75 * LIFT.scale, hy: 45 * LIFT.scale, r: 14 * LIFT.scale });
     expect(overlaps({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 5, width: 10, height: 10 })).toBe(true);
     expect(overlaps({ x: 0, y: 0, width: 10, height: 10 }, { x: 10, y: 0, width: 10, height: 10 })).toBe(false);   // touching is not overlapping
   });

@@ -1,7 +1,8 @@
 // `vf-frame` — VibeField's card frame as a CARD PROGRAM pack (design-014): the
-// SOCKET — the ring a selected card rests in and a held card rises into — with
-// the close and lock buttons in optional ears, the delete morph, the §7 overlap
-// heat as cast light. Registered by an app (`groundCompose({ card: vfFrame() })`,
+// SHELL — a rim of solid chrome around a well in the card's own surface, the
+// well's corners notched into bays for the close and lock buttons, the content
+// inside it never cut; revealed by selection, un-revealed by the lift — with the
+// delete morph and the §7 overlap heat as cast light. Registered by an app (`groundCompose({ card: vfFrame() })`,
 // `Ground.create({ card })`); the engine's own card is the shell. This file is
 // the seam's CPU half: the program object — its style (settable, the lab's
 // panel edits it), its heat knobs, its own per-card springs (the two buttons'
@@ -101,7 +102,7 @@ export const VF_TUNING = { lockHz: 3.6, lockDamp: 0.72 } as const;
 export const VF_PARTS = { close: "close", lock: "lock" } as const;
 
 export interface VfFrameOptions {
-  /** The frame style; the product's socket (no ears) by default — `STYLES.ears` carries the two controls. */
+  /** The frame style; the product's shell (James's mockup, with its two controls) by default — `STYLES.plain` has none. */
   readonly style?: FrameStyle;
   /** The heat's knobs (height, the tier alphas, the rim); theme.ts's `HEAT` by default. */
   readonly heat?: Heat;
@@ -180,13 +181,12 @@ export function vfFrame(opts: VfFrameOptions = {}): VfFramePack {
     release: (key) => { table.delete(key); },
     uniformValues: (theme) => vfUniformValues(vfSectionOf(theme), pack.heat),
     pick: (G, x, y): Hit => pick(G, x, y),
-    // THE SOCKET LAW: a lifted card's silhouette is the socket's outer edge — the content grown by the ring,
-    // whatever scale the host's lift driver holds (`lift` is the shell's number; this pack rises by its thickness).
-    source(w, h, _lift, radius): Silhouette {
-      const T = pack.style.thickness;
-      return { hx: w / 2 + T, hy: h / 2 + T, r: radius + T };
+    // THE SHELL LAW: a lifted card's silhouette is the card itself, scaled — the shell is un-revealed by the lift,
+    // so a dragged set casts the lifted content and nothing of the plate.
+    source(w, h, lift, radius): Silhouette {
+      return { hx: (w / 2) * lift, hy: (h / 2) * lift, r: radius * lift };
     },
-    reach: (radius) => reachOf(pack.style, radius),
+    reach: () => reachOf(pack.style),
     theme: VF_THEME_SOURCE.theme,
     // No `inner`: the content is never cut, so a DOM host clips to its own rounded rect (dom-compose.ts's
     // fallback) — no ray march, no clip key, and the pickup pays nothing for the reveal.

@@ -1268,69 +1268,84 @@ the entity's own kind behaviour.
   the floor, the tile, the neighbours, the cost model, the refused draw, the failed copy, the
   tiling, the composition of the two levers).
 
-### The shell, turned inside out — the socket frame (S3, 2026-09-23)
+### The shell, turned inside out — the plate, the well and the bays (S3, 2026-09-23)
 
 James's direction, 2026-09-23: the selection frame's four corners sat INSIDE the card and
-covered its content. The frame now lives outside the content, wraps it to its edge, and its
-outer side is the card's lifted size — so a lifted card fills the frame, and the frame is gone
-while the card moves.
+covered its content; the frame belongs outside, wrapping the content to its edge, and a lifted
+card should fill it so nothing of it shows while the card moves. His mockup the same day fixed
+the look: the v3 plate, turned inside out.
 
-**The socket.** `packs/vf-frame`'s frame is the ring between a card at rest and the same card
-lifted: `inner` is the content's own rounded rect, never cut and never covered; `outer` is the
-content grown by `thickness` (8 px) on every side, its corners concentric; and the LIFT is that
-same growth — a held card RISES by the ring's thickness, on every side, instead of scaling by
-`ChromeSettings.liftScale` (the engine's shell still scales; the pack ignores the number). A
-selected card at rest wears the ring; a grab grows the content into it and the ring's width
-goes to zero while the outer edge never moves; a release settles the content back and the ring
-re-emerges; a grabbed card that was not selected simply rises. The §7 selection line rides the
-outer edge and fades with the lift, so a moving card is calm. The selection chrome and the
-lift's footprint are one shape: a selected card never claims more of the board than a lifted one.
+**The shell.** `packs/vf-frame` draws three nested shapes. The CONTENT is the widget's own
+rounded rect, never cut. The WELL is a recess in the card's own surface (`--vf-card`, the
+record's `surface`), `well` (34 px) wide around the content, its four corners NOTCHED into
+rounded bays that house the close and the lock. The PLATE is a rim of §2.2 solid chrome,
+`band` (10 px) wide, whose outer corners are the ear's arc centred on each control. The corner
+composition is the reference's, moved from the content to the well: ear = control/2 +
+clearance (26), bay = control/2 + bayClearance (22), notch = ear + bay − band (38, so 48 from
+the outer corner), fillet = ear − band (16). `styleViolations` refuses a bay that would bite
+the content.
 
-**The ears.** A 26 px control cannot live inside an 8 px ring, so a style that wants the close
-and the lock carries EARS: a lobe of chrome per corner, OUTSIDE the content and tangent to its
-corner arc, the control at its centre with `clearance` of chrome all round; they bloom with the
-reveal (staggered, the old corner windows) and retract for the lift, buttons first. The product
-socket has none — DESIGN.md §8's card anatomy carries no corner controls and the product never
-wired `onPart` — and `STYLES.ears` is the style with them, which the widgetlab composited rig
-now registers so the part channel stays exercised.
+**The reveal and the un-reveal.** Selection reveals the shell out of the content's edge: the
+well and the rim over the first half of the reveal spring, the bays staggered after, the
+buttons last. THE LIFT UN-REVEALS IT: the card scales by `ChromeSettings.liftScale` as it
+always has, and the shell plays its reveal backwards into the card's edge — buttons first,
+then the bays, then the well and the rim — so at the end of the lift the plate's outer edge
+IS the lifted card's silhouette, and nothing of the shell shows while the card moves. A
+release plays it forward; a grabbed card that was not selected simply scales. The §7 ring
+rides the plate's outer edge and leaves with the shell.
 
-- **Breaking (the pack's sheet).** The notched frame is retired: `REFERENCE`, `CLEAN`, `PLAIN`,
-  `REFERENCE_CARD`, `composeStyle`, `CornerSpec`, `PRODUCT_CORNER`, `scaleStyle` and the
-  `nw · nh · rho · rfH · rfV · baseR` geometry are gone. The sheet is `socketStyle(spec)` over a
-  `SocketSpec { thickness, radius, control?, clearance?, fillet? }` → `FrameStyle { thickness,
-  radius, control, clearance, fillet, btn }`, with `PRODUCT` (no controls), `EARS` and `STYLES`,
-  `styleViolations` for the socket, and `earOf` / `earReachOf` / `reachOf`. `VfGeometry` carries
-  `band`, `earX · earY · earR · fillet` (per corner) and the buttons; the TAIL is 8 vec4s (was
-  10): `VF_EXT = 8`, the record 144 + 128 B. `choreography.ts` adds `LIFT` (the lift's own
-  windows: buttons `[0, 0.35]`, ears `[0, 0.6]`); `DELETE.notches` is `DELETE.ears`. `pick`
-  routes lock · close · content · frame · outside as before.
-- **`CardProgram.reach?(radius)`** (optional, new): how far the chrome reaches beyond the content
-  rect at rest — the frame builder's cull margin and the router's pick pad grow by it (the ears
-  reach past the ring). `source()` is the socket's outer silhouette whatever `lift` is handed.
-- **The DOM boundary reads the lift off the geometry.** `createDomHostWriter` writes the host's
-  transform as the resolved inner box over the content rect, per axis (`scale(s)` when uniform,
-  `scale(sx, sy)` otherwise — `liftOf`), and the clip's radius likewise (`contentRadiusOf`); the
-  pack defines no `inner`, so a DOM host under the socket clips with one `inset(0 round r)` and
-  the 720-ray march never runs — the pickup's 153 ms clip cost (S2's finding) is gone with it:
-  the stress rig's grab at 96 cards on the gpu arm has a longest frame of 8.8 ms (167–185 ms
-  under every S2 variant), and the pan recomputes 0 clip polygons (the first report's stall).
-- **groundlab.** The frame panel edits the socket (ring, radius, control, clearance, fillet);
-  `PARAMS_VERSION` 4 drops the notched snapshots; `rig:corner` renders the two shipped styles
-  (medium + small, dark + light), `rig:reveal` and `rig:probe` read the new geometry.
+- **Breaking (the pack's sheet).** The notched-content frame is retired: `REFERENCE`, `CLEAN`,
+  the old `PLAIN`, `REFERENCE_CARD`, `composeStyle`, `CornerSpec`, `PRODUCT_CORNER` and
+  `scaleStyle` are gone. The sheet is `shellStyle(spec)` over a `ShellSpec { band, well,
+  radius, control?, clearance?, bayClearance?, fillet? }` → `FrameStyle { band, well, radius,
+  control, clearance, bayClearance, fillet, btn }`, with `PRODUCT` (the mockup's numbers, its
+  two controls), `PLAIN` (no bays) and `STYLES`; `cornersOf`, `outerRadiusOf`, `reachOf`.
+  `VfGeometry` carries `shell` (the presence), `wellHalf` / `wellR`, `nw · nh · rho · rf` per
+  corner and the buttons; the TAIL is 9 vec4s (was 10): `VF_EXT = 9`, the record 144 + 144 B.
+  `choreography.ts` adds `LIFT` (the un-reveal's windows: buttons `[0, 0.35]`, bays `[0, 0.6]`,
+  shell `[0, 1]`); `DELETE.notches` is `DELETE.bays`. `pick` routes lock · close · content ·
+  frame (the well and the rim) · outside; `sdWell` joins `sdInner` / `sdOuter` / `sdFrame` in
+  the CPU mirror. The shader's `Shade.chrome` is per pixel: the rim's colour, or the card's
+  own surface inside the well.
+- **`CardProgram.reach?(radius)`** (optional, new): how far the chrome reaches beyond the
+  content rect at rest (the well and the rim: 44) — the frame builder's cull margin and the
+  router's pick pad grow by it. `source()` is the lifted content: a dragged set casts the
+  card, never the shell.
+- **The DOM boundary reads the lift off the geometry.** `createDomHostWriter` writes the
+  host's transform as the resolved inner box over the content rect, per axis (`liftOf`; a
+  uniform `scale(s)` here), and the clip's radius likewise (`contentRadiusOf`); the pack
+  defines no `inner`, so a DOM host clips with one `inset(0 round r)` and the 720-ray march
+  never runs — the pickup's 153 ms clip cost (S2's finding) is gone with it.
+- **groundlab.** The frame panel edits the shell (rim, well, radius, control, clearance, bay
+  clearance, fillet); `PARAMS_VERSION` 5 drops the older snapshots; `rig:corner` renders the
+  two shipped styles (medium + small, dark + light), `rig:reveal` and `rig:probe` read the
+  new geometry. The widgetlab composited rig checks the lift as the scale, with the shell gone.
 - **Fixed — the oracle's `mirror` was stale since design-014.** Its flat `frame` / `fill`
   overrides sat on the theme's HEAD, which nothing reads, so it compared a predicted white band
   against the chrome's own colour: at `fc6206f` a max error of 217/255 over 4.85% of the pixels.
-  The overrides live in the `vf-frame` section now; the socket mirrors at mean 0.0000/255, max
-  0.49, 0 pixels over 2.
+  The overrides live in the `vf-frame` section now, and the mirror predicts the well's material
+  too; the shell mirrors at mean 0.0001/255, max 0.50, 0 pixels over 2.
 
-Witnessed: groundlab `rig:corner` and `rig:reveal` (the ring 0 → 8 px over reveal 0 → 0.5,
-concentric throughout), the oracle mirror exact, `pnpm run ci` green (every package, the dom
-10k-mount included at host load 60), `gate:landing` green (47 oracle scenes at maxΔ 0, the pack
-audit), the seven desktop rigs green (the boot rig's clip check now expects the socket's one
-`inset()`), the stress rig's pickup above. Owed on the product side: DESIGN.md §5/§7's amendment (in the composited profile the
-lift is the socket's rise, not `scale(1.05)`, and the socket is the selection chrome); the core
-union box still pads a held card by `liftScale`, an approximation of the rise; the stratified
-profile's CSS lift is untouched.
+History: a first cut the same morning (`5fbf943`) read the direction as a thin 8 px ring whose
+thickness was the lift's rise; James's mockup replaced it within the hour, and this entry
+describes what ships.
+
+Witnessed: groundlab `rig:corner` (product + plain, medium + small, dark + light) and `rig:reveal`
+(the shell 0 → 1 over reveal 0 → 0.5, outerR 22 → 26, the bays 0 → 38 over 0.16 → 0.5, the lock
+after 0.5); the oracle mirror exact; `gate:landing` green (47 oracle scenes at maxΔ 0, the pack
+audit); the seven desktop rigs green (the boot rig's rim and shadow samples and its band-drag
+grip moved into the column gap, which no DOM host covers under a 44 px plate); `pnpm run ci`
+green in every package but two 5 s timeouts at host load 166–290 (the budget-controller test and
+the dom 10k-mount), both green alone; the stress rig's grab at 96 cards on the gpu arm: longest
+frame 9.3 ms (167–185 ms under every S2 variant), the pan recomputing 0 clip polygons — the
+clip march no longer exists.
+
+Owed from James's live test the same hour (the next slice): a selected card's plate is drawn
+under any DOM neighbour it overlaps (the ground paints beneath the DOM; the overlapped cards
+must move to the GPU while the shell shows), a dragged R3F card rides under DOM cards (the
+gesture set promotes only on a grab of a dom card), and a promoted widget laid out in fixed
+pixels is copied as its top-left corner at zoom < 1 (band space shrinks the host's box —
+the band-space reflow owed since the first report).
 
 ### The copy's cost, named (2026-09-09)
 

@@ -33,7 +33,7 @@ try {
   await sleep(900);
   const info = await tab.evaluate(`(() => { const c = window.__ground.cards[3]; const G = c.geometry; const st = window.__ground.state;
     return { motion: { selected: c.motion.selected, reveal: c.motion.reveal, lockA: window.__ground.springs(3).lockA }, style: st.style.name,
-      G: G && { centre: G.centre, half: G.half, ih: G.ih, outerR: G.outerR, closeR: G.closeR, closeC: G.closeC, lockR: G.lockR, band: G.band, earR: G.earR, earX: G.earX, earY: G.earY, radius: G.radius, shadowSigma: G.shadowSigma, frameAlpha: G.frameAlpha },
+      G: G && { centre: G.centre, half: G.half, ih: G.ih, outerR: G.outerR, closeR: G.closeR, closeC: G.closeC, lockR: G.lockR, shell: G.shell, wellHalf: G.wellHalf, wellR: G.wellR, nw: G.nw, nh: G.nh, rho: G.rho, rf: G.rf, radius: G.radius, shadowSigma: G.shadowSigma, frameAlpha: G.frameAlpha },
       screen: G && [(G.centre[0] - st.camX) * st.zoom, (G.centre[1] - st.camY) * st.zoom],
       stats: document.getElementById('stats').textContent }; })()`, { timeoutMs: 20000 });
   console.log(JSON.stringify(info, null, 1).replace(/\n\s+/g, " ").slice(0, 1800));

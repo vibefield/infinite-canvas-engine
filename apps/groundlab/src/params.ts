@@ -5,30 +5,32 @@
 
 import { FIT, type FadeIn, type FieldConfig, type FitBand, type FlightTuning, type GlyphRange, type GroundTheme, LINES, MATERIAL, MOTION_DEFAULTS, type Material, type MotionTuning, NAV, PORTAL_CAP, PORTAL_GATE, type RGB, type RGBA, type ThemeName } from "@ice/ground/compose";
 // The product's look is in the PACKS (design-014): the frame's style sheet and heat, the mat's material and its night.
-import { EIGENGRAU, type FrameStyle, HEAT, MAT_COLORS, MAT_GLYPH, MAT_GRID, type MatConfig, type MatLight, NIGHT, PRODUCT, type PlateName, type STYLES, VF_FRAME, type VfThemeSection, dayLuminance, nightLight, socketStyle, vfSectionOf } from "@ice/ground/packs";
+import { EIGENGRAU, type FrameStyle, HEAT, MAT_COLORS, MAT_GLYPH, MAT_GRID, type MatConfig, type MatLight, NIGHT, PRODUCT, type PlateName, type STYLES, VF_FRAME, type VfThemeSection, dayLuminance, nightLight, shellStyle, vfSectionOf } from "@ice/ground/packs";
 import { PRODUCT_GRID, THEMES } from "@ice/ground/oracle/fixtures/vf-theme";
 
 /**
- * The SOCKET as the panel edits it (sheet.ts `SocketSpec`, every field explicit):
- * the ring = the lift's rise, the card's resting radius, and the controls if any
- * (a control diameter of 0 is a socket without ears). `buildStyle` is
- * `socketStyle`; the base names the shipped style the tweaks started from.
+ * The SHELL as the panel edits it (sheet.ts `ShellSpec`, every field explicit):
+ * the plate's rim, the well, the card's resting radius, and the controls if any
+ * (a control diameter of 0 is a shell without bays). `buildStyle` is
+ * `shellStyle`; the base names the shipped style the tweaks started from.
  */
 export interface StyleTweaks {
   base: keyof typeof STYLES;
-  thickness: number;
+  band: number;
+  well: number;
   radius: number;
   control: number;
   clearance: number;
+  bayClearance: number;
   fillet: number;
 }
 
 export function styleTweaksOf(s: FrameStyle, base: keyof typeof STYLES): StyleTweaks {
-  return { base, thickness: s.thickness, radius: s.radius, control: s.control, clearance: s.clearance, fillet: s.fillet };
+  return { base, band: s.band, well: s.well, radius: s.radius, control: s.control, clearance: s.clearance, bayClearance: s.bayClearance, fillet: s.fillet };
 }
 
 export function buildStyle(t: StyleTweaks): FrameStyle {
-  return socketStyle({ name: t.base, thickness: t.thickness, radius: t.radius, control: t.control, clearance: t.clearance, fillet: t.fillet });
+  return shellStyle({ name: t.base, band: t.band, well: t.well, radius: t.radius, control: t.control, clearance: t.clearance, bayClearance: t.bayClearance, fillet: t.fillet });
 }
 
 /**
@@ -150,7 +152,7 @@ export interface HeatTweaks { height: number; alpha: [number, number]; rim: { wi
 export const defaultHeatTweaks = (): HeatTweaks => ({ height: HEAT.height, alpha: [...HEAT.alpha], rim: { width: HEAT.rim.width, alpha: [...HEAT.rim.alpha] } });
 
 /** Bumped when a saved snapshot's meaning changes; an old snapshot is dropped, not merged. */
-export const PARAMS_VERSION = 4;
+export const PARAMS_VERSION = 5;
 
 export interface Params {
   version: number;

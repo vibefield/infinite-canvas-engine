@@ -35,7 +35,7 @@ try {
     await tab.send("Page.bringToFront");
     const { data } = await tab.send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: 220, height: 220, scale: 1 } });
     clips.push(data);
-    const G = await q("(() => { const G = window.__ground.cards[0].geometry; return { outerR: +G.outerR.toFixed(2), band: +G.band.toFixed(2), ear: +G.earR[0].toFixed(2), lockR: +G.lockR.toFixed(2), t: +(G.half[0] - G.ih[0]).toFixed(2) }; })()");
+    const G = await q("(() => { const G = window.__ground.cards[0].geometry; return { outerR: +G.outerR.toFixed(2), shell: +G.shell.toFixed(3), nw: +G.nw[0].toFixed(2), rho: +G.rho[0].toFixed(2), lockR: +G.lockR.toFixed(2), reach: +(G.half[0] - G.ih[0]).toFixed(2) }; })()");
     console.log(`r ${r.toFixed(2)}: ${JSON.stringify(G)}`);
   }
   // tile in the page: one row, a label under each

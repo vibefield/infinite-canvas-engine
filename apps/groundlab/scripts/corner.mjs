@@ -1,21 +1,21 @@
-// The socket, rendered: one selected medium card and one small card, close-up,
-// dark and light, for a list of socket specs (sheet.ts `SocketSpec`) — the eyes
+// The shell, rendered: one selected medium card and one small card, close-up,
+// dark and light, for a list of shell specs (sheet.ts `ShellSpec`) — the eyes
 // judge the frame, the harness only draws it. The shipped styles first: the
-// product's socket, then the one with ears.
+// product's shell, then the plain one without bays.
 //   node test/harness/corner.mjs            → results/corner-<name>-{medium,small}.png
-//   node test/harness/corner.mjs '[{"name":"x","thickness":10,"radius":22,"control":26,"clearance":8}]'
+//   node test/harness/corner.mjs '[{"name":"x","band":10,"well":34,"radius":22,"control":32,"clearance":10,"bayClearance":6}]'
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
-import { EARS_SOCKET, PRODUCT_SOCKET, socketStyle } from "@ice/ground/packs";
+import { PLAIN_SHELL, PRODUCT_SHELL, shellStyle } from "@ice/ground/packs";
 import { styleTweaksOf } from "../src/params.ts";
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");   // the server root is the REPO: the app's dist and the package's oracle results are both under it
 mkdirSync(resolve(app, "results"), { recursive: true });
-const specs = process.argv[2] ? JSON.parse(process.argv[2]) : [PRODUCT_SOCKET, EARS_SOCKET];
-const tweaks = specs.map((c) => [c.name ?? "spec", styleTweaksOf(socketStyle(c), "product")]);
+const specs = process.argv[2] ? JSON.parse(process.argv[2]) : [PRODUCT_SHELL, PLAIN_SHELL];
+const tweaks = specs.map((c) => [c.name ?? "spec", styleTweaksOf(shellStyle(c), "product")]);
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
 const chrome = await launchChrome({ port: 9487, headless: !process.env.GROUND_HEADED });
@@ -41,7 +41,7 @@ try {
       await q(`window.__ground.setScene(${JSON.stringify(scene)}); for (const el of document.querySelectorAll('#legend')) el.style.visibility = 'hidden';`);
       await q(`window.__ground.params.style = ${JSON.stringify(t)}; window.__ground.apply(); window.__ground.panel.refresh();`);
       await sleep(700);   // the reveal spring
-      // hover the close button when the style has one (the ears); the product socket has nothing to hover
+      // hover the close button when the style has one; the plain shell has nothing to hover
       const close = await q("(() => { const g = window.__ground, st = g.state, G = g.cards[0].geometry; return G.closeR > 0.05 ? [(G.closeC[0] - st.camX) * st.zoom, (G.closeC[1] - st.camY) * st.zoom] : null; })()");
       if (close) { await mouse("mouseMoved", close[0], close[1]); await sleep(450); }
       await shot(`${name}-${s.tag}`);

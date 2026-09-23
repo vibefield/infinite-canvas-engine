@@ -149,10 +149,10 @@ try {
   check(afterClick.selected === before.selected && afterClick.grabbed === false, `and it neither grabs nor changes the selection (selected ${afterClick.selected}, grabbed ${afterClick.grabbed})`);
   // a frame between moves, so the drag recognizer sees a gesture rather than one coalesced sample
   // LEFT, away from every neighbour: a release over a solid card is a rejected drop and flies back
-  await page.mouse.move(b.band.sx - 20, b.band.sy + 3);
+  await page.mouse.move(b.grip.sx, b.grip.sy);
   await page.mouse.down();
   await page.waitForTimeout(40);
-  for (let k = 1; k <= 6; k++) { await page.mouse.move(b.band.sx - 20 - k * 7, b.band.sy + 3); await page.waitForTimeout(40); }
+  for (let k = 1; k <= 6; k++) { await page.mouse.move(b.grip.sx - k * 7, b.grip.sy); await page.waitForTimeout(40); }
   await page.mouse.up();
   const afterDrag = await page.evaluate(() => window.__nextRig.cardState(0));
   log(`band drag: x ${before.x} → ${afterDrag.x}`);
@@ -160,8 +160,8 @@ try {
 
   const grab = await page.evaluate(() => window.__nextRig.grab(1));
   log(`grab: ${JSON.stringify(grab)}`);
-  check(grab.lift === 1 && Math.abs(grab.rise[0] - grab.thickness) < 1e-6 && Math.abs(grab.rise[1] - grab.thickness) < 1e-6, `Grab lifts: lift ${grab.lift}, the content rose ${grab.rise[0].toFixed(2)}×${grab.rise[1].toFixed(2)} px into the socket (its ring is ${grab.thickness})`);
-  check(grab.liftAfter === 0 && grab.riseAfter[0] === 0 && grab.riseAfter[1] === 0, `losing Grab sets it down: lift ${grab.liftAfter}, rise ${grab.riseAfter.join("×")}`);
+  check(grab.lift === 1 && Math.abs(grab.scale - 1.05) < 1e-6 && Math.abs(grab.shell) < 1e-6, `Grab lifts: lift ${grab.lift}, scale ${grab.scale.toFixed(4)} (ChromeSettings.liftScale 1.05), the shell un-revealed (${grab.shell.toFixed(2)} px of it left)`);
+  check(grab.liftAfter === 0 && Math.abs(grab.scaleAfter - 1) < 1e-9, `losing Grab sets it down: lift ${grab.liftAfter}, scale ${grab.scaleAfter}`);
 
   const heat = await page.evaluate(() => window.__nextRig.heat(2, 1));
   log(`heat: ${JSON.stringify(heat)}`);
