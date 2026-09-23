@@ -371,11 +371,19 @@ them and the shell draws. **The shield (S4, 2026-09-23):** the ground paints ben
 resting DOM host, so `ice:surface.domAtRest` lifts to the GPU the dom cards a selected card's
 chrome overlaps — `ChromeSettings.selectionReach` says how far that chrome reaches, and an app
 passes its frame pack's `reachOf(style)` through `createCanvasEngine({ settings: { chrome: {
-selectionReach } } })`; any `Grab` on the board lifts the gesture set; and DomRender carries band
-space with CSS `zoom` on a host that keeps the widget's own box. A container the GPU holds draws
-as a PANE (`FrameContent` mode `pane`, `paneContent(page, face)`): its own picture around its
-face over the plate, nothing inside the face — the hole's inside shows through — so its bar keeps
-its text while lifted. The record is a HEAD (`ShellGeometry` + the content binding,
+selectionReach } } })` — the shield counts members of the current nav frame only (a selection that
+rode a nav transition, Culled without Active, shields nothing), computes its need once per change
+rather than once per frame, and the selection union box pads a member at REST by the same reach
+(a Grab-bed one by `liftScale`, as before), so the box and its grips sit on the plate's outer edge
+(review, 2026-09-23); any `Grab` on the board lifts the gesture set; and DomRender carries band
+space with CSS `zoom` on a host that keeps the widget's own box (its placement translation is
+written in unzoomed units, because Blink multiplies a transform's translation by the element's
+`zoom`). A container the GPU holds draws as a PANE (`FrameContent` mode `pane`,
+`paneContent(page, face)`): its own picture around its face over the plate, nothing inside the
+face — the hole's inside shows through — so its bar keeps its text while lifted; the face and the
+slot scale with the content's lift. The pane falls back to a hole (the bar's text with it) for the
+one frame after a re-slot, for a container whose picture is an `own` destination, and in a
+flight's departed slot. The record is a HEAD (`ShellGeometry` + the content binding,
 `FRAME_HEAD_BYTES` = 160 since the pane's face joined it — `CARD_ABI` 2, 2026-09-23) plus the
 program's `ext` slots, built by `frameStruct(ext)`;
 `frameUniformStruct(uext)` likewise; `CARD_ABI` pins the head. The theme is a head
@@ -437,8 +445,9 @@ the plate. The last six are THE LEVERS' (2026-09-09): `budget` is the copy budge
 milliseconds inside the copy calls — the budget controller's own signal.
 **`groundCompose({ dom })`** (2026-09-09) tunes DomRender — `{ strategy?: "element" | "batched",
 budget?: false | number | { start?, min?, max? }, costs? }`. `budget` caps the cards copied per
-flush, FIFO with a gesture's stills first; a number is a fixed cap, an object the adaptive
-controller (start 16, min 2, max 256), which shrinks the cap hard when a flush spends more than
+flush, FIFO with a gesture's stills first; a number is a fixed cap, an object — or nothing: the
+adaptive controller is the DEFAULT since the review of 2026-09-23, `budget: false` is one copy
+per dirty card — the adaptive controller (start 16, min 2, max 256), which shrinks the cap hard when a flush spends more than
 3 ms of main thread inside its copies (the flow-control signature of a saturated GPU process)
 and grows it by one while cards wait and a flush spent under 1 ms. `strategy: "batched"` rasters
 the served cards of one page layer as ONE recording — each `drawElementImage`d into the source

@@ -137,6 +137,12 @@ interface Promoted {
   readonly expectBox: string;
   readonly slot: string;
   readonly writtenPx: string;
+  /** The host's `getBoundingClientRect()` against the card's screen rect — the placement as the page has it (review, 2026-09-23). */
+  readonly screenBox: { x: number; y: number; w: number; h: number };
+  readonly expectScreen: { x: number; y: number; w: number; h: number };
+  readonly screenOff: number;
+  /** The host's inline `zoom` — "" when its box is band space already (band 1). */
+  readonly zoom: string;
 }
 interface DriftResult {
   readonly raster: RasterStrategy;
@@ -230,6 +236,11 @@ function mountRenderRig(): RenderRig {
     const r = cardRect(i);
     const c = toScreen(r.x + r.w / 2, r.y + r.h / 2);
     const hit = document.elementFromPoint(c.sx, c.sy);
+    // the host's box on the page (a zoomed host's rect is its zoomed box in Chrome 150) against the card's screen rect
+    const b = el?.getBoundingClientRect();
+    const rootBox = rootEl.getBoundingClientRect();
+    const screenBox = b === undefined ? { x: Number.NaN, y: Number.NaN, w: Number.NaN, h: Number.NaN } : { x: b.x - rootBox.x, y: b.y - rootBox.y, w: b.width, h: b.height };
+    const expectScreen = { x: r.x * zoom, y: r.y * zoom, w: r.w * zoom, h: r.h * zoom };
     return {
       target: world.get(card, SurfaceTarget)?.target ?? "?",
       onCanvas: el?.parentElement?.hasAttribute("data-ice-source-canvas") === true,
@@ -244,6 +255,10 @@ function mountRenderRig(): RenderRig {
       expectBox: `${geo.cssSize.w}pxx${geo.cssSize.h}px`,
       slot: ref === undefined ? "?" : `${Math.round((ref.u1 - ref.u0) * side)}x${Math.round((ref.v1 - ref.v0) * side)}`,
       writtenPx: `${geo.written.w}x${geo.written.h}`,
+      screenBox,
+      expectScreen,
+      zoom: el?.style.zoom ?? "",
+      screenOff: Math.max(Math.abs(screenBox.x - expectScreen.x), Math.abs(screenBox.y - expectScreen.y), Math.abs(screenBox.w - expectScreen.w), Math.abs(screenBox.h - expectScreen.h)),
     };
   };
 

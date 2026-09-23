@@ -180,6 +180,19 @@ try {
   check(titleRest > 60 && titleHeld > 60, `the folder's bar keeps its title while it is held — a PANE around the face: contrast ${titleHeld} held vs ${titleRest} at rest`);
   check(dropped.folderOnGpu === false, "and the folder comes back to the DOM after the settle");
 
+  // THE FACE RIDES THE LIFT (review, 2026-09-23): held, the folder's picture is drawn on its lifted content, so the
+  // face it is drawn around and the slot beneath must scale with it — left at the resting rect they sat 5 % inside
+  // the hairline, a plate-coloured ring. Three points just inside the lifted face's left edge: the plate at rest
+  // (outside the resting face), the inside's ground while held (inside the lifted one).
+  const hf = await page.evaluate(() => window.__nextRig.holdFolder());
+  const dropF = await page.evaluate(() => window.__nextRig.dropFolder());
+  const same = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+  log(`folder held (lift ${hf.lift}, gpu ${hf.onGpu}, written ${hf.written}): just inside the lifted face — at rest ${hf.rest.map(rgb).join(" ")} · held ${hf.held.map(rgb).join(" ")} · plate ${rgb(hf.plate)} inside ${rgb(hf.inside)}`);
+  check(hf.lift >= 1 && hf.onGpu && hf.written, `a grab on the folder lifts it with its picture written (lift ${hf.lift}, gpu ${hf.onGpu}, written ${hf.written})`);
+  check(hf.rest.every((c) => same(c, hf.plate)), `at rest the three points sit outside the face, on the plate: ${hf.rest.map(rgb).join(" ")}`);
+  check(hf.held.every((c) => same(c, hf.inside)), `held, the face has grown with the content and the three points show the inside's ground through it: ${hf.held.map(rgb).join(" ")} (the pane's body read (27,27,28) here before the face rode the lift)`);
+  check(dropF.onGpu === false, "and the folder sets down and comes back to the DOM");
+
   const grab = await page.evaluate(() => window.__nextRig.grab(1));
   log(`grab: ${JSON.stringify(grab)}`);
   check(grab.lift === 1 && Math.abs(grab.scale - 1.05) < 1e-6 && Math.abs(grab.shell) < 1e-6, `Grab lifts: lift ${grab.lift}, scale ${grab.scale.toFixed(4)} (ChromeSettings.liftScale 1.05), the shell un-revealed (${grab.shell.toFixed(2)} px of it left)`);

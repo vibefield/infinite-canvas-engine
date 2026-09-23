@@ -326,6 +326,8 @@ try {
   const zPts = await page.evaluate(() => window.__renderRig.points(0));
   const zpr = await page.evaluate(() => window.__renderRig.promote(0));
   check(zpr.mode === "page", `band arm: the card at zoom 0.7 is drawn from its page layer (${zpr.mode})`);
+  const box = (b) => `(${b.x.toFixed(1)}, ${b.y.toFixed(1)}) ${b.w.toFixed(1)}×${b.h.toFixed(1)}`;
+  log(`zoom 0.7: the host's box ${zpr.hostBox} at zoom ${zpr.zoom || "(none)"} for a slot of ${zpr.expectBox} · on the page ${box(zpr.screenBox)} vs the card's screen rect ${box(zpr.expectScreen)} (off by ${zpr.screenOff.toFixed(2)} px)`);
   const zRect = await pageRect(page, zPts.rect);
   if (process.env.RENDER_DUMP) fs.writeFileSync(path.join(process.env.RENDER_DUMP, "band-space-promoted.png"), await page.screenshot({ type: "png", clip: { x: zPts.rect.sx, y: zPts.rect.sy, width: zPts.rect.w, height: zPts.rect.h } }));
   await open("?profile=stratified");
@@ -341,6 +343,21 @@ try {
   const edges = inkA.count > 0 && inkB.count > 0 ? Math.max(Math.abs(inkA.x0 - inkB.x0), Math.abs(inkA.y0 - inkB.y0), Math.abs(inkA.x1 - inkB.x1), Math.abs(inkA.y1 - inkB.y1)) : Number.POSITIVE_INFINITY;
   const ratio = inkB.count > 0 ? inkA.count / inkB.count : 0;
   check(edges <= 3 && ratio > 0.85 && ratio < 1.15, `band space at zoom 0.7: the promoted card's block is the live one's — the WHOLE widget copied at band 0.5, not its top-left corner (edges off by ${edges} px, area ${ratio.toFixed(3)}×)`);
+
+  // THE HOST LANDS WHERE THE PLACEMENT SAYS (review, 2026-09-23): Blink zooms a transform's translation, so a host
+  // that carries a `zoom` (band 0.5 — at zoom 0.45 here; at 0.7 the band is still 1 and the host's box is its own)
+  // whose matrix carried the screen offset sat at HALF of it — the hit, focus and caret truth of every promoted card
+  // at zoom < 1. The box on the page must be the card's screen rect, and the point at a far card's centre must still
+  // name its host (card 5, whose misplaced host would not have reached its own centre).
+  await open("");
+  await page.evaluate(() => window.__renderRig.board(6));
+  await page.evaluate(() => window.__renderRig.zoomTo(0.45));
+  const hpr = await page.evaluate(() => window.__renderRig.promote(0));
+  log(`zoom 0.45: the host's box ${hpr.hostBox} at zoom ${hpr.zoom || "(none)"} for a slot of ${hpr.expectBox} · on the page ${box(hpr.screenBox)} vs the card's screen rect ${box(hpr.expectScreen)} (off by ${hpr.screenOff.toFixed(2)} px)`);
+  check(hpr.zoom !== "" && hpr.mode === "page", `at zoom 0.45 the promoted host IS zoomed (zoom ${hpr.zoom || "(none)"}) and drawn from its page (${hpr.mode}) — the placement witness is not vacuous`);
+  check(hpr.screenOff <= 1.5, `a zoomed host sits on the card's screen rect: off by ${hpr.screenOff.toFixed(2)} px`);
+  const hpr5 = await page.evaluate(() => window.__renderRig.promote(5));
+  check(hpr5.hitIsHost === true && hpr5.screenOff <= 1.5, `and a far card's zoomed host is where its centre is: elementFromPoint names it (${hpr5.hitIsHost}), box off by ${hpr5.screenOff.toFixed(2)} px`);
 } finally {
   await app.close();
 }

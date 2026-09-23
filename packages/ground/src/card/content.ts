@@ -71,9 +71,18 @@ export interface FrameRun { readonly first: number; readonly count: number; read
  * one run; islands and live surfaces split it only where they interleave.
  */
 export function runsOf(contents: ReadonlyArray<FrameContent | undefined>): FrameRun[] {
+  return runsBy(contents.length, (i) => contents[i]);
+}
+
+/** `runsOf` over the first `n` instances of a frame list — no copy of the list (review, 2026-09-23). */
+export function runsOfInstances(instances: ReadonlyArray<{ readonly content?: FrameContent | undefined }>, n: number): FrameRun[] {
+  return runsBy(Math.min(n, instances.length), (i) => instances[i]?.content);
+}
+
+function runsBy(n: number, at: (i: number) => FrameContent | undefined): FrameRun[] {
   const runs: { first: number; count: number; own: GPUTextureView | null; srgb: boolean }[] = [];
-  for (let i = 0; i < contents.length; i++) {
-    const c = contents[i];
+  for (let i = 0; i < n; i++) {
+    const c = at(i);
     const own = c?.mode === "own" ? c.texture : null;
     const srgb = c?.mode === "own" ? c.srgb : false;
     const cur = runs[runs.length - 1];

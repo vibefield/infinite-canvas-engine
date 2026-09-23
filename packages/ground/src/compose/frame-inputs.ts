@@ -285,6 +285,16 @@ export function navFrameOf(world: World, e: Entity): Entity | undefined {
   return undefined;
 }
 
+/**
+ * A face scaled about the card's centre by the content's lift (per axis; the radius by the
+ * x scale) — the face a lifted card draws. Exactly the given face at scale 1.
+ */
+export function liftedFace(face: { readonly K: Rect; readonly r: number }, centre: readonly [number, number], sx: number, sy: number): { readonly K: Rect; readonly r: number } {
+  if (sx === 1 && sy === 1) return face;
+  const K = face.K;
+  return { K: { x: centre[0] + (K.x - centre[0]) * sx, y: centre[1] + (K.y - centre[1]) * sy, width: K.width * sx, height: K.height * sy }, r: face.r * sx };
+}
+
 /** The hole's face in the card's own frame (content.ts `PortalFace`). */
 export const portalFaceOf = (K: Rect, r: number): PortalFace => ({ cx: K.x + K.width / 2, cy: K.y + K.height / 2, hx: K.width / 2, hy: K.height / 2, r });
 
@@ -427,6 +437,8 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
     return { frames, sources };
   };
 
+  // the paint order's four tiers — unselected, selected, held, held + selected — reused per build
+  const tiers: [Entity[], Entity[], Entity[], Entity[]] = [[], [], [], []];
   return {
     build(cam, vp, dt, theme, config) {
       if (disposed) return { sources: [], frames: [], portals: [], stats: EMPTY_STATS };
@@ -435,8 +447,6 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       const parts = partsNow();
       partsSig = parts.sig;
       const ordinals = order.ordinals();
-      const list: Entity[] = [];
-      world.query(widgetsQ).each((batch) => { for (const row of batch) list.push(batch.entity(row)); });
       // PAINT ORDER: the stack order, and HELD cards last (S1, 2026-09-09). `Grab` is the lift
       // signal (design-004 §1: P3, the lifted plane, paints above P1) — the stratified DOM
       // re-parents a grabbed host onto the lifted plane and back, and this is the same rule
@@ -446,15 +456,21 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
       // content plane did), and a product that wants "drop on top" reorders the siblings.
       // And SELECTED cards after unselected ones (S4, 2026-09-23): a selected card's chrome reaches
       // past its rect, and a later sibling painted over it hid the frame's rim (James's live test).
-      list.sort((a, b) => {
-        const ha = world.has(a, Grab);
-        const hb = world.has(b, Grab);
-        if (ha !== hb) return ha ? 1 : -1;
-        const sa = world.hasTag(a, Selected);
-        const sb = world.hasTag(b, Selected);
-        if (sa !== sb) return sa ? 1 : -1;
-        return compareStackOrder(world, ordinals, a, b);
+      // Four TIERS, read once per card (review, 2026-09-23): the comparator used to ask the world
+      // for `Grab` and `Selected` on every comparison — ≈2.5k component reads per build at 96
+      // cards, N·log N — where each card's tier is one read, and only the stack order is compared.
+      for (const t of tiers) t.length = 0;
+      world.query(widgetsQ).each((batch) => {
+        for (const row of batch) {
+          const e = batch.entity(row);
+          (tiers[(world.has(e, Grab) ? 2 : 0) + (world.hasTag(e, Selected) ? 1 : 0)] as Entity[]).push(e);
+        }
       });
+      const list: Entity[] = [];
+      for (const t of tiers) {
+        t.sort((a, b) => compareStackOrder(world, ordinals, a, b));
+        for (const e of t) list.push(e);
+      }
 
       // Pass 1 — every on-screen card's flux and geometry, and the portal candidates.
       const seen = new Set<Entity>();
@@ -498,7 +514,13 @@ export function createFrameBuilder(world: World, opts: FrameBuilderOptions = {})
           if (previews !== undefined) {
             if (st.unsub === undefined) st.unsub = previews.subscribe(e, () => woke("preview"));
             const snap = previews.snapshot(e);
-            const face = faceOfSnapshot(pos, size, snap, radius, faceR);
+            // THE FACE RIDES THE CONTENT (review, 2026-09-23): the program resolved the content's box
+            // `ih` — the widget's own rect × the lift — and the pane's picture is mapped onto it, so
+            // the face it is drawn around, and the slot the inside shows through, scale with it about
+            // the card's centre. Left at the resting rect they sat 5 % inside a held folder's hairline:
+            // a plate-coloured ring. A resting card resolves ih = contentHalf exactly and keeps its
+            // rect bit for bit (the oracle's scenes).
+            const face = liftedFace(faceOfSnapshot(pos, size, snap, radius, faceR), centre, G.ih[0] / contentHalf[0], G.ih[1] / contentHalf[1]);
             const lp = portalAt(face.K, face.r, snap.resolvedView, cam, vp, gate);
             if (lp !== null) portal = { K: face.K, r: face.r, live: lp, snap };
           }

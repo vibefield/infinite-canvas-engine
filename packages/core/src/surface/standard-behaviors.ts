@@ -38,7 +38,7 @@ import type { Entity } from "@vibecook/strata-ecs";
 import { defineEngineBehavior } from "../behavior/define-behavior";
 import type { AnyBehaviorDef, RuntimeBehaviorCtx } from "../behavior/types";
 import type { BehaviorRuntime } from "../behavior/runtime";
-import { MeasuredSize } from "../catalog/camera-derived";
+import { Active, Culled, MeasuredSize } from "../catalog/camera-derived";
 import { Grab } from "../catalog/gesture";
 import { Position, Size } from "../catalog/scene";
 import { Selected } from "../catalog/selection-presence";
@@ -150,6 +150,15 @@ interface SettleState {
   readonly shielded: Set<Entity>;
   readonly shieldRelease: Map<Entity, number>;
   /**
+   * THE NEED'S CACHE (review, 2026-09-23): the shield's need as last computed, whether it is stale,
+   * and the reach it was computed under. `changed` fires every frame (`FrameInfo` is a polled read)
+   * and the need walks every selected and every dom card, so it is computed at most once per change
+   * — never once per frame, and never on a frame that does not read it (a held drag).
+   */
+  lastNeed: ReadonlySet<Entity> | undefined;
+  needDirty: boolean;
+  lastReach: number;
+  /**
    * The `FrameInfo.clock` reading the GESTURE's settle window expires at; `null` while a card is
    * grabbed or nothing is owned. One window for the whole set (2026-09-09): the set was promoted
    * together for one reason, the z-order under a drag, and comes back together.
@@ -162,7 +171,7 @@ function settleState(ctx: RuntimeBehaviorCtx<Record<string, unknown>>): SettleSt
   const signal = ctx.signal;
   let state = settleTables.get(signal);
   if (state === undefined) {
-    state = { owned: new Set<Entity>(), stills: new Set<Entity>(), shielded: new Set<Entity>(), shieldRelease: new Map<Entity, number>(), settleAt: null };
+    state = { owned: new Set<Entity>(), stills: new Set<Entity>(), shielded: new Set<Entity>(), shieldRelease: new Map<Entity, number>(), lastNeed: undefined, needDirty: true, lastReach: 0, settleAt: null };
     settleTables.set(signal, state);
     // `dispose` runs for every instance BEFORE the signal aborts (§4.3), so
     // this only ever clears what a torn-down generation left behind.
@@ -250,10 +259,13 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
     stillWhileGrabbed: p.boolean({ default: true }),
     ...demandSchema,
   },
-  reads: [Grab, SurfaceKind, PrefabId, FrameInfo, Selected, Position, Size, MeasuredSize, ChromeSettings],
+  reads: [Grab, SurfaceKind, PrefabId, FrameInfo, Selected, Position, Size, MeasuredSize, ChromeSettings, Active, Culled],
   writes: [SurfaceTarget, RequestedDemand],
   on: {
     init(e, data, ctx) {
+      // A card joining the behaviour may already sit under a selected card's plate: the shield's
+      // need is recomputed (its cache, review 2026-09-23).
+      settleState(ctx).needDirty = true;
       // The cadence ask is legitimate whatever the kind is, so it lands before
       // the refusal below can stop this hook (`alwaysDom`'s order, same
       // reason).
@@ -277,9 +289,29 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
     changed(ctx) {
       const state = settleState(ctx);
       const clock = ctx.world.getResource(FrameInfo)?.clock ?? 0;
-      // THE SHIELD'S NEED, computed first: the gesture's demotion hands a card the shield still
-      // wants straight over, rather than dropping it to the DOM for one frame and lifting it again.
-      const need = shieldNeed(ctx);
+      // THE SHIELD'S NEED — the gesture's demotion hands a card the shield still wants straight
+      // over, rather than dropping it to the DOM for one frame and lifting it again. LAZY AND
+      // CACHED (review, 2026-09-23): this hook fires every frame (`FrameInfo` is a polled read),
+      // and the need walks every selected and every dom card, so it used to be paid on every
+      // frame of a held drag, where nothing reads it. It is computed only where it is read — the
+      // settle's hand-off and the shield phase — and only when something it reads has changed
+      // since the last computation: `ctx.changes()` names every journaled entity of this
+      // behaviour's reads (a Position/Size/MeasuredSize write, a Selected/Culled/Active flip, a
+      // death) and `full` the rebuilds; `init`/`dispose` dirty it for instance churn; the reach
+      // is the one input outside the journal, so it is compared by value.
+      const ch = ctx.changes();
+      const reach = ctx.world.getResource(ChromeSettings)?.selectionReach ?? 0;
+      if (ch.full || ch.changed.length > 0 || ch.removed.length > 0 || reach !== state.lastReach) {
+        state.needDirty = true;
+        state.lastReach = reach;
+      }
+      const needOf = (): ReadonlySet<Entity> => {
+        if (state.needDirty || state.lastNeed === undefined) {
+          state.lastNeed = shieldNeed(ctx, reach);
+          state.needDirty = false;
+        }
+        return state.lastNeed;
+      };
 
       // THE GESTURE: ANY grab on the board (S4, 2026-09-23). The ground draws a lifted card beneath
       // every resting host the DOM still paints above the canvas, whatever KIND the lifted card is —
@@ -336,7 +368,9 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
           // THE STILL: one picture at promotion, held for the gesture (DomRender's still
           // rule copies a paused card once when the world names its destination). Only a
           // card this behaviour promoted, only once per gesture, and only if its instance
-          // did not opt out.
+          // did not opt out. A grabbed card the SHIELD already holds is not a still either
+          // (review, 2026-09-23): it was lifted live and is carried live, at its cadence —
+          // `owned` never names it, so `stillWhileGrabbed` does not reach it.
           if (state.owned.has(e) && !state.stills.has(e) && cellOf(ctx, e)?.stillWhileGrabbed !== false) {
             const asked = ctx.world.get(e, RequestedDemand);
             ctx.set(e, RequestedDemand, {
@@ -370,7 +404,7 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
               });
             }
             // the shield takes over a card it still needs: on the GPU it stays, live
-            if (need.has(e)) {
+            if (needOf().has(e)) {
               state.shielded.add(e);
               continue;
             }
@@ -388,6 +422,7 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
       // `selectionReach` past its rect, BENEATH every resting host the DOM paints above the canvas.
       // The dom cards it overlaps go to the GPU, live at their own cadence, while it shows; they come
       // back one settle window after the overlap ends, so clicking around a board does not flap them.
+      const need = needOf();
       for (const e of need) {
         state.shieldRelease.delete(e);
         if (state.shielded.has(e)) continue;
@@ -420,38 +455,70 @@ export const domAtRest = defineEngineBehavior(DOM_AT_REST, {
       state.stills.delete(e);
       state.shielded.delete(e);
       state.shieldRelease.delete(e);
+      state.needDirty = true;
     },
   },
 });
 
-/** A card's world rect: its position and its measured size when the DOM has one, its declared size otherwise. */
+/**
+ * A card's world rect: its position and, PER AXIS, its measured size when the DOM has one, its
+ * declared size otherwise — the rule `systems/chrome.ts` and the retier apply (review, 2026-09-23:
+ * this took the measurement only when both axes were measured).
+ */
 function rectOf(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity): { x: number; y: number; w: number; h: number } | undefined {
   const p = ctx.world.get(e, Position);
   if (p === undefined) return undefined;
   const m = ctx.world.get(e, MeasuredSize);
-  const s = m !== undefined && m.w > 0 && m.h > 0 ? m : ctx.world.get(e, Size);
-  if (s === undefined || !(s.w > 0) || !(s.h > 0)) return undefined;
-  return { x: p.x, y: p.y, w: s.w, h: s.h };
+  const s = ctx.world.get(e, Size);
+  const w = m !== undefined && m.w > 0 ? m.w : (s?.w ?? 0);
+  const h = m !== undefined && m.h > 0 ? m.h : (s?.h ?? 0);
+  if (!(w > 0) || !(h > 0)) return undefined;
+  return { x: p.x, y: p.y, w, h };
+}
+
+/**
+ * The codebase's NON-MEMBER signature (the 2026-07-17 field bug; `systems/chrome.ts` and
+ * `l3-claim.ts` apply it for the same reason): a widget of ANOTHER nav frame is Culled without
+ * Active, and its coordinates are that frame's — frame-local numbers that can overlap this one's.
+ * Viewport-culled members are Culled ∧ Active and count; a bare membership-less world (a rig)
+ * carries neither tag.
+ */
+function otherFrame(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, e: Entity): boolean {
+  return ctx.world.hasTag(e, Culled) && !ctx.world.hasTag(e, Active);
+}
+
+/**
+ * TEST-ONLY witness (review, 2026-09-23; deliberately NOT on the barrel, like
+ * `__resetBehaviorsForTests`): how many times the shield's need has been computed in this
+ * process. A test reads it across a held drag and across a resting selection to pin the cache.
+ */
+let shieldComputes = 0;
+export function __shieldComputesForTests(): number {
+  return shieldComputes;
 }
 
 /**
  * The dom cards a selected card's chrome reaches over (S4): every SELECTED card's rect grown by
- * `ChromeSettings.selectionReach` on every side, against every dom card of this behaviour that is
- * not itself selected (a selected card sits inside its own chrome, on top of it). Empty when the
- * reach is 0 — a host with no such chrome shields nothing.
+ * `reach` (`ChromeSettings.selectionReach`) on every side, against every dom card of this
+ * behaviour that is not itself selected (a selected card sits inside its own chrome, on top of
+ * it). Empty when the reach is 0 — a host with no such chrome shields nothing. Cards of ANOTHER
+ * nav frame count on neither side (review, 2026-09-23): a selection that rode a nav transition
+ * stays Selected inside a folder, and its plate must not lift the folder's own cards whose
+ * frame-local rects happen to overlap it — nor the reverse.
  */
-function shieldNeed(ctx: RuntimeBehaviorCtx<Record<string, unknown>>): Set<Entity> {
+function shieldNeed(ctx: RuntimeBehaviorCtx<Record<string, unknown>>, reach: number): Set<Entity> {
+  shieldComputes += 1;
   const need = new Set<Entity>();
-  const reach = ctx.world.getResource(ChromeSettings)?.selectionReach ?? 0;
   if (!(reach > 0)) return need;
   const plates: { x0: number; y0: number; x1: number; y1: number }[] = [];
   ctx.query({ all: [Selected] }).each((s) => {
+    if (otherFrame(ctx, s)) return;
     const r = rectOf(ctx, s);
     if (r !== undefined) plates.push({ x0: r.x - reach, y0: r.y - reach, x1: r.x + r.w + reach, y1: r.y + r.h + reach });
   });
   if (plates.length === 0) return need;
   ctx.query({ all: [domAtRest] }).each((d) => {
-    if (kindOf(ctx, d) !== "dom" || ctx.world.hasTag(d, Selected)) return;
+    if (otherFrame(ctx, d) || kindOf(ctx, d) !== "dom" || ctx.world.hasTag(d, Selected)) return;
     const r = rectOf(ctx, d);
     if (r === undefined) return;
     for (const p of plates) {

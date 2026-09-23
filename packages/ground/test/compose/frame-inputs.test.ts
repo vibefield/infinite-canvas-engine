@@ -159,6 +159,46 @@ describe("the frame builder · the board (design-013 §8 B3a)", () => {
     builder.dispose();
   });
 
+  it("a HELD container's face and slot ride its lifted content: the pane is drawn around the face the lift moved, the inside shows through it (review, 2026-09-23)", () => {
+    const { ce, world, settle, folder } = makeBoard();
+    const residency = { contentOf: (e: Entity) => (e === folder ? { mode: "page", layer: 2, uv: { u0: 0.1, v0: 0.2, u1: 0.5, v1: 0.6 } } : PLATE), onTouch: () => () => {} } as unknown as ContentResidency;
+    const builder = createFrameBuilder(ce.world, { previews: ce.previews, residency });
+    const build = () => builder.build(CAM, VP, DT, THEMES.dark, DEFAULT_FIELD_CONFIG);
+    build();
+    world.addComponent(folder, Grab, { x: 700, y: 100, w: 329, h: 345, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+    // settle the lift through THIS builder (makeBoard's `settle` drives its own)
+    const settleHere = (): void => { for (let i = 0; i < 600; i++) { build(); if (!builder.live()) break; } };
+    settleHere();
+    expect(must(builder.motionOf(folder)).lift).toBe(1);
+    void settle;
+    const f = build();
+    const pane = must(f.frames[must(f.portals[0]).at]);
+    const content = must(pane.content);
+    expect(content.mode).toBe("pane");
+    if (content.mode !== "pane") return;
+    // the folder at (700, 100) 329 × 345, its centre (864.5, 272.5); the resting face (810, 110) 309 × 299 — scaled by the
+    // lift 1.05 about the centre: the face's own numbers, not the code's
+    const s = 1.05;
+    expect(content.face.cx).toBeCloseTo(864.5 + (864.5 - 864.5) * s, 9);
+    expect(content.face.cy).toBeCloseTo(272.5 + (259.5 - 272.5) * s, 9);
+    expect(content.face.hx).toBeCloseTo(154.5 * s, 9);
+    expect(content.face.hy).toBeCloseTo(149.5 * s, 9);
+    expect(content.face.r).toBeCloseTo(FOLDER_FACE.radius * s, 9);
+    // the slot beneath is clipped to the same lifted face (screen = world at this camera)
+    const clip = must(must(must(f.portals[0]).present, "the slot's presentation").portal, "the slot's clip");
+    expect(clip.cy).toBeCloseTo(272.5 + (259.5 - 272.5) * s, 6);
+    expect(clip.hx).toBeCloseTo(154.5 * s, 6);
+    expect(clip.hy).toBeCloseTo(149.5 * s, 6);
+    // set down, the face is the resting one again, bit for bit
+    world.removeComponent(folder, Grab);
+    settleHere();
+    expect(must(builder.motionOf(folder)).lift).toBe(0);
+    const back = build();
+    const paneBack = must(back.frames[must(back.portals[0]).at]);
+    expect(paneBack.content?.mode === "pane" ? paneBack.content.face : null).toEqual({ cx: 864.5, cy: 259.5, hx: 154.5, hy: 149.5, r: FOLDER_FACE.radius });
+    builder.dispose();
+  });
+
   it("the container is a HOLE cut to its face, and its portal is the preview's inside at rest under the flight's exact camera", () => {
     const { ce, build, folder, c1, c2 } = makeBoard();
     const f = build();

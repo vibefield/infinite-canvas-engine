@@ -129,16 +129,20 @@ fn shade_card(G: Frame, u: FrameUniforms, p: vec2f, px: f32) -> Shade {
 
   let dI = frame_inner(G, p, exact);
   let dF = max(dO, -dI);
-  // The shell's two materials partition the frame: the rim in the frame colour, the well in
-  // the card's own surface — one colour per pixel, blended across the well's edge by its coverage.
-  s.chrome = mix(u.uext[0].rgb, G.surface.rgb, cov(frame_well(G, p), px));
-
   // Frame and content are ADDITIVE, not sequential: their coverages partition
   // the pixel (cov(dF) + cov(dI) == 1 across the shared boundary), and a second
   // `over` would leak bg·cF·cI at the seam. Clamped so a rounding slip cannot
   // push the sum past 1.
   let cF = cov(dF, px);
   let cI = min(cov(dI, px), 1.0 - cF);
+  // The shell's two materials partition the frame: the rim in the frame colour, the well in
+  // the card's own surface — one colour per pixel, blended across the well's edge by its coverage.
+  // Only where the frame paints (review, 2026-09-23): `chrome` is consumed as chrome × cF, and the
+  // well's field — four notched corners — is the costliest thing in the pass, so the content's
+  // interior (most of an idle card's fragments) never evaluates it.
+  if (cF > 0.0) {
+    s.chrome = mix(u.uext[0].rgb, G.surface.rgb, cov(frame_well(G, p), px));
+  }
   s.dI = dI;
   s.cF = cF;
   s.cI = cI;

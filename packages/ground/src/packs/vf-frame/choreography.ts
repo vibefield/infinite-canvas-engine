@@ -7,9 +7,10 @@
 // content's edge: the well and the rim grow out of it, the bays bloom into the
 // well's corners (staggered), the buttons pop. THE LIFT UN-REVEALS IT: as the
 // card scales up (the host's lift scale, `Motion.lift`), the shell shrinks back
-// into the card's edge — the buttons first, then the bays, then the well and
-// the rim — so at the end of the lift the shell's outer edge IS the lifted
-// card's silhouette and nothing shows while the card moves. A release plays it
+// into the card's edge — the buttons first (gone over the first eighth, before
+// the rim has shrunk under them), then the bays, then the well and the rim — so
+// at the end of the lift the shell's outer edge IS the lifted card's silhouette
+// and nothing shows while the card moves. A release plays it
 // forward again; a grabbed card that was not selected simply scales.
 //
 // Every window, easing and constant for the reveal, the lift, the delete, the
@@ -42,7 +43,12 @@ export const REVEAL = {
 
 /** The lift's own windows over `held`: the un-reveal, in the order things leave. */
 export const LIFT = {
-  buttons: [0.0, 0.35] as const,     // unpressable mid-drag: they go first
+  // Gone over the first eighth of the lift, easing OUT: the rim shrinks with an ease-out too, and a
+  // button that lingered (an ease-in over [0, 0.35], before the review of 2026-09-23) rode the
+  // shrinking rim over the content for two frames per grab — 8.7 px over it at h 0.2, its centre
+  // inside it at h 0.3, and `pick` still answered "close" there. With this window the close
+  // button's disc clears the content by 17.7 px at its nearest over the whole lift.
+  buttons: [0.0, 0.12] as const,     // unpressable mid-drag: they go first
   bays: [0.0, 0.6] as const,         // the notches close
   shell: [0.0, 1.0] as const,        // the well and the rim shrink back into the card's edge
 };
@@ -133,8 +139,11 @@ export function resolve(P: FrameStyle, card: { readonly centre: readonly [number
     radius = mix(radius, 0.3, kIn);
     half = [mix(half[0], dr, kOut), mix(half[1], dr, kOut)];
     outerR = mix(outerR, dr, kOut);
-    wellHalf = [mix(wellHalf[0], dr, kOut), mix(wellHalf[1], dr, kOut)];
-    wellR = mix(wellR, dr, kOut);
+    // the well closes to nothing as the plate collapses, so the dot the card leaves wears the
+    // CHROME (the reference's dot) — a well that followed the plate left a dot in the card's own
+    // surface, five levels over the dark ground (review, 2026-09-23)
+    wellHalf = [mix(wellHalf[0], 0, kOut), mix(wellHalf[1], 0, kOut)];
+    wellR = mix(wellR, 0, kOut);
     const vanish = kBul * kVan;
     half = [half[0] * vanish, half[1] * vanish]; outerR *= vanish;
     wellHalf = [wellHalf[0] * vanish, wellHalf[1] * vanish]; wellR *= vanish;
@@ -157,7 +166,7 @@ export function resolve(P: FrameStyle, card: { readonly centre: readonly [number
 
   // ---- buttons: inset `ear` from the plate's outer corners — the lock TL, the close TR ----
   const leave = 1 - easeInCubic(win(d, ...DELETE.buttons));
-  const gone = 1 - easeInCubic(win(h, ...LIFT.buttons));
+  const gone = 1 - easeOutCubic(win(h, ...LIFT.buttons));   // out, like the rim they sit on (review, 2026-09-23)
   // a window not yet open pops EXACTLY 0 (easeOutBack(0) is 1e-15 in floating point): a card at rest resolves as its still does
   const pop = (w: readonly [number, number]) => { const x = win(r, ...w); return x <= 0 ? 0 : Math.min(Math.max(easeOutBack(x), 0), 1.4); };
   const feel = (hv: number, pr: number) => 1 + BUTTON.hoverSwell * hv - BUTTON.pressSquash * pr;
@@ -194,15 +203,23 @@ export function resolve(P: FrameStyle, card: { readonly centre: readonly [number
 }
 
 /** The pack's TAIL, packed in the order frame.wgsl reads it (9 vec4 slots). */
-export function tailOf(G: VfGeometry): number[] {
-  return [
-    ...G.nw, ...G.nh, ...G.rho, ...G.rf,
-    G.wellHalf[0], G.wellHalf[1], G.wellR, G.shell,
-    G.closeC[0], G.closeC[1], G.closeR, G.closeGlyphW,
-    G.lockC[0], G.lockC[1], G.lockR, G.lockGlyphScale,
-    G.closeGlyphR, G.lockOpen, G.lockSquash, G.hoverC,
-    G.hoverK, 0, 0, 0,
-  ];
-}
 /** The tail's slot count — what `CardProgram.ext` declares. */
 export const VF_EXT = 9;
+// ONE tail, reused (review, 2026-09-23): the frame pass consumes a tail the moment it is handed
+// one (`frameValues` → the record view), so the 36 numbers are written into the same array every
+// call — a fresh array with four spreads per card per frame was the pass's largest allocator on a
+// pan (23 MB over 3 s at 96 cards). A caller that keeps a tail across calls must copy it.
+const TAIL: number[] = new Array<number>(4 * VF_EXT).fill(0);
+export function tailOf(G: VfGeometry): number[] {
+  const t = TAIL;
+  t[0] = G.nw[0]; t[1] = G.nw[1]; t[2] = G.nw[2]; t[3] = G.nw[3];
+  t[4] = G.nh[0]; t[5] = G.nh[1]; t[6] = G.nh[2]; t[7] = G.nh[3];
+  t[8] = G.rho[0]; t[9] = G.rho[1]; t[10] = G.rho[2]; t[11] = G.rho[3];
+  t[12] = G.rf[0]; t[13] = G.rf[1]; t[14] = G.rf[2]; t[15] = G.rf[3];
+  t[16] = G.wellHalf[0]; t[17] = G.wellHalf[1]; t[18] = G.wellR; t[19] = G.shell;
+  t[20] = G.closeC[0]; t[21] = G.closeC[1]; t[22] = G.closeR; t[23] = G.closeGlyphW;
+  t[24] = G.lockC[0]; t[25] = G.lockC[1]; t[26] = G.lockR; t[27] = G.lockGlyphScale;
+  t[28] = G.closeGlyphR; t[29] = G.lockOpen; t[30] = G.lockSquash; t[31] = G.hoverC;
+  t[32] = G.hoverK; t[33] = 0; t[34] = 0; t[35] = 0;
+  return t;
+}

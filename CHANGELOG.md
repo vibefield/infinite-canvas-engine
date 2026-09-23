@@ -1347,6 +1347,120 @@ gesture set promotes only on a grab of a dom card), and a promoted widget laid o
 pixels is copied as its top-left corner at zoom < 1 (band space shrinks the host's box —
 the band-space reflow owed since the first report).
 
+### The review of the shell and the shield, and the copy budget turned on (S4r, 2026-09-23)
+
+<!-- James: "now do a thorough code review, and also help optimize performance" -->
+Three read-only reviews of `cad363a` and `6738ded` (the vf-frame shell, the ground's compose path
+with the pane, the core's shield) and a profile of the composited profile at 96 cards; every
+finding below was verified against the code before it was changed, and each fix carries its
+witness. One was a live defect S4 shipped (the first item); the rest are risks the reviews caught
+before a user did.
+
+- **A promoted host at zoom < 1 sat at half its screen offset** (DomRender `placeHost`). Blink
+  multiplies a transform's translation by the element's own `zoom`, so the `matrix()` S4 wrote on
+  a zoomed host landed at zoom × the offset: at band 0.5 every promoted card's host — the hit,
+  focus, caret and IME truth of a promoted card — was at half its place (the reviewer's probe in
+  Electron 43 / Chrome 150: `zoom: 0.5; matrix(1.4,0,0,1.4,300,200)` lands at x 150, y 100, and
+  `elementFromPoint` at the intended point returns the page). The translation is written in
+  unzoomed units now. Neither S4 witness could see it: the render rig compared pixels, the boot
+  rig's hit check ran at zoom 1. The render rig now promotes a card at zoom 0.45 (at 0.7 the band
+  is still 1 and the host carries no zoom — the pass checks the host IS zoomed before it counts),
+  reads the host's box on the page against the card's screen rect, and names a far card's host
+  by `elementFromPoint` at its centre; the unit test's zoom loop gained 0.45.
+- **A held folder's face and slot ride its lifted content.** The pane's picture is mapped onto
+  the lifted content (×1.05 while held), but the face it was drawn around and the portal slot
+  beneath came from the resting rect, so the bar and its hairline drew 5 % larger than the hole —
+  a plate-coloured ring inside the hairline while a folder was carried (the hole had the same
+  mismatch; a flat plate hid it). The face is scaled about the card's centre by the lift the
+  program resolved and handed to both the slot and the pane; a resting card computes the same
+  rect bit for bit (the oracle's scenes). The boot rig grabs the folder and reads three points just
+  inside the lifted face's left edge: the plate at rest, the inside's ground while held.
+- **The lift's buttons leave before the rim shrinks under them.** The buttons eased IN over
+  `held` [0, 0.35] while the rim eased OUT, so for two frames per grab the close button rode the
+  shrinking rim over the content (8.7 px over it at h 0.2, its centre inside it at h 0.3, and
+  `pick` still answered "close" there). The window is [0, 0.12], easing out with the rim; the
+  close button's disc now clears the content by 16 px at its nearest over the whole lift (pinned
+  on a 0.01 grid of `held`).
+- **The well's field is evaluated only where the frame paints** (`frame.wgsl`). `shade_card`
+  computed `frame_well` — four notched corners, the pass's costliest field — on every fragment
+  inside the content, where its result is unused (half of a medium card's plate fragments, four
+  fifths of a large widget's). It is gated on the frame's coverage; the oracle mirror is exact
+  (3.8 M px, mean 0.0001/255, max 0.50, 0 over 2).
+- **`styleViolations` judges the bay against the worst content radius.** The bite check used the
+  style's resting radius; a card may carry any radius and radius 0 sits nearest the bay, so a well
+  of 26 passed at the style's 22 and bit a radius-8 card by 4.5 px. Judged at 0 now; PRODUCT
+  clears it by 3.5 px.
+- **The delete morph's dot wears the chrome again.** The well collapsed to the same disc as the
+  plate, so the dying card's last dot was the card's own surface — five levels over the dark
+  ground — where the reference's dot is the frame colour. The well closes to nothing under the
+  collapsing plate.
+
+- **The shield counts members of the current nav frame only** (`ice:surface.domAtRest`). Its
+  need walked every `Selected` and every dom card with no membership filter, so a selection that
+  rode a nav transition (Selected, Culled without Active — the 2026-07-17 field bug the selection
+  chrome and the L3 claim already filter for) grew a plate over the folder's own cards, whose
+  frame-local rects happen to overlap it, and lifted them live for the whole visit. Both sides of
+  the need now skip the codebase's non-member signature; `Active` and `Culled` join the reads.
+- **The need is computed once per change, not once per frame.** `changed` fires every frame
+  (`FrameInfo` is a polled read) and the need was paid at its top — through every frame of a held
+  drag, where the gesture branch never reads it, and every resting frame with a selection. It is
+  lazy now (read at the settle's hand-off and in the shield phase only) and cached on the
+  behaviour's change journal: a Position/Size/MeasuredSize write, a Selected/Culled/Active flip,
+  a death, a full rebuild, instance churn or a different reach recomputes it. A test-only counter
+  pins it: 0 computes over 20 resting frames, 0 over 20 drag frames, 1 at the release's hand-off.
+- **The selection union box pads a resting member by `selectionReach`.** `systems/chrome.ts`
+  padded a Grab-bed member by `liftScale` and nothing at rest, so with the shell the box and its
+  eight grips sat on the content edge, 44 world units inside the plate's rim, in the well — the
+  ne/nw grips over the close and the lock (grip span 39–49 vs the button's 10–42 on that axis).
+  A member at rest pads by the reach on every side, a Grab-bed one by the lift scale as before.
+- The owned→shield hand-off has its test (a still the carried selection's plate now covers stays
+  on the GPU at the settle, live again); `rectOf` takes a measured size per axis, the rule the
+  chrome and the retier apply; a grabbed card the shield already holds is documented as never a
+  still. Each fix was shown to fail with its lines removed and pass restored.
+
+- **Profiled, then tuned** (the copy count is the lever; the engine's JavaScript is not).
+  A CDP profile of the composited profile at 96 cards on this host: the engine's own main-thread
+  JS is 0.8–1.3 ms/frame at idle, 2–3 on a pan or a carry, 5.8 with every card animating — of
+  which 1.3 is the copy call itself and ≈3.4 the flow-control wait behind it; React ≤ 0.4 %
+  everywhere. Each element copy costs 0.63–0.79 ms of GPU-process CPU at 1.3–2.4k copies/s
+  whatever the load, and the renderer's own cost to issue one is 0.028 ms; the GPU process's
+  one main thread saturates at 2.3–2.6k copies/s today. So:
+  - **The adaptive copy budget is ON by default** (`groundCompose({ dom: { budget: false } })`
+    turns it off). S2 built and measured it off; measured again today on the stress rig (gpu arm,
+    96 cards, every card animating, budget on vs off): compositor 120.1 fps / p95 9.9 ms / GPU
+    process 84 % against 45.3 / 44.8 / 169 %; paint 120.1 / 10.0 / 74 % against 28.7 / 62.6 /
+    111 %; compositor + pan 120.1 / 9.3 / 68 % against 40.8 / 45.9 / 171 %; the zoom crossing
+    117 / 9.3 / 44 % against 89 / 30.3 / 116 %; ≈280 MB less GPU-process memory across it; the
+    pickup unchanged (8.9 vs 9.7 ms). The cost is card cadence — ≈7 refreshes a second per card
+    with 96 animating — where the alternative was the whole app at 23–58 fps. The batched route
+    stays off.
+  - **The paint-order sort reads each card's tier once.** The comparator asked the world for
+    `Grab` and `Selected` on every comparison — ≈2.5k component reads per build at 96 cards; the
+    cards are bucketed into four tiers by one read each and only the stack order is compared.
+  - **The vf-frame tail is one reused array** (four spreads into a fresh 36-number array per
+    card per frame was the frame pass's largest allocator on a pan: 23 MB over 3 s at 96 cards),
+    and the run split reads the instance list in place instead of copying it.
+  Measured and left for a slice of their own, with the numbers in the draft plan: the idle tick
+  still walks every card each frame (strata's tick, the reflector's promote scan, residency's
+  `written` sweep and DomRender's placement pass ≈ 0.5–1.25 ms/frame at 96 cards at idle-zero —
+  first verify at true idle whether the host loop parks on the FrameControl gate); the frame
+  pass's per-card geometry objects (≈550–840 KB/frame on a pan or carry at 96 cards, GC 2–7 % of
+  busy); whole-component reads (`readPresent`, 2–9 % of busy in every phase) where a field read
+  would do.
+
+Witnessed: `pnpm run ci` green in every package (ground 354, core 864, dom 152; no timeouts at
+host load 9–23); `gate:landing` green (47 oracle scenes at maxΔ 0, the pack audit); the seven
+desktop rigs green — the render rig at zoom 0.45 finds the promoted host zoomed (0.5) with its
+page box on the card's screen rect (off by 0.00 px) and a far card's host named by
+`elementFromPoint` at its centre; the boot rig reads three points just inside the lifted face as
+the plate at rest (28,28,30) and the inside's ground held (23,23,23), the folder's title contrast
+227 held vs 227 at rest, exactly 3 clocks shielded; the oracle mirror exact; the stress rig's
+pickup at 96 cards on the gpu arm under the new default: longest frame 9.6 ms, the carry 120.2 fps,
+and every animated phase at 120 fps (compositor 120.1 / p95 10.1 ms / budget 7, paint 120.1 /
+10.0, compositor + pan 120.1 / 10.0, the zoom crossing 119.6 with one 27 ms frame at the band
+change) where the gate before it read 45.3, 28.7, 40.8 and 89.2; GPU-process memory 446 MB at the
+camera phase against 480.
+
 ### What the DOM covers, the GPU takes — the shield, any grab, and band space by `zoom` (S4, 2026-09-23)
 
 James's live test of the shell, the same hour, named three defects around it. All three are one

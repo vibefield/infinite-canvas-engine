@@ -735,7 +735,7 @@ describe("DomRender · a refused realisation backs off (D-C4.7)", () => {
 
 describe("DomRender · the host box IS the slot (the zoom-drift proof, design-013 D9 + §9 Q1)", () => {
   for (const raster of ["band", "crisp"] as const) {
-    for (const zoom of [1, 1.9, 3]) {
+    for (const zoom of [0.45, 1, 1.9, 3]) {
       it(`${raster} @ zoom ${zoom}: the host CSS box is geometry().cssSize, and ceil(box × dpr) is the slot Residency placed`, () => {
         const b = makeBoard({ raster, dpr: 2, zoom });
         const card = b.spawn("dr:promoted", 100);
@@ -763,9 +763,14 @@ describe("DomRender · the host box IS the slot (the zoom-drift proof, design-01
         const r = b.ref(card);
         const side = (b.side as { size: number }).size;
         expect({ w: Math.round((r.u1 - r.u0) * side), h: Math.round((r.v1 - r.v0) * side) }).toEqual(geo.slotSize);
-        // The placement matrix carries the rest — zoom/band under `band`, 1 under `crisp`.
+        // The placement matrix carries the rest — zoom/band under `band`, 1 under `crisp`. Its translation is
+        // written in UNZOOMED units (review, 2026-09-23): Blink multiplies a transform's translation by the
+        // element's `zoom`, so a host at zoom z asks for tx / z to land at tx. At zoom 0.45 the host IS zoomed
+        // (band 0.5 under `band`, the placement itself under `crisp`) — the pin is not vacuous there.
+        const zoomScale = zoomCss === "" ? 1 : geo.cssSize.w / size.w;
+        if (zoom === 0.45) expect(zoomScale).not.toBe(1);
         expect(style.transformOrigin).toBe("0 0");
-        expect(style.transform).toBe(`matrix(${geo.placement.w / geo.cssSize.w},0,0,${geo.placement.w / geo.cssSize.w},${100 * zoom},${100 * zoom})`);
+        expect(style.transform).toBe(`matrix(${geo.placement.w / geo.cssSize.w},0,0,${geo.placement.w / geo.cssSize.w},${(100 * zoom) / zoomScale},${(100 * zoom) / zoomScale})`);
       });
     }
   }
@@ -885,11 +890,22 @@ describe("DomRender · the levers (2026-09-09): the copy budget", () => {
     expect(late.stats().budget).toBe(4); // under the gate: the copies are not the cause, the budget holds
   });
 
-  it("without a budget nothing changes: every dirty card copies in the flush, `budget` reads Infinity", () => {
-    const b = makeBoard();
+  it("`budget: false` is the behaviour before the levers: every dirty card copies in the flush, `budget` reads Infinity", () => {
+    const b = makeBoard({ tuning: { budget: false } });
     promoted(b, 7);
     b.flush();
     expect(b.stats()).toMatchObject({ copies: 7, throttled: 0, budget: Number.POSITIVE_INFINITY });
+  });
+
+  it("absent, the budget IS the adaptive controller (review, 2026-09-23): a board of 20 promoted cards copies 16 on the first flush and the rest on the next, and `budget` reads a number", () => {
+    const b = makeBoard();
+    promoted(b, 20);
+    b.flush();
+    // the controller starts at 16 (the feed-forward cap is not known before a cadence is): 16 served, 4 left waiting
+    expect(b.stats()).toMatchObject({ copies: 16, throttled: 4, budget: 16 });
+    b.flush();
+    expect(b.stats().copies).toBe(20);
+    expect(Number.isFinite(b.stats().budget)).toBe(true);
   });
 });
 

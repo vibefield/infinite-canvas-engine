@@ -167,6 +167,36 @@ describe("selectionChrome pool", () => {
     expect(bb.h).toBeCloseTo(105, 4);
   });
 
+  it("the shell's reach (review, 2026-09-23): a member at REST pads the box by ChromeSettings.selectionReach on every side — the plate's outer edge, where the grips no longer overlap the close and the lock — and a Grab-bed member still pads by liftScale", () => {
+    const { world, step, entities } = rig();
+    world.setResource(ChromeSettings, { liftScale: 1.2, selectionReach: 44 });
+    const a = world.spawn({ components: [[Position, { x: 0, y: 0 }], [Size, { w: 100, h: 100 }]] });
+    const b = world.spawn({
+      components: [
+        [Position, { x: 200, y: 0 }],
+        [Size, { w: 100, h: 50 }],
+        [Grab, { x: 200, y: 0, w: 100, h: 50, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 }], // mid-drag lift: the shell is un-revealed
+      ],
+    });
+    setSelection(world, [a, b], "replace");
+    step();
+    const box = entities(boxQ)[0] as Entity;
+    // a grows by 44 → (−44, −44, 188, 188); b inflates ×1.2 about its centre → (190, −5, 120, 60); union → (−44, −44, 354, 188).
+    const bb = world.read(box, SelectionBox);
+    expect(bb.x).toBeCloseTo(-44, 4);
+    expect(bb.y).toBeCloseTo(-44, 4);
+    expect(bb.w).toBeCloseTo(354, 4);
+    expect(bb.h).toBeCloseTo(188, 4);
+    // reach 0 (the default) is the content edge, as before
+    world.setResource(ChromeSettings, { liftScale: 1.2, selectionReach: 0 });
+    step();
+    const bb0 = world.read(box, SelectionBox);
+    expect(bb0.x).toBeCloseTo(0, 4);
+    expect(bb0.y).toBeCloseTo(-5, 4);
+    expect(bb0.w).toBeCloseTo(310, 4);
+    expect(bb0.h).toBeCloseTo(105, 4);
+  });
+
   it("scope filter: a non-member (Culled ∧ ¬Active) selected widget contributes no chrome", () => {
     const { world, step, entities, spawnBox } = rig();
     const a = spawnBox(0, 0, 100, 100); // Resizable, in scope

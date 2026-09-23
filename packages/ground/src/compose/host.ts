@@ -135,8 +135,9 @@ export interface GroundComposeOptions extends GroundHostOptions {
   readonly raster?: (kind: "dom" | "gl" | "video") => RasterStrategy;
   /**
    * DomRender's levers (2026-09-09; `compose/dom-render.ts` header): the per-flush copy
-   * budget and the batched 2D route. Absent ⇒ one element copy per dirty card, no budget —
-   * the behaviour before them.
+   * budget and the batched 2D route. Absent ⇒ the element route under the ADAPTIVE budget
+   * (on by default since the review of 2026-09-23; `{ budget: false }` is one element copy per
+   * dirty card, the behaviour before the levers).
    */
   readonly dom?: DomRenderTuning;
 }

@@ -142,10 +142,13 @@ export function styleViolations(s: FrameStyle, contentHalf: readonly [number, nu
     if (s.clearance < 0 || s.bayClearance < 0) out.push("a clearance must not be negative");
     if (ear < s.band) out.push(`ear ${ear} is under the band ${s.band}: the fillet goes negative`);
     if (s.fillet + bay > notch + 1e-9) out.push(`fillet ${s.fillet} + bay ${bay} exceed the notch ${notch}: the corner self-intersects`);
-    // the bay must not bite the content: the control's centre sits `ear` from the outer corner, the
-    // content's corner arc `well + band + radius` — the arc's nearest point must clear the bay
+    // the bay must not bite the content: the control's centre sits `ear` from the outer corner; a
+    // card may carry ANY content radius (the style's is only the resting default), and the nearest
+    // content point to the control is the corner itself at radius 0 — a rounder corner only
+    // recedes from it by R(√2 − 1) — so the clearance is judged at radius 0 (review, 2026-09-23:
+    // judged at the style's 22 it passed a well of 26 that bit a radius-8 card by 4.5 px)
     const M = s.well + s.band;
-    const clear = (M + s.radius - ear) * Math.SQRT2 - s.radius - bay;
+    const clear = (M - ear) * Math.SQRT2 - bay;
     if (clear < 0) out.push(`the bay bites the content's corner by ${(-clear).toFixed(1)} px: widen the well or shrink the bay`);
     // two notches on one edge must not meet
     const wx = hx + s.well; const wy = hy + s.well;

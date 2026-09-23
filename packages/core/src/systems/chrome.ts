@@ -180,7 +180,17 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       // CSS-scaled about its center by the app (widgetlab 1.05); inflate its
       // rect by the mirrored setting so the box keeps WRAPPING what the user
       // sees. 1 (default) ⇒ pure ECS union.
-      const liftScale = ctx.getResource(ChromeSettings)?.liftScale ?? 1;
+      // THE SHELL'S REACH (review, 2026-09-23): at rest a selected card's
+      // chrome — the frame the ground draws around it (`packs/vf-frame`, the
+      // shell) — reaches `ChromeSettings.selectionReach` past its rect on every
+      // side, and the lift un-reveals it while the card scales. So a member at
+      // REST pads by the reach and a Grab-bed one by the lift scale, and the
+      // box and its grips sit on the plate's outer edge rather than 44 units
+      // inside it, in the well, where the ne/nw grips overlapped the close and
+      // the lock. 0 (the default) ⇒ the content edge, as before.
+      const chrome = ctx.getResource(ChromeSettings);
+      const liftScale = chrome?.liftScale ?? 1;
+      const reach = chrome?.selectionReach ?? 0;
       for (const e of selectedEntities(world)) {
         if (!ctx.has(e, Position)) continue;
         // Scope filter (field bug 2026-07-17, the wires-collect rule): a
@@ -200,11 +210,18 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         let h = m !== undefined && m.h > 0 ? m.h : (s?.h ?? 0);
         let x = p.x;
         let y = p.y;
-        if (liftScale !== 1 && ctx.has(e, Grab)) {
-          x -= (w * (liftScale - 1)) / 2;
-          y -= (h * (liftScale - 1)) / 2;
-          w *= liftScale;
-          h *= liftScale;
+        if (ctx.has(e, Grab)) {
+          if (liftScale !== 1) {
+            x -= (w * (liftScale - 1)) / 2;
+            y -= (h * (liftScale - 1)) / 2;
+            w *= liftScale;
+            h *= liftScale;
+          }
+        } else if (reach > 0) {
+          x -= reach;
+          y -= reach;
+          w += 2 * reach;
+          h += 2 * reach;
         }
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);

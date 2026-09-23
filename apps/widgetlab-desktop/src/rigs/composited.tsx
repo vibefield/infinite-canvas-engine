@@ -129,6 +129,13 @@ interface NextRig {
   hold(i: number): Promise<{ folderOnGpu: boolean; folderWritten: boolean }>;
   /** Let card i go and wait out the settle. */
   drop(i: number): Promise<{ folderOnGpu: boolean }>;
+  /**
+   * Grab the FOLDER itself and hold it lifted: its face and its slot must ride its lifted content (review, 2026-09-23).
+   * `rest` and `held` are the ground's pixels at three world points just inside the LIFTED face's left edge —
+   * outside the resting face (the plate at rest), inside the lifted one (the inside's ground while held).
+   */
+  holdFolder(): Promise<{ lift: number; onGpu: boolean; written: boolean; rest: RGB[]; held: RGB[]; plate: RGB; inside: RGB }>;
+  dropFolder(): Promise<{ onGpu: boolean }>;
   /** The folder's bar title on the page (CSS px): the rect the text occupies, and the plate colour it sits on. */
   folderTitle(): { sx: number; sy: number; w: number; h: number; plate: RGB };
   grab(i: number): Promise<Grabbed>;
@@ -375,6 +382,29 @@ function mountNextRig(): NextRig {
       await until(() => world.get(f, SurfaceTarget)?.target !== "gpu", 300);
       await frames(4);
       return { folderOnGpu: world.get(f, SurfaceTarget)?.target === "gpu" };
+    },
+    async holdFolder() {
+      const world = ce().world;
+      const f = must(folder, "folder");
+      // the face at rest: (810, 50) 309 × 299; lifted ×1.05 about the folder's centre (964.5, 212.5) its left edge
+      // moves from 810 to 802.3 — sample 4 px outside the resting edge, 3.7 px inside the lifted one, along the upper
+      // half of the edge, where the inside's ground shows (its cards sit lower and to the right: an edge at y ≈ 200)
+      const pts: [number, number][] = [[806, 120], [806, 145], [806, 170]];
+      const read = async (): Promise<RGB[]> => { const img = await readback(compose().canvas); return pts.map(([x, y]) => pixelAt(img, x, y)); };
+      const rest = await read();
+      world.addComponent(f, Grab, { x: FOLDER.x, y: FOLDER.y, w: FOLDER.w, h: FOLDER.h, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+      await until(() => (compose().motionOf(f)?.lift ?? 0) >= 1 && compose().residency.isWritten(f) === true && !compose().stats().live, 300);
+      await frames(4);
+      const held = await read();
+      return { lift: compose().motionOf(f)?.lift ?? 0, onGpu: world.get(f, SurfaceTarget)?.target === "gpu", written: compose().residency.isWritten(f) === true, rest, held, plate: bytes(theme.card), inside: bytes(theme.canvasBg) };
+    },
+    async dropFolder() {
+      const world = ce().world;
+      const f = must(folder, "folder");
+      world.removeComponent(f, Grab);
+      await until(() => world.get(f, SurfaceTarget)?.target !== "gpu" && (compose().motionOf(f)?.lift ?? 1) <= 0, 300);
+      await frames(4);
+      return { onGpu: world.get(f, SurfaceTarget)?.target === "gpu" };
     },
     folderTitle() {
       // the bar's title: after the 12 px padding and the 14 px icon + 8 px gap; 60 × 14 px of text

@@ -17,7 +17,7 @@ import { compile, compose, type ShaderPart } from "../engine/shader";
 import type { StructBuffer, StructDef } from "../engine/struct";
 import type { Presentation } from "../nav/portal";
 import { LINES, type GroundTheme, type RGB } from "../theme";
-import { type FrameContent, type FrameRun, runsOf } from "./content";
+import { type FrameContent, type FrameRun, runsOfInstances } from "./content";
 import type { ShellGeometry } from "./geometry";
 import { CARD_ABI, type CardProgram, shellProgram } from "./program";
 import { type FrameField, type FrameUniformsField, frameStruct, frameUniformStruct, MAX_FRAMES, frameUniformValues, frameValues } from "./layout";
@@ -158,7 +158,7 @@ export class FramePass {
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
     if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
     this.count = n;
-    this.runs = n > 0 ? runsOf(instances.slice(0, n).map((f) => f.content)) : [];
+    this.runs = n > 0 ? runsOfInstances(instances, n) : [];
     return n;
   }
 

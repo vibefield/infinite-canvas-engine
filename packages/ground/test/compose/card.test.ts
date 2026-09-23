@@ -41,6 +41,10 @@ describe("the composition (the mockup's numbers)", () => {
       expect(styleViolations(s, [77.5, 77.5])).toEqual([]);
     }
     expect(styleViolations(shellStyle({ ...PRODUCT_SHELL, well: 10 }), [164.5, 77.5]).some((m) => m.includes("bites the content"))).toBe(true);
+    // judged at the WORST content radius, 0 (review, 2026-09-23): a well of 26 clears the style's own radius 22 by
+    // 1.3 px and bites a radius-8 card by 4.5 px — a card carries any radius, so the style must clear them all
+    expect(styleViolations(shellStyle({ ...PRODUCT_SHELL, well: 26 }), [164.5, 77.5]).some((m) => m.includes("bites the content"))).toBe(true);
+    expect(styleViolations(P, [164.5, 77.5])).toEqual([]);   // PRODUCT clears radius 0 by 3.5 px
     expect(styleViolations(shellStyle({ band: 1, well: 34, radius: 22 }), [100, 60]).some((m) => m.includes("selection ring"))).toBe(true);
     expect(styleViolations(shellStyle({ band: 0, well: 34, radius: 22 }), [100, 60]).some((m) => m.includes("positive"))).toBe(true);
     expect(styleViolations(shellStyle({ ...PRODUCT_SHELL, control: 16 }), [100, 60]).some((m) => m.includes("pointer floor"))).toBe(true);
@@ -119,6 +123,20 @@ describe("the shell law", () => {
     expect(early.shell).toBeGreaterThan(0.4);
   });
 
+  it("the buttons leave before the rim shrinks under them: the close button's disc never enters the content at any point of the lift (review, 2026-09-23)", () => {
+    // buttons that lingered (an ease-in over [0, 0.35]) rode the ease-out rim over the content for two frames per grab
+    let worst = Number.NEGATIVE_INFINITY;
+    for (let h = 0; h <= 1; h += 0.01) {
+      const G = resolve(P, medium, { ...VF_REST, held: h, lift: 1 + (LIFT.scale - 1) * h });
+      if (G.closeR <= 0) continue;
+      // sdInner: positive outside the content — the button's centre must sit at least its radius outside it
+      worst = Math.max(worst, G.closeR - sdInner(G, G.closeC[0], G.closeC[1]));
+    }
+    expect(worst).toBeLessThan(-16);   // 16.3 px of clearance at the nearest, measured on a 0.01 grid of h
+    expect(resolve(P, medium, { ...VF_REST, held: 0.12, lift: 1.006 }).closeR).toBe(0);   // gone at the window's end
+    expect(resolve(P, medium, { ...VF_REST, held: 0.3, lift: 1.015 }).closeR).toBe(0);    // where it used to sit inside the content
+  });
+
   it("a grabbed card that was not selected simply scales: no shell appears", () => {
     const G = resolve(P, medium, { ...VF_IDLE, held: 0.5, lift: 1.025 });
     expect(G.shell).toBe(0);
@@ -155,6 +173,9 @@ describe("the shell law", () => {
     expect(mid.half[0]).toBeCloseTo(mid.half[1], 3);
     expect(mid.outerR).toBeCloseTo(mid.half[0], 3);
     expect(resolve(P, medium, { ...VF_REST, del: 0.3 }).nw[0]).toBe(0);    // the bays close before the box gets small
+    // the dot wears the CHROME (review, 2026-09-23): the well has closed to nothing under it, the plate is all rim
+    expect(mid.wellHalf[0]).toBeLessThan(mid.half[0] * 0.05);
+    expect(sdWell(mid, mid.centre[0] + mid.half[0] / 2, mid.centre[1])).toBeGreaterThan(0);   // halfway out from the dot's centre: outside the well — rim, not surface
     const gone = resolve(P, medium, { ...VF_REST, del: 1 });
     expect(gone.half[0]).toBeLessThan(1e-6);
     expect(gone.shadowAlpha).toBeLessThan(1e-6);

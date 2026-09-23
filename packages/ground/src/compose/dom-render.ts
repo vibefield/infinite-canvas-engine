@@ -66,8 +66,11 @@
 // period, since a board can run late for reasons of its own. A feed-forward
 // cap keeps that estimate to half the period; the budget shrinks on either
 // signal and grows by one only after a calm run with cards still waiting.
-// Off unless `tuning.budget` says otherwise (the measurement commit keeps the
-// old behaviour the default).
+// ON by default since the review of 2026-09-23 (`budget: false` turns it off;
+// the measurement commit of 2026-09-09 had kept the old behaviour the default
+// until the numbers were in: every animated phase at 96 cards from 23–58 fps
+// to the display's rate, the GPU process from 108–171 % to 44–84 % of a core,
+// the pickup unchanged, each card refreshing ≈7 times a second).
 //
 // THE BATCH (2026-09-09, the other lever): strategy `batched` rasters the
 // served cards of one page layer as ONE recording — each drawn into the SOURCE
@@ -148,13 +151,13 @@ export type CanvasCopy = (
   size: { readonly w: number; readonly h: number },
 ) => boolean;
 
-/** The two levers (2026-09-09; the header). Everything defaults to the behaviour before them. */
+/** The two levers (2026-09-09; the header). The route defaults to the behaviour before them; the budget is ON since the review of 2026-09-23. */
 export interface DomRenderTuning {
   /** `element` (one HiC copy per card — the default) or `batched` (the 2D draws + one canvas copy per tile, with the element copy as the fallback). */
   readonly strategy?: "element" | "batched";
   /**
-   * The per-flush copy budget: `false`/absent for none; a number for a fixed cap; an object for the
-   * adaptive controller (start 16, min 2, max 256, `target` 0.5 — the share of the frame period the
+   * The per-flush copy budget: `false` for none; a number for a fixed cap; an object — or nothing,
+   * since 2026-09-23 — for the adaptive controller (start 16, min 2, max 256, `target` 0.5 — the share of the frame period the
    * copies' estimated GPU-process time is capped to; 0.5 held 120 fps with no dropped frame on the
    * stress rig, and a higher target buys card cadence on a mid-size board at the price of the
    * controller probing the knee with an occasional late frame).
@@ -467,7 +470,13 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
       resized += 1;
     }
     el.style.transformOrigin = "0 0";
-    el.style.transform = `matrix(${k},0,0,${k},${tx},${ty})`;
+    // Blink ZOOMS a transform's translation (its lengths are computed under the element's own
+    // `zoom`, so `matrix(k,0,0,k,tx,ty)` on a host at zoom z lands at z·tx, z·ty: a promoted host
+    // at band 0.5 sat at half its screen offset — the hit, focus and caret truth of every
+    // promoted card at zoom < 1, wrong; review, 2026-09-23). Written in unzoomed units, it lands
+    // where the placement says; the scale k is a ratio and is not zoomed.
+    const z = zoomCss === "" ? 1 : scale;
+    el.style.transform = `matrix(${k},0,0,${k},${tx / z},${ty / z})`;
     placed.set(e, { w, h, k, tx, ty });
     // ARM THE GUARD only for a write the PLACEMENT PASS made — a card whose
     // pixels nobody asked for, moved because the camera moved. When `attempt`
@@ -548,7 +557,11 @@ export function createDomRender(opts: DomRenderOptions): DomRender {
     });
   const context2d = opts.context2d ?? ((canvas: HTMLCanvasElement) => canvas.getContext("2d"));
   const budgetOpt = tuning.budget;
-  const budgetOn = budgetOpt !== undefined && budgetOpt !== false;
+  // ON BY DEFAULT (review, 2026-09-23): absent ⇒ the adaptive controller; `false` ⇒ none. Measured
+  // the same day on the stress rig (gpu arm, 96 cards, every card animating): every animated phase
+  // 23–58 fps → 117–120, p95 45–65 → 9–10 ms, the GPU process 108–171 % → 44–84 % of a core, the
+  // pickup unchanged; each card refreshing ≈7 times a second at 96 (the S2 trade).
+  const budgetOn = budgetOpt !== false;
   const budgetFixed = typeof budgetOpt === "number";
   const budgetMin = typeof budgetOpt === "object" ? (budgetOpt.min ?? 2) : 2;
   const budgetMax = typeof budgetOpt === "object" ? (budgetOpt.max ?? 256) : 256;

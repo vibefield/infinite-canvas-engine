@@ -58,6 +58,8 @@ import {
 import { PrefabId } from "../src/schema/prefab";
 import { ChromeSettings } from "../src/catalog/settings-resources";
 import { Selected } from "../src/catalog/selection-presence";
+import { Active } from "../src/catalog/camera-derived";
+import { __shieldComputesForTests } from "../src/surface/standard-behaviors";
 
 const GRAB = { x: 0, y: 0, w: 10, h: 10, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 };
 /** The behaviour's own default, and the number the cases below step against. */
@@ -759,6 +761,107 @@ describe("S4 (2026-09-23): any grab lifts the board, and a selected card's chrom
     r.world.removeTag(s, Selected);
     r.step(STEPS_PAST_SETTLE + 1);
     expect(r.target(near)).toBe("dom");
+    expect(r.faults).toEqual([]);
+  });
+});
+
+describe("review, 2026-09-23: the shield's membership, its cache, and the gesture's hand-off", () => {
+  const at = (r: ReturnType<typeof rig>, type: string, x: number, y: number): Entity => {
+    const e = r.spawn(type);
+    r.world.edit(e).set(Position, { x, y });
+    return e;
+  };
+
+  it("membership: a selection that rode a nav transition — Selected but Culled without Active — shields nothing, another frame's dom card is never shielded, and viewport-culled members (Culled ∧ Active) still count", () => {
+    const r = rig();
+    r.world.setResource(ChromeSettings, { liftScale: 1, selectionReach: 44 });
+    // another frame's selected card: its frame-local rect happens to sit 30 px from ours
+    const ghost = at(r, "sb:card", 0, 0);
+    r.world.addTag(ghost, Culled);
+    const near = at(r, "sb:card", 130, 0);
+    r.step();
+    r.world.addTag(ghost, Selected);
+    r.step(3);
+    expect(r.target(near)).toBe("dom");
+    // the reverse: a member's plate over another frame's card
+    const s = at(r, "sb:card", 300, 0);
+    const foreign = at(r, "sb:card", 430, 0);
+    r.world.addTag(foreign, Culled);
+    r.step();
+    r.world.addTag(s, Selected);
+    r.step(3);
+    expect(r.target(foreign)).toBe("dom");
+    expect(r.target(near)).toBe("dom");
+    // viewport-culled members carry both tags and are shielded like any other
+    const s2 = at(r, "sb:card", 0, 300);
+    r.world.addTag(s2, Culled);
+    r.world.addTag(s2, Active);
+    const near2 = at(r, "sb:card", 130, 300);
+    r.world.addTag(near2, Culled);
+    r.world.addTag(near2, Active);
+    r.step();
+    r.world.addTag(s2, Selected);
+    r.step(3);
+    expect(r.target(near2)).toBe("gpu");
+    expect(r.faults).toEqual([]);
+  });
+
+  it("the cache: the need is computed once per change, never once per frame — a resting selection computes nothing more, and a held drag computes nothing until the settle's hand-off reads it", () => {
+    const r = rig();
+    r.world.setResource(ChromeSettings, { liftScale: 1, selectionReach: 44 });
+    const s = at(r, "sb:card", 0, 0);
+    const near = at(r, "sb:card", 130, 0);
+    at(r, "sb:card", 500, 0);
+    r.step();
+    r.world.addTag(s, Selected);
+    r.step();
+    expect(r.target(near)).toBe("gpu");
+    const c0 = __shieldComputesForTests();
+    // at rest nothing the need reads changes: 20 frames, 0 computes
+    r.step(20);
+    expect(__shieldComputesForTests()).toBe(c0);
+    // a held drag: the gesture branch never reads the need
+    r.grab(s);
+    for (let i = 1; i <= 20; i++) {
+      r.world.edit(s).set(Position, { x: i * 5, y: 0 });
+      r.step();
+    }
+    expect(__shieldComputesForTests()).toBe(c0);
+    // the release: the settle's hand-off reads it ONCE; the shield phase after it reuses the answer
+    r.release(s);
+    r.step(STEPS_PAST_SETTLE + 2);
+    expect(__shieldComputesForTests()).toBe(c0 + 1);
+    // and a change it reads — the selection moving — computes exactly once more
+    r.world.edit(s).set(Position, { x: 600, y: 0 });
+    r.step(3);
+    expect(__shieldComputesForTests()).toBe(c0 + 2);
+    expect(r.faults).toEqual([]);
+  });
+
+  it("the hand-off: a card the gesture lifted as a STILL that the carried selection's plate now covers stays on the GPU at the settle — live again, never dropped to the DOM for a frame — and leaves when the selection does", () => {
+    const r = rig();
+    r.world.setResource(ChromeSettings, { liftScale: 1, selectionReach: 44 });
+    const s = at(r, "sb:card", 0, 0);
+    const far = at(r, "sb:card", 500, 0);
+    r.step();
+    r.world.addTag(s, Selected);
+    r.step();
+    expect(r.target(far)).toBe("dom");
+    r.grab(s);
+    r.step();
+    expect(r.target(far)).toBe("gpu"); // the gesture set, as a still
+    expect(r.world.get(far, RequestedDemand)?.mode).toBe("paused");
+    // carried next to it: a 30 px gap, inside the 44 px reach
+    r.world.edit(s).set(Position, { x: 470, y: 0 });
+    r.step();
+    r.release(s);
+    const seen = r.sample(far, STEPS_PAST_SETTLE + 2);
+    expect(seen.every((t) => t === "gpu")).toBe(true);
+    expect(r.world.get(far, RequestedDemand)?.mode).toBe("live"); // the shield's card is live
+    expect(r.target(s)).toBe("dom"); // the selected card itself came back
+    r.world.removeTag(s, Selected);
+    r.step(STEPS_PAST_SETTLE + 1);
+    expect(r.target(far)).toBe("dom");
     expect(r.faults).toEqual([]);
   });
 });
