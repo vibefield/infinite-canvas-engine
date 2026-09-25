@@ -147,7 +147,12 @@ export function flightCamera(
   const inv0 = 1 / c0.zoom;
   const inv1 = 1 / c1.zoom;
   const inv = 1 / zoom;
-  const w = Math.abs(inv1 - inv0) < 1e-12 ? p : (inv - inv0) / (inv1 - inv0);
+  // Equal zooms (numerically) take the linear blend: the anchored form divides by
+  // inv1 − inv0. The test is RELATIVE (design-015 D2a-core, the desk's 1e-8…1e8
+  // zoom): the exp/log round trip leaves ~|ln z|·2⁻⁵² of relative error in 1/zoom,
+  // and the old ABSOLUTE 1e-12 only swallowed that near zoom 1 — at zoom 1e-8, two
+  // zooms 3 ulps apart put w at ±4 and the view centre 4× past its endpoints.
+  const w = Math.abs(inv1 - inv0) <= 1e-9 * Math.max(inv0, inv1) ? p : (inv - inv0) / (inv1 - inv0);
   const cx = c0.x + vpW * inv0 * 0.5 + (c1.x + vpW * inv1 * 0.5 - (c0.x + vpW * inv0 * 0.5)) * w;
   const cy = c0.y + vpH * inv0 * 0.5 + (c1.y + vpH * inv1 * 0.5 - (c0.y + vpH * inv0 * 0.5)) * w;
   return { x: cx - vpW * inv * 0.5, y: cy - vpH * inv * 0.5, zoom };

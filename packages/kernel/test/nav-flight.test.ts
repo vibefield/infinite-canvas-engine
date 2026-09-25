@@ -147,6 +147,55 @@ describe("flightCamera", () => {
       expect(s.y).toBeCloseTo(anchor.sy, 6);
     }
   });
+
+  /** `z` moved up by `ulps` units in the last place. */
+  const upUlps = (z: number, ulps: number): number => {
+    const f = new Float64Array([z]);
+    const u = new BigUint64Array(f.buffer);
+    u[0] = (u[0] as bigint) + BigInt(ulps);
+    return f[0] as number;
+  };
+
+  it("stays on its segment at the desk's zoom range — near-equal zooms blend, never extrapolate (design-015 D2a-core)", () => {
+    for (const z0 of [1e-8, 1e-7, 1e-3, 1, 1e7, 1e8]) {
+      // a 1000 × 500 px pan at (all but) constant zoom: the endpoints 3 ulps apart
+      const a: CameraState = { x: 0, y: 0, zoom: z0 };
+      const b: CameraState = { x: 1000 / z0, y: -500 / z0, zoom: upUlps(z0, 3) };
+      const centre = (cam: CameraState) => ({ x: cam.x + VP.w / (2 * cam.zoom), y: cam.y + VP.h / (2 * cam.zoom) });
+      const ca = centre(a);
+      const cb = centre(b);
+      for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+        const cam = flightCamera(a, b, p, VP.w, VP.h);
+        const c = centre(cam);
+        // the centre is p of the way from a's to b's — measured in screen px, to a thousandth
+        expect(Math.abs(c.x - ca.x - p * (cb.x - ca.x)) * cam.zoom).toBeLessThan(1e-3);
+        expect(Math.abs(c.y - ca.y - p * (cb.y - ca.y)) * cam.zoom).toBeLessThan(1e-3);
+      }
+    }
+  });
+
+  it("is finite and monotone in zoom across the desk's whole range, 1e-7 → 1e7 and back", () => {
+    const lo: CameraState = { x: 3, y: -2, zoom: 1e-7 };
+    const hi: CameraState = { x: 5, y: 7, zoom: 1e7 };
+    for (const [from, to] of [[lo, hi], [hi, lo]] as const) {
+      let last = from.zoom;
+      for (let i = 1; i <= 64; i++) {
+        const cam = flightCamera(from, to, i / 64, VP.w, VP.h);
+        expect(Number.isFinite(cam.x) && Number.isFinite(cam.y) && Number.isFinite(cam.zoom)).toBe(true);
+        expect(to.zoom > from.zoom ? cam.zoom > last : cam.zoom < last).toBe(true);
+        last = cam.zoom;
+      }
+      // the zoom lands on the far endpoint to the exp∘log round trip. (Its POSITION there
+      // carries ~2⁻⁵³·vpW/2·(zmax/zmin) px of cancellation — sub-pixel below a 1e11 span;
+      // navFlight writes c1 exactly at settle and capFlightStart keeps every engine flight
+      // within capFactor of its arrival, so no flight the engine runs is near it.)
+      const end = flightCamera(from, to, 1, VP.w, VP.h);
+      expect(end.zoom / to.zoom).toBeCloseTo(1, 12);
+      const start = flightCamera(from, to, 0, VP.w, VP.h);
+      expect(Math.abs(start.x - from.x) * start.zoom).toBeLessThan(1e-3);
+      expect(Math.abs(start.y - from.y) * start.zoom).toBeLessThan(1e-3);
+    }
+  });
 });
 
 describe("capFlightStart", () => {
