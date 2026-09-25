@@ -12,9 +12,9 @@ today's presentation and deletes the hybrid in one commit at D5 (`packages/r3f`,
 dom's world-space half, core's surface infra, the profiles, the widget React binding, every app but
 `apps/desk`) — the breaks will be listed here then. Until D5 nothing below changes an existing API.
 
-<!-- design-015 D1 (2026-09-25) -->
 ### Added
 
+<!-- design-015 D1 (2026-09-25) -->
 - **`@ice/desk`** (`packages/desk`, a private workspace package; the umbrella does not export it
   yet): the desk prototype (`vibe-field/draft/ground` at its 2026-09-25 snapshot) moved in —
   the raw-WebGPU engine (`src/engine`, byte-identical to `@ice/ground`'s), the lattice laws, the
@@ -29,6 +29,71 @@ dom's world-space half, core's surface infra, the profiles, the widget React bin
   `rig:parity` = Chrome vs Node at maxΔ 0 on all 38 scenes (a free-port CDP probe; a red scene
   needs a second witness). `gate:landing` now also runs the desk oracle, the `apps/desk` build and
   its `rig:parity`.
+
+<!-- design-015 D2a-core (2026-09-25) -->
+The desk's core half (design-015 §4.2 · §5 · §9): a widget can be a GPU OBJECT, and the
+prototype's input conventions exist as settings. ADDITIVE — nothing breaks yet: every
+`dom`/`gl`/`video` widget compiles, equips, mounts, stacks and transitions as before, every
+default is today's, and nothing carries the new facts until an object or the new op puts them
+there.
+
+- **`surface: "object"` — a widget that is a GPU object** (`defineWidget`; design-015 §5.2,
+  D-D16). `WidgetSurfaceKind` gains `"object"` — its own literal, not a `SurfaceKindValue`: an
+  object carries no surface fact. `WidgetDef` gains `object?: unknown` (the kind binding —
+  opaque to core, carried by identity for the desk's renderer to dispatch on through
+  `widgetTypeFor`) and `stratum?: DeskStratum` (`"pads" | "sheets" | "things"`); `component`
+  is optional so an object can omit it. The compiled `WidgetType` carries `object` and
+  `stratum` (an object that declares none is a `"things"`). Refused at definition: an object
+  without a binding, an object with a component / chrome / `animated` (`null` / `false` are
+  the explicit "none"), a binding on any other surface, an unknown stratum, and an object that
+  lists a behaviour writing `SurfaceTarget`. No standard surface behaviour is attached to an
+  object. `defineContainer({ surface: "object", object, stratum })` makes a container object
+  (the mini mat).
+- **What an object gets, and what it does not.** Equip stamps its capability tags, its runtime
+  behaviours, `WidgetEquipped` and a runtime **`Stratum { band }`** (pads 0 · sheets 1 · things
+  2 — `STRATUM_BANDS`, `DEFAULT_STRATUM_BAND`), and NONE of the six surface facts, so Band /
+  Demand / Residency never see it. A view widget that declares a `stratum` gets `Stratum` too
+  (none does today). The cull classifies an object (`Visible`/`Culled` is the desk renderer's
+  working set) but the mount store gives it no entry — no DOM host, no portal, no island, no
+  transition retention. `@ice/dom`'s `widgetSurfaceKind` answers `undefined` for one.
+- **`presentationPlanesOf(widget)`** — the planes one widget type presents on (the rule
+  `prepareTransition` always applied, named: `gl` → `gl`, a component or chrome → `dom`) plus
+  the object's: `["ground"]` alone. A nav flight out of a frame with a visible object now
+  requires the `ground` plane.
+- **Pick order is paint order across kinds.** `compareStackOrder` ranks by `Stratum.band`
+  first (absent = things), then the sibling / StackZ order as before — so `pickTopAt`, the
+  l1 frame tier, the drop target and every renderer sort put a pad under a note however the
+  sequence is ordered. An all-dom board is one band and ranks exactly as it did (pinned
+  against a verbatim copy of the old comparator).
+- **The tape — `Locked` and `ops.setLocked(ids, locked)`** (design-015 §5.1, *Marks on the
+  Mat* Q-e/Q-g). A durable tag (`tag:Locked` in the document: it syncs and undoes) with one
+  writer: `ops.setLocked(ids: readonly Entity[], locked: boolean)` writes it on the current
+  frame's widgets whose state differs in ONE transaction (one undo step, none when nothing
+  changes) and refuses on a read-only document like every write op. A taped widget is never
+  moved or resized by a gesture — moveClaim and resizeClaim give it no rider; the untaped
+  members of its selection still move — and the marquee passes over it; it stays selectable
+  and pickable.
+- **The wheel mode** (`GestureSettings.wheel: "pan" | "zoom"`, `wheelZoomRate` — defaults
+  `"pan"` and `0.0016`; `type WheelMode`; `createCanvasEngine({ settings: { gestures: { wheel,
+  wheelZoomRate } } })`). `"pan"` is today's camera, byte for byte. `"zoom"` is the desk's
+  law, the prototype's: a plain wheel's Δy zooms about the pointer by
+  `zoom · exp(−Δy · wheelZoomRate)`, its Δx moves nothing, and a pinch zooms by the same law;
+  CameraLimits clamps as ever.
+- **`WheelZoomStep { ratio, anchorX, anchorY, tick }`** — this frame's WHEEL zoom (ratio > 1 in,
+  < 1 out), written by `cameraControl` change-only (the step frame, one reset to ratio 1, nothing
+  while idle), for the systems that run after it: design-015 §9's zoom-through is the first.
+  Touch pinches, pans, flights and ops are not recorded.
+- **`ToolRoute.canvasDragShift`** — the route of a shift-held canvas drag, defaulting to the
+  tool's own `canvasDrag` (every existing tool routes shift as before). The desk's select tool
+  is `{ canvasDrag: "pan", canvasDragShift: "marquee" }`: the bare mat pans, shift draws the
+  marquee; space / middle / touch still pan above it.
+- **Infinite zoom, end to end.** `settings.zoom: { min: 1e-8, max: 1e8 }` (design-015 §9's
+  `ZOOM_MIN`/`ZOOM_MAX`) holds through the desk's wheel, `ops.zoomTo`, `ops.zoomToFit` and a
+  nav flight in and out: the camera stays finite and invertible at 1e-7 and 1e7 and returns
+  home. One fix rode it: the kernel's `flightCamera` tested "equal zooms" with an ABSOLUTE
+  1e-12 on 1/zoom, which near zoom 1e-8 let two zooms a few ulps apart through to the anchored
+  form and threw the view centre up to 4× past its endpoints; the test is relative now, and
+  every flight whose zooms differ takes the same path as before.
 
 ## [0.13.0] — 2026-09-07
 
