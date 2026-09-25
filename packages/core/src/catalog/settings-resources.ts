@@ -9,7 +9,7 @@
  * inlined (the `SnapConfig`-reads-`SNAP_DEFAULTS` pattern in camera-derived.ts
  * exists because an inline-number drift bug shipped once).
  */
-import { field } from "@vibecook/strata-ecs";
+import { enumOf, field } from "@vibecook/strata-ecs";
 import { defineResource } from "../schema/meta";
 import {
   CAMERA_DEFAULTS,
@@ -46,6 +46,10 @@ export const GestureSettings = defineResource("GestureSettings", {
   multiTapSlopPx: field("f32", { default: GESTURE_DEFAULTS.multiTapSlopPx }),
   wheelZoomSensitivity: field("f32", { default: GESTURE_DEFAULTS.wheelZoomSensitivity }),
   wheelZoomMaxStep: field("f32", { default: GESTURE_DEFAULTS.wheelZoomMaxStep }),
+  /** A plain wheel's job (design-015 §9, D-D11): "pan" (default, today) or the desk's "zoom" about the pointer. */
+  wheel: field(enumOf(["pan", "zoom"]), { default: GESTURE_DEFAULTS.wheel }),
+  /** "zoom" mode's law: `zoom · exp(−Δ · wheelZoomRate)` for a plain wheel and a pinch. f64: the prototype's 0.0016, exactly. */
+  wheelZoomRate: field("f64", { default: GESTURE_DEFAULTS.wheelZoomRate }),
 });
 
 /** Pick radii + retarget dead-band live mirror (design-003 §3 L1 targeting). */

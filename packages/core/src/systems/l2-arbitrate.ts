@@ -11,7 +11,9 @@
  * a mis-ordered arbitration would otherwise be undetectable).
  *
  * `dragRoute` — the ONE pan/marquee/move decision, latched at Drag activation
- * via route tags; the route never changes mid-gesture (design-003 §4.4).
+ * via route tags; the route never changes mid-gesture (design-003 §4.4). A
+ * canvas drag reads the pointer's latched shift to choose between the tool's
+ * `canvasDrag` and `canvasDragShift` (design-015 §9, D2a-core).
  */
 import type { Entity, System, SystemCtx, Tag, World } from "@vibecook/strata-ecs";
 import { Any, Not, defineQuery, defineSystem } from "@vibecook/strata-ecs";
@@ -32,6 +34,7 @@ import {
   Pinch,
   Pointer,
   PointerButtons,
+  PointerMods,
   Port,
   Position,
   RoutedConnect,
@@ -202,7 +205,13 @@ export function createArbitrationSystems(world?: World): { arbitration: System; 
         if (spaceHeld || middleButton || touch) {
           ctx.addTag(e, RoutedPan); // one-finger touch pans (Freeform default)
         } else {
-          const t = routeTag(tool.route.canvasDrag);
+          // Shift takes the tool's shift route (design-015 §9, D-D11): the desk's
+          // select tool pans the bare mat and draws the marquee on shift. It is the
+          // tool's own canvasDrag unless declared, so every other tool is unchanged
+          // (`??` for a Tool assembled outside defineTool).
+          const shift = pointer !== undefined && ctx.get(pointer, PointerMods)?.shift === true;
+          const route = shift ? (tool.route.canvasDragShift ?? tool.route.canvasDrag) : tool.route.canvasDrag;
+          const t = routeTag(route);
           if (t !== undefined) ctx.addTag(e, t);
         }
       }

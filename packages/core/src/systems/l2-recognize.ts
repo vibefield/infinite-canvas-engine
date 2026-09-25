@@ -100,8 +100,8 @@ const pendingQ = defineQuery([Any(Tap, LongPress, Drag, Pinch), GesturePhases.ta
 
 const P = GesturePhases;
 
-/** Live-tunable gesture settings (design-005 §4): resource first, const fallback. */
-function gs(ctx: SystemCtx): Readonly<Record<keyof typeof GESTURE_DEFAULTS, number>> {
+/** Live-tunable gesture settings (design-005 §4): resource first, const fallback. The numeric ones — `wheel` is the camera's mode. */
+function gs(ctx: SystemCtx): Readonly<Record<Exclude<keyof typeof GESTURE_DEFAULTS, "wheel">, number>> {
   return ctx.getResource(GestureSettings) ?? GESTURE_DEFAULTS;
 }
 

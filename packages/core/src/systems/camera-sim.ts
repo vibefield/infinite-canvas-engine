@@ -23,10 +23,21 @@
  *    opposite). This is the Figma/Freeform convention for both mouse wheels and
  *    macOS natural-scroll trackpads; the sign was inverted until James's field
  *    report (2026-07-10) and is now pinned by a trace.
- *  - WheelZoom (Active): anchored zoom, `zoomAtPoint(cam, anchor, zoom·e^(-pinch·k))`.
+ *  - WheelZoom (Active): anchored zoom, `zoomAtPoint(cam, anchor,
+ *    zoom·2^(−clamp(pinch, ±maxStep)·sens))` (the v2 curve below — this line
+ *    said `e^(−pinch·k)` until D2a-core corrected it; the code never did).
  *  - Pinch (Active): zoom `startZoom · spread/startDist`, anchored at the live centroid.
  * `Camera.gesturing` is true while ANY of these is Active (compositor DPR gate).
  * On pan JustEnded, inertia is seeded from the Drag's release velocity.
+ *
+ * THE WHEEL MODE (design-015 §9, D-D11 — D2a-core, 2026-09-25):
+ * `GestureSettings.wheel` is `"pan"` by default — everything above, byte for
+ * byte. `"zoom"` is the desk's law, the prototype's (vibe-field/draft/ground
+ * lab/main.ts): a PLAIN wheel's Δy zooms about the pointer by
+ * `zoom · exp(−Δy · wheelZoomRate)` and its Δx moves nothing; a pinch
+ * (WheelZoom) zooms by the same law instead of the v2 curve; CameraLimits
+ * clamps both as ever. Either mode records each frame's WHEEL zoom in the
+ * one-tick `WheelZoomStep` (below) for the systems that run after this one.
  */
 import { field } from "@vibecook/strata-ecs";
 import type { Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
@@ -71,6 +82,35 @@ const CAMERA_ZERO = { x: 0, y: 0, zoom: 1, gesturing: false } as const;
 export const CameraInertia = defineResource(
   "CameraInertia",
   { vx: field("f32", { default: 0 }), vy: field("f32", { default: 0 }) },
+  { durable: false },
+);
+
+/**
+ * This frame's WHEEL zoom (design-015 §9, D2a-core): the one-tick fact a system
+ * that runs after `cameraControl` reads to know "this frame zoomed in / out
+ * about this anchor" — D2b's zoom-through is the first. `cameraControl` is its
+ * one writer, change-only: it writes a step on each frame whose wheel zoom (a
+ * plain wheel in `"zoom"` mode, or a pinch-wheel in either mode) moved the
+ * zoom, and resets `ratio` to 1 on the first frame after that has none; idle
+ * frames write nothing.
+ *  - `ratio`: zoom after ÷ zoom before, over this frame's wheel zooms — `> 1`
+ *    zoomed in, `< 1` out, `1` no step (a clamped zoom is no step).
+ *  - `anchorX/Y`: the screen point (CSS px) of the frame's last wheel zoom.
+ *  - `tick`: the `FrameInfo.tick` it happened on, for a reader that runs BEFORE
+ *    `cameraControl` and must tell last frame's step from this one's.
+ * Not recorded: pans, flights, ops (`zoomTo`, fits) and the TOUCH pinch — whose
+ * zoom is absolute from its own start (`startZoom · spread/startDist`), so a
+ * consumer that re-bases the camera mid-pinch would have to re-base the pinch
+ * too; that is the consumer's call to make, not a fact to hand it silently.
+ */
+export const WheelZoomStep = defineResource(
+  "WheelZoomStep",
+  {
+    ratio: field("f64", { default: 1 }),
+    anchorX: field("f32", { default: 0 }),
+    anchorY: field("f32", { default: 0 }),
+    tick: field("u32", { default: 0 }),
+  },
   { durable: false },
 );
 
@@ -135,6 +175,15 @@ export function createCameraSystems(world: World): CameraSystems {
       let y = cam0.y;
       let zoom = cam0.zoom;
       let anyActive = false;
+      // The wheel mode (design-015 §9): "zoom" is the desk's law for a plain
+      // wheel AND a pinch; "pan" (default) leaves 2) and 3) exactly as they were.
+      const gmode = world.getResource(GestureSettings);
+      const wheelZooms = (gmode?.wheel ?? GESTURE_DEFAULTS.wheel) === "zoom";
+      const zoomRate = gmode?.wheelZoomRate ?? GESTURE_DEFAULTS.wheelZoomRate;
+      // This frame's WHEEL zoom, for WheelZoomStep: the product of its ratios and its last anchor.
+      let wheelRatio = 1;
+      let wheelAnchorX = 0;
+      let wheelAnchorY = 0;
 
       // 1) RoutedPan drags — per-frame delta at CURRENT zoom (design decision 14).
       ctx.query(panDragQ).each((b) => {
@@ -170,6 +219,24 @@ export function createCameraSystems(world: World): CameraSystems {
           anyActive = true;
           const w = world.read(rec, WheelPan);
           if (w.dx === 0 && w.dy === 0) continue;
+          if (wheelZooms) {
+            // The desk (design-015 §9): a plain wheel's Δy ZOOMS about the
+            // pointer by the prototype's law; its Δx is not the camera's.
+            if (w.dy === 0) continue;
+            const next = zoomAtPoint(
+              { x, y, zoom },
+              w.anchorX,
+              w.anchorY,
+              clampZoom(world, zoom * Math.exp(-w.dy * zoomRate)),
+            );
+            wheelRatio *= next.zoom / zoom;
+            wheelAnchorX = w.anchorX;
+            wheelAnchorY = w.anchorY;
+            x = next.x;
+            y = next.y;
+            zoom = next.zoom;
+            continue;
+          }
           x += w.dx / zoom;
           y += w.dy / zoom;
         }
@@ -183,16 +250,26 @@ export function createCameraSystems(world: World): CameraSystems {
           anyActive = true;
           const wz = world.read(rec, WheelZoom);
           if (wz.pinch === 0) continue;
-          const gset = world.getResource(GestureSettings);
-          const sens = gset?.wheelZoomSensitivity ?? GESTURE_DEFAULTS.wheelZoomSensitivity;
-          const maxStep = gset?.wheelZoomMaxStep ?? GESTURE_DEFAULTS.wheelZoomMaxStep;
-          const step = Math.max(-maxStep, Math.min(maxStep, wz.pinch));
+          let factor: number;
+          if (wheelZooms) {
+            // The desk: a pinch zooms by the same law as its plain wheel.
+            factor = Math.exp(-wz.pinch * zoomRate);
+          } else {
+            const gset = world.getResource(GestureSettings);
+            const sens = gset?.wheelZoomSensitivity ?? GESTURE_DEFAULTS.wheelZoomSensitivity;
+            const maxStep = gset?.wheelZoomMaxStep ?? GESTURE_DEFAULTS.wheelZoomMaxStep;
+            const step = Math.max(-maxStep, Math.min(maxStep, wz.pinch));
+            factor = 2 ** (-step * sens);
+          }
           const next = zoomAtPoint(
             { x, y, zoom },
             wz.anchorX,
             wz.anchorY,
-            clampZoom(world, zoom * 2 ** (-step * sens)),
+            clampZoom(world, zoom * factor),
           );
+          wheelRatio *= next.zoom / zoom;
+          wheelAnchorX = wz.anchorX;
+          wheelAnchorY = wz.anchorY;
           x = next.x;
           y = next.y;
           zoom = next.zoom;
@@ -227,6 +304,20 @@ export function createCameraSystems(world: World): CameraSystems {
 
       if (x !== cam0.x || y !== cam0.y || zoom !== cam0.zoom || anyActive !== cam0.gesturing) {
         world.setResource(Camera, { x, y, zoom, gesturing: anyActive });
+      }
+
+      // WheelZoomStep (design-015 §9), change-only: this frame's wheel zoom, or
+      // the one reset after the last one. An idle frame writes nothing.
+      if (wheelRatio !== 1) {
+        world.setResource(WheelZoomStep, {
+          ratio: wheelRatio,
+          anchorX: wheelAnchorX,
+          anchorY: wheelAnchorY,
+          tick: world.getResource(FrameInfo)?.tick ?? 0,
+        });
+      } else {
+        const last = world.getResource(WheelZoomStep);
+        if (last !== undefined && last.ratio !== 1) world.setResource(WheelZoomStep, { ...last, ratio: 1 });
       }
     },
     { name: "cameraControl" },

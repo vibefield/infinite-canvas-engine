@@ -144,6 +144,7 @@ import {
   POINTER_DEFAULTS,
   RUNTIME_BUDGETS,
   SNAP_DEFAULTS,
+  type WheelMode,
 } from "../settings/defaults";
 
 export interface CanvasEngineOpts {
@@ -199,8 +200,19 @@ export interface CanvasEngineOpts {
     readonly framePreviewBytes?: number;
   };
   readonly settings?: {
+    /**
+     * The CameraLimits clamp. The desk's is infinite: `{ min: 1e-8, max: 1e8 }`
+     * (design-015 §9) — every camera path holds finite and invertible there.
+     */
     readonly zoom?: { readonly min?: number; readonly max?: number };
-    readonly gestures?: Partial<Record<keyof typeof GESTURE_DEFAULTS, number>>;
+    /**
+     * GestureSettings seeds. `wheel` is a plain wheel's job (design-015 §9,
+     * D-D11): "pan" (default) or the desk's "zoom" about the pointer by
+     * `zoom · exp(−Δ · wheelZoomRate)` (default rate 0.0016, the prototype's).
+     */
+    readonly gestures?: Partial<Record<Exclude<keyof typeof GESTURE_DEFAULTS, "wheel">, number>> & {
+      readonly wheel?: WheelMode;
+    };
     readonly pointers?: Partial<Record<keyof typeof POINTER_DEFAULTS, number>>;
     readonly snap?: { readonly enabled?: boolean; readonly thresholdPx?: number };
     /**

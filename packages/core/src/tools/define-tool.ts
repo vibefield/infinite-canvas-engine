@@ -8,6 +8,8 @@
  * Built-ins ship as configs of this same primitive:
  *  - select: tap/longPress/drag; canvas drag → marquee (pan on touch /
  *    space / middle-button — device conventions, honored ABOVE tool policy).
+ *    A shift-held canvas drag takes `route.canvasDragShift` (design-015 §9,
+ *    D2a-core), which defaults to the tool's own `canvasDrag`.
  *  - pan: hand cursor; every drag pans.
  *  - connect: crosshair; widget/port drags connect (design-003 §5.8).
  *  - draw(widgetType): factory — canvas drag creates ONE widget from the
@@ -26,6 +28,14 @@ export type WidgetDragRoute = "move" | "pan" | "connect" | "none";
 export interface ToolRoute {
   /** Drag starting on empty canvas (after device overrides: touch/space/middle → pan). */
   readonly canvasDrag?: CanvasDragRoute;
+  /**
+   * The same drag with SHIFT held (design-015 §9, D-D11 — D2a-core): the desk's
+   * select tool pans the bare mat and draws its marquee on shift —
+   * `{ canvasDrag: "pan", canvasDragShift: "marquee" }`. Omitted: the tool's
+   * own `canvasDrag`, so shift changes nothing (every tool before this field).
+   * The device conventions (touch / space / middle → pan) still sit above it.
+   */
+  readonly canvasDragShift?: CanvasDragRoute;
   /** Drag starting on a widget body. */
   readonly widgetDrag?: WidgetDragRoute;
   /** Drag starting on a port entity ("connect" | "none"). */
@@ -66,7 +76,7 @@ export interface Tool extends Required<Pick<ToolDef, "id">> {
 const SELECT_DEFAULTS: Omit<Tool, "id" | "shortcut"> = {
   cursor: undefined,
   spawnProfile: ["tap", "longPress", "drag"],
-  route: { canvasDrag: "marquee", widgetDrag: "move", portDrag: "connect" },
+  route: { canvasDrag: "marquee", canvasDragShift: "marquee", widgetDrag: "move", portDrag: "connect" },
   gates: { movable: true, resizable: true },
   draw: undefined,
 };
@@ -77,11 +87,14 @@ export function defineTool(def: ToolDef): Tool {
   if (registry.has(def.id)) {
     throw new Error(`ice: tool "${def.id}" is already defined.`);
   }
+  const route = { ...SELECT_DEFAULTS.route, ...def.route };
   const tool: Tool = {
     id: def.id,
     cursor: def.cursor,
     spawnProfile: def.spawnProfile ?? SELECT_DEFAULTS.spawnProfile,
-    route: { ...SELECT_DEFAULTS.route, ...def.route },
+    // An omitted shift route is the tool's OWN canvas route — never select's
+    // default leaking in (a pan tool's shift-drag pans, as it always did).
+    route: { ...route, canvasDragShift: def.route?.canvasDragShift ?? route.canvasDrag },
     gates: { ...SELECT_DEFAULTS.gates, ...def.gates },
     shortcut: def.shortcut,
     draw: def.draw,
