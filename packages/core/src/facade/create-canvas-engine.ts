@@ -68,6 +68,7 @@ import {
 } from "../canvas/frame-preview";
 import {
   createPresentationTransitionCoordinator,
+  presentationPlanesOf,
   type PresentationPlane,
   type PresentationTransitionCoordinator,
 } from "../canvas/presentation-transition";
@@ -93,7 +94,7 @@ import {
   Viewport,
   Wire,
 } from "../catalog";
-import { Active } from "../catalog/camera-derived";
+import { Active, Visible } from "../catalog/camera-derived";
 import {
   createBehaviorRuntime,
   type BehaviorPresence,
@@ -122,7 +123,7 @@ import { clearSelection, selectedEntities, setSelection } from "../ops/selection
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
 import { setWidgetProps } from "../widget/set-props";
-import { WidgetEquipped } from "../widget/define-widget";
+import { WidgetEquipped, type WidgetType } from "../widget/define-widget";
 import { registerBuiltinTools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
 import { createDocSession, openDocSession, type DocSession, type DocSessionOpts, type OpenDocResult } from "../doc/doc-kit";
@@ -459,6 +460,8 @@ function createForwardingSink(
 
 // Query singletons (module scope — defineQuery identity is the cache key).
 const selectableWidgetsQ = defineQuery([Position, Size, Selectable, Active, WidgetEquipped]);
+/** The current frame's visible widgets — `prepareTransition` finds the objects (no mount entry) here. */
+const visibleWidgetsQ = defineQuery([PrefabId, WidgetEquipped, Active, Visible]);
 /** Live glides — the history chokepoint's sweep set (petition I15). */
 const tweenQ = defineQuery([Position, TransformTween]);
 const insertGhostQ = defineQuery([InsertGhost]);
@@ -600,13 +603,27 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       const toGround = catalog.canvasType(request.toTypeId)?.presentation?.ground;
       const required = new Set<PresentationPlane>();
       if (fromGround !== undefined || toGround !== undefined) required.add("ground");
+      const widgetOf = (entity: Entity): WidgetType | undefined => {
+        const widgetTypeId = world.get(entity, PrefabId)?.id;
+        return typeof widgetTypeId === "string" ? catalog.widget(widgetTypeId) : undefined;
+      };
       for (const entry of runtime.store.getSnapshot()) {
         if (entry.hidden || !world.isAlive(entry.entity)) continue;
-        const widgetTypeId = world.get(entry.entity, PrefabId)?.id;
-        const widget =
-          typeof widgetTypeId === "string" ? catalog.widget(widgetTypeId) : undefined;
-        if (widget?.surface === "gl") required.add("gl");
-        if (widget?.component != null || widget?.chrome != null) required.add("dom");
+        const widget = widgetOf(entry.entity);
+        if (widget !== undefined) for (const plane of presentationPlanesOf(widget)) required.add(plane);
+      }
+      // OBJECTS have no mount entry (design-015 §5.2, D2a-core), so the departing
+      // frame's visible ones are found in the world — pre-cut, `Active` is still
+      // that frame's membership — and each asks for the `ground` plane alone. Only
+      // objects: every visible view widget was answered by the snapshot above.
+      if (!required.has("ground")) {
+        world.query(visibleWidgetsQ).each((batch) => {
+          for (const row of batch) {
+            const widget = widgetOf(batch.entity(row));
+            if (widget?.surface !== "object") continue;
+            for (const plane of presentationPlanesOf(widget)) required.add(plane);
+          }
+        });
       }
       return transitions.prepare(
         Object.freeze({

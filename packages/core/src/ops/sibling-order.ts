@@ -6,6 +6,12 @@
  * — every renderer/pick consumer shares this module so the orders can never
  * diverge (the point-pick lesson, extended to the comparator).
  *
+ * THE DESK'S STRATA (design-015 §4.2, D2a-core, 2026-09-25) rank ABOVE the
+ * sequence: `compareStackOrder` orders by `Stratum.band` first (pads · sheets ·
+ * things; absent = things) and by sibling order within a band, so an object's
+ * pick order is its paint order across kinds. No pre-desk widget carries a
+ * `Stratum`, so every existing board is one band and orders as it always did.
+ *
  * LEGACY FALLBACK (must keep working): when the `BoardRoot` resource is absent
  * (a pre-schema-2 doc opened read-only, or a doc-less runtime world) OR an
  * entity carries no `ChildOf` edge (bare runtime spawns), stacking falls back
@@ -28,6 +34,7 @@
 import type { Component, Entity, World } from "@vibecook/strata-ecs";
 import { Related, defineQuery } from "@vibecook/strata-ecs";
 import { BoardRoot, ChildOf, Position, StackZ } from "../catalog/scene";
+import { DEFAULT_STRATUM_BAND, Stratum } from "../catalog/desk";
 import { currentNavFrame } from "../nav/nested-canvas";
 
 /** Structural read both `World` and `SystemCtx` provide — all the comparator needs. */
@@ -58,10 +65,14 @@ export function buildOrdinals(world: World, parent: Entity): Map<Entity, number>
 
 /**
  * THE stacking comparator (ascending = paint order; the pick tier takes the
- * max). Ordinal-mapped entities order by sibling position; entities missing
- * from the map use the legacy `(StackZ asc, entity asc)` fallback among
- * themselves and sort ABOVE the ordinal-mapped set (see the header note on
- * nominally-impossible mixed frames).
+ * max). The desk's STRATUM first (design-015 §4.2, D-D4 — D2a-core): pads
+ * under sheets under things, whatever the sibling order says, so what the desk
+ * paints on top is what a point picks; an entity with no `Stratum` is a thing,
+ * which is every pre-desk widget — an all-dom board is one band and orders
+ * exactly as before. Within a band: ordinal-mapped entities order by sibling
+ * position; entities missing from the map use the legacy `(StackZ asc, entity
+ * asc)` fallback among themselves and sort ABOVE the ordinal-mapped set (see
+ * the header note on nominally-impossible mixed frames).
  */
 export function compareStackOrder(
   reader: StackOrderReader,
@@ -69,6 +80,9 @@ export function compareStackOrder(
   a: Entity,
   b: Entity,
 ): number {
+  const ba = reader.get(a, Stratum)?.band ?? DEFAULT_STRATUM_BAND;
+  const bb = reader.get(b, Stratum)?.band ?? DEFAULT_STRATUM_BAND;
+  if (ba !== bb) return ba - bb;
   const oa = ordinals.get(a);
   const ob = ordinals.get(b);
   if (oa !== undefined && ob !== undefined) return oa - ob;

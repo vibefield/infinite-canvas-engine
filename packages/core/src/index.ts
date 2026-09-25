@@ -392,6 +392,7 @@ export {
 } from "./canvas/frame-preview";
 export {
   createPresentationTransitionCoordinator,
+  presentationPlanesOf,
   type FrameSwitchDescriptor,
   type FrameSwitchRequest,
   type PreparedFrameSwitch,

@@ -11,8 +11,29 @@ import { Camera } from "../catalog";
 import type { Engine } from "../engine/engine";
 import { FrameInfo } from "../engine/frame-info";
 import { departedCameraOf, NavTransition } from "../systems/nav-flight";
+import type { WidgetType } from "../widget/define-widget";
 
 export type PresentationPlane = "ground" | "dom" | "gl";
+
+const GROUND_ONLY: readonly PresentationPlane[] = Object.freeze(["ground"]);
+
+/**
+ * The planes ONE widget type presents on, and so must have prepared before a
+ * flight may carry it (design-015 §5.2, D2a-core). The rule the facade's
+ * `prepareTransition` always applied, named once: a `gl` island needs `gl`, and
+ * anything with a component or chrome to mount needs `dom`. An `object` is drawn
+ * by the desk — the ground layer — and by nothing else, so it needs `ground` and
+ * only `ground`, whatever else its definition carries.
+ */
+export function presentationPlanesOf(
+  widget: Pick<WidgetType, "surface" | "component" | "chrome">,
+): readonly PresentationPlane[] {
+  if (widget.surface === "object") return GROUND_ONLY;
+  const planes: PresentationPlane[] = [];
+  if (widget.surface === "gl") planes.push("gl");
+  if (widget.component != null || widget.chrome != null) planes.push("dom");
+  return planes;
+}
 export type PresentationReleaseReason =
   | "settled"
   | "interrupted"

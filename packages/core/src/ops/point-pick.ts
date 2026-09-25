@@ -12,7 +12,10 @@
  * ONE comparator paint and pick share). Deliberately NOT plane-stratified:
  * cross-plane z is stratified visually (P2 GL composites above P1 DOM), but
  * pick order is sibling order across all surfaces — design-004 §1 names the
- * mixed-overlap consequence and accepts it; do not "fix" it here.
+ * mixed-overlap consequence and accepts it; do not "fix" it here. (The desk's
+ * `Stratum` bands — design-015 §4.2 — are NOT that stratification: they are
+ * the desk's PAINT order, read inside compareStackOrder, so pick still equals
+ * paint. No pre-desk widget carries one.)
  */
 import type { Component, Entity } from "@vibecook/strata-ecs";
 import type { Cubic, SpatialIndex } from "@ice/kernel";
