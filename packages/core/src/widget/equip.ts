@@ -25,6 +25,11 @@
  * the one writer named in §5 never races an attach. Structural `ctx.addComponent`
  * lands at the derive flush like the tags, so `present:infra` sees them in the
  * SAME frame. Non-widget prefabs (ports, ghosts, chrome) get none of the six.
+ *
+ * OBJECTS (design-015 §5.2, D2a-core, 2026-09-25) get their tags, their runtime
+ * behaviours, `WidgetEquipped` and a `Stratum` — and none of the six: an object
+ * presents on the desk and nowhere else. `Stratum` rides the same path for the
+ * same reason the six do (derivable from the type, needed on every projection).
  */
 import { Not, defineQuery, defineSystem, type Component, type System, type World } from "@vibecook/strata-ecs";
 import type { AnyBehaviorDef } from "../behavior/types";
@@ -36,6 +41,7 @@ import {
   SurfaceTarget,
   TextureRef,
 } from "../catalog/surface";
+import { STRATUM_BANDS, Stratum } from "../catalog/desk";
 import { widgetTypeFor } from "../canvas/engine-catalog";
 import { PrefabId } from "../schema/prefab";
 import { WidgetEquipped } from "./define-widget";
@@ -76,12 +82,26 @@ export function createWidgetEquipSystem(world: World): System {
           // clamp that does not exist, and parked every card in a host that
           // installs no Demand system). A host that DOES install it overwrites
           // this in `present:infra`, in this same tick.
-          ctx.addComponent(e, SurfaceKind, { kind: widget.surface });
-          ctx.addComponent(e, SurfaceTarget, { target: widget.surface === "dom" ? "dom" : "gpu" });
-          ctx.addComponent(e, RequestedDemand, { mode: "live", fpsBucket: 60, interactive: false });
-          ctx.addComponent(e, SurfaceDemand, { mode: "live", fpsBucket: 60, interactive: false });
-          ctx.addComponent(e, SurfaceBand, { band: 0 });
-          ctx.addComponent(e, TextureRef, { texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
+          //
+          // An OBJECT gets none of the six (design-015 §5.2, D2a-core): it
+          // presents nowhere but the desk, so there is no kind to name, no
+          // target to choose and no texture to reserve — and Band, Demand and
+          // Residency, which key off `SurfaceKind`, never see it.
+          if (widget.surface !== "object") {
+            ctx.addComponent(e, SurfaceKind, { kind: widget.surface });
+            ctx.addComponent(e, SurfaceTarget, { target: widget.surface === "dom" ? "dom" : "gpu" });
+            ctx.addComponent(e, RequestedDemand, { mode: "live", fpsBucket: 60, interactive: false });
+            ctx.addComponent(e, SurfaceDemand, { mode: "live", fpsBucket: 60, interactive: false });
+            ctx.addComponent(e, SurfaceBand, { band: 0 });
+            ctx.addComponent(e, TextureRef, { texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
+          }
+          // The desk stratum (design-015 §4.2): every object (a `things` unless
+          // it declared otherwise) and any other widget that declared one. A
+          // rider like the tags — derivable from the type, stamped on every
+          // peer's projection, never synced.
+          if (widget.stratum !== undefined) {
+            ctx.addComponent(e, Stratum, { band: STRATUM_BANDS[widget.stratum] });
+          }
           // RUNTIME pre-attached behaviors (design-009 §6) are riders, exactly
           // like capability tags: session-local, and needed on every peer's
           // projection — including one that received this widget over the wire

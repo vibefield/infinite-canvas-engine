@@ -10,7 +10,8 @@
  *  - a capability-stamp recipe (RUNTIME tags at projection — the equip system
  *    consumes it; tags stay pure, design-001 §2);
  *  - a view registration (surface, component, sizeMode, sizes) the React/dom
- *    layers consume;
+ *    layers consume — or, for `surface: "object"` (design-015 D2a-core), the
+ *    opaque kind binding and the desk stratum the desk's renderer consumes;
  *  - the migration chain (stored now; the M9 migrator runs it).
  *
  * Definition-time rules enforced: every top-level field defaulted (p.json
@@ -32,12 +33,14 @@ import {
   Position,
   Provides,
   Resizable,
+  STRATUM_BANDS,
   Selectable,
   Size,
   SnapSource,
   SnapTarget,
   Solid,
   SweepsContained,
+  type DeskStratum,
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
@@ -70,8 +73,20 @@ import type { FrameProjection } from "../canvas/frame-projection";
  * way to spawn a live surface at all. So a video widget is declared like any
  * other and equip gives it `SurfaceTarget = gpu` (the only target it has); what
  * it may not carry is a `component`, because nothing would ever mount one.
+ *
+ * ADDED (design-015 D2a-core, 2026-09-25): `object` — a widget that is a GPU
+ * OBJECT on the desk. Its face is its kind's program, reached through the
+ * opaque `object` binding (design-015 §5.2, D-D16); nothing mounts a view for
+ * it — no component, no chrome, no island, no DOM host. A literal of its OWN,
+ * deliberately outside `SurfaceKindValue` and the `SurfaceKind` component's
+ * enum: an object never carries the surface facts, so the compositor's
+ * vocabulary never learns the word. The old paths skip it by construction —
+ * equip stamps no surface fact for it, no surface behaviour is attached, the
+ * mount store makes no mount entry, and a transition asks only the `ground`
+ * plane of it. At D5 the other three kinds and the view fields are deleted and
+ * this becomes the only binding.
  */
-export type WidgetSurfaceKind = Extract<SurfaceKindValue, "dom" | "gl" | "video">;
+export type WidgetSurfaceKind = Extract<SurfaceKindValue, "dom" | "gl" | "video"> | "object";
 export type SizeMode = "fixed" | "auto-height" | "auto";
 
 export interface WidgetPortDecl {
@@ -206,8 +221,31 @@ export interface WidgetDef {
   /** Conflict groups: group name → prop names. Ungrouped props → "props". */
   readonly groups?: Readonly<Record<string, readonly string[]>>;
   readonly surface: WidgetSurfaceKind;
-  /** Framework component (opaque to core — the react package narrows it). */
-  readonly component: unknown;
+  /**
+   * Framework component (opaque to core — the react package narrows it). The
+   * view of a `dom`/`gl` widget (`null` = declared without one); an `object`
+   * has none, so for it this is absent or `null` and anything else is refused.
+   * Optional since design-015 D2a-core so an object can omit it; a view
+   * widget's authors keep passing it as before.
+   */
+  readonly component?: unknown;
+  /**
+   * The KIND BINDING of an `object` widget (design-015 §5.2, D-D16) — what the
+   * desk's renderer dispatches on through `widgetTypeFor`: the kind's program,
+   * its pick mirror, its opening. Opaque to core, exactly as `component` is: core
+   * carries it and never reads it. Required when `surface` is `"object"` and
+   * refused on every other surface.
+   */
+  readonly object?: unknown;
+  /**
+   * Which stratum of the desk instances lie in (design-015 §4.2, D-D4):
+   * `pads` under everything, `sheets` flat on the mat holding a desk, `things`
+   * above both. Equip stamps it as the runtime `Stratum` rider, and
+   * `compareStackOrder` ranks by it before sibling order, so pick order is paint
+   * order across kinds. An `object` that declares none is a `things`; any other
+   * widget that declares none gets no `Stratum` at all (and sorts as a thing).
+   */
+  readonly stratum?: DeskStratum;
   /**
    * GL only: a DOM chrome component portaled into the widget's CONTENT-plane
    * host (P1), which stacks UNDER the GL canvas (P2) — v1's proven
@@ -318,6 +356,14 @@ export interface WidgetType {
   readonly propToGroup: Readonly<Record<string, string>>;
   readonly surface: WidgetSurfaceKind;
   readonly component: unknown;
+  /** The `object` kind binding (design-015 §5.2) — opaque; `undefined` on every other surface. */
+  readonly object: unknown;
+  /**
+   * The desk stratum equip stamps as `Stratum` (design-015 §4.2): the declared
+   * one, `things` for an `object` that declared none, `undefined` (no rider) for
+   * any other widget that declared none.
+   */
+  readonly stratum: DeskStratum | undefined;
   /** GL widgets: DOM chrome under the canvas (see WidgetDef.chrome). */
   readonly chrome: unknown;
   readonly sizeMode: SizeMode;
@@ -605,6 +651,39 @@ export function defineWidget(def: WidgetDef): WidgetType {
     );
   }
 
+  // An OBJECT (design-015 §5.2, D2a-core) is drawn by its kind's program and by
+  // nothing else, so every view field on it is the same class as the two above:
+  // a declaration that compiles, reads as wired, and is never consulted. Its
+  // binding is the one thing it must carry — and the one thing no other surface
+  // may, since the dom/gl/video paths would carry it past every reader. `null`
+  // (and `false` for `animated`) is how a caller says "none", so it passes.
+  const isObject = def.surface === "object";
+  if (isObject) {
+    if (def.object === undefined || def.object === null) {
+      throw new Error(
+        `ice: defineWidget("${def.type}") is an object surface and carries no object binding — an object's face is its kind's program, and the binding is how the desk finds it (design-015 §5.2). Pass object: <the kind binding>.`,
+      );
+    }
+    const views: string[] = [];
+    if (def.component !== undefined && def.component !== null) views.push("component");
+    if (def.chrome !== undefined && def.chrome !== null) views.push("chrome");
+    if (def.animated !== undefined && def.animated !== false) views.push("animated");
+    if (views.length > 0) {
+      throw new Error(
+        `ice: defineWidget("${def.type}") is an object surface and declares ${views.join(", ")} — nothing mounts a view for an object (its face is its kind's program, design-015 §5.2). Drop ${views.length > 1 ? "them" : "it"}.`,
+      );
+    }
+  } else if (def.object !== undefined && def.object !== null) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") is a ${def.surface} surface and carries an object binding — only surface: "object" is drawn by a kind's program (design-015 §5.2). Use surface: "object", or drop the binding.`,
+    );
+  }
+  if (def.stratum !== undefined && !Object.hasOwn(STRATUM_BANDS, def.stratum)) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") declares stratum "${String(def.stratum)}" — a desk stratum is "pads", "sheets" or "things" (design-015 §4.2).`,
+    );
+  }
+
   // WHO WRITES THIS TYPE'S `SurfaceTarget` — exactly one behaviour, always.
   //
   // "Chose for itself" is broader than "listed an `ice:surface.*`",
@@ -634,7 +713,18 @@ export function defineWidget(def: WidgetDef): WidgetType {
         .join(", ")}) — an entity has ONE kind and that kind's behavior is the sole writer of its target (design-013 §5). Keep one.`,
     );
   }
-  if (targetWriters.length === 0) {
+  // An object carries no `SurfaceTarget` (equip stamps none of the six facts on
+  // it), so a behaviour that writes one would write a component the entity does
+  // not have — refused here rather than at its first write. And none is
+  // attached for it below: there is no second place for an object to present.
+  if (isObject && targetWriters.length > 0) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") is an object surface and lists ${targetWriters
+        .map((x) => `"${x.behavior.name}"`)
+        .join(", ")}, which write${targetWriters.length > 1 ? "" : "s"} SurfaceTarget — an object has no surface facts to choose between (design-015 §5.2). Drop it.`,
+    );
+  }
+  if (targetWriters.length === 0 && !isObject) {
     // dom rests in the DOM and promotes under a gesture (design-012 §11 Q5,
     // re-read by design-013 §0 as a default rather than a law); every other
     // kind IS a GPU texture and has no second mode to choose between.
@@ -708,6 +798,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
     propToGroup,
     surface: def.surface,
     component: def.component,
+    object: isObject ? def.object : undefined,
+    stratum: def.stratum ?? (isObject ? "things" : undefined),
     chrome: def.chrome,
     sizeMode: def.sizeMode ?? "fixed",
     defaultSize,

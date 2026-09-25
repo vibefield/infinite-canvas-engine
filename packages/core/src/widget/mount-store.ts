@@ -19,6 +19,8 @@
  *   GATED the same way on Visible/Culled flips (+ destroys of tagged
  *   widgets); LRU recency is stamped at the flip (identical eviction order —
  *   "last tick seen visible" = the tick it stopped being visible).
+ *   OBJECT widgets (design-015 §5.2, D2a-core) are culled like any widget but
+ *   never mounted: they have no view, and the desk draws them from the world.
  * - The store implements the `useSyncExternalStore` contract: `subscribe` /
  *   `getSnapshot` with snapshot identity changing IFF membership or a hidden
  *   flag changed. Listener notification is deferred to post-notify (the
@@ -36,6 +38,8 @@ import { createActiveMembership, currentNavFrame } from "../nav/nested-canvas";
 import { createMeasureIngest } from "../systems/measure-ingest";
 import type { MeasureQueue } from "../input/measure-queue";
 import { makeChurnGuard } from "../helpers/churn-guard";
+import { PrefabId } from "../schema/prefab";
+import { widgetTypeFor } from "../canvas/engine-catalog";
 
 const widgetQ = defineQuery([Position, Size, WidgetEquipped, Active]);
 
@@ -239,6 +243,16 @@ export function createWidgetRuntime(
   const visibleWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Active, Visible]);
   const culledWidgetsQ = defineQuery([Position, Size, WidgetEquipped, Not(Visible)]);
 
+  // An OBJECT has no view to mount (design-015 §5.2, D2a-core): the cull above
+  // still classifies it — `Visible`/`Culled` is the desk renderer's working
+  // set — but it never enters the mount list, so no DOM host, React portal or
+  // island is made for it and no transition retains one. Read off the TYPE
+  // (the kind is derivable from `PrefabId`, design-013 D4), per engine catalog.
+  const isObjectWidget = (e: Entity): boolean => {
+    const type = world.get(e, PrefabId)?.id;
+    return typeof type === "string" && widgetTypeFor(world, type)?.surface === "object";
+  };
+
   // GATED tick system (2026-07-15): Visible/Culled flips journal the entity;
   // destroys of tagged widgets land in `removed` (every mounted widget carries
   // one of the two tags). Idle frames skip. LRU recency stamps at the flip —
@@ -254,6 +268,7 @@ export function createWidgetRuntime(
       let changed = false;
 
       const markVisible = (e: Entity): void => {
+        if (isObjectWidget(e)) return; // no view, no mount entry (markHidden touches only entries that exist)
         lastVisibleTick.set(e, tickCounter);
         const entry = mounted.get(e);
         if (entry === undefined) {

@@ -67,9 +67,13 @@ function widgetTypeOf(world: World, entity: Entity) {
   return typeof type === "string" ? widgets.get(type) : undefined;
 }
 
-/** An entity's authored surface kind. */
+/**
+ * An entity's authored surface kind. An `object` (design-015 D2a-core) has none — it presents on
+ * the desk alone and carries no surface fact — so it answers `undefined`, as a non-widget does.
+ */
 export function widgetSurfaceKind(world: World, entity: Entity): SurfaceKindValue | undefined {
-  return widgetTypeOf(world, entity)?.surface;
+  const kind = widgetTypeOf(world, entity)?.surface;
+  return kind === "object" ? undefined : kind;
 }
 
 /**

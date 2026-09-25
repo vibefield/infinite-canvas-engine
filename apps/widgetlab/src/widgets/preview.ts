@@ -48,11 +48,12 @@ const CARD_PREVIEW: Record<string, string> = {
  *
  * `surface` is the widget type's kind — `WidgetSurfaceKind`, which gained `video` at
  * design-013 B6. A live surface's tile is a plain card: its pixels are a producer's and there
- * is nothing to preview until one arrives, so only `gl` keeps the floating look.
+ * is nothing to preview until one arrives, so only `gl` keeps the floating look. It gained
+ * `object` at design-015 D2a-core (a desk object — no view; a plain card here, like video).
  */
 export function previewBackground(
   type: string | undefined,
-  surface: "dom" | "gl" | "video" | undefined,
+  surface: "dom" | "gl" | "video" | "object" | undefined,
 ): string {
   if (type !== undefined) {
     const hit = CARD_PREVIEW[type];

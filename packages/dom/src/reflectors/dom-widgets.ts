@@ -286,7 +286,10 @@ export function createDomWidgetsReflector(
     const stamped = world.get(e, SurfaceKind)?.kind;
     if (stamped !== undefined) return stamped as SurfaceKindValue;
     const type = world.get(e, PrefabId)?.id;
-    return typeof type === "string" ? widgets.get(type)?.surface : undefined;
+    const authored = typeof type === "string" ? widgets.get(type)?.surface : undefined;
+    // An `object` (design-015 D2a-core) is no surface kind at all: the mount store gives it no
+    // entry, so it never reaches a host here — and it answers what an unknown entity answers.
+    return authored === "object" ? undefined : authored;
   }
 
   /**
