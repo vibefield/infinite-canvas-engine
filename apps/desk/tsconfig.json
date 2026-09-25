@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"],
+  "compilerOptions": { "lib": ["ES2022", "DOM", "DOM.Iterable"], "types": ["@webgpu/types", "vite/client"] }
+}

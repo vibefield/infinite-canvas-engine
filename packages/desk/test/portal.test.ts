@@ -255,7 +255,7 @@ describe("the tree, the pool", () => {
     const root = { mat: { spawn: () => { spawned += 1; return {}; } }, papers: { spawn: () => ({}) }, minimats: { spawn: () => ({}) } } as unknown as SlotSet;
     const pool = new SlotPool(root);
     pool.reset(); const a = pool.acquire();
-const b = pool.acquire();
+    const b = pool.acquire();
     expect(a).not.toBe(b); expect(pool.size).toBe(2); expect(spawned).toBe(2);
     pool.reset(); expect(pool.acquire()).toBe(a); expect(pool.acquire()).toBe(b); expect(pool.acquire()).not.toBe(a);
     expect(pool.size).toBe(3); expect(spawned).toBe(3);

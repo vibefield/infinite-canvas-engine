@@ -14,7 +14,7 @@
     "depcruise": "depcruise packages --config .dependency-cruiser.cjs",
     "gen:check": "pnpm -r --if-present run gen:check",
     "ci": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run depcruise && pnpm run gen:check",
-    "gate:landing": "pnpm --filter ./packages/ground oracle && pnpm --filter ./apps/groundlab build && pnpm --filter ./apps/groundlab rig:parity && pnpm --filter ./packages/ice pack:audit",
+    "gate:landing": "pnpm --filter ./packages/ground oracle && pnpm --filter ./apps/groundlab build && pnpm --filter ./apps/groundlab rig:parity && pnpm --filter ./packages/desk oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:parity && pnpm --filter ./packages/ice pack:audit",
     "relay": "node scripts/ws-relay.mjs"
   },
   "devDependencies": {

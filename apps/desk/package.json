@@ -1,0 +1,21 @@
+{
+  "name": "desk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The desk's app (design-015). At D1 a parity page only: every oracle scene drawn straight through @ice/desk's engine in Chrome, held to the Node (Dawn) render byte for byte by rig:parity.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "rig:parity": "tsx scripts/parity.mjs"
+  },
+  "dependencies": {
+    "@ice/desk": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.72",
+    "tsx": "^4.20.0",
+    "vite": "^7.0.0"
+  }
+}

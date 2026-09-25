@@ -1,8 +1,8 @@
 // The ENGINE's theme gate (src/theme.ts): the CSS colour parser, the one law —
 // a colour literal lives in src/theme.ts or the host's projection (the lab's
 // theme.ts in the prototype; oracle/fixtures/vf-theme.ts here, a fixture since
-// design-015 D1) and nowhere else in src/, shaders/ or the host's code (the
-// oracle) — the mini mat's shader naming no colour, and the grid's own law. The
+// design-015 D1) and nowhere else in src/, shaders/ or the hosts' code (the
+// oracle, apps/desk) — the mini mat's shader naming no colour, and the grid's own law. The
 // product's cross-checks against tokens.css, DESIGN.md and canvas-appearance.ts
 // are test/vf-theme.test.ts. (The card frame's shader check and the dot/needle
 // defaults read back from ICE retired with them, 2026-09-25 — MINIMAT.md §1.)
@@ -30,7 +30,7 @@ describe("theme (the engine's half)", () => {
     expect(() => cssColor("neutral-800")).toThrow();
   });
 
-  it("a colour literal has two homes — src/theme.ts (the engine's) and oracle/fixtures/vf-theme.ts (the product's, a fixture) — and none in the rest of src/, shaders/ and the oracle", () => {
+  it("a colour literal has two homes — src/theme.ts (the engine's) and oracle/fixtures/vf-theme.ts (the product's, a fixture) — and none in the rest of src/, shaders/, the oracle and apps/desk", () => {
     const offenders: string[] = [];
     const scan = (p: string) => {
       const text = readFileSync(p, "utf8");
@@ -44,8 +44,9 @@ describe("theme (the engine's half)", () => {
     // (src/shaders.gen.ts is the generated copy of shaders/, which is scanned at its source; `files` skips src/assets)
     for (const p of files(join(ground, "src"), /\.ts$/)) if (!p.endsWith("/src/theme.ts") && !p.endsWith("/src/shaders.gen.ts")) scan(p);
     for (const p of files(join(ground, "shaders"), /\.wgsl$/)) scan(p);
-    // the host's code — the lab's in the prototype, the oracle's here
+    // the hosts' code — the lab's in the prototype; the oracle's and apps/desk's here (packages/ground's gate scans groundlab's)
     for (const p of files(join(ground, "oracle"), /\.(ts|mjs)$/)) if (!p.endsWith("/oracle/fixtures/vf-theme.ts")) scan(p);
+    for (const p of files(resolve(ground, "../../apps/desk/src"), /\.ts$/)) scan(p);
     expect(offenders).toEqual([]);
   });
 
