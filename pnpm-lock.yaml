@@ -471,6 +471,21 @@ importers:
         specifier: ^1.13.8
         version: 1.13.8
 
+  packages/desk:
+    devDependencies:
+      '@webgpu/types':
+        specifier: ^0.1.72
+        version: 0.1.72
+      tsx:
+        specifier: ^4.20.0
+        version: 4.23.13
+      vitest:
+        specifier: ^3
+        version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
+      webgpu:
+        specifier: 0.4.0
+        version: 0.4.0
+
   packages/devtools:
     dependencies:
       '@ice/core':

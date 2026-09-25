@@ -212,6 +212,46 @@ module.exports = {
       to: { path: "^packages/ground" },
     },
     {
+      name: "desk-only-core-kernel",
+      comment:
+        "design-015 §3 (D1, 2026-09-25): the desk draws in RAW WebGPU on its own engine " +
+        "(vibe-field/draft/ground's prototype, moved) — core + kernel ONLY, the ground's wall. D1 " +
+        "imports neither: the engine, the mat, nav, the mini mat and the objects are self-contained " +
+        "and the world arrives at D2. `from` binds on src, so the Node oracle and the tests are " +
+        "exempt (they import `webgpu`, `vitest` and `node:*`).",
+      severity: "error",
+      from: { path: "^packages/desk/src" },
+      to: { pathNot: ["^packages/desk/src", "^packages/core", "^packages/kernel"] },
+    },
+    {
+      name: "nobody-imports-desk",
+      comment:
+        "design-015 D1: nothing imports @ice/desk yet — apps consume it directly (apps/desk). The " +
+        "react host (`<Desk>`) and the umbrella's /desk entries are D2's to open, by amending this " +
+        "rule. Both path forms: a resolved import lands in packages/desk; an unresolved one (no " +
+        "workspace dependency declared) is reported by SPECIFIER.",
+      severity: "error",
+      from: { path: "^packages/(kernel|core|dom|react|r3f|devtools|ice)/src" },
+      to: { path: ["^packages/desk/", "^@ice/desk(/|$)"] },
+    },
+    {
+      name: "ground-never-imports-desk",
+      comment:
+        "design-015 plan D-D0.3: @ice/desk is born BESIDE @ice/ground and the two never import " +
+        "each other until D5 deletes the old leg — from anywhere in the package (src, tests, " +
+        "oracle, tools), not only src: the two legs share no code, only the laws the oracle pins.",
+      severity: "error",
+      from: { path: "^packages/ground/" },
+      to: { path: ["^packages/desk/", "^@ice/desk(/|$)"] },
+    },
+    {
+      name: "desk-never-imports-ground",
+      comment: "The other direction of ground-never-imports-desk (D-D0.3); see that rule.",
+      severity: "error",
+      from: { path: "^packages/desk/" },
+      to: { path: ["^packages/ground/", "^@ice/ground(/|$)"] },
+    },
+    {
       name: "three-only-in-r3f",
       comment:
         "design-013 §8 Phase C (D-C3.1, 2026-09-07): `three` left @ice/ground with the " +

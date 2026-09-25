@@ -1,0 +1,14 @@
+{
+  "scale": 2,
+  "cellW": 16,
+  "cellH": 28,
+  "advance": 12,
+  "baseline": 21,
+  "cap": 15,
+  "width": 768,
+  "height": 28,
+  "count": 48,
+  "size": 10,
+  "family": "ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+  "generated": "2026-09-25"
+}
