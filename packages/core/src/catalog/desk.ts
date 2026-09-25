@@ -12,9 +12,19 @@
  *   for `SurfaceKind`, applied to the one presentation fact that survives the
  *   desk). `compareStackOrder` reads it FIRST, so pick order is paint order
  *   across kinds (design-015 §4.2's table, D-D4).
+ * - `Locked` — the tape (*Marks on the Mat* Q-e): a taped widget is never
+ *   moved or resized by a gesture (moveClaim and resizeClaim give it no rider)
+ *   and the marquee passes over it (Q-g), yet it stays selectable, pickable and
+ *   openable. A DURABLE TAG — document truth that syncs and undoes — with one
+ *   writer, `ops.setLocked` (one transaction). A tag rather than a zero-field
+ *   component because a marker IS strata's tag ("a zero-sized marker", its own
+ *   `defineTag` doc) and *Marks on the Mat* named it one; the document holds one
+ *   `tag:Locked` register per entity. Tags are not prefab-eligibility-checked
+ *   (guards/guarded-tx.ts header — "optional-tag modeling is future work"), so
+ *   any durable widget carries it with no prefab declaration.
  */
 import { field } from "@vibecook/strata-ecs";
-import { defineComponent } from "../schema/meta";
+import { defineComponent, defineTag } from "../schema/meta";
 
 /** A desk stratum an object can declare (design-015 §4.2). The mat, the held set and the marks are the renderer's, never declared. */
 export type DeskStratum = "pads" | "sheets" | "things";
@@ -41,3 +51,6 @@ export const DEFAULT_STRATUM_BAND = STRATUM_BANDS.things;
 export const Stratum = defineComponent("Stratum", {
   band: field("u8", { default: DEFAULT_STRATUM_BAND }),
 });
+
+/** Durable: taped down (design-015 §5.1, Q-e). One writer: `ops.setLocked`. */
+export const Locked = defineTag("Locked");

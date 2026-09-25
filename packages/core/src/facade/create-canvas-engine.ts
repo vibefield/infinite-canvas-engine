@@ -83,6 +83,7 @@ import {
   Container,
   GestureSettings,
   InsertGhost,
+  Locked,
   MeasuredSize,
   PointerSettings,
   Position,
@@ -261,6 +262,15 @@ export interface CanvasOps {
   selectAll(): void;
   /** Sibling-sequence sweep, one tx: the ids to the frame top/bottom (petition 8). */
   reorder(ids: readonly Entity[], mode: "top" | "bottom"): void;
+  /**
+   * Tape widgets down, or lift the tape (design-015 §5.1, *Marks on the Mat*
+   * Q-e): writes the durable `Locked` tag on every id that is a widget of the
+   * current frame whose state differs, in ONE transaction (one undo step; no
+   * transaction at all when nothing changes). A taped widget is never moved or
+   * resized by a gesture and the marquee passes over it; it stays selectable,
+   * pickable and openable. Refuses on a read-only document like every write op.
+   */
+  setLocked(ids: readonly Entity[], locked: boolean): void;
   /**
    * Desktop-style Clean Up (kernel packLayout): tidy reading-order rows, one
    * undo step, 240ms glide (durationMs: 0 snaps). Scope: ids > selection ≥2 >
@@ -1515,6 +1525,32 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
           // No ChildOf edge (legacy doc) — no sequence to move within.
           if (world.getRelation(e, ChildOf) === undefined) continue;
           tx.moveRelation(e, ChildOf, mode === "top" ? "last" : "first");
+        }
+      });
+    },
+    setLocked(ids, locked) {
+      const s = requireWritable("setLocked");
+      // The tape (design-015 §5.1): the durable `Locked` tag, this op its one
+      // writer. Scoped like `reorder` — doc-keyed widgets of the current frame —
+      // and CHANGE-ONLY against the world every facade op reads (a transaction
+      // lands there at the next sync): an id already in the asked state writes
+      // nothing, and when none differs no transaction opens (no empty undo
+      // step). Placement is asserted before the transaction, so a refusal writes
+      // nothing at all.
+      const targets: Entity[] = [];
+      for (const e of new Set(ids)) {
+        if (!world.isAlive(e) || !world.hasTag(e, Active) || s.store.keyOf(e) === undefined) continue;
+        const typeId = world.get(e, PrefabId)?.id;
+        if (typeof typeId !== "string" || catalog.widget(typeId) === undefined) continue;
+        if (world.hasTag(e, Locked) === locked) continue;
+        assertEditablePlacement(e, "setLocked");
+        targets.push(e);
+      }
+      if (targets.length === 0) return;
+      guardedTransaction(s.store, world, (tx) => {
+        for (const e of targets) {
+          if (locked) tx.addTag(e, Locked);
+          else tx.removeTag(e, Locked);
         }
       });
     },

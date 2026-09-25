@@ -22,6 +22,13 @@
  * Same-widget double-grab guard: a widget already in another recognizer's
  * `Drags` set is skipped (first gesture owns it) — two `ctx.addComponent(Grab)`
  * for one widget in one frame would hit strata's flush-time duplicate policy.
+ *
+ * The tape (design-015 §5.1, D2a-core): a `Locked` widget gets no rider from
+ * either claim — never moved, never resized by a gesture — and nothing else
+ * changes: select-on-grab still selects it, the pointer is still claimed, and
+ * the untaped members of the same selection move without it. A claim whose set
+ * is all tape moves nothing and commits nothing (the release paths commit only
+ * what carries a `Grab`).
  */
 import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
@@ -35,6 +42,7 @@ import {
   GesturePhases,
   Grab,
   InsertGhost,
+  Locked,
   MeasuredSize,
   Movable,
   NO_ENTITY,
@@ -192,6 +200,10 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
         for (const w of dragged) {
           if (!ctx.isAlive(w) || !ctx.has(w, Position)) continue;
           if (w !== grabbed && !ctx.hasTag(w, Movable)) continue;
+          // Taped down (design-015 §5.1): no rider, so no move, no elevate and no
+          // commit for it — whether it was grabbed, rode the selection or was
+          // swept. Selection above is untouched: a taped widget stays selectable.
+          if (ctx.hasTag(w, Locked)) continue;
           if (!attachRiders(ctx, rec, w, taken)) continue;
           // Sibling elevate (petition 8): an immediate structural move —
           // gesture divergence; the Grab memo restores on cancel/fly-back.
@@ -215,6 +227,7 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
         // Anchor = the captured handle's HandleSpec (read by resizeBehavior).
         for (const w of selectedEntities(world)) {
           if (!ctx.isAlive(w) || !ctx.hasTag(w, Resizable) || !ctx.has(w, Position)) continue;
+          if (ctx.hasTag(w, Locked)) continue; // taped down: never resized by a gesture (design-015 §5.1)
           attachRiders(ctx, rec, w, taken);
         }
       }

@@ -35,5 +35,5 @@ export * from "./settings-resources";
 // band, the texture reference and retention, all stamped at equip and
 // value-written change-only by the one writer each names.
 export * from "./surface";
-// The desk's vocabulary (design-015 §4.2/§5.1, D2a-core) — an object's stratum.
+// The desk's vocabulary (design-015 §4.2/§5.1, D2a-core) — an object's stratum, the tape.
 export * from "./desk";

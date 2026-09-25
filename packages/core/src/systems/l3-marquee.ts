@@ -13,7 +13,8 @@
  * global tag version, design-003 §5.7). Selection commits ONCE at terminal
  * (`JustEnded`): replace with the hits, or union when the watched pointer holds
  * shift; `SelectionVersion` bumps once (the v1 marquee lesson). No `access.write`
- * — reads + the buffer + ctx selection tags only.
+ * — reads + the buffer + ctx selection tags only. A `Locked` widget is never a
+ * hit (design-015 §5.1, Q-g: the tape keeps it out of the vellum).
  *
  * Camera staleness: both corners convert with the CURRENT camera, so a mid-
  * marquee camera move re-projects the rect (accepted — design-002 §2).
@@ -27,6 +28,7 @@ import {
   Captures,
   Drag,
   GesturePhases,
+  Locked,
   LongPress,
   PointerMods,
   RoutedMarquee,
@@ -60,7 +62,9 @@ export function createMarqueeBehavior(
     const out: Entity[] = [];
     for (const entry of index.search({ minX: rx, minY: ry, maxX: rx + rw, maxY: ry + rh })) {
       const e = entry.id;
-      if (ctx.isAlive(e) && ctx.hasTag(e, Selectable)) out.push(e);
+      // A taped widget is passed over (design-015 §5.1, *Marks on the Mat* Q-g) —
+      // neither previewed nor gathered; a tap still selects it.
+      if (ctx.isAlive(e) && ctx.hasTag(e, Selectable) && !ctx.hasTag(e, Locked)) out.push(e);
     }
     return out;
   };
