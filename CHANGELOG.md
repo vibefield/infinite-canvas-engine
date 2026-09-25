@@ -6,6 +6,30 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+**design-015 — the desk (M20), IN BUILD.** Every object under the camera is drawn by one WebGPU
+renderer from the world; the DOM lives only in screen space. The ladder builds the desk BESIDE
+today's presentation and deletes the hybrid in one commit at D5 (`packages/r3f`, `packages/ground`,
+dom's world-space half, core's surface infra, the profiles, the widget React binding, every app but
+`apps/desk`) — the breaks will be listed here then. Until D5 nothing below changes an existing API.
+
+<!-- design-015 D1 (2026-09-25) -->
+### Added
+
+- **`@ice/desk`** (`packages/desk`, a private workspace package; the umbrella does not export it
+  yet): the desk prototype (`vibe-field/draft/ground` at its 2026-09-25 snapshot) moved in —
+  the raw-WebGPU engine (`src/engine`, byte-identical to `@ice/ground`'s), the lattice laws, the
+  cutting mat (its gobo, the Sun and the Moon, the rulers, the shared lamp), the design-006
+  flight and the portal chain, the MINI MAT (the desk's container), and the passes of the note,
+  the notebook, the whiteboard, the calendar and the photo print; `ground.ts` is its composition
+  root. Its Node oracle (`pnpm --filter @ice/desk oracle`, Dawn through tsx) renders the
+  prototype's 38 scenes BYTE-IDENTICAL to the prototype's own renders, and its 20 checks (cut,
+  continuity, sealed, lod, light, chain, night, ruler, paper) pass. Walls: `desk-only-core-kernel`,
+  `nobody-imports-desk`, and `@ice/ground` ↔ `@ice/desk` never import each other.
+- **`apps/desk`**: a parity page drawing every desk oracle scene through the engine in Chrome;
+  `rig:parity` = Chrome vs Node at maxΔ 0 on all 38 scenes (a free-port CDP probe; a red scene
+  needs a second witness). `gate:landing` now also runs the desk oracle, the `apps/desk` build and
+  its `rig:parity`.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and

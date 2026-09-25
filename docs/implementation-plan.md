@@ -1067,6 +1067,60 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1 LANDED 2026-09-25)**
+
+*(Numbering note: next free after M19. design-015 is ruled in direction by James's
+2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
+widget instead … the current widgetlab in ICE will be retired, our cutting mat ground will
+be the default" — which also rules vibe-field's thinking-the-desk DK-D1…D10 as leaned and
+design-013 Q13 (the zoom-through) on. The task-grade plan is
+`draft/design-015-implementation-plan.md` — local-dev only.)*
+
+Every object under the camera is drawn by ONE WebGPU renderer from the world; the DOM
+lives only in screen space (the app's chrome, the selection menu and held bar, and at most
+one focused editor). A widget becomes an OBJECT KIND — durable props in the document, a GPU
+program, a CPU hit mirror, behaviours — declared with `defineObject` (design-005's compiler
+without the view). The renderer is `vibe-field/draft/ground`, the prototype that has been
+the ground's lab since design-013 B1, moved at its 2026-09-25 snapshot into a new package
+`@ice/desk` beside the old ground and proven byte-identical before anything is driven from
+the world: the cutting mat (its gobo, its Sun and Moon, its rulers) is the ground; the mini
+mat — a small cutting mat with a desk inside it — is the container, entered by the
+design-006 flight or the zoom-through; notes, notebooks, whiteboards, calendars and photo
+prints are the reference kinds. `packages/dom`, `packages/r3f`, the 09-07 ground (the
+magnet field, the card pass, DomRender/DomCompose/IslandRender/VideoIngest), core's surface
+infra and residency, the profiles, the widget React binding and six apps (widgetlab,
+widgetlab-desktop, cardboard, glboard, nodeboard, groundlab) are deleted in one commit at
+the end (D5), after `apps/desk` — the new showcase — passes the prototype's harnesses as
+rigs.
+
+**The ladder:** D1 the move → D2a the object model, the builder and the reflector → D2b
+mini mats + nav ∥ D2c notes + the text stack → D3 notebook ∥ whiteboard ∥ calendar ∥ photo ∥
+D4a the marks (*Marks on the Mat*) → D4b the opening (pick it up; the focus blur) → D5 the
+deletion → D6 performance (persistent records; the 1,000-object gates) → D7 review.
+
+**Exit (design-015 §11):** the prototype's oracle scenes byte-identical through the move AND
+through the world; Chrome = Node at maxΔ 0; the prototype's harnesses pass as `apps/desk`
+rigs; idle 0 submits; O(1) pan with no per-entity work; 1,000 mixed objects pan at 120 fps
+with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + depcruise).
+
+- **D1 — the move** (**LANDED 2026-09-25**, `ff76610` the move · `44dad26` Chrome = Node): the
+  prototype's 66 source files, 23 of its 25 WGSL files (the retired flat notebook's two stayed
+  behind with `src/book`), its blue noise and its oracle as `@ice/desk` + `apps/desk`'s parity
+  page. The one code change beyond conformance: the flat notebook's dead `books` slot left
+  `ground.ts` (D-D1.1; no host passed it). Conformance was mechanical and proven: 319 multi-
+  declarators split with 51 files token-equal to the pre-lint tree, 50 `±Infinity` →
+  `Number.±INFINITY`, 93 test `!` → `must()`, six justified `biome-ignore`s where a rewrite
+  would move a float or change what an explicit `undefined` means. Exit: the 38 oracle scenes
+  sha256-equal to the prototype's renders of the frozen snapshot — four times by the builder,
+  once more by the orchestrator at grading — and the 20 checks identical; Chrome = Node at
+  maxΔ 0 on all 38 (a one-byte perturbation control reds exactly 1 px); 216 units (the
+  prototype's 243 less the 27 that tested the retired flat notebook and the lab's tunables);
+  `gate:landing` exit 0. `pnpm run ci`'s test leg reds only on load timeouts outside D1's
+  closure (dom's 10k-mount at 16 s vs 5 s, widgetlab-desktop's app-mount — 290 ms alone at load
+  343). Owed: `engine/device.ts`'s `surface()` touches the DOM, so `desk-dom-free` is not yet
+  true (D2a-world moves it to `desk/host`); the CI-runner Dawn probe (D-B1.4) now covers two
+  oracles.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
