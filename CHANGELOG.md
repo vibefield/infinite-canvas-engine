@@ -440,6 +440,21 @@ there.
   throughout still keeps the moved object out and leaves the copy. Held by `consume-copy.test.ts` (all four ⌥
   combinations; the start-only row is red on the pre-fix source) and `rig:interact` §8b (the copy at the
   origin and the note inside; one ⌘Z removes the copy and brings the note back).
+- **Arbitration decides once per pointer per tick, over every claimant.** A strata system body runs once per
+  matching chunk, and the recognizer kinds live in different archetypes. So the tie rule (Pinch > Drag >
+  LongPress > Tap) never compared, say, a Tap with a Drag. The first batch's claimant won and failed the
+  rest; a later batch read `ClaimedBy` before the flush, claimed too, and failed back. A tie could leave the
+  pointer claimed by a Failed recognizer, both gestures dead. `arbitration` is now a tick system: it collects
+  the tick's claimants, then decides. A claimant that loses the tick's tie fails even from a terminal phase
+  (a Tap's `Recognized`), so a pointer gets one outcome, not a drag AND the tap it beat. That matches the
+  drag-first case, where tap-then-drag already fails the pending tap. `runIf` skips ticks with no fresh
+  claim. The ties the stack can produce: a long-press hold on the tick the drag leaves its dead zone (a
+  long-press slop wider than the drag's), and a multi-tap window that closes on the tick a new drag on the
+  same pointer activates. Held by `trace/arbitration-batches.test.ts` (hand-made claimants in both spawn
+  orders, plus the two ties through the pipeline; all 7 red on the pre-fix source, 4 of them red with only
+  the terminal-loser rule reverted) and `rig:interact` §8f (the desk at a 20 px long-press slop, the loop
+  parked by the frame gate and stepped by hand to the exact tick). With the fix the drag takes the note and
+  it follows by (40, 20); before it, the note never moved. `window.__desk` gains `gestures(patch)`.
 
 ## [0.13.0] — 2026-09-07
 

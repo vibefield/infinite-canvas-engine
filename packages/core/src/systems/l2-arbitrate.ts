@@ -10,13 +10,25 @@
  * one ClaimedBy write per pointer per pass (`setRelation` is silent last-wins —
  * a mis-ordered arbitration would otherwise be undetectable).
  *
+ * ONE PASS PER TICK (2026-09-26): a strata system body runs once per matching
+ * CHUNK, and the recognizer kinds live in different archetypes — so while
+ * arbitration was a chunk system, the tie rule compared claimants only within
+ * one batch. The first batch's claimant won and failed the rest; a later batch,
+ * reading `ClaimedBy` before the flush, claimed as well and failed back (a
+ * pointer could end claimed by a Failed recognizer, both claimants dead). It is
+ * a tick system now: it collects EVERY claimant of the tick, then decides once
+ * per pointer. A claimant that lost this tick's tie fails even from a terminal
+ * phase — a Tap's `Recognized` — so a pointer gets one outcome, never a drag
+ * AND the tap it beat (as when the drag claims first: tap-then-drag fails the
+ * pending tap).
+ *
  * `dragRoute` — the ONE pan/marquee/move decision, latched at Drag activation
  * via route tags; the route never changes mid-gesture (design-003 §4.4). A
  * canvas drag reads the pointer's latched shift to choose between the tool's
  * `canvasDrag` and `canvasDragShift` (design-015 §9, D2a-core).
  */
-import type { Entity, System, SystemCtx, Tag, World } from "@vibecook/strata-ecs";
-import { Any, Not, defineQuery, defineSystem } from "@vibecook/strata-ecs";
+import type { Entity, System, SystemCtx, Tag, TickSystem, World } from "@vibecook/strata-ecs";
+import { Any, Not, defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
 import {
   CanvasSurface,
   Captures,
@@ -63,6 +75,8 @@ const claimCandidateQ = defineQuery([
 ]);
 
 const justActiveDragQ = defineQuery([Drag, P.justTags.Active]);
+/** Anything that entered a claiming phase this tick (the arbitration's gate). */
+const justClaimQ = defineQuery([Any(P.justTags.Active, P.justTags.Recognized)]);
 
 function isTerminal(ctx: SystemCtx, e: Entity): boolean {
   if (ctx.hasTag(e, P.tags.Failed) || ctx.hasTag(e, P.tags.Cancelled) || ctx.hasTag(e, P.tags.Ended)) {
@@ -79,28 +93,35 @@ function priorityOf(ctx: SystemCtx, e: Entity): number {
   return 1; // Tap
 }
 
-export function createArbitrationSystems(world?: World): { arbitration: System; dragRoute: System } {
-  const arbitration = defineSystem(
-    claimCandidateQ,
-    (b, ctx) => {
-      // Collect this frame's claimants: recognizers that JUST entered a claiming phase.
+export function createArbitrationSystems(world?: World): { arbitration: TickSystem; dragRoute: System } {
+  const arbitration = defineTickSystem(
+    (ctx) => {
+      // Collect this tick's claimants — recognizers that JUST entered a claiming
+      // phase — from EVERY batch before deciding anything (the header).
       const bestByPointer = new Map<Entity, Entity>();
-      for (const r of b) {
-        const e = b.entity(r);
-        const claiming =
-          ctx.hasTag(e, P.justTags.Active) || ctx.hasTag(e, P.justTags.Recognized);
-        if (!claiming) continue;
-        for (const pointer of ctx.getRelations(e, Watches)) {
-          // First-wins across frames: an existing live claim stands.
-          const existing = ctx.getRelation(pointer, ClaimedBy);
-          if (existing !== undefined && !isTerminal(ctx, existing)) continue;
-          const incumbent = bestByPointer.get(pointer);
-          if (incumbent === undefined || priorityOf(ctx, e) > priorityOf(ctx, incumbent)) {
-            bestByPointer.set(pointer, e);
+      const claimantsOf = new Map<Entity, Entity[]>();
+      ctx.query(claimCandidateQ).each((b) => {
+        for (const r of b) {
+          const e = b.entity(r);
+          const claiming =
+            ctx.hasTag(e, P.justTags.Active) || ctx.hasTag(e, P.justTags.Recognized);
+          if (!claiming) continue;
+          for (const pointer of ctx.getRelations(e, Watches)) {
+            // First-wins across frames: an existing live claim stands.
+            const existing = ctx.getRelation(pointer, ClaimedBy);
+            if (existing !== undefined && !isTerminal(ctx, existing)) continue;
+            const claimants = claimantsOf.get(pointer);
+            if (claimants === undefined) claimantsOf.set(pointer, [e]);
+            else claimants.push(e);
+            const incumbent = bestByPointer.get(pointer);
+            if (incumbent === undefined || priorityOf(ctx, e) > priorityOf(ctx, incumbent)) {
+              bestByPointer.set(pointer, e);
+            }
           }
         }
-      }
+      });
 
+      const winners = new Set(bestByPointer.values());
       const written = devGuardsEnabled() ? new Set<Entity>() : null;
       for (const [pointer, winner] of bestByPointer) {
         if (written !== null) {
@@ -110,10 +131,14 @@ export function createArbitrationSystems(world?: World): { arbitration: System; 
           written.add(pointer);
         }
         ctx.setRelation(pointer, ClaimedBy, winner);
-        // Fail every other live competitor watching this pointer.
+        // Fail every other live competitor watching this pointer — and this
+        // tick's losing claimants even from a terminal phase (a Tap's
+        // Recognized): one decision, one outcome. A winner elsewhere (a Pinch
+        // holds two pointers) is never failed here.
+        const lost = claimantsOf.get(pointer) ?? [];
         for (const rec of ctx.getReverse(pointer, Watches)) {
-          if (rec === winner) continue;
-          if (isTerminal(ctx, rec)) continue;
+          if (rec === winner || winners.has(rec)) continue;
+          if (isTerminal(ctx, rec) && !lost.includes(rec)) continue;
           if (ctx.hasTag(rec, Simultaneous) || ctx.hasTag(rec, GestureSuspended)) continue;
           // Edge-parked Pending recognizers are the dependency system's to
           // resolve. v2 resolved them same-tick BEFORE arbitration (immediate
@@ -131,7 +156,8 @@ export function createArbitrationSystems(world?: World): { arbitration: System; 
         }
       }
     },
-    { name: "arbitration" },
+    // Idle and mid-gesture ticks with no claim to settle skip the walk.
+    { name: "arbitration", runIf: (ctx) => ctx.firstOf(justClaimQ) !== undefined },
   );
 
   const dragRoute = defineSystem(

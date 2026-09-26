@@ -1,11 +1,12 @@
 // `window.__desk` — the desk's door for the rigs (and a person at the console): the engine and the
 // layer's handle themselves, `spawn` (at a CENTRE, the prototype's convention), `setScene` (an
 // oracle still spawned into the world), the desk's objects as a harness reads them, the camera, the
-// selection, the instruments (`stats`, `wakes`, `submits`), the ambient policy, the theme, and
-// `settle` — resolves once the desk is drawn, quiet and its assets are up. Everything reads the
-// WORLD (Position/Size/tags) and the builder's flux; nothing here writes what an op would not.
+// selection, the instruments (`stats`, `wakes`, `submits`), the ambient policy, the theme, the gesture
+// settings (a host's live tuning), and `settle` — resolves once the desk is drawn, quiet and its
+// assets are up. Everything reads the WORLD (Position/Size/tags) and the builder's flux; nothing here
+// writes what an op would not.
 
-import { Active, type CanvasEngine, ChildOf, type Entity, Grab, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
+import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
 import type { DeskLayerHandle, MatPin } from "@ice/desk/host";
 import type { AmbientMode } from "@ice/desk/compose";
 import type { ThemeName } from "@ice/desk/theme";
@@ -53,6 +54,8 @@ export interface DeskApi {
   wakes(): ReturnType<DeskLayerHandle["wakes"]>;
   submits(): { readonly total: number; readonly buffers: number; readonly inWindow: (ms: number) => number } | null;
   ambient(mode?: AmbientMode, idleMs?: number): ReturnType<ReturnType<DeskLayerHandle["ambient"]>["state"]> & { readonly clocks: { readonly time: number; readonly goboTime: number } };
+  /** The live gesture settings (design-005 §4), `patch` written over them first — a rig tunes a slop, then puts it back. */
+  gestures(patch?: { readonly [K in Exclude<keyof typeof GESTURE_DEFAULTS, "wheel">]?: number }): Readonly<Record<string, number | string>>;
   pinMat(pin: MatPin | null): void;
   theme(): ThemeName;
   setTheme(name: ThemeName): void;
@@ -178,6 +181,11 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     wakes: () => handle.wakes(),
     submits() { const s = handle.submits(); return s === undefined ? null : { total: s.total(), buffers: s.buffers(), inWindow: (ms) => s.inWindow(ms) }; },
     ambient(mode, idleMs) { if (mode !== undefined) handle.setAmbient(mode, idleMs); return { ...handle.ambient().state(), clocks: handle.ambient().clocks() }; },
+    gestures(patch) {
+      const cur = world.getResource(GestureSettings) ?? GESTURE_DEFAULTS;
+      if (patch !== undefined) world.setResource(GestureSettings, { ...cur, ...patch });
+      return { ...(world.getResource(GestureSettings) ?? cur) };
+    },
     pinMat: (pin) => handle.pinMat(pin),
     theme: () => theme.name(),
     setTheme: (name) => theme.set(name, true),

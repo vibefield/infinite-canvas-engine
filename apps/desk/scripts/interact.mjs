@@ -14,7 +14,10 @@
 // a drag with a 2 px give (its Position never moves) and the vellum passes over it; ⌘⇧L tapes and lifts; inside a mini mat
 // entered by a double-click, a selected note's brackets stand where the entered camera draws it.
 // A click whose release shares its frame with a far move still selects its note, and nothing follows
-// the cursor after (core's fold cut). Exit 0 = every check passed.
+// the cursor after (core's fold cut). The core follow-ups: a note dropped into the mini mat leaves the
+// selection (nothing to nudge or delete in there); ⌥ at a drag's start leaves a copy even when the note
+// goes in, one ⌘Z undoing both; a long-press hold on the drag's exit tick is the drag's (arbitration
+// decides once per tick). Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -465,9 +468,46 @@ try {
   await foldedClick("press, release and a far move back to back", false);
   await foldedClick("the press stepped alone, then the release and a far move together", true);
 
+  // --- 8f. arbitration decides ONCE per pointer per tick (core, 2026-09-26). A long-press hold that lands on the very tick the
+  //     drag leaves its dead zone is a tie the desk meets once its long-press slop is wider than the drag's (a touch-kind
+  //     tuning, 20 over 10): Drag > LongPress, so the drag takes the note and it follows. The tie is one exact tick, so the row
+  //     parks the loop (the frame gate) and steps the engine by hand, the input enqueued between the steps. Before the fix the
+  //     two claimants sat in different archetype batches: the long press's claimed and failed the drag, the drag's claimed too
+  //     and failed the long press — the pointer claimed by a dead recognizer, the note left where it was.
+  await q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
+  await settle();
+  const n8f = (await entities()).find((e) => e.type === "desk.note" && e.active && e.id !== c);
+  const tie = await q(`(async () => {
+    const d = window.__desk, ce = d.engine, eng = ce.engine;
+    const slop = d.gestures().longPressSlopPx;
+    d.gestures({ longPressSlopPx: 20 });
+    const thaw = eng.frame.freeze("rig:interact 8f");
+    for (let i = 0; i < 1000 && !eng.frame.isParked(); i++) await new Promise((r) => setTimeout(r, 5));
+    const parked = eng.frame.isParked();
+    let t = performance.now();
+    const step = () => { t += 16; eng.step(t); };
+    const mods = { shift: false, ctrl: false, alt: false, meta: false, space: false };
+    const ev = (kind, x, y, buttons) => ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods });
+    const x = ${n8f.cx}, y = ${n8f.cy};
+    ev("move", x, y, 0); step();
+    ev("down", x, y, 1); step();
+    for (let k = 0; k < 31; k++) step();   // held 31 × 16 ms: one tick short of the 500 ms hold
+    ev("move", x + 15, y, 1); step();       // the hold's tick AND the drag's exit (15 px: past 10, inside 20)
+    const grabbed = d.entity(${n8f.id}).grabbed;
+    ev("move", x + 55, y + 20, 1); step();
+    const at = d.entity(${n8f.id});
+    ev("up", x + 55, y + 20, 0); step(); step();
+    d.gestures({ longPressSlopPx: slop });
+    thaw();
+    return { parked, grabbed, dx: at.cx - x, dy: at.cy - y, slop: d.gestures().longPressSlopPx };
+  })()`);
+  await settle();
+  check(tie.parked && tie.grabbed && near(tie.dx, 40) && near(tie.dy, 20), `a long-press hold on the drag's exit tick: the drag takes the note (grabbed ${tie.grabbed}) and it follows by (${tie.dx.toFixed(1)}, ${tie.dy.toFixed(1)}) of (40, 20) — the loop parked for the exact tick (${tie.parked}), the slop back to ${tie.slop}`);
+  if (tie.grabbed) { await key("z", "KeyZ", 90, META); await settle(); }   // the move back: the desk as 8e left it
+
   // --- D3w: the whiteboard, the print, the notebook and the desk calendar at rest (interact-kinds.mjs) — after D2b's rows: 8d has
-  //     flown back out to the root desk (the exit clears the selection), and each kind lays its object in a stretch of the desk
-  //     of its own, far from the notes and the mini mat
+  //     flown back out to the root desk (the exit clears the selection) and 8e and 8f (core) leave it as they found it; each kind
+  //     lays its object in a stretch of the desk of its own, far from the notes and the mini mat
   await kindsRig({ q, qa: (js) => tab.evaluate(js, { awaitPromise: true, timeoutMs: 30000 }), entity, entities, mouse, click, key, sleep, settle, check, near, META, SHIFT });
 
   // --- 9. quiet at the end: no spring, nothing dirty
