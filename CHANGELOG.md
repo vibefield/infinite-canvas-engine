@@ -567,6 +567,44 @@ THE NOTEBOOK IN HAND (design-015 §6's notebook on D3t-a's seam; NOTEBOOK.md §6
   `rig:open` §12 (the notebook in hand, 35 rows; §8's two taps now land on the case), `rig:two-tab` (a stroke by hand in A on B's
   page, a turn and ⌘Z seen), the units' parity of the ink table and every page's raster with the oracle's.
 
+<!-- design-015 D3t-c (2026-09-26) -->
+THE DESK CALENDAR AT WORK (design-015 §6's calendar in hand and at rest; CALENDAR.md §2–§5 ported whole).
+
+- **The print from its events** (`@ice/desk` calendar/print.ts — the prototype's display list, DOM-free): the month,
+  the two small months, the weekdays, the ISO weeks, the Moon, the colophon; today ringed in hot, the past ticked in
+  pencil; each entry a line in the note's hand — a time set apart, a run of days a highlighter band, a stuck note's day
+  giving its foot, "+N more". Its TILES are a cache (calendar/printing.ts `PrintTiles`): the coarse levels for the
+  sheet, the view's rung and the one under it, each tile keyed by what it shows (an edit redraws its cell's tiles
+  alone), EMPTY where nothing prints, within the frame's budget; the `PrintRaster` seam draws them (host/print.ts: one
+  CPU-raster OffscreenCanvas a tile). A host with no canvas PINS a sheet's committed tiles — exactly: a blank pin is a
+  blank sheet, whatever the owner pinned before.
+- **Its entries and pins are DATA children** (`desk.event {start, end, text, seeds, ink}`, `desk.pin {day}` + the
+  `desk.pins` edge — the Calendar declares `data: [EventPrefab, PinPrefab]`). An entry's writing is its ONE `ink`
+  cell (D-D3t-c.1); a new line is a draft the pad prints until its session ends and spawns it whole — one
+  transaction, never an empty entity (D-D3t-c.4).
+- **The days** (host/calendar-input.ts, objects/calendar-writing.ts, objects/calendar-hand.ts): the pad's parts
+  through the desk eye (`partAt`: the tape, the roll, the corner, the foot, the sheet in motion, a line, a day); a
+  click selects a day (⇧ a run) or a line — the runtime `PadSelection`, marked as the marks' brackets drawn on the
+  sheet itself (D-D3t-c.3); ⏎, a double-click or just typing writes through the ONE editor, lent to the calendar
+  (a day under 150 px on screen picks the pad up first); ⌫ takes a line off (one step); the arrows walk the days
+  and the pad follows over a month's edge; t goes home; ⌘Z/⇧⌘Z are the document's.
+- **The ROLL** (calendar/turn.ts): a month rolls up from its foot or corner and comes down off the roll under the
+  tape — a click, a flick, or past a third by hand; the corner lifts under the pointer; ] [ PageDown PageUp and the
+  held bar's ‹ › turn it, today rolls home. The document's `month` is the TARGET and moves ONE transaction per
+  completed roll, off the undo stack (D-D3t-c.5: a roll is not an edit).
+- **Notes stuck to days**: let go over a day a note sticks (its pin + the glide into `daySlot`, one transaction;
+  the day marked while carried), rides with the pad and into the hand, goes with its month (veiled — not drawn,
+  not picked — while its month is not shown), and is unstuck when carried off (D-D3t-c.6). Core: a DEPENDENT
+  relation (`defineRelation(name, { dependent: true })` — the destroy cascade takes the edge's source: deleting a
+  stuck note takes its pin, and one ⌘Z brings both) and RIDERS (`defineWidget({ riders })`, moved in the drag's one
+  transaction).
+- **Witnesses**: the committed print (`oracle/prints.mjs`, `fixtures/assets/print-2026-{09,10}` — apps/desk
+  `scripts/print-fixture.mjs --write` reads the live print back from the world); oracle stills
+  `pad-print-z0.42`, `pad-print-roll-z0.42`, `pad-print-note-z0.85` with a print check (Chrome = Node at maxΔ 0 in
+  rig:parity and from the world in rig:world, which then holds the live print to the committed bytes, tile for
+  tile); `rig:open` §12 (the calendar at work, 52 rows); `rig:two-tab` (a line written in A arrives on B's pad, with
+  A's seeds, and ⌘Z in A takes it off both).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
