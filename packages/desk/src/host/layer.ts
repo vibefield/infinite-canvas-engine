@@ -317,7 +317,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       : undefined;
     // the prints' carry (D3w): the hands onto the photo kind's bodies, each rest ONE transaction out of the frame
     const carry = locals.has(PHOTO_KIND)
-      ? createPhotoCarry({ world, docs: opts.docs ?? { current: () => undefined }, prints: () => locals.get(PHOTO_KIND) as Prints | undefined, isPrint: (e) => builder.kindOf(e)?.name === PHOTO_KIND })
+      ? createPhotoCarry({
+          world, docs: opts.docs ?? { current: () => undefined }, prints: () => locals.get(PHOTO_KIND) as Prints | undefined, isPrint: (e) => builder.kindOf(e)?.name === PHOTO_KIND,
+          refused: (e) => builder.meetTape(e),   // a taped print answers a drag with the tape's give (D4a)
+        })
       : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;

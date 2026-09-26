@@ -2,9 +2,11 @@
 // = the Node oracle's own `printOf` for the same print (rest, held, hovered, between notes — PARITY BY
 // CONSTRUCTION); the BlobStore round trip (D-D12: bytes by hash, one picture per blob, dropped with its last
 // print); the FLICK LAW (the finger's last 70 ms, the cap, a stopped finger throws nothing, the glide's Coulomb
-// grip); and the carry: a press, a flick, a glide — ONE transaction when the print comes to rest, one undo step.
-import { Captures, ChildOf, createCanvasEngine, type Entity, LocalPointer, Movable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Watches } from "@ice/core";
+// grip); and the carry: a press, a flick, a glide — ONE transaction when the print comes to rest, one undo step; a
+// TAPED print is never carried, and a press-drag on it gives as every taped object does (D4a's give, through the marks).
+import { Captures, ChildOf, createCanvasEngine, Drag, type Entity, GestureActive, LocalPointer, Movable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Viewport, Watches } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createDeskBuilder } from "../src/compose/builder";
 import { createMemoryBlobStore, FLUX_REST, hashBytes, type KindHost, type ObjectContext, PHOTO_KIND, PhotoKind, photoKind, type Prints, printRect, RGBA_TYPE } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { objectKindOf } from "../src/object";
@@ -12,7 +14,7 @@ import { createPhotoCarry, Photo, PHOTO_TYPE } from "../src/objects";
 import { lampOf } from "../src/paper/paper";
 import { grab, moveHold, newBody, PHOTO, release, restless, stepPhoto } from "../src/photo/photo";
 import type { Picture, PhotoPass } from "../src/photo/photo-pass";
-import { MAT_GRID } from "../src/theme";
+import { MARKS, MAT_GRID } from "../src/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeOracle, type OracleInternals, sceneOf } from "./oracle-fake";
 import { must } from "./must";
@@ -305,5 +307,71 @@ describe("the CARRY — ONE transaction when the print comes to rest", () => {
     expect(d.carry.commits()).toBe(0);
     expect(d.rect().cx).toBeCloseTo(400, 9);
     expect(must(d.prints.body(d.e)).h).toBe(0);
+  });
+});
+
+describe("a TAPED print (D4a's tape over D3w's carry)", () => {
+  it("is never carried: a press that becomes a drag meets the tape — the print gives ≤ 2.2 px and settles, once a gesture, its Position never moved; untaped, the carry takes it again", () => {
+    const ce = createCanvasEngine({ widgets: [Photo] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 2 });
+    const { world } = ce;
+    let now = 1000;
+    const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
+    const at = printRect(400, 300, META.w, META.h);
+    const e = ce.ops.spawnWidget(PHOTO_TYPE, { x: at.x, y: at.y, w: at.w, h: at.h, props: { width: META.w, height: META.h }, undoable: false });
+    step(3);
+    const builder = createDeskBuilder(world, { objects: [Photo] });
+    const prints = must(kind.local)({ pass: () => stubPass().kindPass }) as Prints;
+    const carry = createPhotoCarry({ world, docs: ce.docs, prints: () => prints, isPrint: (q) => q === e, defer: (fn) => fn(), refused: (q) => builder.meetTape(q) });
+    const LOOKS = new Map<string, unknown>();
+    /** One desk frame as the layer's reflector runs it: the carry, then the build when the builder has word of anything or still moves. */
+    const frame = (): number => {
+      now += 16;
+      carry.follow(now);
+      const woke = builder.changed();
+      const wasLive = builder.live();
+      if (woke || wasLive) builder.build({ x: 0, y: 0, zoom: 1 }, { width: 1200, height: 800, dpr: 2 }, 1 / 60, THEMES.light, DEFAULT_GRID, LOOKS);
+      return (must(builder.geometryOf(e)) as { centre: readonly number[] }).centre[0] as number - 400;
+    };
+    const settle = (): void => { let n = 0; do frame(); while (builder.live() && ++n < 200); };
+    ce.ops.setLocked([e], true);
+    step(1);
+    settle();
+    expect(frame()).toBe(0);
+    // a press on it — the recognizer captures it, still a press: nothing gives yet
+    const p = world.spawn({ components: [[Pointer, { id: "mouse", device: "mouse", owner: "" }], [PointerWorld, { x: 450, y: 320 }], [PointerButtons, { buttons: 1, downX: 0, downY: 0, downMs: 0 }]], tags: [LocalPointer] });
+    const rec = world.spawn({ components: [[Drag, { startX: 450, startY: 320 }]] });
+    world.addRelation(rec, Watches, p);
+    world.setRelation(rec, Captures, e);
+    for (let i = 0; i < 3; i++) expect(frame()).toBe(0);
+    expect(builder.changed()).toBe(false);
+    // past the slop the recognizer is an ACTIVE drag that drives nothing (a print is not core-movable): the carry refuses it
+    world.addTag(rec, GestureActive);
+    const gives: number[] = [];
+    let n = 0;
+    do { world.edit(p).set(PointerWorld, { x: 450 + 4 * n, y: 320 }); gives.push(frame()); n += 1; } while ((builder.live() || n < 2) && n < 100);
+    const peak = Math.max(...gives.map(Math.abs));
+    expect(peak).toBeGreaterThan(1.5);
+    expect(peak).toBeLessThanOrEqual(MARKS.give.px);
+    expect(gives.at(-1)).toBe(0);
+    expect(n).toBeLessThan(40);
+    // the same gesture goes on: it gave once
+    for (let i = 0; i < 10; i++) { world.edit(p).set(PointerWorld, { x: 700 + i, y: 320 }); expect(frame()).toBe(0); }
+    expect(carry.held()).toEqual([]);
+    expect(carry.commits()).toBe(0);
+    expect(world.get(e, Position)).toEqual({ x: at.x, y: at.y });
+    // let go and untaped: the next press is carried again
+    world.edit(p).set(PointerButtons, { buttons: 0, downX: 0, downY: 0, downMs: 0 });
+    world.destroy(rec);
+    frame();
+    ce.ops.setLocked([e], false);
+    step(1);
+    const rec2 = world.spawn({ components: [[Drag, { startX: 450, startY: 320 }]], tags: [GestureActive] });
+    world.addRelation(rec2, Watches, p);
+    world.setRelation(rec2, Captures, e);
+    world.edit(p).set(PointerButtons, { buttons: 1, downX: 0, downY: 0, downMs: 0 });
+    frame();
+    expect(carry.held()).toEqual([e]);
   });
 });

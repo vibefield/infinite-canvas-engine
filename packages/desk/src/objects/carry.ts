@@ -15,9 +15,11 @@
 // print's Position at the rest, and the raise (the top of its siblings, the prototype's `toTop`) — so one carry
 // is one undo step, whatever the glide did. The commit is DEFERRED out of the frame (`defer`, a microtask by
 // default): the carry runs in the desk's reflector, and a reflector never writes (D-D2c.5's rule).
-// A press that never moved the print commits nothing. A taped print (`Locked`) is not carried.
+// A press that never moved the print commits nothing. A taped print (`Locked`) is not carried: a press on it that
+// becomes a drag meets the tape, and the carry says so (`refused`, once a gesture) — the desk's marks answer it with the
+// tape's GIVE, as a core drag that meets a taped note makes it give (D4a).
 
-import { ChildOf, defineQuery, type Entity, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, Size, Captures, Watches, type World } from "@ice/core";
+import { ChildOf, defineQuery, Drag, type Entity, GestureActive, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, Size, Captures, Watches, type World } from "@ice/core";
 import type { Prints } from "../kinds/photo";
 import type { TypingDocs } from "./typing";
 
@@ -31,6 +33,8 @@ export interface PhotoCarryOptions {
   readonly isPrint: (e: Entity) => boolean;
   /** Where a rest's transaction runs: out of the frame (a microtask) unless a test says. */
   readonly defer?: (fn: () => void) => void;
+  /** A press on a TAPED print became a drag (the recognizer Active): not carried — told once a gesture, so the desk's marks give it (D4a). */
+  readonly refused?: (e: Entity) => void;
 }
 
 export interface PhotoCarry {
@@ -48,6 +52,8 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
   const { world, docs } = opts;
   const defer = opts.defer ?? ((fn: () => void) => queueMicrotask(fn));
   const held = new Set<Entity>();
+  /** The drags on taped prints already told of (their recognizers), so each gesture gives once. */
+  const refusing = new Set<Entity>();
   let commits = 0;
 
   /** ONE transaction: the print where it came to rest, raised to the top of its siblings. False when it could not. */
@@ -76,18 +82,26 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
       // the hands: a pointer down whose press captured a print holds it at the finger's world point
       const t = now / 1000;
       const hands = new Map<Entity, { readonly x: number; readonly y: number }>();
+      const taped = new Set<Entity>();
       world.query(pointersQ).each((b) => {
         for (const row of b) {
           const p = b.entity(row);
           if ((world.read(p, PointerButtons).buttons & 1) === 0) continue;
           for (const rec of world.getReverse(p, Watches)) {
             const e = world.getRelation(rec, Captures);
-            if (e === undefined || hands.has(e) || !world.isAlive(e) || !opts.isPrint(e) || world.hasTag(e, Locked)) continue;
+            if (e === undefined || hands.has(e) || !world.isAlive(e) || !opts.isPrint(e)) continue;
+            if (world.hasTag(e, Locked)) {
+              // taped: never carried — a press that has become a drag meets the tape (once a gesture)
+              if (world.has(rec, Drag) && world.hasTag(rec, GestureActive)) { taped.add(rec); if (!refusing.has(rec)) opts.refused?.(e); }
+              continue;
+            }
             const at = world.read(p, PointerWorld);
             hands.set(e, { x: at.x, y: at.y });
           }
         }
       });
+      refusing.clear();
+      for (const rec of taped) refusing.add(rec);
       for (const [e, at] of hands) {
         if (held.has(e)) prints.move(e, at.x, at.y, t);
         else { prints.hold(e, at.x, at.y, t); held.add(e); }

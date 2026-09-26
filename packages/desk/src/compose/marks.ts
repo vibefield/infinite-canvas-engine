@@ -9,8 +9,10 @@
 // marquee lets go; the laser's strike (160 ms) on a NEW alignment; the tape pressed (240 ms, the second
 // strip 60 ms later) and lifted (160 ms); and the tape's GIVE — a drag that meets a taped object shivers
 // it 2.2 px for 360 ms and settles (*Marks on the Mat*: "a taped object refuses a drag with a 2 px give";
-// D2a-core already refuses the move itself). `assembleMarks` (marks/assemble.ts) turns it all into the
-// frame's marks — the oracle's stills run through the same rule. Nothing here writes the world.
+// D2a-core already refuses the move itself): core's move meets the tape here, and a kind that carries itself
+// (the print, D3w) tells the collector of the drag it refused (`refused`). `assembleMarks` (marks/assemble.ts)
+// turns it all into the frame's marks — the oracle's stills run through the same rule. Nothing here writes
+// the world.
 
 import {
   Camera,
@@ -82,6 +84,11 @@ export interface MarksCollector {
   live(): boolean;
   /** The tape's give on an entity this frame, CSS px along x (0 at rest) — the builder shifts the object by it. */
   giveOf(e: Entity): number;
+  /**
+   * A drag refused on `e` outside core's move — a print's own carry (D3w: a print is not core-movable, so no core drag of
+   * it ever meets the tape here): a taped `e` gives, as a core drag meeting tape makes it give. The next `changed()` wakes.
+   */
+  refused(e: Entity): void;
   /** The selection menu's anchor, as of the last frame. */
   anchor(): SelectionAnchor;
   dispose(): void;
@@ -136,11 +143,14 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
     if (c === undefined) { c = { lockT: 0, lockA: 0, selected: false, tapeT: 0, tapeA: 0, locked: false, give: -1 }; clocks.set(e, c); }
     return c;
   };
+  /** A taped object met by a drag gives: its clock from 0. */
+  const give = (e: Entity): void => { if (!world.hasTag(e, Locked)) return; clockOf(e).give = 0; live = true; };
+  /** A refusal a host told of since the last `changed()` (a print's carry). */
+  let told = false;
   /** A drag that meets tape: every taped object it would carry — the one it grabbed, and the selection it grabbed into — gives. */
   const meetTape = (rec: Entity): void => {
     const grabbed = world.getRelation(rec, Captures);
     if (grabbed === undefined || !world.isAlive(grabbed)) return;
-    const give = (e: Entity): void => { if (!world.hasTag(e, Locked)) return; clockOf(e).give = 0; live = true; };
     if (world.hasTag(grabbed, Selected)) {
       world.query(selectedQ).each((b) => { for (const r of b) give(b.entity(r)); });
     } else give(grabbed);
@@ -165,7 +175,8 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
       for (const rec of now) seenDrags.add(rec);
       const p = rect === null ? null : pointerScreen();
       const next = `${laserKey(guides, bars)}|${rect === null ? "" : `${rect.x},${rect.y},${rect.w},${rect.h},${m?.hits.length ?? 0},${p?.x ?? ""},${p?.y ?? ""}`}|${drags}|${cam?.gesturing === true ? 1 : 0}|${editing}`;
-      const any = next !== snapshot || met;
+      const any = next !== snapshot || met || told;
+      told = false;
       snapshot = next;
       return any;
     },
@@ -239,6 +250,11 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
       if (c === undefined || c.give < 0) return 0;
       const t = c.give;
       return Math.sin(t * MARKS.give.rate) * MARKS.give.px * (1 - (t * 1000) / C.give);
+    },
+    refused(e) {
+      if (!world.isAlive(e) || !world.hasTag(e, Locked)) return;
+      give(e);
+      told = true;
     },
     anchor: () => anchor,
     dispose() { clocks.clear(); seenDrags.clear(); },

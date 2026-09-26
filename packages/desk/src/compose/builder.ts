@@ -236,6 +236,11 @@ export interface DeskBuilder {
   reach(): number;
   /** The selection menu's anchor as of the last build: the marks' box around the selection on screen, whether a gesture is on (D4a). */
   anchor(): SelectionAnchor;
+  /**
+   * A drag a host refused on `e` outside core's move — a print's own carry (D3w): a taped object gives, as a core drag that
+   * meets the tape makes it give (D4a). The next `changed()` reports it.
+   */
+  meetTape(e: Entity): void;
   stats(): DeskBuilderStats;
   dispose(): void;
 }
@@ -852,6 +857,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     },
     reach: () => reach,
     anchor: () => marks.anchor(),
+    meetTape: (e) => marks.refused(e),
     stats: () => stats,
     dispose() {
       disposed = true;

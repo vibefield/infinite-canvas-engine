@@ -154,6 +154,38 @@ export async function kindsRig(t) {
   await settle();
   p = await entity(print);
   check(near(p.cx, 4000) && near(p.cy, 1500), `print: ONE ⌘Z undoes the carry and the glide together (${p.cx.toFixed(1)}, ${p.cy.toFixed(1)})`);
+  // the TAPE (D4a): ⇧⌘L tapes the print; a press-drag on it is refused with the tape's GIVE — a 2 px shiver that settles —
+  // its Position never moves (the carry does not take it, and tells the marks); ⇧⌘L lifts the tape and it carries again
+  await click(600, 400);
+  await settle();
+  await key("L", "KeyL", 76, META | SHIFT);
+  await sleep(100);   // the tape's transaction lands at the next sync
+  await settle();
+  const pTaped = await entity(print);
+  check(pTaped.locked && ((await marks())?.tape ?? []).length === 1, `print: ⇧⌘L tapes it (locked ${pTaped.locked}, its tape pressed down)`);
+  await q(`window.__desk.kinds.watch(${print})`);
+  await mouse("mouseMoved", 600, 400); await mouse("mousePressed", 600, 400);
+  const pGives = [];
+  for (let i = 1; i <= 8; i++) { await mouse("mouseMoved", 600 + 10 * i, 400); pGives.push((await entity(print)).geometry.centre[0] - 4000); await sleep(20); }
+  await release([680, 400]);
+  await settle();
+  await sleep(200);
+  const pAfter = await entity(print);
+  const pPeak = Math.max(...pGives.map(Math.abs));
+  check(near(pAfter.cx, 4000) && near(pAfter.cy, 1500) && pAfter.geometry.centre[0] === pAfter.cx && (await q("window.__desk.kinds.moves()")) === 0, `print: taped, the drag is refused — its Position never moved (${pAfter.cx.toFixed(1)}, ${pAfter.cy.toFixed(1)}), no transaction`);
+  check(pPeak > 0.5 && pPeak <= 2.2 + 1e-9, `print: with the tape's give — it shivered up to ${pPeak.toFixed(2)} px and settled (${pGives.map((g) => g.toFixed(1)).join(" ")})`);
+  await key("L", "KeyL", 76, META | SHIFT);
+  await sleep(100);
+  await settle();
+  check(!(await entity(print)).locked, "print: ⇧⌘L lifts the tape");
+  await q(`window.__desk.kinds.watch(${print})`);
+  await carry([600, 400], [540, 400], 6, 30, 250);
+  await release([540, 400]);
+  await settle();
+  p = await entity(print);
+  check(p.cx < 4000 - 30 && (await q("window.__desk.kinds.moves()")) === 1, `print: untaped, it carries again (${p.cx.toFixed(1)}, ${p.cy.toFixed(1)}), one transaction`);
+  await key("z", "KeyZ", 90, META);
+  await settle();
   await click(600, 400);
   await settle();
   const nPrint = (await entities()).length;
