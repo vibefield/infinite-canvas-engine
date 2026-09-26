@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes and D5a LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a and D4b LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1341,6 +1341,30 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   desk 418, apps/desk 12 units; ci exit 0; `gate:landing` exit 0 (re-run by the orchestrator). Owed: presence
   carries no nav frame (a peer inside a mini mat is drawn in this desk's frame); the ruler's 1× atlas row and the
   cost bench's "blowing" row.
+- **D4b — the opening: pick it up** (**LANDED 2026-09-26**, `26e289e` … `5ed5ca4`, six commits — five by a fable builder on
+  `881707e`, rebased by the orchestrator over D5a, plus THE SURFACE's one-line admission of `@ice/desk`): design-015 §8 as
+  *Marks on the Mat* v2 draws it — an object is picked up INTO THE HAND with no camera move and the desk behind goes out of
+  focus. Core: `Held` (a runtime tag; one writer, `ops.open` / `ops.putDown`; refused for a type that is not `openable`,
+  the object-only `defineWidget` word `defineObject` sets from `kind.open`), the user's `HeldView { zoom, panX, panY }`,
+  held input routed at the head of `react` (every local pointer handled while held — the camera never hears a held
+  gesture) through the pose seam `stack.heldPose`, desk.js's numbers for the held zoom (⌘-wheel / pinch 0.72…3 about the
+  pointer), pan and the zoom-out past 0.72× that puts it down and MUTES the rest of that gesture, the double-tap router
+  asking `open` before the container test, `HeldIntent` applied after the tick. The kind's `open` binding (`extent`,
+  `pose: "camera" | "eye"` — a flat kind's pose IS a camera mapping its extent to the held rect, the notebook rises under
+  the desk eye by H·(1 − 1/grow) —, `openness`, `spread` for a portrait phone's single page, `tools` DECLARED for D3t);
+  `hold/pose.ts` (the reading size, the pose in log scale, the camera, the frame, the focus) shared by the builder, the
+  oracle and the units. The render path (`renderHeldFrame`, shared with the oracle): the desk copied at half dpr and
+  dual-Kawase-blurred ONCE per settled desk, cross-faded by e with an 8 % dim, the hand drawn as its own bare slot through
+  the reading light by night — a composite-level override, the kinds' bytes untouched; e = 0 is the rest path.
+  `<SelectionMenu>` travels to the foot and becomes the held bar (Send · the kind's tools, dim until D3t · Done); ⏎ opens,
+  Esc puts down first, the desk's keys go quiet in hand; apps/desk walks its objects with Tab. Exit: seven `hold-*` oracle
+  stills (the rest frame at e = 0 byte for byte; the hand's reach bounded; identical twice) Chrome = Node and FROM THE
+  WORLD at maxΔ 0 (rig:parity 92 · 0 · 3 kept, rig:world 79 · 0 · 3 kept); `rig:open` 38/38 in `gate:landing` (the camera IDENTICAL after every open/put-down; idle-zero in hand —
+  0 submits in 600 ms; the copy + blur 0.28–0.39 ms once, 0 per still held frame; every way back incl. the muted zoom-out;
+  Tab → ⏎ → Esc with the selection back); core 971, desk 437, react 67 units; ci exit 0; `gate:landing` exit 0 (re-run by
+  the orchestrator on the rebased tip). Rulings D-D4b.1–.12 (in the code). Owed: a two-finger pinch in hand, the phone's
+  touch pan/zoom, a cancelled `HeldPress` read as a release, the Kawase σ calibration, the held frame's cost (the open
+  spread's — D6), and every tool (D3t).
 
 ## Release cut & downstream
 
