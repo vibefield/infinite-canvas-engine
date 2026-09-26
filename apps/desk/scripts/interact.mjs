@@ -187,16 +187,23 @@ try {
   await settle();
   const B0 = await entity(b);
 
-  // --- 10. a selection wears BRACKETS — the marks pass's — and the note draws no ring of its own
+  // --- 10. a selection wears BRACKETS — the marks pass's — and the note draws no ring of its own. The tap also puts the pen on the
+  //     note (D2c): while it is being written the menu steps aside and the brackets stay; Escape puts the pen down, the menu returns
   await click(B0.cx, B0.cy);
+  await settle();
+  await sleep(200);
+  const writing10 = await marks();
+  const menuWriting = await menuState();
+  check((await q("window.__desk.anchor()")).editing === true && (writing10?.objects ?? []).some((o) => o.style === "brackets" && o.alpha === 1) && menuWriting.away === "true", `while the note is being written the brackets stay on it and the menu steps aside (away ${menuWriting.away})`);
+  await key("Escape", "Escape", 27);
   await settle();
   const m10 = await marks();
   const br = m10?.objects ?? [];
   check(br.length === 1 && br[0].style === "brackets" && br[0].t === 1 && br[0].alpha === 1, `the selected note wears brackets, locked on (${br.map((o) => `${o.style} t ${o.t} α ${o.alpha}`).join(", ")})`);
   check((await entity(b)).geometry.ring === 0 && m10.union === null, "and no ring: its kind is handed 0 (the kinds' own ring retired)");
 
-  // --- 11. the menu: 10 px above the brackets, centred on them, in screen space
-  await sleep(300);
+  // --- 11. the menu: 10 px above the brackets, centred on them, in screen space (back 200 ms after the pen went down, 180 ms in)
+  await sleep(500);
   const anchor11 = await q("window.__desk.anchor()");
   const menu11 = await menuState();
   const cx11 = (anchor11.box.x0 + anchor11.box.x1) / 2;
@@ -274,6 +281,8 @@ try {
   const B15 = await entity(b);
   await click(B15.cx, B15.cy);
   await settle();   // the tap's selection lands on the next tick: the key must find it
+  await key("Escape", "Escape", 27);   // the tap put the pen on the note (D2c): put it down, or the keys are the editor's
+  await settle();
   await key("L", "KeyL", 76, META | SHIFT);
   await sleep(100);   // the tape's transaction lands at the next sync — a settle before it would find the desk quiet too early
   await settle();
@@ -296,6 +305,8 @@ try {
   check(!picked.includes(b) && picked.includes(A13.id), `the vellum passes over the tape: it gathered A, not B (${picked.length} selected)`);
   await deselect();
   await click(B15.cx, B15.cy);
+  await settle();
+  await key("Escape", "Escape", 27);
   await settle();
   await key("L", "KeyL", 76, META | SHIFT);
   await sleep(100);   // the tape's transaction lands at the next sync — a settle before it would find the desk quiet too early

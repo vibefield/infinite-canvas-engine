@@ -98,6 +98,12 @@ describe("<SelectionMenu>", () => {
     act(() => { vi.advanceTimersByTime(20); });
     expect(menu().dataset.away).toBe("false");
     expect(menu().style.opacity).toBe("1");
+    // a note being written steps it aside the same way, and back 200 ms after the pen is put down
+    source.set(anchorOf({ editing: true }));
+    expect(menu().dataset.away).toBe("true");
+    source.set(anchorOf({ editing: false }));
+    act(() => { vi.advanceTimersByTime(SELECTION_MENU.backMs + 10); });
+    expect(menu().dataset.away).toBe("false");
   });
 
   it("its acts run the engine's ops: Duplicate, Tape it down → Lift the tape (Duplicate gone for tape), Delete past a rule, colourless until armed", () => {
@@ -141,7 +147,7 @@ describe("<SelectionMenu>", () => {
     click(first);
     expect(sent).toEqual([3]);
     click(menu().querySelector('[data-act="more"]'));
-    const items = [...menu().querySelectorAll(".ice-sm-item")].map((i) => i.textContent);
+    const items = Array.from(menu().querySelectorAll(".ice-sm-item"), (i) => i.textContent);
     expect(items).toEqual(["Send 3 to agent⌘↩", "Duplicate⌘D", "Tape it down⇧⌘L", "Delete⌫"]);
     source.set(anchorOf({ count: 1 }));
     expect(menu().querySelector(".ice-sm-sheet")).toBeNull();   // a new selection closes More

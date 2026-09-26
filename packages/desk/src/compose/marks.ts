@@ -17,6 +17,7 @@ import {
   Captures,
   defineQuery,
   Drag,
+  Editing,
   GestureActive,
   GuideLine,
   LocalPointer,
@@ -56,6 +57,8 @@ export interface SelectionAnchor {
   readonly locked: boolean;
   /** A gesture is on (a drag, a vellum, a pan, a pinch): the menu steps aside. */
   readonly gesturing: boolean;
+  /** A note is being written (core's `Editing` — the one focused editor, D2c): the menu steps aside as for a gesture; the brackets stay. */
+  readonly editing: boolean;
   /** The view it was placed in, CSS px, and whether the rulers are printed (the menu flips below their band). */
   readonly view: { readonly width: number; readonly height: number };
   readonly rulers: { readonly margin: number; readonly band: number } | null;
@@ -92,8 +95,9 @@ const dragsQ = defineQuery([Drag, GestureActive]);
 const movesQ = defineQuery([Drag, GestureActive, RoutedMove]);
 const pointersQ = defineQuery([Pointer, LocalPointer, PointerScreen]);
 const selectedQ = defineQuery([Selected]);
+const editingQ = defineQuery([Editing]);
 
-const NO_ANCHOR: SelectionAnchor = { box: null, count: 0, locked: false, gesturing: false, view: { width: 0, height: 0 }, rulers: null };
+const NO_ANCHOR: SelectionAnchor = { box: null, count: 0, locked: false, gesturing: false, editing: false, view: { width: 0, height: 0 }, rulers: null };
 const step = (x: number, to: number, dt: number, ms: number): number => (to > x ? Math.min(to, x + (dt * 1000) / ms) : Math.max(to, x - (dt * 1000) / ms));
 
 export function createMarksCollector(world: World, opts: { readonly marquee?: () => MarqueeBuffer | undefined } = {}): MarksCollector {
@@ -150,6 +154,8 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
       const cam = world.getResource(Camera);
       let drags = 0;
       world.query(dragsQ).each((b) => { drags += b.count; });
+      let editing = 0;
+      world.query(editingQ).each((b) => { editing += b.count; });
       // a drag that has just started meets the tape it would carry
       const now = new Set<Entity>();
       world.query(movesQ).each((b) => { for (const r of b) now.add(b.entity(r)); });
@@ -158,7 +164,7 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
       seenDrags.clear();
       for (const rec of now) seenDrags.add(rec);
       const p = rect === null ? null : pointerScreen();
-      const next = `${laserKey(guides, bars)}|${rect === null ? "" : `${rect.x},${rect.y},${rect.w},${rect.h},${m?.hits.length ?? 0},${p?.x ?? ""},${p?.y ?? ""}`}|${drags}|${cam?.gesturing === true ? 1 : 0}`;
+      const next = `${laserKey(guides, bars)}|${rect === null ? "" : `${rect.x},${rect.y},${rect.w},${rect.h},${m?.hits.length ?? 0},${p?.x ?? ""},${p?.y ?? ""}`}|${drags}|${cam?.gesturing === true ? 1 : 0}|${editing}`;
       const any = next !== snapshot || met;
       snapshot = next;
       return any;
@@ -219,7 +225,12 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
       let drags = 0;
       world.query(dragsQ).each((b) => { drags += b.count; });
       const frames = objects.filter((o) => o.selected).map((o) => ({ ...o.frame, cx: (o.frame.cx - cam.x) * z, cy: (o.frame.cy - cam.y) * z, hx: o.frame.hx * z, hy: o.frame.hy * z, r: o.frame.r * z }));
-      anchor = { box: selectionBox(frames), count, locked: count > 0 && allTaped, gesturing: drags > 0 || marquee !== null || world.getResource(Camera)?.gesturing === true, view: { width: input.view.width, height: input.view.height }, rulers: input.rulers };
+      anchor = {
+        box: selectionBox(frames), count, locked: count > 0 && allTaped,
+        gesturing: drags > 0 || marquee !== null || world.getResource(Camera)?.gesturing === true,
+        editing: world.firstOf(editingQ) !== undefined,
+        view: { width: input.view.width, height: input.view.height }, rulers: input.rulers,
+      };
       return marks;
     },
     live: () => live,

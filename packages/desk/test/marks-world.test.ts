@@ -5,7 +5,7 @@
 // lock-on (180 ms) and its presence (120 ms in and out), several's union (220 ms / 120 ms), the tape pressed
 // (240 ms, the second strip 60 ms later) and lifted (160 ms), the vellum's fold (240 ms) from where it let go,
 // the laser's strike (160 ms) on a NEW alignment, the tape's give on a drag that meets it; the menu's anchor.
-import { Captures, createCanvasEngine, Drag, GestureActive, GuideLine, LocalPointer, type MarqueeBuffer, Pointer, PointerScreen, Position, Resizable, RoutedMove, Viewport } from "@ice/core";
+import { Captures, createCanvasEngine, Drag, Editing, GestureActive, GuideLine, LocalPointer, type MarqueeBuffer, Pointer, PointerScreen, Position, Resizable, RoutedMove, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
 import { DEFAULT_GRID } from "../src/mat/grid";
@@ -211,5 +211,17 @@ describe("the marks from the world (compose/marks.ts, through the builder)", () 
     builder.changed();
     settle();
     expect(builder.anchor().gesturing).toBe(false);
+    // a note being written (D2c's one focused editor, core's `Editing`): the menu steps aside — and the brackets stay on the note
+    ce.ops.setSelection([a]);
+    settle();
+    world.addTag(a, Editing);
+    expect(builder.changed()).toBe(true);
+    const writing = settle().marks;
+    expect(builder.anchor().editing).toBe(true);
+    expect(writing.objects.map((o) => [o.style, o.alpha])).toEqual([["brackets", 1]]);
+    world.removeTag(a, Editing);
+    expect(builder.changed()).toBe(true);
+    settle();
+    expect(builder.anchor().editing).toBe(false);
   });
 });

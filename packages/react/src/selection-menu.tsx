@@ -5,8 +5,8 @@
  * desk publishes (`source`, structurally the desk handle's `selection`: the marks' box around the
  * selection as DRAWN — the brackets 6 px out, the union 10 px out), 10 px above it, centred; it flips
  * below when it would cross the top ruler's band (or the view's top) and keeps 16 px from the sides.
- * It steps aside for any gesture (a drag, a vellum, a pan, a pinch) in 90 ms and comes back 200 ms
- * after the hand lets go (180 ms in). Its acts are an app-extensible list: ICE ships Duplicate (gone
+ * It steps aside for any gesture (a drag, a vellum, a pan, a pinch) — and while a note is being written
+ * (the one focused editor has the keys) — in 90 ms, and comes back 200 ms after (180 ms in). Its acts are an app-extensible list: ICE ships Duplicate (gone
  * when the selection is all tape — "a copy of a taped thing is not taped"), Tape it down / Lift the tape,
  * More (every act with its key), and Delete alone past a rule, colourless until the pointer arms it red;
  * an app adds its own (VibeField: Send to agent, first). The glyphs are DESIGN.md §13's drawings and the
@@ -31,6 +31,8 @@ export interface SelectionMenuAnchor {
   readonly locked: boolean;
   /** A gesture is on: the menu steps aside. */
   readonly gesturing: boolean;
+  /** A note is being written (the one focused editor): the menu steps aside as for a gesture. */
+  readonly editing?: boolean;
   readonly view: { readonly width: number; readonly height: number };
   /** The rulers printed along the top and left (their margin and band, CSS px), or null. */
   readonly rulers: { readonly margin: number; readonly band: number } | null;
@@ -164,7 +166,7 @@ export interface SelectionMenuProps {
 }
 
 interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean }
-const shownOf = (a: SelectionMenuAnchor): Shown => ({ count: a.count, locked: a.locked, visible: a.count > 0 && a.box !== null, gesturing: a.gesturing });
+const shownOf = (a: SelectionMenuAnchor): Shown => ({ count: a.count, locked: a.locked, visible: a.count > 0 && a.box !== null, gesturing: a.gesturing || a.editing === true });
 const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing;
 
 export function SelectionMenu({ source, actions, engine: given }: SelectionMenuProps): ReactElement | null {
