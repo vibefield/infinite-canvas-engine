@@ -1079,7 +1079,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — D3t-a, D3t-b and D3t-c LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — D3t-a, D3t-b, D3t-c and D6 LANDED 2026-09-26; D7's review done, its fix wave in build)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1456,6 +1456,22 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   `gate:landing` exit 0 (re-run by the orchestrator). Rulings D-D3t-c.1–.6. Owed: the committed print follows the local
   time zone (the live-print leg reds elsewhere — pin the zone); D4a's menu clamps over a selected pad's foot at 0.42 (a
   product call); `t`/`p` are tool keys before "just typing" can start a line; a double-click inside a run writes one day.
+- **D6 — performance** (**LANDED 2026-09-26**, `2a248fc` … `93eca2c`, five commits: the instruments by a fable builder that
+  died at its context limit with steps 2–5 uncommitted, frozen by the orchestrator, finished by a fable finisher): the
+  per-entity-work counter and `rig:stress` (1,002 mixed objects) FIRST, with the prototype-form BEFORE table; then PERSISTENT
+  RECORDS per design-015 §4.3 (`engine/records.ts`: a slot allocator, change-only writes by object identity, an index-buffer
+  draw list re-sorted only on order — the builder REUSES a row unless its facts, flux, look/theme/grid or its slot's zoom (a
+  `rezoom` kind) moved); the CULL through the spatial index with hysteresis; the retired ring SPRING removed (it had kept the
+  desk live 667 ms after every selection); one RASTER BUDGET (an LRU ledger, 192 MB) over the board inks (evicted to their
+  strokes, replayed on return), the notebook's pages and the calendar's tiles; a board's ink wakes only while drawn. Exit
+  (medians over 7 rounds, load recorded): a PAN over 1,002 objects queries and sorts 0 of them, visits 211, writes 0.38
+  records a frame (the entrants), 1.07 ms JS (was 1.38) and 3.25 ms JS + GPU; a drag of 50 3.14 ms; one raster per edit; the
+  pick-up's blur 0.67 ms once and 0 per held frame; idle 0 submits — the counters' gates asserted by `rig:stress` in
+  `gate:landing` (a 3-round leg); the oracle's 101 renders SHA-EQUAL to main's own; ci exit 0 (desk 545); `gate:landing` exit 0
+  (re-run by the orchestrator). NOT MET, with its numbers: idle main-thread 2.07 ms/s against §11.4's ≤ 0.1 — the kinds'
+  POLLED `tick(now)` and the followers run each tick; meeting it needs REGISTERED WAKES (a kind says when it is next live) — a
+  design change, owed. Also owed: composites remade every drawn build, `rezoom` on any zoom delta (a quantised band), a
+  restless kind remaking its whole kind on an edit, a live eviction → replay witness.
 
 ## Release cut & downstream
 
