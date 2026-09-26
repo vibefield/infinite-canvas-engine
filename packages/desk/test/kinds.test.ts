@@ -238,7 +238,8 @@ describe("the registry: the root slot, the pool", () => {
 
   it("the composition root names no kind: ground.ts imports the engine, the mat, the portal and the kind CONTRACT — no object's pass", () => {
     const src = readFileSync(new URL("../src/ground.ts", import.meta.url), "utf8");
-    const from = [...src.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
+    // every specifier: `from "…"`, a bare `import "…"`, a dynamic `import("…")`
+    const from = [...src.matchAll(/\b(?:from|import)\s*\(?\s*"([^"]+)"/g)].map((m) => m[1]);
     expect(from).toContain("./kind");
     expect(from).toContain("./mat/mat-pass");
     for (const f of from) expect(f).not.toMatch(/(^|\/)(paper|minimat|board|book|notebook|calendar|photo|kinds)(\/|$)/);
