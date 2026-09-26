@@ -131,6 +131,26 @@ export interface DeskBuilderOptions {
   readonly marquee?: () => MarqueeBuffer | undefined;
 }
 
+/**
+ * The builder's PER-ENTITY WORK in a build — the O(1)-pan witness (design-015 §2.5, §11.4: "no per-entity work — a counter
+ * proves it"; D6). A camera move over a settled desk must leave every count at 0 but the cull's `visited`, which is the
+ * spatial index's answer, never the desk's population.
+ */
+export interface BuildWork {
+  /** Entities the membership query yielded (the frame's objects walked). */
+  readonly queried: number;
+  /** Members the cull walked, every slot. */
+  readonly visited: number;
+  /** Members sorted into paint order (0 = the last order stood). */
+  readonly sorted: number;
+  /** A kind's `resolve` — every slot's rows, the chips, the ghosts, the hand and its riders. */
+  readonly resolved: number;
+  /** A kind's `record`. */
+  readonly recorded: number;
+}
+type MutableWork = { -readonly [K in keyof BuildWork]: number };
+const ZERO_WORK: BuildWork = { queried: 0, visited: 0, sorted: 0, resolved: 0, recorded: 0 };
+
 export interface DeskBuilderStats {
   /** Objects Active in the frame this build saw. */
   readonly active: number;
@@ -144,6 +164,10 @@ export interface DeskBuilderStats {
   readonly portals: number;
   /** True after a build while any spring or ghost is still moving, or a re-dressing ramp runs. */
   readonly live: boolean;
+  /** This build's per-entity work (D6). */
+  readonly work: BuildWork;
+  /** The work of every build since the builder was made — a rig diffs two readings. */
+  readonly totals: BuildWork;
 }
 
 /** What can dirty the builder: a journaled world write, a despawn, a document reset, the sibling order, the hover target, the marks' own facts (the snap's chrome, the vellum, a drag meeting tape, the gestures — D4a). */
@@ -346,7 +370,7 @@ interface SlotBuild {
   readonly culled: number;
 }
 
-const EMPTY_STATS: DeskBuilderStats = { active: 0, objects: 0, culled: 0, ghosts: 0, portals: 0, live: false };
+const EMPTY_STATS: DeskBuilderStats = { active: 0, objects: 0, culled: 0, ghosts: 0, portals: 0, live: false, work: ZERO_WORK, totals: ZERO_WORK };
 const GHOST_MS = 220;
 const MARGIN_PX = 200;
 const REDRESS_MS = 320;
@@ -399,6 +423,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const kids = new Map<Entity, { stamp: number; list: Entity[] }>();
   const wakes = Object.fromEntries(WAKE_REASONS.map((r) => [r, 0])) as Record<DeskWakeReason, number>;
   let stats: DeskBuilderStats = EMPTY_STATS;
+  /** This build's work and every build's (D6) — counted at the call sites, snapshotted into `stats`. */
+  const work: MutableWork = { ...ZERO_WORK };
+  const totals: MutableWork = { ...ZERO_WORK };
   let disposed = false;
   let seq = 0;
   let dirtyAll = true;
@@ -606,6 +633,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     build(cam, vp, dt0, theme, grid, looks, bopts = {}) {
       if (disposed) return { objects: [], portals: [], grid, marks: marks.frame({ rows: [], cam, view: vp, dt: 0, night: false, rulers: null }), stats: EMPTY_STATS };
       seq += 1;
+      work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0;
       lastGrid = grid;
       lastLooks = looks;
       lastTheme = theme;
@@ -679,6 +707,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const cst = stateOf(c);
             if (cst === undefined || cst.kind.chip === undefined) continue;
             const cctx = contextOf(c, cst, insideView, insideGrid, insideLamp, false);
+            work.resolved += 1;
             const chip = cst.kind.chip(cst.kind.resolve(cctx), cctx);
             if (chip !== null) chips.push(chip);
           }
@@ -704,6 +733,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         let culled = 0;
         for (let i = 0; i < members.length; i++) {
           const e = members[i] as Entity;
+          work.visited += 1;
           const st = stateOf(e);
           if (st === undefined) continue;
           st.seen = seq;
@@ -722,8 +752,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
           // the root's and the departed desk's objects run their springs; an inside's members lie at rest
           const ctx = contextOf(e, st, view, slotGrid, slotLamp, slot !== "inside", drawn);
+          work.resolved += 1;
           const G = st.kind.resolve(ctx);
           const inside = insideOf(e, st, G, ctx, slotCam, slotGrid);
+          work.recorded += 1;
           const R = st.kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
           st.geometry = G;
           st.record = R;
@@ -828,6 +860,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const props = typeof hst.props.angle === "number" ? { ...hst.props, angle: pose.angle } : hst.props;
             const snap = pin !== undefined || bopts.freeze === true;
             const hctx: ObjectContext = { ...base, props, held: { e: hand.e, open: openTarget, grow, snap } };
+            work.resolved += 1; work.recorded += 1;
             const G = hst.kind.resolve(hctx);
             const R = hst.kind.record(G, hctx);
             hst.geometry = G;
@@ -847,6 +880,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
               const rst = veiledNow.has(rider) ? undefined : stateOf(rider);
               if (rst === undefined) continue;
               const rctx = contextOf(rider, rst, heldView, heldGrid, lampOf(heldGrid.mat.plane), false);
+              work.resolved += 1; work.recorded += 1;
               riders.push({ kind: rst.kind.name, record: rst.kind.record(rst.kind.resolve(rctx), rctx) });
               handRiders.add(rider);
             }
@@ -866,6 +900,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       world.query(membersQ).each((b) => {
         for (const r of b) {
           const e = b.entity(r);
+          work.queried += 1;
           const st = stateOf(e);
           if (st === undefined) continue;
           const lifted = !st.grabbed && locals?.get(st.kind.name)?.lifted?.(e) === true;
@@ -875,7 +910,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       });
       liftedList = liftedNow;
       dirtyAll = false;
-      for (const t of tiers) t.sort((a, b) => compareStackOrder(reader, ordinals, a, b));
+      for (const t of tiers) { work.sorted += t.length; t.sort((a, b) => compareStackOrder(reader, ordinals, a, b)); }
       const list = [...tiers[0], ...tiers[1]];
       // the root slot: the current frame's desk under the camera
       const root = buildSlot(list, cam, frameGrid, "root", 0, undefined, redressOut);
@@ -891,6 +926,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         deskMoving = true;
         const local = locals?.get(g.kind.name);
         const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, ring: 0, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp: rootLamp, view: rootView, grid: frameGrid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
+        work.resolved += 1; work.recorded += 1;
         const G = g.kind.resolve(ctx);
         const row: Row = { entity: undefined, kind: g.kind.name, record: g.kind.record(G, ctx), band: g.band };
         let at = g.next === undefined ? -1 : rows.findIndex((q) => q.entity === g.next);
@@ -970,7 +1006,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       if (deskMoving || deskWasMoving) { deskSeq += 1; if (heldBuild !== undefined) heldBuild = { ...heldBuild, deskSeq }; }
       deskWasMoving = deskMoving;
       lastHand = heldBuild;
-      stats = { active: list.length, objects: objects.length, culled: root.culled, ghosts: ghosts.size, portals: portalsCount, live };
+      totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded;
+      stats = { active: list.length, objects: objects.length, culled: root.culled, ghosts: ghosts.size, portals: portalsCount, live, work: { ...work }, totals: { ...totals } };
       return {
         objects,
         portals: root.portals,

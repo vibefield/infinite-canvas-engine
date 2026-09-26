@@ -7,7 +7,7 @@
 // writes what an op would not.
 
 import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, HeldView, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
-import type { GroundFrameInputs } from "@ice/desk";
+import type { BuildWork, DeskLayerPerf, GroundFrameInputs, UploadTally } from "@ice/desk";
 import type { DeskLayerHandle, MatPin } from "@ice/desk";
 import type { AmbientMode } from "@ice/desk";
 import type { ThemeName } from "@ice/desk";
@@ -128,6 +128,35 @@ export interface DeskApi {
    * and the CPU µs of recording one. Needs something in hand for `copy` and `hand` (null otherwise). Leaves the frame as it was.
    */
   holdCost(n: number): Promise<{ readonly copy: { ms: number; cpu: number } | null; readonly hand: { ms: number; cpu: number } | null; readonly rest: { ms: number; cpu: number } }>;
+  /** The performance instruments (D6 — design-015 §11.4's gates, read by rig:stress). */
+  readonly perf: PerfApi;
+}
+
+/** One reading of every counter rig:stress diffs (D6): cumulative since the mount unless said otherwise. */
+export interface PerfReading {
+  /** Every `engine.step` since `arm()`: its ms, in order — drained by `take`. */
+  readonly steps: number[];
+  /** The layer's own flushes and their ms (`DeskLayerHandle.perf`). */
+  readonly flush: DeskLayerPerf;
+  /** The queue's uploads by resource label prefix (`paper`, `minimat`, `board`, `mat`, `marks` …) and its submits. */
+  readonly uploads: Readonly<Record<string, UploadTally>>;
+  readonly submits: number;
+  /** The builder's work over every build. */
+  readonly totals: BuildWork;
+  /** The last build's work. */
+  readonly work: BuildWork;
+  readonly redraws: number;
+}
+
+export interface PerfApi {
+  /** Wrap the engine's `step` once so every step is timed; idempotent. */
+  arm(): void;
+  /** A reading of every counter; the step samples since the last take are drained. */
+  take(): PerfReading;
+  /** Chrome's `performance.memory.usedJSHeapSize` (precise under `--enable-precise-memory-info`), or null where absent. */
+  heap(): number | null;
+  /** V8's `gc()` when Chrome exposes it (`--js-flags=--expose-gc`); false when it does not. */
+  gc(): boolean;
 }
 
 declare global {
@@ -174,10 +203,41 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       flux: handle.fluxOf(e) ?? null, geometry: handle.geometryOf(e) ?? null,
     };
   };
+  // THE PERF DOOR (D6): the engine's `step` timed from outside — the loop calls `engine.step(now)` through the property, so a wrapper
+  // installed here sees every step the rAF loop makes, the desk's flush among them
+  let stepSamples: number[] = [];
+  let armed = false;
+  const perf: PerfApi = {
+    arm() {
+      if (armed) return;
+      armed = true;
+      const eng = engine.engine as { step(now: number): void };
+      const step = eng.step.bind(eng);
+      eng.step = (now: number): void => { const t0 = performance.now(); step(now); stepSamples.push(performance.now() - t0); };
+    },
+    take() {
+      const steps = stepSamples;
+      stepSamples = [];
+      const s = handle.submits();
+      const st = handle.stats();
+      return { steps, flush: handle.perf(), uploads: s?.uploadsByLabel() ?? {}, submits: s?.total() ?? 0, totals: st.totals, work: st.work, redraws: handle.redraws() };
+    },
+    heap() {
+      const m = (performance as { memory?: { usedJSHeapSize?: number } }).memory;
+      return typeof m?.usedJSHeapSize === "number" ? m.usedJSHeapSize : null;
+    },
+    gc() {
+      const g = (globalThis as { gc?: () => void }).gc;
+      if (typeof g !== "function") return false;
+      g();
+      return true;
+    },
+  };
   const api: DeskApi = {
     engine,
     handle,
     state,
+    perf,
     note: noteApi(engine, handle),
     kinds: kindsApi(engine, handle),
     notebook: notebookApi(engine, handle),

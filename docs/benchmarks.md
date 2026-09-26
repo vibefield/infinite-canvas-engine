@@ -20,6 +20,36 @@ file is its recorded output.
 > re-measures them. The M3 baseline (reactivity tax, O(1) pan, churn budget) is re-measured on
 > `apps/desk`'s stress rig at D6 (design-015 §11.6).
 
+## design-015 D6 — the desk's stress rig: 1,000 mixed objects (2026-09-26)
+
+`pnpm --filter ./apps/desk rig:stress` (`apps/desk/scripts/stress.mjs`): one scene of 1,002 root objects on a golden
+spiral over a 7,200-unit field — 725 notes (every third written), 100 mini mats each with two notes inside, 150 prints,
+25 whiteboards with strokes, a notebook, a desk calendar — in a 1200 × 800 view at dpr 2 (85 objects drawn at zoom 1),
+headless Chrome, medians over 7 rounds with the host's 1-minute load average beside each row (this Mac is loaded; a
+number without its load is folklore). The instruments are the desk's own: the engine's `step` timed from outside
+(`__desk.perf`), the layer's flush time, the builder's per-entity work counters (`stats().work` — resolved, recorded,
+visited, queried, sorted per frame), the queue instrument's uploads by label, V8's heap between a `gc()` and the last
+frame, the writing's raster count, the hand's copy count and `holdCost`. The fps gates are stated against THE MACHINE'S
+REFRESH — headless Chrome's rAF runs at 60 Hz whatever the display — so "120 fps" is a frame budget: JS ≤ 2 ms and
+JS + GPU ≤ 8.33 ms (the drag's 110 fps: ≤ 9.09 ms).
+
+### BEFORE — the prototype's per-frame form (main `f7db939` + the instruments; load 4.9–6.6)
+
+| scenario | headline | detail |
+|---|---|---|
+| idle (240 frames) | 0 submits | main thread 2.20 ms/s the desk's flush · 8.93 ms/s the whole engine step (a step 140–160 µs at 60 Hz) |
+| pan (120 frames, 8 px/frame) | 1.38 ms JS/frame · 2.23 ms GPU (saturated) | every frame: 118 resolves, 99 records, 1,021 visited, 1,002 queried, 1,002 sorted · 56.3 KB uploaded (paper 17.9 · minimat 12.2 · photo 9.2 · board 8.5 · mat 5.7 · notebook 1.5 · calendar 1.2) · heap +210 KB |
+| zoom (120 frames, ×1.005/frame) | 1.38 ms JS/frame | 83 resolves, 68 records, 1,017 visited, 1,002 sorted · 45.8 KB uploaded · heap +193 KB |
+| drag of 50 selected (60 moves) | 3.36 ms JS/frame (max frames' median 5.24) | 60 steps/s; all 50 carried with the mouse |
+| edit (a character into a written note) | 1 raster drawn | 99 records made in that frame (every visible object) |
+| hold (the notebook picked up) | blur 0.67 ms once | 0 desk copies over 60 held frames · a held frame 2.91 ms, the rest frame 2.57 ms, a copy 3.58 ms |
+
+The §11.4 gates at the baseline: idle 0 submits ✓ but the desk's flush 2.2 ms/s against ≤ 0.1 ms/s ✗ (and the engine's
+whole tick 8.9 ms/s — core's, not the desk's); pan JS ≤ 2 ms ✓ and JS + GPU 3.6 ms ≤ 8.33 ✓, but NOT per-entity-free
+(118 resolves a frame — every visible object, every frame; all 1,002 visited and sorted) ✗ and allocation 210 KB against
+≤ 64 KB ✗; drag ≤ 9.09 ms ✓; a note edit re-rasters one note ✓ (and records 99 — the whole visible set); the blur once
+≤ 1.5 ms ✓, 0 per held frame ✓.
+
 ## design-013 B5 — island parity under composited (2026-09-07)
 
 > *Historical* — measured on the GL islands and `widgetlab-desktop`'s `islands` rig, deleted at D5b.

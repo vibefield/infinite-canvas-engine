@@ -150,6 +150,18 @@ export interface SelectionSource {
 /** A note's writing as a still states it for the far LOD (kinds/paper.ts `PaperWriting`): the text's left edge, its em, each line's baseline and width, note units. */
 export type GreekPin = PaperWriting;
 
+/**
+ * The desk's MAIN-THREAD time (D6): every flush of the layer's reflector — the kinds' ticks, the pull, the build and the
+ * render when a frame is due — counted and timed since the mount; `frames` are the flushes that drew, `frameMs` their share.
+ * At rest a tick that draws nothing must cost next to nothing (design-015 §11.4: ≤ 0.1 ms of main thread per second).
+ */
+export interface DeskLayerPerf {
+  readonly ticks: number;
+  readonly ms: number;
+  readonly frames: number;
+  readonly frameMs: number;
+}
+
 export interface DeskLayerHandle {
   /** The drawing reflector — the facade registers it right after the plane transform, where the ground layer has always gone. */
   readonly reflector: ReflectorDef & { available(): boolean };
@@ -220,6 +232,8 @@ export interface DeskLayerHandle {
   ambient(): Ambient;
   /** The submit instrument on the layer's device (installed before anything submits); undefined before the device. */
   submits(): SubmitInstrument | undefined;
+  /** The layer's own main-thread time since the mount (D6, design-015 §11.4's idle gate): a rig diffs two readings. */
+  perf(): DeskLayerPerf;
   redraws(): number;
   stats(): DeskReflectorStats;
   wakes(): DeskWakes;
@@ -406,11 +420,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
+    const perf = { ticks: 0, ms: 0, frames: 0, frameMs: 0 };
     const inner = compose.reflector;
     const reflector: ReflectorDef & { available(): boolean } = {
       ...inner,
       flush(w) {
         const now = performance.now();
+        const drawn = compose.redraws();
         carry?.follow(now);
         pen?.follow(now);
         leaf?.follow(now);
@@ -421,6 +437,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         moving = want;   // D3w: a kind's own motion (a print in the air) keeps the desk from reading quiet between its frames
         inner.flush(w);
         editor?.follow();
+        // the desk's own main-thread time (D6): this flush, and whether it drew
+        const spent = performance.now() - now;
+        perf.ticks += 1; perf.ms += spent;
+        if (compose.redraws() !== drawn) { perf.frames += 1; perf.frameMs += spent; }
       },
     };
 
@@ -550,6 +570,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       setAmbient(mode, idleMs) { ambient.configure({ mode, ...(idleMs !== undefined ? { idleMs } : {}) }); compose.wake("ambient"); },
       ambient: () => ambient,
       submits: () => instrument,
+      perf: () => ({ ...perf }),
       redraws: () => compose.redraws(),
       stats: () => compose.stats(),
       wakes: () => compose.wakes(),

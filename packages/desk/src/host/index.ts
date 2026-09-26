@@ -2,7 +2,7 @@
 // the swap chain over a canvas, and the desk LAYER a host mounts (`deskLayer`, D2a-world: the
 // canvas in the ground slot, the device, the reflector and the pick source over the world).
 // Everything else under src/ is DOM-free, so the Node oracle imports it whole; a test greps.
-export { deskLayer, type DeskLayerContext, type DeskLayerFactory, type DeskLayerHandle, type DeskLayerOptions, type DeskLayerStatus, type MatPin, type SelectionSource } from "./layer";
+export { deskLayer, type DeskLayerContext, type DeskLayerFactory, type DeskLayerHandle, type DeskLayerOptions, type DeskLayerPerf, type DeskLayerStatus, type MatPin, type SelectionSource } from "./layer";
 export type { SelectionAnchor } from "../compose/marks";
 export { surface, type Surface } from "./surface";
 // the text raster a browser hands the paper kind (D2c): the faces by URL, Canvas2D ink on an OffscreenCanvas
