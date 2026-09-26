@@ -4,17 +4,16 @@
 // hello/snapshot handshake, presence on the same socket), each with a pinned identity (`?name=`/`?color=`). The checks:
 // both joined over the relay (the relay saw both sockets in the room; a desk that ignored `?relay=` would still converge
 // over the same-origin BroadcastChannel — the socket count is what tells them apart); an ADD in A reaches B;
-// a real DRAG in A lands in B where A let go; a DELETE in A leaves B; and each tab DRAWS THE OTHER'S HAND (D-D5a.1) — A's
-// pointer on A's desk is Alice's violet arrow on B's, at the same point with her name, and B's pointer Bob's on A's —
-// read from the marks the frame drew and from the frame itself: the pixel under the arrow's body is the peer's ink, byte
-// for byte; and what A holds selected wears A's brackets on B's desk at 50 %. Objects cross by their durable KEY
-// (`__desk.room`). Exit 0 = passed.
+// a real DRAG in A lands in B where A let go; a DELETE in A leaves B; and each tab SHOWS THE OTHER'S CURSOR — dom's
+// remote-cursors reflector (design-015 §1/§3 keep `@ice/dom`'s screen-space half; `<InfiniteCanvas>` mounts it, `chrome={false}`
+// or not): the peer's world point (its own pointer, read in its own tab) mapped through THIS tab's camera, screen px to 0.5 —
+// and again after this tab pans and zooms — with the peer's name on its chip, the chip painted over the desk in the peer's
+// colour (the screenshot's pixel). Objects cross by their durable KEY (`__desk.room`). Exit 0 = passed.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:collab
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { MARKS } from "../../../packages/desk/src/theme.ts";
 import { launchChrome, openTab } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
 
@@ -57,8 +56,9 @@ const byteOf = (css) => { const v = Number.parseInt(css.slice(1), 16); return [(
 
 try {
   const room = `d5a-${process.pid}-${Date.now()}`;
-  const ALICE = { name: "Alice", color: MARKS.hand.inks[0] };
-  const BOB = { name: "Bob", color: MARKS.hand.inks[2] };
+  // two of the presence palette's inks (the product fixture's `PRESENCE_INKS`: violet, red)
+  const ALICE = { name: "Alice", color: "#8e4ec6" };
+  const BOB = { name: "Bob", color: "#e5484d" };
   const urlOf = (who) => `http://127.0.0.1:${PORT}/apps/desk/dist/index.html?room=${room}&relay=${encodeURIComponent(`ws://127.0.0.1:${RELAY_PORT}`)}&name=${who.name}&color=${encodeURIComponent(who.color)}`;
   const logs = [];
   const open = async (name, who) => {
@@ -105,35 +105,43 @@ try {
   const movedB = await until(async () => { const e = await B.q(`window.__desk.entity(${bn})`); return e !== null && e.x === moved.x && e.y === moved.y ? e : null; }, 8000);
   check(moved.x > n0.x && movedB !== null, `a MOVE in A — a real drag — lands in B where A let go: (${moved.x}, ${moved.y}) in A, (${movedB?.x}, ${movedB?.y}) in B`);
 
-  // ---- each tab DRAWS the other's hand: A's pointer on A's desk is Alice's arrow on B's, with her name; A's selection on B at 50 %
+  // ---- each tab SHOWS the other's cursor at the peer's world point through THIS tab's camera — before and after a pan
+  /** The cursor a tab shows for a peer's name (dom's reflector: a root div translated to the screen point, a name chip in the peer's colour). */
+  const cursorOf = (T, name) => T.q(`(() => {
+    for (const chip of document.querySelectorAll('div')) {
+      if (chip.children.length !== 0 || chip.textContent !== ${JSON.stringify(name)}) continue;
+      const m = /translate\\(([-\\d.e]+)px, ([-\\d.e]+)px\\)/.exec(chip.parentElement?.style.transform ?? '');
+      if (m === null) continue;
+      const r = chip.getBoundingClientRect();
+      return { x: Number(m[1]), y: Number(m[2]), shown: getComputedStyle(chip).display !== 'none' && r.width > 0, chip: { x: r.left + 3, y: r.top + r.height / 2 } };
+    }
+    return null; })()`);
+  const pixel = async (T, x, y) => { const png = decodePng(Buffer.from((await T.tab.send("Page.captureScreenshot", { format: "png" })).data, "base64")); const o = (Math.floor(y * 2) * png.width + Math.floor(x * 2)) * 4; return [png.rgba[o], png.rgba[o + 1], png.rgba[o + 2]]; };
+  /** Tab `T` shows `peer`'s cursor where `peerTab`'s pointer is, through T's own camera (to 0.5 px), its chip in the peer's colour. */
+  const shows = async (T, peerTab, peer, label) => {
+    await front(T);
+    const w = await peerTab.q("window.__desk.pointer()");
+    const cam = await T.q("window.__desk.camera()");
+    const want = { x: (w.x - cam.x) * cam.zoom, y: (w.y - cam.y) * cam.zoom };
+    const c = await until(async () => { const c = await cursorOf(T, peer.name); return c !== null && Math.abs(c.x - want.x) <= 0.5 && Math.abs(c.y - want.y) <= 0.5 ? c : null; }, 8000);
+    const seen = c ?? (await cursorOf(T, peer.name));
+    const ink = seen === null ? null : await pixel(T, seen.chip.x, seen.chip.y);
+    check(c?.shown === true && ink !== null && ink.join() === byteOf(peer.color).join(), `${T.name} SHOWS ${peer.name}'s cursor ${label}: ${peer.name}'s world point (${w.x}, ${w.y}) through ${T.name}'s camera (${cam.x}, ${cam.y}, ×${cam.zoom}) = (${want.x.toFixed(2)}, ${want.y.toFixed(2)}) — shown at (${seen?.x}, ${seen?.y}); the chip painted over the desk in ${peer.name}'s colour (${ink} = ${byteOf(peer.color)})`);
+  };
   await front(A);
   await mouse(A, "mouseMoved", 820, 520);
-  await A.q(`window.__desk.engine.ops.setSelection([${n}], "replace")`);
   await front(A);
-  await sleep(300);
-  await front(B);
-  const handsOf = async (T) => (await T.q("window.__desk.marks()?.peers ?? null")) ?? { hands: [], selections: [] };
-  const seenB = await until(async () => { const p = await handsOf(B); return p.hands.find((h) => h.x === 820 && h.y === 520) ? p : null; }, 8000);
-  const handB = seenB?.hands.find((h) => h.x === 820 && h.y === 520);
-  const inkA = byteOf(ALICE.color);
-  const inkB = byteOf(BOB.color);
-  const pixel = async (T, x, y) => { await front(T); const png = decodePng(Buffer.from((await T.tab.send("Page.captureScreenshot", { format: "png" })).data, "base64")); const o = (Math.floor(y * 2) * png.width + Math.floor(x * 2)) * 4; return [png.rgba[o], png.rgba[o + 1], png.rgba[o + 2]]; };
-  // the arrow's body: 2.5 in from its tip's corner along the path (theme MARKS.hand.path: (4, 9) of the 16 × 20 box, the tip at (1.5, 1.5))
-  const body = (h) => [h.x - MARKS.hand.path[0][0] + 4, h.y - MARKS.hand.path[0][1] + 9];
-  const onB = handB === undefined ? null : await pixel(B, ...body(handB));
-  const theirSel = seenB?.selections ?? [];
-  check(handB !== undefined && handB.name === "Alice" && onB !== null && onB.join() === inkA.join(), `B DRAWS A's hand: Alice's arrow where A's pointer is (${handB?.x}, ${handB?.y}), her name in the flag — the pixel under its body is her ink (${onB} = ${inkA})`);
-  check(theirSel.length === 1 && Math.abs(theirSel[0].frame.cx - (moved.x + moved.w / 2)) < 1e-6, `what A holds selected wears A's brackets on B's desk (${theirSel.length} selection at centre x ${theirSel[0]?.frame.cx}) — at ${MARKS.hand.selection * 100} %`);
-  // and the other way: B's pointer on B's desk is Bob's arrow on A's
+  await shows(B, A, ALICE, "at rest");
+  await B.q("window.__desk.setCamera({ x: 400, y: 300, zoom: 1.25 })");
+  await shows(B, A, ALICE, "after B pans and zooms");
+  await B.q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");   // B's own pointer in B's unpanned world: (260, 620)
   await front(B);
   await mouse(B, "mouseMoved", 260, 620);
   await front(B);
-  await sleep(300);
-  await front(A);
-  const seenA = await until(async () => { const p = await handsOf(A); return p.hands.find((h) => h.x === 260 && h.y === 620) ? p : null; }, 8000);
-  const handA = seenA?.hands.find((h) => h.x === 260 && h.y === 620);
-  const onA = handA === undefined ? null : await pixel(A, ...body(handA));
-  check(handA !== undefined && handA.name === "Bob" && onA !== null && onA.join() === inkB.join(), `A DRAWS B's hand: Bob's arrow where B's pointer is (${handA?.x}, ${handA?.y}) — the pixel under its body is his ink (${onA} = ${inkB})`);
+  await shows(A, B, BOB, "at rest");
+  await A.q("window.__desk.setCamera({ x: -120, y: 90, zoom: 0.8 })");
+  await shows(A, B, BOB, "after A pans and zooms");
+  for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
 
   // ---- a DELETE in A leaves B
   await front(A);
