@@ -11,8 +11,8 @@
 // deselects. D4a (*Marks on the Mat*, the desk's chrome on the GPU): a selection wears BRACKETS (the marks pass) and its
 // note no ring; the screen-space selection menu stands 10 px above them and steps aside during a drag, back 200 ms after;
 // a snap lights the laser along the aligned edge; the vellum draws, touches, then folds onto the union; a taped note refuses
-// a drag with a 2 px give (its Position never moves) and the vellum passes over it; ⌘⇧L tapes and lifts. Exit 0 = every
-// check passed.
+// a drag with a 2 px give (its Position never moves) and the vellum passes over it; ⌘⇧L tapes and lifts; inside a mini mat
+// entered by a double-click, a selected note's brackets stand where the entered camera draws it. Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -352,6 +352,45 @@ try {
   const t2 = (await entity(m)).props.vinyl;
   check((await entity(m)).selected && t0 === "sage" && t1 === "slate" && t2 === "charcoal", `t: ${t0} → ${t1} → ${t2}`);
   await click(100, 700);   // deselect
+
+  // --- 8d. INSIDE an entered mini mat (D4a over D2b): a real double-click on the mat's face flies into it; a tap on the note inside
+  //     (B, dropped in at 8b) selects it, and its BRACKETS stand where the ENTERED camera draws it — the marks are the root slot's,
+  //     and once entered the root slot IS the mat's inside, its members under the entered camera; the menu's anchor goes with them.
+  //     Then back out: Escape puts the pen down, a second leaves the frame.
+  const dbl = async (x, y) => { for (const [type, clickCount] of [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]]) { await tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount }); await sleep(16); } };
+  const land = async () => { for (let w = 0; w < 4000; w += 50) { await sleep(50); if (!(await q("window.__desk.flight()"))) return true; } return false; };
+  await sleep(250);   // clear of the deselect's tap window
+  await mouse("mouseMoved", 400, 700);
+  await dbl(400, 700);   // the mat's face, clear of the note kept over it (8b) and of B's chip
+  await sleep(40);
+  const flight8 = await q("window.__desk.flight()");
+  await land();
+  await settle();
+  // the entered camera off its 1:1 arrival by a real wheel (in, about a point off the note), so the witness sees its zoom too
+  await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 500, y: 330, deltaX: 0, deltaY: -240 });
+  await sleep(250);
+  await settle();
+  const camIn = await q("window.__desk.camera()");
+  const Bin = await entity(b);
+  await click((Bin.cx - camIn.x) * camIn.zoom, (Bin.cy - camIn.y) * camIn.zoom);
+  await settle();
+  const G8 = (await entity(b)).geometry;
+  const z8 = camIn.zoom;
+  const want8 = { cx: (G8.centre[0] - camIn.x) * z8, cy: (G8.centre[1] - camIn.y) * z8, hx: G8.half[0] * z8, hy: G8.half[1] * z8, angle: G8.angle };
+  const got8 = (await marks())?.objects ?? [];
+  const f8 = got8[0]?.frame;
+  const a8 = (await q("window.__desk.anchor()")).box;
+  const ex8 = want8.hx * Math.abs(Math.cos(want8.angle)) + want8.hy * Math.abs(Math.sin(want8.angle)) + 6;
+  const ey8 = want8.hx * Math.abs(Math.sin(want8.angle)) + want8.hy * Math.abs(Math.cos(want8.angle)) + 6;
+  const on8 = f8 !== undefined && near(f8.cx, want8.cx) && near(f8.cy, want8.cy) && near(f8.hx, want8.hx) && near(f8.hy, want8.hy) && near(f8.angle, want8.angle);
+  const box8 = a8 !== null && near(a8.x0, want8.cx - ex8) && near(a8.y0, want8.cy - ey8) && near(a8.x1, want8.cx + ex8) && near(a8.y1, want8.cy + ey8);
+  const depth8 = await q("window.__desk.depth()");
+  check(flight8?.kind === "enter" && depth8 === 1 && (await entity(b)).selected && got8.length === 1 && got8[0].style === "brackets" && on8 && box8, `entered by a double-click (depth ${depth8}), the note inside wears its brackets where the entered camera draws it — (${f8?.cx.toFixed(1)}, ${f8?.cy.toFixed(1)}) ±(${f8?.hx.toFixed(1)}, ${f8?.hy.toFixed(1)}) turned ${f8?.angle.toFixed(4)}, its sheet's (${want8.cx.toFixed(1)}, ${want8.cy.toFixed(1)}) at zoom ${z8.toFixed(3)} — and the menu's anchor 6 px around them`);
+  await key("Escape", "Escape", 27);   // the tap put the pen on the note (D2c): down
+  await settle();
+  await key("Escape", "Escape", 27);   // no gesture to cancel: Escape leaves the frame (D2b)
+  await land();
+  await settle();
 
   // --- 9. quiet at the end: no spring, nothing dirty
   const s = await settle();
