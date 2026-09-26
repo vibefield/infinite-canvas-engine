@@ -7,16 +7,17 @@
 // Q-a/b: knobs only on the photo and the whiteboard) are core's resize handles, and its world half is drawn from its
 // rect, so a resized board is drawn at its new size and its ink replays into a raster of that size; a ROOT object (D-D18:
 // `interaction.drop: "never"` — no container takes it, whatever it accepts; let go over a mini mat's face it lies there).
-// Its held tools — the markers, the eraser, the tray, undo over its strokes — are D3t's, after the opening.
+// Its held tools (D3t-a — the kind's `open.tools`): the four markers and the eraser (the tool in hand), undo and redo over its
+// strokes (the document's history), the tip and the wipe on keys; the prototype's tray is the held bar (Q-o).
 
 import { p } from "@ice/core";
+import { MARKERS } from "../board/data";
 import { boardKind } from "../kinds/board";
 import { defineObject } from "../object";
 import { BOARD } from "../theme";
 
-/** The dry-erase markers a board is written with (BOARD.md §3) — names; the inks are the host's. */
-export const MARKERS = ["black", "blue", "red", "green"] as const;
-export type MarkerName = (typeof MARKERS)[number];
+/** The dry-erase markers a board is written with (BOARD.md §3) — names; the inks are the host's (board/data.ts). */
+export { MARKERS, type MarkerName } from "../board/data";
 /** The marker's tips (board/stroke.ts `TIPS`). */
 export const TIPS = ["fine", "bullet", "chisel"] as const;
 

@@ -341,17 +341,18 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
     },
     frame: notebookFrame,
     // THE OPENING (design-015 §8, D4b): the spread — twice the case's width, left of the spine — comes to the hand under the desk
-    // eye; the cover's swing is its motion; ‹ pages ›, the four pens and undo are its tools (declared here, built at D3t)
+    // eye; the cover's swing is its motion; ‹ pages ›, the four pens and undo are its tools — declared here with no `kind` (dim
+    // in the bar, nothing routes to them), built on D3t-a's seam at D3t-b
     open: {
       extent: (c) => ({ cx: c.rect.cx - c.rect.w / 2, cy: c.rect.cy, w: c.rect.w * 2, h: c.rect.h }),
       pose: "eye",
       spread: true,
       openness: (c) => (c.local as Books | undefined)?.state(c.entity).coverT ?? 0,
       tools: [
-        { id: "turn:-1", label: "Previous page", keys: "←", glyph: "chevron-left" },
-        { id: "turn:1", label: "Next page", keys: "→", glyph: "chevron" },
-        { id: "pen", label: "Pens", keys: "1–4", glyph: "pen" },
-        { id: "undo", label: "Undo", keys: "⌘Z", glyph: "undo" },
+        { id: "turn:-1", label: "Previous page", hint: "←", glyph: "chevron-left" },
+        { id: "turn:1", label: "Next page", hint: "→", glyph: "chevron" },
+        { id: "pen", label: "Pens", hint: "1–4", glyph: "pen" },
+        { id: "undo", label: "Undo", hint: "⌘Z", glyph: "undo" },
       ],
     },
     theme(palette: Palette, _name: ThemeName): NotebookObjectLook {

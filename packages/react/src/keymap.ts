@@ -14,6 +14,8 @@
  *   ⇧⌘L / ⇧Ctrl-L   → tape the selection down, or lift the tape when all of it is taped
  *                     (*Marks on the Mat*'s keys, D4a) — `ops.setLocked`, one transaction
  *   tool shortcuts  → ops.setTool (v/h/c + any registered tool's shortcut)
+ *   in hand         → the held object's own tools first (design-015 §8, D3t-a): its type's
+ *                     `heldTools` keys → ops.useHeldTool — and only while it is held
  *
  * Space-hold pan is ALREADY owned by the pointer adapter (design-003 §2) — it is
  * NOT rebound here. `mod` = ⌘ on macOS, Ctrl elsewhere (metaKey || ctrlKey).
@@ -43,7 +45,7 @@
  * Space warns at attach: the pointer adapter owns Space (the pan modifier,
  * design-003 §4.4) and preventDefaults it before gate 1 can let it through.
  */
-import { Container, GestureActive, Locked, Position, PrefabId, currentNavEntry, defineQuery, guardedTransaction, heldEntity, selectedEntities, tools, type CanvasEngine } from "@ice/core";
+import { Container, GestureActive, Locked, Position, PrefabId, currentNavEntry, defineQuery, guardedTransaction, heldEntity, matchHeldTool, selectedEntities, tools, type CanvasEngine } from "@ice/core";
 import { isEditableTarget, keyboardClaimOf } from "@ice/dom";
 
 const gestureActiveQ = defineQuery([GestureActive]);
@@ -82,6 +84,22 @@ function escapeOrExit(engine: CanvasEngine): void {
 
 /** The desk's keys go quiet while an object is in hand (D4b): what would delete, copy, nudge or gather on the inert desk does nothing. */
 const unlessHeld = (run: (engine: CanvasEngine) => void) => (engine: CanvasEngine): void => { if (heldEntity(engine.world) === undefined) run(engine); };
+
+/**
+ * The held bar's keys (design-015 §8; D3t-a): with an object in hand, its type's tools (`heldTools` — the kind's `open.tools`)
+ * take their keys before any entry here, and only then — `1`–`4` are the board's markers in hand and nothing on the desk. The
+ * tool is used through `ops.useHeldTool` (a mode becomes the tool in hand, an action runs its op). True when a tool took it.
+ */
+function heldToolKey(engine: CanvasEngine, event: KeyboardEvent): boolean {
+  const held = heldEntity(engine.world);
+  if (held === undefined) return false;
+  const typeId = engine.world.get(held, PrefabId)?.id;
+  const tools = typeof typeId === "string" ? (engine.catalog.widget(typeId)?.heldTools ?? []) : [];
+  const tool = matchHeldTool(tools, { key: event.key, mod: event.metaKey || event.ctrlKey, shift: event.shiftKey, alt: event.altKey });
+  if (tool === undefined) return false;
+  engine.ops.useHeldTool(tool.id);
+  return true;
+}
 
 export interface KeymapEntry {
   /** `event.key` to match (case-insensitive; e.g. "z", "Backspace", "ArrowUp"). */
@@ -211,6 +229,7 @@ export function attachKeymap(
       return;
     }
     if (isEditableTarget(event.target)) return; // gate 3 — typing
+    if (heldToolKey(engine, event)) { event.preventDefault(); return; } // the object in hand's tools first (D3t-a)
     const mod = event.metaKey || event.ctrlKey;
     const entry = map.get(signature(event.key, mod, event.shiftKey));
     if (entry === undefined) return;

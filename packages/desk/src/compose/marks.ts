@@ -34,7 +34,7 @@ import {
   type World,
 } from "@ice/core";
 import { assembleMarks, type MarkedObject } from "../marks/assemble";
-import type { HeldTool } from "../kinds/world";
+import type { HeldToolDef } from "../kinds/world";
 import { laserKey, type WorldBar, type WorldGuide } from "../marks/laser";
 import { type MarkBox, type MarkFrame, type MarksInput, selectionBox } from "../marks/layout";
 import { MARKS } from "../theme";
@@ -69,11 +69,39 @@ export interface SelectionAnchor {
   readonly held?: HeldAnchor;
 }
 
-/** The hand as the menu takes it (D4b): the kind's declared tools (its `open.tools`), whether the object is flying home (the bar hides) and whether the pickup has settled. */
+/**
+ * The hand as the menu takes it (D4b): the kind's tools that take a slot in the bar (its `open.tools`, D3t-a: live), the mode
+ * in hand (core's `HeldTool` — the one slot marked), whether the object is flying home (the bar hides) and whether the pickup
+ * has settled.
+ */
 export interface HeldAnchor {
-  readonly tools: readonly HeldTool[];
+  readonly tools: readonly HeldSlot[];
+  readonly active: string;
   readonly landing: boolean;
   readonly settled: boolean;
+}
+
+/** A tool's slot as the bar shows it: plain data (the op stays on the widget type — the bar uses a tool through `ops.useHeldTool`). */
+export interface HeldSlot {
+  readonly id: string;
+  readonly label: string;
+  /** `mode` · `action`; absent = declared only (dim). */
+  readonly kind?: "mode" | "action";
+  readonly hint?: string;
+  readonly glyph?: string;
+  /** A colour the slot shows instead of its glyph (a marker's ink), CSS. */
+  readonly swatch?: string;
+}
+
+/** The slots a kind's tools take in the bar: every tool not keys-only, as plain data, its swatch from the kind's look. */
+export function heldSlots(tools: readonly HeldToolDef[], swatches: Readonly<Record<string, string>> = {}): HeldSlot[] {
+  return tools.filter((t) => t.bar !== false).map((t) => ({
+    id: t.id, label: t.label,
+    ...(t.kind !== undefined ? { kind: t.kind } : {}),
+    ...(t.hint !== undefined ? { hint: t.hint } : {}),
+    ...(t.glyph !== undefined ? { glyph: t.glyph } : {}),
+    ...(swatches[t.id] !== undefined ? { swatch: swatches[t.id] as string } : {}),
+  }));
 }
 
 export interface MarksFrameInput {

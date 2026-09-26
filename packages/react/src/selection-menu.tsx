@@ -39,17 +39,24 @@ export interface SelectionMenuAnchor {
   /**
    * An object is IN HAND (design-015 §8, D4b): the menu travels to the foot of the view and changes role (M1) — one element,
    * not a second toolbar — Send stays first, the kind's tools take the middle, Done ends the bar. `landing`: the object is
-   * flying home — the bar steps aside and comes back above the object 200 ms after it lands.
+   * flying home — the bar steps aside and comes back above the object 200 ms after it lands. `active` (D3t-a): the mode in
+   * hand — core's `HeldTool` — the one slot marked.
    */
-  readonly held?: { readonly tools: readonly SelectionMenuTool[]; readonly landing: boolean; readonly settled: boolean };
+  readonly held?: { readonly tools: readonly SelectionMenuTool[]; readonly active?: string; readonly landing: boolean; readonly settled: boolean };
 }
 
-/** A slot of the held bar as the kind declared it (the desk's `HeldTool`, mirrored structurally): DECLARED at D4b, built at D3t — shown dim until then. */
+/**
+ * A slot of the held bar as the desk publishes it (its `HeldSlot`, mirrored structurally — D3t-a): a `mode` (pressed, it
+ * becomes the tool in hand) or an `action` (pressed, it runs its op), both through `ops.useHeldTool`; no `kind` = declared
+ * only, shown dim and inert. `swatch`: a colour shown instead of the glyph (a marker's ink).
+ */
 export interface SelectionMenuTool {
   readonly id: string;
   readonly label: string;
-  readonly keys?: string;
+  readonly kind?: "mode" | "action";
+  readonly hint?: string;
   readonly glyph?: string;
+  readonly swatch?: string;
 }
 
 /** The anchor's source — the desk handle's `selection` (anchor + a subscription that fires when it moves). */
@@ -190,6 +197,10 @@ const STYLE = `
 [data-ice-selection-menu] .ice-sm-btn.is-dim:hover{background:none;color:rgb(var(--ice-menu-cream-rgb) / .38)}
 [data-ice-selection-menu] .ice-sm-btn.is-dim:active{transform:none;background:none}
 [data-ice-selection-menu][data-held="true"] .ice-sm-text svg:last-child{display:none}
+[data-ice-selection-menu] .ice-sm-ink{width:28px;height:32px;border-radius:14px;display:grid;place-items:center}
+[data-ice-selection-menu] .ice-sm-ink i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(255 255 255 / .16);transition:transform 160ms cubic-bezier(.3,1.4,.5,1),box-shadow 160ms ease}
+[data-ice-selection-menu] .ice-sm-ink:hover i{transform:scale(1.18)}
+[data-ice-selection-menu] .ice-sm-ink[data-on="true"] i{box-shadow:0 0 0 2px var(--ice-menu-ink-solid),0 0 0 3.5px var(--ice-menu-cream)}
 `;
 
 export interface SelectionMenuProps {
@@ -201,14 +212,15 @@ export interface SelectionMenuProps {
   readonly engine?: CanvasEngine;
 }
 
-interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean; readonly held: boolean; readonly tools: string }
+interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean; readonly held: boolean; readonly tools: string; readonly active: string }
 const shownOf = (a: SelectionMenuAnchor): Shown => {
   const held = a.held !== undefined && !a.held.landing;
   // flying home the bar steps aside as for a gesture — and comes back 200 ms after the landing
   const landing = a.held?.landing === true;
-  return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools: held ? (a.held?.tools ?? []).map((t) => t.id).join("|") : "" };
+  const tools = held ? (a.held?.tools ?? []).map((t) => `${t.id}:${t.kind ?? ""}:${t.swatch ?? ""}`).join("|") : "";
+  return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools, active: held ? (a.held?.active ?? "") : "" };
 };
-const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools;
+const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools && a.active === b.active;
 /** The one element's transitions: the opacity's, and — while the bar travels between the selection and the foot (M1) — the transform's. */
 const transitionOf = (away: boolean, visible: boolean, traveling: boolean): string => {
   const M = SELECTION_MENU;
@@ -306,12 +318,31 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   const main = at("main");
   const end = at("end");
   const opacity = visible && !away ? 1 : 0;
-  // THE HELD BAR (design-015 §8, D4b): Send stays first, the kind's tools take the middle (declared, dim until D3t builds them), Done ends it
-  const slot = (t: SelectionMenuTool): ReactElement => (
-    <button key={t.id} type="button" className="ice-sm-btn is-dim" data-tool={t.id} aria-label={t.label} aria-disabled="true" title={t.keys !== undefined ? `${t.label} (${t.keys})` : t.label} tabIndex={-1}>
-      <Glyph glyph={t.glyph !== undefined && t.glyph in SELECTION_GLYPHS ? t.glyph : "ellipsis"} />
-    </button>
-  );
+  // THE HELD BAR (design-015 §8, D4b): Send stays first, the kind's tools take the middle, Done ends it. D3t-a: a slot is LIVE —
+  // pressed, it uses its tool through the engine (`ops.useHeldTool`: a mode becomes the tool in hand, an action runs its op); the
+  // mode in hand is marked in cream, the tray's own ink (*Marks on the Mat* Q-f: never `--hot`), and only it; a tool declared with
+  // no kind stays dim and inert
+  const slot = (t: SelectionMenuTool): ReactElement => {
+    const tip = t.hint !== undefined ? `${t.label} (${t.hint})` : t.label;
+    const glyph = <Glyph glyph={t.glyph !== undefined && t.glyph in SELECTION_GLYPHS ? t.glyph : "ellipsis"} />;
+    if (t.kind === undefined) {
+      return (
+        <button key={t.id} type="button" className="ice-sm-btn is-dim" data-tool={t.id} aria-label={t.label} aria-disabled="true" title={tip} tabIndex={-1}>
+          {glyph}
+        </button>
+      );
+    }
+    const on = t.kind === "mode" && t.id === shown.active;
+    return (
+      <button
+        key={t.id} type="button" className={t.swatch !== undefined ? "ice-sm-ink" : "ice-sm-btn"} data-tool={t.id} data-kind={t.kind}
+        data-on={on ? "true" : undefined} aria-pressed={t.kind === "mode" ? on : undefined} aria-label={t.label} title={tip}
+        onClick={() => { setOpen(false); engine.ops.useHeldTool(t.id); }}
+      >
+        {t.swatch !== undefined ? <i style={{ background: t.swatch }} /> : glyph}
+      </button>
+    );
+  };
   const done = (
     <button key="done" type="button" className="ice-sm-text" data-act="done" aria-label="Done" title="Done (Esc)" onClick={() => { setOpen(false); engine.ops.putDown(); }}>
       <Glyph glyph="check" />

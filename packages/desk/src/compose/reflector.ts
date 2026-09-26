@@ -96,6 +96,8 @@ export interface DeskReflector {
   lastInputs(): GroundFrameInputs | null;
   grid(): GridConfig;
   theme(): GroundTheme;
+  /** A kind's look for the theme in force (its `theme()` of the palette) — the held bar's swatches read it (D3t-a). */
+  look(kind: string): unknown;
   dispose(): void;
 }
 
@@ -257,6 +259,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     lastInputs: () => lastInputs,
     grid: () => grid,
     theme: () => theme,
+    look: (kind) => looks.get(kind),
     dispose() { disposed = true; },
   };
 }

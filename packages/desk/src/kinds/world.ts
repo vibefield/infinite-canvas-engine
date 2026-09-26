@@ -20,7 +20,7 @@
 // select it, as in the prototype — and the real parts (a notebook's turn zone, a board's marker)
 // arrive with D3.
 
-import type { Component, Entity, Tag } from "@ice/core";
+import type { Component, Entity, HeldToolDef, Tag } from "@ice/core";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
@@ -70,13 +70,13 @@ export interface ObjectFlux {
 /** A kind's answer to "what is under this world point" — the widget itself (`content`/`frame`), a part, or nothing. */
 export type ObjectHit = "content" | "frame" | (string & {});
 
-/** A slot of the held bar for a kind in hand (design-015 §8 — "the kind's tools take the middle"): DECLARED here, built at D3t. `glyph` names one of the bar's. */
-export interface HeldTool {
-  readonly id: string;
-  readonly label: string;
-  readonly keys?: string;
-  readonly glyph?: string;
-}
+/**
+ * A slot of the held bar for a kind in hand (design-015 §8 — "the kind's tools take the middle"): core's `HeldToolDef`
+ * (D3t-a — widget/held-tools.ts), declared by the kind and carried onto its widget type by `defineObject`, so the one
+ * keymap and the one bar reach it through the engine: a `mode` (the tool in hand, core's `HeldTool`), an `action` (an op),
+ * or — no `kind` — declared only (dim; a later slice builds it). `glyph` names one of the bar's.
+ */
+export type { HeldToolDef } from "@ice/core";
 
 /**
  * The kind's OPENING (design-015 §8; D4b) — what "pick it up" means for this kind. `extent`: the OPEN rect in the object's
@@ -86,14 +86,18 @@ export interface HeldTool {
  * and the kind draws at rest) or `eye` (a thing with height: the camera keeps the desk's zoom and the kind RISES toward the
  * desk eye by `ctx.held.grow`). `openness`: how far the kind's own open motion has come (0 shut … 1 open) — the put-down
  * flies home once it is under 0.35 and lands once under 0.02 (absent: 0, a kind with no motion of its own). `spread`: a
- * two-page extent that opens one page at a time on a portrait phone (Q-p). `tools`: the held bar's slots.
+ * two-page extent that opens one page at a time on a portrait phone (Q-p). `tools`: the held bar's slots (D3t-a: live — a
+ * mode or an action each); `tool`: the mode in hand when it is picked up, from its props (default: the first mode);
+ * `swatches`: the colour a slot shows instead of its glyph (the board's four inks — the product's palette, through the look).
  */
 export interface OpenBinding {
   extent(ctx: Pick<ObjectContext, "rect" | "props">): ObjectRect;
   readonly pose?: "camera" | "eye";
   openness?(ctx: Pick<ObjectContext, "entity" | "local">): number;
   readonly spread?: boolean;
-  readonly tools?: readonly HeldTool[];
+  readonly tools?: readonly HeldToolDef[];
+  tool?(props: Readonly<Record<string, unknown>>): string;
+  swatches?(look: unknown): Readonly<Record<string, string>>;
 }
 
 /**

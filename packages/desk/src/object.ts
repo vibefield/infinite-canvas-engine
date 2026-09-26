@@ -10,7 +10,7 @@ import { defineWidget, type WidgetContainerDef, type WidgetDef, type WidgetType 
 import { isObjectKind, type ObjectKind } from "./kinds/world";
 
 /** What an object declares: a widget definition without a view, plus its KIND. */
-export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "openable" | "defaultSize" | "container"> {
+export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "openable" | "defaultSize" | "container" | "heldTools" | "heldTool"> {
   /** The kind: its program (the ground registers it) and its world half (the builder and the pick source drive it). */
   readonly kind: ObjectKind;
   /** The size a new one spawns at, world units (`defaultSize`). */
@@ -29,6 +29,9 @@ export function defineObject(def: ObjectDef): WidgetType {
     stratum: kind.stratum,
     // the kind that declares an opening is what `ops.open` may pick up (design-015 §8, D4b) — the ONE place the word is set
     openable: kind.open !== undefined,
+    // …and its held bar's tools ride the widget type (D3t-a), so the keymap and the bar reach them through the engine
+    ...(kind.open?.tools !== undefined ? { heldTools: kind.open.tools } : {}),
+    ...(kind.open?.tool !== undefined ? { heldTool: kind.open.tool } : {}),
     ...(size !== undefined ? { defaultSize: size } : {}),
     ...(container !== undefined ? { container } : {}),
   });

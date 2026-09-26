@@ -20,6 +20,10 @@ import type { RGB } from "../theme";
 import { type BoardOp, BoardHistory } from "./history";
 import { ERASER_TOOL, markerTool, StrokeBuilder, type TipName, TIPS } from "./stroke";
 
+/** The dry-erase markers a board is written with (BOARD.md §3) — names; the inks are the host's palette. */
+export const MARKERS = ["black", "blue", "red", "green"] as const;
+export type MarkerName = (typeof MARKERS)[number];
+
 /** A board's data child: a stroke (`marker`, with `erase` for the eraser) or a wipe. */
 export const BoardStroke = defineComponent("desk.stroke", {
   tool: field("string", { default: "marker" }),

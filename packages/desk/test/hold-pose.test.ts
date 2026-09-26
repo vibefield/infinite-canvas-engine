@@ -158,7 +158,9 @@ describe("the kinds' openings (design-015 §8's contract)", () => {
     const bd = boardKind();
     expect(bd.open?.pose).toBeUndefined();
     expect(bd.open?.extent({ rect, props: {} })).toEqual(rect);
-    expect(bd.open?.tools?.map((t) => t.id)).toEqual(["marker", "eraser", "undo", "redo"]);
+    // D3t-a: the board's tools are live — four markers and the eraser (modes), undo and redo; the tip and the wipe on keys alone
+    expect(bd.open?.tools?.map((t) => t.id)).toEqual(["marker:black", "marker:blue", "marker:red", "marker:green", "eraser", "undo", "redo", "tip", "wipe"]);
+    expect(bd.open?.tools?.filter((t) => t.bar !== false).map((t) => t.id)).toEqual(["marker:black", "marker:blue", "marker:red", "marker:green", "eraser", "undo", "redo"]);
     const cal = calendarKind();
     expect(cal.open?.extent({ rect, props: {} })).toEqual(rect);
     expect(cal.open?.tools?.map((t) => t.id)).toEqual(["month:-1", "month:1", "today", "pen"]);

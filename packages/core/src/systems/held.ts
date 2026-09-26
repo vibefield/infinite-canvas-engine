@@ -22,14 +22,17 @@
  *    leaves the middle of the view; a middle-button or Space drag pans the same way, as does a drag
  *    that starts on the soft desk;
  *  - a click on the soft desk — pressed and released outside the object, unmoved — puts it down; two
- *    instant taps on the object do too (the notebook's case rule, generalised: its parts are D3t's).
+ *    instant taps on the object do too (the notebook's case rule, generalised) — unless they land on its
+ *    drawing surface with a mode in hand (D3t-a): that press is the TOOL's (`HeldPress` `tool` — the
+ *    board's stroke; a double-click there is two dots, never a way back).
  * The ways back are OPS (`ops.putDown`, structural) and a system may not run them mid-tick: it writes
  * the one-tick `HeldIntent` and the facade applies it after the step (D2b's `NavIntent`, same shape).
- * Nothing here reads a kind: the seam gives a frame, the kind's parts arrive with D3t.
+ * Nothing here reads a kind: the seam gives a frame and (D3t-a) the part under a point; the tool in
+ * hand is core's `HeldTool`.
  */
 import type { Entity, System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { Held, HeldIntent, HeldMute, HeldPointer, HeldPress, HeldTapMemo, HeldView } from "../catalog/desk";
+import { Held, HeldIntent, HeldMute, HeldPointer, HeldPress, HeldTapMemo, HeldTool, HeldView } from "../catalog/desk";
 import {
   HandledByWidget,
   Keyboard,
@@ -58,9 +61,14 @@ export interface HeldScreenFrame {
   readonly settled: boolean;
 }
 
-/** The pose seam: the renderer's word on where the held object is — `undefined` before its first frame. */
+/**
+ * The pose seam: the renderer's word on where the held object is — `undefined` before its first frame — and (D3t-a) which of
+ * its kind's parts is under a point of the object's own frame (its `hit` on the geometry it drew: the board's melamine
+ * `content`, its `frame`), null over nothing; absent = no parts ("content" inside the frame).
+ */
 export interface HeldPoseSource {
   frame(entity: Entity): HeldScreenFrame | undefined;
+  part?(entity: Entity, x: number, y: number): string | null;
 }
 
 /** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `framePick`). */
@@ -128,15 +136,18 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
         if (!ctx.hasTag(p, HandledByWidget)) ctx.addTag(p, HandledByWidget);
         if (!ctx.hasTag(p, WheelHandled)) ctx.addTag(p, WheelHandled);
         const s = ctx.read(p, PointerScreen);
-        // the pointer in the object's own frame, through the pose the renderer drew — change-only
+        // the pointer in the object's own frame, through the pose the renderer drew — and the kind's part under it (D3t-a) — change-only
         let inside = false;
+        let part = "";
         if (frame !== undefined) {
           const lx = (s.x - frame.cx) / Math.max(frame.s, 1e-9);
           const ly = (s.y - frame.cy) / Math.max(frame.s, 1e-9);
           inside = Math.abs(s.x - frame.cx) <= frame.hx && Math.abs(s.y - frame.cy) <= frame.hy;
+          const source = opts.pose.current;
+          part = source?.part !== undefined ? (source.part(held, lx, ly) ?? "") : inside ? "content" : "";
           const cur = ctx.get(p, HeldPointer);
-          if (cur === undefined) ctx.addComponent(p, HeldPointer, { x: lx, y: ly, inside });
-          else if (cur.x !== lx || cur.y !== ly || cur.inside !== inside) ctx.edit(p).set(HeldPointer, { x: lx, y: ly, inside });
+          if (cur === undefined) ctx.addComponent(p, HeldPointer, { x: lx, y: ly, inside, part });
+          else if (cur.x !== lx || cur.y !== ly || cur.inside !== inside || cur.part !== part) ctx.edit(p).set(HeldPointer, { x: lx, y: ly, inside, part });
         }
         // the wheel: ⌘/ctrl or a pinch brings it closer about the pointer; a plain wheel moves it once brought close (settled only)
         const w = ctx.get(p, PointerWheel);
@@ -164,11 +175,13 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
             next = { ...next, panX: px, panY: py };
           }
         }
-        // the press: where it began decides what it is; its release, unmoved, is a way back
+        // the press: where it began decides what it is; its release, unmoved, is a way back. On the drawing surface with a mode
+        // in hand it is the TOOL's (D3t-a — the board's stroke): never a pan, never a tap that puts the object down
         if (ctx.hasTag(p, WentDown)) {
           const buttons = ctx.get(p, PointerButtons)?.buttons ?? 0;
           const pan = ((buttons & 4) !== 0 || space) && next.zoom > 1.001;
-          const kind = pan ? "pan" : inside ? "object" : "desk";
+          const tool = part === "content" && (world.get(held, HeldTool)?.id ?? "") !== "";
+          const kind = pan ? "pan" : tool ? "tool" : inside ? "object" : "desk";
           const press = { kind, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false } as const;
           if (ctx.has(p, HeldPress)) ctx.edit(p).set(HeldPress, press);
           else ctx.addComponent(p, HeldPress, press);

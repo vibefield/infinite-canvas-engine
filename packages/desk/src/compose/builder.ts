@@ -59,6 +59,7 @@ import {
   departedCameraOf,
   Grab,
   Held,
+  HeldTool,
   HeldView,
   heldEntity,
   LocalPointer,
@@ -270,6 +271,13 @@ export interface DeskBuilder {
   meetTape(e: Entity): void;
   /** The object in hand as of the last build (D4b) — what the pose seam answers from; undefined = nothing held or flying home. */
   hand(): HeldBuild | undefined;
+  /**
+   * A point of the held object's own frame (core's `HeldPointer`: its open extent's units, centred) as a DESK point, through the
+   * pose the last build drew (the frame on screen, then the held slot's camera) — undefined unless `e` is in hand (D3t-a).
+   */
+  heldToWorld(e: Entity, x: number, y: number): readonly [number, number] | undefined;
+  /** The held kind's part under such a point — its `hit` on the geometry it was drawn with in hand; null over nothing (the pose seam's `part`, D3t-a). */
+  heldPart(e: Entity, x: number, y: number): string | null;
   stats(): DeskBuilderStats;
   dispose(): void;
 }
@@ -419,7 +427,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   for (const k of kindsSeen) { readsC.push(...(k.reads?.components ?? [])); readsT.push(...(k.reads?.tags ?? [])); }
   const marks = createMarksCollector(world, opts.marquee !== undefined ? { marquee: opts.marquee } : {});
   const collector = world.changes.collect({
-    components: [Position, Size, PrefabId, Grab, HeldView, ...propComponents(opts.objects), ...readsC],
+    components: [Position, Size, PrefabId, Grab, HeldView, HeldTool, ...propComponents(opts.objects), ...readsC],
     tags: [Selected, Active, Container, Locked, WidgetEquipped, Retained, Held, ...readsT],
     coarse: false,
   });
@@ -431,6 +439,16 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
    */
   let hand: { entity: Entity; dir: 1 | -1; p: number; e: number; e0: number; closeT: number; openness: number } | null = null;
   let lastHand: HeldBuild | undefined;
+  /**
+   * The held object's own frame → the screen (the frame the pose seam published) → the desk (the held slot's camera): the pose
+   * the last build DREW, as core mapped the pointer through it (D3t-a). Undefined unless `e` is in hand.
+   */
+  const heldToWorld = (e: Entity, x: number, y: number): readonly [number, number] | undefined => {
+    const h = lastHand;
+    if (h === undefined || h.entity !== e || h.landing) return undefined;
+    const v = h.inputs.view;
+    return [v.camX + (h.frame.cx + x * h.frame.s) / v.zoom, v.camY + (h.frame.cy + y * h.frame.s) / v.zoom];
+  };
   /** The desk's change count — everything the blurred copy behind the hand depends on; a change to the held object alone never bumps it. */
   let deskSeq = 0;
   /** The desk's own flux moved in the last build (a ghost, a row's spring, a ramp, a flight): the frame it settles on bumps the count too. */
@@ -936,15 +954,16 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const wokeNow = woke;
       let any = woke;
       woke = false;
-      // the desk copy behind the hand (D4b) stands while the only change is the held object's own (its HeldView, its facts): every
-      // other dirt below bumps `deskSeq`
+      // the desk copy behind the hand (D4b) stands while the only change is the held object's own (its HeldView, its tool, its
+      // facts — and, D3t-a, its DATA children: a stroke laid on the board in hand): every other dirt below bumps `deskSeq`
       const heldE = hand?.entity ?? heldEntity(world);
+      const ownOfHeld = (e: Entity): boolean => e === heldE || (heldE !== undefined && world.isAlive(e) && world.getRelation(e, ChildOf) === heldE && !states.has(e));
       let deskDirt = wokeNow;
       if (delta.reset) { wakes.reset += 1; dirtyAll = true; kids.clear(); any = true; deskDirt = true; }
       if (delta.changed.length > 0 || delta.coarse.length > 0) {
         wakes.world += 1;
         any = true;
-        for (const e of delta.changed) { const st = states.get(e); if (st !== undefined) st.dirty = true; if (e !== heldE) deskDirt = true; }
+        for (const e of delta.changed) { const st = states.get(e); if (st !== undefined) st.dirty = true; if (!ownOfHeld(e)) deskDirt = true; }
         if (delta.coarse.length > 0) { dirtyAll = true; deskDirt = true; }
       }
       if (delta.removed.length > 0) {
@@ -995,6 +1014,13 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     anchor: () => marks.anchor(),
     meetTape: (e) => marks.refused(e),
     hand: () => lastHand,
+    heldToWorld: (e, x, y) => heldToWorld(e, x, y),
+    heldPart(e, x, y) {
+      const w = heldToWorld(e, x, y);
+      const st = states.get(e);
+      if (w === undefined || st === undefined || st.geometry === null) return null;
+      return st.kind.hit(st.geometry, w[0], w[1]);
+    },
     stats: () => stats,
     dispose() {
       disposed = true;

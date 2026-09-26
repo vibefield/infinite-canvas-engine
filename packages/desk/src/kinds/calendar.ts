@@ -212,14 +212,15 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
     reach: calendarReach(law),
     local: (host: KindHost): Pads => createPads(host),
     // THE OPENING (design-015 §8, D4b — Q-q): the month comes to the hand laid bare, flat under the pose's camera (the notes stuck
-    // to it ride along, as when the pad is carried); ‹ months ›, today and the pen are its tools — declared here, built at D3t
+    // to it ride along, as when the pad is carried); ‹ months ›, today and the pen are its tools — declared here with no `kind`
+    // (dim in the bar, nothing routes to them), built on D3t-a's seam at D3t-c
     open: {
       extent: (c) => c.rect,
       tools: [
-        { id: "month:-1", label: "Previous month", keys: "←", glyph: "chevron-left" },
-        { id: "month:1", label: "Next month", keys: "→", glyph: "chevron" },
-        { id: "today", label: "Today", keys: "T", glyph: "today" },
-        { id: "pen", label: "The pen", keys: "P", glyph: "pen" },
+        { id: "month:-1", label: "Previous month", hint: "←", glyph: "chevron-left" },
+        { id: "month:1", label: "Next month", hint: "→", glyph: "chevron" },
+        { id: "today", label: "Today", hint: "T", glyph: "today" },
+        { id: "pen", label: "The pen", hint: "P", glyph: "pen" },
       ],
     },
     resolve(ctx: ObjectContext): CalendarGeometry {

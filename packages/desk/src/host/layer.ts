@@ -32,12 +32,12 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type HeldPoseSlot, type HeldPoseSource, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin } from "../compose/builder";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
-import type { SelectionAnchor } from "../compose/marks";
+import { heldSlots, type SelectionAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes } from "../compose/reflector";
 import { acquire } from "../engine/device";
@@ -300,12 +300,16 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const readMarquee = ctx.readMarquee;
     const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
-    // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home)
+    // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
+    // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       const h = builder.hand();
       if (h === undefined) return a;
-      return { ...a, held: { tools: builder.kindOf(h.entity)?.open?.tools ?? [], landing: h.landing, settled: h.settled } };
+      const kind = builder.kindOf(h.entity);
+      const swatches = kind?.open?.swatches?.(compose.look(kind.name)) ?? {};
+      const active = world.isAlive(h.entity) ? (world.get(h.entity, HeldTool)?.id ?? "") : "";
+      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches), active, landing: h.landing, settled: h.settled } };
     };
     const listeners = new Set<() => void>();
     let published = "";
@@ -372,7 +376,11 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     if (navGeometry !== undefined) navGeometry.current = navSource;
     // the held pose seam (design-015 §8, D4b): where the object in hand is on screen, as the last frame drew it — the frame the
     // builder made; nothing while it flies home (the desk is the desk's again)
-    const poseSource: HeldPoseSource = { frame: (e) => { const h = builder.hand(); return h !== undefined && h.entity === e && !h.landing ? h.frame : undefined; } };
+    const poseSource: HeldPoseSource = {
+      frame: (e) => { const h = builder.hand(); return h !== undefined && h.entity === e && !h.landing ? h.frame : undefined; },
+      // …and which of the kind's parts is under a point of it (D3t-a): its `hit` on the geometry drawn in hand
+      part: (e, x, y) => builder.heldPart(e, x, y),
+    };
     const heldPose = ctx.heldPose;
     if (heldPose !== undefined) heldPose.current = poseSource;
     // the ground plane's transition adapter: prepared the moment it is asked — the desk's second slot is built from the world (D2b)

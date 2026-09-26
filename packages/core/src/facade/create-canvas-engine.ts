@@ -112,7 +112,7 @@ import { installInteractionStack, type InteractionStack } from "../interaction/i
 import { createNestedCanvas, currentNavFrame, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
 import { NavIntent } from "../nav/nav-geometry";
 import { cancelActiveGestures } from "../ops/gestures";
-import { Held, HeldIntent, HeldView } from "../catalog/desk";
+import { Held, HeldIntent, HeldTool, HeldView } from "../catalog/desk";
 import { heldEntity } from "../systems/held";
 import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
@@ -304,11 +304,19 @@ export interface CanvasOps {
    * stays selected when put down, so ⏎ opens it again) and any live gesture is cancelled. Refused
    * — an Error, like `enterContainer` on a non-container — for an entity that is not a live object
    * of the current frame whose type declares `openable` (its kind has an `open` binding), and while
-   * another object is held (put that one down first). Never a document write.
+   * another object is held (put that one down first). Never a document write. The object's tool in
+   * hand (`HeldTool`, D3t-a) comes with it: its type's `heldTool` of its props, else its first mode.
    */
   open(entity: Entity): void;
-  /** Put the held object down (design-015 §8): `Held` and `HeldView` leave; the renderer flies it home. Nothing held: no-op. */
+  /** Put the held object down (design-015 §8): `Held`, `HeldView` and `HeldTool` leave; the renderer flies it home. Nothing held: no-op. */
   putDown(): void;
+  /**
+   * Use a tool of the held bar (design-015 §8; D3t-a — widget/held-tools.ts): a `mode` becomes the held object's ACTIVE
+   * tool (`HeldTool` — a runtime write, the user's fact; a `toggle` mode chosen again hands back the one before it), an
+   * `action` runs its op once (its transaction, the document's undo or redo). False when nothing is held, the held type
+   * names no such tool, or the tool is declared only.
+   */
+  useHeldTool(id: string): boolean;
 }
 
 export interface CanvasDocs {
@@ -547,14 +555,36 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   };
   /** The object in hand, or undefined. */
   const heldNow = (): Entity | undefined => heldEntity(world);
-  /** THE PUT-DOWN (design-015 §8): the fact and the user's view leave together; the renderer's flux flies the object home. */
+  /** THE PUT-DOWN (design-015 §8): the fact and the user's view (and tool, D3t-a) leave together; the renderer's flux flies the object home. */
   const putDown = (): void => {
     const held = heldNow();
     if (held === undefined) return;
     if (world.isAlive(held)) {
       if (world.has(held, HeldView)) world.removeComponent(held, HeldView);
+      if (world.has(held, HeldTool)) world.removeComponent(held, HeldTool);
       world.removeTag(held, Held);
     }
+  };
+  /** The held bar's tools of an entity's type (D3t-a) — empty for anything that does not open. */
+  const heldToolsOf = (entity: Entity): WidgetType["heldTools"] => {
+    const typeId = world.get(entity, PrefabId)?.id;
+    return typeof typeId === "string" ? (catalog.widget(typeId)?.heldTools ?? []) : [];
+  };
+  /** A widget's props as the world holds them now: its groups' cells, flat (D3t-a — what a held tool reads). */
+  const propsOf = (entity: Entity): Record<string, unknown> => {
+    const typeId = world.get(entity, PrefabId)?.id;
+    const type = typeof typeId === "string" ? catalog.widget(typeId) : undefined;
+    const props: Record<string, unknown> = {};
+    for (const g of type?.groups ?? []) Object.assign(props, (world.get(entity, g.component) as Record<string, unknown> | undefined) ?? {});
+    return props;
+  };
+  /** The mode in hand at a pick-up (D3t-a): the type's `heldTool` of the object's props, else its first mode, else none. */
+  const firstHeldTool = (entity: Entity): string => {
+    const typeId = world.get(entity, PrefabId)?.id;
+    const type = typeof typeId === "string" ? catalog.widget(typeId) : undefined;
+    if (type === undefined) return "";
+    if (type.heldTool !== undefined) return type.heldTool(propsOf(entity));
+    return type.heldTools.find((t) => t.kind === "mode")?.id ?? "";
   };
   const stack = installInteractionStack(engine, {
     sink,
@@ -1707,9 +1737,52 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       cancelActiveGestures(world);
       setSelection(world, [entity], "replace");
       world.addComponent(entity, HeldView, { zoom: 1, panX: 0, panY: 0 });
+      const tool = firstHeldTool(entity);
+      world.addComponent(entity, HeldTool, { id: tool, prev: tool });
       world.addTag(entity, Held);
     },
     putDown,
+    useHeldTool(id) {
+      // THE HELD BAR (design-015 §8, D3t-a): a mode becomes the tool in hand — a runtime write, the user's fact, as the selection
+      // is; an action runs its op, whose writes are the document's (its own transaction, or a step of the document's history)
+      const held = heldNow();
+      if (held === undefined || !world.isAlive(held)) return false;
+      const tool = heldToolsOf(held).find((t) => t.id === id);
+      if (tool === undefined || tool.kind === undefined) return false;
+      if (tool.kind === "mode") {
+        const cur = world.get(held, HeldTool) ?? { id: "", prev: "" };
+        const next = cur.id !== id ? { id, prev: cur.id } : tool.toggle === true ? { id: cur.prev, prev: id } : undefined;
+        if (next === undefined) return true;
+        if (world.has(held, HeldTool)) world.edit(held).set(HeldTool, next);
+        else world.addComponent(held, HeldTool, next);
+        return true;
+      }
+      /** The session an action may write through, or undefined on a read-only document (the write ops' own test). */
+      const writable = (): DocSession | undefined => {
+        const s = session;
+        return s === undefined || s.readOnly || gateVerdict(s.versionReport()) !== "ok" || diagnosticsDirty || diagnosticSnapshot.authorityIssue !== undefined ? undefined : s;
+      };
+      tool.run?.({
+        world,
+        entity: held,
+        undo: () => docs.undo(),
+        redo: () => docs.redo(),
+        transact(fn, o) {
+          const s = writable();
+          if (s === undefined) return false;
+          guardedTransaction(s.store, world, fn, o?.undoable === false ? { undoable: false } : undefined);
+          return true;
+        },
+        props: () => propsOf(held),
+        setProps(props, o) {
+          const s = writable();
+          if (s === undefined) return false;
+          setWidgetProps(s.store, world, held, props, o?.undoable === false ? { undoable: false } : undefined);
+          return true;
+        },
+      });
+      return true;
+    },
   };
 
   // --- stage holds (StageMode mirror; tokens live HERE, out-of-ECS) ---------

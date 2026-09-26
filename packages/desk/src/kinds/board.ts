@@ -18,16 +18,16 @@
 
 import { BoardPass } from "../board/board-pass";
 import { type BoardGeometry, type BoardLaw, DEFAULT_BOARD_LAW, pickBoard, quadOf, resolveBoard, surfaceSize } from "../board/board";
-import { BoardStroke, boardOps, type MarkerInk, type StrokeRow } from "../board/data";
+import { addStroke, BoardStroke, boardOps, MARKERS, type MarkerInk, type StrokeRow } from "../board/data";
 import type { BoardInstance, BoardPen } from "../board/layout";
 import { BOARD_SHADER_FILES, boardShaders } from "../board/shaders";
-import { type TipName, TIPS } from "../board/stroke";
+import { TIP_NAMES, type TipName, TIPS } from "../board/stroke";
 import type { KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
 import { type ShaderText, shaderText } from "../shaders";
 import { BOARD, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
-import type { Entity } from "@ice/core";
+import { ChildOf, defineQuery, type Entity, HeldPress, type HeldToolDef, LocalPointer, Pointer, type World } from "@ice/core";
 import { type KindHost, type KindLocal, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
 /** The whiteboard's kind name — its key in the registry and in every slot's `objects`. */
@@ -79,13 +79,69 @@ export interface BoardPalette extends Palette {
   readonly markers?: Readonly<Record<string, TokenRef & { readonly opacity: number }>>;
 }
 
-/** The board's look for a theme, parsed: the melamine and the frame a record takes, the pen's materials the pass takes, the markers' inks the replay takes. */
+/** The board's look for a theme, parsed: the melamine and the frame a record takes, the pen's materials the pass takes, the markers' inks the replay takes, and each marker's CSS the held bar's swatch shows (by tool id). */
 export interface BoardObjectLook {
   readonly surface: RGB;
   readonly metal: RGB;
   readonly pen: { readonly barrel: RGB; readonly felt: RGB; readonly wood: RGB };
   readonly markers: Readonly<Record<string, MarkerInk>>;
+  readonly swatches: Readonly<Record<string, string>>;
 }
+
+// ---------------------------------------------------------------- the tools in hand (design-015 §8; D3t-a)
+
+/** A marker's tool id in the held bar ("marker:blue"); the eraser's is `ERASER_TOOL_ID`. */
+export const markerToolId = (ink: string): string => `marker:${ink}`;
+export const ERASER_TOOL_ID = "eraser";
+/** The ink a tool id names, or undefined (the eraser, anything else). */
+export const inkOfTool = (id: string): string | undefined => (id.startsWith("marker:") ? id.slice(7) : undefined);
+
+const heldPressesQ = defineQuery([Pointer, LocalPointer, HeldPress]);
+/** A stroke is in hand (a local pointer's press is the tool's): the history waits for it to land (BOARD.md §5 — the bench's `!this.open?.stroke`). */
+export function inking(world: World): boolean {
+  let yes = false;
+  world.query(heldPressesQ).each((b) => { for (const r of b) if (world.read(b.entity(r), HeldPress).kind === "tool") yes = true; });
+  return yes;
+}
+
+/** Is there ink on board `e` — a stroke (the eraser's too: it may leave a ghost) after its last wipe? */
+export function boardInked(world: World, e: Entity): boolean {
+  let inked = false;
+  for (const k of world.getReverse(e, ChildOf)) {
+    const s = world.get(k, BoardStroke);
+    if (s === undefined) continue;
+    inked = s.tool !== "wipe";
+  }
+  return inked;
+}
+
+const title = (s: string): string => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
+
+/**
+ * The whiteboard's tools in hand (BOARD.md §5, *Marks on the Mat*'s contract: "four markers, eraser, undo, redo"; the tray merged
+ * into the held bar, Q-o): the four markers (`1`–`4`) and the eraser (`e`, a toggle — chosen again, the marker it took over from
+ * comes back) are MODES — core's `HeldTool`, the user's fact — whose cursor is none over the melamine (the pen draws itself);
+ * undo and redo are the DOCUMENT's history (a stroke is one transaction, D-D5) and wait for a stroke in hand to land; on keys
+ * alone, the tip (`t`: fine → bullet → chisel, the capped marker's durable `tip`) and the wipe (⌘⌫, one transaction — itself
+ * undoable, as the bench's was). The pen's own state is written off the undo stack: ⌘Z undoes ink, never a pick of the pen.
+ */
+export const BOARD_TOOLS: readonly HeldToolDef[] = [
+  ...MARKERS.map((ink, i): HeldToolDef => ({ id: markerToolId(ink), label: `${title(ink)} marker`, kind: "mode", keys: [String(i + 1)], hint: String(i + 1), glyph: "pen", cursor: "none" })),
+  { id: ERASER_TOOL_ID, label: "Eraser", kind: "mode", keys: ["e"], hint: "E", glyph: "eraser", toggle: true, cursor: "none" },
+  { id: "undo", label: "Undo", kind: "action", keys: ["mod+z"], hint: "⌘Z", glyph: "undo", run: (api) => { if (!inking(api.world)) api.undo(); } },
+  { id: "redo", label: "Redo", kind: "action", keys: ["mod+shift+z", "mod+y"], hint: "⇧⌘Z", glyph: "redo", run: (api) => { if (!inking(api.world)) api.redo(); } },
+  {
+    id: "tip", label: "Tip", kind: "action", keys: ["t"], hint: "T", bar: false,
+    run: (api) => {
+      const cur = stringProp(api.props(), "tip", "bullet") as TipName;
+      api.setProps({ tip: TIP_NAMES[(Math.max(TIP_NAMES.indexOf(cur), 0) + 1) % TIP_NAMES.length] }, { undoable: false });
+    },
+  },
+  {
+    id: "wipe", label: "Wipe the board", kind: "action", keys: ["mod+Backspace", "mod+Delete"], hint: "⌘⌫", bar: false,
+    run: (api) => { if (!inking(api.world) && boardInked(api.world, api.entity)) api.transact((tx) => { addStroke(tx, api.entity, { tool: "wipe" }); }); },
+  },
+];
 
 /** A right hand holds a marker with its barrel rising away to the upper right (lab/board.ts). */
 const HAND_ANGLE = Math.atan2(-0.8, 0.6);
@@ -201,8 +257,6 @@ export interface BoardKindOptions {
   readonly law?: BoardLaw;
 }
 
-const TIP_NAMES: readonly TipName[] = ["fine", "bullet", "chisel"];
-
 /** The whiteboard's kind, whole (kinds/world.ts `ObjectKind`): the program, and the world half on the bench's laws. */
 export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry, BoardInstance, BoardObjectLook> {
   const law = opts.law ?? DEFAULT_BOARD_LAW;
@@ -212,16 +266,13 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
     ...program,
     reach: boardReach(law),
     local: (host: KindHost): BoardInk => createBoardInk(host),
-    // THE OPENING (design-015 §8, D4b): the board's face comes to the hand whole, flat under the pose's camera; the marker taken
-    // into the hand and the tools — four markers, the eraser, undo, redo (the tray merged into the bar, Q-o) — are D3t's
+    // THE OPENING (design-015 §8, D4b): the board's face comes to the hand whole, flat under the pose's camera; its tools (D3t-a,
+    // `BOARD_TOOLS` — the tray merged into the bar, Q-o) with the marker in the ink it lies in taken into the hand
     open: {
       extent: (c) => c.rect,
-      tools: [
-        { id: "marker", label: "Markers", keys: "1–4", glyph: "pen" },
-        { id: "eraser", label: "Eraser", keys: "E", glyph: "eraser" },
-        { id: "undo", label: "Undo", keys: "⌘Z", glyph: "undo" },
-        { id: "redo", label: "Redo", keys: "⇧⌘Z", glyph: "redo" },
-      ],
+      tools: BOARD_TOOLS,
+      tool: (props) => markerToolId(stringProp(props, "cap", "black")),
+      swatches: (look) => (look as BoardObjectLook).swatches,
     },
     resolve(ctx: ObjectContext): BoardGeometry {
       const r = ctx.rect;
@@ -253,6 +304,7 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
         surface, metal,
         pen: { barrel: parse(b?.barrel) ?? black, felt: parse(b?.felt) ?? black, wood: parse(b?.wood) ?? black },
         markers: Object.fromEntries(Object.entries(p.markers ?? {}).map(([name, m]) => [name, { color: rgb(m.css), opacity: m.opacity }])),
+        swatches: Object.fromEntries(Object.entries(p.markers ?? {}).map(([name, m]) => [markerToolId(name), m.css])),
       };
     },
   };

@@ -46,6 +46,7 @@ import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
+import { type HeldToolDef, validateHeldTools } from "./held-tools";
 import type { CanvasType } from "../canvas/define-canvas-type";
 import type { FrameProjection } from "../canvas/frame-projection";
 
@@ -213,6 +214,14 @@ export interface WidgetDef {
    * lies, a mini mat is entered, a print has nothing to open. Refused without an `object` binding.
    */
   readonly openable?: boolean;
+  /**
+   * The held bar's tools of an object that opens (design-015 §8; D3t-a — widget/held-tools.ts): each a mode (the
+   * object's active tool in hand) or an action (an op), with its keys. The keymap and the bar reach them through the
+   * engine; `ops.useHeldTool` uses one. Refused on anything that does not open.
+   */
+  readonly heldTools?: readonly HeldToolDef[];
+  /** The mode in hand when the object is picked up, from its props (the board: its capped marker's ink). Default: the first mode, else none. */
+  readonly heldTool?: (props: Readonly<Record<string, unknown>>) => string;
   readonly defaultSize?: { readonly w: number; readonly h: number };
   readonly minSize?: { readonly w: number; readonly h: number };
   readonly interaction?: WidgetInteraction;
@@ -290,6 +299,10 @@ export interface WidgetType {
   readonly stratum: DeskStratum | undefined;
   /** An object whose kind opens — `ops.open` picks it up (design-015 §8); false on every other widget. */
   readonly openable: boolean;
+  /** The held bar's tools (design-015 §8, D3t-a); empty for anything that does not open. */
+  readonly heldTools: readonly HeldToolDef[];
+  /** The mode in hand at the pick-up, from the object's props; undefined = the first mode. */
+  readonly heldTool: ((props: Readonly<Record<string, unknown>>) => string) | undefined;
   readonly defaultSize: { readonly w: number; readonly h: number };
   readonly minSize: { readonly w: number; readonly h: number };
   /** Node-editor ports (empty when not a node). */
@@ -553,6 +566,13 @@ export function defineWidget(def: WidgetDef): WidgetType {
       `ice: defineWidget("${def.type}") declares openable and carries no object binding — only an object is picked up into the hand (design-015 §8). Pass object: <a kind that opens>, or drop it.`,
     );
   }
+  // the held bar's tools belong to what is held (design-015 §8, D3t-a)
+  if ((def.heldTools?.length ?? 0) > 0 || def.heldTool !== undefined) {
+    if (!(hasObject && def.openable === true)) {
+      throw new Error(`ice: defineWidget("${def.type}") declares held tools but does not open — only an object picked up into the hand has a held bar (design-015 §8).`);
+    }
+    validateHeldTools(def.type, def.heldTools ?? []);
+  }
   if (def.stratum !== undefined && !Object.hasOwn(STRATUM_BANDS, def.stratum)) {
     throw new Error(
       `ice: defineWidget("${def.type}") declares stratum "${String(def.stratum)}" — a desk stratum is "pads", "sheets" or "things" (design-015 §4.2).`,
@@ -602,6 +622,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
     object: hasObject ? def.object : undefined,
     stratum: def.stratum ?? (hasObject ? "things" : undefined),
     openable: hasObject && def.openable === true,
+    heldTools: Object.freeze([...(def.heldTools ?? [])]),
+    heldTool: def.heldTool,
     defaultSize,
     minSize: def.minSize ?? { w: 40, h: 40 },
     ports: def.ports ?? [],

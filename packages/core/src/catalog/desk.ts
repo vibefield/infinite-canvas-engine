@@ -90,6 +90,18 @@ export const HeldView = defineComponent("HeldView", {
 });
 
 /**
+ * Runtime, on the object in hand: its ACTIVE tool (design-015 §8; D3t-a — widget/held-tools.ts) — the
+ * id of the held bar's `mode` in hand (the board's marker in blue, its eraser), and `prev` the one
+ * before it (a `toggle` mode chosen again hands that one back). The USER's fact, never in the document.
+ * Put on with `Held` by `ops.open` (the type's `heldTool` of its props, else its first mode; "" = none)
+ * and taken off with it; `ops.useHeldTool` its only other writer. The kind's held behaviours read it.
+ */
+export const HeldTool = defineComponent("HeldTool", {
+  id: field("string", { default: "" }),
+  prev: field("string", { default: "" }),
+});
+
+/**
  * A system's IN-TICK request to pick an object up or put it down (D2b's `NavIntent`, applied the
  * same way): the double-tap on an openable object asks to `open`; the ways back that are
  * gestures — a click on the soft desk, a pinch or ⌘-wheel in past 0.72×, a double-tap on the
@@ -120,22 +132,26 @@ export const HeldMute = defineResource("HeldMute", { until: field("f64", { defau
  * OWN frame — its open extent's units, centred, mapped through the same pose the renderer drew
  * (`HeldPoseSource`) — and whether it is over the object at all. Change-only. What a kind's held
  * behaviours (its parts, its pen — D3t) read; absent when nothing is held or before the first frame.
+ * `part` (D3t-a): the kind's part under it as the renderer drew it (the pose seam's `part` — the
+ * board's melamine `content`, its aluminium `frame`), "" over nothing.
  */
 export const HeldPointer = defineComponent("HeldPointer", {
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
   inside: field("bool", { default: false }),
+  part: field("string", { default: "" }),
 });
 
 /**
  * Runtime, on a local pointer: a press that began while an object was held — on the soft desk
  * (`desk`: released unmoved, it puts the object down; dragged with the object brought close, it
- * pans), as a pan (`pan`: a middle button or Space, the object brought close) or on the object
- * itself (`object`: the kind's — D3t; two instant taps put it down). `x`/`y` where it began (CSS
- * px), the pan it began from, and whether it has moved past the slop.
+ * pans), as a pan (`pan`: a middle button or Space, the object brought close), on the object's
+ * drawing surface with a mode in hand (`tool`, D3t-a: the TOOL's press — the board's stroke; never
+ * a tap that puts it down) or elsewhere on the object itself (`object`: two instant taps put it
+ * down). `x`/`y` where it began (CSS px), the pan it began from, and whether it has moved past the slop.
  */
 export const HeldPress = defineComponent("HeldPress", {
-  kind: field(enumOf(["desk", "pan", "object"]), { default: "desk" }),
+  kind: field(enumOf(["desk", "pan", "object", "tool"]), { default: "desk" }),
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
   panX0: field("f64", { default: 0 }),

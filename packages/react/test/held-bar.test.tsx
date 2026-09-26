@@ -1,19 +1,31 @@
 /**
  * THE HELD BAR (design-015 §8, *Marks on the Mat* "The bar goes with it"; D4b): with an object in hand the selection menu
  * travels to the foot of the view and changes role (M1) — one element, not a second toolbar — Send stays first, the kind's
- * declared tools take the middle (dim until D3t builds them), Done ends the bar (`ops.putDown`); while the object flies home
- * the bar steps aside as for a gesture and comes back 200 ms after the landing; the travel's transform transition is on for
- * 340 ms and off again after (a moving selection still places instantly). happy-dom: no layout, the bar is placed as 40 tall.
+ * declared tools take the middle (a tool declared with no kind stays dim), Done ends the bar (`ops.putDown`); while the object
+ * flies home the bar steps aside as for a gesture and comes back 200 ms after the landing; the travel's transform transition
+ * is on for 340 ms and off again after (a moving selection still places instantly). happy-dom: no layout, the bar is placed
+ * as 40 tall. D3t-a: the slots are LIVE — a press uses the tool through `ops.useHeldTool` (a mode becomes the tool in hand,
+ * an action runs its op), the mode in hand is marked (and only it), a swatch shows a marker's ink — and the keymap routes the
+ * held type's keys to its tools, only while it is held.
  */
-import { createCanvasEngine, defineWidget, Held, type CanvasEngine, type Entity } from "@ice/core";
+import { createCanvasEngine, defineWidget, Held, HeldTool, type CanvasEngine, type Entity, type HeldToolDef } from "@ice/core";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_MENU, SelectionMenu, type SelectionAction, type SelectionMenuAnchor, type SelectionMenuSource } from "../src";
+import { attachKeymap, defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_MENU, SelectionMenu, type SelectionAction, type SelectionMenuAnchor, type SelectionMenuSource } from "../src";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 const BOOK = defineWidget({ type: "hb:book", object: { name: "book" }, openable: true, defaultSize: { w: 180, h: 252 } });
+const actions: string[] = [];
+const BOARD_TOOLS: readonly HeldToolDef[] = [
+  { id: "marker:black", label: "Black marker", kind: "mode", keys: ["1"], hint: "1", glyph: "pen" },
+  { id: "marker:blue", label: "Blue marker", kind: "mode", keys: ["2"], hint: "2", glyph: "pen" },
+  { id: "eraser", label: "Eraser", kind: "mode", keys: ["e"], hint: "E", glyph: "eraser", toggle: true },
+  { id: "undo", label: "Undo", kind: "action", keys: ["mod+z"], hint: "⌘Z", glyph: "undo", run: () => { actions.push("undo"); } },
+  { id: "wipe", label: "Wipe", kind: "action", keys: ["mod+Backspace"], bar: false, run: () => { actions.push("wipe"); } },
+];
+const BOARD = defineWidget({ type: "hb:board", object: { name: "board" }, openable: true, defaultSize: { w: 480, h: 320 }, heldTools: BOARD_TOOLS });
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -40,10 +52,11 @@ function fakeSource(first: SelectionMenuAnchor): SelectionMenuSource & { set(a: 
 
 const SEND: SelectionAction = { id: "send", place: "lead", text: true, glyph: "agents", label: "Send to agent", run: () => {} };
 
-function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () => HTMLElement; book: Entity } {
-  const engine = createCanvasEngine({ widgets: [BOOK] });
+function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () => HTMLElement; book: Entity; board: Entity } {
+  const engine = createCanvasEngine({ widgets: [BOOK, BOARD] });
   engine.docs.create();
   const book = engine.ops.spawnWidget("hb:book", { x: 100, y: 100, undoable: false });
+  const board = engine.ops.spawnWidget("hb:board", { x: 400, y: 100, undoable: false });
   engine.world.sync();
   const host = document.createElement("div");
   document.body.append(host);
@@ -54,8 +67,18 @@ function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () =>
   });
   cleanups.push(() => { act(() => root?.unmount()); engine.dispose(); });
   const menu = (): HTMLElement => { const el = host.querySelector<HTMLElement>("[data-ice-selection-menu]"); if (el === null) throw new Error("no menu"); return el; };
-  return { engine, menu, book };
+  return { engine, menu, book, board };
 }
+
+/** The board's slots as the desk publishes them (its `HeldSlot`s): the bar's five — the wipe is keys-only — with the markers' swatches. */
+const BOARD_SLOTS = [
+  { id: "marker:black", label: "Black marker", kind: "mode" as const, hint: "1", glyph: "pen", swatch: "rgb(20 20 22)" },
+  { id: "marker:blue", label: "Blue marker", kind: "mode" as const, hint: "2", glyph: "pen", swatch: "rgb(30 80 200)" },
+  { id: "eraser", label: "Eraser", kind: "mode" as const, hint: "E", glyph: "eraser" },
+  { id: "undo", label: "Undo", kind: "action" as const, hint: "⌘Z", glyph: "undo" },
+  { id: "later", label: "Declared only", glyph: "today" },
+];
+const heldBoard = (active: string): SelectionMenuAnchor => anchorOf({ box: null, count: 0, held: { tools: BOARD_SLOTS, active, landing: false, settled: true } });
 
 describe("the held bar (design-015 §8)", () => {
   it("is placed centred in the 72 px band at the foot, whatever the selection's box", () => {
@@ -119,5 +142,69 @@ describe("the held bar (design-015 §8)", () => {
     expect(menu().dataset.away).toBe("false");
     act(() => { vi.advanceTimersByTime(SELECTION_MENU.travelMs + 1); });
     expect(menu().style.transition).not.toContain("transform");
+  });
+});
+
+describe("the held bar's live tools (design-015 §8, D3t-a)", () => {
+  it("a slot is live: a press uses its tool through the engine — a mode becomes the tool in hand, an action runs its op", () => {
+    actions.length = 0;
+    const source = fakeSource(anchorOf());
+    const { engine, menu, board } = mount(source);
+    engine.ops.open(board);
+    source.set(heldBoard("marker:black"));
+    const slot = (id: string) => menu().querySelector<HTMLButtonElement>(`[data-tool="${id}"]`);
+    expect(slot("marker:blue")?.classList.contains("is-dim")).toBe(false);
+    act(() => { slot("marker:blue")?.click(); });
+    expect(engine.world.get(board, HeldTool)).toEqual({ id: "marker:blue", prev: "marker:black" });
+    act(() => { slot("undo")?.click(); });
+    expect(actions).toEqual(["undo"]);
+    // a tool declared with no kind: dim and inert
+    expect(slot("later")?.classList.contains("is-dim")).toBe(true);
+    expect(slot("later")?.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("the mode in hand is marked — and only it; a marker shows its ink as a swatch", () => {
+    const source = fakeSource(heldBoard("marker:blue"));
+    const { menu } = mount(source);
+    const pressed = () => Array.from(menu().querySelectorAll<HTMLElement>('[data-tool][aria-pressed="true"]')).map((b) => b.dataset.tool);
+    expect(pressed()).toEqual(["marker:blue"]);
+    expect(menu().querySelectorAll('[data-on="true"]')).toHaveLength(1);
+    expect(menu().querySelector('[data-tool="undo"]')?.hasAttribute("aria-pressed")).toBe(false);   // an action is never "on"
+    const ink = menu().querySelector<HTMLElement>('[data-tool="marker:blue"]');
+    expect(ink?.className).toBe("ice-sm-ink");
+    expect(ink?.querySelector("i")?.style.background).toBe("rgb(30 80 200)");
+    source.set(heldBoard("eraser"));
+    expect(pressed()).toEqual(["eraser"]);
+    expect(menu().querySelector<HTMLElement>('[data-tool="eraser"]')?.className).toBe("ice-sm-btn");
+  });
+
+  it("the keymap routes the held type's keys to its tools — only while it is held", () => {
+    actions.length = 0;
+    const source = fakeSource(anchorOf());
+    const { engine, board } = mount(source);
+    cleanups.push(attachKeymap(engine, window));
+    const key = (k: string, m: { meta?: boolean; shift?: boolean } = {}): KeyboardEvent => {
+      const e = new KeyboardEvent("keydown", { key: k, metaKey: m.meta === true, shiftKey: m.shift === true, bubbles: true, cancelable: true });
+      window.dispatchEvent(e);
+      return e;
+    };
+    // nothing held: `2` and ⌘⌫ are nobody's here
+    expect(key("2").defaultPrevented).toBe(false);
+    key("Backspace", { meta: true });
+    expect(actions).toEqual([]);
+    engine.ops.open(board);
+    expect(engine.world.get(board, HeldTool)?.id).toBe("marker:black");
+    expect(key("2").defaultPrevented).toBe(true);
+    expect(engine.world.get(board, HeldTool)?.id).toBe("marker:blue");
+    key("e");
+    expect(engine.world.get(board, HeldTool)?.id).toBe("eraser");
+    key("E");   // Caps Lock: the same key
+    expect(engine.world.get(board, HeldTool)?.id).toBe("marker:blue");
+    key("z", { meta: true });
+    key("Backspace", { meta: true });
+    expect(actions).toEqual(["undo", "wipe"]);   // the tool's ⌘Z before the keymap's own
+    engine.ops.putDown();
+    key("Backspace", { meta: true });
+    expect(actions).toEqual(["undo", "wipe"]);
   });
 });

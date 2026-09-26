@@ -8,6 +8,9 @@
  * (2) `ActiveTool` override — pan tool → "grab"; (3) else the mouse pointer's
  * `Targets` kind — a `HandleSpec` → directional resize, an entity with
  * `Position` (widget) → "default", `CanvasSurface`/none → "default".
+ * Above all of them (design-015 §8, D3t-a): with an object IN HAND, the mode in hand's own
+ * `cursor` (its `HeldToolDef.cursor` — "none" where the tool draws itself: the board's marker) while
+ * the mouse is over the object's drawing surface (`HeldPointer.part` "content") or presses the tool.
  *
  * Scheduled on the `CanvasSurface` anchor query (exactly one such entity,
  * guaranteed by install — the same idiom `pointerIngest` uses in l0-input.ts)
@@ -20,7 +23,7 @@
  */
 import type { Entity, System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { resolveToolFor } from "../canvas/engine-catalog";
+import { resolveToolFor, widgetTypeFor } from "../canvas/engine-catalog";
 import {
   ActiveTool,
   CanvasSurface,
@@ -29,6 +32,10 @@ import {
   Drag,
   GesturePhases,
   HandleSpec,
+  Held,
+  HeldPointer,
+  HeldPress,
+  HeldTool,
   LocalPointer,
   LongPress,
   Pointer,
@@ -38,11 +45,33 @@ import {
   RoutedResize,
   Targets,
 } from "../catalog";
+import { PrefabId } from "../schema/prefab";
 
 const P = GesturePhases;
 
 const anchorQ = defineQuery([CanvasSurface]);
 const localPointerQ = defineQuery([Pointer, LocalPointer]);
+const heldQ = defineQuery([Held]);
+
+/** The mode in hand's cursor while a local mouse is over the held object's drawing surface or presses its tool (D3t-a); undefined otherwise. */
+function heldToolCursor(world: World): string | undefined {
+  const held = world.firstOf(heldQ);
+  if (held === undefined) return undefined;
+  const id = world.get(held, HeldTool)?.id ?? "";
+  const typeId = world.get(held, PrefabId)?.id;
+  if (id === "" || typeof typeId !== "string") return undefined;
+  const cursor = widgetTypeFor(world, typeId)?.heldTools.find((t) => t.id === id)?.cursor;
+  if (cursor === undefined) return undefined;
+  let over = false;
+  world.query(localPointerQ).each((b) => {
+    for (const r of b) {
+      const p = b.entity(r);
+      if (world.read(p, Pointer).device !== "mouse") continue;
+      if (world.get(p, HeldPointer)?.part === "content" || world.get(p, HeldPress)?.kind === "tool") over = true;
+    }
+  });
+  return over ? cursor : undefined;
+}
 
 /** `HandleSpec.anchor` → CSS directional-resize cursor (design-003 §7). */
 function resizeCursorForAnchor(anchor: string): string {
@@ -67,7 +96,7 @@ export function createCursorSync(world: World): System & { readCursor(): string 
   const system = defineSystem(
     anchorQ,
     (_b, ctx) => {
-      let resolved: string | undefined;
+      let resolved: string | undefined = heldToolCursor(world);
       let mouseTargets: Entity | undefined;
 
       world.query(localPointerQ).each((b) => {
