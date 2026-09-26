@@ -445,7 +445,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    */
   function marksOf(s, cam, theme = THEMES[s.theme]) {
     const M = s.marks ?? {};
-    const desk = { notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.things ? { things: s.things } : {}) };
+    // the root desk as `encode` builds it — its books and pads too (a note pinned to a pad's day lies where the pad puts it)
+    const desk = { notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.books ? { books: s.books } : {}), ...(s.calendars ? { calendars: s.calendars } : {}), ...(s.things ? { things: s.things } : {}) };
     const objects = markedObjects(desk, M);
     let guides = [];
     let bars = [];
