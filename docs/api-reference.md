@@ -30,14 +30,15 @@ published bytes rather than trusting the last local build.
 | `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain. RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
-| `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, widgetDrag, portDrag}`, `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
+| `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, canvasDragShift, widgetDrag, portDrag}` (`canvasDragShift`: what a shift-drag on the bare canvas does — the desk's `deskSelect` pans on a bare drag and marquees on a shift-drag), `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
 | `definePrefab(id, def)` | → `Prefab` | The base primitive `defineWidget` sugars over; `store: "durable" \| "runtime" \| "ephemeral"`. |
 | `defineComponent/Tag/Relation/Resource` | strata wrappers | Record metadata for sovereignty/devtools; catalog in `@ice/core` ships the full engine vocabulary. |
 
 ### The facade
 
 ```ts
-const ce = createCanvasEngine({ widgets?, tools?, behaviors?, budgets?, settings?, policy?, measureQueue? });
+const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, behaviors?, budgets?, settings?, policy?, compositorDevice?, onGuestFault?, onReflectorFault? });
+// the desk's preset: createCanvasEngine(DESK_ENGINE) — @vibecook/ice/desk/objects
 // ce: { world, engine, behaviors, stack, runtime, nav, ops, docs, stage, frame,
 //       budgets, step(now), dispose() }
 ```
@@ -284,7 +285,7 @@ focused editor `createNoteEditor`, the text raster `inkRaster`/`penFaces`, `deco
 `boardKind`, `calendarKind`, `photoKind`, …), the builder/pick/ambient/reflector of `compose`,
 `instrumentSubmits`, the theme (`themeFrom`, `Palette`, `MAT`, `PAPER`, …), `shaderText`,
 `blueNoise`, the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs `SPRINGS`) ·
-**`@ice/desk/engine`** (the raw-WebGPU engine: device, surface, passes) · **`@ice/desk/objects`**
+**`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the `Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is `@ice/desk`'s, and no pass ships here) · **`@ice/desk/objects`**
 (the six reference kinds' world halves: `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`,
 `Calendar`, `Photo`, `DESK_OBJECTS`, the typing session, the strokes and pins; the engine preset
 `DESK_ENGINE` — `createCanvasEngine(DESK_ENGINE)`: the objects, `deskSelect`/`DeskCanvas`, the wheel

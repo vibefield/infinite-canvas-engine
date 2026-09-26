@@ -8,7 +8,7 @@
  * THE DESK ARRIVES AS AN OPAQUE LAYER FACTORY. This package never imports `@ice/desk` (the wall
  * `nobody-imports-desk`): the factory's context and its handle are typed STRUCTURALLY here —
  * exactly as `<InfiniteCanvas ground={groundCompose(…)}>` received the ground — and
- * `@ice/desk/host`'s `deskLayer(opts)` returns a function assignable to {@link LayerFactory}.
+ * `@ice/desk`'s `deskLayer(opts)` (its src/host/) returns a function assignable to {@link LayerFactory}.
  * The context carries the interaction stack's seams the renderer fills (the frame pick, the nav
  * geometry, the held pose — design-014 B3b, design-015 §8–§9) and the marquee buffer it draws.
  *
@@ -36,7 +36,7 @@ import { attachWidgetFocus, type WidgetFocusHandle } from "./widget-focus";
 
 /**
  * What the host needs of a mounted layer: its drawing reflector and its teardown. The desk's own
- * handle (`@ice/desk/host`'s `DeskLayerHandle`) carries far more; an app keeps that through its
+ * handle (`@ice/desk`'s `DeskLayerHandle`) carries far more; an app keeps that through its
  * own factory wrapper, or reads it off {@link DeskHost.layer} typed as the factory returned it.
  */
 export interface LayerHandle {
@@ -73,7 +73,7 @@ export interface DeskHostOptions<H extends LayerHandle = LayerHandle> {
   readonly container: HTMLElement;
   /** A constructed engine (`createCanvasEngine(...)`); NOT disposed by the host. */
   readonly engine: CanvasEngine;
-  /** The desk — `deskLayer({ … })` from `@ice/desk/host`, received opaquely. */
+  /** The desk — `deskLayer({ … })` from `@vibecook/ice/desk` (`@ice/desk`'s src/host/), received opaquely. */
   readonly layer: LayerFactory<H>;
 }
 

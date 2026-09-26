@@ -208,7 +208,7 @@ export interface SelectionMenuProps {
   readonly source: SelectionMenuSource;
   /** The acts, in the bar's order within their places (default: `defaultSelectionActions()`); an app prepends its own. */
   readonly actions?: readonly SelectionAction[];
-  /** The engine the acts run on (default: the `EngineProvider`'s — `<InfiniteCanvas>` provides one to its children). */
+  /** The engine the acts run on (default: the `EngineProvider`'s — the one `<Desk>` is mounted under). */
   readonly engine?: CanvasEngine;
 }
 
@@ -402,7 +402,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   );
 }
 
-/** The provider's engine when there is one (the menu may also be mounted outside `<InfiniteCanvas>` with `engine` given). */
+/** The provider's engine when there is one (the menu may also be mounted outside an `EngineProvider` with `engine` given). */
 function useOptionalEngine(): CanvasEngine | undefined {
   try {
     return useCanvasEngine();

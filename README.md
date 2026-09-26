@@ -69,7 +69,7 @@ packages; `packages/ice` bundles them for publish):
 | `@vibecook/ice` | The engine: ECS catalog, frame contract, interaction stack, the widget compiler (`defineWidget` with the `object` binding), the cull, node graph, nested canvas, doc kit, presence, bootstrap, migrations, `createCanvasEngine` facade | strata-ecs, kernel, loro-crdt |
 | `@vibecook/ice/dom` | SCREEN SPACE ONLY: the canvas host, the pointer adapter (L0's producer), the rAF loop, input ownership + the editor's focus, OS + remote cursors, `createDeskHost` (the vanilla mount) | core, kernel |
 | `@vibecook/ice/desk` | The desk: one WebGPU renderer drawing every object from the world — the cutting mat, `deskLayer`, `defineObject`, the kind registry, the one focused editor, the text raster, the theme | core, kernel; **nobody imports desk but apps** |
-| `@vibecook/ice/desk/engine` | The raw-WebGPU engine alone (device, surface, passes) | — |
+| `@vibecook/ice/desk/engine` | The raw-WebGPU engine alone: the device (`acquire`, `adopt`), the `Surface` type (the swap chain itself is `surface()` in `/desk`), shader composition (`compose`, `compile`), pipelines and bind groups, render targets (`Target`, `beginPass`, `readback`), `defineStruct` | — |
 | `@vibecook/ice/desk/objects` | The six reference object kinds' world halves: note · mini mat · notebook · whiteboard · calendar · photo | core, kernel |
 | `@vibecook/ice/react` | `<Desk>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap, the screen-space selection menu and held bar | dom, core, kernel + react/react-dom |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one dock | core only; **nobody imports devtools** |

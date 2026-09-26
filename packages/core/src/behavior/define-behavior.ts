@@ -60,9 +60,10 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*:[A-Za-z0-9][A-Za-z0-9._-]*$/;
  * on their declared writes, and an exemption from the published-read-surface
  * warning — and BOTH were keyed on the string prefix, so a pack that called
  * itself `ice:surface.kiosk` was handed the engine's own promises. The
- * attestation is the sharp end: it says "these co-writers of `SurfaceTarget`
- * are ICE's and row-disjoint by law", which silences precisely the advisory a
- * second writer of one entity's target needed to hear.
+ * attestation is the sharp end: it said "these co-writers of `SurfaceTarget`
+ * are ICE's and row-disjoint by law" (the surface vocabulary, retired at
+ * design-015 D5b), which silenced precisely the advisory a second writer of
+ * one entity's target needed to hear.
  *
  * So the namespace is the engine's alone. The mark is a module-private symbol
  * — not exported, not on the spec type, unforgeable from outside this file —

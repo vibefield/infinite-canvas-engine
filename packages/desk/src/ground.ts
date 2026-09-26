@@ -72,7 +72,7 @@ export interface GroundOptions {
   readonly device: GPUDevice;
   /**
    * The swap chain the frames go into — the HOST makes it (`surface(device, canvas)` from
-   * `@ice/desk/host`, the one module that names a canvas; a test's fake), so this composition
+   * `@ice/desk`'s src/host/, the one module that names a canvas; a test's fake), so this composition
    * root never touches the DOM (design-015 §3 `desk-dom-free`, D2a-world).
    */
   readonly surface: Surface;

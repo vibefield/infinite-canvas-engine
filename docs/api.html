@@ -314,50 +314,32 @@ body.empty .nores{display:block}
       <article class="entry" id="quickstart" data-k="quickstart getting started install minimal app example">
         <h4><a href="#quickstart">A complete minimal app</a></h4>
         <pre class="sig">pnpm add @vibecook/ice react react-dom   # react/react-dom are peers of the react entry</pre>
-        <div class="codeblock"><pre><code><span class="tk-k">import</span> { createCanvasEngine, defineWidget, p } <span class="tk-k">from</span> <span class="tk-s">"@vibecook/ice"</span>;
-<span class="tk-k">import</span> { EngineProvider, InfiniteCanvas, attachKeymap, useCommit, useWidgetProps } <span class="tk-k">from</span> <span class="tk-s">"@vibecook/ice/react"</span>;
-<span class="tk-k">import</span> { createRoot } <span class="tk-k">from</span> <span class="tk-s">"react-dom/client"</span>;
+        <div class="codeblock"><pre><code>import { createCanvasEngine } from "@vibecook/ice";
+import { deskLayer, inkRaster, penFaces } from "@vibecook/ice/desk";
+import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "@vibecook/ice/desk/objects";
+import { Desk, EngineProvider } from "@vibecook/ice/react";
+import { createRoot } from "react-dom/client";
 
-<span class="tk-c">// 1 · Define a widget — any React component becomes a canvas citizen.</span>
-<span class="tk-k">const</span> <span class="tk-f">Sticky</span> = <span class="tk-f">defineWidget</span>({
-  <span class="tk-p">type</span>: <span class="tk-s">"sticky"</span>,
-  <span class="tk-p">surface</span>: <span class="tk-s">"dom"</span>,
-  <span class="tk-p">props</span>: { <span class="tk-p">text</span>: p.<span class="tk-f">string</span>({ <span class="tk-p">default</span>: <span class="tk-s">"Write something…"</span> }) },
-  <span class="tk-p">component</span>: <span class="tk-f">StickyView</span>,
-  <span class="tk-p">defaultSize</span>: { <span class="tk-p">w</span>: <span class="tk-n">220</span>, <span class="tk-p">h</span>: <span class="tk-n">160</span> },
-  <span class="tk-p">interaction</span>: { <span class="tk-p">selectable</span>: <span class="tk-n">true</span>, <span class="tk-p">movable</span>: <span class="tk-n">true</span>, <span class="tk-p">resizable</span>: <span class="tk-n">true</span>, <span class="tk-p">snap</span>: <span class="tk-s">"both"</span> },
+// 1 · The desk's preset: the six reference objects, the desk's select tool (a bare-mat drag pans,
+//     shift draws the marquee), a plain wheel zooming about the pointer, the scale-free zoom, the zoom-through.
+const engine = createCanvasEngine(DESK_ENGINE);
+engine.docs.create();                                  // a local-first document; .join() for a room
+engine.ops.spawnWidget("desk.note", { x: 120, y: 120, props: { text: "Write something…" } });
+
+// 2 · The desk is an OPAQUE layer factory: the renderer, its kinds, the theme, the text raster.
+const layer = deskLayer({
+  theme: deskTheme("light"), palette: deskPalette("light"),   // the shipped default palette — or your own tokens
+  objects: [...DESK_OBJECTS], docs: engine.docs,
+  text: inkRaster({ faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }) }),   // YOUR font URLs
 });
 
-<span class="tk-c">// 2 · The view reads props with a hook and writes through commit —</span>
-<span class="tk-c">//     one commit call = one undo step, synced to every peer.</span>
-<span class="tk-k">function</span> <span class="tk-f">StickyView</span>({ entity, world }) {
-  <span class="tk-k">const</span> props = <span class="tk-f">useWidgetProps</span>(world, entity, <span class="tk-s">"sticky"</span>);
-  <span class="tk-k">const</span> commit = <span class="tk-f">useCommit</span>();
-  <span class="tk-k">return</span> (
-    &lt;<span class="tk-f">textarea</span>
-      <span class="tk-p">value</span>={props.text}
-      <span class="tk-p">onChange</span>={(e) =&gt;
-        <span class="tk-f">commit</span>((tx) =&gt; tx.<span class="tk-f">edit</span>(entity).<span class="tk-f">set</span>(Sticky.groups[<span class="tk-n">0</span>].component, { <span class="tk-p">text</span>: e.target.value }))
-      }
-    /&gt;
-  );
-}
-
-<span class="tk-c">// 3 · Boot: engine → document → content → mount.</span>
-<span class="tk-k">const</span> engine = <span class="tk-f">createCanvasEngine</span>({ <span class="tk-p">widgets</span>: [Sticky] });
-engine.docs.<span class="tk-f">create</span>();                                  <span class="tk-c">// a local-first document</span>
-engine.ops.<span class="tk-f">spawnWidget</span>(<span class="tk-s">"sticky"</span>, { <span class="tk-p">x</span>: <span class="tk-n">120</span>, <span class="tk-p">y</span>: <span class="tk-n">120</span> });
-<span class="tk-f">attachKeymap</span>(engine);                                   <span class="tk-c">// ⌫ · ⌘Z · ⌘D · ⌘A · Esc · arrows · v/h/c</span>
-
-<span class="tk-f">createRoot</span>(document.getElementById(<span class="tk-s">"root"</span>)).<span class="tk-f">render</span>(
-  &lt;<span class="tk-f">EngineProvider</span> <span class="tk-p">engine</span>={engine}&gt;
-    &lt;<span class="tk-f">InfiniteCanvas</span> <span class="tk-p">engine</span>={engine} /&gt;
-  &lt;/<span class="tk-f">EngineProvider</span>&gt;,
+createRoot(document.getElementById("root")).render(
+  &lt;EngineProvider engine={engine}&gt;
+    &lt;Desk engine={engine} layer={layer} /&gt;
+  &lt;/EngineProvider&gt;,
 );</code></pre></div>
-        <p>What you now have, with zero extra code: click to select (shift-click toggles), drag to move with snap guides, eight resize handles, marquee select on empty canvas, wheel to pan, pinch or <kbd>⌘</kbd>-scroll to zoom, per-gesture undo, and full keyboard support. Every behavior is documented in the sections below.</p>
-        <div class="tryit"><p class="tt">Try it in the repo</p><pre>pnpm --filter cardboard dev     # DOM widget board
-pnpm --filter nodeboard dev     # node editor (add ?room=x&amp;relay=ws://localhost:9301 after `pnpm relay`)
-pnpm --filter glboard dev       # mixed DOM + GL board</pre></div>
+        <p>What you now have, with zero extra code: click to select (shift-click toggles), drag to move with snap guides drawn as lasers, resize grips, a bare-mat drag that pans and a shift-drag that draws the vellum marquee, a plain wheel that zooms about the pointer, mini mats you fly into and out of, a note you write on in place, per-gesture undo, and full keyboard support. Every behavior is documented in the sections below.</p>
+        <div class="tryit"><p class="tt">Try it in the repo</p><pre>pnpm --filter desk dev          # the desk (add ?room=x&amp;relay=ws://localhost:9301 after `pnpm relay`)</pre></div>
         <div class="demo-embed"><iframe src="demos/board.html" loading="lazy" title="Live demo — the starter board"></iframe></div>
         <p class="demo-cap">live — this exact app, served from the published package via esm.sh (the 0.1.0 API; the desk of 0.14.0 is <code>apps/desk</code>). <a href="demos/board.html" target="_blank" rel="noopener" style="color:var(--ink2);border-bottom:1px solid var(--line2)">open standalone ↗</a></p>
       </article>
@@ -517,7 +499,7 @@ engine.ops.exitContainer();         // step out</pre></div>
         <ul>
           <li><b>Compatibility is declared, not coded</b>: a connection requires the ports' <code>accepts</code> keys to match. Incompatible ports never light up.</li>
           <li><b>Ports cost nothing until needed.</b> Port entities materialize on demand — near the viewport with the connect tool, on hover, or during a connect drag — and reap afterward. Panning a 10,000-node board with the select tool creates zero port entities.</li>
-          <li><b>Wires render under content</b> and pick above the canvas, so they're clickable but never in the way. Deleting either endpoint deletes the wire in the same transaction.</li>
+          <li><b>Wires pick above the canvas</b>, so they're clickable but never in the way; deleting either endpoint deletes the wire in the same transaction. (The engine's wire model stands; the desk's wire pass returns with the first ported kind.)</li>
           <li><b>No flicker on commit</b>: the preview persists exactly until the real wire appears.</li>
         </ul>
         <div class="tryit"><p class="tt">Try it</p><pre>const Osc = defineWidget({ /* … */ ports: [{ id: "out", side: "e", accepts: ["signal"] }] });
@@ -525,7 +507,7 @@ const Filter = defineWidget({ /* … */ ports: [
   { id: "in", side: "w", accepts: ["signal"] },
   { id: "out", side: "e", accepts: ["signal"] },
 ]});
-// run it:  pnpm --filter nodeboard dev</pre></div>
+// the desk draws no wires yet: no reference kind declares ports — the wires pass is owed to the first kind that does (design-015 D5b)</pre></div>
         <div class="demo-embed"><iframe src="demos/nodes.html" loading="lazy" title="Live demo — node editor, ports and wires"></iframe></div>
         <p class="demo-cap">live — the connect tool is active: drag from a port to a compatible port. <a href="demos/nodes.html" target="_blank" rel="noopener" style="color:var(--ink2);border-bottom:1px solid var(--line2)">open standalone ↗</a></p>
       </article>
@@ -572,19 +554,18 @@ const peers = usePresencePeers();                          // avatar stack
 
       <h3 class="subhead" id="rendering">Rendering &amp; performance</h3>
 
-      <article class="entry" id="rendering-behavior" data-k="culling unmount lru frozen hidden measurement auto size breakpoints responsive gl islands fbo zoom bands dpr">
+      <article class="entry" id="rendering-behavior" data-k="desk renderer webgpu idle zero cull spatial index raster budget breakpoints responsive faults">
         <h4><a href="#rendering-behavior">What the renderer does for you</a></h4>
         <ul>
-          <li><b>Off-screen widgets hide, they don't unmount.</b> The most recent 256 stay mounted (tunable), so scrolling away and back preserves React state — scroll positions, focus, in-progress input.</li>
-          <li><b>Hidden widgets are frozen.</b> Their prop subscriptions suspend while hidden: a collaborator editing 500 off-screen cards re-renders zero of your trees.</li>
-          <li><b>Auto-sizing without polluting the document</b>: <code>sizeMode: "auto-height"</code> or <code>"auto"</code> measures real content (ResizeObserver) into a session-only value; the document keeps only authored sizes.</li>
-          <li><b>Responsive widgets</b>: <code>useBreakpoint(entity)</code> returns one of five tiers computed from on-screen size × zoom — swap dense/full layouts without measuring anything yourself.</li>
-          <li><b>GL widgets are islands</b>: each renders into a pooled texture at zoom-banded resolution (256 MB budget), composites as a quad, and repaints only when it declares <code>animated</code>, subscribes via <code>useIslandFrame</code>, or its props change. While you pan or zoom, resolution gates down and repaints defer — gestures stay at full frame rate.</li>
-          <li><b>Rendering never writes back</b>: reflectors and the GL loop are consumers of world state, enforced in dev builds. If a frame is wrong, the truth is in the world, not in a render callback.</li>
+          <li><b>One renderer draws everything under the camera</b> (design-015): the desk's WebGPU layer draws every object from the world — a widget's face is its <code>object</code> kind; nothing mounts a component, and the DOM lives in screen space only.</li>
+          <li><b>Idle is zero.</b> A quiet desk submits nothing: the reflector paints only on a change it can name — a write, the camera, a theme, a spring still settling, the wind while the ambient is live.</li>
+          <li><b>The cull rides the one spatial index</b> with a hysteresis margin, so a pan costs nothing for the objects off screen; the kinds' raster caches share one LRU ledger (<code>deskLayer({ rasterBudget })</code>, 192 MB by default).</li>
+          <li><b>Responsive widgets</b>: <code>useBreakpoint(entity)</code> returns one of five tiers computed from on-screen size × zoom.</li>
+          <li><b>Rendering never writes back</b>: reflectors are consumers of world state, enforced in dev builds. A reflector that throws skips its frame and is routed to <code>onReflectorFault</code> — count them.</li>
         </ul>
-        <div class="tryit"><p class="tt">Try it</p><pre>const bp = useBreakpoint(entity);          // "xs" … tier 5 — render dense vs full
-createCanvasEngine({ budgets: { keepMounted: 512, fboBytes: 128e6 } })
-pnpm --filter glboard dev                  // islands, bands, and GL input live</pre></div>
+        <div class="tryit"><p class="tt">Try it</p><pre>const engine = createCanvasEngine(DESK_ENGINE);   // @vibecook/ice/desk/objects
+const bp = useBreakpoint(entity);                 // "micro" … "detailed" — render dense vs full
+pnpm --filter desk dev                            // the desk; the backtick opens the dev panel</pre></div>
       </article>
     </section>
 
@@ -718,11 +699,8 @@ world.setResource(SnapConfig, { enabled: false, thresholdPx: 5 });</pre></div>
             <tr><td>version</td><td><code>number = 1</code></td><td>Per-type document version — the open gate and migrations key off it.</td></tr>
             <tr><td>props</td><td><code>Record&lt;string, p.*&gt;</code></td><td>The props DSL (below). Every top-level field must carry a default.</td></tr>
             <tr><td>groups</td><td><code>Record&lt;group, prop[]&gt;</code></td><td>Conflict groups → one generated component each (<code>&lt;type&gt;:&lt;group&gt;</code>). Membership must be total and disjoint; ungrouped props form the <code>"props"</code> group. The component is the CRDT conflict unit.</td></tr>
-            <tr><td>surface<span class="req">req</span></td><td><code>"dom" | "gl"</code></td><td>DOM portal widget, or R3F compositor island.</td></tr>
-            <tr><td>component<span class="req">req</span></td><td><code>FC&lt;{entity, world}&gt;</code></td><td>Opaque to core — the react package narrows it.</td></tr>
-            <tr><td>sizeMode</td><td><code>"fixed" | "auto-height" | "auto"</code></td><td>Auto modes measure via ResizeObserver → <code>MeasuredSize</code> rider; auto widgets never commit <code>Size</code> — the doc stores authorial intent only.</td></tr>
+            <tr><td>object</td><td><code>ObjectKind</code></td><td>The widget's FACE: a GPU object kind the desk draws (<code>defineObject</code>, <code>@vibecook/ice/desk</code>). The view fields — <code>surface</code>, <code>component</code>, <code>chrome</code>, <code>animated</code>, <code>preview</code>, <code>instancePreview</code>, <code>sizeMode</code> — are REFUSED since design-015 D5b.</td></tr>
             <tr><td>defaultSize · minSize</td><td><code>{w, h}</code></td><td>World units.</td></tr>
-            <tr><td>animated</td><td><code>boolean</code></td><td><b>GL only</b>: repaint every visible frame. Plain <code>useFrame</code> inside a portal cannot be attributed to an island — content-driven animation goes through <code>useIslandFrame</code>.</td></tr>
             <tr><td>interaction</td><td><code>WidgetInteraction</code></td><td><code>selectable · movable · resizable</code> · <code>snap: "source"|"target"|"both"|"none"</code> · <code>solid</code> (drop-rejecting target — dropped widgets fly back) · <code>dragOn: "press" | "longPress"</code> (hold-to-lift, the iOS model).</td></tr>
             <tr><td>ports</td><td><code>{id, side, index?, accepts?}[]</code></td><td>Wires bind to widget + port <b>id</b>; port entities are runtime and materialize on demand. <code>accepts</code> is the compatibility key list the connect gesture checks.</td></tr>
             <tr><td>container</td><td><code>{accepts, provides?}</code></td><td>Containment contract: makes this widget a drop target and an enterable frame.</td></tr>
@@ -794,14 +772,14 @@ createDrawTool(widgetType: string): Tool</pre>
 
       <article class="entry" id="facade" data-k="createcanvasengine facade engine budgets settings policy world ops docs step dispose">
         <h4><a href="#facade">createCanvasEngine</a><span class="kchip">function</span></h4>
-        <pre class="sig">createCanvasEngine({ widgets?, tools?, budgets?, settings?, policy?, measureQueue? })
+        <pre class="sig">createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, behaviors?, budgets?, settings?, policy?, compositorDevice?, onGuestFault?, onReflectorFault?, … })
   ⇒ { world, engine, stack, runtime, nav, ops, docs, budgets, step(now), dispose() }</pre>
         <p>Construction wires the world, schema/prefab registration (HMR-safe boot kit), the pipeline, built-in systems, the reflector registry, and settings resources. <b>Doc-less by construction</b> — ops that need a document throw with guidance; <code>engine.docs.create()</code> is the first call of every editor app.</p>
         <table class="t">
           <thead><tr><th>option</th><th>notes</th></tr></thead>
           <tbody>
             <tr><td>widgets · tools</td><td><code>WidgetType[]</code> / <code>Tool[]</code> to register. Built-in tools ship regardless.</td></tr>
-            <tr><td>budgets</td><td><code>{keepMounted: 256, fboBytes: 256e6, portSpawnPerFrame: 64, portRadiusPx: 600}</code></td></tr>
+            <tr><td>budgets</td><td><code>{framePreviewChildren?: 128, framePreviewBytes?: 256 KiB}</code> — a frame preview's limits (the mount and GL budgets left with the hybrid at design-015 D5b)</td></tr>
             <tr><td>settings</td><td>Seeds live-tunable resources: <code>GestureSettings</code>, <code>PointerSettings</code>, <code>CameraLimits</code> (zoom clamp 0.1–5), <code>SnapConfig</code> (threshold 5 px). Resource first, reviewed constants as fallback.</td></tr>
             <tr><td>policy</td><td><code>{versionGate: "reject" | "read-only" | "migrate"}</code> — what <code>docs.open</code> does on version skew.</td></tr>
           </tbody>

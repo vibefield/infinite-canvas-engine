@@ -984,6 +984,16 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   `apps/desk/tools/make-gobo-plate.mjs` (the prototype's, its image path and PNG previews left behind), whose
   `--check` — apps/desk's `gen:check` — regenerates `palm --seed 1` and `canopy --seed 1` and fails on any differing
   byte (both reproduce byte for byte; one flipped byte in the palm plate → FAIL).
+- **The docs say what the code does** (D7 surface #10). `docs/api.html` documented `defineWidget`'s `surface`/`component`
+  as required and `sizeMode`/`animated` as fields (all refused since D5b — an `object` row replaces them), gave
+  `createCanvasEngine` a `measureQueue` (so did `api-reference.md`), budgets it no longer has, and a quickstart and
+  "Try it" blocks built on `<InfiniteCanvas>` and deleted apps; its renderer entry described portals, islands and a
+  keep-mounted LRU. `docs/index.html` still showed "Six planes, one camera", GL islands, the keep-mounted LRU,
+  `MeasuredSize` and the GL router, and "React and R3F components … wired into node graphs". The READMEs said
+  `/desk/engine` holds "device, surface, passes" (the swap chain is `/desk`'s; no pass ships there);
+  `api-reference.md`'s `defineTool` row lacked `canvasDragShift`; JSDoc named `@ice/desk/host` (not an entry),
+  `<InfiniteCanvas>` as the menu's engine provider, "three adopts it", and the retired `SurfaceTarget` as current.
+  Each fixed; `scripts/check-docs.mjs` (the root `gen:check`, so `ci`) pins the ten rows — red on the pre-D7 tree.
 
 ## [0.13.0] — 2026-09-07
 

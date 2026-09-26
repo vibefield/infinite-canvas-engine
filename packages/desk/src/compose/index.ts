@@ -2,7 +2,7 @@
 // D2a-world): the builder (the frame's objects as records, the flux, the ghosts), the pick source
 // over the kinds' mirrors, the ambient policy (the wind that idles), the reflector that draws
 // only on pulled dirt, and the submit instrument that proves it. The host half — the canvas, the
-// device, the layer factory a React or vanilla host mounts — is `@ice/desk/host` (`deskLayer`).
+// device, the layer factory a React or vanilla host mounts — is src/host/ (`deskLayer`, in `@ice/desk`'s root barrel).
 export { AMBIENT_DEFAULTS, type Ambient, type AmbientMode, type AmbientOptions, type AmbientPhase, type AmbientPin, type AmbientState, createAmbient } from "./ambient";
 export { type BuildViewport, type BuildWork, type BuiltDesk, createDeskBuilder, type DeskBuilder, type DeskBuilderOptions, type DeskBuilderStats, type DeskWakeReason, type HeldBuild, type HoldPin } from "./builder";
 export { createMarksCollector, type MarkRow, type MarksCollector, type SelectionAnchor } from "./marks";

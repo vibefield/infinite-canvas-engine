@@ -530,7 +530,7 @@ footer a:hover{color:var(--ink)}
     <div class="wrap">
       <p class="eyebrow"><b>ICE</b> — infinite canvas engine · built on strata-ecs</p>
       <h1>An infinite canvas that <em>shows its work.</em></h1>
-      <p class="sub"><code>defineWidget</code> turns React and R3F components into canvas citizens — selectable, movable, resizable, wired into node graphs, synced over CRDT, undoable per gesture. Underneath: an archetype ECS where every pointer, gesture, and claim is queryable world state.</p>
+      <p class="sub"><code>defineObject</code> turns a GPU object kind into a canvas citizen — selectable, movable, resizable, nested in mini mats, synced over CRDT, undoable per gesture — drawn with every other object by one WebGPU renderer from the world. Underneath: an archetype ECS where every pointer, gesture, and claim is queryable world state.</p>
       <div class="cta-row">
         <a class="btn btn-solid" href="api.html">Read the API →</a>
         <a class="btn btn-ghost" href="#architecture">The architecture</a>
@@ -572,7 +572,7 @@ footer a:hover{color:var(--ink)}
       <div class="pillar rv">
         <span class="tagname">widgets</span>
         <h3>Widgets are prefabs</h3>
-        <p><code>defineWidget</code> compiles props into conflict-group components on a durable prefab. Views are React portals from one root, or GL compositor islands. Cull ≠ unmount; hidden trees freeze.</p>
+        <p><code>defineWidget</code> compiles props into conflict-group components on a durable prefab; its face is an <code>object</code> kind the desk's one WebGPU renderer draws from the world. Idle is zero; the cull rides the spatial index.</p>
       </div>
       <div class="pillar rv">
         <span class="tagname">tools</span>
@@ -802,62 +802,26 @@ footer a:hover{color:var(--ink)}
           <li><b>One durable prefab</b> — <code>PrefabId</code> + Position/Size/StackZ + one generated component per group (<code>todo-card:content</code>, <code>todo-card:style</code>). The conflict unit is the component.</li>
           <li><b>Capability tags</b> — <code>Selectable</code>, <code>Movable</code>, <code>Resizable</code>, snap roles: stamped as <i>runtime</i> tags at projection. Tags stay pure.</li>
           <li><b>Port declarations</b> — kernel anchor input; port <i>entities</i> are runtime and materialize on demand. Panning with the select tool spawns zero.</li>
-          <li><b>A view registration</b> — DOM widgets render as portals from one React root; GL widgets render as compositor islands with a pooled FBO.</li>
+          <li><b>The face</b> — the widget's <code>object</code> kind: the desk draws it from the world, and nothing mounts a component (the view fields are refused since design-015 D5b).</li>
           <li><b>A migration chain</b> — validated for contiguity at definition time, run at document open.</li>
         </ul>
       </div>
     </div>
 
     <div class="twocol">
-      <figure class="panel rv">
-        <h3>Six planes, one camera</h3>
-        <svg viewBox="0 0 470 330" style="display:block;width:100%;height:auto" role="img" aria-label="Exploded stack of the six output planes P0 to P5">
-          <g font-family="JetBrains Mono,monospace" font-size="10.5">
-            <!-- exploded parallelograms, bottom (P0) to top (P5) -->
-            <g>
-              <polygon points="60,296 250,254 440,296 250,338" fill="rgba(77,227,174,.08)" stroke="#4DE3AE"/>
-              <text x="34" y="300" fill="#4DE3AE" font-weight="700">P0</text>
-              <text x="250" y="300" fill="#B9F3DE" text-anchor="middle">ground · WebGL — grid + wires pass</text>
-            </g>
-            <g>
-              <polygon points="60,246 250,204 440,246 250,288" fill="rgba(77,163,255,.08)" stroke="#4DA3FF"/>
-              <text x="34" y="250" fill="#4DA3FF" font-weight="700">P1</text>
-              <text x="250" y="250" fill="#BFDCFF" text-anchor="middle">content · DOM — widget hosts, world units</text>
-            </g>
-            <g>
-              <polygon points="60,196 250,154 440,196 250,238" fill="rgba(77,227,174,.08)" stroke="#4DE3AE"/>
-              <text x="34" y="200" fill="#4DE3AE" font-weight="700">P2</text>
-              <text x="250" y="200" fill="#B9F3DE" text-anchor="middle">GL views · WebGL — composited island quads</text>
-            </g>
-            <g>
-              <polygon points="60,146 250,104 440,146 250,188" fill="rgba(77,163,255,.08)" stroke="#4DA3FF"/>
-              <text x="34" y="150" fill="#4DA3FF" font-weight="700">P3</text>
-              <text x="250" y="150" fill="#BFDCFF" text-anchor="middle">lifted · DOM — promoted drags, portal swap</text>
-            </g>
-            <g>
-              <polygon points="60,96 250,54 440,96 250,138" fill="rgba(255,184,77,.08)" stroke="#FFB84D"/>
-              <text x="34" y="100" fill="#FFB84D" font-weight="700">P4</text>
-              <text x="250" y="100" fill="#FFE3B8" text-anchor="middle">chrome · DOM pooled — selection, handles, guides</text>
-            </g>
-            <g>
-              <polygon points="60,46 250,4 440,46 250,88" fill="rgba(192,139,255,.08)" stroke="#C08BFF"/>
-              <text x="34" y="50" fill="#C08BFF" font-weight="700">P5</text>
-              <text x="250" y="50" fill="#E3D0FF" text-anchor="middle">cursors · DOM — remote presence</text>
-            </g>
-          </g>
-        </svg>
-        <p class="figcap">P0–P3 apply the camera as <b>one transform each</b> — pan cost is O(planes), never O(widgets). P4–P5 are deliberately screen-space. Chrome always renders above content.</p>
-      </figure>
+      <div class="panel rv">
+        <h3>One renderer, one camera</h3>
+        <p>Everything under the camera — the cutting mat, the mini mats and their insides, every object — is drawn by <b>one WebGPU renderer</b> from the ECS world, in strata (pads · sheets · things) and then the marks (the selection, the snap guides as lasers, the marquee's vellum). The DOM lives only in <b>screen space</b>: the one focused editor, the cursors, the selection menu. No DOM element carries a camera transform, so a pan re-renders one canvas, never a tree of elements.</p>
+      </div>
 
       <div class="panel accent-m rv">
         <h3>Runtime guarantees</h3>
         <ul>
-          <li><b>Cull ≠ unmount</b> — culled hosts hide but stay mounted within an LRU budget (default 256). React state survives scrolling away and back.</li>
-          <li><b>Hidden trees freeze</b> — props subscriptions suspend while hidden: a doc edit re-renders zero off-screen widgets.</li>
-          <li><b>Auto-size without pollution</b> — ResizeObserver → <code>MeasuredSize</code> session rider; the document stores authorial intent only.</li>
-          <li><b>GL islands</b> — own Scene + ortho camera, size-keyed FBO pool, zoom-band resolution with hysteresis, DPR gated while gesturing.</li>
-          <li><b>Zero render→ECS writes</b> — DEV-enforced with a write trap. The render loop is a consumer, never an author.</li>
-          <li><b>First tap works</b> — the GL router point-picks synchronously at event time; widget opt-out is world state (<code>surfaceHandled</code>), not an event trick.</li>
+          <li><b>Idle is zero</b> — a quiet desk submits nothing to the GPU: the reflector paints only on a change it can name (a write, the camera, a theme, a spring still moving, the wind when the ambient is live).</li>
+          <li><b>The cull rides the one spatial index</b> — with a hysteresis margin, so a pan is O(1) in the objects off screen.</li>
+          <li><b>Zero render→ECS writes</b> — reflectors run after notify and never write the world. The render loop is a consumer, never an author.</li>
+          <li><b>What you hit is what was drawn</b> — each kind's CPU mirror answers the pick on the same geometry the renderer drew; picking is the interaction stack's, at the tick, never a DOM hit test.</li>
+          <li><b>Contained faults are counted</b> — a reflector that throws skips its frame and is routed to <code>onReflectorFault</code>; a guest's throw trips its breaker (<code>onGuestFault</code>).</li>
         </ul>
       </div>
     </div>
@@ -973,7 +937,7 @@ footer a:hover{color:var(--ink)}
       <a class="demo rv" href="api.html#node-editor"><span class="dn">Node editor</span><p>Declared ports, compatibility-checked wiring, light-up targets, cascade on delete.</p></a>
       <a class="demo rv" href="api.html#docs-behavior"><span class="dn">Documents &amp; undo</span><p>One undo step per gesture, selection restore, gesture-aware autosave, versioned open.</p></a>
       <a class="demo rv" href="api.html#presence-behavior"><span class="dn">Presence</span><p>Named live cursors and selection outlines that can never repaint your content.</p></a>
-      <a class="demo rv" href="api.html#rendering"><span class="dn">Rendering &amp; perf</span><p>Cull ≠ unmount, frozen hidden trees, auto-sizing, breakpoints, GL islands.</p></a>
+      <a class="demo rv" href="api.html#rendering"><span class="dn">Rendering &amp; perf</span><p>One renderer, idle-zero, the cull on the spatial index, the raster budget, breakpoints.</p></a>
       <a class="demo rv" href="api.html#vocabulary"><span class="dn">The vocabulary</span><p>Every built-in component, tag, relation, and resource — queryable from your own code.</p></a>
       <a class="demo rv" href="api.html#start"><span class="dn">Getting started</span><p>A complete minimal app in one file, and seven runnable demo boards.</p></a>
     </div>

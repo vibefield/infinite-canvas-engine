@@ -6,7 +6,7 @@
  * desk draws its own marks, design-015 §7), no measurement, no GL route, no `grid` prop (the
  * desk's handle has `configureFadeIn`/`configureMat`).
  *
- * The desk arrives as an OPAQUE layer factory — `layer={deskLayer({ … })}` from `@ice/desk/host`
+ * The desk arrives as an OPAQUE layer factory — `layer={deskLayer({ … })}` from `@vibecook/ice/desk`
  * — typed structurally by `@ice/dom`; this package imports neither `@ice/desk` nor its handle.
  * Memoize the factory in the caller: a new identity re-boots the mount.
  *
