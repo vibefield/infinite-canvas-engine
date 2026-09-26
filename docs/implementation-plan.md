@@ -1079,7 +1079,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — and D3t-a LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — D3t-a and D3t-b LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1420,6 +1420,24 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   exit 0 (re-run by the orchestrator on the rebased tip: parity 95 · 0 · 6 kept, world 82 · 0 · 6 kept). Owed: coalesced
   pointer samples and pen pressure; a cancelled press read as a lift; a peer's stroke mid-draw shifting the live seed;
   tip and wipe without bar slots; wet ink keeps the desk drawing 7.2 s after a stroke (the law's).
+- **D3t-b — the notebook in hand** (**LANDED 2026-09-26**, `f3d7c17` … `abd06ff`, seven commits, opus): page strokes are
+  DATA — `desk.stroke` v3 adds `page` (sheet i's recto 2i + 1, verso 2i + 2; a v2 stroke migrates to 0), a notebook
+  stroke's path in page units with D3t-a's `times`, the prototype's fountain-pen law over the samples; the page raster is
+  pure arithmetic (the prototype's Canvas2D stroke re-expressed, so the desk and the Node oracle share it byte for byte)
+  and the eight ink layers are a CACHE — LRU over the pages in view, a page replayed when its strokes change, the live
+  stroke's final segments drawn once with only the touched rectangle uploaded, the lifted stroke ADOPTED. Writing in hand
+  samples the pointer through the same desk eye the risen book is drawn with; the lift is ONE child in one transaction.
+  The turns are PARTS (core: a press on a named part is `HeldPress` "part" and never a tap that puts down): a page's
+  outer 30 % takes the sheet (drag) or turns it (click), the keys and the bar count turns the hand follows (a run fans),
+  the fore-edge corner peeks, a completed turn writes `spread` off the undo stack, a portrait phone turns page by page.
+  Found and fixed: an undo in hand left the undone ink on its page (nothing woke the desk for a held book's children);
+  two dots on one spot in two pens shared an identity. Exit: three new oracle stills (a written spread, a sheet mid-turn
+  carrying its writing, by night) at maxΔ 0 in rig:parity (98 · 0 · 6 kept) and FROM THE WORLD (85 · 0 · 6 kept);
+  rig:open 68 → 103, rig:two-tab 26 → 33 (a stroke by hand in A on B's page, a turn in A turns B's copy); 25 red proofs;
+  core 788, desk 483 units; ci exit 0; `gate:landing` exit 0 (re-run by the orchestrator). For James: the turn zone is
+  the prototype's and the brief's 30 % where design-015 §6's table says 16 %. Owed: the turn zone's cursor (core has no
+  part-cursor seam), the two-finger leaf-through, the bar's page numbers, ⌘Z of an out-of-view page not turning to it,
+  pen pressure and coalesced samples, the last pen not durable, the eight layers' CPU copies (5.6 MB each).
 
 ## Release cut & downstream
 
