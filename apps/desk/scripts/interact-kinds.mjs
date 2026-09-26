@@ -1,10 +1,11 @@
-// rig:interact's D3w section — the whiteboard, the print, the notebook and the desk calendar AT REST, from the world,
-// through core's generic systems (a click selects and the ring springs; the hover is each kind's — a board's the
-// cursor's, a print's edge lifts 2.2, a book rises 3.5, a pad's tape is its handle; a drag lifts by the kind's
-// height, lands where it was let go and is ONE undo step; ⌫ removes it and ⌘Z brings it back) — and the print's
-// OWN carry: a press lifts it, the grab point rides the finger, a flick glides it on and the mat's grip stops it,
-// and it lands where the LAW says (the rig replays photo.ts `stepPhoto` over the desk's own steps from the body the
-// hand let go) in ONE transaction. Each object is laid in its own clear stretch of the desk, far from the notes.
+// rig:interact's D3w section — the whiteboard, the print, the notebook and the desk calendar AT REST, from the
+// world, through core's generic systems (a click selects and the object wears D4a's brackets — its kind's own ring
+// retired; the hover is each kind's — a board's the cursor's, a print's edge lifts 2.2, a book rises 3.5, a pad's
+// tape is its handle; a drag lifts by the kind's height, lands where it was let go and is ONE undo step; ⌫ removes
+// it and ⌘Z brings it back) — and the print's OWN carry: a press lifts it, the grab point rides the finger, a flick
+// glides it on and the mat's grip stops it, and it lands where the LAW says (the rig replays photo.ts `stepPhoto`
+// over the desk's own steps from the body the hand let go) in ONE transaction. Each object is laid in its own clear
+// stretch of the desk, far from the notes.
 import { stepPhoto } from "../../../packages/desk/src/photo/photo.ts";
 
 /** @param {Record<string, any>} t the rig's helpers: q, qa, entity, entities, mouse, click, key, sleep, settle, check, near, META, SHIFT */
@@ -16,6 +17,10 @@ export async function kindsRig(t) {
   const click = async (x, y, extra = {}) => { await t.click(x, y, extra); await sleep(120); };
   const cam = (x, y, zoom) => q(`window.__desk.setCamera({ x: ${x}, y: ${y}, zoom: ${zoom} })`);
   const typeOf = async (type) => (await entities()).filter((e) => e.type === type);
+  /** The desk's marks as last drawn (D4a): ONE object wearing the brackets, locked on — the selection as the product shows it. */
+  const marks = () => q("window.__desk.marks()");
+  const bracketed = (m) => (m?.objects ?? []).length === 1 && m.objects[0].style === "brackets" && m.objects[0].t === 1 && m.objects[0].alpha === 1;
+  const worn = (m) => (m?.objects ?? []).map((o) => `${o.style} t ${o.t} α ${o.alpha}`).join(", ") || "no marks";
   /** Press at `from`, walk to `to` in `steps` samples `gap` ms apart; `hold` ms still before the release (0 = let go moving). */
   const carry = async (from, to, steps, gap, hold) => {
     await mouse("mouseMoved", from[0], from[1]);
@@ -43,7 +48,8 @@ export async function kindsRig(t) {
   await click(600, 400);
   await sleep(700);
   let b = await entity(board);
-  check(b.selected && b.flux.ring === 1, `board: a click on the melamine selects it; its ring springs to 1 (${b.flux.ring})`);
+  const bSel = await marks();
+  check(b.selected && bracketed(bSel) && b.geometry.ring === 0, `board: a click on the melamine selects it — it wears the brackets, locked on (${worn(bSel)}); its kind draws no ring (handed ${b.geometry.ring})`);
   await hover(640, 420);
   await sleep(500);
   b = await entity(board);
@@ -82,7 +88,8 @@ export async function kindsRig(t) {
   await click(600, 400);
   await settle();
   let p = await entity(print);
-  check(p.selected && near(p.cx, 4000) && near(p.cy, 1500), "print: a tap selects it — the hand lifted it and laid it back where it was: no transaction");
+  const pSel = await marks();
+  check(p.selected && bracketed(pSel) && near(p.cx, 4000) && near(p.cy, 1500), `print: a tap selects it — it wears the brackets (${worn(pSel)}); the hand lifted it and laid it back where it was: no transaction`);
   await hover(640, 420);
   await sleep(600);
   p = await entity(print);
@@ -140,17 +147,19 @@ export async function kindsRig(t) {
   await sleep(700);
   let k = await entity(book);
   const restZ = k.geometry.rigid.t[2];
-  check(k.selected && k.geometry.ring === 1, `notebook: a click selects it; its ring springs to 1 (${k.geometry.ring})`);
+  const kSel = await marks();
+  check(k.selected && bracketed(kSel) && k.geometry.ring === 0, `notebook: a click selects it — it wears the brackets, locked on (${worn(kSel)}); its kind draws no ring (handed ${k.geometry.ring})`);
   await hover(610, 420);
   await sleep(700);
   k = await entity(book);
   check(k.flux.hover > 0.9 && near(k.geometry.rigid.t[2] - restZ, 3.5, 1e-3), `notebook: hovered, it rises the law's 3.5 (${(k.geometry.rigid.t[2] - restZ).toFixed(3)})`);
   await carry([600, 400], [550, 360], 6, 30, 300);
   const kHeld = await entity(book);
+  const kHeldMarks = await marks();
   await release([550, 360]);
   await settle();
   const kMoved = await entity(book);
-  check(kHeld.grabbed && kHeld.geometry.rigid.t[2] - restZ > 15 && kHeld.geometry.ring < 0.5, `notebook: held it lifts toward 30 through the desk eye (${(kHeld.geometry.rigid.t[2] - restZ).toFixed(1)}) and puts its ring away`);
+  check(kHeld.grabbed && kHeld.geometry.rigid.t[2] - restZ > 15 && bracketed(kHeldMarks) && kHeld.geometry.ring === 0, `notebook: held it lifts toward 30 through the desk eye (${(kHeld.geometry.rigid.t[2] - restZ).toFixed(1)}) — the selection's brackets go with it (${worn(kHeldMarks)}), no ring`);
   check(near(kMoved.cx, kHeld.cx) && near(kMoved.cy, kHeld.cy) && kMoved.cx < 4000, `notebook: let go, it lies where it was held (${kMoved.cx.toFixed(1)}, ${kMoved.cy.toFixed(1)})`);
   await key("z", "KeyZ", 90, META);
   await settle();
@@ -182,7 +191,8 @@ export async function kindsRig(t) {
   await click(600, tapeY);
   await sleep(700);
   let c = await entity(pad);
-  check(c.selected && c.geometry.ring === 1, `pad: a click on its TAPE selects it; its ring springs to 1 (${c.geometry.ring})`);
+  const cSel = await marks();
+  check(c.selected && bracketed(cSel) && c.geometry.ring === 0, `pad: a click on its TAPE selects it — it wears the brackets, locked on (${worn(cSel)}); its kind draws no ring (handed ${c.geometry.ring})`);
   await hover(700, tapeY);
   await sleep(500);
   c = await entity(pad);

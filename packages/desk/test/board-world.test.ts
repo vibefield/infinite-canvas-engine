@@ -29,9 +29,10 @@ const viewOf = (s: { camX: number; camY: number; zoom: number }) => ({ camX: s.c
 interface BoardScene { camX: number; camY: number; zoom: number; boards: { x: number; y: number; strokes?: { ink?: string; tip?: string; erase?: boolean; points: [number, number][] }[] }[] }
 const inkScene = sceneOf<BoardScene>("board-ink-z1");
 const BOARD_STROKES = must(must(inkScene.boards[0]).strokes);
+/** A board's context as the builder hands it — ring 0 selected or not: the kinds' own ring is retired, a selection is the desk's marks (D4a). */
 const ctxOf = (b: { x: number; y: number; selected?: boolean }, over: Partial<ObjectContext> = {}): ObjectContext => ({
   entity: 7 as Entity, rect: rectOf({ x: b.x - W / 2, y: b.y - H / 2 }, { w: W, h: H }), props: { cap: "black", tip: "bullet" },
-  flux: { ...FLUX_REST, ring: b.selected ? 1 : 0 }, look, theme: THEMES.light, lamp, view: viewOf(inkScene), grid: DEFAULT_GRID, dt: 1 / 60, ...over,
+  flux: { ...FLUX_REST, ring: 0 }, look, theme: THEMES.light, lamp, view: viewOf(inkScene), grid: DEFAULT_GRID, dt: 1 / 60, ...over,
 });
 
 let oracle: OracleInternals;
@@ -53,7 +54,7 @@ describe("the Board object (design-015 §6)", () => {
 });
 
 describe("the board's world half = the oracle's scene builder (parity by construction)", () => {
-  it("resolve + record = frame.mjs `boardPoseOf` for the bench's boards: at rest and selected — the geometry, the materials, the quad, the sheen, the capped marker", () => {
+  it("resolve + record = frame.mjs `boardPoseOf` for the bench's boards: at rest and selected (the ring retired on both sides — D4a) — the geometry, the materials, the quad, the sheen, the capped marker", () => {
     for (const b of [{ x: 420, y: -120 }, { x: 420, y: -120, selected: true }, { x: -300, y: 250 }]) {
       const ctx = ctxOf(b);
       const G = kind.resolve(ctx);

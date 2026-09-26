@@ -1,6 +1,7 @@
 // The NOTEBOOK from the world (design-015 §5–6; D3w): the Notebook object through `defineObject`; its world half
-// = the Node oracle's own `notebookDraw` for every book scene (closed, open at a spread, held and tilted and
-// selected, by night, over a note — PARITY BY CONSTRUCTION, the mesh to the last float); a still's pose a FLUX pin
+// = the Node oracle's own book (`notebookDraw`, its ring retired as a desk draws it — D4a) for every book scene (closed,
+// open at a spread, held and tilted and selected, by night, over a note) and a selected closed book — PARITY BY
+// CONSTRUCTION, the mesh to the last float; a still's pose a FLUX pin
 // on the kind's state; the hit through the SAME desk eye the pass draws with; the ring's rule; the tilt into the
 // carry's motion; the instant delete (a ghost's record never reaches the pass); the ruling's ink on the root pass.
 import type { Entity } from "@ice/core";
@@ -16,7 +17,7 @@ import { lampOf } from "../src/paper/paper";
 import { MAT_GRID } from "../src/theme";
 import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, THEMES } from "../oracle/fixtures/vf-theme";
 import { notebookDraw } from "../oracle/frame.mjs";
-import { fakeOracle, sceneOf } from "./oracle-fake";
+import { fakeOracle, type OracleInternals, sceneOf } from "./oracle-fake";
 import { must } from "./must";
 
 const lamp = lampOf(MAT_GRID.plane);
@@ -28,17 +29,19 @@ const H = NOTEBOOK.cover.height;
 type Book = { x: number; y: number; angle?: number; cover?: string; seed?: number; open?: boolean | number; left?: number; held?: boolean; tilt?: [number, number]; selected?: boolean; ruling?: string };
 type Scene = { camX: number; camY: number; zoom: number; books?: Book[]; things?: (Book & { kind: string })[] };
 const viewOf = (s: Scene) => ({ camX: s.camX, camY: s.camY, zoom: s.zoom, width: 1200, height: 800, dpr: 2 });
+/** A book's context as the builder hands it — ring 0 selected or not: the kinds' own ring is retired, a selection is the desk's marks (D4a). */
 const ctxOf = (b: Book, s: Scene, over: Partial<ObjectContext> = {}): ObjectContext => ({
   entity: 21 as Entity, rect: rectOf({ x: b.x - W / 2, y: b.y - H / 2 }, { w: W, h: H }),
   props: { title: "", cover: b.cover ?? "orbit", ruling: b.ruling ?? "dots", seed: b.seed ?? 7, spread: b.left ?? 0, angle: b.angle ?? 0 },
-  flux: { ...FLUX_REST, lift: b.held ? 1 : 0, ring: b.selected ? 1 : 0 }, look, theme: THEMES.light, lamp, view: viewOf(s), grid: DEFAULT_GRID, dt: 1 / 60, ...over,
+  flux: { ...FLUX_REST, lift: b.held ? 1 : 0, ring: 0 }, look, theme: THEMES.light, lamp, view: viewOf(s), grid: DEFAULT_GRID, dt: 1 / 60, ...over,
 });
 /** The still's pose a scene's book states, as a pin. */
 const poseOf = (b: Book): BookPose | undefined => (b.open !== undefined || b.tilt !== undefined ? { ...(b.open !== undefined ? { open: b.open } : {}), ...(b.tilt !== undefined ? { tilt: b.tilt } : {}) } : undefined);
 const booksOf = () => must(kind.local)({ pass: () => undefined }) as Books;
 
+let oracle: OracleInternals;
 let undoGpu: () => void;
-beforeAll(async () => { undoGpu = (await fakeOracle()).undo; });
+beforeAll(async () => { const o = await fakeOracle(); oracle = o.desk; undoGpu = o.undo; });
 afterAll(() => undoGpu());
 
 describe("the Notebook object (design-015 §6)", () => {
@@ -52,21 +55,25 @@ describe("the Notebook object (design-015 §6)", () => {
 });
 
 describe("the notebook's world half = the oracle's `notebookDraw` (parity by construction)", () => {
-  it("every book scene — closed, open at 30, held + tilted + selected, by night open at 10 in ink, over a note: the whole record, the mesh to the last float", () => {
+  it("every book scene — closed, open at 30, held + tilted + selected, by night open at 10 in ink, over a note — and a selected closed book: the whole record as a desk draws it, the mesh to the last float", () => {
     const cases: { name: string; book: Book; scene: Scene }[] = [];
     for (const name of ["book-closed-z2.2", "book-open-z2.2", "book-held-z1.8", "book-night-z2.2"]) { const scene = sceneOf<Scene>(name); cases.push({ name, book: must(must(scene.books)[0]), scene }); }
     const over = sceneOf<Scene>("book-over-note-z1.6");
     cases.push({ name: "book-over-note-z1.6", book: must(must(over.things).find((t) => t.kind === "book")), scene: over });
+    // selected and lying closed: the lab's own ring would be up (the prototype drew it) — the desk's is retired, on both sides
+    const chosen: Book = { x: 0, y: 0, angle: 0, cover: "orbit", seed: 7, selected: true };
+    expect((notebookDraw(chosen) as NotebookDraw).ring).toBe(1);
+    cases.push({ name: "a selected closed book", book: chosen, scene: sceneOf<Scene>("book-closed-z2.2") });
     for (const { name, book, scene } of cases) {
       const books = booksOf();
       const pose = poseOf(book);
       if (pose !== undefined) books.pin(21 as Entity, pose);
       const ctx = ctxOf(book, scene, { local: books });
       const { id, mesh, ...mine } = kind.record(kind.resolve(ctx), ctx);
-      const { id: theirs, mesh: oMesh, ...oracle } = notebookDraw(book) as NotebookDraw;
+      const { id: theirs, mesh: oMesh, ...drawn } = oracle.bookOf(book) as NotebookDraw;
       expect(id, name).toBeGreaterThan(0);
       expect(theirs, name).toBeGreaterThan(0);
-      expect(mine, name).toEqual(oracle);
+      expect(mine, name).toEqual(drawn);
       // the mesh, byte for byte over what was built (a deep equality over its typed arrays is slow under load)
       expect([mesh.vcount, mesh.icount, mesh.min, mesh.max], name).toEqual([oMesh.vcount, oMesh.icount, oMesh.min, oMesh.max]);
       const bytes = (a: Float32Array | Uint32Array, n: number) => Buffer.from(a.buffer, a.byteOffset, n * a.BYTES_PER_ELEMENT);

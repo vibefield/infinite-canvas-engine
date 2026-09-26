@@ -27,8 +27,8 @@
 // does — brackets for one, member ticks and a union for several, knobs where the kind resizes — and its
 // `locked` ones the tape; `marks` states the rest a still can pin (the lock-on's progress, the vellum, the
 // fold, the laser from a real snap, the strike, the tape's press). The kinds' own ring is retired (their
-// records carry ring 0, as the builder's do); `prototypeRing` draws a still exactly as the prototype did —
-// the kinds' ring, no marks — for the baseline check against the prototype's own renders. (The books and the
+// records carry ring 0, as the builder's do — the notebook's too, D3w); `prototypeRing` draws a still exactly
+// as the prototype did — the kinds' ring, no marks — for the baseline check against the prototype's own renders. (The books and the
 // pads wear no marks yet: their world halves, and so their frames, come after D4b.)
 import { VIEW } from "./scenes.mjs";
 import { beginPass } from "../src/engine/target.ts";
@@ -332,8 +332,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   }
   /**
    * A board at rest as the bench draws it (`BoardDesk.instances` + `poseOf` with no board open), all but its raster: resolved under
-   * the one lamp, its ring as its selection says, the capped marker lying where a hand put it down, the world rect it may paint,
-   * the eye straight over it (the parallax at rest).
+   * the one lamp, its ring the prototype's alone (`prototypeRing` — the desk's selection is its marks), the capped marker lying where
+   * a hand put it down, the world rect it may paint, the eye straight over it (the parallax at rest).
    */
   function boardPoseOf(b) {
     const w = b.w ?? BOARD.spec.width;
@@ -409,13 +409,22 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       });
     }
     let n = 0;
-    const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : t.kind === "book" ? { kind: NOTEBOOK_KIND, record: notebookDraw(t) } : thingError(t)));
+    const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : t.kind === "book" ? { kind: NOTEBOOK_KIND, record: bookOf(t) } : thingError(t)));
     // the desk calendars lie in the pads stratum, beneath everything whatever their place in the list (`padsFirst` puts them before the things)
     const pads = (desk.calendars ?? []).map((c, i) => ({ kind: CALENDAR_KIND, record: calendarDraw(c, i) }));
     const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...(s.padsFirst ? pads : []), ...thingObjects, ...(s.padsFirst ? [] : pads)];
     return { objects, portals };
   }
   const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board, a print or a book — not "${t.kind}"`); };
+  /**
+   * A book as a desk draws it: the lab's (`notebookDraw` — the same object for the same spec, its id and mesh kept) with its own
+   * selection ring RETIRED, as the builder hands every kind ring 0 (D4a: a selection is the desk's marks); `prototypeRing` keeps the
+   * lab's ring for the baseline against the prototype's own renders.
+   */
+  function bookOf(t) {
+    const d = notebookDraw(t);
+    return prototypeRing || d.ring === 0 ? d : { ...d, ring: 0 };
+  }
 
   // ---------------------------------------------------------------- the desk's marks (D4a) — the builder's rules on a still
 
@@ -550,5 +559,5 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, encode };
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, encode };
 }

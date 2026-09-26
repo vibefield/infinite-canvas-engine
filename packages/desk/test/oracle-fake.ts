@@ -16,6 +16,8 @@ export interface OracleInternals {
   readonly calendars: unknown;
   boardPoseOf(b: Record<string, unknown>): Record<string, unknown>;
   printOf(p: Record<string, unknown>): Record<string, unknown>;
+  /** A book as a desk draws it: the lab's `notebookDraw`, its ring retired unless the still is drawn the prototype's way. */
+  bookOf(b: Record<string, unknown>): unknown;
   encode(encoder: GPUCommandEncoder, target: GPUTextureView, size: { w: number; h: number }, scene: unknown): unknown;
 }
 
