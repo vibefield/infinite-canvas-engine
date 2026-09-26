@@ -221,6 +221,14 @@ export interface InfiniteCanvasProps {
    * re-render, and it is deliberately absent from the mount effect's deps.
    */
   readonly profile?: PresentationProfile;
+  /**
+   * The P4 DOM selection chrome (the boxes, the handles, the marquee — `createChromeReflector`).
+   * Default true, today's mount byte for byte. `false` registers no chrome reflector and inserts
+   * no chrome plane: the DESK draws its own selection on the GPU (design-015 §7, D2a-world's
+   * `<InfiniteCanvas ground={deskLayer(…)} chrome={false}>` — plan D-D0.6), and two selections
+   * on one screen would be one too many. Bound ONCE at mount, like the profile.
+   */
+  readonly chrome?: boolean;
   readonly className?: string;
   readonly style?: CSSProperties;
   /** Overlays inside the viewport (toolbars, HUD) — rendered under the EngineProvider. */
@@ -236,6 +244,7 @@ export function InfiniteCanvas({
   glRoute,
   keymapOverrides,
   profile,
+  chrome: chromeProp,
   className,
   style,
   children,
@@ -267,6 +276,9 @@ export function InfiniteCanvas({
   // there); identity churn must not re-boot the canvas.
   const profileRef = useRef(profile);
   profileRef.current = profile;
+  // The chrome switch is bound once at mount too (it decides the roster).
+  const chromeRef = useRef(chromeProp);
+  chromeRef.current = chromeProp;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -330,7 +342,8 @@ export function InfiniteCanvas({
     if (groundLayer !== null && gridConfigRef.current !== undefined) {
       groundLayer.configureGrid(gridConfigRef.current);
     }
-    const chrome = createChromeReflector(host, world, stack.marqueeBuffer);
+    // The P4 chrome (design-004 §5) unless the app draws its own selection (`chrome={false}` — the desk, design-015 §7).
+    const chrome = chromeRef.current === false ? null : createChromeReflector(host, world, stack.marqueeBuffer);
 
     // The presentation profile's boot gate (design-012 §11 Q2). ONE profile
     // ships per app, so there is nothing to fall back to: refuse loudly.
@@ -352,7 +365,7 @@ export function InfiniteCanvas({
     if (refusal !== null) {
       groundLayer?.dispose();
       groundRef.current = null;
-      chrome.dispose();
+      chrome?.dispose();
       domWidgets.dispose();
       sourceCanvas?.dispose();
       remoteCursors.destroy();
@@ -387,7 +400,7 @@ export function InfiniteCanvas({
       ...(hostsFirst ? [core.registerReflector(domWidgets)] : []),
       ...activeProfile.reflectorsAfterGround(profileCtx).map((r) => core.registerReflector(r)),
       ...(hostsFirst ? [] : [core.registerReflector(domWidgets)]),
-      core.registerReflector(chrome),
+      ...(chrome !== null ? [core.registerReflector(chrome)] : []),
       core.registerReflector(createCursorReflector(host, stack.readCursor)),
       core.registerReflector(remoteCursors.reflector),
     ];
@@ -454,7 +467,7 @@ export function InfiniteCanvas({
       detachDomTransition();
       domWidgets.dispose();
       sourceCanvas?.dispose();
-      chrome.dispose();
+      chrome?.dispose();
       planes.dispose();
       host.dispose();
       setHosts(undefined);
