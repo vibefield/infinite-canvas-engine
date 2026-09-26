@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { launchChrome, openTab } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
 
 const here = import.meta.dirname;
@@ -64,8 +64,7 @@ try {
   const open = async (name, who) => {
     const tab = await openTab(chrome.port, urlOf(who));
     await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
-    tab.on("Runtime.exceptionThrown", (e) => logs.push(`${name} EXCEPTION ${e.exceptionDetails.exception?.description ?? e.exceptionDetails.text}`));
-    tab.on("Log.entryAdded", (e) => { if (e.entry.level === "error") logs.push(`${name} [${e.entry.level}] ${e.entry.text}`); });
+    watchPage(tab, logs, { name });
     await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
     const q = (js) => tab.evaluate(js, { timeoutMs: 20000 });
     for (let i = 0; i < 300; i++) { await tab.send("Page.bringToFront"); if (await q("typeof window.__desk === 'object' && window.__desk.state.ready")) break; await sleep(200); }
@@ -153,6 +152,7 @@ try {
   const goneB = await until(async () => (await B.q(`window.__desk.room.resolve(${K(nKey)})`)) === null && (await B.q(`window.__desk.entity(${bn})`)) === null, 8000);
   check(goneA && goneB, `a DELETE in A leaves B (A: ${goneA ? "gone" : "still there"}, B: ${goneB ? "gone" : "still there"})`);
 
+  logs.push(...(await faultsOf(A.tab, A.name)), ...(await faultsOf(B.tab, B.name)));   // the faults each engine CONTAINED (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors in either tab");
   console.log(`\n${pass} passed, ${failN} failed · ${((Date.now() - t0) / 1000).toFixed(1)} s`);

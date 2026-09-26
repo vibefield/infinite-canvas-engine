@@ -171,6 +171,11 @@ export interface CanvasEngineOpts {
   readonly behaviors?: readonly AnyBehaviorDef[];
   /** Generic guest breaker routing for hosts that use the published facade. */
   readonly onGuestFault?: (id: string, error: unknown) => void;
+  /**
+   * A reflector that threw (design-015 D7): the flush contains it — that frame is skipped — and routes it here (default:
+   * `console.error`). A host that counts its faults (apps/desk's `window.__desk.faults`, the rigs' "no page errors") passes it.
+   */
+  readonly onReflectorFault?: (name: string, error: unknown) => void;
   readonly onGuestNotice?: (message: string) => void;
   /** Behavior-specific routing preserves hook and entity provenance. The two
    *  pairs are COMPLEMENTARY, not alternatives: a fault that also strikes the
@@ -519,6 +524,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     session?.versionReport().docPacks[id] === version;
   const engine = createEngine(world, {
     ...(opts.onGuestFault === undefined ? {} : { onGuestFault: opts.onGuestFault }),
+    ...(opts.onReflectorFault === undefined ? {} : { onReflectorFault: opts.onReflectorFault }),
     ...(opts.onGuestNotice === undefined ? {} : { onGuestNotice: opts.onGuestNotice }),
   });
   const runtimeExtensionHost: CanvasRuntimeExtensionHost = installCanvasRuntimeExtensions({

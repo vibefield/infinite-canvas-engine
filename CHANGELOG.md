@@ -909,6 +909,17 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   deliberate event: the file's diff IS the pixel change, committed with its why — on another GPU or driver as well).
   A missing baseline file FAILS. Red proof: the marker ink darkened 3 % (`ink.wgsl`, both hosts alike) — the pre-fix
   oracle exits 0 (every property check passes), the golden fails 7 scenes; `BASELINE_DIR=/typo` exits 1 (was 0).
+- **The rigs see the faults the engine contains** (D7 surface #3). Every rig's "no page errors" row listened to
+  `Runtime.exceptionThrown` and `Log.entryAdded` only; the reflector flush catches every throw and `console.error`s it,
+  Chromium never sends console-API messages to the Log domain, and apps/desk passed no fault sink — a kind's record
+  throwing on some frames skipped those frames with every row green. Now the facade takes **`onReflectorFault`**
+  (forwarded to the engine's flush; default unchanged: `console.error`, the frame skipped), apps/desk's engine routes
+  each contained reflector or guest fault into `DESK_FAULTS` = **`window.__desk.faults`** (and still to the console),
+  and the rigs share `watchPage` (exceptions · `Runtime.consoleAPICalled` at error/assert · the Log domain) and
+  `faultsOf` (`scripts/cdp.mjs`): every "no page errors" row also holds the faults to none, and rig:world gains the row
+  it lacked. Red proof: rig:idle with a reflector throwing on alternate frames and one page `console.error` injected —
+  the pre-fix rig passes 10/10, the fixed one fails its row (3 console errors + 3 faults listed); the unit
+  (`apps/desk/test/faults.test.ts`) is red with the facade's forwarding reverted.
 
 ## [0.13.0] — 2026-09-07
 

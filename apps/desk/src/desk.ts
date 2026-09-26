@@ -61,9 +61,21 @@ export async function joinDeskRoom(engine: CanvasEngine, opts: DeskRoomOptions =
   return joined;
 }
 
-/** A desk engine with a fresh document — none yet in a room (`joinDeskRoom` brings the room's) — the desk's tool in hand. */
-export function createDeskEngine(room: string | undefined = deskRoom()): CanvasEngine {
-  const engine = createCanvasEngine(DESK_ENGINE);
+/**
+ * The faults the engine CONTAINED on this page (design-015 D7): a reflector's throw (its frame skipped) and a guest's (the breaker's),
+ * each also on the console as core logs it by default. `window.__desk.faults` is this list; every rig's "no page errors" row holds it
+ * empty — a kind's record throwing on some frames skips those frames and stays otherwise invisible.
+ */
+export const DESK_FAULTS: string[] = [];
+const faultText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** A desk engine with a fresh document — none yet in a room (`joinDeskRoom` brings the room's) — the desk's tool in hand; its contained faults into `faults`. */
+export function createDeskEngine(room: string | undefined = deskRoom(), faults: string[] = DESK_FAULTS): CanvasEngine {
+  const engine = createCanvasEngine({
+    ...DESK_ENGINE,
+    onReflectorFault: (name, err) => { faults.push(`reflector "${name}": ${faultText(err)}`); console.error(`[ice] reflector "${name}" threw — skipped this frame`, err); },
+    onGuestFault: (id, err) => { faults.push(`guest "${id}": ${faultText(err)}`); console.error(`[ice] guest "${id}" faulted`, err); },
+  });
   if (room !== undefined) return engine;
   engine.docs.create();
   engine.ops.setTool(deskSelect.id);

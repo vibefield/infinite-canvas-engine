@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { ORACLE_SCENES } from "@ice/desk/oracle/scenes.mjs";
-import { launchChrome, openTab } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -131,8 +131,7 @@ try {
   const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/parity.html`);
   const logs = [];
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
-  tab.on("Runtime.exceptionThrown", (e) => logs.push(`EXCEPTION ${e.exceptionDetails.exception?.description ?? e.exceptionDetails.text}`));
-  tab.on("Log.entryAdded", (e) => { if (e.entry.level === "error" || e.entry.level === "warning") logs.push(`[${e.entry.level}] ${e.entry.text}`); });
+  watchPage(tab, logs, { warnings: true });
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   for (let i = 0; i < 150; i++) {
     await front(tab);

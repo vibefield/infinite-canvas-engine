@@ -71,6 +71,31 @@ export async function launchChrome({ port = 9333, headless = false, extraArgs = 
   };
 }
 
+/** A console-API argument as text: a primitive's value, an object's description. */
+const argText = (a) => (a.value !== undefined ? String(a.value) : (a.description ?? a.type));
+
+/**
+ * A page's ERRORS as a rig's "no page errors" row counts them (design-015 D7): an uncaught exception (`Runtime.exceptionThrown`),
+ * a `console.error`/failed `console.assert` — `Runtime.consoleAPICalled`, because Chromium never sends console-API messages to the
+ * Log domain, so a fault the engine CONTAINED and logged was invisible — and the Log domain's own errors (a failed load, an
+ * intervention). `warnings` adds both channels' warnings. `name` prefixes each line (a two-tab rig's A and B). Returns `logs`.
+ */
+export function watchPage(tab, logs, { name = "", warnings = false } = {}) {
+  const tag = name ? `${name} ` : "";
+  const api = warnings ? ["error", "assert", "warning"] : ["error", "assert"];
+  const levels = warnings ? ["error", "warning"] : ["error"];
+  tab.on("Runtime.exceptionThrown", (e) => logs.push(`${tag}EXCEPTION ${e.exceptionDetails.exception?.description ?? e.exceptionDetails.text}`));
+  tab.on("Runtime.consoleAPICalled", (e) => { if (api.includes(e.type)) logs.push(`${tag}console.${e.type} ${e.args.map(argText).join(" ")}`); });
+  tab.on("Log.entryAdded", (e) => { if (levels.includes(e.entry.level)) logs.push(`${tag}[${e.entry.level}] ${e.entry.text}`); });
+  return logs;
+}
+
+/** The faults the desk's engine CONTAINED (D7): `window.__desk.faults` — a reflector's or a guest's throw, each a skipped frame or a tripped breaker — as log lines. */
+export async function faultsOf(tab, name = "") {
+  const faults = (await tab.evaluate("window.__desk?.faults ?? []", { timeoutMs: 20_000 })) ?? [];
+  return faults.map((f) => `${name ? `${name} ` : ""}FAULT ${f}`);
+}
+
 export async function openTab(port, url) {
   const res = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, {
     method: "PUT",

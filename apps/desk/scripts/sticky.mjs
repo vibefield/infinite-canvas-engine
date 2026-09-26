@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { launchChrome, openTab } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -52,8 +52,7 @@ try {
   const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/index.html`);
   const logs = [];
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
-  tab.on("Runtime.exceptionThrown", (e) => logs.push(`EXCEPTION ${e.exceptionDetails.exception?.description ?? e.exceptionDetails.text}`));
-  tab.on("Log.entryAdded", (e) => { if (e.entry.level === "error") logs.push(`[${e.entry.level}] ${e.entry.text}`); });
+  watchPage(tab, logs);
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
   const front = () => tab.send("Page.bringToFront");
@@ -308,6 +307,7 @@ try {
   await sleep(100);
   check(composing?.text === "に" && composed?.text === "日本" && imeLayout?.glyphs === 2 && (await q(`window.__desk.note.raster(${imeId})`)) !== null && (await docNote(imeId))?.text === "日本", `IME text is written as it composes ("${composing?.text}") and as it commits ("${composed?.text}", ${imeLayout?.glyphs} glyphs in the hand), and Escape commits it`);
 
+  logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors");
   console.log(`\n${pass} passed, ${failN} failed`);

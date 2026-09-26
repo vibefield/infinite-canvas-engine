@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { ORACLE_SCENES } from "@ice/desk/oracle/scenes.mjs";
-import { launchChrome, openTab } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { compareSheet, liveSheet, printedSheets } from "./print-fixture.mjs";
 
 const here = import.meta.dirname;
@@ -127,8 +127,7 @@ try {
   const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/index.html`);
   const logs = [];
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
-  tab.on("Runtime.exceptionThrown", (e) => logs.push(`EXCEPTION ${e.exceptionDetails.exception?.description ?? e.exceptionDetails.text}`));
-  tab.on("Log.entryAdded", (e) => { if (e.entry.level === "error" || e.entry.level === "warning") logs.push(`[${e.entry.level}] ${e.entry.text}`); });
+  watchPage(tab, logs, { warnings: true });
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   for (let i = 0; i < 200; i++) {
     await front(tab);
@@ -180,6 +179,10 @@ try {
     }
   }
   console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} drawn from the world${sheets > 0 ? ` · ${sheets} live sheet${sheets === 1 ? "" : "s"} held to the committed print` : ""} · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness)`);
+  // D7: an error or a fault the engine CONTAINED is a failure, never only a line of log (the warnings stay a print)
+  const errors = [...logs.filter((l) => !/^(\[warning\]|console\.warning) /.test(l)), ...(await faultsOf(tab))];
+  if (errors.length) failures += 1;
+  console.log(`${errors.length ? "FAIL" : "PASS"}  no page errors or contained faults${errors.length ? ` (${errors.length}): ${errors.slice(0, 4).join(" · ")}` : ""}`);
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);
 } catch (err) {
   console.log("THREW:", String(err.stack ?? err));

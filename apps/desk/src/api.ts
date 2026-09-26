@@ -12,6 +12,7 @@ import type { DeskLayerHandle, MatPin } from "@ice/desk";
 import type { AmbientMode } from "@ice/desk";
 import type { ThemeName } from "@ice/desk";
 import { type CalendarApi, calendarApi } from "./calendar-api";
+import { DESK_FAULTS } from "./desk";
 import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
 import { type NotebookApi, notebookApi } from "./notebook-api";
@@ -108,6 +109,8 @@ export interface DeskApi {
   anchor(): ReturnType<DeskLayerHandle["selection"]["anchor"]>;
   /** The app's stub Send: each press's selection count. */
   readonly sent: number[];
+  /** The faults the engine contained on this page — a reflector's or a guest's throw (D7); a rig's "no page errors" row holds it empty. */
+  readonly faults: readonly string[];
   /** The dev panel (D5a — the backtick opens it): its params, open or not. */
   readonly panel: DevPanel | null;
   // ---- the hand (design-015 §8, D4b)
@@ -275,6 +278,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     marks: () => handle.lastInputs()?.marks ?? null,
     anchor: () => handle.selection.anchor(),
     sent: [],
+    faults: DESK_FAULTS,
     panel,
     stats: () => handle.stats(),
     wakes: () => handle.wakes(),
