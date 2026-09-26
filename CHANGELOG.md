@@ -343,6 +343,41 @@ there.
   `rig:sticky` leave the DOM menu out of their captures, as `rig:world` does. `rig:proto-parity` draws a still that
   has a selection the prototype's way (the parity page's `prototypeRing`), as the oracle's BASELINE check does.
 
+<!-- design-015 D3w (2026-09-25) -->
+- **The whiteboard, the photo print, the notebook and the desk calendar from the world, at rest** (`@ice/desk`;
+  design-015 §5–6, D-D5, D-D12, D-D18). Each kind gains its WORLD half beside its render half — `boardKind()`,
+  `photoKind()`, `notebookKind()`, `calendarKind()` (`@ice/desk/kinds`: resolve · record · hit · reach · theme · local) —
+  and each an object through `defineObject` (`@ice/desk/objects`; all six in `DESK_OBJECTS`): `desk.board { cap, tip }`,
+  `desk.photo { blob, width, height, border, angle }`, `desk.notebook { title, cover, ruling, seed, spread, angle }`,
+  `desk.calendar { month, weekStart, tape, pen }`. Each world half's records are the Node oracle's own for the same
+  object, number for number (units hold them to `oracle/frame.mjs` on a stub device); hits go through the geometry the
+  pass draws — the notebook's and the calendar's through the SAME desk eye (the geometry carries it). The colours are
+  the palette's (`BoardPalette`, `NotebookPalette`, `CalendarPalette`); the notebook's ruling ink and the calendar's
+  print presences reach their root pass through the kind's own state. At rest: a board's hover is the cursor's, a
+  print's edge lifts 2.2, a book rises 3.5, a pad is carried by its TAPE (its paper is not taken: a press there pans);
+  a deleted notebook is gone at once (its ghost's record is kept out of the pass).
+- **Data children** (design-015 §5.1, D-D5): a board's strokes and wipes are entities `desk.stroke { tool, ink, tip,
+  erase, points, speed }` `ChildOf` the board — `points` base64 of LE f32 (x, y) pairs — laid by `addStroke(tx, board,
+  spec)`, one transaction a stroke, and the board's ink is a CACHE of them (`BoardInk` replays when their order stamp
+  turns or the look changes; `boardOps` = the bench's `sketch`); a pad's events `desk.event { start, end, text, seeds,
+  ink }` and pins `desk.pin { day }` + the relation `desk.pins` (pin → note) are children of the pad (`addEvent`,
+  `pinNote`, `daySlot`; read-only in this slice). The kinds read them through the host (`KindHost.children`,
+  `worldChildren`), never the world.
+- **A print's bytes and its carry** (D-D12): the app provides a content-addressed `BlobStore` (`put` → SHA-256 hex,
+  `get`; `createMemoryBlobStore`, `hashBytes`, `RGBA_TYPE`); the photo kind fetches a print's blob the first time it
+  meets it and makes ONE pass `Picture` per blob, dropped with its last print — raw RGBA by itself, anything else through
+  the host's decoder (`decodePicture`, `@ice/desk/host`). A print is not core-movable: `createPhotoCarry` holds it on the
+  finger (the kinematic pin), lets it go with the finger's last 70 ms (capped 4200 u/s) and the kind steps its body
+  through the air and the mat's Coulomb grip at 240 Hz — flux, the document still — then commits ONE transaction when it
+  comes to rest (its Position and its raise). `deskLayer` takes `blobs`; its handle gains `local(name)` (a kind's own
+  state: a still's pose pins — `Prints.pin`, `Books.pin`, `Pads.pin`, flux, never a Grab — a print's body and flick).
+- apps/desk: `W` a board, `b` a notebook, `C` a calendar, paste or drop an image for a print; `setScene` stages every
+  board, print, notebook and pad scene (strokes and pins as children, poses as flux pins); `window.__desk.kinds`.
+  Witnesses in `gate:landing`: `rig:world` 20 → 40 scenes from the world at maxΔ 0 (three inked boards kept within
+  rig:parity's named 1-LSB bound); `rig:interact` 24 → 61 (each kind's select, hover, drag with its lift and one undo
+  step, delete and ⌘Z; a board's stroke child; the print's flick landing where `stepPhoto` over the desk's own steps
+  lands it, its Position changing once).
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
