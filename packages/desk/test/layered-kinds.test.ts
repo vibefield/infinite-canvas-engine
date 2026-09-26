@@ -245,6 +245,16 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
     pool.dispose();
   });
 
+  it("the oracle's book lives across frames as the lab's does: the same spec is the same book — its id, its mesh — and another spec another book (the cost rig's steady state re-uploads nothing)", () => {
+    const spec = { x: 10, y: 20, cover: "ink", seed: 7 };
+    const a = notebookDraw(spec) as NotebookDraw;
+    expect(notebookDraw(spec)).toBe(a);
+    const b = notebookDraw({ ...spec }) as NotebookDraw;
+    expect(b).not.toBe(a);
+    expect(b.id).not.toBe(a.id);
+    expect(b.mesh.vcount).toBe(a.mesh.vcount);
+  });
+
   it("the passes' own paths record what they always did: the books' `render` — the layer, then the composite in a pass of its own over the canvas; the pad's `renderLayer` — the layer in a submit of its own", async () => {
     const log: string[] = [];
     const { device, queue } = fakeDevice(log);

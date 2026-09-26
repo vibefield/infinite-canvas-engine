@@ -33,6 +33,13 @@ export interface DeskParity {
   readonly state: { drawn: string | null; frames: number; scoped: number; readonly errors: string[] };
   /** Draw one scene into the canvas inside a frame; resolves once the GPU has finished it. */
   render(name: string): Promise<{ readonly portals: number }>;
+  /**
+   * THE COST (design-015 D3r-b, `rig:cost`): `n` frames of a scene spec (JSON — any oracle-shaped still) drawn back to back into
+   * the canvas's current texture, the GPU drained before and after: ms per frame and the CPU µs of recording one. Each frame is
+   * built as a host builds it (frame.mjs `encode`: the inputs, the ground's prepareFrame + drawFrame, one submit); the same spec
+   * string is the same scene object, so its books keep their meshes (a host's steady state). Outside the probe's scopes.
+   */
+  bench(spec: string, n: number): Promise<{ readonly ms: number; readonly cpu: number }>;
 }
 
 declare global {
@@ -101,6 +108,7 @@ async function boot(): Promise<void> {
     log: (message) => console.warn(message),
   }));
   const state: DeskParity["state"] = { drawn: null, frames: 0, get scoped() { return scoped; }, errors };
+  const benched = new Map<string, unknown>();
   window.__parity = {
     scenes: ORACLE_SCENES.map((s) => s.name),
     view: VIEW,
@@ -120,6 +128,22 @@ async function boot(): Promise<void> {
       state.drawn = name;
       state.frames += 1;
       return { portals: prepared.portals };
+    },
+    async bench(spec, n) {
+      let scene = benched.get(spec);
+      if (scene === undefined) { scene = JSON.parse(spec) as unknown; benched.set(spec, scene); }
+      await device.queue.onSubmittedWorkDone();
+      const t0 = performance.now();
+      let cpu = 0;
+      for (let i = 0; i < n; i++) {
+        const c0 = performance.now();
+        const encoder = device.createCommandEncoder();
+        desk.encode(encoder, surf.view(), surf.size(), scene);
+        device.queue.submit([encoder.finish()]);
+        cpu += performance.now() - c0;
+      }
+      await device.queue.onSubmittedWorkDone();
+      return { ms: (performance.now() - t0) / n, cpu: cpu / n };
     },
   };
 }

@@ -60,6 +60,8 @@ const LAMP = lampOf(MAT_GRID.plane);
 const bookHash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 /** The lab's book ids never repeat (its `nextId`): a mesh's buffers are kept under its id, so an id is never another mesh's. */
 let nextBook = 1;
+/** A book is an object that lives across frames (the lab's `Book`): the same spec object is the same book — its id, its mesh — so a host drawing it again re-uploads nothing (the cost rig's steady state). */
+const booksBySpec = new WeakMap();
 
 /**
  * A notebook as the lab's `drawBooks` hands it to the pass, from a scene's spec (lab/notebook.ts `BookSceneSpec`): `makeBook` — its spec
@@ -67,6 +69,8 @@ let nextBook = 1;
  * pose, its mesh, the placement, the lamp) and the draw (the swing, the relax, the look, the ruling). No ink. A still: its springs stand.
  */
 export function notebookDraw(b) {
+  const had = booksBySpec.get(b);
+  if (had) return had;
   const law = NOTEBOOK;
   const seed = b.seed ?? 7;
   const spec = specOf(law, { sheets: b.sheets ?? law.block.sheets });
@@ -92,11 +96,13 @@ export function notebookDraw(b) {
   const pose = withDesk(poseOf(motion, law), place.lift);
   const mesh = buildMesh(new MeshWriter(), frame, pose, law);
   const sw = swingOf(motion.theta);
-  return {
+  const draw = {
     id: nextBook++, mesh, version: 1, frame, rigid: rigidOf(place), lamp: lampDir(LAMP, b.x, b.y, law.shadow.slopeMax),
     theta: motion.theta, gamma: relaxOf(motion.theta), look: notebookLook(b.cover ?? "orbit"), ruling: b.ruling ?? "dots", seed: seed % 97, ring: motion.ring,
     selfShadow: pose.airs.length > 0 || (sw > 0.02 && sw < Math.PI - 0.02), ink: { pages: [], layers: [] },
   };
+  booksBySpec.set(b, draw);
+  return draw;
 }
 
 /** The pad's frame and its one mesh, as the lab's calendar desk builds them once (its `meshVersion` 1). */
@@ -230,7 +236,10 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    * it gives one (`things` — a print laid between two notes), else the prototype's order: the whiteboards, the notes, the prints,
    * the notebooks. A note stuck to a calendar's day (`pin: { pad, day }`) lies where the lab's calendar snaps it: its day's slot.
    */
-  const thingsOf = (desk) => (desk.things ?? [...(desk.boards ?? []).map((b) => ({ ...b, kind: "board" })), ...(desk.notes ?? []).map((n) => ({ ...n, kind: "note" })), ...(desk.prints ?? []).map((p) => ({ ...p, kind: "print" })), ...(desk.books ?? []).map((b) => ({ ...b, kind: "book" }))]).map((t) => (t.pin ? { ...t, ...pinnedAt((desk.calendars ?? [])[t.pin.pad ?? 0], t.pin.day) } : t));
+  const thingsOf = (desk) => (desk.things ?? [...(desk.boards ?? []).map((b) => ({ ...b, kind: "board" })), ...(desk.notes ?? []).map((n) => ({ ...n, kind: "note" })), ...(desk.prints ?? []).map((p) => ({ ...p, kind: "print" })), ...(desk.books ?? []).map(bookThing)]).map((t) => (t.pin ? { ...t, ...pinnedAt((desk.calendars ?? [])[t.pin.pad ?? 0], t.pin.day) } : t));
+  /** A book spec's thing — the same object for the same spec, so the book it is keeps its id and mesh from frame to frame (`notebookDraw`). */
+  const bookThings = new WeakMap();
+  function bookThing(b) { let t = bookThings.get(b); if (!t) { t = { ...b, kind: "book" }; bookThings.set(b, t); } return t; }
   const notesIn = (desk) => (desk.things ? desk.things.filter((t) => t.kind === "note") : (desk.notes ?? []));
   const printsIn = (desk) => thingsOf(desk).filter((t) => t.kind === "print");
   /** The bounds of a desk's content (its notes, its prints and its mini mats) — what its arrival is framed on; a control may pin them (`bounds`). */

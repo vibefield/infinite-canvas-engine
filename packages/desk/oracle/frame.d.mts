@@ -47,7 +47,8 @@ export function createOracleDesk(opts: {
 
 /**
  * A notebook as the prototype's lab hands it to the pass (design-015 D3r-b: lab/notebook.ts `makeBook` → `resolveBooks` →
- * `drawBooks`), from a scene's book spec — a `NotebookDraw` (src/notebook/pass.ts), untyped here. A fresh id every call.
+ * `drawBooks`), from a scene's book spec — a `NotebookDraw` (src/notebook/pass.ts), untyped here. The same spec object is the same
+ * book (its id and mesh kept, as the lab's `Book` lives across frames); a new spec object, a new book with a fresh id.
  */
 export function notebookDraw(spec: { readonly x: number; readonly y: number } & Readonly<Record<string, unknown>>): unknown;
 /** The `index`-th desk calendar as the lab's `renderLayer` hands it to the pass, from a scene's pad spec — a `CalendarDraw`, untyped here. */
