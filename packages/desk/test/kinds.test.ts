@@ -26,7 +26,7 @@ import { type ShaderText, shaderText } from "../src/shaders";
 import { BOARD, MAT_GRID } from "../src/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
 import { DESK, fakeSlot, loggingKind, scissorPass } from "./fake-kinds";
-import { fakeCanvas, fakeDevice, installGpuFlags, installNavigatorGpu, recordingPass } from "./fake-gpu";
+import { fakeDevice, fakeSurface, installGpuFlags, recordingPass } from "./fake-gpu";
 import { must } from "./must";
 
 const SIZE = { w: 2400, h: 1600 };
@@ -248,7 +248,7 @@ describe("the registry: the root slot, the pool", () => {
 
 describe("Ground and the desk's passes on a fake device (no pixels: the oracle has those)", () => {
   const undo: (() => void)[] = [];
-  beforeAll(() => { undo.push(installGpuFlags(), installNavigatorGpu("bgra8unorm")); });
+  beforeAll(() => { undo.push(installGpuFlags()); });
   afterAll(() => { for (const u of undo.splice(0)) u(); });
 
   it("Ground: made from a registry (the mat first, every kind on it), one frame drawn stratum by stratum in runs, each kind's records counted, every pass disposed", async () => {
@@ -263,7 +263,8 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
       dispose: () => events.push(`dispose ${slot} ${name}`),
     });
     const program = (name: string, stratum: StratumName): KindProgram => ({ name, stratum, create: async (_d, format, mat) => { madeOn.push(mat); events.push(`make ${name} (${format})`); return kindPass(name, "root"); } });
-    const ground = await Ground.create({ device, canvas: fakeCanvas(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [program("paper", "things"), program("minimat", "sheets"), program("pad", "pads")] });
+    // the swap chain is the host's (D2a-world): the composition root takes one made, never a canvas
+    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [program("paper", "things"), program("minimat", "sheets"), program("pad", "pads")] });
     expect(events).toEqual(["make paper (bgra8unorm)", "make minimat (bgra8unorm)", "make pad (bgra8unorm)"]);
     for (const m of madeOn) expect(m).toBe(ground.mat);
     expect(ground.pass("minimat")).toBe(must(ground.root.kinds.get("minimat")).pass);

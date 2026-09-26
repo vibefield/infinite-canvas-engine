@@ -488,6 +488,13 @@ importers:
         version: 1.13.8
 
   packages/desk:
+    dependencies:
+      '@ice/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ice/kernel':
+        specifier: workspace:*
+        version: link:../kernel
     devDependencies:
       '@webgpu/types':
         specifier: ^0.1.72

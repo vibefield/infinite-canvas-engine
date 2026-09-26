@@ -1,7 +1,10 @@
 // The WebGPU boilerplate, and nothing else. Host-agnostic: pass `navigator.gpu`
 // in a browser or Dawn's `create([])` in Node, and the rest of the engine never
 // knows the difference — which is what lets the pixel oracle run without a
-// browser.
+// browser. The swap chain (`surface()`, the one call that names a canvas, the
+// window and `navigator.gpu`) lives in host/surface.ts since D2a-world: the
+// `Surface` it returns is declared here, so the composition root can take one
+// without touching the DOM (design-015 §3 `desk-dom-free`).
 
 export interface GpuOptions {
   /** `navigator.gpu` in a browser; Dawn's `create([])` in Node. */
@@ -39,6 +42,7 @@ export async function acquire(opts: GpuOptions): Promise<Gpu> {
   return { adapter, device, info: { vendor: a.vendor, architecture: a.architecture, description: a.description } };
 }
 
+/** A swap chain as the ground draws into it — made by `host/surface.ts` (a canvas) or a test's fake. */
 export interface Surface {
   readonly context: GPUCanvasContext;
   readonly format: GPUTextureFormat;
@@ -48,27 +52,4 @@ export interface Surface {
   view(): GPUTextureView;
   /** The drawing buffer's size in device px — whatever sized the canvas, `fit()` or the host. */
   size(): { readonly w: number; readonly h: number };
-}
-
-export function surface(device: GPUDevice, canvas: HTMLCanvasElement, opts: { alphaMode?: GPUCanvasAlphaMode } = {}): Surface {
-  const context = canvas.getContext("webgpu");
-  if (!context) throw new Error("canvas.getContext('webgpu') returned null");
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: opts.alphaMode ?? "opaque" });
-  let last = { w: 0, h: 0 };
-  return {
-    context, format,
-    fit(maxDpr = 2) {
-      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
-      const cssWidth = Math.max(1, canvas.clientWidth);
-      const cssHeight = Math.max(1, canvas.clientHeight);
-      const width = Math.max(1, Math.round(cssWidth * dpr));
-      const height = Math.max(1, Math.round(cssHeight * dpr));
-      const changed = width !== last.w || height !== last.h;
-      if (changed) { canvas.width = width; canvas.height = height; last = { w: width, h: height }; }
-      return { changed, width, height, cssWidth, cssHeight, dpr };
-    },
-    view() { return context.getCurrentTexture().createView(); },
-    size() { return { w: Math.max(1, canvas.width), h: Math.max(1, canvas.height) }; },
-  };
 }

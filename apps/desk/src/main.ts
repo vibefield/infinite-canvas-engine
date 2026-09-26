@@ -5,7 +5,8 @@
 // The only differences are the host's: the canvas's swap-chain texture (the preferred format)
 // instead of a readable target, the generated shader text instead of the .wgsl files, the fixtures
 // fetched instead of read. It draws on demand — the rig's `__desk.render(name)` — never on a clock.
-import { acquire, surface } from "@ice/desk/engine";
+import { acquire } from "@ice/desk/engine";
+import { surface } from "@ice/desk/host";
 import { blueNoise } from "@ice/desk/noise";
 import { createOracleDesk } from "@ice/desk/oracle/frame.mjs";
 import { ORACLE_SCENES, VIEW } from "@ice/desk/oracle/scenes.mjs";

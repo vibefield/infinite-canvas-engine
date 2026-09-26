@@ -1,4 +1,4 @@
-// The ground: one device, one canvas, the mat and the registered KINDS, one render per call.
+// The ground: one device, one swap chain, the mat and the registered KINDS, one render per call.
 //
 // There is no frame LOOP here on purpose. A host decides when a frame is due —
 // the lab's rAF + dirty flags, ICE's reflector, the oracle's single call — and
@@ -41,7 +41,7 @@
 // Slots beyond the root come from a POOL spawned on first use — no compile,
 // no clock — and cost nothing while no portal is on screen and no flight is on.
 
-import { surface, type Surface } from "./engine/device";
+import type { Surface } from "./engine/device";
 import { beginPass } from "./engine/target";
 import { type KindPass, type KindProgram, type SlotContext, STRATA, type StratumName } from "./kind";
 import { boxOf } from "./lattice/lod";
@@ -62,7 +62,12 @@ export interface GroundOptions {
    * makes one: every texture the compose pass samples must live on the same device.
    */
   readonly device: GPUDevice;
-  readonly canvas: HTMLCanvasElement;
+  /**
+   * The swap chain the frames go into — the HOST makes it (`surface(device, canvas)` from
+   * `@ice/desk/host`, the one module that names a canvas; a test's fake), so this composition
+   * root never touches the DOM (design-015 §3 `desk-dom-free`, D2a-world).
+   */
+  readonly surface: Surface;
   /** The cutting mat (mat/mat-pass.ts) — the ground's own: every slot draws it first. */
   readonly mat: MatShaders;
   /**
@@ -426,7 +431,7 @@ export class Ground {
   }
 
   static async create(opts: GroundOptions): Promise<Ground> {
-    const surf = surface(opts.device, opts.canvas);
+    const surf = opts.surface;
     const mat = await MatPass.create(opts.device, surf.format, opts.mat);
     return new Ground(opts.device, surf, await createSlotSet(opts.device, surf.format, mat, opts.kinds));
   }

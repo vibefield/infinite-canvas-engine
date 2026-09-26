@@ -5,6 +5,8 @@
 // registry, one frame through it, its stats and its dispose), the mat's pass and the whiteboard's
 // lists and ranges to run in Node. The pixels stay the oracle's (Dawn) and the parity rig's (Chrome).
 
+import type { Surface } from "../src/engine/device";
+
 type Undo = () => void;
 
 /** The WebGPU flag namespaces a Node host lacks (the engine reads them at call time, never at load): installed, with their undo. */
@@ -71,4 +73,15 @@ export function fakeDevice(log: string[] = []): FakeGpu {
 export function fakeCanvas(width: number, height: number): HTMLCanvasElement {
   const context = { configure: () => {}, getCurrentTexture: () => ({ createView: () => ({ label: "swap" }) }) };
   return { width, height, clientWidth: width, clientHeight: height, getContext: () => context } as unknown as HTMLCanvasElement;
+}
+
+/** A swap chain as `Ground.create` takes it (D2a-world: the host makes it, the composition root never names a canvas) — a fixed device-px size, a `swap` view. */
+export function fakeSurface(width: number, height: number, format: GPUTextureFormat = "bgra8unorm"): Surface {
+  return {
+    context: {} as GPUCanvasContext,
+    format,
+    fit: () => ({ changed: false, width, height, cssWidth: width, cssHeight: height, dpr: 1 }),
+    view: () => ({ label: "swap" }) as unknown as GPUTextureView,
+    size: () => ({ w: width, h: height }),
+  };
 }

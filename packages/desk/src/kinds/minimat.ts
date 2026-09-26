@@ -3,13 +3,30 @@
 // the mat beneath every thing, and it HOLDS a desk — the ground draws a live inside right after
 // its mini mat and tells the pass (the `extra`'s `live`) which faces give way to one, and the
 // chips come back over the inside while its objects fade in (`drawOver`, MINIMAT.md §5).
+//
+// And its WORLD half (kinds/world.ts; D2a-world): `minimatKind` — an entity of the mini mat's
+// widget type becomes a `MiniMatInstance` through the prototype's own laws: `resolveMiniMat` on
+// the rect and the flux (lift ← `Grab`, hover ← the pointer's exact hit — a mini mat RISES under
+// the pointer, Marks on the Mat Q-j —, ring ← `Selected`, fade ← a ghost), `miniMatInstance` over
+// an EMPTY inside — no chips, `live` −1 — the far LOD's lattice dressed for the inside's arrival
+// as `insideView` makes it (D2b brings the inside's members, the chips and the live slot);
+// `pickMiniMat` is the mirror: the face is `content`, the border `frame`. Its vinyl is the
+// product's (`theme()`, the palette's `vinyls`); `sage` is the desk's own ground.
 
 import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
+import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { MatPass } from "../mat/mat-pass";
+import { insideView } from "../minimat/inside";
 import type { MiniMatInstance } from "../minimat/layout";
+import { DEFAULT_MINIMAT_LAW, faceClip, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "../minimat/minimat";
+import { miniMatInstance } from "../minimat/inside";
 import { MiniMatPass } from "../minimat/pass";
 import { MINIMAT_SHADER_FILES, miniMatShaders } from "../minimat/shaders";
-import type { ShaderText } from "../shaders";
+import { FIT } from "../nav/flight";
+import { PORTAL_GATE } from "../nav/portal";
+import { type ShaderText, shaderText } from "../shaders";
+import { type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import { type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
 /** The mini mat's kind name — its key in the registry and in every slot's `objects`. */
 export const MINIMAT_KIND = "minimat";
@@ -47,3 +64,74 @@ export function miniMatProgram(text: ShaderText): KindProgram<MiniMatInstance> {
     create: async (device, format, mat) => new MiniMatKind(await MiniMatPass.create(device, format, miniMatShaders(text(MINIMAT_SHADER_FILES)), mat)),
   };
 }
+
+// ---------------------------------------------------------------- the world half (D2a-world)
+
+/** What the mini mat's kind takes from the host's palette: the vinyls by the `vinyl` prop's value (`sage` needs none — it is the desk's own ground). */
+export interface MiniMatPalette extends Palette {
+  readonly vinyls?: Readonly<Record<string, TokenRef>>;
+}
+
+/** The mini mat's look for a theme: its vinyls, parsed. */
+export interface MiniMatLook {
+  readonly vinyls: Readonly<Record<string, RGB>>;
+}
+
+/** The vinyl the desk's own mat is: the `vinyl` prop's value that means "the ground's colour". */
+export const SAGE = "sage";
+
+/** How far a mini mat's drawing reaches past its rect, world units: the slab's shadow swept from its top, its penumbra and contact term, the held scale. */
+export function miniMatReach(law: MiniMatLaw = DEFAULT_MINIMAT_LAW): number {
+  const top = law.lift.height + law.thick;
+  const p = law.shadow.penumbra;
+  const shadow = law.shadow.slopeMax * top + 2.5 * (p.sigma0 + p.sigmaPerHeight * top) + 2.5 * law.shadow.contact.sigma;
+  const held = (Math.max(law.size.w, law.size.h) * (law.lift.scale - 1)) / 2;
+  return shadow + held;
+}
+
+export interface MiniMatKindOptions {
+  /** The host's shader text; the generated module unless a host says. */
+  readonly text?: ShaderText;
+  /** The mini mat's numbers (theme.ts `MINIMAT`) — the engine's unless a host tweaks them. */
+  readonly law?: MiniMatLaw;
+}
+
+/** The mini mat's kind, whole (kinds/world.ts `ObjectKind`): the program, and the world half on the prototype's laws over an empty inside. */
+export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGeometry, MiniMatInstance, MiniMatLook> {
+  const law = opts.law ?? DEFAULT_MINIMAT_LAW;
+  const program = miniMatProgram(opts.text ?? shaderText);
+  return {
+    ...program,
+    reach: miniMatReach(law),
+    resolve(ctx: ObjectContext): MiniMatGeometry {
+      const r = ctx.rect;
+      return resolveMiniMat({ cx: r.cx, cy: r.cy, w: r.w, h: r.h }, { held: ctx.flux.lift, hover: ctx.flux.hover, ring: ctx.flux.ring, fade: ctx.flux.fade }, law, ctx.lamp);
+    },
+    record(G: MiniMatGeometry, ctx: ObjectContext): MiniMatInstance {
+      const look = ctx.look as MiniMatLook | undefined;
+      const vinylName = stringProp(ctx.props, "vinyl", SAGE);
+      const vinyl = vinylName === SAGE ? ctx.grid.mat.ground : (look?.vinyls[vinylName] ?? ctx.grid.mat.ground);
+      // the inside's grid: the desk's own fade-in, the mat in the mini mat's vinyl, no rulers (a portal's inside never prints them)
+      const grid: GridConfig = { fadeIn: ctx.grid.fadeIn, mat: { ...ctx.grid.mat, ground: vinyl, ruler: { ...ctx.grid.mat.ruler, on: false } } };
+      const cam = { x: ctx.view.camX, y: ctx.view.camY, zoom: ctx.view.zoom };
+      const vp = { width: ctx.view.width, height: ctx.view.height };
+      // an EMPTY inside (D2a-world): its arrival is the origin at zoom 1, its face's far LOD the lattice of that desk, no chips
+      const view = insideView(G, null, cam, vp, FIT, PORTAL_GATE) ?? {
+        M: { s: 1, ox: G.centre[0], oy: G.centre[1] }, arrival: cam, cam, clip: faceClip(G, cam), presence: 0, box: { x: 0, y: 0, w: 0, h: 0 },
+      };
+      const name = stringProp(ctx.props, "name", "");
+      return { ...miniMatInstance(G, view, grid, [], name || undefined, true, law), live: -1 };
+    },
+    hit(G: MiniMatGeometry, wx: number, wy: number): ObjectHit | null {
+      const h = pickMiniMat(G, wx, wy);
+      return h === "face" ? "content" : h === "border" ? "frame" : null;
+    },
+    theme(palette: Palette, _name: ThemeName): MiniMatLook {
+      const p = palette as MiniMatPalette;
+      return { vinyls: Object.fromEntries(Object.entries(p.vinyls ?? {}).map(([k, t]) => [k, rgb(t.css)])) };
+    },
+  };
+}
+
+/** The grid a mini mat's inside is drawn with when a host names none: the engine's (re-exported for D2b's live insides). */
+export const INSIDE_GRID: GridConfig = DEFAULT_GRID;

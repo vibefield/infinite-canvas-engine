@@ -3,6 +3,10 @@
 // (ground.ts) never imports this module — a host hands `Ground.create` a registry, and the desk's
 // own is `DESK_KINDS`. The notebook, the calendar and the photo still draw outside the ground
 // (their fold is D3).
+//
+// And the kinds WHOLE (kinds/world.ts; D2a-world): `paperKind()` and `minimatKind()` — each a
+// `KindProgram` with its world half (resolve · record · hit · reach · theme) — what `defineObject`
+// binds a widget type to and the builder drives. The whiteboard's world half is D3's.
 
 import type { KindProgram } from "../kind";
 import { type ShaderText, shaderText } from "../shaders";
@@ -11,8 +15,9 @@ import { miniMatProgram } from "./minimat";
 import { paperProgram } from "./paper";
 
 export { BOARD_KIND, BoardKind, boardProgram } from "./board";
-export { MINIMAT_KIND, MiniMatKind, miniMatProgram } from "./minimat";
-export { PAPER_KIND, PaperKind, paperProgram } from "./paper";
+export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
+export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperProgram, paperReach, paperKind } from "./paper";
+export { FLUX_REST, isObjectKind, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, rectOf, type StratumName, stringProp } from "./world";
 
 /**
  * The desk's kinds in the order they prepare — the prototype's (the notes, the mini mats, the whiteboards) — each

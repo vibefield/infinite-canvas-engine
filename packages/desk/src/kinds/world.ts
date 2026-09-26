@@ -1,0 +1,133 @@
+// The WORLD half of a kind (design-015 §5.2's `ObjectKind`; D2a-world). D2a-render gave the
+// ground a kind's RENDER half — `KindProgram`: its name, its stratum, its pass made on the mat —
+// and left the world out of it. This is the rest: how an ENTITY of the kind becomes the record
+// its pass draws, on the same CPU mirror the pick reads (design-015 §4.5). The builder
+// (compose/builder.ts) hands every object of the current nav frame to its kind through an
+// `ObjectContext` — the entity's rect in world units, its props, the flux the builder stepped
+// for it, the theme's look for the kind, the lamp, the slot's view — and takes back a geometry
+// (`resolve`) and a record (`record`); the pick source asks the same geometry what part is under
+// a world point (`hit`). A kind never reads the world: what it needs arrives in the context, and
+// so the same kind draws for the Node oracle, a test's fake world and the app alike.
+//
+// COORDINATES (the brief's pinned detail): ICE's `Position` is the object's TOP-LEFT and `Size`
+// its extent; the prototype's objects — and every law under `resolve` — are CENTRED. The builder
+// converts in ONE place (`rectOf`): a kind sees `ObjectRect { cx, cy, w, h }` and nothing else.
+//
+// PICK ANSWERS (core's `FramePickSource`): `"content"` and `"frame"` are the widget ITSELF — a
+// tap selects it, a drag moves it; any other string is a PART (a tap writes `PartTap`, a drag
+// that starts on it is not a move); `null` is a miss (the source answers `outside`). So a note
+// answers `content`, a mini mat `content` (its face) or `frame` (its border) — both move and
+// select it, as in the prototype — and the real parts (a notebook's turn zone, a board's marker)
+// arrive with D3.
+
+import type { Component, Entity, Tag } from "@ice/core";
+import type { KindProgram, StratumName } from "../kind";
+import type { View } from "../lattice/lod";
+import type { GridConfig } from "../mat/grid";
+import type { Lamp } from "../paper/paper";
+import type { GroundTheme, Palette, ThemeName } from "../theme";
+
+/** An object's rect on its desk, world units, CENTRED — converted from ICE's top-left `Position` + `Size` by the builder, once. */
+export interface ObjectRect {
+  readonly cx: number;
+  readonly cy: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/**
+ * What moves, per entity — the builder's springs, each 0..1 and SNAPPED to its target when settled
+ * (the B7 trap: a spring that never quite lands keeps the desk awake forever). `lift` follows the
+ * `Grab` fact (held), `ring` the `Selected` tag, `hover` the local mouse pointer's exact hit (the
+ * B9 pairing — never the dead-band `Targets`), `fade` the delete ghost (1 alive … 0 gone).
+ */
+export interface ObjectFlux {
+  readonly lift: number;
+  readonly hover: number;
+  readonly ring: number;
+  readonly fade: number;
+}
+
+/** A kind's answer to "what is under this world point" — the widget itself (`content`/`frame`), a part, or nothing. */
+export type ObjectHit = "content" | "frame" | (string & {});
+
+/**
+ * Everything a kind is handed for one entity, one frame. The props are the widget type's group
+ * fields as the builder cached them (refreshed from the change journal, never re-read per frame —
+ * the 09-23 profile); `look` is what the kind's own `theme()` made of the palette in force.
+ */
+export interface ObjectContext {
+  readonly entity: Entity;
+  readonly rect: ObjectRect;
+  readonly props: Readonly<Record<string, unknown>>;
+  readonly flux: ObjectFlux;
+  /** The kind's `theme(palette, name)` result for the theme in force; `undefined` when the kind declares none. */
+  readonly look: unknown;
+  readonly theme: GroundTheme;
+  /** The desk's one lamp — the gobo projector on the desk plane (`lampOf`), world units. */
+  readonly lamp: Lamp;
+  /** The slot's camera and attachment (CSS px) with the device pixel ratio. */
+  readonly view: View & { readonly dpr: number };
+  /** The slot's grid: the mat's config (its vinyl, its gobo, its rulers) and the lattice's fade-in. */
+  readonly grid: GridConfig;
+  /** The frame's dt, SECONDS (the engine's clamped dt). */
+  readonly dt: number;
+  /**
+   * A per-entity asset the HOST pinned through the layer (`pinRaster`: the note's committed ink
+   * raster for a parity scene — `{ layer, uv }`); `undefined` = none. Flux, never a world fact.
+   */
+  readonly asset?: unknown;
+}
+
+/**
+ * A kind, whole: the render half the ground registers (`KindProgram` — name, stratum, the pass)
+ * and the world half the builder and the pick source drive. `G` is the kind's resolved geometry,
+ * `R` the record its pass draws, `L` its look (what `theme()` returns).
+ */
+export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindProgram<R> {
+  /**
+   * How far the kind's drawing may reach PAST its rect, world units — its shadow, its lift, its
+   * tilt's overhang: the builder's cull margin, and the pick source's pad (`FramePickSource.pad`).
+   */
+  readonly reach: number;
+  /** Components and tags the kind reads beyond its own props (the builder adds them to its change journal). */
+  readonly reads?: { readonly components?: readonly Component[]; readonly tags?: readonly Tag[] };
+  /** The entity's geometry this frame, from its rect, its props and its flux — the prototype's `resolve*`. */
+  resolve(ctx: ObjectContext): G;
+  /** The record the kind's pass draws for that geometry — the prototype's instance. */
+  record(geometry: G, ctx: ObjectContext): R;
+  /** The CPU mirror on the SAME geometry the pass drew: the part under a world point, or null for a miss. */
+  hit(geometry: G, wx: number, wy: number): ObjectHit | null;
+  /** Its far-LOD face inside a mini mat (D2b's `chip`); absent = a plain sheet at the far LOD. */
+  chip?(geometry: G, inside: unknown): unknown;
+  /** The kind's colours from the host's palette, per theme — the look `record` reads (`ctx.look`). */
+  theme?(palette: Palette, name: ThemeName): L;
+}
+
+/** The strata a kind may declare — re-exported beside the contract for a kind's author. */
+export type { StratumName };
+
+/** ICE's top-left `Position` + `Size` → the centred rect every law reads: the ONE conversion. */
+export function rectOf(pos: { readonly x: number; readonly y: number }, size: { readonly w: number; readonly h: number }): ObjectRect {
+  return { cx: pos.x + size.w / 2, cy: pos.y + size.h / 2, w: size.w, h: size.h };
+}
+
+/** The flux of an object at rest: down, unhovered, unselected, whole. */
+export const FLUX_REST: ObjectFlux = { lift: 0, hover: 0, ring: 0, fade: 1 };
+
+/** A prop read with a type and a default — the kinds' one door to `ctx.props`. */
+export const numberProp = (props: Readonly<Record<string, unknown>>, name: string, fallback: number): number => {
+  const v = props[name];
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+};
+export const stringProp = (props: Readonly<Record<string, unknown>>, name: string, fallback: string): string => {
+  const v = props[name];
+  return typeof v === "string" ? v : fallback;
+};
+
+/** Is this opaque widget binding a desk kind — the world half present beside the program? */
+export function isObjectKind(binding: unknown): binding is ObjectKind {
+  if (typeof binding !== "object" || binding === null) return false;
+  const k = binding as Partial<ObjectKind>;
+  return typeof k.name === "string" && typeof k.stratum === "string" && typeof k.create === "function" && typeof k.resolve === "function" && typeof k.record === "function" && typeof k.hit === "function" && typeof k.reach === "number";
+}

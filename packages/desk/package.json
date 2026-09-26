@@ -3,10 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The desk (design-015): the cutting mat, the mini mats and the desk's objects on one raw-WebGPU renderer — vibe-field/draft/ground's prototype, moved at D1 (2026-09-25).",
+  "description": "The desk (design-015): the cutting mat, the mini mats and the desk's objects on one raw-WebGPU renderer — vibe-field/draft/ground's prototype, moved at D1 (2026-09-25); drawn FROM THE WORLD since D2a-world (the kinds' world halves, defineObject, the builder, the reflector, the pick source, the desk layer).",
   "exports": {
     ".": "./src/ground.ts",
     "./kinds": "./src/kinds/index.ts",
+    "./objects": "./src/objects/index.ts",
+    "./object": "./src/object.ts",
+    "./compose": "./src/compose/index.ts",
+    "./host": "./src/host/index.ts",
+    "./theme": "./src/theme.ts",
     "./engine": "./src/engine/index.ts",
     "./shaders": "./src/shaders.ts",
     "./noise": "./src/assets/blue-noise.gen.ts",
@@ -21,6 +26,10 @@
     "gen:noise": "node tools/noise-to-ts.mjs",
     "gen:check": "node tools/wgsl-to-ts.mjs --check && node tools/noise-to-ts.mjs --check",
     "oracle": "tsx oracle/render.mjs"
+  },
+  "dependencies": {
+    "@ice/core": "workspace:*",
+    "@ice/kernel": "workspace:*"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.72",
