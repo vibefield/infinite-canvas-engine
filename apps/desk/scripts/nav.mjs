@@ -6,15 +6,20 @@
 // yields (touch wins); a double-click on a mini mat flies in and on the bare mat flies out (the
 // engine's gesture); and THE PRESS + DOUBLE-CLICK CUT — a mini mat HELD (its face reads 2 % larger, the
 // still's `held`), hovered and selected, double-clicked: the flight starts from the face AS DRAWN
-// (the seam) and its first frame is the face's last, the same PNG. Exit 0 = every check passed.
+// (the seam) and its first frame is the face's last, the same PNG outside the selection's marks (D4a:
+// the marks are the root slot's chrome and leave with the selection, which the enter clears). Exit 0 =
+// every check passed.
 //
 //   pnpm --filter ./packages/desk oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:nav
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { NAV_SCENES } from "@ice/desk/oracle/scenes.mjs";
+import { layoutMarks } from "../../../packages/desk/src/marks/layout.ts";
+import { markDistance } from "../../../packages/desk/src/marks/mirror.ts";
 import { flightOpacity } from "../../../packages/desk/src/nav/flight.ts";
 import { launchChrome, openTab } from "./cdp.mjs";
+import { decodePng } from "./png.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -38,6 +43,33 @@ let failN = 0;
 const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/**
+ * Two captures compared OUTSIDE a frame's marks (D4a): the device px within one of a mark's ink by the marks' CPU mirror are the
+ * chrome's (the oracle's `marks` check); every other pixel is held to the same bytes.
+ */
+function outsideMarks(a, b, marks, dpr) {
+  const A = decodePng(Buffer.from(a, "base64"));
+  const B = decodePng(Buffer.from(b, "base64"));
+  const band = new Uint8Array(A.width * A.height);
+  for (const m of layoutMarks(marks)) {
+    const [x0, y0, x1, y1] = m.quad;
+    for (let Y = Math.max(0, Math.floor(y0 * dpr) - 1); Y <= Math.min(A.height - 1, Math.ceil(y1 * dpr) + 1); Y++) {
+      for (let X = Math.max(0, Math.floor(x0 * dpr) - 1); X <= Math.min(A.width - 1, Math.ceil(x1 * dpr) + 1); X++) {
+        if (markDistance(m, (X + 0.5) / dpr, (Y + 0.5) / dpr) <= 1 / dpr) band[Y * A.width + X] = 1;
+      }
+    }
+  }
+  let outside = 0;
+  let outsideMax = 0;
+  let inside = 0;
+  let insideDiff = 0;
+  for (let i = 0; i < band.length; i++) {
+    const o = i * 4;
+    const d = Math.max(Math.abs(A.rgba[o] - B.rgba[o]), Math.abs(A.rgba[o + 1] - B.rgba[o + 1]), Math.abs(A.rgba[o + 2] - B.rgba[o + 2]));
+    if (band[i]) { inside++; if (d > 0) insideDiff++; } else { outside++; if (d > outsideMax) outsideMax = d; }
+  }
+  return { outside, outsideMax, inside, insideDiff };
+}
 
 try {
   const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/index.html`);
@@ -146,6 +178,11 @@ try {
   const faceStatic = { x: 380 - 320 + 32, y: 330 - 240 + 32, width: 640 - 64, height: 480 - 64 };
   check((await q(`window.__desk.entity(${A2})`)).selected && faceHeld.face.width > faceStatic.width && faceHeld.face.x < faceStatic.x, `held and selected: the face as drawn is ${faceHeld.face.width.toFixed(1)} wide, the static portal rect ${faceStatic.width} — the drawn one is the seam's word`);
   await q("window.__desk.freeze(true)");
+  // D4a: the witness is the RENDERER's frame — the screen-space selection menu (DOM over the canvas) is hidden, as in rig:world — and
+  // the selection's MARKS are chrome drawn from the root slot's selection, which the enter clears: they leave at the cut. The cut
+  // frame is held to the pre-cut frame everywhere outside their band.
+  await q("document.head.insertAdjacentHTML('beforeend', '<style id=rig-no-menu>[data-ice-selection-menu]{display:none!important}</style>')");
+  const preMarks = await q("window.__desk.marks()");
   const beforeCut = await png();
   await dbl(380, 330);
   await sleep(40);
@@ -153,9 +190,11 @@ try {
   await q("window.__desk.pinFlight(0)");
   await settle();
   const firstCut = await png();
+  const atCut = await q("({ marked: window.__desk.marks().objects.length, selected: window.__desk.selection().length })");
   check(fc && fc.kind === "enter" && same(fc.c0, faceHeld.cam), `the double-click's flight starts from the held face's own camera — the seam's numbers (zoom ${fc?.c0.zoom.toFixed(4)}); the static rect's would have been ${(faceHeld.cam.zoom * faceStatic.width / faceHeld.face.width).toFixed(4)}`);
-  check(firstCut === beforeCut, `the cut frame IS the pre-cut frame — the same PNG (${firstCut === beforeCut ? "identical" : `differs: ${beforeCut.length} vs ${firstCut.length} bytes`})`);
-  await q("window.__desk.pinFlight(null); window.__desk.freeze(false)");
+  const cut = outsideMarks(beforeCut, firstCut, preMarks, 2);
+  check(preMarks.objects.length === 1 && atCut.marked === 0 && atCut.selected === 0 && cut.outsideMax === 0 && cut.insideDiff > 0, `the cut frame IS the pre-cut frame outside the selection's marks — maxΔ ${cut.outsideMax} over ${cut.outside.toLocaleString()} px; the brackets left with the selection (the enter clears it: ${atCut.selected} selected, ${atCut.marked} marked; ${cut.insideDiff.toLocaleString()} of ${cut.inside.toLocaleString()} band px changed)`);
+  await q("window.__desk.pinFlight(null); window.__desk.freeze(false); document.getElementById('rig-no-menu')?.remove()");
   await land();
   await q(`window.__desk.handle.pinFlux(${A2}, undefined)`);
 
