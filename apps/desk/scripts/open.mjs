@@ -219,7 +219,10 @@ try {
   await settle();
 
   // ---- 10. the cost (design-015 §11.4): frames back to back — a copy remade each, the hand alone, the rest frame; and the held frame
-  //          as the desk draws it under the DEFAULT ambient with the wind up (D7): no copy, no frame
+  //          as the desk draws it under the DEFAULT ambient with the wind up (D7): no copy, no frame. A SECOND notebook lies on the desk
+  //          behind (D7): the copy's layers and meshes are its own, so remaking it neither refits nor re-uploads the hand's (nor they its)
+  await q("window.__desk.spawn('desk.notebook', { seed: 5, angle: -0.06 }, { x: 1060, y: 250 })");
+  await settle();
   await q("window.__desk.ambient('idle')");
   await dbl(300, 200);
   check(await settledInHand(), "picked up for the cost");
@@ -233,7 +236,7 @@ try {
   const cost = await tab.evaluate("window.__desk.holdCost(40)", { awaitPromise: true, timeoutMs: 60000 });
   const copyMs = cost.copy.ms; const handMs = cost.hand.ms; const restMs = cost.rest.ms;
   console.log(`  cost (ms/frame, 40 back to back, GPU drained): the copy remade each frame ${copyMs.toFixed(2)} (cpu ${(cost.copy.cpu * 1000).toFixed(0)} µs) · the hand alone ${handMs.toFixed(2)} (cpu ${(cost.hand.cpu * 1000).toFixed(0)} µs) · the rest frame ${restMs.toFixed(2)} (cpu ${(cost.rest.cpu * 1000).toFixed(0)} µs)`);
-  check(copyMs - handMs <= 1.5, `the desk copy + its blur costs ${(copyMs - handMs).toFixed(2)} ms over the hand alone (design-015 §11.4: ≤ 1.5 ms, once per settled desk; 0 per held frame — the row above, the wind up)`);
+  check(copyMs - handMs <= 1.5, `with a second notebook behind the hand, the desk copy + its blur costs ${(copyMs - handMs).toFixed(2)} ms over the hand alone (design-015 §11.4: ≤ 1.5 ms, once per settled desk; 0 per held frame — the row above, the wind up)`);
   console.log(`  note: a held frame is the OPEN spread at ${(672 / 252).toFixed(2)}× plus the hand's two composites — ${(handMs / restMs).toFixed(1)}× the rest frame's closed book at 1×; the object's own cost at its reading size, not the hand's overhead (the copy's is the number above)`);
   await key("Escape", "Escape", 27);
   await landed();

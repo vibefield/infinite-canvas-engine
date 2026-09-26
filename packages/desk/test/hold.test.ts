@@ -13,7 +13,7 @@ import { looksOf } from "../src/compose/reflector";
 import { Ground, type GroundFrameInputs } from "../src/ground";
 import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders";
 import { HOLD, readingTarget } from "../src/hold/pose";
-import { FLUX_REST, type NotebookGeometry, notebookKind, type ObjectContext, paperKind, rectOf } from "../src/kinds";
+import { CALENDAR_KIND, type CalendarKind, calendarKind, FLUX_REST, NOTEBOOK_KIND, type NotebookGeometry, type NotebookKind, notebookKind, type ObjectContext, paperKind, rectOf } from "../src/kinds";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
@@ -21,7 +21,8 @@ import type { NotebookDraw } from "../src/notebook/pass";
 import { Note, Notebook } from "../src/objects";
 import { lampOf } from "../src/paper/paper";
 import { shaderText } from "../src/shaders";
-import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
+import { calendarDraw, notebookDraw } from "../oracle/frame.mjs";
+import { CALENDAR_LOOK, NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
 import { must } from "./must";
 
@@ -243,5 +244,55 @@ describe("the ground's held frame on a fake device", () => {
     // the carry at 0: the rest frame's own path, byte for byte the same code
     ground.render({ ...rest, held: { ...must(held(0, "c").held), e: 0 } });
     expect(passes()).toEqual(["ground"]);
+  });
+
+  it("a notebook in hand over a desk with another notebook and a pad, the copy remade frame after frame: the layered passes keep the copy's targets and meshes APART from the hand's — nothing is made or given back after the first held frame; the hold's end gives the copy's back (D7)", async () => {
+    const { device } = fakeDevice();
+    const made: string[] = [];
+    const dropped: string[] = [];
+    const texture = device.createTexture.bind(device);
+    const buffer = device.createBuffer.bind(device);
+    device.createTexture = (d) => {
+      made.push(`texture ${d.label}`);
+      const t = texture(d);
+      const destroy = t.destroy.bind(t);
+      t.destroy = () => { dropped.push(`texture ${d.label}`); destroy(); };
+      return t;
+    };
+    device.createBuffer = (d) => {
+      made.push(`buffer ${d.label}`);
+      const b = buffer(d);
+      const destroy = b.destroy.bind(b);
+      b.destroy = () => { dropped.push(`buffer ${d.label}`); destroy(); };
+      return b;
+    };
+    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [paperKind(), notebookKind(), calendarKind()], hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
+    (must(ground.pass(NOTEBOOK_KIND)) as NotebookKind).ruleInk = notebookRuleInk();
+    (must(ground.pass(CALENDAR_KIND)) as CalendarKind).alpha = CALENDAR_LOOK.alpha;
+    const view = { camX: -600, camY: -400, zoom: 1, width: 1200, height: 800, dpr: 2 };
+    // the desk behind the hand: a second notebook and a pad; in hand, a notebook at its reading size
+    const desk = [{ kind: NOTEBOOK_KIND, record: notebookDraw({ x: -250, y: 0, angle: 0.04, cover: "orbit", seed: 7 }) }, { kind: CALENDAR_KIND, record: calendarDraw({ x: 250, y: 0, month: "2026-09", weekStart: 1 }, 0) }];
+    const book = { kind: NOTEBOOK_KIND, record: notebookDraw({ x: 0, y: 0, angle: 0, cover: "orbit", seed: 3 }) };
+    const rest: GroundFrameInputs = { view, theme: THEMES.light, objects: [...desk, book] };
+    const heldFrame = (stamp: string): GroundFrameInputs => ({
+      view, theme: THEMES.light, objects: desk,
+      held: { object: book, view: { ...view, camX: -240, camY: -160, zoom: 2.5 }, grid: DEFAULT_GRID, e: 1, blur: 14, dim: HOLD.dim, filter: { saturate: 1, brightness: 1 }, light: THEMES.light.matLight, stamp },
+    });
+    ground.render(rest);
+    ground.render(heldFrame("a"));   // the pick-up: the copy's own layers (at half the dpr) and meshes are made
+    const layers = made.filter((l) => l === "texture notebook/layer ×4" || l === "texture calendar/layer ×4").length;
+    made.length = 0;
+    dropped.length = 0;
+    // the desk behind moved twice (a new stamp each): the copy remade and the hand redrawn — every target and mesh stands
+    ground.render(heldFrame("b"));
+    ground.render(heldFrame("c"));
+    expect(ground.heldCopies()).toBe(3);
+    expect(made).toEqual([]);
+    expect(dropped).toEqual([]);
+    // the hold's end: the copy's layers given back, the frame's stand
+    ground.render(rest);
+    expect(dropped.filter((l) => l.startsWith("texture notebook/") || l.startsWith("texture calendar/")).sort()).toEqual(["texture calendar/depth ×4", "texture calendar/layer", "texture calendar/layer ×4", "texture notebook/depth ×4", "texture notebook/layer", "texture notebook/layer ×4"]);
+    expect(made.filter((l) => l.startsWith("texture"))).toEqual([]);
+    expect(layers).toBe(4);   // up to the pick-up: each kind's layer for the frame and one for the copy — the hand's prepare made none
   });
 });

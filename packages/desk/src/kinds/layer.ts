@@ -9,7 +9,7 @@
 // slot's scissor, then gives the slot its scissor back (the objects after it draw in the slot's, as the
 // ground restored it after a host's `underlays`).
 
-import type { KindPass, SlotContext } from "../kind";
+import type { KindPass, RenderTarget, SlotContext } from "../kind";
 import type { View } from "../lattice/lod";
 import type { MatPass } from "../mat/mat-pass";
 import { scissorOf } from "../nav/portal";
@@ -40,6 +40,10 @@ export interface LayerPass {
   layer(encoder: GPUCommandEncoder, size: { readonly w: number; readonly h: number }, dpr: number): boolean;
   composite(pass: GPURenderPassEncoder, scissor?: Rect4 | null): void;
   readonly screenBox: Rect4 | null;
+  /** The render target the next prepare is for (D7 — `SlotContext.target`): a pass keeps the held desk copy's state apart. */
+  use?(target: RenderTarget): void;
+  /** The hold is over: the copy's state given back. */
+  endHold?(): void;
   dispose(): void;
 }
 
@@ -68,6 +72,7 @@ export abstract class LayeredKind<R, P extends LayerPass> implements KindPass<R>
     this.handed = records.length;
     const p = this.pass;
     if (!p) return 0;
+    p.use?.(s.target ?? "frame");
     const n = this.prepareOwn(p, s, records);
     if (n === 0) return 0;
     const size = attachmentOf(s.view);
@@ -87,6 +92,8 @@ export abstract class LayeredKind<R, P extends LayerPass> implements KindPass<R>
     p.composite(pass, r);
     pass.setScissorRect(within[0], within[1], within[2], within[3]);
   }
+
+  endHold(): void { this.pass?.endHold?.(); }
 
   dispose(): void { this.pass?.dispose(); }
 }

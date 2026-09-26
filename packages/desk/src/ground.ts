@@ -45,7 +45,7 @@ import type { Surface } from "./engine/device";
 import { beginPass } from "./engine/target";
 import { HoldPass } from "./hold/focus";
 import type { HoldShaders } from "./hold/shaders";
-import { type KindPass, type KindProgram, type SlotContext, STRATA, type StratumName } from "./kind";
+import { type KindPass, type KindProgram, type RenderTarget, type SlotContext, STRATA, type StratumName } from "./kind";
 import { boxOf, type View } from "./lattice/lod";
 import type { MatLight } from "./mat/night";
 import { DEFAULT_GRID, dressGrid, type GridConfig, type GridStats, gridStats, type SlotFrame } from "./mat/grid";
@@ -58,7 +58,7 @@ import type { MarksShaders } from "./marks/shaders";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "./nav/portal";
 import type { GroundTheme } from "./theme";
 
-export type { KindExtra, KindPass, KindProgram, SlotContext, StratumName } from "./kind";
+export type { KindExtra, KindPass, KindProgram, RenderTarget, SlotContext, StratumName } from "./kind";
 export { STRATA } from "./kind";
 export type { MarkBar, MarkBox, MarkFrame, MarkGuide, MarkMarquee, MarkObject, MarkRuler, MarksInput, MarkTape, MarkUnion } from "./marks/layout";
 export { MARKS_SHADER_FILES, marksShaders } from "./marks/shaders";
@@ -390,7 +390,7 @@ const liveOf = (p: Presentation | undefined): number => (p ? p.opacity * (p.obje
  * them carries a live inside. Shared by the ground and the Node oracle. `grid`
  * is the root's when its inputs name none.
  */
-export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: SlotPool, inputs: GroundFrameInputs, grid: GridConfig = DEFAULT_GRID): PreparedFrame {
+export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: SlotPool, inputs: GroundFrameInputs, grid: GridConfig = DEFAULT_GRID, target?: RenderTarget): PreparedFrame {
   pool.reset();
   const theme = inputs.theme;
   let portals = 0;
@@ -447,7 +447,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     }
     // the kinds, in registration order: each lit by this slot's mat — its light, its lamp's gobo (MINIMAT.md §4) — at the objects'
     // presence, a spawned slot's pass first taking the root's laws, each told which of its records carries a live inside this frame
-    const slot: SlotContext = { view: inp.view, fadeIn: g.fadeIn, cfg: g.mat, frame: inp.mat, present: objectsOf(inp.present), light: theme.matLight, lit, select: theme.select, theme };
+    const slot: SlotContext = { view: inp.view, fadeIn: g.fadeIn, cfg: g.mat, frame: inp.mat, present: objectsOf(inp.present), light: theme.matLight, lit, select: theme.select, theme, ...(target !== undefined ? { target } : {}) };
     const drawn: [string, number][] = [];
     for (const k of s.kinds.values()) {
       const own = root.kinds.get(k.name);
@@ -525,6 +525,11 @@ export class Ground {
     // the hand (D4b): at a carry above 0 the frame is the desk out of focus with the held object over it; at 0 it is the rest frame
     const held = inputs.held;
     if (held !== undefined && held.e > 0 && this.hold !== null) return renderHeldFrame(this.device, this.hold, this.root, this.pool, this.grid, this.surface, inputs, held, this.heldCache);
+    // the hold is over: the passes give the desk copy's own state back, once — the next pick-up makes its copy afresh (D7)
+    if (this.heldCache.stamp !== null) {
+      this.heldCache.stamp = null;
+      for (const k of this.root.kinds.values()) k.pass.endHold?.();
+    }
     const encoder = this.device.createCommandEncoder({ label: "ground" });
     const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid);
     const marked = inputs.marks !== undefined && this.marks !== null ? this.marks.prepare(inputs.marks) : 0;
@@ -570,7 +575,7 @@ export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet
     const encoder = device.createCommandEncoder({ label: "hold/copy" });
     const { held: _held, marks: _marks, ...rest } = inputs;
     const copy: GroundFrameInputs = { ...rest, view: { ...inputs.view, dpr: dpr / 2 } };
-    const prepared = prepareFrame(encoder, root, pool, copy, grid);
+    const prepared = prepareFrame(encoder, root, pool, copy, grid, "copy");   // the copy's own state in the passes that keep one (D7)
     const pass = beginPass(encoder, hold.desk.view, [bg[0], bg[1], bg[2], 1], "hold/copy");
     const drawn = drawFrame(pass, { w: hold.desk.width, h: hold.desk.height }, dpr / 2, prepared.incoming, prepared.outgoing);
     pass.end();

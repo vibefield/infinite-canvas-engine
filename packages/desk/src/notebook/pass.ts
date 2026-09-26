@@ -20,6 +20,7 @@
 
 import { bindGroup, bindLayout, storageBuffer, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
+import type { RenderTarget } from "../kind";
 import type { FadeIn, View } from "../lattice/lod";
 import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, STILL_MAT_FRAME } from "../mat/layout";
 import type { MatPass } from "../mat/mat-pass";
@@ -69,6 +70,35 @@ export interface NotebookDraw {
 
 interface BookBuffers { vb: GPUBuffer; ib: GPUBuffer; vcap: number; icap: number; version: number; icount: number; seen: number }
 
+/**
+ * What one RENDER TARGET keeps between its prepares (D7): the layer's targets at its size, the books' meshes it drew (swept when a
+ * prepare of ITS OWN no longer sees them), its frame count, this prepare's books, their screen extent and box, its stats. A held
+ * frame prepares the pass twice — the desk copy behind the hand at half the dpr, then the hand — and with one state each prepare
+ * undid the other's (the targets refit, the other's meshes given back): the copy's is kept apart and given back at the hold's end.
+ */
+interface NbTarget {
+  msaa: GPUTexture | null;
+  depth: GPUTexture | null;
+  resolve: GPUTexture | null;
+  compGroup: GPUBindGroup | null;
+  size: { w: number; h: number };
+  readonly buffers: Map<number, BookBuffers>;
+  list: NotebookDraw[];
+  frameNo: number;
+  screen: { x0: number; y0: number; x1: number; y1: number } | null;
+  stats: NotebookStats;
+  box: readonly [number, number, number, number] | null;
+}
+
+const nbTarget = (): NbTarget => ({ msaa: null, depth: null, resolve: null, compGroup: null, size: { w: 0, h: 0 }, buffers: new Map(), list: [], frameNo: 0, screen: null, stats: { books: 0, triangles: 0, shadowed: 0 }, box: null });
+
+function dropTarget(t: NbTarget): void {
+  for (const b of t.buffers.values()) { b.vb.destroy(); b.ib.destroy(); }
+  t.buffers.clear();
+  t.msaa?.destroy(); t.depth?.destroy(); t.resolve?.destroy();
+  t.msaa = null; t.depth = null; t.resolve = null; t.compGroup = null; t.size = { w: 0, h: 0 };
+}
+
 export interface NotebookStats { readonly books: number; readonly triangles: number; readonly shadowed: number }
 
 export class NotebookPass {
@@ -104,16 +134,10 @@ export class NotebookPass {
   private mainGroup!: GPUBindGroup;
   private boundAssets = -1;
   private boundInk = false;
-  private msaa: GPUTexture | null = null;
-  private depth: GPUTexture | null = null;
-  private resolve: GPUTexture | null = null;
-  private compGroup: GPUBindGroup | null = null;
-  private size = { w: 0, h: 0 };
-  private readonly buffers = new Map<number, BookBuffers>();
-  private list: NotebookDraw[] = [];
-  private frameNo = 0;
-  private screen: { x0: number; y0: number; x1: number; y1: number } | null = null;
-  private stats: NotebookStats = { books: 0, triangles: 0, shadowed: 0 };
+  /** The frame's target (the canvas; the hand) and the held desk copy's, apart (D7) — `t` the one this prepare is for (`use`). */
+  private readonly frameT = nbTarget();
+  private copyT: NbTarget | null = null;
+  private t = this.frameT;
   /** Profiling switches (a harness's): 1 no PCSS · 2 no material detail · 4 no gobo · 8 no shadow maps · 16 no composite · 32 no book draw · 64 no mat draw. */
   debug = 0;
 
@@ -239,18 +263,18 @@ export class NotebookPass {
 
   /** The layer's targets at the canvas's device size. */
   private fit(w: number, h: number): void {
-    if (this.size.w === w && this.size.h === h && this.msaa) return;
-    this.msaa?.destroy(); this.depth?.destroy(); this.resolve?.destroy();
-    this.msaa = this.device.createTexture({ label: "notebook/layer ×4", size: [w, h], format: "rgba8unorm", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    this.depth = this.device.createTexture({ label: "notebook/depth ×4", size: [w, h], format: "depth24plus", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    this.resolve = this.device.createTexture({ label: "notebook/layer", size: [w, h], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
-    this.compGroup = bindGroup(this.device, this.layoutComp, [this.resolve.createView()], "notebook/composite");
-    this.size = { w, h };
+    if (this.t.size.w === w && this.t.size.h === h && this.t.msaa) return;
+    this.t.msaa?.destroy(); this.t.depth?.destroy(); this.t.resolve?.destroy();
+    this.t.msaa = this.device.createTexture({ label: "notebook/layer ×4", size: [w, h], format: "rgba8unorm", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    this.t.depth = this.device.createTexture({ label: "notebook/depth ×4", size: [w, h], format: "depth24plus", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    this.t.resolve = this.device.createTexture({ label: "notebook/layer", size: [w, h], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+    this.t.compGroup = bindGroup(this.device, this.layoutComp, [this.t.resolve.createView()], "notebook/composite");
+    this.t.size = { w, h };
   }
 
   /** A book's mesh on the device — uploaded when its version moved, the buffers grown when too small. */
   private upload(d: NotebookDraw): BookBuffers {
-    let b = this.buffers.get(d.id);
+    let b = this.t.buffers.get(d.id);
     const vbytes = d.mesh.vcount * VERTEX_BYTES;
     const ibytes = d.mesh.icount * 4;
     if (!b || b.vcap < vbytes || b.icap < ibytes) {
@@ -262,14 +286,14 @@ export class NotebookPass {
         ib: this.device.createBuffer({ label: `notebook/${d.id} indices`, size: (icap + 3) & ~3, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST }),
         vcap, icap, version: -1, icount: 0, seen: 0,
       };
-      this.buffers.set(d.id, b);
+      this.t.buffers.set(d.id, b);
     }
     if (b.version !== d.version) {
       this.device.queue.writeBuffer(b.vb, 0, d.mesh.vertices.buffer, d.mesh.vertices.byteOffset, vbytes);
       this.device.queue.writeBuffer(b.ib, 0, d.mesh.indices.buffer, d.mesh.indices.byteOffset, ibytes);
       b.version = d.version; b.icount = d.mesh.icount;
     }
-    b.seen = this.frameNo;
+    b.seen = this.t.frameNo;
     return b;
   }
 
@@ -281,7 +305,7 @@ export class NotebookPass {
   // biome-ignore lint/style/useDefaultParameterLast: the prototype's signature, moved verbatim — dropping the default would change what an explicit `undefined` means (design-015 D1)
   prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, light: MatLight = DAY_LIGHT, eye: DeskEye, law: NotebookLaw, colours: { readonly cast: RGB; readonly select: RGB; readonly ruleInk: RGBA }, books: readonly NotebookDraw[]): number {
     this.rebind();
-    this.frameNo += 1;
+    this.t.frameNo += 1;
     // a book wholly off the screen (its box and its shadow) is not drawn, nor mapped
     const onScreen = (d: NotebookDraw): boolean => {
       const wb = worldBounds(d.rigid, d.mesh.min, d.mesh.max);
@@ -293,15 +317,15 @@ export class NotebookPass {
       for (let c = 0; c < 8; c++) { const [qx, qy] = project(eye, c & 1 ? wb.hi[0] + pad : wb.lo[0] - pad, c & 2 ? wb.hi[1] + pad : wb.lo[1] - pad, c & 4 ? wb.hi[2] : wb.lo[2]); x0 = Math.min(x0, qx); y0 = Math.min(y0, qy); x1 = Math.max(x1, qx); y1 = Math.max(y1, qy); }
       return x1 >= 0 && y1 >= 0 && x0 <= eye.vw && y0 <= eye.vh;
     };
-    this.list = books.filter(onScreen).slice(0, MAX_NOTEBOOKS) as NotebookDraw[];
-    const n = this.list.length;
+    this.t.list = books.filter(onScreen).slice(0, MAX_NOTEBOOKS) as NotebookDraw[];
+    const n = this.t.list.length;
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
     this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, undefined, light, NO_GLYPHS));
     this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     // the near plane above the tallest thing a book reaches: a book risen toward the eye in the hand (D4b) climbs past the 900 the law
     // assumed at rest, and the plane follows it (the at-rest numbers are the same bytes: no book reaches past 900 lying down)
     let top = 0;
-    for (const d of this.list) top = Math.max(top, worldBounds(d.rigid, d.mesh.min, d.mesh.max).hi[2]);
+    for (const d of this.t.list) top = Math.max(top, worldBounds(d.rigid, d.mesh.min, d.mesh.max).hi[2]);
     this.knobs.set({ ...nbUniformValues(law, eyeValues(eye, Math.max(900, top + 200)), view.dpr, colours.cast, colours.select, colours.ruleInk), ring: [law.ring.offset, this.debug, 0, 0] });
     this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
     let tris = 0;
@@ -311,7 +335,7 @@ export class NotebookPass {
     let sx1 = Number.NEGATIVE_INFINITY;
     let sy1 = Number.NEGATIVE_INFINITY;
     for (let i = 0; i < n; i++) {
-      const d = this.list[i] as NotebookDraw;
+      const d = this.t.list[i] as NotebookDraw;
       this.upload(d);
       tris += d.mesh.icount / 3;
       const F = d.frame;
@@ -361,36 +385,48 @@ export class NotebookPass {
     }
     if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
     // a book gone from the list gives its buffers back
-    for (const [id, b] of this.buffers) if (b.seen !== this.frameNo) { b.vb.destroy(); b.ib.destroy(); this.buffers.delete(id); }
-    this.screen = n > 0 ? { x0: sx0, y0: sy0, x1: sx1, y1: sy1 } : null;
-    this.stats = { books: n, triangles: tris, shadowed };
+    for (const [id, b] of this.t.buffers) if (b.seen !== this.t.frameNo) { b.vb.destroy(); b.ib.destroy(); this.t.buffers.delete(id); }
+    this.t.screen = n > 0 ? { x0: sx0, y0: sy0, x1: sx1, y1: sy1 } : null;
+    this.t.stats = { books: n, triangles: tris, shadowed };
     return n;
   }
 
-  get drawn(): NotebookStats { return this.stats; }
+  get drawn(): NotebookStats { return this.t.stats; }
+
+  /** The render target the next prepare, layer and composite are for (D7): the frame's, or the held desk copy's — made on first use. */
+  use(target: RenderTarget): void {
+    if (target === "copy" && this.copyT === null) this.copyT = nbTarget();
+    this.t = target === "copy" && this.copyT !== null ? this.copyT : this.frameT;
+  }
+
+  /** The hold is over: the desk copy's target gives its layer and meshes back (D7). */
+  endHold(): void {
+    if (this.copyT) dropTarget(this.copyT);
+    this.copyT = null;
+    this.t = this.frameT;
+  }
 
   /** The books' screen box on an attachment of `size` device px, clamped to it — the layer's scissor and the composite's; null when none shows. */
   private boxOf(size: { readonly w: number; readonly h: number }, dpr: number): readonly [number, number, number, number] | null {
-    if (this.list.length === 0 || !this.screen) return null;
+    if (this.t.list.length === 0 || !this.t.screen) return null;
     const W = Math.max(1, size.w);
     const H = Math.max(1, size.h);
-    const x0 = Math.max(0, Math.floor(this.screen.x0 * dpr) - 2);
-    const y0 = Math.max(0, Math.floor(this.screen.y0 * dpr) - 2);
-    const x1 = Math.min(W, Math.ceil(this.screen.x1 * dpr) + 2);
-    const y1 = Math.min(H, Math.ceil(this.screen.y1 * dpr) + 2);
+    const x0 = Math.max(0, Math.floor(this.t.screen.x0 * dpr) - 2);
+    const y0 = Math.max(0, Math.floor(this.t.screen.y0 * dpr) - 2);
+    const x1 = Math.min(W, Math.ceil(this.t.screen.x1 * dpr) + 2);
+    const y1 = Math.min(H, Math.ceil(this.t.screen.y1 * dpr) + 2);
     return x1 <= x0 || y1 <= y0 ? null : [x0, y0, x1, y1];
   }
 
   /** The books' screen box of the last `layer`, device px [x, y, w, h] — what the composite paints at most; null: no layer to lay. */
-  get screenBox(): readonly [number, number, number, number] | null { return this.box; }
-  private box: readonly [number, number, number, number] | null = null;
+  get screenBox(): readonly [number, number, number, number] | null { return this.t.box; }
 
   /** Draw the prepared books onto `target` (the canvas, holding what the ground drew). Its own command buffer: the layer, then the composite. */
   render(target: GPUTextureView, size: { readonly w: number; readonly h: number }, dpr: number): void {
-    if (!this.boxOf(size, dpr)) { this.box = null; return; }
+    if (!this.boxOf(size, dpr)) { this.t.box = null; return; }
     this.fit(Math.max(1, size.w), Math.max(1, size.h));
     // the first frames are watched: a validation error names itself on the console instead of hiding behind the submit's
-    const watch = this.frameNo < 4;
+    const watch = this.t.frameNo < 4;
     if (watch) this.device.pushErrorScope("validation");
     const enc = this.device.createCommandEncoder({ label: "notebook" });
     this.layer(enc, size, dpr);
@@ -412,14 +448,14 @@ export class NotebookPass {
    */
   layer(encoder: GPUCommandEncoder, size: { readonly w: number; readonly h: number }, dpr: number): boolean {
     const at = this.boxOf(size, dpr);
-    this.box = null;
+    this.t.box = null;
     if (!at) return false;
     const [x0, y0, x1, y1] = at;
     this.fit(Math.max(1, size.w), Math.max(1, size.h));
     // 1. the shadow maps
-    this.list.forEach((d, i) => {
+    this.t.list.forEach((d, i) => {
       if (i >= MAX_SHADOWED || (this.debug & 8)) return;
-      const b = this.buffers.get(d.id);
+      const b = this.t.buffers.get(d.id);
       if (!b) return;
       const p = encoder.beginRenderPass({ label: `notebook/shadow ${i}`, colorAttachments: [], depthStencilAttachment: { view: this.shadowLayers[i] as GPUTextureView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } });
       p.setPipeline(this.shadowPipe);
@@ -432,23 +468,23 @@ export class NotebookPass {
     // 2. the layer: the books, then the mat under them
     const pass = encoder.beginRenderPass({
       label: "notebook/layer",
-      colorAttachments: [{ view: (this.msaa as GPUTexture).createView(), resolveTarget: (this.resolve as GPUTexture).createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "discard" }],
-      depthStencilAttachment: { view: (this.depth as GPUTexture).createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
+      colorAttachments: [{ view: (this.t.msaa as GPUTexture).createView(), resolveTarget: (this.t.resolve as GPUTexture).createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "discard" }],
+      depthStencilAttachment: { view: (this.t.depth as GPUTexture).createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
     });
     pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
     pass.setBindGroup(0, this.mainGroup);
     pass.setPipeline(this.bookPipe);
-    this.list.forEach((d, i) => {
-      const b = this.buffers.get(d.id);
+    this.t.list.forEach((d, i) => {
+      const b = this.t.buffers.get(d.id);
       if (!b || (this.debug & 32)) return;
       pass.setVertexBuffer(0, b.vb);
       pass.setIndexBuffer(b.ib, "uint32");
       pass.drawIndexed(b.icount, 1, 0, 0, i);
     });
     pass.setPipeline(this.recvPipe);
-    if (!(this.debug & 64)) for (let i = 0; i < this.list.length; i++) pass.draw(6, 1, 0, i);
+    if (!(this.debug & 64)) for (let i = 0; i < this.t.list.length; i++) pass.draw(6, 1, 0, i);
     pass.end();
-    this.box = [x0, y0, x1 - x0, y1 - y0];
+    this.t.box = [x0, y0, x1 - x0, y1 - y0];
     return true;
   }
 
@@ -456,18 +492,17 @@ export class NotebookPass {
    * (3) Lay the last `layer` over what `pass` holds — premultiplied, one fullscreen triangle — scissored to `scissor` (the books'
    * box, or a part of it a host narrows it to). Nothing without a layer, or with the debug bit 16 (no composite).
    */
-  composite(pass: GPURenderPassEncoder, scissor: readonly [number, number, number, number] | null = this.box): void {
-    if (!this.box || !scissor || !this.compGroup || (this.debug & 16)) return;
+  composite(pass: GPURenderPassEncoder, scissor: readonly [number, number, number, number] | null = this.t.box): void {
+    if (!this.t.box || !scissor || !this.t.compGroup || (this.debug & 16)) return;
     pass.setScissorRect(scissor[0], scissor[1], scissor[2], scissor[3]);
     pass.setPipeline(this.compPipe);
-    pass.setBindGroup(0, this.compGroup);
+    pass.setBindGroup(0, this.t.compGroup);
     pass.draw(3);
   }
 
   dispose(): void {
-    for (const b of this.buffers.values()) { b.vb.destroy(); b.ib.destroy(); }
-    this.buffers.clear();
-    this.msaa?.destroy(); this.depth?.destroy(); this.resolve?.destroy();
+    dropTarget(this.frameT);
+    if (this.copyT) dropTarget(this.copyT);
     this.shadowTex.destroy(); this.inkTex.destroy(); this.paperTex.destroy(); this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy();
     void this.format;
   }

@@ -33,6 +33,13 @@ export const STRATA: readonly StratumName[] = ["pads", "sheets", "things"];
  * Everything a kind's pass is prepared with for one slot, one frame — what each object pass's `prepare`
  * took as arguments before the registry, in one record. The ground fills it; a kind reads what it needs.
  */
+/**
+ * What a slot is prepared FOR (D7): `frame` — the canvas (and the hand's own slot over it); `copy` — the held desk copy behind the
+ * hand, the desk at half the dpr (design-015 §8). A held frame prepares the root twice, once for each, so a pass that keeps state
+ * between its prepares keeps the copy's apart.
+ */
+export type RenderTarget = "frame" | "copy";
+
 export interface SlotContext {
   /** The slot's camera and box (CSS px) and the device pixel ratio. */
   readonly view: View & { readonly dpr: number };
@@ -52,6 +59,8 @@ export interface SlotContext {
   readonly select: RGB;
   /** The theme in force. */
   readonly theme: GroundTheme;
+  /** The render this slot is prepared for; absent = the frame's (D7). */
+  readonly target?: RenderTarget;
 }
 
 /**
@@ -94,6 +103,8 @@ export interface KindPass<R = unknown> {
    * rig's witness that a camera move writes no standing record. Absent for a kind that keeps none (the composites' layers).
    */
   records?(): RecordStoreStats;
+  /** The hold is over (D7): a pass that kept the held desk copy's state apart (`SlotContext.target`) gives it back. */
+  endHold?(): void;
   /** A sheet's marks over its live inside, drawn right after the inside (the mini mat's chips while the inside's objects come in). */
   drawOver?(pass: GPURenderPassEncoder, index: number): void;
   /** This slot's buffers (the shared resources go with the last slot standing). */
