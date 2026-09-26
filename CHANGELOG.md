@@ -95,6 +95,20 @@ there.
   form and threw the view centre up to 4× past its endpoints; the test is relative now, and
   every flight whose zooms differ takes the same path as before.
 
+<!-- design-015 D2a-render (2026-09-25) -->
+- **The desk's kind registry** (`@ice/desk`; design-015 §4.2, and §5.2's render half): the desk's
+  composition root (`ground.ts`) names no kind. A kind registers a `KindProgram { name, stratum,
+  create }`; its `KindPass` (`spawn`, `tune?`, `prepare(encoder, SlotContext, records, KindExtra)`,
+  `drawRange`, `drawOver?`, `dispose`) is prepared per slot and drawn in ranges.
+  `Ground.create({ device, canvas, mat, kinds })` takes the registry; `SlotInputs.objects` (`{ kind,
+  record }` in paint order) replaces the per-kind lists, and a portal's `at` indexes it; the draw walks
+  the strata (pads · sheets · things — the literal set of core's `DeskStratum`) and cuts each into
+  runs of one kind, one draw per run, a sheet with a live inside splitting its run (the inside, then
+  the sheet's marks over it). `GroundStats.kinds` counts the root's records by kind name. The note,
+  the mini mat and the whiteboard are kinds by thin adapters (`@ice/desk/kinds`: `DESK_KINDS`,
+  `deskKinds(text)`), their shaders untouched. The oracle builds its root slot from the registry and
+  renders its 38 scenes byte-identical to D1's; Chrome = Node at maxΔ 0 on every one.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and

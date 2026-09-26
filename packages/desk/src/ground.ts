@@ -241,7 +241,7 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   // the live insides by the object each lies in (two on one object draw in the order they came)
   const objects = slot.objects ?? [];
   const insides = new Map<number, DrawSlot[]>();
-  for (const c of slot.children ?? []) { const at = insides.get(c.at); if (at) at.push(c.slot); else insides.set(c.at, [c.slot]); }
+  for (const c of slot.children ?? []) { const listed = insides.get(c.at); if (listed) listed.push(c.slot); else insides.set(c.at, [c.slot]); }
   const inside = (child: DrawSlot) => { if (drawSlot(pass, size, dpr, child)) pass.setScissorRect(x, y, w, h); };
   // the objects, stratum by stratum; within one, in paint order, a run of one kind at a time — cut after an object with a live
   // inside: the run through it, its inside over its face, then its marks over that (the mini mat's chips while the inside's
