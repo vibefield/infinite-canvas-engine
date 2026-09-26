@@ -29,8 +29,8 @@ export interface DeskParity {
   readonly view: { readonly cssW: number; readonly cssH: number; readonly dpr: number };
   /** The swap chain's format (the preferred one; the oracle draws rgba8unorm — the bytes must still agree). */
   readonly format: GPUTextureFormat;
-  /** The last scene drawn and how many frames were, and every uncaptured GPU error. */
-  readonly state: { drawn: string | null; frames: number; readonly errors: string[] };
+  /** The last scene drawn and how many frames were, and every GPU error — uncaptured, or caught by the probe's scopes (`scoped`: the desk's creation and every frame, each in scopes of its own — D3r-b). */
+  readonly state: { drawn: string | null; frames: number; scoped: number; readonly errors: string[] };
   /** Draw one scene into the canvas inside a frame; resolves once the GPU has finished it. */
   render(name: string): Promise<{ readonly portals: number }>;
 }
@@ -83,12 +83,24 @@ async function boot(): Promise<void> {
     bytesOf(goboCUrl), bytesOf(goboBUrl), bytesOf(glyphsUrl), jsonOf<{ count: number }>(glyphMetaUrl), bytesOf(inkUrl), jsonOf<{ w: number; h: number }>(inkMetaUrl),
     bytesOf(photoUrl), jsonOf<{ w: number; h: number }>(photoMetaUrl),
   ]);
-  const desk = await createOracleDesk({
+  // THE ERROR-SCOPE PROBE (design-015 D3r-b): the desk's creation and every frame in scopes of their own — validation,
+  // out-of-memory, internal — so an error is counted where it happened, not only when it escapes (the notebook's and the
+  // calendar's layers are recorded into the frame's encoder: the host that submits the frame watches it)
+  const SCOPES: GPUErrorFilter[] = ["validation", "out-of-memory", "internal"];
+  let scoped = 0;
+  const scope = async <T>(what: string, fn: () => T | Promise<T>): Promise<T> => {
+    for (const f of SCOPES) device.pushErrorScope(f);
+    const out = await fn();
+    for (const f of [...SCOPES].reverse()) { const e = await device.popErrorScope(); if (e) { errors.push(`${what} (${f}): ${e.message}`); fail(`GPU error: ${e.message}`); } }
+    scoped += 1;
+    return out;
+  };
+  const desk = await scope("creation", () => createOracleDesk({
     device, format: surf.format, text: shaderText,
     assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink, photoMeta, photo },
     log: (message) => console.warn(message),
-  });
-  const state: DeskParity["state"] = { drawn: null, frames: 0, errors };
+  }));
+  const state: DeskParity["state"] = { drawn: null, frames: 0, get scoped() { return scoped; }, errors };
   window.__parity = {
     scenes: ORACLE_SCENES.map((s) => s.name),
     view: VIEW,
@@ -98,9 +110,12 @@ async function boot(): Promise<void> {
       const sc = ORACLE_SCENES.find((s) => s.name === name);
       if (!sc) throw new Error(`no oracle scene "${name}"`);
       await new Promise((resolve) => requestAnimationFrame(resolve));   // inside a frame, as a host's clock draws
-      const encoder = device.createCommandEncoder();
-      const { prepared } = desk.encode(encoder, surf.view(), surf.size(), sc.scene);
-      device.queue.submit([encoder.finish()]);
+      const { prepared } = await scope(`frame ${name}`, () => {
+        const encoder = device.createCommandEncoder();
+        const r = desk.encode(encoder, surf.view(), surf.size(), sc.scene);
+        device.queue.submit([encoder.finish()]);
+        return r;
+      });
       await device.queue.onSubmittedWorkDone();
       state.drawn = name;
       state.frames += 1;

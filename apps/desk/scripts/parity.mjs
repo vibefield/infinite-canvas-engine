@@ -157,7 +157,8 @@ try {
     console.log(`${clean(r) ? "PASS" : excused ? "KEPT" : "FAIL"}  ${sc.name.padEnd(24)} ${detail.padEnd(46)} ${r.portals}${note}`);
   }
   const errs = await tab.evaluate("window.__parity.state.errors", { timeoutMs: 20000 });
-  console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} checked · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness) · ${errs.length} uncaptured GPU error${errs.length === 1 ? "" : "s"}`);
+  const scoped = await tab.evaluate("window.__parity.state.scoped", { timeoutMs: 20000 });
+  console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} checked · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness) · ${errs.length} GPU error${errs.length === 1 ? "" : "s"} (uncaptured, or in the probe's scopes over the creation and ${Math.max(0, scoped - 1)} frames)`);
   if (errs.length) { failures += 1; console.log(`  ${errs.slice(0, 5).join("\n  ")}`); }
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);
 } catch (err) {
