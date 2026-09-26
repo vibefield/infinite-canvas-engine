@@ -286,12 +286,14 @@ export function createBooks(host: KindHost): Books {
     table(e, G, look) {
       const st = state(e);
       const inView = pagesInView(G.pose, swingOf(G.theta));
-      if (inView.length === 0) return NO_TABLE;
-      const k = host.pass();
-      const up = k instanceof NotebookKind ? (k.pass ?? undefined) : undefined;
-      const fallback: RGB = Object.values(look.pens)[0] ?? [look.ruleInk[0], look.ruleInk[1], look.ruleInk[2]];
       const live = st.live;
-      const t = pages.table(st.id, inView, (p) => strokesOn(e, p), live, (ink) => look.pens[ink] ?? fallback, look, up, G.frame.Wo, G.frame.Hp);
+      let t = NO_TABLE;
+      if (inView.length > 0) {
+        const k = host.pass();
+        const up = k instanceof NotebookKind ? (k.pass ?? undefined) : undefined;
+        const fallback: RGB = Object.values(look.pens)[0] ?? [look.ruleInk[0], look.ruleInk[1], look.ruleInk[2]];
+        t = pages.table(st.id, inView, (p) => strokesOn(e, p), live, (ink) => look.pens[ink] ?? fallback, look, up, G.frame.Wo, G.frame.Hp);
+      }
       // the lifted stroke drawn to its end (a page out of the table replays with it): from here the page lists it until its child lands
       if (live?.lifted === true) {
         st.adopt = { page: live.page, stroke: { key: live.key, ink: live.ink, points: live.points }, at: (byPage(e, st).get(live.page) ?? []).length };

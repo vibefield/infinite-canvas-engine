@@ -1,0 +1,159 @@
+// @vitest-environment node
+// THE NOTEBOOK IN HAND — its pen (NOTEBOOK.md §7–8; design-015 §8; D3t-b): through the REAL stack (core's held input maps the
+// pointer through the pose seam into `HeldPointer`, the kind's hit answers the part under it — a page's writing is `content`, and
+// a press there with a pen in hand is the tool's), the hand lays a stroke LIVE into its page's raster a sample a frame — through
+// the SAME desk eye the book was drawn with (`pageHitAt` on the geometry in hand) — and commits it as ONE `desk.stroke` child of
+// the book on its page, in page units with its samples' times, which the page's raster ADOPTS (the replay of its row lays the live
+// pen's bytes). Put down mid-stroke, the stroke lands first; ⌘Z is the document's; the case and a turn's share take no ink.
+import { ChildOf, createCanvasEngine, defineQuery, type Entity, heldEntity, HeldPointer, LocalPointer, NO_MODS, Pointer, Viewport } from "@ice/core";
+import { describe, expect, it } from "vitest";
+import { worldChildren } from "../src/compose/children";
+import { type Books, FLUX_REST, type NotebookGeometry, NotebookKind, notebookKind, type NotebookObjectLook, type ObjectContext, pageHitAt, rectOf } from "../src/kinds";
+import { DEFAULT_GRID } from "../src/mat/grid";
+import { INK_H, INK_W } from "../src/notebook/ink";
+import { NOTEBOOK } from "../src/notebook/law";
+import { PageInk } from "../src/notebook/pages";
+import type { NotebookPass } from "../src/notebook/pass";
+import { BoardStroke, createNotebookHand, decodePoints, decodeTimes, Notebook } from "../src/objects";
+import { lampOf } from "../src/paper/paper";
+import { MAT_GRID } from "../src/theme";
+import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
+import { must } from "./must";
+
+const lamp = lampOf(MAT_GRID.plane);
+const palette = { ...PALETTE.light, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] }, pens: PENS };
+const kind = notebookKind();
+const look = must(kind.theme)(palette, "light") as NotebookObjectLook;
+const W = NOTEBOOK.cover.width;
+const H = NOTEBOOK.cover.height;
+const pointerQ = defineQuery([Pointer, LocalPointer]);
+
+/**
+ * A notebook in hand: its case centred at the desk's origin, its spread's centre (−90, 0) at the screen's (600, 400), one CSS px a
+ * unit (the pose seam's frame), the desk's camera over it (the eye the book is drawn and picked with) — each frame the hand
+ * follows the LAST build's geometry, then the build resolves and records the book in hand (its pages' table), as the layer runs them.
+ */
+function rig(props: Record<string, unknown> = {}) {
+  const ce = createCanvasEngine({ widgets: [Notebook] });
+  ce.docs.create();
+  ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 1 });
+  const book = ce.ops.spawnWidget("desk.notebook", { x: -W / 2, y: -H / 2, props: { seed: 7, ...props }, undoable: false });
+  ce.world.sync();
+  const sent: number[] = [];
+  const pass = new NotebookKind({ uploadInk: (layer: number) => { sent.push(layer); } } as unknown as NotebookPass);
+  const books = must(kind.local)({ pass: () => pass, children: worldChildren(ce.world) }) as Books;
+  const spread = () => (ce.world.get(book, Notebook.groups[0]?.component as never) as { spread: number }).spread;
+  const ctx = (inHand: boolean): ObjectContext => ({
+    entity: book, rect: rectOf({ x: -W / 2, y: -H / 2 }, { w: W, h: H }), props: { title: "", cover: "orbit", ruling: "dots", seed: 7, spread: spread(), angle: 0 },
+    flux: FLUX_REST, look, theme: THEMES.light, lamp, view: { camX: -690, camY: -400, zoom: 1, width: 1200, height: 800, dpr: 1 }, grid: DEFAULT_GRID, dt: 1 / 60,
+    local: books, ...(inHand ? { held: { e: 1, open: true, grow: 1, snap: true } } : {}),
+  });
+  let G: NotebookGeometry | undefined;
+  const build = (): void => { const c = ctx(heldEntity(ce.world) === book); G = kind.resolve(c); kind.record(G, c); };
+  ce.stack.heldPose.current = {
+    frame: (e) => (e === book ? { cx: 600, cy: 400, hx: 180, hy: 126, s: 1, settled: true } : undefined),
+    part: (e, x, y) => (e === book && G !== undefined ? kind.hit(G, -90 + x, y) : null),
+  };
+  const hand = createNotebookHand({
+    world: ce.world, docs: ce.docs, books: () => books, isBook: (e) => e === book,
+    heldToWorld: (e, x, y) => (e === book ? [-90 + x, y] : undefined), geometryOf: (e) => (e === book ? G : undefined),
+  });
+  let now = 1000;
+  const frame = (dt = 16): void => { now += dt; ce.step(now); hand.follow(now); build(); };
+  const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => {
+    ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
+  };
+  const strokes = () => ce.world.getReverse(book, ChildOf).map((k) => ce.world.get(k, BoardStroke)).filter((s) => s !== undefined);
+  const settle = async (): Promise<void> => { await Promise.resolve(); await Promise.resolve(); ce.world.sync(); };
+  const open = (): void => { frame(); ce.ops.open(book); build(); frame(); frame(); };
+  const partUnder = () => ce.world.get(ce.world.firstOf(pointerQ) as Entity, HeldPointer)?.part;
+  return { ce, book, books, hand, frame, mouse, strokes, settle, open, sent, partUnder, geometry: () => must(G), spread };
+}
+
+describe("the pen in hand writes on a page and commits ONE child with its page and its samples' times", () => {
+  it("press on the right page · moves · a rest · the lift → one desk.stroke on page 1, in page units; its replay is the live pen's raster, byte for byte", async () => {
+    const r = rig();
+    r.open();
+    r.mouse("move", 650, 380, 0); r.frame();
+    expect(r.partUnder()).toBe("content");
+    r.mouse("down", 650, 380, 1); r.frame();
+    expect(r.hand.live()).toMatchObject({ book: r.book, page: 1, samples: 1 });
+    r.mouse("move", 670, 386, 1); r.frame();
+    r.mouse("move", 700, 392, 1); r.frame();
+    r.frame(200);   // the pen rests: a sample on the same point
+    r.mouse("move", 730, 404, 1); r.frame();
+    r.mouse("up", 730, 404, 0); r.frame();
+    expect(r.hand.live()).toBeNull();
+    await r.settle();
+    const rows = r.strokes();
+    expect(rows).toHaveLength(1);
+    const row = must(rows[0]);
+    expect(row).toMatchObject({ tool: "pen", ink: "fountain", page: 1, erase: false });
+    const pts = decodePoints(row.points ?? "");
+    const times = decodeTimes(row.times ?? "");
+    expect(pts.length).toBe(times.length);
+    expect(times[0]).toBe(0);
+    // screen (650, 380) is the desk's (−40, −20): the right page's point through the eye, page units — `s` from the gutter, `y` from the head
+    const h = must(pageHitAt(r.geometry(), -40, -20));
+    if (h.part !== "page") throw new Error("the press is on the right page");
+    expect(pts[0]).toEqual([Math.fround(h.s), Math.fround(h.y + r.geometry().frame.Hp / 2)]);
+    expect(must(pts[0])[1]).toBeGreaterThan(100);   // 20 units above the page's middle, from its head
+    expect(pts.some((p, i) => i > 0 && p[0] === must(pts[i - 1])[0] && p[1] === must(pts[i - 1])[1])).toBe(true);   // the rest
+    expect(r.hand.commits()).toBe(1);
+    // the page's raster ADOPTED the stroke: its landing was no replay, and it holds what a replay of the child lays
+    const replays = r.books.pages.replays;
+    r.frame(); r.frame();
+    expect(r.books.pages.replays).toBe(replays);
+    const mine = must(r.books.pages.rasterOf(r.books.state(r.book).id, 1));
+    const fresh = new PageInk();
+    fresh.table(1, [1], (p) => r.books.strokesOn(r.book, p), null, () => look.pens.fountain ?? [0, 0, 0], look, { uploadInk: () => {} }, r.geometry().frame.Wo, r.geometry().frame.Hp);
+    expect(Buffer.compare(Buffer.from(mine.bytes), Buffer.from(must(fresh.rasterOf(1, 1)).bytes))).toBe(0);
+    expect(mine.bytes.length).toBe(INK_W * INK_H * 4);
+    // ⌘Z is the document's: the stroke goes, and the page is clean again
+    r.ce.docs.undo();
+    r.ce.world.sync();
+    expect(r.strokes()).toHaveLength(0);
+    r.frame();
+    expect(r.books.strokesOn(r.book, 1)).toHaveLength(0);
+  });
+
+  it("the pen in hand is the ink: the red pen writes red; a page turned to is written on its own page (the left, a verso)", async () => {
+    const r = rig({ spread: 2 });
+    r.open();
+    r.ce.ops.useHeldTool("pen:red");
+    // the left page at spread 2 is sheet 1's verso: page 4 — the desk's (−190, 10), the screen's (500, 410)
+    r.mouse("move", 500, 410, 0); r.frame();
+    expect(r.partUnder()).toBe("content");
+    r.mouse("down", 500, 410, 1); r.frame();
+    r.mouse("move", 520, 420, 1); r.frame();
+    r.mouse("up", 520, 420, 0); r.frame();
+    await r.settle();
+    expect(r.strokes().map((s) => [s?.ink, s?.page])).toEqual([["red", 4]]);
+  });
+
+  it("put down mid-stroke, the stroke lands first; a press on the case, an endpaper or a turn's share lays no ink", async () => {
+    const r = rig();
+    r.open();
+    r.mouse("move", 650, 380, 0); r.frame();
+    r.mouse("down", 650, 380, 1); r.frame();
+    r.mouse("move", 690, 390, 1); r.frame();
+    r.ce.ops.putDown();
+    r.frame();
+    await r.settle();
+    expect(r.strokes().map((s) => s?.page)).toEqual([1]);
+    r.mouse("up", 690, 390, 0); r.frame();
+    // in hand again: the left side at spread 0 is the front endpaper (the inside of the cover) — the case's, no page to write on
+    r.ce.ops.open(r.book); r.frame(); r.frame();
+    r.mouse("move", 500, 400, 0); r.frame();
+    expect(r.partUnder()).toBe("frame");
+    r.mouse("down", 500, 400, 1); r.frame();
+    r.mouse("move", 520, 410, 1); r.frame();
+    r.mouse("up", 520, 410, 0); r.frame();
+    // the right page's outer 30 %: a turn's, not the pen's
+    r.mouse("move", 760, 400, 0); r.frame();
+    expect(r.partUnder()).toBe("turn");
+    await r.settle();
+    expect(r.strokes()).toHaveLength(1);
+    expect(r.hand.commits()).toBe(1);
+  });
+});

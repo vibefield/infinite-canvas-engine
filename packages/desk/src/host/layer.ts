@@ -59,8 +59,10 @@ import { decodePicture } from "./picture";
 import { createNoteTyping, type NoteTyping, type TypingDocs } from "../objects/typing";
 import { createPhotoCarry } from "../objects/carry";
 import { type BoardPen, createBoardPen } from "../objects/pen";
+import { createNotebookHand, type NotebookHand } from "../objects/leaf";
 import { BOARD_KIND, type BoardInk, type BoardObjectLook } from "../kinds/board";
 import { PHOTO_KIND, type Prints } from "../kinds/photo";
+import { type Books, NOTEBOOK_KIND } from "../kinds/notebook";
 import type { TextRaster } from "../paper/raster";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 import { createNoteEditor, type NoteEditor } from "./editor";
@@ -231,6 +233,8 @@ export interface DeskLayerHandle {
   readonly typing: NoteTyping;
   /** The whiteboard's pen in hand (D3t-a): the stroke laid, the commits — `undefined` when no board kind is registered. */
   pen(): BoardPen | undefined;
+  /** The notebook in hand (D3t-b): its pen's stroke, the commits — `undefined` when no notebook kind is registered. */
+  notebook(): NotebookHand | undefined;
   /** Where the selection menu goes (D4a): the marks' box around the selection, published after each frame it moved. */
   readonly selection: SelectionSource;
   /**
@@ -360,6 +364,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), geometryOf: (e) => builder.geometryOf(e),
         })
       : undefined;
+    // the notebook in hand (D3t-b): its pen and its leaves — the hand onto the notebook kind's state, each stroke ONE transaction out of the frame
+    const leaf = locals.has(NOTEBOOK_KIND)
+      ? createNotebookHand({
+          world, docs: opts.docs ?? { current: () => undefined }, books: () => locals.get(NOTEBOOK_KIND) as Books | undefined,
+          isBook: (e) => builder.kindOf(e)?.name === NOTEBOOK_KIND, heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), geometryOf: (e) => builder.geometryOf(e),
+        })
+      : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
     const inner = compose.reflector;
@@ -369,6 +380,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         const now = performance.now();
         carry?.follow(now);
         pen?.follow(now);
+        leaf?.follow(now);
         let want = false;
         for (const local of locals.values()) if (local.tick?.(now) === true) want = true;
         if (want) compose.wake("ink");
@@ -517,6 +529,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       editor: () => editor,
       typing,
       pen: () => pen,
+      notebook: () => leaf,
       selection: {
         anchor: () => anchorOf(),
         subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
