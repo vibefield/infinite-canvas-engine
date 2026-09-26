@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world and D3r-a LANDED 2026-09-25)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b and D2c LANDED 2026-09-25)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1201,6 +1201,32 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   on ≤ 16 px — Chrome's Dawn and node-webgpu's compile the board's stamp pass differently on 6 of 2.2 M
   texels (named, measured bounds in the rig). Owed: board ink bit-stability across Dawns; the photo
   fixture's `--check` into `gen:check`; a far-LOD chip for prints (D2b).
+- **D3r-b — the notebook's and the calendar's render halves** (**LANDED 2026-09-25**, `8fa752f` …
+  `bf8e09e`, seven commits): the real 3D notebook (under the desk eye, its shadow maps and MSAA layer)
+  and the desk calendar's pad become kinds — root-only (a spawned slot's pass is null, D-D18) and
+  COMPOSITE (`KindProgram.composite`: one run after the rest of its stratum, because the composite
+  covers every book or pad at once — the named limit: a thing laid on a notebook draws under it); both
+  layers now record into the frame's encoder after the mat's wind, which removes a one-frame wind lag
+  the prototype's own submit had (maxΔ 11 on the first frame after a wind change). Exit: 9 new Node
+  scenes; Chrome = Node on all 59 scenes (the MSAA resolves and the shadow compares needed no bound);
+  `rig:proto-parity` — every book and pad scene BYTE-IDENTICAL to the prototype's own main lab (19 held
+  in all); a GPU error-scope probe clean; the cost equal to the prototype's passes where a book or pad
+  draws (0.03–0.05 ms more on empty desks — owed to D6). It also found and fixed a defect on main:
+  `rig:proto-parity` had thrown since D2a-world renamed the parity page.
+- **D2c — the note's text** (**LANDED 2026-09-25**, `2b78d16` · `c7ade1a` · `9b5eda0` · `9b2ad26` ·
+  `82b3efe`, rebased by the orchestrator over D3r-b): the note's writing is DATA — one durable `ink` cell
+  `{ text, seeds }` (the hand law's per-glyph seeds, base64) — and its ink a CACHE (the `TextRaster` seam;
+  the browser's Canvas2D raster in `desk/host`; layout and raster keyed exactly, re-rastered only on an
+  edit or a √2 rung crossing, only near the view; the ink pages' page-slot leak across delete/undo
+  closed); the ONE focused editor (an invisible platform textarea in screen space, placed each frame by
+  translate · rotate over the drawn note — the law's grep pins it); typing as a GESTURE (core's runtime
+  `Editing` is a gesture claim; the cell is written live and committed as ONE transaction per session on
+  Esc, blur or 1 s idle — ⌘Z undoes a session). Exit: `rig:sticky` 35/35 (the live raster equals the
+  committed `ink-note-1` raster byte for byte; the hand-off 0 px; the editor rect = the note's screen rect
+  to 0.1 px; IME), `rig:two-tab` 10/10 (a session crosses to another tab when it commits, same seeds),
+  37 mutations red; on the combined tree `gate:landing` exit 0 with both rigs added, and `pnpm run ci`
+  red ONLY on dom's graybox 10k-mount load flake (5.3 s vs 5 s; 4/4 alone), every later stage run
+  separately green.
 
 ## Release cut & downstream
 
