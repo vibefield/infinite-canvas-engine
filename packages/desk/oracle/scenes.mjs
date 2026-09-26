@@ -263,6 +263,21 @@ ORACLE_SCENES.push(...ZOOM_SCENES);
 // carry at 0: the rest frame byte for byte. `held` runs the check: at e = 0 the frame is the rest frame; else the frame outside the
 // held object's box (grown by its reach) equals the blurred desk alone (the hand drawn empty), inside it differs, and two renders
 // of the same still are identical.
+// THE WHITEBOARD IN HAND AT WORK (D3t-a, BOARD.md §4–5): the marker taken up into the hand — hovering over the melamine (its
+// shadow off the nib), pressed (they meet); the ink of a hand at work — a stroke just lifted, WET (laid live, committed wet), and
+// another MID-DRAW (its first samples in the stroke layer, the pen pressed at its head) — and the same strokes DRIED (every one
+// replayed from its data, the pen lifted over the last one's end). The strokes are TIMED as a hand lays them (one sample a frame,
+// the red one resting — its bleed), in melamine units; the board lies at (420, −120): its melamine's top-left is (189, −271).
+const MEL = [189, -271];
+const onBoard = ([x, y]) => ({ x: MEL[0] + x, y: MEL[1] + y });
+export const BOARD_WET = { ink: "red", tip: "bullet", points: [[260, 150], [290, 140], [320, 135], [350, 140], [350, 140], [380, 150]], times: [0, 16, 33, 50, 250, 266] };
+export const BOARD_LIVE = { ink: "black", tip: "chisel", points: [[60, 260], [90, 250], [120, 245], [150, 248], [180, 255], [210, 262]], times: [0, 16, 32, 48, 64, 80] };
+const penBoard = (extra = {}) => ({ x: 420, y: -120, cap: "blue", strokes: BOARD_STROKES.slice(0, 2), ...extra });
+const BOARD_PEN_SCENES = [
+  { name: "hold-board-pen-e1-z1", held: true, scene: { ...boardBase, zoom: 1, boards: [penBoard()], notes: [BOARD_NOTE], hold: { board: 0, e: 1, pen: onBoard([191, 121]) } } },
+  { name: "hold-board-wet-e1-z1", held: true, scene: { ...boardBase, zoom: 1, boards: [penBoard({ wet: BOARD_WET, live: { ...BOARD_LIVE, upto: 4 } })], notes: [BOARD_NOTE], hold: { board: 0, e: 1, pen: { ...onBoard([150, 248]), press: true, ink: "black" } } } },
+  { name: "hold-board-dry-e1-z1", held: true, scene: { ...boardBase, zoom: 1, boards: [penBoard({ strokes: [...BOARD_STROKES.slice(0, 2), BOARD_WET, BOARD_LIVE] })], notes: [BOARD_NOTE], hold: { board: 0, e: 1, pen: { ...onBoard([210, 262]), ink: "black" } } } },
+];
 const holdBase = { ...deskBase, ...at(0, 0, 1) };
 const HOLD_NOTE = { x: 380, y: -160, seed: 5, text: "" };
 const HOLD_BOOK = nb({ angle: 0.08 });
@@ -274,5 +289,6 @@ export const HOLD_SCENES = [
   { name: "hold-book-phone-e1", held: true, scene: { ...deskBase, view: { cssW: 390, cssH: 844, dpr: 2 }, camX: -195, camY: -422, zoom: 1, books: [HOLD_BOOK], hold: { book: 0, e: 1 } } },
   { name: "hold-board-e0.42-z1", held: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120 }], notes: [BOARD_NOTE], hold: { board: 0, e: 0.42 } } },
   { name: "hold-board-e1-z1", held: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120 }], notes: [BOARD_NOTE], hold: { board: 0, e: 1 } } },
+  ...BOARD_PEN_SCENES,
 ];
 ORACLE_SCENES.push(...HOLD_SCENES);

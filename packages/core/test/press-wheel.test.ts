@@ -22,8 +22,8 @@ import {
 } from "../src";
 
 // one widget type per FILE (global registry; no test reset)
-const PRINT = widgets.get("pw:print") ?? defineWidget({ type: "pw:print", surface: "object", object: { name: "print" }, defaultSize: { w: 200, h: 140 }, interaction: { movable: false, wheelTurns: true } });
-const CARD = widgets.get("pw:card") ?? defineWidget({ type: "pw:card", surface: "object", object: { name: "card" }, defaultSize: { w: 200, h: 140 }, interaction: { movable: false } });
+const PRINT = widgets.get("pw:print") ?? defineWidget({ type: "pw:print", object: { name: "print" }, defaultSize: { w: 200, h: 140 }, interaction: { movable: false, wheelTurns: true } });
+const CARD = widgets.get("pw:card") ?? defineWidget({ type: "pw:card", object: { name: "card" }, defaultSize: { w: 200, h: 140 }, interaction: { movable: false } });
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
 function rig() {

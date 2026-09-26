@@ -20,9 +20,9 @@ import { abortNavFlight, attachSpawnBehaviors, attachSpawnParent, Camera, type C
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk";
 import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
 import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk";
-import type { PaperKind } from "@ice/desk";
+import type { BoardInk, PaperKind } from "@ice/desk";
 import { oracleFixtures } from "./fixtures";
-import { boardSpec, bookSpec, type KindScene, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, thingsOf } from "./scene-kinds";
+import { boardSpec, bookSpec, type KindScene, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, strokeSpecOf, thingsOf } from "./scene-kinds";
 
 /** A scene as scenes.mjs states one — the mat, ruler, paper, minimat and nav scenes' fields, the D3w kinds' (scene-kinds.ts). */
 export interface OracleScene extends KindScene {
@@ -48,7 +48,11 @@ export interface OracleScene extends KindScene {
   readonly view?: { readonly cssW: number; readonly cssH: number; readonly dpr: number };
 }
 export interface OracleNav { readonly kind: "enter" | "exit"; readonly container: number; readonly p: number }
-export interface OracleHold { readonly book?: number; readonly board?: number; readonly pad?: number; readonly e: number; readonly open?: boolean; readonly zoom?: number; readonly panX?: number; readonly panY?: number }
+export interface OracleHold {
+  readonly book?: number; readonly board?: number; readonly pad?: number; readonly e: number; readonly open?: boolean; readonly zoom?: number; readonly panX?: number; readonly panY?: number;
+  /** The hand over a board in hand (D3t-a): a desk point, pressed or hovering, the eraser, the ink — pinned on the board kind's pen. */
+  readonly pen?: { readonly x: number; readonly y: number; readonly press?: boolean; readonly erase?: boolean; readonly ink?: string };
+}
 export interface OracleNote {
   readonly x: number;
   readonly y: number;
@@ -236,6 +240,7 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   handle.holdRedress(false);
   engine.ops.putDown();   // the hand lets go of the last scene's object (D4b)
   handle.pinHold(null);
+  (handle.local("board") as BoardInk | undefined)?.pinStill(false);   // the board's ink dries again (D3t-a)
   // 2. the theme, pinned (the OS no longer leads)
   host.setTheme(s.theme, true);
   // 3. the objects, in the prototype's paint order — the mini mats (sheets), the desk calendars (pads), then the things (the
@@ -287,6 +292,18 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
       engine.world.addComponent(target, HeldView, { zoom: h.zoom ?? 1, panX: h.panX ?? 0, panY: h.panY ?? 0 });
     }
     handle.pinHold({ e: h.e, ...(h.open !== undefined ? { open: h.open } : {}) });
+    // THE WHITEBOARD AT WORK (D3t-a): the hand pinned on the pen; the board's wet stroke laid live and committed wet and its live one
+    // mid-draw (`BoardInk.sketch` — the oracle's `boardOf` steps), the ink held still (no drying) for the still
+    const ink = handle.local("board") as BoardInk | undefined;
+    if (h.board !== undefined && ink !== undefined) {
+      const spec = s.boards?.[h.board];
+      if (h.pen !== undefined) ink.pinPen(target, h.pen);
+      if (spec?.wet !== undefined || spec?.live !== undefined) {
+        const work = { ...(spec.wet !== undefined ? { wet: strokeSpecOf(spec.wet) } : {}), ...(spec.live !== undefined ? { live: { ...strokeSpecOf(spec.live), upto: spec.live.upto } } : {}) };
+        for (let i = 0; i < 60 && !ink.sketch(target, work); i++) await frame();
+        ink.pinStill(true);
+      }
+    }
   }
   return root;
 }

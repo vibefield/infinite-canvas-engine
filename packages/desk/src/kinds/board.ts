@@ -18,7 +18,7 @@
 
 import { BoardPass } from "../board/board-pass";
 import { type BoardGeometry, type BoardLaw, DEFAULT_BOARD_LAW, pickBoard, quadOf, resolveBoard, surfaceSize } from "../board/board";
-import { addStroke, BoardStroke, boardOps, MARKERS, type MarkerInk, type StrokeRow } from "../board/data";
+import { addStroke, BoardStroke, boardOps, feedStroke, MARKERS, type MarkerInk, strokePen, type StrokeRow, strokeSeed, type StrokeSpec } from "../board/data";
 import type { BoardInstance } from "../board/layout";
 import { followHand, penAtRest, penPose, type PenState, stepPen } from "../board/pen";
 import { BOARD_SHADER_FILES, boardShaders } from "../board/shaders";
@@ -187,8 +187,8 @@ export interface PenHand {
   readonly over: boolean;
   readonly pressing: boolean;
   readonly erasing: boolean;
-  /** The ink in hand (the marker's, or the one it lies down in while the eraser rubs). */
-  readonly ink: string;
+  /** The ink in hand (the marker's, or the one it lies down in while the eraser rubs); absent = the capped marker's. */
+  readonly ink?: string;
   /** The pointer on screen, CSS px, and the clock (ms) it was read at. */
   readonly screen?: readonly [number, number];
   readonly t?: number;
@@ -218,6 +218,8 @@ export interface BoardInk extends KindLocal {
   raster(e: Entity, G: BoardGeometry, look: BoardObjectLook, ghost: boolean): number;
   /** How many replays since the desk was made (a rig's witness). */
   replays(): number;
+  /** Board `e`'s raster on the pass (`BoardPass.readInk` reads it — a rig's witness); undefined before it is met. */
+  rasterOf(e: Entity): number | undefined;
   /** The stroke in hand on `e`: the builder's stamps since the last call into the stroke layer (sent at the next prepare). */
   lay(e: Entity, builder: StrokeBuilder): void;
   /** The lift: the stroke in hand laid into the ink and marked WET; its entity (its cell's `points`) is adopted when it lands. */
@@ -236,6 +238,14 @@ export interface BoardInk extends KindLocal {
   handFor(e: Entity): { readonly hand: PenHand | undefined; readonly pen: PenState; readonly pinned: boolean };
   /** A pen still moving (the record says so): the next tick asks a frame. */
   moving(e: Entity): void;
+  /**
+   * A STILL's ink on board `e` (a rig's door — the oracle's `wet`/`live` board, D3t-a): after its children replayed, `wet` laid
+   * LIVE and committed wet, then `live` mid-draw — its first `upto` samples in the stroke layer, the pen never lifted — each at the
+   * seed of the op it would be. False before the board's raster is here.
+   */
+  sketch(e: Entity, s: { readonly wet?: StrokeSpec; readonly live?: StrokeSpec & { readonly upto: number } }): boolean;
+  /** Hold the ink still (a still): no drying, no frame asked for a stroke in hand. */
+  pinStill(on: boolean): void;
 }
 
 interface BoardState {
@@ -258,6 +268,7 @@ export function createBoardInk(host: KindHost): BoardInk {
   let replays = 0;
   let last = -1;
   let penMoving = false;
+  let still = false;
   const passOf = (): BoardPass | undefined => { const k = host.pass(); return k instanceof BoardKind ? k.pass : undefined; };
   const stampOf = (e: Entity): number => host.children?.stamp(e) ?? 0;
   const state = (e: Entity): BoardState => {
@@ -330,18 +341,39 @@ export function createBoardInk(host: KindHost): BoardInk {
       const st = state(e);
       const p = st.pin;
       if (p === undefined) return { hand: st.hand, pen: st.pen, pinned: false };
-      return { hand: { at: [p.x, p.y], over: true, pressing: p.press === true, erasing: p.erase === true, ink: p.ink ?? st.hand?.ink ?? "black" }, pen: st.pen, pinned: true };
+      const ink = p.ink ?? st.hand?.ink;
+      return { hand: { at: [p.x, p.y], over: true, pressing: p.press === true, erasing: p.erase === true, ...(ink !== undefined ? { ink } : {}) }, pen: st.pen, pinned: true };
     },
+    sketch(e, s) {
+      const pass = passOf();
+      const st = boards.get(e);
+      const look = st?.look;
+      if (pass === undefined || st === undefined || look === null || look === undefined || st.stamp === -1) return false;
+      let n = host.children?.rows(e, BoardStroke).length ?? 0;
+      const lay = (spec: StrokeSpec, upto?: number): StrokeBuilder | undefined => {
+        const b = strokePen(spec, look.markers, strokeSeed(n));
+        if (b === undefined) return undefined;
+        const points = spec.points ?? [];
+        feedStroke(b, points, spec.times !== undefined && spec.times.length === points.length ? spec.times : null, spec.speed ?? 400, upto);
+        pass.lay(st.id, b.tool, b.pending());
+        n += 1;
+        return b;
+      };
+      if (s.wet !== undefined) { const b = lay(s.wet); if (b !== undefined) pass.commit(st.id, b.tool); }
+      if (s.live !== undefined) { const b = lay(s.live, s.live.upto); if (b !== undefined) st.live = { builder: b }; }
+      return true;
+    },
+    pinStill(on) { still = on; },
     moving() { penMoving = true; },
     tick(now) {
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.25);
       last = now;
       const pass = passOf();
-      pass?.dry(dt);   // fresh ink dries (the wet layer fades) on the frame's clock
-      let want = penMoving || pass?.wetting === true;
+      if (!still) pass?.dry(dt);   // fresh ink dries (the wet layer fades) on the frame's clock — a still holds it
+      let want = penMoving || (!still && pass?.wetting === true);
       penMoving = false;
       for (const [e, st] of boards) {
-        if (st.live !== null) want = true;   // a stroke in hand: its stamps (a resting pen's bleed) go out every frame
+        if (st.live !== null && !still) want = true;   // a stroke in hand: its stamps (a resting pen's bleed) go out every frame
         else if (st.stamp !== -1 && stampOf(e) !== st.stamp) want = true;   // a stroke laid or undone: a frame to replay in
       }
       return want;
@@ -358,6 +390,7 @@ export function createBoardInk(host: KindHost): BoardInk {
       boards.clear();
     },
     replays: () => replays,
+    rasterOf: (e) => boards.get(e)?.id,
   };
 }
 

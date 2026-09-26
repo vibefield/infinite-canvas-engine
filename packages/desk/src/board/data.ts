@@ -144,19 +144,35 @@ export const strokeSeed = (n: number): number => (n * 97.13) % 1000;
  * the pen RESTING (`hold` — its bleed), any other a move, the last the lift (`end`). Timed (`times`, one per point), the samples keep
  * their own clocks; else they are spaced by distance / `speed` (an old stroke — the bench's `sketch`, which never rests).
  */
-export function feedStroke(builder: StrokeBuilder, points: readonly (readonly [number, number])[], times: readonly number[] | null, speed: number): void {
+export function feedStroke(builder: StrokeBuilder, points: readonly (readonly [number, number])[], times: readonly number[] | null, speed: number, upto: number = points.length): void {
   const timed = times !== null && times.length === points.length;
+  // `upto` < the samples: the stroke MID-DRAW (a still's) — its first `upto` samples fed, never lifted
+  const n = Math.min(Math.max(upto, 0), points.length);
+  const lifts = n === points.length;
   let t = 0;
-  points.forEach(([x, y], i) => {
+  for (let i = 0; i < n; i++) {
+    const [x, y] = points[i] as readonly [number, number];
     if (timed) t = times[i] as number;
     else if (i > 0) { const [px, py] = points[i - 1] as readonly [number, number]; t += (Math.hypot(x - px, y - py) / speed) * 1000; }
-    if (i === 0) { builder.begin(x, y, t); return; }
+    if (i === 0) { builder.begin(x, y, t); continue; }
     const [px, py] = points[i - 1] as readonly [number, number];
-    if (i === points.length - 1) { builder.end(x, y, t); return; }
+    if (lifts && i === points.length - 1) { builder.end(x, y, t); continue; }
     if (timed && x === px && y === py) builder.hold(t);
     else builder.move(x, y, t);
-  });
-  if (points.length === 1) builder.end();
+  }
+  if (lifts && points.length === 1) builder.end();
+}
+
+/**
+ * The pen a spec is drawn with and its builder at seed `seed` — the replay's own choice (`boardOps`): the eraser's felt, or the
+ * marker in the palette's ink (the first it names when it names not this one) at the spec's tip; undefined = no ink to draw with.
+ */
+export function strokePen(s: StrokeSpec, markers: Readonly<Record<string, MarkerInk>>, seed: number): StrokeBuilder | undefined {
+  const erase = s.erase === true;
+  const m = markers[s.ink ?? "black"] ?? Object.values(markers)[0];
+  if (!erase && m === undefined) return undefined;
+  const tip = TIPS[s.tip ?? "bullet"] ?? TIPS.bullet;
+  return new StrokeBuilder(erase || m === undefined ? ERASER_TOOL : markerTool(linear(m.color), m.opacity, tip), seed);
 }
 
 /**
@@ -172,15 +188,13 @@ export function boardOps(rows: readonly StrokeRow[], markers: Readonly<Record<st
     if (s.tool === "wipe") { history.push({ kind: "wipe" }); continue; }
     const ink = s.ink ?? "black";
     const erase = s.erase === true;
-    const m = markers[ink] ?? fallback;
-    if (!erase && m === undefined) continue;
-    const tip = TIPS[(s.tip ?? "bullet") as TipName] ?? TIPS.bullet;
-    const tool = erase || m === undefined ? ERASER_TOOL : markerTool(linear(m.color), m.opacity, tip);
-    const builder = new StrokeBuilder(tool, strokeSeed(history.done.length));
+    if (!erase && fallback === undefined) continue;
+    const builder = strokePen({ ink, tip: (s.tip ?? "bullet") as TipName, erase }, markers, strokeSeed(history.done.length));
+    if (builder === undefined) continue;
     const speed = s.speed !== null && s.speed > 0 ? s.speed : 400;
     const times = s.times !== null && s.times !== undefined && s.times !== "" ? decodeTimes(s.times) : null;
     feedStroke(builder, decodePoints(s.points ?? ""), times, speed);
-    history.push({ kind: "stroke", tool, stamps: builder.stamps(), ...(erase ? {} : { ink }) });
+    history.push({ kind: "stroke", tool: builder.tool, stamps: builder.stamps(), ...(erase ? {} : { ink }) });
   }
   return history.replay;
 }

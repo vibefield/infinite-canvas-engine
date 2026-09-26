@@ -10,6 +10,11 @@
 // ⌘-wheel in past 0.72× (and the rest of that gesture MUTED: the desk's camera stands through its tail, a control past the mute),
 // two taps on the object; the keyboard: Tab to the notebook, ⏎ opens, Esc lands it with the selection back; and THE COST (design-015
 // §11.4): frames drawn back to back — a copy remade each frame, the hand alone over the standing copy, the rest frame — ms each.
+// And THE WHITEBOARD IN HAND (D3t-a): the held bar's tools live and the marker in hand marked (only it), the marker taken up, the
+// pen shown over the melamine with the OS cursor hidden, a stroke by hand — pressed mid-stroke, ONE timed child at the lift, the
+// raster's ink under its path, adopted (no replay) — `3` · ⌘Z · ⇧⌘Z · the bar's undo and redo · `t` · `e` (the marker laid down,
+// the eraser rubbing a stroke away) · two taps are two dots · ⌘⌫ and its undo · the marker laid down in the last ink, and the
+// tools' keys nobody's once it is.
 // Exit 0 = every check passed; 1 = a check or a throw; 2 = the watchdog.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
@@ -210,6 +215,104 @@ try {
   console.log(`  note: a held frame is the OPEN spread at ${(672 / 252).toFixed(2)}× plus the hand's two composites — ${(handMs / restMs).toFixed(1)}× the rest frame's closed book at 1×; the object's own cost at its reading size, not the hand's overhead (the copy's is the number above)`);
   await key("Escape", "Escape", 27);
   await landed();
+
+  // ---- 11. THE WHITEBOARD IN HAND (D3t-a): the held bar's tools live, the pen that draws, the strokes as ONE child each, the
+  //          document's history, the eraser, the wipe, the keys only while held, the marker laid down in the last ink
+  const wb = await q("window.__desk.spawn('desk.board', { cap: 'blue' }, { x: 700, y: 300 })");
+  await settle();
+  await dbl(700, 300);
+  check(await settledInHand(), "a double-click on the whiteboard picks it up");
+  await sleep(400);
+  const barOf = () => q("(() => { const el = document.querySelector('[data-ice-selection-menu]'); return { tools: [...el.querySelectorAll('[data-tool]')].map((b) => b.dataset.tool), hot: [...el.querySelectorAll('[data-tool][aria-pressed=\"true\"]')].map((b) => b.dataset.tool), dim: el.querySelectorAll('[data-tool].is-dim').length }; })()");
+  const bar1 = await barOf();
+  check(JSON.stringify(bar1.tools) === JSON.stringify(["marker:black", "marker:blue", "marker:red", "marker:green", "eraser", "undo", "redo"]) && bar1.dim === 0, `the held bar's tools are live: ${bar1.tools.join(" · ")} (${bar1.dim} dim)`);
+  check(JSON.stringify(bar1.hot) === JSON.stringify(["marker:blue"]), `the marker in hand is marked — the cap's blue, and only it (${bar1.hot.join(", ")})`);
+  const wf = (await hand()).frame;
+  // the melamine's top-left on the desk is (700 − 240 + 9, 300 − 160 + 9); in hand a desk point is at the frame's centre + (p − c)·s
+  const mel = (mx, my) => [wf.cx + (469 + mx - 700) * wf.s, wf.cy + (149 + my - 300) * wf.s];
+  const pen = () => q(`window.__desk.kinds.pen(${wb})`);
+  const rows = () => q(`window.__desk.kinds.strokeRows(${wb})`);
+  const cursor = () => q("document.querySelector('canvas')?.parentElement?.style.cursor ?? null");
+  check(await until(async () => (await pen())?.take === 1, 1500), "the marker is taken up into the hand as the board comes into it");
+  const [hx, hy] = mel(120, 120);
+  await mouse("mouseMoved", hx, hy);
+  check(await until(async () => (await pen())?.shown === 1 && (await cursor()) === "none", 1000), `over the melamine the pen is shown at the hand and the OS cursor hidden (cursor "${await cursor()}")`);
+  check((await pen())?.press === 0, "hovering: the nib stands off the board (press 0)");
+  /** A stroke by hand across the melamine: the press, `n` frames of moves, the release — each frame a sample. */
+  const stroke = async (from, to, n = 8, mid = null) => {
+    const [ax, ay] = mel(...from);
+    await mouse("mouseMoved", ax, ay); await mouse("mousePressed", ax, ay);
+    for (let i = 1; i <= n; i++) { const [x, y] = mel(from[0] + ((to[0] - from[0]) * i) / n, from[1] + ((to[1] - from[1]) * i) / n + Math.sin(i) * 6); await mouse("mouseMoved", x, y, { buttons: 1 }); await sleep(20); if (i === n >> 1 && mid) await mid(); }
+    await sleep(30);
+    const [bx, by] = mel(...to);
+    await mouse("mouseReleased", bx, by);
+  };
+  const replays0 = await q("window.__desk.kinds.replays()");
+  let midPen = null;
+  let midLive = null;
+  await stroke([60, 60], [300, 90], 10, async () => { midPen = await pen(); midLive = (await q("window.__desk.kinds.hand()"))?.live; });
+  check(midPen?.press > 0.5 && midLive?.samples > 2, `mid-stroke the pen is pressed (press ${midPen?.press.toFixed(2)}) and the stroke is in hand (${midLive?.samples} samples, live in the stroke layer)`);
+  check(await until(async () => (await rows()).length === 1, 1500), "the lift: ONE desk.stroke child of the board");
+  const s1 = (await rows())[0];
+  check(s1?.ink === "blue" && s1.tool === "marker" && !s1.erase && s1.timed === s1.points.length && s1.points.length >= 10, `…in the ink in hand (${s1?.ink}), each sample timed (${s1?.timed} of ${s1?.points.length})`);
+  check((await q("window.__desk.kinds.replays()")) === replays0, "…and the ink ADOPTED it: no replay (the raster already holds the stroke, wet)");
+  const inner1 = s1.points.slice(2, -2);
+  const ink1 = await tab.evaluate(`window.__desk.kinds.inkAt(${wb}, ${JSON.stringify(inner1)})`, { awaitPromise: true, timeoutMs: 15000 });
+  check(ink1?.alpha.every((a) => a > 96) === true, `the raster's ink under the path: coverage ${ink1?.alpha.slice(0, 6).join(", ")}… (every sample > 96 of 255)`);
+  // `3` — the red marker: the hot slot follows; a second stroke, red
+  await key("3", "Digit3", 51);
+  const hotIs = (id) => until(async () => JSON.stringify((await barOf()).hot) === JSON.stringify([id]), 1000);
+  check(await hotIs("marker:red"), "`3` takes the red marker — the bar's mark moves with it");
+  await stroke([60, 200], [300, 180], 8);
+  check(await until(async () => (await rows()).length === 2 && (await rows())[1].ink === "red", 1500), "a second stroke, red — its own child");
+  // the history is the document's
+  await key("z", "KeyZ", 90, META);
+  check(await until(async () => (await rows()).length === 1, 1000), "⌘Z removes the last stroke (the child entity goes)");
+  await key("z", "KeyZ", 90, META | 8);
+  check(await until(async () => (await rows()).length === 2, 1000), "⇧⌘Z restores it");
+  await q("document.querySelector('[data-tool=\"undo\"]').click()");
+  check(await until(async () => (await rows()).length === 1, 1000), "the bar's Undo does the same");
+  await q("document.querySelector('[data-tool=\"redo\"]').click()");
+  check(await until(async () => (await rows()).length === 2, 1000), "…and its Redo");
+  // `t` — the tip
+  const tip0 = (await q(`window.__desk.entity(${wb})`)).props.tip;
+  await key("t", "KeyT", 84);
+  check(await until(async () => (await q(`window.__desk.entity(${wb})`)).props.tip === "chisel", 1000), `\`t\` turns the tip: ${tip0} → chisel`);
+  // `e` — the eraser: the marker laid down, the eraser rubbing at the hand; a rub across the first stroke erases it
+  await key("e", "KeyE", 69);
+  check(await hotIs("eraser"), "`e` takes the eraser — marked");
+  await mouse("mouseMoved", ...mel(150, 150));
+  check(await until(async () => { const p = await pen(); return p?.take === 0 && p.rub === 1; }, 1500), "…the marker laid down, the eraser at the hand");
+  await stroke([60, 60], [300, 90], 10);
+  check(await until(async () => (await rows()).length === 3 && (await rows())[2].erase === true, 1500), "an eraser stroke is a child too (erase)");
+  const ink1b = await tab.evaluate(`window.__desk.kinds.inkAt(${wb}, ${JSON.stringify(inner1)})`, { awaitPromise: true, timeoutMs: 15000 });
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
+  check(ink1b !== null && mean(ink1b.alpha) < mean(ink1.alpha) * 0.5, `…and the first stroke's ink under it is rubbed away (mean coverage ${mean(ink1.alpha).toFixed(0)} → ${mean(ink1b.alpha).toFixed(0)})`);
+  await key("e", "KeyE", 69);
+  check(await hotIs("marker:red"), "`e` again: the marker it took over from (red)");
+  // two instant taps on the melamine are two dots, never a way back
+  await dbl(...mel(200, 250));
+  await sleep(300);
+  check((await hand()) !== null && (await rows()).length === 5, `two taps on the melamine are two dots — still in hand (${(await rows()).length} strokes)`);
+  // ⌘⌫ wipes — one transaction, itself undoable
+  await key("Backspace", "Backspace", 8, META);
+  check(await until(async () => { const r = await rows(); return r.length === 6 && r[5].tool === "wipe"; }, 1000), "⌘⌫ wipes the board: one `wipe` child");
+  const wiped = await tab.evaluate(`window.__desk.kinds.inkAt(${wb}, [])`, { awaitPromise: true, timeoutMs: 15000 });
+  check(wiped?.inked === 0, `…the raster clean (${wiped?.inked} inked texels)`);
+  await key("z", "KeyZ", 90, META);
+  let unwiped = null;
+  // the replay lands at the next frame's record: wait for it
+  const back = await until(async () => { unwiped = await tab.evaluate(`window.__desk.kinds.inkAt(${wb}, [])`, { awaitPromise: true, timeoutMs: 15000 }); return (await rows()).length === 5 && unwiped?.inked > 0; }, 1500);
+  check(back, `⌘Z brings the ink back (${unwiped?.inked} inked texels)`);
+  // put down: the marker lies down in the ink last used; the keys are the board's only while held
+  await key("Escape", "Escape", 27);
+  check(await landed(), "Esc puts the board down");
+  const props = (await q(`window.__desk.entity(${wb})`)).props;
+  check(props.cap === "red" && (await pen())?.take === 0, `the marker lies down capped in the ink last used (cap ${props.cap}, taken up ${(await pen())?.take})`);
+  await key("2", "Digit2", 50);
+  await sleep(200);
+  check((await q(`window.__desk.entity(${wb})`)).props.cap === "red" && (await rows()).length === 5, "on the desk `2` is nobody's: the tools' keys route only while held");
+  await settle();
 
   if (logs.length) console.log(`  page log:\n  ${logs.slice(0, 8).join("\n  ")}`);
   check(logs.length === 0, `no page exceptions or errors (${logs.length})`);

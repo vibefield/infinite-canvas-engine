@@ -54,9 +54,9 @@ import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, 
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
 import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
 import { quadOf, resolveBoard, surfaceSize } from "../src/board/board.ts";
+import { feedStroke, strokePen, strokeSeed } from "../src/board/data.ts";
 import { BoardHistory } from "../src/board/history.ts";
-import { ERASER_TOOL, markerTool, StrokeBuilder, TIPS } from "../src/board/stroke.ts";
-import { linear } from "../src/mat/night.ts";
+import { penAtRest, penPose, stepPen } from "../src/board/pen.ts";
 import { borderOf } from "../src/photo/layout.ts";
 import { newBody, PHOTO, printSize, resolvePhoto } from "../src/photo/photo.ts";
 import { NOTEBOOK } from "../src/notebook/law.ts";
@@ -315,77 +315,69 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   /** The rasters this frame's boards drew with — each scene's boards get fresh ones (the bench's first `instances()` makes them). */
   const rastered = new Set();
   let nextBoard = 1;
-  const clamp01 = (v) => Math.min(1, Math.max(0, v));
-  const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-  /** A right hand holds a marker with its barrel rising away to the upper right (lab/board.ts). */
-  const HAND_ANGLE = Math.atan2(-0.8, 0.6);
+  /** A stroke's pen, or a throw: every scene's ink is one the fixture names. */
+  const must = (b) => { if (b === undefined) throw new Error("oracle: a board's stroke names no ink the palette has"); return b; };
+  /** The palette's markers as a replay takes them (kinds/board.ts `theme` — the fixture's inks and coverages). */
+  const MARKER_INKS = Object.fromEntries(Object.keys(MARKERS).map((name) => [name, { color: marker(name), opacity: MARKERS[name].opacity }]));
   /**
    * A board's history from a stroke list, as the bench's `sketch` lays one: each stroke a path of melamine points (world units
-   * from its top-left) at a pace, through the StrokeBuilder with the bench's seed, committed dry — then what a replay needs.
+   * from its top-left) at a pace — or, timed (D3t-a), at its samples' own times — through the StrokeBuilder with the bench's
+   * seed, committed dry; then what a replay needs. The same feed as the world's replay (board/data.ts `feedStroke`).
    */
   function opsOf(strokes = []) {
     const history = new BoardHistory();
     for (const s of strokes) {
-      const ink = s.ink ?? "black";
-      const tool = s.erase ? ERASER_TOOL : markerTool(linear(marker(ink)), MARKERS[ink].opacity, TIPS[s.tip ?? "bullet"]);
-      const builder = new StrokeBuilder(tool, (history.done.length * 97.13) % 1000);
-      const speed = s.speed ?? 400;   // world units / s
-      let t = 0;
-      s.points.forEach(([x, y], i) => {
-        if (i === 0) { builder.begin(x, y, t); return; }
-        const [px, py] = s.points[i - 1];
-        t += (Math.hypot(x - px, y - py) / speed) * 1000;
-        builder.move(x, y, t);
-      });
-      builder.end();
-      history.push({ kind: "stroke", tool, stamps: builder.stamps(), ...(s.erase ? {} : { ink }) });
+      const builder = must(strokePen(s, MARKER_INKS, strokeSeed(history.done.length)));
+      feedStroke(builder, s.points, s.times ?? null, s.speed ?? 400);
+      history.push({ kind: "stroke", tool: builder.tool, stamps: builder.stamps(), ...(s.erase ? {} : { ink: s.ink ?? "black" }) });
     }
     return history.replay;
   }
   /**
-   * A board at rest as the bench draws it (`BoardDesk.instances` + `poseOf` with no board open), all but its raster: resolved under
-   * the one lamp, its ring the prototype's alone (`prototypeRing` — the desk's selection is its marks), the capped marker lying where
-   * a hand put it down, the world rect it may paint, the eye straight over it (the parallax at rest).
+   * A board as the bench draws it, all but its raster: resolved under the one lamp, its ring the prototype's alone (`prototypeRing`
+   * — the desk's selection is its marks), the world rect it may paint, the eye straight over it (the parallax at rest), and THE
+   * marker (board/pen.ts — the kind's own law): lying capped where a hand put it down, or — the board IN HAND (`inHand`, D3t-a) —
+   * its flux snapped as a still's is (`stepPen`): taken up once the board is open, at the scene's pen (a desk point) over the
+   * melamine, hovering or pressed; with no pen stated the hand is off the board and the marker taken up is not shown.
    */
   function boardPoseOf(b) {
     const w = b.w ?? BOARD.spec.width;
     const h = b.h ?? BOARD.spec.height;
     const G = resolveBoard({ cx: b.x, cy: b.y, w, h }, { held: 0, ring: prototypeRing && b.selected ? 1 : 0, fade: 1 }, lamp);
-    // THE marker, lying on the board (the bench's `poseOf` with nothing taken up: every hand term at e = 0, kept as it computes them)
-    const P = BOARD.pen;
-    const R = P.radius;
-    const L = P.length;
-    const e = 0;
-    const rest = { x: w * 0.16, y: h * 0.5 - BOARD.spec.frame - BOARD.pen.radius - 13, angle: -0.07 };
-    const ar = rest.angle;
-    const mid = [G.centre[0] + rest.x * G.scale, G.centre[1] + rest.y * G.scale];
-    const at = [mid[0] - Math.cos(ar) * L * 0.5, mid[1] - Math.sin(ar) * L * 0.5];
-    const hand = at;
-    let da = HAND_ANGLE - ar;
-    da = Math.atan2(Math.sin(da), Math.cos(da));
-    const gap = P.hover;
-    const penPose = {
-      x: at[0] + (hand[0] - at[0]) * e, y: at[1] + (hand[1] - at[1]) * e, angle: ar + da * e,
-      height: R + (gap - R) * e + 34 * Math.sin(Math.PI * e), rise: P.rise * e,
-      cap: smooth(0.3, 0.85, e), nib: TIPS[b.tip ?? "bullet"].half[1],
-      presence: 1 + (0 - 1) * smooth(0.85, 1, e),
-      ink: marker(b.cap ?? "black"),
-    };
-    const slope = Math.hypot(G.slope[0], G.slope[1]);
-    const r = L * 1.3 + 60 + slope * (penPose.height + L * penPose.rise + 12);
-    const box = { x0: penPose.x - r, y0: penPose.y - r, x1: penPose.x + r, y1: penPose.y + r };
+    const pen = penAtRest();
+    const hand = b.inHand?.pen;
+    if (b.inHand !== undefined) stepPen(pen, { held: b.inHand.open, erasing: hand?.erase === true, over: hand !== undefined, pressing: hand?.press === true }, 0, true);
+    const pose = penPose(G, w, h, b.tip ?? "bullet", marker((b.inHand !== undefined ? hand?.ink : undefined) ?? b.cap ?? "black"), pen, hand !== undefined ? [hand.x, hand.y] : null);
     const par = [0, 0];
     const k = BOARD.surface.parallax;
-    return { geometry: G, surface: look.surface, metal: look.frame, quad: quadOf(G, box), sheen: [par[0] * k * 5, -par[1] * k * 5], pen: penPose };
+    return {
+      geometry: G, surface: look.surface, metal: look.frame, quad: quadOf(G, pose.box), sheen: [par[0] * k * 5, -par[1] * k * 5], pen: pose.pen,
+      ...(pose.eraser !== undefined ? { eraser: pose.eraser } : {}),
+    };
   }
-  /** A board as the pass takes it: its pose, and its raster made and its ink REPLAYED (`ensure` + `replay` — the raster is a cache of the history). */
+  /**
+   * A board as the pass takes it: its pose, and its raster made and its ink REPLAYED (`ensure` + `replay` — the raster is a cache of
+   * the history); then (D3t-a, a still of the pen at work) its `wet` stroke laid LIVE and committed wet, and its `live` one mid-draw —
+   * the first `upto` samples in the stroke layer — each at the seed of the op it would be: `BoardInk.sketch`'s own steps.
+   */
   function boardOf(b) {
     const pose = boardPoseOf(b);
     const id = nextBoard++;
     boards.ensure(id, surfaceSize(pose.geometry));
     boards.replay(id, opsOf(b.strokes));
     rastered.add(id);
-    return { id, ...pose };
+    let n = (b.strokes ?? []).length;
+    const lay = (spec, upto) => {
+      const builder = must(strokePen(spec, MARKER_INKS, strokeSeed(n)));
+      feedStroke(builder, spec.points, spec.times ?? null, spec.speed ?? 400, upto);
+      boards.lay(id, builder.tool, builder.pending());
+      n += 1;
+      return builder;
+    };
+    if (b.wet !== undefined) { const w = lay(b.wet); boards.commit(id, w.tool); }
+    let stroke;
+    if (b.live !== undefined) { const l = lay(b.live, b.live.upto); stroke = { color: l.tool.color, erase: l.tool.mode === "erase" }; }
+    return { id, ...pose, ...(stroke !== undefined ? { stroke } : {}) };
   }
 
   /**
@@ -573,7 +565,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       rect = { cx: b.x, cy: b.y, w: b.w ?? BOARD.spec.width, h: b.h ?? BOARD.spec.height };
       extentLocal = rect;
       restDesk = { ...s, boards: s.boards.filter((_, i) => i !== h.board) };
-      handDesk = () => ({ boards: [{ ...b, selected: false, held: false }] });
+      // in hand its marker is the pen law's (D3t-a): taken up once the board is open, at the scene's pen if it states one
+      handDesk = () => ({ boards: [{ ...b, selected: false, held: false, inHand: { open: openTarget, ...(h.pen !== undefined ? { pen: h.pen } : {}) } }] });
     } else {
       const c = s.calendars[h.pad];
       rect = { cx: c.x, cy: c.y, w: PAD.W, h: PAD.H };

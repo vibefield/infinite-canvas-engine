@@ -46,7 +46,12 @@ const STAMP_LSB = "the ink raster's stamps quantise 6 of 2,232,384 texels 1 LSB 
 const EXCEPTIONS = {
   "board-ink-z1": { maxD: 1, differ: 1, why: STAMP_LSB },
   "board-selected-z1": { maxD: 1, differ: 1, why: STAMP_LSB },
-  "board-ink-z2.5": { maxD: 1, differ: 16, why: STAMP_LSB },
+  "board-ink-z2.5": { maxD: 1, differ: 16, why: STAMP_LSB },  // D3t-a: the whiteboard IN HAND at work — the same class on the same kind of strokes (the green fine one, the red timed one), seen at
+  // the reading scale (2.1×: a texel's footprint two device px); the pen itself is exact. Measured on both witnesses, and the two
+  // Chrome paths (the oracle's desk here, the world in rig:world) agree with each other to the pixel.
+  "hold-board-pen-e1-z1": { maxD: 1, differ: 5, why: STAMP_LSB },
+  "hold-board-wet-e1-z1": { maxD: 1, differ: 11, why: STAMP_LSB },
+  "hold-board-dry-e1-z1": { maxD: 1, differ: 10, why: STAMP_LSB },
 };
 
 // ── Preflight, before a browser exists: both things compared are FILES ON DISK ─────────────────

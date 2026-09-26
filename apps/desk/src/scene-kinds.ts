@@ -23,6 +23,8 @@ export interface OracleStroke {
   readonly erase?: boolean;
   readonly points: readonly (readonly [number, number])[];
   readonly speed?: number;
+  /** Each sample's time, ms from the first (D3t-a — a stroke laid by hand). */
+  readonly times?: readonly number[];
 }
 export interface OracleBoard {
   readonly x: number;
@@ -34,6 +36,10 @@ export interface OracleBoard {
   readonly selected?: boolean;
   readonly held?: boolean;
   readonly strokes?: readonly OracleStroke[];
+  /** A stroke just lifted, WET — laid live and committed wet, not (yet) a child (D3t-a; the kind's `sketch`). */
+  readonly wet?: OracleStroke;
+  /** A stroke MID-DRAW: its first `upto` samples in the stroke layer (D3t-a). */
+  readonly live?: OracleStroke & { readonly upto: number };
 }
 
 /** A print as the photo lab's `addRGBA` leaves it, its pose pinned (scenes.mjs `PRINT`, `HELD`, `STACK`): `picture: null` = its paper alone. */
@@ -195,6 +201,9 @@ export function pinPrints(handle: DeskLayerHandle, prints: readonly { readonly e
 export const boardSpec = (b: OracleBoard): SpawnSpec => ({ type: BOARD_TYPE, cx: b.x, cy: b.y, w: b.w ?? BOARD.spec.width, h: b.h ?? BOARD.spec.height, props: { cap: b.cap ?? "black", tip: b.tip ?? "bullet" } });
 
 /** The boards' strokes laid as their children — the bench's `sketch` order — in ONE non-undoable transaction (a scene is not an edit). */
+/** A scene's stroke as the data states one (its samples' times too, D3t-a). */
+export const strokeSpecOf = (s: OracleStroke): StrokeSpec => ({ points: s.points, ...(s.ink !== undefined ? { ink: s.ink } : {}), ...(s.tip !== undefined ? { tip: s.tip as "bullet" } : {}), ...(s.erase ? { erase: true } : {}), ...(s.speed !== undefined ? { speed: s.speed } : {}), ...(s.times !== undefined ? { times: s.times } : {}) });
+
 export function layStrokes(engine: CanvasEngine, boards: readonly { readonly entity: Entity; readonly spec: OracleBoard }[]): number {
   const session = engine.docs.current();
   if (session === undefined) throw new Error("desk: no document");
@@ -204,8 +213,7 @@ export function layStrokes(engine: CanvasEngine, boards: readonly { readonly ent
   guardedTransaction(session.store, engine.world, (tx) => {
     for (const { entity, spec } of inked) {
       for (const s of spec.strokes ?? []) {
-        const stroke: StrokeSpec = { points: s.points, ...(s.ink !== undefined ? { ink: s.ink } : {}), ...(s.tip !== undefined ? { tip: s.tip as "bullet" } : {}), ...(s.erase ? { erase: true } : {}), ...(s.speed !== undefined ? { speed: s.speed } : {}) };
-        addStroke(tx, entity, stroke);
+        addStroke(tx, entity, strokeSpecOf(s));
         n += 1;
       }
     }
