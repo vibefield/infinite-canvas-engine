@@ -5,11 +5,11 @@
 // commits them as ONE transaction, text and seeds together, so ONE undo takes the whole session back;
 // a session that nets to nothing commits nothing; a remote edit during a session is dropped and the
 // session's commit wins (the claimed-cell rule), while one between sessions applies.
-import { createCanvasEngine, decodeEnvelope, defineQuery, Editing, encodeEnvelope, type Entity, guardedTransaction } from "@ice/core";
+import { createCanvasEngine, decodeEnvelope, defineQuery, Editing, encodeEnvelope, type Entity, guardedTransaction, heldEntity, LocalPointer, NO_MODS, Pointer, TouchesExact, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { decodeSeeds, seedsFor } from "../src/paper/seeds";
-import { NOTE_INK, Note } from "../src/objects";
-import { createNoteTyping } from "../src/objects/typing";
+import { Board, NOTE_INK, Note } from "../src/objects";
+import { createNoteTyping, tapNote } from "../src/objects/typing";
 
 function makeDesk() {
   const ce = createCanvasEngine({ widgets: [Note] });
@@ -262,5 +262,39 @@ describe("typing · the writer's gate (D7 #1) — a read-only document is not wr
     expect(typing.begin(a)).toBe(false);
     expect(newer.world.hasTag(a, Editing)).toBe(false);
     expect((newer.world.get(a, NOTE_INK) as { text: string }).text).toBe("base");
+  });
+});
+
+describe("typing · the tap's note (D7 #4) — no tap writes while an object is in hand", () => {
+  it("a note hovered, ⏎ takes the board in hand, the pointer's exact hit freezes on the note: the tap names NO note in hand, and the note again once the hand is empty", () => {
+    const ce = createCanvasEngine({ widgets: [Note, Board] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 1 });
+    let now = 0;
+    const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
+    const note = ce.ops.spawnWidget("desk.note", { x: 0, y: 0, props: { seed: 7, text: "hi" }, undoable: false });
+    const board = ce.ops.spawnWidget("desk.board", { x: 600, y: 100, undoable: false });
+    step();
+    const isNote = (e: Entity): boolean => e === note;
+    // the mouse over the note: the stack's exact hit is the note
+    ce.stack.queue.enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: 50, screenY: 50, buttons: 0, mods: NO_MODS });
+    step(2);
+    const p = ce.world.firstOf(defineQuery([Pointer, LocalPointer])) as Entity;
+    expect(ce.world.getRelation(p, TouchesExact)).toBe(note);
+    expect(tapNote(ce.world, "mouse", isNote)).toEqual({ found: true, note });
+    // the board taken in hand (⏎ on the selection): the pointer is the hand's and its hit stays frozen on the note
+    ce.ops.setSelection([board], "replace");
+    ce.ops.open(board);
+    step(3);
+    expect(heldEntity(ce.world)).toBe(board);
+    expect(ce.world.getRelation(p, TouchesExact)).toBe(note);   // the stale hit the defect read
+    expect(tapNote(ce.world, "mouse", isNote)).toEqual({ found: true, note: undefined });
+    // put down: once the hand is empty the tap is the desk's again
+    ce.ops.putDown();
+    for (let i = 0; i < 200 && heldEntity(ce.world) !== undefined; i++) step();
+    expect(heldEntity(ce.world)).toBeUndefined();
+    step(2);
+    expect(tapNote(ce.world, "mouse", isNote)).toEqual({ found: true, note });
+    expect(tapNote(ce.world, "touch:9", isNote)).toEqual({ found: false, note: undefined });   // a pointer the stack does not know
   });
 });

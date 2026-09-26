@@ -19,7 +19,7 @@
 // A note deleted mid-session takes its uncommitted run with it — the gesture was interrupted; an undo
 // of the delete restores the note as last committed.
 
-import { type CommitExtender, type DocSession, Editing, type Entity, gateVerdict, guardedTransaction, type World } from "@ice/core";
+import { type CommitExtender, defineQuery, type DocSession, Editing, type Entity, gateVerdict, guardedTransaction, heldEntity, LocalPointer, Pointer, TouchesExact, type World } from "@ice/core";
 import { encodeSeeds, freshSeed, seedsFor } from "../paper/seeds";
 import { carrySeeds } from "../paper/text";
 import { NOTE_INK, NOTE_PROPS } from "./note";
@@ -45,6 +45,30 @@ export type WritableSession = Pick<DocSession, "store" | "liveWriter">;
 export function writable(docs: TypingDocs): WritableSession | undefined {
   const s = docs.current();
   return s === undefined || s.readOnly || gateVerdict(s.versionReport()) !== "ok" ? undefined : s;
+}
+
+const tapPointersQ = defineQuery([Pointer, LocalPointer]);
+
+/**
+ * THE TAP'S NOTE (D7 #4): the note a tap by the local pointer `pid` writes into — the interaction stack's exact hit for that
+ * pointer — or none. NONE while any object is in hand: a tap in hand is the hand's (a put-down, a held tool), and the pointer's
+ * hit is frozen at the pick-up anyway (l1-pick skips `HandledByWidget` pointers, which the hold stamps every tick), so it would
+ * name whatever the pointer touched then — the note hovered before ⏎ opened the board. `found` says whether the pointer is
+ * known at all (a touch that has lifted is gone: the caller may ask the drawn notes instead).
+ */
+export function tapNote(world: World, pid: string, isNote: (e: Entity) => boolean): { readonly found: boolean; readonly note: Entity | undefined } {
+  if (heldEntity(world) !== undefined) return { found: true, note: undefined };
+  let found = false;
+  let hit: Entity | undefined;
+  world.query(tapPointersQ).each((b) => {
+    for (const r of b) {
+      const p = b.entity(r);
+      if (world.read(p, Pointer).id !== pid) continue;
+      found = true;
+      hit = world.getRelation(p, TouchesExact);
+    }
+  });
+  return { found, note: found && hit !== undefined && isNote(hit) ? hit : undefined };
 }
 
 export interface NoteTypingOptions {

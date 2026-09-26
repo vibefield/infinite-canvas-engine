@@ -21,8 +21,8 @@
 // edit, an undo — reaches the textarea on the next frame. The pen's wipe and the caret are the
 // writing's flux, stamped on ONE clock, `performance.now()` (the rAF clock lags wall time headless).
 
-import { Active, Camera, type Entity, GestureSettings, Grab, LocalPointer, Pointer, TouchesExact, type World, defineQuery } from "@ice/core";
-import type { NoteTyping } from "../objects/typing";
+import { Active, Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
+import { type NoteTyping, tapNote } from "../objects/typing";
 import type { PaperGeometry } from "../paper/paper";
 import type { HandLaw } from "../paper/text";
 import type { Writing } from "../paper/writing";
@@ -95,7 +95,6 @@ export interface NoteEditor {
   dispose(): void;
 }
 
-const pointersQ = defineQuery([Pointer, LocalPointer]);
 
 export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
   const { container, world, typing } = opts;
@@ -305,20 +304,10 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
     const r = container.getBoundingClientRect();
     return { x: cam.x + (clientX - r.left) / cam.zoom, y: cam.y + (clientY - r.top) / cam.zoom };
   };
-  /** The note the tap landed on: the stack's exact hit for this pointer; the writing's topmost drawn note when the pointer is gone. */
+  /** The note the tap landed on: the stack's exact hit for this pointer (none with an object in hand — `tapNote`, D7 #4); the writing's topmost drawn note when the pointer is gone. */
   const noteUnder = (type: string, id: number, w: { x: number; y: number }): Entity | undefined => {
-    const pid = type === "touch" ? `touch:${id}` : "mouse";
-    let found = false;
-    let hit: Entity | undefined;
-    world.query(pointersQ).each((b) => {
-      for (const r of b) {
-        const p = b.entity(r);
-        if (world.read(p, Pointer).id !== pid) continue;
-        found = true;
-        hit = world.getRelation(p, TouchesExact);
-      }
-    });
-    if (found) return hit !== undefined && opts.isNote(hit) ? hit : undefined;
+    const t = tapNote(world, type === "touch" ? `touch:${id}` : "mouse", opts.isNote);
+    if (t.found) return t.note;
     return writing()?.noteAt(w.x, w.y);
   };
   const onDown = (ev: PointerEvent): void => {
