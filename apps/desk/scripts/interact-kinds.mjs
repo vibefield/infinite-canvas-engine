@@ -30,6 +30,23 @@ export async function kindsRig(t) {
     const same = f !== undefined && ["cx", "cy", "hx", "hy", "angle", "r"].every((k) => near(f[k], want[k], 1e-6));
     return { same, said: f === undefined ? "no brackets" : `(${f.cx.toFixed(1)}, ${f.cy.toFixed(1)}) ±(${f.hx.toFixed(1)}, ${f.hy.toFixed(1)}) turned ${f.angle.toFixed(4)} r ${f.r.toFixed(1)}` };
   };
+  /**
+   * D4a's `<SelectionMenu>` over the one selected object: the anchor is its brackets' box (6 out of the frame the marks drew,
+   * turned or not), and the menu's bar stands shown, 10 px above that box and centred on it — what D4a's own rows read.
+   */
+  const menuOver = async () => {
+    await sleep(500);   // the lock-on, then the menu's own fade in
+    const a = await q("window.__desk.anchor()");
+    const f = (await marks())?.objects?.[0]?.frame;
+    const m = await q(`(() => { const m = document.querySelector("[data-ice-selection-menu]"); if (!m) return null; const b = m.firstElementChild.getBoundingClientRect(); return { visible: m.dataset.visible, opacity: Number(getComputedStyle(m).opacity), bar: { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom } }; })()`);
+    if (a?.box == null || f === undefined || m === null) return { ok: false, said: `anchor ${JSON.stringify(a?.box)} · marks ${f !== undefined} · menu ${m !== null}` };
+    const ex = f.hx * Math.abs(Math.cos(f.angle)) + f.hy * Math.abs(Math.sin(f.angle)) + 6;
+    const ey = f.hx * Math.abs(Math.sin(f.angle)) + f.hy * Math.abs(Math.cos(f.angle)) + 6;
+    const box = near(a.box.x0, f.cx - ex) && near(a.box.y0, f.cy - ey) && near(a.box.x1, f.cx + ex) && near(a.box.y1, f.cy + ey);
+    const mid = (a.box.x0 + a.box.x1) / 2;
+    const ok = a.count === 1 && box && m.visible === "true" && m.opacity === 1 && near(m.bar.y1, a.box.y0 - 10, 1.01) && near((m.bar.x0 + m.bar.x1) / 2, mid, 1.01);
+    return { ok, said: `the brackets' box (${a.box.x0.toFixed(1)}, ${a.box.y0.toFixed(1)})–(${a.box.x1.toFixed(1)}, ${a.box.y1.toFixed(1)}); the bar's foot at ${m.bar.y1.toFixed(1)} vs ${(a.box.y0 - 10).toFixed(1)}, its middle ${((m.bar.x0 + m.bar.x1) / 2).toFixed(1)} vs ${mid.toFixed(1)}, opacity ${m.opacity}` };
+  };
   /** Press at `from`, walk to `to` in `steps` samples `gap` ms apart; `hold` ms still before the release (0 = let go moving). */
   const carry = async (from, to, steps, gap, hold) => {
     await mouse("mouseMoved", from[0], from[1]);
@@ -61,6 +78,8 @@ export async function kindsRig(t) {
   check(b.selected && bracketed(bSel) && b.geometry.ring === 0, `board: a click on the melamine selects it — it wears the brackets, locked on (${worn(bSel)}); its kind draws no ring (handed ${b.geometry.ring})`);
   const bOn = await onFrame(bSel, boardFrame(b.geometry));
   check(bOn.same, `board: its brackets stand on its frame — the aluminium's outside as drawn, square, its corner: ${bOn.said}`);
+  const bMenu = await menuOver();
+  check(bMenu.ok, `board: the selection menu stands over it, 10 px above its brackets and centred — ${bMenu.said}`);
   // the knobs are the whiteboard's (*Marks on the Mat* Q-a/b: it resizes) and core's handles lie under them: a real drag on the
   // south-east one grows it from its fixed north-west corner, the board is drawn at its new size, and ONE ⌘Z puts it back
   check(bSel.objects[0].knobs === true, "board: its brackets carry the knobs — a whiteboard resizes");
@@ -119,6 +138,8 @@ export async function kindsRig(t) {
   check(p.selected && bracketed(pSel) && near(p.cx, 4000) && near(p.cy, 1500), `print: a tap selects it — it wears the brackets (${worn(pSel)}); the hand lifted it and laid it back where it was: no transaction`);
   const pOn = await onFrame(pSel, photoFrame(p.geometry));
   check(pOn.same, `print: its brackets stand on its sheet — its own axes at its turn, its corner: ${pOn.said}`);
+  const pMenu = await menuOver();
+  check(pMenu.ok, `print: the selection menu stands over it, 10 px above its brackets and centred — ${pMenu.said}`);
   await hover(640, 420);
   await sleep(600);
   p = await entity(print);
@@ -212,6 +233,8 @@ export async function kindsRig(t) {
   check(k.selected && bracketed(kSel) && k.geometry.ring === 0, `notebook: a click selects it — it wears the brackets, locked on (${worn(kSel)}); its kind draws no ring (handed ${k.geometry.ring})`);
   const kOn = await onFrame(kSel, bookFrame(k.geometry.frame, k.geometry.theta, k.geometry.cx, k.geometry.cy, k.geometry.angle));
   check(kOn.same && near(kSel.objects[0].frame.angle, k.props.angle, 1e-12), `notebook: its brackets stand on its footprint — the case where it lies, at its turn (${k.props.angle.toFixed(4)}): ${kOn.said}`);
+  const kMenu = await menuOver();
+  check(kMenu.ok, `notebook: the selection menu stands over it, 10 px above its (turned) brackets' box and centred — ${kMenu.said}`);
   await hover(610, 420);
   await sleep(700);
   k = await entity(book);
@@ -258,6 +281,12 @@ export async function kindsRig(t) {
   check(c.selected && bracketed(cSel) && c.geometry.ring === 0, `pad: a click on its TAPE selects it — it wears the brackets, locked on (${worn(cSel)}); its kind draws no ring (handed ${c.geometry.ring})`);
   const cOn = await onFrame(cSel, calendarFrame(c.geometry.cx, c.geometry.cy));
   check(cOn.same, `pad: its brackets stand on its sheet's footprint, square to the mat: ${cOn.said}`);
+  await cam(4000 - 600 / 0.3, 6000 - 400 / 0.3, 0.3);   // at 0.42 the sheet fills the view's height: the menu has no room above it there
+  await settle();
+  const cMenu = await menuOver();
+  check(cMenu.ok, `pad: the selection menu stands over it, 10 px above its brackets and centred (zoom 0.3) — ${cMenu.said}`);
+  await cam(cx0, cy0, z);
+  await settle();
   await hover(700, tapeY);
   await sleep(500);
   c = await entity(pad);
