@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1 and D2a-core LANDED 2026-09-25)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core and D2a-render LANDED 2026-09-25)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1145,6 +1145,24 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   (both oracles, both parity rigs 0 FAILED, the pack audit ALL PASS). Owed: api-reference
   entries (D5's docs pass); kernel `snap.ts`'s world-unit tolerances at extreme zoom; Locked vs
   nudges, `ops.arrange`, resize handles and duplicate (D4a); `NavCamera.zoom` is f32 (D2b).
+- **D2a-render — the kind registry** (**LANDED 2026-09-25**, `d064a22` · `a82c40f` · `68d005a`):
+  the desk's composition root names no kind. `KindProgram` / `KindPass` (`src/kind.ts`, design-015
+  §5.2's render half: `spawn` · `tune` · `prepare(encoder, SlotContext, records, KindExtra)` ·
+  `drawRange` · `drawOver`), `SlotInputs.objects` in paint order with a portal's `at` indexing
+  it, `drawSlot` walking the strata (pads · sheets · things, whatever order the caller used)
+  and each stratum's RUNS of one kind with a per-kind cursor, a sheet with a live inside
+  splitting its run (range · child · scissor restore · `drawOver`); the note, the mini mat and
+  the whiteboard as kinds (`@ice/desk/kinds`: `paperProgram` · `miniMatProgram` ·
+  `boardProgram`, `DESK_KINDS`) over the moved passes with no WGSL change (`BoardPass` gained
+  `drawRange`); an unregistered kind is a named error. Exit: the 38 oracle renders sha256-equal
+  to D1's — three times by the builder, once by the orchestrator at grading — the 20 checks
+  identical, a Dawn error probe clean over registry creation and all 38 frames (the whiteboard's
+  passes compiled on Dawn for the first time), Chrome = Node maxΔ 0 twice; desk 216 → 234 units,
+  the 18 new ones each red under at least one of 19 deliberate mutations of the walker, the
+  kinds and the wall; `pnpm run ci` exit 0 (no load timeout this run) and `gate:landing` exit 0.
+  Owed: a depcruise rule for "the root imports no kind" (a unit test reads every import form
+  today); `SlotContext.fadeIn`/`cfg` are the grid's UNDRESSED values exactly as the prototype
+  passed them (D2b looks at it with the dressing).
 
 ## Release cut & downstream
 
