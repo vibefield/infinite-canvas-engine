@@ -28,8 +28,19 @@ const results = resolve(app, "results");
 mkdirSync(results, { recursive: true });
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-/** The scenes the world draws: the mat, the rulers, the notes, the mini mats with their insides and chains, the flights (D2b) — the prints and the whiteboards are D3r's rigs. */
-const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav)-/;
+/** The scenes the world draws: the mat, the rulers, the notes, the mini mats with their insides and chains, the flights (D2b); the whiteboards (D3w). */
+const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board)-/;
+/**
+ * design-015 D3w: the three inked-board scenes keep, from the world too, the bound rig:parity names for them (D-D3r-a.5): the
+ * stamp pass compiled by Chrome's Dawn and by node-webgpu's quantises a handful of the raster's coverages one LSB apart — the
+ * same stamps, replayed here from the board's CHILD ENTITIES, land on the same texels. Worse than the bound is red.
+ */
+const STAMP_LSB = "the ink raster's stamps quantise a handful of texels 1 LSB apart between the two hosts' Dawns (D-D3r-a.5)";
+const EXCEPTIONS = {
+  "board-ink-z1": { maxD: 1, differ: 1, why: STAMP_LSB },
+  "board-selected-z1": { maxD: 1, differ: 1, why: STAMP_LSB },
+  "board-ink-z2.5": { maxD: 1, differ: 16, why: STAMP_LSB },
+};
 
 const die = (what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`); process.exit(1); };
 if (!existsSync(resolve(app, "dist/index.html"))) die("the desk's build is missing (apps/desk/dist/index.html)", "pnpm --filter ./apps/desk build");
@@ -92,7 +103,7 @@ async function witness(tab, sc) {
   const png = await capture(tab);
   const r = await tab.evaluate(diffJs(png, sc.name), { awaitPromise: true, timeoutMs: 60000 });
   const stats = await tab.evaluate("(() => { const s = window.__desk.stats(); return { objects: s.objects, redraws: s.redraws, live: s.live, kinds: s.frame && s.frame.kinds }; })()", { timeoutMs: 20000 });
-  return { ...r, png, settled: s.settled, objects: stats.objects, kinds: stats.kinds, spawned: spawned.notes.length + spawned.minimats.length };
+  return { ...r, png, settled: s.settled, objects: stats.objects, kinds: stats.kinds, spawned: spawned.objects };
 }
 
 try {
@@ -116,6 +127,7 @@ try {
   if (fail) throw new Error("boot failed");
 
   let flaps = 0;
+  let kept = 0;
   console.log("\nscene                        Chrome (from the world) vs Node                objects");
   for (const sc of scenes) {
     let r = await witness(tab, sc);
@@ -129,11 +141,14 @@ try {
       if (clean(r)) flaps += 1;
       else writeFileSync(resolve(results, `world-${sc.name}-2.png`), Buffer.from(r.png, "base64"));
     }
-    if (!clean(r)) failures += 1;
+    const bound = EXCEPTIONS[sc.name];
+    const excused = !clean(r) && r.error === undefined && bound !== undefined && r.maxD <= bound.maxD && r.differ <= bound.differ;
+    if (excused) { kept += 1; note += ` · KEPT within its measured bound (maxΔ ≤ ${bound.maxD}, ≤ ${bound.differ} px): ${bound.why}`; }
+    else if (!clean(r)) failures += 1;
     const detail = r.error === undefined ? `maxΔ ${r.maxD} · ${r.differ} px differ · over4 ${r.over4Pct}% · ${r.w}×${r.h}` : `ERROR ${r.error}`;
-    console.log(`${clean(r) ? "PASS" : "FAIL"}  ${sc.name.padEnd(24)} ${detail.padEnd(52)} ${r.objects}/${r.spawned} ${JSON.stringify(r.kinds)}${r.settled ? "" : " · UNSETTLED"}${note}`);
+    console.log(`${clean(r) ? "PASS" : excused ? "KEPT" : "FAIL"}  ${sc.name.padEnd(24)} ${detail.padEnd(52)} ${r.objects}/${r.spawned} ${JSON.stringify(r.kinds)}${r.settled ? "" : " · UNSETTLED"}${note}`);
   }
-  console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} drawn from the world · ${failures} FAILED · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness)`);
+  console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} drawn from the world · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness)`);
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);
 } catch (err) {
   console.log("THREW:", String(err.stack ?? err));

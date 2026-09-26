@@ -5,7 +5,7 @@
 // app does (the brief's pinned detail).
 
 import { broadcastChannelByteChannel, type CanvasEngine, createCanvasEngine, defineCanvasType, defineTool, type Tool, tools } from "@ice/core";
-import { MiniMat, Note } from "@ice/desk/objects";
+import { DESK_OBJECTS } from "@ice/desk/objects";
 
 function builtin(id: string): Tool {
   const tool = tools.get(id);
@@ -23,7 +23,7 @@ export const DESK_TOOLS: readonly Tool[] = [builtin("select"), deskSelect, built
 export const DeskCanvas = defineCanvasType({
   id: "desk.desk",
   semanticVersion: 1,
-  semantic: { placement: { widgets: [Note, MiniMat] } },
+  semantic: { placement: { widgets: [...DESK_OBJECTS] } },
   presentation: {
     tools: { allowed: [deskSelect, builtin("pan")], default: deskSelect },
     camera: { arrival: "fit", padding: 80, minZoom: 0.5, maxZoom: 1 },
@@ -52,7 +52,7 @@ export async function joinDeskRoom(engine: CanvasEngine): Promise<void> {
 /** A desk engine with a fresh document (none yet in a room: `joinDeskRoom`), the desk's tool in hand. */
 export function createDeskEngine(): CanvasEngine {
   const engine = createCanvasEngine({
-    widgets: [Note, MiniMat],
+    widgets: [...DESK_OBJECTS],
     tools: DESK_TOOLS,
     canvasTypes: [DeskCanvas],
     rootCanvas: DeskCanvas,

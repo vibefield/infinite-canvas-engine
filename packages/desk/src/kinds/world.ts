@@ -30,6 +30,7 @@ import type { ChildShape } from "../minimat/minimat";
 import type { Rect } from "../nav/flight";
 import type { Lamp } from "../paper/paper";
 import type { TextRaster } from "../paper/raster";
+import type { BlobStore, PictureDecoder } from "../photo/blobs";
 import type { GroundTheme, Palette, ThemeName } from "../theme";
 
 /**
@@ -111,6 +112,21 @@ export interface KindHost {
   pass(): KindPass | undefined;
   /** The host's text raster (desk/host/ink.ts in a browser); absent in Node — the oracle pins committed rasters. */
   readonly text?: TextRaster | undefined;
+  /** An object's DATA children (D3w, design-015 §5.1 — a board's strokes, a pad's events and pins); absent = none (a test, the oracle). */
+  readonly children?: DataChildren | undefined;
+  /** The app's byte store (D3w, D-D12 — a print's picture) and the host's decoder for what it holds; absent = no pictures. */
+  readonly blobs?: BlobStore | undefined;
+  readonly decode?: PictureDecoder | undefined;
+}
+
+/**
+ * An object's DATA children as its kind reads them (D3w): entities `ChildOf` the object, never members of the desk's
+ * paint order — the `stamp` turns over whenever the set or its order changes (strata's order stamp), and `rows` are the
+ * children's values of one component, in sibling order (the oldest stroke first).
+ */
+export interface DataChildren {
+  stamp(parent: Entity): number;
+  rows<T>(parent: Entity, c: Component<T>): readonly T[];
 }
 
 /**

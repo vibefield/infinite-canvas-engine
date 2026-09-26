@@ -39,7 +39,7 @@ export interface DeskApi {
   readonly handle: DeskLayerHandle;
   /** Spawn one object of `type` centred at `at` (one undoable transaction); returns its entity id. */
   spawn(type: string, props: Readonly<Record<string, unknown>>, at: { readonly x: number; readonly y: number }): number;
-  setScene(scene: OracleScene): Promise<{ readonly notes: number[]; readonly minimats: number[] }>;
+  setScene(scene: OracleScene): Promise<{ readonly notes: number[]; readonly minimats: number[]; readonly objects: number }>;
   entities(): DeskEntity[];
   entity(id: number): DeskEntity | null;
   camera(): { readonly x: number; readonly y: number; readonly zoom: number };
@@ -150,7 +150,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     },
     async setScene(scene) {
       const r = await setScene({ engine, handle, setTheme: (n, pin) => theme.set(n, pin), pinFlight: (p) => api.pinFlight(p) }, scene);
-      return { notes: r.notes.map((e) => e as number), minimats: r.minimats.map((e) => e as number) };
+      return { notes: r.notes.map((e) => e as number), minimats: r.minimats.map((e) => e as number), objects: Object.values(r).reduce((n, list) => n + list.length, 0) };
     },
     entities() {
       const out: DeskEntity[] = [];

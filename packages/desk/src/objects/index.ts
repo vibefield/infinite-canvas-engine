@@ -6,9 +6,13 @@
 export { MINIMAT_TYPE, MiniMat, VINYLS, type VinylName } from "./minimat";
 export { NOTE_INK, NOTE_PROPS, NOTE_TYPE, Note, PAPERS, type PaperName, PENS, type PenName } from "./note";
 export { createNoteTyping, type NoteTyping, type NoteTypingOptions, type TypingDocs } from "./typing";
+// the whiteboard and its data children (D3w)
+export { BOARD_TYPE, Board, MARKERS, type MarkerName, TIPS } from "./board";
+export { addStroke, BoardStroke, boardOps, decodePoints, encodePoints, type MarkerInk, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, type StrokeSpec } from "../board/data";
 
+import { Board } from "./board";
 import { MiniMat } from "./minimat";
 import { Note } from "./note";
 
 /** The desk's reference objects, in the order an app registers them. */
-export const DESK_OBJECTS = [Note, MiniMat] as const;
+export const DESK_OBJECTS = [Note, MiniMat, Board] as const;

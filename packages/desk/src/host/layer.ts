@@ -51,6 +51,9 @@ import { objectKindOf } from "../object";
 import { blueNoise } from "../assets/blue-noise.gen";
 import { PAPER_KIND, type PaperWriting } from "../kinds/paper";
 import type { KindLocal } from "../kinds/world";
+import { worldChildren } from "../compose/children";
+import type { BlobStore } from "../photo/blobs";
+import { decodePicture } from "./picture";
 import { createNoteTyping, type NoteTyping, type TypingDocs } from "../objects/typing";
 import type { TextRaster } from "../paper/raster";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
@@ -94,6 +97,8 @@ export interface DeskLayerOptions {
   readonly docs?: TypingDocs;
   /** A typing session ends after this long without input, ms (1000). */
   readonly idleMs?: number;
+  /** The app's byte store (D3w, D-D12): a print's picture by the hash its `blob` prop names; absent, prints draw their paper alone. */
+  readonly blobs?: BlobStore;
 }
 
 /** The pinned still a parity scene states: the clocks, the plate and the gobo's opacity, the wind (0 = a still). */
@@ -199,6 +204,8 @@ export interface DeskLayerHandle {
   readonly builder: DeskBuilder;
   /** The note's writing on this desk (D2c): its layouts, rasters, caret and wipe — `undefined` when no note kind is registered. */
   writing(): Writing | undefined;
+  /** A kind's own state on this desk by kind name (D3w: a print's body, a book's or a pad's pinned pose) — `undefined` when it keeps none. */
+  local(name: string): KindLocal | undefined;
   /** The one focused editor (D2c) — `undefined` when no note kind is registered. */
   editor(): NoteEditor | undefined;
   /** The note's typing session (D2c): the claim, the live cell, the commit. */
@@ -267,8 +274,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
 
     // each kind's own state on this desk (the note's writing): made once, over its root pass once the ground is here
     const locals = new Map<string, KindLocal>();
+    const children = worldChildren(world);   // …and its DATA children (D3w): the host reads them, never the kind
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture });
       if (local !== undefined) locals.set(k.name, local);
     }
     const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;
@@ -438,6 +446,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       dirty: () => compose.dirty(),
       builder,
       writing,
+      local: (name) => locals.get(name),
       editor: () => editor,
       typing,
       selection: {

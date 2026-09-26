@@ -5,14 +5,17 @@
 // `papers`/`pens` by the prop's value; `MiniMatPalette`: `vinyls`). The engine holds no note colour
 // (the theme gate); this file is where the product's byte enters the desk.
 
-import type { MiniMatPalette, PaperPalette } from "@ice/desk/kinds";
-import { PALETTE, PENS, SURFACES, VINYLS } from "@ice/desk/oracle/fixtures/vf-theme";
+import type { BoardPalette, MiniMatPalette, PaperPalette } from "@ice/desk/kinds";
+import { BOARD_LOOK, MARKERS, PALETTE, PENS, SURFACES, VINYLS } from "@ice/desk/oracle/fixtures/vf-theme";
 import { type GroundTheme, type ThemeName, themeFrom } from "@ice/desk/theme";
 
-export type DeskPalette = PaperPalette & MiniMatPalette;
+export type DeskPalette = PaperPalette & MiniMatPalette & BoardPalette;
 
 /** The palette for a theme: the fixture's roles, the note's one paper (`yellow` — the product's `--vf-note-surface`), its pens, the mini mats' vinyls. */
-export const deskPalette = (name: ThemeName): DeskPalette => ({ ...PALETTE[name], papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS });
+export const deskPalette = (name: ThemeName): DeskPalette => ({
+  ...PALETTE[name], papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS,
+  board: BOARD_LOOK, markers: MARKERS,   // D3w: the whiteboard's materials and the dry-erase markers (BOARD.md)
+});
 
 /** The theme the passes read for a name — `themeFrom` on the fixture's palette, the oracle's `THEMES[name]` exactly. */
 export const deskTheme = (name: ThemeName): GroundTheme => themeFrom(name, PALETTE[name]);
