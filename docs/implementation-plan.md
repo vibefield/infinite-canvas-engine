@@ -1079,7 +1079,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — D3t-a and D3t-b LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — D3t-a, D3t-b and D3t-c LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1438,6 +1438,24 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   the prototype's and the brief's 30 % where design-015 §6's table says 16 %. Owed: the turn zone's cursor (core has no
   part-cursor seam), the two-finger leaf-through, the bar's page numbers, ⌘Z of an out-of-view page not turning to it,
   pen pressure and coalesced samples, the last pen not durable, the eight layers' CPU copies (5.6 MB each).
+- **D3t-c — the desk calendar at work** (**LANDED 2026-09-26**, `88ecf68` … `8905845`, seven commits: four by an opus
+  builder that died at its context limit in the last step, three by an opus finisher from the frozen WIP; rebased by the
+  orchestrator over D3t-b): the calendar's PRINT from its events (the prototype's display list moved whole; the tiles a
+  cache keyed by content, so an edit redraws only its cell's tiles); the days at rest and in hand — a click selects a day
+  (brackets on the cell), ⇧-click a run, a line written through the ONE editor lands as ONE `desk.event` child (its text and
+  seeds one cell; a draft until its session spawns it whole — never empty), a band over a run, a line selected and ⌫;
+  THE ROLL by the foot, the corner, the roll, a pull or a flick, the keys and the held bar, `t` for today (the month a
+  TARGET moved off the undo stack — a roll is not an edit); notes STUCK to days (one transaction and a glide into the day's
+  slot; riders move with the pad by the same delta; veiled while their month is rolled away; unstuck when carried off; a
+  pin dies with its note and comes back with it on ⌘Z); where CALENDAR.md leaned the camera in, the pad is picked up.
+  Exit: three oracle stills pin the COMMITTED print (a month with entries and a band, mid-roll, a stuck note) — maxΔ 0 in
+  rig:parity and FROM THE WORLD, whose new leg holds the LIVE print to the committed bytes (0 of 4.06 M / 4.33 M differ);
+  rig:open gains §13 (52 rows — 155 in all), rig:two-tab a line written in A arriving on B's pad with A's seeds (39 in
+  all); rig:parity 101 · 0 · 6 kept, rig:world 88 · 0 · 6 kept; found and
+  fixed: a blank print pin kept an owner's old entries, and ⇧-click never made a run; core 793, desk 527 units; ci exit 0;
+  `gate:landing` exit 0 (re-run by the orchestrator). Rulings D-D3t-c.1–.6. Owed: the committed print follows the local
+  time zone (the live-print leg reds elsewhere — pin the zone); D4a's menu clamps over a selected pad's foot at 0.42 (a
+  product call); `t`/`p` are tool keys before "just typing" can start a line; a double-click inside a run writes one day.
 
 ## Release cut & downstream
 
