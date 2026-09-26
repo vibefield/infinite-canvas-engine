@@ -7,12 +7,14 @@
 // ticked at once (never the tape — Q-g), the count riding the cursor; released, the vellum folds onto
 // the union on the island ease (onto the one object, fading, when it gathered one); knobs only where an
 // object resizes, is not taped and nothing moves it; the laser from the snap's facts (marks/laser.ts); a
-// taped object's tape; your extent on the rulers while something is selected and no vellum is drawn.
+// taped object's tape; your extent on the rulers while something is selected and no vellum is drawn; and a
+// room's other people (D5a, D-D5a.1): each one's hand at their cursor with their name, and what they hold
+// selected wearing your brackets in their colour at 50 % — no knobs, no menu, no tape.
 
 import { easeIsland } from "./ease";
 import { type LaserCamera, laserOf, type WorldBar, type WorldBox, type WorldGuide } from "./laser";
 import { frameOnScreen, framesBox, type MarkBox, type MarkFrame, type MarkObject, type MarkRuler, type MarksInput, type MarkTape, type MarkUnion } from "./layout";
-import { MARKS } from "../theme";
+import { MARKS, type RGBA } from "../theme";
 
 /** One object as its marks need it — the builder's cached facts and flux, or a still's. */
 export interface MarkedObject {
@@ -30,6 +32,14 @@ export interface MarkedObject {
   readonly lock: { readonly t: number; readonly a: number };
   /** The tape's clocks: each strip's press (0..1, linear) and the tape's presence (0 = none drawn). */
   readonly tape: { readonly press: readonly [number, number]; readonly a: number };
+}
+
+/** A room's other person as their marks need them (D5a): their cursor (world; null without one), name and presence colour, and the frames (world) of what they hold selected. */
+export interface MarkedPeer {
+  readonly hand: { readonly x: number; readonly y: number } | null;
+  readonly name: string;
+  readonly ink: RGBA;
+  readonly selected: readonly MarkFrame[];
 }
 
 export interface MarksState {
@@ -51,6 +61,8 @@ export interface MarksState {
   readonly strike: number;
   /** The rulers printed on this desk (their margin and band, CSS px), or null. */
   readonly ruler: { readonly margin: number; readonly band: number } | null;
+  /** A room's other people (D5a); absent or empty on a desk alone. */
+  readonly peers?: readonly MarkedPeer[];
 }
 
 const clamp01 = (x: number): number => Math.min(Math.max(x, 0), 1);
@@ -116,5 +128,13 @@ export function assembleMarks(s: MarksState): MarksInput {
     const world = framesBox(sel.map((o) => o.frame));
     if (world !== null) ruler = { sel: selBox, world, margin: s.ruler.margin, band: s.ruler.band };
   }
-  return { view: s.view, night: s.night, tape, objects, union, marquee, guides: laser.guides, bars: laser.bars, strike: s.strike, ruler };
+  // a room's other people: their selections and their hands, on screen
+  const peers = s.peers ?? [];
+  const others = peers.length === 0 ? {} : {
+    peers: {
+      selections: peers.flatMap((p) => p.selected.map((f) => ({ frame: on(f), ink: p.ink }))),
+      hands: peers.flatMap((p) => (p.hand === null ? [] : [{ x: (p.hand.x - cam.x) * z, y: (p.hand.y - cam.y) * z, name: p.name, ink: p.ink }])),
+    },
+  };
+  return { view: s.view, night: s.night, tape, objects, union, marquee, guides: laser.guides, bars: laser.bars, strike: s.strike, ruler, ...others };
 }

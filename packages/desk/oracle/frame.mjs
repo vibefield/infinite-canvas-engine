@@ -48,7 +48,7 @@ import { assembleMarks } from "../src/marks/assemble.ts";
 import { computeSnapGuides } from "@ice/kernel";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
-import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
+import { BOARD, cssColor, MARKS, MAT_GRID, MINIMAT } from "../src/theme.ts";
 import { quadOf, resolveBoard, surfaceSize } from "../src/board/board.ts";
 import { BoardHistory } from "../src/board/history.ts";
 import { ERASER_TOOL, markerTool, StrokeBuilder, TIPS } from "../src/board/stroke.ts";
@@ -439,7 +439,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   function markedObjects(desk, M) {
     const rectOf = (o, w, h) => ({ x0: o.x - w / 2, y0: o.y - h / 2, x1: o.x + w / 2, y1: o.y + h / 2 });
     const facts = (o, frame, rect, resizable) => ({
-      frame, rect, selected: o.selected === true, locked: o.locked === true, moving: o.held === true, resizable,
+      frame, rect, selected: o.selected === true, locked: o.locked === true, moving: o.held === true, resizable, peer: o.peer,
       lock: o.selected === true ? { t: M.t ?? 1, a: M.alpha ?? 1 } : { t: 0, a: 0 },
       tape: { press: M.press ?? [1, 1], a: o.locked === true ? 1 : 0 },
     });
@@ -458,8 +458,10 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   /**
    * A still's marks: its `selected` and `locked` objects, and what `marks` pins — `t`/`alpha` (the lock-on), `unionT`,
    * `marquee` (a world rect mid-drag, `pointer` on screen), `fold` (`rect` on screen, `t`), `snap` (the kernel's law on the
-   * scene's rects: the `held` objects are the dragged set), `strike`, `press` (the tape's two strips). The rulers' band
-   * follows the scene's own rulers.
+   * scene's rects: the `held` objects are the dragged set), `strike`, `press` (the tape's two strips), `peers` (a room's other
+   * people — D5a: each `{ name, ink (an index of MARKS.hand.inks), hand: [x, y] world }`, what they hold selected the objects
+   * marked `peer: i`). The rulers'
+   * band follows the scene's own rulers.
    */
   function marksOf(s, cam, theme = THEMES[s.theme]) {
     const M = s.marks ?? {};
@@ -487,6 +489,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       marquee: q ? { rect: { x0: q.x0, y0: q.y0, x1: q.x1, y1: q.y1 }, pointer: q.pointer ?? { x: (q.x1 - cam.x) * cam.zoom, y: (q.y1 - cam.y) * cam.zoom } } : null,
       fold: M.fold ?? null, guides, bars, strike: M.strike ?? 0,
       ruler: rulers === null ? null : { margin: rulers.margin, band: rulers.band },
+      peers: (M.peers ?? []).map((p, i) => ({ hand: p.hand === undefined ? null : { x: p.hand[0], y: p.hand[1] }, name: p.name, ink: cssColor(MARKS.hand.inks[p.ink]), selected: objects.filter((o) => o.peer === i).map((o) => o.frame) })),
     });
   }
 

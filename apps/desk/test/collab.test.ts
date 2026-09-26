@@ -51,7 +51,7 @@ const remotePeersQ = defineQuery([PresencePeer, Not(Local)]);
 const remoteCursorQ = defineQuery([CursorVisual, Position]);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const ALICE: DeskIdentity = { name: "Alice", color: "#e5484d" };
-const BOB: DeskIdentity = { name: "Bob", color: "#30a46c" };
+const BOB: DeskIdentity = { name: "Bob", color: "#8e4ec6" };
 
 // --- in-memory bus (BroadcastChannel semantics: never delivers to the sender) — nodeboard's ---
 class Bus {
@@ -203,7 +203,8 @@ describe("desk collab: presence", () => {
     let now = 1000;
     const t0 = Date.now();
     for (;;) {
-      A.engine.step((now += 16));
+      now += 16;
+      A.engine.step(now);
       bus.deliverAll();
       B.world.sync();
       const p = B.world.firstOf(remotePeersQ);
@@ -224,7 +225,8 @@ describe("desk collab: presence", () => {
     expect(mine !== undefined && B.world.isAlive(mine) && B.world.read(mine, PrefabId).id === NOTE_TYPE).toBe(true); // B's own copy of the note
 
     // B's frame derives the remote hand: a pooled CursorVisual "remote" at A's cursor, following A's peer
-    B.engine.step((now += 16));
+    now += 16;
+    B.engine.step(now);
     const cursor = must(B.world.firstOf(remoteCursorQ), "remote cursor entity");
     expect(B.world.get(cursor, CursorVisual)).toMatchObject({ kind: "remote" });
     expect(B.world.read(cursor, Position)).toEqual({ x: 12, y: 34 });

@@ -218,6 +218,9 @@ ORACLE_SCENES.push(...CALENDAR_SCENES);
 // a knob's face, a pill's fill); `unlit` runs the night's. And (D3w) a notebook lying closed and a desk calendar, each selected:
 // the brackets go around their footprints on the mat (kinds `bookFrame`, `calendarFrame` — what the world's builder draws).
 const marksBase = { ...base, theme: "light", mat: matStill };
+/** A room's other person (D5a): a name, a presence ink (its index in theme.ts `MARKS.hand.inks` — Bob's violet), the hand's point (world); the notes a still marks `peer: 0` are theirs. */
+const BOB = { name: "Bob", ink: 0, hand: [598, 262] };
+const REMOTE_NOTES = [{ x: 400, y: 330, seed: 5, text: "", peer: 0 }, { x: 800, y: 360, seed: 11, text: "", selected: true }];
 const ROW = [{ x: 250, y: 300, seed: 5, text: "" }, { x: 550, y: 300, seed: 11, text: "", selected: true, held: true }, { x: 850, y: 300, seed: 7, text: "" }];
 export const MARKS_SCENES = [
   { name: "marks-note-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 760, y: 360, seed: 11, text: "" }] } },
@@ -241,5 +244,10 @@ export const MARKS_SCENES = [
   { name: "marks-ruler-z1", marks: true, scene: { ...marksBase, zoom: 1, ruler: {}, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }] } },
   { name: "marks-book-z2.2", marks: true, scene: { ...deskBase, ...at(0, 0, 2.2), books: [nb({ angle: 0.04, selected: true })] } },
   { name: "marks-pad-z0.42", marks: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [pad({ selected: true })] } },
+  // D5a (D-D5a.1): a room's other person — Bob's hand at his cursor in his green with his name in a small ink flag, and the note he
+  // holds selected (`peer: 0`) wearing YOUR brackets in his colour at 50 % beside yours in the pencil; by day and by night (the hand
+  // rides the glass: the Moon changes nothing of it)
+  { name: "marks-remote-z1", marks: true, hands: true, scene: { ...marksBase, zoom: 1, notes: REMOTE_NOTES, marks: { peers: [BOB] } } },
+  { name: "marks-remote-night-z1", marks: true, hands: true, scene: { ...marksBase, theme: "dark", zoom: 1, notes: REMOTE_NOTES, marks: { peers: [BOB] } } },
 ];
 ORACLE_SCENES.push(...MARKS_SCENES);

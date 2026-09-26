@@ -4,7 +4,7 @@
 // at every zoom), shaded here into a premultiplied colour: an outline or a fill of a turned rounded
 // box (a frame, a ring, a knob, the vellum, a pill), the four brackets of a frame, a segment (solid or
 // dotted, a laser's line), a gap's bar with its end ticks, a flare, a glyph of the rulers' mono atlas
-// (with its halo), a strip of masking tape. Light is ADDED: a mark flagged so returns alpha 0 over its
+// (with its halo), a strip of masking tape, a remote person's hand (D5a). Light is ADDED: a mark flagged so returns alpha 0 over its
 // colour, which the pass's premultiplied blend turns into dst + src — Canvas2D's "lighter".
 // Pure: every resource is a parameter (engine/shader.ts's rule).
 
@@ -16,6 +16,7 @@ const MARK_BAR: f32 = 4.0;
 const MARK_FLARE: f32 = 5.0;
 const MARK_GLYPH: f32 = 6.0;
 const MARK_TAPE: f32 = 7.0;
+const MARK_HAND: f32 = 8.0;
 
 /** Coverage of a distance (CSS px) over one DEVICE px of ramp. */
 fn marks_cov(sd: f32, dpr: f32) -> f32 { return clamp(0.5 - sd * dpr, 0.0, 1.0); }
@@ -117,6 +118,29 @@ fn marks_glyph_cov(q: vec2f, cell: f32, size: vec2f, atlas: vec4f, halo: f32, te
   return c;
 }
 
+// A remote person's HAND (D5a, D-D5a.1 — desk.js `ensureAgentCursor`'s arrow): the path in its own 16 × 20 box, CSS px,
+// its first vertex the tip (theme.ts `MARKS.hand.path`; src/marks/mirror.ts `handDistance` and the desk's units hold the
+// three to each other). Signed (≤ 0 inside), even-odd — the polygon distance of iquilezles.org's 2D distance functions.
+const HAND_TIP = vec2f(1.5, 1.5);
+fn marks_hand_sd(q: vec2f) -> f32 {
+  var v = array<vec2f, 7>(vec2f(1.5, 1.5), vec2f(1.5, 16.0), vec2f(5.4, 12.4), vec2f(8.2, 18.6), vec2f(10.8, 17.4), vec2f(8.0, 11.3), vec2f(13.4, 11.1));
+  var d = dot(q - v[0], q - v[0]);
+  var s = 1.0;
+  var j = 6u;
+  for (var i = 0u; i < 7u; i = i + 1u) {
+    let e = v[j] - v[i];
+    let w = q - v[i];
+    let b = w - e * clamp(dot(w, e) / dot(e, e), 0.0, 1.0);
+    d = min(d, dot(b, b));
+    let above = q.y >= v[i].y;
+    let below = q.y < v[j].y;
+    let left = e.x * w.y > e.y * w.x;
+    if ((above && below && left) || (!above && !below && !left)) { s = -s; }
+    j = i;
+  }
+  return s * sqrt(d);
+}
+
 /**
  * One mark at screen point `p` (CSS px), premultiplied — alpha 0 when it is light (added). `atlas` = the glyph atlas's
  * width, height (texels), texels per CSS px and cell width (texels).
@@ -175,6 +199,19 @@ fn marks_shade(M: Mark, p: vec2f, dpr: f32, atlas: vec4f, tex: texture_2d<f32>, 
     let rgb = marks_moonlit(c.rgb / max(c.a, 1e-6), M.aux.y, M.aux.z);
     let a = c.a * cov * M.centre.w;
     return vec4f(rgb * a, a);
+  } else if (kind == MARK_HAND) {
+    // the hand in its own box (the tip at `centre.xy` is the path's first vertex): its shadow on the mat (the hand with its
+    // rim, moved by `half.xy`, softened over ± `half.z`, in `aux`), the hand in the peer's colour over it, the white rim over both
+    let q = p - M.centre.xy + HAND_TIP;
+    let rim = 0.5 * width;
+    let sd = marks_hand_sd(q);
+    let sds = marks_hand_sd(q - M.half.xy) - rim;
+    let drop = M.aux.a * clamp(0.5 - sds / (2.0 * M.half.z), 0.0, 1.0);
+    var c = vec4f(M.aux.rgb * drop, drop);
+    let body = M.colour.a * marks_cov(sd, dpr);
+    c = vec4f(M.colour.rgb * body, body) + c * (1.0 - body);
+    let edge = marks_cov(abs(sd) - rim, dpr);
+    return vec4f(vec3f(edge), edge) + c * (1.0 - edge);
   }
   let a = col.a * cov;
   return vec4f(col.rgb * a, select(a, 0.0, (u32(M.shape.y) & 1u) != 0u));

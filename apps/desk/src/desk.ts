@@ -6,6 +6,7 @@
 
 import { type BootstrapClock, broadcastChannelByteChannel, type ByteChannel, type CanvasEngine, createCanvasEngine, defineCanvasType, defineTool, type JoinResult, type Tool, tools, webSocketByteChannel } from "@ice/core";
 import { DESK_OBJECTS } from "@ice/desk/objects";
+import { MARKS } from "@ice/desk/theme";
 
 function builtin(id: string): Tool {
   const tool = tools.get(id);
@@ -47,8 +48,8 @@ export interface DeskIdentity {
   readonly color: string;
 }
 
-/** The presence palette: inks that read on the lit mat and under the Moon — none of them the pencil's own blue (that is YOUR hand). */
-export const PRESENCE_COLORS = ["#e5484d", "#30a46c", "#f76b15", "#8e4ec6", "#12a594", "#d6409f", "#e2a336", "#0090ff"] as const;
+/** The presence palette: the desk's hand inks (theme.ts) — they read on the lit mat and under the Moon, none of them the pencil's own blue (that is YOUR hand). */
+export const PRESENCE_COLORS = MARKS.hand.inks;
 const PRESENCE_NAMES = ["Otter", "Heron", "Marmot", "Lynx", "Falcon", "Badger", "Gecko", "Wren", "Vole", "Puffin"] as const;
 
 /** `?name=` and `?color=` pin this desk's identity (a rig's two hands); otherwise a name and a colour drawn at random. */
