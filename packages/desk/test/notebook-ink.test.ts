@@ -257,6 +257,32 @@ describe("the notebook's strokes are its DATA — one child each, on its page (d
   });
 });
 
+describe("a stroke's identity is its pen, its pace and its path", () => {
+  it("two dots on one spot in two pens are two strokes, each laid in its own ink; the second undone and laid again in a third pen, the page replays in it", () => {
+    const b = book();
+    b.books.pin(b.e, { open: true });
+    const record = () => { const c = b.ctx(0); return kind.record(kind.resolve(c), c); };
+    const texel = (): number[] => {
+      const r = must(b.books.pages.rasterOf(b.books.state(b.e).id, 1));
+      const i = (Math.floor(60 * SY) * INK_W + Math.floor(50 * SX)) * 4;
+      return [r.bytes[i] ?? -1, r.bytes[i + 1] ?? -1, r.bytes[i + 2] ?? -1];
+    };
+    const bytesOf = (pen: string) => must(look.pens[pen]).map((c) => Math.round(c * 255));
+    b.lay(1, [[50, 60]], "red");
+    record();
+    expect(texel()).toEqual(bytesOf("red"));
+    b.lay(1, [[50, 60]], "felt");   // the same spot, the same pace — another pen
+    record();
+    expect(b.books.strokesOn(b.e, 1).map((q) => q.ink)).toEqual(["red", "felt"]);
+    expect(texel()).toEqual(bytesOf("felt"));
+    b.ce.docs.undo();
+    b.ce.world.sync();
+    b.lay(1, [[50, 60]], "ball");
+    record();
+    expect(texel()).toEqual(bytesOf("ball"));
+  });
+});
+
 describe("the notebook's tools in hand (the held bar: ‹ pages › · pens · undo)", () => {
   it("‹ › are actions that count a turn; the four pens are the note's — modes, 1–4, a crosshair, their swatches the palette's inks; undo and redo are the document's", () => {
     expect(NOTEBOOK_PENS).toEqual(PENS);

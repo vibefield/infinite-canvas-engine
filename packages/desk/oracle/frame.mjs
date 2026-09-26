@@ -59,7 +59,7 @@ import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
 import { quadOf, resolveBoard, surfaceSize } from "../src/board/board.ts";
 import { decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, strokePen, strokeSeed } from "../src/board/data.ts";
 import { inkPoints, pagesInView } from "../src/notebook/ink.ts";
-import { PageInk } from "../src/notebook/pages.ts";
+import { PageInk, pageStrokeKey } from "../src/notebook/pages.ts";
 import { BoardHistory } from "../src/board/history.ts";
 import { penAtRest, penPose, stepPen } from "../src/board/pen.ts";
 import { borderOf } from "../src/photo/layout.ts";
@@ -449,9 +449,10 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     const byPage = new Map();
     for (const s of t.ink) {
       const points = decodePoints(encodePoints(s.points));
-      const times = Array.isArray(s.times) && s.times.length === s.points.length ? decodeTimes(encodeTimes(s.times)) : null;
+      const timed = Array.isArray(s.times) && s.times.length === s.points.length;
+      const times = timed ? decodeTimes(encodeTimes(s.times)) : null;
       const list = byPage.get(s.page) ?? [];
-      list.push({ key: encodePoints(s.points), ink: s.pen ?? "fountain", points: inkPoints(points, times, s.speed ?? 400) });
+      list.push({ key: pageStrokeKey(s.pen ?? "fountain", encodePoints(s.points), timed ? encodeTimes(s.times) : "", s.speed ?? 400), ink: s.pen ?? "fountain", points: inkPoints(points, times, s.speed ?? 400) });
       byPage.set(s.page, list);
     }
     return pageInk.table(d.id, pagesInView(posesByDraw.get(d), swingOf(d.theta)), (p) => byPage.get(p) ?? [], null, (ink) => pen(ink), "oracle", notebooks, d.frame.Wo, d.frame.Hp);

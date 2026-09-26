@@ -4,13 +4,20 @@
 // whole when the strokes it holds are not the page's (a stroke undone or redone, a peer's, the look changed, the layer evicted);
 // the pen in hand draws into it a segment at a time, each the moment it is final, uploading only the rectangle it touched; and
 // the stroke it lifts is ADOPTED — the raster already holds it, so the page's strokes growing by exactly that one is no replay.
-// A stroke's identity is its cell's `points` (its path's bytes): the table compares the page's list with what the raster drew.
+// A stroke's identity is its pen, its pace and its path as its cell keeps them (`pageStrokeKey`): the table compares the page's
+// list with what the raster drew.
 
 import type { RGB } from "../theme";
 import { INK_LAYERS, INK_TABLE, type InkPoint } from "./ink";
 import { drawSegment, drawStroke, type InkRect, PageRaster, scaleOf, segmentsOf, unionRect } from "./raster";
 
-/** A stroke as a page's raster draws it: its identity (the cell's `points`), its pen by name, its samples with their widths. */
+/**
+ * A stroke's identity on its page — what a raster compares: its pen, its pace (the cell's `times`; an untimed stroke's `speed`) and
+ * its path (the cell's `points`). Two dots on one spot in two pens are two strokes.
+ */
+export const pageStrokeKey = (ink: string, points: string, times: string, speed: number): string => `${ink}|${times !== "" ? times : `@${speed}`}|${points}`;
+
+/** A stroke as a page's raster draws it: its identity (`pageStrokeKey`), its pen by name, its samples with their widths. */
 export interface PageStroke {
   readonly key: string;
   readonly ink: string;

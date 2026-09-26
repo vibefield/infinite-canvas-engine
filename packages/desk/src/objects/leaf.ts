@@ -24,12 +24,12 @@
 // the left page on, the view goes to the right page; back, the other way round (`Books.face`).
 
 import { defineQuery, type Entity, guardedTransaction, heldEntity, HeldPointer, HeldPress, HeldTool, LocalPointer, Pointer, PointerButtons, PointerScreen, setWidgetProps, Viewport, type World } from "@ice/core";
-import { addStroke, encodePoints } from "../board/data";
+import { addStroke, encodePoints, encodeTimes } from "../board/data";
 import { readingTarget } from "../hold/pose";
 import { type Books, DEFAULT_PEN, type NotebookGeometry, PageTurns, pageHitAt, partOf, penOfTool } from "../kinds/notebook";
 import { inkPoints, pageOfSide } from "../notebook/ink";
 import { counts, dragSheet, grabSheet, releaseSheet } from "../notebook/motion";
-import type { LiveStroke } from "../notebook/pages";
+import { type LiveStroke, pageStrokeKey } from "../notebook/pages";
 import { type NotebookHit, localXAt } from "../notebook/pick";
 import { Notebook } from "./notebook";
 import type { TypingDocs } from "./typing";
@@ -183,7 +183,8 @@ export function createNotebookHand(opts: NotebookHandOptions): NotebookHand {
     const G = opts.geometryOf(s.book) as NotebookGeometry | undefined;
     const q = at !== undefined && G !== undefined ? onPage(G, at, s) : null;
     if (q !== null) sample(s, q.s, q.y, f32(now - s.t0));
-    const key = encodePoints(s.points);
+    // its identity as its cell will state it: the pen, the samples' times and the path (a live stroke is always timed)
+    const key = pageStrokeKey(s.live.ink, encodePoints(s.points), encodeTimes(s.times), 400);
     books?.lift(s.book, key);
     const spec = { tool: "pen" as const, ink: s.live.ink, page: s.page, points: s.points, times: s.times };
     defer(() => {

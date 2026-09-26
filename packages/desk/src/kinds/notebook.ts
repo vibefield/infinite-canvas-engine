@@ -41,7 +41,7 @@ import { type NotebookLook, type Ruling, RULINGS } from "../notebook/layout";
 import { type BuiltMesh, buildMesh, MeshWriter } from "../notebook/mesh";
 import { inkPoints, pageOfSide, pagesInView } from "../notebook/ink";
 import { newMotion, type NotebookMotion, poseKey, poseOf, setOpen, stepLeaves, tiltToward, turnable, turnPage, withDesk } from "../notebook/motion";
-import { type InkTable, type LiveStroke, PageInk, type PageStroke } from "../notebook/pages";
+import { type InkTable, type LiveStroke, PageInk, type PageStroke, pageStrokeKey } from "../notebook/pages";
 import { type NotebookDraw, NotebookPass } from "../notebook/pass";
 import { type NotebookHit, pickNotebook } from "../notebook/pick";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
@@ -202,8 +202,9 @@ interface BookState {
   /** The pen's stroke in hand, and the one it lifted until its child lands (with the page's stroke count at the lift). */
   live: LiveStroke | null;
   adopt: { readonly page: number; readonly stroke: PageStroke; readonly at: number } | null;
-  /** The book's strokes by page, as of the children's stamp. */
+  /** The book's strokes by page, as of the children's stamp — and each decoded once (by `pageStrokeKey`), kept while it is the book's. */
   byPage: Map<number, PageStroke[]>;
+  decoded: Map<string, PageStroke>;
   stamp: number;
   /** The last frame in hand moved a sheet or the peek, or has turns to go: the next asks a frame too. */
   stirring: boolean;
@@ -211,15 +212,16 @@ interface BookState {
   face: number; faceV: number; faceT: 0 | 1;
 }
 
-/** A stroke's cell → its samples with their widths, once per cell (a replay reads them again). */
-function pageStrokeOf(row: StrokeRow, cache: Map<string, PageStroke>): PageStroke {
-  const key = row.points ?? "";
-  let st = cache.get(key);
-  if (st === undefined) {
-    const times = row.times !== null && row.times !== undefined && row.times !== "" ? decodeTimes(row.times) : null;
-    st = { key, ink: row.ink ?? "fountain", points: inkPoints(decodePoints(key), times, row.speed !== null && row.speed > 0 ? row.speed : 400) };
-    cache.set(key, st);
-  }
+/** A stroke's cell → its samples with their widths, once per stroke (`had` — the book's last regroup — is asked first; a replay reads them again). */
+function pageStrokeOf(row: StrokeRow, had: ReadonlyMap<string, PageStroke>, now: Map<string, PageStroke>): PageStroke {
+  const ink = row.ink ?? "fountain";
+  const points = row.points ?? "";
+  const times = row.times ?? "";
+  const speed = row.speed !== null && row.speed > 0 ? row.speed : 400;
+  const key = pageStrokeKey(ink, points, times, speed);
+  let st = now.get(key) ?? had.get(key);
+  if (st === undefined) st = { key, ink, points: inkPoints(decodePoints(points), times !== "" ? decodeTimes(times) : null, speed) };
+  now.set(key, st);
   return st;
 }
 
@@ -227,7 +229,6 @@ function pageStrokeOf(row: StrokeRow, cache: Map<string, PageStroke>): PageStrok
 export function createBooks(host: KindHost): Books {
   const books = new Map<Entity, BookState>();
   const pages = new PageInk();
-  const strokes = new Map<string, PageStroke>();
   let next = 1;
   let woke = false;
   let moving = false;
@@ -236,7 +237,7 @@ export function createBooks(host: KindHost): Books {
     if (st === undefined) {
       st = {
         id: next++, pose: undefined, tiltX: 0, tiltXV: 0, tiltY: 0, tiltYV: 0, lastX: Number.NaN, lastY: Number.NaN, coverT: 0, coverV: 0, writer: null, mesh: null, key: "", version: 0,
-        motion: null, pending: null, live: null, adopt: null, byPage: new Map(), stamp: -1, stirring: false, face: 0, faceV: 0, faceT: 0,
+        motion: null, pending: null, live: null, adopt: null, byPage: new Map(), decoded: new Map(), stamp: -1, stirring: false, face: 0, faceV: 0, faceT: 0,
       };
       books.set(e, st);
     }
@@ -247,14 +248,16 @@ export function createBooks(host: KindHost): Books {
     const stamp = host.children?.stamp(e) ?? 0;
     if (stamp === st.stamp) return st.byPage;
     const m = new Map<number, PageStroke[]>();
+    const decoded = new Map<string, PageStroke>();
     for (const row of host.children?.rows(e, BoardStroke) ?? []) {
       const page = row.page ?? 0;
       if (row.tool !== "pen" || page < 1) continue;
       let list = m.get(page);
       if (list === undefined) { list = []; m.set(page, list); }
-      list.push(pageStrokeOf(row, strokes));
+      list.push(pageStrokeOf(row, st.decoded, decoded));
     }
     st.byPage = m;
+    st.decoded = decoded;
     st.stamp = stamp;
     return m;
   };
@@ -343,7 +346,7 @@ export function createBooks(host: KindHost): Books {
       if (st !== undefined) pages.forget(st.id);
       books.delete(e);
     },
-    dispose() { books.clear(); pages.dispose(); strokes.clear(); },
+    dispose() { books.clear(); pages.dispose(); },
   };
 }
 
