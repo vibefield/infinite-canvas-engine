@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w and four core fixes LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1278,6 +1278,45 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   Owed: a dropped object stays `Selected` unseen inside the mini mat (a core fix); the consume path leaves no ⌥ copy;
   a D-D2b.7 cut still whose spring moves at p = 0 (the ring that witnessed it retired); the retired ring spring still
   advances and keeps the desk live (D6).
+- **D3w — the whiteboard, the print, the notebook and the desk calendar from the world** (**LANDED 2026-09-26**,
+  `7de815d` … `bf30714`, fifteen commits — seven built on `1645f1c` by an opus builder, rebased over D2b + D4a by a
+  finisher that added eight integration commits): the four kinds' WORLD halves at rest (`boardKind` · `photoKind` ·
+  `notebookKind` · `calendarKind`, per-desk locals; the notebook's and the pad's geometry carries the desk eye, so a
+  hit goes through the eye the pass draws with) and their objects (`desk.board`, `desk.photo`, `desk.notebook`,
+  `desk.calendar`); their durable data as CHILD ENTITIES — `desk.stroke` (points = base64 LE f32 pairs), `desk.event`,
+  `desk.pin` with the reified edge `desk.pins` (a pin carries data, which strata's relations cannot) — read through
+  `KindHost.children`, a board's ink REPLAYED from its strokes (the raster a cache); the `BlobStore` seam (sha-256 keys;
+  the app's store; ONE decoded `Picture` per blob, dropped with its last print); the print's own CARRY — the kinematic pin
+  on the finger, the flick from the last 70 ms capped 4200 u/s, the glide, the Coulomb grip — as flux, committed as ONE
+  transaction at rest (a print is not core-movable: core commits a move at release); one set of springs for every kind.
+  Over D2b and D4a: the ring retires on all four (brackets from each kind's `frame` — the oracle's marks see books and
+  pads as `encode` builds them), a whiteboard RESIZES (*Marks on the Mat* puts knobs on photos and whiteboards; they are core's
+  handles, and its ink replays at the new size), the whiteboard, the notebook and the calendar are ROOT objects (`interaction.drop: "never"`, D-D18),
+  a print lies inside a mini mat through D2b's inside slot, a taped print answers a drag with the tape's give, and the
+  menu stands over each kind. Exit: the desk oracle 74 renders, 56 checks (a selected book and pad as new marks stills); `rig:parity` 74 · 0
+  failed · 3 kept; `rig:world` 38 → 61 (58 at maxΔ 0, the three inked boards within D-D3r-a.5's 1-LSB bound); `rig:interact` 47 → 102 (the print's flick lands where `stepPhoto` replayed says, to 1e-6, and one ⌘Z undoes
+  carry + glide); parity-by-construction units against the oracle's own `frame.mjs` on a stub device (every board, print,
+  book and pad record); desk 361 → 418 units, every new one proven red; `rig:proto-parity` 19 byte-identical; ci exit 0;
+  `gate:landing` exit 0 (re-run by the orchestrator). Owed: a print's drop-into (its carry must learn the face) and a
+  resize law for prints; a resize read as a lift (a board rises while its knob is dragged — a fact to tell a resize
+  from a carry); per-kind ghost durations; the notebook's open state and a standing cover's shadow beyond its reach
+  (D4b); the held tools of all four (D3t). Found and fixed separately: a click's release + a coalesced far move armed
+  a ghost drag (core, `fix-click`).
+- **Core fixes found by the desk's rigs** (**LANDED 2026-09-26**, `9a28a20` · `05f53e3` · `aa46b98` · `5657c14`, built
+  by one opus agent, rebased over D3w by the orchestrator): **the coalesced click** — `pointerIngest` folded a tick's
+  events past a transition, so a release and a far move in one frame published `WentUp` at the move's point and armed a
+  ghost drag that captured the clicked object (D3w's rigs had dodged it with a pause); a pointer's fold now ENDS at its
+  transition (the rest of the drain is the next tick's facts, arrival order kept) and a Possible drag fails on its
+  release. **The selection stays inside the frame** — membership removes `Selected` with `Active` (a consume's reparent,
+  a peer's, an undo that carries a widget away), so a note dropped into a mini mat is no longer selected unseen
+  (design-011's `Selected ⇒ Active`, held before only by some consumers). **⌥ into a container** — the consume path
+  honours D4a's `LeavesCopy`: the copy at the origin, the original inside, one transaction. **Arbitration per tick** —
+  every claimant of a pointer collected across strata's archetype batches before one decision (Pinch > Drag > LongPress
+  > Tap had held only within a batch; a LongPress + Drag tie could leave the pointer claimed by a dead recognizer).
+  Witnesses: core units (coalesced-release 4, consume-selection 6, consume-copy 3, arbitration-batches 7 — each red on the
+  reverted hunk) and rig:interact rows §8b/§8e/§8f, each red on the reverted core. Graded by the orchestrator on the
+  combined tip: `pnpm run ci` exit 0 (core 937 → 957 units), `gate:landing` exit 0 (rig:interact 102 → 114, every other leg
+  unchanged).
 
 ## Release cut & downstream
 
