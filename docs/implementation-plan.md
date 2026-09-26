@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core and D2a-render LANDED 2026-09-25)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world and D3r-a LANDED 2026-09-25)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1163,6 +1163,44 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   Owed: a depcruise rule for "the root imports no kind" (a unit test reads every import form
   today); `SlotContext.fadeIn`/`cfg` are the grid's UNDRESSED values exactly as the prototype
   passed them (D2b looks at it with the dressing).
+- **D2a-world — the desk from the world** (**LANDED 2026-09-25**, `4926b05` · `09ef89d` · `02a3dd7` ·
+  `419d7f4`): the desk renders, picks and idles FROM THE ECS WORLD. `ObjectKind` (a `KindProgram` + its
+  world half: `resolve` · `record` · `hit` · `reach` · `reads` · `chip?` · `theme?`), `defineObject`
+  compiling through core's `defineWidget({ surface: "object" })`, the reference `Note` and `MiniMat`
+  objects; `@ice/desk/compose` (DOM-free): the builder (the nav frame's object members by
+  `compareStackOrder`, the carried set last, cull by rect ⊕ reach, springs and DELETE GHOSTS as flux —
+  a despawned object keeps its last record and fades 220 ms in its paint position —, hover from the
+  mouse pointer's `TouchesExact`), the pick source (`undefined` before geometry — B9's blocker —,
+  `"outside"` on a miss), the AMBIENT policy (the wind, the mat's clocks and the gobo tilt run while
+  touched, then ease still and the desk idles at ZERO submits — D-D9), the reflector (pulled dirt);
+  `deskLayer(opts)` (desk/host, with the swap chain moved there — `desk-dom-free` holds but for
+  `pictureFrom`'s DOM image types) mounted through `<InfiniteCanvas ground={…} chrome={false}>` (react's
+  one change: the `chrome` prop); `apps/desk` is a React 19 desk with `window.__desk`. Built by a fable
+  builder that died at its CONTEXT LIMIT mid-sub-slice 3 after committing sub-slice 1; its uncommitted
+  ~3,300 lines were frozen by the orchestrator and a fable FINISHER completed them (the builder's
+  `pinFlux`/`clearFlux` parity hooks, the handle's shape), fixed what the rigs caught (the six paper
+  scenes red at maxΔ 166–201 on exactly note 1's ink box — a raster pinned in the same task as its
+  spawn, before `PrefabId` was readable; the idle rig's 15 stray submits — the gobo tilt filter's tail
+  kept the reflector live), and rewrote the WIP into honest commits. Exit: `rig:world` — the 20 mat,
+  ruler and paper oracle scenes SPAWNED AS ENTITIES and drawn by the real reflector path = the Node
+  oracle at maxΔ 0 (re-run by the orchestrator: 20/20); `rig:interact` 24/24 (select + ring without
+  overshoot, a mini mat rises on hover, a drag lands where held with ONE undo step, ⌫ fades 220 ms and
+  ⌘Z restores, the shift marquee, the wheel zooms exp(−Δ·0.0016) about the pointer, a bare drag pans);
+  `rig:idle` 10/10 (0 submits over 240 frames at rest; a touch revives the wind); the desk oracle's 38
+  renders sha-equal; desk 274 units (11 mutations red), react 57; `pnpm run ci` exit 0; `gate:landing`
+  exit 0 with world · interact · idle added after the desk's parity leg.
+- **D3r-a — the photo print's and the whiteboard's render halves** (**LANDED 2026-09-25**, `a614a7e` ·
+  `8b27df8` · `bb92096` · `c9d74aa` · `cf6a5c1`, rebased by the orchestrator over D2a-world — the kinds
+  barrel, the parity rig's page name, the app's scripts and the CHANGELOG): the print as a `things`
+  kind (`photoProgram`; the pass gained `spawn`/`tune`/`drawRange` and the `LIT_ELSEWHERE` override for
+  a print inside a mini mat, the root path's bytes unchanged); 12 new Node scenes and 11 checks (photo,
+  order across kinds, board, replayed ink, ring, lit — r 0.978 vs an own-lamp control's −0.147);
+  `rig:proto-parity` — the same scene staged in the PROTOTYPE's own photo lab and board bench vs the
+  desk: 10/10 BYTE-IDENTICAL (which also proves the prototype's separate photo pass equal to the desk's
+  single pass); Chrome = Node on 47 of 50 scenes at maxΔ 0 and three inked-board scenes KEPT at maxΔ 1
+  on ≤ 16 px — Chrome's Dawn and node-webgpu's compile the board's stamp pass differently on 6 of 2.2 M
+  texels (named, measured bounds in the rig). Owed: board ink bit-stability across Dawns; the photo
+  fixture's `--check` into `gen:check`; a far-LOD chip for prints (D2b).
 
 ## Release cut & downstream
 
