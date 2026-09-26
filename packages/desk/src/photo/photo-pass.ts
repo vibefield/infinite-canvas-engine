@@ -92,6 +92,8 @@ export class PhotoPass {
   private readonly knobs = PhotoUniforms.alloc(1);
   /** The prints' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per print while drawn, written when it changed. */
   private readonly store: RecordStore<PhotoInstance>;
+  /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
+  dropped = 0;
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
   private group!: GPUBindGroup;
@@ -194,6 +196,7 @@ export class PhotoPass {
   prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, prints: readonly PhotoInstance[], present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight, keys?: readonly number[]): number {
     const cap = MAX_PHOTOS * 64;
     const list = prints.length > cap ? prints.slice(0, cap) : prints;
+    this.dropped = prints.length - list.length;
     // the store (D6): a print keyed by `keys[i]` keeps its slot and is written only when its record changed; no keys = every one packed
     const n = this.store.prepare(list, keys !== undefined && keys.length > cap ? keys.slice(0, cap) : keys);
     this.rebind();   // after: the store's buffers may have grown

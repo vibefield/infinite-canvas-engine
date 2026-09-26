@@ -159,6 +159,8 @@ export class CalendarPass {
   private copyT: CalTarget | null = null;
   private t = this.frameT;
   private tableCount = 0;
+  /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
+  dropped = 0;
   /** Profiling switches: 2 no print or paper detail · 4 no gobo · 8 no rolls' shade · 16 no layer on the mat · 32 no marks · 64 no tiles · 128 no mat under it · 256 no moving sheet · 512 flat colour. */
   debug = 0;
 
@@ -357,7 +359,9 @@ export class CalendarPass {
       for (let c = 0; c < 8; c++) { const [qx, qy] = project(eye, c & 1 ? wb.hi[0] + pad : wb.lo[0] - pad, c & 2 ? wb.hi[1] + pad : wb.lo[1] - pad, c & 4 ? wb.hi[2] : wb.lo[2]); x0 = Math.min(x0, qx); y0 = Math.min(y0, qy); x1 = Math.max(x1, qx); y1 = Math.max(y1, qy); }
       return x1 >= 0 && y1 >= 0 && x0 <= eye.vw && y0 <= eye.vh;
     };
-    this.t.list = calendars.filter(onScreen).slice(0, MAX_CALENDARS) as CalendarDraw[];
+    const shown = calendars.filter(onScreen);
+    this.dropped = Math.max(0, shown.length - MAX_CALENDARS);
+    this.t.list = shown.slice(0, MAX_CALENDARS) as CalendarDraw[];
     const n = this.t.list.length;
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
     this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, undefined, light, NO_GLYPHS));

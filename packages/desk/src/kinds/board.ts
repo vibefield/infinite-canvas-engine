@@ -48,6 +48,8 @@ export class BoardKind implements KindPass<BoardInstance> {
     return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.theme, extra?.keys);
   }
 
+  dropped(): number { return this.pass.dropped; }
+
   /** Records [first, end) — a board whose raster is missing draws nothing (the pass counts in the list it was handed). */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
   records() { return this.pass.records; }

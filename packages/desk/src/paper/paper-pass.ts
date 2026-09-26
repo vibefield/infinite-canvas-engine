@@ -52,6 +52,8 @@ export class PaperPass {
   private readonly knobs = PaperUniforms.alloc(1);
   /** The notes' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per note while it is drawn, written when it changed. */
   private readonly store: RecordStore<PaperInstance>;
+  /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
+  dropped = 0;
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
   private group!: GPUBindGroup;
@@ -168,6 +170,7 @@ export class PaperPass {
   prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly PaperInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, select: RGB = [0, 0, 0], lit?: SlotLight, keys?: readonly number[]): number {
     const cap = MAX_PAPERS * 64;
     const list = instances.length > cap ? instances.slice(0, cap) : instances;
+    this.dropped = instances.length - list.length;
     const n = this.store.prepare(list, keys !== undefined && keys.length > cap ? keys.slice(0, cap) : keys);
     this.rebind();   // after: the store's buffers may have grown
     this.count = n;

@@ -106,6 +106,8 @@ export class BoardPass {
   private readonly knobs = BoardUniforms.alloc(1);
   /** The boards' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per drawn board, written when its record or its raster's facts changed. */
   private readonly store: RecordStore<BoardInstance>;
+  /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
+  dropped = 0;
   private readonly stampU = StampUniforms.alloc(1);
   private readonly inkU = InkUniforms.alloc(1);
   private readonly matBuf: GPUBuffer;
@@ -436,10 +438,11 @@ export class BoardPass {
     const drawnKeys: number[] | undefined = keys === undefined ? undefined : [];
     const aux: number[] = [];
     const cap = MAX_BOARDS * 64;
+    this.dropped = 0;
     for (const [i, b] of instances.entries()) {
-      if (list.length >= cap) break;
       const r = s.rasters.get(b.id);
       if (!r) continue;
+      if (list.length >= cap) { this.dropped += 1; continue; }
       drawn.push(b);
       drawnKeys?.push(keys?.[i] as number);
       aux.push((r.wetting ? 1 : 0) + 2 * r.density + 64 * r.size[0] + 64 * 8192 * r.size[1]);

@@ -138,6 +138,8 @@ export class NotebookPass {
   private readonly frameT = nbTarget();
   private copyT: NbTarget | null = null;
   private t = this.frameT;
+  /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
+  dropped = 0;
   /** Profiling switches (a harness's): 1 no PCSS · 2 no material detail · 4 no gobo · 8 no shadow maps · 16 no composite · 32 no book draw · 64 no mat draw. */
   debug = 0;
 
@@ -317,7 +319,9 @@ export class NotebookPass {
       for (let c = 0; c < 8; c++) { const [qx, qy] = project(eye, c & 1 ? wb.hi[0] + pad : wb.lo[0] - pad, c & 2 ? wb.hi[1] + pad : wb.lo[1] - pad, c & 4 ? wb.hi[2] : wb.lo[2]); x0 = Math.min(x0, qx); y0 = Math.min(y0, qy); x1 = Math.max(x1, qx); y1 = Math.max(y1, qy); }
       return x1 >= 0 && y1 >= 0 && x0 <= eye.vw && y0 <= eye.vh;
     };
-    this.t.list = books.filter(onScreen).slice(0, MAX_NOTEBOOKS) as NotebookDraw[];
+    const shown = books.filter(onScreen);
+    this.dropped = Math.max(0, shown.length - MAX_NOTEBOOKS);
+    this.t.list = shown.slice(0, MAX_NOTEBOOKS) as NotebookDraw[];
     const n = this.t.list.length;
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
     this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, undefined, light, NO_GLYPHS));

@@ -48,6 +48,8 @@ export class MiniMatPass {
   private readonly knobs = MiniMatUniforms.alloc(1);
   /** The mini mats' PERSISTENT records and their chips (engine/records.ts, design-015 §4.3; D6): a slot per mini mat while drawn, its chips a fixed block, written when it changed. */
   private readonly store: RecordStore<MiniMatInstance>;
+  /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
+  dropped = 0;
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
   private group!: GPUBindGroup;
@@ -139,6 +141,7 @@ export class MiniMatPass {
   prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly MiniMatInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, select: RGB = [0, 0, 0], lit?: SlotLight, live?: (index: number) => number, keys?: readonly number[]): number {
     const cap = MAX_MINIMATS * 64;
     const list = instances.length > cap ? instances.slice(0, cap) : instances;
+    this.dropped = instances.length - list.length;
     // the store (D6): a mini mat keyed by `keys[i]` keeps its slot (and its chips' block) and is written only when its record or its
     // live inside's presence changed; no keys = every one packed afresh. The ground's word on the live inside overrides the instance's.
     const n = this.store.prepare(list, keys !== undefined && keys.length > cap ? keys.slice(0, cap) : keys, (i) => { const m = list[i] as MiniMatInstance; const pres = live ? live(i) : (m.live ?? -1); return pres < 0 ? -1 : Math.min(pres, 1); });

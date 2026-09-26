@@ -103,6 +103,12 @@ export interface KindPass<R = unknown> {
    * rig's witness that a camera move writes no standing record. Absent for a kind that keeps none (the composites' layers).
    */
   records?(): RecordStoreStats;
+  /**
+   * The records this slot's last `prepare` turned away at the pass's CAP (its buffers' ceiling — the layered kinds' fixed tables,
+   * the record stores' most) — objects the builder resolved that will NOT draw. Never silent (D7): the ground sums them into the
+   * frame's `GroundStats.dropped` and the host says so.
+   */
+  dropped?(): number;
   /** The hold is over (D7): a pass that kept the held desk copy's state apart (`SlotContext.target`) gives it back. */
   endHold?(): void;
   /** A sheet's marks over its live inside, drawn right after the inside (the mini mat's chips while the inside's objects come in). */

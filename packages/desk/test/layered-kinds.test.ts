@@ -3,14 +3,14 @@
 // one run lays that target over the frame (`KindProgram.composite`: the ground draws it as ONE range after every other
 // run of its stratum). ROOT ONLY (D-D18): a spawned slot's pass draws nothing. On a fake device — no pixels (those are the
 // oracle's `book-*` / `pad-*` scenes and apps/desk's rigs).
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { padFrame } from "../src/calendar/pad";
 import { CALENDAR } from "../src/calendar/law";
 import type { CalendarDraw, CalendarPass } from "../src/calendar/pass";
 import { tileGrid } from "../src/calendar/tiles";
 import { beginPass } from "../src/engine/target";
-import { createSlotSet, drawFrame, drawSlot, type GroundFrameInputs, type KindPass, prepareFrame, type SlotContext, SlotPool } from "../src/ground";
-import { CALENDAR_KIND, CalendarKind, calendarProgram, deskKinds, NOTEBOOK_KIND, NotebookKind, notebookProgram } from "../src/kinds";
+import { createSlotSet, drawFrame, drawSlot, Ground, type GroundFrameInputs, type KindPass, prepareFrame, type SlotContext, SlotPool } from "../src/ground";
+import { CALENDAR_KIND, CalendarKind, calendarKind, calendarProgram, deskKinds, NOTEBOOK_KIND, NotebookKind, notebookKind, notebookProgram, paperKind } from "../src/kinds";
 import { attachmentOf, clip } from "../src/kinds/layer";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX, STILL_MAT_FRAME } from "../src/mat/layout";
@@ -21,12 +21,13 @@ import { eyeOf } from "../src/notebook/eye";
 import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookDraw, NotebookPass } from "../src/notebook/pass";
 import { scissorOf } from "../src/nav/portal";
+import { MAX_PAPERS } from "../src/paper/layout";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper } from "../src/paper/paper";
 import { shaderText } from "../src/shaders";
 import { MAT_COLORS, MAT_GRID } from "../src/theme";
 import { calendarDraw, notebookDraw } from "../oracle/frame.mjs";
 import { CALENDAR_LOOK, notebookRuleInk, pen, surface, THEMES } from "../oracle/fixtures/vf-theme";
-import { fakeDevice, installGpuFlags, recordingPass } from "./fake-gpu";
+import { fakeDevice, fakeSurface, installGpuFlags, recordingPass } from "./fake-gpu";
 import { fakeSlot } from "./fake-kinds";
 import { must } from "./must";
 
@@ -243,6 +244,53 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
     expect(frame.slice(at("pipeline calendar/composite") - 1, at("pipeline calendar/composite") + 4)).toEqual([`scissor ${must(calBox).join(",")}`, "pipeline calendar/composite", "group 0 calendar/composite", "draw 3", "scissor 0,0,2400,1600"]);
     expect(frame.slice(at("pipeline notebook/composite") - 1, at("pipeline notebook/composite") + 4)).toEqual([`scissor ${must(nbBox).join(",")}`, "pipeline notebook/composite", "group 0 notebook/composite", "draw 3", "scissor 0,0,2400,1600"]);
     pool.dispose();
+  });
+
+  it("a CAP is never silent (D7): 33 books and 5 pads on screen — the passes draw 32 and 4, and the frame SAYS what they turned away, by kind", async () => {
+    const { device } = fakeDevice([]);
+    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const root = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
+    (must(root.kinds.get(NOTEBOOK_KIND)).pass as NotebookKind).ruleInk = notebookRuleInk();
+    (must(root.kinds.get(CALENDAR_KIND)).pass as CalendarKind).alpha = CALENDAR_LOOK.alpha;
+    const pool = new SlotPool(root);
+    const view = { camX: -400, camY: -400, zoom: 0.25, width: 1200, height: 800, dpr: 2 };
+    const books = Array.from({ length: 33 }, (_, i) => ({ kind: NOTEBOOK_KIND, record: notebookDraw({ x: (i % 11) * 400, y: Math.floor(i / 11) * 400, angle: 0, cover: "orbit", seed: 100 + i }) }));
+    const pads = Array.from({ length: 5 }, (_, i) => ({ kind: CALENDAR_KIND, record: calendarDraw({ x: i * 800, y: 1800, month: "2026-09", weekStart: 1 }, i) }));
+    const at = (objects: NonNullable<GroundFrameInputs["objects"]>) => prepareFrame(device.createCommandEncoder(), root, pool, { view, theme: THEMES.light, objects });
+    const over = at([...books, ...pads]);
+    expect(over.kinds).toMatchObject({ notebook: 32, calendar: 4 });
+    expect(over.dropped).toEqual({ notebook: 1, calendar: 1 });
+    // under the caps: nothing turned away, and the frame says nothing
+    const under = at([...books.slice(0, 32), ...pads.slice(0, 4)]);
+    expect(under.kinds).toMatchObject({ notebook: 32, calendar: 4 });
+    expect(under.dropped).toBeUndefined();
+    // a record store's cap too (the notes' 65,536): the one past it is said
+    const note = { kind: "paper", record: { geometry: resolvePaper({ cx: 0, cy: 0, w: 200, h: 200, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lampOf(MAT_GRID.plane)), paper: surface("note"), ink: pen("felt") } };
+    const notes = at(Array.from({ length: MAX_PAPERS * 64 + 1 }, () => note));
+    expect(notes.kinds.paper).toBe(MAX_PAPERS * 64);
+    expect(notes.dropped).toEqual({ paper: 1 });
+  });
+
+  it("…and the HOST says it: a drop is an error on the console when it begins and again if it grows — the frame's stats carry it (D7)", async () => {
+    const { device } = fakeDevice([]);
+    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [paperKind(), notebookKind(), calendarKind()] });
+    (must(ground.pass(CALENDAR_KIND)) as CalendarKind).alpha = CALENDAR_LOOK.alpha;
+    const view = { camX: -400, camY: -400, zoom: 0.25, width: 1200, height: 800, dpr: 2 };
+    const pads = Array.from({ length: 6 }, (_, i) => ({ kind: CALENDAR_KIND, record: calendarDraw({ x: i * 800, y: 0, month: "2026-09", weekStart: 1 }, i) }));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(ground.render({ view, theme: THEMES.light, objects: pads.slice(0, 5) }).dropped).toEqual({ calendar: 1 });
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(String(errors.mock.calls[0]?.[0])).toContain("1 calendar object not drawn");
+      ground.render({ view, theme: THEMES.light, objects: pads.slice(0, 5) });   // the same drop: said once
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(ground.render({ view, theme: THEMES.light, objects: pads }).dropped).toEqual({ calendar: 2 });   // it grew
+      expect(errors).toHaveBeenCalledTimes(2);
+      expect(ground.render({ view, theme: THEMES.light, objects: pads.slice(0, 4) }).dropped).toBeUndefined();   // gone: nothing said
+      expect(errors).toHaveBeenCalledTimes(2);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("the oracle's book lives across frames as the lab's does: the same spec is the same book — its id, its mesh — and another spec another book (the cost rig's steady state re-uploads nothing)", () => {

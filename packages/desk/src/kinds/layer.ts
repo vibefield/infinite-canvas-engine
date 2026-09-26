@@ -44,6 +44,8 @@ export interface LayerPass {
   use?(target: RenderTarget): void;
   /** The hold is over: the copy's state given back. */
   endHold?(): void;
+  /** The records its last prepare turned away at its cap (D7). */
+  readonly dropped?: number;
   dispose(): void;
 }
 
@@ -94,6 +96,8 @@ export abstract class LayeredKind<R, P extends LayerPass> implements KindPass<R>
   }
 
   endHold(): void { this.pass?.endHold?.(); }
+
+  dropped(): number { return this.pass?.dropped ?? 0; }
 
   dispose(): void { this.pass?.dispose(); }
 }

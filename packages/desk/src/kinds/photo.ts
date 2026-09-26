@@ -52,6 +52,8 @@ export class PhotoKind implements KindPass<PhotoInstance> {
     return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit, extra?.keys);
   }
 
+  dropped(): number { return this.pass.dropped; }
+
   /** Records [first, end) — indices into the prints `prepare` was handed, each drawn with its picture. */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
   records() { return this.pass.records; }

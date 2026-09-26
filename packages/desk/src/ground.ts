@@ -198,6 +198,8 @@ export interface GroundStats extends GridStats {
   readonly outgoing: GridStats | null;
   /** Live portals drawn this frame, the root's and the departed desk's together. */
   readonly portals: number;
+  /** The records the kinds' CAPS turned away this frame, by kind name, every slot's (absent: none) — resolved and NOT drawn (D7). */
+  readonly dropped?: Readonly<Record<string, number>>;
 }
 
 /** One registered kind as a slot holds it: the registry's name and stratum, and the slot's own pass (and whether it lays a composite — `KindProgram.composite`). */
@@ -373,6 +375,8 @@ export interface PreparedFrame {
   readonly portals: number;
   /** The root's records that will draw, by kind name — every registered kind. */
   readonly kinds: Readonly<Record<string, number>>;
+  /** What the kinds' caps turned away, by kind name, every slot's (absent: nothing) — `GroundStats.dropped` (D7). */
+  readonly dropped?: Readonly<Record<string, number>>;
 }
 
 /** The light a slot is lit by when nothing says otherwise: its own camera. */
@@ -395,6 +399,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
   const theme = inputs.theme;
   let portals = 0;
   let rootDrawn: readonly (readonly [string, number])[] = [];
+  const dropped: Record<string, number> = {};
   const attach = { width: inputs.view.width, height: inputs.view.height };
   // `host`: the light of the slot this one is nested in — a mini mat's inside is lit by the desk it lies on; `skipAt`: a portal of this
   // slot not to prepare — on an enter, the arriving desk IS that face, and `treeLive` is its presence over the mini mat there.
@@ -455,6 +460,9 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
       const told = live.get(k.name);
       const ks = keys.get(k.name);
       drawn.push([k.name, k.pass.prepare(encoder, slot, records.get(k.name) ?? [], { live: (i) => told?.get(i) ?? -1, ...(ks !== null && ks !== undefined ? { keys: ks } : {}) })]);
+      // what its cap turned away is said, never silent (D7)
+      const turned = k.pass.dropped?.() ?? 0;
+      if (turned > 0) dropped[k.name] = (dropped[k.name] ?? 0) + turned;
     }
     if (s === root) rootDrawn = drawn;
     return {
@@ -475,7 +483,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     const out = prepare(pool.acquire(), o, o.grid, undefined, enterTree ? o.at : undefined, enterTree ? liveOf(inputs.present) : undefined);
     outgoing = { ...out, order: o.order, at: o.at };
   }
-  return { incoming, outgoing, portals, kinds: Object.fromEntries(rootDrawn) };
+  return { incoming, outgoing, portals, kinds: Object.fromEntries(rootDrawn), ...(Object.keys(dropped).length > 0 ? { dropped } : {}) };
 }
 
 export class Ground {
@@ -497,6 +505,8 @@ export class Ground {
   private readonly heldCache: HeldCache = { stamp: null, stats: null, copies: 0 };
   /** How many desk copies the hand has made so far (D4b) — a rig's witness that the blurred desk is made once per settled state. */
   heldCopies(): number { return this.heldCache.copies; }
+  /** The drops last said, by kind (D7). */
+  private readonly dropSaid = new Map<string, number>();
 
   private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null, hold: HoldPass | null) {
     this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks; this.hold = hold;
@@ -524,7 +534,7 @@ export class Ground {
   render(inputs: GroundFrameInputs): GroundStats {
     // the hand (D4b): at a carry above 0 the frame is the desk out of focus with the held object over it; at 0 it is the rest frame
     const held = inputs.held;
-    if (held !== undefined && held.e > 0 && this.hold !== null) return renderHeldFrame(this.device, this.hold, this.root, this.pool, this.grid, this.surface, inputs, held, this.heldCache);
+    if (held !== undefined && held.e > 0 && this.hold !== null) return this.said(renderHeldFrame(this.device, this.hold, this.root, this.pool, this.grid, this.surface, inputs, held, this.heldCache));
     // the hold is over: the passes give the desk copy's own state back, once — the next pick-up makes its copy afresh (D7)
     if (this.heldCache.stamp !== null) {
       this.heldCache.stamp = null;
@@ -540,7 +550,18 @@ export class Ground {
     if (marked > 0) this.marks?.draw(pass);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
-    return { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals };
+    return this.said({ ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) });
+  }
+
+  /** A kind whose cap turns objects away is an ERROR on the host's console (D7): said when the drop begins and again if it grows. */
+  private said(stats: GroundStats): GroundStats {
+    const now = stats.dropped ?? {};
+    for (const [kind, n] of Object.entries(now)) {
+      if (n > (this.dropSaid.get(kind) ?? 0)) console.error(`desk: ${n} ${kind} object${n === 1 ? "" : "s"} not drawn — past the kind's cap (GroundStats.dropped)`);
+      this.dropSaid.set(kind, n);
+    }
+    for (const kind of [...this.dropSaid.keys()]) if (!(kind in now)) this.dropSaid.delete(kind);
+    return stats;
   }
 
   /** The pool's slots, then the root's kinds in reverse registration order, then the mat. */
@@ -581,7 +602,7 @@ export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet
     pass.end();
     hold.blur(encoder, (held.blur * dpr) / 2);
     device.queue.submit([encoder.finish()]);
-    cache.stats = { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals };
+    cache.stats = { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) };
   }
   const encoder = device.createCommandEncoder({ label: "hold" });
   const handInputs: GroundFrameInputs = { view: held.view, grid: held.grid, objects: [held.object, ...(held.riders ?? [])], theme: { ...inputs.theme, matLight: held.light } };

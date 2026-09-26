@@ -47,6 +47,8 @@ export class PaperKind implements KindPass<PaperInstance> {
     return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.select, s.lit, extra?.keys);
   }
 
+  dropped(): number { return this.pass.dropped; }
+
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
   records() { return this.pass.records; }
 
