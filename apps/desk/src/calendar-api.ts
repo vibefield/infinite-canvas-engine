@@ -3,14 +3,16 @@
 // the print as the last frame laid it (where each line landed), the tiles' counters, today pinned for a still, a live sheet
 // read back as a fixture holds it. Reads the world and the calendar kind's own state; writes only the transactions an op would.
 
-import { type CanvasEngine, defineQuery, type Entity, guardedTransaction, LocalPointer, Pointer, PointerPart, TouchesExact } from "@ice/core";
+import { type CanvasEngine, ChildOf, defineQuery, type Entity, guardedTransaction, LocalPointer, Pointer, PointerPart, TouchesExact } from "@ice/core";
 import type { CalendarGeometry, DeskLayerHandle, Pads } from "@ice/desk";
 import { sheetDayBox, sheetOnScreen } from "@ice/desk";
-import { addEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/desk/objects";
+import { addEvent, CalendarEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/desk/objects";
 
 export interface CalendarApi {
   /** Write an entry on pad `pad` — ONE undoable transaction; its entity id. */
   write(pad: number, start: string, end: string, text: string, ink?: string): number;
+  /** An entry's own cell as the document holds it: its pad (the `ChildOf` parent), its text, the hand's seeds as stored (base64, a u32 a UTF-16 unit), its ink; null when gone. */
+  inkOf(event: number): { readonly parent: number; readonly text: string; readonly seeds: string; readonly ink: string } | null;
   /** A pad's entries as the print takes them: id, days (keys), text, ink. */
   entries(pad: number): readonly { readonly id: number; readonly start: number; readonly end: number; readonly text: string; readonly ink: string }[];
   /** Month `month` (YYYY-MM)'s print on a pad as the last frame laid it: each line's entry, day and box (sheet units). */
@@ -57,6 +59,11 @@ export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): Cale
       let e: Entity | undefined;
       guardedTransaction(session.store, world, (tx) => { e = addEvent(tx, pad as Entity, { start, end, text, ...(ink !== undefined ? { ink } : {}) }); });
       return (e ?? 0) as number;
+    },
+    inkOf(event) {
+      const c = world.isAlive(event as Entity) ? world.get(event as Entity, CalendarEvent) : undefined;
+      if (c === undefined) return null;
+      return { parent: (world.getRelation(event as Entity, ChildOf) ?? 0) as number, text: c.text ?? "", seeds: c.seeds ?? "", ink: c.ink ?? "" };
     },
     entries: (pad) => (pads()?.entries(pad as Entity) ?? []).map((e) => ({ id: e.id, start: e.start, end: e.end, text: e.text, ink: e.ink })),
     lines(pad, month) {

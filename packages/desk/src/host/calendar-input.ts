@@ -99,7 +99,8 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
   let caretIndex = 0;
   let caretT0 = 0;
   let wipe: { index: number; t0: number } | null = null;
-  let down: { id: number; type: string; x: number; y: number } | null = null;
+  /** The press in flight: where it began, and the run lent when it did (the press's blur lets the days go before its click). */
+  let down: { id: number; type: string; x: number; y: number; lent: { readonly pad: Entity; readonly anchor: string } | null } | null = null;
 
   const G = (e: Entity): CalendarGeometry | undefined => opts.geometryOf(e) as CalendarGeometry | undefined;
   const selOf = (e: Entity) => (world.isAlive(e) ? world.get(e, PadSelection) : undefined);
@@ -355,7 +356,9 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
   };
 
   const onDown = (ev: PointerEvent): void => {
-    down = ev.isPrimary && ev.button === 0 ? { id: ev.pointerId, type: ev.pointerType, x: ev.clientX, y: ev.clientY } : null;
+    const anchor = pad === null || runOf(pad) === null ? null : (selOf(pad)?.anchor ?? null);
+    const lent = pad !== null && anchor !== null ? { pad, anchor } : null;
+    down = ev.isPrimary && ev.button === 0 ? { id: ev.pointerId, type: ev.pointerType, x: ev.clientX, y: ev.clientY, lent } : null;
   };
   const tapOn = (ev: MouseEvent): { pad: Entity; part: CalendarPart } | null => {
     const d = down;
@@ -367,13 +370,14 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
     return partAtClient(ev.clientX, ev.clientY);
   };
   const onClick = (ev: MouseEvent): void => {
+    // the run lent when the press began: the press moved the focus off the editor, and that blur (`ended`) let the days go
+    const lent = down?.lent ?? null;
     const hit = tapOn(ev);
     down = ev.detail >= 2 ? down : null;
     if (hit === null) return;
     const { pad: e, part } = hit;
     if (part.part === "day" && part.day !== undefined) {
-      const run = runOf(e);
-      if (ev.shiftKey && run !== null && pad === e) setSel(e, { anchor: selOf(e)?.anchor ?? keyOf(part.day), focus: keyOf(part.day) });
+      if (ev.shiftKey && lent !== null && lent.pad === e) setSel(e, { anchor: lent.anchor, focus: keyOf(part.day) });
       else setSel(e, { anchor: keyOf(part.day), focus: keyOf(part.day) });
       lendFor(e);
       return;

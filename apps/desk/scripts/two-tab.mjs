@@ -17,7 +17,11 @@
 // THE WHITEBOARD ACROSS THE ROOM (D3t-a): A picks a board up and lays a stroke BY HAND; its ONE child — the same path, the same
 // samples' times — arrives on B's board and B draws it; ⌘Z and ⇧⌘Z in A (the board still in hand — the document's history) are
 // seen in B. THE NOTEBOOK ACROSS THE ROOM (D3t-b — two-tab-notebook.mjs): a stroke by hand in A arrives on B's page (B holds its copy
-// open), a page A turns turns in B, ⌘Z in A is seen in B. Exit 0 = passed.
+// open), a page A turns turns in B, ⌘Z in A is seen in B.
+//
+// THE CALENDAR ACROSS THE ROOM (D3t-c): A selects a day on a desk calendar and writes a line on it through the one editor; its ONE
+// `desk.event` child — the text and A's seeds, the same hand — arrives on B's pad and B's print lays it; ⌘Z in A takes it off both.
+// Exit 0 = passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -72,7 +76,7 @@ try {
   check((await A.q("window.__desk.state.ready")) && (await B.q("window.__desk.state.ready")), `two tabs joined room ${room} (A ${await A.q("window.__desk.engine.docs.current() !== undefined")}, B ${await B.q("window.__desk.engine.docs.current() !== undefined")})`);
   const front = (T) => T.tab.send("Page.bringToFront");
   const key = async (k, modifiers = 0) => {
-    const VK = { Escape: 27, End: 35, z: 90, Backspace: 8 };
+    const VK = { Escape: 27, End: 35, z: 90, Backspace: 8, Enter: 13 };
     const code = k.length === 1 ? (k === " " ? "Space" : `Key${k.toUpperCase()}`) : k;
     const vk = VK[k] ?? (k === " " ? 32 : k.toUpperCase().charCodeAt(0));
     const text = k.length === 1 && modifiers === 0 ? { text: k, unmodifiedText: k } : {};
@@ -279,6 +283,49 @@ try {
 
   // ---- THE NOTEBOOK ACROSS THE ROOM (D3t-b): two-tab-notebook.mjs — a stroke by hand in A on B's page, a turn followed, ⌘Z seen
   await notebookAcrossRoom({ A, B, front, settle, mouse, key, check, until, sleep, K });
+
+  // ---- THE CALENDAR ACROSS THE ROOM (D3t-c): a line written in A — ONE desk.event child, its ink cell — arrives on B's pad with
+  //      A's seeds and B's print lays it; ⌘Z in A takes it off B's pad too
+  const PX = -4000;
+  const PY = 0;
+  for (const T of [A, B]) await T.q(`window.__desk.setCamera({ x: ${PX - 1300}, y: ${PY - 950}, zoom: 0.42 }); window.__desk.calendar.pinToday('2026-09-24')`);
+  await front(A);
+  const padA = await A.q(`window.__desk.spawn('desk.calendar', { month: '2026-09' }, { x: ${PX}, y: ${PY} })`);
+  const padKey = await A.q(`window.__desk.room.key(${padA})`);
+  await front(B);
+  const padB = await until(() => B.q(`window.__desk.room.resolve(${K(padKey)})`), 8000);
+  check(typeof padB === "number", `the desk calendar spawned in A reaches B (key ${padKey}: A's #${padA}, B's #${padB})`);
+  await front(A);
+  await settle(A);
+  const box17 = await A.q(`window.__desk.calendar.dayBox(${padA}, '2026-09-17')`);
+  const at17 = await A.q(`window.__desk.calendar.screenOf(${padA}, ${box17.x + box17.w / 2}, ${box17.y + box17.h * 0.8})`);
+  await A.tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at17[0], y: at17[1], button: "none" });
+  await sleep(120);
+  await click(at17[0], at17[1]);
+  const sel17 = await A.q(`window.__desk.calendar.selection(${padA})`);
+  check(sel17?.anchor === "2026-09-17", `A selects 17 September on its pad (${sel17?.anchor})`);
+  // ⏎ picks the pad up first (a day 101 px wide), the pen begins; the line is typed and kept with ⏎ — ONE transaction
+  await key("Enter");
+  await until(async () => { const h = await A.q("window.__desk.hand()"); return h?.settled === true && h.e === 1; }, 3000);
+  await typeKeys("dentist 3pm");
+  await key("Enter");
+  const eA = await until(async () => (await A.q(`window.__desk.calendar.entries(${padA})`)).find((e) => e.text === "dentist 3pm" && e.id > 0) ?? null, 2000);
+  const cellA = eA === null ? null : await A.q(`window.__desk.calendar.inkOf(${eA.id})`);
+  check(eA !== null && cellA?.parent === padA && cellA.seeds.length > 0, `A writes "dentist 3pm" on it: ONE desk.event child (#${eA?.id}, its seeds ${cellA?.seeds})`);
+  for (let i = 0; i < 3 && (await A.q("window.__desk.hand()")) !== null; i++) { await key("Escape"); await sleep(200); }
+  await front(B);
+  const eB = await until(async () => (await B.q(`window.__desk.calendar.entries(${padB})`)).find((e) => e.text === "dentist 3pm" && e.id > 0) ?? null, 8000);
+  const cellB = eB === null ? null : await B.q(`window.__desk.calendar.inkOf(${eB.id})`);
+  check(eB !== null && eB.start === eA?.start && eB.end === eA?.end && cellB?.parent === padB && cellB.seeds === cellA?.seeds, `the line arrives on B's pad — the same day, A's seeds, the same hand, glyph for glyph (B's #${eB?.id}: ${cellB?.seeds})`);
+  const printedB = eB !== null && await until(async () => ((await B.q(`window.__desk.calendar.lines(${padB}, '2026-09')`)) ?? []).some((l) => l.entry === eB.id), 3000);
+  check(printedB, "B's print lays it on 17 September");
+  await front(A);
+  await key("z", 4);
+  const offA = await until(async () => !(await A.q(`window.__desk.calendar.entries(${padA})`)).some((e) => e.text === "dentist 3pm"), 1500);
+  await front(B);
+  const offB = await until(async () => !(await B.q(`window.__desk.calendar.entries(${padB})`)).some((e) => e.text === "dentist 3pm"), 3000);
+  check(offA && offB, `⌘Z in A takes the line off in ONE step (A: ${offA}) — and off B's pad (B: ${offB})`);
+  await front(A);
 
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors in either tab");

@@ -15,12 +15,16 @@
 // raster's ink under its path, adopted (no replay) — `3` · ⌘Z · ⇧⌘Z · the bar's undo and redo · `t` · `e` (the marker laid down,
 // the eraser rubbing a stroke away) · two taps are two dots · ⌘⌫ and its undo · the marker laid down in the last ink, and the
 // tools' keys nobody's once it is. And THE NOTEBOOK IN HAND (D3t-b — open-notebook.mjs, §12): its pens, its page strokes as data, its turns.
+// And THE DESK CALENDAR AT WORK (D3t-c — open-calendar.mjs, §13): a day selected, a line written as ONE event child, ⌫ and ⌘Z, the roll
+// by the foot, the roll, a pull, the keys and the held bar, today, a note stuck to a day that goes with its month, unstuck, deleted
+// with its pin and brought back with it.
 // Exit 0 = every check passed; 1 = a check or a throw; 2 = the watchdog.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
 import { notebookRows } from "./open-notebook.mjs";
+import { calendarRig } from "./open-calendar.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -319,6 +323,9 @@ try {
 
   // ---- 12. THE NOTEBOOK IN HAND (D3t-b): open-notebook.mjs
   await notebookRows({ q, settle, mouse, click, dbl, key, check, until, sleep, hand, landed, settledInHand, META });
+
+  // ---- 13. THE DESK CALENDAR AT WORK (D3t-c — open-calendar.mjs)
+  await calendarRig({ tab, q, settle, mouse, dbl, key, sleep, check, until, hand, META });
 
   if (logs.length) console.log(`  page log:\n  ${logs.slice(0, 8).join("\n  ")}`);
   check(logs.length === 0, `no page exceptions or errors (${logs.length})`);
