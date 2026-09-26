@@ -9,19 +9,19 @@
  * world (there is no Focus resource; design-007 §2.2 demoted it, and despawn
  * integrity is free: removing the node resets `activeElement`).
  *
- * Acquisition is DOM-at-event-time, not a world system: for DOM widgets the
- * browser's own event targeting IS the pick (the down target sits inside the
- * claiming host), and for GL widgets the claim lives on the DOM-chrome host
- * under the pointer (the GL plane is `pointer-events:none`, so the down lands
- * on the chrome — design-007 §2.5's proxy path). A capture-phase listener
- * keeps ordering deterministic across browsers (Safari's click-focus quirks):
+ * Acquisition is DOM-at-event-time, not a world system: the browser's own event
+ * targeting IS the pick (the down target sits inside the claiming host — since
+ * design-015 D5b that host is screen-space chrome, never a widget under the
+ * camera; the desk's one focused editor acquires focus on its own, the same
+ * principle). A capture-phase listener keeps ordering deterministic across
+ * browsers (Safari's click-focus quirks):
  *
  *  - down on a natively-focusable node inside the claim (textarea, canvas
  *    with tabindex, the declared proxy itself) → the browser's own mousedown
  *    focus is correct; the driver does nothing.
- *  - down anywhere else inside the claim → the driver focuses the widget's
+ *  - down anywhere else inside the claim → the driver focuses the claim's
  *    declared `[data-canvas-focus]` proxy when one exists, else the host
- *    (the reflector gave it `tabindex="-1"`), with `preventScroll` — and
+ *    (which carries `tabindex="-1"`), with `preventScroll` — and
  *    `preventDefault()`s the pointerdown so the native focus fixup cannot
  *    fight the choice. Canceling a pointerdown suppresses only the compat
  *    mouse events (focus fixup + text selection — the container is already
@@ -48,7 +48,11 @@ export const FOCUS_PROXY_ATTR = "data-canvas-focus";
 const FOCUSABLE_SELECTOR =
   'input, textarea, select, button, a[href], [contenteditable=""], [contenteditable="true"], [tabindex], audio[controls], video[controls], iframe';
 
-/** Resolves an entity to its host's content element (the dom-widgets reflector's `hostFor`). */
+/**
+ * Resolves an entity to a claiming host's content element — what `focusWidget` walks from. The
+ * dom-widgets reflector was the one lookup until design-015 D5b; a host that keeps per-entity
+ * DOM (none in the engine today) may still hand one in.
+ */
 export interface FocusHostLookup {
   hostFor(entity: Entity): HTMLElement | undefined;
 }
@@ -56,9 +60,9 @@ export interface FocusHostLookup {
 export interface WidgetFocusHandle {
   /**
    * Programmatically focus a claiming widget (its proxy, else its host).
-   * Returns false when the entity has no mounted host or no keyboard claim —
-   * only `keyboard: "exclusive"` widgets are focusable (declaration drives
-   * focusability; design-007 §3.1).
+   * Returns false when the entity has no host in the lookup (always, without
+   * one) or no keyboard claim — only `keyboard: "exclusive"` widgets are
+   * focusable (declaration drives focusability; design-007 §3.1).
    */
   focusWidget(entity: Entity): boolean;
   /** Blur whatever claim currently holds focus. False when none does. */
@@ -73,7 +77,7 @@ function focusNodeOf(claimHost: HTMLElement): HTMLElement {
   return proxy ?? claimHost;
 }
 
-export function attachWidgetFocus(host: CanvasHost, lookup: FocusHostLookup): WidgetFocusHandle {
+export function attachWidgetFocus(host: CanvasHost, lookup?: FocusHostLookup): WidgetFocusHandle {
   const { container } = host;
   const doc = container.ownerDocument;
 
@@ -97,7 +101,7 @@ export function attachWidgetFocus(host: CanvasHost, lookup: FocusHostLookup): Wi
 
   return {
     focusWidget(entity) {
-      const content = lookup.hostFor(entity);
+      const content = lookup?.hostFor(entity);
       const hostEl = content?.parentElement;
       if (!(hostEl instanceof HTMLElement) || !hostEl.hasAttribute(KEYBOARD_CLAIM_ATTR)) return false;
       const node = focusNodeOf(hostEl);

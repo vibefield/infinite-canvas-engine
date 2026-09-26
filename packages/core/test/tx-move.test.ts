@@ -30,8 +30,6 @@ const BOX =
   widgets.get("mv:box") ??
   defineWidget({
     type: "mv:box",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 100 },
   });
 

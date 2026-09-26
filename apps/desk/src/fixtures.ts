@@ -10,7 +10,7 @@ import glyphMetaUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.json?u
 import glyphsUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.r8?url";
 import inkMetaUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.json?url";
 import inkUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.r8?url";
-import type { GlyphAtlasMeta } from "@ice/desk/host";
+import type { GlyphAtlasMeta } from "@ice/desk";
 import canopyUrl from "../assets/gobo-canopy-1.rgba?url";
 import palmUrl from "../assets/gobo-palm-1.rgba?url";
 

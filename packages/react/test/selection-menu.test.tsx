@@ -14,7 +14,7 @@ import { defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-defineWidget({ type: "sm:box", props: { text: p.string({ default: "" }) }, surface: "dom", component: () => null, defaultSize: { w: 100, h: 60 } });
+defineWidget({ type: "sm:box", props: { text: p.string({ default: "" }) }, defaultSize: { w: 100, h: 60 } });
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {

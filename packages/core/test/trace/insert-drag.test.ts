@@ -42,8 +42,6 @@ const CARD =
   widgets.get("ins:card") ??
   defineWidget({
     type: "ins:card",
-    surface: "dom",
-    component: null,
     props: { label: p.string({ default: "note" }) },
     defaultSize: { w: 100, h: 80 },
     interaction: { selectable: true, movable: true, snap: "target", dragOn: "press" },
@@ -53,8 +51,6 @@ const FOLDER =
   widgets.get("ins:folder") ??
   defineWidget({
     type: "ins:folder",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 200, h: 200 },
     interaction: { selectable: false, movable: false },
     container: { accepts: ["widget"] },
@@ -63,8 +59,6 @@ const SOLID =
   widgets.get("ins:solid") ??
   defineWidget({
     type: "ins:solid",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 160, h: 120 },
     interaction: { selectable: true, movable: true, solid: true, dragOn: "press" },
   });
@@ -72,8 +66,6 @@ const HOLD =
   widgets.get("ins:hold") ??
   defineWidget({
     type: "ins:hold",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 80 },
     interaction: { selectable: true, movable: true, dragOn: "longPress" },
     provides: ["widget"],

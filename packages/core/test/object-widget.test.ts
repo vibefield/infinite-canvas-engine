@@ -1,35 +1,28 @@
 /**
- * design-015 D2a-core, items 1–3: a widget can be a GPU OBJECT.
+ * design-015 D2a-core, items 1–3, as they stand after D5b: a widget's face IS its object kind.
  *
- * - The binding: `surface: "object"` carries an opaque `object` binding and a
- *   desk `stratum`; it refuses every view field, and no other surface may carry
- *   a binding. No standard surface behaviour is attached to it.
- * - Equip: an object gets its capability tags, its runtime behaviours,
- *   `WidgetEquipped` and a `Stratum` — and NONE of the six surface facts. A
- *   view widget is unchanged, except that a declared `stratum` rides along.
- * - The mount store: an object is culled like any widget (`Visible`/`Culled` is
- *   the desk renderer's working set) but never gets a mount entry.
+ * - The binding: an opaque `object` binding and a desk `stratum` compile onto the WidgetType; a
+ *   widget without a binding is faceless (the desk draws nothing for it) and gets no stratum
+ *   unless it declares one. The retired view fields (`surface`, `component`, `chrome`,
+ *   `animated`, `preview`, `instancePreview`, `sizeMode`) are refused for the JS caller.
+ * - Equip: an object gets its capability tags, its runtime behaviours, `WidgetEquipped` and a
+ *   `Stratum`; a faceless widget the same minus the stratum (unless declared).
+ * - The cull: every widget is classified (`Visible`/`Culled` is the desk renderer's working set);
+ *   there is no mount store any more.
  */
-import type { Component, Entity, World } from "@vibecook/strata-ecs";
+import type { Entity } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
   Camera,
   Container,
   Culled,
   Movable,
-  RequestedDemand,
   Selectable,
   SnapTarget,
   Stratum,
-  SurfaceBand,
-  SurfaceDemand,
-  SurfaceKind,
-  SurfaceTarget,
-  TextureRef,
   Viewport,
   Visible,
   WidgetEquipped,
-  alwaysGpu,
   createDocSession,
   createEngine,
   createWorld,
@@ -57,7 +50,6 @@ const NOTE =
     type: "obj:note",
     props: { text: p.string({ default: "" }) },
     defaultSize: { w: 200, h: 200 },
-    surface: "object",
     object: PAPER_KIND,
     behaviors: [Rise],
   });
@@ -67,35 +59,23 @@ const PAD =
   defineWidget({
     type: "obj:pad",
     defaultSize: { w: 400, h: 300 },
-    surface: "object",
     object: { name: "calendar" },
-    component: null, // the explicit "none" is legal too
+    // the explicit "none" is legal too
     stratum: "pads",
     interaction: { resizable: true },
   });
 
 const CARD =
   widgets.get("obj:card") ??
-  defineWidget({ type: "obj:card", surface: "dom", component: null, defaultSize: { w: 120, h: 80 } });
+  defineWidget({ type: "obj:card", defaultSize: { w: 120, h: 80 } });
 
 const SHEET_CARD =
   widgets.get("obj:sheet-card") ??
   defineWidget({
     type: "obj:sheet-card",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 120, h: 80 },
     stratum: "sheets",
   });
-
-const SIX_SURFACE_FACTS: readonly Component[] = [
-  SurfaceKind,
-  SurfaceTarget,
-  RequestedDemand,
-  SurfaceDemand,
-  SurfaceBand,
-  TextureRef,
-] as Component[];
 
 function rig() {
   const world = createWorld();
@@ -115,13 +95,8 @@ function rig() {
   return { world, runtime, step, spawn };
 }
 
-function hasAll(world: World, e: Entity, comps: readonly Component[]): boolean[] {
-  return comps.map((c) => world.has(e, c));
-}
-
 describe("defineWidget — the object binding (design-015 §5.2)", () => {
   it("compiles the binding and the stratum onto the WidgetType, a `things` by default", () => {
-    expect(NOTE.surface).toBe("object");
     expect(NOTE.object).toBe(PAPER_KIND); // carried by identity, never read
     expect(NOTE.stratum).toBe("things");
     expect(PAD.stratum).toBe("pads");
@@ -131,53 +106,43 @@ describe("defineWidget — the object binding (design-015 §5.2)", () => {
     expect(SHEET_CARD.stratum).toBe("sheets");
   });
 
-  it("attaches no standard surface behaviour to an object; a dom widget still gets domAtRest", () => {
+  it("attaches only the declared behaviours — no engine surface behaviour rides any widget (D5b)", () => {
     expect(NOTE.behaviors.map((b) => b.behavior.name)).toEqual(["obj:rise"]);
     expect(PAD.behaviors).toEqual([]);
-    expect(CARD.behaviors.map((b) => b.behavior.name)).toEqual(["ice:surface.domAtRest"]);
+    expect(CARD.behaviors).toEqual([]);
   });
 
-  it("refuses an object without a binding, and a binding on any other surface", () => {
-    expect(() => defineWidget({ type: "obj:bad-unbound", surface: "object" })).toThrow(
-      /object surface and carries no object binding/,
-    );
-    expect(() => defineWidget({ type: "obj:bad-null", surface: "object", object: null })).toThrow(
-      /carries no object binding/,
-    );
-    for (const surface of ["dom", "gl", "video"] as const) {
-      expect(() =>
-        defineWidget({ type: `obj:bad-${surface}`, surface, component: null, object: PAPER_KIND }),
-      ).toThrow(new RegExp(`is a ${surface} surface and carries an object binding`));
-    }
+  it("a widget without a binding is faceless, not refused; `null` is how a caller says none", () => {
+    const bare = defineWidget({ type: "obj:faceless", defaultSize: { w: 10, h: 10 } });
+    expect(bare.object).toBeUndefined();
+    expect(bare.stratum).toBeUndefined();
+    expect(bare.openable).toBe(false);
+    const none = defineWidget({ type: "obj:null-face", object: null });
+    expect(none.object).toBeUndefined();
+    // …but openable needs a kind to open
+    expect(() => defineWidget({ type: "obj:bad-open", openable: true })).toThrow(/declares openable and carries no object binding/);
   });
 
-  it("refuses every view field on an object: a component, chrome, animated", () => {
-    const base = { surface: "object" as const, object: PAPER_KIND };
-    expect(() => defineWidget({ ...base, type: "obj:bad-comp", component: () => null })).toThrow(
-      /declares component/,
-    );
-    expect(() => defineWidget({ ...base, type: "obj:bad-chrome", chrome: () => null })).toThrow(/declares chrome/);
-    expect(() => defineWidget({ ...base, type: "obj:bad-anim", animated: true })).toThrow(/declares animated/);
+  it("refuses the retired view fields for the JS caller (design-015 D5b): surface, component, chrome, animated, preview, instancePreview, sizeMode", () => {
+    const w = (extra: Record<string, unknown>) => defineWidget({ type: `obj:retired-${Object.keys(extra).join("-")}`, object: PAPER_KIND, ...extra } as never);
+    expect(() => w({ surface: "object" })).toThrow(/declares surface — the view half of a widget is retired/);
+    expect(() => w({ component: () => null })).toThrow(/declares component/);
+    expect(() => w({ chrome: () => null })).toThrow(/declares chrome/);
+    expect(() => w({ animated: true })).toThrow(/declares animated/);
+    expect(() => w({ preview: {} })).toThrow(/declares preview/);
+    expect(() => w({ instancePreview: { props: [] } })).toThrow(/declares instancePreview/);
+    expect(() => w({ sizeMode: "auto" })).toThrow(/declares sizeMode/);
+    expect(() => w({ presentation: {} })).toThrow(/declares presentation/);
+    expect(() => w({ component: {}, chrome: {}, animated: true })).toThrow(/declares component, chrome, animated/);
     expect(() =>
-      defineWidget({ ...base, type: "obj:bad-all", component: {}, chrome: {}, animated: true }),
-    ).toThrow(/declares component, chrome, animated/);
-    // the explicit "none" of each passes
-    expect(() =>
-      defineWidget({ ...base, type: "obj:ok-nones", component: null, chrome: null, animated: false }),
-    ).not.toThrow();
-  });
-
-  it("refuses a behaviour that writes SurfaceTarget on an object — it has none to choose", () => {
-    expect(() =>
-      defineWidget({ type: "obj:bad-gpu", surface: "object", object: PAPER_KIND, behaviors: [alwaysGpu] }),
-    ).toThrow(/object surface and lists "ice:surface.alwaysGpu", which writes SurfaceTarget/);
+      defineWidget({ type: "obj:retired-frame-preview", object: PAPER_KIND, container: { accepts: [], framePreview: {} } as never }),
+    ).toThrow(/container declares framePreview/);
   });
 
   it("refuses an unknown stratum", () => {
     expect(() =>
       defineWidget({
         type: "obj:bad-stratum",
-        surface: "object",
         object: PAPER_KIND,
         stratum: "floor" as unknown as "things",
       }),
@@ -189,12 +154,11 @@ describe("defineWidget — the object binding (design-015 §5.2)", () => {
     const MAT = defineContainer({
       type: "obj:minimat",
       canvas: inside,
-      surface: "object",
       object: { name: "minimat" },
       stratum: "sheets",
       provides: ["widget"],
     });
-    expect(MAT.surface).toBe("object");
+    expect(MAT.object).toEqual({ name: "minimat" });
     expect(MAT.stratum).toBe("sheets");
     expect(MAT.container?.canvasTypeId).toBe("obj:inside");
     expect(MAT.capabilityTags).toContain(Container);
@@ -202,7 +166,7 @@ describe("defineWidget — the object binding (design-015 §5.2)", () => {
 });
 
 describe("equip — an object's riders (design-015 §5.2)", () => {
-  it("stamps tags, runtime behaviours, WidgetEquipped and Stratum — and none of the six surface facts", () => {
+  it("stamps tags, runtime behaviours, WidgetEquipped and Stratum", () => {
     const { world, step, spawn } = rig();
     const note = spawn(NOTE.type, 10, 10);
     const pad = spawn(PAD.type, 300, 10);
@@ -213,7 +177,6 @@ describe("equip — an object's riders (design-015 §5.2)", () => {
       expect(world.hasTag(e, Selectable)).toBe(true);
       expect(world.hasTag(e, Movable)).toBe(true);
       expect(world.hasTag(e, SnapTarget)).toBe(true);
-      expect(hasAll(world, e, SIX_SURFACE_FACTS)).toEqual([false, false, false, false, false, false]);
     }
     expect(world.get(note, Stratum)).toEqual({ band: 2 }); // things, by default
     expect(world.get(pad, Stratum)).toEqual({ band: 0 }); // pads
@@ -221,57 +184,38 @@ describe("equip — an object's riders (design-015 §5.2)", () => {
     expect(world.get(note, Rise.component)).toEqual({ lift: 0 });
   });
 
-  it("leaves a view widget as it was — the six facts, no Stratum — unless it declared a stratum", () => {
+  it("a faceless widget gets no Stratum unless it declared one", () => {
     const { world, step, spawn } = rig();
     const card = spawn(CARD.type, 10, 10);
     const sheet = spawn(SHEET_CARD.type, 200, 10);
     step(2);
-    expect(hasAll(world, card, SIX_SURFACE_FACTS)).toEqual([true, true, true, true, true, true]);
-    expect(world.get(card, SurfaceKind)).toEqual({ kind: "dom" });
-    expect(world.get(card, SurfaceTarget)).toEqual({ target: "dom" });
+    expect(world.hasTag(card, WidgetEquipped)).toBe(true);
     expect(world.has(card, Stratum)).toBe(false);
-    // a declared stratum rides along, and takes nothing away
-    expect(hasAll(world, sheet, SIX_SURFACE_FACTS)).toEqual([true, true, true, true, true, true]);
+    // a declared stratum rides along
     expect(world.get(sheet, Stratum)).toEqual({ band: 1 });
   });
 });
 
-describe("the mount store — no entry for an object (design-015 §5.2)", () => {
-  it("culls an object like any widget but never mounts it", () => {
-    const { world, runtime, step, spawn } = rig();
+describe("the cull — every widget is classified (design-015 §5.2; no mount store since D5b)", () => {
+  it("culls an object and a faceless widget alike, and flips them back", () => {
+    const { world, step, spawn } = rig();
     const note = spawn(NOTE.type, 10, 10);
     const card = spawn(CARD.type, 300, 10);
     step(3);
-    // both are classified by the cull…
     expect(world.hasTag(note, Visible)).toBe(true);
     expect(world.hasTag(card, Visible)).toBe(true);
-    // …but only the view widget is mounted
-    const mounted = runtime.store.getSnapshot().map((m) => m.entity);
-    expect(mounted).toContain(card);
-    expect(mounted).not.toContain(note);
 
-    // pan away: the cull still flips the object, and it still has no entry
+    // pan away: the cull flips both
     world.setResource(Camera, { x: 50_000, y: 50_000, zoom: 1, gesturing: false });
     step(2);
     expect(world.hasTag(note, Culled)).toBe(true);
     expect(world.hasTag(note, Visible)).toBe(false);
-    const hidden = runtime.store.getSnapshot();
-    expect(hidden.map((m) => m.entity)).toEqual([card]);
-    expect(hidden[0]?.hidden).toBe(true);
+    expect(world.hasTag(card, Culled)).toBe(true);
 
-    // and back: visible again, still unmounted
+    // and back
     world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
     step(2);
     expect(world.hasTag(note, Visible)).toBe(true);
-    expect(runtime.store.getSnapshot().map((m) => m.entity)).toEqual([card]);
-  });
-
-  it("offers an object to no transition retention (only mounted entries can be held)", () => {
-    const { runtime, step, spawn } = rig();
-    const note = spawn(NOTE.type, 10, 10);
-    step(3);
-    const hold = runtime.store.retainForTransition?.([note]);
-    expect(hold?.entities).toEqual([]);
-    hold?.release();
+    expect(world.hasTag(card, Visible)).toBe(true);
   });
 });

@@ -1,12 +1,13 @@
 /**
- * Canvas host (design-004 §1; M3 slice): container styling, one transform-ready
- * content plane, and a dispose that unwinds what it created.
+ * Canvas host (design-004 §1; screen-space only since design-015 D5b): container styling and a
+ * dispose that unwinds what it wrote. The camera-transformed content plane it used to mount is
+ * gone — no DOM element carries a camera transform (design-015 §2 law 2).
  */
 import { describe, expect, it } from "vitest";
 import { createCanvasHost } from "../src/host";
 
 describe("createCanvasHost", () => {
-  it("styles the container and mounts one transform-ready content plane", () => {
+  it("styles the container as a gesture-clean viewport and mounts NOTHING in it", () => {
     const container = document.createElement("div");
     const host = createCanvasHost(container);
 
@@ -14,19 +15,15 @@ describe("createCanvasHost", () => {
     expect(container.style.overflow).toBe("hidden");
     expect(container.style.touchAction).toBe("none");
     expect(container.style.userSelect).toBe("none");
-
-    expect(host.contentPlane.parentElement).toBe(container);
-    expect(host.contentPlane.style.position).toBe("absolute");
-    expect(host.contentPlane.style.transformOrigin).toBe("0 0");
-    expect(host.contentPlane.style.willChange).toBe("transform");
+    expect(container.children).toHaveLength(0); // no content plane: nothing under the camera is DOM
+    expect(host.container).toBe(container);
   });
 
-  it("removes the plane and clears its container styles on dispose", () => {
+  it("clears its container styles on dispose", () => {
     const container = document.createElement("div");
     const host = createCanvasHost(container);
     host.dispose();
 
-    expect(host.contentPlane.parentElement).toBeNull();
     expect(container.style.position).toBe("");
     expect(container.style.touchAction).toBe("");
   });

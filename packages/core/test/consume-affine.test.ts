@@ -29,19 +29,19 @@ const MARGIN = 32;
 // One widget type per FILE (global registry; no test reset).
 const NOTE =
   widgets.get("cons:note") ??
-  defineWidget({ type: "cons:note", surface: "object", object: { name: "paper" }, stratum: "things", defaultSize: { w: 200, h: 200 }, provides: ["note"], interaction: { snap: "none" } });
+  defineWidget({ type: "cons:note", object: { name: "paper" }, stratum: "things", defaultSize: { w: 200, h: 200 }, provides: ["note"], interaction: { snap: "none" } });
 const BOARD =
   widgets.get("cons:board") ??
-  defineWidget({ type: "cons:board", surface: "object", object: { name: "board" }, stratum: "things", defaultSize: { w: 200, h: 200 }, provides: ["note"], interaction: { snap: "none", drop: "never" } });
+  defineWidget({ type: "cons:board", object: { name: "board" }, stratum: "things", defaultSize: { w: 200, h: 200 }, provides: ["note"], interaction: { snap: "none", drop: "never" } });
 const MAT =
   widgets.get("cons:mat") ??
   defineWidget({
-    type: "cons:mat", surface: "object", object: { name: "minimat" }, stratum: "sheets", defaultSize: { w: 640, h: 480 }, interaction: { snap: "none" },
+    type: "cons:mat", object: { name: "minimat" }, stratum: "sheets", defaultSize: { w: 640, h: 480 }, interaction: { snap: "none" },
     container: { accepts: ["note", "mat"], provides: ["mat"], portal: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN } },
   });
 const TRAY =
   widgets.get("cons:tray") ??
-  defineWidget({ type: "cons:tray", surface: "object", object: { name: "tray" }, stratum: "sheets", defaultSize: { w: 640, h: 480 }, interaction: { snap: "none" }, container: { accepts: ["nothing-of-ours"] } });
+  defineWidget({ type: "cons:tray", object: { name: "tray" }, stratum: "sheets", defaultSize: { w: 640, h: 480 }, interaction: { snap: "none" }, container: { accepts: ["nothing-of-ours"] } });
 
 const VP = { w: 800, h: 600, dpr: 1 };
 

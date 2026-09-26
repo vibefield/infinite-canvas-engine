@@ -31,9 +31,8 @@ export * from "./insert";
 export * from "./selection-presence";
 export * from "./camera-derived";
 export * from "./settings-resources";
-// Presentation facts (design-013 §5, A1a) — kind, target, the two demands, the
-// band, the texture reference and retention, all stamped at equip and
-// value-written change-only by the one writer each names.
+// `Retained` — the nav crossfade's pin. The six presentation facts that stood beside it
+// (design-013 §5, A1a) left at design-015 D5b with the DOM/GPU presentation choice.
 export * from "./surface";
 // The desk's vocabulary (design-015 §4.2/§5.1, D2a-core) — an object's stratum, the tape.
 export * from "./desk";

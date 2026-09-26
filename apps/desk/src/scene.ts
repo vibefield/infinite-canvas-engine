@@ -17,10 +17,10 @@
 // host's `pinFlight` — the camera and the resource held there every tick, the frame a still.
 
 import { abortNavFlight, attachSpawnBehaviors, attachSpawnParent, Camera, type CanvasEngine, cascadeDestroy, type Entity, guardedTransaction, HeldView, Position, PrefabId, Size, widgetSpawnInits, writeRuntimeResource, defineQuery, Active } from "@ice/core";
-import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk/host";
+import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk";
 import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
-import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk/theme";
-import type { PaperKind } from "@ice/desk/kinds";
+import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk";
+import type { PaperKind } from "@ice/desk";
 import { oracleFixtures } from "./fixtures";
 import { boardSpec, bookSpec, type KindScene, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, thingsOf } from "./scene-kinds";
 

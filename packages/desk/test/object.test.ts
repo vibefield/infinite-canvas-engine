@@ -29,10 +29,9 @@ const ctxOf = (over: Partial<ObjectContext> & { rect: ObjectContext["rect"] }): 
 });
 
 describe("defineObject (design-015 §5.2, D-D16)", () => {
-  it("compiles through defineWidget: surface object, the kind as the binding, the kind's stratum, the size as defaultSize; objectKindOf finds it again", () => {
+  it("compiles through defineWidget: the kind as the binding, the kind's stratum, the size as defaultSize; objectKindOf finds it again", () => {
     const kind = paperKind();
     const Thing = defineObject({ type: "t:thing", kind, size: { w: 120, h: 80 }, props: { seed: { kind: "number" } as never } });
-    expect(Thing.surface).toBe("object");
     expect(Thing.object).toBe(kind);
     expect(Thing.stratum).toBe("things");
     expect(Thing.defaultSize).toEqual({ w: 120, h: 80 });
@@ -53,7 +52,6 @@ describe("defineObject (design-015 §5.2, D-D16)", () => {
 
   it("Note: desk.note — text · seeds (one `ink` cell, D2c) · pen · paper · seed, 200², things, snapping both ways, offered to a mini mat", () => {
     expect(Note.type).toBe(NOTE_TYPE);
-    expect(Note.surface).toBe("object");
     expect(Note.stratum).toBe("things");
     expect(Note.defaultSize).toEqual({ w: PAPER.size, h: PAPER.size });
     expect(Object.keys(Note.propToGroup).sort()).toEqual(["paper", "pen", "seed", "seeds", "text"]);

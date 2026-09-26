@@ -32,7 +32,7 @@ const handleQ = defineQuery([HandleSpec]);
 // A widget whose declared floor (defineWidget minSize) resize must respect —
 // resolved through the target's PrefabId. Registered once at module scope.
 const MINBOX = "resize-minbox";
-defineWidget({ type: MINBOX, surface: "gl", component: null, minSize: { w: 80, h: 60 } });
+defineWidget({ type: MINBOX, minSize: { w: 80, h: 60 } });
 
 function makeRig() {
   const world = createWorld();

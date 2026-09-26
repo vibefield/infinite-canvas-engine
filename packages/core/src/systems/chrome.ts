@@ -39,8 +39,7 @@
  *   phase boundary), so their initial geometry rides the `ctx.spawn` payload and
  *   the change-only `edit().set` updates begin the next frame.
  *
- * `breakpoint` — `WidgetBreakpoint{tier,w,h}` from a widget's EFFECTIVE size
- *   (`MeasuredSize` where auto-sized and >0, else `Size`), width-thresholded into
+ * `breakpoint` — `WidgetBreakpoint{tier,w,h}` from a widget's `Size`, width-thresholded into
  *   5 tiers with ±10% boundary hysteresis. Added lazily (on `WidgetEquipped`
  *   widgets, once measured) and thereafter written ONLY when the tier changes —
  *   the LOD signal must be stable within a tier so the measure→tier→content→
@@ -56,7 +55,6 @@ import {
   Grab,
   HandleSpec,
   Locked,
-  MeasuredSize,
   Position,
   Resizable,
   SelectionBox,
@@ -180,21 +178,12 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       // The tape (design-015 §5.1, D4a): a taped widget is never resized by a gesture (resizeClaim gives it no rider),
       // so a selection holding one shows no grips — the knobs hide, the box stays.
       let anyLocked = false;
-      // Visual drag-lift factor (2026-07-17): a Grab-bed member's card is
-      // CSS-scaled about its center by the app (widgetlab 1.05); inflate its
-      // rect by the mirrored setting so the box keeps WRAPPING what the user
-      // sees. 1 (default) ⇒ pure ECS union.
-      // THE SHELL'S REACH (review, 2026-09-23): at rest a selected card's
-      // chrome — the frame the ground draws around it (`packs/vf-frame`, the
-      // shell) — reaches `ChromeSettings.selectionReach` past its rect on every
-      // side, and the lift un-reveals it while the card scales. So a member at
-      // REST pads by the reach and a Grab-bed one by the lift scale, and the
-      // box and its grips sit on the plate's outer edge rather than 44 units
-      // inside it, in the well, where the ne/nw grips overlapped the close and
-      // the lock. 0 (the default) ⇒ the content edge, as before.
+      // Visual drag-lift factor (2026-07-17): a Grab-bed member is scaled about its center by
+      // the app's lift; inflate its rect by the mirrored setting so the box keeps WRAPPING what
+      // the user sees. 1 (default) ⇒ pure ECS union. (`selectionReach`, the shell's reach that
+      // padded a resting member, left at design-015 D5b with the shell it measured.)
       const chrome = ctx.getResource(ChromeSettings);
       const liftScale = chrome?.liftScale ?? 1;
-      const reach = chrome?.selectionReach ?? 0;
       for (const e of selectedEntities(world)) {
         if (!ctx.has(e, Position)) continue;
         // Scope filter (field bug 2026-07-17, the wires-collect rule): a
@@ -207,12 +196,9 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         if (!ctx.hasTag(e, Resizable)) allResizable = false;
         if (ctx.hasTag(e, Locked)) anyLocked = true;
         const p = ctx.read(e, Position);
-        // Effective size (review finding): the outline must wrap what the user
-        // SEES — MeasuredSize where auto-sized and measured, else Size.
-        const m = ctx.get(e, MeasuredSize);
         const s = ctx.get(e, Size);
-        let w = m !== undefined && m.w > 0 ? m.w : (s?.w ?? 0);
-        let h = m !== undefined && m.h > 0 ? m.h : (s?.h ?? 0);
+        let w = s?.w ?? 0;
+        let h = s?.h ?? 0;
         let x = p.x;
         let y = p.y;
         if (ctx.has(e, Grab)) {
@@ -222,11 +208,6 @@ export function createSelectionChromeSystem(world: World): TickSystem {
             w *= liftScale;
             h *= liftScale;
           }
-        } else if (reach > 0) {
-          x -= reach;
-          y -= reach;
-          w += 2 * reach;
-          h += 2 * reach;
         }
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);
@@ -358,10 +339,8 @@ const equippedWidgetQ = defineQuery([Size, WidgetEquipped, Active]);
 
 /** One entity's tier pass (shared by the full walk and the delta path). */
 function retier(ctx: SystemCtx, e: Entity, w: number, h: number, zoom: number): void {
-  const m = ctx.get(e, MeasuredSize);
-  // Effective size: MeasuredSize where auto-sized and measured, else Size.
-  const ew = m !== undefined && m.w > 0 ? m.w : w;
-  const eh = m !== undefined && m.h > 0 ? m.h : h;
+  const ew = w;
+  const eh = h;
   const cw = clampU16(ew);
   const ch = clampU16(eh);
   // Tier input is the ON-SCREEN width: effective size × zoom (design-004
@@ -388,7 +367,7 @@ export function createBreakpointSystem(world: World): TickSystem {
   // The gate (2026-07-15; the activeMembership playbook, but through a REAL
   // runIf — this system declares access.write, and a run-but-early-out would
   // blanket-stamp WidgetBreakpoint every frame). Zoom is the `extra` trigger:
-  // its change re-tiers everything Active; Size/MeasuredSize churn and
+  // its change re-tiers everything Active; Size churn and
   // Active flips re-tier only the journaled entities. Pan frames (zoom
   // unchanged) skip entirely — pre-gate they paid the full O(N) scan.
   // A TICK system (one body per frame — the batch form would re-run the
@@ -397,7 +376,7 @@ export function createBreakpointSystem(world: World): TickSystem {
   let lastZoom: number | undefined;
   const guard = makeChurnGuard(
     world,
-    { components: [Size, MeasuredSize], tags: [Active], coarse: false },
+    { components: [Size], tags: [Active], coarse: false },
     () => {
       // A nav flight sweeps the zoom across EVERY tier threshold in ~400 ms —
       // retier-ing per flight frame swaps widget CONTENT mid-flight (React

@@ -3,7 +3,6 @@ import type { Entity, World } from "@vibecook/strata-ecs";
 import { fitCamera, type CameraState } from "@ice/kernel";
 import {
   CameraLimits,
-  MeasuredSize,
   Position,
   Size,
   Viewport,
@@ -39,8 +38,6 @@ export interface FrameChildrenOpts {
 }
 
 function effectiveSize(world: World, entity: Entity): { w: number; h: number } | undefined {
-  const measured = world.get(entity, MeasuredSize);
-  if (measured !== undefined && measured.w > 0 && measured.h > 0) return measured;
   return world.get(entity, Size);
 }
 

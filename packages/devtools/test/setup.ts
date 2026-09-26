@@ -6,7 +6,7 @@
  * happy-dom environment never injects happy-dom's real Storage over it — so
  * every bare `localStorage.*` access in tests explodes. Replace the stub with
  * a real in-memory Storage; browsers are unaffected (test-only file).
- * Same shim rides in apps/widgetlab/test/setup.ts — keep the two in step.
+ * (The same shim rode in apps/widgetlab/test/setup.ts until design-015 D5b deleted the app.)
  */
 function makeStorage(): Storage {
   const map = new Map<string, string>();

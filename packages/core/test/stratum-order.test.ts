@@ -136,12 +136,11 @@ describe("compareStackOrder — strata rank before sibling order (design-015 §4
 describe("the picking system — TouchesExact follows the strata (design-015 §4.2)", () => {
   const NOTE =
     widgets.get("so:note") ??
-    defineWidget({ type: "so:note", surface: "object", object: { name: "paper" }, defaultSize: { w: 200, h: 200 } });
+    defineWidget({ type: "so:note", object: { name: "paper" }, defaultSize: { w: 200, h: 200 } });
   const PAD =
     widgets.get("so:pad") ??
     defineWidget({
       type: "so:pad",
-      surface: "object",
       object: { name: "calendar" },
       stratum: "pads",
       defaultSize: { w: 400, h: 300 },

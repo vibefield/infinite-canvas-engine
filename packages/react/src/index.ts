@@ -1,21 +1,19 @@
 /**
- * @ice/react — widget content layer: portals from one root + Tier-3 hooks.
- * Import wall: @ice/dom → @ice/core down only — never three/@react-three
- * (enforced). react/react-dom are peers.
+ * @ice/react — the React face of the desk (design-015 §3): `<Desk>` (wraps `@ice/dom`'s
+ * `createDeskHost`), EngineProvider + the Tier-3 hooks, the keymap, the screen-space selection
+ * menu and held bar. Renderer-free: the desk arrives as an opaque layer factory.
+ * Import wall: @ice/dom → @ice/core down only — never three/desk (enforced). react/react-dom are peers.
+ *
+ * GONE at D5b (design-015 §1): `<InfiniteCanvas>` (→ `<Desk>`), `WidgetRoot` and the portals,
+ * `WidgetPreview` + the preview snapshots, the surface content seam, the two presentation
+ * profiles, `ChromeOwnerContext` and `WidgetHiddenContext`. One presentation (DK-D8).
  */
 export const REACT_VERSION = "0.0.0";
 
-export {
-  WidgetHiddenContext,
-  useBreakpoint,
-  useSelected,
-  useBehavior,
-  useWidgetProps,
-  useWorldComponent, ChromeOwnerContext, type ChromeOwner, useChromeOwner } from "./hooks";
-export { WidgetRoot, type WidgetComponentProps, type WidgetHosts, type WidgetRootProps } from "./widget-root";
+export { useBreakpoint, useSelected, useBehavior, useWidgetProps, useWorldComponent } from "./hooks";
 
 // M10 React facade (design-005 §5): engine context, commit seam, hooks, keymap,
-// and the <InfiniteCanvas> mount.
+// and the <Desk> mount.
 export {
   EngineProvider,
   useCanvasEngine,
@@ -26,14 +24,6 @@ export {
   type EngineProviderProps,
 } from "./engine-context";
 export { useCommit, useUndoStatus, type Commit, type UndoStatus } from "./use-commit";
-export { WidgetPreview, type WidgetPreviewProps } from "./widget-preview";
-export {
-  getPreviewSnapshot,
-  hasPreviewSnapshot,
-  setPreviewSnapshot,
-  subscribePreviewSnapshots,
-  type PreviewImage,
-} from "./preview-snapshots";
 export { useTool, useToolState } from "./use-tool";
 export {
   useCanvasCatalog,
@@ -63,35 +53,6 @@ export {
   type SelectionState,
   selectionTaped,
 } from "./selection-menu";
-export {
-  InfiniteCanvas,
-  type GroundLayerFactory,
-  type GroundLayerHandle,
-  type InfiniteCanvasHandle,
-  type InfiniteCanvasProps,
-} from "./infinite-canvas";
-// The mounted ground's CONTENT seam (design-013 §5/§6, B5): the residency a render
-// reflector realises handles into, and the three render slots the composited profile
-// forwards. Structural mirrors of `@ice/ground/compose` — react may not import ground, and
-// `@ice/r3f` imports these rather than restating them.
-export {
-  SurfaceContentContext,
-  surfaceContentOf,
-  useSurfaceContent,
-  type ContentRenderSlot,
-  type ContentRenderSlots,
-  type ContentSink,
-  type SurfaceContent,
-  type TextureDescription,
-} from "./surface-content";
-
-// Presentation profiles (design-012 §3). An app imports exactly ONE of these
-// and passes it to <InfiniteCanvas profile={...}>; the other tree-shakes out of
-// that app's bundle. Absent ⇒ stratified, so every existing app is untouched.
-export type {
-  PresentationProfile,
-  PresentationProfileName,
-  ProfileBootContext,
-} from "./profiles/contract";
-export { stratifiedProfile } from "./profiles/stratified";
-export { compositedProfile } from "./profiles/composited";
+export { Desk, type DeskHandle, type DeskProps } from "./desk";
+// The layer seam, re-exported so an app types its factory wrapper without naming @ice/dom.
+export type { LayerContext, LayerFactory, LayerHandle } from "@ice/dom";

@@ -76,8 +76,6 @@ describe("headless facade arming (petition 7 validation finding S5)", () => {
       widgets.get("pin:card") ??
       defineWidget({
         type: "pin:card",
-        surface: "dom",
-        component: () => null,
         defaultSize: { w: 100, h: 100 },
       });
     const ce = createCanvasEngine();

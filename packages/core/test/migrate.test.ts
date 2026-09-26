@@ -55,8 +55,6 @@ type CardProps = { title: string; weight: number; status: string };
 const card = defineWidget({
   type: CARD,
   version: 2,
-  surface: "dom",
-  component: {},
   props: {
     title: p.string({ default: "" }),
     weight: p.number({ default: 1 }),
@@ -76,8 +74,6 @@ const NOCHAIN = "mig:nochain";
 const nochain = defineWidget({
   type: NOCHAIN,
   version: 2,
-  surface: "dom",
-  component: {},
   props: { title: p.string({ default: "" }) },
   // no migrate chain
 });
@@ -283,8 +279,6 @@ const BOOM = "mig:boom";
 const boom = defineWidget({
   type: BOOM,
   version: 2,
-  surface: "dom",
-  component: {},
   props: { label: p.string({ default: "" }) },
   migrate: {
     1: () => {

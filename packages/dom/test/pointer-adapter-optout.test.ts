@@ -35,7 +35,7 @@ describe("pointer adapter — widget opt-out", () => {
     const hostDiv = document.createElement("div");
     const button = document.createElement("button");
     hostDiv.appendChild(button);
-    host.contentPlane.appendChild(hostDiv);
+    host.container.appendChild(hostDiv);
 
     fire(button, "pointerdown", DOWN);
     const down = queue.drain()[0];
@@ -48,7 +48,7 @@ describe("pointer adapter — widget opt-out", () => {
     const { host, queue, detach } = setup();
     const el = document.createElement("div");
     el.setAttribute("data-canvas-interactive", "");
-    host.contentPlane.appendChild(el);
+    host.container.appendChild(el);
 
     fire(el, "pointerdown", DOWN);
     expect(queue.drain()[0]?.surfaceHandled).toBe(true);
@@ -59,7 +59,7 @@ describe("pointer adapter — widget opt-out", () => {
     const { host, queue, detach } = setup();
     const el = document.createElement("div");
     el.setAttribute("contenteditable", "true");
-    host.contentPlane.appendChild(el);
+    host.container.appendChild(el);
 
     fire(el, "pointerdown", DOWN);
     expect(queue.drain()[0]?.surfaceHandled).toBe(true);
@@ -69,7 +69,7 @@ describe("pointer adapter — widget opt-out", () => {
   it("leaves a down on plain canvas content unflagged (absent, not false)", () => {
     const { host, queue, detach } = setup();
     const plain = document.createElement("div");
-    host.contentPlane.appendChild(plain);
+    host.container.appendChild(plain);
 
     fire(plain, "pointerdown", DOWN);
     const down = queue.drain()[0];
@@ -81,7 +81,7 @@ describe("pointer adapter — widget opt-out", () => {
   it("makes NO fact when widget content stopPropagations before the container", () => {
     const { host, queue, detach } = setup();
     const widget = document.createElement("div");
-    host.contentPlane.appendChild(widget);
+    host.container.appendChild(widget);
     widget.addEventListener("pointerdown", (e) => e.stopPropagation());
 
     fire(widget, "pointerdown", DOWN);
@@ -92,7 +92,7 @@ describe("pointer adapter — widget opt-out", () => {
   it("only opts out on down — a move over a button is still a normal fact", () => {
     const { host, queue, detach } = setup();
     const button = document.createElement("button");
-    host.contentPlane.appendChild(button);
+    host.container.appendChild(button);
 
     fire(button, "pointermove", { ...DOWN, buttons: 0 });
     const move = queue.drain()[0];
@@ -107,8 +107,8 @@ describe("pointer adapter — hover-time overInteractive (design-002 §8 amendme
     const { host, queue, detach } = setup();
     const button = document.createElement("button");
     const plain = document.createElement("div");
-    host.contentPlane.appendChild(button);
-    host.contentPlane.appendChild(plain);
+    host.container.appendChild(button);
+    host.container.appendChild(plain);
 
     fire(button, "pointermove", { ...DOWN, buttons: 0 });
     fire(plain, "pointermove", { ...DOWN, buttons: 0 });
@@ -123,8 +123,8 @@ describe("pointer adapter — hover-time overInteractive (design-002 §8 amendme
     const row = document.createElement("div");
     row.setAttribute("data-canvas-interactive", "");
     const plain = document.createElement("div");
-    host.contentPlane.appendChild(row);
-    host.contentPlane.appendChild(plain);
+    host.container.appendChild(row);
+    host.container.appendChild(plain);
 
     fire(row, "pointerdown", DOWN);
     fire(plain, "pointerdown", { ...DOWN, pointerId: 2 });
@@ -137,49 +137,13 @@ describe("pointer adapter — hover-time overInteractive (design-002 §8 amendme
   it("leaves up/cancel and blur-cancel facts UNSTAMPED (capture retargeting lies)", () => {
     const { container, host, queue, detach } = setup();
     const button = document.createElement("button");
-    host.contentPlane.appendChild(button);
+    host.container.appendChild(button);
 
     fire(button, "pointerdown", DOWN);
     fire(container, "pointerup", { ...DOWN, buttons: 0 });
     const [, up] = queue.drain();
     expect(up?.kind).toBe("up");
     expect(up?.overInteractive).toBeUndefined();
-    detach();
-  });
-
-  it("folds a rich GLRouteVerdict into the move stamp (hover over claim-capable island content)", () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const host = createCanvasHost(container);
-    const queue = createInputQueue();
-    const detach = attachPointerAdapter(host, queue, {
-      glRoute: (kind) => (kind === "move" ? { handled: false, overInteractive: true } : false),
-    });
-    const plain = document.createElement("div");
-    host.contentPlane.appendChild(plain);
-
-    fire(plain, "pointermove", { ...DOWN, buttons: 0 });
-    const move = queue.drain()[0];
-    expect(move?.surfaceHandled).toBeUndefined(); // unclaimed — recognizers still see it
-    expect(move?.overInteractive).toBe(true); // but the hover truth carries
-    detach();
-  });
-
-  it("a boolean-returning glRoute still flags handled moves AND counts them as overInteractive", () => {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const host = createCanvasHost(container);
-    const queue = createInputQueue();
-    const detach = attachPointerAdapter(host, queue, {
-      glRoute: (kind) => kind === "move", // legacy boolean: captured island drag
-    });
-    const plain = document.createElement("div");
-    host.contentPlane.appendChild(plain);
-
-    fire(plain, "pointermove", { ...DOWN, buttons: 1 });
-    const move = queue.drain()[0];
-    expect(move?.surfaceHandled).toBe(true);
-    expect(move?.overInteractive).toBe(true);
     detach();
   });
 });

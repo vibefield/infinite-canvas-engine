@@ -6,8 +6,8 @@
 // the law's height onto its place and fades in: flux, no second transaction). The desk's keys and pointer path
 // stay core's; these are the document's own paste and drop events, bubbling, never capture-phase.
 import { Camera, type CanvasEngine, defineQuery, type Entity, LocalPointer, Pointer, PointerWorld, Viewport } from "@ice/core";
-import { decodePicture, type DeskLayerHandle } from "@ice/desk/host";
-import { printRect, type Prints } from "@ice/desk/kinds";
+import { decodePicture, type DeskLayerHandle } from "@ice/desk";
+import { printRect, type Prints } from "@ice/desk";
 import { PHOTO_TYPE } from "@ice/desk/objects";
 import { deskBlobs } from "./blobs";
 import { spawnAll } from "./scene";

@@ -86,8 +86,6 @@ function buildOldDoc(oldType: string): Uint8Array {
   defineWidget({
     type: oldType,
     props: { title: p.string({ default: "t" }), n: p.number({ default: 0 }) },
-    surface: "dom",
-    component: null,
   });
   const { ce, step } = makeEngine();
   ce.docs.create();
@@ -108,8 +106,6 @@ function defineRenamed(newType: string, oldType: string): void {
     type: newType,
     version: 2,
     props: { title: p.string({ default: "t" }), n: p.number({ default: 0 }) },
-    surface: "dom",
-    component: null,
     renamedFrom: [{ type: oldType }],
     migrate: { 1: (prev) => ({ ...prev, title: `${String(prev.title)}!` }) },
   });
@@ -121,15 +117,11 @@ describe("renamedFrom — declaration compile", () => {
     defineWidget({
       type: "rn:decl-old",
       props: { a: p.string({ default: "" }) },
-      surface: "dom",
-      component: null,
     });
     resetRegistries();
     const W = defineWidget({
       type: "rn:decl-new",
       props: { a: p.string({ default: "" }) },
-      surface: "dom",
-      component: null,
       renamedFrom: [{ type: "rn:decl-old", atVersion: 1 }],
     });
     const entry = renames.get("rn:decl-old");
@@ -144,19 +136,19 @@ describe("renamedFrom — declaration compile", () => {
   it("throws on self-rename, still-registered old types, and double claims", () => {
     resetRegistries();
     expect(() =>
-      defineWidget({ type: "rn:self", surface: "dom", component: null, renamedFrom: [{ type: "rn:self" }] }),
+      defineWidget({ type: "rn:self", renamedFrom: [{ type: "rn:self" }] }),
     ).toThrow(/lists itself/);
 
     resetRegistries();
-    defineWidget({ type: "rn:live-old", surface: "dom", component: null });
+    defineWidget({ type: "rn:live-old" });
     expect(() =>
-      defineWidget({ type: "rn:live-new", surface: "dom", component: null, renamedFrom: [{ type: "rn:live-old" }] }),
+      defineWidget({ type: "rn:live-new", renamedFrom: [{ type: "rn:live-old" }] }),
     ).toThrow(/still a registered widget/);
 
     resetRegistries();
-    defineWidget({ type: "rn:claim-a", surface: "dom", component: null, renamedFrom: [{ type: "rn:claimed" }] });
+    defineWidget({ type: "rn:claim-a", renamedFrom: [{ type: "rn:claimed" }] });
     expect(() =>
-      defineWidget({ type: "rn:claim-b", surface: "dom", component: null, renamedFrom: [{ type: "rn:claimed" }] }),
+      defineWidget({ type: "rn:claim-b", renamedFrom: [{ type: "rn:claimed" }] }),
     ).toThrow(/already claimed/);
   });
 });
@@ -168,8 +160,6 @@ describe("version gate — rename aliasing + tombstones (design-008 §4)", () =>
       type: "rn:gate-new",
       version: 2,
       props: { a: p.string({ default: "" }) },
-      surface: "dom",
-      component: null,
       renamedFrom: [{ type: "rn:gate-old" }],
       migrate: { 1: (prev) => prev },
     });
@@ -329,7 +319,7 @@ describe("zombie sweep (design-008 §6) — stale deliveries converge live", () 
     // still needs the PrefabId watcher after the 2026-08-09 narrowing (a late
     // old-shape entity here carries nothing but PrefabId + geometry).
     resetRegistries();
-    defineWidget({ type: "rn:zp-old", surface: "dom", component: null });
+    defineWidget({ type: "rn:zp-old" });
     const a = makeEngine();
     a.ce.docs.create();
     a.ce.ops.spawnWidget("rn:zp-old", { x: 0, y: 0 });
@@ -338,7 +328,7 @@ describe("zombie sweep (design-008 §6) — stale deliveries converge live", () 
     a.ce.docs.close();
 
     resetRegistries();
-    defineWidget({ type: "rn:zp-new", surface: "dom", component: null, renamedFrom: [{ type: "rn:zp-old" }] });
+    defineWidget({ type: "rn:zp-new", renamedFrom: [{ type: "rn:zp-old" }] });
     const { ce, step } = makeEngine();
     const res = ce.docs.open(bytes);
     expect(res.ok).toBe(true);

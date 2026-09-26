@@ -8,18 +8,16 @@ export * from "./shapes";
 export * from "./coords";
 export * from "./snap";
 export * from "./spatial-index";
-export * from "./zoom-bands";
-// The ONE call that answers every size question about a card's pixels — copy
-// size, slot size and uv numerator together (design-013 §7 row one, D9).
-export * from "./surface-geometry";
-export * from "./eviction";
 export * from "./anchors";
 export * from "./bezier";
 export * from "./easing";
 export * from "./nav-flight";
 export * from "./layout";
+// PARKED (design-015 §1, D5b): the shelf packer's one reader was core's residency layer
+// allocator, deleted with the surface infra. Kept, unread, for an image or text atlas.
 export * from "./atlas-pack";
 
-// The lift: ONE curve and ONE duration for every surface, so the composited
-// profile cannot drift from the DOM transition it replaces (design-012 §7).
-export { FADE_EASE, LIFT_DURATION_MS, LIFT_EASE, easedValue } from "./lift";
+// Gone at design-015 D5b with the HiC/island sizing they served: `surface-geometry` (the copy
+// size / slot size / uv numerator call), `zoom-bands` (island FBO bands), `eviction` (the island
+// FBO pool), `lift` (the DOM/GL lift lockstep) and coords' island helpers (`worldToIsland`,
+// `islandToWorld`, `compositeCameraFrustum`, `worldRectToComposite`).

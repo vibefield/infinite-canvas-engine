@@ -24,10 +24,10 @@ import {
 // One widget type per FILE (global registry; no test reset).
 const FOLDER =
   widgets.get("zt:folder") ??
-  defineWidget({ type: "zt:folder", surface: "dom", component: null, defaultSize: { w: 200, h: 200 }, container: { accepts: ["widget"], portal: { top: 10, right: 10, bottom: 10, left: 10 } } });
+  defineWidget({ type: "zt:folder", defaultSize: { w: 200, h: 200 }, container: { accepts: ["widget"], portal: { top: 10, right: 10, bottom: 10, left: 10 } } });
 const BOX =
   widgets.get("zt:box") ??
-  defineWidget({ type: "zt:box", surface: "dom", component: null, defaultSize: { w: 100, h: 100 }, provides: ["widget"] });
+  defineWidget({ type: "zt:box", defaultSize: { w: 100, h: 100 }, provides: ["widget"] });
 
 const VP = { w: 800, h: 600, dpr: 1 };
 

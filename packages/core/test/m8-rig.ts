@@ -5,7 +5,7 @@
  * nested canvas + a durable doc session), no reflectors, no mount. Screen == world (identity camera), so
  * synthetic pointer coords ARE world coords.
  *
- * The node types are nodeboard's three, declared as desk OBJECTS (`surface: "object"`, an opaque kind binding,
+ * The node types are nodeboard's three, declared as desk OBJECTS (an opaque `object` kind binding,
  * no view) with the demo's exact ports, sizes and capabilities; they spawn through the paved road
  * (`spawnWidget`, one store transaction each), so equip + membership run as the app's did — capability tags and
  * `Active` land a frame after projection (step a couple of frames before driving input).
@@ -46,7 +46,6 @@ export const MATH_NODE =
   defineWidget({
     type: "m8:math-node",
     props: { value: p.number({ default: 1 }) },
-    surface: "object",
     object: NODE_KIND,
     defaultSize: { w: 150, h: 84 },
     minSize: { w: 120, h: 70 },
@@ -60,7 +59,6 @@ export const SUM_NODE =
   widgets.get("m8:sum-node") ??
   defineWidget({
     type: "m8:sum-node",
-    surface: "object",
     object: NODE_KIND,
     defaultSize: { w: 150, h: 84 },
     minSize: { w: 120, h: 70 },

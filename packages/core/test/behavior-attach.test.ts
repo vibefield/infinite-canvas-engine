@@ -44,8 +44,6 @@ const CARD =
   widgets.get("batt:card") ??
   defineWidget({
     type: "batt:card",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 10, h: 10 },
     behaviors: [Sticky.with({ note: "pinned" }), Hover],
   });
@@ -114,8 +112,6 @@ describe("widget pre-attachment", () => {
     expect(() =>
       defineWidget({
         type: "batt:bad",
-        surface: "dom",
-        component: null,
         behaviors: [Facet],
       }),
     ).toThrow(/local presence peer/);
@@ -150,9 +146,9 @@ describe("engine.behaviors", () => {
     const e = spawn();
     ce.behaviors.attach(e, Loose);
     step();
-    // The engine registers its OWN three (`ice:surface.*`, design-013 D7), so
-    // the app's behaviours are what is left after those.
-    const rows = ce.behaviors.list().filter((r) => !r.name.startsWith("ice:"));
+    // The engine registers no behaviours of its own since design-015 D5b (the three
+    // `ice:surface.*` kind behaviours left with the DOM/GPU choice): the list is the app's.
+    const rows = ce.behaviors.list();
     expect(rows.map((r) => r.name).sort()).toEqual(["batt:hover", "batt:loose", "batt:sticky"]);
     const loose = rows.find((r) => r.name === "batt:loose");
     expect(loose?.store).toBe("runtime");
@@ -167,15 +163,7 @@ describe("engine.behaviors", () => {
     // nothing and does nothing — "a plugin declared it" and "this engine runs
     // it" are deliberately separable.
     const solo = createCanvasEngine({ widgets: [CARD] });
-    expect(solo.behaviors.list().filter((r) => !r.name.startsWith("ice:"))).toEqual([]);
-    // …and what the ENGINE registered is there whether an app asked or not:
-    // the standard surface behaviours are the kind's default choice, and a
-    // boot that could omit them is the "copied wiring" class (D7).
-    expect(solo.behaviors.list().map((r) => r.name).sort()).toEqual([
-      "ice:surface.alwaysDom",
-      "ice:surface.alwaysGpu",
-      "ice:surface.domAtRest",
-    ]);
+    expect(solo.behaviors.list()).toEqual([]);
     solo.dispose();
   });
 });

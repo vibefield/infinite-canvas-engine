@@ -10,37 +10,20 @@
  *
  * This generalizes the graybox demo's equipSceneBoxes into the engine.
  *
- * PRESENTATION FACTS ride the same path (2026-09-06, design-013 §5 / D2 / D4).
- * The six surface components are runtime riders exactly like capability tags
- * and pre-attached runtime behaviours: session-local, derivable from the widget
- * TYPE, and needed on every peer's projection — including one that received the
+ * RIDERS take the same path — session-local facts derivable from the widget
+ * TYPE and needed on every peer's projection, including one that received the
  * widget over the wire or restored it from a file, neither of which ran a spawn
- * path. Putting the kind in the durable prefab instead would sync a fact every
- * peer can compute from `PrefabId` (D4).
- *
- * They are added ONCE, here, and value-written thereafter. design-001 §7 bans
- * interaction-rate component add/remove, and a promote/demote per drag would
- * move the card's archetype twice per gesture; stamping the safe default at
- * equip is the `SnapState` discipline instead — essential at spawn, zeroed, so
- * the one writer named in §5 never races an attach. Structural `ctx.addComponent`
- * lands at the derive flush like the tags, so `present:infra` sees them in the
- * SAME frame. Non-widget prefabs (ports, ghosts, chrome) get none of the six.
- *
- * OBJECTS (design-015 §5.2, D2a-core, 2026-09-25) get their tags, their runtime
- * behaviours, `WidgetEquipped` and a `Stratum` — and none of the six: an object
- * presents on the desk and nowhere else. `Stratum` rides the same path for the
- * same reason the six do (derivable from the type, needed on every projection).
+ * path (design-013 D4: never sync what every peer can compute from `PrefabId`):
+ * the desk `Stratum` (design-015 §4.2, D2a-core) and the type's runtime
+ * pre-attached behaviours (design-009 §6). Structural `ctx.addComponent` lands
+ * at the derive flush like the tags. Until design-015 D5b the six presentation
+ * facts (`SurfaceKind` … `TextureRef`, design-013 §5) rode here too; they left
+ * with the DOM/GPU presentation choice — an object presents on the desk and
+ * nowhere else, so there is no kind to name, no target to choose and no texture
+ * to reserve.
  */
 import { Not, defineQuery, defineSystem, type Component, type System, type World } from "@vibecook/strata-ecs";
 import type { AnyBehaviorDef } from "../behavior/types";
-import {
-  RequestedDemand,
-  SurfaceBand,
-  SurfaceDemand,
-  SurfaceKind,
-  SurfaceTarget,
-  TextureRef,
-} from "../catalog/surface";
 import { STRATUM_BANDS, Stratum } from "../catalog/desk";
 import { widgetTypeFor } from "../canvas/engine-catalog";
 import { PrefabId } from "../schema/prefab";
@@ -70,31 +53,6 @@ export function createWidgetEquipSystem(world: World): System {
         // re-scans; widgets get their capability tags.
         if (widget !== undefined) {
           for (const tag of widget.capabilityTags) ctx.addTag(e, tag);
-          // The presentation facts, at their safe defaults (design-013 D2).
-          // Only the two the TYPE decides carry real values: the kind, and the
-          // target that kind can actually present on. Band starts at 0 ("never
-          // banded") and the texture at 0 (no destination, the NO_ENTITY
-          // precedent) — both states that claim nothing.
-          //
-          // BOTH demand components start `live/60`, which is what a card got
-          // before demand existed (the erratum in `catalog/surface.ts` — D2's
-          // `paused` clamp default named a frame between equip and the first
-          // clamp that does not exist, and parked every card in a host that
-          // installs no Demand system). A host that DOES install it overwrites
-          // this in `present:infra`, in this same tick.
-          //
-          // An OBJECT gets none of the six (design-015 §5.2, D2a-core): it
-          // presents nowhere but the desk, so there is no kind to name, no
-          // target to choose and no texture to reserve — and Band, Demand and
-          // Residency, which key off `SurfaceKind`, never see it.
-          if (widget.surface !== "object") {
-            ctx.addComponent(e, SurfaceKind, { kind: widget.surface });
-            ctx.addComponent(e, SurfaceTarget, { target: widget.surface === "dom" ? "dom" : "gpu" });
-            ctx.addComponent(e, RequestedDemand, { mode: "live", fpsBucket: 60, interactive: false });
-            ctx.addComponent(e, SurfaceDemand, { mode: "live", fpsBucket: 60, interactive: false });
-            ctx.addComponent(e, SurfaceBand, { band: 0 });
-            ctx.addComponent(e, TextureRef, { texture: 0, layer: 0, u0: 0, v0: 0, u1: 0, v1: 0 });
-          }
           // The desk stratum (design-015 §4.2): every object (a `things` unless
           // it declared otherwise) and any other widget that declared one. A
           // rider like the tags — derivable from the type, stamped on every

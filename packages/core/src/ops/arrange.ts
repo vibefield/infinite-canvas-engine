@@ -56,7 +56,6 @@ import {
   Active,
   Grab,
   Locked,
-  MeasuredSize,
   Position,
   Selectable,
   Size,
@@ -123,8 +122,7 @@ export function arrangeWidgets(
 
   const rectOf = (e: Entity): LayoutRect => {
     const p = world.get(e, Position) as { x: number; y: number };
-    const m = world.get(e, MeasuredSize);
-    const s = m !== undefined && m.w > 0 ? m : (world.get(e, Size) ?? { w: 0, h: 0 });
+    const s = world.get(e, Size) ?? { w: 0, h: 0 };
     return { x: p.x, y: p.y, w: s.w, h: s.h };
   };
   const rects: LayoutRect[] = movable.map(rectOf);

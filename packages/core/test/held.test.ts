@@ -34,13 +34,13 @@ import {
 // One widget type per FILE (global registry; no test reset).
 const BOOK =
   widgets.get("held:book") ??
-  defineWidget({ type: "held:book", surface: "object", object: { name: "book" }, openable: true, defaultSize: { w: 200, h: 140 } });
+  defineWidget({ type: "held:book", object: { name: "book" }, openable: true, defaultSize: { w: 200, h: 140 } });
 const NOTE =
   widgets.get("held:note") ??
-  defineWidget({ type: "held:note", surface: "object", object: { name: "note" }, defaultSize: { w: 100, h: 100 } });
+  defineWidget({ type: "held:note", object: { name: "note" }, defaultSize: { w: 100, h: 100 } });
 const FOLDER =
   widgets.get("held:folder") ??
-  defineWidget({ type: "held:folder", surface: "dom", component: null, defaultSize: { w: 200, h: 150 }, container: { accepts: ["widget"] } });
+  defineWidget({ type: "held:folder", defaultSize: { w: 200, h: 150 }, container: { accepts: ["widget"] } });
 
 const VP = { w: 800, h: 600, dpr: 1 };
 const META: InputMods = { ...NO_MODS, meta: true };

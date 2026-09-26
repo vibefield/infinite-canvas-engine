@@ -15,8 +15,6 @@ const gauge =
   widgets.get(GAUGE) ??
   defineWidget({
     type: GAUGE,
-    surface: "dom",
-    component: {},
     props: {
       level: p.number({ default: 1, min: 0, max: 10 }),
       mode: p.enum(["auto", "manual"], { default: "auto" }),

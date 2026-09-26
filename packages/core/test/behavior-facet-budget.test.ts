@@ -369,8 +369,6 @@ describe("store-routing audit: the durable tx wrapper", () => {
     });
     const CARD = defineWidget({
       type: "bfb:card",
-      surface: "dom",
-      component: null,
       defaultSize: { w: 10, h: 10 },
       behaviors: [Doc],
     });

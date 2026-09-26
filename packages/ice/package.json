@@ -1,7 +1,7 @@
 {
   "name": "@vibecook/ice",
   "version": "0.13.0",
-  "description": "ICE \u2014 infinite canvas engine. Figma-grade infinite-canvas UX as a framework: defineWidget turns React/R3F components into canvas citizens \u2014 selectable, movable, resizable, wired into node graphs, CRDT-synced, undoable per gesture.",
+  "description": "ICE — infinite canvas engine. The desk: every object under the camera drawn by one WebGPU renderer from a CRDT-synced ECS world, the DOM in screen space. defineObject turns a GPU kind into a canvas citizen — selectable, movable, nested in mini mats, undoable per gesture, collaborative.",
   "license": "MIT",
   "author": "James Yong <me@jamesyong42.com>",
   "type": "module",
@@ -21,10 +21,9 @@
     "local-first",
     "collaboration",
     "loro",
-    "react",
-    "r3f",
-    "three",
-    "gestures"
+    "gestures",
+    "webgpu",
+    "desk"
   ],
   "files": [
     "dist"
@@ -44,33 +43,21 @@
       "types": "./dist/types/packages/ice/src/dom.d.ts",
       "default": "./dist/dom.js"
     },
+    "./desk": {
+      "types": "./dist/types/packages/ice/src/desk.d.ts",
+      "default": "./dist/desk.js"
+    },
+    "./desk/engine": {
+      "types": "./dist/types/packages/ice/src/desk-engine.d.ts",
+      "default": "./dist/desk-engine.js"
+    },
+    "./desk/objects": {
+      "types": "./dist/types/packages/ice/src/desk-objects.d.ts",
+      "default": "./dist/desk-objects.js"
+    },
     "./react": {
       "types": "./dist/types/packages/ice/src/react.d.ts",
       "default": "./dist/react.js"
-    },
-    "./r3f": {
-      "types": "./dist/types/packages/ice/src/r3f.d.ts",
-      "default": "./dist/r3f.js"
-    },
-    "./r3f/webgpu": {
-      "types": "./dist/types/packages/ice/src/r3f-webgpu.d.ts",
-      "default": "./dist/r3f-webgpu.js"
-    },
-    "./ground": {
-      "types": "./dist/types/packages/ice/src/ground.d.ts",
-      "default": "./dist/ground.js"
-    },
-    "./ground/compose": {
-      "types": "./dist/types/packages/ice/src/ground-compose.d.ts",
-      "default": "./dist/ground-compose.js"
-    },
-    "./ground/packs": {
-      "types": "./dist/types/packages/ice/src/ground-packs.d.ts",
-      "default": "./dist/ground-packs.js"
-    },
-    "./ground/engine": {
-      "types": "./dist/types/packages/ice/src/ground-engine.d.ts",
-      "default": "./dist/ground-engine.js"
     },
     "./devtools": {
       "types": "./dist/types/packages/ice/src/devtools.d.ts",
@@ -93,38 +80,28 @@
   "dependencies": {
     "@vibecook/strata-ecs": "0.13.0",
     "loro-crdt": "^1.13.8",
-    "stats-gl": "^4.2.3",
     "rbush": "^3.0.1",
     "@webgpu/types": "^0.1.72"
   },
   "peerDependencies": {
-    "@react-three/fiber": ">=9",
     "react": ">=19",
-    "react-dom": ">=19",
-    "three": ">=0.185.0"
+    "react-dom": ">=19"
   },
   "peerDependenciesMeta": {
-    "@react-three/fiber": {
-      "optional": true
-    },
     "react": {
       "optional": true
     },
     "react-dom": {
       "optional": true
-    },
-    "three": {
-      "optional": true
     }
   },
   "devDependencies": {
     "@ice/core": "workspace:*",
+    "@ice/desk": "workspace:*",
     "@ice/devtools": "workspace:*",
     "@ice/dom": "workspace:*",
     "@ice/kernel": "workspace:*",
-    "@ice/r3f": "workspace:*",
     "@ice/react": "workspace:*",
-    "@react-three/fiber": "^9",
     "@types/rbush": "^3.0.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",

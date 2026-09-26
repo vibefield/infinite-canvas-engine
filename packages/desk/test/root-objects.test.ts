@@ -12,7 +12,7 @@ const MARGIN = 32;
 const TRAY =
   widgets.get("d18:tray") ??
   defineWidget({
-    type: "d18:tray", surface: "object", object: { name: "tray" }, stratum: "sheets", defaultSize: { w: 4000, h: 4000 }, interaction: { snap: "none" },
+    type: "d18:tray", object: { name: "tray" }, stratum: "sheets", defaultSize: { w: 4000, h: 4000 }, interaction: { snap: "none" },
     container: { accepts: [], widgets: [Board, Notebook, Calendar, Note], portal: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN } },
   });
 

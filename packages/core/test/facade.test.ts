@@ -29,8 +29,6 @@ const CARD =
   widgets.get("facade:card") ??
   defineWidget({
     type: "facade:card",
-    surface: "dom",
-    component: () => null,
     defaultSize: { w: 120, h: 90 },
     minSize: { w: 30, h: 30 },
   });

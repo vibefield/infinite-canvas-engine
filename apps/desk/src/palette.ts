@@ -5,9 +5,9 @@
 // `papers`/`pens` by the prop's value; `MiniMatPalette`: `vinyls`). The engine holds no note colour
 // (the theme gate); this file is where the product's byte enters the desk.
 
-import type { BoardPalette, CalendarPalette, MiniMatPalette, NotebookPalette, PaperPalette } from "@ice/desk/kinds";
+import type { BoardPalette, CalendarPalette, MiniMatPalette, NotebookPalette, PaperPalette } from "@ice/desk";
 import { BOARD_LOOK, CALENDAR_LOOK, MARKERS, NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, VINYLS } from "@ice/desk/oracle/fixtures/vf-theme";
-import { type GroundTheme, type ThemeName, themeFrom } from "@ice/desk/theme";
+import { type GroundTheme, type ThemeName, themeFrom } from "@ice/desk";
 
 export type DeskPalette = PaperPalette & MiniMatPalette & BoardPalette & NotebookPalette & CalendarPalette;
 

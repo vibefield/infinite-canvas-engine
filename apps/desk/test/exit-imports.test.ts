@@ -7,8 +7,10 @@
  *   2. EVERY engine specifier (one whose package is a workspace package) is an entry of THE SURFACE — exactly what
  *      apps/desk imports today, no more (an allowance nothing uses fails too) — and every entry of THE SURFACE is
  *      one its package's `exports` map publishes (`/*` = a wildcard entry, the files under it).
- * THE SURFACE is ONE constant on one line: D5b's umbrella rename (the `@ice/*` workspace entries → the umbrella's)
- * changes that line and nothing else. A vite query (`?url`) is not part of the module path.
+ * THE SURFACE is ONE constant on one line, and since D5b it mirrors the published umbrella's entries — `@ice/desk` ·
+ * `/engine` · `/objects` are `@vibecook/ice/desk` · `/desk/engine` · `/desk/objects` (the `./oracle/*` allowance is the
+ * rigs' door to the oracle's scenes and fixtures, which the umbrella does not ship). A vite query (`?url`) is not part
+ * of the module path.
  *
  * Test files live under `test/`, not `src/`, so this file (which necessarily NAMES the forbidden strings) is not
  * scanned by itself.
@@ -18,8 +20,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** THE SURFACE — the engine entries apps/desk may import. D5b's umbrella rename is a change to this one line. */
-const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/desk/compose", "@ice/desk/engine", "@ice/desk/host", "@ice/desk/kinds", "@ice/desk/noise", "@ice/desk/objects", "@ice/desk/shaders", "@ice/desk/theme", "@ice/desk/oracle/*"] as const;
+/** THE SURFACE — the engine entries apps/desk may import: the umbrella's entries, in their workspace spelling. */
+const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/desk/engine", "@ice/desk/objects", "@ice/desk/oracle/*"] as const;
 
 /** The forbidden shapes, applied per specifier: a deep `src|dist` path, the engine's raw deps, a climb into `packages/`. */
 const FORBIDDEN = /^@[^/]+\/[^/]+\/(src|dist)(\/|$)|^@vibecook\/strata-ecs|^loro-crdt|(^|\/)\.\.\/(\.\.\/)*packages\//;

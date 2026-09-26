@@ -7,7 +7,7 @@
 // oracle cannot render text: it reads the committed copy (oracle/fixtures/assets/glyphs-mono-2x), and a
 // parity scene uploads that same copy so the two hosts agree (lab/glyphs.ts, the prototype's, moved).
 
-import { GLYPH_PAD, GLYPHS, type GlyphAtlasMeta } from "@ice/desk/host";
+import { GLYPH_PAD, GLYPHS, type GlyphAtlasMeta } from "@ice/desk";
 
 export interface GlyphAtlas {
   readonly bytes: Uint8Array<ArrayBuffer>;

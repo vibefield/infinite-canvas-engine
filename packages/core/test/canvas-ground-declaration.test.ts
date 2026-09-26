@@ -59,7 +59,7 @@ describe("presentation.ground — the field declaration (D-C2.4)", () => {
   });
 
   it("a type that declares a ground requires the `ground` plane to prepare for a flight; one that declares none does not", () => {
-    const CARD = widgets.get("gd:card") ?? defineWidget({ type: "gd:card", surface: "dom", component: null, defaultSize: { w: 100, h: 60 } });
+    const CARD = widgets.get("gd:card") ?? defineWidget({ type: "gd:card", defaultSize: { w: 100, h: 60 } });
     const groundedInside = defineCanvasType({
       id: "gd:inside-grounded",
       semanticVersion: 1,
@@ -71,8 +71,8 @@ describe("presentation.ground — the field declaration (D-C2.4)", () => {
       semanticVersion: 1,
       semantic: { placement: { widgets: [CARD] } },
     });
-    const GROUNDED = defineContainer({ type: "gd:folder-grounded", canvas: groundedInside, component: null, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
-    const PLAIN = defineContainer({ type: "gd:folder-plain", canvas: plainInside, component: null, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
+    const GROUNDED = defineContainer({ type: "gd:folder-grounded", canvas: groundedInside, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
+    const PLAIN = defineContainer({ type: "gd:folder-plain", canvas: plainInside, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
     const ROOT: CanvasType = defineCanvasType({
       id: "gd:root",
       semanticVersion: 1,

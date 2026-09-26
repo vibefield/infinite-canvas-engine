@@ -1,5 +1,5 @@
 /**
- * Ground-layer (P0) pass configs — CANONICAL home (2026-07-16, the @ice/ground
+ * Ground-layer (P0) pass configs — CANONICAL home (2026-07-16, the then @ice/ground
  * extraction): plain data shared by the ground renderer, the react facade's
  * `grid` prop, and apps. They live in core because core is the vocabulary
  * package every layer may import (ground cannot import react; react cannot
@@ -33,7 +33,7 @@ export interface GridConfig {
    * Magnet-field tuning (design-010 §3.1). The ground's field is the engine's
    * one implementation since design-013; this block resolves over
    * {@link DEFAULT_GRID_MAGNET_CONFIG} and maps onto the field's config
-   * (`fieldConfigOf` in `@ice/ground/compose`): `glyph`, `reach`, `polarity`,
+   * (`fieldConfigOf` in the retired `@ice/ground/compose`; the desk reads `fadeIn` since D5b): `glyph`, `reach`, `polarity`,
    * `alwaysAlign`, `needleLength`, `needleWidth` — the rest of the block is
    * the old magnet grid's vocabulary with no field reader (named in C2's
    * landing log).

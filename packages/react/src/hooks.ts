@@ -1,6 +1,5 @@
 /**
- * React hooks over the engine's Tier-3 reactivity (design-005 §2 hooks;
- * design-004 §2 frozen-hidden rule).
+ * React hooks over the engine's Tier-3 reactivity (design-005 §2 hooks).
  *
  * Implemented directly on `world.reactive.observeValue` + `useSyncExternalStore`
  * rather than strata's own react module: core is react-free by law, so
@@ -8,10 +7,12 @@
  * lines. Value semantics are strata Tier-3: equality-suppressed, fired at
  * notify(), never during the tick.
  *
- * FROZEN-HIDDEN: a widget inside a hidden (culled-but-kept-mounted) host must
- * not re-render on doc edits — `useWidgetProps` reads {@link WidgetHiddenContext}
- * (provided per-portal by WidgetRoot) and suspends its subscription while
- * hidden, serving the last snapshot; on show it resubscribes and refreshes.
+ * These are the hooks of SCREEN-SPACE chrome (design-015 §2 law 2): a panel
+ * that shows the selected object's props, a bar that reads its behaviour
+ * state. Until design-015 D5b they also served the React faces of DOM widgets
+ * and carried the frozen-hidden rule (a culled-but-kept-mounted portal must
+ * not re-render) through `WidgetHiddenContext` and the mount store's freeze;
+ * both left with the portals. `ChromeOwnerContext` left with the profiles.
  */
 import {
   Selected,
@@ -21,29 +22,9 @@ import {
   type AnyBehaviorDef,
   type Component,
   type Entity,
-  type WidgetMountStore,
   type World,
 } from "@ice/core";
-import { createContext, useCallback, useContext, useMemo, useRef, useSyncExternalStore } from "react";
-
-/** Per-portal hidden flag (WidgetRoot provides it; defaults to live). */
-export const WidgetHiddenContext = createContext(false);
-/**
- * Who draws a card's chrome (design-014, B3b): `dom` — the app's shell does, in
- * CSS; `ground` — the ground draws the plate, shadow, ring, lift and controls,
- * and the host is content only. `<InfiniteCanvas>` provides it from the
- * profile; a shell reads it with {@link useChromeOwner} and renders bare
- * under `ground`. Defaults to `dom`.
- */
-export type ChromeOwner = "dom" | "ground";
-export const ChromeOwnerContext = createContext<ChromeOwner>("dom");
-/** Who draws this widget's chrome under the mounted profile — `dom` (the app's shell) or `ground` (the ground). */
-export function useChromeOwner(): ChromeOwner {
-  return useContext(ChromeOwnerContext);
-}
-
-/** Internal live gate: transition holds suppress callbacks before React commits the frozen snapshot. */
-export const WidgetMountStoreContext = createContext<WidgetMountStore | undefined>(undefined);
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 
 const selectedQ = defineQuery([Selected]);
 
@@ -68,28 +49,16 @@ function shallowEq(a: unknown, b: unknown): boolean {
  * field change yields a new reference.
  */
 export function useWorldComponent<S>(world: World, entity: Entity, component: Component<S>): S | undefined {
-  const hidden = useContext(WidgetHiddenContext);
-  const mountStore = useContext(WidgetMountStoreContext);
-  const frozenNow = useCallback(
-    () => hidden || mountStore?.isFrozen?.(entity) === true,
-    [hidden, mountStore, entity],
-  );
   const last = useRef<S | undefined>(undefined);
   const subscribe = useCallback(
-    (onChange: () => void) => {
-      if (frozenNow()) return () => {}; // frozen while hidden — no wakeups, no renders
-      return world.reactive.observeValue(entity, component, () => {
-        if (!frozenNow()) onChange();
-      });
-    },
-    [world, entity, component, frozenNow],
+    (onChange: () => void) => world.reactive.observeValue(entity, component, onChange),
+    [world, entity, component],
   );
   const getSnapshot = useCallback(() => {
-    if (frozenNow()) return last.current; // stable snapshot while frozen
     const v = world.isAlive(entity) ? world.get(entity, component) : undefined;
     if (!shallowEq(v, last.current)) last.current = v;
     return last.current;
-  }, [world, entity, component, frozenNow]);
+  }, [world, entity, component]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
@@ -127,7 +96,7 @@ export function useWidgetProps<T extends Record<string, unknown>>(
  * `undefined` when the behavior is not attached, which is a legitimate render
  * state and not an error.
  *
- * READ-ONLY by construction. A face renders behavior state; it never writes it
+ * READ-ONLY by construction. Chrome renders behavior state; it never writes it
  * (Law 10) — writes go through `ctx` inside the behavior's own hooks, or
  * through `engine.behaviors.attach` / a transaction from an app handler.
  */
@@ -167,33 +136,17 @@ function parseJsonCell(cell: string, serializedDefault: string | undefined): unk
   }
 }
 
-/**
- * Selection membership (Tier-1 wake on Selected churn; O(1) snapshot).
- * Frozen-hidden like every widget hook: a selection change must not re-render
- * 256 hidden trees (review finding — design-004 §2 applies to ALL hooks).
- */
+/** Selection membership (Tier-1 wake on Selected churn; O(1) snapshot). */
 export function useSelected(world: World, entity: Entity): boolean {
-  const hidden = useContext(WidgetHiddenContext);
-  const mountStore = useContext(WidgetMountStoreContext);
-  const frozenNow = useCallback(
-    () => hidden || mountStore?.isFrozen?.(entity) === true,
-    [hidden, mountStore, entity],
-  );
   const last = useRef(false);
   const subscribe = useCallback(
-    (onChange: () => void) => {
-      if (frozenNow()) return () => {};
-      return world.reactive.observeQuery(selectedQ, () => {
-        if (!frozenNow()) onChange();
-      });
-    },
-    [world, frozenNow],
+    (onChange: () => void) => world.reactive.observeQuery(selectedQ, onChange),
+    [world],
   );
   const getSnapshot = useCallback(() => {
-    if (frozenNow()) return last.current;
     last.current = world.isAlive(entity) && world.hasTag(entity, Selected);
     return last.current;
-  }, [world, entity, frozenNow]);
+  }, [world, entity]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 

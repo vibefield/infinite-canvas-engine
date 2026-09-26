@@ -23,7 +23,7 @@
  */
 import type { Component, Relation, Resource, Tag } from "@vibecook/strata-ecs";
 import { CameraLimits } from "../catalog/settings-resources";
-import { Camera, Culled, MeasuredSize, Viewport, Visible } from "../catalog/camera-derived";
+import { Camera, Culled, Viewport, Visible } from "../catalog/camera-derived";
 import { ChildOf, Opacity, Position, Size } from "../catalog/scene";
 import { Accepts, Container, Provides } from "../catalog/graph";
 import { Movable, Resizable, Selectable, Selected } from "../catalog/selection-presence";
@@ -40,7 +40,6 @@ export const PUBLIC_READS: ReadonlySet<Component | Tag | Relation | Resource> = 
   // Geometry — the whole reason most behaviors exist.
   Position as Component,
   Size as Component,
-  MeasuredSize as Component,
   Opacity as Component,
   // Structure.
   ChildOf as Relation,

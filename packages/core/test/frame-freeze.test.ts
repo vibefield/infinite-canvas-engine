@@ -27,8 +27,6 @@ const BOX =
   widgets.get("freeze:box") ??
   defineWidget({
     type: "freeze:box",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 80 },
   });
 

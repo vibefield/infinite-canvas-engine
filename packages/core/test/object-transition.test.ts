@@ -1,10 +1,8 @@
 /**
- * design-015 D2a-core, item 4: an object requires only the `ground` plane.
- *
- * `presentationPlanesOf` names the rule the facade's `prepareTransition` always
- * applied (gl → `gl`; a component or chrome → `dom`) and adds the object's: the
- * desk draws it, so `ground` and nothing else. Objects have no mount entry, so
- * the facade finds the departing frame's VISIBLE ones in the world.
+ * design-015 D2a-core, item 4 (as it stands after D5b): a visible object in the departing frame
+ * requires the `ground` plane — the ONE plane there is — and a frame with none requires nothing.
+ * The facade finds the departing frame's VISIBLE objects in the world (`presentationPlanesOf`
+ * and the `dom`/`gl` planes it named left at D5b with the mount store's snapshot).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -14,7 +12,6 @@ import {
   defineCanvasType,
   defineContainer,
   defineWidget,
-  presentationPlanesOf,
   tools,
   widgets,
   type CanvasType,
@@ -27,29 +24,16 @@ function tool(id: string): Tool {
   return t;
 }
 
-describe("presentationPlanesOf (design-015 §5.2)", () => {
-  it("an object needs `ground` alone; the view kinds keep the facade's old rule", () => {
-    expect(presentationPlanesOf({ surface: "object", component: null, chrome: undefined })).toEqual(["ground"]);
-    expect(presentationPlanesOf({ surface: "object", component: undefined, chrome: undefined })).toEqual(["ground"]);
-    // the pre-desk rule, unchanged: gl → gl; a component or chrome → dom
-    expect(presentationPlanesOf({ surface: "gl", component: {}, chrome: {} })).toEqual(["gl", "dom"]);
-    expect(presentationPlanesOf({ surface: "gl", component: null, chrome: undefined })).toEqual(["gl"]);
-    expect(presentationPlanesOf({ surface: "dom", component: () => null, chrome: undefined })).toEqual(["dom"]);
-    expect(presentationPlanesOf({ surface: "dom", component: null, chrome: undefined })).toEqual([]);
-    expect(presentationPlanesOf({ surface: "video", component: null, chrome: {} })).toEqual(["dom"]);
-  });
-});
-
 describe("prepareTransition — a visible object requires the ground plane (design-015 §5.2)", () => {
   const NOTE =
     widgets.get("otr:note") ??
-    defineWidget({ type: "otr:note", surface: "object", object: { name: "paper" }, defaultSize: { w: 200, h: 200 } });
+    defineWidget({ type: "otr:note", object: { name: "paper" }, defaultSize: { w: 200, h: 200 } });
   const CARD =
     widgets.get("otr:card") ??
-    defineWidget({ type: "otr:card", surface: "dom", component: () => null, defaultSize: { w: 100, h: 60 } });
+    defineWidget({ type: "otr:card", defaultSize: { w: 100, h: 60 } });
   const inside = defineCanvasType({ id: "otr:inside", semanticVersion: 1, semantic: { placement: { widgets: [NOTE] } } });
   // a container with no view of its own (component null) and no ground declaration: it requires nothing
-  const FOLDER = defineContainer({ type: "otr:folder", canvas: inside, component: null, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
+  const FOLDER = defineContainer({ type: "otr:folder", canvas: inside, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
   const ROOT: CanvasType = defineCanvasType({
     id: "otr:root",
     semanticVersion: 1,
@@ -106,7 +90,7 @@ describe("prepareTransition — a visible object requires the ground plane (desi
     ce.dispose();
   });
 
-  it("a culled object requires nothing (it presents nowhere); a view widget still asks for `dom` beside it", () => {
+  it("a culled object requires nothing (it presents nowhere); a faceless widget beside a visible object adds nothing — `ground` is the one plane (D5b)", () => {
     const { ce, prepared, step } = rig();
     const folder = ce.ops.spawnWidget(FOLDER.type, { x: 0, y: 0, w: 300, h: 200, undoable: false });
     ce.ops.spawnWidget(NOTE.type, { x: 100_000, y: 100_000, undoable: false }); // off every view
@@ -123,7 +107,7 @@ describe("prepareTransition — a visible object requires the ground plane (desi
     step(3);
     ce.ops.enterContainer(folder);
     step(2);
-    expect(prepared).toEqual(["", "dom,ground"]);
+    expect(prepared).toEqual(["", "ground"]);
     ce.dispose();
   });
 });

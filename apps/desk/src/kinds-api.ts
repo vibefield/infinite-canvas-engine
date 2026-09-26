@@ -6,10 +6,10 @@
 // the transactions an op would make.
 
 import { type CanvasEngine, ChildOf, type Entity, guardedTransaction, Position } from "@ice/core";
-import type { DeskLayerHandle } from "@ice/desk/host";
-import type { BoardInk, FlickWitness, NotebookKind, Pads, Prints } from "@ice/desk/kinds";
+import type { DeskLayerHandle } from "@ice/desk";
+import type { BoardInk, FlickWitness, NotebookKind, Pads, Prints } from "@ice/desk";
 import { addStroke, BoardStroke, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
-import { printRect } from "@ice/desk/kinds";
+import { printRect } from "@ice/desk";
 import { spawnAll } from "./scene";
 import { printFixture } from "./scene-kinds";
 

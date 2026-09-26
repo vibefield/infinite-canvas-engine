@@ -34,7 +34,7 @@ function* walk(dir) {
 
 // Quoted specifiers only — `from "@ice/core"` / `import("@ice/core")`; prose
 // mentions in doc comments are unquoted and must survive.
-const SPECIFIER = /(["'])@ice\/(kernel|core|dom|react|r3f|ground|devtools)\1/g;
+const SPECIFIER = /(["'])@ice\/(kernel|core|dom|desk|react|devtools)\1/g;
 
 let rewrites = 0;
 let failed = false;

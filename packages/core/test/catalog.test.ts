@@ -327,11 +327,10 @@ describe("camera / resources / derived / chrome / nav (§5.7, §5.8)", () => {
     expect(enumLabels(cat.CursorVisual, "kind")).toEqual(["local", "remote"]);
   });
 
-  it("SelectionBox/MarqueeBox/MeasuredSize field types", () => {
+  it("SelectionBox/MarqueeBox field types", () => {
     expect(scalarType(cat.SelectionBox, "x")).toBe("f64");
     expect(scalarType(cat.SelectionBox, "w")).toBe("f32");
     expect(scalarType(cat.MarqueeBox, "y")).toBe("f64");
-    expect(scalarType(cat.MeasuredSize, "w")).toBe("f32");
   });
 
   it("Follows/VisualOf/NavFrame are arity-one; NavDepth u8, NavCamera f64 throughout (zoom f64 since D2b)", () => {

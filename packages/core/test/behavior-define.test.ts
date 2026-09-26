@@ -21,8 +21,6 @@ import {
 } from "../src/behavior/define-behavior";
 import { Culled, Position } from "../src/catalog";
 import { Grab } from "../src/catalog/gesture";
-import { RequestedDemand, SurfaceTarget } from "../src/catalog/surface";
-import { alwaysDom, alwaysGpu, domAtRest } from "../src/surface/standard-behaviors";
 import { defineComponent, defineRelation, defineResource, defineTag, schemaMeta } from "../src/schema/meta";
 import { definePrefab, init, __resetPrefabsForTests } from "../src/schema/prefab";
 import { p } from "../src/widget/props";
@@ -245,34 +243,22 @@ describe("the SPLIT rule (BF-D16/BF-D17)", () => {
     expect(c.delivery.access?.orderIndependent).toBeUndefined();
   });
 
-  it("attests DECLARED writes for the engine's three kind behaviours, by exact name", () => {
-    // The one exception to "declared writes are never attested" (design-013
-    // A1b): the three write `SurfaceTarget` and `RequestedDemand` in `present`
-    // and are each other's co-writers, so without it strata's advisory fires
-    // on every engine boot describing ICE's own deliberate design.
-    for (const b of [domAtRest, alwaysGpu, alwaysDom]) {
-      const c = compileBehavior(b, NO_HOOKS);
-      expect(c.delivery.access?.orderIndependent).toEqual(
-        expect.arrayContaining([SurfaceTarget, RequestedDemand]),
-      );
-    }
-  });
-
-  it("does NOT attest a pack's kind behaviour, however it is named", () => {
-    // The attestation says "these co-writers are ICE's and row-disjoint by
-    // law" — a promise ICE cannot make on a pack's behalf. Keyed on the
-    // `ice:surface.` PREFIX, a pack that named itself into it inherited the
-    // promise and silenced the advisory its author needed. `defineBehavior`
-    // refuses that name now; this grades the second lock, which holds in a
-    // production build where the refusal (dev-guarded) does not.
+  it("does NOT attest a pack's declared writes, however the pack is named", () => {
+    // An attestation would say "these co-writers are ICE's and row-disjoint by
+    // law" — a promise ICE cannot make on a pack's behalf. The engine's own
+    // exception (the three `ice:surface.*` kind behaviours, keyed on their
+    // exact names) left at design-015 D5b; nothing is attested beyond a
+    // ticking behaviour's own component now, and `defineBehavior` still
+    // refuses the `ice:` namespace. This grades the second lock, which holds
+    // in a production build where the refusal (dev-guarded) does not.
     const Kiosk = defineBehavior("bdpack:surface.kiosk", {
       store: "runtime",
       phase: "present",
-      writes: [SurfaceTarget],
+      writes: [Position],
       on: { changed: () => {} },
     });
     const c = compileBehavior(Kiosk, NO_HOOKS);
-    expect(c.delivery.access?.write).toEqual([Kiosk.component, SurfaceTarget]);
+    expect(c.delivery.access?.write).toEqual([Kiosk.component, Position]);
     expect(c.delivery.access?.orderIndependent).toBeUndefined();
   });
 });

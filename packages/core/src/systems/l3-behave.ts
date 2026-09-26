@@ -35,7 +35,6 @@ import {
   Grab,
   InsertGhost,
   LeavesCopy,
-  MeasuredSize,
   NO_ENTITY,
   OverlapCandidate,
   OverlapRejected,
@@ -406,13 +405,11 @@ export function createSelectMoveBehaviors(
             // each other"): the raw drop point maps everyone who aimed at the
             // folder's center onto the same container-local spot. Newcomers
             // get the nearest free slot instead; incumbents NEVER move (the
-            // kernel insertSlot contract). Sizes mirror the folder preview's
-            // rule: measured when real, else declared.
+            // kernel insertSlot contract). Sizes are the declared ones.
             const incumbents: LayoutRect[] = [];
             for (const c of ctx.getReverse(container, ChildOf)) {
               const cp = ctx.get(c, Position);
-              const cm = ctx.get(c, MeasuredSize);
-              const cs = cm !== undefined && cm.w > 0 ? cm : ctx.get(c, Size);
+              const cs = ctx.get(c, Size);
               if (cp === undefined || cs === undefined) continue;
               incumbents.push({ x: cp.x, y: cp.y, w: cs.w, h: cs.h });
             }
@@ -424,8 +421,7 @@ export function createSelectMoveBehaviors(
             for (const w of dragged) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
               const g = ctx.read(w, Grab);
-              const wm = ctx.get(w, MeasuredSize);
-              const ws = wm !== undefined && wm.w > 0 ? wm : (ctx.get(w, Size) ?? { w: 0, h: 0 });
+              const ws = ctx.get(w, Size) ?? { w: 0, h: 0 };
               let slot: { x: number; y: number };
               if (M !== undefined) {
                 const ncx = g.x + wx + ws.w / 2;

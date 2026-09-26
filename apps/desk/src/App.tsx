@@ -1,6 +1,6 @@
 // The DESK (design-015; D2a-world): React 19 over `createCanvasEngine`, the mat and its objects drawn
-// FROM THE WORLD by `deskLayer()` mounted through `<InfiniteCanvas … chrome={false}>` (plan D-D0.6 —
-// the one react change is that prop: the desk draws its own selection; D4a draws the marks). Keys:
+// FROM THE WORLD by `deskLayer()` mounted through `<Desk layer={…}>` (D5b — `<InfiniteCanvas>` became
+// `<Desk>` by deletion, plan D-D0.6; the desk draws its own selection, D4a's marks). Keys:
 // `w` sticks a note at the pointer, `m` lays a mini mat, ⌫ deletes, ⌘Z/⇧⌘Z undo and redo (the core
 // keymap), `d` toggles the theme and pins it (until then the OS leads). The generated plates and a
 // runtime glyph atlas feed the mat at boot; `window.__desk` (api.ts) is the rigs' door. D4a: the desk
@@ -10,12 +10,11 @@
 
 import type { Entity } from "@ice/core";
 import { Active, PointerWorld, LocalPointer, Pointer, Camera, heldEntity, Position, PrefabId, Size, Viewport, defineQuery, selectedEntities } from "@ice/core";
-import type { DeskLayerHandle } from "@ice/desk/host";
-import { deskLayer } from "@ice/desk/host";
-import { bookAngle } from "@ice/desk/kinds";
+import { deskLayer, type DeskLayerHandle } from "@ice/desk";
+import { bookAngle } from "@ice/desk";
 import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, MiniMat, NOTE_TYPE, NOTEBOOK_TYPE, VINYLS, type VinylName } from "@ice/desk/objects";
-import type { ThemeName } from "@ice/desk/theme";
-import { defaultSelectionActions, type GroundLayerFactory, InfiniteCanvas, type KeymapEntry, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
+import type { ThemeName } from "@ice/desk";
+import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
 import { deskBlobs } from "./blobs";
@@ -79,7 +78,7 @@ export function App(): ReactElement {
   const [menuSource, setMenuSource] = useState<SelectionMenuSource | null>(null);
 
   // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
-  const layer = useMemo<GroundLayerFactory>(() => {
+  const layer = useMemo<LayerFactory>(() => {
     // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into
     const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
@@ -151,10 +150,9 @@ export function App(): ReactElement {
   useEffect(() => () => engine.dispose(), [engine]);
 
   return (
-    <InfiniteCanvas
+    <Desk
       engine={engine}
-      ground={layer}
-      chrome={false}
+      layer={layer}
       keymapOverrides={keys}
       style={{ position: "absolute", inset: 0 }}
       onReady={() => {
@@ -183,6 +181,6 @@ export function App(): ReactElement {
       }}
     >
       {menuSource !== null ? <SelectionMenu source={menuSource} actions={MENU_ACTIONS} /> : null}
-    </InfiniteCanvas>
+    </Desk>
   );
 }

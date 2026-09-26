@@ -33,8 +33,6 @@ const CARD =
   widgets.get("lk:card") ??
   defineWidget({
     type: "lk:card",
-    surface: "dom",
-    component: () => null,
     defaultSize: { w: 120, h: 90 },
     interaction: { resizable: true },
   });

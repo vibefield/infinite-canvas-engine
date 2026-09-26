@@ -1,25 +1,24 @@
 /**
- * The DOM canvas host (design-004 §1, host pipeline — M3 slice).
- *
- * M3 stands up ONE content plane: an absolutely-positioned div whose single CSS
- * transform (written by the plane-transform reflector) applies the camera to
- * every world-positioned child at once (design-002 §5 `planeTransform`; kernel
- * `planeCssTransform`). The full six-plane model (background/content/overlay/
- * chrome/HUD/nav + the FBO compositor) arrives in M6 — this file is deliberately
- * the minimum that lets a reflector paint into a camera-transformed space.
+ * The canvas host (design-004 §1, host pipeline; SCREEN SPACE ONLY since design-015 D5b).
  *
  * The container is styled to be a stable, gesture-clean viewport: `relative` so
- * the absolute plane anchors to it, `overflow:hidden` to clip the infinite
- * plane, `touch-action:none` + `user-select:none` so browser scroll/zoom and
- * text selection never fight the interaction stack.
+ * absolutely-positioned children (the desk's canvas, the one focused editor, the
+ * remote-cursor plane, the app's screen-space chrome) anchor to it,
+ * `overflow:hidden` to clip them, `touch-action:none` + `user-select:none` so
+ * browser scroll/zoom and text selection never fight the interaction stack.
+ *
+ * THE CONTENT PLANE IS GONE (design-015 §2 law 2). Until D5b the host also made
+ * one camera-transformed `<div>` — M3's "content plane", the P1 every DOM
+ * widget mounted in, carrying the camera as ONE CSS transform written by the
+ * plane-transform reflector (kernel `planeCssTransform`). No DOM element
+ * carries a camera transform any more: everything under the camera is the
+ * desk renderer's, and the DOM that remains is screen-space.
  */
 
 export interface CanvasHost {
   /** The app-provided viewport element (styled, not created, by the host). */
   readonly container: HTMLElement;
-  /** The single camera-transformed plane; world-positioned children mount here. */
-  readonly contentPlane: HTMLDivElement;
-  /** Remove the plane and clear the inline styles the host wrote. */
+  /** Clear the inline styles the host wrote. */
   dispose(): void;
 }
 
@@ -30,17 +29,8 @@ const CONTAINER_STYLE: Readonly<Record<string, string>> = {
   userSelect: "none",
 };
 
-/** The content-plane styles: origin-anchored, transform-ready (design-002 §5). */
-const PLANE_STYLE: Readonly<Record<string, string>> = {
-  position: "absolute",
-  left: "0",
-  top: "0",
-  transformOrigin: "0 0",
-  willChange: "transform",
-};
-
 export function createCanvasHost(container: HTMLElement): CanvasHost {
-  // The plane needs the container to be a POSITIONED containing block — but
+  // The children need the container to be a POSITIONED containing block — but
   // `absolute`/`fixed` already qualify, so only promote a `static` container
   // to `relative`. Stomping an app's `position: absolute` with inline
   // `relative` collapses the common `#app { position: absolute; inset: 0 }`
@@ -65,15 +55,9 @@ export function createCanvasHost(container: HTMLElement): CanvasHost {
   });
   Object.assign(container.style, CONTAINER_STYLE);
 
-  const contentPlane = container.ownerDocument.createElement("div");
-  Object.assign(contentPlane.style, PLANE_STYLE);
-  container.appendChild(contentPlane);
-
   return {
     container,
-    contentPlane,
     dispose() {
-      contentPlane.remove();
       if (promoteToRelative) container.style.removeProperty("position");
       for (const [cssName, prior] of priorContainerStyle) {
         // Restore the caller's prior inline value, or clear the host's if the

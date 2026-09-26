@@ -54,13 +54,13 @@ import { compareStackOrder, createSiblingOrderIndex } from "../ops/sibling-order
 import { PrefabId } from "../schema/prefab";
 import type { PortalAffine } from "@ice/kernel";
 
-/** Is every one of these a GPU OBJECT (`surface: "object"`, design-015 §5.2)? The desk's drop rules apply to an all-object set. */
+/** Is every one of these a GPU OBJECT (an `object` kind binding, design-015 §5.2)? The desk's drop rules apply to an all-object set. */
 export function objectsOnly(world: World, entities: readonly Entity[]): boolean {
   if (entities.length === 0) return false;
   for (const e of entities) {
     if (!world.isAlive(e)) continue;
     const id = world.get(e, PrefabId)?.id;
-    if (typeof id !== "string" || widgetTypeFor(world, id)?.surface !== "object") return false;
+    if (typeof id !== "string" || widgetTypeFor(world, id)?.object === undefined) return false;
   }
   return true;
 }

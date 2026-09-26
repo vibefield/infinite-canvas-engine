@@ -23,10 +23,10 @@ import {
 // One widget type per FILE (global registry; no test reset).
 const FOLDER =
   widgets.get("navf:folder") ??
-  defineWidget({ type: "navf:folder", surface: "dom", component: null, defaultSize: { w: 200, h: 200 }, container: { accepts: ["widget"] } });
+  defineWidget({ type: "navf:folder", defaultSize: { w: 200, h: 200 }, container: { accepts: ["widget"] } });
 const BOX =
   widgets.get("navf:box") ??
-  defineWidget({ type: "navf:box", surface: "dom", component: null, defaultSize: { w: 100, h: 100 }, provides: ["widget"] });
+  defineWidget({ type: "navf:box", defaultSize: { w: 100, h: 100 }, provides: ["widget"] });
 
 const VP = { w: 800, h: 600, dpr: 1 };
 

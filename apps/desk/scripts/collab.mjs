@@ -5,7 +5,7 @@
 // both joined over the relay (the relay saw both sockets in the room; a desk that ignored `?relay=` would still converge
 // over the same-origin BroadcastChannel — the socket count is what tells them apart); an ADD in A reaches B;
 // a real DRAG in A lands in B where A let go; a DELETE in A leaves B; and each tab SHOWS THE OTHER'S CURSOR — dom's
-// remote-cursors reflector (design-015 §1/§3 keep `@ice/dom`'s screen-space half; `<InfiniteCanvas>` mounts it, `chrome={false}`
+// remote-cursors reflector (design-015 §1/§3 keep `@ice/dom`'s screen-space half; `<Desk>` mounts it through `createDeskHost` (D5b)
 // or not): the peer's world point (its own pointer, read in its own tab) mapped through THIS tab's camera, screen px to 0.5 —
 // and again after this tab pans and zooms — with the peer's name on its chip, the chip painted over the desk in the peer's
 // colour (the screenshot's pixel). Objects cross by their durable KEY (`__desk.room`). Exit 0 = passed.

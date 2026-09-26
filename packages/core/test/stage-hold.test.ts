@@ -11,8 +11,6 @@ const BOX =
   widgets.get("stage:box") ??
   defineWidget({
     type: "stage:box",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 80 },
   });
 

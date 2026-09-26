@@ -13,7 +13,7 @@ import { defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-const BOOK = defineWidget({ type: "hb:book", surface: "object", object: { name: "book" }, openable: true, defaultSize: { w: 180, h: 252 } });
+const BOOK = defineWidget({ type: "hb:book", object: { name: "book" }, openable: true, defaultSize: { w: 180, h: 252 } });
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {

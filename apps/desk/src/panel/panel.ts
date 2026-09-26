@@ -8,9 +8,9 @@
 // here touches storage — the room is the truth.
 
 import { type CanvasEngine, type Entity, NavTransitionSettings, PrefabId, selectedEntities, writeRuntimeResource, ZoomThroughSettings } from "@ice/core";
-import type { DeskLayerHandle, PlateName } from "@ice/desk/host";
+import type { DeskLayerHandle, PlateName } from "@ice/desk";
 import { MINIMAT_TYPE, MiniMat, VINYLS } from "@ice/desk/objects";
-import { cssColor, type GroundTheme, MARKS, type RGB, type ThemeName } from "@ice/desk/theme";
+import { cssColor, type GroundTheme, MARKS, type RGB, type ThemeName } from "@ice/desk";
 import { type ColorRole, type DeskParams, defaultParams, matConfigOf, resetParams, restoreParams, snapshotParams, themeWith } from "./params";
 
 export type Row =

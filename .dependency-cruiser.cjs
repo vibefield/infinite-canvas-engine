@@ -1,7 +1,8 @@
 /**
- * The import walls (design-002 §6). One direction only:
- *   kernel ← core ← dom ← react ← r3f          devtools → core (+kernel)
- * kernel imports NOTHING. core never touches react/dom/three.
+ * The import walls (design-002 §6; reshaped at design-015 §3, D5b). One direction only:
+ *   kernel ← core ← dom ← react          desk → core (+kernel)       devtools → core (+kernel)
+ * kernel imports NOTHING. core never touches react/dom/three. Nobody imports desk but apps
+ * (and the umbrella's entries); nobody imports devtools. three is imported NOWHERE.
  * Violations are CI failures, not warnings — v1 had no wall to stop at.
  *
  * Each package rule is a POSITIVE ALLOWLIST: `to.pathNot` enumerates the ONLY
@@ -21,6 +22,11 @@
  *    `[^/]+` inside an optional group) because dependency-cruiser rejects
  *    nested-quantifier regexes as unsafe. The `(/|$)` boundary keeps `react`
  *    from also matching `react-dom`, etc.
+ *
+ * GONE at design-015 D5b, with the packages and seams they bound: `r3f-top-of-chain`,
+ * `ground-only-core-kernel`, `nobody-imports-ground`, `ground-never-imports-desk` and its
+ * reverse (D-D0.3's two legs, one deleted), `hic-symbols-live-in-the-adapter`,
+ * `no-cross-profile-imports` and its reverse. `three-only-in-r3f` became `no-three`.
  */
 const nm = (pkg) => `node_modules/${pkg}(/|$)`;
 
@@ -32,12 +38,12 @@ module.exports = {
       // ever caught: before `tsPreCompilationDeps` (design-013 C4, 2026-09-08)
       // a type-only import was invisible to the cruiser, so every cycle it
       // reported closed through real, emitted edges. Turning type edges on to
-      // seal `three-only-in-r3f` also made 21 TYPE-ONLY cycles visible in core
-      // and react (`behavior/types.ts` ⇄ `guards/guarded-tx.ts` is the shape:
-      // both sides `import type`). Those are erased by `tsc` — no emitted
-      // require, no initialisation order to get wrong — so reporting them would
-      // change what this rule means, not what the code does. A cycle with even
-      // ONE runtime edge still fails.
+      // seal the three wall also made 21 TYPE-ONLY cycles visible in core and
+      // react (`behavior/types.ts` ⇄ `guards/guarded-tx.ts` is the shape: both
+      // sides `import type`). Those are erased by `tsc` — no emitted require,
+      // no initialisation order to get wrong — so reporting them would change
+      // what this rule means, not what the code does. A cycle with even ONE
+      // runtime edge still fails.
       severity: "error",
       from: {},
       to: { circular: true, viaOnly: { dependencyTypesNot: ["type-only"] } },
@@ -73,7 +79,10 @@ module.exports = {
     },
     {
       name: "dom-only-core-kernel",
-      comment: "design-002 §6: dom sits on core — core + kernel only, never react/three/higher layers.",
+      comment:
+        "design-002 §6, design-015 §3: dom is SCREEN SPACE on core — core + kernel only, never " +
+        "react/three/desk/higher layers. The desk reaches its host as an OPAQUE layer factory " +
+        "(`createDeskHost`), typed structurally here.",
       severity: "error",
       from: { path: "^packages/dom/src" },
       to: { pathNot: ["^packages/dom/src", "^packages/core", "^packages/kernel"] },
@@ -81,8 +90,9 @@ module.exports = {
     {
       name: "react-only-dom-core-kernel-react",
       comment:
-        "design-002 §6: react layers on dom — dom/core/kernel + react/react-dom peers " +
-        "(jsx-runtime + createPortal: portals-from-one-root IS the package, design-004 §2), never three/r3f.",
+        "design-002 §6, design-015 §3: react layers on dom — dom/core/kernel + react/react-dom peers " +
+        "(jsx-runtime for the screen-space chrome), never three/desk. `<Desk>` wraps dom's " +
+        "`createDeskHost` and receives the desk as an opaque layer factory.",
       severity: "error",
       from: { path: "^packages/react/src" },
       to: {
@@ -97,51 +107,39 @@ module.exports = {
       },
     },
     {
-      name: "r3f-top-of-chain",
+      name: "desk-only-core-kernel",
       comment:
-        "design-002 §6: r3f is the top — react/dom/core/kernel + peers react|three|@react-three " +
-        "+ stats-gl (2026-07-13: the GL profiling seam's GPU-timer dep, dynamic-imported), nothing above. " +
-        "Note what the design-012 S5 addition below does NOT open: r3f still may not import ground. " +
-        "Islands reach the unified compositor through core's CompositorSourceRegistry, which is the " +
-        "whole reason that seam lives in core.",
+        "design-015 §3 (D1, 2026-09-25): the desk draws in RAW WebGPU on its own engine " +
+        "(vibe-field/draft/ground's prototype, moved) — core + kernel ONLY, the ground's old wall. " +
+        "`from` binds on src, so the Node oracle and the tests are exempt (they import `webgpu`, " +
+        "`vitest` and `node:*`).",
       severity: "error",
-      from: { path: "^packages/r3f/src" },
-      to: {
-        pathNot: [
-          "^packages/r3f/src",
-          "^packages/react",
-          "^packages/dom",
-          "^packages/core",
-          "^packages/kernel",
-          nm("react"),
-          nm("three"),
-          nm("@react-three"),
-          nm("stats-gl"),
-          "^stats-gl(/|$)", // dynamic import reports by specifier (the strata-subpath precedent)
-          // design-012 S5: `three/webgpu` (the WebGPURenderer incantation) resolves
-          // through three's exports map, which the cruiser reports by SPECIFIER
-          // rather than by node_modules path — the same allowance ground already
-          // carries. Confined to ONE file, src/webgpu/island-renderer.ts, behind
-          // the `@ice/r3f/webgpu` subpath, so a stratified app never pulls three's
-          // node material system (its `sideEffects: ["./src/nodes/**"]` makes that
-          // import survive tree-shaking).
-          "^three(/|$)",
-        ],
-      },
+      from: { path: "^packages/desk/src" },
+      to: { pathNot: ["^packages/desk/src", "^packages/core", "^packages/kernel"] },
     },
     {
-      name: "ground-only-core-kernel",
+      name: "desk-dom-free",
       comment:
-        "design-002 §6 (amended 2026-07-16, the @ice/ground extraction; three struck out at " +
-        "design-013 C3, 2026-09-07): the P0 ground layer draws in RAW WebGPU — core + kernel " +
-        "ONLY. C2 deleted the three-based stratified leg (the WebGPURenderer, TSL, the pass " +
-        "registry, the programs) and C3 struck the `three` allowance this rule carried for it, " +
-        "along with the package's `three` peer and dev deps. Off the react chain: react must " +
-        "NOT import ground (its own allowlist enforces that); apps inject the layer through the " +
-        "InfiniteCanvas `ground` factory prop or register its reflector directly.",
+        "design-015 §3 `desk-dom-free`: `desk/src/*` may touch the DOM only under `desk/src/host/` " +
+        "(the canvas, the editor element, font loading, Canvas2D rasters, image decode), so the Node " +
+        "oracle imports everything else whole. The import-graph half of the wall: nothing under " +
+        "desk/src outside host/ may import host/ (the DOM half is a LEAF the composition root and the " +
+        "world half never reach) — except the package's root barrel, `src/index.ts`, which is the " +
+        "published door and re-exports both halves. The API half — no `document`/`window`/`navigator` " +
+        "outside host/ — is `packages/desk/test/dom-free.test.ts`, the grep a cruiser cannot be.",
       severity: "error",
-      from: { path: "^packages/ground/src" },
-      to: { pathNot: ["^packages/ground/src", "^packages/core", "^packages/kernel"] },
+      from: { path: "^packages/desk/src", pathNot: ["^packages/desk/src/host/", "^packages/desk/src/index\\.ts$"] },
+      to: { path: "^packages/desk/src/host/" },
+    },
+    {
+      name: "desk-engine-never-imports-objects",
+      comment:
+        "design-015 §3 (the design-014 seam test): `desk/engine` is what every desk needs and depends " +
+        "on world facts; a KIND is a look plus its behaviours and plugs in through `defineObject` " +
+        "exactly as a third-party kind will. The engine may not know the reference kinds.",
+      severity: "error",
+      from: { path: "^packages/desk/src/engine/" },
+      to: { path: "^packages/desk/src/objects/" },
     },
     {
       name: "devtools-only-core-kernel-strata",
@@ -167,114 +165,38 @@ module.exports = {
       name: "nobody-imports-devtools",
       comment: "design-002 §6: devtools is a leaf — no engine package may depend on it.",
       severity: "error",
-      from: { path: "^packages/(kernel|core|dom|react|r3f|ground)/src" },
+      from: { path: "^packages/(kernel|core|dom|react|desk)/src" },
       to: { path: "^packages/devtools" },
-    },
-    {
-      name: "no-cross-profile-imports",
-      comment:
-        "design-012 §3: the composited and stratified presentation profiles are ALTERNATIVES, " +
-        "selected by an app's build wiring (the design-010 idiom — the unselected one is excluded " +
-        "from that app's graph). An import edge between them would put both in every bundle and " +
-        "turn a build-time selection into dead weight. They share vocabulary through " +
-        "profiles/contract.ts, never through each other.",
-      severity: "error",
-      from: { path: "^packages/react/src/profiles/composited" },
-      to: { path: "^packages/react/src/profiles/stratified" },
-    },
-    {
-      name: "no-cross-profile-imports-reverse",
-      comment: "The other direction of no-cross-profile-imports; see that rule.",
-      severity: "error",
-      from: { path: "^packages/react/src/profiles/stratified" },
-      to: { path: "^packages/react/src/profiles/composited" },
-    },
-    {
-      name: "hic-symbols-live-in-the-adapter",
-      comment:
-        "design-012 §8 gates 1+6: HTML-in-Canvas is an origin trial that has been renamed once " +
-        "and ends at M154. Everything HiC-touching sits behind ONE adapter module, so it dies in " +
-        "one place. No module may import ground's internals to reach around it.",
-      severity: "error",
-      // `from` binds on src dirs only — the file header's standing convention,
-      // which keeps ground's OWN test/ files (which must import the adapter to
-      // test it) out of every rule.
-      from: { path: "^packages/[^/]+/src", pathNot: "^packages/ground/src" },
-      to: { path: "^packages/ground/src/hic-adapter" },
-    },
-    {
-      name: "nobody-imports-ground",
-      comment:
-        "design-002 §6 (2026-07-16): ground is a leaf like devtools — apps consume it directly; " +
-        "no engine package may depend on it (react receives its layer as an OPAQUE factory prop).",
-      severity: "error",
-      from: { path: "^packages/(kernel|core|dom|react|r3f|devtools)/src" },
-      to: { path: "^packages/ground" },
-    },
-    {
-      name: "desk-only-core-kernel",
-      comment:
-        "design-015 §3 (D1, 2026-09-25): the desk draws in RAW WebGPU on its own engine " +
-        "(vibe-field/draft/ground's prototype, moved) — core + kernel ONLY, the ground's wall. D1 " +
-        "imported neither: the engine, the mat, nav, the mini mat and the objects are self-contained; " +
-        "the world arrived at D2a-world (the kinds' world halves, `defineObject` over core's " +
-        "`defineWidget`, the builder and the pick source over the world — src/compose, src/objects). " +
-        "`from` binds on src, so the Node oracle and the tests are exempt (they import `webgpu`, " +
-        "`vitest` and `node:*`).",
-      severity: "error",
-      from: { path: "^packages/desk/src" },
-      to: { pathNot: ["^packages/desk/src", "^packages/core", "^packages/kernel"] },
     },
     {
       name: "nobody-imports-desk",
       comment:
-        "design-015 D1: nothing imports @ice/desk yet — apps consume it directly (apps/desk). The " +
-        "react host (`<Desk>`) and the umbrella's /desk entries are D2's to open, by amending this " +
-        "rule. Both path forms: a resolved import lands in packages/desk; an unresolved one (no " +
-        "workspace dependency declared) is reported by SPECIFIER.",
+        "design-015 §3: nobody imports `desk` but apps (today's `nobody-imports-ground`) — the React " +
+        "host and the vanilla host receive the desk as an opaque LAYER FACTORY (`deskLayer({ … })`), " +
+        "exactly as `<InfiniteCanvas ground={groundCompose(…)}>` received the ground. The react package " +
+        "stays renderer-free; the walls stay a chain (dom → react) with desk beside it. The umbrella's " +
+        "entries (`packages/ice/src`) re-export it and are the one exception. Both path forms: a " +
+        "resolved import lands in packages/desk; an unresolved one is reported by SPECIFIER.",
       severity: "error",
-      from: { path: "^packages/(kernel|core|dom|react|r3f|devtools|ice)/src" },
+      from: { path: "^packages/(kernel|core|dom|react|devtools)/src" },
       to: { path: ["^packages/desk/", "^@ice/desk(/|$)"] },
     },
     {
-      name: "ground-never-imports-desk",
+      name: "no-three",
       comment:
-        "design-015 plan D-D0.3: @ice/desk is born BESIDE @ice/ground and the two never import " +
-        "each other until D5 deletes the old leg — from anywhere in the package (src, tests, " +
-        "oracle, tools), not only src: the two legs share no code, only the laws the oracle pins.",
+        "design-015 §3 (D5b): `three` is imported NOWHERE. Until D5b `three-only-in-r3f` let " +
+        "`packages/r3f` name it for the GL islands; the islands, their WebGPU renderer, the `three` " +
+        "peer and the `stats-gl` dependency left together (a 3D object is an object kind with its own " +
+        "pass — the notebook is one). Binds on every package's `src`, the umbrella's entry modules " +
+        "included, so a three edge cannot re-enter the graph through a publish entry. BOTH path forms " +
+        "are listed because the cruiser reports a bare `three` by its resolved node_modules path and an " +
+        "exports-map subpath (`three/webgpu`, `three/tsl`) by SPECIFIER; either alone leaves half the " +
+        "door open (the probe that proved it: a temporary `import \"three\"` in ground's theme.ts). " +
+        "`@react-three` and `stats-gl` ride the same rule.",
       severity: "error",
-      from: { path: "^packages/ground/" },
-      to: { path: ["^packages/desk/", "^@ice/desk(/|$)"] },
+      from: { path: "^packages/(kernel|core|dom|react|desk|devtools|ice)/src" },
+      to: { path: ["^three(/|$)", nm("three"), "^@react-three/", nm("@react-three"), "^stats-gl(/|$)", nm("stats-gl")] },
     },
-    {
-      name: "desk-never-imports-ground",
-      comment: "The other direction of ground-never-imports-desk (D-D0.3); see that rule.",
-      severity: "error",
-      from: { path: "^packages/desk/" },
-      to: { path: ["^packages/ground/", "^@ice/ground(/|$)"] },
-    },
-    {
-      name: "three-only-in-r3f",
-      comment:
-        "design-013 §8 Phase C (D-C3.1, 2026-09-07): `three` left @ice/ground with the " +
-        "stratified leg's renderer, so `packages/r3f` is the ONLY package that may name it — " +
-        "the GL islands and their WebGPU renderer are what the published `three` peer is FOR, " +
-        "and the peer stays declared (optional) for exactly them. Belt and braces over the " +
-        "per-package allowlists above: it also binds on `packages/ice/src`, the publish " +
-        "bundle's entry modules, which have no allowlist of their own — so a three edge cannot " +
-        "re-enter the graph through the umbrella. BOTH path forms are listed because the " +
-        "cruiser reports a bare `three` by its resolved node_modules path and an exports-map " +
-        "subpath (`three/webgpu`, `three/tsl`) by SPECIFIER; either alone leaves half the door " +
-        "open (the probe that proved it: a temporary `import \"three\"` in ground's theme.ts).",
-      severity: "error",
-      from: { path: "^packages/(kernel|core|dom|react|ground|devtools|ice)/src" },
-      to: { path: ["^three(/|$)", nm("three")] },
-    },
-    // The two Phase-B/C leg walls (`ground-compose-imports-no-old-leg` and its reverse) left with
-    // the old stratified leg at design-013 C2 (2026-09-07): `packages/ground/src` is ONE leg now —
-    // the barrel (`index.ts`) is the engine's stratified face and imports from `compose/`; the
-    // paths the walls named (`passes`, `programs`, `program-host`, `renderer`, `layer`, `pass`,
-    // `poles`) no longer exist, so a wall between them would bind on nothing.
   ],
   options: {
     doNotFollow: { path: "node_modules" },
@@ -291,8 +213,8 @@ module.exports = {
     // after a build.
     //
     // ANCHORED AT `packages/` ON PURPOSE. A bare `(^|/)dist/` also swallows a
-    // DEPENDENCY's own dist (strata-ecs, vitest, fiber, stats-gl, tsup — five
-    // modules), and an excluded target takes its edges with it: an import of
+    // DEPENDENCY's own dist (strata-ecs, vitest, tsup — modules the allowlists
+    // must SEE), and an excluded target takes its edges with it: an import of
     // `some-pkg/dist/thing` would stop being a wall violation and start being
     // invisible. The allowlists work by seeing the node_modules target, so it
     // must stay in the graph.
@@ -300,11 +222,11 @@ module.exports = {
     tsConfig: { fileName: "tsconfig.base.json" },
     // A `import type { X } from "three"` is an EDGE (design-013 C4, D-C4.11).
     // Without this the cruiser walks the emitted JS, where a type-only import is
-    // erased — so `three-only-in-r3f` could not see one, and the wall stood only
-    // because `@types/three` happens to be absent from every walled package's
+    // erased — so `no-three` could not see one, and the wall stood only because
+    // `@types/three` happens to be absent from every walled package's
     // node_modules. That is a resolution accident, not a wall. The probe that
     // proved it: a temporary `import type { Vector3 } from "three"` in ground's
-    // theme.ts passes without this flag and is a violation with it.
+    // theme.ts passed without this flag and was a violation with it.
     tsPreCompilationDeps: true,
   },
 };

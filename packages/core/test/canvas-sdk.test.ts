@@ -48,15 +48,11 @@ import { ensureBoardRoot } from "../src/doc/schema-migrate";
 
 const Sticky = defineWidget({
   type: "canvas-sdk:sticky",
-  surface: "dom",
-  component: null,
   provides: ["whiteboard.item"],
 });
 
 const BoardCard = defineWidget({
   type: "canvas-sdk:board-card",
-  surface: "dom",
-  component: null,
   provides: ["board.item"],
 });
 
@@ -85,7 +81,6 @@ const WhiteboardCanvas = defineCanvasType({
 const WhiteboardContainer = defineContainer({
   type: "canvas-sdk:whiteboard-container",
   canvas: WhiteboardCanvas,
-  component: null,
   defaultSize: { w: 360, h: 280 },
   portal: { top: 12, right: 12, bottom: 40, left: 12 },
   provides: ["board.item", "canvas-container"],
@@ -139,7 +134,6 @@ const RuntimeCanvas = defineCanvasType({
 const RuntimeContainer = defineContainer({
   type: "canvas-sdk:runtime-container",
   canvas: RuntimeCanvas,
-  component: null,
 });
 
 /**
@@ -179,15 +173,11 @@ const FaultingRuntimeCanvas = defineCanvasType({
 const FaultingRuntimeContainer = defineContainer({
   type: "canvas-sdk:faulting-runtime-container",
   canvas: FaultingRuntimeCanvas,
-  component: null,
 });
 
 const BehaviorSticky = defineWidget({
   type: "canvas-sdk:behavior-sticky",
-  surface: "dom",
-  component: null,
   props: { normalized: p.boolean({ default: false }) },
-  instancePreview: { props: ["normalized"] },
 });
 const BehaviorStickyProps = BehaviorSticky.groups[0]?.component;
 if (BehaviorStickyProps === undefined) throw new Error("missing generated behavior props group");
@@ -218,7 +208,6 @@ const BehaviorCanvas = defineCanvasType({
 const BehaviorContainer = defineContainer({
   type: "canvas-sdk:behavior-container",
   canvas: BehaviorCanvas,
-  component: null,
 });
 const EmptyCanvas = defineCanvasType({
   id: "canvas-sdk:empty-canvas",
@@ -229,7 +218,6 @@ const EmptyCanvas = defineCanvasType({
 const EmptyContainer = defineContainer({
   type: "canvas-sdk:empty-container",
   canvas: EmptyCanvas,
-  component: null,
 });
 
 let previewProjectionRuns = 0;
@@ -261,7 +249,6 @@ const PreviewCanvas = defineCanvasType({
 const PreviewContainer = defineContainer({
   type: "canvas-sdk:preview-container",
   canvas: PreviewCanvas,
-  component: null,
   defaultSize: { w: 320, h: 240 },
   portal: { top: 10, right: 20, bottom: 30, left: 40 },
 });
@@ -310,8 +297,6 @@ const MigratingCanvas = defineCanvasType({
  */
 const LegacyFolder = defineWidget({
   type: "canvas-sdk:legacy-folder",
-  surface: "dom",
-  component: null,
   container: { accepts: ["board.item"] },
 });
 
@@ -858,7 +843,6 @@ describe("semantic frame previews", () => {
         resolvePortal(engine.world, frame, PreviewContainer.container)?.local,
       );
       expect(initial.children).toHaveLength(1);
-      expect(initial.children[0]?.previewModel).toEqual({ normalized: false });
       expect(initial.facets).toMatchObject({
         labels: [{ normalized: false }],
         containment: [{ source: initial.children[0]?.key, target: initial.frameKey }],
@@ -878,7 +862,6 @@ describe("semantic frame previews", () => {
       expect(changed).not.toBe(initial);
       expect(changed.revision).toBe(initial.revision + 1);
       expect(changed.facets).toMatchObject({ labels: [{ normalized: true }] });
-      expect(changed.children[0]?.previewModel).toEqual({ normalized: true });
       expect(notifications).toBeGreaterThan(0);
 
       unsubscribe();
@@ -915,7 +898,6 @@ describe("semantic frame previews", () => {
     const HugeContainer = defineContainer({
       type: "canvas-sdk:huge-container",
       canvas: HugeCanvas,
-      component: null,
     });
     const faults: unknown[] = [];
     const engine = createCanvasEngine({
@@ -1370,7 +1352,6 @@ const NestingCanvas = defineCanvasType({
 const NestingContainer = defineContainer({
   type: "canvas-sdk:nesting-container",
   canvas: NestingCanvas,
-  component: null,
   defaultSize: { w: 360, h: 280 },
   provides: ["nest.item", "canvas-container"],
 });

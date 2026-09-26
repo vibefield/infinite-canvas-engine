@@ -6,8 +6,8 @@
 // or the platform would.
 
 import { type CanvasEngine, defineQuery, Editing, type Entity } from "@ice/core";
-import type { DeskLayerHandle } from "@ice/desk/host";
-import { DEFAULT_BLEED, DEFAULT_HAND_LAW, layoutText, type NoteRasterInfo, type PaperKind, type WritingStats } from "@ice/desk/kinds";
+import type { DeskLayerHandle } from "@ice/desk";
+import { DEFAULT_BLEED, DEFAULT_HAND_LAW, layoutText, type NoteRasterInfo, type PaperKind, type WritingStats } from "@ice/desk";
 import { NOTE_INK } from "@ice/desk/objects";
 import { deskText } from "./faces";
 

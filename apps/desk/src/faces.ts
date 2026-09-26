@@ -3,7 +3,7 @@
 // names the faces and their weights (`PEN_FACES`); the app owns the files. One raster per page: the
 // faces load once, lazily, the first time a note asks for one.
 
-import { inkRaster, type InkRaster, penFaces } from "@ice/desk/host";
+import { inkRaster, type InkRaster, penFaces } from "@ice/desk";
 import caveat500 from "../assets/fonts/Caveat-500.ttf?url";
 import caveat600 from "../assets/fonts/Caveat-600.ttf?url";
 import kalam400 from "../assets/fonts/Kalam-400.ttf?url";

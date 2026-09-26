@@ -22,7 +22,6 @@ import type { Entity, World } from "@vibecook/strata-ecs";
 import type { PublishHook } from "../engine/engine";
 import {
   LocalPointer,
-  MeasuredSize,
   Pointer,
   PointerWorld,
   Position,
@@ -154,11 +153,9 @@ export function createPresencePublish(
       }
       if (!w.has(e, Position)) continue;
       const p = w.read(e, Position);
-      // Effective size mirrors selectionChrome: MeasuredSize where auto-sized, else Size.
-      const m = w.get(e, MeasuredSize);
       const s = w.get(e, Size);
-      const width = m !== undefined && m.w > 0 ? m.w : (s?.w ?? 0);
-      const height = m !== undefined && m.h > 0 ? m.h : (s?.h ?? 0);
+      const width = s?.w ?? 0;
+      const height = s?.h ?? 0;
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x + width);

@@ -18,16 +18,12 @@ const BOX =
   widgets.get("ff:box") ??
   defineWidget({
     type: "ff:box",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 100 },
   });
 const FOLDER =
   widgets.get("ff:folder") ??
   defineWidget({
     type: "ff:folder",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 200, h: 200 },
     container: { accepts: ["widget"] },
   });

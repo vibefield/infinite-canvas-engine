@@ -36,16 +36,12 @@ import { widgetSpawnInits } from "../src/widget/spawn";
 
 const BenchLeaf = defineWidget({
   type: "bench-leaf",
-  surface: "dom",
-  component: () => null,
   defaultSize: { w: 100, h: 60 },
   provides: ["widget"],
 });
 
 const BenchFolder = defineWidget({
   type: "bench-folder",
-  surface: "dom",
-  component: () => null,
   defaultSize: { w: 300, h: 300 },
   container: { accepts: ["widget"] },
 });

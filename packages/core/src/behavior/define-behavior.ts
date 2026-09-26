@@ -66,8 +66,10 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*:[A-Za-z0-9][A-Za-z0-9._-]*$/;
  *
  * So the namespace is the engine's alone. The mark is a module-private symbol
  * — not exported, not on the spec type, unforgeable from outside this file —
- * supplied only by `defineEngineBehavior` below, which only
- * `surface/standard-behaviors.ts` calls.
+ * supplied only by `defineEngineBehavior` below. Its three callers, the
+ * `ice:surface.*` kind behaviours (`surface/standard-behaviors.ts`), left at
+ * design-015 D5b with the DOM/GPU presentation choice they wrote; the door
+ * stays for the engine's next behaviour, and the reservation stands.
  */
 const ENGINE_MARK = Symbol("ice.engineBehavior");
 const RESERVED_NAMESPACE = "ice:";
@@ -322,15 +324,13 @@ function validate(name: string, spec: BehaviorSpec<BehaviorStore, BehaviorSchema
     //
     // The ENGINE's own behaviors are EXEMPT (2026-09-06, design-013 A1b). The
     // warning says "this shape is engine vocabulary and may change without
-    // notice", and the engine's own behaviours ship in the same package as the
-    // vocabulary they read: `ice:surface.domAtRest` reads `Grab`,
-    // `SurfaceKind` and `FrameInfo` because design-013 §5's table says a kind
-    // behaviour reads exactly those. Warning about it addresses nobody — an
+    // notice", and an engine behaviour ships in the same package as the
+    // vocabulary it reads (the retired `ice:surface.domAtRest` read `Grab`,
+    // `SurfaceKind` and `FrameInfo` because design-013 §5's table said a kind
+    // behaviour reads exactly those). Warning about it addresses nobody — an
     // app cannot act on it — and three lines on every engine import is how
     // people learn to ignore warnings. Third-party behaviours still hear it,
-    // which is who it was written for. This does NOT widen `PUBLIC_READS`:
-    // the presentation components stay off the published surface until packs
-    // are meant to write kind behaviours of their own.
+    // which is who it was written for. This does NOT widen `PUBLIC_READS`.
     //
     // Keyed on the MARK, not on the name (A3b fix 4): a pack that named itself
     // into `ice:` used to inherit the exemption. That path is refused above

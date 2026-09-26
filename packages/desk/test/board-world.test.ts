@@ -45,7 +45,6 @@ afterAll(() => undoGpu());
 describe("the Board object (design-015 §6)", () => {
   it("desk.board — cap · tip, 480 × 320, things, movable, selectable and RESIZABLE (its knobs are core's handles — Q-a/b), snapping both ways; its kind the board's", () => {
     expect(Board.type).toBe(BOARD_TYPE);
-    expect(Board.surface).toBe("object");
     expect(objectKindOf(Board)?.name).toBe("board");
     expect(Board.defaultSize).toEqual({ w: 480, h: 320 });
     expect(Board.stratum).toBe("things");

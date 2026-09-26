@@ -29,11 +29,11 @@ import {
 // One widget type per FILE (global registry; no test reset).
 const NOTE =
   widgets.get("csel:note") ??
-  defineWidget({ type: "csel:note", surface: "object", object: { name: "paper" }, stratum: "things", defaultSize: { w: 200, h: 200 }, provides: ["note"], interaction: { snap: "none" } });
+  defineWidget({ type: "csel:note", object: { name: "paper" }, stratum: "things", defaultSize: { w: 200, h: 200 }, provides: ["note"], interaction: { snap: "none" } });
 const MAT =
   widgets.get("csel:mat") ??
   defineWidget({
-    type: "csel:mat", surface: "object", object: { name: "minimat" }, stratum: "sheets", defaultSize: { w: 640, h: 480 }, interaction: { snap: "none" },
+    type: "csel:mat", object: { name: "minimat" }, stratum: "sheets", defaultSize: { w: 640, h: 480 }, interaction: { snap: "none" },
     container: { accepts: ["note"], provides: ["mat"], portal: { top: 32, right: 32, bottom: 32, left: 32 } },
   });
 

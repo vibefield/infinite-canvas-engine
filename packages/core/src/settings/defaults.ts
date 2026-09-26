@@ -72,12 +72,6 @@ export const SNAP_DEFAULTS = {
  */
 export const CHROME_DEFAULTS = {
   liftScale: 1,
-  /**
-   * How far a SELECTED card's chrome reaches beyond its rect, world units (S4, 2026-09-23): the
-   * ground draws that chrome beneath every resting DOM host, so `ice:surface.domAtRest` lifts the
-   * dom cards it overlaps to the GPU while the selection shows. 0 = no such chrome, nothing lifts.
-   */
-  selectionReach: 0,
 } as const;
 
 /** Zoom clamp (design-003 §5 item 9 cameraControl) and frame dt clamp (design-002 §1). */
@@ -138,10 +132,12 @@ export const ZOOM_THROUGH_DEFAULTS = {
   gate: [140, 220] as readonly [number, number],
 } as const;
 
-/** Widget/FBO/port budgets (design-004 §2 host pipeline, §3 FBO pool, §6 port materialization; ported into design-005 §4 engine facade). */
+/**
+ * Port and cull budgets (design-004 §6 port materialization; ported into design-005 §4 engine
+ * facade). `keepMountedWidgets` and `fboBytes` left at design-015 D5b with the mount LRU and the
+ * GL allocation ledger they bounded.
+ */
 export const RUNTIME_BUDGETS = {
-  keepMountedWidgets: 256,
-  fboBytes: 268_435_456,
   portSpawnPerFrame: 64,
   portLightUpRadiusPx: 600,
   portReapGraceMs: 1000,

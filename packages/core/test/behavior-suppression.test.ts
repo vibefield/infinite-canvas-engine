@@ -24,7 +24,7 @@ import { p } from "../src/widget/props";
 
 const BOX =
   widgets.get("bsup:box") ??
-  defineWidget({ type: "bsup:box", surface: "dom", component: null, defaultSize: { w: 10, h: 10 } });
+  defineWidget({ type: "bsup:box", defaultSize: { w: 10, h: 10 } });
 
 let ce: CanvasEngine;
 let runtime: BehaviorRuntime;

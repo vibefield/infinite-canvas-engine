@@ -14,4 +14,4 @@ export {
   type DevtoolsOpts,
 } from "./attach";
 export { createDock, type Dock, type DockCorner, type DockOptions, type DockSlotId } from "./dock";
-export { createGlPanel, type GlPanel, type GlPanelCorner, type GlPanelOptions, type GlPanelStats } from "./gl-panel";
+// `createGlPanel` (the r3f stats mirror) left at design-015 D5b with the GL islands it read.

@@ -38,8 +38,6 @@ const BOX =
   widgets.get("reseed:box") ??
   defineWidget({
     type: "reseed:box",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 80 },
   });
 
@@ -84,7 +82,7 @@ function mounted(): { ce: CanvasEngine; release: () => void } {
     hitSlopPx: 7,
   } as never);
   writeRuntimeResource(ce.world, SnapConfig, { enabled: true, thresholdPx: 11 });
-  writeRuntimeResource(ce.world, ChromeSettings, { liftScale: 1.42, selectionReach: 0 });
+  writeRuntimeResource(ce.world, ChromeSettings, { liftScale: 1.42 });
   const release = ce.stage.background("reseed-overlay");
   return { ce, release };
 }

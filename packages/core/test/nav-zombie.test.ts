@@ -20,8 +20,6 @@ const FOLDER =
   widgets.get("navz:folder") ??
   defineWidget({
     type: "navz:folder",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 200, h: 200 },
     container: { accepts: ["widget"] },
   });
@@ -29,8 +27,6 @@ const BOX =
   widgets.get("navz:box") ??
   defineWidget({
     type: "navz:box",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 100 },
   });
 
@@ -66,8 +62,6 @@ describe("nav transitions never resurrect departing-frame widgets", () => {
     }
     expect(ce.world.hasTag(box, Active)).toBe(false);
     expect(ce.world.hasTag(box, Culled)).toBe(true);
-    const entry = ce.runtime.store.getSnapshot().find((m) => m.entity === box);
-    expect(entry === undefined || entry.hidden === true).toBe(true);
     ce.dispose();
   });
 

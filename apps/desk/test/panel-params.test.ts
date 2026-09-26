@@ -6,8 +6,8 @@
  * builder holds the springs object).
  */
 import { NAV_TRANSITION_DEFAULTS, ZOOM_THROUGH_DEFAULTS } from "@ice/core";
-import { DEFAULT_MAT_CONFIG, SPRINGS } from "@ice/desk/host";
-import { MAT_LIGHT, MINIMAT, themeFrom } from "@ice/desk/theme";
+import { DEFAULT_MAT_CONFIG, SPRINGS } from "@ice/desk";
+import { MAT_LIGHT, MINIMAT, themeFrom } from "@ice/desk";
 import { PALETTE } from "@ice/desk/oracle/fixtures/vf-theme";
 import { describe, expect, it } from "vitest";
 import { defaultParams, matConfigOf, PARAMS_VERSION, resetParams, restoreParams, snapshotParams, themeWith } from "../src/panel/params";

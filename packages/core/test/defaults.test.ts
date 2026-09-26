@@ -51,8 +51,6 @@ describe("settings/defaults (load-bearing constants, design-003/004/005)", () =>
   });
 
   it("runtime budgets match design-004 defaults", () => {
-    expect(RUNTIME_BUDGETS.keepMountedWidgets).toBe(256);
-    expect(RUNTIME_BUDGETS.fboBytes).toBe(268_435_456);
     expect(RUNTIME_BUDGETS.portSpawnPerFrame).toBe(64);
   });
 });

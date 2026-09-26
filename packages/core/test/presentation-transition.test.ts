@@ -1,3 +1,12 @@
+/**
+ * The presentation transition coordinator over its ONE plane (design-015 D5b): until D5b the
+ * descriptor could require `ground`, `dom` and `gl`, and the tests below drove three adapters
+ * through the gate, the epoch, the ceiling and the stress loop. The DOM and GL planes left with
+ * the widgets that presented on them; every case that needed a second plane is folded to the one
+ * that remains, and the two that were ABOUT a second plane (`continue`, not `break`, past a
+ * detached adapter; the ceiling releasing the OTHER plane's hold after a fault) are recorded here
+ * as retired with it rather than faked.
+ */
 import { createWorld, type Entity } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import { Camera, Viewport } from "../src/catalog";
@@ -22,7 +31,7 @@ const descriptor = Object.freeze({
   affine: { s: 0.5, ox: 25, oy: 30 },
   requestedMotion: true,
   requiresFullT2: true,
-  requiredPlanes: Object.freeze(["ground", "dom", "gl"] as const),
+  requiredPlanes: Object.freeze(["ground"] as const),
 }) satisfies FrameSwitchDescriptor;
 
 function setup() {
@@ -36,17 +45,11 @@ function setup() {
 }
 
 describe("presentation transition coordinator", () => {
-  it("gates cross-type flight until every required visual plane prepares", () => {
+  it("gates the flight on the required plane: no adapter — nothing prepares, a commit is a snap; with one, the flight settles", () => {
     const rig = setup();
     const releases: PresentationReleaseReason[] = [];
-    rig.coordinator.register({
-      id: "dom",
-      plane: "dom",
-      prepare: () => ({ update: () => {}, release: (reason) => releases.push(reason) }),
-    });
-    const prepared = rig.coordinator.prepare(descriptor);
-    expect(prepared.complete).toBe(false);
-    expect(prepared.allowFlight).toBe(false);
+    const unprepared = rig.coordinator.prepare(descriptor);
+    expect(unprepared).toMatchObject({ complete: false, allowFlight: false });
     publishNavCut(
       rig.world,
       "enter",
@@ -55,11 +58,30 @@ describe("presentation transition coordinator", () => {
       descriptor,
       descriptor.affine,
     );
+    unprepared.commit(); // nothing retained ⇒ nothing to animate: a snap
+    expect(rig.coordinator.stats()).toMatchObject({ active: false, retainers: 0 });
+
+    rig.coordinator.register({
+      id: "ground",
+      plane: "ground",
+      prepare: () => ({ update: () => {}, release: (reason) => releases.push(reason) }),
+    });
+    const prepared = rig.coordinator.prepare(descriptor);
+    expect(prepared).toMatchObject({ complete: true, allowFlight: true });
+    startNavFlight(
+      rig.world,
+      "enter",
+      descriptor.affine,
+      descriptor.fromCamera,
+      descriptor.toCamera,
+      descriptor,
+    );
     prepared.commit();
-    expect(rig.coordinator.stats()).toMatchObject({ active: true, motion: "crossfade" });
+    expect(rig.coordinator.stats()).toMatchObject({ active: true, motion: "flight" });
+    const transition = rig.world.getResource(NavTransition);
+    if (transition === undefined) throw new Error("expected transition");
+    rig.world.setResource(NavTransition, { ...transition, active: false, p: 1, v: 0 });
     rig.engine.step(64);
-    rig.engine.step(128);
-    rig.engine.step(192);
     expect(releases).toEqual(["settled"]);
     expect(rig.coordinator.stats().active).toBe(false);
     rig.coordinator.dispose();
@@ -85,7 +107,7 @@ describe("presentation transition coordinator", () => {
     }
     const prepared = rig.coordinator.prepare(descriptor);
     expect(prepared).toMatchObject({ complete: true, allowFlight: true });
-    expect(preparations).toEqual(["dom", "gl", "ground"]);
+    expect(preparations).toEqual(["ground"]);
     startNavFlight(
       rig.world,
       "enter",
@@ -101,11 +123,7 @@ describe("presentation transition coordinator", () => {
     if (transition === undefined) throw new Error("expected transition");
     rig.world.setResource(NavTransition, { ...transition, active: false, p: 1, v: 0 });
     rig.engine.step(64);
-    expect(releases).toEqual([
-      "dom:settled",
-      "gl:settled",
-      "ground:settled",
-    ]);
+    expect(releases).toEqual(["ground:settled"]);
     expect(rig.coordinator.stats().retainers).toBe(0);
     rig.coordinator.dispose();
   });
@@ -214,8 +232,8 @@ describe("presentation transition coordinator", () => {
     const rig = setup();
     const releases: PresentationReleaseReason[] = [];
     const detach = rig.coordinator.register({
-      id: "dom",
-      plane: "dom",
+      id: "ground",
+      plane: "ground",
       prepare: () => ({ update: () => {}, release: (reason) => releases.push(reason) }),
     });
     const prepared = rig.coordinator.prepare(descriptor);
@@ -245,28 +263,23 @@ describe("presentation transition coordinator", () => {
     // store there), so the mount owning the adapter can tear down mid-call.
     // The retainer would then be banked a moment AFTER unregister swept the map.
     const rig = setup();
-    const domReleases: PresentationReleaseReason[] = [];
-    const glReleases: PresentationReleaseReason[] = [];
+    const releases: PresentationReleaseReason[] = [];
     let detach: () => void = () => {};
     detach = rig.coordinator.register({
-      id: "dom",
-      plane: "dom",
+      id: "ground",
+      plane: "ground",
       prepare: () => {
         detach(); // the mount goes away from inside the boundary
-        return { update: () => {}, release: (reason) => domReleases.push(reason) };
+        return { update: () => {}, release: (reason) => releases.push(reason) };
       },
-    });
-    rig.coordinator.register({
-      id: "gl",
-      plane: "gl",
-      prepare: () => ({ update: () => {}, release: (reason) => glReleases.push(reason) }),
     });
 
     const prepared = rig.coordinator.prepare(descriptor);
-    expect(domReleases).toEqual(["detached"]);
-    expect(prepared.complete).toBe(false); // the dom plane did not prepare
+    expect(releases).toEqual(["detached"]);
+    expect(prepared.complete).toBe(false); // the plane did not prepare
 
-    // `continue`, not `break`: the planes that are still ours keep theirs.
+    // The emptied preparation commits nothing, and dispose releases nothing twice. (The
+    // `continue`-not-`break` half — a second plane keeping its retainer — retired with the planes.)
     publishNavCut(
       rig.world,
       "enter",
@@ -276,11 +289,9 @@ describe("presentation transition coordinator", () => {
       descriptor.affine,
     );
     prepared.commit();
-    expect(rig.coordinator.stats()).toMatchObject({ active: true, retainers: 1 });
-    expect(glReleases).toEqual([]);
+    expect(rig.coordinator.stats()).toMatchObject({ active: false, retainers: 0 });
     rig.coordinator.dispose();
-    expect(glReleases).toEqual(["detached"]);
-    expect(domReleases).toEqual(["detached"]); // never released twice
+    expect(releases).toEqual(["detached"]); // never released twice
   });
 
   it("uses a bounded non-geometric crossfade under reduced motion", () => {
@@ -317,7 +328,7 @@ describe("presentation transition coordinator", () => {
     rig.coordinator.dispose();
   });
 
-  it("isolates a faulting plane and releases every remaining hold at the absolute ceiling", () => {
+  it("isolates a faulting plane: released once with `fault`, and nothing lingers past the ceiling", () => {
     const rig = setup();
     const releases: string[] = [];
     rig.coordinator.register({
@@ -330,15 +341,7 @@ describe("presentation transition coordinator", () => {
         release: (reason) => releases.push(`ground:${reason}`),
       }),
     });
-    rig.coordinator.register({
-      id: "dom",
-      plane: "dom",
-      prepare: () => ({
-        update: () => {},
-        release: (reason) => releases.push(`dom:${reason}`),
-      }),
-    });
-    const request = { ...descriptor, requiredPlanes: ["ground", "dom"] as const };
+    const request = { ...descriptor, requiredPlanes: ["ground"] as const };
     const prepared = rig.coordinator.prepare(request);
     startNavFlight(
       rig.world,
@@ -350,10 +353,11 @@ describe("presentation transition coordinator", () => {
     );
     prepared.commit();
     expect(releases).toEqual(["ground:fault"]);
-    // The ceiling is wall-time, not the animation dt (which intentionally
-    // clamps background-tab gaps). One late frame must still release.
+    // The ceiling is wall-time, not the animation dt (which intentionally clamps background-tab
+    // gaps). One late frame: nothing left to release, nothing released twice. (The other plane's
+    // `timeout` release at the ceiling retired with the planes.)
     rig.engine.step(5_000);
-    expect(releases).toEqual(["ground:fault", "dom:timeout"]);
+    expect(releases).toEqual(["ground:fault"]);
     expect(rig.coordinator.stats().active).toBe(false);
     rig.coordinator.dispose();
   });
@@ -484,43 +488,41 @@ describe("presentation transition coordinator", () => {
 
     expect(duplicateReleases).toBe(0);
     expect(releases).toBe(serial);
-    expect(peakActive).toBe(3);
+    expect(peakActive).toBe(1);
     expect(reasons).toEqual(new Set(["cancelled", "superseded", "interrupted", "settled"]));
     rig.coordinator.dispose();
   });
 });
 
-describe("ownerOf (D-C4.6): who holds a plane", () => {
-  const adapter = (id: string, plane: "ground" | "dom" | "gl") =>
-    Object.freeze({ id, plane, prepare: () => null });
+describe("ownerOf (D-C4.6): who holds the plane", () => {
+  const adapter = (id: string) => Object.freeze({ id, plane: "ground" as const, prepare: () => null });
 
   it("names the registered adapter, answers undefined for a free plane, and frees it on unregister", () => {
     const rig = setup();
-    expect(rig.coordinator.ownerOf("gl")).toBeUndefined();
+    expect(rig.coordinator.ownerOf("ground")).toBeUndefined();
 
-    const unregister = rig.coordinator.register(adapter("@ice/r3f/gl", "gl"));
-    expect(rig.coordinator.ownerOf("gl")).toBe("@ice/r3f/gl");
-    expect(rig.coordinator.ownerOf("dom")).toBeUndefined();
+    const unregister = rig.coordinator.register(adapter("@ice/desk/ground"));
+    expect(rig.coordinator.ownerOf("ground")).toBe("@ice/desk/ground");
 
     unregister();
-    expect(rig.coordinator.ownerOf("gl")).toBeUndefined();
+    expect(rig.coordinator.ownerOf("ground")).toBeUndefined();
     rig.coordinator.dispose();
   });
 
   it("is the question `register`'s throw answers — and the message names the same owner", () => {
     const rig = setup();
-    rig.coordinator.register(adapter("first", "gl"));
-    expect(() => rig.coordinator.register(adapter("second", "gl"))).toThrowError(
-      /plane "gl" is already owned by "first"/,
+    rig.coordinator.register(adapter("first"));
+    expect(() => rig.coordinator.register(adapter("second"))).toThrowError(
+      /plane "ground" is already owned by "first"/,
     );
-    expect(rig.coordinator.ownerOf("gl")).toBe("first");
+    expect(rig.coordinator.ownerOf("ground")).toBe("first");
     rig.coordinator.dispose();
   });
 
   it("a disposed coordinator owns nothing", () => {
     const rig = setup();
-    rig.coordinator.register(adapter("@ice/r3f/gl", "gl"));
+    rig.coordinator.register(adapter("@ice/desk/ground"));
     rig.coordinator.dispose();
-    expect(rig.coordinator.ownerOf("gl")).toBeUndefined();
+    expect(rig.coordinator.ownerOf("ground")).toBeUndefined();
   });
 });

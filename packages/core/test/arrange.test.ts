@@ -28,8 +28,6 @@ const BOX =
   widgets.get("arr:box") ??
   defineWidget({
     type: "arr:box",
-    surface: "dom",
-    component: null,
     defaultSize: { w: 100, h: 100 },
   });
 

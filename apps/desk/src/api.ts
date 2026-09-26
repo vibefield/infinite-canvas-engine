@@ -8,9 +8,9 @@
 
 import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, HeldView, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
 import type { GroundFrameInputs } from "@ice/desk";
-import type { DeskLayerHandle, MatPin } from "@ice/desk/host";
-import type { AmbientMode } from "@ice/desk/compose";
-import type { ThemeName } from "@ice/desk/theme";
+import type { DeskLayerHandle, MatPin } from "@ice/desk";
+import type { AmbientMode } from "@ice/desk";
+import type { ThemeName } from "@ice/desk";
 import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
 import { type RoomApi, roomApi } from "./room-api";

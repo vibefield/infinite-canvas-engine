@@ -1,11 +1,11 @@
 /**
  * breakpoint: `WidgetBreakpoint` from a widget's effective size (design-004 §8).
  * Asserts the 5 width tiers, ±10% boundary hysteresis (stable within a band), the
- * MeasuredSize-over-Size effective-size rule, and lazy add on WidgetEquipped only.
+ * `Size` as the effective size (MeasuredSize left at design-015 D5b), and lazy add on WidgetEquipped only.
  *
  * 2026-07-15 gate: the system is Active-scoped (tiers drive RENDERED content;
  * non-active widgets are frozen-while-hidden) and runIf-gated on zoom change ∨
- * Size/MeasuredSize/Active churn — rig spawns stamp Active the way the real
+ * Size/Active churn — rig spawns stamp Active the way the real
  * pipeline's membership system does, and the gate suite below pins skips via
  * run/skip telemetry.
  */
@@ -18,7 +18,6 @@ import {
   createBreakpointSystem,
   createEngine,
   type Entity,
-  MeasuredSize,
   NavTransition,
   Size,
   WidgetBreakpoint,
@@ -90,17 +89,6 @@ describe("breakpoint tiers", () => {
     world.edit(e).set(Size, { w: 140, h: 100 }); // < 144 → compact
     step();
     expect(tier(e)).toBe("compact");
-  });
-
-  it("uses MeasuredSize over Size when auto-sized (>0)", () => {
-    const { world, step, spawn, tier } = rig();
-    const e = spawn(50); // Size width 50 → micro
-    step();
-    expect(tier(e)).toBe("micro");
-
-    world.addComponent(e, MeasuredSize, { w: 300, h: 100 }); // effective 300 → normal
-    step();
-    expect(tier(e)).toBe("normal");
   });
 
   it("ignores entities without WidgetEquipped", () => {

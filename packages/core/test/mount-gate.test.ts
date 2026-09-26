@@ -1,13 +1,15 @@
 /**
- * cull + widgetMount gates (2026-07-15; design-004 §2 lifecycle × the
- * activeMembership gating playbook).
+ * The cull gate (2026-07-15; design-004 §2 lifecycle × the activeMembership
+ * gating playbook), as it stands after design-015 D5b: the mount system, its
+ * keep-mounted LRU and the transition retention it served left with the DOM
+ * hosts and GL islands they kept mounted — `Visible`/`Culled` is the desk
+ * renderer's working set and the cull is the whole runtime.
  *
- * The rig runs the REAL derive slice (membership → cull → mount) so the
- * tag-flush timing matches production: membership stamps Active at its flush,
- * cull sees the flip through its journal next tick, mount follows one behind.
- * Pins: idle frames SKIP both systems (run/skip telemetry), camera motion
- * re-culls, Position churn re-tests through the delta path, despawns leave
- * the snapshot, and the keep-mounted LRU still evicts.
+ * The rig runs the REAL derive slice (membership → cull) so the tag-flush timing
+ * matches production: membership stamps Active at its flush, cull sees the flip
+ * through its journal next tick. Pins: idle frames SKIP the cull (run/skip
+ * telemetry), camera motion re-culls, Position churn re-tests through the delta
+ * path, and the equip-lag fix keeps fresh container content Culled.
  */
 import { createWorld } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
@@ -31,14 +33,13 @@ import {
 import { guardedTransaction } from "../src/guards/guarded-tx";
 import { widgetSpawnInits } from "../src/widget/spawn";
 
-function rig(opts: { keepMounted?: number } = {}) {
+function rig() {
   const world = createWorld();
   const engine = createEngine(world);
   engine.registerReflector({ name: "armed", observe: { resources: [Camera] }, flush: () => {} });
   engine.enableTelemetry();
-  const runtime = createWidgetRuntime(world, opts);
-  engine.addSystems("derive", createActiveMembership(world), runtime.cullSystem, runtime.mountSystem);
-  engine.registerReflector({ name: "mountFlush", always: true, flush: () => runtime.flush() });
+  const runtime = createWidgetRuntime(world);
+  engine.addSystems("derive", createActiveMembership(world), runtime.cullSystem);
   world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
   world.setResource(Viewport, { w: 800, h: 600, dpr: 1 });
   let now = 0;
@@ -58,36 +59,32 @@ function rig(opts: { keepMounted?: number } = {}) {
       tags: [WidgetEquipped],
     });
   const ran = (name: string) => engine.lastFrame()?.systems.find((s) => s.system === name)?.ran;
-  const entry = (e: Entity) => runtime.store.getSnapshot().find((m) => m.entity === e);
-  return { world, step, spawn, ran, entry, runtime };
+  return { world, step, spawn, ran, runtime };
 }
 
-describe("cull + mount gates", () => {
-  it("settles to mounted-visible, then IDLE frames skip cull and widgetMount", () => {
+describe("the cull gate", () => {
+  it("settles to Visible, then IDLE frames skip the cull", () => {
     const t = rig();
     const e = t.spawn(100, 100);
-    t.step(3); // membership → cull → mount flush chain
+    t.step(3); // membership → cull chain
     expect(t.world.hasTag(e, Visible)).toBe(true);
-    expect(t.entry(e)).toEqual({ entity: e, hidden: false });
 
     t.step(3); // settled — nothing journals, window static
     expect(t.ran("cull")).toBe(false);
-    expect(t.ran("widgetMount")).toBe(false);
   });
 
-  it("camera pan re-culls (full pass); offscreen widget hides but stays mounted", () => {
+  it("camera pan re-culls (full pass); an offscreen widget is Culled, and a static window skips again", () => {
     const t = rig();
     const e = t.spawn(100, 100);
     t.step(3);
-    expect(t.entry(e)?.hidden).toBe(false);
+    expect(t.world.hasTag(e, Visible)).toBe(true);
 
     // Pan far away — the widget leaves the (overscanned) window.
     t.world.setResource(Camera, { x: 100000, y: 100000, zoom: 1, gesturing: false });
     t.step(1);
     expect(t.ran("cull")).toBe(true);
     expect(t.world.hasTag(e, Culled)).toBe(true);
-    t.step(1); // mount consumes the flip's journal
-    expect(t.entry(e)).toEqual({ entity: e, hidden: true }); // kept-mounted
+    expect(t.world.hasTag(e, Visible)).toBe(false);
 
     t.step(2);
     expect(t.ran("cull")).toBe(false); // window static again → skip
@@ -107,22 +104,9 @@ describe("cull + mount gates", () => {
     t.world.edit(e).set(Position, { x: 200, y: 200 }); // back in view
     t.step(1);
     expect(t.world.hasTag(e, Visible)).toBe(true);
-    t.step(1);
-    expect(t.entry(e)?.hidden).toBe(false);
   });
 
-  it("despawn leaves the snapshot (journaled removal, no isAlive sweep needed)", () => {
-    const t = rig();
-    const e = t.spawn(100, 100);
-    t.step(3);
-    expect(t.entry(e)).toBeDefined();
-
-    t.world.destroy(e);
-    t.step(1);
-    expect(t.entry(e)).toBeUndefined();
-  });
-
-  it("seed through the REAL widget path: container content never flash-mounts (equip-lag fix)", () => {
+  it("seed through the REAL widget path: container content is Culled from its first frame (equip-lag fix)", () => {
     // The 2026-07-15 bench diagnostic: membership classified on the
     // projection frame, before equip stamped Container — fresh folder
     // CONTENT flashed root-Active for one frame, cull mass-Visible-tagged it
@@ -131,15 +115,11 @@ describe("cull + mount gates", () => {
     // container-ness from PrefabId during that window.
     const GateLeaf = defineWidget({
       type: "gate-leaf",
-      surface: "dom",
-      component: () => null,
       defaultSize: { w: 100, h: 60 },
       provides: ["widget"],
     });
     const GateFolder = defineWidget({
       type: "gate-folder",
-      surface: "dom",
-      component: () => null,
       defaultSize: { w: 300, h: 300 },
       container: { accepts: ["widget"] },
     });
@@ -170,94 +150,12 @@ describe("cull + mount gates", () => {
       now += 16;
       ce.engine.step(now);
     }
-    // The folder mounts; its content NEVER does (no flash, no zombies).
-    const snapshot = ce.runtime.store.getSnapshot();
-    expect(snapshot.some((m) => m.entity === folder)).toBe(true);
+    // The folder is Visible; its content NEVER is (no flash, no zombies).
+    expect(folder !== undefined && ce.world.hasTag(folder, Visible)).toBe(true);
     for (const leaf of leaves) {
-      expect(snapshot.some((m) => m.entity === leaf)).toBe(false);
       expect(ce.world.hasTag(leaf, Visible)).toBe(false);
       expect(ce.world.hasTag(leaf, Culled)).toBe(true);
     }
-  });
-
-  it("keep-mounted LRU still evicts the least-recently-visible hidden widget", () => {
-    const t = rig({ keepMounted: 1 }); // hidden budget shrinks to keepMounted - visibleCount
-    const a = t.spawn(100, 100);
-    const b = t.spawn(300, 100);
-    t.step(3);
-    expect(t.entry(a)?.hidden).toBe(false);
-    expect(t.entry(b)?.hidden).toBe(false);
-
-    // Hide A first, settle, then hide B — A is the older hidden entry.
-    t.world.edit(a).set(Position, { x: 100000, y: 0 });
-    t.step(2);
-    t.world.edit(b).set(Position, { x: 100000, y: 100000 });
-    t.step(2);
-
-    // Budget 1, zero visible → one hidden survives: the most recent (B).
-    expect(t.entry(a)).toBeUndefined(); // evicted for real
-    expect(t.entry(b)).toEqual({ entity: b, hidden: true });
-  });
-
-  it("pins a globally capped outgoing set, freezes it synchronously, then resumes LRU exactly once", () => {
-    const t = rig({ keepMounted: 1 });
-    const a = t.spawn(100, 100);
-    const b = t.spawn(300, 100);
-    t.step(3);
-    let notifications = 0;
-    t.runtime.store.subscribe(() => {
-      notifications += 1;
-    });
-
-    const domHold = t.runtime.store.retainForTransition?.([a, b]);
-    if (domHold === undefined) throw new Error("expected transition retention");
-    expect(domHold.entities).toEqual([a]);
-    expect(t.entry(a)).toEqual({ entity: a, hidden: false, frozen: true });
-    expect(notifications).toBe(1); // trusted pre-cut freeze is synchronous
-
-    // A second adapter can share A's slot but cannot grow the global outgoing
-    // union past keepMounted with disjoint B.
-    const glHold = t.runtime.store.retainForTransition?.([a, b]);
-    if (glHold === undefined) throw new Error("expected transition retention");
-    expect(glHold.entities).toEqual([a]);
-
-    t.world.edit(a).set(Position, { x: 100_000, y: 0 });
-    t.world.edit(b).set(Position, { x: 100_000, y: 100_000 });
-    t.step(2);
-    expect(t.entry(a)).toEqual({ entity: a, hidden: false, frozen: true });
-    expect(t.entry(b)).toEqual({ entity: b, hidden: true });
-
-    domHold.release();
-    expect(t.entry(a)?.frozen).toBe(true); // GL still owns the shared pin
-    glHold.release();
-    expect(t.entry(a)).toBeUndefined(); // normal hidden LRU ran immediately
-    expect(t.entry(b)).toEqual({ entity: b, hidden: true });
-    const afterRelease = notifications;
-    glHold.release();
-    domHold.release();
-    expect(notifications).toBe(afterRelease);
-  });
-
-  it("isolates a throwing pre-cut subscriber without stranding the mount hold", () => {
-    const t = rig({ keepMounted: 1 });
-    const entity = t.spawn(100, 100);
-    t.step(3);
-    let laterNotifications = 0;
-    t.runtime.store.subscribe(() => {
-      throw new Error("bad external-store subscriber");
-    });
-    t.runtime.store.subscribe(() => {
-      laterNotifications += 1;
-    });
-
-    const hold = t.runtime.store.retainForTransition?.([entity]);
-    if (hold === undefined) throw new Error("expected transition retention");
-    expect(hold.entities).toEqual([entity]);
-    expect(t.entry(entity)).toEqual({ entity, hidden: false, frozen: true });
-    expect(laterNotifications).toBe(1);
-
-    expect(() => hold.release()).not.toThrow();
-    expect(t.entry(entity)).toEqual({ entity, hidden: false });
-    expect(laterNotifications).toBe(2);
+    ce.dispose();
   });
 });

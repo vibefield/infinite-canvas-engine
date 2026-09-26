@@ -18,7 +18,6 @@ import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import {
   CameraLimits,
   ChildOf,
-  MeasuredSize,
   Position,
   Size,
   Viewport,
@@ -55,7 +54,6 @@ export interface FramePreviewChild {
   readonly rect: CanvasRect;
   readonly order: number;
   readonly validity: FramePreviewValidity;
-  readonly previewModel?: unknown;
 }
 
 export interface FramePreviewSnapshot {
@@ -129,7 +127,6 @@ const EMPTY_FACETS: Readonly<Record<string, unknown>> = Object.freeze({});
 const BASE_COMPONENTS: readonly Component[] = Object.freeze([
   Position,
   Size,
-  MeasuredSize,
   PrefabId,
 ]);
 const MAX_OPAQUE_DURABLE_KEY_BYTES = 1024;
@@ -317,25 +314,6 @@ export function createFramePreviewStore(opts: FramePreviewStoreOpts): FramePrevi
     return typeof typeId === "string" && catalog.widget(typeId)?.container !== undefined;
   };
 
-  const previewModelFor = (entity: Entity, widgetTypeId: string): unknown => {
-    const widget = catalog.widget(widgetTypeId);
-    if (widget === undefined || widget.instancePreviewProps.length === 0) return undefined;
-    const model: Record<string, unknown> = {};
-    for (const name of widget.instancePreviewProps) {
-      const groupName = widget.propToGroup[name];
-      const group = widget.groups.find((candidate) => candidate.name === groupName);
-      const spec = group?.fields[name];
-      if (group === undefined || spec === undefined) continue;
-      const value = (world.get(entity, group.component) as Record<string, unknown> | undefined)?.[
-        name
-      ];
-      if (value !== undefined) {
-        model[name] = spec.kind === "json" ? parseJsonCell(value, spec.default) : value;
-      }
-    }
-    return plain(model);
-  };
-
   const relationRows = (
     frame: Entity,
     frameKey: string,
@@ -449,12 +427,7 @@ export function createFramePreviewStore(opts: FramePreviewStoreOpts): FramePrevi
       keys.set(entity, key);
       refs.push(Object.freeze({ key, widgetType, order }));
       const position = world.get(entity, Position) ?? { x: 0, y: 0 };
-      const measured = world.get(entity, MeasuredSize);
-      const size =
-        measured !== undefined && measured.w > 0 && measured.h > 0
-          ? measured
-          : world.get(entity, Size) ?? { w: 0, h: 0 };
-      const previewModel = previewModelFor(entity, widgetType);
+      const size = world.get(entity, Size) ?? { w: 0, h: 0 };
       children.push(
         Object.freeze({
           key,
@@ -462,7 +435,6 @@ export function createFramePreviewStore(opts: FramePreviewStoreOpts): FramePrevi
           rect: Object.freeze({ x: position.x, y: position.y, width: size.w, height: size.h }),
           order,
           validity: validityFor(entity, diagnostics),
-          ...(previewModel === undefined ? {} : { previewModel }),
         }),
       );
     }
@@ -592,18 +564,6 @@ export function createFramePreviewStore(opts: FramePreviewStoreOpts): FramePrevi
     entry.observedShape = shape;
     for (const entity of next) {
       const components = [...uniqueComponents(def.projection)];
-      const seen = new Set(components);
-      const widgetTypeId = world.get(entity, PrefabId)?.id;
-      const widget =
-        typeof widgetTypeId === "string" ? catalog.widget(widgetTypeId) : undefined;
-      for (const name of widget?.instancePreviewProps ?? []) {
-        const groupName = widget?.propToGroup[name];
-        const group = widget?.groups.find((candidate) => candidate.name === groupName);
-        if (group !== undefined && !seen.has(group.component)) {
-          seen.add(group.component);
-          components.push(group.component);
-        }
-      }
       for (const component of components) {
         entry.childUnsubs.push(world.reactive.observeValue(entity, component, () => schedule(entry)));
         observerCount += 1;
@@ -646,9 +606,6 @@ export function createFramePreviewStore(opts: FramePreviewStoreOpts): FramePrevi
     }
     observe(entry, () => world.reactive.observeValue(entry.frame, Position, () => schedule(entry)));
     observe(entry, () => world.reactive.observeValue(entry.frame, Size, () => schedule(entry)));
-    observe(entry, () =>
-      world.reactive.observeValue(entry.frame, MeasuredSize, () => schedule(entry)),
-    );
     observe(entry, () => world.reactive.observeValue(entry.frame, PrefabId, () => schedule(entry)));
     observe(entry, () => world.reactive.observeResource(Viewport, () => schedule(entry)));
     observe(entry, () => world.reactive.observeResource(CameraLimits, () => schedule(entry)));

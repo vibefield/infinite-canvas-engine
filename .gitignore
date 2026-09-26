@@ -5,22 +5,11 @@ dist-profile/
 .idea/
 *.log
 
-# Desktop-example secrets/state (widgetlab-desktop): the tailnet auth key and
-# tsnet node state never enter the repo.
-apps/widgetlab-desktop/.env
-apps/widgetlab-desktop/tsnet/
-
 # Design drafts are version-controlled ONLY on the `local-dev` branch (never pushed).
 # On main they stay present-but-untracked. See CLAUDE.md "Draft workflow".
 /draft/
 
-# The ground's pixel witnesses (design-013 B1): the oracle's renders and the lab rigs' stills are results, never sources.
-packages/ground/oracle/results/
-apps/groundlab/results/
-# The desk's (design-015 D1), the same discipline: the Dawn oracle's renders, apps/desk's parity captures.
+# The desk's pixel witnesses (design-015 D1; the B1 discipline): the Dawn oracle's renders and apps/desk's rig captures are results, never sources.
 packages/desk/oracle/results/
 apps/desk/results/
-# The HiC cost probes' results (2026-09-09): a trace is 240 MB of events, a micro run a JSON of numbers.
-apps/widgetlab-desktop/screenshots/hic-trace/
-apps/widgetlab-desktop/screenshots/hic-micro/
 docs/.local-*.html

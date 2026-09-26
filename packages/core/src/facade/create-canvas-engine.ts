@@ -14,9 +14,9 @@
  * write path that didn't already exist — ops BIND existing primitives to
  * the current session.
  *
- * Budgets: `keepMounted` feeds the widget runtime; `fboBytes` is carried
- * for the GL layer (GLViews reads it via the react facade). Port budgets
- * remain reviewed constants (RUNTIME_BUDGETS) in v1 — recorded.
+ * Budgets: the frame preview's (children, bytes). Port budgets remain reviewed
+ * constants (RUNTIME_BUDGETS) in v1 — recorded. `keepMounted` and `fboBytes`
+ * left at design-015 D5b with the mount LRU and the GL ledger.
  */
 import type { Entity, Resource, World } from "@vibecook/strata-ecs";
 import { createWorld, defineQuery } from "@vibecook/strata-ecs";
@@ -68,7 +68,6 @@ import {
 } from "../canvas/frame-preview";
 import {
   createPresentationTransitionCoordinator,
-  presentationPlanesOf,
   type PresentationPlane,
   type PresentationTransitionCoordinator,
 } from "../canvas/presentation-transition";
@@ -84,7 +83,6 @@ import {
   GestureSettings,
   InsertGhost,
   Locked,
-  MeasuredSize,
   PointerSettings,
   Position,
   Selectable,
@@ -104,13 +102,8 @@ import {
   type BehaviorSession,
 } from "../behavior/runtime";
 import type { AnyBehaviorDef } from "../behavior/types";
-import { registerStandardSurfaceBehaviors } from "../surface/standard-behaviors";
 import { createEngine, type Engine } from "../engine/engine";
 import type { FrameControl } from "../engine/frame-control";
-import {
-  createGpuAllocationLedger,
-  type GpuAllocationLedger,
-} from "../engine/gpu-allocation-ledger";
 import { isMidGesture } from "../interaction/gesture-status";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { guardedTransaction, retargetTweensToDoc } from "../guards/guarded-tx";
@@ -138,7 +131,6 @@ import type { ByteChannel } from "../doc/channels";
 import { startAutosave, type Autosave, type AutosaveOpts, type AutosaveStorageWrite } from "../doc/autosave";
 import { attachPresence, type PresenceOpts, type PresenceSession } from "../presence/presence-kit";
 import { installPresence } from "../presence/remote-cursors";
-import type { MeasureQueue } from "../input/measure-queue";
 import type { EngineGpu } from "../surface/gpu-device";
 import {
   CAMERA_DEFAULTS,
@@ -146,7 +138,6 @@ import {
   FIT_DEFAULTS,
   GESTURE_DEFAULTS,
   POINTER_DEFAULTS,
-  RUNTIME_BUDGETS,
   SNAP_DEFAULTS,
   type WheelMode,
   ZOOM_THROUGH_DEFAULTS,
@@ -198,8 +189,6 @@ export interface CanvasEngineOpts {
     rest: readonly unknown[],
   ) => void;
   readonly budgets?: {
-    readonly keepMounted?: number;
-    readonly fboBytes?: number;
     /** Portal-preview limits may be lowered from 128 children / 256 KiB. */
     readonly framePreviewChildren?: number;
     readonly framePreviewBytes?: number;
@@ -220,13 +209,8 @@ export interface CanvasEngineOpts {
     };
     readonly pointers?: Partial<Record<keyof typeof POINTER_DEFAULTS, number>>;
     readonly snap?: { readonly enabled?: boolean; readonly thresholdPx?: number };
-    /**
-     * Selection-chrome knobs: liftScale = the app's visual drag-lift scale (union box wraps it);
-     * selectionReach = how far a selected card's chrome reaches beyond its rect, world units
-     * (the composited profile's frame draws it beneath the DOM, so `domAtRest` lifts the dom
-     * cards it overlaps to the GPU while it shows; 0 = nothing to shield).
-     */
-    readonly chrome?: { readonly liftScale?: number; readonly selectionReach?: number };
+    /** Selection-chrome knob: liftScale = the app's visual drag-lift scale (the union box wraps it). */
+    readonly chrome?: { readonly liftScale?: number };
     /**
      * Nav seeds (design-015 §9 — D2b). `zoomThrough`: a wheel zoom that leaves a container's
      * face covering the view by `in` CSS px cuts into it, one that leaves the current frame's
@@ -246,25 +230,13 @@ export interface CanvasEngineOpts {
     /** The gate verdict a "migrate"-classified doc downgrades to when migration is off/fails. */
     readonly versionGate?: "reject" | "readOnly" | "migrate";
   };
-  /** The dom measure adapter's queue (wireMeasurement provides; optional headless). */
-  readonly measureQueue?: MeasureQueue;
   /**
-   * The app-owned GPU device (design-012 §4 / plan §1 "Device ownership") —
-   * COMPOSITED PROFILE ONLY. Acquire it with `acquireCompositorDevice()`
-   * before constructing the engine and pass it here; ground's factory and
-   * r3f's mount both receive it from `engine.compositorDevice`, which is how
-   * ONE device ends up under the ground programs, the islands and the live
-   * surfaces.
-   *
-   * NOT `gpu` — that name belongs to design-011's {@link GpuAllocationLedger},
-   * which is budget ACCOUNTING over allocations. This is the device those
-   * allocations are made ON. Design-012 §11 Q7's ruling (keep the pool-handle
-   * layer and the presentation contract from conflating) applies to this pair
-   * exactly, so the two never share a name.
-   *
-   * Absent on the stratified profile and on headless engines: ground then
-   * creates its own device exactly as before. A composited build that finds
-   * this absent must refuse at boot rather than degrade (§11 Q2).
+   * An app-owned GPU device (design-012 §4 / plan §1 "Device ownership"), kept
+   * as the device injection door at design-015 D5b: acquire it with
+   * `acquireCompositorDevice()` before constructing the engine and pass it
+   * here; a host reads it off `engine.compositorDevice` and may hand it to the
+   * desk's layer (`deskLayer({ gpu })`). Absent — the common case, and every
+   * headless engine — the desk acquires its own device.
    */
   readonly compositorDevice?: EngineGpu;
 }
@@ -441,8 +413,6 @@ export interface CanvasEngine {
   readonly runtime: WidgetRuntime & { uninstall(): void };
   /** Trusted cross-package retention seam for cut-first canvas transitions. */
   readonly transitions: PresentationTransitionCoordinator;
-  /** Shared accounting for R3F pools and bounded ground transition targets. */
-  readonly gpu: GpuAllocationLedger;
   readonly nav: NestedCanvas;
   readonly ops: CanvasOps;
   readonly docs: CanvasDocs;
@@ -456,18 +426,12 @@ export interface CanvasEngine {
    */
   readonly frame: FrameControl;
   /**
-   * The app-owned GPU device, on the composited profile only (design-012 §4).
-   * Undefined on the stratified profile and headless engines. `dispose()`
-   * deliberately does NOT destroy it: the device outlives layers by design,
-   * and its owner is the app that acquired it.
-   *
-   * Distinct from {@link CanvasEngine.gpu}, which is design-011's allocation
-   * LEDGER — accounting over allocations, not the device they are made on.
+   * The app-owned GPU device when the app passed one (design-012 §4); undefined
+   * otherwise. `dispose()` deliberately does NOT destroy it: the device outlives
+   * layers by design, and its owner is the app that acquired it.
    */
   readonly compositorDevice?: EngineGpu;
   readonly budgets: {
-    readonly keepMounted: number;
-    readonly fboBytes: number;
     readonly framePreviewChildren: number;
     readonly framePreviewBytes: number;
   };
@@ -608,17 +572,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     isOpenable: (entity) => isOpenable(entity),
   });
   const budgets = {
-    keepMounted: opts.budgets?.keepMounted ?? RUNTIME_BUDGETS.keepMountedWidgets,
-    fboBytes: opts.budgets?.fboBytes ?? RUNTIME_BUDGETS.fboBytes,
     framePreviewChildren:
       opts.budgets?.framePreviewChildren ?? FRAME_PREVIEW_DEFAULT_CHILDREN,
     framePreviewBytes: opts.budgets?.framePreviewBytes ?? FRAME_PREVIEW_DEFAULT_BYTES,
   };
-  const runtime = installWidgetRuntime(engine, {
-    keepMounted: budgets.keepMounted,
-    ...(opts.measureQueue !== undefined ? { measureQueue: opts.measureQueue } : {}),
-  });
-  const gpu = createGpuAllocationLedger(budgets.fboBytes);
+  const runtime = installWidgetRuntime(engine);
   const transitions = createPresentationTransitionCoordinator(world, engine, {
     ...(opts.onGuestFault === undefined
       ? {}
@@ -677,8 +635,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     prepareTransition: (request) => {
       // A canvas type that DECLARES a ground (design-013 C2: a field declaration, not a program
-      // id) requires the `ground` plane to prepare — the ground host of either profile registers
-      // the plane's adapter, and without an owner every enter into a folder is a snap.
+      // id) requires the `ground` plane to prepare — the desk's layer registers the plane's
+      // adapter, and without an owner every enter into a folder is a snap. So does a visible
+      // OBJECT in the departing frame (design-015 §5.2): found in the world — pre-cut, `Active`
+      // is still that frame's membership — each asks for `ground`, the one plane there is (D5b;
+      // the `dom` and `gl` planes the mount store's snapshot used to ask for went with it).
       const fromGround = catalog.canvasType(request.fromTypeId)?.presentation?.ground;
       const toGround = catalog.canvasType(request.toTypeId)?.presentation?.ground;
       const required = new Set<PresentationPlane>();
@@ -687,21 +648,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         const widgetTypeId = world.get(entity, PrefabId)?.id;
         return typeof widgetTypeId === "string" ? catalog.widget(widgetTypeId) : undefined;
       };
-      for (const entry of runtime.store.getSnapshot()) {
-        if (entry.hidden || !world.isAlive(entry.entity)) continue;
-        const widget = widgetOf(entry.entity);
-        if (widget !== undefined) for (const plane of presentationPlanesOf(widget)) required.add(plane);
-      }
-      // OBJECTS have no mount entry (design-015 §5.2, D2a-core), so the departing
-      // frame's visible ones are found in the world — pre-cut, `Active` is still
-      // that frame's membership — and each asks for the `ground` plane alone. Only
-      // objects: every visible view widget was answered by the snapshot above.
       if (!required.has("ground")) {
         world.query(visibleWidgetsQ).each((batch) => {
           for (const row of batch) {
-            const widget = widgetOf(batch.entity(row));
-            if (widget?.surface !== "object") continue;
-            for (const plane of presentationPlanesOf(widget)) required.add(plane);
+            if (widgetOf(batch.entity(row))?.object !== undefined) required.add("ground");
           }
         });
       }
@@ -841,7 +791,6 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     },
     chrome: {
       liftScale: st.chrome?.liftScale ?? CHROME_DEFAULTS.liftScale,
-      selectionReach: st.chrome?.selectionReach ?? CHROME_DEFAULTS.selectionReach,
     },
     zoomThrough: {
       enabled: st.nav?.zoomThrough?.enabled ?? ZOOM_THROUGH_DEFAULTS.enabled,
@@ -1484,27 +1433,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     ...(opts.onBehaviorFault === undefined ? {} : { onFault: opts.onBehaviorFault }),
     ...(opts.onBehaviorLog === undefined ? {} : { onLog: opts.onBehaviorLog }),
   });
-  // The engine's OWN kind behaviours, FIRST (design-013 D7). They decide
-  // `SurfaceTarget` and `RequestedDemand` for every widget whose type named no
-  // behaviour of its own — which is almost every widget — and they are
-  // registered here rather than left to the app because until this line the
-  // shipping React composited profile had NO promotion at all:
-  // `infinite-canvas.tsx` built `domWidgets` without a presentation registry
-  // and nothing in `@ice/react` created the policy, so every card was live-dom
-  // forever and only the rigs, which hand-wired both, ever saw a promotion.
-  // That is the fix wave's "copied wiring" class — a boot sequence an app was
-  // expected to reproduce — and the answer is that there is no DECISION left
-  // for an app to reproduce. Before `opts.behaviors` so an app's own behaviour
-  // registered after them also runs after them within the phase group.
-  //
-  // ERRATUM 2026-09-06 (A3b): this comment used to end "there is nothing left
-  // for an app to reproduce", which claimed the whole fix. What A1b closed is
-  // the decision half — the facts are world facts and the behaviours are
-  // engine-registered, so `SurfaceTarget` flips on the grab in a React app
-  // too. The PRESENTATION half is still missing there: `infinite-canvas.tsx`
-  // builds `domWidgets` with no source canvas, so nothing reparents a host and
-  // no pixels move. That path lands with design-013 B3/B4.
-  registerStandardSurfaceBehaviors(behaviors);
+  // The engine registered its own three kind behaviours here first (design-013 D7's
+  // `ice:surface.*`, the DOM/GPU choice) until design-015 D5b; an object presents on the
+  // desk and nowhere else, so the app's are the only behaviours there are.
   for (const b of opts.behaviors ?? []) behaviors.register(b);
 
   // --- ops catalog -------------------------------------------------------------
@@ -1728,8 +1659,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       let any = false;
       for (const e of targets) {
         const p = world.get(e, Position);
-        const m = world.get(e, MeasuredSize);
-        const s = m !== undefined && m.w > 0 ? m : world.get(e, Size);
+        const s = world.get(e, Size);
         if (p === undefined || s === undefined) continue;
         minX = Math.min(minX, p.x);
         minY = Math.min(minY, p.y);
@@ -1838,7 +1768,6 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     stack,
     runtime,
     transitions,
-    gpu,
     nav,
     ops,
     docs,
@@ -1867,7 +1796,6 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       engine.disposeGuests();
       runtime.uninstall();
       stack.uninstall();
-      gpu.dispose();
       unbindCatalog();
     },
   };

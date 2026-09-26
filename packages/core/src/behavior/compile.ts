@@ -55,12 +55,8 @@ import { Culled } from "../catalog/camera-derived";
 import type { AnySystem } from "../engine/pipeline";
 import { prefabs } from "../schema/prefab";
 import { schemaMeta } from "../schema/meta";
-import { STANDARD_SURFACE_BEHAVIOR_NAMES } from "../surface/standard-behavior-names";
 import { behaviors, classifyRead, readComponentOf } from "./define-behavior";
 import type { AnyBehaviorDef, BehaviorPhase } from "./types";
-
-/** The three exact names the `orderIndependent` attestation below is for. */
-const STANDARD_SURFACE_NAMES: ReadonlySet<string> = new Set(STANDARD_SURFACE_BEHAVIOR_NAMES);
 
 /**
  * The bodies the runtime supplies. Compilation owns SHAPE (query, access,
@@ -218,30 +214,11 @@ export function compileBehavior(b: AnyBehaviorDef, hooks: BehaviorSystemHooks): 
   // Without this, every ticking behavior would print a strata advisory at
   // registration — a framework must not make its users read a warning that
   // describes its own deliberate design.
-  // ONE exception to "declared writes are never attested" (2026-09-06,
-  // design-013 A1b): the engine's own THREE KIND BEHAVIOURS. All three write
-  // `SurfaceTarget` and `RequestedDemand` in `present`, so they are each
-  // other's co-writers and strata's advisory fires on every engine boot — 200
-  // lines across a CI run, describing ICE's own deliberate design. Here the
-  // caveat above does not apply, because the co-writers ARE ours and the
-  // writes are row-disjoint by law: an entity has ONE kind, that kind's
-  // behaviour is the sole writer of its choice components (design-013 §5), and
-  // `defineWidget` attaches exactly one and refuses two. This says nothing on
-  // anyone else's behalf — a pack's own kind behaviour is an unattested
-  // co-writer and strata will say so, which is right until an author-facing
-  // attestation earns its way into design-009.
-  //
-  // The match is on the THREE EXACT NAMES, not on the `ice:surface.` prefix
-  // they share (A3b fix 4). A pack that called itself `ice:surface.kiosk` used
-  // to be attested by that prefix — inheriting a promise ICE cannot make for
-  // it, and silencing the one advisory its author needed. `defineBehavior` now
-  // reserves `ice:` outright, but that refusal is dev-guarded and this is not,
-  // so the exact list is what actually holds the line in a production build.
+  // (Until design-015 D5b there was ONE exception — the engine's own three
+  // `ice:surface.*` kind behaviours, co-writers of `SurfaceTarget` by law, were
+  // attested on the three exact names, A3b fix 4. They left with the DOM/GPU
+  // presentation choice, and with them the exception.)
   const attested: Component[] = b.on.tick !== undefined ? [own] : [];
-  if (STANDARD_SURFACE_NAMES.has(b.name)) {
-    for (const c of writeSet) if (c !== own && !attested.includes(c)) attested.push(c);
-    if (b.on.tick !== undefined && !attested.includes(own)) attested.push(own);
-  }
   const deliveryAccess: SystemAccess = {
     write: [...writeSet],
     ...(declaredRead.length > 0 ? { read: declaredRead } : {}),

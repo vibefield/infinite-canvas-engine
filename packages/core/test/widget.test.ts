@@ -1,11 +1,12 @@
 /**
- * M6 spine: defineWidget compile → spawnWidget → projection → equip →
- * cull/LRU/mount store, end to end on the real engine loop.
+ * M6 spine: defineWidget compile → spawnWidget → projection → equip → the cull,
+ * end to end on the real engine loop (the LRU/mount store left at design-015 D5b).
  */
 import { describe, expect, it } from "vitest";
 import {
   Camera,
   Container,
+  Culled,
   KeyboardExclusive,
   Movable,
   Opacity,
@@ -15,6 +16,7 @@ import {
   Size,
   SnapTarget,
   Viewport,
+  Visible,
   createDocSession,
   createEngine,
   createWorld,
@@ -36,9 +38,6 @@ const Card = defineWidget({
     items: p.json(p.array(p.object({ text: p.string(), done: p.boolean() }))),
   },
   groups: { content: ["title", "items"], style: ["dense", "color"] },
-  surface: "dom",
-  component: null,
-  sizeMode: "auto-height",
   defaultSize: { w: 280, h: 200 },
   interaction: { selectable: true, movable: true, resizable: true, snap: "target" },
   container: { accepts: ["wt:chip"], provides: ["wt:card"] },
@@ -66,15 +65,13 @@ describe("defineWidget compile", () => {
 
   it("rejects duplicate types and overlapping groups", () => {
     expect(() =>
-      defineWidget({ type: "wt:card", surface: "dom", component: null }),
+      defineWidget({ type: "wt:card" }),
     ).toThrow(/already defined/);
     expect(() =>
       defineWidget({
         type: "wt:dupGroups",
         props: { a: p.string({ default: "" }) },
         groups: { g1: ["a"], g2: ["a"] },
-        surface: "dom",
-        component: null,
       }),
     ).toThrow(/two groups/);
   });
@@ -85,7 +82,7 @@ describe("spawnWidget → equip → mount store", () => {
     const world = createWorld();
     const engine = createEngine(world);
     const session = createDocSession(world);
-    const runtime = installWidgetRuntime(engine);
+    installWidgetRuntime(engine);
     world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
     world.setResource(Viewport, { w: 1000, h: 800, dpr: 1 });
 
@@ -110,27 +107,24 @@ describe("spawnWidget → equip → mount store", () => {
     if (content === undefined) return;
     expect((world.read(e, content) as { title: string }).title).toBe("Hello");
 
-    step(2); // equip tags land, then cull+mount see them
+    step(2); // equip tags land, then the cull sees them
     expect(world.hasTag(e, Selectable)).toBe(true);
     expect(world.hasTag(e, Movable)).toBe(true);
-    const snap = runtime.store.getSnapshot();
-    expect(snap.some((m) => m.entity === e && !m.hidden)).toBe(true);
+    expect(world.hasTag(e, Visible)).toBe(true);
   });
 
-  it("hides off-viewport widgets but keeps them mounted; LRU evicts past the budget", () => {
+  it("culls off-viewport widgets and flips them back as the camera moves (no mount store since design-015 D5b)", () => {
     const world = createWorld();
     const engine = createEngine(world);
     const session = createDocSession(world);
-    const runtime = installWidgetRuntime(engine, { keepMounted: 4 });
+    installWidgetRuntime(engine);
     world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
     world.setResource(Viewport, { w: 500, h: 500, dpr: 1 });
 
-    // 3 in view, 6 far away (off-view from the start — never mounted).
+    // 3 in view, 6 far away (off-view from the start).
     const inView = [0, 1, 2].map((i) =>
       spawnWidget(session.store, world, "wt:card", { x: 10 + i * 50, y: 10 }),
     );
-    // Clustered tight so ALL SIX fit the 500px viewport at the far camera —
-    // the hidden budget must hit max(0, 4 - 6) = 0 for full eviction.
     const farAway = [0, 1, 2, 3, 4, 5].map((i) =>
       spawnWidget(session.store, world, "wt:card", { x: 10_000 + i * 60, y: 10_000 }),
     );
@@ -143,26 +137,19 @@ describe("spawnWidget → equip → mount store", () => {
       }
     };
     step(3);
-    const snap1 = runtime.store.getSnapshot();
-    expect(snap1.filter((m) => !m.hidden)).toHaveLength(3);
-    expect(snap1.some((m) => farAway.includes(m.entity))).toBe(false); // never visible ⇒ never mounted
+    for (const e of inView) expect(world.hasTag(e, Visible)).toBe(true);
+    for (const e of farAway) expect(world.hasTag(e, Culled)).toBe(true);
 
-    // Pan away: the 3 go hidden-but-mounted (within budget 4).
+    // Pan away: the 3 are Culled.
     world.setResource(Camera, { x: 50_000, y: 50_000, zoom: 1, gesturing: false });
     step(2);
-    const snap2 = runtime.store.getSnapshot();
-    expect(snap2).toHaveLength(3);
-    expect(snap2.every((m) => m.hidden)).toBe(true);
+    for (const e of inView) expect(world.hasTag(e, Culled)).toBe(true);
 
-    // Visit the far cluster: 6 become visible; hidden budget (4 - 6 visible = 0)
-    // evicts all 3 old hidden ones.
+    // Visit the far cluster: the 6 become Visible, the 3 stay Culled.
     world.setResource(Camera, { x: 9_900, y: 9_900, zoom: 1, gesturing: false });
     step(2);
-    const snap3 = runtime.store.getSnapshot();
-    expect(snap3.filter((m) => !m.hidden).length).toBeGreaterThanOrEqual(1);
-    for (const e of inView) {
-      expect(snap3.some((m) => m.entity === e)).toBe(false); // LRU-evicted
-    }
+    for (const e of farAway) expect(world.hasTag(e, Visible)).toBe(true);
+    for (const e of inView) expect(world.hasTag(e, Culled)).toBe(true);
   });
 });
 
@@ -170,15 +157,13 @@ describe("keyboard claim declaration (design-007 §3.1)", () => {
   it("keyboard:'exclusive' stamps KeyboardExclusive and rides the registry", () => {
     const Term = defineWidget({
       type: "wt:terminal",
-      surface: "dom",
-      component: null,
       interaction: { keyboard: "exclusive", keyboardEscape: "widget" },
     });
     expect(Term.capabilityTags).toContain(KeyboardExclusive);
     expect(Term.keyboard).toBe("exclusive");
     expect(Term.keyboardEscape).toBe("widget");
 
-    const Plain = defineWidget({ type: "wt:plain-card", surface: "dom", component: null });
+    const Plain = defineWidget({ type: "wt:plain-card" });
     expect(Plain.capabilityTags).not.toContain(KeyboardExclusive);
     expect(Plain.keyboard).toBe("shared"); // the default — undeclared widgets unchanged
     expect(Plain.keyboardEscape).toBe("release");

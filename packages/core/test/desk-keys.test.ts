@@ -31,8 +31,6 @@ const CARD =
   widgets.get("dk:card") ??
   defineWidget({
     type: "dk:card",
-    surface: "dom",
-    component: () => null,
     defaultSize: { w: 120, h: 90 },
     props: { label: p.string({ default: "" }) },
     interaction: { resizable: true, snap: "both" },

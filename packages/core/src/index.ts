@@ -8,7 +8,7 @@ export const CORE_VERSION = "0.11.0";
 
 export { defineSchemaOnce, hmrInvalidateOnSchemaChange } from "./boot/hmr";
 
-// Strata surface re-exported for downstream packages: dom/react/r3f reach
+// Strata surface re-exported for downstream packages: dom/react/desk reach
 // strata ONLY through core (design-002 §6 — strata is core's sole runtime
 // dependency; the import walls make a direct dep a CI failure).
 export {
@@ -117,10 +117,10 @@ export {
 // what survives, which write vocabulary the hooks receive, at which cadence.
 export { behaviors, defineBehavior, describeBehavior } from "./behavior/define-behavior";
 // The runtime itself, for IMPERATIVE hosts (2026-09-06, design-013 D7).
-// `createCanvasEngine` builds one and registers the standard surface
-// behaviours into it, so a facade app never names this; a host that drives the
-// raw engine — the rigs, a headless trace — needs the factory to have a
-// runtime to register into at all.
+// `createCanvasEngine` builds one and registers the app's behaviours into it,
+// so a facade app never names this; a host that drives the raw engine — the
+// rigs, a headless trace — needs the factory to have a runtime to register
+// into at all.
 export { createBehaviorRuntime } from "./behavior/runtime";
 export type {
   BehaviorPresence,
@@ -206,9 +206,8 @@ export * from "./ops/point-pick";
 // Sibling order (petition 8): THE per-frame stacking source — frame parent,
 // pull-based ordinal cache, and the one comparator paint/pick/drop share.
 export * from "./ops/sibling-order";
-// Port-schema → kernel PortSlot resolution (2026-07-16: exported for the
-// @ice/ground wires pass — rendered and picked anchors agree by construction;
-// retires the wires reflector's local-resolver TODO).
+// Port-schema → kernel PortSlot resolution (2026-07-16: exported for a wires
+// pass — rendered and picked anchors agree by construction).
 export { portSlots, portSlotOf } from "./ops/port-geometry";
 
 // The interaction stack (design-003): input queue, commit seam, install.
@@ -279,14 +278,13 @@ export {
 export { runMigrations, type MigrationCtx, type MigrationOutcome } from "./doc/migrate";
 
 // The widget runtime core (design-005 §2 + design-004 §2): props DSL,
-// defineWidget compiler, equip, spawn, cull/LRU/mount store.
+// defineWidget compiler, equip, spawn, the cull.
 export { p, type JsonShape, type PropSpec, type PropsDecl, type StandardSchemaV1 } from "./widget/props";
 export {
   WidgetEquipped,
   defineWidget,
   renames,
   widgets,
-  type SizeMode,
   type WidgetDef,
   type WidgetGroup,
   type WidgetInteraction,
@@ -298,7 +296,6 @@ export {
   type WidgetBehaviorEntry,
   type WidgetRename,
   type WidgetRenameEntry,
-  type WidgetSurfaceKind,
   type WidgetType,
 } from "./widget/define-widget";
 
@@ -392,7 +389,6 @@ export {
 } from "./canvas/frame-preview";
 export {
   createPresentationTransitionCoordinator,
-  presentationPlanesOf,
   type FrameSwitchDescriptor,
   type FrameSwitchRequest,
   type PreparedFrameSwitch,
@@ -429,18 +425,11 @@ export { attachSpawnBehaviors, attachSpawnParent, spawnWidget, widgetSpawnInits,
 // The frame pick source (design-014, B3b): the ground layer's hit test on the interaction stack.
 export type { FramePickSlot, FramePickSource } from "./systems/l1-pick";
 export { setWidgetProps } from "./widget/set-props";
-export {
-  createWidgetRuntime,
-  installWidgetRuntime,
-  type MountEntry,
-  type WidgetMountHold,
-  type WidgetMountStore,
-  type WidgetRuntime,
-} from "./widget/mount-store";
+export { createWidgetRuntime, installWidgetRuntime, type WidgetRuntime } from "./widget/mount-store";
 
 // Reviewed default constants (citations point at the owning design sections).
 export * from "./settings/defaults";
-// Ground-layer (P0) pass configs — plain data shared by @ice/ground, the react
+// Ground-layer (P0) pass configs — plain data shared by the desk, the react
 // facade, and apps (2026-07-16 extraction; neither may import the other).
 export * from "./settings/ground-config";
 
@@ -471,9 +460,7 @@ export {
   type RelayChannel,
 } from "./doc/broadcast-relay";
 
-// --- M6 measurement + chrome + breakpoints (design-004 §2 measure, §5 chrome, §8 LOD) ---
-export { createMeasureQueue, type MeasureEvent, type MeasureQueue } from "./input/measure-queue";
-export { createMeasureIngest } from "./systems/measure-ingest";
+// --- chrome + breakpoints (design-004 §5 chrome, §8 LOD; measurement left at design-015 D5b) ---
 export { createBreakpointSystem, createSelectionChromeSystem } from "./systems/chrome";
 
 // --- M8 nested canvas (design-004 §7): membership, nav ops, integrity ---
@@ -567,23 +554,15 @@ export {
   type StageControl,
   type CanvasOps,
 } from "./facade/create-canvas-engine";
-export {
-  createGpuAllocationLedger,
-  type GpuAllocationLedger,
-  type GpuAllocationStats,
-  type GpuAllocatorHandle,
-  type GpuAllocatorRegistration,
-  type GpuReservation,
-} from "./engine/gpu-allocation-ledger";
 export { createDrawBehavior } from "./systems/l3-draw";
 
-// --- the widget-surface layer (design-012, design-013): the surface
-// vocabulary as plain data + types, so no producer gains an import of
-// `ground`. The old composited leg's SOURCE REGISTRY lived here until B8
-// (design-013 §8) and went with it — the ground reads the world's
-// `TextureRef` now, and a producer's door is `@ice/ground/compose`'s
-// `VideoIngest` rather than a registry in core.
-export type { SurfaceKindValue } from "./surface/contract";
+// --- the GPU device door (design-012 §4, slimmed at design-015 D5b) ---------
+// `acquireCompositorDevice` is the one WebGPU touch in core: an app-owned device
+// the desk may be handed through `createCanvasEngine({ compositorDevice })`. The
+// surface vocabulary, the infra trio (Band · Demand · Residency), the residency
+// module, three's backend-texture read and the three standard surface
+// behaviours that used to follow it here left with the DOM/GPU presentation
+// choice (design-015 §1: nothing presents anywhere but the desk).
 export {
   acquireCompositorDevice,
   GpuUnavailableError,
@@ -591,66 +570,3 @@ export {
   type EngineGpu,
   type GpuUncapturedError,
 } from "./surface/gpu-device";
-// Demand: what stops self-animating DOM from uploading at display rate
-// (hic-bench §5 measured a CSS-keyframe card at 239.9 paint events/s).
-// The ONE unsupported read of three's backend texture record. It landed here at
-// S6b because `ground` and `r3f` both needed it and neither may import the other;
-// since design-013 C3 (2026-09-07) `r3f` is its only consumer — it stays for the
-// reasons the module note gives, which also carries the errata.
-export {
-  backendTexture,
-  backendTextureIsSrgb,
-  backendTextureRecord,
-  type BackendLike,
-  type BackendTextureRecord,
-  type RendererWithBackend,
-} from "./surface/backend-texture";
-export {
-  DEFAULT_SURFACE_DEMAND,
-  PAUSED_SURFACE_DEMAND,
-  createWidgetSurfaceView,
-  demandIntervalMs,
-  foldDemand,
-  toFpsBucket,
-  type SurfaceDemandValue,
-  type SurfaceFpsBucket,
-  type WidgetSurface,
-  type WidgetSurfaceSeams,
-  type WidgetSurfaceView,
-} from "./surface/contract";
-
-// --- design-013 A1a: the surface infra system-set --------------------------
-// The presentation FACTS themselves ride the catalog re-export above
-// (`catalog/surface.ts` — the six components, `Retained`, `NO_TEXTURE`,
-// `effectiveTarget`). These are the systems that write two of them, and the one
-// call a profile makes to install the set into `present:infra`.
-export { createSurfaceBandSystem } from "./systems/surface-band";
-export { createSurfaceDemandSystem } from "./systems/surface-demand";
-// `ResidencyOptions` rides out with them: it is the shape a profile fills in to
-// hand Residency its table, allocator, budget and device ceiling, and a caller
-// that cannot name the type cannot build one outside a literal at the call site.
-export {
-  installSurfaceInfra,
-  type ResidencyOptions,
-  type SurfaceInfraOpts,
-} from "./surface/install";
-
-// --- design-013 A1b: the three standard surface behaviours -----------------
-// The DOOR (§0): the engine's own kind behaviours, shipped through
-// `defineBehavior` like any pack's. `createCanvasEngine` registers all three
-// before `opts.behaviors`, so a React app needs none of this; an imperative
-// host that builds its own behaviour runtime calls
-// `registerStandardSurfaceBehaviors(runtime)` — one line.
-export {
-  STANDARD_SURFACE_BEHAVIORS,
-  alwaysDom,
-  alwaysGpu,
-  domAtRest,
-  registerStandardSurfaceBehaviors,
-} from "./surface/standard-behaviors";
-// --- residency (design-013 §4) ----------------------------------------------
-// The module that replaces "atlasing": the layer allocator over the kernel shelf
-// math, the texture table a `TextureRef.texture` handle indexes into, and the
-// Residency system that writes it — the third of the `present:infra` trio.
-// Allocation is computed here; realisation is Phase B's.
-export * from "./residency";

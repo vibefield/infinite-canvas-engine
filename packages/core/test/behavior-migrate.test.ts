@@ -26,7 +26,7 @@ import { p } from "../src/widget/props";
 
 const BOX =
   widgets.get("bmig:box") ??
-  defineWidget({ type: "bmig:box", surface: "dom", component: null, defaultSize: { w: 10, h: 10 } });
+  defineWidget({ type: "bmig:box", defaultSize: { w: 10, h: 10 } });
 
 let ce: CanvasEngine;
 let runtime: BehaviorRuntime;

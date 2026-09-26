@@ -211,8 +211,6 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
       widgets.get("cmt:c") ??
       defineWidget({
         type: "cmt:c",
-        surface: "dom",
-        component: null,
         defaultSize: { w: 400, h: 300 },
         interaction: { selectable: true, movable: true, resizable: true, snap: "target", dragOn: "press", sweepContained: true },
       });
@@ -220,8 +218,6 @@ describe("trace: comment-box sweep (SweepsContained)", () => {
       widgets.get("cmt:m") ??
       defineWidget({
         type: "cmt:m",
-        surface: "dom",
-        component: null,
         defaultSize: { w: 80, h: 60 },
         interaction: { selectable: true, movable: true, solid: true, snap: "both", dragOn: "press" },
         provides: ["widget"],

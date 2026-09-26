@@ -28,10 +28,10 @@ import {
 // One widget type per FILE (global registry; no test reset).
 const FOLDER =
   widgets.get("navg:folder") ??
-  defineWidget({ type: "navg:folder", surface: "dom", component: null, defaultSize: { w: 200, h: 200 }, container: { accepts: ["widget"], provides: ["widget"], portal: { top: 10, right: 10, bottom: 10, left: 10 } } });
+  defineWidget({ type: "navg:folder", defaultSize: { w: 200, h: 200 }, container: { accepts: ["widget"], provides: ["widget"], portal: { top: 10, right: 10, bottom: 10, left: 10 } } });
 const BOX =
   widgets.get("navg:box") ??
-  defineWidget({ type: "navg:box", surface: "dom", component: null, defaultSize: { w: 100, h: 100 }, provides: ["widget"] });
+  defineWidget({ type: "navg:box", defaultSize: { w: 100, h: 100 }, provides: ["widget"] });
 
 const VP = { w: 800, h: 600, dpr: 1 };
 /** The static face: the folder's body (300, 200, 200×200) inset by its portal (10). */

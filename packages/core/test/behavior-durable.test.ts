@@ -19,7 +19,7 @@ import { p } from "../src/widget/props";
 
 const BOX =
   widgets.get("bdur:box") ??
-  defineWidget({ type: "bdur:box", surface: "dom", component: null, defaultSize: { w: 10, h: 10 } });
+  defineWidget({ type: "bdur:box", defaultSize: { w: 10, h: 10 } });
 
 let ce: CanvasEngine;
 let runtime: BehaviorRuntime;

@@ -33,8 +33,6 @@ const CARD =
   widgets.get("order:card") ??
   defineWidget({
     type: "order:card",
-    surface: "dom",
-    component: () => null,
     defaultSize: { w: 80, h: 60 },
   });
 void CARD;

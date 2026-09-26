@@ -9,9 +9,9 @@
  *    container contract is declared;
  *  - a capability-stamp recipe (RUNTIME tags at projection — the equip system
  *    consumes it; tags stay pure, design-001 §2);
- *  - a view registration (surface, component, sizeMode, sizes) the React/dom
- *    layers consume — or, for `surface: "object"` (design-015 D2a-core), the
- *    opaque kind binding and the desk stratum the desk's renderer consumes;
+ *  - the opaque `object` kind binding and the desk stratum the desk's renderer
+ *    consumes (design-015 §5.2, D2a-core) — since D5b the ONE face a widget can
+ *    have (the view registration — surface, component, sizeMode — is gone);
  *  - the migration chain (stored now; the M9 migrator runs it).
  *
  * Definition-time rules enforced: every top-level field defaulted (p.json
@@ -44,50 +44,15 @@ import {
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
 import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/prefab";
-import type { SurfaceKindValue } from "../surface/contract";
-import { SurfaceTarget } from "../catalog/surface";
-import { STANDARD_SURFACE_BEHAVIOR_NAMES } from "../surface/standard-behavior-names";
-import { alwaysGpu, domAtRest } from "../surface/standard-behaviors";
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
 import type { CanvasType } from "../canvas/define-canvas-type";
 import type { FrameProjection } from "../canvas/frame-projection";
 
-/**
- * Which kind of pixels a widget type is authored to produce.
- *
- * RENAMED from `WidgetSurface` at S8 (design-012 §11 Q7). Q7 ratifies
- * `WidgetSurface` as the name of the PRESENTATION CONTRACT — the thing that
- * owns pixels-or-DOM, demand and retention — and this union was sitting on it
- * while meaning something else entirely: not the surface, but the kind of
- * surface. It is a subset of the compositor's `SurfaceKindValue` (the terminal
- * mirror joins later per Q6), and `Extract` says so rather than restating the
- * strings, so a new kind cannot make the two lists silently disagree.
- *
- * ERRATUM (design-013 B6, 2026-09-07): `video` USED to be excluded here, on the
- * ground that it "arrives from a producer, never from `defineWidget`". Half of
- * that is still true — the PIXELS arrive from a producer, which registers a
- * stable texture with VideoIngest — but the CARD does not: Band, Demand and
- * Residency all key off `SurfaceKind = video`, and only equip stamps that, from
- * the type's static recipe. With the kind unspeakable at the door there was no
- * way to spawn a live surface at all. So a video widget is declared like any
- * other and equip gives it `SurfaceTarget = gpu` (the only target it has); what
- * it may not carry is a `component`, because nothing would ever mount one.
- *
- * ADDED (design-015 D2a-core, 2026-09-25): `object` — a widget that is a GPU
- * OBJECT on the desk. Its face is its kind's program, reached through the
- * opaque `object` binding (design-015 §5.2, D-D16); nothing mounts a view for
- * it — no component, no chrome, no island, no DOM host. A literal of its OWN,
- * deliberately outside `SurfaceKindValue` and the `SurfaceKind` component's
- * enum: an object never carries the surface facts, so the compositor's
- * vocabulary never learns the word. The old paths skip it by construction —
- * equip stamps no surface fact for it, no surface behaviour is attached, the
- * mount store makes no mount entry, and a transition asks only the `ground`
- * plane of it. At D5 the other three kinds and the view fields are deleted and
- * this becomes the only binding.
- */
-export type WidgetSurfaceKind = Extract<SurfaceKindValue, "dom" | "gl" | "video"> | "object";
-export type SizeMode = "fixed" | "auto-height" | "auto";
+// `WidgetSurfaceKind` (`dom` · `gl` · `video` · `object`) and `SizeMode` left at design-015 D5b:
+// a widget's face is its `object` kind's program or nothing, and its size is its `Size`. The
+// fields that named a view — `surface`, `component`, `chrome`, `animated`, `preview`,
+// `instancePreview`, `sizeMode` — are refused below for the JS caller TypeScript cannot stop.
 
 export interface WidgetPortDecl {
   readonly id: string;
@@ -151,8 +116,6 @@ export interface WidgetContainerDef {
   readonly inheritCanvasPlacement?: boolean;
   /** Card-local portal insets; full widget body when absent. */
   readonly portal?: WidgetPortalInsets;
-  /** Opaque instance-preview renderer declaration. */
-  readonly framePreview?: unknown;
   /** Optional declared facet projection overriding the CanvasType default. */
   readonly frameProjection?: FrameProjection;
   /** Internal normalized distinction between defineContainer and legacy sugar. */
@@ -166,7 +129,6 @@ export interface WidgetContainerEntry {
   readonly widgetTypeIds: readonly string[];
   readonly inheritCanvasPlacement: boolean;
   readonly portal: Readonly<Required<WidgetPortalInsets>>;
-  readonly framePreview: unknown;
   readonly frameProjection: FrameProjection | undefined;
   readonly typed: boolean;
 }
@@ -202,13 +164,12 @@ export interface WidgetInteraction {
   readonly sweepContained?: boolean;
   /**
    * Keyboard claim (design-007 §3.1, petitions I1/I4). `"exclusive"`: while a
-   * node inside this widget holds browser focus, the engine keymap and the
-   * adapter's Space pan modifier stand down — keys flow to the widget's own
-   * handlers (the engine stops competing; it never delivers behavior). The
-   * dom-widgets reflector marks the host `data-canvas-keyboard` + `tabindex=-1`
-   * so a click anywhere in the widget acquires focus, and plain wheel over the
-   * widget's scrollable content cedes to native scroll (ctrl/pinch stays
-   * canvas zoom always). Default `"shared"` — today's behavior, byte-identical.
+   * node inside this widget's claim holds browser focus, the engine keymap and
+   * the adapter's Space pan modifier stand down — keys flow to the widget's own
+   * handlers (the engine stops competing; it never delivers behavior). The claim
+   * is a `data-canvas-keyboard` host in screen space (the desk's one focused
+   * editor carries it), and plain wheel over its scrollable content cedes to
+   * native scroll (ctrl/pinch stays canvas zoom always). Default `"shared"`.
    */
   readonly keyboard?: "shared" | "exclusive";
   /**
@@ -228,21 +189,12 @@ export interface WidgetDef {
   readonly props?: PropsDecl | { readonly kind: "object"; readonly fields: Readonly<Record<string, unknown>> };
   /** Conflict groups: group name → prop names. Ungrouped props → "props". */
   readonly groups?: Readonly<Record<string, readonly string[]>>;
-  readonly surface: WidgetSurfaceKind;
   /**
-   * Framework component (opaque to core — the react package narrows it). The
-   * view of a `dom`/`gl` widget (`null` = declared without one); an `object`
-   * has none, so for it this is absent or `null` and anything else is refused.
-   * Optional since design-015 D2a-core so an object can omit it; a view
-   * widget's authors keep passing it as before.
-   */
-  readonly component?: unknown;
-  /**
-   * The KIND BINDING of an `object` widget (design-015 §5.2, D-D16) — what the
+   * The KIND BINDING (design-015 §5.2, D-D16) — the widget's FACE: what the
    * desk's renderer dispatches on through `widgetTypeFor`: the kind's program,
-   * its pick mirror, its opening. Opaque to core, exactly as `component` is: core
-   * carries it and never reads it. Required when `surface` is `"object"` and
-   * refused on every other surface.
+   * its pick mirror, its opening. Opaque to core: it carries it and never reads
+   * it. Optional — a widget without one (a port, a test fixture) is a type the
+   * desk draws nothing for; since D5b there is no other face a widget can have.
    */
   readonly object?: unknown;
   /**
@@ -255,32 +207,14 @@ export interface WidgetDef {
    */
   readonly stratum?: DeskStratum;
   /**
-   * An `object` that OPENS (design-015 §8, D4b): its kind declares an `open` binding — an open
+   * An object that OPENS (design-015 §8, D4b): its kind declares an `open` binding — an open
    * extent, an open motion, the held bar's tools — and `ops.open(entity)` picks it up into the
    * hand (the double-tap, ⏎). A kind without one is refused by the op: a note is written where it
-   * lies, a mini mat is entered, a print has nothing to open. Refused on every other surface.
+   * lies, a mini mat is entered, a print has nothing to open. Refused without an `object` binding.
    */
   readonly openable?: boolean;
-  /**
-   * GL only: a DOM chrome component portaled into the widget's CONTENT-plane
-   * host (P1), which stacks UNDER the GL canvas (P2) — v1's proven
-   * CardChrome-beneath-the-canvas sandwich. The island renders ONLY the 3D
-   * content; the card body (gradient, radius, ring, shadow, lift spring,
-   * hover/overlap glow) is DOM and shares the app's CSS with DOM widgets.
-   * Opaque to core — the react package narrows it. Ignored for dom-surface
-   * widgets (their component IS the chrome).
-   */
-  readonly chrome?: unknown;
-  readonly sizeMode?: SizeMode;
   readonly defaultSize?: { readonly w: number; readonly h: number };
   readonly minSize?: { readonly w: number; readonly h: number };
-  /**
-   * GL only: the island repaints every frame while visible (design-004 §3
-   * animation contract — the EXPLICIT opt-in; plain `useFrame` inside a
-   * portal cannot be attributed to an island, so it never drives repaints;
-   * content-driven animation goes through `useIslandFrame`).
-   */
-  readonly animated?: boolean;
   readonly interaction?: WidgetInteraction;
   /**
    * Node-editor port schema (design-005 §2; design-001 §5.3): wires bind to
@@ -288,29 +222,6 @@ export interface WidgetDef {
    * the compatibility key list the connect gesture checks.
    */
   readonly ports?: readonly WidgetPortDecl[];
-  /**
-   * Palette/tray preview (design-005 §2 amendment, 2026-07-19). ENGINE-FREE
-   * BY CONTRACT: a preview renders with no world, no entity, no ops — a pure
-   * picture the host mounts inert (that is what makes it portable: trays,
-   * docs sites, a widget store). Authored at `defaultSize`; hosts scale.
-   * Three tiers, least effort first:
-   *  - absent            → the REAL component mounts with default props in
-   *                        the framework's preview sandbox (dom surfaces;
-   *                        truthful by construction);
-   *  - `{ props: {…} }`  → same sandbox mount with curated props;
-   *  - a component, or `{ component }` → author-owned preview (a static
-   *    mockup, a live self-ticking clock — the author's call). In P1 all
-   *    declared previews are DOM components — the sanctioned escape hatch
-   *    for GL widgets too (P2 adds the r3f snapshot pipeline).
-   * Opaque to core — the react package narrows it (`component` precedent).
-   */
-  readonly preview?: unknown;
-  /**
-   * Curated live values exposed inside a container's semantic instance
-   * preview. This is distinct from the engine-free tray preview above: names
-   * are validated against declared props and observed only while subscribed.
-   */
-  readonly instancePreview?: { readonly props: readonly string[] };
   readonly container?: WidgetContainerDef;
   /**
    * Provides-keys WITHOUT container semantics (nodeboard field finding): a
@@ -369,25 +280,18 @@ export interface WidgetType {
   readonly prefab: Prefab;
   readonly groups: readonly WidgetGroup[];
   readonly propToGroup: Readonly<Record<string, string>>;
-  readonly surface: WidgetSurfaceKind;
-  readonly component: unknown;
-  /** The `object` kind binding (design-015 §5.2) — opaque; `undefined` on every other surface. */
+  /** The `object` kind binding (design-015 §5.2) — the face; opaque; `undefined` for a widget the desk draws nothing for. */
   readonly object: unknown;
   /**
    * The desk stratum equip stamps as `Stratum` (design-015 §4.2): the declared
-   * one, `things` for an `object` that declared none, `undefined` (no rider) for
-   * any other widget that declared none.
+   * one, `things` for an object that declared none, `undefined` (no rider) for
+   * a faceless widget that declared none.
    */
   readonly stratum: DeskStratum | undefined;
   /** An object whose kind opens — `ops.open` picks it up (design-015 §8); false on every other widget. */
   readonly openable: boolean;
-  /** GL widgets: DOM chrome under the canvas (see WidgetDef.chrome). */
-  readonly chrome: unknown;
-  readonly sizeMode: SizeMode;
   readonly defaultSize: { readonly w: number; readonly h: number };
   readonly minSize: { readonly w: number; readonly h: number };
-  /** GL islands: repaint every visible frame (design-004 §3). */
-  readonly animated: boolean;
   /** Node-editor ports (empty when not a node). */
   readonly ports: readonly WidgetPortDecl[];
   /** Runtime capability tags the equip system stamps at projection. */
@@ -405,12 +309,6 @@ export interface WidgetType {
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
   /** Pre-attached behaviors, normalized (spawn tx for durable, equip for runtime). */
   readonly behaviors: readonly WidgetBehaviorEntry[];
-  /** Normalized author preview component (opaque; react narrows). null = none declared. */
-  readonly previewComponent: unknown;
-  /** Prop overrides for the default real-component preview mount (validated names). */
-  readonly previewProps?: Readonly<Record<string, unknown>>;
-  /** Validated prop names admitted to FramePreviewChild.previewModel. */
-  readonly instancePreviewProps: readonly string[];
 }
 
 /** Stamped by the equip system once a projected widget carries its capability tags. */
@@ -501,26 +399,6 @@ function validateMigrateChain(
         `outside the migratable range 1..${version - 1} — they never run.`,
     );
   }
-}
-
-/**
- * Normalize the `preview` declaration: a bare component (function, or a
- * memo/forwardRef exotic — an object carrying `$$typeof`) vs. the options
- * form `{ component?, props? }`. Core never renders either — shape only.
- */
-function normalizePreview(preview: unknown): {
-  component: unknown;
-  props?: Readonly<Record<string, unknown>>;
-} {
-  if (preview === undefined || preview === null) return { component: null };
-  const isComponent =
-    typeof preview === "function" || (typeof preview === "object" && "$$typeof" in (preview as object));
-  if (isComponent) return { component: preview };
-  const opts = preview as { component?: unknown; props?: Readonly<Record<string, unknown>> };
-  return {
-    component: opts.component ?? null,
-    ...(opts.props !== undefined ? { props: opts.props } : {}),
-  };
 }
 
 export function defineWidget(def: WidgetDef): WidgetType {
@@ -649,59 +527,30 @@ export function defineWidget(def: WidgetDef): WidgetType {
     behaviorEntries.push(entry);
   }
 
-  // `presentation` is RETIRED (design-013 A1, §5). Where a card presents is a
-  // world fact written by its kind's behaviour, so the declaration moved onto
-  // the behaviours door — the same door a pack uses. TypeScript already
-  // refuses the field; this is for the JS callers and the stale build that
-  // would otherwise pass an object nothing reads and get a card that silently
-  // ignores its own pin.
-  if ((def as { presentation?: unknown }).presentation !== undefined) {
+  // THE RETIRED VIEW (design-015 §1, D5b). TypeScript already refuses these
+  // fields; this is for the JS caller and the stale build that would otherwise
+  // pass a declaration nothing reads — the `presentation` precedent (design-013
+  // A1). `surface` chose between DOM, GL and video faces; `component`, `chrome`,
+  // `animated`, `preview`, `instancePreview` and `sizeMode` described them.
+  // A widget's face is its `object` kind's program now, or nothing.
+  const retired = ["presentation", "surface", "component", "chrome", "animated", "preview", "instancePreview", "sizeMode"]
+    .filter((k) => (def as unknown as Record<string, unknown>)[k] !== undefined);
+  if (retired.length > 0) {
     throw new Error(
-      `ice: defineWidget("${def.type}") presentation is retired (design-013 A1) — attach ice:surface.alwaysDom / alwaysGpu / alwaysGpu.with({ paused: true }) through behaviors:`,
+      `ice: defineWidget("${def.type}") declares ${retired.join(", ")} — the view half of a widget is retired (design-015 D5b): a widget's face is its object kind's program (\`object:\`), and nothing mounts a component, a chrome, a preview or a surface for it. Drop ${retired.length > 1 ? "them" : "it"}.`,
+    );
+  }
+  if ((def.container as { framePreview?: unknown } | undefined)?.framePreview !== undefined) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") container declares framePreview — the container's preview renderer is retired (design-015 D5b): a mini mat's inside is drawn by the desk.`,
     );
   }
 
-  // A VIDEO widget has no view of its own (design-013 §9 Q5, B6): its pixels are
-  // a producer's, copied into the stable texture it registered with VideoIngest.
-  // Nothing mounts a `component` for it — `WidgetRoot` portals the CHROME for
-  // every non-dom kind and `GLViews` takes only `gl` — so a component passed here
-  // would be silently dead code, which is the same class as the `presentation`
-  // above: a declaration that compiles, reads as wired, and is never consulted.
-  if (def.surface === "video" && def.component !== null && def.component !== undefined) {
+  // The FACE: an `object` binding, or none. `null` is how a caller says "none".
+  const hasObject = def.object !== undefined && def.object !== null;
+  if (!hasObject && def.openable === true) {
     throw new Error(
-      `ice: defineWidget("${def.type}") is a video surface and carries a component — a video card's pixels come from a producer's registered texture, and nothing mounts its component. Pass component: null (chrome: is still yours).`,
-    );
-  }
-
-  // An OBJECT (design-015 §5.2, D2a-core) is drawn by its kind's program and by
-  // nothing else, so every view field on it is the same class as the two above:
-  // a declaration that compiles, reads as wired, and is never consulted. Its
-  // binding is the one thing it must carry — and the one thing no other surface
-  // may, since the dom/gl/video paths would carry it past every reader. `null`
-  // (and `false` for `animated`) is how a caller says "none", so it passes.
-  const isObject = def.surface === "object";
-  if (isObject) {
-    if (def.object === undefined || def.object === null) {
-      throw new Error(
-        `ice: defineWidget("${def.type}") is an object surface and carries no object binding — an object's face is its kind's program, and the binding is how the desk finds it (design-015 §5.2). Pass object: <the kind binding>.`,
-      );
-    }
-    const views: string[] = [];
-    if (def.component !== undefined && def.component !== null) views.push("component");
-    if (def.chrome !== undefined && def.chrome !== null) views.push("chrome");
-    if (def.animated !== undefined && def.animated !== false) views.push("animated");
-    if (views.length > 0) {
-      throw new Error(
-        `ice: defineWidget("${def.type}") is an object surface and declares ${views.join(", ")} — nothing mounts a view for an object (its face is its kind's program, design-015 §5.2). Drop ${views.length > 1 ? "them" : "it"}.`,
-      );
-    }
-  } else if (def.object !== undefined && def.object !== null) {
-    throw new Error(
-      `ice: defineWidget("${def.type}") is a ${def.surface} surface and carries an object binding — only surface: "object" is drawn by a kind's program (design-015 §5.2). Use surface: "object", or drop the binding.`,
-    );
-  } else if (def.openable === true) {
-    throw new Error(
-      `ice: defineWidget("${def.type}") is a ${def.surface} surface and declares openable — only an object is picked up into the hand (design-015 §8). Use surface: "object" with a kind that opens, or drop it.`,
+      `ice: defineWidget("${def.type}") declares openable and carries no object binding — only an object is picked up into the hand (design-015 §8). Pass object: <a kind that opens>, or drop it.`,
     );
   }
   if (def.stratum !== undefined && !Object.hasOwn(STRATUM_BANDS, def.stratum)) {
@@ -710,81 +559,9 @@ export function defineWidget(def: WidgetDef): WidgetType {
     );
   }
 
-  // WHO WRITES THIS TYPE'S `SurfaceTarget` — exactly one behaviour, always.
-  //
-  // "Chose for itself" is broader than "listed an `ice:surface.*`",
-  // deliberately: the question is whether anything already owns this entity's
-  // `SurfaceTarget`, and design-013 §0's whole point is that a kind may write
-  // its OWN behaviour rather than take a standard one. Appending `domAtRest`
-  // beside a pack's `mypack:surface.kiosk` would put TWO writers on one
-  // component of one entity, which §5's table forbids. So a listed behaviour
-  // counts as a chooser if it is one of the standard three OR declares
-  // `SurfaceTarget` in its `writes:`.
-  const standardNames: readonly string[] = STANDARD_SURFACE_BEHAVIOR_NAMES;
-  const targetWriters = behaviorEntries.filter(
-    (x) => standardNames.includes(x.behavior.name) || x.behavior.writes.includes(SurfaceTarget),
-  );
-  // TWO of them is the same defect from the other side, and it was ACCEPTED
-  // (A3b fix 3): `behaviors: [alwaysDom, alwaysGpu]` compiled, both wrote
-  // `SurfaceTarget` in `present`, and the compiler's own `orderIndependent`
-  // attestation for the standard three silenced the strata advisory that
-  // would otherwise have reported the pair. The card's target was then
-  // whichever behaviour happened to run last. An entity has ONE kind and that
-  // kind's behaviour is the sole writer of its choice components (§5), so the
-  // second one is refused where it was written, not diagnosed at runtime.
-  if (targetWriters.length > 1) {
-    throw new Error(
-      `ice: defineWidget("${def.type}") lists ${targetWriters.length} behaviors that write SurfaceTarget (${targetWriters
-        .map((x) => `"${x.behavior.name}"`)
-        .join(", ")}) — an entity has ONE kind and that kind's behavior is the sole writer of its target (design-013 §5). Keep one.`,
-    );
-  }
-  // An object carries no `SurfaceTarget` (equip stamps none of the six facts on
-  // it), so a behaviour that writes one would write a component the entity does
-  // not have — refused here rather than at its first write. And none is
-  // attached for it below: there is no second place for an object to present.
-  if (isObject && targetWriters.length > 0) {
-    throw new Error(
-      `ice: defineWidget("${def.type}") is an object surface and lists ${targetWriters
-        .map((x) => `"${x.behavior.name}"`)
-        .join(", ")}, which write${targetWriters.length > 1 ? "" : "s"} SurfaceTarget — an object has no surface facts to choose between (design-015 §5.2). Drop it.`,
-    );
-  }
-  if (targetWriters.length === 0 && !isObject) {
-    // dom rests in the DOM and promotes under a gesture (design-012 §11 Q5,
-    // re-read by design-013 §0 as a default rather than a law); every other
-    // kind IS a GPU texture and has no second mode to choose between.
-    behaviorEntries.push({ behavior: def.surface === "dom" ? domAtRest : alwaysGpu, data: {} });
-  }
-
   const version = def.version ?? 1;
   if (def.migrate !== undefined) validateMigrateChain(def.type, version, def.migrate);
 
-
-  // Preview declaration: fail FAST on unknown previewProps names — a typo
-  // would otherwise surface as a spawn throw inside the preview host's error
-  // boundary (a silent placeholder), the worst place to find it.
-  const previewDecl = normalizePreview(def.preview);
-  for (const name of Object.keys(previewDecl.props ?? {})) {
-    if (propToGroup[name] === undefined) {
-      throw new Error(`ice: defineWidget("${def.type}") preview.props names unknown prop "${name}".`);
-    }
-  }
-  const instancePreviewProps = [...(def.instancePreview?.props ?? [])];
-  const instancePreviewSeen = new Set<string>();
-  for (const name of instancePreviewProps) {
-    if (propToGroup[name] === undefined) {
-      throw new Error(
-        `ice: defineWidget("${def.type}") instancePreview.props names unknown prop "${name}".`,
-      );
-    }
-    if (instancePreviewSeen.has(name)) {
-      throw new Error(
-        `ice: defineWidget("${def.type}") instancePreview.props repeats "${name}".`,
-      );
-    }
-    instancePreviewSeen.add(name);
-  }
 
   const prefab = definePrefab(def.type, {
     store: "durable",
@@ -822,16 +599,11 @@ export function defineWidget(def: WidgetDef): WidgetType {
     prefab,
     groups,
     propToGroup,
-    surface: def.surface,
-    component: def.component,
-    object: isObject ? def.object : undefined,
-    stratum: def.stratum ?? (isObject ? "things" : undefined),
-    openable: isObject && def.openable === true,
-    chrome: def.chrome,
-    sizeMode: def.sizeMode ?? "fixed",
+    object: hasObject ? def.object : undefined,
+    stratum: def.stratum ?? (hasObject ? "things" : undefined),
+    openable: hasObject && def.openable === true,
     defaultSize,
     minSize: def.minSize ?? { w: 40, h: 40 },
-    animated: def.animated === true,
     ports: def.ports ?? [],
     capabilityTags,
     provides: Object.freeze([...(def.container?.provides ?? def.provides ?? [])]),
@@ -850,7 +622,6 @@ export function defineWidget(def: WidgetDef): WidgetType {
               bottom: def.container.portal?.bottom ?? 0,
               left: def.container.portal?.left ?? 0,
             }),
-            framePreview: def.container.framePreview,
             frameProjection: def.container.frameProjection,
             typed: def.container.typed === true,
           }),
@@ -859,9 +630,6 @@ export function defineWidget(def: WidgetDef): WidgetType {
     drop: interaction.drop ?? "into",
     migrate: def.migrate ?? {},
     behaviors: behaviorEntries,
-    previewComponent: previewDecl.component,
-    ...(previewDecl.props !== undefined ? { previewProps: previewDecl.props } : {}),
-    instancePreviewProps: Object.freeze(instancePreviewProps),
   };
   registry.set(def.type, widget);
   for (const decl of renameDecls) {

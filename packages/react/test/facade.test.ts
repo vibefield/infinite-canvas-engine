@@ -1,6 +1,7 @@
 /**
  * M10 React facade (design-005 §5): EngineProvider/useCommit, useUndoStatus,
- * useTool, the default keymap, usePresencePeers, and the <InfiniteCanvas> mount.
+ * useTool, the default keymap, usePresencePeers, and the <Desk> mount (design-015 D5b —
+ * `<InfiniteCanvas>` became `<Desk>` by deletion; the desk arrives as an opaque layer factory).
  *
  * Driven headless (happy-dom) against a REAL `createCanvasEngine` + doc session
  * — the reactive observers fire at `engine.step()` notify, so each assertion
@@ -21,15 +22,14 @@ import {
   type CanvasEngine,
   type Entity,
 } from "@ice/core";
-import * as iceDom from "@ice/dom";
+import type { LayerFactory } from "@ice/dom";
 import { StrictMode, act, createElement, useState, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  Desk,
   EngineProvider,
-  InfiniteCanvas,
   attachKeymap,
-  compositedProfile,
   useCommit,
   usePresencePeers,
   useTool,
@@ -42,10 +42,31 @@ import {
 defineWidget({
   type: "rt:box",
   props: { text: p.string({ default: "hi" }) },
-  surface: "dom",
-  component: () => null,
   defaultSize: { w: 100, h: 60 },
 });
+
+/**
+ * A structural fake of the desk's layer factory (`deskLayer(…)` in production): react must treat
+ * it as a black box. It prepends one canvas to the container, exactly as the desk does, and
+ * counts its births and deaths so a StrictMode double-mount can be told from a leak.
+ */
+function fakeLayer(): { factory: LayerFactory; created: () => number; disposed: () => number } {
+  let created = 0;
+  let disposed = 0;
+  const factory: LayerFactory = (ctx) => {
+    created++;
+    const canvas = ctx.host.container.ownerDocument.createElement("canvas");
+    ctx.host.container.prepend(canvas);
+    return {
+      reflector: { name: "fake-desk", always: true, flush() {}, available: () => true },
+      dispose() {
+        disposed++;
+        canvas.remove();
+      },
+    };
+  };
+  return { factory, created: () => created, disposed: () => disposed };
+}
 
 // PrefabId marks durable widgets; excludes the ephemeral selection-chrome
 // entities the interaction stack spawns (which carry Position+Size but no prefab).
@@ -296,10 +317,10 @@ describe("usePresencePeers", () => {
   });
 });
 
-describe("<InfiniteCanvas> — a refused profile", () => {
+describe("<Desk> — a throwing layer factory", () => {
   /**
    * A `matchMedia` whose listeners can be counted. The reduced-motion listener
-   * lives for the life of the WINDOW, so one left behind by a refused mount
+   * lives for the life of the WINDOW, so one left behind by a failed mount
    * outlives every engine it captured.
    */
   function countingMatchMedia(): { live: () => number } {
@@ -320,16 +341,19 @@ describe("<InfiniteCanvas> — a refused profile", () => {
     return { live: () => live };
   }
 
-  /** Mount the composited profile on a device-less engine; return what it threw. */
-  function mountRefused(engine: CanvasEngine): unknown {
+  /** Mount a layer whose factory throws; return what the mount threw. */
+  function mountThrowing(engine: CanvasEngine): unknown {
     const mountEl = document.createElement("div");
     document.body.appendChild(mountEl);
     // React 19 reports an uncaught effect error as well as rethrowing it; the
-    // sink keeps this expected refusal out of the suite's console.
+    // sink keeps this expected failure out of the suite's console.
     const root = createRoot(mountEl, { onUncaughtError: () => {} });
+    const layer: LayerFactory = () => {
+      throw new Error("no GPU in this fake");
+    };
     try {
       act(() => {
-        root.render(createElement(InfiniteCanvas, { engine, profile: compositedProfile }));
+        root.render(createElement(Desk, { engine, layer }));
       });
     } catch (error) {
       return error;
@@ -337,33 +361,24 @@ describe("<InfiniteCanvas> — a refused profile", () => {
     return undefined;
   }
 
-  it("surfaces the REAL reason on a remount, never 'plane already owned'", () => {
-    // A throwing effect returns no cleanup, so anything the refusal path had
-    // already claimed on the ENGINE — which outlives the mount — was claimed
-    // for good. Registering the dom transition adapter before the gate made
-    // the SECOND mount die inside `transitions.register`, masking the reason
-    // the developer actually needed to read.
-    const { engine } = makeEngine(); // no compositorDevice ⇒ composited refuses
-    const first = mountRefused(engine);
-    expect(String(first)).toMatch(/needs an app-owned GPUDevice/);
-
-    const second = mountRefused(engine);
-    expect(String(second)).toMatch(/needs an app-owned GPUDevice/);
-    expect(String(second)).not.toMatch(/already owned/);
+  it("surfaces the factory's own reason, on a remount too", () => {
+    // A throwing effect returns no cleanup, so anything the failing path had
+    // already claimed on the ENGINE — which outlives the mount — would be claimed
+    // for good. The layer is built before any registration, so nothing is.
+    const { engine } = makeEngine();
+    expect(String(mountThrowing(engine))).toMatch(/no GPU in this fake/);
+    expect(String(mountThrowing(engine))).toMatch(/no GPU in this fake/);
   });
 
   it("claims nothing on the engine or the window on its way out", () => {
     const media = countingMatchMedia();
     const { engine } = makeEngine();
-    expect(mountRefused(engine)).toBeInstanceOf(Error);
-
-    expect(engine.transitions.stats().adapters).toBe(0); // the dom plane is free
+    expect(mountThrowing(engine)).toBeInstanceOf(Error);
+    expect(engine.transitions.stats().adapters).toBe(0); // the ground plane is free
     expect(media.live()).toBe(0); // no window-lifetime listener survived
   });
 
-  it("still wires and unwires both once the profile ACCEPTS", () => {
-    // The control: the gate's new position must not cost the passing path its
-    // adapter or its listener.
+  it("wires and unwires the reduced-motion listener once the layer mounts", () => {
     vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
     vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
     const media = countingMatchMedia();
@@ -371,23 +386,24 @@ describe("<InfiniteCanvas> — a refused profile", () => {
     const mountEl = document.createElement("div");
     document.body.appendChild(mountEl);
     const root = createRoot(mountEl);
+    const layer = fakeLayer();
 
     act(() => {
-      root.render(createElement(InfiniteCanvas, { engine })); // stratified default
+      root.render(createElement(Desk, { engine, layer: layer.factory }));
     });
-    expect(engine.transitions.stats().adapters).toBe(1);
     expect(media.live()).toBe(1);
+    expect(layer.created()).toBe(1);
 
     act(() => {
       root.unmount();
     });
-    expect(engine.transitions.stats().adapters).toBe(0);
     expect(media.live()).toBe(0);
+    expect(layer.disposed()).toBe(1);
   });
 });
 
-describe("<InfiniteCanvas>", () => {
-  it("mounts host planes and detaches on unmount (no rAF leak)", () => {
+describe("<Desk>", () => {
+  it("mounts the layer's canvas in the host and detaches on unmount (no rAF leak)", () => {
     const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
     const caf = vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
 
@@ -395,24 +411,30 @@ describe("<InfiniteCanvas>", () => {
     const mountEl = document.createElement("div");
     document.body.appendChild(mountEl);
     const root = createRoot(mountEl);
+    const layer = fakeLayer();
+    let ready: unknown;
 
     act(() => {
-      root.render(createElement(InfiniteCanvas, { engine }));
+      root.render(createElement(Desk, { engine, layer: layer.factory, onReady: (h) => { ready = h; } }));
     });
 
-    const canvas = mountEl.querySelector("[data-ice-canvas]");
-    expect(canvas).toBeTruthy();
-    expect(canvas?.children.length).toBeGreaterThan(0); // host content plane + reflector layers
+    const container = mountEl.querySelector("[data-ice-canvas]");
+    expect(container).toBeTruthy();
+    expect(container?.querySelectorAll("canvas")).toHaveLength(1); // the layer's canvas
+    expect(container?.children.length).toBeGreaterThan(1); // + the remote-cursors plane
     expect(raf).toHaveBeenCalled(); // the rAF loop started
+    expect(ready).toMatchObject({ engine }); // onReady saw the live host
+    expect((ready as { focus: { blurFocus(): boolean } }).focus.blurFocus()).toBe(false); // nothing claims focus
 
     act(() => {
       root.unmount();
     });
     expect(caf).toHaveBeenCalled(); // the loop was cancelled
     expect(mountEl.querySelector("[data-ice-canvas]")).toBeNull(); // host torn down
+    expect(layer.disposed()).toBe(1);
   });
 
-  it("StrictMode remount stacks nothing: exactly one ground canvas, disposed per unmount (double-grid field report)", () => {
+  it("StrictMode remount stacks nothing: exactly one canvas, disposed per unmount (the double-grid field report)", () => {
     vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
     vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
 
@@ -420,100 +442,45 @@ describe("<InfiniteCanvas>", () => {
     const mountEl = document.createElement("div");
     document.body.appendChild(mountEl);
     const root = createRoot(mountEl);
-
-    // The ground layer arrives through the OPAQUE factory prop (@ice/ground in
-    // production; a structural fake here — react must treat it as a black box).
     // StrictMode runs the mount effect twice ON THE SAME container div — every
-    // factory-inserted node (the ground canvas, chrome plane, lifted plane)
-    // must be disposed by the cleanup or it duplicates here.
-    let created = 0;
-    let disposed = 0;
-    const fakeGround = (ctx: {
-      host: { container: HTMLElement; contentPlane: HTMLElement };
-      world: unknown;
-      readWirePreview: () => unknown;
-    }) => {
-      created++;
-      const canvas = ctx.host.container.ownerDocument.createElement("canvas");
-      ctx.host.container.insertBefore(canvas, ctx.host.contentPlane);
-      return {
-        reflector: { name: "fake-ground", always: true, flush() {}, available: () => true },
-        configureGrid() {},
-        dispose() {
-          disposed++;
-          canvas.remove();
-        },
-      };
-    };
+    // node the layer inserted must be disposed by the cleanup or it duplicates here.
+    const layer = fakeLayer();
 
     act(() => {
-      root.render(
-        createElement(
-          StrictMode,
-          null,
-          createElement(InfiniteCanvas, { engine, ground: fakeGround as never }),
-        ),
-      );
+      root.render(createElement(StrictMode, null, createElement(Desk, { engine, layer: layer.factory })));
     });
 
     const container = mountEl.querySelector("[data-ice-canvas]");
     expect(container).toBeTruthy();
-    expect(container?.querySelectorAll("canvas")).toHaveLength(1); // ONE ground canvas, once
-    expect(created).toBe(2); // StrictMode double-mount…
-    expect(disposed).toBe(1); // …first instance disposed by the cleanup
+    expect(container?.querySelectorAll("canvas")).toHaveLength(1); // ONE canvas, once
+    expect(layer.created()).toBe(2); // StrictMode double-mount…
+    expect(layer.disposed()).toBe(1); // …first instance disposed by the cleanup
 
     act(() => {
       root.unmount();
     });
-    expect(disposed).toBe(2);
+    expect(layer.disposed()).toBe(2);
     expect(mountEl.querySelectorAll("canvas")).toHaveLength(0);
   });
 
-  it("mounts NO ground canvas when the factory prop is absent (headless/test default)", () => {
+  it("renders its children in the container, above the canvas — screen-space chrome", () => {
     vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
     vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
     const { engine } = makeEngine();
     const mountEl = document.createElement("div");
     document.body.appendChild(mountEl);
     const root = createRoot(mountEl);
+    const layer = fakeLayer();
     act(() => {
-      root.render(createElement(InfiniteCanvas, { engine }));
+      root.render(createElement(Desk, { engine, layer: layer.factory }, createElement("nav", { id: "chrome" })));
     });
-    expect(mountEl.querySelectorAll("canvas")).toHaveLength(0);
+    const container = mountEl.querySelector("[data-ice-canvas]");
+    const chrome = container?.querySelector("#chrome");
+    expect(chrome).toBeTruthy();
+    expect(container?.firstElementChild?.tagName).toBe("CANVAS"); // the desk under everything
     act(() => {
       root.unmount();
     });
-  });
-
-  it("disposes every domWidgets reflector it creates — a StrictMode remount leaks no observers", () => {
-    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
-    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
-
-    // Wrap the factory so each constructed reflector's dispose is a spy — the
-    // domWidgets reflector installs private reactive observers on the shared,
-    // engine-owned world, so a missed dispose stacks a subscription set per remount.
-    const disposeSpies: Array<ReturnType<typeof vi.spyOn>> = [];
-    const realFactory = iceDom.createDomWidgetsReflector;
-    vi.spyOn(iceDom, "createDomWidgetsReflector").mockImplementation((...args) => {
-      const refl = realFactory(...(args as Parameters<typeof realFactory>));
-      disposeSpies.push(vi.spyOn(refl, "dispose"));
-      return refl;
-    });
-
-    const { engine } = makeEngine();
-    const mountEl = document.createElement("div");
-    document.body.appendChild(mountEl);
-    const root = createRoot(mountEl);
-    act(() => {
-      root.render(createElement(StrictMode, null, createElement(InfiniteCanvas, { engine })));
-    });
-    act(() => root.unmount());
-
-    // StrictMode constructs the reflector twice (mount → interleaved cleanup →
-    // mount); the fix disposes BOTH — the first at the interleaved cleanup, the
-    // second at unmount.
-    expect(disposeSpies.length).toBeGreaterThanOrEqual(2);
-    for (const spy of disposeSpies) expect(spy).toHaveBeenCalled();
   });
 });
 

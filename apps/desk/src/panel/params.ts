@@ -8,8 +8,8 @@
 // (design-006: its response is the one live number).
 
 import { NAV_TRANSITION_DEFAULTS, ZOOM_THROUGH_DEFAULTS } from "@ice/core";
-import { DEFAULT_MAT_CONFIG, type MatConfig, type ObjectSprings, type PlateName, type RulerConfig, SPRINGS } from "@ice/desk/host";
-import { dayLuminance, EIGENGRAU, GRID, type GroundTheme, type MatLight, MINIMAT, NIGHT, nightLight, type RGB, type ThemeName } from "@ice/desk/theme";
+import { DEFAULT_MAT_CONFIG, type MatConfig, type ObjectSprings, type PlateName, type RulerConfig, SPRINGS } from "@ice/desk";
+import { dayLuminance, EIGENGRAU, GRID, type GroundTheme, type MatLight, MINIMAT, NIGHT, nightLight, type RGB, type ThemeName } from "@ice/desk";
 
 /** Deep-mutable: the panel writes into what the engine only reads. */
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly number[] ? T[K] : T[K] extends object ? Mutable<T[K]> : T[K] };

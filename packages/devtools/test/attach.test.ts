@@ -129,97 +129,34 @@ describe("the durable inspection seam (observer durable tab feed)", () => {
   });
 });
 
-// One plausible frame of GlPanelStats — shared by the GL panel + dock suites.
-const STATS = {
-    cpuMs: 1.2,
-    gpuMs: 5.5,
-    fps: 60,
-    drawCalls: 42,
-    triangles: 123456,
-    points: 0,
-    lines: 0,
-    programs: 7,
-    geometries: 12,
-    textures: 18,
-    renderTargets: 14,
-    renderMegaPixels: 6.2,
-    fboBytes: 40 * 1048576,
-    fboBudgetBytes: 256 * 1048576,
-    islands: { total: 14, hot: 2, warm: 9, waking: 1, cold: 1, dormant: 1 },
-    bandHistogram: { "×1": 6, "×0.5": 8 },
-    repainted: 2,
-    pendingPaints: 1,
-    evicted: 0,
-    zoom: 0.45,
-    band: 0.5,
-    effectiveDpr: 1,
-    visibleWidgets: 18,
-    culledWidgets: 12,
-  };
-
-describe("the GL metrics panel (comprehensive r3f profiling, 2026-07-13)", () => {
-  it("mounts lazily on the first glStats push, renders the census, disposes with detach", () => {
-    const ce = createCanvasEngine();
-    const handle = attachDevtools(ce, { observer: false, profiler: false, glPanel: { expanded: true } });
-    expect(document.querySelector(".ice-gl")).toBeNull(); // lazy — no pushes yet
-
-    handle.glStats(STATS);
-    const panel = document.querySelector(".ice-gl");
-    expect(panel).not.toBeNull();
-    const text = panel?.textContent ?? "";
-    expect(text).toContain("14 targets · 6.2 MP total");
-    expect(text).toContain("40MB / 256MB");
-    expect(text).toContain("2 hot");
-    expect(text).toContain("9 warm");
-    expect(text).toContain("zoom 45% → band ×0.5 → paint dpr 1.00");
-    expect(text).toContain("×0.5: 8");
-    expect(text).toContain("18 visible · 12 culled");
-    expect(text).toContain("123.5k"); // triangles, k-formatted
-
-    handle.detach();
-    expect(document.querySelector(".ice-gl")).toBeNull();
-    ce.dispose();
-  });
-
-  it("glPanel: false makes glStats a no-op", () => {
-    const ce = createCanvasEngine();
-    const handle = attachDevtools(ce, { observer: false, profiler: false, glPanel: false });
-    handle.glStats(STATS);
-    expect(document.querySelector(".ice-gl")).toBeNull();
-    handle.detach();
-    ce.dispose();
-  });
-});
-
-describe("the dock: one draggable panel for all three tools (2026-07-13)", () => {
+describe("the dock: one draggable panel for the tools (2026-07-13; two tools since design-015 D5b)", () => {
     beforeEach(() => {
       localStorage.clear();
     });
 
-    it("hosts all three tools in fixed slot order (strips first, observer last)", () => {
+    it("hosts both tools in fixed slot order (the strip first, the observer last)", () => {
       const ce = createCanvasEngine();
       const handle = attachDevtools(ce);
-      handle.glStats(STATS);
 
       expect(document.querySelectorAll(".ice-dock").length).toBe(1);
       const slots = Array.from(document.querySelectorAll<HTMLElement>(".ice-dock-slot"));
-      expect(slots.map((s) => s.dataset.slot)).toEqual(["profiler", "gl", "observer"]);
+      expect(slots.map((s) => s.dataset.slot)).toEqual(["profiler", "observer"]);
       expect(slots[0]?.querySelector(".strata-prof")).not.toBeNull();
-      expect(slots[1]?.querySelector(".ice-gl")).not.toBeNull();
-      expect(slots[2]?.querySelector(".strata-obs")).not.toBeNull();
+      expect(slots[1]?.querySelector(".strata-obs")).not.toBeNull();
 
       handle.detach();
       expect(document.querySelector(".ice-dock")).toBeNull();
       ce.dispose();
     });
 
-    it("mounts lazily: no dock until the first tool needs it", () => {
+    it("mounts lazily: no dock until a tool needs it", () => {
       const ce = createCanvasEngine();
-      const handle = attachDevtools(ce, { observer: false, profiler: false });
-      expect(document.querySelector(".ice-dock")).toBeNull(); // gl is push-lazy
-      handle.glStats(STATS);
+      const none = attachDevtools(ce, { observer: false, profiler: false });
+      expect(document.querySelector(".ice-dock")).toBeNull(); // nothing mounted, nothing docked
+      none.detach();
+      const one = attachDevtools(ce, { observer: false });
       expect(document.querySelector(".ice-dock")).not.toBeNull();
-      handle.detach();
+      one.detach();
       ce.dispose();
     });
 
@@ -270,11 +207,9 @@ describe("the dock: one draggable panel for all three tools (2026-07-13)", () =>
     it("dock: false restores the classic scattered corners", () => {
       const ce = createCanvasEngine();
       const handle = attachDevtools(ce, { dock: false });
-      handle.glStats(STATS);
       expect(document.querySelector(".ice-dock")).toBeNull();
       expect(document.querySelector(".strata-obs")?.parentElement).toBe(document.body);
       expect(document.querySelector(".strata-prof")?.parentElement).toBe(document.body);
-      expect(document.querySelector(".ice-gl")?.parentElement).toBe(document.body);
       handle.detach();
       ce.dispose();
     });

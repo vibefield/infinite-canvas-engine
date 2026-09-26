@@ -1161,9 +1161,10 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       // iteration.
       //
       // CACHED (A3b fix 5) — and this is the whole of the idle tax A1b
-      // recorded. `ice:surface.domAtRest` reads `FrameInfo`, a resource, so
-      // its poll fires every frame and delivery runs every frame; the walks
-      // inside are all O(changed), but this spread was O(instances)
+      // recorded on the engine's kind behaviour of the day (`ice:surface.domAtRest`,
+      // retired at design-015 D5b): it read `FrameInfo`, a resource, so its poll
+      // fired every frame and delivery ran every frame; the walks inside are
+      // all O(changed), but this spread was O(instances)
       // unconditionally: 18 µs at 10k, 165 µs at 100k, ≈1.6 ns an element for
       // an array whose contents had not moved since the frame before. The
       // membership it describes changes only where `snapshotDirty` is set, so

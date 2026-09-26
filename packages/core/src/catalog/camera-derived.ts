@@ -110,12 +110,6 @@ export const WidgetBreakpoint = defineComponent("WidgetBreakpoint", {
   h: field("u16", { default: 0 }),
 });
 
-/** Session rider on auto-sized widgets (ResizeObserver → queue → ingest; never committed). */
-export const MeasuredSize = defineComponent("MeasuredSize", {
-  w: field("f32", { default: 0 }),
-  h: field("f32", { default: 0 }),
-});
-
 // --- chrome prefabs (pooled entities, reaped when the source empties) ---
 
 /** Selection outline rect. */

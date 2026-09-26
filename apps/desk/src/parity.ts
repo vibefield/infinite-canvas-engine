@@ -8,11 +8,11 @@
 // fetched instead of read. It draws on demand — the rig's `__parity.render(name)` — never on a clock.
 // Its door is `window.__parity`: `window.__desk` is the REAL desk's (api.ts), a different page and shape.
 import { acquire } from "@ice/desk/engine";
-import { surface } from "@ice/desk/host";
-import { blueNoise } from "@ice/desk/noise";
+import { surface } from "@ice/desk";
+import { blueNoise } from "@ice/desk";
 import { createOracleDesk } from "@ice/desk/oracle/frame.mjs";
 import { ORACLE_SCENES, VIEW } from "@ice/desk/oracle/scenes.mjs";
-import { shaderText } from "@ice/desk/shaders";
+import { shaderText } from "@ice/desk";
 import goboBUrl from "@ice/desk/oracle/fixtures/assets/gobo-b.rgba?url";
 import goboCUrl from "@ice/desk/oracle/fixtures/assets/gobo-c.rgba?url";
 import glyphMetaUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.json?url";

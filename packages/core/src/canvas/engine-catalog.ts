@@ -60,7 +60,6 @@ export interface EngineCatalog {
   frameBehaviorsFor(canvasTypeId: string): readonly FrameBehavior[];
   frameProjection(id: string): FrameProjection | undefined;
   frameProjectionForContainer(widgetTypeId: string): FrameProjection | undefined;
-  framePreviewRendererForContainer(widgetTypeId: string): unknown;
   framePreviewBackgroundForContainer(widgetTypeId: string): unknown;
   canvasForContainer(widgetTypeId: string): CanvasType | undefined;
   placementFor(canvasTypeId: string): ReadonlySet<string>;
@@ -654,15 +653,6 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
       return (
         binding.frameProjection ??
         canvasMap.get(binding.canvasTypeId)?.presentation?.preview?.projection
-      );
-    },
-    framePreviewRendererForContainer(widgetTypeId: string) {
-      const widget = widgetMap.get(widgetTypeId);
-      const binding = widget?.container;
-      if (binding === undefined) return undefined;
-      return (
-        binding.framePreview ??
-        canvasMap.get(binding.canvasTypeId)?.presentation?.preview?.renderer
       );
     },
     framePreviewBackgroundForContainer(widgetTypeId: string) {

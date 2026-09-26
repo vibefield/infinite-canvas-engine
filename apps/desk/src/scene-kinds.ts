@@ -7,12 +7,12 @@
 // state (D-D2a-world.5: never a Grab), set by setScene after the spawn.
 
 import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
-import type { DeskLayerHandle } from "@ice/desk/host";
-import { type BookPose, type Books, type PadPose, type Pads, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk/kinds";
+import type { DeskLayerHandle } from "@ice/desk";
+import { type BookPose, type Books, type PadPose, type Pads, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk";
 import { addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/desk/objects";
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
-import { BOARD } from "@ice/desk/theme";
+import { BOARD } from "@ice/desk";
 import { deskBlobs } from "./blobs";
 import { bytesOf } from "./fixtures";
 import type { OracleNote, SpawnSpec } from "./scene";

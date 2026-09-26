@@ -47,29 +47,21 @@ function defineNodeTypes(): void {
   // out port on the east edge; accepts "num".
   defineWidget({
     type: "m8-src",
-    surface: "dom",
-    component: {},
     ports: [{ id: "out", side: "e", accepts: ["num"] }],
   });
   // in port on the west edge; accepts "num" → compatible with m8-src/out.
   defineWidget({
     type: "m8-dst",
-    surface: "dom",
-    component: {},
     ports: [{ id: "in", side: "w", accepts: ["num"] }],
   });
   // in port accepting only "str" → INCOMPATIBLE with m8-src/out.
   defineWidget({
     type: "m8-bad",
-    surface: "dom",
-    component: {},
     ports: [{ id: "in", side: "w", accepts: ["str"] }],
   });
   // wildcard single port (empty accepts) — the crowd for staging/pan traces.
   defineWidget({
     type: "m8-node",
-    surface: "dom",
-    component: {},
     ports: [{ id: "p", side: "e", accepts: [] }],
   });
 }

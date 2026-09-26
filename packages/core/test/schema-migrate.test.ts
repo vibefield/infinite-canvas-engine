@@ -28,8 +28,6 @@ import {
 const BOX = "smig:box";
 defineWidget({
   type: BOX,
-  surface: "dom",
-  component: {},
   props: { label: p.string({ default: "" }) },
 });
 

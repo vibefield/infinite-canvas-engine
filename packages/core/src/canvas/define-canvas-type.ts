@@ -54,7 +54,7 @@ export interface CanvasTypeDef {
      * DECLARATION, resolved by the ground host per slot — the root slot from the
      * current type at every switch, a live portal's slot from the container's
      * inside type. `glyph` names the engine's `dot` or `line`, or a registered
-     * grid program's (`needle`, `mat` — `@ice/ground/packs`); an unknown name
+     * grid program's (`needle`, `mat` — the retired `@ice/ground/packs`; the desk's mat is the one ground since D5b); an unknown name
      * draws as the dot. `grid` is the same partial the react `grid` prop takes
      * (the prop's re-tune lands on top of it). `wires`/`guides` gate the two
      * root-slot overlays, both on by default. A type that declares a ground

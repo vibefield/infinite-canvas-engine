@@ -37,9 +37,9 @@ function tool(id: string): Tool {
 }
 
 const CARD =
-  widgets.get("iz:card") ?? defineWidget({ type: "iz:card", surface: "dom", component: null, defaultSize: { w: 100, h: 60 } });
+  widgets.get("iz:card") ?? defineWidget({ type: "iz:card", defaultSize: { w: 100, h: 60 } });
 const inside = defineCanvasType({ id: "iz:inside", semanticVersion: 1, semantic: { placement: { widgets: [CARD] } } });
-const FOLDER = defineContainer({ type: "iz:folder", canvas: inside, component: null, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
+const FOLDER = defineContainer({ type: "iz:folder", canvas: inside, defaultSize: { w: 300, h: 200 }, provides: ["widget"] });
 const ROOT: CanvasType = defineCanvasType({ id: "iz:root", semanticVersion: 1, semantic: { placement: { widgets: [CARD, FOLDER] } } });
 
 function rig() {

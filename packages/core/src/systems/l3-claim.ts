@@ -44,7 +44,6 @@ import {
   InsertGhost,
   LeavesCopy,
   Locked,
-  MeasuredSize,
   Movable,
   NO_ENTITY,
   PointerMods,
@@ -92,8 +91,7 @@ function expandSweep(world: World, ctx: SystemCtx, dragged: Entity[]): void {
         if (inSet.has(w)) continue;
         if (world.hasTag(w, Culled) && !world.hasTag(w, Active)) continue; // other frame
         const p = world.get(w, Position);
-        const m = world.get(w, MeasuredSize);
-        const s = m !== undefined && m.w > 0 ? m : world.get(w, Size);
+        const s = world.get(w, Size);
         if (p === undefined || s === undefined) continue;
         if (p.x >= rp.x && p.y >= rp.y && p.x + s.w <= rp.x + rs.w && p.y + s.h <= rp.y + rs.h) {
           inSet.add(w);

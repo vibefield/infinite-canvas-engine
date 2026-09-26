@@ -7,7 +7,7 @@
  * ops + docs). Widgets never hand-roll store plumbing again: {@link useOps}
  * gives the engine-owned write paths, {@link useCommit} (its own module) the
  * sanctioned durable commit seam, and {@link useWorld} the read/observe escape
- * hatch. `<InfiniteCanvas>` provides this automatically; apps that mount
+ * hatch. `<Desk>` provides this automatically; apps that mount
  * WidgetRoot themselves wrap it in `<EngineProvider>`.
  */
 import { devGuardsEnabled, type CanvasEngine, type CanvasOps, type World } from "@ice/core";
@@ -30,7 +30,7 @@ export function useCanvasEngine(): CanvasEngine {
   const engine = useContext(EngineContext);
   if (engine === null) {
     throw new Error(
-      "ice: useCanvasEngine — no <EngineProvider>. Render widgets inside <InfiniteCanvas> (which provides it) or wrap your tree in <EngineProvider engine={...}>.",
+      "ice: useCanvasEngine — no <EngineProvider>. Render inside <Desk> (which provides it) or wrap your tree in <EngineProvider engine={...}>.",
     );
   }
   return engine;
@@ -46,7 +46,7 @@ export function useOps(): CanvasOps {
  * overlay-lifecycle sugar — the disposer releases on deactivate AND unmount,
  * so a crashed/unmounted overlay can never wedge the canvas backgrounded.
  * `engine` is an explicit param (not context): overlays typically render as
- * SIBLINGS of <InfiniteCanvas>, outside the provider.
+ * SIBLINGS of <Desk>, outside the provider.
  */
 export function useStageHold(engine: CanvasEngine, active: boolean, name: string): void {
   useEffect(() => {

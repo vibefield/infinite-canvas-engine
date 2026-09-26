@@ -1,9 +1,9 @@
 // The DESK LAYER — what a host mounts (design-015 §3, plan D-D0.6; D2a-world): `deskLayer(opts)`
-// returns a factory structurally assignable to `@ice/react`'s `GroundLayerFactory`, so
-// `<InfiniteCanvas ground={deskLayer({ … })} chrome={false}>` mounts the desk exactly as it mounted
-// the ground, until D5 turns the host into `<Desk>` by deletion. This is the host half — the one
-// module beside host/surface.ts that may touch the DOM: it inserts its canvas before the content
-// plane (the ground slot's place), acquires its OWN device (`navigator.gpu`, or the `gpu` handed in),
+// returns a factory structurally assignable to `@ice/dom`'s `LayerFactory` (D5b: `createDeskHost`,
+// wrapped by `@ice/react`'s `<Desk layer={deskLayer({ … })}>`, mounts the desk exactly as
+// `<InfiniteCanvas ground={…}>` mounted the ground until D5 turned the host into `<Desk>` by
+// deletion). This is the host half — the one module beside host/surface.ts that may touch the DOM:
+// it prepends its canvas to the container, acquires its OWN device (`navigator.gpu`, or the `gpu` handed in),
 // installs the submit instrument before anything can submit, makes the swap chain, compiles the
 // ground from the app's object kinds (`Ground.create` — `available()` is false until it resolves),
 // reads the OS's reduced-motion preference into the ambient, and hands the DOM-free reflector
@@ -116,9 +116,9 @@ export interface MatPin extends AmbientPin {
 
 export interface DeskLayerStatus { readonly state: "pending" | "ready" | "failed"; readonly message?: string }
 
-/** The mount context — the fields of react's `GroundLayerFactory` context this layer reads, mirrored structurally (react never imports the desk). */
+/** The mount context — the fields of `@ice/dom`'s `LayerContext` this layer reads, mirrored structurally (dom never imports the desk). */
 export interface DeskLayerContext {
-  readonly host: { readonly container: HTMLElement; readonly contentPlane: HTMLElement };
+  readonly host: { readonly container: HTMLElement };
   readonly world: World;
   readonly framePick?: FramePickSlot;
   /** The nav geometry seam (design-015 §9, D2b): the desk sets its word on its containers' drawn faces here, clears it at dispose. */
@@ -143,7 +143,7 @@ export type GreekPin = PaperWriting;
 export interface DeskLayerHandle {
   /** The drawing reflector — the facade registers it right after the plane transform, where the ground layer has always gone. */
   readonly reflector: ReflectorDef & { available(): boolean };
-  /** The react `grid` prop's re-tune (the old ground's magnet grid): the desk keeps only its fade-in. */
+  /** A host's grid re-tune (the old ground's magnet grid, the retired react `grid` prop): the desk keeps only its fade-in. */
   configureGrid(cfg: Partial<CoreGridConfig>): void;
   dispose(): void;
   /** The canvas in the ground slot. */
@@ -230,9 +230,9 @@ export interface DeskLayerHandle {
   /** Where the selection menu goes (D4a): the marks' box around the selection, published after each frame it moved. */
   readonly selection: SelectionSource;
   /**
-   * The DOM-free reflector behind `reflector` — named `desk`, never `compose`: react's
-   * `GroundLayerHandle.compose?` is the ground's COMPOSE handle (the composited profile reads its
-   * `sourceCanvas` seam off it, infinite-canvas.tsx), and the desk is not one. The slot stays absent.
+   * The DOM-free reflector behind `reflector` — named `desk`, never `compose`: react's retired
+   * `GroundLayerHandle.compose?` was the ground's COMPOSE handle (the composited profile read its
+   * `sourceCanvas` seam off it, until D5b), and the desk was never one. The slot stays absent.
    */
   readonly desk: DeskReflector;
 }
@@ -259,7 +259,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const doc = host.container.ownerDocument;
     const view = doc.defaultView;
     // the OBJECT types: the catalog's, plus the app's — their kinds are the ground's registry
-    const types = new Set<WidgetType>([...(ctx.catalog?.widgetTypes() ?? []).filter((t) => t.surface === "object"), ...(opts.objects ?? [])]);
+    const types = new Set<WidgetType>([...(ctx.catalog?.widgetTypes() ?? []).filter((t) => t.object !== undefined), ...(opts.objects ?? [])]);
     const { kinds, objectKinds } = kindsOf([...types], opts.kinds ?? []);
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
@@ -269,7 +269,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     canvas.style.height = "100%";
     canvas.style.display = "block";
     canvas.style.pointerEvents = "none";   // the router owns picking; the canvas is never a DOM hit target
-    host.container.insertBefore(canvas, host.contentPlane);
+    host.container.prepend(canvas);   // the container's first child: everything screen-space paints over it
 
     let ground: Ground | null = null;
     let ownDevice: GPUDevice | null = null;

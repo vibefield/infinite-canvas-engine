@@ -1,26 +1,28 @@
 /**
- * The devtools dock — ONE draggable window hosting all three tools
- * (2026-07-13, James: "make the 3 tools into one draggable panel").
+ * The devtools dock — ONE draggable window hosting the tools
+ * (2026-07-13, James: "make the 3 tools into one draggable panel"; two since
+ * design-015 D5b — the GL metrics panel, the r3f stats mirror, left with the
+ * GL islands it read).
  *
- * strata's observer + profiler and our GL panel each mount `position: fixed`
- * into their own corner. The dock does NOT re-implement any of them (standing
- * rule: wrap first-party tools): it is a fixed, draggable shell with three
- * stacked slots; each tool mounts into its slot via its own `container`
- * option, and dock-scoped CSS de-windows them (`position: static`, full
- * width, no border/shadow) so they read as sections of one panel. Their own
- * behavior is untouched — the observer keeps its tabs/collapse/vertical
- * resize (its header drag goes inert: left/top are ignored at static), the
- * profiler + GL strips keep their click-to-expand.
+ * strata's observer + profiler each mount `position: fixed` into their own
+ * corner. The dock does NOT re-implement either (standing rule: wrap
+ * first-party tools): it is a fixed, draggable shell with stacked slots; each
+ * tool mounts into its slot via its own `container` option, and dock-scoped
+ * CSS de-windows them (`position: static`, full width, no border/shadow) so
+ * they read as sections of one panel. Their own behavior is untouched — the
+ * observer keeps its tabs/collapse/vertical resize (its header drag goes
+ * inert: left/top are ignored at static), the profiler strip keeps its
+ * click-to-expand.
  *
- * Slot order is fixed by the dock, not by mount order: profiler and GL are
- * one-line summary strips, the observer is the deep-dive — strips on top.
+ * Slot order is fixed by the dock, not by mount order: the profiler is a
+ * one-line summary strip, the observer is the deep-dive — the strip on top.
  * Layout (x/y/width/open) persists to localStorage, same as the observer:
  * schema edits full-reload the page by design; the dock must stay put.
  */
 
 export type DockCorner = "tl" | "tr" | "bl" | "br";
 
-export type DockSlotId = "profiler" | "gl" | "observer";
+export type DockSlotId = "profiler" | "observer";
 
 export interface DockOptions {
   /** Where the dock mounts (default: document.body). */
@@ -44,7 +46,7 @@ const LS_KEY = "ice-dock:layout";
 const STYLE_ID = "ice-dock-style";
 const MARGIN = 8;
 const KEEP = 90; // px that must stay on screen so the header is always grabbable
-const SLOT_ORDER: readonly DockSlotId[] = ["profiler", "gl", "observer"];
+const SLOT_ORDER: readonly DockSlotId[] = ["profiler", "observer"];
 
 interface Layout {
   x?: number;
@@ -93,12 +95,12 @@ const CSS = `
 .ice-dock-slot:empty { display: none; }
 
 /* De-window the hosted tools — the dock is the window now. */
-.ice-dock .strata-obs, .ice-dock .strata-prof, .ice-dock .ice-gl {
+.ice-dock .strata-obs, .ice-dock .strata-prof {
   position: static !important; width: auto !important; min-width: 0 !important;
   border: none !important; border-radius: 0 !important; box-shadow: none !important; }
 .ice-dock .strata-obs { resize: vertical !important; }
 .ice-dock .strata-obs-head { cursor: default; }
-.ice-dock .strata-prof-body, .ice-dock .ice-gl-body { min-width: 0; }
+.ice-dock .strata-prof-body { min-width: 0; }
 `;
 
 function injectStyle(doc: Document): void {
