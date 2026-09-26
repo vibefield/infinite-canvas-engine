@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b and D2c LANDED 2026-09-25)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1227,6 +1227,57 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   37 mutations red; on the combined tree `gate:landing` exit 0 with both rigs added, and `pnpm run ci`
   red ONLY on dom's graybox 10k-mount load flake (5.3 s vs 5 s; 4/4 alone), every later stage run
   separately green.
+- **D2b — mini mats, nesting and nav from the world** (**LANDED 2026-09-25**, `f27d9e1` · `4b7fca3` ·
+  `c4971cf` · `758ba06`): the prototype's nav conventions on the world. THE NAV GEOMETRY SEAM —
+  `stack.navGeometry` beside `framePick`: the desk is the authority on a container's face AS DRAWN
+  (through its springs), so a flight starts from the drawn face and the cut is exact; `NavOpts` gains
+  `face`/`arrival`/`c0` and `transition: "cut"`, `NavCamera.zoom` is f64; the enter gesture is two
+  instant taps (D-D2b.1 — `MultiTap(2)` parks the first tap 280 ms); the ZOOM-THROUGH (a wheel that
+  leaves the face covering the view cuts in with no flight, a wheel out cuts out; a touch pinch never
+  cuts — D-D2b.5) writes `NavIntent`, applied on the engine's new `afterStep` hook (the raw loop never
+  applied it — D-D2b.12), and the cut op states `NavRedress` itself (D-D2b.13). DROP-INTO through the
+  portal affine (`interaction.drop`: an object's centre over the drawn FACE decides, it lands at
+  `(n − M.o) / M.s` taking the inside's scale, ⌥ keeps it out; view widgets keep their rules). The
+  builder per SLOT (root · inside · departed): every container gets its inside — its `ChildOf`
+  children as content, a far-LOD `chip` per kind (≤ 64), and past the gate (presence > 0, depth < 4,
+  the largest faces first) a LIVE slot built under the inside's camera, recursing; the FLIGHT draws
+  the departed desk from the frame's `Retained` widgets with the lamp's handover and holds the cut
+  frame at p = 0 (D-D2b.7); the RE-DRESSING after a cut eases 320 ms in log space. Exit: `rig:world`
+  38/38 at maxΔ 0 (the minimat, chain and nav scenes added), `rig:portal` 21/21 (THE CUT — the frame
+  before the enter and the flight's first frame the same PNG; the zoom-through by a real wheel, in and
+  out), `rig:nav` 25/25 (a live flight landing exact to 1e-9; THE PRESS + DOUBLE-CLICK CUT from the
+  face as drawn — 2 % larger than the static rect — the same PNG), `rig:interact` 28/28 (drop-into, ⌥,
+  the vinyl key); core 908 → 930 and desk 323 → 330 units, each new one proven red. Graded by the
+  orchestrator (the builder stopped on the account's rate limit before its own final gate): `pnpm run
+  ci` exit 0, `gate:landing` exit 0 with rig:portal and rig:nav added.
+- **D4a — the marks and the selection menu** (**LANDED 2026-09-26**, `baa80c0` … `20d9bd7`, thirteen commits —
+  nine rebased over D2b by a finisher, four it added): *Marks on the Mat* on the GPU. The MARKS PASS (desk/src/marks; stratum 5, screen px): the
+  page's reference drawing re-expressed as ONE instanced draw of SDF records — the pencil's brackets (lock-on 180 ms,
+  one ring under 24 px, knobs only where a kind resizes), member ticks under several's union, the vellum marquee
+  (live touches, the fold onto the union, tape skipped — Q-g), the laser guides and gap pills from core's snap facts
+  (the strike on a new alignment), the masking tape on `Locked` with its 2 px GIVE when a drag meets it, your extent on
+  the rulers; drawn once in the ROOT slot after every stratum (an entered mini mat's objects wear them — the root slot
+  IS the entered frame). The kinds' own ring RETIRES: a selected object's pixels are the unselected object's, and
+  `ObjectKind.frame` names the silhouette the marks go around. The marks' facts are READ (`Selected`, `Locked`,
+  `Grab`, `Resizable`, `GuideLine`, `SpacingBar`, the marquee preview, the gestures) and their motion is flux stepped by
+  dt (a `marks` wake in the reflector — idle-zero holds). The desk's keys (core): ⌥ at a drag's start leaves a copy
+  in the move's one transaction, ⌘ holds the snap off, ⇧ locks an axis (`moveDelta`, shared by the snap and the move),
+  ⇧⌘L tapes / lifts (`ops.setLocked`, one transaction); nudges and Clean Up pass tape over. `<SelectionMenu>`
+  (@ice/react): ONE screen-space element placed from the desk's anchor 10 px above the marks (flipped under the top
+  ruler), away for a gesture, stepping aside while a note is written (D2c's `Editing`), the app's acts first (apps/desk's
+  stub Send). Over D2b the marks are the ROOT slot's alone — an entered mini mat's objects wear them (the root slot IS
+  the entered frame; a rig row selects a note inside an entered, wheeled mini mat and its brackets stand where the
+  entered camera draws it, to 1e-6), the inside and departed slots add none, and the enter clears the selection, so
+  D2b's press + double-click cut is compared outside the pre-cut marks' band (maxΔ 0 over 3.8 M px). Exit: 14 marks
+  stills in the Node oracle (72 scenes, 55 checks); `rig:parity` 72 — 69 at maxΔ 0 and the 3 named board bounds;
+  `rig:world` 38/38 at maxΔ 0 (the brackets from the world = Dawn); `rig:interact` 47/47; `rig:proto-parity` 19
+  byte-identical (a selected scene drawn the prototype's way for its bench); idle, portal, nav, sticky, two-tab green;
+  core 937, desk 361, react 63 units; ci exit 0; `gate:landing` exit 0 (re-run by the orchestrator). Provisional calls
+  (James's to overturn): ⌥ is read twice — at a drag's START it leaves a copy, at the RELEASE it keeps the object out
+  of a container (held throughout: both); the chrome belongs to the desk you are on and leaves at a nav cut with it.
+  Owed: a dropped object stays `Selected` unseen inside the mini mat (a core fix); the consume path leaves no ⌥ copy;
+  a D-D2b.7 cut still whose spring moves at p = 0 (the ring that witnessed it retired); the retired ring spring still
+  advances and keeps the desk live (D6).
 
 ## Release cut & downstream
 
