@@ -248,12 +248,15 @@ describe("the writing · the pen and the caret (flux)", () => {
     // no word from a builder: the wipe's own 110 ms and one frame to draw it done, then quiet — though the note is never drawn again
     const bare = desk();
     bare.frame([n]);
+    const laid = bare.w.landed(E(1));
+    expect(laid).toBeGreaterThan(0);   // its raster laid: a landing (D7)
     bare.w.wrote(E(1), 1, 16);
     const wants: boolean[] = [];
     for (let i = 0; i < 12; i++) wants.push(bare.frame([]).want);   // 192 ms of frames that draw nothing
     expect(wants.slice(0, 7).every((x) => x)).toBe(true);
     expect(wants.slice(7)).toEqual([false, false, false, false, false]);
     expect(bare.w.wipeOf(E(1))).toBeUndefined();
+    expect(bare.w.landed(E(1))).toBe(laid + 1);   // the wipe let go: one landing; its running frames none
     // the builder's word: the note culled while its wipe runs — no frame is asked for it
     let shown = true;
     const cut = desk({ drawn: () => (shown ? 0 : undefined) });

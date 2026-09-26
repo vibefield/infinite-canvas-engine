@@ -146,9 +146,10 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
 
   it("a stroke laid on a board NOT drawn (culled — the builder's word): nothing asks a frame for it; back in view it asks, and replays (law #6 — D6's gate, pinned at D7)", () => {
     let shown = true;
-    const { ink, draw, lay, stub } = desk(() => (shown ? 0 : undefined));
+    const { ink, draw, lay, stub, board } = desk(() => (shown ? 0 : undefined));
     draw();
     expect(ink.tick?.(0)).toBe(false);
+    expect(ink.landed?.(board)).toBe(1);   // met: its ink replayed — a landing (D7)
     shown = false;   // scrolled off: the builder resolves nothing of it
     lay({ ink: "blue", tip: "bullet", points: [[40, 60], [90, 48], [150, 52]] });
     expect(ink.tick?.(16)).toBe(false);
@@ -158,6 +159,7 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
     draw();
     expect(stub.calls.at(-1)).toBe("replay 1 1");
     expect(ink.tick?.(64)).toBe(false);
+    expect(ink.landed?.(board)).toBe(2);   // the replay landed; the ticks between moved nothing
   });
 
   it("a stroke laid LIVE (D3t-a): its stamps into the stroke layer; the lift lays it in WET; its entity is ADOPTED when it lands — no replay; another turnover replays and lays a stroke in hand again", () => {

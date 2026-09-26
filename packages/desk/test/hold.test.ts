@@ -6,7 +6,7 @@
 // still. The desk copy behind the hand depends on the desk alone: the held object's own facts never bump its count.
 // And the GROUND on a fake device: a held frame is the copy (once per stamp, blurred), the bare hand slot and the two
 // composites; the copy is reused while the stamp stands; at a carry of 0 the frame is the rest frame's path.
-import { Camera, createCanvasEngine, HeldView, Viewport } from "@ice/core";
+import { Camera, createCanvasEngine, type Entity, HeldView, Viewport } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
 import { worldChildren } from "../src/compose/children";
@@ -154,6 +154,37 @@ describe("the hand in the builder (design-015 §8)", () => {
       for (let i = 0; i < 60; i++) build();   // a second in hand, still: nothing asks for a frame
       expect(builder.live(), type).toBe(false);
     }
+  });
+
+  it("something LANDS on a desk object while one is in hand (a picture, a replay, tiles, a wipe let go): the copy's count moves ONCE; a restless kind with nothing landed (the ink drying) or a landing on the held object never moves it (D7)", () => {
+    const ce = createCanvasEngine({ widgets: [Note, Notebook] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: VP.width, h: VP.height, dpr: VP.dpr });
+    ce.world.setResource(Camera, { ...CAM, gesturing: false });
+    const book = ce.ops.spawnWidget("desk.notebook", { x: 300 - 90, y: 400 - 126, props: { seed: 3, angle: 0.08 }, undoable: false });
+    const note = ce.ops.spawnWidget("desk.note", { x: 800, y: 200, props: { seed: 7 }, undoable: false });
+    for (let i = 1; i <= 3; i++) ce.step(i * 16);
+    const lands = new Map<Entity, number>();
+    const books = must(notebookKind().local)({ pass: () => undefined });
+    // the notebook's own local, its word on landings replaced: the held book's landings are the test's to move
+    const bookLocal = new Proxy(books, { get: (t, k) => (k === "landed" ? (e: Entity) => lands.get(e) ?? 0 : Reflect.get(t, k)) });
+    const paperLocal = { draw: () => ({}), layoutOf: () => undefined, landed: (e: Entity) => lands.get(e) ?? 0 };
+    const builder = createDeskBuilder(ce.world, { objects: [Note, Notebook], locals: new Map<string, unknown>([["notebook", bookLocal], ["paper", paperLocal]]) as never });
+    const build = (restless: string[] = []) => { builder.changed(); return builder.build(CAM, VP, DT, THEMES.light, DEFAULT_GRID, LOOKS, { restless: new Set(restless) }); };
+    build();
+    ce.ops.open(book);
+    for (let i = 0; i < 160 && (builder.hand()?.settled !== true || builder.live()); i++) build();
+    const seq0 = must(builder.hand()).deskSeq;
+    build(["paper"]);   // restless, nothing landed (the ink drying, a caret): the desk behind stands
+    expect(must(builder.hand()).deskSeq).toBe(seq0);
+    lands.set(note, 1);   // a picture, a raster, a wipe let go — on the note behind the hand
+    build(["paper"]);
+    expect(must(builder.hand()).deskSeq).toBe(seq0 + 1);
+    build(["paper"]);   // once
+    expect(must(builder.hand()).deskSeq).toBe(seq0 + 1);
+    lands.set(book, 1);   // on the HELD book: its own, never the desk's
+    build(["notebook"]);
+    expect(must(builder.hand()).deskSeq).toBe(seq0 + 1);
   });
 
   it("a harness pins the carry for a still: e held, the cover snapped (shut under 42 % unless the pin says open), settled only at 1", () => {

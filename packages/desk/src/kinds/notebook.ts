@@ -228,6 +228,9 @@ function pageStrokeOf(row: StrokeRow, had: ReadonlyMap<string, PageStroke>, now:
 /** The notebook's `local()`. */
 export function createBooks(host: KindHost): Books {
   const books = new Map<Entity, BookState>();
+  /** What has LANDED on each object, counted (D7 — `KindLocal.landed`): the held desk copy is made again when a desk object's moves. */
+  const landedOf = new Map<Entity, number>();
+  const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
   const pages = new PageInk(host.budget);   // its page rasters under the desk's one budget (D6)
   let next = 1;
   let woke = false;
@@ -302,7 +305,9 @@ export function createBooks(host: KindHost): Books {
         const k = host.pass();
         const up = k instanceof NotebookKind ? (k.pass ?? undefined) : undefined;
         const fallback: RGB = Object.values(look.pens)[0] ?? [look.ruleInk[0], look.ruleInk[1], look.ruleInk[2]];
+        const replays = pages.replays;
         t = pages.table(st.id, inView, (p) => strokesOn(e, p), live, (ink) => look.pens[ink] ?? fallback, look, up, G.frame.Wo, G.frame.Hp);
+        if (pages.replays !== replays) land(e);
       }
       // the lifted stroke drawn to its end (a page out of the table replays with it): from here the page lists it until its child lands
       if (live?.lifted === true) {
@@ -332,6 +337,7 @@ export function createBooks(host: KindHost): Books {
     ask(e, spread) { state(e).pending = spread; moving = true; },
     stir() { moving = true; },
     face(e, side) { state(e).faceT = side; moving = true; },
+    landed: (e) => landedOf.get(e) ?? 0,
     tick() {
       const w = woke || moving;
       woke = false;
@@ -347,6 +353,7 @@ export function createBooks(host: KindHost): Books {
       const st = books.get(e);
       if (st !== undefined) pages.forget(st.id);
       books.delete(e);
+      landedOf.delete(e);
     },
     dispose() { books.clear(); pages.dispose(); },
   };

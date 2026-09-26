@@ -186,6 +186,7 @@ describe("the pad's mirror, ring, presences and slots", () => {
     const ctx = ctxOf(c, s, { local: pads });
     const draw = (): void => { kind.record(kind.resolve(ctx), ctx); };
     draw();
+    expect(pads.landed?.(31 as Entity)).toBe(1);   // tiles drawn for its sheet: a landing (D7)
     expect(pads.tick?.(t)).toBe(true);   // the first frame's marks and tiles
     draw();
     expect(pads.tiles().pending).toBeGreaterThan(0);

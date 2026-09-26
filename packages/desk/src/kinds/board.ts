@@ -279,6 +279,9 @@ export function createBoardInk(host: KindHost): BoardInk {
   // let go when the ledger evicts it (it replays from its children when next drawn: `stamp` −1), kept while the board is on screen
   const budget = host.budget;
   const entityOf = new Map<string, Entity>();
+  /** What has LANDED on each object, counted (D7 — `KindLocal.landed`): the held desk copy is made again when a desk object's moves. */
+  const landedOf = new Map<Entity, number>();
+  const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
   const rasterBytes = (size: readonly [number, number]): number => Math.round(size[0] * size[1] * (4 * (4 / 3) + 1 + 1));
   const state = (e: Entity): BoardState => {
     let st = boards.get(e);
@@ -307,6 +310,7 @@ export function createBoardInk(host: KindHost): BoardInk {
         st.adopt = null;
         if (!landed) {
           pass.replay(st.id, boardOps(rows, look.markers));
+          land(e);
           replays += 1;
           if (st.live !== null) pass.lay(st.id, st.live.builder.tool, st.live.builder.stamps());   // the stroke in hand, laid again over the replay
         }
@@ -380,6 +384,7 @@ export function createBoardInk(host: KindHost): BoardInk {
     },
     pinStill(on) { still = on; },
     moving() { penMoving = true; },
+    landed: (e) => landedOf.get(e) ?? 0,
     tick(now) {
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.25);
       last = now;
@@ -408,6 +413,7 @@ export function createBoardInk(host: KindHost): BoardInk {
       passOf()?.release(st.id);
       budget?.release("board", String(st.id));
       entityOf.delete(String(st.id));
+      landedOf.delete(e);
       boards.delete(e);
     },
     dispose() {

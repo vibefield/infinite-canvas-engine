@@ -192,6 +192,9 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
   /** The prints whose body LEADS (in a hand, in the air, flying home, arriving) — the ones the tick steps (D6: never every print). */
   const leading = new Set<Entity>();
   const pics = new Map<string, Pic>();
+  /** What has LANDED on each object, counted (D7 — `KindLocal.landed`): the held desk copy is made again when a desk object's moves. */
+  const landedOf = new Map<Entity, number>();
+  const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
   const queue: PrintRest[] = [];
   let last = -1;
   let woke = false;
@@ -256,6 +259,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       if (pics.get(hash) !== pic) { if (picture !== null) passOf()?.dropPicture(picture); return; }   // nobody wants it any more
       pic.picture = picture;
       pic.state = picture === null ? "failed" : "ready";
+      for (const u of pic.users) land(u);
       woke = true;
     })().catch(() => { pic.state = "failed"; woke = true; });
     return pic;
@@ -347,6 +351,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       pic.held = false;
       return pic.picture;
     },
+    landed: (e) => landedOf.get(e) ?? 0,
     tick(now) {
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
       last = now;
@@ -385,6 +390,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       return want;
     },
     forget(e) {
+      landedOf.delete(e);
       const pr = prints.get(e);
       if (pr === undefined) return;
       unuse(e, pr.hash);

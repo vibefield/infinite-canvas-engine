@@ -128,6 +128,8 @@ export interface Writing {
   /** A glyph was just written at `index` (the pen's wipe from `now`); `undefined` = nothing to wipe (a paste, a newline). */
   wrote(e: Entity, index: number | undefined, now: number): void;
   wipeOf(e: Entity): { readonly index: number; readonly t0: number } | undefined;
+  /** What has LANDED on the note, counted — its raster laid, its wipe let go (D7 — `KindLocal.landed`); never the wipe running. */
+  landed(e: Entity): number;
   /** The caret index nearest a world point on a drawn note — where a tap puts the pen. */
   caretIndexAt(e: Entity, wx: number, wy: number): number | undefined;
   /** The topmost note drawn last frame under a world point. */
@@ -192,6 +194,8 @@ export function createWriting(opts: WritingOptions): Writing {
   const text = opts.text;
   const entries = new Map<Entity, Entry>();
   const wipes = new Map<Entity, { index: number; t0: number }>();
+  const landedOf = new Map<Entity, number>();
+  const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
   let focus: { entity: Entity; index: number; t0: number } | undefined;
   let now = 0;
   let ticks = 0;
@@ -258,7 +262,7 @@ export function createWriting(opts: WritingOptions): Writing {
       // draw it done — only for a note on screen (the builder's word, when it gives one); a note panned off or never drawn again
       // asked a frame every tick forever, its wipe let go only by a draw that never came
       for (const [e, wp] of wipes) {
-        if (t - wp.t0 >= wipeMs) wipes.delete(e);
+        if (t - wp.t0 >= wipeMs) { wipes.delete(e); land(e); }
         if (drawn === undefined || drawn(e) !== undefined) want = true;
       }
       const phase = focus === undefined ? undefined : phaseAt(t);
@@ -304,6 +308,7 @@ export function createWriting(opts: WritingOptions): Writing {
             const bmp = text.raster(L, face, { w: rect.w, h: rect.h }, band, bleed);
             en.raster = { rect: at, uv: pages.write(at, bmp.bytes), band, layout: L, bleed };
             rasters += 1;
+            land(e);
           }
         }
       }
@@ -313,7 +318,7 @@ export function createWriting(opts: WritingOptions): Writing {
       if (wp !== undefined && L !== undefined) {
         const g = L.glyphs.find((q) => q.index === wp.index);
         const u = (now - wp.t0) / wipeMs;
-        if (g === undefined || u >= 1) wipes.delete(e);
+        if (g === undefined || u >= 1) { wipes.delete(e); land(e); }
         else wipe = { ...glyphBox(L, g), t: Math.max(0, u) };
       }
       const caret = focus !== undefined && focus.entity === e && L !== undefined ? { ...caretAt(L, focus.index), on: phaseAt(now) } : undefined;
@@ -358,6 +363,7 @@ export function createWriting(opts: WritingOptions): Writing {
       dirty = true;
     },
     wipeOf: (e) => wipes.get(e),
+    landed: (e) => landedOf.get(e) ?? 0,
 
     caretIndexAt(e, wx, wy) {
       const en = entries.get(e);
@@ -384,6 +390,7 @@ export function createWriting(opts: WritingOptions): Writing {
       const en = entries.get(e);
       if (en !== undefined) { release(opts.pages(), en); entries.delete(e); }
       wipes.delete(e);
+      landedOf.delete(e);
       if (focus?.entity === e) { focus = undefined; dirty = true; }
     },
 

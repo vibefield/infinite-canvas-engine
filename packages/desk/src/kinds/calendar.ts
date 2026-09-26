@@ -335,6 +335,9 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   let begun = false;
   let lastTick: number | null = null;
   const prints = new Map<string, { key: string; print: SheetPrint }>();
+  /** What has LANDED on each object, counted (D7 — `KindLocal.landed`): the held desk copy is made again when a desk object's moves. */
+  const landedOf = new Map<Entity, number>();
+  const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
   const state = (e: Entity): PadState => {
     let st = pads.get(e);
     if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined, pinned: new Map(), marks: undefined, draft: null, roll: newRoll(), hidden: new Set() }; pads.set(e, st); }
@@ -548,13 +551,16 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
         if (x1 < 0 || y1 < 0 || x0 > F.W || y0 > F.H) continue;
         const level = levelFor(view.zoom * view.dpr);
         const t = tilesOf(pass);
+        const tiles0 = t.drawn();
         t.sheet(pass, host.print, `${st.id}:${month}`, slot, print, { x0, y0, x1, y1 }, month === G.base ? level : Math.max(level - 1, 0), G.moving === null ? 2 : 1);
+        if (t.drawn() !== tiles0) land(e);
         t.end(pass);
       }
       return marksOn(st, markMonth, G.weekStart, markPrint);
     },
     /** The budget's ask (D6): the tile texture is the pass's, fixed — always kept. */
     keeps: () => true,
+    landed: (e) => landedOf.get(e) ?? 0,
     tick(now) {
       // tiles still to draw are a reason for a frame only while a pad DREW since the last tick: a pad culled (the builder resolves
       // nothing off-screen) or gone leaves its count standing, and a count no frame will ever lower kept the desk awake (D7)
@@ -576,6 +582,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       if (st === undefined) return;
       free.push(st.slot);
       pads.delete(e);
+      landedOf.delete(e);
       if (st.hidden.size > 0) veilsCache = null;
       tiles?.drop(st.id, [st.slot * 2, st.slot * 2 + 1]);
       for (const k of [...prints.keys()]) if (k.startsWith(`${st.id}:`)) prints.delete(k);

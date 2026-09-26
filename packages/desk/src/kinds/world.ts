@@ -206,6 +206,13 @@ export interface DataChildren {
 export interface KindLocal {
   /** Once a tick, before the draw, with the frame's clock (ms): does the state want a frame now (a wipe, a blink, an asset landed)? */
   tick?(now: number): boolean;
+  /**
+   * What has LANDED on `e` so far — a count the kind moves when something arrives that changes how the object looks with no fact
+   * of its own moving (a picture decoded, ink replayed, a raster laid, tiles drawn, a wipe ended), never for a running motion (the
+   * ink drying, a wipe running, a pen). The builder reads it after it remakes a restless kind's record: a desk object's that moved
+   * remakes the blurred desk copy behind the hand (D7 — its stamp saw only the facts). Absent: nothing lands.
+   */
+  landed?(e: Entity): number;
   /** The entity left this desk for good — its ghost faded, it left the frame, the desk was reset: free what it held. */
   forget?(e: Entity): void;
   /**

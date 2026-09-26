@@ -377,6 +377,8 @@ interface ObjectState {
   give: number;
   content: Rect | null;
   zoom: number;
+  /** Its kind's word on what has landed on it, as its record was last made (`KindLocal.landed`; D7). */
+  landed: number;
   /** The marks' row for the record as made (the root slot). */
   markRow: MarkRow | null;
 }
@@ -641,7 +643,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     const st: ObjectState = {
       kind, widget, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, locked: false, resizable: false, band: DEFAULT_STRATUM_BAND, dirty: true,
       lift: 0, liftV: 0, hover: 0, hoverV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
-      rank: -1, active: false, lifted: false, stale: true, give: 0, content: null, zoom: Number.NaN, markRow: null,
+      rank: -1, active: false, lifted: false, stale: true, give: 0, content: null, zoom: Number.NaN, landed: 0, markRow: null,
     };
     states.set(e, st);
     return st;
@@ -747,6 +749,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
        * copy made while a cleared scene's ghosts were still fading kept them for the whole hold.
        */
       let deskMoving = flying;
+      /** Something landed on a desk object this build (`KindLocal.landed`; D7): the copy behind the hand is made again, once. */
+      let deskLanded = false;
       // the cut frame (D-D2b.7) and a harness's freeze: no spring advances — the departed desk IS its pre-cut frame
       const dt = bopts.freeze === true || (flying && nav.p === 0) ? 0 : dt0;
       const lamp: Lamp = lampOf(grid.mat.plane);
@@ -913,6 +917,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const inside = insideOf(e, st, G, ctx, slotCam, slotGrid);
             work.recorded += 1;
             R = kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
+            // something LANDED on it since its record was last made (a picture, a replay, tiles — not a running motion): the desk behind
+            // the hand looks different though no fact moved, and its blurred copy must be made again (D7)
+            const landed = locals?.get(kind.name)?.landed?.(e) ?? 0;
+            if (landed !== st.landed) { st.landed = landed; deskLanded = true; }
             st.geometry = G;
             st.record = R;
             st.stale = false;
@@ -1233,7 +1241,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // the desk moved under the hand, this frame or the last: the blurred copy's count moves with it (the hand's own motion never
       // does). The last frame too — a ghost leaves, a spring snaps to its target, a ramp ends — on a frame that reads still, and the
       // copy must take that frame, not the one before it.
-      if (deskMoving || deskWasMoving) { deskSeq += 1; if (heldBuild !== undefined) heldBuild = { ...heldBuild, deskSeq }; }
+      if (deskMoving || deskWasMoving || deskLanded) { deskSeq += 1; if (heldBuild !== undefined) heldBuild = { ...heldBuild, deskSeq }; }
       deskWasMoving = deskMoving;
       lastHand = heldBuild;
       totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded; totals.reused += work.reused;
