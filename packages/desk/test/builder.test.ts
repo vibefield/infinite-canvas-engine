@@ -113,11 +113,16 @@ describe("the desk builder · the springs snap (B7's trap)", () => {
     expect(n).toBeGreaterThan(5);
     expect(must(builder.fluxOf(a)).ring).toBe(1);   // snapped, not 0.9997
     expect(builder.live()).toBe(false);
+    // D4a: the kind's own ring is retired — it is handed 0, so the selected note's pixels are the unselected note's —
+    // and the MARKS carry the selection: its brackets, locked on and whole
     const G = builder.geometryOf(a) as { ring: number };
-    expect(G.ring).toBe(1);
+    expect(G.ring).toBe(0);
+    const at = build().marks;
+    expect(at.objects.map((o) => [o.style, o.t, o.alpha])).toEqual([["brackets", 1, 1]]);
     ce.ops.clearSelection();
     settle();
     expect(must(builder.fluxOf(a)).ring).toBe(0);
+    expect(build().marks.objects).toEqual([]);   // the leave ran to its end: nothing drawn
   });
 
   it("the hold: Grab lifts a note on the same spring and lands on 1; its release lands on 0", () => {

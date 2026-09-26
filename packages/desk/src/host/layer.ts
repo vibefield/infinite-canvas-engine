@@ -26,11 +26,17 @@
 // (`performance.now()` — the rAF clock lags wall time headless) and may wake an `ink` frame (a wipe,
 // a blink, a face landing); after it, the editor follows the drawn note. A committed raster is
 // pinned through the writing, so a note that leaves the desk gives its rect back (the page-slot leak).
+//
+// And the desk's chrome (D4a): the ground is made with the marks pass, the builder reads the interaction
+// stack's marquee preview through the context's `readMarquee`, and the handle's `selection` is the one
+// source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
+// published after every frame it changed.
 
-import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder } from "../compose/builder";
+import type { SelectionAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes } from "../compose/reflector";
 import { acquire } from "../engine/device";
@@ -40,6 +46,7 @@ import type { ObjectFlux, ObjectKind } from "../kinds/world";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GlyphAtlasMeta, MatConfig, PlateName } from "../mat/layout";
 import { MAT_SHADER_FILES, matShaders } from "../mat/shaders";
+import { MARKS_SHADER_FILES, marksShaders } from "../marks/shaders";
 import { objectKindOf } from "../object";
 import { blueNoise } from "../assets/blue-noise.gen";
 import { PAPER_KIND, type PaperWriting } from "../kinds/paper";
@@ -107,6 +114,14 @@ export interface DeskLayerContext {
   readonly navGeometry?: NavGeometrySlot;
   readonly transitions?: { register(adapter: PresentationTransitionAdapter): () => void };
   readonly catalog?: { widgetTypes(): readonly WidgetType[] };
+  /** The interaction stack's marquee preview (`stack.marqueeBuffer`, out of the ECS): the vellum the marks draw (D4a). */
+  readonly readMarquee?: () => MarqueeBuffer;
+}
+
+/** The selection menu's source (D4a): the marks' anchor as of the last frame, and a subscription that fires when it changes. */
+export interface SelectionSource {
+  anchor(): SelectionAnchor;
+  subscribe(listener: () => void): () => void;
 }
 
 /** A note's writing as a still states it for the far LOD (kinds/paper.ts `PaperWriting`): the text's left edge, its em, each line's baseline and width, note units. */
@@ -188,6 +203,8 @@ export interface DeskLayerHandle {
   editor(): NoteEditor | undefined;
   /** The note's typing session (D2c): the claim, the live cell, the commit. */
   readonly typing: NoteTyping;
+  /** Where the selection menu goes (D4a): the marks' box around the selection, published after each frame it moved. */
+  readonly selection: SelectionSource;
   /**
    * The DOM-free reflector behind `reflector` — named `desk`, never `compose`: react's
    * `GroundLayerHandle.compose?` is the ground's COMPOSE handle (the composited profile reads its
@@ -255,8 +272,20 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (local !== undefined) locals.set(k.name, local);
     }
     const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;
-    const builder = createDeskBuilder(world, { objects: [...types], locals });
+    const readMarquee = ctx.readMarquee;
+    const builder = createDeskBuilder(world, { objects: [...types], locals, ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
+    // the selection menu's source: the anchor published whenever a frame moved it
+    const listeners = new Set<() => void>();
+    let published = "";
+    const publish = (): void => {
+      const a = builder.anchor();
+      const key = JSON.stringify(a);
+      if (key === published) return;
+      published = key;
+      for (const l of [...listeners]) l();
+    };
     const compose = createDeskReflector({
+      onFrame: publish,
       world, builder, kinds: objectKinds, ambient,
       ground: () => ground,
       attach: { resize: (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } } },
@@ -328,7 +357,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           ownDevice = g.device;
           instrument = instrumentSubmits(g.device);   // before anything can submit: the idle-zero witness counts from boot
           opts.onDevice?.(g.device);
-          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds });
+          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)) });
           if (disposed || ended) { made.dispose(); return; }
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;
@@ -411,9 +440,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       writing,
       editor: () => editor,
       typing,
+      selection: {
+        anchor: () => builder.anchor(),
+        subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+      },
       desk: compose,
       dispose() {
         disposed = true;
+        listeners.clear();
         editor?.dispose();
         for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);

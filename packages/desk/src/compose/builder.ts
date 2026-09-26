@@ -60,12 +60,14 @@ import {
   Grab,
   LocalPointer,
   Locked,
+  type MarqueeBuffer,
   type NavFace,
   NavRedress,
   NavTransition,
   Pointer,
   Position,
   PrefabId,
+  Resizable,
   Retained,
   Selected,
   Size,
@@ -82,7 +84,9 @@ import {
   type World,
 } from "@ice/core";
 import type { OutgoingInputs, PortalInputs, SlotObject } from "../ground";
-import { FLUX_REST, type InsideContext, type KindLocal, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectOf } from "../kinds/world";
+import { FLUX_REST, type InsideContext, type KindLocal, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectFrame, rectOf } from "../kinds/world";
+import type { MarksInput } from "../marks/layout";
+import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
 import type { MatFrame, SlotLight } from "../mat/layout";
 import { flightLights, flightPresent, type InsideView, insidePresent, insideViewOfFace } from "../minimat/inside";
@@ -118,6 +122,8 @@ export interface DeskBuilderOptions {
    * (its ghost faded, it left the frame, it died unseen) so what it held — a raster's rect — goes back.
    */
   readonly locals?: ReadonlyMap<string, KindLocal>;
+  /** The interaction stack's marquee preview (out of the ECS — design-003 §5.7): the vellum the marks draw (D4a). */
+  readonly marquee?: () => MarqueeBuffer | undefined;
 }
 
 export interface DeskBuilderStats {
@@ -135,9 +141,9 @@ export interface DeskBuilderStats {
   readonly live: boolean;
 }
 
-/** What can dirty the builder: a journaled world write, a despawn, a document reset, the sibling order, the hover target. */
-export type DeskWakeReason = "world" | "removed" | "reset" | "order" | "hover";
-const WAKE_REASONS: readonly DeskWakeReason[] = ["world", "removed", "reset", "order", "hover"];
+/** What can dirty the builder: a journaled world write, a despawn, a document reset, the sibling order, the hover target, the marks' own facts (the snap's chrome, the vellum, a drag meeting tape, the gestures — D4a). */
+export type DeskWakeReason = "world" | "removed" | "reset" | "order" | "hover" | "marks";
+const WAKE_REASONS: readonly DeskWakeReason[] = ["world", "removed", "reset", "order", "hover", "marks"];
 
 /** The springs a host may pin: each present key holds that spring at the value. */
 export type FluxPin = Partial<Pick<ObjectFlux, "lift" | "hover" | "ring">>;
@@ -173,6 +179,8 @@ export interface BuiltDesk {
   readonly light?: SlotLight;
   /** The departed desk while a flight is on. */
   readonly outgoing?: OutgoingInputs;
+  /** The desk's chrome this frame (stratum 5 — `GroundFrameInputs.marks`, D4a): the root slot's, the current frame's desk. */
+  readonly marks: MarksInput;
   readonly stats: DeskBuilderStats;
 }
 
@@ -226,6 +234,8 @@ export interface DeskBuilder {
   clearFlux(): void;
   /** The widest `reach` among the desk's kinds, world units — the pick source's pad. */
   reach(): number;
+  /** The selection menu's anchor as of the last build: the marks' box around the selection on screen, whether a gesture is on (D4a). */
+  anchor(): SelectionAnchor;
   stats(): DeskBuilderStats;
   dispose(): void;
 }
@@ -238,6 +248,9 @@ interface ObjectState {
   props: Record<string, unknown>;
   selected: boolean;
   grabbed: boolean;
+  /** Taped down (`Locked`) and resizable (`Resizable`) — what the marks read (D4a). */
+  locked: boolean;
+  resizable: boolean;
   band: number;
   dirty: boolean;
   /** The springs: value and velocity. */
@@ -370,6 +383,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const readsC: Component[] = [];
   const readsT: Tag[] = [];
   for (const k of kindsSeen) { readsC.push(...(k.reads?.components ?? [])); readsT.push(...(k.reads?.tags ?? [])); }
+  const marks = createMarksCollector(world, opts.marquee !== undefined ? { marquee: opts.marquee } : {});
   const collector = world.changes.collect({
     components: [Position, Size, PrefabId, Grab, ...propComponents(opts.objects), ...readsC],
     tags: [Selected, Active, Container, Locked, WidgetEquipped, Retained, ...readsT],
@@ -409,6 +423,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     st.props = props;
     st.selected = world.hasTag(e, Selected);
     st.grabbed = world.has(e, Grab);
+    st.locked = world.hasTag(e, Locked);
+    st.resizable = world.hasTag(e, Resizable);
     st.band = world.get(e, Stratum)?.band ?? DEFAULT_STRATUM_BAND;
     st.dirty = false;
   };
@@ -423,7 +439,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     if (widget === undefined || kind === undefined) return undefined;
     meet(kind);
     const st: ObjectState = {
-      kind, widget, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, band: DEFAULT_STRATUM_BAND, dirty: true,
+      kind, widget, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, locked: false, resizable: false, band: DEFAULT_STRATUM_BAND, dirty: true,
       lift: 0, liftV: 0, hover: 0, hoverV: 0, ring: 0, ringV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
     };
     states.set(e, st);
@@ -514,7 +530,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
 
   return {
     build(cam, vp, dt0, theme, grid, looks, bopts = {}) {
-      if (disposed) return { objects: [], portals: [], grid, stats: EMPTY_STATS };
+      if (disposed) return { objects: [], portals: [], grid, marks: marks.frame({ rows: [], cam, view: vp, dt: 0, night: false, rulers: null }), stats: EMPTY_STATS };
       seq += 1;
       lastGrid = grid;
       lastLooks = looks;
@@ -536,9 +552,11 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const frameGrid = frameGridOf(frame, grid, looks);
       let portalsCount = 0;
       let live = false;
+      /** The root slot's objects as the marks go around them (D4a) — the inside and departed slots add none. */
+      const markRows: MarkRow[] = [];
 
       /** One object's context for a slot, its springs advanced (`springs`) or at rest. */
-      const contextOf = (e: Entity, st: ObjectState, view: ObjectContext["view"], slotGrid: GridConfig, slotLamp: Lamp, springs: boolean): ObjectContext => {
+      const contextOf = (e: Entity, st: ObjectState, view: ObjectContext["view"], slotGrid: GridConfig, slotLamp: Lamp, springs: boolean, rect: ObjectRect = st.rect): ObjectContext => {
         let flux: ObjectFlux;
         if (springs) {
           // the springs: the hold's lift (Grab), the hover's rise (the exact hit, never while held), the ring (Selected) — each snapped
@@ -551,11 +569,13 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           live ||= moving;
           [st.ring, st.ringV, moving] = advance(st.ring, st.ringV, pin?.ring ?? (st.selected ? 1 : 0), S.ringHz, S.ringDamp, dt, pin?.ring !== undefined);
           live ||= moving;
-          flux = fluxOf(st);
+          // the kinds' own selection ring is retired — the marks draw the selection (D4a): they are handed ring 0, so a selected
+          // object's pixels are the unselected object's
+          flux = { ...fluxOf(st), ring: 0 };
         } else flux = FLUX_REST;
         const asset = assets.get(e);
         const local = locals?.get(st.kind.name);
-        return { entity: e, rect: st.rect, props: st.props, flux, look: looks.get(st.kind.name), theme, lamp: slotLamp, view, grid: slotGrid, dt, ...(asset !== undefined ? { asset } : {}), ...(local !== undefined ? { local } : {}) };
+        return { entity: e, rect, props: st.props, flux, look: looks.get(st.kind.name), theme, lamp: slotLamp, view, grid: slotGrid, dt, ...(asset !== undefined ? { asset } : {}), ...(local !== undefined ? { local } : {}) };
       };
 
       /**
@@ -612,8 +632,11 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           const hx = r.w / 2 + st.kind.reach;
           const hy = r.h / 2 + st.kind.reach;
           if (r.cx + hx < x0 || r.cx - hx > x1 || r.cy + hy < y0 || r.cy - hy > y1) { st.geometry = null; st.record = null; st.inside = null; culled += 1; continue; }
+          // a drag that met the tape shivers the object by its give (CSS px → world) — in the root slot alone, where the marks are (D4a)
+          const give = slot === "root" ? marks.giveOf(e) : 0;
+          const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
           // the root's and the departed desk's objects run their springs; an inside's members lie at rest
-          const ctx = contextOf(e, st, view, slotGrid, slotLamp, slot !== "inside");
+          const ctx = contextOf(e, st, view, slotGrid, slotLamp, slot !== "inside", drawn);
           const G = st.kind.resolve(ctx);
           const inside = insideOf(e, st, G, ctx, slotCam, slotGrid);
           const R = st.kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
@@ -621,6 +644,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           st.record = R;
           const at = rows.length;
           rows.push({ entity: e, kind: st.kind.name, record: R, band: st.band });
+          // the marks go around what was drawn: the kind's frame on the geometry just resolved, ICE's rect (D4a)
+          if (slot === "root") markRows.push({ entity: e, frame: st.kind.frame?.(G) ?? rectFrame(drawn), rect: { x0: r.cx - r.w / 2, y0: r.cy - r.h / 2, x1: r.cx + r.w / 2, y1: r.cy + r.h / 2 }, selected: st.selected, locked: st.locked, grabbed: st.grabbed, resizable: st.resizable });
           if (inside?.view && portalsOn && depth < PORTAL_DEPTH && e !== skip && inside.view.presence > 0) {
             cands.push({ at, e, view: inside.view, grid: st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid });
           }
@@ -687,7 +712,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         if (g.del >= 1) { ghosts.delete(e); forget(g.kind, e); continue; }
         live = true;
         const local = locals?.get(g.kind.name);
-        const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp: rootLamp, view: rootView, grid: frameGrid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
+        const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, ring: 0, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp: rootLamp, view: rootView, grid: frameGrid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
         const G = g.kind.resolve(ctx);
         const row: Row = { entity: undefined, kind: g.kind.name, record: g.kind.record(G, ctx), band: g.band };
         let at = g.next === undefined ? -1 : rows.findIndex((q) => q.entity === g.next);
@@ -753,6 +778,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // an object that left the frame without dying (a nav cut) is forgotten, no ghost: it was not deleted — its kind lets go of it (D2c)
       for (const [e, st] of states) if (st.seen !== seq) { states.delete(e); forget(st.kind, e); }
       const objects: SlotObject[] = rows.map((r) => ({ kind: r.kind, record: r.record }));
+      // the marks: the root slot's rows under the root camera — the current frame's desk — and its grid's rulers (an entered mini mat prints none) (D4a)
+      const ruler = frameGrid.mat.ruler;
+      const marked = marks.frame({ rows: markRows, cam, view: vp, dt, night: theme.name === "dark", rulers: ruler.on ? { margin: ruler.margin, band: ruler.band } : null });
+      live ||= marks.live();
       stats = { active: list.length, objects: objects.length, culled: root.culled, ghosts: ghosts.size, portals: portalsCount, live };
       return {
         objects,
@@ -762,6 +791,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         ...(present !== undefined ? { present } : {}),
         ...(light !== undefined ? { light } : {}),
         ...(outgoing !== undefined ? { outgoing } : {}),
+        marks: marked,
         stats,
       };
     },
@@ -795,6 +825,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       if (order.stale()) { wakes.order += 1; any = true; }
       const h = hoverTarget();
       if (h !== lastHover) { lastHover = h; wakes.hover += 1; any = true; }
+      if (marks.changed()) { wakes.marks += 1; any = true; }
       return any;
     },
     wakes: () => ({ ...wakes }),
@@ -820,9 +851,11 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       wakes.world += 1;
     },
     reach: () => reach,
+    anchor: () => marks.anchor(),
     stats: () => stats,
     dispose() {
       disposed = true;
+      marks.dispose();
       collector.dispose();
       states.clear();
       ghosts.clear();

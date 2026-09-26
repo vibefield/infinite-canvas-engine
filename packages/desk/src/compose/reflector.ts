@@ -55,6 +55,8 @@ export interface DeskReflectorOptions {
   /** The device pixel ratio the canvas is capped at (2). */
   readonly maxDpr?: number;
   readonly name?: string;
+  /** Called after every frame drawn — the layer publishes the selection menu's anchor from it (D4a). */
+  readonly onFrame?: () => void;
 }
 
 /** What woke a frame, counted since the mount — the builder's reasons and the reflector's own. */
@@ -123,7 +125,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let lodPin: number | undefined;
   let freeze = false;
   let holdRedress = false;
-  const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0 };
+  const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0 };
   let builderWakes = builder.wakes();
 
   /** The local mouse pointer's screen point as NDC (x right, y up), or null before one was seen. */
@@ -153,7 +155,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       if (builder.changed()) {
         dirty = true;
         const bw = builder.wakes();
-        for (const k of ["world", "removed", "reset", "order", "hover"] as const) wakes[k] += bw[k] - builderWakes[k];
+        for (const k of ["world", "removed", "reset", "order", "hover", "marks"] as const) wakes[k] += bw[k] - builderWakes[k];
         builderWakes = bw;
       }
       const cs = w.resourceStamp(Camera);
@@ -199,10 +201,12 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         ...(built.light !== undefined ? { light: built.light } : {}),
         ...(built.outgoing !== undefined ? { outgoing: built.outgoing } : {}),
         theme,
+        marks: built.marks,
       };
       lastInputs = inputs;
       lastFrame = ground.render(inputs);
       redraws += 1;
+      opts.onFrame?.();
       if (builder.live()) { dirty = true; wakes.live += 1; }   // a spring, a ghost or a re-dressing ramp still moves: the next frame paints too
     },
   };
