@@ -59,8 +59,20 @@ const inkMetaPath = resolve(root, "oracle/fixtures/assets/ink-note-1.json");
 const inkMeta = existsSync(inkMetaPath) ? JSON.parse(readFileSync(inkMetaPath, "utf8")) : null;
 const photoMetaPath = resolve(root, "oracle/fixtures/assets/photo-1.json");
 const photoMeta = existsSync(photoMetaPath) ? JSON.parse(readFileSync(photoMetaPath, "utf8")) : null;
+// THE ERROR-SCOPE PROBE (design-015 D3r-b): every GPU error the desk's creation and every frame after it raises — a validation
+// error, an out-of-memory, an internal one — is caught in a scope of its own and counted; a single one fails the run. (The notebook's
+// and the calendar's passes watched their first four frames themselves; as kinds they record into the frame's encoder, so the host
+// that submits the frame watches it.)
+const SCOPES = ["validation", "out-of-memory", "internal"];
+const probe = { frames: 0, errors: [] };
+const scoped = async (what, fn) => {
+  for (const f of SCOPES) device.pushErrorScope(f);
+  const out = await fn();
+  for (const f of [...SCOPES].reverse()) { const e = await device.popErrorScope(); if (e) probe.errors.push(`${what} (${f}): ${e.message}`); }
+  return out;
+};
 // The desk both hosts draw (frame.mjs), on Dawn's device, composed from the .wgsl files on disk.
-const desk = await createOracleDesk({
+const desk = await scoped("creation", () => createOracleDesk({
   device, format: FORMAT, text: texts,
   assets: {
     noise: raw("blue-noise.rgba"), goboC: hostRaw("gobo-c.rgba"), goboB: hostRaw("gobo-b.rgba"),
@@ -68,17 +80,20 @@ const desk = await createOracleDesk({
     inkMeta, ink: inkMeta && inkMeta.w > 0 ? hostRaw("ink-note-1.r8") : null,
     photoMeta, photo: photoMeta && photoMeta.w > 0 ? hostRaw("photo-1.rgba") : null,
   },
-});
+}));
 const { mat, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf } = desk;
 const W = VIEW.cssW * VIEW.dpr;
 const H = VIEW.cssH * VIEW.dpr;
 const out = new Target(device, { format: FORMAT, label: "oracle", readable: true }, W, H);
 
-/** Render one scene through frame.mjs's `encode` into the readable target, and read it back. */
+/** Render one scene through frame.mjs's `encode` into the readable target — the frame inside the probe's scopes — and read it back. */
 async function render(s, opts = {}) {
-  const encoder = device.createCommandEncoder();
-  const { theme, nav, prepared } = desk.encode(encoder, out.view, { w: W, h: H }, s, opts);
-  device.queue.submit([encoder.finish()]);
+  const { theme, nav, prepared } = await scoped(`frame ${++probe.frames}`, () => {
+    const encoder = device.createCommandEncoder();
+    const r = desk.encode(encoder, out.view, { w: W, h: H }, s, opts);
+    device.queue.submit([encoder.finish()]);
+    return r;
+  });
   return { px: await readback(device, out.texture, 4), theme, nav, portals: prepared.portals, stats: prepared.incoming.stats };
 }
 
@@ -730,6 +745,124 @@ async function litCheck(sc) {
   return ok;
 }
 
+// ---------------------------------------------------------------- the notebooks and the desk calendars (design-015 D3r-b)
+
+/** Is a device pixel inside a device-px box [x, y, w, h]? */
+const inBox = (b, x, y) => x >= b[0] && x < b[0] + b[2] && y >= b[1] && y < b[1] + b[3];
+
+/**
+ * NOTEBOOK.md §9, as pixels — the books are ONE layer laid inside their screen box: the same still with its books and without,
+ * (1) outside the box the pass lays (`screenBox`: the books and their shadows' reach, device px) byte for byte; (2) inside it the
+ * books and their shadows change the frame.
+ */
+async function bookCheck(sc) {
+  const s = sc.scene;
+  const { px: A } = await render(s);
+  const box = desk.notebooks.screenBox;
+  const { px: B } = await render({ ...s, books: [] });
+  if (!box) { console.log(`  FAIL  book       ${sc.name.padEnd(24)} no layer was laid`); return false; }
+  let outside = 0;
+  let outsideMax = 0;
+  let inside = 0;
+  let insideDiff = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const d = delta(A, B, (y * W + x) * 4);
+    if (!inBox(box, x, y)) { outside++; if (d > outsideMax) outsideMax = d; } else { inside++; if (d > 0) insideDiff++; }
+  }
+  const ok = outsideMax === 0 && outside > 100000 && insideDiff > inside * 0.3;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  book       ${sc.name.padEnd(24)} outside the books' box [${box.join(", ")}] maxΔ ${outsideMax}/255 over ${outside.toLocaleString()} px · inside it ${insideDiff.toLocaleString()} of ${inside.toLocaleString()} differ`);
+  return ok;
+}
+
+/**
+ * design-015 §4.2 for a COMPOSITE kind, as pixels — the books' layer is the things' LAST run: (1) a note laid before the book and a
+ * note laid after it give the same frame, byte for byte; (2) where the book is opaque (its coverage with the mat under it switched
+ * off — the pass's debug bit 64 — 2 device px in) and the note lies under it, the frame is the book alone: the note never shows.
+ */
+async function bookOrderCheck(sc) {
+  const s = sc.scene;
+  const things = thingsOf(s);
+  const { px: R1 } = await render(s);
+  const { px: R2 } = await render({ ...s, things: [...things].reverse() });
+  let orderMax = 0;
+  for (let o = 0; o < R1.length; o += 4) { const d = delta(R1, R2, o); if (d > orderMax) orderMax = d; }
+  const books = things.filter((t) => t.kind === "book");
+  const notes = things.filter((t) => t.kind === "note");
+  const { px: D } = await render({ ...s, things: [] });
+  const { px: N } = await render({ ...s, things: notes });
+  const { px: Bk } = await render({ ...s, things: books });
+  desk.notebooks.debug = 64;   // the books alone in their layer: no mat under them, so what differs from the bare desk is the books
+  const { px: C } = await render({ ...s, things: books });
+  desk.notebooks.debug = 0;
+  const cover = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) cover[i] = delta(C, D, i * 4) > 0 ? 1 : 0;
+  const core = (x, y) => { for (let v = -2; v <= 2; v++) for (let u = -2; u <= 2; u++) { const X = x + u; const Y = y + v; if (X < 0 || Y < 0 || X >= W || Y >= H || !cover[Y * W + X]) return false; } return true; };
+  let under = 0;
+  let underMax = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const o = (y * W + x) * 4;
+    if (delta(N, D, o) === 0 || !core(x, y)) continue;   // where the note lies, and the book is opaque over it
+    under++;
+    const d = delta(R1, Bk, o);
+    if (d > underMax) underMax = d;
+  }
+  const ok = orderMax === 0 && underMax === 0 && under > 1000;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  bookOrder  ${sc.name.padEnd(24)} the note before the book and after it: maxΔ ${orderMax}/255 · where the book lies opaque over the note (${under.toLocaleString()} px) the frame is the book alone: maxΔ ${underMax}/255`);
+  return ok;
+}
+
+/**
+ * CALENDAR.md §6, as pixels — the pads are ONE layer laid beneath everything: the same still with its pads and without, (1) outside the
+ * box the pass lays (`screenBox`, device px) byte for byte; (2) inside it the pads change the frame.
+ */
+async function padCheck(sc) {
+  const s = sc.scene;
+  const { px: A } = await render(s);
+  const box = desk.calendars.screenBox;
+  const { px: B } = await render({ ...s, calendars: [] });
+  if (!box) { console.log(`  FAIL  pad        ${sc.name.padEnd(24)} no layer was laid`); return false; }
+  let outside = 0;
+  let outsideMax = 0;
+  let inside = 0;
+  let insideDiff = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const d = delta(A, B, (y * W + x) * 4);
+    if (!inBox(box, x, y)) { outside++; if (d > outsideMax) outsideMax = d; } else { inside++; if (d > 0) insideDiff++; }
+  }
+  const ok = outsideMax === 0 && outside > 50000 && insideDiff > inside * 0.5;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  pad        ${sc.name.padEnd(24)} outside the pads' box [${box.join(", ")}] maxΔ ${outsideMax}/255 over ${outside.toLocaleString()} px · inside it ${insideDiff.toLocaleString()} of ${inside.toLocaleString()} differ`);
+  return ok;
+}
+
+/**
+ * design-015 §4.2 for the PADS, as pixels — a note stuck to a day lies ON the pad: (1) the pads listed before the things and after
+ * them give the same frame, byte for byte (the pads are the first stratum whatever the list says); (2) inside every note's sheet
+ * (1.5 device px in) the frame is the same notes with no pad under them — the pad beneath a note leaves the note's pixels alone.
+ */
+async function padNoteCheck(sc) {
+  const s = sc.scene;
+  const notes = thingsOf(s).filter((t) => t.kind === "note").map(({ pin: _pin, kind: _kind, ...n }) => n);   // where the pins put them
+  const { px: A } = await render(s);
+  const { px: A2 } = await render({ ...s, padsFirst: true });
+  const { px: B } = await render({ ...s, calendars: [], notes });
+  let orderMax = 0;
+  for (let o = 0; o < A.length; o += 4) { const d = delta(A, A2, o); if (d > orderMax) orderMax = d; }
+  const geoms = notes.map((n) => noteGeometry(n));
+  const k = 1 / (s.zoom * VIEW.dpr);
+  let on = 0;
+  let onMax = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const [wx, wy] = worldAt(s, x, y);
+    if (!geoms.some((G) => sdPaper(G, wx, wy) < -1.5 * k)) continue;
+    on++;
+    const d = delta(A, B, (y * W + x) * 4);
+    if (d > onMax) onMax = d;
+  }
+  const ok = orderMax === 0 && onMax === 0 && on > 10000;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  padNote    ${sc.name.padEnd(24)} the pads before the things and after them: maxΔ ${orderMax}/255 · on the ${notes.length} notes' sheets (${on.toLocaleString()} px) the frame is the notes with no pad: maxΔ ${onMax}/255`);
+  return ok;
+}
+
 // ---------------------------------------------------------------- run
 
 const only = process.env.ORACLE_ONLY ? new RegExp(process.env.ORACLE_ONLY) : null;
@@ -742,7 +875,7 @@ for (const sc of scenes) {
   const flight = nav ? ` · ${nav.f.kind} p ${sc.scene.nav.p}${nav.f.frozen ? " FROZEN" : ""} · in ${nav.pres.incoming.opacity.toFixed(2)}${nav.pres.incoming.objects !== undefined ? ` (objects ${nav.pres.incoming.objects.toFixed(2)})` : ""} out ${nav.pres.outgoing.opacity.toFixed(2)}` : "";
   const things = thingsOf(sc.scene);
   const count = (kind) => things.filter((t) => t.kind === kind).length;
-  console.log(`${sc.name.padEnd(28)} ${(sc.scene.minimats ?? []).length} mini mats · ${count("note")} notes${count("board") ? ` · ${count("board")} boards` : ""}${count("print") ? ` · ${count("print")} prints` : ""} · ${portals} live insides · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · k0 ${stats.k0}${stats.wind ? " · wind" : ""}${flight}`);
+  console.log(`${sc.name.padEnd(28)} ${(sc.scene.minimats ?? []).length} mini mats · ${count("note")} notes${count("board") ? ` · ${count("board")} boards` : ""}${count("print") ? ` · ${count("print")} prints` : ""}${count("book") ? ` · ${count("book")} books` : ""}${sc.scene.calendars?.length ? ` · ${sc.scene.calendars.length} pads` : ""} · ${portals} live insides · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · k0 ${stats.k0}${stats.wind ? " · wind" : ""}${flight}`);
   if (sc.baseline && process.env.BASELINE_DIR && !baselineCheck(sc, px)) failed += 1;
 }
 for (const sc of scenes) if (sc.continuity) { if (!(await continuity(sc))) failed += 1; }
@@ -760,5 +893,12 @@ for (const sc of scenes) if (sc.board) { if (!(await boardCheck(sc))) failed += 
 for (const sc of scenes) if (sc.ink) { if (!(await inkCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ring) { if (!(await ringCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.lit) { if (!(await litCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.book) { if (!(await bookCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.bookOrder) { if (!(await bookOrderCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.pad) { if (!(await padCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.padNote) { if (!(await padNoteCheck(sc))) failed += 1; }
+// the probe's verdict: creation and every frame drawn above, in scopes of their own
+console.log(`${probe.errors.length ? "FAIL" : "PASS"}  error scopes (validation · out-of-memory · internal) over the desk's creation and ${probe.frames} frames: ${probe.errors.length} error${probe.errors.length === 1 ? "" : "s"}${probe.errors.length ? `\n  ${probe.errors.slice(0, 5).join("\n  ")}` : ""}`);
+if (probe.errors.length) failed += 1;
 if (failed) { console.log(`${failed} check(s) FAILED`); process.exitCode = 1; }
 device.destroy();

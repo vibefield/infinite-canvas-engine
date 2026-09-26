@@ -44,3 +44,13 @@ export function createOracleDesk(opts: {
   readonly assets: OracleAssets;
   readonly log?: (message: string) => void;
 }): Promise<OracleDesk>;
+
+/**
+ * A notebook as the prototype's lab hands it to the pass (design-015 D3r-b: lab/notebook.ts `makeBook` → `resolveBooks` →
+ * `drawBooks`), from a scene's book spec — a `NotebookDraw` (src/notebook/pass.ts), untyped here. A fresh id every call.
+ */
+export function notebookDraw(spec: { readonly x: number; readonly y: number } & Readonly<Record<string, unknown>>): unknown;
+/** The `index`-th desk calendar as the lab's `renderLayer` hands it to the pass, from a scene's pad spec — a `CalendarDraw`, untyped here. */
+export function calendarDraw(spec: { readonly x: number; readonly y: number } & Readonly<Record<string, unknown>>, index: number): unknown;
+/** Where a note stuck to `day` (YYYY-MM-DD) on a pad lies: its day's slot, world units (the lab's `slotOf`). */
+export function pinnedAt(pad: { readonly x: number; readonly y: number; readonly weekStart?: 0 | 1 }, day: string): { readonly x: number; readonly y: number };

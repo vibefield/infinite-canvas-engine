@@ -16,7 +16,11 @@
 // and the prints are made as their prototype hosts make them (design-015 D3r-a): a board by the
 // board bench's `BoardDesk` (lab/board.ts — at rest, its marker lying on it, its ink REPLAYED from
 // a stroke list as `sketch` lays one), a print by the photo lab's `addRGBA` (lab/photo.ts — a body
-// with its pose pinned, the committed picture).
+// with its pose pinned, the committed picture). The notebooks and the desk calendars (design-015 D3r-b) are made as
+// the prototype's main lab makes them (lab/notebook.ts `makeBook` → `resolveBooks` → `drawBooks`; lab/calendar.ts
+// `add` + `reset` + `pose` → `renderLayer`'s draw), without their print: a pad's page tables name no tile (MISSING —
+// its paper and its ruled grid), a book's pages carry no ink. The two draw as composite runs (kinds/layer.ts): the
+// pads beneath the sheets and the things, the books over every other thing, whatever the scene's order says.
 import { VIEW } from "./scenes.mjs";
 import { beginPass } from "../src/engine/target.ts";
 import { MatPass } from "../src/mat/mat-pass.ts";
@@ -27,7 +31,7 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/pa
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { flightLights, flightPresent, insidePresent, insideView, miniMatInstance } from "../src/minimat/inside.ts";
 import { createSlotSet, drawFrame, prepareFrame, SlotPool } from "../src/ground.ts";
-import { BOARD_KIND, deskKinds, MINIMAT_KIND, PAPER_KIND, PHOTO_KIND } from "../src/kinds/index.ts";
+import { BOARD_KIND, CALENDAR_KIND, deskKinds, MINIMAT_KIND, NOTEBOOK_KIND, PAPER_KIND, PHOTO_KIND } from "../src/kinds/index.ts";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
 import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
@@ -37,7 +41,110 @@ import { ERASER_TOOL, markerTool, StrokeBuilder, TIPS } from "../src/board/strok
 import { linear } from "../src/mat/night.ts";
 import { borderOf } from "../src/photo/layout.ts";
 import { newBody, PHOTO, printSize, resolvePhoto } from "../src/photo/photo.ts";
-import { boardLook, MARKERS, marker, pen, THEMES, surface } from "./fixtures/vf-theme.ts";
+import { NOTEBOOK } from "../src/notebook/law.ts";
+import { buildMesh, MeshWriter } from "../src/notebook/mesh.ts";
+import { newMotion, poseOf, withDesk } from "../src/notebook/motion.ts";
+import { lampDir, rigidOf } from "../src/notebook/place.ts";
+import { frameOf, relaxOf, specOf, swingOf } from "../src/notebook/shape.ts";
+import { CALENDAR } from "../src/calendar/law.ts";
+import { dayOfKey, isWeekendCol, monthGrid, monthIndex, monthOfDay } from "../src/calendar/month.ts";
+import { buildPad, padFrame } from "../src/calendar/pad.ts";
+import { rollState } from "../src/calendar/roll.ts";
+import { noteSlot, sheetOf } from "../src/calendar/sheet.ts";
+import { boardLook, CALENDAR_LOOK, calendarLook, MARKERS, marker, notebookLook, notebookRuleInk, pen, THEMES, surface } from "./fixtures/vf-theme.ts";
+
+// ---------------------------------------------------------------- the notebooks and the desk calendars (design-015 D3r-b)
+
+/** The one lamp over the desk the lab's notebooks and calendars are lit by (lab/notebook.ts `LAMP`; main.ts's `lamp()` at the product's plane). */
+const LAMP = lampOf(MAT_GRID.plane);
+const bookHash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+/** The lab's book ids never repeat (its `nextId`): a mesh's buffers are kept under its id, so an id is never another mesh's. */
+let nextBook = 1;
+
+/**
+ * A notebook as the lab's `drawBooks` hands it to the pass, from a scene's spec (lab/notebook.ts `BookSceneSpec`): `makeBook` — its spec
+ * and frame, its motion pinned as the spec says (a swing, a sheet mid-turn, the peek, held, tilted, selected) — then `resolveBooks` (the
+ * pose, its mesh, the placement, the lamp) and the draw (the swing, the relax, the look, the ruling). No ink. A still: its springs stand.
+ */
+export function notebookDraw(b) {
+  const law = NOTEBOOK;
+  const seed = b.seed ?? 7;
+  const spec = specOf(law, { sheets: b.sheets ?? law.block.sheets });
+  const frame = frameOf(spec);
+  const left = Math.min(Math.max(b.left ?? 0, 0), spec.sheets);
+  const motion = newMotion(spec.sheets, left, b.open === true || (typeof b.open === "number" && b.open >= 0.5));
+  if (typeof b.open === "number") { motion.theta = b.open * Math.PI; motion.fluttered = true; }
+  if (b.turn) {
+    const i = b.turn.dir === 1 ? motion.sheets.findIndex((q) => q.side === 0) : motion.sheets.map((q) => q.side).lastIndexOf(1);
+    const q = motion.sheets[i];
+    if (q) { q.air = true; q.side = b.turn.dir === 1 ? 1 : 0; q.phi = b.turn.phi; q.psi = b.turn.psi; q.tw = b.turn.twist ?? 0; }
+  }
+  if (b.peek !== undefined) { motion.peek = b.peek; motion.peekOn = b.peek > 0; }
+  if (b.held) { motion.held = true; motion.lift = 1; }
+  if (b.tilt) { motion.tiltX = b.tilt[0]; motion.tiltY = b.tilt[1]; }
+  if (b.selected) { motion.selected = true; motion.ring = b.held || motion.opened ? 0 : 1; }
+  const angle = b.angle ?? (bookHash(seed) - 0.5) * 0.06;
+  // resolveBooks: held it rises and tilts; opening, it rises while the cover stands
+  const swing = Math.min(Math.max(swingOf(motion.theta), 0), Math.PI);
+  // biome-ignore lint/style/useExponentiationOperator: the lab's arithmetic (lab/notebook.ts `placementOf`), verbatim — it feeds a record
+  const opening = law.lift.open * Math.pow(Math.sin(swing), 0.85);
+  const place = { cx: b.x, cy: b.y, angle, lift: motion.lift * law.lift.held + motion.hover * law.lift.hover + opening, tiltX: motion.tiltX, tiltY: motion.tiltY, zc: frame.b + frame.T / 2 };
+  const pose = withDesk(poseOf(motion, law), place.lift);
+  const mesh = buildMesh(new MeshWriter(), frame, pose, law);
+  const sw = swingOf(motion.theta);
+  return {
+    id: nextBook++, mesh, version: 1, frame, rigid: rigidOf(place), lamp: lampDir(LAMP, b.x, b.y, law.shadow.slopeMax),
+    theta: motion.theta, gamma: relaxOf(motion.theta), look: notebookLook(b.cover ?? "orbit"), ruling: b.ruling ?? "dots", seed: seed % 97, ring: motion.ring,
+    selfShadow: pose.airs.length > 0 || (sw > 0.02 && sw < Math.PI - 0.02), ink: { pages: [], layers: [] },
+  };
+}
+
+/** The pad's frame and its one mesh, as the lab's calendar desk builds them once (its `meshVersion` 1). */
+const PAD = padFrame(CALENDAR);
+const PAD_MESH = buildPad(new MeshWriter(2048, 8192), PAD, CALENDAR);
+const monthOfKey = (key) => { const [y, m] = key.split("-").map(Number); return monthIndex(y, m); };
+/** A sheet as the pass draws it: where its grid is printed, its rows, weekends and days, its page table's slot. */
+function sheetDrawOf(month, weekStart, slot) {
+  const L = sheetOf(monthGrid(month, weekStart), CALENDAR);
+  const g = L.grid;
+  let weekends = 0;
+  for (let col = 0; col < 7; col++) if (isWeekendCol(g, col)) weekends |= 1 << col;
+  return { x0: L.x0, y0: L.y0, cw: L.cw, ch: L.ch, rows: L.rows, weekends, lead: g.lead, days: g.days, slot };
+}
+
+/**
+ * The i-th desk calendar as the lab's `renderLayer` hands it to the pass, from a scene's spec `{ x, y, month, weekStart, pose, tape, pen }`:
+ * `reset` (where, which month, nothing written, nothing selected, nothing lifted), `pose` (the roll pinned part-way — `{ dir, p, tilt }` —
+ * or the corner's peek), then `sheetsOf` (the month on the pad and the one in motion, the roll) and the draw. No marks.
+ */
+export function calendarDraw(c, i) {
+  const law = CALENDAR;
+  const shown = monthOfKey(c.month ?? "2026-09");
+  const weekStart = c.weekStart ?? 1;
+  const pose = c.pose ?? {};
+  const roll = (p, tilt) => rollState(p, { rest: law.roll.rest + 0.6, tau: law.roll.tau }, PAD.L, PAD.W, tilt);
+  let sh = { base: shown, moving: null, roll: null, marksOn: 0 };
+  if (pose.p !== undefined) sh = (pose.dir ?? 1) === 1 ? { base: shown + 1, moving: shown, roll: roll(pose.p, pose.tilt ?? 0), marksOn: 1 } : { base: shown, moving: shown - 1, roll: roll(pose.p, pose.tilt ?? 0), marksOn: 0 };
+  else if ((pose.peek ?? 0) > 1e-3) sh = { base: shown + 1, moving: shown, roll: roll((pose.peek * law.roll.peek) / (PAD.L - law.roll.rest), -law.roll.tilt), marksOn: 1 };
+  const look = calendarLook(c.tape ?? "ink");
+  return {
+    id: i + 1, frame: PAD, mesh: PAD_MESH, version: 1, rigid: rigidOf({ cx: c.x, cy: c.y, angle: 0, lift: 0, tiltX: 0, tiltY: 0, zc: 0 }),
+    lamp: lampDir(LAMP, c.x, c.y, law.shadow.slopeMax), lift: 0, ring: 0,
+    base: sheetDrawOf(sh.base, weekStart, i * 2), moving: sh.moving !== null ? sheetDrawOf(sh.moving, weekStart, i * 2 + 1) : null, roll: sh.roll, marksOn: sh.marksOn,
+    sel: [], mark: null, drop: null, caret: null, wipe: null,
+    colours: { paper: look.paper, ink: look.ink, muted: look.muted, weekend: look.weekend, hot: look.hot, chipboard: look.chipboard, cloth: look.cloth, foil: look.foil, pen: pen(c.pen ?? "felt") },
+  };
+}
+
+/** Where a note stuck to `day` on a calendar lies (the lab's `slotOf`): its day's slot on the month that day is in, in the world. */
+export function pinnedAt(c, day) {
+  const n = dayOfKey(day);
+  const L = sheetOf(monthGrid(monthOfDay(n), c.weekStart ?? 1), CALENDAR);
+  const k = n - L.grid.first;
+  if (k < 0 || k >= L.rows * 7) throw new Error(`oracle: ${day} is not on its month's sheet`);
+  const s = noteSlot(L, Math.floor(k / 7), k % 7, CALENDAR);
+  return { x: c.x - PAD.W / 2 + s.x, y: c.y - PAD.H / 2 + s.y };
+}
 
 /**
  * The desk both hosts draw: the root's passes on `device` in `format`, composed from `text(files)` — a shader-file map
@@ -57,6 +164,12 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const minimats = passOf(MINIMAT_KIND);
   const boards = passOf(BOARD_KIND);
   const photos = passOf(PHOTO_KIND);
+  // the notebook's and the calendar's looks — the product's: the ruling's ink, the print's presences — as the lab hands its passes them
+  const kindOf = (name) => rootSlot.kinds.get(name).pass;
+  kindOf(NOTEBOOK_KIND).ruleInk = notebookRuleInk();
+  kindOf(CALENDAR_KIND).alpha = CALENDAR_LOOK.alpha;
+  const notebooks = passOf(NOTEBOOK_KIND);
+  const calendars = passOf(CALENDAR_KIND);
   // the whiteboard's materials, as the bench's BoardDesk hands its pass them (lab/board.ts)
   const look = boardLook();
   boards.look = { barrel: look.barrel, felt: look.felt, wood: look.wood };
@@ -113,10 +226,11 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const matGeometry = (m) => resolveMiniMat({ cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h }, { held: m.held ? 1 : 0, hover: 0, ring: m.selected ? 1 : 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
   const insideOf = (m) => m.inside ?? { notes: [], minimats: [] };
   /**
-   * A desk's THINGS in paint order, each `{ kind: "note" | "board" | "print", …its spec }`: the scene's own list where it
-   * gives one (`things` — a print laid between two notes), else the prototype's order: the whiteboards, the notes, the prints.
+   * A desk's THINGS in paint order, each `{ kind: "note" | "board" | "print" | "book", …its spec }`: the scene's own list where
+   * it gives one (`things` — a print laid between two notes), else the prototype's order: the whiteboards, the notes, the prints,
+   * the notebooks. A note stuck to a calendar's day (`pin: { pad, day }`) lies where the lab's calendar snaps it: its day's slot.
    */
-  const thingsOf = (desk) => desk.things ?? [...(desk.boards ?? []).map((b) => ({ ...b, kind: "board" })), ...(desk.notes ?? []).map((n) => ({ ...n, kind: "note" })), ...(desk.prints ?? []).map((p) => ({ ...p, kind: "print" }))];
+  const thingsOf = (desk) => (desk.things ?? [...(desk.boards ?? []).map((b) => ({ ...b, kind: "board" })), ...(desk.notes ?? []).map((n) => ({ ...n, kind: "note" })), ...(desk.prints ?? []).map((p) => ({ ...p, kind: "print" })), ...(desk.books ?? []).map((b) => ({ ...b, kind: "book" }))]).map((t) => (t.pin ? { ...t, ...pinnedAt((desk.calendars ?? [])[t.pin.pad ?? 0], t.pin.day) } : t));
   const notesIn = (desk) => (desk.things ? desk.things.filter((t) => t.kind === "note") : (desk.notes ?? []));
   const printsIn = (desk) => thingsOf(desk).filter((t) => t.kind === "print");
   /** The bounds of a desk's content (its notes, its prints and its mini mats) — what its arrival is framed on; a control may pin them (`bounds`). */
@@ -269,11 +383,13 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       });
     }
     let n = 0;
-    const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : thingError(t)));
-    const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...thingObjects];
+    const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : t.kind === "book" ? { kind: NOTEBOOK_KIND, record: notebookDraw(t) } : thingError(t)));
+    // the desk calendars lie in the pads stratum, beneath everything whatever their place in the list (`padsFirst` puts them before the things)
+    const pads = (desk.calendars ?? []).map((c, i) => ({ kind: CALENDAR_KIND, record: calendarDraw(c, i) }));
+    const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...(s.padsFirst ? pads : []), ...thingObjects, ...(s.padsFirst ? [] : pads)];
     return { objects, portals };
   }
-  const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board or a print — not "${t.kind}"`); };
+  const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board, a print or a book — not "${t.kind}"`); };
 
   /** The flight a nav scene pins — the lab's setScene computes the same. */
   function navOf(s) {
@@ -338,7 +454,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       };
     } else {
       const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
-      const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.things ? { things: s.things } : {}) }, cam, s, 0);
+      const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.books ? { books: s.books } : {}), ...(s.calendars ? { calendars: s.calendars } : {}), ...(s.things ? { things: s.things } : {}) }, cam, s, 0);
       inputs = { view: viewOf(cam), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
@@ -349,5 +465,5 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return { theme, nav, prepared };
   }
 
-  return { mat, papers, minimats, boards, photos, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, encode };
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, encode };
 }

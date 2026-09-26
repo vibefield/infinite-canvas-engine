@@ -164,3 +164,45 @@ export const BOARD_SCENES = [
   { name: "board-ink-z2.5", scene: { ...boardBase, camX: 200, camY: -260, zoom: 2.5, boards: [inked()], notes: [BOARD_NOTE] } },
 ];
 ORACLE_SCENES.push(...BOARD_SCENES);
+
+// ---------------------------------------------------------------- the NOTEBOOKS (NOTEBOOK.md) and the DESK CALENDARS (CALENDAR.md)
+//
+// design-015 D3r-b: the prototype's oracle had no scene of either — its books and its pads lived in its main lab, seen through
+// Chrome stills (test/harness/{notebook,calendar}.mjs). Each scene below is one of those stills, or staged as they stage one (apps/desk
+// `rig:proto-parity` holds every one to the prototype's own main lab): a camera centred on a world point (`at`), the mat's still
+// clocks; a book is the lab's `makeBook` from its spec (`nb()`, the harness's: cover orbit, seed 7, square), a pad the lab's `reset`
+// + `pose` at the origin — September 2026, the week from Monday. The books carry no ink and the pads no print: a pad's tiles are the
+// host's Canvas 2D raster (CALENDAR.md §6), and a page table that names none shows the paper and its ruled grid (MISSING).
+//
+// THE NOTEBOOKS — closed; open across its spread; held (lifted, tilted toward the hand); laid over a note — the note first in the
+// desk's order AND the book first give the same frame: the book's composite is the things' last run (`bookOrder`); by night. `book`
+// runs the check where it applies.
+const at = (cx, cy, z) => ({ camX: cx - 600 / z, camY: cy - 400 / z, zoom: z });
+const deskBase = { theme: "light", mat: matStill };
+const nb = (extra = {}) => ({ x: 0, y: 0, angle: 0, cover: "orbit", seed: 7, ...extra });
+/** The open spread's centre: the back board's centre less half a spread (W + the spine) — the harness's. */
+const spreadX = -(180 + 17) / 2;
+export const NOTEBOOK_SCENES = [
+  { name: "book-closed-z2.2", book: true, scene: { ...deskBase, ...at(0, 0, 2.2), books: [nb()] } },
+  { name: "book-open-z2.2", book: true, scene: { ...deskBase, ...at(spreadX, 0, 2.2), books: [nb({ open: true, left: 30 })] } },
+  { name: "book-held-z1.8", book: true, scene: { ...deskBase, ...at(0, 0, 1.8), books: [nb({ cover: "label", held: true, tilt: [0.05, 0.08], selected: true })] } },
+  { name: "book-over-note-z1.6", bookOrder: true, scene: { ...deskBase, ...at(-40, 0, 1.6), things: [{ kind: "note", x: -150, y: 30, seed: 5, text: "" }, { kind: "book", ...nb({ angle: 0.04 }) }] } },
+  { name: "book-night-z2.2", book: true, scene: { ...deskBase, ...at(spreadX, 0, 2.2), theme: "dark", books: [nb({ open: true, left: 10, cover: "ink" })] } },
+];
+ORACLE_SCENES.push(...NOTEBOOK_SCENES);
+
+// THE DESK CALENDARS — the whole pad at rest (the harness's `whole`); a month rolling up, pinned at p 0.55 (`rolling`), a note lying
+// on the mat beside the pad (drawn after the pad's layer: the slot's scissor must be given back); two notes stuck to days (`notes`:
+// each where the lab's calendar snaps it, its day's slot); by night. `pad` runs the check; `padNote` holds the notes lying on the pad
+// to themselves alone.
+/** The pad's sheet, world units (calendar/law.ts `sheetSize`): a sheet point x from its left, y from its head is at (x − W/2, y − H/2). */
+const SHEET = { W: 1760, H: 1852 };
+const wpt = (sx, sy) => [sx - SHEET.W / 2, sy - SHEET.H / 2];
+const pad = (extra = {}) => ({ x: 0, y: 0, month: "2026-09", weekStart: 1, ...extra });
+export const CALENDAR_SCENES = [
+  { name: "pad-rest-z0.42", pad: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [pad()] } },
+  { name: "pad-roll-z0.42", pad: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [pad({ pose: { dir: 1, p: 0.55 } })], notes: [{ x: 1150, y: 200, seed: 13, text: "" }] } },
+  { name: "pad-notes-z0.85", padNote: true, scene: { ...deskBase, ...at(...wpt(1150, 1150), 0.85), calendars: [pad()], notes: [{ x: 0, y: 0, seed: 11, text: "", pin: { day: "2026-09-26" } }, { x: 0, y: 0, seed: 23, text: "", pin: { day: "2026-09-15" } }] } },
+  { name: "pad-night-z0.42", pad: true, scene: { ...deskBase, ...at(0, 0, 0.42), theme: "dark", calendars: [pad()] } },
+];
+ORACLE_SCENES.push(...CALENDAR_SCENES);

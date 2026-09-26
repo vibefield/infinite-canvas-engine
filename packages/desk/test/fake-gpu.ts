@@ -70,6 +70,9 @@ export function fakeDevice(log: string[] = []): FakeGpu {
       finish: () => ({}),
     }),
     queue: { writeBuffer: () => { queue.writes += 1; }, writeTexture: () => {}, submit: () => { queue.submits += 1; } },
+    // a pass that watches its first frames (the notebook's `render`, the calendar's `renderLayer`) finds nothing wrong here
+    pushErrorScope: () => {},
+    popErrorScope: async () => null,
   };
   return { device: device as unknown as GPUDevice, queue };
 }

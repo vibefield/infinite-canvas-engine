@@ -8,11 +8,12 @@ import { padFrame } from "../src/calendar/pad";
 import { CALENDAR } from "../src/calendar/law";
 import type { CalendarDraw, CalendarPass } from "../src/calendar/pass";
 import { tileGrid } from "../src/calendar/tiles";
-import { createSlotSet, drawSlot, type KindPass, type SlotContext, SlotPool } from "../src/ground";
+import { beginPass } from "../src/engine/target";
+import { createSlotSet, drawFrame, drawSlot, type GroundFrameInputs, type KindPass, prepareFrame, type SlotContext, SlotPool } from "../src/ground";
 import { CALENDAR_KIND, CalendarKind, calendarProgram, deskKinds, NOTEBOOK_KIND, NotebookKind, notebookProgram } from "../src/kinds";
 import { attachmentOf, clip } from "../src/kinds/layer";
 import { DEFAULT_GRID } from "../src/mat/grid";
-import { DEFAULT_MAT_CONFIG, STILL_MAT_FRAME } from "../src/mat/layout";
+import { DEFAULT_MAT_CONFIG, HERO_MATRIX, STILL_MAT_FRAME } from "../src/mat/layout";
 import { MatPass } from "../src/mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import type { MatPass as MatPassType } from "../src/mat/mat-pass";
@@ -20,9 +21,11 @@ import { eyeOf } from "../src/notebook/eye";
 import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookDraw, NotebookPass } from "../src/notebook/pass";
 import { scissorOf } from "../src/nav/portal";
+import { DEFAULT_PAPER_LAW, lampOf, resolvePaper } from "../src/paper/paper";
 import { shaderText } from "../src/shaders";
-import { MAT_COLORS } from "../src/theme";
-import { CALENDAR_LOOK, notebookRuleInk, THEMES } from "../oracle/fixtures/vf-theme";
+import { MAT_COLORS, MAT_GRID } from "../src/theme";
+import { calendarDraw, notebookDraw } from "../oracle/frame.mjs";
+import { CALENDAR_LOOK, notebookRuleInk, pen, surface, THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, installGpuFlags, recordingPass } from "./fake-gpu";
 import { fakeSlot } from "./fake-kinds";
 import { must } from "./must";
@@ -191,5 +194,95 @@ describe("the notebook and the desk calendar: two layered kinds in the registry"
     log.length = 0;
     drawSlot(recordingPass(log), { w: 2400, h: 1600 }, 2, fakeSlot(log, "desk", { kinds, objects: ["paper", "minimat"] }));
     expect(log).toEqual([`scissor ${FULL.join(",")}`, "desk mat", "desk minimat 0..1", "desk paper 0..1"]);
+  });
+});
+
+describe("the prepare order: both layers in the frame's own command buffer, after the mat's wind, before the frame's pass", () => {
+  let undo: () => void = () => {};
+  beforeAll(() => { undo = installGpuFlags(); });
+  afterAll(() => undo());
+
+  it("through the ground's own prepareFrame + drawFrame: the wind, the pad's layer, the books' shadow maps and layer, then the frame — the pad laid right after the mat, the books after the note that lies before them", async () => {
+    const log: string[] = [];
+    const { device, queue } = fakeDevice(log);
+    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const root = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
+    const nbKind = must(root.kinds.get(NOTEBOOK_KIND)).pass as NotebookKind;
+    const calKind = must(root.kinds.get(CALENDAR_KIND)).pass as CalendarKind;
+    nbKind.ruleInk = notebookRuleInk();
+    calKind.alpha = CALENDAR_LOOK.alpha;
+    const pool = new SlotPool(root);
+    // records as the oracle's desk makes them (frame.mjs — the lab's own builders): a closed book, a note beside it, the pad under both
+    const note = { geometry: resolvePaper({ cx: -150, cy: 30, w: 200, h: 200, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lampOf(MAT_GRID.plane)), paper: surface("note"), ink: pen("felt") };
+    const inputs: GroundFrameInputs = {
+      view: { camX: -600 / 1.6 - 40, camY: -400 / 1.6, zoom: 1.6, width: 1200, height: 800, dpr: 2 },
+      mat: { time: 3.7, goboTime: 57.14, goboMatrix: HERO_MATRIX, noise: [0.37, 0.61] },
+      theme: THEMES.light,
+      // the book listed FIRST: its composite is still the things' last run
+      objects: [{ kind: NOTEBOOK_KIND, record: notebookDraw({ x: 0, y: 0, angle: 0.04, cover: "orbit", seed: 7 }) }, { kind: "paper", record: note }, { kind: CALENDAR_KIND, record: calendarDraw({ x: 0, y: 0, month: "2026-09", weekStart: 1 }, 0) }],
+    };
+    log.length = 0;
+    const submits = queue.submits;
+    const encoder = device.createCommandEncoder();
+    const prepared = prepareFrame(encoder, root, pool, inputs);
+    expect(prepared.kinds).toMatchObject({ notebook: 1, calendar: 1, paper: 1 });
+    const pass = beginPass(encoder, { label: "swap" } as unknown as GPUTextureView, [0, 0, 0, 1], "ground");
+    drawFrame(pass, { w: 2400, h: 1600 }, 2, prepared.incoming, prepared.outgoing);
+    pass.end();
+    expect(queue.submits).toBe(submits);   // no command buffer of their own: everything waits for the frame's
+    const passes = log.filter((l) => l.startsWith("pass "));
+    expect(passes).toEqual(["pass mat/wind", "pass calendar/layer", "pass notebook/shadow 0", "pass notebook/layer", "pass ground"]);
+    const frame = log.slice(log.indexOf("pass ground"));
+    const at = (line: string) => { const i = frame.indexOf(line); expect(i, line).toBeGreaterThan(0); return i; };
+    // inside the frame's pass: the mat, the pad's layer laid (its box, the slot's scissor back), the note, the books' layer laid last
+    expect(at("pipeline mat/mat")).toBeLessThan(at("pipeline calendar/composite"));
+    expect(at("pipeline calendar/composite")).toBeLessThan(at("pipeline paper/notes"));
+    expect(at("pipeline paper/notes")).toBeLessThan(at("pipeline notebook/composite"));
+    const calBox = must(calKind.pass).screenBox;
+    const nbBox = must(nbKind.pass).screenBox;
+    expect(frame.slice(at("pipeline calendar/composite") - 1, at("pipeline calendar/composite") + 4)).toEqual([`scissor ${must(calBox).join(",")}`, "pipeline calendar/composite", "group 0 calendar/composite", "draw 3", "scissor 0,0,2400,1600"]);
+    expect(frame.slice(at("pipeline notebook/composite") - 1, at("pipeline notebook/composite") + 4)).toEqual([`scissor ${must(nbBox).join(",")}`, "pipeline notebook/composite", "group 0 notebook/composite", "draw 3", "scissor 0,0,2400,1600"]);
+    pool.dispose();
+  });
+
+  it("the passes' own paths record what they always did: the books' `render` — the layer, then the composite in a pass of its own over the canvas; the pad's `renderLayer` — the layer in a submit of its own", async () => {
+    const log: string[] = [];
+    const { device, queue } = fakeDevice(log);
+    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const root = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
+    const nbKind = must(root.kinds.get(NOTEBOOK_KIND)).pass as NotebookKind;
+    const calKind = must(root.kinds.get(CALENDAR_KIND)).pass as CalendarKind;
+    nbKind.ruleInk = notebookRuleInk();
+    calKind.alpha = CALENDAR_LOOK.alpha;
+    const s = ctx({ view: { camX: -600 / 2.2, camY: -400 / 2.2, zoom: 2.2, width: 1200, height: 800, dpr: 2 } });
+    const book = notebookDraw({ x: 0, y: 0, angle: 0, cover: "orbit", seed: 7 }) as NotebookDraw;
+    const nb = must(nbKind.pass);
+    expect(nb.prepare(s.view, s.fadeIn, s.cfg, s.frame, s.light, eyeOf({ x: s.view.camX, y: s.view.camY, zoom: s.view.zoom }, s.view, NOTEBOOK.eye), NOTEBOOK, { cast: MAT_COLORS.cast, select: s.select, ruleInk: notebookRuleInk() }, [book])).toBe(1);
+    log.length = 0;
+    const submits = queue.submits;
+    nb.render({ label: "swap" } as unknown as GPUTextureView, { w: 2400, h: 1600 }, 2);
+    expect(queue.submits).toBe(submits + 1);
+    const box = must(nb.screenBox);
+    expect(log.filter((l) => l.startsWith("pass "))).toEqual(["pass notebook/shadow 0", "pass notebook/layer", "pass notebook/composite"]);
+    expect(log.slice(log.indexOf("pass notebook/composite"))).toEqual(["pass notebook/composite", `scissor ${box.join(",")}`, "pipeline notebook/composite", "group 0 notebook/composite", "draw 3", "end"]);
+    // the shadow map, then the layer: its scissor the books' box, the books then the mat under them
+    const layer = log.slice(log.indexOf("pass notebook/layer"), log.indexOf("pass notebook/composite"));
+    expect(layer.slice(0, 4)).toEqual(["pass notebook/layer", `scissor ${box.join(",")}`, "group 0 notebook/main", "pipeline notebook/book"]);
+    expect(layer.slice(-3)).toEqual(["pipeline notebook/mat", "draw 6,1,0,0", "end"]);
+    // the pad: prepared as the lab's renderLayer prepares it, then its layer in its own submit
+    const cal = must(calKind.pass);
+    const cs = ctx({ view: { camX: -600 / 0.42, camY: -400 / 0.42, zoom: 0.42, width: 1200, height: 800, dpr: 2 } });
+    expect(calKind.prepare({ beginRenderPass: () => { throw new Error("not this encoder"); } } as unknown as GPUCommandEncoder, cs, [])).toBe(0);
+    expect(cal.prepare(cs.view, cs.fadeIn, cs.cfg, cs.frame, cs.light, eyeOf({ x: cs.view.camX, y: cs.view.camY, zoom: cs.view.zoom }, cs.view, CALENDAR.eye), CALENDAR, calKind.grid, { cast: MAT_COLORS.cast, select: cs.select, alpha: CALENDAR_LOOK.alpha }, [calendarDraw({ x: 0, y: 0, month: "2026-09", weekStart: 1 }, 0) as CalendarDraw])).toBe(1);
+    log.length = 0;
+    cal.renderLayer({ w: 2400, h: 1600 }, 2);
+    expect(queue.submits).toBe(submits + 2);
+    expect(log.filter((l) => l.startsWith("pass "))).toEqual(["pass calendar/layer"]);
+    expect(log.slice(0, 3)).toEqual(["pass calendar/layer", `scissor ${must(cal.screenBox).join(",")}`, "group 0 calendar/main"]);
+    const drawn: string[] = [];
+    must(cal.underlay()).draw(recordingPass(drawn));
+    const composed: string[] = [];
+    cal.composite(recordingPass(composed));
+    expect(composed).toEqual(drawn);   // the kind's composite is the underlay's draw, command for command
   });
 });
