@@ -1,10 +1,12 @@
-// rig:proto-parity — the desk = the PROTOTYPE, in Chrome (design-015 D3r-a). The prototype's prints and whiteboards had no
-// Node oracle: its PHOTO LAB (lab/photo.html + photo.ts) and its BOARD BENCH (lab/board.html + board-lab.ts) were their only
-// witnesses, and the desk's `photo-*` / `board-*` oracle scenes are new. So this rig holds those scenes to the strongest thing
-// there is: the prototype's own pages, built from the frozen snapshot (D-D0.1), each scene staged through the page's own window
-// hooks exactly as the prototype's harnesses stage a still (test/harness/{photo,board}.mjs), beside apps/desk's parity page
-// drawing the same scene through frame.mjs. Both captured at 1200 × 800 @2 until two shots agree; the table is maxΔ and the
-// pixels that differ, per scene. (`rig:parity` then holds apps/desk's page to the Node oracle: Chrome = Node = the prototype.)
+// rig:proto-parity — the desk = the PROTOTYPE, in Chrome (design-015 D3r-a, D3r-b). The prototype's prints, whiteboards,
+// notebooks and desk calendars had no Node oracle: its PHOTO LAB (lab/photo.html + photo.ts), its BOARD BENCH (lab/board.html +
+// board-lab.ts) and its MAIN LAB (lab/index.html + main.ts: the books and the pads) were their only witnesses, and the desk's
+// `photo-*` / `board-*` / `book-*` / `pad-*` oracle scenes are new. So this rig holds those scenes to the strongest thing there
+// is: the prototype's own pages, built from the frozen snapshot (D-D0.1), each scene staged through the page's own window hooks
+// exactly as the prototype's harnesses stage a still (test/harness/{photo,board,notebook,calendar}.mjs), beside apps/desk's
+// PARITY page (parity.html, `window.__parity`) drawing the same scene through frame.mjs. Both captured at 1200 × 800 @2 until two
+// shots agree; the table is maxΔ and the pixels that differ, per scene. (`rig:parity` then holds apps/desk's page to the Node
+// oracle: Chrome = Node = the prototype.)
 //
 //   DESK_PROTO=<the snapshot's ground/, extracted, with draft/ground's node_modules linked in> \
 //   [DESK_PROTO_OUT=<a directory for the prototype's build>] pnpm --filter ./apps/desk rig:proto-parity [scene-regex]
@@ -14,10 +16,17 @@
 //   it, stages the still — the mat's clocks and noise pinned, the camera, the theme, each print through `__photo.addRGBA` (the
 //   committed picture) with its pose pinned on its body — and runs ONE tick at dt = 0 (no physics moves, the frame renders);
 // - the board bench draws on demand: `__board.scene` (its clocks pinned: the mat's time and noise 0, the palm at `goboTime`,
-//   the rulers off) + `__board.sketch` per board, then waits for the bench's own `idle`.
+//   the rulers off) + `__board.sketch` per board, then waits for the bench's own `idle`;
+// - the main lab draws on demand too: `__ground.setScene` (the camera, the theme, the mat's still clocks, the notes, the books —
+//   the lab's own `makeBook` pins them), then for a pad the calendar's own harness door as calendar.mjs uses it (`reset` to the
+//   scene's place, month and week, `today`, `pose`, a note `pin`ned to a day) — and the pad's PRINT held back: every page table
+//   the lab writes reaches its pass all MISSING (its pass's `writeTable`, wrapped; every table it holds marked dirty once), as
+//   the oracle draws a pad whose host has printed no tile — then waits until the lab has nothing left to draw.
 // A scene the prototype cannot stage (a print between two notes — the photo lab has no notes; a print inside a mini mat) is
-// reported as such, never compared. THE EXIT CODE: the number of stageable scenes whose captures differ and whose difference is
-// not a named, measured exception (EXCEPTIONS, below — none today); 1 for a failed preflight or a throw; 2 for the watchdog.
+// reported as such, never compared. (D3r-b: the desk's side is `parity.html` — D2a-world made `index.html` the REAL desk, whose
+// `window.__desk` draws no oracle scene; this rig, written before that and rebased over it, still drove `index.html` and threw.)
+// THE EXIT CODE: the number of stageable scenes whose captures differ and whose difference is not a named, measured exception
+// (EXCEPTIONS, below — none today); 1 for a failed preflight or a throw; 2 for the watchdog.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -38,7 +47,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * A difference that is understood, measured and kept on purpose: scene name → the reason. The prototype drew its prints in a
  * render pass of their own after the ground's (loadOp "load"), the desk draws them as runs in its one pass — the same premultiplied
- * blend onto the same 8-bit bytes, so no exception is expected there; this table stays empty unless a run proves one.
+ * blend onto the same 8-bit bytes, so no exception is expected there; nor for its books (a command buffer of their own after the
+ * ground's: shadow maps, the 4× layer, a composite pass with "load") and its pads (a layer submitted before the ground's, laid as
+ * an `underlays` entry), which the desk records into its one frame and lays as each kind's composite run (D3r-b: none was needed).
+ * This table stays empty unless a run proves one.
  */
 const EXCEPTIONS = {};
 
@@ -46,8 +58,8 @@ const EXCEPTIONS = {};
 const die = (what, how) => { console.log(`PREFLIGHT FAIL: ${what}\n  ${how}`); process.exit(1); };
 const proto = process.env.DESK_PROTO ? resolve(process.env.DESK_PROTO) : null;
 if (!proto) die("DESK_PROTO is not set", "extract vibe-field/draft/ground/results/backup/ground-at-desk-port-2026-09-25.tgz into a scratch directory, link draft/ground's node_modules into its ground/, and point DESK_PROTO at that ground/");
-for (const f of ["lab/photo.html", "lab/photo.ts", "lab/board.html", "lab/board-lab.ts", "node_modules/.bin/vite"]) if (!existsSync(join(proto, f))) die(`${join(proto, f)} is missing`, "DESK_PROTO must be the snapshot's ground/ with its node_modules");
-if (!existsSync(resolve(app, "dist/index.html"))) die("the page's build is missing (apps/desk/dist/index.html)", "pnpm --filter ./apps/desk build");
+for (const f of ["lab/photo.html", "lab/photo.ts", "lab/board.html", "lab/board-lab.ts", "lab/index.html", "lab/main.ts", "node_modules/.bin/vite"]) if (!existsSync(join(proto, f))) die(`${join(proto, f)} is missing`, "DESK_PROTO must be the snapshot's ground/ with its node_modules");
+if (!existsSync(resolve(app, "dist/parity.html"))) die("the parity page's build is missing (apps/desk/dist/parity.html)", "pnpm --filter ./apps/desk build");
 const picturePath = resolve(repo, "packages/desk/oracle/fixtures/assets/photo-1.rgba");
 const pictureMeta = JSON.parse(readFileSync(resolve(repo, "packages/desk/oracle/fixtures/assets/photo-1.json"), "utf8"));
 const out = process.env.DESK_PROTO_OUT ? resolve(process.env.DESK_PROTO_OUT) : mkdtempSync(join(tmpdir(), "desk-proto-"));
@@ -58,9 +70,25 @@ const matOf = (s) => ({ time: s.mat?.time ?? 0, goboTime: s.mat?.goboTime ?? 0, 
 const PRINT_KEYS = new Set(["x", "y", "angle", "height", "sx", "sy", "bend", "ax", "ay", "hold"]);
 const NOTE_KEYS = new Set(["x", "y", "seed", "text"]);
 const BOARD_KEYS = new Set(["x", "y", "selected", "strokes"]);
+const BOOK_KEYS = new Set(["kind", "x", "y", "angle", "cover", "ruling", "sheets", "seed", "open", "left", "turn", "peek", "held", "tilt", "selected"]);
+const PAD_KEYS = new Set(["x", "y", "month", "weekStart", "pose"]);
+const MAIN_NOTE_KEYS = new Set(["kind", "x", "y", "seed", "text", "pin"]);
 /** The prototype page that can stage a scene exactly, or why none can. */
 function stagingOf(s) {
   const has = (k) => s[k] !== undefined && !(Array.isArray(s[k]) && s[k].length === 0);
+  // the MAIN LAB (D3r-b): its books over everything — as the desk's composite run draws them, whatever the desk's order — and its
+  // pads beneath; its notes blank (their hand is a Canvas 2D raster the oracle has only as a committed fixture)
+  const things = s.things ?? [];
+  if (has("books") || has("calendars") || things.some((t) => t.kind === "book")) {
+    if (has("minimats") || has("nav") || has("prints") || has("boards") || s.ruler !== undefined || s.lodZoom !== undefined || s.mat?.opacity !== undefined || s.mat?.plate !== undefined) return { why: "the main lab stages books and pads on a bare desk (no mini mat, flight, print, board, rulers or tuned gobo)" };
+    if (things.some((t) => t.kind !== "note" && t.kind !== "book")) return { why: "the main lab's things here are notes and books" };
+    const books = [...(s.books ?? []), ...things.filter((t) => t.kind === "book")].map(({ kind: _k, ...b }) => b);
+    const notes = [...(s.notes ?? []), ...things.filter((t) => t.kind === "note")].map(({ kind: _k, ...n }) => n);
+    if (books.some((b) => Object.keys(b).some((k) => !BOOK_KEYS.has(k)))) return { why: "a book the lab's makeBook cannot make" };
+    if ((s.calendars ?? []).some((c) => Object.keys(c).some((k) => !PAD_KEYS.has(k)))) return { why: "a pad the lab's calendar door cannot pose" };
+    if (notes.some((n) => Object.keys(n).some((k) => !MAIN_NOTE_KEYS.has(k)) || (n.text ?? "") !== "")) return { why: "a note the rig cannot write (it stages blank notes)" };
+    return { page: "main", books, notes };
+  }
   if (has("minimats") || has("things") || has("nav") || s.ruler !== undefined || s.lodZoom !== undefined || s.mat?.opacity !== undefined || s.mat?.plate !== undefined) return { why: "no prototype page holds it (a mini mat, a flight, the rulers, a desk's own order, the gobo tuned)" };
   if (has("prints")) {
     if (has("notes") || has("boards")) return { why: "the photo lab has prints and nothing else" };
@@ -76,19 +104,19 @@ function stagingOf(s) {
   }
   return { why: "neither a print nor a board" };
 }
-const scenes = ORACLE_SCENES.filter((sc) => /^(photo|board)-/.test(sc.name) && (!only || only.test(sc.name)));
-if (scenes.length === 0) die(`no photo-/board- oracle scene matches ${only}`, "pnpm --filter ./apps/desk rig:proto-parity [scene-regex]");
+const scenes = ORACLE_SCENES.filter((sc) => /^(photo|board|book|pad)-/.test(sc.name) && (!only || only.test(sc.name)));
+if (scenes.length === 0) die(`no photo-/board-/book-/pad- oracle scene matches ${only}`, "pnpm --filter ./apps/desk rig:proto-parity [scene-regex]");
 
 // ── The prototype's two pages, built by its own vite from the snapshot (a plain config object: nothing to resolve) ──────────
 const pages = join(out, "pages");
 const config = join(out, "vite.proto.config.mjs");
 writeFileSync(config, `export default ${JSON.stringify({
   root: join(proto, "lab"), base: "./", logLevel: "warn",
-  build: { outDir: pages, emptyOutDir: true, target: "esnext", rollupOptions: { input: { photo: join(proto, "lab/photo.html"), board: join(proto, "lab/board.html") } } },
+  build: { outDir: pages, emptyOutDir: true, target: "esnext", rollupOptions: { input: { photo: join(proto, "lab/photo.html"), board: join(proto, "lab/board.html"), index: join(proto, "lab/index.html") } } },
 }, null, 2)};\n`);
 const t0 = performance.now();
 execFileSync(join(proto, "node_modules/.bin/vite"), ["build", "--config", config], { cwd: proto, stdio: "inherit" });
-console.log(`the prototype's photo lab and board bench built from ${proto} into ${pages} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
+console.log(`the prototype's photo lab, board bench and main lab built from ${proto} into ${pages} (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
 
 /** A CDP port nothing listens on — never drive another session's Chrome by accident. */
 async function freePort(from) {
@@ -189,6 +217,43 @@ async function boardIdle(tab) {
   for (let i = 0; i < 400; i++) { await front(tab); if (await tab.evaluate("window.__board.idle", { timeoutMs: 20000 })) return; await sleep(50); }
   throw new Error("the board bench never went idle");
 }
+/**
+ * The main lab staged for one scene (D3r-b): its own `setScene` — the camera, the theme, the mat's still clocks, the notes, the books
+ * (the lab's `makeBook` pins them as the spec says) and the pads it names — then each pad through the calendar's harness door as
+ * calendar.mjs uses it (`reset` to the scene's place, month and week, `today`, `pose`) and each stuck note `pin`ned to its day; the
+ * pad's print held back (every page table MISSING — see the header). Returns what the lab holds: books, pads, notes.
+ */
+const stageMain = (s, staging) => {
+  const spec = { camX: s.camX, camY: s.camY, zoom: s.zoom, theme: s.theme, mat: matOf(s), notes: staging.notes.map(({ pin: _p, ...n }) => n), books: staging.books, ...(s.calendars ? { calendars: s.calendars.map((c) => ({ x: c.x, y: c.y })) } : {}) };
+  const pads = s.calendars ?? [];
+  const pins = staging.notes.map((n, i) => (n.pin ? [i, n.pin.pad ?? 0, n.pin.day] : null)).filter((p) => p !== null);
+  return `(() => {
+    const G = window.__ground;
+    G.setScene(${JSON.stringify(spec)});
+    for (const el of document.querySelectorAll('#legend, #stats, #panel, .panel')) el.style.visibility = 'hidden';
+    const C = G.calendar;
+    if (C) {
+      // the print held back: every table the lab writes reaches its pass MISSING, and every table it holds is written once more
+      const pass = C.desk.pass;
+      if (!pass.__missing) { const write = pass.writeTable.bind(pass); pass.writeTable = (slot, grid, table) => write(slot, grid, new Int32Array(table.length).fill(-1)); pass.__missing = true; }
+      for (const t of C.desk.tables.values()) t.dirty = true;
+      ${JSON.stringify(pads)}.forEach((c, i) => { C.reset(i, { x: c.x, y: c.y }, c.month ?? "2026-09", c.weekStart ?? 1); C.pose(i, c.pose ?? {}); });
+      C.today("2026-09-24");
+      for (const [note, pad, day] of ${JSON.stringify(pins)}) C.pin(note, pad, day);
+    }
+    return { books: ${staging.books.length}, pads: C ? C.desk.calendars.length : 0, notes: ${staging.notes.length} };
+  })()`;
+};
+/**
+ * The main lab has nothing left to draw — or, as calendar.mjs's own `settle` allows (it waits 8 s, then shoots), a still that keeps
+ * the lab drawing the same frame: a pad's roll pinned part-way is a turn in progress, so the lab's clock never stops (lab/calendar.ts
+ * `step`: `if (c.turn) live = true`). Then the capture's two identical shots are the witness that the frame stands. Returns whether
+ * the lab went idle.
+ */
+async function mainIdle(tab) {
+  for (let i = 0; i < 80; i++) { await front(tab); if (await tab.evaluate("!window.__ground.state.needsDraw", { timeoutMs: 20000 })) return true; await sleep(50); }
+  return false;
+}
 
 /** The two captures as pixels: maxΔ over RGB, and how many pixels differ at all. */
 function compare(a, b) {
@@ -206,10 +271,11 @@ function compare(a, b) {
 }
 
 try {
-  const desk = await openPage(`http://127.0.0.1:${deskServer.port}/apps/desk/dist/index.html`, "typeof window.__desk === 'object'");
+  const desk = await openPage(`http://127.0.0.1:${deskServer.port}/apps/desk/dist/parity.html`, "typeof window.__parity === 'object'");
   const lab = await openPage(`http://127.0.0.1:${protoServer.port}/photo.html`, "typeof window.__photo === 'object' && window.__photo.state.ready && window.__photo.state.frames > 2");
   const bench = await openPage(`http://127.0.0.1:${protoServer.port}/board.html`, "!!window.__board && window.__board.ready");
-  console.log(`chrome ${chrome.version.Browser} · apps/desk ${await desk.tab.evaluate("window.__desk.format", { timeoutMs: 20000 })} · the photo lab and the board bench up`);
+  const main = await openPage(`http://127.0.0.1:${protoServer.port}/index.html`, "typeof window.__ground === 'object' && window.__ground.state.assetsReady && window.__ground.books.pass().ready && window.__ground.calendar !== null");
+  console.log(`chrome ${chrome.version.Browser} · apps/desk's parity page ${await desk.tab.evaluate("window.__parity.format", { timeoutMs: 20000 })} · the photo lab, the board bench and the main lab up`);
   // the photo lab: its overlays hidden (the harness's `hide`), its picture handed in once, its loop taken over and stopped
   await lab.tab.evaluate("for (const el of document.querySelectorAll('#legend, #stats, #hint')) el.style.visibility = 'hidden'", { timeoutMs: 20000 });
   await lab.tab.evaluate(`window.__picture = Uint8Array.from(atob(${JSON.stringify(readFileSync(picturePath).toString("base64"))}), (c) => c.charCodeAt(0))`, { timeoutMs: 60000 });
@@ -227,15 +293,16 @@ try {
     const staging = stagingOf(s);
     if (!staging.page) { skipped++; console.log(`SKIP  ${sc.name.padEnd(24)} —                   ${staging.why}`); continue; }
     // the prototype's page
-    const page = staging.page === "photo" ? lab : bench;
+    const page = staging.page === "photo" ? lab : staging.page === "board" ? bench : main;
     await front(page.tab);
-    const staged = await page.tab.evaluate(staging.page === "photo" ? stagePhoto(s) : stageBoard(s), { timeoutMs: 60000 });
+    const staged = await page.tab.evaluate(staging.page === "photo" ? stagePhoto(s) : staging.page === "board" ? stageBoard(s) : stageMain(s, staging), { timeoutMs: 60000 });
     if (staging.page === "board") await boardIdle(page.tab);
+    const idle = staging.page === "main" ? await mainIdle(page.tab) : true;
     await settle(page.tab); await sleep(200); await settle(page.tab);
     const protoPng = await capture(page.tab);
     // the desk's page, the same scene through frame.mjs
     await front(desk.tab);
-    await desk.tab.evaluate(`window.__desk.render(${JSON.stringify(sc.name)})`, { awaitPromise: true, timeoutMs: 60000 });
+    await desk.tab.evaluate(`window.__parity.render(${JSON.stringify(sc.name)})`, { awaitPromise: true, timeoutMs: 60000 });
     await settle(desk.tab); await sleep(200); await settle(desk.tab);
     const deskPng = await capture(desk.tab);
     const r = compare(protoPng, deskPng);
@@ -248,10 +315,11 @@ try {
       if (!excused) failures++;
     }
     const detail = r.error === undefined ? `maxΔ ${r.maxD} · ${r.differ} px differ · ${r.w}×${r.h}${r.same ? " · the PNGs byte-identical" : ""}` : `ERROR ${r.error}`;
-    console.log(`${clean ? "PASS" : excused ? "KEPT" : "FAIL"}  ${sc.name.padEnd(24)} ${`${staging.page === "photo" ? "photo lab" : "board bench"} (${staged})`.padEnd(19)} ${detail}${excused ? ` — ${excused}` : ""}`);
+    const held = typeof staged === "object" ? `${staged.books}b ${staged.pads}p ${staged.notes}n${idle ? "" : " live"}` : staged;
+    console.log(`${clean ? "PASS" : excused ? "KEPT" : "FAIL"}  ${sc.name.padEnd(24)} ${`${staging.page === "photo" ? "photo lab" : staging.page === "board" ? "board bench" : "main lab"} (${held})`.padEnd(19)} ${detail}${excused ? ` — ${excused}` : ""}`);
   }
   console.log(`\n${compared} scene${compared === 1 ? "" : "s"} held to the prototype · ${failures} FAILED · ${skipped} not stageable there`);
-  const logs = [...lab.logs, ...bench.logs, ...desk.logs];
+  const logs = [...lab.logs, ...bench.logs, ...main.logs, ...desk.logs];
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);
 } catch (err) {
   console.log("THREW:", String(err.stack ?? err));
