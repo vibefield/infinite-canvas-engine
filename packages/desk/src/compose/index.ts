@@ -1,0 +1,10 @@
+// `@ice/desk/compose` — the desk FROM THE WORLD, the DOM-free half (design-015 §4.4–§4.6;
+// D2a-world): the builder (the frame's objects as records, the flux, the ghosts), the pick source
+// over the kinds' mirrors, the ambient policy (the wind that idles), the reflector that draws
+// only on pulled dirt, and the submit instrument that proves it. The host half — the canvas, the
+// device, the layer factory a React or vanilla host mounts — is `@ice/desk/host` (`deskLayer`).
+export { AMBIENT_DEFAULTS, type Ambient, type AmbientMode, type AmbientOptions, type AmbientPhase, type AmbientPin, type AmbientState, createAmbient } from "./ambient";
+export { type BuildViewport, type BuiltDesk, createDeskBuilder, type DeskBuilder, type DeskBuilderOptions, type DeskBuilderStats, type DeskWakeReason } from "./builder";
+export { createPickSource } from "./pick";
+export { createDeskReflector, type DeskReflector, type DeskReflectorOptions, type DeskReflectorStats, type DeskWakes } from "./reflector";
+export { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";

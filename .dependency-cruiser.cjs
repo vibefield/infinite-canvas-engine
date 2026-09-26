@@ -216,9 +216,11 @@ module.exports = {
       comment:
         "design-015 §3 (D1, 2026-09-25): the desk draws in RAW WebGPU on its own engine " +
         "(vibe-field/draft/ground's prototype, moved) — core + kernel ONLY, the ground's wall. D1 " +
-        "imports neither: the engine, the mat, nav, the mini mat and the objects are self-contained " +
-        "and the world arrives at D2. `from` binds on src, so the Node oracle and the tests are " +
-        "exempt (they import `webgpu`, `vitest` and `node:*`).",
+        "imported neither: the engine, the mat, nav, the mini mat and the objects are self-contained; " +
+        "the world arrived at D2a-world (the kinds' world halves, `defineObject` over core's " +
+        "`defineWidget`, the builder and the pick source over the world — src/compose, src/objects). " +
+        "`from` binds on src, so the Node oracle and the tests are exempt (they import `webgpu`, " +
+        "`vitest` and `node:*`).",
       severity: "error",
       from: { path: "^packages/desk/src" },
       to: { pathNot: ["^packages/desk/src", "^packages/core", "^packages/kernel"] },
