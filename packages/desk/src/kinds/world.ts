@@ -24,9 +24,25 @@ import type { Component, Entity, Tag } from "@ice/core";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
+import type { InsideView } from "../minimat/inside";
+import type { ChildShape } from "../minimat/minimat";
+import type { Rect } from "../nav/flight";
 import type { Lamp } from "../paper/paper";
 import type { TextRaster } from "../paper/raster";
 import type { GroundTheme, Palette, ThemeName } from "../theme";
+
+/**
+ * What the builder hands a CONTAINER kind's `record` about its inside (D2b): the bounds of the
+ * children's rects (`content`, null = empty — the arrival is the empty desk's), the inside's
+ * embedding and camera under this slot's camera (`view`, from the kind's own `face` — the
+ * flight's numbers, so the face's far LOD and the live inside agree to the bit), and the children
+ * as their kinds chip them (`chips`, in the inside's own units — the kind maps them through `view.M`).
+ */
+export interface InsideContext {
+  readonly content: Rect | null;
+  readonly view: InsideView | null;
+  readonly chips: readonly ChildShape[];
+}
 
 /** An object's rect on its desk, world units, CENTRED — converted from ICE's top-left `Position` + `Size` by the builder, once. */
 export interface ObjectRect {
@@ -84,6 +100,8 @@ export interface ObjectContext {
    * none. Flux, never a world fact; the builder threads it and tells it when an entity is forgotten.
    */
   readonly local?: unknown;
+  /** A container's inside, for its `record` (D2b): the content bounds, the view through its face, the children's chips. Absent = not a container, or `resolve`. */
+  readonly inside?: InsideContext;
 }
 
 /** What a desk hands a kind's `local()` (D2c): its ROOT pass once the ground is made, and the host's text seam. */
@@ -126,8 +144,21 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   record(geometry: G, ctx: ObjectContext): R;
   /** The CPU mirror on the SAME geometry the pass drew: the part under a world point, or null for a miss. */
   hit(geometry: G, wx: number, wy: number): ObjectHit | null;
-  /** Its far-LOD face inside a mini mat (D2b's `chip`); absent = a plain sheet at the far LOD. */
-  chip?(geometry: G, inside: unknown): unknown;
+  /**
+   * A CONTAINER kind's FACE as drawn — the window its inside shows through, in the desk's units
+   * (the mini mat: the sheet inset by its printed border, through its springs). The builder builds
+   * the live inside through it and the nav geometry seam answers core's nav with it (design-015 §9).
+   * Absent = the kind holds no desk.
+   */
+  face?(geometry: G): Rect | undefined;
+  /**
+   * The kind's far-LOD face inside a mini mat (MINIMAT.md §5): the child as a `ChildShape` in ITS
+   * desk's units — a note as paper with its writing greeked, a mini mat as vinyl with its border;
+   * `null` = nothing to chip. Absent = the kind has no chip yet (the oracle's prints).
+   */
+  chip?(geometry: G, ctx: ObjectContext): ChildShape | null;
+  /** The grid a CONTAINER kind's inside draws with (the mini mat: the desk's fade-in, the mat in its vinyl, no rulers). Absent = the root's. */
+  insideGrid?(ctx: Pick<ObjectContext, "props" | "look">, root: GridConfig): GridConfig;
   /** The kind's colours from the host's palette, per theme — the look `record` reads (`ctx.look`). */
   theme?(palette: Palette, name: ThemeName): L;
   /** The kind's own state on one desk (`ctx.local`) — made by the host once per desk; absent = none (D2c). */

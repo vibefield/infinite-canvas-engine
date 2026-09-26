@@ -6,10 +6,10 @@
 // runtime glyph atlas feed the mat at boot; `window.__desk` (api.ts) is the rigs' door.
 
 import type { Entity } from "@ice/core";
-import { PointerWorld, LocalPointer, Pointer, Camera, Viewport, defineQuery } from "@ice/core";
+import { PointerWorld, LocalPointer, Pointer, Camera, PrefabId, Viewport, defineQuery, selectedEntities } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk/host";
 import { deskLayer } from "@ice/desk/host";
-import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
+import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, VINYLS, type VinylName } from "@ice/desk/objects";
 import type { ThemeName } from "@ice/desk/theme";
 import { type GroundLayerFactory, InfiniteCanvas, type KeymapEntry } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -81,10 +81,21 @@ export function App(): ReactElement {
       const [e] = spawnAll(engine, [{ type, cx: at.x, cy: at.y, w: widget.defaultSize.w, h: widget.defaultSize.h, props }], true);
       engine.ops.setSelection([e as Entity], "replace");
     };
+    /** `t` (MINIMAT.md §2): the selected mini mats' vinyl cycles sage → slate → charcoal; the inside's mat is the same vinyl, so it follows. */
+    const cycleVinyl = (): void => {
+      for (const e of selectedEntities(world)) {
+        const id = world.get(e, PrefabId)?.id;
+        if (id !== MINIMAT_TYPE) continue;
+        const cur = (world.get(e, MiniMat.groups[0]?.component as never) as { vinyl?: string } | undefined)?.vinyl ?? VINYLS[0];
+        const next = VINYLS[(VINYLS.indexOf(cur as VinylName) + 1) % VINYLS.length] ?? VINYLS[0];
+        engine.ops.setWidgetProps(e, { vinyl: next });
+      }
+    };
     return [
       { key: "w", run: () => stick(NOTE_TYPE, { seed: (Math.random() * 0x7fffffff) | 0 }) },
       { key: "m", run: () => stick(MINIMAT_TYPE, { name: `Mat ${matSerial.current++}` }) },
       { key: "d", run: () => themeRef.current.toggle() },
+      { key: "t", run: cycleVinyl },
     ];
   }, [engine]);
 

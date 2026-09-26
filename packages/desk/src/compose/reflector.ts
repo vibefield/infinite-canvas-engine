@@ -21,6 +21,7 @@ import {
   defineQuery,
   FrameInfo,
   LocalPointer,
+  NavRedress,
   NavTransition,
   Pointer,
   PointerScreen,
@@ -78,6 +79,12 @@ export interface DeskReflector {
   configureGrid(grid: GridConfig): void;
   /** Wake a frame for a reason the world does not carry (a pin, an asset, the writing's flux — D2c's `ink`). */
   wake(reason: "pin" | "ambient" | "ink"): void;
+  /**
+   * A harness's pins on the build (D2b): live insides on or off (the oracle's `portals: false`), a pinned root
+   * dressing (`lodZoom`), every spring and ghost held where it is (`freeze` — a still of a moving frame), the
+   * re-dressing ramp held at its start (`holdRedress`). Each present key is set; the next frame paints.
+   */
+  pinBuild(pins: { readonly portals?: boolean; readonly lodZoom?: number | null; readonly freeze?: boolean; readonly holdRedress?: boolean }): void;
   /** The frame dirty and not yet drawn (a rig's witness). */
   dirty(): boolean;
   redraws(): number;
@@ -108,8 +115,14 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let camStamp = -1;
   let vpStamp = -1;
   let navStamp = -1;
+  let redressStamp = -1;
   let pointerStamp = -1;
   let mouse: ReturnType<World["firstOf"]>;
+  /** The harness's pins on the build (D2b). */
+  let portalsOn = true;
+  let lodPin: number | undefined;
+  let freeze = false;
+  let holdRedress = false;
   const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0 };
   let builderWakes = builder.wakes();
 
@@ -149,6 +162,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       if (vs !== vpStamp) { if (vpStamp !== -1) { dirty = true; wakes.viewport += 1; } vpStamp = vs; }
       const ns = w.resourceStamp(NavTransition);
       if (ns !== navStamp) { if (navStamp !== -1) { dirty = true; wakes.nav += 1; ambient.touch(now); } navStamp = ns; }
+      // a zoom-through cut: the desk re-dresses over its ramp (the builder keeps the frame live while it runs)
+      const rs = w.resourceStamp(NavRedress);
+      if (rs !== redressStamp) { if (redressStamp !== -1) { dirty = true; wakes.nav += 1; ambient.touch(now); } redressStamp = rs; }
       // the pointer moved (a wheel, a down, a move): the ambient stays awake; the hover itself is the builder's dirt
       const ps = w.resourceStamp(PointerVersion);
       if (ps !== pointerStamp) { if (pointerStamp !== -1) ambient.touch(now); pointerStamp = ps; }
@@ -167,18 +183,27 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       const dpr = Math.min(vp.dpr > 0 ? vp.dpr : 1, maxDpr);
       opts.attach.resize(Math.max(1, Math.round(vp.w * dpr)), Math.max(1, Math.round(vp.h * dpr)));
       const camera = { x: cam.x, y: cam.y, zoom: cam.zoom };
-      const built = builder.build(camera, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, grid, looks);
+      const built = builder.build(camera, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, grid, looks, {
+        now, mat: amb.frame, portals: portalsOn, freeze, holdRedress, ...(lodPin !== undefined ? { lodZoom: lodPin } : {}),
+      });
+      // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
+      // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)
       const inputs: GroundFrameInputs = {
         view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr },
         mat: amb.frame,
-        grid,
+        grid: built.grid,
         objects: built.objects,
+        ...(built.portals.length ? { portals: built.portals } : {}),
+        ...(built.lodZoom !== undefined ? { lodZoom: built.lodZoom } : {}),
+        ...(built.present !== undefined ? { present: built.present } : {}),
+        ...(built.light !== undefined ? { light: built.light } : {}),
+        ...(built.outgoing !== undefined ? { outgoing: built.outgoing } : {}),
         theme,
       };
       lastInputs = inputs;
       lastFrame = ground.render(inputs);
       redraws += 1;
-      if (builder.live()) { dirty = true; wakes.live += 1; }   // a spring or a ghost still moves: the next frame paints too
+      if (builder.live()) { dirty = true; wakes.live += 1; }   // a spring, a ghost or a re-dressing ramp still moves: the next frame paints too
     },
   };
 
@@ -194,6 +219,14 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     },
     configureGrid(g) { grid = g; dirty = true; wakes.grid += 1; },
     wake(reason) { dirty = true; wakes[reason] += 1; },
+    pinBuild(pins) {
+      if (pins.portals !== undefined) portalsOn = pins.portals;
+      if (pins.lodZoom !== undefined) lodPin = pins.lodZoom === null ? undefined : pins.lodZoom;
+      if (pins.freeze !== undefined) freeze = pins.freeze;
+      if (pins.holdRedress !== undefined) holdRedress = pins.holdRedress;
+      dirty = true;
+      wakes.pin += 1;
+    },
     dirty: () => dirty,
     redraws: () => redraws,
     stats: () => ({ ...builder.stats(), redraws, frame: lastFrame, ambient: ambient.state() }),

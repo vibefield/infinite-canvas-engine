@@ -17,6 +17,7 @@
 
 import type { KindPass, KindProgram, SlotContext } from "../kind";
 import type { MatPass } from "../mat/mat-pass";
+import type { ChildShape } from "../minimat/minimat";
 import type { PaperInstance } from "../paper/layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "../paper/paper";
 import { PaperPass } from "../paper/paper-pass";
@@ -77,10 +78,17 @@ export interface PaperLook {
   readonly pens: Readonly<Record<string, RGB>>;
 }
 
-/** A committed raster's place in the ink pages, as the host pinned it (`ctx.asset`). */
-export interface PaperAsset { readonly layer: number; readonly uv: UvRect }
+/** A note's writing as the far LOD greeks it (MINIMAT.md §5): the text's left edge and em (note units from the sheet's top-left) and each line's baseline and width. */
+export interface PaperWriting { readonly x0: number; readonly em: number; readonly lines: readonly { readonly y: number; readonly width: number }[] }
 
-const isPaperAsset = (a: unknown): a is PaperAsset => typeof a === "object" && a !== null && typeof (a as PaperAsset).layer === "number" && typeof (a as PaperAsset).uv === "object";
+/**
+ * What the host pins on a note (`ctx.asset`): a committed raster's place in the ink pages (`layer` + `uv`),
+ * and/or its writing's lines for the chip (`greek` — a still states them; the live text's layout is D2c's).
+ */
+export interface PaperAsset { readonly layer?: number; readonly uv?: UvRect; readonly greek?: PaperWriting }
+
+const asPaperAsset = (a: unknown): PaperAsset | undefined => (typeof a === "object" && a !== null ? (a as PaperAsset) : undefined);
+const hasRaster = (a: PaperAsset | undefined): a is PaperAsset & { readonly layer: number; readonly uv: UvRect } => a !== undefined && typeof a.layer === "number" && typeof a.uv === "object" && a.uv !== null;
 
 /**
  * How far a note's drawing reaches past its rect, world units: its shadow at full lift and curl,
@@ -142,12 +150,25 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       // the writing on this desk: the live (or pinned) ink, the pen's wipe, the caret; a builder pin is the fallback
       const w = ctx.local as Writing | undefined;
       const hand = w?.draw(ctx.entity, ctx.props, ctx.rect, ctx.view, G, ctx.flux.fade < 1) ?? {};   // a ghost fades on what it has
-      const asset = ctx.asset;
-      const raster = hand.raster ?? (isPaperAsset(asset) ? { layer: asset.layer, uv: asset.uv } : undefined);
+      const asset = asPaperAsset(ctx.asset);
+      const raster = hand.raster ?? (hasRaster(asset) ? { layer: asset.layer, uv: asset.uv } : undefined);
       return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}) };
     },
     hit(G: PaperGeometry, wx: number, wy: number): ObjectHit | null {
       return pickPaper(G, wx, wy) === "paper" ? "content" : null;
+    },
+    /** Inside a mini mat, a note is a paper chip with its writing greeked (the prototype's `childrenOf`): the sheet's colour, the pen's ink, the lines the host pinned. */
+    chip(G: PaperGeometry, ctx: ObjectContext): ChildShape {
+      const look = ctx.look as PaperLook | undefined;
+      const papers = look?.papers ?? {};
+      const pens = look?.pens ?? {};
+      const paper = papers[stringProp(ctx.props, "paper", "")] ?? Object.values(papers)[0] ?? ([0, 0, 0] as unknown as RGB);
+      const ink = pens[stringProp(ctx.props, "pen", "")] ?? Object.values(pens)[0] ?? paper;
+      const greek = asPaperAsset(ctx.asset)?.greek;
+      return {
+        kind: "paper", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, radius: G.radius, colour: paper, height: G.curl * 0.5,
+        ...(greek !== undefined && greek.lines.length > 0 ? { writing: { ink, x0: greek.x0, em: greek.em, lines: greek.lines } } : {}),
+      };
     },
     theme(palette: Palette, _name: ThemeName): PaperLook {
       const p = palette as PaperPalette;

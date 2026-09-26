@@ -1,4 +1,4 @@
-// The DESK BUILDER — the world's objects as the ground's records (design-015 §4.4; D2a-world).
+// The DESK BUILDER — the world's objects as the ground's records (design-015 §4.4; D2a-world, D2b).
 // B3a's frame builder re-aimed: one call per frame the reflector paints, every OBJECT Active in
 // the current nav frame, in paint order, becomes the record its kind's pass draws — through the
 // kind's own world half (kinds/world.ts): the builder hands each entity to its kind as an
@@ -25,27 +25,54 @@
 // above plus every object kind's props components and the tags; the sibling order's stamp; the
 // hover target. The camera and the viewport are the reflector's to poll (`resourceStamp`).
 //
+// THE NESTED DESKS (D2b; MINIMAT.md §3–§5, the prototype's `deskInputs` line for line): a
+// container drawn in a slot gets its INSIDE — its `ChildOf` children, their rects' bounds as the
+// content, the view through the kind's `face` (`insideViewOfFace`: the flight's own numbers, so
+// the far LOD and the live inside agree to the bit), the children as their kinds chip them — and,
+// past the gate (`presence > 0`, depth < 4, the `PORTAL_CAP` largest faces first), a LIVE slot:
+// the children built under the inside's camera, recursing. Inside members lie at REST (nothing
+// inside is hovered, held or selected; a note put in lands flat, as the prototype's did). THE
+// FLIGHT (design-006; `NavTransition`): the departed desk — the frame's `Retained` widgets in
+// their sibling order — under `departedCameraOf`, an ENTER as one tree through the face (`at` =
+// the container's index among the departed objects), an EXIT and a FROZEN flight as two whole
+// slots, the opacities and the lamp HANDOVER `flightPresent`/`flightLights`, the dressing
+// (`lodZoom`: the arriving desk for its landing, the departed for the cut). THE RE-DRESSING
+// (`NavRedress`, a zoom-through's cut): 320 ms in log space, smoothstep, the lamp on the same
+// ramp. THE CUT FRAME (D-D2b.7): while the flight holds at p = 0 no spring advances — the
+// departed desk IS its pre-cut frame to the bit (B7 extended to the flux). And THE SEAM
+// (`navFace`, design-015 §9): a container's face AS DRAWN this frame — at rest when it is not in
+// the frame — with the inside's arrival, embedding, camera, presence and cover test, for core's nav.
+//
 // The builder is pure with respect to the GPU: it makes records; the reflector hands them to
 // `Ground.render`. PAN IS O(1) in the world: nothing here is stored per object in the ECS.
 
 import {
   Active,
+  BoardRoot,
+  ChildOf,
   Container,
   compareStackOrder,
   createSiblingOrderIndex,
+  currentNavFrame,
   DEFAULT_STRATUM_BAND,
   defineQuery,
+  departedCameraOf,
   Grab,
   LocalPointer,
   Locked,
+  type NavFace,
+  NavRedress,
+  NavTransition,
   Pointer,
   Position,
   PrefabId,
+  Retained,
   Selected,
   Size,
   type StackOrderReader,
   Stratum,
   TouchesExact,
+  Viewport,
   WidgetEquipped,
   widgetTypeFor,
   type Component,
@@ -54,14 +81,18 @@ import {
   type WidgetType,
   type World,
 } from "@ice/core";
-import type { SlotObject } from "../ground";
-import { FLUX_REST, type KindLocal, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectOf } from "../kinds/world";
+import type { OutgoingInputs, PortalInputs, SlotObject } from "../ground";
+import { FLUX_REST, type InsideContext, type KindLocal, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectOf } from "../kinds/world";
 import type { GridConfig } from "../mat/grid";
+import type { MatFrame, SlotLight } from "../mat/layout";
+import { flightLights, flightPresent, type InsideView, insidePresent, insideViewOfFace } from "../minimat/inside";
+import { type ChildShape, FACE_RADIUS } from "../minimat/minimat";
+import { boundsOf, type CameraState, FIT, type Rect, solveFlightStart } from "../nav/flight";
+import { clipOf, faceCovers, PORTAL_CAP, PORTAL_GATE, type Presentation } from "../nav/portal";
 import { type Lamp, lampOf } from "../paper/paper";
 import { objectKindOf } from "../object";
 import { type ObjectSprings, SPRINGS, settled, spring } from "../springs";
-import type { GroundTheme } from "../theme";
-import type { CameraState } from "../nav/flight";
+import { MINIMAT, type GroundTheme } from "../theme";
 
 /** The view a frame is built for: CSS px and the dpr the canvas is at. */
 export interface BuildViewport { readonly width: number; readonly height: number; readonly dpr: number }
@@ -79,6 +110,8 @@ export interface DeskBuilderOptions {
   readonly ghostMs?: number;
   /** The cull margin past the view, CSS px (the prototype's 200). */
   readonly marginPx?: number;
+  /** The re-dressing after a zoom-through cut, ms (PORTAL.md §9's 320). */
+  readonly redressMs?: number;
   /**
    * The kinds' own state on this desk by kind name (kinds/world.ts `KindLocal` — the note's writing,
    * D2c): threaded into every context of the kind as `ctx.local`, and told when an entity is FORGOTTEN
@@ -90,13 +123,15 @@ export interface DeskBuilderOptions {
 export interface DeskBuilderStats {
   /** Objects Active in the frame this build saw. */
   readonly active: number;
-  /** Objects drawn — within the view and its margin, plus the ghosts. */
+  /** Objects drawn in the root slot — within the view and its margin, plus the ghosts. */
   readonly objects: number;
-  /** Objects off screen this build. */
+  /** Objects off screen this build (the root slot). */
   readonly culled: number;
   /** Deleted objects still fading. */
   readonly ghosts: number;
-  /** True after a build while any spring or ghost is still moving. */
+  /** Live insides built this frame, every depth (the departed desk's included). */
+  readonly portals: number;
+  /** True after a build while any spring or ghost is still moving, or a re-dressing ramp runs. */
   readonly live: boolean;
 }
 
@@ -107,20 +142,48 @@ const WAKE_REASONS: readonly DeskWakeReason[] = ["world", "removed", "reset", "o
 /** The springs a host may pin: each present key holds that spring at the value. */
 export type FluxPin = Partial<Pick<ObjectFlux, "lift" | "hover" | "ring">>;
 
+/** What a build may be told beyond the camera (a harness's pins, the reflector's clocks). */
+export interface BuildOptions {
+  /** The frame's clock, ms (`FrameInfo.now`) — the re-dressing ramp's. */
+  readonly now?: number;
+  /** The mat's clocks and tilt for every slot this frame (the reflector's ambient frame). */
+  readonly mat?: MatFrame;
+  /** Live insides on (the default). Off, every face draws its far LOD alone (the oracle's `portals: false`). */
+  readonly portals?: boolean;
+  /** A pinned root dressing (the oracle's `lodZoom`). */
+  readonly lodZoom?: number;
+  /** Hold every spring and ghost where it is — a still of a moving frame (a rig's flight pin). */
+  readonly freeze?: boolean;
+  /** Hold the re-dressing ramp at its start (the prototype harness's `redressPinned`). */
+  readonly holdRedress?: boolean;
+}
+
 export interface BuiltDesk {
   /** The root slot's objects in paint order — what `SlotInputs.objects` takes. */
   readonly objects: readonly SlotObject[];
+  /** The root slot's live insides (MINIMAT.md §3). */
+  readonly portals: readonly PortalInputs[];
+  /** The current frame's grid: the root's, or the entered mini mat's inside grid. */
+  readonly grid: GridConfig;
+  /** The root's dressing: a flight's landing, a re-dressing's ramp, a pin — absent = its own zoom. */
+  readonly lodZoom?: number;
+  /** The root's presentation while a flight is on. */
+  readonly present?: Presentation;
+  /** The root's lamp while it is handed over (a flight, a re-dressing after a cut in). */
+  readonly light?: SlotLight;
+  /** The departed desk while a flight is on. */
+  readonly outgoing?: OutgoingInputs;
   readonly stats: DeskBuilderStats;
 }
 
 export interface DeskBuilder {
   /**
    * Advance every on-screen object's springs by `dt` SECONDS and build this frame's records under
-   * `cam` and `vp`: `theme` and `grid` are the slot's; `looks` is each kind's `theme()` result by
-   * kind name (the reflector keeps them per theme).
+   * `cam` and `vp`: `theme` and `grid` are the root's; `looks` is each kind's `theme()` result by
+   * kind name (the reflector keeps them per theme); `opts` the clocks and a harness's pins.
    */
-  build(cam: CameraState, vp: BuildViewport, dt: number, theme: GroundTheme, grid: GridConfig, looks: ReadonlyMap<string, unknown>): BuiltDesk;
-  /** True while a spring or a ghost is still moving after the last build — the reflector paints again. */
+  build(cam: CameraState, vp: BuildViewport, dt: number, theme: GroundTheme, grid: GridConfig, looks: ReadonlyMap<string, unknown>, opts?: BuildOptions): BuiltDesk;
+  /** True while a spring, a ghost or a re-dressing ramp still moves after the last build — the reflector paints again. */
   live(): boolean;
   /**
    * PULL the world's dirt: did any fact a build reads change since the last pull — an object's
@@ -137,10 +200,19 @@ export interface DeskBuilder {
   kindOf(e: Entity): ObjectKind | undefined;
   /** The last build's flux for an entity (the rig's witness). */
   fluxOf(e: Entity): ObjectFlux | undefined;
+  /** The last build's view of a container's inside — its camera, presence and clip under the slot it was drawn in (a rig's witness). */
+  insideViewOf(e: Entity): InsideView | undefined;
   /**
-   * A per-entity asset the host pins — a committed raster (`ObjectContext.asset`); `undefined`
-   * unpins. Kept BY ENTITY, met or not: a pin made in the same task as the spawn (the parity scene's
-   * ink, before the entity's facts are readable) waits for the first build. Dirties the builder.
+   * THE SEAM's answer (design-015 §9): the container's face under the host camera `cam` — AS DRAWN
+   * when it was built in the current frame this frame, at REST otherwise (the frame's own container,
+   * an exit's) — with the inside's arrival, embedding, camera, presence and cover test. `undefined`:
+   * not a container kind, or a face with no area.
+   */
+  navFace(container: Entity, cam: CameraState): NavFace | undefined;
+  /**
+   * A per-entity asset the host pins — a committed raster, a note's greeked writing (`ObjectContext.asset`);
+   * `undefined` unpins. Kept BY ENTITY, met or not: a pin made in the same task as the spawn (the parity
+   * scene's ink, before the entity's facts are readable) waits for the first build. Dirties the builder.
    */
   pin(e: Entity, asset: unknown): void;
   /**
@@ -178,6 +250,10 @@ interface ObjectState {
   /** The last build's geometry and record; null when not drawn (culled, unseen). */
   geometry: unknown | null;
   record: unknown | null;
+  /** The last build's view of its inside (a container), null when none. */
+  inside: InsideView | null;
+  /** Where it was drawn last: the current frame's root slot, a live inside, the departed desk. */
+  slot: "root" | "inside" | "departed";
   /** The object painted right after it in the last build — where a ghost of it keeps its place (the indices shift when it leaves; a neighbour does not). */
   next: Entity | undefined;
   /** The build that last saw it in the frame. */
@@ -204,12 +280,26 @@ interface Row {
   readonly band: number;
 }
 
-const EMPTY_STATS: DeskBuilderStats = { active: 0, objects: 0, culled: 0, ghosts: 0, live: false };
+/** One slot's build: its rows in paint order, its live insides, its containers' geometry by entity. */
+interface SlotBuild {
+  readonly rows: Row[];
+  readonly portals: PortalInputs[];
+  readonly culled: number;
+}
+
+const EMPTY_STATS: DeskBuilderStats = { active: 0, objects: 0, culled: 0, ghosts: 0, portals: 0, live: false };
 const GHOST_MS = 220;
 const MARGIN_PX = 200;
+const REDRESS_MS = 320;
+/** The host belt: a live inside's insides show live to this depth (the prototype's `depth < 4`). */
+const PORTAL_DEPTH = 4;
+/** At most this many chips per face (MINIMAT.chips.max). */
+const CHIPS_MAX = MINIMAT.chips.max;
 
 // An object: a widget (PrefabId, Position, Size) Active in the current nav frame — the same membership the cull and the pick use.
 const membersQ = defineQuery([Position, Size, PrefabId, Active]);
+// The departed frame's widgets while a flight is on (nav-flight.ts `retainDeparted`).
+const retainedQ = defineQuery([Position, Size, PrefabId, Retained]);
 // The local pointers; the MOUSE one's exact hit is the hover.
 const localPointersQ = defineQuery([Pointer, LocalPointer]);
 
@@ -227,6 +317,11 @@ function advance(x: number, v: number, target: number, hz: number, damp: number,
   return settled(nx, nv, target) ? [target, 0, false] : [nx, nv, true];
 }
 
+/** Smooth at both ends; exactly 0 at or below `a` and 1 at or above `b`. */
+const smoothstep = (a: number, b: number, x: number): number => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** `from` → `to` in log space at `u` (PORTAL.md §9: the re-dressing eases the dressing's ZOOM, so it looks like a zoom). */
+const lodEase = (from: number, to: number, u: number): number => (u >= 1 ? to : u <= 0 ? from : Math.exp(Math.log(from) + (Math.log(to) - Math.log(from)) * u));
+
 export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskBuilder {
   const S = opts.springs ?? SPRINGS;
   const locals = opts.locals;
@@ -234,12 +329,15 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const forget = (kind: ObjectKind, e: Entity): void => { locals?.get(kind.name)?.forget?.(e); };
   const ghostS = (opts.ghostMs ?? GHOST_MS) / 1000;
   const marginPx = opts.marginPx ?? MARGIN_PX;
+  const redressMs = opts.redressMs ?? REDRESS_MS;
   const order = createSiblingOrderIndex(world);
   const states = new Map<Entity, ObjectState>();
   const ghosts = new Map<Entity, Ghost>();
   const pins = new Map<Entity, FluxPin>();
   /** The hosts' pinned assets by entity (a committed raster) — outside the state, so a pin outlives a state the builder has not made yet. */
   const assets = new Map<Entity, unknown>();
+  /** Each parent's children in sibling order, cached against the parent's order stamp (strata's per-parent `orderStamp`). */
+  const kids = new Map<Entity, { stamp: number; list: Entity[] }>();
   const wakes = Object.fromEntries(WAKE_REASONS.map((r) => [r, 0])) as Record<DeskWakeReason, number>;
   let stats: DeskBuilderStats = EMPTY_STATS;
   let disposed = false;
@@ -251,6 +349,15 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   let mouse: Entity | undefined;
   /** The widest reach: the listed types' kinds, and any kind met since. */
   let reach = 0;
+  /** The re-dressing ramp: the epoch seen and the clock it started at. */
+  let redressEpoch = 0;
+  let redressStart = 0;
+  /** The nav frame of the last build: a change drops the ghosts (they belong to the desk they died in). */
+  let lastFrame: Entity | undefined;
+  /** The last build's root grid, looks and theme — what a container resolves at REST with when the seam asks between builds. */
+  let lastGrid: GridConfig | undefined;
+  let lastLooks: ReadonlyMap<string, unknown> | undefined;
+  let lastTheme: GroundTheme | undefined;
   const kindsSeen = new Set<ObjectKind>();
   const meet = (kind: ObjectKind): void => {
     if (kindsSeen.has(kind)) return;
@@ -265,7 +372,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   for (const k of kindsSeen) { readsC.push(...(k.reads?.components ?? [])); readsT.push(...(k.reads?.tags ?? [])); }
   const collector = world.changes.collect({
     components: [Position, Size, PrefabId, Grab, ...propComponents(opts.objects), ...readsC],
-    tags: [Selected, Active, Container, Locked, WidgetEquipped, ...readsT],
+    tags: [Selected, Active, Container, Locked, WidgetEquipped, Retained, ...readsT],
     coarse: false,
   });
   // The comparator's reader: the stratum from the cache (stamped at equip, cached at first sight), the rest the world's.
@@ -308,6 +415,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
 
   /** Meet an entity: its widget type through the engine's catalog, its kind off the binding; not an object = nothing. */
   const enter = (e: Entity): ObjectState | undefined => {
+    if (!world.isAlive(e)) return undefined;
     const id = world.get(e, PrefabId)?.id;
     if (typeof id !== "string") return undefined;
     const widget = widgetTypeFor(world, id);
@@ -316,98 +424,346 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     meet(kind);
     const st: ObjectState = {
       kind, widget, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, band: DEFAULT_STRATUM_BAND, dirty: true,
-      lift: 0, liftV: 0, hover: 0, hoverV: 0, ring: 0, ringV: 0, geometry: null, record: null, next: undefined, seen: 0,
+      lift: 0, liftV: 0, hover: 0, hoverV: 0, ring: 0, ringV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
     };
     states.set(e, st);
     return st;
   };
 
-  /** An entity the journal reports gone: a ghost at its last paint, if it was ever drawn. */
+  /** The state for an entity, met and fresh — or undefined when it is not an object. */
+  const stateOf = (e: Entity): ObjectState | undefined => {
+    const st = states.get(e) ?? enter(e);
+    if (st === undefined) return undefined;
+    if (st.dirty || dirtyAll) refresh(e, st);
+    return st;
+  };
+
+  /** An entity the journal reports gone: a ghost at its last paint, if it was ever drawn in the root slot. */
   const ghostOf = (e: Entity, st: ObjectState): void => {
-    if (st.geometry === null) return;
+    if (st.geometry === null || st.slot !== "root") return;
     ghosts.set(e, { kind: st.kind, rect: st.rect, props: st.props, flux: { lift: st.lift, hover: st.hover, ring: st.ring, fade: 1 }, band: st.band, next: st.next, asset: assets.get(e), del: 0 });
   };
 
   const fluxOf = (st: ObjectState): ObjectFlux => ({ lift: st.lift, hover: st.hover, ring: st.ring, fade: 1 });
 
+  /**
+   * A parent's children that are objects, in sibling order (strata's ordered `ChildOf`), the strata
+   * bands ascending within — the inside's paint order (sheets under things) — cached against the
+   * parent's order stamp; every cache is dropped when the journal reports a removal or a reset.
+   */
+  const childrenOf = (parent: Entity): Entity[] => {
+    const stamp = world.orderStamp(parent, ChildOf);
+    const hit = kids.get(parent);
+    if (hit !== undefined && hit.stamp === stamp) return hit.list;
+    const list: Entity[] = [];
+    for (const c of world.getReverse(parent, ChildOf)) if (stateOf(c) !== undefined) list.push(c);
+    const band = (e: Entity): number => states.get(e)?.band ?? DEFAULT_STRATUM_BAND;
+    list.sort((a, b) => band(a) - band(b));   // stable: the sibling sequence within a band
+    kids.set(parent, { stamp, list });
+    return list;
+  };
+
+  /** The bounds of a container's children — the inside's content (`contentOf`); null = empty. */
+  const contentOf = (container: Entity): Rect | null => {
+    const rects: Rect[] = [];
+    for (const c of childrenOf(container)) {
+      const st = stateOf(c);
+      if (st === undefined) continue;
+      rects.push({ x: st.rect.cx - st.rect.w / 2, y: st.rect.cy - st.rect.h / 2, width: st.rect.w, height: st.rect.h });
+    }
+    return boundsOf(rects);
+  };
+
+  const viewportOf = (): { readonly width: number; readonly height: number } => {
+    const vp = world.getResource(Viewport);
+    return { width: vp?.w ?? 0, height: vp?.h ?? 0 };
+  };
+
+  /** The frame's grid: the root's for the board root, a container kind's `insideGrid` for a mini mat entered. */
+  const frameGridOf = (frame: Entity | undefined, root: GridConfig, looks: ReadonlyMap<string, unknown>): GridConfig => {
+    if (frame === undefined || !world.isAlive(frame) || !world.hasTag(frame, Container)) return root;
+    const st = stateOf(frame);
+    if (st === undefined || st.kind.insideGrid === undefined) return root;
+    return st.kind.insideGrid({ props: st.props, look: looks.get(st.kind.name) }, root);
+  };
+
+  /** THE SEAM's answer (design-015 §9) — see `DeskBuilder.navFace`. */
+  const navFace = (container: Entity, cam: CameraState): NavFace | undefined => {
+    const st = stateOf(container);
+    if (st === undefined || st.kind.face === undefined) return undefined;
+    // as DRAWN when it was built in the current frame this frame; at REST otherwise (the frame's own container, an exit's)
+    let G: unknown;
+    if (st.seen === seq && st.geometry !== null && st.slot === "root") G = st.geometry;
+    else {
+      const grid = lastGrid;
+      const theme = lastTheme;
+      if (grid === undefined || theme === undefined) return undefined;
+      const vp = world.getResource(Viewport);
+      const view: ObjectContext["view"] = { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp?.w ?? 0, height: vp?.h ?? 0, dpr: vp?.dpr ?? 1 };
+      const local = locals?.get(st.kind.name);
+      const ctx: ObjectContext = { entity: container, rect: st.rect, props: st.props, flux: FLUX_REST, look: lastLooks?.get(st.kind.name), theme, lamp: lampOf(grid.mat.plane), view, grid, dt: 0, ...(local !== undefined ? { local } : {}) };
+      G = st.kind.resolve(ctx);
+    }
+    const face = st.kind.face(G);
+    if (face === undefined) return undefined;
+    const vpSize = viewportOf();
+    const view = insideViewOfFace(face, contentOf(container), cam, vpSize, FIT, PORTAL_GATE);
+    if (view === null) return undefined;
+    return { face, arrival: view.arrival, affine: view.M, camera: view.cam, presence: view.presence, covers: (marginPx: number) => faceCovers(view.clip, vpSize, marginPx) };
+  };
+
   return {
-    build(cam, vp, dt, theme, grid, looks) {
-      if (disposed) return { objects: [], stats: EMPTY_STATS };
+    build(cam, vp, dt0, theme, grid, looks, bopts = {}) {
+      if (disposed) return { objects: [], portals: [], grid, stats: EMPTY_STATS };
       seq += 1;
+      lastGrid = grid;
+      lastLooks = looks;
+      lastTheme = theme;
+      const now = bopts.now ?? 0;
+      const portalsOn = bopts.portals !== false;
+      const nav = world.getResource(NavTransition);
+      const flying = nav?.active === true;
+      // the cut frame (D-D2b.7) and a harness's freeze: no spring advances — the departed desk IS its pre-cut frame
+      const dt = bopts.freeze === true || (flying && nav.p === 0) ? 0 : dt0;
       const lamp: Lamp = lampOf(grid.mat.plane);
+      const vpSize = { width: vp.width, height: vp.height };
       const ordinals = order.ordinals();
-      const view = { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
-      const m = marginPx / cam.zoom;
-      const x0 = cam.x - m;
-      const y0 = cam.y - m;
-      const x1 = cam.x + vp.width / cam.zoom + m;
-      const y1 = cam.y + vp.height / cam.zoom + m;
       const hover = hoverTarget();
+      const frame = currentNavFrame(world);
+      // a nav cut changes the desk under the camera: a ghost of the desk left would fade in the wrong desk's units (the prototype has
+      // no ghost across desks) — the ghosts go with the frame
+      if (frame !== lastFrame) { ghosts.clear(); lastFrame = frame; }
+      const frameGrid = frameGridOf(frame, grid, looks);
+      let portalsCount = 0;
+      let live = false;
+
+      /** One object's context for a slot, its springs advanced (`springs`) or at rest. */
+      const contextOf = (e: Entity, st: ObjectState, view: ObjectContext["view"], slotGrid: GridConfig, slotLamp: Lamp, springs: boolean): ObjectContext => {
+        let flux: ObjectFlux;
+        if (springs) {
+          // the springs: the hold's lift (Grab), the hover's rise (the exact hit, never while held), the ring (Selected) — each snapped
+          // when settled; a host's pin (`pinFlux`) holds a spring AT its value, a still
+          const pin = pins.get(e);
+          let moving: boolean;
+          [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
+          live ||= moving;
+          [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
+          live ||= moving;
+          [st.ring, st.ringV, moving] = advance(st.ring, st.ringV, pin?.ring ?? (st.selected ? 1 : 0), S.ringHz, S.ringDamp, dt, pin?.ring !== undefined);
+          live ||= moving;
+          flux = fluxOf(st);
+        } else flux = FLUX_REST;
+        const asset = assets.get(e);
+        const local = locals?.get(st.kind.name);
+        return { entity: e, rect: st.rect, props: st.props, flux, look: looks.get(st.kind.name), theme, lamp: slotLamp, view, grid: slotGrid, dt, ...(asset !== undefined ? { asset } : {}), ...(local !== undefined ? { local } : {}) };
+      };
+
+      /**
+       * A container's inside for its record (D2b): its content, its view through its face under the slot's camera, its children as
+       * chips (each resolved at rest in the inside's own units) — and the candidate for a live slot when the gate lets it through.
+       */
+      const insideOf = (e: Entity, st: ObjectState, G: unknown, ctx: ObjectContext, slotCam: CameraState, slotGrid: GridConfig): InsideContext | undefined => {
+        const face = st.kind.face?.(G);
+        if (face === undefined) { st.inside = null; return undefined; }
+        const content = contentOf(e);
+        const view = insideViewOfFace(face, content, slotCam, vpSize, FIT, PORTAL_GATE);
+        st.inside = view;
+        const insideGrid = st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid;
+        const chips: ChildShape[] = [];
+        if (view !== null) {
+          const insideLamp = lampOf(insideGrid.mat.plane);
+          const insideView: ObjectContext["view"] = { camX: view.cam.x, camY: view.cam.y, zoom: view.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
+          for (const c of childrenOf(e)) {
+            if (chips.length >= CHIPS_MAX) break;
+            const cst = stateOf(c);
+            if (cst === undefined || cst.kind.chip === undefined) continue;
+            const cctx = contextOf(c, cst, insideView, insideGrid, insideLamp, false);
+            const chip = cst.kind.chip(cst.kind.resolve(cctx), cctx);
+            if (chip !== null) chips.push(chip);
+          }
+        }
+        return { content, view, chips };
+      };
+
+      /**
+       * Build one slot: `members` in paint order under `slotCam`, culled against the view and its margin (plus each kind's reach);
+       * each container gets its inside, and the live insides that pass the gate — depth < 4, `presence > 0`, not the flight's `skip`
+       * — are built through their faces, the largest first up to the cap, recursing.
+       */
+      const buildSlot = (members: readonly Entity[], slotCam: CameraState, slotGrid: GridConfig, slot: ObjectState["slot"], depth: number, skip: Entity | undefined, redressOut: { frame: Entity; from: number; u: number } | undefined): SlotBuild => {
+        const slotLamp = lampOf(slotGrid.mat.plane);
+        const view: ObjectContext["view"] = { camX: slotCam.x, camY: slotCam.y, zoom: slotCam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
+        const m = marginPx / slotCam.zoom;
+        const x0 = slotCam.x - m;
+        const y0 = slotCam.y - m;
+        const x1 = slotCam.x + vp.width / slotCam.zoom + m;
+        const y1 = slotCam.y + vp.height / slotCam.zoom + m;
+        const rows: Row[] = [];
+        const cands: { at: number; e: Entity; view: InsideView; grid: GridConfig }[] = [];
+        let culled = 0;
+        for (let i = 0; i < members.length; i++) {
+          const e = members[i] as Entity;
+          const st = stateOf(e);
+          if (st === undefined) continue;
+          st.seen = seq;
+          st.slot = slot;
+          st.next = slot === "root" ? members[i + 1] : undefined;
+          const r = st.rect;
+          const hx = r.w / 2 + st.kind.reach;
+          const hy = r.h / 2 + st.kind.reach;
+          if (r.cx + hx < x0 || r.cx - hx > x1 || r.cy + hy < y0 || r.cy - hy > y1) { st.geometry = null; st.record = null; st.inside = null; culled += 1; continue; }
+          // the root's and the departed desk's objects run their springs; an inside's members lie at rest
+          const ctx = contextOf(e, st, view, slotGrid, slotLamp, slot !== "inside");
+          const G = st.kind.resolve(ctx);
+          const inside = insideOf(e, st, G, ctx, slotCam, slotGrid);
+          const R = st.kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
+          st.geometry = G;
+          st.record = R;
+          const at = rows.length;
+          rows.push({ entity: e, kind: st.kind.name, record: R, band: st.band });
+          if (inside?.view && portalsOn && depth < PORTAL_DEPTH && e !== skip && inside.view.presence > 0) {
+            cands.push({ at, e, view: inside.view, grid: st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid });
+          }
+        }
+        // the live insides: the largest faces first, up to the cap (MINIMAT.md §3), each a slot of its own through its face
+        cands.sort((a, b) => b.view.clip.hx * b.view.clip.hy - a.view.clip.hx * a.view.clip.hy);
+        const portals: PortalInputs[] = [];
+        for (const c of cands.slice(0, PORTAL_CAP)) {
+          const sub = buildSlot(childrenOf(c.e), c.view.cam, c.grid, "inside", depth + 1, undefined, undefined);
+          portalsCount += 1;
+          // a desk cut out of by a zoom-through is still dressed and lit as it left itself, handing both to this desk over the ramp (MINIMAT.md §4)
+          const redress = redressOut !== undefined && redressOut.frame === c.e ? redressOut : undefined;
+          portals.push({
+            view: { camX: c.view.cam.x, camY: c.view.cam.y, zoom: c.view.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr, box: c.view.box },
+            ...(bopts.mat !== undefined ? { mat: bopts.mat } : {}),
+            lodZoom: redress === undefined ? c.view.arrival.zoom : lodEase(redress.from, c.view.arrival.zoom, redress.u),
+            present: insidePresent(c.view),
+            ...(redress !== undefined ? { light: { a: c.view.cam, b: slotCam, t: redress.u } } : {}),
+            grid: c.grid,
+            objects: sub.rows.map((r) => ({ kind: r.kind, record: r.record })),
+            ...(sub.portals.length ? { portals: sub.portals } : {}),
+            at: c.at,
+          });
+        }
+        return { rows, portals, culled };
+      };
+
+      // THE RE-DRESSING (a zoom-through cut): its ramp from the clock it was first seen at; a harness may hold it at 0
+      const redress = world.getResource(NavRedress);
+      let redressIn: { from: number; u: number; frame: Entity } | undefined;
+      let redressOut: { frame: Entity; from: number; u: number } | undefined;
+      if (redress !== undefined && redress.epoch > 0 && !flying) {
+        if (redress.epoch !== redressEpoch) { redressEpoch = redress.epoch; redressStart = now; }
+        const u = bopts.holdRedress === true ? 0 : smoothstep(0, 1, Math.min(1, (now - redressStart) / Math.max(redressMs, 1)));
+        if (u < 1) {
+          live = true;
+          if (redress.kind === "in") redressIn = { from: redress.from, u, frame: redress.frame };
+          else redressOut = { frame: redress.frame, from: redress.from, u };
+        }
+      }
+
       // membership: every object Active in the frame, its facts refreshed where the journal said, in two tiers — the carried set last
       const tiers: [Entity[], Entity[]] = [[], []];
       world.query(membersQ).each((b) => {
         for (const r of b) {
           const e = b.entity(r);
-          const st = states.get(e) ?? enter(e);
+          const st = stateOf(e);
           if (st === undefined) continue;
-          if (st.dirty || dirtyAll) refresh(e, st);
-          st.seen = seq;
           (st.grabbed ? tiers[1] : tiers[0]).push(e);
         }
       });
       dirtyAll = false;
       for (const t of tiers) t.sort((a, b) => compareStackOrder(reader, ordinals, a, b));
       const list = [...tiers[0], ...tiers[1]];
-      // an object that left the frame without dying (a nav cut — D2b) is forgotten, no ghost: it was not deleted
-      for (const [e, st] of states) if (st.seen !== seq) { states.delete(e); forget(st.kind, e); }
-      // pass: the cull, the springs, the kind's geometry and record, in paint order
-      const rows: Row[] = [];
-      let live = false;
-      let culled = 0;
-      for (let i = 0; i < list.length; i++) {
-        const e = list[i] as Entity;
-        const st = states.get(e) as ObjectState;
-        st.next = list[i + 1];
-        const r = st.rect;
-        const reachOf = st.kind.reach;
-        const hx = r.w / 2 + reachOf;
-        const hy = r.h / 2 + reachOf;
-        if (r.cx + hx < x0 || r.cx - hx > x1 || r.cy + hy < y0 || r.cy - hy > y1) { st.geometry = null; st.record = null; culled += 1; continue; }
-        // the springs: the hold's lift (Grab), the hover's rise (the exact hit, never while held), the ring (Selected) — each snapped
-        // when settled; a host's pin (`pinFlux`) holds a spring AT its value, a still
-        const pin = pins.get(e);
-        let moving: boolean;
-        [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
-        live ||= moving;
-        [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
-        live ||= moving;
-        [st.ring, st.ringV, moving] = advance(st.ring, st.ringV, pin?.ring ?? (st.selected ? 1 : 0), S.ringHz, S.ringDamp, dt, pin?.ring !== undefined);
-        live ||= moving;
-        const asset = assets.get(e);
-        const local = locals?.get(st.kind.name);
-        const ctx: ObjectContext = { entity: e, rect: r, props: st.props, flux: fluxOf(st), look: looks.get(st.kind.name), theme, lamp, view, grid, dt, ...(asset !== undefined ? { asset } : {}), ...(local !== undefined ? { local } : {}) };
-        const G = st.kind.resolve(ctx);
-        const R = st.kind.record(G, ctx);
-        st.geometry = G;
-        st.record = R;
-        rows.push({ entity: e, kind: st.kind.name, record: R, band: st.band });
-      }
+      // the root slot: the current frame's desk under the camera
+      const root = buildSlot(list, cam, frameGrid, "root", 0, undefined, redressOut);
+      const rows = root.rows;
       // the ghosts: each fades where it was — just before the object that followed it, else at its band's end — then is forgotten
+      const rootView: ObjectContext["view"] = { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
+      const rootLamp = lampOf(frameGrid.mat.plane);
       for (const [e, g] of ghosts) {
-        g.del = Math.min(g.del + dt / ghostS, 1);
+        // a ghost fades on the frame's own clock, held or not: a held clock (a pinned flight) must not keep a deleted object on the desk
+        g.del = Math.min(g.del + dt0 / ghostS, 1);
         if (g.del >= 1) { ghosts.delete(e); forget(g.kind, e); continue; }
         live = true;
         const local = locals?.get(g.kind.name);
-        const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp, view, grid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
+        const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp: rootLamp, view: rootView, grid: frameGrid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
         const G = g.kind.resolve(ctx);
         const row: Row = { entity: undefined, kind: g.kind.name, record: g.kind.record(G, ctx), band: g.band };
         let at = g.next === undefined ? -1 : rows.findIndex((q) => q.entity === g.next);
         if (at < 0) { at = rows.length; for (let i = 0; i < rows.length; i++) { if ((rows[i] as Row).band > row.band) { at = i; break; } } }
         rows.splice(at, 0, row);
+        // a ghost before a live inside's mini mat shifts that inside's `at`
+        for (let i = 0; i < root.portals.length; i++) { const p = root.portals[i] as PortalInputs; if (p.at >= at) root.portals[i] = { ...p, at: p.at + 1 }; }
       }
+
+      // THE FLIGHT: the departed desk beside the arriving one
+      let present: Presentation | undefined;
+      let light: SlotLight | undefined;
+      let lodZoom: number | undefined = bopts.lodZoom;
+      let outgoing: OutgoingInputs | undefined;
+      if (flying) {
+        const entering = nav.kind === "enter";
+        const outCam = departedCameraOf(nav, cam);
+        // the departed frame's desk: its Retained widgets in their sibling order (the frame's parent: the board root, or the container left)
+        const departedFrame = nav.fromFrame;
+        const root0 = world.getResource(BoardRoot)?.root;
+        const parent = departedFrame !== (0 as Entity) && world.isAlive(departedFrame) ? departedFrame : root0;
+        let members: Entity[];
+        if (parent !== undefined && world.isAlive(parent)) members = childrenOf(parent).filter((e) => world.hasTag(e, Retained));
+        else { members = []; world.query(retainedQ).each((b) => { for (const r of b) members.push(b.entity(r)); }); }
+        const departedGrid = frameGridOf(parent !== undefined && world.hasTag(parent, Container) ? parent : undefined, grid, looks);
+        // the container the flight is through: entered (its inside is the arriving desk) or left (the arriving desk's live inside shows the same pixels)
+        const container = entering ? nav.toFrame : nav.fromFrame;
+        const departed = buildSlot(members, outCam, departedGrid, "departed", 0, entering ? container : undefined, undefined);
+        // the face lives in the PARENT desk: the departed one on enter, the arriving one on exit. A frozen flight has none — it is a dissolve.
+        let clip: Presentation["portal"] | undefined;
+        let at = -1;
+        if (!nav.frozen) {
+          const cst = states.get(container);
+          const face = cst !== undefined && cst.geometry !== null && cst.seen === seq ? cst.kind.face?.(cst.geometry) : undefined;
+          if (face !== undefined) clip = clipOf(face, FACE_RADIUS, entering ? outCam : cam);
+          if (entering) at = departed.rows.findIndex((r) => r.entity === container);
+        }
+        const f = { kind: nav.kind, p: nav.p, frozen: nav.frozen };
+        const pres = flightPresent(f, clip, PORTAL_GATE);
+        const lights = flightLights(f, cam, outCam);
+        present = pres.incoming;
+        light = lights.incoming;
+        lodZoom = nav.c1z;   // the arriving desk is dressed for its landing (PORTAL.md §9)
+        outgoing = {
+          view: { camX: outCam.x, camY: outCam.y, zoom: outCam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr },
+          ...(bopts.mat !== undefined ? { mat: bopts.mat } : {}),
+          lodZoom: nav.fromZ,   // the departed desk keeps the dressing it had at the cut
+          present: pres.outgoing,
+          ...(lights.outgoing !== undefined ? { light: lights.outgoing } : {}),
+          grid: departedGrid,
+          objects: departed.rows.map((r) => ({ kind: r.kind, record: r.record })),
+          ...(departed.portals.length ? { portals: departed.portals } : {}),
+          order: entering ? "under" : "over",
+          ...(at >= 0 && clip !== undefined ? { at } : {}),
+        };
+      } else if (redressIn !== undefined) {
+        // cut INTO by a zoom-through: the desk is dressed as its face showed it and lit by the desk it was cut from, easing to its own (MINIMAT.md §4)
+        lodZoom = lodEase(redressIn.from, cam.zoom, redressIn.u);
+        const face = navFace(redressIn.frame, cam);
+        if (face !== undefined) light = { a: solveFlightStart(face.affine, cam), b: cam, t: redressIn.u };
+      }
+
+      // an object that left the frame without dying (a nav cut) is forgotten, no ghost: it was not deleted — its kind lets go of it (D2c)
+      for (const [e, st] of states) if (st.seen !== seq) { states.delete(e); forget(st.kind, e); }
       const objects: SlotObject[] = rows.map((r) => ({ kind: r.kind, record: r.record }));
-      stats = { active: list.length, objects: objects.length, culled, ghosts: ghosts.size, live };
-      return { objects, stats };
+      stats = { active: list.length, objects: objects.length, culled: root.culled, ghosts: ghosts.size, portals: portalsCount, live };
+      return {
+        objects,
+        portals: root.portals,
+        grid: frameGrid,
+        ...(lodZoom !== undefined ? { lodZoom } : {}),
+        ...(present !== undefined ? { present } : {}),
+        ...(light !== undefined ? { light } : {}),
+        ...(outgoing !== undefined ? { outgoing } : {}),
+        stats,
+      };
     },
     live: () => stats.live,
     changed() {
@@ -415,7 +771,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const delta = collector.drain();
       let any = woke;
       woke = false;
-      if (delta.reset) { wakes.reset += 1; dirtyAll = true; any = true; }
+      if (delta.reset) { wakes.reset += 1; dirtyAll = true; kids.clear(); any = true; }
       if (delta.changed.length > 0 || delta.coarse.length > 0) {
         wakes.world += 1;
         any = true;
@@ -423,11 +779,12 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         if (delta.coarse.length > 0) dirtyAll = true;
       }
       if (delta.removed.length > 0) {
+        kids.clear();
         for (const e of delta.removed) {
           const st = states.get(e);
           if (st === undefined) continue;
           ghostOf(e, st);   // the ghost takes the asset with it
-          if (!ghosts.has(e)) forget(st.kind, e);   // never drawn: nothing fades, the kind lets go now
+          if (!ghosts.has(e)) forget(st.kind, e);   // never drawn in the root: nothing fades, the kind lets go now (D2c)
           states.delete(e);
           pins.delete(e);
           assets.delete(e);
@@ -444,6 +801,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     geometryOf: (e) => states.get(e)?.geometry ?? undefined,
     kindOf: (e) => states.get(e)?.kind,
     fluxOf: (e) => { const st = states.get(e); return st === undefined ? undefined : fluxOf(st); },
+    insideViewOf: (e) => states.get(e)?.inside ?? undefined,
+    navFace,
     pin(e, asset) {
       if (asset === undefined) { if (!assets.delete(e)) return; } else assets.set(e, asset);
       woke = true;   // every record is remade at the next build; the facts need no re-read
@@ -469,6 +828,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       ghosts.clear();
       pins.clear();
       assets.clear();
+      kids.clear();
     },
   };
 }

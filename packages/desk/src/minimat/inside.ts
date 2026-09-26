@@ -17,9 +17,9 @@ import type { Box } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
 import type { SlotLight } from "../mat/layout";
 import { arrivalCamera, type CameraState, FIT, type FitBand, type Flight, flightOpacity, outgoingCamera, type PortalAffine, portalAffine, type Rect, type Viewport, visibleRect } from "../nav/flight";
-import { boxOfPortal, PORTAL_GATE, type PortalClip, portalPresence, type Presentation } from "../nav/portal";
+import { boxOfPortal, clipOf, PORTAL_GATE, type PortalClip, portalPresence, type Presentation } from "../nav/portal";
 import type { MiniMatInstance } from "./layout";
-import { type Chip, DEFAULT_MINIMAT_LAW, faceClip, faceLattice, faceOf, type MiniMatGeometry, type MiniMatLaw, numeralsOf } from "./minimat";
+import { type Chip, DEFAULT_MINIMAT_LAW, FACE_RADIUS, faceLattice, faceOf, type MiniMatGeometry, type MiniMatLaw, numeralsOf } from "./minimat";
 
 export interface InsideView {
   /** The embedding: inside → host (`host = o + inside · s`) — the flight's own. */
@@ -43,9 +43,17 @@ export interface InsideView {
  * flight's first frame. Null only for a face with no area.
  */
 export function insideView(G: MiniMatGeometry, content: Rect | null, cam: CameraState, vp: Viewport, fit: FitBand = FIT, gate: readonly [number, number] = PORTAL_GATE): InsideView | null {
-  const K = faceOf(G);
+  return insideViewOfFace(faceOf(G), content, cam, vp, fit, gate);
+}
+
+/**
+ * The same view from a FACE rect alone (D2b): what a kind's `face(geometry)` hands the builder, so
+ * any container kind's inside is built by the one law — `faceClip` is `clipOf(faceOf(G), FACE_RADIUS, cam)`,
+ * so the numbers are `insideView`'s to the bit.
+ */
+export function insideViewOfFace(K: Rect, content: Rect | null, cam: CameraState, vp: Viewport, fit: FitBand = FIT, gate: readonly [number, number] = PORTAL_GATE): InsideView | null {
   if (!(K.width > 0) || !(K.height > 0)) return null;
-  const clip = faceClip(G, cam);
+  const clip = clipOf(K, FACE_RADIUS, cam);
   const arrival = arrivalCamera(content, vp, fit);
   const M = portalAffine(visibleRect(arrival, vp.width, vp.height), K);
   return { M, arrival, cam: outgoingCamera(M, cam), clip, presence: portalPresence(clip, gate), box: boxOfPortal(clip, vp) };
@@ -73,7 +81,10 @@ export const insidePresent = (view: InsideView): Presentation => ({ opacity: 1, 
  * the face's, by the same lamp). An exit keeps its objects whole and lands on whatever the face
  * shows at the landing (the old landing fade). A frozen flight is a dissolve.
  */
-export function flightPresent(f: Flight, clip: PortalClip | undefined, gate: readonly [number, number] = PORTAL_GATE): { readonly incoming: Presentation; readonly outgoing: Presentation } {
+/** What the flight helpers read of a flight: its kind, its progress, whether it is frozen — the prototype's `Flight` or core's `NavTransition` alike. */
+export type FlightState = Pick<Flight, "kind" | "p" | "frozen">;
+
+export function flightPresent(f: FlightState, clip: PortalClip | undefined, gate: readonly [number, number] = PORTAL_GATE): { readonly incoming: Presentation; readonly outgoing: Presentation } {
   const op = flightOpacity(f.kind, f.p, f.frozen);
   if (f.frozen || !clip) return { incoming: { opacity: op.incoming }, outgoing: { opacity: op.outgoing } };
   if (f.kind === "enter") return { incoming: { opacity: op.incoming, objects: portalPresence(clip, gate), portal: clip }, outgoing: { opacity: op.outgoing } };
@@ -98,7 +109,7 @@ const ease = (p: number, [a, b]: readonly [number, number]): number => { const x
  * ends under the arriving desk's — the lamp its mini mat's inside is lit by at rest. A frozen
  * flight is two whole desks under their own lamps.
  */
-export function flightLights(f: Flight, cam: CameraState, outCam: CameraState): { readonly incoming?: SlotLight; readonly outgoing?: SlotLight } {
+export function flightLights(f: FlightState, cam: CameraState, outCam: CameraState): { readonly incoming?: SlotLight; readonly outgoing?: SlotLight } {
   if (f.frozen) return {};
   return f.kind === "enter" ? { incoming: { a: outCam, b: cam, t: ease(f.p, HANDOVER.enter) } } : { outgoing: { a: outCam, b: cam, t: ease(f.p, HANDOVER.exit) } };
 }

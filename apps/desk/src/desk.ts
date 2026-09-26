@@ -57,7 +57,8 @@ export function createDeskEngine(): CanvasEngine {
     canvasTypes: [DeskCanvas],
     rootCanvas: DeskCanvas,
     presentationFallback: DeskCanvas,
-    settings: { zoom: { min: ZOOM_MIN, max: ZOOM_MAX }, gestures: { wheel: "zoom" } },
+    // design-015 §9: the zoom-through is ON for the desk (a wheel that leaves a face covering the view cuts into it)
+    settings: { zoom: { min: ZOOM_MIN, max: ZOOM_MAX }, gestures: { wheel: "zoom" }, nav: { zoomThrough: { enabled: true } } },
   });
   if (deskRoom() !== undefined) return engine;
   engine.docs.create();

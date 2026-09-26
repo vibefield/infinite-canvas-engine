@@ -28,8 +28,8 @@ const results = resolve(app, "results");
 mkdirSync(results, { recursive: true });
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-/** The scenes the world draws in this slice: the mat, the rulers, the notes — flat desks, no insides, no flight. */
-const WORLD_SCENES = /^(mat|ruler|paper)-/;
+/** The scenes the world draws: the mat, the rulers, the notes, the mini mats with their insides and chains, the flights (D2b) — the prints and the whiteboards are D3r's rigs. */
+const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav)-/;
 
 const die = (what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`); process.exit(1); };
 if (!existsSync(resolve(app, "dist/index.html"))) die("the desk's build is missing (apps/desk/dist/index.html)", "pnpm --filter ./apps/desk build");

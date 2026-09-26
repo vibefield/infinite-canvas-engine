@@ -27,7 +27,8 @@
 // a blink, a face landing); after it, the editor follows the drawn note. A committed raster is
 // pinned through the writing, so a note that leaves the desk gives its rect back (the page-slot leak).
 
-import type { Entity, FramePickSlot, GridConfig as CoreGridConfig, PresentationTransitionAdapter, ReflectorDef, WidgetType, World } from "@ice/core";
+import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
+import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder } from "../compose/builder";
 import { createPickSource } from "../compose/pick";
@@ -41,13 +42,14 @@ import type { GlyphAtlasMeta, MatConfig, PlateName } from "../mat/layout";
 import { MAT_SHADER_FILES, matShaders } from "../mat/shaders";
 import { objectKindOf } from "../object";
 import { blueNoise } from "../assets/blue-noise.gen";
-import { PAPER_KIND } from "../kinds/paper";
+import { PAPER_KIND, type PaperWriting } from "../kinds/paper";
 import type { KindLocal } from "../kinds/world";
 import { createNoteTyping, type NoteTyping, type TypingDocs } from "../objects/typing";
 import type { TextRaster } from "../paper/raster";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 import { createNoteEditor, type NoteEditor } from "./editor";
 import { PEN_FACES } from "./ink";
+import type { InsideView } from "../minimat/inside";
 import { shaderText } from "../shaders";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
 import type { GroundTheme, Palette } from "../theme";
@@ -101,9 +103,14 @@ export interface DeskLayerContext {
   readonly host: { readonly container: HTMLElement; readonly contentPlane: HTMLElement };
   readonly world: World;
   readonly framePick?: FramePickSlot;
+  /** The nav geometry seam (design-015 §9, D2b): the desk sets its word on its containers' drawn faces here, clears it at dispose. */
+  readonly navGeometry?: NavGeometrySlot;
   readonly transitions?: { register(adapter: PresentationTransitionAdapter): () => void };
   readonly catalog?: { widgetTypes(): readonly WidgetType[] };
 }
+
+/** A note's writing as a still states it for the far LOD (kinds/paper.ts `PaperWriting`): the text's left edge, its em, each line's baseline and width, note units. */
+export type GreekPin = PaperWriting;
 
 export interface DeskLayerHandle {
   /** The drawing reflector — the facade registers it right after the plane transform, where the ground layer has always gone. */
@@ -138,10 +145,29 @@ export interface DeskLayerHandle {
   pinRaster(entity: Entity, bytes: Uint8Array<ArrayBuffer>, meta: { readonly w: number; readonly h: number }): boolean;
   /** Every raster forgotten and the pages carved afresh (a scene reload — the oracle's `reset(true)`). */
   clearRasters(): void;
+  /** Pin a note's writing lines for its far-LOD chip (a still states them; the live text's layout is D2c's); `undefined` unpins. */
+  pinGreek(entity: Entity, writing: GreekPin | undefined): void;
   /** Pin an object's spring targets for a still (a scene's `held` = `{ lift: 1 }`, never a `Grab`); `undefined` unpins. */
   pinFlux(entity: Entity, targets: Partial<Pick<ObjectFlux, "lift" | "hover" | "ring">> | undefined): void;
   /** Every flux pin lifted. */
   clearFlux(): void;
+  /** Live insides on or off (the oracle's `portals: false` — every face draws its far LOD alone). */
+  setPortals(on: boolean): void;
+  /** Pin the root's dressing (the oracle's `lodZoom`); `null` unpins. */
+  pinLodZoom(zoom: number | null): void;
+  /** Hold every spring and ghost where it is — a still of a moving frame (a rig's flight pin). */
+  freeze(on: boolean): void;
+  /** Hold the re-dressing ramp at its start (the prototype harness's `redressPinned`). */
+  holdRedress(on: boolean): void;
+  /** THE SEAM's answer for a container under the camera (the live one unless given) — a rig's witness (`DeskBuilder.navFace`). */
+  navFace(entity: Entity, cam?: { readonly x: number; readonly y: number; readonly zoom: number }): NavFace | undefined;
+  /** The last build's view of a container's inside (a rig's witness). */
+  insideViewOf(entity: Entity): InsideView | undefined;
+  /**
+   * The camera of the flight on now at progress `p` (the prototype's `flightAt`: the endpoints c0 and c1 themselves,
+   * `flightCamera` between) — what a rig's flight pin writes each tick; `undefined` when no flight drives.
+   */
+  flightCameraAt(p: number): { readonly x: number; readonly y: number; readonly zoom: number } | undefined;
   /** The ambient policy, live: the mode, the idle window. */
   setAmbient(mode: AmbientMode, idleMs?: number): void;
   ambient(): Ambient;
@@ -268,6 +294,11 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const pick = createPickSource(builder);
     const framePick = ctx.framePick;
     if (framePick !== undefined) framePick.current = pick;
+    // the nav geometry seam (design-015 §9): the desk's word on its containers' faces AS DRAWN — core's nav, the zoom-through and the
+    // drop-into read it; the cut is exact only on the face as drawn
+    const navSource = { face: (container: Entity, cam: { readonly x: number; readonly y: number; readonly zoom: number }) => builder.navFace(container, cam) };
+    const navGeometry = ctx.navGeometry;
+    if (navGeometry !== undefined) navGeometry.current = navSource;
     // the ground plane's transition adapter: prepared the moment it is asked — the desk's second slot is built from the world (D2b)
     const detachTransition = ctx.transitions?.register({ id: "@ice/desk", plane: "ground", prepare: () => null }) ?? null;
 
@@ -342,8 +373,30 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         writing()?.reset();
         compose.wake("pin");
       },
+      pinGreek(entity, lines) {
+        // the greeked lines alone ride the builder's asset (the committed raster lives in the note's writing since D2c)
+        builder.pin(entity, lines === undefined ? undefined : { greek: lines });
+        compose.wake("pin");
+      },
       pinFlux(entity, targets) { builder.pinFlux(entity, targets); compose.wake("pin"); },
       clearFlux() { builder.clearFlux(); compose.wake("pin"); },
+      setPortals: (on) => compose.pinBuild({ portals: on }),
+      pinLodZoom: (zoom) => compose.pinBuild({ lodZoom: zoom }),
+      freeze: (on) => compose.pinBuild({ freeze: on }),
+      holdRedress: (on) => compose.pinBuild({ holdRedress: on }),
+      navFace(entity, cam) {
+        const c = cam ?? world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1 };
+        return builder.navFace(entity, { x: c.x, y: c.y, zoom: c.zoom });
+      },
+      insideViewOf: (e) => builder.insideViewOf(e),
+      flightCameraAt(p) {
+        const t = world.getResource(NavTransition);
+        const vp = world.getResource(Viewport);
+        if (t === undefined || !t.active || vp === undefined) return undefined;
+        const c0 = { x: t.c0x, y: t.c0y, zoom: t.c0z };
+        const c1 = { x: t.c1x, y: t.c1y, zoom: t.c1z };
+        return p <= 0 ? c0 : p >= 1 ? c1 : flightCamera(c0, c1, p, vp.w, vp.h);
+      },
       setAmbient(mode, idleMs) { ambient.configure({ mode, ...(idleMs !== undefined ? { idleMs } : {}) }); compose.wake("ambient"); },
       ambient: () => ambient,
       submits: () => instrument,
@@ -365,6 +418,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);
         if (framePick !== undefined && framePick.current === pick) framePick.current = null;
+        if (navGeometry !== undefined && navGeometry.current === navSource) navGeometry.current = null;
         detachTransition?.();
         compose.dispose();
         builder.dispose();

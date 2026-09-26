@@ -18,7 +18,7 @@ import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { MatPass } from "../mat/mat-pass";
 import { insideView } from "../minimat/inside";
 import type { MiniMatInstance } from "../minimat/layout";
-import { DEFAULT_MINIMAT_LAW, faceClip, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "../minimat/minimat";
+import { type ChildShape, chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "../minimat/minimat";
 import { miniMatInstance } from "../minimat/inside";
 import { MiniMatPass } from "../minimat/pass";
 import { MINIMAT_SHADER_FILES, miniMatShaders } from "../minimat/shaders";
@@ -97,6 +97,14 @@ export interface MiniMatKindOptions {
 }
 
 /** The mini mat's kind, whole (kinds/world.ts `ObjectKind`): the program, and the world half on the prototype's laws over an empty inside. */
+/** The grid a mini mat's inside draws with: the desk's own fade-in, the mat in the mini mat's vinyl, no rulers (a portal's inside never prints them). */
+function insideGrid(ctx: Pick<ObjectContext, "props" | "look">, root: GridConfig): GridConfig {
+  const look = ctx.look as MiniMatLook | undefined;
+  const vinylName = stringProp(ctx.props, "vinyl", SAGE);
+  const vinyl = vinylName === SAGE ? root.mat.ground : (look?.vinyls[vinylName] ?? root.mat.ground);
+  return { fadeIn: root.fadeIn, mat: { ...root.mat, ground: vinyl, ruler: { ...root.mat.ruler, on: false } } };
+}
+
 export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGeometry, MiniMatInstance, MiniMatLook> {
   const law = opts.law ?? DEFAULT_MINIMAT_LAW;
   const program = miniMatProgram(opts.text ?? shaderText);
@@ -108,24 +116,33 @@ export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGe
       return resolveMiniMat({ cx: r.cx, cy: r.cy, w: r.w, h: r.h }, { held: ctx.flux.lift, hover: ctx.flux.hover, ring: ctx.flux.ring, fade: ctx.flux.fade }, law, ctx.lamp);
     },
     record(G: MiniMatGeometry, ctx: ObjectContext): MiniMatInstance {
-      const look = ctx.look as MiniMatLook | undefined;
-      const vinylName = stringProp(ctx.props, "vinyl", SAGE);
-      const vinyl = vinylName === SAGE ? ctx.grid.mat.ground : (look?.vinyls[vinylName] ?? ctx.grid.mat.ground);
-      // the inside's grid: the desk's own fade-in, the mat in the mini mat's vinyl, no rulers (a portal's inside never prints them)
-      const grid: GridConfig = { fadeIn: ctx.grid.fadeIn, mat: { ...ctx.grid.mat, ground: vinyl, ruler: { ...ctx.grid.mat.ruler, on: false } } };
+      const grid = insideGrid(ctx, ctx.grid);
       const cam = { x: ctx.view.camX, y: ctx.view.camY, zoom: ctx.view.zoom };
       const vp = { width: ctx.view.width, height: ctx.view.height };
-      // an EMPTY inside (D2a-world): its arrival is the origin at zoom 1, its face's far LOD the lattice of that desk, no chips
-      const view = insideView(G, null, cam, vp, FIT, PORTAL_GATE) ?? {
+      // the inside as the builder saw it (D2b: its content's bounds, its view through this face, its children as chips); with no
+      // word from the builder — a bare kind — the inside is EMPTY: its arrival is the origin at zoom 1, its face's far LOD the lattice
+      // of that desk, no chips. The view is the flight's own numbers, so the far LOD and the live inside agree to the bit.
+      const view = ctx.inside?.view ?? insideView(G, ctx.inside?.content ?? null, cam, vp, FIT, PORTAL_GATE) ?? {
         M: { s: 1, ox: G.centre[0], oy: G.centre[1] }, arrival: cam, cam, clip: faceClip(G, cam), presence: 0, box: { x: 0, y: 0, w: 0, h: 0 },
       };
+      const chips = (ctx.inside?.chips ?? []).map((c) => chipOf(c, view.M, law.chips.greekWeight));
       const name = stringProp(ctx.props, "name", "");
-      return { ...miniMatInstance(G, view, grid, [], name || undefined, true, law), live: -1 };
+      return { ...miniMatInstance(G, view, grid, chips, name || undefined, true, law), live: -1 };
     },
     hit(G: MiniMatGeometry, wx: number, wy: number): ObjectHit | null {
       const h = pickMiniMat(G, wx, wy);
       return h === "face" ? "content" : h === "border" ? "frame" : null;
     },
+    /** The face as drawn: the sheet inset by its printed border, through its springs (`faceOf` — what the live inside and the nav cut read). */
+    face(G: MiniMatGeometry) { return faceOf(G); },
+    /** Inside another mini mat, a mini mat is a vinyl chip with its border (the prototype's `childrenOf`). */
+    chip(G: MiniMatGeometry, ctx: ObjectContext): ChildShape {
+      const look = ctx.look as MiniMatLook | undefined;
+      const vinylName = stringProp(ctx.props, "vinyl", SAGE);
+      const vinyl = vinylName === SAGE ? ctx.grid.mat.ground : (look?.vinyls[vinylName] ?? ctx.grid.mat.ground);
+      return { kind: "mat", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: 0, radius: G.radius, colour: vinyl, height: G.thick, margin: G.margin };
+    },
+    insideGrid,
     theme(palette: Palette, _name: ThemeName): MiniMatLook {
       const p = palette as MiniMatPalette;
       return { vinyls: Object.fromEntries(Object.entries(p.vinyls ?? {}).map(([k, t]) => [k, rgb(t.css)])) };

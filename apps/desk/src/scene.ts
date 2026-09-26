@@ -1,23 +1,27 @@
 // A STILL, as the oracle states it (packages/desk/oracle/scenes.mjs), spawned INTO THE WORLD: the
 // scene's objects become entities in ONE `undoable: false` transaction in the prototype's paint
-// order (the mini mats, then the notes), the camera is written, the mat's clocks and plate are pinned
-// on the layer's handle (never in durable props — the brief's pinned detail), the rulers become the
-// app's mat config, the committed ink raster is pinned on its note, the theme is set — and the
-// desk draws the oracle's frame from the world (`rig:world` holds it to Dawn at maxΔ 0). `held`
-// is a FLUX PIN (the lift's target), not a `Grab`: a Grab would also carry the object to the top
-// (S1's rule), which the oracle's still does not do. `selected` is the real `Selected` tag.
+// order (the mini mats, then the notes; each mini mat's inside as its CHILDREN, recursively, in the
+// inside's own units), the camera is written, the mat's clocks and plate are pinned on the layer's
+// handle (never in durable props — the brief's pinned detail), the rulers become the app's mat
+// config, the committed ink raster is pinned on its note, a note's greeked writing on it too (the
+// chips' lines — a still states them; the live text's layout is D2c's), the theme is set — and the
+// desk draws the oracle's frame from the world (`rig:world` holds it to Dawn at maxΔ 0). `held` is a
+// FLUX PIN (the lift's target), not a `Grab`: a Grab would also carry the object to the top (S1's
+// rule), which the oracle's still does not do. `selected` is the real `Selected` tag.
 //
-// The minimat and nav scenes state insides and flights — D2b's; a scene naming them throws here so a
-// rig never compares a half-drawn frame.
+// A NAV scene (D2b) flies for real: the desk draws the still once so the mini mat's face is AS DRAWN
+// (the flight starts from it — design-015 §9), then `enterContainer` (or a `none` enter onto the
+// inside's arrival and `exitContainer` back), and the flight is PINNED at the scene's progress by the
+// host's `pinFlight` — the camera and the resource held there every tick, the frame a still.
 
-import { attachSpawnBehaviors, attachSpawnParent, Camera, type CanvasEngine, cascadeDestroy, type Entity, guardedTransaction, Position, PrefabId, Size, widgetSpawnInits, writeRuntimeResource, defineQuery, Active } from "@ice/core";
+import { abortNavFlight, attachSpawnBehaviors, attachSpawnParent, Camera, type CanvasEngine, cascadeDestroy, type Entity, guardedTransaction, Position, PrefabId, Size, widgetSpawnInits, writeRuntimeResource, defineQuery, Active } from "@ice/core";
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk/host";
 import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
-import { MINIMAT, PAPER, type ThemeName } from "@ice/desk/theme";
+import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk/theme";
 import type { PaperKind } from "@ice/desk/kinds";
 import { oracleFixtures } from "./fixtures";
 
-/** A scene as scenes.mjs states one — the mat, ruler and paper scenes' fields (the rest is D2b's). */
+/** A scene as scenes.mjs states one — the mat, ruler, paper, minimat and nav scenes' fields. */
 export interface OracleScene {
   readonly camX: number;
   readonly camY: number;
@@ -29,10 +33,14 @@ export interface OracleScene {
   readonly minimats?: readonly OracleMiniMat[];
   readonly paper?: { readonly chain?: boolean };
   readonly fadeIn?: readonly [number, number];
-  readonly nav?: unknown;
+  /** A flight pinned at `p`: into (`enter`) or out of (`exit`) the mini mat at `container` (an index into `minimats`). */
+  readonly nav?: OracleNav;
+  /** Live insides on (the default); false = every face draws its far LOD alone. */
   readonly portals?: boolean;
+  /** The root's dressing pinned. */
   readonly lodZoom?: number;
 }
+export interface OracleNav { readonly kind: "enter" | "exit"; readonly container: number; readonly p: number }
 export interface OracleNote {
   readonly x: number;
   readonly y: number;
@@ -46,6 +54,14 @@ export interface OracleNote {
   readonly held?: boolean;
   readonly asset?: string;
   readonly angle?: number;
+  /** The note's lines of writing as the far LOD greeks them: [baseline, width], note units (scenes.mjs). */
+  readonly greek?: readonly (readonly [number, number])[];
+}
+export interface OracleInside {
+  readonly notes?: readonly OracleNote[];
+  readonly minimats?: readonly OracleMiniMat[];
+  readonly prints?: readonly unknown[];
+  readonly boards?: readonly unknown[];
 }
 export interface OracleMiniMat {
   readonly x: number;
@@ -56,7 +72,7 @@ export interface OracleMiniMat {
   readonly tone?: string;
   readonly selected?: boolean;
   readonly held?: boolean;
-  readonly inside?: unknown;
+  readonly inside?: OracleInside;
 }
 
 const widgetsQ = defineQuery([Position, Size, PrefabId]);
@@ -75,12 +91,14 @@ export function clearDesk(engine: CanvasEngine): void {
 
 export interface SpawnSpec {
   readonly type: string;
-  /** The CENTRE, world units (the prototype's convention) — converted to ICE's top-left here. */
+  /** The CENTRE, world units (the prototype's convention) — converted to ICE's top-left here. In a container, the inside's own units. */
   readonly cx: number;
   readonly cy: number;
   readonly w: number;
   readonly h: number;
   readonly props: Readonly<Record<string, unknown>>;
+  /** The container it goes INTO (a mini mat's child); absent = the open frame. */
+  readonly parent?: Entity;
 }
 
 /** Spawn objects in ONE transaction (undoable or not), in the order given (= the sibling order = the paint order within a stratum). */
@@ -95,56 +113,95 @@ export function spawnAll(engine: CanvasEngine, specs: readonly SpawnSpec[], undo
       if (widget === undefined) throw new Error(`desk: no object type "${s.type}"`);
       const { prefab, overrides } = widgetSpawnInits(s.type, { x: s.cx - s.w / 2, y: s.cy - s.h / 2, w: s.w, h: s.h, props: s.props }, widget);
       const e = tx.spawnPrefab(prefab, overrides);
-      attachSpawnParent(tx, world, e, {});
+      attachSpawnParent(tx, world, e, s.parent === undefined ? {} : { parent: s.parent });
       attachSpawnBehaviors(tx, widget, e);
       out.push(e);
     }
   }, undoable ? undefined : { undoable: false });
-  // `Active` is derived in the tick; the facade's own spawn stamps it for a spawn into the open frame, so the scope-filtered ops see it now
-  for (const e of out) if (!world.hasTag(e, Active)) world.addTag(e, Active);
+  // `Active` is derived in the tick; the facade's own spawn stamps it for a spawn into the open frame, so the scope-filtered ops see it
+  // now — a mini mat's child is NOT a member of the open frame and waits for the tick's word
+  specs.forEach((s, i) => { const e = out[i] as Entity; if (s.parent === undefined && !world.hasTag(e, Active)) world.addTag(e, Active); });
   return out;
 }
 
 /** The scene's note as a spawn: the oracle's defaults (`seed ?? 1`, `pen ?? "felt"`, the product's one paper, 200²). */
-const noteSpec = (n: OracleNote): SpawnSpec => {
+const noteSpec = (n: OracleNote, parent?: Entity): SpawnSpec => {
   if (n.angle !== undefined) throw new Error("desk: a scene note with an explicit angle — the tilt is the seed's (no angle prop)");
-  return { type: NOTE_TYPE, cx: n.x, cy: n.y, w: n.w ?? PAPER.size, h: n.h ?? PAPER.size, props: { seed: n.seed ?? 1, pen: n.pen ?? "felt", paper: "yellow", text: n.text ?? "" } };
+  return { type: NOTE_TYPE, cx: n.x, cy: n.y, w: n.w ?? PAPER.size, h: n.h ?? PAPER.size, props: { seed: n.seed ?? 1, pen: n.pen ?? "felt", paper: "yellow", text: n.text ?? "" }, ...(parent === undefined ? {} : { parent }) };
 };
-const matSpec = (m: OracleMiniMat): SpawnSpec => ({ type: MINIMAT_TYPE, cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h, props: { name: m.name ?? "", vinyl: m.tone ?? "sage" } });
+const matSpec = (m: OracleMiniMat, parent?: Entity): SpawnSpec => ({ type: MINIMAT_TYPE, cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h, props: { name: m.name ?? "", vinyl: m.tone ?? "sage" }, ...(parent === undefined ? {} : { parent }) });
 
 export interface SceneHost {
   readonly engine: CanvasEngine;
   readonly handle: DeskLayerHandle;
   setTheme(name: ThemeName, pin: boolean): void;
+  /** Hold the flight on at progress `p` every tick (a still of a flight frame); `null` lets it fly. */
+  pinFlight(p: number | null): void;
 }
 
-/** Spawn the scene, pin the mat, the rasters and the flux, set the camera and the theme. Resolves once every asset is uploaded. */
+const frame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()));
+
+/**
+ * Spawn a desk's notes and mini mats into `parent` (the open frame, or a mini mat), recursing into every
+ * mini mat's inside: the mats first (sheets), then the notes (things) — one transaction per desk, the
+ * children's after their parent's (its entity must exist to be their `ChildOf`). Pins the flux, the
+ * rasters and the greeked writing as it goes. Returns the desk's own entities in spawn order.
+ */
+async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFixtures>>, desk: { readonly notes?: readonly OracleNote[]; readonly minimats?: readonly OracleMiniMat[] }, parent: Entity | undefined, selected: Entity[]): Promise<{ readonly notes: Entity[]; readonly minimats: Entity[] }> {
+  const { engine, handle } = host;
+  const mats = desk.minimats ?? [];
+  const notes = desk.notes ?? [];
+  const spawned = spawnAll(engine, [...mats.map((m) => matSpec(m, parent)), ...notes.map((n) => noteSpec(n, parent))], false);
+  const matEntities = spawned.slice(0, mats.length);
+  const noteEntities = spawned.slice(mats.length);
+  mats.forEach((m, i) => { const e = matEntities[i] as Entity; if (m.selected) selected.push(e); if (m.held) handle.pinFlux(e, { lift: 1 }); });
+  notes.forEach((n, i) => {
+    const e = noteEntities[i] as Entity;
+    if (n.selected) selected.push(e);
+    if (n.held) handle.pinFlux(e, { lift: 1 });
+    // the committed ink raster on the note that carries it — allocated in scene order, so it lands where the oracle's did
+    if (n.asset === "note-1" && fx.inkMeta.w > 0) {
+      const ok = handle.pinRaster(e, fx.ink, { w: fx.inkMeta.w, h: fx.inkMeta.h });
+      if (!ok) throw new Error("desk: the ink pages refused the committed raster");
+    } else if (n.asset !== undefined) throw new Error(`desk: unknown note asset "${n.asset}"`);
+    // the writing the far LOD greeks (frame.mjs `childrenOf`: x0 = the hand's pad, em = its size)
+    if (n.greek !== undefined && n.greek.length > 0) handle.pinGreek(e, { x0: HAND.pad, em: HAND.size, lines: n.greek.map(([y, width]) => ({ y, width })) });
+  });
+  for (let i = 0; i < mats.length; i++) {
+    const inside = mats[i]?.inside;
+    if (inside === undefined) continue;
+    if ((inside.prints?.length ?? 0) > 0 || (inside.boards?.length ?? 0) > 0) throw new Error("desk: a print or a whiteboard inside a mini mat needs its world half (D3r-b)");
+    await spawnDesk(host, fx, inside, matEntities[i] as Entity, selected);
+  }
+  return { notes: noteEntities, minimats: matEntities };
+}
+
+/** Spawn the scene, pin the mat, the rasters and the flux, set the camera and the theme; fly and pin a nav scene. Resolves once every asset is uploaded. */
 export async function setScene(host: SceneHost, s: OracleScene): Promise<{ readonly notes: Entity[]; readonly minimats: Entity[] }> {
   const { engine, handle } = host;
-  if (s.nav !== undefined) throw new Error("desk: a nav scene needs D2b (the flight, the departed desk)");
-  if ((s.minimats ?? []).some((m) => m.inside !== undefined && Object.keys(m.inside as object).some((k) => ((m.inside as Record<string, unknown[]>)[k] ?? []).length > 0))) throw new Error("desk: a scene with a mini mat's inside needs D2b (the live insides, the chips)");
-  if (s.portals === false || s.lodZoom !== undefined) throw new Error("desk: a scene with portals/lodZoom needs D2b");
   // the ground must be here: the paper pass takes the raster, the mat the plates
-  while (!handle.available()) { if (handle.status().state === "failed") throw new Error(`desk: ${handle.status().message}`); await new Promise((r) => requestAnimationFrame(r)); }
+  while (!handle.available()) { if (handle.status().state === "failed") throw new Error(`desk: ${handle.status().message}`); await frame(); }
   const fx = await oracleFixtures();
-  // 1. a fresh desk: every object gone, the rasters forgotten and the pages carved afresh, the pins lifted
+  // 1. a fresh desk at the root: any flight ENDED (unpinned, a pinned exit flight at depth 0 would fly on and drive the camera through
+  //    this scene's setup), any frame left, every object gone, the rasters forgotten and the pages carved afresh, every pin lifted
+  host.pinFlight(null);
+  abortNavFlight(engine.world);
+  while (engine.nav.depth() > 0) engine.ops.exitContainer({ transition: "none" });
   clearDesk(engine);
   handle.clearRasters();
   handle.pinMat(null);
   handle.clearFlux();
+  handle.setPortals(s.portals !== false);
+  handle.pinLodZoom(s.lodZoom ?? null);
+  handle.freeze(false);
+  handle.holdRedress(false);
   // 2. the theme, pinned (the OS no longer leads)
   host.setTheme(s.theme, true);
-  // 3. the objects, in the prototype's paint order — the mini mats (sheets), then the notes (things) — one transaction
-  const mats = s.minimats ?? [];
-  const notes = s.notes ?? [];
-  const spawned = spawnAll(engine, [...mats.map(matSpec), ...notes.map(noteSpec)], false);
-  const matEntities = spawned.slice(0, mats.length);
-  const noteEntities = spawned.slice(mats.length);
-  // 4. the facts and the flux a still states: selected → the tag; held → the lift's target pinned (never a Grab: no raise)
-  const selected = [...mats.flatMap((m, i) => (m.selected ? [matEntities[i] as Entity] : [])), ...notes.flatMap((n, i) => (n.selected ? [noteEntities[i] as Entity] : []))];
+  // 3. the objects, in the prototype's paint order — the mini mats (sheets), then the notes (things) — and every inside as children
+  const selected: Entity[] = [];
+  const root = await spawnDesk(host, fx, s, undefined, selected);
+  // 4. the facts a still states: selected → the tag (the flux pins were made as the objects were spawned)
   engine.ops.setSelection(selected, "replace");
-  mats.forEach((m, i) => { if (m.held) handle.pinFlux(matEntities[i] as Entity, { lift: 1 }); });
-  notes.forEach((n, i) => { if (n.held) handle.pinFlux(noteEntities[i] as Entity, { lift: 1 }); });
   // 5. the camera: the prototype's camX/camY/zoom ARE ICE's Camera
   writeRuntimeResource(engine.world, Camera, { x: s.camX, y: s.camY, zoom: s.zoom, gesturing: false });
   // 6. the mat: the oracle's fixtures on it (its plates, its committed glyphs), its config from the engine's defaults with the scene's
@@ -158,14 +215,22 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<{ reado
   // 7. the paper's law and chain (the oracle's `papers.law = DEFAULT; papers.chain = s.paper?.chain ?? false`)
   const paper = handle.ground()?.pass("paper") as PaperKind | undefined;
   if (paper !== undefined) paper.pass.chain = s.paper?.chain ?? false;
-  // 8. the committed ink raster on the note that carries it — allocated first, so it lands where the oracle's did
-  notes.forEach((n, i) => {
-    if (n.asset === "note-1" && fx.inkMeta.w > 0) {
-      const ok = handle.pinRaster(noteEntities[i] as Entity, fx.ink, { w: fx.inkMeta.w, h: fx.inkMeta.h });
-      if (!ok) throw new Error("desk: the ink pages refused the committed raster");
-    } else if (n.asset !== undefined) throw new Error(`desk: unknown note asset "${n.asset}"`);
-  });
-  return { notes: noteEntities, minimats: matEntities };
+  // 8. a NAV scene: the desk draws the still once — the mini mat's face is then AS DRAWN, and the flight starts from it (design-015 §9,
+  //    the seam) — then the op, and the flight pinned at the scene's progress
+  if (s.nav !== undefined) {
+    const container = root.minimats[s.nav.container];
+    if (container === undefined) throw new Error(`desk: the nav scene names mini mat ${s.nav.container}, which the scene does not have`);
+    for (let i = 0; i < 3; i++) await frame();
+    if (s.nav.kind === "enter") engine.ops.enterContainer(container);
+    else {
+      // the way back out: in as a cut onto the inside's arrival (the oracle's innerCam), then the exit flight to the scene's camera
+      engine.ops.enterContainer(container, { transition: "none" });
+      for (let i = 0; i < 2; i++) await frame();
+      engine.ops.exitContainer();
+    }
+    host.pinFlight(s.nav.p);
+  }
+  return root;
 }
 
 export { MiniMat, Note };
