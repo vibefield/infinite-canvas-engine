@@ -12,7 +12,9 @@
 // note no ring; the screen-space selection menu stands 10 px above them and steps aside during a drag, back 200 ms after;
 // a snap lights the laser along the aligned edge; the vellum draws, touches, then folds onto the union; a taped note refuses
 // a drag with a 2 px give (its Position never moves) and the vellum passes over it; ⌘⇧L tapes and lifts; inside a mini mat
-// entered by a double-click, a selected note's brackets stand where the entered camera draws it. Exit 0 = every check passed.
+// entered by a double-click, a selected note's brackets stand where the entered camera draws it.
+// A click whose release shares its frame with a far move still selects its note, and nothing follows
+// the cursor after (core's fold cut). Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -392,6 +394,41 @@ try {
   await key("Escape", "Escape", 27);   // no gesture to cancel: Escape leaves the frame (D2b)
   await land();
   await settle();
+
+  // --- 8e. a click whose release shares its frame with a FAR move (core, 2026-09-26): mousePressed, mouseReleased and a
+  //     mouseMoved ~1000 px off go out back to back — sent without awaiting one another, no frame wait — so they fold into one
+  //     or two engine ticks; then the shape it was found in: the press stepped alone (its recognizers are in flight), the release
+  //     and the move together. Either way the click selects the note, nothing is captured, and the note stays put while the
+  //     cursor wanders on. Before core's fold cut the release was judged at the MOVE's point: all in one tick, the click picked the
+  //     bare mat and never selected; the release with the move, the drag went Active on the note and it followed the cursor (a
+  //     ghost drag). The moves carry no button, as a hand's do. The note is the first one where 3 left it — looked up, as ⌘Z in 4
+  //     brought it back as a new entity (B is inside the mat, C over its face). Each step waits on the WORLD, not a clock — no
+  //     gesture in flight before the press, the press's recognizers live before the release (shape two), the wander's last point
+  //     on the pointer before the checks — and the waits are a check of their own: on the old source a step EARLIER tripped the
+  //     same defect (8c's click, then the far move to the note) and left a gesture in flight, which a timed row would misread.
+  const inFlight = () => q("window.__desk.engine.engine.frame.settling().includes('gestures')");
+  const until = async (fn) => { for (let i = 0; i < 400; i++) { if (await fn()) return true; await sleep(5); } return false; };
+  const foldedClick = async (label, pressAlone) => {
+    const n0 = (await entities()).find((e) => e.type === "desk.note" && e.active && e.id !== c);
+    await mouse("mouseMoved", n0.cx, n0.cy, { button: "none" });
+    const idle = await until(async () => !(await inFlight()));
+    const press = mouse("mousePressed", n0.cx, n0.cy);
+    let alone = true;
+    if (pressAlone) { await press; alone = await until(inFlight); }
+    await Promise.all([press, mouse("mouseReleased", n0.cx, n0.cy), mouse("mouseMoved", 1100, 700, { button: "none" })]);
+    for (const [x, y] of [[1040, 730], [1150, 660], [980, 760]]) { await sleep(40); await mouse("mouseMoved", x, y, { button: "none" }); }
+    const landed = await until(async () => { const p = await q("window.__desk.pointer()"); return p !== null && near(p.x, 980, 0.5) && near(p.y, 760, 0.5); });
+    await sleep(100);
+    const n1 = await entity(n0.id);
+    const live = await inFlight();
+    check(idle && alone && landed, `${label}: the shape held (idle before the press ${idle}${pressAlone ? `, the press stepped alone ${alone}` : ""}, the wander landed ${landed})`);
+    check(n1.selected && (await q("window.__desk.selection()")).length === 1, `${label}: the click still selects the note (and only it)`);
+    check(!n1.grabbed && !live && near(n1.cx, n0.cx) && near(n1.cy, n0.cy), `${label}: nothing is captured, the note stays put while the cursor wanders — (${n1.cx.toFixed(1)}, ${n1.cy.toFixed(1)}), grabbed ${n1.grabbed}, a gesture in flight ${live}`);
+    await key("Escape", "Escape", 27);   // the tap put the pen on the note: put it down,
+    await click(100, 700);               // and deselect, as 8c left the desk
+  };
+  await foldedClick("press, release and a far move back to back", false);
+  await foldedClick("the press stepped alone, then the release and a far move together", true);
 
   // --- D3w: the whiteboard, the print, the notebook and the desk calendar at rest (interact-kinds.mjs) — after D2b's rows: 8d has
   //     flown back out to the root desk (the exit clears the selection), and each kind lays its object in a stretch of the desk

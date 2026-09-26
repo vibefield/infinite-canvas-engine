@@ -20,6 +20,20 @@
  * cannot take `edit().set`). Facts are always true: `surfaceHandled` events
  * still land, but carry the one-tick `HandledByWidget` tag L1/L2 read (the
  * pinned widget-event contract, design-002 §8).
+ *
+ * THE CUT (2026-09-26): a pointer's fold ENDS at its transition (down / up /
+ * cancel), so a tick that carries `WentDown`/`WentUp` carries the pointer AT
+ * the press or the release — picking hits what was pressed, recognizers judge
+ * the release where it happened. The first event past a closed fold ends the
+ * tick's drain: it and everything behind it (every pointer, every key — the
+ * processed events stay a PREFIX of arrival order) are the next tick's facts.
+ * Before the cut, a click whose release coalesced with a far move into one
+ * frame published `WentUp` at the MOVE's point: the tap failed its slop, the
+ * drag measured its dead zone to a point reached after the release and went
+ * Active on the clicked object — which then followed the cursor (a ghost
+ * drag; found under CDP input in apps/desk, reachable by a quick tap and
+ * flick). Between transitions moves and wheel deltas still fold: every
+ * consumer reads the latest position or the tick's accumulated deltas.
  */
 import type { Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
@@ -140,12 +154,19 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
       const samples = new Map<string, Sample>();
       let keyboard: { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean; space: boolean } | null =
         null;
-      for (const ev of events) {
+      for (const [i, ev] of events.entries()) {
         if (ev.kind === "key") {
           keyboard = { ...ev.mods };
           continue;
         }
         let s = samples.get(ev.pointerId);
+        if (s !== undefined && (s.wentDown || s.wentUp || s.wentCancelled)) {
+          // The cut (module doc): this pointer's fold closed at its transition.
+          // The drain above emptied the queue, so re-enqueueing puts the tail
+          // back at its HEAD, in order, ahead of anything a later handler adds.
+          for (const rest of events.slice(i)) queue.enqueue(rest);
+          break;
+        }
         if (s === undefined) {
           s = {
             device: ev.device,

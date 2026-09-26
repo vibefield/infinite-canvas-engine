@@ -398,6 +398,28 @@ there.
   Size, so it stays `resizable: false` and wears none from the world. A resize lifts a board (core's `Grab` is also the
   carry's, and a board reads it as its lift).
 
+### Fixed
+
+<!-- core (2026-09-26) -->
+- **A click whose release shares its frame with a far move no longer leaves a ghost drag.** Found under CDP
+  input in `apps/desk` (the D3w build dodged it with a 120 ms pause after each click); a hand reaches it with
+  a quick tap and a flick of the cursor. `pointerIngest` folds a tick's events into one sample per pointer, and the
+  fold ran PAST a transition: a release and a move 500 px on, coalesced, published `WentUp` at the MOVE's
+  point. The tap failed its slop; the drag measured its dead zone to a point reached after the release, went
+  Active on the clicked object and — its one-tick `WentUp` spent — stayed Active, the object following the
+  cursor until the next press. The press, the release and the move all in one tick picked at the far point,
+  so the click selected whatever lay there instead. Now **a pointer's fold ends at its transition** (down,
+  up, cancel): the first event past one ends the tick's drain, and it and everything behind it — every
+  pointer, every key, arrival order kept — are the next tick's facts; moves and wheel deltas between
+  transitions still fold. And **a Possible drag that sees its pointer's release fails**, dead zone crossed
+  or not: pressed travel can still fold into the release's own tick (a flick, a starved frame), and a drag
+  promoted there never saw its release — such a flick is now no gesture at all. Held by
+  `trace/coalesced-release.test.ts` (the click folded into one tick and across two, the flick, the cut's
+  prefix order — each red on the pre-fix source) and `rig:interact` §8d (a press, a release and a far move
+  sent back to back; the press stepped alone, then the release and the move together). By design, a press
+  that shares its frame with the moves after it now picks, and anchors its recognizers, at the press — not
+  at the last of those moves (in `rig:interact` §3 the drag's slop now eats one sample).
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and

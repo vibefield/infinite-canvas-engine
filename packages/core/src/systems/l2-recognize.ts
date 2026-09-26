@@ -553,6 +553,16 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         }
 
         if (ctx.hasTag(e, P.tags.Possible)) {
+          // Released before it activated → Failed, inside the dead zone or past
+          // it (2026-09-26): a drag activates only while its pointer is held.
+          // Pressed travel can fold into the release's own tick (a flick, a
+          // starved frame), and `WentUp` is one-tick — a drag promoted HERE
+          // would never see its release and stay Active on a lifted pointer,
+          // the object glued to the cursor until the next press.
+          if (ctx.hasTag(pointer, WentUp)) {
+            P.set(ctx, e, "Failed");
+            continue;
+          }
           const down = ctx.read(e, Down);
           // Adopted insert drags (tray ghosts, 2026-07-19) have NO tap-vs-drag
           // ambiguity — the user is already mid-drag when the synthetic down
@@ -587,8 +597,6 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
               });
             }
             P.set(ctx, e, "Active");
-          } else if (ctx.hasTag(pointer, WentUp)) {
-            P.set(ctx, e, "Failed"); // released inside the dead zone
           }
           continue;
         }

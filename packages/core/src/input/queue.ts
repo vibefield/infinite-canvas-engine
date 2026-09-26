@@ -6,7 +6,9 @@
  * per tick and turns events into world facts. Handlers run mid-frame at
  * arbitrary times — the queue is what keeps every world write inside the frame
  * contract (design-002 §3). It is pre-ingest TRANSPORT, not world state: no
- * system reads it, nothing observes it, it holds nothing across a drain.
+ * system reads it, nothing observes it, and it holds nothing across a drain but
+ * the tail ingest hands back — the events past a pointer's transition, which
+ * are the next tick's facts (l0-input.ts, the fold's cut).
  *
  * Pointer identity: `pointerId` is the adapter's stable string for a device
  * pointer — `"mouse"` for the one mouse, `"touch:<n>"` per touch contact,
