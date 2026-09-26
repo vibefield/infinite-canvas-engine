@@ -10,10 +10,15 @@
 // `dist/types/packages/<pkg>/src/index.d.ts`, which the same emit already
 // contains, so the rewrite is purely mechanical.
 //
+// A SUBPATH (`@ice/desk/objects`, design-015 D7) maps through the workspace
+// package's own exports map (`./objects` → `./src/objects/index.ts` →
+// `dist/types/packages/desk/src/objects/index.d.ts`); until D7 the pattern
+// named bare package names only, so a subpath was neither rewritten nor caught.
+//
 // Runs as the LAST step of `build`. Exits non-zero if a rewrite target is
-// missing or any QUOTED `@ice/` specifier survives — the guard that keeps this
-// defect class out of every future artifact. Doc-comment mentions of `@ice/*`
-// are prose, not specifiers, and deliberately survive.
+// missing or any QUOTED `@ice/` specifier survives — bare or subpath — the
+// guard that keeps this defect class out of every future artifact. Doc-comment
+// mentions of `@ice/*` are prose, not specifiers, and deliberately survive.
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -32,9 +37,20 @@ function* walk(dir) {
   }
 }
 
-// Quoted specifiers only — `from "@ice/core"` / `import("@ice/core")`; prose
-// mentions in doc comments are unquoted and must survive.
-const SPECIFIER = /(["'])@ice\/(kernel|core|dom|desk|react|devtools)\1/g;
+// Quoted specifiers only — `from "@ice/core"` / `import("@ice/desk/objects")`;
+// prose mentions in doc comments are unquoted and must survive.
+const SPECIFIER = /(["'])@ice\/(kernel|core|dom|desk|react|devtools)(\/[^"']+)?\1/g;
+/** The guard's pattern: ANY quoted private-scope specifier, whatever package or subpath it names. */
+const ANY_PRIVATE = /(["'])@ice\/[^"']*\1/;
+
+/** A specifier's d.ts target (without `.d.ts`): the package's index, or its exports map's subpath source. */
+function targetOf(pkg, sub) {
+  if (sub === undefined) return join(typesRoot, "packages", pkg, "src", "index");
+  const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, "..", "..", pkg, "package.json"), "utf8"));
+  const src = manifest.exports?.[`.${sub}`];
+  if (typeof src !== "string" || !/\.tsx?$/.test(src)) return undefined;
+  return join(typesRoot, "packages", pkg, src.replace(/^\.\//, "").replace(/\.tsx?$/, ""));
+}
 
 let rewrites = 0;
 let failed = false;
@@ -42,10 +58,10 @@ for (const file of walk(typesRoot)) {
   const text = readFileSync(file, "utf8");
   if (!SPECIFIER.test(text)) continue;
   SPECIFIER.lastIndex = 0;
-  const next = text.replace(SPECIFIER, (match, quote, pkg) => {
-    const target = join(typesRoot, "packages", pkg, "src", "index");
-    if (!existsSync(`${target}.d.ts`)) {
-      console.error(`fix-dts-specifiers: missing rewrite target ${target}.d.ts (for @ice/${pkg} in ${file})`);
+  const next = text.replace(SPECIFIER, (match, quote, pkg, sub) => {
+    const target = targetOf(pkg, sub);
+    if (target === undefined || !existsSync(`${target}.d.ts`)) {
+      console.error(`fix-dts-specifiers: missing rewrite target ${target ?? "(no exports entry)"}.d.ts (for @ice/${pkg}${sub ?? ""} in ${file})`);
       failed = true;
       return match;
     }
@@ -61,8 +77,7 @@ if (failed) process.exit(1);
 // The guard: no quoted private-scope specifier may survive.
 const leftovers = [];
 for (const file of walk(typesRoot)) {
-  SPECIFIER.lastIndex = 0;
-  if (SPECIFIER.test(readFileSync(file, "utf8"))) leftovers.push(file);
+  if (ANY_PRIVATE.test(readFileSync(file, "utf8"))) leftovers.push(file);
 }
 if (leftovers.length > 0) {
   console.error(

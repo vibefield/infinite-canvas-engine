@@ -1,41 +1,41 @@
 /**
- * THE PACK AUDIT (design-013 D-B8.1; the desk's since design-015 D5b) — what
+ * THE PACK AUDIT (design-013 D-B8.1; the desk's since design-015 D5b; widened at D7) — what
  * `@vibecook/ice` actually ships.
  *
- * Four questions, asked of the BUILT `dist/` rather than of the source, because
- * the source is not what a consumer installs. Run after `pnpm --filter
- * @vibecook/ice build`:
+ * Every question is asked of the BUILT `dist/` rather than of the source, because the source is not
+ * what a consumer installs. Run after `pnpm --filter @vibecook/ice build`:
  *
- *   1. THE PLATES must be ABSENT. `packages/desk/oracle/fixtures/assets/*.rgba`
- *      are the oracle's test pictures (the study's gobo plates). They live
- *      outside `src/`, nothing in `src/` imports them, and `files: ["dist"]`
- *      excludes them — but "nothing imports them" is a claim that decays, so it
- *      is measured.
- *   2. THE BLUE NOISE must be PRESENT. The mat needs the 128² tile at runtime
- *      and a published consumer has no `assets/` to fetch it from, so it is
- *      generated into `src/assets/blue-noise.gen.ts`. If this reads absent,
- *      every downstream cutting mat is undithered.
- *   3. THE WGSL TEXT must be PRESENT. `src/shaders.gen.ts` is how the desk
- *      entry ships its shaders with no bundler loader (D-B1.3).
- *   4. THE WHOLE GRAPH must have ZERO edges to `three`, `@react-three` or
- *      `stats-gl` (design-015 §3 `no-three`: three is imported nowhere). Until
- *      D5b the walk spared the two GL-island entries the `three` peer existed
- *      for; the islands, the peer and the `stats-gl` dependency left together,
- *      so every published entry is walked and any such edge is a leak.
+ *   1. THE PLATES must be ABSENT — by CONTENT, not by name (D7): the oracle's study plates
+ *      (`packages/desk/oracle/fixtures/assets/gobo-{b,c}.rgba`, oryzo/Lusion's) and apps/desk's product
+ *      plates (`apps/desk/assets/gobo-*.rgba`) are 1 MB each; a plate inlined as base64 carries no file
+ *      name, so each is sought as three base64 needles cut from its own bytes (one per alignment).
+ *   2. THE BLUE NOISE must be PRESENT (the mat's 128² tile, generated into `src/assets/blue-noise.gen.ts`).
+ *   3. THE WGSL TEXT must be PRESENT (`src/shaders.gen.ts` — the desk entry ships its shaders, D-B1.3).
+ *   4. THE SHIPPED CHUNKS must have ZERO edges to `three`, `@react-three` or `stats-gl` (design-015 §3
+ *      `no-three`) — read off every `dist/*.js` (D7: until then this walked the SOURCE graph, though the
+ *      header said dist/), static, bare and dynamic imports alike.
+ *   5. THE EXTERNALS the chunks import are DECLARED: each is a dependency or a peer (or a node builtin),
+ *      and every dependency is imported by a chunk or named by the d.ts (an undeclared external breaks an
+ *      install; an unused dependency is weight).
+ *   6. THE EXPORTS MAP's every target — `types` and `default` — exists in dist/.
+ *   7. THE D.TS resolves standalone: every relative specifier of every `dist/types/**` file lands on a file,
+ *      no quoted `@ice/*` specifier survives (subpaths included — fix-dts-specifiers rewrites them), and every
+ *      bare specifier is declared.
+ *   8. EACH ENTRY IMPORTS IN NODE (`import(dist/<entry>.js)`): no module-scope DOM or GPU touch — the
+ *      headless engine, the oracle and SSR hosts load these.
  *
- *      The walker follows `@ice/*` specifiers as well as relative ones, because
- *      tsup bundles the workspace (`noExternal: [/^@ice\//]`) — an `@ice/*`
- *      edge is an edge in the SHIPPED chunk, where a relative-only walk would
- *      report it as an untraced external.
- *
- * Run: `node packages/ice/tools/audit-pack.mjs`
+ * Run: `node packages/ice/tools/audit-pack.mjs` (`pnpm --filter ./packages/ice pack:audit` builds first).
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { builtinModules } from "node:module";
+import { dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const repo = resolve(import.meta.dirname, "../../..");
-const dist = resolve(repo, "packages/ice/dist");
+const pkgDir = resolve(repo, "packages/ice");
+const dist = resolve(pkgDir, "dist");
 const deskSrc = resolve(repo, "packages/desk/src");
+const pkg = JSON.parse(readFileSync(resolve(pkgDir, "package.json"), "utf8"));
 
 const rows = [];
 const fail = [];
@@ -44,7 +44,7 @@ const say = (ok, label, detail) => {
   if (!ok) fail.push(label);
 };
 
-// --- the built bundle, as one blob of text --------------------------------
+// --- the built bundle, as text ---------------------------------------------
 let bundleBytes = 0;
 const bundle = [];
 for (const name of readdirSync(dist)) {
@@ -57,20 +57,52 @@ for (const name of readdirSync(dist)) {
 }
 const anyFile = (needle) => bundle.filter((f) => f.text.includes(needle)).map((f) => f.name);
 
-// --- 1. the plates --------------------------------------------------------
-const plateNames = ["gobo-b", "gobo-c"];
-const plateHits = plateNames.flatMap((n) => anyFile(n).map((f) => `${n} in ${f}`));
+/** Every import specifier a module's text names: `from` (spanning newlines), bare `import "x"`, dynamic `import("x")`. */
+const SPECIFIER_PATTERNS = [
+  /(?:^|\n)\s*(?:import|export)\s[^;"']*?from\s+["']([^"']+)["']/g,
+  /(?:^|\n)\s*import\s+["']([^"']+)["']/g,
+  /\bimport\(\s*["']([^"']+)["']\s*\)/g,
+];
+/** Block comments out, so prose that happens to read `import("…")` is not an edge. */
+const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "");
+const specifiersOf = (text) => SPECIFIER_PATTERNS.flatMap((re) => [...code(text).matchAll(re)].map((m) => m[1]).filter((s) => s !== undefined));
+/** A bare specifier's package: `@scope/name` or `name`. */
+const packageOf = (spec) => (spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0]);
+const isBuiltin = (spec) => spec.startsWith("node:") || builtinModules.includes(packageOf(spec));
+
+// --- 1. the plates, by content -------------------------------------------------
+/** Three base64 needles from a plate's bytes, one per alignment: a 48-byte window where the bytes vary (never a flat run). */
+function plateNeedles(bytes) {
+  let at = Math.floor(bytes.length / 2);
+  for (let o = at; o + 64 < bytes.length; o += 997) {
+    if (new Set(bytes.subarray(o, o + 48)).size > 24) {
+      at = o;
+      break;
+    }
+  }
+  return [0, 1, 2].map((k) => Buffer.from(bytes.subarray(at + k, at + k + 48)).toString("base64").slice(4, -4));
+}
+const plateFiles = [
+  ...["gobo-b.rgba", "gobo-c.rgba"].map((n) => resolve(repo, "packages/desk/oracle/fixtures/assets", n)),
+  ...readdirSync(resolve(repo, "apps/desk/assets"))
+    .filter((n) => /^gobo-.*\.rgba$/.test(n))
+    .map((n) => resolve(repo, "apps/desk/assets", n)),
+];
+const plateHits = plateFiles.flatMap((file) => {
+  const name = file.split("/").pop().replace(/\.rgba$/, "");
+  const hits = [...new Set(plateNeedles(new Uint8Array(readFileSync(file))).flatMap((n) => anyFile(n)))];
+  return [...hits.map((f) => `${name}'s bytes in ${f}`), ...anyFile(name).map((f) => `${name}'s name in ${f}`)];
+});
 say(
   plateHits.length === 0,
   "the plates are ABSENT",
   plateHits.length === 0
-    ? `none of ${plateNames.join(", ")} appears in ${bundle.length} bundle files (${(bundleBytes / 1024).toFixed(0)} KB)`
+    ? `none of ${plateFiles.length} plates (${plateFiles.map((f) => f.split("/").pop()).join(", ")}) appears by content or by name in ${bundle.length} bundle files (${(bundleBytes / 1024).toFixed(0)} KB)`
     : plateHits.join(", "),
 );
 
-// --- 2. the blue noise ----------------------------------------------------
-// The generated module's own first base64 chunk — a needle nothing else could
-// coincidentally carry.
+// --- 2. the blue noise ------------------------------------------------------
+// The generated module's own first base64 chunk — a needle nothing else could coincidentally carry.
 const noiseSrc = readFileSync(join(deskSrc, "assets/blue-noise.gen.ts"), "utf8");
 const needle = /"([A-Za-z0-9+/=]{60,})"/.exec(noiseSrc)?.[1] ?? "";
 const noiseIn = needle === "" ? [] : anyFile(needle);
@@ -86,9 +118,7 @@ say(
 const wgslNeedles = ["@fragment", "var<uniform>"];
 const wgslIn = wgslNeedles.map((n) => ({ n, files: anyFile(n) }));
 const wgslOk = wgslIn.every((r) => r.files.length > 0);
-const wgslBytes = bundle
-  .filter((f) => f.text.includes("@fragment"))
-  .reduce((sum, f) => sum + Buffer.byteLength(f.text), 0);
+const wgslBytes = bundle.filter((f) => f.text.includes("@fragment")).reduce((sum, f) => sum + Buffer.byteLength(f.text), 0);
 say(
   wgslOk,
   "the WGSL text SHIPS",
@@ -97,90 +127,99 @@ say(
     : `missing: ${wgslIn.filter((r) => r.files.length === 0).map((r) => r.n).join(", ")}`,
 );
 
-// --- 4. three in the whole graph ---------------------------------------------
-/**
- * Every import/export specifier a module names. THREE patterns, because one
- * regex over ES module syntax misses two whole shapes and the audit's answer is
- * only as good as its graph:
- *
- *  - the `from` form, spanning NEWLINES. The original `[^;\n]*?` could not
- *    cross a line, so every biome-wrapped `export {\n  a,\n  b,\n} from "x"`
- *    was invisible — 187 of the then tree's 1,339 source edges across 80 of its
- *    274 files, the old ground entry among them at 5 of its 11. `[^;"']*?`
- *    crosses lines but not a `;` or a quote, so it cannot run past a statement
- *    into the next one's specifier the way a bare `[\s\S]*?` can.
- *  - the BARE side-effect import (`import "three"`), which has no `from` at all.
- *  - the DYNAMIC `import("…")`, which is how the retired r3f entry reached
- *    stats-gl and is how a lazy three edge would hide from both patterns above.
- */
-const SPECIFIER_PATTERNS = [
-  /(?:^|\n)\s*(?:import|export)\s[^;"']*?from\s+["']([^"']+)["']/g,
-  /(?:^|\n)\s*import\s+["']([^"']+)["']/g,
-  /\bimport\(\s*["']([^"']+)["']\s*\)/g,
-];
-
-/** Every module reachable from a source entry, following relative + `@ice/*`. */
-function walk(entries) {
-  const seen = new Set();
-  const external = new Map(); // specifier -> the file that imported it
-  const queue = entries.map((e) => resolve(e));
-  const candidates = (base) => [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")];
-  const firstFile = (paths) => {
-    for (const c of paths) {
-      try {
-        if (statSync(c).isFile()) return c;
-      } catch {
-        // keep trying the next candidate
-      }
-    }
-    return null;
-  };
-  const resolveSpec = (from, spec) => {
-    if (spec.startsWith(".")) return firstFile(candidates(resolve(dirname(from), spec)));
-    // tsup bundles the workspace, so an `@ice/*` edge is an edge in the SHIPPED
-    // chunk — follow it rather than parking it as an untraced external.
-    const ice = /^@ice\/([^/]+)(?:\/(.+))?$/.exec(spec);
-    if (ice === null) return null;
-    const base = resolve(repo, "packages", ice[1], "src", ice[2] ?? "");
-    return firstFile(candidates(base));
-  };
-  while (queue.length > 0) {
-    const file = queue.pop();
-    if (file === undefined || seen.has(file)) continue;
-    seen.add(file);
-    const text = readFileSync(file, "utf8");
-    for (const re of SPECIFIER_PATTERNS) {
-      for (const m of text.matchAll(re)) {
-        const spec = m[1];
-        if (spec === undefined) continue;
-        const next = resolveSpec(file, spec);
-        if (next !== null) {
-          queue.push(next);
-          continue;
-        }
-        if (!external.has(spec)) external.set(spec, file);
-      }
-    }
-  }
-  return { modules: seen, external };
-}
-
-/** Every published entry. */
-const iceSrc = resolve(repo, "packages/ice/src");
-const entries = readdirSync(iceSrc)
-  .filter((n) => n.endsWith(".ts"))
-  .sort();
-const graph = walk(entries.map((n) => join(iceSrc, n)));
-const threeEdges = [...graph.external.entries()].filter(([spec]) => /^(three|@react-three|stats-gl)(\/|$)/.test(spec));
+// --- 4. three in the shipped chunks ------------------------------------------
+const externals = new Map(); // bare specifier -> the chunk that imports it
+for (const f of bundle) for (const spec of specifiersOf(f.text)) if (!spec.startsWith(".") && !externals.has(spec)) externals.set(spec, f.name);
+const threeEdges = [...externals.entries()].filter(([spec]) => /^(three|@react-three|stats-gl)(\/|$)/.test(spec));
 say(
   threeEdges.length === 0,
-  "the whole graph is THREE-FREE",
+  "the shipped chunks are THREE-FREE",
   threeEdges.length === 0
-    ? `${graph.modules.size} modules reachable from the ${entries.length} entries (${entries.join(", ")}), 0 edges to three, @react-three or stats-gl (externals: ${[...graph.external.keys()].sort().join(", ")}). No \`three\` peer is declared: nothing in the package needs one (design-015 §3)`
-    : threeEdges.map(([spec, from]) => `${spec} from ${from.slice(repo.length + 1)}`).join(", "),
+    ? `${bundle.length} chunks, 0 edges to three, @react-three or stats-gl (externals: ${[...externals.keys()].sort().join(", ")}). No \`three\` peer is declared: nothing in the package needs one (design-015 §3)`
+    : threeEdges.map(([spec, from]) => `${spec} from ${from}`).join(", "),
 );
 
-console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5");
+// --- 7 (read before 5, which needs its bare specifiers). the d.ts ---------------------
+const typesRoot = resolve(dist, "types");
+function* dtsFiles(dir) {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) yield* dtsFiles(p);
+    else if (p.endsWith(".d.ts")) yield p;
+  }
+}
+const dts = existsSync(typesRoot) ? [...dtsFiles(typesRoot)] : [];
+const unresolved = [];
+const privateScope = [];
+const dtsBare = new Map();
+for (const file of dts) {
+  for (const spec of specifiersOf(readFileSync(file, "utf8"))) {
+    if (spec.startsWith(".")) {
+      const base = resolve(dirname(file), spec);
+      const hit = [`${base}.d.ts`, base, join(base, "index.d.ts"), base.replace(/\.js$/, ".d.ts")].some((c) => existsSync(c) && statSync(c).isFile());
+      if (!hit) unresolved.push(`${relative(dist, file)} → ${spec}`);
+    } else if (spec.startsWith("@ice/")) privateScope.push(`${relative(dist, file)} → ${spec}`);
+    else if (!dtsBare.has(spec)) dtsBare.set(spec, relative(dist, file));
+  }
+}
+const declared = new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.peerDependencies ?? {})]);
+const undeclaredInDts = [...dtsBare.keys()].filter((s) => !isBuiltin(s) && !declared.has(packageOf(s)));
+const dtsProblems = [
+  ...unresolved.slice(0, 4).map((u) => `unresolved ${u}`),
+  ...privateScope.slice(0, 4).map((u) => `private ${u}`),
+  ...undeclaredInDts.map((s) => `undeclared ${s} (${dtsBare.get(s)})`),
+];
+say(
+  dts.length > 0 && dtsProblems.length === 0,
+  "the d.ts RESOLVES standalone",
+  dts.length === 0
+    ? "no dist/types — the build's tsc step did not run"
+    : dtsProblems.length === 0
+      ? `${dts.length} files: every relative specifier lands on a file, no @ice/* specifier survives, the bare ones (${[...new Set([...dtsBare.keys()].map(packageOf))].sort().join(", ")}) are declared`
+      : dtsProblems.join(" · "),
+);
+
+// --- 5. externals vs the declared dependencies -------------------------------------------
+const undeclared = [...externals.keys()].filter((s) => !isBuiltin(s) && !declared.has(packageOf(s)));
+const used = new Set([...externals.keys(), ...dtsBare.keys()].map(packageOf));
+// `@webgpu/types` is ambient: the d.ts name GPUDevice & co. through the globals it declares, so no specifier names it
+const unused = Object.keys(pkg.dependencies ?? {}).filter((d) => !used.has(d) && d !== "@webgpu/types");
+say(
+  undeclared.length === 0 && unused.length === 0,
+  "the externals are the DECLARED dependencies",
+  undeclared.length === 0 && unused.length === 0
+    ? `every external a chunk imports is a dependency or a peer (${[...new Set([...externals.keys()].map(packageOf))].sort().join(", ")}), and every dependency is imported or ambient (@webgpu/types)`
+    : [...undeclared.map((s) => `undeclared ${s} (imported by ${externals.get(s)})`), ...unused.map((d) => `unused dependency ${d}`)].join(" · "),
+);
+
+// --- 6. the exports map's targets ------------------------------------------------------
+const targets = Object.entries(pkg.exports ?? {}).flatMap(([sub, t]) => (typeof t === "string" ? [[sub, t]] : Object.values(t).map((v) => [sub, v])));
+const missingTargets = targets.filter(([, t]) => !existsSync(resolve(pkgDir, t))).map(([sub, t]) => `${sub} → ${t}`);
+say(
+  missingTargets.length === 0,
+  "the exports map's targets EXIST",
+  missingTargets.length === 0 ? `${targets.length} targets across ${Object.keys(pkg.exports ?? {}).length} subpaths` : missingTargets.join(", "),
+);
+
+// --- 8. a Node import of each entry ---------------------------------------------------
+const entries = Object.entries(pkg.exports ?? {}).flatMap(([sub, t]) =>
+  typeof t === "object" && typeof t.default === "string" && t.default.endsWith(".js") ? [[sub, t.default]] : [],
+);
+const refused = [];
+for (const [sub, file] of entries) {
+  try {
+    await import(pathToFileURL(resolve(pkgDir, file)).href);
+  } catch (e) {
+    refused.push(`${sub}: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+  }
+}
+say(
+  refused.length === 0,
+  "every entry IMPORTS in Node",
+  refused.length === 0 ? `${entries.length} entries (${entries.map(([s]) => s).join(" ")}) load with no DOM and no GPU` : refused.join(" · "),
+);
+
+console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7");
 for (const r of rows) console.log(`[pack-audit] ${r}`);
 console.log(fail.length === 0 ? "[pack-audit] ALL PASS" : `[pack-audit] ${fail.length} FAILED`);
 process.exit(fail.length === 0 ? 0 : 1);

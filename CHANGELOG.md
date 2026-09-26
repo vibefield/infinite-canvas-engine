@@ -994,6 +994,19 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   `api-reference.md`'s `defineTool` row lacked `canvasDragShift`; JSDoc named `@ice/desk/host` (not an entry),
   `<InfiniteCanvas>` as the menu's engine provider, "three adopts it", and the retired `SurfaceTarget` as current.
   Each fixed; `scripts/check-docs.mjs` (the root `gen:check`, so `ci`) pins the ten rows — red on the pre-D7 tree.
+- **`pack:audit` audits what ships** (D7 surface #11). It sought the plates by NAME (a plate inlined as base64 passed),
+  walked the SOURCE graph for three though its header said all checks read `dist/`, and checked neither the d.ts, the
+  exports targets, the externals against the declared dependencies, nor that each entry imports in Node; and
+  `fix-dts-specifiers` rewrote and guarded bare `@ice/<pkg>` only — a subpath like `@ice/desk/objects` was neither
+  rewritten nor caught. Now eight rows, all off `dist/`: the plates (the oracle's two and apps/desk's two) by three
+  base64 needles of their own bytes; the blue noise; the WGSL; the chunks' own imports three-free; every external a
+  declared dependency or peer and every dependency used (or ambient: `@webgpu/types`); every exports target present;
+  the d.ts resolving (relative specifiers land, no `@ice/*` survives, bare ones declared); and a Node `import()` of
+  every entry. `fix-dts-specifiers` maps a subpath through the workspace package's exports map and its guard refuses
+  any quoted `@ice/…`. Red proofs (each injected into dist/, the pre-fix audit exit 0, the fixed exit 1): the palm
+  plate inlined as base64; a chunk importing `three`; an unresolved d.ts specifier; a missing exports target; an
+  undeclared `left-pad`; a module-scope `document` touch. The pre-fix `fix-dts-specifiers` left
+  `"@ice/desk/objects"` in place and exited 0; the fixed one rewrites it and refuses an unmapped subpath.
 
 ## [0.13.0] — 2026-09-07
 
