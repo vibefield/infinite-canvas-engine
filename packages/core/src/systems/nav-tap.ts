@@ -25,6 +25,7 @@ import { GestureSettings } from "../catalog/settings-resources";
 import { FrameInfo } from "../engine/frame-info";
 import { currentNavEntry } from "../nav/nested-canvas";
 import { NavIntent } from "../nav/nav-geometry";
+import { NavTransition } from "./nav-flight";
 import { defineResource } from "../schema/meta";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
 
@@ -64,6 +65,12 @@ export function createNavTap(world: World, opts: NavTapOpts = {}): System {
         const rec = b.entity(r);
         // a tap on a part is the app's (design-014 B3b) — it neither counts nor clears the memo
         if ((ctx.get(rec, DownPart)?.part ?? "") !== "") continue;
+        // a tap while a flight drives is not a double-tap's first half (the header; D7 #12): the arriving desk is not yet
+        // where the eye has it, so it neither counts nor pairs — the memo is spent, a tap after the landing starts afresh
+        if (world.getResource(NavTransition)?.active === true) {
+          world.setResource(NavTapMemo, { target: 0 as Entity, x: 0, y: 0, at: 0, seq: 0 });
+          continue;
+        }
         const down = ctx.read(rec, Down);
         const captured = ctx.getRelation(rec, Captures);
         // the bare frame: no target, or the canvas surface entity picking falls back to

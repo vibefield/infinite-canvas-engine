@@ -110,3 +110,24 @@ describe("the double-tap (design-015 §9, D-D2b.1)", () => {
     expect(r.depth()).toBe(1);
   });
 });
+
+describe("a tap while a flight drives is not a double-tap's first half (D7 #12)", () => {
+  it("two taps on the bare frame DURING the enter flight ask nothing; the same two taps after the landing fly back out", () => {
+    const r = rig();
+    r.tap(400, 300);
+    r.tap(400, 300);   // into the folder: the flight drives
+    expect(r.depth()).toBe(1);
+    expect(r.flight()?.active).toBe(true);
+    const epoch = r.world.getResource(NavIntent)?.epoch;
+    r.tap(20, 20);
+    r.tap(20, 20);
+    expect(r.flight()?.active).toBe(true);   // still driving: the taps fell inside it
+    expect(r.world.getResource(NavIntent)?.epoch).toBe(epoch);
+    expect(r.depth()).toBe(1);
+    for (let i = 0; i < 400 && r.flight()?.active === true; i++) r.step();
+    expect(r.flight()?.active).not.toBe(true);
+    r.tap(20, 20);
+    r.tap(20, 20);   // landed: the double-tap on the bare frame is the gesture again
+    expect(r.depth()).toBe(0);
+  });
+});
