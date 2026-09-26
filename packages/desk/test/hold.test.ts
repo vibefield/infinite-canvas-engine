@@ -9,20 +9,21 @@
 import { Camera, createCanvasEngine, HeldView, Viewport } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
+import { worldChildren } from "../src/compose/children";
 import { looksOf } from "../src/compose/reflector";
 import { Ground, type GroundFrameInputs } from "../src/ground";
 import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders";
 import { HOLD, readingTarget } from "../src/hold/pose";
-import { CALENDAR_KIND, type CalendarKind, calendarKind, FLUX_REST, NOTEBOOK_KIND, type NotebookGeometry, type NotebookKind, notebookKind, type ObjectContext, paperKind, rectOf } from "../src/kinds";
+import { boardKind, CALENDAR_KIND, type CalendarKind, calendarKind, createPads, FLUX_REST, NOTEBOOK_KIND, type NotebookGeometry, type NotebookKind, notebookKind, type ObjectContext, paperKind, rectOf } from "../src/kinds";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import type { NotebookDraw } from "../src/notebook/pass";
-import { Note, Notebook } from "../src/objects";
+import { Board, Calendar, Note, Notebook } from "../src/objects";
 import { lampOf } from "../src/paper/paper";
 import { shaderText } from "../src/shaders";
 import { calendarDraw, notebookDraw } from "../oracle/frame.mjs";
-import { CALENDAR_LOOK, NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
+import { BOARD_LOOK, CALENDAR_LOOK, MARKERS, NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
 import { must } from "./must";
 
@@ -127,6 +128,32 @@ describe("the hand in the builder (design-015 §8)", () => {
     expect(back.landing).toBe(false);
     expect(back.e).toBeGreaterThanOrEqual(mid);
     expect(back.e).toBeLessThan(mid + 0.2);
+  });
+
+  it("a kind with NO cover (the whiteboard, the desk calendar — no `openness`): once the carry settles nothing of it moves, and the desk sleeps in hand (D7)", () => {
+    const kindsPalette = { ...palette, board: BOARD_LOOK, markers: MARKERS, calendars: CALENDAR_LOOK };
+    const looks = looksOf([boardKind(), calendarKind()], kindsPalette, THEMES.light);
+    for (const [type, props] of [["desk.board", { cap: "blue" }], ["desk.calendar", { month: "2026-09" }]] as const) {
+      const ce = createCanvasEngine({ widgets: [Board, Calendar] });
+      ce.docs.create();
+      ce.world.setResource(Viewport, { w: VP.width, h: VP.height, dpr: VP.dpr });
+      ce.world.setResource(Camera, { ...CAM, gesturing: false });
+      const e = ce.ops.spawnWidget(type, { x: 200, y: 200, props, undoable: false });
+      for (let i = 1; i <= 3; i++) ce.step(i * 16);
+      const locals = new Map([["calendar", createPads({ pass: () => undefined, children: worldChildren(ce.world) })]]);
+      const builder = createDeskBuilder(ce.world, { objects: [Board, Calendar], locals });
+      const build = () => { builder.changed(); return builder.build(CAM, VP, DT, THEMES.light, DEFAULT_GRID, looks); };
+      build();
+      ce.ops.open(e);
+      let settledAt = -1;
+      for (let i = 0; i < 90 && settledAt < 0; i++) { build(); if (builder.hand()?.settled === true) settledAt = i; }
+      expect(settledAt, type).toBeGreaterThan(20);   // the carry's 560 ms on the island ease
+      build();
+      expect(builder.hand()?.entity, type).toBe(e);
+      expect(builder.live(), `${type}: live once settled`).toBe(false);
+      for (let i = 0; i < 60; i++) build();   // a second in hand, still: nothing asks for a frame
+      expect(builder.live(), type).toBe(false);
+    }
   });
 
   it("a harness pins the carry for a still: e held, the cover snapped (shut under 42 % unless the pin says open), settled only at 1", () => {

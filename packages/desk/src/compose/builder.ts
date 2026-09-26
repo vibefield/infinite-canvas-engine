@@ -1033,9 +1033,12 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             hst.inside = null;
             hst.slot = "root";
             hst.seen = seq;
-            hand.openness = binding.openness?.(hctx) ?? 0;
+            // a kind with no cover (the whiteboard, the desk calendar — no `openness`) has nothing of its own to open: its carry is its
+            // whole motion, and it reads shut (0) for the flight home's lead. Only a kind that declares the motion can keep it live (D7)
+            const openness = binding.openness?.(hctx);
+            hand.openness = openness ?? 0;
             const settledNow = pin !== undefined ? hand.e >= 1 : hand.dir > 0 && hand.p >= 1;
-            const coverMoving = openTarget ? hand.openness < 1 - 1e-3 : hand.openness > 1e-3;
+            const coverMoving = openness !== undefined && (openTarget ? openness < 1 - 1e-3 : openness > 1e-3);
             if (pin === undefined && (hand.dir < 0 || hand.p < 1 || coverMoving)) live = true;
             // what rides with it (D3t-c — `riders`: a calendar's stuck notes, "they ride along, as when you carry the pad"): each drawn in
             // the hand's slot under the same camera, at rest, over it — and out of the desk behind while it is in hand

@@ -259,6 +259,12 @@ try {
   const rows = () => q(`window.__desk.kinds.strokeRows(${wb})`);
   const cursor = () => q("document.querySelector('canvas')?.parentElement?.style.cursor ?? null");
   check(await until(async () => (await pen())?.take === 1, 1500), "the marker is taken up into the hand as the board comes into it");
+  // idle-zero in hand (D7): the board has no cover — once the carry and the marker settle, nothing of it moves
+  await settle();
+  const wbN0 = await q("window.__desk.submits().total");
+  await sleep(600);
+  const wbN = (await q("window.__desk.submits().total")) - wbN0;
+  check(wbN === 0, `idle-zero with the whiteboard held and still: ${wbN} submits in 600 ms`);
   const [hx, hy] = mel(120, 120);
   await mouse("mouseMoved", hx, hy);
   check(await until(async () => (await pen())?.shown === 1 && (await cursor()) === "none", 1000), `over the melamine the pen is shown at the hand and the OS cursor hidden (cursor "${await cursor()}")`);

@@ -236,6 +236,12 @@ export async function calendarRig(t) {
   await sleep(400);
   const bar = await q("(() => { const el = document.querySelector('[data-ice-selection-menu]'); return el ? { tools: [...el.querySelectorAll('[data-tool]')].map((b) => b.dataset.tool), dim: [...el.querySelectorAll('[data-tool]')].filter((b) => b.disabled).length } : null; })()");
   check(JSON.stringify(bar?.tools) === JSON.stringify(["month:-1", "month:1", "today", "pen"]) && bar.dim === 0, `calendar: the held bar's tools are live: ${bar?.tools?.join(" · ")} (${bar?.dim} dimmed)`);
+  // idle-zero in hand (D7): a pad has no cover — once the carry settles nothing of it moves
+  await settle();
+  const padN0 = await q("window.__desk.submits().total");
+  await sleep(600);
+  const padN = (await q("window.__desk.submits().total")) - padN0;
+  check(padN === 0, `calendar: idle-zero with the pad held and still: ${padN} submits in 600 ms`);
   const tool = (id) => q(`document.querySelector('[data-ice-selection-menu] [data-tool="${id}"]').click()`);
   await tool("month:1");
   check(await rolledTo("2026-10") && (await month()) === "2026-10", "calendar: the bar's › turns to October");
