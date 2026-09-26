@@ -201,7 +201,7 @@ export interface DeskLayerHandle {
   geometryOf(e: Entity): unknown | undefined;
   fluxOf(e: Entity): ObjectFlux | undefined;
   lastInputs(): GroundFrameInputs | null;
-  /** The frame dirty and not yet drawn (a rig's settle witness). */
+  /** The frame dirty and not yet drawn, or a kind still moving on its own (a print in the air — D3w): a rig's settle witness. */
   dirty(): boolean;
   readonly builder: DeskBuilder;
   /** The note's writing on this desk (D2c): its layouts, rasters, caret and wipe — `undefined` when no note kind is registered. */
@@ -320,6 +320,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       ? createPhotoCarry({ world, docs: opts.docs ?? { current: () => undefined }, prints: () => locals.get(PHOTO_KIND) as Prints | undefined, isPrint: (e) => builder.kindOf(e)?.name === PHOTO_KIND })
       : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
+    let moving = false;
     const inner = compose.reflector;
     const reflector: ReflectorDef & { available(): boolean } = {
       ...inner,
@@ -329,6 +330,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         let want = false;
         for (const local of locals.values()) if (local.tick?.(now) === true) want = true;
         if (want) compose.wake("ink");
+        moving = want;   // D3w: a kind's own motion (a print in the air) keeps the desk from reading quiet between its frames
         inner.flush(w);
         editor?.follow();
       },
@@ -450,7 +452,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       geometryOf: (e) => builder.geometryOf(e),
       fluxOf: (e) => builder.fluxOf(e),
       lastInputs: () => compose.lastInputs(),
-      dirty: () => compose.dirty(),
+      dirty: () => compose.dirty() || moving,
       builder,
       writing,
       local: (name) => locals.get(name),

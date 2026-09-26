@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
+import { kindsRig } from "./interact-kinds.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -391,6 +392,11 @@ try {
   await key("Escape", "Escape", 27);   // no gesture to cancel: Escape leaves the frame (D2b)
   await land();
   await settle();
+
+  // --- D3w: the whiteboard, the print, the notebook and the desk calendar at rest (interact-kinds.mjs) — after D2b's rows: 8d has
+  //     flown back out to the root desk (the exit clears the selection), and each kind lays its object in a stretch of the desk
+  //     of its own, far from the notes and the mini mat
+  await kindsRig({ q, qa: (js) => tab.evaluate(js, { awaitPromise: true, timeoutMs: 30000 }), entity, entities, mouse, click, key, sleep, settle, check, near, META, SHIFT });
 
   // --- 9. quiet at the end: no spring, nothing dirty
   const s = await settle();

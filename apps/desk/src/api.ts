@@ -9,6 +9,7 @@ import { Active, type CanvasEngine, ChildOf, type Entity, Grab, Locked, NavInten
 import type { DeskLayerHandle, MatPin } from "@ice/desk/host";
 import type { AmbientMode } from "@ice/desk/compose";
 import type { ThemeName } from "@ice/desk/theme";
+import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
 import { type OracleScene, setScene, spawnAll } from "./scene";
 
@@ -61,6 +62,8 @@ export interface DeskApi {
   readonly state: { ready: boolean };
   /** The sticky notes' text stack: the editor, the writing, the ink (D2c). */
   readonly note: NoteApi;
+  /** The D3w kinds: strokes as a board's children, a print's body and flick, the books drawn, a pad's events. */
+  readonly kinds: KindsApi;
   // ---- the nav (D2b): the doors the portal and nav rigs use
   /** The nav stack's depth (0 = the root desk). */
   depth(): number;
@@ -142,6 +145,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     handle,
     state,
     note: noteApi(engine, handle),
+    kinds: kindsApi(engine, handle),
     spawn(type, props, at) {
       const widget = engine.catalog.widget(type);
       if (widget === undefined) throw new Error(`desk: no object type "${type}"`);
