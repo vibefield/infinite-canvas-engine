@@ -54,6 +54,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 const EXCEPTIONS = {};
 
+/**
+ * The prototype's pages draw a selection as the kinds' own ring and no marks; the desk retired that ring for the marks pass (D4a).
+ * A scene with a selection is drawn on the desk's side as the prototype drew it — frame.mjs's `prototypeRing`, the oracle's own
+ * BASELINE rule — so this rig holds the objects to the prototype, and `rig:parity` holds the marks to the Node oracle.
+ */
+const selects = (s) => [...(s.notes ?? []), ...(s.minimats ?? []), ...(s.boards ?? [])].some((o) => o.selected);
+
 // ── Preflight: the prototype, its build tool, the page's build ──────────────────────────────────────────────────────────────
 const die = (what, how) => { console.log(`PREFLIGHT FAIL: ${what}\n  ${how}`); process.exit(1); };
 const proto = process.env.DESK_PROTO ? resolve(process.env.DESK_PROTO) : null;
@@ -302,7 +309,7 @@ try {
     const protoPng = await capture(page.tab);
     // the desk's page, the same scene through frame.mjs
     await front(desk.tab);
-    await desk.tab.evaluate(`window.__parity.render(${JSON.stringify(sc.name)})`, { awaitPromise: true, timeoutMs: 60000 });
+    await desk.tab.evaluate(`window.__parity.render(${JSON.stringify(sc.name)}${selects(s) ? ", { prototypeRing: true }" : ""})`, { awaitPromise: true, timeoutMs: 60000 });
     await settle(desk.tab); await sleep(200); await settle(desk.tab);
     const deskPng = await capture(desk.tab);
     const r = compare(protoPng, deskPng);

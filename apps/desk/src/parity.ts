@@ -31,8 +31,11 @@ export interface DeskParity {
   readonly format: GPUTextureFormat;
   /** The last scene drawn and how many frames were, and every GPU error — uncaptured, or caught by the probe's scopes (`scoped`: the desk's creation and every frame, each in scopes of its own — D3r-b). */
   readonly state: { drawn: string | null; frames: number; scoped: number; readonly errors: string[] };
-  /** Draw one scene into the canvas inside a frame; resolves once the GPU has finished it. */
-  render(name: string): Promise<{ readonly portals: number }>;
+  /**
+   * Draw one scene into the canvas inside a frame; resolves once the GPU has finished it. `prototypeRing`: a selection drawn as the
+   * prototype drew it — the kinds' own ring, no marks (frame.mjs; D4a retired the ring in the product) — for `rig:proto-parity`.
+   */
+  render(name: string, opts?: { readonly prototypeRing?: boolean }): Promise<{ readonly portals: number }>;
   /**
    * THE COST (design-015 D3r-b, `rig:cost`): `n` frames of a scene spec (JSON — any oracle-shaped still) drawn back to back into
    * the canvas's current texture, the GPU drained before and after: ms per frame and the CPU µs of recording one. Each frame is
@@ -114,13 +117,13 @@ async function boot(): Promise<void> {
     view: VIEW,
     format: surf.format,
     state,
-    async render(name) {
+    async render(name, opts) {
       const sc = ORACLE_SCENES.find((s) => s.name === name);
       if (!sc) throw new Error(`no oracle scene "${name}"`);
       await new Promise((resolve) => requestAnimationFrame(resolve));   // inside a frame, as a host's clock draws
       const { prepared } = await scope(`frame ${name}`, () => {
         const encoder = device.createCommandEncoder();
-        const r = desk.encode(encoder, surf.view(), surf.size(), sc.scene);
+        const r = desk.encode(encoder, surf.view(), surf.size(), sc.scene, opts?.prototypeRing === true ? { prototypeRing: true } : {});
         device.queue.submit([encoder.finish()]);
         return r;
       });

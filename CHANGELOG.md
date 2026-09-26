@@ -340,7 +340,8 @@ there.
   they are the inside's, under the entered camera, and `rig:interact` (47) selects a note inside one to witness that.
   Core's enter clears the selection, so the brackets leave at the cut. `rig:nav`'s press + double-click cut now holds
   the cut frame to the pre-cut frame outside the selection's marks band (by their CPU mirror). `rig:nav` and
-  `rig:sticky` leave the DOM menu out of their captures, as `rig:world` does.
+  `rig:sticky` leave the DOM menu out of their captures, as `rig:world` does. `rig:proto-parity` draws a still that
+  has a selection the prototype's way (the parity page's `prototypeRing`), as the oracle's BASELINE check does.
 
 ## [0.13.0] — 2026-09-07
 
