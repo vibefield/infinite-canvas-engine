@@ -371,12 +371,32 @@ there.
   through the air and the mat's Coulomb grip at 240 Hz — flux, the document still — then commits ONE transaction when it
   comes to rest (its Position and its raise). `deskLayer` takes `blobs`; its handle gains `local(name)` (a kind's own
   state: a still's pose pins — `Prints.pin`, `Books.pin`, `Pads.pin`, flux, never a Grab — a print's body and flick).
+- **Over D2b and D4a** (the integration). The kinds' own selection ring is retired: a selected board, print, notebook or
+  pad wears the desk's BRACKETS, and the oracle retires the notebook's ring as well (`bookOf`; `prototypeRing` keeps the
+  lab's). Each world half hands the marks its silhouette (`ObjectKind.frame`): `boardFrame` and `photoFrame` (D4a's),
+  `notebookFrame`/`bookFrame` (the case's FOOTPRINT on the mat at its turn; open, the whole spread) and `calendarFrame`
+  (the sheet, square to the mat). The oracle's marks read the same functions, and books and pads now take part.
+  A whiteboard RESIZES (`resizable: true`): the knobs D4a draws on it are core's handles, and its world half is drawn
+  from its rect, so its ink replays at the new size. The whiteboard, the notebook and the desk calendar are ROOT objects
+  (`interaction.drop: "never"`, D-D18): no container takes one. A TAPED print answers a press-drag with the tape's
+  give: the carry refuses it and tells the marks (`PhotoCarryOptions.refused` → `DeskBuilder.meetTape`). The selection
+  menu stands over each kind. `setScene` goes through D2b's recursive spawn, so its things nest: a print lies inside a
+  mini mat, while a board, a notebook or a pad inside one is refused (D-D18). New marks stills: `marks-book-z2.2` and
+  `marks-pad-z0.42`.
 - apps/desk: `W` a board, `b` a notebook, `C` a calendar, paste or drop an image for a print; `setScene` stages every
   board, print, notebook and pad scene (strokes and pins as children, poses as flux pins); `window.__desk.kinds`.
-  Witnesses in `gate:landing`: `rig:world` 20 → 40 scenes from the world at maxΔ 0 (three inked boards kept within
-  rig:parity's named 1-LSB bound); `rig:interact` 24 → 61 (each kind's select, hover, drag with its lift and one undo
-  step, delete and ⌘Z; a board's stroke child; the print's flick landing where `stepPhoto` over the desk's own steps
-  lands it, its Position changing once).
+  Witnesses in `gate:landing`: `rig:world` 38 → 61 scenes from the world (58 at maxΔ 0; the three inked boards kept
+  within rig:parity's named 1-LSB bound). Its new rows: every board, print, notebook and pad still, a print inside a
+  mini mat lit by its host's lamp (photo-inside-z1), a selected book and a selected pad. `rig:interact` 47 → 102: each
+  kind's select (its brackets on its own frame, its menu above them), hover, drag with its lift and one undo step,
+  delete and ⌘Z; a board's stroke child and its knob's resize; the print's flick landing where `stepPhoto` over the
+  desk's own steps lands it, its Position changing once; a taped print's give; a board let go over a mini mat's face
+  staying on the desk.
+- Owed: a print's drop-into. A print is not core-movable (its carry is its own, D-D3w.4), so a print let go over a
+  mini mat's face stays out until the carry learns the face (prints do nest: a scene lays one inside). A print's
+  resize: the oracle draws D4a's knobs on a selected print, but a print's extent is its picture's aspect, not its
+  Size, so it stays `resizable: false` and wears none from the world. A resize lifts a board (core's `Grab` is also the
+  carry's, and a board reads it as its lift).
 
 ## [0.13.0] — 2026-09-07
 
