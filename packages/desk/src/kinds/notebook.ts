@@ -49,7 +49,7 @@ import { NOTEBOOK_SHADER_FILES, notebookShaders } from "../notebook/shaders";
 import { coverFrame, type Frame, frameOf, type NotebookPose, relaxOf, specOf, swingOf } from "../notebook/shape";
 import { type ShaderText, shaderText } from "../shaders";
 import { settled, spring } from "../springs";
-import { HOLD } from "../hold/pose";
+import { HOLD, readingTarget } from "../hold/pose";
 import { MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../theme";
 import type { MarkFrame } from "../marks/layout";
 import { inking } from "./board";
@@ -177,6 +177,10 @@ export interface Books extends KindLocal {
   refuse(e: Entity): void;
   /** The spread the hand asks for (a turn by hand, a click, a key), until its transaction lands; null — the document's again. */
   ask(e: Entity, spread: number | null): void;
+  /** The hand moved the book's sheets (a sheet in the hand, the peek): the next frame builds. */
+  stir(e: Entity): void;
+  /** On a portrait phone, the page of the spread in view (D3t-b — page by page): 0 the right, 1 the left; sprung (the view glides to it). */
+  face(e: Entity, side: 0 | 1): void;
 }
 
 interface BookState {
@@ -203,6 +207,8 @@ interface BookState {
   stamp: number;
   /** The last frame in hand moved a sheet or the peek, or has turns to go: the next asks a frame too. */
   stirring: boolean;
+  /** The phone's page in view (0 the right … 1 the left), sprung toward `faceT`. */
+  face: number; faceV: number; faceT: 0 | 1;
 }
 
 /** A stroke's cell → its samples with their widths, once per cell (a replay reads them again). */
@@ -230,7 +236,7 @@ export function createBooks(host: KindHost): Books {
     if (st === undefined) {
       st = {
         id: next++, pose: undefined, tiltX: 0, tiltXV: 0, tiltY: 0, tiltYV: 0, lastX: Number.NaN, lastY: Number.NaN, coverT: 0, coverV: 0, writer: null, mesh: null, key: "", version: 0,
-        motion: null, pending: null, live: null, adopt: null, byPage: new Map(), stamp: -1, stirring: false,
+        motion: null, pending: null, live: null, adopt: null, byPage: new Map(), stamp: -1, stirring: false, face: 0, faceV: 0, faceT: 0,
       };
       books.set(e, st);
     }
@@ -320,6 +326,8 @@ export function createBooks(host: KindHost): Books {
       moving = true;
     },
     ask(e, spread) { state(e).pending = spread; moving = true; },
+    stir() { moving = true; },
+    face(e, side) { state(e).faceT = side; moving = true; },
     tick() {
       const w = woke || moving;
       woke = false;
@@ -388,6 +396,8 @@ export function partOf(G: NotebookGeometry, h: NotebookHit): ObjectHit {
 }
 
 const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, a), b);
+/** The phone's glide from one page of the spread to the other (D3t-b): a hand moving the book under the eye. */
+const FACE = { hz: 1.8, zeta: 0.9 } as const;
 /** One damped spring step (the motion's own: semi-implicit Euler). */
 const springStep = (x: number, v0: number, to: number, hz: number, z: number, h: number): [number, number] => {
   const w = 2 * Math.PI * hz;
@@ -489,8 +499,17 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
         for (const q of m.sheets) if (q.side === 1) turned += 1;
         if (turned !== want && turnable(m) && !m.sheets.some((q) => q.held)) turnPage(m, turned < want ? 1 : -1, law);
         st.stirring = stepLeaves(m, ctx.dt, law) || turned !== want;
+        // a portrait phone reads the spread a page at a time: the view glides to the page the hand turned to (the pose's `page`)
+        const single = readingTarget({ cx: 0, cy: 0, w: ctx.rect.w * 2, h: ctx.rect.h }, { width: ctx.view.width, height: ctx.view.height }, true).single;
+        if (!single) st.faceT = 0;
+        if (held.snap || !single) { st.face = st.faceT; st.faceV = 0; }
+        else {
+          [st.face, st.faceV] = spring(st.face, st.faceV, st.faceT, FACE.hz, FACE.zeta, ctx.dt);
+          if (settled(st.face, st.faceV, st.faceT, 1e-3)) { st.face = st.faceT; st.faceV = 0; }
+          else st.stirring = true;
+        }
       } else {
-        if (st !== undefined) { st.motion = null; st.stirring = false; }
+        if (st !== undefined) { st.motion = null; st.stirring = false; if (held === undefined) { st.face = 0; st.faceV = 0; st.faceT = 0; } }
         const open = cover !== undefined ? cover : pin?.open;
         m = newMotion(sheets, left, open === true || (typeof open === "number" && open >= 0.5));
         if (typeof open === "number") { m.theta = open * Math.PI; m.fluttered = true; }
@@ -580,6 +599,7 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       pose: "eye",
       spread: true,
       openness: (c) => (c.local as Books | undefined)?.state(c.entity).coverT ?? 0,
+      page: (c) => (c.local as Books | undefined)?.state(c.entity).face ?? 0,
       tools: NOTEBOOK_TOOLS,
       tool: () => penToolId(DEFAULT_PEN),
       swatches: (look) => (look as NotebookObjectLook).swatches,

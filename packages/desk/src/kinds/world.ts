@@ -86,8 +86,9 @@ export type { HeldToolDef } from "@ice/core";
  * and the kind draws at rest) or `eye` (a thing with height: the camera keeps the desk's zoom and the kind RISES toward the
  * desk eye by `ctx.held.grow`). `openness`: how far the kind's own open motion has come (0 shut … 1 open) — the put-down
  * flies home once it is under 0.35 and lands once under 0.02 (absent: 0, a kind with no motion of its own). `spread`: a
- * two-page extent that opens one page at a time on a portrait phone (Q-p). `tools`: the held bar's slots (D3t-a: live — a
- * mode or an action each); `tool`: the mode in hand when it is picked up, from its props (default: the first mode);
+ * two-page extent that opens one page at a time on a portrait phone (Q-p); `page`: which of its two is in view there — 0 the
+ * right (the default) … 1 the left, flux the view glides by (D3t-b: the notebook reads page by page). `tools`: the held bar's
+ * slots (D3t-a: live — a mode or an action each); `tool`: the mode in hand when it is picked up, from its props (default: the first mode);
  * `swatches`: the colour a slot shows instead of its glyph (the board's four inks — the product's palette, through the look).
  */
 export interface OpenBinding {
@@ -95,6 +96,7 @@ export interface OpenBinding {
   readonly pose?: "camera" | "eye";
   openness?(ctx: Pick<ObjectContext, "entity" | "local">): number;
   readonly spread?: boolean;
+  page?(ctx: Pick<ObjectContext, "entity" | "local">): number;
   readonly tools?: readonly HeldToolDef[];
   tool?(props: Readonly<Record<string, unknown>>): string;
   swatches?(look: unknown): Readonly<Record<string, string>>;

@@ -805,7 +805,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const ca = Math.cos(angle);
             const sa = Math.sin(angle);
             const extentWorld: ObjectRect = { cx: hst.rect.cx + ca * ox - sa * oy, cy: hst.rect.cy + sa * ox + ca * oy, w: extentLocal.w, h: extentLocal.h };
-            const target = readingTarget(extentLocal, vpSize, binding.spread === true);
+            // a spread read one page at a time on a phone: the page in view is the kind's (D3t-b — flux, the view glides)
+            const face = binding.spread === true ? (binding.page?.({ entity: hand.entity, local: locals?.get(hst.kind.name) }) ?? 0) : 0;
+            const target = readingTarget(extentLocal, vpSize, binding.spread === true, face);
             const user = world.get(hand.entity, HeldView) ?? HELD_USER_REST;
             const pose = heldPose(homePose(extentWorld, angle, cam), target, user, hand.e);
             const { cam: heldCam, grow } = heldCamera(pose, hst.rect, extentLocal, cam.zoom, binding.pose === "eye", vpSize);
@@ -828,7 +830,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             if (pin === undefined && (hand.dir < 0 || hand.p < 1 || coverMoving)) live = true;
             heldBuild = {
               entity: hand.entity, e: hand.e, settled: settledNow, landing: hand.dir < 0,
-              frame: { ...heldFrame(pose, extentLocal, target.single), settled: settledNow },
+              frame: { ...heldFrame(pose, extentLocal, target.single, face), settled: settledNow },
               inputs: { object: { kind: hst.kind.name, record: R }, view: heldView, grid: heldGrid, e: hand.e, ...heldFocus(hand.e, vpSize, theme) },
               deskSeq,
             };

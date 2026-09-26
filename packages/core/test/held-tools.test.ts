@@ -199,6 +199,34 @@ describe("the tool's press and the part under the pointer (the held input, D3t-a
     expect(r.world.hasTag(r.board, Held)).toBe(false);   // the frame is the object's own: two taps put it down
   });
 
+  it("a press on one of the kind's named PARTS is the kind's (D3t-b): `part`, with the part it began on — two clicks there never put it down; on the frame they still do", () => {
+    const r = rig();
+    // the board with a named part along its right edge: a `turn` between the melamine and the frame (x 60 … 100, |y| ≤ 40)
+    r.ce.stack.heldPose.current = {
+      frame: (e) => (e === r.board ? { cx: 400, cy: 300, hx: 150, hy: 105, s: 1.5, settled: true } : undefined),
+      part: (e, x, y) => (e !== r.board ? null : x > 60 && x <= 100 && Math.abs(y) <= 40 ? "turn" : Math.abs(x) <= 60 && Math.abs(y) <= 40 ? "content" : Math.abs(x) <= 100 && Math.abs(y) <= 70 ? "frame" : null),
+    };
+    r.ce.ops.open(r.board);
+    r.step();
+    const tx = 400 + 80 * 1.5;
+    r.mouse("move", tx, 300, 0); r.step();
+    r.mouse("down", tx, 300, 1); r.step();
+    expect(r.world.get(r.pointer() as Entity, HeldPress)).toMatchObject({ kind: "part", part: "turn", moved: false });
+    r.mouse("up", tx, 300, 0); r.step();
+    r.tap(tx, 300);
+    r.step(2);
+    expect(r.world.hasTag(r.board, Held)).toBe(true);   // two clicks on a turn turn two pages — never a way back
+    // the tool's press carries its part too; the frame's is the object's own, and two taps there still put it down
+    r.mouse("down", 400, 300, 1); r.step();
+    expect(r.world.get(r.pointer() as Entity, HeldPress)).toMatchObject({ kind: "tool", part: "content" });
+    r.mouse("up", 400, 300, 0); r.step(20);
+    const fy = 300 + 55 * 1.5;
+    r.tap(tx, fy);
+    r.tap(tx, fy);
+    r.step(2);
+    expect(r.world.hasTag(r.board, Held)).toBe(false);
+  });
+
   it("the mode's cursor shows over the surface alone; none in hand, none of it", () => {
     const r = rig();
     r.mouse("move", 400, 300, 0); r.step();

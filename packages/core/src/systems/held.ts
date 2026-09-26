@@ -24,7 +24,9 @@
  *  - a click on the soft desk — pressed and released outside the object, unmoved — puts it down; two
  *    instant taps on the object do too (the notebook's case rule, generalised) — unless they land on its
  *    drawing surface with a mode in hand (D3t-a): that press is the TOOL's (`HeldPress` `tool` — the
- *    board's stroke; a double-click there is two dots, never a way back).
+ *    board's stroke; a double-click there is two dots, never a way back) — or on one of the kind's named
+ *    PARTS (D3t-b: any part but `content` and `frame`, the object itself): that press is the KIND's
+ *    (`HeldPress` `part`, with the part it began on — a notebook's turn: two clicks there turn two pages).
  * The ways back are OPS (`ops.putDown`, structural) and a system may not run them mid-tick: it writes
  * the one-tick `HeldIntent` and the facade applies it after the step (D2b's `NavIntent`, same shape).
  * Nothing here reads a kind: the seam gives a frame and (D3t-a) the part under a point; the tool in
@@ -176,13 +178,15 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
           }
         }
         // the press: where it began decides what it is; its release, unmoved, is a way back. On the drawing surface with a mode
-        // in hand it is the TOOL's (D3t-a — the board's stroke): never a pan, never a tap that puts the object down
+        // in hand it is the TOOL's (D3t-a — the board's stroke); on a named part the KIND's (D3t-b — a notebook's turn): never a
+        // pan, never a tap that puts the object down
         if (ctx.hasTag(p, WentDown)) {
           const buttons = ctx.get(p, PointerButtons)?.buttons ?? 0;
           const pan = ((buttons & 4) !== 0 || space) && next.zoom > 1.001;
           const tool = part === "content" && (world.get(held, HeldTool)?.id ?? "") !== "";
-          const kind = pan ? "pan" : tool ? "tool" : inside ? "object" : "desk";
-          const press = { kind, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false } as const;
+          const named = part !== "" && part !== "content" && part !== "frame";
+          const kind = pan ? "pan" : tool ? "tool" : named ? "part" : inside ? "object" : "desk";
+          const press = { kind, part, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false } as const;
           if (ctx.has(p, HeldPress)) ctx.edit(p).set(HeldPress, press);
           else ctx.addComponent(p, HeldPress, press);
         } else if (ctx.has(p, HeldPress)) {

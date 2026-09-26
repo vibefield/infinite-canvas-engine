@@ -147,11 +147,14 @@ export const HeldPointer = defineComponent("HeldPointer", {
  * (`desk`: released unmoved, it puts the object down; dragged with the object brought close, it
  * pans), as a pan (`pan`: a middle button or Space, the object brought close), on the object's
  * drawing surface with a mode in hand (`tool`, D3t-a: the TOOL's press — the board's stroke; never
- * a tap that puts it down) or elsewhere on the object itself (`object`: two instant taps put it
- * down). `x`/`y` where it began (CSS px), the pan it began from, and whether it has moved past the slop.
+ * a tap that puts it down), on one of the kind's named PARTS (`part`, D3t-b: the kind's own — a
+ * notebook's turn, its click and its drag; never a tap that puts it down) or elsewhere on the object
+ * itself (`object`: two instant taps put it down). `part`: the part it began on ("" — none); `x`/`y`
+ * where it began (CSS px), the pan it began from, and whether it has moved past the slop.
  */
 export const HeldPress = defineComponent("HeldPress", {
-  kind: field(enumOf(["desk", "pan", "object", "tool"]), { default: "desk" }),
+  kind: field(enumOf(["desk", "pan", "object", "tool", "part"]), { default: "desk" }),
+  part: field("string", { default: "" }),
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
   panX0: field("f64", { default: 0 }),

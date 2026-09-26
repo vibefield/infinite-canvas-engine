@@ -53,9 +53,10 @@ export const isNarrow = (vp: HeldViewport): boolean => vp.width < HOLD.narrow;
  * The reading size (desk.js `heldTarget`): the extent fits the view inside the margins and above the bar's band, never past 3×.
  * `spread`: the extent is a two-page spread that may open one page at a time — on a portrait phone (W < 0.85·H) it does when
  * one page reads at least 1.3× larger than the whole spread would; then the RIGHT page is centred (the extent's centre sits a
- * quarter of its width left of the middle).
+ * quarter of its width left of the middle) — or, `face` → 1, the LEFT (D3t-b: the notebook reads page by page; between, the view
+ * glides).
  */
-export function readingTarget(extent: ObjectRect, vp: HeldViewport, spread = false): ReadingTarget {
+export function readingTarget(extent: ObjectRect, vp: HeldViewport, spread = false, face = 0): ReadingTarget {
   const narrow = isNarrow(vp);
   const m = narrow ? HOLD.marginPhone : HOLD.margin;
   const top = narrow ? HOLD.topPhone : HOLD.top;
@@ -67,7 +68,7 @@ export function readingTarget(extent: ObjectRect, vp: HeldViewport, spread = fal
     const s1 = Math.min(boxW / (extent.w / 2), boxH / extent.h, HOLD.max);
     if (s1 > s * 1.3) { s = s1; single = true; }
   }
-  return { cx: vp.width / 2 - (single ? (extent.w / 4) * s : 0), cy: top + boxH / 2, s, single };
+  return { cx: vp.width / 2 - (single ? (extent.w / 4) * s * (1 - 2 * face) : 0), cy: top + boxH / 2, s, single };
 }
 
 /** Where the extent lies on screen at rest, under the desk's camera: its centre (CSS px), the scale (the zoom) and the object's turn. */
@@ -151,12 +152,16 @@ export function heldCamera(pose: HeldPose, rect: ObjectRect, extent: ObjectRect,
   return { cam: { x: ex - vp.width / (2 * zoom), y: ey - vp.height / (2 * zoom), zoom }, grow };
 }
 
-/** The held object's frame ON SCREEN (what the pose seam publishes, core's `HeldScreenFrame`): the shown extent's centre and half extents, CSS px, its scale. `single`: the right page alone. */
-export function heldFrame(pose: HeldPose, extent: ObjectRect, single: boolean): { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly s: number } {
+/**
+ * The held object's frame ON SCREEN (what the pose seam publishes, core's `HeldScreenFrame`): the shown extent's centre and half
+ * extents, CSS px, its scale. `single`: one page alone — the right (`face` 0), the left (`face` 1), a glide between (D3t-b).
+ */
+export function heldFrame(pose: HeldPose, extent: ObjectRect, single: boolean, face = 0): { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly s: number } {
   if (!single) return { cx: pose.cx, cy: pose.cy, hx: (extent.w / 2) * pose.s, hy: (extent.h / 2) * pose.s, s: pose.s };
-  // one page: the right half of the spread, centred a quarter-width right of the extent's centre (turned with the pose)
-  const q = (extent.w / 4) * pose.s;
-  return { cx: pose.cx + q * Math.cos(pose.angle), cy: pose.cy + q * Math.sin(pose.angle), hx: q, hy: (extent.h / 2) * pose.s, s: pose.s };
+  // one page: a half of the spread, centred a quarter-width right (the right page) or left (the left) of the extent's centre, turned with the pose
+  const half = (extent.w / 4) * pose.s;
+  const q = half * (1 - 2 * face);
+  return { cx: pose.cx + q * Math.cos(pose.angle), cy: pose.cy + q * Math.sin(pose.angle), hx: half, hy: (extent.h / 2) * pose.s, s: pose.s };
 }
 
 /** The focus behind the hand: the blur radius (CSS px) and the dim at a carry amount. */
