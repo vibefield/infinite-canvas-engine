@@ -40,6 +40,9 @@ import { createSelectionChromeSystem } from "../systems/chrome";
 import { createDrawBehavior } from "../systems/l3-draw";
 import { createInsertGhostReap } from "../systems/insert-ghost";
 import { createCursorSync } from "../systems/l4-cursor";
+import { createNavTap } from "../systems/nav-tap";
+import { createZoomThrough } from "../systems/zoom-through";
+import type { NavGeometrySlot } from "../nav/nav-geometry";
 
 const canvasSurfaceQ = defineQuery([CanvasSurface]);
 
@@ -56,6 +59,8 @@ export interface InteractionCoreOpts {
   readonly profiles?: SpawnProfiles;
   /** Typed Canvas SDK placement truth; omission retains compatibility cells. */
   readonly placement?: DropPlacementPolicy;
+  /** Is this entity a container the engine may ENTER (the facade's catalog-backed test; design-015 §9's gesture and zoom-through)? Default: the `Container` tag. */
+  readonly isContainer?: (entity: Entity) => boolean;
 }
 
 export interface InteractionCore {
@@ -121,6 +126,12 @@ export interface InteractionStack extends InteractionCore {
   readonly wirePreview: WirePreviewBuffer;
   /** The frame pick source's slot (design-014, B3b): the ground layer sets `current` at mount, clears it at dispose. */
   readonly framePick: FramePickSlot;
+  /**
+   * The nav geometry seam (design-015 §9; D2b) beside `framePick`: the renderer's word on a
+   * container's DRAWN face, the inside's arrival and the exact cut camera — core's nav, the
+   * zoom-through and the drop-into read it when set; the renderer sets it at mount, clears it at dispose.
+   */
+  readonly navGeometry: NavGeometrySlot;
   /** Nav-op seam (design-004 §7): forget spatialSync's last-known AABBs. */
   clearCaches(): void;
   /** L4 cursor readout for the DOM cursor reflector. */
@@ -149,6 +160,9 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   // The frame pick source's slot (design-014, B3b): the ground layer fills it at mount.
   const framePick: FramePickSlot = { current: null };
   const pick = createPickingSystems(world, index, wires, framePick);
+  // The nav geometry seam (design-015 §9; D2b): the renderer fills it at mount.
+  const navGeometry: NavGeometrySlot = { current: null };
+  const navOpts = { navGeometry, ...(opts.isContainer !== undefined ? { isContainer: opts.isContainer } : {}) };
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
   const arb = createArbitrationSystems(world);
   const claims = createClaimSystems(world);
@@ -194,6 +208,11 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
       connect.connectBehavior,
       createDrawBehavior(world, sink),
       camera.cameraControl,
+      // design-015 §9 (D2b): the enter GESTURE after the select (the first tap selects, the
+      // second asks to enter) and the zoom-through after the camera (it reads this frame's
+      // wheel zoom). Both ask through `NavIntent`; the facade applies it after the tick.
+      createNavTap(world, navOpts),
+      createZoomThrough(world, navOpts),
     ),
     // navFlight AFTER cameraControl's group (ctl:behave): a gesture going
     // Active stamps Camera.gesturing THIS frame, so the flight yields
@@ -218,6 +237,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     marqueeBuffer: marquee.buffer,
     wirePreview: connect.previewBuffer,
     framePick,
+    navGeometry,
     clearCaches: () => pick.clearCaches(),
     readCursor: cursor.readCursor,
     uninstall() {

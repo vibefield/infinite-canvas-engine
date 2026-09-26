@@ -93,13 +93,14 @@ import { SelectionVersion } from "../helpers/version-stamps";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { ChildOf } from "../catalog/scene";
 import { WidgetEquipped } from "../widget/define-widget";
-import { engineCatalogFor, widgetTypeFor } from "../canvas/engine-catalog";
-import { resolveFrameView, resolvePortal } from "../canvas/frame-view";
+import { widgetTypeFor } from "../canvas/engine-catalog";
+import type { CanvasRect } from "../canvas/frame-view";
 import type {
   FrameSwitchRequest,
   PreparedFrameSwitch,
   PresentationReleaseReason,
 } from "../canvas/presentation-transition";
+import { defaultArrivalCamera, type NavGeometrySlot, resolveNavFace, staticFace } from "./nav-geometry";
 
 const navEntryQ = defineQuery([NavDepth, NavCamera]);
 const selectedQ = defineQuery([Selected]);
@@ -164,9 +165,22 @@ function firstContainerAncestor(world: World, e: Entity): Entity | undefined {
   return undefined;
 }
 
-/** Per-op transition choice (design-006 §3.1); default is the portal zoom. */
+/**
+ * Per-op transition choice (design-006 §3.1); default is the portal zoom. `"none"` snaps to
+ * the arrival; `"cut"` (design-015 §9, the zoom-through — D2b) moves nothing either but lands
+ * on the CONTINUITY camera — the one the destination was already rendering under through the
+ * face (`c0`) — so the cut changes no pixel; the renderer then re-dresses.
+ *
+ * The three overrides are the renderer's word on the container's DRAWN geometry (the nav
+ * geometry seam, nav-geometry.ts): the face `K` in the parent's units, the inside's `arrival`,
+ * and the exact `c0`. Given, they outrank the seam and core's own computation; absent, the op
+ * asks the seam, then computes.
+ */
 export interface NavOpts {
-  readonly transition?: "zoom" | "none";
+  readonly transition?: "zoom" | "none" | "cut";
+  readonly face?: CanvasRect;
+  readonly arrival?: CameraState;
+  readonly c0?: CameraState;
 }
 
 export interface NestedCanvas {
@@ -191,6 +205,8 @@ export interface NestedCanvasOpts {
   readonly clearSpatialCaches: () => void;
   /** EngineCatalog-backed container validity; legacy rigs may omit it. */
   readonly isContainer?: (entity: Entity) => boolean;
+  /** The nav geometry seam (design-015 §9; D2b): the renderer's word on a container's drawn face, arrival and exact `c0`. */
+  readonly navGeometry?: NavGeometrySlot;
   /** Runs synchronously before an explicit enter/exit visibility cut. */
   readonly beforeSwitch?: () => void;
   /** Presentation gate: false forces an atomic cut (for example, cross-ground before T2). */
@@ -405,20 +421,14 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
    * outside the band; only the arrival honors it. No `ContainerCamera`
    * rider (design-006).
    */
-  const resolveArrivalCamera = (frame: Entity): CameraState => {
-    const frameTypeId = world.get(frame, PrefabId)?.id;
-    const canvas =
-      typeof frameTypeId === "string"
-        ? engineCatalogFor(world)?.canvasForContainer(frameTypeId)
-        : undefined;
-    return resolveFrameView(world, frame, canvas, { isContainer: validContainer }).camera;
-  };
+  const resolveArrivalCamera = (frame: Entity): CameraState =>
+    defaultArrivalCamera(world, frame, validContainer);
 
   const snapCamera = (c: CameraState): void => {
     writeRuntimeResource(world, Camera, { x: c.x, y: c.y, zoom: c.zoom, gesturing: false });
   };
 
-  /** Flights need a real viewport and no opt-out; headless snaps (pre-T1 behavior). */
+  /** Flights need a real viewport and no opt-out; headless snaps (pre-T1 behavior). A `"cut"` never flies. */
   const flightable = (
     opts: NavOpts | undefined,
     fromFrame: Entity | undefined,
@@ -427,6 +437,7 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
     const vp = world.getResource(Viewport);
     return (
       opts?.transition !== "none" &&
+      opts?.transition !== "cut" &&
       (config.transitionAllowed?.(fromFrame, toFrame) ?? true) &&
       vp !== undefined &&
       vp.w > 0 &&
@@ -435,10 +446,28 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
   };
 
   /** Container body rect in its parent frame's coords — the portal (§8.5: full body for now). */
-  const containerRect = (c: Entity): { x: number; y: number; width: number; height: number } | undefined => {
-    const typeId = world.get(c, PrefabId)?.id;
-    const binding = typeof typeId === "string" ? widgetTypeFor(world, typeId)?.container : undefined;
-    return resolvePortal(world, c, binding)?.parent;
+  const containerRect = (c: Entity): CanvasRect | undefined => staticFace(world, c);
+
+  /**
+   * A container's face and its inside's arrival for an op (design-015 §9; D2b): the op's own
+   * overrides first, then the renderer's drawn geometry through the seam, then the static rect
+   * and the default framing. `cam` is the host camera the drawn answer is taken under.
+   */
+  const faceOf = (
+    c: Entity,
+    cam: CameraState,
+    opts: NavOpts | undefined,
+  ): { readonly K: CanvasRect | undefined; readonly arrival: CameraState; readonly c0: CameraState | undefined } => {
+    const drawn = resolveNavFace(world, c, cam, config.navGeometry, {
+      ...(opts?.face !== undefined ? { face: opts.face } : {}),
+      ...(opts?.arrival !== undefined ? { arrival: opts.arrival } : {}),
+      isContainer: validContainer,
+    });
+    return {
+      K: opts?.face ?? drawn?.face ?? containerRect(c),
+      arrival: opts?.arrival ?? drawn?.arrival ?? resolveArrivalCamera(c),
+      c0: opts?.c0 ?? drawn?.camera,
+    };
   };
 
   const prepareSwitch = (
@@ -587,14 +616,21 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
     let A: PortalAffine | undefined;
     const vp = world.getResource(Viewport);
     if (vp !== undefined && vp.w > 0 && vp.h > 0) {
+      // the deepest link — the current frame's own container — takes the op's overrides; the seam
+      // answers every link at rest (a container out of the frame is not drawn)
+      const deepest = doomed[doomed.length - 1]?.e;
       for (const { e } of doomed) {
         const frame = world.getRelation(e, NavFrame);
-        const K = frame !== undefined && world.isAlive(frame) ? containerRect(frame) : undefined;
-        if (frame === undefined || K === undefined) {
+        if (frame === undefined || !world.isAlive(frame)) {
           A = undefined;
           break;
         }
-        const M = portalAffine(visibleRect(resolveArrivalCamera(frame), vp.w, vp.h), K);
+        const { K, arrival } = faceOf(frame, camPre, e === deepest ? opts : undefined);
+        if (K === undefined) {
+          A = undefined;
+          break;
+        }
+        const M = portalAffine(visibleRect(arrival, vp.w, vp.h), K);
         A = A === undefined ? M : composeAffine(A, M);
       }
     }
@@ -616,6 +652,11 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
       authorityMutated = true;
       if (A !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
         startNavFlight(world, "exit", A, solveFlightStart(A, camPre), c1, identity);
+      } else if (A !== undefined && opts?.transition === "cut") {
+        // the zoom-through's cut OUT (design-015 §9): the parent camera under which the inside renders as it does now
+        const c0 = opts.c0 ?? solveFlightStart(A, camPre);
+        snapCamera(c0);
+        publishNavCut(world, "exit", camPre, c0, identity, A);
       } else {
         snapCamera(c1);
         publishNavCut(world, "exit", camPre, c1, identity, A);
@@ -649,8 +690,11 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
       if (depth > maxDepth) {
         throw new Error(`ice: enterContainer would exceed the maximum CanvasFrame depth ${maxDepth}.`);
       }
-      const c1 = resolveArrivalCamera(container);
-      const K = containerRect(container);
+      // the face AS DRAWN, the arrival and the exact c0 — the op's, the renderer's (the seam), or core's own (design-015 §9)
+      const camNow: CameraState = { x: cam.x, y: cam.y, zoom: cam.zoom };
+      const face = faceOf(container, camNow, opts);
+      const c1 = face.arrival;
+      const K = face.K;
       const vp = world.getResource(Viewport);
       // M: the child's arrival view onto the container's face (the live portal's own affine); A = M⁻¹.
       const M =
@@ -658,6 +702,9 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
           ? portalAffine(visibleRect(c1, vp.w, vp.h), K)
           : undefined;
       const A = M === undefined ? undefined : invertAffine(M);
+      // the camera the inside was already rendering under through the face: the renderer's word when it has one (the drawn face),
+      // else `outgoingCamera(M, cam)` — the live portal's camera, not the continuity solve's ulp-off twin (design-013 §8 B7, D-B7.1)
+      const c0 = M === undefined ? undefined : (face.c0 ?? outgoingCamera(M, camNow));
       const identity = config.transitionIdentity?.(fromFrame, container);
       const requestedMotion = A !== undefined && flightable(opts, fromFrame, container);
       config.beforeSwitch?.();
@@ -674,11 +721,14 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
         authorityMutated = true;
         world.setRelation(entry, NavFrame, container);
         cutVisibility(); // BEFORE the camera write — no frame may render old content under the new camera
-        if (M !== undefined && A !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
+        if (A !== undefined && c0 !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
           // A = M⁻¹: parent (departed) coords → child (destination) coords. The flight STARTS from the
-          // live portal's exact camera — `outgoingCamera(M, cam)`, the camera the inside was already
-          // rendering under, not the continuity solve's ulp-off twin (design-013 §8 B7, D-B7.1).
-          startNavFlight(world, "enter", A, outgoingCamera(M, cam), c1, identity);
+          // live portal's exact camera (`c0` above), the camera the inside was already rendering under.
+          startNavFlight(world, "enter", A, c0, c1, identity);
+        } else if (A !== undefined && c0 !== undefined && opts?.transition === "cut") {
+          // the zoom-through's cut IN (design-015 §9): the camera lands where the inside already rendered — no pixel changes
+          snapCamera(c0);
+          publishNavCut(world, "enter", cam, c0, identity, A);
         } else {
           snapCamera(c1);
           publishNavCut(world, "enter", cam, c1, identity, A);

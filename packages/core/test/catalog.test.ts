@@ -334,12 +334,12 @@ describe("camera / resources / derived / chrome / nav (§5.7, §5.8)", () => {
     expect(scalarType(cat.MeasuredSize, "w")).toBe("f32");
   });
 
-  it("Follows/VisualOf/NavFrame are arity-one; NavDepth u8, NavCamera f64/f32", () => {
+  it("Follows/VisualOf/NavFrame are arity-one; NavDepth u8, NavCamera f64 throughout (zoom f64 since D2b)", () => {
     expect(arityOf(cat.Follows)).toBe("one");
     expect(arityOf(cat.VisualOf)).toBe("one");
     expect(arityOf(cat.NavFrame)).toBe("one");
     expect(scalarType(cat.NavDepth, "d")).toBe("u8");
     expect(scalarType(cat.NavCamera, "x")).toBe("f64");
-    expect(scalarType(cat.NavCamera, "zoom")).toBe("f32");
+    expect(scalarType(cat.NavCamera, "zoom")).toBe("f64");
   });
 });

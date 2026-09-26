@@ -162,6 +162,8 @@ export type GroundLayerFactory = (ctx: {
   };
   /** The interaction stack's frame pick slot: the ground sets its hit test here at mount, clears it at dispose (design-014, B3b). */
   readonly framePick: InteractionStack["framePick"];
+  /** The interaction stack's nav geometry slot (design-015 §9, D2b): the renderer sets its word on its containers' drawn faces here at mount, clears it at dispose. */
+  readonly navGeometry: InteractionStack["navGeometry"];
 }) => GroundLayerHandle;
 
 export interface InfiniteCanvasProps {
@@ -312,6 +314,7 @@ export function InfiniteCanvas({
         previews: engine.previews,
         hosts: { contentOf: (e) => domWidgets?.hostFor(e), hostOf: (e) => domWidgets?.hostElementFor(e) },
         framePick: stack.framePick,
+        navGeometry: stack.navGeometry,
       }) ?? null;
     groundRef.current = groundLayer;
 

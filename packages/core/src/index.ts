@@ -486,6 +486,22 @@ export {
   type NestedCanvas,
   type NestedCanvasOpts,
 } from "./nav/nested-canvas";
+// design-015 §9 (D2b): the nav geometry seam — the renderer's word on a container's DRAWN face
+// (`stack.navGeometry`), core's fallback, the in-tick nav request and the re-dressing fact.
+export {
+  defaultArrivalCamera,
+  fallbackNavFace,
+  type NavFace,
+  type NavGeometrySlot,
+  type NavGeometrySource,
+  NavIntent,
+  NavRedress,
+  resolveNavFace,
+  smoothstep,
+  staticFace,
+} from "./nav/nav-geometry";
+export { createNavTap, NavTapMemo, type NavTapOpts } from "./systems/nav-tap";
+export { createZoomThrough, type ZoomThroughOpts } from "./systems/zoom-through";
 // design-006 T1: the flight resource (T2's reflector consumes it) + system factory.
 export {
   abortNavFlight,

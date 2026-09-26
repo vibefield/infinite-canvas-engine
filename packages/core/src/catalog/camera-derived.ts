@@ -178,11 +178,16 @@ export const VisualOf = defineRelation("VisualOf", { arity: "one" });
 /** Depth of a nav entry (root = 0). */
 export const NavDepth = defineComponent("NavDepth", { d: field("u8", { default: 0 }) });
 
-/** Camera stored on a nav entry. */
+/**
+ * Camera stored on a nav entry. `zoom` is f64 (D2b, design-015 §9): the return pose is a
+ * flight's ARRIVAL when one is driving (`enterContainer`'s settled-pose rule), and the arrival
+ * lives in f64 on the flight resource — an f32 cell here rounded it, and the exit then landed
+ * one ulp off the camera the desk had been dressed for.
+ */
 export const NavCamera = defineComponent("NavCamera", {
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
-  zoom: field("f32", { default: 1 }),
+  zoom: field("f64", { default: 1 }),
 });
 
 /** Tool active in the departed frame, restored when this nav entry is popped. */

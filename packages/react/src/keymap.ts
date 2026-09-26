@@ -40,8 +40,31 @@
  * Space warns at attach: the pointer adapter owns Space (the pan modifier,
  * design-003 §4.4) and preventDefaults it before gate 1 can let it through.
  */
-import { Position, guardedTransaction, selectedEntities, tools, type CanvasEngine } from "@ice/core";
+import { Container, GestureActive, Position, currentNavEntry, defineQuery, guardedTransaction, selectedEntities, tools, type CanvasEngine } from "@ice/core";
 import { isEditableTarget, keyboardClaimOf } from "@ice/dom";
+
+const gestureActiveQ = defineQuery([GestureActive]);
+
+/** ⏎ (design-015 §9): exactly one selected widget, and it is a container the catalog can enter → fly into it. */
+function enterSelectedContainer(engine: CanvasEngine): void {
+  const { world } = engine;
+  const selected = selectedEntities(world);
+  if (selected.length !== 1) return;
+  const target = selected[0];
+  if (target === undefined || !world.isAlive(target) || !world.hasTag(target, Container)) return;
+  engine.ops.enterContainer(target);
+}
+
+/** Esc (design-007 §3.3, design-015 §9): a live gesture is cancelled, as ever; with none to cancel, the current frame is left. */
+function escapeOrExit(engine: CanvasEngine): void {
+  const { world } = engine;
+  const gestureLive = world.firstOf(gestureActiveQ) !== undefined;
+  if (!gestureLive && currentNavEntry(world) !== undefined) {
+    engine.ops.exitContainer();
+    return;
+  }
+  engine.ops.cancelActiveGestures();
+}
 
 export interface KeymapEntry {
   /** `event.key` to match (case-insensitive; e.g. "z", "Backspace", "ArrowUp"). */
@@ -90,7 +113,10 @@ function defaultEntries(): KeymapEntry[] {
     { key: "z", mod: true, shift: true, run: (e) => e.docs.redo() },
     { key: "d", mod: true, run: (e) => e.ops.duplicateSelection() },
     { key: "a", mod: true, run: (e) => e.ops.selectAll() },
-    { key: "Escape", run: (e) => e.ops.cancelActiveGestures() },
+    // design-015 §9 (D2b): ⏎ with ONE container selected flies into it; Esc cancels a live
+    // gesture as ever, and with none to cancel flies back out of the current frame.
+    { key: "Enter", run: (e) => enterSelectedContainer(e) },
+    { key: "Escape", run: (e) => escapeOrExit(e) },
   ];
   for (const [key, dx, dy] of ARROWS) {
     entries.push({ key, run: (e) => nudgeSelection(e, dx, dy) });

@@ -123,6 +123,21 @@ export const NAV_TRANSITION_DEFAULTS = {
   settleV: 0.02,
 } as const;
 
+/**
+ * The zoom-through (design-015 §9, PORTAL.md §8 — D2b): a wheel zoom IN that leaves a
+ * container's face covering the whole view by `in` CSS px cuts into it; a zoom OUT that
+ * leaves the current frame's face `out` px short of covering cuts back out — both as cuts
+ * nobody can see. `gate` is the face's short side (CSS px) across which a live inside comes
+ * in over its far LOD (presence 0 → 1); a face enters only at presence 1. OFF by default: the
+ * desk turns it on (`settings.nav.zoomThrough.enabled`); every other app keeps explicit entry.
+ */
+export const ZOOM_THROUGH_DEFAULTS = {
+  enabled: false,
+  in: 2,
+  out: 6,
+  gate: [140, 220] as readonly [number, number],
+} as const;
+
 /** Widget/FBO/port budgets (design-004 §2 host pipeline, §3 FBO pool, §6 port materialization; ported into design-005 §4 engine facade). */
 export const RUNTIME_BUDGETS = {
   keepMountedWidgets: 256,

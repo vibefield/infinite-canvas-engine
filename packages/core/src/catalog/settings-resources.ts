@@ -17,6 +17,7 @@ import {
   GESTURE_DEFAULTS,
   NAV_TRANSITION_DEFAULTS,
   POINTER_DEFAULTS,
+  ZOOM_THROUGH_DEFAULTS,
 } from "../settings/defaults";
 
 /**
@@ -69,4 +70,17 @@ export const CameraLimits = defineResource("CameraLimits", {
 /** Nav-transition spring response live mirror (design-006 §4; navFlight consumes). */
 export const NavTransitionSettings = defineResource("NavTransitionSettings", {
   responseMs: field("f32", { default: NAV_TRANSITION_DEFAULTS.responseMs }),
+});
+
+/**
+ * The zoom-through's live mirror (design-015 §9 — D2b; `settings.nav.zoomThrough`): `enabled`
+ * (off unless the app says), the dead band `in`/`out` (CSS px) and the gate `gate0` → `gate1`
+ * (the face's short side, CSS px). The `zoomThrough` system consumes it.
+ */
+export const ZoomThroughSettings = defineResource("ZoomThroughSettings", {
+  enabled: field("bool", { default: ZOOM_THROUGH_DEFAULTS.enabled }),
+  in: field("f32", { default: ZOOM_THROUGH_DEFAULTS.in }),
+  out: field("f32", { default: ZOOM_THROUGH_DEFAULTS.out }),
+  gate0: field("f32", { default: ZOOM_THROUGH_DEFAULTS.gate[0] }),
+  gate1: field("f32", { default: ZOOM_THROUGH_DEFAULTS.gate[1] }),
 });

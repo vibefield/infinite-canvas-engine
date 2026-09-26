@@ -94,6 +94,7 @@ import {
   TransformTween,
   Viewport,
   Wire,
+  ZoomThroughSettings,
 } from "../catalog";
 import { Active, Visible } from "../catalog/camera-derived";
 import {
@@ -115,7 +116,8 @@ import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { guardedTransaction, retargetTweensToDoc } from "../guards/guarded-tx";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { installInteractionStack, type InteractionStack } from "../interaction/install";
-import { createNestedCanvas, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
+import { createNestedCanvas, currentNavFrame, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
+import { NavIntent, NavRedress } from "../nav/nav-geometry";
 import { cancelActiveGestures } from "../ops/gestures";
 import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
@@ -145,6 +147,7 @@ import {
   RUNTIME_BUDGETS,
   SNAP_DEFAULTS,
   type WheelMode,
+  ZOOM_THROUGH_DEFAULTS,
 } from "../settings/defaults";
 
 export interface CanvasEngineOpts {
@@ -222,6 +225,20 @@ export interface CanvasEngineOpts {
      * cards it overlaps to the GPU while it shows; 0 = nothing to shield).
      */
     readonly chrome?: { readonly liftScale?: number; readonly selectionReach?: number };
+    /**
+     * Nav seeds (design-015 §9 — D2b). `zoomThrough`: a wheel zoom that leaves a container's
+     * face covering the view by `in` CSS px cuts into it, one that leaves the current frame's
+     * face `out` px short cuts back out — off unless `enabled` (the desk's is on); `gate` is the
+     * face's short side (CSS px) across which a live inside comes in (a face enters only at 1).
+     */
+    readonly nav?: {
+      readonly zoomThrough?: {
+        readonly enabled?: boolean;
+        readonly in?: number;
+        readonly out?: number;
+        readonly gate?: readonly [number, number];
+      };
+    };
   };
   readonly policy?: {
     /** The gate verdict a "migrate"-classified doc downgrades to when migration is off/fails. */
@@ -550,6 +567,12 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       canIngress: (widgetTypeId, targetContainer) =>
         placement.canIngress(widgetTypeId, targetContainer).ok,
     },
+    // the gesture's and the zoom-through's "may this be entered" — the nav's own test (design-015 §9)
+    isContainer: (entity) => {
+      if (!world.isAlive(entity) || !world.hasTag(entity, Container)) return false;
+      const typeId = world.get(entity, PrefabId)?.id;
+      return typeof typeId === "string" && catalog.widget(typeId)?.container !== undefined;
+    },
   });
   const budgets = {
     keepMounted: opts.budgets?.keepMounted ?? RUNTIME_BUDGETS.keepMountedWidgets,
@@ -601,6 +624,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   const nav = createNestedCanvas(world, {
     index: stack.index,
     clearSpatialCaches: () => stack.clearCaches(),
+    navGeometry: stack.navGeometry,
     isContainer: (entity) => {
       if (!world.isAlive(entity) || !world.hasTag(entity, Container)) return false;
       const typeId = world.get(entity, PrefabId)?.id;
@@ -700,6 +724,39 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   });
   engine.addSystems("react", nav.navIntegrity);
 
+  /**
+   * The nav op a system asked for INSIDE the tick (design-015 §9, D2b — the double-tap gesture,
+   * the zoom-through; `NavIntent`), applied once the tick is over: the ops are structural and
+   * run outside it. A zoom-through cut also states the re-dressing fact (`NavRedress`) — the
+   * renderer's ramp reads it: the desk entered was dressed for its arrival as a face, the one
+   * left for the camera it was cut at.
+   */
+  let appliedIntent = 0;
+  const applyNavIntent = (): void => {
+    const intent = world.getResource(NavIntent);
+    if (intent === undefined || intent.epoch === appliedIntent) return;
+    appliedIntent = intent.epoch;
+    const opts: NavOpts = { transition: intent.transition };
+    if (intent.kind === "enter") {
+      if (!world.isAlive(intent.target) || !world.hasTag(intent.target, Container)) return;
+      const typeId = world.get(intent.target, PrefabId)?.id;
+      if (typeof typeId !== "string" || catalog.widget(typeId)?.container === undefined) return;
+      nav.enterContainer(intent.target, opts);
+      if (intent.redress) {
+        const prev = world.getResource(NavRedress);
+        writeRuntimeResource(world, NavRedress, { kind: "in", from: intent.from, frame: intent.target, epoch: (prev?.epoch ?? 0) + 1 });
+      }
+    } else {
+      const left = currentNavFrame(world);
+      if (left === undefined) return;
+      nav.exitContainer(opts);
+      if (intent.redress) {
+        const prev = world.getResource(NavRedress);
+        writeRuntimeResource(world, NavRedress, { kind: "out", from: intent.from, frame: left, epoch: (prev?.epoch ?? 0) + 1 });
+      }
+    }
+  };
+
   // Settings resources (design-005 §4): construction seeds; live-tunable after.
   //
   // THE FACADE OWNS THESE, NOT THE DOCUMENT (D-C4.5, Phase C review). A
@@ -725,6 +782,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     pointers: ResourceValue<typeof PointerSettings>;
     snap: ResourceValue<typeof SnapConfig>;
     chrome: ResourceValue<typeof ChromeSettings>;
+    zoomThrough: ResourceValue<typeof ZoomThroughSettings>;
     stage: ResourceValue<typeof StageMode> | undefined;
   } = {
     camera: { x: 0, y: 0, zoom: 1, gesturing: false },
@@ -744,6 +802,13 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       liftScale: st.chrome?.liftScale ?? CHROME_DEFAULTS.liftScale,
       selectionReach: st.chrome?.selectionReach ?? CHROME_DEFAULTS.selectionReach,
     },
+    zoomThrough: {
+      enabled: st.nav?.zoomThrough?.enabled ?? ZOOM_THROUGH_DEFAULTS.enabled,
+      in: st.nav?.zoomThrough?.in ?? ZOOM_THROUGH_DEFAULTS.in,
+      out: st.nav?.zoomThrough?.out ?? ZOOM_THROUGH_DEFAULTS.out,
+      gate0: st.nav?.zoomThrough?.gate?.[0] ?? ZOOM_THROUGH_DEFAULTS.gate[0],
+      gate1: st.nav?.zoomThrough?.gate?.[1] ?? ZOOM_THROUGH_DEFAULTS.gate[1],
+    },
     // StageMode's truth is the out-of-ECS `stageHolds` map below, so the
     // mirror starts ABSENT: at construction nothing holds and the resource is
     // legitimately unset (every reader defaults to 0). It is captured and
@@ -761,6 +826,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     facadeResources.pointers = world.getResource(PointerSettings) ?? facadeResources.pointers;
     facadeResources.snap = world.getResource(SnapConfig) ?? facadeResources.snap;
     facadeResources.chrome = world.getResource(ChromeSettings) ?? facadeResources.chrome;
+    facadeResources.zoomThrough = world.getResource(ZoomThroughSettings) ?? facadeResources.zoomThrough;
     facadeResources.stage = world.getResource(StageMode) ?? facadeResources.stage;
   };
   /** Write the mirror into the world: construction, and after every reset. */
@@ -773,6 +839,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     world.setResource(PointerSettings, facadeResources.pointers);
     world.setResource(SnapConfig, facadeResources.snap);
     world.setResource(ChromeSettings, facadeResources.chrome);
+    world.setResource(ZoomThroughSettings, facadeResources.zoomThrough);
     if (facadeResources.stage !== undefined) world.setResource(StageMode, facadeResources.stage);
   };
   seedFacadeResources();
@@ -1725,7 +1792,12 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     // NOT the same as an absent one, and the optional field refuses the former.
     ...(opts.compositorDevice !== undefined ? { compositorDevice: opts.compositorDevice } : {}),
     budgets,
-    step: (now) => engine.step(now),
+    // the tick, then the nav op a system asked for inside it (design-015 §9, D2b): ops are
+    // structural and run outside the tick; the frame in between is drawn under the old camera
+    step: (now) => {
+      engine.step(now);
+      applyNavIntent();
+    },
     dispose() {
       previews.dispose();
       closeDoc();

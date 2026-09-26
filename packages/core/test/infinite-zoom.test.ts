@@ -201,10 +201,10 @@ describe("CameraLimits [1e-8, 1e8] end to end (design-015 §9)", () => {
     expect(outFrames).toBeGreaterThan(0);
     expect(outFrames).toBeLessThan(600);
     const after = cam();
-    // the exit lands EXACTLY on the stored root camera — whose zoom is an f32 column
-    // (NavCamera.zoom; x/y are f64): f32 precision is RELATIVE, the same ~6e-8 at 1e-6
-    // as at 0.6, so the return is as exact here as at any zoom (≈1e-4 px across 1280).
-    expect(after.zoom).toBe(Math.fround(before.zoom));
+    // the exit lands EXACTLY on the stored root camera — every column of NavCamera is f64
+    // since D2b (design-015 §9: the zoom-through's exit must land on the camera the desk was
+    // dressed for, and a flight's arrival lives in f64), so the return is the number itself.
+    expect(after.zoom).toBe(before.zoom);
     expect(after.x).toBe(before.x);
     expect(after.y).toBe(before.y);
     expectInvertible(after);
