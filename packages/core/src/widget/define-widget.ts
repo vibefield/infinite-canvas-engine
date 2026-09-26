@@ -19,7 +19,7 @@
  * options (checked in the DSL), duplicate types rejected.
  */
 import { field, enumOf } from "@vibecook/strata-ecs";
-import type { Component, FieldInput, Tag } from "@vibecook/strata-ecs";
+import type { Component, Entity, FieldInput, Tag, World } from "@vibecook/strata-ecs";
 import { ensureComponent } from "../schema/meta";
 import type { AnyBehaviorAttachSpec, AnyBehaviorDef } from "../behavior/types";
 import {
@@ -229,6 +229,12 @@ export interface WidgetDef {
   /** The mode in hand when the object is picked up, from its props (the board: its capped marker's ink). Default: the first mode, else none. */
   readonly heldTool?: (props: Readonly<Record<string, unknown>>) => string;
   /**
+   * What RIDES with the widget when a gesture moves it (design-015 D3t-c — the desk calendar's stuck notes): widgets of the same
+   * frame the move claim adds to its dragged set, so they move with it live and land in the SAME transaction (one undo step).
+   * Read from the world at the claim; a taped rider stays put, as a taped member of a selection does.
+   */
+  readonly riders?: (world: World, entity: Entity) => readonly Entity[];
+  /**
    * The object's DATA prefabs (design-015 §5.1; D3t-a): durable children `ChildOf` it that are never widgets — the board's
    * strokes. An engine catalog that registers the widget tracks them as it tracks the widget's own: their packs are stamped on
    * a new document and gated at open, a guarded transaction resolves them, and one whose version moved migrates by its own
@@ -316,6 +322,8 @@ export interface WidgetType {
   readonly heldTools: readonly HeldToolDef[];
   /** The mode in hand at the pick-up, from the object's props; undefined = the first mode. */
   readonly heldTool: ((props: Readonly<Record<string, unknown>>) => string) | undefined;
+  /** What rides with the widget when a gesture moves it (design-015 D3t-c); undefined = nothing. */
+  readonly riders: ((world: World, entity: Entity) => readonly Entity[]) | undefined;
   /** The object's data prefabs (design-015 §5.1, D3t-a) — the catalog tracks them with the widget; empty for most. */
   readonly data: readonly Prefab[];
   readonly defaultSize: { readonly w: number; readonly h: number };
@@ -644,6 +652,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     openable: hasObject && def.openable === true,
     heldTools: Object.freeze([...(def.heldTools ?? [])]),
     heldTool: def.heldTool,
+    riders: def.riders,
     data: Object.freeze([...(def.data ?? [])]),
     defaultSize,
     minSize: def.minSize ?? { w: 40, h: 40 },

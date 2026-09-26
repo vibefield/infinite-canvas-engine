@@ -401,6 +401,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       ? createCalendarHand({
           world, docs: opts.docs ?? { current: () => undefined }, pads: padsLocal, writing: calWriting, caret: () => calInput?.caret() ?? null,
           geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), isPad: (e) => builder.kindOf(e)?.name === CALENDAR_KIND,
+          isNote: (e) => builder.kindOf(e)?.name === PAPER_KIND,
         })
       : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it

@@ -34,6 +34,8 @@ export interface ComponentMeta {
 export interface RelationMeta {
   name: string;
   arity: "one" | "many";
+  /** A DEPENDENT edge (design-015 D3t-c): its source dies with its target — the cascade walks it as it walks a wire's ends. */
+  dependent?: boolean;
 }
 
 export interface ResourceMeta {
@@ -109,12 +111,22 @@ export function defineTag(name: string): Tag {
   return t;
 }
 
+/** The relations declared `dependent` (their sources die with their targets), in definition order. */
+const dependentRelations: Relation[] = [];
+
+/**
+ * A relation. `dependent` (design-015 D3t-c — a reified edge, the wire's precedent generalised: the desk calendar's pin → its note):
+ * the entity the edge goes OUT of dies with the entity it points AT — `cascadeDestroy` takes it in the same transaction, so one undo
+ * brings both back.
+ */
 export function defineRelation(
   name: string,
-  opts?: { arity?: "one" | "many"; ordered?: boolean },
+  opts?: { arity?: "one" | "many"; ordered?: boolean; dependent?: boolean },
 ): Relation {
-  const r = strataDefineRelation(name, opts);
-  relationMeta.set(r, { name, arity: opts?.arity ?? "one" });
+  const { dependent, ...strataOpts } = opts ?? {};
+  const r = strataDefineRelation(name, opts === undefined ? undefined : strataOpts);
+  relationMeta.set(r, { name, arity: opts?.arity ?? "one", ...(dependent === true ? { dependent: true } : {}) });
+  if (dependent === true) dependentRelations.push(r);
   return r;
 }
 
@@ -137,6 +149,10 @@ export const schemaMeta = {
   },
   relation(r: Relation): RelationMeta | undefined {
     return relationMeta.get(r);
+  },
+  /** The relations whose sources die with their targets (`defineRelation({ dependent: true })`). */
+  dependents(): readonly Relation[] {
+    return dependentRelations;
   },
   resource(r: Resource): ResourceMeta | undefined {
     return resourceMeta.get(r);

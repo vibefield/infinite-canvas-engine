@@ -280,6 +280,8 @@ export interface DeskBuilder {
   heldPart(e: Entity, x: number, y: number): string | null;
   /** The objects the last build painted LIFTED by their kind's own state (D3t-a — a print carried or in the air): above their siblings, asked first by the pick. */
   lifted(): readonly Entity[];
+  /** An entity a kind's state veiled in the last build (D3t-c — a note gone with its month): not drawn, never picked. */
+  veiled(e: Entity): boolean;
   stats(): DeskBuilderStats;
   dispose(): void;
 }
@@ -443,6 +445,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   let lastHand: HeldBuild | undefined;
   /** What the last build painted lifted by its kind's own word (D3t-a) — the pick asks these first. */
   let liftedList: readonly Entity[] = [];
+  /** What the kinds' states veiled in the last build (D3t-c) — the pick answers `outside` for them. */
+  let veiledList: ReadonlySet<Entity> = new Set();
   /**
    * The held object's own frame → the screen (the frame the pose seam published) → the desk (the held slot's camera): the pose
    * the last build DREW, as core mapped the pointer through it (D3t-a). Undefined unless `e` is in hand.
@@ -706,7 +710,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           st.slot = slot;
           st.next = slot === "root" ? members[i + 1] : undefined;
           // the object in hand (or flying home) is drawn as a slot of its own over the desk, never among the desk's rows nor its marks (D4b)
-          if (hand !== null && hand.e > 0 && e === hand.entity && slot === "root") continue;
+          if (hand !== null && hand.e > 0 && (e === hand.entity || handRiders.has(e)) && slot === "root") continue;
+          // veiled by a kind's own state (D3t-c — a stuck note whose month the calendar is not showing): not drawn, never picked, no marks
+          if (veiledNow.has(e) && !st.grabbed) { st.geometry = null; st.record = null; st.inside = null; continue; }
           const r = st.rect;
           const hx = r.w / 2 + st.kind.reach;
           const hy = r.h / 2 + st.kind.reach;
@@ -771,6 +777,11 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // let go, it flies home from where it is. A harness pins the carry for a still. The object is resolved ONCE, in its own slot
       // under the pose's camera (its extent to the reading size, no dapple, the day's light by night as the carry rises), never
       // among the desk's rows; landed — home and shut — it is the desk's again this very frame, and the brackets lock back on.
+      // what the kinds' own states veil (D3t-c — a note stuck to a day of a month its calendar is not showing): asked row by row, so a
+      // pad drawn earlier in this very build (the pads stratum paints first) has already said which of its notes go with its month
+      const veiledNow = { has: (e: Entity): boolean => { for (const local of locals?.values() ?? []) if (local.veils?.().has(e) === true) return true; return false; } };
+      /** What rides with the object in hand (D3t-c — its stuck notes): drawn in the hand's slot, never on the desk behind. */
+      const handRiders = new Set<Entity>();
       const heldNow = heldEntity(world);
       if (heldNow !== undefined) {
         if (hand === null || hand.entity !== heldNow) hand = { entity: heldNow, dir: 1, p: 0, e: 0, e0: 0, closeT: 0, openness: 0 };
@@ -828,10 +839,21 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const settledNow = pin !== undefined ? hand.e >= 1 : hand.dir > 0 && hand.p >= 1;
             const coverMoving = openTarget ? hand.openness < 1 - 1e-3 : hand.openness > 1e-3;
             if (pin === undefined && (hand.dir < 0 || hand.p < 1 || coverMoving)) live = true;
+            // what rides with it (D3t-c — `riders`: a calendar's stuck notes, "they ride along, as when you carry the pad"): each drawn in
+            // the hand's slot under the same camera, at rest, over it — and out of the desk behind while it is in hand
+            const riders: SlotObject[] = [];
+            const typeId = world.get(hand.entity, PrefabId)?.id;
+            for (const rider of typeof typeId === "string" ? (widgetTypeFor(world, typeId)?.riders?.(world, hand.entity) ?? []) : []) {
+              const rst = veiledNow.has(rider) ? undefined : stateOf(rider);
+              if (rst === undefined) continue;
+              const rctx = contextOf(rider, rst, heldView, heldGrid, lampOf(heldGrid.mat.plane), false);
+              riders.push({ kind: rst.kind.name, record: rst.kind.record(rst.kind.resolve(rctx), rctx) });
+              handRiders.add(rider);
+            }
             heldBuild = {
               entity: hand.entity, e: hand.e, settled: settledNow, landing: hand.dir < 0,
               frame: { ...heldFrame(pose, extentLocal, target.single, face), settled: settledNow },
-              inputs: { object: { kind: hst.kind.name, record: R }, view: heldView, grid: heldGrid, e: hand.e, ...heldFocus(hand.e, vpSize, theme) },
+              inputs: { object: { kind: hst.kind.name, record: R }, ...(riders.length > 0 ? { riders } : {}), view: heldView, grid: heldGrid, e: hand.e, ...heldFocus(hand.e, vpSize, theme) },
               deskSeq,
             };
           }
@@ -934,6 +956,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // an object that left the frame without dying (a nav cut) is forgotten, no ghost: it was not deleted — its kind lets go of it (D2c)
       for (const [e, st] of states) if (st.seen !== seq) { states.delete(e); forget(st.kind, e); }
       const objects: SlotObject[] = rows.map((r) => ({ kind: r.kind, record: r.record }));
+      // the pick's word on what was veiled, as this build left it
+      const veiledSet = new Set<Entity>();
+      for (const local of locals?.values() ?? []) for (const e of local.veils?.() ?? []) veiledSet.add(e);
+      veiledList = veiledSet;
       // the marks: the root slot's rows under the root camera — the current frame's desk — and its grid's rulers (an entered mini mat prints none) (D4a)
       const ruler = frameGrid.mat.ruler;
       const marked = marks.frame({ rows: markRows, cam, view: vp, dt, night: theme.name === "dark", rulers: ruler.on ? { margin: ruler.margin, band: ruler.band } : null });
@@ -1027,6 +1053,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     hand: () => lastHand,
     heldToWorld: (e, x, y) => heldToWorld(e, x, y),
     lifted: () => liftedList,
+    veiled: (e) => veiledList.has(e),
     heldPart(e, x, y) {
       const w = heldToWorld(e, x, y);
       const st = states.get(e);

@@ -57,6 +57,8 @@ import {
   Watches,
 } from "../catalog";
 import { SelectionVersion, bumpVersion } from "../helpers/version-stamps";
+import { widgetTypeFor } from "../canvas/engine-catalog";
+import { PrefabId } from "../schema/prefab";
 import { selectedEntities } from "../ops/selection";
 
 const P = GesturePhases;
@@ -99,6 +101,26 @@ function expandSweep(world: World, ctx: SystemCtx, dragged: Entity[]): void {
         }
       }
     });
+  }
+}
+
+/**
+ * The widgets a dragged widget's type says RIDE with it (`defineWidget({ riders })`, design-015 D3t-c — the desk calendar's stuck
+ * notes): added to the dragged set once each, alive and of the same frame (the sweep's frame test), so they move live with it and
+ * commit in the same transaction. A rider's own riders are not followed (one level — a note carries nothing).
+ */
+function expandRiders(world: World, ctx: SystemCtx, dragged: Entity[]): void {
+  const inSet = new Set(dragged);
+  for (const w of [...dragged]) {
+    if (!ctx.isAlive(w)) continue;
+    const id = ctx.get(w, PrefabId)?.id;
+    const riders = typeof id === "string" ? widgetTypeFor(world, id)?.riders?.(world, w) : undefined;
+    for (const r of riders ?? []) {
+      if (inSet.has(r) || !ctx.isAlive(r) || !ctx.has(r, Position)) continue;
+      if (world.hasTag(r, Culled) && !world.hasTag(r, Active)) continue; // other frame
+      inSet.add(r);
+      dragged.push(r);
+    }
   }
 }
 
@@ -197,6 +219,9 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
         // elevate (comment first, members after — each successive "last"
         // lands ABOVE the previous one).
         expandSweep(world, ctx, dragged);
+        // …and what a dragged widget's TYPE says rides with it (design-015 D3t-c — a calendar's stuck notes): after it, so a
+        // rider elevates above what it rides
+        expandRiders(world, ctx, dragged);
 
         for (const w of dragged) {
           if (!ctx.isAlive(w) || !ctx.has(w, Position)) continue;

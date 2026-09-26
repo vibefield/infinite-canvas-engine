@@ -8,11 +8,12 @@
 // - a PIN `desk.pin { day }` — a note stuck to a day: a child of the pad with a durable relation `desk.pins` to the
 //   note (a reified edge, the wire's precedent: strata's relations carry no data, and the day is the pin's).
 //
-// Both are READ-ONLY in this slice: the pad's print (the tiles, a Canvas 2D raster of its events) and the hand
-// that writes, sticks and unsticks are D3t's; here the model, its transactions for a test or an agent, and where
-// a pinned note lies (`daySlot` — the lab's `slotOf`).
+// D3t-c writes both: the pen's sessions spawn and edit events (objects/calendar-writing.ts), the hand sticks and unsticks
+// notes (objects/calendar-hand.ts); here the model, its transactions for a test or an agent, where a pinned note lies
+// (`daySlot` — the lab's `slotOf`), an event as the print takes it (`calEventOf`) and the user's selection on a pad
+// (`PadSelection`, runtime). The pin's edge is DEPENDENT: a pin dies with its note.
 
-import { ChildOf, defineComponent, definePrefab, defineRelation, type Entity, field, type GuardedTx, init } from "@ice/core";
+import { ChildOf, defineComponent, definePrefab, defineRelation, type Entity, field, type GuardedTx, init, type World } from "@ice/core";
 import { decodeSeeds } from "../paper/seeds";
 import type { CalEvent } from "./events";
 import { CALENDAR, type CalendarLaw } from "./law";
@@ -38,8 +39,24 @@ export const EventPrefab = definePrefab(EVENT_TYPE, {
 
 /** A note stuck to a day of a pad: the pin's day (ISO key); its note by the `PinsNote` edge. */
 export const NotePin = defineComponent("desk.pin", { day: field("string", { default: "" }) });
-/** pin → the note it holds (a reified edge: the day is the pin's cell). */
-export const PinsNote = defineRelation("desk.pins", { arity: "one" });
+/**
+ * pin → the note it holds (a reified edge: the day is the pin's cell). DEPENDENT (D3t-c — core's `defineRelation({ dependent })`):
+ * the pin dies with its note in the same transaction (a stuck note deleted leaves no pin behind; one ⌘Z brings both back).
+ */
+export const PinsNote = defineRelation("desk.pins", { arity: "one", dependent: true });
+
+/** The notes stuck to a pad, with their days (its pins' edges) — what rides with it, what goes with its months. */
+export function pinnedNotes(world: World, pad: Entity): { readonly pin: Entity; readonly note: Entity; readonly day: string }[] {
+  if (!world.isAlive(pad)) return [];
+  const out: { pin: Entity; note: Entity; day: string }[] = [];
+  for (const k of world.getReverse(pad, ChildOf)) {
+    const p = world.get(k, NotePin);
+    if (p === undefined) continue;
+    const note = world.getRelation(k, PinsNote);
+    if (note !== undefined && world.isAlive(note)) out.push({ pin: k, note, day: p.day ?? "" });
+  }
+  return out;
+}
 export const PIN_TYPE = "desk.pin";
 export const PinPrefab = definePrefab(PIN_TYPE, {
   store: "durable",

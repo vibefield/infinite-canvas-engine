@@ -7,7 +7,8 @@
  * edge entities, so a wire whose `WireFrom`/`WireTo` endpoint dies is destroyed
  * with it (reverse-index lookup, same transaction).
  *
- * The walk reads runtime world state via `getReverse`; `tx.destroy` only RECORDS
+ * Beyond the wires, any source of a DEPENDENT relation pointing at a doomed entity dies with it (`defineRelation({ dependent:
+ * true })`, design-015 D3t-c). The walk reads runtime world state via `getReverse`; `tx.destroy` only RECORDS
  * (applied at seal / projection), so the reverse indices stay whole for the whole
  * walk. A `visited` set guards against cycles and double-destroying a wire that
  * touches two doomed endpoints.
@@ -16,6 +17,7 @@ import type { Entity, World } from "@vibecook/strata-ecs";
 import type { Mutator } from "@vibecook/strata-ecs/durable";
 import { WireFrom, WireTo } from "../catalog/graph";
 import { ChildOf } from "../catalog/scene";
+import { schemaMeta } from "../schema/meta";
 
 /** Depth-first destroy `root` and its `ChildOf` subtree + any wires bound to a destroyed entity. */
 export function cascadeDestroy(tx: Mutator, world: World, root: Entity): void {
@@ -31,6 +33,8 @@ export function cascadeDestroy(tx: Mutator, world: World, root: Entity): void {
     // Wires whose endpoint dies here die with it.
     for (const wire of world.getReverse(e, WireFrom)) walk(wire);
     for (const wire of world.getReverse(e, WireTo)) walk(wire);
+    // …and any DEPENDENT edge's source pointing here (design-015 D3t-c — the wire's rule, generalised: a calendar's pin dies with its note)
+    for (const r of schemaMeta.dependents()) for (const src of world.getReverse(e, r)) walk(src);
 
     tx.destroy(e);
   };

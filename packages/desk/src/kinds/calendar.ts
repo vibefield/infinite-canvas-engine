@@ -15,13 +15,19 @@
 // eye), its ring the selection's, fading with a ghost (the lab's `ring × (1 − fade)`; the pad itself stays whole
 // until it is gone — its delete). Its page tables' slots and its id are the kind's, per pad. Its hit unprojects the
 // desk point at the pad's face through the SAME desk eye the pass draws with: at rest a pad answers its TAPE
-// (`frame` — a press carries it, a tap selects it); its paper is not taken (a miss — the press falls through to the
-// mat and pans, the lab's "not taken"); the days, the entries, the roll and the corner are D3t's parts. Its events
-// and pins are data children (calendar/data.ts), read-only here. The colours and the print's presences are the
-// product's (`theme()`; the presences set on the root pass by the kind's local — the theme gate).
+// (`frame` — a press carries it, a tap selects it) and the roll's handles (D3t-c: the roll, the corner, the foot, the
+// sheet in motion — parts); its paper is not taken (a miss — the press falls through to the mat and pans, the lab's
+// "not taken"; a click there is the days', read at event time); in hand the whole sheet is the pen's `content`. Its
+// events and pins are data children (calendar/data.ts). The colours and the print's presences are the product's
+// (`theme()`; the presences set on the root pass by the kind's local — the theme gate).
+//
+// AT WORK (D3t-c): the local (`createPads`) also keeps each pad's PRINT (calendar/print.ts, from its events — tiles
+// through calendar/printing.ts and the host's raster), its months TURNING toward the document's month
+// (calendar/turn.ts), the MARKS the hand puts on it (days, a line, the caret, a drop — drawn on the sheet as the
+// marks' brackets), a DRAFT line, and the notes stuck to it that go with its months (`veils` — not drawn, never picked).
 
 import type { Entity, HeldToolApi } from "@ice/core";
-import { calEventOf, CalendarEvent, dayOr, monthKeyOf, monthOfKey, NotePin, PadSelection } from "../calendar/data";
+import { calEventOf, CalendarEvent, dayOr, monthKeyOf, monthOfKey, NotePin, PadSelection, PinsNote } from "../calendar/data";
 import type { CalEvent } from "../calendar/events";
 import { padFrame, buildPad } from "../calendar/pad";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
@@ -33,7 +39,7 @@ import { type PinnedSheet, PrintTiles } from "../calendar/printing";
 import { rollAt, rollState, type RollState, tangentAt } from "../calendar/roll";
 import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn, stepRoll } from "../calendar/turn";
 import { CALENDAR_SHADER_FILES, calendarShaders } from "../calendar/shaders";
-import { cellAt, dayBox, sheetOf } from "../calendar/sheet";
+import { cellAt, dayBox, noteSlot, sheetOf } from "../calendar/sheet";
 import { bandOf, GUTTER, levelFor, type TileGrid, tileGrid, tileRect, tilesIn } from "../calendar/tiles";
 import { caretAt, glyphBox, type HandLaw } from "../paper/text";
 import type { KindProgram, SlotContext } from "../kind";
@@ -291,6 +297,8 @@ export interface Pads extends KindLocal {
   rolled(): readonly { readonly e: Entity; readonly month: number }[];
   /** A hand's roll the document refused (read-only): the pad rolls back to the document's month. */
   unroll(e: Entity): void;
+  /** The notes stuck to its pads that go with their months (D3t-c): not drawn, never picked (`KindLocal.veils`). */
+  veils(): ReadonlySet<Entity>;
   /** Draw a pad's print and its marks for this frame (the kind's `record`): the sheets' tiles brought up, the marks' boxes. */
   draw(e: Entity, G: CalendarGeometry, view: ObjectContext["view"], print: PrintLook | undefined): Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe">;
 }
@@ -304,6 +312,8 @@ interface PadState {
   draft: PadDraft | null;
   /** Its months turning (calendar/turn.ts) — flux toward the document's month. */
   readonly roll: PadRoll;
+  /** The notes stuck to it that go with its months this frame (not drawn, never picked — `veils`). */
+  hidden: ReadonlySet<Entity>;
 }
 
 const NO_MARKS: Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> = { sel: [], mark: null, drop: null, caret: null, wipe: null };
@@ -327,7 +337,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   const prints = new Map<string, { key: string; print: SheetPrint }>();
   const state = (e: Entity): PadState => {
     let st = pads.get(e);
-    if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined, pinned: new Map(), marks: undefined, draft: null, roll: newRoll() }; pads.set(e, st); }
+    if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined, pinned: new Map(), marks: undefined, draft: null, roll: newRoll(), hidden: new Set() }; pads.set(e, st); }
     return st;
   };
   const passOf = (): CalendarPass | undefined => { const k = host.pass(); return k instanceof CalendarKind ? (k.pass ?? undefined) : undefined; };
@@ -365,6 +375,37 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     prints.set(id, { key, print });
     return print;
   };
+  /**
+   * The notes stuck to pad `e` that go with its months this frame (the prototype's `syncNotes`, each note at its day's slot): a note
+   * whose month is not laid bare; mid-turn, one on the sheet in motion once the roll has reached it, one on the sheet beneath until
+   * the roll has laid it bare (Q-7: a note steps out of sight as the roll reaches it — it is not wound into the paper).
+   */
+  const hiddenOf = (e: Entity, G: CalendarGeometry): ReadonlySet<Entity> => {
+    const out = new Set<Entity>();
+    const ch = host.children;
+    if (ch?.entries === undefined || ch.target === undefined) return out;
+    for (const { entity: pin, value } of ch.entries(e, NotePin)) {
+      const note = ch.target(pin, PinsNote);
+      const day = dayOr(value.day ?? "");
+      if (note === undefined || day === undefined) continue;
+      const m = monthOfDay(day);
+      let show = m === G.base && G.moving === null;
+      const R = G.roll;
+      if (G.moving !== null && R !== null && (m === G.moving || m === G.base)) {
+        const L = sheetOf(monthGrid(m, G.weekStart), law);
+        const k = day - L.grid.first;
+        const slot = noteSlot(L, Math.floor(k / 7), k % 7, law);
+        const h = (law.note.size / 2) * 1.05;
+        const corners: readonly (readonly [number, number])[] = [[slot.x - h, slot.y - h], [slot.x + h, slot.y - h], [slot.x - h, slot.y + h], [slot.x + h, slot.y + h]];
+        show = m === G.moving
+          ? corners.every(([x, y]) => y - F.T < tangentAt(R, x) - rollAt(R, x).radius * 1.1)
+          : corners.every(([x, y]) => y - F.T > tangentAt(R, x) + rollAt(R, x).radius * 1.25);
+      }
+      if (!show) out.add(note);
+    }
+    return out;
+  };
+  let veilsCache: ReadonlySet<Entity> | null = null;
   /** The marks' boxes on the sheet they are on (the base at rest and rolling down, the moving sheet rolling up). */
   const marksOn = (st: PadState, month: number, weekStart: 0 | 1, print: SheetPrint | undefined): Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> => {
     const m = st.marks;
@@ -468,8 +509,15 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       }
       return { tiles: out, empty };
     },
+    veils() {
+      if (veilsCache === null) { const all = new Set<Entity>(); for (const st of pads.values()) for (const n of st.hidden) all.add(n); veilsCache = all; }
+      return veilsCache;
+    },
     draw(e, G, view, look) {
       const st = state(e);
+      // the notes stuck to it that go with its months (before the things are drawn: the pads paint first)
+      const hidden = hiddenOf(e, G);
+      if (hidden.size !== st.hidden.size || [...hidden].some((n) => !st.hidden.has(n))) { st.hidden = hidden; veilsCache = null; }
       const writing = st.marks?.writing?.entry ?? Number.NaN;
       const markMonth = G.marksOn === 1 && G.moving !== null ? G.moving : G.base;
       const pass = passOf();
@@ -512,6 +560,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       if (st === undefined) return;
       free.push(st.slot);
       pads.delete(e);
+      if (st.hidden.size > 0) veilsCache = null;
       tiles?.drop(st.id, [st.slot * 2, st.slot * 2 + 1]);
       for (const k of [...prints.keys()]) if (k.startsWith(`${st.id}:`)) prints.delete(k);
     },

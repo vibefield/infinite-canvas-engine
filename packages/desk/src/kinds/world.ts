@@ -198,6 +198,11 @@ export interface KindLocal {
    * flying home): the builder paints it with the carried set, above its siblings, and the pick asks it first where it is drawn.
    */
   lifted?(e: Entity): boolean;
+  /**
+   * Entities this kind's state says are NOT drawn this frame, of any kind (D3t-c — a note stuck to a day of a month the calendar is
+   * not showing): the builder draws none of them and the pick answers `outside` for them. Asked after `tick`, before the draw.
+   */
+  veils?(): ReadonlySet<Entity>;
   dispose?(): void;
 }
 

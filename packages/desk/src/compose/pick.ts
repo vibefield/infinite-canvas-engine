@@ -14,12 +14,13 @@
 import type { Entity, FramePickSource } from "@ice/core";
 import type { DeskBuilder } from "./builder";
 
-export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach" | "lifted">, opts: { readonly moving?: () => boolean } = {}): FramePickSource {
+export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach" | "lifted"> & Partial<Pick<DeskBuilder, "veiled">>, opts: { readonly moving?: () => boolean } = {}): FramePickSource {
   return {
     pad: () => builder.reach(),
     // what a kind draws lifted (D3t-a — a print carried or gliding) is asked first, where it is drawn, not where its facts are
     lifted: () => builder.lifted(),
     hit(e: Entity, wx: number, wy: number): string | undefined {
+      if (builder.veiled?.(e) === true) return "outside";   // veiled by a kind's state (D3t-c — a note gone with its month): never picked
       const G = builder.geometryOf(e);
       const kind = builder.kindOf(e);
       if (G === undefined || kind === undefined) return undefined;

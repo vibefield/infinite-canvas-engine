@@ -2,12 +2,12 @@
 // tape, lying beneath everything (stratum `pads`). Durable props: the MONTH it shows (YYYY-MM), its week start
 // (1 Monday, 0 Sunday), its tape and the pen its caret is drawn in, by name (the colours are the host's). What is
 // WRITTEN on it and what is STUCK to it are data children (calendar/data.ts): its events `desk.event`, its pins
-// `desk.pin` (a note stuck to a day) — read-only in this slice; the roll, the entries and the sticking are D3t's.
+// `desk.pin` (a note stuck to a day; D3t-c writes both, and the notes stuck to it ride with it — its `riders`).
 // Its rect is the sheet (1760 × 1852 at the law's cell); movable by its tape, selectable; a ROOT object (D-D18:
 // `interaction.drop: "never"` — no container takes it, whatever it accepts).
 
 import { p } from "@ice/core";
-import { EventPrefab, PinPrefab } from "../calendar/data";
+import { EventPrefab, PinPrefab, pinnedNotes } from "../calendar/data";
 import { CALENDAR } from "../calendar/law";
 import { padFrame } from "../calendar/pad";
 import { calendarKind } from "../kinds/calendar";
@@ -37,4 +37,6 @@ export const Calendar = defineObject({
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
   // its entries and its pins are its DATA (D3t-a's door, D3t-c): the catalog stamps, gates and migrates their prefabs with the pad's own
   data: [EventPrefab, PinPrefab],
+  // the notes stuck to it RIDE with it (D3t-c — core's `riders`): carried by its tape, they move with it and land in its transaction
+  riders: (world, pad) => pinnedNotes(world, pad).map((p) => p.note),
 });

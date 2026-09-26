@@ -163,6 +163,8 @@ export interface OutgoingInputs extends SlotInputs {
  */
 export interface HeldFrameInputs {
   readonly object: SlotObject;
+  /** What rides with it (D3t-c — a calendar's stuck notes): drawn in the hand's slot after it, under the same camera. */
+  readonly riders?: readonly SlotObject[];
   readonly view: View & { readonly dpr: number };
   readonly grid: GridConfig;
   readonly e: number;
@@ -567,7 +569,7 @@ export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet
     cache.stats = { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals };
   }
   const encoder = device.createCommandEncoder({ label: "hold" });
-  const handInputs: GroundFrameInputs = { view: held.view, grid: held.grid, objects: [held.object], theme: { ...inputs.theme, matLight: held.light } };
+  const handInputs: GroundFrameInputs = { view: held.view, grid: held.grid, objects: [held.object, ...(held.riders ?? [])], theme: { ...inputs.theme, matLight: held.light } };
   const hand = prepareFrame(encoder, root, pool, handInputs, held.grid);
   const handPass = beginPass(encoder, hold.hand.view, [0, 0, 0, 0], "hold/hand");
   drawSlot(handPass, size, dpr, { ...hand.incoming, bare: true });

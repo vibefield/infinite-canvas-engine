@@ -6,7 +6,7 @@
 import { type CanvasEngine, defineQuery, type Entity, guardedTransaction, LocalPointer, Pointer, PointerPart, TouchesExact } from "@ice/core";
 import type { CalendarGeometry, DeskLayerHandle, Pads } from "@ice/desk";
 import { sheetDayBox, sheetOnScreen } from "@ice/desk";
-import { addEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection } from "@ice/desk/objects";
+import { addEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/desk/objects";
 
 export interface CalendarApi {
   /** Write an entry on pad `pad` — ONE undoable transaction; its entity id. */
@@ -35,6 +35,8 @@ export interface CalendarApi {
   partAt(x: number, y: number): { readonly pad: number; readonly part: string; readonly day: string | null; readonly entry: number | null } | null;
   /** A pad's turning (the kind's local): the month laid bare (YYYY-MM), the turn in flight, the corner's lift, a hand's roll pending. */
   roll(pad: number): { readonly shown: string | null; readonly turn: { readonly dir: 1 | -1; readonly p: number; readonly target: 0 | 1; readonly held: boolean; readonly hand: boolean } | null; readonly peek: number; readonly pending: string | null } | null;
+  /** The notes stuck to a pad: each pin's note, its day, whether the pad's month shows it (not veiled). */
+  pins(pad: number): readonly { readonly pin: number; readonly note: number; readonly day: string; readonly veiled: boolean }[];
   /** The mouse pointer as the interaction stack sees it: what it touches exactly and the part there (a pad's foot, its corner). */
   hover(): { readonly touches: number; readonly part: string } | null;
   /** The editor's state: lent to the calendar, focused, its value. */
@@ -93,6 +95,7 @@ export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): Cale
       if (r === undefined) return null;
       return { shown: r.shown === null ? null : monthKeyOf(r.shown), turn: r.turn === null ? null : { ...r.turn }, peek: r.peek, pending: r.pending === null ? null : monthKeyOf(r.pending) };
     },
+    pins: (pad) => pinnedNotes(world, pad as Entity).map((p) => ({ pin: p.pin as number, note: p.note as number, day: p.day, veiled: handle.builder.veiled(p.note) })),
     hover() {
       let out: { touches: number; part: string } | null = null;
       world.query(mouseQ).each((b) => {
