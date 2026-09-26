@@ -231,8 +231,12 @@ describe("a taped widget under gestures (design-015 §5.1, Q-e)", () => {
     ce.ops.setLocked([a], true);
     ce.ops.setSelection([a]);
     step(2);
-    const h = seHandle();
-    drag(h.x, h.y, h.x + 60, h.y + 40);
+    // D4a: a taped selection shows no grips at all (selectionChrome reaps them) — nothing to grab; a drag where the se grip
+    // would be (the card's corner) resizes and moves nothing
+    let grips = 0;
+    ce.world.query(handleQ).each((b) => { grips += b.count; });
+    expect(grips).toBe(0);
+    drag(220, 190, 280, 230);
     expect(ce.world.get(a, Size)).toEqual({ w: 120, h: 90 });
     expect(ce.world.get(a, Position)).toEqual({ x: 100, y: 100 });
 

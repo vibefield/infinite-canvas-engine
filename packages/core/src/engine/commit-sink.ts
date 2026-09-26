@@ -68,6 +68,8 @@ export interface CommitCreate {
   readonly props?: Readonly<Record<string, unknown>>;
   readonly parent?: Entity;
   readonly select?: boolean;
+  /** Where the widget joins its parent's sibling sequence (default: last — on top). An ⌥-drag's copy goes `{ before: original }` (D4a). */
+  readonly order?: OrderPlace;
 }
 
 /** Generation key captured by an interactive commit before final validation. */

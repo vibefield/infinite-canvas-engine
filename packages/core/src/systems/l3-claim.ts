@@ -42,6 +42,7 @@ import {
   GesturePhases,
   Grab,
   InsertGhost,
+  LeavesCopy,
   Locked,
   MeasuredSize,
   Movable,
@@ -166,6 +167,8 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
         // from the pointer's latched sample (Keyboard only carries key events).
         const pointer = ctx.getRelations(rec, Watches)[0];
         const shift = pointer !== undefined && ctx.get(pointer, PointerMods)?.shift === true;
+        // ⌥ as the drag starts: its release leaves a copy behind (design-015 D4a) — latched like a route, never mid-gesture
+        if (pointer !== undefined && ctx.get(pointer, PointerMods)?.alt === true && !ctx.has(grabbed, InsertGhost)) ctx.addTag(rec, LeavesCopy);
         const current = selectedEntities(world);
         let dragged: Entity[];
         if (ctx.has(grabbed, InsertGhost)) {

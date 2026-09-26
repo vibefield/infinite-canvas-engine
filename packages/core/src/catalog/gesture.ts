@@ -148,6 +148,13 @@ export const RoutedResize = defineTag("RoutedResize");
 export const RoutedConnect = defineTag("RoutedConnect");
 export const RoutedMarquee = defineTag("RoutedMarquee");
 export const RoutedPan = defineTag("RoutedPan");
+
+/**
+ * A move drag that STARTED with ⌥ held (latched by moveClaim, like a route): its release leaves a copy of every
+ * widget it carried where that widget lay, just under it, in the move's one transaction (*Marks on the Mat*'s
+ * keys — "⌥ as the drag starts leaves a copy behind"; design-015 D4a). Runtime, on the recognizer.
+ */
+export const LeavesCopy = defineTag("LeavesCopy");
 /** Draw-tool drag: the release rect creates a widget (design-005 §3, M10). */
 export const RoutedDraw = defineTag("RoutedDraw");
 

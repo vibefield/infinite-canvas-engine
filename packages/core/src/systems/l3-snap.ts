@@ -53,6 +53,7 @@ import {
   Viewport,
 } from "../catalog";
 import { SNAP_DEFAULTS } from "../settings/defaults";
+import { moveDelta, snapHeldOff, watchedMods } from "./drag-mods";
 
 const snapDragQ = defineQuery([Drag, GestureActive, RoutedMove]);
 
@@ -159,14 +160,17 @@ export function createSnapSystem(world: World, index: SpatialIndex<Entity>): Tic
           const hasSource =
             (captured !== undefined && ctx.hasTag(captured, SnapSource)) ||
             dragged.some((w) => ctx.hasTag(w, SnapSource));
-          if (!enabled || !hasSource) {
+          // ⌘ (or Ctrl) held holds the snap off — no correction, no guides (design-015 D4a, the desk's keys)
+          if (!enabled || !hasSource || snapHeldOff(watchedMods(ctx, rec))) {
             setSnap(rec, 0, 0);
             continue;
           }
 
-          // Intended union rect from Grab + total/zoom (never last-applied Position).
+          // Intended union rect from Grab + the drag's delta (never last-applied Position) — ⇧'s axis lock
+          // included: the delta the snap aligns is the delta the move writes (drag-mods.ts).
           const d = ctx.read(rec, Drag);
           const zoom = d.zoomAtClaim || 1;
+          const delta = moveDelta(ctx, rec);
           const draggedSet = new Set<Entity>(dragged);
           let minX = Number.POSITIVE_INFINITY;
           let minY = Number.POSITIVE_INFINITY;
@@ -176,8 +180,8 @@ export function createSnapSystem(world: World, index: SpatialIndex<Entity>): Tic
           for (const w of dragged) {
             if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
             const g = ctx.read(w, Grab);
-            const x = g.x + d.totalX / zoom;
-            const y = g.y + d.totalY / zoom;
+            const x = g.x + delta.x;
+            const y = g.y + delta.y;
             minX = Math.min(minX, x);
             minY = Math.min(minY, y);
             maxX = Math.max(maxX, x + g.w);
@@ -224,9 +228,12 @@ export function createSnapSystem(world: World, index: SpatialIndex<Entity>): Tic
           }
 
           const res = computeSnapGuides(intended, refs, threshold);
-          setSnap(rec, res.snapDx, res.snapDy);
-          for (const g of res.guides) wantGuides.push({ axis: g.axis, at: g.position });
+          // ⇧ locks the drag to one axis: the snap corrects along it alone, and states nothing about the other
+          const free = (axis: "x" | "y"): boolean => delta.lock === null || delta.lock === axis;
+          setSnap(rec, free("x") ? res.snapDx : 0, free("y") ? res.snapDy : 0);
+          for (const g of res.guides) if (free(g.axis)) wantGuides.push({ axis: g.axis, at: g.position });
           for (const sp of res.spacings) {
+            if (!free(sp.axis)) continue;
             for (const seg of sp.segments) {
               wantBars.push({ axis: sp.axis, from: seg.from, to: seg.to, perp: sp.perpPosition, gap: sp.gap });
             }

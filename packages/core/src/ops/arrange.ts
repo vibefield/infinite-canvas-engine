@@ -55,6 +55,7 @@ import type { DurableStore } from "@vibecook/strata-ecs/durable";
 import {
   Active,
   Grab,
+  Locked,
   MeasuredSize,
   Position,
   Selectable,
@@ -114,6 +115,8 @@ export function arrangeWidgets(
       // Grab-held only: an in-flight tween is RETARGETED below (I15), not
       // skipped — skipping stranded it at the previous run's target.
       !world.has(e, Grab) &&
+      // taped down (design-015 §5.1, D4a): Clean Up flows around it — it stays, an obstacle like any bystander
+      !world.hasTag(e, Locked) &&
       world.get(e, Position) !== undefined,
   );
   if (movable.length < 2) return [];

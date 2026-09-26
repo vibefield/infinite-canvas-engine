@@ -34,6 +34,7 @@ import {
   GhostRetiring,
   Grab,
   InsertGhost,
+  LeavesCopy,
   MeasuredSize,
   NO_ENTITY,
   OverlapCandidate,
@@ -56,6 +57,9 @@ import { SelectionVersion, bumpVersion } from "../helpers/version-stamps";
 import type { NavGeometrySlot } from "../nav/nav-geometry";
 import { selectedEntities } from "../ops/selection";
 import { dropFaceOf, insideRect, objectsOnly } from "./l3-drop";
+import { widgetTypeFor } from "../canvas/engine-catalog";
+import { PrefabId } from "../schema/prefab";
+import { moveDelta } from "./drag-mods";
 
 const P = GesturePhases;
 
@@ -214,6 +218,18 @@ export function createSelectMoveBehaviors(
   opts: { readonly navGeometry?: NavGeometrySlot } = {},
 ): { selectBehavior: System; moveBehavior: System } {
   const navGeometry = opts.navGeometry;
+  /** An ⌥-drag's copy of `w`: its type and every prop group as they are, at its origin (`Grab`), untaped, just under it. */
+  const copyOf = (ctx: SystemCtx, w: Entity, g: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }): CommitCreate | undefined => {
+    const id = ctx.get(w, PrefabId)?.id;
+    const widget = typeof id === "string" ? widgetTypeFor(world, id) : undefined;
+    if (widget === undefined || typeof id !== "string") return undefined;
+    const props: Record<string, unknown> = {};
+    for (const group of widget.groups) {
+      const v = ctx.get(w, group.component) as Record<string, unknown> | undefined;
+      if (v !== undefined) for (const name of Object.keys(group.fields)) props[name] = v[name];
+    }
+    return { type: id, x: g.x, y: g.y, w: g.w, h: g.h, props, order: { before: w } };
+  };
   const selectBehavior = defineSystem(
     tapRecognizedQ,
     (b, ctx) => {
@@ -281,11 +297,11 @@ export function createSelectMoveBehaviors(
         const dragged = ctx.getRelations(rec, Drags); // live edges — remote despawns already gone
 
         if (ctx.hasTag(rec, P.tags.Active)) {
-          // Per-frame absolute writes: Grab origin + screen totals / zoom-at-claim + snap.
-          const d = ctx.read(rec, Drag);
+          // Per-frame absolute writes: Grab origin + the drag's delta (screen totals / zoom-at-claim, ⇧'s axis lock — drag-mods.ts) + snap.
+          const delta = moveDelta(ctx, rec);
           const snap = ctx.get(rec, SnapState) ?? { dx: 0, dy: 0 };
-          const wx = d.totalX / d.zoomAtClaim + snap.dx;
-          const wy = d.totalY / d.zoomAtClaim + snap.dy;
+          const wx = delta.x + snap.dx;
+          const wy = delta.y + snap.dy;
           for (const w of dragged) {
             if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue; // survivor-safe (design-003 §8)
             const g = ctx.read(w, Grab);
@@ -296,9 +312,10 @@ export function createSelectMoveBehaviors(
 
         if (ctx.hasTag(rec, P.justTags.Ended)) {
           const d = ctx.read(rec, Drag);
+          const delta = moveDelta(ctx, rec);
           const snap = ctx.get(rec, SnapState) ?? { dx: 0, dy: 0 };
-          const wx = d.totalX / d.zoomAtClaim + snap.dx;
-          const wy = d.totalY / d.zoomAtClaim + snap.dy;
+          const wx = delta.x + snap.dx;
+          const wy = delta.y + snap.dy;
           let container = ctx.getRelation(rec, DropTarget);
           // The desk's rules for an all-OBJECT set (design-015 §9, D2b): ⌥ held at the release
           // keeps the object on this desk; the centre of the FINAL bounds over the container's
@@ -481,6 +498,11 @@ export function createSelectMoveBehaviors(
                 continue;
               }
               writes.push({ entity: w, component: Position, value: { x: g.x + wx, y: g.y + wy } });
+              // ⌥ at the drag's start: a copy stays where it lay, just under it — in this one transaction (D4a)
+              if (ctx.hasTag(rec, LeavesCopy)) {
+                const copy = copyOf(ctx, w, g);
+                if (copy !== undefined) creates.push(copy);
+              }
             }
             if (writes.length > 0 || creates.length > 0) {
               const accepted = sink.commit({

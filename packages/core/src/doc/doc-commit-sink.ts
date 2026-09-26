@@ -120,7 +120,7 @@ export function createDocCommitSink(
             ...(c.props !== undefined ? { props: c.props } : {}),
           }, widget);
           const spawned = tx.spawnPrefab(prefab, overrides);
-          attachSpawnParent(tx, world, spawned, c.parent !== undefined ? { parent: c.parent } : undefined);
+          attachSpawnParent(tx, world, spawned, c.parent !== undefined || c.order !== undefined ? { ...(c.parent !== undefined ? { parent: c.parent } : {}), ...(c.order !== undefined ? { order: c.order } : {}) } : undefined);
           if (c.select === true) {
             let list = pendingSelects.get(world);
             if (list === undefined) {

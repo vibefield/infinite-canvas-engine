@@ -8,6 +8,7 @@
  * `<EngineProvider>` and mirrors the hook's return into `result.current`.
  */
 import {
+  Locked,
   Position,
   PrefabId,
   PresenceInfo,
@@ -224,6 +225,34 @@ describe("default keymap", () => {
     });
     step();
     expect(engine.world.get(e, Position)?.x).toBe(50);
+  });
+
+  it("the tape (design-015 D4a): an arrow passes a taped widget over while its untaped companion moves; ⇧⌘L tapes the selection, and lifts it once all of it is taped — one undo step each", () => {
+    const { engine, step } = makeEngine();
+    const a = spawnBox(engine, step, 50, 50);
+    const b = spawnBox(engine, step, 200, 50);
+    engine.ops.setLocked([a], true);
+    step();
+    engine.ops.setSelection([a, b]);
+    cleanups.push(attachKeymap(engine, window));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    step();
+    expect(engine.world.get(a, Position)?.x).toBe(50);
+    expect(engine.world.get(b, Position)?.x).toBe(201);
+    const tape = (): KeyboardEvent => new KeyboardEvent("keydown", { key: "L", metaKey: true, shiftKey: true, bubbles: true, cancelable: true });
+    const first = tape();
+    window.dispatchEvent(first);
+    step();
+    expect(first.defaultPrevented).toBe(true);
+    expect([engine.world.hasTag(a, Locked), engine.world.hasTag(b, Locked)]).toEqual([true, true]);
+    window.dispatchEvent(tape());
+    step();
+    expect([engine.world.hasTag(a, Locked), engine.world.hasTag(b, Locked)]).toEqual([false, false]);
+    act(() => {
+      engine.docs.undo();
+    });
+    step();
+    expect([engine.world.hasTag(a, Locked), engine.world.hasTag(b, Locked)]).toEqual([true, true]);
   });
 
   it("Escape cancels active gestures through ops", () => {

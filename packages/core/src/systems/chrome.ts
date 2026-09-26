@@ -55,6 +55,7 @@ import {
   Culled,
   Grab,
   HandleSpec,
+  Locked,
   MeasuredSize,
   Position,
   Resizable,
@@ -176,6 +177,9 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       // card gets the outline box, never the 8 grips (mixed multi-select is
       // conservatively grip-less too).
       let allResizable = true;
+      // The tape (design-015 §5.1, D4a): a taped widget is never resized by a gesture (resizeClaim gives it no rider),
+      // so a selection holding one shows no grips — the knobs hide, the box stays.
+      let anyLocked = false;
       // Visual drag-lift factor (2026-07-17): a Grab-bed member's card is
       // CSS-scaled about its center by the app (widgetlab 1.05); inflate its
       // rect by the mirrored setting so the box keeps WRAPPING what the user
@@ -201,6 +205,7 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         // membership-less worlds carry neither tag).
         if (ctx.hasTag(e, Culled) && !ctx.hasTag(e, Active)) continue;
         if (!ctx.hasTag(e, Resizable)) allResizable = false;
+        if (ctx.hasTag(e, Locked)) anyLocked = true;
         const p = ctx.read(e, Position);
         // Effective size (review finding): the outline must wrap what the user
         // SEES — MeasuredSize where auto-sized and measured, else Size.
@@ -238,7 +243,7 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       //    selection look is the app's (e.g. widgetlab's CardShell ring);
       //  - grips stay gated to all-resizable selections (2026-07-12 rule).
       const wantBox = count > 0 && (allResizable || count >= 2);
-      const wantHandles = count > 0 && allResizable;
+      const wantHandles = count > 0 && allResizable && !anyLocked;
 
       if (!wantBox) {
         if (boxEntity !== undefined) reap(ctx);

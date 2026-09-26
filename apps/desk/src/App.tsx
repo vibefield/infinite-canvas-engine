@@ -11,7 +11,7 @@ import type { DeskLayerHandle } from "@ice/desk/host";
 import { deskLayer } from "@ice/desk/host";
 import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, VINYLS, type VinylName } from "@ice/desk/objects";
 import type { ThemeName } from "@ice/desk/theme";
-import { type GroundLayerFactory, InfiniteCanvas, type KeymapEntry } from "@ice/react";
+import { type GroundLayerFactory, InfiniteCanvas, type KeymapEntry, nudgeSelection } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
 import { createDeskEngine, joinDeskRoom } from "./desk";
@@ -22,6 +22,8 @@ import { deskPalette, deskTheme, osTheme } from "./palette";
 import { spawnAll } from "./scene";
 
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
+/** The mat's lattice cell at zoom 1, world units — the desk's ⇧ nudge (*Marks on the Mat*: "⇧ arrows nudge 20, one lattice cell"). */
+const LATTICE_CELL = 20;
 
 function fail(e: unknown): void {
   const el = document.getElementById("fail");
@@ -96,6 +98,8 @@ export function App(): ReactElement {
       { key: "m", run: () => stick(MINIMAT_TYPE, { name: `Mat ${matSerial.current++}` }) },
       { key: "d", run: () => themeRef.current.toggle() },
       { key: "t", run: cycleVinyl },
+      // ⇧ arrows nudge one lattice cell (Marks on the Mat's keys, D4a) — the engine's default ⇧ step is 10; a taped object never moves
+      ...([["ArrowLeft", -1, 0], ["ArrowRight", 1, 0], ["ArrowUp", 0, -1], ["ArrowDown", 0, 1]] as const).map(([key, dx, dy]): KeymapEntry => ({ key, shift: true, run: (e) => nudgeSelection(e, dx * LATTICE_CELL, dy * LATTICE_CELL) })),
     ];
   }, [engine]);
 

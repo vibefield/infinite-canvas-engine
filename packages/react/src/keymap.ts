@@ -9,7 +9,10 @@
  *   ⌘D              → ops.duplicateSelection
  *   ⌘A              → ops.selectAll
  *   Esc             → ops.cancelActiveGestures
- *   Arrows          → nudge the selection ±1px (⇧ = ±10px) — ONE tx per press
+ *   Arrows          → nudge the selection ±1px (⇧ = ±10px) — ONE tx per press; a TAPED widget
+ *                     never moves (design-015 §5.1 — `Locked`, D4a), its untaped companions do
+ *   ⇧⌘L / ⇧Ctrl-L   → tape the selection down, or lift the tape when all of it is taped
+ *                     (*Marks on the Mat*'s keys, D4a) — `ops.setLocked`, one transaction
  *   tool shortcuts  → ops.setTool (v/h/c + any registered tool's shortcut)
  *
  * Space-hold pan is ALREADY owned by the pointer adapter (design-003 §2) — it is
@@ -40,7 +43,7 @@
  * Space warns at attach: the pointer adapter owns Space (the pan modifier,
  * design-003 §4.4) and preventDefaults it before gate 1 can let it through.
  */
-import { Container, GestureActive, Position, currentNavEntry, defineQuery, guardedTransaction, selectedEntities, tools, type CanvasEngine } from "@ice/core";
+import { Container, GestureActive, Locked, Position, currentNavEntry, defineQuery, guardedTransaction, selectedEntities, tools, type CanvasEngine } from "@ice/core";
 import { isEditableTarget, keyboardClaimOf } from "@ice/dom";
 
 const gestureActiveQ = defineQuery([GestureActive]);
@@ -82,11 +85,15 @@ type KeyTarget = Pick<Window, "addEventListener" | "removeEventListener">;
 const signature = (key: string, mod?: boolean, shift?: boolean): string =>
   `${key.toLowerCase()}|${mod ? 1 : 0}|${shift ? 1 : 0}`;
 
-/** One nudge = one gesture-equivalent transaction (absolute Position writes). */
-function nudgeSelection(engine: CanvasEngine, dx: number, dy: number): void {
+/**
+ * One nudge = one gesture-equivalent transaction (absolute Position writes). A taped widget (`Locked`) is passed
+ * over — the tape holds it as it holds against a drag (design-015 §5.1, D4a). Exported so an app can bind its own
+ * step (the desk's ⇧ nudge is one lattice cell, 20).
+ */
+export function nudgeSelection(engine: CanvasEngine, dx: number, dy: number): void {
   const session = engine.docs.current();
   if (session === undefined) return;
-  const selection = selectedEntities(engine.world).filter((e) => session.store.keyOf(e) !== undefined);
+  const selection = selectedEntities(engine.world).filter((e) => session.store.keyOf(e) !== undefined && !engine.world.hasTag(e, Locked));
   if (selection.length === 0) return;
   guardedTransaction(session.store, engine.world, (tx) => {
     for (const e of selection) {
@@ -104,6 +111,13 @@ const ARROWS: readonly [key: string, dx: number, dy: number][] = [
   ["ArrowDown", 0, 1],
 ];
 
+/** ⇧⌘L: tape the selection down — or, when every selected widget is taped, lift the tape (one transaction). */
+export function toggleTape(engine: CanvasEngine): void {
+  const selection = selectedEntities(engine.world);
+  if (selection.length === 0) return;
+  engine.ops.setLocked(selection, !selection.every((e) => engine.world.hasTag(e, Locked)));
+}
+
 /** The locked defaults + tool shortcuts (read from the registry at attach time). */
 function defaultEntries(): KeymapEntry[] {
   const entries: KeymapEntry[] = [
@@ -117,6 +131,7 @@ function defaultEntries(): KeymapEntry[] {
     // gesture as ever, and with none to cancel flies back out of the current frame.
     { key: "Enter", run: (e) => enterSelectedContainer(e) },
     { key: "Escape", run: (e) => escapeOrExit(e) },
+    { key: "l", mod: true, shift: true, run: toggleTape },
   ];
   for (const [key, dx, dy] of ARROWS) {
     entries.push({ key, run: (e) => nudgeSelection(e, dx, dy) });
