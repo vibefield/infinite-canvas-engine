@@ -59,7 +59,7 @@ const EXCEPTIONS = {};
  * A scene with a selection is drawn on the desk's side as the prototype drew it — frame.mjs's `prototypeRing`, the oracle's own
  * BASELINE rule — so this rig holds the objects to the prototype, and `rig:parity` holds the marks to the Node oracle.
  */
-const selects = (s) => [...(s.notes ?? []), ...(s.minimats ?? []), ...(s.boards ?? [])].some((o) => o.selected);
+const selects = (s) => [...(s.notes ?? []), ...(s.minimats ?? []), ...(s.boards ?? []), ...(s.prints ?? []), ...(s.books ?? []), ...(s.calendars ?? []), ...(s.things ?? [])].some((o) => o.selected);
 
 // ── Preflight: the prototype, its build tool, the page's build ──────────────────────────────────────────────────────────────
 const die = (what, how) => { console.log(`PREFLIGHT FAIL: ${what}\n  ${how}`); process.exit(1); };

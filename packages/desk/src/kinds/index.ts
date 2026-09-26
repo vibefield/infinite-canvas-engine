@@ -18,9 +18,9 @@ import { paperProgram } from "./paper";
 import { photoProgram } from "./photo";
 
 export { BOARD_KIND, type BoardInk, BoardKind, type BoardKindOptions, type BoardObjectLook, type BoardPalette, boardFrame, boardKind, boardProgram, boardReach, boardRest, createBoardInk } from "./board";
-export { CALENDAR_KIND, type CalendarAlpha, type CalendarGeometry, CalendarKind, type CalendarKindOptions, calendarKind, type CalendarObjectLook, type CalendarPalette, calendarProgram, calendarReach, createPads, type PadPose, type Pads, sheetDraw } from "./calendar";
+export { CALENDAR_KIND, type CalendarAlpha, calendarFrame, type CalendarGeometry, CalendarKind, type CalendarKindOptions, calendarKind, type CalendarObjectLook, type CalendarPalette, calendarProgram, calendarReach, createPads, type PadPose, type Pads, sheetDraw } from "./calendar";
 export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatFrame, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
-export { bookAngle, type BookPose, type Books, createBooks, NOTEBOOK_KIND, type NotebookGeometry, NotebookKind, type NotebookKindOptions, notebookKind, type NotebookObjectLook, type NotebookPalette, notebookProgram, notebookReach } from "./notebook";
+export { bookAngle, bookFrame, type BookPose, type Books, createBooks, NOTEBOOK_KIND, notebookFrame, type NotebookGeometry, NotebookKind, type NotebookKindOptions, notebookKind, type NotebookObjectLook, type NotebookPalette, notebookProgram, notebookReach } from "./notebook";
 export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperFrame, paperProgram, paperReach, paperKind } from "./paper";
 export { createPrints, type FlickWitness, PHOTO_KIND, photoFrame, photoKind, PhotoKind, type PhotoKindOptions, type PhotoPose, photoProgram, photoReach, printExtent, printRect, type PrintRest, type Prints } from "./photo";
 export { type BlobStore, createMemoryBlobStore, type DecodedPicture, hashBytes, type PictureDecoder, RGBA_TYPE, type StoredBlob } from "../photo/blobs";

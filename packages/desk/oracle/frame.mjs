@@ -28,8 +28,9 @@
 // `locked` ones the tape; `marks` states the rest a still can pin (the lock-on's progress, the vellum, the
 // fold, the laser from a real snap, the strike, the tape's press). The kinds' own ring is retired (their
 // records carry ring 0, as the builder's do — the notebook's too, D3w); `prototypeRing` draws a still exactly
-// as the prototype did — the kinds' ring, no marks — for the baseline check against the prototype's own renders. (The books and the
-// pads wear no marks yet: their world halves, and so their frames, come after D4b.)
+// as the prototype did — the kinds' ring, no marks — for the baseline check against the prototype's own renders. The books and the
+// pads wear them too (D3w): each marks object is the frame its kind's world half draws — the whiteboard's, the print's, the
+// notebook's and the desk calendar's (kinds `boardFrame`, `photoFrame`, `bookFrame`, `calendarFrame`), one function on both sides.
 import { VIEW } from "./scenes.mjs";
 import { beginPass } from "../src/engine/target.ts";
 import { MatPass } from "../src/mat/mat-pass.ts";
@@ -40,7 +41,7 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/pa
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { flightLights, flightPresent, insidePresent, insideView, miniMatInstance } from "../src/minimat/inside.ts";
 import { createSlotSet, drawFrame, prepareFrame, SlotPool } from "../src/ground.ts";
-import { BOARD_KIND, boardFrame, CALENDAR_KIND, deskKinds, MINIMAT_KIND, miniMatFrame, NOTEBOOK_KIND, PAPER_KIND, paperFrame, PHOTO_KIND, photoFrame } from "../src/kinds/index.ts";
+import { BOARD_KIND, boardFrame, bookFrame, CALENDAR_KIND, calendarFrame, deskKinds, MINIMAT_KIND, miniMatFrame, NOTEBOOK_KIND, PAPER_KIND, paperFrame, PHOTO_KIND, photoFrame } from "../src/kinds/index.ts";
 import { MarksPass } from "../src/marks/pass.ts";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders.ts";
 import { assembleMarks } from "../src/marks/assemble.ts";
@@ -75,6 +76,8 @@ const bookHash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; re
 let nextBook = 1;
 /** A book is an object that lives across frames (the lab's `Book`): the same spec object is the same book — its id, its mesh — so a host drawing it again re-uploads nothing (the cost rig's steady state). */
 const booksBySpec = new WeakMap();
+/** A book's turn on the mat: the spec's, else its seed's (the lab's `makeBook` — never set down quite square). */
+const bookAngleOf = (b) => b.angle ?? (bookHash(b.seed ?? 7) - 0.5) * 0.06;
 
 /**
  * A notebook as the lab's `drawBooks` hands it to the pass, from a scene's spec (lab/notebook.ts `BookSceneSpec`): `makeBook` — its spec
@@ -100,7 +103,7 @@ export function notebookDraw(b) {
   if (b.held) { motion.held = true; motion.lift = 1; }
   if (b.tilt) { motion.tiltX = b.tilt[0]; motion.tiltY = b.tilt[1]; }
   if (b.selected) { motion.selected = true; motion.ring = b.held || motion.opened ? 0 : 1; }
-  const angle = b.angle ?? (bookHash(seed) - 0.5) * 0.06;
+  const angle = bookAngleOf(b);
   // resolveBooks: held it rises and tilts; opening, it rises while the cover stands
   const swing = Math.min(Math.max(swingOf(motion.theta), 0), Math.PI);
   // biome-ignore lint/style/useExponentiationOperator: the lab's arithmetic (lab/notebook.ts `placementOf`), verbatim — it feeds a record
@@ -428,7 +431,11 @@ export async function createOracleDesk({ device, format, text, assets, log = con
 
   // ---------------------------------------------------------------- the desk's marks (D4a) — the builder's rules on a still
 
-  /** A desk's objects in paint order as their marks need them (marks/assemble.ts): the frame its kind draws, ICE's rect, the still's facts. */
+  /**
+   * A desk's objects in paint order as their marks need them (marks/assemble.ts): the frame its kind draws, ICE's rect, the still's
+   * facts. The builder's order: the pads' stratum beneath the sheets, the sheets beneath the things (a note pinned to a pad's day
+   * lies where the pad puts it).
+   */
   function markedObjects(desk, M) {
     const rectOf = (o, w, h) => ({ x0: o.x - w / 2, y0: o.y - h / 2, x1: o.x + w / 2, y1: o.y + h / 2 });
     const facts = (o, frame, rect, resizable) => ({
@@ -437,11 +444,13 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       tape: { press: M.press ?? [1, 1], a: o.locked === true ? 1 : 0 },
     });
     const out = [];
+    for (const c of desk.calendars ?? []) out.push(facts(c, calendarFrame(c.x, c.y), rectOf(c, PAD.W, PAD.H), false));
     for (const m of desk.minimats ?? []) out.push(facts(m, miniMatFrame(matGeometry(m)), rectOf(m, m.w ?? MINIMAT.size.w, m.h ?? MINIMAT.size.h), false));
     for (const t of thingsOf(desk)) {
       if (t.kind === "note") out.push(facts(t, paperFrame(noteGeometry(t)), rectOf(t, t.w ?? NOTE.size, t.h ?? NOTE.size), false));
       else if (t.kind === "board") out.push(facts(t, boardFrame(boardPoseOf(t).geometry), rectOf(t, t.w ?? BOARD.spec.width, t.h ?? BOARD.spec.height), true));
       else if (t.kind === "print") { const size = printSizeOf(); out.push(facts(t, photoFrame(printOf(t).geometry), rectOf(t, size.w, size.h), true)); }
+      else if (t.kind === "book") { const d = bookOf(t); out.push(facts(t, bookFrame(d.frame, d.theta, t.x, t.y, bookAngleOf(t)), rectOf(t, NOTEBOOK.cover.width, NOTEBOOK.cover.height), false)); }
     }
     return out;
   }

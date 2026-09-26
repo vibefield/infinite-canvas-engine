@@ -230,6 +230,7 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
       const h = pickBoard(G, wx, wy);
       return h === "surface" ? "content" : h === "frame" ? "frame" : null;
     },
+    frame: boardFrame,
     theme(palette: Palette, _name: ThemeName): BoardObjectLook {
       const p = palette as BoardPalette;
       const b = p.board;

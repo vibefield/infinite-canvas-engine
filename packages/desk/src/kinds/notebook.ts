@@ -33,9 +33,10 @@ import { type NotebookDraw, NotebookPass } from "../notebook/pass";
 import { pickNotebook } from "../notebook/pick";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
 import { NOTEBOOK_SHADER_FILES, notebookShaders } from "../notebook/shaders";
-import { type Frame, frameOf, type NotebookPose, relaxOf, specOf, swingOf } from "../notebook/shape";
+import { coverFrame, type Frame, frameOf, type NotebookPose, relaxOf, specOf, swingOf } from "../notebook/shape";
 import { type ShaderText, shaderText } from "../shaders";
 import { MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../theme";
+import type { MarkFrame } from "../marks/layout";
 import { LayeredKind } from "./layer";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
@@ -120,6 +121,10 @@ export interface NotebookGeometry {
   readonly ring: number;
   readonly eye: DeskEye;
   readonly fade: number;
+  /** Where it lies: the case's centre on the mat and its turn (the placement's, before the lift and the tilt). */
+  readonly cx: number;
+  readonly cy: number;
+  readonly angle: number;
 }
 
 /** The notebook's own state on one desk: each book's id, mesh and pinned pose, the carry's tilt; the ruling's ink on the root pass. */
@@ -194,6 +199,23 @@ export function notebookReach(law: NotebookLaw = NOTEBOOK): number {
   const h = law.lift.held + law.lift.open + law.lift.hover;
   return F.W + F.sw + law.shadow.slopeMax * h + 3 * (law.shadow.sigma0 + law.shadow.perUnit * h) + F.W * (law.eye.min / (law.eye.min - h) - 1);
 }
+
+/**
+ * A book's silhouette for the desk's marks (D4a — the brackets, a member's ticks, the tape): the footprint of its case on
+ * the mat at its turn — the closed case W × H about the book's centre and, as the cover swings over, the cover's own
+ * footprint beside it (open, the whole spread) — with the fore-edge's corner. The height's parallax aside, as the print's:
+ * the marks go around where the book LIES. The oracle's marks read the same function (oracle/frame.mjs).
+ */
+export function bookFrame(F: Frame, theta: number, cx: number, cy: number, angle: number): MarkFrame {
+  const c = coverFrame(F, theta);
+  const x0 = Math.min(-F.W / 2, c.ox, c.ox + c.ux * F.W);
+  const x1 = F.W / 2;
+  const mid = (x0 + x1) / 2;
+  return { cx: cx + mid * Math.cos(angle), cy: cy + mid * Math.sin(angle), hx: (x1 - x0) / 2, hy: F.H / 2, angle, r: F.spec.coverRadius };
+}
+
+/** The notebook's silhouette on a resolved book (`bookFrame` on its geometry). */
+export const notebookFrame = (G: NotebookGeometry): MarkFrame => bookFrame(G.frame, G.theta, G.cx, G.cy, G.angle);
 
 const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, a), b);
 /** One damped spring step (the motion's own: semi-implicit Euler). */
@@ -270,6 +292,7 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       return {
         frame: F, pose, mesh: built.mesh, version: built.version, rigid: rigidOf(place), lamp: lampDir(ctx.lamp, ctx.rect.cx, ctx.rect.cy, law.shadow.slopeMax),
         theta: m.theta, ring: m.ring, eye: eyeOf({ x: v.camX, y: v.camY, zoom: v.zoom }, { width: v.width, height: v.height }, law.eye), fade: ctx.flux.fade,
+        cx: ctx.rect.cx, cy: ctx.rect.cy, angle,
       };
     },
     record(G: NotebookGeometry, ctx: ObjectContext): NotebookDraw {
@@ -292,6 +315,7 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       if (G.fade < 1) return null;
       return pickNotebook(G.frame, G.pose, law, G.rigid, G.eye, wx, wy, G.mesh) === null ? null : "content";
     },
+    frame: notebookFrame,
     theme(palette: Palette, _name: ThemeName): NotebookObjectLook {
       const n = (palette as NotebookPalette).notebooks;
       if (n === undefined) return { covers: {}, ruleInk: [0, 0, 0, 0] };

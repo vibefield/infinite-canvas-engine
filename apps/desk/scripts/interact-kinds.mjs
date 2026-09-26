@@ -6,6 +6,8 @@
 // glides it on and the mat's grip stops it, and it lands where the LAW says (the rig replays photo.ts `stepPhoto`
 // over the desk's own steps from the body the hand let go) in ONE transaction. Each object is laid in its own clear
 // stretch of the desk, far from the notes.
+import { boardFrame, bookFrame, calendarFrame, photoFrame } from "../../../packages/desk/src/kinds/index.ts";
+import { frameOnScreen } from "../../../packages/desk/src/marks/layout.ts";
 import { stepPhoto } from "../../../packages/desk/src/photo/photo.ts";
 
 /** @param {Record<string, any>} t the rig's helpers: q, qa, entity, entities, mouse, click, key, sleep, settle, check, near, META, SHIFT */
@@ -21,6 +23,13 @@ export async function kindsRig(t) {
   const marks = () => q("window.__desk.marks()");
   const bracketed = (m) => (m?.objects ?? []).length === 1 && m.objects[0].style === "brackets" && m.objects[0].t === 1 && m.objects[0].alpha === 1;
   const worn = (m) => (m?.objects ?? []).map((o) => `${o.style} t ${o.t} α ${o.alpha}`).join(", ") || "no marks";
+  /** The brackets stand on the kind's own silhouette (D4a's `frame`, on the geometry the world resolved) under the live camera. */
+  const onFrame = async (m, frame) => {
+    const f = m?.objects?.[0]?.frame;
+    const want = frameOnScreen(frame, await q("window.__desk.camera()"));
+    const same = f !== undefined && ["cx", "cy", "hx", "hy", "angle", "r"].every((k) => near(f[k], want[k], 1e-6));
+    return { same, said: f === undefined ? "no brackets" : `(${f.cx.toFixed(1)}, ${f.cy.toFixed(1)}) ±(${f.hx.toFixed(1)}, ${f.hy.toFixed(1)}) turned ${f.angle.toFixed(4)} r ${f.r.toFixed(1)}` };
+  };
   /** Press at `from`, walk to `to` in `steps` samples `gap` ms apart; `hold` ms still before the release (0 = let go moving). */
   const carry = async (from, to, steps, gap, hold) => {
     await mouse("mouseMoved", from[0], from[1]);
@@ -50,6 +59,8 @@ export async function kindsRig(t) {
   let b = await entity(board);
   const bSel = await marks();
   check(b.selected && bracketed(bSel) && b.geometry.ring === 0, `board: a click on the melamine selects it — it wears the brackets, locked on (${worn(bSel)}); its kind draws no ring (handed ${b.geometry.ring})`);
+  const bOn = await onFrame(bSel, boardFrame(b.geometry));
+  check(bOn.same, `board: its brackets stand on its frame — the aluminium's outside as drawn, square, its corner: ${bOn.said}`);
   await hover(640, 420);
   await sleep(500);
   b = await entity(board);
@@ -90,6 +101,8 @@ export async function kindsRig(t) {
   let p = await entity(print);
   const pSel = await marks();
   check(p.selected && bracketed(pSel) && near(p.cx, 4000) && near(p.cy, 1500), `print: a tap selects it — it wears the brackets (${worn(pSel)}); the hand lifted it and laid it back where it was: no transaction`);
+  const pOn = await onFrame(pSel, photoFrame(p.geometry));
+  check(pOn.same, `print: its brackets stand on its sheet — its own axes at its turn, its corner: ${pOn.said}`);
   await hover(640, 420);
   await sleep(600);
   p = await entity(print);
@@ -140,7 +153,7 @@ export async function kindsRig(t) {
   console.log("-- the notebook --");
   await cam(3400, 2600, 1);
   await click(20, 780);
-  const book = await q("window.__desk.spawn('desk.notebook', { seed: 7 }, { x: 4000, y: 3000 })");
+  const book = await q("window.__desk.spawn('desk.notebook', { seed: 7, angle: 0.04 }, { x: 4000, y: 3000 })");   // never set down quite square
   await settle();
   await click(600, 400);
   await hover(20, 780);
@@ -149,6 +162,8 @@ export async function kindsRig(t) {
   const restZ = k.geometry.rigid.t[2];
   const kSel = await marks();
   check(k.selected && bracketed(kSel) && k.geometry.ring === 0, `notebook: a click selects it — it wears the brackets, locked on (${worn(kSel)}); its kind draws no ring (handed ${k.geometry.ring})`);
+  const kOn = await onFrame(kSel, bookFrame(k.geometry.frame, k.geometry.theta, k.geometry.cx, k.geometry.cy, k.geometry.angle));
+  check(kOn.same && near(kSel.objects[0].frame.angle, k.props.angle, 1e-12), `notebook: its brackets stand on its footprint — the case where it lies, at its turn (${k.props.angle.toFixed(4)}): ${kOn.said}`);
   await hover(610, 420);
   await sleep(700);
   k = await entity(book);
@@ -193,6 +208,8 @@ export async function kindsRig(t) {
   let c = await entity(pad);
   const cSel = await marks();
   check(c.selected && bracketed(cSel) && c.geometry.ring === 0, `pad: a click on its TAPE selects it — it wears the brackets, locked on (${worn(cSel)}); its kind draws no ring (handed ${c.geometry.ring})`);
+  const cOn = await onFrame(cSel, calendarFrame(c.geometry.cx, c.geometry.cy));
+  check(cOn.same, `pad: its brackets stand on its sheet's footprint, square to the mat: ${cOn.said}`);
   await hover(700, tapeY);
   await sleep(500);
   c = await entity(pad);

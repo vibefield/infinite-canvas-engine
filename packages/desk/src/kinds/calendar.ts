@@ -38,6 +38,7 @@ import { MeshWriter } from "../notebook/mesh";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
 import { type ShaderText, shaderText } from "../shaders";
 import { MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import type { MarkFrame } from "../marks/layout";
 import { LayeredKind } from "./layer";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
@@ -183,6 +184,16 @@ export function calendarReach(law: CalendarLaw = CALENDAR): number {
   return law.shadow.slopeMax * h + 3 * (law.shadow.sigma0 + law.shadow.perUnit * h) + law.ring.offset + 8;
 }
 
+/**
+ * A desk calendar's silhouette for the desk's marks (D4a — the brackets, a member's ticks, the tape): its sheet's footprint
+ * on the mat, square to it, about the pad's centre, with the sheet's corner. The height's parallax aside, as the print's;
+ * the oracle's marks read the same function (oracle/frame.mjs).
+ */
+export function calendarFrame(cx: number, cy: number, law: CalendarLaw = CALENDAR): MarkFrame {
+  const F = padFrame(law);
+  return { cx, cy, hx: F.W / 2, hy: F.H / 2, angle: 0, r: law.sheet.radius };
+}
+
 export interface CalendarKindOptions {
   readonly text?: ShaderText;
   /** The calendar's numbers (calendar/law.ts `CALENDAR`) — the engine's unless a host tweaks them. */
@@ -241,6 +252,7 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
       if (sx < 0 || sy < 0 || sx > F.W || sy > F.H) return null;
       return sy < F.T ? "frame" : null;
     },
+    frame: (G: CalendarGeometry): MarkFrame => calendarFrame(G.cx, G.cy, law),
     theme(palette: Palette, _name: ThemeName): CalendarObjectLook {
       const p = palette as CalendarPalette;
       const c = p.calendars;

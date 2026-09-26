@@ -377,6 +377,7 @@ export function photoKind(opts: PhotoKindOptions = {}): ObjectKind<PhotoGeometry
     hit(G: PhotoGeometry, wx: number, wy: number): ObjectHit | null {
       return hitPhoto(G, wx, wy) ? "content" : null;
     },
+    frame: photoFrame,
   };
 }
 

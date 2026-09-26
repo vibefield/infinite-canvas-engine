@@ -215,7 +215,8 @@ ORACLE_SCENES.push(...CALENDAR_SCENES);
 // one carried: its top, bottom and centre aligned with its neighbours', the gaps equal — a real snap through the kernel's law);
 // the tape; far out, where the brackets collapse to one ring; by night (the pencil and the laser unlit, the tape moonlit); your
 // extent on the rulers. `marks` runs the check (outside the marks' band nothing moved; the pencil's byte where a stroke is solid;
-// a knob's face, a pill's fill); `unlit` runs the night's.
+// a knob's face, a pill's fill); `unlit` runs the night's. And (D3w) a notebook lying closed and a desk calendar, each selected:
+// the brackets go around their footprints on the mat (kinds `bookFrame`, `calendarFrame` — what the world's builder draws).
 const marksBase = { ...base, theme: "light", mat: matStill };
 const ROW = [{ x: 250, y: 300, seed: 5, text: "" }, { x: 550, y: 300, seed: 11, text: "", selected: true, held: true }, { x: 850, y: 300, seed: 7, text: "" }];
 export const MARKS_SCENES = [
@@ -238,5 +239,7 @@ export const MARKS_SCENES = [
   { name: "marks-far-z0.1", marks: true, scene: { ...marksBase, camX: 400 - 600 / 0.1, camY: 330 - 400 / 0.1, zoom: 0.1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 900, y: 330, seed: 11, text: "" }] } },
   { name: "marks-night-z1", marks: true, unlit: true, scene: { ...marksBase, theme: "dark", zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 760, y: 360, seed: 11, text: "", locked: true }] } },
   { name: "marks-ruler-z1", marks: true, scene: { ...marksBase, zoom: 1, ruler: {}, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }] } },
+  { name: "marks-book-z2.2", marks: true, scene: { ...deskBase, ...at(0, 0, 2.2), books: [nb({ angle: 0.04, selected: true })] } },
+  { name: "marks-pad-z0.42", marks: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [pad({ selected: true })] } },
 ];
 ORACLE_SCENES.push(...MARKS_SCENES);
