@@ -32,6 +32,9 @@ import { arrivalCamera, FIT } from "../src/nav/flight.ts";
 import { PORTAL_GATE } from "../src/nav/portal.ts";
 import { THEMES, surface } from "./fixtures/vf-theme.ts";
 import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../src/mat/night.ts";
+import { sdRoundBox, unproject } from "../src/photo/photo.ts";
+import { sdBoard, sdSurface } from "../src/board/board.ts";
+import { BOARD } from "../src/theme.ts";
 
 Object.assign(globalThis, globals);   // GPUBufferUsage & friends, which the browser has for free
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,6 +57,8 @@ const glyphMetaPath = resolve(root, "oracle/fixtures/assets/glyphs-mono-2x.json"
 const glyphMeta = existsSync(glyphMetaPath) ? JSON.parse(readFileSync(glyphMetaPath, "utf8")) : null;
 const inkMetaPath = resolve(root, "oracle/fixtures/assets/ink-note-1.json");
 const inkMeta = existsSync(inkMetaPath) ? JSON.parse(readFileSync(inkMetaPath, "utf8")) : null;
+const photoMetaPath = resolve(root, "oracle/fixtures/assets/photo-1.json");
+const photoMeta = existsSync(photoMetaPath) ? JSON.parse(readFileSync(photoMetaPath, "utf8")) : null;
 // The desk both hosts draw (frame.mjs), on Dawn's device, composed from the .wgsl files on disk.
 const desk = await createOracleDesk({
   device, format: FORMAT, text: texts,
@@ -61,9 +66,10 @@ const desk = await createOracleDesk({
     noise: raw("blue-noise.rgba"), goboC: hostRaw("gobo-c.rgba"), goboB: hostRaw("gobo-b.rgba"),
     glyphMeta, glyphs: glyphMeta && glyphMeta.count >= 12 ? hostRaw("glyphs-mono-2x.r8") : null,
     inkMeta, ink: inkMeta && inkMeta.w > 0 ? hostRaw("ink-note-1.r8") : null,
+    photoMeta, photo: photoMeta && photoMeta.w > 0 ? hostRaw("photo-1.rgba") : null,
   },
 });
-const { mat, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf } = desk;
+const { mat, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf } = desk;
 const W = VIEW.cssW * VIEW.dpr;
 const H = VIEW.cssH * VIEW.dpr;
 const out = new Target(device, { format: FORMAT, label: "oracle", readable: true }, W, H);
@@ -527,6 +533,158 @@ async function paperCheck(sc) {
   return ok;
 }
 
+// ---------------------------------------------------------------- the prints and the whiteboards (design-015 D3r-a)
+
+/** A device pixel's centre in the scene's world. */
+const worldAt = (s, x, y) => { const k = 1 / (s.zoom * VIEW.dpr); return [(x + 0.5) * k + s.camX, (y + 0.5) * k + s.camY]; };
+/** The print's sheet as the eye sees it at a world point: its signed distance in the sheet's own units (photo.ts `hitPhoto`'s). */
+const sdPrint = (G, wx, wy) => { const [u, v] = unproject(G, wx, wy); return sdRoundBox(u, v, G.half[0], G.half[1], G.radius); };
+/** Is a world point inside a print's quad (its sheet as seen and its shadow), grown by `m` world units? */
+const inBounds = (G, wx, wy, m) => wx > G.bounds.x0 - m && wx < G.bounds.x1 + m && wy > G.bounds.y0 - m && wy < G.bounds.y1 + m;
+
+/**
+ * PHOTO.md, as pixels. The same still with its prints and without: (1) outside every print's quad (its sheet as seen and its
+ * shadow, `resolvePhoto`'s bounds, + 3 device px) byte for byte — a print paints nothing it does not own; (2) inside the sheets
+ * most pixels differ; (3) around the sheets, inside their quads, the shadow only darkens.
+ */
+async function photoCheck(sc) {
+  const s = sc.scene;
+  const { px: A } = await render(s);
+  const { px: B } = await render({ ...s, prints: [] });
+  const geoms = s.prints.map((p) => printOf(p).geometry);
+  const k = 1 / (s.zoom * VIEW.dpr);
+  let outside = 0;
+  let outsideMax = 0;
+  let inside = 0;
+  let insideDiff = 0;
+  let band = 0;
+  let bandDark = 0;
+  let bandBright = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const [wx, wy] = worldAt(s, x, y);
+    const o = (y * W + x) * 4;
+    const d = delta(A, B, o);
+    if (!geoms.some((G) => inBounds(G, wx, wy, 3 * k))) { outside++; if (d > outsideMax) outsideMax = d; continue; }
+    const sd = Math.min(...geoms.map((G) => sdPrint(G, wx, wy)));
+    if (sd < -1.5 * k) { inside++; if (d > 0) insideDiff++; continue; }
+    if (sd > 1.5 * k) { band++; const la = lum(A, o); const lb = lum(B, o); if (la > lb + 1) bandBright++; if (la < lb - 2) bandDark++; }
+  }
+  const ok = outsideMax === 0 && outside > 100000 && insideDiff > inside * 0.5 && bandBright === 0 && bandDark > 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  photo      ${sc.name.padEnd(24)} outside the prints' quads maxΔ ${outsideMax}/255 over ${outside.toLocaleString()} px · inside the sheets ${insideDiff.toLocaleString()} of ${inside.toLocaleString()} differ · around them ${bandDark.toLocaleString()} of ${band.toLocaleString()} darker, ${bandBright} brighter`);
+  return ok;
+}
+
+/**
+ * design-015 §4.2, as pixels — PAINT ORDER across kinds: the desk's things are runs of one kind in the desk's own order. Each thing,
+ * inside its own sheet (1.5 device px in) and outside the reach of every thing laid after it, is byte for byte the same thing
+ * lying ALONE on the desk: an opaque sheet shows itself whatever lies under it — so a note under the print and a note over it
+ * each hold only if the three runs drew in the order the list gave.
+ */
+async function orderCheck(sc) {
+  const s = sc.scene;
+  const { px: A } = await render(s);
+  const things = thingsOf(s);
+  const k = 1 / (s.zoom * VIEW.dpr);
+  // each thing's sheet (signed distance, world) and its reach (what it may paint: a note's sheet and shadow, a print's quad)
+  const shapes = things.map((t) => {
+    if (t.kind === "note") { const G = noteGeometry(t); return { sd: (wx, wy) => sdPaper(G, wx, wy), reach: (wx, wy) => sdPaper(G, wx, wy) < shadowReach(G) + 3 * k }; }
+    const G = printOf(t).geometry;
+    return { sd: (wx, wy) => sdPrint(G, wx, wy), reach: (wx, wy) => inBounds(G, wx, wy, 3 * k) };
+  });
+  const rows = [];
+  let ok = true;
+  for (let i = 0; i < things.length; i++) {
+    const { px: L } = await render({ ...s, things: [things[i]] });
+    let n = 0;
+    let max = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const [wx, wy] = worldAt(s, x, y);
+      if (!(shapes[i].sd(wx, wy) < -1.5 * k)) continue;
+      if (shapes.slice(i + 1).some((sh) => sh.reach(wx, wy))) continue;
+      n++;
+      const d = delta(A, L, (y * W + x) * 4);
+      if (d > max) max = d;
+    }
+    if (!(max === 0 && n > 1000)) ok = false;
+    rows.push(`${things[i].kind} ${i} maxΔ ${max} over ${n.toLocaleString()} px`);
+  }
+  console.log(`  ${ok ? "PASS" : "FAIL"}  order      ${sc.name.padEnd(24)} each thing on its own sheet, clear of those laid after it, is itself alone: ${rows.join(" · ")}`);
+  return ok;
+}
+
+/**
+ * BOARD.md, as pixels. The same still with its whiteboards and without (the note beside it kept): (1) outside every board's quad
+ * (the slab, its shadow's reach, the marker lying on it — `quadOf`, + 3 device px) byte for byte; (2) inside the boards most
+ * pixels differ.
+ */
+async function boardCheck(sc) {
+  const s = sc.scene;
+  const { px: A } = await render(s);
+  const { px: B } = await render({ ...s, boards: [] });
+  const poses = s.boards.map((b) => boardPoseOf(b));
+  const k = 1 / (s.zoom * VIEW.dpr);
+  let outside = 0;
+  let outsideMax = 0;
+  let inside = 0;
+  let insideDiff = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const [wx, wy] = worldAt(s, x, y);
+    const d = delta(A, B, (y * W + x) * 4);
+    const m = 3 * k;
+    if (!poses.some(({ quad: q }) => wx > q.x0 - m && wx < q.x1 + m && wy > q.y0 - m && wy < q.y1 + m)) { outside++; if (d > outsideMax) outsideMax = d; continue; }
+    if (poses.some(({ geometry: G }) => sdBoard(G, wx, wy) < -1.5 * k)) { inside++; if (d > 0) insideDiff++; }
+  }
+  const ok = outsideMax === 0 && outside > 100000 && insideDiff > inside * 0.5;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  board      ${sc.name.padEnd(24)} outside the boards' quads maxΔ ${outsideMax}/255 over ${outside.toLocaleString()} px · inside the boards ${insideDiff.toLocaleString()} of ${inside.toLocaleString()} differ`);
+  return ok;
+}
+
+/**
+ * BOARD.md §4, as pixels — the INK is the history replayed into the melamine and nowhere else: the same board with its strokes and
+ * with none differs only on the melamine (1.5 device px of its edge's AA aside), and there on the strokes' pixels.
+ */
+async function inkCheck(sc) {
+  const s = sc.scene;
+  const { px: A } = await render(s);
+  const { px: B } = await render({ ...s, boards: s.boards.map((b) => ({ ...b, strokes: [] })) });
+  const poses = s.boards.map((b) => boardPoseOf(b));
+  const k = 1 / (s.zoom * VIEW.dpr);
+  let off = 0;
+  let offMax = 0;
+  let on = 0;
+  let onDiff = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const [wx, wy] = worldAt(s, x, y);
+    const d = delta(A, B, (y * W + x) * 4);
+    if (poses.some(({ geometry: G }) => sdSurface(G, wx, wy) < 1.5 * k)) { on++; if (d > 0) onDiff++; } else { off++; if (d > offMax) offMax = d; }
+  }
+  const ok = offMax === 0 && onDiff > 1000;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  ink        ${sc.name.padEnd(24)} off the melamine maxΔ ${offMax}/255 over ${off.toLocaleString()} px · on it ${onDiff.toLocaleString()} of ${on.toLocaleString()} px carry the replayed strokes`);
+  return ok;
+}
+
+/** DESIGN.md §7 on the board, as pixels — the SELECTION is its ring alone: selected and not, the two differ only within the ring's band inside the board's outer edge. */
+async function ringCheck(sc) {
+  const s = sc.scene;
+  const { px: A } = await render(s);
+  const { px: B } = await render({ ...s, boards: s.boards.map((b) => ({ ...b, selected: false })) });
+  const poses = s.boards.map((b) => boardPoseOf(b));
+  const k = 1 / (s.zoom * VIEW.dpr);
+  const ring = BOARD.ring / s.zoom;   // CSS px → world
+  let off = 0;
+  let offMax = 0;
+  let band = 0;
+  let bandDiff = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const [wx, wy] = worldAt(s, x, y);
+    const d = delta(A, B, (y * W + x) * 4);
+    if (poses.some(({ geometry: G }) => { const sd = sdBoard(G, wx, wy); return sd > -(ring + 1.5 * k) && sd < 1.5 * k; })) { band++; if (d > 0) bandDiff++; } else { off++; if (d > offMax) offMax = d; }
+  }
+  const ok = offMax === 0 && bandDiff > band * 0.5;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  ring       ${sc.name.padEnd(24)} outside the ring's band maxΔ ${offMax}/255 over ${off.toLocaleString()} px · in it ${bandDiff.toLocaleString()} of ${band.toLocaleString()} px differ`);
+  return ok;
+}
+
 // ---------------------------------------------------------------- run
 
 const only = process.env.ORACLE_ONLY ? new RegExp(process.env.ORACLE_ONLY) : null;
@@ -537,7 +695,9 @@ for (const sc of scenes) {
   const { px, nav, portals, stats } = await render(sc.scene);
   writeFileSync(resolve(results, `oracle-${sc.name}.rgba`), px);
   const flight = nav ? ` · ${nav.f.kind} p ${sc.scene.nav.p}${nav.f.frozen ? " FROZEN" : ""} · in ${nav.pres.incoming.opacity.toFixed(2)}${nav.pres.incoming.objects !== undefined ? ` (objects ${nav.pres.incoming.objects.toFixed(2)})` : ""} out ${nav.pres.outgoing.opacity.toFixed(2)}` : "";
-  console.log(`${sc.name.padEnd(28)} ${(sc.scene.minimats ?? []).length} mini mats · ${(sc.scene.notes ?? []).length} notes · ${portals} live insides · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · k0 ${stats.k0}${stats.wind ? " · wind" : ""}${flight}`);
+  const things = thingsOf(sc.scene);
+  const count = (kind) => things.filter((t) => t.kind === kind).length;
+  console.log(`${sc.name.padEnd(28)} ${(sc.scene.minimats ?? []).length} mini mats · ${count("note")} notes${count("board") ? ` · ${count("board")} boards` : ""}${count("print") ? ` · ${count("print")} prints` : ""} · ${portals} live insides · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · k0 ${stats.k0}${stats.wind ? " · wind" : ""}${flight}`);
   if (sc.baseline && process.env.BASELINE_DIR && !baselineCheck(sc, px)) failed += 1;
 }
 for (const sc of scenes) if (sc.continuity) { if (!(await continuity(sc))) failed += 1; }
@@ -549,5 +709,10 @@ for (const sc of scenes) if (sc.light) { if (!(await lightCheck(sc))) failed += 
 for (const sc of scenes) if (sc.night) { if (!(await nightCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ruler) { if (!(await rulerCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.paper) { if (!(await paperCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.photo) { if (!(await photoCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.board) { if (!(await boardCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.ink) { if (!(await inkCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.ring) { if (!(await ringCheck(sc))) failed += 1; }
 if (failed) { console.log(`${failed} check(s) FAILED`); process.exitCode = 1; }
 device.destroy();

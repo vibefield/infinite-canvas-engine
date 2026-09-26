@@ -1,0 +1,7 @@
+{
+  "w": 192,
+  "h": 128,
+  "format": "rgba8 sRGB, straight alpha, row 0 = top",
+  "made": "tools/make-photo-fixture.mjs",
+  "generated": "2026-09-25"
+}

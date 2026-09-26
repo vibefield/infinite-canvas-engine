@@ -19,6 +19,8 @@ import glyphMetaUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.json?u
 import glyphsUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.r8?url";
 import inkMetaUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.json?url";
 import inkUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.r8?url";
+import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
+import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
 
 /** The page's door for the rig (and a person at the console). */
 export interface DeskParity {
@@ -77,12 +79,13 @@ async function boot(): Promise<void> {
   canvas.height = VIEW.cssH * VIEW.dpr;
   const surf = surface(device, canvas);
   // The fixtures, the same bytes the oracle reads from disk; the blue noise from the generated module (gen:check keeps it equal to assets/).
-  const [goboC, goboB, glyphs, glyphMeta, ink, inkMeta] = await Promise.all([
+  const [goboC, goboB, glyphs, glyphMeta, ink, inkMeta, photo, photoMeta] = await Promise.all([
     bytesOf(goboCUrl), bytesOf(goboBUrl), bytesOf(glyphsUrl), jsonOf<{ count: number }>(glyphMetaUrl), bytesOf(inkUrl), jsonOf<{ w: number; h: number }>(inkMetaUrl),
+    bytesOf(photoUrl), jsonOf<{ w: number; h: number }>(photoMetaUrl),
   ]);
   const desk = await createOracleDesk({
     device, format: surf.format, text: shaderText,
-    assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink },
+    assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink, photoMeta, photo },
     log: (message) => console.warn(message),
   });
   const state: DeskParity["state"] = { drawn: null, frames: 0, errors };

@@ -8,11 +8,15 @@
 // where the prototype had them; its lab kept a copy of the same logic for Chrome.)
 //
 // The root slot is built from the KIND REGISTRY (design-015 D2a-render: `deskKinds(text)` — the
-// note, the mini mat and the whiteboard, on the host's shader text), and a desk's objects reach the
-// ground as ONE list in the prototype's paint order: its mini mats (sheets), then its notes
-// (things) — so a mini mat's index among the mini mats is its index in `objects`, which is what a
-// portal's `at` names. No scene holds a whiteboard yet (its oracle scenes are D3's): its pass is
-// compiled and prepared empty in every slot, and draws nothing.
+// note, the mini mat, the whiteboard and the photo print, on the host's shader text), and a desk's
+// objects reach the ground as ONE list in paint order: its mini mats (sheets) first — so a mini
+// mat's index among the mini mats is its index in `objects`, which is what a portal's `at` names —
+// then its THINGS: the scene's own order where it gives one (`things`), else the prototype's — the
+// whiteboards, the notes, the prints (its photo lab drew them over everything). The whiteboards
+// and the prints are made as their prototype hosts make them (design-015 D3r-a): a board by the
+// board bench's `BoardDesk` (lab/board.ts — at rest, its marker lying on it, its ink REPLAYED from
+// a stroke list as `sketch` lays one), a print by the photo lab's `addRGBA` (lab/photo.ts — a body
+// with its pose pinned, the committed picture).
 import { VIEW } from "./scenes.mjs";
 import { beginPass } from "../src/engine/target.ts";
 import { MatPass } from "../src/mat/mat-pass.ts";
@@ -23,17 +27,24 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/pa
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { flightLights, flightPresent, insidePresent, insideView, miniMatInstance } from "../src/minimat/inside.ts";
 import { createSlotSet, drawFrame, prepareFrame, SlotPool } from "../src/ground.ts";
-import { deskKinds, MINIMAT_KIND, PAPER_KIND } from "../src/kinds/index.ts";
+import { BOARD_KIND, deskKinds, MINIMAT_KIND, PAPER_KIND, PHOTO_KIND } from "../src/kinds/index.ts";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
-import { MAT_GRID, MINIMAT } from "../src/theme.ts";
-import { pen, THEMES, surface } from "./fixtures/vf-theme.ts";
+import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
+import { quadOf, resolveBoard, surfaceSize } from "../src/board/board.ts";
+import { BoardHistory } from "../src/board/history.ts";
+import { ERASER_TOOL, markerTool, StrokeBuilder, TIPS } from "../src/board/stroke.ts";
+import { linear } from "../src/mat/night.ts";
+import { borderOf } from "../src/photo/layout.ts";
+import { newBody, PHOTO, printSize, resolvePhoto } from "../src/photo/photo.ts";
+import { boardLook, MARKERS, marker, pen, THEMES, surface } from "./fixtures/vf-theme.ts";
 
 /**
  * The desk both hosts draw: the root's passes on `device` in `format`, composed from `text(files)` — a shader-file map
  * (`MAT_SHADER_FILES`, …) to its text: the .wgsl files on disk in Node, the generated module in a browser — and the
- * fixtures' bytes (`assets`: the engine's blue noise; the host's gobo plates, the rulers' glyph atlas and the note's
- * committed ink raster, each with its metadata; a missing atlas or raster is `null` and the desk draws without it).
+ * fixtures' bytes (`assets`: the engine's blue noise; the host's gobo plates, the rulers' glyph atlas, the note's
+ * committed ink raster and the prints' picture, each with its metadata; a missing atlas, raster or picture is `null`
+ * and the desk draws without it).
  */
 export async function createOracleDesk({ device, format, text, assets, log = console.log }) {
   const mat = await MatPass.create(device, format, matShaders(text(MAT_SHADER_FILES)));
@@ -44,6 +55,11 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const passOf = (name) => { const k = rootSlot.kinds.get(name); if (!k) throw new Error(`oracle: the registry has no "${name}" kind`); return k.pass.pass; };
   const papers = passOf(PAPER_KIND);
   const minimats = passOf(MINIMAT_KIND);
+  const boards = passOf(BOARD_KIND);
+  const photos = passOf(PHOTO_KIND);
+  // the whiteboard's materials, as the bench's BoardDesk hands its pass them (lab/board.ts)
+  const look = boardLook();
+  boards.look = { barrel: look.barrel, felt: look.felt, wood: look.wood };
   // The engine's asset (the blue noise) and the HOST's (the gobo plates, the rulers' glyphs, the note's ink — the product's, a fixture here) — raw bytes either way.
   mat.setPlate("c", assets.goboC); mat.setPlate("b", assets.goboB); mat.setNoise(assets.noise);
   const glyphMeta = assets.glyphMeta;
@@ -52,6 +68,9 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const inkMeta = assets.inkMeta;
   const inkBytes = inkMeta && inkMeta.w > 0 ? assets.ink : null;
   if (!inkBytes) log("no ink raster (oracle/fixtures/assets/ink-note-1.*): the notes draw blank");
+  const photoMeta = assets.photoMeta;
+  const photoBytes = photoMeta && photoMeta.w > 0 ? assets.photo : null;
+  if (!photoBytes) log("no picture (oracle/fixtures/assets/photo-1.*): the prints draw their paper alone");
   const lamp = lampOf(MAT_GRID.plane);
 
   // The slots beyond the root — the departed desk's, the live insides — from the same pool the ground keeps.
@@ -93,13 +112,20 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   }
   const matGeometry = (m) => resolveMiniMat({ cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h }, { held: m.held ? 1 : 0, hover: 0, ring: m.selected ? 1 : 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
   const insideOf = (m) => m.inside ?? { notes: [], minimats: [] };
-  /** The bounds of a desk's content (its notes and mini mats) — what its arrival is framed on; a control may pin them (`bounds`). */
-  const contentOf = (desk) => desk.bounds ?? boundsOf([...(desk.notes ?? []).map((n) => ({ x: n.x - (n.w ?? NOTE.size) / 2, y: n.y - (n.h ?? NOTE.size) / 2, width: n.w ?? NOTE.size, height: n.h ?? NOTE.size })), ...(desk.minimats ?? []).map((m) => ({ x: m.x - (m.w ?? MINIMAT.size.w) / 2, y: m.y - (m.h ?? MINIMAT.size.h) / 2, width: m.w ?? MINIMAT.size.w, height: m.h ?? MINIMAT.size.h }))]);
-  /** A desk's children as the far LOD draws them (minimat.ts `ChildShape`), in the desk's own frame. */
+  /**
+   * A desk's THINGS in paint order, each `{ kind: "note" | "board" | "print", …its spec }`: the scene's own list where it
+   * gives one (`things` — a print laid between two notes), else the prototype's order: the whiteboards, the notes, the prints.
+   */
+  const thingsOf = (desk) => desk.things ?? [...(desk.boards ?? []).map((b) => ({ ...b, kind: "board" })), ...(desk.notes ?? []).map((n) => ({ ...n, kind: "note" })), ...(desk.prints ?? []).map((p) => ({ ...p, kind: "print" }))];
+  const notesIn = (desk) => (desk.things ? desk.things.filter((t) => t.kind === "note") : (desk.notes ?? []));
+  const printsIn = (desk) => thingsOf(desk).filter((t) => t.kind === "print");
+  /** The bounds of a desk's content (its notes, its prints and its mini mats) — what its arrival is framed on; a control may pin them (`bounds`). */
+  const contentOf = (desk) => desk.bounds ?? boundsOf([...notesIn(desk).map((n) => ({ x: n.x - (n.w ?? NOTE.size) / 2, y: n.y - (n.h ?? NOTE.size) / 2, width: n.w ?? NOTE.size, height: n.h ?? NOTE.size })), ...printsIn(desk).map((p) => { const s = printSizeOf(); return { x: p.x - s.w / 2, y: p.y - s.h / 2, width: s.w, height: s.h }; }), ...(desk.minimats ?? []).map((m) => ({ x: m.x - (m.w ?? MINIMAT.size.w) / 2, y: m.y - (m.h ?? MINIMAT.size.h) / 2, width: m.w ?? MINIMAT.size.w, height: m.h ?? MINIMAT.size.h }))]);
+  /** A desk's children as the far LOD draws them (minimat.ts `ChildShape`), in the desk's own frame — a print has no chip yet (the far LOD's kinds are D2b's). */
   function childrenOf(desk) {
     const out = [];
     for (const m of desk.minimats ?? []) { const G = matGeometry(m); out.push({ kind: "mat", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: 0, radius: G.radius, colour: DEFAULT_MAT_CONFIG.ground, height: G.thick, margin: G.margin }); }
-    for (const n of desk.notes ?? []) {
+    for (const n of notesIn(desk)) {
       const G = noteGeometry(n);
       const w = n.greek ? { ink: pen(n.pen ?? "felt"), x0: 16, em: 24, lines: n.greek.map(([y, width]) => ({ y, width })) } : undefined;
       out.push({ kind: "paper", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, radius: G.radius, colour: surface(n.paper ?? "note"), height: G.curl * 0.5, ...(w ? { writing: w } : {}) });
@@ -107,15 +133,119 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return out;
   }
 
+  // ---------------------------------------------------------------- the prints, as the photo lab makes them (lab/photo.ts)
+
+  /** The committed picture, made once on the photo pass (a picture is the pass's resource, shared by every slot) — null without the fixture. */
+  let picture = null;
+  const pictureOf = (name) => {
+    if (name === null || !photoBytes) return null;
+    if (name !== "photo-1") throw new Error(`oracle: no picture "${name}" (the fixture is photo-1)`);
+    picture ??= photos.picture(photoBytes, photoMeta.w, photoMeta.h);
+    return picture;
+  };
+  /** A print's size: the long side the law's, the picture's aspect (photo.ts `printSize`, as the lab's `addPicture` sizes one). */
+  const printSizeOf = () => printSize(photoMeta?.w ?? 3, photoMeta?.h ?? 2, PHOTO.long);
+  /**
+   * A print as the lab's `addRGBA` leaves it — `newBody` at its point, turned 0, at `height`, still and whole — with the scene's
+   * pose pinned over it: its turn, its slope, its bend, its anchor, the hand holding it (the grab point in its frame, the finger
+   * in the world). Resolved under the one lamp; its border the law's for its size.
+   */
+  function printOf(p) {
+    const { w, h } = printSizeOf();
+    const body = newBody(p.x, p.y, w, h, 0, p.height ?? 0);
+    for (const k of ["angle", "sx", "sy", "bend", "ax", "ay"]) if (p[k] !== undefined) body[k] = p[k];
+    if (p.hold) body.hold = { gx: p.hold.gx, gy: p.hold.gy, px: p.hold.px, py: p.hold.py, vx: 0, vy: 0, ax: 0, ay: 0, trail: [[0, p.hold.px, p.hold.py]] };
+    return { geometry: resolvePhoto(body, PHOTO, lamp), border: borderOf(w / 2, h / 2, PHOTO), picture: pictureOf(p.picture === undefined ? "photo-1" : p.picture) };
+  }
+
+  // ---------------------------------------------------------------- the whiteboards, as the board bench makes them (lab/board.ts)
+
+  /** The rasters this frame's boards drew with — each scene's boards get fresh ones (the bench's first `instances()` makes them). */
+  const rastered = new Set();
+  let nextBoard = 1;
+  const clamp01 = (v) => Math.min(1, Math.max(0, v));
+  const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  /** A right hand holds a marker with its barrel rising away to the upper right (lab/board.ts). */
+  const HAND_ANGLE = Math.atan2(-0.8, 0.6);
+  /**
+   * A board's history from a stroke list, as the bench's `sketch` lays one: each stroke a path of melamine points (world units
+   * from its top-left) at a pace, through the StrokeBuilder with the bench's seed, committed dry — then what a replay needs.
+   */
+  function opsOf(strokes = []) {
+    const history = new BoardHistory();
+    for (const s of strokes) {
+      const ink = s.ink ?? "black";
+      const tool = s.erase ? ERASER_TOOL : markerTool(linear(marker(ink)), MARKERS[ink].opacity, TIPS[s.tip ?? "bullet"]);
+      const builder = new StrokeBuilder(tool, (history.done.length * 97.13) % 1000);
+      const speed = s.speed ?? 400;   // world units / s
+      let t = 0;
+      s.points.forEach(([x, y], i) => {
+        if (i === 0) { builder.begin(x, y, t); return; }
+        const [px, py] = s.points[i - 1];
+        t += (Math.hypot(x - px, y - py) / speed) * 1000;
+        builder.move(x, y, t);
+      });
+      builder.end();
+      history.push({ kind: "stroke", tool, stamps: builder.stamps(), ...(s.erase ? {} : { ink }) });
+    }
+    return history.replay;
+  }
+  /**
+   * A board at rest as the bench draws it (`BoardDesk.instances` + `poseOf` with no board open), all but its raster: resolved under
+   * the one lamp, its ring as its selection says, the capped marker lying where a hand put it down, the world rect it may paint,
+   * the eye straight over it (the parallax at rest).
+   */
+  function boardPoseOf(b) {
+    const w = b.w ?? BOARD.spec.width;
+    const h = b.h ?? BOARD.spec.height;
+    const G = resolveBoard({ cx: b.x, cy: b.y, w, h }, { held: 0, ring: b.selected ? 1 : 0, fade: 1 }, lamp);
+    // THE marker, lying on the board (the bench's `poseOf` with nothing taken up: every hand term at e = 0, kept as it computes them)
+    const P = BOARD.pen;
+    const R = P.radius;
+    const L = P.length;
+    const e = 0;
+    const rest = { x: w * 0.16, y: h * 0.5 - BOARD.spec.frame - BOARD.pen.radius - 13, angle: -0.07 };
+    const ar = rest.angle;
+    const mid = [G.centre[0] + rest.x * G.scale, G.centre[1] + rest.y * G.scale];
+    const at = [mid[0] - Math.cos(ar) * L * 0.5, mid[1] - Math.sin(ar) * L * 0.5];
+    const hand = at;
+    let da = HAND_ANGLE - ar;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    const gap = P.hover;
+    const penPose = {
+      x: at[0] + (hand[0] - at[0]) * e, y: at[1] + (hand[1] - at[1]) * e, angle: ar + da * e,
+      height: R + (gap - R) * e + 34 * Math.sin(Math.PI * e), rise: P.rise * e,
+      cap: smooth(0.3, 0.85, e), nib: TIPS[b.tip ?? "bullet"].half[1],
+      presence: 1 + (0 - 1) * smooth(0.85, 1, e),
+      ink: marker(b.cap ?? "black"),
+    };
+    const slope = Math.hypot(G.slope[0], G.slope[1]);
+    const r = L * 1.3 + 60 + slope * (penPose.height + L * penPose.rise + 12);
+    const box = { x0: penPose.x - r, y0: penPose.y - r, x1: penPose.x + r, y1: penPose.y + r };
+    const par = [0, 0];
+    const k = BOARD.surface.parallax;
+    return { geometry: G, surface: look.surface, metal: look.frame, quad: quadOf(G, box), sheen: [par[0] * k * 5, -par[1] * k * 5], pen: penPose };
+  }
+  /** A board as the pass takes it: its pose, and its raster made and its ink REPLAYED (`ensure` + `replay` — the raster is a cache of the history). */
+  function boardOf(b) {
+    const pose = boardPoseOf(b);
+    const id = nextBoard++;
+    boards.ensure(id, surfaceSize(pose.geometry));
+    boards.replay(id, opsOf(b.strokes));
+    rastered.add(id);
+    return { id, ...pose };
+  }
+
   /**
    * A desk's inputs under `cam` (the lab's `deskInputs`): its objects — its mini mats, each with its inside's embedding, the lattice
-   * its face shows and its children as chips, then its notes: the prototype's paint order, so mini mat `i` is object `i` — and the
-   * live insides of the mini mats whose faces pass the gate, largest first up to the cap, recursing through them (a belt of 4).
-   * `skip` = a mini mat whose inside is the flight's arriving desk.
+   * its face shows and its children as chips, then its things in paint order (the prototype's: the whiteboards, the notes, the
+   * prints), so mini mat `i` is object `i` — and the live insides of the mini mats whose faces pass the gate, largest first up to
+   * the cap, recursing through them (a belt of 4). `skip` = a mini mat whose inside is the flight's arriving desk.
    */
   function deskInputs(desk, cam, s, depth = 0, skip = -1) {
     const gate = s.portalGate ?? PORTAL_GATE;
-    const notes = notesOf(desk.notes);   // first, as ever: the ink pages are carved in the order the notes come
+    const things = thingsOf(desk);
+    const notes = notesOf(things.filter((t) => t.kind === "note"));   // first, as ever: the ink pages are carved in the order the notes come
     const minis = [];
     const portals = [];
     const cands = [];
@@ -138,9 +268,12 @@ export async function createOracleDesk({ device, format, text, assets, log = con
         at: i,   // mini mat i is object i: the mini mats come first
       });
     }
-    const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...notes.map((record) => ({ kind: PAPER_KIND, record }))];
+    let n = 0;
+    const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : thingError(t)));
+    const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...thingObjects];
     return { objects, portals };
   }
+  const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board or a print — not "${t.kind}"`); };
 
   /** The flight a nav scene pins — the lab's setScene computes the same. */
   function navOf(s) {
@@ -182,6 +315,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     const m = matOf(s);
     papers.law = DEFAULT_PAPER_LAW; papers.chain = s.paper?.chain ?? false;
     papers.reset(); inkRaster = null;   // the ink pages carved afresh, so a scene's rasters land where the lab's do
+    for (const id of rastered) boards.release(id);   // and the boards' rasters: each scene's boards replay into fresh ones
+    rastered.clear(); nextBoard = 1;
     const bg = theme.canvasBg;
     const rootGrid = { ...gridFor(s, true), ...(opts.rootGround ? { mat: { ...gridFor(s, true).mat, ground: opts.rootGround } } : {}) };
     let inputs;
@@ -203,7 +338,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       };
     } else {
       const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
-      const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [] }, cam, s, 0);
+      const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.things ? { things: s.things } : {}) }, cam, s, 0);
       inputs = { view: viewOf(cam), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
@@ -214,5 +349,5 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return { theme, nav, prepared };
   }
 
-  return { mat, papers, minimats, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, encode };
+  return { mat, papers, minimats, boards, photos, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, encode };
 }

@@ -110,3 +110,54 @@ export const NAV_SCENES = [
   { name: "nav-enter-frozen-p0.5", scene: { ...navBase, zoom: 0.25, camX: -600, camY: -400, nav: { kind: "enter", container: 3, p: 0.5 } } },
 ];
 ORACLE_SCENES.push(...NAV_SCENES);
+
+// ---------------------------------------------------------------- the PRINTS (PHOTO.md) and the WHITEBOARDS (BOARD.md)
+//
+// design-015 D3r-a: the prototype's oracle had no scene of either — its prints lived only in the photo lab, its boards on the
+// board bench, both seen through Chrome screenshots. Every scene below is staged exactly as those two pages stage a still
+// (apps/desk `rig:proto-parity` draws the same scene in the prototype's own page and holds the two to each other): a print is
+// the lab's `addRGBA` body with its pose pinned; a board is the bench's `scene` + `sketch` — its clocks the bench's (the mat's
+// time and its noise at 0, the palm at `goboTime`), its rulers off (the bench's atlas is rendered by the page, not committed).
+//
+// THE PRINTS — the committed picture (tools/make-photo-fixture.mjs), a 6×4 at the note's scale: at rest; HELD (lifted to the
+// hand's height by a grab near its right edge, tipped toward the fingers, drooping away from them — the pose the law settles
+// to, `stepPhoto` for 3 s, rounded); by night; three overlapping (the top one hovered); far off (the picture's mips); and laid
+// BETWEEN two notes, so the desk's things are three runs of two kinds (`things` gives the order; `order` runs the check).
+const photoBase = { ...base, theme: "light", mat: matStill };
+const PRINT = { x: 520, y: 330, angle: -0.07 };
+const HELD = { ...PRINT, height: 24, sx: 0.037, sy: 0.0061, bend: 5, ax: 167.2, ay: 39.9, hold: { gx: 167.2, gy: 39.9, px: 689.58, py: 358.11 } };
+const STACK = [{ x: 390, y: 290, angle: 0.09 }, { x: 610, y: 400, angle: -0.06 }, { x: 790, y: 270, angle: 0.03, height: 2.2 }];
+export const PHOTO_SCENES = [
+  { name: "photo-rest-z1", photo: true, scene: { ...photoBase, zoom: 1, prints: [PRINT] } },
+  { name: "photo-held-z1", photo: true, scene: { ...photoBase, zoom: 1, prints: [HELD] } },
+  { name: "photo-night-z1", photo: true, scene: { ...photoBase, theme: "dark", zoom: 1, prints: [PRINT] } },
+  { name: "photo-stack-z1", photo: true, scene: { ...photoBase, zoom: 1, prints: STACK } },
+  { name: "photo-far-z0.15", scene: { ...photoBase, camX: 590 - 600 / 0.15, camY: 335 - 400 / 0.15, zoom: 0.15, prints: STACK } },
+  {
+    name: "photo-over-note-z1", order: true,
+    scene: { ...photoBase, zoom: 1, things: [{ kind: "note", x: 330, y: 300, seed: 5, text: "" }, { kind: "print", x: 520, y: 330, angle: 0.05 }, { kind: "note", x: 700, y: 420, seed: 11, text: "" }] },
+  },
+];
+ORACLE_SCENES.push(...PHOTO_SCENES);
+
+// THE WHITEBOARDS — the bench's desk (lab/board-lab.ts: a board and a note beside it; test/harness/board.mjs's camera, the board's
+// centre at CSS (540, 420)): at rest, the capped marker lying on it; its ink REPLAYED from a stroke list (a blue bullet line, a
+// green fine one, a red chisel one, and the eraser across the blue — the raster is a cache of that history); selected (the ring);
+// by night; the ink up close (parity only). `board`, `ink` and `ring` name the checks.
+const boardBase = { ...base, theme: "light", camX: -120, camY: -540, mat: { time: 0, goboTime: 3.2, noise: [0, 0] } };
+const BOARD_NOTE = { x: 830, y: -180, seed: 7, text: "" };
+export const BOARD_STROKES = [
+  { ink: "blue", tip: "bullet", points: [[40, 60], [90, 48], [150, 52], [200, 70], [230, 100]] },
+  { ink: "green", tip: "fine", points: [[60, 200], [120, 185], [180, 205], [240, 190], [300, 210], [360, 195]] },
+  { ink: "red", tip: "chisel", points: [[250, 120], [300, 96], [350, 110], [390, 140]] },
+  { erase: true, points: [[128, 30], [146, 84]] },
+];
+const inked = (extra = {}) => ({ x: 420, y: -120, strokes: BOARD_STROKES, ...extra });
+export const BOARD_SCENES = [
+  { name: "board-rest-z1", board: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120 }], notes: [BOARD_NOTE] } },
+  { name: "board-ink-z1", board: true, ink: true, scene: { ...boardBase, zoom: 1, boards: [inked()], notes: [BOARD_NOTE] } },
+  { name: "board-selected-z1", ring: true, scene: { ...boardBase, zoom: 1, boards: [inked({ selected: true })], notes: [BOARD_NOTE] } },
+  { name: "board-night-z1", board: true, scene: { ...boardBase, theme: "dark", zoom: 1, boards: [inked()], notes: [BOARD_NOTE] } },
+  { name: "board-ink-z2.5", scene: { ...boardBase, camX: 200, camY: -260, zoom: 2.5, boards: [inked()], notes: [BOARD_NOTE] } },
+];
+ORACLE_SCENES.push(...BOARD_SCENES);
