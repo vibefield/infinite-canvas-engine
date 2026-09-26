@@ -6,6 +6,7 @@ import { must } from "./must";
 import { describe, expect, it } from "vitest";
 import { defineStruct } from "../src/engine/struct";
 import { lineWeight } from "../src/lattice/line";
+import { lod } from "../src/lattice/lod";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX, MatUniforms, STILL_MAT_FRAME, matUniformValues } from "../src/mat/layout";
 import { HERO_PROJECTOR, blurRatio, perspective, project, projectorMatrix, quatFromEuler, tilted } from "../src/mat/projector";
 import { secondOrder, stepSecondOrder } from "../src/mat/tilt";
@@ -81,10 +82,27 @@ describe("line law", () => {
   });
 
   it("is continuous across a decade wrap: the same cell draws the same line whichever rung owns it", () => {
-    // at zoom 10^k the fine rung's cell equals the mid rung's cell at zoom 10^(k−1): one function of the cell, so identical by construction
-    for (const cell of [10, 14, 20, 35, 60, 200]) expect(lineWeight(cell, [10, 20], law)).toEqual(lineWeight(cell, [10, 20], law));
-    // and the coarse rung's saturated weight is what the rung above it would carry too
-    expect(lineWeight(200, [10, 20], law)).toEqual(lineWeight(2000, [10, 20], law));
+    // D7 (the surface review's #12): until D7 this compared lineWeight(cell) with ITSELF. Now through the lattice's own rung
+    // choice (lod.ts `lod`): just below and just above a decade boundary k0 steps, every rung hands its lattice to the next
+    // one — and a world line is drawn with the max alpha of the rungs whose lattice holds it (mat.wgsl `mat_albedo`), so for
+    // each line class (spacing S, not on 10·S) that max must not jump across the wrap
+    const win = [10, 20] as const;
+    const view = (zoom: number) => ({ camX: 0, camY: 0, zoom, width: 1200, height: 800 });
+    /** A line class's drawn alpha at a zoom: the max over the rungs whose lattice holds a line of spacing S. */
+    const drawn = (zoom: number, S: number): number => {
+      const l = lod(view(zoom));
+      const holding = [l.fine, l.mid, l.coarse].filter((r) => r <= S * (1 + 1e-9) && Math.abs(S / r - Math.round(S / r)) < 1e-6);
+      return holding.length === 0 ? 0 : Math.max(...holding.map((r) => lineWeight(r * zoom, win, law).alpha));
+    };
+    for (const boundary of [1e-3, 0.1, 1, 10, 1e4]) {
+      const lo = boundary * (1 - 1e-9);
+      const hi = boundary * (1 + 1e-9);
+      expect(lod(view(lo)).k0 - lod(view(hi)).k0).toBe(1);   // the wrap really happens here
+      // every class from a decade under the finer side's fine rung to a decade over the coarser side's coarse rung
+      for (let S = lod(view(hi)).fine / 10; S <= lod(view(lo)).coarse * 10 * (1 + 1e-9); S *= 10) {
+        expect(Math.abs(drawn(lo, S) - drawn(hi, S)), `line class ${S.toPrecision(3)} at the ${boundary} wrap`).toBeLessThan(1e-6);
+      }
+    }
   });
 });
 

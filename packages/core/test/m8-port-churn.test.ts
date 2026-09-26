@@ -6,7 +6,8 @@
  * ported nodes spawned through core's paved road (m8-rig.ts) — and one row stronger: the spawn observer is on
  * from the FIRST frame, so a port materialised at rest (before the pan) is caught too. nodeboard attached it
  * after boot, and a select tool that lit every visible port would have spawned them all unseen (D5a's red
- * proof found it).
+ * proof found it). D7: a port that is spawned AND reaped during the pan counts too — the count was of the ports
+ * alive at the end, blind to the churn the test is named for.
  */
 import type { Entity } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
@@ -17,8 +18,11 @@ describe("M8 exit (core): zero port churn on a select-tool pan", () => {
   it("a 20-frame pan on empty canvas spawns no Port entities", () => {
     const rig = makeM8Rig();
     const spawned: Entity[] = [];
-    rig.world.observe({ onSpawn: (e) => spawned.push(e) });
-    const ports = (): Entity[] => spawned.filter((e) => rig.world.isAlive(e) && rig.world.has(e, Port));
+    // …and the ports REAPED along the way (D7, the surface review's #12): a port spawned and reaped mid-pan was invisible
+    // to a count of the ports alive at the end — `onDestroy` fires before teardown, the entity still readable
+    const reaped: Entity[] = [];
+    rig.world.observe({ onSpawn: (e) => spawned.push(e), onDestroy: (e) => { if (rig.world.has(e, Port)) reaped.push(e); } });
+    const ports = (): Entity[] => [...spawned.filter((e) => rig.world.isAlive(e) && rig.world.has(e, Port)), ...reaped];
 
     for (let i = 0; i < 6; i++) spawnMathNode(rig.session.store, rig.world, 100 + i * 160, 100, i);
     rig.setTool("select");

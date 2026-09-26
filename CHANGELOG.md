@@ -1007,6 +1007,14 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   plate inlined as base64; a chunk importing `three`; an unresolved d.ts specifier; a missing exports target; an
   undeclared `left-pad`; a module-scope `document` touch. The pre-fix `fix-dts-specifiers` left
   `"@ice/desk/objects"` in place and exited 0; the fixed one rewrites it and refuses an unmapped subpath.
+- **Two vacuous units test their subject** (D7 surface #12). `desk/test/mat.test.ts`'s decade-wrap row compared
+  `lineWeight(cell)` with ITSELF; it now goes through the lattice's own rung choice (`lod()`): at five decade
+  boundaries k0 steps by one, and every line class's drawn alpha — the max over the rungs whose lattice holds it, as
+  `mat.wgsl` draws — is the same just below and just above (red with `fine: mid / 5` in `lod()`, where the old row
+  stayed green). `core/test/m8-port-churn.test.ts` counted only the ports ALIVE at the end, blind to ports spawned and
+  reaped mid-pan (inherited from nodeboard); it now also counts every port destroyed during the run (`onDestroy`
+  fires before teardown) — red under a mutation that lights the viewport's ports while the camera gestures and reaps
+  them when it stops (6 ports; the old count saw 0).
 
 ## [0.13.0] — 2026-09-07
 
