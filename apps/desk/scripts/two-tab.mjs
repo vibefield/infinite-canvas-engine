@@ -5,7 +5,14 @@
 // the channel's messages reach without a frame, then brought to the front to draw. The checks: a spawn in A
 // reaches B; A's keystrokes are LIVE in A and cross NOTHING while the session is open; Escape commits the session
 // and B's document holds the text with A's seeds — the same hand — and B draws it; 1 s without input commits the
-// next session with A's editor still on the note; an undo in A takes the session back in B too. Exit 0 = passed.
+// next session with A's editor still on the note; an undo in A takes the session back in B too.
+//
+// THE M5 ROWS, BY NAME ("M5 two-tab convergence" — D5a; graybox's `two-tab`, the M5 exit test, ported before the
+// graybox retires): graybox's assertions re-aimed at DESK objects, through the same two tabs — a note spawned in A
+// arrives in B where it lies; a real drag in A moves it while held with NOTHING crossing, lands as ONE commit, and B
+// converges on A's position exactly; ⌫ deletes it in both; ⌘Z in A restores it in both (the same key, the same place,
+// the same hand); a mini mat's INSIDE is edited (the note dropped into it) and B has it inside, and ⌘Z takes it back
+// out in both. Objects cross by their durable KEY (`__desk.room`) — the tabs' entity ids differ. Exit 0 = passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -59,7 +66,7 @@ try {
   check((await A.q("window.__desk.state.ready")) && (await B.q("window.__desk.state.ready")), `two tabs joined room ${room} (A ${await A.q("window.__desk.engine.docs.current() !== undefined")}, B ${await B.q("window.__desk.engine.docs.current() !== undefined")})`);
   const front = (T) => T.tab.send("Page.bringToFront");
   const key = async (k, modifiers = 0) => {
-    const VK = { Escape: 27, End: 35, z: 90 };
+    const VK = { Escape: 27, End: 35, z: 90, Backspace: 8 };
     const code = k.length === 1 ? (k === " " ? "Space" : `Key${k.toUpperCase()}`) : k;
     const vk = VK[k] ?? (k === " " ? 32 : k.toUpperCase().charCodeAt(0));
     const text = k.length === 1 && modifiers === 0 ? { text: k, unmodifiedText: k } : {};
@@ -120,6 +127,101 @@ try {
   await key("z", 4);
   const undoneB = await until(async () => { const d = await B.q(`window.__desk.note.docInk(${b})`); return d?.text === "hello" ? d : null; }, 5000);
   check((await A.q(`window.__desk.note.docInk(${a})`))?.text === "hello" && undoneB !== null, `⌘Z in A takes the last session back in ONE step, and B follows ("${(await B.q(`window.__desk.note.docInk(${b})`))?.text}")`);
+
+  // ---- M5 two-tab convergence (graybox's exit test, re-aimed at desk objects — the header's second paragraph)
+  const M5 = "M5 two-tab convergence";
+  const K = (k) => JSON.stringify(k);
+  const mouse = (T, type, x, y) => T.tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+  const settle = (T) => T.q("window.__desk.settle(4000)");
+  await front(A);
+  for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
+  await settle(A);
+  const n = await A.q("window.__desk.spawn('desk.note', { seed: 31 }, { x: 700, y: 150 })");
+  const mm = await A.q("window.__desk.spawn('desk.minimat', { name: 'Inbox' }, { x: 880, y: 560 })");
+  const nKey = await A.q(`window.__desk.room.key(${n})`);
+  const mmKey = await A.q(`window.__desk.room.key(${mm})`);
+  await settle(A);
+  const n0 = await A.q(`window.__desk.entity(${n})`);
+  // B projects them on its next frames (B forward)
+  await front(B);
+  const bn = await until(() => B.q(`window.__desk.room.resolve(${K(nKey)})`), 8000);
+  const bmm = await until(() => B.q(`window.__desk.room.resolve(${K(mmKey)})`), 8000);
+  const bn0 = bn === null ? null : await B.q(`window.__desk.entity(${bn})`);
+  check(typeof nKey === "string" && bn0 !== null && bmm !== null && bn0.x === n0.x && bn0.y === n0.y && bn0.w === n0.w && bn0.props.seed === 31, `${M5}: a note spawned in A arrives in B where it lies (key ${nKey}: A's #${n} at (${n0.x}, ${n0.y}), B's #${bn} at (${bn0?.x}, ${bn0?.y}), seed ${bn0?.props.seed}) — and the mini mat with it`);
+
+  // a real drag in A: live in A, nothing crosses while held, ONE commit at the release, B converges exactly
+  await front(A);
+  await settle(A);
+  const c0 = await A.q("window.__desk.room.commits()");
+  await mouse(A, "mouseMoved", 700, 150); await mouse(A, "mousePressed", 700, 150);
+  for (let i = 1; i <= 8; i++) { await mouse(A, "mouseMoved", 700 + 25 * i, 150); await sleep(16); }
+  await sleep(150);
+  const heldA = await A.q(`window.__desk.entity(${n})`);
+  const midDocB = await B.q(`window.__desk.room.doc(${K(nKey)})`);
+  const midCommits = (await A.q("window.__desk.room.commits()")) - c0;
+  await mouse(A, "mouseReleased", 900, 150);
+  await settle(A);
+  const movedA = await A.q(`window.__desk.entity(${n})`);
+  const moveCommits = (await A.q("window.__desk.room.commits()")) - c0;
+  check(heldA.grabbed && heldA.x > n0.x && midDocB?.x === n0.x && midCommits === 0, `${M5}: held in A the note moves (x ${n0.x} → ${heldA.x}) and nothing crosses — B's document still says x ${midDocB?.x}, ${midCommits} commits mid-gesture`);
+  check(moveCommits === 1 && movedA.x > n0.x && !movedA.grabbed, `${M5}: the drag lands ONE commit in A (${moveCommits}) — A moved (x ${n0.x} → ${movedA.x})`);
+  const docB1 = await until(async () => { const d = await B.q(`window.__desk.room.doc(${K(nKey)})`); return d !== null && d.x === movedA.x && d.y === movedA.y ? d : null; }, 5000);
+  await front(B);
+  await settle(B);
+  const movedB = await B.q(`window.__desk.entity(${bn})`);
+  check(docB1 !== null && movedB?.x === movedA.x && movedB?.y === movedA.y, `${M5}: B converges on A's position exactly — its document (${docB1?.x}, ${docB1?.y}) and its world (${movedB?.x}, ${movedB?.y}) = A's (${movedA.x}, ${movedA.y})`);
+
+  // ⌫ deletes it — in both
+  await front(A);
+  await click(movedA.cx, movedA.cy);   // a tap selects it (and puts the pen on it — a tap writes)
+  await key("Escape");                 // the pen down, the selection kept
+  const selA = await A.q("window.__desk.selection()");
+  await key("Backspace");
+  await settle(A);
+  const goneA = await A.q(`window.__desk.entity(${n})`);
+  const goneDocB = await until(async () => (await B.q(`window.__desk.room.doc(${K(nKey)})`)) === null, 5000);
+  await front(B);
+  await settle(B);
+  const goneB = (await B.q(`window.__desk.room.resolve(${K(nKey)})`)) === null && (await B.q(`window.__desk.entity(${bn})`)) === null;
+  check(movedB?.x === movedA.x && selA.length === 1 && selA[0] === n && goneA === null && goneDocB && goneB, `${M5}: ⌫ on the selected note deletes it in A, and B — which had it — lets it go: its document and its world (selection [${selA}])`);
+
+  // ⌘Z in A restores it — in both: the same key, the same place, the same hand
+  await front(A);
+  await key("z", 4);
+  await settle(A);
+  const an = await A.q(`window.__desk.room.resolve(${K(nKey)})`);
+  const backA = an === null ? null : await A.q(`window.__desk.entity(${an})`);
+  await front(B);
+  const bn2 = await until(() => B.q(`window.__desk.room.resolve(${K(nKey)})`), 8000);
+  await settle(B);
+  const backB = bn2 === null ? null : await B.q(`window.__desk.entity(${bn2})`);
+  check(backA !== null && backA.x === movedA.x && backA.y === movedA.y && backB !== null && backB.x === movedA.x && backB.y === movedA.y && backB.props.seed === 31, `${M5}: ⌘Z in A restores it in both — key ${nKey}, at (${backA?.x}, ${backA?.y}) in A and (${backB?.x}, ${backB?.y}) in B, seed ${backB?.props.seed}`);
+
+  // a mini mat's INSIDE edited: the note let go over its face goes in — B has it inside; ⌘Z takes it back out in both
+  await front(A);
+  await settle(A);
+  await mouse(A, "mouseMoved", backA.cx, backA.cy); await mouse(A, "mousePressed", backA.cx, backA.cy);
+  for (let i = 1; i <= 8; i++) { await mouse(A, "mouseMoved", backA.cx + ((880 - backA.cx) * i) / 8, backA.cy + ((560 - backA.cy) * i) / 8); await sleep(16); }
+  await sleep(40);
+  await mouse(A, "mouseReleased", 880, 560);
+  await settle(A);
+  const inA = await A.q(`window.__desk.entity(${an})`);
+  await front(B);
+  const inB = await until(async () => { const id = await B.q(`window.__desk.room.resolve(${K(nKey)})`); const e = id === null ? null : await B.q(`window.__desk.entity(${id})`); return e !== null && e.parent === bmm ? e : null; }, 8000);
+  await settle(B);
+  const insideB = await B.q(`window.__desk.insideView(${bmm})`);
+  check(inA?.parent === mm && inB !== null && inB.x === inA.x && inB.y === inA.y && inB.w === inA.w, `${M5}: the mini mat's inside is edited — the note went in (A's parent #${inA?.parent} = the mat) and B has it inside B's mat (#${inB?.parent}) at the same place in the inside's units (${inB?.x.toFixed(1)}, ${inB?.y.toFixed(1)})`);
+  check(insideB !== null && insideB.presence > 0, `${M5}: B draws the mat's inside (presence ${insideB?.presence})`);
+  await front(A);
+  await key("z", 4);
+  await settle(A);
+  // (a room's root objects are children of its root canvas entity — the parent the note had before the drop — and the undo
+  // may re-mint a handle: the note is found by its key again)
+  const outAId = await A.q(`window.__desk.room.resolve(${K(nKey)})`);
+  const outA = outAId === null ? null : await A.q(`window.__desk.entity(${outAId})`);
+  await front(B);
+  const outB = await until(async () => { const id = await B.q(`window.__desk.room.resolve(${K(nKey)})`); const e = id === null ? null : await B.q(`window.__desk.entity(${id})`); return e !== null && e.parent === bn0.parent ? e : null; }, 8000);
+  check(outA?.parent === n0.parent && outA.active && outA.x === movedA.x && outA.y === movedA.y && outB !== null && outB.active && outB.x === movedA.x && outB.y === movedA.y, `${M5}: ⌘Z takes it back out in ONE step — on the desk again in A (${outA?.x}, ${outA?.y}) and in B (${outB?.x}, ${outB?.y}), each a member of its root frame`);
 
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors in either tab");
