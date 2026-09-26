@@ -2,6 +2,11 @@
 
 Browser run: 2026-08-26. Evidence review: 2026-08-27.
 
+> **Historical (design-015 D5b, 2026-09-26).** The subjects this evidence exercised — the
+> cross-ground implementation, `apps/widgetlab`, the DOM/GL retention tests — were deleted at D5b;
+> the desk (`@ice/desk`, `apps/desk`) is the one presentation and its own gates are `pnpm run
+> gate:landing`. The record stands as written.
+
 Status: **the public “near-zero performance regression” claim remains blocked**.
 The retained cross-ground implementation passes its deterministic ownership tests,
 its WebGL2 performance gates, and the defined flight-compositing checks. The browser

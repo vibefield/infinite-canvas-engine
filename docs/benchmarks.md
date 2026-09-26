@@ -12,7 +12,17 @@ exist to catch regressions by eye across milestones, not to assert a
 threshold in a test. The bench source is the single source of truth; this
 file is its recorded output.
 
+> **HISTORICAL MARKS (design-015 D5b, 2026-09-26).** The sections marked *historical* below were
+> measured on subjects deleted at D5b — `apps/widgetlab-desktop`'s rigs (the composited profile,
+> the DOM/GL islands, the HiC copy path, `DomRender`), `apps/graybox`'s harness (the M3 baseline)
+> and the `ice:surface.domAtRest` idle bench (`packages/core/bench/behavior-idle-snapshot.test.ts`,
+> deleted with the behaviour). Their numbers stand as the record of what the hybrid cost; nothing
+> re-measures them. The M3 baseline (reactivity tax, O(1) pan, churn budget) is re-measured on
+> `apps/desk`'s stress rig at D6 (design-015 §11.6).
+
 ## design-013 B5 — island parity under composited (2026-09-07)
+
+> *Historical* — measured on the GL islands and `widgetlab-desktop`'s `islands` rig, deleted at D5b.
 
 The first island numbers in this file. `pnpm --filter widgetlab-desktop islands` runs a
 `gl` island through the whole new leg — `<InfiniteCanvas profile={compositedProfile}>` on the
@@ -57,6 +67,8 @@ clamped) and its paint-attributed callback ticked 38 times with it; paused, 0 re
 uncaptured GPU errors.
 ## M19 B4 — DomRender: the promote, the clamp, the drift (2026-09-07)
 
+> *Historical* — measured on `DomRender`, the HiC copy path and `widgetlab-desktop`'s `render` rig, deleted at D5b.
+
 `apps/widgetlab-desktop` `pnpm --filter widgetlab-desktop render`, on the pinned
 Electron 43.1.1 / Chromium 150, one window, 1280×808 at dpr 2. A board of six TEXT-FREE
 cards (200×130 world units, opaque fill + one block, no glyphs) through the real React path
@@ -97,6 +109,8 @@ uploading nothing.
 
 ## M19 A2 — the fixed-layer allocator's packing waste (2026-09-06)
 
+> *Historical* — measured on core's residency layer allocator, deleted at D5b (kernel's `atlas-pack` is parked).
+
 design-013 §4 replaces the paged, growing atlas with fixed 2048² layers of one
 `texture_2d_array` (§9 Q10), keyed `(entity, band)`, repack not ported (D8). The waste
 instrument is areas only — a fixed layer's memory is `layerSize² × 4` from first
@@ -111,6 +125,8 @@ D8's revisit threshold: a realistic board above 30 % on a layer brings repack ba
 own slice, against that number.
 
 ## M19 A1a — the equip stamp's price (2026-09-06)
+
+> *Historical* — measured on the six surface facts equip stamped, deleted at D5b (equip stamps `Stratum` and the runtime behaviours).
 
 design-013 D2 stamps six presentation components on every widget at equip (value-written
 thereafter, never added or removed). Interleaved A/B on the loaded host, the equip stamp
@@ -134,6 +150,8 @@ exits 1 on this machine with a vitest-worker RPC timeout during the 85 s nested-
 even when every test passes; read the numbers, not the exit code.
 
 ## M19 A1b — the standard behaviour's idle tax (2026-09-06; MECHANISM CORRECTED and FIXED, A3b)
+
+> *Historical* — measured on `ice:surface.domAtRest` and its bench file, deleted at D5b.
 
 `ice:surface.domAtRest` is attached to every dom widget and its settle window polls
 `FrameInfo` from the `changed` hook. `FrameInfo` is a RESOURCE, so the poll fires every
@@ -193,6 +211,8 @@ pairs read 0.1753/0.1741, 0.1712/0.1727, 0.1731/0.1724 (that bench builds a raw 
 its own runtime; nothing here is on its path). It reads 0.1791 → 0.1778 across A3b.
 
 ## T2 — legacy ground vs typed GroundHost CPU proxy (2026-08-26)
+
+> *Historical* — measured on the old ground legs, deleted at design-013 C2 and D5b.
 
 **Machine**: arm64 macOS 26.5.2, Node v26.5.0.
 
@@ -322,6 +342,8 @@ Remaining idle tail at 100k: widgetEquip 262 µs, marquee 207 µs, cursorSync 20
 
 ## M3 baseline (2026-07-09)
 
+> *Historical* — measured on `apps/graybox`'s scripted harness, deleted at D5b; re-measured on `apps/desk`'s stress rig at D6.
+
 **Machine**: Apple M1 Max (arm64), Node v24.14.1, `@vibecook/strata-ecs` 0.3.0.
 
 ### Reactivity tax
@@ -396,6 +418,8 @@ counters identical, µs within noise.
 
 ## design-013 B8 — the ported `input` rig: hit truth and the cost of a pan (2026-09-07)
 
+> *Historical* — measured on `widgetlab-desktop`'s `input` rig under the composited profile, deleted at D5b.
+
 `pnpm --filter widgetlab-desktop input`, on the pinned Electron 43.1.1 / Chromium 150, one
 window, 1280×808 at dpr 2. Six cards (260×150 world units) each carrying a real `<input>`,
 all promoted, through the real React path under `compositedProfile`. The rig is the old
@@ -424,6 +448,8 @@ subtree, and typing `hello42` arrives verbatim — and still reaches the copy pa
 guard is a filter rather than a mute.
 
 ## design-013 B8 — the demand bucket ladder (2026-09-07)
+
+> *Historical* — measured on `widgetlab-desktop`'s `render` rig and the demand clamp, deleted at D5b.
 
 `pnpm --filter widgetlab-desktop render`, same host. One card whose content self-invalidates
 from a CSS keyframe, at three demand ceilings. Ported from the old `demand` rig.

@@ -1,9 +1,10 @@
 # @vibecook/ice
 
-**ICE — infinite canvas engine.** Figma-grade infinite-canvas UX as a framework:
-`defineWidget` turns React (or React-Three-Fiber) components into canvas
-citizens — selectable, movable, resizable, snappable, wired into node graphs,
-synced over CRDT, undoable per gesture.
+**ICE — infinite canvas engine.** Figma-grade infinite-canvas UX as a framework — THE DESK:
+every object under the camera drawn by one WebGPU renderer from a CRDT-synced ECS world, the
+DOM in screen space. `defineObject` turns a GPU object kind into a canvas citizen — selectable,
+movable, resizable, snappable, nested in mini mats, wired into node graphs, synced over CRDT,
+undoable per gesture.
 
 Built on [`@vibecook/strata-ecs`](https://www.npmjs.com/package/@vibecook/strata-ecs):
 an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
@@ -11,74 +12,71 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 **Docs:** <https://vibefield.github.io/infinite-canvas-engine/> ·
 **Source:** <https://github.com/vibefield/infinite-canvas-engine>
 
+> **0.14.0 (design-015 D5b, 2026-09-26) breaks:** the DOM/R3F widget hybrid is deleted — no `three`,
+> no `@react-three/fiber`, no presentation profiles, no React widget faces. `<InfiniteCanvas>` is
+> `<Desk>`; `defineWidget`'s `surface`/`component`/`chrome`/`animated`/`preview`/`instancePreview`/
+> `sizeMode` are refused; the entries `./r3f`, `./r3f/webgpu`, `./ground*` are gone and
+> `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
+> `### Removed`. (The published 0.11.0 still describes the old surface.)
+
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers
 ```
 
 ```tsx
-import { createCanvasEngine, defineWidget, p } from "@vibecook/ice";
-import { EngineProvider, InfiniteCanvas, attachKeymap, useCommit, useWidgetProps } from "@vibecook/ice/react";
+import { createCanvasEngine } from "@vibecook/ice";
+import { deskLayer, inkRaster, penFaces } from "@vibecook/ice/desk";
+import { DESK_OBJECTS } from "@vibecook/ice/desk/objects";
+import { Desk, EngineProvider } from "@vibecook/ice/react";
 import { createRoot } from "react-dom/client";
+import { deskPalette, deskTheme } from "./palette";   // your theme + palette — apps/desk/src/palette.ts is the model
 
-const Sticky = defineWidget({
-  type: "sticky",
-  surface: "dom",
-  props: { text: p.string({ default: "Write something…" }) },
-  component: StickyView,
-  defaultSize: { w: 220, h: 160 },
-  interaction: { selectable: true, movable: true, resizable: true, snap: "both" },
-});
-
-function StickyView({ entity, world }) {
-  const props = useWidgetProps(world, entity, "sticky");
-  const commit = useCommit(); // one commit call = one undo step, synced to every peer
-  return (
-    <textarea
-      value={props.text}
-      onChange={(e) => commit((tx) => tx.edit(entity).set(Sticky.groups[0].component, { text: e.target.value }))}
-    />
-  );
-}
-
-const engine = createCanvasEngine({ widgets: [Sticky] });
+const engine = createCanvasEngine({ widgets: [...DESK_OBJECTS] });
 engine.docs.create(); // a local-first document
-engine.ops.spawnWidget("sticky", { x: 120, y: 120 });
-attachKeymap(engine); // ⌫ · ⌘Z · ⌘D · ⌘A · Esc · arrows · v/h/c
+engine.ops.spawnWidget("desk.note", { x: 120, y: 120, props: { text: "Write something…" } });
+
+// The desk is an OPAQUE layer factory: the renderer, its kinds, the theme, the text raster.
+const layer = deskLayer({
+  theme: deskTheme("light"), palette: deskPalette("light"),
+  objects: [...DESK_OBJECTS], docs: engine.docs,
+  text: inkRaster({ faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }) }),   // the hands' fonts by URL (apps/desk/assets/fonts)
+});
 
 createRoot(document.getElementById("root")).render(
   <EngineProvider engine={engine}>
-    <InfiniteCanvas engine={engine} />
+    <Desk engine={engine} layer={layer} />   {/* mounts the desk, the adapters, the keymap */}
   </EngineProvider>,
 );
 ```
 
-Everything above ships working out of the box: click/shift-click selection,
-marquee, drag with snap guides, eight resize handles, wheel pan + anchored
-zoom, containers with consume/fly-back, a node editor (ports + wires),
-per-gesture undo, gesture-aware autosave, and live presence when you
-`docs.join()` a room.
+Everything above ships working out of the box: click/shift-click selection, the
+vellum marquee, drag with snap guides drawn as lasers, resize grips, wheel zoom
+about the pointer and bare-mat pan, mini mats you fly into and out of, a note you
+write on in place, pick-up into the hand, per-gesture undo, gesture-aware autosave,
+and live presence when you `docs.join()` a room.
 
 ## Entry points
 
 | Import | Contents |
 | --- | --- |
 | `@vibecook/ice` | The headless engine: `createCanvasEngine`, `defineWidget`, `defineTool`, `definePrefab`, the props DSL `p`, the doc kit, presence, and the full ECS vocabulary. |
-| `@vibecook/ice/react` | `<InfiniteCanvas>`, `<EngineProvider>`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useUndoStatus`, `usePresencePeers`, …), `attachKeymap`. |
-| `@vibecook/ice/r3f` | GL widget islands + virtual-texture compositor, `<GLViews>`, `useIslandFrame`, the GL pointer router. Peers: `three`, `@react-three/fiber`. |
-| `@vibecook/ice/dom` | DOM planes, adapters, and reflectors — for custom shells without React. |
-| `@vibecook/ice/ground` | The P0 ground stratum as one WebGPU canvas (grid, wires, snap guides) with automatic WebGL2 fallback. Passed to `<InfiniteCanvas ground={…}>`. Peer: `three`. |
-| `@vibecook/ice/devtools` | `attachDevtools(engine)` — live pointers/gestures, planes, sovereignty, and loop tabs. |
-| `@vibecook/ice/kernel` | Pure math: coordinates, spatial index, snap, wire geometry, zoom bands. Zero dependencies beyond `rbush`. |
+| `@vibecook/ice/desk` | The desk: `deskLayer`, `defineObject`, the kind registry, the one focused editor, the text raster, the theme, the renderer (`Ground`). |
+| `@vibecook/ice/desk/engine` | The raw-WebGPU engine (device, surface, passes). |
+| `@vibecook/ice/desk/objects` | The six reference object kinds: note · mini mat · notebook · whiteboard · calendar · photo (`DESK_OBJECTS`). |
+| `@vibecook/ice/react` | `<Desk>`, `<EngineProvider>`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useUndoStatus`, `usePresencePeers`, …), `attachKeymap`, `<SelectionMenu>`. |
+| `@vibecook/ice/dom` | Screen space only: the canvas host, the pointer adapter, the rAF loop, input ownership, the cursors, `createDeskHost` — for custom shells without React. |
+| `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one draggable dock. |
+| `@vibecook/ice/kernel` | Pure math: coordinates, spatial index, snap, wire geometry, the flight maths. Zero dependencies beyond `rbush`. |
 
-React, `react-dom`, `three`, and `@react-three/fiber` are **optional** peer
-dependencies — install only what your surfaces use. The core entry is fully
-headless.
+React and `react-dom` are **optional** peer dependencies — the core, desk and dom
+entries are React-free; `three` is imported nowhere.
 
 ## Limits
 
 Measured, not estimated. The bench source in `packages/core/bench/` is the source
 of truth; [`docs/benchmarks.md`](https://github.com/vibefield/infinite-canvas-engine/blob/main/docs/benchmarks.md)
-records the full output (Apple M1 Max, 2026-07-15).
+records the full output (Apple M1 Max, 2026-07-15; the sections measured on the deleted
+hybrid are marked historical).
 
 **Collaboration is the tightest ceiling — plan shared boards around ~3,000
 objects.** A local-only document scales to ~100k, but a collaboratively-edited one
@@ -99,11 +97,6 @@ when everything is active. Containers let active-scoped queries skip whole chunk
 TODO: a general layout engine (beyond `ops.arrange`), rich text, comments/threads,
 and permissions. strata has no authority model, so multi-user trust is the
 application's to own.
-
-**Not yet built**: an engine-level focus model for widget keyboard exclusivity and
-wheel/scroll opt-out. Native form controls already work — the keymap ignores
-keystrokes targeting an `input`, `textarea`, `select`, or `contenteditable` — but a
-widget wanting arrow keys or its own scrolling has no engine contract yet.
 
 **The substrate is pre-1.0**: `@vibecook/strata-ecs` minor versions may break APIs.
 

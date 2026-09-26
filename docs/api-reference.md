@@ -1,14 +1,21 @@
-# API reference (engine v1)
+# API reference (engine v1 · the desk since design-015 D5b)
 
 Curated reference for the published surface. Source of truth: each package's
 barrel (`packages/*/src/index.ts`); design citations in the JSDoc. Everything
 listed here is importable from the package ROOT — deep imports are
 unsupported and wall-checked.
 
-**What a landing must pass** (design-013 C4, D-C4.11): `pnpm run ci` (typecheck ·
-lint · tests · the import walls · `gen:check`), the desktop rigs, and
-**`pnpm run gate:landing`** — the Dawn oracle, the lab's build, `rig:parity`
-(Chrome against the oracle's bytes, maxΔ 0 asserted per scene) and `pack:audit`.
+> **design-015 D5b (2026-09-26) — the desk is the one presentation.** `@ice/r3f`, `@ice/ground`,
+> dom's world-space half, core's surface infra, the presentation profiles and the React widget
+> faces are DELETED; `<InfiniteCanvas>` is `<Desk>`; a widget's face is its `object` kind
+> (`@ice/desk`'s `defineObject`). The break list, export by export, is `CHANGELOG.md`
+> `## [Unreleased] › ### Removed`. The sections below are amended at their rows; the retired
+> packages' sections are reduced to a pointer so the history stays readable.
+
+**What a landing must pass** (design-013 C4, D-C4.11; design-015 D1): `pnpm run ci` (typecheck ·
+lint · tests · the import walls · `gen:check`) and **`pnpm run gate:landing`** — the desk's Dawn
+oracle, the `apps/desk` build, its twelve rigs (`rig:parity` first: Chrome against the oracle's
+bytes, maxΔ 0 asserted per scene) and `pack:audit`.
 The landing gate is separate from `ci` because the oracle needs Dawn, which the
 CI runner has not been probed for. A RELEASE adds the audit again from the other
 side: `packages/ice`'s `prepack` runs `pack:audit`, so `npm publish` measures the
@@ -20,7 +27,7 @@ published bytes rather than trusting the last local build.
 
 | Export | Shape | Notes |
 |---|---|---|
-| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; `surface: "dom" \| "gl"` (the `WidgetSurfaceKind` union); `ports`, `container`/`provides`, `interaction`, `animated`, `migrate` chain. Where a card presents is chosen through `behaviors: [alwaysDom \| alwaysGpu \| alwaysGpu.with({ paused: true })]` — a definition naming none gets its kind's default (`domAtRest` for `dom`, `alwaysGpu` otherwise), exactly one behaviour may write `SurfaceTarget`, and the retired `presentation` field throws (migration table in the CHANGELOG). **`domAtRest` promotes the GESTURE SET, as stills (S1, 2026-09-09):** a grab on any dom card carrying it lifts every dom card carrying it to the GPU in the same step (the ground would otherwise draw the carried card BELOW every resting card the DOM paints above the canvas), pauses each promoted card's demand for the gesture (one picture at promotion, held — the grabbed card included), and demotes the whole set one settle window after the last release, every card's own cadence ask restored; it owns only what it changed. `domAtRest.with({ promoteBoard: false })` keeps the one-card promotion, `.with({ stillWhileGrabbed: false })` keeps a carried card live at its bucket. The ground paints HELD cards last (the lifted plane's rule on the ground), so the carried card draws above what it crosses. |
+| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain. RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
 | `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, widgetDrag, portDrag}`, `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
@@ -135,7 +142,7 @@ the answer depends on what is moving:
 | Per-frame writes to a durable cell | **nothing — this is refused** | The divergence law: durable cells are written live only under a gesture claim or a tween grant, and the framework does not mint a third. A `tick` hook that writes one throws through the armed live writer. |
 
 **`reads:` is a published surface.** The curated list — `Position`, `Size`,
-`MeasuredSize`, `Opacity`, `ChildOf`, `PrefabId`, `Accepts`, `Provides`,
+`Opacity`, `ChildOf`, `PrefabId`, `Accepts`, `Provides`,
 `Selected`, `Selectable`, `Movable`, `Resizable`, `Solid`, `Container`,
 `Visible`, `Culled`, `Camera`, `CameraLimits`, `Viewport` — is a stability
 promise. Reading anything else works but dev-warns: recognizers, claims and
@@ -211,312 +218,91 @@ the only output writers) · `ce.engine.onPublish(hook)` (presence I/O slot) ·
 
 ## @ice/react
 
-**Presentation profiles (design-012 §3; design-013 §8):** `stratifiedProfile` and
-`compositedProfile`. The composited one is the ground's — `<InfiniteCanvas
-ground={groundCompose({ device, theme })} profile={compositedProfile}>`, the ground itself the
-compositor (`@ice/ground/compose`). It refuses a device-less engine, a missing ground and a
-`groundField()` layer BY SHAPE — a `GroundFieldHandle` carries no `compose`, so there is no
-GpuCompose to register — rather than rendering a plausible screen that is quietly the
-stratified one; it installs the surface infra set (Band · Demand · Residency) and
-registers §6's roster: DomRender · IslandRender · VideoIngest · DomCompose · GpuCompose. An app
-imports exactly one profile and passes it to `<InfiniteCanvas profile={…}>`; the other
-tree-shakes out. (B8, 2026-09-07: the old composited leg and its profile are deleted, and
-`compositedProfile` took this name.)
-
-**`useChromeOwner()`** — `"ground"` under the composited profile, `"dom"` otherwise. A card
-shell renders bare under the ground (the plate, ring, shadow, lift and glow are drawn there);
-under the stratified profile it draws its own CSS chrome. That branch does NOT retire in
-Phase C, contrary to what this line said before C3 (2026-09-07): C2 moved the stratified
-ground onto the same engine rather than deleting the profile, so the ground draws no cards
-under it and the CSS chrome stays the fallback.
-
+The React face of the desk (design-015 §3): `<Desk>` wraps `@ice/dom`'s `createDeskHost`; the
+desk arrives as an OPAQUE layer factory (`layer={deskLayer({ … })}` from `@ice/desk`), so this
+package imports neither the desk nor a renderer. The presentation profiles, `WidgetRoot`,
+`WidgetPreview`, the surface content seam and the chrome-owner/hidden contexts left at D5b (the
+CHANGELOG's `### Removed` lists them).
 
 | Export | Notes |
 |---|---|
 | `<EngineProvider engine>` | Context root; all hooks require it. |
-| `<InfiniteCanvas engine measureQueue? onReady?>` | Mounts planes P0–P5, adapters, reflectors, keymap, rAF loop, WidgetRoot. Unmount detaches; the engine outlives it. GL islands + devtools attach app-side via `onReady` (import walls). |
-| `useCommit()` | `(fn: (tx: GuardedTx) => void, {undoable?}) => void` — THE widget write path; one call = one undo step. |
-| `useBehavior(world, entity, behavior)` | Live behavior data for one entity; `p.json` fields parsed; `undefined` when unattached (a legitimate render state). READ-ONLY — faces render behavior state, never write it. |
-| `useWidgetProps(world, entity, type, group?)` | Tier-3 subscription, json-parsed, frozen while the widget is hidden. |
+| `<Desk engine layer keymapOverrides? onReady? className? style?>` | Mounts the desk: `createDeskHost({ container, engine, layer })` + `attachKeymap`. `onReady({ engine, host, layer, focus })`. Unmount disposes the host; the engine outlives it. Children render in the container, above the canvas — screen-space chrome only (§2 law 2). |
+| `LayerFactory` / `LayerHandle` / `LayerContext` | Re-exported from `@ice/dom`: the structural seam a layer factory is typed against (`deskLayer` returns one). |
+| `useCommit()` | `(fn: (tx: GuardedTx) => void, {undoable?}) => void` — THE write path; one call = one undo step. |
+| `useBehavior(world, entity, behavior)` | Live behavior data for one entity; `p.json` fields parsed; `undefined` when unattached (a legitimate render state). READ-ONLY — chrome renders behavior state, never writes it. |
+| `useWidgetProps(world, entity, type, group?)` | Tier-3 subscription, json-parsed. |
 | `useSelected` / `useBreakpoint` / `useWorldComponent` | Equality-suppressed snapshots (strata `get()` returns fresh objects — the hooks cache by shallow-eq). |
 | `useTool()` / `useToolState(id)` | `[id, setTool]` over the `ActiveTool` resource. |
 | `useUndoStatus()` | `{canUndo, canRedo}` via the `DurableUndoStatus` resource — survives doc swaps. |
 | `usePresencePeers()` | Remote peers (`PresencePeer` × `Not(Local)`), membership-keyed stable snapshots. |
-| `attachKeymap(ce, target?, overrides?)` | Defaults: ⌫ delete · ⌘Z/⇧⌘Z · ⌘D · ⌘A · Esc · arrows nudge (one tx/press) · tool shortcuts. All resolve to ops; editable targets skipped. |
+| `attachKeymap(ce, target?, overrides?)` · `nudgeSelection` · `toggleTape` | Defaults: ⌫ delete · ⌘Z/⇧⌘Z · ⌘D · ⌘A · Esc · arrows nudge (one tx/press) · ⏎ opens / enters · tool shortcuts. All resolve to ops; editable targets and keyboard claims skipped. |
+| `<SelectionMenu source actions>` · `defaultSelectionActions` · `placeSelectionMenu` · `SELECTION_MENU` · `SELECTION_GLYPHS` · `selectionTaped` | *Marks on the Mat*'s ink bar and the held bar (design-015 §7–§8, D4a/D4b): placed from the desk layer's `selection` anchor. |
+| `useCanvasCatalog` / `useCanvasTools` / `useCurrentCanvas` / `useCanvasDiagnostics` / `useFramePreview` · `<FramePreviewBoundary>` | The canvas SDK hooks. |
 | `useWorld()` | Escape hatch: read + observe only (DEV-warned). |
 
 ## @ice/dom
 
-`createCanvasHost(container)` · `createPlanes(host)` · adapters
-(`attachPointerAdapter(host, queue, {glRoute?})`, `attachMeasureAdapter`,
-`wireMeasurement`) · reflectors (`createPlaneTransformReflector`,
-`createGridReflector`, `createWiresReflector`, `createDomWidgetsReflector`,
-`createChromeReflector`, `createCursorReflector`,
-`createRemoteCursorsReflector`) · `startRafLoop` · `createSourceCanvas(container, effects,
-opts?)` — the L1 `<canvas layoutsubtree>` whose immediate children are `gpu`-target hosts
-(`effects` is the HiC adapter's injected `{markAsSourceCanvas, onPaint, changedElements}`;
-`opts.onDirty(hosts, event)` is the per-slot dirty latch; **`opts.pointerEvents: "auto" |
-"none"`** — `"none"` for a MIXED board, where `dom`-target cards live under this canvas and
-the hosts it adopts set `pointer-events: auto` themselves; `resize(w, h, dpr)` must be called
-on every viewport change, the bitmap being what paint records are recorded against).
-`createDomWidgetsReflector` parents a host by `effectiveTarget(SurfaceKind, SurfaceTarget)`
-when a `sourceCanvas` is present; `hostFor(e)` is the inner portal target and
-`hostElementFor(e)` the outer host the copy addresses. `<InfiniteCanvas>` wires
-all of this; direct use is for custom shells.
+SCREEN SPACE ONLY (design-015 §3, D-D15): `createCanvasHost(container)` (the styled container —
+no planes; `CanvasHost { container, dispose }`) · **`createDeskHost({ container, engine, layer })`**
+— the vanilla mount: host → the layer factory (`LayerContext { host, world, framePick, navGeometry,
+heldPose, transitions, catalog, readMarquee }`) → reflectors [ the layer's · cursor · remote cursors ]
+→ `attachPointerAdapter(host, queue)` → `attachWidgetFocus(host, lookup?)` → the viewport sync
+(one layout read, then a ResizeObserver) → `startRafLoop`; `DeskHost { engine, host, layer, focus,
+dispose }` · `startRafLoop(engine)` (rAF + the freeze park) · input ownership (`isEditableTarget`,
+`keyboardClaimOf`, `wheelCede`, `KEYBOARD_CLAIM_ATTR`, `CLAIM_OWNS_ESCAPE`) · the focus driver
+(`attachWidgetFocus`, `FOCUS_PROXY_ATTR`) · `createCursorReflector(host, readCursor)` ·
+`createRemoteCursorsReflector(host, world)` (a room's other people). The world-space half — the
+content and lifted planes, the plane-transform reflector, the DOM widget hosts and writeback, the L1
+source canvas, the Widget Surface contract, measurement, the graybox and chrome reflectors, the GL
+route — left at D5b. `<Desk>` wires all of this; direct use is for shells without React.
 
-## @ice/r3f
+## @ice/r3f — RETIRED (design-015 D5b, 2026-09-26)
 
-`createGLBridge(engine | canvasEngine, {transitions?, gpu?, devAssertRenderWrites?})` (a `CanvasEngine` supplies both seams; the options override) · `<GLViews engine bridge
-store>` (mount inside an R3F `<Canvas frameloop="demand">` on the P2 plane) ·
-`useIslandFrame(cb)` / `useIslandInvalidate()` (the ONLY sanctioned island
-animation paths) · `createGLPointerRouter({world, bridge, index})` → the
-adapter's `glRoute`. Zero render→ECS writes, DEV-enforced via
-`world.devOnWrite`.
+Deleted whole with the `three` and `@react-three/fiber` peers (D-D1): a 3D object is an object
+kind with its own pass (the notebook is one). The section this replaced described `createGLBridge`,
+`<GLViews>`, `useIslandFrame`, the GL pointer router, the islands and their WebGPU renderer leg —
+the CHANGELOG's `### Removed` lists every export, and git history (`git show c5df2c9:docs/api-reference.md`)
+keeps the prose.
 
-**The `gl` presentation plane** (design-013 C4, D-C4.6). The coordinator answers
-**`ownerOf(plane): string | undefined`** — the id of whatever owns that plane, or `undefined`
-when it is free. `<GLViews>` consults it and **registers the `gl` plane only when it is
-unowned**, so a second `<GLViews>` on one engine neither throws nor takes the plane from the
-first; `register` still throws on a plane already owned, which inside an effect used to unmount
-the tree. `createGLBridge` **defaults `transitions` from the engine it is handed**, so a bridge
-built without the option still registers its adapter — glboard's did not, and a cross-type
-enter with an island snapped.
+## @ice/ground — RETIRED (design-015 D5b, 2026-09-26); the desk is `@ice/desk`
 
-## @ice/ground
+The 09-07 engine (the magnet field, the card pass and shell, DomRender · DomCompose · IslandRender ·
+VideoIngest, the residency trunk, the copy budget, the shield, the HiC adapter, groundlab) is deleted
+whole (D-D3): what it proved carries as law, its `engine/` files ARE the desk's byte for byte (D1),
+and its section here is history (`git show c5df2c9:docs/api-reference.md`). The overlay seam
+(`overlay` · `soup` · `wires-collect` · `guides-collect`) was not carried as code — the desk's marks
+pass draws the guides and the marquee, and a wires pass is owed to the first desk kind with ports.
 
-**`@ice/ground/compose` IS this package's main entry** (design-013; the ground became the
-compositor at B8, 2026-09-07). Everything under that heading below is what a composited app
-uses. This root barrel is the STRATIFIED ground, which is the SAME engine since C2
-(2026-09-07): one internal host in two modes, sharing the canvas, the builder, the overlays,
-the poles and the flight. three's `WebGPURenderer`, TSL, `ground()`, `groundHost` and
-design-011's program contract were deleted with the old leg, and C3 struck `three` from the
-package's dependencies entirely — the whole non-r3f graph is three-free and the pack audit
-measures it. `instrumentSubmits` and the HiC adapter's exports are exported from both entries.
+## @ice/desk
 
-`groundField(opts?)` → an opaque factory for the react `ground` prop (or call it with the
-mount context in imperative shells and register `layer.reflector`). It acquires its OWN
-WebGPU device (`gpu`/`onDevice` override and observe it) and draws, under the DOM planes, the
-field, the live portals, the flight's second slot, the wires and the snap guides — and NO
-cards: the DOM draws those under this profile. `groundField({ grid, wires, guides, poles,
-theme?, config?, grids?, gpu?, onDevice? })`; `configureGrid` re-tunes live (the react `grid`
-prop forwards here), `layer.field` is the handle (`status` · `device` · `redraws` · `stats` ·
-`config` · `setTheme`). There is no WebGL2 fallback, no timestamp profile and no extra
-`passes` — an overlay is `Ground.create({ overlays })`'s. **The ground is OPAQUE**: it clears
-to its theme's `canvasBg` and writes the bytes the theme and the config name, so a host
-projects its page background into the theme (`themeFrom(name, palette)` over
-`ENGINE_PALETTE[name]`). **With no `theme`, the mount reads `prefers-color-scheme`** and takes
-the engine's light or dark theme accordingly, falling back to light where `matchMedia` is
-absent (Node, a lab) — D-C4.4. That is a guess at the page, not knowledge of it: a product with
-its own background passes `theme` and gets its own bytes. Before C4 the default was
-`ENGINE_THEMES.light` unconditionally, so a dark app porting `ground()` → `groundField()`
-verbatim got a white viewport.
-
-**`@ice/ground/compose`** — the ground as design-013's compositor: the magnet field and the
-cutting mat, the SDF card frame with its content term and the heat, the live portal's slot
-tree and the flight's second slot. `Ground.create({ device, canvas, field, frames, fill })` on a device the
-host owns (`acquireCompositorDevice().device`; `GROUND_SHADERS` supplies the three shader
-sets); `ground.render(inputs)` draws one frame — the root slot, a nested slot per live
-portal, a flight's departed slot — and returns its stats; `prepareFrame` / `drawFrame` /
-`SlotPool` are the seams the oracle drives. `resolve()` turns a card's rect and motion into
-the `Geometry` the frame records and `pick()` hit-tests alike; `portalOf()` gives a
-container's face its camera (`outgoingCamera`, the flight's exact `c0`); `themeFrom(name,
-palette, grid)` builds the `GroundTheme` the passes read — the palette is the host's,
-`ENGINE_GRID` and the mat's `MAT_LIGHT` are the engine's own. `@ice/ground/engine` is the
-raw-WebGPU boilerplate alone. **`groundCompose({ device, theme, config?, maxDpr? })`** (B2)
-is the ground as a LAYER: a factory with the shape of the react `ground` prop, returning a
-handle whose `compose.gpuCompose` reflector the `compositedProfile` registers last (after
-the renders, design-013 §6); `configureGrid` maps the react `grid` prop onto the field
-(`fieldConfigOf`), `compose.setTheme` swaps the host's projection, `compose.redraws()` is the
-churn instrument, `compose.available()` says whether the pipelines compiled. **B3a — the
-world's cards**: GpuCompose builds each frame through **`createFrameBuilder(world, opts)`**,
-the `FrameBuilder` — `build(cam, vp, dtSeconds, theme, config)` returns the `{ sources,
-frames, portals, stats }` `Ground.render` takes (Active widgets in sibling order as plate
-frames and field sources; the reveal on `Selected`, the lift on `Grab` × the live
-`ChromeSettings.liftScale`, the heat on `OverlapCandidate`/`OverlapRejected` + the
-recognizer's `DragBounds`; a live portal per gated container from the preview store, its
-children at rest under the flight's exact camera); `changed()` PULLS the world's dirt (a
-change collector, `coarse: false`, plus the sibling order's stamp — call it every frame);
-`observe(wake)` arms the out-of-world wakes (`ChromeSettings`, a container's preview);
-`live()` while a spring still moves; `geometryOf(e)`, `motionOf(e)`, `stats()`, `wakes()`.
-`groundCompose({ cards })` passes the builder's options (`style`, `material`, `motion`,
-`liftScale`, `sourceStrength`, `radius`, `faceRadius`, `gate`, `portalCap`); the mount
-context's `previews` (`engine.previews`, which the react facade passes) feeds the portals;
-the handle adds `compose.stats()`, `compose.wakes()`, `compose.geometryOf(e)`,
-`compose.motionOf(e)`. **`portalAt(K, radius, arrival, cam, vp, gate?)`** is `portalOf`
-past the gate on an arrival already solved (the preview's `resolvedView`) — the same
-record, bit for bit. **The pack seam (design-014, B3s)**: the engine's ground is the dot
-grid and the SHELL card; a look is a pack. **`@ice/ground/packs`** exports `needleGlyph`
-and `cuttingMat` (`GlyphProgram`s — `instanced` over the engine's bake, or `surface` with
-its own `SurfacePass`; the mat's config and clocks ride `FieldConfig.ext.mat` /
-`FieldFrame.ext.mat` via `withMat` / `withMatFrame`, its light the theme's `mat` section
-via `matLightOf`, its plates through `matPassOf(field)`) and `vfFrame(opts?)` (a
-`CardProgram`: `resolve(ctx)` → a `VfGeometry`, `tail(G)`, `uniformValues(theme)`,
-`pick(G, x, y)`, `source(w, h, lift, radius)`, `reach(radius)`, plus `style` and `heat`
-settable, and `springsOf(key)` / `setLocked(key, locked)` for its own buttons and lock).
-**The frame is the SHELL (2026-09-23):** three nested shapes — the CONTENT, the widget's own
-rounded rect, never cut; the WELL, a recess in the card's own surface `well` wide around it,
-its corners notched into bays for the close and the lock; the PLATE, a rim of solid chrome
-`band` wide whose outer corners are the ear's arc centred on each control. Selection reveals
-the shell out of the content's edge; the lift UN-REVEALS it while the card scales by
-`ChromeSettings.liftScale`, so a lifted card's silhouette is the plate's outer edge and
-nothing of the shell shows while it moves. A style is `shellStyle({ band, well, radius,
-control?, clearance?, bayClearance?, fillet? })`; `PRODUCT` carries the two controls, `PLAIN`
-none (`STYLES`); `cornersOf` gives the ear, the bay and the notch. A program's optional
-`reach(radius)` is how far its chrome extends beyond the content at rest (the cull margin
-and the pick pad grow by it); a program without `inner` clips its DOM hosts with one
-`inset(0 round r)`, and the DOM boundary writes a host's lift from the resolved inner box per
-axis (`liftOf`, `contentRadiusOf`). Register them
-with `Ground.create({ card, grids })` or `groundCompose({ card, grids, onPart })`; omit
-them and the shell draws. **The shield (S4, 2026-09-23):** the ground paints beneath every
-resting DOM host, so `ice:surface.domAtRest` lifts to the GPU the dom cards a selected card's
-chrome overlaps — `ChromeSettings.selectionReach` says how far that chrome reaches, and an app
-passes its frame pack's `reachOf(style)` through `createCanvasEngine({ settings: { chrome: {
-selectionReach } } })` — the shield counts members of the current nav frame only (a selection that
-rode a nav transition, Culled without Active, shields nothing), computes its need once per change
-rather than once per frame, and the selection union box pads a member at REST by the same reach
-(a Grab-bed one by `liftScale`, as before), so the box and its grips sit on the plate's outer edge
-(review, 2026-09-23); any `Grab` on the board lifts the gesture set; and DomRender carries band
-space with CSS `zoom` on a host that keeps the widget's own box (its placement translation is
-written in unzoomed units, because Blink multiplies a transform's translation by the element's
-`zoom`). A container the GPU holds draws as a PANE (`FrameContent` mode `pane`,
-`paneContent(page, face)`): its own picture around its face over the plate, nothing inside the
-face — the hole's inside shows through — so its bar keeps its text while lifted; the face and the
-slot scale with the content's lift. The pane falls back to a hole (the bar's text with it) for the
-one frame after a re-slot, for a container whose picture is an `own` destination, and in a
-flight's departed slot. The record is a HEAD (`ShellGeometry` + the content binding,
-`FRAME_HEAD_BYTES` = 160 since the pane's face joined it — `CARD_ABI` 2, 2026-09-23) plus the
-program's `ext` slots, built by `frameStruct(ext)`;
-`frameUniformStruct(uext)` likewise; `CARD_ABI` pins the head. The theme is a head
-(`canvasBg · fieldInk · card · hairline · select · shadow`) plus `packs[name]`, built by
-`themeFrom(name, palette, grid, packs)`. `ENGINE_GRID.glyph` is `"dot"`. **The DOM boundary
-(design-014, B3b)**: `groundCompose({ onPart })` — the app's action for a tap on a card
-program's PART (`close`, `lock` …); the handle's `compose.domCompose` reflector (present when
-the mount context carries `hosts`) writes each DOM card's content element from the same
-geometry the ground draws — `clip-path` marched from `CardProgram.inner` (`clipPathOf`,
-`createDomHostWriter`, `compose.domWrites()` the instrument), the lift on `transform`, the
-hold's opacity; `CardProgram.inner(G, x, y)` and `clipKey(G)` are the two optional hooks a
-program provides for it. The ground registers a `FramePickSource` on the interaction stack's
-`framePick` slot (core: `InteractionStack.framePick`; `picking` writes `PointerPart` on the
-pointer, recognizers carry `DownPart`, a part tap lands in the `PartTap` resource). In
-`@ice/react`, `PresentationProfile.chromeOwner` (`dom` | `ground`) reaches widgets as
-`useChromeOwner()`; an app's card shell renders bare under `ground`. **The flight (design-013, B7)**: a nav
-flight is the ground's second slot — `FrameBuilder.flight(cam, vp, theme, config)` builds the departed
-frame from the `NavTransition` resource (`{ present, outgoing, lodZoom }` for `Ground.render`), the host
-passes it and reports `compose.stats().outgoing` and `compose.lastInputs()`; the compose layer owns the
-`ground` presentation plane when the mount context carries `transitions`. In core, `NavTransition`
-carries the pre-cut camera (`fromX/fromY/fromZ`) and `ticks`; `departedCameraOf(t, cam)` is the one rule
-for the departed frame's camera (the pre-cut camera itself at p = 0 and while frozen); an enter starts
-from the live portal's exact camera and holds its first tick at p = 0; `Retained` is written on the
-departed frame's cards for the flight. **A live surface (design-013 B6,
-§9 Q5)**: the handle's **`compose.video`** is the producer's door — `register(entity, {
-width, height, srgb? })` claims the STABLE TEXTURE Residency names in that card's
-`TextureRef` (a `video` widget: `defineWidget({ surface: "video", component: null })`, whose
-pixels are the producer's and whose `component` is therefore refused), `arrive(entity,
-source)` hands over a `VideoFrame` / `ImageBitmap` / canvas / video element and OWNS it from
-then on (closed by the copy, by the arrival that supersedes it, by the demand clamp that
-refuses it, or by `dispose` — once, never twice), `unregister`, `stats()` (`registered ·
-arrivals · copies · dropped · paused`, and `arrivals === copies + dropped`). The copy is a
-queue op in the profile's `video` render slot (§6's reflector 7, before GpuCompose's submit),
-one per arrival, premultiplied and unflipped, and it wakes the frame through the content
-residency — never a retained frame re-imported per composite. `SurfaceDemand` bites at the
-door: paused drops, and a bucket allows one copy per `demandIntervalMs`. The witness is the
-`video` rig. **DomRender (design-013 B4)**: `compose.residency` is the content residency (B4a) and `compose.renders.dom` is §6's
-reflector-5 slot; the ground fills it with **`createDomRender({ device, world, residency,
-hosts, raster?, now?, copy? })`** once `Ground.create` resolves — HiC copies a promoted card's
-L1 host into the layer its `TextureRef` names (`origin = { x: u0·side, y: v0·side, z: layer }`;
-`copyElementToTexture`'s `origin` grew the `z`), then `residency.wrote(e)`. Two more doors on
-`ContentResidency` (design-013 C4, D-C4.7): **`unwrote(e)`** CLEARS a card's standing write, and
-**`revision()`** is the texture table's revision — it moves when a handle is realised, evicted or forgotten (a NEW handle for the entity is the other retry key). Together they are
-the backoff: a refused `realize` skips that entity until `revision()` moves rather than
-allocating, rendering and destroying a full target every frame; and an oversize card that copied
-once and then grew past the device limit inside its band calls `unwrote(e)`, so it draws the
-PLATE instead of its stale raster stretched to the new box. It also OWNS the L1
-host's geometry while the host is canvas-side: the box is `geometry().cssSize` and the
-placement matrix carries `zoom / band`. `compose.domRender.stats()` → `{ copies, stills, dirtied,
-refused, unavailable, parked, deferred, pending, resized, pagesLayers, growths, budget, throttled,
-batches, draws, fallbacks, copyMs }` — `stills`
-(S1, 2026-09-09) counts the FIRST pictures taken for PAUSED cards: a paused card whose current
-destination has never been written copies once when the world names it (a promotion, a
-re-slot, a re-size) and then parks; a paint mark buys nothing. Until S1 such a card stayed on
-the plate. The last six are THE LEVERS' (2026-09-09): `budget` is the copy budget in force
-(cards per flush; `Infinity` without one), `throttled` the cards flushes left waiting for it,
-`batches` the tiles the batched route landed (one canvas copy each), `draws` its 2D draws,
-`fallbacks` the tiles it abandoned for element copies, and `copyMs` the main thread's
-milliseconds inside the copy calls — the budget controller's own signal.
-**`groundCompose({ dom })`** (2026-09-09) tunes DomRender — `{ strategy?: "element" | "batched",
-budget?: false | number | { start?, min?, max? }, costs? }`. `budget` caps the cards copied per
-flush, FIFO with a gesture's stills first; a number is a fixed cap, an object — or nothing: the
-adaptive controller is the DEFAULT since the review of 2026-09-23, `budget: false` is one copy
-per dirty card — the adaptive controller (start 16, min 2, max 256), which shrinks the cap hard when a flush spends more than
-3 ms of main thread inside its copies (the flow-control signature of a saturated GPU process)
-and grows it by one while cards wait and a flush spent under 1 ms. `strategy: "batched"` rasters
-the served cards of one page layer as ONE recording — each `drawElementImage`d into the source
-canvas's own 2D context at its slot inside a staging tile cut to the canvas's bitmap, the tile
-landed in the page by ONE `copyExternalImageToTexture` — with the element copy as the fallback
-for a single card, a card the bitmap cannot hold, a refused draw or a tile the cost model
-(`costs`, ms of GPU-process CPU: draw 0.1, canvas copy 0.9, element copy 0.58) says would lose.
-Absent, DomRender copies one element per dirty card with no budget, as before.
-**`groundCompose({ raster })`** declares the per-kind raster strategy ONCE — the profile
-carries the same function to Residency, so the slot and the host box come from one call — and
-**`compose.sourceCanvas`** is `{ effects, onDirty } | null`: what the react facade needs to
-build the L1 `<canvas layoutsubtree>` (null when `probeHic` finds no trial, or no
-`layoutsubtree`). The mount context's `hosts` gained `hostOf(entity)` (the OUTER host, beside
-`contentOf`). The pixel witnesses are the package's oracle
-(`pnpm --filter @ice/ground oracle`) and the `groundlab` app's rigs; the design record is
-`vibe-field/draft/ground/{README,COMPOSE,GLOW,PORTAL,MAT,FOLD}.md`.
-
-**The magnet grid (design-010, 0.10.0; build-time wiring in 0.11.0; ONE implementation
-since design-013 C2)**: the `GridPassFactory` seam and its classic/magnet pair went with the
-old leg. The engine's field IS the magnet field, and the glyph is a per-canvas-type
-declaration (`presentation.ground = { glyph: "dot" | "line", grid, wires, guides }`) rather
-than a build-time re-export. Selecting classic is design-013's owed `classic-line` glyph, not
-a rewiring. **The `line` glyph's width is a law in CSS px**, scaled by dpr at upload (design-013
-C4, D-C4.10) — the same weight on every monitor, which is the old grid's unit and D-C1.4's
-intent. Read literally, C1's one-device-pixel rule made the line 1 CSS px on a 1× monitor and
-0.5 on retina, and at dpr 1 the peak alpha swung 0.42 → 0.31 with sub-pixel phase: a shimmer
-under a pan. `lineInk` stays the theme's bytes — its brightness is a colour choice, not this
-defect. The cutting mat's own line law is separate and untouched.
-
-`grid.magnet?: Partial<GridMagnetConfig>` live-tunes the field and is deep-merged one level by
-`configureGrid`. SIX of its keys map onto the engine's field: `glyph: "dot"|"needle"` ·
-`reach` (CSS px at influence 0.5) · `polarity` · `alwaysAlign` · `needleLength`/`needleWidth`.
-The rest — `widgets`/`widgetStrength`/`widgetRadius`, `maxSources`, `fadeZoom` — are the old
-magnet grid's vocabulary and have **no field reader** since C2 (every on-screen card is a
-source at strength 1); they stay declared, and core's doc comments say so at each key. There
-is no `GroundContext.readSpatial` any more: the frame builder reads the cards from the world.
-
-**`PoleSource`** (`groundField({ poles })` / `groundCompose({ poles })`): injected point
-sources — the field knows no cursor vocabulary. `{read(world) => Pole[], subscribe(world,
-wake)}` with `Pole = {x, y, strength, space?: "world"|"screen", pointer?: boolean}`. A pole
-flagged `pointer` rides the field's ANALYTIC cursor term (D-C2.2) — its motion redraws but
-never re-bakes the source buffer, and the first flagged pole in read order wins; every other
-pole packs as a degenerate SDF box (≡ a point charge). The same packed set goes to every slot,
-because a screen point is slot-invariant. Canned wirings: `localPointerPoles()` (the local
-pointer entity, a SCREEN-space pole on `PointerScreen` since C2 — `PointerWorld` is rewritten
-every tick and lags the spawn by one) · `cursorVisualPoles()` (presence cursor entities —
-remote collaborators drive the field). Sources that ease should GATE their
-writing systems (`runIf` + `makeVersionGuard`) — strata blanket-stamps
-declared writes on every run, and an ungated easing system wakes the field's
-observer every tick (design-010 §10.7).
-
-**`changed?(world): boolean`** (optional, design-013 C4, D-C4.9) — a PULLED dirt check the host
-drains every tick, beside the frame builder's own. A source that can answer "did my poles move
-since you last asked?" from the world should implement it and skip `subscribe`'s wake:
-`cursorVisualPoles()` uses it, over its own `coarse: false` collector on `Position`, because a
-Tier-1 observer on `Position` is a subscription to the hot column every declared writer stamps —
-it woke the ground on EVERY frame a remote cursor existed. `subscribe` stays, and stays right,
-for a source whose dirt is not in the world at all (a halo's ease, a clock).
+The desk (design-015): every object under the camera drawn by ONE WebGPU renderer FROM THE WORLD;
+the DOM in screen space. Entries mirror the umbrella's: **`@ice/desk`** (the root barrel — the
+renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLayerHandle`, the one
+focused editor `createNoteEditor`, the text raster `inkRaster`/`penFaces`, `decodePicture`,
+`defineObject`/`objectKindOf`, the kind registry (`paperKind`, `minimatKind`, `notebookKind`,
+`boardKind`, `calendarKind`, `photoKind`, …), the builder/pick/ambient/reflector of `compose`,
+`instrumentSubmits`, the theme (`themeFrom`, `Palette`, `MAT`, `PAPER`, …), `shaderText`,
+`blueNoise`, the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs `SPRINGS`) ·
+**`@ice/desk/engine`** (the raw-WebGPU engine: device, surface, passes) · **`@ice/desk/objects`**
+(the six reference kinds' world halves: `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`,
+`Calendar`, `Photo`, `DESK_OBJECTS`, the typing session, the strokes and pins). Walls: `desk = core +
+kernel`; nobody imports desk but apps and the umbrella; `desk-dom-free` (only `src/host/*` touches
+the DOM); `desk/engine` never imports `desk/objects`. Mount: `<Desk layer={deskLayer({ theme,
+palette, objects: [...DESK_OBJECTS], text, docs, blobs })}>` (react) or `createDeskHost` (dom);
+`apps/desk/src/App.tsx` is the worked example, `apps/desk/src/palette.ts` the theme's. The oracle
+(`pnpm --filter @ice/desk oracle`, Dawn in Node) and `apps/desk`'s rigs are the pixel witnesses.
 
 ## @ice/devtools
 
 `attachDevtools(engine, {container?, intervalMs?, keyOf?, cellInDoc?,
-telemetry?})` → `{detach}`. Tabs: pointers/recognizers · planes ·
-sovereignty · loop. Note: arming telemetry permanently arms reactive
+telemetry?, dock?, observer?, profiler?, presence?, describe?})` → `{observer, profiler, lane, detach}`.
+strata's observer + profiler in one draggable dock (the GL metrics panel left at design-015 D5b). Note: arming telemetry permanently arms reactive
 stamping (+17–28% on write-heavy paths) — dev builds only.
 
 ## @ice/kernel
 
-Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/
-planeCssTransform/worldToIsland/islandToWorld/compositeCameraFrustum` ·
-`SpatialIndex` · `computeSnapGuides` · `portAnchor/wireCubic/distanceToCubic` ·
-`selectBand/isOutOfBand/fboPixelSize` · `selectEvictions/computeIslandPhase`.
+Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera/planeCssTransform` ·
+`SpatialIndex` · `computeSnapGuides` · `portAnchor/wireCubic/distanceToCubic` · the easings · the
+design-006 flight maths · `layout` · `atlas-pack` (parked). The island helpers, `zoom-bands`,
+`eviction`, `surface-geometry` and `lift` left at design-015 D5b.

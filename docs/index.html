@@ -758,7 +758,7 @@ footer a:hover{color:var(--ink)}
   <div class="wrap">
     <div class="sec-head rv">
       <p class="kicker k-mint">The flagship primitive</p>
-      <h2><em>defineWidget</em> — components become canvas citizens.</h2>
+      <h2><em>defineWidget</em> — object kinds become canvas citizens.</h2>
       <p class="lead">Props compile to conflict-group components on a durable prefab. Interaction flags become capability tags. Ports opt into the node editor; <code>container</code> opts into nesting. Nothing here is unavailable to a hand-rolled prefab — it is sugar, not a second object model.</p>
     </div>
 
@@ -781,9 +781,8 @@ footer a:hover{color:var(--ink)}
   },
   <span class="tk-p">groups</span>: { <span class="tk-p">content</span>: [<span class="tk-s">"title"</span>, <span class="tk-s">"items"</span>], <span class="tk-p">style</span>: [<span class="tk-s">"color"</span>] },
 
-  <span class="tk-p">surface</span>: <span class="tk-s">"dom"</span>,            <span class="tk-c">// | "gl" — R3F island</span>
-  <span class="tk-p">component</span>: <span class="tk-f">TodoCardView</span>,   <span class="tk-c">// a plain React component</span>
-  <span class="tk-p">sizeMode</span>: <span class="tk-s">"auto-height"</span>,
+  <span class="tk-p">object</span>: <span class="tk-f">todoCardKind</span>,      <span class="tk-c">// the FACE: a GPU kind the desk draws (design-015 §5.2) — no component</span>
+  <span class="tk-p">stratum</span>: <span class="tk-s">"things"</span>,          <span class="tk-c">// pads · sheets · things: where on the desk it lies</span>
   <span class="tk-p">defaultSize</span>: { <span class="tk-p">w</span>: <span class="tk-n">280</span>, <span class="tk-p">h</span>: <span class="tk-n">200</span> },
 
   <span class="tk-p">interaction</span>: {
@@ -1043,12 +1042,12 @@ footer a:hover{color:var(--ink)}
   <div class="wrap">
     <div class="sec-head rv">
       <p class="kicker k-blue">Structure</p>
-      <h2>One package, six entries, <em>one direction.</em></h2>
-      <p class="lead">Dependencies flow one way and the walls are CI-fatal. <code>core</code> never imports React, DOM, or three.js — the engine is headless by construction, and every surface is an adapter.</p>
+      <h2>One package, eight entries, <em>one direction.</em></h2>
+      <p class="lead">Dependencies flow one way and the walls are CI-fatal. <code>core</code> never imports React or the DOM, and three.js is imported nowhere (design-015 <code>no-three</code>) — the engine is headless by construction, and every surface is an adapter.</p>
     </div>
 
     <figure class="diagram rv">
-      <svg class="dg" viewBox="0 0 1000 190" role="img" aria-label="Package dependency chain: kernel to core to dom to react to r3f, devtools depends on core only">
+      <svg class="dg" viewBox="0 0 1000 190" role="img" aria-label="Package dependency chain: kernel to core to dom to react; desk and devtools depend on core only; nobody imports desk but apps">
         <defs>
           <marker id="arr3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" fill="#64799A"/>
@@ -1078,19 +1077,19 @@ footer a:hover{color:var(--ink)}
 
           <rect x="374" y="78" width="130" height="54" rx="10" fill="#0F1826" stroke="#233650"/>
           <text x="439" y="101" text-anchor="middle" fill="#E9F1FB" font-size="12.5" font-weight="700">dom</text>
-          <text x="439" y="118" text-anchor="middle" fill="#64799A" font-size="9.5">planes · reflectors</text>
+          <text x="439" y="118" text-anchor="middle" fill="#64799A" font-size="9.5">screen space · createDeskHost</text>
 
           <path d="M504 105 H544" stroke="#64799A" stroke-width="1.4" fill="none" marker-end="url(#arr3)"/>
 
           <rect x="548" y="78" width="140" height="54" rx="10" fill="#0F1826" stroke="#233650"/>
           <text x="618" y="101" text-anchor="middle" fill="#E9F1FB" font-size="12.5" font-weight="700">react</text>
-          <text x="618" y="118" text-anchor="middle" fill="#64799A" font-size="9.5">InfiniteCanvas · hooks</text>
+          <text x="618" y="118" text-anchor="middle" fill="#64799A" font-size="9.5">&lt;Desk&gt; · hooks</text>
 
           <path d="M688 105 H728" stroke="#64799A" stroke-width="1.4" fill="none" marker-end="url(#arr3)"/>
 
           <rect x="732" y="78" width="140" height="54" rx="10" fill="#0F1826" stroke="#233650"/>
           <text x="802" y="101" text-anchor="middle" fill="#E9F1FB" font-size="12.5" font-weight="700">r3f</text>
-          <text x="802" y="118" text-anchor="middle" fill="#64799A" font-size="9.5">GL islands · compositor</text>
+          <text x="802" y="118" text-anchor="middle" fill="#64799A" font-size="9.5">deleted at design-015 D5b</text>
 
           <!-- devtools -->
           <rect x="180" y="150" width="150" height="34" rx="10" fill="rgba(192,139,255,.08)" stroke="#C08BFF"/>
@@ -1099,7 +1098,7 @@ footer a:hover{color:var(--ink)}
 
           <!-- wall note -->
           <text x="920" y="101" text-anchor="middle" fill="#64799A" font-size="9.5">peers: react ·</text>
-          <text x="920" y="115" text-anchor="middle" fill="#64799A" font-size="9.5">three · @r3f</text>
+          <text x="920" y="115" text-anchor="middle" fill="#64799A" font-size="9.5">retired at D5b</text>
         </g>
       </svg>
       <figcaption>The Y-flip and every screen↔world conversion live in exactly <b>one kernel module</b>. The spatial index is the only hit path. Walls enforced by dependency-cruiser — a violating import fails CI.</figcaption>
@@ -1110,7 +1109,7 @@ footer a:hover{color:var(--ink)}
       <tbody>
         <tr>
           <td><code class="pk">@vibecook/ice/kernel</code></td>
-          <td>Pure math: coordinates (the one Y-flip), snap guides, RBush spatial index, bezier/anchors, zoom bands, eviction policy.</td>
+          <td>Pure math: coordinates (the one Y-flip), snap guides, RBush spatial index, bezier/anchors, the flight maths, easings, layout.</td>
           <td><small>rbush only</small></td>
         </tr>
         <tr>
@@ -1120,18 +1119,23 @@ footer a:hover{color:var(--ink)}
         </tr>
         <tr>
           <td><code class="pk">@vibecook/ice/dom</code></td>
-          <td>DOM planes + reflectors (grid, widgets, wires, chrome, cursors), pointer/measure adapters, rAF loop.</td>
+          <td>Screen space only: the canvas host, the pointer adapter, the rAF loop, input ownership + the editor's focus, OS and remote cursors, <code>createDeskHost</code> (the vanilla mount).</td>
           <td><small>core · kernel</small></td>
         </tr>
         <tr>
           <td><code class="pk">@vibecook/ice/react</code></td>
-          <td><code>&lt;InfiniteCanvas&gt;</code>, <code>EngineProvider</code>, hooks (<code>useCommit</code>, <code>useWidgetProps</code>, <code>useSelected</code>, …), keymap.</td>
+          <td><code>&lt;Desk&gt;</code>, <code>EngineProvider</code>, hooks (<code>useCommit</code>, <code>useWidgetProps</code>, <code>useSelected</code>, …), keymap, the screen-space selection menu and held bar.</td>
           <td><small>dom · core · kernel + react peers</small></td>
         </tr>
         <tr>
-          <td><code class="pk">@vibecook/ice/r3f</code></td>
-          <td>GL widget islands + virtual-texture compositor, GL pointer router.</td>
-          <td><small>react-pkg + three/@react-three/fiber peers</small></td>
+          <td><code class="pk">@vibecook/ice/desk</code></td>
+          <td>The desk: one WebGPU renderer drawing every object from the world — the cutting mat, <code>deskLayer</code>, <code>defineObject</code>, the kind registry, the one focused editor, the theme.</td>
+          <td><small>core · kernel — nobody imports desk but apps</small></td>
+        </tr>
+        <tr>
+          <td><code class="pk">@vibecook/ice/desk/engine</code> · <code class="pk">/desk/objects</code></td>
+          <td>The raw-WebGPU engine (device, surface, passes) · the six reference object kinds (note, mini mat, notebook, whiteboard, calendar, photo).</td>
+          <td><small>core · kernel</small></td>
         </tr>
         <tr>
           <td><code class="pk">@vibecook/ice/devtools</code></td>
@@ -1146,18 +1150,13 @@ footer a:hover{color:var(--ink)}
 <!-- ================================================================ CTA / DEMOS -->
 <div class="cta-final" id="demos">
   <div class="wrap">
-    <p class="kicker k-blue rv" style="justify-content:center">Seven demo apps ship in the repo</p>
+    <p class="kicker k-blue rv" style="justify-content:center">One showcase ships in the repo (design-015 D5b)</p>
     <h2 class="rv">Pan something <em>real.</em></h2>
-    <p class="lead rv" style="text-align:center;max-width:52ch">Each milestone exits through a runnable app — from a 10k-rectangle gray-box to a two-machine collab board.</p>
+    <p class="lead rv" style="text-align:center;max-width:52ch">The desk: a cutting mat with notes, mini mats, notebooks, whiteboards, calendars and photos — every object drawn by one WebGPU renderer from the world, collaborative in a room. Its twelve rigs are the landing gate.</p>
     <div class="demos" style="text-align:left">
-      <div class="demo rv"><span class="dn">graybox</span><p>10,000 rectangles: the frame-contract proof — O(1) pan, churn budget, telemetry.</p><code class="cmd">pnpm --filter graybox dev</code></div>
-      <div class="demo rv"><span class="dn">pointerlab</span><p>The interaction crucible: recognizers, arbitration, multi-tap, gesture graph.</p><code class="cmd">pnpm --filter pointerlab dev</code></div>
-      <div class="demo rv"><span class="dn">cardboard</span><p>DOM widget board — portals, measurement, breakpoints, keep-mounted LRU.</p><code class="cmd">pnpm --filter cardboard dev</code></div>
-      <div class="demo rv"><span class="dn">glboard</span><p>Mixed DOM + GL board — islands, FBO pool, zoom bands, GL pointer routing.</p><code class="cmd">pnpm --filter glboard dev</code></div>
-      <div class="demo rv"><span class="dn">nodeboard</span><p>The node editor — ports, wires, connect gesture, containers, nested canvas.</p><code class="cmd">pnpm --filter nodeboard dev</code></div>
-      <div class="demo rv"><span class="dn">moodboard</span><p>Facade-only collab proof — presence, undo, autosave, migrations. Built on the published surface alone.</p><code class="cmd">pnpm --filter moodboard dev</code></div>
-      <div class="demo rv"><span class="dn">widgetlab</span><p>Widget interaction lab — hold-to-lift drags, solid containers, fly-back.</p><code class="cmd">pnpm --filter widgetlab dev</code></div>
-      <div class="demo rv"><span class="dn">+ relay</span><p>Rooms over a dumb WebSocket relay: <code style="font-size:10px">?room=x&amp;relay=ws://localhost:9301</code></p><code class="cmd">pnpm relay</code></div>
+      <div class="demo rv"><span class="dn">desk</span><p>The showcase — <code style="font-size:10px">w</code> sticks a note, <code style="font-size:10px">m</code> lays a mini mat, <code style="font-size:10px">b</code> a notebook, <code style="font-size:10px">W</code> a whiteboard, <code style="font-size:10px">C</code> a calendar; paste a picture for a print; double-tap to pick up; the backtick opens the dev panel.</p><code class="cmd">pnpm --filter desk dev</code></div>
+      <div class="demo rv"><span class="dn">+ room</span><p>Two tabs share a desk over BroadcastChannel: <code style="font-size:10px">?room=x</code>; two machines over the relay: <code style="font-size:10px">&amp;relay=ws://localhost:9301</code></p><code class="cmd">pnpm relay</code></div>
+      <div class="demo rv"><span class="dn">the rigs</span><p>parity · world · interact · idle · portal · nav · open · sticky · two-tab · collab · ruler · panel — headless Chrome against the Dawn oracle's bytes.</p><code class="cmd">pnpm run gate:landing</code></div>
     </div>
     <div class="cta-row rv" style="margin-top:52px">
       <a class="btn btn-solid" href="api.html">Open the API reference →</a>

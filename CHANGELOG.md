@@ -6,11 +6,13 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-**design-015 — the desk (M20), IN BUILD.** Every object under the camera is drawn by one WebGPU
-renderer from the world; the DOM lives only in screen space. The ladder builds the desk BESIDE
-today's presentation and deletes the hybrid in one commit at D5 (`packages/r3f`, `packages/ground`,
+**design-015 — the desk (M20), IN BUILD; ships as 0.14.0 (D-D17 — the version bump and the publish
+are the release cut, not this ledger).** Every object under the camera is drawn by one WebGPU
+renderer from the world; the DOM lives only in screen space. The ladder built the desk BESIDE the
+old presentation and deleted the hybrid in one commit at D5b — `packages/r3f`, `packages/ground`,
 dom's world-space half, core's surface infra, the profiles, the widget React binding, every app but
-`apps/desk`) — the breaks will be listed here then. Until D5 nothing below changes an existing API.
+`apps/desk`. **0.14.0 BREAKS: the break list is the `### Removed` section below.** Everything under
+`### Added` was additive when it landed; D5b is what turned the additions into the only way.
 
 ### Added
 
@@ -500,6 +502,162 @@ lay. ADDITIVE beside the desk: nothing here reaches a `dom`/`gl` board.
   the mute, held zoom and pan, the keyboard, idle-zero in hand, the copy standing, the cost) joins
   `gate:landing`; `rig:world` draws the seven `hold-*` stills (Chrome = Node); the oracle's `held` check
   (the rest frame at e = 0 byte for byte; the object's reach past its box bounded; renders identical).
+
+<!-- design-015 D5b (2026-09-26) -->
+### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
+
+The hybrid is gone: no DOM under the camera, no GL islands, no old ground engine, no presentation
+profiles, no React widget faces. `three`, `@react-three/fiber` and `stats-gl` leave the package's
+dependency graph entirely (`pnpm install` resolves 80 fewer packages); the desk is the one
+presentation and `apps/desk` the one app. Grep and depcruise witnesses: no `three`, no
+`packages/r3f`, no `packages/ground`, no world-space half of `packages/dom`, no `SurfaceTarget`, no
+`layoutsubtree` anywhere (§11.5); the desk oracle's 92 renders are sha-equal before and after (the
+deletion moves no pixel). Each line below is an export or an entry a consumer could have named.
+
+**Entries of `@vibecook/ice` (`packages/ice`):** `./r3f`, `./r3f/webgpu`, `./ground`,
+`./ground/compose`, `./ground/packs`, `./ground/engine` are gone; `./desk` (the desk — the
+renderer, `deskLayer`, `defineObject`, the kind registry, the theme, the shaders' text, the blue
+noise), `./desk/engine` (the raw-WebGPU engine) and `./desk/objects` (the six reference kinds) are
+new. Eight entries: `.` · `/kernel` · `/dom` · `/desk` · `/desk/engine` · `/desk/objects` · `/react`
+· `/devtools`. The `three` and `@react-three/fiber` peers and the `stats-gl` dependency are struck;
+`react`/`react-dom` stay optional peers. `pack:audit` now walks EVERY entry and fails on any
+`three`, `@react-three` or `stats-gl` edge (`no-three`, §3); the plates it checks for are the
+desk oracle's `gobo-b`/`gobo-c`.
+
+**Packages deleted whole:** `@ice/r3f` (islands, `IslandRender`, the GL plane adapter,
+`BoardGLCanvas`, preview capture, the WebGPU renderer leg, `createGLBridge`, `<GLViews>`,
+`useIslandFrame`, the GL pointer router — 4,383 src lines) and `@ice/ground` (the 09-07 engine:
+the magnet `Field`, the dot/needle/line glyphs and poles, the card pass and `vfFrame`, `DomRender`
+· `DomCompose` · `IslandRender` · `VideoIngest`, the residency trunk, the copy budget, the shield,
+the stills, the HiC adapter, the nav fill pass, its oracle and `groundlab` — 11,092 src lines).
+What the ground PROVED carries as law in `@ice/desk` (its `engine/` is the prototype's, byte for
+byte, D1); its overlay seam (`overlay` · `soup` · `wires-collect` · `guides-collect`, 940 lines) is
+NOT carried as code: the desk's marks pass draws the guides as lasers and the marquee (D4a), and no
+desk kind declares a port yet, so a wires pass has nothing to draw — it is owed to the first kind
+that does (recorded below). `submit-instrument` the desk already had (`instrumentSubmits`).
+
+**`@vibecook/ice` (core):**
+- `defineWidget`: `WidgetDef.surface`, `component`, `chrome`, `animated`, `preview`,
+  `instancePreview`, `sizeMode` and the container's `framePreview` are gone; a widget's FACE is its
+  `object` kind binding (design-015 §5.2), optional — a widget without one is faceless (the desk
+  draws nothing for it) and gets no `Stratum` unless it declares one. The retired fields are REFUSED
+  at definition for the JS caller TypeScript cannot stop (the `presentation` precedent). `openable`
+  requires a binding. `WidgetType` loses `surface`, `component`, `chrome`, `sizeMode`, `animated`,
+  `previewComponent`, `previewProps`, `instancePreviewProps`; `WidgetContainerDef`/`WidgetContainerEntry`
+  lose `framePreview`; `ContainerDef` loses `surface` and `framePreview`. `WidgetSurfaceKind` and
+  `SizeMode` are gone. `defineContainer({ object, stratum })` still makes a container object.
+- The presentation vocabulary (`catalog/surface.ts`): `SurfaceKind`, `SurfaceTarget`,
+  `RequestedDemand`, `SurfaceDemand`, `SurfaceBand`, `TextureRef`, `NO_TEXTURE`, `effectiveTarget`
+  are gone. `Retained` stays (the nav crossfade's pin). Equip stamps no surface fact.
+- The surface infra: `installSurfaceInfra`, `ResidencyOptions`, `SurfaceInfraOpts`,
+  `createSurfaceBandSystem`, `createSurfaceDemandSystem`, the residency module (`layer-allocator`,
+  `residency-system`, `texture-table` — every export), the surface contract (`SurfaceKindValue`,
+  `SurfaceFpsBucket`, `SurfaceDemandValue`, `DEFAULT_SURFACE_DEMAND`, `PAUSED_SURFACE_DEMAND`,
+  `toFpsBucket`, `demandIntervalMs`, `foldDemand`, `WidgetSurface`, `WidgetSurfaceView`,
+  `WidgetSurfaceSeams`, `createWidgetSurfaceView`), three's backend-texture read (`backendTexture`,
+  `backendTextureIsSrgb`, `backendTextureRecord`, `BackendLike`, `BackendTextureRecord`,
+  `RendererWithBackend`) and the GL allocation ledger (`createGpuAllocationLedger`,
+  `GpuAllocationLedger`, `GpuAllocationStats`, `GpuAllocatorHandle`, `GpuAllocatorRegistration`,
+  `GpuReservation`) are gone. `acquireCompositorDevice` stays, slimmed of its three rules
+  (`EngineGpu`, `AcquireDeviceOpts`, `GpuUncapturedError`, `GpuUnavailableError`), as the device
+  injection door (`createCanvasEngine({ compositorDevice })`).
+- The three standard surface behaviours — `domAtRest`, `alwaysGpu`, `alwaysDom`,
+  `STANDARD_SURFACE_BEHAVIORS`, `registerStandardSurfaceBehaviors` — are gone; the engine registers
+  no behaviours of its own (`engine.behaviors.list()` is the app's), and the compiler's exact-name
+  attestation for them went with them. `defineEngineBehavior` and the `ice:` reservation stay.
+- The pipeline: `PHASE_GROUPS` loses `present:infra` — eleven phases, design-002 §2's table as first
+  written.
+- The mount store: `WidgetRuntime` is `{ cullSystem }`; `store`, `mountSystem`, `flush`, `MountEntry`,
+  `WidgetMountHold`, `WidgetMountStore`, the keep-mounted LRU and `retainForTransition` are gone;
+  `installWidgetRuntime(engine)` and `createWidgetRuntime(world)` take no options. `Visible`/`Culled`
+  is the desk renderer's working set.
+- Measurement: `MeasuredSize`, `createMeasureQueue`, `MeasureQueue`, `MeasureEvent`,
+  `createMeasureIngest` and `CanvasEngineOpts.measureQueue` are gone; every "effective size"
+  (the cull, the selection chrome, the breakpoint tiers, presence, `arrange`, the frame view and
+  preview, drop placement) is `Size`. `MeasuredSize` leaves the published behaviour read surface.
+- The transition planes: `PresentationPlane` is `"ground"` alone (was `"ground" | "dom" | "gl"`);
+  `presentationPlanesOf` is gone; a flight prepares `ground` when either canvas type declares a
+  ground or a visible object stands in the departing frame.
+- Settings: `RUNTIME_BUDGETS.keepMountedWidgets` and `.fboBytes`, `CHROME_DEFAULTS.selectionReach`,
+  `ChromeSettings.selectionReach` (the shield's reach) and `createCanvasEngine`'s
+  `budgets.keepMounted` / `budgets.fboBytes` / `settings.chrome.selectionReach` are gone.
+  `CanvasEngine.gpu` (the ledger) and `budgets.keepMounted`/`fboBytes` are gone;
+  `budgets.framePreviewChildren`/`framePreviewBytes` stay.
+- `EngineCatalog.framePreviewRendererForContainer` and `FramePreviewChild.previewModel` are gone
+  (the container's React preview renderer and the instance-preview model).
+
+**`@vibecook/ice/kernel`:** `surface-geometry` (`geometry`, `SurfaceGeometry`, `SurfaceExtent`,
+`RasterStrategy`), `zoom-bands` (`ZOOM_BANDS`, `selectBand`, `isOutOfBand`, `fboPixelSize`),
+`eviction` (`selectEvictions`, `computeIslandPhase`, `EvictionCandidate`, `IslandPhase`), `lift`
+(`LIFT_EASE`, `FADE_EASE`, `LIFT_DURATION_MS`, `easedValue`) and coords' island helpers
+(`worldToIsland`, `islandToWorld`, `compositeCameraFrustum`, `worldRectToComposite`) are gone.
+`planeCssTransform` stays. `atlas-pack` is PARKED (exported, unread).
+
+**`@vibecook/ice/dom` — SCREEN SPACE ONLY (D-D15):** `createPlanes`/`Planes`,
+`createPlaneTransformReflector`/`CameraPlanes`, `createGrayboxReflector`, `createDomWidgetsReflector`
+(+ `DomWidgetsHost`, `DomWidgetsOptions`, `DomWidgetsReflector`), `createDomWritebackReflector`
+(+ `DomWritebackHosts`, `DomWritebackReflector`), `createSourceCanvas` (+ `SourceCanvas`,
+`SourceCanvasEffects`, `SourceCanvasOptions` — the L1 `<canvas layoutsubtree>`), the Widget Surface
+contract (`compositedSurfaces`, `stratifiedSurfaces`, `widgetSurfaceKind`, `CompositedSurfacesOptions`,
+`StratifiedSurfacesOptions`, `WidgetSurfaceDemandSeam`), `createChromeReflector` (P4), the
+measurement adapter (`attachMeasureAdapter`, `MeasureAdapter`, `wireMeasurement`, `MeasureWiringHosts`,
+`MeasureWiringOpts`) and the pointer adapter's GL route (`GLRoute`, `GLRouteVerdict`,
+`PointerAdapterOpts`; `attachPointerAdapter(host, queue)` takes two arguments) are gone.
+`CanvasHost` loses `contentPlane` — no DOM element carries a camera transform (§2 law 2).
+`attachWidgetFocus(host, lookup?)`'s lookup is optional. **New:** `createDeskHost({ container,
+engine, layer })` — the vanilla mount (host → the desk's layer → reflectors [layer · cursor ·
+remoteCursors] → pointer adapter → focus → viewport → rAF loop), typing the desk structurally as
+`LayerFactory`/`LayerContext`/`LayerHandle` (`DeskHost`, `DeskHostOptions`).
+
+**`@vibecook/ice/react`:** `<InfiniteCanvas>` → **`<Desk engine layer keymapOverrides? onReady?>`**
+(wraps `createDeskHost`; `DeskProps`, `DeskHandle { engine, host, layer, focus }`; the
+`ground`, `grid`, `glRoute`, `measureQueue`, `profile` and `chrome` props are gone with the planes
+they configured; no compatibility alias). `GroundLayerFactory`/`GroundLayerHandle`/
+`InfiniteCanvasHandle`/`InfiniteCanvasProps` → `LayerFactory`/`LayerHandle`/`LayerContext`
+(re-exported from dom). `WidgetRoot` (+ `WidgetComponentProps`, `WidgetHosts`, `WidgetRootProps`),
+`WidgetPreview`/`WidgetPreviewProps`, the preview snapshots (`getPreviewSnapshot`,
+`hasPreviewSnapshot`, `setPreviewSnapshot`, `subscribePreviewSnapshots`, `PreviewImage`), the surface
+content seam (`SurfaceContentContext`, `surfaceContentOf`, `useSurfaceContent`, `ContentRenderSlot`,
+`ContentRenderSlots`, `ContentSink`, `SurfaceContent`, `TextureDescription`), the presentation
+profiles (`PresentationProfile`, `PresentationProfileName`, `ProfileBootContext`, `stratifiedProfile`,
+`compositedProfile` — one presentation, DK-D8), `WidgetHiddenContext`, `ChromeOwnerContext`,
+`ChromeOwner` and `useChromeOwner` are gone. `useWorldComponent`/`useSelected` no longer freeze
+under a hidden portal (there are none). The hooks, `EngineProvider`, `useCommit`, the keymap and
+`<SelectionMenu>` stay.
+
+**`@vibecook/ice/devtools`:** `createGlPanel` (+ `GlPanel`, `GlPanelCorner`, `GlPanelOptions`,
+`GlPanelStats`), `DevtoolsOpts.glPanel` and `DevtoolsHandle.glStats` are gone; `DockSlotId` is
+`"profiler" | "observer"`.
+
+**`@ice/desk` (workspace):** its entries mirror the umbrella's — `.` (the root barrel), `./engine`,
+`./objects` (+ `./oracle/*` and `./assets/*`, the rigs' doors, which the umbrella does not ship);
+`./host`, `./compose`, `./kinds`, `./theme`, `./shaders`, `./noise`, `./object` fold into the root.
+`deskLayer`'s mount context takes `host: { container }` (no content plane) and prepends its canvas.
+`defineObject` no longer passes `surface: "object"`; `objectKindOf` reads the binding.
+
+**The nine apps** (`graybox`, `pointerlab`, `cardboard`, `glboard`, `nodeboard`, `moodboard`,
+`widgetlab`, `widgetlab-desktop` with its Electron shell, truffle mesh and HiC probes, `groundlab`)
+are deleted (D-D14). Their exit tests were ported or retired BY NAME at D5a (§11.6): M5 two-tab →
+`rig:two-tab`; M8 cascade + port-churn → core tests; M9 collab → `apps/desk`'s collab test +
+`rig:collab`; M10 exit-imports → `apps/desk/test/exit-imports.test.ts` (THE SURFACE now mirrors the
+umbrella's entries); M6 `exit-trace`/`cull-reenter` and M7 `gl-router` retired WITH their subject.
+`electron` and `@vibecook/truffle` leave `allowBuilds`; the `@react-three/fiber` patch leaves
+`patchedDependencies`. `gate:landing` = the desk oracle → the `apps/desk` build → its twelve rigs →
+`pack:audit`.
+
+**Tests retired with their subjects:** core's `surface-*`, `residency/*`, `gpu-allocation-ledger`,
+`measure-ingest`, `widget-preview-schema` suites and the `behavior-idle-snapshot` bench
+(`domAtRest`'s idle row — its numbers stay in `docs/benchmarks.md` as history); dom's world-space
+suites; react's profile, portal, preview and `chrome-prop` suites; kernel's `surface-geometry`,
+`zoom-bands`, `eviction`; devtools' GL panel cases. The coordinator's suite is ported to the one
+plane (the two cases that were ABOUT a second plane are recorded there as retired, not faked).
+
+**Owed after D5b:** the string between objects — a wires pass on the desk (`wires-collect` + `soup`
+were the ground's; the first desk kind with ports brings it back); the M3 baseline re-measured on
+`apps/desk`'s stress rig (D6); the design-004/005 amendments live in `draft/` (the orchestrator's
+snapshot); VibeField's migration (plugin ABI `surface`/`component`, plugin-sdk re-exports,
+design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) — VibeField pins
+0.11.0 and is untouched.
 
 ### Fixed
 

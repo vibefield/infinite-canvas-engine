@@ -74,6 +74,14 @@ passes `surface: "dom"` to `defineWidget` is unaffected. It is recorded under
 about it; it is repeated here so the consumer meets it while reading about the
 round rather than only at the cut.
 
+> **Erratum (design-015 D5b, 2026-09-26):** `WidgetSurfaceKind` is gone too — `defineWidget`'s
+> `surface` field (with `component`, `chrome`, `animated`, `preview`, `instancePreview`,
+> `sizeMode`) retired at D5b; a widget's face is its `object` kind binding, and `<InfiniteCanvas>`
+> is `<Desk>`. VibeField's migration — the plugin ABI's `surface: "dom" | "gl"`, plugin-sdk's
+> react/r3f re-exports, design-kit's chrome + GL, the five product cards — is its OWN program
+> after D5 (design-015 D-D17); VibeField pins 0.11.0 until then. The break list is the
+> CHANGELOG's `### Removed`.
+
 ## I5 — prefab rename migration (resolved)
 
 **The ask** (full text: `vibe-field/draft/petitions/I5-ice-rename-migration.md`):

@@ -50,6 +50,8 @@ Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tes
 
 **Exit**: two-tab demo — concurrent drags converge per strata semantics; undo restores selection; corrupt autosave quarantines instead of bricking boot.
 
+> *design-015 D5b (2026-09-26):* graybox is deleted; the two-tab exit is `apps/desk`'s `rig:two-tab` (desk objects over BroadcastChannel, D5a).
+
 ## M6 — Widget runtime, DOM half (design-004 §1–2, §5)
 
 - Real planes P0/P1/P3–P5; hosts + portals-from-one-root + keep-mounted LRU + frozen-hidden subscriptions; measurement path (RO disconnect-on-hide, `MeasuredSize`, effective size); drag-promote portal swap; chrome reflector (pooled nodes, marquee buffer); breakpoints; grid shader.
@@ -58,6 +60,8 @@ Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tes
 
 **Exit**: naive widget handlers compose per the pinned contract (native opt-out, stopPropagation boundary, inert-during-drag); cull/re-enter preserves React state within budget.
 
+> *design-015 D5b (2026-09-26):* the DOM widget runtime is deleted — cardboard's `exit-trace` and `cull-reenter` retired WITH their subject (§11.6); the cull stays (`packages/core/test/mount-gate.test.ts`), the mount store, the planes and the React faces do not.
+
 ## M7 — GL views (design-004 §3–4)
 
 - Islands + FBO pool with retention decoupled from cull (+ specified fallbacks); neutral composite (`{opacity}`); two-level invalidation; `animated`/`useIslandFrame` contract; router GL path (synchronous point-pick, synthetic events, `surfaceHandled`).
@@ -65,11 +69,15 @@ Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tes
 
 **Exit**: first-tap-on-GL-widget trace green; zero render→ECS writes (asserted by a DEV hook); FBO budget honored under scripted zoom/cull storms.
 
+> *design-015 D5b (2026-09-26):* GL islands are deleted — glboard's `gl-router` retired WITH its subject (§11.6); a 3D object is a desk kind with its own pass (the notebook).
+
 ## M8 — Node editor layer (designs 001 §5.3, 003 §5.8, 004 §6–7)
 
 - Ports (on-demand materialization, budgets, light-up staging); wires (P0 pass, pick-below-widgets, connect gesture + preview continuity, endpoint cascade); containers (consume/fly-back full path); nested canvas (activeMembership, nav ops + index rebuild + nav integrity, `NavEntry` stack).
 
 **Exit**: node-graph demo (spawn nodes, wire them, enter a container, delete an endpoint → wire cascades); zero port churn panning with the select tool (measured).
+
+> *design-015 D5b (2026-09-26):* nodeboard is deleted; the cascade and port-churn exits are core tests (`m8-cascade`, `m8-port-churn`, D5a). The string between objects is not yet drawn on the desk (owed to the first kind with ports).
 
 ## M9 — Presence & collab polish (design-005 §6.5 + presence catalog)
 
@@ -77,11 +85,15 @@ Port from v1 (`../infinite-canvas/packages/infinite-canvas/src/`) with their tes
 
 **Exit**: two-machine collab demo over the dumb relay; version-skew test: older pack opens read-only, migrator upgrades via `{ undoable: false }` transactions (strata 0.3.0 — user history survives), both converge.
 
+> *design-015 D5b (2026-09-26):* nodeboard/moodboard are deleted; the collab exit is `apps/desk`'s collab test and `rig:collab` over the ws relay (D5a).
+
 ## M10 — API polish, devtools, docs
 
 - Ops catalog + keymap complete; devtools tabs (pointers/recognizers, planes, sovereignty, loop); `<InfiniteCanvas>` config surface + budgets; examples; README; API reference.
 
 **Exit**: a third-party-shaped sample app builds against the published surface only (no deep imports).
+
+> *design-015 D5b (2026-09-26):* moodboard is deleted; the exit is `apps/desk/test/exit-imports.test.ts`, whose THE SURFACE mirrors the umbrella's entries (`@ice/desk` · `/engine` · `/objects`, D5a/D5b).
 
 ---
 

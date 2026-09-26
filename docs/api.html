@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API reference — infinite-canvas-engine</title>
-<meta name="description" content="The published surface of infinite-canvas-engine: @vibecook/ice, @vibecook/ice/react, @vibecook/ice/dom, @vibecook/ice/r3f, @vibecook/ice/devtools, @vibecook/ice/kernel.">
+<meta name="description" content="The published surface of infinite-canvas-engine: @vibecook/ice, @vibecook/ice/react, @vibecook/ice/dom, @vibecook/ice/desk, @vibecook/ice/devtools, @vibecook/ice/kernel.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='18' height='18' rx='3' fill='none' stroke='%234DA3FF' stroke-width='2'/%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5' fill='%2306090F' stroke='%234DA3FF' stroke-width='2'/%3E%3Crect x='22' y='22' width='7' height='7' rx='1.5' fill='%2306090F' stroke='%234DA3FF' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -269,7 +269,7 @@ body.empty .nores{display:block}
         <p class="st">Surfaces</p>
         <a href="#react">@vibecook/ice/react</a>
         <a href="#dom">@vibecook/ice/dom</a>
-        <a href="#r3f">@vibecook/ice/r3f</a>
+        <a href="#desk">@vibecook/ice/desk</a>
         <a href="#devtools">@vibecook/ice/devtools</a>
         <a href="#kernel">@vibecook/ice/kernel</a>
       </div>
@@ -296,6 +296,13 @@ body.empty .nores{display:block}
     </header>
 
     <div class="nores" id="nores">no entries match — try a shorter query</div>
+
+    <section class="pkg" id="d5b">
+      <div class="pkg-head">
+        <h2>0.14.0 — <span class="at">the desk</span> (design-015 D5b, 2026-09-26; unpublished)</h2>
+        <p class="desc"><b>The hybrid is deleted.</b> <code>@vibecook/ice/r3f</code>, <code>/r3f/webgpu</code> and the four <code>/ground*</code> entries are gone with the <code>three</code> and <code>@react-three/fiber</code> peers; <code>&lt;InfiniteCanvas&gt;</code> is <code>&lt;Desk layer={deskLayer(…)}&gt;</code>; a widget's face is its <code>object</code> kind binding — <code>surface</code>, <code>component</code>, <code>chrome</code>, <code>animated</code>, <code>preview</code>, <code>instancePreview</code> and <code>sizeMode</code> are refused; <code>@vibecook/ice/dom</code> is screen space only and gains <code>createDeskHost</code>. The new entries are <code>@vibecook/ice/desk</code> · <code>/desk/engine</code> · <code>/desk/objects</code>. The break list, export by export, is <code>CHANGELOG.md › [Unreleased] › Removed</code>; <code>docs/api-reference.md</code> carries the amended sections. The getting-started code and the live demos below show the PUBLISHED surface (0.11.0 on npm; 0.13.0 a git release point) and stay correct for it; <code>apps/desk/src/App.tsx</code> is the desk's worked example.</p>
+      </div>
+    </section>
 
     <!-- ======================================================== GETTING STARTED -->
     <section class="pkg" id="start">
@@ -352,7 +359,7 @@ engine.ops.<span class="tk-f">spawnWidget</span>(<span class="tk-s">"sticky"</sp
 pnpm --filter nodeboard dev     # node editor (add ?room=x&amp;relay=ws://localhost:9301 after `pnpm relay`)
 pnpm --filter glboard dev       # mixed DOM + GL board</pre></div>
         <div class="demo-embed"><iframe src="demos/board.html" loading="lazy" title="Live demo — the starter board"></iframe></div>
-        <p class="demo-cap">live — this exact app, served from the published package via esm.sh. <a href="demos/board.html" target="_blank" rel="noopener" style="color:var(--ink2);border-bottom:1px solid var(--line2)">open standalone ↗</a></p>
+        <p class="demo-cap">live — this exact app, served from the published package via esm.sh (the 0.1.0 API; the desk of 0.14.0 is <code>apps/desk</code>). <a href="demos/board.html" target="_blank" rel="noopener" style="color:var(--ink2);border-bottom:1px solid var(--line2)">open standalone ↗</a></p>
       </article>
     </section>
 
@@ -930,9 +937,11 @@ engine.reflectorNames()</pre>
         <p>Context root — all hooks require it. Threads the engine (and its current doc session) to widgets so userland never hand-rolls store plumbing.</p>
       </article>
 
-      <article class="entry" id="infinitecanvas" data-k="infinitecanvas canvas component planes adapters reflectors raf keymap widgetroot onready">
-        <h4><a href="#infinitecanvas">&lt;InfiniteCanvas&gt;</a><span class="kchip cmp">component</span></h4>
-        <pre class="sig">&lt;InfiniteCanvas engine={ce} measureQueue={q?} onReady={(host) ⇒ …}? /&gt;</pre>
+      <article class="entry" id="desk-mount" data-k="desk infinitecanvas canvas component mount layer desklayer adapters reflectors raf keymap onready">
+        <h4><a href="#desk-mount">&lt;Desk&gt;</a><span class="kchip cmp">component</span><span class="kchip">0.14.0 — was &lt;InfiniteCanvas&gt;</span></h4>
+        <pre class="sig">&lt;Desk engine={ce} layer={deskLayer({ theme, palette, objects })} keymapOverrides={…}? onReady={({ engine, host, layer, focus }) ⇒ …}? /&gt;</pre>
+        <p>Mounts the desk through <code>@vibecook/ice/dom</code>'s <code>createDeskHost</code>: the layer's canvas, the pointer adapter, the OS and remote cursors, the focus driver, the viewport sync, the rAF loop and the keymap. The desk arrives as an OPAQUE layer factory (the react entry imports no renderer). Unmount disposes the host — <b>the engine outlives it</b>. Children render in the container above the canvas: screen-space chrome only. The paragraph below is the 0.13.0 <code>&lt;InfiniteCanvas&gt;</code> it replaced.</p>
+        <pre class="sig">&lt;InfiniteCanvas engine={ce} measureQueue={q?} onReady={(host) ⇒ …}? /&gt;   // ≤ 0.13.0</pre>
         <p>Mounts the six output planes, pointer/measure adapters, built-in reflectors, the keymap, the rAF loop, and the widget portal root. Unmount detaches cleanly — <b>the engine outlives it</b>. GL islands and devtools attach app-side via <code>onReady</code> (the import walls keep core react-free and react three-free).</p>
       </article>
 
@@ -989,10 +998,10 @@ commit((tx: GuardedTx) ⇒ void, {undoable?})   // one call = one undo step</pre
         <div class="callout"><b>Escape hatch.</b> Reading and observing are fine; mutation from components is DEV-warned — every v1 entanglement started as a convenient direct write. Write through <code>useCommit</code> or ops.</div>
       </article>
 
-      <article class="entry" id="widgetroot" data-k="widgetroot advanced portal hosts">
-        <h4><a href="#widgetroot">WidgetRoot</a><span class="kchip cmp">component</span><span class="kchip">advanced</span></h4>
-        <pre class="sig">&lt;WidgetRoot engine hosts /&gt;   // portal-list owner; InfiniteCanvas mounts it for you</pre>
-        <p>Owns portal-list membership via <code>useSyncExternalStore</code> over the engine's enter/exit/evict feed. Exported for custom shells that assemble planes by hand.</p>
+      <article class="entry" id="widgetroot" data-k="widgetroot advanced portal hosts retired">
+        <h4><a href="#widgetroot">WidgetRoot</a><span class="kchip cmp">component</span><span class="kchip">retired at 0.14.0</span></h4>
+        <pre class="sig">&lt;WidgetRoot engine hosts /&gt;   // ≤ 0.13.0 — the portal-list owner; gone with the DOM widget faces (design-015 D5b)</pre>
+        <p>Owned portal-list membership via <code>useSyncExternalStore</code> over the engine's enter/exit/evict feed. There are no portals to own: an object's face is its kind's program.</p>
       </article>
     </section>
 
@@ -1001,13 +1010,19 @@ commit((tx: GuardedTx) ⇒ void, {undoable?})   // one call = one undo step</pre
       <div class="pkg-head">
         <h2><span class="at">@vibecook/ice</span>/dom</h2>
         <p class="imports">imports: @vibecook/ice · @vibecook/ice/kernel</p>
-        <p class="desc"><code>&lt;InfiniteCanvas&gt;</code> wires all of this — direct use is for custom shells (vanilla JS, other frameworks).</p>
+        <p class="desc"><code>&lt;Desk&gt;</code> wires all of this — direct use is for custom shells (vanilla JS, other frameworks). <b>Screen space only since 0.14.0</b> (design-015 D5b): the planes, the DOM widget hosts, the L1 source canvas, measurement and the chrome reflector are gone.</p>
       </div>
 
-      <article class="entry" id="host" data-k="createcanvashost createplanes host planes">
-        <h4><a href="#host">createCanvasHost / createPlanes</a><span class="kchip">function</span></h4>
-        <pre class="sig">createCanvasHost(container) ⇒ CanvasHost   ·   createPlanes(host) ⇒ Planes</pre>
-        <p>Builds the stage and the six output planes (P0 ground GL · P1 content DOM · P2 GL views · P3 lifted · P4 chrome · P5 cursors).</p>
+      <article class="entry" id="deskhost" data-k="createdeskhost host mount layer factory vanilla">
+        <h4><a href="#deskhost">createDeskHost</a><span class="kchip">function</span><span class="kchip">0.14.0</span></h4>
+        <pre class="sig">createDeskHost({ container, engine, layer }) ⇒ DeskHost { engine, host, layer, focus, dispose }</pre>
+        <p>The vanilla mount: host → the layer factory (<code>LayerContext</code>: the world and the interaction stack's seams the renderer fills) → reflectors [ the layer's · cursor · remote cursors ] → the pointer adapter → the focus driver → the viewport sync → the rAF loop. <code>deskLayer(…)</code> from <code>@vibecook/ice/desk</code> is a <code>LayerFactory</code>.</p>
+      </article>
+
+      <article class="entry" id="host" data-k="createcanvashost host">
+        <h4><a href="#host">createCanvasHost</a><span class="kchip">function</span></h4>
+        <pre class="sig">createCanvasHost(container) ⇒ CanvasHost { container, dispose }</pre>
+        <p>Styles the container as a gesture-clean viewport (<code>relative</code> · <code>overflow:hidden</code> · <code>touch-action:none</code> · <code>user-select:none</code>). No planes: nothing under the camera is DOM (design-015 §2 law 2). <code>createPlanes</code> is gone.</p>
       </article>
 
       <article class="entry" id="adapters" data-k="attachpointeradapter attachmeasureadapter wiremeasurement adapters enqueue glroute">
@@ -1037,12 +1052,21 @@ createRemoteCursorsReflector</pre>
       </article>
     </section>
 
-    <!-- ======================================================== @vibecook/ice/r3f -->
+    <!-- ======================================================== @vibecook/ice/desk (0.14.0) -->
+    <section class="pkg" id="desk">
+      <div class="pkg-head">
+        <h2><span class="at">@vibecook/ice</span>/desk</h2>
+        <p class="imports">imports: @vibecook/ice · @vibecook/ice/kernel — nobody imports desk but apps · three is imported nowhere</p>
+        <p class="desc">The desk (design-015): every object under the camera drawn by ONE WebGPU renderer from the world — the cutting mat, the notes, the mini mats (nested desks), the notebook, the whiteboard, the calendar, the photo print — with the DOM in screen space. <code>deskLayer(opts)</code> is the layer <code>&lt;Desk&gt;</code>/<code>createDeskHost</code> mount; <code>defineObject({ type, kind, size, props })</code> is the typed door (sugar over <code>defineWidget</code> with the kind as the <code>object</code> binding); <code>/desk/engine</code> is the raw-WebGPU engine and <code>/desk/objects</code> the six reference kinds' world halves. Its Node oracle (Dawn) and <code>apps/desk</code>'s rigs are the pixel witnesses; <code>apps/desk/src/App.tsx</code> is the worked example.</p>
+      </div>
+    </section>
+
+    <!-- ======================================================== @vibecook/ice/r3f (RETIRED) -->
     <section class="pkg" id="r3f">
       <div class="pkg-head">
-        <h2><span class="at">@vibecook/ice</span>/r3f</h2>
-        <p class="imports">imports: @vibecook/ice/react — peers: three · @react-three/fiber</p>
-        <p class="desc">GL widget islands and the virtual-texture compositor. <b>Zero render→ECS writes</b>, DEV-enforced via a write trap.</p>
+        <h2><span class="at">@vibecook/ice</span>/r3f <small>— retired at 0.14.0</small></h2>
+        <p class="imports">≤ 0.13.0 — imports: @vibecook/ice/react — peers: three · @react-three/fiber</p>
+        <p class="desc"><b>Deleted at design-015 D5b (2026-09-26)</b> with the <code>three</code> peer: a 3D object is a desk kind with its own pass (the notebook is one). The entries below describe the 0.13.0 surface and are kept as history.</p>
       </div>
 
       <article class="entry" id="glbridge" data-k="createglbridge bridge islands fbo">
