@@ -34,6 +34,7 @@ import {
   type World,
 } from "@ice/core";
 import { assembleMarks, type MarkedObject } from "../marks/assemble";
+import type { HeldTool } from "../kinds/world";
 import { laserKey, type WorldBar, type WorldGuide } from "../marks/laser";
 import { type MarkBox, type MarkFrame, type MarksInput, selectionBox } from "../marks/layout";
 import { MARKS } from "../theme";
@@ -64,6 +65,15 @@ export interface SelectionAnchor {
   /** The view it was placed in, CSS px, and whether the rulers are printed (the menu flips below their band). */
   readonly view: { readonly width: number; readonly height: number };
   readonly rulers: { readonly margin: number; readonly band: number } | null;
+  /** An object is IN HAND (design-015 §8, D4b): the menu travels to the foot and becomes the held bar — Send · the kind's tools · Done. Absent = nothing held. */
+  readonly held?: HeldAnchor;
+}
+
+/** The hand as the menu takes it (D4b): the kind's declared tools (its `open.tools`), whether the object is flying home (the bar hides) and whether the pickup has settled. */
+export interface HeldAnchor {
+  readonly tools: readonly HeldTool[];
+  readonly landing: boolean;
+  readonly settled: boolean;
 }
 
 export interface MarksFrameInput {

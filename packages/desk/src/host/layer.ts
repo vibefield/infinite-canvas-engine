@@ -299,11 +299,18 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;
     const readMarquee = ctx.readMarquee;
     const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
-    // the selection menu's source: the anchor published whenever a frame moved it
+    // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
+    // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home)
+    const anchorOf = (): SelectionAnchor => {
+      const a = builder.anchor();
+      const h = builder.hand();
+      if (h === undefined) return a;
+      return { ...a, held: { tools: builder.kindOf(h.entity)?.open?.tools ?? [], landing: h.landing, settled: h.settled } };
+    };
     const listeners = new Set<() => void>();
     let published = "";
     const publish = (): void => {
-      const a = builder.anchor();
+      const a = anchorOf();
       const key = JSON.stringify(a);
       if (key === published) return;
       published = key;
@@ -489,7 +496,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       editor: () => editor,
       typing,
       selection: {
-        anchor: () => builder.anchor(),
+        anchor: () => anchorOf(),
         subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
       },
       desk: compose,

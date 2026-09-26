@@ -43,24 +43,35 @@
  * Space warns at attach: the pointer adapter owns Space (the pan modifier,
  * design-003 §4.4) and preventDefaults it before gate 1 can let it through.
  */
-import { Container, GestureActive, Locked, Position, currentNavEntry, defineQuery, guardedTransaction, selectedEntities, tools, type CanvasEngine } from "@ice/core";
+import { Container, GestureActive, Locked, Position, PrefabId, currentNavEntry, defineQuery, guardedTransaction, heldEntity, selectedEntities, tools, type CanvasEngine } from "@ice/core";
 import { isEditableTarget, keyboardClaimOf } from "@ice/dom";
 
 const gestureActiveQ = defineQuery([GestureActive]);
 
-/** ⏎ (design-015 §9): exactly one selected widget, and it is a container the catalog can enter → fly into it. */
-function enterSelectedContainer(engine: CanvasEngine): void {
+/**
+ * ⏎ (design-015 §8 · §9): exactly one selected widget — an object whose kind OPENS is picked up into the hand (D4b); a
+ * container the catalog can enter is flown into. Nothing while something is already held.
+ */
+function openOrEnterSelected(engine: CanvasEngine): void {
   const { world } = engine;
+  if (heldEntity(world) !== undefined) return;
   const selected = selectedEntities(world);
   if (selected.length !== 1) return;
   const target = selected[0];
-  if (target === undefined || !world.isAlive(target) || !world.hasTag(target, Container)) return;
+  if (target === undefined || !world.isAlive(target)) return;
+  const typeId = world.get(target, PrefabId)?.id;
+  if (typeof typeId === "string" && engine.catalog.widget(typeId)?.openable === true) { engine.ops.open(target); return; }
+  if (!world.hasTag(target, Container)) return;
   engine.ops.enterContainer(target);
 }
 
-/** Esc (design-007 §3.3, design-015 §9): a live gesture is cancelled, as ever; with none to cancel, the current frame is left. */
+/**
+ * Esc (design-007 §3.3, design-015 §8 · §9): an object in hand is put down first (D4b — the object lands, still selected,
+ * so ⏎ opens it again); else a live gesture is cancelled, as ever; with none to cancel, the current frame is left.
+ */
 function escapeOrExit(engine: CanvasEngine): void {
   const { world } = engine;
+  if (heldEntity(world) !== undefined) { engine.ops.putDown(); return; }
   const gestureLive = world.firstOf(gestureActiveQ) !== undefined;
   if (!gestureLive && currentNavEntry(world) !== undefined) {
     engine.ops.exitContainer();
@@ -68,6 +79,9 @@ function escapeOrExit(engine: CanvasEngine): void {
   }
   engine.ops.cancelActiveGestures();
 }
+
+/** The desk's keys go quiet while an object is in hand (D4b): what would delete, copy, nudge or gather on the inert desk does nothing. */
+const unlessHeld = (run: (engine: CanvasEngine) => void) => (engine: CanvasEngine): void => { if (heldEntity(engine.world) === undefined) run(engine); };
 
 export interface KeymapEntry {
   /** `event.key` to match (case-insensitive; e.g. "z", "Backspace", "ArrowUp"). */
@@ -121,21 +135,21 @@ export function toggleTape(engine: CanvasEngine): void {
 /** The locked defaults + tool shortcuts (read from the registry at attach time). */
 function defaultEntries(): KeymapEntry[] {
   const entries: KeymapEntry[] = [
-    { key: "Backspace", run: (e) => e.ops.deleteSelection() },
-    { key: "Delete", run: (e) => e.ops.deleteSelection() },
+    { key: "Backspace", run: unlessHeld((e) => e.ops.deleteSelection()) },
+    { key: "Delete", run: unlessHeld((e) => e.ops.deleteSelection()) },
     { key: "z", mod: true, run: (e) => e.docs.undo() },
     { key: "z", mod: true, shift: true, run: (e) => e.docs.redo() },
-    { key: "d", mod: true, run: (e) => e.ops.duplicateSelection() },
-    { key: "a", mod: true, run: (e) => e.ops.selectAll() },
-    // design-015 §9 (D2b): ⏎ with ONE container selected flies into it; Esc cancels a live
-    // gesture as ever, and with none to cancel flies back out of the current frame.
-    { key: "Enter", run: (e) => enterSelectedContainer(e) },
+    { key: "d", mod: true, run: unlessHeld((e) => e.ops.duplicateSelection()) },
+    { key: "a", mod: true, run: unlessHeld((e) => e.ops.selectAll()) },
+    // design-015 §8 · §9 (D2b, D4b): ⏎ with ONE selected picks an openable object up, or flies into a container; Esc puts
+    // the held object down, else cancels a live gesture as ever, and with none to cancel flies back out of the current frame.
+    { key: "Enter", run: (e) => openOrEnterSelected(e) },
     { key: "Escape", run: (e) => escapeOrExit(e) },
-    { key: "l", mod: true, shift: true, run: toggleTape },
+    { key: "l", mod: true, shift: true, run: unlessHeld(toggleTape) },
   ];
   for (const [key, dx, dy] of ARROWS) {
-    entries.push({ key, run: (e) => nudgeSelection(e, dx, dy) });
-    entries.push({ key, shift: true, run: (e) => nudgeSelection(e, dx * 10, dy * 10) });
+    entries.push({ key, run: unlessHeld((e) => nudgeSelection(e, dx, dy)) });
+    entries.push({ key, shift: true, run: unlessHeld((e) => nudgeSelection(e, dx * 10, dy * 10)) });
   }
   for (const tool of tools.all()) {
     if (tool.shortcut !== undefined) {

@@ -170,7 +170,8 @@ describe("the hand in the builder (design-015 §8)", () => {
 
   it("by night the hand keeps a reading light: the day's light mixed in by the carry, saturate .62 · brightness .82 at the top", () => {
     const { ce, builder, book } = makeDesk();
-    const looks = looksOf(KINDS, { ...palette, ...PALETTE.dark, notebooks: palette.notebooks, papers: palette.papers, pens: palette.pens, vinyls: palette.vinyls }, THEMES.dark);
+    const dark = { ...PALETTE.dark, notebooks: palette.notebooks, papers: palette.papers, pens: palette.pens, vinyls: palette.vinyls };
+    const looks = looksOf(KINDS, dark, THEMES.dark);
     ce.ops.open(book);
     builder.changed();
     const f = builder.build(CAM, VP, DT, THEMES.dark, DEFAULT_GRID, looks, { hold: { e: 1 } });

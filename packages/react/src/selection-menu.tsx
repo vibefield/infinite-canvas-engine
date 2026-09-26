@@ -36,6 +36,20 @@ export interface SelectionMenuAnchor {
   readonly view: { readonly width: number; readonly height: number };
   /** The rulers printed along the top and left (their margin and band, CSS px), or null. */
   readonly rulers: { readonly margin: number; readonly band: number } | null;
+  /**
+   * An object is IN HAND (design-015 §8, D4b): the menu travels to the foot of the view and changes role (M1) — one element,
+   * not a second toolbar — Send stays first, the kind's tools take the middle, Done ends the bar. `landing`: the object is
+   * flying home — the bar steps aside and comes back above the object 200 ms after it lands.
+   */
+  readonly held?: { readonly tools: readonly SelectionMenuTool[]; readonly landing: boolean; readonly settled: boolean };
+}
+
+/** A slot of the held bar as the kind declared it (the desk's `HeldTool`, mirrored structurally): DECLARED at D4b, built at D3t — shown dim until then. */
+export interface SelectionMenuTool {
+  readonly id: string;
+  readonly label: string;
+  readonly keys?: string;
+  readonly glyph?: string;
 }
 
 /** The anchor's source — the desk handle's `selection` (anchor + a subscription that fires when it moves). */
@@ -71,21 +85,28 @@ export interface SelectionAction {
   run(engine: CanvasEngine, s: SelectionState): void;
 }
 
-/** The menu's numbers (*Marks on the Mat* §14): 40 tall, 10 above the marks, 16 from the sides, 8 from the view's top and foot; away 90 ms, back 200 ms after, in 180 ms. */
-export const SELECTION_MENU = { height: 40, gap: 10, margin: 16, edge: 8, awayMs: 90, backMs: 200, inMs: 180, outMs: 120 } as const;
+/**
+ * The menu's numbers (*Marks on the Mat* §14): 40 tall, 10 above the marks, 16 from the sides, 8 from the view's top and foot;
+ * away 90 ms, back 200 ms after, in 180 ms. The held bar (§8, D4b): centred in the 72 px band at the foot, the travel 340 ms.
+ */
+export const SELECTION_MENU = { height: 40, gap: 10, margin: 16, edge: 8, awayMs: 90, backMs: 200, inMs: 180, outMs: 120, foot: 72, travelMs: 340 } as const;
 
 const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, a), Math.max(a, b));
 
 /**
  * Where the menu goes (desk.js `positionMenu`, number for number): centred on the anchor, `gap` above it; below it when
  * there is no room above (under the top ruler's band) and more below; `margin` from the sides, `edge` from the top and foot.
- * `sheet` = the height of an open sheet that must fit too. Null when there is nothing to anchor to.
+ * `sheet` = the height of an open sheet that must fit too. Null when there is nothing to anchor to. With an object IN HAND
+ * (D4b) the bar sits centred in the band at the foot of the view, whatever the selection's box.
  */
 export function placeSelectionMenu(anchor: SelectionMenuAnchor, size: { readonly w: number; readonly h: number }, sheet = 0): { readonly x: number; readonly y: number; readonly below: boolean } | null {
-  const b = anchor.box;
-  if (b === null || anchor.count === 0) return null;
   const M = SELECTION_MENU;
   const { width: W, height: H } = anchor.view;
+  if (anchor.held !== undefined && !anchor.held.landing) {
+    return { x: clamp(W / 2 - size.w / 2, M.margin, W - size.w - M.margin), y: H - M.foot + (M.foot - size.h) / 2, below: false };
+  }
+  const b = anchor.box;
+  if (b === null || anchor.count === 0) return null;
   let x = (b.x0 + b.x1) / 2 - size.w / 2;
   let y = b.y0 - M.gap - size.h;
   const top = anchor.rulers !== null ? anchor.rulers.margin + anchor.rulers.band + M.edge : M.edge;
@@ -111,6 +132,14 @@ export const SELECTION_GLYPHS: Readonly<Record<string, ReactNode>> = {
   lock: stroke(<><rect x="4.5" y="10.5" width="15" height="10" rx="3" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5M12 14.5v2" /></>),
   unlock: stroke(<><rect x="4.5" y="10.5" width="15" height="10" rx="3" /><path d="M8 10.5V8a4 4 0 0 1 7.7-1.5M12 14.5v2" /></>),
   ellipsis: <path fill="currentColor" fillRule="evenodd" d="M3.7 10.4h1.9a0.7 0.7 0 0 1 0.7 0.7v1.9a0.7 0.7 0 0 1 -0.7 0.7h-1.9a0.7 0.7 0 0 1 -0.7 -0.7v-1.9a0.7 0.7 0 0 1 0.7 -0.7ZM11.05 10.4h1.9a0.7 0.7 0 0 1 0.7 0.7v1.9a0.7 0.7 0 0 1 -0.7 0.7h-1.9a0.7 0.7 0 0 1 -0.7 -0.7v-1.9a0.7 0.7 0 0 1 0.7 -0.7ZM18.4 10.4h1.9a0.7 0.7 0 0 1 0.7 0.7v1.9a0.7 0.7 0 0 1 -0.7 0.7h-1.9a0.7 0.7 0 0 1 -0.7 -0.7v-1.9a0.7 0.7 0 0 1 0.7 -0.7Z" />,
+  // the held bar's (design-015 §8, D4b): the kinds' declared tools and Done — the same 24-box, one 2-unit stroke
+  "chevron-left": stroke(<path d="M14.5 6l-6 6 6 6" />),
+  pen: stroke(<><path d="M5 19l1.2-4.2L15.6 5.4a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L9.2 17.8z" /><path d="M13.5 7.5l3 3" /></>),
+  eraser: stroke(<><path d="M4.5 15.5l7-7a2 2 0 0 1 2.8 0l4.2 4.2a2 2 0 0 1 0 2.8l-4 4H9.3l-4.8-4z" /><path d="M9 19.5h11" /></>),
+  undo: stroke(<><path d="M8.5 7.5H15a4.5 4.5 0 0 1 0 9H7" /><path d="M11 4.5l-3.5 3 3.5 3" /></>),
+  redo: stroke(<><path d="M15.5 7.5H9a4.5 4.5 0 0 0 0 9h8" /><path d="M13 4.5l3.5 3-3.5 3" /></>),
+  today: stroke(<><rect x="4.5" y="6" width="15" height="13.5" rx="2.5" /><path d="M4.5 10.5h15M8.5 4v3.5M15.5 4v3.5" /><circle cx="12" cy="15" r="1.4" /></>),
+  check: stroke(<path d="M5 12.5l4.5 4.5L19 7.5" />),
 };
 function Glyph({ glyph, size = 16 }: { readonly glyph: string | ReactNode; readonly size?: number }): ReactElement {
   const body = typeof glyph === "string" ? SELECTION_GLYPHS[glyph] : glyph;
@@ -157,6 +186,10 @@ const STYLE = `
 [data-ice-selection-menu] .ice-sm-item:hover{background:rgb(var(--ice-menu-cream-rgb) / .09)}
 [data-ice-selection-menu] .ice-sm-item[data-tone="danger"]:hover{color:var(--ice-menu-danger);background:var(--ice-menu-danger-bg)}
 [data-ice-selection-menu] .ice-sm-item kbd{font:500 11px/1 var(--ice-menu-mono,ui-monospace,monospace);color:var(--ice-menu-brass)}
+[data-ice-selection-menu] .ice-sm-btn.is-dim{color:rgb(var(--ice-menu-cream-rgb) / .38);cursor:default}
+[data-ice-selection-menu] .ice-sm-btn.is-dim:hover{background:none;color:rgb(var(--ice-menu-cream-rgb) / .38)}
+[data-ice-selection-menu] .ice-sm-btn.is-dim:active{transform:none;background:none}
+[data-ice-selection-menu][data-held="true"] .ice-sm-text svg:last-child{display:none}
 `;
 
 export interface SelectionMenuProps {
@@ -168,9 +201,20 @@ export interface SelectionMenuProps {
   readonly engine?: CanvasEngine;
 }
 
-interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean }
-const shownOf = (a: SelectionMenuAnchor): Shown => ({ count: a.count, locked: a.locked, visible: a.count > 0 && a.box !== null, gesturing: a.gesturing || a.editing === true });
-const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing;
+interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean; readonly held: boolean; readonly tools: string }
+const shownOf = (a: SelectionMenuAnchor): Shown => {
+  const held = a.held !== undefined && !a.held.landing;
+  // flying home the bar steps aside as for a gesture — and comes back 200 ms after the landing
+  const landing = a.held?.landing === true;
+  return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools: held ? (a.held?.tools ?? []).map((t) => t.id).join("|") : "" };
+};
+const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools;
+/** The one element's transitions: the opacity's, and — while the bar travels between the selection and the foot (M1) — the transform's. */
+const transitionOf = (away: boolean, visible: boolean, traveling: boolean): string => {
+  const M = SELECTION_MENU;
+  const opacity = away ? `opacity ${M.awayMs}ms ease-out` : visible ? `opacity ${M.inMs}ms ease-out` : `opacity ${M.outMs}ms ease-out, visibility 0s linear ${M.outMs}ms`;
+  return traveling ? `${opacity}, transform ${M.travelMs}ms cubic-bezier(.25,1,.3,1)` : opacity;
+};
 
 export function SelectionMenu({ source, actions, engine: given }: SelectionMenuProps): ReactElement | null {
   const provided = useOptionalEngine();
@@ -181,6 +225,10 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   const [away, setAway] = useState(false);
   const [open, setOpen] = useState(false);
   const [below, setBelow] = useState(false);
+  const [traveling, setTraveling] = useState(false);
+  const tools = useRef<readonly SelectionMenuTool[]>(source.anchor().held?.tools ?? []);
+  const heldRef = useRef(shown.held);
+  const travelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // placement: written straight to the one element's transform on every anchor the desk publishes (no render per frame)
   const placeRef = useRef<() => void>(() => {});
@@ -188,8 +236,19 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     const el = root.current;
     const a = source.anchor();
     const next = shownOf(a);
+    if (next.held) tools.current = a.held?.tools ?? [];
     setShown((prev) => (sameShown(prev, next) ? prev : next));
     if (el === null) return;
+    // THE TRAVEL (M1, D4b): the bar changes place and role — the transform's transition must be on BEFORE the new place is
+    // written, or the bar jumps (desk.js `morphBar`); it stays on for the travel and no longer, so a moving selection still
+    // places instantly
+    if (next.held !== heldRef.current) {
+      heldRef.current = next.held;
+      el.style.transition = transitionOf(away, next.visible, true);
+      setTraveling(true);
+      if (travelTimer.current !== null) clearTimeout(travelTimer.current);
+      travelTimer.current = setTimeout(() => { travelTimer.current = null; setTraveling(false); }, SELECTION_MENU.travelMs);
+    }
     const bar = el.firstElementChild as HTMLElement | null;
     const sheet = el.querySelector<HTMLElement>(".ice-sm-sheet");
     // a bar not laid out yet (0 tall) is placed as the 40 it will be
@@ -199,14 +258,15 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     el.dataset.below = String(p.below);
     setBelow((prev) => (prev === p.below ? prev : p.below));
   };
+  useEffect(() => () => { if (travelTimer.current !== null) clearTimeout(travelTimer.current); }, []);
   useLayoutEffect(() => {
     const run = (): void => placeRef.current();
     run();
     return source.subscribe(run);
   }, [source]);
-  // re-place after the bar's contents change size (a taped selection drops Duplicate; More opens)
+  // re-place after the bar's contents change size (a taped selection drops Duplicate; More opens; the bar becomes the held bar)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the placement follows what was rendered — these are its triggers, not its inputs
-  useLayoutEffect(() => { placeRef.current(); }, [shown.count, shown.locked, shown.visible, open]);
+  useLayoutEffect(() => { placeRef.current(); }, [shown.count, shown.locked, shown.visible, shown.held, shown.tools, open]);
 
   // a gesture: away in 90 ms at once; back 200 ms after the hand lets go
   useEffect(() => {
@@ -246,6 +306,18 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   const main = at("main");
   const end = at("end");
   const opacity = visible && !away ? 1 : 0;
+  // THE HELD BAR (design-015 §8, D4b): Send stays first, the kind's tools take the middle (declared, dim until D3t builds them), Done ends it
+  const slot = (t: SelectionMenuTool): ReactElement => (
+    <button key={t.id} type="button" className="ice-sm-btn is-dim" data-tool={t.id} aria-label={t.label} aria-disabled="true" title={t.keys !== undefined ? `${t.label} (${t.keys})` : t.label} tabIndex={-1}>
+      <Glyph glyph={t.glyph !== undefined && t.glyph in SELECTION_GLYPHS ? t.glyph : "ellipsis"} />
+    </button>
+  );
+  const done = (
+    <button key="done" type="button" className="ice-sm-text" data-act="done" aria-label="Done" title="Done (Esc)" onClick={() => { setOpen(false); engine.ops.putDown(); }}>
+      <Glyph glyph="check" />
+      <span>Done</span>
+    </button>
+  );
   return (
     <div
       ref={root}
@@ -253,25 +325,38 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
       data-canvas-interactive=""
       data-away={String(away)}
       data-visible={String(visible)}
+      data-held={String(shown.held)}
       role="toolbar"
-      aria-label="Selection"
+      aria-label={shown.held ? "In hand" : "Selection"}
       aria-hidden={!visible}
       onPointerDown={(e) => e.stopPropagation()}
       style={{
         opacity,
         visibility: visible ? "visible" : "hidden",
         pointerEvents: opacity === 1 ? "auto" : "none",
-        transition: away ? `opacity ${SELECTION_MENU.awayMs}ms ease-out` : visible ? `opacity ${SELECTION_MENU.inMs}ms ease-out` : `opacity ${SELECTION_MENU.outMs}ms ease-out, visibility 0s linear ${SELECTION_MENU.outMs}ms`,
+        transition: transitionOf(away, visible, traveling),
       }}
     >
       <div className="ice-sm-bar">
-        {lead.map(button)}
-        {lead.length > 0 && main.length > 0 ? <span className="ice-sm-rule" aria-hidden="true" /> : null}
-        {main.map(button)}
-        {end.length > 0 && lead.length + main.length > 0 ? <span className="ice-sm-rule" aria-hidden="true" /> : null}
-        {end.map(button)}
+        {shown.held ? (
+          <>
+            {lead.map(button)}
+            {lead.length > 0 ? <span className="ice-sm-rule" aria-hidden="true" /> : null}
+            {tools.current.map(slot)}
+            {tools.current.length > 0 ? <span className="ice-sm-rule" aria-hidden="true" /> : null}
+            {done}
+          </>
+        ) : (
+          <>
+            {lead.map(button)}
+            {lead.length > 0 && main.length > 0 ? <span className="ice-sm-rule" aria-hidden="true" /> : null}
+            {main.map(button)}
+            {end.length > 0 && lead.length + main.length > 0 ? <span className="ice-sm-rule" aria-hidden="true" /> : null}
+            {end.map(button)}
+          </>
+        )}
       </div>
-      {open ? (
+      {open && !shown.held ? (
         <div className="ice-sm-sheet" role="menu" style={below ? { top: "calc(100% + 6px)" } : { bottom: "calc(100% + 6px)" }}>
           {listed.filter((a) => a.id !== "more").map((a) => (
             <button key={a.id} type="button" role="menuitem" className="ice-sm-item" data-act={a.id} data-tone={a.tone} onClick={() => { setOpen(false); a.run(engine, state); }}>

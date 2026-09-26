@@ -59,6 +59,7 @@ export {
   type SelectionMenuBox,
   type SelectionMenuProps,
   type SelectionMenuSource,
+  type SelectionMenuTool,
   type SelectionState,
   selectionTaped,
 } from "./selection-menu";
