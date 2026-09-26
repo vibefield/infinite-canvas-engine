@@ -16,7 +16,7 @@ export { COVERS, type CoverName, NOTEBOOK_TYPE, Notebook, RULING_NAMES } from ".
 // the photo print and its carry (D3w)
 export { PHOTO_TYPE, Photo, printExtent } from "./photo";
 export { createPhotoCarry, type PhotoCarry, type PhotoCarryOptions } from "./carry";
-export { addStroke, BoardStroke, boardOps, decodePoints, encodePoints, type MarkerInk, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, type StrokeSpec } from "../board/data";
+export { addStroke, BoardStroke, boardOps, decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, type MarkerInk, meanSpeed, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, strokeSeed, type StrokeSpec } from "../board/data";
 
 import { Board } from "./board";
 import { Calendar } from "./calendar";

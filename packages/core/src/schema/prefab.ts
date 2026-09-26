@@ -53,6 +53,14 @@ export interface PrefabDef {
    * compared at open. Bump when the prefab's durable shape changes. Default 1.
    */
   version?: number;
+  /**
+   * A DATA prefab's own migration chain (design-015 §5.1, D3t-a — an object's data children, the board's
+   * strokes): `{ fromVersion: (prev) => next }` over the flat record of its essential components' fields,
+   * every version `1..version-1` covered — defineWidget's `migrate` shape. The M9 runner applies it to a
+   * document whose `engine.pack.<id>` marker is older, when an engine catalog tracks the prefab (an
+   * object's `data`). A widget's own prefab migrates by its widget's chain instead.
+   */
+  migrate?: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
 }
 
 export interface Prefab extends PrefabDef {
@@ -75,6 +83,18 @@ export function definePrefab(id: string, def: PrefabDef): Prefab {
     throw new Error(
       `ice: prefab "${id}": the presence store supports components + tags only — no relations (design-001 §1).`,
     );
+  }
+  if (def.migrate !== undefined) {
+    // the chain covers every step 1..version-1 and nothing else (defineWidget's rule for its `migrate`)
+    const version = def.version ?? 1;
+    if (def.store !== "durable") throw new Error(`ice: prefab "${id}": only a durable prefab migrates (its cells live in the document).`);
+    for (let v = 1; v < version; v++) {
+      if (typeof def.migrate[v] !== "function") throw new Error(`ice: prefab "${id}": migrate chain has a gap at fromVersion ${v} (version ${version}).`);
+    }
+    for (const k of Object.keys(def.migrate)) {
+      const v = Number(k);
+      if (!(Number.isInteger(v) && v >= 1 && v < version)) throw new Error(`ice: prefab "${id}": migrate declares fromVersion ${k}, outside 1..${version - 1}.`);
+    }
   }
 
   const eligible = new Set<Component>();

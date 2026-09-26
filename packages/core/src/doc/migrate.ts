@@ -47,9 +47,8 @@
 import type { Component, Entity, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
-import { widgetTypeFor } from "../canvas/engine-catalog";
+import { dataPrefabFor, widgetTypeFor } from "../canvas/engine-catalog";
 import { PrefabId } from "../schema/prefab";
-import type { WidgetType } from "../widget/define-widget";
 import type { DocVersionReport } from "./version-gate";
 
 /** Same reserved prefix as version-gate's markers (that module owns the read side). */
@@ -82,7 +81,8 @@ interface EntityPlan {
 
 interface TypePlan {
   readonly id: string;
-  readonly widget: WidgetType;
+  /** The cells a type's migration reads and writes: a widget's prop groups, a data prefab's essential components (D3t-a). */
+  readonly components: readonly Component[];
   readonly localV: number;
   readonly plans: EntityPlan[];
 }
@@ -105,15 +105,19 @@ export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): Migr
   // --- plan pass: every type's reads + chain folds, NO writes yet ---
   const typePlans: TypePlan[] = [];
   for (const id of report.olderInDoc) {
+    // a widget migrates by its widget's chain over its prop groups; an object's DATA prefab (design-015 §5.1, D3t-a — the
+    // board's strokes) by its own chain over its essential components
     const widget = widgetTypeFor(world, id);
-    const chain = widget?.migrate;
-    if (widget === undefined || chain === undefined || Object.keys(chain).length === 0) {
+    const data = widget === undefined ? dataPrefabFor(world, id) : undefined;
+    const chain = widget?.migrate ?? data?.migrate;
+    if ((widget === undefined && data === undefined) || chain === undefined || Object.keys(chain).length === 0) {
       skipped.push(id); // no widget or no chain → cannot upgrade; the re-gate keeps it read-only
       continue;
     }
+    const components: readonly Component[] = widget !== undefined ? widget.groups.map((g) => g.component as Component) : (data?.components ?? []).map(([c]) => c);
 
     const docV = report.docPacks[id] ?? 1;
-    const localV = report.localPacks[id] ?? widget.version;
+    const localV = report.localPacks[id] ?? widget?.version ?? data?.version ?? 1;
 
     // The chain must cover every step fromVersion docV..localV-1. A gap means we
     // cannot reach localV from docV safely — skip the whole type (stays read-only)
@@ -140,10 +144,10 @@ export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): Migr
 
         const prev: Record<string, unknown> = {};
         const present = new Set<number>();
-        for (const g of widget.groups) {
-          const val = world.get(e, g.component);
+        for (const c of components) {
+          const val = world.get(e, c);
           if (val === undefined) continue; // an added-in-v2 group has no v1 cell — written fresh below
-          present.add(g.component.id);
+          present.add(c.id);
           Object.assign(prev, val as Record<string, unknown>);
         }
 
@@ -155,23 +159,23 @@ export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): Migr
         plans.push({ e, next: cur, present });
       }
     });
-    typePlans.push({ id, widget, localV, plans });
+    typePlans.push({ id, components, localV, plans });
   }
 
   // --- write pass: per type, ONE non-undoable transaction of absolute per-group
   // writes. `edit().set` / `addComponent` canon the value against the group
   // schema, so a flat `next` spanning all groups is picked apart per group
   // (extra keys ignored, missing declared-default keys default-filled).
-  for (const { id, widget, localV, plans } of typePlans) {
+  for (const { id, components, localV, plans } of typePlans) {
     store.transaction(
       (tx) => {
         for (const { e, next, present } of plans) {
-          for (const g of widget.groups) {
-            if (present.has(g.component.id)) {
-              tx.edit(e).set(g.component as Component, next);
+          for (const c of components) {
+            if (present.has(c.id)) {
+              tx.edit(e).set(c, next);
             } else {
               // Added-in-v2 group: structure rides projection at the next sync().
-              tx.addComponent(e, g.component as Component, next);
+              tx.addComponent(e, c, next);
             }
           }
         }

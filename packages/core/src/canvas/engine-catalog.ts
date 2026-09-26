@@ -74,6 +74,8 @@ export interface EngineCatalog {
   packDependencies(): Readonly<Record<string, Readonly<Record<string, number>>>>;
   /** Requirement closure that must be stamped before this widget can be created. */
   requirementsForWidget(widgetTypeId: string): Readonly<Record<string, number>> | undefined;
+  /** A registered widget's DATA prefab by id (design-015 §5.1, D3t-a — the board's strokes): tracked, stamped and gated with the widget. */
+  dataPrefab(id: string): Prefab | undefined;
 }
 
 function uniqueById<T>(label: string, values: readonly T[], idOf: (value: T) => string): T[] {
@@ -588,8 +590,19 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
     }
   }
 
+  // an object's DATA prefabs (design-015 §5.1, D3t-a): tracked with the widget that declares them — one prefab per id, whoever declares it
+  const dataPrefabs = new Map<string, Prefab>();
+  for (const widget of widgetList) {
+    for (const d of widget.data) {
+      const had = dataPrefabs.get(d.id);
+      if (had !== undefined && had !== d) throw new Error(`ice: data prefab "${d.id}" is declared twice with different definitions.`);
+      if (widgetMap.has(d.id) || d.id === WirePrefab.id) throw new Error(`ice: data prefab "${d.id}" collides with a widget's own prefab.`);
+      dataPrefabs.set(d.id, d);
+    }
+  }
   const localPacks: Record<string, number> = { [WirePrefab.id]: WirePrefab.version ?? 1 };
   for (const widget of widgetList) localPacks[widget.prefab.id] = widget.prefab.version ?? 1;
+  for (const d of dataPrefabs.values()) localPacks[d.id] = d.version ?? 1;
   for (const canvas of normalizedCanvasList) {
     localPacks[canvasPackId(canvas.id)] = canvas.semanticVersion;
   }
@@ -598,6 +611,7 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
   }
   const initialPacks: Record<string, number> = { [WirePrefab.id]: WirePrefab.version ?? 1 };
   for (const widget of widgetList) initialPacks[widget.prefab.id] = widget.prefab.version ?? 1;
+  for (const d of dataPrefabs.values()) initialPacks[d.id] = d.version ?? 1;
   for (const id of requiredCanvasIds) {
     const canvas = canvasMap.get(id) as CanvasType;
     initialPacks[canvasPackId(id)] = canvas.semanticVersion;
@@ -686,6 +700,7 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
       }
       return Object.freeze(requirements);
     },
+    dataPrefab: (id: string) => dataPrefabs.get(id),
   });
 }
 
@@ -726,7 +741,15 @@ export function resolveToolFor(world: World, id: string): Tool {
 export function durablePrefabFor(world: World, id: string): Prefab | undefined {
   const catalog = byWorld.get(world);
   if (catalog !== undefined) {
-    return catalog.widget(id)?.prefab ?? (id === WirePrefab.id ? WirePrefab : undefined);
+    return catalog.widget(id)?.prefab ?? catalog.dataPrefab(id) ?? (id === WirePrefab.id ? WirePrefab : undefined);
   }
   return prefabs.get(id);
+}
+
+/** A DATA prefab the engine tracks (an object's `data` — D3t-a), or, in an unbound legacy world, any registered durable prefab that is no widget's. */
+export function dataPrefabFor(world: World, id: string): Prefab | undefined {
+  const catalog = byWorld.get(world);
+  if (catalog !== undefined) return catalog.dataPrefab(id);
+  const p = prefabs.get(id);
+  return p !== undefined && p.store === "durable" && widgets.get(id) === undefined ? p : undefined;
 }

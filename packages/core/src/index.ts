@@ -328,6 +328,8 @@ export {
 export {
   bindEngineCatalog,
   compileEngineCatalog,
+  dataPrefabFor,
+  durablePrefabFor,
   engineCatalogFor,
   resolveToolFor,
   toolTypeFor,

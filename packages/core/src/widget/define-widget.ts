@@ -222,6 +222,13 @@ export interface WidgetDef {
   readonly heldTools?: readonly HeldToolDef[];
   /** The mode in hand when the object is picked up, from its props (the board: its capped marker's ink). Default: the first mode, else none. */
   readonly heldTool?: (props: Readonly<Record<string, unknown>>) => string;
+  /**
+   * The object's DATA prefabs (design-015 §5.1; D3t-a): durable children `ChildOf` it that are never widgets — the board's
+   * strokes. An engine catalog that registers the widget tracks them as it tracks the widget's own: their packs are stamped on
+   * a new document and gated at open, a guarded transaction resolves them, and one whose version moved migrates by its own
+   * `migrate` chain (doc/migrate.ts).
+   */
+  readonly data?: readonly Prefab[];
   readonly defaultSize?: { readonly w: number; readonly h: number };
   readonly minSize?: { readonly w: number; readonly h: number };
   readonly interaction?: WidgetInteraction;
@@ -303,6 +310,8 @@ export interface WidgetType {
   readonly heldTools: readonly HeldToolDef[];
   /** The mode in hand at the pick-up, from the object's props; undefined = the first mode. */
   readonly heldTool: ((props: Readonly<Record<string, unknown>>) => string) | undefined;
+  /** The object's data prefabs (design-015 §5.1, D3t-a) — the catalog tracks them with the widget; empty for most. */
+  readonly data: readonly Prefab[];
   readonly defaultSize: { readonly w: number; readonly h: number };
   readonly minSize: { readonly w: number; readonly h: number };
   /** Node-editor ports (empty when not a node). */
@@ -573,6 +582,10 @@ export function defineWidget(def: WidgetDef): WidgetType {
     }
     validateHeldTools(def.type, def.heldTools ?? []);
   }
+  for (const d of def.data ?? []) {
+    if (d.store !== "durable") throw new Error(`ice: defineWidget("${def.type}") data prefab "${d.id}" is ${d.store} — an object's data children live in the document (durable).`);
+    if (d.id === def.type) throw new Error(`ice: defineWidget("${def.type}") names itself as its own data prefab.`);
+  }
   if (def.stratum !== undefined && !Object.hasOwn(STRATUM_BANDS, def.stratum)) {
     throw new Error(
       `ice: defineWidget("${def.type}") declares stratum "${String(def.stratum)}" — a desk stratum is "pads", "sheets" or "things" (design-015 §4.2).`,
@@ -624,6 +637,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     openable: hasObject && def.openable === true,
     heldTools: Object.freeze([...(def.heldTools ?? [])]),
     heldTool: def.heldTool,
+    data: Object.freeze([...(def.data ?? [])]),
     defaultSize,
     minSize: def.minSize ?? { w: 40, h: 40 },
     ports: def.ports ?? [],

@@ -11,7 +11,7 @@
 // strokes (the document's history), the tip and the wipe on keys; the prototype's tray is the held bar (Q-o).
 
 import { p } from "@ice/core";
-import { MARKERS } from "../board/data";
+import { MARKERS, StrokePrefab } from "../board/data";
 import { boardKind } from "../kinds/board";
 import { defineObject } from "../object";
 import { BOARD } from "../theme";
@@ -34,4 +34,6 @@ export const Board = defineObject({
   size: { w: BOARD.spec.width, h: BOARD.spec.height },
   kind: boardKind(),
   interaction: { selectable: true, movable: true, resizable: true, snap: "both", drop: "never" },
+  // its strokes and wipes are its DATA (D3t-a): the catalog stamps, gates and migrates their prefab with the board's own
+  data: [StrokePrefab],
 });
