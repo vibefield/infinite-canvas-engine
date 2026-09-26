@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1 LANDED 2026-09-25)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1 and D2a-core LANDED 2026-09-25)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1086,17 +1086,20 @@ the ground's lab since design-013 B1, moved at its 2026-09-25 snapshot into a ne
 the world: the cutting mat (its gobo, its Sun and Moon, its rulers) is the ground; the mini
 mat — a small cutting mat with a desk inside it — is the container, entered by the
 design-006 flight or the zoom-through; notes, notebooks, whiteboards, calendars and photo
-prints are the reference kinds. `packages/dom`, `packages/r3f`, the 09-07 ground (the
-magnet field, the card pass, DomRender/DomCompose/IslandRender/VideoIngest), core's surface
-infra and residency, the profiles, the widget React binding and six apps (widgetlab,
-widgetlab-desktop, cardboard, glboard, nodeboard, groundlab) are deleted in one commit at
-the end (D5), after `apps/desk` — the new showcase — passes the prototype's harnesses as
-rigs.
+prints are the reference kinds. `packages/r3f`, the 09-07 ground (the magnet field, the card
+pass, DomRender/DomCompose/IslandRender/VideoIngest), `packages/dom`'s WORLD-SPACE half (its
+screen-space half — the pointer adapter, the loop, the focus model — is the desk host's own and
+stays), core's surface infra and residency, the profiles, the widget React binding and ALL NINE
+apps (graybox and pointerlab too: they draw DOM under a camera transform) are deleted in one
+commit at the end (D5), after `apps/desk` — the new showcase — passes the prototype's harnesses
+as rigs; the exit tests those apps carried are ported to `apps/desk` or core, or retired with
+their subject, by name (design-015 §11.6).
 
-**The ladder:** D1 the move → D2a the object model, the builder and the reflector → D2b
-mini mats + nav ∥ D2c notes + the text stack → D3 notebook ∥ whiteboard ∥ calendar ∥ photo ∥
-D4a the marks (*Marks on the Mat*) → D4b the opening (pick it up; the focus blur) → D5 the
-deletion → D6 performance (persistent records; the 1,000-object gates) → D7 review.
+**The ladder:** D1 the move ∥ D2a-core (the object binding in core) → D2a-render (the kind
+registry) → D2a-world (the desk from the world) → D2b mini mats + nav ∥ D2c notes + the text
+stack → D3 notebook ∥ whiteboard ∥ calendar ∥ photo ∥ D4a the marks (*Marks on the Mat*) → D4b
+the opening (pick it up; the focus blur) → D5 the deletion → D6 performance (persistent
+records; the 1,000-object gates) → D7 review.
 
 **Exit (design-015 §11):** the prototype's oracle scenes byte-identical through the move AND
 through the world; Chrome = Node at maxΔ 0; the prototype's harnesses pass as `apps/desk`
@@ -1120,6 +1123,28 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   343). Owed: `engine/device.ts`'s `surface()` touches the DOM, so `desk-dom-free` is not yet
   true (D2a-world moves it to `desk/host`); the CI-runner Dawn probe (D-B1.4) now covers two
   oracles.
+- **D2a-core — the object binding in core** (**LANDED 2026-09-25**, `0cdd5d2` · `ada5846` ·
+  `8e57112` · `d4dd78f` · `a3cf6a7` · `ab8b0fc`; built in parallel with D1, rebased over it with
+  one CHANGELOG conflict resolved by keeping both blocks): additive, every existing widget path
+  unchanged. `defineWidget({ surface: "object", object, stratum })` — a widget that is a GPU
+  object (an opaque kind binding, no component, NO surface facts, no mount entry, the ground
+  plane alone in a flight — `presentationPlanesOf`); equip stamps `Stratum { band }` and
+  `compareStackOrder` ranks it FIRST, so pick order is paint order across kinds (an all-dom board
+  pinned identical against a verbatim copy of the old comparator); `Locked` (durable tag) +
+  `ops.setLocked` (one transaction; move/resize skip a taped widget, the marquee passes over it);
+  the desk's input as settings (`GestureSettings.wheel: "zoom"` = the prototype's
+  `exp(−Δy·0.0016)` about the pointer for a plain wheel and a pinch; a one-tick `WheelZoomStep`
+  for the zoom-through to read; `ToolRoute.canvasDragShift` so a tool pans the bare mat and
+  marquees on shift); CameraLimits [1e-8, 1e8] end to end — which found a real kernel defect:
+  `flightCamera`'s equal-zooms test was an absolute 1e-12 on 1/zoom, so at zoom 1e-8 two zooms
+  3 ulps apart put the view centre 4× past its endpoints (now relative). Every new behaviour's
+  test was proven red by reverting its hunk (a sha-guarded script, never `git checkout`). Exit:
+  core 864 → 906, kernel +2; on the rebased tree typecheck · lint · depcruise · gen:check green,
+  kernel · core · desk · react · ground · dom (60 s timeout — the known graybox 10k load flake)
+  and the widgetlab/widgetlab-desktop/moodboard/nodeboard suites green, `gate:landing` exit 0
+  (both oracles, both parity rigs 0 FAILED, the pack audit ALL PASS). Owed: api-reference
+  entries (D5's docs pass); kernel `snap.ts`'s world-unit tolerances at extreme zoom; Locked vs
+  nudges, `ops.arrange`, resize handles and duplicate (D4a); `NavCamera.zoom` is f32 (D2b).
 
 ## Release cut & downstream
 
