@@ -135,7 +135,13 @@ export interface MatPin extends AmbientPin {
   readonly wind?: number;
 }
 
-export interface DeskLayerStatus { readonly state: "pending" | "ready" | "failed"; readonly message?: string }
+/**
+ * The layer's honest state: `pending` until the device and the pipelines are here; `ready`; `degraded` — the device reported an error
+ * nobody captured (out of memory, a validation or an internal error): the desk still draws what it can, but a frame — or every frame,
+ * an attachment left invalid — may be lost, and the state never reads `ready` again on its own (D7); `failed` — no desk (refused, or
+ * the device lost). `message` names the cause.
+ */
+export interface DeskLayerStatus { readonly state: "pending" | "ready" | "degraded" | "failed"; readonly message?: string }
 
 /** The mount context — the fields of `@ice/dom`'s `LayerContext` this layer reads, mirrored structurally (dom never imports the desk). */
 export interface DeskLayerContext {
@@ -512,7 +518,11 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           gpu,
           label: "desk",
           onLost: (info) => { if (disposed || ended) return; fail("the device was lost", new Error(`${info.reason}: ${info.message}`)); endLayer(); },
-          onError: (error) => { console.error("[ice] desk: uncaptured GPU error", error.message); },
+          onError: (error) => {
+            console.error("[ice] desk: uncaptured GPU error", error.message);
+            // never silent: a lost submit leaves the desk black while nothing else says so (D7) — a failed layer stays failed
+            if (status.state !== "failed") status = { state: "degraded", message: `an uncaptured GPU error — ${error.constructor?.name ?? "GPUError"}: ${error.message}` };
+          },
         }).then(async (g) => {
           if (disposed) { g.device.destroy(); throw new Error("disposed before the device arrived"); }
           ownDevice = g.device;
@@ -523,7 +533,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;
           ground = made;
-          status = { state: "ready" };
+          if (status.state === "pending") status = { state: "ready" };   // an error while it booted keeps its word
           compose.ready();
         });
     boot.catch((e: unknown) => { if (!disposed) fail("no desk — the adapter, the device or the pipelines were refused", e); });
@@ -534,7 +544,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       reflector,
       configureGrid(cfg) { if (cfg.fadeIn !== undefined) setGrid({ ...grid, fadeIn: [cfg.fadeIn[0], cfg.fadeIn[1]] }); },
       canvas,
-      available: () => ground !== null && status.state === "ready",
+      available: () => ground !== null && (status.state === "ready" || status.state === "degraded"),
       status: () => status,
       device: () => ownDevice ?? undefined,
       ground: () => ground,
