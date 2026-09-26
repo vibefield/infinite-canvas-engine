@@ -298,6 +298,45 @@ there.
   and out; THE PRESS + DOUBLE-CLICK CUT — a HELD mini mat double-clicked, the flight from the face as
   drawn, the same PNG); `rig:interact` gains drop-into, ⌥ keeps it, the vinyl key.
 
+<!-- design-015 D4a (2026-09-25) -->
+- **The desk's chrome is drawn by the renderer** (`@ice/desk`; design-015 §7, *Marks on the Mat* v2 — Q-a…Q-k):
+  a MARKS pass, stratum 5, ONE instanced draw of SDF records in the ROOT's pass after every stratum (the composites
+  included), in SCREEN px — the chrome keeps its size at every zoom. `GroundOptions.marks` (its shaders:
+  `marksShaders(text(MARKS_SHADER_FILES))`) and `GroundFrameInputs.marks` (a `MarksInput`). The page's reference drawing
+  code, number for number (`MARKS` in theme.ts, with every ink's token): focus BRACKETS in the pencil #79B5F8 over a cast
+  keyline — 6 px out, reaching 16 (≤ 30 % of a side), 1.5 px, the 1-device-px hairline at 42 % between them, the corner
+  r + 6 ≤ 10; the lock-on from 8 px further out on `--vf-ease-lift` (180 ms), the leave 120 ms; ONE ring under 24 px on
+  screen; knobs (7 px) only where the object resizes; several = member ticks (4 out, reach 8, 62 %) under ONE union 10 px
+  out, square to the mat; the VELLUM marquee (cream 11 %, 7 % cool by night, its pencil edge, corner brackets, the count
+  by the cursor) folding onto the union in 240 ms on the island ease; the LASER snap guides (added light: bloom
+  9·5·2.6 px at 7·16·32 %, the #FF4FA3 line and #FFD6EA core, 14 px past the aligned objects, faint wall to wall, flares at
+  the aligned corners, centres dotted, a 160 ms strike at 1.8×) with the equal gaps in 10 px mono laser pills (the rulers'
+  own glyph atlas); your extent on the rulers in pencil; masking TAPE on a taped object (the object's attachment: it zooms
+  with it and is moonlit by night — the pencil and the laser are light and are not). The kinds' own selection ring retires:
+  the builder hands them ring 0, so a selected object's pixels are the unselected object's (`ObjectKind.frame?` — each
+  kind's silhouette as drawn: `paperFrame` · `miniMatFrame` · `boardFrame` · `photoFrame`; the notebook's and the
+  calendar's come with their world halves). `assembleMarks` is ONE rule set shared by the builder (`compose/marks.ts`: the
+  facts read — `Selected`, `Locked`, `Grab`, `Resizable`, core's `GuideLine`/`SpacingBar`, the marquee preview (the ground
+  layer's new `readMarquee`), the gestures, `Editing` — the flux stepped and snapped: lock-on, leave, union, fold, strike,
+  the tape's press and lift, and the tape's GIVE, a drag that meets tape shivering the object 2.2 px for 360 ms) and the
+  Node oracle's stills. The desk handle's `selection` publishes the anchor a menu is placed from.
+- **`<SelectionMenu>`** (`@ice/react`): the ONE screen-space element (design-015 §2), placed from the desk's anchor by one
+  plain `translate()` — 10 px above the marks, flipped below under the rulers' band, 16 px from the sides — stepping aside
+  for any gesture and while a note is being written (90 ms out, back 200 ms after). An app-extensible list of acts
+  (`SelectionAction`): ICE ships Duplicate (not for tape), Tape it down / Lift the tape, More (every act with its key) and
+  Delete past a rule, red only under the pointer; the §13 glyphs as inline SVG; the tray's ink as CSS custom properties.
+  apps/desk adds a stub Send first. `placeSelectionMenu`, `defaultSelectionActions`, `SELECTION_GLYPHS` exported.
+- **The desk's keys and the tape** (`@ice/core`, `@ice/react`): ⌥ as a move starts leaves a copy where it lay, just under it,
+  in the move's one transaction (`LeavesCopy`, `CommitCreate.order`); ⌘ held holds the snap off; ⇧ locks the drag to its
+  dominant axis and the snap corrects along it alone (`systems/drag-mods.ts`); ⇧⌘L tapes the selection or lifts the tape
+  (`toggleTape`); arrows pass a taped widget over (`nudgeSelection`, exported — apps/desk binds ⇧ to one lattice cell, 20);
+  Clean Up flows around tape; a taped selection shows no grips; a copy of a taped widget is untaped. Witnesses: 13 Node
+  marks stills + board-selected with the `marks` check (maxΔ 0 outside the marks' band by their CPU mirror, the pencil's
+  byte where a stroke is solid, knob faces, laser pills) and `unlit` by night; the D1 stills with a selection keep their
+  prototype pixels under `prototypeRing` (BASELINE_DIR); `rig:parity` Chrome = Node; `rig:world` the brackets FROM THE
+  WORLD at maxΔ 0; `rig:interact` 42 (brackets not a ring, the menu 10 px above and away during a drag or while writing,
+  the laser on a snap, the vellum and its fold, the tape's give and the marquee passing it over, ⇧⌘L).
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
