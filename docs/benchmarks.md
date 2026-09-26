@@ -50,6 +50,45 @@ whole tick 8.9 ms/s — core's, not the desk's); pan JS ≤ 2 ms ✓ and JS + GP
 ≤ 64 KB ✗; drag ≤ 9.09 ms ✓; a note edit re-rasters one note ✓ (and records 99 — the whole visible set); the blur once
 ≤ 1.5 ms ✓, 0 per held frame ✓.
 
+### AFTER — persistent records, the cull on the index, the list that stands (D6; load 3.3–4.3; 7 rounds)
+
+The same rig on the same scene, the same Mac, the same day; the BEFORE figures in parentheses. Two counters are new: the
+root passes' record STORES (records packed and uploaded, draw lists rewritten — `__desk.records()`, diffed by
+`perf.take`), and a `nudge` case — 30 frames of ½ px from rest, a camera move inside the cull's hysteresis band and short
+of any object's margin.
+
+| scenario | headline | detail |
+|---|---|---|
+| idle (240 frames) | 0 submits | main thread 2.07 ms/s the desk's flush (2.20) · 8.46 ms/s the whole engine step (a step 140 µs) |
+| pan (120 frames, 8 px/frame) | 1.07 ms JS/frame (1.38) · 2.18 ms GPU (saturated) | a frame: 1.4 resolves (118), 1.4 records (99), 211 visited (1,021), 0 queried (1,002), 0 sorted (1,002) · the stores write 0.38 records a frame — the objects entering the margin — and the draw list 66 of 120 frames · 35.2 KB uploaded (56.3: board 7.4 · minimat 7.0 · photo 6.3 · paper 6.1 · mat 5.7 · notebook 1.5 · calendar 1.2 — the slots' camera blocks, no records) · heap +59 KB (+210) |
+| nudge (30 frames, ½ px/frame, from rest) | 1.03 ms JS/frame | 1.00 resolve and record a frame — the composite on screen, remade every build it is drawn · 0 records written, 0 draw lists rewritten · 36.2 KB uploaded (the slot uniforms alone) · heap +723 KB/frame (the note below) |
+| zoom (120 frames, ×1.005/frame) | 1.26 ms JS/frame (1.38) | 66.7 resolves (83), 51.6 records (68), 207 visited (1,017), 0 sorted (1,002) · 41 records written a frame — every `rezoom` kind's (paper, mini mat) on any zoom delta · 47.9 KB uploaded · heap +169 KB |
+| drag of 50 selected (60 moves) | 3.14 ms JS/frame (3.36; max frames' median 4.97) | 60.3 steps/s; all 50 carried with the mouse |
+| edit (a character into a written note) | 1 raster drawn | 65 records made in that frame (99): the paper kind is RESTLESS while its writing is live, and a restless kind remakes every visible record of its kind |
+| hold (the notebook picked up) | blur 0.67 ms once | 0 desk copies over 60 held frames · a held frame 2.91 ms, the rest frame 2.59 ms, a copy 3.58 ms |
+
+The §11.4 gates after D6. Idle 0 submits ✓ (checked); the desk's flush 2.07 ms/s against ≤ 0.1 ms/s ✗ — 33 µs a
+tick: the seven kinds' polled `tick(now)`, the four followers, the reflector's dirty read, the budget's trim. ≤ 0.1 ms/s
+means the flush does not run at rest, which wants a REGISTERED wake (a kind says when it is next live) in place of the
+poll — owed, a design change, not a tweak (the whole engine step is 8.5 ms/s, core's tick, out of the desk's hands). Pan:
+JS ≤ 2 ms ✓ (1.07), JS + GPU 3.25 ≤ 8.33 ✓, NO per-entity work ✓ — CHECKED by the counters, never by the clock: 0 queried,
+0 sorted, 211 of 1,002 visited (the index's candidates), 1.4 resolved (the composite + the entrants), the stores writing
+0.38 a frame (only what the builder remade) and, on the nudge, 0 records and 0 draw lists; allocation 59 KB ≤ 64 ✓
+(loosely — the note); drag 3.14 ≤ 9.09 ✓; a note edit re-rasters one note ✓; the blur 0.67 ≤ 1.5 once ✓, 0 per held
+frame ✓. The fps gates are frame budgets (headless rAF is 60 Hz); the clock gates stay soft (`gate()`, hard under
+`DESK_STRESS_GATE=1`), the counter gates are `check()`s.
+
+A note on the heap figure: V8's heap read between a forced `gc()` and the run's end includes garbage not yet scavenged —
+over 120 frames the young generation is collected several times, over the nudge's 30 it need not be — so +59 KB (pan)
+and +723 KB (nudge) bracket the truth between retained growth and raw allocation. The raw rate is dominated by the
+composite's remake (its record made afresh every build it is drawn); the finer rule below would take most of it.
+
+Owed, with numbers: the idle flush 2.07 ms/s (above); the composites remade every build they are drawn — 1 resolve a frame
+on any camera move; `rezoom` kinds remade on ANY zoom delta — 66.7 resolves and 41 records written a frame on a zoom (the
+design gates the pan; a quantised band would cut it); a restless kind remaking every record of its kind — 65 on a note
+edit; D3r-b's 0.03–0.05 ms on empty desks, not re-measured here (`rig:cost`). `rig:stress` at 3 rounds runs in 41 s
+(15/15) and is the `gate:landing` leg; the 7-round table run is 85 s.
+
 ## design-013 B5 — island parity under composited (2026-09-07)
 
 > *Historical* — measured on the GL islands and `widgetlab-desktop`'s `islands` rig, deleted at D5b.

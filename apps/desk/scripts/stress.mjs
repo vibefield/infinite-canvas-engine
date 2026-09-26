@@ -143,7 +143,12 @@ try {
     for (const k of new Set([...Object.keys(a.uploads), ...Object.keys(b.uploads)])) uploads[k] = { writes: (b.uploads[k]?.writes ?? 0) - (a.uploads[k]?.writes ?? 0), bytes: (b.uploads[k]?.bytes ?? 0) - (a.uploads[k]?.bytes ?? 0) };
     const work = {};
     for (const k of Object.keys(b.totals)) work[k] = b.totals[k] - a.totals[k];
-    return { steps: b.steps, flush: { ticks: b.flush.ticks - a.flush.ticks, ms: b.flush.ms - a.flush.ms, frames: b.flush.frames - a.flush.frames, frameMs: b.flush.frameMs - a.flush.frameMs }, uploads, submits: b.submits - a.submits, work, redraws: b.redraws - a.redraws };
+    // the root passes' persistent record stores (D6, design-015 §4.3): records packed and uploaded, draw lists rewritten, summed over the kinds
+    const records = { written: 0, bytes: 0, orderWrites: 0 };
+    for (const k of new Set([...Object.keys(a.records ?? {}), ...Object.keys(b.records ?? {})])) {
+      for (const f of Object.keys(records)) records[f] += (b.records?.[k]?.[f] ?? 0) - (a.records?.[k]?.[f] ?? 0);
+    }
+    return { steps: b.steps, flush: { ticks: b.flush.ticks - a.flush.ticks, ms: b.flush.ms - a.flush.ms, frames: b.flush.frames - a.flush.frames, frameMs: b.flush.frameMs - a.flush.frameMs }, uploads, submits: b.submits - a.submits, work, records, redraws: b.redraws - a.redraws };
   };
   /** One driven run in the page: `frames` rAFs, the camera written each from the start by (dx, dy) and ×dz about the view's centre; the heap read after a gc before and at the end. */
   const drive = async (frames, cam, dx, dy, dz) => {
@@ -176,6 +181,7 @@ try {
         flushPerFrame: d.flush.frameMs / Math.max(d.flush.frames, 1),
         resolvedPerFrame: d.work.resolved / Math.max(d.redraws, 1), recordedPerFrame: d.work.recorded / Math.max(d.redraws, 1), visitedPerFrame: d.work.visited / Math.max(d.redraws, 1), queriedPerFrame: d.work.queried / Math.max(d.redraws, 1), sortedPerFrame: d.work.sorted / Math.max(d.redraws, 1),
         uploadsPerFrame: upl, bytesPerFrame: Object.values(d.uploads).reduce((a, v) => a + v.bytes, 0) / Math.max(d.redraws, 1),
+        writtenPerFrame: d.records.written / Math.max(d.redraws, 1), orderWrites: d.records.orderWrites,
         allocPerFrame: (r.h1 - r.h0) / frames, fps: (frames * 1000) / r.ms, redraws: d.redraws, submits: d.submits, drawn: r.stats.objects, culled: r.stats.culled, load: r.load,
       };
     });
@@ -188,6 +194,7 @@ try {
       recorded: { median: median(col("recordedPerFrame")), min: min(col("recordedPerFrame")) },
       visited: { median: median(col("visitedPerFrame")) }, queried: { median: median(col("queriedPerFrame")) }, sorted: { median: median(col("sortedPerFrame")) },
       bytes: { median: median(col("bytesPerFrame")), min: min(col("bytesPerFrame")) },
+      written: { median: median(col("writtenPerFrame")), max: max(col("writtenPerFrame")) }, orderWrites: { median: median(col("orderWrites")), max: max(col("orderWrites")) },
       uploads: Object.fromEntries([...new Set(perRound.flatMap((p) => Object.keys(p.uploadsPerFrame)))].map((k) => [k, median(perRound.map((p) => p.uploadsPerFrame[k] ?? 0))])),
       alloc: { median: median(col("allocPerFrame")), min: min(col("allocPerFrame")) },
       fps: { median: median(col("fps")), min: min(col("fps")) },
@@ -202,6 +209,7 @@ try {
     console.log(`  step ms/frame        median ${fmt(s.stepMs.median)} · min ${fmt(s.stepMs.min)} · the rounds' max frames' median ${fmt(s.stepMs.maxMedian)}`);
     console.log(`  the desk's flush     median ${fmt(s.flushMs.median)} ms/frame · min ${fmt(s.flushMs.min)}`);
     console.log(`  builder work/frame   resolved ${fmt(s.resolved.median, 1)} (min ${fmt(s.resolved.min, 1)}) · recorded ${fmt(s.recorded.median, 1)} · visited ${fmt(s.visited.median, 0)} · queried ${fmt(s.queried.median, 0)} · sorted ${fmt(s.sorted.median, 0)}`);
+    console.log(`  records written/frame ${fmt(s.written.median, 2)} (the root stores; the most in a round ${fmt(s.written.max, 2)}) · draw lists rewritten ${fmt(s.orderWrites.median, 0)} a round (most ${fmt(s.orderWrites.max, 0)})`);
     console.log(`  uploads/frame        ${kb(s.bytes.median)} (min ${kb(s.bytes.min)}) — ${Object.entries(s.uploads).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${kb(v)}`).join(" · ")}`);
     console.log(`  heap growth/frame    median ${kb(s.alloc.median)} · min ${kb(s.alloc.min)}`);
     console.log(`  cadence              ${fmt(s.fps.median, 1)} fps median (min ${fmt(s.fps.min, 1)}) · ${s.redraws} redraws, ${s.submits} submits a round · ${s.drawn} drawn, ${s.culled} culled at the end`);
@@ -251,10 +259,45 @@ try {
     s.gpu = { ms: { median: median(gpu.map((g) => g.ms)), min: min(gpu.map((g) => g.ms)) }, cpu: { median: median(gpu.map((g) => g.cpu)), min: min(gpu.map((g) => g.cpu)) } };
     console.log(`  saturated batch      GPU-bound ${fmt(s.gpu.ms.median)} ms/frame (min ${fmt(s.gpu.ms.min)}) · recording ${fmt(s.gpu.cpu.median)} ms · JS + GPU ${fmt(s.stepMs.median + s.gpu.ms.median)} ms vs 8.33 (120 Hz)`);
     gate(s.stepMs.median <= 2, `pan: main-thread JS ≤ 2 ms/frame (${fmt(s.stepMs.median)})`);
-    gate(s.resolved.median === 0 && s.recorded.median === 0, `pan: no per-entity work — resolved ${fmt(s.resolved.median, 1)}, recorded ${fmt(s.recorded.median, 1)} a frame`);
+    // THE O(1) PAN (design-015 §2 · §4.3 · §11.4; D6) — the counters, not the clock, and CHECKED (the clock's gates above and below
+    // bend with this Mac's load; these cannot): the members are neither queried nor sorted on a camera move; the cull visits the
+    // index's candidates in the hysteresis band, never every member; what is resolved and recorded a frame is the objects ENTERING
+    // the view's margin (a handful over 8 px), not the objects on screen; and the root stores write no standing record — every
+    // record written is one the builder remade. Before D6: 1,002 queried and sorted, 1,021 visited, 118 resolved a frame.
+    const active = report.scene.active;
+    check(s.queried.median === 0 && s.sorted.median === 0, `pan: the members are neither queried nor sorted on a camera move (queried ${fmt(s.queried.median, 0)}, sorted ${fmt(s.sorted.median, 0)} a frame; ${active} members)`);
+    check(s.visited.median < active / 2, `pan: the cull visits the index's candidates, never every member (${fmt(s.visited.median, 0)} of ${active} a frame)`);
+    check(s.resolved.median <= 3 && s.recorded.median <= 3, `pan: no per-entity work — resolved ${fmt(s.resolved.median, 1)}, recorded ${fmt(s.recorded.median, 1)} a frame against ${s.drawn} drawn (the composites on screen, and the objects entering the margin)`);
+    check(s.written.max <= s.recorded.median * 1.5 + 0.5, `pan: the stores write no standing record — ${fmt(s.written.median, 2)} written a frame (most ${fmt(s.written.max, 2)}), ${fmt(s.recorded.median, 2)} remade`);
     gate(s.stepMs.median + s.gpu.ms.median <= 8.33, `pan: 120 fps budget — JS + GPU ${fmt(s.stepMs.median + s.gpu.ms.median)} ms ≤ 8.33`);
     gate(s.alloc.median <= 64 * 1024, `pan: allocation ≤ 64 KB/frame (${kb(s.alloc.median)})`);
-    rows.push(["pan", `${fmt(s.stepMs.median)} ms JS · ${fmt(s.gpu.ms.median)} ms GPU`, `resolved ${fmt(s.resolved.median, 1)} · recorded ${fmt(s.recorded.median, 1)} · ${kb(s.bytes.median)} up · ${kb(s.alloc.median)} alloc`, s.loads.join(" ")]);
+    // the memory the kinds' caches hold after the pans swept the field (D6's budget): the boards' rasters, the notebook's page rasters, the tiles
+    const mem = await q("window.__desk.memory()");
+    s.memory = mem;
+    console.log(`  raster budget        ${(mem.used / 1048576).toFixed(1)} MB of ${(mem.cap / 1048576).toFixed(0)} MB resident (${Object.entries(mem.byOwner).map(([k, v]) => `${k} ${(v.bytes / 1048576).toFixed(1)} MB × ${v.entries}`).join(" · ")}) · ${mem.evictions} evictions`);
+    gate(mem.used <= mem.cap, `pan: the kinds' rasters within the budget (${(mem.used / 1048576).toFixed(1)} of ${(mem.cap / 1048576).toFixed(0)} MB)`);
+    rows.push(["pan", `${fmt(s.stepMs.median)} ms JS · ${fmt(s.gpu.ms.median)} ms GPU`, `resolved ${fmt(s.resolved.median, 1)} · recorded ${fmt(s.recorded.median, 1)} · ${fmt(s.written.median, 2)} written · ${kb(s.bytes.median)} up · ${kb(s.alloc.median)} alloc · rasters ${(mem.used / 1048576).toFixed(0)} MB`, s.loads.join(" ")]);
+  }
+
+  // ── nudge: 30 frames, ½ px a frame from rest — a camera move inside the cull's hysteresis band and short of any object's margin.
+  //    THE LAW WHOLE (design-015 §4.3, D6): nothing is resolved, recorded or written and the draw list stands; the camera rides the
+  //    slot uniforms alone. The desk is settled at cam0 first so the drive's own camera set is no move.
+  if (wantCase("nudge")) {
+    const runs = [];
+    for (let r = 0; r < ROUNDS; r++) {
+      await q(`window.__desk.setCamera(${JSON.stringify(cam0)})`);
+      await settle();
+      const run = await drive(30, cam0, 0.5, 0, 1);
+      run.load = load();
+      runs.push(run);
+    }
+    const s = summarise("nudge", runs, 30);
+    printDrive(s);
+    // what a camera move alone may still resolve: the COMPOSITES on screen (the notebook, the calendar — their layers are not records;
+    // the builder remakes a composite every build it is drawn, its resolve steps its own motion — kind.ts `composite`), so the count
+    // is theirs (≤ 2 here), never a standing record's: the stores write nothing and the draw lists stand
+    check(s.resolved.median <= 2 && s.recorded.median <= 2 && s.written.median === 0 && s.orderWrites.median === 0, `nudge: a camera move alone writes NOTHING and remakes nothing but the composites on screen — resolved ${fmt(s.resolved.median, 2)}, recorded ${fmt(s.recorded.median, 2)} a frame (the composites; every standing record stood), written ${fmt(s.written.median, 2)}, draw lists rewritten ${fmt(s.orderWrites.median, 0)} a round; the slot uniforms ${kb(s.bytes.median)} a frame`);
+    rows.push(["nudge", `${fmt(s.stepMs.median)} ms JS`, `resolved ${fmt(s.resolved.median, 2)} (the composites) · recorded ${fmt(s.recorded.median, 2)} · ${fmt(s.written.median, 2)} written · ${kb(s.bytes.median)} up (the slot uniforms)`, s.loads.join(" ")]);
   }
 
   // ── zoom: 120 frames, ×1.005 a frame about the view's centre

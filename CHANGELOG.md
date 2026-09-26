@@ -605,6 +605,65 @@ THE DESK CALENDAR AT WORK (design-015 §6's calendar in hand and at rest; CALEND
   tile); `rig:open` §12 (the calendar at work, 52 rows); `rig:two-tab` (a line written in A arrives on B's pad, with
   A's seeds, and ⌘Z in A takes it off both).
 
+<!-- design-015 D6 (2026-09-26) -->
+PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,000-OBJECT GATES (design-015 §2 · §2.5 ·
+§4.3 · §11.4).
+
+- **Persistent records** (`@ice/desk` engine/records.ts `createRecordStore`; §4.3): per kind a GPU storage buffer
+  indexed by a SLOT ALLOCATOR — a record keyed by its entity (a ghost's negated) keeps its slot while it is drawn and
+  is written only when its record object changed (identity: the builder hands the same object while nothing moved);
+  the draw list an index buffer (`order`, binding 9 in the four passes' WGSL — paint index → slot) rewritten only when
+  membership, order or visibility changed; slots freed and reused, the capacity doubling (the pass rebinds on
+  `version`); a slot's block (the mini mat's chips) beside it. No keys = transient, the oracle's form — byte-identical:
+  101 renders sha256-equal to main `f7db939`. Paper, print, board and mini mat carry stores; the notebook and the
+  calendar keep their layers.
+- **The builder reuses what stood** (compose/builder.ts): a row's record is remade only when its facts moved (`stale`,
+  from the journal), its flux (a spring this frame), a law, look, theme or grid (`remakeAll`), its zoom or dpr (a
+  `rezoom` kind — the paper's ink band, the mini mat's lattice — at its SLOT's zoom, which a lifted face moves with the
+  root camera still: rig:nav's cut frame, a lattice 1 LSB stale), the tape's give, its slot, or its kind restless; a
+  composite is remade every build it is drawn. The paint-ordered LIST stands until the membership moves (a spawn, a
+  despawn, an Active flip) and is re-sorted only when the order does (siblings, a stratum, a Grab, a kind lifting);
+  `verify()` re-resolves every reused record against a fresh one (`sameRecord`) and counts the mismatches — the checker
+  that catches a look changed under the builder's feet.
+- **The cull rides the spatial index** (§2.5; `stack.index` through `LayerContext.spatial`, @ice/dom desk-host.ts): the
+  candidates are the index's answer for the view, its margin and the kinds' reach, asked again only when the view
+  leaves a hysteresis band (the margin again) or the world moved; the exact rect test per candidate; the index's
+  one-tick lag after a nav cut falls back to the linear cull for that build.
+- **The idle tick**: the selection RING's spring is removed, not zeroed (springs.ts, the panel's two rows, `pinFlux`'s
+  type) — since D4a the marks draw the selection, and a spring feeding a retired zero kept the desk live for a second
+  after every selection change (the D4a landing's owed item; on main the marks-world test only ever saw that spring:
+  38 frames past the lock-on). The kinds' `tick(now)` name the RESTLESS kinds each flush (`reflector.restless`) and the
+  builder asks the lifted tier of those alone; the writing's residency and `noteAt` read the builder's word on what is
+  drawn (`KindHost.drawn`) — a reused record makes no draw call. Found on the way: BoardInk woke on ANY known board's
+  stale stamp (D-D3t-b.11) — now a DRAWN board's only.
+- **The raster budget** (engine/budget.ts `createRasterBudget`, 192 MB by default — `DeskLayerOptions.rasterBudget`):
+  one LRU ledger for every raster a kind keeps as a cache — a board's ink with its mips and layers (evicted, `stamp`
+  −1: it replays from its strokes when next drawn), the notebook's page rasters (5.6 MB each), the calendar's tile
+  texture (charged once, always kept); each kind answers `keeps(key)` for what is on screen, the host trims once a
+  tick; `handle.memory()` / `__desk.memory()` the ledger. On the stress scene after the pans: 134.9 MB resident (six
+  boards 93.7, the calendar 41.3), 0 evictions.
+- **The gates** (`rig:stress`; docs/benchmarks.md § design-015 D6 — BEFORE and AFTER on this Mac, medians over 7 rounds
+  with the load): pan 1.38 → 1.07 ms JS/frame; a frame's work 118 resolves → 1.4, 1,002 queried and sorted → 0, 1,021
+  visited → 211 (the index's candidates); uploads 56.3 → 35.2 KB (the slots' camera blocks alone); heap +210 → +59 KB;
+  drag of 50 3.36 → 3.14 ms. CHECKED, never soft: the members neither queried nor sorted on a camera move; the cull
+  visiting candidates alone; ≤ 3 resolves a frame on a pan (the composites and the entrants); the stores writing no
+  standing record (0.38 written a frame against 1.38 remade — `__desk.records()`, the stores' counters through
+  `KindPass.records`); a `nudge` (30 frames × ½ px inside the hysteresis band) writing 0 records and 0 draw lists, the
+  camera riding the slot uniforms alone; idle 0 submits. NOT met, owed with numbers: idle's desk flush 2.07 ms/s
+  against ≤ 0.1 (33 µs a tick — the kinds' polled ticks; wants a registered wake, a design change); the composites
+  remade every drawn build (1 resolve a frame on any camera move); `rezoom` kinds remade on any zoom delta (66.7
+  resolves a frame on a zoom); a restless kind remaking every record of its kind (65 on a note edit). `rig:stress` at
+  3 rounds (41 s, 15/15) is a `gate:landing` leg; the 7-round table run is 85 s.
+- **Witnesses**: units records.test.ts (change-only writes proven red against a per-frame pack; a changed record writes
+  its slot alone; the draw list on a reorder; free and reuse; grow; transient; blocks; invalidate),
+  builder-persistent.test.ts (a camera move resolves and records NOTHING; a fact write remakes ONE; a spring remakes
+  until it snaps; the rezoom kind at its slot's zoom; the cull's hysteresis — a pan within it asks nothing, past it
+  once, the drawn set the linear cull's; `verify` red on a look changed in place), budget.test.ts (LRU beyond the cap,
+  what the owner keeps spared, a re-charge counted once), marks-world (the lock-on's frames counted: whole on the first
+  frame at or past 180 ms and the builder quiet THAT frame); the oracle 101/101 sha256-equal to main; rig:nav 26/26 in
+  four runs (the cut frame maxΔ 0), rig:interact's selection row (the ring 0 at every sample, the desk quiet within
+  600 ms), rig:stress 15/15 at 7 and at 3 rounds.
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
