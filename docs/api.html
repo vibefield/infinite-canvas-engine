@@ -670,7 +670,7 @@ pnpm --filter glboard dev                  // islands, bands, and GL input live<
         <table class="t wide">
           <thead><tr><th>export</th><th>kind</th><th>meaning</th></tr></thead>
           <tbody>
-            <tr><td>SelectionBox · HandleSpec · GuideLine · MarqueeBox · CursorVisual · VisualOf · Follows</td><td>chrome</td><td>The selection box, the eight handles, snap guides, the marquee rect, cursor visuals — all plain entities you can query or restyle.</td></tr>
+            <tr><td>HandleSpec · GuideLine · MarqueeBox · CursorVisual · Follows</td><td>chrome</td><td>The eight resize handles (what picking reads — the selection box and <code>VisualOf</code> left at design-015 D7), snap guides, the marquee rect, cursor visuals — plain entities you can query; the desk's marks draw them.</td></tr>
             <tr><td>Visible · Culled · Active</td><td>tags</td><td>Viewport partition (visible vs culled) · membership in the current navigation frame.</td></tr>
             <tr><td>MeasuredSize · WidgetBreakpoint</td><td>components</td><td>Measured content size (session-only) · the 5-tier responsive breakpoint.</td></tr>
             <tr><td>NavDepth · NavCamera · NavFrame · ContainerCamera</td><td>nav</td><td>The container navigation stack and per-container camera memory.</td></tr>

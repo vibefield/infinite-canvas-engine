@@ -112,13 +112,7 @@ export const WidgetBreakpoint = defineComponent("WidgetBreakpoint", {
 
 // --- chrome prefabs (pooled entities, reaped when the source empties) ---
 
-/** Selection outline rect. */
-export const SelectionBox = defineComponent("SelectionBox", {
-  x: field("f64", { default: 0 }),
-  y: field("f64", { default: 0 }),
-  w: field("f32", { default: 0 }),
-  h: field("f32", { default: 0 }),
-});
+// (`SelectionBox` — the pooled selection outline's rect — left at design-015 D7: nothing read it after the P4 DOM chrome.)
 
 /** A resize handle's anchor (the one chrome kind behaviors capture). */
 export const HandleSpec = defineComponent("HandleSpec", {
@@ -164,8 +158,7 @@ export const CursorVisual = defineComponent("CursorVisual", {
 /** cursor → pointer or presence peer. */
 export const Follows = defineRelation("Follows", { arity: "one" });
 
-/** chrome → its source (recognizer, selection). */
-export const VisualOf = defineRelation("VisualOf", { arity: "one" });
+// (`VisualOf` — a chrome entity's edge to its source — left with the selection box at design-015 D7: nothing read it.)
 
 // --- navigation stack (session NavEntry prefab, design-004 §7) ---
 

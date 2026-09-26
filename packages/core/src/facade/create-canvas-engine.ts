@@ -214,7 +214,7 @@ export interface CanvasEngineOpts {
     };
     readonly pointers?: Partial<Record<keyof typeof POINTER_DEFAULTS, number>>;
     readonly snap?: { readonly enabled?: boolean; readonly thresholdPx?: number };
-    /** Selection-chrome knob: liftScale = the app's visual drag-lift scale (the union box wraps it). */
+    /** Selection-chrome knob: liftScale = the app's visual drag-lift scale (the resize handles wrap it). */
     readonly chrome?: { readonly liftScale?: number };
     /**
      * Nav seeds (design-015 §9 — D2b). `zoomThrough`: a wheel zoom that leaves a container's

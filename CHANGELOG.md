@@ -845,6 +845,11 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
 - **kernel `planeCssTransform`** (the retired planes' camera transform — the DOM is screen space, §2.2; D5b's note
   kept it, nothing read it) and **`tessellateCubic`** / **`Tessellation`** (the retired @ice/ground wires pass's).
 - **`EngineGpu.hasCoreFeatures`** (three's compatibility-mode signal; see "One device per engine" below).
+- **`SelectionBox`** (component) and **`VisualOf`** (relation), with the pooled selection-box ENTITY `selectionChrome`
+  spawned beside the handles: the P4 DOM chrome that drew the box left at D5b, nothing read it, and it was rewritten
+  every frame the union moved (every drag frame). A non-resizable multi-selection's group box went with it (the desk's
+  marks draw every selection's look). The 8 resize handles stay — picking reads them — and `settings.chrome.liftScale`
+  stays with them: it places the handles about a lifted card (the review read it as the box's alone).
 
 ### Fixed
 
@@ -966,6 +971,10 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   engine's device drawn with, no second `requestAdapter`, `errors()` holding the desk's error, the device alive after
   dispose; the own-device path destroyed at dispose) and `packages/dom/test/desk-host.test.ts` — red with the layer's
   or the host's hunk reverted.
+- **`selectionChrome` produces only what picking reads** (D7 surface #8): the 8 resize handles. The selection-box
+  entity, its `SelectionBox` value (rewritten every drag frame) and the handles' `VisualOf` edges to it are gone (see
+  `### Removed`). Held by `core/test/selection-chrome.test.ts`: a selection spawns the 8 handles and NOTHING else, a
+  non-resizable single or multi selection spawns nothing — both red on the pre-fix producer (9 entities: the box).
 
 ## [0.13.0] — 2026-09-07
 

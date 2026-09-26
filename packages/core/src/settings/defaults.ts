@@ -66,9 +66,8 @@ export const SNAP_DEFAULTS = {
 
 /**
  * Selection-chrome knobs (2026-07-17). `liftScale` mirrors the app's visual
- * drag-lift scale (widgetlab CardShell: 1.05) so the union box can inflate a
- * grabbed member's rect and keep WRAPPING the card it sees; 1 = no lift
- * visual, no inflation.
+ * drag-lift scale so the resize handles can inflate a grabbed member's rect
+ * and keep WRAPPING the card it sees; 1 = no lift visual, no inflation.
  */
 export const CHROME_DEFAULTS = {
   liftScale: 1,

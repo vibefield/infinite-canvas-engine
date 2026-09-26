@@ -7,7 +7,7 @@
  * Three triggers materialize a widget's declared ports (registry decl → kernel
  * `portAnchor`; a port carries Port + PortAnchor + PortOf → widget, and NO
  * Position/Size — `spatialSync` must never see it; design-004 §6, the
- * SelectionBox precedent). Because ports carry no Position/Size, this system
+ * precedent of the retired selection box). Because ports carry no Position/Size, this system
  * gives them their OWN tiny world AABB in the shared spatial index so they are
  * pickable (design-003 §3 port tier):
  *   (a) connect tool → widgets in viewport+overscan (`200/zoom`); materialize at

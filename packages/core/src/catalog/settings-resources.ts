@@ -23,8 +23,8 @@ import {
 /**
  * Selection-chrome live mirror (2026-07-17): `liftScale` = the app's visual
  * drag-lift scale factor; `selectionChrome` inflates a Grab-bed member's rect
- * by it (about the rect center) so the union box always wraps the card the
- * user SEES, not just its ECS footprint.
+ * by it (about the rect center) so the resize handles wrap the card the user
+ * SEES, not just its ECS footprint (the union box it also inflated left at D7).
  */
 export const ChromeSettings = defineResource("ChromeSettings", {
   liftScale: field("f32", { default: CHROME_DEFAULTS.liftScale }),

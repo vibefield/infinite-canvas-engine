@@ -327,15 +327,14 @@ describe("camera / resources / derived / chrome / nav (§5.7, §5.8)", () => {
     expect(enumLabels(cat.CursorVisual, "kind")).toEqual(["local", "remote"]);
   });
 
-  it("SelectionBox/MarqueeBox field types", () => {
-    expect(scalarType(cat.SelectionBox, "x")).toBe("f64");
-    expect(scalarType(cat.SelectionBox, "w")).toBe("f32");
+  it("MarqueeBox field types (SelectionBox left at design-015 D7)", () => {
     expect(scalarType(cat.MarqueeBox, "y")).toBe("f64");
+    expect("SelectionBox" in cat).toBe(false);
   });
 
-  it("Follows/VisualOf/NavFrame are arity-one; NavDepth u8, NavCamera f64 throughout (zoom f64 since D2b)", () => {
+  it("Follows/NavFrame are arity-one (VisualOf left at D7); NavDepth u8, NavCamera f64 throughout (zoom f64 since D2b)", () => {
     expect(arityOf(cat.Follows)).toBe("one");
-    expect(arityOf(cat.VisualOf)).toBe("one");
+    expect("VisualOf" in cat).toBe(false);
     expect(arityOf(cat.NavFrame)).toBe("one");
     expect(scalarType(cat.NavDepth, "d")).toBe("u8");
     expect(scalarType(cat.NavCamera, "x")).toBe("f64");

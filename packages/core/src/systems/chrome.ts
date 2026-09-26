@@ -3,14 +3,11 @@
  *
  * Two systems, both derive-scheduled, both write change-only:
  *
- * `selectionChrome` — maintains POOLED chrome entities mirroring the current
- *   `Selected` set: ONE selection-box entity + 8 resize-handle entities. The box
- *   entity carries ONLY the `SelectionBox` value (x,y,w,h = the union bbox); the
- *   handles carry Position + Size + `HandleSpec{anchor}` + `VisualOf → box`.
- *   Box policy (amended 2026-07-17): all-resizable selections get box + grips
- *   (v1 parity); a MULTI-selection gets the box (group bbox) even when
- *   non-resizable; a single non-resizable widget gets no engine chrome (the
- *   app owns its selection look).
+ * `selectionChrome` — maintains the POOLED resize-handle entities mirroring the
+ *   current `Selected` set: 8 handles carrying Position + Size + `HandleSpec{anchor}`,
+ *   placed about the selection's union bbox. They exist only when EVERY selected
+ *   entity is Resizable and none is taped (Locked) — v1 parity; any other
+ *   selection gets no engine chrome (the desk's marks draw its look).
  *
  *   HANDLE PICKING (the point of the design): handles carry a world AABB, so the
  *   `react`-phase `spatialSync` indexes them automatically and `picking` resolves
@@ -21,21 +18,17 @@
  *   so its on-screen hit target stays ~constant across zoom. The tradeoff: the
  *   handles must be recomputed whenever the camera zoom changes, so this system
  *   runs every frame a selection exists and rewrites the 8 handles' Position/Size
- *   change-only (a zoom change restamps 8 entities — small, bounded N; §5's
- *   "screen-space, recomputed on camera dirt, small N").
+ *   change-only (a zoom change restamps 8 entities — small, bounded N).
  *
- *   THE BOX IS DELIBERATELY NOT PICKABLE. It stores its rect in the `SelectionBox`
- *   value, NOT in Position/Size, so `spatialSync` (which indexes [Position,Size])
- *   never sees it. design-003 §3's pick priority lists ONLY HandleSpec chrome as
- *   pickable; indexing the box would make it a widget-class pick (it has Position)
- *   and let a center-of-selection click be grabbed by `moveClaim`. (This diverges
- *   from a literal reading of the M6 brief's "Position+Size+SelectionBox" — the
- *   box's geometry lives on the `SelectionBox` value instead; the chrome reflector
- *   reads it from there.)
+ *   THE SELECTION BOX LEFT AT design-015 D7: the pooled box entity carried the
+ *   union bbox in a `SelectionBox` value (with a `VisualOf` edge from each handle)
+ *   for the P4 DOM chrome that drew it; that chrome was deleted at D5b, nothing read
+ *   the box, and it was rewritten every frame the union moved (every drag frame).
+ *   Only what picking reads stays.
  *
- *   POOL LIFECYCLE: entities spawn once via `ctx` (runtime prefab class) when a
- *   selection appears and are reaped via `ctx.destroy` when it empties. On the
- *   spawn frame the handles are still identity-only (placement defers to the
+ *   POOL LIFECYCLE: the handles spawn once via `ctx` (runtime prefab class) when a
+ *   resizable selection appears and are reaped via `ctx.destroy` when it empties.
+ *   On the spawn frame they are still identity-only (placement defers to the
  *   phase boundary), so their initial geometry rides the `ctx.spawn` payload and
  *   the change-only `edit().set` updates begin the next frame.
  *
@@ -57,10 +50,8 @@ import {
   Locked,
   Position,
   Resizable,
-  SelectionBox,
   Selected,
   Size,
-  VisualOf,
   WidgetBreakpoint,
 } from "../catalog";
 import { selectedEntities } from "../ops/selection";
@@ -122,11 +113,9 @@ function handleRect(anchor: HandleAnchor, b: Rect, worldSize: number): Rect {
 const selectedQ = defineQuery([Selected]);
 
 export function createSelectionChromeSystem(world: World): TickSystem {
-  // Pool state (a derived cache, not world state): the box + 8 handles, aligned
-  // to HANDLE_ANCHORS, plus the last-written geometry for change-only writes.
-  let boxEntity: Entity | undefined;
+  // Pool state (a derived cache, not world state): the 8 handles, aligned to
+  // HANDLE_ANCHORS, plus the last-written geometry for change-only writes.
   let handleEntities: Entity[] = [];
-  let boxCache: Rect | undefined;
   const handleCache = new Map<Entity, Rect>();
 
   const reapHandles = (ctx: SystemCtx): void => {
@@ -135,16 +124,7 @@ export function createSelectionChromeSystem(world: World): TickSystem {
     handleCache.clear();
   };
 
-  const reap = (ctx: SystemCtx): void => {
-    if (boxEntity !== undefined) {
-      ctx.destroy(boxEntity);
-      boxEntity = undefined;
-      boxCache = undefined;
-    }
-    reapHandles(ctx);
-  };
-
-  const spawnHandles = (ctx: SystemCtx, bbox: Rect, worldSize: number, box: Entity): void => {
+  const spawnHandles = (ctx: SystemCtx, bbox: Rect, worldSize: number): void => {
     for (const anchor of HANDLE_ANCHORS) {
       const hr = handleRect(anchor, bbox, worldSize);
       const he = ctx.spawn({
@@ -154,7 +134,6 @@ export function createSelectionChromeSystem(world: World): TickSystem {
           [HandleSpec, { anchor }],
         ],
       });
-      ctx.setRelation(he, VisualOf, box); // VisualOf is arity "one"
       handleEntities.push(he);
       handleCache.set(he, hr);
     }
@@ -172,16 +151,14 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       let count = 0;
       // Resize affordance gate (field report 2026-07-12, v1 parity): handles
       // exist only when EVERY selected entity is Resizable — a non-resizable
-      // card gets the outline box, never the 8 grips (mixed multi-select is
-      // conservatively grip-less too).
+      // card gets no grips (mixed multi-select is conservatively grip-less too).
       let allResizable = true;
       // The tape (design-015 §5.1, D4a): a taped widget is never resized by a gesture (resizeClaim gives it no rider),
-      // so a selection holding one shows no grips — the knobs hide, the box stays.
+      // so a selection holding one shows no grips.
       let anyLocked = false;
       // Visual drag-lift factor (2026-07-17): a Grab-bed member is scaled about its center by
-      // the app's lift; inflate its rect by the mirrored setting so the box keeps WRAPPING what
-      // the user sees. 1 (default) ⇒ pure ECS union. (`selectionReach`, the shell's reach that
-      // padded a resting member, left at design-015 D5b with the shell it measured.)
+      // the app's lift; inflate its rect by the mirrored setting so the handles keep wrapping what
+      // the user sees. 1 (default) ⇒ pure ECS union.
       const chrome = ctx.getResource(ChromeSettings);
       const liftScale = chrome?.liftScale ?? 1;
       for (const e of selectedEntities(world)) {
@@ -216,18 +193,8 @@ export function createSelectionChromeSystem(world: World): TickSystem {
         count++;
       }
 
-      // Box policy (amended 2026-07-17, James: a multi-selection shares ONE
-      // bounding chrome regardless of resizability):
-      //  - box for any ALL-RESIZABLE selection (the grips' anchor, v1 parity)
-      //    OR any selection of TWO OR MORE (the group bbox);
-      //  - a single non-resizable card still shows NO engine chrome — its
-      //    selection look is the app's (e.g. widgetlab's CardShell ring);
-      //  - grips stay gated to all-resizable selections (2026-07-12 rule).
-      const wantBox = count > 0 && (allResizable || count >= 2);
-      const wantHandles = count > 0 && allResizable && !anyLocked;
-
-      if (!wantBox) {
-        if (boxEntity !== undefined) reap(ctx);
+      if (!(count > 0 && allResizable && !anyLocked)) {
+        if (handleEntities.length > 0) reapHandles(ctx);
         return;
       }
 
@@ -235,38 +202,13 @@ export function createSelectionChromeSystem(world: World): TickSystem {
       const zoom = ctx.getResource(Camera)?.zoom ?? 1;
       const worldSize = HANDLE_PICK_PX / zoom;
 
-      if (boxEntity === undefined) {
+      if (handleEntities.length === 0) {
         // Spawn the pool with its initial geometry on the payload — the entities
         // are identity-only until the phase boundary, so no edit() until next frame.
-        boxEntity = ctx.spawn({ components: [[SelectionBox, { ...bbox }]] });
-        boxCache = { ...bbox };
-        if (wantHandles) spawnHandles(ctx, bbox, worldSize, boxEntity);
+        spawnHandles(ctx, bbox, worldSize);
         return;
       }
-
       // Pool exists (placed) — change-only value writes.
-      if (
-        boxCache === undefined ||
-        boxCache.x !== bbox.x ||
-        boxCache.y !== bbox.y ||
-        boxCache.w !== bbox.w ||
-        boxCache.h !== bbox.h
-      ) {
-        ctx.edit(boxEntity).set(SelectionBox, { ...bbox });
-        boxCache = { ...bbox };
-      }
-      if (!wantHandles) {
-        // Mixed/non-resizable multi: group box only. Reap grips left over from
-        // an all-resizable selection this replaced.
-        if (handleEntities.length > 0) reapHandles(ctx);
-        return;
-      }
-      if (handleEntities.length === 0) {
-        // Turned all-resizable with the box already placed — grips spawn now
-        // (geometry on the payload; change-only edits begin next frame).
-        spawnHandles(ctx, bbox, worldSize, boxEntity);
-        return;
-      }
       for (let i = 0; i < HANDLE_ANCHORS.length; i++) {
         const he = handleEntities[i];
         const anchor = HANDLE_ANCHORS[i];
@@ -282,9 +224,9 @@ export function createSelectionChromeSystem(world: World): TickSystem {
     },
     {
       name: "selectionChrome",
-      access: { write: [SelectionBox, Position, Size] },
+      access: { write: [Position, Size] },
       // Run while there is a selection to mirror OR a pool still to reap.
-      runIf: () => world.firstOf(selectedQ) !== undefined || boxEntity !== undefined,
+      runIf: () => world.firstOf(selectedQ) !== undefined || handleEntities.length > 0,
     },
   );
 
