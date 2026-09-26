@@ -808,7 +808,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   } = {
     camera: { x: 0, y: 0, zoom: 1, gesturing: false },
     viewport: { w: 0, h: 0, dpr: 1 },
-    activeTool: { id: "select" },
+    // the ROOT canvas type's default tool is the one in hand at birth (design-015 D7, D-D7-C.2 — `select` when it names none): a
+    // preset's root, like the desk's, is what `createCanvasEngine` makes, with no `setTool` after
+    activeTool: { id: catalog.defaultToolFor(catalog.rootCanvas.id).id },
     cameraLimits: {
       minZoom: st.zoom?.min ?? CAMERA_DEFAULTS.minZoom,
       maxZoom: st.zoom?.max ?? CAMERA_DEFAULTS.maxZoom,

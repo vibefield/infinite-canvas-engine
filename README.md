@@ -27,21 +27,22 @@ pnpm add @vibecook/ice react react-dom   # react/react-dom are optional peers
 ```tsx
 import { createCanvasEngine } from "@vibecook/ice";
 import { deskLayer, penFaces, inkRaster } from "@vibecook/ice/desk";
-import { DESK_OBJECTS } from "@vibecook/ice/desk/objects";
+import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "@vibecook/ice/desk/objects";
 import { Desk, EngineProvider } from "@vibecook/ice/react";
-import { deskPalette, deskTheme } from "./palette";   // the app's theme + palette (apps/desk/src/palette.ts is the model)
 
-// The engine knows the desk's object kinds — the note, the mini mat, the notebook,
-// the whiteboard, the calendar, the photo print — as widget types.
-const engine = createCanvasEngine({ widgets: [...DESK_OBJECTS] });
+// The desk's preset: the engine knows the desk's object kinds — the note, the mini mat,
+// the notebook, the whiteboard, the calendar, the photo print — as widget types, with the
+// desk's select tool (a bare-mat drag pans, shift draws the marquee), a plain wheel zooming
+// about the pointer, the scale-free zoom and the zoom-through.
+const engine = createCanvasEngine(DESK_ENGINE);
 engine.docs.create();                     // local-first document; .open()/.join() for load/collab
 
 // The desk arrives as an OPAQUE layer factory: the renderer, its kinds, the theme,
 // the text raster the notes are written with, the document the typing commits into.
 const layer = deskLayer({
-  theme: deskTheme("light"), palette: deskPalette("light"),
+  theme: deskTheme("light"), palette: deskPalette("light"),   // the shipped default palette — or your own tokens
   objects: [...DESK_OBJECTS], docs: engine.docs,
-  text: inkRaster({ faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }) }),   // the hands' fonts by URL (apps/desk/assets/fonts)
+  text: inkRaster({ faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }) }),   // YOUR URLs for the hands' fonts (Caveat, Kalam — OFL; apps/desk/assets/fonts)
 });
 
 root.render(

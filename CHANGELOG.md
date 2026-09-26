@@ -884,6 +884,23 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   parked by the frame gate and stepped by hand to the exact tick). With the fix the drag takes the note and
   it follows by (40, 20); before it, the note never moved. `window.__desk` gains `gestures(patch)`.
 
+<!-- design-015 D7 — the fix wave, the surface lens (2026-09-26) -->
+- **The published quickstart runs** (D7 surface #1). `Palette` is typed `{ canvasBg, select }`, but `deskLayer` builds
+  every kind's look at the mount and the board's, the note's, the notebook's and the calendar's `theme()` throw without
+  their materials; the only complete palette was the oracle's fixture, which the package does not ship, and the README
+  imported it from "`./palette` — apps/desk/src/palette.ts is the model". Now `@vibecook/ice/desk/objects` SHIPS the
+  reference objects' default look — `deskPalette(name)` / `deskTheme(name)` / `DeskPalette` and `PRESENCE_INKS` (the
+  fixture's table moved to `src/objects/palette.ts`; `oracle/fixtures/vf-theme.ts` re-exports it; the theme gate's second
+  home moved with it, D-D7-C.1) — and the desk's ENGINE PRESET: `DESK_ENGINE` (`deskSelect`, `DESK_TOOLS`, `DeskCanvas`,
+  `DESK_OBJECTS`), so `createCanvasEngine(DESK_ENGINE)` is the desk the README promises — the plain wheel zooms about the
+  pointer, a bare-mat drag pans (shift marquees), the zoom is scale-free, the zoom-through is on. Core seeds the
+  active tool from the ROOT canvas type's default (D-D7-C.2; `select` when it names none) — the desk's tool was in hand
+  only after an app's `setTool`. A mount whose palette cannot answer throws BEFORE it touches the page (no canvas left in
+  the container, no reduced-motion listener armed over a binding in its TDZ). "Wired into node graphs" is gone from the
+  README (no kind has ports). Held by `packages/desk/test/quickstart.test.ts` (the READMEs' imports against the umbrella's
+  exports map, both themes' looks, the failed mount on a fake page, the preset's resolved settings — each red on its
+  pre-fix source). apps/desk takes the shipped preset and palette like a third party.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and

@@ -286,11 +286,14 @@ focused editor `createNoteEditor`, the text raster `inkRaster`/`penFaces`, `deco
 `blueNoise`, the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs `SPRINGS`) ·
 **`@ice/desk/engine`** (the raw-WebGPU engine: device, surface, passes) · **`@ice/desk/objects`**
 (the six reference kinds' world halves: `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`,
-`Calendar`, `Photo`, `DESK_OBJECTS`, the typing session, the strokes and pins). Walls: `desk = core +
+`Calendar`, `Photo`, `DESK_OBJECTS`, the typing session, the strokes and pins; the engine preset
+`DESK_ENGINE` — `createCanvasEngine(DESK_ENGINE)`: the objects, `deskSelect`/`DeskCanvas`, the wheel
+zooming about the pointer, the scale-free zoom, the zoom-through — and the complete default palette
+`deskPalette(name)`/`deskTheme(name)`, D7). Walls: `desk = core +
 kernel`; nobody imports desk but apps and the umbrella; `desk-dom-free` (only `src/host/*` touches
 the DOM); `desk/engine` never imports `desk/objects`. Mount: `<Desk layer={deskLayer({ theme,
 palette, objects: [...DESK_OBJECTS], text, docs, blobs })}>` (react) or `createDeskHost` (dom);
-`apps/desk/src/App.tsx` is the worked example, `apps/desk/src/palette.ts` the theme's. The oracle
+`apps/desk/src/App.tsx` is the worked example; `deskPalette`/`deskTheme` are the theme's default. The oracle
 (`pnpm --filter @ice/desk oracle`, Dawn in Node) and `apps/desk`'s rigs are the pixel witnesses.
 
 ## @ice/devtools

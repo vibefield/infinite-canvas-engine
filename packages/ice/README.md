@@ -3,8 +3,7 @@
 **ICE — infinite canvas engine.** Figma-grade infinite-canvas UX as a framework — THE DESK:
 every object under the camera drawn by one WebGPU renderer from a CRDT-synced ECS world, the
 DOM in screen space. `defineObject` turns a GPU object kind into a canvas citizen — selectable,
-movable, resizable, snappable, nested in mini mats, wired into node graphs, synced over CRDT,
-undoable per gesture.
+movable, resizable, snappable, nested in mini mats, synced over CRDT, undoable per gesture.
 
 Built on [`@vibecook/strata-ecs`](https://www.npmjs.com/package/@vibecook/strata-ecs):
 an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
@@ -26,20 +25,21 @@ pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers
 ```tsx
 import { createCanvasEngine } from "@vibecook/ice";
 import { deskLayer, inkRaster, penFaces } from "@vibecook/ice/desk";
-import { DESK_OBJECTS } from "@vibecook/ice/desk/objects";
+import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "@vibecook/ice/desk/objects";
 import { Desk, EngineProvider } from "@vibecook/ice/react";
 import { createRoot } from "react-dom/client";
-import { deskPalette, deskTheme } from "./palette";   // your theme + palette — apps/desk/src/palette.ts is the model
 
-const engine = createCanvasEngine({ widgets: [...DESK_OBJECTS] });
+// The desk's preset: the six objects, the desk's select tool (a bare-mat drag pans, shift draws the
+// marquee), a plain wheel zooming about the pointer, the scale-free zoom and the zoom-through.
+const engine = createCanvasEngine(DESK_ENGINE);
 engine.docs.create(); // a local-first document
 engine.ops.spawnWidget("desk.note", { x: 120, y: 120, props: { text: "Write something…" } });
 
 // The desk is an OPAQUE layer factory: the renderer, its kinds, the theme, the text raster.
 const layer = deskLayer({
-  theme: deskTheme("light"), palette: deskPalette("light"),
+  theme: deskTheme("light"), palette: deskPalette("light"),   // the shipped default palette — or your own tokens
   objects: [...DESK_OBJECTS], docs: engine.docs,
-  text: inkRaster({ faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }) }),   // the hands' fonts by URL (apps/desk/assets/fonts)
+  text: inkRaster({ faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }) }),   // YOUR URLs for the hands' fonts (Caveat, Kalam — OFL; apps/desk/assets/fonts)
 });
 
 createRoot(document.getElementById("root")).render(

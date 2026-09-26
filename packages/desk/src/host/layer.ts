@@ -41,7 +41,7 @@ import type { RecordStoreStats } from "../engine/records";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
 import { heldSlots, type SelectionAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
-import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes } from "../compose/reflector";
+import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire } from "../engine/device";
 import { Ground, type GroundFrameInputs } from "../ground";
 import type { KindProgram } from "../kind";
@@ -314,6 +314,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // the OBJECT types: the catalog's, plus the app's — their kinds are the ground's registry
     const types = new Set<WidgetType>([...(ctx.catalog?.widgetTypes() ?? []).filter((t) => t.object !== undefined), ...(opts.objects ?? [])]);
     const { kinds, objectKinds } = kindsOf([...types], opts.kinds ?? []);
+    // every kind's look from the palette BEFORE the mount touches the page (D7): an incomplete palette throws HERE, leaving no canvas,
+    // no listener, no builder behind (the reflector remakes the looks it keeps; this pass only proves they can be made)
+    looksOf(objectKinds, opts.palette, opts.theme);
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
     canvas.style.left = "0";
@@ -340,7 +343,6 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       reducedMotion: motionQuery?.matches === true,
     });
     const syncMotion = (): void => { ambient.configure({ reducedMotion: motionQuery?.matches === true }); compose.wake("ambient"); };
-    motionQuery?.addEventListener("change", syncMotion);
 
     // each kind's own state on this desk (the note's writing): made once, over its root pass once the ground is here — and told what
     // the builder DRAWS (D6, `KindHost.drawn`: the builder is made after the locals, so the word is bound late)
@@ -388,6 +390,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       ...(opts.maxDpr !== undefined ? { maxDpr: opts.maxDpr } : {}),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
     });
+    motionQuery?.addEventListener("change", syncMotion);   // armed once `compose` exists (D7: never a listener over a binding in its TDZ)
 
     // the note's typing session and the ONE focused editor, in the container (screen space) — D2c
     const typing = createNoteTyping({ world, docs: opts.docs ?? { current: () => undefined } });
