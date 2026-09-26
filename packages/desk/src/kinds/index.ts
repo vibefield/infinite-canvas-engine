@@ -20,7 +20,7 @@ import { photoProgram } from "./photo";
 export { BOARD_KIND, type BoardInk, BoardKind, type BoardKindOptions, type BoardObjectLook, type BoardPalette, boardFrame, boardKind, boardProgram, boardReach, boardRest, createBoardInk } from "./board";
 export { CALENDAR_KIND, type CalendarAlpha, CalendarKind, calendarProgram } from "./calendar";
 export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatFrame, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
-export { NOTEBOOK_KIND, NotebookKind, notebookProgram } from "./notebook";
+export { bookAngle, type BookPose, type Books, createBooks, NOTEBOOK_KIND, type NotebookGeometry, NotebookKind, type NotebookKindOptions, notebookKind, type NotebookObjectLook, type NotebookPalette, notebookProgram, notebookReach } from "./notebook";
 export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperFrame, paperProgram, paperReach, paperKind } from "./paper";
 export { createPrints, type FlickWitness, PHOTO_KIND, photoFrame, photoKind, PhotoKind, type PhotoKindOptions, type PhotoPose, photoProgram, photoReach, printExtent, printRect, type PrintRest, type Prints } from "./photo";
 export { type BlobStore, createMemoryBlobStore, type DecodedPicture, hashBytes, type PictureDecoder, RGBA_TYPE, type StoredBlob } from "../photo/blobs";

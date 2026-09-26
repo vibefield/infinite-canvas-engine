@@ -11,7 +11,8 @@ import type { Entity } from "@ice/core";
 import { PointerWorld, LocalPointer, Pointer, Camera, PrefabId, Viewport, defineQuery, selectedEntities } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk/host";
 import { deskLayer } from "@ice/desk/host";
-import { BOARD_TYPE, DESK_OBJECTS, MINIMAT_TYPE, MiniMat, NOTE_TYPE, VINYLS, type VinylName } from "@ice/desk/objects";
+import { bookAngle } from "@ice/desk/kinds";
+import { BOARD_TYPE, DESK_OBJECTS, MINIMAT_TYPE, MiniMat, NOTE_TYPE, NOTEBOOK_TYPE, VINYLS, type VinylName } from "@ice/desk/objects";
 import type { ThemeName } from "@ice/desk/theme";
 import { defaultSelectionActions, type GroundLayerFactory, InfiniteCanvas, type KeymapEntry, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -111,6 +112,8 @@ export function App(): ReactElement {
       { key: "m", run: () => stick(MINIMAT_TYPE, { name: `Mat ${matSerial.current++}` }) },
       // D3w: `W` lays a whiteboard (BOARD.md — its capped marker black, bullet)
       { key: "w", shift: true, run: () => stick(BOARD_TYPE, {}) },
+      // …`b` a notebook (NOTEBOOK.md — its seed its hand and its turn on the mat, never set down quite square)
+      { key: "b", run: () => { const seed = (Math.random() * 1000) | 0; stick(NOTEBOOK_TYPE, { seed, angle: bookAngle(seed) }); } },
       { key: "d", run: () => themeRef.current.toggle() },
       { key: "t", run: cycleVinyl },
       // ⇧ arrows nudge one lattice cell (Marks on the Mat's keys, D4a) — the engine's default ⇧ step is 10; a taped object never moves

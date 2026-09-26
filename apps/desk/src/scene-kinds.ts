@@ -8,8 +8,8 @@
 
 import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk/host";
-import { type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk/kinds";
-import { addStroke, BOARD_TYPE, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
+import { type BookPose, type Books, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk/kinds";
+import { addStroke, BOARD_TYPE, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
 import { BOARD } from "@ice/desk/theme";
@@ -52,29 +52,64 @@ export interface OraclePrint {
   readonly selected?: boolean;
 }
 
+/** A notebook as the lab's `makeBook` takes a spec (scenes.mjs `nb()`): where, its cover and seed, and the still's pins. */
+export interface OracleBook {
+  readonly x: number;
+  readonly y: number;
+  readonly angle?: number;
+  readonly cover?: string;
+  readonly ruling?: string;
+  readonly seed?: number;
+  readonly sheets?: number;
+  readonly open?: boolean | number;
+  readonly left?: number;
+  readonly turn?: { readonly dir: 1 | -1; readonly phi: number; readonly psi: number; readonly twist?: number };
+  readonly peek?: number;
+  readonly held?: boolean;
+  readonly tilt?: readonly [number, number];
+  readonly selected?: boolean;
+}
+
 /** A desk's thing as the oracle lists it (frame.mjs `thingsOf`). */
 export type OracleThing =
   | ({ readonly kind: "note" } & OracleNote)
   | ({ readonly kind: "board" } & OracleBoard)
   | ({ readonly kind: "print" } & OraclePrint)
-  | { readonly kind: "book"; readonly [k: string]: unknown };
+  | ({ readonly kind: "book" } & OracleBook);
 
 /** The scene fields the D3w kinds read. */
 export interface KindScene {
   readonly boards?: readonly OracleBoard[];
   readonly notes?: readonly OracleNote[];
   readonly prints?: readonly OraclePrint[];
+  readonly books?: readonly OracleBook[];
   readonly things?: readonly OracleThing[];
 }
 
-/** The scene's things in the oracle's paint order: its own list, else the whiteboards, the notes, the prints (and, as its slice lands, the notebooks). */
+/** The scene's things in the oracle's paint order: its own list, else the whiteboards, the notes, the prints, the notebooks. */
 export function thingsOf(s: KindScene): OracleThing[] {
   if (s.things !== undefined) return [...s.things];
   return [
     ...(s.boards ?? []).map((b) => ({ ...b, kind: "board" as const })),
     ...(s.notes ?? []).map((n) => ({ ...n, kind: "note" as const })),
     ...(s.prints ?? []).map((p) => ({ ...p, kind: "print" as const })),
+    ...(s.books ?? []).map((b) => ({ ...b, kind: "book" as const })),
   ];
+}
+
+/** A notebook as a spawn: the closed case centred where the scene says; its spread durable, its seed 7 and its cover orbit unless the scene says. */
+export function bookSpec(b: OracleBook): SpawnSpec {
+  if (b.sheets !== undefined) throw new Error("desk: a notebook of another thickness is not a desk object yet");
+  return { type: NOTEBOOK_TYPE, cx: b.x, cy: b.y, w: Notebook.defaultSize.w, h: Notebook.defaultSize.h, props: { cover: b.cover ?? "orbit", ruling: b.ruling ?? "dots", seed: b.seed ?? 7, spread: b.left ?? 0, angle: b.angle ?? 0 } };
+}
+
+/** A book's still — open, a sheet mid-turn, the peek, the tilt — pinned on the notebook kind's state (a FLUX pin, never a Grab). */
+export function pinBooks(handle: DeskLayerHandle, books: readonly { readonly entity: Entity; readonly spec: OracleBook }[]): void {
+  const local = handle.local("notebook") as Books | undefined;
+  for (const { entity, spec: b } of books) {
+    const pose: BookPose = { ...(b.open !== undefined ? { open: b.open } : {}), ...(b.turn !== undefined ? { turn: b.turn } : {}), ...(b.peek !== undefined ? { peek: b.peek } : {}), ...(b.tilt !== undefined ? { tilt: b.tilt } : {}) };
+    if (Object.keys(pose).length > 0) local?.pin(entity, pose);
+  }
 }
 
 /** The committed picture (tools/make-photo-fixture.mjs) as the scenes' prints name it: its bytes in the app's store, its size. */

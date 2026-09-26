@@ -14,7 +14,7 @@ import { insideView, miniMatInstance } from "../src/minimat/inside";
 import { FIT } from "../src/nav/flight";
 import { PORTAL_GATE } from "../src/nav/portal";
 import { defineObject, objectKindOf } from "../src/object";
-import { Board, DESK_OBJECTS, MiniMat, MINIMAT_TYPE, Note, NOTE_TYPE, Photo } from "../src/objects";
+import { Board, DESK_OBJECTS, MiniMat, MINIMAT_TYPE, Note, Notebook, NOTE_TYPE, Photo } from "../src/objects";
 import { DEFAULT_PAPER_LAW, lampOf, pickPaper, resolvePaper, tiltOf } from "../src/paper/paper";
 import { MAT_GRID, MINIMAT, PAPER } from "../src/theme";
 import { PALETTE, PENS, SURFACES, THEMES, VINYLS, pen, surface, vinyl } from "../oracle/fixtures/vf-theme";
@@ -77,7 +77,7 @@ describe("defineObject (design-015 §5.2, D-D16)", () => {
     const G = resolveMiniMat({ cx: 380, cy: 330, w: 640, h: 480 }, { held: 0, hover: 0, ring: 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
     const F = faceOf(G);
     expect([F.x, F.y, F.width, F.height]).toEqual([380 - 320 + c.portal.left, 330 - 240 + c.portal.top, 640 - c.portal.left - c.portal.right, 480 - c.portal.top - c.portal.bottom]);
-    expect(DESK_OBJECTS).toEqual([Note, MiniMat, Board, Photo]);   // D3w's kinds follow the note and the mini mat
+    expect(DESK_OBJECTS).toEqual([Note, MiniMat, Board, Photo, Notebook]);   // D3w's kinds follow the note and the mini mat
   });
 });
 
