@@ -192,6 +192,47 @@ there.
   again — it had thrown since D2a-world moved it to `parity.html`); `rig:cost` (new) re-measures NOTEBOOK.md §9 and
   CALENDAR.md §9 through the registry beside the prototype. The 50 existing scenes unchanged.
 
+<!-- design-015 D2c (2026-09-25) -->
+- **A note's writing is data, its ink a cache, and typing a gesture** (`@ice/desk`, `@ice/core`; design-015
+  §6.1, D-D13). The note (`desk.note`) gains `seeds` — each glyph's own hand, base64 of little-endian u32s
+  (`encodeSeeds`/`decodeSeeds`/`seedsFor`; a glyph with no stored seed writes `glyphSeed(seed, i)`, a new
+  note's hand) — and its `text` and `seeds` are ONE conflict group, `ink` (`NOTE_INK`): one cell, written in
+  one transaction. Core gains `Editing` (catalog/desk.ts), the runtime rider the one focused editor stamps on
+  the note it writes; `makeDefaultMayDiverge` reads it as a gesture claim. `createNoteTyping({ world, docs })`
+  (`@ice/desk/objects`) is the session: `begin` (the claim) · `input(value)` (the seeds carried, the cell
+  written LIVE through the guarded live writer) · `commit()` (ONE undoable transaction; a session that nets to
+  nothing — the same text in the same hand — commits nothing and puts the cell back exactly) · `end()`. So ⌘Z
+  undoes a typing session, never a keystroke, and a remote edit during a session follows strata's claimed-cell
+  rule (dropped while the cell diverges, lost to the session's commit; applied when the session nets to nothing).
+- **The text raster seam and the writing** (`@ice/desk/kinds`). `TextRaster` — `metrics(face)` (undefined
+  while the face loads), `version()`, `raster(layout, face, box, band, bleed) → r8` — is what the paper kind
+  calls; `inkRaster({ faces: penFaces({ caveat, "caveat-bold", kalam }) })` (`@ice/desk/host`) is the
+  browser's, the prototype's lab/ink.ts on an OffscreenCanvas with the app's face URLs; the Node oracle has none
+  and keeps its committed raster. `createWriting()` is the paper kind's own state on one desk: layouts keyed by
+  the face, its version, the hand's law, the size, the seed, the text and its seeds; rasters keyed by the layout,
+  the √2 band (`rasterBand`, hysteresis) and the bleed — re-rastered on an edit or a rung crossing only, only
+  within 200 CSS px of the view; residency in the paper pass's shelves (a new size frees the old rect, a note
+  that leaves the desk gives its rect back, full pages evict what no one drew in two frames, else the sheet
+  draws blank and `stats().blanks` counts it); a pinned still wins; the 110 ms wipe and the 530 ms caret as
+  flux. The kind contract gains `ObjectKind.local(host) → KindLocal` (threaded as `ObjectContext.local`,
+  `tick(now)` and `forget(e)`), and `createDeskBuilder` takes `locals` and tells them when an entity is
+  forgotten — which closes the page-slot leak across delete/undo. `InkShelves.trim()` gives back a layer's
+  trailing empty rows.
+- **The one focused editor** (`@ice/desk/host`): `createNoteEditor()` — one invisible platform `<textarea>` in
+  screen space (transparent text, caret and selection, no pointer events, design-007's `data-canvas-keyboard`
+  claim), placed each frame over the note's drawn geometry by one plain transform (translate · rotate ·
+  translate). A tap (within the drag slop, on the stack's exact hit) focuses the note with the caret at the tap;
+  `input` writes live; 1 s without input commits the session; Escape, blur, a press elsewhere, a delete or a nav
+  cut end it. `deskLayer` takes `text` (the app's raster), `docs` (the document typing commits into) and
+  `idleMs`; its handle gains `writing()`, `editor()`, `typing`; the drawing reflector gains the `ink` wake.
+  apps/desk ships the OFL faces (Caveat 500/600, Kalam 400, with OFL.txt), joins a `?room=` over a
+  BroadcastChannel, and adds `window.__desk.note`. Witnesses in `gate:landing`: `rig:sticky` (35 — the text
+  raster = the committed ink-note-1.r8 byte for byte; a note written live = its committed still at 0 px; the
+  editor's rect = the sheet's; live keys, the wipe, the blink alone at rest; the caret at the tap; the hand-off
+  at 0 px; one ⌘Z per session; the ladder re-rasters at crossings only; delete while writing; no page leak; IME)
+  and `rig:two-tab` (10 — a typed note crosses a room only when its session commits, with its seeds).
+  `rig:interact`'s delete presses Escape first: a tap now writes.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and

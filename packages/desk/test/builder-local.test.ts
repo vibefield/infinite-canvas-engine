@@ -52,8 +52,10 @@ describe("the desk builder · a kind's own state (D2c)", () => {
     ce.ops.setSelection([a], "replace");
     ce.ops.deleteSelection();
     step();
+    const drawn = spy.seen.length;
     build();
-    expect(spy.seen.at(-1)).toBe(a);   // the ghost fades through the same local
+    expect(spy.seen.length).toBe(drawn + 1);   // the ghost fades through the same local: one more draw, of it
+    expect(spy.seen.at(-1)).toBe(a);
   });
 
   it("a deleted note is forgotten when its ghost has faded — not before; one that died unseen at once; one that left the frame at once", () => {
