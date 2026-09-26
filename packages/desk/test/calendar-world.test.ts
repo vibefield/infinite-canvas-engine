@@ -6,10 +6,12 @@
 import { cascadeDestroy, ChildOf, createCanvasEngine, defineQuery, type Entity, guardedTransaction, Position, PrefabId } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CALENDAR } from "../src/calendar/law";
-import type { CalendarDraw } from "../src/calendar/pass";
+import type { CalendarDraw, CalendarPass } from "../src/calendar/pass";
+import type { PrintPass, PrintRaster, TileSource } from "../src/calendar/printing";
+import { TILE_TEX } from "../src/calendar/tiles";
 import { padFrame } from "../src/calendar/pad";
 import { worldChildren } from "../src/compose/children";
-import { CalendarKind, calendarKind, FLUX_REST, type ObjectContext, type Pads, rectOf } from "../src/kinds";
+import { CalendarKind, calendarKind, createPads, FLUX_REST, type ObjectContext, type Pads, rectOf } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { objectKindOf } from "../src/object";
 import { addEvent, Calendar, CALENDAR_TYPE, CalendarEvent, daySlot, NOTE_TYPE, Note, NotePin, pinNote, PinsNote } from "../src/objects";
@@ -165,5 +167,37 @@ describe("the pad's mirror, ring, presences and slots", () => {
     pads.forget?.(31 as Entity);
     expect(pads.state(33 as Entity).slot).toBe(0);
     expect(() => kind.record(kind.resolve(ctxOf(c, s)), ctxOf(c, s, { look: must(kind.theme)(PALETTE.light, "light") }))).toThrow(/calendars/);
+  });
+
+  it("tiles still to draw ask for a frame only while their pad DRAWS (D7): culled, the pad's waiting tiles are no reason; forgotten, they go with it", () => {
+    // a print pass and a raster that spends 50 ms of the pads' clock a tile — past the frame's 6 ms budget after the first, so the
+    // rest of the sheet waits (pending) frame after frame
+    let t = 0;
+    const printPass: PrintPass = { layers: 160, uploadTile: () => {}, writeTileBytes: () => {}, writeTable: () => {} };
+    const raster: PrintRaster = {
+      hand: () => ({ face: { family: "Caveat", weight: 500 }, metrics: { ascent: 0.8, descent: 0.25, advance: (ch) => (ch === " " ? 0.3 : 0.5) } }),
+      version: () => 1,
+      measure: (_font, text) => text.length * 6,
+      tile: (): TileSource => { t += 50; return {} as TileSource; },
+      bytes: () => new Uint8Array(TILE_TEX * TILE_TEX * 4),
+    };
+    const pads = createPads({ pass: () => new CalendarKind(printPass as unknown as CalendarPass), print: raster }, { now: () => t });
+    const s = { camX: 0 - PAD.W / 2, camY: 0 - PAD.H / 2, zoom: 0.5 };
+    const ctx = ctxOf(c, s, { local: pads });
+    const draw = (): void => { kind.record(kind.resolve(ctx), ctx); };
+    draw();
+    expect(pads.tick?.(t)).toBe(true);   // the first frame's marks and tiles
+    draw();
+    expect(pads.tiles().pending).toBeGreaterThan(0);
+    expect(pads.tick?.(t)).toBe(true);   // the CONTROL: tiles waiting on a pad that draws — another frame, rightly
+    // the pad is culled: the frames after resolve nothing of it, and its waiting tiles are nobody's reason
+    expect(pads.tick?.(t)).toBe(false);
+    expect(pads.tick?.(t)).toBe(false);
+    // drawn again, then forgotten in the same frame: its waiting tiles go with it
+    draw();
+    expect(pads.tiles().pending).toBeGreaterThan(0);
+    pads.forget?.(31 as Entity);
+    expect(pads.tiles().pending).toBe(0);
+    expect(pads.tick?.(t)).toBe(false);
   });
 });

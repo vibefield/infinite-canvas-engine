@@ -86,7 +86,8 @@ export class PrintTiles {
   private cache: TileCache | null = null;
   private readonly tables = new Map<number, { owner: string; table: Int32Array; dirty: boolean }>();
   private t0 = 0;
-  private pendingN = 0;
+  /** Tiles the last frame left waiting, by sheet slot — a pad's own, so a pad forgotten takes its waiting tiles with it (D7). */
+  private readonly pendingBy = new Map<number, number>();
   private starvedN = 0;
   private drawnN = 0;
 
@@ -97,7 +98,7 @@ export class PrintTiles {
   }
 
   /** Tiles still to draw after the last frame (the desk asks for another). */
-  pending(): number { return this.pendingN; }
+  pending(): number { let n = 0; for (const k of this.pendingBy.values()) n += k; return n; }
   /** Tiles drawn since the driver was made (a witness). */
   drawn(): number { return this.drawnN; }
   /** Tiles the last frame wanted and no layer could hold (every one in use by that frame) — a witness. */
@@ -113,7 +114,7 @@ export class PrintTiles {
   /** A new frame: its budget starts now; what it touches is kept from eviction until the next. */
   begin(pass: PrintPass): void {
     this.cacheOf(pass).tick();
-    this.pendingN = 0;
+    this.pendingBy.clear();
     this.starvedN = 0;
     this.t0 = this.now();
   }
@@ -157,7 +158,7 @@ export class PrintTiles {
         // out of time: a stale copy may stand in for a frame; else it waits, its level's fallback showing
         const v = cache.stale(key) ?? MISSING;
         if (T.table[e] !== v) { T.table[e] = v; T.dirty = true; }
-        this.pendingN += 1;
+        this.pendingBy.set(slot, (this.pendingBy.get(slot) ?? 0) + 1);
         continue;
       }
       // every layer in use by this very frame: the tile STARVES (its level's fallback shows) — not pending, so a view that wants more
@@ -224,10 +225,11 @@ export class PrintTiles {
     for (const [, t] of this.tables) if (t.owner === owner && (t.table[e] as number) >= 0) { t.table[e] = MISSING; t.dirty = true; }
   }
 
-  /** A pad gone: its tiles and its tables (by its slots) forgotten. */
+  /** A pad gone: its tiles, its tables and its waiting tiles (by its slots) forgotten. */
   drop(pad: number, slots: readonly number[]): void {
     this.cache?.drop(`${pad}:`);
     this.cache?.drop(`pin:${pad}:`);
+    for (const s of slots) this.pendingBy.delete(s);
     for (const s of slots) { const t = this.tables.get(s); if (t !== undefined) { t.owner = ""; t.table.fill(MISSING); t.dirty = true; } }
   }
 }

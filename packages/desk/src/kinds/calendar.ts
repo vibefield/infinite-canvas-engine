@@ -556,6 +556,9 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     /** The budget's ask (D6): the tile texture is the pass's, fixed — always kept. */
     keeps: () => true,
     tick(now) {
+      // tiles still to draw are a reason for a frame only while a pad DREW since the last tick: a pad culled (the builder resolves
+      // nothing off-screen) or gone leaves its count standing, and a count no frame will ever lower kept the desk awake (D7)
+      const drew = begun;
       begun = false;
       chargeTiles();
       // the months turning (their springs on the frame's clock); tiles still to draw: another frame (the marks' clocks — the
@@ -564,7 +567,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       lastTick = now;
       let turning = false;
       for (const st of pads.values()) if (st.roll.durable !== null && st.pose === undefined && stepRoll(st.roll, st.roll.durable, dt, law, F)) turning = true;
-      const w = woke || turning || (tiles?.pending() ?? 0) > 0;
+      const w = woke || turning || (drew && (tiles?.pending() ?? 0) > 0);
       woke = false;
       return w;
     },
