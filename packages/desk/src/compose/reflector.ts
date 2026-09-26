@@ -35,7 +35,7 @@ import type { ObjectKind } from "../kinds/world";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GroundTheme, Palette } from "../theme";
 import type { Ambient, AmbientState } from "./ambient";
-import type { DeskBuilder, DeskBuilderStats, DeskWakeReason } from "./builder";
+import type { DeskBuilder, DeskBuilderStats, DeskWakeReason, HoldPin } from "./builder";
 
 export interface DeskReflectorOptions {
   readonly world: World;
@@ -86,7 +86,7 @@ export interface DeskReflector {
    * dressing (`lodZoom`), every spring and ghost held where it is (`freeze` — a still of a moving frame), the
    * re-dressing ramp held at its start (`holdRedress`). Each present key is set; the next frame paints.
    */
-  pinBuild(pins: { readonly portals?: boolean; readonly lodZoom?: number | null; readonly freeze?: boolean; readonly holdRedress?: boolean }): void;
+  pinBuild(pins: { readonly portals?: boolean; readonly lodZoom?: number | null; readonly freeze?: boolean; readonly holdRedress?: boolean; readonly hold?: HoldPin | null }): void;
   /** The frame dirty and not yet drawn (a rig's witness). */
   dirty(): boolean;
   redraws(): number;
@@ -125,6 +125,12 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let lodPin: number | undefined;
   let freeze = false;
   let holdRedress = false;
+  /** The hand pinned for a still (D4b). */
+  let holdPin: HoldPin | undefined;
+  /** What the desk copy behind the hand depends on beyond the builder's count and the camera's and viewport's stamps (D4b). */
+  let themeGen = 0;
+  let gridGen = 0;
+  let pinGen = 0;
   const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0 };
   let builderWakes = builder.wakes();
 
@@ -167,9 +173,11 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       // a zoom-through cut: the desk re-dresses over its ramp (the builder keeps the frame live while it runs)
       const rs = w.resourceStamp(NavRedress);
       if (rs !== redressStamp) { if (redressStamp !== -1) { dirty = true; wakes.nav += 1; ambient.touch(now); } redressStamp = rs; }
-      // the pointer moved (a wheel, a down, a move): the ambient stays awake; the hover itself is the builder's dirt
+      // the pointer moved (a wheel, a down, a move): the ambient stays awake; the hover itself is the builder's dirt — but not
+      // while something is in hand (D4b): the desk behind stands still, so its blurred copy is made once and reused
+      const inHand = builder.hand() !== undefined;
       const ps = w.resourceStamp(PointerVersion);
-      if (ps !== pointerStamp) { if (pointerStamp !== -1) ambient.touch(now); pointerStamp = ps; }
+      if (ps !== pointerStamp) { if (pointerStamp !== -1 && !inHand) ambient.touch(now); pointerStamp = ps; }
       if (w.getResource(Camera)?.gesturing === true) ambient.touch(now);
       const ground = opts.ground();
       if (ground === null) return;   // pre-ready: the dirt is kept
@@ -178,7 +186,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       if (cam === undefined || vp === undefined || vp.w <= 0 || vp.h <= 0) return;   // no viewport yet: stay dirty, paint when it exists
       // the ambient's clocks: stepped every tick the ground is here — a frame is wanted while the wind blows or the tilt moves
       const dtMs = info?.dt ?? 16;
-      const amb = ambient.step(dtMs / 1000, now, pointerNdc(vp));
+      // in hand the mat's tilt lets go of the pointer too: the desk behind the hand stands still
+      const amb = ambient.step(dtMs / 1000, now, inHand ? null : pointerNdc(vp));
       if (amb.live) { dirty = true; wakes.ambient += 1; }
       if (!dirty) return;   // IDLE-ZERO: no getCurrentTexture, no submit
       dirty = false;
@@ -186,8 +195,14 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       opts.attach.resize(Math.max(1, Math.round(vp.w * dpr)), Math.max(1, Math.round(vp.h * dpr)));
       const camera = { x: cam.x, y: cam.y, zoom: cam.zoom };
       const built = builder.build(camera, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, grid, looks, {
-        now, mat: amb.frame, portals: portalsOn, freeze, holdRedress, ...(lodPin !== undefined ? { lodZoom: lodPin } : {}),
+        now, mat: amb.frame, portals: portalsOn, freeze, holdRedress, ...(lodPin !== undefined ? { lodZoom: lodPin } : {}), ...(holdPin !== undefined ? { hold: holdPin } : {}),
       });
+      // the hand (D4b): the desk copy's stamp is everything the copy depends on — the builder's desk count (never the held
+      // object's own facts), the camera, the viewport, the theme, the grid, the pins, the mat's clocks and tilt this frame
+      const held = built.held === undefined ? undefined : {
+        ...built.held.inputs,
+        stamp: `${built.held.deskSeq}|${camStamp}|${vpStamp}|${themeGen}|${gridGen}|${pinGen}|${amb.frame === undefined ? "still" : `${amb.frame.time},${amb.frame.goboTime},${amb.frame.noise[0]},${amb.frame.noise[1]},${amb.frame.goboMatrix.join(",")}`}`,
+      };
       // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
       // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)
       const inputs: GroundFrameInputs = {
@@ -202,6 +217,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         ...(built.outgoing !== undefined ? { outgoing: built.outgoing } : {}),
         theme,
         marks: built.marks,
+        ...(held !== undefined ? { held } : {}),
       };
       lastInputs = inputs;
       lastFrame = ground.render(inputs);
@@ -220,16 +236,19 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       looks = looksOf(opts.kinds, palette, theme);
       dirty = true;
       wakes.theme += 1;
+      themeGen += 1;
     },
-    configureGrid(g) { grid = g; dirty = true; wakes.grid += 1; },
-    wake(reason) { dirty = true; wakes[reason] += 1; },
+    configureGrid(g) { grid = g; dirty = true; wakes.grid += 1; gridGen += 1; },
+    wake(reason) { dirty = true; wakes[reason] += 1; if (reason === "pin") pinGen += 1; },
     pinBuild(pins) {
       if (pins.portals !== undefined) portalsOn = pins.portals;
       if (pins.lodZoom !== undefined) lodPin = pins.lodZoom === null ? undefined : pins.lodZoom;
       if (pins.freeze !== undefined) freeze = pins.freeze;
       if (pins.holdRedress !== undefined) holdRedress = pins.holdRedress;
+      if (pins.hold !== undefined) holdPin = pins.hold === null ? undefined : pins.hold;
       dirty = true;
       wakes.pin += 1;
+      pinGen += 1;
     },
     dirty: () => dirty,
     redraws: () => redraws,

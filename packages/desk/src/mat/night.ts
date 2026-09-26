@@ -170,3 +170,16 @@ export function lightValues(l: MatLight): { night: number[]; moon: number[]; rod
     eigengrau: [l.eigengrau[0], l.eigengrau[1], l.eigengrau[2], 0],
   };
 }
+
+/**
+ * A light between two (design-015 §8, D4b — the reading light): the object in hand keeps its DAY light while the mat
+ * stays moonlit, the change riding the carry (`t` 0 = `a`, 1 = `b`); every field lerped, the colours channel-wise.
+ * `nightAppearance` is linear in each of them within a frame, so a lerp of the parameters is an honest in-between.
+ */
+export function mixLight(a: MatLight, b: MatLight, t: number): MatLight {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  const l = (x: number, y: number): number => x + (y - x) * t;
+  const c = (x: RGB, y: RGB): RGB => [l(x[0], y[0]), l(x[1], y[1]), l(x[2], y[2])];
+  return { night: l(a.night, b.night), lux: l(a.lux, b.lux), exposure: l(a.exposure, b.exposure), snow: l(a.snow, b.snow), moon: c(a.moon, b.moon), fill: l(a.fill, b.fill), rod: c(a.rod, b.rod), eigengrau: c(a.eigengrau, b.eigengrau) };
+}

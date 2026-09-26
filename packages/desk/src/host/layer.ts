@@ -32,10 +32,11 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type HeldPoseSlot, type HeldPoseSource, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
-import { createDeskBuilder, type DeskBuilder } from "../compose/builder";
+import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin } from "../compose/builder";
+import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
 import type { SelectionAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes } from "../compose/reflector";
@@ -122,6 +123,8 @@ export interface DeskLayerContext {
   readonly framePick?: FramePickSlot;
   /** The nav geometry seam (design-015 §9, D2b): the desk sets its word on its containers' drawn faces here, clears it at dispose. */
   readonly navGeometry?: NavGeometrySlot;
+  /** The held pose seam (design-015 §8, D4b): the desk publishes where the object in hand is ON SCREEN as it drew it; core's held input maps every pointer through it. */
+  readonly heldPose?: HeldPoseSlot;
   readonly transitions?: { register(adapter: PresentationTransitionAdapter): () => void };
   readonly catalog?: { widgetTypes(): readonly WidgetType[] };
   /** The interaction stack's marquee preview (`stack.marqueeBuffer`, out of the ECS): the vellum the marks draw (D4a). */
@@ -189,6 +192,10 @@ export interface DeskLayerHandle {
   freeze(on: boolean): void;
   /** Hold the re-dressing ramp at its start (the prototype harness's `redressPinned`). */
   holdRedress(on: boolean): void;
+  /** THE HAND PINNED for a still (D4b): the carry amount at `e`, the kind's open motion snapped; `null` unpins. The object itself is picked up through `ops.open`. */
+  pinHold(pin: HoldPin | null): void;
+  /** The object in hand as of the last frame (D4b) — a rig's witness: its carry, its frame on screen, whether settled or flying home. */
+  hand(): HeldBuild | undefined;
   /** THE SEAM's answer for a container under the camera (the live one unless given) — a rig's witness (`DeskBuilder.navFace`). */
   navFace(entity: Entity, cam?: { readonly x: number; readonly y: number; readonly zoom: number }): NavFace | undefined;
   /** The last build's view of a container's inside (a rig's witness). */
@@ -356,6 +363,11 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const navSource = { face: (container: Entity, cam: { readonly x: number; readonly y: number; readonly zoom: number }) => builder.navFace(container, cam) };
     const navGeometry = ctx.navGeometry;
     if (navGeometry !== undefined) navGeometry.current = navSource;
+    // the held pose seam (design-015 §8, D4b): where the object in hand is on screen, as the last frame drew it — the frame the
+    // builder made; nothing while it flies home (the desk is the desk's again)
+    const poseSource: HeldPoseSource = { frame: (e) => { const h = builder.hand(); return h !== undefined && h.entity === e && !h.landing ? h.frame : undefined; } };
+    const heldPose = ctx.heldPose;
+    if (heldPose !== undefined) heldPose.current = poseSource;
     // the ground plane's transition adapter: prepared the moment it is asked — the desk's second slot is built from the world (D2b)
     const detachTransition = ctx.transitions?.register({ id: "@ice/desk", plane: "ground", prepare: () => null }) ?? null;
 
@@ -385,7 +397,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           ownDevice = g.device;
           instrument = instrumentSubmits(g.device);   // before anything can submit: the idle-zero witness counts from boot
           opts.onDevice?.(g.device);
-          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)) });
+          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
           if (disposed || ended) { made.dispose(); return; }
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;
@@ -437,6 +449,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       },
       pinFlux(entity, targets) { builder.pinFlux(entity, targets); compose.wake("pin"); },
       clearFlux() { builder.clearFlux(); compose.wake("pin"); },
+      pinHold: (pin) => compose.pinBuild({ hold: pin }),
+      hand: () => builder.hand(),
       setPortals: (on) => compose.pinBuild({ portals: on }),
       tuneLaw(kind, law) {
         for (const t of types) { const k = objectKindOf(t); if (k?.name === kind) k.tune?.(law); }
@@ -487,6 +501,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         motionQuery?.removeEventListener("change", syncMotion);
         if (framePick !== undefined && framePick.current === pick) framePick.current = null;
         if (navGeometry !== undefined && navGeometry.current === navSource) navGeometry.current = null;
+        if (heldPose !== undefined && heldPose.current === poseSource) heldPose.current = null;
         detachTransition?.();
         compose.dispose();
         builder.dispose();

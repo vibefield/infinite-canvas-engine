@@ -164,6 +164,8 @@ export type GroundLayerFactory = (ctx: {
   readonly framePick: InteractionStack["framePick"];
   /** The interaction stack's nav geometry slot (design-015 §9, D2b): the renderer sets its word on its containers' drawn faces here at mount, clears it at dispose. */
   readonly navGeometry: InteractionStack["navGeometry"];
+  /** The interaction stack's held pose slot (design-015 §8, D4b): the renderer publishes where the object in hand is on screen; core maps every pointer through it while something is held. */
+  readonly heldPose: InteractionStack["heldPose"];
   /** The marquee's preview (out of the ECS, design-003 §5.7): a layer that draws the selection's chrome draws the vellum from it (the desk's marks, design-015 D4a). */
   readonly readMarquee: () => InteractionStack["marqueeBuffer"];
 }) => GroundLayerHandle;
@@ -317,6 +319,7 @@ export function InfiniteCanvas({
         hosts: { contentOf: (e) => domWidgets?.hostFor(e), hostOf: (e) => domWidgets?.hostElementFor(e) },
         framePick: stack.framePick,
         navGeometry: stack.navGeometry,
+        heldPose: stack.heldPose,
         readMarquee: () => stack.marqueeBuffer,
       }) ?? null;
     groundRef.current = groundLayer;

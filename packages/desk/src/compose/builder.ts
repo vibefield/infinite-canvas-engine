@@ -58,6 +58,9 @@ import {
   defineQuery,
   departedCameraOf,
   Grab,
+  Held,
+  HeldView,
+  heldEntity,
   LocalPointer,
   Locked,
   type MarqueeBuffer,
@@ -83,9 +86,11 @@ import {
   type WidgetType,
   type World,
 } from "@ice/core";
-import type { OutgoingInputs, PortalInputs, SlotObject } from "../ground";
-import { FLUX_REST, type InsideContext, type KindLocal, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectFrame, rectOf } from "../kinds/world";
+import type { HeldFrameInputs, OutgoingInputs, PortalInputs, SlotObject } from "../ground";
+import { carryOf, HELD_USER_REST, heldCamera, heldFrame, heldPose, HOLD, homePose, isNarrow, readingTarget } from "../hold/pose";
+import { FLUX_REST, type InsideContext, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectFrame, rectOf } from "../kinds/world";
 import type { MarksInput } from "../marks/layout";
+import { DAY_LIGHT, mixLight } from "../mat/night";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
 import type { MatFrame, SlotLight } from "../mat/layout";
@@ -162,6 +167,27 @@ export interface BuildOptions {
   readonly freeze?: boolean;
   /** Hold the re-dressing ramp at its start (the prototype harness's `redressPinned`). */
   readonly holdRedress?: boolean;
+  /** THE HAND PINNED (D4b — a still of the opening): the carry amount held at `e`, the kind's open motion snapped to `open` (default: open past 42 %). */
+  readonly hold?: HoldPin;
+}
+
+export interface HoldPin { readonly e: number; readonly open?: boolean }
+
+/**
+ * The object IN HAND as the last build made it (design-015 §8; D4b): the entity, whether the pickup has settled and whether
+ * it is flying home (the fact already gone), the frame the pose seam publishes (core's `HeldScreenFrame`, CSS px), what the
+ * ground draws (`GroundFrameInputs.held` less its `stamp` — the reflector adds the camera's and the viewport's stamps), and the
+ * desk's own change count `deskSeq` — everything the desk copy depends on, never the held object's own facts.
+ */
+export interface HeldBuild {
+  readonly entity: Entity;
+  /** The carry amount this frame, 0 on the desk … 1 in hand (also `inputs.e` — here for the witnesses). */
+  readonly e: number;
+  readonly settled: boolean;
+  readonly landing: boolean;
+  readonly frame: { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly s: number; readonly settled: boolean };
+  readonly inputs: Omit<HeldFrameInputs, "stamp">;
+  readonly deskSeq: number;
 }
 
 export interface BuiltDesk {
@@ -181,6 +207,8 @@ export interface BuiltDesk {
   readonly outgoing?: OutgoingInputs;
   /** The desk's chrome this frame (stratum 5 — `GroundFrameInputs.marks`, D4a): the root slot's, the current frame's desk. */
   readonly marks: MarksInput;
+  /** The object in hand, or flying home (D4b): out of `objects` and of the marks, drawn as a slot of its own over the desk out of focus. */
+  readonly held?: HeldBuild;
   readonly stats: DeskBuilderStats;
 }
 
@@ -241,6 +269,8 @@ export interface DeskBuilder {
    * meets the tape makes it give (D4a). The next `changed()` reports it.
    */
   meetTape(e: Entity): void;
+  /** The object in hand as of the last build (D4b) — what the pose seam answers from; undefined = nothing held or flying home. */
+  hand(): HeldBuild | undefined;
   stats(): DeskBuilderStats;
   dispose(): void;
 }
@@ -390,10 +420,29 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   for (const k of kindsSeen) { readsC.push(...(k.reads?.components ?? [])); readsT.push(...(k.reads?.tags ?? [])); }
   const marks = createMarksCollector(world, opts.marquee !== undefined ? { marquee: opts.marquee } : {});
   const collector = world.changes.collect({
-    components: [Position, Size, PrefabId, Grab, ...propComponents(opts.objects), ...readsC],
-    tags: [Selected, Active, Container, Locked, WidgetEquipped, Retained, ...readsT],
+    components: [Position, Size, PrefabId, Grab, HeldView, ...propComponents(opts.objects), ...readsC],
+    tags: [Selected, Active, Container, Locked, WidgetEquipped, Retained, Held, ...readsT],
     coarse: false,
   });
+  /**
+   * THE HAND (design-015 §8; D4b): the one object in hand or flying home — its clock (`p` over 560 ms up, 440 ms home after a
+   * 140 ms close lead), its carry `e` (the island ease of `p`; home from `e0` where the put-down caught it), and the kind's
+   * openness as of the last build (the flight home starts once it is under 0.35, the landing once under 0.02). Flux — the FACT
+   * is core's `Held`; this outlives it by the flight home.
+   */
+  let hand: { entity: Entity; dir: 1 | -1; p: number; e: number; e0: number; closeT: number; openness: number } | null = null;
+  let lastHand: HeldBuild | undefined;
+  /** The desk's change count — everything the blurred copy behind the hand depends on; a change to the held object alone never bumps it. */
+  let deskSeq = 0;
+  /** The pickup's progress at a carry amount — the island ease inverted by bisection (a put-down caught mid-flight, a pinned still). */
+  const inverseCarry = (e: number): number => {
+    if (e <= 0) return 0;
+    if (e >= 1) return 1;
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (carryOf(mid) < e) lo = mid; else hi = mid; }
+    return (lo + hi) / 2;
+  };
   // The comparator's reader: the stratum from the cache (stamped at equip, cached at first sight), the rest the world's.
   const reader: StackOrderReader = {
     get<T>(e: Entity, c: Component<T>): T | undefined {
@@ -402,8 +451,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     },
   };
 
-  /** The local mouse pointer's exact hit, if it is one of ours. */
+  /** The local mouse pointer's exact hit, if it is one of ours — none while something is in hand (the desk behind is inert, D4b). */
   const hoverTarget = (): Entity | undefined => {
+    if (hand !== null) return undefined;
     if (mouse === undefined || !world.isAlive(mouse)) {
       mouse = undefined;
       world.query(localPointersQ).each((b) => { for (const r of b) { const p = b.entity(r); if (world.read(p, Pointer).device === "mouse") mouse = p; } });
@@ -633,6 +683,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           st.seen = seq;
           st.slot = slot;
           st.next = slot === "root" ? members[i + 1] : undefined;
+          // the object in hand (or flying home) is drawn as a slot of its own over the desk, never among the desk's rows nor its marks (D4b)
+          if (hand !== null && e === hand.entity && slot === "root") continue;
           const r = st.rect;
           const hx = r.w / 2 + st.kind.reach;
           const hy = r.h / 2 + st.kind.reach;
@@ -691,6 +743,80 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           else redressOut = { frame: redress.frame, from: redress.from, u };
         }
       }
+
+      // THE HAND (design-015 §8; D4b): the fact is `Held` — picked up, the clock starts (or resumes from where a put-down caught it);
+      // let go, it flies home from where it is. A harness pins the carry for a still. The object is resolved ONCE, in its own slot
+      // under the pose's camera (its extent to the reading size, no dapple, the day's light by night as the carry rises), never
+      // among the desk's rows; landed — home and shut — it is the desk's again this very frame, and the brackets lock back on.
+      const heldNow = heldEntity(world);
+      if (heldNow !== undefined) {
+        if (hand === null || hand.entity !== heldNow) hand = { entity: heldNow, dir: 1, p: 0, e: 0, e0: 0, closeT: 0, openness: 0 };
+        else if (hand.dir < 0) { hand.dir = 1; hand.p = inverseCarry(hand.e); hand.closeT = 0; }
+      } else if (hand !== null && hand.dir > 0) { hand.dir = -1; hand.p = 0; hand.e0 = hand.e; hand.closeT = 0; }
+      let heldBuild: HeldBuild | undefined;
+      if (hand !== null) {
+        const hst = world.isAlive(hand.entity) ? stateOf(hand.entity) : undefined;
+        const binding = hst?.kind.open;
+        if (hst === undefined || binding === undefined) hand = null;   // gone (deleted, undone) or no opening after all: nothing is in the hand
+        else {
+          const pin = bopts.hold;
+          const hdt = bopts.freeze === true ? 0 : dt0;
+          let openTarget: boolean;
+          if (pin !== undefined) { hand.dir = 1; hand.e = Math.min(Math.max(pin.e, 0), 1); hand.p = inverseCarry(hand.e); openTarget = pin.open ?? hand.p >= HOLD.openAt; }
+          else if (hand.dir > 0) { hand.p = Math.min(1, hand.p + hdt / (HOLD.inMs / 1000)); hand.e = carryOf(hand.p); openTarget = hand.p >= HOLD.openAt; }
+          else {
+            // putting it down: it shuts first (the lead, or once the cover is under 0.35), then flies home and lands softly
+            hand.closeT += hdt;
+            if (hand.closeT >= HOLD.closeLead || hand.openness < 0.35) { hand.p = Math.min(1, hand.p + hdt / (HOLD.outMs / 1000)); hand.e = (1 - carryOf(hand.p)) * hand.e0; }
+            openTarget = false;
+          }
+          if (hand.dir < 0 && hand.p >= 1 && hand.openness < 0.02) hand = null;   // LANDED
+          else {
+            const extentLocal = binding.extent({ rect: hst.rect, props: hst.props });
+            const angle = numberProp(hst.props, "angle", 0);
+            // the extent turned with the object about its centre — where it lies on the desk (the home pose); in hand the turn lets go
+            const ox = extentLocal.cx - hst.rect.cx;
+            const oy = extentLocal.cy - hst.rect.cy;
+            const ca = Math.cos(angle);
+            const sa = Math.sin(angle);
+            const extentWorld: ObjectRect = { cx: hst.rect.cx + ca * ox - sa * oy, cy: hst.rect.cy + sa * ox + ca * oy, w: extentLocal.w, h: extentLocal.h };
+            const target = readingTarget(extentLocal, vpSize, binding.spread === true);
+            const user = world.get(hand.entity, HeldView) ?? HELD_USER_REST;
+            const pose = heldPose(homePose(extentWorld, angle, cam), target, user, hand.e);
+            const { cam: heldCam, grow } = heldCamera(pose, hst.rect, extentLocal, cam.zoom, binding.pose === "eye", vpSize);
+            const heldView: ObjectContext["view"] = { camX: heldCam.x, camY: heldCam.y, zoom: heldCam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
+            const heldGrid: GridConfig = { ...frameGrid, mat: { ...frameGrid.mat, gobo: { ...frameGrid.mat.gobo, opacity: 0 } } };   // dapple 0 in hand
+            const base = contextOf(hand.entity, hst, heldView, heldGrid, lampOf(heldGrid.mat.plane), false);
+            const props = typeof hst.props.angle === "number" ? { ...hst.props, angle: pose.angle } : hst.props;
+            const snap = pin !== undefined || bopts.freeze === true;
+            const hctx: ObjectContext = { ...base, props, held: { e: hand.e, open: openTarget, grow, snap } };
+            const G = hst.kind.resolve(hctx);
+            const R = hst.kind.record(G, hctx);
+            hst.geometry = G;
+            hst.record = R;
+            hst.inside = null;
+            hst.slot = "root";
+            hst.seen = seq;
+            hand.openness = binding.openness?.(hctx) ?? 0;
+            const settledNow = pin !== undefined ? hand.e >= 1 : hand.dir > 0 && hand.p >= 1;
+            const coverMoving = openTarget ? hand.openness < 1 - 1e-3 : hand.openness > 1e-3;
+            if (pin === undefined && (hand.dir < 0 || hand.p < 1 || coverMoving)) live = true;
+            const night = theme.name === "dark";
+            heldBuild = {
+              entity: hand.entity, e: hand.e, settled: settledNow, landing: hand.dir < 0,
+              frame: { ...heldFrame(pose, extentLocal, target.single), settled: settledNow },
+              inputs: {
+                object: { kind: hst.kind.name, record: R }, view: heldView, grid: heldGrid, e: hand.e,
+                blur: isNarrow(vpSize) ? HOLD.blurPhone : HOLD.blur, dim: HOLD.dim * hand.e,
+                filter: night ? { saturate: 1 - (1 - HOLD.light.saturate) * hand.e, brightness: 1 - (1 - HOLD.light.brightness) * hand.e } : { saturate: 1, brightness: 1 },
+                light: night ? mixLight(theme.matLight, DAY_LIGHT, hand.e) : theme.matLight,
+              },
+              deskSeq,
+            };
+          }
+        }
+      }
+      lastHand = heldBuild;
 
       // membership: every object Active in the frame, its facts refreshed where the journal said, in two tiers — the carried set last
       const tiers: [Entity[], Entity[]] = [[], []];
@@ -797,6 +923,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         ...(light !== undefined ? { light } : {}),
         ...(outgoing !== undefined ? { outgoing } : {}),
         marks: marked,
+        ...(heldBuild !== undefined ? { held: heldBuild } : {}),
         stats,
       };
     },
@@ -804,14 +931,19 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     changed() {
       if (disposed) return false;
       const delta = collector.drain();
+      const wokeNow = woke;
       let any = woke;
       woke = false;
-      if (delta.reset) { wakes.reset += 1; dirtyAll = true; kids.clear(); any = true; }
+      // the desk copy behind the hand (D4b) stands while the only change is the held object's own (its HeldView, its facts): every
+      // other dirt below bumps `deskSeq`
+      const heldE = hand?.entity ?? heldEntity(world);
+      let deskDirt = wokeNow;
+      if (delta.reset) { wakes.reset += 1; dirtyAll = true; kids.clear(); any = true; deskDirt = true; }
       if (delta.changed.length > 0 || delta.coarse.length > 0) {
         wakes.world += 1;
         any = true;
-        for (const e of delta.changed) { const st = states.get(e); if (st !== undefined) st.dirty = true; }
-        if (delta.coarse.length > 0) dirtyAll = true;
+        for (const e of delta.changed) { const st = states.get(e); if (st !== undefined) st.dirty = true; if (e !== heldE) deskDirt = true; }
+        if (delta.coarse.length > 0) { dirtyAll = true; deskDirt = true; }
       }
       if (delta.removed.length > 0) {
         kids.clear();
@@ -825,12 +957,14 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           assets.delete(e);
           wakes.removed += 1;
           any = true;
+          deskDirt = true;
         }
       }
-      if (order.stale()) { wakes.order += 1; any = true; }
+      if (order.stale()) { wakes.order += 1; any = true; deskDirt = true; }
       const h = hoverTarget();
-      if (h !== lastHover) { lastHover = h; wakes.hover += 1; any = true; }
-      if (marks.changed()) { wakes.marks += 1; any = true; }
+      if (h !== lastHover) { lastHover = h; wakes.hover += 1; any = true; deskDirt = true; }
+      if (marks.changed()) { wakes.marks += 1; any = true; deskDirt = true; }
+      if (deskDirt) deskSeq += 1;
       return any;
     },
     wakes: () => ({ ...wakes }),
@@ -858,6 +992,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     reach: () => reach,
     anchor: () => marks.anchor(),
     meetTape: (e) => marks.refused(e),
+    hand: () => lastHand,
     stats: () => stats,
     dispose() {
       disposed = true;

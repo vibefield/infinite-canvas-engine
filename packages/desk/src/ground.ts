@@ -43,8 +43,11 @@
 
 import type { Surface } from "./engine/device";
 import { beginPass } from "./engine/target";
+import { HoldPass } from "./hold/focus";
+import type { HoldShaders } from "./hold/shaders";
 import { type KindPass, type KindProgram, type SlotContext, STRATA, type StratumName } from "./kind";
-import { boxOf } from "./lattice/lod";
+import { boxOf, type View } from "./lattice/lod";
+import type { MatLight } from "./mat/night";
 import { DEFAULT_GRID, dressGrid, type GridConfig, type GridStats, gridStats, type SlotFrame } from "./mat/grid";
 import { type SlotLight, STILL_MAT_FRAME } from "./mat/layout";
 import { MatPass } from "./mat/mat-pass";
@@ -87,6 +90,11 @@ export interface GroundOptions {
    * a ground that draws no chrome.
    */
   readonly marks?: MarksShaders;
+  /**
+   * The hand (hold/focus.ts; design-015 §8, D4b): the focus behind an object in hand and the object over it, when a
+   * frame names its `held`. Absent = a ground that never picks anything up (a frame's `held` is then ignored).
+   */
+  readonly hold?: HoldShaders;
 }
 
 /** A layer a host rendered first, laid on the mat inside the ground's pass (it sets its own scissor; the ground restores the slot's). */
@@ -145,6 +153,26 @@ export interface OutgoingInputs extends SlotInputs {
   readonly at?: number;
 }
 
+/**
+ * THE HAND for one frame (design-015 §8; D4b — the builder makes it, the ground draws it): the one object in hand as a slot
+ * of its own — its record, the pose's CAMERA (`view`) and its grid (no dapple in hand) — drawn by its kind's own pass over the
+ * desk out of focus. `e` is the carry amount (the focus follows it); `blur` the radius the ONE blur is made at (CSS px: 14, a
+ * phone's 10); `dim` the desk's dim behind (already by the carry); `filter` the reading light on the hand (1, 1 by day);
+ * `light` the hand's own light (the day's mixed in by night); `stamp` the desk copy's identity — while it stands, the blurred
+ * desk is reused (rendered ONCE per settled state, the held object alone redrawing).
+ */
+export interface HeldFrameInputs {
+  readonly object: SlotObject;
+  readonly view: View & { readonly dpr: number };
+  readonly grid: GridConfig;
+  readonly e: number;
+  readonly blur: number;
+  readonly dim: number;
+  readonly filter: { readonly saturate: number; readonly brightness: number };
+  readonly light: MatLight;
+  readonly stamp: string;
+}
+
 export interface GroundFrameInputs extends SlotInputs {
   /** The theme in force (`theme.ts`): the clear colour, the selection's colour and the mat's light (the Sun or the Moon) come from it. */
   readonly theme: GroundTheme;
@@ -152,6 +180,8 @@ export interface GroundFrameInputs extends SlotInputs {
   readonly outgoing?: OutgoingInputs;
   /** The desk's marks this frame, in screen px (marks/layout.ts) — stratum 5, over everything; absent = none. */
   readonly marks?: MarksInput;
+  /** The object in hand (design-015 §8, D4b) while one is held or flying home; absent = the desk as it is. At `e` 0 the frame is the rest frame, byte for byte. */
+  readonly held?: HeldFrameInputs;
 }
 
 export interface GroundStats extends GridStats {
@@ -181,6 +211,8 @@ export interface SlotSet {
 export interface DrawSlot {
   readonly mat: MatPass;
   readonly present?: Presentation | undefined;
+  /** BARE: no mat is drawn — the hand's slot (D4b) lays its one object over a frame that is already there. */
+  readonly bare?: boolean | undefined;
   /** Layers laid on the mat before everything (the calendar's). */
   readonly underlays?: readonly Underlay[] | undefined;
   /** The slot's kinds, prepared (its `SlotSet.kinds`): an object's kind names its stratum and its pass. */
@@ -254,7 +286,7 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   const [x, y, w, h] = scissorOf(slot.present, dpr, size);
   if (w === 0 || h === 0) return false;   // the portal is off screen: nothing to shade
   pass.setScissorRect(x, y, w, h);
-  slot.mat.draw(pass);
+  if (slot.bare !== true) slot.mat.draw(pass);
   // the layers a host laid on the mat (the desk calendar, CALENDAR.md), each setting its own scissor
   if (slot.underlays?.length) { for (const u of slot.underlays) u.draw(pass); pass.setScissorRect(x, y, w, h); }
   // the live insides by the object each lies in (two on one object draw in the order they came)
@@ -447,9 +479,13 @@ export class Ground {
   grid: GridConfig = DEFAULT_GRID;
   /** The desk's chrome — stratum 5 (D4a); null when the options named no marks shaders. */
   readonly marks: MarksPass | null;
+  /** The hand — the focus behind an object in hand and the object over it (D4b); null when the options named no hold shaders. */
+  readonly hold: HoldPass | null;
+  /** The desk copy's cache (D4b): the stamp it was made for and the stats of that frame. */
+  private readonly heldCache: HeldCache = { stamp: null, stats: null };
 
-  private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null) {
-    this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks;
+  private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null, hold: HoldPass | null) {
+    this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks; this.hold = hold;
     this.pool = new SlotPool(root);
   }
 
@@ -457,7 +493,11 @@ export class Ground {
     const surf = opts.surface;
     const mat = await MatPass.create(opts.device, surf.format, opts.mat);
     const root = await createSlotSet(opts.device, surf.format, mat, opts.kinds);
-    return new Ground(opts.device, surf, root, opts.marks === undefined ? null : await MarksPass.create(opts.device, surf.format, opts.marks, mat));
+    const [marks, hold] = await Promise.all([
+      opts.marks === undefined ? null : MarksPass.create(opts.device, surf.format, opts.marks, mat),
+      opts.hold === undefined ? null : HoldPass.create(opts.device, surf.format, opts.hold),
+    ]);
+    return new Ground(opts.device, surf, root, marks, hold);
   }
 
   /** The root's pass of the kind registered as `name` (undefined if none) — a host reaches its kind's own API through it: the note's ink pages, the whiteboard's rasters. */
@@ -468,6 +508,9 @@ export class Ground {
 
   /** Render one frame now. Synchronous submit; the caller owns the cadence. */
   render(inputs: GroundFrameInputs): GroundStats {
+    // the hand (D4b): at a carry above 0 the frame is the desk out of focus with the held object over it; at 0 it is the rest frame
+    const held = inputs.held;
+    if (held !== undefined && held.e > 0 && this.hold !== null) return renderHeldFrame(this.device, this.hold, this.root, this.pool, this.grid, this.surface, inputs, held, this.heldCache);
     const encoder = this.device.createCommandEncoder({ label: "ground" });
     const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid);
     const marked = inputs.marks !== undefined && this.marks !== null ? this.marks.prepare(inputs.marks) : 0;
@@ -482,5 +525,53 @@ export class Ground {
   }
 
   /** The pool's slots, then the root's kinds in reverse registration order, then the mat. */
-  dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.mat.dispose(); }
+  dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.mat.dispose(); }
+}
+
+/** The desk copy's cache between held frames (D4b): the `stamp` it was made for (null: none yet) and the stats of that frame. */
+export interface HeldCache { stamp: string | null; stats: GroundStats | null }
+
+/** Where a held frame goes: the swap chain's view and size (the ground's surface, or the oracle's target dressed as one). */
+export interface HeldInto { view(): GPUTextureView; size(): { readonly w: number; readonly h: number } }
+
+/**
+ * A HELD FRAME (design-015 §8; D4b) — shared by `Ground.render` and the Node oracle so both hosts draw it through one code path:
+ *  1. the DESK COPY, only when its `stamp` moved: the frame WITHOUT the held object (the builder left it out), no marks, prepared
+ *     and drawn at half the dpr into the hold pass's half-size target, then blurred — its own encoder, SUBMITTED FIRST: the root's
+ *     passes are about to be prepared again for the hand, and a queue write lands before every later submit, never an earlier one;
+ *  2. the HAND: the one object under the pose's camera, its kind's own pass into a transparent full-size target (no mat — a bare
+ *     slot), the hand's light (the day's by night, as the carry rises);
+ *  3. the FRAME: the desk out of focus (the sharp copy mixed toward the blurred one by the carry, dimmed), then the hand over it
+ *     through the reading light. Two fullscreen draws; the marks stay quiet (the builder hands none).
+ * Returns the desk copy's stats (the frame's objects behind the hand).
+ */
+export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet, pool: SlotPool, grid: GridConfig, into: HeldInto, inputs: GroundFrameInputs, held: HeldFrameInputs, cache: HeldCache): GroundStats {
+  const size = into.size();
+  const dpr = inputs.view.dpr;
+  const bg = inputs.theme.canvasBg;
+  const remade = hold.fit(size.w, size.h);
+  if (remade || cache.stamp !== held.stamp) {
+    cache.stamp = held.stamp;
+    const encoder = device.createCommandEncoder({ label: "hold/copy" });
+    const { held: _held, marks: _marks, ...rest } = inputs;
+    const copy: GroundFrameInputs = { ...rest, view: { ...inputs.view, dpr: dpr / 2 } };
+    const prepared = prepareFrame(encoder, root, pool, copy, grid);
+    const pass = beginPass(encoder, hold.desk.view, [bg[0], bg[1], bg[2], 1], "hold/copy");
+    const drawn = drawFrame(pass, { w: hold.desk.width, h: hold.desk.height }, dpr / 2, prepared.incoming, prepared.outgoing);
+    pass.end();
+    hold.blur(encoder, (held.blur * dpr) / 2);
+    device.queue.submit([encoder.finish()]);
+    cache.stats = { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals };
+  }
+  const encoder = device.createCommandEncoder({ label: "hold" });
+  const handInputs: GroundFrameInputs = { view: held.view, grid: held.grid, objects: [held.object], theme: { ...inputs.theme, matLight: held.light } };
+  const hand = prepareFrame(encoder, root, pool, handInputs, held.grid);
+  const handPass = beginPass(encoder, hold.hand.view, [0, 0, 0, 0], "hold/hand");
+  drawSlot(handPass, size, dpr, { ...hand.incoming, bare: true });
+  handPass.end();
+  const pass = beginPass(encoder, into.view(), [bg[0], bg[1], bg[2], 1], "hold");
+  hold.composite(pass, { e: held.e, dim: held.dim, saturate: held.filter.saturate, brightness: held.filter.brightness });
+  pass.end();
+  device.queue.submit([encoder.finish()]);
+  return cache.stats ?? { k0: 0, fade: 0, wind: false, kinds: hand.kinds, outgoing: null, portals: 0 };
 }
