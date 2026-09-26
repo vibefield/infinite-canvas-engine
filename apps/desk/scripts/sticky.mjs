@@ -58,6 +58,9 @@ try {
   for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
   const front = () => tab.send("Page.bringToFront");
   await front();
+  // the witness is the RENDERER's frame (rig:world's rule): the screen-space selection menu (DOM over the canvas — D4a) steps aside
+  // while a note is written and comes back 200 ms after on its own clock, so a capture would catch it at any point of its fade
+  await tab.evaluate("document.head.insertAdjacentHTML('beforeend', '<style>[data-ice-selection-menu]{display:none!important}</style>')", { timeoutMs: 20000 });
   const q = (js) => tab.evaluate(js, { timeoutMs: 20000 });
   const settle = () => tab.evaluate("window.__desk.settle(4000)", { awaitPromise: true, timeoutMs: 15000 });
   const mouse = (type, x, y, extra = {}) => tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, ...extra });
