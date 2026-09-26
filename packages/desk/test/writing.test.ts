@@ -53,10 +53,10 @@ function fakePages(layers = 4) {
   return { pages, shelves, writes, resets: () => resets };
 }
 
-function desk(opts: { text?: TextRaster | undefined; layers?: number } = {}) {
+function desk(opts: { text?: TextRaster | undefined; layers?: number; drawn?: (e: Entity) => number | undefined } = {}) {
   const t = fakeText();
   const p = fakePages(opts.layers);
-  const w = createWriting({ pages: () => p.pages, text: "text" in opts ? opts.text : t.text });
+  const w = createWriting({ pages: () => p.pages, text: "text" in opts ? opts.text : t.text, ...(opts.drawn !== undefined ? { drawn: opts.drawn } : {}) });
   let now = 0;
   /** One frame: the tick, then every note drawn in order. */
   const frame = (notes: { e: Entity; cx: number; cy: number; text: string; seeds?: string; seed?: number; w?: number }[], view = VIEW, dt = 16) => {
@@ -241,6 +241,30 @@ describe("the writing · the pen and the caret (flux)", () => {
     expect(frame([n]).want).toBe(false);
     w.wrote(E(1), undefined, 200);            // a paste arrives whole: no wipe
     expect(frame([n]).out[0]?.wipe).toBeUndefined();
+  });
+
+  it("a wipe on a note NOT drawn again (panned off): it is let go when its time is up and asks nothing more — the builder's word, when given, asks nothing at all (law #7, D7)", () => {
+    const n = { e: E(1), cx: 300, cy: 250, text: "hi" };
+    // no word from a builder: the wipe's own 110 ms and one frame to draw it done, then quiet — though the note is never drawn again
+    const bare = desk();
+    bare.frame([n]);
+    bare.w.wrote(E(1), 1, 16);
+    const wants: boolean[] = [];
+    for (let i = 0; i < 12; i++) wants.push(bare.frame([]).want);   // 192 ms of frames that draw nothing
+    expect(wants.slice(0, 7).every((x) => x)).toBe(true);
+    expect(wants.slice(7)).toEqual([false, false, false, false, false]);
+    expect(bare.w.wipeOf(E(1))).toBeUndefined();
+    // the builder's word: the note culled while its wipe runs — no frame is asked for it
+    let shown = true;
+    const cut = desk({ drawn: () => (shown ? 0 : undefined) });
+    cut.frame([n]);
+    cut.w.wrote(E(1), 1, 16);
+    shown = false;
+    expect(cut.frame([]).want).toBe(true);    // the write itself: one frame (its text moved)
+    expect(cut.frame([]).want).toBe(false);   // …and none for its wipe, still running (32 of 110 ms)
+    expect(cut.w.wipeOf(E(1))).toBeDefined();
+    for (let i = 0; i < 8; i++) cut.frame([]);
+    expect(cut.w.wipeOf(E(1))).toBeUndefined();
   });
 
   it("the caret stands before its glyph and blinks every 530 ms: a frame wanted at each flip, none between", () => {

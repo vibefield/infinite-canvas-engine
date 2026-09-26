@@ -254,7 +254,13 @@ export function createWriting(opts: WritingOptions): Writing {
       let want = dirty;
       dirty = false;
       if (text !== undefined && text.version() !== seenVersion) { seenVersion = text.version(); want = true; }
-      if (wipes.size > 0) want = true;
+      // a wipe runs on the clock whether or not its note is drawn (D7): a frame for it while it runs — and once as its time is up, to
+      // draw it done — only for a note on screen (the builder's word, when it gives one); a note panned off or never drawn again
+      // asked a frame every tick forever, its wipe let go only by a draw that never came
+      for (const [e, wp] of wipes) {
+        if (t - wp.t0 >= wipeMs) wipes.delete(e);
+        if (drawn === undefined || drawn(e) !== undefined) want = true;
+      }
       const phase = focus === undefined ? undefined : phaseAt(t);
       if (phase !== lastPhase) { lastPhase = phase; want = true; }
       return want;
