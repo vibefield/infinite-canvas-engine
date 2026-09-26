@@ -357,6 +357,28 @@ try {
   await settle();
   const kept = await entity(c);
   check(kept.parent !== m && kept.active && kept.cx > 312 && kept.cx < 888, `with ⌥ held the note stays on the desk, over the face (${kept.cx.toFixed(0)}, ${kept.cy.toFixed(0)})`);
+  // ⌥ at the drag's START, let go of before the drop, leaves a copy where the note lay AND sends the note in — one transaction,
+  // one ⌘Z undoes both (D4a × D2b, the recorded design; core 2026-09-26: the consume path honours `LeavesCopy`). Then a second
+  // ⌘Z takes the spawn back, so the desk is as the rows above left it.
+  const d = await q("window.__desk.spawn('desk.note', { seed: 5 }, { x: 1000, y: 650 })");
+  await settle();
+  const before8 = new Set((await entities()).map((e) => e.id));
+  await mouse("mouseMoved", 1000, 650); await mouse("mousePressed", 1000, 650, { modifiers: 1 });
+  for (let i = 1; i <= 8; i++) { await mouse("mouseMoved", 1000 - (400 * i) / 8, 650 - (90 * i) / 8, i <= 2 ? { modifiers: 1 } : {}); await sleep(16); }
+  await sleep(40);
+  await mouse("mouseReleased", 600, 560);
+  await settle();
+  const sent = await entity(d);
+  const copies8 = (await entities()).filter((e) => !before8.has(e.id));
+  const copy8 = copies8[0];
+  check(sent.parent === m && copies8.length === 1 && copy8.parent !== m && copy8.active && near(copy8.cx, 1000) && near(copy8.cy, 650), `⌥ at the drag's start, let go of before the drop: the note went into the mat (parent ${sent.parent === m ? "the mat" : sent.parent}) and a copy stays where it lay (${copy8 ? `${copy8.cx.toFixed(1)}, ${copy8.cy.toFixed(1)}` : "none"})`);
+  await key("z", "KeyZ", 90, META);
+  await settle();
+  const back8 = await entity(d);
+  const left8 = (await entities()).filter((e) => !before8.has(e.id)).length;
+  check(left8 === 0 && back8.parent !== m && back8.active && near(back8.cx, 1000) && near(back8.cy, 650), `one ⌘Z undoes both: no copy left (${left8}), the note back on the desk where it lay (${back8.cx.toFixed(1)}, ${back8.cy.toFixed(1)})`);
+  await key("z", "KeyZ", 90, META);
+  await settle();
 
   // --- 8c. `t` gives the selected mini mat the next vinyl (its inside is that vinyl too)
   await click(600, 336);   // the mat's top border: the frame part selects it

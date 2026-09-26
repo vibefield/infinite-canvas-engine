@@ -457,6 +457,13 @@ export function createSelectMoveBehaviors(
               }
               writes.push({ entity: w, component: Position, value: slot });
               reparents.push({ entity: w, container });
+              // ⌥ at the drag's start leaves a copy where it lay on THIS desk even when the original goes in (2026-09-26 —
+              // the recorded D4a × D2b design), in the consume's one transaction. The original has left this frame, so the
+              // copy takes its lifted place, on top ("last"): `{ before: w }` would name a sibling that is no longer here.
+              if (ctx.hasTag(rec, LeavesCopy)) {
+                const copy = copyOf(ctx, w, g);
+                if (copy !== undefined) creates.push({ ...copy, order: "last" });
+              }
             }
             if (writes.length > 0 || creates.length > 0) {
               const accepted = sink.commit({

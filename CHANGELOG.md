@@ -431,6 +431,15 @@ there.
   after the drop nothing is selected, an arrow key nudges nothing inside, and ⌫ deletes nothing there. On
   the pre-fix desk, the selection still held the note and the arrow moved it 1 px inside the mat; ⌫ was
   already safe, because `deleteSelection` filters by membership.
+- **A drop into a container now honours ⌥ at the drag's start.** D4a's ⌥ latches `LeavesCopy` on the
+  recognizer, and the plain move's release commits a copy at the origin; the consume path ignored it. So ⌥ at
+  the start, released before the drop, sent the object into the mini mat and left no copy. Under the recorded
+  (provisional) design, the consume now does both in its ONE transaction: the original goes inside, and a
+  copy stays at the origin on this desk, in the original's lifted place on top (`order: "last"`, since
+  `{ before: original }` would name a sibling that is no longer in the frame). One ⌘Z undoes both. ⌥ held
+  throughout still keeps the moved object out and leaves the copy. Held by `consume-copy.test.ts` (all four ⌥
+  combinations; the start-only row is red on the pre-fix source) and `rig:interact` §8b (the copy at the
+  origin and the note inside; one ⌘Z removes the copy and brings the note back).
 
 ## [0.13.0] — 2026-09-07
 
