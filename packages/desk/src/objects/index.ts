@@ -24,7 +24,7 @@ export { createPhotoCarry, type PhotoCarry, type PhotoCarryOptions, TWIST_PER_WH
 export { type BoardPen, type BoardPenOptions, createBoardPen } from "./pen";
 // the notebook in hand: its pen and its leaves (D3t-b)
 export { createNotebookHand, type NotebookHand, type NotebookHandOptions } from "./leaf";
-export { addStroke, BoardStroke, boardOps, decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, type MarkerInk, meanSpeed, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, strokeSeed, type StrokeSpec } from "../board/data";
+export { addStroke, BoardStroke, boardOps, decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, type MarkerInk, meanSpeed, seedOfRow, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, strokeSeed, type StrokeSpec } from "../board/data";
 // the desk as a whole (D7, D-D7-C.1): the objects' list, the engine preset the README's quickstart spreads, and the complete default
 // palette `deskLayer` mounts with — shipped, where until D7 only apps/desk and the oracle's fixture had them
 export { DESK_ENGINE, DESK_OBJECTS, DESK_TOOLS, DeskCanvas, deskSelect } from "./preset";

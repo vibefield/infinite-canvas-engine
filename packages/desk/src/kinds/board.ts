@@ -370,7 +370,7 @@ export function createBoardInk(host: KindHost): BoardInk {
       if (pass === undefined || st === undefined || look === null || look === undefined || st.stamp === -1) return false;
       let n = host.children?.rows(e, BoardStroke).length ?? 0;
       const lay = (spec: StrokeSpec, upto?: number): StrokeBuilder | undefined => {
-        const b = strokePen(spec, look.markers, strokeSeed(n));
+        const b = strokePen(spec, look.markers, spec.seed !== undefined && spec.seed >= 0 ? spec.seed : strokeSeed(n));   // the row's own seed (v4), else the position's
         if (b === undefined) return undefined;
         const points = spec.points ?? [];
         feedStroke(b, points, spec.times !== undefined && spec.times.length === points.length ? spec.times : null, spec.speed ?? 400, upto);

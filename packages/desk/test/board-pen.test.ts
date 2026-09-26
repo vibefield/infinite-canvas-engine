@@ -5,12 +5,12 @@
 // it as ONE `desk.stroke` child with its samples' times, whose replay lays the SAME stamps the live pen laid (the seed is the
 // next op's, the samples the cell's f32s). The eraser in hand (or a pen's eraser end) erases; put down mid-stroke, the stroke
 // lands first and the marker lies down in the ink last used — the cap, off the undo stack; ⌘Z is the document's.
-import { ChildOf, createCanvasEngine, type Entity, HeldPointer, LocalPointer, NO_MODS, Pointer, Viewport, defineQuery } from "@ice/core";
+import { ChildOf, createCanvasEngine, type Entity, guardedTransaction, HeldPointer, LocalPointer, NO_MODS, Pointer, Viewport, defineQuery } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { pickBoard, resolveBoard, toSurface } from "../src/board/board";
 import type { StrokeBuilder } from "../src/board/stroke";
 import { type BoardInk, boardKind, type BoardObjectLook, type PenHand } from "../src/kinds";
-import { Board, BoardStroke, boardOps, createBoardPen, decodePoints, decodeTimes } from "../src/objects";
+import { addStroke, Board, BoardStroke, boardOps, createBoardPen, decodePoints, decodeTimes } from "../src/objects";
 import { lampOf } from "../src/paper/paper";
 import { MAT_GRID } from "../src/theme";
 import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
@@ -173,6 +173,32 @@ describe("the pen and a read-only document (D7 #1: the writer's gate)", () => {
     expect(r.pen.commits()).toBe(0);
     expect(r.cancels()).toBe(1);
     expect(r.cap()).toBe("black");
+  });
+});
+
+describe("a stroke's fibre seed is STORED in its row, not read off its position (D7 #13)", () => {
+  it("a peer's stroke landing BEFORE mine does not re-seed mine: the replay lays my live pen's stamps still", async () => {
+    const r = rig({ cap: "blue" });
+    r.frame(); r.ce.ops.open(r.board); r.frame(); r.frame();
+    r.mouse("move", 560, 380, 0); r.frame();
+    r.mouse("down", 560, 380, 1); r.frame();
+    r.mouse("move", 640, 395, 1); r.frame();
+    r.mouse("up", 640, 395, 0); r.frame();
+    await r.settle();
+    const mine = must(r.strokes()[0]);
+    expect(mine.seed).toBe(0);   // the first op's seed, and now the row's own
+    const live = must(r.laid[0]);
+    // a peer's stroke lands FIRST among the board's children (a concurrent stroke, an undone earlier one redone)
+    const s = must(r.ce.docs.current());
+    guardedTransaction(s.store, r.ce.world, (tx) => {
+      const peer = addStroke(tx, r.board, { ink: "red", points: [[10, 10], [40, 40]] });
+      tx.setRelation(peer, ChildOf, r.board, "first");
+    });
+    r.ce.world.sync();
+    const rows = r.strokes();
+    expect(rows.map((x) => x?.ink)).toEqual(["red", "blue"]);
+    const ops = boardOps(rows, look.markers);
+    expect(ops[1]?.kind === "stroke" ? Array.from(ops[1].stamps) : null).toEqual(Array.from(live.stamps()));
   });
 });
 

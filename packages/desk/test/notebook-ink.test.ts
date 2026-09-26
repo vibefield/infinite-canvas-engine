@@ -220,7 +220,7 @@ describe("the notebook's strokes are its DATA — one child each, on its page (d
   it("the Notebook declares the stroke prefab as its data: the catalog stamps desk.stroke@3 in a notebook-only desk; a stroke is a child with its page", () => {
     expect(Notebook.data).toEqual([StrokePrefab]);
     const b = book();
-    expect(b.ce.docs.current()?.versionReport().localPacks["desk.stroke"]).toBe(3);
+    expect(b.ce.docs.current()?.versionReport().localPacks["desk.stroke"]).toBe(4);
     expect(durablePrefabFor(b.ce.world, "desk.stroke")).toBe(StrokePrefab);
     b.lay(3, path(4));
     const kids = b.ce.world.getReverse(b.e, ChildOf);

@@ -63,6 +63,8 @@ interface Stroke {
   readonly ink: string;
   readonly tip: TipName;
   readonly erase: boolean;
+  /** The fibre seed the live pen laid with — STORED in the row (v4, D7 #13), so the replay lays the same stamps whatever lands before it. */
+  readonly seed: number;
 }
 
 const pointersQ = defineQuery([Pointer, LocalPointer, PointerScreen]);
@@ -94,7 +96,7 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
     s.points.push([x, y]);
     s.times.push(t);
     ink?.commit(s.board, encodePoints(s.points));
-    const spec = { tool: "marker" as const, ink: s.ink, tip: s.tip, erase: s.erase, points: s.points, times: s.times };
+    const spec = { tool: "marker" as const, ink: s.ink, tip: s.tip, erase: s.erase, points: s.points, times: s.times, seed: s.seed };
     defer(() => {
       const session = writable(docs);
       let ok = false;
@@ -167,10 +169,11 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
         const m = look.markers[inHand] ?? Object.values(look.markers)[0];
         const pen = erase || m === undefined ? ERASER_TOOL : markerTool(linear(m.color), m.opacity, TIPS[tip]);
         const rows = world.getReverse(board, ChildOf).filter((k) => world.get(k, BoardStroke) !== undefined).length;
-        const builder = new StrokeBuilder(pen, strokeSeed(rows));
+        const seed = strokeSeed(rows);   // the next op's, as a replay of the rows so far would seed it — and the row will carry it
+        const builder = new StrokeBuilder(pen, seed);
         const [x, y] = onMelamine(G, at);
         builder.begin(x, y, 0);
-        stroke = { board, pointer, builder, t0: now, points: [[x, y]], times: [0], ink: inHand, tip, erase };
+        stroke = { board, pointer, builder, t0: now, points: [[x, y]], times: [0], ink: inHand, tip, erase, seed };
         ink.lay(board, builder);
       }
       const screen = pointer !== undefined ? world.get(pointer, PointerScreen) : undefined;

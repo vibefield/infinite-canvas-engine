@@ -26,6 +26,10 @@
 // its path in PAGE units (`s` from the gutter, `y` from the head — the same on both faces of a sheet), its tool the `pen` and
 // its ink the pen's name (the note's `PENS`; the colours are the host's). The pace is the same codec: the pen's nib law
 // (notebook/ink.ts) reads each sample's time, so a page's replay lays the widths the hand did.
+//
+// ITS SEED (D7 #13 — version 4): the fibre seed the live pen laid with is the ROW's, `seed`, not the seed its position in
+// the replay gives it — a peer's stroke landing before it, or an earlier one undone, moved every later stroke's stamps. A row
+// from before (or one spawned without a seed) carries −1 and keeps the positional seed (`seedOfRow`), so nothing it drew changes.
 
 import { ChildOf, defineComponent, definePrefab, type Entity, field, type GuardedTx, init } from "@ice/core";
 import { linear } from "../mat/night";
@@ -48,6 +52,7 @@ export const BoardStroke = defineComponent("desk.stroke", {
   speed: field("f64", { default: 400 }),
   times: field("string", { default: "" }),
   page: field("u32", { default: 0 }),
+  seed: field("f64", { default: -1 }),
 });
 
 /** A stroke's cell as the board reads it (a tolerant reader: a string field strata hands back as null reads as its default). */
@@ -61,6 +66,8 @@ export interface StrokeRow {
   readonly times?: string | null;
   /** The notebook page it is on (D3t-b — v3): 2i + 1 a sheet's recto, 2i + 2 its verso; 0 (or absent, a v2 reader's) = none. */
   readonly page?: number | null;
+  /** Its fibre seed (D7 #13 — v4): the one the live pen laid with; −1 (or absent, a v3 reader's) = the seed its position gives it. */
+  readonly seed?: number | null;
 }
 
 /** The durable id a stroke entity carries (`PrefabId`) — a data child, never a widget. */
@@ -74,11 +81,15 @@ export const STROKE_TYPE = "desk.stroke";
  */
 export const StrokePrefab = definePrefab(STROKE_TYPE, {
   store: "durable",
-  version: 3,
-  components: [init(BoardStroke, { tool: "marker", ink: "black", tip: "bullet", erase: false, points: "", speed: 400, times: "", page: 0 })],
+  version: 4,
+  components: [init(BoardStroke, { tool: "marker", ink: "black", tip: "bullet", erase: false, points: "", speed: 400, times: "", page: 0, seed: -1 })],
   relations: [ChildOf],
-  migrate: { 1: (v) => ({ ...v, times: "" }), 2: (v) => ({ ...v, page: 0 }) },
+  // v4 (D7 #13): `seed` — the fibre seed the pen laid with; a v3 stroke keeps the seed its position gives it (−1), so nothing it drew changes
+  migrate: { 1: (v) => ({ ...v, times: "" }), 2: (v) => ({ ...v, page: 0 }), 3: (v) => ({ ...v, seed: -1 }) },
 });
+
+/** A row's fibre seed: its own (v4, the pen's) — or, for a row from before or without one, the `n`-th op's positional seed. */
+export const seedOfRow = (s: Pick<StrokeRow, "seed">, n: number): number => (s.seed !== null && s.seed !== undefined && s.seed >= 0 ? s.seed : strokeSeed(n));
 
 /**
  * A stroke as an author states one: the path in melamine units (a notebook's: page units, on its `page`) and its pace — each
@@ -94,6 +105,8 @@ export interface StrokeSpec {
   readonly speed?: number;
   /** The notebook page (D3t-b): 2i + 1 sheet i's recto, 2i + 2 its verso; absent = 0, a board's. */
   readonly page?: number;
+  /** The fibre seed the pen laid with (D7 #13): stored, so the replay lays the same stamps whatever lands before it; absent = the position's. */
+  readonly seed?: number;
 }
 
 /** A path as the cell stores it: base64 (no padding) of LE f32 (x, y) pairs. */
@@ -131,7 +144,7 @@ export function meanSpeed(points: readonly (readonly [number, number])[], times:
 }
 
 /** The row a spec is — defaults as the prefab has them; timed, its `speed` is the path's mean pace unless the spec names one. */
-export function strokeRow(s: StrokeSpec): { tool: string; ink: string; tip: string; erase: boolean; points: string; speed: number; times: string; page: number } {
+export function strokeRow(s: StrokeSpec): { tool: string; ink: string; tip: string; erase: boolean; points: string; speed: number; times: string; page: number; seed: number } {
   const points = s.points ?? [];
   const timed = s.times !== undefined && s.times.length === points.length && points.length > 0;
   return {
@@ -139,6 +152,7 @@ export function strokeRow(s: StrokeSpec): { tool: string; ink: string; tip: stri
     points: encodePoints(points), speed: s.speed ?? (timed ? meanSpeed(points, s.times ?? []) : 400),
     times: timed ? encodeTimes(s.times ?? []) : "",
     page: Math.max(0, Math.floor(s.page ?? 0)),
+    seed: s.seed !== undefined && Number.isFinite(s.seed) && s.seed >= 0 ? s.seed : -1,
   };
 }
 
@@ -205,7 +219,7 @@ export function boardOps(rows: readonly StrokeRow[], markers: Readonly<Record<st
     const ink = s.ink ?? "black";
     const erase = s.erase === true;
     if (!erase && fallback === undefined) continue;
-    const builder = strokePen({ ink, tip: (s.tip ?? "bullet") as TipName, erase }, markers, strokeSeed(history.done.length));
+    const builder = strokePen({ ink, tip: (s.tip ?? "bullet") as TipName, erase }, markers, seedOfRow(s, history.done.length));
     if (builder === undefined) continue;
     const speed = s.speed !== null && s.speed > 0 ? s.speed : 400;
     const times = s.times !== null && s.times !== undefined && s.times !== "" ? decodeTimes(s.times) : null;
