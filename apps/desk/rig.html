@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>desk · rigs</title>
+<link rel="icon" href="data:," />
+<style>
+  /* The desk fills the window: one WebGPU canvas under the camera (the desk layer's), the DOM only in
+     screen space — nothing over it by default, so a rig's capture is the canvas alone. The product's
+     mono stack is the token the rulers' glyph atlas reads (DESIGN.md §3 `--vf-font-mono`). */
+  :root { --vf-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --vf-canvas-bg: #fafafa; }
+  :root[data-theme="dark"] { --vf-canvas-bg: #171717; }
+  html, body, #root { margin: 0; height: 100%; overflow: hidden; background: var(--vf-canvas-bg); }
+  #fail { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; font: 400 13px/1.6 ui-monospace, Menlo, monospace; color: white; background: black; text-align: center; white-space: pre-wrap; z-index: 9; }
+  #fail[hidden] { display: none; }
+</style>
+</head>
+<body>
+  <!-- rig.html (design-015 D7, D-D7-C.3): index.html + THE RIGS' HARNESS (src/rig/harness.ts) — the oracle's scenes and
+       fixtures behind window.__desk.setScene / kinds.print. The product page (index.html) never loads them. -->
+  <div id="root"></div>
+  <div id="fail" hidden></div>
+  <script type="module" src="/src/rig/harness.ts"></script>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

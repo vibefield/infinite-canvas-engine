@@ -18,7 +18,8 @@ import { type NoteApi, noteApi } from "./note-api";
 import { type NotebookApi, notebookApi } from "./notebook-api";
 import { type RoomApi, roomApi } from "./room-api";
 import type { DevPanel } from "./panel/panel";
-import { type OracleScene, setScene, spawnAll } from "./scene";
+import { deskRig } from "./rig-door";
+import { spawnAll } from "./scene";
 
 export interface DeskEntity {
   readonly id: number;
@@ -47,7 +48,8 @@ export interface DeskApi {
   readonly handle: DeskLayerHandle;
   /** Spawn one object of `type` centred at `at` (one undoable transaction); returns its entity id. */
   spawn(type: string, props: Readonly<Record<string, unknown>>, at: { readonly x: number; readonly y: number }): number;
-  setScene(scene: OracleScene): Promise<{ readonly notes: number[]; readonly minimats: number[]; readonly objects: number }>;
+  /** THE RIGS' DOOR (D7): an oracle scene staged into the world — on rig.html only; the product page refuses (src/rig-door.ts). */
+  setScene(scene: object): Promise<{ readonly notes: number[]; readonly minimats: number[]; readonly objects: number }>;
   entities(): DeskEntity[];
   entity(id: number): DeskEntity | null;
   camera(): { readonly x: number; readonly y: number; readonly zoom: number };
@@ -257,7 +259,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       return e as number;
     },
     async setScene(scene) {
-      const r = await setScene({ engine, handle, setTheme: (n, pin) => theme.set(n, pin), pinFlight: (p) => api.pinFlight(p) }, scene);
+      const r = await deskRig().setScene({ engine, handle, setTheme: (n, pin) => theme.set(n, pin), pinFlight: (p) => api.pinFlight(p) }, scene);
       return { notes: r.notes.map((e) => e as number), minimats: r.minimats.map((e) => e as number), objects: Object.values(r).reduce((n, list) => n + list.length, 0) };
     },
     entities() {

@@ -920,6 +920,19 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   it lacked. Red proof: rig:idle with a reflector throwing on alternate frames and one page `console.error` injected —
   the pre-fix rig passes 10/10, the fixed one fails its row (3 console errors + 3 faults listed); the unit
   (`apps/desk/test/faults.test.ts`) is red with the facade's forwarding reverted.
+- **M10 holds the product to the UMBRELLA's surface** (D7 surface #4). THE SURFACE admitted `@ice/desk/oracle/*` and
+  "published" read the WORKSPACE package's exports map, so M10 could not go red for an entry `@vibecook/ice` does not
+  ship — and the product's own modules imported the oracle (the palette, the presence inks, the plates, the prints),
+  which is why the unpublished palette (#1) went unseen. Now `apps/desk/test/exit-imports.test.ts` reads each page's
+  module graph: THE PRODUCT (`index.html` → `main.tsx`, static and dynamic edges, type-only included) imports THE
+  SURFACE only, and every SURFACE entry must be one `packages/ice/package.json` publishes (read back through
+  `packages/ice/src/<entry>.ts` to its workspace barrel); THE RIGS' pages may add the oracle's door. The oracle
+  staging moved out of the product (D-D7-C.3): `src/rig/` (`stage.ts` ← `scene.ts`, `scene-kinds.ts`,
+  `oracle-fixtures.ts` ← `fixtures.ts`, `harness.ts`) loads only on the new **`rig.html`** (the desk + the harness,
+  which opens `window.__deskRig`); `window.__desk.setScene` and `kinds.print` go through `src/rig-door.ts` and refuse
+  by name on the product page; every `rig:*` drives `rig.html`. The parity page (`parity.html`) is test-only and keeps
+  its oracle imports. Red proof: the new test over the pre-D7 `apps/desk/src` is red on exactly the four product files
+  (`palette.ts`, `desk.ts`, `fixtures.ts`, `scene-kinds.ts`).
 
 ## [0.13.0] — 2026-09-07
 

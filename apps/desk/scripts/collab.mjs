@@ -59,7 +59,7 @@ try {
   // two of the presence palette's inks (the product fixture's `PRESENCE_INKS`: violet, red)
   const ALICE = { name: "Alice", color: "#8e4ec6" };
   const BOB = { name: "Bob", color: "#e5484d" };
-  const urlOf = (who) => `http://127.0.0.1:${PORT}/apps/desk/dist/index.html?room=${room}&relay=${encodeURIComponent(`ws://127.0.0.1:${RELAY_PORT}`)}&name=${who.name}&color=${encodeURIComponent(who.color)}`;
+  const urlOf = (who) => `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?room=${room}&relay=${encodeURIComponent(`ws://127.0.0.1:${RELAY_PORT}`)}&name=${who.name}&color=${encodeURIComponent(who.color)}`;
   const logs = [];
   const open = async (name, who) => {
     const tab = await openTab(chrome.port, urlOf(who));

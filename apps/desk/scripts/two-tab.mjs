@@ -59,7 +59,7 @@ async function until(fn, ms) {
 
 try {
   const room = `d2c-${process.pid}-${Date.now()}`;
-  const url = `http://127.0.0.1:${PORT}/apps/desk/dist/index.html?room=${room}`;
+  const url = `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?room=${room}`;
   const logs = [];
   const open = async (name) => {
     const tab = await openTab(chrome.port, url);

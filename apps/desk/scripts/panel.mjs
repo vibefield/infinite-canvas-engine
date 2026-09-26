@@ -34,7 +34,7 @@ let failN = 0;
 const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
 
 try {
-  const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/index.html`);
+  const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html`);
   const logs = [];
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
   watchPage(tab, logs);

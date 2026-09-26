@@ -106,7 +106,7 @@ export function compareSheet(name, sheet) {
 }
 
 async function main() {
-  if (!existsSync(resolve(app, "dist/index.html"))) { console.log("PREFLIGHT FAIL: the desk's build is missing — pnpm --filter ./apps/desk build"); process.exit(1); }
+  if (!existsSync(resolve(app, "dist/rig.html"))) { console.log("PREFLIGHT FAIL: the desk's build is missing — pnpm --filter ./apps/desk build"); process.exit(1); }
   const sheets = printedSheets();
   async function freePort(from) {
     for (let port = from; port < from + 40; port++) {
@@ -122,7 +122,7 @@ async function main() {
   const cleanup = async () => { try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} };
   setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 300_000).unref();
   try {
-    const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/index.html`);
+    const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html`);
     await tab.send("Runtime.enable");
     await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
     for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }

@@ -14,9 +14,11 @@ import { BLANK_SHEET, type CommittedSheet, type PrintMeta, PRINT_ZONE, printShee
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
 import { BOARD } from "@ice/desk";
-import { deskBlobs } from "./blobs";
-import { bytesOf } from "./fixtures";
-import type { OracleNote, SpawnSpec } from "./scene";
+import { deskBlobs } from "../blobs";
+import { bytesOf } from "../fixtures";
+import type { PrintFixture } from "../rig-door";
+import type { SpawnSpec } from "../scene";
+import type { OracleNote } from "./stage";
 
 export interface OracleStroke {
   readonly ink?: string;
@@ -234,7 +236,7 @@ export function pinBooks(handle: DeskLayerHandle, books: readonly { readonly ent
 }
 
 /** The committed picture (tools/make-photo-fixture.mjs) as the scenes' prints name it: its bytes in the app's store, its size. */
-export interface PrintFixture { readonly hash: string; readonly w: number; readonly h: number }
+export type { PrintFixture };
 let fixture: Promise<{ readonly bytes: Uint8Array<ArrayBuffer>; readonly w: number; readonly h: number }> | null = null;
 /** The fixture put in the desk's BlobStore and PRELOADED on the photo kind — so the scene's first frame has its picture. */
 export async function printFixture(handle: DeskLayerHandle): Promise<PrintFixture> {

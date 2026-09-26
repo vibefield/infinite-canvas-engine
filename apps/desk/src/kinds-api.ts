@@ -12,7 +12,7 @@ import { addStroke, BoardStroke, decodePoints, decodeTimes, PHOTO_TYPE, type Str
 import { BOARD } from "@ice/desk";
 import { printRect } from "@ice/desk";
 import { spawnAll } from "./scene";
-import { printFixture } from "./scene-kinds";
+import { deskRig } from "./rig-door";
 
 export interface KindsApi {
   stroke(board: number, spec: StrokeSpec): number;
@@ -87,7 +87,7 @@ export function kindsApi(engine: CanvasEngine, handle: DeskLayerHandle): KindsAp
       return { live: live === null ? null : { board: live.board as number, samples: live.samples }, commits: pen.commits() };
     },
     async print(at, angle = 0) {
-      const fx = await printFixture(handle);
+      const fx = await deskRig().printFixture(handle);   // the oracle's photo: the rigs' door (D7), rig.html only
       const r = printRect(at.x, at.y, fx.w, fx.h);
       const [e] = spawnAll(engine, [{ type: PHOTO_TYPE, cx: r.cx, cy: r.cy, w: r.w, h: r.h, props: { blob: fx.hash, width: fx.w, height: fx.h, angle } }], true);
       return (e ?? 0) as number;

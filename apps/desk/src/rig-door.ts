@@ -1,0 +1,45 @@
+// THE RIGS' DOOR (design-015 D7, D-D7-C.3). The oracle's scenes and fixtures — the stills `setScene` stages, the committed
+// print a rig lays down — are the RIGS', not the product's: they live in src/rig/ and load only on `rig.html` (the desk + the
+// rigs' harness), which opens this door as `window.__deskRig`. The product page (`index.html`) never imports them, so the
+// app's own module graph imports the published surface only (M10, `test/exit-imports.test.ts`); on it, `window.__desk`'s
+// `setScene` and `kinds.print` refuse by name instead of reaching for fixtures a third-party app would not have.
+
+import type { CanvasEngine, Entity } from "@ice/core";
+import type { DeskLayerHandle, ThemeName } from "@ice/desk";
+
+/** What a scene is staged INTO: the engine, the layer's handle, the theme's setter, the flight's pin. */
+export interface SceneHost {
+  readonly engine: CanvasEngine;
+  readonly handle: DeskLayerHandle;
+  setTheme(name: ThemeName, pin: boolean): void;
+  /** Hold the flight on at progress `p` every tick (a still of a flight frame); `null` lets it fly. */
+  pinFlight(p: number | null): void;
+}
+
+/** What a desk's spawn made, by kind, in the scene's own order. */
+export interface Staged { readonly notes: Entity[]; readonly minimats: Entity[]; readonly boards: Entity[]; readonly prints: Entity[]; readonly books: Entity[]; readonly pads: Entity[] }
+
+/** The committed print a rig lays down: its picture's hash in the desk's BlobStore (preloaded on the photo kind) and its size. */
+export interface PrintFixture { readonly hash: string; readonly w: number; readonly h: number }
+
+/** What `rig.html`'s harness hands the app. */
+export interface DeskRig {
+  /** Stage an oracle scene (packages/desk/oracle/scenes.mjs's shape) into the world. */
+  setScene(host: SceneHost, scene: object): Promise<Staged>;
+  /** The oracle's photo fixture, put in the BlobStore and preloaded. */
+  printFixture(handle: DeskLayerHandle): Promise<PrintFixture>;
+}
+
+declare global {
+  interface Window {
+    /** Set by `src/rig/harness.ts` on `rig.html`; absent on the product page. */
+    __deskRig?: DeskRig;
+  }
+}
+
+/** The harness, or a refusal that names the page to open. */
+export function deskRig(): DeskRig {
+  const rig = typeof window === "undefined" ? undefined : window.__deskRig;
+  if (rig === undefined) throw new Error("desk: the rigs' door is closed on the product page — the oracle's scenes and fixtures load on rig.html");
+  return rig;
+}
