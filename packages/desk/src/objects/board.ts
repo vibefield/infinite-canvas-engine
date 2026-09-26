@@ -5,8 +5,8 @@
 // board (board/data.ts, D-D5), and the raster the pass draws is a cache replayed from them (kinds/board.ts).
 // Things, movable, selectable, snapping both ways; RESIZABLE — the knobs the desk's marks draw on it (*Marks on the Mat*
 // Q-a/b: knobs only on the photo and the whiteboard) are core's resize handles, and its world half is drawn from its
-// rect, so a resized board is drawn at its new size and its ink replays into a raster of that size; a ROOT object (D-D18
-// — never offered to a mini mat).
+// rect, so a resized board is drawn at its new size and its ink replays into a raster of that size; a ROOT object (D-D18:
+// `interaction.drop: "never"` — no container takes it, whatever it accepts; let go over a mini mat's face it lies there).
 // Its held tools — the markers, the eraser, the tray, undo over its strokes — are D3t's, after the opening.
 
 import { p } from "@ice/core";
@@ -32,5 +32,5 @@ export const Board = defineObject({
   },
   size: { w: BOARD.spec.width, h: BOARD.spec.height },
   kind: boardKind(),
-  interaction: { selectable: true, movable: true, resizable: true, snap: "both" },
+  interaction: { selectable: true, movable: true, resizable: true, snap: "both", drop: "never" },
 });

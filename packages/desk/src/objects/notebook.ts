@@ -4,7 +4,8 @@
 // left) and its `angle` on the mat (the prototype kept it on the book; a new one takes its seed's — `bookAngle`).
 // Its rect is the closed case (180 × 252); whether it lies OPEN is a pose — the opening is D4b's (a still pins it).
 // Its INK (the four pens, the pages' strokes as data children `ChildOf` the book with their page) is D3t's.
-// Things, movable, selectable, snapping both ways; a ROOT object (D-D18 — never offered to a mini mat).
+// Things, movable, selectable, snapping both ways; a ROOT object (D-D18: `interaction.drop: "never"` — no container
+// takes it, whatever it accepts).
 
 import { p } from "@ice/core";
 import { notebookKind } from "../kinds/notebook";
@@ -34,5 +35,5 @@ export const Notebook = defineObject({
   },
   size: { w: NOTEBOOK.cover.width, h: NOTEBOOK.cover.height },
   kind: notebookKind(),
-  interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
+  interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
 });

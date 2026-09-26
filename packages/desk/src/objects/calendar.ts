@@ -3,7 +3,8 @@
 // (1 Monday, 0 Sunday), its tape and the pen its caret is drawn in, by name (the colours are the host's). What is
 // WRITTEN on it and what is STUCK to it are data children (calendar/data.ts): its events `desk.event`, its pins
 // `desk.pin` (a note stuck to a day) — read-only in this slice; the roll, the entries and the sticking are D3t's.
-// Its rect is the sheet (1760 × 1852 at the law's cell); movable by its tape, selectable; a ROOT object (D-D18).
+// Its rect is the sheet (1760 × 1852 at the law's cell); movable by its tape, selectable; a ROOT object (D-D18:
+// `interaction.drop: "never"` — no container takes it, whatever it accepts).
 
 import { p } from "@ice/core";
 import { CALENDAR } from "../calendar/law";
@@ -32,5 +33,5 @@ export const Calendar = defineObject({
   },
   size: { w: PAD.W, h: PAD.H },
   kind: calendarKind(),
-  interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
+  interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
 });

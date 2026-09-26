@@ -259,5 +259,28 @@ export async function kindsRig(t) {
   await key("z", "KeyZ", 90, META);
   await settle();
   check((await typeOf("desk.calendar")).length === 1, "pad: ⌘Z brings it back");
+
+  // ---------------------------------------------------------------- D-D18: a whiteboard is a ROOT object, over the mini mat at (600, 560)
+  // A board let go with its centre over the mini mat's FACE stays on this desk (`interaction.drop: "never"`): a plain move,
+  // no fly-back — where 8b's note went in. Screen = world again; the board is laid clear of the notes, to the mat's upper right.
+  console.log("-- a root object over a mini mat --");
+  await cam(0, 0, 1);
+  await click(20, 20);   // the bare mat: nothing selected
+  const [mat] = await typeOf("desk.minimat");
+  const face = (await q(`window.__desk.navFace(${mat.id})`)).face;
+  const aim = [face.x + face.width / 2, face.y + face.height / 2];
+  const root = await q("window.__desk.spawn('desk.board', {}, { x: 1000, y: 150 })");
+  await settle();
+  const nRoot = await q("window.__desk.stats().active");
+  await carry([1000, 150], aim, 8, 30, 200);
+  const overFace = await entity(root);
+  await release(aim);
+  await settle();
+  const stayed = await entity(root);
+  const inFace = (e) => e.cx > face.x && e.cx < face.x + face.width && e.cy > face.y && e.cy < face.y + face.height;
+  check(inFace(overFace) && stayed.parent !== mat.id && stayed.active && (await q("window.__desk.stats().active")) === nRoot && near(stayed.cx, overFace.cx) && near(stayed.cy, overFace.cy), `a whiteboard let go with its centre over the mini mat's face (${overFace.cx.toFixed(0)}, ${overFace.cy.toFixed(0)}) stays on the desk, where it was let go — a root object (a member of the root frame, not the mat's: ${await q("window.__desk.stats().active")} root objects)`);
+  await key("Backspace", "Backspace", 8);   // it is the selection (a grab selects): off the desk again
+  await settle();
+  check((await entity(root)) === null, "and ⌫ takes it away");
   void SHIFT;
 }
