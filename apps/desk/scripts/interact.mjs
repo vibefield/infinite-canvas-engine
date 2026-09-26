@@ -337,6 +337,19 @@ try {
   const dropped = await entity(b);
   check(dropped.parent === m && !dropped.active && (await q("window.__desk.stats().active")) === 2, `the note left the desk and lies inside the mini mat (parent = the mat, ${await q("window.__desk.stats().active")} root objects)`);
   check(near(dropped.cx, (liveB.cx - M.ox) / M.s, 1e-6) && near(dropped.cy, (liveB.cy - M.oy) / M.s, 1e-6) && dropped.w === 200, `where it was let go, in the inside's own units: (${dropped.cx.toFixed(1)}, ${dropped.cy.toFixed(1)}) = (n − M.o) / M.s at scale ${M.s.toFixed(3)}, its size kept`);
+  // It left the frame, so it left the selection (core, 2026-09-26: `Selected ⇒ Active`). The grab had selected it; before the fix
+  // it stayed selected inside the mat — no brackets, no menu — and an arrow key nudged it there, unseen. ⌫ deletes nothing either.
+  const selDropped = await q("window.__desk.selection()");
+  const inside0 = (await entities()).filter((e) => e.parent === m).length;
+  await key("ArrowRight", "ArrowRight", 39);
+  await sleep(150);
+  const nudged = await entity(b);
+  await key("Backspace", "Backspace", 8);
+  await sleep(150);
+  const inside1 = (await entities()).filter((e) => e.parent === m).length;
+  check(selDropped.length === 0 && !dropped.selected, `the drop leaves nothing selected — the note inside is no member of this frame (selection [${selDropped.join(", ")}])`);
+  check(nudged !== null && nudged.x === dropped.x && nudged.y === dropped.y, `an arrow key nudges nothing inside the mat (the note at (${nudged?.x.toFixed(1)}, ${nudged?.y.toFixed(1)}))`);
+  check(inside1 === inside0 && (await entity(b))?.parent === m, `⌫ deletes nothing inside it (${inside0} → ${inside1})`);
   // ⌥ held at the release keeps a note on this desk, over the face
   const c = await q("window.__desk.spawn('desk.note', { seed: 3 }, { x: 1000, y: 650 })");
   await settle();

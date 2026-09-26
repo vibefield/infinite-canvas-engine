@@ -26,6 +26,15 @@
  *   project both rows of that tx. A bare runtime `world.setRelation(e,
  *   ChildOf, …)` with no Position write on a pre-existing entity is OUTSIDE
  *   the contract and goes stale until the next resweep.
+ *   THE SELECTION IS SCOPED HERE (design-011 §6/§16 `Selected ⇒ Active`,
+ *   2026-09-26): a widget classified OUT of the frame loses `Selected` in the
+ *   same flush — a drop into a mini mat, a peer's reparent, an undo or a redo
+ *   that carries it away. The collector journals `Selected` too, so a
+ *   selection written onto a standing non-member (the undo stack's selection
+ *   restore of a stale key, an app's raw write) is dropped the next tick.
+ *   Found at D4a's landing: a note dropped into a mini mat stayed selected
+ *   inside it — no marks, no menu, but reachable by every consumer that does
+ *   not filter by membership (the nudge, the tape, a drag of the rest).
  * - Nav stack = SESSION entities: `NavEntry` rows carry NavDepth + NavCamera
  *   (the camera to restore on exit) + NavFrame(entry→container). Root =
  *   empty stack. Current frame = deepest live entry's NavFrame target.
@@ -271,7 +280,7 @@ export function createActiveMembership(world: World): TickSystem {
         // writer of these components is store-visible (ctx/edit/projection).
         collector = world.changes.collect({
           components: [PrefabId, Position],
-          tags: [Container],
+          tags: [Container, Selected],
           coarse: false,
         });
       }
@@ -280,6 +289,7 @@ export function createActiveMembership(world: World): TickSystem {
       const navChanged = !framePrimed || frame !== lastFrame;
       framePrimed = true;
       lastFrame = frame;
+      let deselected = false;
 
       const classify = (e: Entity): void => {
         const member = firstContainerAncestor(world, e) === frame;
@@ -295,6 +305,11 @@ export function createActiveMembership(world: World): TickSystem {
           if (ctx.hasTag(e, Active)) ctx.removeTag(e, Active);
           if (ctx.hasTag(e, Visible)) ctx.removeTag(e, Visible);
           if (!ctx.hasTag(e, Culled)) ctx.addTag(e, Culled);
+          // …and out of the selection (the header's `Selected ⇒ Active`).
+          if (ctx.hasTag(e, Selected)) {
+            ctx.removeTag(e, Selected);
+            deselected = true;
+          }
         }
       };
 
@@ -332,6 +347,7 @@ export function createActiveMembership(world: World): TickSystem {
             for (const r of b) classify(b.entity(r));
           });
         }
+        if (deselected) bumpVersion(world, SelectionVersion);
         return;
       }
 
@@ -362,13 +378,17 @@ export function createActiveMembership(world: World): TickSystem {
         const parent = world.getRelation(e, ChildOf);
         const isCont = isContainerForMembership(world, e);
         if (knownParent.has(e) && knownParent.get(e) === parent && knownContainer.has(e) === isCont) {
-          continue; // Position-only churn — membership inputs unchanged
+          // Position-only churn — membership inputs unchanged. A standing
+          // non-member that just gained `Selected` is the one exception.
+          if (ctx.hasTag(e, Selected) && !ctx.hasTag(e, Active)) classify(e);
+          continue;
         }
         knownParent.set(e, parent);
         if (isCont) knownContainer.add(e);
         else knownContainer.delete(e);
         reclassifySubtree(e);
       }
+      if (deselected) bumpVersion(world, SelectionVersion);
     },
     { name: "activeMembership" },
   );

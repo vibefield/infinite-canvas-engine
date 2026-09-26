@@ -12,6 +12,8 @@
  *    out-of-ECS hand-off (`drainCreatedSelections`); they are drained on the
  *    commit tick and applied HERE one tick later, when the projection is
  *    alive — the select-on-grab the ghost held transfers to the real widget.
+ *    Not to a twin created INSIDE a container: it is no member of this frame
+ *    (`Selected ⇒ Active`, nested-canvas.ts), so the drop selects nothing.
  *
  *  - RETIRING (`GhostRetiring`, cancel / rejected drop): despawned when the
  *    fly-back `TransformTween` lands (camera-sim removes it on arrival).
@@ -24,7 +26,9 @@
 import type { Entity, System, SystemCtx, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import {
+  Active,
   Captures,
+  Culled,
   GesturePhases,
   GhostCommitted,
   GhostRetiring,
@@ -62,7 +66,8 @@ export function createInsertGhostReap(world: World): System {
     ghostQ,
     (b, ctx) => {
       if (pendingSelect.length > 0) {
-        const live = pendingSelect.filter((e) => ctx.isAlive(e));
+        // Membership classified the twin this tick (derive runs before cleanup): the non-member signature is Culled ∧ ¬Active.
+        const live = pendingSelect.filter((e) => ctx.isAlive(e) && !(ctx.hasTag(e, Culled) && !ctx.hasTag(e, Active)));
         pendingSelect = [];
         if (live.length > 0) {
           const keep = new Set(live);

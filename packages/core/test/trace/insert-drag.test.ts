@@ -10,7 +10,8 @@
  *    ordinary drag stack adopts it via the synthetic down (same-tick pick);
  *  - drop = ONE create transaction: durable twin at the final position, prop
  *    overrides applied, twin selected, ghost swapped out, ONE undo step;
- *  - drop into an accepting container creates INSIDE it (ChildOf + local pos);
+ *  - drop into an accepting container creates INSIDE it (ChildOf + local pos),
+ *    unselected — it is no member of this frame (Selected ⇒ Active);
  *  - cancel / rejected-by-Solid = fly-back tween toward the tray press point,
  *    ghost despawned, document untouched (undo has nothing);
  *  - a longPress-drag widget type still drags INSTANTLY from the tray;
@@ -182,7 +183,10 @@ describe("trace: tray insert-by-drag (ghost adoption)", () => {
     expect(local!.x).toBeGreaterThanOrEqual(-100);
     // biome-ignore lint/style/noNonNullAssertion: asserted above
     expect(local!.x).toBeLessThanOrEqual(300);
-    expect(ce.world.hasTag(twin, Selected)).toBe(true);
+    // …and NOT selected (2026-09-26): inside the folder the twin is no member of this frame, and the selection
+    // is always a subset of the frame's members (Selected ⇒ Active) — the select-on-drop does not reach inside.
+    // (It did until then: a selection nothing drew, which the nudge and the tape could still reach.)
+    expect(ce.world.hasTag(twin, Selected)).toBe(false);
     ce.dispose();
   });
 

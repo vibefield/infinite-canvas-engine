@@ -419,6 +419,18 @@ there.
   sent back to back; the press stepped alone, then the release and the move together). By design, a press
   that shares its frame with the moves after it now picks, and anchors its recognizers, at the press — not
   at the last of those moves (in `rig:interact` §3 the drag's slop now eats one sample).
+- **The selection is always a subset of the current frame's members** (design-011's `Selected ⇒ Active`,
+  now held in the world). Found at D4a's landing: a note dropped into a mini mat stayed `Selected` inside it.
+  Nothing drew that selection (the marks belong to the root slot), yet every consumer that does not filter by
+  membership could still reach it: the arrow nudge, ⇧⌘L's tape, a drag of the rest of the selection, a resize,
+  Clean Up. `activeMembership` now deselects a widget in the same flush that classifies it out of the frame:
+  a drop, a peer's reparent, an undo or a redo that carries it away. It also journals `Selected`, so a
+  selection written onto a standing non-member is dropped the next tick (the undo stack's restore of a stale
+  key, an app's raw write). The tray's select-on-drop no longer selects a twin created inside a container.
+  Held by `consume-selection.test.ts` (6 cases, each red on the pre-fix source) and `rig:interact` §8b:
+  after the drop nothing is selected, an arrow key nudges nothing inside, and ⌫ deletes nothing there. On
+  the pre-fix desk, the selection still held the note and the arrow moved it 1 px inside the mat; ⌫ was
+  already safe, because `deleteSelection` filters by membership.
 
 ## [0.13.0] — 2026-09-07
 
