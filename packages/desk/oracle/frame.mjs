@@ -8,9 +8,10 @@
 // where the prototype had them; its lab kept a copy of the same logic for Chrome.)
 //
 // The root slot is built from the KIND REGISTRY (design-015 D2a-render: `deskKinds(text)` — the
-// note, the mini mat, the whiteboard and the photo print, on the host's shader text), and a desk's
-// objects reach the ground as ONE list in paint order: its mini mats (sheets) first — so a mini
-// mat's index among the mini mats is its index in `objects`, which is what a portal's `at` names —
+// note, the mini mat, the whiteboard, the photo print, the desk calendar and the notebook, on the
+// host's shader text), and a desk's objects reach the ground as ONE list in paint order: its mini
+// mats (sheets) first — so a mini mat's index among the mini mats is its index in `objects`, which
+// is what a portal's `at` names —
 // then its THINGS: the scene's own order where it gives one (`things`), else the prototype's — the
 // whiteboards, the notes, the prints (its photo lab drew them over everything). The whiteboards
 // and the prints are made as their prototype hosts make them (design-015 D3r-a): a board by the
@@ -162,8 +163,8 @@ export function pinnedAt(c, day) {
 export async function createOracleDesk({ device, format, text, assets, log = console.log }) {
   const mat = await MatPass.create(device, format, matShaders(text(MAT_SHADER_FILES)));
   // The root slot from the kind registry: every desk kind's pass on the root's mat — the sticky notes (STICKY.md), the mini mats
-  // (MINIMAT.md) and the whiteboards (BOARD.md, no scene holds one yet) — and the two passes a scene reaches into: the notes'
-  // (the ink pages, the law) and the mini mats'.
+  // (MINIMAT.md), the whiteboards (BOARD.md), the prints (PHOTO.md), the desk calendars (CALENDAR.md) and the notebooks
+  // (NOTEBOOK.md) — and the passes a scene reaches into: the notes' (the ink pages, the law), the mini mats', the boards', …
   const rootSlot = await createSlotSet(device, format, mat, deskKinds(text));
   const passOf = (name) => { const k = rootSlot.kinds.get(name); if (!k) throw new Error(`oracle: the registry has no "${name}" kind`); return k.pass.pass; };
   const papers = passOf(PAPER_KIND);

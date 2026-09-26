@@ -7,6 +7,10 @@
 // (`underlay()` — ground.ts `underlays`), so the cards, the notes, the boards and the notebooks all lie
 // ON the calendar: a sticky note stuck to a day is drawn over its paper by the paper pass, casting on it.
 //
+// As a kind of the desk's registry (kinds/calendar.ts; design-015 D3r-b) the layer is recorded into the
+// frame's own encoder after the mat's wind (`layer`) and laid as the pads stratum's one run (`composite`)
+// — the underlay's own draw, where the underlay lay: right after the mat, beneath everything else.
+//
 // The print is a pyramid of tiles (tiles.ts) in a texture array; the host draws them (Canvas 2D) and
 // hands them over with `uploadTile`, and writes each sheet's page table with `writeTable`. The pads'
 // shadows are analytic (a slab on the mat, a roll on the paper): no shadow map is drawn.

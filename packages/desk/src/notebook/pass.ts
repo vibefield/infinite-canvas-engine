@@ -12,6 +12,11 @@
 // parts real occlusion, and the mat's shadow is a premultiplied darkening the ground never
 // has to know about. Meshes live in per-book buffers, uploaded only when the book's pose
 // changed; a book carried across the desk moves by its matrix.
+//
+// Two hosts (design-015 D3r-b): the prototype's lab drew the books after the ground in a command
+// buffer of their own (`render`: steps 1–3); the desk's registry records steps 1–2 into the
+// frame's own encoder (`layer`) and lays step 3 inside the frame's pass as the things' last run
+// (`composite`, kinds/notebook.ts) — the same commands, the same bytes.
 
 import { bindGroup, bindLayout, storageBuffer, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
