@@ -7,8 +7,10 @@
 // engine's gesture); and THE PRESS + DOUBLE-CLICK CUT — a mini mat HELD (its face reads 2 % larger, the
 // still's `held`), hovered and selected, double-clicked: the flight starts from the face AS DRAWN
 // (the seam) and its first frame is the face's last, the same PNG outside the selection's marks (D4a:
-// the marks are the root slot's chrome and leave with the selection, which the enter clears). Exit 0 =
-// every check passed.
+// the marks are the root slot's chrome and leave with the selection, which the enter clears); and THE CUT
+// HOLDS A SPRING MID-MOTION (D-D2b.7, restored at D5a): a double-click that lands while a mini mat's hover
+// rise is moving, the flight pinned at p = 0 with the flux unfrozen — only the builder's p = 0 hold keeps
+// the departed desk its pre-cut frame. Exit 0 = every check passed.
 //
 //   pnpm --filter ./packages/desk oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:nav
 import { spawn } from "node:child_process";
@@ -69,6 +71,20 @@ function outsideMarks(a, b, marks, dpr) {
     if (band[i]) { inside++; if (d > 0) insideDiff++; } else { outside++; if (d > outsideMax) outsideMax = d; }
   }
   return { outside, outsideMax, inside, insideDiff };
+}
+
+/** Two captures compared over the whole frame: the largest channel Δ, and how many px differ at all. */
+function frameDiff(a, b) {
+  const A = decodePng(Buffer.from(a, "base64"));
+  const B = decodePng(Buffer.from(b, "base64"));
+  let max = 0;
+  let px = 0;
+  for (let o = 0; o < A.rgba.length; o += 4) {
+    const d = Math.max(Math.abs(A.rgba[o] - B.rgba[o]), Math.abs(A.rgba[o + 1] - B.rgba[o + 1]), Math.abs(A.rgba[o + 2] - B.rgba[o + 2]));
+    if (d > 0) px++;
+    if (d > max) max = d;
+  }
+  return { max, px, total: A.rgba.length / 4 };
 }
 
 try {
@@ -197,6 +213,56 @@ try {
   await q("window.__desk.pinFlight(null); window.__desk.freeze(false); document.getElementById('rig-no-menu')?.remove()");
   await land();
   await q(`window.__desk.handle.pinFlux(${A2}, undefined)`);
+
+  // ---- 7. THE CUT HOLDS A SPRING MID-MOTION (D-D2b.7's witness, restored at D5a). The builder holds every spring while the flight
+  //         holds at p = 0 — the departed desk IS its pre-cut frame. Section 6 cannot see that hold (the flux is frozen before its
+  //         double-click, and `pinFlight` freezes it too); D2b's own witness was the selection ring falling at the cut, which D4a
+  //         retired. So here springs MOVE as the double-click lands: a note just let go, its lift falling back to the mat (the
+  //         departed desk DRAWS it), and the mini mat's hover rise, the pointer just arrived on its face. The flight is pinned at
+  //         p = 0 with the flux UNFROZEN — only the builder's hold keeps the cut still: 400 ms later neither spring's value nor
+  //         one pixel of the frame may have moved.
+  console.log("-- the cut holds a spring mid-motion --");
+  // A spring at rest sits EXACTLY on its target (0 or 1 — the flux snaps); anything else is a spring in motion, overshoot
+  // included. The double-click must land before the note's lift settles — on a loaded host it can land late, so the scene is
+  // laid again (at most three times) until the cut catches it moving; the held values and frames are then compared.
+  const moving = (v) => typeof v === "number" && v !== 0 && v !== 1;
+  let A3;
+  let N3;
+  let fc3;
+  let l0;
+  let h0;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1) { await q("window.__desk.pinFlight(null); document.getElementById('rig-no-menu')?.remove()"); await land(); }
+    const { notes: notes3, minimats: mats3 } = await scene(rest);
+    A3 = mats3[0];
+    N3 = notes3[0];   // the desk's note at (700, 610), its centre off the mini mat's face
+    await mouse("mouseMoved", 300, 720);   // the bare mat: nothing hovered
+    await settle();
+    await q("document.head.insertAdjacentHTML('beforeend', '<style id=rig-no-menu>[data-ice-selection-menu]{display:none!important}</style>')");
+    // the note carried 40 px and let go — its lift starts falling…
+    await mouse("mouseMoved", 700, 610); await mouse("mousePressed", 700, 610);
+    for (let i = 1; i <= 4; i++) { await mouse("mouseMoved", 700 + 10 * i, 610 + 10 * i); await sleep(16); }
+    await sleep(120);
+    await mouse("mouseReleased", 740, 650);
+    // …the pointer onto the mini mat's face (its hover rise starts), and the double-click lands at once
+    await mouse("mouseMoved", 380, 330);
+    await dbl(380, 330);
+    fc3 = await q("window.__desk.flight()");
+    await q("window.__desk.pinFlight(0); window.__desk.freeze(false)");   // the flight held at p = 0 — the flux NOT frozen
+    l0 = (await q(`window.__desk.entity(${N3})`))?.flux?.lift;
+    h0 = (await q(`window.__desk.entity(${A3})`))?.flux?.hover;
+    if (moving(l0)) break;
+    console.log(`  (attempt ${attempt}: the note's lift read ${l0} at the cut — at rest; laying the scene again)`);
+  }
+  const still0 = await png();
+  await sleep(400);
+  const l1 = (await q(`window.__desk.entity(${N3})`))?.flux?.lift;
+  const h1 = (await q(`window.__desk.entity(${A3})`))?.flux?.hover;
+  const still1 = await png();
+  const held = frameDiff(still0, still1);
+  check(fc3?.kind === "enter" && moving(l0) && l1 === l0 && h1 === h0 && held.max === 0, `the cut holds the springs where the double-click caught them — the dropped note's lift ${l0?.toFixed(4)} → ${l1?.toFixed(4)} and the mat's hover ${h0?.toFixed(4)} → ${h1?.toFixed(4)} over 400 ms; the frame moved maxΔ ${held.max} (${held.px.toLocaleString()} of ${held.total.toLocaleString()} px)`);
+  await q("window.__desk.pinFlight(null); document.getElementById('rig-no-menu')?.remove()");
+  await land();
 
   await settle();
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
