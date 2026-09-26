@@ -41,6 +41,8 @@ export class MiniMatKind implements KindPass<MiniMatInstance> {
 
   tune(root: KindPass<MiniMatInstance>): void { if (root instanceof MiniMatKind) this.pass.tune(root.pass); }
 
+  setLaw(law: unknown): void { this.pass.law = law as MiniMatLaw; }
+
   /**
    * The pass's own `prepare`, argument for argument; the ground's word on each mini mat's live inside (`extra.live`,
    * by this kind's record index) overrides the instance's own — absent, the instances say.
@@ -107,11 +109,13 @@ function insideGrid(ctx: Pick<ObjectContext, "props" | "look">, root: GridConfig
 }
 
 export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGeometry, MiniMatInstance, MiniMatLook> {
-  const law = opts.law ?? DEFAULT_MINIMAT_LAW;
+  let law = opts.law ?? DEFAULT_MINIMAT_LAW;
   const program = miniMatProgram(opts.text ?? shaderText);
   return {
     ...program,
+    // the reach is the construction law's: a live law moves the face, not the shadow's reach (the dev panel's rows — D5a)
     reach: miniMatReach(law),
+    tune(next: unknown): void { law = next as MiniMatLaw; },
     resolve(ctx: ObjectContext): MiniMatGeometry {
       const r = ctx.rect;
       return resolveMiniMat({ cx: r.cx, cy: r.cy, w: r.w, h: r.h }, { held: ctx.flux.lift, hover: ctx.flux.hover, ring: ctx.flux.ring, fade: ctx.flux.fade }, law, ctx.lamp);

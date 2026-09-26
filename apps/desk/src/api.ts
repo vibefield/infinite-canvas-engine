@@ -13,6 +13,7 @@ import type { ThemeName } from "@ice/desk/theme";
 import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
 import { type RoomApi, roomApi } from "./room-api";
+import type { DevPanel } from "./panel/panel";
 import { type OracleScene, setScene, spawnAll } from "./scene";
 
 export interface DeskEntity {
@@ -100,6 +101,8 @@ export interface DeskApi {
   anchor(): ReturnType<DeskLayerHandle["selection"]["anchor"]>;
   /** The app's stub Send: each press's selection count. */
   readonly sent: number[];
+  /** The dev panel (D5a — the backtick opens it): its params, open or not. */
+  readonly panel: DevPanel | null;
 }
 
 declare global {
@@ -109,7 +112,7 @@ declare global {
 const widgetsQ = defineQuery([Position, Size, PrefabId]);
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
 
-export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }): DeskApi {
+export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null): DeskApi {
   const { world } = engine;
   const state = { ready: false };
   // THE FLIGHT PIN (D2b): a system after core's `navFlight` in `simulate` that puts the flight back at `pinned` and the camera at
@@ -181,6 +184,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     marks: () => handle.lastInputs()?.marks ?? null,
     anchor: () => handle.selection.anchor(),
     sent: [],
+    panel,
     stats: () => handle.stats(),
     wakes: () => handle.wakes(),
     submits() { const s = handle.submits(); return s === undefined ? null : { total: s.total(), buffers: s.buffers(), inWindow: (ms) => s.inWindow(ms) }; },

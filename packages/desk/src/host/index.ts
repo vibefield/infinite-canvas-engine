@@ -14,3 +14,5 @@ export { decodePicture } from "./picture";
 // What a host FEEDS the mat through the handle (the render map's finding #2): the plates' slots, the glyph atlas's shape and cells, the mat's config.
 export { DEFAULT_MAT_CONFIG, GLYPH_PAD, GLYPHS, type GlyphAtlasMeta, type MatConfig, type PlateName, type RulerConfig } from "../mat/layout";
 export type { GridConfig } from "../mat/grid";
+// …and the objects' springs a host may keep and tune live (`DeskLayerOptions.springs` — the dev panel, D5a)
+export { type ObjectSprings, SPRINGS } from "../springs";

@@ -6,6 +6,7 @@
 // runtime glyph atlas feed the mat at boot; `window.__desk` (api.ts) is the rigs' door. D4a: the desk
 // draws its marks on the GPU and the ONE screen-space selection menu rides the layer's anchor
 // (`<SelectionMenu>`), with ICE's acts and the app's own stub "Send" first (it logs — VibeField's is real).
+// D5a: the backtick opens the DEV PANEL (panel/ — the prototype's tweak panel), its params projected into the layer.
 
 import type { Entity } from "@ice/core";
 import { PointerWorld, LocalPointer, Pointer, Camera, PrefabId, Viewport, defineQuery, selectedEntities } from "@ice/core";
@@ -19,7 +20,9 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
 import { deskBlobs } from "./blobs";
 import { installPictureDrop } from "./paste";
-import { createDeskEngine, joinDeskRoom } from "./desk";
+import { createDeskEngine, deskRoom, joinDeskRoom } from "./desk";
+import { type DevPanel, installDevPanel } from "./panel/panel";
+import { defaultParams } from "./panel/params";
 import { deskText } from "./faces";
 import { productPlates } from "./fixtures";
 import { makeGlyphAtlas } from "./glyphs";
@@ -45,13 +48,13 @@ function fail(e: unknown): void {
   el.hidden = false;
 }
 
-/** The theme in force: the OS's unless pinned by `d` or a scene; every change re-projects the palette into the layer. */
-function createThemeControl(handle: () => DeskLayerHandle | null) {
+/** The theme in force: the OS's unless pinned by `d` or a scene; every change re-projects the palette into the layer (through `themeOf` — the dev panel's colours and night, once touched). */
+function createThemeControl(handle: () => DeskLayerHandle | null, themeOf: (name: ThemeName) => ReturnType<typeof deskTheme> = deskTheme) {
   let name: ThemeName = osTheme();
   let pinned = false;
   const apply = (): void => {
     document.documentElement.dataset.theme = name;
-    handle()?.setTheme(deskTheme(name), deskPalette(name));
+    handle()?.setTheme(themeOf(name), deskPalette(name));
   };
   const mq = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
   mq?.addEventListener("change", (e) => { if (!pinned) { name = e.matches ? "dark" : "light"; apply(); } });
@@ -67,16 +70,18 @@ export function App(): ReactElement {
   const [engine] = useState(() => createDeskEngine());
   const handleRef = useRef<DeskLayerHandle | null>(null);
   const apiRef = useRef<DeskApi | null>(null);
-  const themeRef = useRef(createThemeControl(() => handleRef.current));
+  const panelRef = useRef<DevPanel | null>(null);
+  const [params] = useState(() => defaultParams());
+  const themeRef = useRef(createThemeControl(() => handleRef.current, (name) => panelRef.current?.themeOf(name, deskTheme(name)) ?? deskTheme(name)));
   const matSerial = useRef(1);
   const [menuSource, setMenuSource] = useState<SelectionMenuSource | null>(null);
 
   // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
   const layer = useMemo<GroundLayerFactory>(() => {
     // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs });
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
-  }, [engine]);
+  }, [engine, params]);
 
   // The keymap is bound once per engine: its entries close over the engine (state, stable) and two refs, and read the world live.
   const keys = useMemo<KeymapEntry[]>(() => {
@@ -118,6 +123,8 @@ export function App(): ReactElement {
       { key: "c", shift: true, run: () => { const d = new Date(); stick(CALENDAR_TYPE, { month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` }); } },
       { key: "d", run: () => themeRef.current.toggle() },
       { key: "t", run: cycleVinyl },
+      // D5a: the backtick opens and closes the dev panel (screen-space DOM, the prototype's tweak panel)
+      { key: "`", run: () => panelRef.current?.toggle() },
       // ⇧ arrows nudge one lattice cell (Marks on the Mat's keys, D4a) — the engine's default ⇧ step is 10; a taped object never moves
       ...([["ArrowLeft", -1, 0], ["ArrowRight", 1, 0], ["ArrowUp", 0, -1], ["ArrowDown", 0, 1]] as const).map(([key, dx, dy]): KeymapEntry => ({ key, shift: true, run: (e) => nudgeSelection(e, dx * LATTICE_CELL, dy * LATTICE_CELL) })),
     ];
@@ -136,8 +143,10 @@ export function App(): ReactElement {
         const handle = handleRef.current;
         if (handle === null) { fail("the desk layer did not mount"); return; }
         setMenuSource(handle.selection);
+        // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing)
+        panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined });
         themeRef.current.apply();
-        const api = installDeskApi(engine, handle, themeRef.current);
+        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current);
         apiRef.current = api;
         installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
         // the product's plates and a runtime glyph atlas the moment the ground is here

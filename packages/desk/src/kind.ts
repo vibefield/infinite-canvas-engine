@@ -72,6 +72,8 @@ export interface KindPass<R = unknown> {
   spawn(mat: MatPass): KindPass<R>;
   /** Take the root's laws (the prototype's `tune()` / `copy()`): a spawned slot's pass does, every frame, before it prepares. */
   tune?(root: KindPass<R>): void;
+  /** Draw with a host's LIVE law (D5a — `handle.tuneLaw`): the root's pass takes it, and its slots follow through `tune`. */
+  setLaw?(law: unknown): void;
   /**
    * Upload this frame's records — the kind's objects in this slot, in paint order — for `slot`'s camera and light.
    * `encoder` is the frame's: work that must precede the frame's pass may be recorded into it (or a pass may submit

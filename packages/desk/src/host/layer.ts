@@ -48,6 +48,7 @@ import type { GlyphAtlasMeta, MatConfig, PlateName } from "../mat/layout";
 import { MAT_SHADER_FILES, matShaders } from "../mat/shaders";
 import { MARKS_SHADER_FILES, marksShaders } from "../marks/shaders";
 import { objectKindOf } from "../object";
+import type { ObjectSprings } from "../springs";
 import { blueNoise } from "../assets/blue-noise.gen";
 import { PAPER_KIND, type PaperWriting } from "../kinds/paper";
 import type { KindLocal } from "../kinds/world";
@@ -85,6 +86,8 @@ export interface DeskLayerOptions {
   readonly ambientIdleMs?: number;
   /** The root's grid at the mount: the mat's config (its gobo, its rulers) and the lattice's fade-in. */
   readonly grid?: GridConfig;
+  /** The objects' springs (springs.ts `SPRINGS`): the builder reads these numbers every frame, so a host that keeps the object may tune them live (the dev panel — D5a). */
+  readonly springs?: ObjectSprings;
   /** The device pixel ratio the canvas is capped at (2). */
   readonly maxDpr?: number;
   /** `navigator.gpu` unless a host hands another. */
@@ -175,6 +178,11 @@ export interface DeskLayerHandle {
   clearFlux(): void;
   /** Live insides on or off (the oracle's `portals: false` — every face draws its far LOD alone). */
   setPortals(on: boolean): void;
+  /**
+   * A kind's LAW, live (D5a — the dev panel's door): every object of `kind` resolves under `law` from the next build and the
+   * root's pass (its slots after it) draws with it; a kind with no live law ignores it. The host owns the law it hands in.
+   */
+  tuneLaw(kind: string, law: unknown): void;
   /** Pin the root's dressing (the oracle's `lodZoom`); `null` unpins. */
   pinLodZoom(zoom: number | null): void;
   /** Hold every spring and ghost where it is — a still of a moving frame (a rig's flight pin). */
@@ -285,7 +293,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const readMarquee = ctx.readMarquee;
     // a room's other people (D5a): their selections' durable keys resolve to this desk's objects through the document handed in
     const resolveKey = (key: string): Entity | undefined => opts.docs?.current()?.store.resolve(key as never);
-    const builder = createDeskBuilder(world, { objects: [...types], locals, resolveKey, ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
+    const builder = createDeskBuilder(world, { objects: [...types], locals, resolveKey, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
     // the selection menu's source: the anchor published whenever a frame moved it
     const listeners = new Set<() => void>();
     let published = "";
@@ -432,6 +440,11 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       pinFlux(entity, targets) { builder.pinFlux(entity, targets); compose.wake("pin"); },
       clearFlux() { builder.clearFlux(); compose.wake("pin"); },
       setPortals: (on) => compose.pinBuild({ portals: on }),
+      tuneLaw(kind, law) {
+        for (const t of types) { const k = objectKindOf(t); if (k?.name === kind) k.tune?.(law); }
+        ground?.root.kinds.get(kind)?.pass.setLaw?.(law);
+        compose.wake("pin");
+      },
       pinLodZoom: (zoom) => compose.pinBuild({ lodZoom: zoom }),
       freeze: (on) => compose.pinBuild({ freeze: on }),
       holdRedress: (on) => compose.pinBuild({ holdRedress: on }),

@@ -155,6 +155,8 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   readonly reach: number;
   /** Components and tags the kind reads beyond its own props (the builder adds them to its change journal). */
   readonly reads?: { readonly components?: readonly Component[]; readonly tags?: readonly Tag[] };
+  /** A host's LIVE law (D5a — the dev panel's door, `handle.tuneLaw`): the kind resolves under it from the next build. Absent, its law is fixed. */
+  tune?(law: unknown): void;
   /** The entity's geometry this frame, from its rect, its props and its flux — the prototype's `resolve*`. */
   resolve(ctx: ObjectContext): G;
   /** The record the kind's pass draws for that geometry — the prototype's instance. */
