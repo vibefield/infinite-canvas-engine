@@ -4,7 +4,8 @@
 // process-global): an app lists them in `createCanvasEngine({ widgets })` and the desk layer
 // registers their kinds with the ground.
 export { MINIMAT_TYPE, MiniMat, VINYLS, type VinylName } from "./minimat";
-export { NOTE_TYPE, Note, PAPERS, type PaperName, PENS, type PenName } from "./note";
+export { NOTE_INK, NOTE_PROPS, NOTE_TYPE, Note, PAPERS, type PaperName, PENS, type PenName } from "./note";
+export { createNoteTyping, type NoteTyping, type NoteTypingOptions, type TypingDocs } from "./typing";
 
 import { MiniMat } from "./minimat";
 import { Note } from "./note";

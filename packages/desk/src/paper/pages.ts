@@ -79,6 +79,27 @@ export class InkShelves {
 
   reset(): void { for (const L of this.stack) { L.rows.length = 0; L.cursor = 0; } }
 
+  /**
+   * Give back every layer's TRAILING rows that hold nothing (D2c): a row keeps its height for life, so a
+   * zoom through the band ladder would otherwise leave each layer carved into rows of every rung, and a
+   * raster of a new height would find no room though the texels are free. A trimmed layer's cursor
+   * retreats; a layer emptied entirely is carved afresh. Rows before a used one stay — the rects in
+   * them are the notes' own. Returns the rows given back.
+   */
+  trim(): number {
+    let n = 0;
+    for (const L of this.stack) {
+      for (;;) {
+        const last = L.rows.at(-1);
+        if (last === undefined || !last.spans.every((s) => s.free)) break;
+        L.rows.pop();
+        L.cursor = last.y;
+        n += 1;
+      }
+    }
+    return n;
+  }
+
   /** Texels in use, rows opened, layers touched — the churn instrument. */
   get stats(): { readonly used: number; readonly rows: number; readonly layersUsed: number } {
     let used = 0;

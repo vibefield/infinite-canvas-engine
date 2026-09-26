@@ -1,0 +1,208 @@
+// @vitest-environment node
+// TYPING IS A GESTURE (design-015 §6.1; D2c) — a real engine, a real document, the desk's Note. The
+// claim (`Editing`, one writer) is what makes the live write legal; a session's keystrokes write the
+// note's `ink` cell LIVE — the renderer's to draw, the document's not yet — and the session's end
+// commits them as ONE transaction, text and seeds together, so ONE undo takes the whole session back;
+// a session that nets to nothing commits nothing; a remote edit during a session is dropped and the
+// session's commit wins (the claimed-cell rule), while one between sessions applies.
+import { createCanvasEngine, defineQuery, Editing, type Entity, guardedTransaction } from "@ice/core";
+import { describe, expect, it } from "vitest";
+import { decodeSeeds, seedsFor } from "../src/paper/seeds";
+import { NOTE_INK, Note } from "../src/objects";
+import { createNoteTyping } from "../src/objects/typing";
+
+function makeDesk() {
+  const ce = createCanvasEngine({ widgets: [Note] });
+  ce.docs.create();
+  let now = 0;
+  const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
+  const note = (text = ""): Entity => ce.ops.spawnWidget("desk.note", { x: 0, y: 0, props: { seed: 7, text }, undoable: false });
+  let next = 5000;
+  const typing = createNoteTyping({ world: ce.world, docs: ce.docs, fresh: () => next++ });
+  const session = () => { const s = ce.docs.current(); if (s === undefined) throw new Error("no doc"); return s; };
+  const doc = (e: Entity) => session().store.getComponent(e, NOTE_INK) as { text: string; seeds: string } | undefined;
+  const live = (e: Entity) => ce.world.get(e, NOTE_INK) as { text: string; seeds: string } | undefined;
+  const undoSteps = (): number => { let n = 0; const s = session().store; while (s.canUndo() && n < 50) { s.undo(); n += 1; } for (let i = 0; i < n; i++) s.redo(); return n; };
+  return { ce, world: ce.world, step, note, typing, doc, live, undoSteps, session };
+}
+
+/** Type as the platform would: the textarea's value after each key. */
+const keys = (t: ReturnType<typeof createNoteTyping>, from: string, chars: string): string => {
+  let v = from;
+  for (const ch of chars) { v += ch; t.input(v); }
+  return v;
+};
+
+describe("typing · the claim (design-015 §6.1)", () => {
+  it("begin stamps `Editing` — the one writer — and the live write is legal only under it", () => {
+    const { world, step, note, typing, session } = makeDesk();
+    const a = note();
+    step();
+    expect(() => session().liveWriter.set(a, NOTE_INK, { text: "x", seeds: "" })).toThrow(/gesture claim/);
+    expect(typing.begin(a)).toBe(true);
+    expect(world.hasTag(a, Editing)).toBe(true);
+    expect(typing.editing()).toBe(a);
+    expect(() => typing.input("x")).not.toThrow();
+    typing.end();
+    expect(world.hasTag(a, Editing)).toBe(false);
+    expect(typing.editing()).toBeUndefined();
+  });
+
+  it("the claim is ONE: beginning on another note ends the first — its session committed, its claim lifted", () => {
+    const { world, step, note, typing, doc } = makeDesk();
+    const a = note();
+    const b = note();
+    step();
+    typing.begin(a);
+    keys(typing, "", "hi");
+    typing.begin(b);
+    expect(world.hasTag(a, Editing)).toBe(false);
+    expect(world.hasTag(b, Editing)).toBe(true);
+    expect(doc(a)?.text).toBe("hi");
+  });
+});
+
+describe("typing · the session is ONE transaction", () => {
+  it("keystrokes write the cell LIVE (the document untouched, no undo step); the commit writes text AND seeds once; ONE ⌘Z takes it all back", () => {
+    const { step, note, typing, doc, live, undoSteps, session } = makeDesk();
+    const a = note("buy milk");
+    step();
+    const before = undoSteps();
+    typing.begin(a);
+    keys(typing, "buy milk", "!!!");
+    expect(live(a)?.text).toBe("buy milk!!!");
+    expect(doc(a)?.text).toBe("buy milk");
+    expect(undoSteps()).toBe(before);
+    expect(typing.open()).toBe(true);
+    expect(typing.commit()).toBe(true);
+    expect(typing.open()).toBe(false);
+    step();
+    expect(doc(a)?.text).toBe("buy milk!!!");
+    // the seeds went with the text in the same cell: the untouched run keeps the note's own hand, the typed run is fresh
+    const seeds = decodeSeeds(doc(a)?.seeds ?? "");
+    expect(seeds.slice(0, 8)).toEqual(seedsFor("buy milk", "", 7));
+    expect(seeds.slice(8)).toEqual([5000, 5001, 5002]);
+    expect(undoSteps()).toBe(before + 1);
+    // ONE undo restores the whole session — text and seeds
+    session().store.undo();
+    step();
+    expect(live(a)).toEqual({ text: "buy milk", seeds: "" });
+    session().store.redo();
+    step();
+    expect(live(a)?.text).toBe("buy milk!!!");
+  });
+
+  it("a session that nets to nothing commits nothing (no undo step); a commit with no open session is a no-op", () => {
+    const { step, note, typing, doc, undoSteps } = makeDesk();
+    const a = note("hi");
+    step();
+    const before = undoSteps();
+    typing.begin(a);
+    typing.input("hix");
+    typing.input("hi");
+    expect(typing.commit()).toBe(false);
+    expect(typing.commit()).toBe(false);
+    typing.end();
+    step();
+    expect(doc(a)?.text).toBe("hi");
+    expect(undoSteps()).toBe(before);
+  });
+
+  it("two sessions on one focus are two undo steps; the second carries the first one's seeds on", () => {
+    const { step, note, typing, doc, undoSteps, session } = makeDesk();
+    const a = note();
+    step();
+    const before = undoSteps();
+    typing.begin(a);
+    keys(typing, "", "ab");
+    typing.commit();   // 1 s without input
+    step();
+    keys(typing, "ab", "c");
+    typing.end();      // Esc
+    step();
+    expect(doc(a)?.text).toBe("abc");
+    expect(decodeSeeds(doc(a)?.seeds ?? "")).toEqual([5000, 5001, 5002]);
+    expect(undoSteps()).toBe(before + 2);
+    session().store.undo();
+    step();
+    expect(doc(a)?.text).toBe("ab");
+  });
+
+  it("a note deleted mid-session: the claim dies with it, nothing is committed, and the undo of the delete brings it back as last committed", () => {
+    const { ce, world, step, note, typing } = makeDesk();
+    const a = note("kept");
+    step();
+    typing.begin(a);
+    keys(typing, "kept", " and lost");
+    ce.ops.setSelection([a], "replace");
+    ce.ops.deleteSelection();
+    step();
+    expect(world.isAlive(a)).toBe(false);
+    expect(typing.editing()).toBeUndefined();
+    expect(typing.commit()).toBe(false);
+    expect(() => typing.end()).not.toThrow();
+    ce.docs.undo();
+    step();
+    const notes: string[] = [];
+    world.query(defineQuery([NOTE_INK])).each((b) => { for (const r of b) notes.push((world.get(b.entity(r), NOTE_INK) as { text: string }).text); });
+    expect(notes).toEqual(["kept"]);
+  });
+});
+
+describe("typing · the claimed-cell rule across peers (strata 006 C5)", () => {
+  /** A second peer on A's document: B opens A's envelope; its entity for A's note by key. */
+  function pair(text: string) {
+    const A = makeDesk();
+    const a = A.note(text);
+    A.step();
+    const B = makeDesk();
+    B.ce.docs.open(A.session().exportEnvelope());
+    B.step();
+    const key = A.session().store.keyOf(a);
+    const b = key === undefined ? undefined : B.session().store.resolve(key);
+    if (b === undefined) throw new Error("B has no twin of A's note");
+    const sync = (from: typeof A, to: typeof A) => { to.session().applyRemote(from.session().exportSnapshot()); to.step(); };
+    const edit = (P: typeof A, e: Entity, t: string) => { guardedTransaction(P.session().store, P.world, (tx) => { tx.edit(e).set(NOTE_INK, { text: t, seeds: "" }); }); P.step(); };
+    return { A, B, a, b, sync, edit };
+  }
+
+  it("a remote edit DURING a session is dropped from the live cell and the session's commit wins — both peers converge on it", () => {
+    const { A, B, a, b, sync, edit } = pair("base");
+    A.typing.begin(a);
+    keys(A.typing, "base", "-A");
+    edit(B, b, "base-B");
+    sync(B, A);
+    expect(A.live(a)?.text).toBe("base-A");   // held off: the gesture owns the cell
+    A.typing.end();
+    A.step();
+    expect(A.doc(a)?.text).toBe("base-A");
+    sync(A, B);
+    expect(B.live(b)?.text).toBe("base-A");
+  });
+
+  it("a session that nets to nothing yields: the remote edit it held off applies", () => {
+    const { A, B, a, b, sync, edit } = pair("base");
+    A.typing.begin(a);
+    A.typing.input("basex");
+    edit(B, b, "base-B");
+    sync(B, A);
+    expect(A.live(a)?.text).toBe("basex");
+    A.typing.input("base");
+    expect(A.typing.commit()).toBe(false);
+    A.step();
+    expect(A.live(a)?.text).toBe("base-B");
+    A.typing.end();
+  });
+
+  it("a remote edit BETWEEN sessions (the editor on the note, no key yet) applies, and the next key writes from it", () => {
+    const { A, B, a, b, sync, edit } = pair("base");
+    A.typing.begin(a);
+    edit(B, b, "base-B");
+    sync(B, A);
+    expect(A.live(a)?.text).toBe("base-B");
+    keys(A.typing, "base-B", "!");
+    A.typing.end();
+    A.step();
+    expect(A.doc(a)?.text).toBe("base-B!");
+  });
+});

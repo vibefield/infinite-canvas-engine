@@ -122,6 +122,8 @@ export class PaperPass {
   /** Room for a `w × h` raster, or null when the pages are full (the note then draws its paper alone). */
   alloc(w: number, h: number): InkRect | null { return this.shared.shelves.alloc(w, h); }
   free(r: InkRect): void { this.shared.shelves.free(r); }
+  /** Give back the layers' trailing empty rows (pages.ts `trim`) — the writing's own housekeeping after a free (D2c). */
+  trim(): number { return this.shared.shelves.trim(); }
   /**
    * Every raster forgotten — a scene reload. The texels stay until overwritten — and a raster's
    * edge, sampled bilinearly, reads one texel beyond its rect, so a host that wants the pages as a

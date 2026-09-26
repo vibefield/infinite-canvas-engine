@@ -54,3 +54,13 @@ export const Stratum = defineComponent("Stratum", {
 
 /** Durable: taped down (design-015 §5.1, Q-e). One writer: `ops.setLocked`. */
 export const Locked = defineTag("Locked");
+
+/**
+ * Runtime: the ONE focused editor is on this object (design-015 §5.1, §6.1 — D2c): a note being
+ * written. One writer, the desk's typing session (`@ice/desk` objects/typing.ts); a runtime rider,
+ * never in the document (a peer's editor is its own). While present it is a GESTURE CLAIM on the
+ * object's cells — `makeDefaultMayDiverge` grants the divergence — so the session writes the note's
+ * text LIVE through the guarded live writer and commits it ONCE when the session ends (design-001
+ * §3's gesture protocol with the keyboard as the gesture: ⌘Z undoes a typing session, never a key).
+ */
+export const Editing = defineTag("Editing");

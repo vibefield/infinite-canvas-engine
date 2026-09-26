@@ -8,8 +8,12 @@
 // the seed's tilt (`tiltOf`), the flux the builder stepped (lift ← `Grab`, ring ← `Selected`,
 // fade ← a delete ghost — a note never hovers); `pickPaper` is the mirror. The sheet's colour and
 // the pen's ink are the PRODUCT's (the theme gate: no literal here) — `theme()` takes them from the
-// palette's `papers` and `pens` by the prop's value. The raster is only a committed asset in this
-// slice (the host pins it, `ctx.asset`); the live text is D2c's.
+// palette's `papers` and `pens` by the prop's value.
+//
+// And its TEXT (D2c, design-015 §6.1): the kind's own state on each desk is a WRITING
+// (paper/writing.ts — `local()`): the hand's layout from the note's durable `text` and `seeds`, the
+// ink raster on the √2 band ladder in the pass's pages, the pen's wipe, the editor's caret. `record`
+// takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
 
 import type { KindPass, KindProgram, SlotContext } from "../kind";
 import type { MatPass } from "../mat/mat-pass";
@@ -18,9 +22,11 @@ import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolv
 import { PaperPass } from "../paper/paper-pass";
 import { PAPER_SHADER_FILES, paperShaders } from "../paper/shaders";
 import type { UvRect } from "../paper/pages";
+import type { HandLaw } from "../paper/text";
+import { createWriting, type Writing } from "../paper/writing";
 import { type ShaderText, shaderText } from "../shaders";
-import { type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
-import { numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
+import { HAND, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import { type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
 /** The note's kind name — its key in the registry and in every slot's `objects`. */
 export const PAPER_KIND = "paper";
@@ -93,7 +99,15 @@ export interface PaperKindOptions {
   readonly text?: ShaderText;
   /** The paper's numbers (theme.ts `PAPER`) — the engine's unless a host tweaks them. */
   readonly law?: PaperLaw;
+  /** The hand (D2c): its law (theme.ts `HAND`), its face (`caveat`) and the pen's bleed (0.3 note units). */
+  readonly hand?: { readonly law?: HandLaw; readonly face?: string; readonly bleed?: number };
 }
+
+/** The root paper pass's pages behind a kind host — the writing's `pages()`. */
+const pagesOf = (host: KindHost) => (): PaperPass | undefined => {
+  const pass = host.pass();
+  return pass instanceof PaperKind ? pass.pass : undefined;
+};
 
 /** The note's kind, whole (kinds/world.ts `ObjectKind`): the program, and the world half on the prototype's laws. */
 export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry, PaperInstance, PaperLook> {
@@ -104,6 +118,15 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
   return {
     ...program,
     reach: paperReach(law),
+    local: (host: KindHost): Writing => createWriting({
+      pages: pagesOf(host),
+      text: host.text,
+      wipeMs: HAND.wipeMs,
+      blinkMs: law.caret.blinkMs,
+      ...(opts.hand?.law !== undefined ? { hand: opts.hand.law } : {}),
+      ...(opts.hand?.face !== undefined ? { face: opts.hand.face } : {}),
+      ...(opts.hand?.bleed !== undefined ? { bleed: opts.hand.bleed } : {}),
+    }),
     resolve(ctx: ObjectContext): PaperGeometry {
       const r = ctx.rect;
       const seed = numberProp(ctx.props, "seed", 0);
@@ -116,8 +139,12 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       const paper = papers[stringProp(ctx.props, "paper", "")] ?? Object.values(papers)[0];
       const ink = pens[stringProp(ctx.props, "pen", "")] ?? Object.values(pens)[0];
       if (paper === undefined || ink === undefined) throw new Error("desk/paper: the note's colours are the host's — the palette names no `papers`/`pens` (kinds/paper.ts `PaperPalette`)");
+      // the writing on this desk: the live (or pinned) ink, the pen's wipe, the caret; a builder pin is the fallback
+      const w = ctx.local as Writing | undefined;
+      const hand = w?.draw(ctx.entity, ctx.props, ctx.rect, ctx.view, G) ?? {};
       const asset = ctx.asset;
-      return { geometry: G, paper, ink, ...(isPaperAsset(asset) ? { raster: { layer: asset.layer, uv: asset.uv } } : {}) };
+      const raster = hand.raster ?? (isPaperAsset(asset) ? { layer: asset.layer, uv: asset.uv } : undefined);
+      return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}) };
     },
     hit(G: PaperGeometry, wx: number, wy: number): ObjectHit | null {
       return pickPaper(G, wx, wy) === "paper" ? "content" : null;

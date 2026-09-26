@@ -51,12 +51,16 @@ describe("defineObject (design-015 §5.2, D-D16)", () => {
     expect(isObjectKind(paperKind())).toBe(true);
   });
 
-  it("Note: desk.note — text · pen · paper · seed, 200², things, snapping both ways, offered to a mini mat", () => {
+  it("Note: desk.note — text · seeds (one `ink` cell, D2c) · pen · paper · seed, 200², things, snapping both ways, offered to a mini mat", () => {
     expect(Note.type).toBe(NOTE_TYPE);
     expect(Note.surface).toBe("object");
     expect(Note.stratum).toBe("things");
     expect(Note.defaultSize).toEqual({ w: PAPER.size, h: PAPER.size });
-    expect(Object.keys(Note.propToGroup).sort()).toEqual(["paper", "pen", "seed", "text"]);
+    expect(Object.keys(Note.propToGroup).sort()).toEqual(["paper", "pen", "seed", "seeds", "text"]);
+    // the writing is ONE conflict group: its text and its hand's seeds are one cell, written in one transaction (D-D13)
+    expect(Note.propToGroup.text).toBe("ink");
+    expect(Note.propToGroup.seeds).toBe("ink");
+    expect(Note.propToGroup.pen).toBe("props");
     expect(Note.provides).toEqual([NOTE_TYPE]);
     expect(Note.container).toBeUndefined();
     expect(must(objectKindOf(Note)).name).toBe("paper");
@@ -106,6 +110,27 @@ describe("the note's world half (kinds/paper.ts paperKind)", () => {
     // an unknown pen or paper name falls back to the look's first — never a blank; no look at all is the host's mistake, said so
     expect(kind.record(G, { ...ctx, props: { pen: "chalk", paper: "vellum" } }).ink).toEqual(pen("felt"));
     expect(() => kind.record(G, { ...ctx, look: undefined })).toThrow(/papers.*pens/);
+  });
+
+  it("record takes the WRITING's ink (D2c): the live raster, the pen's wipe and the caret from the desk's `local`, which wins over a builder pin", () => {
+    const ctx = ctxOf({ rect: rectOf({ x: 200, y: 150 }, { w: 200, h: 200 }), props: { seed: 7, paper: "yellow", pen: "ball", text: "hi" }, look });
+    const G = kind.resolve(ctx);
+    const live = { layer: 2, uv: { u0: 0.5, v0: 0, u1: 0.7, v1: 0.2 } };
+    const wipe = { x0: 1, y0: 2, x1: 3, y1: 4, t: 0.5 };
+    const caret = { x: 5, y: 6, above: 7, below: 8, on: true };
+    const handed: unknown[] = [];
+    const local = { draw: (...args: unknown[]) => { handed.push(args); return { raster: live, wipe, caret }; } };
+    const R = kind.record(G, { ...ctx, local, asset: { layer: 0, uv: { u0: 0, v0: 0, u1: 1, v1: 1 } } });
+    expect(R.raster).toEqual(live);
+    expect(R.wipe).toEqual(wipe);
+    expect(R.caret).toEqual(caret);
+    // the writing was handed the entity, its props, its rect, the slot's view and the geometry just resolved
+    expect(handed).toEqual([[ctx.entity, ctx.props, ctx.rect, ctx.view, G]]);
+    // a writing with nothing for the note leaves the builder's pin as the fallback, and no marks
+    const bare = kind.record(G, { ...ctx, local: { draw: () => ({}) }, asset: { layer: 1, uv: live.uv } });
+    expect([bare.raster, bare.wipe, bare.caret]).toEqual([{ layer: 1, uv: live.uv }, undefined, undefined]);
+    // and the kind makes its desk's writing itself (`local`), over the root pass the host names
+    expect(typeof must(kind.local)({ pass: () => undefined }).tick).toBe("function");
   });
 
   it("hit: content inside the sheet, null outside — pickPaper on the same geometry; reach covers the shadow, the tilt and the held scale", () => {

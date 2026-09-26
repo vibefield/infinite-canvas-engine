@@ -21,10 +21,11 @@
 // arrive with D3.
 
 import type { Component, Entity, Tag } from "@ice/core";
-import type { KindProgram, StratumName } from "../kind";
+import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
 import type { Lamp } from "../paper/paper";
+import type { TextRaster } from "../paper/raster";
 import type { GroundTheme, Palette, ThemeName } from "../theme";
 
 /** An object's rect on its desk, world units, CENTRED — converted from ICE's top-left `Position` + `Size` by the builder, once. */
@@ -73,10 +74,37 @@ export interface ObjectContext {
   /** The frame's dt, SECONDS (the engine's clamped dt). */
   readonly dt: number;
   /**
-   * A per-entity asset the HOST pinned through the layer (`pinRaster`: the note's committed ink
-   * raster for a parity scene — `{ layer, uv }`); `undefined` = none. Flux, never a world fact.
+   * A per-entity asset the HOST pinned through the builder (`DeskBuilder.pin`) — `undefined` = none.
+   * Flux, never a world fact. (The note's committed raster moved into its kind's `local` at D2c.)
    */
   readonly asset?: unknown;
+  /**
+   * The kind's OWN state on this desk — what `ObjectKind.local()` made for it (the note's writing:
+   * its layouts, its rasters' residency, the caret, the wipe — D2c); `undefined` when the kind keeps
+   * none. Flux, never a world fact; the builder threads it and tells it when an entity is forgotten.
+   */
+  readonly local?: unknown;
+}
+
+/** What a desk hands a kind's `local()` (D2c): its ROOT pass once the ground is made, and the host's text seam. */
+export interface KindHost {
+  /** The kind's root pass on this desk's ground; `undefined` before `Ground.create` resolves and after the layer ends. */
+  pass(): KindPass | undefined;
+  /** The host's text raster (desk/host/ink.ts in a browser); absent in Node — the oracle pins committed rasters. */
+  readonly text?: TextRaster | undefined;
+}
+
+/**
+ * A kind's own state on ONE desk (D2c) — made once per desk by `ObjectKind.local`, threaded by the
+ * builder into every context of the kind as `ctx.local`, and told the frame's clock and each entity's
+ * end, so a kind can keep per-entity residency (a raster, a decoded picture) outside the world.
+ */
+export interface KindLocal {
+  /** Once a tick, before the draw, with the frame's clock (ms): does the state want a frame now (a wipe, a blink, an asset landed)? */
+  tick?(now: number): boolean;
+  /** The entity left this desk for good — its ghost faded, it left the frame, the desk was reset: free what it held. */
+  forget?(e: Entity): void;
+  dispose?(): void;
 }
 
 /**
@@ -102,6 +130,8 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   chip?(geometry: G, inside: unknown): unknown;
   /** The kind's colours from the host's palette, per theme — the look `record` reads (`ctx.look`). */
   theme?(palette: Palette, name: ThemeName): L;
+  /** The kind's own state on one desk (`ctx.local`) — made by the host once per desk; absent = none (D2c). */
+  local?(host: KindHost): KindLocal;
 }
 
 /** The strata a kind may declare — re-exported beside the contract for a kind's author. */

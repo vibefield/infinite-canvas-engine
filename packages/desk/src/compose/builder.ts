@@ -55,7 +55,7 @@ import {
   type World,
 } from "@ice/core";
 import type { SlotObject } from "../ground";
-import { FLUX_REST, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectOf } from "../kinds/world";
+import { FLUX_REST, type KindLocal, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectOf } from "../kinds/world";
 import type { GridConfig } from "../mat/grid";
 import { type Lamp, lampOf } from "../paper/paper";
 import { objectKindOf } from "../object";
@@ -79,6 +79,12 @@ export interface DeskBuilderOptions {
   readonly ghostMs?: number;
   /** The cull margin past the view, CSS px (the prototype's 200). */
   readonly marginPx?: number;
+  /**
+   * The kinds' own state on this desk by kind name (kinds/world.ts `KindLocal` — the note's writing,
+   * D2c): threaded into every context of the kind as `ctx.local`, and told when an entity is FORGOTTEN
+   * (its ghost faded, it left the frame, it died unseen) so what it held — a raster's rect — goes back.
+   */
+  readonly locals?: ReadonlyMap<string, KindLocal>;
 }
 
 export interface DeskBuilderStats {
@@ -223,6 +229,9 @@ function advance(x: number, v: number, target: number, hz: number, damp: number,
 
 export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskBuilder {
   const S = opts.springs ?? SPRINGS;
+  const locals = opts.locals;
+  /** The entity is gone from this desk for good: its kind's own state lets go of it (D2c). */
+  const forget = (kind: ObjectKind, e: Entity): void => { locals?.get(kind.name)?.forget?.(e); };
   const ghostS = (opts.ghostMs ?? GHOST_MS) / 1000;
   const marginPx = opts.marginPx ?? MARGIN_PX;
   const order = createSiblingOrderIndex(world);
@@ -350,7 +359,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       for (const t of tiers) t.sort((a, b) => compareStackOrder(reader, ordinals, a, b));
       const list = [...tiers[0], ...tiers[1]];
       // an object that left the frame without dying (a nav cut — D2b) is forgotten, no ghost: it was not deleted
-      for (const [e, st] of states) if (st.seen !== seq) states.delete(e);
+      for (const [e, st] of states) if (st.seen !== seq) { states.delete(e); forget(st.kind, e); }
       // pass: the cull, the springs, the kind's geometry and record, in paint order
       const rows: Row[] = [];
       let live = false;
@@ -375,7 +384,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         [st.ring, st.ringV, moving] = advance(st.ring, st.ringV, pin?.ring ?? (st.selected ? 1 : 0), S.ringHz, S.ringDamp, dt, pin?.ring !== undefined);
         live ||= moving;
         const asset = assets.get(e);
-        const ctx: ObjectContext = { entity: e, rect: r, props: st.props, flux: fluxOf(st), look: looks.get(st.kind.name), theme, lamp, view, grid, dt, ...(asset !== undefined ? { asset } : {}) };
+        const local = locals?.get(st.kind.name);
+        const ctx: ObjectContext = { entity: e, rect: r, props: st.props, flux: fluxOf(st), look: looks.get(st.kind.name), theme, lamp, view, grid, dt, ...(asset !== undefined ? { asset } : {}), ...(local !== undefined ? { local } : {}) };
         const G = st.kind.resolve(ctx);
         const R = st.kind.record(G, ctx);
         st.geometry = G;
@@ -385,9 +395,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // the ghosts: each fades where it was — just before the object that followed it, else at its band's end — then is forgotten
       for (const [e, g] of ghosts) {
         g.del = Math.min(g.del + dt / ghostS, 1);
-        if (g.del >= 1) { ghosts.delete(e); continue; }
+        if (g.del >= 1) { ghosts.delete(e); forget(g.kind, e); continue; }
         live = true;
-        const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp, view, grid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}) };
+        const local = locals?.get(g.kind.name);
+        const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp, view, grid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
         const G = g.kind.resolve(ctx);
         const row: Row = { entity: undefined, kind: g.kind.name, record: g.kind.record(G, ctx), band: g.band };
         let at = g.next === undefined ? -1 : rows.findIndex((q) => q.entity === g.next);
@@ -416,6 +427,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           const st = states.get(e);
           if (st === undefined) continue;
           ghostOf(e, st);   // the ghost takes the asset with it
+          if (!ghosts.has(e)) forget(st.kind, e);   // never drawn: nothing fades, the kind lets go now
           states.delete(e);
           pins.delete(e);
           assets.delete(e);
