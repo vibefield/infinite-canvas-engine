@@ -180,6 +180,14 @@ export interface WidgetBehaviorEntry {
 export interface WidgetInteraction {
   readonly selectable?: boolean;
   readonly movable?: boolean;
+  /**
+   * May this widget be dropped INTO an accepting container (design-015 §9, D-D6 — D2b)?
+   * `"into"` (default): yes — for a GPU object, when its centre is let go over the container's
+   * FACE, at the point where it lay in the inside's own units (it takes the inside's scale), ⌥
+   * held at the release keeping it out. `"never"`: a root object always (D-D18: the notebook, the
+   * whiteboard, the calendar) — the widget offers itself to no container (no `Provides`).
+   */
+  readonly drop?: "into" | "never";
   readonly resizable?: boolean;
   readonly snap?: "source" | "target" | "both" | "none";
   /** Drop-REJECTING target: widgets dropped onto this one fly back (v1 iOS-card contract). */
@@ -383,6 +391,8 @@ export interface WidgetType {
   readonly keyboard: "shared" | "exclusive";
   /** Escape ownership under an exclusive claim ("release" = engine-reserved). */
   readonly keyboardEscape: "release" | "widget";
+  /** May instances be dropped INTO an accepting container (design-015 §9; `"never"` = a root object always, D-D18)? The drop system reads THIS. */
+  readonly drop: "into" | "never";
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
   /** Pre-attached behaviors, normalized (spawn tx for durable, equip for runtime). */
   readonly behaviors: readonly WidgetBehaviorEntry[];
@@ -595,10 +605,13 @@ export function defineWidget(def: WidgetDef): WidgetType {
     for (const [name, spec] of Object.entries(g.fields)) defaults[name] = defaultValueOf(spec);
     essential.push([g.component, defaults] as ComponentInit);
   }
+  // `interaction.drop: "never"` (design-015 D-D18): the widget offers itself to no container — its
+  // Provides cell is empty, so no drop ever matches and a release over a container is a plain move.
+  const dropNever = def.interaction?.drop === "never";
   if (def.container !== undefined) {
     essential.push(init(Accepts, { list: JSON.stringify(def.container.accepts) }));
-    essential.push(init(Provides, { list: JSON.stringify(def.container.provides ?? []) }));
-  } else if (def.provides !== undefined && def.provides.length > 0) {
+    essential.push(init(Provides, { list: JSON.stringify(dropNever ? [] : (def.container.provides ?? [])) }));
+  } else if (!dropNever && def.provides !== undefined && def.provides.length > 0) {
     essential.push(init(Provides, { list: JSON.stringify(def.provides) })); // leaf: no Container tag
   }
 
@@ -829,6 +842,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
           }),
     keyboard: interaction.keyboard ?? "shared",
     keyboardEscape: interaction.keyboardEscape ?? "release",
+    drop: interaction.drop ?? "into",
     migrate: def.migrate ?? {},
     behaviors: behaviorEntries,
     previewComponent: previewDecl.component,

@@ -53,7 +53,9 @@ import {
 } from "../catalog";
 import type { CommitCreate, CommitOrder, CommitSink, CommitWrite } from "../engine/commit-sink";
 import { SelectionVersion, bumpVersion } from "../helpers/version-stamps";
+import type { NavGeometrySlot } from "../nav/nav-geometry";
 import { selectedEntities } from "../ops/selection";
+import { dropFaceOf, insideRect, objectsOnly } from "./l3-drop";
 
 const P = GesturePhases;
 
@@ -209,7 +211,9 @@ function commitOrders(ctx: SystemCtx, dragged: readonly Entity[]): CommitOrder[]
 export function createSelectMoveBehaviors(
   world: World,
   sink: CommitSink,
+  opts: { readonly navGeometry?: NavGeometrySlot } = {},
 ): { selectBehavior: System; moveBehavior: System } {
+  const navGeometry = opts.navGeometry;
   const selectBehavior = defineSystem(
     tapRecognizedQ,
     (b, ctx) => {
@@ -296,12 +300,37 @@ export function createSelectMoveBehaviors(
           const wx = d.totalX / d.zoomAtClaim + snap.dx;
           const wy = d.totalY / d.zoomAtClaim + snap.dy;
           let container = ctx.getRelation(rec, DropTarget);
+          // The desk's rules for an all-OBJECT set (design-015 §9, D2b): ⌥ held at the release
+          // keeps the object on this desk; the centre of the FINAL bounds over the container's
+          // FACE decides; the landing goes through the inside's embedding (below).
+          const objects = objectsOnly(world, dragged);
+          const pointer = ctx.getRelations(rec, Watches)[0];
+          const alt = pointer !== undefined && ctx.get(pointer, PointerMods)?.alt === true;
+          if (objects && alt) container = undefined;
+          let drop: ReturnType<typeof dropFaceOf> | undefined;
 
           // Re-validate at RELEASE: the drop system's candidate is one frame
           // behind, and a coalesced final-move+up frame can leave a STALE
           // target the widget no longer overlaps (2026-07-12: a mid-path card
           // triggered a spurious fly-back). The FINAL bounds are the truth.
-          if (container !== undefined && ctx.isAlive(container)) {
+          if (container !== undefined && ctx.isAlive(container) && objects) {
+            drop = dropFaceOf(world, container, navGeometry);
+            let minX = Number.POSITIVE_INFINITY;
+            let minY = Number.POSITIVE_INFINITY;
+            let maxX = Number.NEGATIVE_INFINITY;
+            let maxY = Number.NEGATIVE_INFINITY;
+            for (const w of dragged) {
+              if (!ctx.isAlive(w) || !ctx.has(w, Grab) || !ctx.has(w, Size)) continue;
+              const g = ctx.read(w, Grab);
+              const ws = ctx.read(w, Size);
+              minX = Math.min(minX, g.x + wx);
+              minY = Math.min(minY, g.y + wy);
+              maxX = Math.max(maxX, g.x + wx + ws.w);
+              maxY = Math.max(maxY, g.y + wy + ws.h);
+            }
+            const over = drop !== undefined && Number.isFinite(minX) && insideRect(drop.face, (minX + maxX) / 2, (minY + maxY) / 2);
+            if (!over) container = undefined; // the centre left the face → plain commit
+          } else if (container !== undefined && ctx.isAlive(container)) {
             const cp = ctx.get(container, Position);
             const cs = ctx.get(container, Size);
             let overlaps = false;
@@ -370,17 +399,29 @@ export function createSelectMoveBehaviors(
               if (cp === undefined || cs === undefined) continue;
               incumbents.push({ x: cp.x, y: cp.y, w: cs.w, h: cs.h });
             }
+            // An OBJECT goes in through the inside's EMBEDDING (design-015 §9, the prototype's
+            // `dropInto`): where its centre lay on the face, in the inside's own units — `(n − M.o) / M.s`
+            // — its size kept, so it takes the inside's scale; no free-slot placement (it lands where
+            // it was let go, as a thing put into a nested desk does).
+            const M = objects ? drop?.affine : undefined;
             for (const w of dragged) {
               if (!ctx.isAlive(w) || !ctx.has(w, Grab)) continue;
               const g = ctx.read(w, Grab);
-              // Container-frame conversion: world → container-local (M8 refines
-              // to the kernel container-frame path once nested canvas lands).
-              const hint = { x: g.x + wx - containerPos.x, y: g.y + wy - containerPos.y };
               const wm = ctx.get(w, MeasuredSize);
               const ws = wm !== undefined && wm.w > 0 ? wm : (ctx.get(w, Size) ?? { w: 0, h: 0 });
-              const slot = insertSlot(incumbents, ws, hint, CONSUME_GUTTER);
-              // Later cards in a multi-drop see the earlier ones as occupied.
-              incumbents.push({ x: slot.x, y: slot.y, w: ws.w, h: ws.h });
+              let slot: { x: number; y: number };
+              if (M !== undefined) {
+                const ncx = g.x + wx + ws.w / 2;
+                const ncy = g.y + wy + ws.h / 2;
+                slot = { x: (ncx - M.ox) / M.s - ws.w / 2, y: (ncy - M.oy) / M.s - ws.h / 2 };
+              } else {
+                // Container-frame conversion: world → container-local (M8 refines
+                // to the kernel container-frame path once nested canvas lands).
+                const hint = { x: g.x + wx - containerPos.x, y: g.y + wy - containerPos.y };
+                slot = insertSlot(incumbents, ws, hint, CONSUME_GUTTER);
+                // Later cards in a multi-drop see the earlier ones as occupied.
+                incumbents.push({ x: slot.x, y: slot.y, w: ws.w, h: ws.h });
+              }
               if (ctx.has(w, InsertGhost)) {
                 const gh = ctx.read(w, InsertGhost);
                 const props = parseGhostProps(gh.props ?? "");

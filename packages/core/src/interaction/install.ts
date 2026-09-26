@@ -166,9 +166,9 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
   const arb = createArbitrationSystems(world);
   const claims = createClaimSystems(world);
-  const behaviors = createSelectMoveBehaviors(world, sink);
+  const behaviors = createSelectMoveBehaviors(world, sink, { navGeometry });
   const snap = createSnapSystem(world, index);
-  const drop = createDropSystem(world, index, opts.placement);
+  const drop = createDropSystem(world, index, opts.placement, navGeometry);
   const resize = createResizeBehavior(world, sink);
   const marquee = createMarqueeBehavior(world, index);
   const connect = createConnectSystems(world, sink, index, wires);

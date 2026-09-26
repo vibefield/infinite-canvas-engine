@@ -46,8 +46,38 @@ import {
   Solid,
   SweepsContained,
 } from "../catalog";
+import { Camera } from "../catalog/camera-derived";
+import { widgetTypeFor } from "../canvas/engine-catalog";
+import type { CanvasRect } from "../canvas/frame-view";
+import { type NavGeometrySlot, resolveNavFace } from "../nav/nav-geometry";
 import { compareStackOrder, createSiblingOrderIndex } from "../ops/sibling-order";
 import { PrefabId } from "../schema/prefab";
+import type { PortalAffine } from "@ice/kernel";
+
+/** Is every one of these a GPU OBJECT (`surface: "object"`, design-015 §5.2)? The desk's drop rules apply to an all-object set. */
+export function objectsOnly(world: World, entities: readonly Entity[]): boolean {
+  if (entities.length === 0) return false;
+  for (const e of entities) {
+    if (!world.isAlive(e)) continue;
+    const id = world.get(e, PrefabId)?.id;
+    if (typeof id !== "string" || widgetTypeFor(world, id)?.surface !== "object") return false;
+  }
+  return true;
+}
+
+/**
+ * A container's FACE and its inside's embedding for a drop (design-015 §9): the renderer's word
+ * through the nav geometry seam under the current camera (the face as drawn), else core's static
+ * portal rect and default framing. `undefined` = the container has no face (no area).
+ */
+export function dropFaceOf(world: World, container: Entity, slot: NavGeometrySlot | undefined): { readonly face: CanvasRect; readonly affine: PortalAffine } | undefined {
+  const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1 };
+  const f = resolveNavFace(world, container, { x: cam.x, y: cam.y, zoom: cam.zoom }, slot);
+  return f === undefined ? undefined : { face: f.face, affine: f.affine };
+}
+
+/** Is the world point inside the rect (edges included)? */
+export const insideRect = (r: CanvasRect, x: number, y: number): boolean => x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
 const dropDragQ = defineQuery([Drag, GestureActive, RoutedMove]);
 
@@ -70,6 +100,7 @@ export function createDropSystem(
   world: World,
   index: SpatialIndex<Entity>,
   placement?: DropPlacementPolicy,
+  navGeometry?: NavGeometrySlot,
 ): System {
   // Frame ordinal map for the topmost-container compare (petition 8) — the
   // same pull-based source the pick systems read; candidates are same-frame
@@ -133,6 +164,12 @@ export function createDropSystem(
         // Topmost drop-evaluating widget under the union bounds (∉dragged):
         // a Container (accept/reject by contracts) OR a Solid widget (always
         // rejects — v1's iOS-card overlap contract, 2026-07-12 field report).
+        // An all-OBJECT set (design-015 §9, D2b) follows the desk's rule instead: the
+        // container whose FACE — the portal rect as drawn (the nav geometry seam) — holds
+        // the set's CENTRE, topmost first; a face the centre is not over is scenery.
+        const objects = any && objectsOnly(world, dragged);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
         let container: Entity | undefined;
         if (any) {
           const ordinals = order.ordinals();
@@ -140,6 +177,10 @@ export function createDropSystem(
             const e = entry.id;
             if (draggedSet.has(e) || !ctx.isAlive(e)) continue;
             if (!ctx.hasTag(e, Container) && !(!sweeper && ctx.hasTag(e, Solid))) continue;
+            if (objects && ctx.hasTag(e, Container)) {
+              const drop = dropFaceOf(world, e, navGeometry);
+              if (drop === undefined || !insideRect(drop.face, cx, cy)) continue;
+            }
             if (container === undefined || compareStackOrder(ctx, ordinals, e, container) > 0) {
               container = e;
             }
@@ -161,9 +202,18 @@ export function createDropSystem(
         }
 
         // accepts ∩ (union of dragged provides) — a widget with no Provides never
-        // matches; a Solid non-container has no Accepts and always rejects.
+        // matches; a Solid non-container has no Accepts and always rejects. A type
+        // that declares `interaction.drop: "never"` (design-015 D-D18) matches nothing,
+        // whichever path decides — the typed placement authority or the cells.
         let matches: boolean;
-        if (placement !== undefined && ctx.hasTag(container, Container)) {
+        const neverDrops = dragged.some((w) => {
+          if (!ctx.isAlive(w)) return false;
+          const typeId = ctx.get(w, PrefabId)?.id;
+          return typeof typeId === "string" && widgetTypeFor(world, typeId)?.drop === "never";
+        });
+        if (neverDrops) {
+          matches = false;
+        } else if (placement !== undefined && ctx.hasTag(container, Container)) {
           matches = dragged.every((w) => {
             if (!ctx.isAlive(w)) return false;
             const typeId = ctx.get(w, PrefabId)?.id;
@@ -181,7 +231,11 @@ export function createDropSystem(
 
         // Sweeper sets never fly back: a non-matching container is treated
         // like no container at all (release = plain move).
-        if (sweeper && !matches) {
+        // Sweeper sets never fly back: a non-matching container is treated
+        // like no container at all (release = plain move). An OBJECT set is the same
+        // (design-015 §9, D-D18): a whiteboard let go over a mini mat lies on it as a
+        // root object — the desk has no fly-back.
+        if ((sweeper || objects) && !matches) {
           if (prev !== undefined) {
             clearSignals(prev);
             ctx.removeRelation(rec, DropTarget);
