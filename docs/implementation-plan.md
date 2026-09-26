@@ -1067,7 +1067,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w and four core fixes LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes and D5a LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1317,6 +1317,30 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   reverted hunk) and rig:interact rows §8b/§8e/§8f, each red on the reverted core. Graded by the orchestrator on the
   combined tip: `pnpm run ci` exit 0 (core 937 → 957 units), `gate:landing` exit 0 (rig:interact 102 → 114, every other leg
   unchanged).
+- **D5a — the exit tests and the last harnesses on the desk** (**LANDED 2026-09-26**, `97b51fd` … `78e6b58`, fifteen
+  commits, opus): what the nine retiring apps witnessed now lives on the desk, BY NAME (design-015 §11.6). **M5** —
+  `rig:two-tab` gains "M5 two-tab convergence" (10 → 19: a spawn, a real drag as ONE commit counted at the
+  transport, a delete and its ⌘Z, a mini mat's inside edited — two real tabs on `?room=`); **M8** — `m8-cascade` and
+  `m8-port-churn` as core tests over desk objects (its observer now runs from the first frame — nodeboard's had
+  attached after boot, so a select tool lighting every port stayed green); **M9** — `apps/desk/test/collab.test.ts`
+  (two desk engines over the same in-memory doubles: convergence key for key, presence to `CursorVisual "remote"`, a
+  room boot that touches no storage) and `rig:collab` LIVE through the ws relay the rig starts itself (9/9: add,
+  real drag, delete converge; each tab shows the other's cursor at the peer's world point through its own camera, to
+  0.5 px, before and after a pan); **M10** — `apps/desk/test/exit-imports.test.ts`, THE SURFACE one constant (an
+  unused allowance fails too); **M6** (`cardboard exit-trace`, `cull-reenter`) and **M7** (`glboard gl-router`)
+  RETIRED with their subject. A room's other people are `@ice/dom`'s remote cursors (the reflector
+  `<InfiniteCanvas>` already mounts, now fed by the presence the desk joins with; design-015 §1/§3 keep it) — a GPU
+  remote hand in the marks pass was built first on the brief's word, then reverted in its own commit when the
+  orchestrator's correction reached the builder (it would have drawn every peer twice). The last prototype
+  harnesses: `rig:ruler` 23/23 (held to the same frame bare — the prototype's bar was cleared by the lattice alone),
+  the mat's and rulers' ms/frame rows in `rig:cost`, the lattice's zoom sweep as 11 world stills, the tweak panel as
+  `apps/desk`'s dev panel (the backtick; `handle.tuneLaw`, `DeskLayerOptions.springs`) with `rig:panel` 13/13; and
+  D-D2b.7's witness restored (`rig:nav` §7: a double-click while a lift and a hover are mid-spring — held for 400 ms
+  at p = 0, maxΔ 0; red with the hold removed). Exit: rig:parity 85 · 0 · 3 kept, rig:world 72 · 0 · 3 kept,
+  interact 114, nav 26, two-tab 19, collab 9, ruler 23, panel 13 (the last three added to gate:landing); core 959,
+  desk 418, apps/desk 12 units; ci exit 0; `gate:landing` exit 0 (re-run by the orchestrator). Owed: presence
+  carries no nav frame (a peer inside a mini mat is drawn in this desk's frame); the ruler's 1× atlas row and the
+  cost bench's "blowing" row.
 
 ## Release cut & downstream
 
