@@ -19,9 +19,10 @@
 import { BoardPass } from "../board/board-pass";
 import { type BoardGeometry, type BoardLaw, DEFAULT_BOARD_LAW, pickBoard, quadOf, resolveBoard, surfaceSize } from "../board/board";
 import { addStroke, BoardStroke, boardOps, MARKERS, type MarkerInk, type StrokeRow } from "../board/data";
-import type { BoardInstance, BoardPen } from "../board/layout";
+import type { BoardInstance } from "../board/layout";
+import { followHand, penAtRest, penPose, type PenState, stepPen } from "../board/pen";
 import { BOARD_SHADER_FILES, boardShaders } from "../board/shaders";
-import { TIP_NAMES, type TipName, TIPS } from "../board/stroke";
+import { type StrokeBuilder, TIP_NAMES, type TipName } from "../board/stroke";
 import type { KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
@@ -143,42 +144,28 @@ export const BOARD_TOOLS: readonly HeldToolDef[] = [
   },
 ];
 
-/** A right hand holds a marker with its barrel rising away to the upper right (lab/board.ts). */
-const HAND_ANGLE = Math.atan2(-0.8, 0.6);
-const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
-const smooth = (a: number, b: number, x: number): number => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
-
 /**
  * A board at rest as the bench draws it (`BoardDesk.instances` + `poseOf` with no board open), all but its raster: THE
- * marker lying where a hand put it down — every hand term at e = 0, kept as the bench computes them —, the world rect the
- * fragment may paint (the board, its shadow, the pen's box), the eye straight over it (the parallax at rest).
+ * marker lying where a hand put it down — the pen's flux at rest (board/pen.ts: every hand term at e = 0, kept as the bench
+ * computes them) —, the world rect the fragment may paint (the board, its shadow, the pen's box), the eye straight over it
+ * (the parallax at rest).
  */
 export function boardRest(G: BoardGeometry, w: number, h: number, tip: TipName, capInk: RGB, look: BoardObjectLook, law: BoardLaw = DEFAULT_BOARD_LAW): Omit<BoardInstance, "id"> {
-  const P = BOARD.pen;
-  const R = P.radius;
-  const L = P.length;
-  const e = 0;
-  const rest = { x: w * 0.16, y: h * 0.5 - BOARD.spec.frame - BOARD.pen.radius - 13, angle: -0.07 };
-  const ar = rest.angle;
-  const mid = [G.centre[0] + rest.x * G.scale, G.centre[1] + rest.y * G.scale];
-  const at = [(mid[0] as number) - Math.cos(ar) * L * 0.5, (mid[1] as number) - Math.sin(ar) * L * 0.5] as const;
-  const hand = at;
-  let da = HAND_ANGLE - ar;
-  da = Math.atan2(Math.sin(da), Math.cos(da));
-  const gap = P.hover;
-  const pen: BoardPen = {
-    x: at[0] + (hand[0] - at[0]) * e, y: at[1] + (hand[1] - at[1]) * e, angle: ar + da * e,
-    height: R + (gap - R) * e + 34 * Math.sin(Math.PI * e), rise: P.rise * e,
-    cap: smooth(0.3, 0.85, e), nib: TIPS[tip].half[1],
-    presence: 1 + (0 - 1) * smooth(0.85, 1, e),
-    ink: capInk,
-  };
-  const slope = Math.hypot(G.slope[0], G.slope[1]);
-  const r = L * 1.3 + 60 + slope * (pen.height + L * pen.rise + 12);
-  const box = { x0: pen.x - r, y0: pen.y - r, x1: pen.x + r, y1: pen.y + r };
+  return boardPose(G, w, h, tip, capInk, look, penAtRest(), null, law);
+}
+
+/**
+ * A board as drawn with its pen in whatever pose its flux has reached (D3t-a — board/pen.ts `penPose`): lying, taken up, in the
+ * hand at `at` (a desk point), the eraser rubbing there; the quad grown to take in both. At rest it is `boardRest`, byte for byte.
+ */
+export function boardPose(G: BoardGeometry, w: number, h: number, tip: TipName, ink: RGB, look: BoardObjectLook, pen: PenState, at: readonly [number, number] | null, law: BoardLaw = DEFAULT_BOARD_LAW): Omit<BoardInstance, "id"> {
+  const pose = penPose(G, w, h, tip, ink, pen, at);
   const par = [0, 0] as const;
   const k = BOARD.surface.parallax;
-  return { geometry: G, surface: look.surface, metal: look.metal, quad: quadOf(G, box, law), sheen: [par[0] * k * 5, -par[1] * k * 5], pen };
+  return {
+    geometry: G, surface: look.surface, metal: look.metal, quad: quadOf(G, pose.box, law), sheen: [par[0] * k * 5, -par[1] * k * 5], pen: pose.pen,
+    ...(pose.eraser !== undefined ? { eraser: pose.eraser } : {}),
+  };
 }
 
 /**
@@ -194,46 +181,170 @@ export function boardReach(law: BoardLaw = DEFAULT_BOARD_LAW): number {
   return Math.max(shadow, pen) + held;
 }
 
-/** The board's own state on one desk: each board's raster on the root pass, a cache of its strokes. */
+/** What the hand is doing over a board in hand this frame, as the pen driver (objects/pen.ts) reads the world: where (a desk point), over the melamine or not, laying a stroke or not, with which tool and ink, and the pointer on screen (its velocity leans the pen). */
+export interface PenHand {
+  readonly at: readonly [number, number] | null;
+  readonly over: boolean;
+  readonly pressing: boolean;
+  readonly erasing: boolean;
+  /** The ink in hand (the marker's, or the one it lies down in while the eraser rubs). */
+  readonly ink: string;
+  /** The pointer on screen, CSS px, and the clock (ms) it was read at. */
+  readonly screen?: readonly [number, number];
+  readonly t?: number;
+}
+
+/** A still's pen (a pinned hand): its desk point, pressed or hovering, the eraser or the marker, the ink. */
+export interface PenPin {
+  readonly x: number;
+  readonly y: number;
+  readonly press?: boolean;
+  readonly erase?: boolean;
+  readonly ink?: string;
+}
+
+/**
+ * The board's own state on one desk: each board's raster on the root pass, a cache of its strokes — and (D3t-a) what the hand
+ * does to it in hand: the stroke laid LIVE into its stroke layer, committed WET and drying, its entity adopted when it lands
+ * rather than replayed; the pen's flux and the hand it follows.
+ */
 export interface BoardInk extends KindLocal {
   /**
    * The raster board `e` draws with (its id on the pass): made the first time, its children REPLAYED into it whenever
-   * their stamp turned over or the look changed; a fading ghost keeps what it had. 0 before the pass is here.
+   * their stamp turned over or the look changed — unless the turnover is the stroke the hand just committed (adopted: the
+   * raster holds it already, wet) —; a stroke in hand is laid again over a replay; a fading ghost keeps what it had. 0 before
+   * the pass is here.
    */
   raster(e: Entity, G: BoardGeometry, look: BoardObjectLook, ghost: boolean): number;
   /** How many replays since the desk was made (a rig's witness). */
   replays(): number;
+  /** The stroke in hand on `e`: the builder's stamps since the last call into the stroke layer (sent at the next prepare). */
+  lay(e: Entity, builder: StrokeBuilder): void;
+  /** The lift: the stroke in hand laid into the ink and marked WET; its entity (its cell's `points`) is adopted when it lands. */
+  commit(e: Entity, points: string): void;
+  /** A stroke in hand abandoned (or its transaction refused): its stamps dropped, the raster replayed from the children. */
+  cancel(e: Entity): void;
+  /** The stroke being laid on `e` — its ink (LINEAR) and whether it erases — for the record; undefined when none. */
+  laying(e: Entity): { readonly color: RGB; readonly erase: boolean } | undefined;
+  /** The hand over board `e` this frame (the pen driver's word). */
+  hand(e: Entity, h: PenHand): void;
+  /** Pin the hand for a still (`undefined` unpins): the pen sits where the pin says, its springs snapped. */
+  pinPen(e: Entity, pin: PenPin | undefined): void;
+  /** The pen's flux of board `e` (a rig's witness). */
+  penOf(e: Entity): PenState | undefined;
+  /** The world half's: the hand over `e` as the record reads it (the pin's, else the driver's), and the pen's flux. */
+  handFor(e: Entity): { readonly hand: PenHand | undefined; readonly pen: PenState; readonly pinned: boolean };
+  /** A pen still moving (the record says so): the next tick asks a frame. */
+  moving(e: Entity): void;
+}
+
+interface BoardState {
+  readonly id: number;
+  stamp: number;
+  look: BoardObjectLook | null;
+  /** The stroke in hand: its tool and builder (laid again over a replay). */
+  live: { readonly builder: StrokeBuilder } | null;
+  /** The committed stroke's `points` whose landing is adopted, not replayed. */
+  adopt: string | null;
+  pen: PenState;
+  hand: PenHand | undefined;
+  pin: PenPin | undefined;
 }
 
 /** The board's `local()`: rasters by entity, released when the builder forgets a board. */
 export function createBoardInk(host: KindHost): BoardInk {
-  const boards = new Map<Entity, { readonly id: number; stamp: number; look: BoardObjectLook | null }>();
+  const boards = new Map<Entity, BoardState>();
   let next = 1;
   let replays = 0;
+  let last = -1;
+  let penMoving = false;
   const passOf = (): BoardPass | undefined => { const k = host.pass(); return k instanceof BoardKind ? k.pass : undefined; };
   const stampOf = (e: Entity): number => host.children?.stamp(e) ?? 0;
+  const state = (e: Entity): BoardState => {
+    let st = boards.get(e);
+    if (st === undefined) { st = { id: next++, stamp: -1, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); }
+    return st;
+  };
   return {
     raster(e, G, look, ghost) {
       const pass = passOf();
       if (pass === undefined) return 0;
-      let st = boards.get(e);
-      if (st === undefined) { st = { id: next++, stamp: -1, look: null }; boards.set(e, st); }
+      const st = state(e);
       if (pass.look !== look.pen) pass.look = look.pen;   // the pen's materials: the product's, set on the root (a spawned slot copies them)
       if (ghost) return st.id;   // a board fading out keeps its ink: its children died with it
       const stamp = stampOf(e);
       const made = pass.ensure(st.id, surfaceSize(G));
       if (made || stamp !== st.stamp || look !== st.look) {
         const rows: readonly StrokeRow[] = host.children?.rows(e, BoardStroke) ?? [];
-        pass.replay(st.id, boardOps(rows, look.markers));
+        // the stroke the hand just committed has landed as its entity: the raster holds it already — WET — so it is adopted
+        const landed = !made && look === st.look && st.adopt !== null && rows[rows.length - 1]?.points === st.adopt;
+        st.adopt = null;
+        if (!landed) {
+          pass.replay(st.id, boardOps(rows, look.markers));
+          replays += 1;
+          if (st.live !== null) pass.lay(st.id, st.live.builder.tool, st.live.builder.stamps());   // the stroke in hand, laid again over the replay
+        }
         st.stamp = stamp;
         st.look = look;
-        replays += 1;
       }
       return st.id;
     },
-    tick() {
-      for (const [e, st] of boards) if (st.stamp !== -1 && stampOf(e) !== st.stamp) return true;   // a stroke laid or undone: a frame to replay in
-      return false;
+    lay(e, builder) {
+      const st = state(e);
+      st.live = { builder };
+      const stamps = builder.pending();
+      if (stamps.length > 0) passOf()?.lay(st.id, builder.tool, stamps);
+    },
+    commit(e, points) {
+      const st = state(e);
+      const live = st.live;
+      st.live = null;
+      if (live === null) return;
+      const pass = passOf();
+      const stamps = live.builder.pending();
+      if (stamps.length > 0) pass?.lay(st.id, live.builder.tool, stamps);
+      pass?.commit(st.id, live.builder.tool);
+      st.adopt = points;
+    },
+    cancel(e) {
+      const st = boards.get(e);
+      if (st === undefined) return;
+      st.live = null;
+      st.adopt = null;
+      passOf()?.cancel(st.id);
+      st.stamp = -1;   // replayed from the children at the next record
+    },
+    laying(e) {
+      const b = boards.get(e)?.live?.builder;
+      return b === undefined ? undefined : { color: b.tool.color, erase: b.tool.mode === "erase" };
+    },
+    hand(e, h) {
+      const st = state(e);
+      const prev = st.hand;
+      if (prev?.screen !== undefined && h.screen !== undefined && prev.t !== undefined && h.t !== undefined) followHand(st.pen, h.screen[0] - prev.screen[0], h.screen[1] - prev.screen[1], (h.t - prev.t) / 1000);
+      st.hand = h;
+    },
+    pinPen(e, pin) { state(e).pin = pin; penMoving = true; },
+    penOf: (e) => boards.get(e)?.pen,
+    handFor(e) {
+      const st = state(e);
+      const p = st.pin;
+      if (p === undefined) return { hand: st.hand, pen: st.pen, pinned: false };
+      return { hand: { at: [p.x, p.y], over: true, pressing: p.press === true, erasing: p.erase === true, ink: p.ink ?? st.hand?.ink ?? "black" }, pen: st.pen, pinned: true };
+    },
+    moving() { penMoving = true; },
+    tick(now) {
+      const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.25);
+      last = now;
+      const pass = passOf();
+      pass?.dry(dt);   // fresh ink dries (the wet layer fades) on the frame's clock
+      let want = penMoving || pass?.wetting === true;
+      penMoving = false;
+      for (const [e, st] of boards) {
+        if (st.live !== null) want = true;   // a stroke in hand: its stamps (a resting pen's bleed) go out every frame
+        else if (st.stamp !== -1 && stampOf(e) !== st.stamp) want = true;   // a stroke laid or undone: a frame to replay in
+      }
+      return want;
     },
     forget(e) {
       const st = boards.get(e);
@@ -283,10 +394,22 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
       if (look === undefined) throw new Error("desk/board: the board's materials are the host's — the palette names no `board` (kinds/board.ts `BoardPalette`)");
       const tipName = stringProp(ctx.props, "tip", "bullet") as TipName;
       const tip = TIP_NAMES.includes(tipName) ? tipName : "bullet";
-      const cap = look.markers[stringProp(ctx.props, "cap", "black")] ?? Object.values(look.markers)[0];
-      const pose = boardRest(G, ctx.rect.w, ctx.rect.h, tip, cap?.color ?? look.metal, look, law);
+      const capName = stringProp(ctx.props, "cap", "black");
+      const colourOf = (name: string): RGB => (look.markers[name] ?? Object.values(look.markers)[0])?.color ?? look.metal;
       const ink = ctx.local as BoardInk | undefined;
-      return { id: ink?.raster(ctx.entity, G, look, ctx.flux.fade < 1) ?? 0, ...pose };
+      const id = ink?.raster(ctx.entity, G, look, ctx.flux.fade < 1) ?? 0;
+      // on the desk the marker lies capped in the ink it was put down in (`cap`); IN HAND (D3t-a) it follows the hand — taken up
+      // as the board opens, at the pointer over the melamine, pressed while a stroke is laid, laid down again flying home
+      if (ink === undefined || ctx.held === undefined) {
+        if (ink !== undefined) Object.assign(ink.handFor(ctx.entity).pen, penAtRest());
+        return { id, ...boardRest(G, ctx.rect.w, ctx.rect.h, tip, colourOf(capName), look, law) };
+      }
+      const { hand, pen, pinned } = ink.handFor(ctx.entity);
+      const input = { held: ctx.held.open, erasing: hand?.erasing === true, over: hand?.over === true, pressing: hand?.pressing === true };
+      if (stepPen(pen, input, ctx.dt, ctx.held.snap || pinned)) ink.moving(ctx.entity);
+      const pose = boardPose(G, ctx.rect.w, ctx.rect.h, tip, colourOf(hand?.ink ?? capName), look, pen, hand?.at ?? null, law);
+      const laying = ink.laying(ctx.entity);
+      return { id, ...pose, ...(laying !== undefined ? { stroke: laying } : {}) };
     },
     hit(G: BoardGeometry, wx: number, wy: number): ObjectHit | null {
       const h = pickBoard(G, wx, wy);

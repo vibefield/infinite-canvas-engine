@@ -58,6 +58,8 @@ import type { BlobStore } from "../photo/blobs";
 import { decodePicture } from "./picture";
 import { createNoteTyping, type NoteTyping, type TypingDocs } from "../objects/typing";
 import { createPhotoCarry } from "../objects/carry";
+import { type BoardPen, createBoardPen } from "../objects/pen";
+import { BOARD_KIND, type BoardInk, type BoardObjectLook } from "../kinds/board";
 import { PHOTO_KIND, type Prints } from "../kinds/photo";
 import type { TextRaster } from "../paper/raster";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
@@ -227,6 +229,8 @@ export interface DeskLayerHandle {
   editor(): NoteEditor | undefined;
   /** The note's typing session (D2c): the claim, the live cell, the commit. */
   readonly typing: NoteTyping;
+  /** The whiteboard's pen in hand (D3t-a): the stroke laid, the commits — `undefined` when no board kind is registered. */
+  pen(): BoardPen | undefined;
   /** Where the selection menu goes (D4a): the marks' box around the selection, published after each frame it moved. */
   readonly selection: SelectionSource;
   /**
@@ -348,6 +352,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           refused: (e) => builder.meetTape(e),   // a taped print answers a drag with the tape's give (D4a)
         })
       : undefined;
+    // the whiteboard in hand (D3t-a): its pen — the hand onto the board kind's state, each stroke ONE transaction out of the frame
+    const pen = locals.has(BOARD_KIND)
+      ? createBoardPen({
+          world, docs: opts.docs ?? { current: () => undefined }, ink: () => locals.get(BOARD_KIND) as BoardInk | undefined,
+          look: () => compose.look(BOARD_KIND) as BoardObjectLook | undefined, isBoard: (e) => builder.kindOf(e)?.name === BOARD_KIND,
+          heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), geometryOf: (e) => builder.geometryOf(e),
+        })
+      : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
     const inner = compose.reflector;
@@ -356,6 +368,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       flush(w) {
         const now = performance.now();
         carry?.follow(now);
+        pen?.follow(now);
         let want = false;
         for (const local of locals.values()) if (local.tick?.(now) === true) want = true;
         if (want) compose.wake("ink");
@@ -503,6 +516,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       local: (name) => locals.get(name),
       editor: () => editor,
       typing,
+      pen: () => pen,
       selection: {
         anchor: () => anchorOf(),
         subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },

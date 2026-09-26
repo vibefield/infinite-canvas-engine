@@ -12,7 +12,8 @@ import { worldChildren } from "../src/compose/children";
 import { type BoardInk, BoardKind, boardFrame, boardKind, FLUX_REST, type ObjectContext, rectOf } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { objectKindOf } from "../src/object";
-import { addStroke, Board, BOARD_TYPE, BoardStroke, boardOps, decodePoints, encodePoints, strokeRow } from "../src/objects";
+import { addStroke, Board, BOARD_TYPE, BoardStroke, boardOps, decodePoints, encodePoints, strokeRow, strokeSeed } from "../src/objects";
+import { ERASER_TOOL, StrokeBuilder } from "../src/board/stroke";
 import { lampOf } from "../src/paper/paper";
 import { BOARD, MAT_GRID } from "../src/theme";
 import { BOARD_LOOK, MARKERS, PALETTE, THEMES } from "../oracle/fixtures/vf-theme";
@@ -97,6 +98,12 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
       ensure(id: number) { if (this.made.has(id)) return false; this.made.add(id); calls.push(`ensure ${id}`); return true; },
       replay(id: number, ops: readonly BoardOp[]) { replays.push([...ops]); calls.push(`replay ${id} ${ops.length}`); },
       release(id: number) { this.made.delete(id); calls.push(`release ${id}`); },
+      // the live stroke's door (D3t-a): what the pen lays, lifts, drops; the drying
+      wetting: false,
+      lay(id: number, _tool: unknown, stamps: Float32Array) { calls.push(`lay ${id} ${stamps.length / 8}`); },
+      commit(id: number) { this.wetting = true; calls.push(`commit ${id}`); },
+      cancel(id: number) { calls.push(`cancel ${id}`); },
+      dry(_dt: number) {},
     };
     return { kindPass: new BoardKind(pass as unknown as BoardPass), pass, calls, replays };
   }
@@ -135,6 +142,41 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
     expect(must(stub.replays[1])[0]?.kind).toBe("stroke");
     expect(ink.tick?.(0)).toBe(false);
     expect(ink.replays()).toBe(2);
+  });
+
+  it("a stroke laid LIVE (D3t-a): its stamps into the stroke layer; the lift lays it in WET; its entity is ADOPTED when it lands — no replay; another turnover replays and lays a stroke in hand again", () => {
+    const { stub, ink, draw, lay, ce, board } = desk();
+    draw();
+    const builder = new StrokeBuilder(ERASER_TOOL, strokeSeed(0));
+    builder.begin(40, 60, 0);
+    ink.lay(board, builder);
+    builder.move(90, 60, 16);
+    ink.lay(board, builder);
+    expect(ink.laying(board)).toEqual({ color: ERASER_TOOL.color, erase: true });
+    expect(ink.tick?.(0)).toBe(true);   // a stroke in hand: a frame every tick
+    builder.end(90, 60, 32);
+    const points = encodePoints([[40, 60], [90, 60], [90, 60]]);
+    ink.commit(board, points);
+    expect(ink.laying(board)).toBeUndefined();
+    expect(stub.calls.slice(2)).toEqual(["lay 1 1", `lay 1 ${builder.count - 1}`, "commit 1"]);
+    lay({ erase: true, points: [[40, 60], [90, 60], [90, 60]], times: [0, 16, 32] });   // its ONE transaction lands
+    const replays = ink.replays();
+    draw();
+    expect(ink.replays()).toBe(replays);   // adopted: the raster holds it already, wet
+    // a stroke in hand while another lands (a peer's): the replay, then the stroke in hand laid again over it
+    const again = new StrokeBuilder(ERASER_TOOL, strokeSeed(1));
+    again.begin(10, 10, 0);
+    ink.lay(board, again);
+    lay({ ink: "red", points: [[200, 100], [260, 120]] });
+    stub.calls.length = 0;
+    draw();
+    expect(stub.calls).toEqual(["replay 1 2", "lay 1 1"]);
+    // abandoned: dropped, and the next record replays the children
+    ink.cancel(board);
+    stub.calls.length = 0;
+    draw();
+    expect(stub.calls).toEqual(["replay 1 2"]);
+    expect(ce.world.getReverse(board, ChildOf)).toHaveLength(2);
   });
 
   it("resized, a board is drawn at its new rect — the frame the marks go around follows — and its ink replays into a raster of the new size", () => {
