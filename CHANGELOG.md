@@ -975,6 +975,15 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   entity, its `SelectionBox` value (rewritten every drag frame) and the handles' `VisualOf` edges to it are gone (see
   `### Removed`). Held by `core/test/selection-chrome.test.ts`: a selection spawns the 8 handles and NOTHING else, a
   non-resizable single or multi selection spawns nothing — both red on the pre-fix producer (9 entities: the box).
+- **The workspace's approvals and the product's plates are checked** (D7 surface #9). (a) `pnpm-workspace.yaml`'s
+  `allowBuilds` still held pnpm's placeholders — `"set this to true or false"` for `electron` and `@vibecook/truffle`
+  (D5b's install wrote them) — under a comment, and a changelog line, saying both had left; neither is in the lockfile.
+  Removed, and `scripts/check-workspace.mjs` (run by the root `gen:check`, so `ci`) holds every approval to a boolean
+  for a package the lockfile resolves — red on the pre-fix file (four rows). (b) `apps/desk/assets/gobo-{palm,canopy}-1.rgba`
+  (2 × 1 MB) had no generator in ICE, only a comment citing the prototype's. The generator moved in:
+  `apps/desk/tools/make-gobo-plate.mjs` (the prototype's, its image path and PNG previews left behind), whose
+  `--check` — apps/desk's `gen:check` — regenerates `palm --seed 1` and `canopy --seed 1` and fails on any differing
+  byte (both reproduce byte for byte; one flipped byte in the palm plate → FAIL).
 
 ## [0.13.0] — 2026-09-07
 

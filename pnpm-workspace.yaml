@@ -6,12 +6,12 @@ packages:
 # download) and @vibecook/truffle (native addon + sidecar) were widgetlab-desktop's,
 # and the @react-three/fiber patch rode `patchedDependencies` for the GL islands —
 # all three left at design-015 D5b with the apps and packages that needed them.
+# (D5b's install left pnpm's "set this to true or false" placeholders for the two;
+# D7 removed them — neither is in the lockfile, and every value here is a boolean.)
 allowBuilds:
   "@biomejs/biome": true
   webgpu: true
   esbuild: true
-  '@vibecook/truffle': set this to true or false
-  electron: set this to true or false
 # pnpm 10 spelling of the same approvals, kept as a fallback for anyone running
 # pnpm 10 directly (it ignores `allowBuilds` wholesale). Normally moot: package.json
 # pins packageManager to pnpm 11.
