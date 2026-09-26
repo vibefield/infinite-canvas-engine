@@ -18,6 +18,8 @@ export interface OracleInternals {
   printOf(p: Record<string, unknown>): Record<string, unknown>;
   /** A book as a desk draws it: the lab's `notebookDraw`, its ring retired unless the still is drawn the prototype's way. */
   bookOf(b: Record<string, unknown>): unknown;
+  /** The notebooks' page layers as this scene's books drew them (D3t-b — the kind's own cache). */
+  pages(): import("../src/notebook/pages").PageInk;
   /** A still's marks as the oracle assembles them (D4a): each bracketed or ticked object's frame ON SCREEN. */
   marksOf(s: unknown, cam: { readonly x: number; readonly y: number; readonly zoom: number }): { readonly objects: readonly { readonly frame: import("../src/marks/layout").MarkFrame; readonly style: string; readonly knobs: boolean }[] };
   encode(encoder: GPUCommandEncoder, target: GPUTextureView, size: { w: number; h: number }, scene: unknown): unknown;

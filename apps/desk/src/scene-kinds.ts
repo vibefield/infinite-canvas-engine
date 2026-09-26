@@ -74,6 +74,17 @@ export interface OracleBook {
   readonly held?: boolean;
   readonly tilt?: readonly [number, number];
   readonly selected?: boolean;
+  /** Its pages' writing (D3t-b): strokes on pages — each laid as a `desk.stroke` child of the book. */
+  readonly ink?: readonly OracleBookInk[];
+}
+
+/** A stroke on a notebook's page as a scene states it (scenes.mjs `BOOK_INK`): its page, its pen, its path in page units, each sample's time. */
+export interface OracleBookInk {
+  readonly page: number;
+  readonly pen?: string;
+  readonly points: readonly (readonly [number, number])[];
+  readonly times?: readonly number[];
+  readonly speed?: number;
 }
 
 /** A desk's thing as the oracle lists it (frame.mjs `thingsOf`). */
@@ -203,6 +214,24 @@ export const boardSpec = (b: OracleBoard): SpawnSpec => ({ type: BOARD_TYPE, cx:
 /** The boards' strokes laid as their children — the bench's `sketch` order — in ONE non-undoable transaction (a scene is not an edit). */
 /** A scene's stroke as the data states one (its samples' times too, D3t-a). */
 export const strokeSpecOf = (s: OracleStroke): StrokeSpec => ({ points: s.points, ...(s.ink !== undefined ? { ink: s.ink } : {}), ...(s.tip !== undefined ? { tip: s.tip as "bullet" } : {}), ...(s.erase ? { erase: true } : {}), ...(s.speed !== undefined ? { speed: s.speed } : {}), ...(s.times !== undefined ? { times: s.times } : {}) });
+
+/** The books' writing laid as their children (D3t-b) — each stroke on its page, the pen's — in ONE non-undoable transaction (a scene is not an edit). */
+export function layBookInk(engine: CanvasEngine, books: readonly { readonly entity: Entity; readonly spec: OracleBook }[]): number {
+  const inked = books.filter((b) => (b.spec.ink ?? []).length > 0);
+  if (inked.length === 0) return 0;
+  const session = engine.docs.current();
+  if (session === undefined) throw new Error("desk: no document");
+  let n = 0;
+  guardedTransaction(session.store, engine.world, (tx) => {
+    for (const { entity, spec } of inked) {
+      for (const s of spec.ink ?? []) {
+        addStroke(tx, entity, { tool: "pen", page: s.page, ink: s.pen ?? "fountain", points: s.points, ...(s.times !== undefined ? { times: s.times } : {}), ...(s.speed !== undefined ? { speed: s.speed } : {}) });
+        n += 1;
+      }
+    }
+  }, { undoable: false });
+  return n;
+}
 
 export function layStrokes(engine: CanvasEngine, boards: readonly { readonly entity: Entity; readonly spec: OracleBoard }[]): number {
   const session = engine.docs.current();

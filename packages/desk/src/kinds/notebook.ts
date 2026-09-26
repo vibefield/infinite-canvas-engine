@@ -291,6 +291,7 @@ export function createBooks(host: KindHost): Books {
     strokesOn,
     table(e, G, look) {
       const st = state(e);
+      byPage(e, st);   // the strokes as of now, in view or not: the clock below compares the children's stamp with this one
       const inView = pagesInView(G.pose, swingOf(G.theta));
       const live = st.live;
       let t = NO_TABLE;
@@ -332,7 +333,9 @@ export function createBooks(host: KindHost): Books {
       const w = woke || moving;
       woke = false;
       moving = false;
-      for (const st of books.values()) if (st.motion !== null && (st.live !== null || st.pending !== null || st.stirring)) return true;
+      // a book in hand keeps asking while it moves or writes — or while its strokes changed since its pages were last brought up to
+      // them (an undo, a redo, a peer's stroke: its pages replay at the next record)
+      for (const [e, st] of books) if (st.motion !== null && (st.live !== null || st.pending !== null || st.stirring || (host.children?.stamp(e) ?? 0) !== st.stamp)) return true;
       return w;
     },
     forget(e) {
@@ -346,6 +349,9 @@ export function createBooks(host: KindHost): Books {
 
 /** No page in view with ink. */
 const NO_TABLE: InkTable = { pages: [], layers: [] };
+
+/** A page of the law's book, open: its width out of the gutter and its height, page units — what a page's raster spans (`INK_W × INK_H`). */
+export const NOTEBOOK_PAGE: { readonly len: number; readonly height: number } = (() => { const F = frameOf(specOf(NOTEBOOK)); return { len: F.Wo, height: F.Hp }; })();
 
 /** A book's DEFAULT turn on the mat when a host lays one: the lab's `makeBook` (never set down quite square). */
 export const bookAngle = (seed: number): number => { const s = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return (s - Math.floor(s) - 0.5) * 0.06; };

@@ -16,11 +16,13 @@
 //
 // THE WHITEBOARD ACROSS THE ROOM (D3t-a): A picks a board up and lays a stroke BY HAND; its ONE child — the same path, the same
 // samples' times — arrives on B's board and B draws it; ⌘Z and ⇧⌘Z in A (the board still in hand — the document's history) are
-// seen in B. Exit 0 = passed.
+// seen in B. THE NOTEBOOK ACROSS THE ROOM (D3t-b — two-tab-notebook.mjs): a stroke by hand in A arrives on B's page (B holds its copy
+// open), a page A turns turns in B, ⌘Z in A is seen in B. Exit 0 = passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
+import { notebookAcrossRoom } from "./two-tab-notebook.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -274,6 +276,9 @@ try {
   check(redoneWbA && redoneWbB, `⇧⌘Z in A brings it back (A: ${redoneWbA}) — and B sees that too (B: ${redoneWbB})`);
   await front(A);
   await key("Escape");
+
+  // ---- THE NOTEBOOK ACROSS THE ROOM (D3t-b): two-tab-notebook.mjs — a stroke by hand in A on B's page, a turn followed, ⌘Z seen
+  await notebookAcrossRoom({ A, B, front, settle, mouse, key, check, until, sleep, K });
 
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors in either tab");

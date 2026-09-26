@@ -14,12 +14,13 @@
 // pen shown over the melamine with the OS cursor hidden, a stroke by hand — pressed mid-stroke, ONE timed child at the lift, the
 // raster's ink under its path, adopted (no replay) — `3` · ⌘Z · ⇧⌘Z · the bar's undo and redo · `t` · `e` (the marker laid down,
 // the eraser rubbing a stroke away) · two taps are two dots · ⌘⌫ and its undo · the marker laid down in the last ink, and the
-// tools' keys nobody's once it is.
+// tools' keys nobody's once it is. And THE NOTEBOOK IN HAND (D3t-b — open-notebook.mjs, §12): its pens, its page strokes as data, its turns.
 // Exit 0 = every check passed; 1 = a check or a throw; 2 = the watchdog.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
+import { notebookRows } from "./open-notebook.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -98,7 +99,7 @@ try {
   check(h1 !== null && near(h1.frame.cx, 600) && near(h1.frame.cy, 392) && near(h1.frame.s, 672 / 252), `the frame on screen is the reading pose: centre (${h1?.frame.cx.toFixed(1)}, ${h1?.frame.cy.toFixed(1)}), ${h1?.frame.s.toFixed(4)} px/unit, hx ${h1?.frame.hx.toFixed(1)}`);
   await sleep(400);   // the bar's travel (340 ms)
   const bar = await q("(() => { const el = document.querySelector('[data-ice-selection-menu]'); if (!el) return null; const r = el.getBoundingClientRect(); return { held: el.dataset.held, done: !!el.querySelector('[data-act=\"done\"]'), tools: [...el.querySelectorAll('[data-tool]')].map((b) => b.dataset.tool), top: r.top, bottom: r.bottom, label: el.getAttribute('aria-label') }; })()");
-  check(bar !== null && bar.held === "true" && bar.done && bar.tools.length === 4 && bar.top > 720 && bar.bottom <= 800, `the selection menu became the held bar at the foot (y ${bar?.top.toFixed(0)}–${bar?.bottom.toFixed(0)}; ${bar?.tools.join(" · ")}; Done; "${bar?.label}")`);
+  check(bar !== null && bar.held === "true" && bar.done && bar.tools.length === 7 && bar.top > 720 && bar.bottom <= 800, `the selection menu became the held bar at the foot (y ${bar?.top.toFixed(0)}–${bar?.bottom.toFixed(0)}; ${bar?.tools.join(" · ")}; Done; "${bar?.label}")`);
 
   // ---- 2. idle-zero in hand; the desk copy made once
   await settle();
@@ -182,11 +183,13 @@ try {
   await q(`window.__desk.setCamera(${JSON.stringify(cam0)})`);
   await settle();
 
-  // ---- 8. two taps on the object put it down (the notebook's case rule, generalised)
+  // ---- 8. two taps on the object put it down (the notebook's case rule, generalised) — on its CASE: since D3t-b a page takes the pen
+  //         (two taps there are two dots), so the taps land on the right board's fore-edge, past the pages' squares
   await dbl(300, 200);
   check(await settledInHand(), "picked up again");
-  await dbl(600, 392);
-  check(await landed(), "two taps on the held object put it down");
+  const f8 = (await hand()).frame;
+  await dbl(f8.cx + 178.6 * f8.s, f8.cy);
+  check(await landed(), "two taps on the held object's case put it down");
   await settle();
 
   // ---- 9. the keyboard: Tab to the notebook, ⏎ opens, Esc lands it with the selection back
@@ -313,6 +316,9 @@ try {
   await sleep(200);
   check((await q(`window.__desk.entity(${wb})`)).props.cap === "red" && (await rows()).length === 5, "on the desk `2` is nobody's: the tools' keys route only while held");
   await settle();
+
+  // ---- 12. THE NOTEBOOK IN HAND (D3t-b): open-notebook.mjs
+  await notebookRows({ q, settle, mouse, click, dbl, key, check, until, sleep, hand, landed, settledInHand, META });
 
   if (logs.length) console.log(`  page log:\n  ${logs.slice(0, 8).join("\n  ")}`);
   check(logs.length === 0, `no page exceptions or errors (${logs.length})`);

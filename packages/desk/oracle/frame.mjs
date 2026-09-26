@@ -20,7 +20,10 @@
 // with its pose pinned, the committed picture). The notebooks and the desk calendars (design-015 D3r-b) are made as
 // the prototype's main lab makes them (lab/notebook.ts `makeBook` → `resolveBooks` → `drawBooks`; lab/calendar.ts
 // `add` + `reset` + `pose` → `renderLayer`'s draw), without their print: a pad's page tables name no tile (MISSING —
-// its paper and its ruled grid), a book's pages carry no ink. The two draw as composite runs (kinds/layer.ts): the
+// its paper and its ruled grid). A book's pages carry the ink its spec writes on them (D3t-b — `ink`: strokes on pages, as
+// the book's data children state them): through the notebook kind's own cache (notebook/pages.ts — the pages in view with
+// ink on the pass's layers, each rastered by the pure raster from the strokes' f32s, as the world's children decode), so
+// the Node oracle and the desk lay the same bytes. The two draw as composite runs (kinds/layer.ts): the
 // pads beneath the sheets and the things, the books over every other thing, whatever the scene's order says.
 //
 // And the desk's MARKS (design-015 §7, D4a): a scene's `selected` objects wear the selection as the product
@@ -54,7 +57,9 @@ import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, 
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
 import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
 import { quadOf, resolveBoard, surfaceSize } from "../src/board/board.ts";
-import { feedStroke, strokePen, strokeSeed } from "../src/board/data.ts";
+import { decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, strokePen, strokeSeed } from "../src/board/data.ts";
+import { inkPoints, pagesInView } from "../src/notebook/ink.ts";
+import { PageInk } from "../src/notebook/pages.ts";
 import { BoardHistory } from "../src/board/history.ts";
 import { penAtRest, penPose, stepPen } from "../src/board/pen.ts";
 import { borderOf } from "../src/photo/layout.ts";
@@ -80,6 +85,8 @@ const bookHash = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; re
 let nextBook = 1;
 /** A book is an object that lives across frames (the lab's `Book`): the same spec object is the same book — its id, its mesh — so a host drawing it again re-uploads nothing (the cost rig's steady state). */
 const booksBySpec = new WeakMap();
+/** The pose each drawn book was built for (its pages in view — D3t-b), kept beside the record rather than in it. */
+const posesByDraw = new WeakMap();
 /** A book's turn on the mat: the spec's, else its seed's (the lab's `makeBook` — never set down quite square). */
 const bookAngleOf = (b) => b.angle ?? (bookHash(b.seed ?? 7) - 0.5) * 0.06;
 
@@ -122,6 +129,7 @@ export function notebookDraw(b) {
     selfShadow: pose.airs.length > 0 || (sw > 0.02 && sw < Math.PI - 0.02), ink: { pages: [], layers: [] },
   };
   booksBySpec.set(b, draw);
+  posesByDraw.set(draw, pose);
   return draw;
 }
 
@@ -195,6 +203,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   kindOf(NOTEBOOK_KIND).ruleInk = notebookRuleInk();
   kindOf(CALENDAR_KIND).alpha = CALENDAR_LOOK.alpha;
   const notebooks = passOf(NOTEBOOK_KIND);
+  /** The notebooks' page layers (D3t-b): the kind's cache, made afresh for each scene. */
+  let pageInk = new PageInk();
   const calendars = passOf(CALENDAR_KIND);
   // the whiteboard's materials, as the bench's BoardDesk hands its pass them (lab/board.ts)
   const look = boardLook();
@@ -427,7 +437,24 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    */
   function bookOf(t) {
     const d = notebookDraw(t);
-    return prototypeRing || d.ring === 0 ? d : { ...d, ring: 0 };
+    const drawn = prototypeRing || d.ring === 0 ? d : { ...d, ring: 0 };
+    return Array.isArray(t.ink) && t.ink.length > 0 ? { ...drawn, ink: bookInk(t, d) } : drawn;
+  }
+
+  /**
+   * A book's pages in view with ink, each on a layer (D3t-b): the notebook kind's own cache — a fresh one each scene, as a fresh
+   * desk's — its strokes as the world's children decode them (the codec's f32 points and times), each pen's ink the palette's.
+   */
+  function bookInk(t, d) {
+    const byPage = new Map();
+    for (const s of t.ink) {
+      const points = decodePoints(encodePoints(s.points));
+      const times = Array.isArray(s.times) && s.times.length === s.points.length ? decodeTimes(encodeTimes(s.times)) : null;
+      const list = byPage.get(s.page) ?? [];
+      list.push({ key: encodePoints(s.points), ink: s.pen ?? "fountain", points: inkPoints(points, times, s.speed ?? 400) });
+      byPage.set(s.page, list);
+    }
+    return pageInk.table(d.id, pagesInView(posesByDraw.get(d), swingOf(d.theta)), (p) => byPage.get(p) ?? [], null, (ink) => pen(ink), "oracle", notebooks, d.frame.Wo, d.frame.Hp);
   }
 
   // ---------------------------------------------------------------- the desk's marks (D4a) — the builder's rules on a still
@@ -605,12 +632,14 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     if (s.hold !== undefined && s.hold.e > 0) {
       papers.law = DEFAULT_PAPER_LAW; papers.chain = false;
       papers.reset(); inkRaster = null;
+      pageInk = new PageInk();
       for (const id of rastered) boards.release(id);
       rastered.clear(); nextBoard = 1;
       return encodeHeld(target, size, s, theme, gridFor(s, true), m);
     }
     papers.law = DEFAULT_PAPER_LAW; papers.chain = s.paper?.chain ?? false;
     papers.reset(); inkRaster = null;   // the ink pages carved afresh, so a scene's rasters land where the lab's do
+    pageInk = new PageInk();   // …and the notebooks' page layers handed out afresh (D3t-b)
     for (const id of rastered) boards.release(id);   // and the boards' rasters: each scene's boards replay into fresh ones
     rastered.clear(); nextBoard = 1;
     const bg = theme.canvasBg;
@@ -648,5 +677,5 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, encode, heldFrame: () => heldFrameDrawn };
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, heldFrame: () => heldFrameDrawn };
 }

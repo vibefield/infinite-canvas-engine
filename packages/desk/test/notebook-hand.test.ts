@@ -62,6 +62,28 @@ describe("the pen in hand writes on a page and commits ONE child with its page a
     expect(r.books.strokesOn(r.book, 1)).toHaveLength(0);
   });
 
+  it("an undo in hand wakes the desk — the book's strokes changed since its pages were brought up to them — and the page gives its ink back", async () => {
+    const r = rig();
+    r.open();
+    r.mouse("move", 650, 380, 0); r.frame();
+    r.mouse("down", 650, 380, 1); r.frame();
+    r.mouse("move", 700, 392, 1); r.frame();
+    r.mouse("up", 700, 392, 0); r.frame();
+    await r.settle();
+    for (let i = 0; i < 4; i++) r.frame();
+    const tick = () => must(r.books.tick)(0);
+    tick();
+    expect(tick()).toBe(false);   // quiet in hand: nothing moves, nothing to bring up to date
+    const id = r.books.state(r.book).id;
+    expect(r.books.pages.rasterOf(id, 1)).toBeDefined();
+    r.ce.docs.undo();
+    r.ce.world.sync();
+    expect(tick()).toBe(true);   // the strokes changed: a frame is asked for
+    r.frame();
+    expect(tick()).toBe(false);
+    expect(r.books.pages.rasterOf(id, 1)).toBeUndefined();   // page 1 has no ink: its layer is given back
+  });
+
   it("the pen in hand is the ink: the red pen writes red; a page turned to is written on its own page (the left, a verso)", async () => {
     const r = rig({ spread: 2 });
     r.open();

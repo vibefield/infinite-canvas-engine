@@ -12,3 +12,6 @@ export const ORACLE_SCENES: readonly OracleScene[];
 
 /** The view every scene is drawn at: CSS px and the device pixel ratio. */
 export const VIEW: { readonly cssW: number; readonly cssH: number; readonly dpr: number };
+
+/** The notebook's page strokes the ink stills write (D3t-b): each on its page, in its pen, its path in page units, each sample's time. */
+export const BOOK_INK: readonly { readonly page: number; readonly pen: string; readonly points: readonly (readonly [number, number])[]; readonly times: readonly number[] }[];

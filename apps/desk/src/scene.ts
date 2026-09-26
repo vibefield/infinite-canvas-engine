@@ -22,7 +22,7 @@ import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
 import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk";
 import type { BoardInk, PaperKind } from "@ice/desk";
 import { oracleFixtures } from "./fixtures";
-import { boardSpec, bookSpec, type KindScene, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, strokeSpecOf, thingsOf } from "./scene-kinds";
+import { boardSpec, bookSpec, type KindScene, layBookInk, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, strokeSpecOf, thingsOf } from "./scene-kinds";
 
 /** A scene as scenes.mjs states one — the mat, ruler, paper, minimat and nav scenes' fields, the D3w kinds' (scene-kinds.ts). */
 export interface OracleScene extends KindScene {
@@ -192,6 +192,7 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
   layStrokes(engine, boards);
   const prints = of("print").map((p) => ({ entity: p.entity, spec: p.spec as OraclePrint }));
   const books = of("book").map((b) => ({ entity: b.entity, spec: b.spec as OracleBook }));
+  layBookInk(engine, books);   // a book's writing: its strokes as its children, each on its page (D3t-b)
   layPins(engine, padEntities, notes);   // a note stuck to a day: a pin, a child of its pad (D3w — read-only here)
   // the facts and the flux a still states: selected → the tag (one `setSelection` for the scene); held → the lift's target pinned (never a Grab: no raise)
   const flagged = [...mats.map((m, i) => ({ entity: matEntities[i] as Entity, spec: m as { selected?: boolean; held?: boolean } })), ...padSpecs.map((c, i) => ({ entity: padEntities[i] as Entity, spec: c as { selected?: boolean; held?: boolean } })), ...things.map((t, i) => ({ entity: thingEntities[i] as Entity, spec: t as { selected?: boolean; held?: boolean } }))];

@@ -244,10 +244,12 @@ describe("the notebook's strokes are its DATA — one child each, on its page (d
     b.ce.docs.undo();   // page 3's
     b.ce.world.sync();
     expect(resolve().ink).toEqual({ pages: [2], layers: [0] });
+    expect(b.books.pages.rasterOf(b.books.state(b.e).id, 3)).toBeUndefined();   // a page whose ink is gone holds no layer
     b.ce.docs.redo();
     b.ce.world.sync();
     expect(resolve().ink).toEqual({ pages: [2, 3], layers: [0, 1] });
-    expect(b.books.pages.replays).toBe(replays);   // page 3's layer still held its stroke — the same stroke back is no replay; page 2's never moved
+    expect(b.books.pages.replays).toBe(replays + 1);   // page 3 gave its layer back when its ink went: back, it replays; page 2's never moved
+    expect(b.books.pages.rasterOf(b.books.state(b.e).id, 5)).toBeUndefined();   // never in view: never on a layer
     // a closed book shows no page: no table, nothing sent
     b.books.pin(b.e, undefined);
     const shut = kind.record(kind.resolve(b.ctx(1)), b.ctx(1));

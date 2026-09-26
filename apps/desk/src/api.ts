@@ -13,6 +13,7 @@ import type { AmbientMode } from "@ice/desk";
 import type { ThemeName } from "@ice/desk";
 import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
+import { type NotebookApi, notebookApi } from "./notebook-api";
 import { type RoomApi, roomApi } from "./room-api";
 import type { DevPanel } from "./panel/panel";
 import { type OracleScene, setScene, spawnAll } from "./scene";
@@ -70,6 +71,8 @@ export interface DeskApi {
   readonly note: NoteApi;
   /** The D3w kinds: strokes as a board's children, a print's body and flick, the books drawn, a pad's events. */
   readonly kinds: KindsApi;
+  /** The notebook in hand (D3t-b): its strokes, a page's raster, the hand, its leaves. */
+  readonly notebook: NotebookApi;
   /** The room's doors (D5a — M5's two-tab rows, M9's live collab): an object's key, the document by key, the local commits. */
   readonly room: RoomApi;
   // ---- the nav (D2b): the doors the portal and nav rigs use
@@ -174,6 +177,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     state,
     note: noteApi(engine, handle),
     kinds: kindsApi(engine, handle),
+    notebook: notebookApi(engine, handle),
     room: roomApi(engine),
     spawn(type, props, at) {
       const widget = engine.catalog.widget(type);

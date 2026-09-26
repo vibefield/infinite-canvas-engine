@@ -292,3 +292,41 @@ export const HOLD_SCENES = [
   ...BOARD_PEN_SCENES,
 ];
 ORACLE_SCENES.push(...HOLD_SCENES);
+
+// THE NOTEBOOK IN HAND AT WORK (D3t-b, NOTEBOOK.md §6–8): pages written in the four pens — the strokes are the book's DATA
+// (`ink`: each on its `page` — sheet i's recto 2i + 1, its verso 2i + 2 — in page units, `s` from the gutter and `y` from the
+// head, a sample a frame), their pages' rasters the notebook kind's cache on both sides. An open spread written on BOTH faces
+// (sheet 0's verso on the left, sheet 1's recto on the right — a red ring on it); a sheet MID-TURN with ink riding it (its recto
+// going over, its verso coming into view, the page it uncovers written too); the same spread by night — the ink laid into the
+// paper before the light, so it takes the moon as the paper does. The writing is loops of a cursive hand made with arithmetic
+// alone (every host computes the same points); on a left page the hand runs toward the gutter's other side (s falls as it writes).
+const LOOP = [[0, 0], [1.5, -2.5], [2.5, -6], [2, -8.5], [0.75, -9], [0, -7.5], [0.5, -3.5], [2, 0]];
+/** A line of writing: `loops` loops of the hand from (s0, y0), 4.5 units apart; `dir` −1 on a left page. */
+const scrawl = (s0, y0, loops, dir = 1) => {
+  const points = [];
+  for (let k = 0; k < loops; k++) for (const [lx, ly] of LOOP) points.push([s0 + dir * (k * 4.5 + lx), y0 + ly]);
+  return { points, times: points.map((_, i) => i * 16) };
+};
+/** A ring drawn round a word: eight samples on an octagon, closed. */
+const ring = (s, y, r) => {
+  const k = r * 0.75;
+  const points = [[s + r, y], [s + k, y + k], [s, y + r], [s - k, y + k], [s - r, y], [s - k, y - k], [s, y - r], [s + k, y - k], [s + r, y]];
+  return { points, times: points.map((_, i) => i * 24) };
+};
+export const BOOK_INK = [
+  { page: 2, pen: "fountain", ...scrawl(150, 48, 22, -1) },
+  { page: 2, pen: "fountain", ...scrawl(150, 66, 18, -1) },
+  { page: 2, pen: "felt", points: [[150, 76], [120, 77], [84, 76.5], [60, 77]], times: [0, 30, 60, 90] },
+  { page: 3, pen: "felt", ...scrawl(26, 52, 24) },
+  { page: 3, pen: "felt", ...scrawl(26, 72, 20) },
+  { page: 3, pen: "red", ...ring(70, 66, 14) },
+  { page: 4, pen: "ball", ...scrawl(150, 110, 20, -1) },
+  { page: 5, pen: "fountain", ...scrawl(26, 130, 22) },
+];
+const inkBook = (extra = {}) => nb({ angle: 0.08, left: 1, ink: BOOK_INK, ...extra });
+export const HOLD_INK_SCENES = [
+  { name: "hold-book-ink-e1-z1", held: true, scene: { ...holdBase, books: [inkBook()], notes: [HOLD_NOTE], hold: { book: 0, e: 1 } } },
+  { name: "hold-book-turn-ink-e1-z1", held: true, scene: { ...holdBase, books: [inkBook({ turn: { dir: 1, phi: 0.8, psi: 1.35, twist: 0.12 } })], notes: [HOLD_NOTE], hold: { book: 0, e: 1 } } },
+  { name: "hold-book-ink-night-e1-z1", held: true, scene: { ...holdBase, theme: "dark", books: [inkBook({ cover: "ink" })], notes: [HOLD_NOTE], hold: { book: 0, e: 1 } } },
+];
+ORACLE_SCENES.push(...HOLD_INK_SCENES);

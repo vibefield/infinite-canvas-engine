@@ -73,8 +73,13 @@ export class PageInk {
       if (out.pages.length >= INK_TABLE) break;
       const strokes = strokesOf(page);
       const lv = live !== null && live.page === page ? live : null;
-      if (strokes.length === 0 && lv === null) continue;
       const key = `${book}:${page}`;
+      if (strokes.length === 0 && lv === null) {
+        // no ink (the last stroke undone): the page gives its layer back — only pages with ink hold one
+        const held = this.slots.find((s) => s.key === key);
+        if (held !== undefined) { held.key = null; held.drawn = null; held.live = null; held.segs = 0; held.used = 0; }
+        continue;
+      }
       let i = this.slots.findIndex((s) => s.key === key);
       if (i < 0) {
         i = 0;

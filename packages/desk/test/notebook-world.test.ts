@@ -3,7 +3,8 @@
 // open at a spread, held and tilted and selected, by night, over a note) and a selected closed book — PARITY BY
 // CONSTRUCTION, the mesh to the last float; a still's pose a FLUX pin
 // on the kind's state; the hit through the SAME desk eye the pass draws with; the ring's rule; the tilt into the
-// carry's motion; the instant delete (a ghost's record never reaches the pass); the ruling's ink on the root pass.
+// carry's motion; the instant delete (a ghost's record never reaches the pass); the ruling's ink on the root pass; and (D3t-b)
+// its pages' INK — the record's table and every page's raster the oracle's own for the same strokes, byte for byte.
 import type { Entity } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type BookPose, type Books, FLUX_REST, NotebookKind, notebookKind, type ObjectContext, rectOf } from "../src/kinds";
@@ -15,13 +16,16 @@ import { objectKindOf } from "../src/object";
 import { Notebook, NOTEBOOK_TYPE } from "../src/objects";
 import { lampOf } from "../src/paper/paper";
 import { MAT_GRID } from "../src/theme";
-import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, THEMES } from "../oracle/fixtures/vf-theme";
+import { BoardStroke, strokeRow } from "../src/objects";
+import type { DataChildren } from "../src/kinds/world";
+import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { notebookDraw } from "../oracle/frame.mjs";
+import { BOOK_INK } from "../oracle/scenes.mjs";
 import { fakeOracle, type OracleInternals, sceneOf } from "./oracle-fake";
 import { must } from "./must";
 
 const lamp = lampOf(MAT_GRID.plane);
-const palette = { ...PALETTE.light, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] } };
+const palette = { ...PALETTE.light, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] }, pens: PENS };
 const kind = notebookKind();
 const look = must(kind.theme)(palette, "light");
 const W = NOTEBOOK.cover.width;
@@ -163,6 +167,32 @@ describe("the notebook's mirror, ring, tilt, delete and ink", () => {
     k.prepare({} as GPUCommandEncoder, slot, [ghost, live]);
     expect(seen).toEqual([1]);
     expect(kind.hit(ghostG, 300, 0)).toBeNull();
+  });
+
+  it("its pages' INK (D3t-b): a book open at spread 1 written on both faces, and one with a sheet mid-turn — the record's table and every page's raster = the oracle's (the kind's cache over the scene's strokes as the codec keeps them), byte for byte", () => {
+    const rows = BOOK_INK.map((q) => strokeRow({ tool: "pen", ink: q.pen, page: q.page, points: q.points, times: q.times }));
+    const children = { stamp: () => 1, rows: (_e: Entity, c: unknown) => (c === BoardStroke ? rows : []) } as unknown as DataChildren;
+    const turn = { dir: 1 as const, phi: 0.8, psi: 1.35, twist: 0.12 };
+    for (const pin of [{ open: true }, { open: true, turn }] as BookPose[]) {
+      const pass = new NotebookKind({ uploadInk: () => {} } as unknown as NotebookPass);
+      const books = must(kind.local)({ pass: () => pass, children }) as Books;
+      books.pin(21 as Entity, pin);
+      const b: Book = { x: 0, y: 0, angle: 0.08, left: 1 };
+      const ctx = ctxOf(b, scene, { local: books });
+      const mine = kind.record(kind.resolve(ctx), ctx);
+      const theirs = oracle.bookOf({ x: 0, y: 0, angle: 0.08, cover: "orbit", seed: 7, left: 1, open: true, ink: BOOK_INK, ...(pin.turn !== undefined ? { turn } : {}) }) as NotebookDraw;
+      // a fresh cache on both sides hands out the same layers; the oracle's is the scene's, so its second book here takes the LRU's next
+      if (pin.turn === undefined) expect(mine.ink).toEqual(theirs.ink);
+      else expect(mine.ink.pages).toEqual(theirs.ink.pages);
+      // the spread's two faces (sheet 0's verso, sheet 1's recto); mid-turn, the sheet's two faces and the page it uncovers too
+      expect([...mine.ink.pages].sort()).toEqual(pin.turn !== undefined ? [2, 3, 4, 5] : [2, 3]);
+      for (const page of mine.ink.pages) {
+        const a = must(books.pages.rasterOf(books.state(21 as Entity).id, page));
+        const o = must(oracle.pages().rasterOf(theirs.id, page));
+        expect(Buffer.compare(Buffer.from(a.bytes), Buffer.from(o.bytes)), `page ${page}`).toBe(0);
+        expect(a.bytes.some((v, i) => i % 4 === 3 && v > 200), `page ${page} has ink`).toBe(true);
+      }
+    }
   });
 
   it("the ruling's ink is the product's: the palette's ink at its presence, set on the root pass by the kind's local; no palette, the host's mistake said", () => {
