@@ -22,7 +22,7 @@ const W = NOTEBOOK.cover.width;
 const H = NOTEBOOK.cover.height;
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
-export function bookRig(props: Record<string, unknown> = {}, vp: { readonly w: number; readonly h: number } = { w: 1200, h: 800 }) {
+export function bookRig(props: Record<string, unknown> = {}, vp: { readonly w: number; readonly h: number } = { w: 1200, h: 800 }, defer?: (fn: () => void) => void) {
   const ce = createCanvasEngine({ widgets: [Notebook] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: vp.w, h: vp.h, dpr: 1 });
@@ -48,6 +48,7 @@ export function bookRig(props: Record<string, unknown> = {}, vp: { readonly w: n
   const hand = createNotebookHand({
     world: ce.world, docs: ce.docs, books: () => books, isBook: (e) => e === book,
     heldToWorld: (e, x, y) => (e === book ? [-90 + x, y] : undefined), geometryOf: (e) => (e === book ? G : undefined),
+    ...(defer !== undefined ? { defer } : {}),
   });
   let now = 1000;
   /** A frame as the layer runs it: the tick, the hand, then the build; `settle` lets the hand's transactions land (microtasks). */

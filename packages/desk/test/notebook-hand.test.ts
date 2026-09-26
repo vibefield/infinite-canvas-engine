@@ -62,6 +62,31 @@ describe("the pen in hand writes on a page and commits ONE child with its page a
     expect(r.books.strokesOn(r.book, 1)).toHaveLength(0);
   });
 
+  it("a landing held back past frames (a slow document): the lifted stroke stays listed on its page — no replay, nothing lost — until its child lands", async () => {
+    const held: (() => void)[] = [];
+    const r = bookRig({}, undefined, (fn) => { held.push(fn); });
+    r.open();
+    r.mouse("move", 650, 380, 0); r.frame();
+    r.mouse("down", 650, 380, 1); r.frame();
+    r.mouse("move", 690, 388, 1); r.frame();
+    r.mouse("move", 720, 400, 1); r.frame();
+    r.mouse("up", 720, 400, 0); r.frame();
+    const replays = r.books.pages.replays;
+    const id = r.books.state(r.book).id;
+    const drawn = Buffer.from(must(r.books.pages.rasterOf(id, 1)).bytes);
+    r.frame(); r.frame(); r.frame();   // three frames with the stroke lifted and no child yet
+    expect(r.strokes()).toHaveLength(0);
+    expect(r.books.strokesOn(r.book, 1)).toHaveLength(1);   // listed from the lift
+    expect(r.books.pages.replays).toBe(replays);
+    expect(Buffer.compare(Buffer.from(must(r.books.pages.rasterOf(id, 1)).bytes), drawn)).toBe(0);
+    for (const fn of held.splice(0)) fn();   // the landing
+    r.ce.world.sync();
+    r.frame(); r.frame();
+    expect(r.strokes()).toHaveLength(1);
+    expect(r.books.strokesOn(r.book, 1)).toHaveLength(1);   // the child, once
+    expect(r.books.pages.replays).toBe(replays);
+  });
+
   it("an undo in hand wakes the desk — the book's strokes changed since its pages were brought up to them — and the page gives its ink back", async () => {
     const r = rig();
     r.open();
