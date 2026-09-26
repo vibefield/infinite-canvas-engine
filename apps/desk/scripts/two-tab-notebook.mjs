@@ -13,12 +13,19 @@ export async function notebookAcrossRoom(t) {
   await front(B);
   const nbB = await until(() => B.q(`window.__desk.room.resolve(${K(nbKey)})`), 8000);
   check(typeof nbB === "number", `the notebook spawned in A reaches B (key ${nbKey}: A's #${nbA}, B's #${nbB})`);
-  /** A double-click at the notebook's place in a tab (the camera puts its case's centre at (400, 400)): picked up, settled. */
+  /**
+   * A double-click at the notebook's place in a tab (the camera puts its case's centre at (400, 400)): picked up, settled — and OPEN.
+   * The hand's pose settles a frame or two before the book's own motion has it open (`turnable`: theta past 0.93 π); a press in that
+   * gap is the OBJECT's, not the pen's (core decides a press's kind at WentDown — `partOf` answers "frame" until the book is turnable),
+   * and the stroke never begins. So the desk is waited quiet after the pick-up: the opening is the last thing moving (found at D6).
+   */
   const pickUp = async (T, id) => {
     await front(T);
     await settle(T);
     for (const [type, clickCount] of [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]]) { await T.tab.send("Input.dispatchMouseEvent", { type, x: 400, y: 400, button: "left", clickCount }); await sleep(16); }
-    return until(async () => { const h = await T.q("window.__desk.hand()"); return h?.settled === true && h.e === 1 && h.entity === id ? h : null; }, 3000);
+    const h = await until(async () => { const h = await T.q("window.__desk.hand()"); return h?.settled === true && h.e === 1 && h.entity === id ? h : null; }, 3000);
+    await settle(T);
+    return h;
   };
   const handB = await pickUp(B, nbB);
   const handA = await pickUp(A, nbA);

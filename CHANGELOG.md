@@ -663,6 +663,12 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   frame at or past 180 ms and the builder quiet THAT frame); the oracle 101/101 sha256-equal to main; rig:nav 26/26 in
   four runs (the cut frame maxΔ 0), rig:interact's selection row (the ring 0 at every sample, the desk quiet within
   600 ms), rig:stress 15/15 at 7 and at 3 rounds.
+- **Found by gate:landing**: rig:two-tab's notebook pick-up pressed the pen the instant the HAND settled, a frame or two
+  before the book's own motion had it open (`turnable`: theta past 0.93 π) — core decides a press's kind at WentDown and
+  `partOf` answers "frame" until then, so the press was the object's and no stroke began (a throwaway log in the leaf
+  read `turnable: false` at the failing press, `true` a frame later). A latent race whose odds D6's frame timing moved
+  (4 of 6 one-tab replays, always after a whiteboard stroke laid by hand); the rig now waits the desk quiet after the
+  pick-up (two-tab-notebook.mjs `pickUp`) — 39/39 three times running.
 
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
