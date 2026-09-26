@@ -398,6 +398,73 @@ there.
   Size, so it stays `resizable: false` and wears none from the world. A resize lifts a board (core's `Grab` is also the
   carry's, and a board reads it as its lift).
 
+<!-- design-015 D5a (2026-09-26) -->
+- **The exit tests the retired apps carried, moved onto the desk BY NAME** before anything is deleted (design-015 §11.6;
+  docs/implementation-plan.md's cross-cutting rule: every design exit test lives in CI). **M5** graybox `two-tab` →
+  `rig:two-tab`'s nine rows "M5 two-tab convergence": graybox's assertions re-aimed at desk objects through two real tabs
+  on `?room=` — a note spawned crosses where it lies; a real drag moves it live in A with nothing crossing, lands as ONE
+  commit, and B converges exactly; ⌫ deletes it in both; ⌘Z in A restores it in both (same key, place, hand); a mini
+  mat's inside is edited (the note dropped into it) and B has it inside and draws the inside; ⌘Z takes it back out in
+  both. **M8** nodeboard `cascade` + `port-churn` → `packages/core/test/m8-cascade.test.ts` and `m8-port-churn.test.ts`
+  on core alone (nodeboard's rig minus the app, its node types as desk objects); port-churn is one row stronger — the
+  spawn observer runs from the first frame (nodeboard's attached after boot, so a select tool lighting every visible
+  port went unseen). **M9** nodeboard `collab` → `apps/desk/test/collab.test.ts` (two desk engines as the app boots
+  them, over nodeboard's Bus and fake clock: the seeder's desk — notes and a mini mat with an inside — converges key for
+  key and a new note crosses; A's cursor and a one-object selection project onto B and B derives the `CursorVisual
+  "remote"`; the boot in a room touches no storage) and the live **`rig:collab`**: two tabs through the ws relay the
+  rig starts itself (`pnpm relay`'s server on a free port) converge on an add, a real drag and a delete, and each DRAWS
+  the other's hand (its ink under the arrow's body, byte for byte). **M10** moodboard `exit-imports` →
+  `apps/desk/test/exit-imports.test.ts`: apps/desk imports only THE SURFACE — exactly what it imports today, each entry
+  one its package's `exports` publishes — ONE constant on one line, so the umbrella rename is a one-line change.
+- **Retired with their subject, by name** (recorded in M20, not dropped): **M6** cardboard `exit-trace` and
+  `cull-reenter` (the DOM widget runtime: naive handlers composing per the pinned contract, React state kept across
+  cull/re-enter — there is no DOM widget left to trace) and **M7** glboard `gl-router` (the GL islands' first-tap router
+  path — there are no islands).
+- **A room's other people on the GPU** (ruling D-D5a.1, James's to overturn; *Marks on the Mat*'s hand table): the marks
+  pass draws each remote `CursorVisual` as the hand — the agent's arrow of the desk-chrome page, in the PEER's presence
+  colour, 16 × 20 on screen at every zoom, a white rim and the lower-left cast, the same by night — with their name in a
+  small ink flag beside it, and a peer's SELECTION wears your brackets in their colour at 50 % (no knobs, no menu, no
+  tape). `MARK.hand` (marks.wgsl `MARK_HAND` — an even-odd polygon distance; the CPU mirror's `handDistance`),
+  `MarksInput.peers?`, `MarksState.peers?` (world → screen in `assembleMarks`, the one rule the builder and the oracle
+  share), the collector reading core's presence projections (a peer's keys resolved through
+  `DeskBuilderOptions.resolveKey`, which the host hands in from its document), theme.ts `MARKS.hand` (the path, the
+  sizes, the hand inks — violet and the warm hues — and the table's grey for a colour no one can parse). Oracle stills
+  `marks-remote-z1` and `marks-remote-night-z1` with a `hands` check; Chrome = Node at maxΔ 0.
+- **The desk joins rooms with presence** (apps/desk `joinDeskRoom(engine, opts)`): `?room=`, `?relay=ws://…` (the ws
+  relay — core's `webSocketByteChannel`), `?name=`/`?color=` (an identity; else one drawn from the presence palette), an
+  injected channel and clock for the units. In a room nothing reads or writes storage.
+- **The last prototype harnesses** (design-015 §11.3): **`rig:ruler`** — ruler.mjs's check rows on a live frame: the
+  atlas up; ink in both bands on every `ruler-*` still and up a zoom ladder through one decade, each band ALSO held to
+  the same frame bare (the harness's own bar was cleared by the mat's lattice alone — the red proof found it); a 7 px
+  pan moving the print's brightest tick 14 device px; the label mirror = the root mat's uploaded ruler uniforms, and 11
+  labels 100 px apart at zoom 1; rulers off. **`rig:cost`** gains the mat's rows (MAT.md §5, day and night) and the
+  rulers' (RULER.md) beside the records. **The zoom sweep** (zoom.mjs) as world stills: `zoom-z{0.11…1.5}` (the product's
+  fade-in window, the 0.99 → 1.01 decade wrap among them) and `zoom-sparse-z{0.2,0.99,1.01}` (a still may state its
+  `fadeIn`), drawn from the world by `rig:world`. **The tweak panel** becomes apps/desk's DEV PANEL (the backtick; screen-
+  space DOM, its look built from the desk's inks): the mat, the rulers, the lattice, the night, the colours, the mini
+  mat's law, its vinyl, the live insides, the springs, the flight's response and the zoom-through, projected through the
+  layer's handle and core's live settings; "reset to product" IS the product; `rig:panel`.
+- **D-D2b.7's witness restored**: `rig:nav` §7 — a double-click lands while a dropped note's lift and a mini mat's
+  hover rise are both moving; the flight pinned at p = 0 with the flux UNFROZEN: only the builder's p = 0 hold keeps the
+  cut still (400 ms, maxΔ 0; red without the hold: the lift falls, 8,111 px move).
+- New doors (`@ice/desk`): `handle.tuneLaw(kind, law)` — a kind's law, live (`ObjectKind.tune?`, `KindPass.setLaw?`;
+  the mini mat's); `DeskLayerOptions.springs` (the object the builder reads each frame); `DeskBuilderOptions.resolveKey`;
+  exports `SPRINGS`/`ObjectSprings` (`/host`) and the night's model — `nightLight`, `dayLuminance`, `MatLight` (`/theme`).
+  apps/desk gains its vitest units and `window.__desk.room` (keys, the document by key, the local commit count) and
+  `__desk.panel`.
+- Witnesses in `gate:landing` (exit 0, 780 s): `rig:parity` 74 → 87 (the remote stills and the sweep) and `rig:world` 61 →
+  72 (the sweep, from the world), Chrome = Node at maxΔ 0; `rig:two-tab` 10 → 19 (M5's nine); `rig:nav` 25 → 26;
+  NEW `rig:collab` 8 (7.9 s), `rig:ruler` 23 (50.5 s), `rig:panel` 13 (4.3 s); the oracle's two remote stills and their
+  `hands` check. Units: core + 2 (M8), desk 418 → 424 (the hands), apps/desk 12 (M10 5, M9 3, the panel's params 4).
+  Every new witness proven red by a sha-checked mutate → run → restore (the counts and the mutations are in the slice's
+  commits).
+- Owed: a peer in another nav frame — core's presence cursor is in the peer's own frame's units and presence carries no
+  frame, so every peer's hand is drawn in THIS desk's current frame: a peer who entered a mini mat has their hand at the
+  wrong place on a root desk (and the other way round). The prototype's paper, hand and notebook laws are not live in the dev panel (the kinds take
+  them at construction — `tuneLaw` is the door for each), nor is the flight's octave model (core's flight exposes its
+  response alone). rig:ruler's 1× row (the atlas re-rendered at a changed device ratio) is not carried: apps/desk makes
+  its atlas once at boot.
+
 ### Fixed
 
 <!-- core (2026-09-26) -->
