@@ -900,6 +900,15 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   README (no kind has ports). Held by `packages/desk/test/quickstart.test.ts` (the READMEs' imports against the umbrella's
   exports map, both themes' looks, the failed mount on a fake page, the preset's resolved settings — each red on its
   pre-fix source). apps/desk takes the shipped preset and palette like a third party.
+- **The oracle holds a COMMITTED pixel golden** (D7 surface #2). The only before/after check could not go red:
+  `baselineCheck` ran only under `BASELINE_DIR`, which gate:landing never set, and answered a missing file with a SKIP
+  (`BASELINE_DIR=/typo` exited 0); rig:parity and rig:world compare Chrome to Node renders the SAME commit wrote, so a
+  WGSL or constant edit that moves pixels the same way in both hosts passed unless a property check happened to cover
+  it. Now `packages/desk/oracle/shas.json` pins every scene's sha-256 (101 scenes) and the oracle — gate:landing's first
+  step — FAILS on a moved pixel, a scene with no entry, or an entry with no scene; `ORACLE_BLESS=1` re-blesses (a
+  deliberate event: the file's diff IS the pixel change, committed with its why — on another GPU or driver as well).
+  A missing baseline file FAILS. Red proof: the marker ink darkened 3 % (`ink.wgsl`, both hosts alike) — the pre-fix
+  oracle exits 0 (every property check passes), the golden fails 7 scenes; `BASELINE_DIR=/typo` exits 1 (was 0).
 
 ## [0.13.0] — 2026-09-07
 

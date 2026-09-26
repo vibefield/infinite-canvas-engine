@@ -2,10 +2,19 @@
 // package), from the same TypeScript passes and the same .wgsl files the
 // browser build uses. No canvas: the colour target is a readable Target.
 //
-//   pnpm --filter @ice/desk oracle              → oracle/results/oracle-<scene>.rgba for apps/desk rig:parity, and every check
+//   pnpm --filter @ice/desk oracle              → oracle/results/oracle-<scene>.rgba for apps/desk rig:parity, and every check —
+//                                                  among them THE GOLDEN: every scene's sha-256 against the COMMITTED
+//                                                  oracle/shas.json (design-015 D7): a pixel that moves, a scene with no
+//                                                  entry or an entry with no scene is a FAIL (gate:landing runs this)
+//   ORACLE_BLESS=1 pnpm --filter @ice/desk oracle   → re-bless: write the drawn shas into oracle/shas.json (a deliberate
+//                                                  event — a diff of that file IS the pixel change; commit it with its why)
 //   BASELINE_DIR=<dir> pnpm --filter @ice/desk oracle   → also: the `baseline` stills byte for byte against <dir>
 //                                                  (the renders the engine made before the cards and the dot and
-//                                                  needle retired — MINIMAT.md §1: what stayed must not move)
+//                                                  needle retired — MINIMAT.md §1: what stayed must not move); a
+//                                                  missing file is a FAIL, never a skip
+//
+// The golden is Dawn's bytes on the host that blessed it: another GPU or driver may round differently, and a re-bless
+// there is the same deliberate event.
 //
 // If this matches Chrome, the engine is host-agnostic and the pixel oracle
 // needs no browser. A nav scene draws BOTH desks of a flight through the
@@ -14,6 +23,7 @@
 // nothing moved by a pixel. The desk itself — the passes, the fixtures on
 // them, the scene builder — is frame.mjs, which apps/desk's parity page runs
 // in Chrome (design-015 D1b); this file is the Node host and the checks.
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -151,7 +161,8 @@ async function baselineCheck(sc, drawn) {
   const px = selects(sc.scene) ? (await render(sc.scene, { prototypeRing: true })).px : drawn;
   const dir = process.env.BASELINE_DIR;
   const file = resolve(dir, `oracle-${sc.name}.rgba`);
-  if (!existsSync(file)) { console.log(`  SKIP  baseline   ${sc.name.padEnd(24)} no ${file}`); return true; }
+  // a witness that is not there has seen nothing: a missing file (a typo'd dir, a scene never captured) FAILS (D7)
+  if (!existsSync(file)) { console.log(`  FAIL  baseline   ${sc.name.padEnd(24)} no ${file}`); return false; }
   const B = readFileSync(file);
   let n = 0;
   let max = 0;
@@ -1011,10 +1022,22 @@ async function padNoteCheck(sc) {
 const only = process.env.ORACLE_ONLY ? new RegExp(process.env.ORACLE_ONLY) : null;
 const scenes = only ? ORACLE_SCENES.filter((sc) => only.test(sc.name)) : ORACLE_SCENES;
 let failed = 0;
+/** THE GOLDEN (design-015 D7): every scene's pixels, pinned by sha-256 in the committed oracle/shas.json. */
+const GOLDEN = resolve(root, "oracle/shas.json");
+const bless = process.env.ORACLE_BLESS === "1";
+const golden = existsSync(GOLDEN) ? JSON.parse(readFileSync(GOLDEN, "utf8")) : {};
+const drawnShas = {};
+let goldenOff = 0;
 for (const sc of scenes) {
   const t1 = performance.now();
   const { px, nav, portals, stats } = await render(sc.scene, { marks: true });
   writeFileSync(resolve(results, `oracle-${sc.name}.rgba`), px);
+  const sha = createHash("sha256").update(px).digest("hex");
+  drawnShas[sc.name] = sha;
+  if (!bless && golden[sc.name] !== sha) {
+    goldenOff += 1;
+    console.log(`  FAIL  golden     ${sc.name.padEnd(24)} ${golden[sc.name] === undefined ? "has no entry in oracle/shas.json" : `drew ${sha.slice(0, 12)}, the golden is ${golden[sc.name].slice(0, 12)}`}`);
+  }
   const flight = nav ? ` · ${nav.f.kind} p ${sc.scene.nav.p}${nav.f.frozen ? " FROZEN" : ""} · in ${nav.pres.incoming.opacity.toFixed(2)}${nav.pres.incoming.objects !== undefined ? ` (objects ${nav.pres.incoming.objects.toFixed(2)})` : ""} out ${nav.pres.outgoing.opacity.toFixed(2)}` : "";
   const things = thingsOf(sc.scene);
   const count = (kind) => things.filter((t) => t.kind === kind).length;
@@ -1088,6 +1111,18 @@ for (const sc of scenes) if (sc.pad) { if (!(await padCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.padNote) { if (!(await padNoteCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.printed) { if (!(await printCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.held) { if (!(await heldCheck(sc))) failed += 1; }
+// THE GOLDEN's verdict: every scene drawn as committed — or, blessing, the drawn shas written (ORACLE_ONLY merges its scenes in)
+if (bless) {
+  const next = only ? { ...golden, ...drawnShas } : drawnShas;
+  const sorted = Object.fromEntries(Object.keys(next).sort().map((k) => [k, next[k]]));
+  writeFileSync(GOLDEN, `${JSON.stringify(sorted, null, 2)}\n`);
+  console.log(`BLESS  golden     ${Object.keys(drawnShas).length} scene(s) written to oracle/shas.json — commit the diff with its why`);
+} else {
+  // an entry whose scene is gone is a golden that pins nothing (only on a full run: ORACLE_ONLY draws a subset)
+  const stale = only ? [] : Object.keys(golden).filter((k) => !(k in drawnShas));
+  console.log(`${goldenOff || stale.length ? "FAIL" : "PASS"}  golden     ${scenes.length - goldenOff} of ${scenes.length} scene(s) drawn byte for byte as oracle/shas.json pins them${stale.length ? ` · ${stale.length} entr${stale.length === 1 ? "y" : "ies"} with no scene: ${stale.slice(0, 5).join(", ")}` : ""}`);
+  if (goldenOff || stale.length) failed += 1;
+}
 // the probe's verdict: creation and every frame drawn above, in scopes of their own
 console.log(`${probe.errors.length ? "FAIL" : "PASS"}  error scopes (validation · out-of-memory · internal) over the desk's creation and ${probe.frames} frames: ${probe.errors.length} error${probe.errors.length === 1 ? "" : "s"}${probe.errors.length ? `\n  ${probe.errors.slice(0, 5).join("\n  ")}` : ""}`);
 if (probe.errors.length) failed += 1;
