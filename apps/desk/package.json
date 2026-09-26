@@ -11,7 +11,8 @@
     "rig:parity": "tsx scripts/parity.mjs",
     "rig:world": "tsx scripts/world.mjs",
     "rig:interact": "tsx scripts/interact.mjs",
-    "rig:idle": "tsx scripts/idle.mjs"
+    "rig:idle": "tsx scripts/idle.mjs",
+    "rig:proto-parity": "tsx scripts/proto-parity.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
