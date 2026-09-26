@@ -16,7 +16,7 @@
 // drew (the builder's `heldToWorld`, as core maps `HeldPointer`). The world half is objects/calendar-writing.ts (the sessions) and
 // the `PadSelection` fact this writes; objects/calendar-hand.ts marks it on the pad each frame.
 
-import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, Size, TouchesExact, type World } from "@ice/core";
+import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, guardedTransaction, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, Size, TouchesExact, type World } from "@ice/core";
 import { dayOr, monthKeyOf, PadSelection } from "../calendar/data";
 import { isSpan } from "../calendar/events";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
@@ -153,7 +153,8 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
         if (k === "Escape") { finishWriting(false); return true; }
         return false;   // the line's own keys: the platform's (its caret, its undo while focused — D-D2c.9)
       }
-      if (mod && (k === "z" || k === "Z")) { const s = opts.docs.current(); if (s !== undefined) { if (ev.shiftKey) s.store.redo(); else s.store.undo(); } return true; }
+      // the document's history through the facade's doors (historyStep: the tween retarget, the read-only posture — D7 #9)
+      if (mod && (k === "z" || k === "Z")) { if (ev.shiftKey) opts.docs.redo?.(); else opts.docs.undo?.(); return true; }
       if (mod || ev.altKey) return false;
       if (k === "Escape") { clear(); return true; }
       if (k === "t" || k === "T") { goToday(e); return true; }
@@ -265,7 +266,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
   const removeEntry = (e: Entity, entry: Entity): void => {
     const s = writable(opts.docs);
     if (s === undefined) return;
-    try { s.store.transaction((tx) => { tx.destroy(entry); }); } catch { return; }
+    try { guardedTransaction(s.store, opts.world, (tx) => { tx.destroy(entry); }); } catch { return; }
     setSel(e, {});
     opts.wake();
   };

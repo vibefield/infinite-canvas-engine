@@ -29,6 +29,9 @@ export interface TypingDocs {
   current(): Pick<DocSession, "store" | "liveWriter" | "readOnly" | "versionReport"> | undefined;
   /** The facade's door into a gesture's own transaction (`docs.extendCommits`, D7 #2): a landing's writes in the gesture's undo step. Absent (a bare store), a driver has no such door. */
   extendCommits?(extend: CommitExtender): () => void;
+  /** The facade's history doors (`docs.undo`/`docs.redo` — historyStep: the tween retarget, the read-only posture; D7 #9). Absent (a bare store), a driver moves no history. */
+  undo?(): boolean;
+  redo?(): boolean;
 }
 
 /** What a desk writer holds while it commits: the session's store and live writer. */
