@@ -20,7 +20,7 @@ import { NAV_SCENES } from "@ice/desk/oracle/scenes.mjs";
 import { layoutMarks } from "../../../packages/desk/src/marks/layout.ts";
 import { markDistance } from "../../../packages/desk/src/marks/mirror.ts";
 import { flightOpacity } from "../../../packages/desk/src/nav/flight.ts";
-import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, until, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
 
 const here = import.meta.dirname;
@@ -183,8 +183,7 @@ try {
   check(fIn?.kind === "enter" && (await q("window.__desk.depth()")) === 1, "a double-click on a mini mat flies into it");
   await land();
   await dbl(40, 760);    // the bare mat, inside
-  await sleep(60);
-  const fOut = await q("window.__desk.flight()");
+  const fOut = await until(async () => { const f = await q("window.__desk.flight()"); return f?.kind === "exit" ? f : null; }, 3000) ?? (await q("window.__desk.flight()"));   // the flight's start, not a 60 ms sleep (D7)
   check(fOut?.kind === "exit" && (await q("window.__desk.depth()")) === 0, "a double-click on the bare mat flies back out");
   await land();
 

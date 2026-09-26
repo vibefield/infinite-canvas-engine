@@ -1015,6 +1015,15 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   reaped mid-pan (inherited from nodeboard); it now also counts every port destroyed during the run (`onDestroy`
   fires before teardown) — red under a mutation that lights the viewport's ports while the camera gestures and reaps
   them when it stops (6 ports; the old count saw 0).
+- **The rigs wait on conditions, not sleeps** (D7 surface #13). rig:two-tab read B after a fixed 300 ms to prove a
+  negative (nothing crosses while A's session is open), and its second row's 300 ms left a ~0.7 s stall enough for the
+  1 s idle commit to land first — a spurious red; rig:sticky slept 60/300/900 ms for the wipe's frames, its end and the
+  idle commit; rig:nav slept 60 ms for the exit flight to start. Now two-tab witnesses the negative by A's OUTBOUND
+  count (`room.commits()` — an update A never sent cannot cross, at any delay) and reads the second row's negative only
+  while the session is provably still open; sticky and nav wait on the event itself (`until`, now shared from
+  `scripts/cdp.mjs`). Red proof: a 0.9 s host stall after the second session's keystrokes → the pre-D7 two-tab fails
+  that row, the new one passes 39/39. (Under CPU ×12 throttling the pre-D7 sticky and nav still passed: their sleeps
+  are conditions now, but the spurious red the review predicted for them did not reproduce here.)
 
 ## [0.13.0] — 2026-09-07
 

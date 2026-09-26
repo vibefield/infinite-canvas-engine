@@ -99,14 +99,16 @@ try {
   await front(A);
   await A.q("window.__desk.settle(4000)");
 
-  // A writes: LIVE in A, nothing crosses while the session is open
+  // A writes: LIVE in A, nothing crosses while the session is open. The witness is A's OUTBOUND count (D7): an update A never
+  // sent cannot cross, at any delay — where a fixed 300 ms sleep before reading B stood for "long enough to have arrived"
   await click(400, 300);
   check((await A.q("window.__desk.note.editing()")) === a, "a tap in A puts A's editor on the note");
+  const sent0 = await A.q("window.__desk.room.commits()");   // the first call arms the count
   await typeKeys("hello");
   const liveA = await A.q(`window.__desk.note.ink(${a})`);
-  await sleep(300);
+  const sent1 = await A.q("window.__desk.room.commits()");
   const midB = await B.q(`window.__desk.note.docInk(${b})`);
-  check(liveA?.text === "hello" && (await A.q("window.__desk.note.sessionOpen()")) && midB?.text === "", `A's keystrokes are live in A ("${liveA?.text}") and cross nothing while the session is open (B's document: "${midB?.text}")`);
+  check(sent1 === sent0 && liveA?.text === "hello" && (await A.q("window.__desk.note.sessionOpen()")) && midB?.text === "", `A's keystrokes are live in A ("${liveA?.text}") and cross nothing while the session is open (A sent ${sent1 - sent0} updates; B's document: "${midB?.text}")`);
 
   // Escape commits the session: B's document holds the text with A's seeds — the same hand
   await key("Escape");
@@ -125,11 +127,16 @@ try {
   await A.q("window.__desk.settle(4000)");
   await click(400, 300);
   await key("End");
+  const sent2 = await A.q("window.__desk.room.commits()");
   await typeKeys(" world");
-  await sleep(300);
+  // no sleep (D7): the negative — nothing sent while the session is open — is read only while the session is provably
+  // still open, so a stall that lets the 1 s idle commit land first no longer reads as a red; the row's own claim (the
+  // commit reaches B) is waited for below
+  const sent3 = await A.q("window.__desk.room.commits()");
   const midB2 = await B.q(`window.__desk.note.docInk(${b})`);
+  const stillOpen = await A.q("window.__desk.note.sessionOpen()");
   const gotB2 = await until(async () => { const d = await B.q(`window.__desk.note.docInk(${b})`); return d?.text === "hello world" ? d : null; }, 5000);
-  check(midB2?.text === "hello" && gotB2 !== null && (await A.q("window.__desk.note.editing()")) === a && (await A.q("window.__desk.note.editorFocused()")), `after 1 s without input the session commits and reaches B ("${midB2?.text}" → "${gotB2?.text}") while A still writes`);
+  check((!stillOpen || (sent3 === sent2 && midB2?.text === "hello")) && gotB2 !== null && (await A.q("window.__desk.note.editing()")) === a && (await A.q("window.__desk.note.editorFocused()")), `after 1 s without input the session commits and reaches B ("${midB2?.text}" → "${gotB2?.text}") while A still writes`);
 
   // an undo in A takes that session back — in B too
   await key("Escape");

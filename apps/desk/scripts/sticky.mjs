@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, until, watchPage } from "./cdp.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -170,12 +170,11 @@ try {
   const doc1 = await docNote(id);
   check(live1?.text === "hi" && doc1?.text === "" && (await q("window.__desk.note.sessionOpen()")), `two keys land in the note LIVE ("${live1?.text}") while the document still holds "${doc1?.text}" — a session is open`);
   check(wipe1 !== null && wipe1.index === 1, `the pen is still writing the last glyph (the wipe at index ${wipe1?.index})`);
-  await sleep(60);
-  const fMid = await q("window.__desk.submits().total");
-  await sleep(300);
-  check(fMid > f0 && (await q(`window.__desk.note.wipe(${id})`)) === null, `the wipe drew frames while it ran (${fMid - f0} submits in ~60 ms) and is over after 110 ms`);
-  await sleep(900);   // past the 1 s idle: the session commits, the focus stays
-  const doc2 = await docNote(id);
+  // conditions, not sleeps (D7): the wipe draws frames while it runs, then ends; the idle commit lands when it lands
+  const fMid = await until(async () => { const n = await q("window.__desk.submits().total"); return n > f0 ? n : 0; }, 2000);
+  const wipeOver = await until(async () => (await q(`window.__desk.note.wipe(${id})`)) === null, 2000);
+  check(fMid > f0 && wipeOver, `the wipe drew frames while it ran (${fMid - f0} submits) and is over`);
+  const doc2 = await until(async () => { const d = await docNote(id); return d?.text === "hi" ? d : null; }, 5000) ?? (await docNote(id));   // past the 1 s idle: the session commits, the focus stays
   check(doc2?.text === "hi" && !(await q("window.__desk.note.sessionOpen()")) && (await q("window.__desk.note.editing()")) === id && (await q("window.__desk.note.editorFocused()")), `1 s without input commits the session ("${doc2?.text}" in the document) and the editor stays on the note`);
   const blinks = await submitsIn(1100);
   check(blinks >= 1 && blinks <= 4, `at rest with the caret blinking the desk submits ${blinks} frames in 1.1 s — the blink and nothing else`);

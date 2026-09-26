@@ -96,6 +96,14 @@ export async function faultsOf(tab, name = "") {
   return faults.map((f) => `${name ? `${name} ` : ""}FAULT ${f}`);
 }
 
+/** Poll `fn` until it answers truthy or `ms` pass; the last answer (D7: a rig waits on a CONDITION, never a fixed sleep standing in for one). */
+export async function until(fn, ms) {
+  const t0 = Date.now();
+  let v = await fn();
+  while (!v && Date.now() - t0 < ms) { await new Promise((r) => setTimeout(r, 40)); v = await fn(); }
+  return v;
+}
+
 export async function openTab(port, url) {
   const res = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, {
     method: "PUT",
