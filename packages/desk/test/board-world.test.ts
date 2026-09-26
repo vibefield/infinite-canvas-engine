@@ -108,7 +108,7 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
     return { kindPass: new BoardKind(pass as unknown as BoardPass), pass, calls, replays };
   }
 
-  function desk() {
+  function desk(drawn?: (e: Entity) => number | undefined) {
     const ce = createCanvasEngine({ widgets: [Board] });
     ce.docs.create();
     let now = 0;
@@ -117,7 +117,7 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
     const board = ce.ops.spawnWidget(BOARD_TYPE, { x: 180, y: -280, undoable: false });
     step();
     const stub = stubPass();
-    const ink = must(kind.local)({ pass: () => stub.kindPass, children: worldChildren(ce.world) }) as BoardInk;
+    const ink = must(kind.local)({ pass: () => stub.kindPass, children: worldChildren(ce.world), ...(drawn !== undefined ? { drawn } : {}) }) as BoardInk;
     const draw = (ghost = false) => { const ctx = ctxOf({ x: 420, y: -120 }, { entity: board, local: ink, flux: { ...FLUX_REST, fade: ghost ? 0.5 : 1 } }); return kind.record(kind.resolve(ctx), ctx).id; };
     const lay = (spec: Parameters<typeof addStroke>[2]) => { guardedTransaction(session().store, ce.world, (tx) => { addStroke(tx, board, spec); }); step(); };
     return { ce, step, session, board, stub, ink, draw, lay };
@@ -142,6 +142,22 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
     expect(must(stub.replays[1])[0]?.kind).toBe("stroke");
     expect(ink.tick?.(0)).toBe(false);
     expect(ink.replays()).toBe(2);
+  });
+
+  it("a stroke laid on a board NOT drawn (culled — the builder's word): nothing asks a frame for it; back in view it asks, and replays (law #6 — D6's gate, pinned at D7)", () => {
+    let shown = true;
+    const { ink, draw, lay, stub } = desk(() => (shown ? 0 : undefined));
+    draw();
+    expect(ink.tick?.(0)).toBe(false);
+    shown = false;   // scrolled off: the builder resolves nothing of it
+    lay({ ink: "blue", tip: "bullet", points: [[40, 60], [90, 48], [150, 52]] });
+    expect(ink.tick?.(16)).toBe(false);
+    expect(ink.tick?.(32)).toBe(false);
+    shown = true;
+    expect(ink.tick?.(48)).toBe(true);
+    draw();
+    expect(stub.calls.at(-1)).toBe("replay 1 1");
+    expect(ink.tick?.(64)).toBe(false);
   });
 
   it("a stroke laid LIVE (D3t-a): its stamps into the stroke layer; the lift lays it in WET; its entity is ADOPTED when it lands — no replay; another turnover replays and lays a stroke in hand again", () => {
