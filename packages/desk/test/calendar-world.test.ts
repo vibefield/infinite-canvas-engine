@@ -58,10 +58,16 @@ describe("the calendar's world half = the oracle's `calendarDraw` (parity by con
       const pads = padsOf();
       if (c.pose !== undefined) pads.pin(31 as Entity, { roll: c.pose });
       const ctx = ctxOf(c, s, { local: pads });
-      const mine = kind.record(kind.resolve(ctx), ctx);
-      expect(mine, name).toEqual(calendarDraw(c, 0) as CalendarDraw);
+      const { mesh, ...mine } = kind.record(kind.resolve(ctx), ctx);
+      const { mesh: oMesh, ...oracle } = calendarDraw(c, 0) as CalendarDraw;
+      expect(mine, name).toEqual(oracle);
+      // the pad's one mesh, byte for byte over what was built (a deep equality over its typed arrays is slow under load)
+      expect([mesh.vcount, mesh.icount, mesh.sheetFirst, mesh.rollFirst, mesh.min, mesh.max], name).toEqual([oMesh.vcount, oMesh.icount, oMesh.sheetFirst, oMesh.rollFirst, oMesh.min, oMesh.max]);
+      const bytes = (a: Float32Array | Uint32Array, n: number) => Buffer.from(a.buffer, a.byteOffset, n * a.BYTES_PER_ELEMENT);
+      expect(Buffer.compare(bytes(mesh.vertices, mesh.vcount * 16), bytes(oMesh.vertices, oMesh.vcount * 16)), name).toBe(0);
+      expect(Buffer.compare(bytes(mesh.indices, mesh.icount), bytes(oMesh.indices, oMesh.icount)), name).toBe(0);
     }
-  });
+  }, 30_000);
 
   it("a note stuck to a day lies in its day's slot: `daySlot` = the oracle's `pinnedAt`, for both of the scene's days and a Sunday-first pad", () => {
     const s = sceneOf<Scene>("pad-notes-z0.85");

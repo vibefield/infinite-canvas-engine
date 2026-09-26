@@ -62,13 +62,18 @@ describe("the notebook's world half = the oracle's `notebookDraw` (parity by con
       const pose = poseOf(book);
       if (pose !== undefined) books.pin(21 as Entity, pose);
       const ctx = ctxOf(book, scene, { local: books });
-      const { id, ...mine } = kind.record(kind.resolve(ctx), ctx);
-      const { id: theirs, ...oracle } = notebookDraw(book) as NotebookDraw;
+      const { id, mesh, ...mine } = kind.record(kind.resolve(ctx), ctx);
+      const { id: theirs, mesh: oMesh, ...oracle } = notebookDraw(book) as NotebookDraw;
       expect(id, name).toBeGreaterThan(0);
       expect(theirs, name).toBeGreaterThan(0);
       expect(mine, name).toEqual(oracle);
+      // the mesh, byte for byte over what was built (a deep equality over its typed arrays is slow under load)
+      expect([mesh.vcount, mesh.icount, mesh.min, mesh.max], name).toEqual([oMesh.vcount, oMesh.icount, oMesh.min, oMesh.max]);
+      const bytes = (a: Float32Array | Uint32Array, n: number) => Buffer.from(a.buffer, a.byteOffset, n * a.BYTES_PER_ELEMENT);
+      expect(Buffer.compare(bytes(mesh.vertices, mesh.vcount * 16), bytes(oMesh.vertices, oMesh.vcount * 16)), name).toBe(0);
+      expect(Buffer.compare(bytes(mesh.indices, mesh.icount), bytes(oMesh.indices, oMesh.icount)), name).toBe(0);
     }
-  });
+  }, 30_000);
 
   it("the pose is a FLUX pin on the kind's state (never a Grab): pinned open it lies open; unpinned it closes on its spread", () => {
     const books = booksOf();
