@@ -14,17 +14,22 @@
 import type { Entity, FramePickSource } from "@ice/core";
 import type { DeskBuilder } from "./builder";
 
-export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach" | "lifted"> & Partial<Pick<DeskBuilder, "veiled">>, opts: { readonly moving?: () => boolean } = {}): FramePickSource {
+export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach" | "lifted"> & Partial<Pick<DeskBuilder, "veiled" | "heldPoint" | "hand">>, opts: { readonly moving?: () => boolean } = {}): FramePickSource {
   return {
     pad: () => builder.reach(),
-    // what a kind draws lifted (D3t-a — a print carried or gliding) is asked first, where it is drawn, not where its facts are
-    lifted: () => builder.lifted(),
+    // what a kind draws lifted (D3t-a — a print carried or gliding) is asked first, where it is drawn, not where its facts are —
+    // and the hand's object too (D7 #11): flying home its facts still say its rest while it is drawn along the way
+    lifted: () => { const h = builder.hand?.(); return h === undefined ? builder.lifted() : [h.entity, ...builder.lifted()]; },
     hit(e: Entity, wx: number, wy: number): string | undefined {
       if (builder.veiled?.(e) === true) return "outside";   // veiled by a kind's state (D3t-c — a note gone with its month): never picked
       const G = builder.geometryOf(e);
       const kind = builder.kindOf(e);
       if (G === undefined || kind === undefined) return undefined;
-      return kind.hit(G, wx, wy) ?? "outside";
+      // the hand's object (held, or flying home — D7 #11): its geometry was resolved under the held slot's camera, so the desk point
+      // goes through the pose the last build drew; anywhere else it is picked where it is drawn, its rest rect answers nothing
+      const hp = builder.heldPoint?.(e, wx, wy);
+      const [x, y] = hp ?? [wx, wy];
+      return kind.hit(G, x, y) ?? "outside";
     },
     live: () => builder.live() || opts.moving?.() === true,
   };

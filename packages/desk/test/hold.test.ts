@@ -10,6 +10,7 @@ import { Camera, createCanvasEngine, type Entity, HeldView, Viewport } from "@ic
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
 import { worldChildren } from "../src/compose/children";
+import { createPickSource } from "../src/compose/pick";
 import { looksOf } from "../src/compose/reflector";
 import { Ground, type GroundFrameInputs } from "../src/ground";
 import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders";
@@ -185,6 +186,28 @@ describe("the hand in the builder (design-015 §8)", () => {
     lands.set(book, 1);   // on the HELD book: its own, never the desk's
     build(["notebook"]);
     expect(must(builder.hand()).deskSeq).toBe(seq0 + 1);
+  });
+
+  it("flying home it is picked where it is DRAWN (D7 #11): the pick lists it lifted, hits it through the pose the build drew, and its rest rect answers nothing", () => {
+    const { ce, step, build, builder } = makeDesk();
+    // a book whose rest is far off to the left, so its rest rect and its drawn pose (the reading target, mid-screen) cannot overlap
+    const far = ce.ops.spawnWidget("desk.notebook", { x: -3000 - 90, y: 400 - 126, props: { seed: 5, angle: 0 }, undoable: false });
+    step(2);
+    const pick = createPickSource(builder);
+    ce.ops.open(far);
+    for (let i = 0; i < 160 && (builder.hand()?.settled !== true || builder.live()); i++) build();
+    ce.ops.putDown();
+    const f = build();
+    const h = must(f.held);
+    expect(h.entity).toBe(far);
+    expect(h.landing).toBe(true);
+    expect(pick.lifted?.()).toContain(far);
+    // where it is drawn: the pose seam's frame on screen, through the desk camera (screen == world here) — the book itself
+    const drawn = pick.hit(far, CAM.x + h.frame.cx / CAM.zoom, CAM.y + h.frame.cy / CAM.zoom);
+    expect(drawn).toBeDefined();
+    expect(drawn).not.toBe("outside");
+    // where its facts say it rests — the case centred at (−3000, 400) — nothing: a drag there moves nothing mid-flight
+    expect(pick.hit(far, -3000, 400)).toBe("outside");
   });
 
   it("a harness pins the carry for a still: e held, the cover snapped (shut under 42 % unless the pin says open), settled only at 1", () => {

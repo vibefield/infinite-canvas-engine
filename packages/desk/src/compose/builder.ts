@@ -322,6 +322,12 @@ export interface DeskBuilder {
    * pose the last build drew (the frame on screen, then the held slot's camera) — undefined unless `e` is in hand (D3t-a).
    */
   heldToWorld(e: Entity, x: number, y: number): readonly [number, number] | undefined;
+  /**
+   * A DESK point into the held slot's world for the object in hand or FLYING HOME (D7 #11): the pose the last build drew, through
+   * the desk camera of that build. The pick asks the kind's mirror there — the held geometry is resolved under the held slot's own
+   * camera, so a desk point tested against it raw picked nothing where the object is drawn. Undefined unless `e` is the hand's.
+   */
+  heldPoint(e: Entity, wx: number, wy: number): readonly [number, number] | undefined;
   /** The held kind's part under such a point — its `hit` on the geometry it was drawn with in hand; null over nothing (the pose seam's `part`, D3t-a). */
   heldPart(e: Entity, x: number, y: number): string | null;
   /** The objects the last build painted LIFTED by their kind's own state (D3t-a — a print carried or in the air): above their siblings, asked first by the pick. */
@@ -563,6 +569,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
    */
   let hand: { entity: Entity; dir: 1 | -1; p: number; e: number; e0: number; closeT: number; openness: number } | null = null;
   let lastHand: HeldBuild | undefined;
+  /** The desk camera of the last build — what `heldPoint` maps a desk point to the screen through (D7 #11). */
+  let lastCam: CameraState | undefined;
   /** What the last build painted lifted by its kind's own word (D3t-a) — the pick asks these first. */
   let liftedList: readonly Entity[] = [];
   /** What the kinds' states veiled in the last build (D3t-c) — the pick answers `outside` for them. */
@@ -576,6 +584,14 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     if (h === undefined || h.entity !== e || h.landing) return undefined;
     const v = h.inputs.view;
     return [v.camX + (h.frame.cx + x * h.frame.s) / v.zoom, v.camY + (h.frame.cy + y * h.frame.s) / v.zoom];
+  };
+  /** A desk point → the screen (the last build's desk camera) → the held slot's world (its view): where the hand's object is DRAWN, held or flying home. */
+  const heldPoint = (e: Entity, wx: number, wy: number): readonly [number, number] | undefined => {
+    const h = lastHand;
+    const cam = lastCam;
+    if (h === undefined || h.entity !== e || cam === undefined) return undefined;
+    const v = h.inputs.view;
+    return [v.camX + ((wx - cam.x) * cam.zoom) / v.zoom, v.camY + ((wy - cam.y) * cam.zoom) / v.zoom];
   };
   /** The desk's change count — everything the blurred copy behind the hand depends on; a change to the held object alone never bumps it. */
   let deskSeq = 0;
@@ -736,6 +752,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     build(cam, vp, dt0, theme, grid, looks, bopts = {}) {
       if (disposed) return { objects: [], portals: [], grid, marks: marks.frame({ rows: [], cam, view: vp, dt: 0, night: false, rulers: null }), stats: EMPTY_STATS };
       seq += 1;
+      lastCam = cam;
       work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0; work.reused = 0;
       const now = bopts.now ?? 0;
       const portalsOn = bopts.portals !== false;
@@ -1345,6 +1362,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     meetTape: (e) => marks.refused(e),
     hand: () => lastHand,
     heldToWorld: (e, x, y) => heldToWorld(e, x, y),
+    heldPoint: (e, wx, wy) => heldPoint(e, wx, wy),
     lifted: () => liftedList,
     veiled: (e) => veiledList.has(e),
     rankOf(e) {
