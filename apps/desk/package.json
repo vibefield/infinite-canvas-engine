@@ -18,6 +18,7 @@
     "rig:sticky": "tsx scripts/sticky.mjs",
     "rig:two-tab": "tsx scripts/two-tab.mjs",
     "rig:collab": "tsx scripts/collab.mjs",
+    "rig:ruler": "tsx scripts/ruler.mjs",
     "rig:proto-parity": "tsx scripts/proto-parity.mjs",
     "rig:cost": "tsx scripts/cost.mjs"
   },
