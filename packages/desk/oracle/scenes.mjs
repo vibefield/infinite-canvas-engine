@@ -145,8 +145,9 @@ ORACLE_SCENES.push(...PHOTO_SCENES);
 
 // THE WHITEBOARDS — the bench's desk (lab/board-lab.ts: a board and a note beside it; test/harness/board.mjs's camera, the board's
 // centre at CSS (540, 420)): at rest, the capped marker lying on it; its ink REPLAYED from a stroke list (a blue bullet line, a
-// green fine one, a red chisel one, and the eraser across the blue — the raster is a cache of that history); selected (the ring);
-// by night; the ink up close (parity only). `board`, `ink` and `ring` name the checks.
+// green fine one, a red chisel one, and the eraser across the blue — the raster is a cache of that history); selected (its
+// marks since D4a: the brackets and the knobs — a whiteboard resizes); by night; the ink up close (parity only). `board`, `ink`
+// and `marks` name the checks.
 const boardBase = { ...base, theme: "light", camX: -120, camY: -540, mat: { time: 0, goboTime: 3.2, noise: [0, 0] } };
 const BOARD_NOTE = { x: 830, y: -180, seed: 7, text: "" };
 export const BOARD_STROKES = [
@@ -159,7 +160,7 @@ const inked = (extra = {}) => ({ x: 420, y: -120, strokes: BOARD_STROKES, ...ext
 export const BOARD_SCENES = [
   { name: "board-rest-z1", board: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120 }], notes: [BOARD_NOTE] } },
   { name: "board-ink-z1", board: true, ink: true, scene: { ...boardBase, zoom: 1, boards: [inked()], notes: [BOARD_NOTE] } },
-  { name: "board-selected-z1", ring: true, scene: { ...boardBase, zoom: 1, boards: [inked({ selected: true })], notes: [BOARD_NOTE] } },
+  { name: "board-selected-z1", marks: true, scene: { ...boardBase, zoom: 1, boards: [inked({ selected: true })], notes: [BOARD_NOTE] } },
   { name: "board-night-z1", board: true, scene: { ...boardBase, theme: "dark", zoom: 1, boards: [inked()], notes: [BOARD_NOTE] } },
   { name: "board-ink-z2.5", scene: { ...boardBase, camX: 200, camY: -260, zoom: 2.5, boards: [inked()], notes: [BOARD_NOTE] } },
 ];
@@ -206,3 +207,36 @@ export const CALENDAR_SCENES = [
   { name: "pad-night-z0.42", pad: true, scene: { ...deskBase, ...at(0, 0, 0.42), theme: "dark", calendars: [pad()] } },
 ];
 ORACLE_SCENES.push(...CALENDAR_SCENES);
+
+// THE MARKS (design-015 §7, *Marks on the Mat* v2; D4a) — the desk's chrome over the objects, as stills: the brackets on each
+// kind at rest (the knobs only where it resizes: the whiteboard, the print); the lock-on pinned at t = 0.3 (the frame still
+// arriving from further out); several: the members' ticks and one union; the vellum mid-drag (two notes touched and ticked, a
+// taped one passed over, the count by the cursor); the vellum folding onto the union; the laser (three notes on a row, the middle
+// one carried: its top, bottom and centre aligned with its neighbours', the gaps equal — a real snap through the kernel's law);
+// the tape; far out, where the brackets collapse to one ring; by night (the pencil and the laser unlit, the tape moonlit); your
+// extent on the rulers. `marks` runs the check (outside the marks' band nothing moved; the pencil's byte where a stroke is solid;
+// a knob's face, a pill's fill); `unlit` runs the night's.
+const marksBase = { ...base, theme: "light", mat: matStill };
+const ROW = [{ x: 250, y: 300, seed: 5, text: "" }, { x: 550, y: 300, seed: 11, text: "", selected: true, held: true }, { x: 850, y: 300, seed: 7, text: "" }];
+export const MARKS_SCENES = [
+  { name: "marks-note-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 760, y: 360, seed: 11, text: "" }] } },
+  { name: "marks-lockon-t0.3-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }], marks: { t: 0.3 } } },
+  { name: "marks-minimat-z1", marks: true, scene: { ...marksBase, zoom: 1, minimats: [{ x: 520, y: 400, name: "INBOX", selected: true }], notes: [{ x: 960, y: 250, seed: 7, text: "" }] } },
+  { name: "marks-board-z1", marks: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120, selected: true }], notes: [BOARD_NOTE] } },   // no ink: the stamps' 1-LSB Dawn split (D-D3r-a.5) is board-selected-z1's
+  { name: "marks-print-z1", marks: true, scene: { ...photoBase, zoom: 1, prints: [{ ...PRINT, selected: true }] } },
+  { name: "marks-several-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 300, y: 280, seed: 5, text: "", selected: true }, { x: 620, y: 420, seed: 11, text: "", selected: true }, { x: 900, y: 260, seed: 7, text: "", selected: true }] } },
+  {
+    name: "marks-vellum-z1", marks: true,
+    scene: { ...marksBase, zoom: 1, notes: [{ x: 300, y: 300, seed: 5, text: "" }, { x: 560, y: 380, seed: 11, text: "" }, { x: 860, y: 300, seed: 7, text: "", locked: true }], marks: { marquee: { x0: 150, y0: 180, x1: 1000, y1: 560 } } },
+  },
+  {
+    name: "marks-fold-t0.5-z1", marks: true,
+    scene: { ...marksBase, zoom: 1, notes: [{ x: 300, y: 300, seed: 5, text: "", selected: true }, { x: 560, y: 380, seed: 11, text: "", selected: true }], marks: { fold: { rect: { x0: 120, y0: 150, x1: 900, y1: 640 }, t: 0.5 } } },
+  },
+  { name: "marks-laser-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: ROW, marks: { snap: true, strike: 0.5 } } },
+  { name: "marks-tape-z1", marks: true, scene: { ...marksBase, zoom: 1, minimats: [{ x: 360, y: 400, name: "PINNED", locked: true }], notes: [{ x: 880, y: 330, seed: 5, text: "", selected: true, locked: true }] } },
+  { name: "marks-far-z0.1", marks: true, scene: { ...marksBase, camX: 400 - 600 / 0.1, camY: 330 - 400 / 0.1, zoom: 0.1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 900, y: 330, seed: 11, text: "" }] } },
+  { name: "marks-night-z1", marks: true, unlit: true, scene: { ...marksBase, theme: "dark", zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 760, y: 360, seed: 11, text: "", locked: true }] } },
+  { name: "marks-ruler-z1", marks: true, scene: { ...marksBase, zoom: 1, ruler: {}, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }] } },
+];
+ORACLE_SCENES.push(...MARKS_SCENES);

@@ -10,6 +10,15 @@ import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import { easeIsland, easeLift } from "../src/marks/ease";
 import { bracketReach, frameOnScreen, framesBox, LIGHT, layoutMarks, MARK, type MarkFrame, type MarkRecord, type MarksInput, NO_MARKS, pillBox, selectionBox, selectionGeometry, tapeStrips, textWidth } from "../src/marks/layout";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders";
+import { assembleMarks, type MarkedObject, type MarksState, vellumHits } from "../src/marks/assemble";
+import { laserKey, laserOf } from "../src/marks/laser";
+import { bracketsDistance, markDistance } from "../src/marks/mirror";
+import { boardFrame, miniMatFrame, paperFrame, photoFrame, rectFrame } from "../src/kinds";
+import { resolvePaper, lampOf } from "../src/paper/paper";
+import { DEFAULT_MINIMAT_LAW, resolveMiniMat } from "../src/minimat/minimat";
+import { resolveBoard } from "../src/board/board";
+import { newBody, PHOTO, resolvePhoto } from "../src/photo/photo";
+import { MAT_GRID, PAPER } from "../src/theme";
 import { shaderText } from "../src/shaders";
 import { cssColor, MARKS } from "../src/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
@@ -242,5 +251,125 @@ describe("the marks pass through the Ground (a fake device: the commands, not th
     expect(ground.marks?.drawn).toBe(80);
     expect(ground.marks?.laid.length).toBe(80);
     ground.dispose();
+  });
+});
+
+describe("the laser from the snap's facts (desk.js `setGuides`)", () => {
+  const cam = { x: 0, y: 0, zoom: 1 };
+  const left = { x0: 150, y0: 200, x1: 350, y1: 400 };
+  const right = { x0: 750, y0: 200, x1: 950, y1: 400 };
+  const off = { x0: 150, y0: 600, x1: 350, y1: 700 };
+  const dragged = { x0: 450, y0: 200, x1: 650, y1: 400 };
+  it("a guide is bright over every rect on its line and the dragged set, 14 past them, with a flare at each aligned corner; one on the dragged set's centre is a CENTRE (dotted, a flare per object)", () => {
+    const { guides } = laserOf([{ axis: "y", at: 200 }, { axis: "y", at: 300 }], [], [left, right, off], dragged, cam);
+    const [top, mid] = guides;
+    expect(top?.type).toBe("edge"); expect(mid?.type).toBe("center");
+    expect(top?.span).toEqual([150 - 14, 950 + 14]);
+    expect(top?.points).toEqual([[150, 200], [350, 200], [750, 200], [950, 200], [450, 200], [650, 200]]);
+    expect(mid?.points).toEqual([[250, 300], [850, 300], [550, 300]]);
+    // the kernel's type wins when the caller has it
+    expect(laserOf([{ axis: "y", at: 300, type: "edge" }], [], [left], dragged, cam).guides[0]?.type).toBe("edge");
+  });
+  it("on screen under the camera, a rect on the line within half a screen px at any zoom; an equal gap keeps its world size as its number", () => {
+    const z = 1e6;
+    const tiny = (b: typeof left) => ({ x0: b.x0 / z, y0: b.y0 / z, x1: b.x1 / z, y1: b.y1 / z });
+    const { guides, bars } = laserOf([{ axis: "x", at: 350 / z + 0.4 / z }], [{ axis: "x", from: 350 / z, to: 450 / z, perp: 300 / z, gap: 100 / z }], [tiny(left)], null, { x: 0, y: 0, zoom: z });
+    expect(guides[0]?.at).toBeCloseTo(350.4, 6); expect(guides[0]?.span[0]).toBeCloseTo(200 - 14, 6);
+    expect(bars[0]?.from).toBeCloseTo(350, 6); expect(bars[0]?.perp).toBeCloseTo(300, 6); expect(bars[0]?.gap).toBe(100 / z);
+    expect(laserOf([{ axis: "x", at: 351 / z }], [], [tiny(left)], null, { x: 0, y: 0, zoom: z }).guides[0]?.span).toEqual([0, 0]);
+  });
+  it("a NEW alignment strikes: the key is the guides' positions and the gaps", () => {
+    expect(laserKey([{ axis: "x", at: 10.04 }], [{ axis: "x", from: 0, to: 1, perp: 0, gap: 40 }])).toBe("x10.0#40.0");
+    expect(laserKey([{ axis: "x", at: 10.04 }], [])).not.toBe(laserKey([{ axis: "y", at: 10.04 }], []));
+  });
+});
+
+describe("assembling a frame's marks from the desk's state (the builder's and the oracle's one rule)", () => {
+  const obj = (over: Partial<MarkedObject> & { readonly at: number }): MarkedObject => ({
+    frame: { cx: over.at, cy: 300, hx: 100, hy: 100, angle: 0, r: 1.5 }, rect: { x0: over.at - 100, y0: 200, x1: over.at + 100, y1: 400 },
+    selected: false, locked: false, moving: false, resizable: false, lock: { t: 0, a: 0 }, tape: { press: [1, 1], a: 0 }, ...over,
+  });
+  const state = (over: Partial<MarksState>): MarksState => ({ view: VIEW, cam: { x: 0, y: 0, zoom: 1 }, night: false, objects: [], union: { t: 1, a: 1 }, marquee: null, fold: null, guides: [], bars: [], strike: 0, ruler: null, ...over });
+  const at1 = { t: 1, a: 1 };
+  it("one selected: brackets on its frame (on screen, under the camera), its clocks, knobs only where it resizes, is not taped and nothing carries it", () => {
+    const m = assembleMarks(state({ cam: { x: 100, y: 50, zoom: 2 }, objects: [obj({ at: 300, selected: true, lock: { t: 0.4, a: 0.7 }, resizable: true })] }));
+    expect(m.objects).toEqual([{ frame: { cx: 400, cy: 500, hx: 200, hy: 200, angle: 0, r: 3 }, style: "brackets", t: 0.4, alpha: 0.7, knobs: true }]);
+    expect(assembleMarks(state({ objects: [obj({ at: 300, selected: true, lock: at1, resizable: true, locked: true })] })).objects[0]?.knobs).toBe(false);
+    expect(assembleMarks(state({ objects: [obj({ at: 300, selected: true, lock: at1, resizable: true, moving: true })] })).objects[0]?.knobs).toBe(false);
+    expect(assembleMarks(state({ objects: [obj({ at: 300, selected: true, lock: at1 })] })).objects[0]?.knobs).toBe(false);
+    // just deselected: its brackets fade where it lies (the leave) — while no several is selected
+    const leaving = assembleMarks(state({ objects: [obj({ at: 300, lock: { t: 1, a: 0.5 } })] }));
+    expect(leaving.objects[0]?.alpha).toBe(0.5); expect(leaving.objects[0]?.style).toBe("brackets");
+    expect(assembleMarks(state({ objects: [obj({ at: 300 })] })).objects).toEqual([]);
+  });
+  it("several: member ticks at each one's presence under ONE union over their frames, the union's own clocks; a leaving one draws nothing", () => {
+    const m = assembleMarks(state({ union: { t: 0.5, a: 0.8 }, objects: [obj({ at: 200, selected: true, lock: at1 }), obj({ at: 700, selected: true, lock: { t: 1, a: 0.6 } }), obj({ at: 1000, lock: { t: 1, a: 0.5 } })] }));
+    expect(m.objects.map((o) => [o.style, o.alpha])).toEqual([["member", 1], ["member", 0.6]]);
+    expect(m.union).toEqual({ box: { x0: 100, y0: 200, x1: 800, y1: 400 }, t: 0.5, alpha: 0.8 });
+    expect(assembleMarks(state({ union: { t: 1, a: 0 }, objects: [obj({ at: 200, selected: true, lock: at1 }), obj({ at: 700, selected: true, lock: at1 })] })).union).toBeNull();
+  });
+  it("the vellum: what it touches is ticked at once — never the tape — and counted by the cursor; released, it folds onto the union on the island ease (onto the one it gathered, fading, gone at 98 %)", () => {
+    const objects = [obj({ at: 200 }), obj({ at: 500, locked: true, tape: { press: [1, 1], a: 1 } }), obj({ at: 900 })];
+    const rect = { x0: 700, y0: 100, x1: 0, y1: 450 };
+    expect(vellumHits(objects, rect).map((o) => o.frame.cx)).toEqual([200]);
+    const m = assembleMarks(state({ objects, marquee: { rect, pointer: { x: 0, y: 450 } } }));
+    expect(m.marquee).toEqual({ rect: { x0: 700, y0: 100, x1: 0, y1: 450 }, count: 1, pointer: { x: 0, y: 450 } });
+    expect(m.objects.map((o) => [o.frame.cx, o.style])).toEqual([[200, "member"]]);
+    expect(m.tape.length).toBe(1); expect(m.ruler).toBeNull();
+    const two = [obj({ at: 200, selected: true, lock: at1 }), obj({ at: 700, selected: true, lock: at1 })];
+    const from = { x0: 0, y0: 0, x1: 1000, y1: 700 };
+    const half = assembleMarks(state({ objects: two, fold: { rect: from, t: 0.5 } }));
+    const e = easeIsland(0.5);
+    expect(half.union?.box.x0).toBeCloseTo(0 + (100 - 0) * e, 12); expect(half.union?.box.y1).toBeCloseTo(700 + (400 - 700) * e, 12); expect(half.union?.t).toBe(1);
+    const one = assembleMarks(state({ objects: [obj({ at: 200, selected: true, lock: at1 })], fold: { rect: from, t: 0.3 } }));
+    expect(one.union?.alpha).toBeCloseTo(1 - easeIsland(0.3) * 0.9, 12); expect(one.union?.box.x0).toBeCloseTo((100 - 6) * easeIsland(0.3), 12);
+    expect(assembleMarks(state({ objects: [obj({ at: 200, selected: true, lock: at1 })], fold: { rect: from, t: 0.99 } })).union).toBeNull();
+  });
+  it("the tape rides its object's frame at the drawn scale (CSS px per object unit: the zoom × the lift); the laser's dragged set is what is carried; your extent on the rulers only with rulers, a selection and no vellum", () => {
+    const lifted = obj({ at: 300, frame: { cx: 300, cy: 300, hx: 103, hy: 103, angle: 0.1, r: 1.5 }, tape: { press: [0.5, 1], a: 1 } });
+    const t = assembleMarks(state({ cam: { x: 0, y: 0, zoom: 2 }, objects: [lifted] })).tape[0];
+    expect(t?.units).toBeCloseTo(2 * 1.03, 12); expect(t?.press).toEqual([0.5, 1]); expect(t?.frame.angle).toBe(0.1);
+    const carried = [obj({ at: 250 }), obj({ at: 550, moving: true, selected: true, lock: at1 }), obj({ at: 850 })];
+    const laser = assembleMarks(state({ objects: carried, guides: [{ axis: "y", at: 300 }] }));
+    expect(laser.guides[0]?.type).toBe("center"); expect(laser.guides[0]?.points.length).toBe(3);
+    const ruled = state({ objects: [obj({ at: 300, selected: true, lock: at1 })], ruler: { margin: 26, band: 26 } });
+    expect(assembleMarks(ruled).ruler).toEqual({ sel: { x0: 200, y0: 200, x1: 400, y1: 400 }, world: { x0: 200, y0: 200, x1: 400, y1: 400 }, margin: 26, band: 26 });
+    expect(assembleMarks({ ...ruled, marquee: { rect: { x0: 0, y0: 0, x1: 1, y1: 1 }, pointer: null } }).ruler).toBeNull();
+    expect(assembleMarks({ ...ruled, ruler: null }).ruler).toBeNull();
+  });
+});
+
+describe("each kind's frame: the silhouette its marks go around, as drawn", () => {
+  const lamp = lampOf(MAT_GRID.plane);
+  it("the note: its centre, its half extents at the lift's scale, its tilt, its corner scaled with it; the mini mat and the whiteboard square to the mat; the print on its own axes; a kind with none, its rect", () => {
+    const P = resolvePaper({ cx: 10, cy: 20, w: 200, h: 180, angle: 0.07 }, { held: 1, ring: 0, fade: 1 }, PAPER, lamp);
+    expect(paperFrame(P)).toEqual({ cx: 10, cy: 20, hx: 100 * P.scale, hy: 90 * P.scale, angle: 0.07, r: PAPER.radius * P.scale });
+    expect(P.scale).toBeGreaterThan(1);
+    const M = resolveMiniMat({ cx: 0, cy: 0, w: 640, h: 480 }, { held: 0, hover: 0, ring: 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
+    expect(miniMatFrame(M)).toEqual({ cx: 0, cy: 0, hx: 320, hy: 240, angle: 0, r: M.radius });
+    const B = resolveBoard({ cx: 5, cy: 6, w: 480, h: 320 }, { held: 0, ring: 0, fade: 1 }, lamp);
+    expect(boardFrame(B)).toEqual({ cx: 5, cy: 6, hx: 240, hy: 160, angle: 0, r: B.radius });
+    const body = newBody(50, 60, 300, 200, 0, 0);
+    body.angle = 0.2;
+    const G = resolvePhoto(body, PHOTO, lamp);
+    const f = photoFrame(G);
+    expect(f.angle).toBeCloseTo(0.2, 9); expect([f.cx, f.cy, f.hx, f.hy]).toEqual([G.centre[0], G.centre[1], G.half[0], G.half[1]]);
+    expect(rectFrame({ cx: 1, cy: 2, w: 30, h: 40 })).toEqual({ cx: 1, cy: 2, hx: 15, hy: 20, angle: 0, r: 0 });
+  });
+});
+
+describe("the marks' CPU mirror (marks.wgsl's distances)", () => {
+  it("a bracket's run is on the ink (−half its width), the frame's middle and the side between two brackets are not; a fill, a segment, a bar's tick, a flare", () => {
+    const [, , pencil] = layoutMarks(input({ objects: [{ frame: NOTE, style: "brackets", t: 1, alpha: 1, knobs: false }] })) as [MarkRecord, MarkRecord, MarkRecord];
+    expect(markDistance(pencil, 400 + 106 - 10, 300 - 106)).toBeCloseTo(-0.75, 9);   // on the top-right bracket's run
+    expect(markDistance(pencil, 400, 300 - 106)).toBeGreaterThan(50);                 // mid-side: between the brackets
+    expect(markDistance(pencil, 400, 300)).toBeGreaterThan(90);                        // the object's middle
+    expect(bracketsDistance(106, 106 - 7.5, 106, 106, 7.5, 16)).toBeCloseTo(0, 9);     // where the arc meets the side
+    const [fill] = layoutMarks(input({ marquee: { rect: { x0: 0, y0: 0, x1: 100, y1: 50 }, count: 0, pointer: null } }));
+    expect(markDistance(fill as MarkRecord, 50, 25)).toBeLessThan(0); expect(markDistance(fill as MarkRecord, 50, 60)).toBeCloseTo(10, 9);
+    const [bloom] = layoutMarks(input({ bars: [{ axis: "x", from: 0, to: 100, perp: 50, gap: 100 }] }), ATLAS);
+    expect(markDistance(bloom as MarkRecord, 0, 50 + 4)).toBeCloseTo(-2, 9);   // on the tick at the start
+    const flare = layoutMarks(input({ guides: [{ axis: "x", at: 10, type: "edge", span: [0, 20], points: [[10, 10]] }] })).at(-1) as MarkRecord;
+    expect(markDistance(flare, 10, 17)).toBeCloseTo(0, 9);
   });
 });

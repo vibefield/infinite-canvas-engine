@@ -24,6 +24,7 @@ import type { Component, Entity, Tag } from "@ice/core";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
+import type { MarkFrame } from "../marks/layout";
 import type { InsideView } from "../minimat/inside";
 import type { ChildShape } from "../minimat/minimat";
 import type { Rect } from "../nav/flight";
@@ -159,6 +160,12 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   chip?(geometry: G, ctx: ObjectContext): ChildShape | null;
   /** The grid a CONTAINER kind's inside draws with (the mini mat: the desk's fade-in, the mat in its vinyl, no rulers). Absent = the root's. */
   insideGrid?(ctx: Pick<ObjectContext, "props" | "look">, root: GridConfig): GridConfig;
+  /**
+   * The silhouette the desk's MARKS go around (D4a — the brackets, a member's ticks, several's union, the tape):
+   * the geometry's centre, half extents AS DRAWN (the lift's scale in), turn and corner, world units. Absent =
+   * the rect, square to the mat (`rectFrame`).
+   */
+  frame?(geometry: G): MarkFrame;
   /** The kind's colours from the host's palette, per theme — the look `record` reads (`ctx.look`). */
   theme?(palette: Palette, name: ThemeName): L;
   /** The kind's own state on one desk (`ctx.local`) — made by the host once per desk; absent = none (D2c). */
@@ -172,6 +179,9 @@ export type { StratumName };
 export function rectOf(pos: { readonly x: number; readonly y: number }, size: { readonly w: number; readonly h: number }): ObjectRect {
   return { cx: pos.x + size.w / 2, cy: pos.y + size.h / 2, w: size.w, h: size.h };
 }
+
+/** An object's marks' silhouette when its kind draws none of its own: the rect, square to the mat, no corner. */
+export const rectFrame = (r: ObjectRect): MarkFrame => ({ cx: r.cx, cy: r.cy, hx: r.w / 2, hy: r.h / 2, angle: 0, r: 0 });
 
 /** The flux of an object at rest: down, unhovered, unselected, whole. */
 export const FLUX_REST: ObjectFlux = { lift: 0, hover: 0, ring: 0, fade: 1 };

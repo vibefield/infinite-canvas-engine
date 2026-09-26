@@ -6,9 +6,11 @@
 // every frame (`tune` → the pass's `copy`).
 
 import { BoardPass } from "../board/board-pass";
+import type { BoardGeometry } from "../board/board";
 import type { BoardInstance } from "../board/layout";
 import { BOARD_SHADER_FILES, boardShaders } from "../board/shaders";
 import type { KindPass, KindProgram, SlotContext } from "../kind";
+import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
 import type { ShaderText } from "../shaders";
 
@@ -42,4 +44,9 @@ export function boardProgram(text: ShaderText): KindProgram<BoardInstance> {
     stratum: "things",
     create: async (device, format, mat) => new BoardKind(await BoardPass.create(device, format, boardShaders(text(BOARD_SHADER_FILES)), mat)),
   };
+}
+
+/** The whiteboard's silhouette for the desk's marks (D4a): its aluminium frame's outside as drawn, square to the mat. */
+export function boardFrame(G: BoardGeometry): MarkFrame {
+  return { cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: 0, r: G.radius };
 }

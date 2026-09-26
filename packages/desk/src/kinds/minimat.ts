@@ -22,6 +22,7 @@ import { type ChildShape, chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, type Mi
 import { miniMatInstance } from "../minimat/inside";
 import { MiniMatPass } from "../minimat/pass";
 import { MINIMAT_SHADER_FILES, miniMatShaders } from "../minimat/shaders";
+import type { MarkFrame } from "../marks/layout";
 import { FIT } from "../nav/flight";
 import { PORTAL_GATE } from "../nav/portal";
 import { type ShaderText, shaderText } from "../shaders";
@@ -143,6 +144,7 @@ export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGe
       return { kind: "mat", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: 0, radius: G.radius, colour: vinyl, height: G.thick, margin: G.margin };
     },
     insideGrid,
+    frame: miniMatFrame,
     theme(palette: Palette, _name: ThemeName): MiniMatLook {
       const p = palette as MiniMatPalette;
       return { vinyls: Object.fromEntries(Object.entries(p.vinyls ?? {}).map(([k, t]) => [k, rgb(t.css)])) };
@@ -152,3 +154,8 @@ export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGe
 
 /** The grid a mini mat's inside is drawn with when a host names none: the engine's (re-exported for D2b's live insides). */
 export const INSIDE_GRID: GridConfig = DEFAULT_GRID;
+
+/** The mini mat's silhouette for the desk's marks (D4a): the sheet as drawn, square to the mat, its die-cut corner. */
+export function miniMatFrame(G: MiniMatGeometry): MarkFrame {
+  return { cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: 0, r: G.radius };
+}

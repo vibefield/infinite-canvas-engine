@@ -22,6 +22,14 @@
 // `add` + `reset` + `pose` → `renderLayer`'s draw), without their print: a pad's page tables name no tile (MISSING —
 // its paper and its ruled grid), a book's pages carry no ink. The two draw as composite runs (kinds/layer.ts): the
 // pads beneath the sheets and the things, the books over every other thing, whatever the scene's order says.
+//
+// And the desk's MARKS (design-015 §7, D4a): a scene's `selected` objects wear the selection as the product
+// does — brackets for one, member ticks and a union for several, knobs where the kind resizes — and its
+// `locked` ones the tape; `marks` states the rest a still can pin (the lock-on's progress, the vellum, the
+// fold, the laser from a real snap, the strike, the tape's press). The kinds' own ring is retired (their
+// records carry ring 0, as the builder's do); `prototypeRing` draws a still exactly as the prototype did —
+// the kinds' ring, no marks — for the baseline check against the prototype's own renders. (The books and the
+// pads wear no marks yet: their world halves, and so their frames, come after D4b.)
 import { VIEW } from "./scenes.mjs";
 import { beginPass } from "../src/engine/target.ts";
 import { MatPass } from "../src/mat/mat-pass.ts";
@@ -32,7 +40,11 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/pa
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { flightLights, flightPresent, insidePresent, insideView, miniMatInstance } from "../src/minimat/inside.ts";
 import { createSlotSet, drawFrame, prepareFrame, SlotPool } from "../src/ground.ts";
-import { BOARD_KIND, CALENDAR_KIND, deskKinds, MINIMAT_KIND, NOTEBOOK_KIND, PAPER_KIND, PHOTO_KIND } from "../src/kinds/index.ts";
+import { BOARD_KIND, boardFrame, CALENDAR_KIND, deskKinds, MINIMAT_KIND, miniMatFrame, NOTEBOOK_KIND, PAPER_KIND, paperFrame, PHOTO_KIND, photoFrame } from "../src/kinds/index.ts";
+import { MarksPass } from "../src/marks/pass.ts";
+import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders.ts";
+import { assembleMarks } from "../src/marks/assemble.ts";
+import { computeSnapGuides } from "@ice/kernel";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
 import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
@@ -192,6 +204,10 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const photoBytes = photoMeta && photoMeta.w > 0 ? assets.photo : null;
   if (!photoBytes) log("no picture (oracle/fixtures/assets/photo-1.*): the prints draw their paper alone");
   const lamp = lampOf(MAT_GRID.plane);
+  // the desk's chrome (D4a): the marks pass on the root's mat (it prints with the rulers' atlas)
+  const marks = await MarksPass.create(device, format, marksShaders(text(MARKS_SHADER_FILES)), mat);
+  /** The prototype's own selection ring (its stills drew it) — on only for the baseline check; the product's selection is the marks. */
+  let prototypeRing = false;
 
   // The slots beyond the root — the departed desk's, the live insides — from the same pool the ground keeps.
   const pool = new SlotPool(rootSlot);
@@ -218,7 +234,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const NOTE = DEFAULT_PAPER_LAW;
   const noteGeometry = (n) => {
     const seed = n.seed ?? 1;
-    return resolvePaper({ cx: n.x, cy: n.y, w: n.w ?? NOTE.size, h: n.h ?? NOTE.size, angle: n.angle ?? tiltOf(seed, NOTE.tilt) }, { held: n.held ? 1 : 0, ring: n.selected ? 1 : 0, fade: 1 }, NOTE, lamp);
+    return resolvePaper({ cx: n.x, cy: n.y, w: n.w ?? NOTE.size, h: n.h ?? NOTE.size, angle: n.angle ?? tiltOf(seed, NOTE.tilt) }, { held: n.held ? 1 : 0, ring: prototypeRing && n.selected ? 1 : 0, fade: 1 }, NOTE, lamp);
   };
   /** The committed raster, placed once per render — as the lab keeps one raster per note, however many desks draw it. */
   let inkRaster = null;
@@ -230,7 +246,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       return { geometry: noteGeometry(n), paper: surface(n.paper ?? "note"), ink: pen(n.pen ?? "felt"), ...(raster ? { raster } : {}) };
     });
   }
-  const matGeometry = (m) => resolveMiniMat({ cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h }, { held: m.held ? 1 : 0, hover: 0, ring: m.selected ? 1 : 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
+  const matGeometry = (m) => resolveMiniMat({ cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h }, { held: m.held ? 1 : 0, hover: 0, ring: prototypeRing && m.selected ? 1 : 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
   const insideOf = (m) => m.inside ?? { notes: [], minimats: [] };
   /**
    * A desk's THINGS in paint order, each `{ kind: "note" | "board" | "print" | "book", …its spec }`: the scene's own list where
@@ -322,7 +338,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   function boardPoseOf(b) {
     const w = b.w ?? BOARD.spec.width;
     const h = b.h ?? BOARD.spec.height;
-    const G = resolveBoard({ cx: b.x, cy: b.y, w, h }, { held: 0, ring: b.selected ? 1 : 0, fade: 1 }, lamp);
+    const G = resolveBoard({ cx: b.x, cy: b.y, w, h }, { held: 0, ring: prototypeRing && b.selected ? 1 : 0, fade: 1 }, lamp);
     // THE marker, lying on the board (the bench's `poseOf` with nothing taken up: every hand term at e = 0, kept as it computes them)
     const P = BOARD.pen;
     const R = P.radius;
@@ -401,6 +417,60 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   }
   const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board, a print or a book — not "${t.kind}"`); };
 
+  // ---------------------------------------------------------------- the desk's marks (D4a) — the builder's rules on a still
+
+  /** A desk's objects in paint order as their marks need them (marks/assemble.ts): the frame its kind draws, ICE's rect, the still's facts. */
+  function markedObjects(desk, M) {
+    const rectOf = (o, w, h) => ({ x0: o.x - w / 2, y0: o.y - h / 2, x1: o.x + w / 2, y1: o.y + h / 2 });
+    const facts = (o, frame, rect, resizable) => ({
+      frame, rect, selected: o.selected === true, locked: o.locked === true, moving: o.held === true, resizable,
+      lock: o.selected === true ? { t: M.t ?? 1, a: M.alpha ?? 1 } : { t: 0, a: 0 },
+      tape: { press: M.press ?? [1, 1], a: o.locked === true ? 1 : 0 },
+    });
+    const out = [];
+    for (const m of desk.minimats ?? []) out.push(facts(m, miniMatFrame(matGeometry(m)), rectOf(m, m.w ?? MINIMAT.size.w, m.h ?? MINIMAT.size.h), false));
+    for (const t of thingsOf(desk)) {
+      if (t.kind === "note") out.push(facts(t, paperFrame(noteGeometry(t)), rectOf(t, t.w ?? NOTE.size, t.h ?? NOTE.size), false));
+      else if (t.kind === "board") out.push(facts(t, boardFrame(boardPoseOf(t).geometry), rectOf(t, t.w ?? BOARD.spec.width, t.h ?? BOARD.spec.height), true));
+      else if (t.kind === "print") { const size = printSizeOf(); out.push(facts(t, photoFrame(printOf(t).geometry), rectOf(t, size.w, size.h), true)); }
+    }
+    return out;
+  }
+
+  /**
+   * A still's marks: its `selected` and `locked` objects, and what `marks` pins — `t`/`alpha` (the lock-on), `unionT`,
+   * `marquee` (a world rect mid-drag, `pointer` on screen), `fold` (`rect` on screen, `t`), `snap` (the kernel's law on the
+   * scene's rects: the `held` objects are the dragged set), `strike`, `press` (the tape's two strips). The rulers' band
+   * follows the scene's own rulers.
+   */
+  function marksOf(s, cam, theme = THEMES[s.theme]) {
+    const M = s.marks ?? {};
+    const desk = { notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.things ? { things: s.things } : {}) };
+    const objects = markedObjects(desk, M);
+    let guides = [];
+    let bars = [];
+    if (M.snap) {
+      const box = (o) => ({ x: o.rect.x0, y: o.rect.y0, width: o.rect.x1 - o.rect.x0, height: o.rect.y1 - o.rect.y0 });
+      const dragged = objects.filter((o) => o.moving).map(box);
+      const x0 = Math.min(...dragged.map((b) => b.x));
+      const y0 = Math.min(...dragged.map((b) => b.y));
+      const x1 = Math.max(...dragged.map((b) => b.x + b.width));
+      const y1 = Math.max(...dragged.map((b) => b.y + b.height));
+      const res = computeSnapGuides({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, objects.filter((o) => !o.moving).map(box), 5 / cam.zoom);
+      guides = res.guides.map((g) => ({ axis: g.axis, at: g.position, type: g.type }));
+      bars = res.spacings.flatMap((sp) => sp.segments.map((seg) => ({ axis: sp.axis, from: seg.from, to: seg.to, perp: sp.perpPosition, gap: sp.gap })));
+    }
+    const rulers = s.ruler === undefined ? null : { ...DEFAULT_MAT_CONFIG.ruler, ...s.ruler };
+    const q = M.marquee;
+    return assembleMarks({
+      view: { width: VIEW.cssW, height: VIEW.cssH, dpr: VIEW.dpr }, cam, night: theme.name === "dark", objects,
+      union: { t: M.unionT ?? 1, a: 1 },
+      marquee: q ? { rect: { x0: q.x0, y0: q.y0, x1: q.x1, y1: q.y1 }, pointer: q.pointer ?? { x: (q.x1 - cam.x) * cam.zoom, y: (q.y1 - cam.y) * cam.zoom } } : null,
+      fold: M.fold ?? null, guides, bars, strike: M.strike ?? 0,
+      ruler: rulers === null ? null : { margin: rulers.margin, band: rulers.band },
+    });
+  }
+
   /** The flight a nav scene pins — the lab's setScene computes the same. */
   function navOf(s) {
     const gate = s.portalGate ?? PORTAL_GATE;
@@ -437,6 +507,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    * exactly the inputs the lab hands `ground.render()`. The host submits; the Node oracle then reads the target back.
    */
   function encode(encoder, target, size, s, opts = {}) {
+    prototypeRing = opts.prototypeRing === true;
     const theme = opts.theme ?? THEMES[s.theme];
     const m = matOf(s);
     papers.law = DEFAULT_PAPER_LAW; papers.chain = s.paper?.chain ?? false;
@@ -469,11 +540,14 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
     const prepared = prepareFrame(encoder, rootSlot, pool, inputs, rootGrid);
+    // the desk's marks (stratum 5): a still's — a flight's chrome waits for its landing; off for a check that measures the objects alone
+    const marked = opts.marks === false || prototypeRing || s.nav ? 0 : marks.prepare(marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme));
     const pass = beginPass(encoder, target, [bg[0], bg[1], bg[2], 1]);
     drawFrame(pass, size, VIEW.dpr, prepared.incoming, prepared.outgoing);
+    if (marked > 0) marks.draw(pass);
     pass.end();
-    return { theme, nav, prepared };
+    return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, encode };
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, encode };
 }

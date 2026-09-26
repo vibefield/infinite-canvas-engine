@@ -10,7 +10,9 @@
 // print's record names it by that handle (`PhotoInstance.picture`, null = its paper alone).
 
 import type { KindPass, KindProgram, SlotContext } from "../kind";
+import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
+import type { PhotoGeometry } from "../photo/photo";
 import { type PhotoInstance, PhotoPass } from "../photo/photo-pass";
 import { PHOTO_SHADER_FILES, photoShaders } from "../photo/shaders";
 import type { ShaderText } from "../shaders";
@@ -45,4 +47,9 @@ export function photoProgram(text: ShaderText): KindProgram<PhotoInstance> {
     stratum: "things",
     create: async (device, format, mat) => new PhotoKind(await PhotoPass.create(device, format, photoShaders(text(PHOTO_SHADER_FILES)), mat)),
   };
+}
+
+/** The print's silhouette for the desk's marks (D4a): the sheet's own axes on the desk plane (its height's parallax aside), its corner. */
+export function photoFrame(G: PhotoGeometry): MarkFrame {
+  return { cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: Math.atan2(G.ex[1], G.ex[0]), r: G.radius };
 }

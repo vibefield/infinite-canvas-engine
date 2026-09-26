@@ -27,6 +27,7 @@ import type { HandLaw } from "../paper/text";
 import { createWriting, type Writing } from "../paper/writing";
 import { type ShaderText, shaderText } from "../shaders";
 import { HAND, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import type { MarkFrame } from "../marks/layout";
 import { type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
 /** The note's kind name — its key in the registry and in every slot's `objects`. */
@@ -177,9 +178,15 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
         ...(greek !== undefined && greek.lines.length > 0 ? { writing: { ink, x0: greek.x0, em: greek.em, lines: greek.lines } } : {}),
       };
     },
+    frame: paperFrame,
     theme(palette: Palette, _name: ThemeName): PaperLook {
       const p = palette as PaperPalette;
       return { papers: parse(p.papers), pens: parse(p.pens) };
     },
   };
+}
+
+/** The note's silhouette for the desk's marks (D4a): the sheet as drawn — tilted, lifted to scale — its corner scaled with it. */
+export function paperFrame(G: PaperGeometry): MarkFrame {
+  return { cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, r: G.radius * G.scale };
 }

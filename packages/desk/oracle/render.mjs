@@ -34,7 +34,8 @@ import { THEMES, surface } from "./fixtures/vf-theme.ts";
 import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../src/mat/night.ts";
 import { sdRoundBox, unproject } from "../src/photo/photo.ts";
 import { sdBoard, sdSurface } from "../src/board/board.ts";
-import { BOARD } from "../src/theme.ts";
+import { cssColor, MARKS } from "../src/theme.ts";
+import { markDistance } from "../src/marks/mirror.ts";
 
 Object.assign(globalThis, globals);   // GPUBufferUsage & friends, which the browser has for free
 const here = dirname(fileURLToPath(import.meta.url));
@@ -86,15 +87,19 @@ const W = VIEW.cssW * VIEW.dpr;
 const H = VIEW.cssH * VIEW.dpr;
 const out = new Target(device, { format: FORMAT, label: "oracle", readable: true }, W, H);
 
-/** Render one scene through frame.mjs's `encode` into the readable target — the frame inside the probe's scopes — and read it back. */
+/**
+ * Render one scene through frame.mjs's `encode` into the readable target — the frame inside the probe's scopes — and read it
+ * back. The desk's marks (D4a) are OFF unless asked: every check but the marks' own measures the objects alone; the saved render
+ * (rig:parity's) has them.
+ */
 async function render(s, opts = {}) {
-  const { theme, nav, prepared } = await scoped(`frame ${++probe.frames}`, () => {
+  const { theme, nav, prepared, marks } = await scoped(`frame ${++probe.frames}`, () => {
     const encoder = device.createCommandEncoder();
-    const r = desk.encode(encoder, out.view, { w: W, h: H }, s, opts);
+    const r = desk.encode(encoder, out.view, { w: W, h: H }, s, { marks: false, ...opts });
     device.queue.submit([encoder.finish()]);
     return r;
   });
-  return { px: await readback(device, out.texture, 4), theme, nav, portals: prepared.portals, stats: prepared.incoming.stats };
+  return { px: await readback(device, out.texture, 4), theme, nav, portals: prepared.portals, stats: prepared.incoming.stats, marks };
 }
 
 // ---------------------------------------------------------------- the checks
@@ -114,8 +119,14 @@ const sdClip = (c) => {
   };
 };
 
-/** MINIMAT.md §1: what stayed must not move — a still the engine drew before the cards and the dot and the needle retired, byte for byte. */
-function baselineCheck(sc, px) {
+/**
+ * MINIMAT.md §1: what stayed must not move — a still the engine drew before the cards and the dot and the needle retired, byte
+ * for byte. A still with a selection is drawn as the prototype drew it (the kinds' own ring, no marks — D4a retired the ring in
+ * the product, `prototypeRing` keeps the engine's path to it), so the witness holds for every scene.
+ */
+async function baselineCheck(sc, drawn) {
+  const selects = (d) => [...(d.notes ?? []), ...(d.minimats ?? []), ...(d.boards ?? [])].some((o) => o.selected);
+  const px = selects(sc.scene) ? (await render(sc.scene, { prototypeRing: true })).px : drawn;
   const dir = process.env.BASELINE_DIR;
   const file = resolve(dir, `oracle-${sc.name}.rgba`);
   if (!existsSync(file)) { console.log(`  SKIP  baseline   ${sc.name.padEnd(24)} no ${file}`); return true; }
@@ -678,25 +689,102 @@ async function inkCheck(sc) {
   return ok;
 }
 
-/** DESIGN.md §7 on the board, as pixels — the SELECTION is its ring alone: selected and not, the two differ only within the ring's band inside the board's outer edge. */
-async function ringCheck(sc) {
+// ---------------------------------------------------------------- the marks (D4a)
+
+/** A scene with nothing selected, taped or marked — the marks check's control. */
+const unmarked = (s) => {
+  const strip = (o) => ({ ...o, selected: false, locked: false });
+  return { ...s, marks: undefined, notes: (s.notes ?? []).map(strip), minimats: (s.minimats ?? []).map(strip), ...(s.boards ? { boards: s.boards.map(strip) } : {}), ...(s.prints ? { prints: s.prints.map(strip) } : {}), ...(s.things ? { things: s.things.map(strip) } : {}) };
+};
+/** The device px a mark may touch: its quad, grown by one. */
+const quadPixels = (m, visit) => {
+  const d = VIEW.dpr;
+  const [x0, y0, x1, y1] = m.quad;
+  for (let Y = Math.max(0, Math.floor(y0 * d) - 1); Y <= Math.min(H - 1, Math.ceil(y1 * d) + 1); Y++) for (let X = Math.max(0, Math.floor(x0 * d) - 1); X <= Math.min(W - 1, Math.ceil(x1 * d) + 1); X++) visit(X, Y);
+};
+/** The pixel nearest a CSS point: its offset, or −1 off screen. */
+const pixelAt = (x, y) => { const X = Math.floor(x * VIEW.dpr); const Y = Math.floor(y * VIEW.dpr); return X < 0 || Y < 0 || X >= W || Y >= H ? -1 : (Y * W + X) * 4; };
+const byteOf = (c) => [0, 1, 2].map((i) => Math.round(c[i] * 255));
+const exact = (P, o, want) => o >= 0 && P[o] === want[0] && P[o + 1] === want[1] && P[o + 2] === want[2];
+/** Points on a SOLID pencil stroke's centre line (full coverage there: the stroke is 1.5 px, three device px) — a bracket's runs' middles, a ring's sides'. */
+function strokeSamples(m) {
+  const [cx, cy, angle, r] = m.centre;
+  const [X, Y] = m.half;
+  const L = m.shape[3];
+  const local = m.shape[0] === 2
+    ? [[1, 1], [1, -1], [-1, 1], [-1, -1]].flatMap(([sx, sy]) => [[sx * (X - (L + r) / 2), sy * Y], [sx * X, sy * (Y - (L + r) / 2)]])
+    : [[0, -Y], [0, Y], [-X, 0], [X, 0]];
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return local.map(([x, y]) => [cx + c * x - s * y, cy + s * x + c * y]);
+}
+
+/**
+ * *Marks on the Mat* as pixels: the marks change the frame ONLY inside their band (every pixel within one device px of a mark's
+ * ink, by the marks' CPU mirror — a frame's brackets reach the object's edge, never its middle) —
+ * against the same desk with nothing selected, taped or marked, maxΔ 0 outside it, so the objects under a selection are the
+ * unselected objects' pixels exactly (the kinds' own ring is gone) — and inside it they are the page's inks: the pencil's byte
+ * (MARKS.inks.pencil) wherever a 1.5 px stroke is solid and nothing is drawn over it; a knob's face the paper's byte; a laser pill's fill the
+ * laser's byte beside its numerals.
+ */
+async function marksCheck(sc) {
   const s = sc.scene;
-  const { px: A } = await render(s);
-  const { px: B } = await render({ ...s, boards: s.boards.map((b) => ({ ...b, selected: false })) });
-  const poses = s.boards.map((b) => boardPoseOf(b));
-  const k = 1 / (s.zoom * VIEW.dpr);
-  const ring = BOARD.ring / s.zoom;   // CSS px → world
-  let off = 0;
-  let offMax = 0;
-  let band = 0;
-  let bandDiff = 0;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const [wx, wy] = worldAt(s, x, y);
-    const d = delta(A, B, (y * W + x) * 4);
-    if (poses.some(({ geometry: G }) => { const sd = sdBoard(G, wx, wy); return sd > -(ring + 1.5 * k) && sd < 1.5 * k; })) { band++; if (d > 0) bandDiff++; } else { off++; if (d > offMax) offMax = d; }
-  }
-  const ok = offMax === 0 && bandDiff > band * 0.5;
-  console.log(`  ${ok ? "PASS" : "FAIL"}  ring       ${sc.name.padEnd(24)} outside the ring's band maxΔ ${offMax}/255 over ${off.toLocaleString()} px · in it ${bandDiff.toLocaleString()} of ${band.toLocaleString()} px differ`);
+  const { px: A, marks } = await render(s, { marks: true });
+  const { px: B } = await render(unmarked(s));
+  const band = new Uint8Array(W * H);
+  const d = VIEW.dpr;
+  for (const m of marks) quadPixels(m, (X, Y) => { if (markDistance(m, (X + 0.5) / d, (Y + 0.5) / d) <= 1 / d) band[Y * W + X] = 1; });
+  let outside = 0;
+  let outsideMax = 0;
+  let inside = 0;
+  let insideDiff = 0;
+  for (let i = 0; i < W * H; i++) { const dd = delta(A, B, i * 4); if (band[i]) { inside++; if (dd > 0) insideDiff++; } else { outside++; if (dd > outsideMax) outsideMax = dd; } }
+  // later marks' quads: a stroke's sample under one is not the stroke's alone
+  const covered = (k, x, y) => marks.slice(k + 1).some((m) => x >= m.quad[0] && x <= m.quad[2] && y >= m.quad[1] && y <= m.quad[3]);
+  const pencil = byteOf(cssColor(MARKS.inks.pencil.css));
+  const paper = byteOf(cssColor(MARKS.inks.paper.css));
+  const laser = byteOf(cssColor(MARKS.inks.laser.css));
+  const inkIs = (m, css) => [0, 1, 2].every((i) => Math.abs(m.colour[i] - cssColor(css)[i]) < 1e-6) && m.colour[3] === 1;
+  const isPencil = (m) => inkIs(m, MARKS.inks.pencil.css);
+  let strokes = 0;
+  let strokesOff = 0;
+  let faces = 0;
+  let facesOff = 0;
+  let pills = 0;
+  let pillsOff = 0;
+  marks.forEach((m, k) => {
+    if ((m.shape[0] === 2 || m.shape[0] === 0) && m.shape[2] === MARKS.select.stroke && isPencil(m)) {
+      for (const [x, y] of strokeSamples(m)) { if (covered(k, x, y) || pixelAt(x, y) < 0) continue; strokes++; if (!exact(A, pixelAt(x, y), pencil)) strokesOff++; }
+    }
+    if (m.shape[0] === 1 && m.centre[3] === MARKS.select.knob && inkIs(m, MARKS.inks.paper.css)) { faces++; if (!exact(A, pixelAt(m.centre[0], m.centre[1]), paper)) facesOff++; }
+    if (m.shape[0] === 1 && m.centre[3] === MARKS.pill.radius && m.half[1] * 2 === MARKS.pill.height && inkIs(m, MARKS.inks.laser.css)) { pills++; if (!exact(A, pixelAt(m.centre[0] - m.half[0] + 2, m.centre[1]), laser)) pillsOff++; }
+  });
+  const ok = marks.length > 0 && outsideMax === 0 && insideDiff > 0 && strokesOff === 0 && facesOff === 0 && pillsOff === 0 && (strokes > 0 || s.marks?.t !== undefined);
+  console.log(`  ${ok ? "PASS" : "FAIL"}  marks      ${sc.name.padEnd(24)} ${marks.length} marks · outside their band maxΔ ${outsideMax}/255 over ${outside.toLocaleString()} px (inside ${insideDiff.toLocaleString()} of ${inside.toLocaleString()} differ) · the pencil's byte on ${strokes - strokesOff}/${strokes} solid samples · knob faces ${faces - facesOff}/${faces} · laser pills ${pills - pillsOff}/${pills}`);
+  return ok;
+}
+
+/** By night (Q-k): the pencil and the laser are light — the pencil's byte where it is solid, as by day — and the tape is moonlit: darker than the same tape by day. */
+async function unlitCheck(sc) {
+  const s = sc.scene;
+  const night = await render(s, { marks: true });
+  const day = await render(s, { marks: true, theme: THEMES.light });
+  const pencil = byteOf(cssColor(MARKS.inks.pencil.css));
+  let solid = 0;
+  let solidOff = 0;
+  let tape = 0;
+  let tapeDarker = 0;
+  night.marks.forEach((m, k) => {
+    if (m.shape[0] === 2 && m.shape[2] === MARKS.select.stroke && m.colour[3] === 1) {
+      for (const [x, y] of strokeSamples(m)) { const o = pixelAt(x, y); if (o < 0) continue; solid++; if (!exact(night.px, o, pencil) || !exact(day.px, o, pencil)) solidOff++; }
+    }
+    if (m.shape[0] === 7) {
+      const o = pixelAt(m.centre[0], m.centre[1]);
+      if (o >= 0) { tape++; if (lum(night.px, o) < lum(day.px, o) - 20) tapeDarker++; }
+    }
+  });
+  const ok = solid > 0 && solidOff === 0 && tape > 0 && tapeDarker === tape;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  unlit      ${sc.name.padEnd(24)} the pencil's byte by night and by day on ${solid - solidOff}/${solid} solid samples · the tape moonlit (darker than by day) at ${tapeDarker}/${tape} strips`);
   return ok;
 }
 
@@ -870,13 +958,13 @@ const scenes = only ? ORACLE_SCENES.filter((sc) => only.test(sc.name)) : ORACLE_
 let failed = 0;
 for (const sc of scenes) {
   const t1 = performance.now();
-  const { px, nav, portals, stats } = await render(sc.scene);
+  const { px, nav, portals, stats } = await render(sc.scene, { marks: true });
   writeFileSync(resolve(results, `oracle-${sc.name}.rgba`), px);
   const flight = nav ? ` · ${nav.f.kind} p ${sc.scene.nav.p}${nav.f.frozen ? " FROZEN" : ""} · in ${nav.pres.incoming.opacity.toFixed(2)}${nav.pres.incoming.objects !== undefined ? ` (objects ${nav.pres.incoming.objects.toFixed(2)})` : ""} out ${nav.pres.outgoing.opacity.toFixed(2)}` : "";
   const things = thingsOf(sc.scene);
   const count = (kind) => things.filter((t) => t.kind === kind).length;
   console.log(`${sc.name.padEnd(28)} ${(sc.scene.minimats ?? []).length} mini mats · ${count("note")} notes${count("board") ? ` · ${count("board")} boards` : ""}${count("print") ? ` · ${count("print")} prints` : ""}${count("book") ? ` · ${count("book")} books` : ""}${sc.scene.calendars?.length ? ` · ${sc.scene.calendars.length} pads` : ""} · ${portals} live insides · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · k0 ${stats.k0}${stats.wind ? " · wind" : ""}${flight}`);
-  if (sc.baseline && process.env.BASELINE_DIR && !baselineCheck(sc, px)) failed += 1;
+  if (sc.baseline && process.env.BASELINE_DIR && !(await baselineCheck(sc, px))) failed += 1;
 }
 for (const sc of scenes) if (sc.continuity) { if (!(await continuity(sc))) failed += 1; }
 for (const sc of scenes) if (sc.cut) { if (!(await portalCut(sc))) failed += 1; }
@@ -891,7 +979,8 @@ for (const sc of scenes) if (sc.photo) { if (!(await photoCheck(sc))) failed += 
 for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.board) { if (!(await boardCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ink) { if (!(await inkCheck(sc))) failed += 1; }
-for (const sc of scenes) if (sc.ring) { if (!(await ringCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.marks) { if (!(await marksCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.unlit) { if (!(await unlitCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.lit) { if (!(await litCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.book) { if (!(await bookCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.bookOrder) { if (!(await bookOrderCheck(sc))) failed += 1; }

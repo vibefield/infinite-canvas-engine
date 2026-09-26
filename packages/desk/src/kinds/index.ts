@@ -17,13 +17,13 @@ import { notebookProgram } from "./notebook";
 import { paperProgram } from "./paper";
 import { photoProgram } from "./photo";
 
-export { BOARD_KIND, BoardKind, boardProgram } from "./board";
+export { BOARD_KIND, BoardKind, boardFrame, boardProgram } from "./board";
 export { CALENDAR_KIND, type CalendarAlpha, CalendarKind, calendarProgram } from "./calendar";
-export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
+export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatFrame, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
 export { NOTEBOOK_KIND, NotebookKind, notebookProgram } from "./notebook";
-export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperProgram, paperReach, paperKind } from "./paper";
-export { PHOTO_KIND, PhotoKind, photoProgram } from "./photo";
-export { FLUX_REST, isObjectKind, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, rectOf, type StratumName, stringProp } from "./world";
+export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperFrame, paperProgram, paperReach, paperKind } from "./paper";
+export { PHOTO_KIND, PhotoKind, photoFrame, photoProgram } from "./photo";
+export { FLUX_REST, isObjectKind, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, rectFrame, rectOf, type StratumName, stringProp } from "./world";
 // the text stack's seam and the note's writing (D2c, design-015 §6.1)
 export { createWriting, DEFAULT_BLEED, DEFAULT_FACE, DEFAULT_HAND_LAW, type InkPages, type NoteInk, type NoteRasterInfo, type Writing, type WritingStats } from "../paper/writing";
 export type { InkBitmap, TextRaster } from "../paper/raster";
