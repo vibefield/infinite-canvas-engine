@@ -503,6 +503,37 @@ lay. ADDITIVE beside the desk: nothing here reaches a `dom`/`gl` board.
   `gate:landing`; `rig:world` draws the seven `hold-*` stills (Chrome = Node); the oracle's `held` check
   (the rest frame at e = 0 byte for byte; the object's reach past its box bounded; renders identical).
 
+<!-- design-015 D3t-a (2026-09-26) -->
+THE TOOLS IN HAND (design-015 §8's held bar made live, §6's whiteboard in hand, the print's owed carry).
+
+- **The held bar's tools** (core `widget/held-tools.ts`): a type's `heldTools` — each a glyph, its keys (`"1"`,
+  `"mod+z"`) and a kind: a **mode** (`ops.useHeldTool(id)` makes it the object's ACTIVE tool — the runtime
+  `HeldTool { id, prev }`, the user's fact; a `toggle` mode chosen again hands back the one before) or an **action**
+  (runs its op with a `HeldToolApi`: one transaction, the document's `undo`/`redo`, the object's `props`/`setProps`);
+  no kind = declared only (dim). `ops.open` puts the type's `heldTool(props)` (else the first mode) in hand,
+  `putDown` takes it off. The keymap asks the held type's tools first, and only while held; the bar's slots are live,
+  the mode in hand marked in cream — *Marks on the Mat* Q-f — and only it. The pose seam answers a PART
+  (`HeldPoseSource.part` → `HeldPointer.part`); a press on the `content` part with a mode in hand is the tool's
+  (`HeldPress` `tool` — never a tap that puts the object down); the mode's `cursor` shows over the surface.
+- **The whiteboard in hand**: four markers (`1`–`4`) and the eraser (`e`, a toggle) as modes, cursor none; undo and
+  redo — the document's history over its stroke entities; `t` cycles the capped marker's tip and ⌘⌫ wipes (one
+  transaction), keys only. The pen driver (`@ice/desk` objects/pen.ts) lays a stroke LIVE a frame at a time (a frame
+  the pointer rested is the pen resting — its bleed), lifts it as ONE `desk.stroke` child with its samples' times,
+  which the ink ADOPTS rather than replays, and at the put-down writes the capped marker's ink off the undo stack.
+  THE MARKER (board/pen.ts — the bench's `poseOf` and springs, shared by the kind, the oracle and the units) is
+  taken up as the board comes into the hand, drawn by the board's pass in the ink's own frame, hovering or
+  pressed, and laid down in the ink last used; the wet layer dries on the frame's clock.
+- **`desk.stroke` v2** carries `times` (base64 LE f32 ms offsets — D-D3w.2's codec); v1 migrates to an empty one and
+  keeps its `speed`. An object declares its DATA prefabs (`defineWidget({ data })` — the Board's strokes): the engine
+  catalog stamps, gates and resolves them, and the M9 runner migrates one by its own chain (`definePrefab({ migrate })`).
+- **The print's carry**: Esc cancels it (no flick, flown home, nothing committed); a carried or gliding print paints
+  above its siblings (`KindLocal.lifted`) and is picked where it is drawn (`FramePickSource.lifted()` — asked first);
+  `interaction.wheelTurns` (core `pressWheel`: a holding press's wheel is the widget's, summed in `PressWheel`) — the
+  wheel twists a carried print about the finger, and its rest commits the turn.
+- **Witnesses**: oracle stills `hold-board-pen/wet/dry-e1-z1` (Chrome = Node, D-D3r-a.5's ink bound); `rig:open` §11
+  (the whiteboard in hand, 30 rows), `rig:two-tab` (a stroke by hand in A arrives on B's board), `rig:interact` (the
+  print's owed rows).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
