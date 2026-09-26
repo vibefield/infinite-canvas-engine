@@ -6,6 +6,13 @@
 // (packages/ground/src/shaders.ts's helper, the B1 convention.)
 import { WGSL, type WgslFile } from "./shaders.gen";
 
+/**
+ * A host's shader text: a shader-file map (`MAT_SHADER_FILES`, …) → the text of every file it names, by the map's
+ * keys — `shaderText` below (the generated module) in a browser, the .wgsl files read from disk in the Node oracle.
+ * A kind's program is made for one (kinds/: `paperProgram(text)`, `deskKinds(text)`).
+ */
+export type ShaderText = <T extends Record<string, string>>(files: T) => { readonly [K in keyof T]: string };
+
 /** The text of every file a shader-file map names, by the map's keys. */
 export function shaderText<T extends Record<string, string>>(files: T): { readonly [K in keyof T]: string } {
   const out: Record<string, string> = {};

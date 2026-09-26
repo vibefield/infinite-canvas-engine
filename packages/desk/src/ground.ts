@@ -1,4 +1,4 @@
-// The ground: one device, one canvas, the passes, one render per call.
+// The ground: one device, one canvas, the mat and the registered KINDS, one render per call.
 //
 // There is no frame LOOP here on purpose. A host decides when a frame is due —
 // the lab's rAF + dirty flags, ICE's reflector, the oracle's single call — and
@@ -9,8 +9,13 @@
 // One command buffer per frame: [the mat's wind] → the desk in ONE render pass.
 // The grid is the cutting mat (the dot and the needle, the card frame and its
 // portal fill retired on 2026-09-25 — MINIMAT.md §1); on it, in paint order: the
-// layers a host laid on the mat (the calendar), the MINI MATS, the whiteboards,
-// the notes, the notebooks.
+// layers a host laid on the mat (the calendar), then the desk's OBJECTS stratum by
+// stratum — pads, sheets (the mini mats), things (the whiteboards, the notes, every
+// other kind) — and within a stratum in the desk's own paint order, one draw per
+// RUN of one kind (design-015 §4.2). The ground names no kind (design-015 §5.2):
+// each registers a PROGRAM (kind.ts) — its name, its stratum, its pass made on the
+// root's mat — and the ground hands each slot's pass of that kind the kind's
+// records and draws them in ranges. A new kind is added without touching this file.
 //
 // A frame is a TREE of slots (PORTAL.md §2.2). The root slot is the desk the
 // camera is on; a mini mat whose face passes the gate carries a NESTED slot —
@@ -38,22 +43,17 @@
 
 import { surface, type Surface } from "./engine/device";
 import { beginPass } from "./engine/target";
+import { type KindPass, type KindProgram, type SlotContext, STRATA, type StratumName } from "./kind";
 import { boxOf } from "./lattice/lod";
 import { DEFAULT_GRID, dressGrid, type GridConfig, type GridStats, gridStats, type SlotFrame } from "./mat/grid";
 import { type SlotLight, STILL_MAT_FRAME } from "./mat/layout";
 import { MatPass } from "./mat/mat-pass";
 import type { MatShaders } from "./mat/shaders";
-import { MiniMatPass } from "./minimat/pass";
-import type { MiniMatInstance } from "./minimat/layout";
-import type { MiniMatShaders } from "./minimat/shaders";
-import { PaperPass } from "./paper/paper-pass";
-import type { PaperInstance } from "./paper/layout";
-import type { PaperShaders } from "./paper/shaders";
-import { BoardPass } from "./board/board-pass";
-import type { BoardInstance } from "./board/layout";
-import type { BoardShaders } from "./board/shaders";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "./nav/portal";
 import type { GroundTheme } from "./theme";
+
+export type { KindExtra, KindPass, KindProgram, SlotContext, StratumName } from "./kind";
+export { STRATA } from "./kind";
 
 export interface GroundOptions {
   /**
@@ -63,18 +63,24 @@ export interface GroundOptions {
    */
   readonly device: GPUDevice;
   readonly canvas: HTMLCanvasElement;
-  /** The cutting mat (mat/mat-pass.ts). */
+  /** The cutting mat (mat/mat-pass.ts) — the ground's own: every slot draws it first. */
   readonly mat: MatShaders;
-  /** The paper — the sticky notes (paper/paper-pass.ts, STICKY.md). */
-  readonly papers: PaperShaders;
-  /** The mini mats — the desk's containers (minimat/pass.ts, MINIMAT.md). */
-  readonly minimats: MiniMatShaders;
-  /** The whiteboards (board/board-pass.ts, BOARD.md); absent = no board pass. */
-  readonly boards?: BoardShaders;
+  /**
+   * The kinds this ground draws — its REGISTRY (kind.ts; the desk's own are `DESK_KINDS`, `@ice/desk/kinds`).
+   * Names are unique. Each kind's pass is made on the root's mat; the kinds prepare in this order and draw
+   * stratum by stratum, then in each slot's paint order.
+   */
+  readonly kinds: readonly KindProgram[];
 }
 
 /** A layer a host rendered first, laid on the mat inside the ground's pass (it sets its own scissor; the ground restores the slot's). */
 export interface Underlay { draw(pass: GPURenderPassEncoder): void }
+
+/** One object on a desk as the ground takes it: its kind's name (a registered one) and the record that kind's pass draws. */
+export interface SlotObject {
+  readonly kind: string;
+  readonly record: unknown;
+}
 
 /** One desk's ground: its camera, grid, objects and presentation — the root's, a departed desk's, or a mini mat's inside. */
 export interface SlotInputs extends SlotFrame {
@@ -85,13 +91,13 @@ export interface SlotInputs extends SlotFrame {
    * (CALENDAR.md: the desk calendar — the host renders its layer first, the ground lays it here).
    */
   readonly underlays?: readonly Underlay[];
-  /** The mini mats on this desk (MINIMAT.md), in paint order, lowest first: flat on the mat, beneath every board, note and notebook. */
-  readonly minimats?: readonly MiniMatInstance[];
-  /** The whiteboards on this desk (BOARD.md): above the mini mats, beneath every note and notebook — a note can sit on a board. */
-  readonly boards?: readonly BoardInstance[];
-  /** The sticky notes on this desk (STICKY.md), in paint order: above every mini mat and board. */
-  readonly papers?: readonly PaperInstance[];
-  /** The live insides of this desk's mini mats (MINIMAT.md §3): each drawn right after the mini mat `at` names. */
+  /**
+   * The objects on this desk in PAINT ORDER, lowest first — the caller sorts: strata first (the ground draws
+   * stratum by stratum whatever the list says), then its own order within each. A kind's records are its
+   * objects, in this order; every kind named must be registered.
+   */
+  readonly objects?: readonly SlotObject[];
+  /** The live insides of this desk's sheets (MINIMAT.md §3): each drawn right after the object `at` names. */
   readonly portals?: readonly PortalInputs[];
 }
 
@@ -102,7 +108,7 @@ export interface SlotInputs extends SlotFrame {
  */
 export interface PortalInputs extends SlotInputs {
   readonly grid: GridConfig;
-  /** The mini mat's index in the parent's `minimats` (paint order): the slot draws just AFTER it, over its face. */
+  /** The mini mat's index in the parent's `objects` (paint order): the slot draws just AFTER it, over its face. */
   readonly at: number;
 }
 
@@ -113,7 +119,7 @@ export interface OutgoingInputs extends SlotInputs {
   readonly order: "under" | "over";
   /**
    * ENTER through a live portal (PORTAL.md §2.4): the mini mat's index in the DEPARTED desk's
-   * `minimats` — the two desks draw as one tree, the arriving one through the mini mat's face,
+   * `objects` — the two desks draw as one tree, the arriving one through the mini mat's face,
    * so the objects over the mini mat stay over the inside and fade with their desk (a live
    * portal of the departed desk at the same index is neither prepared nor drawn: the arriving
    * desk is that face). Absent = two whole slots, `order` decides: a frozen flight, and every
@@ -131,14 +137,25 @@ export interface GroundFrameInputs extends SlotInputs {
 }
 
 export interface GroundStats extends GridStats {
-  /** The root's notes, mini mats and whiteboards drawn this frame. */
-  readonly papers: number;
-  readonly minimats: number;
-  readonly boards: number;
+  /** The root's records drawn this frame, by kind name — every registered kind, 0 where it had none. */
+  readonly kinds: Readonly<Record<string, number>>;
   /** The departed slot's grid while a flight is on. */
   readonly outgoing: GridStats | null;
   /** Live portals drawn this frame, the root's and the departed desk's together. */
   readonly portals: number;
+}
+
+/** One registered kind as a slot holds it: the registry's name and stratum, and the slot's own pass. */
+export interface SlotKind {
+  readonly name: string;
+  readonly stratum: StratumName;
+  readonly pass: KindPass;
+}
+
+/** The passes one slot owns: the mat's, and every registered kind's by name, in registration order. The root's are the ground's; the pool spawns the rest on the same pipelines. */
+export interface SlotSet {
+  readonly mat: MatPass;
+  readonly kinds: ReadonlyMap<string, SlotKind>;
 }
 
 /** One slot's passes for `drawFrame` — the ground's own, or the oracle's. A parent carries its nested slots. */
@@ -147,13 +164,11 @@ export interface DrawSlot {
   readonly present?: Presentation | undefined;
   /** Layers laid on the mat before everything (the calendar's). */
   readonly underlays?: readonly Underlay[] | undefined;
-  /** The slot's mini mats, prepared: drawn on the mat, each followed by its live inside. */
-  readonly minimats?: MiniMatPass | undefined;
-  /** The slot's whiteboards, prepared: above the mini mats. */
-  readonly boards?: BoardPass | undefined;
-  /** The slot's notes, prepared: above the whiteboards. */
-  readonly papers?: PaperPass | undefined;
-  /** Nested slots, each drawn right after the parent's mini mat `at` (MINIMAT.md §3). */
+  /** The slot's kinds, prepared (its `SlotSet.kinds`): an object's kind names its stratum and its pass. */
+  readonly kinds: ReadonlyMap<string, SlotKind>;
+  /** The slot's objects in paint order — only their kinds matter to the draw: each kind's records are counted along them. */
+  readonly objects?: readonly { readonly kind: string }[] | undefined;
+  /** Nested slots, each drawn right after the object `at` names (MINIMAT.md §3) — one that names no object here draws over them all. */
   readonly children?: readonly { readonly at: number; readonly slot: DrawSlot }[] | undefined;
   /** What the slot's grid did this frame. */
   readonly stats: GridStats;
@@ -162,8 +177,27 @@ export interface DrawSlot {
 /** A slot at opacity 0 draws nothing: "source over" with alpha 0 leaves every pixel as it was. */
 export const visible = (p: Presentation | undefined): boolean => (p?.opacity ?? 1) > 0;
 
-/** The passes one slot owns. The root's are the ground's; the pool spawns the rest on the same pipelines. */
-export interface SlotSet { readonly mat: MatPass; readonly papers?: PaperPass; readonly minimats?: MiniMatPass; readonly boards?: BoardPass }
+/**
+ * The root slot's passes: the mat's (made first — every kind's pass is made on it) and every registered
+ * kind's, made in parallel on the root's mat, in registration order. Names must be unique and strata known.
+ * Shared by the ground and the Node oracle.
+ */
+export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat, mat: MatPass, programs: readonly KindProgram[]): Promise<SlotSet> {
+  const names = new Set<string>();
+  for (const p of programs) {
+    if (!p.name) throw new Error("ground: a kind needs a name — it is the kind's key in every slot");
+    if (names.has(p.name)) throw new Error(`ground: two kinds are named "${p.name}" — a kind's name is its key in every slot`);
+    if (!STRATA.includes(p.stratum)) throw new Error(`ground: kind "${p.name}" lies in no stratum the ground draws ("${p.stratum}"; ${STRATA.join(", ")})`);
+    names.add(p.name);
+  }
+  const passes = await Promise.all(programs.map((p) => p.create(device, format, mat)));
+  const kinds = new Map<string, SlotKind>();
+  for (let i = 0; i < programs.length; i++) {
+    const p = programs[i] as KindProgram;
+    kinds.set(p.name, { name: p.name, stratum: p.stratum, pass: passes[i] as KindPass });
+  }
+  return { mat, kinds };
+}
 
 /** Slots beyond the root, spawned on first use and reused every frame: `reset()` then `acquire()` per slot the frame needs. */
 export class SlotPool {
@@ -172,25 +206,29 @@ export class SlotPool {
   private readonly root: SlotSet;
   constructor(root: SlotSet) { this.root = root; }
   reset(): void { this.used = 0; }
+  /** The next slot: on first use its mat spawned from the root's, then every registered kind's pass on that mat, in registration order. */
   acquire(): SlotSet {
     if (this.used === this.slots.length) {
-      const r = this.root;
-      const mat = r.mat.spawn();
-      this.slots.push({ mat, ...(r.papers ? { papers: r.papers.spawn(mat) } : {}), ...(r.minimats ? { minimats: r.minimats.spawn(mat) } : {}), ...(r.boards ? { boards: r.boards.spawn(mat) } : {}) });
+      const mat = this.root.mat.spawn();
+      const kinds = new Map<string, SlotKind>();
+      for (const k of this.root.kinds.values()) kinds.set(k.name, { name: k.name, stratum: k.stratum, pass: k.pass.spawn(mat) });
+      this.slots.push({ mat, kinds });
     }
     return this.slots[this.used++] as SlotSet;
   }
   /** Slots spawned so far — the churn instrument. */
   get size(): number { return this.slots.length; }
-  dispose(): void { for (const s of this.slots) { s.mat.dispose(); s.papers?.dispose(); s.minimats?.dispose(); s.boards?.dispose(); } this.slots.length = 0; this.used = 0; }
+  dispose(): void { for (const s of this.slots) { s.mat.dispose(); for (const k of s.kinds.values()) k.pass.dispose(); } this.slots.length = 0; this.used = 0; }
 }
 
 /**
  * Draw one slot into an open render pass: scissored to its portal (nothing
  * outside it is shaded), skipped outright at opacity 0 — the mat, the layers on
- * it, then the mini mats in paint order with each one's live inside drawn right
- * after it (restoring this slot's scissor), then the whiteboards and the notes.
- * Returns whether it drew.
+ * it, then the objects stratum by stratum: within a stratum in paint order, one
+ * `drawRange` per RUN of one kind (each kind counting its own records), the run
+ * cut after an object with a live inside — the inside over its face (restoring
+ * this slot's scissor), then that object's marks over the inside. Returns
+ * whether it drew.
  */
 export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, slot: DrawSlot): boolean {
   if (!visible(slot.present)) return false;
@@ -200,20 +238,37 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   slot.mat.draw(pass);
   // the layers a host laid on the mat (the desk calendar, CALENDAR.md), each setting its own scissor
   if (slot.underlays?.length) { for (const u of slot.underlays) u.draw(pass); pass.setScissorRect(x, y, w, h); }
-  // the mini mats in paint order: at a mini mat with a live inside, the mats up to and including it, then its inside over
-  // its face, then its chips over that while they fade out (MINIMAT.md §5) — before the mats above it
-  const kids = slot.children ? [...slot.children].sort((a, b) => a.at - b.at) : [];
-  let from = 0;
-  for (const k of kids) {
-    slot.minimats?.drawRange(pass, from, k.at + 1);
-    from = Math.max(from, k.at + 1);
-    if (drawSlot(pass, size, dpr, k.slot)) pass.setScissorRect(x, y, w, h);
-    slot.minimats?.drawChips(pass, k.at);
+  // the live insides by the object each lies in (two on one object draw in the order they came)
+  const objects = slot.objects ?? [];
+  const insides = new Map<number, DrawSlot[]>();
+  for (const c of slot.children ?? []) { const at = insides.get(c.at); if (at) at.push(c.slot); else insides.set(c.at, [c.slot]); }
+  const inside = (child: DrawSlot) => { if (drawSlot(pass, size, dpr, child)) pass.setScissorRect(x, y, w, h); };
+  // the objects, stratum by stratum; within one, in paint order, a run of one kind at a time — cut after an object with a live
+  // inside: the run through it, its inside over its face, then its marks over that (the mini mat's chips while the inside's
+  // objects fade in — MINIMAT.md §5) — before the objects above it
+  const next = new Map<string, number>();   // each kind's next record
+  for (const stratum of STRATA) {
+    let run: SlotKind | undefined;
+    let first = 0;
+    let end = 0;
+    for (let i = 0; i < objects.length; i++) {
+      const k = slot.kinds.get((objects[i] as { readonly kind: string }).kind);
+      if (!k || k.stratum !== stratum) continue;
+      const index = next.get(k.name) ?? 0;
+      next.set(k.name, index + 1);
+      if (k !== run) { run?.pass.drawRange(pass, first, end); run = k; first = index; }
+      end = index + 1;
+      const children = insides.get(i);
+      if (!children) continue;
+      k.pass.drawRange(pass, first, end);
+      run = undefined;
+      for (const child of children) { inside(child); k.pass.drawOver?.(pass, index); }
+      insides.delete(i);
+    }
+    run?.pass.drawRange(pass, first, end);
   }
-  slot.minimats?.drawRange(pass, from, Number.MAX_SAFE_INTEGER);
-  // the whiteboards and the notes, above every mini mat (BOARD.md, STICKY.md)
-  slot.boards?.draw(pass);
-  slot.papers?.draw(pass);
+  // an inside whose `at` names no object this slot draws has nothing to lie in: it draws over them all
+  for (const children of insides.values()) for (const child of children) inside(child);
   return true;
 }
 
@@ -251,10 +306,8 @@ export interface PreparedFrame {
   readonly incoming: DrawSlot;
   readonly outgoing: (DrawSlot & { readonly order: "under" | "over"; readonly at?: number | undefined }) | null;
   readonly portals: number;
-  /** The root's notes, mini mats and whiteboards drawn. */
-  readonly papers: number;
-  readonly minimats: number;
-  readonly boards: number;
+  /** The root's records that will draw, by kind name — every registered kind. */
+  readonly kinds: Readonly<Record<string, number>>;
 }
 
 /** The light a slot is lit by when nothing says otherwise: its own camera. */
@@ -267,13 +320,16 @@ const liveOf = (p: Presentation | undefined): number => (p ? p.opacity * (p.obje
 /**
  * Upload one frame's records into its slots — the root's, each live portal's
  * (from the pool), the departed desk's — run the mat's wind where its clock
- * moved, and return the draw tree. Shared by the ground and the Node oracle.
- * `grid` is the root's when its inputs name none.
+ * moved, and return the draw tree. Per slot, every registered kind prepares its
+ * own records (the slot's objects of that kind, in paint order), told which of
+ * them carries a live inside. Shared by the ground and the Node oracle. `grid`
+ * is the root's when its inputs name none.
  */
 export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: SlotPool, inputs: GroundFrameInputs, grid: GridConfig = DEFAULT_GRID): PreparedFrame {
   pool.reset();
   const theme = inputs.theme;
   let portals = 0;
+  let rootDrawn: readonly (readonly [string, number])[] = [];
   const attach = { width: inputs.view.width, height: inputs.view.height };
   // `host`: the light of the slot this one is nested in — a mini mat's inside is lit by the desk it lies on; `skipAt`: a portal of this
   // slot not to prepare — on an enter, the arriving desk IS that face, and `treeLive` is its presence over the mini mat there.
@@ -283,9 +339,28 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     const lit = inp.light ?? host;   // undefined = the slot's own lamp, exactly (the root at rest)
     const cfg = dressGrid(g, inp.view.zoom, inp.lodZoom);
     const wind = s.mat.prepare(encoder, inp.view, cfg.fadeIn, cfg.mat, inp.mat ?? STILL_MAT_FRAME, inp.present, theme.matLight, lit);
+    // the objects by kind — each kind's records in paint order, and each object's index among its kind's
+    const objects = inp.objects ?? [];
+    const records = new Map<string, unknown[]>();
+    for (const name of s.kinds.keys()) records.set(name, []);
+    const indexOf: number[] = [];
+    for (const o of objects) {
+      const list = records.get(o.kind);
+      if (!list) throw new Error(`ground: no kind "${o.kind}" is registered (${[...s.kinds.keys()].join(", ") || "none"})`);
+      indexOf.push(list.length);
+      list.push(o.record);
+    }
+    // each object's live inside, by its kind's own record index: what the face's own drawing gives way to
+    const live = new Map<string, Map<number, number>>();
+    const tell = (at: number, presence: number): void => {
+      const o = objects[at];
+      if (!o) return;   // no object there: nothing to tell (its inside, if any, draws over the slot's objects)
+      const told = live.get(o.kind) ?? new Map<number, number>();
+      told.set(indexOf[at] as number, presence);
+      live.set(o.kind, told);
+    };
+    if (skipAt !== undefined && treeLive !== undefined) tell(skipAt, treeLive);
     const children: { at: number; slot: DrawSlot }[] = [];
-    const live = new Map<number, number>();
-    if (skipAt !== undefined && treeLive !== undefined) live.set(skipAt, treeLive);
     // A child is seen through its own face AND every face this slot is seen through — the chain (PORTAL.md §10) — and its box is its face's inside this slot's.
     const within = chainOf(inp.present);
     let parentBox = boxOf(inp.view);
@@ -298,19 +373,24 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
       // the inside comes in over the mini mat's own face — its mat whole, its objects by their presence; it is lit by this desk's lamp
       const present: Presentation = { opacity: p.present.opacity, ...(p.present.objects !== undefined ? { objects: p.present.objects } : {}), portal: p.present.portal, within };
       children.push({ at: p.at, slot: prepare(pool.acquire(), { ...p, view: { ...p.view, box }, present }, p.grid, light) });
-      live.set(p.at, liveOf(present));
+      tell(p.at, liveOf(present));
       portals += 1;
     }
-    // the objects, lit by this slot's mat — its light, its lamp's gobo (MINIMAT.md §4) — at their presence; each mini mat told
-    // whether a live inside covers its face this frame (the face's far LOD gives way to it)
-    const objects = objectsOf(inp.present);
-    if (s.papers) { if (root.papers && s.papers !== root.papers) s.papers.tune(root.papers); s.papers.prepare(inp.view, g.fadeIn, g.mat, inp.mat, inp.papers ?? [], objects, theme.matLight, theme.select, lit); }
-    if (s.minimats) { if (root.minimats && s.minimats !== root.minimats) s.minimats.tune(root.minimats); s.minimats.prepare(inp.view, g.fadeIn, g.mat, inp.mat, inp.minimats ?? [], objects, theme.matLight, theme.select, lit, (i) => live.get(i) ?? -1); }
-    if (s.boards) { if (root.boards && s.boards !== root.boards) s.boards.copy(root.boards); s.boards.prepare(inp.view, g.fadeIn, g.mat, inp.mat, inp.boards ?? [], objects, theme.matLight, theme); }
+    // the kinds, in registration order: each lit by this slot's mat — its light, its lamp's gobo (MINIMAT.md §4) — at the objects'
+    // presence, a spawned slot's pass first taking the root's laws, each told which of its records carries a live inside this frame
+    const slot: SlotContext = { view: inp.view, fadeIn: g.fadeIn, cfg: g.mat, frame: inp.mat, present: objectsOf(inp.present), light: theme.matLight, lit, select: theme.select, theme };
+    const drawn: [string, number][] = [];
+    for (const k of s.kinds.values()) {
+      const own = root.kinds.get(k.name);
+      if (own && k.pass !== own.pass) k.pass.tune?.(own.pass);
+      const told = live.get(k.name);
+      drawn.push([k.name, k.pass.prepare(encoder, slot, records.get(k.name) ?? [], { live: (i) => told?.get(i) ?? -1 })]);
+    }
+    if (s === root) rootDrawn = drawn;
     return {
-      mat: s.mat, present: inp.present, stats: gridStats(inp.view, wind),
+      mat: s.mat, present: inp.present, stats: gridStats(inp.view, wind), kinds: s.kinds,
       ...(inp.underlays?.length ? { underlays: inp.underlays } : {}),
-      ...(s.minimats ? { minimats: s.minimats } : {}), ...(s.boards ? { boards: s.boards } : {}), ...(s.papers ? { papers: s.papers } : {}),
+      ...(objects.length ? { objects } : {}),
       ...(children.length ? { children } : {}),
     };
   };
@@ -325,7 +405,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     const out = prepare(pool.acquire(), o, o.grid, undefined, enterTree ? o.at : undefined, enterTree ? liveOf(inputs.present) : undefined);
     outgoing = { ...out, order: o.order, at: o.at };
   }
-  return { incoming, outgoing, portals, papers: root.papers?.drawn ?? 0, minimats: root.minimats?.drawn ?? 0, boards: root.boards?.drawn ?? 0 };
+  return { incoming, outgoing, portals, kinds: Object.fromEntries(rootDrawn) };
 }
 
 export class Ground {
@@ -333,34 +413,26 @@ export class Ground {
   readonly surface: Surface;
   /** The cutting mat — the root slot's; its plates, noise and glyph atlas are every slot's. */
   readonly mat: MatPass;
-  /** The sticky notes (STICKY.md). */
-  readonly papers: PaperPass;
-  /** The mini mats (MINIMAT.md). */
-  readonly minimats: MiniMatPass;
-  /** The whiteboards (BOARD.md); undefined when the host handed no board shaders. */
-  readonly boards: BoardPass | undefined;
+  /** The root slot's passes: the mat's and every registered kind's, by name (the registry, in registration order). */
+  readonly root: SlotSet;
   /** Slots beyond the root — the departed desk's, the live insides of mini mats — spawned on first use. */
   readonly pool: SlotPool;
   /** The root's grid when a frame names none. */
   grid: GridConfig = DEFAULT_GRID;
 
-  private constructor(device: GPUDevice, surface: Surface, mat: MatPass, papers: PaperPass, minimats: MiniMatPass, boards: BoardPass | undefined) {
-    this.device = device; this.surface = surface; this.mat = mat; this.papers = papers; this.minimats = minimats; this.boards = boards;
-    this.pool = new SlotPool(this.slotSet());
+  private constructor(device: GPUDevice, surface: Surface, root: SlotSet) {
+    this.device = device; this.surface = surface; this.mat = root.mat; this.root = root;
+    this.pool = new SlotPool(root);
   }
-
-  private slotSet(): SlotSet { return { mat: this.mat, papers: this.papers, minimats: this.minimats, ...(this.boards ? { boards: this.boards } : {}) }; }
 
   static async create(opts: GroundOptions): Promise<Ground> {
     const surf = surface(opts.device, opts.canvas);
     const mat = await MatPass.create(opts.device, surf.format, opts.mat);
-    const [papers, minimats, boards] = await Promise.all([
-      PaperPass.create(opts.device, surf.format, opts.papers, mat),
-      MiniMatPass.create(opts.device, surf.format, opts.minimats, mat),
-      opts.boards ? BoardPass.create(opts.device, surf.format, opts.boards, mat) : Promise.resolve(undefined),
-    ]);
-    return new Ground(opts.device, surf, mat, papers, minimats, boards);
+    return new Ground(opts.device, surf, await createSlotSet(opts.device, surf.format, mat, opts.kinds));
   }
+
+  /** The root's pass of the kind registered as `name` (undefined if none) — a host reaches its kind's own API through it: the note's ink pages, the whiteboard's rasters. */
+  pass(name: string): KindPass | undefined { return this.root.kinds.get(name)?.pass; }
 
   /** Size the canvas to its CSS box; returns the CSS size and dpr the frame should use. (A host may size the canvas itself instead.) */
   fit(maxDpr = 2) { return this.surface.fit(maxDpr); }
@@ -368,14 +440,15 @@ export class Ground {
   /** Render one frame now. Synchronous submit; the caller owns the cadence. */
   render(inputs: GroundFrameInputs): GroundStats {
     const encoder = this.device.createCommandEncoder({ label: "ground" });
-    const prepared = prepareFrame(encoder, this.slotSet(), this.pool, inputs, this.grid);
+    const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid);
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
-    return { ...drawn.incoming, papers: prepared.papers, minimats: prepared.minimats, boards: prepared.boards, outgoing: drawn.outgoing, portals: prepared.portals };
+    return { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals };
   }
 
-  dispose(): void { this.pool.dispose(); this.boards?.dispose(); this.minimats.dispose(); this.papers.dispose(); this.mat.dispose(); }
+  /** The pool's slots, then the root's kinds in reverse registration order, then the mat. */
+  dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.mat.dispose(); }
 }

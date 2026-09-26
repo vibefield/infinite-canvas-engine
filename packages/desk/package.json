@@ -6,6 +6,7 @@
   "description": "The desk (design-015): the cutting mat, the mini mats and the desk's objects on one raw-WebGPU renderer — vibe-field/draft/ground's prototype, moved at D1 (2026-09-25).",
   "exports": {
     ".": "./src/ground.ts",
+    "./kinds": "./src/kinds/index.ts",
     "./engine": "./src/engine/index.ts",
     "./shaders": "./src/shaders.ts",
     "./noise": "./src/assets/blue-noise.gen.ts",

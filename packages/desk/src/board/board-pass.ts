@@ -112,6 +112,8 @@ export class BoardPass {
   private group!: GPUBindGroup;
   private boundAssets = -1;
   private drawList: GPUBindGroup[] = [];
+  /** Each drawn board's index in the list `prepare` was handed (a board whose raster is missing is skipped) — what `drawRange` counts in. */
+  private drawnFrom: number[] = [];
   /** The materials a host projects (lab/theme.ts); black until it says. */
   look: BoardLook = { barrel: [0, 0, 0], felt: [0, 0, 0], wood: [0, 0, 0] };
   /** The day's chain on the board: false = a lit melamine shows its configured byte; true = the mat's double gamma. */
@@ -417,14 +419,17 @@ export class BoardPass {
     this.dryNow();
     const s = this.shared;
     const list: GPUBindGroup[] = [];
-    for (const b of instances) {
+    const from: number[] = [];
+    for (const [i, b] of instances.entries()) {
       if (list.length >= MAX_BOARDS) break;
       const r = s.rasters.get(b.id);
       if (!r) continue;
       this.records.set(boardValues(b, { size: r.size, density: r.density, wet: r.wetting }), list.length);
       list.push(r.group);
+      from.push(i);
     }
     this.drawList = list;
+    this.drawnFrom = from;
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
     this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS));
     this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
@@ -477,11 +482,24 @@ export class BoardPass {
 
   get drawn(): number { return this.drawList.length; }
 
-  draw(pass: GPURenderPassEncoder): void {
-    if (this.drawList.length === 0) return;
-    pass.setPipeline(this.shared.pipeline);
-    pass.setBindGroup(0, this.group);
-    this.drawList.forEach((g, i) => { pass.setBindGroup(1, g); pass.draw(6, 1, 0, i); });
+  /** Every board drawn this frame. */
+  draw(pass: GPURenderPassEncoder): void { this.drawRange(pass, 0, Number.POSITIVE_INFINITY); }
+
+  /**
+   * The boards `prepare` was handed at [first, end) — indices into ITS list, as the ground's runs count a
+   * kind's records (a board whose raster is missing draws nothing) — one quad each with its raster bound,
+   * the slot's group bound once before the first. The whole list is `draw`: the same commands it always gave.
+   */
+  drawRange(pass: GPURenderPassEncoder, first: number, end: number): void {
+    let bound = false;
+    for (let i = 0; i < this.drawList.length; i++) {
+      const at = this.drawnFrom[i] as number;
+      if (at >= end) break;   // ascending: nothing further is in range
+      if (at < first) continue;
+      if (!bound) { pass.setPipeline(this.shared.pipeline); pass.setBindGroup(0, this.group); bound = true; }
+      pass.setBindGroup(1, this.drawList[i] as GPUBindGroup);
+      pass.draw(6, 1, 0, i);
+    }
   }
 
   /** This slot's buffers; the rasters and the stamp buffers go with the last slot standing. */

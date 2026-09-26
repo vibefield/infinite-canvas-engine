@@ -3,17 +3,18 @@
 // and §2's identity as a test: the camera a mini mat's inside renders under at rest IS
 // the enter flight's start, so a flight that begins from it cuts bit for bit; an exit's
 // affine is the same M. Then the dressing, the zoom-through's cover test, the draw
-// tree's order through a fake pass (the mini mats in ranges, each live inside right
+// tree's order through fake kinds (the mini mats in ranges, each live inside right
 // after its mini mat and its chips over it), `prepareFrame`'s chain and HOST LIGHT, and
 // the pool. (The folder's face, the portal hole in the card frame and the fill pass
-// retired with the cards, 2026-09-25.)
+// retired with the cards, 2026-09-25; the tree's slots hold the registry's kinds since
+// D2a-render — kinds.test.ts has the registry's own laws.)
 import { must } from "./must";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MAT_CONFIG, MatUniforms, matUniformValues, STILL_MAT_FRAME } from "../src/mat/layout";
 import { DEFAULT_GRID, dressGrid, dressScale } from "../src/mat/grid";
 import { boxOf, boxValues } from "../src/lattice/lod";
-import { drawFrame, drawSlot, prepareFrame, SlotPool, type DrawSlot, type SlotSet } from "../src/ground";
+import { type DrawSlot, drawFrame, drawSlot, type KindExtra, type KindPass, prepareFrame, type SlotContext, type SlotKind, SlotPool, type SlotSet } from "../src/ground";
 import { departedCamera, enterFlight, exitFlight, FIT, flightAt, outgoingCamera, solveFlightStart } from "../src/nav/flight";
 import { boxOfPortal, chainOf, clipOf, faceCovers, intersectBox, PORTAL_CAP, PORTAL_CHAIN, PORTAL_CHAIN_TYPE, PORTAL_GATE, portalPresence, portalValues, scissorOf, THROUGH_IN, THROUGH_OUT } from "../src/nav/portal";
 import { DEFAULT_MINIMAT_LAW, FACE_RADIUS, faceClip, faceOf, MINIMAT_REST, resolveMiniMat } from "../src/minimat/minimat";
@@ -21,6 +22,7 @@ import { insideView } from "../src/minimat/inside";
 import { lampOf } from "../src/paper/paper";
 import { GRID, MAT_GRID, MINIMAT } from "../src/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
+import { DESK, fakeSlot, scissorPass } from "./fake-kinds";
 
 const VP = { width: 1200, height: 800 };
 const CAM = { x: 13.7, y: -21.3, zoom: 1.37 };
@@ -149,52 +151,45 @@ describe("the dressing (§9) and the zoom-through (§8)", () => {
   });
 });
 
-// A fake slot for the draw order: every draw call it gets, logged by name.
-const END = Number.MAX_SAFE_INTEGER;
-function fakeSlot(log: string[], name: string, present?: DrawSlot["present"], children?: DrawSlot["children"]): DrawSlot {
-  return {
-    mat: { draw: () => log.push(`${name} mat`) } as unknown as DrawSlot["mat"],
-    minimats: { drawRange: (_p: unknown, a: number, b: number) => log.push(`${name} mats ${a}..${b === END ? "end" : b}`), drawChips: (_p: unknown, at: number) => log.push(`${name} chips ${at}`) } as unknown as NonNullable<DrawSlot["minimats"]>,
-    papers: { draw: () => log.push(`${name} notes`) } as unknown as NonNullable<DrawSlot["papers"]>,
-    present, children, stats: { name } as unknown as DrawSlot["stats"],
-  };
-}
-const fakePass = (log: string[]) => ({ setScissorRect: (x: number, y: number, w: number, h: number) => log.push(`scissor ${x},${y},${w},${h}`) }) as unknown as GPURenderPassEncoder;
+// A slot of the desk's shape for the draw order — mini mats (sheets) and notes (things), their objects in paint order, the
+// mini mats first — every draw call it gets logged by slot and kind (fake-kinds.ts).
+const deskSlot = (log: string[], name: string, objects: readonly string[], present?: DrawSlot["present"], children?: DrawSlot["children"]) => fakeSlot(log, name, { kinds: DESK, objects, present, children });
+const mats = (n: number, notes = 0): string[] => [...Array.from({ length: n }, () => "minimat"), ...Array.from({ length: notes }, () => "paper")];
 
 describe("the tree, the pool", () => {
   it("drawSlot draws the mini mats in ranges, each live inside right after its mini mat and its chips over it, restoring the parent's scissor", () => {
     const log: string[] = [];
     const face = { cx: 300, cy: 200, hx: 100, hy: 60, r: 0 };
     // the inner slot's own face pokes 20 px past the child's right edge; seen THROUGH the child's face (`within`) its scissor stops there
-    const inner = fakeSlot(log, "inner", { opacity: 1, portal: { cx: 390, cy: 210, hx: 30, hy: 10, r: 0 }, within: [face] });
-    const child = fakeSlot(log, "child", { opacity: 1, portal: face }, [{ at: 1, slot: inner }]);
-    const gone = fakeSlot(log, "gone", { opacity: 0, portal: face });
-    const root = fakeSlot(log, "root", undefined, [{ at: 5, slot: gone }, { at: 2, slot: child }]);
-    expect(drawSlot(fakePass(log), { w: 2400, h: 1600 }, 2, root)).toBe(true);
+    const inner = deskSlot(log, "inner", mats(1, 1), { opacity: 1, portal: { cx: 390, cy: 210, hx: 30, hy: 10, r: 0 }, within: [face] });
+    const child = deskSlot(log, "child", mats(3, 1), { opacity: 1, portal: face }, [{ at: 1, slot: inner }]);
+    const gone = deskSlot(log, "gone", mats(1, 1), { opacity: 0, portal: face });
+    const root = deskSlot(log, "root", mats(8, 1), undefined, [{ at: 5, slot: gone }, { at: 2, slot: child }]);
+    expect(drawSlot(scissorPass(log), { w: 2400, h: 1600 }, 2, root)).toBe(true);
     expect(log).toEqual([
-      "scissor 0,0,2400,1600", "root mat", "root mats 0..3",
-      "scissor 399,279,402,242", "child mat", "child mats 0..2",
-      "scissor 719,399,82,42", "inner mat", "inner mats 0..end", "inner notes",
-      "scissor 399,279,402,242", "child chips 1", "child mats 2..end", "child notes",
-      "scissor 0,0,2400,1600", "root chips 2", "root mats 3..6",
-      "root chips 5",   // the slot at opacity 0 drew nothing and touched no scissor (the pass draws no chips over an inside that is not there)
-      "root mats 6..end", "root notes",
+      "scissor 0,0,2400,1600", "root mat", "root minimat 0..3",
+      "scissor 399,279,402,242", "child mat", "child minimat 0..2",
+      "scissor 719,399,82,42", "inner mat", "inner minimat 0..1", "inner paper 0..1",
+      "scissor 399,279,402,242", "child minimat over 1", "child minimat 2..3", "child paper 0..1",
+      "scissor 0,0,2400,1600", "root minimat over 2", "root minimat 3..6",
+      "root minimat over 5",   // the slot at opacity 0 drew nothing and touched no scissor (the pass draws no chips over an inside that is not there)
+      "root minimat 6..8", "root paper 0..1",
     ]);
   });
   it("drawFrame: an enter through a live face is one tree; an exit and a frozen flight are two whole slots; the attachment's scissor is restored last", () => {
     const log: string[] = [];
-    const pass = fakePass(log);
+    const pass = scissorPass(log);
     const face = { cx: 600, cy: 400, hx: 100, hy: 50, r: 0 };
     const size = { w: 2400, h: 1600 };
-    const r1 = drawFrame(pass, size, 2, fakeSlot(log, "in", { opacity: 1, portal: face }), { ...fakeSlot(log, "out"), order: "under", at: 3 });
-    expect(log).toEqual(["scissor 0,0,2400,1600", "out mat", "out mats 0..4", "scissor 999,699,402,202", "in mat", "in mats 0..end", "in notes", "scissor 0,0,2400,1600", "out chips 3", "out mats 4..end", "out notes", "scissor 0,0,2400,1600"]);
+    const r1 = drawFrame(pass, size, 2, deskSlot(log, "in", mats(1, 1), { opacity: 1, portal: face }), { ...deskSlot(log, "out", mats(5, 1)), order: "under", at: 3 });
+    expect(log).toEqual(["scissor 0,0,2400,1600", "out mat", "out minimat 0..4", "scissor 999,699,402,202", "in mat", "in minimat 0..1", "in paper 0..1", "scissor 0,0,2400,1600", "out minimat over 3", "out minimat 4..5", "out paper 0..1", "scissor 0,0,2400,1600"]);
     expect((r1.incoming as unknown as { name: string }).name).toBe("in"); expect((r1.outgoing as unknown as { name: string }).name).toBe("out");
     log.length = 0;
-    drawFrame(pass, size, 2, fakeSlot(log, "in"), { ...fakeSlot(log, "out", { opacity: 1, portal: face }), order: "over" });
-    expect(log).toEqual(["scissor 0,0,2400,1600", "in mat", "in mats 0..end", "in notes", "scissor 999,699,402,202", "out mat", "out mats 0..end", "out notes", "scissor 0,0,2400,1600"]);
+    drawFrame(pass, size, 2, deskSlot(log, "in", mats(1, 1)), { ...deskSlot(log, "out", mats(1, 1), { opacity: 1, portal: face }), order: "over" });
+    expect(log).toEqual(["scissor 0,0,2400,1600", "in mat", "in minimat 0..1", "in paper 0..1", "scissor 999,699,402,202", "out mat", "out minimat 0..1", "out paper 0..1", "scissor 0,0,2400,1600"]);
     log.length = 0;
-    const r3 = drawFrame(pass, size, 2, fakeSlot(log, "in"), { ...fakeSlot(log, "out", { opacity: 0 }), order: "under" });
-    expect(log).toEqual(["scissor 0,0,2400,1600", "in mat", "in mats 0..end", "in notes", "scissor 0,0,2400,1600"]);
+    const r3 = drawFrame(pass, size, 2, deskSlot(log, "in", mats(1, 1)), { ...deskSlot(log, "out", mats(1, 1), { opacity: 0 }), order: "under" });
+    expect(log).toEqual(["scissor 0,0,2400,1600", "in mat", "in minimat 0..1", "in paper 0..1", "scissor 0,0,2400,1600"]);
     expect(r3.outgoing).toBeNull();
   });
   it("prepareFrame builds the chain and hands every nested slot its host's light; each mini mat is told its live inside's presence; on enter the departed desk's face at `at` is the arriving desk", () => {
@@ -205,18 +200,21 @@ describe("the tree, the pool", () => {
     const fakeSet = () => {
       const rec = { mat: [] as MatCall[], minis: [] as MiniCall[] };
       made.push(rec);
+      const minimats = { prepare: (_e: unknown, slot: SlotContext, list: readonly unknown[], extra?: KindExtra) => { rec.minis.push({ present: slot.present, lit: slot.lit, live: [0, 1, 2].map((i) => extra?.live(i) ?? -2) }); return list.length; }, tune() {} } as unknown as KindPass;
       return {
         mat: { prepare: (_e: unknown, view: MatCall["view"], _f: unknown, _c: unknown, _m: unknown, present: unknown, _l: unknown, lit: unknown) => { rec.mat.push({ view, present, lit }); return false; } },
-        minimats: { prepare: (_v: unknown, _f: unknown, _c: unknown, _m: unknown, list: unknown[], present: unknown, _l: unknown, _s: unknown, lit: unknown, live?: (i: number) => number) => { rec.minis.push({ present, lit, live: [0, 1, 2].map((i) => live?.(i) ?? -2) }); return list.length; }, tune() {}, drawn: 0 },
+        kinds: new Map<string, SlotKind>([["minimat", { name: "minimat", stratum: "sheets", pass: minimats }]]),
       };
     };
     const root = fakeSet() as unknown as SlotSet;
     let pending: ReturnType<typeof fakeSet> | null = null;
-    const pool = new SlotPool({ mat: { spawn: () => { pending = fakeSet(); return pending.mat; } }, minimats: { spawn: () => must(pending).minimats } } as unknown as SlotSet);
+    const spawned = { spawn: () => must(must(pending).kinds.get("minimat")).pass } as unknown as KindPass;
+    const pool = new SlotPool({ mat: { spawn: () => { pending = fakeSet(); return pending.mat; } }, kinds: new Map([["minimat", { name: "minimat", stratum: "sheets", pass: spawned }]]) } as unknown as SlotSet);
     const v = { camX: 5, camY: 7, zoom: 1, width: 1200, height: 800, dpr: 2 };
     const face = { cx: 600, cy: 400, hx: 400, hy: 300, r: 0 };          // a mini mat's face: 200..1000 × 100..700
     const inner = { cx: 950, cy: 400, hx: 100, hy: 60, r: 0 };           // a mini mat inside it, poking 50 px past the face's right edge
-    const leaf = { view: v, grid: DEFAULT_GRID, minimats: [] };
+    // every desk here holds three mini mats: object i is mini mat i, which a portal's `at` names
+    const leaf = { view: v, grid: DEFAULT_GRID, objects: [0, 1, 2].map(() => ({ kind: "minimat", record: {} })) };
     const grand = { ...leaf, present: { opacity: 1, portal: inner }, at: 0 };
     const child = { ...leaf, present: { opacity: 1, objects: 0.4, portal: face }, at: 1, portals: [grand] };
     const encoder = {} as GPUCommandEncoder;
@@ -252,7 +250,8 @@ describe("the tree, the pool", () => {
   });
   it("the pool spawns on demand, reuses across frames, and counts what it spawned", () => {
     let spawned = 0;
-    const root = { mat: { spawn: () => { spawned += 1; return {}; } }, papers: { spawn: () => ({}) }, minimats: { spawn: () => ({}) } } as unknown as SlotSet;
+    const kind = (name: string, stratum: SlotKind["stratum"]): SlotKind => ({ name, stratum, pass: { spawn: () => ({}) } as unknown as KindPass });
+    const root = { mat: { spawn: () => { spawned += 1; return {}; } }, kinds: new Map([["paper", kind("paper", "things")], ["minimat", kind("minimat", "sheets")]]) } as unknown as SlotSet;
     const pool = new SlotPool(root);
     pool.reset(); const a = pool.acquire();
     const b = pool.acquire();

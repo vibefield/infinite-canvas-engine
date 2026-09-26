@@ -6,20 +6,24 @@
 // both hosts draw a scene through ONE copy of the scene builder, and `rig:parity` compares pixels,
 // not two builders. (design-015 D1b: the functions below moved here verbatim from render.mjs,
 // where the prototype had them; its lab kept a copy of the same logic for Chrome.)
+//
+// The root slot is built from the KIND REGISTRY (design-015 D2a-render: `deskKinds(text)` — the
+// note, the mini mat and the whiteboard, on the host's shader text), and a desk's objects reach the
+// ground as ONE list in the prototype's paint order: its mini mats (sheets), then its notes
+// (things) — so a mini mat's index among the mini mats is its index in `objects`, which is what a
+// portal's `at` names. No scene holds a whiteboard yet (its oracle scenes are D3's): its pass is
+// compiled and prepared empty in every slot, and draws nothing.
 import { VIEW } from "./scenes.mjs";
 import { beginPass } from "../src/engine/target.ts";
 import { MatPass } from "../src/mat/mat-pass.ts";
 import { matShaders, MAT_SHADER_FILES } from "../src/mat/shaders.ts";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../src/mat/layout.ts";
 import { DEFAULT_GRID } from "../src/mat/grid.ts";
-import { PaperPass } from "../src/paper/paper-pass.ts";
-import { paperShaders, PAPER_SHADER_FILES } from "../src/paper/shaders.ts";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/paper.ts";
-import { MiniMatPass } from "../src/minimat/pass.ts";
-import { miniMatShaders, MINIMAT_SHADER_FILES } from "../src/minimat/shaders.ts";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { flightLights, flightPresent, insidePresent, insideView, miniMatInstance } from "../src/minimat/inside.ts";
-import { drawFrame, prepareFrame, SlotPool } from "../src/ground.ts";
+import { createSlotSet, drawFrame, prepareFrame, SlotPool } from "../src/ground.ts";
+import { deskKinds, MINIMAT_KIND, PAPER_KIND } from "../src/kinds/index.ts";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
 import { MAT_GRID, MINIMAT } from "../src/theme.ts";
@@ -33,9 +37,13 @@ import { pen, THEMES, surface } from "./fixtures/vf-theme.ts";
  */
 export async function createOracleDesk({ device, format, text, assets, log = console.log }) {
   const mat = await MatPass.create(device, format, matShaders(text(MAT_SHADER_FILES)));
-  // The sticky notes (STICKY.md) and the mini mats (MINIMAT.md), on the root's mat.
-  const papers = await PaperPass.create(device, format, paperShaders(text(PAPER_SHADER_FILES)), mat);
-  const minimats = await MiniMatPass.create(device, format, miniMatShaders(text(MINIMAT_SHADER_FILES)), mat);
+  // The root slot from the kind registry: every desk kind's pass on the root's mat — the sticky notes (STICKY.md), the mini mats
+  // (MINIMAT.md) and the whiteboards (BOARD.md, no scene holds one yet) — and the two passes a scene reaches into: the notes'
+  // (the ink pages, the law) and the mini mats'.
+  const rootSlot = await createSlotSet(device, format, mat, deskKinds(text));
+  const passOf = (name) => { const k = rootSlot.kinds.get(name); if (!k) throw new Error(`oracle: the registry has no "${name}" kind`); return k.pass.pass; };
+  const papers = passOf(PAPER_KIND);
+  const minimats = passOf(MINIMAT_KIND);
   // The engine's asset (the blue noise) and the HOST's (the gobo plates, the rulers' glyphs, the note's ink — the product's, a fixture here) — raw bytes either way.
   mat.setPlate("c", assets.goboC); mat.setPlate("b", assets.goboB); mat.setNoise(assets.noise);
   const glyphMeta = assets.glyphMeta;
@@ -47,7 +55,6 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const lamp = lampOf(MAT_GRID.plane);
 
   // The slots beyond the root — the departed desk's, the live insides — from the same pool the ground keeps.
-  const rootSlot = { mat, papers, minimats };
   const pool = new SlotPool(rootSlot);
   const VP = { width: VIEW.cssW, height: VIEW.cssH };
   const viewOf = (cam) => ({ camX: cam.x, camY: cam.y, zoom: cam.zoom, width: VIEW.cssW, height: VIEW.cssH, dpr: VIEW.dpr });
@@ -101,34 +108,38 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   }
 
   /**
-   * A desk's inputs under `cam` (the lab's `deskInputs`): its notes, its mini mats — each with its inside's embedding, the lattice
-   * its face shows and its children as chips — and the live insides of the mini mats whose faces pass the gate, largest first up
-   * to the cap, recursing through them (a belt of 4). `skip` = a mini mat whose inside is the flight's arriving desk.
+   * A desk's inputs under `cam` (the lab's `deskInputs`): its objects — its mini mats, each with its inside's embedding, the lattice
+   * its face shows and its children as chips, then its notes: the prototype's paint order, so mini mat `i` is object `i` — and the
+   * live insides of the mini mats whose faces pass the gate, largest first up to the cap, recursing through them (a belt of 4).
+   * `skip` = a mini mat whose inside is the flight's arriving desk.
    */
   function deskInputs(desk, cam, s, depth = 0, skip = -1) {
     const gate = s.portalGate ?? PORTAL_GATE;
-    const out = { papers: notesOf(desk.notes), minimats: [], portals: [] };
+    const notes = notesOf(desk.notes);   // first, as ever: the ink pages are carved in the order the notes come
+    const minis = [];
+    const portals = [];
     const cands = [];
     (desk.minimats ?? []).forEach((m, i) => {
       const G = matGeometry(m);
       const inside = insideOf(m);
       const view = insideView(G, contentOf(inside), cam, VP, FIT, gate);
       const grid = gridFor(s, false, m.ground);
-      out.minimats.push(miniMatInstance(G, view, grid, childrenOf(inside).map((c) => chipOf(c, view.M)), m.name, s.dress !== false));
+      minis.push(miniMatInstance(G, view, grid, childrenOf(inside).map((c) => chipOf(c, view.M)), m.name, s.dress !== false));
       if (s.portals !== false && depth < 4 && i !== skip && view.presence > 0) cands.push({ i, view, inside, grid });
     });
     cands.sort((a, b) => b.view.clip.hx * b.view.clip.hy - a.view.clip.hx * a.view.clip.hy);
     for (const { i, view, inside, grid } of cands.slice(0, PORTAL_CAP)) {
       const sub = deskInputs(inside, view.cam, s, depth + 1);
-      out.portals.push({
+      portals.push({
         view: { ...viewOf(view.cam), box: view.box }, mat: matOf(s),
         ...(s.dress === false ? {} : { lodZoom: view.arrival.zoom }),   // dressed for its arrival (PORTAL.md §9)
         present: insidePresent(view), grid,
-        papers: sub.papers, minimats: sub.minimats, ...(sub.portals.length ? { portals: sub.portals } : {}),
-        at: i,
+        objects: sub.objects, ...(sub.portals.length ? { portals: sub.portals } : {}),
+        at: i,   // mini mat i is object i: the mini mats come first
       });
     }
-    return out;
+    const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...notes.map((record) => ({ kind: PAPER_KIND, record }))];
+    return { objects, portals };
   }
 
   /** The flight a nav scene pins — the lab's setScene computes the same. */
@@ -182,18 +193,18 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       inputs = {
         view: viewOf(nav.cam), mat: m, theme, present: nav.pres.incoming, ...(nav.lights.incoming ? { light: nav.lights.incoming } : {}),
         ...(s.dress === false ? {} : { lodZoom: nav.f.c1.zoom }),   // the arriving desk is dressed for its landing, the departed for the cut (PORTAL.md §9)
-        grid: nav.enter ? gridFor(s, false) : rootGrid, papers: a.papers, minimats: a.minimats, ...(a.portals.length ? { portals: a.portals } : {}),
+        grid: nav.enter ? gridFor(s, false) : rootGrid, objects: a.objects, ...(a.portals.length ? { portals: a.portals } : {}),
         outgoing: {
           view: viewOf(nav.outCam), mat: m, present: nav.pres.outgoing, ...(nav.lights.outgoing ? { light: nav.lights.outgoing } : {}),
           ...(s.dress === false ? {} : { lodZoom: nav.f.camPre.zoom }),
-          grid: nav.enter ? rootGrid : gridFor(s, false), papers: d.papers, minimats: d.minimats, ...(d.portals.length ? { portals: d.portals } : {}),
+          grid: nav.enter ? rootGrid : gridFor(s, false), objects: d.objects, ...(d.portals.length ? { portals: d.portals } : {}),
           order: nav.enter ? "under" : "over", ...(nav.at !== undefined ? { at: nav.at } : {}),
         },
       };
     } else {
       const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
       const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [] }, cam, s, 0);
-      inputs = { view: viewOf(cam), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, papers: r.papers, minimats: r.minimats, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
+      inputs = { view: viewOf(cam), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
     const prepared = prepareFrame(encoder, rootSlot, pool, inputs, rootGrid);
