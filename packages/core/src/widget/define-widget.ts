@@ -255,6 +255,13 @@ export interface WidgetDef {
    */
   readonly stratum?: DeskStratum;
   /**
+   * An `object` that OPENS (design-015 §8, D4b): its kind declares an `open` binding — an open
+   * extent, an open motion, the held bar's tools — and `ops.open(entity)` picks it up into the
+   * hand (the double-tap, ⏎). A kind without one is refused by the op: a note is written where it
+   * lies, a mini mat is entered, a print has nothing to open. Refused on every other surface.
+   */
+  readonly openable?: boolean;
+  /**
    * GL only: a DOM chrome component portaled into the widget's CONTENT-plane
    * host (P1), which stacks UNDER the GL canvas (P2) — v1's proven
    * CardChrome-beneath-the-canvas sandwich. The island renders ONLY the 3D
@@ -372,6 +379,8 @@ export interface WidgetType {
    * any other widget that declared none.
    */
   readonly stratum: DeskStratum | undefined;
+  /** An object whose kind opens — `ops.open` picks it up (design-015 §8); false on every other widget. */
+  readonly openable: boolean;
   /** GL widgets: DOM chrome under the canvas (see WidgetDef.chrome). */
   readonly chrome: unknown;
   readonly sizeMode: SizeMode;
@@ -690,6 +699,10 @@ export function defineWidget(def: WidgetDef): WidgetType {
     throw new Error(
       `ice: defineWidget("${def.type}") is a ${def.surface} surface and carries an object binding — only surface: "object" is drawn by a kind's program (design-015 §5.2). Use surface: "object", or drop the binding.`,
     );
+  } else if (def.openable === true) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") is a ${def.surface} surface and declares openable — only an object is picked up into the hand (design-015 §8). Use surface: "object" with a kind that opens, or drop it.`,
+    );
   }
   if (def.stratum !== undefined && !Object.hasOwn(STRATUM_BANDS, def.stratum)) {
     throw new Error(
@@ -813,6 +826,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     component: def.component,
     object: isObject ? def.object : undefined,
     stratum: def.stratum ?? (isObject ? "things" : undefined),
+    openable: isObject && def.openable === true,
     chrome: def.chrome,
     sizeMode: def.sizeMode ?? "fixed",
     defaultSize,

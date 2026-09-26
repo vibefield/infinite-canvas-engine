@@ -18,6 +18,7 @@
 import type { Entity, System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, field } from "@vibecook/strata-ecs";
 import { CanvasSurface } from "../catalog/camera-derived";
+import { HeldIntent } from "../catalog/desk";
 import { Captures, Down, DownPart, GesturePhases as P, Tap } from "../catalog/gesture";
 import { Container } from "../catalog/graph";
 import { GestureSettings } from "../catalog/settings-resources";
@@ -46,10 +47,16 @@ const tapRecognizedQ = defineQuery([Tap, P.justTags.Recognized]);
 export interface NavTapOpts {
   /** Is this entity a container the engine may enter (the facade's catalog-backed test)? Default: the `Container` tag. */
   readonly isContainer?: (entity: Entity) => boolean;
+  /**
+   * Is this entity an object that OPENS (design-015 §8, D4b — the facade's catalog-backed test: its widget type
+   * declares `openable`)? A double-tap on one asks to pick it up (`HeldIntent`), not to enter it. Default: nothing opens.
+   */
+  readonly isOpenable?: (entity: Entity) => boolean;
 }
 
 export function createNavTap(world: World, opts: NavTapOpts = {}): System {
   const isContainer = opts.isContainer ?? ((e: Entity): boolean => world.hasTag(e, Container));
+  const isOpenable = opts.isOpenable ?? ((): boolean => false);
   return defineSystem(
     tapRecognizedQ,
     (b, ctx) => {
@@ -83,7 +90,14 @@ export function createNavTap(world: World, opts: NavTapOpts = {}): System {
         const prev = world.getResource(NavIntent);
         const epoch = (prev?.epoch ?? 0) + 1;
         if (!bare) {
-          if (!ctx.isAlive(target) || !isContainer(target)) continue;
+          if (!ctx.isAlive(target)) continue;
+          // an OPENABLE object is picked up (design-015 §8): its kind declared an opening, the more specific word
+          if (isOpenable(target)) {
+            const held = world.getResource(HeldIntent);
+            world.setResource(HeldIntent, { kind: "open", target, epoch: (held?.epoch ?? 0) + 1 });
+            continue;
+          }
+          if (!isContainer(target)) continue;
           world.setResource(NavIntent, { kind: "enter", target, transition: "zoom", source: "tap", epoch });
         } else if (currentNavEntry(world) !== undefined) {
           world.setResource(NavIntent, { kind: "exit", target: 0 as Entity, transition: "zoom", source: "tap", epoch });

@@ -1,0 +1,209 @@
+/**
+ * HELD INPUT (design-015 §8; D4b) — while an object is in the hand, every pointer is the held
+ * object's and the desk behind it is inert. The HEAD of the `react` phase: the ingest's one-tick
+ * tags are flushed by then (a press is visible), and what this stamps flushes before `ctl`.
+ *
+ * The desk goes inert with the vocabulary the stack already honours: every local pointer gets the
+ * one-tick `HandledByWidget` (picking and the recognizers skip it — no hit, no tap, no drag, no
+ * selection change) and `WheelHandled` (both wheel consumers skip it — the camera never moves), the
+ * cleanup phase clears them, this system stamps them again next tick. So "no camera move" is not a
+ * rule the camera keeps; it is a fact the camera never hears about.
+ *
+ * What the pointer does instead is mapped through the SAME pose the renderer drew — the seam
+ * `HeldPoseSlot` beside `framePick`: the renderer publishes the held object's screen frame each
+ * frame (`HeldPoseSource.frame`), and a pointer's point becomes `HeldPointer` — the object's own
+ * units, centred — and an inside/outside verdict. The routes (desk.js `heldDown`/`heldMove`/
+ * `heldUp`/`heldZoomAt`/`heldPanBy`, number for number):
+ *  - a ⌘/ctrl-wheel or a pinch brings the object closer ABOUT THE POINTER (`HeldView.zoom`, up to 3×,
+ *    the pan following so the point under the pointer stays), never the mat; in past 0.72× it is put
+ *    down — and the rest of that gesture is MUTED (`HeldMute`: 400 ms, +250 per swallowed event), so
+ *    the wheel's tail never zooms the desk (the v2 lesson);
+ *  - once brought close (zoom > 1) a plain wheel moves the object under the eye, clamped so it never
+ *    leaves the middle of the view; a middle-button or Space drag pans the same way, as does a drag
+ *    that starts on the soft desk;
+ *  - a click on the soft desk — pressed and released outside the object, unmoved — puts it down; two
+ *    instant taps on the object do too (the notebook's case rule, generalised: its parts are D3t's).
+ * The ways back are OPS (`ops.putDown`, structural) and a system may not run them mid-tick: it writes
+ * the one-tick `HeldIntent` and the facade applies it after the step (D2b's `NavIntent`, same shape).
+ * Nothing here reads a kind: the seam gives a frame, the kind's parts arrive with D3t.
+ */
+import type { Entity, System, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
+import { Held, HeldIntent, HeldMute, HeldPointer, HeldPress, HeldTapMemo, HeldView } from "../catalog/desk";
+import {
+  HandledByWidget,
+  Keyboard,
+  LocalPointer,
+  Pointer,
+  PointerButtons,
+  PointerMods,
+  PointerScreen,
+  PointerWheel,
+  WentCancelled,
+  WentDown,
+  WentUp,
+  WheelHandled,
+} from "../catalog/pointer";
+import { GestureSettings } from "../catalog/settings-resources";
+import { FrameInfo } from "../engine/frame-info";
+import { GESTURE_DEFAULTS } from "../settings/defaults";
+
+/** The held object's frame ON SCREEN as the renderer drew it this frame (CSS px): its centre, half extents, its scale (CSS px per object unit), and whether the pickup has settled (the wheel waits for it). */
+export interface HeldScreenFrame {
+  readonly cx: number;
+  readonly cy: number;
+  readonly hx: number;
+  readonly hy: number;
+  readonly s: number;
+  readonly settled: boolean;
+}
+
+/** The pose seam: the renderer's word on where the held object is — `undefined` before its first frame. */
+export interface HeldPoseSource {
+  frame(entity: Entity): HeldScreenFrame | undefined;
+}
+
+/** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `framePick`). */
+export interface HeldPoseSlot { current: HeldPoseSource | null }
+
+/** The hand's numbers (desk.js `HOLD` and its wheel handler): the zoom's floor (put down below it) and ceiling, the wheel's rate, the mute, the press slop. */
+export const HOLD_INPUT = { zoomMin: 0.72, zoomMax: 3, wheelRate: 0.0105, muteMs: 400, muteMoreMs: 250, slopPx: 3 } as const;
+
+const heldQ = defineQuery([Held]);
+const localPointerQ = defineQuery([Pointer, PointerScreen, LocalPointer]);
+
+const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, a), Math.max(a, b));
+
+/** The held object, or undefined. */
+export function heldEntity(world: World): Entity | undefined {
+  return world.firstOf(heldQ);
+}
+
+export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlot }): System {
+  const request = (kind: "open" | "putDown", target: Entity): void => {
+    const prev = world.getResource(HeldIntent);
+    world.setResource(HeldIntent, { kind, target, epoch: (prev?.epoch ?? 0) + 1 });
+  };
+  return defineSystem(
+    localPointerQ,
+    (b, ctx) => {
+      const now = world.getResource(FrameInfo)?.now ?? 0;
+      const held = world.firstOf(heldQ);
+      if (held === undefined || !ctx.isAlive(held)) {
+        // nothing in hand: the mute swallows the tail of the gesture that put the object down, and a pointer's held facts leave
+        const mute = world.getResource(HeldMute);
+        let muted = mute !== undefined && now < mute.until;
+        for (const r of b) {
+          const p = b.entity(r);
+          if (ctx.has(p, HeldPointer)) ctx.removeComponent(p, HeldPointer);
+          if (ctx.has(p, HeldPress)) ctx.removeComponent(p, HeldPress);
+          if (!muted) continue;
+          const w = ctx.get(p, PointerWheel);
+          if (w === undefined || (w.dx === 0 && w.dy === 0 && w.pinch === 0) || ctx.hasTag(p, WheelHandled)) continue;
+          ctx.addTag(p, WheelHandled);
+          // each swallowed event pushes the mute further — never nearer (the page's own `now + 250` could shorten its 400)
+          world.setResource(HeldMute, { until: Math.max(mute?.until ?? 0, now + HOLD_INPUT.muteMoreMs) });
+          muted = true;
+        }
+        return;
+      }
+      const view = world.get(held, HeldView) ?? { zoom: 1, panX: 0, panY: 0 };
+      const frame = opts.pose.current?.frame(held);
+      const gs = world.getResource(GestureSettings);
+      const windowMs = gs?.multiTapWindowMs ?? GESTURE_DEFAULTS.multiTapWindowMs;
+      const slopPx = gs?.multiTapSlopPx ?? GESTURE_DEFAULTS.multiTapSlopPx;
+      const space = world.getResource(Keyboard)?.space === true;
+      /** The pan clamp at a zoom: half the held extent on screen there (desk.js `heldPanBy`). */
+      const clampPan = (x: number, y: number, zoom: number): readonly [number, number] => {
+        if (frame === undefined) return [x, y];
+        const hx = (frame.hx / Math.max(view.zoom, 1e-9)) * zoom;
+        const hy = (frame.hy / Math.max(view.zoom, 1e-9)) * zoom;
+        return [clamp(x, -hx, hx), clamp(y, -hy, hy)];
+      };
+      let next = { zoom: view.zoom, panX: view.panX, panY: view.panY };
+      let putDown = false;
+      for (const r of b) {
+        const p = b.entity(r);
+        // the desk is inert: picking, the recognizers and both wheel consumers skip this pointer this tick
+        if (!ctx.hasTag(p, HandledByWidget)) ctx.addTag(p, HandledByWidget);
+        if (!ctx.hasTag(p, WheelHandled)) ctx.addTag(p, WheelHandled);
+        const s = ctx.read(p, PointerScreen);
+        // the pointer in the object's own frame, through the pose the renderer drew — change-only
+        let inside = false;
+        if (frame !== undefined) {
+          const lx = (s.x - frame.cx) / Math.max(frame.s, 1e-9);
+          const ly = (s.y - frame.cy) / Math.max(frame.s, 1e-9);
+          inside = Math.abs(s.x - frame.cx) <= frame.hx && Math.abs(s.y - frame.cy) <= frame.hy;
+          const cur = ctx.get(p, HeldPointer);
+          if (cur === undefined) ctx.addComponent(p, HeldPointer, { x: lx, y: ly, inside });
+          else if (cur.x !== lx || cur.y !== ly || cur.inside !== inside) ctx.edit(p).set(HeldPointer, { x: lx, y: ly, inside });
+        }
+        // the wheel: ⌘/ctrl or a pinch brings it closer about the pointer; a plain wheel moves it once brought close (settled only)
+        const w = ctx.get(p, PointerWheel);
+        if (!putDown && frame !== undefined && frame.settled && w !== undefined && (w.dx !== 0 || w.dy !== 0 || w.pinch !== 0)) {
+          const mods = ctx.get(p, PointerMods);
+          const zooming = w.pinch !== 0 || mods?.meta === true || mods?.ctrl === true;
+          if (zooming) {
+            const d = w.pinch !== 0 ? w.pinch : w.dy;
+            const z = next.zoom * Math.exp(-d * HOLD_INPUT.wheelRate);
+            if (z < HOLD_INPUT.zoomMin) {
+              // in past the floor: down it goes, and the rest of this gesture is nobody's
+              putDown = true;
+              world.setResource(HeldMute, { until: now + HOLD_INPUT.muteMs });
+            } else {
+              const zoom = Math.min(z, HOLD_INPUT.zoomMax);
+              const ratio = zoom / next.zoom;
+              // the point under the pointer stays: C' = p + (C − p)·r, so pan' = pan + (p − C)(1 − r); at the reading size and under, centred
+              const cx = frame.cx + (next.panX - view.panX);
+              const cy = frame.cy + (next.panY - view.panY);
+              const [px, py] = zoom <= 1 ? [0, 0] : clampPan(next.panX + (s.x - cx) * (1 - ratio), next.panY + (s.y - cy) * (1 - ratio), zoom);
+              next = { zoom, panX: px, panY: py };
+            }
+          } else if (next.zoom > 1.001) {
+            const [px, py] = clampPan(next.panX - w.dx, next.panY - w.dy, next.zoom);
+            next = { ...next, panX: px, panY: py };
+          }
+        }
+        // the press: where it began decides what it is; its release, unmoved, is a way back
+        if (ctx.hasTag(p, WentDown)) {
+          const buttons = ctx.get(p, PointerButtons)?.buttons ?? 0;
+          const pan = ((buttons & 4) !== 0 || space) && next.zoom > 1.001;
+          const kind = pan ? "pan" : inside ? "object" : "desk";
+          const press = { kind, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false } as const;
+          if (ctx.has(p, HeldPress)) ctx.edit(p).set(HeldPress, press);
+          else ctx.addComponent(p, HeldPress, press);
+        } else if (ctx.has(p, HeldPress)) {
+          const pr = ctx.read(p, HeldPress);
+          const dx = s.x - pr.x;
+          const dy = s.y - pr.y;
+          const moved = pr.moved || Math.hypot(dx, dy) > HOLD_INPUT.slopPx;
+          if (pr.kind === "pan" || (pr.kind === "desk" && next.zoom > 1.001)) {
+            // brought close: the drag moves the object under the eye
+            const [px, py] = clampPan(pr.panX0 + dx, pr.panY0 + dy, next.zoom);
+            next = { ...next, panX: px, panY: py };
+          }
+          const up = ctx.hasTag(p, WentUp);
+          if (up || ctx.hasTag(p, WentCancelled)) {
+            if (up && !moved && !putDown) {
+              if (pr.kind === "desk") putDown = true;   // a click on the soft desk puts it down (the whiteboard's rule, now every held object's)
+              else if (pr.kind === "object") {
+                // two instant taps on the object: the notebook's case, generalised (its parts are D3t's)
+                const memo = world.getResource(HeldTapMemo);
+                const pairs = memo !== undefined && memo.seq > 0 && now - memo.at <= windowMs && Math.hypot(s.x - memo.x, s.y - memo.y) <= slopPx;
+                if (pairs) { putDown = true; world.setResource(HeldTapMemo, { x: 0, y: 0, at: 0, seq: 0 }); }
+                else world.setResource(HeldTapMemo, { x: s.x, y: s.y, at: now, seq: (memo?.seq ?? 0) + 1 });
+              }
+            }
+            ctx.removeComponent(p, HeldPress);
+          } else if (moved !== pr.moved) ctx.edit(p).set(HeldPress, { ...pr, moved });
+        }
+      }
+      if (putDown) { request("putDown", held); return; }
+      if (next.zoom !== view.zoom || next.panX !== view.panX || next.panY !== view.panY) {
+        if (ctx.has(held, HeldView)) ctx.edit(held).set(HeldView, next);
+        else ctx.addComponent(held, HeldView, next);
+      }
+    },
+    { name: "heldInput", access: { write: [HeldView, HeldPointer, HeldPress] } },
+  );
+}

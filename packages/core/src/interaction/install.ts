@@ -40,6 +40,7 @@ import { createSelectionChromeSystem } from "../systems/chrome";
 import { createDrawBehavior } from "../systems/l3-draw";
 import { createInsertGhostReap } from "../systems/insert-ghost";
 import { createCursorSync } from "../systems/l4-cursor";
+import { createHeldInput, type HeldPoseSlot } from "../systems/held";
 import { createNavTap } from "../systems/nav-tap";
 import { createZoomThrough } from "../systems/zoom-through";
 import type { NavGeometrySlot } from "../nav/nav-geometry";
@@ -61,6 +62,8 @@ export interface InteractionCoreOpts {
   readonly placement?: DropPlacementPolicy;
   /** Is this entity a container the engine may ENTER (the facade's catalog-backed test; design-015 §9's gesture and zoom-through)? Default: the `Container` tag. */
   readonly isContainer?: (entity: Entity) => boolean;
+  /** Is this entity an object that OPENS (design-015 §8's double-tap; the facade's catalog-backed test — its type declares `openable`)? Default: nothing opens. */
+  readonly isOpenable?: (entity: Entity) => boolean;
 }
 
 export interface InteractionCore {
@@ -132,6 +135,12 @@ export interface InteractionStack extends InteractionCore {
    * zoom-through and the drop-into read it when set; the renderer sets it at mount, clears it at dispose.
    */
   readonly navGeometry: NavGeometrySlot;
+  /**
+   * The held pose seam (design-015 §8; D4b) beside the two above: the renderer's word on where the object in
+   * hand is ON SCREEN this frame, through which every pointer is mapped while something is held; the renderer
+   * sets it at mount, clears it at dispose.
+   */
+  readonly heldPose: HeldPoseSlot;
   /** Nav-op seam (design-004 §7): forget spatialSync's last-known AABBs. */
   clearCaches(): void;
   /** L4 cursor readout for the DOM cursor reflector. */
@@ -162,7 +171,9 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   const pick = createPickingSystems(world, index, wires, framePick);
   // The nav geometry seam (design-015 §9; D2b): the renderer fills it at mount.
   const navGeometry: NavGeometrySlot = { current: null };
-  const navOpts = { navGeometry, ...(opts.isContainer !== undefined ? { isContainer: opts.isContainer } : {}) };
+  const navOpts = { navGeometry, ...(opts.isContainer !== undefined ? { isContainer: opts.isContainer } : {}), ...(opts.isOpenable !== undefined ? { isOpenable: opts.isOpenable } : {}) };
+  // The held pose seam (design-015 §8; D4b): the renderer fills it at mount; the held input maps every pointer through it.
+  const heldPose: HeldPoseSlot = { current: null };
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
   const arb = createArbitrationSystems(world);
   const claims = createClaimSystems(world);
@@ -179,9 +190,12 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
 
   const removers = [
     engine.addSystems("input", l0.pointerLifecycle, l0.pointerIngest, l0.pointerWorldSync),
+    // heldInput at the HEAD of react (design-015 §8, D4b): the ingest's one-tick tags (WentDown/WentUp) are flushed at the
+    // phase boundary, so here it sees the press; its own `HandledByWidget`/`WheelHandled` flush before ctl — the recognizers
+    // and both wheel consumers never see a pointer while an object is in hand. Picking still runs (the hover relations), harmless.
     // wireSync AFTER spatialSync (both SpatialVersion writers), BEFORE picking —
     // which now narrow-phases wire entries against wireSync's cached cubics.
-    engine.addSystems("react", pick.spatialSync, wireSync, pick.picking),
+    engine.addSystems("react", createHeldInput(world, { pose: heldPose }), pick.spatialSync, wireSync, pick.picking),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
     engine.addSystems(
       "ctl:recognize",
@@ -238,6 +252,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     wirePreview: connect.previewBuffer,
     framePick,
     navGeometry,
+    heldPose,
     clearCaches: () => pick.clearCaches(),
     readCursor: cursor.readCursor,
     uninstall() {

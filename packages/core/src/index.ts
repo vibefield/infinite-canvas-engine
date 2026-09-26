@@ -501,6 +501,8 @@ export {
   staticFace,
 } from "./nav/nav-geometry";
 export { createNavTap, NavTapMemo, type NavTapOpts } from "./systems/nav-tap";
+// design-015 §8 (D4b): the held input — the pose seam (`stack.heldPose`), the hand's numbers, the held object.
+export { createHeldInput, heldEntity, HOLD_INPUT, type HeldPoseSlot, type HeldPoseSource, type HeldScreenFrame } from "./systems/held";
 export { createZoomThrough, type ZoomThroughOpts } from "./systems/zoom-through";
 // design-006 T1: the flight resource (T2's reflector consumes it) + system factory.
 export {

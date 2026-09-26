@@ -119,6 +119,8 @@ import { installInteractionStack, type InteractionStack } from "../interaction/i
 import { createNestedCanvas, currentNavFrame, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
 import { NavIntent } from "../nav/nav-geometry";
 import { cancelActiveGestures } from "../ops/gestures";
+import { Held, HeldIntent, HeldView } from "../catalog/desk";
+import { heldEntity } from "../systems/held";
 import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
 import { cascadeDestroy } from "../ops/cascade";
@@ -323,6 +325,18 @@ export interface CanvasOps {
   /** Pop several levels in ONE transition (breadcrumb jumps; design-006 §5). */
   exitTo(targetDepth: number, opts?: NavOpts): void;
   cancelActiveGestures(): void;
+  /**
+   * Pick an object up into the hand (design-015 §8, D4b): the ONE writer of the runtime `Held`
+   * tag (with a fresh `HeldView`) — no camera moves, the renderer lifts the object to its reading
+   * size and the desk behind goes out of focus. The object is selected as it is picked up (it
+   * stays selected when put down, so ⏎ opens it again) and any live gesture is cancelled. Refused
+   * — an Error, like `enterContainer` on a non-container — for an entity that is not a live object
+   * of the current frame whose type declares `openable` (its kind has an `open` binding), and while
+   * another object is held (put that one down first). Never a document write.
+   */
+  open(entity: Entity): void;
+  /** Put the held object down (design-015 §8): `Held` and `HeldView` leave; the renderer flies it home. Nothing held: no-op. */
+  putDown(): void;
 }
 
 export interface CanvasDocs {
@@ -561,6 +575,23 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     canvasWritable: (canvasTypeId) => frameBehaviorHost.isCanvasWritable(canvasTypeId),
   });
   const sink = createForwardingSink(world, () => canvasSession.current());
+  /** An object that OPENS (design-015 §8): a live, Active widget of the frame whose type declares `openable`. */
+  const isOpenable = (entity: Entity): boolean => {
+    if (!world.isAlive(entity) || !world.hasTag(entity, Active)) return false;
+    const typeId = world.get(entity, PrefabId)?.id;
+    return typeof typeId === "string" && catalog.widget(typeId)?.openable === true;
+  };
+  /** The object in hand, or undefined. */
+  const heldNow = (): Entity | undefined => heldEntity(world);
+  /** THE PUT-DOWN (design-015 §8): the fact and the user's view leave together; the renderer's flux flies the object home. */
+  const putDown = (): void => {
+    const held = heldNow();
+    if (held === undefined) return;
+    if (world.isAlive(held)) {
+      if (world.has(held, HeldView)) world.removeComponent(held, HeldView);
+      world.removeTag(held, Held);
+    }
+  };
   const stack = installInteractionStack(engine, {
     sink,
     placement: {
@@ -573,6 +604,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       const typeId = world.get(entity, PrefabId)?.id;
       return typeof typeId === "string" && catalog.widget(typeId)?.container !== undefined;
     },
+    // the double-tap's "may this be picked up" (design-015 §8): its type declares an opening
+    isOpenable: (entity) => isOpenable(entity),
   });
   const budgets = {
     keepMounted: opts.budgets?.keepMounted ?? RUNTIME_BUDGETS.keepMountedWidgets,
@@ -633,6 +666,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     beforeSwitch: () => {
       runtimeExtensionHost.invalidate();
       cancelActiveGestures(world);
+      putDown();   // the hand lets go at a nav cut (design-015 §8, §9): the chrome belongs to the desk you are on
       stack.queue.drain();
       const ghosts: Entity[] = [];
       world.query(insertGhostQ).each((batch) => {
@@ -746,6 +780,23 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   };
   // on the ENGINE's own after-step hook, not a wrapper round `step`: a host loop (dom/loop.ts) may drive the raw engine
   const removeNavIntent = engine.afterStep(applyNavIntent);
+
+  /**
+   * The hand's request a system made INSIDE the tick (design-015 §8, D4b — the double-tap on an openable
+   * object, the gesture ways back; `HeldIntent`), applied once the tick is over exactly as the nav's is:
+   * `open` when the target still qualifies and nothing else is held, `putDown` whatever is held.
+   */
+  let appliedHeld = 0;
+  const applyHeldIntent = (): void => {
+    const intent = world.getResource(HeldIntent);
+    if (intent === undefined || intent.epoch === appliedHeld) return;
+    appliedHeld = intent.epoch;
+    if (intent.kind === "open") {
+      if (heldNow() !== undefined || !isOpenable(intent.target)) return;
+      ops.open(intent.target);
+    } else putDown();
+  };
+  const removeHeldIntent = engine.afterStep(applyHeldIntent);
 
   // Settings resources (design-005 §4): construction seeds; live-tunable after.
   //
@@ -1714,6 +1765,21 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     exitContainer: (opts) => nav.exitContainer(opts),
     exitTo: (d, opts) => nav.exitTo(d, opts),
     cancelActiveGestures: () => cancelActiveGestures(world),
+    open(entity) {
+      // THE OPEN (design-015 §8): the one writer of `Held`. Runtime riders only — a free write from an op, as the
+      // selection is; the document never learns what is in whose hand.
+      if (!isOpenable(entity)) throw new Error("ice: open — the target is not a live object of this frame whose kind opens (its type declares no `openable`).");
+      const held = heldNow();
+      if (held !== undefined) {
+        if (held === entity) return;
+        throw new Error("ice: open — another object is in hand; put it down first (at most one object is held).");
+      }
+      cancelActiveGestures(world);
+      setSelection(world, [entity], "replace");
+      world.addComponent(entity, HeldView, { zoom: 1, panX: 0, panY: 0 });
+      world.addTag(entity, Held);
+    },
+    putDown,
   };
 
   // --- stage holds (StageMode mirror; tokens live HERE, out-of-ECS) ---------
@@ -1785,6 +1851,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     step: (now) => engine.step(now),
     dispose() {
       removeNavIntent();
+      removeHeldIntent();
       previews.dispose();
       closeDoc();
       transitions.dispose();
