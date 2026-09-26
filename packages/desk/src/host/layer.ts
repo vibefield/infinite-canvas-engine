@@ -397,7 +397,12 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           wake: () => compose.wake("ink"),
         })
       : undefined;
-    const calHand = calWriting !== undefined ? createCalendarHand({ world, docs: opts.docs ?? { current: () => undefined }, pads: padsLocal, writing: calWriting, caret: () => calInput?.caret() ?? null }) : undefined;
+    const calHand = calWriting !== undefined
+      ? createCalendarHand({
+          world, docs: opts.docs ?? { current: () => undefined }, pads: padsLocal, writing: calWriting, caret: () => calInput?.caret() ?? null,
+          geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), isPad: (e) => builder.kindOf(e)?.name === CALENDAR_KIND,
+        })
+      : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
     const inner = compose.reflector;

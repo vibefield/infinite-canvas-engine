@@ -3,10 +3,10 @@
 // the print as the last frame laid it (where each line landed), the tiles' counters, today pinned for a still, a live sheet
 // read back as a fixture holds it. Reads the world and the calendar kind's own state; writes only the transactions an op would.
 
-import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
+import { type CanvasEngine, defineQuery, type Entity, guardedTransaction, LocalPointer, Pointer, PointerPart, TouchesExact } from "@ice/core";
 import type { CalendarGeometry, DeskLayerHandle, Pads } from "@ice/desk";
 import { sheetDayBox, sheetOnScreen } from "@ice/desk";
-import { addEvent, dayOr, keyOfDay, monthOfKey, PadSelection } from "@ice/desk/objects";
+import { addEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection } from "@ice/desk/objects";
 
 export interface CalendarApi {
   /** Write an entry on pad `pad` — ONE undoable transaction; its entity id. */
@@ -33,10 +33,15 @@ export interface CalendarApi {
   dayBox(pad: number, day: string): { readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null;
   /** What a client point lands on — the pad and its part (day, entry, foot, …) — as a click reads it. */
   partAt(x: number, y: number): { readonly pad: number; readonly part: string; readonly day: string | null; readonly entry: number | null } | null;
+  /** A pad's turning (the kind's local): the month laid bare (YYYY-MM), the turn in flight, the corner's lift, a hand's roll pending. */
+  roll(pad: number): { readonly shown: string | null; readonly turn: { readonly dir: 1 | -1; readonly p: number; readonly target: 0 | 1; readonly held: boolean; readonly hand: boolean } | null; readonly peek: number; readonly pending: string | null } | null;
+  /** The mouse pointer as the interaction stack sees it: what it touches exactly and the part there (a pad's foot, its corner). */
+  hover(): { readonly touches: number; readonly part: string } | null;
   /** The editor's state: lent to the calendar, focused, its value. */
   editor(): { readonly lent: boolean; readonly focused: boolean; readonly value: string; readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null };
 }
 
+const mouseQ = defineQuery([Pointer, LocalPointer]);
 const b64 = (bytes: Uint8Array): string => { let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(bin); };
 
 export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): CalendarApi {
@@ -82,6 +87,22 @@ export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): Cale
       const r = handle.calendar()?.input.partAtClient(x, y) ?? null;
       if (r === null) return null;
       return { pad: r.pad as number, part: r.part.part, day: r.part.day !== undefined ? keyOfDay(r.part.day) : null, entry: r.part.line?.event.id ?? null };
+    },
+    roll(pad) {
+      const r = pads()?.rollOf(pad as Entity);
+      if (r === undefined) return null;
+      return { shown: r.shown === null ? null : monthKeyOf(r.shown), turn: r.turn === null ? null : { ...r.turn }, peek: r.peek, pending: r.pending === null ? null : monthKeyOf(r.pending) };
+    },
+    hover() {
+      let out: { touches: number; part: string } | null = null;
+      world.query(mouseQ).each((b) => {
+        for (const r of b) {
+          const p = b.entity(r);
+          if (world.read(p, Pointer).device !== "mouse") continue;
+          out = { touches: (world.getRelation(p, TouchesExact) ?? 0) as number, part: world.get(p, PointerPart)?.part ?? "" };
+        }
+      });
+      return out;
     },
     editor() {
       const ed = handle.editor();

@@ -31,6 +31,7 @@ import { type CalendarDraw, CalendarPass, type SheetBox, type SheetDraw } from "
 import { anyIn, type EventLine, onSheet, type PrintLook, printSheet, type SheetPrint } from "../calendar/print";
 import { type PinnedSheet, PrintTiles } from "../calendar/printing";
 import { rollAt, rollState, type RollState, tangentAt } from "../calendar/roll";
+import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn, stepRoll } from "../calendar/turn";
 import { CALENDAR_SHADER_FILES, calendarShaders } from "../calendar/shaders";
 import { cellAt, dayBox, sheetOf } from "../calendar/sheet";
 import { bandOf, GUTTER, levelFor, type TileGrid, tileGrid, tileRect, tilesIn } from "../calendar/tiles";
@@ -197,6 +198,13 @@ export function partAt(G: CalendarGeometry, wx: number, wy: number, lines: reado
   return { part: "day", sx, sy, day: cell.day };
 }
 
+/** The sheet point (x from its left edge, y from its head) under a desk point, at the pad's face through the eye — unclamped (a finger may leave the pad). */
+export function sheetPoint(G: CalendarGeometry, wx: number, wy: number, law: CalendarLaw = CALENDAR): { readonly sx: number; readonly sy: number } {
+  const F = padFrame(law);
+  const [px, py] = unproject(G.eye, wx, wy, F.zt + G.lift);
+  return { sx: px - G.cx + F.W / 2, sy: py - G.cy + F.H / 2 };
+}
+
 /** A pad's sheet point (x from its left, y from its head, `z` up) on the screen, CSS px — through the eye the pad was drawn with. */
 export function sheetOnScreen(G: CalendarGeometry, sx: number, sy: number, z?: number, law: CalendarLaw = CALENDAR): readonly [number, number] {
   const F = padFrame(law);
@@ -266,6 +274,23 @@ export interface Pads extends KindLocal {
   tiles(): { readonly resident: number; readonly pending: number; readonly drawn: number };
   /** The desk's raster reads a live sheet back as a fixture would hold it (level `level`'s tiles, RGBA) — a rig's door; undefined without a raster. */
   readSheet(e: Entity, month: number, level: number): { readonly tiles: ReadonlyMap<string, Uint8Array<ArrayBuffer>>; readonly empty: ReadonlySet<string> } | undefined;
+  // ---- D3t-c: the month's turn (calendar/turn.ts) — flux toward the document's month
+  /** The sheets in play for pad `e` whose document month is `durable` (the kind's `resolve`): the month laid bare, the one in motion. */
+  sheets(e: Entity, durable: number): ReturnType<typeof rollSheets>;
+  /** A pad's turning as it stands (a witness): the month laid bare, the turn in flight, the corner's lift, a hand's roll pending. */
+  rollOf(e: Entity): { readonly shown: number | null; readonly turn: { readonly dir: 1 | -1; readonly p: number; readonly target: 0 | 1; readonly held: boolean; readonly hand: boolean } | null; readonly peek: number; readonly pending: number | null } | undefined;
+  /** The corner lifts while the pointer is near the foot or the corner (the next month shows under it). */
+  peek(e: Entity, on: boolean): void;
+  /** A hand takes a sheet by `part` (the foot or the corner: up; the roll: down; the sheet in motion) at sheet point (sx, s from under the tape). False when it cannot. */
+  grab(e: Entity, part: "foot" | "corner" | "roll" | "moving", sx: number, s: number, now: number): boolean;
+  /** The finger at `s`: the moving sheet follows it. */
+  dragTo(e: Entity, s: number, now: number, moved: boolean): void;
+  /** Let go (or the press was cancelled): the turn decides. */
+  letGo(e: Entity, now: number, cancel?: boolean): void;
+  /** The hands' finished rolls since the last drain — each a month the document should now hold (the hand commits it). */
+  rolled(): readonly { readonly e: Entity; readonly month: number }[];
+  /** A hand's roll the document refused (read-only): the pad rolls back to the document's month. */
+  unroll(e: Entity): void;
   /** Draw a pad's print and its marks for this frame (the kind's `record`): the sheets' tiles brought up, the marks' boxes. */
   draw(e: Entity, G: CalendarGeometry, view: ObjectContext["view"], print: PrintLook | undefined): Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe">;
 }
@@ -277,6 +302,8 @@ interface PadState {
   readonly pinned: Map<number, PinnedSheet>;
   marks: PadMarks | undefined;
   draft: PadDraft | null;
+  /** Its months turning (calendar/turn.ts) — flux toward the document's month. */
+  readonly roll: PadRoll;
 }
 
 const NO_MARKS: Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> = { sel: [], mark: null, drop: null, caret: null, wipe: null };
@@ -296,10 +323,11 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   let ticksOn = true;
   let tiles: PrintTiles | null = null;
   let begun = false;
+  let lastTick: number | null = null;
   const prints = new Map<string, { key: string; print: SheetPrint }>();
   const state = (e: Entity): PadState => {
     let st = pads.get(e);
-    if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined, pinned: new Map(), marks: undefined, draft: null }; pads.set(e, st); }
+    if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined, pinned: new Map(), marks: undefined, draft: null, roll: newRoll() }; pads.set(e, st); }
     return st;
   };
   const passOf = (): CalendarPass | undefined => { const k = host.pass(); return k instanceof CalendarKind ? (k.pass ?? undefined) : undefined; };
@@ -381,6 +409,35 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   };
   return {
     pin(e, pose) { state(e).pose = pose; woke = true; },
+    sheets: (e, durable) => rollSheets(state(e).roll, durable, law, F),
+    rollOf(e) {
+      const st = pads.get(e);
+      if (st === undefined) return undefined;
+      const r = st.roll;
+      const t = r.turn;
+      return { shown: r.shown, turn: t === null ? null : { dir: t.dir, p: t.p, target: t.target, held: t.drag !== null, hand: t.hand }, peek: r.peek, pending: r.pending };
+    },
+    peek(e, on) { const r = state(e).roll; if (r.peekOn !== on) { r.peekOn = on; woke = true; } },
+    grab(e, part, sx, s, now) {
+      const r = state(e).roll;
+      let ok: boolean;
+      if (part === "moving") ok = grabMoving(r, s, now);
+      else if (part === "roll") ok = startTurn(r, -1, 0, law, F, { hand: true, drag: { s, now } });
+      else {
+        const tilt = part === "corner" || sx > F.W * 0.78 ? -law.roll.tilt : sx < F.W * 0.22 ? law.roll.tilt : 0;
+        ok = startTurn(r, 1, tilt, law, F, { hand: true, drag: { s, now } });
+      }
+      if (ok) woke = true;
+      return ok;
+    },
+    dragTo(e, s, now, moved) { const st = pads.get(e); if (st === undefined) return; dragTo(st.roll, s, now, moved, law, F); woke = true; },
+    letGo(e, now, cancel) { const st = pads.get(e); if (st === undefined) return; letGo(st.roll, now, law, F, cancel); woke = true; },
+    rolled() {
+      const out: { e: Entity; month: number }[] = [];
+      for (const [e, st] of pads) if (st.roll.rolled && st.roll.shown !== null) { st.roll.rolled = false; out.push({ e, month: st.roll.shown }); }
+      return out;
+    },
+    unroll(e) { const st = pads.get(e); if (st === undefined) return; st.roll.pending = null; woke = true; },
     state,
     alpha(a) { const k = host.pass(); if (k instanceof CalendarKind && k.alpha !== a) k.alpha = a; },
     events: (e) => host.children?.rows(e, CalendarEvent) ?? [],
@@ -438,10 +495,15 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       }
       return marksOn(st, markMonth, G.weekStart, markPrint);
     },
-    tick() {
+    tick(now) {
       begun = false;
-      // tiles still to draw: another frame (the marks' clocks — the caret's blink, the wipe — are the hand's: it marks anew)
-      const w = woke || (tiles?.pending() ?? 0) > 0;
+      // the months turning (their springs on the frame's clock); tiles still to draw: another frame (the marks' clocks — the
+      // caret's blink, the wipe — are the hand's: it marks anew)
+      const dt = lastTick === null ? 0 : Math.min(Math.max((now - lastTick) / 1000, 0), 0.1);
+      lastTick = now;
+      let turning = false;
+      for (const st of pads.values()) if (st.roll.durable !== null && st.pose === undefined && stepRoll(st.roll, st.roll.durable, dt, law, F)) turning = true;
+      const w = woke || turning || (tiles?.pending() ?? 0) > 0;
       woke = false;
       return w;
     },
@@ -552,15 +614,24 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
       const weekStart: 0 | 1 = numberProp(ctx.props, "weekStart", 1) === 0 ? 0 : 1;
       let sh: { base: number; moving: number | null; roll: RollState | null; marksOn: 0 | 1 } = { base: shown, moving: null, roll: null, marksOn: 0 };
       const r = pose?.roll;
+      let laid = shown;
+      let turning = r !== undefined;
       if (r !== undefined) sh = r.dir === 1 ? { base: shown + 1, moving: shown, roll: roll(r.p, r.tilt ?? 0), marksOn: 1 } : { base: shown, moving: shown - 1, roll: roll(r.p, r.tilt ?? 0), marksOn: 0 };
       else if ((pose?.peek ?? 0) > 1e-3) sh = { base: shown + 1, moving: shown, roll: roll(((pose?.peek ?? 0) * law.roll.peek) / (F.L - law.roll.rest), -law.roll.tilt), marksOn: 1 };
+      else if (pads !== undefined && pose === undefined) {
+        // the months turning (D3t-c): the pad shows the month it has laid bare and rolls toward the document's
+        const t = pads.sheets(ctx.entity, shown);
+        laid = t.shown;
+        turning = t.turning;
+        sh = { base: t.base, moving: t.moving, roll: t.roll, marksOn: t.marksOn };
+      }
       const lift = law.lift * ctx.flux.lift;
       const v = ctx.view;
       return {
-        shown, weekStart, ...sh, rigid: rigidOf({ cx: ctx.rect.cx, cy: ctx.rect.cy, angle: 0, lift, tiltX: 0, tiltY: 0, zc: 0 }),
+        shown: laid, weekStart, ...sh, rigid: rigidOf({ cx: ctx.rect.cx, cy: ctx.rect.cy, angle: 0, lift, tiltX: 0, tiltY: 0, zc: 0 }),
         lamp: lampDir(ctx.lamp, ctx.rect.cx, ctx.rect.cy, law.shadow.slopeMax), lift, ring: ctx.flux.ring * ctx.flux.fade,
         eye: eyeOf({ x: v.camX, y: v.camY, zoom: v.zoom }, { width: v.width, height: v.height }, law.eye), cx: ctx.rect.cx, cy: ctx.rect.cy,
-        held: ctx.held !== undefined, turning: r !== undefined,
+        held: ctx.held !== undefined, turning,
       };
     },
     record(G: CalendarGeometry, ctx: ObjectContext): CalendarDraw {
