@@ -96,6 +96,7 @@ import {
   type NavTransitionIdentity,
 } from "../systems/nav-flight";
 import { Active } from "../catalog/camera-derived";
+import { Held, HeldIntent } from "../catalog/desk";
 import { PrefabId } from "../schema/prefab";
 import { SpatialVersion, bumpVersion } from "../helpers/version-stamps";
 import { SelectionVersion } from "../helpers/version-stamps";
@@ -309,6 +310,13 @@ export function createActiveMembership(world: World): TickSystem {
           if (ctx.hasTag(e, Selected)) {
             ctx.removeTag(e, Selected);
             deselected = true;
+          }
+          // …and out of the HAND (`Held ⇒ Active`, D7 #8): a peer's reparent carried the held object out of the frame —
+          // left held, the desk behind stays inert and the hand keeps drawing a non-member. Held's writer is an op, and a
+          // system runs no op mid-tick: the one-tick intent the facade applies after the step, as the hold's input does.
+          if (ctx.hasTag(e, Held)) {
+            const prev = world.getResource(HeldIntent);
+            world.setResource(HeldIntent, { kind: "putDown", target: e, epoch: (prev?.epoch ?? 0) + 1 });
           }
         }
       };

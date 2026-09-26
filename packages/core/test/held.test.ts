@@ -9,7 +9,10 @@
 // pointer is mapped into the object's frame through the pose seam. Through the REAL stack.
 import { describe, expect, it } from "vitest";
 import {
+  Active,
   Camera,
+  ChildOf,
+  guardedTransaction,
   HOLD_INPUT,
   Held,
   HeldIntent,
@@ -298,5 +301,26 @@ describe("the ways back by pointer, and the pointer in the object's frame", () =
     r.ce.ops.putDown();
     r.step();
     expect(r.world.has(p as Entity, HeldPointer)).toBe(false);   // the hand let go: the pointer's held facts leave
+  });
+});
+
+describe("Held is scoped to the frame (D7 #8): an object that leaves the frame is put down", () => {
+  it("a peer reparents the held book into a folder: the membership sweep puts it down through the one-tick HeldIntent, and the desk behind is live again", () => {
+    const r = rig();
+    r.ce.ops.open(r.book);
+    r.step(2);
+    expect(r.held()).toBe(true);
+    // a peer's transaction moves the book INTO the folder — the edge and its frame-local Position together, as core's own
+    // consume writes them (Position is the sweep's reparent proxy): it is no member of the root frame any more (Active leaves)
+    const s = r.ce.docs.current();
+    if (s === undefined) throw new Error("no doc");
+    guardedTransaction(s.store, r.world, (tx) => {
+      tx.setRelation(r.book, ChildOf, r.folder);
+      tx.edit(r.book).set(Position, { x: 10, y: 10 });
+    });
+    r.step(3);
+    expect(r.world.hasTag(r.book, Active)).toBe(false);
+    expect(r.held()).toBe(false);
+    expect(r.world.has(r.book, HeldView)).toBe(false);
   });
 });
