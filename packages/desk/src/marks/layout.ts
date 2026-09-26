@@ -10,8 +10,7 @@
 // clocks, several's union, the vellum, the laser's guides and gaps, the tape, your extent on the rulers
 // — assembled from the world by the builder (compose/marks.ts) or from a scene by the oracle. Paint
 // order is chrome.js's: the tape (it lies on its object, under every pencil stroke), each object's
-// marks, the union, the vellum, the laser, your extent on the rulers — and a room's other people (D5a,
-// D-D5a.1): their selections under yours, just over the tape; their hands over everything. A light mark (the laser's bloom,
+// marks, the union, the vellum, the laser, your extent on the rulers. A light mark (the laser's bloom,
 // its wall-to-wall lines, the flares, the rulers' laser ticks) is flagged: the pass ADDS it.
 
 import { defineStruct } from "../engine/struct";
@@ -36,7 +35,7 @@ export const MarksUniformsStruct = defineStruct("MarksUniforms", [
 ]);
 
 /** The primitives (marks.wgsl's `MARK_*`). */
-export const MARK = { stroke: 0, fill: 1, brackets: 2, segment: 3, bar: 4, flare: 5, glyph: 6, tape: 7, hand: 8 } as const;
+export const MARK = { stroke: 0, fill: 1, brackets: 2, segment: 3, bar: 4, flare: 5, glyph: 6, tape: 7 } as const;
 /** A mark of light: added, never painted over. */
 export const LIGHT = 1;
 
@@ -91,13 +90,6 @@ export interface MarkGuide {
 export interface MarkBar { readonly axis: "x" | "y"; readonly from: number; readonly to: number; readonly perp: number; readonly gap: number }
 /** A taped object's tape: its frame on screen, CSS px per object unit (the zoom, the lift), each strip's press (0..1, linear), the tape's presence. */
 export interface MarkTape { readonly frame: MarkFrame; readonly units: number; readonly press: readonly [number, number]; readonly alpha: number }
-/** A remote person's hand (D-D5a.1): its tip on screen (their cursor, CSS px), their name, their presence colour. */
-export interface MarkHand { readonly x: number; readonly y: number; readonly name: string; readonly ink: RGBA }
-/** A room's other people: each object one of them holds selected (its frame on screen, in their colour), and their hands. */
-export interface MarkPeers {
-  readonly selections: readonly { readonly frame: MarkFrame; readonly ink: RGBA }[];
-  readonly hands: readonly MarkHand[];
-}
 /** Your extent on the rulers: the selection's screen box, its world edges, and the rulers' margin and band (CSS px). */
 export interface MarkRuler { readonly sel: MarkBox; readonly world: MarkBox; readonly margin: number; readonly band: number }
 
@@ -114,8 +106,6 @@ export interface MarksInput {
   /** A new alignment's strike, 1 … 0 over 160 ms: the bloom and the flares at up to 1.8×. */
   readonly strike: number;
   readonly ruler: MarkRuler | null;
-  /** A room's other people (D5a): absent on a desk alone. */
-  readonly peers?: MarkPeers;
 }
 
 /** A frame with nothing marked. */
@@ -200,19 +190,19 @@ export function selectionGeometry(f: MarkFrame, t: number, alpha: number): { rea
   return { gap, X, Y, R: Math.min(f.r + gap, S.radiusMax), a: alpha * clamp(t * S.rise, 0, 1), collapsed: Math.min(f.hx, f.hy) * 2 < S.collapse };
 }
 
-function selection(out: Out, f: MarkFrame, t: number, alpha: number, knobs: boolean, dpr: number, ink: RGBA = INK.pencil): void {
+function selection(out: Out, f: MarkFrame, t: number, alpha: number, knobs: boolean, dpr: number): void {
   if (alpha <= 0.001) return;
   const S = MARKS.select;
   const g = selectionGeometry(f, t, alpha);
   const { X, Y, R, a } = g;
   if (g.collapsed) {
     // far out: under 24 px on screen the brackets become one ring
-    keyed((w, c) => box(out, MARK.stroke, f.cx, f.cy, X, Y, f.angle, R, w, c), S.stroke, ink, a);
+    keyed((w, c) => box(out, MARK.stroke, f.cx, f.cy, X, Y, f.angle, R, w, c), S.stroke, INK.pencil, a);
     return;
   }
-  box(out, MARK.stroke, f.cx, f.cy, X, Y, f.angle, R, 1 / dpr, at(ink, S.hair * a));
+  box(out, MARK.stroke, f.cx, f.cy, X, Y, f.angle, R, 1 / dpr, at(INK.pencil, S.hair * a));
   const L = bracketReach(S.reach, X, Y, R);
-  keyed((w, c) => box(out, MARK.brackets, f.cx, f.cy, X, Y, f.angle, R, w, c, L), S.stroke, ink, a);
+  keyed((w, c) => box(out, MARK.brackets, f.cx, f.cy, X, Y, f.angle, R, w, c, L), S.stroke, INK.pencil, a);
   if (!knobs) return;
   const k = R * (1 - Math.SQRT1_2);
   for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
@@ -454,7 +444,6 @@ export function layoutMarks(input: MarksInput, atlas: GlyphAtlasMeta = NO_GLYPHS
   const out: MarkRecord[] = [];
   const dpr = input.view.dpr;
   for (const t of input.tape) tape(out, t, input.night);
-  for (const p of input.peers?.selections ?? []) selection(out, p.frame, 1, MARKS.hand.selection, false, dpr, p.ink);
   for (const o of input.objects) {
     if (o.style === "member") member(out, o.frame, o.alpha);
     else selection(out, o.frame, o.t, o.alpha, o.knobs, dpr);
@@ -463,25 +452,7 @@ export function layoutMarks(input: MarksInput, atlas: GlyphAtlasMeta = NO_GLYPHS
   if (input.marquee !== null) marquee(out, input.marquee, input.night, dpr, atlas);
   if (input.guides.length > 0 || input.bars.length > 0) laser(out, input.guides, input.bars, input.strike, input.view, atlas);
   if (input.ruler !== null) ruler(out, input.ruler, input.guides, input.view, atlas);
-  for (const h of input.peers?.hands ?? []) hand(out, h, atlas, dpr);
   return out;
-}
-
-/** How far a hand's ink may reach past its 16 × 20 box: the rim's half, the shadow's move and its softness, a margin. */
-export const HAND_REACH = MARKS.hand.rim / 2 + Math.max(Math.abs(MARKS.hand.shadow.offset[0]), Math.abs(MARKS.hand.shadow.offset[1])) + MARKS.hand.shadow.blur + 1.5;
-
-/** A remote person's hand (D-D5a.1): the arrow at their cursor in their colour, and their name in a small ink flag beside it. */
-function hand(out: Out, h: MarkHand, atlas: GlyphAtlasMeta, dpr: number): void {
-  const H = MARKS.hand;
-  const x0 = h.x - H.path[0][0];
-  const y0 = h.y - H.path[0][1];
-  out.push({
-    shape: [MARK.hand, 0, H.rim, 0], centre: [h.x, h.y, 0, 0], half: [H.shadow.offset[0], H.shadow.offset[1], H.shadow.blur, 0],
-    colour: [h.ink[0], h.ink[1], h.ink[2], 1], aux: at(INK.keyline, H.shadow.alpha),
-    quad: [x0 - HAND_REACH, y0 - HAND_REACH, x0 + H.box[0] + HAND_REACH, y0 + H.box[1] + HAND_REACH],
-  });
-  const name = h.name.toUpperCase().slice(0, H.name).trim();
-  if (name.length > 0) pill(out, x0 + H.flag[0], y0 + H.flag[1] + MARKS.pill.height / 2, name, INK.ink, INK.paper, "left", atlas, dpr);
 }
 
 /** The screen box of the frames (each turned frame's extent) — several's union, the menu's anchor. */

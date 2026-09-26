@@ -431,23 +431,6 @@ export const MARKS = {
   /** A number the desk states: 10 px mono, 8 wider than its text, 15 tall, corner 3.5. */
   pill: { size: 10, pad: 8, height: 15, radius: 3.5 },
   /**
-   * A remote person's HAND (D-D5a.1 — *Marks on the Mat*'s hand table: every mark says whose hand made it; the agent's hand of
-   * desk.js `ensureAgentCursor`): the arrow's path in its 16 × 20 box (screen px — it rides the glass, the same size at every
-   * zoom, unchanged by night), its tip (1.5, 1.5) the hotspot on the peer's cursor, filled in the PEER's presence colour with a
-   * 1.4 px white rim, its shadow 1 left and 2 down, 2 soft at the mat's cast × .4/.34 (desk.css `drop-shadow(-1px 2px 2px
-   * rgb(cast / .4))`); the name in a small ink flag 13 right and 17 down from the box's corner (the agent's `.ac-label`), at
-   * most 16 characters of the mono capitals; the peer's selection wears YOUR brackets in their colour at 50 % — no knobs.
-   */
-  hand: {
-    path: [[1.5, 1.5], [1.5, 16], [5.4, 12.4], [8.2, 18.6], [10.8, 17.4], [8, 11.3], [13.4, 11.1]] as const,
-    box: [16, 20] as const, rim: 1.4, shadow: { offset: [-1, 2] as const, blur: 2, alpha: 0.4 / 0.34 },
-    flag: [13, 17] as const, name: 16, selection: 0.5,
-    /** A colour no one can parse: the hand table's presence grey (an agent's). */
-    fallback: "#68686b",
-    /** The inks a person's hand may take in a room: violet and the warm hues — they read on the green mat by day and under the Moon; none is a green of the mat's, nor the pencil's blue (YOUR hand's). */
-    inks: ["#8e4ec6", "#e2a336", "#e5484d", "#d6409f", "#f76b15"] as const,
-  },
-  /**
    * The laser: a faint line wall to wall (3 px at 12 %, then 1 device px + 0.5 at 34 %, both added), and between the
    * objects it aligns, 14 past them, the bloom (9 · 5 · 2.6 px at 7 · 16 · 32 %, added) under a 1.25 px line at 95 %
    * with a 0.6 px core at 95 %; a centre is dotted (a dot every 4.51 px: the bloom 0.7 as wide, the line 2, the core 1);

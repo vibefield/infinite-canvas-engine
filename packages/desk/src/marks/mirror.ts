@@ -4,7 +4,6 @@
 // paint — the oracle's check holds everything outside that reach to the frame without marks, byte for byte.
 
 import { sdRoundBox } from "../sdf";
-import { MARKS } from "../theme";
 import { MARK, type MarkRecord } from "./layout";
 
 const segment = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
@@ -37,29 +36,6 @@ export function bracketsDistance(qx: number, qy: number, X: number, Y: number, r
   return d;
 }
 
-/** marks.wgsl `marks_hand_sd`: the distance to a hand's path in its own 16 × 20 box (theme.ts `MARKS.hand.path`), ≤ 0 inside, even-odd. */
-export function handDistance(qx: number, qy: number): number {
-  const v = MARKS.hand.path;
-  const n = v.length;
-  let d = (qx - v[0][0]) ** 2 + (qy - v[0][1]) ** 2;
-  let s = 1;
-  for (let i = 0, j = n - 1; i < n; j = i, i++) {
-    const [ix, iy] = v[i] as readonly [number, number];
-    const [jx, jy] = v[j] as readonly [number, number];
-    const ex = jx - ix;
-    const ey = jy - iy;
-    const wx = qx - ix;
-    const wy = qy - iy;
-    const h = Math.min(Math.max((wx * ex + wy * ey) / (ex * ex + ey * ey), 0), 1);
-    d = Math.min(d, (wx - ex * h) ** 2 + (wy - ey * h) ** 2);
-    const above = qy >= iy;
-    const below = qy < jy;
-    const left = ex * wy > ey * wx;
-    if ((above && below && left) || (!above && !below && !left)) s = -s;
-  }
-  return s * Math.sqrt(d);
-}
-
 /**
  * The signed distance (CSS px) from a mark's ink at a screen point — a stroke's half-width taken off, a fill's edge, a
  * flare's radius; a glyph and a strip of tape by their turned boxes (the atlas's coverage and the torn outline lie inside).
@@ -88,11 +64,5 @@ export function markDistance(m: MarkRecord, x: number, y: number): number {
     return Math.min(segment(x, y, ax, ay, bx, by), segment(x, y, ax - nx, ay - ny, ax + nx, ay + ny), segment(x, y, bx - nx, by - ny, bx + nx, by + ny)) - w / 2;
   }
   if (kind === MARK.flare) return Math.hypot(x - m.centre[0], y - m.centre[1]) - m.centre[3];
-  if (kind === MARK.hand) {
-    // the hand with its rim, or its shadow — moved by `half.xy`, reaching `half.z` softer
-    const qx = x - m.centre[0] + MARKS.hand.path[0][0];
-    const qy = y - m.centre[1] + MARKS.hand.path[0][1];
-    return Math.min(handDistance(qx, qy) - w / 2, handDistance(qx - m.half[0], qy - m.half[1]) - w / 2 - m.half[2]);
-  }
   return Number.POSITIVE_INFINITY;
 }

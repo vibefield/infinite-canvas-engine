@@ -35,7 +35,7 @@ import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../src/mat/night.ts";
 import { sdRoundBox, unproject } from "../src/photo/photo.ts";
 import { sdBoard, sdSurface } from "../src/board/board.ts";
 import { cssColor, MARKS } from "../src/theme.ts";
-import { handDistance, markDistance } from "../src/marks/mirror.ts";
+import { markDistance } from "../src/marks/mirror.ts";
 
 Object.assign(globalThis, globals);   // GPUBufferUsage & friends, which the browser has for free
 const here = dirname(fileURLToPath(import.meta.url));
@@ -789,47 +789,6 @@ async function unlitCheck(sc) {
 }
 
 /**
- * A room's other person, as pixels (D5a, D-D5a.1): their hand is the arrow in THEIR colour — every device px at least 1.5 px inside
- * its path (the CPU mirror's `handDistance`) is the peer's byte, and the rim's centre line on every edge the white's; the name's
- * flag is ink (the tray's byte beside its capitals); what they hold selected wears brackets in their colour at 50 % (its bracket
- * marks carry exactly that colour, and move the frame); and the hand rides the glass — the same bytes by night as by day.
- */
-async function handsCheck(sc) {
-  const s = sc.scene;
-  const { px: A, marks } = await render(s, { marks: true });
-  const peer = s.marks.peers[0];
-  const ink = cssColor(MARKS.hand.inks[peer.ink]);
-  const want = byteOf(ink);
-  const white = [255, 255, 255];
-  const tray = byteOf(cssColor(MARKS.inks.tray.css));
-  const hands = marks.filter((m) => m.shape[0] === 8);
-  const [tx, ty] = MARKS.hand.path[0];
-  const body = [];
-  const rim = [];
-  for (const m of hands) {
-    const x0 = m.centre[0] - tx;
-    const y0 = m.centre[1] - ty;
-    for (let Y = Math.ceil(y0 * VIEW.dpr); Y < (y0 + MARKS.hand.box[1]) * VIEW.dpr; Y++) for (let X = Math.ceil(x0 * VIEW.dpr); X < (x0 + MARKS.hand.box[0]) * VIEW.dpr; X++) if (handDistance((X + 0.5) / VIEW.dpr - x0, (Y + 0.5) / VIEW.dpr - y0) <= -1.5) body.push((Y * W + X) * 4);
-    const v = MARKS.hand.path;
-    for (let i = 0; i < v.length; i++) { const a = v[i]; const b = v[(i + 1) % v.length]; rim.push(pixelAt(x0 + (a[0] + b[0]) / 2, y0 + (a[1] + b[1]) / 2)); }
-  }
-  const bodyOff = body.filter((o) => !exact(A, o, want)).length;
-  const rimOff = rim.filter((o) => !exact(A, o, white)).length;
-  const flags = marks.filter((m) => m.shape[0] === 1 && m.centre[3] === MARKS.pill.radius && m.half[1] * 2 === MARKS.pill.height && [0, 1, 2].every((i) => m.colour[i] === cssColor(MARKS.inks.tray.css)[i]));
-  const flagsOff = flags.filter((m) => !exact(A, pixelAt(m.centre[0] - m.half[0] + 2, m.centre[1]), tray)).length;
-  const theirs = marks.filter((m) => m.shape[0] === 2 && [0, 1, 2].every((i) => Math.abs(m.colour[i] - ink[i]) < 1e-6) && Math.abs(m.colour[3] - MARKS.hand.selection) < 1e-6);
-  const { px: B } = await render(unmarked(s));
-  let moved = 0;
-  for (const m of theirs) for (const [x, y] of strokeSamples(m)) { const o = pixelAt(x, y); if (o >= 0 && delta(A, B, o) > 0) moved++; }
-  // by night the hand is the day's, byte for byte — and by day the night's
-  const other = await render(s, { marks: true, theme: s.theme === "dark" ? THEMES.light : THEMES.dark });
-  const glassOff = [...body, ...rim].filter((o) => o >= 0 && [0, 1, 2].some((i) => A[o + i] !== other.px[o + i])).length;
-  const ok = hands.length === 1 && body.length > 0 && bodyOff === 0 && rim.length === 7 && rimOff === 0 && flags.length === 1 && flagsOff === 0 && theirs.length === 1 && moved > 0 && glassOff === 0;
-  console.log(`  ${ok ? "PASS" : "FAIL"}  hands      ${sc.name.padEnd(24)} ${hands.length} hand · its body the peer's byte on ${body.length - bodyOff}/${body.length} px · the white rim on ${rim.length - rimOff}/${rim.length} edges · the ink flag ${flags.length - flagsOff}/${flags.length} · their brackets ${theirs.length} at ${MARKS.hand.selection * 100} % (${moved} stroke samples moved) · the same by ${s.theme === "dark" ? "day" : "night"}: ${glassOff} px off`);
-  return ok;
-}
-
-/**
  * MINIMAT.md §4 for a PRINT, as pixels — a print inside a mini mat's face is lit by the lamp of the desk the mini mat lies on (the
  * photo pass's LIT_ELSEWHERE pipeline): over the print's sheet (4 device px in), its SHADE (gobo on ÷ off) follows the bare desk's
  * own shade at the same pixels (r ≥ 0.9); the control — the inside under its own lamp — does not (lower by 0.2 or more).
@@ -1021,7 +980,6 @@ for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 
 for (const sc of scenes) if (sc.board) { if (!(await boardCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ink) { if (!(await inkCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.marks) { if (!(await marksCheck(sc))) failed += 1; }
-for (const sc of scenes) if (sc.hands) { if (!(await handsCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.unlit) { if (!(await unlitCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.lit) { if (!(await litCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.book) { if (!(await bookCheck(sc))) failed += 1; }

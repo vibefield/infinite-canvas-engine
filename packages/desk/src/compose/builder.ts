@@ -124,8 +124,6 @@ export interface DeskBuilderOptions {
   readonly locals?: ReadonlyMap<string, KindLocal>;
   /** The interaction stack's marquee preview (out of the ECS — design-003 §5.7): the vellum the marks draw (D4a). */
   readonly marquee?: () => MarqueeBuffer | undefined;
-  /** A room's durable key → this desk's object (the host's document): what another person holds selected, for the marks (D5a). */
-  readonly resolveKey?: (key: string) => Entity | undefined;
 }
 
 export interface DeskBuilderStats {
@@ -390,7 +388,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const readsC: Component[] = [];
   const readsT: Tag[] = [];
   for (const k of kindsSeen) { readsC.push(...(k.reads?.components ?? [])); readsT.push(...(k.reads?.tags ?? [])); }
-  const marks = createMarksCollector(world, { ...(opts.marquee !== undefined ? { marquee: opts.marquee } : {}), ...(opts.resolveKey !== undefined ? { resolveKey: opts.resolveKey } : {}) });
+  const marks = createMarksCollector(world, opts.marquee !== undefined ? { marquee: opts.marquee } : {});
   const collector = world.changes.collect({
     components: [Position, Size, PrefabId, Grab, ...propComponents(opts.objects), ...readsC],
     tags: [Selected, Active, Container, Locked, WidgetEquipped, Retained, ...readsT],

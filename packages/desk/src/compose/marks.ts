@@ -1,8 +1,6 @@
 // The desk's MARKS from the world (design-015 §7, stratum 5; D4a) — the builder's chrome half. FACTS are
 // the world's, read and never written: `Selected`, `Locked`, `Grab`, `Resizable` (the builder caches
-// them per entity), a room's other people (D5a: core's presence projections — each remote `CursorVisual`
-// at its peer's cursor, `Follows` → the peer's `PresenceInfo`; each peer's `SelectionSummary` keys, resolved
-// to this desk's objects through the host's key resolver), core's snap chrome (`GuideLine { axis, at }` · `SpacingBar`, pooled runtime entities
+// them per entity), core's snap chrome (`GuideLine { axis, at }` · `SpacingBar`, pooled runtime entities
 // the snap system keeps), the marquee's out-of-ECS preview (`MarqueeBuffer`, handed in by the host), the
 // mouse pointer's screen point, the gestures (`Camera.gesturing`, an active `Drag`). FLUX is here, per
 // entity and for the desk, stepped by the frame's dt and snapped at its ends (B7's trap): each object's
@@ -19,15 +17,7 @@
 import {
   Camera,
   Captures,
-  CursorVisual,
   defineQuery,
-  Follows,
-  Local,
-  Not,
-  Position,
-  PresenceInfo,
-  PresencePeer,
-  SelectionSummary,
   Drag,
   Editing,
   GestureActive,
@@ -43,10 +33,10 @@ import {
   type Entity,
   type World,
 } from "@ice/core";
-import { assembleMarks, type MarkedObject, type MarkedPeer } from "../marks/assemble";
+import { assembleMarks, type MarkedObject } from "../marks/assemble";
 import { laserKey, type WorldBar, type WorldGuide } from "../marks/laser";
 import { type MarkBox, type MarkFrame, type MarksInput, selectionBox } from "../marks/layout";
-import { cssColor, MARKS, type RGBA } from "../theme";
+import { MARKS } from "../theme";
 
 /** One object as the builder hands it to the marks: its drawn frame and rect (world), the facts it cached. */
 export interface MarkRow {
@@ -113,17 +103,11 @@ const movesQ = defineQuery([Drag, GestureActive, RoutedMove]);
 const pointersQ = defineQuery([Pointer, LocalPointer, PointerScreen]);
 const selectedQ = defineQuery([Selected]);
 const editingQ = defineQuery([Editing]);
-const handsQ = defineQuery([CursorVisual, Position]);
-const peersQ = defineQuery([PresencePeer, PresenceInfo, SelectionSummary, Not(Local)]);
-/** A peer's colour as a hand's ink — a colour no one can parse is the hand table's presence grey (a tolerant reader: a peer's bad byte never throws here). */
-const inkOf = (css: string): RGBA => { try { return cssColor(css); } catch { return cssColor(MARKS.hand.fallback); } };
-/** A summary's key list (a JSON array, ≤ 32) — unreadable, none. */
-const keysOf = (json: string): string[] => { try { const k: unknown = JSON.parse(json); return Array.isArray(k) ? k.filter((x): x is string => typeof x === "string") : []; } catch { return []; } };
 
 const NO_ANCHOR: SelectionAnchor = { box: null, count: 0, locked: false, gesturing: false, editing: false, view: { width: 0, height: 0 }, rulers: null };
 const step = (x: number, to: number, dt: number, ms: number): number => (to > x ? Math.min(to, x + (dt * 1000) / ms) : Math.max(to, x - (dt * 1000) / ms));
 
-export function createMarksCollector(world: World, opts: { readonly marquee?: () => MarqueeBuffer | undefined; readonly resolveKey?: (key: string) => Entity | undefined } = {}): MarksCollector {
+export function createMarksCollector(world: World, opts: { readonly marquee?: () => MarqueeBuffer | undefined } = {}): MarksCollector {
   const C = MARKS.clocks;
   const clocks = new Map<Entity, Clocks>();
   let unionT = 1;
@@ -153,50 +137,6 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
     world.query(guidesQ).each((b) => { for (const r of b) { const g = world.read(b.entity(r), GuideLine); guides.push({ axis: g.axis, at: g.at }); } });
     world.query(barsQ).each((b) => { for (const r of b) { const s = world.read(b.entity(r), SpacingBar); bars.push({ axis: s.axis, from: s.from, to: s.to, perp: s.perp, gap: s.gap }); } });
     return { guides, bars };
-  };
-  /** A room's other people this frame: each remote hand (its cursor, world) under its peer's name and colour, and what each holds selected among `rows`. */
-  const readPeers = (rows: readonly MarkRow[]): MarkedPeer[] => {
-    const byPeer = new Map<Entity, { hand: { x: number; y: number } | null; name: string; ink: RGBA; selected: MarkFrame[] }>();
-    const entry = (peer: Entity): { hand: { x: number; y: number } | null; name: string; ink: RGBA; selected: MarkFrame[] } | undefined => {
-      let p = byPeer.get(peer);
-      if (p !== undefined) return p;
-      const info = world.get(peer, PresenceInfo);
-      if (info === undefined) return undefined;
-      p = { hand: null, name: info.name ?? "", ink: inkOf(info.color ?? ""), selected: [] };
-      byPeer.set(peer, p);
-      return p;
-    };
-    world.query(handsQ).each((b) => {
-      for (const r of b) {
-        const c = b.entity(r);
-        if (world.read(c, CursorVisual).kind !== "remote") continue;
-        const peer = world.getRelation(c, Follows);
-        const p = peer === undefined || !world.isAlive(peer) ? undefined : entry(peer);
-        if (p === undefined) continue;
-        const at = world.read(c, Position);
-        p.hand = { x: at.x, y: at.y };
-      }
-    });
-    const resolve = opts.resolveKey;
-    if (resolve !== undefined) {
-      const frames = new Map(rows.map((row) => [row.entity, row.frame]));
-      world.query(peersQ).each((b) => {
-        for (const r of b) {
-          const peer = b.entity(r);
-          const p = entry(peer);
-          if (p === undefined) continue;
-          for (const k of keysOf(world.read(peer, SelectionSummary).keys ?? "[]")) { const e = resolve(k); const f = e === undefined ? undefined : frames.get(e); if (f !== undefined) p.selected.push(f); }
-        }
-      });
-    }
-    return [...byPeer.values()];
-  };
-  /** What a room's other people show, as a string — a hand that moves, a name, a colour, a selection: a wake. */
-  const peersKey = (): string => {
-    let k = "";
-    world.query(handsQ).each((b) => { for (const r of b) { const c = b.entity(r); if (world.read(c, CursorVisual).kind !== "remote") continue; const at = world.read(c, Position); const peer = world.getRelation(c, Follows); const i = peer === undefined ? undefined : world.get(peer, PresenceInfo); k += `h${c}:${at.x},${at.y},${i?.name},${i?.color};`; } });
-    world.query(peersQ).each((b) => { for (const r of b) { const e = b.entity(r); k += `p${e}:${world.read(e, SelectionSummary).keys};`; } });
-    return k;
   };
   const clockOf = (e: Entity): Clocks => {
     let c = clocks.get(e);
@@ -234,7 +174,7 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
       seenDrags.clear();
       for (const rec of now) seenDrags.add(rec);
       const p = rect === null ? null : pointerScreen();
-      const next = `${laserKey(guides, bars)}|${rect === null ? "" : `${rect.x},${rect.y},${rect.w},${rect.h},${m?.hits.length ?? 0},${p?.x ?? ""},${p?.y ?? ""}`}|${drags}|${cam?.gesturing === true ? 1 : 0}|${editing}|${peersKey()}`;
+      const next = `${laserKey(guides, bars)}|${rect === null ? "" : `${rect.x},${rect.y},${rect.w},${rect.h},${m?.hits.length ?? 0},${p?.x ?? ""},${p?.y ?? ""}`}|${drags}|${cam?.gesturing === true ? 1 : 0}|${editing}`;
       const any = next !== snapshot || met || told;
       told = false;
       snapshot = next;
@@ -291,7 +231,7 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
       unionT = step(unionT, 1, dt, C.union);
       unionA = step(unionA, several ? 1 : 0, dt, C.unionFade);
       live ||= (several && unionT < 1) || (several ? unionA < 1 : unionA > 0);
-      const marks = assembleMarks({ view: input.view, cam, night: input.night, objects, union: { t: unionT, a: unionA }, marquee, fold, guides, bars, strike, ruler: input.rulers, peers: readPeers(input.rows) });
+      const marks = assembleMarks({ view: input.view, cam, night: input.night, objects, union: { t: unionT, a: unionA }, marquee, fold, guides, bars, strike, ruler: input.rulers });
       // the menu's anchor: the marks' box around the selection as drawn
       let drags = 0;
       world.query(dragsQ).each((b) => { drags += b.count; });

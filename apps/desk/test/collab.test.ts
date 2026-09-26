@@ -9,8 +9,8 @@
  *     same desk key for key (the inside's note inside B's mini mat); then a new object crosses.
  *  2. Presence: A's cursor (through A's real input queue) and a one-object selection project onto B — B's peer
  *     carries A's name and colour, the cursor, a summary whose one key resolves to B's own copy of the note — and
- *     B's derive grows the `CursorVisual "remote"` entity following that peer (what the marks draw as A's hand,
- *     D-D5a.1). Loro's presence throttle runs on the wasm clock, which no fake reaches, so presence converges by
+ *     B's derive grows the `CursorVisual "remote"` entity following that peer (what `@ice/dom`'s remote-cursors
+ *     reflector shows, rig:collab). Loro's presence throttle runs on the wasm clock, which no fake reaches, so presence converges by
  *     the presence suite's rule — REAL short waits, deadline-polled (`converge`) — over the room's own channel.
  *  3. The boot with a room never touches storage: the room is the truth (Web Storage and IndexedDB spied).
  */

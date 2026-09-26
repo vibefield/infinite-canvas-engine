@@ -267,3 +267,10 @@ export const calendarLook = (tape: CalendarTape): { paper: RGB; ink: RGB; muted:
   const t = L.tapes[tape];
   return { paper: rgb(L.paper.css), ink: rgb(L.ink.css), muted: rgb(L.muted.css), weekend: rgb(L.weekend.css), hot: rgb(L.hot.css), chipboard: rgb(L.chipboard.css), cloth: rgb(t.cloth.css), foil: rgb(t.foil.css), alpha: L.alpha };
 };
+
+/**
+ * The inks a PERSON takes in apps/desk's rooms (D5a) — the colour `@ice/dom`'s remote-cursors reflector paints a peer's cursor and
+ * name chip in (core's `PresenceInfo.color`): violet and the warm hues, which read over the green mat by day and under the Moon;
+ * none a green of the mat's, none the pencil's blue (YOUR hand's). A demo's choice, not yet a DESIGN.md token.
+ */
+export const PRESENCE_INKS = ["#8e4ec6", "#e2a336", "#e5484d", "#d6409f", "#f76b15"] as const;

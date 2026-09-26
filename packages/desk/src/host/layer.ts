@@ -291,9 +291,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     }
     const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;
     const readMarquee = ctx.readMarquee;
-    // a room's other people (D5a): their selections' durable keys resolve to this desk's objects through the document handed in
-    const resolveKey = (key: string): Entity | undefined => opts.docs?.current()?.store.resolve(key as never);
-    const builder = createDeskBuilder(world, { objects: [...types], locals, resolveKey, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
+    const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
     // the selection menu's source: the anchor published whenever a frame moved it
     const listeners = new Set<() => void>();
     let published = "";

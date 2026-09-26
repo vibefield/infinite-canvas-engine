@@ -6,7 +6,7 @@
 
 import { type BootstrapClock, broadcastChannelByteChannel, type ByteChannel, type CanvasEngine, createCanvasEngine, defineCanvasType, defineTool, type JoinResult, type Tool, tools, webSocketByteChannel } from "@ice/core";
 import { DESK_OBJECTS } from "@ice/desk/objects";
-import { MARKS } from "@ice/desk/theme";
+import { PRESENCE_INKS } from "@ice/desk/oracle/fixtures/vf-theme";
 
 function builtin(id: string): Tool {
   const tool = tools.get(id);
@@ -48,8 +48,8 @@ export interface DeskIdentity {
   readonly color: string;
 }
 
-/** The presence palette: the desk's hand inks (theme.ts) — they read on the lit mat and under the Moon, none of them the pencil's own blue (that is YOUR hand). */
-export const PRESENCE_COLORS = MARKS.hand.inks;
+/** The presence palette: the product fixture's person inks (`PRESENCE_INKS` — what dom's remote-cursors reflector paints a peer in). */
+export const PRESENCE_COLORS = PRESENCE_INKS;
 const PRESENCE_NAMES = ["Otter", "Heron", "Marmot", "Lynx", "Falcon", "Badger", "Gecko", "Wren", "Vole", "Puffin"] as const;
 
 /** `?name=` and `?color=` pin this desk's identity (a rig's two hands); otherwise a name and a colour drawn at random. */
