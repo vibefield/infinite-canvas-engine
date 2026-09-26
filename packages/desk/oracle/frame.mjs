@@ -222,7 +222,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   // biome-ignore lint/style/useDefaultParameterLast: the prototype's signature, moved verbatim — dropping the default would change what an explicit `undefined` means (design-015 D1)
   function gridFor(s, rootSlot = false, ground) {
     return {
-      fadeIn: DEFAULT_GRID.fadeIn,
+      fadeIn: s.fadeIn ?? DEFAULT_GRID.fadeIn,   // a still may state its lattice's fade-in window (the zoom sweep's sparse one — D5a)
       mat: {
         ...DEFAULT_MAT_CONFIG,
         ...(ground ? { ground } : {}),

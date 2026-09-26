@@ -33,7 +33,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * the whiteboards, the prints — one inside a mini mat, through the inside's slot, lit by its host's lamp — the notebooks, the
  * desk calendars, and a selected notebook's and desk calendar's marks (D3w).
  */
-const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad)-/;
+const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad|zoom)-/;
 /**
  * design-015 D3w: the three inked-board scenes keep, from the world too, the bound rig:parity names for them (D-D3r-a.5): the
  * stamp pass compiled by Chrome's Dawn and by node-webgpu's quantises a handful of the raster's coverages one LSB apart — the

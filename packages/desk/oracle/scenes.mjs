@@ -251,3 +251,14 @@ export const MARKS_SCENES = [
   { name: "marks-remote-night-z1", marks: true, hands: true, scene: { ...marksBase, theme: "dark", zoom: 1, notes: REMOTE_NOTES, marks: { peers: [BOB] } } },
 ];
 ORACLE_SCENES.push(...MARKS_SCENES);
+
+// The LATTICE through a zoom sweep (the prototype's test/harness/zoom.mjs — screenshots there, stills here, drawn FROM THE WORLD by
+// rig:world — D5a): the desk of mini mats and notes by night at the harness's camera, the product's fade-in window (the mid cell
+// 10 → 20 px) across the sweep with the DECADE WRAP between 0.99 and 1.01 among it; and the sparse window (20 → 40 px — the classic
+// grid's "nothing under 20 px") at three of those zooms, over the notes alone (an inside keeps the product's window).
+const zoomBase = { ...base, theme: "dark", mat: matStill, camX: 13.7, camY: -21.3 };
+export const ZOOM_SCENES = [
+  ...[0.11, 0.15, 0.2, 0.3, 0.6, 0.99, 1.01, 1.5].map((zoom) => ({ name: `zoom-z${zoom}`, scene: { ...zoomBase, zoom, minimats: DESK, notes: deskNotes } })),
+  ...[0.2, 0.99, 1.01].map((zoom) => ({ name: `zoom-sparse-z${zoom}`, scene: { ...zoomBase, zoom, notes: deskNotes, fadeIn: [20, 40] } })),
+];
+ORACLE_SCENES.push(...ZOOM_SCENES);
