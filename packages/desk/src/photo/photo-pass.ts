@@ -6,14 +6,16 @@
 // uploaded from whatever the host decoded (a pasted image, a dropped file) and
 // bound as the print's own group 1, so a picture made once draws in any slot.
 // A slot reads its OWN mat's animated silhouette and blue noise, so a print is
-// dappled by the same palm as the mat under it. The pass draws in RANGES of the
-// prints it was handed (design-015 §4.2): the desk's runs of one kind.
+// dappled by the same palm as the mat under it — and a slot lit from elsewhere
+// (a mini mat's inside: MINIMAT.md §4) takes the lamp of the desk it lies on,
+// through a second pipeline (`LIT_ELSEWHERE`, the note's precedent). The pass
+// draws in RANGES of the prints it was handed (design-015 §4.2): the desk's runs.
 
 import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
-import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, STILL_MAT_FRAME } from "../mat/layout";
+import { litByOwn, type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../mat/layout";
 import type { MatPass } from "../mat/mat-pass";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
 import { MAT_GRID } from "../theme";
@@ -49,6 +51,8 @@ interface PhotoShared {
   readonly layout0: GPUBindGroupLayout;
   readonly layout1: GPUBindGroupLayout;
   readonly pipeline: GPURenderPipeline;
+  /** The same, for a slot lit from elsewhere — a mini mat's inside, a handover (MINIMAT.md §4): `LIT_ELSEWHERE` is a pipeline constant. */
+  readonly litPipeline: GPURenderPipeline;
   readonly goboSampler: GPUSampler;
   readonly noiseSampler: GPUSampler;
   readonly picSampler: GPUSampler;
@@ -93,6 +97,8 @@ export class PhotoPass {
   private bound = -1;
   /** This frame's prints' pictures, in the order `prepare` was handed them — what `drawRange` counts in. */
   private list: (Picture | null)[] = [];
+  /** This frame's slot is lit from elsewhere: it draws with the second pipeline. */
+  private litElsewhere = false;
   /** The print's numbers (photo.ts `PHOTO`) — a host tunes the root's copy; every slot takes it (`tune`). */
   law: PhotoLaw = PHOTO;
   private readonly device: GPUDevice;
@@ -122,9 +128,13 @@ export class PhotoPass {
     ], "photo/prints");
     const layout1 = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }], "photo/picture");
     const module = await compile(device, compose({ structs: [MatUniforms, PhotoUniforms, Photo], modules: src.modules, entry: src.entry }));
-    const pipeline = await renderPipeline(device, { label: "photo/prints", layout: device.createPipelineLayout({ bindGroupLayouts: [layout0, layout1] }), module, format, blend: BLEND_PREMUL });
+    const pl = device.createPipelineLayout({ bindGroupLayouts: [layout0, layout1] });
+    const [pipeline, litPipeline] = await Promise.all([
+      renderPipeline(device, { label: "photo/prints", layout: pl, module, format, blend: BLEND_PREMUL }),
+      renderPipeline(device, { label: "photo/prints, lit from elsewhere", layout: pl, module, format, blend: BLEND_PREMUL, constants: { LIT_ELSEWHERE: 1 } }),
+    ]);
     const shared: PhotoShared = {
-      layout0, layout1, pipeline,
+      layout0, layout1, pipeline, litPipeline,
       goboSampler: device.createSampler({ label: "photo/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
       noiseSampler: device.createSampler({ label: "photo/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" }),
       picSampler: device.createSampler({ label: "photo/picture", magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
@@ -170,10 +180,11 @@ export class PhotoPass {
   dropPicture(p: Picture): void { if (p !== this.shared.blank) p.texture.destroy(); }
 
   /**
-   * Upload this frame's prints in paint order (first = lowest) and the mat's block for the
-   * camera and light: the dapple falls on the prints. Returns the count that will draw.
+   * Upload this frame's prints in paint order (first = lowest) and the mat's block for this slot's camera,
+   * its light (`light` the Sun or the Moon, `lit` the lamp it is seen by — MINIMAT.md §4): the dapple falls
+   * on the prints. Returns the count that will draw.
    */
-  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, prints: readonly PhotoInstance[], present?: Presentation, light: MatLight = DAY_LIGHT): number {
+  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, prints: readonly PhotoInstance[], present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight): number {
     this.rebind();
     const n = Math.min(prints.length, MAX_PHOTOS);
     for (let i = 0; i < n; i++) {
@@ -181,8 +192,9 @@ export class PhotoPass {
       this.records.set(photoValues(p.geometry, p.border, p.picture), i);
     }
     this.list = prints.slice(0, n).map((p) => p.picture);
+    this.litElsewhere = !litByOwn(view, lit);
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
-    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS));
+    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS, lit));
     this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set(photoUniformValues(this.law));
     this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
@@ -198,12 +210,12 @@ export class PhotoPass {
   /**
    * The prints `prepare` was handed at [first, end) — indices into ITS list, as the ground's runs count a kind's records —
    * one quad each with its picture bound (the blank texel where it has none), the slot's group bound once before the
-   * first. An empty range records nothing, not even the pipeline.
+   * first, on the pipeline for the slot's light. An empty range records nothing, not even the pipeline.
    */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void {
     const hi = Math.min(end, this.list.length);
     if (first >= hi) return;
-    pass.setPipeline(this.shared.pipeline);
+    pass.setPipeline(this.litElsewhere ? this.shared.litPipeline : this.shared.pipeline);
     pass.setBindGroup(0, this.group);
     for (let i = first; i < hi; i++) {
       pass.setBindGroup(1, (this.list[i] ?? this.shared.blank).group);

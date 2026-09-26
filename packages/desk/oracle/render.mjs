@@ -685,6 +685,51 @@ async function ringCheck(sc) {
   return ok;
 }
 
+/**
+ * MINIMAT.md §4 for a PRINT, as pixels — a print inside a mini mat's face is lit by the lamp of the desk the mini mat lies on (the
+ * photo pass's LIT_ELSEWHERE pipeline): over the print's sheet (4 device px in), its SHADE (gobo on ÷ off) follows the bare desk's
+ * own shade at the same pixels (r ≥ 0.9); the control — the inside under its own lamp — does not (lower by 0.2 or more).
+ */
+async function litCheck(sc) {
+  const s = sc.scene;
+  const off = { ...s, mat: { ...s.mat, opacity: 0 } };
+  const [{ px: MA }, { px: MB }, { px: DA }, { px: DB }, { px: OA }, { px: OB }] = [await render(s), await render(off), await render({ ...s, minimats: [] }), await render({ ...off, minimats: [] }), await render(s, { ownLitInsides: true }), await render(off, { ownLitInsides: true })];
+  const m = s.minimats[0];
+  const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
+  const view = insideView(matGeometry(m), contentOf(insideOf(m)), cam, VP, FIT, s.portalGate ?? PORTAL_GATE);
+  const G = printOf(insideOf(m).prints[0]).geometry;
+  const k = 1 / (view.cam.zoom * VIEW.dpr);   // the inside's world units per device px
+  const shade = (A, B, o) => lum(A, o) / Math.max(lum(B, o), 1);
+  const xs = [];
+  const ys = [];
+  const zs = [];
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) {
+    const wx = (x + 0.5) * k + view.cam.x;
+    const wy = (y + 0.5) * k + view.cam.y;
+    if (!(sdPrint(G, wx, wy) < -4 * k)) continue;
+    const o = (y * W + x) * 4;
+    xs.push(shade(DA, DB, o)); ys.push(shade(MA, MB, o)); zs.push(shade(OA, OB, o));
+  }
+  const corr = (a, b) => {
+    const n = a.length;
+    const ma = a.reduce((p, v) => p + v, 0) / n;
+    const mb = b.reduce((p, v) => p + v, 0) / n;
+    let c = 0;
+    let va = 0;
+    let vb = 0;
+    for (let i = 0; i < n; i++) { c += (a[i] - ma) * (b[i] - mb); va += (a[i] - ma) ** 2; vb += (b[i] - mb) ** 2; }
+    return c / Math.sqrt(va * vb + 1e-12);
+  };
+  const host = corr(xs, ys);
+  const own = corr(xs, zs);
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+  for (const v of xs) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const ok = xs.length > 10000 && view.presence === 1 && hi - lo > 0.2 && host >= 0.9 && own < host - 0.2;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  lit        ${sc.name.padEnd(24)} over ${xs.length.toLocaleString()} px of the print through the face (presence ${view.presence}; the desk's shade spans ${(hi - lo).toFixed(2)}): the print's shade follows the desk's at r = ${host.toFixed(3)}; lit by its own lamp instead, r = ${own.toFixed(3)}`);
+  return ok;
+}
+
 // ---------------------------------------------------------------- run
 
 const only = process.env.ORACLE_ONLY ? new RegExp(process.env.ORACLE_ONLY) : null;
@@ -714,5 +759,6 @@ for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 
 for (const sc of scenes) if (sc.board) { if (!(await boardCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ink) { if (!(await inkCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ring) { if (!(await ringCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.lit) { if (!(await litCheck(sc))) failed += 1; }
 if (failed) { console.log(`${failed} check(s) FAILED`); process.exitCode = 1; }
 device.destroy();

@@ -4,6 +4,9 @@
 // portal clip. The picture is the print's own texture (group 1), so a print
 // is one draw; the paint order is the draw order.
 
+// The slot is lit from elsewhere (MINIMAT.md §4): the pass's second pipeline — a pipeline constant, never a uniform flag.
+override LIT_ELSEWHERE: bool = false;
+
 @group(0) @binding(0) var<uniform> u: MatUniforms;
 @group(0) @binding(1) var<uniform> k: PhotoUniforms;
 @group(0) @binding(2) var<storage, read> photos: array<Photo>;
@@ -45,7 +48,7 @@ fn fs(in: VSOut) -> @location(0) vec4f {
   let dpr = mat_dpr(u);
   let px = 1.0 / (mat_zoom(u) * dpr);
   let s = in.clip.xy * px + u.cam.xy;   // device px → world
-  let c = shade_photo(P, u, k, s, px, in.clip.xy, gobo_tex, gobo_samp, noise_tex, noise_samp, pic_tex, pic_samp);
+  let c = shade_photo(P, u, k, s, px, in.clip.xy, gobo_tex, gobo_samp, noise_tex, noise_samp, pic_tex, pic_samp, LIT_ELSEWHERE);
   if (c.a < 0.002) { discard; }
   return c * (u.view.w * portal_cover(in.clip.xy / dpr, u.portals, u.clips, dpr));
 }

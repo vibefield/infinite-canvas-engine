@@ -3,7 +3,9 @@
 // desk's other things in the desk's own order (a print on a note, a note on a print) — in the
 // prototype the prints lay above everything, drawn by the photo lab in a render pass of their
 // own after the ground's; here they are one more kind's runs in the ground's one pass, with the
-// same blend onto the same bytes. A spawned slot's pass takes the root's law every frame (`tune`).
+// same blend onto the same bytes. A spawned slot's pass takes the root's law every frame (`tune`), and a
+// print inside a mini mat's face is lit by the lamp of the desk the mini mat lies on (the slot's `lit` —
+// MINIMAT.md §4), through the pass's second pipeline, as the note's is.
 // The PICTURES stay the pass's: a host makes one (`pass.picture`, `pass.pictureFrom`) and a
 // print's record names it by that handle (`PhotoInstance.picture`, null = its paper alone).
 
@@ -25,9 +27,9 @@ export class PhotoKind implements KindPass<PhotoInstance> {
 
   tune(root: KindPass<PhotoInstance>): void { if (root instanceof PhotoKind) this.pass.tune(root.pass); }
 
-  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light. */
+  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light, the lamp. */
   prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly PhotoInstance[]): number {
-    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light);
+    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit);
   }
 
   /** Records [first, end) — indices into the prints `prepare` was handed, each drawn with its picture. */

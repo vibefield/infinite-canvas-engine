@@ -137,6 +137,9 @@ export const PHOTO_SCENES = [
     name: "photo-over-note-z1", order: true,
     scene: { ...photoBase, zoom: 1, things: [{ kind: "note", x: 330, y: 300, seed: 5, text: "" }, { kind: "print", x: 520, y: 330, angle: 0.05 }, { kind: "note", x: 700, y: 420, seed: 11, text: "" }] },
   },
+  // a print INSIDE a mini mat (design-015 D-D18: prints nest): its face past the gate, the print lit by the lamp of the desk the
+  // mini mat lies on (MINIMAT.md §4) — the photo pass's LIT_ELSEWHERE pipeline, as the note's. `lit` runs the check.
+  { name: "photo-inside-z1", lit: true, scene: { ...photoBase, camX: 0, camY: 0, zoom: 1, notes: [], minimats: [{ x: 600, y: 400, w: 800, h: 560, inside: { notes: [], minimats: [], prints: [{ x: 0, y: 0, angle: 0.04 }] } }] } },
 ];
 ORACLE_SCENES.push(...PHOTO_SCENES);
 

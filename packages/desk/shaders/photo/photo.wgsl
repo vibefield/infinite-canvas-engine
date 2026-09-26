@@ -118,10 +118,12 @@ fn photo_desk_at(u: MatUniforms, world: vec2f, h: f32) -> vec3f {
   return vec3f(u.plane.x + world.x * u.plane.z, u.plane.w + h * u.plane.z, u.plane.y + world.y * u.plane.z);
 }
 
-// One print at a desk point `s`: premultiplied colour. `px` is world units per DEVICE px; `frag` the framebuffer pixel.
+// One print at a desk point `s`: premultiplied colour. `px` is world units per DEVICE px; `frag` the framebuffer pixel; `lit`
+// the slot is lit from elsewhere (a mini mat's inside, a handover — MINIMAT.md §4): a PIPELINE constant, never a uniform flag,
+// so a print under its own lamp compiles to exactly what it always did (the note's precedent, paper.wgsl `shade_paper`).
 fn shade_photo(P: Photo, u: MatUniforms, k: PhotoUniforms, s: vec2f, px: f32, frag: vec2f,
                gobo_tex: texture_2d<f32>, gobo_samp: sampler, noise_tex: texture_2d<f32>, noise_samp: sampler,
-               pic_tex: texture_2d<f32>, pic_samp: sampler) -> vec4f {
+               pic_tex: texture_2d<f32>, pic_samp: sampler, lit: bool) -> vec4f {
   let half = vec2f(P.ex.w, P.ey.w);
   let L = P.light.xyz;
 
@@ -162,7 +164,9 @@ fn shade_photo(P: Photo, u: MatUniforms, k: PhotoUniforms, s: vec2f, px: f32, fr
   let n = photo_normal(P, q);
   let diffuse = clamp(dot(n, L) / max(L.z, 1.0e-3), 0.0, 1.6);
   albedo = clamp(albedo * pow(diffuse, 1.0 / 2.2), vec3f(0.0), vec3f(1.0));
-  let gobo = sample_gobo(u, gobo_tex, gobo_samp, photo_desk_at(u, hit.p.xy, hit.p.z), bn.z);
+  // the dapple: under the slot's own lamp the sheet's point itself — else where the LIGHT sees it: the lamp of the desk a mini mat lies on (MINIMAT.md §4)
+  var gobo = sample_gobo(u, gobo_tex, gobo_samp, photo_desk_at(u, hit.p.xy, hit.p.z), bn.z);
+  if (lit) { gobo = lit_gobo(u, gobo_tex, gobo_samp, hit.p.xy, hit.p.z, photo_desk_at(u, hit.p.xy, hit.p.z), bn.z); }
   var colour = photo_colour(u, k, albedo, gobo, pic.a, bn.y);
   // the light on the coating: the Sun's, or by night the Moon's — the same palm blocks both, and the Moon's
   // glint is dimmer (the night's level) and cooler (what the rods make of a white highlight)

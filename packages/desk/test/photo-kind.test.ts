@@ -1,17 +1,19 @@
 // The PHOTO print as a kind (design-015 D3r-a): the photo pass behind the registry's door. Its adapter
 // hands the pass what the ground hands it; the pass itself — on a fake device, no pixels (those are the
 // oracle's `photo-*` scenes and apps/desk's rigs) — spawns a slot's own buffers on the shared pipeline,
-// samplers and pictures, and draws in RANGES of the prints it was handed, as the ground's runs ask.
+// samplers and pictures, draws in RANGES of the prints it was handed, as the ground's runs ask, and a slot
+// lit from elsewhere (a mini mat's inside — MINIMAT.md §4) draws with its second pipeline and the host's lamp.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createSlotSet, drawSlot, type DrawSlot, type KindPass, type SlotContext } from "../src/ground";
 import { DESK_KINDS, PHOTO_KIND, PhotoKind, photoProgram } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
-import { DEFAULT_MAT_CONFIG, STILL_MAT_FRAME } from "../src/mat/layout";
+import { DEFAULT_MAT_CONFIG, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../src/mat/layout";
 import { MatPass } from "../src/mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import { newBody, resolvePhoto } from "../src/photo/photo";
 import type { PhotoInstance, PhotoPass, Picture } from "../src/photo/photo-pass";
 import { shaderText } from "../src/shaders";
+import { MAT_GRID } from "../src/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, installGpuFlags } from "./fake-gpu";
 import { loggingKind } from "./fake-kinds";
@@ -49,14 +51,14 @@ describe("the photo print in the registry", () => {
     expect(DESK_KINDS.at(-1)?.name).toBe(PHOTO_KIND);
   });
 
-  it("the adapter hands its pass's prepare exactly what the ground hands it: the slot's camera, grid, clocks, the objects' presence, the light", () => {
+  it("the adapter hands its pass's prepare exactly what the ground hands it: the slot's camera, grid, clocks, the objects' presence, the light, the lamp", () => {
     const got: unknown[][] = [];
     const spy = { prepare: (...a: unknown[]) => { got.push(a); return 3; } };
     const kind: KindPass = new PhotoKind(spy as unknown as PhotoPass);
     const s = ctx({ present: { opacity: 0.5 }, light: THEMES.dark.matLight, theme: THEMES.dark, lit: { a: { x: 1, y: 2, zoom: 3 } } });
     const records: never[] = [];
     expect(kind.prepare({} as GPUCommandEncoder, s, records, { live: () => 0.5 })).toBe(3);
-    same(got[0], [s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light]);
+    same(got[0], [s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit]);
   });
 
   it("spawn wraps the pass's own spawn; tune takes the root's law; ranges forward", () => {
@@ -82,15 +84,22 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
   beforeAll(() => { undo.push(installGpuFlags()); });
   afterAll(() => { for (const u of undo.splice(0)) u(); });
 
-  /** The root's photo pass on a fake device that keeps every bind group it made and every texture (with whether it was destroyed). */
+  /** The root's photo pass on a fake device that keeps every bind group, pipeline and buffer write it made and every texture (with whether it was destroyed). */
   async function root() {
     const { device } = fakeDevice();
     const groups: GPUBindGroupDescriptor[] = [];
+    const pipelines: GPURenderPipelineDescriptor[] = [];
+    const writes: { readonly buffer: string; readonly bytes: Uint8Array }[] = [];
     const textures: { readonly texture: unknown; destroyed: boolean }[] = [];
     const makeGroup = device.createBindGroup.bind(device);
     const makeTexture = device.createTexture.bind(device);
-    const d = device as { createBindGroup: GPUDevice["createBindGroup"]; createTexture: GPUDevice["createTexture"] };
+    const makePipeline = device.createRenderPipelineAsync.bind(device);
+    const d = device as { createBindGroup: GPUDevice["createBindGroup"]; createTexture: GPUDevice["createTexture"]; createRenderPipelineAsync: GPUDevice["createRenderPipelineAsync"] };
     d.createBindGroup = (desc) => { groups.push(desc); return makeGroup(desc); };
+    d.createRenderPipelineAsync = (desc) => { pipelines.push(desc); return makePipeline(desc); };
+    (device.queue as { writeBuffer: unknown }).writeBuffer = (buffer: { label: string }, _offset: number, data: ArrayBufferView) => {
+      writes.push({ buffer: buffer.label, bytes: new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice() });
+    };
     d.createTexture = (desc) => {
       const texture = makeTexture(desc);
       const kept = { texture, destroyed: false };
@@ -101,7 +110,7 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const set = await createSlotSet(device, "bgra8unorm", mat, [photoProgram(shaderText)]);
     const kind = must(set.kinds.get(PHOTO_KIND)).pass as PhotoKind;
-    return { device, mat, kind, groups, textures };
+    return { device, mat, kind, groups, pipelines, writes, textures };
   }
 
   it("a spawned slot shares the pipeline and the pictures, and binds its own buffers and ITS mat's silhouette", async () => {
@@ -127,6 +136,55 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     expect(b[1]?.[2]).not.toBe(a[1]?.[2]);    // each slot's own group 0
     expect(b[2]?.[2]).toBe(picture.group);   // the picture, made once, bound in both
     expect(a[2]?.[2]).toBe(picture.group);
+    // a spawned slot takes the root's law when tuned (the ground does it every frame)
+    const law = structuredClone(kind.pass.law);
+    kind.pass.law = law;
+    spawned.tune(kind);
+    expect(spawned.pass.law).toBe(law);
+  });
+
+  it("the slot's light picks the pipeline — a pipeline CONSTANT, never a uniform flag: its own lamp draws with the plain one (no constants), a host's lamp or a handover mid-way with LIT_ELSEWHERE", async () => {
+    const { kind, pipelines } = await root();
+    const plain = must(pipelines.find((p) => p.label === "photo/prints"));
+    const litDesc = must(pipelines.find((p) => p.label === "photo/prints, lit from elsewhere"));
+    for (const stage of [plain.vertex, plain.fragment]) expect(stage?.constants).toEqual({});
+    for (const stage of [litDesc.vertex, litDesc.fragment]) expect(stage?.constants).toEqual({ LIT_ELSEWHERE: 1 });
+    expect(litDesc.fragment?.module).toBeDefined();
+    expect(litDesc.fragment?.module).toBe(plain.fragment?.module);   // one module, two specialisations
+    const own = { x: VIEW.camX, y: VIEW.camY, zoom: VIEW.zoom };
+    const host = { x: 40, y: -12, zoom: 0.5 };
+    const drawnWith = (lit: SlotLight | undefined) => {
+      kind.prepare({} as GPUCommandEncoder, ctx({ lit }), [print(0, null)]);
+      const c: unknown[][] = [];
+      kind.drawRange(objectPass(c), 0, 1);
+      return (c[0]?.[1] as { label: string }).label;
+    };
+    expect(drawnWith(undefined)).toBe("photo/prints");                                  // the root at rest
+    expect(drawnWith({ a: own })).toBe("photo/prints");                                 // a light that IS its own camera
+    expect(drawnWith({ a: host, b: own, t: 1 })).toBe("photo/prints");                 // a handover landed on its own
+    expect(drawnWith({ a: host })).toBe("photo/prints, lit from elsewhere");            // a mini mat's inside: the host's lamp
+    expect(drawnWith({ a: own, b: host, t: 0.5 })).toBe("photo/prints, lit from elsewhere");   // a handover mid-way
+    expect(drawnWith(undefined)).toBe("photo/prints");                                  // and back: the choice is per frame
+  });
+
+  it("the lamp reaches the mat block the prints are shaded by: the host's camera as the slot's light, its own camera without one", async () => {
+    const { kind, writes } = await root();
+    const host: SlotLight = { a: { x: 40, y: -12, zoom: 0.5 } };
+    const s = ctx({ lit: host, present: { opacity: 0.75 } });
+    const block = (lit: SlotLight | undefined) => {
+      const u = MatUniforms.alloc(1);
+      const strength = MAT_GRID.gobo.plates[s.cfg.gobo.plate === "b" ? "b" : "c"].strength;
+      u.set(matUniformValues(s.view, s.fadeIn, s.cfg, s.frame ?? STILL_MAT_FRAME, strength, s.present, s.light, NO_GLYPHS, lit));
+      return new Uint8Array(u.view().buffer, u.view().byteOffset, u.view().byteLength).slice();
+    };
+    writes.length = 0;
+    kind.prepare({} as GPUCommandEncoder, s, [print(0, null)]);
+    const written = must(writes.find((w) => w.buffer === "photo/mat uniforms")).bytes;
+    expect(written).toEqual(block(host));
+    expect(written).not.toEqual(block(undefined));   // the lamp is not the slot's own
+    writes.length = 0;
+    kind.prepare({} as GPUCommandEncoder, ctx({ present: { opacity: 0.75 } }), [print(0, null)]);
+    expect(must(writes.find((w) => w.buffer === "photo/mat uniforms")).bytes).toEqual(block(undefined));
   });
 
   it("drawRange counts in the prints it was handed: [first, end) each with its picture (the blank texel where it has none); an empty range records nothing; draw() is the whole list", async () => {
