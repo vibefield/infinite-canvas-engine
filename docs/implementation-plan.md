@@ -1079,7 +1079,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a and D4b LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b and D5b — THE DELETION — LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1377,6 +1377,32 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   the orchestrator on the rebased tip). Rulings D-D4b.1–.12 (in the code). Owed: a two-finger pinch in hand, the phone's
   touch pan/zoom, a cancelled `HeldPress` read as a release, the Kawase σ calibration, the held frame's cost (the open
   spread's — D6), and every tool (D3t).
+- **D5b — the deletion: the hybrid goes, the desk is the one presentation** (**LANDED 2026-09-26**, `f287e7f` the code —
+  676 files, −87,647 lines — and `3eb8209` the docs; a fable builder): design-015 §1's retire table, area by area against
+  its estimates — dom's WORLD-SPACE half (2,251 lines: the planes, the source canvas and `layoutsubtree`, the widget
+  surfaces, measurement, the dom-widgets/writeback/graybox/plane-transform/chrome reflectors, the adapter's GL route; the
+  screen-space half stays — host, pointer adapter, loop, input ownership, focus, cursor and remote cursors — and no DOM
+  element carries a camera transform any more), `packages/r3f` whole (`three`, `@react-three/*`, `stats-gl`, the fiber
+  patch, electron and truffle leave the workspace — 80 fewer packages resolve), `packages/ground` whole with groundlab
+  (nothing carried as code: the desk already had the submit instrument, its marks pass draws the guides and the marquee,
+  and the wires' overlay seam waits for the first kind that declares a port), core's surface infra (3,259: `Retained` and a
+  slimmed `acquireCompositorDevice` kept) and the widget runtime's VIEW half (`surface`/`component`/`chrome`/`animated`/
+  `preview`/`instancePreview`/`sizeMode`/`framePreview` refused at definition; a widget's face is its optional `object`
+  binding; the mount store cull-only; every effective size is `Size`), kernel's island helpers, react's profiles/portals/
+  previews, devtools' GL panel, and ALL NINE legacy apps (38,801 lines; their exit tests ported by D5a or retired by
+  name). `<InfiniteCanvas>` became `<Desk engine layer>` by deletion over `createDeskHost` in dom (the desk typed
+  structurally — `LayerFactory`); the umbrella's entries are `.` · `/kernel` · `/dom` · `/desk` · `/desk/engine` ·
+  `/desk/objects` · `/react` · `/devtools`, and `@ice/desk`'s workspace exports now MIRROR them (the subpaths fold into the
+  root, so M10's SURFACE is the published shape); the walls `no-three`, `desk-dom-free`, desk/engine never imports
+  desk/objects, nobody imports desk or devtools; the lockfile's change proven by a control install; the CHANGELOG's 0.14.0
+  BREAK LIST (no version bump — the release cut is James's); design-004/005 amended at their sections. Exit: the oracle's
+  92 renders SHA-EQUAL before and after (the deletion moved no pixel); every desk rig at main's count (parity 92 · 0 · 3,
+  world 79 · 0 · 3, interact 114, open 38, nav 26, two-tab 19, collab 9, ruler 23, panel 13, idle, portal, sticky);
+  pack:audit — 278 modules from 8 entries, 0 edges to three; ci exit 0 (kernel 113, core 771, dom 57, react 33, desk 437,
+  devtools 10, apps/desk 12 — the retired suites went with their subjects); `gate:landing` exit 0 (re-run by the
+  orchestrator). Flagged for James: the committed Lusion gobo plates (study-only licence; absent from the published dist,
+  present in the repo as oracle fixtures). Owed: a desk wires pass with the first kind that declares ports; the M3 baseline
+  re-measured on the stress rig (D6); a peer's nav frame in presence.
 
 ## Release cut & downstream
 
