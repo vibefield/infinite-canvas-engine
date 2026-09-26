@@ -90,7 +90,12 @@ try {
   const cam0 = await cam();
   const notePos = await q(`(() => { const e = window.__desk.entity(${note}); return { x: e.x, y: e.y }; })()`);
 
-  // ---- 1. the double-click picks it up; no camera move; the frame is the reading pose; the bar goes to the foot
+  // ---- 1. the double-click picks it up; no camera move; the frame is the reading pose; the bar goes to the foot — §1–§3 under the
+  //         DEFAULT ambient (D7): `idle` with the wind up (the pointer's move is a touch), so the copy's "once" and the idle-zero in
+  //         hand hold while the wind's clocks run, not only on a still mat
+  await q("window.__desk.ambient('idle')");
+  await mouse("mouseMoved", 300, 200);
+  check(await until(async () => (await q("window.__desk.ambient().phase")) === "live", 1000), "the wind is up for the pick-up (the default `idle` ambient, the pointer's move a touch)");
   const t0 = Date.now();
   await dbl(300, 200);
   check(await held(), "a double-click on the notebook picks it up (Held; the hand's frame published)");
@@ -105,14 +110,15 @@ try {
   const bar = await q("(() => { const el = document.querySelector('[data-ice-selection-menu]'); if (!el) return null; const r = el.getBoundingClientRect(); return { held: el.dataset.held, done: !!el.querySelector('[data-act=\"done\"]'), tools: [...el.querySelectorAll('[data-tool]')].map((b) => b.dataset.tool), top: r.top, bottom: r.bottom, label: el.getAttribute('aria-label') }; })()");
   check(bar !== null && bar.held === "true" && bar.done && bar.tools.length === 7 && bar.top > 720 && bar.bottom <= 800, `the selection menu became the held bar at the foot (y ${bar?.top.toFixed(0)}–${bar?.bottom.toFixed(0)}; ${bar?.tools.join(" · ")}; Done; "${bar?.label}")`);
 
-  // ---- 2. idle-zero in hand; the desk copy made once
+  // ---- 2. idle-zero in hand; the desk copy made once — the wind's window (20 s) still open: the desk behind the hand stands still
   await settle();
   const copies0 = await q("window.__desk.holdCopies()");
   const n0 = await q("window.__desk.submits().total");
   await sleep(600);
   const n1 = await q("window.__desk.submits().total");
-  check(n1 === n0, `idle-zero while held and still: ${n1 - n0} submits in 600 ms`);
+  check(n1 === n0, `idle-zero while held and still, the wind up: ${n1 - n0} submits in 600 ms`);
   check(copies0 >= 1, `the desk copy behind the hand: ${copies0} made for the pickup (once when it settled, plus the flight's frames the pointer disturbed)`);
+  check((await q("window.__desk.holdCopies()")) === copies0, "…and the wind remakes none of it (design-015 §8 \"rendered ONCE\"; §11.4 \"0 per held frame\")");
 
   // ---- 3. the wheel is the held object's, never the camera's; the copy stands
   await wheel(700, 400, -60, META);
@@ -136,6 +142,7 @@ try {
   const v3 = await q(`window.__desk.heldView(${book})`);
   check(v3 !== null && near(v3.panX, v2.panX + 40, 1e-6) && near(v3.panY, v2.panY + 20, 1e-6), `a middle-button drag pans it too (${v3?.panX.toFixed(1)}, ${v3?.panY.toFixed(1)})`);
   check(same(await cam(), cam0) && (await hand()) !== null, "…the camera still stands, the object still in hand");
+  await q("window.__desk.ambient('still')");   // the rest of the rig on a still mat: its settles wait for a quiet desk
 
   // ---- 4. Esc puts it down: it flies home and lands; the camera identical; still selected
   await key("Escape", "Escape", 27);
@@ -211,14 +218,22 @@ try {
   check(selBack.length === 1 && selBack[0] === book && same(await cam(), cam0), "…with the selection back on it and the camera identical");
   await settle();
 
-  // ---- 10. the cost (design-015 §11.4): frames back to back — a copy remade each, the hand alone, the rest frame
+  // ---- 10. the cost (design-015 §11.4): frames back to back — a copy remade each, the hand alone, the rest frame; and the held frame
+  //          as the desk draws it under the DEFAULT ambient with the wind up (D7): no copy, no frame
+  await q("window.__desk.ambient('idle')");
   await dbl(300, 200);
   check(await settledInHand(), "picked up for the cost");
   await sleep(400);
+  const idleCost0 = { copies: await q("window.__desk.holdCopies()"), submits: await q("window.__desk.submits().total"), phase: await q("window.__desk.ambient().phase") };
+  await sleep(600);
+  const idleCost = { copies: (await q("window.__desk.holdCopies()")) - idleCost0.copies, submits: (await q("window.__desk.submits().total")) - idleCost0.submits };
+  console.log(`  cost under the default ambient (idle, the wind ${idleCost0.phase}): ${idleCost.submits} submits, ${idleCost.copies} desk copies in 600 ms held — 0 ms per held frame`);
+  check(idleCost0.phase === "live" && idleCost.copies === 0 && idleCost.submits === 0, `a held frame under the default ambient costs nothing while the desk stands: ${idleCost.copies} copies, ${idleCost.submits} submits in 600 ms, the wind ${idleCost0.phase}`);
+  await q("window.__desk.ambient('still')");
   const cost = await tab.evaluate("window.__desk.holdCost(40)", { awaitPromise: true, timeoutMs: 60000 });
   const copyMs = cost.copy.ms; const handMs = cost.hand.ms; const restMs = cost.rest.ms;
   console.log(`  cost (ms/frame, 40 back to back, GPU drained): the copy remade each frame ${copyMs.toFixed(2)} (cpu ${(cost.copy.cpu * 1000).toFixed(0)} µs) · the hand alone ${handMs.toFixed(2)} (cpu ${(cost.hand.cpu * 1000).toFixed(0)} µs) · the rest frame ${restMs.toFixed(2)} (cpu ${(cost.rest.cpu * 1000).toFixed(0)} µs)`);
-  check(copyMs - handMs <= 1.5, `the desk copy + its blur costs ${(copyMs - handMs).toFixed(2)} ms over the hand alone (design-015 §11.4: ≤ 1.5 ms, once per settled desk; 0 per held frame when still — the idle-zero above)`);
+  check(copyMs - handMs <= 1.5, `the desk copy + its blur costs ${(copyMs - handMs).toFixed(2)} ms over the hand alone (design-015 §11.4: ≤ 1.5 ms, once per settled desk; 0 per held frame — the row above, the wind up)`);
   console.log(`  note: a held frame is the OPEN spread at ${(672 / 252).toFixed(2)}× plus the hand's two composites — ${(handMs / restMs).toFixed(1)}× the rest frame's closed book at 1×; the object's own cost at its reading size, not the hand's overhead (the copy's is the number above)`);
   await key("Escape", "Escape", 27);
   await landed();

@@ -59,6 +59,8 @@ export interface Ambient {
   touch(now: number): void;
   /** Advance the clocks by `dt` seconds at `now` ms, the tilt following `pointer` (NDC, or null before the pointer was seen); `live` = another frame is wanted. */
   step(dt: number, now: number, pointer: readonly [number, number] | null): { readonly frame: MatFrame; readonly live: boolean };
+  /** The frame as the clocks stand, NOT advanced (the pinned one while pinned) — the desk behind the hand stands still (§8, D7). */
+  frame(): MatFrame;
   /** Pin the clocks (a still) or unpin (`null`). Pinned, `step` returns the pinned frame and wants no frame. */
   pin(frame: AmbientPin | null): void;
   configure(opts: Pick<AmbientOptions, "mode" | "idleMs" | "settleMs" | "reducedMotion">): void;
@@ -98,13 +100,15 @@ export function createAmbient(opts: AmbientOptions = {}): Ambient {
     return 1 - smoothstep(0, settleMs, since - idleMs);
   };
 
+  const pinnedFrame = (p: AmbientPin): MatFrame => ({ time: p.time ?? 0, goboTime: p.goboTime ?? 0, goboMatrix: HERO_MATRIX, noise: p.noise ?? [0, 0] });
+
   return {
     touch(now) { touchedAt = now; },
     step(dt, now, pointer) {
       if (pinned !== null) {
         phase = "pinned";
         speed = 0;
-        return { frame: { time: pinned.time ?? 0, goboTime: pinned.goboTime ?? 0, goboMatrix: HERO_MATRIX, noise: pinned.noise ?? [0, 0] }, live: false };
+        return { frame: pinnedFrame(pinned), live: false };
       }
       speed = speedAt(now);
       let tiltLive = false;
@@ -136,6 +140,7 @@ export function createAmbient(opts: AmbientOptions = {}): Ambient {
       phase = speed >= 1 ? "live" : speed > 0 ? "easing" : "still";
       return { frame: { time, goboTime, goboMatrix, noise }, live: speed > 0 || tiltLive };
     },
+    frame: () => (pinned !== null ? pinnedFrame(pinned) : { time, goboTime, goboMatrix, noise }),
     pin(frame) { pinned = frame; },
     configure(o) {
       if (o.mode !== undefined) mode = o.mode;

@@ -192,8 +192,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       if (cam === undefined || vp === undefined || vp.w <= 0 || vp.h <= 0) return;   // no viewport yet: stay dirty, paint when it exists
       // the ambient's clocks: stepped every tick the ground is here — a frame is wanted while the wind blows or the tilt moves
       const dtMs = info?.dt ?? 16;
-      // in hand the mat's tilt lets go of the pointer too: the desk behind the hand stands still
-      const amb = ambient.step(dtMs / 1000, now, inHand ? null : pointerNdc(vp));
+      // in hand the desk behind the hand STANDS STILL (§8): the clocks are not stepped — the wind holds its breath, the tilt lets
+      // go of nothing — so under the default `idle` ambient too the blurred copy is made once and no frame is the wind's (D7)
+      const amb = inHand ? { frame: ambient.frame(), live: false } : ambient.step(dtMs / 1000, now, pointerNdc(vp));
       if (amb.live) { dirty = true; wakes.ambient += 1; }
       if (!dirty) return;   // IDLE-ZERO: no getCurrentTexture, no submit
       dirty = false;

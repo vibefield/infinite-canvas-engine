@@ -12,11 +12,12 @@ import { createAmbient } from "../src/compose/ambient";
 import { createDeskBuilder } from "../src/compose/builder";
 import { createDeskReflector, looksOf } from "../src/compose/reflector";
 import { Ground } from "../src/ground";
-import { minimatKind, paperKind } from "../src/kinds";
+import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders";
+import { minimatKind, notebookKind, paperKind } from "../src/kinds";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
-import { MiniMat, Note } from "../src/objects";
+import { MiniMat, Note, Notebook } from "../src/objects";
 import { shaderText } from "../src/shaders";
-import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
+import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
 import { must } from "./must";
 
@@ -167,5 +168,52 @@ describe("the desk reflector · idle-zero (design-015 §2.4)", () => {
     const looks = looksOf([paperKind(), minimatKind(), { ...bare, name: "bare" }], palette, THEMES.light);
     expect([...looks.keys()].sort()).toEqual(["minimat", "paper"]);
     expect((looks.get("paper") as { papers: Record<string, unknown> }).papers.yellow).toBeDefined();
+  });
+});
+
+describe("the hand under the DEFAULT ambient (design-015 §8, §11.4; D7)", () => {
+  const undo: (() => void)[] = [];
+  beforeAll(() => { undo.push(installGpuFlags()); });
+  afterAll(() => { for (const u of undo.splice(0)) u(); });
+
+  it("picked up with the wind up (`idle`, inside its window): the desk copy is made ONCE and a held, still desk submits NOTHING — the wind's clocks stand in hand; put down, the wind blows again", async () => {
+    const ce = createCanvasEngine({ widgets: [Note, Notebook] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 2 });
+    const { device, queue } = fakeDevice();
+    const kinds = [paperKind(), notebookKind()];
+    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
+    const locals = new Map([["notebook", must(kinds[1]?.local)({ pass: () => ground.pass("notebook") })]]);
+    const builder = createDeskBuilder(ce.world, { objects: [Note, Notebook], locals });
+    let r = 0;
+    const ambient = createAmbient({ mode: "idle", idleMs: 20_000, settleMs: 2_000, random: () => { r = (r + 0.37) % 1; return r; } });
+    const bookPalette = { ...palette, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] } };
+    const desk = createDeskReflector({ world: ce.world, builder, kinds, ambient, ground: () => ground, attach: { resize: () => {} }, theme: THEMES.light, palette: bookPalette });
+    ce.engine.registerReflector(desk.reflector);
+    let now = 0;
+    const step = (n = 1): number => { const before = queue.submits; for (let i = 0; i < n; i++) { now += 16; ce.step(now); } return queue.submits - before; };
+    const book = ce.ops.spawnWidget("desk.notebook", { x: 210, y: 274, props: { seed: 3, angle: 0.08 }, undoable: false });
+    ce.ops.spawnWidget("desk.note", { x: 800, y: 200, props: { seed: 7 }, undoable: false });
+    step(3);
+    // the wind up: a camera move is a touch (as the pointer's moves before a pick-up are) — the precondition, pinned
+    writeRuntimeResource(ce.world, Camera, { x: 1, y: 0, zoom: 1, gesturing: false });
+    expect(step()).toBe(1);
+    expect(desk.stats().ambient.phase).toBe("live");
+    ce.ops.open(book);
+    let frames = 0;
+    for (let i = 0; i < 240 && (builder.hand()?.settled !== true || builder.live()); i++) frames += step() > 0 ? 1 : 0;
+    expect(builder.hand()?.settled).toBe(true);
+    expect(frames).toBeGreaterThan(30);   // the pick-up's flight and the cover's swing: a frame each tick
+    const copies = ground.heldCopies();
+    expect(copies).toBe(1);   // …over ONE desk copy (§8 "rendered ONCE"), not one per frame
+    // held and still, the wind's window still open (20 s): no frame is the wind's, no copy is remade (§11.4 "0 per held frame")
+    expect(step(120)).toBe(0);
+    expect(ground.heldCopies()).toBe(copies);
+    // put down: the desk is the ambient's again — inside its window the wind blows, a frame each tick
+    ce.ops.putDown();
+    for (let i = 0; i < 240 && builder.hand() !== undefined; i++) step();
+    expect(builder.hand()).toBeUndefined();
+    expect(step(10)).toBe(10);
+    expect(desk.stats().ambient.phase).toBe("live");
   });
 });
