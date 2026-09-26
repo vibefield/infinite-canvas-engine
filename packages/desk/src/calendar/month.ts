@@ -105,8 +105,25 @@ export function localDay(ms: number): number {
   const t = new Date(ms);
   return dayNumber(t.getFullYear(), t.getMonth() + 1, t.getDate());
 }
-/** Today, as the platform's clock and time zone have it. */
-export const today = (): number => localDay(Date.now());
+/** One formatter per IANA zone asked (a zone's rules are the platform's Intl data). */
+const zoneFormats = new Map<string, Intl.DateTimeFormat>();
+/** The civil day of a moment in the IANA zone `zone` — the calendar's CLOCK SEAM (D7); absent, the platform's own (`localDay`). */
+export function dayIn(ms: number, zone?: string): number {
+  if (zone === undefined) return localDay(ms);
+  let f = zoneFormats.get(zone);
+  if (f === undefined) { f = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "numeric", day: "numeric" }); zoneFormats.set(zone, f); }
+  let y = 0;
+  let m = 0;
+  let d = 0;
+  for (const part of f.formatToParts(ms)) {
+    if (part.type === "year") y = Number(part.value);
+    else if (part.type === "month") m = Number(part.value);
+    else if (part.type === "day") d = Number(part.value);
+  }
+  return dayNumber(y, m, d);
+}
+/** Today — the platform's clock and time zone unless the caller hands its own (a pad's clock seam, D7). */
+export const today = (ms: number = Date.now(), zone?: string): number => dayIn(ms, zone);
 
 // ---------------------------------------------------------------- the Moon
 

@@ -27,7 +27,8 @@ export const Calendar = defineObject({
   type: CALENDAR_TYPE,
   version: 1,
   props: {
-    month: p.string({ default: "2026-09" }),
+    // '' — no month chosen: the pad shows the month of its today (the calendar's clock seam, D7) until a roll writes one
+    month: p.string({ default: "" }),
     weekStart: p.number({ default: 1 }),
     tape: p.enum(TAPES, { default: "ink" }),
     pen: p.enum(PENS, { default: "felt" }),

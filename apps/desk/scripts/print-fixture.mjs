@@ -4,8 +4,8 @@
 // stuck), the desk's own raster draws the sheet's tiles, and its level-2 tiles are read back (`__desk.calendar.readSheet` — the same
 // `drawRegion` on the same OffscreenCanvas). `--write` commits them (oracle/fixtures/assets/<name>.json + .bin, raw-deflated RGBA);
 // without it, every scene that names a print is held to the committed bytes, tile for tile — a note stuck to a day with no lines
-// changes no printed byte. Headless Chrome; the moons follow the machine's time zone (as the prototype's do), so a fixture is this
-// machine's. Exit: the number of sheets that differ (1 for a throw, 2 for the watchdog).
+// changes no printed byte. Headless Chrome; the moons follow the zone the scene pins beside its today (oracle/prints.mjs `PRINT_ZONE`,
+// D7 — before, the machine's own, so a fixture was this machine's). Exit: the number of sheets that differ (1 for a throw, 2 for the watchdog).
 //
 //   pnpm --filter ./apps/desk build && tsx scripts/print-fixture.mjs [--write]
 import { spawn } from "node:child_process";

@@ -10,7 +10,7 @@ import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
 import { type BookPose, type Books, type PadPose, type Pads, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk";
 import { addEvent, addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, monthKeyOf, monthOfKey, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/desk/objects";
-import { BLANK_SHEET, type CommittedSheet, type PrintMeta, printSheetOf } from "@ice/desk/oracle/prints.mjs";
+import { BLANK_SHEET, type CommittedSheet, type PrintMeta, PRINT_ZONE, printSheetOf } from "@ice/desk/oracle/prints.mjs";
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
 import { BOARD } from "@ice/desk";
@@ -194,7 +194,10 @@ function committedPrint(name: string): Promise<CommittedSheet> {
 export async function pinPadPrints(handle: DeskLayerHandle, pads: readonly { readonly entity: Entity; readonly spec: OraclePad }[]): Promise<void> {
   const local = handle.local("calendar") as Pads | undefined;
   if (local === undefined) return;
-  local.pinToday(pads.find((p) => p.spec.today !== undefined)?.spec.today ?? null);
+  const today = pads.find((p) => p.spec.today !== undefined)?.spec.today ?? null;
+  local.pinToday(today);
+  // …and the zone the committed prints were drawn in, beside it (D7): the Moon's days on a live print are then the same anywhere
+  local.pinZone(today === null ? null : PRINT_ZONE);
   for (const { entity, spec } of pads) {
     if (spec.livePrint === true) continue;
     const shown = monthOfKey(spec.month ?? "2026-09") ?? 0;

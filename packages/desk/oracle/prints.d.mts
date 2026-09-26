@@ -17,6 +17,7 @@ export interface CommittedSheet {
 
 /** The committed prints the oracle's scenes name. */
 export const PRINT_FIXTURES: readonly string[];
+export const PRINT_ZONE: string;
 /** A sheet pinned with nothing on it: the paper and its ruled grid. */
 export const BLANK_SHEET: CommittedSheet;
 /** A committed print from its meta and its INFLATED bytes. */

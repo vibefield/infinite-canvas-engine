@@ -41,7 +41,7 @@ export async function calendarRig(t) {
   const camY = Y - 950;
   await q(`window.__desk.setCamera({ x: ${camX}, y: ${camY}, zoom: ${Z} })`);
   const pad = await q(`window.__desk.spawn('desk.calendar', { month: '2026-09' }, { x: ${X}, y: ${Y} })`);
-  await q("window.__desk.calendar.pinToday('2026-09-24')");
+  await q("window.__desk.calendar.pinToday('2026-09-24'); window.__desk.calendar.pinZone('America/Los_Angeles')");
   await settle();
   const cal = (m, ...a) => q(`window.__desk.calendar.${m}(${[pad, ...a].map((v) => JSON.stringify(v)).join(", ")})`);
   const ent = (id) => q(`window.__desk.entity(${id})`);

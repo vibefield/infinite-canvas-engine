@@ -8,6 +8,13 @@
 /** The committed prints the oracle's scenes name — each a month of the scenes' one set of entries (scenes.mjs `PAD_EVENTS`). */
 export const PRINT_FIXTURES = ["print-2026-09", "print-2026-10"];
 
+/**
+ * The ZONE the committed prints were drawn in (D7): the Moon's phases fall on a day by a zone (September 2026's full moon is the 26th
+ * in Los Angeles, the 27th in Tokyo), so a scene that holds a live print to these bytes pins this zone beside its today — the pads'
+ * clock seam (kinds/calendar.ts `pinZone`) — and the bytes are the same on any machine.
+ */
+export const PRINT_ZONE = "America/Los_Angeles";
+
 /** A sheet pinned with nothing on it: every tile MISSING — the paper and its ruled grid (a still that states no print). */
 export const BLANK_SHEET = Object.freeze({ level: 0, tiles: new Map(), empty: new Set() });
 

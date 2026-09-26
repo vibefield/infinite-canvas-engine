@@ -9,6 +9,7 @@ import { CALENDAR } from "../src/calendar/law";
 import type { CalendarDraw, CalendarPass } from "../src/calendar/pass";
 import type { PrintPass, PrintRaster, TileSource } from "../src/calendar/printing";
 import { TILE_TEX } from "../src/calendar/tiles";
+import { dayIn, dayOfKey, monthOfDay } from "../src/calendar/month";
 import { padFrame } from "../src/calendar/pad";
 import { worldChildren } from "../src/compose/children";
 import { CalendarKind, calendarKind, createPads, FLUX_REST, type ObjectContext, type Pads, rectOf } from "../src/kinds";
@@ -200,5 +201,59 @@ describe("the pad's mirror, ring, presences and slots", () => {
     pads.forget?.(31 as Entity);
     expect(pads.tiles().pending).toBe(0);
     expect(pads.tick?.(t)).toBe(false);
+  });
+});
+
+describe("the calendar's CLOCK SEAM (D7): today, the zone, the month no one chose", () => {
+  const s = { camX: -600 / 0.42, camY: -400 / 0.42, zoom: 0.42 };
+  const at = (iso: string): number => Date.parse(iso);
+
+  it("a pad spawned with no month shows the month of ITS today — the pad's clock, a still's pinned day — never a literal", () => {
+    // spawned with no month, the durable month is '' — none chosen
+    const ce = createCanvasEngine({ widgets: [Calendar] });
+    ce.docs.create();
+    const spawned = ce.ops.spawnWidget(CALENDAR_TYPE, { x: 0, y: 0, undoable: false });
+    ce.step(16);
+    const month = Calendar.groups.map((g) => ce.world.get(spawned, g.component as never) as { month?: string } | undefined).find((v) => v?.month !== undefined)?.month;
+    expect(month).toBe("");
+    // a pad met with no month — its clock at each moment, a fresh pad each (a pad already shown TURNS to a new month, animated)
+    const padAt = (wall: number, today?: string): Pads => { const pads = createPads({ pass: () => undefined }, { now: () => wall, zone: "UTC" }); if (today !== undefined) pads.pinToday(today); return pads; };
+    const unrolled = (pads: Pads): number => kind.resolve(ctxOf({ x: 0, y: 0 }, s, { local: pads, props: { month: "", weekStart: 1, tape: "ink", pen: "felt" } })).base;
+    expect(unrolled(padAt(at("2026-11-05T12:00:00Z")))).toBe(monthOfDay(dayOfKey("2026-11-05")));
+    expect(unrolled(padAt(at("2027-02-01T08:00:00Z")))).toBe(monthOfDay(dayOfKey("2027-02-01")));   // the clock's month, whatever it is
+    expect(unrolled(padAt(at("2027-02-01T08:00:00Z"), "2026-09-24"))).toBe(monthOfDay(dayOfKey("2026-09-24")));   // a still's pinned day
+    // a month CHOSEN stands
+    expect(kind.resolve(ctxOf({ x: 0, y: 0, month: "2026-03" }, s, { local: padAt(at("2026-11-05T12:00:00Z")) })).base).toBe(monthOfDay(dayOfKey("2026-03-01")));
+  });
+
+  it("today turns over at midnight — a frame is asked for it (the ring, the ticks), on the pad's own clock; a pinned today never turns", () => {
+    let wall = at("2026-09-24T23:59:58Z");
+    const pads = createPads({ pass: () => undefined }, { now: () => wall, zone: "UTC" });
+    pads.tick?.(0);
+    expect(pads.today()).toBe(dayOfKey("2026-09-24"));
+    wall += 1500;   // 23:59:59.5 — the same day
+    expect(pads.tick?.(16)).toBe(false);
+    wall += 1500;   // 00:00:01 on the 25th
+    expect(pads.tick?.(32)).toBe(true);
+    expect(pads.today()).toBe(dayOfKey("2026-09-25"));
+    wall += 1500;
+    expect(pads.tick?.(48)).toBe(false);   // once
+    pads.pinToday("2026-09-24");
+    pads.tick?.(64);   // the pin's own frame
+    wall += 86_400_000;
+    expect(pads.tick?.(80)).toBe(false);
+    expect(pads.today()).toBe(dayOfKey("2026-09-24"));
+  });
+
+  it("the ZONE a day is reckoned in: the same moment is the 26th in Los Angeles and the 27th in Tokyo — today's, and the Moon's days on the print; a still pins it", () => {
+    const moment = at("2026-09-27T05:30:00Z");
+    expect(dayIn(moment, "America/Los_Angeles")).toBe(dayOfKey("2026-09-26"));
+    expect(dayIn(moment, "Asia/Tokyo")).toBe(dayOfKey("2026-09-27"));
+    const pads = createPads({ pass: () => undefined }, { now: () => moment, zone: "Asia/Tokyo" });
+    expect(pads.today()).toBe(dayOfKey("2026-09-27"));
+    pads.pinZone("America/Los_Angeles");
+    expect(pads.today()).toBe(dayOfKey("2026-09-26"));
+    pads.pinZone(null);
+    expect(pads.today()).toBe(dayOfKey("2026-09-27"));
   });
 });

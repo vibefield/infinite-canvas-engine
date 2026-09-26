@@ -19,6 +19,8 @@ export interface CalendarApi {
   lines(pad: number, month: string): readonly { readonly entry: number; readonly day: number; readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }; readonly band: boolean }[] | null;
   /** Pin today (a day key) — null gives it back to the clock. */
   pinToday(key: string | null): void;
+  /** Pin the zone a day is reckoned in (an IANA name — today's, the Moon's days on the print; D7) — null gives it back. */
+  pinZone(zone: string | null): void;
   /** The print's tiles: resident, still to draw, drawn since the desk began. */
   tiles(): { readonly resident: number; readonly pending: number; readonly drawn: number } | null;
   /** A live sheet read back as a fixture holds it: level `level`'s tiles as base64 RGBA by `tx:ty`, and the empty ones. */
@@ -72,6 +74,7 @@ export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): Cale
       return p.lines.map((l) => ({ entry: l.event.id, day: l.day, box: { x: l.box.x, y: l.box.y, w: l.box.w, h: l.box.h }, band: l.band }));
     },
     pinToday(key) { pads()?.pinToday(key); handle.desk.wake("pin"); },
+    pinZone(zone) { pads()?.pinZone(zone); handle.desk.wake("pin"); },
     tiles: () => pads()?.tiles() ?? null,
     selection(pad) {
       const s = world.isAlive(pad as Entity) ? world.get(pad as Entity, PadSelection) : undefined;

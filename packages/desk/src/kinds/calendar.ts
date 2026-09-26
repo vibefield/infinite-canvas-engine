@@ -32,7 +32,7 @@ import type { CalEvent } from "../calendar/events";
 import { padFrame, buildPad } from "../calendar/pad";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
 import type { CalendarColours } from "../calendar/layout";
-import { isWeekendCol, monthGrid, monthOfDay, phasesBetween, today as todayOf } from "../calendar/month";
+import { dayIn, isWeekendCol, monthGrid, monthOfDay, phasesBetween, today as todayOf } from "../calendar/month";
 import { type CalendarDraw, CalendarPass, type SheetBox, type SheetDraw } from "../calendar/pass";
 import { anyIn, type EventLine, onSheet, type PrintLook, printSheet, type SheetPrint } from "../calendar/print";
 import { type PinnedSheet, PrintTiles } from "../calendar/printing";
@@ -262,6 +262,11 @@ export interface Pads extends KindLocal {
   today(): number;
   /** Pin today (a day key) for stills and rigs — null gives it back to the clock. */
   pinToday(key: string | null): void;
+  /**
+   * Pin the ZONE a day is reckoned in (an IANA name) — today's, and the Moon's phases' local days on the print — for stills and rigs:
+   * the committed prints were drawn in one zone, and a scene that holds a live print to them pins it (D7). Null: the pad's own.
+   */
+  pinZone(zone: string | null): void;
   /** The past days ticked off in pencil (CALENDAR.md Q-4; on by default). */
   ticks(on?: boolean): boolean;
   /** A pad's entries as the print takes them — its events by entity, and the draft being written. */
@@ -319,7 +324,7 @@ interface PadState {
 const NO_MARKS: Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> = { sel: [], mark: null, drop: null, caret: null, wipe: null };
 
 /** The calendar's `local()`: ids from 1, slot pairs from the lowest free (the pass's tables hold `MAX_CALENDARS` pads); the print's driver. */
-export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; readonly now?: () => number; readonly hand?: HandLaw } = {}): Pads {
+export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; readonly now?: () => number; readonly zone?: string; readonly hand?: HandLaw } = {}): Pads {
   const law = opts.law ?? CALENDAR;
   const clock = opts.now ?? (() => Date.now());
   const hand = opts.hand ?? HAND;
@@ -330,6 +335,10 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   let nextSlot = 0;
   let woke = false;
   let todayPin: number | null = null;
+  let zonePin: string | null = null;
+  /** The day the print last called today, and when the wall clock is next asked whether it turned over (D7). */
+  let dayShown: number | null = null;
+  let dayCheckAt = Number.NEGATIVE_INFINITY;
   let ticksOn = true;
   let tiles: PrintTiles | null = null;
   let begun = false;
@@ -355,7 +364,10 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     host.budget.charge("calendar", "print tiles", pass.layers * TILE_TEX * TILE_TEX * 4, () => {});
     charged = true;
   };
-  const todayNow = (): number => todayPin ?? todayOf();
+  // THE CLOCK SEAM (D7): today and the Moon's local days on the pad's own wall clock (`now`) in its zone — the platform's unless the
+  // host says (`zone`) or a still pins them (`pinToday`, `pinZone`)
+  const zoneNow = (): string | undefined => zonePin ?? opts.zone;
+  const todayNow = (): number => todayPin ?? todayOf(clock(), zoneNow());
   const entriesOf = (e: Entity): CalEvent[] => {
     const out: CalEvent[] = [];
     for (const { entity, value } of host.children?.entries?.(e, CalendarEvent) ?? []) { const ev = calEventOf(entity, value); if (ev !== null) out.push(ev); }
@@ -377,12 +389,13 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     noted.sort((a, b) => a - b);
     const today = todayNow();
     const style = `${h.face.family}:${h.face.weight}:${raster.version()}:${ticksOn ? 1 : 0}:${lookKey(look)}`;
-    const key = `${events.map((ev) => `${ev.id}.${ev.rev}.${ev.start}.${ev.end}`).join(",")}|${weekStart}|${noted.join(",")}|${today}|${style}|${writing}`;
+    const zone = zoneNow();
+    const key = `${events.map((ev) => `${ev.id}.${ev.rev}.${ev.start}.${ev.end}`).join(",")}|${weekStart}|${noted.join(",")}|${today}|${zone ?? ""}|${style}|${writing}`;
     const id = `${st.id}:${month}`;
     const hit = prints.get(id);
     if (hit !== undefined && hit.key === key) return hit.print;
     const print = printSheet({
-      law, look, sheet: L, events, noted: new Set(noted), today, moons: phasesBetween(g.first, last),
+      law, look, sheet: L, events, noted: new Set(noted), today, moons: phasesBetween(g.first, last, (ms) => dayIn(ms, zone)),
       face: h.face, metrics: h.metrics, hand, measure: (f, t) => raster.measure(f, t), ticks: ticksOn, style, plain: writing,
     });
     prints.set(id, { key, print });
@@ -496,7 +509,9 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     alpha(a) { const k = host.pass(); if (k instanceof CalendarKind && k.alpha !== a) k.alpha = a; },
     events: (e) => host.children?.rows(e, CalendarEvent) ?? [],
     today: todayNow,
-    pinToday(key) { todayPin = key === null ? null : (dayOr(key) ?? null); woke = true; },
+    // a pin is its own frame, never a turn of the day: the next look at the wall clock starts afresh
+    pinToday(key) { todayPin = key === null ? null : (dayOr(key) ?? null); dayShown = null; woke = true; },
+    pinZone(zone) { zonePin = zone; dayShown = null; woke = true; },
     ticks(on) { if (on !== undefined && on !== ticksOn) { ticksOn = on; woke = true; } return ticksOn; },
     entries: (e) => entriesOf(e),
     printOf: (e, month) => { const st = pads.get(e); return st === undefined ? undefined : prints.get(`${st.id}:${month}`)?.print; },
@@ -573,7 +588,17 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       lastTick = now;
       let turning = false;
       for (const st of pads.values()) if (st.roll.durable !== null && st.pose === undefined && stepRoll(st.roll, st.roll.durable, dt, law, F)) turning = true;
-      const w = woke || turning || (drew && (tiles?.pending() ?? 0) > 0);
+      // the day turns over (D7): today's ring and its ticks — an unrolled pad's month too — move at midnight; the wall clock is asked
+      // about once a second, and a pinned today never turns
+      let turned = false;
+      const wall = clock();
+      if (wall >= dayCheckAt) {
+        dayCheckAt = wall + 1000;
+        const d = todayNow();
+        turned = dayShown !== null && d !== dayShown;
+        dayShown = d;
+      }
+      const w = woke || turning || turned || (drew && (tiles?.pending() ?? 0) > 0);
       woke = false;
       return w;
     },
@@ -634,8 +659,9 @@ export function calendarFrame(cx: number, cy: number, law: CalendarLaw = CALENDA
 
 /** The bar's ‹ › (D3t-c): the pad's month one on or back — its durable `month`, ONE transaction off the undo stack (a roll is not an edit). */
 function turnBy(api: HeldToolApi, d: 1 | -1): void {
-  const m = monthOfKey(stringProp(api.props(), "month", ""));
-  if (m !== undefined) api.setProps({ month: monthKeyOf(m + d) }, { undoable: false });
+  // a pad with no month chosen steps from the platform's month (the bar has no word from the pad's clock; a still spawns its month)
+  const m = monthOfKey(stringProp(api.props(), "month", "")) ?? monthOfDay(todayOf());
+  api.setProps({ month: monthKeyOf(m + d) }, { undoable: false });
 }
 
 /** The bar's today (D3t-c): the hand rolls the pad home and selects today — asked through the pad's selection (`home` bumped). */
@@ -682,7 +708,8 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
     resolve(ctx: ObjectContext): CalendarGeometry {
       const pads = ctx.local as Pads | undefined;
       const pose = pads?.state(ctx.entity).pose;
-      const shown = monthOfKey(stringProp(ctx.props, "month", "")) ?? (monthOfKey("2026-09") as number);
+      // no month chosen (the default ''): the month of the pad's today (its clock seam — a still's pinned day), never a literal (D7)
+      const shown = monthOfKey(stringProp(ctx.props, "month", "")) ?? monthOfDay(pads?.today() ?? todayOf());
       const weekStart: 0 | 1 = numberProp(ctx.props, "weekStart", 1) === 0 ? 0 : 1;
       let sh: { base: number; moving: number | null; roll: RollState | null; marksOn: 0 | 1 } = { base: shown, moving: null, roll: null, marksOn: 0 };
       const r = pose?.roll;
