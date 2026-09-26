@@ -8,14 +8,31 @@
 // MINIMAT.md §4), through the pass's second pipeline, as the note's is.
 // The PICTURES stay the pass's: a host makes one (`pass.picture`, `pass.pictureFrom`) and a
 // print's record names it by that handle (`PhotoInstance.picture`, null = its paper alone).
+//
+// And its WORLD half (kinds/world.ts; D3w): `photoKind` — a print is a BODY (photo/photo.ts `PhotoBody`, the
+// prototype's), resolved by `resolvePhoto` under the desk's lamp. At rest the body IS the facts: its centre the
+// rect's, its turn the `angle` prop, its edge lifted `hover` × the builder's hover flux (PHOTO.md: 2.2 units),
+// its extent the picture's aspect at the law's long side (`printExtent`). Carried, flicked or gliding, the body
+// LEADS — the carry (objects/carry.ts) holds it on the finger (the kinematic pin), lets it go with the flick
+// of the last 70 ms, and the kind's own state on the desk (`local()` → `Prints`) steps it at 240 Hz through
+// the air and the mat's Coulomb grip; when it comes to rest the carry commits ONE transaction and the body
+// hands back to the facts once they show it. A fading ghost lifts as it goes (its `leave`). The PICTURE is
+// the world half's too (D-D3r-a.2): the `blob` prop names bytes in the app's BlobStore (D-D12), fetched and
+// decoded the first time a print is met — raw RGBA by the kind, anything else through the host's decoder —
+// into one pass `Picture` per blob, shared by every print of it and dropped with the last. `hitPhoto` is the
+// mirror, through the same local eye the pass draws with.
 
+import type { Entity } from "@ice/core";
 import type { KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
-import type { PhotoGeometry } from "../photo/photo";
-import { type PhotoInstance, PhotoPass } from "../photo/photo-pass";
+import { type BlobStore, type DecodedPicture, RGBA_TYPE } from "../photo/blobs";
+import { borderOf } from "../photo/layout";
+import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto } from "../photo/photo";
+import { type Picture, PICTURE_MAX, type PhotoInstance, PhotoPass } from "../photo/photo-pass";
 import { PHOTO_SHADER_FILES, photoShaders } from "../photo/shaders";
-import type { ShaderText } from "../shaders";
+import { type ShaderText, shaderText } from "../shaders";
+import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type ObjectRect, stringProp } from "./world";
 
 /** The print's kind name — its key in the registry and in every slot's `objects`. */
 export const PHOTO_KIND = "photo";
@@ -52,4 +69,321 @@ export function photoProgram(text: ShaderText): KindProgram<PhotoInstance> {
 /** The print's silhouette for the desk's marks (D4a): the sheet's own axes on the desk plane (its height's parallax aside), its corner. */
 export function photoFrame(G: PhotoGeometry): MarkFrame {
   return { cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: Math.atan2(G.ex[1], G.ex[0]), r: G.radius };
+}
+
+// ---------------------------------------------------------------- the world half (D3w)
+
+/** A print's extent on the desk, world units: its picture's aspect at the law's long side (the lab's `addPicture`); 3:2 without one. */
+export const printExtent = (width: number, height: number, long: number = PHOTO.long): { readonly w: number; readonly h: number } =>
+  width > 0 && height > 0 ? printSize(width, height, long) : printSize(3, 2, long);
+
+/**
+ * How far a print's drawing reaches past its rect, world units: the leave's height (1.6 × the lift) and the held droop cast
+ * along the lamp's capped slope and blurred, and the local eye's scale of a sheet at that height about its far corner.
+ */
+export function photoReach(law: PhotoLaw = PHOTO): number {
+  const h = law.lift * 1.6 + law.bend.held;
+  const p = law.shadow.penumbra;
+  const shadow = p.slopeMax * h + 3 * (p.sigma0 + p.sigmaPerHeight * h) + 2 * law.bend.held + 4;
+  const scale = (law.long / 2) * Math.SQRT2 * (law.eye / (law.eye - law.lift * 1.6) - 1);
+  return shadow + scale;
+}
+
+/** A print's pose as a still pins it (a FLUX pin, never a Grab — D-D2a-world.5): its height, slope, bend, anchor and the hand holding it. */
+export interface PhotoPose {
+  readonly h?: number;
+  readonly sx?: number;
+  readonly sy?: number;
+  readonly bend?: number;
+  readonly ax?: number;
+  readonly ay?: number;
+  readonly hold?: { readonly gx: number; readonly gy: number; readonly px: number; readonly py: number };
+}
+
+/** A print that came to rest where its facts are not — ONE transaction's worth for the carry: its centre, world units. */
+export interface PrintRest { readonly entity: Entity; readonly x: number; readonly y: number }
+
+/** A flick's witness: the body as the hand let it go, and every step the desk took with it since (the law replays them). */
+export interface FlickWitness { readonly body: PhotoBody; readonly dts: number[]; landed: { readonly x: number; readonly y: number } | null }
+
+/** The photo kind's own state on one desk: the prints' bodies, their pictures, the carry's door. */
+export interface Prints extends KindLocal {
+  /** The hand takes print `e` at a world point (the carry); a body at rest is lifted off its facts. */
+  hold(e: Entity, wx: number, wy: number, t: number): void;
+  /** The hand moved (world, t seconds) — the grab point follows it exactly. */
+  move(e: Entity, wx: number, wy: number, t: number): void;
+  /** The hand let go: the flick from the last 70 ms, capped; the body glides from here. */
+  drop(e: Entity, t: number): void;
+  /** Prints that came to rest away from their facts since the last ask — the carry commits each in ONE transaction. */
+  rests(): PrintRest[];
+  /** The carry committed `e`'s rest (or could not): the body leads until the facts show it (or a second runs out). */
+  settle(e: Entity, committed: boolean): void;
+  /** A still's pose on `e` (undefined unpins). */
+  pin(e: Entity, pose: PhotoPose | undefined): void;
+  /** A print just laid by a paste or a drop arrives: it falls from `arrive` onto its place and fades in (PHOTO.md §3). */
+  arrive(e: Entity): void;
+  /** Fetch, decode and upload a blob's picture before a print names it (a scene's still); resolves once it is on the device. */
+  preload(hash: string, width: number, height: number): Promise<void>;
+  /** Print `e`'s body as it is now — a copy (a rig's witness); undefined for a print never met. */
+  body(e: Entity): PhotoBody | undefined;
+  /** The last flick of print `e` — a copy. */
+  flick(e: Entity): FlickWitness | undefined;
+  /** The pictures: on the device, on their way, missing from the store or undecodable. */
+  pictures(): { readonly ready: number; readonly loading: number; readonly failed: number };
+  /** The world half's: the body to resolve for this frame (the facts at rest, the live body while it leads). */
+  bodyFor(ctx: ObjectContext, hx: number, hy: number): PhotoBody;
+  /** The world half's: the picture a print's `blob` names (null while it loads, or without one). */
+  pictureFor(e: Entity, hash: string, width: number, height: number): Picture | null;
+}
+
+interface Print {
+  body: PhotoBody;
+  /** The body leads the facts: held, gliding, arriving, or its rest committed and not yet in the facts. */
+  leads: boolean;
+  /** The rest was handed to the carry (queued or committed); the clock at the commit, −1 before it. */
+  resting: boolean;
+  committedAt: number;
+  /** The perspective's anchor, kept after a hold (PHOTO.md: "kept after"). */
+  ax: number;
+  ay: number;
+  pose: PhotoPose | undefined;
+  flick: FlickWitness | undefined;
+  /** The blob the print draws, for the picture's user count. */
+  hash: string;
+  /** Where its facts put its centre, as last resolved. */
+  fx: number;
+  fy: number;
+}
+
+interface Pic {
+  picture: Picture | null;
+  state: "loading" | "ready" | "failed";
+  readonly users: Set<Entity>;
+  /** A preload holds it until a print takes it. */
+  held: boolean;
+  load: Promise<void>;
+}
+
+const copyBody = (b: PhotoBody): PhotoBody => ({ ...b, hold: b.hold ? { ...b.hold, trail: b.hold.trail.map((s) => [...s] as [number, number, number]) } : null });
+const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
+
+/** The photo kind's `local()` on one desk. */
+export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
+  const prints = new Map<Entity, Print>();
+  const pics = new Map<string, Pic>();
+  const queue: PrintRest[] = [];
+  let last = -1;
+  let woke = false;
+  const passOf = (): PhotoPass | undefined => { const k = host.pass(); return k instanceof PhotoKind ? k.pass : undefined; };
+
+  /** A body at rest where the facts say: the rect's centre, the prop's turn, the builder's hover lifting its edge. */
+  const restBody = (ctx: ObjectContext, hx: number, hy: number, pr: Print | undefined): PhotoBody => {
+    const b = newBody(ctx.rect.cx, ctx.rect.cy, 2 * hx, 2 * hy, numberProp(ctx.props, "angle", 0), law.hover * ctx.flux.hover);
+    b.ax = pr?.ax ?? 0;
+    b.ay = pr?.ay ?? 0;
+    return b;
+  };
+  const withPose = (b: PhotoBody, pose: PhotoPose | undefined): PhotoBody => {
+    if (pose === undefined) return b;
+    if (pose.h !== undefined) b.h = pose.h;
+    if (pose.sx !== undefined) b.sx = pose.sx;
+    if (pose.sy !== undefined) b.sy = pose.sy;
+    if (pose.bend !== undefined) b.bend = pose.bend;
+    if (pose.ax !== undefined) b.ax = pose.ax;
+    if (pose.ay !== undefined) b.ay = pose.ay;
+    if (pose.hold !== undefined) { const H = pose.hold; b.hold = { gx: H.gx, gy: H.gy, px: H.px, py: H.py, vx: 0, vy: 0, ax: 0, ay: 0, trail: [[0, H.px, H.py]] }; }
+    return b;
+  };
+  const print = (e: Entity): Print => {
+    let pr = prints.get(e);
+    if (pr === undefined) {
+      pr = { body: newBody(0, 0, 1, 1), leads: false, resting: false, committedAt: -1, ax: 0, ay: 0, pose: undefined, flick: undefined, hash: "", fx: Number.NaN, fy: Number.NaN };
+      prints.set(e, pr);
+    }
+    return pr;
+  };
+  /** Print `e` stops naming `hash`: the picture goes with its last print (a preload holds it until one takes it). */
+  const unuse = (e: Entity, hash: string): void => {
+    const pic = pics.get(hash);
+    if (pic === undefined) return;
+    pic.users.delete(e);
+    if (pic.users.size > 0 || pic.held) return;
+    if (pic.picture !== null) passOf()?.dropPicture(pic.picture);
+    pics.delete(hash);
+  };
+  /** The upload: raw RGBA by the kind, a decoded source by the device's copy. */
+  const upload = (d: DecodedPicture): Picture | null => {
+    const pass = passOf();
+    if (pass === undefined) return null;
+    if (d.kind === "rgba") return d.bytes.length === d.width * d.height * 4 ? pass.picture(d.bytes, d.width, d.height) : null;
+    return pass.pictureFrom(d.source as ImageBitmap, d.width, d.height);
+  };
+  const load = (hash: string, width: number, height: number): Pic => {
+    const had = pics.get(hash);
+    if (had !== undefined) return had;
+    const pic: Pic = { picture: null, state: "loading", users: new Set(), held: false, load: Promise.resolve() };
+    pics.set(hash, pic);
+    const blobs: BlobStore | undefined = host.blobs;
+    pic.load = (async () => {
+      const blob = await blobs?.get(hash);
+      let decoded: DecodedPicture | undefined;
+      if (blob === undefined) decoded = undefined;
+      else if (blob.type === RGBA_TYPE) decoded = { kind: "rgba", bytes: blob.bytes, width, height };
+      else decoded = await host.decode?.(blob, PICTURE_MAX);
+      const picture = decoded === undefined ? null : upload(decoded);
+      if (decoded?.kind === "source") decoded.close?.();
+      if (pics.get(hash) !== pic) { if (picture !== null) passOf()?.dropPicture(picture); return; }   // nobody wants it any more
+      pic.picture = picture;
+      pic.state = picture === null ? "failed" : "ready";
+      woke = true;
+    })().catch(() => { pic.state = "failed"; woke = true; });
+    return pic;
+  };
+
+  return {
+    hold(e, wx, wy, t) {
+      const pr = prints.get(e);
+      if (pr === undefined) return;   // never drawn: nothing to lift
+      if (!pr.leads) pr.body = copyBody(pr.body);
+      pr.leads = true;
+      pr.resting = false;
+      pr.committedAt = -1;
+      pr.body.hovered = false;
+      grab(pr.body, wx, wy, t);
+      pr.ax = pr.body.ax;
+      pr.ay = pr.body.ay;
+    },
+    move(e, wx, wy, t) { const pr = prints.get(e); if (pr?.body.hold) moveHold(pr.body, wx, wy, t); },
+    drop(e, t) {
+      const pr = prints.get(e);
+      if (!pr?.body.hold) return;
+      release(pr.body, t, law);
+      pr.flick = { body: copyBody(pr.body), dts: [], landed: null };
+    },
+    rests: () => queue.splice(0, queue.length),
+    settle(e, committed) {
+      const pr = prints.get(e);
+      if (pr === undefined) return;
+      if (committed) pr.committedAt = last < 0 ? 0 : last;
+      else { pr.leads = false; pr.resting = false; }
+    },
+    pin(e, pose) { print(e).pose = pose; woke = true; },
+    arrive(e) {
+      const pr = print(e);
+      pr.leads = true;
+      pr.resting = false;
+      pr.body.h = law.arrive;
+      pr.body.alpha = 0;
+      pr.body.x = Number.NaN;   // placed on its facts at the first resolve
+    },
+    preload(hash, width, height) { const pic = load(hash, width, height); pic.held = true; return pic.load; },
+    body: (e) => { const pr = prints.get(e); return pr === undefined ? undefined : copyBody(pr.body); },
+    flick: (e) => { const f = prints.get(e)?.flick; return f === undefined ? undefined : { body: copyBody(f.body), dts: [...f.dts], landed: f.landed }; },
+    pictures() {
+      let ready = 0;
+      let loading = 0;
+      let failed = 0;
+      for (const p of pics.values()) { if (p.state === "ready") ready += 1; else if (p.state === "loading") loading += 1; else failed += 1; }
+      return { ready, loading, failed };
+    },
+    bodyFor(ctx, hx, hy) {
+      const pr = print(ctx.entity);
+      pr.fx = ctx.rect.cx;
+      pr.fy = ctx.rect.cy;
+      if (pr.leads && pr.committedAt >= 0 && ((near(ctx.rect.cx, pr.body.x) && near(ctx.rect.cy, pr.body.y)) || last - pr.committedAt > 1000)) { pr.leads = false; pr.resting = false; pr.committedAt = -1; }
+      if (pr.leads && Number.isNaN(pr.body.x)) { const b = restBody(ctx, hx, hy, pr); b.h = pr.body.h; b.alpha = pr.body.alpha; pr.body = b; }
+      if (!pr.leads) pr.body = withPose(restBody(ctx, hx, hy, pr), pr.pose);
+      const b = pr.body;
+      if (ctx.flux.fade >= 1) return b;
+      // a ghost leaves: it lifts toward 1.6 × the lift as it fades (PHOTO.md's `leave`)
+      return { ...b, h: b.h + law.lift * 1.6 * (1 - ctx.flux.fade), alpha: Math.min(b.alpha, ctx.flux.fade) };
+    },
+    pictureFor(e, hash, width, height) {
+      const pr = print(e);
+      if (pr.hash !== hash) { unuse(e, pr.hash); pr.hash = hash; }
+      if (hash === "") return null;
+      const pic = load(hash, width, height);
+      pic.users.add(e);
+      pic.held = false;
+      return pic.picture;
+    },
+    tick(now) {
+      const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
+      last = now;
+      let want = woke;
+      woke = false;
+      for (const [e, pr] of prints) {
+        if (!pr.leads || pr.resting) { if (pr.leads) want = true; continue; }
+        want = true;
+        if (Number.isNaN(pr.body.x) || dt <= 0) continue;
+        stepPhoto(pr.body, dt, law);
+        const flick = pr.flick;
+        if (flick !== undefined && flick.landed === null && pr.body.hold === null) flick.dts.push(dt);
+        if (pr.body.hold !== null || restless(pr.body)) continue;
+        // at rest: ONE transaction's worth for the carry — a print that came back where its facts are commits nothing
+        if (flick !== undefined && flick.landed === null) flick.landed = { x: pr.body.x, y: pr.body.y };
+        if (near(pr.body.x, pr.fx) && near(pr.body.y, pr.fy)) { pr.leads = false; continue; }
+        pr.resting = true;
+        queue.push({ entity: e, x: pr.body.x, y: pr.body.y });
+      }
+      return want;
+    },
+    forget(e) {
+      const pr = prints.get(e);
+      if (pr === undefined) return;
+      unuse(e, pr.hash);
+      prints.delete(e);
+    },
+    dispose() {
+      const pass = passOf();
+      for (const p of pics.values()) if (p.picture !== null) pass?.dropPicture(p.picture);
+      pics.clear();
+      prints.clear();
+    },
+  };
+}
+
+export interface PhotoKindOptions {
+  /** The host's shader text; the generated module unless a host says. */
+  readonly text?: ShaderText;
+  /** The print's numbers (photo.ts `PHOTO`) — the engine's unless a host tweaks them. */
+  readonly law?: PhotoLaw;
+}
+
+/** The print's kind, whole (kinds/world.ts `ObjectKind`): the program, and the world half on the photo lab's body. */
+export function photoKind(opts: PhotoKindOptions = {}): ObjectKind<PhotoGeometry, PhotoInstance> {
+  const law = opts.law ?? PHOTO;
+  const program = photoProgram(opts.text ?? shaderText);
+  const extentOf = (ctx: ObjectContext): { w: number; h: number } => printExtent(numberProp(ctx.props, "width", 0), numberProp(ctx.props, "height", 0), law.long);
+  return {
+    ...program,
+    reach: photoReach(law),
+    local: (host: KindHost): Prints => createPrints(host, law),
+    resolve(ctx: ObjectContext): PhotoGeometry {
+      const { w, h } = extentOf(ctx);
+      const prints = ctx.local as Prints | undefined;
+      if (prints !== undefined) return resolvePhoto(prints.bodyFor(ctx, w / 2, h / 2), law, ctx.lamp);
+      const b = newBody(ctx.rect.cx, ctx.rect.cy, w, h, numberProp(ctx.props, "angle", 0), law.hover * ctx.flux.hover);
+      if (ctx.flux.fade < 1) { b.h += law.lift * 1.6 * (1 - ctx.flux.fade); b.alpha = ctx.flux.fade; }
+      return resolvePhoto(b, law, ctx.lamp);
+    },
+    record(G: PhotoGeometry, ctx: ObjectContext): PhotoInstance {
+      const { w, h } = extentOf(ctx);
+      const border = borderOf(w / 2, h / 2, { ...law, border: numberProp(ctx.props, "border", law.border) });
+      const prints = ctx.local as Prints | undefined;
+      const picture = prints?.pictureFor(ctx.entity, stringProp(ctx.props, "blob", ""), numberProp(ctx.props, "width", 0), numberProp(ctx.props, "height", 0)) ?? null;
+      return { geometry: G, border, picture };
+    },
+    hit(G: PhotoGeometry, wx: number, wy: number): ObjectHit | null {
+      return hitPhoto(G, wx, wy) ? "content" : null;
+    },
+  };
+}
+
+/** The rect a print lies in at rest, for a host that places one by its centre: top-left and the f32 size the world stores. */
+export function printRect(cx: number, cy: number, width: number, height: number, long: number = PHOTO.long): ObjectRect & { readonly x: number; readonly y: number } {
+  const e = printExtent(width, height, long);
+  const w = Math.fround(e.w);
+  const h = Math.fround(e.h);
+  return { x: cx - w / 2, y: cy - h / 2, cx, cy, w, h };
 }

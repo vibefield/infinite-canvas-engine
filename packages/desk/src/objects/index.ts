@@ -8,11 +8,15 @@ export { NOTE_INK, NOTE_PROPS, NOTE_TYPE, Note, PAPERS, type PaperName, PENS, ty
 export { createNoteTyping, type NoteTyping, type NoteTypingOptions, type TypingDocs } from "./typing";
 // the whiteboard and its data children (D3w)
 export { BOARD_TYPE, Board, MARKERS, type MarkerName, TIPS } from "./board";
+// the photo print and its carry (D3w)
+export { PHOTO_TYPE, Photo, printExtent } from "./photo";
+export { createPhotoCarry, type PhotoCarry, type PhotoCarryOptions } from "./carry";
 export { addStroke, BoardStroke, boardOps, decodePoints, encodePoints, type MarkerInk, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, type StrokeSpec } from "../board/data";
 
 import { Board } from "./board";
 import { MiniMat } from "./minimat";
 import { Note } from "./note";
+import { Photo } from "./photo";
 
 /** The desk's reference objects, in the order an app registers them. */
-export const DESK_OBJECTS = [Note, MiniMat, Board] as const;
+export const DESK_OBJECTS = [Note, MiniMat, Board, Photo] as const;

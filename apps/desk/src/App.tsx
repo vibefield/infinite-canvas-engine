@@ -16,6 +16,8 @@ import type { ThemeName } from "@ice/desk/theme";
 import { defaultSelectionActions, type GroundLayerFactory, InfiniteCanvas, type KeymapEntry, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
+import { deskBlobs } from "./blobs";
+import { installPictureDrop } from "./paste";
 import { createDeskEngine, joinDeskRoom } from "./desk";
 import { deskText } from "./faces";
 import { productPlates } from "./fixtures";
@@ -71,7 +73,7 @@ export function App(): ReactElement {
   // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
   const layer = useMemo<GroundLayerFactory>(() => {
     // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs });
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
   }, [engine]);
 
@@ -132,6 +134,7 @@ export function App(): ReactElement {
         themeRef.current.apply();
         const api = installDeskApi(engine, handle, themeRef.current);
         apiRef.current = api;
+        installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
         // the product's plates and a runtime glyph atlas the moment the ground is here
         const feed = async (): Promise<void> => {
           await joinDeskRoom(engine);   // D2c: `?room=` joins the room's document first

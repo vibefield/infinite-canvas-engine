@@ -55,6 +55,8 @@ import { worldChildren } from "../compose/children";
 import type { BlobStore } from "../photo/blobs";
 import { decodePicture } from "./picture";
 import { createNoteTyping, type NoteTyping, type TypingDocs } from "../objects/typing";
+import { createPhotoCarry } from "../objects/carry";
+import { PHOTO_KIND, type Prints } from "../kinds/photo";
 import type { TextRaster } from "../paper/raster";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 import { createNoteEditor, type NoteEditor } from "./editor";
@@ -313,12 +315,17 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
         })
       : undefined;
+    // the prints' carry (D3w): the hands onto the photo kind's bodies, each rest ONE transaction out of the frame
+    const carry = locals.has(PHOTO_KIND)
+      ? createPhotoCarry({ world, docs: opts.docs ?? { current: () => undefined }, prints: () => locals.get(PHOTO_KIND) as Prints | undefined, isPrint: (e) => builder.kindOf(e)?.name === PHOTO_KIND })
+      : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     const inner = compose.reflector;
     const reflector: ReflectorDef & { available(): boolean } = {
       ...inner,
       flush(w) {
         const now = performance.now();
+        carry?.follow(now);
         let want = false;
         for (const local of locals.values()) if (local.tick?.(now) === true) want = true;
         if (want) compose.wake("ink");

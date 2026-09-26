@@ -7,8 +7,14 @@
 // state (D-D2a-world.5: never a Grab), set by setScene after the spawn.
 
 import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
-import { addStroke, BOARD_TYPE, type StrokeSpec } from "@ice/desk/objects";
+import type { DeskLayerHandle } from "@ice/desk/host";
+import { type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk/kinds";
+import { addStroke, BOARD_TYPE, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
+import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
+import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
 import { BOARD } from "@ice/desk/theme";
+import { deskBlobs } from "./blobs";
+import { bytesOf } from "./fixtures";
 import type { OracleNote, SpawnSpec } from "./scene";
 
 export interface OracleStroke {
@@ -30,20 +36,77 @@ export interface OracleBoard {
   readonly strokes?: readonly OracleStroke[];
 }
 
+/** A print as the photo lab's `addRGBA` leaves it, its pose pinned (scenes.mjs `PRINT`, `HELD`, `STACK`): `picture: null` = its paper alone. */
+export interface OraclePrint {
+  readonly x: number;
+  readonly y: number;
+  readonly angle?: number;
+  readonly height?: number;
+  readonly sx?: number;
+  readonly sy?: number;
+  readonly bend?: number;
+  readonly ax?: number;
+  readonly ay?: number;
+  readonly hold?: { readonly gx: number; readonly gy: number; readonly px: number; readonly py: number };
+  readonly picture?: string | null;
+  readonly selected?: boolean;
+}
+
 /** A desk's thing as the oracle lists it (frame.mjs `thingsOf`). */
-export type OracleThing = ({ readonly kind: "note" } & OracleNote) | ({ readonly kind: "board" } & OracleBoard) | { readonly kind: "print" | "book"; readonly [k: string]: unknown };
+export type OracleThing =
+  | ({ readonly kind: "note" } & OracleNote)
+  | ({ readonly kind: "board" } & OracleBoard)
+  | ({ readonly kind: "print" } & OraclePrint)
+  | { readonly kind: "book"; readonly [k: string]: unknown };
 
 /** The scene fields the D3w kinds read. */
 export interface KindScene {
   readonly boards?: readonly OracleBoard[];
   readonly notes?: readonly OracleNote[];
+  readonly prints?: readonly OraclePrint[];
   readonly things?: readonly OracleThing[];
 }
 
-/** The scene's things in the oracle's paint order: its own list, else the whiteboards, the notes (and, as their slices land, the prints, the notebooks). */
+/** The scene's things in the oracle's paint order: its own list, else the whiteboards, the notes, the prints (and, as its slice lands, the notebooks). */
 export function thingsOf(s: KindScene): OracleThing[] {
   if (s.things !== undefined) return [...s.things];
-  return [...(s.boards ?? []).map((b) => ({ ...b, kind: "board" as const })), ...(s.notes ?? []).map((n) => ({ ...n, kind: "note" as const }))];
+  return [
+    ...(s.boards ?? []).map((b) => ({ ...b, kind: "board" as const })),
+    ...(s.notes ?? []).map((n) => ({ ...n, kind: "note" as const })),
+    ...(s.prints ?? []).map((p) => ({ ...p, kind: "print" as const })),
+  ];
+}
+
+/** The committed picture (tools/make-photo-fixture.mjs) as the scenes' prints name it: its bytes in the app's store, its size. */
+export interface PrintFixture { readonly hash: string; readonly w: number; readonly h: number }
+let fixture: Promise<{ readonly bytes: Uint8Array<ArrayBuffer>; readonly w: number; readonly h: number }> | null = null;
+/** The fixture put in the desk's BlobStore and PRELOADED on the photo kind — so the scene's first frame has its picture. */
+export async function printFixture(handle: DeskLayerHandle): Promise<PrintFixture> {
+  fixture ??= Promise.all([bytesOf(photoUrl), fetch(photoMetaUrl).then((r) => r.json() as Promise<{ w: number; h: number }>)]).then(([bytes, meta]) => ({ bytes, w: meta.w, h: meta.h }));
+  const f = await fixture;
+  const hash = await deskBlobs.put(f.bytes, RGBA_TYPE);
+  await (handle.local("photo") as Prints | undefined)?.preload(hash, f.w, f.h);
+  return { hash, w: f.w, h: f.h };
+}
+
+/** A print as a spawn: centred where the scene says, its extent the picture's aspect (the f32 `Size` the world keeps, so the centre is exact). */
+export function printSpec(p: OraclePrint, fx: PrintFixture): SpawnSpec {
+  const r = printRect(p.x, p.y, fx.w, fx.h);
+  if (p.picture !== undefined && p.picture !== null && p.picture !== "photo-1") throw new Error(`desk: no picture "${p.picture}" (the fixture is photo-1)`);
+  return { type: PHOTO_TYPE, cx: r.cx, cy: r.cy, w: r.w, h: r.h, props: { blob: p.picture === null ? "" : fx.hash, width: fx.w, height: fx.h, angle: p.angle ?? 0 } };
+}
+
+/** A print's still: its pose pinned on the photo kind's body — a FLUX pin, never a Grab (D-D2a-world.5). */
+export function pinPrints(handle: DeskLayerHandle, prints: readonly { readonly entity: Entity; readonly spec: OraclePrint }[]): void {
+  const local = handle.local("photo") as Prints | undefined;
+  for (const { entity, spec: p } of prints) {
+    const pose: PhotoPose = {
+      ...(p.height !== undefined ? { h: p.height } : {}), ...(p.sx !== undefined ? { sx: p.sx } : {}), ...(p.sy !== undefined ? { sy: p.sy } : {}),
+      ...(p.bend !== undefined ? { bend: p.bend } : {}), ...(p.ax !== undefined ? { ax: p.ax } : {}), ...(p.ay !== undefined ? { ay: p.ay } : {}),
+      ...(p.hold !== undefined ? { hold: p.hold } : {}),
+    };
+    if (Object.keys(pose).length > 0) local?.pin(entity, pose);
+  }
 }
 
 /** A whiteboard as a spawn: the bench's size, its capped marker black and bullet unless the scene says. */

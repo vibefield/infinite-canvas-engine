@@ -22,7 +22,8 @@ export { CALENDAR_KIND, type CalendarAlpha, CalendarKind, calendarProgram } from
 export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatFrame, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
 export { NOTEBOOK_KIND, NotebookKind, notebookProgram } from "./notebook";
 export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperFrame, paperProgram, paperReach, paperKind } from "./paper";
-export { PHOTO_KIND, PhotoKind, photoFrame, photoProgram } from "./photo";
+export { createPrints, type FlickWitness, PHOTO_KIND, photoFrame, photoKind, PhotoKind, type PhotoKindOptions, type PhotoPose, photoProgram, photoReach, printExtent, printRect, type PrintRest, type Prints } from "./photo";
+export { type BlobStore, createMemoryBlobStore, type DecodedPicture, hashBytes, type PictureDecoder, RGBA_TYPE, type StoredBlob } from "../photo/blobs";
 export { type DataChildren, FLUX_REST, isObjectKind, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, rectFrame, rectOf, type StratumName, stringProp } from "./world";
 // the text stack's seam and the note's writing (D2c, design-015 §6.1)
 export { createWriting, DEFAULT_BLEED, DEFAULT_FACE, DEFAULT_HAND_LAW, type InkPages, type NoteInk, type NoteRasterInfo, type Writing, type WritingStats } from "../paper/writing";

@@ -1,15 +1,15 @@
 // A STILL, as the oracle states it (packages/desk/oracle/scenes.mjs), spawned INTO THE WORLD: the
 // scene's objects become entities in ONE `undoable: false` transaction in the prototype's paint
 // order (the mini mats, then the things in the oracle's `thingsOf` order — the whiteboards, the
-// notes (D3w, scene-kinds.ts); each mini mat's inside as its CHILDREN, recursively, in the inside's
-// own units), a whiteboard's strokes as ITS children (D3w), the camera is written, the mat's clocks
-// and plate are pinned on the layer's handle (never in durable props — the brief's pinned detail),
-// the rulers become the app's mat config, the committed ink raster is pinned on its note, a note's
-// greeked writing on it too (the chips' lines — a still states them; the live text's layout is
-// D2c's), the theme is set — and the desk draws the oracle's frame from the world (`rig:world` holds
-// it to Dawn at maxΔ 0). `held` is a FLUX PIN (the lift's target), not a `Grab`: a Grab would also
-// carry the object to the top (S1's rule), which the oracle's still does not do. `selected` is the
-// real `Selected` tag.
+// notes, the prints (D3w, scene-kinds.ts); each mini mat's inside as its CHILDREN, recursively, in
+// the inside's own units), a whiteboard's strokes as ITS children (D3w), the camera is written, the
+// mat's clocks and plate are pinned on the layer's handle (never in durable props — the brief's
+// pinned detail), the rulers become the app's mat config, the committed ink raster is pinned on its
+// note, a note's greeked writing on it too (the chips' lines — a still states them; the live text's
+// layout is D2c's), the theme is set — and the desk draws the oracle's frame from the world
+// (`rig:world` holds it to Dawn at maxΔ 0). `held` is a FLUX PIN (the lift's target), not a `Grab`:
+// a Grab would also carry the object to the top (S1's rule), which the oracle's still does not do.
+// `selected` is the real `Selected` tag.
 //
 // A NAV scene (D2b) flies for real: the desk draws the still once so the mini mat's face is AS DRAWN
 // (the flight starts from it — design-015 §9), then `enterContainer` (or a `none` enter onto the
@@ -22,7 +22,7 @@ import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
 import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk/theme";
 import type { PaperKind } from "@ice/desk/kinds";
 import { oracleFixtures } from "./fixtures";
-import { boardSpec, type KindScene, layStrokes, type OracleBoard, type OracleThing, thingsOf } from "./scene-kinds";
+import { boardSpec, type KindScene, layStrokes, type OracleBoard, type OraclePrint, type OracleThing, pinPrints, printFixture, type PrintFixture, printSpec, thingsOf } from "./scene-kinds";
 
 /** A scene as scenes.mjs states one — the mat, ruler, paper, minimat and nav scenes' fields, the D3w kinds' (scene-kinds.ts). */
 export interface OracleScene extends KindScene {
@@ -62,7 +62,6 @@ export interface OracleNote {
 }
 export interface OracleInside extends KindScene {
   readonly minimats?: readonly OracleMiniMat[];
-  readonly prints?: readonly unknown[];
 }
 export interface OracleMiniMat {
   readonly x: number;
@@ -143,15 +142,16 @@ export interface SceneHost {
 const frame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()));
 
 /** What a desk's spawn made, by kind, in the scene's own order. */
-export interface Staged { readonly notes: Entity[]; readonly minimats: Entity[]; readonly boards: Entity[] }
+export interface Staged { readonly notes: Entity[]; readonly minimats: Entity[]; readonly boards: Entity[]; readonly prints: Entity[] }
 
-/** A thing as a spawn (the oracle's `thingsOf` order) into `parent` — a whiteboard is a ROOT object (D-D18): never a mini mat's child. */
-function thingSpec(t: OracleThing, parent: Entity | undefined): SpawnSpec {
+/** A thing as a spawn (the oracle's `thingsOf` order) into `parent` — a whiteboard is a ROOT object (D-D18): never a mini mat's child; a print nests. */
+function thingSpec(t: OracleThing, parent: Entity | undefined, photo: PrintFixture | null): SpawnSpec {
   if (t.kind === "note") return noteSpec(t, parent);
   if (t.kind === "board") {
     if (parent !== undefined) throw new Error("desk: a whiteboard is a ROOT object (D-D18) — a scene cannot lay one inside a mini mat");
     return boardSpec(t);
   }
+  if (t.kind === "print" && photo !== null) return { ...printSpec(t, photo), ...(parent === undefined ? {} : { parent }) };
   throw new Error(`desk: a scene's "${t.kind}" needs its D3w world half`);
 }
 
@@ -166,19 +166,22 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
   const { engine, handle } = host;
   const mats = desk.minimats ?? [];
   const things = thingsOf(desk);
-  const spawned = spawnAll(engine, [...mats.map((m) => matSpec(m, parent)), ...things.map((t) => thingSpec(t, parent))], false);
+  const photo = things.some((t) => t.kind === "print") ? await printFixture(handle) : null;   // the picture in the store and on the device first
+  const spawned = spawnAll(engine, [...mats.map((m) => matSpec(m, parent)), ...things.map((t) => thingSpec(t, parent, photo))], false);
   const matEntities = spawned.slice(0, mats.length);
   const thingEntities = spawned.slice(mats.length);
   const of = <K extends OracleThing["kind"]>(kind: K) => things.flatMap((t, i) => (t.kind === kind ? [{ entity: thingEntities[i] as Entity, spec: t as Extract<OracleThing, { kind: K }> }] : []));
   const notes = of("note");
   const boards = of("board").map((b) => ({ entity: b.entity, spec: b.spec as OracleBoard }));
   layStrokes(engine, boards);
+  const prints = of("print").map((p) => ({ entity: p.entity, spec: p.spec as OraclePrint }));
   // the facts and the flux a still states: selected → the tag (one `setSelection` for the scene); held → the lift's target pinned (never a Grab: no raise)
   const flagged = [...mats.map((m, i) => ({ entity: matEntities[i] as Entity, spec: m as { selected?: boolean; held?: boolean } })), ...things.map((t, i) => ({ entity: thingEntities[i] as Entity, spec: t as { selected?: boolean; held?: boolean } }))];
   for (const f of flagged) {
     if (f.spec.selected) selected.push(f.entity);
     if (f.spec.held) handle.pinFlux(f.entity, { lift: 1 });
   }
+  pinPrints(handle, prints);   // a print's pose is its body's (height, slope, bend, the hand) — pinned on the photo kind
   for (const { entity: e, spec: n } of notes) {
     // the committed ink raster on the note that carries it — allocated in scene order, so it lands where the oracle's did
     if (n.asset === "note-1" && fx.inkMeta.w > 0) {
@@ -191,10 +194,9 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
   for (let i = 0; i < mats.length; i++) {
     const inside = mats[i]?.inside;
     if (inside === undefined) continue;
-    if ((inside.prints?.length ?? 0) > 0) throw new Error("desk: a print inside a mini mat needs its world half (D3w)");
     await spawnDesk(host, fx, inside, matEntities[i] as Entity, selected);
   }
-  return { notes: notes.map((n) => n.entity), minimats: matEntities, boards: boards.map((b) => b.entity) };
+  return { notes: notes.map((n) => n.entity), minimats: matEntities, boards: boards.map((b) => b.entity), prints: prints.map((p) => p.entity) };
 }
 
 /** Spawn the scene, pin the mat, the rasters and the flux, set the camera and the theme; fly and pin a nav scene. Resolves once every asset is uploaded. */
@@ -219,7 +221,7 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   // 2. the theme, pinned (the OS no longer leads)
   host.setTheme(s.theme, true);
   // 3. the objects, in the prototype's paint order — the mini mats (sheets), then the things (the oracle's `thingsOf`: the
-  //    whiteboards, the notes) — and every inside as children; the boards' strokes their children (D3w)
+  //    whiteboards, the notes, the prints) — and every inside as children; the boards' strokes their children (D3w)
   const selected: Entity[] = [];
   const root = await spawnDesk(host, fx, s, undefined, selected);
   // 4. the facts a still states: selected → the tag (the flux pins were made as the objects were spawned)
