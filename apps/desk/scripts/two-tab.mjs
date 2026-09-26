@@ -12,7 +12,11 @@
 // arrives in B where it lies; a real drag in A moves it while held with NOTHING crossing, lands as ONE commit, and B
 // converges on A's position exactly; ⌫ deletes it in both; ⌘Z in A restores it in both (the same key, the same place,
 // the same hand); a mini mat's INSIDE is edited (the note dropped into it) and B has it inside, and ⌘Z takes it back
-// out in both. Objects cross by their durable KEY (`__desk.room`) — the tabs' entity ids differ. Exit 0 = passed.
+// out in both. Objects cross by their durable KEY (`__desk.room`) — the tabs' entity ids differ.
+//
+// THE WHITEBOARD ACROSS THE ROOM (D3t-a): A picks a board up and lays a stroke BY HAND; its ONE child — the same path, the same
+// samples' times — arrives on B's board and B draws it; ⌘Z and ⇧⌘Z in A (the board still in hand — the document's history) are
+// seen in B. Exit 0 = passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -222,6 +226,54 @@ try {
   await front(B);
   const outB = await until(async () => { const id = await B.q(`window.__desk.room.resolve(${K(nKey)})`); const e = id === null ? null : await B.q(`window.__desk.entity(${id})`); return e !== null && e.parent === bn0.parent ? e : null; }, 8000);
   check(outA?.parent === n0.parent && outA.active && outA.x === movedA.x && outA.y === movedA.y && outB !== null && outB.active && outB.x === movedA.x && outB.y === movedA.y, `${M5}: ⌘Z takes it back out in ONE step — on the desk again in A (${outA?.x}, ${outA?.y}) and in B (${outB?.x}, ${outB?.y}), each a member of its root frame`);
+
+  // ---- THE WHITEBOARD ACROSS THE ROOM (D3t-a): a stroke laid BY HAND in A — ONE child, its samples' times — arrives on B's board
+  //      and B draws it; the history in A is the document's, and B sees both the undo and the redo
+  for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: 1800, y: -100, zoom: 1 })");
+  await front(A);
+  const wbA = await A.q("window.__desk.spawn('desk.board', { cap: 'green' }, { x: 2400, y: 300 })");
+  const wbKey = await A.q(`window.__desk.room.key(${wbA})`);
+  await front(B);
+  const wbB = await until(() => B.q(`window.__desk.room.resolve(${K(wbKey)})`), 8000);
+  check(typeof wbB === "number", `the whiteboard spawned in A reaches B (key ${wbKey}: A's #${wbA}, B's #${wbB})`);
+  await front(A);
+  await settle(A);
+  for (const [type, clickCount] of [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]]) { await A.tab.send("Input.dispatchMouseEvent", { type, x: 600, y: 400, button: "left", clickCount }); await sleep(16); }
+  const handA = await until(async () => { const h = await A.q("window.__desk.hand()"); return h?.settled === true && h.e === 1 ? h : null; }, 3000);
+  check(handA !== null && handA.entity === wbA, "A picks the board up (a double-click)");
+  // the melamine's top-left on the desk is (2400 − 240 + 9, 300 − 160 + 9); in hand a desk point is at the frame's centre + (p − c)·s
+  const wfA = handA?.frame ?? { cx: 600, cy: 392, s: 1 };
+  const melA = (mx, my) => [wfA.cx + (2169 + mx - 2400) * wfA.s, wfA.cy + (149 + my - 300) * wfA.s];
+  const [sx0, sy0] = melA(80, 120);
+  await mouse(A, "mouseMoved", sx0, sy0); await mouse(A, "mousePressed", sx0, sy0);
+  for (let i = 1; i <= 10; i++) { const [x, y] = melA(80 + 24 * i, 120 + 30 * Math.sin(i / 2)); await A.tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 }); await sleep(20); }
+  const [sx1, sy1] = melA(320, 120 + 30 * Math.sin(5));
+  await sleep(30);
+  await mouse(A, "mouseReleased", sx1, sy1);
+  const rowsA = await until(async () => { const r = await A.q(`window.__desk.kinds.strokeRows(${wbA})`); return r.length === 1 ? r : null; }, 3000);
+  check(rowsA !== null && rowsA[0].ink === "green" && rowsA[0].timed === rowsA[0].points.length && rowsA[0].points.length >= 10, `A lays ONE stroke by hand: its child, in the ink in hand (${rowsA?.[0]?.ink}), ${rowsA?.[0]?.timed} timed samples`);
+  await front(B);
+  const rowsB = await until(async () => { const r = await B.q(`window.__desk.kinds.strokeRows(${wbB})`); return r.length === 1 ? r : null; }, 8000);
+  check(rowsB !== null && JSON.stringify(rowsB[0].points) === JSON.stringify(rowsA?.[0]?.points) && rowsB[0].timed === rowsA?.[0]?.timed, `the stroke arrives on B's board — the same path, the same ${rowsB?.[0]?.timed} times`);
+  await settle(B);
+  const inkB = await B.tab.evaluate(`window.__desk.kinds.inkAt(${wbB}, ${JSON.stringify(rowsA?.[0]?.points.slice(2, -2) ?? [])})`, { awaitPromise: true, timeoutMs: 15000 });
+  check(inkB !== null && inkB.alpha.length > 0 && inkB.alpha.every((a) => a > 96), `B draws it: its raster's coverage under the path ${inkB?.alpha.slice(0, 5).join(", ")}… (every sample > 96)`);
+  // (each tab is read while in front: a background tab draws no frame, and its world projects the document at its frames)
+  await front(A);
+  const inHandA = (await A.q("window.__desk.hand()")) !== null;
+  await key("z", 4);
+  const undoneWbA = await until(async () => (await A.q(`window.__desk.kinds.strokeRows(${wbA})`)).length === 0, 3000);
+  await front(B);
+  const undoneWbB = await until(async () => (await B.q(`window.__desk.kinds.strokeRows(${wbB})`)).length === 0, 8000);
+  check(inHandA && undoneWbA && undoneWbB, `⌘Z in A (the board in hand: ${inHandA}) takes the stroke away (A: ${undoneWbA}) — and B sees it go (B: ${undoneWbB})`);
+  await front(A);
+  await key("z", 12);
+  const redoneWbA = await until(async () => (await A.q(`window.__desk.kinds.strokeRows(${wbA})`)).length === 1, 3000);
+  await front(B);
+  const redoneWbB = await until(async () => (await B.q(`window.__desk.kinds.strokeRows(${wbB})`)).length === 1, 8000);
+  check(redoneWbA && redoneWbB, `⇧⌘Z in A brings it back (A: ${redoneWbA}) — and B sees that too (B: ${redoneWbB})`);
+  await front(A);
+  await key("Escape");
 
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors in either tab");

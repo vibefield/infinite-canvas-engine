@@ -5,7 +5,10 @@
 // it and ⌘Z brings it back) — and the print's OWN carry: a press lifts it, the grab point rides the finger, a flick
 // glides it on and the mat's grip stops it, and it lands where the LAW says (the rig replays photo.ts `stepPhoto`
 // over the desk's own steps from the body the hand let go) in ONE transaction. Each object is laid in its own clear
-// stretch of the desk, far from the notes.
+// stretch of the desk, far from the notes. D3t-a, the print's owed rows: carried, it paints above the note laid after it
+// (like a Grab); Esc cancels the carry — nothing committed, flown back home; a press on it GLIDING catches it where it is
+// drawn (its facts still where they were) and it lands there; the wheel over it carried turns it about the finger (the
+// camera never zooms) and the rest commits the turn with the place; ⌘Z undoes both.
 import { boardFrame, bookFrame, calendarFrame, photoFrame } from "../../../packages/desk/src/kinds/index.ts";
 import { frameOnScreen } from "../../../packages/desk/src/marks/layout.ts";
 import { stepPhoto } from "../../../packages/desk/src/photo/photo.ts";
@@ -217,6 +220,64 @@ export async function kindsRig(t) {
   await settle();
   const [pRestored] = await typeOf("desk.photo");
   check(pRestored !== undefined && (await q("window.__desk.handle.local('photo').pictures().ready")) >= 1, "print: ⌘Z brings it back — its picture from the store");
+
+  // ---- THE PRINT'S OWED CARRY (D3t-a): Esc cancels a carry; a carried print paints above its siblings; a press catches a print in the
+  //      air where it is drawn; the wheel twists a carried print about the finger (PHOTO.md) and the rest commits the turn
+  const pr = pRestored?.id ?? print;
+  const paintLast = async () => { const o = (await q("window.__desk.handle.lastInputs()"))?.objects ?? []; return o.length > 0 ? o[o.length - 1].kind : null; };
+  // a note overlapping the print's right half, above it in the desk's order
+  const over = await q("window.__desk.spawn('desk.note', { seed: 5 }, { x: 4080, y: 1500 })");
+  await settle();
+  check((await paintLast()) === "paper", "print: at rest the note laid after it paints over it");
+  await q(`window.__desk.kinds.watch(${pr})`);
+  await carry([470, 400], [540, 440], 6, 20, 60);
+  const liftedLast = await paintLast();
+  await key("Escape", "Escape", 27);
+  await sleep(700);
+  const home = await q(`window.__desk.kinds.body(${pr})`);
+  await release([540, 440]);
+  await settle();
+  const pEsc = await entity(pr);
+  check(liftedLast === "photo", `print: carried, it paints above its siblings like a Grab (last painted: ${liftedLast})`);
+  check(near(pEsc.cx, 4000) && near(pEsc.cy, 1500) && (await q("window.__desk.kinds.moves()")) === 0, `print: Esc CANCELS the carry — nothing committed, its facts where they were (${pEsc.cx.toFixed(1)}, ${pEsc.cy.toFixed(1)})`);
+  check(home !== null && home.hold === null && near(home.x, 4000, 1e-6) && near(home.y, 1500, 1e-6) && near(home.angle, 0, 1e-9), `print: …and it flew back to where it began (${home?.x.toFixed(2)}, ${home?.y.toFixed(2)})`);
+  // flicked, then CAUGHT in the air — pressed where it is drawn, far from its facts
+  await q(`window.__desk.kinds.watch(${pr})`);
+  await carry([470, 400], [650, 400], 6, 16, 0);
+  await release([650, 400]);
+  await sleep(60);
+  const air = await q(`window.__desk.kinds.body(${pr})`);
+  const [ax, ay] = [air.x - 3400 - 60, air.y - 1100];
+  await mouse("mouseMoved", ax, ay); await mouse("mousePressed", ax, ay);
+  await sleep(80);
+  const caught = await q(`window.__desk.kinds.body(${pr})`);
+  await sleep(200);
+  await release([ax, ay]);
+  await sleep(200);
+  await settle();
+  const pCaught = await entity(pr);
+  // (the finger's world point is `PointerWorld`'s — f32 cells: a thousandth of a unit)
+  check(air.hold === null && air.x > 4000 + 120 && caught?.hold != null && near(caught.hold.px, ax + 3400, 1e-3), `print: a press on it GLIDING catches it where it is drawn — pressed at x ${(ax + 3400).toFixed(3)}, held at ${caught?.hold?.px?.toFixed(3)}, the body flying at ${air.x.toFixed(1)}, its facts still at 4000`);
+  check(pCaught.cx > 4000 + 60 && (await q("window.__desk.kinds.moves()")) === 1, `print: …and it lands where it was caught, one transaction (${pCaught.cx.toFixed(1)}, ${pCaught.cy.toFixed(1)})`);
+  await key("z", "KeyZ", 90, META);
+  await settle();
+  // the WHEEL over a carried print twists it about the finger — the camera never zooms — and the rest commits the turn
+  const cam0 = await q("window.__desk.camera()");
+  await q(`window.__desk.kinds.watch(${pr})`);
+  await carry([470, 400], [480, 400], 2, 20, 60);
+  for (let i = 0; i < 2; i++) { await mouse("mouseWheel", 480, 400, { deltaX: 0, deltaY: 100, buttons: 1 }); await sleep(40); }
+  await sleep(100);
+  const turned = await q(`window.__desk.kinds.body(${pr})`);
+  const camT = await q("window.__desk.camera()");
+  await release([480, 400]);
+  await sleep(200);
+  await settle();
+  const pTurned = await entity(pr);
+  check(near(turned.angle, 100 * 0.0035, 1e-9) && camT.zoom === cam0.zoom && camT.x === cam0.x, `print: the wheel over it carried turns it about the finger (${turned.angle.toFixed(4)} rad for 100 wheel units — the lab's 0.0035) and the camera never zooms`);
+  check(near(pTurned.props.angle, turned.angle, 1e-9) && (await q("window.__desk.kinds.moves()")) === 1, `print: …and the rest commits the turn with the place (angle ${pTurned.props.angle.toFixed(4)}, one transaction)`);
+  await key("z", "KeyZ", 90, META);
+  await settle();
+  check(near((await entity(pr)).props.angle, 0, 1e-12), "print: ⌘Z undoes the turn with the carry");
 
   // ---------------------------------------------------------------- the NOTEBOOK at world (4000, 3000): screen = world − (3400, 2600)
   console.log("-- the notebook --");
