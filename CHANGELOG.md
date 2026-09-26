@@ -233,6 +233,71 @@ there.
   and `rig:two-tab` (10 — a typed note crosses a room only when its session commits, with its seeds).
   `rig:interact`'s delete presses Escape first: a tap now writes.
 
+<!-- design-015 D2b (2026-09-26) -->
+- **The mini mats' nested desks and the flight, FROM THE WORLD** (`@ice/desk`, `@ice/core`; design-015 §9,
+  MINIMAT.md §3–§5, PORTAL.md §2.4 · §8 · §9; the plan's D2b). A container drawn in a slot gets its INSIDE:
+  its `ChildOf` children (cached against strata's per-parent order stamp, sheets before things), their
+  bounds as the content, the view through the kind's own `face(G)` (`insideViewOfFace` — the flight's
+  numbers, so the far LOD and the live inside agree to the bit), the children as their kinds chip them
+  (`chip(G, ctx)` — a note as paper with its writing greeked: the still's pinned lines, else the hand's
+  own layout; a mini mat as vinyl with its border; ≤ 64 per face) — and, past the gate (presence > 0 on
+  the face's short side, 140 → 220 CSS px; depth < 4; the 16 largest faces first), a LIVE slot: the
+  children built under the inside's camera at rest, recursing (the belt of 4; the ground's chain of 6).
+  `ObjectKind` gains `face?`, `chip?`, `insideGrid?`; a container's `record` receives `ctx.inside
+  { content, view, chips }`. THE FLIGHT: the departed desk from the frame's `Retained` widgets in sibling
+  order under `departedCameraOf` — an enter as ONE tree through the face (`at` = the container's row), an
+  exit and a frozen flight as two whole slots — with `flightPresent`/`flightLights` (the opacities, the
+  lamp HANDOVER), the arriving desk dressed for its landing (`c1z`), the departed for the cut (`fromZ`).
+  The CUT FRAME holds every spring (D-D2b.7): while the flight sits at p = 0 the departed desk IS its
+  pre-cut frame. Ghosts go with the frame (a nav cut drops them; they fade on the frame's own clock).
+- **The nav geometry SEAM — the desk is the authority on its containers' faces AS DRAWN** (design-015 §9's
+  found subtlety): `stack.navGeometry.current: NavGeometrySource` beside `framePick`; `face(container,
+  cam) → NavFace { face, arrival, affine, camera, presence, covers(px) }` — as drawn when the container is
+  in the frame this frame (a held mini mat's face reads 2 % larger), at rest when it is not. Core's nav
+  reads it first (`resolveNavFace`; `fallbackNavFace` — the static portal rect, the default framing, a
+  sharp-cornered cover test — for every app that mounts none): `enterContainer` starts the flight from the
+  seam's exact camera and lands on ITS arrival (an empty desk's is the prototype's, centred on its origin
+  at zoom 1 — D-D2b.2); `exitTo` composes the chain from the seam's faces. `NavOpts` gains `face`,
+  `arrival`, `c0` (an op's own word) and `transition: "cut"` — no motion, landing on the CONTINUITY camera
+  (c0 in, the solve out), the zoom-through's cut (`"none"` still lands on the arrival). `NavCamera.zoom`
+  is f64.
+- **The enter GESTURE and the ZOOM-THROUGH are core's.** `navTap` (after `selectBehavior`): a double-tap
+  on a container asks to enter, on the bare frame to leave — two INSTANT taps within
+  `multiTapWindowMs`/`multiTapSlopPx` (`NavTapMemo`), not a `MultiTap(2)` opt-in, which would delay the
+  first tap's selection by the window (D-D2b.1). `zoomThrough` (after `cameraControl`; reads D2a-core's
+  `WheelZoomStep`): a wheel zoom in that leaves the topmost Active container's face at presence 1
+  covering the view by `in` px cuts into it; a wheel out that leaves the frame's face short of covering by
+  `out` px cuts back out; no cut while a flight drives; a touch pinch never cuts (D-D2a.6 → D-D2b.5).
+  Ops are structural, so both write the one-tick `NavIntent` and the facade applies it on the ENGINE's
+  new `afterStep` hook (D-D2b.4 — a host loop may drive the raw engine); a zoom-through cut states
+  `NavRedress { kind: in|out, from, frame, epoch }`, and the desk re-dresses over 320 ms in log space
+  with the lamp on the same ramp. `settings.nav.zoomThrough { enabled, in, out, gate }` seeds
+  `ZoomThroughSettings` (`ZOOM_THROUGH_DEFAULTS`: off, 2, 6, [140, 220]); the desk turns it on. react's
+  keymap: ⏎ enters the one selected container, Esc leaves the frame when no gesture is live to cancel.
+- **Drop-into goes through the portal affine** (design-015 §9, D-D6, D-D18): an all-object drag's
+  candidate is the topmost container whose FACE holds the set's CENTRE (`l3-drop`); at the release the
+  object lands at `(n − M.o) / M.s − size/2`, its size kept — it takes the inside's scale; ⌥ held keeps it
+  on this desk; a non-accepting container is scenery, never a fly-back; `interaction.drop: "into" |
+  "never"` (`"never"`: no `Provides`, and read off the compiled type — D-D18's kinds). View widgets keep
+  every rule they had.
+- **The desk layer** fills the seam at mount, gains `pinGreek`, `setPortals`, `pinLodZoom`, `freeze`,
+  `holdRedress`, `navFace`, `insideViewOf`, `flightCameraAt`; the reflector composes the nested inputs
+  (the entered mini mat's inside grid at depth > 0, the portals, the departed slot, the presentation,
+  the light, the dressing) and wakes on `NavRedress`. apps/desk: `setScene` spawns every inside as
+  children and flies a nav scene for real (the still drawn once so the face is as drawn, then the op, the
+  flight PINNED at p by a system after `navFlight`); `window.__desk` gains depth/flight/enter/exit/
+  pinFlight/pinRedress/freeze/redress/portals/navFace/insideView/taps, `DeskEntity.parent/active`;
+  `t` cycles the selected mats' vinyl. Witnesses in `gate:landing`: `rig:world` now draws the minimat,
+  chain and nav scenes (38/38 at maxΔ 0); `rig:portal` (the live counts; THE CUT — the frame before the
+  flight and its first frame the same PNG, the flight from the seam's camera; the landing shows the
+  inside's own mini mat live; the exit lands on the saved camera with the same PNG as before; a mini mat
+  laid inside shows its inside; the gate 0 → 0.63 → 1; the zoom-through in as the same PNG, then by a
+  real wheel with the `NavRedress` fact, and out; live insides off/on; the quiet loop); `rig:nav` (the
+  nav scenes as stills; a live flight — the camera flies, held midway both desks draw, the landing exact,
+  the loop quiet; the exit lands back exactly; a wheel mid-flight yields; a real double-click flies in
+  and out; THE PRESS + DOUBLE-CLICK CUT — a HELD mini mat double-clicked, the flight from the face as
+  drawn, the same PNG); `rig:interact` gains drop-into, ⌥ keeps it, the vinyl key.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and

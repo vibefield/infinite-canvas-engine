@@ -5,7 +5,7 @@
 // `settle` — resolves once the desk is drawn, quiet and its assets are up. Everything reads the
 // WORLD (Position/Size/tags) and the builder's flux; nothing here writes what an op would not.
 
-import { Active, type CanvasEngine, ChildOf, type Entity, Grab, Locked, NavRedress, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
+import { Active, type CanvasEngine, ChildOf, type Entity, Grab, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
 import type { DeskLayerHandle, MatPin } from "@ice/desk/host";
 import type { AmbientMode } from "@ice/desk/compose";
 import type { ThemeName } from "@ice/desk/theme";
@@ -73,14 +73,18 @@ export interface DeskApi {
   pinFlight(p: number | null): void;
   /** Hold the re-dressing ramp at its start (the prototype harness's `redressPinned`). */
   pinRedress(on: boolean): void;
+  /** Hold every spring and ghost where it is — a still of a moving frame (a rig's cut witness). */
+  freeze(on: boolean): void;
   /** The re-dressing fact as core last stated it, or null. */
   redress(): { readonly kind: "in" | "out"; readonly from: number; readonly frame: number; readonly epoch: number } | null;
   /** Live insides on or off (the oracle's `portals: false`). */
   portals(on: boolean): void;
-  /** THE SEAM's answer for a mini mat under the live camera: its face, arrival, embedding, the inside's camera, presence, and whether it covers the view by `marginPx`. */
-  navFace(id: number, coverPx?: number): { readonly face: { x: number; y: number; width: number; height: number }; readonly arrival: { x: number; y: number; zoom: number }; readonly cam: { x: number; y: number; zoom: number }; readonly presence: number; readonly covers: boolean } | null;
+  /** THE SEAM's answer for a mini mat under the live camera: its face, arrival, embedding (inside → desk), the inside's camera, presence, and whether it covers the view by `coverPx`. */
+  navFace(id: number, coverPx?: number): { readonly face: { x: number; y: number; width: number; height: number }; readonly arrival: { x: number; y: number; zoom: number }; readonly affine: { s: number; ox: number; oy: number }; readonly cam: { x: number; y: number; zoom: number }; readonly presence: number; readonly covers: boolean } | null;
   /** The last build's view of a mini mat's inside (its camera, presence, clip), or null when it was not drawn. */
   insideView(id: number): { readonly cam: { x: number; y: number; zoom: number }; readonly presence: number; readonly clip: { cx: number; cy: number; hx: number; hy: number } } | null;
+  /** The gesture's facts (a rig's diagnosis): the last instant tap remembered, and the last nav request a system made. */
+  taps(): { readonly memo: { target: number; x: number; y: number; at: number; seq: number } | null; readonly intent: { kind: string; target: number; transition: string; source: string; epoch: number } | null; readonly redressRaw: { kind: string; from: number; frame: number; epoch: number } | null };
 }
 
 declare global {
@@ -191,6 +195,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       handle.freeze(p !== null);
     },
     pinRedress: (on) => handle.holdRedress(on),
+    freeze: (on) => handle.freeze(on),
     redress() {
       const r = world.getResource(NavRedress);
       return r === undefined || r.epoch === 0 ? null : { kind: r.kind, from: r.from, frame: r.frame as number, epoch: r.epoch };
@@ -199,12 +204,22 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     navFace(id, coverPx = 0) {
       const f = handle.navFace(id as Entity);
       if (f === undefined) return null;
-      return { face: { ...f.face }, arrival: { ...f.arrival }, cam: { ...f.camera }, presence: f.presence, covers: f.covers(coverPx) };
+      return { face: { ...f.face }, arrival: { ...f.arrival }, affine: { ...f.affine }, cam: { ...f.camera }, presence: f.presence, covers: f.covers(coverPx) };
     },
     insideView(id) {
       const v = handle.insideViewOf(id as Entity);
       if (v === undefined) return null;
       return { cam: { ...v.cam }, presence: v.presence, clip: { cx: v.clip.cx, cy: v.clip.cy, hx: v.clip.hx, hy: v.clip.hy } };
+    },
+    taps() {
+      const m = world.getResource(NavTapMemo);
+      const i = world.getResource(NavIntent);
+      const r = world.getResource(NavRedress);
+      return {
+        memo: m === undefined ? null : { target: m.target as number, x: m.x, y: m.y, at: m.at, seq: m.seq },
+        intent: i === undefined ? null : { kind: i.kind, target: i.target as number, transition: i.transition, source: i.source, epoch: i.epoch },
+        redressRaw: r === undefined ? null : { ...r, frame: r.frame as number },
+      };
     },
   };
   window.__desk = api;

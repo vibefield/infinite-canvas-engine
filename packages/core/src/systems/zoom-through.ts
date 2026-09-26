@@ -73,7 +73,7 @@ export function createZoomThrough(world: World, opts: ZoomThroughOpts = {}): Tic
           if (!isContainer(c)) continue;
           const f = resolveNavFace(world, c, cam, opts.navGeometry);
           if (f === undefined || f.presence < 1 || !f.covers(zt.in)) continue;
-          world.setResource(NavIntent, { kind: "enter", target: c, transition: "cut", source: "through", redress: true, from: f.arrival.zoom, epoch });
+          world.setResource(NavIntent, { kind: "enter", target: c, transition: "cut", source: "through", epoch });
           return;
         }
       } else {
@@ -85,7 +85,7 @@ export function createZoomThrough(world: World, opts: ZoomThroughOpts = {}): Tic
         const hostCam = solveFlightStart(rest.affine, cam);
         const f = resolveNavFace(world, frame, hostCam, opts.navGeometry);
         if (f === undefined || f.covers(-zt.out)) return;
-        world.setResource(NavIntent, { kind: "exit", target: frame, transition: "cut", source: "through", redress: true, from: cam.zoom, epoch });
+        world.setResource(NavIntent, { kind: "exit", target: frame, transition: "cut", source: "through", epoch });
       }
     },
     {

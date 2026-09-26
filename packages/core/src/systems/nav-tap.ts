@@ -84,9 +84,9 @@ export function createNavTap(world: World, opts: NavTapOpts = {}): System {
         const epoch = (prev?.epoch ?? 0) + 1;
         if (!bare) {
           if (!ctx.isAlive(target) || !isContainer(target)) continue;
-          world.setResource(NavIntent, { kind: "enter", target, transition: "zoom", source: "tap", redress: false, from: 1, epoch });
+          world.setResource(NavIntent, { kind: "enter", target, transition: "zoom", source: "tap", epoch });
         } else if (currentNavEntry(world) !== undefined) {
-          world.setResource(NavIntent, { kind: "exit", target: 0 as Entity, transition: "zoom", source: "tap", redress: false, from: 1, epoch });
+          world.setResource(NavIntent, { kind: "exit", target: 0 as Entity, transition: "zoom", source: "tap", epoch });
         }
       }
     },

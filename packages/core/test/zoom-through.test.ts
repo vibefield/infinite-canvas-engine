@@ -79,8 +79,8 @@ describe("the zoom-through (design-015 §9; D-D2b.3, .4)", () => {
     expect(camPre.zoom).toBeGreaterThan(4.4);
     expect(r.cam()).toEqual(outgoingCamera(r.M(), camPre));
     // the request rode the one-tick fact, applied after the tick
-    expect(r.world.getResource(NavIntent)).toMatchObject({ kind: "enter", target: r.folder, transition: "cut", source: "through", redress: true });
-    // the desk entered was dressed for its arrival as a face: the renderer re-dresses from there
+    expect(r.world.getResource(NavIntent)).toMatchObject({ kind: "enter", target: r.folder, transition: "cut", source: "through" });
+    // the desk entered was dressed for its arrival as a face: the renderer re-dresses from there (the cut op states it)
     const arrival = defaultArrivalCamera(r.world, r.folder);
     expect(r.world.getResource(NavRedress)).toMatchObject({ kind: "in", from: arrival.zoom, frame: r.folder, epoch: 1 });
   });

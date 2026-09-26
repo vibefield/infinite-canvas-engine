@@ -105,6 +105,12 @@ export interface Engine {
   /** Run one full frame. `now` in ms (rAF timestamp or a test counter). */
   step(now: number): void;
   /**
+   * Register a hook that runs right AFTER every `step` — outside the tick, after the reflectors
+   * (design-015 §9, D2b): where an op a system asked for inside the tick is applied (the facade's
+   * nav intent), whichever `step` a host drives. Returns a remover.
+   */
+  afterStep(hook: () => void): () => void;
+  /**
    * The frame gate (2026-08-04): freeze/thaw plus the settle protocol a host
    * loop consults before each frame. It lives HERE, next to the step it
    * governs, so every host gets it without a new argument — and so a
@@ -131,6 +137,8 @@ export function createEngine(world: World, opts?: EngineOpts): Engine {
     opts?.onReflectorFault ? { onFault: opts.onReflectorFault } : undefined,
   );
   const publishHooks: PublishEntry[] = [];
+  /** After-step hooks (design-015 §9, D2b): run once every `step` is over, in registration order. */
+  const afterHooks: (() => void)[] = [];
   // The per-frame SNAPSHOT (rebuilt only when the registration set changes, so
   // steady state allocates nothing). Iterating the live array let a hook that
   // removed itself — or an earlier hook — shift the array under the index-based
@@ -209,6 +217,15 @@ export function createEngine(world: World, opts?: EngineOpts): Engine {
       }
       world.reactive.notify();
       reflectors.flushAll();
+      if (afterHooks.length > 0) for (const hook of afterHooks.slice()) hook();
+    },
+
+    afterStep(hook) {
+      afterHooks.push(hook);
+      return () => {
+        const i = afterHooks.indexOf(hook);
+        if (i !== -1) afterHooks.splice(i, 1);
+      };
     },
 
     enableTelemetry() {

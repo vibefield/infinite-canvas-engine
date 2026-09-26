@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   Camera,
   NavCamera,
+  NavRedress,
   NavTransition,
   Viewport,
   createCanvasEngine,
@@ -176,6 +177,8 @@ describe("`transition: \"cut\"` — the zoom-through's cut lands on the continui
     expect(r.nav().active).toBe(false);
     expect(r.nav().kind).toBe("enter");
     expect(r.ce.nav.depth()).toBe(1);
+    // the cut states the re-dressing itself: the desk entered was dressed for its arrival as a face
+    expect(r.world.getResource(NavRedress)).toMatchObject({ kind: "in", from: src.arrival0.zoom, frame: r.folder, epoch: 1 });
     // and a "none" would have landed on the arrival — the two are different cameras here
     expect(c0).not.toEqual(src.arrival0);
     // out as a cut: the parent camera under which the inside renders as it does now
@@ -185,6 +188,8 @@ describe("`transition: \"cut\"` — the zoom-through's cut lands on the continui
     expect(r.ce.nav.depth()).toBe(0);
     expect(r.nav().active).toBe(false);
     expect(r.cam()).toEqual(solveFlightStart(M, camInside));
+    // and the desk left, the live inside of the folder now, was dressed for the camera it was cut at
+    expect(r.world.getResource(NavRedress)).toMatchObject({ kind: "out", from: camInside.zoom, frame: r.folder, epoch: 2 });
     r.ce.stack.navGeometry.current = null;
   });
 

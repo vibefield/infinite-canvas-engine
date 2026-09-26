@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The desk's app (design-015): the REAL desk since D2a-world — React 19 over createCanvasEngine, the mat and its objects drawn FROM THE WORLD through deskLayer(); plus D1's parity page (parity.html). Rigs: rig:parity (Chrome = Node through the oracle's own desk), rig:world (Chrome = Node FROM THE WORLD), rig:interact (the prototype's grammar), rig:idle (0 submits at rest), rig:sticky (the note's text: the hand, the editor, typing as a gesture — D2c), rig:two-tab (a typed note crossing a ?room= when its session commits — D2c).",
+  "description": "The desk's app (design-015): the REAL desk since D2a-world — React 19 over createCanvasEngine, the mat and its objects drawn FROM THE WORLD through deskLayer(); plus D1's parity page (parity.html). Rigs: rig:parity (Chrome = Node through the oracle's own desk), rig:world (Chrome = Node FROM THE WORLD), rig:interact (the prototype's grammar), rig:idle (0 submits at rest), rig:portal (the mini mats' live insides, the cut and the zoom-through — D2b), rig:nav (the flights, the gesture, the press + double-click cut — D2b), rig:sticky (the note's text: the hand, the editor, typing as a gesture — D2c), rig:two-tab (a typed note crossing a ?room= when its session commits — D2c).",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -12,6 +12,8 @@
     "rig:world": "tsx scripts/world.mjs",
     "rig:interact": "tsx scripts/interact.mjs",
     "rig:idle": "tsx scripts/idle.mjs",
+    "rig:portal": "tsx scripts/portal.mjs",
+    "rig:nav": "tsx scripts/nav.mjs",
     "rig:sticky": "tsx scripts/sticky.mjs",
     "rig:two-tab": "tsx scripts/two-tab.mjs",
     "rig:proto-parity": "tsx scripts/proto-parity.mjs",

@@ -100,7 +100,7 @@ import type {
   PreparedFrameSwitch,
   PresentationReleaseReason,
 } from "../canvas/presentation-transition";
-import { defaultArrivalCamera, type NavGeometrySlot, resolveNavFace, staticFace } from "./nav-geometry";
+import { defaultArrivalCamera, type NavGeometrySlot, NavRedress, resolveNavFace, staticFace } from "./nav-geometry";
 
 const navEntryQ = defineQuery([NavDepth, NavCamera]);
 const selectedQ = defineQuery([Selected]);
@@ -428,6 +428,12 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
     writeRuntimeResource(world, Camera, { x: c.x, y: c.y, zoom: c.zoom, gesturing: false });
   };
 
+  /** A `"cut"` states the re-dressing fact (design-015 §9, `NavRedress`): the renderer eases the desk's dressing from `from` on its own ramp. */
+  const stateRedress = (kind: "in" | "out", from: number, frame: Entity): void => {
+    const prev = world.getResource(NavRedress);
+    writeRuntimeResource(world, NavRedress, { kind, from, frame, epoch: (prev?.epoch ?? 0) + 1 });
+  };
+
   /** Flights need a real viewport and no opt-out; headless snaps (pre-T1 behavior). A `"cut"` never flies. */
   const flightable = (
     opts: NavOpts | undefined,
@@ -653,10 +659,12 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
       if (A !== undefined && requestedMotion && (prepared?.allowFlight ?? true)) {
         startNavFlight(world, "exit", A, solveFlightStart(A, camPre), c1, identity);
       } else if (A !== undefined && opts?.transition === "cut") {
-        // the zoom-through's cut OUT (design-015 §9): the parent camera under which the inside renders as it does now
+        // the zoom-through's cut OUT (design-015 §9): the parent camera under which the inside renders as it does now; the desk
+        // left — the live inside of `fromFrame` now — stays dressed for the camera it was cut at and re-dresses to its arrival
         const c0 = opts.c0 ?? solveFlightStart(A, camPre);
         snapCamera(c0);
         publishNavCut(world, "exit", camPre, c0, identity, A);
+        if (fromFrame !== undefined) stateRedress("out", camPre.zoom, fromFrame);
       } else {
         snapCamera(c1);
         publishNavCut(world, "exit", camPre, c1, identity, A);
@@ -726,9 +734,11 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
           // live portal's exact camera (`c0` above), the camera the inside was already rendering under.
           startNavFlight(world, "enter", A, c0, c1, identity);
         } else if (A !== undefined && c0 !== undefined && opts?.transition === "cut") {
-          // the zoom-through's cut IN (design-015 §9): the camera lands where the inside already rendered — no pixel changes
+          // the zoom-through's cut IN (design-015 §9): the camera lands where the inside already rendered — no pixel changes; the
+          // desk entered stays dressed for its arrival, as its face showed it, and re-dresses to the camera's zoom
           snapCamera(c0);
           publishNavCut(world, "enter", cam, c0, identity, A);
+          stateRedress("in", c1.zoom, container);
         } else {
           snapCamera(c1);
           publishNavCut(world, "enter", cam, c1, identity, A);

@@ -117,7 +117,7 @@ import { guardedTransaction, retargetTweensToDoc } from "../guards/guarded-tx";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { installInteractionStack, type InteractionStack } from "../interaction/install";
 import { createNestedCanvas, currentNavFrame, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
-import { NavIntent, NavRedress } from "../nav/nav-geometry";
+import { NavIntent } from "../nav/nav-geometry";
 import { cancelActiveGestures } from "../ops/gestures";
 import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
@@ -727,9 +727,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   /**
    * The nav op a system asked for INSIDE the tick (design-015 §9, D2b — the double-tap gesture,
    * the zoom-through; `NavIntent`), applied once the tick is over: the ops are structural and
-   * run outside it. A zoom-through cut also states the re-dressing fact (`NavRedress`) — the
-   * renderer's ramp reads it: the desk entered was dressed for its arrival as a face, the one
-   * left for the camera it was cut at.
+   * run outside it. A `"cut"` states its own re-dressing fact (`NavRedress`) in the op.
    */
   let appliedIntent = 0;
   const applyNavIntent = (): void => {
@@ -742,20 +740,12 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       const typeId = world.get(intent.target, PrefabId)?.id;
       if (typeof typeId !== "string" || catalog.widget(typeId)?.container === undefined) return;
       nav.enterContainer(intent.target, opts);
-      if (intent.redress) {
-        const prev = world.getResource(NavRedress);
-        writeRuntimeResource(world, NavRedress, { kind: "in", from: intent.from, frame: intent.target, epoch: (prev?.epoch ?? 0) + 1 });
-      }
-    } else {
-      const left = currentNavFrame(world);
-      if (left === undefined) return;
+    } else if (currentNavFrame(world) !== undefined) {
       nav.exitContainer(opts);
-      if (intent.redress) {
-        const prev = world.getResource(NavRedress);
-        writeRuntimeResource(world, NavRedress, { kind: "out", from: intent.from, frame: left, epoch: (prev?.epoch ?? 0) + 1 });
-      }
     }
   };
+  // on the ENGINE's own after-step hook, not a wrapper round `step`: a host loop (dom/loop.ts) may drive the raw engine
+  const removeNavIntent = engine.afterStep(applyNavIntent);
 
   // Settings resources (design-005 §4): construction seeds; live-tunable after.
   //
@@ -1792,13 +1782,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     // NOT the same as an absent one, and the optional field refuses the former.
     ...(opts.compositorDevice !== undefined ? { compositorDevice: opts.compositorDevice } : {}),
     budgets,
-    // the tick, then the nav op a system asked for inside it (design-015 §9, D2b): ops are
-    // structural and run outside the tick; the frame in between is drawn under the old camera
-    step: (now) => {
-      engine.step(now);
-      applyNavIntent();
-    },
+    step: (now) => engine.step(now),
     dispose() {
+      removeNavIntent();
       previews.dispose();
       closeDoc();
       transitions.dispose();

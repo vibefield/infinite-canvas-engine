@@ -148,8 +148,8 @@ export function resolveNavFace(world: World, container: Entity, cam: CameraState
 /**
  * A nav op asked for from INSIDE the tick — by the double-tap gesture (`navTap`) or the
  * zoom-through — for the facade to apply once the tick is over. `epoch` bumps per request;
- * `transition` is the op's; `redress` says the renderer must re-dress (a zoom-through cut) from
- * the zoom `from`. `target` is the container to enter (unused on exit).
+ * `transition` is the op's (a `"cut"` states `NavRedress` itself). `target` is the container to
+ * enter (unused on exit).
  */
 export const NavIntent = defineResource(
   "NavIntent",
@@ -158,8 +158,6 @@ export const NavIntent = defineResource(
     target: field("eid", { default: 0 as Entity }),
     transition: field(enumOf(["zoom", "none", "cut"]), { default: "zoom" }),
     source: field(enumOf(["tap", "through"]), { default: "tap" }),
-    redress: field("bool", { default: false }),
-    from: field("f64", { default: 1 }),
     epoch: field("u32", { default: 0 }),
   },
   { durable: false },
@@ -169,7 +167,8 @@ export const NavIntent = defineResource(
  * A zoom-through cut left a desk dressed for another zoom (design-015 §9): `in` — the desk
  * entered was dressed for its arrival (`from`) as a face and re-dresses to the camera's zoom;
  * `out` — the desk left, now the live inside of `frame`, was dressed for the camera it was cut
- * at (`from`) and re-dresses to its arrival. The renderer eases; `epoch` bumps per cut.
+ * at (`from`) and re-dresses to its arrival. Stated by the nav ops on every `transition: "cut"`
+ * (one writer); the renderer eases; `epoch` bumps per cut.
  */
 export const NavRedress = defineResource(
   "NavRedress",

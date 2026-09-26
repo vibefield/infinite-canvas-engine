@@ -1,5 +1,5 @@
 // rig:interact — the prototype's grammar through a real Chrome, FROM THE WORLD (D2a-world; the
-// prototype's test/harness/interact.mjs minus the nesting — drop-into and the vinyl key are D2b's).
+// prototype's test/harness/interact.mjs; the nesting — drop-into, ⌥ keeps, the vinyl key — since D2b).
 // Page-level synthetic pointer and key events (CDP Input.* — nothing reaches the OS) on a desk of
 // two notes and a mini mat spawned through `window.__desk`, the checks read off the WORLD and the
 // builder's flux: a click selects a note and its ring springs to 1 without overshoot through
@@ -173,6 +173,41 @@ try {
   await click(100, 700);
   await sleep(150);
   check((await q("window.__desk.selection()")).length === 0, "a click on the bare mat deselects");
+
+  // --- 8b. DROP-INTO (D2b, design-015 §9, MINIMAT.md §3): a note let go with its centre over the mini mat's FACE goes into its
+  //     desk at the point where it lay, in the inside's own units — through the face's embedding M, so it takes the inside's scale.
+  //     The note trails the pointer by the slop-eaten sample; the check reads the live centre just before the release. The camera
+  //     is put back to (0, 0, 1) first — the wheel and the pan above moved it, and these drags are stated in screen = world.
+  await q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
+  await settle();
+  const M = (await q(`window.__desk.navFace(${m})`)).affine;
+  await mouse("mouseMoved", 900, 250); await mouse("mousePressed", 900, 250);
+  for (let i = 1; i <= 8; i++) { await mouse("mouseMoved", 900 - (300 * i) / 8, 250 + (310 * i) / 8); await sleep(16); }
+  await sleep(40);
+  const liveB = await entity(b);
+  await mouse("mouseReleased", 600, 560);
+  await settle();
+  const dropped = await entity(b);
+  check(dropped.parent === m && !dropped.active && (await q("window.__desk.stats().active")) === 2, `the note left the desk and lies inside the mini mat (parent = the mat, ${await q("window.__desk.stats().active")} root objects)`);
+  check(near(dropped.cx, (liveB.cx - M.ox) / M.s, 1e-6) && near(dropped.cy, (liveB.cy - M.oy) / M.s, 1e-6) && dropped.w === 200, `where it was let go, in the inside's own units: (${dropped.cx.toFixed(1)}, ${dropped.cy.toFixed(1)}) = (n − M.o) / M.s at scale ${M.s.toFixed(3)}, its size kept`);
+  // ⌥ held at the release keeps a note on this desk, over the face
+  const c = await q("window.__desk.spawn('desk.note', { seed: 3 }, { x: 1000, y: 650 })");
+  await settle();
+  await drag([1000, 650], [600, 560], { modifiers: 1 }, 8);   // ⌥
+  await settle();
+  const kept = await entity(c);
+  check(kept.parent !== m && kept.active && kept.cx > 312 && kept.cx < 888, `with ⌥ held the note stays on the desk, over the face (${kept.cx.toFixed(0)}, ${kept.cy.toFixed(0)})`);
+
+  // --- 8c. `t` gives the selected mini mat the next vinyl (its inside is that vinyl too)
+  await click(600, 336);   // the mat's top border: the frame part selects it
+  await sleep(100);
+  const t0 = (await entity(m)).props.vinyl;
+  await key("t", "KeyT", 84); await sleep(100);
+  const t1 = (await entity(m)).props.vinyl;
+  await key("t", "KeyT", 84); await sleep(100);
+  const t2 = (await entity(m)).props.vinyl;
+  check((await entity(m)).selected && t0 === "sage" && t1 === "slate" && t2 === "charcoal", `t: ${t0} → ${t1} → ${t2}`);
+  await click(100, 700);   // deselect
 
   // --- 9. quiet at the end: no spring, nothing dirty
   const s = await settle();

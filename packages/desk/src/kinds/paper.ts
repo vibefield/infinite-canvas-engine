@@ -157,14 +157,21 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
     hit(G: PaperGeometry, wx: number, wy: number): ObjectHit | null {
       return pickPaper(G, wx, wy) === "paper" ? "content" : null;
     },
-    /** Inside a mini mat, a note is a paper chip with its writing greeked (the prototype's `childrenOf`): the sheet's colour, the pen's ink, the lines the host pinned. */
+    /**
+     * Inside a mini mat, a note is a paper chip with its writing greeked (the prototype's `childrenOf`): the sheet's
+     * colour, the pen's ink, and the lines — the ones a still pinned (`greek`), else the hand's own layout of the note's
+     * text as the writing laid it out (D2c's `layoutOf`; a note never laid out yet shows no lines, the prototype's
+     * `ensureLayout` on demand is owed).
+     */
     chip(G: PaperGeometry, ctx: ObjectContext): ChildShape {
       const look = ctx.look as PaperLook | undefined;
       const papers = look?.papers ?? {};
       const pens = look?.pens ?? {};
       const paper = papers[stringProp(ctx.props, "paper", "")] ?? Object.values(papers)[0] ?? ([0, 0, 0] as unknown as RGB);
       const ink = pens[stringProp(ctx.props, "pen", "")] ?? Object.values(pens)[0] ?? paper;
-      const greek = asPaperAsset(ctx.asset)?.greek;
+      const laid = (ctx.local as Writing | undefined)?.layoutOf(ctx.entity);
+      const hand = opts.hand?.law ?? HAND;
+      const greek = asPaperAsset(ctx.asset)?.greek ?? (laid === undefined ? undefined : { x0: hand.pad, em: hand.size, lines: laid.lines.map((L) => ({ y: L.y, width: L.width })) });
       return {
         kind: "paper", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, radius: G.radius, colour: paper, height: G.curl * 0.5,
         ...(greek !== undefined && greek.lines.length > 0 ? { writing: { ink, x0: greek.x0, em: greek.em, lines: greek.lines } } : {}),
