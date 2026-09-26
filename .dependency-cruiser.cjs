@@ -194,7 +194,9 @@ module.exports = {
         "door open (the probe that proved it: a temporary `import \"three\"` in ground's theme.ts). " +
         "`@react-three` and `stats-gl` ride the same rule.",
       severity: "error",
-      from: { path: "^packages/(kernel|core|dom|react|desk|devtools|ice)/src" },
+      // …and every app's modules too (D7: `depcruise` walks apps/ since the fix wave; an app is a consumer, and three is
+      // imported NOWHERE)
+      from: { path: ["^packages/(kernel|core|dom|react|desk|devtools|ice)/src", "^apps/"] },
       to: { path: ["^three(/|$)", nm("three"), "^@react-three/", nm("@react-three"), "^stats-gl(/|$)", nm("stats-gl")] },
     },
   ],
@@ -218,7 +220,7 @@ module.exports = {
     // `some-pkg/dist/thing` would stop being a wall violation and start being
     // invisible. The allowlists work by seeing the node_modules target, so it
     // must stay in the graph.
-    exclude: { path: "^packages/[^/]+/dist/" },
+    exclude: { path: ["^packages/[^/]+/dist/", "^apps/[^/]+/(dist|results)/"] },
     tsConfig: { fileName: "tsconfig.base.json" },
     // A `import type { X } from "three"` is an EDGE (design-013 C4, D-C4.11).
     // Without this the cruiser walks the emitted JS, where a type-only import is

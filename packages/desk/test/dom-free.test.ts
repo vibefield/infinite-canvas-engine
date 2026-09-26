@@ -19,8 +19,12 @@ function* files(dir: string): Generator<string> {
   }
 }
 
-/** A value-level DOM touch: a global's member, a constructor, a call — never a bare type name. */
-const DOM_TOUCH = /\b(navigator|window|document|localStorage|sessionStorage)\s*[.[]|\b(matchMedia|requestAnimationFrame|cancelAnimationFrame|createImageBitmap|getComputedStyle)\s*\(|\bnew\s+(ResizeObserver|OffscreenCanvas|Image|FontFace|MutationObserver|IntersectionObserver)\b|\.getContext\s*\(|\bdevicePixelRatio\b/;
+/**
+ * A value-level DOM touch: a global's member (optional chaining too — `navigator?.gpu`), a constructor, a call, an
+ * `instanceof` against a DOM class (it throws where the class is undefined) — never a bare type name. D7 widened it:
+ * `?.`, `instanceof HTMLCanvasElement|ImageBitmap|…` and `new ImageData|DOMMatrix|Path2D` passed until then.
+ */
+const DOM_TOUCH = /\b(navigator|window|document|localStorage|sessionStorage)\s*(\?\.|[.[])|\b(matchMedia|requestAnimationFrame|cancelAnimationFrame|createImageBitmap|getComputedStyle)\s*\(|\bnew\s+(ResizeObserver|OffscreenCanvas|Image|ImageData|ImageBitmap|DOMMatrix|DOMPoint|DOMRect|Path2D|FontFace|MutationObserver|IntersectionObserver)\b|\binstanceof\s+(HTMLCanvasElement|HTMLImageElement|HTMLVideoElement|HTMLElement|Element|Node|ImageBitmap|ImageData|OffscreenCanvas|Window|Document|Event|MouseEvent|PointerEvent|KeyboardEvent)\b|\.getContext\s*\(|\bdevicePixelRatio\b/;
 
 /** The code without its comments (block and line) and without its string literals' insides. */
 function code(text: string): string {
@@ -36,6 +40,15 @@ describe("desk-dom-free (design-015 §3)", () => {
       code(readFileSync(p, "utf8")).split("\n").forEach((line, i) => { if (DOM_TOUCH.test(line)) offenders.push(`${rel}:${i + 1}: ${line.trim()}`); });
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("the regex sees every shape of a touch — optional chaining, instanceof, the 2D/matrix constructors — and passes a bare type", () => {
+    for (const touch of ["const g = navigator?.gpu;", "if (window?.devicePixelRatio) {}", "if (src instanceof HTMLCanvasElement) {}", "x instanceof ImageBitmap", "new ImageData(1, 1)", "new DOMMatrix()", "new Path2D()", "document.title", "requestAnimationFrame(f)"]) {
+      expect(DOM_TOUCH.test(code(touch)), touch).toBe(true);
+    }
+    for (const type of ["let c: HTMLCanvasElement | null = null;", "type B = ImageBitmap;", "function f(e: PointerEvent): void {}", "const s = \"navigator?.gpu\";"]) {
+      expect(DOM_TOUCH.test(code(type)), type).toBe(false);
+    }
   });
 
   it("the host half DOES touch it — the swap chain names the canvas, the window and navigator.gpu — so the regex is live", () => {

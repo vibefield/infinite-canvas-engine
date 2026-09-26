@@ -1024,6 +1024,15 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   `scripts/cdp.mjs`). Red proof: a 0.9 s host stall after the second session's keystrokes → the pre-D7 two-tab fails
   that row, the new one passes 39/39. (Under CPU ×12 throttling the pre-D7 sticky and nav still passed: their sleeps
   are conditions now, but the spurious red the review predicted for them did not reproduce here.)
+- **The lint blind spots close** (D7 surface #14). `desk/test/dom-free.test.ts`'s regex missed `navigator?.gpu`
+  (optional chaining), `instanceof HTMLCanvasElement|ImageBitmap|…` and `new ImageData|DOMMatrix|Path2D`; it sees
+  them now, with self-test rows for every shape (and a bare type still passing). `editor-law.test.ts` read only
+  desk/src/host lines naming "transform"; it now also reads dom's and react's DOM code for a camera transform — a
+  style `zoom`/`scale` write, or an INTERPOLATED `scale(`/`matrix(` (a static stylesheet's press effect passes).
+  `pnpm run depcruise` walks `apps/` too (their builds and results excluded), and `no-three` binds there. Red proofs:
+  a planted `navigator?.gpu` in `desk/src/springs.ts` passes the pre-D7 dom-free, fails the new; a planted
+  `style.scale = String(cam.zoom)` in dom's remote cursors passes the pre-D7 editor law, fails the new; an
+  `import "three"` in apps/desk passes the packages-only walk, fails the new one (`no-three: apps/desk/src/blobs.ts → three`).
 
 ## [0.13.0] — 2026-09-07
 
