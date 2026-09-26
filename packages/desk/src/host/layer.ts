@@ -3,7 +3,8 @@
 // wrapped by `@ice/react`'s `<Desk layer={deskLayer({ … })}>`, mounts the desk exactly as
 // `<InfiniteCanvas ground={…}>` mounted the ground until D5 turned the host into `<Desk>` by
 // deletion). This is the host half — the one module beside host/surface.ts that may touch the DOM:
-// it prepends its canvas to the container, acquires its OWN device (`navigator.gpu`, or the `gpu` handed in),
+// it prepends its canvas to the container, draws with the ENGINE's device when the context carries one (D7: one device
+// per engine) and otherwise acquires its OWN (`navigator.gpu`, or the `gpu` handed in),
 // installs the submit instrument before anything can submit, makes the swap chain, compiles the
 // ground from the app's object kinds (`Ground.create` — `available()` is false until it resolves),
 // reads the OS's reduced-motion preference into the ambient, and hands the DOM-free reflector
@@ -42,7 +43,7 @@ import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
 import { heldSlots, type SelectionAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
-import { acquire } from "../engine/device";
+import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
 import { Ground, type GroundFrameInputs } from "../ground";
 import type { KindProgram } from "../kind";
 import type { ObjectFlux, ObjectKind } from "../kinds/world";
@@ -103,7 +104,7 @@ export interface DeskLayerOptions {
   readonly springs?: ObjectSprings;
   /** The device pixel ratio the canvas is capped at (2). */
   readonly maxDpr?: number;
-  /** `navigator.gpu` unless a host hands another. */
+  /** Where the layer acquires its OWN device when the engine has none (`engine.compositorDevice` — then it draws with that): `navigator.gpu` unless a host hands another. */
   readonly gpu?: GPU;
   /** Called once with the layer's OWN device, before anything submits — after the submit instrument is installed. */
   readonly onDevice?: (device: GPUDevice) => void;
@@ -158,6 +159,8 @@ export interface DeskLayerContext {
   readonly readMarquee?: () => MarqueeBuffer;
   /** The engine's spatial index (`stack.index`; design-015 §2.5, D6): the cull's broad phase. Absent, every member is tested. */
   readonly spatial?: SpatialSource;
+  /** The engine's device (`engine.compositorDevice`, D7): the layer draws with it and never acquires its own — ONE device per engine. */
+  readonly gpu?: { readonly adapter: GPUAdapter; readonly device: GPUDevice };
 }
 
 /** The selection menu's source (D4a): the marks' anchor as of the last frame, and a subscription that fires when it changes. */
@@ -192,7 +195,7 @@ export interface DeskLayerHandle {
   /** The device is acquired and `Ground.create` resolved. */
   available(): boolean;
   status(): DeskLayerStatus;
-  /** The layer's OWN device once acquired. */
+  /** The device the layer draws with once it is here — the engine's when the context carries one (D7: one device per engine), else the layer's own. */
   device(): GPUDevice | undefined;
   /** The ground once made (a rig's door to a pass: `ground()?.pass("paper")`). */
   ground(): Ground | null;
@@ -329,6 +332,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
 
     let ground: Ground | null = null;
     let ownDevice: GPUDevice | null = null;
+    let drawDevice: GPUDevice | null = null;   // the device the layer draws with: its own, or the engine's (D7)
     let instrument: SubmitInstrument | undefined;
     let status: DeskLayerStatus = { state: "pending" };
     let disposed = false;
@@ -515,20 +519,26 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       canvas.remove();
     };
     const gpu = opts.gpu ?? (typeof navigator !== "undefined" ? navigator.gpu : undefined);
-    const boot: Promise<void> = gpu === undefined
-      ? Promise.reject(new Error("WebGPU is unavailable here (no navigator.gpu)"))
-      : acquire({
-          gpu,
-          label: "desk",
+    const events: Pick<GpuOptions, "onLost" | "onError"> = {
           onLost: (info) => { if (disposed || ended) return; fail("the device was lost", new Error(`${info.reason}: ${info.message}`)); endLayer(); },
           onError: (error) => {
             console.error("[ice] desk: uncaptured GPU error", error.message);
             // never silent: a lost submit leaves the desk black while nothing else says so (D7) — a failed layer stays failed
             if (status.state !== "failed") status = { state: "degraded", message: `an uncaptured GPU error — ${error.constructor?.name ?? "GPUError"}: ${error.message}` };
           },
-        }).then(async (g) => {
-          if (disposed) { g.device.destroy(); throw new Error("disposed before the device arrived"); }
-          ownDevice = g.device;
+    };
+    // ONE device per engine (D7): the ENGINE's device when it has one — drawn with, never destroyed here (the app owns it);
+    // otherwise the layer's own
+    const shared = ctx.gpu;
+    const device: Promise<Gpu> = shared !== undefined
+      ? Promise.resolve(adopt(shared.adapter, shared.device, events))
+      : gpu === undefined
+        ? Promise.reject(new Error("WebGPU is unavailable here (no navigator.gpu)"))
+        : acquire({ gpu, label: "desk", ...events });
+    const boot: Promise<void> = device.then(async (g) => {
+          if (disposed) { if (shared === undefined) g.device.destroy(); throw new Error("disposed before the device arrived"); }
+          drawDevice = g.device;
+          if (shared === undefined) ownDevice = g.device;
           instrument = instrumentSubmits(g.device);   // before anything can submit: the idle-zero witness counts from boot
           opts.onDevice?.(g.device);
           const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
@@ -549,7 +559,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       canvas,
       available: () => ground !== null && (status.state === "ready" || status.state === "degraded"),
       status: () => status,
-      device: () => ownDevice ?? undefined,
+      device: () => drawDevice ?? undefined,
       ground: () => ground,
       setTheme: (t, p) => compose.setTheme(t, p),
       configureMat: (mat) => setGrid({ ...grid, mat: { ...grid.mat, ...mat, ...(mat.gobo !== undefined ? { gobo: { ...grid.mat.gobo, ...mat.gobo } } : {}), ...(mat.ruler !== undefined ? { ruler: { ...grid.mat.ruler, ...mat.ruler } } : {}) } }),

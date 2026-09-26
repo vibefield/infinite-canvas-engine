@@ -22,6 +22,7 @@ import {
   Viewport,
   writeRuntimeResource,
   type CanvasEngine,
+  type EngineGpu,
   type InteractionStack,
   type ReflectorDef,
   type World,
@@ -61,6 +62,8 @@ export interface LayerContext {
   readonly readMarquee: () => InteractionStack["marqueeBuffer"];
   /** The one spatial index (design-015 §2.5; D6): the renderer's cull rides it with a hysteresis margin — no per-entity rect test on a pan. */
   readonly spatial: InteractionStack["index"];
+  /** The engine's device (`engine.compositorDevice`), when the app passed one (design-015 D7): the layer draws with it — ONE device per engine. */
+  readonly gpu?: EngineGpu;
 }
 
 export type LayerFactory<H extends LayerHandle = LayerHandle> = (ctx: LayerContext) => H;
@@ -105,6 +108,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       catalog: engine.catalog,
       readMarquee: () => stack.marqueeBuffer,
       spatial: stack.index,
+      ...(engine.compositorDevice !== undefined ? { gpu: engine.compositorDevice } : {}),
     });
   } catch (err) {
     host.dispose();

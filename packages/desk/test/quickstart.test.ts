@@ -17,6 +17,7 @@ import { objectKindOf } from "../src/object";
 import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskSelect, deskTheme } from "../src/objects";
 import { PALETTE } from "../src/objects/palette";
 import type { ObjectKind } from "../src/kinds/world";
+import { fakePage } from "./fake-page";
 
 const repo = resolve(import.meta.dirname, "../../..");
 const umbrella = resolve(repo, "packages/ice");
@@ -49,20 +50,6 @@ function entryOf(spec: string): string | undefined {
 }
 
 const deskKinds = (): ObjectKind[] => DESK_OBJECTS.map((t) => objectKindOf(t)).filter((k): k is ObjectKind => k !== undefined);
-
-/** A structural page for `deskLayer`'s mount: a container that keeps its children, a view whose media query counts its listeners. */
-function fakePage() {
-  const children: unknown[] = [];
-  const listeners = new Set<unknown>();
-  const element = (tag: string) => {
-    const el = { tagName: tag.toUpperCase(), style: {} as Record<string, string>, width: 0, height: 0, remove: () => { const i = children.indexOf(el); if (i >= 0) children.splice(i, 1); } };
-    return el;
-  };
-  const query = { matches: false, addEventListener: (_: string, l: unknown) => listeners.add(l), removeEventListener: (_: string, l: unknown) => listeners.delete(l) };
-  const ownerDocument = { createElement: element, defaultView: { matchMedia: () => query } };
-  const container = { ownerDocument, prepend: (el: unknown) => children.unshift(el), appendChild: (el: unknown) => children.push(el) };
-  return { container, children, listeners };
-}
 
 describe("the published quickstart (design-015 D7)", () => {
   it("imports only what the umbrella publishes, and every name it imports is an export of that entry", async () => {

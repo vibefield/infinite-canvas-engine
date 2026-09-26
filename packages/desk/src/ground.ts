@@ -65,8 +65,8 @@ export { MARKS_SHADER_FILES, marksShaders } from "./marks/shaders";
 
 export interface GroundOptions {
   /**
-   * The device the HOST owns — ICE's `acquireCompositorDevice()` at the fold (three adopts
-   * it for islands), `gpu/device.ts` `acquire()` in a lab or the oracle. The ground never
+   * The device the HOST owns — the engine's (`acquireCompositorDevice()`, handed to the layer through its
+   * context) or the layer's own (`engine/device.ts` `acquire()`, as the oracle's is). The ground never
    * makes one: every texture the compose pass samples must live on the same device.
    */
   readonly device: GPUDevice;

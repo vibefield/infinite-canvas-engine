@@ -236,12 +236,11 @@ export interface CanvasEngineOpts {
     readonly versionGate?: "reject" | "readOnly" | "migrate";
   };
   /**
-   * An app-owned GPU device (design-012 §4 / plan §1 "Device ownership"), kept
-   * as the device injection door at design-015 D5b: acquire it with
-   * `acquireCompositorDevice()` before constructing the engine and pass it
-   * here; a host reads it off `engine.compositorDevice` and may hand it to the
-   * desk's layer (`deskLayer({ gpu })`). Absent — the common case, and every
-   * headless engine — the desk acquires its own device.
+   * The engine's GPU device (design-012 §4; the device door since design-015 D5b): acquire it with
+   * `acquireCompositorDevice()` before constructing the engine and pass it here. ONE device per engine
+   * (D7): the desk's layer draws with it — `createDeskHost` hands it through the layer context — and never
+   * acquires its own, so its `errors()` sees the desk's uncaptured GPU errors; the app owns its end of life.
+   * Absent — the common case, and every headless engine — the desk acquires its own device.
    */
   readonly compositorDevice?: EngineGpu;
 }

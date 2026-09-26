@@ -561,9 +561,9 @@ export {
 } from "./facade/create-canvas-engine";
 export { createDrawBehavior } from "./systems/l3-draw";
 
-// --- the GPU device door (design-012 §4, slimmed at design-015 D5b) ---------
-// `acquireCompositorDevice` is the one WebGPU touch in core: an app-owned device
-// the desk may be handed through `createCanvasEngine({ compositorDevice })`. The
+// --- the GPU device door (design-012 §4, slimmed at design-015 D5b and D7) ---
+// `acquireCompositorDevice` is the one WebGPU touch in core: the engine's device,
+// passed as `createCanvasEngine({ compositorDevice })`, the desk draws with. The
 // surface vocabulary, the infra trio (Band · Demand · Residency), the residency
 // module, three's backend-texture read and the three standard surface
 // behaviours that used to follow it here left with the DOM/GPU presentation

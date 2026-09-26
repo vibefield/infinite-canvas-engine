@@ -933,6 +933,19 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   by name on the product page; every `rig:*` drives `rig.html`. The parity page (`parity.html`) is test-only and keeps
   its oracle imports. Red proof: the new test over the pre-D7 `apps/desk/src` is red on exactly the four product files
   (`palette.ts`, `desk.ts`, `fixtures.ts`, `scene-kinds.ts`).
+- **One device per engine** (D7 surface #6). `acquireCompositorDevice` still carried the three.js creation rules and
+  the islands' header (the changelog's "slimmed" was not yet true), and nothing read `engine.compositorDevice`: the
+  facade's doc said to hand it to `deskLayer({ gpu })` — an option that takes a `GPU`, not an `EngineGpu` — and the layer
+  always acquired its own device, so an app following the doc ran TWO devices and `errors()` never saw the desk's GPU
+  errors. Now the door is slimmed (a plain adapter and device, `requiredFeatures` opt-in, the `addEventListener` error
+  log armed before any consumer; `EngineGpu.hasCoreFeatures`, three's compatibility-mode signal, is REMOVED), dom's
+  `createDeskHost` hands `engine.compositorDevice` to the layer as `LayerContext.gpu`, and `deskLayer` DRAWS WITH IT
+  (`adopt` in `@vibecook/ice/desk/engine` wires its loss and errors like `acquire` does) — never acquiring a second one,
+  never destroying the app's; with no engine device it acquires its own as before. `handle.device()` is the device the
+  layer draws with. The facade's, core's and `ground.ts`'s docs say so. Held by `packages/desk/test/device.test.ts` (the
+  engine's device drawn with, no second `requestAdapter`, `errors()` holding the desk's error, the device alive after
+  dispose; the own-device path destroyed at dispose) and `packages/dom/test/desk-host.test.ts` — red with the layer's
+  or the host's hunk reverted.
 
 ## [0.13.0] — 2026-09-07
 

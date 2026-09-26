@@ -32,9 +32,16 @@ export async function acquire(opts: GpuOptions): Promise<Gpu> {
     label: opts.label ?? "ground",
     requiredFeatures: (opts.requiredFeatures ?? []).filter((f) => adapter.features.has(f)),
   });
+  return adopt(adapter, device, opts);
+}
+
+/**
+ * A device the host already HAS — the engine's (design-015 D7: ONE device per engine) — wired as `acquire` wires one it
+ * made: its loss and its uncaptured errors reach the handlers. The caller does not own it, so it never destroys it.
+ */
+export function adopt(adapter: GPUAdapter, device: GPUDevice, opts: Pick<GpuOptions, "onLost" | "onError"> = {}): Gpu {
   device.lost.then((info) => opts.onLost?.(info));
-  // Subscribe, never assign: a co-hosted renderer (three adopts a device this
-  // way) ASSIGNS `onuncapturederror`, and a listener coexists with that.
+  // Subscribe, never assign: another holder of the device may ASSIGN `onuncapturederror`, and a listener coexists with that.
   if (opts.onError && typeof (device as unknown as { addEventListener?: unknown }).addEventListener === "function") {
     device.addEventListener("uncapturederror", (ev) => opts.onError?.((ev as GPUUncapturedErrorEvent).error));
   }
