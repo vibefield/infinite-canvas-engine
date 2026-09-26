@@ -20,8 +20,8 @@
 // and pins are data children (calendar/data.ts), read-only here. The colours and the print's presences are the
 // product's (`theme()`; the presences set on the root pass by the kind's local — the theme gate).
 
-import type { Entity } from "@ice/core";
-import { calEventOf, CalendarEvent, dayOr, monthOfKey, NotePin } from "../calendar/data";
+import type { Entity, HeldToolApi } from "@ice/core";
+import { calEventOf, CalendarEvent, dayOr, monthKeyOf, monthOfKey, NotePin, PadSelection } from "../calendar/data";
 import type { CalEvent } from "../calendar/events";
 import { padFrame, buildPad } from "../calendar/pad";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
@@ -30,14 +30,14 @@ import { isWeekendCol, monthGrid, monthOfDay, phasesBetween, today as todayOf } 
 import { type CalendarDraw, CalendarPass, type SheetBox, type SheetDraw } from "../calendar/pass";
 import { anyIn, type EventLine, onSheet, type PrintLook, printSheet, type SheetPrint } from "../calendar/print";
 import { type PinnedSheet, PrintTiles } from "../calendar/printing";
-import { rollState, type RollState } from "../calendar/roll";
+import { rollAt, rollState, type RollState, tangentAt } from "../calendar/roll";
 import { CALENDAR_SHADER_FILES, calendarShaders } from "../calendar/shaders";
-import { dayBox, sheetOf } from "../calendar/sheet";
+import { cellAt, dayBox, sheetOf } from "../calendar/sheet";
 import { bandOf, GUTTER, levelFor, type TileGrid, tileGrid, tileRect, tilesIn } from "../calendar/tiles";
 import { caretAt, glyphBox, type HandLaw } from "../paper/text";
 import type { KindProgram, SlotContext } from "../kind";
 import type { MatPass } from "../mat/mat-pass";
-import { type DeskEye, eyeOf, unproject } from "../notebook/eye";
+import { type DeskEye, eyeOf, project, unproject } from "../notebook/eye";
 import { MeshWriter } from "../notebook/mesh";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
 import { type ShaderText, shaderText } from "../shaders";
@@ -147,6 +147,65 @@ export interface CalendarGeometry {
   readonly eye: DeskEye;
   readonly cx: number;
   readonly cy: number;
+  /** In hand (D4b's `ctx.held`): the whole sheet is the pen's surface (`content`), never a miss (D3t-c). */
+  readonly held: boolean;
+  /** A month in motion (a turn — not the corner's peek): the sheet in motion is what a press takes. */
+  readonly turning: boolean;
+}
+
+/** The parts of a pad (the prototype's `CalendarHit`): where a point lands on its sheet, the day and the line there. */
+export type CalendarPartName = "tape" | "roll" | "moving" | "corner" | "foot" | "day" | "entry" | "sheet";
+export interface CalendarPart {
+  readonly part: CalendarPartName;
+  /** The sheet point: x from its left edge, y from its head (world units). */
+  readonly sx: number;
+  readonly sy: number;
+  /** The day under it (a neighbour month's day in the first or last row counts) — on `day` and `entry`. */
+  readonly day?: number;
+  /** The line there, as the print laid it — on `entry`. */
+  readonly line?: EventLine;
+}
+
+/**
+ * What a desk point lands on, on a pad as resolved (the prototype's `hit`, through the SAME desk eye the pass draws with, at the
+ * face's height): the tape; mid-turn the sheet in motion (within the roll's reach of its tangent line) or the sheet beneath; at
+ * rest the roll under the tape, the corner, the foot, a line of writing (the print's own boxes — a band a little taller), a day,
+ * or the sheet's paper. Null off the pad. The print is the month shown's (`lines` — none in Node: no lines are hit).
+ */
+export function partAt(G: CalendarGeometry, wx: number, wy: number, lines: readonly EventLine[] = [], law: CalendarLaw = CALENDAR): CalendarPart | null {
+  const F = padFrame(law);
+  const [px, py] = unproject(G.eye, wx, wy, F.zt + G.lift);
+  const sx = px - G.cx + F.W / 2;
+  const sy = py - G.cy + F.H / 2;
+  if (sx < 0 || sy < 0 || sx > F.W || sy > F.H) return null;
+  if (sy < F.T) return { part: "tape", sx, sy };
+  const s = sy - F.T;
+  if (G.turning && G.roll !== null) {
+    const R = rollAt(G.roll, sx).radius;
+    const a = tangentAt(G.roll, sx);
+    return { part: Math.abs(s - a) < R * 1.4 + 6 ? "moving" : "sheet", sx, sy };
+  }
+  if (s < 2 * law.roll.rest + 6) return { part: "roll", sx, sy };
+  if (F.W - sx + (F.H - sy) < 150) return { part: "corner", sx, sy };
+  if (F.H - sy < law.sheet.foot) return { part: "foot", sx, sy };
+  const L = sheetOf(monthGrid(G.shown, G.weekStart), law);
+  const cell = cellAt(L, sx, sy);
+  if (cell === null) return { part: "sheet", sx, sy };
+  const line = lines.find((l) => !l.band && sx >= l.box.x && sx <= l.box.x + l.box.w && sy >= l.box.y && sy <= l.box.y + l.box.h)
+    ?? lines.find((l) => l.band && sx >= l.box.x && sx <= l.box.x + l.box.w && sy >= l.box.y - 3 && sy <= l.box.y + l.box.h + 3);
+  if (line !== undefined) return { part: "entry", sx, sy, day: cell.day, line };
+  return { part: "day", sx, sy, day: cell.day };
+}
+
+/** A pad's sheet point (x from its left, y from its head, `z` up) on the screen, CSS px — through the eye the pad was drawn with. */
+export function sheetOnScreen(G: CalendarGeometry, sx: number, sy: number, z?: number, law: CalendarLaw = CALENDAR): readonly [number, number] {
+  const F = padFrame(law);
+  return project(G.eye, G.cx - F.W / 2 + sx, G.cy - F.H / 2 + sy, (z ?? F.zt) + G.lift);
+}
+
+/** A day's cell on the month a pad shows (sheet units) — a neighbour month's day in the first or last row counts — or null. */
+export function sheetDayBox(G: CalendarGeometry, day: number, law: CalendarLaw = CALENDAR): { readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null {
+  return dayBox(sheetOf(monthGrid(G.shown, G.weekStart), law), day);
 }
 
 /** A run of days, an entry, a caret: what the calendar's hand says is marked on a pad (the driver's — objects/calendar-hand.ts). */
@@ -159,8 +218,8 @@ export interface PadMarks {
   readonly drop?: number;
   /** The entry being WRITTEN (the editor on it): printed whole, its time not set apart, the caret at `index` (`on`: the blink). */
   readonly writing?: { readonly entry: number; readonly index: number; readonly on: boolean };
-  /** The newest glyph being written, since `t0` (ms, the local's clock): the pen's wipe. */
-  readonly wipe?: { readonly entry: number; readonly index: number; readonly t0: number };
+  /** The newest glyph being written and how far the pen's wipe has come over it (0 … 1 — the hand's clock). */
+  readonly wipe?: { readonly entry: number; readonly index: number; readonly t: number };
 }
 
 /** An entry being written that the world does not hold yet (a new line: it is spawned when its session ends — D-D3t-c.4). */
@@ -223,7 +282,7 @@ interface PadState {
 const NO_MARKS: Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> = { sel: [], mark: null, drop: null, caret: null, wipe: null };
 
 /** The calendar's `local()`: ids from 1, slot pairs from the lowest free (the pass's tables hold `MAX_CALENDARS` pads); the print's driver. */
-export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; readonly now?: () => number; readonly hand?: HandLaw & { readonly wipeMs: number } } = {}): Pads {
+export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; readonly now?: () => number; readonly hand?: HandLaw } = {}): Pads {
   const law = opts.law ?? CALENDAR;
   const clock = opts.now ?? (() => Date.now());
   const hand = opts.hand ?? HAND;
@@ -310,10 +369,9 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
         const cp = caretAt(l.layout, Math.min(Math.max(w.index, 0), n));
         if (w.on) caret = [l.ox + cp.x, l.oy + cp.y - cp.above * 0.8, l.oy + cp.y + cp.below * 0.6, 1.3];
         const wp = m.wipe;
-        if (wp !== undefined && wp.entry === selected) {
-          const t = (clock() - wp.t0) / hand.wipeMs;
+        if (wp !== undefined && wp.entry === selected && wp.t < 1) {
           const gl = l.layout.glyphs.find((q) => q.index === wp.index);
-          if (gl !== undefined && t < 1) { const gb = glyphBox(l.layout, gl); wipe = { box: [l.ox + gb.x0, l.oy + gb.y0, l.ox + gb.x1, l.oy + gb.y1], t: Math.max(t, 0) }; }
+          if (gl !== undefined) { const gb = glyphBox(l.layout, gl); wipe = { box: [l.ox + gb.x0, l.oy + gb.y0, l.ox + gb.x1, l.oy + gb.y1], t: Math.max(wp.t, 0) }; }
         }
       }
     }
@@ -382,9 +440,8 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     },
     tick() {
       begun = false;
-      // tiles still to draw, a wipe running: another frame
-      const wipeOn = [...pads.values()].some((st) => st.marks?.wipe !== undefined && clock() - st.marks.wipe.t0 < hand.wipeMs);
-      const w = woke || (tiles?.pending() ?? 0) > 0 || wipeOn;
+      // tiles still to draw: another frame (the marks' clocks — the caret's blink, the wipe — are the hand's: it marks anew)
+      const w = woke || (tiles?.pending() ?? 0) > 0;
       woke = false;
       return w;
     },
@@ -441,6 +498,19 @@ export function calendarFrame(cx: number, cy: number, law: CalendarLaw = CALENDA
   return { cx, cy, hx: F.W / 2, hy: F.H / 2, angle: 0, r: law.sheet.radius };
 }
 
+/** The bar's ‹ › (D3t-c): the pad's month one on or back — its durable `month`, ONE transaction off the undo stack (a roll is not an edit). */
+function turnBy(api: HeldToolApi, d: 1 | -1): void {
+  const m = monthOfKey(stringProp(api.props(), "month", ""));
+  if (m !== undefined) api.setProps({ month: monthKeyOf(m + d) }, { undoable: false });
+}
+
+/** The bar's today (D3t-c): the hand rolls the pad home and selects today — asked through the pad's selection (`home` bumped). */
+function homeOf(api: HeldToolApi): void {
+  const cur = api.world.get(api.entity, PadSelection);
+  if (cur === undefined) api.world.addComponent(api.entity, PadSelection, { anchor: "", focus: "", entry: 0 as Entity, home: 1 });
+  else api.world.edit(api.entity).set(PadSelection, { ...cur, home: (cur.home ?? 0) + 1 });
+}
+
 export interface CalendarKindOptions {
   readonly text?: ShaderText;
   /** The calendar's numbers (calendar/law.ts `CALENDAR`) — the engine's unless a host tweaks them. */
@@ -461,16 +531,19 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
     reads: { components: [CalendarEvent, NotePin] },
     local: (host: KindHost): Pads => createPads(host, { law }),
     // THE OPENING (design-015 §8, D4b — Q-q): the month comes to the hand laid bare, flat under the pose's camera (the notes stuck
-    // to it ride along, as when the pad is carried); ‹ months ›, today and the pen are its tools — declared here with no `kind`
-    // (dim in the bar, nothing routes to them), built on D3t-a's seam at D3t-c
+    // to it ride along, as when the pad is carried). Its tools, LIVE on D3t-a's seam (D3t-c): ‹ › turn the month — its durable
+    // `month`, ONE transaction off the undo stack (D-D3t-c.5; the kind's local rolls the sheet there) —, today asks the hand to roll
+    // home and select today (`PadSelection.home`, the user's fact), and the PEN is the tool in hand: a press on the month is its
+    // (the days selected, a line written, a sheet rolled by hand — never a tap that puts the pad down)
     open: {
       extent: (c) => c.rect,
       tools: [
-        { id: "month:-1", label: "Previous month", hint: "←", glyph: "chevron-left" },
-        { id: "month:1", label: "Next month", hint: "→", glyph: "chevron" },
-        { id: "today", label: "Today", hint: "T", glyph: "today" },
-        { id: "pen", label: "The pen", hint: "P", glyph: "pen" },
+        { id: "month:-1", label: "Previous month", kind: "action", keys: ["ArrowLeft", "PageUp", "["], hint: "←", glyph: "chevron-left", run: (api) => turnBy(api, -1) },
+        { id: "month:1", label: "Next month", kind: "action", keys: ["ArrowRight", "PageDown", "]"], hint: "→", glyph: "chevron", run: (api) => turnBy(api, 1) },
+        { id: "today", label: "Today", kind: "action", keys: ["t"], hint: "T", glyph: "today", run: (api) => homeOf(api) },
+        { id: "pen", label: "The pen", kind: "mode", keys: ["p"], hint: "P", glyph: "pen" },
       ],
+      tool: () => "pen",
     },
     resolve(ctx: ObjectContext): CalendarGeometry {
       const pads = ctx.local as Pads | undefined;
@@ -487,6 +560,7 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
         shown, weekStart, ...sh, rigid: rigidOf({ cx: ctx.rect.cx, cy: ctx.rect.cy, angle: 0, lift, tiltX: 0, tiltY: 0, zc: 0 }),
         lamp: lampDir(ctx.lamp, ctx.rect.cx, ctx.rect.cy, law.shadow.slopeMax), lift, ring: ctx.flux.ring * ctx.flux.fade,
         eye: eyeOf({ x: v.camX, y: v.camY, zoom: v.zoom }, { width: v.width, height: v.height }, law.eye), cx: ctx.rect.cx, cy: ctx.rect.cy,
+        held: ctx.held !== undefined, turning: r !== undefined,
       };
     },
     record(G: CalendarGeometry, ctx: ObjectContext): CalendarDraw {
@@ -508,12 +582,16 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
       };
     },
     hit(G: CalendarGeometry, wx: number, wy: number): ObjectHit | null {
-      // the desk point unprojected at the pad's face (its top sheet, lifted) through the eye; at rest only the tape is the pad's
-      const [px, py] = unproject(G.eye, wx, wy, F.zt + G.lift);
-      const sx = px - G.cx + F.W / 2;
-      const sy = py - G.cy + F.H / 2;
-      if (sx < 0 || sy < 0 || sx > F.W || sy > F.H) return null;
-      return sy < F.T ? "frame" : null;
+      // the desk point unprojected at the pad's face (its top sheet, lifted) through the eye. At rest the tape is the pad's (a press
+      // carries it, a tap selects it) and the ROLL's handles are parts (the roll under the tape, the corner, the foot, the sheet in
+      // motion — a press there rolls, never pans, D3t-c); its paper is not taken — a drag there pans the desk, a click is the days'
+      // (host/calendar-input.ts reads it at event time). In hand the whole sheet is the pen's surface (`content`: a press there is
+      // the tool's, D3t-a) and the tape the pad's frame.
+      const at = partAt(G, wx, wy, [], law);
+      if (at === null) return null;
+      if (at.part === "tape") return "frame";
+      if (G.held) return "content";
+      return at.part === "roll" || at.part === "corner" || at.part === "foot" || at.part === "moving" ? at.part : null;
     },
     frame: (G: CalendarGeometry): MarkFrame => calendarFrame(G.cx, G.cy, law),
     theme(palette: Palette, _name: ThemeName): CalendarObjectLook {

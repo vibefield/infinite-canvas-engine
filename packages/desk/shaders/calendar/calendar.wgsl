@@ -146,3 +146,16 @@ fn cal_outline(q: vec2f, box: vec4f, w: f32, r: f32, px: f32) -> f32 {
   let d = nb_sd_box(q - c, h - vec2f(w * 0.5 + 1.0), r);
   return nb_cov(abs(d) - w * 0.5, px);
 }
+
+// The selection's BRACKETS on a box of the sheet (D3t-c — *Marks on the Mat* Q-a on a day or a line): the outline strong along
+// `reach` of each side from every corner (never past 30 % of a side), the hairline between them one device px at 42 %.
+fn cal_brackets(q: vec2f, box: vec4f, w: f32, r: f32, px: f32, reach: f32) -> f32 {
+  if (box.z <= box.x) { return 0.0; }
+  let c = (box.xy + box.zw) * 0.5;
+  let h = (box.zw - box.xy) * 0.5;
+  let a = abs(q - c);
+  let arm = min(vec2f(reach), h * 0.3 + vec2f(r + 2.0));
+  let arms = nb_sat((a.x - (h.x - arm.x)) / max(px, 1e-5) + 0.5) * nb_sat((a.y - (h.y - arm.y)) / max(px, 1e-5) + 0.5);
+  let hair = nb_cov(abs(nb_sd_box(q - c, h - vec2f(w * 0.5 + 1.0), r)) - 0.5 * px, px);
+  return max(cal_outline(q, box, w, r, px) * arms, hair * 0.42);
+}

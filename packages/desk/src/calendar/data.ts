@@ -48,6 +48,19 @@ export const PinPrefab = definePrefab(PIN_TYPE, {
   relations: [ChildOf, PinsNote],
 });
 
+/**
+ * Runtime, on a pad: the USER's selection on it (D3t-c) — a run of days (`anchor` … `focus`, day keys; "" none) or one entry
+ * (`entry`, an event child; 0 none) — and `home`, bumped by the held bar's today (the hand then rolls home and selects today).
+ * The user's fact, as `Selected` is: never in the document, a peer's selection its own. Its writers: the calendar's hand
+ * (objects/calendar-hand.ts, host/calendar-input.ts) and the today tool's bump.
+ */
+export const PadSelection = defineComponent("desk.padSelection", {
+  anchor: field("string", { default: "" }),
+  focus: field("string", { default: "" }),
+  entry: field("eid", { default: 0 as Entity }),
+  home: field("u32", { default: 0 }),
+});
+
 /** An event as an author states one. */
 export interface EventSpec {
   readonly start: string;
@@ -70,6 +83,12 @@ export function pinNote(tx: GuardedTx, pad: Entity, note: Entity, day: string): 
   tx.setRelation(e, ChildOf, pad);
   tx.setRelation(e, PinsNote, note);
   return e;
+}
+
+/** A month index as its key ("2026-09"). */
+export function monthKeyOf(m: number): string {
+  const y = Math.floor(m / 12);
+  return `${y}-${String(m - y * 12 + 1).padStart(2, "0")}`;
 }
 
 /** A month key (YYYY-MM) as the law's month index; undefined when it is not one. */

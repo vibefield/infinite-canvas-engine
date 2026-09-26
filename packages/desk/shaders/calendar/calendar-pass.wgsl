@@ -239,9 +239,10 @@ fn cal_face(pi: u32, albedo0: vec3f, q: vec2f, px: f32, moving: bool, dbg: u32) 
     if ((dbg & 32u) == 0u) {
       // the marks the host draws: the days selected (as many boxes as `wipe2.w` says), the entry selected, the day a note would stick to
       let w = k.select.w / max(k.eye.w, 1e-6);
+      let reach = 16.0 / max(k.eye.w, 1e-6);   // the marks' brackets reach 16 CSS px (D3t-c)
       let nSel = i32((*B).wipe2.w + 0.5);
-      for (var i = 0; i < nSel; i++) { out.marks = max(out.marks, cal_outline(q, (*B).sel[i], w, 3.0, px)); }
-      out.marks = max(out.marks, cal_outline(q, (*B).mark, w, 4.0, px));
+      for (var i = 0; i < nSel; i++) { out.marks = max(out.marks, cal_brackets(q, (*B).sel[i], w, 3.0, px, reach)); }
+      out.marks = max(out.marks, cal_brackets(q, (*B).mark, w, 4.0, px, reach));
       out.marks = max(out.marks, cal_outline(q, (*B).drop, w * 1.4, 4.0, px) * 0.85);
     }
   }

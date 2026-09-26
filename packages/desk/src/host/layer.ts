@@ -32,7 +32,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, setWidgetProps, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin } from "../compose/builder";
@@ -67,6 +67,11 @@ import type { TextRaster } from "../paper/raster";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 import { createNoteEditor, type NoteEditor } from "./editor";
 import { printRaster } from "./print";
+import { type CalendarInput, createCalendarInput } from "./calendar-input";
+import { type CalendarHand, createCalendarHand } from "../objects/calendar-hand";
+import { type CalendarWriting, createCalendarWriting } from "../objects/calendar-writing";
+import { Calendar } from "../objects/calendar";
+import { CALENDAR_KIND, type CalendarObjectLook, type Pads } from "../kinds/calendar";
 import { PEN_FACES } from "./ink";
 import type { InsideView } from "../minimat/inside";
 import { shaderText } from "../shaders";
@@ -236,6 +241,8 @@ export interface DeskLayerHandle {
   pen(): BoardPen | undefined;
   /** The notebook in hand (D3t-b): its pen's stroke, the commits — `undefined` when no notebook kind is registered. */
   notebook(): NotebookHand | undefined;
+  /** The desk calendar at work (D3t-c): its writing (the sessions), its DOM half (the days, the pen), its hand (the marks) — undefined without the calendar kind or an editor. */
+  calendar(): { readonly writing: CalendarWriting; readonly input: CalendarInput; readonly hand: CalendarHand } | undefined;
   /** Where the selection menu goes (D4a): the marks' box around the selection, published after each frame it moved. */
   readonly selection: SelectionSource;
   /**
@@ -373,6 +380,24 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           isBook: (e) => builder.kindOf(e)?.name === NOTEBOOK_KIND, heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), geometryOf: (e) => builder.geometryOf(e),
         })
       : undefined;
+    // the desk calendar at work (D3t-c): its writing through the ONE editor (lent to it), the days read at event time, its hand's marks
+    const padsLocal = (): Pads | undefined => locals.get(CALENDAR_KIND) as Pads | undefined;
+    const calPropsOf = (e: Entity): Readonly<Record<string, unknown>> => (world.isAlive(e) ? ((world.get(e, Calendar.groups[0]?.component as never) as Record<string, unknown> | undefined) ?? {}) : {});
+    const calWriting = locals.has(CALENDAR_KIND) ? createCalendarWriting({ world, docs: opts.docs ?? { current: () => undefined }, pads: padsLocal }) : undefined;
+    const calInput = calWriting !== undefined && editor !== undefined
+      ? createCalendarInput({
+          container: host.container, world, geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y),
+          isPad: (e) => builder.kindOf(e)?.name === CALENDAR_KIND, editor, writing: calWriting, pads: padsLocal, docs: opts.docs ?? { current: () => undefined },
+          look: () => compose.look(CALENDAR_KIND) as CalendarObjectLook | undefined, props: calPropsOf,
+          setProps: (e, props) => {
+            const session = opts.docs?.current();
+            if (session === undefined || !world.isAlive(e)) return;
+            try { setWidgetProps(session.store, world, e, props, { undoable: false }); } catch { /* a read-only document keeps its month */ }
+          },
+          wake: () => compose.wake("ink"),
+        })
+      : undefined;
+    const calHand = calWriting !== undefined ? createCalendarHand({ world, docs: opts.docs ?? { current: () => undefined }, pads: padsLocal, writing: calWriting, caret: () => calInput?.caret() ?? null }) : undefined;
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
     const inner = compose.reflector;
@@ -383,6 +408,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         carry?.follow(now);
         pen?.follow(now);
         leaf?.follow(now);
+        calHand?.follow(now);
         let want = false;
         for (const local of locals.values()) if (local.tick?.(now) === true) want = true;
         if (want) compose.wake("ink");
@@ -532,6 +558,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       typing,
       pen: () => pen,
       notebook: () => leaf,
+      calendar: () => (calWriting !== undefined && calInput !== undefined && calHand !== undefined ? { writing: calWriting, input: calInput, hand: calHand } : undefined),
       selection: {
         anchor: () => anchorOf(),
         subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -540,6 +567,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       dispose() {
         disposed = true;
         listeners.clear();
+        calInput?.dispose();
         editor?.dispose();
         for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);

@@ -10,7 +10,11 @@ export { createNoteTyping, type NoteTyping, type NoteTypingOptions, type TypingD
 export { BOARD_TYPE, Board, MARKERS, type MarkerName, TIPS } from "./board";
 // the desk calendar and its data children (D3w)
 export { CALENDAR_TYPE, Calendar, TAPES, type TapeName } from "./calendar";
-export { addEvent, CalendarEvent, daySlot, EVENT_TYPE, EventPrefab, type EventSpec, monthOfKey, NotePin, PIN_TYPE, PinPrefab, pinNote, PinsNote } from "../calendar/data";
+export { addEvent, calEventOf, CalendarEvent, dayOr, daySlot, EVENT_TYPE, EventPrefab, type EventRow, type EventSpec, monthKeyOf, monthOfKey, NotePin, PadSelection, PIN_TYPE, PinPrefab, pinNote, PinsNote } from "../calendar/data";
+export { keyOf as keyOfDay } from "../calendar/month";
+// the desk calendar at work (D3t-c): its writing sessions, its hand
+export { type CalendarWriting, type CalendarWritingOptions, createCalendarWriting, type WritingTarget } from "./calendar-writing";
+export { type CalendarHand, type CalendarHandOptions, createCalendarHand } from "./calendar-hand";
 // the notebook (D3w)
 export { COVERS, type CoverName, NOTEBOOK_TYPE, Notebook, RULING_NAMES } from "./notebook";
 // the photo print and its carry (D3w)

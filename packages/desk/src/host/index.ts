@@ -9,6 +9,9 @@ export { surface, type Surface } from "./surface";
 export { type FaceSpec, inkRaster, type InkRaster, type InkRasterOptions, PEN_FACES, penFaces } from "./ink";
 // …and the desk calendar's PRINT in the same hand (D3t-c): a sheet's tiles drawn on an OffscreenCanvas
 export { printRaster, type PrintRasterOptions } from "./print";
+// …and its days and its pen at event time (D3t-c): a click selects, a double-click writes, the ONE editor lent to it
+export { type CalendarInput, type CalendarInputOptions, caretIndexAt, createCalendarInput } from "./calendar-input";
+export type { EditorLease } from "./editor";
 // the ONE focused editor — the platform's textarea in screen space over the note being written (D2c)
 export { createNoteEditor, EDITOR_ATTR, KEYBOARD_CLAIM_ATTR, type NoteEditor, type NoteEditorOptions } from "./editor";
 // the one image decode — a pasted or dropped picture for a print (D3w)

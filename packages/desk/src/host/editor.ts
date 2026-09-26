@@ -54,8 +54,35 @@ export interface NoteEditorOptions {
   readonly now?: () => number;
 }
 
+/**
+ * A BORROWER of the ONE editor (D3t-c — the desk calendar: a day selected, a line written). While lent, the textarea's value, keys,
+ * caret and blur are the lease's, and it says where the textarea stands; a note taking the editor, a blur, or `release` ends it.
+ */
+export interface EditorLease {
+  /** The value the textarea holds now ("" while nothing is being written). */
+  value(): string;
+  /** The platform's value after an input event. */
+  input(value: string): void;
+  /** A key the lease takes: true — handled (the editor prevents its default, so the keymap stands down). */
+  keydown(ev: KeyboardEvent): boolean;
+  /** The caret moved (a selection change): its index. */
+  caret(index: number): void;
+  /** Where the textarea stands (container px, unturned) and the size its text is laid at — null keeps it where it was. */
+  place(): { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly fontPx: number } | null;
+  /** 1 s without input (never mid-IME): a session's end; the focus stays. */
+  idle(): void;
+  /** The lease is over (a blur, a note taking the editor, `release`). */
+  ended(): void;
+}
+
 export interface NoteEditor {
   readonly element: HTMLTextAreaElement;
+  /** Lend the editor to a borrower (D3t-c): a note being written ends first; the textarea takes focus. */
+  lend(lease: EditorLease): void;
+  /** End the lease (only `lease`'s, when named). */
+  release(lease?: EditorLease): void;
+  /** The borrower holding the editor, if any. */
+  lease(): EditorLease | undefined;
   /** Put the editor on note `e`, the caret before glyph `index` (the end by default). False for a still or a non-note. */
   focus(e: Entity, index?: number): boolean;
   /** End the writing: the session committed, the claim lifted, the editor hidden. */
@@ -108,6 +135,8 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
   container.appendChild(el);
 
   let current: Entity | undefined;
+  /** The borrower holding the editor (D3t-c), or undefined — the note path's `current` is then undefined too. */
+  let lent: EditorLease | undefined;
   let idle: ReturnType<typeof setTimeout> | undefined;
   let composing = false;
   let down: { id: number; type: string; x: number; y: number } | null = null;
@@ -122,6 +151,7 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
     idle = setTimeout(() => {
       idle = undefined;
       if (composing) { arm(); return; }   // an IME candidate being chosen is not a pause
+      if (lent !== undefined) { lent.idle(); opts.wake(); return; }
       if (typing.commit()) opts.wake();
     }, idleMs);
   };
@@ -163,7 +193,57 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
     opts.wake();
   };
 
+  /** The lease is over: its borrower told, the textarea hidden and blurred (a blur that ended it has already moved the focus). */
+  const endLease = (): void => {
+    const l = lent;
+    if (l === undefined) return;
+    lent = undefined;
+    if (idle !== undefined) { clearTimeout(idle); idle = undefined; }
+    composing = false;
+    placed = null;
+    el.hidden = true;
+    st.whiteSpace = "pre-wrap";
+    el.setAttribute("aria-label", "write on the note");
+    lastTransform = "";
+    lastScale = -1;
+    if (doc.activeElement === el) el.blur();
+    l.ended();
+    opts.wake();
+  };
+  const placeLease = (): void => {
+    const p = lent?.place();
+    if (p === undefined || p === null) return;
+    placed = { cx: p.x + p.w / 2, cy: p.y + p.h / 2, w: p.w, h: p.h, angle: 0 };
+    const transform = `translate(${p.x}px, ${p.y}px)`;
+    if (transform !== lastTransform) { st.transform = transform; lastTransform = transform; }
+    if (p.fontPx !== lastScale) {
+      lastScale = p.fontPx;
+      st.width = `${p.w}px`;
+      st.height = `${p.h}px`;
+      st.padding = "0";
+      st.font = `${opts.font.weight} ${p.fontPx}px "${opts.font.family}"`;
+      st.lineHeight = `${p.h}px`;
+    }
+  };
+  const lend = (lease: EditorLease): void => {
+    if (lent === lease) { if (doc.activeElement !== el) el.focus({ preventScroll: true }); return; }
+    if (current !== undefined) end();
+    if (lent !== undefined) endLease();
+    lent = lease;
+    lastTransform = "";
+    lastScale = -1;
+    st.whiteSpace = "pre";
+    el.setAttribute("aria-label", "write on the calendar");
+    el.value = lease.value();
+    el.hidden = false;
+    placeLease();
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+    opts.wake();
+  };
+
   const focus = (e: Entity, index?: number): boolean => {
+    if (lent !== undefined) endLease();
     if (!world.isAlive(e) || !opts.isNote(e) || writing()?.isPinned(e) === true) return false;
     if (!typing.begin(e)) return false;
     if (current !== e) {
@@ -184,6 +264,7 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
 
   // ---- the platform's events
   const onInput = (): void => {
+    if (lent !== undefined) { lent.input(el.value); arm(); opts.wake(); return; }
     const e = current;
     if (e === undefined) return;
     const r = typing.input(el.value);
@@ -197,14 +278,19 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
     opts.wake();
   };
   const onKeyDown = (ev: KeyboardEvent): void => {
+    if (lent !== undefined) { if (!ev.isComposing && lent.keydown(ev)) { ev.preventDefault(); opts.wake(); } return; }
     if (ev.key !== "Escape" || ev.isComposing) return;
     ev.preventDefault();   // the keymap's gate 1 stands down; the release is ours
     end();
   };
-  const onBlur = (): void => end();
+  const onBlur = (): void => { if (lent !== undefined) endLease(); else end(); };
   const onCompositionStart = (): void => { composing = true; };
   const onCompositionEnd = (): void => { composing = false; arm(); };
-  const onSelection = (): void => { if (current !== undefined && doc.activeElement === el) { caretToSelection(); opts.wake(); } };
+  const onSelection = (): void => {
+    if (doc.activeElement !== el) return;
+    if (lent !== undefined) { lent.caret(el.selectionStart); opts.wake(); return; }
+    if (current !== undefined) { caretToSelection(); opts.wake(); }
+  };
   el.addEventListener("input", onInput);
   el.addEventListener("keydown", onKeyDown);
   el.addEventListener("blur", onBlur);
@@ -255,10 +341,19 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
 
   return {
     element: el,
+    lend,
+    release(lease) { if (lent !== undefined && (lease === undefined || lease === lent)) endLease(); },
+    lease: () => lent,
     focus,
-    blur: end,
+    blur: () => { if (lent !== undefined) endLease(); else end(); },
     editing: () => current,
     follow() {
+      if (lent !== undefined) {
+        // a value the world moved between sessions (a peer, an undo) reaches the platform's field; then the textarea follows the line
+        if (!composing) { const v = lent.value(); if (v !== el.value) { const i = Math.min(el.selectionStart, v.length); el.value = v; el.setSelectionRange(i, i); } }
+        placeLease();
+        return;
+      }
       const e = current;
       if (e === undefined) return;
       // a delete or a nav cut ends the writing — outside the frame: reflectors never write the world
@@ -278,6 +373,7 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
     placement: () => placed,
     dispose() {
       if (idle !== undefined) clearTimeout(idle);
+      lent = undefined;
       el.removeEventListener("input", onInput);
       el.removeEventListener("keydown", onKeyDown);
       el.removeEventListener("blur", onBlur);
