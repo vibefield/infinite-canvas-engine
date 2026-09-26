@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /** THE SURFACE — the engine entries apps/desk may import. D5b's umbrella rename is a change to this one line. */
-const SURFACE = ["@ice/core", "@ice/react", "@ice/desk/compose", "@ice/desk/engine", "@ice/desk/host", "@ice/desk/kinds", "@ice/desk/noise", "@ice/desk/objects", "@ice/desk/shaders", "@ice/desk/theme", "@ice/desk/oracle/*"] as const;
+const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/desk/compose", "@ice/desk/engine", "@ice/desk/host", "@ice/desk/kinds", "@ice/desk/noise", "@ice/desk/objects", "@ice/desk/shaders", "@ice/desk/theme", "@ice/desk/oracle/*"] as const;
 
 /** The forbidden shapes, applied per specifier: a deep `src|dist` path, the engine's raw deps, a climb into `packages/`. */
 const FORBIDDEN = /^@[^/]+\/[^/]+\/(src|dist)(\/|$)|^@vibecook\/strata-ecs|^loro-crdt|(^|\/)\.\.\/(\.\.\/)*packages\//;
