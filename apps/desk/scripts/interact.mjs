@@ -8,7 +8,11 @@
 // note out over 220 ms (a ghost, no entity) and the entity is gone — ⌘Z brings it back; shift-drag
 // on the bare mat draws the marquee and selects both notes; the wheel zooms about the pointer by
 // exp(−Δ · 0.0016) with the world point under it fixed; a bare drag pans; a click on the bare mat
-// deselects. Exit 0 = every check passed.
+// deselects. D4a (*Marks on the Mat*, the desk's chrome on the GPU): a selection wears BRACKETS (the marks pass) and its
+// note no ring; the screen-space selection menu stands 10 px above them and steps aside during a drag, back 200 ms after;
+// a snap lights the laser along the aligned edge; the vellum draws, touches, then folds onto the union; a taped note refuses
+// a drag with a 2 px give (its Position never moves) and the vellum passes over it; ⌘⇧L tapes and lifts. Exit 0 = every
+// check passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
@@ -174,6 +178,135 @@ try {
   await sleep(150);
   check((await q("window.__desk.selection()")).length === 0, "a click on the bare mat deselects");
 
+  // ================================================================ D4a — the marks and the menu
+  const marks = () => q("window.__desk.marks()");
+  /** A click on the bare mat, clear of any tap window on either side: the selection is empty after it. */
+  const deselect = async () => { await sleep(250); await click(100, 700); await settle(); await sleep(250); };
+  const menuState = () => q(`(() => { const m = document.querySelector("[data-ice-selection-menu]"); if (!m) return null; const b = m.firstElementChild.getBoundingClientRect(); return { away: m.dataset.away, visible: m.dataset.visible, opacity: Number(getComputedStyle(m).opacity), bar: { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom } }; })()`);
+  await q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
+  await settle();
+  const B0 = await entity(b);
+
+  // --- 10. a selection wears BRACKETS — the marks pass's — and the note draws no ring of its own
+  await click(B0.cx, B0.cy);
+  await settle();
+  const m10 = await marks();
+  const br = m10?.objects ?? [];
+  check(br.length === 1 && br[0].style === "brackets" && br[0].t === 1 && br[0].alpha === 1, `the selected note wears brackets, locked on (${br.map((o) => `${o.style} t ${o.t} α ${o.alpha}`).join(", ")})`);
+  check((await entity(b)).geometry.ring === 0 && m10.union === null, "and no ring: its kind is handed 0 (the kinds' own ring retired)");
+
+  // --- 11. the menu: 10 px above the brackets, centred on them, in screen space
+  await sleep(300);
+  const anchor11 = await q("window.__desk.anchor()");
+  const menu11 = await menuState();
+  const cx11 = (anchor11.box.x0 + anchor11.box.x1) / 2;
+  check(menu11 !== null && menu11.visible === "true" && menu11.opacity === 1, `the selection menu shows (opacity ${menu11?.opacity})`);
+  check(near(menu11.bar.y1, anchor11.box.y0 - 10, 1.01) && near((menu11.bar.x0 + menu11.bar.x1) / 2, cx11, 1.01), `it stands 10 px above the brackets, centred: its foot at ${menu11.bar.y1.toFixed(1)} vs ${(anchor11.box.y0 - 10).toFixed(1)}, its middle ${((menu11.bar.x0 + menu11.bar.x1) / 2).toFixed(1)} vs ${cx11.toFixed(1)}`);
+  check(await q(`[...document.querySelectorAll("[data-ice-selection-menu] [data-act]")].map((b) => b.dataset.act).join() === "send,duplicate,tape,more,delete"`), "its acts: the app's Send first, then Duplicate · Tape · More, Delete last");
+
+  // --- 12. a drag: the menu steps aside at once and returns 200 ms after the hand lets go (80 px straight up — a note let go
+  //     overlapping the mini mat below (its top at y 320) would be CONSUMED into it, core's law)
+  await mouse("mouseMoved", B0.cx, B0.cy); await mouse("mousePressed", B0.cx, B0.cy);
+  for (let i = 1; i <= 5; i++) { await mouse("mouseMoved", B0.cx, B0.cy - 16 * i); await sleep(30); }
+  await sleep(160);
+  const during = await menuState();
+  await mouse("mouseReleased", B0.cx, B0.cy - 80);
+  await sleep(120);
+  const justAfter = await menuState();
+  await sleep(400);
+  const back = await menuState();
+  check(during.away === "true" && during.opacity < 0.05, `during the drag it stepped aside (away, opacity ${during.opacity.toFixed(2)})`);
+  check(justAfter.away === "true" && back.away === "false" && back.opacity === 1, `back 200 ms after the release (120 ms after: away ${justAfter.away}; 520 ms after: opacity ${back.opacity})`);
+  await key("z", "KeyZ", 90, META);
+  await settle();
+
+  // --- 13. a snap lights the laser: note B dragged up past note A's top edge — while held it snaps onto it and the guide shows
+  // note A's id: ⌘Z brought it back in section 4 as a NEW entity (the undo respawns it), so it is looked up again
+  const A13 = (await entities()).find((e) => e.type === "desk.note" && e.id !== b);
+  const B13 = await entity(b);
+  await deselect();
+  await mouse("mouseMoved", B13.cx, B13.cy); await mouse("mousePressed", B13.cx, B13.cy);
+  let lit = null;
+  const trace13 = [];
+  const reach = B13.y - A13.y;   // how far up B's top must go to meet A's
+  for (let d = 0; d <= reach + 30; d += 2) {
+    await mouse("mouseMoved", B13.cx, B13.cy - d);
+    await sleep(60);
+    const mk = await marks();
+    const now = await entity(b);
+    const guide = (mk?.guides ?? []).find((g) => g.axis === "y" && near(g.at, A13.y, 0.51));
+    trace13.push(`${d}:${now.y}/${(mk?.guides ?? []).map((g) => g.at).join("+")}`);
+    if (guide && near(now.y, A13.y, 1e-6)) { lit = { guide, y: now.y, strike: mk.strike }; break; }
+  }
+  await mouse("mouseReleased", B13.cx, B13.cy - reach);
+  await settle();
+  if (lit === null) console.log(`   (trace13) ${trace13.join(" ")}`);
+  check(lit !== null, `a snap onto A's top edge lights the laser there (${lit ? `guide y ${lit.guide.at.toFixed(1)}, span ${lit.guide.span.map((v) => v.toFixed(0)).join("–")}, strike ${lit.strike.toFixed(2)}` : "no guide met while held"})`);
+  check(lit !== null && lit.guide.span[0] < Math.min(A13.x, B13.x) && lit.guide.span[1] > Math.max(A13.x + A13.w, B13.x + B13.w), "bright over both notes and past them");
+  check(((await marks())?.guides ?? []).length === 0, "let go, the laser is gone");
+  await key("z", "KeyZ", 90, META);
+  await settle();
+
+  // --- 14. the vellum: drawn while the shift-drag runs, what it touches ticked, the count by the cursor — then it folds onto the union
+  await deselect();
+  await mouse("mouseMoved", 60, 40, { modifiers: SHIFT }); await mouse("mousePressed", 60, 40, { modifiers: SHIFT });
+  for (let i = 1; i <= 10; i++) { await mouse("mouseMoved", 60 + 99 * i, 40 + 26 * i, { modifiers: SHIFT }); await sleep(25); }
+  await sleep(120);
+  const drawing = await marks();
+  await mouse("mouseReleased", 1050, 300, { modifiers: SHIFT });
+  await sleep(40);
+  const folding = await marks();
+  await settle();
+  const gathered = await marks();
+  check(drawing?.marquee !== null && drawing.marquee.count === 2 && drawing.objects.filter((o) => o.style === "member").length === 2, `mid-drag the vellum is drawn, touching two notes, their ticks shown and "${drawing?.marquee?.count}" by the cursor`);
+  // the fold starts from the vellum as last DRAWN and eases onto the union: its first frames lie between the two, off the union
+  const v = drawing?.marquee?.rect;
+  const u0 = folding?.union?.box;
+  const u1 = gathered?.union?.box;
+  const between = (f, a0, a1) => f >= Math.min(a0, a1) - 1 && f <= Math.max(a0, a1) + 1;
+  const vx0 = v ? Math.min(v.x0, v.x1) : 0;
+  const vx1 = v ? Math.max(v.x0, v.x1) : 0;
+  const folds = v !== undefined && u0 !== undefined && u1 !== undefined && between(u0.x0, vx0, u1.x0) && between(u0.x1, vx1, u1.x1) && Math.abs(u0.x0 - u1.x0) + Math.abs(u0.x1 - u1.x1) > 2;
+  check(folds, `released, it folds: the union's first frame [${u0 ? `${u0.x0.toFixed(0)}, ${u0.x1.toFixed(0)}` : "–"}] lies between the vellum [${vx0.toFixed(0)}, ${vx1.toFixed(0)}] and the union it lands on [${u1 ? `${u1.x0.toFixed(0)}, ${u1.x1.toFixed(0)}` : "–"}]`);
+
+  // --- 15. the tape: ⌘⇧L tapes B; a drag on it gives 2 px and it never moves; the vellum passes over it; ⌘⇧L lifts it
+  await deselect();
+  const B15 = await entity(b);
+  await click(B15.cx, B15.cy);
+  await settle();   // the tap's selection lands on the next tick: the key must find it
+  await key("L", "KeyL", 76, META | SHIFT);
+  await sleep(100);   // the tape's transaction lands at the next sync — a settle before it would find the desk quiet too early
+  await settle();
+  const taped15 = (await marks())?.tape ?? [];
+  check((await entity(b)).locked && taped15.length === 1 && taped15[0].press[0] === 1 && taped15[0].press[1] === 1, `⌘⇧L tapes the note: Locked, its tape pressed down (the layout lays it as two strips) — ${JSON.stringify(taped15.map((t) => t.press))}`);
+  await mouse("mouseMoved", B15.cx, B15.cy); await mouse("mousePressed", B15.cx, B15.cy);
+  const gives = [];
+  for (let i = 1; i <= 8; i++) { await mouse("mouseMoved", B15.cx + 10 * i, B15.cy); gives.push((await entity(b)).geometry.centre[0] - B15.cx); await sleep(20); }
+  await mouse("mouseReleased", B15.cx + 80, B15.cy);
+  await settle();
+  await sleep(200);
+  const after15 = await entity(b);
+  const peakGive = Math.max(...gives.map(Math.abs));
+  check(near(after15.cx, B15.cx) && near(after15.cy, B15.cy) && after15.geometry.centre[0] === B15.cx, `it refuses the drag: its Position never moved (${after15.cx.toFixed(1)}, ${after15.cy.toFixed(1)})`);
+  check(peakGive > 0.5 && peakGive <= 2.2 + 1e-9, `with a give: it shivered up to ${peakGive.toFixed(2)} px and settled (${gives.map((g) => g.toFixed(1)).join(" ")})`);
+  await deselect();
+  await drag([60, 40], [1050, 300], { modifiers: SHIFT }, 10);
+  await sleep(200);
+  const picked = await q("window.__desk.selection()");
+  check(!picked.includes(b) && picked.includes(A13.id), `the vellum passes over the tape: it gathered A, not B (${picked.length} selected)`);
+  await deselect();
+  await click(B15.cx, B15.cy);
+  await settle();
+  await key("L", "KeyL", 76, META | SHIFT);
+  await sleep(100);   // the tape's transaction lands at the next sync — a settle before it would find the desk quiet too early
+  await settle();
+  const lifted = await entity(b);
+  const tapeLeft = ((await marks())?.tape ?? []).length;
+  check(!lifted.locked && tapeLeft === 0, `⌘⇧L lifts the tape (locked ${lifted.locked}, tape left ${tapeLeft}, selection ${JSON.stringify(await q("window.__desk.selection()"))} b ${b})`);
+  await click(100, 700);
+
+  // D2b's nesting rows run after D4a's: the drop-into below takes note B into the mini mat, and D4a's rows above hold B on
+  // the root desk (each of them leaves it where it lay, untaped, the selection empty)
   // --- 8b. DROP-INTO (D2b, design-015 §9, MINIMAT.md §3): a note let go with its centre over the mini mat's FACE goes into its
   //     desk at the point where it lay, in the inside's own units — through the face's embedding M, so it takes the inside's scale.
   //     The note trails the pointer by the slop-eaten sample; the check reads the live centre just before the release. The camera

@@ -49,6 +49,20 @@ export {
 export { usePresencePeers, type PresencePeerView } from "./use-presence";
 export { attachKeymap, type KeymapEntry, nudgeSelection, toggleTape } from "./keymap";
 export {
+  defaultSelectionActions,
+  placeSelectionMenu,
+  SELECTION_GLYPHS,
+  SELECTION_MENU,
+  type SelectionAction,
+  SelectionMenu,
+  type SelectionMenuAnchor,
+  type SelectionMenuBox,
+  type SelectionMenuProps,
+  type SelectionMenuSource,
+  type SelectionState,
+  selectionTaped,
+} from "./selection-menu";
+export {
   InfiniteCanvas,
   type GroundLayerFactory,
   type GroundLayerHandle,

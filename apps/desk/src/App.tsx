@@ -3,7 +3,9 @@
 // the one react change is that prop: the desk draws its own selection; D4a draws the marks). Keys:
 // `w` sticks a note at the pointer, `m` lays a mini mat, ⌫ deletes, ⌘Z/⇧⌘Z undo and redo (the core
 // keymap), `d` toggles the theme and pins it (until then the OS leads). The generated plates and a
-// runtime glyph atlas feed the mat at boot; `window.__desk` (api.ts) is the rigs' door.
+// runtime glyph atlas feed the mat at boot; `window.__desk` (api.ts) is the rigs' door. D4a: the desk
+// draws its marks on the GPU and the ONE screen-space selection menu rides the layer's anchor
+// (`<SelectionMenu>`), with ICE's acts and the app's own stub "Send" first (it logs — VibeField's is real).
 
 import type { Entity } from "@ice/core";
 import { PointerWorld, LocalPointer, Pointer, Camera, PrefabId, Viewport, defineQuery, selectedEntities } from "@ice/core";
@@ -11,7 +13,7 @@ import type { DeskLayerHandle } from "@ice/desk/host";
 import { deskLayer } from "@ice/desk/host";
 import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, VINYLS, type VinylName } from "@ice/desk/objects";
 import type { ThemeName } from "@ice/desk/theme";
-import { type GroundLayerFactory, InfiniteCanvas, type KeymapEntry, nudgeSelection } from "@ice/react";
+import { defaultSelectionActions, type GroundLayerFactory, InfiniteCanvas, type KeymapEntry, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
 import { createDeskEngine, joinDeskRoom } from "./desk";
@@ -22,6 +24,14 @@ import { deskPalette, deskTheme, osTheme } from "./palette";
 import { spawnAll } from "./scene";
 
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
+
+/** The app's own act, first in the bar (*Marks on the Mat*: "Send to agent first, because it is the one act only this desk has") — a stub here: it logs, and the rigs read `__desk.sent`. */
+const SEND: SelectionAction = {
+  id: "send", place: "lead", text: true, glyph: "agents", keys: "⌘↩",
+  label: (s) => (s.count > 1 ? `Send ${s.count} to agent` : "Send to agent"),
+  run: (_engine, s) => { console.info(`[desk] send ${s.count} to an agent (a stub — VibeField's picker is real)`); window.__desk?.sent.push(s.count); },
+};
+const MENU_ACTIONS: readonly SelectionAction[] = [SEND, ...defaultSelectionActions()];
 /** The mat's lattice cell at zoom 1, world units — the desk's ⇧ nudge (*Marks on the Mat*: "⇧ arrows nudge 20, one lattice cell"). */
 const LATTICE_CELL = 20;
 
@@ -56,6 +66,7 @@ export function App(): ReactElement {
   const apiRef = useRef<DeskApi | null>(null);
   const themeRef = useRef(createThemeControl(() => handleRef.current));
   const matSerial = useRef(1);
+  const [menuSource, setMenuSource] = useState<SelectionMenuSource | null>(null);
 
   // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
   const layer = useMemo<GroundLayerFactory>(() => {
@@ -115,6 +126,7 @@ export function App(): ReactElement {
       onReady={() => {
         const handle = handleRef.current;
         if (handle === null) { fail("the desk layer did not mount"); return; }
+        setMenuSource(handle.selection);
         themeRef.current.apply();
         const api = installDeskApi(engine, handle, themeRef.current);
         apiRef.current = api;
@@ -132,6 +144,8 @@ export function App(): ReactElement {
         };
         feed().catch(fail);
       }}
-    />
+    >
+      {menuSource !== null ? <SelectionMenu source={menuSource} actions={MENU_ACTIONS} /> : null}
+    </InfiniteCanvas>
   );
 }

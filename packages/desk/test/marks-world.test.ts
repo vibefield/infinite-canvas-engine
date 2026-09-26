@@ -164,11 +164,13 @@ describe("the marks from the world (compose/marks.ts, through the builder)", () 
     const rec = world.spawn({ components: [[Drag, { startX: 300, startY: 250 }]], tags: [GestureActive, RoutedMove] });
     world.setRelation(rec, Captures, a);
     expect(builder.changed()).toBe(true);
+    // frames only while the desk is live — as the reflector draws them: the LAST one drawn has the note back at rest
     const xs: number[] = [];
-    for (let i = 0; i < 30; i++) { build(); xs.push(cx(a) - 300); }
+    let frames = 0;
+    do { build(); xs.push(cx(a) - 300); frames += 1; } while (builder.live() && frames < 100);
     expect(Math.max(...xs.map(Math.abs))).toBeGreaterThan(1.5);
     expect(Math.max(...xs.map(Math.abs))).toBeLessThanOrEqual(MARKS.give.px);
-    expect(settle().n).toBeLessThan(60);
+    expect(frames).toBeLessThan(40);
     expect(cx(a)).toBe(300);
     const rec2 = world.spawn({ components: [[Drag, { startX: 700, startY: 250 }]], tags: [GestureActive, RoutedMove] });
     world.setRelation(rec2, Captures, b);

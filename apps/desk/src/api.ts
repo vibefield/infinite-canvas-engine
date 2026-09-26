@@ -85,6 +85,12 @@ export interface DeskApi {
   insideView(id: number): { readonly cam: { x: number; y: number; zoom: number }; readonly presence: number; readonly clip: { cx: number; cy: number; hx: number; hy: number } } | null;
   /** The gesture's facts (a rig's diagnosis): the last instant tap remembered, and the last nav request a system made. */
   taps(): { readonly memo: { target: number; x: number; y: number; at: number; seq: number } | null; readonly intent: { kind: string; target: number; transition: string; source: string; epoch: number } | null; readonly redressRaw: { kind: string; from: number; frame: number; epoch: number } | null };
+  /** The desk's marks as last drawn (stratum 5 — D4a), or null before the first frame. */
+  marks(): NonNullable<ReturnType<DeskLayerHandle["lastInputs"]>>["marks"] | null;
+  /** The selection menu's anchor as the layer last published it. */
+  anchor(): ReturnType<DeskLayerHandle["selection"]["anchor"]>;
+  /** The app's stub Send: each press's selection count. */
+  readonly sent: number[];
 }
 
 declare global {
@@ -161,6 +167,9 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       world.query(mouseQ).each((b) => { for (const r of b) { const p = b.entity(r); if (world.read(p, Pointer).device === "mouse") { const w = world.read(p, PointerWorld); at = { x: w.x, y: w.y }; } } });
       return at;
     },
+    marks: () => handle.lastInputs()?.marks ?? null,
+    anchor: () => handle.selection.anchor(),
+    sent: [],
     stats: () => handle.stats(),
     wakes: () => handle.wakes(),
     submits() { const s = handle.submits(); return s === undefined ? null : { total: s.total(), buffers: s.buffers(), inWindow: (ms) => s.inWindow(ms) }; },

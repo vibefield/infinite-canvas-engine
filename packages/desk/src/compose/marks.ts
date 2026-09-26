@@ -197,7 +197,8 @@ export function createMarksCollector(world: World, opts: { readonly marquee?: ()
         const pressEnd = (C.tapePress + C.tapeStagger) / 1000;
         if (row.locked) { c.tapeT = Math.min(c.tapeT + dt, pressEnd); c.tapeA = 1; }
         else c.tapeA = step(c.tapeA, 0, dt, C.tapeLift);
-        if (c.give >= 0) { c.give += dt; if (c.give >= C.give / 1000) c.give = -1; }
+        // the give ends: one more frame, so the object is drawn at rest (its geometry was resolved with this frame's give)
+        if (c.give >= 0) { c.give += dt; if (c.give >= C.give / 1000) { c.give = -1; live = true; } }
         live ||= (row.selected && (c.lockT < 1 || c.lockA < 1)) || (!row.selected && c.lockA > 0) || (row.locked && c.tapeT < pressEnd) || (!row.locked && c.tapeA > 0) || c.give >= 0;
         if (row.selected) { count += 1; allTaped &&= row.locked; }
         const press = (row.locked ? [c.tapeT * 1000 / C.tapePress, (c.tapeT * 1000 - C.tapeStagger) / C.tapePress] : [1, 1]) as [number, number];
