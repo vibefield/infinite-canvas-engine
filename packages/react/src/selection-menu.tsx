@@ -54,8 +54,8 @@ export interface SelectionAction {
   readonly id: string;
   /** Its name — the button's accessible label and its tip; may read the selection ("Lift the tape"). */
   readonly label: string | ((s: SelectionState) => string);
-  /** A glyph from `SELECTION_GLYPHS` by name, or any node. */
-  readonly glyph: string | ReactNode;
+  /** A glyph from `SELECTION_GLYPHS` by name, or any node — or one read off the selection (the lock opens when it is taped). */
+  readonly glyph: string | ReactNode | ((s: SelectionState) => string | ReactNode);
   /** The key that does the same, shown in the tip and in More (e.g. "⌘D"). */
   readonly keys?: string;
   /** `lead` sits first (the app's own act — Send), `main` in the middle, `end` alone past a rule (Delete). */
@@ -124,7 +124,7 @@ export function defaultSelectionActions(): SelectionAction[] {
   return [
     { id: "duplicate", label: "Duplicate", glyph: "duplicate", keys: "⌘D", when: (s) => !s.locked, run: (e) => { e.ops.duplicateSelection(); } },
     {
-      id: "tape", label: (s) => (s.locked ? "Lift the tape" : "Tape it down"), glyph: "lock", keys: "⇧⌘L", on: (s) => s.locked,
+      id: "tape", label: (s) => (s.locked ? "Lift the tape" : "Tape it down"), glyph: (s) => (s.locked ? "unlock" : "lock"), keys: "⇧⌘L", on: (s) => s.locked,
       run: (e, s) => { e.ops.setLocked(selectedEntities(e.world), !s.locked); },
     },
     { id: "more", label: "More", glyph: "ellipsis", run: () => {} },
@@ -133,6 +133,7 @@ export function defaultSelectionActions(): SelectionAction[] {
 }
 
 const labelOf = (a: SelectionAction, s: SelectionState): string => (typeof a.label === "function" ? a.label(s) : a.label);
+const glyphOf = (a: SelectionAction, s: SelectionState): string | ReactNode => (typeof a.glyph === "function" ? a.glyph(s) : a.glyph);
 
 // ---------------------------------------------------------------- the ink (desk.css `.sel-menu`, the tray's material)
 
@@ -148,6 +149,8 @@ const STYLE = `
 [data-ice-selection-menu] .ice-sm-text{height:32px;padding:0 9px;border-radius:16px;display:inline-flex;align-items:center;gap:7px;color:var(--ice-menu-cream);background:rgb(var(--ice-menu-cream-rgb) / .08);transition:background 120ms ease,transform 120ms ease}
 [data-ice-selection-menu] .ice-sm-text:hover{background:rgb(var(--ice-menu-cream-rgb) / .15)}
 [data-ice-selection-menu] .ice-sm-text:active{transform:scale(.97)}
+[data-ice-selection-menu] .ice-sm-text svg:last-child{transform:rotate(-90deg);opacity:.55;margin-left:-1px;transition:transform 240ms cubic-bezier(.25,1,.3,1)}
+[data-ice-selection-menu][data-below="true"] .ice-sm-text svg:last-child{transform:rotate(90deg)}
 [data-ice-selection-menu] .ice-sm-rule{flex:none;width:0;height:22px;margin:0 4px;border-left:1px dashed var(--ice-menu-rule)}
 [data-ice-selection-menu] .ice-sm-sheet{position:absolute;left:0;min-width:208px;padding:6px;box-sizing:border-box;border-radius:14px;background:var(--ice-menu-ink);color:var(--ice-menu-cream);box-shadow:inset 0 0 0 1px var(--ice-menu-hair),var(--ice-menu-shadow)}
 [data-ice-selection-menu] .ice-sm-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:16px;padding:8px 10px;border-radius:8px;text-align:left}
@@ -227,15 +230,15 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     if (a.text === true) {
       return (
         <button key={a.id} type="button" className="ice-sm-text" data-act={a.id} aria-label={label} title={tip} onClick={run}>
-          <Glyph glyph={a.glyph} />
+          <Glyph glyph={glyphOf(a, state)} />
           <span>{label}</span>
           <Glyph glyph="chevron" size={12} />
         </button>
       );
     }
     return (
-      <button key={a.id} type="button" className="ice-sm-btn" data-act={a.id} data-on={a.on?.(state) === true ? "true" : undefined} data-tone={a.tone} aria-label={label} title={tip} aria-haspopup={a.id === "more" ? "menu" : undefined} aria-expanded={a.id === "more" ? open : undefined} onClick={run}>
-        <Glyph glyph={a.glyph} />
+      <button key={a.id} type="button" className="ice-sm-btn" data-act={a.id} data-on={a.on?.(state) === true ? "true" : undefined} data-tone={a.tone} data-glyph={typeof glyphOf(a, state) === "string" ? (glyphOf(a, state) as string) : undefined} aria-label={label} title={tip} aria-haspopup={a.id === "more" ? "menu" : undefined} aria-expanded={a.id === "more" ? open : undefined} onClick={run}>
+        <Glyph glyph={glyphOf(a, state)} />
       </button>
     );
   };

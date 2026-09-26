@@ -123,6 +123,7 @@ describe("<SelectionMenu>", () => {
     const tape = menu().querySelector('[data-act="tape"]') as HTMLElement;
     expect(tape.getAttribute("aria-label")).toBe("Lift the tape");
     expect(tape.dataset.on).toBe("true");
+    expect(tape.dataset.glyph).toBe("unlock");   // the lock opens (desk.js barHTML: `locked ? "unlock" : "lock"`)
     click(tape);
     step();
     expect(engine.world.hasTag(e, Locked)).toBe(false);
