@@ -125,7 +125,10 @@ describe("the note's world half (kinds/paper.ts paperKind)", () => {
     expect(R.wipe).toEqual(wipe);
     expect(R.caret).toEqual(caret);
     // the writing was handed the entity, its props, its rect, the slot's view and the geometry just resolved
-    expect(handed).toEqual([[ctx.entity, ctx.props, ctx.rect, ctx.view, G]]);
+    expect(handed).toEqual([[ctx.entity, ctx.props, ctx.rect, ctx.view, G, false]]);
+    // a delete ghost (fade < 1) is handed as FADING: the writing draws only what it holds
+    kind.record(G, { ...ctx, local, flux: { lift: 0, hover: 0, ring: 0, fade: 0.5 } });
+    expect((handed[1] as unknown[])[5]).toBe(true);
     // a writing with nothing for the note leaves the builder's pin as the fallback, and no marks
     const bare = kind.record(G, { ...ctx, local: { draw: () => ({}) }, asset: { layer: 1, uv: live.uv } });
     expect([bare.raster, bare.wipe, bare.caret]).toEqual([{ layer: 1, uv: live.uv }, undefined, undefined]);

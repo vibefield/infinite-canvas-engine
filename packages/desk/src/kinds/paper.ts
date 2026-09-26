@@ -141,7 +141,7 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       if (paper === undefined || ink === undefined) throw new Error("desk/paper: the note's colours are the host's — the palette names no `papers`/`pens` (kinds/paper.ts `PaperPalette`)");
       // the writing on this desk: the live (or pinned) ink, the pen's wipe, the caret; a builder pin is the fallback
       const w = ctx.local as Writing | undefined;
-      const hand = w?.draw(ctx.entity, ctx.props, ctx.rect, ctx.view, G) ?? {};
+      const hand = w?.draw(ctx.entity, ctx.props, ctx.rect, ctx.view, G, ctx.flux.fade < 1) ?? {};   // a ghost fades on what it has
       const asset = ctx.asset;
       const raster = hand.raster ?? (isPaperAsset(asset) ? { layer: asset.layer, uv: asset.uv } : undefined);
       return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}) };

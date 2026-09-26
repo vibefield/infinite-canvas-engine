@@ -208,6 +208,21 @@ describe("the writing · residency in the pages", () => {
   });
 });
 
+describe("the writing · a delete ghost", () => {
+  it("a FADING note draws the raster it holds and asks for nothing: no layout, no raster — after a reset it fades blank", () => {
+    const { w, t, p } = desk();
+    const G = resolvePaper({ cx: 300, cy: 250, w: 200, h: 200, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lamp);
+    const rect = { cx: 300, cy: 250, w: 200, h: 200 };
+    w.tick(16);
+    const held = w.draw(E(1), { text: "hi", seeds: "", seed: 7 }, rect, VIEW, G);
+    expect(w.draw(E(1), { text: "hi", seeds: "", seed: 7 }, rect, VIEW, G, true).raster).toEqual(held.raster);
+    w.reset();
+    const layouts = w.stats().layouts;
+    expect(w.draw(E(1), { text: "hi", seeds: "", seed: 7 }, rect, VIEW, G, true)).toEqual({});
+    expect([w.stats().layouts, t.calls.length, p.shelves.stats.used]).toEqual([layouts, 1, 0]);
+  });
+});
+
 describe("the writing · the pen and the caret (flux)", () => {
   it("the wipe runs 110 ms over the newest glyph — a frame wanted every tick meanwhile — then is gone and the desk idles", () => {
     const { w, frame } = desk();

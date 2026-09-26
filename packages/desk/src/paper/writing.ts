@@ -104,8 +104,11 @@ export interface WritingStats {
 export interface Writing {
   /** The frame's clock, once a tick before the draw: does the writing want a frame now? */
   tick(now: number): boolean;
-  /** What note `e` draws with this frame: its ink (pinned or live), the pen's wipe, the caret. */
-  draw(e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number }, view: View & { readonly dpr: number }, geometry: PaperGeometry): NoteInk;
+  /**
+   * What note `e` draws with this frame: its ink (pinned or live), the pen's wipe, the caret. A `fading` note (a
+   * delete ghost) draws only the raster it already holds — never a new layout or raster, no marks.
+   */
+  draw(e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number }, view: View & { readonly dpr: number }, geometry: PaperGeometry, fading?: boolean): NoteInk;
   /** The note's layout as last drawn (undefined before, for a still, or while the face loads). */
   layoutOf(e: Entity): HandLayout | undefined;
   rasterOf(e: Entity): NoteRasterInfo | undefined;
@@ -248,8 +251,10 @@ export function createWriting(opts: WritingOptions): Writing {
       return want;
     },
 
-    draw(e, props, rect, view, G) {
+    draw(e, props, rect, view, G, fading = false) {
       if (renderTick !== ticks) { renderTick = ticks; render += 1; order = 0; }
+      // a delete ghost keeps what it has and asks for nothing: after a reset it fades blank, never re-rastered
+      if (fading) { const r = entries.get(e)?.raster; return r === null || r === undefined ? {} : { raster: { layer: r.rect.layer, uv: r.uv } }; }
       const en = entryOf(e);
       en.drawnAt = render;
       en.order = ++order;
