@@ -154,6 +154,23 @@ there.
   shift-drag marquee, the wheel `exp(−Δ·0.0016)` about the pointer, a bare drag pans (24/24);
   `rig:idle` — 0 submits over 240 frames after the ease (10/10).
 
+<!-- design-015 D3r-a (2026-09-25) -->
+- **The photo print is a desk kind; the prints and the whiteboards have pixel witnesses** (`@ice/desk`;
+  design-015 §4.2, §5.2): `photoProgram(text)` · `PhotoKind` · `PHOTO_KIND` (`"photo"`, stratum `things`,
+  registered in `DESK_KINDS` after the whiteboard). `PhotoPass` gains `spawn(mat)` (a slot's own buffers on
+  the shared pipeline, samplers and pictures), `tune(from)` and `drawRange(first, end)` over the prints it was
+  handed — the prototype drew its prints in a render pass of their own after the ground's; the desk draws them
+  as runs in its one pass, byte for byte the same. A print inside a mini mat's face is lit by the lamp of the
+  desk the mini mat lies on (`prepare(…, lit)`, a `LIT_ELSEWHERE` pipeline override as the note's; a print on
+  the root draws exactly as before). Pictures stay the pass's resources: a record names its `Picture` (null =
+  the paper alone). The Node oracle gains twelve scenes — prints at rest, held, by night, stacked, far off,
+  between two notes and inside a mini mat; whiteboards at rest, with a replayed stroke list, selected, by
+  night, close — from a committed picture (`tools/make-photo-fixture.mjs`), and a check for each (`photo`,
+  `order`, `board`, `ink`, `ring`, `lit`). apps/desk: `rig:parity` holds all 50 to Chrome (three inked-board
+  scenes kept within a named, measured 1-LSB bound: the two hosts' Dawns quantise six of the ink raster's
+  stamp texels differently), and `rig:proto-parity` (new; `DESK_PROTO` = the frozen snapshot) holds the ten
+  stageable ones to the prototype's own photo lab and board bench, byte for byte. The 38 D1 scenes unchanged.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
