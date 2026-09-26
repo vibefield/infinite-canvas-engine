@@ -3,12 +3,13 @@
 // board (frame.mjs `boardPoseOf`, number for number: PARITY BY CONSTRUCTION), its strokes as DATA CHILDREN
 // whose replay is the oracle's `opsOf` op for op, the raster a cache the kind's local rebuilds when the
 // children's stamp turns over (a stroke laid, undone, redone), the path codec, the mirror, the look.
-import { cascadeDestroy, ChildOf, createCanvasEngine, type Entity, guardedTransaction, Position, STRATUM_BANDS } from "@ice/core";
+import { cascadeDestroy, ChildOf, createCanvasEngine, type Entity, guardedTransaction, Position, Resizable, STRATUM_BANDS } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { surfaceSize } from "../src/board/board";
 import type { BoardPass } from "../src/board/board-pass";
 import type { BoardOp } from "../src/board/history";
 import { worldChildren } from "../src/compose/children";
-import { type BoardInk, BoardKind, boardKind, FLUX_REST, type ObjectContext, rectOf } from "../src/kinds";
+import { type BoardInk, BoardKind, boardFrame, boardKind, FLUX_REST, type ObjectContext, rectOf } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { objectKindOf } from "../src/object";
 import { addStroke, Board, BOARD_TYPE, BoardStroke, boardOps, decodePoints, encodePoints, strokeRow } from "../src/objects";
@@ -42,7 +43,7 @@ beforeAll(async () => { const o = await fakeOracle(); oracle = o.desk; undoGpu =
 afterAll(() => undoGpu());
 
 describe("the Board object (design-015 §6)", () => {
-  it("desk.board — cap · tip, 480 × 320, things, movable and selectable, snapping both ways; its kind the board's", () => {
+  it("desk.board — cap · tip, 480 × 320, things, movable, selectable and RESIZABLE (its knobs are core's handles — Q-a/b), snapping both ways; its kind the board's", () => {
     expect(Board.type).toBe(BOARD_TYPE);
     expect(Board.surface).toBe("object");
     expect(objectKindOf(Board)?.name).toBe("board");
@@ -50,6 +51,7 @@ describe("the Board object (design-015 §6)", () => {
     expect(Board.stratum).toBe("things");
     expect(STRATUM_BANDS.things).toBeGreaterThan(STRATUM_BANDS.sheets);
     expect(Object.keys(Board.propToGroup).sort()).toEqual(["cap", "tip"]);
+    expect(Board.capabilityTags).toContain(Resizable);
   });
 });
 
@@ -134,6 +136,23 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
     expect(must(stub.replays[1])[0]?.kind).toBe("stroke");
     expect(ink.tick?.(0)).toBe(false);
     expect(ink.replays()).toBe(2);
+  });
+
+  it("resized, a board is drawn at its new rect — the frame the marks go around follows — and its ink replays into a raster of the new size", () => {
+    const { stub, ink, lay, board } = desk();
+    // the pass keeps one raster per board and makes it afresh when the melamine's size changes (board-pass.ts `ensure`)
+    const sizes = new Map<number, string>();
+    stub.pass.ensure = (id: number, size?: readonly [number, number]) => { const k = String(size); if (sizes.get(id) === k) return false; sizes.set(id, k); stub.calls.push(`ensure ${id}`); return true; };
+    const drawAt = (w: number, h: number) => { const ctx = ctxOf({ x: 420, y: -120 }, { entity: board, local: ink, rect: rectOf({ x: 420 - w / 2, y: -120 - h / 2 }, { w, h }) }); const G = kind.resolve(ctx); kind.record(G, ctx); return G; };
+    drawAt(W, H);
+    lay({ ink: "blue", tip: "bullet", points: [[40, 60], [90, 48]] });
+    drawAt(W, H);
+    const before = stub.calls.length;
+    const G = drawAt(W + 60, H + 40);
+    expect(G.half).toEqual([(W + 60) / 2, (H + 40) / 2]);
+    expect(boardFrame(G)).toMatchObject({ hx: (W + 60) / 2, hy: (H + 40) / 2 });
+    expect(stub.calls.slice(before)).toEqual(["ensure 1", "replay 1 1"]);   // a raster of the new size, the stroke replayed into it
+    expect(sizes.get(1)).toBe(String(surfaceSize(G)));
   });
 
   it("⌘Z takes the stroke away (the child despawns) and the raster replays without it; ⇧⌘Z brings it back — one stroke, one undo step", () => {

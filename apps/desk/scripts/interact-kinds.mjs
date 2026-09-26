@@ -61,6 +61,22 @@ export async function kindsRig(t) {
   check(b.selected && bracketed(bSel) && b.geometry.ring === 0, `board: a click on the melamine selects it — it wears the brackets, locked on (${worn(bSel)}); its kind draws no ring (handed ${b.geometry.ring})`);
   const bOn = await onFrame(bSel, boardFrame(b.geometry));
   check(bOn.same, `board: its brackets stand on its frame — the aluminium's outside as drawn, square, its corner: ${bOn.said}`);
+  // the knobs are the whiteboard's (*Marks on the Mat* Q-a/b: it resizes) and core's handles lie under them: a real drag on the
+  // south-east one grows it from its fixed north-west corner, the board is drawn at its new size, and ONE ⌘Z puts it back
+  check(bSel.objects[0].knobs === true, "board: its brackets carry the knobs — a whiteboard resizes");
+  const bRect = await entity(board);
+  const se = [bRect.x + bRect.w - 3400, bRect.y + bRect.h + 400];
+  await carry(se, [se[0] + 60, se[1] + 40], 6, 30, 150);
+  await release([se[0] + 60, se[1] + 40]);
+  await sleep(400);   // a resize holds its target by core's Grab, and a board reads Grab as its lift: let it settle back down
+  await settle();
+  const bBig = await entity(board);
+  const bBigOn = await onFrame(await marks(), boardFrame(bBig.geometry));
+  check(bBig.w > bRect.w + 30 && bBig.h > bRect.h + 20 && near(bBig.x, bRect.x) && near(bBig.y, bRect.y) && near(bBig.geometry.half[0], bBig.w / 2) && near(bBig.geometry.half[1], bBig.h / 2) && bBigOn.same, `board: its south-east knob RESIZES it — ${bRect.w} × ${bRect.h} → ${bBig.w.toFixed(1)} × ${bBig.h.toFixed(1)} about its north-west corner (${bRect.x}, ${bRect.y}) → (${bBig.x.toFixed(2)}, ${bBig.y.toFixed(2)}), drawn at the new size (half ${bBig.geometry.half.map((v) => v.toFixed(2)).join(" × ")}), its brackets with it: ${bBigOn.said}`);
+  await key("z", "KeyZ", 90, META);
+  await settle();
+  const bBack0 = await entity(board);
+  check(near(bBack0.w, bRect.w) && near(bBack0.h, bRect.h) && near(bBack0.x, bRect.x), `board: ONE ⌘Z puts its size back (${bBack0.w} × ${bBack0.h})`);
   await hover(640, 420);
   await sleep(500);
   b = await entity(board);
