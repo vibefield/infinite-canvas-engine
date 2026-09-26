@@ -33,6 +33,7 @@ function rig() {
   const pad = ce.ops.spawnWidget("desk.calendar", { x: -PAD.W / 2, y: -PAD.H / 2, props: { month: "2026-09" }, undoable: false });
   ce.world.sync();
   const pads = createPads({ pass: () => undefined, children: { stamp: () => 0, rows: () => [], entries: (e, c) => ce.world.getReverse(e, ChildOf).flatMap((k) => { const v = ce.world.get(k, c); return v === undefined ? [] : [{ entity: k, value: v }]; }) } });
+  pads.sheets(pad, monthIndex(2026, 9));   // the draw path's word: the pad is on the desk (its state is the draw's to make — D7 #10)
   let fresh = 9000;
   const writing = createCalendarWriting({ world: ce.world, docs: ce.docs, pads: () => pads, fresh: () => fresh++ });
   let caret: { index: number; t0: number; wipe: { index: number; t0: number } | null } | null = null;
@@ -184,6 +185,23 @@ describe("the hand marks each pad from the user's selection (objects/calendar-ha
     r.flush();   // the commit — and the release, before any tick hears the document
     expect((r.ce.world.get(r.pad, Calendar.groups[0]?.component as never) as { month: string }).month).toBe("2026-10");
     expect(r.pads.rollOf(r.pad)?.pending).toBeNull();
+  });
+
+  it("a pad forgotten (its delete): a mark, a draft, a peek, a grab on it re-acquire NO state — the freed slot goes to the next pad (D7 #10)", () => {
+    const r = rig();
+    const SEP = monthIndex(2026, 9);
+    r.pads.sheets(r.pad, SEP);   // the draw path makes its state
+    expect(r.pads.state(r.pad).slot).toBe(0);
+    r.pads.forget?.(r.pad);
+    r.pads.mark(r.pad, { drop: 3 });
+    r.pads.draft(r.pad, { start: 3, end: 3, text: "x", seeds: [], ink: "felt" });
+    r.pads.peek(r.pad, true);
+    expect(r.pads.grab(r.pad, "foot", PAD.W / 2, PAD.L, 0)).toBe(false);
+    expect(r.pads.marksOf(r.pad)).toBeUndefined();
+    expect(r.pads.draftOf(r.pad)).toBeNull();
+    expect(r.pads.rollOf(r.pad)).toBeUndefined();
+    const other = r.ce.ops.spawnWidget("desk.calendar", { x: 2000, y: 0, props: { month: "2026-09" }, undoable: false });
+    expect(r.pads.state(other).slot).toBe(0);   // the forgotten pad's slot, free again
   });
 });
 

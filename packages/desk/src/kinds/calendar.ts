@@ -347,6 +347,10 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   /** What has LANDED on each object, counted (D7 — `KindLocal.landed`): the held desk copy is made again when a desk object's moves. */
   const landedOf = new Map<Entity, number>();
   const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
+  // A pad's state is MADE by the draw path only — `sheets`, `draw`, `pin` (a scene's pose), `pinPrint`, the kind's record — and
+  // answered to every other door for a pad it knows (`pads.get`): a mark, a draft, a peek or a grab on a pad already forgotten
+  // (its delete, its cull) must not re-acquire a slot against MAX_CALENDARS (D7 #10 — the hand marks a pad it saw last frame,
+  // the writing drafts on one). A pad culled mid-draft shows its draft again at the next keystroke, not before: the price
   const state = (e: Entity): PadState => {
     let st = pads.get(e);
     if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined, pinned: new Map(), marks: undefined, draft: null, roll: newRoll(), hidden: new Set() }; pads.set(e, st); }
@@ -475,7 +479,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     return { sel, mark, drop, caret, wipe };
   };
   return {
-    pin(e, pose) { state(e).pose = pose; woke = true; },
+    pin(e, pose) { state(e).pose = pose; woke = true; },   // a scene's pose, pinned before its first draw (the oracle's, a test's): the draw path's own setup
     sheets: (e, durable) => rollSheets(state(e).roll, durable, law, F),
     rollOf(e) {
       const st = pads.get(e);
@@ -484,9 +488,10 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       const t = r.turn;
       return { shown: r.shown, turn: t === null ? null : { dir: t.dir, p: t.p, target: t.target, held: t.drag !== null, hand: t.hand }, peek: r.peek, pending: r.pending };
     },
-    peek(e, on) { const r = state(e).roll; if (r.peekOn !== on) { r.peekOn = on; woke = true; } },
+    peek(e, on) { const r = pads.get(e)?.roll; if (r !== undefined && r.peekOn !== on) { r.peekOn = on; woke = true; } },
     grab(e, part, sx, s, now) {
-      const r = state(e).roll;
+      const r = pads.get(e)?.roll;
+      if (r === undefined) return false;
       let ok: boolean;
       if (part === "moving") ok = grabMoving(r, s, now);
       else if (part === "roll") ok = startTurn(r, -1, 0, law, F, { hand: true, drag: { s, now } });
@@ -516,9 +521,9 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     entries: (e) => entriesOf(e),
     printOf: (e, month) => { const st = pads.get(e); return st === undefined ? undefined : prints.get(`${st.id}:${month}`)?.print; },
     pinPrint(e, month, sheet) { const st = state(e); if (sheet === null) st.pinned.delete(month); else st.pinned.set(month, sheet); woke = true; },
-    mark(e, marks) { const st = state(e); if (!sameMarks(st.marks, marks)) { st.marks = marks; woke = true; } },
+    mark(e, marks) { const st = pads.get(e); if (st !== undefined && !sameMarks(st.marks, marks)) { st.marks = marks; woke = true; } },
     marksOf: (e) => pads.get(e)?.marks,
-    draft(e, d) { const st = state(e); if (st.draft !== d) { st.draft = d; woke = true; } },
+    draft(e, d) { const st = pads.get(e); if (st !== undefined && st.draft !== d) { st.draft = d; woke = true; } },
     draftOf: (e) => pads.get(e)?.draft ?? null,
     tiles: () => ({ resident: tiles?.resident() ?? 0, pending: tiles?.pending() ?? 0, drawn: tiles?.drawn() ?? 0, starved: tiles?.starved() ?? 0 }),
     readSheet(e, month, level) {
