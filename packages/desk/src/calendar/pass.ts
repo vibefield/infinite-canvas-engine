@@ -274,6 +274,12 @@ export class CalendarPass {
     this.device.queue.copyExternalImageToTexture({ source, origin: { x: 0, y: 0 } }, { texture: this.tileTex, origin: { x: 0, y: 0, z: layer }, premultipliedAlpha: false }, [TILE_TEX, TILE_TEX]);
   }
 
+  /** A tile's COMMITTED raster (RGBA bytes, TILE_TEX² × 4, straight alpha, row 0 at the top) into its layer — a host with no canvas (the Node oracle; D3t-c). */
+  writeTileBytes(layer: number, bytes: Uint8Array<ArrayBuffer>): void {
+    if (bytes.byteLength !== TILE_TEX * TILE_TEX * 4) throw new Error(`calendar: a tile is ${TILE_TEX}² RGBA (${TILE_TEX * TILE_TEX * 4} bytes), not ${bytes.byteLength}`);
+    this.device.queue.writeTexture({ texture: this.tileTex, origin: { x: 0, y: 0, z: layer } }, bytes, { bytesPerRow: TILE_TEX * 4, rowsPerImage: TILE_TEX }, [TILE_TEX, TILE_TEX, 1]);
+  }
+
   /** The layer's targets at the canvas's device size. */
   private fit(w: number, h: number): void {
     if (this.size.w === w && this.size.h === h && this.msaa) return;

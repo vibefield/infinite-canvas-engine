@@ -7,6 +7,7 @@
 // `interaction.drop: "never"` — no container takes it, whatever it accepts).
 
 import { p } from "@ice/core";
+import { EventPrefab, PinPrefab } from "../calendar/data";
 import { CALENDAR } from "../calendar/law";
 import { padFrame } from "../calendar/pad";
 import { calendarKind } from "../kinds/calendar";
@@ -34,4 +35,6 @@ export const Calendar = defineObject({
   size: { w: PAD.W, h: PAD.H },
   kind: calendarKind(),
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
+  // its entries and its pins are its DATA (D3t-a's door, D3t-c): the catalog stamps, gates and migrates their prefabs with the pad's own
+  data: [EventPrefab, PinPrefab],
 });

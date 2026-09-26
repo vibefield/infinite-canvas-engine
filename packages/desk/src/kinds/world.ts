@@ -20,7 +20,8 @@
 // select it, as in the prototype — and the real parts (a notebook's turn zone, a board's marker)
 // arrive with D3.
 
-import type { Component, Entity, HeldToolDef, Tag } from "@ice/core";
+import type { Component, Entity, HeldToolDef, Relation, Tag } from "@ice/core";
+import type { PrintRaster } from "../calendar/printing";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
@@ -164,6 +165,8 @@ export interface KindHost {
   /** The app's byte store (D3w, D-D12 — a print's picture) and the host's decoder for what it holds; absent = no pictures. */
   readonly blobs?: BlobStore | undefined;
   readonly decode?: PictureDecoder | undefined;
+  /** The host's PRINT raster (D3t-c — the desk calendar's tiles: desk/host/print.ts in a browser); absent in Node — the oracle pins committed tiles. */
+  readonly print?: PrintRaster | undefined;
 }
 
 /**
@@ -174,6 +177,10 @@ export interface KindHost {
 export interface DataChildren {
   stamp(parent: Entity): number;
   rows<T>(parent: Entity, c: Component<T>): readonly T[];
+  /** The children holding `c`, each with its value, in sibling order (D3t-c — a pad's events by entity: the line you point at is one). */
+  entries?<T>(parent: Entity, c: Component<T>): readonly { readonly entity: Entity; readonly value: T }[];
+  /** A child's one edge `r` — the entity it names (D3t-c — a pin's note), undefined when it names none. */
+  target?(child: Entity, r: Relation): Entity | undefined;
 }
 
 /**

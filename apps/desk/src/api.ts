@@ -11,6 +11,7 @@ import type { GroundFrameInputs } from "@ice/desk";
 import type { DeskLayerHandle, MatPin } from "@ice/desk";
 import type { AmbientMode } from "@ice/desk";
 import type { ThemeName } from "@ice/desk";
+import { type CalendarApi, calendarApi } from "./calendar-api";
 import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
 import { type NotebookApi, notebookApi } from "./notebook-api";
@@ -73,6 +74,8 @@ export interface DeskApi {
   readonly kinds: KindsApi;
   /** The notebook in hand (D3t-b): its strokes, a page's raster, the hand, its leaves. */
   readonly notebook: NotebookApi;
+  /** The desk calendar at work (D3t-c): its entries, its print, its days, its roll, its pins. */
+  readonly calendar: CalendarApi;
   /** The room's doors (D5a — M5's two-tab rows, M9's live collab): an object's key, the document by key, the local commits. */
   readonly room: RoomApi;
   // ---- the nav (D2b): the doors the portal and nav rigs use
@@ -178,6 +181,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     note: noteApi(engine, handle),
     kinds: kindsApi(engine, handle),
     notebook: notebookApi(engine, handle),
+    calendar: calendarApi(engine, handle),
     room: roomApi(engine),
     spawn(type, props, at) {
       const widget = engine.catalog.widget(type);

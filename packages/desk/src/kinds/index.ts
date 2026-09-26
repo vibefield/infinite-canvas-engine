@@ -18,7 +18,9 @@ import { paperProgram } from "./paper";
 import { photoProgram } from "./photo";
 
 export { BOARD_KIND, BOARD_TOOLS, type BoardInk, boardInked, BoardKind, type BoardKindOptions, type BoardObjectLook, type BoardPalette, boardFrame, boardKind, boardPose, boardProgram, boardReach, boardRest, createBoardInk, ERASER_TOOL_ID, inking, inkOfTool, markerToolId, type PenHand, type PenPin } from "./board";
-export { CALENDAR_KIND, type CalendarAlpha, calendarFrame, type CalendarGeometry, CalendarKind, type CalendarKindOptions, calendarKind, type CalendarObjectLook, type CalendarPalette, calendarProgram, calendarReach, createPads, type PadPose, type Pads, sheetDraw } from "./calendar";
+export { CALENDAR_KIND, type CalendarAlpha, calendarFrame, type CalendarGeometry, CalendarKind, type CalendarKindOptions, calendarKind, type CalendarObjectLook, type CalendarPalette, calendarProgram, calendarReach, createPads, DRAFT_ID, type PadDraft, type PadMarks, type PadPose, type Pads, sheetDraw } from "./calendar";
+export type { EventLine, PrintLook, SheetPrint } from "../calendar/print";
+export type { PinnedSheet, PrintRaster } from "../calendar/printing";
 export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatFrame, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
 export { INK_H, INK_W } from "../notebook/ink";
 export { askTurn, bookAngle, bookFrame, type BookPose, type Books, createBooks, DEFAULT_PEN, inTurnZone, NOTEBOOK_KIND, NOTEBOOK_PAGE, NOTEBOOK_PENS, NOTEBOOK_TOOLS, notebookFrame, type NotebookGeometry, NotebookKind, type NotebookKindOptions, notebookKind, type NotebookObjectLook, type NotebookPalette, notebookProgram, notebookReach, PageTurns, pageHitAt, partOf, penOfTool, penToolId } from "./notebook";

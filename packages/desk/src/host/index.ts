@@ -7,6 +7,8 @@ export type { SelectionAnchor } from "../compose/marks";
 export { surface, type Surface } from "./surface";
 // the text raster a browser hands the paper kind (D2c): the faces by URL, Canvas2D ink on an OffscreenCanvas
 export { type FaceSpec, inkRaster, type InkRaster, type InkRasterOptions, PEN_FACES, penFaces } from "./ink";
+// …and the desk calendar's PRINT in the same hand (D3t-c): a sheet's tiles drawn on an OffscreenCanvas
+export { printRaster, type PrintRasterOptions } from "./print";
 // the ONE focused editor — the platform's textarea in screen space over the note being written (D2c)
 export { createNoteEditor, EDITOR_ATTR, KEYBOARD_CLAIM_ATTR, type NoteEditor, type NoteEditorOptions } from "./editor";
 // the one image decode — a pasted or dropped picture for a print (D3w)

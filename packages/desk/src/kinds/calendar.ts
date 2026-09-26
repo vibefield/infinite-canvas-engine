@@ -21,23 +21,27 @@
 // product's (`theme()`; the presences set on the root pass by the kind's local — the theme gate).
 
 import type { Entity } from "@ice/core";
-import { CalendarEvent, monthOfKey } from "../calendar/data";
+import { calEventOf, CalendarEvent, dayOr, monthOfKey, NotePin } from "../calendar/data";
+import type { CalEvent } from "../calendar/events";
 import { padFrame, buildPad } from "../calendar/pad";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
 import type { CalendarColours } from "../calendar/layout";
-import { isWeekendCol, monthGrid } from "../calendar/month";
-import { type CalendarDraw, CalendarPass, type SheetDraw } from "../calendar/pass";
+import { isWeekendCol, monthGrid, monthOfDay, phasesBetween, today as todayOf } from "../calendar/month";
+import { type CalendarDraw, CalendarPass, type SheetBox, type SheetDraw } from "../calendar/pass";
+import { anyIn, type EventLine, onSheet, type PrintLook, printSheet, type SheetPrint } from "../calendar/print";
+import { type PinnedSheet, PrintTiles } from "../calendar/printing";
 import { rollState, type RollState } from "../calendar/roll";
 import { CALENDAR_SHADER_FILES, calendarShaders } from "../calendar/shaders";
-import { sheetOf } from "../calendar/sheet";
-import { type TileGrid, tileGrid } from "../calendar/tiles";
+import { dayBox, sheetOf } from "../calendar/sheet";
+import { bandOf, GUTTER, levelFor, type TileGrid, tileGrid, tileRect, tilesIn } from "../calendar/tiles";
+import { caretAt, glyphBox, type HandLaw } from "../paper/text";
 import type { KindProgram, SlotContext } from "../kind";
 import type { MatPass } from "../mat/mat-pass";
 import { type DeskEye, eyeOf, unproject } from "../notebook/eye";
 import { MeshWriter } from "../notebook/mesh";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
 import { type ShaderText, shaderText } from "../shaders";
-import { MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import { HAND, MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
 import type { MarkFrame } from "../marks/layout";
 import { LayeredKind } from "./layer";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
@@ -98,10 +102,19 @@ export interface CalendarPalette extends Palette {
   readonly calendars?: {
     readonly paper: TokenRef; readonly ink: TokenRef; readonly muted: TokenRef; readonly weekend: TokenRef; readonly hot: TokenRef; readonly chipboard: TokenRef;
     readonly tapes: Readonly<Record<string, { readonly cloth: TokenRef; readonly foil: TokenRef }>>;
-    readonly alpha: CalendarAlpha;
+    /** The presences; `faint` (a neighbour month's date) and `highlight` (a highlighter's dye) are the PRINT's (D3t-c). */
+    readonly alpha: CalendarAlpha & { readonly faint?: number; readonly highlight?: number };
+    /** The PRINT's inks (D3t-c): the pencil a past day is ticked in, the highlighters a run of days is banded in. */
+    readonly pencil?: TokenRef;
+    readonly highlighters?: Readonly<Record<string, TokenRef>>;
   };
   readonly pens?: Readonly<Record<string, TokenRef>>;
 }
+
+/** A pencil's tick lies at this presence (CALENDAR.md §2: graphite through a past date, lighter than the ink). */
+const PENCIL_ALPHA = 0.55;
+/** A colour as the print's Canvas 2D takes it, with a presence — the fixture's `calendarPrint` spelling, byte for byte. */
+const cssOf = (c: RGB, a = 1): string => `rgba(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)}, ${a})`;
 
 /** The calendar's look for a theme, parsed. */
 export interface CalendarObjectLook {
@@ -109,6 +122,8 @@ export interface CalendarObjectLook {
   readonly tapes: Readonly<Record<string, { readonly cloth: RGB; readonly foil: RGB }>>;
   readonly pens: Readonly<Record<string, RGB>>;
   readonly alpha: CalendarAlpha;
+  /** The PRINT's inks as the raster takes them (D3t-c) — absent when the palette names no pencil or highlighters. */
+  readonly print?: PrintLook;
 }
 
 /** A pad's still, pinned on the kind's own state (a FLUX pin): a month rolling (`dir` +1 up, −1 down, `p` of the way, the roll's tilt) or the corner's peek. */
@@ -134,38 +149,270 @@ export interface CalendarGeometry {
   readonly cy: number;
 }
 
-/** The calendar's own state on one desk: each pad's id and page-table slots, its pinned still; the print's presences on the root pass. */
+/** A run of days, an entry, a caret: what the calendar's hand says is marked on a pad (the driver's — objects/calendar-hand.ts). */
+export interface PadMarks {
+  /** The days selected, first to last (day numbers). */
+  readonly days?: readonly [number, number];
+  /** The entry selected — an event entity's id, or the draft's (−1). */
+  readonly entry?: number;
+  /** The day a note held over the pad would stick to. */
+  readonly drop?: number;
+  /** The entry being WRITTEN (the editor on it): printed whole, its time not set apart, the caret at `index` (`on`: the blink). */
+  readonly writing?: { readonly entry: number; readonly index: number; readonly on: boolean };
+  /** The newest glyph being written, since `t0` (ms, the local's clock): the pen's wipe. */
+  readonly wipe?: { readonly entry: number; readonly index: number; readonly t0: number };
+}
+
+/** An entry being written that the world does not hold yet (a new line: it is spawned when its session ends — D-D3t-c.4). */
+export interface PadDraft {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly seeds: readonly number[];
+  readonly ink: string;
+}
+
+/** The draft's id in a print (never an entity's). */
+export const DRAFT_ID = -1;
+
+/** The calendar's own state on one desk: each pad's id and page-table slots, its pinned still, its print and marks; the print's presences on the root pass. */
 export interface Pads extends KindLocal {
   pin(e: Entity, pose: PadPose | undefined): void;
   /** The world half's: the pad's id, its slot pair (its base sheet's table is 2k, its moving sheet's 2k + 1) and its pin. */
   state(e: Entity): { readonly id: number; readonly slot: number; readonly pose: PadPose | undefined };
   /** The world half's: the print's presences on the root pass (the product's look). */
   alpha(a: CalendarAlpha): void;
-  /** A pad's events as its data children hold them (read-only here — D3t writes them). */
+  /** A pad's events as its data children hold them. */
   events(e: Entity): readonly { readonly start: string | null; readonly end: string | null; readonly text: string | null; readonly ink: string | null }[];
+  // ---- D3t-c: the print, the marks, the pen
+  /** The day the print calls today: the pinned one (a still's), else the clock's. */
+  today(): number;
+  /** Pin today (a day key) for stills and rigs — null gives it back to the clock. */
+  pinToday(key: string | null): void;
+  /** The past days ticked off in pencil (CALENDAR.md Q-4; on by default). */
+  ticks(on?: boolean): boolean;
+  /** A pad's entries as the print takes them — its events by entity, and the draft being written. */
+  entries(e: Entity): readonly CalEvent[];
+  /** Month `month`'s print on pad `e` as the last frame laid it (its lines: where each entry landed), or undefined — no raster, or not laid. */
+  printOf(e: Entity, month: number): SheetPrint | undefined;
+  /** A month's COMMITTED tiles on pad `e` (a still's, a rig's pin): drawn instead of the live print; null takes them back. */
+  pinPrint(e: Entity, month: number, sheet: PinnedSheet | null): void;
+  /** What the calendar's hand marks on pad `e` this frame (undefined: nothing). */
+  mark(e: Entity, marks: PadMarks | undefined): void;
+  marksOf(e: Entity): PadMarks | undefined;
+  /** The entry being written that the world does not hold yet (null: none). */
+  draft(e: Entity, d: PadDraft | null): void;
+  draftOf(e: Entity): PadDraft | null;
+  /** The print's tiles: resident, still to draw, drawn since the desk began. */
+  tiles(): { readonly resident: number; readonly pending: number; readonly drawn: number };
+  /** The desk's raster reads a live sheet back as a fixture would hold it (level `level`'s tiles, RGBA) — a rig's door; undefined without a raster. */
+  readSheet(e: Entity, month: number, level: number): { readonly tiles: ReadonlyMap<string, Uint8Array<ArrayBuffer>>; readonly empty: ReadonlySet<string> } | undefined;
+  /** Draw a pad's print and its marks for this frame (the kind's `record`): the sheets' tiles brought up, the marks' boxes. */
+  draw(e: Entity, G: CalendarGeometry, view: ObjectContext["view"], print: PrintLook | undefined): Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe">;
 }
 
-/** The calendar's `local()`: ids from 1, slot pairs from the lowest free (the pass's tables hold `MAX_CALENDARS` pads). */
-export function createPads(host: KindHost): Pads {
-  const pads = new Map<Entity, { readonly id: number; readonly slot: number; pose: PadPose | undefined }>();
+interface PadState {
+  readonly id: number;
+  readonly slot: number;
+  pose: PadPose | undefined;
+  readonly pinned: Map<number, PinnedSheet>;
+  marks: PadMarks | undefined;
+  draft: PadDraft | null;
+}
+
+const NO_MARKS: Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> = { sel: [], mark: null, drop: null, caret: null, wipe: null };
+
+/** The calendar's `local()`: ids from 1, slot pairs from the lowest free (the pass's tables hold `MAX_CALENDARS` pads); the print's driver. */
+export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; readonly now?: () => number; readonly hand?: HandLaw & { readonly wipeMs: number } } = {}): Pads {
+  const law = opts.law ?? CALENDAR;
+  const clock = opts.now ?? (() => Date.now());
+  const hand = opts.hand ?? HAND;
+  const F = padFrame(law);
+  const pads = new Map<Entity, PadState>();
   const free: number[] = [];
   let nextId = 1;
   let nextSlot = 0;
   let woke = false;
-  const state = (e: Entity) => {
+  let todayPin: number | null = null;
+  let ticksOn = true;
+  let tiles: PrintTiles | null = null;
+  let begun = false;
+  const prints = new Map<string, { key: string; print: SheetPrint }>();
+  const state = (e: Entity): PadState => {
     let st = pads.get(e);
-    if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined }; pads.set(e, st); }
+    if (st === undefined) { free.sort((a, b) => a - b); st = { id: nextId++, slot: free.shift() ?? nextSlot++, pose: undefined, pinned: new Map(), marks: undefined, draft: null }; pads.set(e, st); }
     return st;
+  };
+  const passOf = (): CalendarPass | undefined => { const k = host.pass(); return k instanceof CalendarKind ? (k.pass ?? undefined) : undefined; };
+  const tilesOf = (pass: CalendarPass): PrintTiles => { tiles ??= new PrintTiles({ grid: tileGrid(F.W, F.H), now: clock }); if (!begun) { tiles.begin(pass); begun = true; } return tiles; };
+  const todayNow = (): number => todayPin ?? todayOf();
+  const entriesOf = (e: Entity): CalEvent[] => {
+    const out: CalEvent[] = [];
+    for (const { entity, value } of host.children?.entries?.(e, CalendarEvent) ?? []) { const ev = calEventOf(entity, value); if (ev !== null) out.push(ev); }
+    const d = pads.get(e)?.draft ?? null;
+    if (d !== null) out.push({ id: DRAFT_ID, start: Math.min(d.start, d.end), end: Math.max(d.start, d.end), text: d.text, seeds: [...d.seeds], seed: 0, ink: d.ink, rev: d.text.length });
+    return out;
+  };
+  /** Month `month`'s print on pad `e` — built again only when what it shows changed (the prototype's `printOf`). */
+  const printFor = (e: Entity, st: PadState, month: number, weekStart: 0 | 1, look: PrintLook, writing: number): SheetPrint | undefined => {
+    const raster = host.print;
+    const h = raster?.hand();
+    if (raster === undefined || h === undefined) return undefined;
+    const L = sheetOf(monthGrid(month, weekStart), law);
+    const g = L.grid;
+    const last = g.first + g.rows * 7 - 1;
+    const events = entriesOf(e).filter((ev) => onSheet(ev, g));
+    const noted: number[] = [];
+    for (const p of host.children?.rows(e, NotePin) ?? []) { const d = dayOr(p.day ?? ""); if (d !== undefined && d >= g.first && d <= last && monthOfDay(d) === month) noted.push(d); }
+    noted.sort((a, b) => a - b);
+    const today = todayNow();
+    const style = `${h.face.family}:${h.face.weight}:${raster.version()}:${ticksOn ? 1 : 0}:${lookKey(look)}`;
+    const key = `${events.map((ev) => `${ev.id}.${ev.rev}.${ev.start}.${ev.end}`).join(",")}|${weekStart}|${noted.join(",")}|${today}|${style}|${writing}`;
+    const id = `${st.id}:${month}`;
+    const hit = prints.get(id);
+    if (hit !== undefined && hit.key === key) return hit.print;
+    const print = printSheet({
+      law, look, sheet: L, events, noted: new Set(noted), today, moons: phasesBetween(g.first, last),
+      face: h.face, metrics: h.metrics, hand, measure: (f, t) => raster.measure(f, t), ticks: ticksOn, style, plain: writing,
+    });
+    prints.set(id, { key, print });
+    return print;
+  };
+  /** The marks' boxes on the sheet they are on (the base at rest and rolling down, the moving sheet rolling up). */
+  const marksOn = (st: PadState, month: number, weekStart: 0 | 1, print: SheetPrint | undefined): Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> => {
+    const m = st.marks;
+    if (m === undefined) return NO_MARKS;
+    const L = sheetOf(monthGrid(month, weekStart), law);
+    const sel: SheetBox[] = [];
+    if (m.days !== undefined) {
+      const [a, b] = m.days[0] <= m.days[1] ? m.days : [m.days[1], m.days[0]];
+      for (let d = a; d <= b;) {
+        const b0 = dayBox(L, d);
+        const col = (((d - L.grid.first) % 7) + 7) % 7;
+        const endD = Math.min(b, d + (6 - col));
+        const b1 = dayBox(L, endD);
+        if (b0 !== null && b1 !== null) sel.push([b0.x + 3, b0.y + 3, b1.x + b1.w - 3, b1.y + b1.h - 3]);
+        d = endD + 1;
+        if (sel.length >= 6) break;
+      }
+    }
+    let mark: SheetBox | null = null;
+    let caret: CalendarDraw["caret"] = null;
+    let wipe: CalendarDraw["wipe"] = null;
+    const line = (id: number): EventLine | undefined => print?.lines.find((l) => l.event.id === id);
+    const selected = m.writing?.entry ?? m.entry;
+    if (selected !== undefined) {
+      const l = line(selected);
+      if (l !== undefined) mark = [l.box.x - 5, l.box.y - 1, l.box.x + l.box.w + 5, l.box.y + l.box.h + 2];
+      const w = m.writing;
+      if (l !== undefined && w !== undefined) {
+        const n = l.layout.positions.length / 2 - 1;
+        const cp = caretAt(l.layout, Math.min(Math.max(w.index, 0), n));
+        if (w.on) caret = [l.ox + cp.x, l.oy + cp.y - cp.above * 0.8, l.oy + cp.y + cp.below * 0.6, 1.3];
+        const wp = m.wipe;
+        if (wp !== undefined && wp.entry === selected) {
+          const t = (clock() - wp.t0) / hand.wipeMs;
+          const gl = l.layout.glyphs.find((q) => q.index === wp.index);
+          if (gl !== undefined && t < 1) { const gb = glyphBox(l.layout, gl); wipe = { box: [l.ox + gb.x0, l.oy + gb.y0, l.ox + gb.x1, l.oy + gb.y1], t: Math.max(t, 0) }; }
+        }
+      }
+    }
+    let drop: SheetBox | null = null;
+    if (m.drop !== undefined) { const b = dayBox(L, m.drop); if (b !== null) drop = [b.x + 2, b.y + 2, b.x + b.w - 2, b.y + b.h - 2]; }
+    return { sel, mark, drop, caret, wipe };
   };
   return {
     pin(e, pose) { state(e).pose = pose; woke = true; },
     state,
     alpha(a) { const k = host.pass(); if (k instanceof CalendarKind && k.alpha !== a) k.alpha = a; },
     events: (e) => host.children?.rows(e, CalendarEvent) ?? [],
-    tick() { const w = woke; woke = false; return w; },
-    forget(e) { const st = pads.get(e); if (st === undefined) return; free.push(st.slot); pads.delete(e); },
-    dispose() { pads.clear(); },
+    today: todayNow,
+    pinToday(key) { todayPin = key === null ? null : (dayOr(key) ?? null); woke = true; },
+    ticks(on) { if (on !== undefined && on !== ticksOn) { ticksOn = on; woke = true; } return ticksOn; },
+    entries: (e) => entriesOf(e),
+    printOf: (e, month) => { const st = pads.get(e); return st === undefined ? undefined : prints.get(`${st.id}:${month}`)?.print; },
+    pinPrint(e, month, sheet) { const st = state(e); if (sheet === null) st.pinned.delete(month); else st.pinned.set(month, sheet); woke = true; },
+    mark(e, marks) { const st = state(e); if (!sameMarks(st.marks, marks)) { st.marks = marks; woke = true; } },
+    marksOf: (e) => pads.get(e)?.marks,
+    draft(e, d) { const st = state(e); if (st.draft !== d) { st.draft = d; woke = true; } },
+    draftOf: (e) => pads.get(e)?.draft ?? null,
+    tiles: () => ({ resident: tiles?.resident() ?? 0, pending: tiles?.pending() ?? 0, drawn: tiles?.drawn() ?? 0 }),
+    readSheet(e, month, level) {
+      const st = pads.get(e);
+      const print = st === undefined ? undefined : prints.get(`${st.id}:${month}`)?.print;
+      const raster = host.print;
+      if (print === undefined || raster === undefined) return undefined;
+      const out = new Map<string, Uint8Array<ArrayBuffer>>();
+      const empty = new Set<string>();
+      const grid = tileGrid(F.W, F.H);
+      for (const [tx, ty] of tilesIn(grid, level, 0, 0, F.W, F.H)) {
+        const r = tileRect(level, tx, ty);
+        const g = GUTTER / bandOf(level);
+        if (!anyIn(print, r.x - g, r.y - g, r.w + 2 * g, r.h + 2 * g)) { empty.add(`${tx}:${ty}`); continue; }
+        out.set(`${tx}:${ty}`, raster.bytes(print, r.x - g, r.y - g, r.w + 2 * g, r.h + 2 * g, bandOf(level)));
+      }
+      return { tiles: out, empty };
+    },
+    draw(e, G, view, look) {
+      const st = state(e);
+      const writing = st.marks?.writing?.entry ?? Number.NaN;
+      const markMonth = G.marksOn === 1 && G.moving !== null ? G.moving : G.base;
+      const pass = passOf();
+      let markPrint: SheetPrint | undefined;
+      const sheets: [number, number][] = [[G.base, st.slot * 2]];
+      if (G.moving !== null) sheets.push([G.moving, st.slot * 2 + 1]);
+      for (const [month, slot] of sheets) {
+        const pinned = st.pinned.get(month);
+        if (pass !== undefined && pinned !== undefined) { const t = tilesOf(pass); t.pin(pass, `${st.id}:${month}`, slot, pinned); t.end(pass); continue; }
+        const print = look === undefined ? undefined : printFor(e, st, month, G.weekStart, look, month === markMonth ? writing : Number.NaN);
+        if (month === markMonth) markPrint = print;
+        if (pass === undefined || print === undefined || host.print === undefined) continue;
+        // the sheet in view (sheet units) and the rung the screen wants — the moving sheet a rung softer, as the prototype drew it
+        const x0 = view.camX - (G.cx - F.W / 2);
+        const y0 = view.camY - (G.cy - F.H / 2);
+        const x1 = x0 + view.width / view.zoom;
+        const y1 = y0 + view.height / view.zoom;
+        if (x1 < 0 || y1 < 0 || x0 > F.W || y0 > F.H) continue;
+        const level = levelFor(view.zoom * view.dpr);
+        const t = tilesOf(pass);
+        t.sheet(pass, host.print, `${st.id}:${month}`, slot, print, { x0, y0, x1, y1 }, month === G.base ? level : Math.max(level - 1, 0));
+        t.end(pass);
+      }
+      return marksOn(st, markMonth, G.weekStart, markPrint);
+    },
+    tick() {
+      begun = false;
+      // tiles still to draw, a wipe running: another frame
+      const wipeOn = [...pads.values()].some((st) => st.marks?.wipe !== undefined && clock() - st.marks.wipe.t0 < hand.wipeMs);
+      const w = woke || (tiles?.pending() ?? 0) > 0 || wipeOn;
+      woke = false;
+      return w;
+    },
+    forget(e) {
+      const st = pads.get(e);
+      if (st === undefined) return;
+      free.push(st.slot);
+      pads.delete(e);
+      tiles?.drop(st.id, [st.slot * 2, st.slot * 2 + 1]);
+      for (const k of [...prints.keys()]) if (k.startsWith(`${st.id}:`)) prints.delete(k);
+    },
+    dispose() { pads.clear(); prints.clear(); },
   };
+}
+
+/** Two marks the same (the local wakes only when they moved). */
+function sameMarks(a: PadMarks | undefined, b: PadMarks | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** The print look as a key (a changed look is a changed print). */
+const lookKeys = new WeakMap<PrintLook, string>();
+function lookKey(look: PrintLook): string {
+  let k = lookKeys.get(look);
+  if (k === undefined) { k = JSON.stringify(look); lookKeys.set(look, k); }
+  return k;
 }
 
 /** A sheet as the pass draws it (the oracle's `sheetDrawOf`): where its grid is printed, its rows, weekends and days, its table's slot. */
@@ -210,7 +457,9 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
   return {
     ...program,
     reach: calendarReach(law),
-    local: (host: KindHost): Pads => createPads(host),
+    // its entries and its pins are cells of its data children (D3t-c): a line typed, a peer's edit, a note stuck — the builder wakes
+    reads: { components: [CalendarEvent, NotePin] },
+    local: (host: KindHost): Pads => createPads(host, { law }),
     // THE OPENING (design-015 §8, D4b — Q-q): the month comes to the hand laid bare, flat under the pose's camera (the notes stuck
     // to it ride along, as when the pad is carried); ‹ months ›, today and the pen are its tools — declared here with no `kind`
     // (dim in the bar, nothing routes to them), built on D3t-a's seam at D3t-c
@@ -250,10 +499,12 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
       pads?.alpha(look.alpha);
       const st = pads?.state(ctx.entity) ?? { id: 1, slot: 0 };
       const colours: CalendarColours = { paper: look.paper, ink: look.ink, muted: look.muted, weekend: look.weekend, hot: look.hot, chipboard: look.chipboard, cloth: tape.cloth, foil: tape.foil, pen };
+      // the print (D3t-c): the sheets' tiles brought up to date from the events; the hand's marks on the sheet they are on
+      const marks = pads?.draw(ctx.entity, G, ctx.view, look.print) ?? { sel: [], mark: null, drop: null, caret: null, wipe: null };
       return {
         id: st.id, frame: F, mesh, version: 1, rigid: G.rigid, lamp: G.lamp, lift: G.lift, ring: G.ring,
         base: sheetDraw(G.base, G.weekStart, st.slot * 2, law), moving: G.moving !== null ? sheetDraw(G.moving, G.weekStart, st.slot * 2 + 1, law) : null, roll: G.roll, marksOn: G.marksOn,
-        sel: [], mark: null, drop: null, caret: null, wipe: null, colours,
+        ...marks, colours,
       };
     },
     hit(G: CalendarGeometry, wx: number, wy: number): ObjectHit | null {
@@ -270,9 +521,17 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
       const c = p.calendars;
       const pens = Object.fromEntries(Object.entries(p.pens ?? {}).map(([k, t]) => [k, rgb(t.css)]));
       if (c === undefined) return { paper: [0, 0, 0], ink: [0, 0, 0], muted: [0, 0, 0], weekend: [0, 0, 0], hot: [0, 0, 0], chipboard: [0, 0, 0], tapes: {}, pens, alpha: { rule: 0, head: 0, weekend: 0, outside: 0 } };
+      // the print's inks (D3t-c): the fixture's `calendarPrint` from the same tokens — the pens a line is written in, the pencil, the highlighters
+      const print: PrintLook | undefined = c.pencil === undefined || c.highlighters === undefined ? undefined : {
+        ink: cssOf(rgb(c.ink.css)), muted: cssOf(rgb(c.muted.css)), faint: c.alpha.faint ?? 0.26, hot: cssOf(rgb(c.hot.css)), pencil: cssOf(rgb(c.pencil.css), PENCIL_ALPHA),
+        pens: Object.fromEntries(Object.entries(p.pens ?? {}).map(([k, t]) => [k, cssOf(rgb(t.css))])),
+        highlighters: Object.fromEntries(Object.entries(c.highlighters).map(([k, t]) => [k, cssOf(rgb(t.css))])), highlight: c.alpha.highlight ?? 0.62,
+      };
+      const alpha: CalendarAlpha = { rule: c.alpha.rule, head: c.alpha.head, weekend: c.alpha.weekend, outside: c.alpha.outside };
       return {
         paper: rgb(c.paper.css), ink: rgb(c.ink.css), muted: rgb(c.muted.css), weekend: rgb(c.weekend.css), hot: rgb(c.hot.css), chipboard: rgb(c.chipboard.css),
         tapes: Object.fromEntries(Object.entries(c.tapes).map(([k, t]) => [k, { cloth: rgb(t.cloth.css), foil: rgb(t.foil.css) }])), pens, alpha: c.alpha,
+        ...(print !== undefined ? { print } : {}),
       };
     },
   };

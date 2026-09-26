@@ -66,6 +66,7 @@ import { type Books, NOTEBOOK_KIND } from "../kinds/notebook";
 import type { TextRaster } from "../paper/raster";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 import { createNoteEditor, type NoteEditor } from "./editor";
+import { printRaster } from "./print";
 import { PEN_FACES } from "./ink";
 import type { InsideView } from "../minimat/inside";
 import { shaderText } from "../shaders";
@@ -300,8 +301,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // each kind's own state on this desk (the note's writing): made once, over its root pass once the ground is here
     const locals = new Map<string, KindLocal>();
     const children = worldChildren(world);   // …and its DATA children (D3w): the host reads them, never the kind
+    const print = opts.text !== undefined ? printRaster({ text: opts.text }) : undefined;   // the calendar's print, in the note's hand (D3t-c)
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print });
       if (local !== undefined) locals.set(k.name, local);
     }
     const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;

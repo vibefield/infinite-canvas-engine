@@ -13,6 +13,8 @@
 // a pinned note lies (`daySlot` — the lab's `slotOf`).
 
 import { ChildOf, defineComponent, definePrefab, defineRelation, type Entity, field, type GuardedTx, init } from "@ice/core";
+import { decodeSeeds } from "../paper/seeds";
+import type { CalEvent } from "./events";
 import { CALENDAR, type CalendarLaw } from "./law";
 import { dayOfKey, keyOf, monthGrid, monthOfDay } from "./month";
 import { padFrame } from "./pad";
@@ -91,4 +93,48 @@ export function daySlot(cx: number, cy: number, day: string, weekStart: 0 | 1 = 
   if (k < 0 || k >= L.rows * 7) throw new Error(`desk/calendar: ${day} is not on its month's sheet`);
   const s = noteSlot(L, Math.floor(k / 7), k % 7, law);
   return { x: cx - F.W / 2 + s.x, y: cy - F.H / 2 + s.y };
+}
+
+/** An event's cell as a reader takes it (a tolerant reader: a string field strata hands back as null reads as its default). */
+export interface EventRow {
+  readonly start: string | null;
+  readonly end: string | null;
+  readonly text: string | null;
+  readonly seeds: string | null;
+  readonly ink: string | null;
+}
+
+/** A day key's day number, or undefined when it is not one (YYYY-MM-DD, a real day). */
+export function dayOr(key: string): number | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return undefined;
+  const n = dayOfKey(key);
+  return keyOf(n) === key ? n : undefined;
+}
+
+/** A string's 32-bit FNV-1a, as a number (an entry's own seed, its content's key). */
+function fnv32(s: string): number {
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h | 0;
+}
+
+/**
+ * An event entity as the PRINT takes it (calendar/events.ts `CalEvent`, the prototype's): its days as day numbers, its text and
+ * its hand's seeds decoded, and two numbers the prototype kept on the event and the world does not (D-D3t-c.2): its own `seed`
+ * — the band's wobble, the hand of a glyph with no stored seed — made from what the entry IS (its days and its ink, so it holds
+ * still while the entry is written), identical on every peer; and its `rev`, a hash of its whole cell (a cell edited redraws
+ * the tiles over it). Null for a cell whose days are not days.
+ */
+export function calEventOf(entity: Entity, row: EventRow): CalEvent | null {
+  const startKey = row.start ?? "";
+  const start = dayOr(startKey);
+  const end = dayOr(row.end === null || row.end === "" ? startKey : row.end);
+  if (start === undefined || end === undefined) return null;
+  const text = row.text ?? "";
+  const ink = row.ink ?? "felt";
+  const stored = row.seeds ?? "";
+  return {
+    id: entity as number, start: Math.min(start, end), end: Math.max(start, end), text, seeds: decodeSeeds(stored),
+    seed: fnv32(`${startKey}|${row.end ?? ""}|${ink}`), ink, rev: fnv32(`${text}\u0000${stored}\u0000${ink}\u0000${startKey}\u0000${row.end ?? ""}`) >>> 0,
+  };
 }
