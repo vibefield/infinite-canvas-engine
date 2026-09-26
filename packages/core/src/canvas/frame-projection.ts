@@ -36,10 +36,6 @@ export interface FrameProjection extends FrameProjectionDef {
 
 export interface CanvasPreviewDeclaration {
   readonly projection?: FrameProjection;
-  /** Opaque framework renderer; core only compiles precedence/identity. */
-  readonly renderer?: unknown;
-  /** Cheap type-level CSS/SVG/atlas token consumed by adapters. */
-  readonly background?: unknown;
 }
 
 const registry = new Map<string, FrameProjection>();

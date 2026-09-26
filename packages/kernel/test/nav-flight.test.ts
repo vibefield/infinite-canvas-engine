@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { CameraState } from "../src/coords";
-import { planeCssTransform, worldToScreen } from "../src/coords";
+import { worldToScreen } from "../src/coords";
 import {
   capFlightStart,
   composeAffine,
@@ -94,11 +94,10 @@ describe("solveFlightStart (continuity at the cut)", () => {
       expect(after.x).toBeCloseTo(before.x, 6);
       expect(after.y).toBeCloseTo(before.y, 6);
     }
-    // Same statement at the plane-transform level: C(c0)∘A = C(camPre).
-    const dep = planeCssTransform(c0);
+    // Same statement at the camera-transform level (translate −cam·zoom, scale zoom): C(c0)∘A = C(camPre).
     expect(A.s * c0.zoom).toBeCloseTo(camPre.zoom, 9); // scale channel
-    expect((A.ox - c0.x) * c0.zoom).toBeCloseTo(planeCssTransform(camPre).tx, 6);
-    expect(dep.scale).toBeGreaterThan(0);
+    expect((A.ox - c0.x) * c0.zoom).toBeCloseTo(-camPre.x * camPre.zoom, 6);
+    expect(c0.zoom).toBeGreaterThan(0);
   });
 
   it("enter starts zoomed OUT of the arrival (a dive-in); exit starts zoomed IN", () => {

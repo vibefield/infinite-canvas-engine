@@ -433,9 +433,8 @@ export { createWidgetRuntime, installWidgetRuntime, type WidgetRuntime } from ".
 
 // Reviewed default constants (citations point at the owning design sections).
 export * from "./settings/defaults";
-// Ground-layer (P0) pass configs — plain data shared by the desk, the react
-// facade, and apps (2026-07-16 extraction; neither may import the other).
-export * from "./settings/ground-config";
+// (The ground-layer pass configs — GridConfig, WiresConfig, SnapGuidesConfig, GridMagnetConfig and their
+// DEFAULT_*s — left at design-015 D7: nothing read them after D5b; the desk's grid is its own, `@ice/desk`'s GridConfig.)
 
 // --- M4 camera slice (design-003 §5 item 9 + simulate tail) ---
 // Sole exception to the no-barrel-edit rule: the camera-sim factory + its

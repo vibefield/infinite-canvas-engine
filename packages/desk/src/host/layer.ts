@@ -33,7 +33,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, setWidgetProps, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, type Entity, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, setWidgetProps, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -187,8 +187,6 @@ export interface DeskLayerPerf {
 export interface DeskLayerHandle {
   /** The drawing reflector — the facade registers it right after the plane transform, where the ground layer has always gone. */
   readonly reflector: ReflectorDef & { available(): boolean };
-  /** A host's grid re-tune (the old ground's magnet grid, the retired react `grid` prop): the desk keeps only its fade-in. */
-  configureGrid(cfg: Partial<CoreGridConfig>): void;
   dispose(): void;
   /** The canvas in the ground slot. */
   readonly canvas: HTMLCanvasElement;
@@ -555,7 +553,6 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
 
     return {
       reflector,
-      configureGrid(cfg) { if (cfg.fadeIn !== undefined) setGrid({ ...grid, fadeIn: [cfg.fadeIn[0], cfg.fadeIn[1]] }); },
       canvas,
       available: () => ground !== null && (status.state === "ready" || status.state === "degraded"),
       status: () => status,

@@ -1130,11 +1130,10 @@ createIslandStateStore · createRenderWriteTrap</pre>
         <p class="desc">Pure math. Every screen↔world conversion — and <b>the one Y-flip</b> — lives here and nowhere else.</p>
       </div>
 
-      <article class="entry" id="coords" data-k="screentoworld worldtoscreen zoomatpoint planecsstransform worldtoisland islandtoworld compositecamerafrustum coordinates yflip">
+      <article class="entry" id="coords" data-k="screentoworld worldtoscreen zoomatpoint fitcamera coordinates yflip">
         <h4><a href="#coords">Coordinates</a><span class="kchip">functions</span></h4>
-        <pre class="sig">screenToWorld · worldToScreen · zoomAtPoint · planeCssTransform
-worldToIsland · islandToWorld · compositeCameraFrustum</pre>
-        <p><code>zoomAtPoint</code> is the anchored-zoom math under wheel/pinch; <code>planeCssTransform</code> feeds the O(1)-pan reflector; the island pair converts through widget-local space for GL routing and composite placement.</p>
+        <pre class="sig">screenToWorld · worldToScreen · zoomAtPoint · fitCamera</pre>
+        <p><code>zoomAtPoint</code> is the anchored-zoom math under wheel/pinch; <code>fitCamera</code> frames a rect. The DOM lives in screen space, so no element carries a camera transform: <code>planeCssTransform</code> left at design-015 D7, the island pair at D5b.</p>
       </article>
 
       <article class="entry" id="spatial" data-k="spatialindex rbush hit path point rect query">

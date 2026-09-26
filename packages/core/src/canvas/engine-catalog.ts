@@ -60,7 +60,6 @@ export interface EngineCatalog {
   frameBehaviorsFor(canvasTypeId: string): readonly FrameBehavior[];
   frameProjection(id: string): FrameProjection | undefined;
   frameProjectionForContainer(widgetTypeId: string): FrameProjection | undefined;
-  framePreviewBackgroundForContainer(widgetTypeId: string): unknown;
   canvasForContainer(widgetTypeId: string): CanvasType | undefined;
   placementFor(canvasTypeId: string): ReadonlySet<string>;
   toolsFor(canvasTypeId: string): readonly Tool[];
@@ -375,10 +374,6 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
     ) {
       throw new Error(`ice: CanvasType "${canvas.id}" has invalid finite camera limits.`);
     }
-    const groundGlyph = canvas.presentation?.ground?.glyph;
-    if (groundGlyph !== undefined && groundGlyph.length === 0) {
-      throw new Error(`ice: CanvasType "${canvas.id}" has an empty ground glyph name.`);
-    }
     const legal = new Set<string>();
     if (canvas.id === DefaultCanvasType.id) {
       for (const widget of widgetList) legal.add(widget.type);
@@ -668,11 +663,6 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
         binding.frameProjection ??
         canvasMap.get(binding.canvasTypeId)?.presentation?.preview?.projection
       );
-    },
-    framePreviewBackgroundForContainer(widgetTypeId: string) {
-      const binding = widgetMap.get(widgetTypeId)?.container;
-      if (binding === undefined) return undefined;
-      return canvasMap.get(binding.canvasTypeId)?.presentation?.preview?.background;
     },
     canvasForContainer(widgetTypeId: string) {
       const binding = widgetMap.get(widgetTypeId)?.container;

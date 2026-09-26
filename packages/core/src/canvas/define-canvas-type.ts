@@ -13,7 +13,6 @@ import type {
   FrameBehavior,
 } from "./extensions";
 import type { CanvasPreviewDeclaration } from "./frame-projection";
-import type { GridConfig } from "../settings/ground-config";
 
 export interface CanvasPlacementDef {
   /** Exact capability keys matched against normalized WidgetType.provides. */
@@ -50,27 +49,14 @@ export interface CanvasTypeDef {
       readonly default: Tool;
     };
     /**
-     * The GROUND this canvas type draws on (design-013 §8 C2, D-C2.4): a field
-     * DECLARATION, resolved by the ground host per slot — the root slot from the
-     * current type at every switch, a live portal's slot from the container's
-     * inside type. `glyph` names the engine's `dot` or `line`, or a registered
-     * grid program's (`needle`, `mat` — the retired `@ice/ground/packs`; the desk's mat is the one ground since D5b); an unknown name
-     * draws as the dot. `grid` is the same partial the react `grid` prop takes
-     * (the prop's re-tune lands on top of it). `wires`/`guides` gate the two
-     * root-slot overlays, both on by default. A type that declares a ground
-     * requires the `ground` presentation plane to prepare before a flight.
-     *
-     * Until C2 this was `program: string` — the id of a three-based
-     * `GroundProgramDefinition` with a transition ladder. That contract is
-     * deleted; a definition still naming `program` is refused at definition
-     * time rather than quietly ignored.
+     * The type DECLARES the desk's ground (design-013 §8 C2; a bare marker since design-015 D7): its one live
+     * meaning is that a flight into or out of the type requires the `ground` presentation plane to prepare.
+     * The declaration's fields are gone and REFUSED by name at definition time rather than quietly ignored:
+     * `program` (C2 — three's GroundProgramDefinition), and at D7 `glyph`, `grid`, `wires` and `guides`, which
+     * nothing had read since D5b (the desk's mat is the one ground; its snap guides are marks, always drawn —
+     * `guides: false` no longer hid them; the wire overlay left with dom's world-space half).
      */
-    readonly ground?: {
-      readonly glyph?: string;
-      readonly grid?: Partial<GridConfig>;
-      readonly wires?: boolean;
-      readonly guides?: boolean;
-    };
+    readonly ground?: Readonly<Record<string, never>>;
     readonly camera?: {
       readonly arrival?: "fit" | "identity";
       readonly padding?: number;
@@ -189,11 +175,22 @@ export function defineCanvasType(def: CanvasTypeDef): CanvasType {
   // learn its declaration was dropped — refuse it by name, like `defineWidget({ presentation })`.
   if (presentation?.ground !== undefined && "program" in presentation.ground) {
     throw new Error(
-      `ice: defineCanvasType("${def.id}") presentation.ground.program is gone (design-013 C2): the ground is a field declaration — name a glyph ({ glyph: "dot" | "line" | a registered grid program's }) and a grid partial; three's GroundProgramDefinition and its transition ladder are deleted.`,
+      `ice: defineCanvasType("${def.id}") presentation.ground.program is gone (design-013 C2): three's GroundProgramDefinition and its transition ladder are deleted; \`ground: {}\` declares the desk's ground.`,
     );
   }
-  if (presentation?.ground?.glyph !== undefined && (typeof presentation.ground.glyph !== "string" || presentation.ground.glyph.length === 0)) {
-    throw new Error(`ice: defineCanvasType("${def.id}") presentation.ground.glyph must be a non-empty glyph name.`);
+  // design-015 D7: the declaration's fields were validated and never read since D5b — refuse each by name
+  const retiredGround = Object.keys(presentation?.ground ?? {}).filter((k) => k !== "program");
+  if (retiredGround.length > 0) {
+    throw new Error(
+      `ice: defineCanvasType("${def.id}") presentation.ground.${retiredGround[0]} is gone (design-015 D7): nothing read it since D5b — the desk's mat is the one ground, its snap guides are marks (always drawn: \`guides: false\` no longer hid them) and the wire overlay left with dom's world-space half; \`ground: {}\` declares the ground.`,
+    );
+  }
+  // …and the preview's two opaque tokens, which no adapter read after the frame-preview renderers left (D5b)
+  const retiredPreview = ["background", "renderer"].filter((k) => presentation?.preview !== undefined && k in presentation.preview);
+  if (retiredPreview.length > 0) {
+    throw new Error(
+      `ice: defineCanvasType("${def.id}") presentation.preview.${retiredPreview[0]} is gone (design-015 D7): no adapter read it after the frame-preview renderers left at D5b — a mini mat's inside is drawn by the desk; \`preview.projection\` stays.`,
+    );
   }
   const migrations = [...(def.migrations ?? [])].sort((a, b) => a.from - b.from);
   const migrationFrom = new Set<number>();
@@ -273,23 +270,7 @@ export function defineCanvasType(def: CanvasTypeDef): CanvasType {
             ...(presentation.runtimeExtensions === undefined
               ? {}
               : { runtimeExtensions: Object.freeze([...presentation.runtimeExtensions]) }),
-            ...(presentation.ground === undefined
-              ? {}
-              : {
-                  ground: Object.freeze({
-                    ...presentation.ground,
-                    ...(presentation.ground.grid === undefined
-                      ? {}
-                      : {
-                          grid: Object.freeze({
-                            ...presentation.ground.grid,
-                            ...(presentation.ground.grid.magnet === undefined
-                              ? {}
-                              : { magnet: Object.freeze({ ...presentation.ground.grid.magnet }) }),
-                          }),
-                        }),
-                  }),
-                }),
+            ...(presentation.ground === undefined ? {} : { ground: Object.freeze({}) }),
             ...(presentation.camera === undefined
               ? {}
               : { camera: Object.freeze({ ...presentation.camera }) }),

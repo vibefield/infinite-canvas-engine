@@ -78,17 +78,5 @@ export function fitCamera(
   };
 }
 
-/**
- * Camera → the ONE per-plane CSS transform (design-002 §5 `planeTransform`).
- * Children are laid out in WORLD units inside the plane (left/top = world x/y),
- * the plane carries `transform: translate(tx px, ty px) scale(scale)` with
- * `transform-origin: 0 0` — so a child at world point p lands at
- * `p·zoom + t = (p − camera)·zoom`, i.e. exactly `worldToScreen(p)`.
- */
-export function planeCssTransform(camera: CameraState): { tx: number; ty: number; scale: number } {
-  return {
-    tx: -camera.x * camera.zoom,
-    ty: -camera.y * camera.zoom,
-    scale: camera.zoom,
-  };
-}
+// (`planeCssTransform` — the per-plane CSS transform of the retired DOM/GL planes — left at design-015 D7: the DOM
+// lives in screen space, and no element carries a camera transform, §2.2.)

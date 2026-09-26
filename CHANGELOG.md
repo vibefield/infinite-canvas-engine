@@ -826,6 +826,26 @@ snapshot); VibeField's migration (plugin ABI `surface`/`component`, plugin-sdk r
 design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) — VibeField pins
 0.11.0 and is untouched.
 
+
+<!-- design-015 D7 — the fix wave's removals (the surface lens; each nothing had read since D5b) -->
+**Removed at D7 — dead settings and exports, named so a caller learns what stopped:**
+- **`defineCanvasType`'s `presentation.ground.{glyph, grid, wires, guides}`** — validated, never read since D5b, now
+  REFUSED by name at definition time (like `program` since C2). What each did until D5b: `glyph`/`grid` chose and tuned
+  the dot/line/magnet grid the mat replaced; `wires: false` hid the root slot's wire overlay (dom's, gone with the
+  world-space half); **`guides: false` hid the snap guides — since D5b the desk's marks draw them as lasers ALWAYS,
+  and the flag silently did nothing.** `presentation.ground` itself stays as a bare marker (`ground: {}`): a type that
+  declares it still requires the `ground` plane for a flight. The catalog's empty-glyph check went with `glyph`.
+- **`presentation.preview.background` and `.renderer`** (refused by name) and the catalog's
+  **`framePreviewBackgroundForContainer`** — opaque tokens for the frame-preview renderers that left at D5b.
+  `preview.projection` stays.
+- **core's ground-layer configs, the whole module:** `GridConfig`, `GridMagnetConfig`, `DEFAULT_GRID_MAGNET_CONFIG`,
+  `DEFAULT_GRID_CONFIG`, `WiresConfig`, `DEFAULT_WIRES_CONFIG`, `SnapGuidesConfig`, `DEFAULT_SNAP_GUIDES_CONFIG`. The
+  desk's grid is `@vibecook/ice/desk`'s own `GridConfig` (its fade-in and its mat).
+- **`DeskLayerHandle.configureGrid`** — it read only `fadeIn`; `configureFadeIn` is the live door.
+- **kernel `planeCssTransform`** (the retired planes' camera transform — the DOM is screen space, §2.2; D5b's note
+  kept it, nothing read it) and **`tessellateCubic`** / **`Tessellation`** (the retired @ice/ground wires pass's).
+- **`EngineGpu.hasCoreFeatures`** (three's compatibility-mode signal; see "One device per engine" below).
+
 ### Fixed
 
 <!-- core (2026-09-26) -->

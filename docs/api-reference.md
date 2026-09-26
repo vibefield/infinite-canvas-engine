@@ -305,7 +305,8 @@ stamping (+17–28% on write-heavy paths) — dev builds only.
 
 ## @ice/kernel
 
-Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera/planeCssTransform` ·
+Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera` ·
 `SpatialIndex` · `computeSnapGuides` · `portAnchor/wireCubic/distanceToCubic` · the easings · the
 design-006 flight maths · `layout` · `atlas-pack` (parked). The island helpers, `zoom-bands`,
-`eviction`, `surface-geometry` and `lift` left at design-015 D5b.
+`eviction`, `surface-geometry` and `lift` left at design-015 D5b; `planeCssTransform` and
+`tessellateCubic` at D7.

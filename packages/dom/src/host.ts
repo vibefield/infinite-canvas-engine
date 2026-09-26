@@ -10,7 +10,7 @@
  * THE CONTENT PLANE IS GONE (design-015 §2 law 2). Until D5b the host also made
  * one camera-transformed `<div>` — M3's "content plane", the P1 every DOM
  * widget mounted in, carrying the camera as ONE CSS transform written by the
- * plane-transform reflector (kernel `planeCssTransform`). No DOM element
+ * plane-transform reflector (kernel `planeCssTransform`, gone since D7). No DOM element
  * carries a camera transform any more: everything under the camera is the
  * desk renderer's, and the DOM that remains is screen-space.
  */
