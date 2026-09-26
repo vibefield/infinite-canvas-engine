@@ -8,6 +8,9 @@ export { NOTE_INK, NOTE_PROPS, NOTE_TYPE, Note, PAPERS, type PaperName, PENS, ty
 export { createNoteTyping, type NoteTyping, type NoteTypingOptions, type TypingDocs } from "./typing";
 // the whiteboard and its data children (D3w)
 export { BOARD_TYPE, Board, MARKERS, type MarkerName, TIPS } from "./board";
+// the desk calendar and its data children (D3w)
+export { CALENDAR_TYPE, Calendar, TAPES, type TapeName } from "./calendar";
+export { addEvent, CalendarEvent, daySlot, EVENT_TYPE, EventPrefab, type EventSpec, monthOfKey, NotePin, PIN_TYPE, PinPrefab, pinNote, PinsNote } from "../calendar/data";
 // the notebook (D3w)
 export { COVERS, type CoverName, NOTEBOOK_TYPE, Notebook, RULING_NAMES } from "./notebook";
 // the photo print and its carry (D3w)
@@ -16,10 +19,11 @@ export { createPhotoCarry, type PhotoCarry, type PhotoCarryOptions } from "./car
 export { addStroke, BoardStroke, boardOps, decodePoints, encodePoints, type MarkerInk, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, type StrokeSpec } from "../board/data";
 
 import { Board } from "./board";
+import { Calendar } from "./calendar";
 import { MiniMat } from "./minimat";
 import { Note } from "./note";
 import { Notebook } from "./notebook";
 import { Photo } from "./photo";
 
 /** The desk's reference objects, in the order an app registers them. */
-export const DESK_OBJECTS = [Note, MiniMat, Board, Photo, Notebook] as const;
+export const DESK_OBJECTS = [Note, MiniMat, Board, Photo, Notebook, Calendar] as const;

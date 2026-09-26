@@ -8,8 +8,8 @@
 
 import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk/host";
-import { type BookPose, type Books, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk/kinds";
-import { addStroke, BOARD_TYPE, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
+import { type BookPose, type Books, type PadPose, type Pads, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk/kinds";
+import { addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/desk/objects";
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
 import { BOARD } from "@ice/desk/theme";
@@ -77,24 +77,71 @@ export type OracleThing =
   | ({ readonly kind: "print" } & OraclePrint)
   | ({ readonly kind: "book" } & OracleBook);
 
+/** A desk calendar as the lab's `reset` + `pose` take one (scenes.mjs `pad()`): where, which month, the week's start, a roll pinned part-way. */
+export interface OraclePad {
+  readonly x: number;
+  readonly y: number;
+  readonly month?: string;
+  readonly weekStart?: 0 | 1;
+  readonly pose?: { readonly dir?: 1 | -1; readonly p?: number; readonly tilt?: number; readonly peek?: number };
+  readonly tape?: string;
+  readonly pen?: string;
+  readonly selected?: boolean;
+  readonly held?: boolean;
+}
+
 /** The scene fields the D3w kinds read. */
 export interface KindScene {
   readonly boards?: readonly OracleBoard[];
   readonly notes?: readonly OracleNote[];
   readonly prints?: readonly OraclePrint[];
   readonly books?: readonly OracleBook[];
+  readonly calendars?: readonly OraclePad[];
   readonly things?: readonly OracleThing[];
 }
 
-/** The scene's things in the oracle's paint order: its own list, else the whiteboards, the notes, the prints, the notebooks. */
+/**
+ * The scene's things in the oracle's paint order: its own list, else the whiteboards, the notes, the prints, the notebooks —
+ * and a note stuck to a pad's day (`pin: { pad, day }`) lies where the pad snaps it: its day's slot (`daySlot`, the lab's `slotOf`).
+ */
 export function thingsOf(s: KindScene): OracleThing[] {
-  if (s.things !== undefined) return [...s.things];
-  return [
+  const list: OracleThing[] = s.things !== undefined ? [...s.things] : [
     ...(s.boards ?? []).map((b) => ({ ...b, kind: "board" as const })),
     ...(s.notes ?? []).map((n) => ({ ...n, kind: "note" as const })),
     ...(s.prints ?? []).map((p) => ({ ...p, kind: "print" as const })),
     ...(s.books ?? []).map((b) => ({ ...b, kind: "book" as const })),
   ];
+  return list.map((t) => {
+    const pin = t.kind === "note" ? (t as { pin?: { pad?: number; day: string } }).pin : undefined;
+    if (pin === undefined) return t;
+    const pad = (s.calendars ?? [])[pin.pad ?? 0];
+    if (pad === undefined) throw new Error(`desk: a note pinned to pad ${pin.pad ?? 0}, which the scene does not lay`);
+    return { ...t, ...daySlot(pad.x, pad.y, pin.day, pad.weekStart ?? 1) };
+  });
+}
+
+/** A desk calendar as a spawn: its sheet centred where the scene says; September 2026 from Monday unless it says. */
+export const padSpec = (c: OraclePad): SpawnSpec => ({ type: CALENDAR_TYPE, cx: c.x, cy: c.y, w: Calendar.defaultSize.w, h: Calendar.defaultSize.h, props: { month: c.month ?? "2026-09", weekStart: c.weekStart ?? 1, tape: c.tape ?? "ink", pen: c.pen ?? "felt" } });
+
+/** A pad's still — a month rolling part-way, the corner's peek — pinned on the calendar kind's state (a FLUX pin, never a Grab). */
+export function pinPads(handle: DeskLayerHandle, pads: readonly { readonly entity: Entity; readonly spec: OraclePad }[]): void {
+  const local = handle.local("calendar") as Pads | undefined;
+  for (const { entity, spec: c } of pads) {
+    const q = c.pose;
+    if (q === undefined) continue;
+    const pose: PadPose = q.p !== undefined ? { roll: { dir: q.dir ?? 1, p: q.p, ...(q.tilt !== undefined ? { tilt: q.tilt } : {}) } } : { ...(q.peek !== undefined ? { peek: q.peek } : {}) };
+    local?.pin(entity, pose);
+  }
+}
+
+/** The scene's notes stuck to days: a PIN entity each, a child of its pad holding the note — one non-undoable transaction. */
+export function layPins(engine: CanvasEngine, pads: readonly Entity[], notes: readonly { readonly entity: Entity; readonly spec: OracleNote }[]): number {
+  const pinned = notes.flatMap((n) => { const pin = (n.spec as { pin?: { pad?: number; day: string } }).pin; return pin === undefined ? [] : [{ note: n.entity, pad: pads[pin.pad ?? 0], day: pin.day }]; });
+  if (pinned.length === 0) return 0;
+  const session = engine.docs.current();
+  if (session === undefined) throw new Error("desk: no document");
+  guardedTransaction(session.store, engine.world, (tx) => { for (const p of pinned) if (p.pad !== undefined) pinNote(tx, p.pad, p.note, p.day); }, { undoable: false });
+  return pinned.length;
 }
 
 /** A notebook as a spawn: the closed case centred where the scene says; its spread durable, its seed 7 and its cover orbit unless the scene says. */
