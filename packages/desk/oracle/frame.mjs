@@ -40,7 +40,11 @@ import { DEFAULT_GRID } from "../src/mat/grid.ts";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/paper.ts";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { flightLights, flightPresent, insidePresent, insideView, miniMatInstance } from "../src/minimat/inside.ts";
-import { createSlotSet, drawFrame, prepareFrame, SlotPool } from "../src/ground.ts";
+import { createSlotSet, drawFrame, prepareFrame, renderHeldFrame, SlotPool } from "../src/ground.ts";
+import { HoldPass } from "../src/hold/focus.ts";
+import { heldCamera, heldFocus, heldFrame, heldPose, HOLD, homePose, progressOf, readingTarget } from "../src/hold/pose.ts";
+import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders.ts";
+import { eyeOf } from "../src/notebook/eye.ts";
 import { BOARD_KIND, boardFrame, bookFrame, CALENDAR_KIND, calendarFrame, deskKinds, MINIMAT_KIND, miniMatFrame, NOTEBOOK_KIND, PAPER_KIND, paperFrame, PHOTO_KIND, photoFrame } from "../src/kinds/index.ts";
 import { MarksPass } from "../src/marks/pass.ts";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders.ts";
@@ -104,11 +108,11 @@ export function notebookDraw(b) {
   if (b.tilt) { motion.tiltX = b.tilt[0]; motion.tiltY = b.tilt[1]; }
   if (b.selected) { motion.selected = true; motion.ring = b.held || motion.opened ? 0 : 1; }
   const angle = bookAngleOf(b);
-  // resolveBooks: held it rises and tilts; opening, it rises while the cover stands
+  // resolveBooks: held it rises and tilts; opening, it rises while the cover stands; IN HAND it rises toward the desk eye by `rise` (D4b)
   const swing = Math.min(Math.max(swingOf(motion.theta), 0), Math.PI);
   // biome-ignore lint/style/useExponentiationOperator: the lab's arithmetic (lab/notebook.ts `placementOf`), verbatim — it feeds a record
   const opening = law.lift.open * Math.pow(Math.sin(swing), 0.85);
-  const place = { cx: b.x, cy: b.y, angle, lift: motion.lift * law.lift.held + motion.hover * law.lift.hover + opening, tiltX: motion.tiltX, tiltY: motion.tiltY, zc: frame.b + frame.T / 2 };
+  const place = { cx: b.x, cy: b.y, angle, lift: motion.lift * law.lift.held + motion.hover * law.lift.hover + opening + (b.rise ?? 0), tiltX: motion.tiltX, tiltY: motion.tiltY, zc: frame.b + frame.T / 2 };
   const pose = withDesk(poseOf(motion, law), place.lift);
   const mesh = buildMesh(new MeshWriter(), frame, pose, law);
   const sw = swingOf(motion.theta);
@@ -209,13 +213,18 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const lamp = lampOf(MAT_GRID.plane);
   // the desk's chrome (D4a): the marks pass on the root's mat (it prints with the rulers' atlas)
   const marks = await MarksPass.create(device, format, marksShaders(text(MARKS_SHADER_FILES)), mat);
+  // the hand (D4b): the focus behind an object in hand and the object over it — the same pass the ground makes
+  const hold = await HoldPass.create(device, format, holdShaders(text(HOLD_SHADER_FILES)));
   /** The prototype's own selection ring (its stills drew it) — on only for the baseline check; the product's selection is the marks. */
   let prototypeRing = false;
 
   // The slots beyond the root — the departed desk's, the live insides — from the same pool the ground keeps.
   const pool = new SlotPool(rootSlot);
   const VP = { width: VIEW.cssW, height: VIEW.cssH };
-  const viewOf = (cam) => ({ camX: cam.x, camY: cam.y, zoom: cam.zoom, width: VIEW.cssW, height: VIEW.cssH, dpr: VIEW.dpr });
+  /** A scene's view: the oracle's one, unless the scene names its own (a phone's portrait still, D4b). */
+  const viewSpecOf = (s) => s?.view ?? VIEW;
+  const vpOf = (s) => { const v = viewSpecOf(s); return { width: v.cssW, height: v.cssH }; };
+  const viewOf = (cam, s) => { const v = viewSpecOf(s); return { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: v.cssW, height: v.cssH, dpr: v.dpr }; };
   const matOf = (s) => ({ time: s.mat?.time ?? 0, goboTime: s.mat?.goboTime ?? 0, goboMatrix: HERO_MATRIX, noise: s.mat?.noise ?? [0, 0] });
 
   /** A desk's grid: the mat with the scene's gobo; the rulers print on the ROOT of a scene that says `ruler` (RULER.md). `ground` = a mini mat's inside of another colour. */
@@ -395,7 +404,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     (desk.minimats ?? []).forEach((m, i) => {
       const G = matGeometry(m);
       const inside = insideOf(m);
-      const view = insideView(G, contentOf(inside), cam, VP, FIT, gate);
+      const view = insideView(G, contentOf(inside), cam, vpOf(s), FIT, gate);
       const grid = gridFor(s, false, m.ground);
       minis.push(miniMatInstance(G, view, grid, childrenOf(inside).map((c) => chipOf(c, view.M)), m.name, s.dress !== false));
       if (s.portals !== false && depth < 4 && i !== skip && view.presence > 0) cands.push({ i, view, inside, grid });
@@ -404,7 +413,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     for (const { i, view, inside, grid } of cands.slice(0, PORTAL_CAP)) {
       const sub = deskInputs(inside, view.cam, s, depth + 1);
       portals.push({
-        view: { ...viewOf(view.cam), box: view.box }, mat: matOf(s),
+        view: { ...viewOf(view.cam, s), box: view.box }, mat: matOf(s),
         ...(s.dress === false ? {} : { lodZoom: view.arrival.zoom }),   // dressed for its arrival (PORTAL.md §9)
         present: insidePresent(view), grid,
         objects: sub.objects, ...(sub.portals.length ? { portals: sub.portals } : {}),
@@ -525,10 +534,88 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    * `drawFrame` — the root desk, the live insides of its mini mats, and a flight's departed desk through the mini mat —
    * exactly the inputs the lab hands `ground.render()`. The host submits; the Node oracle then reads the target back.
    */
+  /** The last held frame's pose on screen (the check reads it): the shown extent's box, CSS px, the grow and the rise. */
+  let heldFrameDrawn = null;
+
+  /**
+   * A HELD FRAME (design-015 §8; D4b): the scene's `hold` names the object in hand (`book`/`board`/`pad`: an index), the carry `e`,
+   * the cover's target (`open`, default: past 42 % of the pickup), the user's zoom and pan, and `empty` (the hand drawn with nothing
+   * in it — the check's "the blurred desk alone"). The pose is hold/pose.ts's — the SAME pure math the builder runs — and the frame
+   * goes through `renderHeldFrame`, the ground's own path: the desk copy (this scene without the held object) blurred, the hand's
+   * one object under the pose's camera, the two composites. It submits its own encoders; the caller's stays empty.
+   */
+  function encodeHeld(target, size, s, theme, rootGrid, m) {
+    const h = s.hold;
+    const vp = vpOf(s);
+    const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
+    const e = Math.min(Math.max(h.e, 0), 1);
+    const openTarget = h.open ?? progressOf(e) >= HOLD.openAt;
+    const user = { zoom: h.zoom ?? 1, panX: h.panX ?? 0, panY: h.panY ?? 0 };
+    // the held object: its rect, its open extent (its own units, unturned), its turn, whether it rises toward the eye
+    let rect;
+    let extentLocal;
+    let angle = 0;
+    let eye = false;
+    let spread = false;
+    let handDesk;
+    let restDesk;
+    if (h.book !== undefined) {
+      const b = s.books[h.book];
+      rect = { cx: b.x, cy: b.y, w: NOTEBOOK.cover.width, h: NOTEBOOK.cover.height };
+      extentLocal = { cx: rect.cx - rect.w / 2, cy: rect.cy, w: rect.w * 2, h: rect.h };
+      angle = bookAngleOf(b);
+      eye = true;
+      spread = true;
+      restDesk = { ...s, books: s.books.filter((_, i) => i !== h.book) };
+      handDesk = (pose, rise) => ({ books: [{ ...b, angle: pose.angle, open: openTarget ? 1 : 0, rise, held: false, selected: false }] });
+    } else if (h.board !== undefined) {
+      const b = s.boards[h.board];
+      rect = { cx: b.x, cy: b.y, w: b.w ?? BOARD.spec.width, h: b.h ?? BOARD.spec.height };
+      extentLocal = rect;
+      restDesk = { ...s, boards: s.boards.filter((_, i) => i !== h.board) };
+      handDesk = () => ({ boards: [{ ...b, selected: false, held: false }] });
+    } else {
+      const c = s.calendars[h.pad];
+      rect = { cx: c.x, cy: c.y, w: PAD.W, h: PAD.H };
+      extentLocal = rect;
+      restDesk = { ...s, calendars: s.calendars.filter((_, i) => i !== h.pad) };
+      handDesk = () => ({ calendars: [{ ...c, selected: false }] });
+    }
+    const target1 = readingTarget(extentLocal, vp, spread);
+    const ox = extentLocal.cx - rect.cx;
+    const oy = extentLocal.cy - rect.cy;
+    const ca = Math.cos(angle);
+    const sa = Math.sin(angle);
+    const extentWorld = { cx: rect.cx + ca * ox - sa * oy, cy: rect.cy + sa * ox + ca * oy, w: extentLocal.w, h: extentLocal.h };
+    const pose = heldPose(homePose(extentWorld, angle, cam), target1, user, e);
+    const { cam: heldCam, grow } = heldCamera(pose, rect, extentLocal, cam.zoom, eye, vp);
+    // the eye kind rises by H·(1 − 1/grow) under the held camera's own eye — the notebook kind's arithmetic
+    const rise = eye && grow > 1 ? eyeOf(heldCam, vp, NOTEBOOK.eye).h * (1 - 1 / grow) : 0;
+    const hand = h.empty === true ? { notes: [{ x: 1e6, y: 1e6, seed: 1, text: "" }] } : handDesk(pose, rise);   // an empty hand: a note a million units away, culled
+    const handInputs = deskInputs({ notes: [], minimats: [], ...hand }, heldCam, s, 0);
+    const heldObject = handInputs.objects[handInputs.objects.length - 1];
+    // the desk without it
+    const r = deskInputs({ notes: restDesk.notes ?? [], minimats: restDesk.minimats ?? [], ...(restDesk.boards ? { boards: restDesk.boards } : {}), ...(restDesk.prints ? { prints: restDesk.prints } : {}), ...(restDesk.books ? { books: restDesk.books } : {}), ...(restDesk.calendars ? { calendars: restDesk.calendars } : {}), ...(restDesk.things ? { things: restDesk.things } : {}) }, cam, s, 0);
+    const inputs = { view: viewOf(cam, s), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}) };
+    const heldGrid = { ...rootGrid, mat: { ...rootGrid.mat, gobo: { ...rootGrid.mat.gobo, opacity: 0 } } };
+    const held = { object: heldObject, view: viewOf(heldCam, s), grid: heldGrid, e, ...heldFocus(e, vp, theme), stamp: `oracle ${Date.now()} ${Math.random()}` };
+    heldFrameDrawn = { ...heldFrame(pose, extentLocal, target1.single), grow, rise, cam: heldCam };
+    const stats = renderHeldFrame(device, hold, rootSlot, pool, rootGrid, { view: () => target, size: () => size }, inputs, held, { stamp: null, stats: null, copies: 0 });
+    return { theme, nav: null, prepared: { incoming: { stats: { k0: stats.k0, fade: stats.fade, wind: stats.wind } }, portals: stats.portals }, marks: [] };
+  }
+
   function encode(encoder, target, size, s, opts = {}) {
     prototypeRing = opts.prototypeRing === true;
     const theme = opts.theme ?? THEMES[s.theme];
     const m = matOf(s);
+    // the hand (D4b): a carry above 0 is the held frame's own path; at 0 the frame is the rest frame, byte for byte
+    if (s.hold !== undefined && s.hold.e > 0) {
+      papers.law = DEFAULT_PAPER_LAW; papers.chain = false;
+      papers.reset(); inkRaster = null;
+      for (const id of rastered) boards.release(id);
+      rastered.clear(); nextBoard = 1;
+      return encodeHeld(target, size, s, theme, gridFor(s, true), m);
+    }
     papers.law = DEFAULT_PAPER_LAW; papers.chain = s.paper?.chain ?? false;
     papers.reset(); inkRaster = null;   // the ink pages carved afresh, so a scene's rasters land where the lab's do
     for (const id of rastered) boards.release(id);   // and the boards' rasters: each scene's boards replay into fresh ones
@@ -542,11 +629,11 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       const a = deskInputs(nav.arriving, nav.cam, s, 0);
       const d = deskInputs(nav.departed, nav.outCam, s, 0, nav.enter ? (nav.at ?? -1) : -1);
       inputs = {
-        view: viewOf(nav.cam), mat: m, theme, present: nav.pres.incoming, ...(nav.lights.incoming ? { light: nav.lights.incoming } : {}),
+        view: viewOf(nav.cam, s), mat: m, theme, present: nav.pres.incoming, ...(nav.lights.incoming ? { light: nav.lights.incoming } : {}),
         ...(s.dress === false ? {} : { lodZoom: nav.f.c1.zoom }),   // the arriving desk is dressed for its landing, the departed for the cut (PORTAL.md §9)
         grid: nav.enter ? gridFor(s, false) : rootGrid, objects: a.objects, ...(a.portals.length ? { portals: a.portals } : {}),
         outgoing: {
-          view: viewOf(nav.outCam), mat: m, present: nav.pres.outgoing, ...(nav.lights.outgoing ? { light: nav.lights.outgoing } : {}),
+          view: viewOf(nav.outCam, s), mat: m, present: nav.pres.outgoing, ...(nav.lights.outgoing ? { light: nav.lights.outgoing } : {}),
           ...(s.dress === false ? {} : { lodZoom: nav.f.camPre.zoom }),
           grid: nav.enter ? rootGrid : gridFor(s, false), objects: d.objects, ...(d.portals.length ? { portals: d.portals } : {}),
           order: nav.enter ? "under" : "over", ...(nav.at !== undefined ? { at: nav.at } : {}),
@@ -555,18 +642,18 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     } else {
       const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
       const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.books ? { books: s.books } : {}), ...(s.calendars ? { calendars: s.calendars } : {}), ...(s.things ? { things: s.things } : {}) }, cam, s, 0);
-      inputs = { view: viewOf(cam), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
+      inputs = { view: viewOf(cam, s), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
     const prepared = prepareFrame(encoder, rootSlot, pool, inputs, rootGrid);
     // the desk's marks (stratum 5): a still's — a flight's chrome waits for its landing; off for a check that measures the objects alone
     const marked = opts.marks === false || prototypeRing || s.nav ? 0 : marks.prepare(marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme));
     const pass = beginPass(encoder, target, [bg[0], bg[1], bg[2], 1]);
-    drawFrame(pass, size, VIEW.dpr, prepared.incoming, prepared.outgoing);
+    drawFrame(pass, size, viewSpecOf(s).dpr, prepared.incoming, prepared.outgoing);
     if (marked > 0) marks.draw(pass);
     pass.end();
     return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, encode };
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, encode, heldFrame: () => heldFrameDrawn };
 }

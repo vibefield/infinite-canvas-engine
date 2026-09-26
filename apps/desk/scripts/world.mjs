@@ -33,7 +33,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * the whiteboards, the prints — one inside a mini mat, through the inside's slot, lit by its host's lamp — the notebooks, the
  * desk calendars, and a selected notebook's and desk calendar's marks (D3w).
  */
-const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad|zoom)-/;
+const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad|zoom|hold)-/;
 /**
  * design-015 D3w: the three inked-board scenes keep, from the world too, the bound rig:parity names for them (D-D3r-a.5): the
  * stamp pass compiled by Chrome's Dawn and by node-webgpu's quantises a handful of the raster's coverages one LSB apart — the
@@ -100,6 +100,9 @@ const diffJs = (png, name) => `(async () => {
 /** One witness: spawn the scene into the world, let the desk settle, capture, compare. */
 async function witness(tab, sc) {
   await front(tab);
+  // a scene with a view of its own (a phone's portrait still, D4b): the page's metrics follow it for this witness
+  const v = sc.scene.view;
+  if (v) { await tab.send("Emulation.setDeviceMetricsOverride", { width: v.cssW, height: v.cssH, deviceScaleFactor: v.dpr, mobile: false }); await sleep(200); }
   const spawned = await tab.evaluate(`window.__desk.setScene(${JSON.stringify(sc.scene)})`, { awaitPromise: true, timeoutMs: 60000 });
   const s = await settle(tab);
   await sleep(150);
@@ -107,6 +110,7 @@ async function witness(tab, sc) {
   const png = await capture(tab);
   const r = await tab.evaluate(diffJs(png, sc.name), { awaitPromise: true, timeoutMs: 60000 });
   const stats = await tab.evaluate("(() => { const s = window.__desk.stats(); return { objects: s.objects, redraws: s.redraws, live: s.live, kinds: s.frame && s.frame.kinds }; })()", { timeoutMs: 20000 });
+  if (v) { await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false }); await sleep(200); }
   return { ...r, png, settled: s.settled, objects: stats.objects, kinds: stats.kinds, spawned: spawned.objects };
 }
 

@@ -16,7 +16,7 @@
 // inside's arrival and `exitContainer` back), and the flight is PINNED at the scene's progress by the
 // host's `pinFlight` — the camera and the resource held there every tick, the frame a still.
 
-import { abortNavFlight, attachSpawnBehaviors, attachSpawnParent, Camera, type CanvasEngine, cascadeDestroy, type Entity, guardedTransaction, Position, PrefabId, Size, widgetSpawnInits, writeRuntimeResource, defineQuery, Active } from "@ice/core";
+import { abortNavFlight, attachSpawnBehaviors, attachSpawnParent, Camera, type CanvasEngine, cascadeDestroy, type Entity, guardedTransaction, HeldView, Position, PrefabId, Size, widgetSpawnInits, writeRuntimeResource, defineQuery, Active } from "@ice/core";
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk/host";
 import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
 import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk/theme";
@@ -42,8 +42,13 @@ export interface OracleScene extends KindScene {
   readonly portals?: boolean;
   /** The root's dressing pinned. */
   readonly lodZoom?: number;
+  /** An object IN HAND (design-015 §8, D4b): one of the scene's books, boards or pads by index, the carry pinned at `e`, the cover's target, the user's zoom and pan. */
+  readonly hold?: OracleHold;
+  /** The scene's own view (a phone's portrait still, D4b): the rig sets the page's metrics to it before spawning. */
+  readonly view?: { readonly cssW: number; readonly cssH: number; readonly dpr: number };
 }
 export interface OracleNav { readonly kind: "enter" | "exit"; readonly container: number; readonly p: number }
+export interface OracleHold { readonly book?: number; readonly board?: number; readonly pad?: number; readonly e: number; readonly open?: boolean; readonly zoom?: number; readonly panX?: number; readonly panY?: number }
 export interface OracleNote {
   readonly x: number;
   readonly y: number;
@@ -229,6 +234,8 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   handle.pinLodZoom(s.lodZoom ?? null);
   handle.freeze(false);
   handle.holdRedress(false);
+  engine.ops.putDown();   // the hand lets go of the last scene's object (D4b)
+  handle.pinHold(null);
   // 2. the theme, pinned (the OS no longer leads)
   host.setTheme(s.theme, true);
   // 3. the objects, in the prototype's paint order — the mini mats (sheets), the desk calendars (pads), then the things (the
@@ -265,6 +272,21 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
       engine.ops.exitContainer();
     }
     host.pinFlight(s.nav.p);
+  }
+  // 9. THE HAND (design-015 §8, D4b): the named object is picked up — `Held` the fact, through the op — the user's zoom and pan
+  //    written, and the carry PINNED at the scene's `e` with the cover snapped to its target (a still of the opening)
+  if (s.hold !== undefined) {
+    const h = s.hold;
+    const target = h.book !== undefined ? root.books[h.book] : h.board !== undefined ? root.boards[h.board] : h.pad !== undefined ? root.pads[h.pad] : undefined;
+    if (target === undefined) throw new Error("desk: the hold scene names an object the scene does not have");
+    for (let i = 0; i < 2; i++) await frame();   // drawn at rest once: the pickup starts from where it lies
+    engine.ops.open(target);
+    engine.ops.clearSelection();   // a still states its selection itself (the op selects what it picks up; the oracle's hold stills select nothing)
+    if (h.zoom !== undefined || h.panX !== undefined || h.panY !== undefined) {
+      engine.world.removeComponent(target, HeldView);
+      engine.world.addComponent(target, HeldView, { zoom: h.zoom ?? 1, panX: h.panX ?? 0, panY: h.panY ?? 0 });
+    }
+    handle.pinHold({ e: h.e, ...(h.open !== undefined ? { open: h.open } : {}) });
   }
   return root;
 }

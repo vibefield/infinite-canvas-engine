@@ -9,7 +9,7 @@
 // D5a: the backtick opens the DEV PANEL (panel/ — the prototype's tweak panel), its params projected into the layer.
 
 import type { Entity } from "@ice/core";
-import { PointerWorld, LocalPointer, Pointer, Camera, PrefabId, Viewport, defineQuery, selectedEntities } from "@ice/core";
+import { Active, PointerWorld, LocalPointer, Pointer, Camera, heldEntity, Position, PrefabId, Size, Viewport, defineQuery, selectedEntities } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk/host";
 import { deskLayer } from "@ice/desk/host";
 import { bookAngle } from "@ice/desk/kinds";
@@ -30,6 +30,8 @@ import { deskPalette, deskTheme, osTheme } from "./palette";
 import { spawnAll } from "./scene";
 
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
+/** The frame's objects, for Tab's walk (D4b). */
+const objectsQ = defineQuery([Position, Size, PrefabId, Active]);
 
 /** The app's own act, first in the bar (*Marks on the Mat*: "Send to agent first, because it is the one act only this desk has") — a stub here: it logs, and the rigs read `__desk.sent`. */
 const SEND: SelectionAction = {
@@ -102,6 +104,18 @@ export function App(): ReactElement {
       const [e] = spawnAll(engine, [{ type, cx: at.x, cy: at.y, w: widget.defaultSize.w, h: widget.defaultSize.h, props }], true);
       engine.ops.setSelection([e as Entity], "replace");
     };
+    /** Tab (D4b): the next object of the frame in reading order after the one selected (the first with none, or several); ⇧Tab the one before. */
+    const tabSelection = (dir: 1 | -1): void => {
+      if (heldEntity(world) !== undefined) return;
+      const all: { e: Entity; x: number; y: number }[] = [];
+      world.query(objectsQ).each((b) => { for (const r of b) { const e = b.entity(r); const p = world.read(e, Position); all.push({ e, x: p.x, y: p.y }); } });
+      if (all.length === 0) return;
+      all.sort((a, b) => (Math.abs(a.y - b.y) > 1 ? a.y - b.y : a.x - b.x));
+      const sel = selectedEntities(world);
+      const at = sel.length === 1 ? all.findIndex((o) => o.e === sel[0]) : -1;
+      const next = all[(at + dir + all.length) % all.length];
+      if (next !== undefined) engine.ops.setSelection([next.e], "replace");
+    };
     /** `t` (MINIMAT.md §2): the selected mini mats' vinyl cycles sage → slate → charcoal; the inside's mat is the same vinyl, so it follows. */
     const cycleVinyl = (): void => {
       for (const e of selectedEntities(world)) {
@@ -125,6 +139,10 @@ export function App(): ReactElement {
       { key: "t", run: cycleVinyl },
       // D5a: the backtick opens and closes the dev panel (screen-space DOM, the prototype's tweak panel)
       { key: "`", run: () => panelRef.current?.toggle() },
+      // D4b: Tab walks the desk's objects in reading order (top to bottom, left to right) — the keyboard's way to a notebook, which ⏎
+      // then picks up and Esc lands with the selection back; ⇧Tab walks back. Nothing while something is in hand (the bar's Tab is D3t's).
+      { key: "Tab", run: () => tabSelection(1) },
+      { key: "Tab", shift: true, run: () => tabSelection(-1) },
       // ⇧ arrows nudge one lattice cell (Marks on the Mat's keys, D4a) — the engine's default ⇧ step is 10; a taped object never moves
       ...([["ArrowLeft", -1, 0], ["ArrowRight", 1, 0], ["ArrowUp", 0, -1], ["ArrowDown", 0, 1]] as const).map(([key, dx, dy]): KeymapEntry => ({ key, shift: true, run: (e) => nudgeSelection(e, dx * LATTICE_CELL, dy * LATTICE_CELL) })),
     ];

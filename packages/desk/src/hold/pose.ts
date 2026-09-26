@@ -18,6 +18,7 @@
 
 import { easeIsland } from "../marks/ease";
 import type { ObjectRect } from "../kinds/world";
+import { DAY_LIGHT, type MatLight, mixLight } from "../mat/night";
 import type { CameraState } from "../nav/flight";
 
 /** The hand's numbers (desk.js `HOLD`). Times in ms; `margin`/`top`/`band` CSS px; `blur` CSS px; `narrow` = a phone's width. */
@@ -92,6 +93,38 @@ export function heldPose(home: HomePose, target: ReadingTarget, user: HeldUser, 
 
 /** The carry amount for the pickup's progress `p` (0 … 1) — the island ease; the put-down runs it backwards from where it was. */
 export const carryOf = (p: number): number => easeIsland(Math.min(Math.max(p, 0), 1));
+
+/** The pickup's progress at a carry amount — the island ease inverted by bisection (a put-down caught mid-flight, a pinned still). */
+export function progressOf(e: number): number {
+  if (e <= 0) return 0;
+  if (e >= 1) return 1;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (carryOf(mid) < e) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
+/** The focus behind the hand and the light on it at a carry amount (the builder's and the oracle's ONE reading of §8's numbers). */
+export interface HeldFocus {
+  /** The radius the ONE blur is made at, CSS px (14; a phone's 10). */
+  readonly blur: number;
+  /** The desk's dim behind, by the carry (8 % at the top). */
+  readonly dim: number;
+  /** The reading light on the hand (Q-n): 1, 1 by day; toward saturate .62 · brightness .82 by night as the carry rises. */
+  readonly filter: { readonly saturate: number; readonly brightness: number };
+  /** The hand's own light: the desk's by day; by night the day's mixed in by the carry. */
+  readonly light: MatLight;
+}
+
+export function heldFocus(e: number, vp: HeldViewport, theme: { readonly name: string; readonly matLight: MatLight }): HeldFocus {
+  const night = theme.name === "dark";
+  return {
+    blur: isNarrow(vp) ? HOLD.blurPhone : HOLD.blur,
+    dim: HOLD.dim * e,
+    filter: night ? { saturate: 1 - (1 - HOLD.light.saturate) * e, brightness: 1 - (1 - HOLD.light.brightness) * e } : { saturate: 1, brightness: 1 },
+    light: night ? mixLight(theme.matLight, DAY_LIGHT, e) : theme.matLight,
+  };
+}
 
 /**
  * The held slot's CAMERA (the pose IS a camera) and the factor a kind with height must reach by rising. The object's rect centre

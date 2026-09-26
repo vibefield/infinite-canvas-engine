@@ -86,6 +86,16 @@ const { mat, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childr
 const W = VIEW.cssW * VIEW.dpr;
 const H = VIEW.cssH * VIEW.dpr;
 const out = new Target(device, { format: FORMAT, label: "oracle", readable: true }, W, H);
+/** A scene's own view (a phone's portrait still, D4b) gets a readable target of its size; the rest share `out`. */
+const targets = new Map();
+const targetOf = (s) => {
+  const v = s.view;
+  if (!v) return { target: out, w: W, h: H };
+  const key = `${v.cssW}x${v.cssH}@${v.dpr}`;
+  let t = targets.get(key);
+  if (!t) { t = new Target(device, { format: FORMAT, label: `oracle ${key}`, readable: true }, v.cssW * v.dpr, v.cssH * v.dpr); targets.set(key, t); }
+  return { target: t, w: t.width, h: t.height };
+};
 
 /**
  * Render one scene through frame.mjs's `encode` into the readable target — the frame inside the probe's scopes — and read it
@@ -93,13 +103,14 @@ const out = new Target(device, { format: FORMAT, label: "oracle", readable: true
  * (rig:parity's) has them.
  */
 async function render(s, opts = {}) {
+  const { target, w, h } = targetOf(s);
   const { theme, nav, prepared, marks } = await scoped(`frame ${++probe.frames}`, () => {
     const encoder = device.createCommandEncoder();
-    const r = desk.encode(encoder, out.view, { w: W, h: H }, s, { marks: false, ...opts });
+    const r = desk.encode(encoder, target.view, { w, h }, s, { marks: false, ...opts });
     device.queue.submit([encoder.finish()]);
     return r;
   });
-  return { px: await readback(device, out.texture, 4), theme, nav, portals: prepared.portals, stats: prepared.incoming.stats, marks };
+  return { px: await readback(device, target.texture, 4), theme, nav, portals: prepared.portals, stats: prepared.incoming.stats, marks, w, h };
 }
 
 // ---------------------------------------------------------------- the checks
@@ -966,6 +977,51 @@ for (const sc of scenes) {
   console.log(`${sc.name.padEnd(28)} ${(sc.scene.minimats ?? []).length} mini mats · ${count("note")} notes${count("board") ? ` · ${count("board")} boards` : ""}${count("print") ? ` · ${count("print")} prints` : ""}${count("book") ? ` · ${count("book")} books` : ""}${sc.scene.calendars?.length ? ` · ${sc.scene.calendars.length} pads` : ""} · ${portals} live insides · ${sc.scene.theme.padEnd(5)} · ${(performance.now() - t1).toFixed(0)} ms · k0 ${stats.k0}${stats.wind ? " · wind" : ""}${flight}`);
   if (sc.baseline && process.env.BASELINE_DIR && !(await baselineCheck(sc, px))) failed += 1;
 }
+/**
+ * design-015 §8 (D4b), the opening as pixels: at a carry of 0 the frame is the REST frame byte for byte (the held path is never
+ * taken); above 0, outside the held object's box on screen (the shown extent, grown by the kind's reach and the risen book's long
+ * shadow) the frame equals the BLURRED DESK ALONE (the same still with the hand drawn empty) to the byte — the desk copy is one
+ * render, the hand is laid over it; inside the box the object is there (a share of the pixels differ from the empty hand); and two
+ * renders of the same still are identical (the copy path is deterministic).
+ */
+async function heldCheck(sc) {
+  const s = sc.scene;
+  const e = s.hold.e;
+  const { px: A, w, h } = await render(s);
+  const label = `held       ${sc.name.padEnd(24)}`;
+  if (e === 0) {
+    const { hold: _h, ...rest } = s;
+    const { px: R } = await render(rest);
+    let maxD = 0;
+    for (let i = 0; i < A.length; i++) { const d = Math.abs(A[i] - R[i]); if (d > maxD) maxD = d; }
+    console.log(`  ${maxD === 0 ? "PASS" : "FAIL"}  ${label} carry 0: the rest frame byte for byte (maxΔ ${maxD})`);
+    return maxD === 0;
+  }
+  const f = desk.heldFrame();
+  const { px: B } = await render({ ...s, hold: { ...s.hold, empty: true } });
+  const { px: A2 } = await render(s);
+  const dpr = s.view?.dpr ?? VIEW.dpr;
+  // the held box in device px; a differing pixel's EXCURSION past it is the object's reach on screen — its shadow under the lamp, long
+  // when a book stands high toward the eye (the slope is capped), short for a flat kind — and must stay within the bound
+  const bound = (f.rise > 0 ? 320 : 160) * dpr;
+  const bx0 = (f.cx - f.hx) * dpr;
+  const by0 = (f.cy - f.hy) * dpr;
+  const bx1 = (f.cx + f.hx) * dpr;
+  const by1 = (f.cy + f.hy) * dpr;
+  let inside = 0; let insideDiff = 0; let same = true; let farthest = 0; let differ = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = (y * w + x) * 4;
+    const d = delta(A, B, o);
+    if (A[o] !== A2[o] || A[o + 1] !== A2[o + 1] || A[o + 2] !== A2[o + 2]) same = false;
+    const inBox = x >= bx0 && x < bx1 && y >= by0 && y < by1;
+    if (inBox) { inside++; if (d > 0) insideDiff++; }
+    if (d > 0) { differ++; if (!inBox) farthest = Math.max(farthest, Math.max(bx0 - x, x - bx1, by0 - y, y - by1)); }
+  }
+  const ok = farthest <= bound && insideDiff > inside * 0.05 && same;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  ${label} the object's pixels vs the blurred desk alone: ${differ.toLocaleString()} differ, reaching ${(farthest / dpr).toFixed(0)} CSS px past its box [${Math.round(bx0)}, ${Math.round(by0)}, ${Math.round(bx1)}, ${Math.round(by1)}] (bound ${bound / dpr}) · inside it ${insideDiff.toLocaleString()} of ${inside.toLocaleString()} · twice ${same ? "identical" : "DIFFERENT"} · grow ${f.grow.toFixed(3)} rise ${f.rise.toFixed(1)}`);
+  return ok;
+}
+
 for (const sc of scenes) if (sc.continuity) { if (!(await continuity(sc))) failed += 1; }
 for (const sc of scenes) if (sc.cut) { if (!(await portalCut(sc))) failed += 1; }
 for (const sc of scenes) if (sc.chain) { if (!(await chainCheck(sc))) failed += 1; }
@@ -986,6 +1042,7 @@ for (const sc of scenes) if (sc.book) { if (!(await bookCheck(sc))) failed += 1;
 for (const sc of scenes) if (sc.bookOrder) { if (!(await bookOrderCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.pad) { if (!(await padCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.padNote) { if (!(await padNoteCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.held) { if (!(await heldCheck(sc))) failed += 1; }
 // the probe's verdict: creation and every frame drawn above, in scopes of their own
 console.log(`${probe.errors.length ? "FAIL" : "PASS"}  error scopes (validation · out-of-memory · internal) over the desk's creation and ${probe.frames} frames: ${probe.errors.length} error${probe.errors.length === 1 ? "" : "s"}${probe.errors.length ? `\n  ${probe.errors.slice(0, 5).join("\n  ")}` : ""}`);
 if (probe.errors.length) failed += 1;

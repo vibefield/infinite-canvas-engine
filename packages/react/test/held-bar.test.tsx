@@ -77,8 +77,8 @@ describe("the held bar (design-015 §8)", () => {
     expect(el.dataset.visible).toBe("true");   // visible though the selection's box is gone: the hand is the anchor
     expect(el.getAttribute("aria-label")).toBe("In hand");
     expect(el.querySelector('[data-act="send"]')).not.toBeNull();
-    expect([...el.querySelectorAll<HTMLElement>("[data-tool]")].map((b) => b.dataset.tool)).toEqual(["turn:-1", "turn:1", "pen", "undo"]);
-    for (const b of el.querySelectorAll<HTMLElement>("[data-tool]")) { expect(b.classList.contains("is-dim")).toBe(true); expect(b.getAttribute("aria-disabled")).toBe("true"); }
+    expect(Array.from(el.querySelectorAll<HTMLElement>("[data-tool]")).map((b) => b.dataset.tool)).toEqual(["turn:-1", "turn:1", "pen", "undo"]);
+    for (const b of Array.from(el.querySelectorAll<HTMLElement>("[data-tool]"))) { expect(b.classList.contains("is-dim")).toBe(true); expect(b.getAttribute("aria-disabled")).toBe("true"); }
     expect(el.querySelector('[data-act="done"]')?.textContent).toContain("Done");
     expect(el.querySelector('[data-act="delete"]')).toBeNull();
     expect(el.querySelector('[data-act="more"]')).toBeNull();

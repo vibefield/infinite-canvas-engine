@@ -111,10 +111,14 @@ const diffJs = (png, name) => `(async () => {
 /** One witness: draw the scene, let it present, capture, compare. */
 async function witness(tab, name) {
   await front(tab);
+  // a scene with a view of its own (a phone's portrait still, D4b): the page's metrics follow it for this witness, the page's canvas too
+  const v = ORACLE_SCENES.find((s) => s.name === name)?.scene?.view;
+  if (v) { await tab.send("Emulation.setDeviceMetricsOverride", { width: v.cssW, height: v.cssH, deviceScaleFactor: v.dpr, mobile: false }); await sleep(200); }
   const drawn = await tab.evaluate(`window.__parity.render(${JSON.stringify(name)})`, { awaitPromise: true, timeoutMs: 60000 });
   await settle(tab); await sleep(200); await settle(tab);
   const png = await capture(tab);
   const r = await tab.evaluate(diffJs(png, name), { awaitPromise: true, timeoutMs: 60000 });
+  if (v) { await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false }); await sleep(200); }
   return { ...r, portals: drawn.portals, png };
 }
 

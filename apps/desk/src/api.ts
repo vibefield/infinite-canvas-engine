@@ -6,7 +6,8 @@
 // assets are up. Everything reads the WORLD (Position/Size/tags) and the builder's flux; nothing here
 // writes what an op would not.
 
-import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
+import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, HeldView, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
+import type { GroundFrameInputs } from "@ice/desk";
 import type { DeskLayerHandle, MatPin } from "@ice/desk/host";
 import type { AmbientMode } from "@ice/desk/compose";
 import type { ThemeName } from "@ice/desk/theme";
@@ -103,6 +104,24 @@ export interface DeskApi {
   readonly sent: number[];
   /** The dev panel (D5a — the backtick opens it): its params, open or not. */
   readonly panel: DevPanel | null;
+  // ---- the hand (design-015 §8, D4b)
+  /** The object in hand as of the last frame: its carry, whether settled or flying home, its frame on screen (the pose seam's word); null = nothing held. */
+  hand(): { readonly entity: number; readonly e: number; readonly settled: boolean; readonly landing: boolean; readonly frame: { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly s: number; readonly settled: boolean } } | null;
+  /** Pick an object up / put it down — the ops. */
+  open(id: number): void;
+  putDown(): void;
+  /** Pin the carry for a still (`null` unpins). */
+  pinHold(pin: { readonly e: number; readonly open?: boolean } | null): void;
+  /** The user's facts on the held object (core's `HeldView`), or null. */
+  heldView(id: number): { readonly zoom: number; readonly panX: number; readonly panY: number } | null;
+  /** How many desk copies the hand has made (the "once per settled state" witness). */
+  holdCopies(): number;
+  /**
+   * THE COST (design-015 §11.4): `n` frames drawn back to back into the canvas with the GPU drained before and after — a copy
+   * remade every frame (a fresh stamp), the hand alone over the standing copy, and the rest frame (nothing held) — ms per frame
+   * and the CPU µs of recording one. Needs something in hand for `copy` and `hand` (null otherwise). Leaves the frame as it was.
+   */
+  holdCost(n: number): Promise<{ readonly copy: { ms: number; cpu: number } | null; readonly hand: { ms: number; cpu: number } | null; readonly rest: { ms: number; cpu: number } }>;
 }
 
 declare global {
@@ -239,6 +258,37 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       const v = handle.insideViewOf(id as Entity);
       if (v === undefined) return null;
       return { cam: { ...v.cam }, presence: v.presence, clip: { cx: v.clip.cx, cy: v.clip.cy, hx: v.clip.hx, hy: v.clip.hy } };
+    },
+    hand() {
+      const h = handle.hand();
+      return h === undefined ? null : { entity: h.entity as number, e: h.e, settled: h.settled, landing: h.landing, frame: { ...h.frame } };
+    },
+    open: (id) => engine.ops.open(id as Entity),
+    putDown: () => engine.ops.putDown(),
+    pinHold: (pin) => handle.pinHold(pin),
+    heldView(id) { const v = world.get(id as Entity, HeldView); return v === undefined ? null : { zoom: v.zoom, panX: v.panX, panY: v.panY }; },
+    holdCopies: () => handle.ground()?.heldCopies() ?? 0,
+    async holdCost(n) {
+      const device = handle.device();
+      const g = handle.ground();
+      const inputs = handle.lastInputs();
+      if (device === undefined || g === null || inputs === null) throw new Error("desk: no frame to measure");
+      // the cost rig's method: a saturated batch into the canvas's current texture, the queue drained before and after
+      const batch = async (make: (i: number) => GroundFrameInputs): Promise<{ ms: number; cpu: number }> => {
+        await device.queue.onSubmittedWorkDone();
+        const t0 = performance.now();
+        let cpu = 0;
+        for (let i = 0; i < n; i++) { const c0 = performance.now(); g.render(make(i)); cpu += performance.now() - c0; }
+        await device.queue.onSubmittedWorkDone();
+        return { ms: (performance.now() - t0) / n, cpu: cpu / n };
+      };
+      const held = inputs.held;
+      const copy = held === undefined ? null : await batch((i) => ({ ...inputs, held: { ...held, stamp: `cost ${i}` } }));
+      const hand = held === undefined ? null : await batch(() => inputs);
+      const { held: _held, ...bare } = inputs;
+      const rest = await batch(() => bare);
+      g.render(inputs);   // the frame as it was
+      return { copy, hand, rest };
     },
     taps() {
       const m = world.getResource(NavTapMemo);

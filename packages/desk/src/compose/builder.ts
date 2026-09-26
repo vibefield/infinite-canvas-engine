@@ -87,10 +87,9 @@ import {
   type World,
 } from "@ice/core";
 import type { HeldFrameInputs, OutgoingInputs, PortalInputs, SlotObject } from "../ground";
-import { carryOf, HELD_USER_REST, heldCamera, heldFrame, heldPose, HOLD, homePose, isNarrow, readingTarget } from "../hold/pose";
+import { carryOf, HELD_USER_REST, heldCamera, heldFocus, heldFrame, heldPose, HOLD, homePose, progressOf, readingTarget } from "../hold/pose";
 import { FLUX_REST, type InsideContext, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectFrame, rectOf } from "../kinds/world";
 import type { MarksInput } from "../marks/layout";
-import { DAY_LIGHT, mixLight } from "../mat/night";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
 import type { MatFrame, SlotLight } from "../mat/layout";
@@ -434,15 +433,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   let lastHand: HeldBuild | undefined;
   /** The desk's change count — everything the blurred copy behind the hand depends on; a change to the held object alone never bumps it. */
   let deskSeq = 0;
-  /** The pickup's progress at a carry amount — the island ease inverted by bisection (a put-down caught mid-flight, a pinned still). */
-  const inverseCarry = (e: number): number => {
-    if (e <= 0) return 0;
-    if (e >= 1) return 1;
-    let lo = 0;
-    let hi = 1;
-    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (carryOf(mid) < e) lo = mid; else hi = mid; }
-    return (lo + hi) / 2;
-  };
+  /** The desk's own flux moved in the last build (a ghost, a row's spring, a ramp, a flight): the frame it settles on bumps the count too. */
+  let deskWasMoving = false;
+  const inverseCarry = progressOf;
   // The comparator's reader: the stratum from the cache (stamped at equip, cached at first sight), the rest the world's.
   const reader: StackOrderReader = {
     get<T>(e: Entity, c: Component<T>): T | undefined {
@@ -594,6 +587,13 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const portalsOn = bopts.portals !== false;
       const nav = world.getResource(NavTransition);
       const flying = nav?.active === true;
+      /**
+       * THE DESK ITSELF MOVING this frame (D4b): a row's spring, a ghost fading, a re-dressing ramp, a flight — anything the blurred
+       * copy behind the hand would show. It bumps `deskSeq` at the end of the build, so the copy follows the desk while it moves
+       * and is reused only once it stands still (the spec's "rendered once when the pick-up settles"). Found by the world rig: a
+       * copy made while a cleared scene's ghosts were still fading kept them for the whole hold.
+       */
+      let deskMoving = flying;
       // the cut frame (D-D2b.7) and a harness's freeze: no spring advances — the departed desk IS its pre-cut frame
       const dt = bopts.freeze === true || (flying && nav.p === 0) ? 0 : dt0;
       const lamp: Lamp = lampOf(grid.mat.plane);
@@ -619,11 +619,11 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           const pin = pins.get(e);
           let moving: boolean;
           [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
-          live ||= moving;
+          if (moving) { live = true; deskMoving = true; }
           [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
-          live ||= moving;
+          if (moving) { live = true; deskMoving = true; }
           [st.ring, st.ringV, moving] = advance(st.ring, st.ringV, pin?.ring ?? (st.selected ? 1 : 0), S.ringHz, S.ringDamp, dt, pin?.ring !== undefined);
-          live ||= moving;
+          if (moving) { live = true; deskMoving = true; }
           // the kinds' own selection ring is retired — the marks draw the selection (D4a): they are handed ring 0, so a selected
           // object's pixels are the unselected object's
           flux = { ...fluxOf(st), ring: 0 };
@@ -684,7 +684,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           st.slot = slot;
           st.next = slot === "root" ? members[i + 1] : undefined;
           // the object in hand (or flying home) is drawn as a slot of its own over the desk, never among the desk's rows nor its marks (D4b)
-          if (hand !== null && e === hand.entity && slot === "root") continue;
+          if (hand !== null && hand.e > 0 && e === hand.entity && slot === "root") continue;
           const r = st.rect;
           const hx = r.w / 2 + st.kind.reach;
           const hy = r.h / 2 + st.kind.reach;
@@ -739,6 +739,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         const u = bopts.holdRedress === true ? 0 : smoothstep(0, 1, Math.min(1, (now - redressStart) / Math.max(redressMs, 1)));
         if (u < 1) {
           live = true;
+          deskMoving = true;
           if (redress.kind === "in") redressIn = { from: redress.from, u, frame: redress.frame };
           else redressOut = { frame: redress.frame, from: redress.from, u };
         }
@@ -770,8 +771,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             if (hand.closeT >= HOLD.closeLead || hand.openness < 0.35) { hand.p = Math.min(1, hand.p + hdt / (HOLD.outMs / 1000)); hand.e = (1 - carryOf(hand.p)) * hand.e0; }
             openTarget = false;
           }
-          if (hand.dir < 0 && hand.p >= 1 && hand.openness < 0.02) hand = null;   // LANDED
-          else {
+          // LANDED once home (p ≥ 1, the carry at 0): the cover's last hundredth shuts on the desk (D-D4b); a carry pinned at 0 is
+          // the rest frame — the object rides the desk's rows this frame, byte for byte
+          if (hand.dir < 0 && hand.p >= 1) hand = null;
+          else if (hand.e > 0) {
             const extentLocal = binding.extent({ rect: hst.rect, props: hst.props });
             const angle = numberProp(hst.props, "angle", 0);
             // the extent turned with the object about its centre — where it lies on the desk (the home pose); in hand the turn lets go
@@ -801,23 +804,15 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const settledNow = pin !== undefined ? hand.e >= 1 : hand.dir > 0 && hand.p >= 1;
             const coverMoving = openTarget ? hand.openness < 1 - 1e-3 : hand.openness > 1e-3;
             if (pin === undefined && (hand.dir < 0 || hand.p < 1 || coverMoving)) live = true;
-            const night = theme.name === "dark";
             heldBuild = {
               entity: hand.entity, e: hand.e, settled: settledNow, landing: hand.dir < 0,
               frame: { ...heldFrame(pose, extentLocal, target.single), settled: settledNow },
-              inputs: {
-                object: { kind: hst.kind.name, record: R }, view: heldView, grid: heldGrid, e: hand.e,
-                blur: isNarrow(vpSize) ? HOLD.blurPhone : HOLD.blur, dim: HOLD.dim * hand.e,
-                filter: night ? { saturate: 1 - (1 - HOLD.light.saturate) * hand.e, brightness: 1 - (1 - HOLD.light.brightness) * hand.e } : { saturate: 1, brightness: 1 },
-                light: night ? mixLight(theme.matLight, DAY_LIGHT, hand.e) : theme.matLight,
-              },
+              inputs: { object: { kind: hst.kind.name, record: R }, view: heldView, grid: heldGrid, e: hand.e, ...heldFocus(hand.e, vpSize, theme) },
               deskSeq,
             };
           }
         }
       }
-      lastHand = heldBuild;
-
       // membership: every object Active in the frame, its facts refreshed where the journal said, in two tiers — the carried set last
       const tiers: [Entity[], Entity[]] = [[], []];
       world.query(membersQ).each((b) => {
@@ -842,6 +837,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         g.del = Math.min(g.del + dt0 / ghostS, 1);
         if (g.del >= 1) { ghosts.delete(e); forget(g.kind, e); continue; }
         live = true;
+        deskMoving = true;
         const local = locals?.get(g.kind.name);
         const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, ring: 0, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp: rootLamp, view: rootView, grid: frameGrid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
         const G = g.kind.resolve(ctx);
@@ -913,6 +909,12 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const ruler = frameGrid.mat.ruler;
       const marked = marks.frame({ rows: markRows, cam, view: vp, dt, night: theme.name === "dark", rulers: ruler.on ? { margin: ruler.margin, band: ruler.band } : null });
       live ||= marks.live();
+      // the desk moved under the hand, this frame or the last: the blurred copy's count moves with it (the hand's own motion never
+      // does). The last frame too — a ghost leaves, a spring snaps to its target, a ramp ends — on a frame that reads still, and the
+      // copy must take that frame, not the one before it.
+      if (deskMoving || deskWasMoving) { deskSeq += 1; if (heldBuild !== undefined) heldBuild = { ...heldBuild, deskSeq }; }
+      deskWasMoving = deskMoving;
+      lastHand = heldBuild;
       stats = { active: list.length, objects: objects.length, culled: root.culled, ghosts: ghosts.size, portals: portalsCount, live };
       return {
         objects,

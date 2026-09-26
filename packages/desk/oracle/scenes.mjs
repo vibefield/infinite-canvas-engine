@@ -254,3 +254,25 @@ export const ZOOM_SCENES = [
   ...[0.2, 0.99, 1.01].map((zoom) => ({ name: `zoom-sparse-z${zoom}`, scene: { ...zoomBase, zoom, notes: deskNotes, fadeIn: [20, 40] } })),
 ];
 ORACLE_SCENES.push(...ZOOM_SCENES);
+
+// THE OPENING (design-015 §8, *Marks on the Mat* v2's Opening; D4b) — stills of an object IN HAND: a notebook picked up from a
+// turned rest, at 42 % of the carry (straightening, growing in log scale, the cover still shut, the desk half out of focus) and at
+// the top (the spread at its reading size under the desk eye, the cover open, the desk blurred 14 px and dimmed 8 %); the same by
+// night (the reading light: the book keeps its day light while the mat stays moonlit); a whiteboard at 42 % and at the top (a
+// flat kind: the pose is a camera); on a portrait phone (one page of the spread — the right — centred, the blur 10 px). And the
+// carry at 0: the rest frame byte for byte. `held` runs the check: at e = 0 the frame is the rest frame; else the frame outside the
+// held object's box (grown by its reach) equals the blurred desk alone (the hand drawn empty), inside it differs, and two renders
+// of the same still are identical.
+const holdBase = { ...deskBase, ...at(0, 0, 1) };
+const HOLD_NOTE = { x: 380, y: -160, seed: 5, text: "" };
+const HOLD_BOOK = nb({ angle: 0.08 });
+export const HOLD_SCENES = [
+  { name: "hold-book-e0-z1", held: true, scene: { ...holdBase, books: [HOLD_BOOK], notes: [HOLD_NOTE], hold: { book: 0, e: 0 } } },
+  { name: "hold-book-e0.42-z1", held: true, scene: { ...holdBase, books: [HOLD_BOOK], notes: [HOLD_NOTE], hold: { book: 0, e: 0.42 } } },
+  { name: "hold-book-e1-z1", held: true, scene: { ...holdBase, books: [HOLD_BOOK], notes: [HOLD_NOTE], hold: { book: 0, e: 1 } } },
+  { name: "hold-book-night-e1-z1", held: true, scene: { ...holdBase, theme: "dark", books: [nb({ angle: 0.08, cover: "ink" })], notes: [HOLD_NOTE], hold: { book: 0, e: 1 } } },
+  { name: "hold-book-phone-e1", held: true, scene: { ...deskBase, view: { cssW: 390, cssH: 844, dpr: 2 }, camX: -195, camY: -422, zoom: 1, books: [HOLD_BOOK], hold: { book: 0, e: 1 } } },
+  { name: "hold-board-e0.42-z1", held: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120 }], notes: [BOARD_NOTE], hold: { board: 0, e: 0.42 } } },
+  { name: "hold-board-e1-z1", held: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120 }], notes: [BOARD_NOTE], hold: { board: 0, e: 1 } } },
+];
+ORACLE_SCENES.push(...HOLD_SCENES);

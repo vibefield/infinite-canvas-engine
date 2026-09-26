@@ -15,6 +15,7 @@
     "rig:idle": "tsx scripts/idle.mjs",
     "rig:portal": "tsx scripts/portal.mjs",
     "rig:nav": "tsx scripts/nav.mjs",
+    "rig:open": "tsx scripts/open.mjs",
     "rig:sticky": "tsx scripts/sticky.mjs",
     "rig:two-tab": "tsx scripts/two-tab.mjs",
     "rig:collab": "tsx scripts/collab.mjs",

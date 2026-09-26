@@ -121,6 +121,14 @@ async function boot(): Promise<void> {
       const sc = ORACLE_SCENES.find((s) => s.name === name);
       if (!sc) throw new Error(`no oracle scene "${name}"`);
       await new Promise((resolve) => requestAnimationFrame(resolve));   // inside a frame, as a host's clock draws
+      // a scene with a view of its own (a phone's portrait still, D4b): the canvas takes it for this frame, the oracle's view after
+      const v = (sc.scene as { view?: { cssW: number; cssH: number; dpr: number } }).view ?? VIEW;
+      if (canvas.width !== v.cssW * v.dpr || canvas.height !== v.cssH * v.dpr) {
+        canvas.style.width = `${v.cssW}px`;
+        canvas.style.height = `${v.cssH}px`;
+        canvas.width = v.cssW * v.dpr;
+        canvas.height = v.cssH * v.dpr;
+      }
       const { prepared } = await scope(`frame ${name}`, () => {
         const encoder = device.createCommandEncoder();
         const r = desk.encode(encoder, surf.view(), surf.size(), sc.scene, opts?.prototypeRing === true ? { prototypeRing: true } : {});

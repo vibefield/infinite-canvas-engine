@@ -462,6 +462,45 @@ there.
   response alone). rig:ruler's 1× row (the atlas re-rendered at a changed device ratio) is not carried: apps/desk makes
   its atlas once at boot.
 
+<!-- design-015 D4b (2026-09-26) -->
+THE OPENING (design-015 §8, *Marks on the Mat* v2's Opening): an object is picked up INTO THE HAND —
+no camera move — and the desk behind it goes out of focus; put down, it flies home and lands where it
+lay. ADDITIVE beside the desk: nothing here reaches a `dom`/`gl` board.
+
+- **`Held` is the fact** (core, runtime tag; one writer `ops.open(entity)` / `ops.putDown()`; at most one
+  held object; `HeldView { zoom, panX, panY }` beside it as the user's facts). `open` refuses a type
+  without `openable` (`defineWidget`'s new object-only word — `defineObject` sets it from the kind's
+  `open` binding) and a second object while one is in hand; it selects what it picks up and cancels
+  live gestures; a nav cut puts the hand down. The double-tap router asks `open` for an openable target
+  before the container test (`HeldIntent`, applied after the tick as `NavIntent` is).
+- **The desk behind is inert** (core `systems/held.ts`, the head of `react`): while something is held
+  every local pointer carries `HandledByWidget` + `WheelHandled` — no pick, no tap, no drag, no
+  selection change, and BOTH wheel consumers skip it: the camera never hears a held gesture. The
+  pointer is mapped through the pose seam `stack.heldPose` (`HeldPoseSource.frame(e)`, beside
+  `framePick`/`navGeometry`) into `HeldPointer`; the routes are desk.js's: ⌘/ctrl-wheel or pinch zooms
+  the object about the pointer (rate 0.0105, 0.72 … 3×), a plain wheel and a middle/Space drag pan it
+  once brought close, in past 0.72× puts it down and MUTES the rest of that gesture (`HeldMute`), a
+  click on the soft desk or two taps on the object put it down.
+- **The kind's opening** (`ObjectKind.open`): `extent`, `pose` (`camera` | `eye`), `openness`, `spread`,
+  `tools` (declared; built at D3t). The notebook opens its spread under the desk eye (a cover spring in
+  its `Books` state — the palm's 1.4 Hz ζ .78 — and a rise of H·(1 − 1/grow)); the board and the
+  calendar their own rect, flat. `hold/pose.ts` is the hand's pure math (the reading size, the pose
+  between, the pose as a camera, the phone's single page, the focus).
+- **The render path** (`@ice/desk`): the builder's HAND flux (560 ms up on the island ease, the cover
+  past 42 %; 140 ms lead + 440 ms home, landing once shut) draws the held object as a slot of its own
+  under the pose's CAMERA; the ground's `renderHeldFrame` (shared with the Node oracle) makes the desk
+  copy ONCE per stamp (half dpr, dual-Kawase blur, its own submit first), lays the hand (a bare slot into
+  a premultiplied full-size target, the day's light by night) over the copy mixed toward the blur by the
+  carry, dimmed 8 %·e, through the reading light (saturate .62 · brightness .82). At e = 0 the rest path.
+- **The held bar** (`@ice/react` `<SelectionMenu>`): the one menu travels to the foot (340 ms, M1) —
+  Send · the kind's tools (dim) · Done — hides while landing, back 200 ms after; the keymap: ⏎ picks up
+  an openable / enters a container, Esc puts down first, the desk's keys go quiet in hand.
+- **apps/desk**: Tab walks the objects in reading order; `__desk.hand/open/putDown/pinHold/heldView/
+  holdCopies/holdCost`; `setScene` takes `hold` and a scene's own `view`; `rig:open` (every way back,
+  the mute, held zoom and pan, the keyboard, idle-zero in hand, the copy standing, the cost) joins
+  `gate:landing`; `rig:world` draws the seven `hold-*` stills (Chrome = Node); the oracle's `held` check
+  (the rest frame at e = 0 byte for byte; the object's reach past its box bounded; renders identical).
+
 ### Fixed
 
 <!-- core (2026-09-26) -->

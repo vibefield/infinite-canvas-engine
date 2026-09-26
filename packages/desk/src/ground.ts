@@ -482,7 +482,9 @@ export class Ground {
   /** The hand — the focus behind an object in hand and the object over it (D4b); null when the options named no hold shaders. */
   readonly hold: HoldPass | null;
   /** The desk copy's cache (D4b): the stamp it was made for and the stats of that frame. */
-  private readonly heldCache: HeldCache = { stamp: null, stats: null };
+  private readonly heldCache: HeldCache = { stamp: null, stats: null, copies: 0 };
+  /** How many desk copies the hand has made so far (D4b) — a rig's witness that the blurred desk is made once per settled state. */
+  heldCopies(): number { return this.heldCache.copies; }
 
   private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null, hold: HoldPass | null) {
     this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks; this.hold = hold;
@@ -528,8 +530,8 @@ export class Ground {
   dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.mat.dispose(); }
 }
 
-/** The desk copy's cache between held frames (D4b): the `stamp` it was made for (null: none yet) and the stats of that frame. */
-export interface HeldCache { stamp: string | null; stats: GroundStats | null }
+/** The desk copy's cache between held frames (D4b): the `stamp` it was made for (null: none yet), the stats of that frame, and how many copies were ever made (the "once per settled state" witness). */
+export interface HeldCache { stamp: string | null; stats: GroundStats | null; copies: number }
 
 /** Where a held frame goes: the swap chain's view and size (the ground's surface, or the oracle's target dressed as one). */
 export interface HeldInto { view(): GPUTextureView; size(): { readonly w: number; readonly h: number } }
@@ -552,6 +554,7 @@ export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet
   const remade = hold.fit(size.w, size.h);
   if (remade || cache.stamp !== held.stamp) {
     cache.stamp = held.stamp;
+    cache.copies += 1;
     const encoder = device.createCommandEncoder({ label: "hold/copy" });
     const { held: _held, marks: _marks, ...rest } = inputs;
     const copy: GroundFrameInputs = { ...rest, view: { ...inputs.view, dpr: dpr / 2 } };
