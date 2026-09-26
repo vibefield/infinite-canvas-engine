@@ -14,7 +14,7 @@ import { dayOfKey, monthGrid, monthIndex, phasesBetween } from "../src/calendar/
 import { printSheet, type PrintInputs, type SheetPrint } from "../src/calendar/print";
 import { contentOf, type PinnedSheet, type PrintPass, type PrintRaster, PrintTiles, type TileSource } from "../src/calendar/printing";
 import { cellAt, sheetOf } from "../src/calendar/sheet";
-import { EMPTY, entryOf, levelFor, MISSING, TILE_TEX, tileGrid } from "../src/calendar/tiles";
+import { EMPTY, entryOf, levelFor, MISSING, TILE_TEX, tileGrid, tilesIn } from "../src/calendar/tiles";
 import { calendarKind } from "../src/kinds";
 import { encodeSeeds } from "../src/paper/seeds";
 import type { HandMetrics } from "../src/paper/text";
@@ -211,6 +211,39 @@ describe("the print's tiles, a cache of the print (calendar/printing.ts)", () =>
     expect(frames).toBeGreaterThan(5);
   });
 
+  it("a view that wants more tiles than the layers hold: the rest STARVE — counted, never pending (the desk is not kept awake)", () => {
+    const clock = { t: 0 };
+    const { pass, uploads } = fakePass(8);
+    const raster = fakeRaster(clock);
+    const tiles = new PrintTiles({ grid, now: () => clock.t, budgetMs: 1e9 });
+    const p = printSheet(inputs([ev("2026-09-02", "haircut"), ev("2026-09-17", "dentist 3pm")]));
+    tiles.begin(pass);
+    tiles.sheet(pass, raster, "1:24320", 0, p, whole, 4);
+    tiles.end(pass);
+    expect(uploads.length).toBe(8);   // every layer, once
+    expect(tiles.starved()).toBeGreaterThan(0);
+    expect(tiles.pending()).toBe(0);
+  });
+
+  it("mid-turn (one rung): what is in view is drawn at the view's own level alone — the rung under it is not asked for", () => {
+    const clock = { t: 0 };
+    const view = { x0: 400, y0: 400, x1: 900, y1: 800 };
+    const run = (rungs: 1 | 2): Int32Array => {
+      const { pass, tables } = fakePass();
+      const tiles = new PrintTiles({ grid, now: () => clock.t, budgetMs: 1e9 });
+      tiles.begin(pass);
+      tiles.sheet(pass, fakeRaster(clock), "1:24320", 0, printSheet(inputs([ev("2026-09-02", "haircut")])), view, 6, rungs);
+      tiles.end(pass);
+      return must(tables.get(0));
+    };
+    const named = (t: Int32Array, l: number) => [...tilesIn(grid, l, view.x0, view.y0, view.x1, view.y1)].filter(([tx, ty]) => t[entryOf(grid, l, tx, ty)] !== MISSING).length;
+    const one = run(1);
+    const two = run(2);
+    expect(named(two, 5)).toBeGreaterThan(0);
+    expect(named(one, 5)).toBe(0);
+    expect(named(one, 6)).toBe(named(two, 6));
+  });
+
   it("a COMMITTED sheet (the oracle's, a rig's pin): its table names its one level — a layer per tile, EMPTY where nothing prints — the rest MISSING", () => {
     const { pass, written, tables } = fakePass();
     const tiles = new PrintTiles({ grid });
@@ -229,6 +262,18 @@ describe("the print's tiles, a cache of the print (calendar/printing.ts)", () =>
     tiles.begin(pass);
     tiles.pin(pass, "1:24320", 1, pinned);
     expect(written.length).toBe(2);
+    // the same owner pinned BLANK (the next still's pad in the same month): none of the sheet before stays — every entry missing
+    tiles.begin(pass);
+    tiles.pin(pass, "1:24320", 1, { level: 0, tiles: new Map(), empty: new Set() });
+    tiles.end(pass);
+    expect([...must(tables.get(1))].filter((v) => v !== MISSING).length).toBe(0);
+    // …and a sheet of another tile set keeps only its own
+    tiles.begin(pass);
+    tiles.pin(pass, "1:24320", 1, { level: 2, tiles: new Map([["2:2", bytes]]), empty: new Set() });
+    tiles.end(pass);
+    const t2 = must(tables.get(1));
+    expect([...t2].filter((v) => v !== MISSING).length).toBe(1);
+    expect(t2[entryOf(grid, 2, 0, 0)]).toBe(MISSING);
   });
 
   it("the rung a screen wants: the density's, at or above it", () => {

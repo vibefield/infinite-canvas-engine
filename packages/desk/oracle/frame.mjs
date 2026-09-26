@@ -70,6 +70,10 @@ import { newMotion, poseOf, withDesk } from "../src/notebook/motion.ts";
 import { lampDir, rigidOf } from "../src/notebook/place.ts";
 import { frameOf, relaxOf, specOf, swingOf } from "../src/notebook/shape.ts";
 import { CALENDAR } from "../src/calendar/law.ts";
+import { monthKeyOf } from "../src/calendar/data.ts";
+import { PrintTiles } from "../src/calendar/printing.ts";
+import { tileGrid } from "../src/calendar/tiles.ts";
+import { BLANK_SHEET } from "./prints.mjs";
 import { dayOfKey, isWeekendCol, monthGrid, monthIndex, monthOfDay } from "../src/calendar/month.ts";
 import { buildPad, padFrame } from "../src/calendar/pad.ts";
 import { rollState } from "../src/calendar/roll.ts";
@@ -426,10 +430,36 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : t.kind === "book" ? { kind: NOTEBOOK_KIND, record: bookOf(t) } : thingError(t)));
     // the desk calendars lie in the pads stratum, beneath everything whatever their place in the list (`padsFirst` puts them before the things)
     const pads = (desk.calendars ?? []).map((c, i) => ({ kind: CALENDAR_KIND, record: calendarDraw(c, i) }));
+    if (depth === 0) pinPrints(desk.calendars ?? []);
     const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...(s.padsFirst ? pads : []), ...thingObjects, ...(s.padsFirst ? [] : pads)];
     return { objects, portals };
   }
   const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board, a print or a book — not "${t.kind}"`); };
+  /**
+   * The desk calendars' PRINTS (D3t-c): each pad's sheets in play — the month on it and the one in motion, as `calendarDraw` lays
+   * them in its table slots (2i, 2i + 1) — pinned with the COMMITTED print its scene names for that month (`print: { "YYYY-MM":
+   * name }`, prints.mjs), else BLANK (every tile missing: the paper and its grid, as every pad before D3t-c); the tile driver is the
+   * world's own (calendar/printing.ts), so both hosts write the same tables and the same bytes.
+   */
+  const printTiles = new PrintTiles({ grid: tileGrid(PAD.W, PAD.H) });
+  function pinPrints(pads) {
+    if (pads.length === 0) return;
+    printTiles.begin(calendars);
+    pads.forEach((c, i) => {
+      const shown = monthOfKey(c.month ?? "2026-09");
+      const pose = c.pose ?? {};
+      const up = pose.p !== undefined ? (pose.dir ?? 1) === 1 : (pose.peek ?? 0) > 1e-3;
+      const sheets = pose.p === undefined && !up ? [[shown, i * 2]] : up ? [[shown + 1, i * 2], [shown, i * 2 + 1]] : [[shown, i * 2], [shown - 1, i * 2 + 1]];
+      for (const [month, slot] of sheets) {
+        const name = c.print?.[monthKeyOf(month)];
+        const sheet = name === undefined ? BLANK_SHEET : assets.prints?.[name];
+        if (sheet === undefined) throw new Error(`oracle: no committed print "${name}" (oracle/fixtures/assets/${name}.json + .bin — apps/desk scripts/print-fixture.mjs --write)`);
+        printTiles.pin(calendars, `${i + 1}:${month}`, slot, sheet);
+      }
+    });
+    printTiles.end(calendars);
+  }
+
   /**
    * A book as a desk draws it: the lab's (`notebookDraw` — the same object for the same spec, its id and mesh kept) with its own
    * selection ring RETIRED, as the builder hands every kind ring 0 (D4a: a selection is the desk's marks); `prototypeRing` keeps the

@@ -20,6 +20,8 @@ export interface OracleAssets {
   /** photo-1.json — the prints' picture's metadata (`w` × `h` rgba8, sRGB, straight alpha; tools/make-photo-fixture.mjs). */
   readonly photoMeta: { readonly w: number; readonly h: number } | null;
   readonly photo: Uint8Array<ArrayBuffer> | null;
+  /** The desk calendars' committed prints by name (prints.mjs — D3t-c); absent = every pad blank (its paper and grid). */
+  readonly prints?: Readonly<Record<string, { readonly level: number; readonly tiles: ReadonlyMap<string, Uint8Array<ArrayBuffer>>; readonly empty: ReadonlySet<string> }>>;
 }
 
 export interface OracleDesk {

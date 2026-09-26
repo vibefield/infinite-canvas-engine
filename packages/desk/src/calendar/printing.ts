@@ -87,6 +87,7 @@ export class PrintTiles {
   private readonly tables = new Map<number, { owner: string; table: Int32Array; dirty: boolean }>();
   private t0 = 0;
   private pendingN = 0;
+  private starvedN = 0;
   private drawnN = 0;
 
   constructor(opts: PrintTilesOptions) {
@@ -99,6 +100,8 @@ export class PrintTiles {
   pending(): number { return this.pendingN; }
   /** Tiles drawn since the driver was made (a witness). */
   drawn(): number { return this.drawnN; }
+  /** Tiles the last frame wanted and no layer could hold (every one in use by that frame) — a witness. */
+  starved(): number { return this.starvedN; }
   /** Resident tiles. */
   resident(): number { return this.cache?.size ?? 0; }
 
@@ -111,6 +114,7 @@ export class PrintTiles {
   begin(pass: PrintPass): void {
     this.cacheOf(pass).tick();
     this.pendingN = 0;
+    this.starvedN = 0;
     this.t0 = this.now();
   }
 
@@ -126,14 +130,14 @@ export class PrintTiles {
    * under it) for what is in view — resident ones kept, empty ones marked, the rest drawn (the view's centre first) within the
    * frame's budget. `owner` names the sheet (`${pad}:${month}`); a sheet with no print yet (its face loading) keeps its table.
    */
-  sheet(pass: PrintPass, raster: PrintRaster, owner: string, slot: number, print: SheetPrint, view: SheetView, level: number): void {
+  sheet(pass: PrintPass, raster: PrintRaster, owner: string, slot: number, print: SheetPrint, view: SheetView, level: number, rungs: 1 | 2 = 2): void {
     const cache = this.cacheOf(pass);
     const T = this.tableFor(slot, owner);
     const want: { l: number; tx: number; ty: number; d: number }[] = [];
     for (let l = 0; l < BASE_LEVELS; l++) for (const [tx, ty] of tilesIn(this.grid, l, 0, 0, this.grid.W, this.grid.H)) want.push({ l, tx, ty, d: -1 });
     const cx = (view.x0 + view.x1) / 2;
     const cy = (view.y0 + view.y1) / 2;
-    for (let l = Math.max(BASE_LEVELS, level - 1); l <= level; l++) {
+    for (let l = Math.max(BASE_LEVELS, level - rungs + 1); l <= level; l++) {
       for (const [tx, ty] of tilesIn(this.grid, l, view.x0, view.y0, view.x1, view.y1)) {
         const r = tileRect(l, tx, ty);
         want.push({ l, tx, ty, d: (l === level ? 0 : 1e9) + Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy) });
@@ -156,8 +160,10 @@ export class PrintTiles {
         this.pendingN += 1;
         continue;
       }
+      // every layer in use by this very frame: the tile STARVES (its level's fallback shows) — not pending, so a view that wants more
+      // tiles than the layers hold does not keep the desk awake redrawing them (the prototype's did); a frame that moves retries it
       const put = cache.put(key, content);
-      if (put === null) { this.pendingN += 1; continue; }
+      if (put === null) { this.starvedN += 1; continue; }
       if (put.evicted !== null) this.forget(put.evicted);
       const band = bandOf(t.l);
       pass.uploadTile(put.layer, raster.tile(print, r.x - g, r.y - g, (r.w + 2 * g), (r.h + 2 * g), band));
@@ -169,11 +175,19 @@ export class PrintTiles {
 
   /**
    * A sheet's COMMITTED tiles (a still's — the Node oracle's, a rig's pin): its table names the fixture's level alone (the rest
-   * missing: the shader falls back to it from any density), each tile written once into a layer of its own.
+   * missing: the shader falls back to it from any density), each tile written once into a layer of its own. The table is the
+   * pinned sheet's EXACTLY: a pin under an owner that pinned another sheet before (the oracle's pad 1 in September, scene after
+   * scene) keeps none of that sheet's entries — a blank pin is a blank sheet.
    */
   pin(pass: PrintPass, owner: string, slot: number, pinned: PinnedSheet): void {
     const cache = this.cacheOf(pass);
     const T = this.tableFor(slot, `pin:${owner}`);
+    const named = new Set<number>();
+    for (const at of [...pinned.tiles.keys(), ...pinned.empty]) {
+      const [tx, ty] = at.split(":").map(Number) as [number, number];
+      named.add(entryOf(this.grid, pinned.level, tx, ty));
+    }
+    for (let e = 0; e < T.table.length; e++) if (!named.has(e) && T.table[e] !== MISSING) { T.table[e] = MISSING; T.dirty = true; }
     for (const [at, bytes] of pinned.tiles) {
       const [tx, ty] = at.split(":").map(Number) as [number, number];
       const key = `pin:${owner}:${pinned.level}:${tx}:${ty}`;

@@ -277,7 +277,7 @@ export interface Pads extends KindLocal {
   draft(e: Entity, d: PadDraft | null): void;
   draftOf(e: Entity): PadDraft | null;
   /** The print's tiles: resident, still to draw, drawn since the desk began. */
-  tiles(): { readonly resident: number; readonly pending: number; readonly drawn: number };
+  tiles(): { readonly resident: number; readonly pending: number; readonly drawn: number; readonly starved: number };
   /** The desk's raster reads a live sheet back as a fixture would hold it (level `level`'s tiles, RGBA) — a rig's door; undefined without a raster. */
   readSheet(e: Entity, month: number, level: number): { readonly tiles: ReadonlyMap<string, Uint8Array<ArrayBuffer>>; readonly empty: ReadonlySet<string> } | undefined;
   // ---- D3t-c: the month's turn (calendar/turn.ts) — flux toward the document's month
@@ -492,7 +492,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     marksOf: (e) => pads.get(e)?.marks,
     draft(e, d) { const st = state(e); if (st.draft !== d) { st.draft = d; woke = true; } },
     draftOf: (e) => pads.get(e)?.draft ?? null,
-    tiles: () => ({ resident: tiles?.resident() ?? 0, pending: tiles?.pending() ?? 0, drawn: tiles?.drawn() ?? 0 }),
+    tiles: () => ({ resident: tiles?.resident() ?? 0, pending: tiles?.pending() ?? 0, drawn: tiles?.drawn() ?? 0, starved: tiles?.starved() ?? 0 }),
     readSheet(e, month, level) {
       const st = pads.get(e);
       const print = st === undefined ? undefined : prints.get(`${st.id}:${month}`)?.print;
@@ -538,7 +538,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
         if (x1 < 0 || y1 < 0 || x0 > F.W || y0 > F.H) continue;
         const level = levelFor(view.zoom * view.dpr);
         const t = tilesOf(pass);
-        t.sheet(pass, host.print, `${st.id}:${month}`, slot, print, { x0, y0, x1, y1 }, month === G.base ? level : Math.max(level - 1, 0));
+        t.sheet(pass, host.print, `${st.id}:${month}`, slot, print, { x0, y0, x1, y1 }, month === G.base ? level : Math.max(level - 1, 0), G.moving === null ? 2 : 1);
         t.end(pass);
       }
       return marksOn(st, markMonth, G.weekStart, markPrint);

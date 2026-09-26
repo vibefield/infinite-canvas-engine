@@ -11,7 +11,10 @@
 //
 // The minimat, chain and nav scenes need insides and flights (D2b) and are not drawn here; a scene
 // off the oracle is drawn and captured ONCE more (the second witness the landing discipline asks of
-// a rig on a loaded host) and reported as a flap if that witness is clean. THE EXIT CODE IS THE
+// a rig on a loaded host) and reported as a flap if that witness is clean. The desk calendars' pad-print scenes pin the COMMITTED
+// print on both hosts (oracle/prints.mjs — Node has no canvas to print with); after the scenes, the same scenes are drawn once more
+// with the LIVE print and each sheet in play is read back and held to the committed bytes, tile for tile (D3t-c — the check of
+// scripts/print-fixture.mjs), so the stills' print is the one the desk draws. THE EXIT CODE IS THE
 // VERDICT: the number of scenes red on both witnesses; 1 for a failed preflight, boot or throw; 2
 // for the watchdog. `pnpm run gate:landing` runs it after rig:parity.
 import { spawn } from "node:child_process";
@@ -20,6 +23,7 @@ import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { ORACLE_SCENES } from "@ice/desk/oracle/scenes.mjs";
 import { launchChrome, openTab } from "./cdp.mjs";
+import { compareSheet, liveSheet, printedSheets } from "./print-fixture.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -161,7 +165,21 @@ try {
     const detail = r.error === undefined ? `maxΔ ${r.maxD} · ${r.differ} px differ · over4 ${r.over4Pct}% · ${r.w}×${r.h}` : `ERROR ${r.error}`;
     console.log(`${clean(r) ? "PASS" : excused ? "KEPT" : "FAIL"}  ${sc.name.padEnd(24)} ${detail.padEnd(52)} ${r.objects}/${r.spawned} ${JSON.stringify(r.kinds)}${r.settled ? "" : " · UNSETTLED"}${note}`);
   }
-  console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} drawn from the world · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness)`);
+  // THE LIVE PRINT = THE COMMITTED (D3t-c): the pad-print scenes above pinned the committed print; drawn again with the desk's own
+  // raster (their events the pad's data children, today pinned), each sheet in play is held to the committed bytes, tile for tile
+  const printed = printedSheets(scenes);
+  let sheets = 0;
+  if (printed.size > 0) console.log("\nthe live print vs the committed (oracle/fixtures/assets/print-*)");
+  for (const [name, uses] of printed) {
+    for (const u of uses) {
+      const sheet = await liveSheet(tab, u.scene, u.pad, u.month);
+      const r = sheet === null ? null : compareSheet(name, sheet);
+      sheets += 1;
+      if (r === null || !r.ok) failures += 1;
+      console.log(`${r?.ok ? "PASS" : "FAIL"}  ${name} · ${u.scene.name} (${u.month}): ${r === null ? "the month never showed live" : r.sameSet ? `the live print = the committed? ${r.tiles} tiles + ${r.empty} empty, ${r.tilesDiffer} differ (${r.differ} of ${r.bytes} bytes)` : "a different set of tiles"}`);
+    }
+  }
+  console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} drawn from the world${sheets > 0 ? ` · ${sheets} live sheet${sheets === 1 ? "" : "s"} held to the committed print` : ""} · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness)`);
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);
 } catch (err) {
   console.log("THREW:", String(err.stack ?? err));

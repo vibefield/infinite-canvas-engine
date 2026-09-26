@@ -20,6 +20,8 @@ import { fileURLToPath } from "node:url";
 import { create, globals } from "webgpu";
 import { ORACLE_SCENES, VIEW } from "./scenes.mjs";
 import { createOracleDesk } from "./frame.mjs";
+import { PRINT_FIXTURES, printSheetOf } from "./prints.mjs";
+import { inflateRawSync } from "node:zlib";
 import { acquire } from "../src/engine/device.ts";
 import { Target, readback } from "../src/engine/target.ts";
 import { DEFAULT_MAT_CONFIG } from "../src/mat/layout.ts";
@@ -60,6 +62,14 @@ const inkMetaPath = resolve(root, "oracle/fixtures/assets/ink-note-1.json");
 const inkMeta = existsSync(inkMetaPath) ? JSON.parse(readFileSync(inkMetaPath, "utf8")) : null;
 const photoMetaPath = resolve(root, "oracle/fixtures/assets/photo-1.json");
 const photoMeta = existsSync(photoMetaPath) ? JSON.parse(readFileSync(photoMetaPath, "utf8")) : null;
+// the desk calendars' committed prints (D3t-c — prints.mjs): the live print's tiles, read back from the world in Chrome
+const prints = {};
+for (const name of PRINT_FIXTURES) {
+  const metaPath = resolve(root, `oracle/fixtures/assets/${name}.json`);
+  if (!existsSync(metaPath)) { console.log(`no committed print ${name} (oracle/fixtures/assets/${name}.*): its scenes cannot be drawn`); continue; }
+  const bin = inflateRawSync(readFileSync(resolve(root, `oracle/fixtures/assets/${name}.bin`)));
+  prints[name] = printSheetOf(JSON.parse(readFileSync(metaPath, "utf8")), new Uint8Array(bin.buffer, bin.byteOffset, bin.byteLength));
+}
 // THE ERROR-SCOPE PROBE (design-015 D3r-b): every GPU error the desk's creation and every frame after it raises — a validation
 // error, an out-of-memory, an internal one — is caught in a scope of its own and counted; a single one fails the run. (The notebook's
 // and the calendar's passes watched their first four frames themselves; as kinds they record into the frame's encoder, so the host
@@ -80,6 +90,7 @@ const desk = await scoped("creation", () => createOracleDesk({
     glyphMeta, glyphs: glyphMeta && glyphMeta.count >= 12 ? hostRaw("glyphs-mono-2x.r8") : null,
     inkMeta, ink: inkMeta && inkMeta.w > 0 ? hostRaw("ink-note-1.r8") : null,
     photoMeta, photo: photoMeta && photoMeta.w > 0 ? hostRaw("photo-1.rgba") : null,
+    prints,
   },
 }));
 const { mat, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf } = desk;
@@ -934,6 +945,39 @@ async function padCheck(sc) {
 }
 
 /**
+ * THE PRINT (D3t-c), as pixels — the committed print a still pins (prints.mjs; rig:world holds the live print to its bytes) is
+ * what the pads show: the frame with it and the same frame with every month blank differ inside the pads' box alone (outside it
+ * maxΔ 0), over the print's ink; mid-roll BOTH sheets carry theirs — each month blanked alone changes the frame.
+ */
+async function printCheck(sc) {
+  const s = sc.scene;
+  const months = Object.keys(s.calendars[0].print ?? {});
+  const keeping = (keep) => ({ ...s, calendars: s.calendars.map((c) => ({ ...c, print: Object.fromEntries(Object.entries(c.print ?? {}).filter(([m]) => keep.includes(m))) })) });
+  const { px: A } = await render(s);
+  const box = desk.calendars.screenBox;
+  const { px: B } = await render(keeping([]));
+  let outside = 0;
+  let inked = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const d = delta(A, B, (y * W + x) * 4);
+    if (!inBox(box, x, y)) { if (d > outside) outside = d; } else if (d > 0) inked++;
+  }
+  let ok = outside === 0 && inked > 30000;
+  let each = "";
+  if (sc.bothSheets) {
+    for (const m of months) {
+      const { px: C } = await render(keeping(months.filter((k) => k !== m)));
+      let n = 0;
+      for (let i = 0; i < W * H; i++) if (delta(A, C, i * 4) > 0) n++;
+      each += ` · ${m} blanked alone: ${n.toLocaleString()} px change`;
+      ok &&= n > 10000;
+    }
+  }
+  console.log(`  ${ok ? "PASS" : "FAIL"}  print      ${sc.name.padEnd(24)} the committed print vs every month blank: outside the pads' box maxΔ ${outside}/255 · inside it ${inked.toLocaleString()} px of ink${each}`);
+  return ok;
+}
+
+/**
  * design-015 §4.2 for the PADS, as pixels — a note stuck to a day lies ON the pad: (1) the pads listed before the things and after
  * them give the same frame, byte for byte (the pads are the first stratum whatever the list says); (2) inside every note's sheet
  * (1.5 device px in) the frame is the same notes with no pad under them — the pad beneath a note leaves the note's pixels alone.
@@ -1042,6 +1086,7 @@ for (const sc of scenes) if (sc.book) { if (!(await bookCheck(sc))) failed += 1;
 for (const sc of scenes) if (sc.bookOrder) { if (!(await bookOrderCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.pad) { if (!(await padCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.padNote) { if (!(await padNoteCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.printed) { if (!(await printCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.held) { if (!(await heldCheck(sc))) failed += 1; }
 // the probe's verdict: creation and every frame drawn above, in scopes of their own
 console.log(`${probe.errors.length ? "FAIL" : "PASS"}  error scopes (validation · out-of-memory · internal) over the desk's creation and ${probe.frames} frames: ${probe.errors.length} error${probe.errors.length === 1 ? "" : "s"}${probe.errors.length ? `\n  ${probe.errors.slice(0, 5).join("\n  ")}` : ""}`);

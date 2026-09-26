@@ -21,6 +21,7 @@ import inkMetaUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.json?url";
 import inkUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.r8?url";
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
+import { PRINT_FIXTURES, type PrintMeta, printSheetOf } from "@ice/desk/oracle/prints.mjs";
 
 /** The page's door for the rig (and a person at the console). */
 export interface DeskParity {
@@ -105,9 +106,18 @@ async function boot(): Promise<void> {
     scoped += 1;
     return out;
   };
+  // the desk calendars' committed prints (D3t-c — oracle/prints.mjs): the same bytes the oracle inflates from disk
+  const prints: Record<string, ReturnType<typeof printSheetOf>> = {};
+  for (const name of PRINT_FIXTURES) {
+    const base = new URL(`../../../packages/desk/oracle/fixtures/assets/${name}`, location.href).href;
+    const [metaRes, binRes] = await Promise.all([fetch(`${base}.json`), fetch(`${base}.bin`)]);
+    if (!metaRes.ok || !binRes.ok) continue;   // not committed yet: its scenes cannot be drawn (the oracle says so too)
+    const bytes = new Uint8Array(await new Response((await binRes.blob()).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+    prints[name] = printSheetOf((await metaRes.json()) as PrintMeta, bytes);
+  }
   const desk = await scope("creation", () => createOracleDesk({
     device, format: surf.format, text: shaderText,
-    assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink, photoMeta, photo },
+    assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink, photoMeta, photo, prints },
     log: (message) => console.warn(message),
   }));
   const state: DeskParity["state"] = { drawn: null, frames: 0, get scoped() { return scoped; }, errors };

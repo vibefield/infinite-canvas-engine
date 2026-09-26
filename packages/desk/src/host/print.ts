@@ -28,7 +28,9 @@ export function printRaster(opts: PrintRasterOptions): PrintRaster {
   const context = (): OffscreenCanvasRenderingContext2D => {
     if (ctx === null) {
       canvas = new OffscreenCanvas(TILE_TEX, TILE_TEX);
-      ctx = canvas.getContext("2d", { willReadFrequently: false });
+      // the CPU raster (as the note's ink): a GPU-backed 2D canvas rasterised the same tile differently run to run (seen by the
+      // print check — 6 tiles of a sheet a few bytes apart), so the committed print could not be held to the live one
+      ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (ctx === null) throw new Error("desk/print: no 2d context on an OffscreenCanvas");
     }
     return ctx;

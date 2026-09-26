@@ -208,6 +208,28 @@ export const CALENDAR_SCENES = [
 ];
 ORACLE_SCENES.push(...CALENDAR_SCENES);
 
+// THE DESK CALENDAR AT WORK (D3t-c) — its PRINT from its entries: a month with its lines (the untimed first, a time set apart), a
+// highlighter's band across a run, today ringed and the past ticked (today pinned: the 24th); mid-roll, with entries on both sheets;
+// a note stuck to a day of it (its day has no lines: its cell's print is the same bytes). The world lays `events` as the pad's data
+// children and pins `today`; the print is the COMMITTED one both hosts pin (`print`: month → oracle/fixtures/assets/<name>.*, the
+// live print's level-2 tiles read back from the world by apps/desk scripts/print-fixture.mjs; rig:world holds the live print to them).
+export const PAD_EVENTS = [
+  { start: "2026-09-02", text: "call mum back" },
+  { start: "2026-09-02", text: "11am haircut" },
+  { start: "2026-09-11", end: "2026-09-15", text: "holiday in Lisbon", ink: "yellow" },
+  { start: "2026-09-17", text: "dentist 3pm" },
+  { start: "2026-09-29", text: "tax return", ink: "red" },
+  { start: "2026-10-06", text: "9:30 flight to Porto" },
+  { start: "2026-10-19", end: "2026-10-21", text: "conference", ink: "green" },
+];
+const printed = (extra = {}) => pad({ events: PAD_EVENTS, today: "2026-09-24", print: { "2026-09": "print-2026-09", "2026-10": "print-2026-10" }, ...extra });
+export const PRINT_SCENES = [
+  { name: "pad-print-z0.42", pad: true, printed: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [printed()] } },
+  { name: "pad-print-roll-z0.42", pad: true, printed: true, bothSheets: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [printed({ pose: { dir: 1, p: 0.55 } })] } },
+  { name: "pad-print-note-z0.85", padNote: true, printed: true, scene: { ...deskBase, ...at(...wpt(880, 1330), 0.85), calendars: [printed()], notes: [{ x: 0, y: 0, seed: 11, text: "", pin: { day: "2026-09-24" } }] } },
+];
+ORACLE_SCENES.push(...PRINT_SCENES);
+
 // THE MARKS (design-015 §7, *Marks on the Mat* v2; D4a) — the desk's chrome over the objects, as stills: the brackets on each
 // kind at rest (the knobs only where it resizes: the whiteboard, the print); the lock-on pinned at t = 0.3 (the frame still
 // arriving from further out); several: the members' ticks and one union; the vellum mid-drag (two notes touched and ticked, a

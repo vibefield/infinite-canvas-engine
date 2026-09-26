@@ -9,7 +9,8 @@
 import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
 import { type BookPose, type Books, type PadPose, type Pads, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk";
-import { addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/desk/objects";
+import { addEvent, addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, monthKeyOf, monthOfKey, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/desk/objects";
+import { BLANK_SHEET, type CommittedSheet, type PrintMeta, printSheetOf } from "@ice/desk/oracle/prints.mjs";
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
 import { BOARD } from "@ice/desk";
@@ -105,6 +106,14 @@ export interface OraclePad {
   readonly pen?: string;
   readonly selected?: boolean;
   readonly held?: boolean;
+  /** Its entries (D3t-c): laid as its data children, one non-undoable transaction — the print draws them. */
+  readonly events?: readonly { readonly start: string; readonly end?: string; readonly text: string; readonly ink?: string }[];
+  /** Today pinned for the still (the print rings it and ticks the days before it). */
+  readonly today?: string;
+  /** The COMMITTED print by month (`YYYY-MM` → a fixture's name, oracle/prints.mjs): pinned as both hosts draw it; a month it names none of is blank. */
+  readonly print?: Readonly<Record<string, string>>;
+  /** Draw the LIVE print instead of a committed one (the fixture tool's and the live check's). */
+  readonly livePrint?: boolean;
 }
 
 /** The scene fields the D3w kinds read. */
@@ -148,6 +157,51 @@ export function pinPads(handle: DeskLayerHandle, pads: readonly { readonly entit
     if (q === undefined) continue;
     const pose: PadPose = q.p !== undefined ? { roll: { dir: q.dir ?? 1, p: q.p, ...(q.tilt !== undefined ? { tilt: q.tilt } : {}) } } : { ...(q.peek !== undefined ? { peek: q.peek } : {}) };
     local?.pin(entity, pose);
+  }
+}
+
+/** The pads' entries (D3t-c): an EVENT entity each, a child of its pad — one non-undoable transaction, in the scene's order. */
+export function layEvents(engine: CanvasEngine, pads: readonly { readonly entity: Entity; readonly spec: OraclePad }[]): number {
+  const all = pads.flatMap((p) => (p.spec.events ?? []).map((e) => ({ pad: p.entity, e })));
+  if (all.length === 0) return 0;
+  const session = engine.docs.current();
+  if (session === undefined) throw new Error("desk: no document");
+  guardedTransaction(session.store, engine.world, (tx) => { for (const { pad, e } of all) addEvent(tx, pad, { start: e.start, ...(e.end !== undefined ? { end: e.end } : {}), text: e.text, ...(e.ink !== undefined ? { ink: e.ink } : {}) }); }, { undoable: false });
+  return all.length;
+}
+
+/** The committed prints, fetched and inflated once (oracle/prints.mjs — the same bytes the Node oracle reads from disk). */
+const committed = new Map<string, Promise<CommittedSheet>>();
+function committedPrint(name: string): Promise<CommittedSheet> {
+  let p = committed.get(name);
+  if (p === undefined) {
+    const base = new URL(`../../../packages/desk/oracle/fixtures/assets/${name}`, location.href).href;
+    p = (async () => {
+      const [meta, bin] = await Promise.all([fetch(`${base}.json`).then((r) => { if (!r.ok) throw new Error(`${name}.json: ${r.status}`); return r.json() as Promise<PrintMeta>; }), fetch(`${base}.bin`).then((r) => { if (!r.ok) throw new Error(`${name}.bin: ${r.status}`); return r.blob(); })]);
+      const bytes = new Uint8Array(await new Response(bin.stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+      return printSheetOf(meta, bytes);
+    })();
+    committed.set(name, p);
+  }
+  return p;
+}
+
+/**
+ * The pads' prints for a still (D3t-c): today pinned; each month the pad may show (its own, the one before, the one after) pinned
+ * with the COMMITTED print the scene names, else BLANK — every pad before D3t-c drew its paper and grid alone, as the Node oracle
+ * still does — unless the scene asks for the live print.
+ */
+export async function pinPadPrints(handle: DeskLayerHandle, pads: readonly { readonly entity: Entity; readonly spec: OraclePad }[]): Promise<void> {
+  const local = handle.local("calendar") as Pads | undefined;
+  if (local === undefined) return;
+  local.pinToday(pads.find((p) => p.spec.today !== undefined)?.spec.today ?? null);
+  for (const { entity, spec } of pads) {
+    if (spec.livePrint === true) continue;
+    const shown = monthOfKey(spec.month ?? "2026-09") ?? 0;
+    for (const m of [shown - 1, shown, shown + 1]) {
+      const name = spec.print?.[monthKeyOf(m)];
+      local.pinPrint(entity, m, name === undefined ? BLANK_SHEET : await committedPrint(name));
+    }
   }
 }
 
