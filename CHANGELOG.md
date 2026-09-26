@@ -534,6 +534,39 @@ THE TOOLS IN HAND (design-015 §8's held bar made live, §6's whiteboard in hand
   (the whiteboard in hand, 30 rows), `rig:two-tab` (a stroke by hand in A arrives on B's board), `rig:interact` (the
   print's owed rows).
 
+<!-- design-015 D3t-b (2026-09-26) -->
+THE NOTEBOOK IN HAND (design-015 §6's notebook on D3t-a's seam; NOTEBOOK.md §6–8): its page strokes as data, its pens, its turns.
+
+- **Page strokes are the book's DATA**: `desk.stroke` **v3** carries `page` (sheet i's recto 2i + 1, its verso 2i + 2; 0 = none —
+  a board's, where every v2 stroke migrates); a notebook's stroke is tool `pen`, its ink the pen's name, its path in PAGE units
+  (`s` from the gutter, `y` from the head) with D3t-a's `times`. The Notebook declares the prefab as its `data`.
+- **The pages' ink is a cache** (`@ice/desk` notebook/pages.ts `PageInk`): the pass's eight layers handed out LRU to the pages in
+  view with ink, each page REPLAYED from its strokes when they are not what its raster holds (an undo, a redo, a peer's, the look,
+  an eviction); a page whose ink is gone gives its layer back. The raster is pure arithmetic (notebook/raster.ts — the
+  prototype's Canvas2D stroke re-expressed: the midpoint quadratic, round caps, source-over, straight alpha), so the Node
+  oracle and the desk lay the same bytes; `NotebookPass.uploadInk` takes those bytes (`writeTexture`), never a canvas.
+- **The pen in hand** (objects/leaf.ts `createNotebookHand`, `handle.notebook()`): a press on a page's writing with a pen in hand
+  lays a stroke LIVE into its page — each segment drawn the moment it is final, only its rectangle uploaded — through the SAME desk
+  eye the book is drawn with; the lift is ONE `desk.stroke` child in one transaction, which the page ADOPTS (no replay, even if
+  its landing is late). The fountain-pen law over the samples (`nibWidths`: thinner as the hand hurries; a resting sample keeps
+  its width). ⌘Z/⇧⌘Z in hand are the document's history over the strokes; a held book's changed strokes wake the desk.
+- **The held bar's tools are live**: ‹ › (←/→, PageUp/PageDown), the four pens — the note's, modes `1`–`4`, their slots the
+  palette's inks, a crosshair over a page, the fountain pen in hand at the pickup — undo, and redo on keys alone.
+- **The turns are PARTS**: in hand the kind's `hit` answers `turn` (a page's outer 30 %), `content` (the rest of a page — the
+  pen's) and `frame` (the case, the endpapers). Core's held input makes a press on a named part the kind's (**`HeldPress` kind
+  `part`**, every press carrying the part it began on) — never a tap that puts the object down: two clicks on a turn turn two
+  pages; two taps on the case still put the book down. A pinch that travels takes the sheet over the gutter (let go past the
+  vertical or flung it goes, else it falls back); a click turns (the right page on, the left back); the keys and the bar count
+  their turns on the book (the runtime `PageTurns`) and the hand turns by the count. A completed turn moves the durable `spread`
+  in ONE transaction, OFF the undo stack; the sheets in hand are a motion kept frame to frame (motion.ts `stepLeaves`), heading
+  for the spread asked one sheet a frame (a run of turns fans); the right page's fore-edge corner peeks under the pointer.
+- **A portrait phone reads page by page**: `OpenBinding.page` (0 the right … 1 the left, sprung) centres the page in view
+  (`readingTarget`/`heldFrame` take a `face`); a step from the right page turns its sheet and follows it to its verso.
+- **Witnesses**: oracle stills `hold-book-ink-e1-z1`, `hold-book-turn-ink-e1-z1`, `hold-book-ink-night-e1-z1` (an open spread
+  written on both faces, a sheet mid-turn with its ink riding it, by night) Chrome = Node at maxΔ 0, from the world too;
+  `rig:open` §12 (the notebook in hand, 35 rows; §8's two taps now land on the case), `rig:two-tab` (a stroke by hand in A on B's
+  page, a turn and ⌘Z seen), the units' parity of the ink table and every page's raster with the oracle's.
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
