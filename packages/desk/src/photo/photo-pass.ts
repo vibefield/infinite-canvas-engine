@@ -1,10 +1,13 @@
 // The photo pass — the prints, one draw each in paint order. Owns its copy of
 // the mat's uniform block (filled for the camera and the light every frame,
-// the gobo on only when the mat is the grid), its knobs, the record buffer and
-// the pictures: each an `rgba8unorm-srgb` texture with its mip chain, uploaded
-// from whatever the host decoded (a pasted image, a dropped file) and bound as
-// the print's own group 1. Reads the mat's animated silhouette and blue noise,
-// so a print is dappled by the same palm as the mat under it.
+// the gobo on only when the mat is the grid), its knobs and the record buffer;
+// shares — with every slot spawned from the first — the pipeline, the samplers
+// and the PICTURES: each an `rgba8unorm-srgb` texture with its mip chain,
+// uploaded from whatever the host decoded (a pasted image, a dropped file) and
+// bound as the print's own group 1, so a picture made once draws in any slot.
+// A slot reads its OWN mat's animated silhouette and blue noise, so a print is
+// dappled by the same palm as the mat under it. The pass draws in RANGES of the
+// prints it was handed (design-015 §4.2): the desk's runs of one kind.
 
 import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
@@ -41,6 +44,43 @@ export interface PhotoInstance {
   readonly picture: Picture | null;
 }
 
+/** What every slot's pass shares with the root's: the layouts, the pipeline, the samplers — and the pictures, whose groups are made on `layout1`. */
+interface PhotoShared {
+  readonly layout0: GPUBindGroupLayout;
+  readonly layout1: GPUBindGroupLayout;
+  readonly pipeline: GPURenderPipeline;
+  readonly goboSampler: GPUSampler;
+  readonly noiseSampler: GPUSampler;
+  readonly picSampler: GPUSampler;
+  /** One white texel: what a print whose picture has not come binds (its record says "no picture" — it draws its paper alone). */
+  readonly blank: Picture;
+  slots: number;
+}
+
+/** A picture's texture, its mip chain to come: every level down to 1×1 (mips.ts). */
+function makePicture(device: GPUDevice, width: number, height: number): { texture: GPUTexture; mips: number } {
+  const mips = mipCount(width, height);
+  const texture = device.createTexture({
+    label: `photo/picture ${width}×${height}`, size: [width, height], format: "rgba8unorm-srgb", mipLevelCount: mips,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+  return { texture, mips };
+}
+
+/** Level 0 uploaded: the mips drawn from it, the group made on the shared layout — so any slot's pass binds it. */
+function finishPicture(device: GPUDevice, layout1: GPUBindGroupLayout, texture: GPUTexture, width: number, height: number, mips: number): Picture {
+  if (mips > 1) generateMips(device, texture);
+  const group = bindGroup(device, layout1, [texture.createView()], "photo/picture");
+  return { texture, group, width, height, mips };
+}
+
+/** A picture from raw sRGB rgba8 bytes (row 0 = top, straight alpha). */
+function rawPicture(device: GPUDevice, layout1: GPUBindGroupLayout, bytes: Uint8Array<ArrayBuffer>, width: number, height: number): Picture {
+  const { texture, mips } = makePicture(device, width, height);
+  device.queue.writeTexture({ texture }, bytes, { bytesPerRow: width * 4 }, [width, height, 1]);
+  return finishPicture(device, layout1, texture, width, height, mips);
+}
+
 export class PhotoPass {
   readonly name = "photo/prints";
   private readonly matU = MatUniforms.alloc(1);
@@ -49,34 +89,26 @@ export class PhotoPass {
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
   private readonly recordBuf: GPUBuffer;
-  private readonly layout0: GPUBindGroupLayout;
-  private readonly layout1: GPUBindGroupLayout;
-  private readonly pipeline: GPURenderPipeline;
-  private readonly goboSampler: GPUSampler;
-  private readonly noiseSampler: GPUSampler;
-  private readonly picSampler: GPUSampler;
-  private readonly blank: Picture;
   private group!: GPUBindGroup;
   private bound = -1;
+  /** This frame's prints' pictures, in the order `prepare` was handed them — what `drawRange` counts in. */
   private list: (Picture | null)[] = [];
-  /** The print's numbers (photo.ts `PHOTO`) — a host tunes its own copy. */
+  /** The print's numbers (photo.ts `PHOTO`) — a host tunes the root's copy; every slot takes it (`tune`). */
   law: PhotoLaw = PHOTO;
   private readonly device: GPUDevice;
+  private readonly shared: PhotoShared;
   private readonly mat: MatPass;
 
-  private constructor(device: GPUDevice, mat: MatPass, layout0: GPUBindGroupLayout, layout1: GPUBindGroupLayout, pipeline: GPURenderPipeline) {
-    this.device = device; this.mat = mat; this.layout0 = layout0; this.layout1 = layout1; this.pipeline = pipeline;
+  private constructor(device: GPUDevice, shared: PhotoShared, mat: MatPass) {
+    this.device = device; this.shared = shared; this.mat = mat;
+    shared.slots += 1;
     this.matBuf = uniformBuffer(device, MatUniforms.size, "photo/mat uniforms");
     this.knobBuf = uniformBuffer(device, PhotoUniforms.size, "photo/knobs");
     this.recordBuf = storageBuffer(device, Photo.size * MAX_PHOTOS, "photo/prints");
-    this.goboSampler = device.createSampler({ label: "photo/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
-    this.noiseSampler = device.createSampler({ label: "photo/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
-    this.picSampler = device.createSampler({ label: "photo/picture", magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
-    this.blank = this.picture(new Uint8Array([255, 255, 255, 255]), 1, 1);
     this.rebind();
   }
 
-  /** The pass on the root's mat (its silhouette and noise). */
+  /** The root's pass, on the root's mat (its silhouette and noise). */
   static async create(device: GPUDevice, format: GPUTextureFormat, src: PhotoShaders, mat: MatPass): Promise<PhotoPass> {
     const layout0 = bindLayout(device, [
       { binding: 0, stages: ["vertex", "fragment"], buffer: "uniform" },
@@ -91,45 +123,51 @@ export class PhotoPass {
     const layout1 = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }], "photo/picture");
     const module = await compile(device, compose({ structs: [MatUniforms, PhotoUniforms, Photo], modules: src.modules, entry: src.entry }));
     const pipeline = await renderPipeline(device, { label: "photo/prints", layout: device.createPipelineLayout({ bindGroupLayouts: [layout0, layout1] }), module, format, blend: BLEND_PREMUL });
-    return new PhotoPass(device, mat, layout0, layout1, pipeline);
+    const shared: PhotoShared = {
+      layout0, layout1, pipeline,
+      goboSampler: device.createSampler({ label: "photo/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
+      noiseSampler: device.createSampler({ label: "photo/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" }),
+      picSampler: device.createSampler({ label: "photo/picture", magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
+      blank: rawPicture(device, layout1, new Uint8Array([255, 255, 255, 255]), 1, 1), slots: 0,
+    };
+    return new PhotoPass(device, shared, mat);
   }
+
+  /** A second slot on the same pipeline, samplers and pictures, reading ITS mat's silhouette and noise — a mini mat's inside, a flight's departed desk. */
+  spawn(mat: MatPass): PhotoPass {
+    const p = new PhotoPass(this.device, this.shared, mat);
+    p.law = this.law;
+    return p;
+  }
+
+  /** Take the root's law — what every spawned slot does each frame. */
+  tune(from: PhotoPass): void { this.law = from.law; }
 
   private rebind(): void {
     if (this.bound === this.mat.assetVersion) return;
-    this.group = bindGroup(this.device, this.layout0, [this.matBuf, this.knobBuf, this.recordBuf, this.mat.silhouette, this.goboSampler, this.mat.noiseTexture.createView(), this.noiseSampler, this.picSampler], "photo/prints");
+    const s = this.shared;
+    this.group = bindGroup(this.device, s.layout0, [this.matBuf, this.knobBuf, this.recordBuf, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.picSampler], "photo/prints");
     this.bound = this.mat.assetVersion;
   }
 
-  private make(width: number, height: number): { texture: GPUTexture; mips: number } {
-    const mips = mipCount(width, height);
-    const texture = this.device.createTexture({
-      label: `photo/picture ${width}×${height}`, size: [width, height], format: "rgba8unorm-srgb", mipLevelCount: mips,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-    return { texture, mips };
-  }
-
-  private finish(texture: GPUTexture, width: number, height: number, mips: number): Picture {
-    if (mips > 1) generateMips(this.device, texture);
-    const group = bindGroup(this.device, this.layout1, [texture.createView()], "photo/picture");
-    return { texture, group, width, height, mips };
-  }
-
-  /** A picture from raw sRGB rgba8 bytes (row 0 = top, straight alpha) — what a Node host or a test hands in. */
+  /**
+   * A picture from raw sRGB rgba8 bytes (row 0 = top, straight alpha) — what a Node host or a test hands in. A picture is
+   * the PASS's resource, shared by every slot: a print's record names it by this handle (`PhotoInstance.picture`), and it
+   * lives until the host drops it (`dropPicture`).
+   */
   picture(bytes: Uint8Array<ArrayBuffer>, width: number, height: number): Picture {
-    const { texture, mips } = this.make(width, height);
-    this.device.queue.writeTexture({ texture }, bytes, { bytesPerRow: width * 4 }, [width, height, 1]);
-    return this.finish(texture, width, height, mips);
+    return rawPicture(this.device, this.shared.layout1, bytes, width, height);
   }
 
   /** A picture from a decoded image (a pasted or dropped file, an `<img>`, a canvas) — the browser's path. */
   pictureFrom(source: ImageBitmap | HTMLCanvasElement | OffscreenCanvas | HTMLImageElement, width: number, height: number): Picture {
-    const { texture, mips } = this.make(width, height);
+    const { texture, mips } = makePicture(this.device, width, height);
     this.device.queue.copyExternalImageToTexture({ source }, { texture, premultipliedAlpha: false }, [width, height]);
-    return this.finish(texture, width, height, mips);
+    return finishPicture(this.device, this.shared.layout1, texture, width, height, mips);
   }
 
-  dropPicture(p: Picture): void { if (p !== this.blank) p.texture.destroy(); }
+  /** A picture no print names any more: its texture destroyed (the blank texel is the pass's own and stays). */
+  dropPicture(p: Picture): void { if (p !== this.shared.blank) p.texture.destroy(); }
 
   /**
    * Upload this frame's prints in paint order (first = lowest) and the mat's block for the
@@ -154,18 +192,30 @@ export class PhotoPass {
 
   get drawn(): number { return this.list.length; }
 
-  /** Record the prints into a pass the caller opened (loading what the ground drew). */
-  draw(pass: GPURenderPassEncoder): void {
-    if (this.list.length === 0) return;
-    pass.setPipeline(this.pipeline);
+  /** Every print prepared this frame, into a pass the caller opened: `drawRange` over the whole list — the same commands the lab's second pass recorded. */
+  draw(pass: GPURenderPassEncoder): void { this.drawRange(pass, 0, this.list.length); }
+
+  /**
+   * The prints `prepare` was handed at [first, end) — indices into ITS list, as the ground's runs count a kind's records —
+   * one quad each with its picture bound (the blank texel where it has none), the slot's group bound once before the
+   * first. An empty range records nothing, not even the pipeline.
+   */
+  drawRange(pass: GPURenderPassEncoder, first: number, end: number): void {
+    const hi = Math.min(end, this.list.length);
+    if (first >= hi) return;
+    pass.setPipeline(this.shared.pipeline);
     pass.setBindGroup(0, this.group);
-    this.list.forEach((pic, i) => {
-      pass.setBindGroup(1, (pic ?? this.blank).group);
+    for (let i = first; i < hi; i++) {
+      pass.setBindGroup(1, (this.list[i] ?? this.shared.blank).group);
       pass.draw(6, 1, 0, i);
-    });
+    }
   }
 
+  /** This slot's buffers; the blank texel goes with the last slot standing (a host's pictures are the host's to drop). */
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy(); this.blank.texture.destroy();
+    this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy();
+    const s = this.shared;
+    s.slots -= 1;
+    if (s.slots === 0) s.blank.texture.destroy();
   }
 }

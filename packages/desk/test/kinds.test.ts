@@ -14,7 +14,7 @@ import { BOARD_REST, quadOf, resolveBoard } from "../src/board/board";
 import type { BoardPass } from "../src/board/board-pass";
 import type { BoardInstance } from "../src/board/layout";
 import { createSlotSet, type DrawSlot, drawSlot, Ground, type KindExtra, type KindPass, type KindProgram, prepareFrame, type SlotContext, type SlotKind, SlotPool, type SlotSet, STRATA, type StratumName } from "../src/ground";
-import { BOARD_KIND, BoardKind, DESK_KINDS, deskKinds, MINIMAT_KIND, MiniMatKind, PAPER_KIND, PaperKind } from "../src/kinds";
+import { BOARD_KIND, BoardKind, DESK_KINDS, deskKinds, MINIMAT_KIND, MiniMatKind, PAPER_KIND, PaperKind, PHOTO_KIND, PhotoKind } from "../src/kinds";
 import { DEFAULT_GRID, dressGrid } from "../src/mat/grid";
 import { DEFAULT_MAT_CONFIG, STILL_MAT_FRAME } from "../src/mat/layout";
 import { MatPass } from "../src/mat/mat-pass";
@@ -280,9 +280,9 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     expect(events).toEqual(["dispose root pad", "dispose root minimat", "dispose root paper"]);
   });
 
-  it("DESK_KINDS: the note, the mini mat, the whiteboard — the prototype's prepare order — in their strata; a host's text is read only when the passes are made", async () => {
-    expect(DESK_KINDS.map((k) => `${k.name}/${k.stratum}`)).toEqual(["paper/things", "minimat/sheets", "board/things"]);
-    expect([PAPER_KIND, MINIMAT_KIND, BOARD_KIND]).toEqual(["paper", "minimat", "board"]);
+  it("DESK_KINDS: the note, the mini mat, the whiteboard, the photo print — the prototype's prepare order — in their strata; a host's text is read only when the passes are made", async () => {
+    expect(DESK_KINDS.map((k) => `${k.name}/${k.stratum}`)).toEqual(["paper/things", "minimat/sheets", "board/things", "photo/things"]);
+    expect([PAPER_KIND, MINIMAT_KIND, BOARD_KIND, PHOTO_KIND]).toEqual(["paper", "minimat", "board", "photo"]);
     const asked: string[] = [];
     const text: ShaderText = (files) => { asked.push(...Object.values(files)); return shaderText(files); };
     const kinds = deskKinds(text);
@@ -293,7 +293,8 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     expect(must(set.kinds.get(PAPER_KIND)).pass).toBeInstanceOf(PaperKind);
     expect(must(set.kinds.get(MINIMAT_KIND)).pass).toBeInstanceOf(MiniMatKind);
     expect(must(set.kinds.get(BOARD_KIND)).pass).toBeInstanceOf(BoardKind);
-    expect(asked).toContain("paper/paper-pass.wgsl"); expect(asked).toContain("minimat/minimat-pass.wgsl"); expect(asked).toContain("board/board-pass.wgsl");
+    expect(must(set.kinds.get(PHOTO_KIND)).pass).toBeInstanceOf(PhotoKind);
+    expect(asked).toContain("paper/paper-pass.wgsl"); expect(asked).toContain("minimat/minimat-pass.wgsl"); expect(asked).toContain("board/board-pass.wgsl"); expect(asked).toContain("photo/photo-pass.wgsl");
   });
 
   it("the whiteboard's drawRange counts in the list it was handed: a board with no raster draws nothing and shifts nothing; its whole range is draw()'s commands", async () => {
