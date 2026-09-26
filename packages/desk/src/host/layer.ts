@@ -17,6 +17,15 @@
 // fed the mat before — the render map's finding #2; the blue noise is the desk's own, the plates
 // are the app's generated ones), `configureMat` (the rulers as the app's mat config). Instruments:
 // `submits()`, `stats()`, `wakes()`, `geometryOf`, `fluxOf`, `lastInputs`.
+//
+// The TEXT (D2c, design-015 §6.1): each object kind's own state on this desk (`kind.local(host)` —
+// the note's WRITING, over the root paper pass's pages and the app's text raster, `opts.text`) is made
+// here and threaded through the builder; the ONE focused editor (host/editor.ts) sits in the
+// container and writes through the note's typing session (objects/typing.ts) into `opts.docs`. The
+// drawing reflector is wrapped, not changed: before it, every kind's local is ticked on ONE clock
+// (`performance.now()` — the rAF clock lags wall time headless) and may wake an `ink` frame (a wipe,
+// a blink, a face landing); after it, the editor follows the drawn note. A committed raster is
+// pinned through the writing, so a note that leaves the desk gives its rect back (the page-slot leak).
 
 import type { Entity, FramePickSlot, GridConfig as CoreGridConfig, PresentationTransitionAdapter, ReflectorDef, WidgetType, World } from "@ice/core";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
@@ -32,7 +41,13 @@ import type { GlyphAtlasMeta, MatConfig, PlateName } from "../mat/layout";
 import { MAT_SHADER_FILES, matShaders } from "../mat/shaders";
 import { objectKindOf } from "../object";
 import { blueNoise } from "../assets/blue-noise.gen";
-import { PAPER_KIND, type PaperKind } from "../kinds/paper";
+import { PAPER_KIND } from "../kinds/paper";
+import type { KindLocal } from "../kinds/world";
+import { createNoteTyping, type NoteTyping, type TypingDocs } from "../objects/typing";
+import type { TextRaster } from "../paper/raster";
+import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
+import { createNoteEditor, type NoteEditor } from "./editor";
+import { PEN_FACES } from "./ink";
 import { shaderText } from "../shaders";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
 import type { GroundTheme, Palette } from "../theme";
@@ -64,6 +79,12 @@ export interface DeskLayerOptions {
   readonly onDevice?: (device: GPUDevice) => void;
   /** The layer's name in the reflector roster. */
   readonly name?: string;
+  /** The app's text raster (`inkRaster({ faces: penFaces({ … }) })`, D2c): absent, no note is written live — the pinned rasters only. */
+  readonly text?: TextRaster;
+  /** The document a note's typing session commits into — the facade's `engine.docs` (D2c); absent, typing stays runtime-only. */
+  readonly docs?: TypingDocs;
+  /** A typing session ends after this long without input, ms (1000). */
+  readonly idleMs?: number;
 }
 
 /** The pinned still a parity scene states: the clocks, the plate and the gobo's opacity, the wind (0 = a still). */
@@ -135,6 +156,12 @@ export interface DeskLayerHandle {
   /** The frame dirty and not yet drawn (a rig's settle witness). */
   dirty(): boolean;
   readonly builder: DeskBuilder;
+  /** The note's writing on this desk (D2c): its layouts, rasters, caret and wipe — `undefined` when no note kind is registered. */
+  writing(): Writing | undefined;
+  /** The one focused editor (D2c) — `undefined` when no note kind is registered. */
+  editor(): NoteEditor | undefined;
+  /** The note's typing session (D2c): the claim, the live cell, the commit. */
+  readonly typing: NoteTyping;
   /**
    * The DOM-free reflector behind `reflector` — named `desk`, never `compose`: react's
    * `GroundLayerHandle.compose?` is the ground's COMPOSE handle (the composited profile reads its
@@ -184,7 +211,6 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     let disposed = false;
     let ended = false;
     let grid: GridConfig = opts.grid ?? DEFAULT_GRID;
-    const rasters = new Map<Entity, { readonly layer: number; readonly x: number; readonly y: number; readonly w: number; readonly h: number }>();
 
     // reduced motion ⇒ still (design-015 §4.6), read from the OS at the mount and followed live
     const motionQuery = view?.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null;
@@ -196,7 +222,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const syncMotion = (): void => { ambient.configure({ reducedMotion: motionQuery?.matches === true }); compose.wake("ambient"); };
     motionQuery?.addEventListener("change", syncMotion);
 
-    const builder = createDeskBuilder(world, { objects: [...types] });
+    // each kind's own state on this desk (the note's writing): made once, over its root pass once the ground is here
+    const locals = new Map<string, KindLocal>();
+    for (const k of objectKinds) {
+      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text });
+      if (local !== undefined) locals.set(k.name, local);
+    }
+    const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;
+    const builder = createDeskBuilder(world, { objects: [...types], locals });
     const compose = createDeskReflector({
       world, builder, kinds: objectKinds, ambient,
       ground: () => ground,
@@ -205,6 +238,31 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       ...(opts.maxDpr !== undefined ? { maxDpr: opts.maxDpr } : {}),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
     });
+
+    // the note's typing session and the ONE focused editor, in the container (screen space) — D2c
+    const typing = createNoteTyping({ world, docs: opts.docs ?? { current: () => undefined } });
+    const face = PEN_FACES[DEFAULT_FACE] ?? { family: "Caveat", weight: 500 };
+    const editor = locals.has(PAPER_KIND)
+      ? createNoteEditor({
+          container: host.container, world, typing, writing, geometryOf: (e) => builder.geometryOf(e),
+          isNote: (e) => builder.kindOf(e)?.name === PAPER_KIND, font: face, hand: DEFAULT_HAND_LAW,
+          wake: () => compose.wake("ink"),
+          ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
+        })
+      : undefined;
+    // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
+    const inner = compose.reflector;
+    const reflector: ReflectorDef & { available(): boolean } = {
+      ...inner,
+      flush(w) {
+        const now = performance.now();
+        let want = false;
+        for (const local of locals.values()) if (local.tick?.(now) === true) want = true;
+        if (want) compose.wake("ink");
+        inner.flush(w);
+        editor?.follow();
+      },
+    };
 
     // the pick source (design-015 §4.5): the kinds' mirrors on the builder's geometry — set now, `undefined` for what it cannot see yet (B9)
     const pick = createPickSource(builder);
@@ -249,11 +307,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         });
     boot.catch((e: unknown) => { if (!disposed) fail("no desk — the adapter, the device or the pipelines were refused", e); });
 
-    const paperPass = (): PaperKind["pass"] | undefined => (ground?.pass(PAPER_KIND) as PaperKind | undefined)?.pass;
     const setGrid = (next: GridConfig): void => { grid = next; if (ground !== null) ground.grid = next; compose.configureGrid(next); };
 
     return {
-      reflector: compose.reflector,
+      reflector,
       configureGrid(cfg) { if (cfg.fadeIn !== undefined) setGrid({ ...grid, fadeIn: [cfg.fadeIn[0], cfg.fadeIn[1]] }); },
       canvas,
       available: () => ground !== null && status.state === "ready",
@@ -276,22 +333,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         compose.wake("pin");
       },
       pinRaster(entity, bytes, meta) {
-        const pass = paperPass();
-        if (pass === undefined) return false;
-        const old = rasters.get(entity);
-        if (old !== undefined) pass.free(old);
-        const rect = pass.alloc(meta.w, meta.h);
-        if (rect === null) { rasters.delete(entity); builder.pin(entity, undefined); compose.wake("pin"); return false; }
-        const uv = pass.write(rect, bytes);
-        rasters.set(entity, rect);
-        builder.pin(entity, { layer: rect.layer, uv });
+        // through the note's writing: allocated NOW, in call order (the oracle's texels), and given back when the note leaves the desk
+        const ok = writing()?.pin(entity, bytes, meta) ?? false;
         compose.wake("pin");
-        return true;
+        return ok;
       },
       clearRasters() {
-        for (const e of rasters.keys()) builder.pin(e, undefined);
-        rasters.clear();
-        paperPass()?.reset(true);
+        writing()?.reset();
         compose.wake("pin");
       },
       pinFlux(entity, targets) { builder.pinFlux(entity, targets); compose.wake("pin"); },
@@ -307,9 +355,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       lastInputs: () => compose.lastInputs(),
       dirty: () => compose.dirty(),
       builder,
+      writing,
+      editor: () => editor,
+      typing,
       desk: compose,
       dispose() {
         disposed = true;
+        editor?.dispose();
+        for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);
         if (framePick !== undefined && framePick.current === pick) framePick.current = null;
         detachTransition?.();

@@ -118,6 +118,9 @@ try {
   // --- 4. ⌫ deletes note A: the entity is gone at once, the ghost fades over 220 ms, then nothing; ⌘Z brings it back
   await click(redone.cx, redone.cy);
   check((await entity(a)).selected, "the moved note is selected by a click");
+  // a tap WRITES (D2c, STICKY.md §4): the click put the pen on the note — ⌫ would erase a glyph. Escape puts the pen
+  // down and keeps the selection; ⌫ on a selected, unfocused note deletes it (the prototype's grammar)
+  await key("Escape", "Escape", 27);
   const before = (await entities()).length;
   await key("Backspace", "Backspace", 8);
   const ghosts = [];

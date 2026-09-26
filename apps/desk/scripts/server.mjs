@@ -15,6 +15,7 @@ const TYPES = {
   ".wgsl": "text/plain; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".png": "image/png",
+  ".ttf": "font/ttf",
 };
 
 const server = createServer(async (req, res) => {

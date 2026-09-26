@@ -4,7 +4,7 @@
 // marquee (D-D11) — as the root canvas type's default. Core registers no desk tool or settings; the
 // app does (the brief's pinned detail).
 
-import { type CanvasEngine, createCanvasEngine, defineCanvasType, defineTool, type Tool, tools } from "@ice/core";
+import { broadcastChannelByteChannel, type CanvasEngine, createCanvasEngine, defineCanvasType, defineTool, type Tool, tools } from "@ice/core";
 import { MiniMat, Note } from "@ice/desk/objects";
 
 function builtin(id: string): Tool {
@@ -34,7 +34,22 @@ export const DeskCanvas = defineCanvasType({
 export const ZOOM_MIN = 1e-8;
 export const ZOOM_MAX = 1e8;
 
-/** A desk engine with a fresh document, the desk's tool in hand. */
+/** `?room=<name>`: the desk joins that room's document (D2c's two-tab witness); absent, a fresh document. */
+export const deskRoom = (): string | undefined => (typeof location === "undefined" ? undefined : new URLSearchParams(location.search).get("room") ?? undefined);
+
+/**
+ * The desk's document in a ROOM (design-015 D-D10's `?room=`, over a same-origin BroadcastChannel —
+ * two tabs, no server): joined through core's bootstrap, the desk's tool in hand once it attaches.
+ * Resolves at once for a desk with no room (its fresh document was made with the engine).
+ */
+export async function joinDeskRoom(engine: CanvasEngine): Promise<void> {
+  const room = deskRoom();
+  if (room === undefined) return;
+  await engine.docs.join(broadcastChannelByteChannel(`ice-desk:${room}`));
+  engine.ops.setTool(deskSelect.id);
+}
+
+/** A desk engine with a fresh document (none yet in a room: `joinDeskRoom`), the desk's tool in hand. */
 export function createDeskEngine(): CanvasEngine {
   const engine = createCanvasEngine({
     widgets: [Note, MiniMat],
@@ -44,6 +59,7 @@ export function createDeskEngine(): CanvasEngine {
     presentationFallback: DeskCanvas,
     settings: { zoom: { min: ZOOM_MIN, max: ZOOM_MAX }, gestures: { wheel: "zoom" } },
   });
+  if (deskRoom() !== undefined) return engine;
   engine.docs.create();
   engine.ops.setTool(deskSelect.id);
   return engine;

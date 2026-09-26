@@ -9,6 +9,7 @@ import { type CanvasEngine, type Entity, Grab, Locked, Position, PrefabId, Selec
 import type { DeskLayerHandle, MatPin } from "@ice/desk/host";
 import type { AmbientMode } from "@ice/desk/compose";
 import type { ThemeName } from "@ice/desk/theme";
+import { type NoteApi, noteApi } from "./note-api";
 import { type OracleScene, setScene, spawnAll } from "./scene";
 
 export interface DeskEntity {
@@ -55,6 +56,8 @@ export interface DeskApi {
   settle(timeoutMs?: number): Promise<{ readonly settled: boolean; readonly redraws: number }>;
   /** Frames since the mount and the drawing state, for a rig's counters. */
   readonly state: { ready: boolean };
+  /** The sticky notes' text stack: the editor, the writing, the ink (D2c). */
+  readonly note: NoteApi;
 }
 
 declare global {
@@ -86,6 +89,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     engine,
     handle,
     state,
+    note: noteApi(engine, handle),
     spawn(type, props, at) {
       const widget = engine.catalog.widget(type);
       if (widget === undefined) throw new Error(`desk: no object type "${type}"`);

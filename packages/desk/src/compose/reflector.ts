@@ -57,7 +57,7 @@ export interface DeskReflectorOptions {
 }
 
 /** What woke a frame, counted since the mount — the builder's reasons and the reflector's own. */
-export type DeskWakes = Readonly<Record<DeskWakeReason | "camera" | "viewport" | "nav" | "theme" | "grid" | "pin" | "ambient" | "live", number>>;
+export type DeskWakes = Readonly<Record<DeskWakeReason | "camera" | "viewport" | "nav" | "theme" | "grid" | "pin" | "ambient" | "live" | "ink", number>>;
 
 export interface DeskReflectorStats extends DeskBuilderStats {
   /** Whole-frame renders so far — the churn instrument (0 on an idle desk). */
@@ -76,8 +76,8 @@ export interface DeskReflector {
   setTheme(theme: GroundTheme, palette?: Palette): void;
   /** The root's grid (the mat's config, the fade-in) as a whole. */
   configureGrid(grid: GridConfig): void;
-  /** Wake a frame for a reason the world does not carry (a pin, an asset). */
-  wake(reason: "pin" | "ambient"): void;
+  /** Wake a frame for a reason the world does not carry (a pin, an asset, the writing's flux — D2c's `ink`). */
+  wake(reason: "pin" | "ambient" | "ink"): void;
   /** The frame dirty and not yet drawn (a rig's witness). */
   dirty(): boolean;
   redraws(): number;
@@ -110,7 +110,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let navStamp = -1;
   let pointerStamp = -1;
   let mouse: ReturnType<World["firstOf"]>;
-  const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0 };
+  const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0 };
   let builderWakes = builder.wakes();
 
   /** The local mouse pointer's screen point as NDC (x right, y up), or null before one was seen. */

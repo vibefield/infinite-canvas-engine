@@ -14,7 +14,8 @@ import type { ThemeName } from "@ice/desk/theme";
 import { type GroundLayerFactory, InfiniteCanvas, type KeymapEntry } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
-import { createDeskEngine } from "./desk";
+import { createDeskEngine, joinDeskRoom } from "./desk";
+import { deskText } from "./faces";
 import { productPlates } from "./fixtures";
 import { makeGlyphAtlas } from "./glyphs";
 import { deskPalette, deskTheme, osTheme } from "./palette";
@@ -56,9 +57,10 @@ export function App(): ReactElement {
 
   // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
   const layer = useMemo<GroundLayerFactory>(() => {
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [Note, MiniMat], name: "desk/compose" });
+    // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [Note, MiniMat], name: "desk/compose", text: deskText(), docs: engine.docs });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
-  }, []);
+  }, [engine]);
 
   // The keymap is bound once per engine: its entries close over the engine (state, stable) and two refs, and read the world live.
   const keys = useMemo<KeymapEntry[]>(() => {
@@ -103,6 +105,7 @@ export function App(): ReactElement {
         apiRef.current = api;
         // the product's plates and a runtime glyph atlas the moment the ground is here
         const feed = async (): Promise<void> => {
+          await joinDeskRoom(engine);   // D2c: `?room=` joins the room's document first
           const plates = await productPlates();
           while (!handle.available()) { if (handle.status().state === "failed") throw new Error(handle.status().message); await new Promise((r) => requestAnimationFrame(r)); }
           handle.setPlate("c", plates.c);
