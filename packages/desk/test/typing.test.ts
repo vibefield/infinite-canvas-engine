@@ -5,7 +5,7 @@
 // commits them as ONE transaction, text and seeds together, so ONE undo takes the whole session back;
 // a session that nets to nothing commits nothing; a remote edit during a session is dropped and the
 // session's commit wins (the claimed-cell rule), while one between sessions applies.
-import { createCanvasEngine, defineQuery, Editing, type Entity, guardedTransaction } from "@ice/core";
+import { createCanvasEngine, decodeEnvelope, defineQuery, Editing, encodeEnvelope, type Entity, guardedTransaction } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { decodeSeeds, seedsFor } from "../src/paper/seeds";
 import { NOTE_INK, Note } from "../src/objects";
@@ -204,5 +204,63 @@ describe("typing · the claimed-cell rule across peers (strata 006 C5)", () => {
     A.typing.end();
     A.step();
     expect(A.doc(a)?.text).toBe("base-B!");
+  });
+});
+
+describe("typing · the writer's gate (D7 #1) — a read-only document is not written", () => {
+  /** The facade's session as `TypingDocs.current()` carries it, the gate's verdict swapped in — a doc a newer build wrote reads so. */
+  const gated = (ce: ReturnType<typeof makeDesk>["ce"], readOnly: () => boolean) => ({
+    current: () => { const s = ce.docs.current(); return s === undefined ? undefined : { store: s.store, liveWriter: s.liveWriter, readOnly: readOnly(), versionReport: s.versionReport }; },
+  });
+
+  it("a read-only session: begin refuses — no claim, no live write; the note's ink stays the document's", () => {
+    const { ce, world, step, note, live, doc } = makeDesk();
+    const a = note("base");
+    step();
+    const typing = createNoteTyping({ world, docs: gated(ce, () => true) });
+    expect(typing.begin(a)).toBe(false);
+    expect(world.hasTag(a, Editing)).toBe(false);
+    expect(typing.editing()).toBeUndefined();
+    expect(typing.input("base!")).toBeNull();
+    expect(live(a)?.text).toBe("base");
+    expect(doc(a)?.text).toBe("base");
+  });
+
+  it("the verdict moves mid-session (a peer's pack): the end commits nothing — no undo step — and the cell goes back as found", () => {
+    const { ce, world, step, note, live, doc, undoSteps } = makeDesk();
+    const a = note("base");
+    step();
+    let readOnly = false;
+    const typing = createNoteTyping({ world, docs: gated(ce, () => readOnly) });
+    expect(typing.begin(a)).toBe(true);
+    keys(typing, "base", "!!");
+    expect(live(a)?.text).toBe("base!!");
+    readOnly = true;
+    const before = undoSteps();
+    expect(typing.commit()).toBe(false);
+    expect(doc(a)?.text).toBe("base");
+    expect(live(a)?.text).toBe("base");
+    expect(undoSteps()).toBe(before);
+    typing.end();
+    expect(world.hasTag(a, Editing)).toBe(false);
+  });
+
+  it("through the facade: a document the version gate opens READ-ONLY (its root does not agree with its envelope's) — the desk's typing sees that verdict", () => {
+    const { step, note, session } = makeDesk();
+    note("base");
+    step();
+    // the in-document markers are the gate's authority (a header's engineSchema is re-read from them); the root mirror is the header's
+    const { header, payload } = decodeEnvelope(session().exportEnvelope());
+    const newer = createCanvasEngine({ widgets: [Note] });
+    const opened = newer.docs.open(encodeEnvelope({ ...header, rootCanvas: { id: "gate:not-the-stored-root", semanticVersion: 1 } }, payload));
+    expect(opened.ok).toBe(true);
+    expect(newer.docs.current()?.readOnly).toBe(true);
+    newer.world.sync();
+    const a = newer.world.firstOf(defineQuery([NOTE_INK])) as Entity | undefined;
+    if (a === undefined) throw new Error("the note did not open");
+    const typing = createNoteTyping({ world: newer.world, docs: newer.docs });
+    expect(typing.begin(a)).toBe(false);
+    expect(newer.world.hasTag(a, Editing)).toBe(false);
+    expect((newer.world.get(a, NOTE_INK) as { text: string }).text).toBe("base");
   });
 });

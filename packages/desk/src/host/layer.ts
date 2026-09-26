@@ -59,7 +59,7 @@ import type { KindLocal } from "../kinds/world";
 import { worldChildren } from "../compose/children";
 import type { BlobStore } from "../photo/blobs";
 import { decodePicture } from "./picture";
-import { createNoteTyping, type NoteTyping, type TypingDocs } from "../objects/typing";
+import { createNoteTyping, type NoteTyping, type TypingDocs, writable } from "../objects/typing";
 import { createPhotoCarry } from "../objects/carry";
 import { type BoardPen, createBoardPen } from "../objects/pen";
 import { createNotebookHand, type NotebookHand } from "../objects/leaf";
@@ -437,9 +437,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           isPad: (e) => builder.kindOf(e)?.name === CALENDAR_KIND, editor, writing: calWriting, pads: padsLocal, docs: opts.docs ?? { current: () => undefined },
           look: () => compose.look(CALENDAR_KIND) as CalendarObjectLook | undefined, props: calPropsOf,
           setProps: (e, props) => {
-            const session = opts.docs?.current();
+            const session = opts.docs === undefined ? undefined : writable(opts.docs);
             if (session === undefined || !world.isAlive(e)) return;
-            try { setWidgetProps(session.store, world, e, props, { undoable: false }); } catch { /* a read-only document keeps its month */ }
+            try { setWidgetProps(session.store, world, e, props, { undoable: false }); } catch { /* refused (the prop's schema, the guard): the month stays */ }
           },
           wake: () => compose.wake("ink"),
         })

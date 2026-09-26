@@ -12,7 +12,7 @@ import { keyOf, monthOfDay } from "../calendar/month";
 import { padFrame } from "../calendar/pad";
 import { type CalendarGeometry, DRAFT_ID, type PadMarks, type Pads, partAt, sheetPoint } from "../kinds/calendar";
 import type { CalendarWriting } from "./calendar-writing";
-import type { TypingDocs } from "./typing";
+import { type TypingDocs, writable } from "./typing";
 
 export interface CalendarHandOptions {
   readonly world: World;
@@ -208,9 +208,9 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
           unstuck.add(note);
           const pin = held.pin;
           defer(() => {
-            const session = docs.current();
+            const session = writable(docs);
             if (session === undefined || !world.isAlive(pin)) return;
-            try { guardedTransaction(session.store, world, (tx) => { tx.destroy(pin); }); } catch { /* a read-only document keeps it */ }
+            try { guardedTransaction(session.store, world, (tx) => { tx.destroy(pin); }); } catch { /* refused by the guard: the pin stays */ }
           });
         }
         // where it would stick, shown on the day
@@ -232,7 +232,7 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
   /** Stick a note to a day: the pin and the note at its day's slot in ONE transaction; the note glides there from where it was let go. */
   const stick = (note: Entity, pad: Entity, day: number): void => {
     defer(() => {
-      const session = docs.current();
+      const session = writable(docs);
       const p = world.get(note, Position);
       const z = world.get(note, Size);
       const pp = world.get(pad, Position);
@@ -263,7 +263,7 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
   const commitRolls = (pads: Pads): void => {
     for (const { e, month } of pads.rolled()) {
       defer(() => {
-        const session = docs.current();
+        const session = writable(docs);
         let ok = false;
         if (session !== undefined && world.isAlive(e)) {
           try { setWidgetProps(session.store, world, e, { month: monthKeyOf(month) }, { undoable: false }); ok = true; } catch { ok = false; }
@@ -291,9 +291,9 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
       if (!world.isAlive(pad)) return;
       const cur = world.get(pad, PadSelection);
       if (cur !== undefined) world.edit(pad).set(PadSelection, { ...cur, anchor: key, focus: key, entry: 0 as Entity });
-      const session = docs.current();
+      const session = writable(docs);
       if (session === undefined) return;
-      try { setWidgetProps(session.store, world, pad, { month }, { undoable: false }); } catch { /* a read-only document keeps its month */ }
+      try { setWidgetProps(session.store, world, pad, { month }, { undoable: false }); } catch { /* refused (the prop's schema, the guard): the month stays */ }
     });
   };
 

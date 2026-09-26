@@ -21,7 +21,7 @@ import { keyOf } from "../calendar/month";
 import type { PadDraft, Pads } from "../kinds/calendar";
 import { decodeSeeds, encodeSeeds, freshSeed } from "../paper/seeds";
 import { carrySeeds } from "../paper/text";
-import type { TypingDocs } from "./typing";
+import { type TypingDocs, writable } from "./typing";
 
 export interface CalendarWritingOptions {
   readonly world: World;
@@ -89,7 +89,7 @@ export function createCalendarWriting(opts: CalendarWritingOptions): CalendarWri
     const t = target;
     if (t === null || !open) return false;
     open = false;
-    const session = docs.current();
+    const session = writable(docs);
     if (t.draft !== null) {
       // a NEW line: spawned now, whole — or nothing, if nothing was written
       const d = t.draft;
@@ -141,6 +141,7 @@ export function createCalendarWriting(opts: CalendarWritingOptions): CalendarWri
     beginNew(pad, s, e, ink) {
       if (target !== null) end();
       if (!alive(pad)) return false;
+      if (docs.current() !== undefined && writable(docs) === undefined) return false;   // a read-only document: no line begins on it
       target = { pad, entry: null, draft: null };
       setDraft({ start: Math.min(s, e), end: Math.max(s, e), text: "", seeds: [], ink });
       open = false;
@@ -151,6 +152,7 @@ export function createCalendarWriting(opts: CalendarWritingOptions): CalendarWri
       if (target !== null && target.entry === entry) return true;
       if (target !== null) end();
       if (!alive(pad) || !alive(entry) || read(entry) === undefined) return false;
+      if (docs.current() !== undefined && writable(docs) === undefined) return false;   // a read-only document: its lines are read, not written
       world.addTag(entry, Editing);
       target = { pad, entry, draft: null };
       open = false;

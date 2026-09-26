@@ -29,7 +29,7 @@
 import { CancelRequest, ChildOf, defineQuery, Drag, type Entity, GestureActive, GestureCancelled, GestureEnded, GestureFailed, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, PressWheel, Size, Captures, Watches, type World } from "@ice/core";
 import { Photo } from "./photo";
 import type { Prints } from "../kinds/photo";
-import type { TypingDocs } from "./typing";
+import { type TypingDocs, writable } from "./typing";
 
 export interface PhotoCarryOptions {
   readonly world: World;
@@ -75,7 +75,7 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
 
   /** ONE transaction: the print where it came to rest, at the turn it came to rest at, raised to the top of its siblings. False when it could not. */
   const commit = (e: Entity, x: number, y: number, angle: number): boolean => {
-    const session = docs.current();
+    const session = writable(docs);
     const size = world.get(e, Size);
     if (session === undefined || size === undefined || !world.isAlive(e)) return false;
     const group = Photo.groups[0]?.component;

@@ -21,7 +21,7 @@ import { ERASER_TOOL, markerTool, StrokeBuilder, TIP_NAMES, type TipName, TIPS }
 import { type BoardInk, type BoardObjectLook, ERASER_TOOL_ID, inkOfTool } from "../kinds/board";
 import { linear } from "../mat/night";
 import { Board } from "./board";
-import type { TypingDocs } from "./typing";
+import { type TypingDocs, writable } from "./typing";
 
 export interface BoardPenOptions {
   readonly world: World;
@@ -93,7 +93,7 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
     ink?.commit(s.board, encodePoints(s.points));
     const spec = { tool: "marker" as const, ink: s.ink, tip: s.tip, erase: s.erase, points: s.points, times: s.times };
     defer(() => {
-      const session = docs.current();
+      const session = writable(docs);
       let ok = false;
       if (session !== undefined && world.isAlive(s.board)) {
         try { guardedTransaction(session.store, world, (tx) => { addStroke(tx, s.board, spec); }); ok = true; } catch { ok = false; }
@@ -106,9 +106,9 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
   /** The put-down: the marker lies down in the ink last used — the `cap`, off the undo stack, when it is another. */
   const layDown = (b: Entity, ink: string): void => {
     defer(() => {
-      const session = docs.current();
+      const session = writable(docs);
       if (session === undefined || !world.isAlive(b) || propsOf(b).cap === ink) return;
-      try { setWidgetProps(session.store, world, b, { cap: ink }, { undoable: false }); } catch { /* a read-only document keeps the old cap */ }
+      try { setWidgetProps(session.store, world, b, { cap: ink }, { undoable: false }); } catch { /* refused (the prop's schema, the guard): the old cap stays */ }
     });
   };
 

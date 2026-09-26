@@ -25,7 +25,7 @@ import type { EventLine } from "../calendar/print";
 import { dayBox, sheetOf } from "../calendar/sheet";
 import { type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, type Pads, partAt, sheetOnScreen } from "../kinds/calendar";
 import type { CalendarWriting } from "../objects/calendar-writing";
-import type { TypingDocs } from "../objects/typing";
+import { type TypingDocs, writable } from "../objects/typing";
 import type { EditorLease, NoteEditor } from "./editor";
 
 export interface CalendarInputOptions {
@@ -263,7 +263,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
     editor.element.value = "";
   };
   const removeEntry = (e: Entity, entry: Entity): void => {
-    const s = opts.docs.current();
+    const s = writable(opts.docs);
     if (s === undefined) return;
     try { s.store.transaction((tx) => { tx.destroy(entry); }); } catch { return; }
     setSel(e, {});

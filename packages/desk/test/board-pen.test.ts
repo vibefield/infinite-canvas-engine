@@ -20,7 +20,7 @@ const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
 const look = must(boardKind().theme)(palette, "light") as BoardObjectLook;
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
-function rig(props: Record<string, unknown> = {}) {
+function rig(props: Record<string, unknown> = {}, readOnly?: () => boolean) {
   const ce = createCanvasEngine({ widgets: [Board] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 1 });
@@ -36,14 +36,19 @@ function rig(props: Record<string, unknown> = {}) {
   const laid: StrokeBuilder[] = [];
   const committed: string[] = [];
   const hands: PenHand[] = [];
+  let cancels = 0;
   const ink = {
     lay: (_e: Entity, b: StrokeBuilder) => { if (laid[laid.length - 1] !== b) laid.push(b); },
     commit: (_e: Entity, points: string) => { committed.push(points); },
-    cancel: () => {},
+    cancel: () => { cancels += 1; },
     hand: (_e: Entity, h: PenHand) => { hands.push(h); },
   } as unknown as BoardInk;
+  // the document as `TypingDocs` carries it — the gate's verdict swapped in when a test says (a doc a newer build wrote reads so)
+  const docs = readOnly === undefined
+    ? ce.docs
+    : { current: () => { const s = ce.docs.current(); return s === undefined ? undefined : { store: s.store, liveWriter: s.liveWriter, readOnly: readOnly(), versionReport: s.versionReport }; } };
   const pen = createBoardPen({
-    world: ce.world, docs: ce.docs, ink: () => ink, look: () => look, isBoard: (e) => e === board,
+    world: ce.world, docs, ink: () => ink, look: () => look, isBoard: (e) => e === board,
     heldToWorld: (e, x, y) => (e === board ? [340 + x, 260 + y] : undefined), geometryOf: (e) => (e === board ? G : undefined),
   });
   let now = 1000;
@@ -54,7 +59,7 @@ function rig(props: Record<string, unknown> = {}) {
   const strokes = () => ce.world.getReverse(board, ChildOf).map((k) => ce.world.get(k, BoardStroke)).filter((s) => s !== undefined);
   const settle = async (): Promise<void> => { await Promise.resolve(); await Promise.resolve(); ce.world.sync(); };
   const cap = () => (ce.world.get(board, Board.groups[0]?.component as never) as { cap: string }).cap;
-  return { ce, board, pen, frame, mouse, strokes, settle, laid, committed, hands, cap, now: () => now };
+  return { ce, board, pen, frame, mouse, strokes, settle, laid, committed, hands, cap, cancels: () => cancels, now: () => now };
 }
 
 describe("the pen in hand lays a stroke and commits it as ONE child with its samples' times", () => {
@@ -149,5 +154,24 @@ describe("the pen in hand lays a stroke and commits it as ONE child with its sam
     r.mouse("up", 600 + 235, 400, 0); r.frame();
     await r.settle();
     expect(r.strokes()).toHaveLength(0);
+  });
+});
+
+describe("the pen and a read-only document (D7 #1: the writer's gate)", () => {
+  it("a stroke on a read-only session lands NO desk.stroke — the wet ink is cancelled, the raster its children's again — and the cap is not written", async () => {
+    const r = rig({ cap: "black" }, () => true);
+    r.frame(); r.ce.ops.open(r.board); r.frame(); r.frame();
+    r.ce.ops.useHeldTool("marker:red");
+    r.mouse("move", 560, 380, 0); r.frame();
+    r.mouse("down", 560, 380, 1); r.frame();
+    expect(r.pen.live()?.samples).toBe(1);
+    r.mouse("move", 620, 390, 1); r.frame();
+    r.ce.ops.putDown();   // mid-stroke: the stroke would land first, then the marker lie down in red
+    r.frame();
+    await r.settle();
+    expect(r.strokes()).toHaveLength(0);
+    expect(r.pen.commits()).toBe(0);
+    expect(r.cancels()).toBe(1);
+    expect(r.cap()).toBe("black");
   });
 });

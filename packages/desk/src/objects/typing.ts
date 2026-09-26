@@ -19,14 +19,30 @@
 // A note deleted mid-session takes its uncommitted run with it — the gesture was interrupted; an undo
 // of the delete restores the note as last committed.
 
-import { type DocSession, Editing, type Entity, guardedTransaction, type World } from "@ice/core";
+import { type DocSession, Editing, type Entity, gateVerdict, guardedTransaction, type World } from "@ice/core";
 import { encodeSeeds, freshSeed, seedsFor } from "../paper/seeds";
 import { carrySeeds } from "../paper/text";
 import { NOTE_INK, NOTE_PROPS } from "./note";
 
-/** The document a session writes into — the facade's `engine.docs` (its `current()` session: store + live writer). */
+/** The document a session writes into — the facade's `engine.docs` (its `current()` session: store + live writer + the gate's verdict). */
 export interface TypingDocs {
-  current(): Pick<DocSession, "store" | "liveWriter"> | undefined;
+  current(): Pick<DocSession, "store" | "liveWriter" | "readOnly" | "versionReport"> | undefined;
+}
+
+/** What a desk writer holds while it commits: the session's store and live writer. */
+export type WritableSession = Pick<DocSession, "store" | "liveWriter">;
+
+/**
+ * THE WRITER'S GATE (D7 #1): the session a desk gesture may commit into — none without a document, and none when the
+ * version gate's verdict is read-only (a doc a newer build wrote, a pack this build does not compile, a root that does not
+ * agree). `readOnly` is the verdict at open; the report is asked again because a peer's pack can move it after. This is
+ * the facade's `requireWritable` law at the desk's own write surfaces: strata's store has no read-only mode, and every desk
+ * writer commits through it directly (guardedTransaction, setWidgetProps), never through the doc kit's commit sink, so a
+ * gate that lived only in the sink never reached them. A refused writer does what "no document" means to it: nothing lands.
+ */
+export function writable(docs: TypingDocs): WritableSession | undefined {
+  const s = docs.current();
+  return s === undefined || s.readOnly || gateVerdict(s.versionReport()) !== "ok" ? undefined : s;
 }
 
 export interface NoteTypingOptions {
@@ -74,7 +90,7 @@ export function createNoteTyping(opts: NoteTypingOptions): NoteTyping {
   const inkOf = (e: Entity): Ink | undefined => world.get(e, NOTE_INK) as Ink | undefined;
   const seedOf = (e: Entity): number => (world.get(e, NOTE_PROPS) as { seed?: number } | undefined)?.seed ?? 0;
   /** The live write — through the guarded live writer, legal only under the claim (`Editing`: core's makeDefaultMayDiverge). */
-  const write = (session: ReturnType<TypingDocs["current"]>, e: Entity, ink: Ink): void => {
+  const write = (session: WritableSession | undefined, e: Entity, ink: Ink): void => {
     if (session !== undefined) session.liveWriter.set(e, NOTE_INK, { text: ink.text, seeds: ink.seeds });
     else world.edit(e).set(NOTE_INK, { text: ink.text, seeds: ink.seeds });   // no document: the runtime is all there is
   };
@@ -84,11 +100,17 @@ export function createNoteTyping(opts: NoteTypingOptions): NoteTyping {
     if (!open) return false;
     open = false;
     if (!alive(e)) return false;
-    const session = docs.current();
+    const doc = docs.current();
+    const session = writable(docs);
     const live = inkOf(e);
     const from = start;
     start = undefined;
-    if (session === undefined || live === undefined) return false;
+    if (doc === undefined || live === undefined) return false;
+    // the document went read-only mid-session (the gate's verdict moved under a peer's pack): nothing lands, the cell goes back as found
+    if (session === undefined) {
+      if (from !== undefined) write(doc, e, from);
+      return false;
+    }
     // NETS TO NOTHING — the same text in the same hand as the session found it: no transaction. The cell is put back
     // EXACTLY as found (an implicit hand made explicit by the carry is the same hand, but not the same bytes), so the
     // runtime reconverges to its baseline and a remote value strata banked meanwhile applies at the next drain. Compared
@@ -117,6 +139,7 @@ export function createNoteTyping(opts: NoteTypingOptions): NoteTyping {
       if (editing === e && alive(e)) return true;
       if (editing !== undefined) end();
       if (!alive(e) || inkOf(e) === undefined) return false;
+      if (docs.current() !== undefined && writable(docs) === undefined) return false;   // a read-only document: no session opens on it (no document at all: the runtime's)
       world.addTag(e, Editing);
       editing = e;
       open = false;

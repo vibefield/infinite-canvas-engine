@@ -32,7 +32,7 @@ import { counts, dragSheet, grabSheet, releaseSheet } from "../notebook/motion";
 import { type LiveStroke, pageStrokeKey } from "../notebook/pages";
 import { type NotebookHit, localXAt } from "../notebook/pick";
 import { Notebook } from "./notebook";
-import type { TypingDocs } from "./typing";
+import { type TypingDocs, writable } from "./typing";
 
 /** The notebook's props cell (`desk.notebook:props` — its `spread` the durable fact a completed turn moves). */
 const NOTEBOOK_PROPS = Notebook.groups[0]?.component;
@@ -128,7 +128,7 @@ export function createNotebookHand(opts: NotebookHandOptions): NotebookHand {
   const write = (books: Books, book: Entity, to: number): void => {
     books.ask(book, to);
     defer(() => {
-      const session = docs.current();
+      const session = writable(docs);
       let ok = false;
       if (session !== undefined && world.isAlive(book)) {
         try { setWidgetProps(session.store, world, book, { spread: to }, { undoable: false }); ok = true; } catch { ok = false; }
@@ -188,7 +188,7 @@ export function createNotebookHand(opts: NotebookHandOptions): NotebookHand {
     books?.lift(s.book, key);
     const spec = { tool: "pen" as const, ink: s.live.ink, page: s.page, points: s.points, times: s.times };
     defer(() => {
-      const session = docs.current();
+      const session = writable(docs);
       let ok = false;
       if (session !== undefined && world.isAlive(s.book)) {
         try { guardedTransaction(session.store, world, (tx) => { addStroke(tx, s.book, spec); }); ok = true; } catch { ok = false; }
