@@ -30,10 +30,10 @@ const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * The scenes the world draws: the mat, the rulers, the notes, the mini mats with their insides and chains, the flights (D2b);
- * the whiteboards, the prints, the notebooks, the desk calendars, and a selected notebook's and desk calendar's marks (D3w)
- * — a print inside a mini mat is not drawn here yet.
+ * the whiteboards, the prints — one inside a mini mat, through the inside's slot, lit by its host's lamp — the notebooks, the
+ * desk calendars, and a selected notebook's and desk calendar's marks (D3w).
  */
-const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad)-(?!inside)/;
+const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad)-/;
 /**
  * design-015 D3w: the three inked-board scenes keep, from the world too, the bound rig:parity names for them (D-D3r-a.5): the
  * stamp pass compiled by Chrome's Dawn and by node-webgpu's quantises a handful of the raster's coverages one LSB apart — the
