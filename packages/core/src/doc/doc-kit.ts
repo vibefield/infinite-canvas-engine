@@ -43,7 +43,7 @@ import {
   encodeEnvelope,
   type EnvelopeHeader,
 } from "./envelope";
-import { createDocCommitSink, createReadOnlyCommitSink } from "./doc-commit-sink";
+import { type CommitExtender, createDocCommitSink, createReadOnlyCommitSink } from "./doc-commit-sink";
 import { runMigrations } from "./migrate";
 import { runRenames } from "./rename";
 import { armRenameSweep } from "./rename-sweep";
@@ -79,6 +79,8 @@ export interface DocSessionOpts {
   readonly rootCanvas?: CanvasTypeIdentity;
   /** Engine-owned final mutation guard; low-level unscoped sessions may omit it. */
   readonly commitGuard?: (intent: CommitIntent) => CommitIntent | undefined;
+  /** The layers' word on a gesture's landing, inside its transaction (the facade fans its registered extenders through this). */
+  readonly commitExtend?: CommitExtender;
   /** Engine-scoped CanvasType definitions used by solo semantic migration. */
   readonly canvasCatalog?: EngineCatalog;
 }
@@ -162,6 +164,7 @@ function makeSession(
   readOnly: boolean,
   versionScope: DocVersionScope | undefined,
   commitGuard: DocSessionOpts["commitGuard"],
+  commitExtend: DocSessionOpts["commitExtend"],
   report?: DocVersionReport,
 ): DocSession {
   // Claimed at construction — `makeSession` is the one choke point both
@@ -194,6 +197,7 @@ function makeSession(
     ? createReadOnlyCommitSink()
     : createDocCommitSink(store, world, {
         ...(commitGuard === undefined ? {} : { guard: commitGuard }),
+        ...(commitExtend === undefined ? {} : { extend: commitExtend }),
       });
   const liveWriter = createLiveWriter(world, {
     keyOf: (e) => store.keyOf(e),
@@ -324,6 +328,7 @@ export function createDocSession(world: World, opts: DocSessionOpts = {}): DocSe
     false,
     opts.versionScope,
     opts.commitGuard,
+    opts.commitExtend,
     report,
   );
 }
@@ -479,6 +484,7 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
         readOnly,
         opts.versionScope,
         opts.commitGuard,
+        opts.commitExtend,
         effectiveReport,
       ),
     };

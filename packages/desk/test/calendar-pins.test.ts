@@ -5,7 +5,7 @@
 // transaction), riding its carried pad it is not; while carried over a pad, the day it would stick to is marked. It GOES WITH ITS
 // MONTH: a note of a month the pad does not show is veiled — not drawn, never picked (`outside`) — and comes back when its month is
 // laid bare again; in hand, the notes the pad shows ride along in the hand's own slot and leave the desk behind.
-import { Camera, ChildOf, createCanvasEngine, type Entity, Grab, guardedTransaction, HeldView, NO_MODS, Position, PrefabId, schemaMeta, TransformTween, Viewport } from "@ice/core";
+import { Camera, CancelRequest, ChildOf, createCanvasEngine, type Entity, Grab, guardedTransaction, HeldView, NO_MODS, Position, PrefabId, schemaMeta, TransformTween, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { dayOfKey, monthGrid, monthIndex } from "../src/calendar/month";
 import { sheetOf } from "../src/calendar/sheet";
@@ -113,7 +113,7 @@ describe("a note GOES WITH ITS MONTH (the pad's local veils it)", () => {
   });
 });
 
-describe("the hand sticks and unsticks (objects/calendar-hand.ts)", () => {
+describe("the hand sticks and unsticks (objects/calendar-hand.ts) — at the LANDING, inside the move's own transaction (D7 #2)", () => {
   function rig() {
     const d = desk();
     const queued: (() => void)[] = [];
@@ -125,72 +125,136 @@ describe("the hand sticks and unsticks (objects/calendar-hand.ts)", () => {
     const flush = (): void => { while (queued.length > 0) (queued.shift() as () => void)(); d.world.sync(); };
     const undoSteps = (): number => { const s = d.session().store; let n = 0; while (s.canUndo() && n < 50) { s.undo(); n += 1; } for (let i = 0; i < n; i++) s.redo(); d.world.sync(); return n; };
     const pinsOf = () => d.world.getReverse(d.pad, ChildOf).filter((k) => d.world.has(k, NotePin)).map((k) => ({ pin: k, day: d.world.get(k, NotePin)?.day, note: d.world.getRelation(k, PinsNote) }));
-    /** Carry a note: core's rider on it (as a drag's claim puts it), one frame of the hand. */
+    /** Carry a note as the drop MARKS see it — core's rider on it, one frame of the hand (the marks read the runtime, never a transaction). */
     const carry = (n: Entity): void => { const p = must(d.world.get(n, Position)); d.world.addComponent(n, Grab, { x: p.x, y: p.y, w: 200, h: 200, parent: 0 as Entity, prev: 0 as Entity, ord: 0 }); hand.follow(0); };
-    const letGo = (n: Entity, cx: number, cy: number): void => { d.world.edit(n).set(Position, { x: cx - 100, y: cy - 100 }); d.world.removeComponent(n, Grab); hand.follow(0); flush(); };
+    const putBack = (n: Entity): void => { d.world.removeComponent(n, Grab); hand.follow(0); };
+    // core's OWN drag through the stack (the landing is core's move intent): the builder's camera; screen = (world − cam) · zoom; the box tier picks by rect
+    d.world.setResource(Camera, { x: CAM.x, y: CAM.y, zoom: CAM.zoom, gesturing: false });
+    const sx = (wx: number): number => (wx - CAM.x) * CAM.zoom;
+    const sy = (wy: number): number => (wy - CAM.y) * CAM.zoom;
+    const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => { d.ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS }); };
+    /** A frame as the layer runs it: core's step, then the hand. */
+    const frame = (n = 1): void => { for (let i = 0; i < n; i++) { d.step(); hand.follow(0); } };
+    /** The pointer's world point, moved a frame at a time. */
+    let at = { x: 0, y: 0 };
+    const move = (wx: number, wy: number, buttons: number): void => { at = { x: wx, y: wy }; mouse("move", sx(wx), sy(wy), buttons); frame(); };
+    /** Press a note at its centre and carry its CENTRE to (cx, cy) in six moves; the button stays down. */
+    const carryTo = (n: Entity, cx: number, cy: number): void => {
+      const p = must(d.world.get(n, Position));
+      const x0 = p.x + 100;
+      const y0 = p.y + 100;
+      move(x0, y0, 0);
+      mouse("down", sx(x0), sy(y0), 1); frame();
+      for (let i = 1; i <= 6; i++) move(x0 + ((cx - x0) * i) / 6, y0 + ((cy - y0) * i) / 6, 1);
+      // core measures a drag from the move that made it one (past its slop), so the note trails the pointer: the residual brings its centre to (cx, cy)
+      const q = must(d.world.get(n, Position));
+      move(at.x + (cx - (q.x + 100)), at.y + (cy - (q.y + 100)), 1);
+    };
+    /** Let go where the pointer is: core's move commits at the release — and the landing inside it. */
+    const letGo = (): void => { mouse("up", sx(at.x), sy(at.y), 0); frame(3); flush(); };
+    /** Esc: core restores the note where the carry began and commits nothing. */
+    const esc = (): void => { d.world.setResource(CancelRequest, { active: true }); frame(2); mouse("up", sx(at.x), sy(at.y), 0); frame(2); flush(); };
     d.build();
-    return { ...d, hand, flush, undoSteps, pinsOf, carry, letGo };
+    return { ...d, hand, flush, undoSteps, pinsOf, carry, putBack, carryTo, letGo, esc };
   }
 
-  it("let go over a day of the month laid bare, a note STICKS: ONE transaction — its pin, the note at the day's slot — and it glides there", () => {
+  it("let go over a day of the month laid bare, a note STICKS — its pin and the note at the day's slot land IN the move's transaction: ONE undo step for the whole drop; it glides there", () => {
     const r = rig();
     const n = r.note(1100, 300);
     r.build();
     const steps = r.undoSteps();
+    const s17 = daySlot(0, 0, "2026-09-17");
+    r.carryTo(n, s17.x + 30, s17.y - 40);
+    expect(r.pinsOf()).toEqual([]);   // nothing is written while it is carried
+    r.letGo();
+    expect(r.pinsOf().map((p) => [p.day, p.note])).toEqual([["2026-09-17", n]]);
+    expect(r.session().store.getComponent(n, Position)).toEqual({ x: s17.x - 100, y: s17.y - 100 });   // the document: at the slot
+    expect(r.world.get(n, TransformTween)).toMatchObject({ toX: s17.x - 100, toY: s17.y - 100 });        // the note: gliding there
+    expect(r.undoSteps()).toBe(steps + 1);
+    r.session().store.undo();
+    r.world.sync();
+    expect(r.pinsOf()).toEqual([]);
+    expect(r.session().store.getComponent(n, Position)).toEqual({ x: 1000, y: 200 });   // ONE ⌘Z: unpinned, back where the carry began
+  });
+
+  it("carried over a day, the day it would stick to is marked on the pad — merged with the days selected on it; a carry that never lands writes nothing", () => {
+    const r = rig();
+    const n = r.note(1100, 300);
+    r.build();
     r.carry(n);
-    // carried over 17 September: the day it would stick to is marked on the pad
     const s17 = daySlot(0, 0, "2026-09-17");
     r.world.edit(n).set(Position, { x: s17.x - 100 + 30, y: s17.y - 100 - 40 });
     r.hand.follow(0);
     expect(r.pads.marksOf(r.pad)?.drop).toBe(dayOfKey("2026-09-17"));
-    // …merged with the days selected on it
     r.world.addComponent(r.pad, PadSelection, { anchor: "2026-09-02", focus: "2026-09-02", entry: 0 as Entity, home: 0 });
     r.hand.follow(0);
     expect(r.pads.marksOf(r.pad)).toMatchObject({ days: [dayOfKey("2026-09-02"), dayOfKey("2026-09-02")], drop: dayOfKey("2026-09-17") });
     r.world.removeComponent(r.pad, PadSelection);
-    r.letGo(n, s17.x + 30, s17.y - 40);
-    expect(r.pinsOf().map((p) => [p.day, p.note])).toEqual([["2026-09-17", n]]);
-    expect(r.session().store.getComponent(n, Position)).toEqual({ x: s17.x - 100, y: s17.y - 100 });   // the document: at the slot
-    expect(r.world.get(n, TransformTween)).toMatchObject({ toX: s17.x - 100, toY: s17.y - 100 });        // the note: gliding there
-    expect(r.world.get(n, Position)).toEqual({ x: s17.x - 100 + 30, y: s17.y - 100 - 40 });
-    expect(r.undoSteps()).toBe(steps + 1);
+    r.putBack(n);
+    r.flush();
+    expect(r.pinsOf()).toEqual([]);
   });
 
   it("let go off the pad, or on a neighbour month's day printed on the sheet, nothing sticks", () => {
     const r = rig();
     const n = r.note(1100, 300);
     r.build();
-    r.carry(n);
-    r.letGo(n, 1300, 300);
+    r.carryTo(n, 1300, 300);
+    r.letGo();
+    expect(r.pinsOf()).toEqual([]);
     // 31 August heads September's grid (row 0, column 0), printed faint: not a day of the month laid bare
     const L = sheetOf(monthGrid(monthIndex(2026, 9), 1), CALENDAR);
-    r.carry(n);
-    r.letGo(n, -F.W / 2 + L.x0 + L.cw / 2, -F.H / 2 + L.y0 + L.ch / 2);
+    const gx = -F.W / 2 + L.x0 + L.cw / 2;
+    const gy = -F.H / 2 + L.y0 + L.ch / 2;
+    r.carryTo(n, gx, gy);
+    r.letGo();
     expect(r.pinsOf()).toEqual([]);
   });
 
-  it("carried off by itself it is UNSTUCK — one transaction, once; riding its carried pad it is not", () => {
+  it("carried off by itself, a stuck note keeps its pin until it is let go; Esc puts it back on its day with the pin alive — a cancelled carry commits nothing", () => {
     const r = rig();
     const n = r.note(0, 0);
     r.stickTo(n, "2026-09-24");
     r.build();
-    // riding: the pad carried too
-    const pp = must(r.world.get(r.pad, Position));
-    r.world.addComponent(r.pad, Grab, { x: pp.x, y: pp.y, w: F.W, h: F.H, parent: 0 as Entity, prev: 0 as Entity, ord: 0 });
-    r.carry(n);
-    r.flush();
-    expect(r.pinsOf().length).toBe(1);
-    r.world.removeComponent(r.pad, Grab);
-    r.world.removeComponent(n, Grab);
-    r.hand.follow(0);
-    r.flush();
-    expect(r.pinsOf().length).toBe(1);   // let go where it rode to: its own day — nothing to do
     const steps = r.undoSteps();
-    r.carry(n);
-    r.hand.follow(0);
-    r.flush();
+    const s24 = daySlot(0, 0, "2026-09-24");
+    r.carryTo(n, 1300, 300);
+    expect(r.pinsOf().length).toBe(1);   // the pin outlives the carry: nothing is written in the hand
+    r.esc();
+    expect(r.pinsOf().map((p) => [p.day, p.note])).toEqual([["2026-09-24", n]]);
+    expect(r.world.get(n, Position)).toEqual({ x: s24.x - 100, y: s24.y - 100 });
+    expect(r.undoSteps()).toBe(steps);
+  });
+
+  it("let go off every day, it is UNSTUCK in the move's own step — one ⌘Z puts it back on its day; moved to another day, one ⌘Z puts it back on the first", () => {
+    const r = rig();
+    const n = r.note(0, 0);
+    r.stickTo(n, "2026-09-24");
+    r.build();
+    const s24 = daySlot(0, 0, "2026-09-24");
+    let steps = r.undoSteps();
+    r.carryTo(n, 1300, 300);
+    r.letGo();
     expect(r.pinsOf()).toEqual([]);
+    const off = must(r.session().store.getComponent(n, Position));
+    expect(off.x).toBeCloseTo(1200, 3);   // where it was let go (the screen's float, through the camera at zoom 0.42)
+    expect(off.y).toBeCloseTo(200, 3);
     expect(r.undoSteps()).toBe(steps + 1);
+    r.session().store.undo();
+    r.world.sync();
+    expect(r.pinsOf().map((p) => [p.day, p.note])).toEqual([["2026-09-24", n]]);
+    expect(r.session().store.getComponent(n, Position)).toEqual({ x: s24.x - 100, y: s24.y - 100 });
+    // and from one day to another: the old pin and the new land in the move's step
+    steps = r.undoSteps();
+    const s10 = daySlot(0, 0, "2026-09-10");
+    r.carryTo(n, s10.x + 5, s10.y + 5);
+    r.letGo();
+    expect(r.pinsOf().map((p) => [p.day, p.note])).toEqual([["2026-09-10", n]]);
+    expect(r.session().store.getComponent(n, Position)).toEqual({ x: s10.x - 100, y: s10.y - 100 });
+    expect(r.undoSteps()).toBe(steps + 1);
+    r.session().store.undo();
+    r.world.sync();
+    expect(r.pinsOf().map((p) => [p.day, p.note])).toEqual([["2026-09-24", n]]);
   });
 });
 
@@ -231,5 +295,6 @@ describe("the pin's lifecycle with its note, and the notes riding the pad (core'
     expect(dx).toBeGreaterThan(20);
     expect(n1.x - n0.x).toBeCloseTo(dx, 9);
     expect(n1.y - n0.y).toBeCloseTo(p1.y + F.H / 2, 9);
+    expect(d.world.getReverse(d.pad, ChildOf).filter((k) => d.world.has(k, NotePin)).length).toBe(1);   // riding its pad, never unstuck
   });
 });

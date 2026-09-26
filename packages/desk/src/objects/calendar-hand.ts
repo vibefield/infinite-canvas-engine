@@ -5,7 +5,7 @@
 // newest glyph's wipe). It WRITES only as an op would, each out of the frame (a reflector never writes — D-D2c.5): the bar's today
 // (`home` bumped) rolls the pad home — its month, ONE transaction, off the undo stack (D-D3t-c.5) — and selects today.
 
-import { Active, Captures, ChildOf, defineQuery, Down, DownPart, type Entity, Grab, guardedTransaction, heldEntity, HeldPointer, HeldPress, LocalPointer, Pointer, PointerButtons, PointerPart, PointerScreen, PointerWorld, Position, PrefabId, setWidgetProps, Size, TouchesExact, TransformTween, Watches, type World } from "@ice/core";
+import { Active, Captures, ChildOf, type CommitIntent, defineQuery, Down, DownPart, type Entity, Grab, type GuardedTx, heldEntity, HeldPointer, HeldPress, LocalPointer, Pointer, PointerButtons, PointerPart, PointerScreen, PointerWorld, Position, PrefabId, setWidgetProps, Size, TouchesExact, TransformTween, Watches, type World } from "@ice/core";
 import { dayOr, daySlot, monthKeyOf, NotePin, PadSelection, pinNote, PinsNote } from "../calendar/data";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
 import { keyOf, monthOfDay } from "../calendar/month";
@@ -42,6 +42,8 @@ export interface CalendarHandOptions {
 export interface CalendarHand {
   /** Once a frame, before the kinds' clocks: the marks on every pad; the bar's today acted on. */
   follow(now: number): void;
+  /** Leave the document's commit door (the landing's extender). */
+  dispose(): void;
 }
 
 const selectionsQ = defineQuery([PadSelection]);
@@ -159,15 +161,13 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
     peeked = now;
   };
   // ---- the notes stuck to days
-  /** The notes carried last frame (a release is one that is not carried now), and the ones already unstuck in this carry. */
-  let carried = new Set<Entity>();
-  const unstuck = new Set<Entity>();
   const glideMs = opts.glideMs ?? 320;
-  /** The pin holding a note, and its pad (a note is stuck to one day at most). */
-  const pinOf = (note: Entity): { readonly pin: Entity; readonly pad: Entity } | undefined => {
+  /** The pin holding a note: the pin, its pad, its day (a note is stuck to one day at most). */
+  const pinOf = (note: Entity): { readonly pin: Entity; readonly pad: Entity; readonly day: string } | undefined => {
     for (const pin of world.getReverse(note, PinsNote)) {
       const pad = world.getRelation(pin, ChildOf);
-      if (pad !== undefined && world.has(pin, NotePin)) return { pin, pad };
+      const v = world.get(pin, NotePin);
+      if (pad !== undefined && v !== undefined) return { pin, pad, day: v.day ?? "" };
     }
     return undefined;
   };
@@ -176,8 +176,10 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
     const p = world.get(note, Position);
     const z = world.get(note, Size);
     if (p === undefined || z === undefined) return undefined;
-    const cx = p.x + z.w / 2;
-    const cy = p.y + z.h / 2;
+    return dropTargetAt(note, p.x + z.w / 2, p.y + z.h / 2);
+  };
+  /** The pad and the day a point (a note's centre) is over — a day of the month laid bare, on a pad at rest. */
+  const dropTargetAt = (note: Entity, cx: number, cy: number): { readonly pad: Entity; readonly day: number } | undefined => {
     let best: { pad: Entity; day: number } | undefined;
     world.query(framedQ).each((b) => {
       for (const r of b) {
@@ -192,72 +194,71 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
     });
     return best;
   };
-  /** The notes: carried off, unstuck (one transaction, once a carry); let go over a day, stuck — ONE transaction, then the glide into its slot. */
-  const stickAndUnstick = (): Map<Entity, number> => {
+  /** The notes carried by themselves this frame (not riding their carried pad) and the day each would stick to, shown on its pad. */
+  const dropMarks = (): Map<Entity, number> => {
     const drops = new Map<Entity, number>();
     if (opts.isNote === undefined) return drops;
-    const now = new Set<Entity>();
     world.query(grabbedQ).each((b) => {
       for (const r of b) {
         const note = b.entity(r);
         if (!opts.isNote?.(note)) continue;
-        now.add(note);
         const held = pinOf(note);
-        // carried off by itself (not riding its pad): unstuck, once
-        if (held !== undefined && !world.has(held.pad, Grab) && !unstuck.has(note)) {
-          unstuck.add(note);
-          const pin = held.pin;
-          defer(() => {
-            const session = writable(docs);
-            if (session === undefined || !world.isAlive(pin)) return;
-            try { guardedTransaction(session.store, world, (tx) => { tx.destroy(pin); }); } catch { /* refused by the guard: the pin stays */ }
-          });
-        }
-        // where it would stick, shown on the day
-        if (held === undefined || unstuck.has(note)) { const t = dropTarget(note); if (t !== undefined) drops.set(t.pad, t.day); }
+        if (held !== undefined && world.has(held.pad, Grab)) continue;   // riding its carried pad: it goes where the pad goes
+        const t = dropTarget(note);
+        if (t !== undefined) drops.set(t.pad, t.day);
       }
     });
-    for (const note of carried) {
-      if (now.has(note)) continue;
-      unstuck.delete(note);
-      if (!world.isAlive(note) || world.has(note, TransformTween)) continue;   // gone, or flying back (a refused drop)
-      const t = dropTarget(note);
-      const already = pinOf(note);
-      if (t === undefined || (already !== undefined && already.pad === t.pad)) continue;
-      stick(note, t.pad, t.day);
-    }
-    carried = now;
     return drops;
   };
-  /** Stick a note to a day: the pin and the note at its day's slot in ONE transaction; the note glides there from where it was let go. */
-  const stick = (note: Entity, pad: Entity, day: number): void => {
-    defer(() => {
-      const session = writable(docs);
-      const p = world.get(note, Position);
+  /** The glides owed after a landing: the note drawn from where it was let go while the document already holds its slot. */
+  const glides: { readonly note: Entity; readonly from: { readonly x: number; readonly y: number }; readonly to: { readonly x: number; readonly y: number } }[] = [];
+  /**
+   * THE LANDING (D7 #2): core's move intent for a note, inside ITS transaction (the facade's `extendCommits`) — let go over a day
+   * of a month laid bare, the note is STUCK: its old pin (if any) destroyed, its pin on the day, the note at the day's slot; let go
+   * over no day (or consumed into a container), UNSTUCK: its pin destroyed. Nothing is written while the note is carried: Esc
+   * restores the note and commits nothing, so the pin outlives a cancelled carry; and the whole drop — the move, the pins, the
+   * slot — is ONE undo step. A note riding its carried pad is the pad's move to carry (core's riders), not this hand's.
+   */
+  const landing = (intent: CommitIntent, tx: GuardedTx): void => {
+    if (opts.isNote === undefined || (intent.kind !== "move" && intent.kind !== "consume")) return;
+    for (const w of intent.writes) {
+      if (w.component !== Position || !opts.isNote(w.entity) || !world.isAlive(w.entity)) continue;
+      const note = w.entity;
+      const held = pinOf(note);
+      if (held !== undefined && world.has(held.pad, Grab)) continue;
+      const at = w.value as { readonly x: number; readonly y: number };
       const z = world.get(note, Size);
-      const pp = world.get(pad, Position);
-      const pz = world.get(pad, Size);
-      if (session === undefined || p === undefined || z === undefined || pp === undefined || pz === undefined || !world.isAlive(pad)) return;
-      const weekStart = (((G(pad)?.weekStart) ?? 1) === 0 ? 0 : 1) as 0 | 1;
-      let slot: { x: number; y: number };
-      try { slot = daySlot(pp.x + pz.w / 2, pp.y + pz.h / 2, keyOf(day), weekStart, law); } catch { return; }
-      const to = { x: slot.x - z.w / 2, y: slot.y - z.h / 2 };
-      const from = { x: p.x, y: p.y };
-      try {
-        guardedTransaction(session.store, world, (tx) => {
-          const old = pinOf(note);
-          if (old !== undefined) tx.destroy(old.pin);
-          pinNote(tx, pad, note, keyOf(day));
-          tx.edit(note).set(Position, to);
-        });
-      } catch { return; }
-      // the glide: the document holds the slot; the note is drawn from where it was let go, a tween being its claim (ops.arrange's way)
-      if (glideMs > 0 && (from.x !== to.x || from.y !== to.y) && world.isAlive(note)) {
-        world.addComponent(note, TransformTween, { toX: to.x, toY: to.y, durationMs: glideMs, elapsedMs: 0 });
-        session.liveWriter.set(note, Position, from);
+      const t = intent.kind === "move" && z !== undefined ? dropTargetAt(note, at.x + z.w / 2, at.y + z.h / 2) : undefined;
+      if (t === undefined) {
+        if (held !== undefined && world.isAlive(held.pin)) tx.destroy(held.pin);
+        continue;
       }
-    });
+      const day = keyOf(t.day);
+      if (held !== undefined && held.pad === t.pad && held.day === day) continue;   // let go on its own day: nothing to do
+      const pp = world.get(t.pad, Position);
+      const pz = world.get(t.pad, Size);
+      if (pp === undefined || pz === undefined || z === undefined) continue;
+      const weekStart = (((G(t.pad)?.weekStart) ?? 1) === 0 ? 0 : 1) as 0 | 1;
+      let slot: { x: number; y: number };
+      try { slot = daySlot(pp.x + pz.w / 2, pp.y + pz.h / 2, day, weekStart, law); } catch { continue; }
+      const to = { x: slot.x - z.w / 2, y: slot.y - z.h / 2 };
+      if (held !== undefined && world.isAlive(held.pin)) tx.destroy(held.pin);
+      pinNote(tx, t.pad, note, day);
+      tx.edit(note).set(Position, to);
+      if (glideMs > 0 && (at.x !== to.x || at.y !== to.y)) glides.push({ note, from: { x: at.x, y: at.y }, to });
+    }
+    if (glides.length > 0) defer(glide);
   };
+  /** After the landing's transaction: the note is drawn from where it was let go, a tween being its claim (ops.arrange's way). */
+  const glide = (): void => {
+    const session = writable(docs);
+    for (const g of glides.splice(0)) {
+      if (session === undefined || !world.isAlive(g.note)) continue;
+      world.addComponent(g.note, TransformTween, { toX: g.to.x, toY: g.to.y, durationMs: glideMs, elapsedMs: 0 });
+      session.liveWriter.set(g.note, Position, g.from);
+    }
+  };
+  const leaveDoor = docs.extendCommits?.(landing);
 
   /** A hand's finished roll: the document's month follows it — ONE transaction, off the undo stack; refused, the pad rolls back. */
   const commitRolls = (pads: Pads): void => {
@@ -303,7 +304,7 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
       if (pads === undefined) return;
       if (opts.isPad !== undefined) { rollByHand(pads, now); peekUnder(pads); }
       commitRolls(pads);
-      const drops = stickAndUnstick();
+      const drops = dropMarks();
       const next = new Set<Entity>();
       const w = opts.writing.current();
       world.query(selectionsQ).each((b) => {
@@ -341,6 +342,10 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
       for (const pad of marked) if (!next.has(pad)) pads.mark(pad, undefined);
       marked = next;
       for (const pad of [...homes.keys()]) if (!world.isAlive(pad) || !world.has(pad, PadSelection)) homes.delete(pad);
+    },
+    dispose() {
+      leaveDoor?.();
+      glides.length = 0;
     },
   };
 }

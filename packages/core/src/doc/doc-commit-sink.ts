@@ -22,7 +22,7 @@ import { init } from "../schema/prefab";
 import { WireFrom, WirePorts, WirePrefab, WireTo } from "../catalog/graph";
 import { attachSpawnParent, widgetSpawnInits } from "../widget/spawn";
 import { widgetTypeFor } from "../canvas/engine-catalog";
-import { guardedTransaction } from "../guards/guarded-tx";
+import { type GuardedTx, guardedTransaction } from "../guards/guarded-tx";
 
 /**
  * Out-of-ECS hand-off for `CommitCreate.select` (the marquee-buffer precedent:
@@ -41,9 +41,21 @@ export function drainCreatedSelections(world: World): Entity[] {
   return list;
 }
 
+/**
+ * A layer's word on a gesture's LANDING (design-001 §3 step 3a, widened 2026-09-26 by the desk's D7 #2): called inside the
+ * intent's transaction, after the intent's own writes, with the intent that made them — so what the layer adds (the desk's
+ * pin when a note is let go on a calendar's day, and the note at the day's slot) is the gesture's own undo step: one gesture,
+ * one transaction, one ⌘Z. A cancelled gesture never reaches a sink, so it never reaches an extender either. A throwing
+ * extender is reported and what it wrote before the throw stays in the step — the user's gesture never rolls back for a
+ * layer's fault.
+ */
+export type CommitExtender = (intent: CommitIntent, tx: GuardedTx) => void;
+
 export interface DocCommitSinkOpts {
   /** Whole-intent final authority; undefined means reject without a transaction. */
   readonly guard?: (intent: CommitIntent) => CommitIntent | undefined;
+  /** The layers' word on the landing, inside the same transaction (see {@link CommitExtender}). */
+  readonly extend?: CommitExtender;
 }
 
 export function createDocCommitSink(
@@ -137,6 +149,14 @@ export function createDocCommitSink(
           const wire = tx.spawnPrefab(WirePrefab, [init(WirePorts, { from: w.fromPort, to: w.toPort })]);
           tx.setRelation(wire, WireFrom, w.from);
           tx.setRelation(wire, WireTo, w.to);
+        }
+        // The layers' word on the landing — in THIS transaction, so it is the gesture's own undo step.
+        if (opts.extend !== undefined) {
+          try {
+            opts.extend(intent, tx);
+          } catch (err) {
+            console.error("ice: a commit extender threw inside a gesture's transaction — what it wrote before stays; the gesture lands", err);
+          }
         }
       });
       return true;

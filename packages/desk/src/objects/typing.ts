@@ -19,7 +19,7 @@
 // A note deleted mid-session takes its uncommitted run with it — the gesture was interrupted; an undo
 // of the delete restores the note as last committed.
 
-import { type DocSession, Editing, type Entity, gateVerdict, guardedTransaction, type World } from "@ice/core";
+import { type CommitExtender, type DocSession, Editing, type Entity, gateVerdict, guardedTransaction, type World } from "@ice/core";
 import { encodeSeeds, freshSeed, seedsFor } from "../paper/seeds";
 import { carrySeeds } from "../paper/text";
 import { NOTE_INK, NOTE_PROPS } from "./note";
@@ -27,6 +27,8 @@ import { NOTE_INK, NOTE_PROPS } from "./note";
 /** The document a session writes into — the facade's `engine.docs` (its `current()` session: store + live writer + the gate's verdict). */
 export interface TypingDocs {
   current(): Pick<DocSession, "store" | "liveWriter" | "readOnly" | "versionReport"> | undefined;
+  /** The facade's door into a gesture's own transaction (`docs.extendCommits`, D7 #2): a landing's writes in the gesture's undo step. Absent (a bare store), a driver has no such door. */
+  extendCommits?(extend: CommitExtender): () => void;
 }
 
 /** What a desk writer holds while it commits: the session's store and live writer. */

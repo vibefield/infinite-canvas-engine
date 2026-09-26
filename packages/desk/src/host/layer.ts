@@ -649,6 +649,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         disposed = true;
         listeners.clear();
         calInput?.dispose();
+        calHand?.dispose();
         editor?.dispose();
         for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);

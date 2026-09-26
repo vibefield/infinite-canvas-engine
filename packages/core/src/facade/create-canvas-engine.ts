@@ -125,6 +125,7 @@ import { WidgetEquipped, type WidgetType } from "../widget/define-widget";
 import { registerBuiltinTools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
 import { createDocSession, openDocSession, type DocSession, type DocSessionOpts, type OpenDocResult } from "../doc/doc-kit";
+import type { CommitExtender } from "../doc/doc-commit-sink";
 import { gateVerdict } from "../doc/version-gate";
 import { joinDoc, type JoinDocOpts, type JoinResult } from "../doc/bootstrap";
 import type { ByteChannel } from "../doc/channels";
@@ -339,6 +340,14 @@ export interface CanvasDocs {
     },
   ): Promise<JoinResult>;
   current(): DocSession | undefined;
+  /**
+   * A layer's word on a gesture's landing: `extend` runs INSIDE every gesture's committing transaction (a move, a consume,
+   * a resize, a create…), after the gesture's own writes, with the intent that made them — so what it adds is the gesture's
+   * undo step, not a second one (the desk sticks a note to a calendar's day this way: the pin and the slot land with the
+   * move, one ⌘Z takes the whole drop back). A cancelled gesture commits nothing and so reaches no extender. Registered on
+   * the engine, not a session: it serves every document this engine opens until the returned function is called.
+   */
+  extendCommits(extend: CommitExtender): () => void;
   /** Add compiled widget capability requirements before creating their content. */
   upgradeCapabilities(widgetTypeIds: readonly string[]): boolean;
   /**
@@ -1129,11 +1138,19 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     return intent;
   };
 
+  // The layers' word on a gesture's landing (`docs.extendCommits`): every session this facade opens fans its gesture
+  // transactions through the extenders registered here — a registration outlives the session it was made under.
+  const commitExtenders = new Set<CommitExtender>();
+  const commitExtend: CommitExtender = (intent, tx) => {
+    for (const extend of [...commitExtenders]) extend(intent, tx);
+  };
+
   const scopedDocOpts = (o: DocSessionOpts | undefined): DocSessionOpts => ({
     ...o,
     versionScope,
     rootCanvas: canvasIdentityOf(catalog.rootCanvas),
     commitGuard,
+    commitExtend,
     canvasCatalog: catalog,
   });
 
@@ -1283,6 +1300,12 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       : (_report, verdict) => (verdict === "migrate" ? (opts.policy?.versionGate ?? verdict) : verdict);
 
   const docs: CanvasDocs = {
+    extendCommits(extend) {
+      commitExtenders.add(extend);
+      return () => {
+        commitExtenders.delete(extend);
+      };
+    },
     create(o) {
       closeDoc();
       return adoptSession(createDocSession(world, scopedDocOpts(o)));
