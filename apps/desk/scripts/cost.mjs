@@ -1,5 +1,7 @@
-// rig:cost — the notebook's and the desk calendar's COST re-measured on this host THROUGH THE REGISTRY (design-015 D3r-b): the
-// prototype's own tables (NOTEBOOK.md §9, CALENDAR.md §9 — its harnesses' `perf` scenes, test/harness/{notebook,calendar}.mjs)
+// rig:cost — the notebook's and the desk calendar's COST re-measured on this host THROUGH THE REGISTRY (design-015 D3r-b), and
+// since D5a the MAT's and the RULERS' (MAT.md §5 — the day's and the night's; RULER.md — the mat with the rulers, same view): the
+// prototype's own tables (NOTEBOOK.md §9, CALENDAR.md §9, MAT.md §5, RULER.md — its harnesses' `perf` scenes,
+// test/harness/{notebook,calendar,mat,ruler}.mjs; the mat's "blowing" row is not carried — the parity page's bench draws a still)
 // drawn by apps/desk's parity page through the oracle's desk (frame.mjs → prepareFrame → drawFrame, the two layered kinds among
 // the note and the mini mat), and — when DESK_PROTO names the frozen snapshot — by the prototype's own main lab beside it, round
 // for round under the same load (its books a command buffer of their own after the ground's, its pads' layer one before).
@@ -32,6 +34,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const still = { time: 3.7, goboTime: 57.14, noise: [0.37, 0.61] };
 const base = { theme: "light", mat: still };
 const at = (cx, cy, z) => ({ camX: cx - 600 / z, camY: cy - 400 / z, zoom: z });
+/** test/harness/{mat,ruler}.mjs's view: the camera's corner at (13.7, −21.3), at zoom `z`. */
+const cam = (z) => ({ camX: 13.7, camY: -21.3, zoom: z });
 /** test/harness/scene.mjs `makeDesk(n)`: notes and MINI MATS on a golden spiral, every third a mini mat holding two notes. */
 function makeDesk(n, seed = 1) {
   const notes = [];
@@ -69,6 +73,18 @@ const SCENES = [
   ["CALENDAR.md §9", "the whole pad (zoom 0.42)", { ...base, ...at(0, 0, 0.42), calendars: [pad(0, 0)] }, "2.42 · 2.36"],
   ["CALENDAR.md §9", "a week up close (zoom 1.3)", { ...base, ...at(...wpt(1000, 1300), 1.3), calendars: [pad(0, 0)] }, "3.45 · 3.43"],
   ["CALENDAR.md §9", "the whole pad, rolling", { ...base, ...at(0, 0, 0.42), calendars: [pad(0, 0, { dir: 1, p: 0.5 })] }, "4.33 · 3.82"],
+  // the mat (MAT.md §5: the day's and the night's, medians of seven) and the rulers (RULER.md: the mat alone vs with them, medians of
+  // five) — test/harness/{mat,ruler}.mjs's own views (the camera at (13.7, −21.3)), their `makeDesk(48)` for "48 cards + frames"
+  ["MAT.md §5", "mat, lines only · day", { ...base, ...cam(1), mat: { ...still, opacity: 0 } }, "0.670 (day)"],
+  ["MAT.md §5", "mat, lines only · night", { ...base, theme: "dark", ...cam(1), mat: { ...still, opacity: 0 } }, "0.804 (night)"],
+  ["MAT.md §5", "mat, gobo still · day", { ...base, ...cam(1) }, "0.929 (day)"],
+  ["MAT.md §5", "mat, gobo still · night", { ...base, theme: "dark", ...cam(1) }, "0.966 (night)"],
+  ["MAT.md §5", "mat, 48 objects · day", { ...base, ...cam(1), ...makeDesk(48) }, "1.615 (day)"],
+  ["MAT.md §5", "mat, 48 objects · night", { ...base, theme: "dark", ...cam(1), ...makeDesk(48) }, "1.627 (night)"],
+  ["MAT.md §5", "mat, 48 objects, zoom 6.31 · day", { ...base, ...cam(6.31), ...makeDesk(48) }, "1.117 (day)"],
+  ["RULER.md", "rulers, gobo still · zoom 1", { ...base, ...cam(1), ruler: {} }, "0.907 (mat 0.919)"],
+  ["RULER.md", "rulers, gobo still · zoom 7", { ...base, ...cam(7), ruler: {} }, "1.216 (mat 1.256)"],
+  ["RULER.md", "rulers, 48 objects · zoom 1", { ...base, ...cam(1), ...makeDesk(48), ruler: {} }, "1.781 (mat 1.732)"],
 ].filter(([, label]) => !only || only.test(label));
 
 // ── Preflight ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
