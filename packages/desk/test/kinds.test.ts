@@ -352,14 +352,18 @@ describe("the desk's kinds: thin adapters over the moved passes", () => {
     const paper: KindPass = new PaperKind(spy as unknown as PaperPass);
     const minimat: KindPass = new MiniMatKind(spy as unknown as MiniMatPass);
     const board: KindPass = new BoardKind(spy as unknown as BoardPass);
+    // …and, D6, the records' KEYS after them (undefined when the ground hands none — every record is then packed afresh)
     expect(paper.prepare(enc, ctx, records, extra)).toBe(7);
-    same(got[0], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit]);
+    same(got[0], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, undefined]);
     expect(minimat.prepare(enc, ctx, records, extra)).toBe(7);
-    same(got[1], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, extra.live]);
+    same(got[1], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, extra.live, undefined]);
     minimat.prepare(enc, ctx, records);   // no word from the ground: the instances say
-    same(got[2], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, undefined]);
+    same(got[2], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, undefined, undefined]);
     expect(board.prepare(enc, ctx, records, extra)).toBe(7);
-    same(got[3], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.theme]);
+    same(got[3], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.theme, undefined]);
+    const keys = [11, 12];
+    paper.prepare(enc, ctx, records, { ...extra, keys });
+    same(got[4], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, keys]);
   });
 
   it("spawn wraps the pass's own spawn; tune takes the root's law (the whiteboard's is its copy); ranges and the mini mat's chips forward", () => {

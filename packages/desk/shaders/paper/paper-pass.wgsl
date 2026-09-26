@@ -15,6 +15,7 @@ override LIT_ELSEWHERE: bool = false;
 @group(0) @binding(6) var noise_samp: sampler;
 @group(0) @binding(7) var ink_tex: texture_2d_array<f32>; // the ink pages: r8 coverage, one layer of rasters per binding
 @group(0) @binding(8) var ink_samp: sampler;
+@group(0) @binding(9) var<storage, read> order: array<u32>;   // the draw list: paint index → the record's slot (persistent records, D6)
 
 struct VSOut {
   @builtin(position) clip: vec4f,
@@ -30,8 +31,9 @@ const CORNERS = array<vec2f, 6>(
 fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VSOut {
   var out: VSOut;
   out.clip = vec4f(2.0, 2.0, 2.0, 1.0);   // degenerate: a culled instance collapses
-  out.idx = iid;
-  let P = papers[iid];
+  let slot = order[iid];
+  out.idx = slot;
+  let P = papers[slot];
   let zoom = mat_zoom(u);
   let px = 1.0 / (zoom * mat_dpr(u));
   // the tilted sheet's bounds, grown by everything the fragment can paint outside it: the shadow's reach and the AA

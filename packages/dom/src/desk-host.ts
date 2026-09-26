@@ -59,6 +59,8 @@ export interface LayerContext {
   readonly catalog: CanvasEngine["catalog"];
   /** The marquee's preview, out of the ECS (design-003 §5.7): the vellum the marks draw (design-015 D4a). */
   readonly readMarquee: () => InteractionStack["marqueeBuffer"];
+  /** The one spatial index (design-015 §2.5; D6): the renderer's cull rides it with a hysteresis margin — no per-entity rect test on a pan. */
+  readonly spatial: InteractionStack["index"];
 }
 
 export type LayerFactory<H extends LayerHandle = LayerHandle> = (ctx: LayerContext) => H;
@@ -102,6 +104,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       transitions: engine.transitions,
       catalog: engine.catalog,
       readMarquee: () => stack.marqueeBuffer,
+      spatial: stack.index,
     });
   } catch (err) {
     host.dispose();

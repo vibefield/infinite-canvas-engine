@@ -235,8 +235,7 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
     { title: "the springs", rows: [
       range("lift and hover, Hz", 0.5, 12, 0.1, () => p.motion.liftHz, (v) => { p.motion.liftHz = v; }),
       range("lift and hover, damping", 0.1, 2, 0.01, () => p.motion.liftDamp, (v) => { p.motion.liftDamp = v; }),
-      range("ring, Hz", 0.5, 12, 0.1, () => p.motion.ringHz, (v) => { p.motion.ringHz = v; }),
-      range("ring, damping", 0.1, 2, 0.01, () => p.motion.ringDamp, (v) => { p.motion.ringDamp = v; }),
+      // the ring's two rows are gone with its spring (D6): the marks draw the selection, and nothing moves for it
     ] },
     { title: "nav", rows: [
       range("the flight's response", 60, 2000, 10, () => p.nav.responseMs, (v) => { p.nav.responseMs = v; }, "ms"),

@@ -12,6 +12,7 @@
 // goes: the inside draws right after it, then the sheet's marks over the inside
 // (`drawOver` — the mini mat's chips while the inside's objects come in).
 
+import type { RecordStoreStats } from "./engine/records";
 import type { FadeIn, View } from "./lattice/lod";
 import type { MatConfig, MatFrame, SlotLight } from "./mat/layout";
 import type { MatPass } from "./mat/mat-pass";
@@ -61,6 +62,12 @@ export interface SlotContext {
  */
 export interface KindExtra {
   readonly live: (index: number) => number;
+  /**
+   * The records' KEYS, one per record in the same order (design-015 §4.3; D6) — the builder's entity (a ghost's negated), stable
+   * across frames, so a pass with persistent records keeps a record's slot and writes it only when the record object changed.
+   * Absent (the oracle, a bare host): every record is packed afresh this frame.
+   */
+  readonly keys?: readonly number[];
 }
 
 /**
@@ -82,6 +89,11 @@ export interface KindPass<R = unknown> {
   prepare(encoder: GPUCommandEncoder, slot: SlotContext, records: readonly R[], extra?: KindExtra): number;
   /** Draw records [first, end) — indices into this frame's `records` — in their order, into the open pass. */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void;
+  /**
+   * The kind's persistent record store's counters (design-015 §4.3; D6) — records packed and uploaded, draw lists rewritten — a
+   * rig's witness that a camera move writes no standing record. Absent for a kind that keeps none (the composites' layers).
+   */
+  records?(): RecordStoreStats;
   /** A sheet's marks over its live inside, drawn right after the inside (the mini mat's chips while the inside's objects come in). */
   drawOver?(pass: GPURenderPassEncoder, index: number): void;
   /** This slot's buffers (the shared resources go with the last slot standing). */

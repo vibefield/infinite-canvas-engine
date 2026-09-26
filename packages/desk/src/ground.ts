@@ -100,10 +100,15 @@ export interface GroundOptions {
 /** A layer a host rendered first, laid on the mat inside the ground's pass (it sets its own scissor; the ground restores the slot's). */
 export interface Underlay { draw(pass: GPURenderPassEncoder): void }
 
-/** One object on a desk as the ground takes it: its kind's name (a registered one) and the record that kind's pass draws. */
+/**
+ * One object on a desk as the ground takes it: its kind's name (a registered one) and the record that kind's pass draws — and
+ * its KEY (D6, design-015 §4.3): stable across frames (the builder's entity; a ghost's negated), so the kind's persistent records
+ * keep the object's slot and write it only when the record object changed. Absent: the record is packed afresh every frame.
+ */
 export interface SlotObject {
   readonly kind: string;
   readonly record: unknown;
+  readonly key?: number | undefined;
 }
 
 /** One desk's ground: its camera, grid, objects and presentation — the root's, a departed desk's, or a mini mat's inside. */
@@ -402,13 +407,17 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     // the objects by kind — each kind's records in paint order, and each object's index among its kind's
     const objects = inp.objects ?? [];
     const records = new Map<string, unknown[]>();
-    for (const name of s.kinds.keys()) records.set(name, []);
+    // …and their keys (D6): a kind's list of keys is handed on only when EVERY one of its objects carries one
+    const keys = new Map<string, number[] | null>();
+    for (const name of s.kinds.keys()) { records.set(name, []); keys.set(name, []); }
     const indexOf: number[] = [];
     for (const o of objects) {
       const list = records.get(o.kind);
       if (!list) throw new Error(`ground: no kind "${o.kind}" is registered (${[...s.kinds.keys()].join(", ") || "none"})`);
       indexOf.push(list.length);
       list.push(o.record);
+      const ks = keys.get(o.kind);
+      if (ks !== null && ks !== undefined) { if (o.key === undefined) keys.set(o.kind, null); else ks.push(o.key); }
     }
     // each object's live inside, by its kind's own record index: what the face's own drawing gives way to
     const live = new Map<string, Map<number, number>>();
@@ -444,7 +453,8 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
       const own = root.kinds.get(k.name);
       if (own && k.pass !== own.pass) k.pass.tune?.(own.pass);
       const told = live.get(k.name);
-      drawn.push([k.name, k.pass.prepare(encoder, slot, records.get(k.name) ?? [], { live: (i) => told?.get(i) ?? -1 })]);
+      const ks = keys.get(k.name);
+      drawn.push([k.name, k.pass.prepare(encoder, slot, records.get(k.name) ?? [], { live: (i) => told?.get(i) ?? -1, ...(ks !== null && ks !== undefined ? { keys: ks } : {}) })]);
     }
     if (s === root) rootDrawn = drawn;
     return {

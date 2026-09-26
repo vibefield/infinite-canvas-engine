@@ -9,3 +9,5 @@ export { createMarksCollector, type MarkRow, type MarksCollector, type Selection
 export { createPickSource } from "./pick";
 export { createDeskReflector, type DeskReflector, type DeskReflectorOptions, type DeskReflectorStats, type DeskWakes } from "./reflector";
 export { instrumentSubmits, type SubmitInstrument, type UploadTally } from "../submit-instrument";
+export { type BudgetStats, createRasterBudget, type RasterBudget } from "../engine/budget";
+export { createRecordStore, type RecordStore, type RecordStoreStats } from "../engine/records";

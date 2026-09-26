@@ -7,8 +7,9 @@
 // A stroke's identity is its pen, its pace and its path as its cell keeps them (`pageStrokeKey`): the table compares the page's
 // list with what the raster drew.
 
+import type { RasterBudget } from "../engine/budget";
 import type { RGB } from "../theme";
-import { INK_LAYERS, INK_TABLE, type InkPoint } from "./ink";
+import { INK_H, INK_LAYERS, INK_TABLE, INK_W, type InkPoint } from "./ink";
 import { drawSegment, drawStroke, type InkRect, PageRaster, scaleOf, segmentsOf, unionRect } from "./raster";
 
 /**
@@ -63,6 +64,15 @@ export class PageInk {
   private clock = 0;
   /** Whole-page replays since the cache was made (a witness: the pen's own stroke lands with none). */
   replays = 0;
+  /** THE BUDGET (D6): each layer's CPU raster (5.6 MB) charged as it is made; evicted, the layer replays from its strokes when next used. */
+  private readonly budget: RasterBudget | undefined;
+  constructor(budget?: RasterBudget) { this.budget = budget; }
+
+  /** The budget's ask (D6): a layer's raster is kept while its page was in a table this frame. */
+  keeps(key: string): boolean {
+    const s = this.slots[Number(key)];
+    return s !== undefined && s.used === this.clock;
+  }
 
   /**
    * The table for one book's pages in view this frame (`pages` in the pass's order): every page with ink — strokes, or the live
@@ -95,7 +105,12 @@ export class PageInk {
         s.key = key; s.drawn = null; s.live = null; s.segs = 0;
       }
       const s = this.slots[i] as Slot;
-      s.raster ??= new PageRaster();
+      if (s.raster === null) {
+        s.raster = new PageRaster();
+        s.drawn = null;   // a fresh raster holds nothing: the page replays into it
+        const layer = i;
+        this.budget?.charge("notebook", String(layer), INK_W * INK_H * 4, () => { const q = this.slots[layer] as Slot; q.raster = null; q.drawn = null; q.live = null; q.segs = 0; });
+      } else this.budget?.touch("notebook", String(i));
       const want = strokes.map((st) => st.key);
       let rect: InkRect | null = null;
       let whole = false;
@@ -136,6 +151,6 @@ export class PageInk {
 
   /** Everything dropped (the desk ends). */
   dispose(): void {
-    for (const s of this.slots) { s.key = null; s.raster = null; s.drawn = null; s.live = null; }
+    for (const [i, s] of this.slots.entries()) { if (s.raster !== null) this.budget?.release("notebook", String(i)); s.key = null; s.raster = null; s.drawn = null; s.live = null; }
   }
 }

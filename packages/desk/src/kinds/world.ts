@@ -22,6 +22,7 @@
 
 import type { Component, Entity, HeldToolDef, Relation, Tag } from "@ice/core";
 import type { PrintRaster } from "../calendar/printing";
+import type { RasterBudget } from "../engine/budget";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
@@ -58,8 +59,10 @@ export interface ObjectRect {
 /**
  * What moves, per entity — the builder's springs, each 0..1 and SNAPPED to its target when settled
  * (the B7 trap: a spring that never quite lands keeps the desk awake forever). `lift` follows the
- * `Grab` fact (held), `ring` the `Selected` tag, `hover` the local mouse pointer's exact hit (the
- * B9 pairing — never the dead-band `Targets`), `fade` the delete ghost (1 alive … 0 gone).
+ * `Grab` fact (held), `hover` the local mouse pointer's exact hit (the B9 pairing — never the
+ * dead-band `Targets`), `fade` the delete ghost (1 alive … 0 gone). `ring` is ALWAYS 0 from the
+ * builder: the kinds' own selection ring retired at D4a (the marks draw the selection) and its
+ * spring went at D6; the Node oracle alone hands a ring, for the baseline against the prototype.
  */
 export interface ObjectFlux {
   readonly lift: number;
@@ -167,6 +170,18 @@ export interface KindHost {
   readonly decode?: PictureDecoder | undefined;
   /** The host's PRINT raster (D3t-c — the desk calendar's tiles: desk/host/print.ts in a browser); absent in Node — the oracle pins committed tiles. */
   readonly print?: PrintRaster | undefined;
+  /**
+   * The builder's word on what is DRAWN (D6, persistent records): the paint rank of `e` in the last build's root slot, undefined when it
+   * was not drawn there. A kind's residency reads it instead of counting its own `record` calls — those come only when a record is
+   * remade. Absent (a bare host, the oracle): the kind counts its own.
+   */
+  readonly drawn?: ((e: Entity) => number | undefined) | undefined;
+  /**
+   * THE RASTER BUDGET (D6, engine/budget.ts): one ledger for every raster a kind keeps as a cache of its data — a board's ink, a
+   * notebook page's CPU raster, the calendar's tiles. A kind charges what it makes with a way to let it go and answers `keeps` for
+   * what is on screen; the host trims the ledger once a tick. Absent: nothing is counted or evicted.
+   */
+  readonly budget?: RasterBudget | undefined;
 }
 
 /**
@@ -203,6 +218,8 @@ export interface KindLocal {
    * not showing): the builder draws none of them and the pick answers `outside` for them. Asked after `tick`, before the draw.
    */
   veils?(): ReadonlySet<Entity>;
+  /** The kind's word on a raster it charged to the budget (D6): true = on screen this frame, never evicted now. */
+  keeps?(key: string): boolean;
   dispose?(): void;
 }
 
@@ -219,6 +236,12 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   readonly reach: number;
   /** Components and tags the kind reads beyond its own props (the builder adds them to its change journal). */
   readonly reads?: { readonly components?: readonly Component[]; readonly tags?: readonly Tag[] };
+  /**
+   * The record reads the view's ZOOM or dpr (a raster band, a far-LOD lattice) and nothing else of the camera (design-015 §4.3; D6):
+   * the builder remakes it when they move and reuses it across a pan. Absent = the record is the facts' and the flux's alone. A
+   * composite kind is remade every frame it is drawn whatever it says (its `resolve` steps its own motion).
+   */
+  readonly rezoom?: boolean;
   /** A host's LIVE law (D5a — the dev panel's door, `handle.tuneLaw`): the kind resolves under it from the next build. Absent, its law is fixed. */
   tune?(law: unknown): void;
   /** The entity's geometry this frame, from its rect, its props and its flux — the prototype's `resolve*`. */

@@ -8,7 +8,8 @@
 // spawned from the first, the pipeline and the samplers; reads its OWN slot's
 // animated silhouette (the wind target), as every object pass does.
 
-import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
+import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
+import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
@@ -36,25 +37,28 @@ interface MiniMatShared {
   slots: number;
 }
 
+/** Chips a mini mat's record may name — its BLOCK in the chips buffer (engine/records.ts; the law's `chips.max` caps within it). */
+export const CHIPS_PER_MAT = MAX_CHIPS / MAX_MINIMATS;
+/** Mini mat slots a pass starts with (a desk seldom shows more; the store doubles past it). */
+const SLOTS_AT_START = 64;
+
 export class MiniMatPass {
   readonly name = "minimat/mats";
   private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = MiniMatUniforms.alloc(1);
-  private readonly records = MiniMat.alloc(MAX_MINIMATS);
-  private readonly chipRecords = ChipRecord.alloc(MAX_CHIPS);
+  /** The mini mats' PERSISTENT records and their chips (engine/records.ts, design-015 §4.3; D6): a slot per mini mat while drawn, its chips a fixed block, written when it changed. */
+  private readonly store: RecordStore<MiniMatInstance>;
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
-  private readonly recordBuf: GPUBuffer;
-  private readonly chipBuf: GPUBuffer;
   private group!: GPUBindGroup;
   private boundAssets = -1;
+  private boundStore = -1;
   private count = 0;
   private chipsUsed = 0;
-  /** Per mini mat this frame: its live inside's presence and its chip count — what `drawChips` asks. */
-  private liveOf: number[] = [];
-  private chipsOf: number[] = [];
-  /** The mini mat's numbers (theme.ts `MINIMAT`) — the print, the edge, the shadow, the chips. A host tweaks the root's; every slot copies it. */
-  law: MiniMatLaw = DEFAULT_MINIMAT_LAW;
+  private lawNow: MiniMatLaw = DEFAULT_MINIMAT_LAW;
+  /** The mini mat's numbers (theme.ts `MINIMAT`) — the print, the edge, the shadow, the chips. A host tweaks the root's; every slot copies it. A new law repacks every record (the chips' cap is packed). */
+  get law(): MiniMatLaw { return this.lawNow; }
+  set law(next: MiniMatLaw) { if (next !== this.lawNow) { this.lawNow = next; this.store.invalidate(); } }
   private readonly device: GPUDevice;
   private readonly shared: MiniMatShared;
   private readonly mat: MatPass;
@@ -64,8 +68,18 @@ export class MiniMatPass {
     shared.slots += 1;
     this.matBuf = uniformBuffer(device, MatUniforms.size, "minimat/mat uniforms");
     this.knobBuf = uniformBuffer(device, MiniMatUniforms.size, "minimat/knobs");
-    this.recordBuf = storageBuffer(device, MiniMat.size * MAX_MINIMATS, "minimat/mats");
-    this.chipBuf = storageBuffer(device, ChipRecord.size * MAX_CHIPS, "minimat/chips");
+    // a mini mat's chips are its block: the law's cap within `CHIPS_PER_MAT`; the live inside's presence is the `aux` folded in
+    this.store = createRecordStore<MiniMatInstance, keyof typeof MiniMat.slots, keyof typeof ChipRecord.slots>({
+      device, def: MiniMat, capacity: SLOTS_AT_START, max: MAX_MINIMATS * 64, label: "minimat/mats",
+      blocks: { def: ChipRecord, per: CHIPS_PER_MAT, label: "minimat/chips" },
+      pack: (m, live, into, slot, blocks, base) => {
+        const chips = m.chips ?? [];
+        const take = Math.max(0, Math.min(chips.length, this.lawNow.chips.max, CHIPS_PER_MAT));
+        if (blocks !== null) for (let j = 0; j < take; j++) blocks.set(chipValues(chips[j] as (typeof chips)[number]), base + j);
+        into.set(miniMatValues({ ...m, live }, base, take), slot);
+        return take;
+      },
+    });
     this.rebind();
   }
 
@@ -81,6 +95,7 @@ export class MiniMatPass {
       { binding: 6, stages: ["fragment"], texture: "float" },
       { binding: 7, stages: ["fragment"], sampler: "filtering" },
       { binding: 8, stages: ["fragment"], texture: "float" },
+      { binding: 9, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "minimat/mats");
     const module = await compile(device, compose({ structs: [MatUniforms, MiniMatUniforms, MiniMat, ChipRecord], modules: src.modules, entry: src.entry }));
     const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
@@ -104,11 +119,12 @@ export class MiniMatPass {
   tune(from: MiniMatPass): void { this.law = from.law; }
 
   private rebind(): void {
-    if (this.boundAssets === this.mat.assetVersion) return;
+    if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
     // the glyph atlas the rulers print with (RULER.md) — the numerals and the name are the same mono face; sampled with the gobo's clamp
-    this.group = bindGroup(this.device, s.layout, [this.matBuf, this.knobBuf, this.recordBuf, this.chipBuf, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, this.mat.glyphTexture.createView()], "minimat/mats");
+    this.group = bindGroup(this.device, s.layout, [this.matBuf, this.knobBuf, this.store.records, this.store.blocks as GPUBuffer, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, this.mat.glyphTexture.createView(), this.store.order], "minimat/mats");
     this.boundAssets = this.mat.assetVersion;
+    this.boundStore = this.store.version;
   }
 
   /**
@@ -120,42 +136,37 @@ export class MiniMatPass {
    * instance's own (a portal the ground could not draw leaves the face to the far LOD).
    * Returns the count that will draw.
    */
-  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly MiniMatInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, select: RGB = [0, 0, 0], lit?: SlotLight, live?: (index: number) => number): number {
-    this.rebind();
-    const n = Math.min(instances.length, MAX_MINIMATS);
+  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly MiniMatInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, select: RGB = [0, 0, 0], lit?: SlotLight, live?: (index: number) => number, keys?: readonly number[]): number {
+    const cap = MAX_MINIMATS * 64;
+    const list = instances.length > cap ? instances.slice(0, cap) : instances;
+    // the store (D6): a mini mat keyed by `keys[i]` keeps its slot (and its chips' block) and is written only when its record or its
+    // live inside's presence changed; no keys = every one packed afresh. The ground's word on the live inside overrides the instance's.
+    const n = this.store.prepare(list, keys !== undefined && keys.length > cap ? keys.slice(0, cap) : keys, (i) => { const m = list[i] as MiniMatInstance; const pres = live ? live(i) : (m.live ?? -1); return pres < 0 ? -1 : Math.min(pres, 1); });
+    this.rebind();   // after: the store's buffers may have grown
     let used = 0;
-    this.liveOf = []; this.chipsOf = [];
-    for (let i = 0; i < n; i++) {
-      const m = instances[i] as MiniMatInstance;
-      const chips = m.chips ?? [];
-      const take = Math.max(0, Math.min(chips.length, this.law.chips.max, MAX_CHIPS - used));
-      for (let j = 0; j < take; j++) this.chipRecords.set(chipValues(chips[j] as (typeof chips)[number]), used + j);
-      const pres = live ? live(i) : (m.live ?? -1);
-      this.records.set(miniMatValues({ ...m, live: pres }, used, take), i);
-      this.liveOf.push(pres); this.chipsOf.push(take);
-      used += take;
-    }
+    for (let i = 0; i < n; i++) used += this.store.entryAt(i).blockN;
     this.count = n; this.chipsUsed = used;
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
     this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS, lit));
     this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set(miniMatUniformValues(this.law, { cream: MAT_COLORS.line, cast: MAT_COLORS.cast, select }, this.mat.glyphs));
     this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
-    if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
-    if (used > 0) this.device.queue.writeBuffer(this.chipBuf, 0, this.chipRecords.view(used));
     return n;
   }
 
   get drawn(): number { return this.count; }
-  /** The chips uploaded this frame, every mini mat's together. */
+  /** The chips drawn this frame, every mini mat's together. */
   get chips(): number { return this.chipsUsed; }
+  /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
+  get records() { return this.store.stats(); }
 
   draw(pass: GPURenderPassEncoder): void { this.drawRange(pass, 0, this.count); }
 
   /** Mini mat `at`'s chips OVER its live inside, fading out as the inside's objects fade in — only while the objects are not whole (MINIMAT.md §5). */
   drawChips(pass: GPURenderPassEncoder, at: number): void {
-    const live = this.liveOf[at] ?? -1;
-    const n = this.chipsOf[at] ?? 0;
+    const ent = this.store.entryAt(at);
+    const live = at < this.count ? ent.aux : -1;
+    const n = ent.blockN;
     if (at >= this.count || !(live >= 0 && live < 1) || n === 0) return;
     pass.setPipeline(this.shared.chipsPipeline);
     pass.setBindGroup(0, this.group);
@@ -172,7 +183,7 @@ export class MiniMatPass {
   }
 
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy(); this.chipBuf.destroy();
+    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
     this.shared.slots -= 1;
   }
 }

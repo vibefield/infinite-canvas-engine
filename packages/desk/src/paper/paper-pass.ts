@@ -8,7 +8,8 @@
 // a note inside a mini mat is dappled by the lamp of the desk the mini mat
 // lies on (MINIMAT.md §4). Notes lie above every mini mat on their desk.
 
-import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
+import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
+import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
@@ -49,17 +50,20 @@ export class PaperPass {
   readonly name = "paper/notes";
   private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = PaperUniforms.alloc(1);
-  private readonly records = Paper.alloc(MAX_PAPERS);
+  /** The notes' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per note while it is drawn, written when it changed. */
+  private readonly store: RecordStore<PaperInstance>;
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
-  private readonly recordBuf: GPUBuffer;
   private group!: GPUBindGroup;
   private boundAssets = -1;
+  private boundStore = -1;
   private count = 0;
   /** This frame's slot is lit from elsewhere: it draws with the second pipeline. */
   private litElsewhere = false;
-  /** The paper's numbers (theme.ts `PAPER`) — the caret's and the ring's widths, the fibre. A host tweaks the root's; every slot copies it. */
-  law: PaperLaw = DEFAULT_PAPER_LAW;
+  private lawNow: PaperLaw = DEFAULT_PAPER_LAW;
+  /** The paper's numbers (theme.ts `PAPER`) — the caret's and the ring's widths, the fibre. A host tweaks the root's; every slot copies it. A new law repacks every record (the fibre is packed). */
+  get law(): PaperLaw { return this.lawNow; }
+  set law(next: PaperLaw) { if (next !== this.lawNow) { this.lawNow = next; this.store.invalidate(); } }
   /** The day's chain on the paper: false = a lit sheet shows its configured byte; true = the mat's own double gamma (the golden note). */
   chain = false;
   /** The wipe's softness — how wide the pen's edge is as a glyph arrives, note units. */
@@ -73,7 +77,10 @@ export class PaperPass {
     shared.slots += 1;
     this.matBuf = uniformBuffer(device, MatUniforms.size, "paper/mat uniforms");
     this.knobBuf = uniformBuffer(device, PaperUniforms.size, "paper/knobs");
-    this.recordBuf = storageBuffer(device, Paper.size * MAX_PAPERS, "paper/notes");
+    this.store = createRecordStore<PaperInstance, keyof typeof Paper.slots>({
+      device, def: Paper, capacity: MAX_PAPERS, max: MAX_PAPERS * 64, label: "paper/notes",
+      pack: (p, _aux, into, slot) => { into.set(paperValues(p, this.lawNow.grain), slot); return 0; },
+    });
     this.rebind();
   }
 
@@ -89,6 +96,7 @@ export class PaperPass {
       { binding: 6, stages: ["fragment"], sampler: "filtering" },
       { binding: 7, stages: ["fragment"], texture: "float", dimension: "2d-array" },
       { binding: 8, stages: ["fragment"], sampler: "filtering" },
+      { binding: 9, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "paper/notes");
     const module = await compile(device, compose({ structs: [MatUniforms, PaperUniforms, Paper], modules: src.modules, entry: src.entry }));
     const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
@@ -144,21 +152,24 @@ export class PaperPass {
   }
 
   private rebind(): void {
-    if (this.boundAssets === this.mat.assetVersion) return;
+    if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
-    this.group = bindGroup(this.device, s.layout, [this.matBuf, this.knobBuf, this.recordBuf, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.pagesView, s.inkSampler], "paper/notes");
+    this.group = bindGroup(this.device, s.layout, [this.matBuf, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.pagesView, s.inkSampler, this.store.order], "paper/notes");
     this.boundAssets = this.mat.assetVersion;
+    this.boundStore = this.store.version;
   }
 
   /**
-   * Upload this frame's notes in paint order and the mat's block for this slot's camera,
-   * its light (`light` the Sun or the Moon, `lit` the lamp it is seen by — MINIMAT.md §4):
-   * the dapple, the lamp's shading and the shadow. Returns the count that will draw.
+   * This frame's notes in paint order — through the persistent store (D6): a note keyed by `keys[i]` keeps its slot and is
+   * written only when its record changed; no keys = every record packed afresh (the oracle's form) — and the mat's block for
+   * this slot's camera, its light (`light` the Sun or the Moon, `lit` the lamp it is seen by — MINIMAT.md §4): the dapple,
+   * the lamp's shading and the shadow. Returns the count that will draw.
    */
-  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly PaperInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, select: RGB = [0, 0, 0], lit?: SlotLight): number {
-    this.rebind();
-    const n = Math.min(instances.length, MAX_PAPERS);
-    for (let i = 0; i < n; i++) this.records.set(paperValues(instances[i] as PaperInstance, this.law.grain), i);
+  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly PaperInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, select: RGB = [0, 0, 0], lit?: SlotLight, keys?: readonly number[]): number {
+    const cap = MAX_PAPERS * 64;
+    const list = instances.length > cap ? instances.slice(0, cap) : instances;
+    const n = this.store.prepare(list, keys !== undefined && keys.length > cap ? keys.slice(0, cap) : keys);
+    this.rebind();   // after: the store's buffers may have grown
     this.count = n;
     this.litElsewhere = !litByOwn(view, lit);
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
@@ -166,9 +177,11 @@ export class PaperPass {
     this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1] });
     this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
-    if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
     return n;
   }
+
+  /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
+  get records() { return this.store.stats(); }
 
   get drawn(): number { return this.count; }
 
@@ -184,7 +197,7 @@ export class PaperPass {
 
   /** This slot's buffers; the pages go with the last slot standing. */
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy();
+    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) s.pages.destroy();

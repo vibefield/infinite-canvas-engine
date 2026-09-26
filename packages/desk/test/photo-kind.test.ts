@@ -58,7 +58,7 @@ describe("the photo print in the registry", () => {
     const s = ctx({ present: { opacity: 0.5 }, light: THEMES.dark.matLight, theme: THEMES.dark, lit: { a: { x: 1, y: 2, zoom: 3 } } });
     const records: never[] = [];
     expect(kind.prepare({} as GPUCommandEncoder, s, records, { live: () => 0.5 })).toBe(3);
-    same(got[0], [s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit]);
+    same(got[0], [s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit, undefined]);   // …and the records' keys (D6): none handed here
   });
 
   it("spawn wraps the pass's own spawn; tune takes the root's law; ranges forward", () => {

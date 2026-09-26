@@ -6,7 +6,7 @@
 // the departed desk from the frame's Retained widgets as one tree through the face on an enter, the
 // dressing for the landing and the cut; the cut frame holds every spring. The RE-DRESSING: 320 ms in
 // log space from the zoom the desk was dressed for, the lamp handed over on the same ramp, a hold at 0.
-import { Camera, createCanvasEngine, NavRedress, NavTransition, Retained, Selected, Viewport, writeRuntimeResource } from "@ice/core";
+import { Camera, createCanvasEngine, Grab, NavRedress, NavTransition, NO_ENTITY, Retained, Selected, Viewport, writeRuntimeResource } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
 import { minimatKind, paperKind } from "../src/kinds";
@@ -180,22 +180,24 @@ describe("the flight from the world (design-006; PORTAL.md §2.4)", () => {
   it("the cut frame holds every spring (D-D2b.7): the departed desk IS its pre-cut frame; the next frame moves again", () => {
     const d = nested();
     d.settle();
-    d.world.addTag(d.root, Selected);
+    // the lift (a Grab): the spring that is left since D6 — the ring's went with the retired ring
+    d.world.addComponent(d.root, Grab, { x: 100, y: 500, w: 200, h: 200, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+    d.world.sync();
     d.step();
-    d.build();   // the ring starts rising
+    d.build();   // the lift starts rising
     d.build();
-    const ringBefore = must(d.builder.fluxOf(d.root)).ring;
-    expect(ringBefore).toBeGreaterThan(0);
-    expect(ringBefore).toBeLessThan(1);
-    d.ce.ops.enterContainer(d.m);   // beforeSwitch clears the selection: the ring's target is 0 now
+    const liftBefore = must(d.builder.fluxOf(d.root)).lift;
+    expect(liftBefore).toBeGreaterThan(0);
+    expect(liftBefore).toBeLessThan(1);
+    d.ce.ops.enterContainer(d.m);   // beforeSwitch cancels the gestures: the Grab goes, the lift's target is 0 now
     d.step();
     expect(must(d.world.getResource(NavTransition)).p).toBe(0);
     d.build(d.camera());
-    expect(must(d.builder.fluxOf(d.root)).ring).toBe(ringBefore);   // held
+    expect(must(d.builder.fluxOf(d.root)).lift).toBe(liftBefore);   // held
     d.step();
     expect(must(d.world.getResource(NavTransition)).p).toBeGreaterThan(0);
     d.build(d.camera());
-    expect(must(d.builder.fluxOf(d.root)).ring).not.toBe(ringBefore);   // moving again (its momentum carries it up before it turns for 0)
+    expect(must(d.builder.fluxOf(d.root)).lift).not.toBe(liftBefore);   // moving again (its momentum carries it up before it turns for 0)
   });
 });
 

@@ -23,7 +23,7 @@
 // mirror, through the same local eye the pass draws with.
 
 import type { Entity } from "@ice/core";
-import type { KindPass, KindProgram, SlotContext } from "../kind";
+import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
 import { type BlobStore, type DecodedPicture, RGBA_TYPE } from "../photo/blobs";
@@ -47,13 +47,14 @@ export class PhotoKind implements KindPass<PhotoInstance> {
 
   tune(root: KindPass<PhotoInstance>): void { if (root instanceof PhotoKind) this.pass.tune(root.pass); }
 
-  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light, the lamp. */
-  prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly PhotoInstance[]): number {
-    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit);
+  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light, the lamp — and the records' keys (D6). */
+  prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly PhotoInstance[], extra?: KindExtra): number {
+    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit, extra?.keys);
   }
 
   /** Records [first, end) — indices into the prints `prepare` was handed, each drawn with its picture. */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
+  records() { return this.pass.records; }
 
   dispose(): void { this.pass.dispose(); }
 }
@@ -186,6 +187,8 @@ const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
 /** The photo kind's `local()` on one desk. */
 export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
   const prints = new Map<Entity, Print>();
+  /** The prints whose body LEADS (in a hand, in the air, flying home, arriving) — the ones the tick steps (D6: never every print). */
+  const leading = new Set<Entity>();
   const pics = new Map<string, Pic>();
   const queue: PrintRest[] = [];
   let last = -1;
@@ -262,6 +265,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       if (pr === undefined) return;   // never drawn: nothing to lift
       if (!pr.leads) pr.body = copyBody(pr.body);
       pr.leads = true;
+      leading.add(e);
       pr.resting = false;
       pr.committedAt = -1;
       pr.back = null;   // caught on its way home: the hand has it again
@@ -303,6 +307,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
     arrive(e) {
       const pr = print(e);
       pr.leads = true;
+      leading.add(e);
       pr.resting = false;
       pr.body.h = law.arrive;
       pr.body.alpha = 0;
@@ -345,8 +350,11 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       last = now;
       let want = woke;
       woke = false;
-      for (const [e, pr] of prints) {
-        if (!pr.leads || pr.resting) { if (pr.leads) want = true; continue; }
+      // the prints that lead, and those alone (D6): a desk of a thousand prints at rest costs the tick nothing per print
+      for (const e of leading) {
+        const pr = prints.get(e);
+        if (pr === undefined || !pr.leads) { leading.delete(e); continue; }
+        if (pr.resting) { want = true; continue; }
         want = true;
         if (pr.back !== null) {
           // a cancelled carry flies home (D3t-a): from where the hand let go to the facts, on the island ease — then the facts lead

@@ -11,7 +11,8 @@
 // through a second pipeline (`LIT_ELSEWHERE`, the note's precedent). The pass
 // draws in RANGES of the prints it was handed (design-015 §4.2): the desk's runs.
 
-import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
+import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
+import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
@@ -89,12 +90,13 @@ export class PhotoPass {
   readonly name = "photo/prints";
   private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = PhotoUniforms.alloc(1);
-  private readonly records = Photo.alloc(MAX_PHOTOS);
+  /** The prints' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per print while drawn, written when it changed. */
+  private readonly store: RecordStore<PhotoInstance>;
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
-  private readonly recordBuf: GPUBuffer;
   private group!: GPUBindGroup;
   private bound = -1;
+  private boundStore = -1;
   /** This frame's prints' pictures, in the order `prepare` was handed them — what `drawRange` counts in. */
   private list: (Picture | null)[] = [];
   /** This frame's slot is lit from elsewhere: it draws with the second pipeline. */
@@ -110,7 +112,10 @@ export class PhotoPass {
     shared.slots += 1;
     this.matBuf = uniformBuffer(device, MatUniforms.size, "photo/mat uniforms");
     this.knobBuf = uniformBuffer(device, PhotoUniforms.size, "photo/knobs");
-    this.recordBuf = storageBuffer(device, Photo.size * MAX_PHOTOS, "photo/prints");
+    this.store = createRecordStore<PhotoInstance, keyof typeof Photo.slots>({
+      device, def: Photo, capacity: MAX_PHOTOS, max: MAX_PHOTOS * 64, label: "photo/prints",
+      pack: (p, _aux, into, slot) => { into.set(photoValues(p.geometry, p.border, p.picture), slot); return 0; },
+    });
     this.rebind();
   }
 
@@ -125,6 +130,7 @@ export class PhotoPass {
       { binding: 5, stages: ["fragment"], texture: "float" },
       { binding: 6, stages: ["fragment"], sampler: "filtering" },
       { binding: 7, stages: ["fragment"], sampler: "filtering" },
+      { binding: 8, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "photo/prints");
     const layout1 = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }], "photo/picture");
     const module = await compile(device, compose({ structs: [MatUniforms, PhotoUniforms, Photo], modules: src.modules, entry: src.entry }));
@@ -154,10 +160,11 @@ export class PhotoPass {
   tune(from: PhotoPass): void { this.law = from.law; }
 
   private rebind(): void {
-    if (this.bound === this.mat.assetVersion) return;
+    if (this.bound === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
-    this.group = bindGroup(this.device, s.layout0, [this.matBuf, this.knobBuf, this.recordBuf, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.picSampler], "photo/prints");
+    this.group = bindGroup(this.device, s.layout0, [this.matBuf, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.picSampler, this.store.order], "photo/prints");
     this.bound = this.mat.assetVersion;
+    this.boundStore = this.store.version;
   }
 
   /**
@@ -184,23 +191,24 @@ export class PhotoPass {
    * its light (`light` the Sun or the Moon, `lit` the lamp it is seen by — MINIMAT.md §4): the dapple falls
    * on the prints. Returns the count that will draw.
    */
-  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, prints: readonly PhotoInstance[], present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight): number {
-    this.rebind();
-    const n = Math.min(prints.length, MAX_PHOTOS);
-    for (let i = 0; i < n; i++) {
-      const p = prints[i] as PhotoInstance;
-      this.records.set(photoValues(p.geometry, p.border, p.picture), i);
-    }
-    this.list = prints.slice(0, n).map((p) => p.picture);
+  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, prints: readonly PhotoInstance[], present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight, keys?: readonly number[]): number {
+    const cap = MAX_PHOTOS * 64;
+    const list = prints.length > cap ? prints.slice(0, cap) : prints;
+    // the store (D6): a print keyed by `keys[i]` keeps its slot and is written only when its record changed; no keys = every one packed
+    const n = this.store.prepare(list, keys !== undefined && keys.length > cap ? keys.slice(0, cap) : keys);
+    this.rebind();   // after: the store's buffers may have grown
+    this.list = list.map((p) => p.picture);
     this.litElsewhere = !litByOwn(view, lit);
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
     this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS, lit));
     this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set(photoUniformValues(this.law));
     this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
-    if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
     return n;
   }
+
+  /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
+  get records() { return this.store.stats(); }
 
   get drawn(): number { return this.list.length; }
 
@@ -225,7 +233,7 @@ export class PhotoPass {
 
   /** This slot's buffers; the blank texel goes with the last slot standing (a host's pictures are the host's to drop). */
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy();
+    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) s.blank.texture.destroy();

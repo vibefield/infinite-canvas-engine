@@ -20,6 +20,7 @@
 @group(0) @binding(6) var noise_tex: texture_2d<f32>;
 @group(0) @binding(7) var noise_samp: sampler;
 @group(0) @binding(8) var glyph_tex: texture_2d<f32>;     // the rulers' glyph atlas and the capitals (RULER.md, MINIMAT.md §2)
+@group(0) @binding(9) var<storage, read> order: array<u32>;   // the draw list: paint index → the record's slot (persistent records, D6)
 
 struct VSOut {
   @builtin(position) clip: vec4f,
@@ -35,8 +36,9 @@ const CORNERS = array<vec2f, 6>(
 fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VSOut {
   var out: VSOut;
   out.clip = vec4f(2.0, 2.0, 2.0, 1.0);   // degenerate: a culled instance collapses
-  out.idx = iid;
-  let M = &mats[iid];
+  let slot = order[iid];
+  out.idx = slot;
+  let M = &mats[slot];
   let zoom = mat_zoom(u);
   let px = 1.0 / (zoom * mat_dpr(u));
   // the sheet's bounds, grown by everything the fragment can paint outside it: the slab's sweep, its penumbra, the contact, the AA

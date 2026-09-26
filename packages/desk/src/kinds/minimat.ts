@@ -48,10 +48,11 @@ export class MiniMatKind implements KindPass<MiniMatInstance> {
    * by this kind's record index) overrides the instance's own — absent, the instances say.
    */
   prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly MiniMatInstance[], extra?: KindExtra): number {
-    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.select, s.lit, extra?.live);
+    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.select, s.lit, extra?.live, extra?.keys);
   }
 
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
+  records() { return this.pass.records; }
 
   /** Mini mat `index`'s chips over its live inside, while the inside's objects are not whole. */
   drawOver(pass: GPURenderPassEncoder, index: number): void { this.pass.drawChips(pass, index); }
@@ -115,6 +116,8 @@ export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGe
     ...program,
     // the reach is the construction law's: a live law moves the face, not the shadow's reach (the dev panel's rows — D5a)
     reach: miniMatReach(law),
+    // the record reads the inside camera's zoom for the face's far-LOD lattice and its numerals (inside.ts `miniMatInstance`) and nothing else of the camera (D6)
+    rezoom: true,
     tune(next: unknown): void { law = next as MiniMatLaw; },
     resolve(ctx: ObjectContext): MiniMatGeometry {
       const r = ctx.rect;

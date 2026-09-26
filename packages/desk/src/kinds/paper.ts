@@ -15,7 +15,7 @@
 // ink raster on the √2 band ladder in the pass's pages, the pen's wipe, the editor's caret. `record`
 // takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
 
-import type { KindPass, KindProgram, SlotContext } from "../kind";
+import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
 import type { MatPass } from "../mat/mat-pass";
 import type { ChildShape } from "../minimat/minimat";
 import type { PaperInstance } from "../paper/layout";
@@ -42,12 +42,13 @@ export class PaperKind implements KindPass<PaperInstance> {
 
   tune(root: KindPass<PaperInstance>): void { if (root instanceof PaperKind) this.pass.tune(root.pass); }
 
-  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light, the ring's colour, the lamp. */
-  prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly PaperInstance[]): number {
-    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.select, s.lit);
+  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light, the ring's colour, the lamp — and the records' keys (D6). */
+  prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly PaperInstance[], extra?: KindExtra): number {
+    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.select, s.lit, extra?.keys);
   }
 
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
+  records() { return this.pass.records; }
 
   dispose(): void { this.pass.dispose(); }
 }
@@ -127,9 +128,12 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
   return {
     ...program,
     reach: paperReach(law),
+    // the record reads the view's zoom and dpr for the ink's band (paper.ts `rasterBand`) and nothing else of the camera (D6)
+    rezoom: true,
     local: (host: KindHost): Writing => createWriting({
       pages: pagesOf(host),
       text: host.text,
+      drawn: host.drawn,
       wipeMs: HAND.wipeMs,
       blinkMs: law.caret.blinkMs,
       ...(opts.hand?.law !== undefined ? { hand: opts.hand.law } : {}),

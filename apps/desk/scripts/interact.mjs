@@ -79,16 +79,18 @@ try {
   await settle();
   check((await entities()).length === 3, `the desk holds two notes and a mini mat (${(await entities()).map((e) => e.type).join(", ")})`);
 
-  // --- 1. click note B → selected; its ring springs to 1 with no overshoot, through intermediate frames
+  // --- 1. click note B → selected; the brackets lock on and the desk goes QUIET — the ring's spring is gone (D6; the kinds' own
+  //     ring retired at D4a), so nothing rises for a selection and no spring keeps the desk live after it
   await click(900, 250);
   const trace = [];
-  let peak = 0;
-  for (let t = 0; t <= 600; t += 100) { const r = (await entity(b)).flux?.ring ?? 0; trace.push(r.toFixed(2)); peak = Math.max(peak, r); await sleep(100); }
-  console.log(`-- select --\n  ring 0..600ms: ${trace.join("  ")}`);
+  for (let t = 0; t <= 600; t += 100) { const s = await q(`({ ring: window.__desk.entity(${b})?.flux?.ring ?? -1, live: window.__desk.stats().live })`); trace.push(`${s.ring}/${s.live ? "live" : "quiet"}`); await sleep(100); }
+  console.log(`-- select --\n  ring/live 0..600ms: ${trace.join("  ")}`);
   const selB = await entity(b);
   check(selB.selected && (await q("window.__desk.selection()")).length === 1, "a click selects the note (and only it)");
-  check(peak > 0.95 && peak <= 1.0000001 && selB.flux.ring === 1, `the ring reached ${peak.toFixed(3)} without overshoot and SNAPPED to 1`);
-  check(trace.some((v) => Number(v) > 0.05 && Number(v) < 0.95), "intermediate frames observed — not a jump cut");
+  const quiet = await q("({ live: window.__desk.stats().live, dirty: window.__desk.handle.dirty() })");
+  check(trace.every((v) => v.startsWith("0/")) && !quiet.live && !quiet.dirty, `the ring reads 0 at every sample and 600 ms after the click the desk is quiet (live ${quiet.live}, dirty ${quiet.dirty}) — no spring for a retired ring`);
+  const br1 = (await q("window.__desk.marks()"))?.objects ?? [];
+  check(br1.length === 1 && br1[0].style === "brackets" && br1[0].t === 1 && br1[0].alpha === 1, `the selection's brackets are locked on (${br1.map((o) => `${o.style} t ${o.t} α ${o.alpha}`).join(", ")})`);
 
   // --- 2. hover the mini mat's face → it rises (Marks on the Mat Q-j); the notes never do
   await mouse("mouseMoved", 600, 560);

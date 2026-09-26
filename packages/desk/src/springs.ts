@@ -27,10 +27,13 @@ export function settled(x: number, v: number, target: number, eps = 1e-3): boole
   return Math.abs(x - target) < eps && Math.abs(v) < eps * 10;
 }
 
-/** The objects' springs: the hold's lift, and the selection ring's presence. */
+/**
+ * The objects' springs: the hold's lift (the hover's rise rides the same numbers). The selection RING's spring is gone (D6): the
+ * kinds' own ring retired at D4a — the marks draw the selection — and a spring that only ever fed a zero kept the desk live for
+ * a second after every selection change (the D4a landing's owed item).
+ */
 export interface ObjectSprings {
   readonly liftHz: number; readonly liftDamp: number;
-  readonly ringHz: number; readonly ringDamp: number;
 }
 
-export const SPRINGS: ObjectSprings = { liftHz: 4.5, liftDamp: 0.78, ringHz: 2.4, ringDamp: 1.0 };
+export const SPRINGS: ObjectSprings = { liftHz: 4.5, liftDamp: 0.78 };

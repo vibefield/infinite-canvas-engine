@@ -14,6 +14,7 @@
 @group(0) @binding(6) var noise_samp: sampler;
 @group(0) @binding(7) var ink_samp: sampler;               // trilinear — the ink seen small reads its mips
 @group(0) @binding(8) var lin_samp: sampler;               // bilinear, level 0 — the stroke and the wet layer
+@group(0) @binding(9) var<storage, read> order: array<u32>;   // the draw list: paint index → the record's slot (persistent records, D6)
 @group(1) @binding(0) var ink_tex: texture_2d<f32>;        // premultiplied linear ink, coverage in alpha
 @group(1) @binding(1) var stroke_tex: texture_2d<f32>;     // the stroke being laid (r8)
 @group(1) @binding(2) var wet_tex: texture_2d<f32>;        // how wet the ink still is (r8)
@@ -32,8 +33,9 @@ const BD_CORNERS = array<vec2f, 6>(
 fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> BoardOut {
   var out: BoardOut;
   out.clip = vec4f(2.0, 2.0, 2.0, 1.0);   // degenerate: a culled board collapses
-  out.idx = iid;
-  let B = boards[iid];
+  let slot = order[iid];
+  out.idx = slot;
+  let B = boards[slot];
   let zoom = max(u.cam.z, 1.0e-12);
   let lo = (B.quad.xy - u.cam.xy) * zoom;   // CSS px
   let hi = (B.quad.zw - u.cam.xy) * zoom;

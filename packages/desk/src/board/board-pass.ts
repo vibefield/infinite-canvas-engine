@@ -15,6 +15,7 @@
 // the frame's pass (its own small submit, so the frame's encoder never waits on it).
 
 import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
+import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
 import { readback } from "../engine/target";
 import type { FadeIn, View } from "../lattice/lod";
@@ -103,14 +104,15 @@ export class BoardPass {
   readonly name = "board/whiteboards";
   private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = BoardUniforms.alloc(1);
-  private readonly records = Board.alloc(MAX_BOARDS);
+  /** The boards' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per drawn board, written when its record or its raster's facts changed. */
+  private readonly store: RecordStore<BoardInstance>;
   private readonly stampU = StampUniforms.alloc(1);
   private readonly inkU = InkUniforms.alloc(1);
   private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
-  private readonly recordBuf: GPUBuffer;
   private group!: GPUBindGroup;
   private boundAssets = -1;
+  private boundStore = -1;
   private drawList: GPUBindGroup[] = [];
   /** Each drawn board's index in the list `prepare` was handed (a board whose raster is missing is skipped) — what `drawRange` counts in. */
   private drawnFrom: number[] = [];
@@ -127,7 +129,15 @@ export class BoardPass {
     shared.slots += 1;
     this.matBuf = uniformBuffer(device, MatUniforms.size, "board/mat uniforms");
     this.knobBuf = uniformBuffer(device, BoardUniforms.size, "board/knobs");
-    this.recordBuf = storageBuffer(device, Board.size * MAX_BOARDS, "board/boards");
+    // the pack reads the board's raster afresh (its size, density and wet are the `aux` the change test folds in)
+    this.store = createRecordStore<BoardInstance, keyof typeof Board.slots>({
+      device, def: Board, capacity: MAX_BOARDS, max: MAX_BOARDS * 64, label: "board/boards",
+      pack: (b, _aux, into, slot) => {
+        const r = shared.rasters.get(b.id);
+        if (r) into.set(boardValues(b, { size: r.size, density: r.density, wet: r.wetting }), slot);
+        return 0;
+      },
+    });
     this.rebind();
   }
 
@@ -143,6 +153,7 @@ export class BoardPass {
       { binding: 6, stages: ["fragment"], sampler: "filtering" },
       { binding: 7, stages: ["fragment"], sampler: "filtering" },
       { binding: 8, stages: ["fragment"], sampler: "filtering" },
+      { binding: 9, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "board/slot");
     const layout1 = bindLayout(device, [
       { binding: 0, stages: ["fragment"], texture: "float" },
@@ -206,10 +217,11 @@ export class BoardPass {
   copy(from: BoardPass): void { this.look = from.look; this.chain = from.chain; }
 
   private rebind(): void {
-    if (this.boundAssets === this.mat.assetVersion) return;
+    if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
-    this.group = bindGroup(this.device, s.layout0, [this.matBuf, this.knobBuf, this.recordBuf, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.inkSampler, s.linSampler], "board/slot");
+    this.group = bindGroup(this.device, s.layout0, [this.matBuf, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.inkSampler, s.linSampler, this.store.order], "board/slot");
     this.boundAssets = this.mat.assetVersion;
+    this.boundStore = this.store.version;
   }
 
   // ---------------------------------------------------------------- the rasters
@@ -413,21 +425,29 @@ export class BoardPass {
    * order) and the mat's block for this slot's camera and light: the dapple, the lamp's shading
    * and the shadows. A board whose raster is missing is skipped. Returns the count that will draw.
    */
-  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly BoardInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, theme?: GroundTheme): number {
-    this.rebind();
+  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly BoardInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, theme?: GroundTheme, keys?: readonly number[]): number {
     this.flush();
     this.dryNow();
     const s = this.shared;
     const list: GPUBindGroup[] = [];
     const from: number[] = [];
+    // the boards with a raster, in paint order — the store's records (D6); their keys alongside, and each raster's facts as the aux
+    const drawn: BoardInstance[] = [];
+    const drawnKeys: number[] | undefined = keys === undefined ? undefined : [];
+    const aux: number[] = [];
+    const cap = MAX_BOARDS * 64;
     for (const [i, b] of instances.entries()) {
-      if (list.length >= MAX_BOARDS) break;
+      if (list.length >= cap) break;
       const r = s.rasters.get(b.id);
       if (!r) continue;
-      this.records.set(boardValues(b, { size: r.size, density: r.density, wet: r.wetting }), list.length);
+      drawn.push(b);
+      drawnKeys?.push(keys?.[i] as number);
+      aux.push((r.wetting ? 1 : 0) + 2 * r.density + 64 * r.size[0] + 64 * 8192 * r.size[1]);
       list.push(r.group);
       from.push(i);
     }
+    this.store.prepare(drawn, drawnKeys, (i) => aux[i] as number);
+    this.rebind();   // after: the store's buffers may have grown
     this.drawList = list;
     this.drawnFrom = from;
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
@@ -460,9 +480,11 @@ export class BoardPass {
       block2: [(BOARD.eraser.angle * Math.PI) / 180, 0, 0, 0],
     });
     this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
-    if (list.length > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(list.length));
     return list.length;
   }
+
+  /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
+  get records() { return this.store.stats(); }
 
   /** The wet layers' fading, sent: one pass each at the accumulated factor, or a clear once dry. */
   private dryNow(): void {
@@ -504,7 +526,7 @@ export class BoardPass {
 
   /** This slot's buffers; the rasters and the stamp buffers go with the last slot standing. */
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy();
+    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) { for (const id of [...s.rasters.keys()]) this.release(id); s.stampBuf.destroy(); s.stampU.destroy(); s.inkU.destroy(); }

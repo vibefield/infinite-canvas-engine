@@ -129,6 +129,22 @@ export interface DeskBuilderOptions {
   readonly locals?: ReadonlyMap<string, KindLocal>;
   /** The interaction stack's marquee preview (out of the ECS — design-003 §5.7): the vellum the marks draw (D4a). */
   readonly marquee?: () => MarqueeBuffer | undefined;
+  /**
+   * The engine's spatial index (design-015 §2.5; D6): the cull's broad phase — the frame's objects within the view, its margin and the
+   * kinds' reach, asked with a hysteresis band so a pan asks it again only when the view leaves the last answer. Absent (a test, a bare
+   * host), every member is tested.
+   */
+  readonly spatial?: SpatialSource;
+}
+
+/**
+ * What the builder asks of the spatial index: the entries whose rects meet a world AABB (kernel's `SpatialIndex.search`), and how
+ * many it holds — core clears it at a nav cut and refills it on the NEXT tick's `spatialSync` (design-004 §7), so a build in which it
+ * holds fewer entries than the frame has members culls linearly and asks again next build.
+ */
+export interface SpatialSource {
+  search(bounds: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number }): readonly { readonly id: Entity }[];
+  readonly size?: number;
 }
 
 /**
@@ -147,9 +163,11 @@ export interface BuildWork {
   readonly resolved: number;
   /** A kind's `record`. */
   readonly recorded: number;
+  /** Records REUSED from the last build — nothing about them changed (D6). */
+  readonly reused: number;
 }
 type MutableWork = { -readonly [K in keyof BuildWork]: number };
-const ZERO_WORK: BuildWork = { queried: 0, visited: 0, sorted: 0, resolved: 0, recorded: 0 };
+const ZERO_WORK: BuildWork = { queried: 0, visited: 0, sorted: 0, resolved: 0, recorded: 0, reused: 0 };
 
 export interface DeskBuilderStats {
   /** Objects Active in the frame this build saw. */
@@ -168,6 +186,8 @@ export interface DeskBuilderStats {
   readonly work: BuildWork;
   /** The work of every build since the builder was made — a rig diffs two readings. */
   readonly totals: BuildWork;
+  /** Under `verify(true)`: reused records that a fresh resolve would NOT have made — the persistent path's own witness; 0 or a bug. */
+  readonly mismatches: number;
 }
 
 /** What can dirty the builder: a journaled world write, a despawn, a document reset, the sibling order, the hover target, the marks' own facts (the snap's chrome, the vellum, a drag meeting tape, the gestures — D4a). */
@@ -175,7 +195,7 @@ export type DeskWakeReason = "world" | "removed" | "reset" | "order" | "hover" |
 const WAKE_REASONS: readonly DeskWakeReason[] = ["world", "removed", "reset", "order", "hover", "marks"];
 
 /** The springs a host may pin: each present key holds that spring at the value. */
-export type FluxPin = Partial<Pick<ObjectFlux, "lift" | "hover" | "ring">>;
+export type FluxPin = Partial<Pick<ObjectFlux, "lift" | "hover">>;
 
 /** What a build may be told beyond the camera (a harness's pins, the reflector's clocks). */
 export interface BuildOptions {
@@ -193,6 +213,8 @@ export interface BuildOptions {
   readonly holdRedress?: boolean;
   /** THE HAND PINNED (D4b — a still of the opening): the carry amount held at `e`, the kind's open motion snapped to `open` (default: open past 42 %). */
   readonly hold?: HoldPin;
+  /** The kinds whose own state moved this tick (their `local.tick` wanted a frame — a print gliding, ink drying): their records are remade (D6). */
+  readonly restless?: ReadonlySet<string>;
 }
 
 export interface HoldPin { readonly e: number; readonly open?: boolean }
@@ -306,6 +328,12 @@ export interface DeskBuilder {
   lifted(): readonly Entity[];
   /** An entity a kind's state veiled in the last build (D3t-c — a note gone with its month): not drawn, never picked. */
   veiled(e: Entity): boolean;
+  /** The last build's paint rank of `e` in the ROOT slot (D6 — a kind's residency asks it); undefined = not drawn there. */
+  rankOf(e: Entity): number | undefined;
+  /** Every record remade at the next build (a kind's law changed under them — `tuneLaw`). */
+  invalidate(): void;
+  /** Check every reused record against a fresh resolve each build (`stats().mismatches`) — a rig's witness, dear per frame. */
+  verify(on: boolean): void;
   stats(): DeskBuilderStats;
   dispose(): void;
 }
@@ -323,13 +351,11 @@ interface ObjectState {
   resizable: boolean;
   band: number;
   dirty: boolean;
-  /** The springs: value and velocity. */
+  /** The springs: value and velocity (the ring's is gone — D6; the kinds are handed ring 0 since D4a). */
   lift: number;
   liftV: number;
   hover: number;
   hoverV: number;
-  ring: number;
-  ringV: number;
   /** The last build's geometry and record; null when not drawn (culled, unseen). */
   geometry: unknown | null;
   record: unknown | null;
@@ -341,6 +367,18 @@ interface ObjectState {
   next: Entity | undefined;
   /** The build that last saw it in the frame. */
   seen: number;
+  /** PERSISTENT RECORDS (design-015 §4.3; D6): its rank in the frame's paint order (−1 = not a member), its membership and its tier as last read. */
+  rank: number;
+  active: boolean;
+  lifted: boolean;
+  /** The record must be remade: its facts were refreshed, a child or its container changed, an asset or a flux pin moved, a law changed. */
+  stale: boolean;
+  /** What the record was made with beyond the facts: the tape's give, the container's content bounds, and — a `rezoom` kind — its SLOT's zoom (an inside's is its host's face's, not the root camera's). */
+  give: number;
+  content: Rect | null;
+  zoom: number;
+  /** The marks' row for the record as made (the root slot). */
+  markRow: MarkRow | null;
 }
 
 interface Ghost {
@@ -361,6 +399,8 @@ interface Row {
   readonly kind: string;
   readonly record: unknown;
   readonly band: number;
+  /** A ghost's row: the entity it fades for (its record's key is that entity negated — D6). */
+  readonly ghostOf?: Entity;
 }
 
 /** One slot's build: its rows in paint order, its live insides, its containers' geometry by entity. */
@@ -370,7 +410,7 @@ interface SlotBuild {
   readonly culled: number;
 }
 
-const EMPTY_STATS: DeskBuilderStats = { active: 0, objects: 0, culled: 0, ghosts: 0, portals: 0, live: false, work: ZERO_WORK, totals: ZERO_WORK };
+const EMPTY_STATS: DeskBuilderStats = { active: 0, objects: 0, culled: 0, ghosts: 0, portals: 0, live: false, work: ZERO_WORK, totals: ZERO_WORK, mismatches: 0 };
 const GHOST_MS = 220;
 const MARGIN_PX = 200;
 const REDRESS_MS = 320;
@@ -402,6 +442,37 @@ function advance(x: number, v: number, target: number, hz: number, damp: number,
 
 /** Smooth at both ends; exactly 0 at or below `a` and 1 at or above `b`. */
 const smoothstep = (a: number, b: number, x: number): number => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/**
+ * Two records the same, value for value (D6's `verify`): plain objects and arrays by their entries, typed arrays by their elements,
+ * numbers with NaN equal to NaN, anything else — a picture's texture, a class instance — by identity.
+ */
+export function sameRecord(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a === "number" && typeof b === "number") return Number.isNaN(a) && Number.isNaN(b);
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (ArrayBuffer.isView(a) || ArrayBuffer.isView(b)) {
+    if (!ArrayBuffer.isView(a) || !ArrayBuffer.isView(b) || a.constructor !== b.constructor) return false;
+    const x = a as unknown as ArrayLike<number>;
+    const y = b as unknown as ArrayLike<number>;
+    if (x.length !== y.length) return false;
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i] && !(Number.isNaN(x[i]) && Number.isNaN(y[i]))) return false;
+    return true;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameRecord(a[i], b[i])) return false;
+    return true;
+  }
+  const pa = Object.getPrototypeOf(a);
+  if (pa !== Object.prototype && pa !== null) return false;   // a class instance: identity alone
+  if (Object.getPrototypeOf(b) !== pa) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) if (!Object.hasOwn(b, k) || !sameRecord((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+  return true;
+}
 /** `from` → `to` in log space at `u` (PORTAL.md §9: the re-dressing eases the dressing's ZOOM, so it looks like a zoom). */
 const lodEase = (from: number, to: number, u: number): number => (u >= 1 ? to : u <= 0 ? from : Math.exp(Math.log(from) + (Math.log(to) - Math.log(from)) * u));
 
@@ -426,9 +497,29 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   /** This build's work and every build's (D6) — counted at the call sites, snapshotted into `stats`. */
   const work: MutableWork = { ...ZERO_WORK };
   const totals: MutableWork = { ...ZERO_WORK };
+  /**
+   * PERSISTENT RECORDS (design-015 §4.3; D6). The frame's paint-ordered `list` stands until the membership or the order moves
+   * (`listDirty`: a spawn, a despawn, an Active flip, a reset; `orderDirty`: the sibling order, a stratum, a Grab, a kind lifting
+   * an object); the cull's `candidates` — the spatial index's answer inside `queryRect`, in rank order — stand until the view leaves
+   * the rect or the world moves (`worldGen`); a row's record stands until its facts, its flux, its children, its look or its zoom
+   * rung move. `remakeAll` for a build: the theme, the grid, the looks or the frame changed, or a law was tuned (`invalidate`).
+   */
+  let listDirty = true;
+  let orderDirty = false;
+  /** The states the journal marked since the last build — re-read at the build's start, before the list is decided. */
+  const dirtyStates = new Set<Entity>();
+  let list: Entity[] = [];
+  let candidates: Entity[] | null = null;
+  let queryRect: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+  let worldGen = 0;
+  let candGen = -1;
+  let invalidated = true;
+  let lastDpr = Number.NaN;
+  let verifying = false;
+  let mismatches = 0;
   let disposed = false;
   let seq = 0;
-  let dirtyAll = true;
+  const spatial = opts.spatial;
   /** A wake the world does not carry (a pin): `changed()` reports it once. */
   let woke = false;
   let lastHover: Entity | undefined;
@@ -509,7 +600,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     return t !== undefined && states.has(t) ? t : undefined;
   };
 
-  /** Read the facts into the cache. */
+  /** Read the facts into the cache; the record is stale after. A membership or tier fact that moved (Active, Grab, the stratum) dirties the frame's list or its order (D6). */
   const refresh = (e: Entity, st: ObjectState): void => {
     const x = world.readField(e, Position, "x") ?? 0;
     const y = world.readField(e, Position, "y") ?? 0;
@@ -523,11 +614,19 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     }
     st.props = props;
     st.selected = world.hasTag(e, Selected);
-    st.grabbed = world.has(e, Grab);
+    const grabbed = world.has(e, Grab);
+    if (grabbed !== st.grabbed) orderDirty = true;
+    st.grabbed = grabbed;
     st.locked = world.hasTag(e, Locked);
     st.resizable = world.hasTag(e, Resizable);
-    st.band = world.get(e, Stratum)?.band ?? DEFAULT_STRATUM_BAND;
+    const band = world.get(e, Stratum)?.band ?? DEFAULT_STRATUM_BAND;
+    if (band !== st.band) orderDirty = true;
+    st.band = band;
+    const active = world.hasTag(e, Active);
+    if (active !== st.active) listDirty = true;
+    st.active = active;
     st.dirty = false;
+    st.stale = true;
   };
 
   /** Meet an entity: its widget type through the engine's catalog, its kind off the binding; not an object = nothing. */
@@ -541,7 +640,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     meet(kind);
     const st: ObjectState = {
       kind, widget, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, locked: false, resizable: false, band: DEFAULT_STRATUM_BAND, dirty: true,
-      lift: 0, liftV: 0, hover: 0, hoverV: 0, ring: 0, ringV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
+      lift: 0, liftV: 0, hover: 0, hoverV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
+      rank: -1, active: false, lifted: false, stale: true, give: 0, content: null, zoom: Number.NaN, markRow: null,
     };
     states.set(e, st);
     return st;
@@ -551,17 +651,18 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const stateOf = (e: Entity): ObjectState | undefined => {
     const st = states.get(e) ?? enter(e);
     if (st === undefined) return undefined;
-    if (st.dirty || dirtyAll) refresh(e, st);
+    if (st.dirty) refresh(e, st);
     return st;
   };
 
   /** An entity the journal reports gone: a ghost at its last paint, if it was ever drawn in the root slot. */
   const ghostOf = (e: Entity, st: ObjectState): void => {
     if (st.geometry === null || st.slot !== "root") return;
-    ghosts.set(e, { kind: st.kind, rect: st.rect, props: st.props, flux: { lift: st.lift, hover: st.hover, ring: st.ring, fade: 1 }, band: st.band, next: st.next, asset: assets.get(e), del: 0 });
+    ghosts.set(e, { kind: st.kind, rect: st.rect, props: st.props, flux: { lift: st.lift, hover: st.hover, ring: 0, fade: 1 }, band: st.band, next: st.next, asset: assets.get(e), del: 0 });
   };
 
-  const fluxOf = (st: ObjectState): ObjectFlux => ({ lift: st.lift, hover: st.hover, ring: st.ring, fade: 1 });
+  /** An object's flux as the kinds are handed it: its springs, the ring 0 (retired at D4a — the marks draw the selection; its spring gone at D6). */
+  const fluxOf = (st: ObjectState): ObjectFlux => ({ lift: st.lift, hover: st.hover, ring: 0, fade: 1 });
 
   /**
    * A parent's children that are objects, in sibling order (strata's ordered `ChildOf`), the strata
@@ -633,12 +734,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     build(cam, vp, dt0, theme, grid, looks, bopts = {}) {
       if (disposed) return { objects: [], portals: [], grid, marks: marks.frame({ rows: [], cam, view: vp, dt: 0, night: false, rulers: null }), stats: EMPTY_STATS };
       seq += 1;
-      work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0;
-      lastGrid = grid;
-      lastLooks = looks;
-      lastTheme = theme;
+      work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0; work.reused = 0;
       const now = bopts.now ?? 0;
       const portalsOn = bopts.portals !== false;
+      const restless = bopts.restless;
       const nav = world.getResource(NavTransition);
       const flying = nav?.active === true;
       /**
@@ -656,69 +755,107 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const hover = hoverTarget();
       const frame = currentNavFrame(world);
       // a nav cut changes the desk under the camera: a ghost of the desk left would fade in the wrong desk's units (the prototype has
-      // no ghost across desks) — the ghosts go with the frame
-      if (frame !== lastFrame) { ghosts.clear(); lastFrame = frame; }
+      // no ghost across desks) — the ghosts go with the frame, and so does every record (D6: another desk's records are another desk's)
+      const frameChanged = frame !== lastFrame;
+      if (frameChanged) { ghosts.clear(); lastFrame = frame; listDirty = true; }
+      // REMAKE ALL (D6): the theme, the grid or the looks are other objects than the last build's (the reflector remakes them on a
+      // change), a law was tuned (`invalidate`), the frame changed — inputs beyond a record's own facts and flux moved
+      const remakeAll = invalidated || frameChanged || theme !== lastTheme || grid !== lastGrid || looks !== lastLooks;
+      invalidated = false;
+      lastGrid = grid;
+      lastLooks = looks;
+      lastTheme = theme;
+      // the zoom rung (D6): a kind whose record reads the view's zoom or dpr (`rezoom`) is remade when they move; a pan moves neither. The
+      // zoom is the SLOT's (an inside's camera is its host's face's, which a lift or the content moves with the root camera still) — each
+      // record keeps the zoom it was made at; the dpr is the frame's
+      const redpr = vp.dpr !== lastDpr;
+      lastDpr = vp.dpr;
       const frameGrid = frameGridOf(frame, grid, looks);
       let portalsCount = 0;
       let live = false;
       /** The root slot's objects as the marks go around them (D4a) — the inside and departed slots add none. */
       const markRows: MarkRow[] = [];
 
-      /** One object's context for a slot, its springs advanced (`springs`) or at rest. */
+      /**
+       * One object's springs advanced by `dt` — the hold's lift (Grab), the hover's rise (the exact hit, never while held) — each
+       * snapped when settled; a host's pin (`pinFlux`) holds a spring AT its value, a still. The selection's ring has no spring
+       * (D6): the marks draw the selection since D4a, and a spring feeding a retired zero kept the desk live after every selection.
+       * Returns whether a VALUE moved this frame: the record was made with the old one and is remade.
+       */
+      const stepSprings = (e: Entity, st: ObjectState): boolean => {
+        const pin = pins.get(e);
+        const lift0 = st.lift;
+        const hover0 = st.hover;
+        let moving: boolean;
+        [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
+        if (moving) { live = true; deskMoving = true; }
+        [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
+        if (moving) { live = true; deskMoving = true; }
+        return st.lift !== lift0 || st.hover !== hover0;
+      };
+
+      /** One object's context for a slot: its springs as stepped this frame (`springs`) or at rest (an inside's members, a chip, the hand). */
       const contextOf = (e: Entity, st: ObjectState, view: ObjectContext["view"], slotGrid: GridConfig, slotLamp: Lamp, springs: boolean, rect: ObjectRect = st.rect): ObjectContext => {
-        let flux: ObjectFlux;
-        if (springs) {
-          // the springs: the hold's lift (Grab), the hover's rise (the exact hit, never while held), the ring (Selected) — each snapped
-          // when settled; a host's pin (`pinFlux`) holds a spring AT its value, a still
-          const pin = pins.get(e);
-          let moving: boolean;
-          [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
-          if (moving) { live = true; deskMoving = true; }
-          [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
-          if (moving) { live = true; deskMoving = true; }
-          [st.ring, st.ringV, moving] = advance(st.ring, st.ringV, pin?.ring ?? (st.selected ? 1 : 0), S.ringHz, S.ringDamp, dt, pin?.ring !== undefined);
-          if (moving) { live = true; deskMoving = true; }
-          // the kinds' own selection ring is retired — the marks draw the selection (D4a): they are handed ring 0, so a selected
-          // object's pixels are the unselected object's
-          flux = { ...fluxOf(st), ring: 0 };
-        } else flux = FLUX_REST;
+        // the kinds' own selection ring is retired — the marks draw the selection (D4a): they are handed ring 0, so a selected
+        // object's pixels are the unselected object's
+        const flux: ObjectFlux = springs ? fluxOf(st) : FLUX_REST;
         const asset = assets.get(e);
         const local = locals?.get(st.kind.name);
         return { entity: e, rect, props: st.props, flux, look: looks.get(st.kind.name), theme, lamp: slotLamp, view, grid: slotGrid, dt, ...(asset !== undefined ? { asset } : {}), ...(local !== undefined ? { local } : {}) };
       };
 
+      /** A container's children as chips (each resolved at rest in the inside's own units) under the inside's camera. */
+      const chipsOf = (e: Entity, st: ObjectState, ctx: ObjectContext, view: InsideView | null, slotGrid: GridConfig): ChildShape[] => {
+        const chips: ChildShape[] = [];
+        if (view === null) return chips;
+        const insideGrid = st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid;
+        const insideLamp = lampOf(insideGrid.mat.plane);
+        const insideView: ObjectContext["view"] = { camX: view.cam.x, camY: view.cam.y, zoom: view.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
+        for (const c of childrenOf(e)) {
+          if (chips.length >= CHIPS_MAX) break;
+          const cst = stateOf(c);
+          if (cst === undefined || cst.kind.chip === undefined) continue;
+          const cctx = contextOf(c, cst, insideView, insideGrid, insideLamp, false);
+          work.resolved += 1;
+          const chip = cst.kind.chip(cst.kind.resolve(cctx), cctx);
+          if (chip !== null) chips.push(chip);
+        }
+        return chips;
+      };
+
       /**
        * A container's inside for its record (D2b): its content, its view through its face under the slot's camera, its children as
-       * chips (each resolved at rest in the inside's own units) — and the candidate for a live slot when the gate lets it through.
+       * chips — and the candidate for a live slot when the gate lets it through. Kept on the state (D6): the content the record was
+       * made with, and the view, which a pan moves even when the record stands (`insideViewOf`).
        */
       const insideOf = (e: Entity, st: ObjectState, G: unknown, ctx: ObjectContext, slotCam: CameraState, slotGrid: GridConfig): InsideContext | undefined => {
         const face = st.kind.face?.(G);
-        if (face === undefined) { st.inside = null; return undefined; }
+        if (face === undefined) { st.inside = null; st.content = null; return undefined; }
         const content = contentOf(e);
         const view = insideViewOfFace(face, content, slotCam, vpSize, FIT, PORTAL_GATE);
         st.inside = view;
-        const insideGrid = st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid;
-        const chips: ChildShape[] = [];
-        if (view !== null) {
-          const insideLamp = lampOf(insideGrid.mat.plane);
-          const insideView: ObjectContext["view"] = { camX: view.cam.x, camY: view.cam.y, zoom: view.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
-          for (const c of childrenOf(e)) {
-            if (chips.length >= CHIPS_MAX) break;
-            const cst = stateOf(c);
-            if (cst === undefined || cst.kind.chip === undefined) continue;
-            const cctx = contextOf(c, cst, insideView, insideGrid, insideLamp, false);
-            work.resolved += 1;
-            const chip = cst.kind.chip(cst.kind.resolve(cctx), cctx);
-            if (chip !== null) chips.push(chip);
-          }
-        }
-        return { content, view, chips };
+        st.content = content;
+        return { content, view, chips: chipsOf(e, st, ctx, view, slotGrid) };
+      };
+
+      /** Under `verify`: a reused record against a fresh resolve of the same state — a difference is a staleness the law above missed. */
+      const checkReuse = (e: Entity, st: ObjectState, view: ObjectContext["view"], slotGrid: GridConfig, slotLamp: Lamp, springs: boolean, give: number, slotCam: CameraState): void => {
+        const r = st.rect;
+        const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
+        const ctx = contextOf(e, st, view, slotGrid, slotLamp, springs, drawn);
+        const G = st.kind.resolve(ctx);
+        const face = st.kind.face?.(G);
+        const inside: InsideContext | undefined = face === undefined ? undefined : { content: st.content, view: st.inside, chips: chipsOf(e, st, ctx, st.inside, slotGrid) };
+        const R = st.kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
+        if (!sameRecord(R, st.record)) mismatches += 1;
       };
 
       /**
        * Build one slot: `members` in paint order under `slotCam`, culled against the view and its margin (plus each kind's reach);
        * each container gets its inside, and the live insides that pass the gate — depth < 4, `presence > 0`, not the flight's `skip`
-       * — are built through their faces, the largest first up to the cap, recursing.
+       * — are built through their faces, the largest first up to the cap, recursing. A row's RECORD is reused while nothing that made
+       * it moved (D6): its facts (`stale`), its flux (a spring this frame), a law or a look (`remakeAll`), its zoom rung (a kind that
+       * reads it), a kind whose own state is restless, a composite (its resolve steps its own motion), the tape's give, its slot.
        */
       const buildSlot = (members: readonly Entity[], slotCam: CameraState, slotGrid: GridConfig, slot: ObjectState["slot"], depth: number, skip: Entity | undefined, redressOut: { frame: Entity; from: number; u: number } | undefined): SlotBuild => {
         const slotLamp = lampOf(slotGrid.mat.plane);
@@ -731,11 +868,14 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         const rows: Row[] = [];
         const cands: { at: number; e: Entity; view: InsideView; grid: GridConfig }[] = [];
         let culled = 0;
+        // the root's and the departed desk's objects run their springs; an inside's members lie at rest
+        const springs = slot !== "inside";
         for (let i = 0; i < members.length; i++) {
           const e = members[i] as Entity;
           work.visited += 1;
           const st = stateOf(e);
           if (st === undefined) continue;
+          const prevSlot = st.slot;
           st.seen = seq;
           st.slot = slot;
           st.next = slot === "root" ? members[i + 1] : undefined;
@@ -749,22 +889,46 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           if (r.cx + hx < x0 || r.cx - hx > x1 || r.cy + hy < y0 || r.cy - hy > y1) { st.geometry = null; st.record = null; st.inside = null; culled += 1; continue; }
           // a drag that met the tape shivers the object by its give (CSS px → world) — in the root slot alone, where the marks are (D4a)
           const give = slot === "root" ? marks.giveOf(e) : 0;
-          const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
-          // the root's and the departed desk's objects run their springs; an inside's members lie at rest
-          const ctx = contextOf(e, st, view, slotGrid, slotLamp, slot !== "inside", drawn);
-          work.resolved += 1;
-          const G = st.kind.resolve(ctx);
-          const inside = insideOf(e, st, G, ctx, slotCam, slotGrid);
-          work.recorded += 1;
-          const R = st.kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
-          st.geometry = G;
-          st.record = R;
+          const fluxMoved = springs ? stepSprings(e, st) : false;
+          const kind = st.kind;
+          const remake = st.record === null || st.geometry === null || st.stale || remakeAll || fluxMoved || prevSlot !== slot || give !== st.give
+            || (kind.rezoom === true && (redpr || slotCam.zoom !== st.zoom)) || kind.composite === true || restless?.has(kind.name) === true;
+          let G: unknown;
+          let R: unknown;
+          if (!remake) {
+            G = st.geometry;
+            R = st.record;
+            work.reused += 1;
+            // a container's inside this frame: its view under the slot camera moves with a pan even when its record stands
+            if (kind.face !== undefined) {
+              const face = kind.face(G);
+              st.inside = face === undefined ? null : insideViewOfFace(face, st.content, slotCam, vpSize, FIT, PORTAL_GATE);
+            }
+            if (verifying) checkReuse(e, st, view, slotGrid, slotLamp, springs, give, slotCam);
+          } else {
+            const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
+            const ctx = contextOf(e, st, view, slotGrid, slotLamp, springs, drawn);
+            work.resolved += 1;
+            G = kind.resolve(ctx);
+            const inside = insideOf(e, st, G, ctx, slotCam, slotGrid);
+            work.recorded += 1;
+            R = kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
+            st.geometry = G;
+            st.record = R;
+            st.stale = false;
+            st.give = give;
+            st.zoom = slotCam.zoom;
+            // the marks go around what was drawn: the kind's frame on the geometry just resolved, ICE's rect (D4a) — kept with the record
+            st.markRow = slot === "root"
+              ? { entity: e, frame: kind.frame?.(G) ?? rectFrame(drawn), rect: { x0: r.cx - r.w / 2, y0: r.cy - r.h / 2, x1: r.cx + r.w / 2, y1: r.cy + r.h / 2 }, selected: st.selected, locked: st.locked, grabbed: st.grabbed, resizable: st.resizable }
+              : null;
+          }
           const at = rows.length;
-          rows.push({ entity: e, kind: st.kind.name, record: R, band: st.band });
-          // the marks go around what was drawn: the kind's frame on the geometry just resolved, ICE's rect (D4a)
-          if (slot === "root") markRows.push({ entity: e, frame: st.kind.frame?.(G) ?? rectFrame(drawn), rect: { x0: r.cx - r.w / 2, y0: r.cy - r.h / 2, x1: r.cx + r.w / 2, y1: r.cy + r.h / 2 }, selected: st.selected, locked: st.locked, grabbed: st.grabbed, resizable: st.resizable });
-          if (inside?.view && portalsOn && depth < PORTAL_DEPTH && e !== skip && inside.view.presence > 0) {
-            cands.push({ at, e, view: inside.view, grid: st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid });
+          rows.push({ entity: e, kind: kind.name, record: R, band: st.band });
+          if (slot === "root" && st.markRow !== null) markRows.push(st.markRow);
+          const iv = st.inside;
+          if (iv !== null && portalsOn && depth < PORTAL_DEPTH && e !== skip && iv.presence > 0) {
+            cands.push({ at, e, view: iv, grid: kind.insideGrid?.({ props: st.props, look: looks.get(kind.name) }, slotGrid) ?? slotGrid });
           }
         }
         // the live insides: the largest faces first, up to the cap (MINIMAT.md §3), each a slot of its own through its face
@@ -782,7 +946,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             present: insidePresent(c.view),
             ...(redress !== undefined ? { light: { a: c.view.cam, b: slotCam, t: redress.u } } : {}),
             grid: c.grid,
-            objects: sub.rows.map((r) => ({ kind: r.kind, record: r.record })),
+            objects: sub.rows.map((r) => ({ kind: r.kind, record: r.record, ...(r.entity !== undefined ? { key: r.entity as number } : {}) })),
             ...(sub.portals.length ? { portals: sub.portals } : {}),
             at: c.at,
           });
@@ -865,6 +1029,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const R = hst.kind.record(G, hctx);
             hst.geometry = G;
             hst.record = R;
+            hst.stale = true;   // made under the hand's camera and openness: the desk's record of it is made afresh when it lands
             hst.inside = null;
             hst.slot = "root";
             hst.seen = seq;
@@ -881,40 +1046,95 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
               if (rst === undefined) continue;
               const rctx = contextOf(rider, rst, heldView, heldGrid, lampOf(heldGrid.mat.plane), false);
               work.resolved += 1; work.recorded += 1;
-              riders.push({ kind: rst.kind.name, record: rst.kind.record(rst.kind.resolve(rctx), rctx) });
+              riders.push({ kind: rst.kind.name, record: rst.kind.record(rst.kind.resolve(rctx), rctx), key: rider as number });
               handRiders.add(rider);
             }
             heldBuild = {
               entity: hand.entity, e: hand.e, settled: settledNow, landing: hand.dir < 0,
               frame: { ...heldFrame(pose, extentLocal, target.single, face), settled: settledNow },
-              inputs: { object: { kind: hst.kind.name, record: R }, ...(riders.length > 0 ? { riders } : {}), view: heldView, grid: heldGrid, e: hand.e, ...heldFocus(hand.e, vpSize, theme) },
+              inputs: { object: { kind: hst.kind.name, record: R, key: hand.entity as number }, ...(riders.length > 0 ? { riders } : {}), view: heldView, grid: heldGrid, e: hand.e, ...heldFocus(hand.e, vpSize, theme) },
               deskSeq,
             };
           }
         }
       }
-      // membership: every object Active in the frame, its facts refreshed where the journal said, in two tiers — the carried set last
-      // (a core drag's `Grab`, and D3t-a what a kind's own state draws LIFTED: a print in a hand, in the air, flying home)
-      const tiers: [Entity[], Entity[]] = [[], []];
-      const liftedNow: Entity[] = [];
-      world.query(membersQ).each((b) => {
-        for (const r of b) {
-          const e = b.entity(r);
-          work.queried += 1;
-          const st = stateOf(e);
-          if (st === undefined) continue;
-          const lifted = !st.grabbed && locals?.get(st.kind.name)?.lifted?.(e) === true;
-          if (lifted) liftedNow.push(e);
-          (st.grabbed || lifted ? tiers[1] : tiers[0]).push(e);
+
+      // THE DIRT, first (D6): every state the journal marked is re-read now, so a membership or tier fact that moved — Active, a Grab,
+      // the stratum — dirties the frame's list or its order BEFORE this build decides them (a Grab added this tick paints last this frame)
+      for (const e of dirtyStates) { const st = states.get(e); if (st?.dirty === true) refresh(e, st); }
+      dirtyStates.clear();
+      // THE LIFTED TIER (D3t-a — what a kind's own state draws LIFTED: a print in a hand, in the air, flying home): the kind's word,
+      // asked of what was lifted last build and, while a kind's state is restless, of every object of that kind (D6 — never of every
+      // object every frame); a host that gives no word on restlessness (a test, a bare host) has every object asked. A change re-sorts.
+      if (locals !== undefined) {
+        const check = (e: Entity, st: ObjectState): void => {
+          const v = !st.grabbed && locals.get(st.kind.name)?.lifted?.(e) === true;
+          if (v !== st.lifted) { st.lifted = v; orderDirty = true; }
+        };
+        if (restless === undefined) { for (const [e, st] of states) if (st.rank >= 0) check(e, st); }
+        else {
+          for (const e of liftedList) { const st = states.get(e); if (st !== undefined) check(e, st); }
+          if (restless.size > 0) for (const [e, st] of states) if (restless.has(st.kind.name) && !st.lifted && st.rank >= 0) check(e, st);
         }
-      });
-      liftedList = liftedNow;
-      dirtyAll = false;
-      for (const t of tiers) { work.sorted += t.length; t.sort((a, b) => compareStackOrder(reader, ordinals, a, b)); }
-      const list = [...tiers[0], ...tiers[1]];
+      }
+      // THE LIST (D6): every object Active in the frame in paint order — the carried set last (a core drag's `Grab`, the lifted) —
+      // rebuilt only when the membership moved, re-sorted only when the order did; a camera move walks none of it
+      let listRebuilt = false;
+      if (listDirty) {
+        const tiers: [Entity[], Entity[]] = [[], []];
+        world.query(membersQ).each((b) => {
+          for (const r of b) {
+            const e = b.entity(r);
+            work.queried += 1;
+            const st = stateOf(e);
+            if (st === undefined) continue;
+            st.active = true;
+            st.lifted = !st.grabbed && locals?.get(st.kind.name)?.lifted?.(e) === true;
+            (st.grabbed || st.lifted ? tiers[1] : tiers[0]).push(e);
+          }
+        });
+        for (const t of tiers) { work.sorted += t.length; t.sort((a, b) => compareStackOrder(reader, ordinals, a, b)); }
+        list = [...tiers[0], ...tiers[1]];
+        listDirty = false;
+        orderDirty = false;
+        for (const st of states.values()) st.rank = -1;
+        list.forEach((e, i) => { (states.get(e) as ObjectState).rank = i; });
+        candidates = null;
+        listRebuilt = true;
+      } else if (orderDirty) {
+        const tiers: [Entity[], Entity[]] = [[], []];
+        for (const e of list) { const st = states.get(e); if (st !== undefined) (st.grabbed || st.lifted ? tiers[1] : tiers[0]).push(e); }
+        for (const t of tiers) { work.sorted += t.length; t.sort((a, b) => compareStackOrder(reader, ordinals, a, b)); }
+        list = [...tiers[0], ...tiers[1]];
+        orderDirty = false;
+        list.forEach((e, i) => { (states.get(e) as ObjectState).rank = i; });
+        candidates?.sort((a, b) => (states.get(a) as ObjectState).rank - (states.get(b) as ObjectState).rank);
+      }
+      liftedList = list.filter((e) => states.get(e)?.lifted === true);
+      // THE CULL (design-015 §2.5; D6): the frame's objects within the view, its margin and the kinds' reach — asked of the spatial
+      // index with a hysteresis band (the margin again), so a pan asks again only when the view leaves the last answer or the world
+      // moved; the exact test per candidate is `buildSlot`'s. Without an index, every member is a candidate (a test, a bare host).
+      let rootMembers: readonly Entity[] = list;
+      // the index lags the world by a tick after a nav cut (cleared, refilled next `spatialSync`): fewer entries than members = not this build
+      if (spatial !== undefined && spatial.size !== undefined && spatial.size < list.length) candidates = null;
+      else if (spatial !== undefined) {
+        const m = marginPx / cam.zoom;
+        const need = { minX: cam.x - m - reach, minY: cam.y - m - reach, maxX: cam.x + vp.width / cam.zoom + m + reach, maxY: cam.y + vp.height / cam.zoom + m + reach };
+        const q = queryRect;
+        if (candidates === null || candGen !== worldGen || q === null || need.minX < q.minX || need.minY < q.minY || need.maxX > q.maxX || need.maxY > q.maxY) {
+          queryRect = { minX: need.minX - m, minY: need.minY - m, maxX: need.maxX + m, maxY: need.maxY + m };
+          const found: Entity[] = [];
+          for (const hit of spatial.search(queryRect)) { const st = states.get(hit.id); if (st !== undefined && st.rank >= 0) found.push(hit.id); }
+          found.sort((a, b) => (states.get(a) as ObjectState).rank - (states.get(b) as ObjectState).rank);
+          candidates = found;
+          candGen = worldGen;
+        }
+        rootMembers = candidates;
+      }
       // the root slot: the current frame's desk under the camera
-      const root = buildSlot(list, cam, frameGrid, "root", 0, undefined, redressOut);
+      const root = buildSlot(rootMembers, cam, frameGrid, "root", 0, undefined, redressOut);
       const rows = root.rows;
+      const drawnRows = rows.length;
       // the ghosts: each fades where it was — just before the object that followed it, else at its band's end — then is forgotten
       const rootView: ObjectContext["view"] = { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
       const rootLamp = lampOf(frameGrid.mat.plane);
@@ -928,7 +1148,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, ring: 0, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp: rootLamp, view: rootView, grid: frameGrid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
         work.resolved += 1; work.recorded += 1;
         const G = g.kind.resolve(ctx);
-        const row: Row = { entity: undefined, kind: g.kind.name, record: g.kind.record(G, ctx), band: g.band };
+        const row: Row = { entity: undefined, kind: g.kind.name, record: g.kind.record(G, ctx), band: g.band, ghostOf: e };
         let at = g.next === undefined ? -1 : rows.findIndex((q) => q.entity === g.next);
         if (at < 0) { at = rows.length; for (let i = 0; i < rows.length; i++) { if ((rows[i] as Row).band > row.band) { at = i; break; } } }
         rows.splice(at, 0, row);
@@ -977,7 +1197,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           present: pres.outgoing,
           ...(lights.outgoing !== undefined ? { light: lights.outgoing } : {}),
           grid: departedGrid,
-          objects: departed.rows.map((r) => ({ kind: r.kind, record: r.record })),
+          objects: departed.rows.map((r) => ({ kind: r.kind, record: r.record, ...(r.entity !== undefined ? { key: r.entity as number } : {}) })),
           ...(departed.portals.length ? { portals: departed.portals } : {}),
           order: entering ? "under" : "over",
           ...(at >= 0 && clip !== undefined ? { at } : {}),
@@ -989,9 +1209,16 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         if (face !== undefined) light = { a: solveFlightStart(face.affine, cam), b: cam, t: redressIn.u };
       }
 
-      // an object that left the frame without dying (a nav cut) is forgotten, no ghost: it was not deleted — its kind lets go of it (D2c)
-      for (const [e, st] of states) if (st.seen !== seq) { states.delete(e); forget(st.kind, e); }
-      const objects: SlotObject[] = rows.map((r) => ({ kind: r.kind, record: r.record }));
+      // an object that left the frame without dying (a nav cut) is forgotten, no ghost: it was not deleted — its kind lets go of it (D2c).
+      // Asked only when the membership moved this build (D6): a state not drawn this build and not a member of the frame — nor under
+      // one to the portal depth (an inside's objects), nor kept by a flight (the departed desk's Retained members are drawn) — goes
+      if (listRebuilt) {
+        const kept = new Set<Entity>(list);
+        const under = (e: Entity): boolean => { let p: Entity | undefined = e; for (let d = 0; d <= PORTAL_DEPTH && p !== undefined; d++) { if (kept.has(p)) return true; p = world.isAlive(p) ? world.getRelation(p, ChildOf) : undefined; } return false; };
+        for (const [e, st] of states) if (st.seen !== seq && !under(e)) { states.delete(e); forget(st.kind, e); }
+      }
+      // the records with their keys (D6, design-015 §4.3): an object's entity, a ghost's entity negated — what the passes keep a slot by
+      const objects: SlotObject[] = rows.map((r) => ({ kind: r.kind, record: r.record, key: r.entity !== undefined ? (r.entity as number) : -(r.ghostOf as number) }));
       // the pick's word on what was veiled, as this build left it
       const veiledSet = new Set<Entity>();
       for (const local of locals?.values() ?? []) for (const e of local.veils?.() ?? []) veiledSet.add(e);
@@ -1006,8 +1233,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       if (deskMoving || deskWasMoving) { deskSeq += 1; if (heldBuild !== undefined) heldBuild = { ...heldBuild, deskSeq }; }
       deskWasMoving = deskMoving;
       lastHand = heldBuild;
-      totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded;
-      stats = { active: list.length, objects: objects.length, culled: root.culled, ghosts: ghosts.size, portals: portalsCount, live, work: { ...work }, totals: { ...totals } };
+      totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded; totals.reused += work.reused;
+      stats = { active: list.length, objects: objects.length, culled: list.length - drawnRows, ghosts: ghosts.size, portals: portalsCount, live, work: { ...work }, totals: { ...totals }, mismatches };
       return {
         objects,
         portals: root.portals,
@@ -1033,15 +1260,27 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const heldE = hand?.entity ?? heldEntity(world);
       const ownOfHeld = (e: Entity): boolean => e === heldE || (heldE !== undefined && world.isAlive(e) && world.getRelation(e, ChildOf) === heldE && !states.has(e));
       let deskDirt = wokeNow;
-      if (delta.reset) { wakes.reset += 1; dirtyAll = true; kids.clear(); any = true; deskDirt = true; }
+      /** Every fact re-read at the next build (a reset, a coarse write): every state dirty, the frame's list rebuilt (D6). */
+      const dirtyAll = (): void => { for (const [e, st] of states) { st.dirty = true; dirtyStates.add(e); } listDirty = true; };
+      if (delta.reset) { wakes.reset += 1; dirtyAll(); kids.clear(); any = true; deskDirt = true; }
       if (delta.changed.length > 0 || delta.coarse.length > 0) {
         wakes.world += 1;
         any = true;
-        for (const e of delta.changed) { const st = states.get(e); if (st !== undefined) st.dirty = true; if (!ownOfHeld(e)) deskDirt = true; }
-        if (delta.coarse.length > 0) { dirtyAll = true; deskDirt = true; }
+        for (const e of delta.changed) {
+          const st = states.get(e);
+          if (st !== undefined) { st.dirty = true; dirtyStates.add(e); }
+          // a newcomer to the frame (a spawn, an Active flip): the frame's list is rebuilt (D6)
+          else if (world.isAlive(e) && (world.hasTag(e, Active) || world.hasTag(e, Retained))) listDirty = true;
+          // its container's inside moved with it (D6): the container's record — its chips, its content — is made afresh
+          const p = world.isAlive(e) ? world.getRelation(e, ChildOf) : undefined;
+          if (p !== undefined) { const ps = states.get(p); if (ps !== undefined) ps.stale = true; }
+          if (!ownOfHeld(e)) deskDirt = true;
+        }
+        if (delta.coarse.length > 0) { dirtyAll(); deskDirt = true; }
       }
       if (delta.removed.length > 0) {
         kids.clear();
+        listDirty = true;
         for (const e of delta.removed) {
           const st = states.get(e);
           if (st === undefined) continue;
@@ -1055,11 +1294,12 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           deskDirt = true;
         }
       }
-      if (order.stale()) { wakes.order += 1; any = true; deskDirt = true; }
+      if (order.stale()) { wakes.order += 1; orderDirty = true; any = true; deskDirt = true; }
       const h = hoverTarget();
       if (h !== lastHover) { lastHover = h; wakes.hover += 1; any = true; deskDirt = true; }
       if (marks.changed()) { wakes.marks += 1; any = true; deskDirt = true; }
       if (deskDirt) deskSeq += 1;
+      if (any) worldGen += 1;
       return any;
     },
     wakes: () => ({ ...wakes }),
@@ -1070,16 +1310,21 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     navFace,
     pin(e, asset) {
       if (asset === undefined) { if (!assets.delete(e)) return; } else assets.set(e, asset);
-      woke = true;   // every record is remade at the next build; the facts need no re-read
+      const st = states.get(e);
+      if (st !== undefined) st.stale = true;   // its record is remade at the next build; the facts need no re-read
+      woke = true;
       wakes.world += 1;
     },
     pinFlux(e, targets) {
       if (targets === undefined) { if (!pins.delete(e)) return; } else pins.set(e, targets);
+      const st = states.get(e);
+      if (st !== undefined) st.stale = true;
       woke = true;
       wakes.world += 1;
     },
     clearFlux() {
       if (pins.size === 0) return;
+      for (const e of pins.keys()) { const st = states.get(e); if (st !== undefined) st.stale = true; }
       pins.clear();
       woke = true;
       wakes.world += 1;
@@ -1091,6 +1336,12 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     heldToWorld: (e, x, y) => heldToWorld(e, x, y),
     lifted: () => liftedList,
     veiled: (e) => veiledList.has(e),
+    rankOf(e) {
+      const st = states.get(e);
+      return st !== undefined && st.seen === seq && st.record !== null && st.slot === "root" && st.rank >= 0 ? st.rank : undefined;
+    },
+    invalidate() { invalidated = true; woke = true; wakes.world += 1; },
+    verify(on) { verifying = on; },
     heldPart(e, x, y) {
       const w = heldToWorld(e, x, y);
       const st = states.get(e);

@@ -50,7 +50,11 @@ describe("the marks from the world (compose/marks.ts, through the builder)", () 
     expect(first?.alpha).toBeCloseTo(DT * 1000 / MARKS.clocks.leave, 9);
     expect(builder.live()).toBe(true);
     const { n, marks } = settle();
-    expect(ms(n + 1)).toBeGreaterThanOrEqual(MARKS.clocks.lockOn - 1);
+    // n + 2 frames since the selection (the first build, settle's first, then n): the marks are whole on the first frame at or past
+    // the lock-on, and the builder is quiet THAT frame — nothing else moves for a selection. Until D6 the retired ring's spring kept
+    // the builder live for a second after every selection change (the D4a landing's owed item), and this line only ever saw the spring
+    expect(ms(n + 2)).toBeGreaterThanOrEqual(MARKS.clocks.lockOn);
+    expect(ms(n + 1)).toBeLessThan(MARKS.clocks.lockOn);
     expect(marks.objects.map((o) => [o.style, o.t, o.alpha])).toEqual([["brackets", 1, 1]]);
     expect(builder.live()).toBe(false);
     ce.ops.clearSelection();

@@ -63,14 +63,25 @@ function outsideMarks(a, b, marks, dpr) {
   }
   let outside = 0;
   let outsideMax = 0;
+  let outsideDiff = 0;
   let inside = 0;
   let insideDiff = 0;
+  // where the outside differs: its bounding box in CSS px (the diagnostic that names the object)
+  let bx0 = Number.POSITIVE_INFINITY;
+  let by0 = Number.POSITIVE_INFINITY;
+  let bx1 = Number.NEGATIVE_INFINITY;
+  let by1 = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < band.length; i++) {
     const o = i * 4;
     const d = Math.max(Math.abs(A.rgba[o] - B.rgba[o]), Math.abs(A.rgba[o + 1] - B.rgba[o + 1]), Math.abs(A.rgba[o + 2] - B.rgba[o + 2]));
-    if (band[i]) { inside++; if (d > 0) insideDiff++; } else { outside++; if (d > outsideMax) outsideMax = d; }
+    if (band[i]) { inside++; if (d > 0) insideDiff++; } else {
+      outside++;
+      if (d > outsideMax) outsideMax = d;
+      if (d > 0) { outsideDiff++; const X = (i % A.width) / dpr; const Y = Math.floor(i / A.width) / dpr; if (X < bx0) bx0 = X; if (X > bx1) bx1 = X; if (Y < by0) by0 = Y; if (Y > by1) by1 = Y; }
+    }
   }
-  return { outside, outsideMax, inside, insideDiff };
+  const box = outsideDiff > 0 ? `[${bx0.toFixed(0)}, ${by0.toFixed(0)}]–[${bx1.toFixed(0)}, ${by1.toFixed(0)}]` : "none";
+  return { outside, outsideMax, outsideDiff, box, inside, insideDiff };
 }
 
 /** Two captures compared over the whole frame: the largest channel Δ, and how many px differ at all. */
@@ -209,7 +220,7 @@ try {
   const atCut = await q("({ marked: window.__desk.marks().objects.length, selected: window.__desk.selection().length })");
   check(fc && fc.kind === "enter" && same(fc.c0, faceHeld.cam), `the double-click's flight starts from the held face's own camera — the seam's numbers (zoom ${fc?.c0.zoom.toFixed(4)}); the static rect's would have been ${(faceHeld.cam.zoom * faceStatic.width / faceHeld.face.width).toFixed(4)}`);
   const cut = outsideMarks(beforeCut, firstCut, preMarks, 2);
-  check(preMarks.objects.length === 1 && atCut.marked === 0 && atCut.selected === 0 && cut.outsideMax === 0 && cut.insideDiff > 0, `the cut frame IS the pre-cut frame outside the selection's marks — maxΔ ${cut.outsideMax} over ${cut.outside.toLocaleString()} px; the brackets left with the selection (the enter clears it: ${atCut.selected} selected, ${atCut.marked} marked; ${cut.insideDiff.toLocaleString()} of ${cut.inside.toLocaleString()} band px changed)`);
+  check(preMarks.objects.length === 1 && atCut.marked === 0 && atCut.selected === 0 && cut.outsideMax === 0 && cut.insideDiff > 0, `the cut frame IS the pre-cut frame outside the selection's marks — maxΔ ${cut.outsideMax} over ${cut.outside.toLocaleString()} px (${cut.outsideDiff.toLocaleString()} differ, within ${cut.box} CSS px); the brackets left with the selection (the enter clears it: ${atCut.selected} selected, ${atCut.marked} marked; ${cut.insideDiff.toLocaleString()} of ${cut.inside.toLocaleString()} band px changed)`);
   await q("window.__desk.pinFlight(null); window.__desk.freeze(false); document.getElementById('rig-no-menu')?.remove()");
   await land();
   await q(`window.__desk.handle.pinFlux(${A2}, undefined)`);

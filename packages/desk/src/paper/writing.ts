@@ -68,6 +68,12 @@ export interface WritingOptions {
   readonly blinkMs?: number;
   /** Only a note within this many CSS px of the view pays for a raster (the prototype's 200). */
   readonly marginPx?: number;
+  /**
+   * The builder's word on what is DRAWN (D6, persistent records — `KindHost.drawn`): the paint rank of a note in the root slot this
+   * frame, undefined when it is not drawn. With it, "drawn" means the builder's set, not the last `draw` call (a reused record makes
+   * none): the eviction spares what is on screen and `noteAt` ranks by paint order. Absent, the writing counts its own draws.
+   */
+  readonly drawn?: ((e: Entity) => number | undefined) | undefined;
 }
 
 /** What a note draws with this frame — the paper kind's record takes it whole. */
@@ -209,11 +215,14 @@ export function createWriting(opts: WritingOptions): Writing {
     pages?.trim?.();
   };
 
+  const drawn = opts.drawn;
+  /** Not on screen this frame: the builder's word when it gives one (D6), else not drawn in the last two renders. */
+  const offScreen = (e: Entity, q: Entry): boolean => (drawn !== undefined ? drawn(e) === undefined : q.drawnAt < render - 1);
   /** Room for a `w × h` raster: the pages' own, else what no one drew in the last two frames, oldest first. */
   const room = (pages: InkPages, w: number, h: number): InkRect | null => {
     const got = pages.alloc(w, h);
     if (got !== null) return got;
-    const stale = [...entries.values()].filter((q) => q.raster !== null && !q.pinned && q.drawnAt < render - 1).sort((a, b) => a.drawnAt - b.drawnAt);
+    const stale = [...entries.entries()].filter(([e, q]) => q.raster !== null && !q.pinned && offScreen(e, q)).map(([, q]) => q).sort((a, b) => a.drawnAt - b.drawnAt);
     for (const q of stale) {
       release(pages, q);
       evicted += 1;
@@ -357,8 +366,10 @@ export function createWriting(opts: WritingOptions): Writing {
       let best: Entity | undefined;
       let bestOrder = -1;
       for (const [e, en] of entries) {
-        if (en.drawnAt !== render || en.geometry === undefined || en.order <= bestOrder) continue;
-        if (sdPaper(en.geometry, wx, wy) < 0) { best = e; bestOrder = en.order; }
+        // the builder's word on what is drawn and in what order (D6), else this writing's own draws of the last render
+        const order = drawn !== undefined ? drawn(e) : en.drawnAt === render ? en.order : undefined;
+        if (order === undefined || en.geometry === undefined || order <= bestOrder) continue;
+        if (sdPaper(en.geometry, wx, wy) < 0) { best = e; bestOrder = order; }
       }
       return best;
     },

@@ -97,26 +97,36 @@ describe("the desk builder · the cull", () => {
 });
 
 describe("the desk builder · the springs snap (B7's trap)", () => {
-  it("selection: the ring rises over frames and lands EXACTLY on 1, the builder no longer live; deselection lands on 0", () => {
-    const { ce, step, build, builder, settle, note } = makeDesk();
+  it("the lift (a Grab) rises over frames and lands EXACTLY on 1, the builder no longer live; let go, it lands on 0; a selection moves NO spring (D6 — the ring's is gone; the marks carry it)", () => {
+    const { ce, world, step, build, builder, settle, note } = makeDesk();
     const a = note(300, 250);
     step(3);
     build();
-    expect(must(builder.fluxOf(a)).ring).toBe(0);
-    ce.ops.setSelection([a]);
+    expect(must(builder.fluxOf(a)).lift).toBe(0);
+    world.addComponent(a, Grab, { x: 200, y: 150, w: 200, h: 200, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+    world.sync();
     build();
-    const mid = must(builder.fluxOf(a)).ring;
+    const mid = must(builder.fluxOf(a)).lift;
     expect(mid).toBeGreaterThan(0);
     expect(mid).toBeLessThan(1);
     expect(builder.live()).toBe(true);
     const n = settle();
     expect(n).toBeGreaterThan(5);
-    expect(must(builder.fluxOf(a)).ring).toBe(1);   // snapped, not 0.9997
+    expect(must(builder.fluxOf(a)).lift).toBe(1);   // snapped, not 0.9997
     expect(builder.live()).toBe(false);
-    // D4a: the kind's own ring is retired — it is handed 0, so the selected note's pixels are the unselected note's —
-    // and the MARKS carry the selection: its brackets, locked on and whole
-    const G = builder.geometryOf(a) as { ring: number };
-    expect(G.ring).toBe(0);
+    world.removeComponent(a, Grab);
+    world.sync();
+    settle();
+    expect(must(builder.fluxOf(a)).lift).toBe(0);
+    // a selection: no spring rises — the ring is 0 at once and the builder is not live (D4a retired the kind's own ring; D6 its
+    // spring) — and the MARKS carry the selection: its brackets, locked on and whole
+    ce.ops.setSelection([a]);
+    const first = build();
+    expect(must(builder.fluxOf(a)).ring).toBe(0);
+    expect((builder.geometryOf(a) as { ring: number }).ring).toBe(0);
+    expect(first.stats.work.recorded).toBe(1);   // the selection is a fact of the note: its record is remade once (the marks read it)
+    settle();
+    expect(build().stats.work.recorded).toBe(0);
     const at = build().marks;
     expect(at.objects.map((o) => [o.style, o.t, o.alpha])).toEqual([["brackets", 1, 1]]);
     ce.ops.clearSelection();
@@ -312,15 +322,15 @@ describe("the desk builder · pulled dirt", () => {
     settle();
     expect(builder.fluxOf(a)?.lift).toBe(0);
     // several pins, one clear
-    builder.pinFlux(b, { ring: 1 });
+    builder.pinFlux(b, { lift: 1 });
     builder.pinFlux(m, { hover: 1 });
     build();
-    expect(builder.fluxOf(b)?.ring).toBe(1);
+    expect(builder.fluxOf(b)?.lift).toBe(1);
     expect(builder.fluxOf(m)?.hover).toBe(1);
     builder.clearFlux();
     expect(builder.changed()).toBe(true);
     settle();
-    expect(builder.fluxOf(b)?.ring).toBe(0);
+    expect(builder.fluxOf(b)?.lift).toBe(0);
     expect(builder.fluxOf(m)?.hover).toBe(0);
     expect(builder.changed()).toBe(false);   // a clear with nothing pinned is no wake
   });

@@ -130,6 +130,8 @@ export interface DeskApi {
   holdCost(n: number): Promise<{ readonly copy: { ms: number; cpu: number } | null; readonly hand: { ms: number; cpu: number } | null; readonly rest: { ms: number; cpu: number } }>;
   /** The performance instruments (D6 — design-015 §11.4's gates, read by rig:stress). */
   readonly perf: PerfApi;
+  /** The raster budget's ledger (D6): the kinds' caches by owner against the cap, the evictions so far. */
+  memory(): ReturnType<DeskLayerHandle["memory"]>;
 }
 
 /** One reading of every counter rig:stress diffs (D6): cumulative since the mount unless said otherwise. */
@@ -146,6 +148,8 @@ export interface PerfReading {
   /** The last build's work. */
   readonly work: BuildWork;
   readonly redraws: number;
+  /** The kinds' persistent record stores (D6, design-015 §4.3): records written and draw lists rewritten since the mount, by kind. */
+  readonly records: Readonly<Record<string, { readonly written: number; readonly bytes: number; readonly orderWrites: number; readonly slots: number }>>;
 }
 
 export interface PerfApi {
@@ -220,7 +224,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       stepSamples = [];
       const s = handle.submits();
       const st = handle.stats();
-      return { steps, flush: handle.perf(), uploads: s?.uploadsByLabel() ?? {}, submits: s?.total() ?? 0, totals: st.totals, work: st.work, redraws: handle.redraws() };
+      return { steps, flush: handle.perf(), uploads: s?.uploadsByLabel() ?? {}, submits: s?.total() ?? 0, totals: st.totals, work: st.work, redraws: handle.redraws(), records: handle.records() };
     },
     heap() {
       const m = (performance as { memory?: { usedJSHeapSize?: number } }).memory;
@@ -274,6 +278,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     panel,
     stats: () => handle.stats(),
     wakes: () => handle.wakes(),
+    memory: () => handle.memory(),
     submits() { const s = handle.submits(); return s === undefined ? null : { total: s.total(), buffers: s.buffers(), inWindow: (ms) => s.inWindow(ms) }; },
     ambient(mode, idleMs) { if (mode !== undefined) handle.setAmbient(mode, idleMs); return { ...handle.ambient().state(), clocks: handle.ambient().clocks() }; },
     gestures(patch) {
@@ -294,7 +299,9 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
           if (quiet || performance.now() - t0 > timeoutMs) requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => resolve({ settled: quiet, redraws: handle.redraws() }), 60)));
           else requestAnimationFrame(poll);
         };
-        poll();
+        // the first look is a FRAME away, never now: an input the rig just sent (a release) is processed by the next tick, and a desk
+        // quiet before it is not the desk after it (found at D6 — the ring's spring used to keep the desk live across that gap)
+        requestAnimationFrame(poll);
       });
     },
     depth: () => engine.nav.depth(),

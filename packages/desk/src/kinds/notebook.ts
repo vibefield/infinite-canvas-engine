@@ -228,7 +228,7 @@ function pageStrokeOf(row: StrokeRow, had: ReadonlyMap<string, PageStroke>, now:
 /** The notebook's `local()`. */
 export function createBooks(host: KindHost): Books {
   const books = new Map<Entity, BookState>();
-  const pages = new PageInk();
+  const pages = new PageInk(host.budget);   // its page rasters under the desk's one budget (D6)
   let next = 1;
   let woke = false;
   let moving = false;
@@ -341,6 +341,8 @@ export function createBooks(host: KindHost): Books {
       for (const [e, st] of books) if (st.motion !== null && (st.live !== null || st.pending !== null || st.stirring || (host.children?.stamp(e) ?? 0) !== st.stamp)) return true;
       return w;
     },
+    /** The budget's ask (D6): a page raster is kept while its page was in a table this frame. */
+    keeps: (key) => pages.keeps(key),
     forget(e) {
       const st = books.get(e);
       if (st !== undefined) pages.forget(st.id);

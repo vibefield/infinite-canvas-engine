@@ -40,7 +40,7 @@ import { rollAt, rollState, type RollState, tangentAt } from "../calendar/roll";
 import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn, stepRoll } from "../calendar/turn";
 import { CALENDAR_SHADER_FILES, calendarShaders } from "../calendar/shaders";
 import { cellAt, dayBox, noteSlot, sheetOf } from "../calendar/sheet";
-import { bandOf, GUTTER, levelFor, type TileGrid, tileGrid, tileRect, tilesIn } from "../calendar/tiles";
+import { bandOf, GUTTER, levelFor, TILE_TEX, type TileGrid, tileGrid, tileRect, tilesIn } from "../calendar/tiles";
 import { caretAt, glyphBox, type HandLaw } from "../paper/text";
 import type { KindProgram, SlotContext } from "../kind";
 import type { MatPass } from "../mat/mat-pass";
@@ -342,6 +342,16 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   };
   const passOf = (): CalendarPass | undefined => { const k = host.pass(); return k instanceof CalendarKind ? (k.pass ?? undefined) : undefined; };
   const tilesOf = (pass: CalendarPass): PrintTiles => { tiles ??= new PrintTiles({ grid: tileGrid(F.W, F.H), now: clock }); if (!begun) { tiles.begin(pass); begun = true; } return tiles; };
+  // THE BUDGET (D6): the print's tile layers are one fixed texture the pass owns, LRU among themselves (tiles.ts `TileCache`) —
+  // charged once as resident and kept, so the ledger tells the whole truth of what the caches hold
+  let charged = false;
+  const chargeTiles = (): void => {
+    if (charged || host.budget === undefined) return;
+    const pass = passOf();
+    if (pass === undefined) return;
+    host.budget.charge("calendar", "print tiles", pass.layers * TILE_TEX * TILE_TEX * 4, () => {});
+    charged = true;
+  };
   const todayNow = (): number => todayPin ?? todayOf();
   const entriesOf = (e: Entity): CalEvent[] => {
     const out: CalEvent[] = [];
@@ -543,8 +553,11 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       }
       return marksOn(st, markMonth, G.weekStart, markPrint);
     },
+    /** The budget's ask (D6): the tile texture is the pass's, fixed — always kept. */
+    keeps: () => true,
     tick(now) {
       begun = false;
+      chargeTiles();
       // the months turning (their springs on the frame's clock); tiles still to draw: another frame (the marks' clocks — the
       // caret's blink, the wipe — are the hand's: it marks anew)
       const dt = lastTick === null ? 0 : Math.min(Math.max((now - lastTick) / 1000, 0), 0.1);

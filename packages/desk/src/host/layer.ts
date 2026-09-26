@@ -35,7 +35,9 @@
 import { Camera, type Entity, type FramePickSlot, type GridConfig as CoreGridConfig, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, setWidgetProps, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
-import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin } from "../compose/builder";
+import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
+import { type BudgetStats, createRasterBudget } from "../engine/budget";
+import type { RecordStoreStats } from "../engine/records";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
 import { heldSlots, type SelectionAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
@@ -115,7 +117,16 @@ export interface DeskLayerOptions {
   readonly idleMs?: number;
   /** The app's byte store (D3w, D-D12): a print's picture by the hash its `blob` prop names; absent, prints draw their paper alone. */
   readonly blobs?: BlobStore;
+  /**
+   * THE RASTER BUDGET (D6, design-015 §11.4), bytes: what every kind's raster caches may hold together — a board's ink (its strokes
+   * are the truth; evicted, it replays when next drawn), a notebook page's CPU raster, the calendar's tiles. The least recently used
+   * off-screen raster goes first. Default 192 MB.
+   */
+  readonly rasterBudget?: number;
 }
+
+/** The raster budget a host does not size: 192 MB — about ten whiteboards' ink at the law's density, the notebook's eight page rasters and the calendar's tiles beside them. */
+export const DEFAULT_RASTER_BUDGET = 192 * 1024 * 1024;
 
 /** The pinned still a parity scene states: the clocks, the plate and the gobo's opacity, the wind (0 = a still). */
 export interface MatPin extends AmbientPin {
@@ -139,6 +150,8 @@ export interface DeskLayerContext {
   readonly catalog?: { widgetTypes(): readonly WidgetType[] };
   /** The interaction stack's marquee preview (`stack.marqueeBuffer`, out of the ECS): the vellum the marks draw (D4a). */
   readonly readMarquee?: () => MarqueeBuffer;
+  /** The engine's spatial index (`stack.index`; design-015 §2.5, D6): the cull's broad phase. Absent, every member is tested. */
+  readonly spatial?: SpatialSource;
 }
 
 /** The selection menu's source (D4a): the marks' anchor as of the last frame, and a subscription that fires when it changes. */
@@ -198,7 +211,7 @@ export interface DeskLayerHandle {
   /** Pin a note's writing lines for its far-LOD chip (a still states them; the live text's layout is D2c's); `undefined` unpins. */
   pinGreek(entity: Entity, writing: GreekPin | undefined): void;
   /** Pin an object's spring targets for a still (a scene's `held` = `{ lift: 1 }`, never a `Grab`); `undefined` unpins. */
-  pinFlux(entity: Entity, targets: Partial<Pick<ObjectFlux, "lift" | "hover" | "ring">> | undefined): void;
+  pinFlux(entity: Entity, targets: Partial<Pick<ObjectFlux, "lift" | "hover">> | undefined): void;
   /** Every flux pin lifted. */
   clearFlux(): void;
   /** Live insides on or off (the oracle's `portals: false` — every face draws its far LOD alone). */
@@ -234,6 +247,10 @@ export interface DeskLayerHandle {
   submits(): SubmitInstrument | undefined;
   /** The layer's own main-thread time since the mount (D6, design-015 §11.4's idle gate): a rig diffs two readings. */
   perf(): DeskLayerPerf;
+  /** The raster budget's ledger (D6): what the kinds' caches hold, by owner, against the cap; the evictions so far. */
+  memory(): BudgetStats;
+  /** The kinds' persistent record stores' counters by kind (D6, design-015 §4.3) — the root passes'; a rig diffs two readings. */
+  records(): Readonly<Record<string, RecordStoreStats>>;
   redraws(): number;
   stats(): DeskReflectorStats;
   wakes(): DeskWakes;
@@ -319,17 +336,22 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const syncMotion = (): void => { ambient.configure({ reducedMotion: motionQuery?.matches === true }); compose.wake("ambient"); };
     motionQuery?.addEventListener("change", syncMotion);
 
-    // each kind's own state on this desk (the note's writing): made once, over its root pass once the ground is here
+    // each kind's own state on this desk (the note's writing): made once, over its root pass once the ground is here — and told what
+    // the builder DRAWS (D6, `KindHost.drawn`: the builder is made after the locals, so the word is bound late)
     const locals = new Map<string, KindLocal>();
     const children = worldChildren(world);   // …and its DATA children (D3w): the host reads them, never the kind
     const print = opts.text !== undefined ? printRaster({ text: opts.text }) : undefined;   // the calendar's print, in the note's hand (D3t-c)
+    const drawn = (e: Entity): number | undefined => builder.rankOf(e);   // `builder` is made just below; the word is only asked at a tick
+    // THE RASTER BUDGET (D6): one ledger for every kind's raster caches; trimmed once a tick by each kind's word on what is on screen
+    const budget = createRasterBudget(opts.rasterBudget ?? DEFAULT_RASTER_BUDGET);
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print, drawn, budget });
       if (local !== undefined) locals.set(k.name, local);
     }
+    const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
     const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;
     const readMarquee = ctx.readMarquee;
-    const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}) });
+    const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}) });
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
     // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
     // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked
@@ -432,11 +454,16 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         leaf?.follow(now);
         calHand?.follow(now);
         let want = false;
-        for (const local of locals.values()) if (local.tick?.(now) === true) want = true;
+        // the kinds whose own state moved (D6): their records are remade this build; the rest stand — told every tick, an empty
+        // set included (no word at all would make the builder ask every object whether a kind lifts it)
+        const restless = new Set<string>();
+        for (const [name, local] of locals) if (local.tick?.(now) === true) { want = true; restless.add(name); }
         if (want) compose.wake("ink");
+        compose.restless(restless);
         moving = want;   // D3w: a kind's own motion (a print in the air) keeps the desk from reading quiet between its frames
         inner.flush(w);
         editor?.follow();
+        budget.trim(keeps);   // over the cap: the least recently used off-screen rasters go (O(1) when under it)
         // the desk's own main-thread time (D6): this flush, and whether it drew
         const spent = performance.now() - now;
         perf.ticks += 1; perf.ms += spent;
@@ -549,6 +576,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       tuneLaw(kind, law) {
         for (const t of types) { const k = objectKindOf(t); if (k?.name === kind) k.tune?.(law); }
         ground?.root.kinds.get(kind)?.pass.setLaw?.(law);
+        builder.invalidate();   // every record was made under the old law (D6)
         compose.wake("pin");
       },
       pinLodZoom: (zoom) => compose.pinBuild({ lodZoom: zoom }),
@@ -571,6 +599,12 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       ambient: () => ambient,
       submits: () => instrument,
       perf: () => ({ ...perf }),
+      memory: () => budget.stats(),
+      records: () => {
+        const out: Record<string, RecordStoreStats> = {};
+        for (const k of objectKinds) { const s = ground?.pass(k.name)?.records?.(); if (s !== undefined) out[k.name] = s; }
+        return out;
+      },
       redraws: () => compose.redraws(),
       stats: () => compose.stats(),
       wakes: () => compose.wakes(),

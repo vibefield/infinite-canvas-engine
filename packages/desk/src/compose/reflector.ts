@@ -87,6 +87,8 @@ export interface DeskReflector {
    * re-dressing ramp held at its start (`holdRedress`). Each present key is set; the next frame paints.
    */
   pinBuild(pins: { readonly portals?: boolean; readonly lodZoom?: number | null; readonly freeze?: boolean; readonly holdRedress?: boolean; readonly hold?: HoldPin | null }): void;
+  /** The kinds whose own state moved this tick (their `local.tick` wanted a frame): the builder remakes their records this build (D6). */
+  restless(kinds: ReadonlySet<string>): void;
   /** The frame dirty and not yet drawn (a rig's witness). */
   dirty(): boolean;
   redraws(): number;
@@ -129,6 +131,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let holdRedress = false;
   /** The hand pinned for a still (D4b). */
   let holdPin: HoldPin | undefined;
+  /** The kinds restless this tick (D6) — set by the host before the flush, spent by the build. */
+  let restless: ReadonlySet<string> | undefined;
   /** What the desk copy behind the hand depends on beyond the builder's count and the camera's and viewport's stamps (D4b). */
   let themeGen = 0;
   let gridGen = 0;
@@ -198,7 +202,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       const camera = { x: cam.x, y: cam.y, zoom: cam.zoom };
       const built = builder.build(camera, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, grid, looks, {
         now, mat: amb.frame, portals: portalsOn, freeze, holdRedress, ...(lodPin !== undefined ? { lodZoom: lodPin } : {}), ...(holdPin !== undefined ? { hold: holdPin } : {}),
+        ...(restless !== undefined && restless.size > 0 ? { restless } : {}),
       });
+      restless = undefined;
       // the hand (D4b): the desk copy's stamp is everything the copy depends on — the builder's desk count (never the held
       // object's own facts), the camera, the viewport, the theme, the grid, the pins, the mat's clocks and tilt this frame
       const held = built.held === undefined ? undefined : {
@@ -252,6 +258,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       wakes.pin += 1;
       pinGen += 1;
     },
+    restless(kinds) { restless = kinds; },
     dirty: () => dirty,
     redraws: () => redraws,
     stats: () => ({ ...builder.stats(), redraws, frame: lastFrame, ambient: ambient.state() }),

@@ -15,6 +15,7 @@ override LIT_ELSEWHERE: bool = false;
 @group(0) @binding(5) var noise_tex: texture_2d<f32>;
 @group(0) @binding(6) var noise_samp: sampler;
 @group(0) @binding(7) var pic_samp: sampler;              // trilinear, clamped
+@group(0) @binding(8) var<storage, read> order: array<u32>;   // the draw list: paint index → the record's slot (persistent records, D6)
 @group(1) @binding(0) var pic_tex: texture_2d<f32>;       // the print's picture (rgba8unorm-srgb, mipmapped)
 
 struct VSOut {
@@ -31,8 +32,9 @@ const CORNERS = array<vec2f, 6>(
 fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VSOut {
   var out: VSOut;
   out.clip = vec4f(2.0, 2.0, 2.0, 1.0);   // degenerate: a culled instance collapses
-  out.idx = iid;
-  let P = photos[iid];
+  let slot = order[iid];
+  out.idx = slot;
+  let P = photos[slot];
   let zoom = mat_zoom(u);
   let lo = (P.bounds.xy - u.cam.xy) * zoom;   // CSS px
   let hi = (P.bounds.zw - u.cam.xy) * zoom;

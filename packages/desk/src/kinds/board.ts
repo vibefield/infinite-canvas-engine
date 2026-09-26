@@ -23,7 +23,7 @@ import type { BoardInstance } from "../board/layout";
 import { followHand, penAtRest, penPose, type PenState, stepPen } from "../board/pen";
 import { BOARD_SHADER_FILES, boardShaders } from "../board/shaders";
 import { type StrokeBuilder, TIP_NAMES, type TipName } from "../board/stroke";
-import type { KindPass, KindProgram, SlotContext } from "../kind";
+import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
 import { type ShaderText, shaderText } from "../shaders";
@@ -43,13 +43,14 @@ export class BoardKind implements KindPass<BoardInstance> {
 
   tune(root: KindPass<BoardInstance>): void { if (root instanceof BoardKind) this.pass.copy(root.pass); }
 
-  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light and the theme (its ring's colour). */
-  prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly BoardInstance[]): number {
-    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.theme);
+  /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light and the theme (its ring's colour) — and the records' keys (D6). */
+  prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly BoardInstance[], extra?: KindExtra): number {
+    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.theme, extra?.keys);
   }
 
   /** Records [first, end) — a board whose raster is missing draws nothing (the pass counts in the list it was handed). */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
+  records() { return this.pass.records; }
 
   dispose(): void { this.pass.dispose(); }
 }
@@ -271,6 +272,12 @@ export function createBoardInk(host: KindHost): BoardInk {
   let still = false;
   const passOf = (): BoardPass | undefined => { const k = host.pass(); return k instanceof BoardKind ? k.pass : undefined; };
   const stampOf = (e: Entity): number => host.children?.stamp(e) ?? 0;
+  const drawn = host.drawn;
+  // THE BUDGET (D6): a board's raster is a cache of its strokes — charged when made (its ink with its mips, its stroke and wet layers),
+  // let go when the ledger evicts it (it replays from its children when next drawn: `stamp` −1), kept while the board is on screen
+  const budget = host.budget;
+  const entityOf = new Map<string, Entity>();
+  const rasterBytes = (size: readonly [number, number]): number => Math.round(size[0] * size[1] * (4 * (4 / 3) + 1 + 1));
   const state = (e: Entity): BoardState => {
     let st = boards.get(e);
     if (st === undefined) { st = { id: next++, stamp: -1, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); }
@@ -285,6 +292,12 @@ export function createBoardInk(host: KindHost): BoardInk {
       if (ghost) return st.id;   // a board fading out keeps its ink: its children died with it
       const stamp = stampOf(e);
       const made = pass.ensure(st.id, surfaceSize(G));
+      if (made && budget !== undefined) {
+        const key = String(st.id);
+        entityOf.set(key, e);
+        const size = pass.sizeOf(st.id);
+        budget.charge("board", key, size === null ? 0 : rasterBytes(size), () => { passOf()?.release(st.id); st.stamp = -1; entityOf.delete(key); });
+      } else budget?.touch("board", String(st.id));
       if (made || stamp !== st.stamp || look !== st.look) {
         const rows: readonly StrokeRow[] = host.children?.rows(e, BoardStroke) ?? [];
         // the stroke the hand just committed has landed as its entity: the raster holds it already — WET — so it is adopted
@@ -374,20 +387,32 @@ export function createBoardInk(host: KindHost): BoardInk {
       penMoving = false;
       for (const [e, st] of boards) {
         if (st.live !== null && !still) want = true;   // a stroke in hand: its stamps (a resting pen's bleed) go out every frame
-        else if (st.stamp !== -1 && stampOf(e) !== st.stamp) want = true;   // a stroke laid or undone: a frame to replay in
+        // a stroke laid or undone: a frame to replay in — for a board that is DRAWN (D6; the builder's word when it gives one): a
+        // board off screen replays when it comes back (its record is made afresh then) and its stale stamp keeps nothing awake
+        // (D-D3t-b.11's latent keep-awake)
+        else if (st.stamp !== -1 && (drawn === undefined || drawn(e) !== undefined) && stampOf(e) !== st.stamp) want = true;
       }
       return want;
+    },
+    /** The budget's ask (D6): a board's raster is kept while the board is drawn — the builder's word, else while it is met at all. */
+    keeps(key) {
+      const e = entityOf.get(key);
+      if (e === undefined) return false;
+      return drawn === undefined ? boards.has(e) : drawn(e) !== undefined;
     },
     forget(e) {
       const st = boards.get(e);
       if (st === undefined) return;
       passOf()?.release(st.id);
+      budget?.release("board", String(st.id));
+      entityOf.delete(String(st.id));
       boards.delete(e);
     },
     dispose() {
       const pass = passOf();
-      for (const st of boards.values()) pass?.release(st.id);
+      for (const st of boards.values()) { pass?.release(st.id); budget?.release("board", String(st.id)); }
       boards.clear();
+      entityOf.clear();
     },
     replays: () => replays,
     rasterOf: (e) => boards.get(e)?.id,

@@ -6,7 +6,7 @@
 // switch each paint ONE frame; a selection paints until its spring settles and then stops; the
 // ambient in `live` mode paints every frame and `still` never on its own; the pull happens every
 // tick even before the ground is here, and the first frame after it arrives paints.
-import { Camera, createCanvasEngine, Viewport, writeRuntimeResource } from "@ice/core";
+import { Camera, createCanvasEngine, Grab, NO_ENTITY, Viewport, writeRuntimeResource } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAmbient } from "../src/compose/ambient";
 import { createDeskBuilder } from "../src/compose/builder";
@@ -94,16 +94,25 @@ describe("the desk reflector · idle-zero (design-015 §2.4)", () => {
     expect(w.camera).toBe(1); expect(w.viewport).toBe(1); expect(w.theme).toBe(1); expect(w.grid).toBe(1);
   });
 
-  it("a spring keeps the desk awake until it settles, then it sleeps; a ghost the same", async () => {
+  it("a spring keeps the desk awake until it settles, then it sleeps; a selection alone does NOT (the ring's spring is gone — D6); a ghost the same", async () => {
     const { ce, desk, step, arrive } = await mount();
     const a = ce.ops.spawnWidget("desk.note", { x: 200, y: 150, props: { seed: 7 }, undoable: false });
     await arrive();
     step(2);
     expect(step(5)).toBe(0);
+    // a selection: the marks' brackets lock on over a dozen frames (D4a's own motion), then quiet — no spring rises for a retired ring
+    // (before D6 the ring's spring kept the desk painting for a second)
     ce.ops.setSelection([a]);
+    let selected = 0;
+    for (let i = 0; i < 60; i++) selected += step();
+    expect(selected).toBeGreaterThan(0);
+    expect(selected).toBeLessThan(30);
+    expect(step(10)).toBe(0);
+    // the lift (a Grab): every tick paints while the spring rises …
+    ce.world.addComponent(a, Grab, { x: 200, y: 150, w: 200, h: 200, parent: NO_ENTITY, prev: NO_ENTITY, ord: 0 });
+    ce.world.sync();
     const first = step();
     expect(first).toBe(1);
-    // live: every tick paints while the ring rises …
     expect(step(10)).toBe(10);
     // … then it settles (the snap) and the desk sleeps
     let painted = 0;
@@ -112,6 +121,10 @@ describe("the desk reflector · idle-zero (design-015 §2.4)", () => {
     expect(painted).toBeLessThan(200);
     expect(step(10)).toBe(0);
     expect(must(desk.stats().frame).kinds.paper).toBe(1);
+    ce.world.removeComponent(a, Grab);
+    ce.world.sync();
+    for (let i = 0; i < 200 && step() > 0; i++);
+    expect(step(10)).toBe(0);
     // the delete: the ghost fades over 220 ms of frames, then nothing
     ce.ops.deleteSelection();
     expect(step()).toBe(1);
