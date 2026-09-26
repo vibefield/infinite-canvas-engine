@@ -1079,7 +1079,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b and D5b — THE DELETION — LANDED 2026-09-26)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — and D3t-a LANDED 2026-09-26)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1403,6 +1403,23 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   orchestrator). Flagged for James: the committed Lusion gobo plates (study-only licence; absent from the published dist,
   present in the repo as oracle fixtures). Owed: a desk wires pass with the first kind that declares ports; the M3 baseline
   re-measured on the stress rig (D6); a peer's nav frame in presence.
+- **D3t-a — the held bar's tools, the whiteboard in hand, the print's owed carry** (**LANDED 2026-09-26**, `78e978d` …
+  `eaf5ce6`, seven commits by an opus builder, rebased by the orchestrator over D5b): the held bar's tools are LIVE and
+  generic — core's `HeldToolDef` (a `mode` sets the runtime `HeldTool { id, prev }` on the object in hand, an `action` runs
+  its op, keys route only while held), declared by the kind and carried by `defineObject`; held input answers a PART and a
+  press on the content with a mode in hand is the tool's. `desk.stroke` v2 carries each sample's time with a v1 → v2
+  migration — and data children are now version-tracked at all (`defineWidget({ data })`: the catalog stamps, gates and
+  migrates them by their own chain; D3w's strokes had never been). The whiteboard in hand: the pen lays LIVE wet ink and
+  the lift is ONE stroke entity the ink adopts (no replay), the marker taken up as the board opens and drawn by the board's
+  pass in the ink's frame, the eraser and its pen end, inks 1–4, tips, ⌘⌫ wipes, and undo in hand IS the document's. The
+  print's owed carry: Esc puts it back, a press catches it mid-glide where it is DRAWN, a carried print paints above its
+  siblings, the wheel twists it (`wheelTurns`, `PressWheel`). The tool in hand is marked in cream — *Marks on the Mat*
+  retired `--hot` on the desk. Exit: oracle stills of the pen in hand (hovering, wet, dry) Chrome = Node (the ink rows
+  within D-D3r-a.5's 1-LSB bound); rig:open 38 → 68, rig:two-tab 19 → 26 (a stroke by hand in A arrives on B's board with
+  the same 23 times), rig:interact 114 → 123; 23 red proofs; core 787, desk 460, react 36 units; ci exit 0; `gate:landing`
+  exit 0 (re-run by the orchestrator on the rebased tip: parity 95 · 0 · 6 kept, world 82 · 0 · 6 kept). Owed: coalesced
+  pointer samples and pen pressure; a cancelled press read as a lift; a peer's stroke mid-draw shifting the live seed;
+  tip and wipe without bar slots; wet ink keeps the desk drawing 7.2 s after a stroke (the law's).
 
 ## Release cut & downstream
 
