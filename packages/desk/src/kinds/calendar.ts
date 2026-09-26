@@ -302,6 +302,8 @@ export interface Pads extends KindLocal {
   rolled(): readonly { readonly e: Entity; readonly month: number }[];
   /** The hand's roll is the document's business now — landed (it projects at the next sync) or refused: the pad follows the document from here. */
   unroll(e: Entity): void;
+  /** A pad is on this desk (D7 #14): the hand's peek needs the pointer every frame while one is, so the hand never idles then. */
+  busy(): boolean;
   /** The notes stuck to its pads that go with their months (D3t-c): not drawn, never picked (`KindLocal.veils`). */
   veils(): ReadonlySet<Entity>;
   /** Draw a pad's print and its marks for this frame (the kind's `record`): the sheets' tiles brought up, the marks' boxes. */
@@ -510,6 +512,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       return out;
     },
     unroll(e) { const st = pads.get(e); if (st === undefined) return; st.roll.pending = null; woke = true; },
+    busy: () => pads.size > 0,
     state,
     alpha(a) { const k = host.pass(); if (k instanceof CalendarKind && k.alpha !== a) k.alpha = a; },
     events: (e) => host.children?.rows(e, CalendarEvent) ?? [],

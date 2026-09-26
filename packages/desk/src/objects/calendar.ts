@@ -6,12 +6,16 @@
 // Its rect is the sheet (1760 × 1852 at the law's cell); movable by its tape, selectable; a ROOT object (D-D18:
 // `interaction.drop: "never"` — no container takes it, whatever it accepts).
 
-import { p } from "@ice/core";
+import { type Entity, p } from "@ice/core";
 import { EventPrefab, PinPrefab, pinnedNotes } from "../calendar/data";
 import { CALENDAR } from "../calendar/law";
 import { padFrame } from "../calendar/pad";
-import { calendarKind } from "../kinds/calendar";
+import { type CalendarPart, calendarKind, type Pads } from "../kinds/calendar";
+import { PAPER_KIND } from "../kinds/paper";
+import type { KindDriver } from "../kinds/world";
 import { defineObject } from "../object";
+import { type CalendarHand, createCalendarHand } from "./calendar-hand";
+import { type CalendarWriting, createCalendarWriting } from "./calendar-writing";
 import { PENS } from "./note";
 
 /** The tapes a pad is bound with (CALENDAR.md §4) — names; the cloths and foils are the host's. */
@@ -40,4 +44,45 @@ export const Calendar = defineObject({
   data: [EventPrefab, PinPrefab],
   // the notes stuck to it RIDE with it (D3t-c — core's `riders`): carried by its tape, they move with it and land in its transaction
   riders: (world, pad) => pinnedNotes(world, pad).map((p) => p.note),
+  // the desk calendar at work (D3t-c): its WRITING (the sessions the ONE editor is lent to) and its HAND (the marks, the rolls, the
+  // notes' landing) — its DOM half (the days and the pen at event time) is the host's and joins through `input` (D-D7-A.3)
+  drivers: (h): CalendarDriver => {
+    const pads = (): Pads | undefined => h.local as Pads | undefined;
+    const writing = createCalendarWriting({ world: h.world, docs: h.docs, pads });
+    const isNote = h.kind(PAPER_KIND);
+    const driver: CalendarDriver = {
+      writing,
+      pads,
+      isPad: h.isKind,
+      input: undefined,
+      hand: createCalendarHand({
+        world: h.world, docs: h.docs, pads, writing, caret: () => driver.input?.caret() ?? null,
+        geometryOf: h.geometryOf, hand: h.hand, heldToWorld: h.heldToWorld, isPad: h.isKind, ...(isNote !== undefined ? { isNote } : {}),
+      }),
+      follow: (now) => driver.hand.follow(now),
+      idle: () => driver.hand.idle(),
+      dispose: () => { driver.hand.dispose(); driver.input?.dispose(); driver.input = undefined; },
+    };
+    return driver;
+  },
 });
+
+/** The calendar's DOM half as its driver sees it (host/calendar-input.ts implements it): the caret on the line being written, the part under a client point, the selection's doors. */
+export interface CalendarInputDoors {
+  caret(): { readonly index: number; readonly t0: number; readonly wipe: { readonly index: number; readonly t0: number } | null } | null;
+  partAtClient(x: number, y: number): { readonly pad: Entity; readonly part: CalendarPart } | null;
+  selectDays(pad: Entity, anchor: number, focus: number): void;
+  selectEntry(pad: Entity, entry: Entity): void;
+  clear(): void;
+  dispose(): void;
+}
+
+/** The calendar's driver (`driversOf(Calendar)`): its writing, its hand, its pads, its membership — and the DOM half that joins it. */
+export interface CalendarDriver extends KindDriver {
+  readonly writing: CalendarWriting;
+  readonly hand: CalendarHand;
+  readonly pads: () => Pads | undefined;
+  readonly isPad: (e: Entity) => boolean;
+  /** The DOM half, once the host has made it (the days and the pen at event time); the hand reads its caret. */
+  input: CalendarInputDoors | undefined;
+}

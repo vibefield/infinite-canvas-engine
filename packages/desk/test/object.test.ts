@@ -5,7 +5,7 @@
 // world half on the prototype's own laws — the same numbers the oracle's scene builder computes
 // for the same object (frame.mjs `noteGeometry` / `matGeometry`, byte for byte): resolve, record,
 // hit, reach, theme.
-import { STRATUM_BANDS, widgets } from "@ice/core";
+import { createWorld, type Entity, STRATUM_BANDS, widgets } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { FLUX_REST, isObjectKind, minimatKind, type ObjectContext, paperKind, paperReach, miniMatReach, rectOf } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
@@ -13,7 +13,9 @@ import { DEFAULT_MINIMAT_LAW, faceOf, pickMiniMat, resolveMiniMat } from "../src
 import { insideView, miniMatInstance } from "../src/minimat/inside";
 import { FIT } from "../src/nav/flight";
 import { PORTAL_GATE } from "../src/nav/portal";
-import { defineObject, objectKindOf } from "../src/object";
+import { defineObject, driversOf, objectKindOf } from "../src/object";
+import { NO_DOCS } from "../src/docs";
+import type { KindDriverHost } from "../src/kinds";
 import { Board, Calendar, DESK_OBJECTS, MiniMat, MINIMAT_TYPE, Note, Notebook, NOTE_TYPE, Photo } from "../src/objects";
 import { DEFAULT_PAPER_LAW, lampOf, pickPaper, resolvePaper, tiltOf } from "../src/paper/paper";
 import { MAT_GRID, MINIMAT, PAPER } from "../src/theme";
@@ -198,5 +200,35 @@ describe("the mini mat's world half (kinds/minimat.ts minimatKind)", () => {
     expect(look.vinyls.slate).toEqual(vinyl("slate", DEFAULT_GRID.mat.ground));
     expect(look.vinyls.charcoal).toEqual(vinyl("charcoal", DEFAULT_GRID.mat.ground));
     expect(must(kind.theme)(PALETTE.dark, "dark")).toEqual({ vinyls: {} });
+  });
+});
+
+describe("the kinds' drivers are DECLARED, never wired by name (D7 #5, D-D7-A.3)", () => {
+  it("every reference object that is worked in declares its driver; `driversOf` answers it, and nothing for a kind without one", () => {
+    for (const t of [Note, Board, Notebook, Photo, Calendar]) expect(driversOf(t), t.type).toBeDefined();
+    expect(driversOf(MiniMat)).toBeUndefined();
+    expect(driversOf(undefined)).toBeUndefined();
+  });
+
+  it("a third-party kind declares a driver in `defineObject` and the desk finds it by the OBJECT: a host makes it from what it lends and ticks it", () => {
+    const made: string[] = [];
+    const Third =
+      widgets.get("d7:third") ??
+      defineObject({
+        type: "d7:third",
+        kind: paperKind(),
+        drivers: (h) => ({ follow: (now) => { made.push(`follow ${now} ${h.isKind(7 as Entity)}`); }, idle: () => made.length > 0 }),
+      });
+    const make = driversOf(Third);
+    expect(make).toBeDefined();
+    const host: KindDriverHost = {
+      world: createWorld(), docs: NO_DOCS, local: undefined, look: () => undefined, isKind: (e) => e === 7, kind: () => undefined,
+      geometryOf: () => undefined, heldToWorld: () => undefined, hand: () => undefined, refused: () => {}, wake: () => {},
+    };
+    const d = make?.(host);
+    expect(d?.idle?.()).toBe(false);
+    d?.follow(16);
+    expect(made).toEqual(["follow 16 true"]);
+    expect(d?.idle?.()).toBe(true);
   });
 });

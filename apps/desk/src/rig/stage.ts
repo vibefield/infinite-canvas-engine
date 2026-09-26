@@ -21,7 +21,7 @@
 
 import { abortNavFlight, Camera, type CanvasEngine, cascadeDestroy, type Entity, HeldView, Position, PrefabId, Size, writeRuntimeResource, defineQuery } from "@ice/core";
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk";
-import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note } from "@ice/desk/objects";
+import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type PaperDriver } from "@ice/desk/objects";
 import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk";
 import type { BoardInk, PaperKind } from "@ice/desk";
 import { oracleFixtures } from "./oracle-fixtures";
@@ -136,6 +136,7 @@ function thingSpec(t: OracleThing, parent: Entity | undefined, photo: PrintFixtu
  * the rasters and the greeked writing as it goes. Returns the desk's own entities in spawn order.
  */
 async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFixtures>>, desk: OracleInside, parent: Entity | undefined, selected: Entity[]): Promise<Staged> {
+  const noteDriver = (): PaperDriver | undefined => host.handle.driver(NOTE_TYPE) as PaperDriver | undefined;
   const { engine, handle } = host;
   const mats = desk.minimats ?? [];
   const things = thingsOf(desk);
@@ -169,7 +170,9 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
   for (const { entity: e, spec: n } of notes) {
     // the committed ink raster on the note that carries it — allocated in scene order, so it lands where the oracle's did
     if (n.asset === "note-1" && fx.inkMeta.w > 0) {
-      const ok = handle.pinRaster(e, fx.ink, { w: fx.inkMeta.w, h: fx.inkMeta.h });
+      // through the note's writing (its driver's — D-D7-A.3): allocated NOW, in call order (the oracle's texels), given back when the note leaves the desk
+      const ok = noteDriver()?.writing()?.pin(e, fx.ink, { w: fx.inkMeta.w, h: fx.inkMeta.h }) ?? false;
+      handle.desk.wake("pin");
       if (!ok) throw new Error("desk: the ink pages refused the committed raster");
     } else if (n.asset !== undefined) throw new Error(`desk: unknown note asset "${n.asset}"`);
     // the writing the far LOD greeks (frame.mjs `childrenOf`: x0 = the hand's pad, em = its size)
@@ -186,6 +189,7 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
 /** Spawn the scene, pin the mat, the rasters and the flux, set the camera and the theme; fly and pin a nav scene. Resolves once every asset is uploaded. */
 export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged> {
   const { engine, handle } = host;
+  const noteDriver = (): PaperDriver | undefined => handle.driver(NOTE_TYPE) as PaperDriver | undefined;
   // the ground must be here: the paper pass takes the raster, the mat the plates
   while (!handle.available()) { if (handle.status().state === "failed") throw new Error(`desk: ${handle.status().message}`); await frame(); }
   const fx = await oracleFixtures();
@@ -195,7 +199,8 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   abortNavFlight(engine.world);
   while (engine.nav.depth() > 0) engine.ops.exitContainer({ transition: "none" });
   clearDesk(engine);
-  handle.clearRasters();
+  noteDriver()?.writing()?.reset();
+  handle.desk.wake("pin");
   handle.pinMat(null);
   handle.clearFlux();
   handle.setPortals(s.portals !== false);

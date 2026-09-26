@@ -234,7 +234,7 @@ describe("the CARRY — ONE transaction when the print comes to rest", () => {
     const stub = stubPass();
     const prints = must(kind.local)({ pass: () => stub.kindPass }) as Prints;
     const pending: (() => void)[] = [];
-    const carry = createPhotoCarry({ world, docs: ce.docs, prints: () => prints, isPrint: (q) => q === e, defer: (fn) => pending.push(fn) });
+    const carry = createPhotoCarry({ world, docs: ce.docs, prints: () => prints, isPrint: (q) => q === e, props: Photo.groups[0]?.component, defer: (fn) => pending.push(fn) });
     // a local pointer and the recognizer its press made (the facts the carry reads)
     const p = world.spawn({ components: [[Pointer, { id: "mouse", device: "mouse", owner: "" }], [PointerWorld, { x: 400, y: 300 }], [PointerButtons, { buttons: 0, downX: 0, downY: 0, downMs: 0 }]], tags: [LocalPointer] });
     const rec = world.spawn({ components: [] });
@@ -401,7 +401,7 @@ describe("a TAPED print (D4a's tape over D3w's carry)", () => {
     step(3);
     const builder = createDeskBuilder(world, { objects: [Photo] });
     const prints = must(kind.local)({ pass: () => stubPass().kindPass }) as Prints;
-    const carry = createPhotoCarry({ world, docs: ce.docs, prints: () => prints, isPrint: (q) => q === e, defer: (fn) => fn(), refused: (q) => builder.meetTape(q) });
+    const carry = createPhotoCarry({ world, docs: ce.docs, prints: () => prints, isPrint: (q) => q === e, props: Photo.groups[0]?.component, defer: (fn) => fn(), refused: (q) => builder.meetTape(q) });
     const LOOKS = new Map<string, unknown>();
     /** One desk frame as the layer's reflector runs it: the carry, then the build when the builder has word of anything or still moves. */
     const frame = (): number => {

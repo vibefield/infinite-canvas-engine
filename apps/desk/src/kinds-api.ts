@@ -8,7 +8,7 @@
 import { type CanvasEngine, ChildOf, type Entity, guardedTransaction, Position } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
 import type { BoardInk, BoardKind, FlickWitness, NotebookKind, Pads, Prints } from "@ice/desk";
-import { addStroke, BoardStroke, decodePoints, decodeTimes, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
+import { addStroke, BOARD_TYPE, type BoardPen, BoardStroke, decodePoints, decodeTimes, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
 import { BOARD } from "@ice/desk";
 import { printRect } from "@ice/desk";
 import { spawnAll } from "./scene";
@@ -81,7 +81,7 @@ export function kindsApi(engine: CanvasEngine, handle: DeskLayerHandle): KindsAp
       return p === undefined ? null : { take: p.take, shown: p.shown, rub: p.rub, press: p.press };
     },
     hand() {
-      const pen = handle.pen();
+      const pen = handle.driver(BOARD_TYPE) as BoardPen | undefined;   // the board's driver (D-D7-A.3)
       if (pen === undefined) return null;
       const live = pen.live();
       return { live: live === null ? null : { board: live.board as number, samples: live.samples }, commits: pen.commits() };

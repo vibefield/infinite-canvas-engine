@@ -20,8 +20,9 @@
 // select it, as in the prototype — and the real parts (a notebook's turn zone, a board's marker)
 // arrive with D3.
 
-import type { Component, Entity, HeldToolDef, Relation, Tag } from "@ice/core";
+import type { Component, Entity, HeldToolDef, Relation, Tag, World } from "@ice/core";
 import type { PrintRaster } from "../calendar/printing";
+import type { TypingDocs } from "../docs";
 import type { RasterBudget } from "../engine/budget";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { View } from "../lattice/lod";
@@ -284,6 +285,43 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   local?(host: KindHost): KindLocal;
   /** The kind's OPENING (design-015 §8, D4b): what picking it up means. Absent = the object never opens (`ops.open` refuses it). */
   readonly open?: OpenBinding;
+}
+
+/**
+ * What the host lends a kind's DRIVERS (D7 #5, D-D7-A.3 — the hand onto the kind's state: a pen, a carry, a leaf, the
+ * calendar's writing and marks). A kind declares them in `defineObject` (`ObjectDef.drivers`); the host makes them once per
+ * desk, generically, and ticks them before the kinds' clocks — a third-party openable kind with held tools gets its driver
+ * the same way. Everything a driver needs comes through here: the world, the document's doors (docs.ts), the kind's own
+ * local and look, the builder's word (geometry as drawn, a held point into the world, the hand), the builder's give.
+ */
+export interface KindDriverHost {
+  readonly world: World;
+  /** The document's doors — `current()`, the writer's gate, the commit door, the history doors (docs.ts). */
+  readonly docs: TypingDocs;
+  /** This kind's own local (`ObjectKind.local`), if it declared one. */
+  readonly local: KindLocal | undefined;
+  /** This kind's look as the desk composed it (the swatches a pen draws in). */
+  readonly look: () => unknown;
+  /** Is `e` an object of this kind? */
+  readonly isKind: (e: Entity) => boolean;
+  /** Is `e` an object of the kind named — undefined when that kind is not on this desk (the calendar asks after notes). */
+  readonly kind: (name: string) => ((e: Entity) => boolean) | undefined;
+  /** The builder's word: an object's geometry as drawn (the kind's `G`), a held-screen point into its world, the hand. */
+  readonly geometryOf: (e: Entity) => unknown;
+  readonly heldToWorld: (e: Entity, x: number, y: number) => readonly [number, number] | undefined;
+  readonly hand: () => { readonly entity: Entity; readonly landing: boolean; readonly frame: { readonly cx: number; readonly cy: number; readonly s: number } } | undefined;
+  /** The builder's give for a drag the kind refuses (a taped print meets the tape — D4a). */
+  readonly refused: (e: Entity) => void;
+  /** Ask the desk for a frame (something landed, a mark moved). */
+  readonly wake: () => void;
+}
+
+/** A kind's driver on one desk: ticked once a frame before the kinds' clocks; idle when it has nothing to follow (D7 #14). */
+export interface KindDriver {
+  follow(now: number): void;
+  /** Nothing to follow this frame — nothing in hand, no press, no rest or roll owed: the host may skip `follow` (the idle-tick budget). Absent: never skipped. */
+  idle?(): boolean;
+  dispose?(): void;
 }
 
 /** The strata a kind may declare — re-exported beside the contract for a kind's author. */

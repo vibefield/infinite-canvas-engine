@@ -11,9 +11,10 @@
 
 import { p } from "@ice/core";
 import { StrokePrefab } from "../board/data";
-import { notebookKind } from "../kinds/notebook";
+import { type Books, notebookKind } from "../kinds/notebook";
 import { NOTEBOOK } from "../notebook/law";
 import { defineObject } from "../object";
+import { createNotebookHand } from "./leaf";
 
 /** The covers a notebook is bound in (NOTEBOOK.md §4) — names; the cloths and designs are the host's. */
 export const COVERS = ["ink", "orbit", "tiles", "label", "linen"] as const;
@@ -41,4 +42,9 @@ export const Notebook = defineObject({
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
   // its strokes are its DATA (D3t-b, the Board's prefab): the catalog stamps, gates and migrates them with the book
   data: [StrokePrefab],
+  // the notebook in hand (D3t-b): its pen and its LEAVES — the hand onto the notebook kind's state, each stroke ONE transaction out of the frame (D-D7-A.3)
+  drivers: (h) => createNotebookHand({
+    world: h.world, docs: h.docs, books: () => h.local as Books | undefined, isBook: h.isKind, heldToWorld: h.heldToWorld, geometryOf: h.geometryOf,
+    props: Notebook.groups[0]?.component,
+  }),
 });

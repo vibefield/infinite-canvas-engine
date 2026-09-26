@@ -23,7 +23,7 @@
 // `spread`) a step is ONE page: from the right page on, the sheet turns and the view follows it to its verso on the left; from
 // the left page on, the view goes to the right page; back, the other way round (`Books.face`).
 
-import { defineQuery, type Entity, guardedTransaction, heldEntity, HeldPointer, HeldPress, HeldTool, LocalPointer, Pointer, PointerButtons, PointerScreen, setWidgetProps, Viewport, type World } from "@ice/core";
+import { type Component, defineQuery, type Entity, guardedTransaction, heldEntity, HeldPointer, HeldPress, HeldTool, LocalPointer, Pointer, PointerButtons, PointerScreen, setWidgetProps, Viewport, type World } from "@ice/core";
 import { addStroke, encodePoints, encodeTimes } from "../board/data";
 import { readingTarget } from "../hold/pose";
 import { type Books, DEFAULT_PEN, type NotebookGeometry, PageTurns, pageHitAt, partOf, penOfTool } from "../kinds/notebook";
@@ -31,16 +31,16 @@ import { inkPoints, pageOfSide } from "../notebook/ink";
 import { counts, dragSheet, grabSheet, releaseSheet } from "../notebook/motion";
 import { type LiveStroke, pageStrokeKey } from "../notebook/pages";
 import { type NotebookHit, localXAt } from "../notebook/pick";
-import { Notebook } from "./notebook";
 import { type TypingDocs, writable } from "./typing";
 
 /** The notebook's props cell (`desk.notebook:props` — its `spread` the durable fact a completed turn moves). */
-const NOTEBOOK_PROPS = Notebook.groups[0]?.component;
 
 export interface NotebookHandOptions {
   readonly world: World;
   /** The document a stroke commits into — the facade's `engine.docs`. */
   readonly docs: TypingDocs;
+  /** The notebook's props cell (its `spread`) — the object hands its own (D-D7-A.3); absent, the spread reads 0. */
+  readonly props?: Component | undefined;
   /** The notebook kind's state on this desk (undefined before it is made). */
   readonly books: () => Books | undefined;
   /** Is this entity a notebook (the desk's builder knows each entity's kind). */
@@ -56,6 +56,8 @@ export interface NotebookHandOptions {
 export interface NotebookHand {
   /** Once a frame, before the kinds' clocks: the hand onto the book in hand — its stroke laid, lifted, committed. */
   follow(now: number): void;
+  /** Nothing to follow (D7 #14): no book in hand, no stroke laid, no turn in progress. */
+  idle(): boolean;
   /** The stroke in hand: its book, its page and how many samples so far; null when none. */
   live(): { readonly book: Entity; readonly page: number; readonly samples: number } | null;
   /** Strokes committed since creation (a rig's witness). */
@@ -121,7 +123,7 @@ export function createNotebookHand(opts: NotebookHandOptions): NotebookHand {
   const spreadOf = (books: Books, book: Entity): number => {
     const asked = books.state(book).pending;
     if (asked !== null) return asked;
-    const v = NOTEBOOK_PROPS === undefined ? undefined : (world.get(book, NOTEBOOK_PROPS) as { spread?: number } | undefined)?.spread;
+    const v = opts.props === undefined ? undefined : (world.get(book, opts.props as never) as { spread?: number } | undefined)?.spread;
     return typeof v === "number" && Number.isFinite(v) ? Math.round(v) : 0;
   };
   /** Move the durable spread to `to` — ONE transaction out of the frame, off the undo stack; the kind heads for it meanwhile. */
@@ -199,6 +201,7 @@ export function createNotebookHand(opts: NotebookHandOptions): NotebookHand {
   };
 
   return {
+    idle: () => stroke === null && turn === null && inHand === null && heldEntity(world) === undefined,
     follow(now) {
       const held = heldEntity(world);
       const book = held !== undefined && world.isAlive(held) && opts.isBook(held) ? held : undefined;

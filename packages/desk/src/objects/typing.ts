@@ -19,36 +19,14 @@
 // A note deleted mid-session takes its uncommitted run with it — the gesture was interrupted; an undo
 // of the delete restores the note as last committed.
 
-import { type CommitExtender, defineQuery, type DocSession, Editing, type Entity, gateVerdict, guardedTransaction, heldEntity, LocalPointer, Pointer, TouchesExact, type World } from "@ice/core";
+import { type Component, defineQuery, Editing, type Entity, guardedTransaction, heldEntity, LocalPointer, Pointer, TouchesExact, type World } from "@ice/core";
+import { type TypingDocs, writable, type WritableSession } from "../docs";
 import { encodeSeeds, freshSeed, seedsFor } from "../paper/seeds";
 import { carrySeeds } from "../paper/text";
-import { NOTE_INK, NOTE_PROPS } from "./note";
 
-/** The document a session writes into — the facade's `engine.docs` (its `current()` session: store + live writer + the gate's verdict). */
-export interface TypingDocs {
-  current(): Pick<DocSession, "store" | "liveWriter" | "readOnly" | "versionReport"> | undefined;
-  /** The facade's door into a gesture's own transaction (`docs.extendCommits`, D7 #2): a landing's writes in the gesture's undo step. Absent (a bare store), a driver has no such door. */
-  extendCommits?(extend: CommitExtender): () => void;
-  /** The facade's history doors (`docs.undo`/`docs.redo` — historyStep: the tween retarget, the read-only posture; D7 #9). Absent (a bare store), a driver moves no history. */
-  undo?(): boolean;
-  redo?(): boolean;
-}
-
-/** What a desk writer holds while it commits: the session's store and live writer. */
-export type WritableSession = Pick<DocSession, "store" | "liveWriter">;
-
-/**
- * THE WRITER'S GATE (D7 #1): the session a desk gesture may commit into — none without a document, and none when the
- * version gate's verdict is read-only (a doc a newer build wrote, a pack this build does not compile, a root that does not
- * agree). `readOnly` is the verdict at open; the report is asked again because a peer's pack can move it after. This is
- * the facade's `requireWritable` law at the desk's own write surfaces: strata's store has no read-only mode, and every desk
- * writer commits through it directly (guardedTransaction, setWidgetProps), never through the doc kit's commit sink, so a
- * gate that lived only in the sink never reached them. A refused writer does what "no document" means to it: nothing lands.
- */
-export function writable(docs: TypingDocs): WritableSession | undefined {
-  const s = docs.current();
-  return s === undefined || s.readOnly || gateVerdict(s.versionReport()) !== "ok" ? undefined : s;
-}
+// The document's doors live in docs.ts (D-D7-A.3: no kind in them, so the host holds them without naming one); the drivers
+// keep reaching them here.
+export { type TypingDocs, writable, type WritableSession } from "../docs";
 
 const tapPointersQ = defineQuery([Pointer, LocalPointer]);
 
@@ -77,6 +55,9 @@ export function tapNote(world: World, pid: string, isNote: (e: Entity) => boolea
 export interface NoteTypingOptions {
   readonly world: World;
   readonly docs: TypingDocs;
+  /** The note's cells: its writing (`{ text, seeds }`, live-written and committed whole) and its other props (the seed). The object hands its own (D-D7-A.3). */
+  readonly ink: Component<{ text: string; seeds: string }>;
+  readonly props: Component<{ seed?: number }>;
   /** A fresh seed for a glyph just written (`Math.random` unless a test says). */
   readonly fresh?: () => number;
 }
@@ -108,7 +89,7 @@ function sameHand(a: Ink, b: Ink, noteSeed: number): boolean {
 }
 
 export function createNoteTyping(opts: NoteTypingOptions): NoteTyping {
-  const { world, docs } = opts;
+  const { world, docs, ink: NOTE_INK, props: NOTE_PROPS } = opts;
   const fresh = opts.fresh ?? freshSeed;
   let editing: Entity | undefined;
   let open = false;

@@ -11,6 +11,7 @@ export * from "./host/index";
 export * from "./compose/index";
 export * from "./kinds/index";
 export * from "./object";
+export { NO_DOCS, type TypingDocs, type WritableSession, writable } from "./docs";
 export * from "./theme";
 export * from "./shaders";
 export { BLUE_NOISE_SIZE, blueNoise } from "./assets/blue-noise.gen";

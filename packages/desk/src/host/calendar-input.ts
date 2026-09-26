@@ -16,15 +16,16 @@
 // drew (the builder's `heldToWorld`, as core maps `HeldPointer`). The world half is objects/calendar-writing.ts (the sessions) and
 // the `PadSelection` fact this writes; objects/calendar-hand.ts marks it on the pad each frame.
 
-import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, guardedTransaction, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, Size, TouchesExact, type World } from "@ice/core";
+import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, guardedTransaction, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, setWidgetProps, Size, TouchesExact, type World } from "@ice/core";
 import { dayOr, monthKeyOf, PadSelection } from "../calendar/data";
 import { isSpan } from "../calendar/events";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
 import { inMonth, keyOf, monthGrid, monthOfDay } from "../calendar/month";
 import type { EventLine } from "../calendar/print";
 import { dayBox, sheetOf } from "../calendar/sheet";
-import { type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, type Pads, partAt, sheetOnScreen } from "../kinds/calendar";
-import type { CalendarWriting } from "../objects/calendar-writing";
+import { CALENDAR_KIND, type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, partAt, sheetOnScreen } from "../kinds/calendar";
+import type { KindDriver } from "../kinds/world";
+import { CALENDAR_TYPE, Calendar, type CalendarDriver } from "../objects/calendar";
 import { type TypingDocs, writable } from "../objects/typing";
 import type { EditorLease, NoteEditor } from "./editor";
 
@@ -35,17 +36,12 @@ export interface CalendarInputOptions {
   readonly geometryOf: (e: Entity) => unknown;
   readonly hand: () => { readonly entity: Entity; readonly landing: boolean; readonly frame: { readonly cx: number; readonly cy: number; readonly s: number } } | undefined;
   readonly heldToWorld: (e: Entity, x: number, y: number) => readonly [number, number] | undefined;
-  readonly isPad: (e: Entity) => boolean;
   readonly editor: NoteEditor;
-  readonly writing: CalendarWriting;
-  readonly pads: () => Pads | undefined;
+  /** The desk's drivers by object type (D-D7-A.3): this is the CALENDAR's DOM half and joins the calendar's (`CalendarDriver`) — none, no input. */
+  readonly driver: (type: string) => KindDriver | undefined;
   readonly docs: TypingDocs;
-  /** The calendar kind's look (the highlighters a band is drawn in). */
-  readonly look: () => CalendarObjectLook | undefined;
-  /** The pad's props as the world holds them (its pen, its month, its week start). */
-  readonly props: (e: Entity) => Readonly<Record<string, unknown>>;
-  /** Write a pad's props (its month) — ONE transaction, off the undo stack: a roll is not an edit (D-D3t-c.5). */
-  readonly setProps: (e: Entity, props: Readonly<Record<string, unknown>>) => void;
+  /** A kind's look as the desk composed it, by kind name (the highlighters a band is drawn in). */
+  readonly look: (kind: string) => unknown;
   readonly law?: CalendarLaw;
   /** The hand's clock (the caret's blink, the wipe): `performance.now` unless a test says. */
   readonly now?: () => number;
@@ -90,8 +86,20 @@ export function caretIndexAt(line: EventLine, sx: number, sy: number): number {
   return Math.max(0, Math.min(best, t.length));
 }
 
-export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
-  const { container, world, editor, writing } = opts;
+export function createCalendarInput(opts: CalendarInputOptions): CalendarInput | undefined {
+  const cal = opts.driver(CALENDAR_TYPE) as CalendarDriver | undefined;
+  if (cal === undefined) return undefined;   // no calendar kind on this desk: no days, no pen
+  const { container, world, editor } = opts;
+  const { writing, pads, isPad } = cal;
+  const look = (): CalendarObjectLook | undefined => opts.look(CALENDAR_KIND) as CalendarObjectLook | undefined;
+  /** The pad's props as the world holds them (its pen, its month, its week start). */
+  const propsOf = (e: Entity): Readonly<Record<string, unknown>> => (world.isAlive(e) ? ((world.get(e, Calendar.groups[0]?.component as never) as Record<string, unknown> | undefined) ?? {}) : {});
+  /** Write a pad's props (its month) — ONE transaction, off the undo stack: a roll is not an edit (D-D3t-c.5). */
+  const setProps = (e: Entity, props: Readonly<Record<string, unknown>>): void => {
+    const session = writable(opts.docs);
+    if (session === undefined || !world.isAlive(e)) return;
+    try { setWidgetProps(session.store, world, e, props, { undoable: false }); } catch { /* refused (the prop's schema, the guard): the month stays */ }
+  };
   const law = opts.law ?? CALENDAR;
   const clock = opts.now ?? (() => performance.now());
   /** The pad the editor is lent for (its days, its line), or null. */
@@ -112,7 +120,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
     opts.wake();
   };
   const dropSel = (e: Entity): void => { if (world.isAlive(e) && world.has(e, PadSelection)) world.removeComponent(e, PadSelection); opts.wake(); };
-  const printLines = (e: Entity): readonly EventLine[] => { const g = G(e); return g === undefined ? [] : (opts.pads()?.printOf(e, g.shown)?.lines ?? []); };
+  const printLines = (e: Entity): readonly EventLine[] => { const g = G(e); return g === undefined ? [] : (pads()?.printOf(e, g.shown)?.lines ?? []); };
   const runOf = (e: Entity): readonly [number, number] | null => {
     const s = selOf(e);
     const a = dayOr(s?.anchor ?? "");
@@ -121,7 +129,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
   };
   const monthOfPad = (e: Entity): number | undefined => G(e)?.shown;
   /** Turn a pad to a month: its durable month, one transaction off the undo stack (the local rolls it there). */
-  const turnTo = (e: Entity, month: number): void => { if (monthOfPad(e) !== month) opts.setProps(e, { month: monthKeyOf(month) }); };
+  const turnTo = (e: Entity, month: number): void => { if (monthOfPad(e) !== month) setProps(e, { month: monthKeyOf(month) }); };
 
   // ---- the lease: the ONE editor's keys and value while the calendar holds it
   const lease: EditorLease = {
@@ -232,10 +240,10 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
     if (g !== undefined && a === b && !inMonth(monthGrid(g.shown, g.weekStart), a)) { turnTo(e, monthOfDay(a)); return false; }
     let ink: string;
     if (b > a) {
-      const names = Object.keys(opts.look()?.print?.highlighters ?? {});
-      const spans = (opts.pads()?.entries(e) ?? []).filter((ev) => ev.id !== DRAFT_ID && isSpan(ev)).length;
+      const names = Object.keys(look()?.print?.highlighters ?? {});
+      const spans = (pads()?.entries(e) ?? []).filter((ev) => ev.id !== DRAFT_ID && isSpan(ev)).length;
       ink = names.length > 0 ? (names[spans % names.length] as string) : "yellow";
-    } else ink = String(opts.props(e).pen ?? "felt");
+    } else ink = String(propsOf(e).pen ?? "felt");
     if (!writing.beginNew(e, a, b, ink)) return false;
     setSel(e, {});
     // too small to write on: the pad comes to the hand first (the editor rides it)
@@ -271,7 +279,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
     opts.wake();
   };
   const goToday = (e: Entity): void => {
-    const today = opts.pads()?.today();
+    const today = pads()?.today();
     if (today === undefined) return;
     setSel(e, { anchor: keyOf(today), focus: keyOf(today) });
     turnTo(e, monthOfDay(today));
@@ -317,7 +325,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
     if (held !== undefined) {
       // in hand: through the pose the last frame drew — the pad in hand, or nothing (the desk behind is soft)
       const h = opts.hand();
-      if (h === undefined || h.entity !== held || h.landing || !opts.isPad(held)) return null;
+      if (h === undefined || h.entity !== held || h.landing || !isPad(held)) return null;
       const at = opts.heldToWorld(held, (px - h.frame.cx) / h.frame.s, (py - h.frame.cy) / h.frame.s);
       const g = G(held);
       if (at === undefined || g === undefined) return null;
@@ -332,7 +340,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
     world.query(padsQ).each((b) => {
       for (const row of b) {
         const e = b.entity(row);
-        if (!opts.isPad(e)) continue;
+        if (!isPad(e)) continue;
         const g = G(e);
         if (g === undefined) continue;
         const part = partAt(g, wx, wy, printLines(e), law);
@@ -413,7 +421,7 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
   container.addEventListener("click", onClick, { capture: true });
   container.addEventListener("dblclick", onDbl, { capture: true });
 
-  return {
+  const input: CalendarInput = {
     caret: () => (writing.current() === null ? null : { index: caretIndex, t0: caretT0, wipe }),
     selectDays(e, anchor, focus) { setSel(e, { anchor: keyOf(anchor), focus: keyOf(focus) }); lendFor(e); },
     selectEntry(e, entry) { setSel(e, { entry }); lendFor(e); },
@@ -426,6 +434,9 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput {
       container.removeEventListener("click", onClick, { capture: true });
       container.removeEventListener("dblclick", onDbl, { capture: true });
       editor.release(lease);
+      if (cal.input === input) cal.input = undefined;
     },
   };
+  cal.input = input;   // the driver's hand reads this half's caret; the driver disposes it
+  return input;
 }

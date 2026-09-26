@@ -27,7 +27,7 @@ export { askTurn, bookAngle, bookFrame, type BookPose, type Books, createBooks, 
 export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperFrame, paperProgram, paperReach, paperKind } from "./paper";
 export { createPrints, type FlickWitness, PHOTO_KIND, photoFrame, photoKind, PhotoKind, type PhotoKindOptions, type PhotoPose, photoProgram, photoReach, PRINT_RETURN_MS, printExtent, printRect, type PrintRest, type Prints } from "./photo";
 export { type BlobStore, createMemoryBlobStore, type DecodedPicture, hashBytes, type PictureDecoder, RGBA_TYPE, type StoredBlob } from "../photo/blobs";
-export { type DataChildren, FLUX_REST, type HeldContext, type HeldToolDef, isObjectKind, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, type OpenBinding, rectFrame, rectOf, type StratumName, stringProp } from "./world";
+export { type DataChildren, FLUX_REST, type HeldContext, type HeldToolDef, isObjectKind, type KindDriver, type KindDriverHost, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, type OpenBinding, rectFrame, rectOf, type StratumName, stringProp } from "./world";
 // the hand's pose (design-015 §8, D4b): the reading size, the pose between the desk and the hand, the pose as a camera
 export { carryOf, focusOf, HELD_USER_REST, type HeldPose, type HeldUser, type HeldViewport, heldCamera, heldFrame, heldPose, HOLD, type HomePose, homePose, isNarrow, type ReadingTarget, readingTarget } from "../hold/pose";
 // the text stack's seam and the note's writing (D2c, design-015 §6.1)

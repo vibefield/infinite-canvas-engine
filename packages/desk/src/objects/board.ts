@@ -12,9 +12,10 @@
 
 import { p } from "@ice/core";
 import { MARKERS, StrokePrefab } from "../board/data";
-import { boardKind } from "../kinds/board";
+import { type BoardInk, type BoardObjectLook, boardKind } from "../kinds/board";
 import { defineObject } from "../object";
 import { BOARD } from "../theme";
+import { createBoardPen } from "./pen";
 
 /** The dry-erase markers a board is written with (BOARD.md §3) — names; the inks are the host's (board/data.ts). */
 export { MARKERS, type MarkerName } from "../board/data";
@@ -36,4 +37,9 @@ export const Board = defineObject({
   interaction: { selectable: true, movable: true, resizable: true, snap: "both", drop: "never" },
   // its strokes and wipes are its DATA (D3t-a): the catalog stamps, gates and migrates their prefab with the board's own
   data: [StrokePrefab],
+  // the whiteboard in hand (D3t-a): its PEN — the hand onto the board kind's state, each stroke ONE transaction out of the frame (D-D7-A.3)
+  drivers: (h) => createBoardPen({
+    world: h.world, docs: h.docs, ink: () => h.local as BoardInk | undefined, look: () => h.look() as BoardObjectLook | undefined, isBoard: h.isKind,
+    heldToWorld: h.heldToWorld, geometryOf: h.geometryOf, props: Board.groups[0]?.component,
+  }),
 });

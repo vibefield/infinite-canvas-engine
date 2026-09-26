@@ -26,8 +26,7 @@
 // and the rest commits the turn with the place; a press on a print in the AIR catches it where it is drawn (the pick asks
 // what the kind draws lifted first), and a print carried, gliding or flying home paints above its siblings like a `Grab`.
 
-import { CancelRequest, ChildOf, defineQuery, Drag, type Entity, GestureActive, GestureCancelled, GestureEnded, GestureFailed, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, PressWheel, Size, Captures, Watches, type World } from "@ice/core";
-import { Photo } from "./photo";
+import { CancelRequest, ChildOf, type Component, defineQuery, Drag, type Entity, GestureActive, GestureCancelled, GestureEnded, GestureFailed, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, PressWheel, Size, Captures, Watches, type World } from "@ice/core";
 import type { Prints } from "../kinds/photo";
 import { type TypingDocs, writable } from "./typing";
 
@@ -35,6 +34,8 @@ export interface PhotoCarryOptions {
   readonly world: World;
   /** The document a rest commits into — the facade's `engine.docs`. */
   readonly docs: TypingDocs;
+  /** The print's props cell (its `angle`) — the object hands its own (D-D7-A.3); absent, a rest commits no turn. */
+  readonly props?: Component | undefined;
   /** The photo kind's state on this desk (undefined before it is made). */
   readonly prints: () => Prints | undefined;
   /** Is this entity a print (the desk's builder knows each entity's kind). */
@@ -46,6 +47,8 @@ export interface PhotoCarryOptions {
 }
 
 export interface PhotoCarry {
+  /** Nothing to follow (D7 #14): no print in a hand, no press on the desk, no rest owed by the kind. */
+  idle(): boolean;
   /** Once a frame, before the kinds' clocks: the hands onto the bodies, and last frame's rests into their transactions. */
   follow(now: number): void;
   /** The prints in a hand now. */
@@ -78,7 +81,7 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
     const session = writable(docs);
     const size = world.get(e, Size);
     if (session === undefined || size === undefined || !world.isAlive(e)) return false;
-    const group = Photo.groups[0]?.component;
+    const group = opts.props;
     const props = group !== undefined ? (world.get(e, group as never) as Record<string, unknown> | undefined) : undefined;
     try {
       guardedTransaction(session.store, world, (tx) => {
@@ -143,6 +146,14 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
         held.delete(e);
         wheel.delete(e);
       }
+    },
+    idle() {
+      if (held.size > 0 || (opts.prints()?.owed() ?? 0) > 0) return false;
+      let pressed = false;
+      world.query(pointersQ).each((b) => { for (const r of b) if ((world.read(b.entity(r), PointerButtons).buttons & 1) !== 0) pressed = true; });
+      if (pressed) return false;
+      cancelStamp = world.resourceStamp(CancelRequest);   // a cancel while idle cancels nothing: the stamp stays current
+      return true;
     },
     held: () => [...held],
     commits: () => commits,

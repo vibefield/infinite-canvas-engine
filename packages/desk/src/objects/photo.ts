@@ -9,9 +9,10 @@
 // comes to rest. Offered to a mini mat (`provides`) for D2b's nesting.
 
 import { p } from "@ice/core";
-import { photoKind, printExtent } from "../kinds/photo";
+import { photoKind, printExtent, type Prints } from "../kinds/photo";
 import { defineObject } from "../object";
 import { PHOTO } from "../photo/photo";
+import { createPhotoCarry } from "./carry";
 
 /** The print's durable type id. */
 export const PHOTO_TYPE = "desk.photo";
@@ -32,4 +33,6 @@ export const Photo = defineObject({
   // the wheel TURNS a print held in a hand (PHOTO.md; D3t-a — core cedes that pointer's wheel to it, `PressWheel`)
   interaction: { selectable: true, movable: false, resizable: false, snap: "both", wheelTurns: true },
   provides: [PHOTO_TYPE],
+  // the prints' CARRY (D3w): the hands onto the photo kind's bodies, each rest ONE transaction out of the frame (D-D7-A.3)
+  drivers: (h) => createPhotoCarry({ world: h.world, docs: h.docs, prints: () => h.local as Prints | undefined, isPrint: h.isKind, refused: h.refused, props: Photo.groups[0]?.component }),
 });

@@ -142,6 +142,88 @@ module.exports = {
       to: { path: "^packages/desk/src/objects/" },
     },
     {
+      name: "desk-seam-never-imports-a-kind",
+      comment:
+        "design-015 §3 + D7 #5 (D-D7-A.3): the desk's SEAM — the composition (compose/), the host (host/), the hold and the " +
+        "marks — wires kinds only through what a kind DECLARES in `defineObject` (its kind, its local, its drivers) and never " +
+        "names one, so a third-party kind plugs in by declaring, exactly as the reference kinds do. Nothing under " +
+        "compose|host|hold|marks imports a reference kind's module — objects/*, kinds/<kind>.ts or a kind's own folder — at " +
+        "runtime (a type is a word, not a wire: type-only edges pass). Three named exceptions carry their own rules below: " +
+        "host/editor.ts (the note's DOM half — the desk's ONE focused editor; DOM lives only under host/, so it cannot live " +
+        "with its kind), host/calendar-input.ts (the calendar's DOM half, the same reason) and compose/builder.ts (the mini mat " +
+        "is the frame's kind: the builder nests frames through its insides). The debt behind the two DOM exceptions is a " +
+        "kind-declared input lease.",
+      severity: "error",
+      from: {
+        path: "^packages/desk/src/(compose|host|hold|marks)/",
+        pathNot: ["^packages/desk/src/host/(editor|calendar-input|print)\\.ts$", "^packages/desk/src/compose/builder\\.ts$"],
+      },
+      to: {
+        path: [
+          "^packages/desk/src/objects/",
+          "^packages/desk/src/(paper|board|notebook|calendar|photo|minimat)/",
+          "^packages/desk/src/kinds/(paper|board|notebook|calendar|photo|minimat)\\.ts$",
+        ],
+        dependencyTypesNot: ["type-only"],
+      },
+    },
+    {
+      name: "desk-seam-builder-nests-only-the-mini-mat",
+      comment: "D-D7-A.3's first exception, bounded: the builder may reach the mini mat's insides (the frame's own kind) and no other kind.",
+      severity: "error",
+      from: { path: "^packages/desk/src/compose/builder\\.ts$" },
+      to: {
+        path: [
+          "^packages/desk/src/objects/",
+          "^packages/desk/src/(paper|board|notebook|calendar|photo)/",
+          "^packages/desk/src/kinds/(paper|board|notebook|calendar|photo)\\.ts$",
+        ],
+        dependencyTypesNot: ["type-only"],
+      },
+    },
+    {
+      name: "desk-seam-editor-is-the-notes-dom-half",
+      comment: "D-D7-A.3's second exception, bounded: the ONE focused editor is the note's DOM half and may reach the note's driver and the paper's writing — no other kind.",
+      severity: "error",
+      from: { path: "^packages/desk/src/host/editor\\.ts$" },
+      to: {
+        path: [
+          "^packages/desk/src/objects/(?!note\\.ts$|typing\\.ts$|index\\.ts$)",
+          "^packages/desk/src/(board|notebook|calendar|photo|minimat)/",
+          "^packages/desk/src/kinds/(board|notebook|calendar|photo|minimat)\\.ts$",
+        ],
+        dependencyTypesNot: ["type-only"],
+      },
+    },
+    {
+      name: "desk-seam-print-is-the-calendars-raster-half",
+      comment: "D-D7-A.3's fourth exception, bounded: the calendar's print is rasterised with Canvas2D, which lives only under host/ — host/print.ts may reach the calendar's print and tiles and no other kind.",
+      severity: "error",
+      from: { path: "^packages/desk/src/host/print\\.ts$" },
+      to: {
+        path: [
+          "^packages/desk/src/objects/",
+          "^packages/desk/src/(paper|board|notebook|photo|minimat)/",
+          "^packages/desk/src/kinds/(paper|board|notebook|calendar|photo|minimat)\\.ts$",
+        ],
+        dependencyTypesNot: ["type-only"],
+      },
+    },
+    {
+      name: "desk-seam-calendar-input-is-the-calendars-dom-half",
+      comment: "D-D7-A.3's third exception, bounded: the calendar's DOM half may reach the calendar's driver, its data and its kind — no other kind.",
+      severity: "error",
+      from: { path: "^packages/desk/src/host/calendar-input\\.ts$" },
+      to: {
+        path: [
+          "^packages/desk/src/objects/(?!calendar\\.ts$|calendar-writing\\.ts$|typing\\.ts$|index\\.ts$)",
+          "^packages/desk/src/(paper|board|notebook|photo|minimat)/",
+          "^packages/desk/src/kinds/(paper|board|notebook|photo|minimat)\\.ts$",
+        ],
+        dependencyTypesNot: ["type-only"],
+      },
+    },
+    {
       name: "devtools-only-core-kernel-strata",
       comment:
         "design-002 §6 (amended 2026-07-13): devtools reads core + kernel and WRAPS " +

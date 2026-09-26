@@ -4,12 +4,12 @@
 // process-global): an app lists them in `createCanvasEngine({ widgets })` and the desk layer
 // registers their kinds with the ground.
 export { MINIMAT_TYPE, MiniMat, VINYLS, type VinylName } from "./minimat";
-export { NOTE_INK, NOTE_PROPS, NOTE_TYPE, Note, PAPERS, type PaperName, PENS, type PenName } from "./note";
+export { NOTE_INK, NOTE_PROPS, NOTE_TYPE, Note, type PaperDriver, PAPERS, type PaperName, PENS, type PenName } from "./note";
 export { createNoteTyping, type NoteTyping, type NoteTypingOptions, type TypingDocs } from "./typing";
 // the whiteboard and its data children (D3w)
 export { BOARD_TYPE, Board, MARKERS, type MarkerName, TIPS } from "./board";
 // the desk calendar and its data children (D3w)
-export { CALENDAR_TYPE, Calendar, TAPES, type TapeName } from "./calendar";
+export { CALENDAR_TYPE, Calendar, type CalendarDriver, type CalendarInputDoors, TAPES, type TapeName } from "./calendar";
 export { addEvent, calEventOf, CalendarEvent, dayOr, daySlot, EVENT_TYPE, EventPrefab, type EventRow, type EventSpec, monthKeyOf, monthOfKey, NotePin, PadSelection, PIN_TYPE, PinPrefab, pinnedNotes, pinNote, PinsNote } from "../calendar/data";
 export { keyOf as keyOfDay } from "../calendar/month";
 // the desk calendar at work (D3t-c): its writing sessions, its hand

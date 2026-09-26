@@ -48,7 +48,7 @@ function rig(props: Record<string, unknown> = {}, readOnly?: () => boolean) {
     ? ce.docs
     : { current: () => { const s = ce.docs.current(); return s === undefined ? undefined : { store: s.store, liveWriter: s.liveWriter, readOnly: readOnly(), versionReport: s.versionReport }; } };
   const pen = createBoardPen({
-    world: ce.world, docs, ink: () => ink, look: () => look, isBoard: (e) => e === board,
+    world: ce.world, docs, ink: () => ink, look: () => look, isBoard: (e) => e === board, props: Board.groups[0]?.component,
     heldToWorld: (e, x, y) => (e === board ? [340 + x, 260 + y] : undefined), geometryOf: (e) => (e === board ? G : undefined),
   });
   let now = 1000;
@@ -173,5 +173,19 @@ describe("the pen and a read-only document (D7 #1: the writer's gate)", () => {
     expect(r.pen.commits()).toBe(0);
     expect(r.cancels()).toBe(1);
     expect(r.cap()).toBe("black");
+  });
+});
+
+describe("the pen idles at rest (D7 #14)", () => {
+  it("nothing in hand: idle; a board in hand: following until it is put down and the hand is empty", () => {
+    const r = rig();
+    r.frame();
+    expect(r.pen.idle()).toBe(true);
+    r.ce.ops.open(r.board);
+    r.frame();
+    expect(r.pen.idle()).toBe(false);
+    r.ce.ops.putDown();
+    for (let i = 0; i < 200 && !r.pen.idle(); i++) r.frame();
+    expect(r.pen.idle()).toBe(true);
   });
 });

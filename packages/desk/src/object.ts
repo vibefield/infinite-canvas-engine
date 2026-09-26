@@ -7,7 +7,10 @@
 // `objectKindOf(widgetTypeFor(world, PrefabId.id))`, never a second registry.
 
 import { defineWidget, type WidgetContainerDef, type WidgetDef, type WidgetType } from "@ice/core";
-import { isObjectKind, type ObjectKind } from "./kinds/world";
+import { isObjectKind, type KindDriver, type KindDriverHost, type ObjectKind } from "./kinds/world";
+
+/** A kind's drivers on one desk, made by the host from what it lends (D7 #5, D-D7-A.3). Undefined: the kind has none. */
+export type DriverFactory = (host: KindDriverHost) => KindDriver | undefined;
 
 /** What an object declares: a widget definition without a view, plus its KIND. */
 export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "openable" | "defaultSize" | "container" | "heldTools" | "heldTool"> {
@@ -17,13 +20,22 @@ export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "opena
   readonly size?: { readonly w: number; readonly h: number };
   /** A container object — the mini mat: what it accepts and the FACE its inside shows through (`portal` insets). */
   readonly container?: WidgetContainerDef;
+  /**
+   * The kind's DRIVERS (D7 #5): the hand onto its state — a pen, a carry, a leaf, a writing session — made once per desk by
+   * the host from what it lends (`KindDriverHost`) and ticked before the kinds' clocks. The object hands its own components to
+   * its driver here, so no driver need import its object back. Absent: the kind is looked at and moved, never worked in.
+   */
+  readonly drivers?: DriverFactory;
 }
+
+/** The drivers behind each compiled object — read back by the host through `driversOf`, never a second registry of kinds. */
+const DRIVERS = new WeakMap<WidgetType, DriverFactory>();
 
 /** Compile an object through `defineWidget` — one door, one registry. */
 export function defineObject(def: ObjectDef): WidgetType {
-  const { kind, size, container, ...rest } = def;
+  const { kind, size, container, drivers, ...rest } = def;
   if (!isObjectKind(kind)) throw new Error(`desk: defineObject("${def.type}") — \`kind\` is not a desk kind (kinds/world.ts \`ObjectKind\`: a program with resolve · record · hit · reach)`);
-  return defineWidget({
+  const widget = defineWidget({
     ...rest,
     object: kind,
     stratum: kind.stratum,
@@ -35,10 +47,17 @@ export function defineObject(def: ObjectDef): WidgetType {
     ...(size !== undefined ? { defaultSize: size } : {}),
     ...(container !== undefined ? { container } : {}),
   });
+  if (drivers !== undefined) DRIVERS.set(widget, drivers);
+  return widget;
 }
 
 /** The kind behind a widget type, or undefined: not an object, or a binding that is not a desk kind. */
 export function objectKindOf(widget: WidgetType | undefined): ObjectKind | undefined {
   if (widget === undefined || widget.object === undefined) return undefined;
   return isObjectKind(widget.object) ? widget.object : undefined;
+}
+
+/** The drivers an object declared (`ObjectDef.drivers`), or undefined: none, or not an object of this desk. */
+export function driversOf(widget: WidgetType | undefined): DriverFactory | undefined {
+  return widget === undefined ? undefined : DRIVERS.get(widget);
 }

@@ -203,6 +203,15 @@ describe("the hand marks each pad from the user's selection (objects/calendar-ha
     const other = r.ce.ops.spawnWidget("desk.calendar", { x: 2000, y: 0, props: { month: "2026-09" }, undoable: false });
     expect(r.pads.state(other).slot).toBe(0);   // the forgotten pad's slot, free again
   });
+
+  it("the hand idles only on a desk with no pad (D7 #14): a pad drawn keeps it following (its peek reads the pointer each frame); a selection wakes it", () => {
+    const r = rig();
+    expect(r.hand.idle()).toBe(false);   // the rig's pad is on the desk
+    r.pads.forget?.(r.pad);
+    expect(r.hand.idle()).toBe(true);
+    r.ce.world.addComponent(r.pad, PadSelection, { anchor: "2026-09-02", focus: "2026-09-02", entry: 0 as Entity, home: 0 });
+    expect(r.hand.idle()).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------- the parts, through the desk eye

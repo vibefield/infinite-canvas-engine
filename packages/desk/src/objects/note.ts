@@ -7,10 +7,13 @@
 // at, never square (`tiltOf`), and the hand of a glyph with no stored seed. Things, movable,
 // selectable, snapping both ways; it offers itself to a mini mat (`provides`) — D2b's drop-into.
 
-import { type Component, p } from "@ice/core";
+import { type Component, type Entity, p } from "@ice/core";
 import { paperKind } from "../kinds/paper";
+import type { KindDriver } from "../kinds/world";
 import { defineObject } from "../object";
+import type { Writing } from "../paper/writing";
 import { PAPER } from "../theme";
+import { createNoteTyping, type NoteTyping } from "./typing";
 
 /** The pens a note is written with (STICKY.md §3) — names; the inks are the host's. */
 export const PENS = ["felt", "ball", "fountain", "red"] as const;
@@ -37,12 +40,28 @@ export const Note = defineObject({
   kind: paperKind(),
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
   provides: [NOTE_TYPE],
+  // TYPING IS A GESTURE (design-015 §6.1; D2c): the note's driver is its typing session — the world half the ONE focused editor
+  // (host/editor.ts) drives; it follows nothing on its own (D-D7-A.3)
+  drivers: (h): PaperDriver => ({
+    typing: createNoteTyping({ world: h.world, docs: h.docs, ink: NOTE_INK, props: NOTE_PROPS }),
+    writing: () => h.local as Writing | undefined,
+    isNote: h.isKind,
+    follow: () => {},
+    idle: () => true,
+  }),
 });
 
 /** The note's writing as a cell (`desk.note:ink` — `{ text, seeds }`): what a typing session live-writes and commits whole. */
 export const NOTE_INK = groupOf("ink") as Component<{ text: string; seeds: string }>;
 /** The note's other props (`desk.note:props` — `{ pen, paper, seed }`). */
 export const NOTE_PROPS = groupOf("props") as Component<{ pen: string; paper: string; seed: number }>;
+
+/** The note's driver (`driversOf(Note)`): its typing session, its writing local and its membership — what the editor asks of it. */
+export interface PaperDriver extends KindDriver {
+  readonly typing: NoteTyping;
+  readonly writing: () => Writing | undefined;
+  readonly isNote: (e: Entity) => boolean;
+}
 
 function groupOf(name: string): Component {
   const g = Note.groups.find((q) => q.name === name);

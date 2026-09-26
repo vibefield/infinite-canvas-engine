@@ -6,7 +6,7 @@
 import { type CanvasEngine, ChildOf, defineQuery, type Entity, guardedTransaction, LocalPointer, Pointer, PointerPart, TouchesExact } from "@ice/core";
 import type { CalendarGeometry, DeskLayerHandle, Pads } from "@ice/desk";
 import { sheetDayBox, sheetOnScreen } from "@ice/desk";
-import { addEvent, CalendarEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/desk/objects";
+import { addEvent, CALENDAR_TYPE, type CalendarDriver, CalendarEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/desk/objects";
 
 export interface CalendarApi {
   /** Write an entry on pad `pad` — ONE undoable transaction; its entity id. */
@@ -53,6 +53,8 @@ const b64 = (bytes: Uint8Array): string => { let bin = ""; for (let i = 0; i < b
 export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): CalendarApi {
   const { world } = engine;
   const pads = (): Pads | undefined => handle.local("calendar") as Pads | undefined;
+  /** The calendar's driver (D-D7-A.3): its writing, its hand and, once made, its DOM half. */
+  const cal = (): CalendarDriver | undefined => handle.driver(CALENDAR_TYPE) as CalendarDriver | undefined;
   const monthOf = (key: string): number => { const m = monthOfKey(key); if (m === undefined) throw new Error(`desk: "${key}" is not a month (YYYY-MM)`); return m; };
   return {
     write(pad, start, end, text, ink) {
@@ -82,7 +84,7 @@ export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): Cale
     },
     marks: (pad) => pads()?.marksOf(pad as Entity) ?? null,
     writing() {
-      const c = handle.calendar();
+      const c = cal();
       const w = c?.writing.current();
       if (c === undefined || w === undefined || w === null) return null;
       return { pad: w.pad as number, entry: (w.entry ?? 0) as number, draft: w.draft?.text ?? null, text: c.writing.text(), open: c.writing.open(), commits: c.writing.commits() };
@@ -96,7 +98,7 @@ export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): Cale
       return b === null ? null : { x: b.x, y: b.y, w: b.w, h: b.h };
     },
     partAt(x, y) {
-      const r = handle.calendar()?.input.partAtClient(x, y) ?? null;
+      const r = cal()?.input?.partAtClient(x, y) ?? null;
       if (r === null) return null;
       return { pad: r.pad as number, part: r.part.part, day: r.part.day !== undefined ? keyOfDay(r.part.day) : null, entry: r.part.line?.event.id ?? null };
     },

@@ -22,10 +22,13 @@
 // writing's flux, stamped on ONE clock, `performance.now()` (the rAF clock lags wall time headless).
 
 import { Active, Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
-import { type NoteTyping, tapNote } from "../objects/typing";
+import { NOTE_TYPE, type PaperDriver } from "../objects/note";
+import { tapNote } from "../objects/typing";
+import type { KindDriver } from "../kinds/world";
+import { PEN_FACES } from "./ink";
 import type { PaperGeometry } from "../paper/paper";
 import type { HandLaw } from "../paper/text";
-import type { Writing } from "../paper/writing";
+import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 
 /** design-007's claim marker (`@ice/dom` KEYBOARD_CLAIM_ATTR — the desk may not import dom): the keymap cedes to a focused claim. */
 export const KEYBOARD_CLAIM_ATTR = "data-canvas-keyboard";
@@ -36,16 +39,13 @@ export interface NoteEditorOptions {
   /** The host's container (screen space): the editor goes in it, the taps are read on it. */
   readonly container: HTMLElement;
   readonly world: World;
-  readonly typing: NoteTyping;
-  /** The paper kind's writing on this desk (its caret, its wipe, its layouts). */
-  readonly writing: () => Writing | undefined;
+  /** The desk's drivers by object type (D-D7-A.3): the editor is the NOTE's DOM half and finds the note's (`PaperDriver`) — none, no editor. */
+  readonly driver: (type: string) => KindDriver | undefined;
   /** The builder's drawn geometry for an entity. */
   readonly geometryOf: (e: Entity) => unknown;
-  /** Is this entity a note (an object of the paper kind)? */
-  readonly isNote: (e: Entity) => boolean;
-  /** The hand's face for the platform's own layout of the text (arrow keys by line): family and weight. */
-  readonly font: { readonly family: string; readonly weight: number };
-  readonly hand: Pick<HandLaw, "size" | "lineHeight" | "pad">;
+  /** The hand's face for the platform's own layout of the text (arrow keys by line): family and weight (the paper's default face). */
+  readonly font?: { readonly family: string; readonly weight: number };
+  readonly hand?: Pick<HandLaw, "size" | "lineHeight" | "pad">;
   /** A session ends after this long without input, ms (1000). */
   readonly idleMs?: number;
   /** Ask the desk for a frame. */
@@ -96,8 +96,13 @@ export interface NoteEditor {
 }
 
 
-export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
-  const { container, world, typing } = opts;
+export function createNoteEditor(opts: NoteEditorOptions): NoteEditor | undefined {
+  const { container, world } = opts;
+  const paper = opts.driver(NOTE_TYPE) as PaperDriver | undefined;
+  if (paper === undefined) return undefined;   // no note kind on this desk: no editor
+  const typing = paper.typing;
+  const font = opts.font ?? PEN_FACES[DEFAULT_FACE] ?? { family: "Caveat", weight: 500 };
+  const hand = opts.hand ?? DEFAULT_HAND_LAW;
   const doc = container.ownerDocument;
   const clock = opts.now ?? (() => performance.now());
   const idleMs = opts.idleMs ?? 1000;
@@ -143,7 +148,7 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
   let lastScale = -1;
   let placed: { cx: number; cy: number; w: number; h: number; angle: number } | null = null;
 
-  const writing = (): Writing | undefined => opts.writing();
+  const writing = (): Writing | undefined => paper.writing();
   const caretToSelection = (): void => { if (current !== undefined) writing()?.caret(current, el.selectionStart, clock()); };
   const arm = (): void => {
     if (idle !== undefined) clearTimeout(idle);
@@ -173,9 +178,9 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
       lastScale = s;
       st.width = `${w}px`;
       st.height = `${h}px`;
-      st.padding = `${opts.hand.pad * s}px`;
-      st.font = `${opts.font.weight} ${opts.hand.size * s}px "${opts.font.family}"`;
-      st.lineHeight = `${opts.hand.lineHeight * opts.hand.size * s}px`;
+      st.padding = `${hand.pad * s}px`;
+      st.font = `${font.weight} ${hand.size * s}px "${font.family}"`;
+      st.lineHeight = `${hand.lineHeight * hand.size * s}px`;
     }
   };
 
@@ -220,7 +225,7 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
       st.width = `${p.w}px`;
       st.height = `${p.h}px`;
       st.padding = "0";
-      st.font = `${opts.font.weight} ${p.fontPx}px "${opts.font.family}"`;
+      st.font = `${font.weight} ${p.fontPx}px "${font.family}"`;
       st.lineHeight = `${p.h}px`;
     }
   };
@@ -243,7 +248,7 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
 
   const focus = (e: Entity, index?: number): boolean => {
     if (lent !== undefined) endLease();
-    if (!world.isAlive(e) || !opts.isNote(e) || writing()?.isPinned(e) === true) return false;
+    if (!world.isAlive(e) || !paper.isNote(e) || writing()?.isPinned(e) === true) return false;
     if (!typing.begin(e)) return false;
     if (current !== e) {
       current = e;
@@ -306,7 +311,7 @@ export function createNoteEditor(opts: NoteEditorOptions): NoteEditor {
   };
   /** The note the tap landed on: the stack's exact hit for this pointer (none with an object in hand — `tapNote`, D7 #4); the writing's topmost drawn note when the pointer is gone. */
   const noteUnder = (type: string, id: number, w: { x: number; y: number }): Entity | undefined => {
-    const t = tapNote(world, type === "touch" ? `touch:${id}` : "mouse", opts.isNote);
+    const t = tapNote(world, type === "touch" ? `touch:${id}` : "mouse", paper.isNote);
     if (t.found) return t.note;
     return writing()?.noteAt(w.x, w.y);
   };

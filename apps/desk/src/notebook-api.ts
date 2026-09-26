@@ -6,7 +6,7 @@
 
 import { type CanvasEngine, ChildOf, type Entity } from "@ice/core";
 import { type Books, type DeskLayerHandle, INK_H, INK_W, NOTEBOOK_PAGE } from "@ice/desk";
-import { BoardStroke, decodePoints, decodeTimes, Notebook } from "@ice/desk/objects";
+import { BoardStroke, decodePoints, decodeTimes, Notebook, NOTEBOOK_TYPE, type NotebookHand } from "@ice/desk/objects";
 
 export interface NotebookApi {
   /** A book's strokes in sibling order: tool, pen, page, the path's points (page units), how many timed samples. */
@@ -48,7 +48,7 @@ export function notebookApi(engine: CanvasEngine, handle: DeskLayerHandle): Note
       return { alpha, inked };
     },
     hand() {
-      const h = handle.notebook();
+      const h = handle.driver(NOTEBOOK_TYPE) as NotebookHand | undefined;   // the notebook's driver (D-D7-A.3)
       if (h === undefined) return null;
       const live = h.live();
       const t = h.turning();

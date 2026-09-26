@@ -42,6 +42,8 @@ export interface CalendarHandOptions {
 export interface CalendarHand {
   /** Once a frame, before the kinds' clocks: the marks on every pad; the bar's today acted on. */
   follow(now: number): void;
+  /** Nothing to follow (D7 #14): no pad on the desk, nothing in hand, no press, no selection, no note carried, no glide owed. */
+  idle(): boolean;
   /** Leave the document's commit door (the landing's extender). */
   dispose(): void;
 }
@@ -346,6 +348,14 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
       for (const pad of marked) if (!next.has(pad)) pads.mark(pad, undefined);
       marked = next;
       for (const pad of [...homes.keys()]) if (!world.isAlive(pad) || !world.has(pad, PadSelection)) homes.delete(pad);
+    },
+    idle() {
+      if (heldEntity(world) !== undefined || hands.size > 0 || peeked.size > 0 || marked.size > 0 || homes.size > 0 || glides.length > 0) return false;
+      if (opts.pads()?.busy() === true) return false;
+      if (world.firstOf(selectionsQ) !== undefined || world.firstOf(grabbedQ) !== undefined) return false;
+      let pressed = false;
+      world.query(pointersQ).each((b) => { for (const r of b) if (((world.get(b.entity(r), PointerButtons)?.buttons ?? 0) & 1) !== 0) pressed = true; });
+      return !pressed;
     },
     dispose() {
       leaveDoor?.();

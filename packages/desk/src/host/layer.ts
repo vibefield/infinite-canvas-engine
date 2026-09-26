@@ -33,7 +33,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, type Entity, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, setWidgetProps, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, type Entity, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -51,31 +51,19 @@ import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GlyphAtlasMeta, MatConfig, PlateName } from "../mat/layout";
 import { MAT_SHADER_FILES, matShaders } from "../mat/shaders";
 import { MARKS_SHADER_FILES, marksShaders } from "../marks/shaders";
-import { objectKindOf } from "../object";
+import { driversOf, objectKindOf } from "../object";
 import type { ObjectSprings } from "../springs";
 import { blueNoise } from "../assets/blue-noise.gen";
-import { PAPER_KIND, type PaperWriting } from "../kinds/paper";
-import type { KindLocal } from "../kinds/world";
+import type { PaperWriting } from "../kinds/paper";
+import type { KindDriver, KindLocal } from "../kinds/world";
 import { worldChildren } from "../compose/children";
 import type { BlobStore } from "../photo/blobs";
 import { decodePicture } from "./picture";
-import { createNoteTyping, type NoteTyping, type TypingDocs, writable } from "../objects/typing";
-import { createPhotoCarry } from "../objects/carry";
-import { type BoardPen, createBoardPen } from "../objects/pen";
-import { createNotebookHand, type NotebookHand } from "../objects/leaf";
-import { BOARD_KIND, type BoardInk, type BoardObjectLook } from "../kinds/board";
-import { PHOTO_KIND, type Prints } from "../kinds/photo";
-import { type Books, NOTEBOOK_KIND } from "../kinds/notebook";
+import { NO_DOCS, type TypingDocs } from "../docs";
 import type { TextRaster } from "../paper/raster";
-import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 import { createNoteEditor, type NoteEditor } from "./editor";
 import { printRaster } from "./print";
-import { type CalendarInput, createCalendarInput } from "./calendar-input";
-import { type CalendarHand, createCalendarHand } from "../objects/calendar-hand";
-import { type CalendarWriting, createCalendarWriting } from "../objects/calendar-writing";
-import { Calendar } from "../objects/calendar";
-import { CALENDAR_KIND, type CalendarObjectLook, type Pads } from "../kinds/calendar";
-import { PEN_FACES } from "./ink";
+import { createCalendarInput } from "./calendar-input";
 import type { InsideView } from "../minimat/inside";
 import { shaderText } from "../shaders";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
@@ -211,10 +199,6 @@ export interface DeskLayerHandle {
   setGlyphs(bytes: Uint8Array<ArrayBuffer>, meta: GlyphAtlasMeta): void;
   /** Pin the mat for a still (a parity scene): the clocks, the plate, the gobo's opacity; `wind` > 0 unpins the clocks. `null` unpins everything. */
   pinMat(pin: MatPin | null): void;
-  /** Pin a committed ink raster on a note (r8 rows, `w × h`): allocated in the paper pass's pages in call order. Returns false when the pages are full or the pass is not here. */
-  pinRaster(entity: Entity, bytes: Uint8Array<ArrayBuffer>, meta: { readonly w: number; readonly h: number }): boolean;
-  /** Every raster forgotten and the pages carved afresh (a scene reload — the oracle's `reset(true)`). */
-  clearRasters(): void;
   /** Pin a note's writing lines for its far-LOD chip (a still states them; the live text's layout is D2c's); `undefined` unpins. */
   pinGreek(entity: Entity, writing: GreekPin | undefined): void;
   /** Pin an object's spring targets for a still (a scene's `held` = `{ lift: 1 }`, never a `Grab`); `undefined` unpins. */
@@ -267,20 +251,16 @@ export interface DeskLayerHandle {
   /** The frame dirty and not yet drawn, or a kind still moving on its own (a print in the air — D3w): a rig's settle witness. */
   dirty(): boolean;
   readonly builder: DeskBuilder;
-  /** The note's writing on this desk (D2c): its layouts, rasters, caret and wipe — `undefined` when no note kind is registered. */
-  writing(): Writing | undefined;
   /** A kind's own state on this desk by kind name (D3w: a print's body, a book's or a pad's pinned pose) — `undefined` when it keeps none. */
   local(name: string): KindLocal | undefined;
   /** The one focused editor (D2c) — `undefined` when no note kind is registered. */
   editor(): NoteEditor | undefined;
-  /** The note's typing session (D2c): the claim, the live cell, the commit. */
-  readonly typing: NoteTyping;
-  /** The whiteboard's pen in hand (D3t-a): the stroke laid, the commits — `undefined` when no board kind is registered. */
-  pen(): BoardPen | undefined;
-  /** The notebook in hand (D3t-b): its pen's stroke, the commits — `undefined` when no notebook kind is registered. */
-  notebook(): NotebookHand | undefined;
-  /** The desk calendar at work (D3t-c): its writing (the sessions), its DOM half (the days, the pen), its hand (the marks) — undefined without the calendar kind or an editor. */
-  calendar(): { readonly writing: CalendarWriting; readonly input: CalendarInput; readonly hand: CalendarHand } | undefined;
+  /**
+   * A kind's DRIVER on this desk by object type (D-D7-A.3) — what the object declared in `defineObject` (the note's typing, the
+   * board's pen, the notebook's hand, the print's carry, the calendar's writing + hand + DOM half), or undefined. A rig casts to
+   * the kind's own driver type (`PaperDriver`, `CalendarDriver`); the desk itself never names one.
+   */
+  driver(type: string): KindDriver | undefined;
   /** Where the selection menu goes (D4a): the marks' box around the selection, published after each frame it moved. */
   readonly selection: SelectionSource;
   /**
@@ -359,7 +339,6 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (local !== undefined) locals.set(k.name, local);
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
-    const writing = (): Writing | undefined => locals.get(PAPER_KIND) as Writing | undefined;
     const readMarquee = ctx.readMarquee;
     const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}) });
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
@@ -394,63 +373,35 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     });
     motionQuery?.addEventListener("change", syncMotion);   // armed once `compose` exists (D7: never a listener over a binding in its TDZ)
 
-    // the note's typing session and the ONE focused editor, in the container (screen space) — D2c
-    const typing = createNoteTyping({ world, docs: opts.docs ?? { current: () => undefined } });
-    const face = PEN_FACES[DEFAULT_FACE] ?? { family: "Caveat", weight: 500 };
-    const editor = locals.has(PAPER_KIND)
-      ? createNoteEditor({
-          container: host.container, world, typing, writing, geometryOf: (e) => builder.geometryOf(e),
-          isNote: (e) => builder.kindOf(e)?.name === PAPER_KIND, font: face, hand: DEFAULT_HAND_LAW,
-          wake: () => compose.wake("ink"),
-          ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
-        })
-      : undefined;
-    // the prints' carry (D3w): the hands onto the photo kind's bodies, each rest ONE transaction out of the frame
-    const carry = locals.has(PHOTO_KIND)
-      ? createPhotoCarry({
-          world, docs: opts.docs ?? { current: () => undefined }, prints: () => locals.get(PHOTO_KIND) as Prints | undefined, isPrint: (e) => builder.kindOf(e)?.name === PHOTO_KIND,
-          refused: (e) => builder.meetTape(e),   // a taped print answers a drag with the tape's give (D4a)
-        })
-      : undefined;
-    // the whiteboard in hand (D3t-a): its pen — the hand onto the board kind's state, each stroke ONE transaction out of the frame
-    const pen = locals.has(BOARD_KIND)
-      ? createBoardPen({
-          world, docs: opts.docs ?? { current: () => undefined }, ink: () => locals.get(BOARD_KIND) as BoardInk | undefined,
-          look: () => compose.look(BOARD_KIND) as BoardObjectLook | undefined, isBoard: (e) => builder.kindOf(e)?.name === BOARD_KIND,
-          heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), geometryOf: (e) => builder.geometryOf(e),
-        })
-      : undefined;
-    // the notebook in hand (D3t-b): its pen and its leaves — the hand onto the notebook kind's state, each stroke ONE transaction out of the frame
-    const leaf = locals.has(NOTEBOOK_KIND)
-      ? createNotebookHand({
-          world, docs: opts.docs ?? { current: () => undefined }, books: () => locals.get(NOTEBOOK_KIND) as Books | undefined,
-          isBook: (e) => builder.kindOf(e)?.name === NOTEBOOK_KIND, heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), geometryOf: (e) => builder.geometryOf(e),
-        })
-      : undefined;
-    // the desk calendar at work (D3t-c): its writing through the ONE editor (lent to it), the days read at event time, its hand's marks
-    const padsLocal = (): Pads | undefined => locals.get(CALENDAR_KIND) as Pads | undefined;
-    const calPropsOf = (e: Entity): Readonly<Record<string, unknown>> => (world.isAlive(e) ? ((world.get(e, Calendar.groups[0]?.component as never) as Record<string, unknown> | undefined) ?? {}) : {});
-    const calWriting = locals.has(CALENDAR_KIND) ? createCalendarWriting({ world, docs: opts.docs ?? { current: () => undefined }, pads: padsLocal }) : undefined;
-    const calInput = calWriting !== undefined && editor !== undefined
-      ? createCalendarInput({
-          container: host.container, world, geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y),
-          isPad: (e) => builder.kindOf(e)?.name === CALENDAR_KIND, editor, writing: calWriting, pads: padsLocal, docs: opts.docs ?? { current: () => undefined },
-          look: () => compose.look(CALENDAR_KIND) as CalendarObjectLook | undefined, props: calPropsOf,
-          setProps: (e, props) => {
-            const session = opts.docs === undefined ? undefined : writable(opts.docs);
-            if (session === undefined || !world.isAlive(e)) return;
-            try { setWidgetProps(session.store, world, e, props, { undoable: false }); } catch { /* refused (the prop's schema, the guard): the month stays */ }
-          },
-          wake: () => compose.wake("ink"),
-        })
-      : undefined;
-    const calHand = calWriting !== undefined
-      ? createCalendarHand({
-          world, docs: opts.docs ?? { current: () => undefined }, pads: padsLocal, writing: calWriting, caret: () => calInput?.caret() ?? null,
-          geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), isPad: (e) => builder.kindOf(e)?.name === CALENDAR_KIND,
-          isNote: (e) => builder.kindOf(e)?.name === PAPER_KIND,
-        })
-      : undefined;
+    // THE KINDS' DRIVERS (D7 #5, D-D7-A.3): each object declared its own in `defineObject` — a pen, a carry, a leaf, the calendar's
+    // writing and hand, the note's typing — and the host makes them here from what it lends, never naming a kind; a third-party
+    // openable kind with held tools gets its driver the same way. Ticked before the kinds' clocks; idle ones skipped (D7 #14)
+    const docs: TypingDocs = opts.docs ?? NO_DOCS;
+    const drivers = new Map<string, KindDriver>();
+    const kindNamed = (name: string): ((e: Entity) => boolean) | undefined => (objectKinds.some((k) => k.name === name) ? (e) => builder.kindOf(e)?.name === name : undefined);
+    for (const t of types) {
+      const make = driversOf(t);
+      const k = objectKindOf(t);
+      if (make === undefined || k === undefined) continue;
+      const d = make({
+        world, docs, local: locals.get(k.name), look: () => compose.look(k.name), isKind: (e) => builder.kindOf(e)?.name === k.name, kind: kindNamed,
+        geometryOf: (e) => builder.geometryOf(e), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), hand: () => builder.hand(),
+        refused: (e) => builder.meetTape(e), wake: () => compose.wake("ink"),
+      });
+      if (d !== undefined) drivers.set(t.type, d);
+    }
+    const driver = (type: string): KindDriver | undefined => drivers.get(type);
+    // the ONE focused editor, in the container (screen space) — the note's DOM half (D2c); the calendar's DOM half is lent it (D3t-c)
+    const editor = createNoteEditor({
+      container: host.container, world, driver, geometryOf: (e) => builder.geometryOf(e), wake: () => compose.wake("ink"),
+      ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
+    });
+    if (editor !== undefined) {
+      createCalendarInput({
+        container: host.container, world, driver, editor, docs, geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(),
+        heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), look: (kind) => compose.look(kind), wake: () => compose.wake("ink"),
+      });
+    }
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
     const perf = { ticks: 0, ms: 0, frames: 0, frameMs: 0 };
@@ -460,10 +411,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       flush(w) {
         const now = performance.now();
         const drawn = compose.redraws();
-        carry?.follow(now);
-        pen?.follow(now);
-        leaf?.follow(now);
-        calHand?.follow(now);
+        for (const d of drivers.values()) if (d.idle?.() !== true) d.follow(now);
         let want = false;
         // the kinds whose own state moved (D6): their records are remade this build; the rest stand — told every tick, an empty
         // set included (no word at all would make the builder ask every object whether a kind lifts it)
@@ -573,16 +521,6 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         }
         compose.wake("pin");
       },
-      pinRaster(entity, bytes, meta) {
-        // through the note's writing: allocated NOW, in call order (the oracle's texels), and given back when the note leaves the desk
-        const ok = writing()?.pin(entity, bytes, meta) ?? false;
-        compose.wake("pin");
-        return ok;
-      },
-      clearRasters() {
-        writing()?.reset();
-        compose.wake("pin");
-      },
       pinGreek(entity, lines) {
         // the greeked lines alone ride the builder's asset (the committed raster lives in the note's writing since D2c)
         builder.pin(entity, lines === undefined ? undefined : { greek: lines });
@@ -633,13 +571,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       lastInputs: () => compose.lastInputs(),
       dirty: () => compose.dirty() || moving,
       builder,
-      writing,
       local: (name) => locals.get(name),
       editor: () => editor,
-      typing,
-      pen: () => pen,
-      notebook: () => leaf,
-      calendar: () => (calWriting !== undefined && calInput !== undefined && calHand !== undefined ? { writing: calWriting, input: calInput, hand: calHand } : undefined),
+      driver,
       selection: {
         anchor: () => anchorOf(),
         subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -648,8 +582,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       dispose() {
         disposed = true;
         listeners.clear();
-        calInput?.dispose();
-        calHand?.dispose();
+        for (const d of drivers.values()) d.dispose?.();   // the calendar's disposes its DOM half
         editor?.dispose();
         for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);

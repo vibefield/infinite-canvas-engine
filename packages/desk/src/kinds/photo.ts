@@ -129,6 +129,8 @@ export interface Prints extends KindLocal {
   lifted(e: Entity): boolean;
   /** Prints that came to rest away from their facts since the last ask — the carry commits each in ONE transaction. */
   rests(): PrintRest[];
+  /** How many rests wait to be asked for (D7 #14: the carry never idles over one). */
+  owed(): number;
   /** The carry committed `e`'s rest (or could not): the body leads until the facts show it (or a second runs out). */
   settle(e: Entity, committed: boolean): void;
   /** A still's pose on `e` (undefined unpins). */
@@ -303,6 +305,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
     },
     lifted: (e) => prints.get(e)?.leads === true,
     rests: () => queue.splice(0, queue.length),
+    owed: () => queue.length,
     settle(e, committed) {
       const pr = prints.get(e);
       if (pr === undefined) return;

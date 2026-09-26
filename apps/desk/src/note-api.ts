@@ -8,7 +8,7 @@
 import { type CanvasEngine, defineQuery, Editing, type Entity } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
 import { DEFAULT_BLEED, DEFAULT_HAND_LAW, layoutText, type NoteRasterInfo, type PaperKind, type WritingStats } from "@ice/desk";
-import { NOTE_INK } from "@ice/desk/objects";
+import { NOTE_INK, NOTE_TYPE, type PaperDriver } from "@ice/desk/objects";
 import { deskText } from "./faces";
 
 export interface NoteApi {
@@ -44,6 +44,8 @@ const claimedQ = defineQuery([Editing]);
 export function noteApi(engine: CanvasEngine, handle: DeskLayerHandle): NoteApi {
   const { world } = engine;
   const E = (id: number) => id as Entity;
+  /** The note's driver (D-D7-A.3): its typing session and its writing. */
+  const paper = (): PaperDriver | undefined => handle.driver(NOTE_TYPE) as PaperDriver | undefined;
   const editor = () => handle.editor();
   return {
     fontReady: (face = "caveat") => deskText().ready(face),
@@ -60,16 +62,16 @@ export function noteApi(engine: CanvasEngine, handle: DeskLayerHandle): NoteApi 
     },
     ink: (id) => (world.isAlive(E(id)) ? ((world.get(E(id), NOTE_INK) as { text: string; seeds: string } | undefined) ?? null) : null),
     docInk: (id) => (engine.docs.current()?.store.getComponent(E(id), NOTE_INK) as { text: string; seeds: string } | undefined) ?? null,
-    sessionOpen: () => handle.typing.open(),
+    sessionOpen: () => (paper()?.typing.open() ?? false),
     canUndo: () => engine.docs.current()?.store.canUndo() ?? false,
-    caret() { const c = handle.writing()?.caretOf(); return c === undefined ? null : { entity: c.entity as number, index: c.index, on: c.on }; },
-    wipe: (id) => handle.writing()?.wipeOf(E(id)) ?? null,
+    caret() { const c = paper()?.writing()?.caretOf(); return c === undefined ? null : { entity: c.entity as number, index: c.index, on: c.on }; },
+    wipe: (id) => paper()?.writing()?.wipeOf(E(id)) ?? null,
     editorRect() { const el = editor()?.element; if (el === undefined || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
     editorPlacement: () => editor()?.placement() ?? null,
     editorFocused: () => { const el = editor()?.element; return el !== undefined && document.activeElement === el; },
-    layout(id) { const L = handle.writing()?.layoutOf(E(id)); return L === undefined ? null : { glyphs: L.glyphs.length, lines: L.lines.length, positions: [...L.positions], ascent: L.ascent }; },
-    raster: (id) => handle.writing()?.rasterOf(E(id)) ?? null,
-    writing: () => handle.writing()?.stats() ?? null,
+    layout(id) { const L = paper()?.writing()?.layoutOf(E(id)); return L === undefined ? null : { glyphs: L.glyphs.length, lines: L.lines.length, positions: [...L.positions], ascent: L.ascent }; },
+    raster: (id) => paper()?.writing()?.rasterOf(E(id)) ?? null,
+    writing: () => paper()?.writing()?.stats() ?? null,
     pages: () => (handle.ground()?.pass("paper") as PaperKind | undefined)?.pass.shelves.stats ?? null,
     rasterBytes(text, w, h, band, face, seed) {
       const raster = deskText();

@@ -46,7 +46,7 @@ export function bookRig(props: Record<string, unknown> = {}, vp: { readonly w: n
     part: (e, x, y) => (e === book && G !== undefined ? kind.hit(G, -90 + x, y) : null),
   };
   const hand = createNotebookHand({
-    world: ce.world, docs: ce.docs, books: () => books, isBook: (e) => e === book,
+    world: ce.world, docs: ce.docs, books: () => books, isBook: (e) => e === book, props: Notebook.groups[0]?.component,
     heldToWorld: (e, x, y) => (e === book ? [-90 + x, y] : undefined), geometryOf: (e) => (e === book ? G : undefined),
     ...(defer !== undefined ? { defer } : {}),
   });

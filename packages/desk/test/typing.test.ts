@@ -8,7 +8,7 @@
 import { createCanvasEngine, decodeEnvelope, defineQuery, Editing, encodeEnvelope, type Entity, guardedTransaction, heldEntity, LocalPointer, NO_MODS, Pointer, TouchesExact, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { decodeSeeds, seedsFor } from "../src/paper/seeds";
-import { Board, NOTE_INK, Note } from "../src/objects";
+import { Board, NOTE_INK, NOTE_PROPS, Note } from "../src/objects";
 import { createNoteTyping, tapNote } from "../src/objects/typing";
 
 function makeDesk() {
@@ -18,7 +18,7 @@ function makeDesk() {
   const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
   const note = (text = ""): Entity => ce.ops.spawnWidget("desk.note", { x: 0, y: 0, props: { seed: 7, text }, undoable: false });
   let next = 5000;
-  const typing = createNoteTyping({ world: ce.world, docs: ce.docs, fresh: () => next++ });
+  const typing = createNoteTyping({ ink: NOTE_INK, props: NOTE_PROPS, world: ce.world, docs: ce.docs, fresh: () => next++ });
   const session = () => { const s = ce.docs.current(); if (s === undefined) throw new Error("no doc"); return s; };
   const doc = (e: Entity) => session().store.getComponent(e, NOTE_INK) as { text: string; seeds: string } | undefined;
   const live = (e: Entity) => ce.world.get(e, NOTE_INK) as { text: string; seeds: string } | undefined;
@@ -217,7 +217,7 @@ describe("typing · the writer's gate (D7 #1) — a read-only document is not wr
     const { ce, world, step, note, live, doc } = makeDesk();
     const a = note("base");
     step();
-    const typing = createNoteTyping({ world, docs: gated(ce, () => true) });
+    const typing = createNoteTyping({ ink: NOTE_INK, props: NOTE_PROPS, world, docs: gated(ce, () => true) });
     expect(typing.begin(a)).toBe(false);
     expect(world.hasTag(a, Editing)).toBe(false);
     expect(typing.editing()).toBeUndefined();
@@ -231,7 +231,7 @@ describe("typing · the writer's gate (D7 #1) — a read-only document is not wr
     const a = note("base");
     step();
     let readOnly = false;
-    const typing = createNoteTyping({ world, docs: gated(ce, () => readOnly) });
+    const typing = createNoteTyping({ ink: NOTE_INK, props: NOTE_PROPS, world, docs: gated(ce, () => readOnly) });
     expect(typing.begin(a)).toBe(true);
     keys(typing, "base", "!!");
     expect(live(a)?.text).toBe("base!!");
@@ -258,7 +258,7 @@ describe("typing · the writer's gate (D7 #1) — a read-only document is not wr
     newer.world.sync();
     const a = newer.world.firstOf(defineQuery([NOTE_INK])) as Entity | undefined;
     if (a === undefined) throw new Error("the note did not open");
-    const typing = createNoteTyping({ world: newer.world, docs: newer.docs });
+    const typing = createNoteTyping({ ink: NOTE_INK, props: NOTE_PROPS, world: newer.world, docs: newer.docs });
     expect(typing.begin(a)).toBe(false);
     expect(newer.world.hasTag(a, Editing)).toBe(false);
     expect((newer.world.get(a, NOTE_INK) as { text: string }).text).toBe("base");

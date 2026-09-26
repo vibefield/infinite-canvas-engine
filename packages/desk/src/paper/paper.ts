@@ -9,7 +9,7 @@
 // how many texels a note's ink is drawn with at a zoom, with hysteresis so a
 // note re-rasters on a band crossing, never on a frame.
 
-import { HERO_PROJECTOR, type ProjectorSpec } from "../mat/projector";
+import { type Lamp, lampOf } from "../mat/lamp";
 import { sdRoundBox } from "../sdf";
 import { PAPER } from "../theme";
 import { hashHand } from "./text";
@@ -31,14 +31,8 @@ export interface PaperLaw {
 }
 export const DEFAULT_PAPER_LAW: PaperLaw = PAPER;
 
-/** The lamp over the desk in WORLD units: where it stands on the plane, and how high above it. */
-export interface Lamp { readonly x: number; readonly y: number; readonly h: number }
-
-/** The gobo projector as a lamp on the world plane (mat.wgsl `desk_of` inverted: world = (desk − origin) / metresPerUnit). */
-export function lampOf(plane: { readonly originX: number; readonly originZ: number; readonly metresPerUnit: number; readonly deskY: number }, p: ProjectorSpec = HERO_PROJECTOR): Lamp {
-  const m = plane.metresPerUnit;
-  return { x: (p.position[0] - plane.originX) / m, y: (p.position[2] - plane.originZ) / m, h: (p.position[1] - plane.deskY) / m };
-}
+// The lamp is the MAT's (mat/lamp.ts — D7 #5): every kind's shadow falls from it; the paper keeps its door for its importers.
+export { type Lamp, lampOf } from "../mat/lamp";
 
 /** A note's tilt from its seed: within ± `maxDeg`, radians — never square, never the same twice. */
 export const tiltOf = (seed: number, maxDeg: number): number => ((hashHand(seed, 11)[1] - 0.5) * 2 * maxDeg * Math.PI) / 180;

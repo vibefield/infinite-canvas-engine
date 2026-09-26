@@ -14,19 +14,20 @@
 // stroke is laid, the stroke lands first. Samples are a frame apart (the ingest folds a frame's moves into one — the
 // prototype's coalesced events are owed).
 
-import { ChildOf, defineQuery, type Entity, guardedTransaction, heldEntity, HeldPointer, HeldPress, HeldTool, LocalPointer, Pointer, PointerButtons, PointerScreen, setWidgetProps, type World } from "@ice/core";
+import { ChildOf, type Component, defineQuery, type Entity, guardedTransaction, heldEntity, HeldPointer, HeldPress, HeldTool, LocalPointer, Pointer, PointerButtons, PointerScreen, setWidgetProps, type World } from "@ice/core";
 import { type BoardGeometry, toSurface } from "../board/board";
 import { addStroke, BoardStroke, encodePoints, strokeSeed } from "../board/data";
 import { ERASER_TOOL, markerTool, StrokeBuilder, TIP_NAMES, type TipName, TIPS } from "../board/stroke";
 import { type BoardInk, type BoardObjectLook, ERASER_TOOL_ID, inkOfTool } from "../kinds/board";
 import { linear } from "../mat/night";
-import { Board } from "./board";
 import { type TypingDocs, writable } from "./typing";
 
 export interface BoardPenOptions {
   readonly world: World;
   /** The document a stroke commits into — the facade's `engine.docs`. */
   readonly docs: TypingDocs;
+  /** The board's props cell (its `cap`, its `tip`) — the object hands its own (D-D7-A.3); absent, the marker is black, the tip a bullet. */
+  readonly props?: Component | undefined;
   /** The board kind's state on this desk (undefined before it is made). */
   readonly ink: () => BoardInk | undefined;
   /** The board kind's look for the theme in force (the markers' inks). */
@@ -42,6 +43,8 @@ export interface BoardPenOptions {
 }
 
 export interface BoardPen {
+  /** Nothing to follow (D7 #14): no board in hand, no stroke laid, no marker to lie down. */
+  idle(): boolean;
   /** Once a frame, before the kinds' clocks: the hand onto the board in hand, its stroke laid, lifted, committed. */
   follow(now: number): void;
   /** The stroke in hand: its board and how many samples so far; null when none. */
@@ -75,7 +78,7 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
 
   /** The capped marker's ink and tip, as the board's props hold them. */
   const propsOf = (b: Entity): { cap: string; tip: string } => {
-    const v = world.get(b, Board.groups[0]?.component as never) as { cap?: string; tip?: string } | undefined;
+    const v = opts.props === undefined ? undefined : (world.get(b, opts.props as never) as { cap?: string; tip?: string } | undefined);
     return { cap: v?.cap ?? "black", tip: v?.tip ?? "bullet" };
   };
   /** A desk point on board `b`'s melamine, as the cell stores it (world units from its top-left, f32). */
@@ -180,6 +183,7 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
         ...(screen !== undefined ? { screen: [screen.x, screen.y] as const, t: now } : {}),
       });
     },
+    idle: () => stroke === null && last === null && heldEntity(world) === undefined,
     live: () => (stroke === null ? null : { board: stroke.board, samples: stroke.points.length }),
     commits: () => commits,
   };
