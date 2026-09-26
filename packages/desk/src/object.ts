@@ -27,6 +27,8 @@ export function defineObject(def: ObjectDef): WidgetType {
     surface: "object",
     object: kind,
     stratum: kind.stratum,
+    // the kind that declares an opening is what `ops.open` may pick up (design-015 §8, D4b) — the ONE place the word is set
+    openable: kind.open !== undefined,
     ...(size !== undefined ? { defaultSize: size } : {}),
     ...(container !== undefined ? { container } : {}),
   });

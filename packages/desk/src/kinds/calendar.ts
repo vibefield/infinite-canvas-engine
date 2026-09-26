@@ -211,6 +211,17 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
     ...program,
     reach: calendarReach(law),
     local: (host: KindHost): Pads => createPads(host),
+    // THE OPENING (design-015 §8, D4b — Q-q): the month comes to the hand laid bare, flat under the pose's camera (the notes stuck
+    // to it ride along, as when the pad is carried); ‹ months ›, today and the pen are its tools — declared here, built at D3t
+    open: {
+      extent: (c) => c.rect,
+      tools: [
+        { id: "month:-1", label: "Previous month", keys: "←", glyph: "chevron-left" },
+        { id: "month:1", label: "Next month", keys: "→", glyph: "chevron" },
+        { id: "today", label: "Today", keys: "T", glyph: "today" },
+        { id: "pen", label: "The pen", keys: "P", glyph: "pen" },
+      ],
+    },
     resolve(ctx: ObjectContext): CalendarGeometry {
       const pads = ctx.local as Pads | undefined;
       const pose = pads?.state(ctx.entity).pose;

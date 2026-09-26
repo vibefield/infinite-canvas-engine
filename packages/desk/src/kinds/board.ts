@@ -212,6 +212,17 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
     ...program,
     reach: boardReach(law),
     local: (host: KindHost): BoardInk => createBoardInk(host),
+    // THE OPENING (design-015 §8, D4b): the board's face comes to the hand whole, flat under the pose's camera; the marker taken
+    // into the hand and the tools — four markers, the eraser, undo, redo (the tray merged into the bar, Q-o) — are D3t's
+    open: {
+      extent: (c) => c.rect,
+      tools: [
+        { id: "marker", label: "Markers", keys: "1–4", glyph: "pen" },
+        { id: "eraser", label: "Eraser", keys: "E", glyph: "eraser" },
+        { id: "undo", label: "Undo", keys: "⌘Z", glyph: "undo" },
+        { id: "redo", label: "Redo", keys: "⇧⌘Z", glyph: "redo" },
+      ],
+    },
     resolve(ctx: ObjectContext): BoardGeometry {
       const r = ctx.rect;
       return resolveBoard({ cx: r.cx, cy: r.cy, w: r.w, h: r.h }, { held: ctx.flux.lift, ring: ctx.flux.ring, fade: ctx.flux.fade }, ctx.lamp, law);

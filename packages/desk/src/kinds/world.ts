@@ -70,6 +70,45 @@ export interface ObjectFlux {
 /** A kind's answer to "what is under this world point" — the widget itself (`content`/`frame`), a part, or nothing. */
 export type ObjectHit = "content" | "frame" | (string & {});
 
+/** A slot of the held bar for a kind in hand (design-015 §8 — "the kind's tools take the middle"): DECLARED here, built at D3t. `glyph` names one of the bar's. */
+export interface HeldTool {
+  readonly id: string;
+  readonly label: string;
+  readonly keys?: string;
+  readonly glyph?: string;
+}
+
+/**
+ * The kind's OPENING (design-015 §8; D4b) — what "pick it up" means for this kind. `extent`: the OPEN rect in the object's
+ * own desk units, centred as its rect is and UNTURNED (the builder turns it with the object): a notebook's spread (twice the
+ * case's width, left of the spine), a board's face, a calendar's month — what the reading size fits into the view. `pose`: how
+ * the reading size is reached — `camera` (a flat kind, the default: the held slot's camera maps the extent to the held rect
+ * and the kind draws at rest) or `eye` (a thing with height: the camera keeps the desk's zoom and the kind RISES toward the
+ * desk eye by `ctx.held.grow`). `openness`: how far the kind's own open motion has come (0 shut … 1 open) — the put-down
+ * flies home once it is under 0.35 and lands once under 0.02 (absent: 0, a kind with no motion of its own). `spread`: a
+ * two-page extent that opens one page at a time on a portrait phone (Q-p). `tools`: the held bar's slots.
+ */
+export interface OpenBinding {
+  extent(ctx: Pick<ObjectContext, "rect" | "props">): ObjectRect;
+  readonly pose?: "camera" | "eye";
+  openness?(ctx: Pick<ObjectContext, "entity" | "local">): number;
+  readonly spread?: boolean;
+  readonly tools?: readonly HeldTool[];
+}
+
+/**
+ * What the builder hands the object IN HAND (D4b, beside its flux): the carry amount `e` (0 on the desk … 1 in hand — the
+ * lift's height, the focus behind), whether it should be OPEN (past 42 % of the pickup going up; never going down), the
+ * factor an `eye` kind must reach by rising (1 for a flat kind — the camera did it), and `snap` (a still: the open motion
+ * sits at its target, no spring).
+ */
+export interface HeldContext {
+  readonly e: number;
+  readonly open: boolean;
+  readonly grow: number;
+  readonly snap: boolean;
+}
+
 /**
  * Everything a kind is handed for one entity, one frame. The props are the widget type's group
  * fields as the builder cached them (refreshed from the change journal, never re-read per frame —
@@ -104,6 +143,8 @@ export interface ObjectContext {
   readonly local?: unknown;
   /** A container's inside, for its `record` (D2b): the content bounds, the view through its face, the children's chips. Absent = not a container, or `resolve`. */
   readonly inside?: InsideContext;
+  /** The object is IN HAND (D4b): its carry amount, its open target, the eye kind's rise. Absent = on the desk. */
+  readonly held?: HeldContext;
 }
 
 /** What a desk hands a kind's `local()` (D2c): its ROOT pass once the ground is made, and the host's text seam. */
@@ -188,6 +229,8 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   theme?(palette: Palette, name: ThemeName): L;
   /** The kind's own state on one desk (`ctx.local`) — made by the host once per desk; absent = none (D2c). */
   local?(host: KindHost): KindLocal;
+  /** The kind's OPENING (design-015 §8, D4b): what picking it up means. Absent = the object never opens (`ops.open` refuses it). */
+  readonly open?: OpenBinding;
 }
 
 /** The strata a kind may declare — re-exported beside the contract for a kind's author. */

@@ -35,6 +35,8 @@ import { lampDir, type Rigid, rigidOf } from "../notebook/place";
 import { NOTEBOOK_SHADER_FILES, notebookShaders } from "../notebook/shaders";
 import { coverFrame, type Frame, frameOf, type NotebookPose, relaxOf, specOf, swingOf } from "../notebook/shape";
 import { type ShaderText, shaderText } from "../shaders";
+import { settled, spring } from "../springs";
+import { HOLD } from "../hold/pose";
 import { MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../theme";
 import type { MarkFrame } from "../marks/layout";
 import { LayeredKind } from "./layer";
@@ -145,6 +147,8 @@ interface BookState {
   /** The carry's tilt (radians about x and y), sprung into the rect's motion; where the rect was. */
   tiltX: number; tiltXV: number; tiltY: number; tiltYV: number;
   lastX: number; lastY: number;
+  /** The cover IN HAND (D4b): its swing 0 shut … 1 open on the hand's spring, and its velocity. */
+  coverT: number; coverV: number;
   writer: MeshWriter | null;
   mesh: BuiltMesh | null;
   key: string;
@@ -158,7 +162,7 @@ export function createBooks(host: KindHost): Books {
   let woke = false;
   const state = (e: Entity): BookState => {
     let st = books.get(e);
-    if (st === undefined) { st = { id: next++, pose: undefined, tiltX: 0, tiltXV: 0, tiltY: 0, tiltYV: 0, lastX: Number.NaN, lastY: Number.NaN, writer: null, mesh: null, key: "", version: 0 }; books.set(e, st); }
+    if (st === undefined) { st = { id: next++, pose: undefined, tiltX: 0, tiltXV: 0, tiltY: 0, tiltYV: 0, lastX: Number.NaN, lastY: Number.NaN, coverT: 0, coverV: 0, writer: null, mesh: null, key: "", version: 0 }; books.set(e, st); }
     return st;
   };
   return {
@@ -246,7 +250,23 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       const st = books?.state(ctx.entity);
       const pin = st?.pose;
       const left = clamp(Math.round(numberProp(ctx.props, "spread", 0)), 0, sheets);
-      const open = pin?.open;
+      // IN HAND (design-015 §8, D4b): the cover swings toward its target on the hand's spring (a palm's — 1.4 Hz, ζ .78), snapped for
+      // a still; the swing is the kind's `openness`, which the builder reads to time the flight home. On the desk the cover is shut.
+      const held = ctx.held;
+      let cover: number | undefined;
+      if (st !== undefined) {
+        if (held === undefined) { st.coverT = 0; st.coverV = 0; }
+        else {
+          const target = held.open ? 1 : 0;
+          if (held.snap) { st.coverT = target; st.coverV = 0; }
+          else {
+            [st.coverT, st.coverV] = spring(st.coverT, st.coverV, target, HOLD.cover.hz, HOLD.cover.zeta, ctx.dt);
+            if (settled(st.coverT, st.coverV, target, 1e-3)) { st.coverT = target; st.coverV = 0; }
+          }
+          cover = st.coverT;
+        }
+      }
+      const open = cover !== undefined ? cover : pin?.open;
       const m: NotebookMotion = newMotion(sheets, left, open === true || (typeof open === "number" && open >= 0.5));
       if (typeof open === "number") { m.theta = open * Math.PI; m.fluttered = true; }
       if (pin?.turn) {
@@ -285,13 +305,17 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       const swing = Math.min(Math.max(swingOf(m.theta), 0), Math.PI);
       // biome-ignore lint/style/useExponentiationOperator: the lab's arithmetic (lab/notebook.ts `placementOf`), verbatim — it feeds a record
       const opening = law.lift.open * Math.pow(Math.sin(swing), 0.85);
-      const place = { cx: ctx.rect.cx, cy: ctx.rect.cy, angle, lift: m.lift * law.lift.held + m.hover * law.lift.hover + opening, tiltX: m.tiltX, tiltY: m.tiltY, zc: F.b + F.T / 2 };
+      const v = ctx.view;
+      const eye = eyeOf({ x: v.camX, y: v.camY, zoom: v.zoom }, { width: v.width, height: v.height }, law.eye);
+      // in hand the book RISES toward the desk eye (the pose is the eye's, D4b): a point z up reads H/(H − z) times its size, so
+      // z = H·(1 − 1/grow) is the reading size — the perspective of a book held close, not a zoomed camera's
+      const rise = held !== undefined && held.grow > 1 ? eye.h * (1 - 1 / held.grow) : 0;
+      const place = { cx: ctx.rect.cx, cy: ctx.rect.cy, angle, lift: m.lift * law.lift.held + m.hover * law.lift.hover + opening + rise, tiltX: m.tiltX, tiltY: m.tiltY, zc: F.b + F.T / 2 };
       const pose = withDesk(poseOf(m, law), place.lift);
       const built = books?.meshFor(ctx.entity, F, pose, law) ?? { mesh: buildMesh(new MeshWriter(), F, pose, law), version: 1 };
-      const v = ctx.view;
       return {
         frame: F, pose, mesh: built.mesh, version: built.version, rigid: rigidOf(place), lamp: lampDir(ctx.lamp, ctx.rect.cx, ctx.rect.cy, law.shadow.slopeMax),
-        theta: m.theta, ring: m.ring, eye: eyeOf({ x: v.camX, y: v.camY, zoom: v.zoom }, { width: v.width, height: v.height }, law.eye), fade: ctx.flux.fade,
+        theta: m.theta, ring: m.ring, eye, fade: ctx.flux.fade,
         cx: ctx.rect.cx, cy: ctx.rect.cy, angle,
       };
     },
@@ -316,6 +340,20 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       return pickNotebook(G.frame, G.pose, law, G.rigid, G.eye, wx, wy, G.mesh) === null ? null : "content";
     },
     frame: notebookFrame,
+    // THE OPENING (design-015 §8, D4b): the spread — twice the case's width, left of the spine — comes to the hand under the desk
+    // eye; the cover's swing is its motion; ‹ pages ›, the four pens and undo are its tools (declared here, built at D3t)
+    open: {
+      extent: (c) => ({ cx: c.rect.cx - c.rect.w / 2, cy: c.rect.cy, w: c.rect.w * 2, h: c.rect.h }),
+      pose: "eye",
+      spread: true,
+      openness: (c) => (c.local as Books | undefined)?.state(c.entity).coverT ?? 0,
+      tools: [
+        { id: "turn:-1", label: "Previous page", keys: "←", glyph: "chevron-left" },
+        { id: "turn:1", label: "Next page", keys: "→", glyph: "chevron" },
+        { id: "pen", label: "Pens", keys: "1–4", glyph: "pen" },
+        { id: "undo", label: "Undo", keys: "⌘Z", glyph: "undo" },
+      ],
+    },
     theme(palette: Palette, _name: ThemeName): NotebookObjectLook {
       const n = (palette as NotebookPalette).notebooks;
       if (n === undefined) return { covers: {}, ruleInk: [0, 0, 0, 0] };

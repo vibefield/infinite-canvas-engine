@@ -297,7 +297,11 @@ export class NotebookPass {
     const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
     this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, undefined, light, NO_GLYPHS));
     this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
-    this.knobs.set({ ...nbUniformValues(law, eyeValues(eye), view.dpr, colours.cast, colours.select, colours.ruleInk), ring: [law.ring.offset, this.debug, 0, 0] });
+    // the near plane above the tallest thing a book reaches: a book risen toward the eye in the hand (D4b) climbs past the 900 the law
+    // assumed at rest, and the plane follows it (the at-rest numbers are the same bytes: no book reaches past 900 lying down)
+    let top = 0;
+    for (const d of this.list) top = Math.max(top, worldBounds(d.rigid, d.mesh.min, d.mesh.max).hi[2]);
+    this.knobs.set({ ...nbUniformValues(law, eyeValues(eye, Math.max(900, top + 200)), view.dpr, colours.cast, colours.select, colours.ruleInk), ring: [law.ring.offset, this.debug, 0, 0] });
     this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
     let tris = 0;
     let shadowed = 0;
