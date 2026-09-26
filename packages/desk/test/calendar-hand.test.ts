@@ -169,6 +169,22 @@ describe("the hand marks each pad from the user's selection (objects/calendar-ha
     expect(r.ce.world.get(r.pad, PadSelection)).toMatchObject({ anchor: "2026-11-05", focus: "2026-11-05" });
     expect(r.undoSteps()).toBe(steps);                               // a roll is not an edit
   });
+
+  it("a hand's roll landed: the pad's hold on the month is released AT the commit, not when the document echoes it — a race lost to a peer cannot shadow the document (D7 #3)", () => {
+    const r = rig();
+    const SEP = monthIndex(2026, 9);
+    r.pads.sheets(r.pad, SEP);   // the draw path's word: the pad shows the document's month
+    // a click on the foot takes the whole month: the turn runs to its end and the month is the hand's to commit
+    expect(r.pads.grab(r.pad, "foot", PAD.W / 2, PAD.L, 0)).toBe(true);
+    r.pads.letGo(r.pad, 8);
+    let t = 8;
+    for (let i = 0; i < 600 && r.pads.rollOf(r.pad)?.pending !== SEP + 1; i++) { t += 16; r.pads.tick?.(t); }
+    expect(r.pads.rollOf(r.pad)).toMatchObject({ shown: SEP + 1, pending: SEP + 1, turn: null });
+    r.hand.follow(t);
+    r.flush();   // the commit — and the release, before any tick hears the document
+    expect((r.ce.world.get(r.pad, Calendar.groups[0]?.component as never) as { month: string }).month).toBe("2026-10");
+    expect(r.pads.rollOf(r.pad)?.pending).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------- the parts, through the desk eye

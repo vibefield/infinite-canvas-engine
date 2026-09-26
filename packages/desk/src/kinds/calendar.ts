@@ -300,7 +300,7 @@ export interface Pads extends KindLocal {
   letGo(e: Entity, now: number, cancel?: boolean): void;
   /** The hands' finished rolls since the last drain — each a month the document should now hold (the hand commits it). */
   rolled(): readonly { readonly e: Entity; readonly month: number }[];
-  /** A hand's roll the document refused (read-only): the pad rolls back to the document's month. */
+  /** The hand's roll is the document's business now — landed (it projects at the next sync) or refused: the pad follows the document from here. */
   unroll(e: Entity): void;
   /** The notes stuck to its pads that go with their months (D3t-c): not drawn, never picked (`KindLocal.veils`). */
   veils(): ReadonlySet<Entity>;

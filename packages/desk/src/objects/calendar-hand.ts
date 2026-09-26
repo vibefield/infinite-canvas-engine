@@ -260,16 +260,20 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
   };
   const leaveDoor = docs.extendCommits?.(landing);
 
-  /** A hand's finished roll: the document's month follows it — ONE transaction, off the undo stack; refused, the pad rolls back. */
+  /**
+   * A hand's finished roll: the document's month follows it — ONE transaction, off the undo stack. Landed or refused, the pad's
+   * hold on the month is released HERE (D7 #3, as the leaf does at leaf.ts): a landed month projects at the next sync and the
+   * pad already shows it; a refused one, or one that lost a race to a peer's roll, leaves the pad following the document — a
+   * `pending` held until the document echoed it exactly would shadow every later month the document takes.
+   */
   const commitRolls = (pads: Pads): void => {
     for (const { e, month } of pads.rolled()) {
       defer(() => {
         const session = writable(docs);
-        let ok = false;
         if (session !== undefined && world.isAlive(e)) {
-          try { setWidgetProps(session.store, world, e, { month: monthKeyOf(month) }, { undoable: false }); ok = true; } catch { ok = false; }
+          try { setWidgetProps(session.store, world, e, { month: monthKeyOf(month) }, { undoable: false }); } catch { /* refused (the prop's schema, the guard): the pad follows the document */ }
         }
-        if (!ok) pads.unroll(e);
+        pads.unroll(e);
       });
     }
   };

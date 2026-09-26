@@ -100,6 +100,19 @@ describe("a month turned BY HAND decides at its release", () => {
     expect(r.pending).toBeNull();
   });
 
+  it("a hand's roll committed, then the document's month moves ELSEWHERE (a peer's roll won the race): the pad follows the document, never a month it does not hold (D7 #3)", () => {
+    const { r, now } = handTurn(1, 0.4, 20, 20);
+    letGo(r, now, law, F);
+    run(r, SEP);
+    expect([r.shown, r.pending]).toEqual([SEP + 1, SEP + 1]);
+    // the document's month arrives as a peer's — two months back — and never as the hand's: the document spoke, the hold is over
+    run(r, SEP - 1);
+    expect([r.shown, r.pending, r.turn]).toEqual([SEP - 1, null, null]);
+    // and nothing shadows the document's later months
+    run(r, SEP + 3);
+    expect(r.shown).toBe(SEP + 3);
+  });
+
   it("a hand that stopped before letting go threw nothing: a fast pull then a pause falls back like a slow one", () => {
     const { r, now } = handTurn(1, 0.2, 2, 20);
     letGo(r, now, law, F);

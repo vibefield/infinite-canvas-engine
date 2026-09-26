@@ -39,15 +39,17 @@ export interface PadRoll {
   peek: number;
   peekV: number;
   peekOn: boolean;
-  /** A hand's finished roll asked of the document, not yet there. */
+  /** A hand's finished roll asked of the document, not yet there — held until the document SPEAKS (its month moves, to this or elsewhere). */
   pending: number | null;
   /** A hand's roll finished (the hand commits `shown`); cleared by whoever drains it. */
   rolled: boolean;
   /** The document's month as last seen. */
   durable: number | null;
+  /** The document's month as `stepRoll` last heard it (a move from it is the document speaking — D7 #3). */
+  heard: number | null;
 }
 
-export const newRoll = (): PadRoll => ({ shown: null, turn: null, peek: 0, peekV: 0, peekOn: false, pending: null, rolled: false, durable: null });
+export const newRoll = (): PadRoll => ({ shown: null, turn: null, peek: 0, peekV: 0, peekOn: false, pending: null, rolled: false, durable: null, heard: null });
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
@@ -131,7 +133,12 @@ export function letGo(r: PadRoll, now: number, law: CalendarLaw, F: PadFrame, ca
 export function stepRoll(r: PadRoll, durable: number, dt: number, law: CalendarLaw, F: PadFrame): boolean {
   if (r.shown === null) r.shown = durable;
   r.durable = durable;
-  if (r.pending !== null && durable === r.pending) r.pending = null;
+  // A hand's month is held only until the DOCUMENT speaks: its own word (the hand's commit landed) or another's (a peer's roll
+  // won the race, LWW) — either way the pad follows the document from here. Held until the document echoed it EXACTLY, a lost
+  // race left `pending` forever, and `targetOf` shadowed every later month the document took (D7 #3).
+  const spoke = r.heard !== null && durable !== r.heard;
+  r.heard = durable;
+  if (r.pending !== null && (durable === r.pending || spoke)) r.pending = null;
   let live = false;
   const peekT = r.peekOn && r.turn === null ? 1 : 0;
   [r.peek, r.peekV] = spring(r.peek, r.peekV, peekT, law.springs.peek[0], law.springs.peek[1], dt);
