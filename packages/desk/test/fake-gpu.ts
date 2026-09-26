@@ -29,12 +29,15 @@ export function installNavigatorGpu(format: GPUTextureFormat): Undo {
   return () => { if (was) Object.defineProperty(globalThis, "navigator", was); else Reflect.deleteProperty(globalThis, "navigator"); };
 }
 
-/** A render pass that logs what it is told, by label: `pipeline <label>`, `group <i> <label>`, `draw <args>`, `scissor <x,y,w,h>`. */
+/** A render pass that logs what it is told, by label: `pipeline <label>`, `group <i> <label>`, `draw <args>`, `scissor <x,y,w,h>` (and a mesh's `vertices <label>`, `indices <label>`, `drawIndexed <args>`). */
 export function recordingPass(log: string[]): GPURenderPassEncoder {
   return {
     setPipeline: (p: { label: string }) => log.push(`pipeline ${p.label}`),
     setBindGroup: (i: number, g: { label: string }) => log.push(`group ${i} ${g.label}`),
     draw: (...a: number[]) => log.push(`draw ${a.join(",")}`),
+    setVertexBuffer: (_slot: number, b: { label: string }) => log.push(`vertices ${b.label}`),
+    setIndexBuffer: (b: { label: string }) => log.push(`indices ${b.label}`),
+    drawIndexed: (...a: number[]) => log.push(`drawIndexed ${a.join(",")}`),
     setScissorRect: (x: number, y: number, w: number, h: number) => log.push(`scissor ${x},${y},${w},${h}`),
     setBlendConstant: () => {},
     end: () => log.push("end"),
@@ -58,6 +61,8 @@ export function fakeDevice(log: string[] = []): FakeGpu {
     createSampler: labelled,
     createShaderModule: (d: GPUShaderModuleDescriptor) => ({ ...labelled(d), getCompilationInfo: async () => ({ messages: [] }) }),
     createRenderPipelineAsync: async (d: GPURenderPipelineDescriptor) => labelled(d),
+    // (a texture's mips — photo/mips.ts, the notebook's and the calendar's paper — compile one synchronously)
+    createRenderPipeline: (d: GPURenderPipelineDescriptor) => ({ ...labelled(d), getBindGroupLayout: () => ({ label: `${d.label ?? ""} group` }) }),
     createBuffer: (d: GPUBufferDescriptor) => ({ ...labelled(d), size: d.size, destroy: () => {}, getMappedRange: () => new ArrayBuffer(0) }),
     createTexture: (d: GPUTextureDescriptor) => ({ ...labelled(d), createView: () => ({ label: `${d.label ?? ""} view` }), destroy: () => {} }),
     createCommandEncoder: () => ({

@@ -130,7 +130,7 @@ export class CalendarPass {
   private list: CalendarDraw[] = [];
   private frameNo = 0;
   private screen: { x0: number; y0: number; x1: number; y1: number } | null = null;
-  private scissor: [number, number, number, number] | null = null;
+  private scissor: readonly [number, number, number, number] | null = null;
   private stats: CalendarStats = { calendars: 0, moving: 0 };
   private tableCount = 0;
   /** Profiling switches: 2 no print or paper detail · 4 no gobo · 8 no rolls' shade · 16 no layer on the mat · 32 no marks · 64 no tiles · 128 no mat under it · 256 no moving sheet · 512 flat colour. */
@@ -394,22 +394,47 @@ export class CalendarPass {
 
   get drawn(): CalendarStats { return this.stats; }
 
-  /** Draw the prepared pads into the layer (its own command buffer — submit it before the ground's). */
-  renderLayer(size: { readonly w: number; readonly h: number }, dpr: number): void {
-    this.scissor = null;
-    if (this.list.length === 0 || !this.screen) return;
+  /** The pads' screen box on an attachment of `size` device px, clamped to it — the layer's scissor and the composite's; null when none shows. */
+  private boxOf(size: { readonly w: number; readonly h: number }, dpr: number): readonly [number, number, number, number] | null {
+    if (this.list.length === 0 || !this.screen) return null;
     const W = Math.max(1, size.w);
     const H = Math.max(1, size.h);
     const x0 = Math.max(0, Math.floor(this.screen.x0 * dpr) - 2);
     const y0 = Math.max(0, Math.floor(this.screen.y0 * dpr) - 2);
     const x1 = Math.min(W, Math.ceil(this.screen.x1 * dpr) + 2);
     const y1 = Math.min(H, Math.ceil(this.screen.y1 * dpr) + 2);
-    if (x1 <= x0 || y1 <= y0) return;
-    this.fit(W, H);
+    return x1 <= x0 || y1 <= y0 ? null : [x0, y0, x1, y1];
+  }
+
+  /** The pads' screen box of the last layer, device px [x, y, w, h] — what the composite paints at most; null: no layer to lay. */
+  get screenBox(): readonly [number, number, number, number] | null { return this.scissor; }
+
+  /** Draw the prepared pads into the layer (its own command buffer — submit it before the ground's). */
+  renderLayer(size: { readonly w: number; readonly h: number }, dpr: number): void {
+    this.scissor = null;
+    if (!this.boxOf(size, dpr)) return;
+    this.fit(Math.max(1, size.w), Math.max(1, size.h));
     const watch = this.frameNo < 4;
     if (watch) this.device.pushErrorScope("validation");
     const enc = this.device.createCommandEncoder({ label: "calendar" });
-    const pass = enc.beginRenderPass({
+    this.layer(enc, size, dpr);
+    this.device.queue.submit([enc.finish()]);
+    if (watch) void this.device.popErrorScope().then((e) => { if (e) console.error(`calendar pass: ${e.message}`); });
+  }
+
+  /**
+   * Record the prepared pads into their LAYER, into `encoder` — ahead of the pass it is laid in: the host's own command buffer
+   * (`renderLayer`), or the desk's frame, after the mat's wind (the calendar a kind of its registry — kinds/calendar.ts). Draw order:
+   * the sheet in motion, the faces, the past roll, the solid, the mat under each. `size`: the attachment's device px. Returns
+   * whether there is a layer to lay (its box: `screenBox`).
+   */
+  layer(encoder: GPUCommandEncoder, size: { readonly w: number; readonly h: number }, dpr: number): boolean {
+    this.scissor = null;
+    const at = this.boxOf(size, dpr);
+    if (!at) return false;
+    const [x0, y0, x1, y1] = at;
+    this.fit(Math.max(1, size.w), Math.max(1, size.h));
+    const pass = encoder.beginRenderPass({
       label: "calendar/layer",
       colorAttachments: [{ view: (this.msaa as GPUTexture).createView(), resolveTarget: (this.resolve as GPUTexture).createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "discard" }],
       depthStencilAttachment: { view: (this.depth as GPUTexture).createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
@@ -438,9 +463,21 @@ export class CalendarPass {
     range(this.solidPipe, () => 0, (b) => b.sheetFirst);
     if (!(this.debug & 128)) { pass.setPipeline(this.recvPipe); for (let i = 0; i < this.list.length; i++) pass.draw(6, 1, 0, i); }
     pass.end();
-    this.device.queue.submit([enc.finish()]);
-    if (watch) void this.device.popErrorScope().then((e) => { if (e) console.error(`calendar pass: ${e.message}`); });
     this.scissor = [x0, y0, x1 - x0, y1 - y0];
+    return true;
+  }
+
+  /**
+   * Lay the last layer over what `pass` holds — premultiplied, one fullscreen triangle — scissored to `scissor` (the pads' box, or
+   * a part of it a host narrows it to). Nothing without a layer, or with the debug bit 16 (no layer on the mat). `underlay()` is
+   * the same draw for a host that lays it through the ground's `underlays`.
+   */
+  composite(pass: GPURenderPassEncoder, scissor: readonly [number, number, number, number] | null = this.scissor): void {
+    if (!this.scissor || !scissor || !this.compGroup || (this.debug & 16)) return;
+    pass.setScissorRect(scissor[0], scissor[1], scissor[2], scissor[3]);
+    pass.setPipeline(this.compPipe);
+    pass.setBindGroup(0, this.compGroup);
+    pass.draw(3);
   }
 
   /** The layer laid on the mat, for the ground to draw inside its own pass (ground.ts `underlays`). */

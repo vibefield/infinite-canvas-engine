@@ -93,5 +93,13 @@ export interface KindPass<R = unknown> {
 export interface KindProgram<R = unknown> {
   readonly name: string;
   readonly stratum: StratumName;
+  /**
+   * A kind that lays a COMPOSITE (design-015 §4.2): its pass renders every one of its objects into a target of its own in `prepare`
+   * (depth, MSAA, shadow maps — the notebook's layer, the calendar's) and `drawRange` lays that target over the frame in one draw.
+   * The ground draws such a kind as ONE run, [0, count), after every other run of its stratum — its objects cannot interleave with
+   * another kind's without a target per run (D-D4's exception: a note laid on a notebook draws under it). Absent: the kind's objects
+   * are cut into runs in the slot's paint order.
+   */
+  readonly composite?: boolean;
   create(device: GPUDevice, format: GPUTextureFormat, mat: MatPass): Promise<KindPass<R>>;
 }

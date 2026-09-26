@@ -359,28 +359,59 @@ export class NotebookPass {
 
   get drawn(): NotebookStats { return this.stats; }
 
-  /** Draw the prepared books onto `target` (the canvas, holding what the ground drew). Its own command buffer. */
-  render(target: GPUTextureView, size: { readonly w: number; readonly h: number }, dpr: number): void {
-    if (this.list.length === 0 || !this.screen) return;
+  /** The books' screen box on an attachment of `size` device px, clamped to it — the layer's scissor and the composite's; null when none shows. */
+  private boxOf(size: { readonly w: number; readonly h: number }, dpr: number): readonly [number, number, number, number] | null {
+    if (this.list.length === 0 || !this.screen) return null;
     const W = Math.max(1, size.w);
     const H = Math.max(1, size.h);
-    // the scissor: the books' screen box, in device px, clamped to the canvas
     const x0 = Math.max(0, Math.floor(this.screen.x0 * dpr) - 2);
     const y0 = Math.max(0, Math.floor(this.screen.y0 * dpr) - 2);
     const x1 = Math.min(W, Math.ceil(this.screen.x1 * dpr) + 2);
     const y1 = Math.min(H, Math.ceil(this.screen.y1 * dpr) + 2);
-    if (x1 <= x0 || y1 <= y0) return;
-    this.fit(W, H);
+    return x1 <= x0 || y1 <= y0 ? null : [x0, y0, x1, y1];
+  }
+
+  /** The books' screen box of the last `layer`, device px [x, y, w, h] — what the composite paints at most; null: no layer to lay. */
+  get screenBox(): readonly [number, number, number, number] | null { return this.box; }
+  private box: readonly [number, number, number, number] | null = null;
+
+  /** Draw the prepared books onto `target` (the canvas, holding what the ground drew). Its own command buffer: the layer, then the composite. */
+  render(target: GPUTextureView, size: { readonly w: number; readonly h: number }, dpr: number): void {
+    if (!this.boxOf(size, dpr)) { this.box = null; return; }
+    this.fit(Math.max(1, size.w), Math.max(1, size.h));
     // the first frames are watched: a validation error names itself on the console instead of hiding behind the submit's
     const watch = this.frameNo < 4;
     if (watch) this.device.pushErrorScope("validation");
     const enc = this.device.createCommandEncoder({ label: "notebook" });
+    this.layer(enc, size, dpr);
+    // 3. the composite, in a pass of its own over what the canvas holds
+    if (!(this.debug & 16)) {
+      const comp = enc.beginRenderPass({ label: "notebook/composite", colorAttachments: [{ view: target, loadOp: "load", storeOp: "store" }] });
+      this.composite(comp);
+      comp.end();
+    }
+    this.device.queue.submit([enc.finish()]);
+    if (watch) void this.device.popErrorScope().then((e) => { if (e) console.error(`notebook pass: ${e.message}`); });
+  }
+
+  /**
+   * Record this frame's books into their LAYER, into `encoder` — ahead of the pass the layer is laid in (the host's own, `render`;
+   * or the desk's frame, the notebook a kind of its registry — kinds/notebook.ts): (1) each book's shadow map, (2) the 4× layer —
+   * the books, then the mat under them — resolved. `size`: the attachment's device px. Returns whether there is a layer to lay
+   * (its box: `screenBox`).
+   */
+  layer(encoder: GPUCommandEncoder, size: { readonly w: number; readonly h: number }, dpr: number): boolean {
+    const at = this.boxOf(size, dpr);
+    this.box = null;
+    if (!at) return false;
+    const [x0, y0, x1, y1] = at;
+    this.fit(Math.max(1, size.w), Math.max(1, size.h));
     // 1. the shadow maps
     this.list.forEach((d, i) => {
       if (i >= MAX_SHADOWED || (this.debug & 8)) return;
       const b = this.buffers.get(d.id);
       if (!b) return;
-      const p = enc.beginRenderPass({ label: `notebook/shadow ${i}`, colorAttachments: [], depthStencilAttachment: { view: this.shadowLayers[i] as GPUTextureView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } });
+      const p = encoder.beginRenderPass({ label: `notebook/shadow ${i}`, colorAttachments: [], depthStencilAttachment: { view: this.shadowLayers[i] as GPUTextureView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } });
       p.setPipeline(this.shadowPipe);
       p.setBindGroup(0, this.shadowGroup);
       p.setVertexBuffer(0, b.vb);
@@ -389,7 +420,7 @@ export class NotebookPass {
       p.end();
     });
     // 2. the layer: the books, then the mat under them
-    const pass = enc.beginRenderPass({
+    const pass = encoder.beginRenderPass({
       label: "notebook/layer",
       colorAttachments: [{ view: (this.msaa as GPUTexture).createView(), resolveTarget: (this.resolve as GPUTexture).createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "discard" }],
       depthStencilAttachment: { view: (this.depth as GPUTexture).createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
@@ -407,16 +438,20 @@ export class NotebookPass {
     pass.setPipeline(this.recvPipe);
     if (!(this.debug & 64)) for (let i = 0; i < this.list.length; i++) pass.draw(6, 1, 0, i);
     pass.end();
-    // 3. the composite
-    if (this.debug & 16) { this.device.queue.submit([enc.finish()]); return; }
-    const comp = enc.beginRenderPass({ label: "notebook/composite", colorAttachments: [{ view: target, loadOp: "load", storeOp: "store" }] });
-    comp.setScissorRect(x0, y0, x1 - x0, y1 - y0);
-    comp.setPipeline(this.compPipe);
-    comp.setBindGroup(0, this.compGroup as GPUBindGroup);
-    comp.draw(3);
-    comp.end();
-    this.device.queue.submit([enc.finish()]);
-    if (watch) void this.device.popErrorScope().then((e) => { if (e) console.error(`notebook pass: ${e.message}`); });
+    this.box = [x0, y0, x1 - x0, y1 - y0];
+    return true;
+  }
+
+  /**
+   * (3) Lay the last `layer` over what `pass` holds — premultiplied, one fullscreen triangle — scissored to `scissor` (the books'
+   * box, or a part of it a host narrows it to). Nothing without a layer, or with the debug bit 16 (no composite).
+   */
+  composite(pass: GPURenderPassEncoder, scissor: readonly [number, number, number, number] | null = this.box): void {
+    if (!this.box || !scissor || !this.compGroup || (this.debug & 16)) return;
+    pass.setScissorRect(scissor[0], scissor[1], scissor[2], scissor[3]);
+    pass.setPipeline(this.compPipe);
+    pass.setBindGroup(0, this.compGroup);
+    pass.draw(3);
   }
 
   dispose(): void {

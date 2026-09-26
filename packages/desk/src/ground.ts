@@ -150,11 +150,12 @@ export interface GroundStats extends GridStats {
   readonly portals: number;
 }
 
-/** One registered kind as a slot holds it: the registry's name and stratum, and the slot's own pass. */
+/** One registered kind as a slot holds it: the registry's name and stratum, and the slot's own pass (and whether it lays a composite — `KindProgram.composite`). */
 export interface SlotKind {
   readonly name: string;
   readonly stratum: StratumName;
   readonly pass: KindPass;
+  readonly composite?: boolean;
 }
 
 /** The passes one slot owns: the mat's, and every registered kind's by name, in registration order. The root's are the ground's; the pool spawns the rest on the same pipelines. */
@@ -199,7 +200,7 @@ export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat,
   const kinds = new Map<string, SlotKind>();
   for (let i = 0; i < programs.length; i++) {
     const p = programs[i] as KindProgram;
-    kinds.set(p.name, { name: p.name, stratum: p.stratum, pass: passes[i] as KindPass });
+    kinds.set(p.name, { name: p.name, stratum: p.stratum, pass: passes[i] as KindPass, ...(p.composite ? { composite: true } : {}) });
   }
   return { mat, kinds };
 }
@@ -216,7 +217,7 @@ export class SlotPool {
     if (this.used === this.slots.length) {
       const mat = this.root.mat.spawn();
       const kinds = new Map<string, SlotKind>();
-      for (const k of this.root.kinds.values()) kinds.set(k.name, { name: k.name, stratum: k.stratum, pass: k.pass.spawn(mat) });
+      for (const k of this.root.kinds.values()) kinds.set(k.name, { name: k.name, stratum: k.stratum, pass: k.pass.spawn(mat), ...(k.composite ? { composite: true } : {}) });
       this.slots.push({ mat, kinds });
     }
     return this.slots[this.used++] as SlotSet;
@@ -261,6 +262,7 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
       if (!k || k.stratum !== stratum) continue;
       const index = next.get(k.name) ?? 0;
       next.set(k.name, index + 1);
+      if (k.composite) continue;   // laid once, after the stratum's runs (below)
       if (k !== run) { run?.pass.drawRange(pass, first, end); run = k; first = index; }
       end = index + 1;
       const children = insides.get(i);
@@ -271,6 +273,12 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
       insides.delete(i);
     }
     run?.pass.drawRange(pass, first, end);
+    // a kind that lays a composite of its own target (the notebook, the calendar): ONE run over all its records, after every other
+    // run of the stratum — one draw lays every one of its objects, so they cannot interleave with another kind's (KindProgram.composite)
+    for (const k of slot.kinds.values()) {
+      const count = k.composite && k.stratum === stratum ? (next.get(k.name) ?? 0) : 0;
+      if (count > 0) k.pass.drawRange(pass, 0, count);
+    }
   }
   // an inside whose `at` names no object this slot draws has nothing to lie in: it draws over them all
   for (const children of insides.values()) for (const child of children) inside(child);

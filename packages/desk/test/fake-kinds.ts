@@ -4,18 +4,18 @@
 // scissor. No GPU: `drawSlot` and `drawFrame` only ever call these.
 import type { DrawSlot, KindPass, SlotKind, StratumName } from "../src/ground";
 
-/** A kind as a slot holds it, its pass logging every range (and, for a sheet that holds a desk, every `drawOver`). */
-export function loggingKind(log: string[], slot: string, name: string, stratum: StratumName, over = false): SlotKind {
+/** A kind as a slot holds it, its pass logging every range (and, for a sheet that holds a desk, every `drawOver`; `composite`: it lays one — `KindProgram.composite`). */
+export function loggingKind(log: string[], slot: string, name: string, stratum: StratumName, over = false, composite = false): SlotKind {
   const pass = {
     drawRange: (_p: unknown, first: number, end: number) => log.push(`${slot} ${name} ${first}..${end}`),
     ...(over ? { drawOver: (_p: unknown, index: number) => log.push(`${slot} ${name} over ${index}`) } : {}),
   };
-  return { name, stratum, pass: pass as unknown as KindPass };
+  return { name, stratum, pass: pass as unknown as KindPass, ...(composite ? { composite: true } : {}) };
 }
 
 export interface FakeSlotSpec {
-  /** The registry, in registration order: each kind's name, stratum and whether it draws over a live inside. */
-  readonly kinds: readonly (readonly [string, StratumName, boolean?])[];
+  /** The registry, in registration order: each kind's name, stratum, whether it draws over a live inside and whether it lays a composite. */
+  readonly kinds: readonly (readonly [string, StratumName, boolean?, boolean?])[];
   /** The slot's objects in paint order, by kind name. */
   readonly objects?: readonly string[];
   readonly present?: DrawSlot["present"];
@@ -28,7 +28,7 @@ export interface FakeSlotSpec {
 export function fakeSlot(log: string[], name: string, spec: FakeSlotSpec): DrawSlot {
   return {
     mat: { draw: () => log.push(`${name} mat`) } as unknown as DrawSlot["mat"],
-    kinds: new Map(spec.kinds.map(([kind, stratum, over]) => [kind, loggingKind(log, name, kind, stratum, over ?? false)])),
+    kinds: new Map(spec.kinds.map(([kind, stratum, over, composite]) => [kind, loggingKind(log, name, kind, stratum, over ?? false, composite ?? false)])),
     ...(spec.objects ? { objects: spec.objects.map((kind) => ({ kind })) } : {}),
     ...(spec.underlays ? { underlays: Array.from({ length: spec.underlays }, (_, i) => ({ draw: () => log.push(`${name} underlay ${i}`) })) } : {}),
     present: spec.present,

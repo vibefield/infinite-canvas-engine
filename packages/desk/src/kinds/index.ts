@@ -1,8 +1,8 @@
 // The desk's kinds as the ground registers them (kind.ts; design-015 §5.2's render half): the
-// note, the mini mat, the whiteboard and the photo print, each a thin adapter over its pass. The
-// composition root (ground.ts) never imports this module — a host hands `Ground.create` a registry,
-// and the desk's own is `DESK_KINDS`. The notebook and the calendar still draw outside the ground
-// (their fold is D3).
+// note, the mini mat, the whiteboard, the photo print, the desk calendar and the notebook, each a thin
+// adapter over its pass (the last two LAYERED — kinds/layer.ts: a target of their own, laid as one
+// composite run; root only, D-D18). The composition root (ground.ts) never imports this module — a
+// host hands `Ground.create` a registry, and the desk's own is `DESK_KINDS`.
 //
 // And the kinds WHOLE (kinds/world.ts; D2a-world): `paperKind()` and `minimatKind()` — each a
 // `KindProgram` with its world half (resolve · record · hit · reach · theme) — what `defineObject`
@@ -11,23 +11,28 @@
 import type { KindProgram } from "../kind";
 import { type ShaderText, shaderText } from "../shaders";
 import { boardProgram } from "./board";
+import { calendarProgram } from "./calendar";
 import { miniMatProgram } from "./minimat";
+import { notebookProgram } from "./notebook";
 import { paperProgram } from "./paper";
 import { photoProgram } from "./photo";
 
 export { BOARD_KIND, BoardKind, boardProgram } from "./board";
+export { CALENDAR_KIND, type CalendarAlpha, CalendarKind, calendarProgram } from "./calendar";
 export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
+export { NOTEBOOK_KIND, NotebookKind, notebookProgram } from "./notebook";
 export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperProgram, paperReach, paperKind } from "./paper";
 export { PHOTO_KIND, PhotoKind, photoProgram } from "./photo";
 export { FLUX_REST, isObjectKind, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, rectOf, type StratumName, stringProp } from "./world";
 
 /**
  * The desk's kinds in the order they prepare — the prototype's (the notes, the mini mats, the whiteboards; its prints
- * last, as its photo lab drew them after the ground) — each made from `text`: the generated module unless a host says
- * (the Node oracle hands the .wgsl files on disk).
+ * after the ground, as its photo lab drew them; then its two layers in the order its lab rendered them: the calendar's
+ * before the frame, the notebooks' after it) — each made from `text`: the generated module unless a host says (the Node
+ * oracle hands the .wgsl files on disk).
  */
 export function deskKinds(text: ShaderText = shaderText): readonly KindProgram[] {
-  return [paperProgram(text), miniMatProgram(text), boardProgram(text), photoProgram(text)];
+  return [paperProgram(text), miniMatProgram(text), boardProgram(text), photoProgram(text), calendarProgram(text), notebookProgram(text)];
 }
 
 /** The desk's kinds on the generated shader text — what a browser host registers: `Ground.create({ device, canvas, mat, kinds: DESK_KINDS })`. */

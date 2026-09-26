@@ -48,7 +48,7 @@ describe("the photo print in the registry", () => {
     expect(program.name).toBe(PHOTO_KIND);
     expect(PHOTO_KIND).toBe("photo");
     expect(program.stratum).toBe("things");
-    expect(DESK_KINDS.at(-1)?.name).toBe(PHOTO_KIND);
+    expect(DESK_KINDS.map((k) => k.name).indexOf(PHOTO_KIND)).toBe(DESK_KINDS.map((k) => k.name).indexOf("board") + 1);   // after the whiteboard (the two layers come after it — D3r-b)
   });
 
   it("the adapter hands its pass's prepare exactly what the ground hands it: the slot's camera, grid, clocks, the objects' presence, the light, the lamp", () => {
