@@ -1,0 +1,21 @@
+// The app's PROJECTION of the product's palette into the desk (design-015 §5.2's `theme` hook;
+// the D-B1.6 precedent groundlab set): VibeField's tokens from the oracle's fixture —
+// `--vf-canvas-bg`, `--vf-select`, the note's `--vf-note-surface`, STICKY.md's pens, MINIMAT.md's
+// vinyls — handed to the layer as ONE palette the kinds read their looks from (`PaperPalette`:
+// `papers`/`pens` by the prop's value; `MiniMatPalette`: `vinyls`). The engine holds no note colour
+// (the theme gate); this file is where the product's byte enters the desk.
+
+import type { MiniMatPalette, PaperPalette } from "@ice/desk/kinds";
+import { PALETTE, PENS, SURFACES, VINYLS } from "@ice/desk/oracle/fixtures/vf-theme";
+import { type GroundTheme, type ThemeName, themeFrom } from "@ice/desk/theme";
+
+export type DeskPalette = PaperPalette & MiniMatPalette;
+
+/** The palette for a theme: the fixture's roles, the note's one paper (`yellow` — the product's `--vf-note-surface`), its pens, the mini mats' vinyls. */
+export const deskPalette = (name: ThemeName): DeskPalette => ({ ...PALETTE[name], papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS });
+
+/** The theme the passes read for a name — `themeFrom` on the fixture's palette, the oracle's `THEMES[name]` exactly. */
+export const deskTheme = (name: ThemeName): GroundTheme => themeFrom(name, PALETTE[name]);
+
+/** The OS's preference at the mount; a rig or the `d` key pins one. */
+export const osTheme = (): ThemeName => (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");

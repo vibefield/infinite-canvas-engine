@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>desk — parity (D1: the oracle's desk in Chrome)</title>
+<link rel="icon" href="data:," />
+<style>
+  /* One canvas at the oracle's view (1200 × 800 CSS px at dpr 2, set by main.ts) and nothing over
+     it: rig:parity compares this page's pixels with the Node render byte for byte. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: black; }
+  #gpu { position: fixed; left: 0; top: 0; display: block; }
+  #fail { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; font: 400 13px/1.6 ui-monospace, Menlo, monospace; color: white; background: black; text-align: center; white-space: pre-wrap; }
+  #fail[hidden] { display: none; }   /* an ID selector outranks the UA [hidden] rule */
+</style>
+</head>
+<body>
+  <canvas id="gpu"></canvas>
+  <div id="fail" hidden></div>
+  <script type="module" src="/src/parity.ts"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-// rig:parity — Chrome = Node. Every oracle scene drawn by apps/desk's parity page in headless
+// rig:parity — Chrome = Node. Every oracle scene drawn by apps/desk's parity page (parity.html — D1's page, kept beside the real desk since D2a-world) in headless
 // Chrome, held to the Node (Dawn) render of the same scene (packages/desk/oracle/results) byte for
 // byte: maxΔ 0 on every channel of every pixel (design-015 §11 witness 1; plan D1 witness 5).
 //
@@ -37,7 +37,7 @@ const die = (what, cmd) => {
   console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`);
   process.exit(1);
 };
-if (!existsSync(resolve(app, "dist/index.html"))) die("the page's build is missing (apps/desk/dist/index.html)", "pnpm --filter ./apps/desk build");
+if (!existsSync(resolve(app, "dist/parity.html"))) die("the page's build is missing (apps/desk/dist/parity.html)", "pnpm --filter ./apps/desk build");
 const scenes = only ? ORACLE_SCENES.filter((sc) => only.test(sc.name)) : ORACLE_SCENES;
 if (scenes.length === 0) die(`no oracle scene matches ${only}`, "pnpm --filter ./apps/desk rig:parity [scene-regex]");
 const missing = scenes.filter((sc) => !existsSync(resolve(repo, `packages/desk/oracle/results/oracle-${sc.name}.rgba`)));
@@ -94,7 +94,7 @@ const diffJs = (png, name) => `(async () => {
 /** One witness: draw the scene, let it present, capture, compare. */
 async function witness(tab, name) {
   await front(tab);
-  const drawn = await tab.evaluate(`window.__desk.render(${JSON.stringify(name)})`, { awaitPromise: true, timeoutMs: 60000 });
+  const drawn = await tab.evaluate(`window.__parity.render(${JSON.stringify(name)})`, { awaitPromise: true, timeoutMs: 60000 });
   await settle(tab); await sleep(200); await settle(tab);
   const png = await capture(tab);
   const r = await tab.evaluate(diffJs(png, name), { awaitPromise: true, timeoutMs: 60000 });
@@ -102,7 +102,7 @@ async function witness(tab, name) {
 }
 
 try {
-  const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/index.html`);
+  const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/parity.html`);
   const logs = [];
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
   tab.on("Runtime.exceptionThrown", (e) => logs.push(`EXCEPTION ${e.exceptionDetails.exception?.description ?? e.exceptionDetails.text}`));
@@ -110,11 +110,11 @@ try {
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   for (let i = 0; i < 150; i++) {
     await front(tab);
-    if (await tab.evaluate("typeof window.__desk === 'object' || !document.getElementById('fail').hidden", { timeoutMs: 20000 })) break;
+    if (await tab.evaluate("typeof window.__parity === 'object' || !document.getElementById('fail').hidden", { timeoutMs: 20000 })) break;
     await sleep(200);
   }
-  const fail = await tab.evaluate("document.getElementById('fail').hidden ? (typeof window.__desk === 'object' ? null : 'the page never came up') : document.getElementById('fail').textContent", { timeoutMs: 20000 });
-  console.log(`chrome ${chrome.version.Browser} · page boot: ${fail ? `FAIL ${fail}` : "ok"} · ${await tab.evaluate("window.__desk ? window.__desk.format + ' · crossOriginIsolated ' + crossOriginIsolated : ''", { timeoutMs: 20000 })}${logs.length ? `\n  ${logs.slice(0, 5).join("\n  ")}` : ""}`);
+  const fail = await tab.evaluate("document.getElementById('fail').hidden ? (typeof window.__parity === 'object' ? null : 'the page never came up') : document.getElementById('fail').textContent", { timeoutMs: 20000 });
+  console.log(`chrome ${chrome.version.Browser} · page boot: ${fail ? `FAIL ${fail}` : "ok"} · ${await tab.evaluate("window.__parity ? window.__parity.format + ' · crossOriginIsolated ' + crossOriginIsolated : ''", { timeoutMs: 20000 })}${logs.length ? `\n  ${logs.slice(0, 5).join("\n  ")}` : ""}`);
   if (fail) throw new Error("boot failed");
 
   let flaps = 0;
@@ -135,7 +135,7 @@ try {
     const detail = r.error === undefined ? `maxΔ ${r.maxD} · ${r.differ} px differ · over4 ${r.over4Pct}% · ${r.w}×${r.h}` : `ERROR ${r.error}`;
     console.log(`${clean(r) ? "PASS" : "FAIL"}  ${sc.name.padEnd(24)} ${detail.padEnd(46)} ${r.portals}${note}`);
   }
-  const errs = await tab.evaluate("window.__desk.state.errors", { timeoutMs: 20000 });
+  const errs = await tab.evaluate("window.__parity.state.errors", { timeoutMs: 20000 });
   console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} checked · ${failures} FAILED · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness) · ${errs.length} uncaptured GPU error${errs.length === 1 ? "" : "s"}`);
   if (errs.length) { failures += 1; console.log(`  ${errs.slice(0, 5).join("\n  ")}`); }
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);

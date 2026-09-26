@@ -16,7 +16,8 @@
     "./shaders": "./src/shaders.ts",
     "./noise": "./src/assets/blue-noise.gen.ts",
     "./oracle/*": "./oracle/*",
-    "./assets/*": "./assets/*"
+    "./assets/*": "./assets/*",
+    "./oracle/fixtures/vf-theme": "./oracle/fixtures/vf-theme.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

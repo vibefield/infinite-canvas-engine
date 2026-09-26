@@ -1,10 +1,12 @@
-// apps/desk at D1 — the PARITY page (design-015 §11 witness 1; plan D1's witness 5). Every oracle
+// apps/desk's PARITY page (design-015 §11 witness 1; plan D1's witness 5) — `parity.html`, D1's page kept whole
+// beside the real desk (`index.html`, D2a-world), what `rig:parity` still drives. Every oracle
 // scene is drawn straight through @ice/desk's engine in Chrome by the Node oracle's OWN desk
 // (packages/desk/oracle/frame.mjs: the same passes, the same fixtures, the same scene builder, the
 // same prepareFrame → drawFrame), so `rig:parity` can hold this page to the Dawn render at maxΔ 0.
 // The only differences are the host's: the canvas's swap-chain texture (the preferred format)
 // instead of a readable target, the generated shader text instead of the .wgsl files, the fixtures
-// fetched instead of read. It draws on demand — the rig's `__desk.render(name)` — never on a clock.
+// fetched instead of read. It draws on demand — the rig's `__parity.render(name)` — never on a clock.
+// Its door is `window.__parity`: `window.__desk` is the REAL desk's (api.ts), a different page and shape.
 import { acquire } from "@ice/desk/engine";
 import { surface } from "@ice/desk/host";
 import { blueNoise } from "@ice/desk/noise";
@@ -32,7 +34,7 @@ export interface DeskParity {
 }
 
 declare global {
-  interface Window { __desk?: DeskParity }
+  interface Window { __parity?: DeskParity }
 }
 
 const byId = <T extends HTMLElement>(id: string): T => {
@@ -84,7 +86,7 @@ async function boot(): Promise<void> {
     log: (message) => console.warn(message),
   });
   const state: DeskParity["state"] = { drawn: null, frames: 0, errors };
-  window.__desk = {
+  window.__parity = {
     scenes: ORACLE_SCENES.map((s) => s.name),
     view: VIEW,
     format: surf.format,

@@ -109,6 +109,51 @@ there.
   `deskKinds(text)`), their shaders untouched. The oracle builds its root slot from the registry and
   renders its 38 scenes byte-identical to D1's; Chrome = Node at maxΔ 0 on every one.
 
+<!-- design-015 D2a-world (2026-09-25) -->
+- **The desk renders, picks and idles FROM THE WORLD** (`@ice/desk`; design-015 §4.4–§4.6, §5.2's
+  world half). A kind is whole: `ObjectKind<G, R, L>` extends D2a-render's `KindProgram` with
+  `resolve(ctx) → G`, `record(G, ctx) → R`, `hit(G, wx, wy) → "content" | "frame" | part | null`,
+  `reach`, `reads?`, `theme?(palette, name)`; `ObjectContext` hands it the entity's CENTRED rect
+  (`rectOf` — ICE's top-left `Position` + `Size` converted in one place), its props, the flux
+  (`lift · hover · ring · fade`), its look, the lamp, the slot's view, the grid, dt and a host-pinned
+  asset. `paperKind()` and `minimatKind()` wrap the D2a-render programs (`@ice/desk/kinds`);
+  `defineObject(def)` (`@ice/desk/object`) compiles an object through core's `defineWidget({ surface:
+  "object", object: kind, stratum: kind.stratum })`; `Note` (`desk.note`: text · pen · paper · seed)
+  and `MiniMat` (`desk.minimat`: name · vinyl, a container accepting both, its portal the face insets)
+  are the reference objects (`@ice/desk/objects`). The object colours are the app's: a kind's
+  `theme()` reads `papers`/`pens`/`vinyls` off the palette.
+- **The builder, the pick source, the ambient, the reflector** (`@ice/desk/compose`, DOM-free).
+  `createDeskBuilder(world, { objects })` turns the current nav frame's Active objects into
+  `SlotInputs.objects` in paint order (`compareStackOrder` — stratum first — the `Grab` set last),
+  culls by rect ⊕ `reach` against the view ⊕ 200 CSS px, runs the springs per entity outside the
+  world and SNAPS each when settled, keeps a deleted object's GHOST fading 220 ms in its last paint
+  position, caches every fact per entity and refreshes it from a `coarse: false` change journal
+  (`changed()` pulls; `wakes()` names the reason); pins by entity — `pin(e, asset)` (a committed
+  raster) and `pinFlux(e, { lift | hover | ring })` (a still's `held`, never a `Grab`) — outlive a state
+  the builder has not made yet. `createPickSource(builder)` mirrors the kinds' `hit` on the same
+  geometry the pass drew: `undefined` before geometry (B9), `"outside"` on a miss, `pad` the widest
+  reach. `createAmbient()` is the wind that idles (§4.6, D-D9): `live | idle | still`, the wind's
+  SPEED easing to 0 over `settleMs` after `idleMs`, the tilt follower snapping WITH the wind (a filter's
+  tail is not a frame), reduced motion ⇒ still, `pin()` for a parity still. `createDeskReflector()`
+  paints only on pulled dirt (`always: true`, early-out — no `getCurrentTexture`, no submit) and
+  `instrumentSubmits(device)` proves it.
+- **`deskLayer(opts)` and the desk app** (`@ice/desk/host`; apps/desk). The layer factory is
+  structurally a react `GroundLayerFactory`: it inserts its canvas before the content plane,
+  acquires its OWN device, compiles the ground from the catalog's object kinds, sets
+  `framePick.current` and clears it at dispose; its handle carries the parity hooks (`pinMat`,
+  `pinRaster`, `pinFlux`, `clearRasters`, `clearFlux`, `setPlate`/`setNoise`/`setGlyphs`,
+  `configureMat`) and the instruments (`submits`, `stats`, `wakes`, `geometryOf`, `fluxOf`,
+  `lastInputs`, `dirty`). `@ice/react` gains one additive prop, `chrome?: boolean` — `false` skips the
+  P4 DOM selection reflector (the desk draws its own). `engine/device.ts`'s DOM touch moved to
+  `host/surface.ts`: `desk-dom-free` is true and gated. apps/desk is the real desk (React 19: `w` a
+  note, `m` a mini mat, ⌫, ⌘Z/⇧⌘Z, `d` the theme), D1's parity page kept as `parity.html`
+  (`window.__parity`); `window.__desk` is the rigs' door. Witnesses in `gate:landing` after
+  `rig:parity`: `rig:world` — every mat, ruler and paper oracle scene spawned as entities through
+  `setScene` and drawn by the real reflector path = the Node render at maxΔ 0 (20/20);
+  `rig:interact` — select → ring, hover → a mini mat rises, drag → one undo step, ⌫ → a 220 ms ghost,
+  shift-drag marquee, the wheel `exp(−Δ·0.0016)` about the pointer, a bare drag pans (24/24);
+  `rig:idle` — 0 submits over 240 frames after the ease (10/10).
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
