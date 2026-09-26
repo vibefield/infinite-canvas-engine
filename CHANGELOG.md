@@ -171,6 +171,27 @@ there.
   stamp texels differently), and `rig:proto-parity` (new; `DESK_PROTO` = the frozen snapshot) holds the ten
   stageable ones to the prototype's own photo lab and board bench, byte for byte. The 38 D1 scenes unchanged.
 
+<!-- design-015 D3r-b (2026-09-25) -->
+- **The notebook and the desk calendar are desk kinds** (`@ice/desk`; design-015 §4.2, §5.2's render half):
+  `notebookProgram(text)` · `NotebookKind` · `NOTEBOOK_KIND` (`"notebook"`, stratum `things`) and `calendarProgram(text)` ·
+  `CalendarKind` · `CALENDAR_KIND` (`"calendar"`, stratum `pads`), registered in `DESK_KINDS` after the photo print (the
+  calendar first — the prototype's lab rendered the pad's layer before its frame and the books' after it). Both are LAYERED:
+  their pass renders every one of its objects into a target of its own in `prepare` — the books' shadow maps and 4× layer,
+  the pads' 4× layer — recorded into the frame's command encoder after the mat's wind, and lays it in one draw. The registry
+  gains one notion, `KindProgram.composite`: the ground draws such a kind as ONE run after every other run of its stratum (so
+  the books lie over every other thing — a note laid on a notebook draws under it, the named limit — and the pads under the
+  sheets and the things, as the prototype drew them). Both are ROOT ONLY (D-D18): a spawned slot's pass draws nothing. The
+  law and the product's look are the host's (`kind.law`, `NotebookKind.ruleInk`, `CalendarKind.alpha`); the pad's print stays
+  the host's Canvas 2D raster (`kind.pass.uploadTile/writeTable`). `NotebookPass` gains `layer(encoder, size, dpr)` ·
+  `composite(pass, scissor?)` · `screenBox` (`render` is their composition), `CalendarPass` the same (`renderLayer` and
+  `underlay()` unchanged). The Node oracle gains nine scenes — a closed book, an open spread, a book held, a book over a
+  note, a book by night; the whole pad, rolling, with two notes stuck to days, by night — built as the prototype's main lab
+  builds them, the pads without their print; four checks (`book`, `bookOrder`, `pad`, `padNote`) and an error-scope probe
+  over the desk's creation and every frame (in apps/desk's parity page too). `rig:parity` holds all 59 to Chrome (the nine
+  new at maxΔ 0); `rig:proto-parity` holds them to the prototype's own main lab, byte for byte (and drives the parity page
+  again — it had thrown since D2a-world moved it to `parity.html`); `rig:cost` (new) re-measures NOTEBOOK.md §9 and
+  CALENDAR.md §9 through the registry beside the prototype. The 50 existing scenes unchanged.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
