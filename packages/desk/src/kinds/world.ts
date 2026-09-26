@@ -184,6 +184,11 @@ export interface KindLocal {
   tick?(now: number): boolean;
   /** The entity left this desk for good — its ghost faded, it left the frame, the desk was reset: free what it held. */
   forget?(e: Entity): void;
+  /**
+   * The entity is drawn LIFTED off the desk's order and away from its facts (D3t-a — a print in a hand, flicked, gliding or
+   * flying home): the builder paints it with the carried set, above its siblings, and the pick asks it first where it is drawn.
+   */
+  lifted?(e: Entity): boolean;
   dispose?(): void;
 }
 

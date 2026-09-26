@@ -103,6 +103,13 @@ export interface FramePickSource {
    * = never; the pointer and the spatial index are then the only wakes (B9 review).
    */
   live?(): boolean;
+  /**
+   * The widgets the source draws LIFTED this frame — above the frame's own order and away from their facts (design-015 §6's
+   * print in a hand, flicked or gliding; D3t-a): the spatial index still holds their fact rects, so the frame tier asks
+   * these FIRST, wherever they are drawn, and the topmost that answers is the hit — a press catches a gliding print where
+   * it is, and its old rect no longer does (its geometry says `outside` there). Absent = none.
+   */
+  lifted?(): Iterable<Entity>;
 }
 
 /** The stack's slot for the frame pick source — a mutable box, so the ground can arrive after install. */
@@ -240,6 +247,22 @@ export function createPickingSystems(
     if (src === null) return { e: boxHit, part: "" };
     const isWidget = (e: Entity): boolean => ctx.hasTag(e, WidgetEquipped) && ctx.hasTag(e, Active);
     const partOf = (h: string): string => (h === "content" || h === "frame" || h === "outside" ? "" : h);
+    // the LIFTED first (D3t-a): drawn above the frame's order, wherever their facts are — the topmost that answers wins
+    const lifted = src.lifted?.();
+    if (lifted !== undefined) {
+      const ordinals = order.ordinals();
+      let top: Entity | undefined;
+      let topPart = "";
+      for (const e of lifted) {
+        if (!ctx.isAlive(e) || !isWidget(e)) continue;
+        if (top !== undefined && compareStackOrder(ctx, ordinals, e, top) < 0) continue;
+        const h = src.hit(e, wx, wy);
+        if (h === undefined || h === "outside") continue;
+        top = e;
+        topPart = partOf(h);
+      }
+      if (top !== undefined) return { e: top, part: topPart };
+    }
     if (boxHit !== undefined && isWidget(boxHit)) {
       const h = src.hit(boxHit, wx, wy);
       if (h === undefined) return { e: boxHit, part: "" }; // no geometry for it yet: the box tier stands

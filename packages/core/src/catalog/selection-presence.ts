@@ -32,6 +32,13 @@ export const SnapTarget = defineTag("SnapTarget");
  */
 export const SweepsContained = defineTag("SweepsContained");
 /**
+ * `interaction.wheelTurns` (design-015 §6's photo — PHOTO.md "wheel while holding turns the print about the finger";
+ * D3t-a): while a press holds this widget, the wheel on that pointer is the WIDGET's — neither the camera nor the
+ * recognizers hear it (`WheelHandled`) — and its deltas add up in the pointer's `PressWheel` for the widget's own
+ * behaviour to read (systems/press-wheel.ts).
+ */
+export const WheelTurns = defineTag("WheelTurns");
+/**
  * `interaction.keyboard: "exclusive"` (design-007 §3.1, petitions I1/I4): while
  * a node inside this widget holds browser focus, the engine's keyboard surfaces
  * (keymap shortcuts, the adapter's Space pan modifier) stand down. The ROUTING

@@ -29,6 +29,7 @@ export const Photo = defineObject({
   },
   size: { w: printExtent(0, 0).w, h: printExtent(0, 0).h },
   kind: photoKind(),
-  interaction: { selectable: true, movable: false, resizable: false, snap: "both" },
+  // the wheel TURNS a print held in a hand (PHOTO.md; D3t-a — core cedes that pointer's wheel to it, `PressWheel`)
+  interaction: { selectable: true, movable: false, resizable: false, snap: "both", wheelTurns: true },
   provides: [PHOTO_TYPE],
 });

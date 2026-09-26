@@ -50,6 +50,16 @@ export const PointerWheel = defineComponent("PointerWheel", {
   pinch: field("f32", { default: 0 }),
 });
 
+/**
+ * Runtime, on a local pointer whose press holds a `WheelTurns` widget (D3t-a — systems/press-wheel.ts): the wheel's deltas
+ * since the press, summed (never zeroed while the press lasts — a reflector reads it after the tick, when `PointerWheel` is
+ * gone); taken off when the press ends.
+ */
+export const PressWheel = defineComponent("PressWheel", {
+  dx: field("f64", { default: 0 }),
+  dy: field("f64", { default: 0 }),
+});
+
 /** Touch-forgiveness radius, screen px (0 = exact, for mouse/pen). */
 export const PointerRadius = defineComponent("PointerRadius", { r: field("f32", { default: 0 }) });
 

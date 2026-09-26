@@ -4,13 +4,13 @@
 // print); the FLICK LAW (the finger's last 70 ms, the cap, a stopped finger throws nothing, the glide's Coulomb
 // grip); and the carry: a press, a flick, a glide — ONE transaction when the print comes to rest, one undo step; a
 // TAPED print is never carried, and a press-drag on it gives as every taped object does (D4a's give, through the marks).
-import { Captures, ChildOf, createCanvasEngine, Drag, type Entity, GestureActive, LocalPointer, Movable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Viewport, Watches } from "@ice/core";
+import { Captures, ChildOf, createCanvasEngine, Drag, type Entity, GestureActive, LocalPointer, Movable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Viewport, Watches, CancelRequest, GestureCancelled, PressWheel } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
-import { createMemoryBlobStore, FLUX_REST, hashBytes, type KindHost, type ObjectContext, PHOTO_KIND, PhotoKind, photoKind, type Prints, printRect, RGBA_TYPE } from "../src/kinds";
+import { createMemoryBlobStore, FLUX_REST, hashBytes, type KindHost, type ObjectContext, PHOTO_KIND, PhotoKind, photoKind, PRINT_RETURN_MS, type Prints, printRect, RGBA_TYPE } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { objectKindOf } from "../src/object";
-import { createPhotoCarry, Photo, PHOTO_TYPE } from "../src/objects";
+import { createPhotoCarry, Photo, PHOTO_TYPE, TWIST_PER_WHEEL } from "../src/objects";
 import { lampOf } from "../src/paper/paper";
 import { grab, moveHold, newBody, PHOTO, release, restless, stepPhoto } from "../src/photo/photo";
 import type { Picture, PhotoPass } from "../src/photo/photo-pass";
@@ -252,7 +252,15 @@ describe("the CARRY — ONE transaction when the print comes to rest", () => {
     const up = () => { world.edit(p).set(PointerButtons, { buttons: 0, downX: 0, downY: 0, downMs: 0 }); };
     const flush = () => { for (const fn of pending.splice(0)) fn(); now += 16; ce.step(now); };
     const undoSteps = (): number => { const s = must(ce.docs.current()).store; let n = 0; while (s.canUndo() && n < 20) { s.undo(); n += 1; } for (let i = 0; i < n; i++) s.redo(); now += 16; ce.step(now); return n; };
-    return { ce, world, e, carry, prints, frame, press, moveTo, up, flush, rect, undoSteps, stepEngine: () => { now += 16; ce.step(now); } };
+    /**
+     * Esc (D3t-a): the gestures' cancel — core's one-tick request, written and cleared — and the sweep's word on the press's recognizer:
+     * CANCELLED, still capturing the print for the frame before the reap (cleanup reaps a terminal recognizer at terminal + 1).
+     */
+    const cancelEsc = () => { world.setResource(CancelRequest, { active: true }); world.setResource(CancelRequest, { active: false }); world.addTag(rec, GestureCancelled); };
+    /** The wheel the press has turned (core's `PressWheel` sum on the pointer). */
+    const wheelTo = (dy: number) => { if (world.has(p, PressWheel)) world.edit(p).set(PressWheel, { dx: 0, dy }); else world.addComponent(p, PressWheel, { dx: 0, dy }); };
+    const angleProp = (): number => (world.get(e, Photo.groups[0]?.component as never) as { angle: number }).angle;
+    return { ce, world, e, carry, prints, frame, press, moveTo, up, flush, rect, undoSteps, cancelEsc, wheelTo, angleProp, now: () => now, stepEngine: () => { now += 16; ce.step(now); } };
   }
 
   it("a press lifts it (the kinematic pin: the grab point stays under the finger), the document does not move while it is carried", () => {
@@ -295,6 +303,76 @@ describe("the CARRY — ONE transaction when the print comes to rest", () => {
     must(d.ce.docs.current()).store.undo();
     d.stepEngine();
     expect(d.rect().cx).toBeCloseTo(400, 6);
+  });
+
+  it("Esc CANCELS a carry (D3t-a): no flick — the print flies home to where it began in PRINT_RETURN_MS and lands there; nothing is committed", () => {
+    const d = desk();
+    const before = d.undoSteps();
+    d.frame();
+    d.press(450, 320);
+    d.frame();
+    for (let i = 1; i <= 12; i++) { d.moveTo(450 + 12 * i, 320 + 4 * i); d.frame(); }
+    expect(d.prints.lifted(d.e)).toBe(true);
+    d.cancelEsc();
+    d.frame();
+    expect(d.carry.cancels()).toBe(1);
+    expect(d.carry.held()).toEqual([]);
+    const b0 = must(d.prints.body(d.e));
+    expect(b0.hold).toBeNull();
+    expect(Math.hypot(b0.vx, b0.vy)).toBe(0);   // no flick
+    for (let t = 0; t < PRINT_RETURN_MS + 64; t += 16) { d.frame(); d.flush(); }
+    const b = must(d.prints.body(d.e));
+    expect([b.x, b.y, b.angle]).toEqual([400, 300, 0]);   // home: its facts
+    expect(d.prints.lifted(d.e)).toBe(false);
+    expect(d.carry.commits()).toBe(0);
+    expect(d.undoSteps()).toBe(before);
+  });
+
+  it("the WHEEL twists a carried print about the finger (0.0035 rad a unit — the lab's) and its rest commits the turn with the place", () => {
+    const d = desk();
+    d.frame();
+    d.press(450, 320);
+    d.frame();
+    d.wheelTo(100);
+    d.frame();
+    const b = must(d.prints.body(d.e));
+    expect(b.angle).toBeCloseTo(100 * TWIST_PER_WHEEL, 12);
+    // about the finger: the grab point is still under it
+    const gx = must(b.hold).gx;
+    const gy = must(b.hold).gy;
+    expect(b.x + Math.cos(b.angle) * gx - Math.sin(b.angle) * gy).toBeCloseTo(450, 9);
+    expect(b.y + Math.sin(b.angle) * gx + Math.cos(b.angle) * gy).toBeCloseTo(320, 9);
+    d.wheelTo(60);   // back a little
+    d.frame();
+    expect(must(d.prints.body(d.e)).angle).toBeCloseTo(60 * TWIST_PER_WHEEL, 12);
+    d.up();
+    for (let i = 0; i < 400 && d.carry.commits() === 0; i++) { d.frame(); d.flush(); }
+    expect(d.carry.commits()).toBe(1);
+    expect(d.angleProp()).toBeCloseTo(60 * TWIST_PER_WHEEL, 9);
+  });
+
+  it("a press on a print in the AIR catches it where it is — the hand takes the gliding body, not its facts — and it paints lifted while it leads", () => {
+    const d = desk();
+    d.frame();
+    d.press(450, 320);
+    d.frame();
+    for (let i = 1; i <= 12; i++) { d.moveTo(450 + 12 * i, 320); d.frame(); }
+    d.up();
+    for (let i = 0; i < 6; i++) d.frame();   // gliding
+    const glide = must(d.prints.body(d.e));
+    expect(glide.hold).toBeNull();
+    expect(glide.x).toBeGreaterThan(400 + 144);
+    expect(d.prints.lifted(d.e)).toBe(true);
+    // caught: pressed where it is drawn now
+    d.press(glide.x, glide.y);
+    d.frame();
+    const caught = must(d.prints.body(d.e));
+    expect(must(caught.hold).px).toBe(glide.x);
+    expect(Math.abs(caught.x - glide.x)).toBeLessThan(20);   // held from where it flew, never snapped back to its facts
+    d.up();
+    for (let i = 0; i < 400 && d.carry.commits() === 0; i++) { d.frame(); d.flush(); }
+    expect(d.carry.commits()).toBe(1);
+    expect(d.rect().cx).toBeGreaterThan(400 + 144);
   });
 
   it("a press that never moved it commits nothing; a print that is not held is never carried", () => {

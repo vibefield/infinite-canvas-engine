@@ -89,3 +89,34 @@ describe("the desk builder · a kind's own state (D2c)", () => {
     expect(f.stats.ghosts).toBe(0);
   });
 });
+
+describe("the desk builder · what a kind draws LIFTED (D3t-a — a print carried or in the air)", () => {
+  it("is painted with the carried set, above its later siblings, and listed for the pick to ask first; set down, it is back in its place", () => {
+    const ce = createCanvasEngine({ widgets: [Note] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: VP.width, h: VP.height, dpr: VP.dpr });
+    let now = 0;
+    const step = (): void => { now += 16; ce.step(now); };
+    const lifted = new Set<Entity>();
+    const local: KindLocal & { draw(e: Entity): object } = { draw: () => ({}), lifted: (e) => lifted.has(e) };
+    const builder = createDeskBuilder(ce.world, { objects: [Note], locals: new Map([["paper", local]]) });
+    const a = ce.ops.spawnWidget("desk.note", { x: 100, y: 100, props: { seed: 1 } });
+    const b = ce.ops.spawnWidget("desk.note", { x: 300, y: 100, props: { seed: 2 } });
+    step();
+    step();
+    /** The frame's rows as entities, in paint order (each row's record carries the geometry the builder resolved for it). */
+    const order = (): Entity[] => {
+      builder.changed();
+      const rows = builder.build({ x: 0, y: 0, zoom: 1 }, VP, 1 / 60, THEMES.light, DEFAULT_GRID, LOOKS).objects;
+      return rows.map((r) => ([a, b].find((e) => (r.record as { geometry?: unknown }).geometry === builder.geometryOf(e)) as Entity));
+    };
+    expect(order()).toEqual([a, b]);
+    expect(builder.lifted()).toEqual([]);
+    lifted.add(a);
+    expect(order()).toEqual([b, a]);   // a lifted: painted over its later sibling
+    expect(builder.lifted()).toEqual([a]);
+    lifted.delete(a);
+    expect(order()).toEqual([a, b]);   // set down: back in its place
+    expect(builder.lifted()).toEqual([]);
+  });
+});

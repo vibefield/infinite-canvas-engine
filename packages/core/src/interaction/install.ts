@@ -41,6 +41,7 @@ import { createDrawBehavior } from "../systems/l3-draw";
 import { createInsertGhostReap } from "../systems/insert-ghost";
 import { createCursorSync } from "../systems/l4-cursor";
 import { createHeldInput, type HeldPoseSlot } from "../systems/held";
+import { createPressWheel } from "../systems/press-wheel";
 import { createNavTap } from "../systems/nav-tap";
 import { createZoomThrough } from "../systems/zoom-through";
 import type { NavGeometrySlot } from "../nav/nav-geometry";
@@ -195,7 +196,8 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     // and both wheel consumers never see a pointer while an object is in hand. Picking still runs (the hover relations), harmless.
     // wireSync AFTER spatialSync (both SpatialVersion writers), BEFORE picking —
     // which now narrow-phases wire entries against wireSync's cached cubics.
-    engine.addSystems("react", createHeldInput(world, { pose: heldPose }), pick.spatialSync, wireSync, pick.picking),
+    // pressWheel beside it (D3t-a): a press holding a `WheelTurns` widget takes its pointer's wheel from both wheel consumers too
+    engine.addSystems("react", createHeldInput(world, { pose: heldPose }), createPressWheel(world), pick.spatialSync, wireSync, pick.picking),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
     engine.addSystems(
       "ctl:recognize",

@@ -15,7 +15,7 @@ export { addEvent, CalendarEvent, daySlot, EVENT_TYPE, EventPrefab, type EventSp
 export { COVERS, type CoverName, NOTEBOOK_TYPE, Notebook, RULING_NAMES } from "./notebook";
 // the photo print and its carry (D3w)
 export { PHOTO_TYPE, Photo, printExtent } from "./photo";
-export { createPhotoCarry, type PhotoCarry, type PhotoCarryOptions } from "./carry";
+export { createPhotoCarry, type PhotoCarry, type PhotoCarryOptions, TWIST_PER_WHEEL } from "./carry";
 // the whiteboard in hand: its pen (D3t-a)
 export { type BoardPen, type BoardPenOptions, createBoardPen } from "./pen";
 export { addStroke, BoardStroke, boardOps, decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, type MarkerInk, meanSpeed, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, strokeSeed, type StrokeSpec } from "../board/data";

@@ -8,20 +8,23 @@
 // met — answers `undefined`, never `outside` (B9's first blocker: a source that said `outside`
 // there made every card unclickable until the first frame). `pad` is the widest kind reach:
 // the spatial index holds rects, and a kind's drawing may reach past its rect. `live` while a
-// spring moves: the part under a still pointer is the part that is there now.
+// spring moves — or a kind's own body (a print in the air, D3t-a): the part under a still pointer is the part that is
+// there now. `lifted` (D3t-a): what the builder painted lifted by its kind's word, asked first where it is drawn.
 
 import type { Entity, FramePickSource } from "@ice/core";
 import type { DeskBuilder } from "./builder";
 
-export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach">): FramePickSource {
+export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach" | "lifted">, opts: { readonly moving?: () => boolean } = {}): FramePickSource {
   return {
     pad: () => builder.reach(),
+    // what a kind draws lifted (D3t-a — a print carried or gliding) is asked first, where it is drawn, not where its facts are
+    lifted: () => builder.lifted(),
     hit(e: Entity, wx: number, wy: number): string | undefined {
       const G = builder.geometryOf(e);
       const kind = builder.kindOf(e);
       if (G === undefined || kind === undefined) return undefined;
       return kind.hit(G, wx, wy) ?? "outside";
     },
-    live: () => builder.live(),
+    live: () => builder.live() || opts.moving?.() === true,
   };
 }

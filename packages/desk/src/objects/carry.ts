@@ -18,8 +18,16 @@
 // A press that never moved the print commits nothing. A taped print (`Locked`) is not carried: a press on it that
 // becomes a drag meets the tape, and the carry says so (`refused`, once a gesture) — the desk's marks answer it with the
 // tape's GIVE, as a core drag that meets a taped note makes it give (D4a).
+//
+// D3t-a, the carry's owed rows: ESC CANCELS a carry — the gestures' cancel (core's one-tick `CancelRequest`, read by its
+// resource stamp: it is written only by a cancel and its clearing) lets go of the print with no flick, and it flies back to
+// where it began, committing nothing; THE WHEEL over a carried print TWISTS it about the finger (PHOTO.md — the print is
+// `wheelTurns`, so core cedes that pointer's wheel to it and sums it in `PressWheel`: 0.0035 rad a wheel unit, the lab's),
+// and the rest commits the turn with the place; a press on a print in the AIR catches it where it is drawn (the pick asks
+// what the kind draws lifted first), and a print carried, gliding or flying home paints above its siblings like a `Grab`.
 
-import { ChildOf, defineQuery, Drag, type Entity, GestureActive, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, Size, Captures, Watches, type World } from "@ice/core";
+import { CancelRequest, ChildOf, defineQuery, Drag, type Entity, GestureActive, GestureCancelled, GestureEnded, GestureFailed, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, PressWheel, Size, Captures, Watches, type World } from "@ice/core";
+import { Photo } from "./photo";
 import type { Prints } from "../kinds/photo";
 import type { TypingDocs } from "./typing";
 
@@ -42,11 +50,15 @@ export interface PhotoCarry {
   follow(now: number): void;
   /** The prints in a hand now. */
   held(): readonly Entity[];
+  /** Carries cancelled since creation (a rig's witness). */
+  cancels(): number;
   /** Transactions committed since creation (a rig's witness). */
   commits(): number;
 }
 
 const pointersQ = defineQuery([Pointer, LocalPointer, PointerWorld, PointerButtons]);
+/** The lab's wheel: a wheel unit turns a held print by this many radians (lab/photo.ts). */
+export const TWIST_PER_WHEEL = 0.0035;
 
 export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
   const { world, docs } = opts;
@@ -54,16 +66,24 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
   const held = new Set<Entity>();
   /** The drags on taped prints already told of (their recognizers), so each gesture gives once. */
   const refusing = new Set<Entity>();
+  /** Each held print's wheel as its pointer's `PressWheel` last read (the twist is the difference). */
+  const wheel = new Map<Entity, number>();
+  /** The gestures' cancel as last seen: `CancelRequest` is written only by a cancel and its clearing, so its stamp moving IS a cancel. */
+  let cancelStamp = world.resourceStamp(CancelRequest);
   let commits = 0;
+  let cancels = 0;
 
-  /** ONE transaction: the print where it came to rest, raised to the top of its siblings. False when it could not. */
-  const commit = (e: Entity, x: number, y: number): boolean => {
+  /** ONE transaction: the print where it came to rest, at the turn it came to rest at, raised to the top of its siblings. False when it could not. */
+  const commit = (e: Entity, x: number, y: number, angle: number): boolean => {
     const session = docs.current();
     const size = world.get(e, Size);
     if (session === undefined || size === undefined || !world.isAlive(e)) return false;
+    const group = Photo.groups[0]?.component;
+    const props = group !== undefined ? (world.get(e, group as never) as Record<string, unknown> | undefined) : undefined;
     try {
       guardedTransaction(session.store, world, (tx) => {
         tx.edit(e).set(Position, { x: x - size.w / 2, y: y - size.h / 2 });
+        if (group !== undefined && props !== undefined && props.angle !== angle) tx.edit(e).set(group as never, { ...props, angle } as never);
         if (world.getRelation(e, ChildOf) !== undefined) tx.moveRelation(e, ChildOf, "last");
       });
     } catch {
@@ -78,16 +98,22 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
       const prints = opts.prints();
       if (prints === undefined) return;
       // last frame's rests: each its one transaction, out of the frame
-      for (const r of prints.rests()) defer(() => prints.settle(r.entity, commit(r.entity, r.x, r.y)));
+      for (const r of prints.rests()) defer(() => prints.settle(r.entity, commit(r.entity, r.x, r.y, r.angle)));
+      const stamp = world.resourceStamp(CancelRequest);
+      const cancelled = stamp !== cancelStamp;
+      cancelStamp = stamp;
       // the hands: a pointer down whose press captured a print holds it at the finger's world point
       const t = now / 1000;
-      const hands = new Map<Entity, { readonly x: number; readonly y: number }>();
+      const hands = new Map<Entity, { readonly x: number; readonly y: number; readonly wheel: number }>();
       const taped = new Set<Entity>();
       world.query(pointersQ).each((b) => {
         for (const row of b) {
           const p = b.entity(row);
           if ((world.read(p, PointerButtons).buttons & 1) === 0) continue;
           for (const rec of world.getReverse(p, Watches)) {
+            // a recognizer past its gesture (cancelled, failed, ended) holds nothing: it lingers a frame before the reap, and a
+            // cancelled one must let go on the very frame the cancel lands (D3t-a — Esc puts the print back)
+            if (world.hasTag(rec, GestureCancelled) || world.hasTag(rec, GestureFailed) || world.hasTag(rec, GestureEnded)) continue;
             const e = world.getRelation(rec, Captures);
             if (e === undefined || hands.has(e) || !world.isAlive(e) || !opts.isPrint(e)) continue;
             if (world.hasTag(e, Locked)) {
@@ -96,19 +122,30 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
               continue;
             }
             const at = world.read(p, PointerWorld);
-            hands.set(e, { x: at.x, y: at.y });
+            hands.set(e, { x: at.x, y: at.y, wheel: world.get(p, PressWheel)?.dy ?? 0 });
           }
         }
       });
       refusing.clear();
       for (const rec of taped) refusing.add(rec);
       for (const [e, at] of hands) {
-        if (held.has(e)) prints.move(e, at.x, at.y, t);
-        else { prints.hold(e, at.x, at.y, t); held.add(e); }
+        if (held.has(e)) {
+          prints.move(e, at.x, at.y, t);
+          const turned = at.wheel - (wheel.get(e) ?? at.wheel);
+          if (turned !== 0) prints.twist(e, turned * TWIST_PER_WHEEL);
+        } else { prints.hold(e, at.x, at.y, t); held.add(e); }
+        wheel.set(e, at.wheel);
       }
-      for (const e of [...held]) if (!hands.has(e)) { prints.drop(e, t); held.delete(e); }
+      for (const e of [...held]) {
+        if (hands.has(e)) continue;
+        // let go — or, the gestures cancelled (Esc), put back where it began: no flick, nothing committed
+        if (cancelled) { prints.cancel(e, t); cancels += 1; } else prints.drop(e, t);
+        held.delete(e);
+        wheel.delete(e);
+      }
     },
     held: () => [...held],
     commits: () => commits,
+    cancels: () => cancels,
   };
 }

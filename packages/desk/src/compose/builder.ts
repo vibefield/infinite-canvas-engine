@@ -278,6 +278,8 @@ export interface DeskBuilder {
   heldToWorld(e: Entity, x: number, y: number): readonly [number, number] | undefined;
   /** The held kind's part under such a point — its `hit` on the geometry it was drawn with in hand; null over nothing (the pose seam's `part`, D3t-a). */
   heldPart(e: Entity, x: number, y: number): string | null;
+  /** The objects the last build painted LIFTED by their kind's own state (D3t-a — a print carried or in the air): above their siblings, asked first by the pick. */
+  lifted(): readonly Entity[];
   stats(): DeskBuilderStats;
   dispose(): void;
 }
@@ -439,6 +441,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
    */
   let hand: { entity: Entity; dir: 1 | -1; p: number; e: number; e0: number; closeT: number; openness: number } | null = null;
   let lastHand: HeldBuild | undefined;
+  /** What the last build painted lifted by its kind's own word (D3t-a) — the pick asks these first. */
+  let liftedList: readonly Entity[] = [];
   /**
    * The held object's own frame → the screen (the frame the pose seam published) → the desk (the held slot's camera): the pose
    * the last build DREW, as core mapped the pointer through it (D3t-a). Undefined unless `e` is in hand.
@@ -832,15 +836,20 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         }
       }
       // membership: every object Active in the frame, its facts refreshed where the journal said, in two tiers — the carried set last
+      // (a core drag's `Grab`, and D3t-a what a kind's own state draws LIFTED: a print in a hand, in the air, flying home)
       const tiers: [Entity[], Entity[]] = [[], []];
+      const liftedNow: Entity[] = [];
       world.query(membersQ).each((b) => {
         for (const r of b) {
           const e = b.entity(r);
           const st = stateOf(e);
           if (st === undefined) continue;
-          (st.grabbed ? tiers[1] : tiers[0]).push(e);
+          const lifted = !st.grabbed && locals?.get(st.kind.name)?.lifted?.(e) === true;
+          if (lifted) liftedNow.push(e);
+          (st.grabbed || lifted ? tiers[1] : tiers[0]).push(e);
         }
       });
+      liftedList = liftedNow;
       dirtyAll = false;
       for (const t of tiers) t.sort((a, b) => compareStackOrder(reader, ordinals, a, b));
       const list = [...tiers[0], ...tiers[1]];
@@ -1015,6 +1024,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     meetTape: (e) => marks.refused(e),
     hand: () => lastHand,
     heldToWorld: (e, x, y) => heldToWorld(e, x, y),
+    lifted: () => liftedList,
     heldPart(e, x, y) {
       const w = heldToWorld(e, x, y);
       const st = states.get(e);

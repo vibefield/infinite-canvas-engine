@@ -27,8 +27,9 @@ import type { KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
 import type { MatPass } from "../mat/mat-pass";
 import { type BlobStore, type DecodedPicture, RGBA_TYPE } from "../photo/blobs";
+import { carryOf } from "../hold/pose";
 import { borderOf } from "../photo/layout";
-import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto } from "../photo/photo";
+import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto, twist } from "../photo/photo";
 import { type Picture, PICTURE_MAX, type PhotoInstance, PhotoPass } from "../photo/photo-pass";
 import { PHOTO_SHADER_FILES, photoShaders } from "../photo/shaders";
 import { type ShaderText, shaderText } from "../shaders";
@@ -100,8 +101,8 @@ export interface PhotoPose {
   readonly hold?: { readonly gx: number; readonly gy: number; readonly px: number; readonly py: number };
 }
 
-/** A print that came to rest where its facts are not — ONE transaction's worth for the carry: its centre, world units. */
-export interface PrintRest { readonly entity: Entity; readonly x: number; readonly y: number }
+/** A print that came to rest where its facts are not — ONE transaction's worth for the carry: its centre, world units, and its turn (the wheel twists a carried print, D3t-a). */
+export interface PrintRest { readonly entity: Entity; readonly x: number; readonly y: number; readonly angle: number }
 
 /** A flick's witness: the body as the hand let it go, and every step the desk took with it since (the law replays them). */
 export interface FlickWitness { readonly body: PhotoBody; readonly dts: number[]; landed: { readonly x: number; readonly y: number } | null }
@@ -114,6 +115,15 @@ export interface Prints extends KindLocal {
   move(e: Entity, wx: number, wy: number, t: number): void;
   /** The hand let go: the flick from the last 70 ms, capped; the body glides from here. */
   drop(e: Entity, t: number): void;
+  /**
+   * The carry was CANCELLED (Esc — D3t-a): the hand lets go and the print flies back to where it began — its facts, its turn —
+   * in `PRINT_RETURN_MS` on the island ease, landing there; nothing is committed.
+   */
+  cancel(e: Entity, t: number): void;
+  /** The wheel turns a carried print about the finger (PHOTO.md), radians; a print in the air takes it as spin. */
+  twist(e: Entity, da: number): void;
+  /** The print is drawn LIFTED — in a hand, in the air, flying home, its rest not yet in the facts (the builder paints it on top). */
+  lifted(e: Entity): boolean;
   /** Prints that came to rest away from their facts since the last ask — the carry commits each in ONE transaction. */
   rests(): PrintRest[];
   /** The carry committed `e`'s rest (or could not): the body leads until the facts show it (or a second runs out). */
@@ -150,9 +160,12 @@ interface Print {
   flick: FlickWitness | undefined;
   /** The blob the print draws, for the picture's user count. */
   hash: string;
-  /** Where its facts put its centre, as last resolved. */
+  /** Where its facts put its centre and its turn, as last resolved. */
   fx: number;
   fy: number;
+  fa: number;
+  /** A cancelled carry's flight home (D3t-a): where it began, when; null otherwise. */
+  back: { readonly x: number; readonly y: number; readonly angle: number; readonly h: number; readonly t0: number } | null;
 }
 
 interface Pic {
@@ -163,6 +176,9 @@ interface Pic {
   held: boolean;
   load: Promise<void>;
 }
+
+/** A cancelled carry's flight home, ms (D3t-a) — the put-down's own length (design-015 §8: 440 ms home), on the hand's island ease. */
+export const PRINT_RETURN_MS = 440;
 
 const copyBody = (b: PhotoBody): PhotoBody => ({ ...b, hold: b.hold ? { ...b.hold, trail: b.hold.trail.map((s) => [...s] as [number, number, number]) } : null });
 const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
@@ -197,7 +213,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
   const print = (e: Entity): Print => {
     let pr = prints.get(e);
     if (pr === undefined) {
-      pr = { body: newBody(0, 0, 1, 1), leads: false, resting: false, committedAt: -1, ax: 0, ay: 0, pose: undefined, flick: undefined, hash: "", fx: Number.NaN, fy: Number.NaN };
+      pr = { body: newBody(0, 0, 1, 1), leads: false, resting: false, committedAt: -1, ax: 0, ay: 0, pose: undefined, flick: undefined, hash: "", fx: Number.NaN, fy: Number.NaN, fa: 0, back: null };
       prints.set(e, pr);
     }
     return pr;
@@ -248,6 +264,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       pr.leads = true;
       pr.resting = false;
       pr.committedAt = -1;
+      pr.back = null;   // caught on its way home: the hand has it again
       pr.body.hovered = false;
       grab(pr.body, wx, wy, t);
       pr.ax = pr.body.ax;
@@ -260,6 +277,21 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       release(pr.body, t, law);
       pr.flick = { body: copyBody(pr.body), dts: [], landed: null };
     },
+    cancel(e, t) {
+      const pr = prints.get(e);
+      if (pr === undefined || !pr.leads) return;
+      const b = pr.body;
+      b.hold = null;
+      b.vx = 0; b.vy = 0; b.spin = 0;
+      pr.back = { x: b.x, y: b.y, angle: b.angle, h: b.h, t0: t };
+      pr.flick = undefined;
+    },
+    twist(e, da) {
+      const pr = prints.get(e);
+      if (pr === undefined || !pr.leads || pr.back !== null) return;
+      twist(pr.body, da);
+    },
+    lifted: (e) => prints.get(e)?.leads === true,
     rests: () => queue.splice(0, queue.length),
     settle(e, committed) {
       const pr = prints.get(e);
@@ -290,7 +322,8 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       const pr = print(ctx.entity);
       pr.fx = ctx.rect.cx;
       pr.fy = ctx.rect.cy;
-      if (pr.leads && pr.committedAt >= 0 && ((near(ctx.rect.cx, pr.body.x) && near(ctx.rect.cy, pr.body.y)) || last - pr.committedAt > 1000)) { pr.leads = false; pr.resting = false; pr.committedAt = -1; }
+      pr.fa = numberProp(ctx.props, "angle", 0);
+      if (pr.leads && pr.committedAt >= 0 && ((near(ctx.rect.cx, pr.body.x) && near(ctx.rect.cy, pr.body.y) && near(pr.fa, pr.body.angle)) || last - pr.committedAt > 1000)) { pr.leads = false; pr.resting = false; pr.committedAt = -1; }
       if (pr.leads && Number.isNaN(pr.body.x)) { const b = restBody(ctx, hx, hy, pr); b.h = pr.body.h; b.alpha = pr.body.alpha; pr.body = b; }
       if (!pr.leads) pr.body = withPose(restBody(ctx, hx, hy, pr), pr.pose);
       const b = pr.body;
@@ -315,6 +348,19 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       for (const [e, pr] of prints) {
         if (!pr.leads || pr.resting) { if (pr.leads) want = true; continue; }
         want = true;
+        if (pr.back !== null) {
+          // a cancelled carry flies home (D3t-a): from where the hand let go to the facts, on the island ease — then the facts lead
+          const B = pr.back;
+          const u = Math.min(Math.max((now / 1000 - B.t0) / (PRINT_RETURN_MS / 1000), 0), 1);
+          const k = carryOf(u);   // the island ease — the hand's own (hold/pose.ts)
+          let da = pr.fa - B.angle;
+          da = Math.atan2(Math.sin(da), Math.cos(da));
+          const b = pr.body;
+          b.x = B.x + (pr.fx - B.x) * k; b.y = B.y + (pr.fy - B.y) * k; b.angle = B.angle + da * k; b.h = B.h * (1 - k);
+          b.sx *= 1 - k; b.sy *= 1 - k; b.vsx = 0; b.vsy = 0; b.vh = 0;
+          if (u >= 1) { pr.back = null; pr.leads = false; }
+          continue;
+        }
         if (Number.isNaN(pr.body.x) || dt <= 0) continue;
         stepPhoto(pr.body, dt, law);
         const flick = pr.flick;
@@ -322,9 +368,9 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
         if (pr.body.hold !== null || restless(pr.body)) continue;
         // at rest: ONE transaction's worth for the carry — a print that came back where its facts are commits nothing
         if (flick !== undefined && flick.landed === null) flick.landed = { x: pr.body.x, y: pr.body.y };
-        if (near(pr.body.x, pr.fx) && near(pr.body.y, pr.fy)) { pr.leads = false; continue; }
+        if (near(pr.body.x, pr.fx) && near(pr.body.y, pr.fy) && near(pr.body.angle, pr.fa)) { pr.leads = false; continue; }
         pr.resting = true;
-        queue.push({ entity: e, x: pr.body.x, y: pr.body.y });
+        queue.push({ entity: e, x: pr.body.x, y: pr.body.y, angle: pr.body.angle });
       }
       return want;
     },

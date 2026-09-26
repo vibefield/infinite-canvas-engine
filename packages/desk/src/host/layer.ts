@@ -379,7 +379,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
 
     // the pick source (design-015 §4.5): the kinds' mirrors on the builder's geometry — set now, `undefined` for what it cannot see yet (B9)
-    const pick = createPickSource(builder);
+    const pick = createPickSource(builder, { moving: () => moving });
     const framePick = ctx.framePick;
     if (framePick !== undefined) framePick.current = pick;
     // the nav geometry seam (design-015 §9): the desk's word on its containers' faces AS DRAWN — core's nav, the zoom-through and the

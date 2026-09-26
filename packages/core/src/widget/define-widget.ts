@@ -40,6 +40,7 @@ import {
   SnapTarget,
   Solid,
   SweepsContained,
+  WheelTurns,
   type DeskStratum,
 } from "../catalog";
 import { defineComponent, defineTag } from "../schema/meta";
@@ -163,6 +164,11 @@ export interface WidgetInteraction {
    * membership — never reparenting). Default false.
    */
   readonly sweepContained?: boolean;
+  /**
+   * The wheel TURNS it while a press holds it (design-015 §6's photo, D3t-a — the `WheelTurns` capability): the wheel on
+   * that pointer is the widget's, never the camera's; its deltas add up in the pointer's `PressWheel`. Default false.
+   */
+  readonly wheelTurns?: boolean;
   /**
    * Keyboard claim (design-007 §3.1, petitions I1/I4). `"exclusive"`: while a
    * node inside this widget's claim holds browser focus, the engine keymap and
@@ -620,6 +626,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if (interaction.solid === true) capabilityTags.push(Solid);
   if (interaction.dragOn === "longPress") capabilityTags.push(LongPressDrag);
   if (interaction.sweepContained === true) capabilityTags.push(SweepsContained);
+  if (interaction.wheelTurns === true) capabilityTags.push(WheelTurns);
   if (interaction.keyboard === "exclusive") capabilityTags.push(KeyboardExclusive);
   const snap = interaction.snap ?? "target";
   if (snap === "source" || snap === "both") capabilityTags.push(SnapSource);
