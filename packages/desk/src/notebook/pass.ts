@@ -218,10 +218,11 @@ export class NotebookPass {
   }
 
   /**
-   * Copy part of a page's raster (the host's canvas, straight alpha) into its layer. The first
+   * Copy part of a page's raster (its bytes — notebook/raster.ts: RGBA8, straight alpha, `INK_W` texels a row) into its layer:
+   * only the rectangle the pen touched goes (D3t-b — the bytes, not a canvas: the Node oracle writes the same layers). The first
    * call makes the layers — a book with no ink costs the device nothing.
    */
-  uploadInk(layer: number, source: HTMLCanvasElement | OffscreenCanvas, x = 0, y = 0, w = INK_W, h = INK_H): void {
+  uploadInk(layer: number, bytes: Uint8Array<ArrayBuffer>, x = 0, y = 0, w = INK_W, h = INK_H): void {
     if (!this.inkReady) {
       this.inkTex.destroy();
       this.inkTex = this.device.createTexture({ label: "notebook/ink", size: [INK_W, INK_H, INK_LAYERS], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
@@ -233,7 +234,7 @@ export class NotebookPass {
     const x1 = Math.min(INK_W, Math.ceil(x + w));
     const y1 = Math.min(INK_H, Math.ceil(y + h));
     if (x1 <= x0 || y1 <= y0) return;
-    this.device.queue.copyExternalImageToTexture({ source, origin: { x: x0, y: y0 } }, { texture: this.inkTex, origin: { x: x0, y: y0, z: layer }, premultipliedAlpha: false }, [x1 - x0, y1 - y0]);
+    this.device.queue.writeTexture({ texture: this.inkTex, origin: { x: x0, y: y0, z: layer } }, bytes, { offset: (y0 * INK_W + x0) * 4, bytesPerRow: INK_W * 4, rowsPerImage: INK_H }, [x1 - x0, y1 - y0, 1]);
   }
 
   /** The layer's targets at the canvas's device size. */

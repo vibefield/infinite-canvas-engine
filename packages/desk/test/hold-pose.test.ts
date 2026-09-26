@@ -154,7 +154,8 @@ describe("the kinds' openings (design-015 §8's contract)", () => {
     expect(nb.open?.pose).toBe("eye");
     expect(nb.open?.spread).toBe(true);
     expect(nb.open?.extent({ rect, props: {} })).toEqual({ cx: 210, cy: 400, w: 360, h: 252 });
-    expect(nb.open?.tools?.map((t) => t.id)).toEqual(["turn:-1", "turn:1", "pen", "undo"]);
+    // D3t-b: live — ‹ ›, the four pens (the note's), undo and redo (keys only)
+    expect(nb.open?.tools?.map((t) => t.id)).toEqual(["turn:-1", "turn:1", "pen:felt", "pen:ball", "pen:fountain", "pen:red", "undo", "redo"]);
     const bd = boardKind();
     expect(bd.open?.pose).toBeUndefined();
     expect(bd.open?.extent({ rect, props: {} })).toEqual(rect);

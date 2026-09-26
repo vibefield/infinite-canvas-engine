@@ -20,17 +20,30 @@
 // the case or a page — `content` either way (the parts, the turn zones and the pen, are D3t's). Its colours
 // are the product's (`theme()`: the covers, the page, the ruling's ink — set on the root pass by the kind's
 // local, the theme gate). A deleted book is gone at once (NOTEBOOK.md: instant) — its ghost draws nothing.
+//
+// IN HAND (D3t-b — NOTEBOOK.md §6–8 on D3t-a's seam): the book's sheets are a MOTION the kind keeps from frame to frame
+// while it is held (the cover stays the hand's spring, D4b): the spread the document says — or the one the hand asked for,
+// until its transaction lands — is where the sheets go, one sheet a frame (a run of turns fans), their springs stepped here;
+// the peek and a sheet in the hand are the hand's (objects/leaf.ts). Its hit answers PARTS in hand: a page's outer 30 % —
+// `turn`; the rest of a page that takes ink — `content`, the pen's; the case and the endpapers — `frame`. Its INK is a cache
+// of its strokes (data children `desk.stroke` with their `page`, board/data.ts): the pass's eight layers handed out LRU to the
+// pages in view (notebook/pages.ts), each page replayed from its strokes, the pen's live stroke drawn into its page a segment
+// at a time and adopted when it lands. Its held bar: ‹ › (the arrow keys — a count of turns the hand turns by), the four pens
+// (the note's, `1`–`4`: the tool in hand), undo (⌘Z) and redo (⇧⌘Z) — the document's history over its strokes.
 
-import type { Entity } from "@ice/core";
+import { defineComponent, type Entity, field, type HeldToolApi, type HeldToolDef } from "@ice/core";
+import { BoardStroke, decodePoints, decodeTimes, type StrokeRow } from "../board/data";
 import type { KindProgram, SlotContext } from "../kind";
 import type { MatPass } from "../mat/mat-pass";
 import { type DeskEye, eyeOf } from "../notebook/eye";
 import { NOTEBOOK, type NotebookLaw } from "../notebook/law";
 import { type NotebookLook, type Ruling, RULINGS } from "../notebook/layout";
 import { type BuiltMesh, buildMesh, MeshWriter } from "../notebook/mesh";
-import { newMotion, type NotebookMotion, poseKey, poseOf, tiltToward, withDesk } from "../notebook/motion";
+import { inkPoints, pageOfSide, pagesInView } from "../notebook/ink";
+import { newMotion, type NotebookMotion, poseKey, poseOf, setOpen, stepLeaves, tiltToward, turnable, turnPage, withDesk } from "../notebook/motion";
+import { type InkTable, type LiveStroke, PageInk, type PageStroke } from "../notebook/pages";
 import { type NotebookDraw, NotebookPass } from "../notebook/pass";
-import { pickNotebook } from "../notebook/pick";
+import { type NotebookHit, pickNotebook } from "../notebook/pick";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
 import { NOTEBOOK_SHADER_FILES, notebookShaders } from "../notebook/shaders";
 import { coverFrame, type Frame, frameOf, type NotebookPose, relaxOf, specOf, swingOf } from "../notebook/shape";
@@ -39,6 +52,7 @@ import { settled, spring } from "../springs";
 import { HOLD } from "../hold/pose";
 import { MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../theme";
 import type { MarkFrame } from "../marks/layout";
+import { inking } from "./board";
 import { LayeredKind } from "./layer";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
@@ -85,7 +99,8 @@ export function notebookProgram(text: ShaderText): KindProgram<NotebookDraw> {
 
 /**
  * What the notebook's kind takes from the host's palette (NOTEBOOK.md's covers): the page, the ruling's ink and its
- * presence, and each cover by name — its cloth, band, three accents, endpaper, its design and whether it is paper.
+ * presence, and each cover by name — its cloth, band, three accents, endpaper, its design and whether it is paper. Its
+ * pens' inks (D3t-b) are the note's — the palette's `pens` (kinds/paper.ts `PaperPalette`), by name.
  */
 export interface NotebookPalette extends Palette {
   readonly notebooks?: {
@@ -95,12 +110,15 @@ export interface NotebookPalette extends Palette {
     readonly rule: number;
     readonly covers: Readonly<Record<string, { readonly cloth: TokenRef; readonly band: TokenRef; readonly a: TokenRef; readonly b: TokenRef; readonly c: TokenRef; readonly endpaper: TokenRef; readonly design: NotebookLook["design"]; readonly paperCover: boolean }>>;
   };
+  readonly pens?: Readonly<Record<string, TokenRef>>;
 }
 
-/** The notebook's look for a theme, parsed: each cover's `NotebookLook`, the ruling's ink with its presence. */
+/** The notebook's look for a theme, parsed: each cover's `NotebookLook`, the ruling's ink with its presence; the pens' inks (sRGB) and each pen tool's swatch (D3t-b). */
 export interface NotebookObjectLook {
   readonly covers: Readonly<Record<string, NotebookLook>>;
   readonly ruleInk: RGBA;
+  readonly pens: Readonly<Record<string, RGB>>;
+  readonly swatches: Readonly<Record<string, string>>;
 }
 
 /** A book's still, pinned on the kind's own state (a FLUX pin — D-D2a-world.5): open (or a swing, 0 … 1), a sheet mid-turn, the peek, the tilt. */
@@ -127,9 +145,15 @@ export interface NotebookGeometry {
   readonly cx: number;
   readonly cy: number;
   readonly angle: number;
+  /** In hand (D3t-b): its hit answers parts — a turn, the pen's page, the case. */
+  readonly held: boolean;
+  /** Its pages can turn (open, the cover landed) — the turn parts exist only then. */
+  readonly turnable: boolean;
+  /** The law it was resolved under (the hit, the hand's pick). */
+  readonly law: NotebookLaw;
 }
 
-/** The notebook's own state on one desk: each book's id, mesh and pinned pose, the carry's tilt; the ruling's ink on the root pass. */
+/** The notebook's own state on one desk: each book's id, mesh and pinned pose, the carry's tilt; the ruling's ink on the root pass; in hand (D3t-b) its sheets' motion, the pen's stroke and the pages' ink. */
 export interface Books extends KindLocal {
   /** A still's pose on `e` (undefined unpins). */
   pin(e: Entity, pose: BookPose | undefined): void;
@@ -139,6 +163,20 @@ export interface Books extends KindLocal {
   meshFor(e: Entity, F: Frame, pose: NotebookPose, law: NotebookLaw): { readonly mesh: BuiltMesh; readonly version: number };
   /** The world half's: the ruling's ink on the root pass — the product's colour (the theme gate). */
   ink(rule: RGBA): void;
+  /** The pages' ink on this desk — the pass's eight layers, a cache of the strokes (a witness's door: its replays, a page's raster). */
+  readonly pages: PageInk;
+  /** A book's strokes on a page as its raster draws them — the children's, in order, then the stroke the pen lifted until it lands. */
+  strokesOn(e: Entity, page: number): readonly PageStroke[];
+  /** The world half's: the ink table for a resolved book — its pages in view with ink, each on a layer, brought up to its strokes. */
+  table(e: Entity, G: NotebookGeometry, look: NotebookObjectLook): InkTable;
+  /** The pen (D3t-b): its stroke in hand on `e` — begun (its samples grow in place, laid a segment at a time) or dropped (null). */
+  write(e: Entity, live: LiveStroke | null): void;
+  /** The pen lifted its stroke, whose cell will read `key`: drawn to its end, then ADOPTED when its child lands (no replay). */
+  lift(e: Entity, key: string): void;
+  /** Its transaction was refused (a read-only document, the book gone): the page is its children's again. */
+  refuse(e: Entity): void;
+  /** The spread the hand asks for (a turn by hand, a click, a key), until its transaction lands; null — the document's again. */
+  ask(e: Entity, spread: number | null): void;
 }
 
 interface BookState {
@@ -153,17 +191,75 @@ interface BookState {
   mesh: BuiltMesh | null;
   key: string;
   version: number;
+  /** IN HAND (D3t-b): the sheets' motion, kept from frame to frame (null on the desk and in a still). */
+  motion: NotebookMotion | null;
+  /** The spread the hand asked for, until the document says it (null: the document's). */
+  pending: number | null;
+  /** The pen's stroke in hand, and the one it lifted until its child lands (with the page's stroke count at the lift). */
+  live: LiveStroke | null;
+  adopt: { readonly page: number; readonly stroke: PageStroke; readonly at: number } | null;
+  /** The book's strokes by page, as of the children's stamp. */
+  byPage: Map<number, PageStroke[]>;
+  stamp: number;
+  /** The last frame in hand moved a sheet or the peek, or has turns to go: the next asks a frame too. */
+  stirring: boolean;
+}
+
+/** A stroke's cell → its samples with their widths, once per cell (a replay reads them again). */
+function pageStrokeOf(row: StrokeRow, cache: Map<string, PageStroke>): PageStroke {
+  const key = row.points ?? "";
+  let st = cache.get(key);
+  if (st === undefined) {
+    const times = row.times !== null && row.times !== undefined && row.times !== "" ? decodeTimes(row.times) : null;
+    st = { key, ink: row.ink ?? "fountain", points: inkPoints(decodePoints(key), times, row.speed !== null && row.speed > 0 ? row.speed : 400) };
+    cache.set(key, st);
+  }
+  return st;
 }
 
 /** The notebook's `local()`. */
 export function createBooks(host: KindHost): Books {
   const books = new Map<Entity, BookState>();
+  const pages = new PageInk();
+  const strokes = new Map<string, PageStroke>();
   let next = 1;
   let woke = false;
+  let moving = false;
   const state = (e: Entity): BookState => {
     let st = books.get(e);
-    if (st === undefined) { st = { id: next++, pose: undefined, tiltX: 0, tiltXV: 0, tiltY: 0, tiltYV: 0, lastX: Number.NaN, lastY: Number.NaN, coverT: 0, coverV: 0, writer: null, mesh: null, key: "", version: 0 }; books.set(e, st); }
+    if (st === undefined) {
+      st = {
+        id: next++, pose: undefined, tiltX: 0, tiltXV: 0, tiltY: 0, tiltYV: 0, lastX: Number.NaN, lastY: Number.NaN, coverT: 0, coverV: 0, writer: null, mesh: null, key: "", version: 0,
+        motion: null, pending: null, live: null, adopt: null, byPage: new Map(), stamp: -1, stirring: false,
+      };
+      books.set(e, st);
+    }
     return st;
+  };
+  /** A book's pen strokes by page, regrouped whenever its children's stamp turns over. */
+  const byPage = (e: Entity, st: BookState): Map<number, PageStroke[]> => {
+    const stamp = host.children?.stamp(e) ?? 0;
+    if (stamp === st.stamp) return st.byPage;
+    const m = new Map<number, PageStroke[]>();
+    for (const row of host.children?.rows(e, BoardStroke) ?? []) {
+      const page = row.page ?? 0;
+      if (row.tool !== "pen" || page < 1) continue;
+      let list = m.get(page);
+      if (list === undefined) { list = []; m.set(page, list); }
+      list.push(pageStrokeOf(row, strokes));
+    }
+    st.byPage = m;
+    st.stamp = stamp;
+    return m;
+  };
+  const strokesOn = (e: Entity, page: number): readonly PageStroke[] => {
+    const st = state(e);
+    const rows = byPage(e, st).get(page) ?? [];
+    const a = st.adopt;
+    if (a === null || a.page !== page) return rows;
+    // the stroke the pen lifted: its child has landed once the page lists it past where the page stood at the lift
+    if (rows.findIndex((r, i) => i >= a.at && r.key === a.stroke.key) >= 0) { st.adopt = null; return rows; }
+    return [...rows, a.stroke];
   };
   return {
     pin(e, pose) { state(e).pose = pose; woke = true; },
@@ -185,11 +281,61 @@ export function createBooks(host: KindHost): Books {
       const had = k.ruleInk;
       if (had === null || had[0] !== rule[0] || had[1] !== rule[1] || had[2] !== rule[2] || had[3] !== rule[3]) k.ruleInk = rule;
     },
-    tick() { const w = woke; woke = false; return w; },
-    forget(e) { books.delete(e); },
-    dispose() { books.clear(); },
+    pages,
+    strokesOn,
+    table(e, G, look) {
+      const st = state(e);
+      const inView = pagesInView(G.pose, swingOf(G.theta));
+      if (inView.length === 0) return NO_TABLE;
+      const k = host.pass();
+      const up = k instanceof NotebookKind ? (k.pass ?? undefined) : undefined;
+      const fallback: RGB = Object.values(look.pens)[0] ?? [look.ruleInk[0], look.ruleInk[1], look.ruleInk[2]];
+      const live = st.live;
+      const t = pages.table(st.id, inView, (p) => strokesOn(e, p), live, (ink) => look.pens[ink] ?? fallback, look, up, G.frame.Wo, G.frame.Hp);
+      // the lifted stroke drawn to its end (a page out of the table replays with it): from here the page lists it until its child lands
+      if (live?.lifted === true) {
+        st.adopt = { page: live.page, stroke: { key: live.key, ink: live.ink, points: live.points }, at: (byPage(e, st).get(live.page) ?? []).length };
+        st.live = null;
+      }
+      return t;
+    },
+    write(e, live) {
+      state(e).live = live;   // dropped (null): the page replays from its strokes at the next table
+      moving = true;
+    },
+    lift(e, key) {
+      const st = state(e);
+      if (st.live === null) return;
+      st.live.lifted = true;
+      st.live.key = key;
+      moving = true;
+    },
+    refuse(e) {
+      const st = books.get(e);
+      if (st === undefined) return;
+      st.live = null;
+      st.adopt = null;
+      moving = true;
+    },
+    ask(e, spread) { state(e).pending = spread; moving = true; },
+    tick() {
+      const w = woke || moving;
+      woke = false;
+      moving = false;
+      for (const st of books.values()) if (st.motion !== null && (st.live !== null || st.pending !== null || st.stirring)) return true;
+      return w;
+    },
+    forget(e) {
+      const st = books.get(e);
+      if (st !== undefined) pages.forget(st.id);
+      books.delete(e);
+    },
+    dispose() { books.clear(); pages.dispose(); strokes.clear(); },
   };
 }
+
+/** No page in view with ink. */
+const NO_TABLE: InkTable = { pages: [], layers: [] };
 
 /** A book's DEFAULT turn on the mat when a host lays one: the lab's `makeBook` (never set down quite square). */
 export const bookAngle = (seed: number): number => { const s = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return (s - Math.floor(s) - 0.5) * 0.06; };
@@ -221,6 +367,24 @@ export function bookFrame(F: Frame, theta: number, cx: number, cy: number, angle
 /** The notebook's silhouette on a resolved book (`bookFrame` on its geometry). */
 export const notebookFrame = (G: NotebookGeometry): MarkFrame => bookFrame(G.frame, G.theta, G.cx, G.cy, G.angle);
 
+/** The page (and where on it) under a desk point of a resolved book — the pick through the SAME eye the pass drew it with (the hand's). */
+export const pageHitAt = (G: NotebookGeometry, wx: number, wy: number): NotebookHit | null => pickNotebook(G.frame, G.pose, G.law, G.rigid, G.eye, wx, wy, G.mesh);
+
+/** A page hit's share of the page that TURNS it (the outer `turnZone` of its length — NOTEBOOK.md §7). */
+export const inTurnZone = (h: NotebookHit, law: NotebookLaw): boolean => h.part === "page" && h.s > (1 - law.turnZone) * h.len;
+
+/**
+ * A held book's PART under a hit (D3t-b): a page's outer 30 % that has a sheet to turn — `turn`; the rest of a page that takes
+ * ink — `content`, the pen's (a mode in hand makes a press there the tool's); the case, the endpapers — `frame`, the book itself
+ * (two taps put it down — the notebook's case rule).
+ */
+export function partOf(G: NotebookGeometry, h: NotebookHit): ObjectHit {
+  if (h.part !== "page" || !G.turnable) return "frame";
+  const page = pageOfSide(G.pose, h.side);
+  if (inTurnZone(h, G.law)) return page !== null ? "turn" : "frame";
+  return page !== null ? "content" : "frame";
+}
+
 const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, a), b);
 /** One damped spring step (the motion's own: semi-implicit Euler). */
 const springStep = (x: number, v0: number, to: number, hz: number, z: number, h: number): [number, number] => {
@@ -228,6 +392,47 @@ const springStep = (x: number, v0: number, to: number, hz: number, z: number, h:
   const v = v0 + (w * w * (to - x) - 2 * z * w * v0) * h;
   return [x + v * h, v];
 };
+
+// ---------------------------------------------------------------- the tools in hand (design-015 §8; D3t-b)
+
+/** The pens a notebook is written with — the NOTE's (objects/note.ts `PENS`, STICKY.md §3): names; the inks are the host's. */
+export const NOTEBOOK_PENS = ["felt", "ball", "fountain", "red"] as const;
+/** The pen in hand when a book is picked up (the note's own default). */
+export const DEFAULT_PEN = "fountain";
+/** A pen's tool id in the held bar ("pen:fountain"). */
+export const penToolId = (pen: string): string => `pen:${pen}`;
+/** The pen a tool id names, or undefined. */
+export const penOfTool = (id: string): string | undefined => (id.startsWith("pen:") ? id.slice(4) : undefined);
+const PEN_LABEL: Readonly<Record<string, string>> = { felt: "Felt pen", ball: "Ballpoint", fountain: "Fountain pen", red: "Red pen" };
+
+/**
+ * Runtime, on the notebook in hand (D3t-b): the pages the keys and the bar asked to turn — a running count, +1 a page on, −1 a
+ * page back. The hand (objects/leaf.ts) turns by what the count moved since it last looked: a tool writes a fact, the hand
+ * turns (a spread of turns — a sheet each frame — fans; on a portrait phone a step is ONE page). The user's, never the document's.
+ */
+export const PageTurns = defineComponent("desk.pageTurns", { n: field("f64", { default: 0 }) });
+
+/** Ask for a turn: the count moves by `dir` (a tool's op — a runtime write, as the tool in hand is). */
+export function askTurn(api: Pick<HeldToolApi, "world" | "entity">, dir: 1 | -1): void {
+  const { world, entity } = api;
+  const cur = world.get(entity, PageTurns);
+  if (cur === undefined) world.addComponent(entity, PageTurns, { n: dir });
+  else world.edit(entity).set(PageTurns, { n: cur.n + dir });
+}
+
+/**
+ * The notebook's tools in hand (*Marks on the Mat* v2's held bar, `heldBarHTML`): ‹ and › (← → and PageUp/PageDown) — a page
+ * back, a page on; the four pens (`1`–`4`) — MODES, the tool in hand, the cursor a crosshair over a page (NOTEBOOK.md §7); undo
+ * (⌘Z) and, on keys alone, redo (⇧⌘Z) — the DOCUMENT's history over the book's strokes (a stroke is one transaction), waiting
+ * for a stroke in hand to land. A turn is never on the undo stack (D-D3t-b.2): ⌘Z takes back ink, never a page.
+ */
+export const NOTEBOOK_TOOLS: readonly HeldToolDef[] = [
+  { id: "turn:-1", label: "Previous page", kind: "action", keys: ["ArrowLeft", "PageUp"], hint: "←", glyph: "chevron-left", run: (api) => { askTurn(api, -1); } },
+  { id: "turn:1", label: "Next page", kind: "action", keys: ["ArrowRight", "PageDown"], hint: "→", glyph: "chevron", run: (api) => { askTurn(api, 1); } },
+  ...NOTEBOOK_PENS.map((pen, i): HeldToolDef => ({ id: penToolId(pen), label: PEN_LABEL[pen] ?? pen, kind: "mode", keys: [String(i + 1)], hint: String(i + 1), glyph: "pen", cursor: "crosshair" })),
+  { id: "undo", label: "Undo", kind: "action", keys: ["mod+z"], hint: "⌘Z", glyph: "undo", run: (api) => { if (!inking(api.world)) api.undo(); } },
+  { id: "redo", label: "Redo", kind: "action", keys: ["mod+shift+z", "mod+y"], hint: "⇧⌘Z", glyph: "redo", bar: false, run: (api) => { if (!inking(api.world)) api.redo(); } },
+];
 
 export interface NotebookKindOptions {
   readonly text?: ShaderText;
@@ -266,16 +471,35 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
           cover = st.coverT;
         }
       }
-      const open = cover !== undefined ? cover : pin?.open;
-      const m: NotebookMotion = newMotion(sheets, left, open === true || (typeof open === "number" && open >= 0.5));
-      if (typeof open === "number") { m.theta = open * Math.PI; m.fluttered = true; }
-      if (pin?.turn) {
-        const t = pin.turn;
-        const i = t.dir === 1 ? m.sheets.findIndex((q) => q.side === 0) : m.sheets.map((q) => q.side).lastIndexOf(1);
-        const q = m.sheets[i];
-        if (q) { q.air = true; q.side = t.dir === 1 ? 1 : 0; q.phi = t.phi; q.psi = t.psi; q.tw = t.twist ?? 0; }
+      let m: NotebookMotion;
+      if (st !== undefined && held !== undefined && pin === undefined) {
+        // IN HAND, live (D3t-b): the sheets are a motion kept from frame to frame — the cover the hand's, the sheets their own springs,
+        // heading for the spread the hand asked for (until its transaction lands) or the document's, one sheet a frame
+        m = st.motion ?? newMotion(sheets, left, false);
+        st.motion = m;
+        const c = cover ?? 0;
+        setOpen(m, c >= 0.5);   // closing lands every sheet in the air on the side it was heading
+        m.theta = c * Math.PI;
+        m.fluttered = true;
+        if (st.pending !== null && st.pending === left) st.pending = null;
+        const want = clamp(st.pending ?? left, 0, sheets);
+        let turned = 0;
+        for (const q of m.sheets) if (q.side === 1) turned += 1;
+        if (turned !== want && turnable(m) && !m.sheets.some((q) => q.held)) turnPage(m, turned < want ? 1 : -1, law);
+        st.stirring = stepLeaves(m, ctx.dt, law) || turned !== want;
+      } else {
+        if (st !== undefined) { st.motion = null; st.stirring = false; }
+        const open = cover !== undefined ? cover : pin?.open;
+        m = newMotion(sheets, left, open === true || (typeof open === "number" && open >= 0.5));
+        if (typeof open === "number") { m.theta = open * Math.PI; m.fluttered = true; }
+        if (pin?.turn) {
+          const t = pin.turn;
+          const i = t.dir === 1 ? m.sheets.findIndex((q) => q.side === 0) : m.sheets.map((q) => q.side).lastIndexOf(1);
+          const q = m.sheets[i];
+          if (q) { q.air = true; q.side = t.dir === 1 ? 1 : 0; q.phi = t.phi; q.psi = t.psi; q.tw = t.twist ?? 0; }
+        }
+        if (pin?.peek !== undefined) { m.peek = pin.peek; m.peekOn = pin.peek > 0; }
       }
-      if (pin?.peek !== undefined) { m.peek = pin.peek; m.peekOn = pin.peek > 0; }
       m.lift = ctx.flux.lift;
       m.held = ctx.flux.lift > 0;
       m.hover = m.opened ? 0 : ctx.flux.hover;
@@ -317,6 +541,7 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
         frame: F, pose, mesh: built.mesh, version: built.version, rigid: rigidOf(place), lamp: lampDir(ctx.lamp, ctx.rect.cx, ctx.rect.cy, law.shadow.slopeMax),
         theta: m.theta, ring: m.ring, eye, fade: ctx.flux.fade,
         cx: ctx.rect.cx, cy: ctx.rect.cy, angle,
+        held: held !== undefined, turnable: turnable(m), law,
       };
     },
     record(G: NotebookGeometry, ctx: ObjectContext): NotebookDraw {
@@ -324,46 +549,51 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       const covers = look?.covers ?? {};
       const cover = covers[stringProp(ctx.props, "cover", "")] ?? Object.values(covers)[0];
       if (look === undefined || cover === undefined) throw new Error("desk/notebook: the covers are the host's — the palette names no `notebooks` (kinds/notebook.ts `NotebookPalette`)");
-      (ctx.local as Books | undefined)?.ink(look.ruleInk);
+      const books = ctx.local as Books | undefined;
+      books?.ink(look.ruleInk);
       const rulingName = stringProp(ctx.props, "ruling", "dots") as Ruling;
       const sw = swingOf(G.theta);
       const draw: NotebookDraw = {
-        id: (ctx.local as Books | undefined)?.state(ctx.entity).id ?? 1, mesh: G.mesh, version: G.version, frame: G.frame, rigid: G.rigid, lamp: G.lamp,
+        id: books?.state(ctx.entity).id ?? 1, mesh: G.mesh, version: G.version, frame: G.frame, rigid: G.rigid, lamp: G.lamp,
         theta: G.theta, gamma: relaxOf(G.theta), look: cover, ruling: RULINGS.includes(rulingName) ? rulingName : "dots", seed: numberProp(ctx.props, "seed", 0) % 97, ring: G.ring,
-        selfShadow: G.pose.airs.length > 0 || (sw > 0.02 && sw < Math.PI - 0.02), ink: { pages: [], layers: [] },
+        // the pages in view with ink, each on a layer brought up to its strokes (D3t-b) — a ghost draws nothing, so asks for none
+        selfShadow: G.pose.airs.length > 0 || (sw > 0.02 && sw < Math.PI - 0.02), ink: books !== undefined && G.fade >= 1 ? books.table(ctx.entity, G, look) : NO_TABLE,
       };
       if (G.fade < 1) VANISHED.add(draw);
       return draw;
     },
     hit(G: NotebookGeometry, wx: number, wy: number): ObjectHit | null {
       if (G.fade < 1) return null;
-      return pickNotebook(G.frame, G.pose, law, G.rigid, G.eye, wx, wy, G.mesh) === null ? null : "content";
+      const h = pageHitAt(G, wx, wy);
+      if (h === null) return null;
+      // on the desk the book is itself (select, carry); in hand its parts (D3t-b)
+      return G.held ? partOf(G, h) : "content";
     },
     frame: notebookFrame,
     // THE OPENING (design-015 §8, D4b): the spread — twice the case's width, left of the spine — comes to the hand under the desk
-    // eye; the cover's swing is its motion; ‹ pages ›, the four pens and undo are its tools — declared here with no `kind` (dim
-    // in the bar, nothing routes to them), built on D3t-a's seam at D3t-b
+    // eye; the cover's swing is its motion; D3t-b: its tools live — ‹ ›, the four pens (the fountain pen in hand at the pickup),
+    // undo and redo — each pen's slot the swatch of its ink
     open: {
       extent: (c) => ({ cx: c.rect.cx - c.rect.w / 2, cy: c.rect.cy, w: c.rect.w * 2, h: c.rect.h }),
       pose: "eye",
       spread: true,
       openness: (c) => (c.local as Books | undefined)?.state(c.entity).coverT ?? 0,
-      tools: [
-        { id: "turn:-1", label: "Previous page", hint: "←", glyph: "chevron-left" },
-        { id: "turn:1", label: "Next page", hint: "→", glyph: "chevron" },
-        { id: "pen", label: "Pens", hint: "1–4", glyph: "pen" },
-        { id: "undo", label: "Undo", hint: "⌘Z", glyph: "undo" },
-      ],
+      tools: NOTEBOOK_TOOLS,
+      tool: () => penToolId(DEFAULT_PEN),
+      swatches: (look) => (look as NotebookObjectLook).swatches,
     },
     theme(palette: Palette, _name: ThemeName): NotebookObjectLook {
       const n = (palette as NotebookPalette).notebooks;
-      if (n === undefined) return { covers: {}, ruleInk: [0, 0, 0, 0] };
+      const penRefs = (palette as NotebookPalette).pens ?? {};
+      const pens: Record<string, RGB> = Object.fromEntries(Object.entries(penRefs).map(([name, t]) => [name, rgb(t.css)]));
+      const swatches: Record<string, string> = Object.fromEntries(Object.entries(penRefs).map(([name, t]) => [penToolId(name), t.css]));
+      if (n === undefined) return { covers: {}, ruleInk: [0, 0, 0, 0], pens, swatches };
       const paper: RGB = rgb(n.paper.css);
       const ink: RGB = rgb(n.ink.css);
       const covers = Object.fromEntries(Object.entries(n.covers).map(([name, c]) => [name, {
         cloth: rgb(c.cloth.css), band: rgb(c.band.css), accents: [rgb(c.a.css), rgb(c.b.css), rgb(c.c.css)] as const, endpaper: rgb(c.endpaper.css), paper, ink, design: c.design, paperCover: c.paperCover,
       } satisfies NotebookLook]));
-      return { covers, ruleInk: [ink[0], ink[1], ink[2], n.rule] };
+      return { covers, ruleInk: [ink[0], ink[1], ink[2], n.rule], pens, swatches };
     },
   };
 }

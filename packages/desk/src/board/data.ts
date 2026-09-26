@@ -20,6 +20,12 @@
 // (world units/s) stays: an old stroke (v1 — no `times`, the migration's empty string) spaces its
 // points by distance / speed as the bench's `sketch` does, and a v2 stroke carries its mean pace there
 // for a reader that knows no `times`.
+//
+// ITS PAGE (D3t-b — version 3): the notebook's strokes are the same data, children of a BOOK — each on one page, `page` (a
+// sheet's recto is page 2i + 1, its verso 2i + 2; 0 = no page: a board's stroke, which is every stroke a v2 document holds),
+// its path in PAGE units (`s` from the gutter, `y` from the head — the same on both faces of a sheet), its tool the `pen` and
+// its ink the pen's name (the note's `PENS`; the colours are the host's). The pace is the same codec: the pen's nib law
+// (notebook/ink.ts) reads each sample's time, so a page's replay lays the widths the hand did.
 
 import { ChildOf, defineComponent, definePrefab, type Entity, field, type GuardedTx, init } from "@ice/core";
 import { linear } from "../mat/night";
@@ -41,6 +47,7 @@ export const BoardStroke = defineComponent("desk.stroke", {
   points: field("string", { default: "" }),
   speed: field("f64", { default: 400 }),
   times: field("string", { default: "" }),
+  page: field("u32", { default: 0 }),
 });
 
 /** A stroke's cell as the board reads it (a tolerant reader: a string field strata hands back as null reads as its default). */
@@ -52,33 +59,41 @@ export interface StrokeRow {
   readonly points: string | null;
   readonly speed: number | null;
   readonly times?: string | null;
+  /** The notebook page it is on (D3t-b — v3): 2i + 1 a sheet's recto, 2i + 2 its verso; 0 (or absent, a v2 reader's) = none. */
+  readonly page?: number | null;
 }
 
 /** The durable id a stroke entity carries (`PrefabId`) — a data child, never a widget. */
 export const STROKE_TYPE = "desk.stroke";
 
 /**
- * A stroke's durable prefab: its one cell and its `ChildOf` edge to the board it is on. Version 2 (D3t-a) added `times`; a v1
- * stroke migrates to an empty one — it keeps its `speed` (the replay spaces it as before). The Board declares it as its `data`,
- * so the engine's catalog stamps, gates and migrates it with the board.
+ * A stroke's durable prefab: its one cell and its `ChildOf` edge to the board (or the book) it is on. Version 2 (D3t-a) added
+ * `times`; a v1 stroke migrates to an empty one — it keeps its `speed` (the replay spaces it as before). Version 3 (D3t-b) added
+ * `page`; a v2 stroke — a board's — migrates to page 0. The Board and the Notebook declare it as their `data`, so the engine's
+ * catalog stamps, gates and migrates it with them.
  */
 export const StrokePrefab = definePrefab(STROKE_TYPE, {
   store: "durable",
-  version: 2,
-  components: [init(BoardStroke, { tool: "marker", ink: "black", tip: "bullet", erase: false, points: "", speed: 400, times: "" })],
+  version: 3,
+  components: [init(BoardStroke, { tool: "marker", ink: "black", tip: "bullet", erase: false, points: "", speed: 400, times: "", page: 0 })],
   relations: [ChildOf],
-  migrate: { 1: (v) => ({ ...v, times: "" }) },
+  migrate: { 1: (v) => ({ ...v, times: "" }), 2: (v) => ({ ...v, page: 0 }) },
 });
 
-/** A stroke as an author states one: the path in melamine units and its pace — each sample's time (ms from the first), or one speed; a wipe has no path. */
+/**
+ * A stroke as an author states one: the path in melamine units (a notebook's: page units, on its `page`) and its pace — each
+ * sample's time (ms from the first), or one speed; a wipe has no path.
+ */
 export interface StrokeSpec {
-  readonly tool?: "marker" | "wipe";
+  readonly tool?: "marker" | "wipe" | "pen";
   readonly ink?: string;
   readonly tip?: TipName;
   readonly erase?: boolean;
   readonly points?: readonly (readonly [number, number])[];
   readonly times?: readonly number[];
   readonly speed?: number;
+  /** The notebook page (D3t-b): 2i + 1 sheet i's recto, 2i + 2 its verso; absent = 0, a board's. */
+  readonly page?: number;
 }
 
 /** A path as the cell stores it: base64 (no padding) of LE f32 (x, y) pairs. */
@@ -116,17 +131,18 @@ export function meanSpeed(points: readonly (readonly [number, number])[], times:
 }
 
 /** The row a spec is — defaults as the prefab has them; timed, its `speed` is the path's mean pace unless the spec names one. */
-export function strokeRow(s: StrokeSpec): { tool: string; ink: string; tip: string; erase: boolean; points: string; speed: number; times: string } {
+export function strokeRow(s: StrokeSpec): { tool: string; ink: string; tip: string; erase: boolean; points: string; speed: number; times: string; page: number } {
   const points = s.points ?? [];
   const timed = s.times !== undefined && s.times.length === points.length && points.length > 0;
   return {
     tool: s.tool ?? "marker", ink: s.ink ?? "black", tip: s.tip ?? "bullet", erase: s.erase === true,
     points: encodePoints(points), speed: s.speed ?? (timed ? meanSpeed(points, s.times ?? []) : 400),
     times: timed ? encodeTimes(s.times ?? []) : "",
+    page: Math.max(0, Math.floor(s.page ?? 0)),
   };
 }
 
-/** Lay a stroke on a board — one entity, the board's newest child — inside the caller's transaction (one stroke, one undo step). */
+/** Lay a stroke on a board (or a book's page) — one entity, the object's newest child — inside the caller's transaction (one stroke, one undo step). */
 export function addStroke(tx: GuardedTx, board: Entity, s: StrokeSpec): Entity {
   const e = tx.spawnPrefab(StrokePrefab, [init(BoardStroke, strokeRow(s))]);
   tx.setRelation(e, ChildOf, board);   // placeless on the ordered ChildOf: appended last — the newest stroke

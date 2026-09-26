@@ -233,13 +233,13 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
     expect(stub.calls.at(-1)).toBe("release 1");
   });
 
-  it("the stroke's cell: tool · ink · tip · erase · points · speed · times (v2, D3t-a); the path as base64 LE f32 pairs, read tolerantly", () => {
+  it("the stroke's cell: tool · ink · tip · erase · points · speed · times (v2, D3t-a) · page (v3, D3t-b); the path as base64 LE f32 pairs, read tolerantly", () => {
     const pts: [number, number][] = [[40, 60], [90.5, 48.25], [-3, 1e4]];
     expect(decodePoints(encodePoints(pts))).toEqual(pts);
     expect(decodePoints(encodePoints([[0.1, 0.2]]))).toEqual([[Math.fround(0.1), Math.fround(0.2)]]);
     expect(encodePoints([[1, 2]])).toBe("AACAPwAAAEA");   // 1.0f = 00 00 80 3F, 2.0f = 00 00 00 40, little-endian
     expect(decodePoints("!?")).toEqual([]);
-    expect(strokeRow({})).toEqual({ tool: "marker", ink: "black", tip: "bullet", erase: false, points: "", speed: 400, times: "" });
+    expect(strokeRow({})).toEqual({ tool: "marker", ink: "black", tip: "bullet", erase: false, points: "", speed: 400, times: "", page: 0 });
   });
 });
 

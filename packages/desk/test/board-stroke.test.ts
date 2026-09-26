@@ -69,17 +69,18 @@ describe("the stroke's times (desk.stroke v2)", () => {
     expect(Array.from(a)).not.toEqual(Array.from(b));   // a hand ten times faster runs the felt dry
   });
 
-  it("the Board declares its strokes as its data: the catalog stamps desk.stroke@2; a v1 stroke migrates keeping its speed", () => {
+  it("the Board declares its strokes as its data: the catalog stamps desk.stroke@3; a v1 stroke migrates keeping its speed, a v2 one to page 0 (D3t-b)", () => {
     expect(Board.data).toEqual([StrokePrefab]);
-    expect(StrokePrefab.version).toBe(2);
+    expect(StrokePrefab.version).toBe(3);
     const ce = createCanvasEngine({ widgets: [Board] });
     ce.docs.create();
     const report = ce.docs.current()?.versionReport();
-    expect(report?.localPacks["desk.stroke"]).toBe(2);
-    expect(report?.docPacks["desk.stroke"]).toBe(2);
+    expect(report?.localPacks["desk.stroke"]).toBe(3);
+    expect(report?.docPacks["desk.stroke"]).toBe(3);
     expect(durablePrefabFor(ce.world, "desk.stroke")).toBe(StrokePrefab);
     expect(dataPrefabFor(ce.world, "desk.stroke")).toBe(StrokePrefab);
     const v1 = { tool: "marker", ink: "red", tip: "fine", erase: false, points: encodePoints([[1, 2]]), speed: 250 };
     expect(StrokePrefab.migrate?.[1]?.(v1)).toEqual({ ...v1, times: "" });
+    expect(StrokePrefab.migrate?.[2]?.({ ...v1, times: "" })).toEqual({ ...v1, times: "", page: 0 });
   });
 });

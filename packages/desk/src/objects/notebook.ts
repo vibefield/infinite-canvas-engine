@@ -3,11 +3,14 @@
 // the host's palette), its `seed` (the hand of its paper), the `spread` it is open at (the sheets turned onto the
 // left) and its `angle` on the mat (the prototype kept it on the book; a new one takes its seed's — `bookAngle`).
 // Its rect is the closed case (180 × 252); whether it lies OPEN is a pose — the opening is D4b's (a still pins it).
-// Its INK (the four pens, the pages' strokes as data children `ChildOf` the book with their page) is D3t's.
+// What is WRITTEN in it is not a prop: its INK is its DATA CHILDREN (D3t-b) — `desk.stroke` entities `ChildOf` the book,
+// each on its `page` in page units, laid by the pen in hand (one transaction a stroke; board/data.ts), the pages' rasters a
+// cache replayed from them (kinds/notebook.ts). `spread` moves with a completed turn, off the undo stack (D-D3t-b.2).
 // Things, movable, selectable, snapping both ways; a ROOT object (D-D18: `interaction.drop: "never"` — no container
 // takes it, whatever it accepts).
 
 import { p } from "@ice/core";
+import { StrokePrefab } from "../board/data";
 import { notebookKind } from "../kinds/notebook";
 import { NOTEBOOK } from "../notebook/law";
 import { defineObject } from "../object";
@@ -36,4 +39,6 @@ export const Notebook = defineObject({
   size: { w: NOTEBOOK.cover.width, h: NOTEBOOK.cover.height },
   kind: notebookKind(),
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
+  // its strokes are its DATA (D3t-b, the Board's prefab): the catalog stamps, gates and migrates them with the book
+  data: [StrokePrefab],
 });

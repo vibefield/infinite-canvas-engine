@@ -173,31 +173,10 @@ export function setOpen(m: NotebookMotion, open: boolean): void {
 
 // ---------------------------------------------------------------- the step
 
-/** Advance every spring by dt seconds; true while anything still moves. */
-export function stepMotion(m: NotebookMotion, dt0: number, law: NotebookLaw): boolean {
-  let dt = dt0;
+/** The sheets in the air, `n` substeps of `h` seconds: a held one follows the hand, the rest spring to their side and land. True while any is in the air. */
+function stepSheets(m: NotebookMotion, h: number, n: number, law: NotebookLaw): boolean {
   const S = law.springs;
-  dt = Math.min(dt, 0.05);
-  const n = 8;
-  const h = dt / n;
   let live = false;
-  // the cover
-  const thetaT = m.opened ? Math.PI : 0;
-  const prev = m.theta;
-  for (let k = 0; k < n; k++) [m.theta, m.thetaV] = springStep(m.theta, m.thetaV, thetaT, S.cover[0], S.cover[1], h);
-  if (Math.abs(m.theta - thetaT) < 1e-4 && Math.abs(m.thetaV) < 1e-3) { m.theta = thetaT; m.thetaV = 0; } else live = true;
-  // the landing flutter: as an opening cover comes down, the first sheets lift off the block and fall back
-  if (m.opened && !m.fluttered && prev < 0.9 * Math.PI && m.theta >= 0.9 * Math.PI) {
-    m.fluttered = true;
-    let top = rightTop(m);
-    for (let k = 0; k < law.flutter.sheets && top >= 0; k++) {
-      const s = m.sheets[top] as SheetMotion;
-      const f = 1 - k / law.flutter.sheets;
-      s.air = true; s.side = 0; s.phi = 0; s.psi = 0; s.phiV = law.flutter.kick * 0.25 * f; s.psiV = law.flutter.kick * f; s.tw = 0; s.twV = 0.6 * f;
-      top = rightTop(m);
-    }
-  }
-  // the sheets in the air
   for (const s of m.sheets) {
     if (!s.air) continue;
     const T = s.side * Math.PI;
@@ -222,10 +201,58 @@ export function stepMotion(m: NotebookMotion, dt0: number, law: NotebookLaw): bo
       s.air = false; s.phi = s.psi = T; s.phiV = s.psiV = s.tw = s.twV = 0;
     } else live = true;
   }
-  // the corner's peek
+  return live;
+}
+
+/** The corner's peek, `n` substeps of `h` seconds: up while the pointer invites a turn of an open book with nothing in the air. True while it moves. */
+function stepPeek(m: NotebookMotion, h: number, n: number, law: NotebookLaw): boolean {
+  const S = law.springs;
+  let live = false;
   const peekT = m.peekOn && turnable(m) && !anyAir(m) ? 1 : 0;
   for (let k = 0; k < n; k++) [m.peek, m.peekV] = springStep(m.peek, m.peekV, peekT, S.peek[0], S.peek[1], h);
   if (Math.abs(m.peek - peekT) < 1e-3 && Math.abs(m.peekV) < 1e-2) { m.peek = peekT; m.peekV = 0; } else live = true;
+  return live;
+}
+
+/**
+ * The SHEETS and the PEEK alone, by dt seconds (D3t-b): a book in hand, whose cover, lift and tilt are the hand's (kinds/notebook.ts
+ * — the cover on the palm's spring), keeps its sheets' springs here — the same substeps `stepMotion` takes. True while any moves.
+ */
+export function stepLeaves(m: NotebookMotion, dt0: number, law: NotebookLaw): boolean {
+  const dt = Math.min(dt0, 0.05);
+  const n = 8;
+  const h = dt / n;
+  const a = stepSheets(m, h, n, law);
+  const b = stepPeek(m, h, n, law);
+  return a || b;
+}
+
+/** Advance every spring by dt seconds; true while anything still moves. */
+export function stepMotion(m: NotebookMotion, dt0: number, law: NotebookLaw): boolean {
+  let dt = dt0;
+  const S = law.springs;
+  dt = Math.min(dt, 0.05);
+  const n = 8;
+  const h = dt / n;
+  let live = false;
+  // the cover
+  const thetaT = m.opened ? Math.PI : 0;
+  const prev = m.theta;
+  for (let k = 0; k < n; k++) [m.theta, m.thetaV] = springStep(m.theta, m.thetaV, thetaT, S.cover[0], S.cover[1], h);
+  if (Math.abs(m.theta - thetaT) < 1e-4 && Math.abs(m.thetaV) < 1e-3) { m.theta = thetaT; m.thetaV = 0; } else live = true;
+  // the landing flutter: as an opening cover comes down, the first sheets lift off the block and fall back
+  if (m.opened && !m.fluttered && prev < 0.9 * Math.PI && m.theta >= 0.9 * Math.PI) {
+    m.fluttered = true;
+    let top = rightTop(m);
+    for (let k = 0; k < law.flutter.sheets && top >= 0; k++) {
+      const s = m.sheets[top] as SheetMotion;
+      const f = 1 - k / law.flutter.sheets;
+      s.air = true; s.side = 0; s.phi = 0; s.psi = 0; s.phiV = law.flutter.kick * 0.25 * f; s.psiV = law.flutter.kick * f; s.tw = 0; s.twV = 0.6 * f;
+      top = rightTop(m);
+    }
+  }
+  if (stepSheets(m, h, n, law)) live = true;
+  if (stepPeek(m, h, n, law)) live = true;
   // the lift and the tilt
   const liftT = m.held ? 1 : 0;
   for (let k = 0; k < n; k++) [m.lift, m.liftV] = springStep(m.lift, m.liftV, liftT, S.lift[0], S.lift[1], h);
