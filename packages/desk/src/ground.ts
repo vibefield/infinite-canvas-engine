@@ -49,11 +49,16 @@ import { DEFAULT_GRID, dressGrid, type GridConfig, type GridStats, gridStats, ty
 import { type SlotLight, STILL_MAT_FRAME } from "./mat/layout";
 import { MatPass } from "./mat/mat-pass";
 import type { MatShaders } from "./mat/shaders";
+import type { MarksInput } from "./marks/layout";
+import { MarksPass } from "./marks/pass";
+import type { MarksShaders } from "./marks/shaders";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "./nav/portal";
 import type { GroundTheme } from "./theme";
 
 export type { KindExtra, KindPass, KindProgram, SlotContext, StratumName } from "./kind";
 export { STRATA } from "./kind";
+export type { MarkBar, MarkBox, MarkFrame, MarkGuide, MarkMarquee, MarkObject, MarkRuler, MarksInput, MarkTape, MarkUnion } from "./marks/layout";
+export { MARKS_SHADER_FILES, marksShaders } from "./marks/shaders";
 
 export interface GroundOptions {
   /**
@@ -76,6 +81,12 @@ export interface GroundOptions {
    * stratum by stratum, then in each slot's paint order.
    */
   readonly kinds: readonly KindProgram[];
+  /**
+   * The desk's chrome (marks/pass.ts; design-015 §7, D4a): the marks pass, drawn in the ROOT's pass after every
+   * stratum — the selection's brackets, the vellum, the laser, the tape — when a frame names its `marks`. Absent =
+   * a ground that draws no chrome.
+   */
+  readonly marks?: MarksShaders;
 }
 
 /** A layer a host rendered first, laid on the mat inside the ground's pass (it sets its own scissor; the ground restores the slot's). */
@@ -139,6 +150,8 @@ export interface GroundFrameInputs extends SlotInputs {
   readonly theme: GroundTheme;
   /** Present only while a nav flight is on. */
   readonly outgoing?: OutgoingInputs;
+  /** The desk's marks this frame, in screen px (marks/layout.ts) — stratum 5, over everything; absent = none. */
+  readonly marks?: MarksInput;
 }
 
 export interface GroundStats extends GridStats {
@@ -432,16 +445,19 @@ export class Ground {
   readonly pool: SlotPool;
   /** The root's grid when a frame names none. */
   grid: GridConfig = DEFAULT_GRID;
+  /** The desk's chrome — stratum 5 (D4a); null when the options named no marks shaders. */
+  readonly marks: MarksPass | null;
 
-  private constructor(device: GPUDevice, surface: Surface, root: SlotSet) {
-    this.device = device; this.surface = surface; this.mat = root.mat; this.root = root;
+  private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null) {
+    this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks;
     this.pool = new SlotPool(root);
   }
 
   static async create(opts: GroundOptions): Promise<Ground> {
     const surf = opts.surface;
     const mat = await MatPass.create(opts.device, surf.format, opts.mat);
-    return new Ground(opts.device, surf, await createSlotSet(opts.device, surf.format, mat, opts.kinds));
+    const root = await createSlotSet(opts.device, surf.format, mat, opts.kinds);
+    return new Ground(opts.device, surf, root, opts.marks === undefined ? null : await MarksPass.create(opts.device, surf.format, opts.marks, mat));
   }
 
   /** The root's pass of the kind registered as `name` (undefined if none) — a host reaches its kind's own API through it: the note's ink pages, the whiteboard's rasters. */
@@ -454,14 +470,17 @@ export class Ground {
   render(inputs: GroundFrameInputs): GroundStats {
     const encoder = this.device.createCommandEncoder({ label: "ground" });
     const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid);
+    const marked = inputs.marks !== undefined && this.marks !== null ? this.marks.prepare(inputs.marks) : 0;
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
+    // stratum 5: the marks, over every slot and every stratum (drawFrame left the scissor on the whole view)
+    if (marked > 0) this.marks?.draw(pass);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
     return { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals };
   }
 
   /** The pool's slots, then the root's kinds in reverse registration order, then the mat. */
-  dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.mat.dispose(); }
+  dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.mat.dispose(); }
 }

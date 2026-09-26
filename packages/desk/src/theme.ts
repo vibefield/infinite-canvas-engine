@@ -380,6 +380,75 @@ export const MINIMAT = {
   gate: [140, 220] as const,
 } as const;
 
+/**
+ * The MARKS — the desk's chrome as the renderer draws it over every object (stratum 5; design-015 §7,
+ * D4a): *Marks on the Mat* v2 (claude.ai artifact W9xB23bF9JkSoZhxqKpjaQ, sources
+ * `vibe-field/draft/desk-chrome/`; Q-a…Q-k agreed 2026-09-25), its proposed DESIGN.md §14 "the
+ * desk's hands". Every mark has one hand and every hand one ink: YOU draw in the PENCIL — the
+ * selection's focus brackets, a several's union and its members' ticks, the knobs, the vellum
+ * marquee, your extent on the rulers (`--vf-select`'s hue, OKLCH 252°, lifted to L .76: 3.62:1 on
+ * the lit mat) — with a dark KEYLINE under every stroke so it holds on paper and on the whiteboard;
+ * the DESK states facts about space in the LASER — the snap guides, the equal gaps and their numbers
+ * — which is light, so it is ADDED; and the TAPE is masking tape across a taped object's top corners,
+ * an attachment of the OBJECT (it zooms with it) and so moonlit by night, where the pencil and the
+ * laser are light and the Moon does not dim them (Q-k). Lengths are SCREEN px (the chrome keeps its
+ * size at every zoom) unless named; the numbers are chrome.js's `CHROME`/`INK` and its `drawSelection`
+ * · `drawMember` · `drawUnion` · `drawMarquee` · `drawGuides` · `flare` · `pill` · `drawRulerBand`,
+ * number for number, and desk.css's tape; the clocks are the page's §14 motion table (ms).
+ */
+export const MARKS = {
+  /** The inks, each with its token (the page's §14; desk.css; chrome.js `INK`). */
+  inks: {
+    pencil: { token: "--desk-pencil (Marks on the Mat §14, proposed)", css: "#79b5f8" },
+    /** The keyline under a pencil stroke: the mat's cast at 34 % (`--desk-keyline`). */
+    keyline: { token: "--desk-keyline — the tree-shadow design's `--cast-rgb`", css: "rgb(14 26 10 / .34)" },
+    /** A resize knob's face: chrome.js `INK.paper`. */
+    paper: { token: "chrome.js INK.paper", css: "#fffdf8" },
+    laser: { token: "--desk-laser (the bloom, added)", css: "#ff2e93" },
+    laserLine: { token: "--desk-laser-line", css: "#ff4fa3" },
+    laserCore: { token: "--desk-laser-core (5.94:1 on the lit mat)", css: "#ffd6ea" },
+    /** The pencil pill's numerals: the tray's ink (`--desk-ink`, solid); the laser pill's: white. */
+    tray: { token: "--desk-ink, solid (the tree-shadow design's `--ink`)", css: "#100904" },
+    white: { token: "chrome.js `pill` — the laser pill's numerals", css: "#ffffff" },
+    tape: { token: "--desk-tape", css: "rgb(238 228 204 / .88)" },
+    /** The vellum's veil: cream by day, a cool milk by night (chrome.js `drawMarquee`). */
+    vellumDay: { token: "chrome.js vellum, day", css: "rgb(255 250 238 / .11)" },
+    vellumNight: { token: "chrome.js vellum, night", css: "rgb(214 226 255 / .07)" },
+  },
+  /** The keyline is this much wider than the stroke it lies under. */
+  keyline: { grow: 2 },
+  /** One object selected: the frame 6 out, brackets reaching 16 (≤ 30 % of a side, never under r + 2), 1.5 thick, the hairline between them one DEVICE px at 42 %, the corner r + 6 ≤ 10; the lock-on arrives from 8 further out, its presence full by 1/2.2 of the way; knobs (radius 3.5, a cast ring 1 wider at 28 %) where the object resizes; under 24 px on screen, one ring. */
+  select: { gap: 6, reach: 16, share: 0.3, minOverR: 2, stroke: 1.5, hair: 0.42, radiusMax: 10, arrive: 8, rise: 2.2, knob: 3.5, knobShadow: 0.28, knobStroke: 1.5, collapse: 24 },
+  /** A member of several: quiet ticks — 4 out, reaching 8, 1.25 thick, at 62 %; the union carries the weight. */
+  member: { gap: 4, reach: 8, radiusMax: 8, stroke: 1.25, alpha: 0.62 },
+  /** Several: one union, 10 out, square to the mat, its corner 4. */
+  union: { gap: 10, radius: 4 },
+  /** The vellum: its pencil edge at 80 % (one device px), brackets reaching 12 at its corners once both sides pass 14, the count riding the cursor at +14, +18. */
+  marquee: { edge: 0.8, reach: 12, minSide: 14, count: [14, 18] as const },
+  /** A number the desk states: 10 px mono, 8 wider than its text, 15 tall, corner 3.5. */
+  pill: { size: 10, pad: 8, height: 15, radius: 3.5 },
+  /**
+   * The laser: a faint line wall to wall (3 px at 12 %, then 1 device px + 0.5 at 34 %, both added), and between the
+   * objects it aligns, 14 past them, the bloom (9 · 5 · 2.6 px at 7 · 16 · 32 %, added) under a 1.25 px line at 95 %
+   * with a 0.6 px core at 95 %; a centre is dotted (a dot every 4.51 px: the bloom 0.7 as wide, the line 2, the core 1);
+   * a new alignment strikes at 1.8×; a flare (radius 7) at every aligned corner; a gap, a 4 px bloom at 18 % under a
+   * 1.1 px line with 4 px ticks at its ends, its number in a laser pill on it (off it, under 26 px).
+   */
+  laser: {
+    wall: [[3, 0.12], [0.5, 0.34]] as const, bloom: [[9, 0.07], [5, 0.16], [2.6, 0.32]] as const,
+    line: 1.25, core: 0.6, alpha: 0.95, dotted: { period: 4.51, bloom: 0.7, line: 2, core: 1 }, past: 14, strike: 0.8,
+    flare: { radius: 7, stop: 0.25, core: 0.9, mid: 0.55 },
+    bar: { bloom: [4, 0.18] as const, line: 1.1, tick: 4, pillFrom: 26, off: [16, 14] as const },
+  },
+  /** Your extent on the rulers (the mat's RULER band): a pencil wash at 16 %, its edges at 95 %, the edge coordinates 4 off them, 7 up from the band's inner line, over a 3 px cast halo at 55 %; a guide ticks the band in laser (1.5 px at 90 %, added). */
+  ruler: { wash: 0.16, edge: 0.95, label: { gap: 4, lift: 7, halo: 1.5, haloAlpha: 0.55 }, tick: { width: 1.5, alpha: 0.9, inset: 3 } },
+  /** Masking tape (desk.css `.obj-tape`): two strips 60 × 17 (object units) crossing the top corners, 5 over the top edge and 20 past each side, turned 37°; fibres 1 in 3 at 10 % white, a light from above (18 % white → 4 % black); moonlit by night. */
+  tape: { w: 60, h: 17, over: 5, past: 20, turn: 37, fibre: { every: 3, alpha: 0.1 }, sheen: [0.18, 0.04] as const, night: { saturate: 0.3, brightness: 0.46 }, press: 1.22 },
+  /** The clocks, ms: the lock-on (on `--vf-ease-lift`) and the leave; several's union and its fade; the vellum's fold (`--vf-ease-island`); the strike; the tape pressed (the second strip 60 later) and lifted; the tape's GIVE — a drag that meets it shivers 2.2 px and settles. */
+  clocks: { lockOn: 180, leave: 120, union: 220, unionFade: 120, fold: 240, strike: 160, tapePress: 240, tapeStagger: 60, tapeLift: 160, give: 360 },
+  give: { px: 2.2, rate: 44 },
+} as const;
+
 /** Everything the passes read, as numbers. */
 export interface GroundTheme {
   readonly name: ThemeName;
