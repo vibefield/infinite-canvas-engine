@@ -13,7 +13,7 @@
 import { p } from "@ice/core";
 import { MARKERS, StrokePrefab } from "./data";
 import { type BoardInk, type BoardObjectLook, boardKind } from "./kind";
-import { defineObject } from "@ice/desk";
+import { DESK_OBJECT, defineObject } from "@ice/desk";
 import { BOARD } from "./theme";
 import { createBoardPen } from "./board-pen";
 
@@ -37,6 +37,8 @@ export const Board = defineObject({
   // on the pegboard tray (design-017 §8): the whiteboard on a rail
   tray: { label: "Whiteboard", category: "surface", order: 1, hang: { w: 240, h: 160, accessory: "rail", pegs: [[-2.5, -0.5], [2.5, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: true, snap: "both", drop: "never" },
+  // it lies on the desk by what it provides (K8a — `DESK_OBJECT`, the desk canvas's one key), as a plugin kind does
+  provides: [DESK_OBJECT],
   // its strokes and wipes are its DATA (D3t-a): the catalog stamps, gates and migrates their prefab with the board's own
   data: [StrokePrefab],
   // the whiteboard in hand (D3t-a): its PEN — the hand onto the board kind's state, each stroke ONE transaction out of the frame (D-D7-A.3)

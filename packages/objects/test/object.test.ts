@@ -7,7 +7,7 @@
 // hit, reach, theme.
 import { createWorld, type Entity, STRATUM_BANDS, widgets } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { FLUX_REST, isObjectKind, type ObjectContext, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, NO_DOCS, type KindDriverHost, MAT_GRID } from "@ice/desk";
+import { CONTAINABLE, DESK_OBJECT, FLUX_REST, isObjectKind, type ObjectContext, PINNABLE, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, NO_DOCS, type KindDriverHost, MAT_GRID } from "@ice/desk";
 import { minimatKind, miniMatReach } from "../src/minimat/kind";
 import { paperKind, paperReach } from "../src/paper/kind";
 import { DEFAULT_MINIMAT_LAW, faceOf, pickMiniMat, resolveMiniMat } from "../src/minimat/minimat";
@@ -58,17 +58,18 @@ describe("defineObject (design-015 §5.2, D-D16)", () => {
     expect(Note.propToGroup.text).toBe("ink");
     expect(Note.propToGroup.seeds).toBe("ink");
     expect(Note.propToGroup.pen).toBe("props");
-    expect(Note.provides).toEqual([NOTE_TYPE]);
+    expect(Note.provides).toEqual([NOTE_TYPE, DESK_OBJECT, CONTAINABLE, PINNABLE]);
     expect(Note.container).toBeUndefined();
     expect(must(objectKindOf(Note)).name).toBe("paper");
   });
 
-  it("MiniMat: desk.minimat — name · vinyl, 640×480, sheets, a container accepting notes and mini mats, its portal the border's inset (faceOf's rect)", () => {
+  it("MiniMat: desk.minimat — name · vinyl, 640×480, sheets, a container accepting what provides CONTAINABLE, its portal the border's inset (faceOf's rect)", () => {
     expect(MiniMat.type).toBe(MINIMAT_TYPE);
     expect(MiniMat.stratum).toBe("sheets");
     expect(MiniMat.defaultSize).toEqual({ w: MINIMAT.size.w, h: MINIMAT.size.h });
     const c = must(MiniMat.container);
-    expect([...c.accepts].sort()).toEqual([MINIMAT_TYPE, NOTE_TYPE]);
+    expect([...c.accepts]).toEqual([CONTAINABLE]);
+    expect(MiniMat.provides).toEqual([MINIMAT_TYPE, DESK_OBJECT, CONTAINABLE]);
     expect(c.portal).toEqual({ top: MINIMAT.margin, right: MINIMAT.margin, bottom: MINIMAT.margin, left: MINIMAT.margin });
     // the portal insets cut exactly the FACE the kind's law cuts at rest
     const G = resolveMiniMat({ cx: 380, cy: 330, w: 640, h: 480 }, { held: 0, hover: 0, ring: 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
@@ -230,7 +231,7 @@ describe("the kinds' drivers are DECLARED, never wired by name (D7 #5, D-D7-A.3)
     const make = driversOf(Third);
     expect(make).toBeDefined();
     const host: KindDriverHost = {
-      world: createWorld(), docs: NO_DOCS, local: undefined, look: () => undefined, isKind: (e) => e === 7, kind: () => undefined,
+      world: createWorld(), docs: NO_DOCS, local: undefined, look: () => undefined, isKind: (e) => e === 7, kind: () => undefined, provides: () => undefined,
       geometryOf: () => undefined, heldToWorld: () => undefined, hand: () => undefined, refused: () => {}, wake: () => {},
     };
     const d = make?.(host);

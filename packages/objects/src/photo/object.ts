@@ -10,7 +10,7 @@
 
 import { p } from "@ice/core";
 import { photoKind, printExtent, type Prints } from "./kind";
-import { defineObject } from "@ice/desk";
+import { DESK_OBJECT, defineObject } from "@ice/desk";
 import { PHOTO } from "./photo";
 import { createPhotoCarry } from "./carry";
 import { SAMPLE_PICTURE, SAMPLE_SIZE } from "./sample";
@@ -36,7 +36,8 @@ export const Photo = defineObject({
   tray: { label: "Print", category: "paper", order: 1, props: { blob: SAMPLE_PICTURE, width: SAMPLE_SIZE.w, height: SAMPLE_SIZE.h }, local: true, hang: { w: 150, h: 100, accessory: "clip", pegs: [[0, -0.5]] } },
   // the wheel TURNS a print held in a hand (PHOTO.md; D3t-a — core cedes that pointer's wheel to it, `PressWheel`)
   interaction: { selectable: true, movable: false, resizable: false, snap: "both", wheelTurns: true },
-  provides: [PHOTO_TYPE],
+  // it lies on the desk by what it provides (K8a — `DESK_OBJECT`, the desk canvas's one key), as a plugin kind does
+  provides: [PHOTO_TYPE, DESK_OBJECT],
   // the prints' CARRY (D3w): the hands onto the photo kind's bodies, each rest ONE transaction out of the frame (D-D7-A.3)
   drivers: (h) => createPhotoCarry({ world: h.world, docs: h.docs, prints: () => h.local as Prints | undefined, isPrint: h.isKind, refused: h.refused, props: Photo.groups[0]?.component }),
 });

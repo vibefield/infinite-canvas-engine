@@ -9,6 +9,21 @@
 import { defineWidget, type WidgetContainerDef, type WidgetDef, type WidgetType } from "@ice/core";
 import { isObjectKind, type KindDriver, type KindDriverHost, type ObjectHost, type ObjectKind } from "./kinds/world";
 
+// THE DESK'S PROVIDES-KEYS (design-016 §5 · K-L2, K8a): what an object PROVIDES (`defineObject({ provides })` — a container's
+// `container.provides`) is what the desk and its containers place it by — never a list of types that names a kind. The keys are the
+// SDK's, so a plugin in its own package declares them as a built-in does; core matches them (`CanvasPlacementDef.accepts`, a
+// container's `accepts`).
+
+/** An object that PROVIDES this lies on the desk: the desk canvas places what provides it (K5b's D-K5b.2, folded into the SDK). */
+export const DESK_OBJECT = "desk.object";
+/**
+ * An object that PROVIDES this may be held in a container's desk — the mini mat accepts it (K8a: D-K4a.3's type names retired). It
+ * declares its CHIP (`ObjectKind.chip` — its far impostor in the container's face), or it vanishes there when the face is far.
+ */
+export const CONTAINABLE = "desk.containable";
+/** An object that PROVIDES this may be pinned to another's part — a note stuck to a desk calendar's day (`KindDriverHost.provides`). */
+export const PINNABLE = "desk.pinnable";
+
 /** A kind's drivers on one desk, made by the host from what it lends (D7 #5, D-D7-A.3). Undefined: the kind has none. */
 export type DriverFactory = (host: KindDriverHost) => KindDriver | undefined;
 

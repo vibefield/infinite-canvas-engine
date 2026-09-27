@@ -13,7 +13,7 @@ import { p } from "@ice/core";
 import { StrokePrefab } from "@ice/desk/kit";
 import { type Books, notebookKind } from "./kind";
 import { NOTEBOOK } from "./law";
-import { defineObject } from "@ice/desk";
+import { DESK_OBJECT, defineObject } from "@ice/desk";
 import { createNotebookHand } from "./leaf";
 
 /** The covers a notebook is bound in (NOTEBOOK.md §4) — names; the cloths and designs are the host's. */
@@ -42,6 +42,8 @@ export const Notebook = defineObject({
   // on the pegboard tray (design-017 §8): the notebook standing on a shelf (a whole number of pitches high, so its top meets the hooks')
   tray: { label: "Notebook", category: "paper", order: 2, hang: { w: 143, h: 200, accessory: "shelf", pegs: [[-1.5, 0.5], [1.5, 0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
+  // it lies on the desk by what it provides (K8a — `DESK_OBJECT`, the desk canvas's one key), as a plugin kind does
+  provides: [DESK_OBJECT],
   // its strokes are its DATA (D3t-b, the Board's prefab): the catalog stamps, gates and migrates them with the book
   data: [StrokePrefab],
   // the notebook in hand (D3t-b): its pen and its LEAVES — the hand onto the notebook kind's state, each stroke ONE transaction out of the frame (D-D7-A.3)

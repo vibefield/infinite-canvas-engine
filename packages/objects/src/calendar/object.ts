@@ -11,7 +11,7 @@ import { EventPrefab, PinPrefab, pinnedNotes } from "./data";
 import { CALENDAR } from "./law";
 import { padFrame } from "./pad";
 import { type CalendarPart, calendarKind, type Pads } from "./kind";
-import { type KindDriver, defineObject } from "@ice/desk";
+import { DESK_OBJECT, type KindDriver, defineObject, PINNABLE } from "@ice/desk";
 import { type CalendarHand, createCalendarHand } from "./hand";
 import { type CalendarWriting, createCalendarWriting } from "./writing";
 import { PENS, PRINT_RASTER, service, TEXT_RASTER } from "@ice/desk/kit";
@@ -28,11 +28,11 @@ export const CALENDAR_TYPE = "desk.calendar";
 const PAD = padFrame(CALENDAR);
 
 /**
- * The kind whose objects stick to a day (D3t-c): the note's, asked of the host by its registry NAME (`KindDriverHost.kind`) —
- * never imported, as a plugin kind would name another (K4a, design-016 K-L1): a desk that registers no note kind lends no
- * predicate, and the pad pins nothing. (K8 turns this into a provides-key.)
+ * What sticks to a day (D3t-c): an object that PROVIDES `PINNABLE` (K8a — the note does; a plugin kind may), asked of the host by that
+ * key (`KindDriverHost.provides`) — never by another kind's name: a desk where nothing provides it lends no predicate, and the pad
+ * pins nothing.
  */
-export const PINNABLE_KIND = "paper";
+export { PINNABLE } from "@ice/desk";
 
 export const Calendar = defineObject({
   type: CALENDAR_TYPE,
@@ -50,6 +50,8 @@ export const Calendar = defineObject({
   // …printing the month of its today through its own print (K5b — `local`: `month` '' follows the clock); one taken is this month's too
   tray: { label: "Calendar", category: "paper", order: 3, local: true, hang: { w: 152, h: 160, accessory: "hook", pegs: [[0, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
+  // it lies on the desk by what it provides (K8a — `DESK_OBJECT`, the desk canvas's one key), as a plugin kind does
+  provides: [DESK_OBJECT],
   // its entries and its pins are its DATA (D3t-a's door, D3t-c): the catalog stamps, gates and migrates their prefabs with the pad's own
   data: [EventPrefab, PinPrefab],
   // the notes stuck to it RIDE with it (D3t-c — core's `riders`): carried by its tape, they move with it and land in its transaction
@@ -59,7 +61,7 @@ export const Calendar = defineObject({
   drivers: (h): CalendarDriver => {
     const pads = (): Pads | undefined => h.local as Pads | undefined;
     const writing = createCalendarWriting({ world: h.world, docs: h.docs, pads });
-    const isNote = h.kind(PINNABLE_KIND);
+    const isNote = h.provides(PINNABLE);
     const driver: CalendarDriver = {
       writing,
       pads,

@@ -349,8 +349,13 @@ export interface KindDriverHost {
   readonly look: () => unknown;
   /** Is `e` an object of this kind? */
   readonly isKind: (e: Entity) => boolean;
-  /** Is `e` an object of the kind named — undefined when that kind is not on this desk (the calendar asks after notes). */
+  /** Is `e` an object of the kind named — undefined when that kind is not on this desk. */
   readonly kind: (name: string) => ((e: Entity) => boolean) | undefined;
+  /**
+   * Does `e`'s object type PROVIDE the key (K8a — `defineObject({ provides })`: the calendar asks after what is `PINNABLE`)? Undefined
+   * when no object type on this desk provides it. A kind asks after a capability, never after another kind's name.
+   */
+  readonly provides: (key: string) => ((e: Entity) => boolean) | undefined;
   /** The builder's word: an object's geometry as drawn (the kind's `G`), a held-screen point into its world, the hand. */
   readonly geometryOf: (e: Entity) => unknown;
   readonly heldToWorld: (e: Entity, x: number, y: number) => readonly [number, number] | undefined;

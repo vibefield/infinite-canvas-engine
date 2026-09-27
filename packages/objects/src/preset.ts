@@ -8,7 +8,7 @@
 // Importing this module DEFINES the tool and the canvas type (core's registries are process-global).
 
 import { type CanvasEngineOpts, defineCanvasType, defineTool, type Tool, tools } from "@ice/core";
-import { ZOOM_MAX, ZOOM_MIN } from "@ice/desk";
+import { DESK_OBJECT, ZOOM_MAX, ZOOM_MIN } from "@ice/desk";
 import { Board } from "./board/object";
 import { Calendar } from "./calendar/object";
 import { MiniMat } from "./minimat/object";
@@ -32,16 +32,14 @@ export const deskSelect: Tool = defineTool({ id: "desk.select", route: { canvasD
 export const DESK_TOOLS: readonly Tool[] = [builtin("select"), deskSelect, builtin("pan")];
 
 /**
- * What an object PROVIDES to lie on the desk (K5b — K-L2): the desk canvas places its six reference objects by name and any other object
- * that provides this key — a plugin kind joins the desk (and so can be taken off the tray onto it) by declaring it, never by a list here.
+ * The desk as a canvas type: what it places, its two tools, the natural arrival band (FIT: pad 80, zoom ½–1). It places every object
+ * that PROVIDES `DESK_OBJECT` (K5b's D-K5b.2, the SDK's key since K8a — the six declare it as a plugin kind does) and names no type: no
+ * list here names a kind.
  */
-export const DESK_OBJECT = "desk.object";
-
-/** The desk as a canvas type: its objects (and any that provide `DESK_OBJECT`), its two tools, the natural arrival band (FIT: pad 80, zoom ½–1). */
 export const DeskCanvas = defineCanvasType({
   id: "desk.desk",
   semanticVersion: 1,
-  semantic: { placement: { widgets: [...DESK_OBJECTS], accepts: [DESK_OBJECT] } },
+  semantic: { placement: { accepts: [DESK_OBJECT] } },
   presentation: {
     tools: { allowed: [deskSelect, builtin("pan")], default: deskSelect },
     camera: { arrival: "fit", padding: 80, minZoom: 0.5, maxZoom: 1 },

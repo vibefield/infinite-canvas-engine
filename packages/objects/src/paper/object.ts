@@ -5,11 +5,12 @@
 // never pair one peer's text with another's seeds (D2c); its pen and its paper by name (the product's
 // colours through the palette, kinds/paper.ts `PaperPalette`), and its `seed` — the tilt it is stuck
 // at, never square (`tiltOf`), and the hand of a glyph with no stored seed. Things, movable,
-// selectable, snapping both ways; it offers itself to a mini mat (`provides`) — D2b's drop-into.
+// selectable, snapping both ways; it offers itself to the desk, a mini mat (D2b's drop-into) and a calendar's day by what it
+// `provides` (K8a — the desk's keys).
 
 import { type Component, type Entity, p } from "@ice/core";
 import { paperKind } from "./kind";
-import { type KindDriver, defineObject } from "@ice/desk";
+import { CONTAINABLE, DESK_OBJECT, type KindDriver, defineObject, PINNABLE } from "@ice/desk";
 import type { Writing } from "./writing";
 import { PAPER } from "./theme";
 import { PENS } from "@ice/desk/kit";
@@ -22,7 +23,7 @@ export { PENS, type PenName } from "@ice/desk/kit";
 export const PAPERS = ["yellow"] as const;
 export type PaperName = (typeof PAPERS)[number];
 
-/** The note's durable type id — what `PrefabId` carries and a mini mat accepts. */
+/** The note's durable type id — what `PrefabId` carries (a mini mat accepts it by what it provides — K8a, `CONTAINABLE`). */
 export const NOTE_TYPE = "desk.note";
 
 export const Note = defineObject({
@@ -42,7 +43,8 @@ export const Note = defineObject({
   // …with a word on it in the note's own hand, written through its writing (K5b — `local`); one taken is blank
   tray: { label: "Note", category: "paper", order: 0, props: { text: "hello" }, local: true, hang: { w: 120, h: 120, accessory: "hook", pegs: [[-1, -0.5], [1, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
-  provides: [NOTE_TYPE],
+  // what it provides is what places it (K8a): on the desk, into a mini mat, onto a calendar's day — as a plugin kind's would
+  provides: [NOTE_TYPE, DESK_OBJECT, CONTAINABLE, PINNABLE],
   // TYPING IS A GESTURE (design-015 §6.1; D2c): the note's driver is its typing session — the world half its body's lease on the
   // desk's ONE editor drives (host/body.ts); it follows nothing on its own (D-D7-A.3)
   drivers: (h): PaperDriver => ({

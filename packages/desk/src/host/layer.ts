@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, openTray, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, openTray, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -522,12 +522,17 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // hand, a note's typing never take it) — the twin it becomes is theirs
     const ofKind = (e: Entity, name: string): boolean => builder.kindOf(e)?.name === name && !world.has(e, InsertGhost);
     const kindNamed = (name: string): ((e: Entity) => boolean) | undefined => (objectKinds.some((k) => k.name === name) ? (e) => ofKind(e, name) : undefined);
+    // …and by what an object PROVIDES (K8a): its type's keys, read off its `PrefabId` — undefined when no type on this desk provides it;
+    // an insert ghost provides nothing to a driver (K5b's law above: the calendar never pins the ghost, only the twin it becomes)
+    const typeNamed = new Map([...types].map((t) => [t.type, t] as const));
+    const providing = (key: string): ((e: Entity) => boolean) | undefined =>
+      [...types].some((t) => t.provides.includes(key)) ? (e) => { const id = world.isAlive(e) && !world.has(e, InsertGhost) ? world.get(e, PrefabId)?.id : undefined; return typeof id === "string" && typeNamed.get(id)?.provides.includes(key) === true; } : undefined;
     for (const t of types) {
       const make = driversOf(t);
       const k = objectKindOf(t);
       if (make === undefined || k === undefined) continue;
       const d = make({
-        world, docs, local: locals.get(k.name), look: () => compose.look(k.name), isKind: (e) => ofKind(e, k.name), kind: kindNamed,
+        world, docs, local: locals.get(k.name), look: () => compose.look(k.name), isKind: (e) => ofKind(e, k.name), kind: kindNamed, provides: providing,
         geometryOf: (e) => builder.geometryOf(e), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), hand: () => builder.hand(),
         refused: (e) => builder.meetTape(e), wake: () => compose.wake("ink"),
       });

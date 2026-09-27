@@ -8,7 +8,7 @@ import { createCanvasEngine, type WidgetType } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { deskLayer, type DeskLayerOptions } from "../src/host/layer";
 import type { KindPass } from "../src/kind";
-import type { KindDriver, KindHost, ObjectDomHost, ObjectKind } from "../src/kinds/world";
+import type { KindDriver, KindDriverHost, KindHost, ObjectDomHost, ObjectKind } from "../src/kinds/world";
 import type { DeskEditor } from "../src/kit/editor";
 import { BLOB_STORE, type BlobStore, PICTURE_DECODER } from "../src/kit/blobs";
 import { PRINT_RASTER, type PrintRaster } from "../src/kit/print";
@@ -95,6 +95,25 @@ describe("an object's DOM half is DECLARED, and the desk builds what the objects
       expect(borrowed).toEqual([handle.editor(), handle.editor()]);
       // nothing lent: every kind's local sees no print raster
       expect(locals.map((h) => h.use?.(PRINT_RASTER))).toEqual([undefined, undefined]);
+    } finally {
+      handle.dispose();
+      ce.dispose();
+    }
+  });
+
+  it("a driver asks after what objects PROVIDE (K8a — `KindDriverHost.provides`), never after a kind's name: a predicate over the desk's types, none when nothing provides the key", () => {
+    let host: KindDriverHost | undefined;
+    const Sticky = defineObject({ type: "test.sticky", version: 1, props: {}, kind: scribbleKind("sticky", []), provides: ["test.sticks"], drivers: (h) => { host = h; return undefined; } });
+    const Plain = defineObject({ type: "test.unsticky", version: 1, props: {}, kind: scribbleKind("unsticky", []) });
+    const { ce, handle } = mountDesk([Sticky, Plain]);
+    try {
+      const a = ce.ops.spawnWidget(Sticky.type, { x: 0, y: 0, w: 10, h: 10, undoable: false });
+      const b = ce.ops.spawnWidget(Plain.type, { x: 20, y: 0, w: 10, h: 10, undoable: false });
+      ce.step(16);
+      const sticks = host?.provides("test.sticks");
+      expect(sticks?.(a)).toBe(true);
+      expect(sticks?.(b)).toBe(false);
+      expect(host?.provides("test.nothing")).toBeUndefined();
     } finally {
       handle.dispose();
       ce.dispose();
