@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
 import { minimatKind, paperKind } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
-import { insideViewOfFace } from "../src/minimat/inside";
+import { insideViewOfFace } from "../src/kit/inside";
 import type { MiniMatInstance } from "../src/minimat/layout";
 import { faceOf, type MiniMatGeometry } from "../src/minimat/minimat";
 import { MiniMat, Note } from "../src/objects";

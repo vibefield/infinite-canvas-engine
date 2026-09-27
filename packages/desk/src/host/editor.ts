@@ -22,10 +22,9 @@
 // writing's flux, stamped on ONE clock, `performance.now()` (the rAF clock lags wall time headless).
 
 import { Active, Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
-import { NOTE_TYPE, type PaperDriver } from "../objects/note";
+import type { PaperDriver } from "../objects/note";
 import { tapNote } from "../objects/typing";
-import type { KindDriver } from "../kinds/world";
-import { PEN_FACES } from "./ink";
+import { PEN_FACES } from "../kit/text";
 import type { PaperGeometry } from "../paper/paper";
 import type { HandLaw } from "../kit/text";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
@@ -40,8 +39,8 @@ export interface NoteEditorOptions {
   /** The host's container (screen space): the editor goes in it, the taps are read on it. */
   readonly container: HTMLElement;
   readonly world: World;
-  /** The desk's drivers by object type (D-D7-A.3): the editor is the NOTE's DOM half and finds the note's (`PaperDriver`) — none, no editor. */
-  readonly driver: (type: string) => KindDriver | undefined;
+  /** The note's driver (`PaperDriver`, D-D7-A.3): the editor is the NOTE's DOM half, which the note declares (K4b) — the host hands it the note's own; none, no editor. */
+  readonly driver: PaperDriver | undefined;
   /** The builder's drawn geometry for an entity. */
   readonly geometryOf: (e: Entity) => unknown;
   /** The hand's face for the platform's own layout of the text (arrow keys by line): family and weight (the paper's default face). */
@@ -61,7 +60,7 @@ export type { EditorLease, NoteEditor } from "../kit/editor";
 
 export function createNoteEditor(opts: NoteEditorOptions): NoteEditor | undefined {
   const { container, world } = opts;
-  const paper = opts.driver(NOTE_TYPE) as PaperDriver | undefined;
+  const paper = opts.driver;
   if (paper === undefined) return undefined;   // no note kind on this desk: no editor
   const typing = paper.typing;
   const font = opts.font ?? PEN_FACES[DEFAULT_FACE] ?? { family: "Caveat", weight: 500 };

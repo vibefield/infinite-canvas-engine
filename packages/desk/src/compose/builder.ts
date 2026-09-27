@@ -94,16 +94,13 @@ import type { MarksInput } from "../marks/layout";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
 import type { MatFrame, SlotLight } from "../mat/layout";
-import type { ChildShape, InsideView } from "../kit/inside";
-import { flightLights, flightPresent, insidePresent, insideViewOfFace } from "../minimat/inside";
-import { FACE_RADIUS } from "../minimat/minimat";
+import { type ChildShape, FACE_CHIPS_MAX, FACE_RADIUS, flightLights, flightPresent, insidePresent, type InsideView, insideViewOfFace } from "../kit/inside";
 import { boundsOf, type CameraState, FIT, type Rect, solveFlightStart } from "../nav/flight";
 import { clipOf, faceCovers, PORTAL_CAP, PORTAL_GATE, type Presentation } from "../nav/portal";
 import { type Lamp, lampOf } from "../mat/lamp";
 import { objectKindOf } from "../object";
 import { type ObjectSprings, SPRINGS, settled, spring } from "../kit/springs";
 import type { GroundTheme } from "../theme";
-import { MINIMAT } from "../minimat/theme";
 
 /** The view a frame is built for: CSS px and the dpr the canvas is at. */
 export interface BuildViewport { readonly width: number; readonly height: number; readonly dpr: number }
@@ -426,8 +423,8 @@ const MARGIN_PX = 200;
 const REDRESS_MS = 320;
 /** The host belt: a live inside's insides show live to this depth (the prototype's `depth < 4`). */
 const PORTAL_DEPTH = 4;
-/** At most this many chips per face (MINIMAT.chips.max). */
-const CHIPS_MAX = MINIMAT.chips.max;
+/** At most this many chips per face (the kit's `FACE_CHIPS_MAX` — every container's cap, since K4b). */
+const CHIPS_MAX = FACE_CHIPS_MAX;
 
 // An object: a widget (PrefabId, Position, Size) Active in the current nav frame — the same membership the cull and the pick use.
 const membersQ = defineQuery([Position, Size, PrefabId, Active]);

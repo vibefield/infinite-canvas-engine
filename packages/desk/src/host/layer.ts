@@ -21,8 +21,9 @@
 //
 // The TEXT (D2c, design-015 §6.1): each object kind's own state on this desk (`kind.local(host)` —
 // the note's WRITING, over the root paper pass's pages and the app's text raster, `opts.text`) is made
-// here and threaded through the builder; the ONE focused editor (host/editor.ts) sits in the
-// container and writes through the note's typing session (objects/typing.ts) into `opts.docs`. The
+// here and threaded through the builder; the ONE focused editor — the note's DOM half, which the note DECLARES (K4b,
+// `defineObject({ host })`: the layer builds what the objects declare and names no kind) — sits in the
+// container and writes through the note's typing session into `opts.docs`. The
 // drawing reflector is wrapped, not changed: before it, every kind's local is ticked on ONE clock
 // (`performance.now()` — the rAF clock lags wall time headless) and may wake an `ink` frame (a wipe,
 // a blink, a face landing); after it, the editor follows the drawn note. A committed raster is
@@ -51,19 +52,16 @@ import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GlyphAtlasMeta, MatConfig, PlateName } from "../mat/layout";
 import { MAT_SHADER_FILES, matShaders } from "../mat/shaders";
 import { MARKS_SHADER_FILES, marksShaders } from "../marks/shaders";
-import { driversOf, objectKindOf } from "../object";
+import { driversOf, hostOf, objectKindOf } from "../object";
 import type { ObjectSprings } from "../kit/springs";
 import { blueNoise } from "../assets/blue-noise.gen";
-import type { PaperWriting } from "../kinds/paper";
-import type { KindDriver, KindLocal } from "../kinds/world";
+import type { KindDriver, KindHost, KindLocal, ObjectDomHost } from "../kinds/world";
 import { worldChildren } from "../compose/children";
 import type { BlobStore } from "../kit/blobs";
 import { decodePicture } from "./picture";
 import { NO_DOCS, type TypingDocs } from "../docs";
 import type { TextRaster } from "../kit/raster";
-import { createNoteEditor, type NoteEditor } from "./editor";
-import { printRaster } from "./print";
-import { createCalendarInput } from "./calendar-input";
+import type { NoteEditor } from "../kit/editor";
 import type { InsideView } from "../kit/inside";
 import { shaderText } from "../shaders";
 import { instrumentMemory, type MemoryLedger } from "../gpu-memory";
@@ -170,8 +168,12 @@ export interface SelectionSource {
   subscribe(listener: () => void): () => void;
 }
 
-/** A note's writing as a still states it for the far LOD (kinds/paper.ts `PaperWriting`): the text's left edge, its em, each line's baseline and width, note units. */
-export type GreekPin = PaperWriting;
+/**
+ * A note's writing as a still states it for the far LOD — the paper kind's `PaperWriting`, stated here by its shape since K4b (the
+ * desk names no kind; a still hands the note its lines as a plugin would): the text's left edge, its em, each line's baseline and
+ * width, note units.
+ */
+export interface GreekPin { readonly x0: number; readonly em: number; readonly lines: readonly { readonly y: number; readonly width: number }[] }
 
 /**
  * The desk's MAIN-THREAD time (D6): every flush of the layer's reflector — the kinds' ticks, the pull, the build and the
@@ -376,12 +378,19 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // the builder DRAWS (D6, `KindHost.drawn`: the builder is made after the locals, so the word is bound late)
     const locals = new Map<string, KindLocal>();
     const children = worldChildren(world);   // …and its DATA children (D3w): the host reads them, never the kind
-    const print = opts.text !== undefined ? printRaster({ text: opts.text }) : undefined;   // the calendar's print, in the note's hand (D3t-c)
+    // what each object's DOM half LENDS its kind's world half (K4b, `ObjectHost.lend` — the calendar's print raster, in the host's
+    // hand, D3t-c): made once per kind before its local, from what the objects declare
+    const lent = new Map<string, Pick<KindHost, "print">>();
+    for (const t of types) {
+      const k = objectKindOf(t);
+      const lend = hostOf(t)?.lend;
+      if (k !== undefined && lend !== undefined && !lent.has(k.name)) lent.set(k.name, lend({ text: opts.text }));
+    }
     const drawn = (e: Entity): number | undefined => builder.rankOf(e);   // `builder` is made just below; the word is only asked at a tick
     // THE RASTER BUDGET (D6): one ledger for every kind's raster caches; trimmed once a tick by each kind's word on what is on screen
     const budget = createRasterBudget(opts.rasterBudget ?? DEFAULT_RASTER_BUDGET);
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print, drawn, budget });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print: lent.get(k.name)?.print, drawn, budget });
       if (local !== undefined) locals.set(k.name, local);
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
@@ -439,17 +448,20 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (d !== undefined) drivers.set(t.type, d);
     }
     const driver = (type: string): KindDriver | undefined => drivers.get(type);
-    // the ONE focused editor, in the container (screen space) — the note's DOM half (D2c); the calendar's DOM half is lent it (D3t-c)
-    const editor = createNoteEditor({
-      container: host.container, world, driver, geometryOf: (e) => builder.geometryOf(e), wake: () => compose.wake("ink"),
-      ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
-    });
-    if (editor !== undefined) {
-      createCalendarInput({
-        container: host.container, world, driver, editor, docs, geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(),
-        heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), look: (kind) => compose.look(kind), wake: () => compose.wake("ink"),
-      });
-    }
+    // THE OBJECTS' DOM HALVES (K4b, `defineObject({ host })`), in screen space: each object declared its own and the host builds them
+    // from what it lends, never naming a kind — the ONE focused editor first (the note's, D2c: the first object that makes one owns
+    // it), then every half that mounts, the editor lent to it (the calendar's days and pen borrow it, D3t-c)
+    const domHost = (t: WidgetType): ObjectDomHost => {
+      const k = objectKindOf(t);
+      return {
+        container: host.container, world, docs, object: t, driver: drivers.get(t.type), look: () => (k === undefined ? undefined : compose.look(k.name)),
+        geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y),
+        wake: () => compose.wake("ink"), ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
+      };
+    };
+    let editor: NoteEditor | undefined;
+    for (const t of types) if (editor === undefined) editor = hostOf(t)?.editor?.(domHost(t));
+    for (const t of types) hostOf(t)?.mount?.({ ...domHost(t), editor });
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
     const perf = { ticks: 0, ms: 0, frames: 0, frameMs: 0 };

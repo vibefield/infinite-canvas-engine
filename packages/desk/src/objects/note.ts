@@ -15,6 +15,7 @@ import type { Writing } from "../paper/writing";
 import { PAPER } from "../paper/theme";
 import { PENS } from "../kit/text";
 import { createNoteTyping, type NoteTyping } from "./typing";
+import { createNoteEditor } from "../host/editor";
 
 // the pens are the HAND's (kit/text.ts since K4a — the desk calendar writes with them too); the note keeps its door
 export { PENS, type PenName } from "../kit/text";
@@ -49,6 +50,14 @@ export const Note = defineObject({
     follow: () => {},
     idle: () => true,
   }),
+  // its DOM HALF (K4b — declared, never found by type): the ONE focused editor, the platform's textarea in screen space over the
+  // note being written (host/editor.ts), made by the host on the note's own driver
+  host: {
+    editor: (h) => createNoteEditor({
+      container: h.container, world: h.world, driver: h.driver as PaperDriver | undefined, geometryOf: h.geometryOf, wake: h.wake,
+      ...(h.idleMs !== undefined ? { idleMs: h.idleMs } : {}),
+    }),
+  },
 });
 
 /** The note's writing as a cell (`desk.note:ink` — `{ text, seeds }`): what a typing session live-writes and commits whole. */

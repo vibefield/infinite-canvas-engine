@@ -13,7 +13,7 @@ import { DEFAULT_MINIMAT_LAW, faceOf, pickMiniMat, resolveMiniMat } from "../src
 import { insideView, miniMatInstance } from "../src/minimat/inside";
 import { FIT } from "../src/nav/flight";
 import { PORTAL_GATE } from "../src/nav/portal";
-import { defineObject, driversOf, objectKindOf } from "../src/object";
+import { defineObject, driversOf, hostOf, objectKindOf } from "../src/object";
 import { NO_DOCS } from "../src/docs";
 import type { KindDriverHost } from "../src/kinds";
 import { Board, Calendar, DESK_OBJECTS, MiniMat, MINIMAT_TYPE, Note, Notebook, NOTE_TYPE, Photo } from "../src/objects";
@@ -210,6 +210,16 @@ describe("the kinds' drivers are DECLARED, never wired by name (D7 #5, D-D7-A.3)
     for (const t of [Note, Board, Notebook, Photo, Calendar]) expect(driversOf(t), t.type).toBeDefined();
     expect(driversOf(MiniMat)).toBeUndefined();
     expect(driversOf(undefined)).toBeUndefined();
+  });
+
+  it("…and so are their DOM halves (K4b): the note declares the ONE editor, the calendar its print raster and its days and pen; the rest none", () => {
+    expect(hostOf(Note)?.editor).toBeTypeOf("function");
+    expect(hostOf(Note)?.mount).toBeUndefined();
+    expect(hostOf(Calendar)?.lend).toBeTypeOf("function");
+    expect(hostOf(Calendar)?.mount).toBeTypeOf("function");
+    expect(hostOf(Calendar)?.editor).toBeUndefined();
+    for (const t of [MiniMat, Board, Notebook, Photo]) expect(hostOf(t), t.type).toBeUndefined();
+    expect(hostOf(undefined)).toBeUndefined();
   });
 
   it("a third-party kind declares a driver in `defineObject` and the desk finds it by the OBJECT: a host makes it from what it lends and ticks it", () => {

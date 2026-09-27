@@ -16,16 +16,15 @@
 // drew (the builder's `heldToWorld`, as core maps `HeldPointer`). The world half is objects/calendar-writing.ts (the sessions) and
 // the `PadSelection` fact this writes; objects/calendar-hand.ts marks it on the pad each frame.
 
-import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, guardedTransaction, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, setWidgetProps, Size, TouchesExact, type World } from "@ice/core";
+import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, guardedTransaction, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, setWidgetProps, Size, TouchesExact, type WidgetType, type World } from "@ice/core";
 import { dayOr, monthKeyOf, PadSelection } from "../calendar/data";
 import { isSpan } from "../calendar/events";
 import { CALENDAR, type CalendarLaw } from "../calendar/law";
 import { inMonth, keyOf, monthGrid, monthOfDay } from "../calendar/month";
 import type { EventLine } from "../calendar/print";
 import { dayBox, sheetOf } from "../calendar/sheet";
-import { CALENDAR_KIND, type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, partAt, sheetOnScreen } from "../kinds/calendar";
-import type { KindDriver } from "../kinds/world";
-import { CALENDAR_TYPE, Calendar, type CalendarDriver } from "../objects/calendar";
+import { type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, partAt, sheetOnScreen } from "../kinds/calendar";
+import type { CalendarDriver } from "../objects/calendar";
 import { type TypingDocs, writable } from "../docs";
 import type { EditorLease, NoteEditor } from "../kit/editor";
 
@@ -37,11 +36,13 @@ export interface CalendarInputOptions {
   readonly hand: () => { readonly entity: Entity; readonly landing: boolean; readonly frame: { readonly cx: number; readonly cy: number; readonly s: number } } | undefined;
   readonly heldToWorld: (e: Entity, x: number, y: number) => readonly [number, number] | undefined;
   readonly editor: NoteEditor;
-  /** The desk's drivers by object type (D-D7-A.3): this is the CALENDAR's DOM half and joins the calendar's (`CalendarDriver`) — none, no input. */
-  readonly driver: (type: string) => KindDriver | undefined;
+  /** The calendar's driver (`CalendarDriver`, D-D7-A.3): this is the CALENDAR's DOM half, which the calendar declares (K4b) — the host hands it the calendar's own and it joins it; none, no input. */
+  readonly driver: CalendarDriver | undefined;
+  /** The calendar object (its compiled widget type — its first group is a pad's props: its month, its week start). */
+  readonly object: WidgetType;
   readonly docs: TypingDocs;
-  /** A kind's look as the desk composed it, by kind name (the highlighters a band is drawn in). */
-  readonly look: (kind: string) => unknown;
+  /** The calendar's look as the desk composed it (the highlighters a band is drawn in). */
+  readonly look: () => unknown;
   readonly law?: CalendarLaw;
   /** The hand's clock (the caret's blink, the wipe): `performance.now` unless a test says. */
   readonly now?: () => number;
@@ -87,13 +88,13 @@ export function caretIndexAt(line: EventLine, sx: number, sy: number): number {
 }
 
 export function createCalendarInput(opts: CalendarInputOptions): CalendarInput | undefined {
-  const cal = opts.driver(CALENDAR_TYPE) as CalendarDriver | undefined;
+  const cal = opts.driver;
   if (cal === undefined) return undefined;   // no calendar kind on this desk: no days, no pen
   const { container, world, editor } = opts;
   const { writing, pads, isPad } = cal;
-  const look = (): CalendarObjectLook | undefined => opts.look(CALENDAR_KIND) as CalendarObjectLook | undefined;
+  const look = (): CalendarObjectLook | undefined => opts.look() as CalendarObjectLook | undefined;
   /** The pad's props as the world holds them (its pen, its month, its week start). */
-  const propsOf = (e: Entity): Readonly<Record<string, unknown>> => (world.isAlive(e) ? ((world.get(e, Calendar.groups[0]?.component as never) as Record<string, unknown> | undefined) ?? {}) : {});
+  const propsOf = (e: Entity): Readonly<Record<string, unknown>> => (world.isAlive(e) ? ((world.get(e, opts.object.groups[0]?.component as never) as Record<string, unknown> | undefined) ?? {}) : {});
   /** Write a pad's props (its month) — ONE transaction, off the undo stack: a roll is not an edit (D-D3t-c.5). */
   const setProps = (e: Entity, props: Readonly<Record<string, unknown>>): void => {
     const session = writable(opts.docs);

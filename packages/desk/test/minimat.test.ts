@@ -18,7 +18,8 @@ import { MAT_GRID } from "../src/theme";
 import { MINIMAT } from "../src/minimat/theme";
 import { chipOf, chipVisible, CHIP_LINES, DEFAULT_MINIMAT_LAW, faceLattice, faceOf, MINIMAT_REST, NAME_CHARS, nameGlyphs, numeralsOf, packGlyphs, pickMiniMat, resolveMiniMat, sdMiniMat, shadowReach } from "../src/minimat/minimat";
 import { ChipRecord, chipValues, MiniMat, miniMatUniformValues, MiniMatUniforms, miniMatValues } from "../src/minimat/layout";
-import { flightLights, flightPresent, HANDOVER, insidePresent, insideView, miniMatInstance } from "../src/minimat/inside";
+import { flightLights, flightPresent, HANDOVER, insidePresent } from "../src/kit/inside";
+import { insideView, miniMatInstance } from "../src/minimat/inside";
 import { miniMatShaders } from "../src/minimat/shaders";
 import { DEFAULT_GRID } from "../src/mat/grid";
 

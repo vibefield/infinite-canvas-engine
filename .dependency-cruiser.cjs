@@ -34,23 +34,27 @@ const nm = (pkg) => `node_modules/${pkg}(/|$)`;
  * A KIND'S FILES (K4a, design-016 §5 · K-L1), by path — the six reference kinds are one package's worth of code each, spread
  * where the desk's layout puts them: its folder (`src/<k>/`), its registry adapter (`kinds/<k>.ts`), its object-side files
  * (`objects/<k>.ts` and what its object alone uses — the note's typing, the board's pen, the print's carry, the calendar's hand
- * and writing, the notebook's leaves) and its DOM half (`host/…` — the note's editor and ink raster, the calendar's input and
- * print raster, the print's picture decode; `desk-dom-free` keeps those under host/, so no layout makes a kind one folder).
+ * and writing, the notebook's leaves) and its DOM half (`host/…` — the note's editor, the calendar's input and print raster;
+ * `desk-dom-free` keeps those under host/, so no layout makes a kind one folder). NOT a kind's since K4b: the TEXT raster
+ * (host/ink.ts) and the PICTURE decoder (host/picture.ts) — the host's services, lent every kind through `KindHost.text` /
+ * `.decode` beside the app's blobs; they name no kind, and a plugin kind borrows the very same.
  * Its WGSL (`shaders/<k>/`) is read by name, not imported: test/kit-wgsl.test.ts holds a kind's programs to its own files and
  * the kit's. NOT a kind's: the barrels and the preset that list them all (kinds/index.ts, objects/index.ts, objects/preset.ts,
  * objects/palette.ts), the contract, the kit, the seam.
  */
 const DESK = "^packages/desk/src/";
 const KIND_FILES = {
-  paper: ["paper/", "kinds/paper\\.ts$", "objects/(note|typing)\\.ts$", "host/(editor|ink)\\.ts$"],
+  paper: ["paper/", "kinds/paper\\.ts$", "objects/(note|typing)\\.ts$", "host/editor\\.ts$"],
   minimat: ["minimat/", "kinds/minimat\\.ts$", "objects/minimat\\.ts$"],
   board: ["board/", "kinds/board\\.ts$", "objects/(board|pen)\\.ts$"],
-  photo: ["photo/", "kinds/photo\\.ts$", "objects/(photo|carry)\\.ts$", "host/picture\\.ts$"],
+  photo: ["photo/", "kinds/photo\\.ts$", "objects/(photo|carry)\\.ts$"],
   calendar: ["calendar/", "kinds/calendar\\.ts$", "objects/(calendar|calendar-hand|calendar-writing)\\.ts$", "host/(calendar-input|print)\\.ts$"],
   notebook: ["notebook/", "kinds/notebook\\.ts$", "objects/(notebook|leaf)\\.ts$"],
 };
 const kindFiles = (k) => KIND_FILES[k].map((p) => DESK + p);
 const ALL_KIND_FILES = Object.keys(KIND_FILES).flatMap(kindFiles);
+/** The kinds' DOM halves (their files under host/): reached only by their OBJECTS' declarations (`defineObject({ host })`, K4b). */
+const KIND_DOM = ALL_KIND_FILES.filter((p) => p.startsWith(`${DESK}host/`));
 /**
  * THE SDK a kind is written against, inside the desk (K4a): the render kit (`kit/` — `@ice/desk/kit`), the engine (`engine/` —
  * `@ice/desk/engine`) and the contract's modules (`kind.ts`, `kinds/world.ts`, `object.ts`, the engine's theme, the typing docs,
@@ -157,7 +161,18 @@ module.exports = {
         "outside host/ — is `packages/desk/test/dom-free.test.ts`, the grep a cruiser cannot be.",
       severity: "error",
       from: { path: "^packages/desk/src", pathNot: ["^packages/desk/src/host/", "^packages/desk/src/index\\.ts$"] },
-      to: { path: "^packages/desk/src/host/" },
+      to: { path: "^packages/desk/src/host/", pathNot: KIND_DOM },
+    },
+    {
+      name: "desk-dom-half-is-its-objects",
+      comment:
+        "K4b (design-016 §5 · K-L2): a kind's DOM half (its files under host/ — the note's editor, the calendar's input and print " +
+        "raster) is reached only by its OBJECT's declaration (`defineObject({ host })` in objects/*.ts) — never by the kind's world " +
+        "half, the seam or the kit — so the Node oracle still imports every world half whole, and the desk layer builds what the " +
+        "objects declare. `no-kind-imports-a-kind` keeps each declaration to its own kind's half.",
+      severity: "error",
+      from: { path: "^packages/desk/src", pathNot: ["^packages/desk/src/host/", "^packages/desk/src/index\\.ts$", "^packages/desk/src/objects/"] },
+      to: { path: KIND_DOM },
     },
     {
       name: "desk-engine-never-imports-objects",
@@ -173,82 +188,22 @@ module.exports = {
       name: "desk-seam-never-imports-a-kind",
       comment:
         "design-015 §3 + D7 #5 (D-D7-A.3): the desk's SEAM — the composition (compose/), the host (host/), the hold and the " +
-        "marks — wires kinds only through what a kind DECLARES in `defineObject` (its kind, its local, its drivers) and never " +
-        "names one, so a third-party kind plugs in by declaring, exactly as the reference kinds do. Nothing under " +
-        "compose|host|hold|marks imports a reference kind's module — objects/*, kinds/<kind>.ts or a kind's own folder — at " +
-        "runtime (a type is a word, not a wire: type-only edges pass). Three named exceptions carry their own rules below: " +
-        "host/editor.ts (the note's DOM half — the desk's ONE focused editor; DOM lives only under host/, so it cannot live " +
-        "with its kind), host/calendar-input.ts (the calendar's DOM half, the same reason) and compose/builder.ts (the mini mat " +
-        "is the frame's kind: the builder nests frames through its insides). The debt behind the two DOM exceptions is a " +
-        "kind-declared input lease.",
+        "marks — wires kinds only through what a kind DECLARES in `defineObject` (its kind, its local, its drivers, its DOM half) " +
+        "and never names one, so a third-party kind plugs in by declaring, exactly as the reference kinds do. Nothing under " +
+        "compose|host|hold|marks imports a reference kind's module — objects/*, kinds/<kind>.ts or a kind's own folder — not even " +
+        "a type. NO exceptions since K4b (design-016 §5): the builder nests every container by the kit's inside law (kit/inside.ts " +
+        "— the mini mat's `insideViewOfFace`, the presentations, the lamp handover, the face's radius and chip cap moved there), and " +
+        "the layer builds the DOM halves the objects declare (`ObjectHost`: the note's editor, the calendar's input and print " +
+        "raster) instead of finding them by type. Those halves live under host/ only because `desk-dom-free` keeps the DOM there; " +
+        "they are their kinds' files (KIND_FILES), bound by the kind rules, not the seam's.",
       severity: "error",
-      from: {
-        path: "^packages/desk/src/(compose|host|hold|marks)/",
-        pathNot: ["^packages/desk/src/host/(editor|calendar-input|print)\\.ts$", "^packages/desk/src/compose/builder\\.ts$"],
-      },
+      from: { path: "^packages/desk/src/(compose|host|hold|marks)/", pathNot: ALL_KIND_FILES },
       to: {
         path: [
           "^packages/desk/src/objects/",
           "^packages/desk/src/(paper|board|notebook|calendar|photo|minimat)/",
           "^packages/desk/src/kinds/(paper|board|notebook|calendar|photo|minimat)\\.ts$",
         ],
-        dependencyTypesNot: ["type-only"],
-      },
-    },
-    {
-      name: "desk-seam-builder-nests-only-the-mini-mat",
-      comment: "D-D7-A.3's first exception, bounded: the builder may reach the mini mat's insides (the frame's own kind) and no other kind.",
-      severity: "error",
-      from: { path: "^packages/desk/src/compose/builder\\.ts$" },
-      to: {
-        path: [
-          "^packages/desk/src/objects/",
-          "^packages/desk/src/(paper|board|notebook|calendar|photo)/",
-          "^packages/desk/src/kinds/(paper|board|notebook|calendar|photo)\\.ts$",
-        ],
-        dependencyTypesNot: ["type-only"],
-      },
-    },
-    {
-      name: "desk-seam-editor-is-the-notes-dom-half",
-      comment: "D-D7-A.3's second exception, bounded: the ONE focused editor is the note's DOM half and may reach the note's driver and the paper's writing — no other kind.",
-      severity: "error",
-      from: { path: "^packages/desk/src/host/editor\\.ts$" },
-      to: {
-        path: [
-          "^packages/desk/src/objects/(?!note\\.ts$|typing\\.ts$|index\\.ts$)",
-          "^packages/desk/src/(board|notebook|calendar|photo|minimat)/",
-          "^packages/desk/src/kinds/(board|notebook|calendar|photo|minimat)\\.ts$",
-        ],
-        dependencyTypesNot: ["type-only"],
-      },
-    },
-    {
-      name: "desk-seam-print-is-the-calendars-raster-half",
-      comment: "D-D7-A.3's fourth exception, bounded: the calendar's print is rasterised with Canvas2D, which lives only under host/ — host/print.ts may reach the calendar's print and tiles and no other kind.",
-      severity: "error",
-      from: { path: "^packages/desk/src/host/print\\.ts$" },
-      to: {
-        path: [
-          "^packages/desk/src/objects/",
-          "^packages/desk/src/(paper|board|notebook|photo|minimat)/",
-          "^packages/desk/src/kinds/(paper|board|notebook|calendar|photo|minimat)\\.ts$",
-        ],
-        dependencyTypesNot: ["type-only"],
-      },
-    },
-    {
-      name: "desk-seam-calendar-input-is-the-calendars-dom-half",
-      comment: "D-D7-A.3's third exception, bounded: the calendar's DOM half may reach the calendar's driver, its data and its kind — no other kind.",
-      severity: "error",
-      from: { path: "^packages/desk/src/host/calendar-input\\.ts$" },
-      to: {
-        path: [
-          "^packages/desk/src/objects/(?!calendar\\.ts$|calendar-writing\\.ts$|typing\\.ts$|index\\.ts$)",
-          "^packages/desk/src/(paper|board|notebook|photo|minimat)/",
-          "^packages/desk/src/kinds/(paper|board|notebook|photo|minimat)\\.ts$",
-        ],
-        dependencyTypesNot: ["type-only"],
       },
     },
     {

@@ -7,7 +7,7 @@
 // `objectKindOf(widgetTypeFor(world, PrefabId.id))`, never a second registry.
 
 import { defineWidget, type WidgetContainerDef, type WidgetDef, type WidgetType } from "@ice/core";
-import { isObjectKind, type KindDriver, type KindDriverHost, type ObjectKind } from "./kinds/world";
+import { isObjectKind, type KindDriver, type KindDriverHost, type ObjectHost, type ObjectKind } from "./kinds/world";
 
 /** A kind's drivers on one desk, made by the host from what it lends (D7 #5, D-D7-A.3). Undefined: the kind has none. */
 export type DriverFactory = (host: KindDriverHost) => KindDriver | undefined;
@@ -26,14 +26,22 @@ export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "opena
    * its driver here, so no driver need import its object back. Absent: the kind is looked at and moved, never worked in.
    */
   readonly drivers?: DriverFactory;
+  /**
+   * The object's DOM HALF (K4b, `ObjectHost`): what its kind needs of the browser — a service lent its world half (the calendar's
+   * print raster), the desk's one editor (the note's), a screen-space half that borrows it (the calendar's days and pen) — declared
+   * here as its drivers are, so the host builds it without naming the kind. Absent: the object needs nothing of the browser.
+   */
+  readonly host?: ObjectHost;
 }
 
 /** The drivers behind each compiled object — read back by the host through `driversOf`, never a second registry of kinds. */
 const DRIVERS = new WeakMap<WidgetType, DriverFactory>();
+/** …and the DOM halves (K4b), read back through `hostOf`. */
+const HOSTS = new WeakMap<WidgetType, ObjectHost>();
 
 /** Compile an object through `defineWidget` — one door, one registry. */
 export function defineObject(def: ObjectDef): WidgetType {
-  const { kind, size, container, drivers, ...rest } = def;
+  const { kind, size, container, drivers, host, ...rest } = def;
   if (!isObjectKind(kind)) throw new Error(`desk: defineObject("${def.type}") — \`kind\` is not a desk kind (kinds/world.ts \`ObjectKind\`: a program with resolve · record · hit · reach)`);
   const widget = defineWidget({
     ...rest,
@@ -48,6 +56,7 @@ export function defineObject(def: ObjectDef): WidgetType {
     ...(container !== undefined ? { container } : {}),
   });
   if (drivers !== undefined) DRIVERS.set(widget, drivers);
+  if (host !== undefined) HOSTS.set(widget, host);
   return widget;
 }
 
@@ -60,4 +69,9 @@ export function objectKindOf(widget: WidgetType | undefined): ObjectKind | undef
 /** The drivers an object declared (`ObjectDef.drivers`), or undefined: none, or not an object of this desk. */
 export function driversOf(widget: WidgetType | undefined): DriverFactory | undefined {
   return widget === undefined ? undefined : DRIVERS.get(widget);
+}
+
+/** The DOM half an object declared (`ObjectDef.host`), or undefined: none, or not an object of this desk. */
+export function hostOf(widget: WidgetType | undefined): ObjectHost | undefined {
+  return widget === undefined ? undefined : HOSTS.get(widget);
 }

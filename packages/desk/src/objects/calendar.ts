@@ -16,6 +16,8 @@ import { defineObject } from "../object";
 import { type CalendarHand, createCalendarHand } from "./calendar-hand";
 import { type CalendarWriting, createCalendarWriting } from "./calendar-writing";
 import { PENS } from "../kit/text";
+import { createCalendarInput } from "../host/calendar-input";
+import { printRaster } from "../host/print";
 
 /** The tapes a pad is bound with (CALENDAR.md §4) — names; the cloths and foils are the host's. */
 export const TAPES = ["ink", "tobacco", "kraft"] as const;
@@ -70,6 +72,19 @@ export const Calendar = defineObject({
       dispose: () => { driver.hand.dispose(); driver.input?.dispose(); driver.input = undefined; },
     };
     return driver;
+  },
+  // its DOM HALF (K4b — declared, never found by type): its PRINT raster, lent to its world half before its local (the tiles in
+  // the host's hand, D3t-c — none without a text raster: the oracle pins committed tiles), and its days and its pen at event time
+  // (host/calendar-input.ts), mounted over the ONE editor it borrows — none on a desk that made no editor
+  host: {
+    lend: (h) => (h.text === undefined ? {} : { print: printRaster({ text: h.text }) }),
+    mount: (h) => {
+      if (h.editor === undefined) return;
+      createCalendarInput({
+        container: h.container, world: h.world, object: h.object, driver: h.driver as CalendarDriver | undefined, editor: h.editor, docs: h.docs,
+        geometryOf: h.geometryOf, hand: h.hand, heldToWorld: h.heldToWorld, look: h.look, wake: h.wake,
+      });
+    },
   },
 });
 

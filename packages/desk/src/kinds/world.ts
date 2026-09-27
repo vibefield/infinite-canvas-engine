@@ -20,11 +20,12 @@
 // select it, as in the prototype — and the real parts (a notebook's turn zone, a board's marker)
 // arrive with D3.
 
-import type { Component, Entity, HeldToolDef, Relation, Tag, World } from "@ice/core";
+import type { Component, Entity, HeldToolDef, Relation, Tag, WidgetType, World } from "@ice/core";
 import type { TypingDocs } from "../docs";
 import type { RasterBudget } from "../engine/budget";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { BlobStore, PictureDecoder } from "../kit/blobs";
+import type { NoteEditor } from "../kit/editor";
 import type { ChildShape, InsideView } from "../kit/inside";
 import type { Lamp } from "../kit/light";
 import type { PrintRaster } from "../kit/print";
@@ -320,6 +321,49 @@ export interface KindDriver {
   /** Nothing to follow this frame — nothing in hand, no press, no rest or roll owed: the host may skip `follow` (the idle-tick budget). Absent: never skipped. */
   idle?(): boolean;
   dispose?(): void;
+}
+
+/**
+ * An object's DOM HALF (K4b, design-016 §5 · K-L2) — what its kind needs of the browser, DECLARED with the object as its drivers
+ * are (`defineObject({ host })`): the desk layer builds what the registered objects declare and never finds a half by type or
+ * names a kind. Three moments, in the layer's order:
+ * - `lend`, before the kind's local: a service its world half reads through `KindHost` that only a browser can make (the desk
+ *   calendar's print raster, in the host's hand — none without a text raster);
+ * - `editor`, once the drivers are made: the desk's ONE focused editor (the note's); the first object that makes one owns it;
+ * - `mount`, after that: a screen-space half, lent the editor if one was made (the desk calendar's days and pen borrow it). A
+ *   mounted half is ended by what it joins — the calendar's by the calendar's driver.
+ * K8 opens this into a service registry and lets any kind take the editor's lease.
+ */
+export interface ObjectHost {
+  readonly lend?: (host: Pick<KindHost, "text">) => Pick<KindHost, "print">;
+  readonly editor?: (host: ObjectDomHost) => NoteEditor | undefined;
+  readonly mount?: (host: ObjectDomHost & { readonly editor: NoteEditor | undefined }) => void;
+}
+
+/**
+ * What the host lends an object's DOM half (K4b): the screen-space container, the object the half was declared on and ITS
+ * driver, its kind's look, and the builder's word — a driver host's fields, and the few a browser half adds.
+ */
+export interface ObjectDomHost {
+  /** The host's container (screen space): a half's elements go in it, its taps are read on it. */
+  readonly container: HTMLElement;
+  readonly world: World;
+  /** The document's doors (docs.ts) — a half that writes, writes through them. */
+  readonly docs: TypingDocs;
+  /** The object the half was declared on — its compiled widget type (its props' groups). */
+  readonly object: WidgetType;
+  /** The object's own driver (`defineObject({ drivers })`), if it declared one. */
+  readonly driver: KindDriver | undefined;
+  /** The object's kind's look as the desk composed it. */
+  readonly look: () => unknown;
+  /** The builder's word: an object's geometry as drawn, the hand, a held-screen point into its world. */
+  readonly geometryOf: KindDriverHost["geometryOf"];
+  readonly hand: KindDriverHost["hand"];
+  readonly heldToWorld: KindDriverHost["heldToWorld"];
+  /** Ask the desk for a frame. */
+  readonly wake: () => void;
+  /** A writing session ends after this long without input, ms (`DeskLayerOptions.idleMs`); absent: the half's own. */
+  readonly idleMs?: number | undefined;
 }
 
 /** The strata a kind may declare — re-exported beside the contract for a kind's author. */

@@ -12,7 +12,7 @@ import { type FadeIn, lod, dressScale, type LineLaw, lineWeight, GLYPHS } from "
 import { type CameraState, type PortalAffine, type Rect, clipOf, type PortalClip } from "../kit/nav";
 import type { Lamp } from "../kit/light";
 import { sdRoundBox } from "../kit/sdf";
-import type { ChildShape, ChipKind } from "../kit/inside";
+import { type ChildShape, type ChipKind, FACE_RADIUS } from "../kit/inside";
 import type { RGB } from "../theme";
 import { MINIMAT } from "./theme";
 
@@ -102,8 +102,6 @@ export function faceOf(G: MiniMatGeometry): Rect {
   const hy = Math.max(G.half[1] - G.margin, 1e-3);
   return { x: G.centre[0] - hx, y: G.centre[1] - hy, width: 2 * hx, height: 2 * hy };
 }
-/** The face's corners: square, as a mat's printed cutting area is. */
-export const FACE_RADIUS = 0;
 
 export type MiniMatHit = "face" | "border" | "outside";
 /** What is under a world point: the face (the inside's window), the border (the sheet round it), or nothing. */
