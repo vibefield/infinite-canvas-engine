@@ -14,7 +14,7 @@ import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
 import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../mat/layout";
-import type { MatPass } from "../mat/mat-pass";
+import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
 import { MAT_COLORS, MAT_GRID, type RGB } from "../theme";
 import { ChipRecord, chipValues, MAX_CHIPS, MAX_MINIMATS, MiniMat, type MiniMatInstance, MiniMatUniforms, miniMatUniformValues, miniMatValues } from "./layout";

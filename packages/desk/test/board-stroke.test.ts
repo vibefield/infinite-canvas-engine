@@ -7,7 +7,7 @@
 import { createCanvasEngine, dataPrefabFor, durablePrefabFor } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { linear } from "../src/mat/night";
-import { BOARD } from "../src/theme";
+import { BOARD } from "../src/board/theme";
 import { markerTool, StrokeBuilder, TIPS } from "../src/board/stroke";
 import { Board, boardOps, decodeTimes, encodePoints, encodeTimes, feedStroke, meanSpeed, StrokePrefab, strokeRow, strokeSeed } from "../src/objects";
 

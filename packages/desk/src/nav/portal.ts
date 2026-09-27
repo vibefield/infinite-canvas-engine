@@ -11,7 +11,7 @@
 // outside it is shaded.
 
 import type { Box } from "../lattice/lod";
-import { MINIMAT } from "../theme";
+import { PORTAL } from "../theme";
 import type { CameraState, Rect, Viewport } from "./flight";
 
 /** A rounded rect in screen CSS px: centre, half extents, corner radius. */
@@ -101,10 +101,10 @@ export function intersectBox(a: Box, b: Box): Box {
  * inside only when its short side on screen is at least `lo` CSS px, fading in
  * fully by `hi` — the rung law applied to portals. Below it no slot exists and
  * the mini mat draws its face itself (its far LOD); zoomed out, a desk of mini
- * mats costs one instanced draw. The mini mat is the one container, so its law
- * holds the numbers (theme.ts `MINIMAT.gate`).
+ * mats costs one instanced draw. The engine holds the numbers (theme.ts
+ * `PORTAL.gate`); the mini mat, the one container, takes them by name.
  */
-export const PORTAL_GATE: readonly [number, number] = MINIMAT.gate;
+export const PORTAL_GATE: readonly [number, number] = PORTAL.gate;
 /** The pool's cap: at most this many faces carry a slot per frame, largest first (PORTAL.md Q-f). */
 export const PORTAL_CAP = 16;
 

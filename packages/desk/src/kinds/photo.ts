@@ -25,8 +25,8 @@
 import type { Entity } from "@ice/core";
 import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
-import type { MatPass } from "../mat/mat-pass";
-import { type BlobStore, type DecodedPicture, RGBA_TYPE } from "../photo/blobs";
+import type { MatPass } from "../kit/view";
+import { type BlobStore, type DecodedPicture, RGBA_TYPE } from "../kit/blobs";
 import { carryOf } from "../hold/pose";
 import { borderOf } from "../photo/layout";
 import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto, twist } from "../photo/photo";

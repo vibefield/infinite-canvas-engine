@@ -8,7 +8,7 @@
 // density the board is drawn at.
 
 import type { RGB } from "../theme";
-import { BOARD } from "../theme";
+import { BOARD } from "./theme";
 
 /** A stamp's floats: x, y (world units from the melamine's top-left) · dir x, y · s (arc length) · flow · size · seed. */
 export const STAMP_FLOATS = 8;

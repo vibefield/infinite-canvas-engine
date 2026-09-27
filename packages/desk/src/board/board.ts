@@ -11,7 +11,7 @@
 import { sdRoundBox } from "../sdf";
 import type { CameraState, Viewport } from "../nav/flight";
 import type { Lamp } from "../paper/paper";
-import { BOARD } from "../theme";
+import { BOARD } from "./theme";
 
 /** The board's numbers (theme.ts `BOARD`) — the engine's unless a host tweaks them. */
 export interface BoardLaw {

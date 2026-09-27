@@ -21,19 +21,16 @@
 // arrive with D3.
 
 import type { Component, Entity, HeldToolDef, Relation, Tag, World } from "@ice/core";
-import type { PrintRaster } from "../calendar/printing";
 import type { TypingDocs } from "../docs";
 import type { RasterBudget } from "../engine/budget";
 import type { KindPass, KindProgram, StratumName } from "../kind";
-import type { View } from "../lattice/lod";
-import type { GridConfig } from "../mat/grid";
+import type { BlobStore, PictureDecoder } from "../kit/blobs";
+import type { ChildShape, InsideView } from "../kit/inside";
+import type { Lamp } from "../kit/light";
+import type { PrintRaster } from "../kit/print";
+import type { TextRaster } from "../kit/raster";
+import type { GridConfig, Rect, View } from "../kit/view";
 import type { MarkFrame } from "../marks/layout";
-import type { InsideView } from "../minimat/inside";
-import type { ChildShape } from "../minimat/minimat";
-import type { Rect } from "../nav/flight";
-import type { Lamp } from "../paper/paper";
-import type { TextRaster } from "../paper/raster";
-import type { BlobStore, PictureDecoder } from "../photo/blobs";
 import type { GroundTheme, Palette, ThemeName } from "../theme";
 
 /**

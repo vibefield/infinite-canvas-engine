@@ -1,3 +1,6 @@
+// (The kit's since K4a, design-016 §5 — moved from paper/text.ts with the HAND's law it lays by, theme.ts's until
+// then: the note writes with it and the desk calendar prints with it, so it is shared, never borrowed.)
+//
 // The handwriting's LAYOUT — pure: no canvas, no font file. A host supplies
 // the face's metrics (advances and kerning in em, the ascent and descent) and
 // this lays a note's text into its writable box — wrapped at words, broken at
@@ -201,3 +204,16 @@ export function carrySeeds(oldText: string, oldSeeds: ArrayLike<number>, newText
   for (let i = 0; i < suf; i++) { const j = oldText.length - suf + i; seeds.push(j < oldSeeds.length ? (oldSeeds[j] as number) : fresh()); }
   return { seeds, from: pre, to: pre + inserted };
 }
+
+/**
+ * The HAND — how the pen writes on the paper (STICKY.md §3; `paper/text.ts`). The face is
+ * the host's (the lab's Caveat, an OFL hand); its size is in world units; the jitter is
+ * each glyph's own — a tilt, a rise, a size, a pressure — and the line wanders slowly.
+ * The wipe is how a typed glyph arrives: revealed left to right in `wipeMs`, the pen's stroke.
+ */
+export const HAND = {
+  size: 24, lineHeight: 1.16, pad: 16,
+  jitter: { rot: 0.028, rise: 0.03, scale: 0.05, press: [0.8, 0.97] as readonly [number, number] },
+  wander: { amp: 0.022, period: 9 },
+  wipeMs: 110,
+} as const;

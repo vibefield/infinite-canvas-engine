@@ -7,7 +7,8 @@ import { resolveBoard } from "../src/board/board";
 import { followHand, HAND_ANGLE, handOnMelamine, penAtRest, penPose, stepPen } from "../src/board/pen";
 import { boardKind, type BoardObjectLook, boardRest } from "../src/kinds";
 import { lampOf } from "../src/paper/paper";
-import { BOARD, MAT_GRID } from "../src/theme";
+import { MAT_GRID } from "../src/theme";
+import { BOARD } from "../src/board/theme";
 import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
 import { must } from "./must";
 

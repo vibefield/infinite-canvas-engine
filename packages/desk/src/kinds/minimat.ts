@@ -15,10 +15,11 @@
 
 import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
-import type { MatPass } from "../mat/mat-pass";
+import type { MatPass } from "../kit/view";
 import { insideView } from "../minimat/inside";
 import type { MiniMatInstance } from "../minimat/layout";
-import { type ChildShape, chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "../minimat/minimat";
+import type { ChildShape } from "../kit/inside";
+import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "../minimat/minimat";
 import { miniMatInstance } from "../minimat/inside";
 import { MiniMatPass } from "../minimat/pass";
 import { MINIMAT_SHADER_FILES, miniMatShaders } from "../minimat/shaders";

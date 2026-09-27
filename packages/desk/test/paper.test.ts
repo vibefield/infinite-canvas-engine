@@ -7,10 +7,12 @@
 import { must } from "./must";
 import { describe, expect, it } from "vitest";
 import { BAND_MAX, BAND_MIN, boundsOf, DEFAULT_PAPER_LAW, heightAt, lampOf, localOf, PAPER_REST, pickPaper, rasterBand, resolvePaper, sdPaper, shadowReach, tiltOf, worldOf } from "../src/paper/paper";
-import { caretAt, carrySeeds, glyphBox, hashHand, type HandMetrics, layoutText } from "../src/paper/text";
+import { caretAt, carrySeeds, glyphBox, hashHand, type HandMetrics, layoutText } from "../src/kit/text";
 import { InkShelves } from "../src/paper/pages";
 import { MAX_PAPERS, Paper, PaperUniforms, paperValues } from "../src/paper/layout";
-import { HAND, MAT_GRID, PAPER } from "../src/theme";
+import { MAT_GRID } from "../src/theme";
+import { HAND } from "../src/kit/text";
+import { PAPER } from "../src/paper/theme";
 
 const LAMP = lampOf(MAT_GRID.plane);
 const note = (over: Partial<{ cx: number; cy: number; w: number; h: number; angle: number }> = {}) => ({ cx: 600, cy: 400, w: 200, h: 200, angle: 0, ...over });

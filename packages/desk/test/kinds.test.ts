@@ -17,13 +17,14 @@ import { createSlotSet, type DrawSlot, drawSlot, Ground, type KindExtra, type Ki
 import { BOARD_KIND, BoardKind, CALENDAR_KIND, CalendarKind, DESK_KINDS, deskKinds, MINIMAT_KIND, MiniMatKind, NOTEBOOK_KIND, NotebookKind, PAPER_KIND, PaperKind, PHOTO_KIND, PhotoKind } from "../src/kinds";
 import { DEFAULT_GRID, dressGrid } from "../src/mat/grid";
 import { DEFAULT_MAT_CONFIG, STILL_MAT_FRAME } from "../src/mat/layout";
-import { MatPass } from "../src/mat/mat-pass";
+import { CuttingMat } from "../src/mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import type { MiniMatPass } from "../src/minimat/pass";
 import { lampOf } from "../src/paper/paper";
 import type { PaperPass } from "../src/paper/paper-pass";
 import { type ShaderText, shaderText } from "../src/shaders";
-import { BOARD, MAT_GRID } from "../src/theme";
+import { MAT_GRID } from "../src/theme";
+import { BOARD } from "../src/board/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
 import { DESK, fakeSlot, loggingKind, scissorPass } from "./fake-kinds";
 import { fakeDevice, fakeSurface, installGpuFlags, recordingPass } from "./fake-gpu";
@@ -199,7 +200,7 @@ describe("the registry: the root slot, the pool", () => {
     const made: unknown[][] = [];
     const program = (name: string, stratum: StratumName): KindProgram => ({ name, stratum, create: async (d, f, m) => { made.push([name, d, f, m]); return { name } as unknown as KindPass; } });
     const device = { device: true } as unknown as GPUDevice;
-    const mat = { mat: true } as unknown as MatPass;
+    const mat = { mat: true } as unknown as CuttingMat;
     const set = await createSlotSet(device, "bgra8unorm", mat, [program("paper", "things"), program("minimat", "sheets"), program("pad", "pads")]);
     expect(set.mat).toBe(mat);
     expect([...set.kinds.entries()].map(([key, k]) => `${key}=${k.name}/${k.stratum}/${(k.pass as unknown as { name: string }).name}`)).toEqual(["paper=paper/things/paper", "minimat=minimat/sheets/minimat", "pad=pad/pads/pad"]);
@@ -288,7 +289,7 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     const kinds = deskKinds(text);
     expect(asked).toEqual([]);
     const { device } = fakeDevice();
-    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const set = await createSlotSet(device, "bgra8unorm", mat, kinds);
     expect(must(set.kinds.get(PAPER_KIND)).pass).toBeInstanceOf(PaperKind);
     expect(must(set.kinds.get(MINIMAT_KIND)).pass).toBeInstanceOf(MiniMatKind);
@@ -302,7 +303,7 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
 
   it("the whiteboard's drawRange counts in the list it was handed: a board with no raster draws nothing and shifts nothing; its whole range is draw()'s commands", async () => {
     const { device } = fakeDevice();
-    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const set = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
     const kind = must(set.kinds.get(BOARD_KIND)).pass as BoardKind;
     const pass: BoardPass = kind.pass;
@@ -326,7 +327,7 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     // through the walker: a note laid on the first board splits the boards into two runs — the second draws board 3 alone
     log.length = 0;
     const slot: DrawSlot = {
-      mat: { draw: () => log.push("mat") } as unknown as MatPass,
+      mat: { draw: () => log.push("mat") } as unknown as CuttingMat,
       kinds: new Map([[BOARD_KIND, { name: BOARD_KIND, stratum: "things", pass: kind }], ["paper", loggingKind(log, "desk", "paper", "things")]]),
       objects: [{ kind: BOARD_KIND }, { kind: "paper" }, { kind: BOARD_KIND }, { kind: BOARD_KIND }],
       stats: { k0: 0, fade: 0, wind: false },
@@ -376,7 +377,7 @@ describe("the desk's kinds: thin adapters over the moved passes", () => {
       drawRange: (_p: unknown, a: number, b: number) => log.push(["range", name, a, b]),
       drawChips: (_p: unknown, i: number) => log.push(["chips", name, i]),
     });
-    const mat = { mat: true } as unknown as MatPass;
+    const mat = { mat: true } as unknown as CuttingMat;
     const rp = {} as GPURenderPassEncoder;
     const paper = new PaperKind(pass("paper") as PaperPass);
     const note = paper.spawn(mat);

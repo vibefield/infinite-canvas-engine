@@ -10,26 +10,9 @@
 // OffscreenCanvas and measures the type), the pass takes what it hands back. The Node oracle has no raster: it PINS a
 // sheet's committed tiles (`pin` — the fixture's bytes, one level), and a sheet pinned so is never drawn live.
 
-import type { HandMetrics } from "../paper/text";
-import { anyIn, type PrintFace, type SheetPrint } from "./print";
+import type { PrintRaster, TileSource } from "../kit/print";
+import { anyIn, type SheetPrint } from "./print";
 import { BASE_LEVELS, bandOf, EMPTY, entryOf, GUTTER, MISSING, TileCache, type TileGrid, tileRect, tilesIn } from "./tiles";
-
-/** What the pass takes a tile as: the host's canvas (TILE_TEX², straight alpha) — a type only. */
-export type TileSource = HTMLCanvasElement | OffscreenCanvas;
-
-/**
- * THE PRINT'S RASTER (the host's seam, as `TextRaster` is the note's): the hand's face and its metrics (undefined while the
- * face loads — the print waits rather than set the hand in a stand-in face), a version that turns over when a face lands,
- * the type's widths, and a rectangle of a print drawn into a tile at `band` texels a unit.
- */
-export interface PrintRaster {
-  hand(): { readonly face: PrintFace; readonly metrics: HandMetrics } | undefined;
-  version(): number;
-  measure(font: string, text: string): number;
-  tile(print: SheetPrint, x: number, y: number, w: number, h: number, band: number): TileSource;
-  /** The same rectangle as RGBA bytes, TILE_TEX² × 4, row 0 at the top — a fixture's (a rig reads the live print through it). */
-  bytes(print: SheetPrint, x: number, y: number, w: number, h: number, band: number): Uint8Array<ArrayBuffer>;
-}
 
 /** What the driver asks of the calendar's pass: its layers, a tile uploaded or written, a page table written. */
 export interface PrintPass {
@@ -131,7 +114,7 @@ export class PrintTiles {
    * under it) for what is in view — resident ones kept, empty ones marked, the rest drawn (the view's centre first) within the
    * frame's budget. `owner` names the sheet (`${pad}:${month}`); a sheet with no print yet (its face loading) keeps its table.
    */
-  sheet(pass: PrintPass, raster: PrintRaster, owner: string, slot: number, print: SheetPrint, view: SheetView, level: number, rungs: 1 | 2 = 2): void {
+  sheet(pass: PrintPass, raster: PrintRaster<SheetPrint>, owner: string, slot: number, print: SheetPrint, view: SheetView, level: number, rungs: 1 | 2 = 2): void {
     const cache = this.cacheOf(pass);
     const T = this.tableFor(slot, owner);
     const want: { l: number; tx: number; ty: number; d: number }[] = [];

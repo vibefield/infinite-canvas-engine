@@ -14,7 +14,8 @@ import type { CalendarLaw } from "./law";
 import { type CalEvent, isSpan, layoutMonth, parseTime } from "./events";
 import { cellDay, inMonth, isoWeek, isWeekendCol, MONTH_NAMES, monthGrid, type MonthGrid, type MoonPhase, WEEKDAY_NAMES } from "./month";
 import { bandBox, type Box, cellBox, lineBox, lineCapacity, type SheetLayout } from "./sheet";
-import { hashHand, type HandLaw, type HandLayout, type HandMetrics, layoutText } from "../paper/text";
+import type { PrintFace } from "../kit/print";
+import { hashHand, type HandLaw, type HandLayout, type HandMetrics, layoutText } from "../kit/text";
 
 /** A 2D context the print draws into — the browser's (a canvas's or an OffscreenCanvas's); a TYPE, never a touch of the DOM. */
 export type PrintContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -35,12 +36,6 @@ export interface PrintLook {
   readonly highlighters: Readonly<Record<string, string>>;
   /** The alpha a highlighter lays down (the shader multiplies it into the paper). */
   readonly highlight: number;
-}
-
-/** The hand's face as the print sets it: a family and a weight (the host loads it — desk/host/ink.ts `PEN_FACES`). */
-export interface PrintFace {
-  readonly family: string;
-  readonly weight: number;
 }
 
 export const SANS = 'system-ui, -apple-system, "Helvetica Neue", sans-serif';

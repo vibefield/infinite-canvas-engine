@@ -25,9 +25,10 @@ import { BOARD_SHADER_FILES, boardShaders } from "../board/shaders";
 import { type StrokeBuilder, TIP_NAMES, type TipName } from "../board/stroke";
 import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
 import type { MarkFrame } from "../marks/layout";
-import type { MatPass } from "../mat/mat-pass";
+import type { MatPass } from "../kit/view";
 import { type ShaderText, shaderText } from "../shaders";
-import { BOARD, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import { type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import { BOARD } from "../board/theme";
 import { ChildOf, defineQuery, type Entity, HeldPress, type HeldToolDef, LocalPointer, Pointer, type World } from "@ice/core";
 import { type KindHost, type KindLocal, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 

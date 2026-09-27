@@ -7,7 +7,8 @@
 import { Captures, ChildOf, createCanvasEngine, Drag, type Entity, GestureActive, LocalPointer, Movable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Viewport, Watches, CancelRequest, GestureCancelled, PressWheel } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeskBuilder } from "../src/compose/builder";
-import { createMemoryBlobStore, FLUX_REST, hashBytes, type KindHost, type ObjectContext, PHOTO_KIND, PhotoKind, photoKind, PRINT_RETURN_MS, type Prints, printRect, RGBA_TYPE } from "../src/kinds";
+import { createMemoryBlobStore, hashBytes, RGBA_TYPE } from "../src/kit/blobs";
+import { FLUX_REST, type KindHost, type ObjectContext, PHOTO_KIND, PhotoKind, photoKind, PRINT_RETURN_MS, type Prints, printRect } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { objectKindOf } from "../src/object";
 import { createPhotoCarry, Photo, PHOTO_TYPE, TWIST_PER_WHEEL } from "../src/objects";

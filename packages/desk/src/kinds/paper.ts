@@ -16,17 +16,18 @@
 // takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
 
 import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
-import type { MatPass } from "../mat/mat-pass";
-import type { ChildShape } from "../minimat/minimat";
+import type { MatPass } from "../kit/view";
+import type { ChildShape } from "../kit/inside";
 import type { PaperInstance } from "../paper/layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "../paper/paper";
 import { PaperPass } from "../paper/paper-pass";
 import { PAPER_SHADER_FILES, paperShaders } from "../paper/shaders";
 import type { UvRect } from "../paper/pages";
-import type { HandLaw } from "../paper/text";
+import type { HandLaw } from "../kit/text";
 import { createWriting, type Writing } from "../paper/writing";
 import { type ShaderText, shaderText } from "../shaders";
-import { HAND, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import { type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
+import { HAND } from "../kit/text";
 import type { MarkFrame } from "../marks/layout";
 import { type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 

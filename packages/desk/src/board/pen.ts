@@ -9,7 +9,7 @@
 
 import { spring, settled } from "../springs";
 import type { RGB } from "../theme";
-import { BOARD } from "../theme";
+import { BOARD } from "./theme";
 import type { BoardGeometry, WorldBox } from "./board";
 import type { BoardEraser, BoardPen } from "./layout";
 import { type TipName, TIPS } from "./stroke";

@@ -50,7 +50,7 @@ import { boxOf, type View } from "./lattice/lod";
 import type { MatLight } from "./mat/night";
 import { DEFAULT_GRID, dressGrid, type GridConfig, type GridStats, gridStats, type SlotFrame } from "./mat/grid";
 import { type SlotLight, STILL_MAT_FRAME } from "./mat/layout";
-import { MatPass } from "./mat/mat-pass";
+import { CuttingMat } from "./mat/mat-pass";
 import type { MatShaders } from "./mat/shaders";
 import type { MarksInput } from "./marks/layout";
 import { MarksPass } from "./marks/pass";
@@ -212,13 +212,13 @@ export interface SlotKind {
 
 /** The passes one slot owns: the mat's, and every registered kind's by name, in registration order. The root's are the ground's; the pool spawns the rest on the same pipelines. */
 export interface SlotSet {
-  readonly mat: MatPass;
+  readonly mat: CuttingMat;
   readonly kinds: ReadonlyMap<string, SlotKind>;
 }
 
 /** One slot's passes for `drawFrame` — the ground's own, or the oracle's. A parent carries its nested slots. */
 export interface DrawSlot {
-  readonly mat: MatPass;
+  readonly mat: CuttingMat;
   readonly present?: Presentation | undefined;
   /** BARE: no mat is drawn — the hand's slot (D4b) lays its one object over a frame that is already there. */
   readonly bare?: boolean | undefined;
@@ -242,7 +242,7 @@ export const visible = (p: Presentation | undefined): boolean => (p?.opacity ?? 
  * kind's, made in parallel on the root's mat, in registration order. Names must be unique and strata known.
  * Shared by the ground and the Node oracle.
  */
-export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat, mat: MatPass, programs: readonly KindProgram[]): Promise<SlotSet> {
+export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat, mat: CuttingMat, programs: readonly KindProgram[]): Promise<SlotSet> {
   const names = new Set<string>();
   for (const p of programs) {
     if (!p.name) throw new Error("ground: a kind needs a name — it is the kind's key in every slot");
@@ -490,7 +490,7 @@ export class Ground {
   readonly device: GPUDevice;
   readonly surface: Surface;
   /** The cutting mat — the root slot's; its plates, noise and glyph atlas are every slot's. */
-  readonly mat: MatPass;
+  readonly mat: CuttingMat;
   /** The root slot's passes: the mat's and every registered kind's, by name (the registry, in registration order). */
   readonly root: SlotSet;
   /** Slots beyond the root — the departed desk's, the live insides of mini mats — spawned on first use. */
@@ -515,7 +515,7 @@ export class Ground {
 
   static async create(opts: GroundOptions): Promise<Ground> {
     const surf = opts.surface;
-    const mat = await MatPass.create(opts.device, surf.format, opts.mat);
+    const mat = await CuttingMat.create(opts.device, surf.format, opts.mat);
     const root = await createSlotSet(opts.device, surf.format, mat, opts.kinds);
     const [marks, hold] = await Promise.all([
       opts.marks === undefined ? null : MarksPass.create(opts.device, surf.format, opts.marks, mat),

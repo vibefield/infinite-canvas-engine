@@ -11,8 +11,8 @@
 
 import { type Lamp, lampOf } from "../mat/lamp";
 import { sdRoundBox } from "../sdf";
-import { PAPER } from "../theme";
-import { hashHand } from "./text";
+import { PAPER } from "./theme";
+import { hashHand } from "../kit/text";
 
 /** The paper's numbers (theme.ts `PAPER`) — the engine's unless a host tweaks them. */
 export interface PaperLaw {

@@ -5,7 +5,7 @@
 // photo pass copies the bitmap to a texture (`pictureFrom`), then it is closed. Raw RGBA never comes
 // here: the photo kind makes those pictures itself.
 
-import type { DecodedPicture, PictureDecoder } from "../photo/blobs";
+import type { DecodedPicture, PictureDecoder } from "../kit/blobs";
 
 export const decodePicture: PictureDecoder = async (blob, max): Promise<DecodedPicture | undefined> => {
   if (typeof createImageBitmap !== "function") return undefined;

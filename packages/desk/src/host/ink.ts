@@ -12,8 +12,8 @@
 // and `version()` bumps when it does, so every layout keyed by it is laid again. One OffscreenCanvas
 // is reused for every raster (`willReadFrequently`: the CPU path the readback wants).
 
-import type { InkBitmap, TextRaster } from "../paper/raster";
-import type { HandLayout, HandMetrics } from "../paper/text";
+import type { InkBitmap, TextRaster } from "../kit/raster";
+import type { HandLayout, HandMetrics } from "../kit/text";
 
 /** A face: its family and weight, and the file it loads from (absent = the platform's own). */
 export interface FaceSpec {

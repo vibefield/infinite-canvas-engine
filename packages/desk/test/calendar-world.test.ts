@@ -7,7 +7,8 @@ import { cascadeDestroy, ChildOf, createCanvasEngine, defineQuery, type Entity, 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CALENDAR } from "../src/calendar/law";
 import type { CalendarDraw, CalendarPass } from "../src/calendar/pass";
-import type { PrintPass, PrintRaster, TileSource } from "../src/calendar/printing";
+import type { PrintPass } from "../src/calendar/printing";
+import type { PrintRaster, TileSource } from "../src/kit/print";
 import { TILE_TEX } from "../src/calendar/tiles";
 import { dayIn, dayOfKey, monthOfDay } from "../src/calendar/month";
 import { padFrame } from "../src/calendar/pad";

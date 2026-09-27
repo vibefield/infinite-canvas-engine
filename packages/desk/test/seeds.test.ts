@@ -3,7 +3,7 @@
 // note's hand — and an edit CARRIED through the encoded cell keeps every untouched glyph's hand.
 import { describe, expect, it } from "vitest";
 import { decodeSeeds, encodeSeeds, seedsFor } from "../src/paper/seeds";
-import { carrySeeds, glyphSeed } from "../src/paper/text";
+import { carrySeeds, glyphSeed } from "../src/kit/text";
 
 describe("the seeds cell (paper/seeds.ts)", () => {
   it("round-trips any i32s exactly, 4 bytes a glyph, deterministic", () => {

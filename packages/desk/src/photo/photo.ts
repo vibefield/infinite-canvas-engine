@@ -18,19 +18,20 @@
 // PAPER.size 200 = 3″, so a 6×4 print is 400 long). Axes: x right, y down the
 // screen, z up off the mat. Time in seconds.
 
-import { MAT_COLORS, MAT_GRID, PAPER, type RGB } from "../theme";
+import { MAT_COLORS, MAT_GRID, type RGB } from "../theme";
+import { PHYSICS } from "../kit/physics";
 import { type Lamp, lampOf } from "../paper/paper";
 
 /**
  * The desk's ONE light: the mat's gobo projector as a lamp over the desk (paper.ts `lampOf` —
  * world (1930, −826), 994 up), the same the notes and the notebooks are lit and shadowed by.
  * Per print, the direction toward it from the print, and the shadow's ground slope away from
- * it, capped at `PAPER.shadow.slopeMax` (a print far from the lamp keeps a finite shadow).
+ * it, capped at `PHYSICS.shadow.slopeMax` (a print far from the lamp keeps a finite shadow).
  */
 export const LAMP: Lamp = lampOf(MAT_GRID.plane);
 
 /**
- * The shadow's two terms: the PENUMBRA is the note's (theme.ts `PAPER.shadow`: σ at contact, alpha
+ * The shadow's two terms: the PENUMBRA is the note's (kit/physics.ts `PHYSICS.shadow`: σ at contact, alpha
  * resting, the slope's cap — one physics for every sheet on the desk; its growth and held alpha below) — and a
  * tight CONTACT term at the base that fades as the sheet rises off the mat (gone by `reach`), as
  * the notebook's slab has (the tree-shadow design system's `--lift-1`).
@@ -39,7 +40,7 @@ export const DESK_SHADOW = {
   // σ grows 0.36 per unit, not the note's 0.75: a held print rides twice as high as a held note (24 vs 12), and at the
   // note's rate its shadow blurred into nothing — this keeps a held print's penumbra as soft as a held note's (σ ≈ 11).
   // PHOTO.md §8 Q-2: the one law may want to be this (or the note's lift may want to be the print's).
-  penumbra: { sigma0: PAPER.shadow.sigma, sigmaPerHeight: 0.36, alpha: PAPER.shadow.alpha, alphaHeld: 0.42, slopeMax: PAPER.shadow.slopeMax },
+  penumbra: { sigma0: PHYSICS.shadow.sigma, sigmaPerHeight: 0.36, alpha: PHYSICS.shadow.alpha, alphaHeld: 0.42, slopeMax: PHYSICS.shadow.slopeMax },
   contact: { alpha: 0.22, sigma: 1.1, reach: 2.5 },
 } as const;
 

@@ -6,7 +6,7 @@
 // PAPER.size 200 = 3″, so one unit ≈ 0.38 mm and this A6-ish book is 180 × 252).
 // Axes: x right, y down the screen, z up off the mat, toward the eye.
 
-import { PAPER } from "../theme";
+import { PHYSICS } from "../kit/physics";
 
 export interface NotebookLaw {
   /** The case: the cover's width × height, a board's thickness, its fore-edge corner radius. */
@@ -79,7 +79,7 @@ export const NOTEBOOK: NotebookLaw = {
   light: { ambient: 0.46, cap: 1.28 },
   // PAPER.shadow's slope cap and contact σ; the growth is the photo's (0.36/unit, not the note's 0.75 — a
   // standing cover is 180 up, and at the note's rate its shadow would blur into the mat)
-  shadow: { sigma0: 1.4, perUnit: 0.3, alpha: 0.55, slopeMax: PAPER.shadow.slopeMax, contact: { sigma: 1.3, alpha: 0.45, reach: 3 } },
+  shadow: { sigma0: 1.4, perUnit: 0.3, alpha: 0.55, slopeMax: PHYSICS.shadow.slopeMax, contact: { sigma: 1.3, alpha: 0.45, reach: 3 } },
   dapple: { page: 0.35, cover: 1 },
   lift: { held: 30, open: 20, hover: 3.5, tiltPer: 0.00011, tiltMax: 0.11 },
   springs: {

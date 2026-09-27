@@ -1,3 +1,5 @@
+// (The kit's since K4a, design-016 §5 — moved from paper/raster.ts: a host service the contract names, `KindHost.text`.)
+//
 // The TEXT RASTER seam (design-015 §6.1; D2c) — what the paper kind calls to turn a hand's layout
 // (text.ts, pure) into ink: the face's metrics for the layout, and the glyph boxes drawn as r8
 // coverage for the ink pages. DOM-free as a contract: the browser's implementation is

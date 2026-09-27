@@ -8,7 +8,7 @@ import { createSlotSet, drawSlot, type DrawSlot, type KindPass, type SlotContext
 import { DESK_KINDS, PHOTO_KIND, PhotoKind, photoProgram } from "../src/kinds";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { DEFAULT_MAT_CONFIG, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../src/mat/layout";
-import { MatPass } from "../src/mat/mat-pass";
+import { CuttingMat } from "../src/mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import { newBody, resolvePhoto } from "../src/photo/photo";
 import type { PhotoInstance, PhotoPass, Picture } from "../src/photo/photo-pass";
@@ -69,7 +69,7 @@ describe("the photo print in the registry", () => {
       tune: (r: { name: string }) => log.push(["tune", name, r.name]),
       drawRange: (_p: unknown, a: number, b: number) => log.push(["range", name, a, b]),
     });
-    const mat = { mat: true } as unknown as MatPass;
+    const mat = { mat: true } as unknown as CuttingMat;
     const root = new PhotoKind(pass("photo") as PhotoPass);
     const inside = root.spawn(mat);
     expect(inside).toBeInstanceOf(PhotoKind);
@@ -107,7 +107,7 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
       (texture as { destroy: () => void }).destroy = () => { kept.destroyed = true; };
       return texture;
     };
-    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const set = await createSlotSet(device, "bgra8unorm", mat, [photoProgram(shaderText)]);
     const kind = must(set.kinds.get(PHOTO_KIND)).pass as PhotoKind;
     return { device, mat, kind, groups, pipelines, writes, textures };
@@ -216,7 +216,7 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     const calls: unknown[][] = [];
     const rp = { ...objectPass(calls), draw: (...a: number[]) => { calls.push(["draw", ...a]); log.push(`photo draw ${a[3]}`); } } as unknown as GPURenderPassEncoder;
     const slot: DrawSlot = {
-      mat: { draw: () => log.push("mat") } as unknown as MatPass,
+      mat: { draw: () => log.push("mat") } as unknown as CuttingMat,
       kinds: new Map([[PHOTO_KIND, { name: PHOTO_KIND, stratum: "things", pass: kind }], ["paper", loggingKind(log, "desk", "paper", "things")]]),
       objects: [{ kind: PHOTO_KIND }, { kind: "paper" }, { kind: PHOTO_KIND }],
       stats: { k0: 0, fade: 0, wind: false },

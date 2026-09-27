@@ -10,7 +10,8 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { cssColor, GRID, MINIMAT } from "../src/theme";
+import { cssColor, GRID } from "../src/theme";
+import { MINIMAT } from "../src/minimat/theme";
 import { PORTAL_GATE } from "../src/nav/portal";
 
 const ground = resolve(import.meta.dirname, "..");

@@ -10,7 +10,7 @@ import { p } from "@ice/core";
 import { minimatKind } from "../kinds/minimat";
 import { defineObject } from "../object";
 import { NOTE_TYPE } from "./note";
-import { MINIMAT } from "../theme";
+import { MINIMAT } from "../minimat/theme";
 
 /** The vinyls a mini mat is sold in (MINIMAT.md §2) — names; `sage` is the desk's ground, the rest the host's. */
 export const VINYLS = ["sage", "slate", "charcoal"] as const;

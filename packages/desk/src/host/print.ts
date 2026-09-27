@@ -4,10 +4,10 @@
 // note's — its face and its metrics come from the desk's text raster (desk/host/ink.ts, the faces the app hands in), so the
 // calendar writes in the very Caveat a note does and waits, blank, while it loads.
 
-import type { HandMetrics } from "../paper/text";
-import type { TextRaster } from "../paper/raster";
-import { drawRegion, type PrintFace, type SheetPrint } from "../calendar/print";
-import type { PrintRaster } from "../calendar/printing";
+import type { HandMetrics } from "../kit/text";
+import type { TextRaster } from "../kit/raster";
+import { drawRegion, type SheetPrint } from "../calendar/print";
+import type { PrintFace, PrintRaster } from "../kit/print";
 import { TILE_TEX } from "../calendar/tiles";
 import { PEN_FACES } from "./ink";
 
@@ -18,7 +18,7 @@ export interface PrintRasterOptions {
   readonly face?: string;
 }
 
-export function printRaster(opts: PrintRasterOptions): PrintRaster {
+export function printRaster(opts: PrintRasterOptions): PrintRaster<SheetPrint> {
   const faceName = opts.face ?? "caveat";
   const spec = PEN_FACES[faceName] ?? { family: "Caveat", weight: 500 };
   const face: PrintFace = { family: spec.family, weight: spec.weight };

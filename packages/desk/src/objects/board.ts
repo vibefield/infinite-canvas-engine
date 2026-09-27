@@ -14,7 +14,7 @@ import { p } from "@ice/core";
 import { MARKERS, StrokePrefab } from "../board/data";
 import { type BoardInk, type BoardObjectLook, boardKind } from "../kinds/board";
 import { defineObject } from "../object";
-import { BOARD } from "../theme";
+import { BOARD } from "../board/theme";
 import { createBoardPen } from "./pen";
 
 /** The dry-erase markers a board is written with (BOARD.md §3) — names; the inks are the host's (board/data.ts). */

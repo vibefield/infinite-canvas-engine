@@ -14,9 +14,9 @@ import { CALENDAR_KIND, CalendarKind, calendarKind, calendarProgram, deskKinds, 
 import { attachmentOf, clip } from "../src/kinds/layer";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX, STILL_MAT_FRAME } from "../src/mat/layout";
-import { MatPass } from "../src/mat/mat-pass";
+import { CuttingMat } from "../src/mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
-import type { MatPass as MatPassType } from "../src/mat/mat-pass";
+import type { MatPass as MatPassType } from "../src/kit/view";
 import { eyeOf } from "../src/notebook/eye";
 import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookDraw, NotebookPass } from "../src/notebook/pass";
@@ -62,7 +62,7 @@ describe("the notebook and the desk calendar: two layered kinds in the registry"
     expect([nb.name, nb.stratum, nb.composite, NOTEBOOK_KIND]).toEqual(["notebook", "things", true, "notebook"]);
     expect([cal.name, cal.stratum, cal.composite, CALENDAR_KIND]).toEqual(["calendar", "pads", true, "calendar"]);
     const { device } = fakeDevice();
-    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const book = await nb.create(device, "bgra8unorm", mat);
     const pad = await cal.create(device, "bgra8unorm", mat);
     expect(book).toBeInstanceOf(NotebookKind); expect(pad).toBeInstanceOf(CalendarKind);
@@ -86,7 +86,7 @@ describe("the notebook and the desk calendar: two layered kinds in the registry"
     expect(calls).toEqual([]);   // the root's pass was never asked a thing on the spawned slots' behalf
     // the ground's own pool: every slot beyond the root spawns them inert, and keeps their flag
     const { device } = fakeDevice();
-    const real = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const real = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const set = await createSlotSet(device, "bgra8unorm", real, deskKinds());
     const pool = new SlotPool(set);
     const slot = pool.acquire();
@@ -206,7 +206,7 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
   it("through the ground's own prepareFrame + drawFrame: the wind, the pad's layer, the books' shadow maps and layer, then the frame — the pad laid right after the mat, the books after the note that lies before them", async () => {
     const log: string[] = [];
     const { device, queue } = fakeDevice(log);
-    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const root = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
     const nbKind = must(root.kinds.get(NOTEBOOK_KIND)).pass as NotebookKind;
     const calKind = must(root.kinds.get(CALENDAR_KIND)).pass as CalendarKind;
@@ -248,7 +248,7 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
 
   it("a CAP is never silent (D7): 33 books and 5 pads on screen — the passes draw 32 and 4, and the frame SAYS what they turned away, by kind", async () => {
     const { device } = fakeDevice([]);
-    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const root = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
     (must(root.kinds.get(NOTEBOOK_KIND)).pass as NotebookKind).ruleInk = notebookRuleInk();
     (must(root.kinds.get(CALENDAR_KIND)).pass as CalendarKind).alpha = CALENDAR_LOOK.alpha;
@@ -306,7 +306,7 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
   it("the passes' own paths record what they always did: the books' `render` — the layer, then the composite in a pass of its own over the canvas; the pad's `renderLayer` — the layer in a submit of its own", async () => {
     const log: string[] = [];
     const { device, queue } = fakeDevice(log);
-    const mat = await MatPass.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
+    const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const root = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
     const nbKind = must(root.kinds.get(NOTEBOOK_KIND)).pass as NotebookKind;
     const calKind = must(root.kinds.get(CALENDAR_KIND)).pass as CalendarKind;

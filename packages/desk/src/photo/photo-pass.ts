@@ -17,7 +17,7 @@ import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
 import { litByOwn, type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../mat/layout";
-import type { MatPass } from "../mat/mat-pass";
+import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
 import { MAT_GRID } from "../theme";
 import { MAX_PHOTOS, Photo, type PhotoPicture, PhotoUniforms, photoUniformValues, photoValues } from "./layout";

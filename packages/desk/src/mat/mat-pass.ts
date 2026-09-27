@@ -6,7 +6,7 @@
 // gobo time moved; `draw()` records the mat into the render pass the ground
 // opened, where the desk's objects follow.
 //
-// One MatPass is one SLOT: its own uniforms, wind target and bind groups. The
+// One CuttingMat is one SLOT: its own uniforms, wind target and bind groups. The
 // pipelines, the samplers, the plates and the blue noise are shared by every
 // slot spawned from the first (`spawn()` — a flight's departed slot, a mini
 // mat's inside): a plate uploaded through any slot is the plate every slot samples.
@@ -22,6 +22,7 @@ import type { Presentation } from "../nav/portal";
 import { MAT_GRID } from "../theme";
 import { type GlyphAtlasMeta, GLYPHS, type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, NOISE_SIZE, PLATE_SIZE, type PlateName, RULER_GLYPHS, type SlotLight } from "./layout";
 import { DAY_LIGHT, type MatLight } from "./night";
+import type { MatPass } from "../kit/view";
 import type { MatShaders } from "./shaders";
 
 const PLATE_NAMES: readonly PlateName[] = ["c", "b"];
@@ -44,7 +45,7 @@ interface MatShared {
   slots: number;
 }
 
-export class MatPass {
+export class CuttingMat implements MatPass {
   readonly name = "mat/mat";
   private readonly uniforms = MatUniforms.alloc(1);
   private readonly uniformBuf: GPUBuffer;
@@ -65,7 +66,7 @@ export class MatPass {
     this.rebind();
   }
 
-  static async create(device: GPUDevice, format: GPUTextureFormat, src: MatShaders): Promise<MatPass> {
+  static async create(device: GPUDevice, format: GPUTextureFormat, src: MatShaders): Promise<CuttingMat> {
     const windLayout = bindLayout(device, [
       { binding: 0, stages: ["fragment"], buffer: "uniform" },
       { binding: 1, stages: ["fragment"], texture: "float" },
@@ -108,11 +109,11 @@ export class MatPass {
       loaded: { c: false, b: false, noise: false, glyphs: false },
       version: 0, slots: 0,
     };
-    return new MatPass(device, shared);
+    return new CuttingMat(device, shared);
   }
 
   /** A second slot on the same pipelines and plates — a flight's departed mat, a mini mat's inside. */
-  spawn(): MatPass { return new MatPass(this.device, this.shared); }
+  spawn(): CuttingMat { return new CuttingMat(this.device, this.shared); }
 
   /** Which assets a host has uploaded — stats, and the lab's boot line. Shared by every slot. */
   get loaded(): { readonly c: boolean; readonly b: boolean; readonly noise: boolean; readonly glyphs: boolean } { return this.shared.loaded; }

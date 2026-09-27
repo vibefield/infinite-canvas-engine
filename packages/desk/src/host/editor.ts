@@ -27,7 +27,7 @@ import { tapNote } from "../objects/typing";
 import type { KindDriver } from "../kinds/world";
 import { PEN_FACES } from "./ink";
 import type { PaperGeometry } from "../paper/paper";
-import type { HandLaw } from "../paper/text";
+import type { HandLaw } from "../kit/text";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../paper/writing";
 
 /** design-007's claim marker (`@ice/dom` KEYBOARD_CLAIM_ATTR — the desk may not import dom): the keymap cedes to a focused claim. */

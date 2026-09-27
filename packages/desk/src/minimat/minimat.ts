@@ -16,7 +16,9 @@ import { clipOf, type PortalClip } from "../nav/portal";
 import type { Lamp } from "../paper/paper";
 import { sdRoundBox } from "../sdf";
 import { GLYPHS } from "../mat/layout";
-import { MINIMAT, type RGB } from "../theme";
+import type { ChildShape, ChipKind } from "../kit/inside";
+import type { RGB } from "../theme";
+import { MINIMAT } from "./theme";
 
 /** The mini mat's numbers (theme.ts `MINIMAT`) — the engine's unless a host tweaks them. */
 export interface MiniMatLaw {
@@ -151,27 +153,6 @@ export function faceLattice(insideZoom: number, fadeIn: FadeIn, law: LineLaw, lo
   const w = [l.fine, l.mid, l.coarse].map((sp) => lineWeight(sp * insideZoom, win, law));
   const at = (i: number) => w[i] as { readonly halfWidth: number; readonly alpha: number };
   return { rungs: [l.fine, l.mid, l.coarse], weights: [at(0).alpha, at(1).alpha, at(2).alpha], widths: [at(0).halfWidth, at(1).halfWidth, at(2).halfWidth] };
-}
-
-/** What a child is, to the face that draws it small: a sheet of paper (a note), or a mini mat of its own. */
-export type ChipKind = "paper" | "mat";
-
-/** One child as the face's far LOD draws it, in the CHILD's frame (the inside's world). */
-export interface ChildShape {
-  readonly kind: ChipKind;
-  readonly cx: number; readonly cy: number;
-  /** Half extents, the tilt (radians), the corner radius — the child's own. */
-  readonly hx: number; readonly hy: number;
-  readonly angle: number;
-  readonly radius: number;
-  /** Its colour: the paper's, or the vinyl's. */
-  readonly colour: RGB;
-  /** How far it stands off the face, child units — what its contact shadow is cast from. */
-  readonly height: number;
-  /** A note's writing, GREEKED: the pen's colour, the text's left edge and em (note units from the sheet's top-left), and each line's baseline and width. */
-  readonly writing?: { readonly ink: RGB; readonly x0: number; readonly em: number; readonly lines: readonly { readonly y: number; readonly width: number }[] } | undefined;
-  /** A mini mat's printed border, child units. */
-  readonly margin?: number | undefined;
 }
 
 /** The most lines of a note's writing a chip greeks. */

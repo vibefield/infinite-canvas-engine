@@ -12,7 +12,8 @@ import { ERASER_TOOL, markerTool, pathOf, pitchOf, STAMP_FLOATS, StrokeBuilder, 
 import { compose } from "../src/engine/shader";
 import { MatUniforms } from "../src/mat/layout";
 import { lampOf } from "../src/paper/paper";
-import { BOARD, MAT_GRID } from "../src/theme";
+import { MAT_GRID } from "../src/theme";
+import { BOARD } from "../src/board/theme";
 
 const lamp = lampOf(MAT_GRID.plane);
 const rect = { cx: 0, cy: 0, w: BOARD.spec.width, h: BOARD.spec.height };

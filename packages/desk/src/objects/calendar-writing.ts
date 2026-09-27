@@ -20,7 +20,7 @@ import { addEvent, CalendarEvent, type EventRow } from "../calendar/data";
 import { keyOf } from "../calendar/month";
 import type { PadDraft, Pads } from "../kinds/calendar";
 import { decodeSeeds, encodeSeeds, freshSeed } from "../paper/seeds";
-import { carrySeeds } from "../paper/text";
+import { carrySeeds } from "../kit/text";
 import { type TypingDocs, writable } from "./typing";
 
 export interface CalendarWritingOptions {

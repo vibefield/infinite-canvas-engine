@@ -10,7 +10,7 @@
 // glyph with no stored seed falls back to `glyphSeed(noteSeed, i)` — which is also what a NEW note's
 // seeds are, so a note spawned with text and no seeds writes exactly the hand it would have written.
 
-import { glyphSeed } from "./text";
+import { glyphSeed } from "../kit/text";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const INDEX: Readonly<Record<string, number>> = Object.fromEntries([...ALPHABET].map((c, i) => [c, i]));

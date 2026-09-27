@@ -23,7 +23,7 @@ import { compile, compose } from "../engine/shader";
 import type { RenderTarget } from "../kind";
 import type { FadeIn, View } from "../lattice/lod";
 import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, STILL_MAT_FRAME } from "../mat/layout";
-import type { MatPass } from "../mat/mat-pass";
+import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
 import { MAT_GRID, type RGB, type RGBA } from "../theme";
 import { type DeskEye, eyeValues, project } from "./eye";

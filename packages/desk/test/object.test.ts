@@ -18,7 +18,9 @@ import { NO_DOCS } from "../src/docs";
 import type { KindDriverHost } from "../src/kinds";
 import { Board, Calendar, DESK_OBJECTS, MiniMat, MINIMAT_TYPE, Note, Notebook, NOTE_TYPE, Photo } from "../src/objects";
 import { DEFAULT_PAPER_LAW, lampOf, pickPaper, resolvePaper, tiltOf } from "../src/paper/paper";
-import { MAT_GRID, MINIMAT, PAPER } from "../src/theme";
+import { MAT_GRID } from "../src/theme";
+import { MINIMAT } from "../src/minimat/theme";
+import { PAPER } from "../src/paper/theme";
 import { PALETTE, PENS, SURFACES, THEMES, VINYLS, pen, surface, vinyl } from "../oracle/fixtures/vf-theme";
 import { must } from "./must";
 

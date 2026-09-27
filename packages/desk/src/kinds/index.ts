@@ -20,20 +20,22 @@ import { photoProgram } from "./photo";
 export { BOARD_KIND, BOARD_TOOLS, type BoardInk, boardInked, BoardKind, type BoardKindOptions, type BoardObjectLook, type BoardPalette, boardFrame, boardKind, boardPose, boardProgram, boardReach, boardRest, createBoardInk, ERASER_TOOL_ID, inking, inkOfTool, markerToolId, type PenHand, type PenPin } from "./board";
 export { CALENDAR_KIND, type CalendarAlpha, calendarFrame, type CalendarGeometry, CalendarKind, type CalendarKindOptions, calendarKind, type CalendarObjectLook, type CalendarPalette, calendarProgram, calendarReach, type CalendarPart, type CalendarPartName, createPads, DRAFT_ID, type PadDraft, type PadMarks, type PadPose, type Pads, partAt, sheetDayBox, sheetDraw, sheetOnScreen, sheetPoint } from "./calendar";
 export type { EventLine, PrintLook, SheetPrint } from "../calendar/print";
-export type { PinnedSheet, PrintRaster } from "../calendar/printing";
+export type { PinnedSheet } from "../calendar/printing";
 export { INSIDE_GRID, MINIMAT_KIND, MiniMatKind, type MiniMatKindOptions, type MiniMatLook, type MiniMatPalette, miniMatFrame, miniMatProgram, miniMatReach, minimatKind, SAGE } from "./minimat";
 export { INK_H, INK_W } from "../notebook/ink";
+// the kinds' own specs — each kind's law as numbers, in its own folder since K4a (design-016 §5; the one physics they share is the kit's)
+export { BOARD } from "../board/theme";
+export { MINIMAT } from "../minimat/theme";
+export { BOOK } from "../notebook/theme";
+export { PAPER } from "../paper/theme";
 export { askTurn, bookAngle, bookFrame, type BookPose, type Books, createBooks, DEFAULT_PEN, inTurnZone, NOTEBOOK_KIND, NOTEBOOK_PAGE, NOTEBOOK_PENS, NOTEBOOK_TOOLS, notebookFrame, type NotebookGeometry, NotebookKind, type NotebookKindOptions, notebookKind, type NotebookObjectLook, type NotebookPalette, notebookProgram, notebookReach, PageTurns, pageHitAt, partOf, penOfTool, penToolId } from "./notebook";
 export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperFrame, paperProgram, paperReach, paperKind } from "./paper";
 export { createPrints, type FlickWitness, PHOTO_KIND, photoFrame, photoKind, PhotoKind, type PhotoKindOptions, type PhotoPose, photoProgram, photoReach, PRINT_RETURN_MS, printExtent, printRect, type PrintRest, type Prints } from "./photo";
-export { type BlobStore, createMemoryBlobStore, type DecodedPicture, hashBytes, type PictureDecoder, RGBA_TYPE, type StoredBlob } from "../photo/blobs";
-export { type DataChildren, FLUX_REST, type HeldContext, type HeldToolDef, isObjectKind, type KindDriver, type KindDriverHost, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, type OpenBinding, rectFrame, rectOf, type StratumName, stringProp } from "./world";
+export { type DataChildren, FLUX_REST, type HeldContext, type HeldToolDef, type InsideContext, isObjectKind, type KindDriver, type KindDriverHost, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectHit, type ObjectKind, type ObjectRect, type OpenBinding, rectFrame, rectOf, type StratumName, stringProp } from "./world";
 // the hand's pose (design-015 §8, D4b): the reading size, the pose between the desk and the hand, the pose as a camera
 export { carryOf, focusOf, HELD_USER_REST, type HeldPose, type HeldUser, type HeldViewport, heldCamera, heldFrame, heldPose, HOLD, type HomePose, homePose, isNarrow, type ReadingTarget, readingTarget } from "../hold/pose";
 // the text stack's seam and the note's writing (D2c, design-015 §6.1)
 export { createWriting, DEFAULT_BLEED, DEFAULT_FACE, DEFAULT_HAND_LAW, type InkPages, type NoteInk, type NoteRasterInfo, type Writing, type WritingStats } from "../paper/writing";
-export type { InkBitmap, TextRaster } from "../paper/raster";
-export { type HandLayout, layoutText } from "../paper/text";
 
 /**
  * The desk's kinds in the order they prepare — the prototype's (the notes, the mini mats, the whiteboards; its prints

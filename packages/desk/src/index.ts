@@ -10,6 +10,7 @@ export * from "./ground";
 export * from "./host/index";
 export * from "./compose/index";
 export * from "./kinds/index";
+export * from "./kit/index";
 export * from "./object";
 export { NO_DOCS, type TypingDocs, type WritableSession, writable } from "./docs";
 export * from "./theme";

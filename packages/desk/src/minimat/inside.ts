@@ -18,23 +18,10 @@ import type { GridConfig } from "../mat/grid";
 import type { SlotLight } from "../mat/layout";
 import { arrivalCamera, type CameraState, FIT, type FitBand, type Flight, flightOpacity, outgoingCamera, type PortalAffine, portalAffine, type Rect, type Viewport, visibleRect } from "../nav/flight";
 import { boxOfPortal, clipOf, PORTAL_GATE, type PortalClip, portalPresence, type Presentation } from "../nav/portal";
+import type { InsideView } from "../kit/inside";
 import type { MiniMatInstance } from "./layout";
 import { type Chip, DEFAULT_MINIMAT_LAW, FACE_RADIUS, faceLattice, faceOf, type MiniMatGeometry, type MiniMatLaw, numeralsOf } from "./minimat";
 
-export interface InsideView {
-  /** The embedding: inside → host (`host = o + inside · s`) — the flight's own. */
-  readonly M: PortalAffine;
-  /** The inside's arrival camera — what its lattice is DRESSED for (PORTAL.md §9). */
-  readonly arrival: CameraState;
-  /** The camera the inside renders under at the host's camera: the enter flight's c0 at the cut. */
-  readonly cam: CameraState;
-  /** The face on screen: the live inside's clip. */
-  readonly clip: PortalClip;
-  /** The gate's answer (0..1): the live inside's presence — 0 = the face is the far LOD alone. */
-  readonly presence: number;
-  /** The live inside's box on the attachment. */
-  readonly box: Box;
-}
 
 /**
  * A mini mat's inside under the host camera `cam`: `content` the bounds of the inside (null = empty

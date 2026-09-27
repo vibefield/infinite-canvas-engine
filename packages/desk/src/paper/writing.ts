@@ -27,14 +27,15 @@
 
 import type { Entity } from "@ice/core";
 import type { View } from "../lattice/lod";
-import { PAPER, HAND } from "../theme";
+import { HAND } from "../kit/text";
+import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
 import type { InkRect, UvRect } from "./pages";
 import { INK_PAGE } from "./paper-pass";
 import { type PaperGeometry, localOf, rasterBand, sdPaper } from "./paper";
-import type { TextRaster } from "./raster";
+import type { TextRaster } from "../kit/raster";
 import { seedsFor } from "./seeds";
-import { caretAt, glyphBox, type HandLaw, type HandLayout, layoutText } from "./text";
+import { caretAt, glyphBox, type HandLaw, type HandLayout, layoutText } from "../kit/text";
 
 /** The pages a writing allocates in — the root paper pass (paper-pass.ts) satisfies it. */
 export interface InkPages {

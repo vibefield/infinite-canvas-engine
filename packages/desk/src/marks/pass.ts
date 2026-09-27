@@ -7,7 +7,7 @@
 import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
 import type { StructBuffer } from "../engine/struct";
-import type { MatPass } from "../mat/mat-pass";
+import type { MatPass } from "../kit/view";
 import { layoutMarks, type MarkRecord, MarkStruct, type MarksInput, MarksUniformsStruct } from "./layout";
 import type { MarksShaders } from "./shaders";
 

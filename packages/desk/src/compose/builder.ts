@@ -94,14 +94,16 @@ import type { MarksInput } from "../marks/layout";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
 import type { MatFrame, SlotLight } from "../mat/layout";
-import { flightLights, flightPresent, type InsideView, insidePresent, insideViewOfFace } from "../minimat/inside";
-import { type ChildShape, FACE_RADIUS } from "../minimat/minimat";
+import type { ChildShape, InsideView } from "../kit/inside";
+import { flightLights, flightPresent, insidePresent, insideViewOfFace } from "../minimat/inside";
+import { FACE_RADIUS } from "../minimat/minimat";
 import { boundsOf, type CameraState, FIT, type Rect, solveFlightStart } from "../nav/flight";
 import { clipOf, faceCovers, PORTAL_CAP, PORTAL_GATE, type Presentation } from "../nav/portal";
 import { type Lamp, lampOf } from "../mat/lamp";
 import { objectKindOf } from "../object";
 import { type ObjectSprings, SPRINGS, settled, spring } from "../springs";
-import { MINIMAT, type GroundTheme } from "../theme";
+import type { GroundTheme } from "../theme";
+import { MINIMAT } from "../minimat/theme";
 
 /** The view a frame is built for: CSS px and the dpr the canvas is at. */
 export interface BuildViewport { readonly width: number; readonly height: number; readonly dpr: number }

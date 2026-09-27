@@ -34,7 +34,7 @@
 import { defineComponent, type Entity, field, type HeldToolApi, type HeldToolDef } from "@ice/core";
 import { BoardStroke, decodePoints, decodeTimes, type StrokeRow } from "../board/data";
 import type { KindProgram, SlotContext } from "../kind";
-import type { MatPass } from "../mat/mat-pass";
+import type { MatPass } from "../kit/view";
 import { type DeskEye, eyeOf } from "../notebook/eye";
 import { NOTEBOOK, type NotebookLaw } from "../notebook/law";
 import { type NotebookLook, type Ruling, RULINGS } from "../notebook/layout";

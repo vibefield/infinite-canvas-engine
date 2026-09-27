@@ -36,7 +36,7 @@
 // notebook's and the desk calendar's (kinds `boardFrame`, `photoFrame`, `bookFrame`, `calendarFrame`), one function on both sides.
 import { VIEW } from "./scenes.mjs";
 import { beginPass } from "../src/engine/target.ts";
-import { MatPass } from "../src/mat/mat-pass.ts";
+import { CuttingMat } from "../src/mat/mat-pass.ts";
 import { matShaders, MAT_SHADER_FILES } from "../src/mat/shaders.ts";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../src/mat/layout.ts";
 import { DEFAULT_GRID } from "../src/mat/grid.ts";
@@ -55,7 +55,9 @@ import { assembleMarks } from "../src/marks/assemble.ts";
 import { computeSnapGuides } from "@ice/kernel";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
 import { PORTAL_CAP, PORTAL_GATE } from "../src/nav/portal.ts";
-import { BOARD, MAT_GRID, MINIMAT } from "../src/theme.ts";
+import { MAT_GRID } from "../src/theme.ts";
+import { BOARD } from "../src/board/theme.ts";
+import { MINIMAT } from "../src/minimat/theme.ts";
 import { quadOf, resolveBoard, surfaceSize } from "../src/board/board.ts";
 import { decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, strokePen, strokeSeed } from "../src/board/data.ts";
 import { inkPoints, pagesInView } from "../src/notebook/ink.ts";
@@ -192,7 +194,7 @@ export function pinnedAt(c, day) {
  * and the desk draws without it).
  */
 export async function createOracleDesk({ device, format, text, assets, log = console.log }) {
-  const mat = await MatPass.create(device, format, matShaders(text(MAT_SHADER_FILES)));
+  const mat = await CuttingMat.create(device, format, matShaders(text(MAT_SHADER_FILES)));
   // The root slot from the kind registry: every desk kind's pass on the root's mat — the sticky notes (STICKY.md), the mini mats
   // (MINIMAT.md), the whiteboards (BOARD.md), the prints (PHOTO.md), the desk calendars (CALENDAR.md) and the notebooks
   // (NOTEBOOK.md) — and the passes a scene reaches into: the notes' (the ink pages, the law), the mini mats', the boards', …

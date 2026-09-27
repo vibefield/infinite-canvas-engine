@@ -12,13 +12,14 @@ import type { CalEvent } from "../src/calendar/events";
 import { CALENDAR } from "../src/calendar/law";
 import { dayOfKey, monthGrid, monthIndex, phasesBetween } from "../src/calendar/month";
 import { printSheet, type PrintInputs, type SheetPrint } from "../src/calendar/print";
-import { contentOf, type PinnedSheet, type PrintPass, type PrintRaster, PrintTiles, type TileSource } from "../src/calendar/printing";
+import { contentOf, type PinnedSheet, type PrintPass, PrintTiles } from "../src/calendar/printing";
+import type { PrintRaster, TileSource } from "../src/kit/print";
 import { cellAt, sheetOf } from "../src/calendar/sheet";
 import { EMPTY, entryOf, levelFor, MISSING, TILE_TEX, tileGrid, tilesIn } from "../src/calendar/tiles";
 import { calendarKind } from "../src/kinds";
 import { encodeSeeds } from "../src/paper/seeds";
-import type { HandMetrics } from "../src/paper/text";
-import { HAND } from "../src/theme";
+import type { HandMetrics } from "../src/kit/text";
+import { HAND } from "../src/kit/text";
 import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS } from "../oracle/fixtures/vf-theme";
 import { must } from "./must";
 

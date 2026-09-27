@@ -13,11 +13,8 @@
 // (`drawOver` — the mini mat's chips while the inside's objects come in).
 
 import type { RecordStoreStats } from "./engine/records";
-import type { FadeIn, View } from "./lattice/lod";
-import type { MatConfig, MatFrame, SlotLight } from "./mat/layout";
-import type { MatPass } from "./mat/mat-pass";
-import type { MatLight } from "./mat/night";
-import type { Presentation } from "./nav/portal";
+import type { MatLight } from "./kit/light";
+import type { FadeIn, MatConfig, MatFrame, MatPass, Presentation, SlotLight, View } from "./kit/view";
 import type { GroundTheme, RGB } from "./theme";
 
 /** The strata of the desk a kind can lie in (design-015 §4.2): beneath everything, flat on the mat holding a desk, every other thing. */

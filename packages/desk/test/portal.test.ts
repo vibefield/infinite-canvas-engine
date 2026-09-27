@@ -20,7 +20,8 @@ import { boxOfPortal, chainOf, clipOf, faceCovers, intersectBox, PORTAL_CAP, POR
 import { DEFAULT_MINIMAT_LAW, FACE_RADIUS, faceClip, faceOf, MINIMAT_REST, resolveMiniMat } from "../src/minimat/minimat";
 import { insideView } from "../src/minimat/inside";
 import { lampOf } from "../src/paper/paper";
-import { GRID, MAT_GRID, MINIMAT } from "../src/theme";
+import { GRID, MAT_GRID } from "../src/theme";
+import { MINIMAT } from "../src/minimat/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
 import { DESK, fakeSlot, scissorPass } from "./fake-kinds";
 

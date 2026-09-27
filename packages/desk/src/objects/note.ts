@@ -12,7 +12,7 @@ import { paperKind } from "../kinds/paper";
 import type { KindDriver } from "../kinds/world";
 import { defineObject } from "../object";
 import type { Writing } from "../paper/writing";
-import { PAPER } from "../theme";
+import { PAPER } from "../paper/theme";
 import { createNoteTyping, type NoteTyping } from "./typing";
 
 /** The pens a note is written with (STICKY.md §3) — names; the inks are the host's. */

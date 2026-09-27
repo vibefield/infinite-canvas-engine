@@ -1,3 +1,5 @@
+// (The kit's since K4a, design-016 §5 — moved from photo/blobs.ts: a host service the contract names, `KindHost.blobs`.)
+//
 // A print's BYTES (design-015 D-D12; D3w): a picture is not a durable cell — strata has no bytes field,
 // and a photo is megabytes — so a print's durable props name its picture by the HASH of its bytes
 // (`blob`), and the bytes live in a store the APP provides: content-addressed, `put` answering the
