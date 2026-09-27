@@ -356,11 +356,15 @@ try {
   const ledger = () => q("(() => { const m = window.__desk.handle.gpuMemory()?.read().byLabel ?? {}; return { notebook: m.notebook?.bytes ?? 0, calendar: m.calendar?.bytes ?? 0 }; })()");
   await q("window.__desk.tray.open()"); await settle(); await sleep(300); await settle();
   const memOpen = await ledger();
+  const tilesOpen = await q("window.__desk.handle.local('calendar')?.tiles().resident ?? -1");
   await q("window.__desk.tray.close()"); await settle();
   await sleep(6000);
   const memShut = await ledger();
+  const tilesShut = await q("window.__desk.handle.local('calendar')?.tiles().resident ?? -1");
   const mb = (b) => (b / 1048576).toFixed(1);
   check(memOpen.notebook > 0 && memOpen.calendar > 0 && memShut.notebook < memOpen.notebook / 4 && memShut.calendar < memOpen.calendar / 4, `the tray's notebook and calendar layers let go once undrawn (each row under a quarter of its open size): the ledger's notebook ${mb(memOpen.notebook)} → ${mb(memShut.notebook)} MB, calendar ${mb(memOpen.calendar)} → ${mb(memShut.calendar)} MB, open → 6 s after the drawer shut`);
+  // K5b: the pad specimen PRINTS its month with the desk's print (its tray pass reads the root's tiles) — and lets it go with the drawer shut
+  check(tilesOpen > 0 && tilesShut === 0, `the pad specimen's print is the desk's, and let go with the drawer: its tiles resident ${tilesOpen} open → ${tilesShut} 6 s after it shut`);
 
   // S10. TAKING ONE (design-017 §9; K5b): a press on a specimen + 4 px lifts a COPY (the specimen stays hung); out of the drawer it slides
   //      away and the desk takes it — the insert ghost under the same grab point (no centre-snap), the ordinary drag, ONE create, selected,
@@ -396,6 +400,31 @@ try {
     if (release) { await mouse("mouseReleased", to[0], to[1], { buttons: 0 }); await frames(6); }
     return g;
   };
+  // THE FACES (K5b, live — drawn with the kinds' own desk state, `tray.local`): the note carries its word in its own hand, the print the
+  // kind's sample picture, the pad the month of its today — each counted in the specimen's own pixels (K5a's were blank)
+  {
+    await q("window.__desk.tray.open()"); await settle();
+    // the pad's print is the host's raster, tile by tile over frames (S9 shut the drawer long enough for its state to be let go): until none is pending
+    const printed = await qa(`(async () => { const t0 = performance.now(); for (;;) { const t = window.__desk.handle.local('calendar')?.tiles(); if (t !== undefined && t.drawn > 0 && t.pending === 0) return t; if (performance.now() - t0 > 6000) return t ?? null; await new Promise((r) => requestAnimationFrame(r)); } })()`, 15000);
+    await settle();
+    const img = await shot();
+    const st = await tray();
+    const count = (type, inset, pred) => {
+      const o = st.specimens.find((x) => x.type === type)?.object;
+      if (o === undefined) return -1;
+      let n = 0;
+      const x0 = Math.round((o.x0 + inset.l * (o.x1 - o.x0)) * 2); const x1 = Math.round((o.x1 - inset.r * (o.x1 - o.x0)) * 2);
+      const y0 = Math.round((o.y0 + inset.t * (o.y1 - o.y0)) * 2); const y1 = Math.round((o.y1 - inset.b * (o.y1 - o.y0)) * 2);
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const i = (y * img.width + x) * 4; if (pred(img.rgba[i], img.rgba[i + 1], img.rgba[i + 2])) n++; }
+      return n;
+    };
+    const L = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const word = count("desk.note", { l: 0.08, r: 0.08, t: 0.08, b: 0.08 }, (r, g, b) => b > r + 25 && L(r, g, b) < 150);        // the pen's blue ink on the yellow
+    const picture = count("desk.photo", { l: 0.12, r: 0.12, t: 0.12, b: 0.12 }, (r, g, b) => b > r + 30);                     // the dusk's blues on the white
+    const month = count("desk.calendar", { l: 0.06, r: 0.06, t: 0.16, b: 0.06 }, (r, g, b) => L(r, g, b) < 200);             // the print's ink on the paper (a blank pad has none this dark)
+    check(word > 60 && picture > 2000 && month > 150, `the specimens read as the real objects (live — K5a's were blank): the note's word ${word} px of ink, the print's sample ${picture} px of sky and water, the pad's month ${month} px of print (its tiles ${printed?.drawn ?? "?"} drawn, ${printed?.pending ?? "?"} pending)`);
+  }
+
   // each kind taken: made where it is dropped, the grab point kept, selected, one undo step (undo removes it, redo restores it)
   const TAKEN = ["desk.note", "desk.photo", "desk.notebook", "desk.calendar", "desk.minimat", "desk.board"];
   const takeRows = [];
@@ -407,15 +436,20 @@ try {
     const m = made[0];
     const at = m === undefined ? null : [m.x + 0.3 * m.w - to[0], m.y + 0.2 * m.h - to[1]];
     const sel = await q("window.__desk.selection()");
+    const madeProps = m === undefined ? null : (await q(`window.__desk.entity(${m.id})?.props ?? null`));
     const shut = (await tray()).facts.open === false;
     const u1 = await undo(); await frames(2);
     const goneAfterUndo = m !== undefined && !(await ents()).some((e) => e.id === m.id || (e.type === type && !before.has(e.id)));
     const r1 = await redo(); await frames(2);
     const back = (await ents()).filter((e) => !before.has(e.id) && e.type === type).length === 1;
     await undo(); await frames(2);
-    takeRows.push({ type, n: made.length, made: m?.type, at, selected: m !== undefined && sel.length === 1 && sel[0] === m.id, root: m?.parent === rootParent, shut, u1, goneAfterUndo, r1, back });
+    takeRows.push({ type, n: made.length, made: m?.type, at, selected: m !== undefined && sel.length === 1 && sel[0] === m.id, root: m?.parent === rootParent, shut, u1, goneAfterUndo, r1, back, props: madeProps });
   }
   const snapTol = 12;
+  // what one taken is made with (D-K5b.1): not the face — a note blank, a print without a picture (it asks for one), a pad on its today's month
+  const propsOf = (type) => takeRows.find((r) => r.type === type)?.props ?? {};
+  check(propsOf("desk.note").text === "" && propsOf("desk.photo").blob === "" && propsOf("desk.calendar").month === "",
+    `one taken is made with the entry's take, never its face: the note's text "${propsOf("desk.note").text}" (its specimen says hello), the print's picture "${propsOf("desk.photo").blob}" (its specimen shows the sample), the pad's month "${propsOf("desk.calendar").month}" (its today's)`);
   check(takeRows.every((r) => r.n === 1 && r.made === r.type && r.at !== null && Math.abs(r.at[0]) <= snapTol && Math.abs(r.at[1]) <= snapTol && r.selected && r.root && r.shut && r.u1 && r.goneAfterUndo && r.r1 && r.back),
     `each kind taken (press at 0.3, 0.2 of its specimen, dropped at 640,260): made where dropped with the grab point kept (|Δ| ≤ ${snapTol}, the drag's snap — a centre-snap is 20–30 % of the object), selected, the drawer away, ONE undo step (undo removes it, redo restores it): ${takeRows.map((r) => `${r.type.replace("desk.", "")} ${r.at === null ? "—" : r.at.map((x) => x.toFixed(1)).join(",")}${r.n === 1 && r.selected && r.u1 && r.goneAfterUndo && r.r1 && r.back ? "" : ` ✗${JSON.stringify(r)}`}`).join(" · ")}`);
 

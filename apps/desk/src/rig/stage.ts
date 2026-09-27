@@ -27,7 +27,7 @@ import { MINIMAT, PAPER, type BoardInk, type PaperKind } from "@ice/objects";
 import { oracleFixtures } from "./oracle-fixtures";
 import type { SceneHost, Staged } from "../rig-door";
 import { type SpawnSpec, spawnAll } from "../scene";
-import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, generatedPicture, strokeSpecOf, thingsOf } from "./scene-kinds";
+import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, pinSpecimenPrint, printFixture, type PrintFixture, printSpec, generatedPicture, strokeSpecOf, thingsOf } from "./scene-kinds";
 
 /** A scene as scenes.mjs states one — the mat, ruler, paper, minimat and nav scenes' fields, the D3w kinds' (scene-kinds.ts). */
 export interface OracleScene extends KindScene {
@@ -105,6 +105,25 @@ function pinSpecimenMonth(engine: CanvasEngine, month: string): void {
     const cell = w.get(e, group.component) as Record<string, unknown> | undefined;
     if (cell !== undefined && cell.month !== month) w.edit(e).set(group.component, { ...cell, month });
   }
+}
+
+/** A still's specimen faces (K5b): the note's committed raster (its word blanked); the pad unprinted (its month is the live print's alone — D-K5b.5). */
+async function pinSpecimenFaces(engine: CanvasEngine, handle: DeskLayerHandle, ink: Uint8Array<ArrayBuffer>, inkMeta: { readonly w: number; readonly h: number }, noteDriver: () => PaperDriver | undefined): Promise<void> {
+  const w = engine.world;
+  const tray = trayEntity(w);
+  if (tray === undefined) return;
+  const text = Note.groups.find((g) => g.name === Note.propToGroup.text);
+  for (const e of specimensOf(w, tray)) {
+    const type = w.get(e, PrefabId)?.id;
+    if (type === NOTE_TYPE && inkMeta.w > 0 && text !== undefined) {
+      const cell = w.get(e, text.component) as Record<string, unknown> | undefined;
+      if (cell !== undefined && cell.text !== "") w.edit(e).set(text.component, { ...cell, text: "" });
+      if (noteDriver()?.writing()?.pin(e, ink, { w: inkMeta.w, h: inkMeta.h }) !== true) throw new Error("desk: the ink pages refused the specimen's committed raster");
+    }
+    // the pad's month is the live print's alone (D-K5b.5: the committed print holds level 2, the specimen samples far coarser): unprinted, as the oracle's
+    if (type === CALENDAR_TYPE) await pinSpecimenPrint(handle, e, "2026-09", null);
+  }
+  handle.desk.wake("pin");
 }
 
 /** The desk's widgets — never the tray's specimens (K5a: runtime entities with a `PrefabId`, not the document's). */
@@ -245,6 +264,9 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   //    strokes and the pads' pins their children (D3w)
   const selected: Entity[] = [];
   const root = await spawnDesk(host, fx, s, undefined, selected);
+  // …and the tray's SPECIMEN faces as the oracle draws them (K5b), after the scene's own rasters: the note's the committed raster (its
+  // word blanked — Node has no text raster), the pad's the committed print of the still's month; the print's sample is made alike on both
+  if (s.tray !== undefined) await pinSpecimenFaces(engine, handle, fx.ink, fx.inkMeta, noteDriver);
   // 4. the facts a still states: selected → the tag (the flux pins were made as the objects were spawned)
   engine.ops.setSelection(selected, "replace");
   // 5. the camera: the prototype's camX/camY/zoom ARE ICE's Camera

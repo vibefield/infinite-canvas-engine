@@ -218,6 +218,14 @@ export async function pinPadPrints(handle: DeskLayerHandle, pads: readonly { rea
   }
 }
 
+/** A still's calendar SPECIMEN (K5b — design-017 §8): the committed print `name` of `month` on it (Node has no print raster; null — none: blank), its neighbours blank. */
+export async function pinSpecimenPrint(handle: DeskLayerHandle, pad: Entity, month: string, name: string | null): Promise<void> {
+  const local = handle.local("calendar") as Pads | undefined;
+  if (local === undefined) return;
+  const shown = monthOfKey(month) ?? 0;
+  for (const m of [shown - 1, shown, shown + 1]) local.pinPrint(pad, m, m === shown && name !== null ? await committedPrint(name) : BLANK_SHEET);
+}
+
 /** The scene's notes stuck to days: a PIN entity each, a child of its pad holding the note — one non-undoable transaction. */
 export function layPins(engine: CanvasEngine, pads: readonly Entity[], notes: readonly { readonly entity: Entity; readonly spec: OracleNote }[]): number {
   const pinned = notes.flatMap((n) => { const pin = (n.spec as { pin?: { pad?: number; day: string } }).pin; return pin === undefined ? [] : [{ note: n.entity, pad: pads[pin.pad ?? 0], day: pin.day }]; });

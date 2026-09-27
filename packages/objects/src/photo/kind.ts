@@ -22,6 +22,7 @@
 // into one pass `Picture` per blob, shared by every print of it and dropped with the last. `hitPhoto` is the
 // mirror, through the same local eye the pass draws with.
 
+import { SAMPLE_PICTURE, samplePicture } from "./sample";
 import type { Entity } from "@ice/core";
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type ObjectRect, stringProp } from "@ice/desk";
 import { type MarkFrame, type MatPass, type DecodedPicture, RGBA_TYPE, carryOf, type ShaderText } from "@ice/desk/kit";
@@ -237,6 +238,8 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
   };
   /** A blob's picture fetched and decoded: raw RGBA by the kind, anything else through the host's decoder (≤ PICTURE_MAX). */
   const decodeOf = async (hash: string, width: number, height: number): Promise<DecodedPicture | undefined> => {
+    // the kind's own sample (K5b — the print on the pegboard): made, never fetched
+    if (hash === SAMPLE_PICTURE) return { kind: "rgba", bytes: samplePicture(width, height), width, height };
     const blob = await host.blobs?.get(hash);
     if (blob === undefined) return undefined;
     if (blob.type === RGBA_TYPE) return { kind: "rgba", bytes: blob.bytes, width, height };

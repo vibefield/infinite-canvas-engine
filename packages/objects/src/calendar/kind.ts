@@ -73,9 +73,15 @@ export class CalendarKind extends LayeredKind<CalendarDraw, CalendarPass> {
 
   /**
    * A slot's own pass of this kind takes the ROOT's host-set state before it prepares (its law and the print's presences): a spawned pass draws nothing, but a
-   * slot that made its own from the program — the tray's specimen (design-017 §8, K5a) — draws with the desk's.
+   * slot that made its own from the program — the tray's specimen (design-017 §8, K5a) — draws with the desk's, and reads the desk's PRINT (K5b).
    */
-  tune(root: KindPass<unknown>): void { if (root instanceof CalendarKind && root !== this) { this.law = root.law; this.alpha = root.alpha; } }
+  tune(root: KindPass<unknown>): void {
+    if (!(root instanceof CalendarKind) || root === this) return;
+    this.law = root.law;
+    this.alpha = root.alpha;
+    // …and its PRINT (K5b): the pads' local prints into the root pass, so a specimen drawn with it samples the root's tiles
+    if (this.pass !== null && root.pass !== null) this.pass.sharePrintOf(root.pass);
+  }
 
   /** The pass's own `prepare`, as the prototype's lab called it: the slot's camera, grid, clocks and light, the desk eye over the slot's view, the law, the tile grid, the colours. */
   protected prepareOwn(pass: CalendarPass, s: SlotContext, records: readonly CalendarDraw[]): number {

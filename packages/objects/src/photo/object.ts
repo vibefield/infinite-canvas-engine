@@ -13,6 +13,7 @@ import { photoKind, printExtent, type Prints } from "./kind";
 import { defineObject } from "@ice/desk";
 import { PHOTO } from "./photo";
 import { createPhotoCarry } from "./carry";
+import { SAMPLE_PICTURE, SAMPLE_SIZE } from "./sample";
 
 /** The print's durable type id. */
 export const PHOTO_TYPE = "desk.photo";
@@ -31,7 +32,8 @@ export const Photo = defineObject({
   size: { w: printExtent(0, 0).w, h: printExtent(0, 0).h },
   kind: photoKind(),
   // on the pegboard tray (design-017 §8): a print, clipped
-  tray: { label: "Print", category: "paper", order: 1, hang: { w: 150, h: 100, accessory: "clip", pegs: [[0, -0.5]] } },
+  // …showing the kind's sample picture (K5b, D-K5b.4) through its own pictures (`local`); one taken is blank — it asks for a picture
+  tray: { label: "Print", category: "paper", order: 1, props: { blob: SAMPLE_PICTURE, width: SAMPLE_SIZE.w, height: SAMPLE_SIZE.h }, local: true, hang: { w: 150, h: 100, accessory: "clip", pegs: [[0, -0.5]] } },
   // the wheel TURNS a print held in a hand (PHOTO.md; D3t-a — core cedes that pointer's wheel to it, `PressWheel`)
   interaction: { selectable: true, movable: false, resizable: false, snap: "both", wheelTurns: true },
   provides: [PHOTO_TYPE],

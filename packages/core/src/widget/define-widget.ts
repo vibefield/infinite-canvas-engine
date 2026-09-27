@@ -306,14 +306,17 @@ export interface WidgetDef {
  * A tray entry (design-017 §8): `label` — the specimen's name tag; `props` — the specimen's props over the widget's defaults: its FACE
  * on the board (K5b — a note with a word on it, a print with a picture); `take` — what one taken off the board is made with (K5b,
  * D-K5b.1): absent, the widget's own defaults (a taken note is blank, a taken calendar shows its today's month); `"face"`, the
- * specimen's props; a record, those props (each valid as `props`'); `hang` — how it hangs (kernel `TrayHang`: its size on the board in
- * CSS px, its pegs in pitches from its hang point, its accessory); `category`, then `order`, then the type — its place in the lattice
- * law's order.
+ * specimen's props; a record, those props (each valid as `props`'); `local` — K5b, D-K5b.3: the specimen (and a copy lifted off it) is
+ * drawn with its kind's DESK STATE (`ObjectKind.local` — a note's writing, a print's pictures, a pad's print), as its objects are, for a
+ * face that lives there; absent, a specimen is its kind's stateless drawing (K5a); `hang` — how it hangs (kernel `TrayHang`: its size on
+ * the board in CSS px, its pegs in pitches from its hang point, its accessory); `category`, then `order`, then the type — its place in
+ * the lattice law's order.
  */
 export interface TrayEntry {
   readonly label: string;
   readonly props?: Readonly<Record<string, unknown>>;
   readonly take?: "face" | Readonly<Record<string, unknown>>;
+  readonly local?: boolean;
   readonly hang: TrayHang;
   readonly order?: number;
   readonly category?: string;
@@ -749,11 +752,13 @@ function compileTrayEntry(type: string, entry: TrayEntry, hasObject: boolean, pr
   if (why !== null) fail(`its hang: ${why}`);
   if (entry.order !== undefined && !Number.isFinite(entry.order)) fail(`its order ${String(entry.order)} is not a finite number`);
   if (entry.category !== undefined && typeof entry.category !== "string") fail("its category is not a string");
+  if (entry.local !== undefined && typeof entry.local !== "boolean") fail("its local is not a boolean");
   const hang = entry.hang;
   return Object.freeze({
     label: entry.label,
     props: Object.freeze({ ...given }),
     ...(take !== undefined ? { take: take === "face" ? take : Object.freeze({ ...take }) } : {}),
+    ...(entry.local === true ? { local: true } : {}),
     hang: Object.freeze({ w: hang.w, h: hang.h, accessory: hang.accessory, pegs: Object.freeze(hang.pegs.map((p) => Object.freeze([p[0], p[1]] as const))) }),
     ...(entry.order !== undefined ? { order: entry.order } : {}),
     ...(entry.category !== undefined ? { category: entry.category } : {}),

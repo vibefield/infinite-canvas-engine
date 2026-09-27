@@ -46,6 +46,7 @@ import { flightLights, flightPresent, insidePresent } from "../../desk/src/kit/i
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
 import { createSlotSet, drawFrame, drawTray, prepareFrame, renderHeldFrame, SlotPool, tagsOf } from "../../desk/src/ground.ts";
 import { DRAWER, drawerRect, drawerSize } from "../../desk/src/tray/drawer.ts";
+import { SAMPLE_SIZE, samplePicture } from "../src/photo/sample.ts";
 import { specimenFrames, TraySlots } from "../../desk/src/tray/specimens.ts";
 import { objectKindOf } from "../../desk/src/object.ts";
 import { looksOf } from "../../desk/src/compose/reflector.ts";
@@ -676,7 +677,10 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   /**
    * A still's tray (design-017 §8, K5a): its slide, lift and shown scroll, and — unless it is `bare` — the six kinds laid by the lattice
    * law across the drawer, recorded by their own kinds exactly as the product's reflector records them (tray/specimens.ts): each its
-   * widget's props at their defaults under its entry's, the calendar's month the still's (its clock is the day it is drawn).
+   * widget's props at their defaults under its entry's, the calendar's month the still's (its clock is the day it is drawn). K5b — THE
+   * FACES, as the product's stage pins them: the note's the committed raster (the one a desk note carries — Node has no text raster),
+   * the print's the kind's sample picture (made from arithmetic, alike on both hosts); the pad's month is the live print's alone (the
+   * committed print holds level 2, the specimen samples far coarser — D-K5b.5): unprinted here, and on the product's stage too.
    */
   function trayInputsOf(s, view, theme, grid) {
     const t = s.tray;
@@ -690,10 +694,22 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       const props = {};
       for (const g of w.groups) { const cell = w.prefab.components.find(([c]) => c === g.component); for (const name of Object.keys(g.fields)) props[name] = cell?.[1][name]; }
       Object.assign(props, w.tray.props, q.type === "desk.calendar" ? { month: "2026-09" } : {});
-      return { key: i + 1, type: q.type, kind: objectKindOf(w), natural: w.defaultSize, rect: { x: q.x, y: q.y, w: q.w, h: q.h }, props, accessory: w.tray.hang.accessory, pegs: w.tray.hang.pegs, label: w.tray.label };
+      const asset = q.type === "desk.note" ? committedInk() : null;
+      return { key: i + 1, type: q.type, kind: objectKindOf(w), natural: w.defaultSize, rect: { x: q.x, y: q.y, w: q.w, h: q.h }, props, accessory: w.tray.hang.accessory, pegs: w.tray.hang.pegs, label: w.tray.label, ...(asset ? { asset } : {}) };
     });
     const frames = specimenFrames(specimens, { rect: drawerRect(view.width, view.height, base.p, base.lift), scroll: base.scroll }, { view, theme, grid, looks: looksOf(kinds, deskPalette(theme.name), theme), lift: () => 0 });
-    return { ...base, specimens: frames };
+    return { ...base, specimens: frames.map((f) => (f.type === "desk.photo" ? { ...f, record: { ...f.record, picture: samplePictureOf() } } : f)) };
+  }
+  /** The committed ink raster, placed once (a desk note's and the note specimen's alike). */
+  function committedInk() {
+    if (inkBytes && !inkRaster) { const rect = papers.alloc(inkMeta.w, inkMeta.h); if (rect) inkRaster = { layer: rect.layer, uv: papers.write(rect, inkBytes) }; }
+    return inkRaster;
+  }
+  /** The print specimen's picture (K5b): the photo kind's sample, made once on the photo pass. */
+  let samplePic = null;
+  function samplePictureOf() {
+    samplePic ??= photos.picture(samplePicture(SAMPLE_SIZE.w, SAMPLE_SIZE.h), SAMPLE_SIZE.w, SAMPLE_SIZE.h);
+    return samplePic;
   }
 
   function encode(encoder, target, size, s, opts = {}) {

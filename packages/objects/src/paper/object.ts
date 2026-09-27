@@ -39,7 +39,8 @@ export const Note = defineObject({
   size: { w: PAPER.size, h: PAPER.size },
   kind: paperKind(),
   // on the pegboard tray (design-017 §8): a pad of notes on two hooks
-  tray: { label: "Note", category: "paper", order: 0, hang: { w: 120, h: 120, accessory: "hook", pegs: [[-1, -0.5], [1, -0.5]] } },
+  // …with a word on it in the note's own hand, written through its writing (K5b — `local`); one taken is blank
+  tray: { label: "Note", category: "paper", order: 0, props: { text: "hello" }, local: true, hang: { w: 120, h: 120, accessory: "hook", pegs: [[-1, -0.5], [1, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
   provides: [NOTE_TYPE],
   // TYPING IS A GESTURE (design-015 §6.1; D2c): the note's driver is its typing session — the world half the ONE focused editor

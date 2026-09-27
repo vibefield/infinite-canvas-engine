@@ -47,6 +47,7 @@ import {
 import type { Ground, GroundFrameInputs, GroundStats } from "../ground";
 import { type KindLocal, type ObjectKind, rectOf } from "../kinds/world";
 import { lampOf } from "../mat/lamp";
+import { LAYER_IDLE_MS } from "../kit/layer";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GroundTheme, Palette } from "../theme";
 import { objectKindOf } from "../object";
@@ -177,6 +178,10 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   /** The take's motion (K5b): the copy, the ghost's grow, its flight home — and what it drew last. */
   const carry = createTrayCarry();
   let drawnCarried: readonly TrayCarriedFrame[] = [];
+  /** The keys drawn with a kind's desk state from the tray (K5b — a specimen's entity, a copy's key): let go of as each goes. */
+  const faced = new Map<number, KindLocal>();
+  /** When the drawer last showed (frame clock, ms): its specimens' desk state is let go once it has been shut `LAYER_IDLE_MS`. */
+  let trayShownAt = Number.NEGATIVE_INFINITY;
   let builderWakes = builder.wakes();
 
   /** The local mouse pointer's screen point as NDC (x right, y up), or null before one was seen. */
@@ -229,6 +234,14 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       const tf = te === undefined ? undefined : w.get(te, Tray);
       const tc = te === undefined ? undefined : w.get(te, TrayContent);
       if (tray.read(tf === undefined ? undefined : { ...tf, hover: tf.hover ?? "", bottom: tc?.bottom ?? 0, laid: tc?.laid ?? 0 })) { dirty = true; wakes.tray += 1; }
+      // the specimens drawn with their kinds' desk state let go of it once the drawer has been shut a while, as the tray's layers do (K5b;
+      // D-K6a.3 — a pad's print keeps the desk's tiles while it has a pad): no frame is asked for; the next open makes it again
+      const pinned = tray.pinned();
+      const showing = pinned !== null ? pinned.hidden !== true && (pinned.p ?? 1) > 0 : tf?.open === true || (tray.frame()?.p ?? 0) > 0;
+      if (showing) trayShownAt = now;
+      else if (faced.size > 0 && now - trayShownAt > LAYER_IDLE_MS) {
+        for (const [key, local] of faced) if (key > 0) { local.forget?.(key as Entity); faced.delete(key); }
+      }
       const ground = opts.ground();
       if (ground === null) return;   // pre-ready: the dirt is kept
       const cam = w.getResource(Camera);
@@ -251,9 +264,10 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       // the first time the tray shows one (a frame is asked for when it is), the frames recorded by their own kinds
       drawnSpecimens = [];
       if (trayed !== undefined && trayed.p > 0 && tray.pinned()?.bare !== true) {
-        const specimens = readSpecimens(w, te);
+        const specimens = readSpecimens(w, te, opts.locals);
         if (specimens.length > 0) {
           ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), () => { dirty = true; wakes.tray += 1; });
+          for (const q of specimens) if (q.local !== undefined) faced.set(q.key, q.local as KindLocal);
           drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p, trayed.lift), scroll: trayed.scroll }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
           trayed = { ...trayed, specimens: drawnSpecimens };
         }
@@ -302,14 +316,22 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
             continue;
           }
           const n = widget.defaultSize;
+          const copyLocal = widget.tray?.local === true ? local : undefined;
           const cx = cam.x + pose.px / cam.zoom - (pose.u - 0.5) * n.w;
           const cy = cam.y + pose.py / cam.zoom - (pose.v - 0.5) * n.h;
-          made.push(carriedFrame(pose, { kind, rect: { x: -n.w / 2, y: -n.h / 2, w: n.w, h: n.h }, props: takenProps(widget), key: -(0x40000000 + pose.id), lamp: { x: L.x - cx, y: L.y - cy, h: L.h }, ...(local !== undefined ? { local } : {}) }, env));
+          const key = -(0x40000000 + pose.id);
+          if (copyLocal !== undefined) faced.set(key, copyLocal as KindLocal);
+          made.push(carriedFrame(pose, { kind, rect: { x: -n.w / 2, y: -n.h / 2, w: n.w, h: n.h }, props: takenProps(widget), key, lamp: { x: L.x - cx, y: L.y - cy, h: L.h }, ...(copyLocal !== undefined ? { local: copyLocal } : {}) }, env));
         }
         // a composite kind's pass is made async: made ahead, from the lift, so the hand-off never waits a frame for it
         ground.warmTray(carry.types().flatMap((t) => { const k = objectKindOf(widgetTypeFor(w, t)); return k === undefined ? [] : [[carrySlot(t), k.name] as const]; }), () => { dirty = true; wakes.tray += 1; });
         drawnCarried = made;
         if (made.length > 0) trayed = { ...trayed, carried: made };
+      }
+      // what was drawn with a kind's desk state and is gone — a specimen re-laid away, a copy put back or handed — its records let go
+      for (const [key, local] of faced) {
+        const gone = key < 0 ? !poses.some((q) => q.ghost === undefined && -(0x40000000 + q.id) === key) : !w.isAlive(key as Entity);
+        if (gone) { local.forget?.(key as Entity); faced.delete(key); }
       }
       // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
       // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)
@@ -378,8 +400,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   };
 }
 
-/** The tray's specimens as the renderer reads them (K5a): the tray entity's `Specimen` children — each's object type, its kind, where it hangs, its props, its entry's hang and label. */
-function readSpecimens(w: World, tray: Entity | undefined): TraySpecimen[] {
+/** The tray's specimens as the renderer reads them (K5a): the tray entity's `Specimen` children — each's object type, its kind, where it hangs, its props, its entry's hang and label — and its kind's desk state when its entry asks for it (K5b). */
+function readSpecimens(w: World, tray: Entity | undefined, locals: ReadonlyMap<string, KindLocal> | undefined): TraySpecimen[] {
   if (tray === undefined) return [];
   const out: TraySpecimen[] = [];
   for (const e of specimensOf(w, tray)) {
@@ -396,7 +418,8 @@ function readSpecimens(w: World, tray: Entity | undefined): TraySpecimen[] {
       const v = w.get(e, g.component) as Record<string, unknown> | undefined;
       if (v !== undefined) for (const name of Object.keys(g.fields)) props[name] = v[name];
     }
-    out.push({ key: e as number, type, kind, natural: widget.defaultSize, rect: { x: at.x, y: at.y, w: size.w, h: size.h }, props, accessory: entry.hang.accessory, pegs: entry.hang.pegs, label: entry.label });
+    const local = entry.local === true ? locals?.get(kind.name) : undefined;
+    out.push({ key: e as number, type, kind, natural: widget.defaultSize, rect: { x: at.x, y: at.y, w: size.w, h: size.h }, props, accessory: entry.hang.accessory, pegs: entry.hang.pegs, label: entry.label, ...(local !== undefined ? { local } : {}) });
   }
   return out;
 }

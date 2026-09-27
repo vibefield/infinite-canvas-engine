@@ -45,6 +45,7 @@ function spyPass(calls: unknown[][], n: number, box: readonly [number, number, n
     prepare: (...a: unknown[]) => { calls.push(["prepare", ...a]); return n; },
     layer: (...a: unknown[]) => { calls.push(["layer", ...a]); return laid; },
     composite: (_p: unknown, scissor: unknown) => calls.push(["composite", scissor]),
+    sharePrintOf: (root: unknown) => calls.push(["sharePrintOf", root]),
     get screenBox() { return box; },
     dispose: () => calls.push(["dispose"]),
   };
@@ -165,10 +166,13 @@ describe("the notebook and the desk calendar: two layered kinds in the registry"
     const rootPad = new CalendarKind(spyPass([], 1, null) as unknown as CalendarPass);
     rootPad.alpha = CALENDAR_LOOK.alpha;
     rootPad.law = { ...CALENDAR };
-    const ownPad = new CalendarKind(spyPass([], 1, null) as unknown as CalendarPass);
+    const ownCalls: unknown[][] = [];
+    const ownPad = new CalendarKind(spyPass(ownCalls, 1, null) as unknown as CalendarPass);
     ownPad.tune(rootPad);
     expect(ownPad.alpha).toBe(CALENDAR_LOOK.alpha);
     expect(ownPad.law).toBe(rootPad.law);
+    // K5b: …and the root's PRINT — the tiles the pads' local prints into the root pass, which a specimen drawn with it samples
+    expect(ownCalls).toEqual([["sharePrintOf", rootPad.pass]]);
   });
 
   it("K5a: a slot the host keeps beyond the root lets its layer go when none of its objects was drawn within the time (D-K6a.3) — only then, and never a spawned slot's", () => {

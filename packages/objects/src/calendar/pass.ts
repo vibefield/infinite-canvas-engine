@@ -153,6 +153,13 @@ export class CalendarPass {
   private readonly gridCount: number;
   private mainGroup!: GPUBindGroup;
   private boundAssets = -1;
+  /**
+   * The pass whose PRINT this one samples — its own, or (K5b) the root's: a slot that made its own calendar pass (the tray's specimen)
+   * reads the root's tile texture and page tables, where the desk's pads print (their local writes the root pass), never a copy.
+   */
+  private print: CalendarPass = this;
+  private boundTiles: GPUTexture | null = null;
+  private boundTable: GPUBuffer | null = null;
   /** The frame's target (the canvas; the hand) and the held desk copy's, apart (D7) — `t` the one this prepare is for (`use`). */
   private readonly frameT = calTarget();
   private copyT: CalTarget | null = null;
@@ -266,12 +273,22 @@ export class CalendarPass {
   }
 
   private rebind(): void {
-    if (this.boundAssets === this.mat.assetVersion) return;
+    const p = this.print;
+    if (this.boundAssets === this.mat.assetVersion && this.boundTiles === p.tileTex && this.boundTable === p.tableBuf) return;
     this.mainGroup = bindGroup(this.device, this.layoutMain, [
       this.mat.view, this.knobBuf, this.recordBuf, this.mat.silhouette, this.goboSampler, this.mat.noiseTexture.createView(), this.noiseSampler,
-      this.tileTex.createView({ dimension: "2d-array" }), this.tileSampler, this.tableBuf, this.paperTex.createView(), this.paperSampler,
+      p.tileTex.createView({ dimension: "2d-array" }), this.tileSampler, p.tableBuf, this.paperTex.createView(), this.paperSampler,
     ], "calendar/main");
     this.boundAssets = this.mat.assetVersion;
+    this.boundTiles = p.tileTex;
+    this.boundTable = p.tableBuf;
+  }
+
+  /** Sample `root`'s print — its tiles and page tables — rather than this pass's own (K5b: the tray's specimen reads the desk's print). */
+  sharePrintOf(root: CalendarPass): void {
+    if (this.print === root) return;
+    this.print = root;
+    this.rebind();
   }
 
   /** Size the page tables for a sheet's tile grid (every table the same); re-makes the buffer, all entries missing. */

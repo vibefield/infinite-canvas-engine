@@ -36,6 +36,10 @@ export interface TraySpecimen {
   readonly accessory: TrayAccessory;
   readonly pegs: readonly (readonly [number, number])[];
   readonly label: string;
+  /** K5b (D-K5b.3): its kind's desk state, when its entry draws it with it (`tray.local`) — the face that lives there. */
+  readonly local?: unknown;
+  /** A per-specimen asset (a still's committed raster — the oracle's; the product's writing pins its own). */
+  readonly asset?: unknown;
 }
 
 /** One specimen this frame: its kind's record under its own view block, where it is on screen, its accessory's pegs on screen, its tag. */
@@ -102,7 +106,8 @@ function lampOver(cx: number, cy: number, size: number): Lamp {
  * The specimens this frame: each culled where it cannot show (its rect and its reach outside the face), else resolved and recorded by
  * its OWN kind — its object at its natural size, centred on its world origin, under the drawer's camera scaled about it — with the
  * board's lamp, the tray's grid, the kind's look, its hover (the kinds' `lift`, a share of the hold's, and `hover`), no local and no
- * asset (a specimen writes nothing into a kind's state on the desk).
+ * asset (a specimen writes nothing into a kind's state on the desk) — unless its entry draws it with its kind's desk state (K5b, D-K5b.3:
+ * `tray.local` — a note's writing, a print's pictures), whose records the reflector lets go of as the specimen goes.
  */
 export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDrawn, env: TraySpecimenEnv): TraySpecimenFrame[] {
   const out: TraySpecimenFrame[] = [];
@@ -133,6 +138,8 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
       view,
       grid,
       dt: 0,
+      ...(s.local !== undefined ? { local: s.local } : {}),
+      ...(s.asset !== undefined ? { asset: s.asset } : {}),
     };
     const record = s.kind.record(s.kind.resolve(ctx), ctx);
     // the hang point: the top edge's centre, or a shelf's bottom edge's; the pegs from it
