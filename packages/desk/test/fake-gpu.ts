@@ -29,7 +29,7 @@ export function installNavigatorGpu(format: GPUTextureFormat): Undo {
   return () => { if (was) Object.defineProperty(globalThis, "navigator", was); else Reflect.deleteProperty(globalThis, "navigator"); };
 }
 
-/** A render pass that logs what it is told, by label: `pipeline <label>`, `group <i> <label>`, `draw <args>`, `scissor <x,y,w,h>` (and a mesh's `vertices <label>`, `indices <label>`, `drawIndexed <args>`; a debug group's `debug <label>` … `debug end`). */
+/** A render pass that logs what it is told, by label: `pipeline <label>`, `group <i> <label>`, `draw <args>`, `scissor <x,y,w,h>`, `viewport <x,y,w,h>` (and a mesh's `vertices <label>`, `indices <label>`, `drawIndexed <args>`; a debug group's `debug <label>` … `debug end`). */
 export function recordingPass(log: string[]): GPURenderPassEncoder {
   return {
     setPipeline: (p: { label: string }) => log.push(`pipeline ${p.label}`),
@@ -39,6 +39,8 @@ export function recordingPass(log: string[]): GPURenderPassEncoder {
     setIndexBuffer: (b: { label: string }) => log.push(`indices ${b.label}`),
     drawIndexed: (...a: number[]) => log.push(`drawIndexed ${a.join(",")}`),
     setScissorRect: (x: number, y: number, w: number, h: number) => log.push(`scissor ${x},${y},${w},${h}`),
+    // (K7a: a layered kind draws its layer through a viewport shifted by its box's origin — kit/layer.ts `BoxTargets`)
+    setViewport: (x: number, y: number, w: number, h: number) => log.push(`viewport ${x},${y},${w},${h}`),
     setBlendConstant: () => {},
     pushDebugGroup: (label: string) => log.push(`debug ${label}`),
     popDebugGroup: () => log.push("debug end"),

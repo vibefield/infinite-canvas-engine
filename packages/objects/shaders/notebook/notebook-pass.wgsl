@@ -112,7 +112,7 @@ fn fs_book(in: VOut) -> @location(0) vec4f {
   Tu = select(vec3f(1.0, 0.0, 0.0), normalize(Tu), length(Tu) > 1e-8);
   Tv = select(vec3f(0.0, 1.0, 0.0), normalize(Tv), length(Tv) > 1e-8);
 
-  let bn = textureSampleLevel(noise_tex, noise_samp, in.clip.xy * u.noise.z + u.noise.xy, 0.0).rgb;
+  let bn = textureSampleLevel(noise_tex, noise_samp, (in.clip.xy + k.ring.zw) * u.noise.z + u.noise.xy, 0.0).rgb;
   var albedo = B.col6.rgb;
   var grad = vec2f(0.0);           // the surface's height slope along u and v
   var ao = in.ao;
@@ -239,7 +239,7 @@ fn nb_footprint(B: NbBook, p: vec2f) -> f32 {
 fn fs_recv(in: ROut) -> @location(0) vec4f {
   let B = books[in.book];
   let P = vec3f(in.world, 0.0);
-  let bn = textureSampleLevel(noise_tex, noise_samp, in.clip.xy * u.noise.z + u.noise.xy, 0.0).rgb;
+  let bn = textureSampleLevel(noise_tex, noise_samp, (in.clip.xy + k.ring.zw) * u.noise.z + u.noise.xy, 0.0).rgb;
   let vis = nb_shadow(k, B, P, vec3f(0.0, 0.0, 1.0), bn.x * 6.2831853, shadow_tex, shadow_cmp);
   let aS = k.shadow.z * (1.0 - vis);
   // the contact: where the case meets the mat, fading as it rises

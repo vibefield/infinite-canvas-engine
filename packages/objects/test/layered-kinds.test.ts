@@ -373,9 +373,10 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
     const box = must(nb.screenBox);
     expect(log.filter((l) => l.startsWith("pass "))).toEqual(["pass notebook/shadow 0", "pass notebook/layer", "pass notebook/composite"]);
     expect(log.slice(log.indexOf("pass notebook/composite"))).toEqual(["pass notebook/composite", `scissor ${box.join(",")}`, "pipeline notebook/composite", "group 0 notebook/composite", "draw 3", "end"]);
-    // the shadow map, then the layer: its scissor the books' box, the books then the mat under them
+    // the shadow map, then the layer: into its targets at the books' box (K7a) — the viewport the whole canvas shifted by the box's
+    // origin, the scissor the box — the books then the mat under them
     const layer = log.slice(log.indexOf("pass notebook/layer"), log.indexOf("pass notebook/composite"));
-    expect(layer.slice(0, 4)).toEqual(["pass notebook/layer", `scissor ${box.join(",")}`, "group 0 notebook/main", "pipeline notebook/book"]);
+    expect(layer.slice(0, 5)).toEqual(["pass notebook/layer", `viewport ${-box[0]},${-box[1]},2400,1600`, `scissor 0,0,${box[2]},${box[3]}`, "group 0 notebook/main", "pipeline notebook/book"]);
     expect(layer.slice(-3)).toEqual(["pipeline notebook/mat", "draw 6,1,0,0", "end"]);
     // the pad: prepared as the lab's renderLayer prepares it, then its layer in its own submit
     const cal = must(calKind.pass);
@@ -386,7 +387,8 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
     cal.renderLayer({ w: 2400, h: 1600 }, 2);
     expect(queue.submits).toBe(submits + 2);
     expect(log.filter((l) => l.startsWith("pass "))).toEqual(["pass calendar/layer"]);
-    expect(log.slice(0, 3)).toEqual(["pass calendar/layer", `scissor ${must(cal.screenBox).join(",")}`, "group 0 calendar/main"]);
+    const cbox = must(cal.screenBox);
+    expect(log.slice(0, 4)).toEqual(["pass calendar/layer", `viewport ${-cbox[0]},${-cbox[1]},2400,1600`, `scissor 0,0,${cbox[2]},${cbox[3]}`, "group 0 calendar/main"]);
     const drawn: string[] = [];
     must(cal.underlay()).draw(recordingPass(drawn));
     const composed: string[] = [];

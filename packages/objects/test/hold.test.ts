@@ -372,6 +372,8 @@ describe("the ground's held frame on a fake device", () => {
     ground.render(rest);
     expect(dropped.filter((l) => l.startsWith("texture notebook/") || l.startsWith("texture calendar/")).sort()).toEqual(["texture calendar/depth ×4", "texture calendar/layer", "texture calendar/layer ×4", "texture notebook/depth ×4", "texture notebook/layer", "texture notebook/layer ×4"]);
     expect(made.filter((l) => l.startsWith("texture"))).toEqual([]);
-    expect(layers).toBe(4);   // up to the pick-up: each kind's layer for the frame and one for the copy — the hand's prepare made none
+    // up to the pick-up: each kind's layer for the frame and one for the copy — and (K7a: the targets are the books' screen box) the
+    // notebook's frame layer made once more, grown from the desk's books to the book in hand at its reading size
+    expect(layers).toBe(5);
   });
 });

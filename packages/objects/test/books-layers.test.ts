@@ -1,9 +1,11 @@
 // THE BOOKS' LAYERS (K7a — design-016 §6 K7): the two layered kinds draw their layer only as far as it must be — the notebook's
 // SHADOW MAPS are kept while the lamp and the book stand still (the lamp stands in world space and the eye is not in the map: a
-// pan draws none); … On the fake device every render pass the desk begins is logged by label, so what a frame drew is counted.
+// pan draws none); their 4× targets are the books' SCREEN BOX, never the canvas. On the fake device every render pass the desk
+// begins is logged by label, and every texture it makes is kept with its size, so what a frame drew and holds is counted.
 
 import { Camera, type Entity } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { BOX_STEP } from "@ice/desk/kit";
 import { type DeskMount, mountDesk } from "./desk-mount";
 
 describe("the books' layers (K7a)", () => {
@@ -34,5 +36,19 @@ describe("the books' layers (K7a)", () => {
     desk.ce.ops.setWidgetProps(book, { angle: 0.2 });
     desk.toSleep();
     expect(passes(turned, "notebook/shadow 0"), "the book turned: its map drawn again").toBe(1);
+  });
+
+  it("the layer's targets are the book's screen box (rounded to BOX_STEP), never the canvas", () => {
+    const live = (label: string) => desk.textures.filter((t) => t.label === label && !t.destroyed).map((t) => t.size as number[]);
+    const [msaa] = live("notebook/layer ×4");
+    const [depth] = live("notebook/depth ×4");
+    const [resolve] = live("notebook/layer");
+    expect(msaa, "the 4× layer is made").toBeDefined();
+    // the canvas is 1200 × 800 (dpr 1); a closed book 180 × 252 with its shadow's reach: two BOX_STEPs a side at most
+    for (const size of [msaa, depth, resolve]) {
+      const [w = 0, h = 0] = size as number[];
+      expect(w % BOX_STEP === 0 && h % BOX_STEP === 0, `rounded to the step: ${w} × ${h}`).toBe(true);
+      expect(w <= 2 * BOX_STEP && h <= 2 * BOX_STEP, `a box, not the 1200 × 800 canvas: ${w} × ${h}`).toBe(true);
+    }
   });
 });

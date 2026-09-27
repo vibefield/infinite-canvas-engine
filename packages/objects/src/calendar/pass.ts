@@ -17,7 +17,7 @@
 
 import { bindGroup, bindLayout, storageBuffer, uniformBuffer, compile, compose } from "@ice/desk/engine";
 import type { RenderTarget, RGB } from "@ice/desk";
-import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass, DAY_LIGHT, type MatLight, type DeskEye, eyeValues, project, NbBook, NbUniforms, type BuiltMesh, VERTEX_BYTES, inverseOf, matrixOf, type Rigid, worldBounds, PAPER_TEX, paperTexture, generateMips, mipCount, sentBytes, writeChanged } from "@ice/desk/kit";
+import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass, DAY_LIGHT, type MatLight, type DeskEye, eyeValues, project, NbBook, NbUniforms, type BuiltMesh, VERTEX_BYTES, inverseOf, matrixOf, type Rigid, worldBounds, PAPER_TEX, paperTexture, generateMips, mipCount, sentBytes, writeChanged, attachmentOf, BoxTargets } from "@ice/desk/kit";
 import type { CalendarLaw } from "./law";
 import { CalPad, type CalendarColours, CalUniforms, calUniformValues, MAX_CALENDARS, TABLE_SLOTS } from "./layout";
 import { movingGrid, type PadFrame } from "./pad";
@@ -88,11 +88,8 @@ interface PadBuffers { vb: GPUBuffer; ib: GPUBuffer; vcap: number; icap: number;
  * copy's apart from the frame's, so a held frame's two prepares never undo each other.
  */
 interface CalTarget {
-  msaa: GPUTexture | null;
-  depth: GPUTexture | null;
-  resolve: GPUTexture | null;
-  compGroup: GPUBindGroup | null;
-  size: { w: number; h: number };
+  /** The layer's targets at the pads' screen box (K7a, kit/layer.ts `BoxTargets`). */
+  readonly layer: BoxTargets;
   readonly buffers: Map<number, PadBuffers>;
   list: CalendarDraw[];
   frameNo: number;
@@ -101,7 +98,7 @@ interface CalTarget {
   stats: CalendarStats;
 }
 
-const calTarget = (): CalTarget => ({ msaa: null, depth: null, resolve: null, compGroup: null, size: { w: 0, h: 0 }, buffers: new Map(), list: [], frameNo: 0, screen: null, scissor: null, stats: { calendars: 0, moving: 0 } });
+const calTarget = (layer: BoxTargets): CalTarget => ({ layer, buffers: new Map(), list: [], frameNo: 0, screen: null, scissor: null, stats: { calendars: 0, moving: 0 } });
 
 /** The tiles' stand-in before the first tile: one texel, one layer. */
 const noTiles = (device: GPUDevice): GPUTexture => device.createTexture({ label: "calendar/print tiles (none yet)", size: [1, 1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING });
@@ -109,8 +106,7 @@ const noTiles = (device: GPUDevice): GPUTexture => device.createTexture({ label:
 function dropTarget(t: CalTarget): void {
   for (const b of t.buffers.values()) { b.vb.destroy(); b.ib.destroy(); }
   t.buffers.clear();
-  t.msaa?.destroy(); t.depth?.destroy(); t.resolve?.destroy();
-  t.msaa = null; t.depth = null; t.resolve = null; t.compGroup = null; t.size = { w: 0, h: 0 };
+  t.layer.dispose();
 }
 
 export interface CalendarStats { readonly calendars: number; readonly moving: number }
@@ -161,9 +157,9 @@ export class CalendarPass {
   private boundTiles: GPUTexture | null = null;
   private boundTable: GPUBuffer | null = null;
   /** The frame's target (the canvas; the hand) and the held desk copy's, apart (D7) — `t` the one this prepare is for (`use`). */
-  private readonly frameT = calTarget();
+  private readonly frameT: CalTarget;
   private copyT: CalTarget | null = null;
-  private t = this.frameT;
+  private t: CalTarget;
   private tableCount = 0;
   /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
   dropped = 0;
@@ -174,6 +170,8 @@ export class CalendarPass {
     this.device = device; this.mat = mat; this.layers = layers;
     this.layoutMain = pipes.layoutMain; this.layoutComp = pipes.layoutComp;
     this.facePipe = pipes.face; this.sheetPipe = pipes.sheet; this.solidPipe = pipes.solid; this.movingPipe = pipes.moving; this.recvPipe = pipes.recv; this.compPipe = pipes.comp;
+    this.frameT = calTarget(new BoxTargets(device, "calendar", this.layoutComp, SAMPLES));
+    this.t = this.frameT;
     this.knobBuf = uniformBuffer(device, CalUniforms.size, "calendar/knobs");
     this.recordBuf = storageBuffer(device, CalPad.size * MAX_CALENDARS, "calendar/pads");
     this.tableBuf = device.createBuffer({ label: "calendar/tile tables", size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -209,7 +207,8 @@ export class CalendarPass {
       { binding: 10, stages: ["fragment"], texture: "float" },
       { binding: 11, stages: ["fragment"], sampler: "filtering" },
     ], "calendar/main");
-    const layoutComp = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }], "calendar/composite");
+    // the layer and its box's origin (K7a — kit/layer.ts `BoxTargets`: the composite reads a pixel's texel at the pixel less it)
+    const layoutComp = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }, { binding: 1, stages: ["fragment"], buffer: "uniform" }], "calendar/composite");
     const module = await compile(device, compose(src.program));
     const compModule = await compile(device, compose(src.composite));
     const vertexLayout: GPUVertexBufferLayout = {
@@ -344,16 +343,6 @@ export class CalendarPass {
     this.device.queue.writeTexture({ texture: this.tiles(), origin: { x: 0, y: 0, z: layer } }, bytes, { bytesPerRow: TILE_TEX * 4, rowsPerImage: TILE_TEX }, [TILE_TEX, TILE_TEX, 1]);
   }
 
-  /** The layer's targets at the canvas's device size. */
-  private fit(w: number, h: number): void {
-    if (this.t.size.w === w && this.t.size.h === h && this.t.msaa) return;
-    this.t.msaa?.destroy(); this.t.depth?.destroy(); this.t.resolve?.destroy();
-    this.t.msaa = this.device.createTexture({ label: "calendar/layer ×4", size: [w, h], format: "rgba8unorm", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    this.t.depth = this.device.createTexture({ label: "calendar/depth ×4", size: [w, h], format: "depth24plus", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    this.t.resolve = this.device.createTexture({ label: "calendar/layer", size: [w, h], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
-    this.t.compGroup = bindGroup(this.device, this.layoutComp, [this.t.resolve.createView()], "calendar/composite");
-    this.t.size = { w, h };
-  }
 
   /** Was a pad drawn within the last `ms`? */
   drawnWithin(ms: number): boolean { return performance.now() - this.drawnAt < ms; }
@@ -361,14 +350,10 @@ export class CalendarPass {
   get lastDrawn(): number { return this.drawnAt; }
 
   /** Is the frame's layer made? */
-  get layerMade(): boolean { return this.frameT.msaa !== null; }
+  get layerMade(): boolean { return this.frameT.layer.made; }
 
   /** The frame's layer targets let go (no pad drawn for a while, or none on the desk): made again at the next pad drawn. */
-  releaseLayer(): void {
-    const t = this.frameT;
-    t.msaa?.destroy(); t.depth?.destroy(); t.resolve?.destroy();
-    t.msaa = null; t.depth = null; t.resolve = null; t.compGroup = null; t.size = { w: 0, h: 0 };
-  }
+  releaseLayer(): void { this.frameT.layer.release(); }
 
   private upload(d: CalendarDraw): PadBuffers {
     let b = this.t.buffers.get(d.id);
@@ -418,8 +403,6 @@ export class CalendarPass {
     this.dropped = Math.max(0, shown.length - MAX_CALENDARS);
     this.t.list = shown.slice(0, MAX_CALENDARS) as CalendarDraw[];
     const n = this.t.list.length;
-    this.knobs.set(calUniformValues(law, eyeValues(eye), view.dpr, colours.cast, colours.select, colours.alpha, grid, this.debug));
-    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     let sx0 = Number.POSITIVE_INFINITY;
     let sy0 = Number.POSITIVE_INFINITY;
     let sx1 = Number.NEGATIVE_INFINITY;
@@ -476,6 +459,11 @@ export class CalendarPass {
     if (n > 0) writeChanged(this.device.queue, this.recordBuf, this.records, this.recordsSent, n);
     for (const [id, b] of this.t.buffers) if (b.seen !== this.t.frameNo) { b.vb.destroy(); b.ib.destroy(); this.t.buffers.delete(id); }
     this.t.screen = n > 0 ? { x0: sx0, y0: sy0, x1: sx1, y1: sy1 } : null;
+    // the knobs, with the layer's box origin (K7a): a fragment's position is the box's, and what samples by it adds the origin back
+    const at = this.boxOf(attachmentOf(view), view.dpr);
+    const knobs = calUniformValues(law, eyeValues(eye), view.dpr, colours.cast, colours.select, colours.alpha, grid, this.debug);
+    this.knobs.set({ ...knobs, shadow2: [knobs.shadow2[0] as number, at?.[0] ?? 0, at?.[1] ?? 0, knobs.shadow2[3] as number] });
+    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     this.t.stats = { calendars: n, moving };
     return n;
   }
@@ -484,7 +472,7 @@ export class CalendarPass {
 
   /** The render target the next prepare, layer and composite are for (D7): the frame's, or the held desk copy's — made on first use. */
   use(target: RenderTarget): void {
-    if (target === "copy" && this.copyT === null) this.copyT = calTarget();
+    if (target === "copy" && this.copyT === null) this.copyT = calTarget(new BoxTargets(this.device, "calendar", this.layoutComp, SAMPLES));
     this.t = target === "copy" && this.copyT !== null ? this.copyT : this.frameT;
   }
 
@@ -514,7 +502,6 @@ export class CalendarPass {
   renderLayer(size: { readonly w: number; readonly h: number }, dpr: number): void {
     this.t.scissor = null;
     if (!this.boxOf(size, dpr)) return;
-    this.fit(Math.max(1, size.w), Math.max(1, size.h));
     const watch = this.t.frameNo < 4;
     if (watch) this.device.pushErrorScope("validation");
     const enc = this.device.createCommandEncoder({ label: "calendar" });
@@ -535,13 +522,9 @@ export class CalendarPass {
     if (!at) return false;
     this.drawnAt = performance.now();
     const [x0, y0, x1, y1] = at;
-    this.fit(Math.max(1, size.w), Math.max(1, size.h));
-    const pass = encoder.beginRenderPass({
-      label: "calendar/layer",
-      colorAttachments: [{ view: (this.t.msaa as GPUTexture).createView(), resolveTarget: (this.t.resolve as GPUTexture).createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "discard" }],
-      depthStencilAttachment: { view: (this.t.depth as GPUTexture).createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
-    });
-    pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
+    // into the targets at the pads' screen box (K7a — kit/layer.ts `BoxTargets`), on the attachment's pixel grid
+    this.t.layer.fit(at, size);
+    const pass = this.t.layer.begin(encoder, "calendar/layer", size, at);
     pass.setBindGroup(0, this.mainGroup);
     // the sheet in motion first: the month it lies over is then skipped by the depth test, never shaded under it
     if (!(this.debug & 256)) {
@@ -575,17 +558,18 @@ export class CalendarPass {
    * the same draw for a host that lays it through the ground's `underlays`.
    */
   composite(pass: GPURenderPassEncoder, scissor: readonly [number, number, number, number] | null = this.t.scissor): void {
-    if (!this.t.scissor || !scissor || !this.t.compGroup || (this.debug & 16)) return;
+    const group = this.t.layer.compGroup;
+    if (!this.t.scissor || !scissor || !group || (this.debug & 16)) return;
     pass.setScissorRect(scissor[0], scissor[1], scissor[2], scissor[3]);
     pass.setPipeline(this.compPipe);
-    pass.setBindGroup(0, this.t.compGroup);
+    pass.setBindGroup(0, group);
     pass.draw(3);
   }
 
   /** The layer laid on the mat, for the ground to draw inside its own pass (ground.ts `underlays`). */
   underlay(): { draw(pass: GPURenderPassEncoder): void } | null {
     const sc = this.t.scissor;
-    const group = this.t.compGroup;
+    const group = this.t.layer.compGroup;
     if (!sc || !group || (this.debug & 16)) return null;
     return {
       draw: (pass) => {

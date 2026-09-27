@@ -271,7 +271,7 @@ fn fs_face(in: VOut) -> @location(0) vec4f {
   let dbg = u32(k.ring.y);
   if ((dbg & 512u) != 0u) { return vec4f((*B).col0.rgb, 1.0); }
   let TT = mat2x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0));   // a pad lies square: its x and y are the world's
-  let bn = textureSampleLevel(noise_tex, noise_samp, in.clip.xy * u.noise.z + u.noise.xy, 0.0).rgb;
+  let bn = textureSampleLevel(noise_tex, noise_samp, (in.clip.xy + k.shadow2.yz) * u.noise.z + u.noise.xy, 0.0).rgb;
   let Lw = (*B).lamp.xyz;
   let pp = cal_paper(k, (*B).col0.rgb, q, dqdx, dqdy, 3.0, paper_tex, paper_samp);
   var face = CalFace(pp.albedo, 0.0);
@@ -305,7 +305,7 @@ fn fs_sheet(in: VOut) -> @location(0) vec4f {
   let dbg = u32(k.ring.y);
   if ((dbg & 512u) != 0u) { return vec4f((*B).col0.rgb, 1.0); }
   let TT = cal_tangents(n, dPdx, dPdy, dqdx, dqdy);
-  let bn = textureSampleLevel(noise_tex, noise_samp, in.clip.xy * u.noise.z + u.noise.xy, 0.0).rgb;
+  let bn = textureSampleLevel(noise_tex, noise_samp, (in.clip.xy + k.shadow2.yz) * u.noise.z + u.noise.xy, 0.0).rgb;
   let Lw = (*B).lamp.xyz;   // a pad lies square on the desk: its own frame is the world's, turned by nothing
   let moving = mat == 1;
   let pp = cal_paper(k, (*B).col0.rgb, q, dqdx, dqdy, select(3.0, 17.0, moving), paper_tex, paper_samp);
@@ -349,7 +349,7 @@ fn fs_solid(in: VOut) -> @location(0) vec4f {
   let V = normalize(E - in.world);
   let q = in.uv;
   let TT = cal_tangents(n, dPdx, dPdy, dqdx, dqdy);
-  let bn = textureSampleLevel(noise_tex, noise_samp, in.clip.xy * u.noise.z + u.noise.xy, 0.0).rgb;
+  let bn = textureSampleLevel(noise_tex, noise_samp, (in.clip.xy + k.shadow2.yz) * u.noise.z + u.noise.xy, 0.0).rgb;
   let Lw = (*B).lamp.xyz;
   var albedo = (*B).col0.rgb;
   var grad = vec2f(0.0);
