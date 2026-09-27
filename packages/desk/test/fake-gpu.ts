@@ -69,6 +69,7 @@ export function fakeDevice(log: string[] = []): FakeGpu {
     createTexture: (d: GPUTextureDescriptor) => ({ ...labelled(d), createView: () => ({ label: `${d.label ?? ""} view` }), destroy: () => {} }),
     createCommandEncoder: () => ({
       beginRenderPass: (d: GPURenderPassDescriptor) => { log.push(`pass ${d.label ?? ""}`); return recordingPass(log); },
+      copyTextureToTexture: () => {},
       finish: () => ({}),
     }),
     queue: { writeBuffer: () => { queue.writes += 1; }, writeTexture: () => {}, submit: () => { queue.submits += 1; } },

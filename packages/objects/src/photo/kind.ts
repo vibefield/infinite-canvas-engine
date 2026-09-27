@@ -24,10 +24,11 @@
 
 import type { Entity } from "@ice/core";
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type ObjectRect, stringProp } from "@ice/desk";
-import { type MarkFrame, type MatPass, type BlobStore, type DecodedPicture, RGBA_TYPE, carryOf, type ShaderText } from "@ice/desk/kit";
+import { type MarkFrame, type MatPass, type DecodedPicture, RGBA_TYPE, carryOf, type ShaderText } from "@ice/desk/kit";
 import { borderOf } from "./layout";
 import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto, twist } from "./photo";
 import { type Picture, PICTURE_MAX, type PhotoInstance, PhotoPass } from "./photo-pass";
+import type { PictureStats } from "./pictures";
 import { PHOTO_SHADER_FILES, photoShaders } from "./shaders";
 import { shaderText } from "../shaders";
 
@@ -139,8 +140,8 @@ export interface Prints extends KindLocal {
   body(e: Entity): PhotoBody | undefined;
   /** The last flick of print `e` — a copy. */
   flick(e: Entity): FlickWitness | undefined;
-  /** The pictures: on the device, on their way, missing from the store or undecodable. */
-  pictures(): { readonly ready: number; readonly loading: number; readonly failed: number };
+  /** The pictures: on the device, on their way, missing from the store or undecodable — and where they are resident (K6a: thumbnails, details, slots). */
+  pictures(): { readonly ready: number; readonly loading: number; readonly failed: number; readonly resident?: PictureStats };
   /** The world half's: the body to resolve for this frame (the facts at rest, the live body while it leads). */
   bodyFor(ctx: ObjectContext, hx: number, hy: number): PhotoBody;
   /** The world half's: the picture a print's `blob` names (null while it loads, or without one). */
@@ -196,6 +197,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
   const queue: PrintRest[] = [];
   let last = -1;
   let woke = false;
+  let attached = false;
   const passOf = (): PhotoPass | undefined => { const k = host.pass(); return k instanceof PhotoKind ? k.pass : undefined; };
 
   /** A body at rest where the facts say: the rect's centre, the prop's turn, the builder's hover lifting its edge. */
@@ -233,26 +235,28 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
     if (pic.picture !== null) passOf()?.dropPicture(pic.picture);
     pics.delete(hash);
   };
-  /** The upload: raw RGBA by the kind, a decoded source by the device's copy. */
-  const upload = (d: DecodedPicture): Picture | null => {
+  /** A blob's picture fetched and decoded: raw RGBA by the kind, anything else through the host's decoder (≤ PICTURE_MAX). */
+  const decodeOf = async (hash: string, width: number, height: number): Promise<DecodedPicture | undefined> => {
+    const blob = await host.blobs?.get(hash);
+    if (blob === undefined) return undefined;
+    if (blob.type === RGBA_TYPE) return { kind: "rgba", bytes: blob.bytes, width, height };
+    return host.decode?.(blob, PICTURE_MAX);
+  };
+  /** The upload: raw RGBA by the kind, a decoded source by the device's copy — and how to decode it again (a print large on screen: its detail, K6a). */
+  const upload = (d: DecodedPicture, hash: string, width: number, height: number): Picture | null => {
     const pass = passOf();
     if (pass === undefined) return null;
     if (d.kind === "rgba") return d.bytes.length === d.width * d.height * 4 ? pass.picture(d.bytes, d.width, d.height) : null;
-    return pass.pictureFrom(d.source as ImageBitmap, d.width, d.height);
+    return pass.pictureFrom(d.source as ImageBitmap, d.width, d.height, () => decodeOf(hash, width, height));
   };
   const load = (hash: string, width: number, height: number): Pic => {
     const had = pics.get(hash);
     if (had !== undefined) return had;
     const pic: Pic = { picture: null, state: "loading", users: new Set(), held: false, load: Promise.resolve() };
     pics.set(hash, pic);
-    const blobs: BlobStore | undefined = host.blobs;
     pic.load = (async () => {
-      const blob = await blobs?.get(hash);
-      let decoded: DecodedPicture | undefined;
-      if (blob === undefined) decoded = undefined;
-      else if (blob.type === RGBA_TYPE) decoded = { kind: "rgba", bytes: blob.bytes, width, height };
-      else decoded = await host.decode?.(blob, PICTURE_MAX);
-      const picture = decoded === undefined ? null : upload(decoded);
+      const decoded = await decodeOf(hash, width, height);
+      const picture = decoded === undefined ? null : upload(decoded, hash, width, height);
       if (decoded?.kind === "source") decoded.close?.();
       if (pics.get(hash) !== pic) { if (picture !== null) passOf()?.dropPicture(picture); return; }   // nobody wants it any more
       pic.picture = picture;
@@ -326,7 +330,8 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       let loading = 0;
       let failed = 0;
       for (const p of pics.values()) { if (p.state === "ready") ready += 1; else if (p.state === "loading") loading += 1; else failed += 1; }
-      return { ready, loading, failed };
+      const resident = passOf()?.pictureStats;
+      return resident === undefined ? { ready, loading, failed } : { ready, loading, failed, resident };
     },
     bodyFor(ctx, hx, hy) {
       const pr = print(ctx.entity);
@@ -354,6 +359,13 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
     tick(now) {
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
       last = now;
+      // the pictures' residency (K6a): under the desk's budget, a landed detail waking the desk; the frame boundary — what the
+      // last frame's prints asked is bound, fetched or let go before this frame's build
+      const pass = passOf();
+      if (pass !== undefined) {
+        if (!attached) { pass.budget(host.budget); pass.onPictures = () => { woke = true; }; attached = true; }
+        if (pass.residency()) woke = true;
+      }
       let want = woke;
       woke = false;
       // the prints that lead, and those alone (D6): a desk of a thousand prints at rest costs the tick nothing per print
@@ -388,6 +400,8 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       }
       return want;
     },
+    /** The budget's ask (K6a): the thumbnails always, a picture's detail while a frame binds it. */
+    keeps: (key) => passOf()?.keeps(key) ?? false,
     forget(e) {
       landedOf.delete(e);
       const pr = prints.get(e);

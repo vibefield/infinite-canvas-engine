@@ -20,6 +20,7 @@ export const Photo = defineStruct("Photo", [
   ["image", "vec4f"],   // the picture: texels wide, high, mip levels, on (0/1)
   ["light", "vec4f"],   // toward the lamp from the print (unit; x right, y down, z up), the penumbra's alpha
   ["slope", "vec4f"],   // the shadow's offset on the mat per unit of height xy, unused ×2
+  ["tier", "vec4f"],    // where the picture's pixels are (K6a, pictures.ts): its thumbnail's layer, the chain level it starts at, its detail's pool slot (−1: none), the level the detail starts at
 ] as const);
 
 export const PhotoUniforms = defineStruct("PhotoUniforms", [
@@ -33,7 +34,16 @@ export const PhotoUniforms = defineStruct("PhotoUniforms", [
 
 export const MAX_PHOTOS = 256;
 
-export interface PhotoPicture { readonly width: number; readonly height: number; readonly mips: number }
+/** A picture as a record names it: its texels and chain, where its thumbnail lies, and its detail's slot while a frame binds one (pictures.ts `Picture`). */
+export interface PhotoPicture {
+  readonly width: number;
+  readonly height: number;
+  readonly mips: number;
+  readonly layer: number;
+  readonly base: number;
+  readonly slot: number;
+  readonly detail: { readonly base: number } | null;
+}
 
 export function photoValues(G: PhotoGeometry, border: number, pic: PhotoPicture | null) {
   return {
@@ -47,6 +57,7 @@ export function photoValues(G: PhotoGeometry, border: number, pic: PhotoPicture 
     image: pic ? [pic.width, pic.height, pic.mips, 1] : [1, 1, 1, 0],
     light: [G.light[0], G.light[1], G.light[2], G.shadowAlpha],
     slope: [G.slope[0], G.slope[1], 0, 0],
+    tier: pic ? [pic.layer, pic.base, pic.slot, pic.slot >= 0 ? (pic.detail?.base ?? 0) : 0] : [0, 0, -1, 0],
   };
 }
 

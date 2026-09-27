@@ -537,7 +537,7 @@ try {
     report.mixed = { js: s.stepMs, gpu: g, memory: mem, pictures: pics };
     console.log(`  JS                   ${fmt(s.stepMs.median)} ms/frame (min ${fmt(s.stepMs.min)}) · ${kb(s.bytes.median)} up a frame`);
     console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · busy p50 ${fmt(g.busy.p50)} · a frame: ${g.draws} draws (${g.instances} instances) · ${g.pipelines} pipelines · ${g.bindGroups} bind groups — draws by kind ${Object.entries(g.byKind).map(([k, n]) => `${k} ${n} (${g.instancesByKind[k]} inst)`).join(" · ")}`);
-    console.log(`  memory               ${memoryLine(mem)}`);
+    console.log(`  memory               ${memoryLine(mem)} · pictures resident ${JSON.stringify((await q(`window.__desk.handle.local("photo")?.pictures() ?? null`))?.resident ?? null)}`);
     rows.push(["mixed (pan)", `${g.draws} draws · ${g.pipelines} pipelines · ${g.bindGroups} bind groups`, `span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · JS ${fmt(s.stepMs.median)} ms · photo ${g.byKind.photo ?? 0} draws / ${g.instancesByKind.photo ?? 0} inst · board ${g.byKind.board ?? 0} / ${g.instancesByKind.board ?? 0} · ${MB(mem.ledger?.total ?? 0)} live`, g.load]);
   }
 
@@ -549,21 +549,41 @@ try {
     const t0 = performance.now();
     await qa(`window.__desk.setScene(${JSON.stringify({ camX: -1500, camY: -1000, zoom: 0.4, theme: "light", prints })})`, 600000);
     await settle(30000);
-    const pics = await q(`window.__desk.handle.local("photo")?.pictures() ?? null`);
+    const picsOf = () => q(`window.__desk.handle.local("photo")?.pictures() ?? null`);
+    const pics = await picsOf();
     const far = await memoryNow();
     const st = await q("window.__desk.stats()");
+    const camFar = { x: -1500, y: -1000, zoom: 0.4 };
     console.log(`\n-- pictures · 20 prints of 4096² pictures, ${st.objects} drawn at zoom 0.4 · staged in ${((performance.now() - t0) / 1000).toFixed(1)} s · load ${load()} --`);
-    console.log(`  at zoom 0.4          ${memoryLine(far)}`);
-    // one print large on screen: the camera over print 0 at zoom 4
+    console.log(`  at zoom 0.4          ${memoryLine(far)} · resident ${JSON.stringify(pics?.resident ?? null)}`);
+    const row = (m, k) => m.ledger?.byLabel?.[k]?.bytes ?? 0;
+    // K6a (K-L4): NO BLANK PRINT — every picture resident as its thumbnail the moment it is on the device (its chain's tail in a
+    // layer of the one array), whatever its size; and the photo kind's memory is the budget's to see
+    const r0 = pics?.resident;
+    check(pics !== null && pics.ready >= 21 && pics.failed === 0 && pics.loading === 0 && r0?.pictures === pics.ready && r0?.layers === r0?.pictures, `pictures: every picture resident as its thumbnail — ${r0?.layers} layers of one array for ${r0?.pictures} pictures (20 × 4096², the fixture, any a scene before preloaded), none blank (${pics?.failed} failed, ${pics?.loading} loading)`);
+    const photoBudget = far.budget.byOwner.photo?.bytes ?? 0;
+    check(row(far, "photo") <= far.budget.cap && Math.abs(row(far, "photo") - photoBudget) <= 0.05 * row(far, "photo"), `pictures: the photo kind's memory is the budget's to see — the ledger's photo ${MB(row(far, "photo"))} (the thumbnail array, its details, the records), the budget's photo ${MB(photoBudget)}, the cap ${MB(far.budget.cap)} (before K6a: 1,712 MB, outside the budget)`);
+    // A RUN OF 20 PRINTS = ONE DRAW (K-L4): the twenty are sibling after sibling — the armed pan's frames draw them as one instanced draw
+    const g = await armedPan(camFar);
+    check(g.byKind.photo === 1 && g.instancesByKind.photo >= 19, `pictures: a run of ${g.instancesByKind.photo} prints is ONE draw (${g.byKind.photo} photo draw a frame, ${g.instancesByKind.photo} instances; before K6a a draw and a bind group a print)`);
+    // one print LARGE on screen: the camera over print 0 at zoom 4 — its detail fetched (decoded again) and bound; how long it took
     await q(`window.__desk.setCamera({ x: ${prints[0].x} - 600 / 4, y: ${prints[0].y} - 400 / 4, zoom: 4 })`);
-    await settle(30000);
-    await qa("new Promise((r) => setTimeout(r, 1500))");
+    const tz = performance.now();
+    let bound = null;
+    for (let i = 0; i < 200 && bound === null; i++) {
+      await front();
+      await qa("new Promise((r) => requestAnimationFrame(() => r()))");
+      const r = (await picsOf())?.resident;
+      if (r !== undefined && r.slotted >= 1) bound = { ms: performance.now() - tz, r };
+    }
     await settle(30000);
     const near = await memoryNow();
-    console.log(`  one print at zoom 4  ${memoryLine(near)}`);
-    const row = (m, k) => m.ledger?.byLabel?.[k]?.bytes ?? 0;
-    report.pictures = { pictures: pics, far, near };
-    rows.push(["pictures (20 × 4096²)", `${MB(far.ledger?.total ?? 0)} live · photo ${MB(row(far, "photo"))}`, `zoom 4 on one: ${MB(near.ledger?.total ?? 0)} · calendar ${MB(row(far, "calendar"))} · notebook ${MB(row(far, "notebook"))} with none on the desk · budget cap ${MB(far.budget.cap)}`, load()]);
+    const rn = (await picsOf())?.resident;
+    console.log(`  one print at zoom 4  ${memoryLine(near)} · resident ${JSON.stringify(rn ?? null)} · its detail bound ${bound === null ? "NEVER" : `${fmt(bound.ms, 0)} ms after the camera moved`}`);
+    check(bound !== null && rn?.slotted >= 1 && rn?.built >= 1, `pictures: a print zoomed large gets its DETAIL — fetched, decoded again and bound ${bound === null ? "never" : `${fmt(bound.ms, 0)} ms after the camera moved`} (${rn?.details} detail, ${rn?.slotted} bound, ${MB(rn?.bytes.details ?? 0)}); the thumbnail drew it meanwhile`);
+    check(row(near, "photo") <= near.budget.cap, `pictures: zoomed large, the photo kind still within the budget — ${MB(row(near, "photo"))} of ${MB(near.budget.cap)}`);
+    report.pictures = { pictures: pics, far, near, run: g, bound };
+    rows.push(["pictures (20 × 4096²)", `${MB(far.ledger?.total ?? 0)} live · photo ${MB(row(far, "photo"))} · 20 prints = ${g.byKind.photo} draw`, `zoom 4 on one: photo ${MB(row(near, "photo"))}, its detail bound in ${bound === null ? "—" : fmt(bound.ms, 0)} ms · calendar ${MB(row(far, "calendar"))} · notebook ${MB(row(far, "notebook"))} with none on the desk · budget cap ${MB(far.budget.cap)}`, load()]);
   }
 
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)

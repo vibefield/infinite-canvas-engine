@@ -123,8 +123,14 @@ export interface DeskLayerOptions {
   readonly gpuLedger?: boolean;
 }
 
-/** The raster budget a host does not size: 192 MB — about ten whiteboards' ink at the law's density, the notebook's eight page rasters and the calendar's tiles beside them. */
-export const DEFAULT_RASTER_BUDGET = 192 * 1024 * 1024;
+/**
+ * The raster budget a host does not size: 256 MB — D6's 192 (about ten whiteboards' ink at the law's density, the notebook's
+ * eight page rasters and the calendar's tiles beside them) and 64 more since the PICTURES joined it (K6a, K-L4): their
+ * thumbnail array (1.4 MB a picture, always kept) and the details a frame binds — each its print's chain from the finest level
+ * it samples, so together at most about four texels a device pixel of the prints on screen (≈ 82 MB were prints to tile a
+ * 2400 × 1600 screen), where before every picture's whole chain stood outside any budget.
+ */
+export const DEFAULT_RASTER_BUDGET = 256 * 1024 * 1024;
 
 /** The pinned still a parity scene states: the clocks, the plate and the gobo's opacity, the wind (0 = a still). */
 export interface MatPin extends AmbientPin {

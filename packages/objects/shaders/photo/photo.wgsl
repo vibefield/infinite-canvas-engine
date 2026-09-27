@@ -62,8 +62,9 @@ fn photo_cast(P: Photo, o: vec3f, D: vec3f) -> PhotoHit {
   return h;
 }
 
-// The picture at a point of the sheet: sRGB-encoded rgb, and whether this point is the picture (1) or the border (0).
-fn photo_picture(P: Photo, q: vec2f, px: f32, tex: texture_2d<f32>, samp: sampler) -> vec4f {
+// The picture at a point of the sheet: sRGB-encoded rgb, and whether this point is the picture (1) or the border (0). Its texel
+// at (uv, lod) is the entry's `photo_texel` (K6a: the entry binds where the pixels live — a shared array's layer, a pool's detail).
+fn photo_picture(P: Photo, q: vec2f, px: f32) -> vec4f {
   let inner = vec2f(P.ex.w, P.ey.w) - vec2f(P.eye.w);
   if (P.image.w < 0.5 || inner.x <= 0.0 || inner.y <= 0.0) { return vec4f(0.0); }
   let d = sdf_box(q, inner);
@@ -72,7 +73,7 @@ fn photo_picture(P: Photo, q: vec2f, px: f32, tex: texture_2d<f32>, samp: sample
   let uv = clamp((q + inner) / (2.0 * inner), vec2f(0.0), vec2f(1.0));
   // the mip: texels per device pixel along the picture's wider axis (the ray's own foreshortening is small; the eye is far)
   let lod = clamp(log2(max(P.image.x / (2.0 * inner.x), P.image.y / (2.0 * inner.y)) * px), 0.0, P.image.z - 1.0);
-  let c = textureSampleLevel(tex, samp, uv, lod);
+  let c = photo_texel(P, uv, lod);
   return vec4f(photo_encode(c.rgb), cov * c.a);
 }
 
@@ -122,8 +123,7 @@ fn photo_desk_at(u: MatUniforms, world: vec2f, h: f32) -> vec3f {
 // the slot is lit from elsewhere (a mini mat's inside, a handover — MINIMAT.md §4): a PIPELINE constant, never a uniform flag,
 // so a print under its own lamp compiles to exactly what it always did (the note's precedent, paper.wgsl `shade_paper`).
 fn shade_photo(P: Photo, u: MatUniforms, k: PhotoUniforms, s: vec2f, px: f32, frag: vec2f,
-               gobo_tex: texture_2d<f32>, gobo_samp: sampler, noise_tex: texture_2d<f32>, noise_samp: sampler,
-               pic_tex: texture_2d<f32>, pic_samp: sampler, lit: bool) -> vec4f {
+               gobo_tex: texture_2d<f32>, gobo_samp: sampler, noise_tex: texture_2d<f32>, noise_samp: sampler, lit: bool) -> vec4f {
   let half = vec2f(P.ex.w, P.ey.w);
   let L = P.light.xyz;
 
@@ -157,7 +157,7 @@ fn shade_photo(P: Photo, u: MatUniforms, k: PhotoUniforms, s: vec2f, px: f32, fr
   // the paper: resin-coated, a faint fibre that sticks to the sheet
   let fibre = ((value_noise(q * 0.7) - 0.5) + (bn.x - 0.5) * 0.5) * k.paper.w;
   var albedo = k.paper.xyz + vec3f(fibre);
-  let pic = photo_picture(P, q, pxs, pic_tex, pic_samp);
+  let pic = photo_picture(P, q, pxs);
   albedo = mix(albedo, pic.rgb, pic.a);
 
   // the light: the lamp's diffuse on the bent sheet (flat = 1, the configured byte), in the display's gamma as the mat's law

@@ -38,6 +38,11 @@ function stubPass() {
     picture: (bytes: Uint8Array, w: number, h: number) => { n += 1; log.push(`picture ${w}x${h} ${bytes.length}`); return { id: n, width: w, height: h } as unknown as Picture; },
     pictureFrom: (_s: unknown, w: number, h: number) => { n += 1; log.push(`pictureFrom ${w}x${h}`); return { id: n, width: w, height: h } as unknown as Picture; },
     dropPicture: (p: Picture) => { log.push(`drop ${(p as unknown as { id: number }).id}`); },
+    // the residency (K6a): nothing to bind or fetch on a stub
+    budget: () => {},
+    residency: () => false,
+    keeps: () => false,
+    onPictures: () => {},
   };
   return { kindPass: new PhotoKind(pass as unknown as PhotoPass), log };
 }

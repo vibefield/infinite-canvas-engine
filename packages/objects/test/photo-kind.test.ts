@@ -116,7 +116,7 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     const { mat, kind, groups } = await root();
     const inner = mat.spawn();
     const spawned = kind.spawn(inner);
-    const picture = kind.pass.picture(new Uint8Array([10, 20, 30, 255]), 1, 1);
+    const picture = must(kind.pass.picture(new Uint8Array([10, 20, 30, 255]), 1, 1));
     // each slot's group 0: its own uniform, knob and record buffers; the silhouette of the mat it was made on
     const slotGroups = groups.filter((g) => g.label === "photo/prints");
     expect(slotGroups).toHaveLength(2);
@@ -133,8 +133,8 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     spawned.drawRange(objectPass(b), 0, 1);
     expect(b[0]?.[1]).toBe(a[0]?.[1]);        // the one pipeline
     expect(b[1]?.[2]).not.toBe(a[1]?.[2]);    // each slot's own group 0
-    expect(b[2]?.[2]).toBe(picture.group);   // the picture, made once, bound in both
-    expect(a[2]?.[2]).toBe(picture.group);
+    expect(b[2]?.[2]).toBe(a[2]?.[2]);       // the pictures (K6a — one group, the array and the pool), made once, bound in both
+    expect((a[2]?.[2] as { label: string }).label).toBe("photo/pictures");
     // a spawned slot takes the root's law when tuned (the ground does it every frame)
     const law = structuredClone(kind.pass.law);
     kind.pass.law = law;
@@ -204,26 +204,37 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     expect(knobs()).toBe(2);
   });
 
-  it("drawRange counts in the prints it was handed: [first, end) each with its picture (the blank texel where it has none); an empty range records nothing; draw() is the whole list", async () => {
+  it("drawRange counts in the prints it was handed: [first, end) as ONE instanced draw (K6a, K-L4) — the pictures' group bound once, a print with a picture, one without and another alike instances; an empty range records nothing; draw() is the whole list", async () => {
     const { kind } = await root();
-    const p1 = kind.pass.picture(new Uint8Array([1, 2, 3, 255]), 1, 1);
-    const p3 = kind.pass.picture(new Uint8Array([4, 5, 6, 255]), 1, 1);
+    const p1 = must(kind.pass.picture(new Uint8Array([1, 2, 3, 255]), 1, 1));
+    const p3 = must(kind.pass.picture(new Uint8Array([4, 5, 6, 255]), 1, 1));
+    expect(p3.layer).not.toBe(p1.layer);   // each its own layer of the one array
     expect(kind.prepare({} as GPUCommandEncoder, ctx(), [print(0, p1), print(500, null), print(1000, p3)])).toBe(3);
     const drawn = (first: number, end: number) => { const c: unknown[][] = []; kind.drawRange(objectPass(c), first, end); return c; };
     const whole = drawn(0, 3);
-    expect(whole.map((c) => c[0])).toEqual(["pipeline", "group", "group", "draw", "group", "draw", "group", "draw"]);
-    const blank = whole[4]?.[2];
-    expect(whole[2]?.[2]).toBe(p1.group); expect(blank).not.toBe(p1.group); expect(blank).not.toBe(p3.group); expect(whole[6]?.[2]).toBe(p3.group);
-    expect(whole.filter((c) => c[0] === "draw")).toEqual([["draw", 6, 1, 0, 0], ["draw", 6, 1, 0, 1], ["draw", 6, 1, 0, 2]]);
+    expect(whole.map((c) => c[0])).toEqual(["pipeline", "group", "group", "draw"]);
+    expect(whole[2]?.[1]).toBe(1);
+    expect(whole[3]).toEqual(["draw", 6, 3, 0, 0]);   // three prints, one draw
     const all: unknown[][] = [];
     kind.pass.draw(objectPass(all));
     expect(all).toEqual(whole);
     expect(drawn(1, 1)).toEqual([]);     // an empty range: not even the pipeline
     expect(drawn(3, 9)).toEqual([]);     // past the list
-    const tail = drawn(1, 9);
-    expect(tail.filter((c) => c[0] === "draw")).toEqual([["draw", 6, 1, 0, 1], ["draw", 6, 1, 0, 2]]);
-    expect(tail[2]?.[2]).toBe(blank); expect(tail[4]?.[2]).toBe(p3.group);
+    expect(drawn(1, 9).filter((c) => c[0] === "draw")).toEqual([["draw", 6, 2, 0, 1]]);
     expect(drawn(0, 1).filter((c) => c[0] === "draw")).toEqual([["draw", 6, 1, 0, 0]]);
+  });
+
+  it("a print ON SCREEN larger than its thumbnail asks for its detail (the residency's step fetches it); one in the cull's margin, off screen, asks nothing (K6a)", async () => {
+    const { kind } = await root();
+    const on = must(kind.pass.picture(new Uint8Array(1024 * 768 * 4), 1024, 768));
+    const off = must(kind.pass.picture(new Uint8Array(1024 * 768 * 4), 1024, 768));
+    expect([on.base, off.base]).toEqual([1, 1]);   // their chains from 512 × 384 in the array
+    kind.prepare({} as GPUCommandEncoder, ctx(), [print(300, on), print(5000, off)]);   // the view: x 5 … 605
+    expect(kind.pass.residency()).toBe(false);
+    expect(kind.pass.pictureStats.building).toBe(1);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(on.detail?.base).toBe(0);
+    expect(off.detail).toBeNull();
   });
 
   it("through the walker: a note laid between two prints cuts them into two runs, the second drawing the second print alone", async () => {
@@ -231,7 +242,7 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     kind.prepare({} as GPUCommandEncoder, ctx(), [print(0, null), print(500, null)]);
     const log: string[] = [];
     const calls: unknown[][] = [];
-    const rp = { ...objectPass(calls), draw: (...a: number[]) => { calls.push(["draw", ...a]); log.push(`photo draw ${a[3]}`); } } as unknown as GPURenderPassEncoder;
+    const rp = { ...objectPass(calls), draw: (...a: number[]) => { calls.push(["draw", ...a]); log.push(`photo draw ${a[3]}×${a[1]}`); } } as unknown as GPURenderPassEncoder;
     const slot: DrawSlot = {
       mat: { draw: () => log.push("mat") } as unknown as CuttingMat,
       kinds: new Map([[PHOTO_KIND, { name: PHOTO_KIND, stratum: "things", pass: kind }], ["paper", loggingKind(log, "desk", "paper", "things")]]),
@@ -239,23 +250,26 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
       stats: { k0: 0, fade: 0, wind: false },
     };
     drawSlot(rp, SIZE, 2, slot);
-    expect(log).toEqual(["mat", "photo draw 0", "desk paper 0..1", "photo draw 1"]);
+    expect(log).toEqual(["mat", "photo draw 0×1", "desk paper 0..1", "photo draw 1×1"]);
+    // …and with nothing between them the two prints are ONE run: one draw of two instances (K6a, K-L4)
+    log.length = 0;
+    drawSlot(rp, SIZE, 2, { ...slot, objects: [{ kind: PHOTO_KIND }, { kind: PHOTO_KIND }, { kind: "paper" }] });
+    expect(log).toEqual(["mat", "photo draw 0×2", "desk paper 0..1"]);
   });
 
-  it("the blank texel is the pass's and goes with the last slot standing; a host's pictures are the host's to drop", async () => {
+  it("the pictures are the pass's and go with the last slot standing: a picture's chain is let go once its thumbnail is laid, the array stays until the last slot", async () => {
     const { mat, kind, textures } = await root();
-    const pictures = () => textures.filter((t) => (t.texture as { label: string }).label.startsWith("photo/picture"));
-    const [blank] = pictures();   // made with the root's pass
-    expect(pictures()).toHaveLength(1);
-    const picture = kind.pass.picture(new Uint8Array([1, 2, 3, 255]), 1, 1);
+    const labelled = (prefix: string) => textures.filter((t) => (t.texture as { label: string }).label.startsWith(prefix));
+    expect(labelled("photo/thumbnails")).toHaveLength(1);   // the empty array's stand-in, made with the root's pass
+    const picture = must(kind.pass.picture(new Uint8Array([1, 2, 3, 255]), 1, 1));
     const spawned = kind.spawn(mat.spawn());
-    expect(pictures()).toHaveLength(2);   // a spawned slot makes no blank of its own
-    const kept = must(pictures().find((t) => t.texture === picture.texture));
+    expect(labelled("photo/thumbnails")).toHaveLength(2);   // the array, made at the first picture; a spawned slot makes none
+    expect(labelled("photo/picture ").every((t) => t.destroyed)).toBe(true);   // the chain: its tail copied into the layer, let go
     kind.pass.dropPicture(picture);
-    expect(kept.destroyed).toBe(true);
+    expect(kind.pass.pictureStats.pictures).toBe(0);
     spawned.dispose();
-    expect(must(blank).destroyed).toBe(false);   // the root still stands
+    expect(labelled("photo/thumbnails").some((t) => t.destroyed)).toBe(false);   // the root still stands
     kind.dispose();
-    expect(must(blank).destroyed).toBe(true);    // the last slot standing takes it
+    expect(labelled("photo/thumbnails").every((t) => t.destroyed)).toBe(true);    // the last slot standing takes them
   });
 });
