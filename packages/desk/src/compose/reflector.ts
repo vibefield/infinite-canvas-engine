@@ -204,6 +204,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   const faced = new Map<number, KindLocal>();
   /** When the drawer last showed (frame clock, ms): its specimens' desk state is let go once it has been shut `LAYER_IDLE_MS`. */
   let trayShownAt = Number.NEGATIVE_INFINITY;
+  /** When the specimens' desk state is let go (K7a — a registered time: the loop may sleep since the drawer shut); ∞ — none held. */
+  let facedAt = Number.POSITIVE_INFINITY;
   let builderWakes = builder.wakes();
 
   /** The local mouse pointer's screen point as NDC (x right, y up), or null before one was seen. */
@@ -264,6 +266,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       else if (faced.size > 0 && now - trayShownAt > LAYER_IDLE_MS) {
         for (const [key, local] of faced) if (key > 0) { local.forget?.(key as Entity); faced.delete(key); }
       }
+      // …at a registered TIME (K7a): with the drawer shut the loop sleeps and no tick comes to poll it — the desk is due when it lets go
+      facedAt = Number.POSITIVE_INFINITY;
+      if (!showing) for (const key of faced.keys()) if (key > 0) { facedAt = trayShownAt + LAYER_IDLE_MS + 1; break; }
       const ground = opts.ground();
       blocked = true;
       if (ground === null) return;   // pre-ready: the dirt is kept
@@ -418,7 +423,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     },
     restless(kinds) { restless = kinds; },
     dirty: () => dirty,
-    due: (now) => (blocked || disposed ? Number.POSITIVE_INFINITY : dirty || ambientLive ? now : Number.POSITIVE_INFINITY),
+    due: (now) => (blocked || disposed ? Number.POSITIVE_INFINITY : dirty || ambientLive ? now : facedAt),
     redraws: () => redraws,
     stats: () => ({ ...builder.stats(), redraws, frame: lastFrame, ambient: ambient.state() }),
     wakes: () => ({ ...wakes }),

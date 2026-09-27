@@ -156,16 +156,24 @@ describe("the tray's layers under the sleeping loop (K7a over K5a)", () => {
     expect(due.tray).toBeGreaterThan(shut);
     expect(due.tray - shut).toBeLessThanOrEqual(LAYER_IDLE_MS);
     expect(due.at).toBe(due.tray);
+    // …and the specimens' desk state (the calendar's print for its pad, K5b's let-go) is a registered time of the reflector's: due
+    // within the window, never left to a tick that will not come
+    expect(due.reflector).toBeGreaterThan(shut);
+    expect(due.reflector - shut).toBeLessThanOrEqual(LAYER_IDLE_MS + 1);
     // at that time a step lets them go — each slot at its own last draw + LAYER_IDLE_MS (since K5b the slots' last draws can part),
     // every one within the window after the shut — and nothing of the tray's is due after
-    for (let n = 0; n < 6 && desk.handle.due(performance.now()).tray !== Number.POSITIVE_INFINITY; n++) {
-      const at = desk.handle.due(performance.now()).tray;
+    // (the specimens' desk state — the calendar's print for its pad — goes at the reflector's registered time, K5b's let-go)
+    const next = (): number => { const d = desk.handle.due(performance.now()); return Math.min(d.tray, d.reflector); };
+    for (let n = 0; n < 6 && next() !== Number.POSITIVE_INFINITY; n++) {
+      const at = next();
       expect(at - shut).toBeLessThanOrEqual(LAYER_IDLE_MS);
       await new Promise((r) => setTimeout(r, Math.max(0, at - performance.now()) + 20));
       desk.step();
     }
     const after = desk.handle.due(performance.now());
     expect(after.tray).toBe(Number.POSITIVE_INFINITY);
+    expect(after.reflector).toBe(Number.POSITIVE_INFINITY);
+    expect((desk.handle.local("calendar") as { tiles(): { resident: number } }).tiles().resident, "the tray pad's print let go").toBe(0);
     // …and the desk's due is the kinds' own again (since K5b the calendar's local prints for the tray's pad: its day turns at midnight)
     expect(after.at).toBe(Math.min(Number.POSITIVE_INFINITY, ...Object.values(after.kinds)));
   }, 20_000);
