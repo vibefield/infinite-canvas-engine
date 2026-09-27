@@ -778,6 +778,21 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   draws 55 → 42 a frame, photo 19 draws → 6 for 19 prints. rig:stress gains mixed sibling order, real pictures and a
   `pictures` scenario (31 rows).
 
+<!-- design-016 K5a (2026-09-27) -->
+- **The kinds hang on the pegboard** (design-017 §8, K-L2 · K-L3): a kind declares a TRAY ENTRY —
+  `defineWidget`/`defineObject({ tray: { label, props?, hang: { w, h, pegs, accessory }, order?, category? } })`, compiled
+  by core (`compileTrayEntry`) onto `WidgetType.tray` — and the catalog's types that carry one ARE the tray's contents (a
+  plugin kind appears by declaring one; no engine list names a kind). The kernel's lattice law (`kernel/src/tray.ts`:
+  `PEG_LATTICE`, `layTray`, `trayScrollMax`, `hangError`) lays them in (category, order, type) order across the board's
+  columns, every peg on a punched hole's centre, a clear row between rows. The tray entity (a `Container`) roots a
+  runtime canvas of `Specimen` entities — never Active, never durable or synced — laid by `createTrayLay` and re-laid on
+  a width or catalog change. Each specimen is drawn by its OWN kind in a slot of its own under the drawer's camera, hung
+  on an SDF accessory (hook, shelf, clip, rail) with its shadow on the board by the lamp, a name tag under it; hover lifts
+  it. The six built-ins declare theirs (the note on two hooks, the print clipped, the notebook and the mini mat on
+  shelves, the calendar on a hook, the whiteboard on a rail). A slot's layered pass lets its layer go 5 s undrawn
+  (`KindPass.idle`, `LayeredKind.idle` — the tray's notebook and calendar 137 → 0.7 MB and 134 → 2.2 MB after the drawer
+  shuts). `rig:tray` 24 → 34 rows; the golden 106 (a fifth tray still, `tray-scrolled`).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 

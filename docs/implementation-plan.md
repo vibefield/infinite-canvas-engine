@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b and K6a LANDED 2026-09-27)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a and K5a LANDED 2026-09-27)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1547,7 +1547,11 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   from shared arrays (a thumbnail layer always resident, details by screen size in pool slots, all under the ONE raster
   budget, 256 MB); boards at their zoom rung; the books' big textures made on first use. Mixed stress desk: memory
   904 → 351 MB, draws 55 → 42; 20 × 4096² pictures 1,942 → 78.8 MB. Graded: ci 0, gate:landing 0 (stress 31/0).
-- K5a — the specimens on the pegboard · K5b — taking one ·
+- **K5a — the specimens on the pegboard** (**LANDED 2026-09-27**, seven commits → `2b583fe`, rebased by its builder
+  over K6a): the tray entry a kind declares, the kernel's lattice law, `Specimen` entities under the tray, each drawn by
+  its own kind in its own slot on an SDF accessory; a plugin fixture kind appears by its entry alone; rig:tray 34, golden
+  106. Graded: ci 0, gate:landing 0.
+- K5b — taking one ·
   K6b — zoom · K7 — layers, wakes, scale · K8 — plugin parity and a third-party kind · K9 — the review and its fixes:
   planned (design-016 §8; K5 and K6 split in two after K3's builder died at its context limit).
 
