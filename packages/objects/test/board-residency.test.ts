@@ -138,6 +138,16 @@ describe("the pool and the thumbnails on a fake device", () => {
     expect([pass.densityOf(id2), bare.replays()]).toEqual([4, 1]);
   });
 
+  it("K6b over K5a: the TRAY's specimen board (id 0 — recorded without the desk's local) draws from its one clean raster at density 1 — never bare, never asked of the frame queue, never raised", async () => {
+    const { kind, pass, q, ink } = await queued();
+    const big = { ...VIEW, camX: 450, zoom: 4 };                          // on screen at zd 8: its size asks the rung 4
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(big), [board(0)])).toBe(1);
+    expect([pass.densityOf(0), pass.bound(0), q.size]).toEqual([1, true, 0]);
+    expect(ink.tick?.(16)).toBe(false);                                   // the step asks a raise for id 0: the desk's ink owns no id 0
+    kind.prepare({} as GPUCommandEncoder, ctx(big), [board(0)]);
+    expect([pass.densityOf(0), q.size]).toEqual([1, 0]);
+  });
+
   it("K6b: the queue's order — a board with NO ink before one whose thumbnail stands (evicted), the nearest the view's centre first within each; a raise waits there too, its old raster standing; forget withdraws", async () => {
     const { kind, pass, q, remade, ink } = await queued();
     const G = board(1).geometry;
