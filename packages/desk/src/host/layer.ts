@@ -66,6 +66,7 @@ import { printRaster } from "./print";
 import { createCalendarInput } from "./calendar-input";
 import type { InsideView } from "../minimat/inside";
 import { shaderText } from "../shaders";
+import { instrumentMemory, type MemoryLedger } from "../gpu-memory";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
 import type { GroundTheme, Palette } from "../theme";
 import { surface } from "./surface";
@@ -112,6 +113,12 @@ export interface DeskLayerOptions {
    * off-screen raster goes first. Default 192 MB.
    */
   readonly rasterBudget?: number;
+  /**
+   * Keep the device's LIVE GPU MEMORY by label from the boot on (gpu-memory.ts, design-016 §4 — the profiler's memory table): a
+   * map entry per texture or buffer MADE, nothing per frame. Off by default (D-K2.2): a resource made before the ledger cannot be
+   * found after it (WebGPU has no enumeration), so it is the one instrument a host decides on at the mount.
+   */
+  readonly gpuLedger?: boolean;
 }
 
 /** The raster budget a host does not size: 192 MB — about ten whiteboards' ink at the law's density, the notebook's eight page rasters and the calendar's tiles beside them. */
@@ -240,6 +247,8 @@ export interface DeskLayerHandle {
   perf(): DeskLayerPerf;
   /** The raster budget's ledger (D6): what the kinds' caches hold, by owner, against the cap; the evictions so far. */
   memory(): BudgetStats;
+  /** The device's live GPU memory by label (K2) — kept only under `gpuLedger: true`, from the boot; undefined otherwise or before the device. */
+  gpuMemory(): MemoryLedger | undefined;
   /** The kinds' persistent record stores' counters by kind (D6, design-015 §4.3) — the root passes'; a rig diffs two readings. */
   records(): Readonly<Record<string, RecordStoreStats>>;
   redraws(): number;
@@ -312,6 +321,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     let ownDevice: GPUDevice | null = null;
     let drawDevice: GPUDevice | null = null;   // the device the layer draws with: its own, or the engine's (D7)
     let instrument: SubmitInstrument | undefined;
+    let ledger: MemoryLedger | undefined;
     let status: DeskLayerStatus = { state: "pending" };
     let disposed = false;
     let ended = false;
@@ -485,6 +495,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           if (disposed) { if (shared === undefined) g.device.destroy(); throw new Error("disposed before the device arrived"); }
           drawDevice = g.device;
           if (shared === undefined) ownDevice = g.device;
+          if (opts.gpuLedger === true) ledger = instrumentMemory(g.device);   // before the ground makes anything
           opts.onDevice?.(g.device);
           const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
           if (disposed || ended) { made.dispose(); return; }
@@ -561,6 +572,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       },
       perf: () => ({ ...perf }),
       memory: () => budget.stats(),
+      gpuMemory: () => ledger,
       records: () => {
         const out: Record<string, RecordStoreStats> = {};
         for (const k of objectKinds) { const s = ground?.pass(k.name)?.records?.(); if (s !== undefined) out[k.name] = s; }
@@ -600,6 +612,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         ground = null;
         instrument?.detach();   // the engine's device goes on without the layer's wrappers
         instrument = undefined;
+        ledger?.detach();
         if (ownDevice !== null) { ownDevice.destroy(); ownDevice = null; }   // the layer's own device: destroyed last
       },
     };

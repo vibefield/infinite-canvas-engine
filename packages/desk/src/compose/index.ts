@@ -8,6 +8,7 @@ export { type BuildViewport, type BuildWork, type BuiltDesk, createDeskBuilder, 
 export { createMarksCollector, type MarkRow, type MarksCollector, type SelectionAnchor } from "./marks";
 export { createPickSource } from "./pick";
 export { createDeskReflector, type DeskReflector, type DeskReflectorOptions, type DeskReflectorStats, type DeskWakes } from "./reflector";
-export { instrumentSubmits, type SubmitInstrument, type UploadTally } from "../submit-instrument";
+export { instrumentSubmits, type SubmitHook, type SubmitInstrument, tapSubmits, type UploadTally } from "../submit-instrument";
+export { type FormatBlock, formatBlock, type GpuMemory, type GpuMemoryRow, instrumentMemory, type MemoryLedger, regionBytes, textureBytes } from "../gpu-memory";
 export { type BudgetStats, createRasterBudget, type RasterBudget } from "../engine/budget";
 export { createRecordStore, type RecordStore, type RecordStoreStats } from "../engine/records";

@@ -28,6 +28,7 @@
 // (gpu-memory.ts `regionBytes`); counted with the writes and on its own (`externals`).
 
 import { regionBytes } from "./gpu-memory";
+import { prefixOf, swapMethod } from "./gpu-wrap";
 
 export interface UploadTally {
   /** `writeBuffer` + `writeTexture` + `copyExternalImageToTexture` calls. */
@@ -60,20 +61,6 @@ export interface SubmitInstrument {
 export interface SubmitHook {
   before?(list: readonly GPUCommandBuffer[]): void;
   after?(list: readonly GPUCommandBuffer[]): void;
-}
-
-/**
- * Replace `obj[key]` with `value`; the undo puts back exactly what was there — the own property it had, or no own property at all
- * (the prototype's method shows through again, so "the wrappers are gone" is literal).
- */
-export function swapMethod<T extends object, K extends keyof T>(obj: T, key: K, value: T[K]): () => void {
-  const own = Object.getOwnPropertyDescriptor(obj, key);
-  obj[key] = value;
-  return () => {
-    if (obj[key] !== value) return;   // wrapped over since: ours stays beneath theirs (its listener list empties instead)
-    if (own !== undefined) Object.defineProperty(obj, key, own);
-    else Reflect.deleteProperty(obj, key);
-  };
 }
 
 interface Tap { readonly hooks: SubmitHook[]; readonly undo: () => void }
@@ -122,13 +109,6 @@ function writeBufferBytes(data: BufferSource | SharedArrayBuffer, dataOffset: nu
   }
   return size ?? data.byteLength - (dataOffset ?? 0);
 }
-
-/** A resource's label prefix — `paper/notes` → `paper`; no label → `?`. */
-export const prefixOf = (label: string | undefined): string => {
-  if (label === undefined || label.length === 0) return "?";
-  const slash = label.indexOf("/");
-  return slash < 0 ? label : label.slice(0, slash);
-};
 
 export function instrumentSubmits(device: GPUDevice): SubmitInstrument {
   const queue = device.queue;
