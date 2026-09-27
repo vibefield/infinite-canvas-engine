@@ -19,15 +19,13 @@
 // A note deleted mid-session takes its uncommitted run with it — the gesture was interrupted; an undo
 // of the delete restores the note as last committed.
 
-import { type Component, defineQuery, Editing, type Entity, guardedTransaction, heldEntity, LocalPointer, Pointer, TouchesExact, type World } from "@ice/core";
-import { type TypingDocs, writable, type WritableSession } from "@ice/desk";
+import { type Component, Editing, type Entity, guardedTransaction, type World } from "@ice/core";
+import { tapHit, type TypingDocs, writable, type WritableSession } from "@ice/desk";
 import { encodeSeeds, freshSeed, seedsFor, carrySeeds } from "@ice/desk/kit";
 
 // The document's doors live in docs.ts (D-D7-A.3: no kind in them, so the host holds them without naming one); the drivers
 // keep reaching them here.
 export { type TypingDocs, writable, type WritableSession } from "@ice/desk";
-
-const tapPointersQ = defineQuery([Pointer, LocalPointer]);
 
 /**
  * THE TAP'S NOTE (D7 #4): the note a tap by the local pointer `pid` writes into — the interaction stack's exact hit for that
@@ -37,18 +35,9 @@ const tapPointersQ = defineQuery([Pointer, LocalPointer]);
  * known at all (a touch that has lifted is gone: the caller may ask the drawn notes instead).
  */
 export function tapNote(world: World, pid: string, isNote: (e: Entity) => boolean): { readonly found: boolean; readonly note: Entity | undefined } {
-  if (heldEntity(world) !== undefined) return { found: true, note: undefined };
-  let found = false;
-  let hit: Entity | undefined;
-  world.query(tapPointersQ).each((b) => {
-    for (const r of b) {
-      const p = b.entity(r);
-      if (world.read(p, Pointer).id !== pid) continue;
-      found = true;
-      hit = world.getRelation(p, TouchesExact);
-    }
-  });
-  return { found, note: found && hit !== undefined && isNote(hit) ? hit : undefined };
+  // the desk's generic tap (K8a — `tapHit`, the stack's exact hit, none in hand): a note when it hit one
+  const t = tapHit(world, pid);
+  return { found: t.found, note: t.hit !== undefined && isNote(t.hit) ? t.hit : undefined };
 }
 
 export interface NoteTypingOptions {

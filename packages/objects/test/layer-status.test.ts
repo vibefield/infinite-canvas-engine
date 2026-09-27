@@ -21,7 +21,9 @@ function fakeHost() {
   const gpu = { requestAdapter: async () => adapter, getPreferredCanvasFormat: () => "bgra8unorm" } as unknown as GPU;
   const context = { configure: () => {}, unconfigure: () => {}, getCurrentTexture: () => ({ createView: () => ({ label: "swap" }), width: 1, height: 1 }) };
   const canvas = { style: {}, width: 1, height: 1, clientWidth: 1, clientHeight: 1, getContext: () => context, remove: () => {} };
-  const container = { ownerDocument: { createElement: () => canvas, defaultView: undefined }, prepend: () => {} } as unknown as HTMLElement;
+  // the desk's ONE editor is made at every mount since K8a (a textarea and its stylesheet, listeners on the container and the document)
+  const node = () => ({ style: {}, setAttribute: () => {}, addEventListener: () => {}, removeEventListener: () => {}, remove: () => {} });
+  const container = { ownerDocument: { createElement: (tag: string) => (tag === "canvas" ? canvas : node()), defaultView: undefined, addEventListener: () => {}, removeEventListener: () => {} }, prepend: () => {}, appendChild: () => {}, addEventListener: () => {}, removeEventListener: () => {} } as unknown as HTMLElement;
   /** An error the device reports and nobody captured — as the browser dispatches it. */
   const uncaptured = (name: string, message: string): void => { for (const fn of listeners) fn({ error: { message, constructor: { name } } }); };
   return { gpu, container, uncaptured };

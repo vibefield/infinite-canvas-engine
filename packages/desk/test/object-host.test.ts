@@ -1,15 +1,15 @@
-// K4b (design-016 §5 · K-L2): an object DECLARES its DOM half — `defineObject({ host: { lend, editor, mount } })` — and the desk
+// K4b (design-016 §5 · K-L2): an object DECLARES its DOM half — `defineObject({ host: { lend, text, mount } })` — and the desk
 // layer builds whatever the registered objects declare, generically: it never finds a half by type or names a kind. Until K4b
 // the layer built the note's editor and the calendar's input itself (`host/layer.ts`, found by type), which no plugin kind could
-// have. Here a THIRD-PARTY object — a kind of the test's own, no reference kind in sight — lends its world half a service, makes
-// the desk's one editor, and mounts a half that borrows it. The halves are made at the mount, before the device boots, so a
-// fake page (the few members a mount reads) is enough.
+// have. Here a THIRD-PARTY object — a kind of the test's own, no reference kind in sight — lends a service, declares a text part
+// over the desk's ONE editor (the desk's since K8a — editor-lease.test.ts leases it), and mounts a half handed it. The halves are
+// made at the mount, before the device boots, so a fake page (the few members a mount reads) is enough.
 import { createCanvasEngine, type WidgetType } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { deskLayer, type DeskLayerOptions } from "../src/host/layer";
 import type { KindPass } from "../src/kind";
 import type { KindDriver, KindHost, ObjectDomHost, ObjectKind } from "../src/kinds/world";
-import type { NoteEditor } from "../src/kit/editor";
+import type { DeskEditor } from "../src/kit/editor";
 import { BLOB_STORE, type BlobStore, PICTURE_DECODER } from "../src/kit/blobs";
 import { PRINT_RASTER, type PrintRaster } from "../src/kit/print";
 import { TEXT_RASTER, type TextRaster } from "../src/kit/raster";
@@ -31,7 +31,7 @@ function scribbleKind(name: string, locals: KindHost[]): ObjectKind {
 }
 
 /** What the halves were handed, in the order the layer called them. */
-interface Calls { lend: { type: string; text: TextRaster | undefined }[]; editor: ObjectDomHost[]; mount: (ObjectDomHost & { editor: NoteEditor | undefined })[]; order: string[] }
+interface Calls { lend: { type: string; text: TextRaster | undefined }[]; text: ObjectDomHost[]; mount: ObjectDomHost[]; order: string[] }
 
 function mountDesk(objects: WidgetType[], text?: TextRaster, more: Pick<DeskLayerOptions, "blobs" | "services"> = {}) {
   const ce = createCanvasEngine({ widgets: objects });
@@ -46,74 +46,69 @@ function mountDesk(objects: WidgetType[], text?: TextRaster, more: Pick<DeskLaye
   return { ce, page, handle };
 }
 
-const fakeEditor = (label: string): NoteEditor => ({ label, follow: () => {}, dispose: () => {} }) as unknown as NoteEditor;
 const fakePrint = { hand: () => undefined } as unknown as PrintRaster;
 const fakeText = { version: () => 0 } as unknown as TextRaster;
 
-describe("an object's DOM half is DECLARED, and the desk builds what the objects declare (K4b)", () => {
-  it("lend → the kind's local; editor → the desk's ONE editor; mount → handed its own object, driver and look, and the editor", () => {
-    const calls: Calls = { lend: [], editor: [], mount: [], order: [] };
+describe("an object's DOM half is DECLARED, and the desk builds what the objects declare (K4b; K8a)", () => {
+  it("lend → every kind's local; text → the object's parts over the desk's ONE editor; mount → handed its own object, driver and look, and the editor", () => {
+    const calls: Calls = { lend: [], text: [], mount: [], order: [] };
     const locals: KindHost[] = [];
     const driver: KindDriver = { follow: () => {}, idle: () => true };
-    const made = fakeEditor("scribble's");
     const Scribble = defineObject({
       type: "test.scribble", version: 1, props: {}, kind: scribbleKind("scribble", locals),
       drivers: () => driver,
       host: {
         lend: (h) => { calls.order.push("lend"); calls.lend.push({ type: "test.scribble", text: h.use(TEXT_RASTER) }); return [service(PRINT_RASTER, fakePrint)]; },
-        editor: (h) => { calls.order.push("editor"); calls.editor.push(h); return made; },
+        text: (h) => { calls.order.push("text"); calls.text.push(h); return [{ part: "scribble.line" }]; },
         mount: (h) => { calls.order.push("mount"); calls.mount.push(h); },
       },
     });
-    expect(hostOf(Scribble)?.editor).toBeTypeOf("function");
+    expect(hostOf(Scribble)?.text).toBeTypeOf("function");
     const { ce, handle } = mountDesk([Scribble], fakeText);
     try {
       // lent before the local, and the kind's world half reads what its DOM half lent (the calendar's print raster, as a plugin's)
-      expect(calls.order).toEqual(["lend", "editor", "mount"]);
+      expect(calls.order).toEqual(["lend", "text", "mount"]);
       expect(calls.lend).toEqual([{ type: "test.scribble", text: fakeText }]);
       expect(locals.map((h) => h.use?.(PRINT_RASTER))).toEqual([fakePrint]);
       // the halves are handed the object they were declared on and ITS driver — never found by type
-      expect(calls.editor[0]?.object).toBe(Scribble);
-      expect(calls.editor[0]?.driver).toBe(driver);
+      expect(calls.text[0]?.object).toBe(Scribble);
+      expect(calls.text[0]?.driver).toBe(driver);
       expect(calls.mount[0]?.object).toBe(Scribble);
       expect(calls.mount[0]?.driver).toBe(driver);
-      // the one editor it made is the desk's: the handle's door, and lent to every half that mounts
-      expect(handle.editor()).toBe(made);
-      expect(calls.mount[0]?.editor).toBe(made);
+      // the one editor is the DESK's: the handle's door, handed to every half — no object made it
+      expect(handle.editor()).toBeDefined();
+      expect(calls.text[0]?.editor).toBe(handle.editor());
+      expect(calls.mount[0]?.editor).toBe(handle.editor());
     } finally {
       handle.dispose();
       ce.dispose();
     }
   });
 
-  it("the ONE editor: the first object that makes one owns it — no second is asked for — and a half that mounts borrows it whatever the order", () => {
-    const asked: string[] = [];
-    const borrowed: (NoteEditor | undefined)[] = [];
+  it("the ONE editor needs no kind: the desk makes it whether or not any object takes text, and every half that mounts is handed the same one", () => {
+    const borrowed: DeskEditor[] = [];
     const locals: KindHost[] = [];
-    // registered FIRST: a half that only borrows — it still gets the editor an object after it makes
     const Borrower = defineObject({ type: "test.borrower", version: 1, props: {}, kind: scribbleKind("borrower", locals), host: { mount: (h) => { borrowed.push(h.editor); } } });
-    const First = defineObject({ type: "test.first", version: 1, props: {}, kind: scribbleKind("first", locals), host: { editor: () => { asked.push("first"); return fakeEditor("first"); } } });
-    const Second = defineObject({ type: "test.second", version: 1, props: {}, kind: scribbleKind("second", locals), host: { editor: () => { asked.push("second"); return fakeEditor("second"); } } });
-    const { ce, handle } = mountDesk([Borrower, First, Second]);
+    const Other = defineObject({ type: "test.other", version: 1, props: {}, kind: scribbleKind("other", locals), host: { mount: (h) => { borrowed.push(h.editor); } } });
+    const { ce, handle } = mountDesk([Borrower, Other]);
     try {
-      expect(asked).toEqual(["first"]);
-      expect((handle.editor() as unknown as { label: string }).label).toBe("first");
-      expect(borrowed).toEqual([handle.editor()]);
+      expect(borrowed).toEqual([handle.editor(), handle.editor()]);
       // nothing lent: every kind's local sees no print raster
-      expect(locals.map((h) => h.use?.(PRINT_RASTER))).toEqual([undefined, undefined, undefined]);
+      expect(locals.map((h) => h.use?.(PRINT_RASTER))).toEqual([undefined, undefined]);
     } finally {
       handle.dispose();
       ce.dispose();
     }
   });
 
-  it("a desk whose objects declare no DOM half has no editor, and the halves are asked for nothing", () => {
+  it("a desk whose objects declare no DOM half still has the desk's editor, and the halves are asked for nothing", () => {
     const locals: KindHost[] = [];
     const Plain = defineObject({ type: "test.plain", version: 1, props: {}, kind: scribbleKind("plain", locals) });
     expect(hostOf(Plain)).toBeUndefined();
     const { ce, handle } = mountDesk([Plain], fakeText);
     try {
-      expect(handle.editor()).toBeUndefined();
+      expect(handle.editor()).toBeDefined();
+      expect(handle.editor().lease()).toBeUndefined();
       expect(locals.length).toBe(1);
       expect(locals[0]?.use?.(PRINT_RASTER)).toBeUndefined();
       expect(locals[0]?.use?.(TEXT_RASTER)).toBe(fakeText);

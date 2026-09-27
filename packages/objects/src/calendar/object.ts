@@ -15,7 +15,7 @@ import { type KindDriver, defineObject } from "@ice/desk";
 import { type CalendarHand, createCalendarHand } from "./hand";
 import { type CalendarWriting, createCalendarWriting } from "./writing";
 import { PENS, PRINT_RASTER, service, TEXT_RASTER } from "@ice/desk/kit";
-import { createCalendarInput } from "./host/input";
+import { CALENDAR_LINE, createCalendarInput } from "./host/input";
 import { printRaster } from "./host/print";
 
 /** The tapes a pad is bound with (CALENDAR.md §4) — names; the cloths and foils are the host's. */
@@ -77,11 +77,12 @@ export const Calendar = defineObject({
   },
   // its DOM HALF (K4b — declared, never found by type): its PRINT raster, lent to its world half before its local (the tiles in
   // the host's hand, D3t-c — none without a text raster: the oracle pins committed tiles), and its days and its pen at event time
-  // (host/calendar-input.ts), mounted over the ONE editor it borrows — none on a desk that made no editor
+  // (host/calendar-input.ts), mounted over the desk's ONE editor, which it leases (K8a: every desk has one)
   host: {
     lend: (h) => { const text = h.use(TEXT_RASTER); return text === undefined ? [] : [service(PRINT_RASTER, printRaster({ text }))]; },
+    // its TEXT PART (K8a): a day's line — leased by its own half at event time (a day selected), never routed a tap by the desk
+    text: () => [{ part: CALENDAR_LINE }],
     mount: (h) => {
-      if (h.editor === undefined) return;
       createCalendarInput({
         container: h.container, world: h.world, object: h.object, driver: h.driver as CalendarDriver | undefined, editor: h.editor, docs: h.docs,
         geometryOf: h.geometryOf, hand: h.hand, heldToWorld: h.heldToWorld, look: h.look, wake: h.wake,

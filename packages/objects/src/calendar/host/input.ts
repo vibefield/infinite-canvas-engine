@@ -1,4 +1,4 @@
-// THE DAYS AND THE PEN — the calendar's DOM half (CALENDAR.md §5; D3t-c), as the one editor is the note's (host/editor.ts). A day
+// THE DAYS AND THE PEN — the calendar's DOM half (CALENDAR.md §5; D3t-c), leasing the desk's ONE editor for its day line (K8a). A day
 // is chosen, and a line begun, at EVENT TIME — the focus that makes typing write must be taken in the event (design-007 §2; a
 // phone's keyboard opens only so, D-D2c.6) — so the clicks on a pad's paper are read here, on the container, at rest and in hand:
 //
@@ -26,7 +26,10 @@ import { dayBox, sheetOf } from "../sheet";
 import { type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, partAt, sheetOnScreen } from "../kind";
 import type { CalendarDriver } from "../object";
 import { type TypingDocs, writable } from "@ice/desk";
-import type { EditorLease, NoteEditor } from "@ice/desk/kit";
+import type { DeskEditor, EditorLease } from "@ice/desk/kit";
+
+/** The desk calendar's text part's name (K8a) — a day's line: what the editor's lease carries while the calendar holds it. */
+export const CALENDAR_LINE = "calendar.line";
 
 export interface CalendarInputOptions {
   readonly container: HTMLElement;
@@ -35,7 +38,7 @@ export interface CalendarInputOptions {
   readonly geometryOf: (e: Entity) => unknown;
   readonly hand: () => { readonly entity: Entity; readonly landing: boolean; readonly frame: { readonly cx: number; readonly cy: number; readonly s: number } } | undefined;
   readonly heldToWorld: (e: Entity, x: number, y: number) => readonly [number, number] | undefined;
-  readonly editor: NoteEditor;
+  readonly editor: DeskEditor;
   /** The calendar's driver (`CalendarDriver`, D-D7-A.3): this is the CALENDAR's DOM half, which the calendar declares (K4b) — the host hands it the calendar's own and it joins it; none, no input. */
   readonly driver: CalendarDriver | undefined;
   /** The calendar object (its compiled widget type — its first group is a pad's props: its month, its week start). */
@@ -134,6 +137,8 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput |
 
   // ---- the lease: the ONE editor's keys and value while the calendar holds it
   const lease: EditorLease = {
+    part: CALENDAR_LINE,
+    label: "write on the calendar",
     value: () => (writing.current() !== null ? writing.text() : ""),
     input(value) {
       const e = pad;

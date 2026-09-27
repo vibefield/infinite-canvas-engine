@@ -7,6 +7,7 @@ export { AMBIENT_DEFAULTS, type Ambient, type AmbientMode, type AmbientOptions, 
 export { type BuildViewport, type BuildWork, type BuiltDesk, createDeskBuilder, type DeskBuilder, type DeskBuilderOptions, type DeskBuilderStats, type DeskWakeReason, type HeldBuild, type HoldPin } from "./builder";
 export { createMarksCollector, type MarkRow, type MarksCollector, type SelectionAnchor } from "./marks";
 export { createPickSource } from "./pick";
+export { tapHit } from "./tap";
 export { createDeskReflector, type DeskReflector, type DeskReflectorOptions, type DeskReflectorStats, type DeskWakes } from "./reflector";
 export { instrumentSubmits, type SubmitHook, type SubmitInstrument, tapSubmits, type UploadTally } from "../submit-instrument";
 export { type Ablation, ablateKinds, type KindCost, type KindCostOptions, type KindCostReport, kindsIn, type Sampled, withoutKind } from "../gpu-ablation";

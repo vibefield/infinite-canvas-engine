@@ -33,8 +33,8 @@ export { type DeskPalette, deskPalette, deskTheme, PRESENCE_INKS } from "./palet
 // the kinds as the ground registers them — their programs, their world halves, their specs, `DESK_KINDS` (kinds.ts)
 export * from "./kinds";
 // the kinds' DOM halves — what their objects' `host` declarations make (K4b: the desk layer builds what the objects declare)
-export { createNoteEditor, EDITOR_ATTR, KEYBOARD_CLAIM_ATTR, type NoteEditorOptions } from "./paper/host/editor";
+export { createNoteBody, NOTE_BODY, type NoteBody, type NoteBodyOptions } from "./paper/host/body";
 export { printRaster, type PrintRasterOptions } from "./calendar/host/print";
-export { type CalendarInput, type CalendarInputOptions, caretIndexAt, createCalendarInput } from "./calendar/host/input";
+export { CALENDAR_LINE, type CalendarInput, type CalendarInputOptions, caretIndexAt, createCalendarInput } from "./calendar/host/input";
 // the kinds' shader text — each kind's WGSL from this package, the kit's from the desk (per-package generation, K4b)
 export { shaderText } from "./shaders";

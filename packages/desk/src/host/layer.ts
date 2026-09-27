@@ -21,12 +21,12 @@
 //
 // The TEXT (D2c, design-015 §6.1): each object kind's own state on this desk (`kind.local(host)` —
 // the note's WRITING, over the root paper pass's pages and the app's text raster, `opts.text`) is made
-// here and threaded through the builder; the ONE focused editor — the note's DOM half, which the note DECLARES (K4b,
-// `defineObject({ host })`: the layer builds what the objects declare and names no kind) — sits in the
-// container and writes through the note's typing session into `opts.docs`. The
+// here and threaded through the builder; the ONE focused editor — the DESK's since K8a (host/editor.ts), made whatever kinds
+// are registered — sits in the container and is LEASED by the text parts the objects declare (`defineObject({ host: { text } })`:
+// the note's body writes through the note's typing session into `opts.docs`; the layer names no kind). The
 // drawing reflector is wrapped, not changed: before it, every kind's local is ticked on ONE clock
 // (`performance.now()` — the rAF clock lags wall time headless) and may wake an `ink` frame (a wipe,
-// a blink, a face landing); after it, the editor follows the drawn note. A committed raster is
+// a blink, a face landing); after it, the editor follows the part it is lent to. A committed raster is
 // pinned through the writing, so a note that leaves the desk gives its rect back (the page-slot leak).
 //
 // And the desk's chrome (D4a): the ground is made with the marks pass, the builder reads the interaction
@@ -63,7 +63,8 @@ import { createServices, type Lent, service } from "../kit/services";
 import { decodePicture } from "./picture";
 import { NO_DOCS, type TypingDocs } from "../docs";
 import { TEXT_RASTER, type TextRaster } from "../kit/raster";
-import type { NoteEditor } from "../kit/editor";
+import type { DeskEditor, TextPart } from "../kit/editor";
+import { createDeskEditor } from "./editor";
 import type { InsideView } from "../kit/inside";
 import { shaderText } from "../shaders";
 import { instrumentMemory, type MemoryLedger } from "../gpu-memory";
@@ -359,8 +360,8 @@ export interface DeskLayerHandle {
   readonly builder: DeskBuilder;
   /** A kind's own state on this desk by kind name (D3w: a print's body, a book's or a pad's pinned pose) — `undefined` when it keeps none. */
   local(name: string): KindLocal | undefined;
-  /** The one focused editor (D2c) — `undefined` when no note kind is registered. */
-  editor(): NoteEditor | undefined;
+  /** The desk's ONE focused editor (D2c; the desk's since K8a — made at the mount whatever kinds are registered, leased by every kind that takes text). */
+  editor(): DeskEditor;
   /**
    * A kind's DRIVER on this desk by object type (D-D7-A.3) — what the object declared in `defineObject` (the note's typing, the
    * board's pen, the notebook's hand, the print's carry, the calendar's writing + hand + DOM half), or undefined. A rig casts to
@@ -533,20 +534,23 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (d !== undefined) drivers.set(t.type, d);
     }
     const driver = (type: string): KindDriver | undefined => drivers.get(type);
+    // THE ONE FOCUSED EDITOR (D2c; the DESK's since K8a — host/editor.ts): made here whatever kinds are registered, and LEASED by
+    // every kind that takes text; a tap is routed to the text parts the objects declare, in registration order
+    const textParts: TextPart[] = [];
+    const editor = createDeskEditor({ container: host.container, world, parts: () => textParts, wake: () => compose.wake("ink"), ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}) });
     // THE OBJECTS' DOM HALVES (K4b, `defineObject({ host })`), in screen space: each object declared its own and the host builds them
-    // from what it lends, never naming a kind — the ONE focused editor first (the note's, D2c: the first object that makes one owns
-    // it), then every half that mounts, the editor lent to it (the calendar's days and pen borrow it, D3t-c)
+    // from what it lends, never naming a kind — their TEXT PARTS first (K8a: the note's body, the calendar's day line), then every
+    // half that mounts (the calendar's days and pen lease the editor, D3t-c)
     const domHost = (t: WidgetType): ObjectDomHost => {
       const k = objectKindOf(t);
       return {
-        container: host.container, world, docs, use: services.use, object: t, driver: drivers.get(t.type), look: () => (k === undefined ? undefined : compose.look(k.name)),
+        container: host.container, world, docs, use: services.use, editor, object: t, driver: drivers.get(t.type), look: () => (k === undefined ? undefined : compose.look(k.name)),
         geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y),
         wake: () => compose.wake("ink"), ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
       };
     };
-    let editor: NoteEditor | undefined;
-    for (const t of types) if (editor === undefined) editor = hostOf(t)?.editor?.(domHost(t));
-    for (const t of types) hostOf(t)?.mount?.({ ...domHost(t), editor });
+    for (const t of types) textParts.push(...(hostOf(t)?.text?.(domHost(t)) ?? []));
+    for (const t of types) hostOf(t)?.mount?.(domHost(t));
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
     /** A driver had something to follow at the last ask (K7a): the desk is due every frame until each is idle again. */
@@ -590,7 +594,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         compose.restless(restless);
         moving = want;   // D3w: a kind's own motion (a print in the air) keeps the desk from reading quiet between its frames
         inner.flush(w);
-        editor?.follow();
+        editor.follow();
         budget.trim(keeps);   // over the cap: the least recently used off-screen rasters go (O(1) when under it)
         const drew = compose.redraws() !== drawn;
         // a frame drawn: what is drawn moved, and a raster no longer drawn may be evicted — the asks held for room try again (K6b)
@@ -843,7 +847,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         stopText?.();
         listeners.clear();
         for (const d of drivers.values()) d.dispose?.();   // the calendar's disposes its DOM half
-        editor?.dispose();
+        editor.dispose();
         for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);
         if (framePick !== undefined && framePick.current === pick) framePick.current = null;

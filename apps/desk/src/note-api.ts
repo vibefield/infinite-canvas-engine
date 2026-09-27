@@ -50,9 +50,10 @@ export function noteApi(engine: CanvasEngine, handle: DeskLayerHandle): NoteApi 
   const editor = () => handle.editor();
   return {
     fontReady: (face = "caveat") => deskText().ready(face),
-    focus: (id, index) => editor()?.focus(E(id), index) ?? false,
+    // the note's body (K8a — its text part, on its driver) puts the desk's ONE editor on a note; the blur is the editor's own
+    focus: (id, index) => paper()?.body?.focus(E(id), index) ?? false,
     blur: () => editor()?.blur(),
-    editing: () => (editor()?.editing() as number | undefined) ?? -1,
+    editing: () => (paper()?.body?.editing() as number | undefined) ?? -1,
     claimed() { const out: number[] = []; world.query(claimedQ).each((b) => { for (const r of b) out.push(b.entity(r) as number); }); return out; },
     type(text) {
       const el = editor()?.element;

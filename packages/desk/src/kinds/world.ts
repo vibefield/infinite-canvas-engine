@@ -25,7 +25,7 @@ import type { TypingDocs } from "../docs";
 import type { RasterBudget } from "../engine/budget";
 import type { RasterQueue } from "../engine/rasters";
 import type { KindPass, KindProgram, StratumName } from "../kind";
-import type { NoteEditor } from "../kit/editor";
+import type { DeskEditor, TextPart } from "../kit/editor";
 import type { ChildShape, InsideView } from "../kit/inside";
 import type { Lamp } from "../kit/light";
 import type { Lent, ServiceKey, Services } from "../kit/services";
@@ -376,15 +376,16 @@ export interface KindDriver {
  * - `lend`, before any kind's local: SERVICES only a browser can make, each under its key (K8a, kit/services.ts — the desk
  *   calendar lends `PRINT_RASTER`, in the host's hand, none without a text raster), handed what is lent so far (the host's, then
  *   the objects' before it); any kind's world half `use`s them (`KindHost.use`), a DOM half too (`ObjectDomHost.use`);
- * - `editor`, once the drivers are made: the desk's ONE focused editor (the note's); the first object that makes one owns it;
- * - `mount`, after that: a screen-space half, lent the editor if one was made (the desk calendar's days and pen borrow it). A
+ * - `text`, once the drivers are made: the object's TEXT PARTS (K8a, kit/editor.ts `TextPart`) — the parts of its objects that
+ *   LEASE the desk's ONE editor: a part with a `tap` the desk routes every tap to (the note's body), a part without one its own
+ *   half leases at event time (the desk calendar's day line). The editor is the DESK's (desk/host/editor.ts): no kind makes it;
+ * - `mount`, after that: a screen-space half, handed the editor like every half (the desk calendar's days and pen lease it). A
  *   mounted half is ended by what it joins — the calendar's by the calendar's driver.
- * K8a opened `lend` into the service registry (kit/services.ts); the editor's lease is next.
  */
 export interface ObjectHost {
   readonly lend?: (host: Services) => readonly Lent[];
-  readonly editor?: (host: ObjectDomHost) => NoteEditor | undefined;
-  readonly mount?: (host: ObjectDomHost & { readonly editor: NoteEditor | undefined }) => void;
+  readonly text?: (host: ObjectDomHost) => readonly TextPart[] | undefined;
+  readonly mount?: (host: ObjectDomHost) => void;
 }
 
 /**
@@ -399,6 +400,8 @@ export interface ObjectDomHost {
   readonly docs: TypingDocs;
   /** The services lent on this desk (K8a — `KindHost.use`'s registry): a DOM half uses them by key as a world half does. */
   readonly use: Services["use"];
+  /** The desk's ONE focused editor (K8a — the desk makes it; every kind leases it: kit/editor.ts `EditorLease`). */
+  readonly editor: DeskEditor;
   /** The object the half was declared on — its compiled widget type (its props' groups). */
   readonly object: WidgetType;
   /** The object's own driver (`defineObject({ drivers })`), if it declared one. */

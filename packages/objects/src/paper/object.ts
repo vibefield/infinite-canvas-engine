@@ -14,7 +14,7 @@ import type { Writing } from "./writing";
 import { PAPER } from "./theme";
 import { PENS } from "@ice/desk/kit";
 import { createNoteTyping, type NoteTyping } from "./typing";
-import { createNoteEditor } from "./host/editor";
+import { createNoteBody, type NoteBody } from "./host/body";
 
 // the pens are the HAND's (kit/text.ts since K4a — the desk calendar writes with them too); the note keeps its door
 export { PENS, type PenName } from "@ice/desk/kit";
@@ -43,22 +43,25 @@ export const Note = defineObject({
   tray: { label: "Note", category: "paper", order: 0, props: { text: "hello" }, local: true, hang: { w: 120, h: 120, accessory: "hook", pegs: [[-1, -0.5], [1, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
   provides: [NOTE_TYPE],
-  // TYPING IS A GESTURE (design-015 §6.1; D2c): the note's driver is its typing session — the world half the ONE focused editor
-  // (host/editor.ts) drives; it follows nothing on its own (D-D7-A.3)
+  // TYPING IS A GESTURE (design-015 §6.1; D2c): the note's driver is its typing session — the world half its body's lease on the
+  // desk's ONE editor drives (host/body.ts); it follows nothing on its own (D-D7-A.3)
   drivers: (h): PaperDriver => ({
     typing: createNoteTyping({ world: h.world, docs: h.docs, ink: NOTE_INK, props: NOTE_PROPS }),
     writing: () => h.local as Writing | undefined,
     isNote: h.isKind,
+    body: undefined,
     follow: () => {},
     idle: () => true,
   }),
-  // its DOM HALF (K4b — declared, never found by type): the ONE focused editor, the platform's textarea in screen space over the
-  // note being written (host/editor.ts), made by the host on the note's own driver
+  // its DOM HALF (K4b — declared, never found by type): its BODY, the note's TEXT PART (K8a, host/body.ts) — the desk routes a tap on
+  // a note to it and it leases the desk's ONE editor, as any kind's part does; the body joins the note's own driver (`body`)
   host: {
-    editor: (h) => createNoteEditor({
-      container: h.container, world: h.world, driver: h.driver as PaperDriver | undefined, geometryOf: h.geometryOf, wake: h.wake,
-      ...(h.idleMs !== undefined ? { idleMs: h.idleMs } : {}),
-    }),
+    text: (h) => {
+      const driver = h.driver as PaperDriver | undefined;
+      const body = createNoteBody({ editor: h.editor, world: h.world, driver, geometryOf: h.geometryOf });
+      if (driver !== undefined) driver.body = body;
+      return body === undefined ? [] : [body];
+    },
   },
 });
 
@@ -67,11 +70,13 @@ export const NOTE_INK = groupOf("ink") as Component<{ text: string; seeds: strin
 /** The note's other props (`desk.note:props` — `{ pen, paper, seed }`). */
 export const NOTE_PROPS = groupOf("props") as Component<{ pen: string; paper: string; seed: number }>;
 
-/** The note's driver (`driversOf(Note)`): its typing session, its writing local and its membership — what the editor asks of it. */
+/** The note's driver (`driversOf(Note)`): its typing session, its writing local and its membership — what its body asks of it. */
 export interface PaperDriver extends KindDriver {
   readonly typing: NoteTyping;
   readonly writing: () => Writing | undefined;
   readonly isNote: (e: Entity) => boolean;
+  /** Its BODY (K8a — the note's text part, host/body.ts), once the host has made it: the doors that put the editor on a note. */
+  body: NoteBody | undefined;
 }
 
 function groupOf(name: string): Component {

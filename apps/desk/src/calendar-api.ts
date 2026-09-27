@@ -6,7 +6,7 @@
 import { type CanvasEngine, ChildOf, defineQuery, type Entity, guardedTransaction, LocalPointer, Pointer, PointerPart, TouchesExact } from "@ice/core";
 import { type CalendarGeometry, type Pads, sheetDayBox, sheetOnScreen } from "@ice/objects";
 import type { DeskLayerHandle } from "@ice/desk";
-import { addEvent, CALENDAR_TYPE, type CalendarDriver, CalendarEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/objects";
+import { addEvent, CALENDAR_LINE, CALENDAR_TYPE, type CalendarDriver, CalendarEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/objects";
 
 export interface CalendarApi {
   /** Write an entry on pad `pad` — ONE undoable transaction; its entity id. */
@@ -124,7 +124,8 @@ export function calendarApi(engine: CanvasEngine, handle: DeskLayerHandle): Cale
       const el = ed?.element;
       if (el === undefined || ed === undefined) return { lent: false, focused: false, value: "", rect: null };
       const rc = el.hidden ? null : el.getBoundingClientRect();
-      return { lent: ed.lease() !== undefined, focused: document.activeElement === el, value: el.value, rect: rc === null ? null : { x: rc.x, y: rc.y, w: rc.width, h: rc.height } };
+      // lent to the CALENDAR — its day line's lease (K8a: the note's body leases the same editor)
+      return { lent: ed.lease()?.part === CALENDAR_LINE, focused: document.activeElement === el, value: el.value, rect: rc === null ? null : { x: rc.x, y: rc.y, w: rc.width, h: rc.height } };
     },
     readSheet(pad, month, level) {
       const r = pads()?.readSheet(pad as Entity, monthOf(month), level);

@@ -207,12 +207,13 @@ describe("the kinds' drivers are DECLARED, never wired by name (D7 #5, D-D7-A.3)
     expect(driversOf(undefined)).toBeUndefined();
   });
 
-  it("…and so are their DOM halves (K4b): the note declares the ONE editor, the calendar its print raster and its days and pen; the rest none", () => {
-    expect(hostOf(Note)?.editor).toBeTypeOf("function");
+  it("…and so are their DOM halves (K4b; K8a): the note its body (a text part), the calendar its print raster, its day line and its days and pen; the rest none", () => {
+    expect(hostOf(Note)?.text).toBeTypeOf("function");
     expect(hostOf(Note)?.mount).toBeUndefined();
+    expect(hostOf(Note)?.lend).toBeUndefined();
     expect(hostOf(Calendar)?.lend).toBeTypeOf("function");
     expect(hostOf(Calendar)?.mount).toBeTypeOf("function");
-    expect(hostOf(Calendar)?.editor).toBeUndefined();
+    expect(hostOf(Calendar)?.text?.({} as never)?.map((p) => p.part)).toEqual(["calendar.line"]);
     for (const t of [MiniMat, Board, Notebook, Photo]) expect(hostOf(t), t.type).toBeUndefined();
     expect(hostOf(undefined)).toBeUndefined();
   });
