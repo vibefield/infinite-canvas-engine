@@ -22,7 +22,7 @@ import { installPictureDrop } from "./paste";
 import { createDeskEngine, deskRoom, joinDeskRoom } from "./desk";
 import { disposeOnLeave } from "./lifetime";
 import { type DevPanel, installDevPanel } from "./panel/panel";
-import { defaultParams } from "./panel/params";
+import { DESK_GRID, defaultParams } from "./panel/params";
 import { deskText } from "./faces";
 import { productPlates } from "./fixtures";
 import { makeGlyphAtlas } from "./glyphs";
@@ -80,8 +80,9 @@ export function App(): ReactElement {
 
   // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
   const layer = useMemo<LayerFactory>(() => {
-    // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion });
+    // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into; K1: the product's
+    // grid — the rulers printed on the root (the engine's default leaves them off; a host prints them, RULER.md §5)
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
   }, [engine, params]);
 

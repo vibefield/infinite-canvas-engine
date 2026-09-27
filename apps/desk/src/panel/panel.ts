@@ -124,14 +124,36 @@ export interface DevPanelHost {
   readonly storageKey: string | undefined;
 }
 
+/** Where the params live between visits: the browser's storage, or a unit's double. */
+export interface ParamStore {
+  read(key: string): unknown;
+  write(key: string, value: string): void;
+  clear(key: string): void;
+}
+
 /** The storage, wrapped: a private window, blocked site data or a preview throws — the panel works without it. */
-const store = {
+const browserStore: ParamStore = {
   read(key: string): unknown { try { const s = globalThis.localStorage?.getItem(key); return s ? JSON.parse(s) : null; } catch { return null; } },
   write(key: string, value: string): void { try { globalThis.localStorage?.setItem(key, value); } catch { /* per-viewer convenience only */ } },
   clear(key: string): void { try { globalThis.localStorage?.removeItem(key); } catch { /* per-viewer convenience only */ } },
 };
 
-export function installDevPanel(host: DevPanelHost): DevPanel {
+/** The params bound to the desk: what the panel's rows, and the app's keys, change them through. */
+export interface DeskParamsBinding {
+  /** A change made to the params: the desk takes it; the browser keeps it — unless they ARE the product again (a reset), when nothing is kept. */
+  changed(): void;
+  /** Whether the params are no longer the product's (the theme then draws with the panel's colours and night). */
+  readonly touched: boolean;
+}
+
+/**
+ * The params BOUND to the desk (DOM-free: the units drive it in Node): every change projected through the layer's handle, the theme
+ * control and core, and kept in the browser. At install a saved desk is restored over the live params (the springs object the
+ * layer holds stays that object) and then everything is APPLIED, saved or not — so the desk draws what the panel says from its
+ * first frame, never the mount's grid by coincidence (K1: before, only a restore or a change projected), and a snapshot a
+ * version bump dropped is cleared, not kept.
+ */
+export function bindDeskParams(host: DevPanelHost, store: ParamStore = browserStore): DeskParamsBinding {
   const { engine, handle, params: p, theme, storageKey } = host;
   const { world } = engine;
   let touched = false;
@@ -146,18 +168,24 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
     theme.apply();
   };
   const product = snapshotParams(defaultParams());
-  /** A change: the desk takes it; the browser keeps it — unless the params ARE the product again (a reset), when nothing is kept. */
   const changed = (): void => {
     const snap = snapshotParams(p);
     touched = snap !== product;
     project();
     if (storageKey !== undefined) { if (touched) store.write(storageKey, snap); else store.clear(storageKey); }
   };
-  // a saved desk, restored over the live params (the springs object the layer holds stays the same object)
   if (storageKey !== undefined) {
     const saved = store.read(storageKey);
-    if (saved !== null) { restoreParams(saved, p); touched = true; project(); }
+    if (saved !== null) restoreParams(saved, p);
   }
+  changed();
+  return { changed, get touched() { return touched; } };
+}
+
+export function installDevPanel(host: DevPanelHost): DevPanel {
+  const { engine, params: p, theme, storageKey } = host;
+  const { world } = engine;
+  const bound = bindDeskParams(host);
 
   const range = (label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, unit?: string): Row => ({ kind: "range", label, min, max, step, get, set, ...(unit !== undefined ? { unit } : {}) });
   const miniMats = (): Entity[] => selectedEntities(world).filter((e) => world.get(e, PrefabId)?.id === MINIMAT_TYPE);
@@ -259,12 +287,12 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
   element.setAttribute("aria-label", "the desk's dev panel");
   element.hidden = true;
   document.body.appendChild(element);
-  const mounted = mountPanel(element, sections, changed);
+  const mounted = mountPanel(element, sections, bound.changed);
   return {
     element,
     params: p,
     get open() { return !element.hidden; },
     toggle() { element.hidden = !element.hidden; if (!element.hidden) mounted.refresh(); },
-    themeOf(_name, base) { lastBase = base; return touched ? themeWith(base, p) : base; },
+    themeOf(_name, base) { lastBase = base; return bound.touched ? themeWith(base, p) : base; },
   };
 }

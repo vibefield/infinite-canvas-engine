@@ -8,11 +8,18 @@
 // (design-006: its response is the one live number).
 
 import { NAV_TRANSITION_DEFAULTS, ZOOM_THROUGH_DEFAULTS } from "@ice/core";
-import { DEFAULT_MAT_CONFIG, type MatConfig, type ObjectSprings, type PlateName, type RulerConfig, SPRINGS } from "@ice/desk";
+import { DEFAULT_MAT_CONFIG, type GridConfig, type MatConfig, type ObjectSprings, type PlateName, type RulerConfig, SPRINGS } from "@ice/desk";
 import { dayLuminance, EIGENGRAU, GRID, type GroundTheme, type MatLight, MINIMAT, NIGHT, nightLight, type RGB, type ThemeName } from "@ice/desk";
 
 /** Deep-mutable: the panel writes into what the engine only reads. */
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly number[] ? T[K] : T[K] extends object ? Mutable<T[K]> : T[K] };
+
+/**
+ * The PRODUCT's grid (design-016 §3, K1): the engine's, with the rulers PRINTED. The engine's own default leaves them off — a host
+ * prints them on the root slot (RULER.md §5) — and this desk is that host: `App.tsx` mounts its layer with this, and every default
+ * below reads it, so "reset to product" is it.
+ */
+export const DESK_GRID: GridConfig = { fadeIn: GRID.fadeIn, mat: { ...DEFAULT_MAT_CONFIG, ruler: { ...DEFAULT_MAT_CONFIG.ruler, on: true } } };
 
 /** The cutting mat as the panel edits it: the line law, the grain, the two material colours, the gobo, the world→desk scale. */
 export interface MatTweaks {
@@ -25,7 +32,7 @@ export interface MatTweaks {
   metresPerUnit: number;
 }
 export function defaultMatTweaks(): MatTweaks {
-  const c = DEFAULT_MAT_CONFIG;
+  const c = DESK_GRID.mat;
   return {
     thin: c.line.thin, thick: c.line.thick, alphaThin: c.line.alphaThin, alphaThick: c.line.alphaThick,
     grain: c.grain, ground: [...c.ground] as RGB, ink: [...c.ink] as RGB,
@@ -34,14 +41,14 @@ export function defaultMatTweaks(): MatTweaks {
   };
 }
 
-/** The RULERS as the panel edits them (RULER.md): whether they print, and the law's numbers. Off: the product's desk prints none. */
+/** The RULERS as the panel edits them (RULER.md): whether they print, and the law's numbers. On: the product's desk prints them (K1). */
 export interface RulerTweaks { on: boolean; band: number; margin: number; tick: [number, number, number]; line: number; label: number; tickAlpha: number; frameAlpha: number }
 export function defaultRulerTweaks(): RulerTweaks {
-  const r = DEFAULT_MAT_CONFIG.ruler;
+  const r = DESK_GRID.mat.ruler;
   return { on: r.on, band: r.band, margin: r.margin, tick: [r.tick[0], r.tick[1], r.tick[2]], line: r.line, label: r.alpha.label, tickAlpha: r.alpha.tick, frameAlpha: r.alpha.frame };
 }
 export const rulerConfigOf = (t: RulerTweaks): RulerConfig => ({
-  ...DEFAULT_MAT_CONFIG.ruler, on: t.on, band: t.band, margin: t.margin, tick: [t.tick[0], t.tick[1], t.tick[2]], line: t.line,
+  ...DESK_GRID.mat.ruler, on: t.on, band: t.band, margin: t.margin, tick: [t.tick[0], t.tick[1], t.tick[2]], line: t.line,
   alpha: { frame: t.frameAlpha, tick: t.tickAlpha, label: t.label },
 });
 /** The mat's config with its rulers — the root's (a mini mat's inside never prints them). */
@@ -49,7 +56,7 @@ export const matConfigOf = (t: MatTweaks, ruler: RulerTweaks): MatConfig => ({
   line: { thin: t.thin, thick: t.thick, alphaThin: t.alphaThin, alphaThick: t.alphaThick },
   grain: t.grain, ground: t.ground, ink: t.ink,
   gobo: { opacity: t.opacity, blurTexels: t.blurTexels, shadeMix: t.shadeMix, darkFloor: t.darkFloor, saturate: t.saturate, sharp: t.sharp, soft: t.soft, plate: t.plate },
-  plane: { ...DEFAULT_MAT_CONFIG.plane, metresPerUnit: t.metresPerUnit },
+  plane: { ...DESK_GRID.mat.plane, metresPerUnit: t.metresPerUnit },
   ruler: rulerConfigOf(ruler),
 });
 
@@ -82,8 +89,11 @@ export type ColorRole = "canvasBg" | "select";
 export const COLOR_ROLES: readonly ColorRole[] = ["canvasBg", "select"];
 export type ColorOverrides = Record<ThemeName, Partial<Record<ColorRole, RGB>>>;
 
-/** Bumped when a saved snapshot's meaning changes; an old snapshot is dropped, not merged. */
-export const PARAMS_VERSION = 1;
+/**
+ * Bumped when a saved snapshot's meaning changes; an old snapshot is dropped, not merged. 2 (K1): the rulers print by default — a
+ * snapshot saved under 1 carries that version's default "off", so a browser that kept one would otherwise boot with them off.
+ */
+export const PARAMS_VERSION = 2;
 
 export interface DeskParams {
   version: number;
@@ -102,7 +112,7 @@ export interface DeskParams {
 export function defaultParams(): DeskParams {
   return {
     version: PARAMS_VERSION,
-    grid: { fadeIn: [GRID.fadeIn[0], GRID.fadeIn[1]] },
+    grid: { fadeIn: [DESK_GRID.fadeIn[0], DESK_GRID.fadeIn[1]] },
     mat: defaultMatTweaks(),
     ruler: defaultRulerTweaks(),
     night: defaultNightTweaks(),
