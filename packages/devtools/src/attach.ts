@@ -20,7 +20,21 @@
  *                   `lastFrame()` telemetry (one frame late by construction:
  *                   publish runs before this frame's reflect).
  *
- * By default all three tools mount into ONE draggable dock (dock.ts —
+ *   GPU SLOT        (design-016 K2) the WebGPU desk's frames — the GPU span,
+ *                   its passes, draws by kind, pipelines, bind groups,
+ *                   uploads, memory — pushed by the host through `gpuFrame`
+ *                   as the STRUCTURAL MIRROR `GpuPanelFrame` (gpu-panel.ts:
+ *                   devtools cannot import desk; the old GlPanelStats way),
+ *                   mounted on the first push; each push also reports the
+ *                   host LANES `desk flush`, `encode` and `gpu` beside
+ *                   strata's per-system lanes. They are readings side by
+ *                   side, not a partition: `desk flush` runs inside `reflect`,
+ *                   `encode` inside `desk flush`, and `gpu` on the GPU, in
+ *                   parallel with the next frame's CPU — and a frame's GPU
+ *                   span lands a frame or two late (its timestamps are read
+ *                   back asynchronously), in the frame the report arrives.
+ *
+ * By default all the tools mount into ONE draggable dock (dock.ts —
  * 2026-07-13, James: "make the 3 tools into one draggable panel"); pass
  * `dock: false` for the classic scattered corners.
  *
@@ -42,6 +56,7 @@ import {
   type ProfilerOptions,
 } from "@vibecook/strata-ecs/tools";
 import { createDock, type Dock, type DockOptions, type DockSlotId } from "./dock";
+import { createGpuPanel, type GpuPanel, type GpuPanelFrame, type GpuPanelOptions, type GpuPanelStats } from "./gpu-panel";
 import {
   CursorVisual,
   Drag,
@@ -78,6 +93,8 @@ export interface DevtoolsOpts {
   readonly profiler?: boolean | Pick<ProfilerOptions, "budgetMs" | "windowSize" | "corner" | "expanded" | "lanes">;
   /** Collab demos: the presence session whose store feeds the ephemeral tab. */
   readonly presence?: () => PresenceSession | null | undefined;
+  /** The GPU slot (K2): `false` to omit, or its options (budget, expanded, the host's capture). Mounts lazily on the first `gpuFrame` push. */
+  readonly gpu?: boolean | Pick<GpuPanelOptions, "budgetMs" | "expanded" | "capture" | "captureFrames">;
   /** Override entity labeling (default: the engine describe below). */
   readonly describe?: DescribeFn;
 }
@@ -87,6 +104,11 @@ export interface DevtoolsHandle {
   readonly profiler: ProfilerHandle | null;
   /** Host-cost lane passthrough (paint, decode…); no-op when the profiler is off. */
   lane(name: string, ms: number): void;
+  /**
+   * Feed one GPU frame (K2 — wire the desk's GPU profiler here: `profiler.subscribe((r) => devtools.gpuFrame(r, profiler.stats()))`).
+   * Mounts the GPU slot on the first push and reports the host lanes `desk flush` / `encode` / `gpu`. No-op when `gpu: false`.
+   */
+  gpuFrame(frame: GpuPanelFrame, stats?: GpuPanelStats): void;
   /** Tear all panels + the telemetry hook down. Idempotent. */
   detach(): void;
 }
@@ -238,11 +260,26 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
   }
 
   let detached = false;
+  let gpu: GpuPanel | null = null;
   return {
     observer,
     profiler,
     lane(name, ms) {
       profiler?.lane(name, ms);
+    },
+    gpuFrame(frame, stats) {
+      if (detached || opts.gpu === false) return;
+      if (gpu === null) {
+        gpu = createGpuPanel({
+          ...(typeof opts.gpu === "object" ? opts.gpu : {}),
+          ...mountIn("gpu"),
+        });
+      }
+      gpu.push(frame, stats);
+      // the host lanes beside strata's per-system ones (side by side, not a partition — the header)
+      if (frame.cpu.flush !== null) profiler?.lane("desk flush", frame.cpu.flush);
+      profiler?.lane("encode", frame.cpu.encode);
+      if (frame.span !== null) profiler?.lane("gpu", frame.span);
     },
     detach() {
       if (detached) return;
@@ -250,6 +287,8 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
       removePublish?.();
       observer?.dispose();
       profiler?.dispose();
+      gpu?.dispose();
+      gpu = null;
       dock?.dispose();
       dock = null;
     },

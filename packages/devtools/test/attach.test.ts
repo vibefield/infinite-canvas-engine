@@ -129,20 +129,21 @@ describe("the durable inspection seam (observer durable tab feed)", () => {
   });
 });
 
-describe("the dock: one draggable panel for the tools (2026-07-13; two tools since design-015 D5b)", () => {
+describe("the dock: one draggable panel for the tools (2026-07-13; two tools since design-015 D5b, the GPU slot since design-016 K2)", () => {
     beforeEach(() => {
       localStorage.clear();
     });
 
-    it("hosts both tools in fixed slot order (the strip first, the observer last)", () => {
+    it("hosts the tools in fixed slot order (the strip first, the GPU's frames next — empty until pushed — the observer last)", () => {
       const ce = createCanvasEngine();
       const handle = attachDevtools(ce);
 
       expect(document.querySelectorAll(".ice-dock").length).toBe(1);
       const slots = Array.from(document.querySelectorAll<HTMLElement>(".ice-dock-slot"));
-      expect(slots.map((s) => s.dataset.slot)).toEqual(["profiler", "observer"]);
+      expect(slots.map((s) => s.dataset.slot)).toEqual(["profiler", "gpu", "observer"]);
       expect(slots[0]?.querySelector(".strata-prof")).not.toBeNull();
-      expect(slots[1]?.querySelector(".strata-obs")).not.toBeNull();
+      expect(slots[1]?.childElementCount).toBe(0);   // hidden by `.ice-dock-slot:empty` until a GPU frame arrives
+      expect(slots[2]?.querySelector(".strata-obs")).not.toBeNull();
 
       handle.detach();
       expect(document.querySelector(".ice-dock")).toBeNull();
