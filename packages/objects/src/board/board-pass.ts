@@ -5,8 +5,17 @@
 // pipelines, the samplers and the RASTERS — each board's ink (rgba8, premultiplied LINEAR
 // colour with its coverage, a full mip chain so a board seen small reads a filtered copy), the
 // stroke being laid (r8, max-blended stamps) and the wet layer (r8, fading). Four programs:
-// the board on the desk (one quad per board, its raster in group 1), the STAMP, the INK
-// (a finished stroke laid into the raster; the wet marked and dried) and the MIP.
+// the board on the desk (a run of boards ONE instanced draw — K6a, K-L4: group 1 is shared, see
+// below), the STAMP, the INK (a finished stroke laid into the raster; the wet marked and dried) and
+// the MIP.
+//
+// RESIDENCY (K6a, design-016 §6): every board keeps a FAR-LOD THUMBNAIL — the tail of its ink's mip
+// chain from the first level that fits BOARD_THUMB², a layer of one shared array (`board/thumbnails`,
+// the kit's `LayerArray`), cut again whenever its ink changes — and, while it is large on screen, its
+// RASTER at the density its zoom rung asks (`boardRung`, never a fixed 4 texels a unit) bound in one
+// of BOARD_SLOTS pool slots; the board being laid on (or drying) binds its stroke and wet layers in the
+// one LIVE slot. A board's record says where its ink is (`tier`), so every board of a run is an
+// instance of one draw. A raster not bound is a cache the budget may take (its strokes replay it).
 //
 // The raster is a CACHE of the board's history (history.ts): a stroke is laid live as its
 // stamps arrive and committed at the lift; an undo, a redo or a new density REPLAYS the
@@ -16,7 +25,7 @@
 
 import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer, compile, compose, readback } from "@ice/desk/engine";
 import { createRecordStore, type RecordStore, type GroundTheme, MAT_COLORS, type RGB } from "@ice/desk";
-import { type FadeIn, type View, type MatConfig, type MatFrame, type MatPass, type Presentation, DAY_LIGHT, type MatLight, sentBytes, writeChanged } from "@ice/desk/kit";
+import { type FadeIn, type View, type MatConfig, type MatFrame, type MatPass, type Presentation, DAY_LIGHT, LayerArray, type MatLight, sentBytes, tailBase, writeChanged } from "@ice/desk/kit";
 import { BOARD } from "./theme";
 import { rasterSize } from "./board";
 import type { BoardOp } from "./history";
@@ -38,6 +47,21 @@ const BLEND_DRY: GPUBlendState = { color: { srcFactor: "zero", dstFactor: "const
 
 /** Stamps one upload carries — a longer stroke replays in chunks. */
 export const STAMP_CAP = 1 << 16;
+/** The far-LOD thumbnails' layer side, texels (a board's ink chain from its first level that fits: 1 texel a unit for the law's board). */
+export const BOARD_THUMB = 512;
+/** The pool: the rasters one frame binds (the boards larger on screen than their thumbnail serves). */
+export const BOARD_SLOTS = 8;
+/** Density changes (re-rasters) one step asks for — the rest wait a frame, their old raster standing. */
+export const BOARD_RASTERS_A_STEP = 2;
+/**
+ * THE ZOOM RUNG (K6a): the density a board's raster is made at for `zd` device px a world unit (zoom × dpr × the hold's scale) —
+ * two texels a device px as the law's 4 gave at zoom 1 on a 2× screen, a power of two, from 1 (the thumbnail's own) to `max`.
+ */
+export function boardRung(zd: number, max: number = BOARD.ink.density): number {
+  let d = 1;
+  while (d < max && d < 2 * zd) d *= 2;
+  return Math.min(d, max);
+}
 /** How long ink keeps some of its wet after its stroke lands, in `wetSeconds` (the research's six time constants: e⁻⁶ of the wet is left). */
 const WET_HOLD = 6;
 
@@ -57,7 +81,6 @@ interface Raster {
   readonly wetView: GPUTextureView;
   readonly mipDst: readonly GPUTextureView[];
   readonly mipGroups: readonly GPUBindGroup[];
-  readonly group: GPUBindGroup;
   readonly inkGroup: GPUBindGroup;
   /** The stroke being laid: its tool and the stamps not yet sent. */
   tool: Tool | null;
@@ -72,7 +95,20 @@ interface Raster {
 interface BoardShared {
   readonly device: GPUDevice;
   readonly layout0: GPUBindGroupLayout;
+  /** Group 1, the same for every board: the thumbnail array, BOARD_SLOTS rasters' ink, the live board's stroke and wet. */
   readonly layout1: GPUBindGroupLayout;
+  group1: GPUBindGroup;
+  readonly thumbs: LayerArray;
+  /** Each board's thumbnail: its layer, the level of its source's chain the layer starts at, that source's size and density. */
+  readonly thumbOf: Map<number, BoardThumb>;
+  /** The pool: the board each slot binds (null: free), and the live board (its stroke and wet bound). */
+  readonly pool: (number | null)[];
+  live: number | null;
+  /** The boards on screen since the last step and the density each asked (the most). */
+  readonly asked: Map<number, number>;
+  readonly blank: GPUTexture;
+  readonly blankR: GPUTexture;
+  readonly blankArray: GPUTexture;
   readonly pipeline: GPURenderPipeline;
   readonly stampPipeline: GPURenderPipeline;
   readonly stampU: GPUBuffer;
@@ -94,6 +130,21 @@ interface BoardShared {
   slots: number;
 }
 
+/** A board's far-LOD thumbnail: its layer, the level of its source's ink chain the layer starts at, that source's texels and density. */
+interface BoardThumb { readonly layer: number; base: number; size: readonly [number, number]; density: number; tier: number }
+
+/** Group 1 made again: the array (or its stand-in), each pool slot's ink (a blank where free), the live board's stroke and wet. */
+function bindPool(s: BoardShared): void {
+  const ink = s.pool.map((id) => (id === null ? undefined : s.rasters.get(id)));
+  const live = s.live === null ? undefined : s.rasters.get(s.live);
+  s.group1 = bindGroup(s.device, s.layout1, [
+    s.thumbs.view(s.blankArray),
+    ...ink.map((r) => (r === undefined ? s.blank.createView() : r.ink.createView())),
+    live === undefined ? s.blankR.createView() : live.strokeView,
+    live === undefined ? s.blankR.createView() : live.wetView,
+  ], "board/pool");
+}
+
 export class BoardPass {
   readonly name = "board/whiteboards";
   private readonly knobs = BoardUniforms.alloc(1);
@@ -109,8 +160,7 @@ export class BoardPass {
   private group!: GPUBindGroup;
   private boundAssets = -1;
   private boundStore = -1;
-  private drawList: GPUBindGroup[] = [];
-  /** Each drawn board's index in the list `prepare` was handed (a board whose raster is missing is skipped) — what `drawRange` counts in. */
+  /** Each drawn board's index in the list `prepare` was handed (a board with no ink to show is skipped) — what `drawRange` counts in. */
   private drawnFrom: number[] = [];
   /** The materials a host projects (lab/theme.ts); black until it says. */
   look: BoardLook = { barrel: [0, 0, 0], felt: [0, 0, 0], wood: [0, 0, 0] };
@@ -127,9 +177,11 @@ export class BoardPass {
     // the pack reads the board's raster afresh (its size, density and wet are the `aux` the change test folds in)
     this.store = createRecordStore<BoardInstance, keyof typeof Board.slots>({
       device, def: Board, capacity: MAX_BOARDS, max: MAX_BOARDS * 64, label: "board/boards",
+      // (with where its ink is — the pool slot, the live slot, the thumbnail's layer and base: the `tier`, K6a)
       pack: (b, _aux, into, slot) => {
         const r = shared.rasters.get(b.id);
-        if (r) into.set(boardValues(b, { size: r.size, density: r.density, wet: r.wetting }), slot);
+        const src = r ?? shared.thumbOf.get(b.id);
+        if (src) into.set(boardValues(b, { size: src.size, density: src.density, wet: r?.wetting === true && shared.live === b.id }, tierOf(shared, b.id)), slot);
         return 0;
       },
     });
@@ -151,10 +203,11 @@ export class BoardPass {
       { binding: 9, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "board/slot");
     const layout1 = bindLayout(device, [
-      { binding: 0, stages: ["fragment"], texture: "float" },
-      { binding: 1, stages: ["fragment"], texture: "float" },
-      { binding: 2, stages: ["fragment"], texture: "float" },
-    ], "board/raster");
+      { binding: 0, stages: ["fragment"], texture: "float", dimension: "2d-array" },   // the far-LOD thumbnails
+      ...Array.from({ length: BOARD_SLOTS }, (_, i) => ({ binding: 1 + i, stages: ["fragment"] as const, texture: "float" as const })),   // the pool's ink
+      { binding: 1 + BOARD_SLOTS, stages: ["fragment"], texture: "float" },   // the live board's stroke
+      { binding: 2 + BOARD_SLOTS, stages: ["fragment"], texture: "float" },   // …and its wet
+    ], "board/pool");
     const stampLayout = bindLayout(device, [
       { binding: 0, stages: ["vertex", "fragment"], buffer: "uniform" },
       { binding: 1, stages: ["vertex", "fragment"], buffer: "read-only-storage" },
@@ -197,7 +250,14 @@ export class BoardPass {
       inkSampler: device.createSampler({ label: "board/ink", ...linear, mipmapFilter: "linear" }),
       linSampler: device.createSampler({ label: "board/linear", ...linear }),
       rasters: new Map(), slots: 0,
+      group1: undefined as unknown as GPUBindGroup,
+      thumbs: new LayerArray(device, { label: "board/thumbnails", format: "rgba8unorm", side: BOARD_THUMB }),
+      thumbOf: new Map(), pool: Array.from({ length: BOARD_SLOTS }, () => null), live: null, asked: new Map(),
+      blank: device.createTexture({ label: "board/pool blank", size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
+      blankR: device.createTexture({ label: "board/pool blank r8", size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
+      blankArray: device.createTexture({ label: "board/thumbnails (none yet)", size: [1, 1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
     };
+    bindPool(shared);
     return new BoardPass(device, shared, mat);
   }
 
@@ -246,7 +306,6 @@ export class BoardPass {
     const wetView = wet.createView();
     const r: Raster = {
       id, size, density, levels, ink, stroke, wet, level0: level(0), strokeView, wetView, mipDst, mipGroups,
-      group: bindGroup(d, s.layout1, [ink.createView(), strokeView, wetView], `board/raster ${id}`),
       inkGroup: bindGroup(d, s.inkLayout, [s.inkU, strokeView], `board/ink ${id}`),
       tool: null, pending: [], wetting: false, wetLeft: 0, dryBy: 1, clearWet: false,
     };
@@ -254,15 +313,87 @@ export class BoardPass {
     const enc = d.createCommandEncoder({ label: "board/new raster" });
     this.clear(enc, r.level0); this.clear(enc, strokeView); this.clear(enc, wetView);
     d.queue.submit([enc.finish()]);
+    if (s.pool.includes(id) || s.live === id) bindPool(s);   // a bound board's new raster: the pool binds it
     return true;
   }
 
-  /** Forget board `id`'s raster. */
+  /** Forget board `id` — its raster, its thumbnail's layer, its slot (it left the desk; a scene's board). */
   release(id: number): void {
-    const r = this.shared.rasters.get(id);
+    this.evict(id);
+    const s = this.shared;
+    const t = s.thumbOf.get(id);
+    if (t !== undefined) { s.thumbs.give(t.layer); s.thumbOf.delete(id); }
+  }
+
+  /**
+   * Let board `id`'s RASTER go and keep its thumbnail (the budget's eviction — the raster is a cache of its strokes, replayed
+   * when it is next wanted): destroyed, its slot freed.
+   */
+  evict(id: number): void {
+    const s = this.shared;
+    const r = s.rasters.get(id);
     if (!r) return;
     r.ink.destroy(); r.stroke.destroy(); r.wet.destroy();
-    this.shared.rasters.delete(id);
+    s.rasters.delete(id);
+    const slot = s.pool.indexOf(id);
+    if (slot >= 0) s.pool[slot] = null;
+    const live = s.live === id;
+    if (live) s.live = null;
+    const t = s.thumbOf.get(id);
+    if (t !== undefined) t.tier += 1;
+    if (slot >= 0 || live) bindPool(s);
+  }
+
+  /** Board `id`'s far-LOD thumbnail cut again from its raster's chain (the ink changed): its layer taken on the first cut. */
+  private cutThumb(r: Raster): void {
+    const s = this.shared;
+    let t = s.thumbOf.get(r.id);
+    if (t === undefined) {
+      const was = s.thumbs.version;
+      const layer = s.thumbs.take();
+      if (layer === null) return;   // the device holds no more layers: the board draws while it has a raster
+      t = { layer, base: 0, size: r.size, density: r.density, tier: 0 };
+      s.thumbOf.set(r.id, t);
+      if (s.thumbs.version !== was) bindPool(s);   // the array grew
+    }
+    t.base = tailBase(r.size[0], r.size[1], BOARD_THUMB);
+    t.size = r.size;
+    t.density = r.density;
+    t.tier += 1;
+    s.thumbs.fill(r.ink, r.levels, t.layer, t.base);
+  }
+
+  /** Is board `id`'s raster bound this frame (a pool slot, or the live one)? The budget keeps what is. */
+  bound(id: number): boolean { return this.shared.pool.includes(id) || this.shared.live === id; }
+
+  /** The thumbnails' array: what it weighs (the budget's `board`/`thumbnails`, always kept). */
+  get thumbnailBytes(): number { return this.shared.thumbs.bytes; }
+
+  /** Has board `id` its far-LOD thumbnail (a layer, cut)? */
+  thumbed(id: number): boolean { return this.shared.thumbOf.has(id); }
+
+  /** Board `id`'s raster density (texels a unit), or null without one. */
+  densityOf(id: number): number | null { return this.shared.rasters.get(id)?.density ?? null; }
+
+  /**
+   * THE FRAME BOUNDARY (the kind's tick, before the next build): the slots of boards no frame asked for since the last step are
+   * freed (their rasters stay, a cache), the live slot of a board no longer laid on or wet; and the boards that asked for more
+   * than their raster holds — largest first, BOARD_RASTERS_A_STEP a step — are returned with the density to remake them at
+   * (the kind replays their strokes into it). Nothing is freed when nothing was drawn since the last step.
+   */
+  step(): { readonly id: number; readonly density: number }[] {
+    const s = this.shared;
+    if (s.asked.size === 0) return [];
+    let moved = false;
+    if (s.live !== null && !liveOf(s.rasters.get(s.live))) { s.live = null; moved = true; }
+    for (let i = 0; i < s.pool.length; i++) {
+      const id = s.pool[i];
+      if (id !== null && id !== undefined && !s.asked.has(id) && s.live !== id) { s.pool[i] = null; moved = true; const t = s.thumbOf.get(id); if (t) t.tier += 1; }
+    }
+    const raise = [...s.asked].filter(([id, want]) => (s.rasters.get(id)?.density ?? 0) < want).sort((a, b) => b[1] - a[1]).slice(0, BOARD_RASTERS_A_STEP).map(([id, density]) => ({ id, density }));
+    s.asked.clear();
+    if (moved) bindPool(s);
+    return raise;
   }
 
   /** The raster's size in texels, or null. */
@@ -360,6 +491,7 @@ export class BoardPass {
     this.composite(enc, r, tool, true);
     this.mips(enc, r);
     this.device.queue.submit([enc.finish()]);
+    this.cutThumb(r);
     r.tool = null;
     if (tool.mode === "ink") { r.wetting = true; r.wetLeft = BOARD.ink.wetSeconds * WET_HOLD; }
   }
@@ -392,6 +524,7 @@ export class BoardPass {
     enc = this.device.createCommandEncoder({ label: "board/replay mips" });
     this.mips(enc, r);
     this.device.queue.submit([enc.finish()]);
+    this.cutThumb(r);
   }
 
   /** Fresh ink dries: every wet raster's wet layer fades by `dt` seconds (sent at the next `prepare`). */
@@ -424,27 +557,46 @@ export class BoardPass {
     this.flush();
     this.dryNow();
     const s = this.shared;
-    const list: GPUBindGroup[] = [];
     const from: number[] = [];
-    // the boards with a raster, in paint order — the store's records (D6); their keys alongside, and each raster's facts as the aux
+    // the boards with ink to show (a raster, or its thumbnail), in paint order — the store's records (D6); their keys alongside,
+    // and each one's facts as the aux (its raster's, and where its ink is bound: a tier move repacks it)
     const drawn: BoardInstance[] = [];
     const drawnKeys: number[] | undefined = keys === undefined ? undefined : [];
     const aux: number[] = [];
     const cap = MAX_BOARDS * 64;
     this.dropped = 0;
+    const zd = view.zoom * view.dpr;
+    const x0 = view.camX;
+    const y0 = view.camY;
+    const x1 = x0 + view.width / view.zoom;
+    const y1 = y0 + view.height / view.zoom;
+    let bind = false;
     for (const [i, b] of instances.entries()) {
       const r = s.rasters.get(b.id);
-      if (!r) continue;
-      if (list.length >= cap) { this.dropped += 1; continue; }
+      const t = s.thumbOf.get(b.id);
+      if (!r && !t) continue;
+      if (drawn.length >= cap) { this.dropped += 1; continue; }
+      // ON SCREEN it asks for the density its size wants (the step raises its raster to it); a frame only ADDS to the pool (the
+      // step frees it between frames): a board on screen with a raster takes a free slot — one in the cull's margin draws its
+      // thumbnail (unseen; a slot it took would be freed at the next step, every frame) — and the one laid on or drying the live slot
+      const q = b.quad;
+      const seen = q.x1 >= x0 && q.x0 <= x1 && q.y1 >= y0 && q.y0 <= y1;
+      if (seen) s.asked.set(b.id, Math.max(s.asked.get(b.id) ?? 0, boardRung(zd * b.geometry.scale)));
+      if (r) {
+        if (seen && !s.pool.includes(b.id)) { const free = s.pool.indexOf(null); if (free >= 0) { s.pool[free] = b.id; bind = true; } }
+        if (s.live === null && (liveOf(r) || b.stroke !== undefined)) { s.live = b.id; bind = true; }
+      }
+      if (t === undefined && !s.pool.includes(b.id)) continue;   // no layer and no slot: nothing to draw it from
       drawn.push(b);
       drawnKeys?.push(keys?.[i] as number);
-      aux.push((r.wetting ? 1 : 0) + 2 * r.density + 64 * r.size[0] + 64 * 8192 * r.size[1]);
-      list.push(r.group);
+      const facts = r === undefined ? 0 : (r.wetting ? 1 : 0) + 2 * r.density + 64 * r.size[0] + 64 * 8192 * r.size[1];
+      const [, , slot, live] = tierOf(s, b.id);
+      aux.push(facts + 5e9 * (2 + slot + 10 * live + 20 * ((t?.tier ?? 0) % 100000)));
       from.push(i);
     }
+    if (bind) bindPool(s);
     this.store.prepare(drawn, drawnKeys, (i) => aux[i] as number);
     this.rebind();   // after: the store's buffers may have grown
-    this.drawList = list;
     this.drawnFrom = from;
     const sh = BOARD.shadow;
     const sf = BOARD.surface;
@@ -473,7 +625,7 @@ export class BoardPass {
       block2: [(BOARD.eraser.angle * Math.PI) / 180, 0, 0, 0],
     });
     writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
-    return list.length;
+    return from.length;
   }
 
   /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
@@ -495,26 +647,31 @@ export class BoardPass {
     if (enc) this.device.queue.submit([enc.finish()]);
   }
 
-  get drawn(): number { return this.drawList.length; }
+  get drawn(): number { return this.drawnFrom.length; }
 
   /** Every board drawn this frame. */
   draw(pass: GPURenderPassEncoder): void { this.drawRange(pass, 0, Number.POSITIVE_INFINITY); }
 
   /**
    * The boards `prepare` was handed at [first, end) — indices into ITS list, as the ground's runs count a
-   * kind's records (a board whose raster is missing draws nothing) — one quad each with its raster bound,
-   * the slot's group bound once before the first. The whole list is `draw`: the same commands it always gave.
+   * kind's records (a board with no ink to show draws nothing) — as ONE instanced draw (K6a, K-L4): the
+   * slot's group and the pool's bound once, each board an instance whose record says where its ink is.
    */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void {
-    let bound = false;
-    for (let i = 0; i < this.drawList.length; i++) {
+    let lo = -1;
+    let hi = -1;
+    for (let i = 0; i < this.drawnFrom.length; i++) {
       const at = this.drawnFrom[i] as number;
       if (at >= end) break;   // ascending: nothing further is in range
       if (at < first) continue;
-      if (!bound) { pass.setPipeline(this.shared.pipeline); pass.setBindGroup(0, this.group); bound = true; }
-      pass.setBindGroup(1, this.drawList[i] as GPUBindGroup);
-      pass.draw(6, 1, 0, i);
+      if (lo < 0) lo = i;
+      hi = i + 1;
     }
+    if (lo < 0) return;
+    pass.setPipeline(this.shared.pipeline);
+    pass.setBindGroup(0, this.group);
+    pass.setBindGroup(1, this.shared.group1);
+    pass.draw(6, hi - lo, 0, lo);
   }
 
   /** This slot's buffers; the rasters and the stamp buffers go with the last slot standing. */
@@ -522,8 +679,21 @@ export class BoardPass {
     this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
-    if (s.slots === 0) { for (const id of [...s.rasters.keys()]) this.release(id); s.stampBuf.destroy(); s.stampU.destroy(); s.inkU.destroy(); }
+    if (s.slots === 0) {
+      for (const id of [...new Set([...s.rasters.keys(), ...s.thumbOf.keys()])]) this.release(id);
+      s.stampBuf.destroy(); s.stampU.destroy(); s.inkU.destroy();
+      s.thumbs.destroy(); s.blank.destroy(); s.blankR.destroy(); s.blankArray.destroy();
+    }
   }
+}
+
+/** A raster in use by the hand: a stroke being laid, stamps waiting, or ink still wet — its stroke and wet layers are read. */
+const liveOf = (r: Raster | undefined): boolean => r !== undefined && (r.wetting || r.tool !== null || r.pending.length > 0);
+
+/** Where board `id`'s ink is this frame: its thumbnail's layer, the level its source's chain starts the layer at, its pool slot (−1: the thumbnail), live (1: its stroke and wet are bound). */
+function tierOf(s: BoardShared, id: number): [number, number, number, number] {
+  const t = s.thumbOf.get(id);
+  return [t?.layer ?? 0, t?.base ?? 0, s.rasters.has(id) ? s.pool.indexOf(id) : -1, s.live === id ? 1 : 0];
 }
 
 function concat(parts: readonly Float32Array[]): Float32Array {

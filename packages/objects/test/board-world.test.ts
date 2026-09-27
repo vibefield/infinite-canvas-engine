@@ -97,6 +97,12 @@ describe("the strokes are DATA CHILDREN; the raster is their cache (D-D5)", () =
       ensure(id: number) { if (this.made.has(id)) return false; this.made.add(id); calls.push(`ensure ${id}`); return true; },
       replay(id: number, ops: readonly BoardOp[]) { replays.push([...ops]); calls.push(`replay ${id} ${ops.length}`); },
       release(id: number) { this.made.delete(id); calls.push(`release ${id}`); },
+      // the residency (K6a): the raster's density (the stub keeps none), the budget's eviction, the step, the pool, the thumbnails
+      densityOf: () => null,
+      evict(id: number) { this.made.delete(id); calls.push(`evict ${id}`); },
+      step: () => [],
+      bound: () => false,
+      thumbnailBytes: 0,
       // the live stroke's door (D3t-a): what the pen lays, lifts, drops; the drying
       wetting: false,
       lay(id: number, _tool: unknown, stamps: Float32Array) { calls.push(`lay ${id} ${stamps.length / 8}`); },

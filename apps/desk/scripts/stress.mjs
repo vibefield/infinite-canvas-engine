@@ -586,6 +586,54 @@ try {
     rows.push(["pictures (20 × 4096²)", `${MB(far.ledger?.total ?? 0)} live · photo ${MB(row(far, "photo"))} · 20 prints = ${g.byKind.photo} draw`, `zoom 4 on one: photo ${MB(row(near, "photo"))}, its detail bound in ${bound === null ? "—" : fmt(bound.ms, 0)} ms · calendar ${MB(row(far, "calendar"))} · notebook ${MB(row(far, "notebook"))} with none on the desk · budget cap ${MB(far.budget.cap)}`, load()]);
   }
 
+  // ── boards (K6a, K-L4): TWENTY whiteboards with strokes, sibling after sibling in a row 700 units apart — a run of boards is ONE
+  //    draw; far, their rasters at their ZOOM RUNG (never the law's fixed 4 texels a unit); walked past at zoom 1 each is raised to
+  //    its rung as it comes on screen, their rasters overrun the budget and the least recently drawn are EVICTED to their
+  //    thumbnails (what the board draws from while it has no raster) — replayed when they are on screen again.
+  if (wantCase("boards")) {
+    const boards = Array.from({ length: 20 }, (_, i) => ({ x: i * 700, y: 0, strokes: scribble(i) }));
+    const camFar = { x: -1000, y: -3000, zoom: 0.08 };
+    await qa(`window.__desk.setScene(${JSON.stringify({ camX: camFar.x, camY: camFar.y, zoom: camFar.zoom, theme: "light", boards })})`, 600000);
+    await settle(30000);
+    const ids = await q(`window.__desk.entities().filter((e) => e.type === "desk.board").map((e) => e.id)`);
+    const res = () => q(`(${JSON.stringify(ids)}).map((e) => window.__desk.handle.local("board").residency(e) ?? null)`);
+    const frames = (n) => qa(`new Promise((r) => { let n = 0; const f = () => { if (++n >= ${n}) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
+    const row = (m, k) => m.ledger?.byLabel?.[k]?.bytes ?? 0;
+    const far = await res();
+    const memFar = await memoryNow();
+    console.log(`\n-- boards · 20 whiteboards in a row, a run · load ${load()} --`);
+    console.log(`  far (zoom 0.08)      ${memoryLine(memFar)} · densities ${far.map((r) => r?.density ?? "—").join(" ")}`);
+    check(ids.length === 20 && far.every((r) => r?.thumb && r.density === 1), `boards: far (zoom 0.08) each raster at its ZOOM RUNG — ${far.filter((r) => r?.density === 1).length} of ${ids.length} at 1 texel a unit, each with its thumbnail; the board row ${MB(row(memFar, "board"))} (the law's fixed 4 texels a unit: 20 × 18.3 MB)`);
+    const g = await armedPan(camFar);
+    check(g.byKind.board === 1 && g.instancesByKind.board === 20, `boards: a run of ${g.instancesByKind.board} boards is ONE draw (${g.byKind.board} board draw a frame; before K6a a draw and a bind group a board)`);
+    // walked past at zoom 1, board after board
+    const replays0 = await q(`window.__desk.handle.local("board").replays()`);
+    for (let i = 0; i < 20; i++) {
+      await q(`window.__desk.setCamera({ x: ${i * 700 - 600}, y: -400, zoom: 1 })`);
+      await front();
+      await frames(6);
+    }
+    await settle(20000);
+    const walked = await res();
+    const memWalk = await memoryNow();
+    const replays1 = await q(`window.__desk.handle.local("board").replays()`);
+    console.log(`  walked at zoom 1     ${memoryLine(memWalk)} · densities ${walked.map((r) => r?.density ?? "—").join(" ")} · ${replays1 - replays0} replays`);
+    // back to board 0: its record made again as it enters, its strokes replayed at its rung, bound
+    await q("window.__desk.setCamera({ x: -600, y: -400, zoom: 1 })");
+    await front();
+    await frames(1);
+    const back0 = (await res())[0];
+    await frames(8);
+    await settle(20000);
+    const back1 = (await res())[0];
+    const replays2 = await q(`window.__desk.handle.local("board").replays()`);
+    console.log(`  back on board 0      at once ${JSON.stringify(back0)} · then ${JSON.stringify(back1)} · ${replays2 - replays1} replays`);
+    check(memWalk.budget.evictions > 0 && walked[0]?.density === null && walked[0]?.thumb === true, `boards: walked past at zoom 1 their rasters overran the budget — ${memWalk.budget.evictions} evictions, board 0's raster gone, its thumbnail kept (the budget ${MB(memWalk.budget.used)} of ${MB(memWalk.budget.cap)})`);
+    check(back0?.density === 4 && back1?.bound === true && replays2 > replays1, `boards: board 0 on screen again — its raster replayed in the frame it came back (its record's own replay, D6) at its rung (4 texels a unit) and bound (${JSON.stringify(back0)}; ${replays2 - replays1} replays)`);
+    report.boards = { far, memFar, run: g, walked, memWalk, back: [back0, back1] };
+    rows.push(["boards (20, a run)", `20 boards = ${g.byKind.board} draw · far: board ${MB(row(memFar, "board"))}`, `walked at zoom 1: ${memWalk.budget.evictions} evictions, board ${MB(row(memWalk, "board"))}; back: replayed and bound`, load()]);
+  }
+
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors");

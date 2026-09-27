@@ -2,6 +2,7 @@
 // view and its mat (`MatPass`), the lamp and its light, a container's inside, the host's rasters and stores a kind is
 // lent, and the shared pieces two kinds would otherwise copy from each other. A kind imports the desk through this, the
 // engine (`@ice/desk/engine`) and the contract (`KindProgram`, `ObjectKind`, `defineObject` — `@ice/desk`) alone.
+export * from "./arrays";
 export * from "./blobs";
 export * from "./book";
 export * from "./editor";

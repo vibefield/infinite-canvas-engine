@@ -32,6 +32,7 @@ export const Board = defineStruct("Board", [
   ["penPose", "vec4f"],  // its axis' height over the melamine at the nib's end, its rise (height per unit of length), its cap (0 on the nib … 1 posted), the nib's half-width
   ["penInk", "vec4f"],   // its colour (sRGB), unused
   ["eraser", "vec4f"],   // the eraser in the hand: world x y, its height over the melamine, its presence
+  ["tier", "vec4f"],     // where its ink is (K6a): its thumbnail's layer, the level of its source's chain the layer starts at, its pool slot (−1: the thumbnail), live (1: its stroke and wet are bound)
 ] as const);
 
 export const BoardUniforms = defineStruct("BoardUniforms", [
@@ -114,7 +115,7 @@ export interface BoardInstance {
   readonly eraser?: BoardEraser | undefined;
 }
 
-export function boardValues(b: BoardInstance, raster: { readonly size: readonly [number, number]; readonly density: number; readonly wet: boolean }) {
+export function boardValues(b: BoardInstance, raster: { readonly size: readonly [number, number]; readonly density: number; readonly wet: boolean }, tier: readonly [number, number, number, number] = [0, 0, 0, 1]) {
   const G = b.geometry;
   const pn = b.pen;
   const er = b.eraser;
@@ -134,5 +135,6 @@ export function boardValues(b: BoardInstance, raster: { readonly size: readonly 
     penPose: pn ? [pn.height, pn.rise, pn.cap, pn.nib] : [0, 0, 0, 0],
     penInk: pn ? [pn.ink[0], pn.ink[1], pn.ink[2], 0] : [0, 0, 0, 0],
     eraser: er ? [er.x, er.y, er.height, er.presence] : [0, 0, 0, 0],
+    tier: [tier[0], tier[1], tier[2], tier[3]],
   };
 }

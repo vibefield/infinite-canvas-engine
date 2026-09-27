@@ -322,7 +322,7 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     expect(pass.ensure(1, [120, 80])).toBe(true); expect(pass.ensure(3, [120, 80])).toBe(true);
     const lamp = lampOf(MAT_GRID.plane);
     const board = (id: number): BoardInstance => {
-      const G = resolveBoard({ cx: id * 600, cy: 0, w: BOARD.spec.width, h: BOARD.spec.height }, BOARD_REST, lamp);
+      const G = resolveBoard({ cx: id * 300, cy: 0, w: BOARD.spec.width, h: BOARD.spec.height }, BOARD_REST, lamp);   // on screen: they take the pool's slots (K6a)
       return { id, geometry: G, surface: [1, 1, 1], metal: [0.5, 0.5, 0.5], quad: quadOf(G) };
     };
     const ctx: SlotContext = { view: VIEW, fadeIn: DEFAULT_GRID.fadeIn, cfg: DEFAULT_MAT_CONFIG, frame: undefined, present: undefined, light: THEMES.light.matLight, lit: undefined, select: THEMES.light.select, theme: THEMES.light };
@@ -330,12 +330,13 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     const log: string[] = [];
     const rp = recordingPass(log);
     kind.drawRange(rp, 0, 3);
-    const whole = ["pipeline board/desk", "group 0 board/slot", "group 1 board/raster 1", "draw 6,1,0,0", "group 1 board/raster 3", "draw 6,1,0,1"];
+    // ONE instanced draw (K6a, K-L4): the pool's group bound once, boards 1 and 3 instances of it
+    const whole = ["pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,2,0,0"];
     expect(log).toEqual(whole);
     log.length = 0; pass.draw(rp); expect(log).toEqual(whole);
     log.length = 0; kind.drawRange(rp, 1, 2); expect(log).toEqual([]);   // the board with no raster: nothing, not even the pipeline
-    log.length = 0; kind.drawRange(rp, 1, 3); expect(log).toEqual(["pipeline board/desk", "group 0 board/slot", "group 1 board/raster 3", "draw 6,1,0,1"]);
-    log.length = 0; kind.drawRange(rp, 0, 1); expect(log).toEqual(["pipeline board/desk", "group 0 board/slot", "group 1 board/raster 1", "draw 6,1,0,0"]);
+    log.length = 0; kind.drawRange(rp, 1, 3); expect(log).toEqual(["pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,1,0,1"]);
+    log.length = 0; kind.drawRange(rp, 0, 1); expect(log).toEqual(["pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,1,0,0"]);
     // through the walker: a note laid on the first board splits the boards into two runs — the second draws board 3 alone
     log.length = 0;
     const slot: DrawSlot = {
@@ -345,7 +346,7 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
       stats: { k0: 0, fade: 0, wind: false },
     };
     drawSlot(rp, SIZE, 2, slot);
-    expect(log).toEqual([FULL, "mat", "pipeline board/desk", "group 0 board/slot", "group 1 board/raster 1", "draw 6,1,0,0", "desk paper 0..1", "pipeline board/desk", "group 0 board/slot", "group 1 board/raster 3", "draw 6,1,0,1"]);
+    expect(log).toEqual([FULL, "mat", "pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,1,0,0", "desk paper 0..1", "pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,1,0,1"]);
   });
 });
 

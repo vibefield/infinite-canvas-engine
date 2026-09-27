@@ -16,7 +16,7 @@
 // laid, undone, redone, a remote peer's) or when the look changes. The materials and the markers' inks are
 // the product's (the theme gate): `theme()` takes them from the palette.
 
-import { BoardPass } from "./board-pass";
+import { BoardPass, boardRung } from "./board-pass";
 import { type BoardGeometry, type BoardLaw, DEFAULT_BOARD_LAW, pickBoard, quadOf, resolveBoard, surfaceSize } from "./board";
 import { addStroke, BoardStroke, boardOps, feedStroke, MARKERS, type MarkerInk, strokePen, type StrokeRow, strokeSeed, type StrokeSpec } from "./data";
 import type { BoardInstance } from "./layout";
@@ -209,13 +209,16 @@ export interface BoardInk extends KindLocal {
    * The raster board `e` draws with (its id on the pass): made the first time, its children REPLAYED into it whenever
    * their stamp turned over or the look changed — unless the turnover is the stroke the hand just committed (adopted: the
    * raster holds it already, wet) —; a stroke in hand is laid again over a replay; a fading ghost keeps what it had. 0 before
-   * the pass is here.
+   * the pass is here. `zd` — device px a world unit where it is drawn (zoom × dpr): a raster made now is made at its ZOOM
+   * RUNG (K6a, `boardRung`); the pass's step raises it when the board grows on screen.
    */
-  raster(e: Entity, G: BoardGeometry, look: BoardObjectLook, ghost: boolean): number;
+  raster(e: Entity, G: BoardGeometry, look: BoardObjectLook, ghost: boolean, zd?: number): number;
   /** How many replays since the desk was made (a rig's witness). */
   replays(): number;
   /** Board `e`'s raster on the pass (`BoardPass.readInk` reads it — a rig's witness); undefined before it is met. */
   rasterOf(e: Entity): number | undefined;
+  /** Board `e`'s residency (K6a — a rig's witness): its raster's density (null: evicted or not made), whether the pool binds it this frame, whether its thumbnail is cut. */
+  residency(e: Entity): { readonly density: number | null; readonly bound: boolean; readonly thumb: boolean } | undefined;
   /** The stroke in hand on `e`: the builder's stamps since the last call into the stroke layer (sent at the next prepare). */
   lay(e: Entity, builder: StrokeBuilder): void;
   /** The lift: the stroke in hand laid into the ink and marked WET; its entity (its cell's `points`) is adopted when it lands. */
@@ -247,6 +250,8 @@ export interface BoardInk extends KindLocal {
 interface BoardState {
   readonly id: number;
   stamp: number;
+  /** The density the pass's step asked its raster remade at (K6a — it grew on screen); undefined when none is owed. */
+  raise: number | undefined;
   look: BoardObjectLook | null;
   /** The stroke in hand: its tool and builder (laid again over a replay). */
   live: { readonly builder: StrokeBuilder } | null;
@@ -276,25 +281,39 @@ export function createBoardInk(host: KindHost): BoardInk {
   const landedOf = new Map<Entity, number>();
   const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
   const rasterBytes = (size: readonly [number, number]): number => Math.round(size[0] * size[1] * (4 * (4 / 3) + 1 + 1));
+  /** The boards by their id on the pass (the step names boards by id). */
+  const byId = new Map<number, Entity>();
+  /** The far-LOD thumbnails' array (K6a): charged when it grows, always kept. */
+  let thumbBytes = 0;
+  const chargeThumbs = (pass: BoardPass): void => {
+    if (budget === undefined || pass.thumbnailBytes === thumbBytes) return;
+    thumbBytes = pass.thumbnailBytes;
+    budget.charge("board", "thumbnails", thumbBytes, () => {});
+  };
   const state = (e: Entity): BoardState => {
     let st = boards.get(e);
-    if (st === undefined) { st = { id: next++, stamp: -1, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); }
+    if (st === undefined) { st = { id: next++, stamp: -1, raise: undefined, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); byId.set(st.id, e); }
     return st;
   };
   return {
-    raster(e, G, look, ghost) {
+    raster(e, G, look, ghost, zd) {
       const pass = passOf();
       if (pass === undefined) return 0;
       const st = state(e);
       if (pass.look !== look.pen) pass.look = look.pen;   // the pen's materials: the product's, set on the root (a spawned slot copies them)
       if (ghost) return st.id;   // a board fading out keeps its ink: its children died with it
       const stamp = stampOf(e);
-      const made = pass.ensure(st.id, surfaceSize(G));
+      // the density (K6a): the one the step asked for, else the raster's own, else the rung of where it is drawn now (the law's
+      // 4 without a word — a bare host, the oracle)
+      const density = st.raise ?? pass.densityOf(st.id) ?? (zd === undefined ? BOARD.ink.density : boardRung(zd * G.scale));
+      st.raise = undefined;
+      const made = pass.ensure(st.id, surfaceSize(G), density);
       if (made && budget !== undefined) {
         const key = String(st.id);
         entityOf.set(key, e);
         const size = pass.sizeOf(st.id);
-        budget.charge("board", key, size === null ? 0 : rasterBytes(size), () => { passOf()?.release(st.id); st.stamp = -1; entityOf.delete(key); });
+        // evicted: the RASTER goes, its thumbnail stays (the board draws it until the raster is wanted again — replayed then)
+        budget.charge("board", key, size === null ? 0 : rasterBytes(size), () => { passOf()?.evict(st.id); st.stamp = -1; entityOf.delete(key); });
       } else budget?.touch("board", String(st.id));
       if (made || stamp !== st.stamp || look !== st.look) {
         const rows: readonly StrokeRow[] = host.children?.rows(e, BoardStroke) ?? [];
@@ -310,6 +329,7 @@ export function createBoardInk(host: KindHost): BoardInk {
         st.stamp = stamp;
         st.look = look;
       }
+      chargeThumbs(pass);
       return st.id;
     },
     lay(e, builder) {
@@ -384,6 +404,16 @@ export function createBoardInk(host: KindHost): BoardInk {
       const pass = passOf();
       if (!still) pass?.dry(dt);   // fresh ink dries (the wet layer fades) on the frame's clock — a still holds it
       let want = penMoving || (!still && pass?.wetting === true);
+      // the residency's frame boundary (K6a): the pool's slots freed for boards no frame asked for; a board grown on screen past
+      // its raster's density is remade at its rung — its strokes replayed at its next record (a frame asked for now)
+      for (const { id, density } of pass?.step() ?? []) {
+        const e = byId.get(id);
+        const st = e === undefined ? undefined : boards.get(e);
+        if (st === undefined) continue;
+        st.raise = density;
+        st.stamp = -1;
+        want = true;
+      }
       penMoving = false;
       for (const [e, st] of boards) {
         if (st.live !== null && !still) want = true;   // a stroke in hand: its stamps (a resting pen's bleed) go out every frame
@@ -394,11 +424,12 @@ export function createBoardInk(host: KindHost): BoardInk {
       }
       return want;
     },
-    /** The budget's ask (D6): a board's raster is kept while the board is drawn — the builder's word, else while it is met at all. */
+    /** The budget's ask (D6; K6a): the thumbnails always; a board's raster while the pool binds it — drawn from it this frame. */
     keeps(key) {
+      if (key === "thumbnails") return true;
       const e = entityOf.get(key);
       if (e === undefined) return false;
-      return drawn === undefined ? boards.has(e) : drawn(e) !== undefined;
+      return passOf()?.bound(Number(key)) ?? false;
     },
     forget(e) {
       const st = boards.get(e);
@@ -406,6 +437,7 @@ export function createBoardInk(host: KindHost): BoardInk {
       passOf()?.release(st.id);
       budget?.release("board", String(st.id));
       entityOf.delete(String(st.id));
+      byId.delete(st.id);
       landedOf.delete(e);
       boards.delete(e);
     },
@@ -417,6 +449,11 @@ export function createBoardInk(host: KindHost): BoardInk {
     },
     replays: () => replays,
     rasterOf: (e) => boards.get(e)?.id,
+    residency(e) {
+      const id = boards.get(e)?.id;
+      const pass = passOf();
+      return id === undefined || pass === undefined ? undefined : { density: pass.densityOf(id), bound: pass.bound(id), thumb: pass.thumbed(id) };
+    },
   };
 }
 
@@ -456,7 +493,7 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
       const capName = stringProp(ctx.props, "cap", "black");
       const colourOf = (name: string): RGB => (look.markers[name] ?? Object.values(look.markers)[0])?.color ?? look.metal;
       const ink = ctx.local as BoardInk | undefined;
-      const id = ink?.raster(ctx.entity, G, look, ctx.flux.fade < 1) ?? 0;
+      const id = ink?.raster(ctx.entity, G, look, ctx.flux.fade < 1, ctx.view.zoom * ctx.view.dpr) ?? 0;
       // on the desk the marker lies capped in the ink it was put down in (`cap`); IN HAND (D3t-a) it follows the hand — taken up
       // as the board opens, at the pointer over the melamine, pressed while a stroke is laid, laid down again flying home
       if (ink === undefined || ctx.held === undefined) {

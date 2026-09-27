@@ -217,8 +217,7 @@ fn bd_sheen(B: Board, k: BoardUniforms, p: vec2f, n: vec3f) -> f32 {
 // One board at a world point `p`: premultiplied colour. `px` is world units per DEVICE px, `css`
 // world units per CSS px; `frag` the framebuffer pixel (the blue noise's key).
 fn shade_board(B: Board, u: MatUniforms, k: BoardUniforms, p: vec2f, px: f32, css: f32, frag: vec2f,
-               gobo_tex: texture_2d<f32>, gobo_samp: sampler, noise_tex: texture_2d<f32>, noise_samp: sampler,
-               ink_tex: texture_2d<f32>, ink_samp: sampler, stroke_tex: texture_2d<f32>, wet_tex: texture_2d<f32>, lin_samp: sampler) -> vec4f {
+               gobo_tex: texture_2d<f32>, gobo_samp: sampler, noise_tex: texture_2d<f32>, noise_samp: sampler) -> vec4f {
   let q = p - B.centre;
   let L = B.lamp.xyz;
   let S = B.slope;
@@ -265,21 +264,21 @@ fn shade_board(B: Board, u: MatUniforms, k: BoardUniforms, p: vec2f, px: f32, cs
       // THE MELAMINE — the raster over it: uv across the face, the ink's mip by the screen's density.
       let uv = (q + B.inner) / (2.0 * B.inner);
       let lod = max(log2(max(B.density * px / max(B.scale, 1.0e-3), 1.0e-6)), 0.0);
-      var ink = textureSampleLevel(ink_tex, ink_samp, uv, lod);
+      var ink = board_ink(B, uv, lod);   // (the entry's: where this board's ink is bound — K6a)
       if (B.laying > 0.5) {
         // the stroke being laid, shown as it will land
-        let sc = textureSampleLevel(stroke_tex, lin_samp, uv, 0.0).r;
+        let sc = board_stroke(B, uv);
         if (B.tool.w < 0.5) { ink = vec4f(ink.rgb * (1.0 - sc) + B.tool.rgb * sc, ink.a * (1.0 - sc) + sc); }
         else { ink = ink * (1.0 - sc); }
       }
       let cov2 = ink.a;
       var wet = 0.0;
-      if (B.wet > 0.5) { wet = textureSampleLevel(wet_tex, lin_samp, uv, 0.0).r * smoothstep(0.0, 0.3, cov2); }
+      if (B.wet > 0.5) { wet = board_wet(B, uv) * smoothstep(0.0, 0.3, cov2); }
 
       // the face's normal: a slow waviness, and the ink film standing a few microns proud of it
       let dt = exp2(lod) / B.texels;
-      let ax = textureSampleLevel(ink_tex, ink_samp, uv + vec2f(dt.x, 0.0), lod).a - textureSampleLevel(ink_tex, ink_samp, uv - vec2f(dt.x, 0.0), lod).a;
-      let ay = textureSampleLevel(ink_tex, ink_samp, uv + vec2f(0.0, dt.y), lod).a - textureSampleLevel(ink_tex, ink_samp, uv - vec2f(0.0, dt.y), lod).a;
+      let ax = board_ink(B, uv + vec2f(dt.x, 0.0), lod).a - board_ink(B, uv - vec2f(dt.x, 0.0), lod).a;
+      let ay = board_ink(B, uv + vec2f(0.0, dt.y), lod).a - board_ink(B, uv - vec2f(0.0, dt.y), lod).a;
       let w1 = felt_noised(q * (1.0 / 80.0) + vec2f(3.1, 7.7)).yz;
       let w2 = felt_noised(q * (1.0 / 31.0) + vec2f(11.0, 5.0)).yz;
       let slope = (w1 + 0.5 * w2) * 0.006 + vec2f(ax, ay) * k.mel.w;
