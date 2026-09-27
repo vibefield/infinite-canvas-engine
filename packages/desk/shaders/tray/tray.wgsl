@@ -60,23 +60,35 @@ fn peg_band(ht: texture_2d<f32>, p: PegPoint, fx: u32, fy: u32, seed: u32) -> ve
   return vec3f(n.x, n.y * f32(fx), n.z * f32(fy));
 }
 
-// The coarse TONE — the research's two coarsest octaves, ½ and 1 per pitch, pre-gathered TOGETHER at the 1-per-pitch lattice (the
-// hash texture's lower half, pass.ts `hashTexels`): one load and the quintic, normalised to [0, 1]. The row is R itself.
-fn peg_tone(ht: texture_2d<f32>, p: PegPoint) -> f32 {
-  let ix = floor(p.x);
-  let f = vec2f(p.x - ix, p.fy);
-  let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-  let k = textureLoad(ht, vec2u(u32(i32(ix)) & 255u, 256u + (u32(p.R) & 255u)), 0);
-  return mix(mix(k.r, k.g, u.x), mix(k.b, k.a, u.x), u.y);
+// ⌊a / b⌋ for b > 0 (WGSL's `/` truncates toward zero).
+fn peg_floor_div(a: i32, b: i32) -> i32 {
+  let q = a / b;
+  return select(q, q - 1, (a % b != 0) && (a < 0));
+}
+
+// Value noise on a TURNED lattice, exact at any row: lattice coordinates M·(x, Y)·num/den, M = [[a, −b], [b, a]] an INTEGER rotation
+// and scale (cells turned atan(b/a), num·√(a² + b²)/den of them to a pitch), so no octave's cells line up with the board or with
+// another octave's — value noise's square cells stop reading as squares. The carried row splits R = den·Q + r: Q's share is an
+// exact integer (−b·num·Q, a·num·Q); only x, r and fy, all small, are ever a float. One pre-gathered load.
+fn peg_rot(ht: texture_2d<f32>, p: PegPoint, a: i32, b: i32, num: i32, den: i32, seed: u32) -> f32 {
+  let q = peg_floor_div(p.R, den);
+  let r = f32(p.R - q * den) + p.fy;
+  let uv = vec2f(f32(a) * p.x - f32(b) * r, f32(b) * p.x + f32(a) * r) * (f32(num) / f32(den));
+  let cell = floor(uv);
+  let base = vec2i(i32(cell.x) - b * num * q, i32(cell.y) + a * num * q);
+  return peg_vnoise(ht, u32(base.x), u32(base.y), uv - cell, seed).x;
 }
 
 // The research's "fine detail fading with pixel footprint", per band: F cycles per pitch are kept while a cycle spans ≥ 4 device
-// px and gone at 2, so a scrolling board never shimmers (a fleck by its thin side, not its cell). The footprint is the frame's, so every band's share is a UNIFORM (pass.ts
-// `keeps` — `1 − smoothstep(¼, ½, fp·F)`): the face's 5 · 10 · 85 · 190, then 210 · 42 · 105, the punched fibre's 9 · 18 · 36.
+// px and gone at 2, so a scrolling board never shimmers (a fleck by its thin side, not its cell). The footprint is the frame's, so
+// every band's share is a UNIFORM (pass.ts `keep` — `1 − smoothstep(¼, ½, fp·F)`): the face's grain (≈ 19) · 85 · 190, then
+// 210 · 42 · 105, the punched fibre's 9 · 18 · 36.
 
 // Sparse fibre flecks (the research's `flecks`): one randomly turned ellipse per jittered cell at F per pitch, signed — dark
-// negative, pale positive.
-fn peg_flecks(p: PegPoint, F: u32, density: f32, seed: u32) -> f32 {
+// negative, pale positive. A stroke's thin side is sub-pixel long before its cell is (≈ 0.3 of it): its edge is widened by the pixel's
+// footprint in the ellipse's own measure and its peak lowered to keep its ink — analytic AA, the stroke a faint line, never a dash
+// (the research averaged 1024 jittered samples to the same end). `fp` = pitches per device px.
+fn peg_flecks(p: PegPoint, F: u32, density: f32, seed: u32, fp: f32) -> f32 {
   let X = p.x * f32(F);
   let ix = floor(X);
   let Y = p.fy * f32(F);
@@ -94,8 +106,10 @@ fn peg_flecks(p: PegPoint, F: u32, density: f32, seed: u32) -> f32 {
       let ca = cos(ang);
       let sa = sin(ang);
       let dl = vec2f(d.x * ca + d.y * sa, -d.x * sa + d.y * ca);
-      let e = length(vec2f(dl.x / (0.35 + 0.65 * r.x), dl.y / (0.10 + 0.10 * r.y)));
-      acc += (1.0 - smoothstep(0.6, 1.0, e)) * select(-1.0, 0.8, r.z > 0.62);
+      let wid = 0.10 + 0.10 * r.y;
+      let e = length(vec2f(dl.x / (0.35 + 0.65 * r.x), dl.y / wid));
+      let aa = fp * f32(F) / wid;
+      acc += (1.0 - smoothstep(0.6 - aa, 1.0 + aa, e)) / (1.0 + 2.0 * aa) * select(-1.0, 0.8, r.z > 0.62);
     }
   }
   return clamp(acc, -1.0, 1.0);
@@ -130,16 +144,17 @@ fn peg_hole(t: TrayUniforms, p: PegPoint) -> PegHole {
 }
 
 // ---- the materials (the research's boardMat · wallMat), linear albedo
-// The tempered face: the tone drift (`big` at ½ · 1 per pitch, pre-gathered as one — `peg_tone` — and `mid` at 5: the research's fbm,
-// less its three faintest octaves, which at a UI pitch carried ±4 % between them and half the face's cost), the fine height grain
-// and its bump, the fibre flecks — every band faded by its own footprint. Out: the grain as one factor on the face's linear albedo
-// (`g`: the albedo is face·(1 + g)), the height's gradient (the bump), and whether the face is FLAT here (every bump band faded).
+// The tempered face: the TONE drift — two smooth octaves on lattices turned against the board and each other (cells 2.24 and 0.89
+// of a pitch), the research's big and mid fbm as a UI pitch shows them — and the fine fibre GRAIN on a third (cells 0.05 of a pitch,
+// ≈ 19 a pitch: what survives of the research's fine grain where its footprint lets it), then at a reading pitch the research's fine
+// height grain and its bump, the fibre flecks — every band faded by its own footprint. Out: the grain as one factor on the face's
+// linear albedo (`g`: the albedo is face·(1 + g)), the height's gradient (the bump), and whether the face is FLAT (every bump faded).
 struct PegFace { g: f32, grad: vec2f, flat: bool }
 fn peg_face(ht: texture_2d<f32>, t: TrayUniforms, p: PegPoint, fp: f32) -> PegFace {
-  let big = peg_tone(ht, p) - 0.5;
-  var mid = 0.0;
-  let k5 = t.keepFace.x;
-  if (k5 > 0.0) { mid = k5 * (peg_band(ht, p, 5u, 5u, 0x2b1u).x - 0.5); }
+  let tone = 0.62 * (peg_rot(ht, p, 2, 1, 1, 5, 0x3a1u) - 0.5) + 0.38 * (peg_rot(ht, p, 1, -2, 1, 2, 0x5c7u) - 0.5);
+  var grain = 0.0;
+  let kg = t.keepFace.x;
+  if (kg > 0.0) { grain = kg * (peg_rot(ht, p, 3, 1, 6, 1, 0x2b1u) - 0.5); }
   // the fine height (the research's faceHeight: 0.55 · 85, 0.30 · 190×70, 0.15 · 60×210) — at a UI pitch its footprint fades it
   var h = 0.0;
   var grad = vec2f(0.0);
@@ -152,10 +167,10 @@ fn peg_face(ht: texture_2d<f32>, t: TrayUniforms, p: PegPoint, fp: f32) -> PegFa
   let k42 = t.keepFine.y;
   let k105 = t.keepFine.z;
   var fl = 0.0;
-  if (k42 > 0.0) { fl += 0.30 * k42 * peg_flecks(p, 42u, 0.40, 0xa13u); }
-  if (k105 > 0.0) { fl += 0.18 * k105 * peg_flecks(p, 105u, 0.35, 0xc35u); }
+  if (k42 > 0.0) { fl += 0.30 * k42 * peg_flecks(p, 42u, 0.40, 0xa13u, fp); }
+  if (k105 > 0.0) { fl += 0.18 * k105 * peg_flecks(p, 105u, 0.35, 0xc35u, fp); }
   var f: PegFace;
-  f.g = (1.0 + 0.18 * big + 0.12 * mid + 0.40 * h) * (1.0 + fl) - 1.0;
+  f.g = (1.0 + 0.12 * tone + 0.08 * grain + 0.40 * h) * (1.0 + fl) - 1.0;
   f.grad = grad;
   f.flat = (k85 <= 0.0) && (k190 <= 0.0) && (k210 <= 0.0);
   return f;
@@ -173,7 +188,7 @@ fn peg_edge(ht: texture_2d<f32>, t: TrayUniforms, p: PegPoint, fp: f32) -> vec3f
   return t.edge.xyz * (1.0 + 0.30 * clump / 0.875);
 }
 
-// ---- the light: the desk's
+// ---- the light: the research's HOME lamp (D-K3.4), in the desk's colour law and room
 // The desk's colour law on the tray (the paper's `paper_colour`, chain 0): by day the mat's grade on the sRGB albedo — lit (`gobo`
 // 1) the identity, a configured byte is the drawn byte; in shadow the room's ½ and its touch of saturation — by night the Moon and
 // the eye (mat.wgsl `night_mat`) on the linear albedo; between, the cross-fade.
@@ -233,8 +248,9 @@ fn peg_wall(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: PegPoint, h
   let gap = t.depth.y;
   let hb = peg_hole(t, peg_move(p, off * (gap + thick)));
   let da = peg_stadium(t, hb.q - off * thick).x;
-  let wa = t.lamp.w * gap + fp;
-  let wb = t.lamp.w * (gap + thick) + fp;
+  // the penumbra: the lamp's angular radius over the ray's length to each plane's edge (depth / L_z), and a pixel
+  let wa = t.lamp.w * gap / max(L.z, 1.0e-3) + fp;
+  let wb = t.lamp.w * (gap + thick) / max(L.z, 1.0e-3) + fp;
   let vis = smoothstep(-wb, wb, -hb.d) * smoothstep(-wa, wa, -da);
   let cav = mix(t.cavity.x, t.cavity.y, smoothstep(0.0, t.cavity.z, -h.d));
   // the room's share in the mat's shadow (shade_mat at gobo 0): the wall takes a·cav of the room and (1 − a)·vis of the lamp

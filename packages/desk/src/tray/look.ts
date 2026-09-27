@@ -18,6 +18,12 @@ export const TRAY_LOOK = {
   wall: research.wall as unknown as RGB,
   /** The room's light on the wall in a hole: at its edge, at its heart, over what width (pitches). */
   cavity: TRAY.cavity,
+  /** The unit direction to the lamp in the board's frame (x right, y down, z toward the eye) — the research's HOME lamp, its y turned down. */
+  lamp: (() => {
+    const az = (TRAY.lamp.azimuth * Math.PI) / 180;
+    const el = (TRAY.lamp.elevation * Math.PI) / 180;
+    return [Math.sin(az) * Math.cos(el), -Math.sin(el), Math.cos(az) * Math.cos(el)] as const;
+  })(),
   /** The lamp's angular radius, rad. */
   lampSize: TRAY.lampSize,
 } as const;

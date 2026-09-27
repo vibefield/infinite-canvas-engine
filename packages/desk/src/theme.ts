@@ -272,14 +272,17 @@ export const MARKS = {
  * face is its own render's (preview.jpg): lit flat, a flat face is drawn at this byte (the paper's law — a configured byte is the
  * drawn byte). The punched edge keeps the research's edge/face albedo ratio; the plaster is its WALL_ALB. The cavity is the share of
  * the room's light on the wall in a hole — at the hole's edge, at its heart, over what width (pitches) — fitted to the render's
- * shadowed wall (#45443f); the lamp's angular radius is the research's HOME lamp (D-K3.5: the desk's object-shadow law, σ ≈ 0.9 px
- * per px of height, would wash the slots out at this scale).
+ * shadowed wall (#45443f). The LAMP is the research's HOME lamp (D-K3.4, decided): from the upper left at 48°, so light clears the
+ * slots and lays its patches on the plaster behind — its direction as the research states it (shader.js `lightDir`: azimuth from
+ * the eye's axis toward +x, elevation up the board, degrees), its angular radius the research's too (D-K3.5); the colour law and
+ * the room are the desk's.
  */
 export const TRAY = {
   face: { token: "research/sdf-pegboard preview.jpg — the face, lit flat", css: "#cdb491" },
   /** shader.js FACE_ALB · EDGE_ALB · WALL_ALB, linear. */
   research: { face: [0.42, 0.26, 0.135], edge: [0.56, 0.41, 0.25], wall: [0.74, 0.72, 0.68] },
   cavity: { edge: 0.1, heart: 0.22, width: 0.13 },
+  lamp: { azimuth: -36, elevation: 48 },
   lampSize: 0.06,
 } as const;
 

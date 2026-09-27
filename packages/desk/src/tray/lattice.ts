@@ -88,3 +88,19 @@ export function holeSdf(qx: number, qy: number): number {
 export function holeCentre(row: number, col: number): { readonly x: number; readonly y: number } {
   return { x: col + PEG.colPhase + ((row & 1) !== 0 ? 0.5 : 0), y: row + PEG.rowPhase };
 }
+
+/**
+ * The TURNED lattice's cell of a board point (tray.wgsl `peg_rot`, the face's tone and grain): lattice coordinates M·(x, Y)·num/den with
+ * M = [[a, −b], [b, a]] an integer rotation and scale. The carried row splits R = den·Q + r, so Q's share (−b·num·Q, a·num·Q) is an
+ * exact integer and only the small rest is a float — the shader's f32 (`Math.fround`) — at any depth.
+ */
+export function rotCell(p: PegPoint, a: number, b: number, num: number, den: number): { readonly u: number; readonly v: number; readonly fu: number; readonly fv: number } {
+  const q = Math.floor(p.R / den);
+  const r = Math.fround(p.R - q * den + p.fy);
+  const s = Math.fround(num / den);
+  const U = Math.fround(Math.fround(a * p.x - b * r) * s);
+  const V = Math.fround(Math.fround(b * p.x + a * r) * s);
+  const cu = Math.floor(U);
+  const cv = Math.floor(V);
+  return { u: cu - b * num * q, v: cv + a * num * q, fu: U - cu, fv: V - cv };
+}

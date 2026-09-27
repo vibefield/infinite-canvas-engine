@@ -15,7 +15,7 @@ import { PALETTE, PENS, SURFACES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import { shaderText } from "../src/shaders";
 import { band, DRAWER, drawerRect, drawerSize, scrollRange, slideEase } from "../src/tray/drawer";
-import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punched } from "../src/tray/lattice";
+import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punched, rotCell } from "../src/tray/lattice";
 import { HASH_SIZE, hashTexels, keep, TrayUniforms } from "../src/tray/pass";
 import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders";
 import { THEMES } from "../oracle/fixtures/vf-theme";
@@ -109,6 +109,38 @@ describe("the carry (design-017 §6.2)", () => {
           expect(deep.qy).toBeCloseTo(top.qy, 9);
         }
       }
+    }
+  });
+});
+
+describe("the face's turned lattices (tray/lattice.ts `rotCell` — tray.wgsl `peg_rot`)", () => {
+  // the face's three octaves: the tone's two (2,1)/5 and (1,−2)/2, the grain's (3,1)·6
+  const OCTAVES = [[2, 1, 1, 5], [1, -2, 1, 2], [3, 1, 6, 1]] as const;
+
+  it("moves a point's cell by an EXACT integer vector when the board moves by whole multiples of den rows — the same fraction, 10⁶ and 2²⁸ rows down", () => {
+    for (const [a, b, num, den] of OCTAVES) {
+      for (const m of [1, 200_000, 2 ** 28 / den]) {
+        const rows = den * Math.round(m);
+        for (const x of [0.3, 7.77, 27.9]) {
+          for (const [R, fy] of [[0, 0.1], [3, 0.55], [-2, 0.9], [11, 0]] as const) {
+            const near = rotCell({ x, R, fy }, a, b, num, den);
+            const far = rotCell({ x, R: R + rows, fy }, a, b, num, den);
+            expect(far.u - near.u).toBe(-b * num * (rows / den));
+            expect(far.v - near.v).toBe(a * num * (rows / den));
+            expect(far.fu).toBe(near.fu);
+            expect(far.fv).toBe(near.fv);
+          }
+        }
+      }
+    }
+  });
+
+  it("is continuous across a row boundary (the carry changes, the lattice point does not)", () => {
+    for (const [a, b, num, den] of OCTAVES) {
+      const before = rotCell({ x: 5.25, R: 1_000_006, fy: 1 - 2 ** -20 }, a, b, num, den);
+      const after = rotCell({ x: 5.25, R: 1_000_007, fy: 0 }, a, b, num, den);
+      expect(Math.abs(after.u + after.fu - (before.u + before.fu))).toBeLessThan(1e-4 * num * 3);
+      expect(Math.abs(after.v + after.fv - (before.v + before.fv))).toBeLessThan(1e-4 * num * 3);
     }
   });
 });
@@ -359,29 +391,20 @@ describe("the reflector draws the tray (design-017 §3 — idle-zero open and cl
 });
 
 describe("the pre-gathered noise and the fades (tray/pass.ts — the cost's work, design-017 §6.7)", () => {
-  it("gives every texel its four lattice corners — its right, lower and diagonal neighbours' own values, across the wrap — in both halves", () => {
+  it("gives every texel its four lattice corners — its right, lower and diagonal neighbours' own values, across the wrap", () => {
     const N = HASH_SIZE;
     const t = hashTexels();
-    expect(t.length).toBe(N * 2 * N * 4);
-    const px = (i: number, j: number, c: number): number => t[(j * N + (i % N)) * 4 + c] as number;
+    expect(t.length).toBe(N * N * 4);
+    const px = (i: number, j: number, c: number): number => t[((j % N) * N + (i % N)) * 4 + c] as number;
     let bad = 0;
-    for (const half of [0, N]) {
-      for (let j = 0; j < N; j++) {
-        const jj = half + ((j + 1) % N);
-        for (let i = 0; i < N; i++) {
-          const row = half + j;
-          if (px(i, row, 1) !== px(i + 1, row, 0)) bad++;   // (i+1, j) is the right neighbour's own
-          if (px(i, row, 2) !== px(i, jj, 0)) bad++;        // (i, j+1) the lower one's
-          if (px(i, row, 3) !== px(i + 1, jj, 0)) bad++;    // (i+1, j+1) the diagonal's
-        }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        if (px(i, j, 1) !== px(i + 1, j, 0)) bad++;       // (i+1, j) is the right neighbour's own
+        if (px(i, j, 2) !== px(i, j + 1, 0)) bad++;       // (i, j+1) the lower one's
+        if (px(i, j, 3) !== px(i + 1, j + 1, 0)) bad++;   // (i+1, j+1) the diagonal's
       }
     }
     expect(bad).toBe(0);
-    // the tone is a smooth field — neighbours close — where the hashes are not
-    let toneStep = 0;
-    let hashStep = 0;
-    for (let i = 0; i < N; i++) { toneStep += Math.abs(px(i, N + 7, 0) - px(i + 1, N + 7, 0)); hashStep += Math.abs(px(i, 7, 0) - px(i + 1, 7, 0)); }
-    expect(toneStep / N).toBeLessThan(hashStep / N / 2);
   });
 
   it("fades a band by its own footprint as tray.wgsl did per pixel: kept while a cycle spans ≥ 4 device px, gone at 2", () => {
