@@ -21,6 +21,7 @@ import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, MINIMAT_FINISHES, type M
 import { MiniMatPass } from "./pass";
 import { MINIMAT_SHADER_FILES, miniMatShaders } from "./shaders";
 import { shaderText } from "../shaders";
+import { MINIMAT } from "./theme";
 
 /** The mini mat's kind name — its key in the registry and in every slot's `objects`. */
 export const MINIMAT_KIND = "minimat";
@@ -140,8 +141,9 @@ export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGe
     },
     /** The face as drawn: the sheet inset by its printed border, through its springs (`faceOf` — what the live inside and the nav cut read). */
     face(G: MiniMatGeometry) { return faceOf(G); },
-    // its face law (K8a — the container's own): the finishes its far face draws a child's chip in
-    faceLaw: { finishes: MINIMAT_FINISHES },
+    // its face law (K8a — the container's own numbers, never the kit's): its square corner, its far face's chip cap (the live law's)
+    // and the finishes it draws a child's chip in
+    get faceLaw() { return { radius: MINIMAT.faceRadius, chips: law.chips.max, finishes: MINIMAT_FINISHES }; },
     /** Inside another mini mat, a mini mat is a vinyl chip with its border (the prototype's `childrenOf`). */
     chip(G: MiniMatGeometry, ctx: ObjectContext): ChildShape {
       const look = ctx.look as MiniMatLook | undefined;

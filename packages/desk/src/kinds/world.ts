@@ -311,8 +311,8 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
    */
   face?(geometry: G): Rect | undefined;
   /**
-   * A CONTAINER kind's face law (K8a, kit/inside.ts `FaceLaw`): the chip finishes its face draws — the container's own, never a
-   * list in the desk. Absent on a container: its face draws no chips.
+   * A CONTAINER kind's face law (K8a, kit/inside.ts `FaceLaw`): its face's corner radius, the most chips its face draws and the
+   * finishes it draws them in — the container's own numbers, never the kit's. Absent on a container: square, no chips.
    */
   readonly faceLaw?: FaceLaw;
   /**

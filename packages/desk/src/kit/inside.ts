@@ -63,10 +63,14 @@ export interface ChildShape {
 }
 
 /**
- * A CONTAINER kind's FACE LAW (K8a — the container's own, declared on its kind as `ObjectKind.faceLaw`): the chip finishes its face
- * draws. Absent on a kind with a `face`: its face draws no chips.
+ * A CONTAINER kind's FACE LAW (K8a — the container's own, declared on its kind as `ObjectKind.faceLaw`; until K8a `FACE_RADIUS` and
+ * `FACE_CHIPS_MAX` were the kit's, the mini mat's numbers imposed on every container): the corner its face clips its inside by (the
+ * live inside, the far LOD, a flight through it — `clipOf(face, radius, cam)`), the most chips its face draws, and the chip finishes
+ * it draws them in. Absent on a kind with a `face`: square, and no chips.
  */
 export interface FaceLaw {
+  readonly radius: number;
+  readonly chips: number;
   readonly finishes: readonly ChipFinish[];
 }
 
@@ -77,23 +81,13 @@ export function finishOf(finish: ChipFinish | readonly ChipFinish[], drawn: read
 }
 
 /**
- * The face's corner radius a container's inside is clipped by (MINIMAT.md §5; D2b): square — `clipOf(face, FACE_RADIUS, cam)` for
- * every container, and core's nav geometry agrees (nav-geometry.ts). The kit's since K4b: the builder cuts every container's
- * inside with it, so it cannot be one kind's.
+ * The same view from a FACE rect and its corner alone (D2b; the corner the container's own since K8a — `FaceLaw.radius`): what a
+ * kind's `face(geometry)` hands the builder, so any container kind's inside is built by the one law — the mini mat's `faceClip` is
+ * `clipOf(faceOf(G), its radius, cam)`, so the numbers are its `insideView`'s to the bit.
  */
-export const FACE_RADIUS = 0;
-
-/** At most this many chips a container's face draws (MINIMAT.md §3, the far LOD's cap): the builder's cut, and the mini mat's law's default. */
-export const FACE_CHIPS_MAX = 64;
-
-/**
- * The same view from a FACE rect alone (D2b): what a kind's `face(geometry)` hands the builder, so
- * any container kind's inside is built by the one law — `faceClip` is `clipOf(faceOf(G), FACE_RADIUS, cam)`,
- * so the numbers are the mini mat's `insideView`'s to the bit.
- */
-export function insideViewOfFace(K: Rect, content: Rect | null, cam: CameraState, vp: Viewport, fit: FitBand = FIT, gate: readonly [number, number] = PORTAL_GATE): InsideView | null {
+export function insideViewOfFace(K: Rect, radius: number, content: Rect | null, cam: CameraState, vp: Viewport, fit: FitBand = FIT, gate: readonly [number, number] = PORTAL_GATE): InsideView | null {
   if (!(K.width > 0) || !(K.height > 0)) return null;
-  const clip = clipOf(K, FACE_RADIUS, cam);
+  const clip = clipOf(K, radius, cam);
   const arrival = arrivalCamera(content, vp, fit);
   const M = portalAffine(visibleRect(arrival, vp.width, vp.height), K);
   return { M, arrival, cam: outgoingCamera(M, cam), clip, presence: portalPresence(clip, gate), box: boxOfPortal(clip, vp) };

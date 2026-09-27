@@ -65,7 +65,7 @@ describe("the live inside from the world (MINIMAT.md §3)", () => {
     expect(p.at).toBe(0);
     // the inside's camera and presence are the face's own numbers (insideViewOfFace on the drawn face), the face 640−64 × 480−64 at zoom 1 → past the gate
     const G = d.builder.geometryOf(d.m) as MiniMatGeometry;
-    const view = must(insideViewOfFace(faceOf(G), { x: -220, y: -160, width: 770, height: 440 }, CAM, VP, FIT, PORTAL_GATE));
+    const view = must(insideViewOfFace(faceOf(G), 0, { x: -220, y: -160, width: 770, height: 440 }, CAM, VP, FIT, PORTAL_GATE));
     expect(p.view.camX).toBe(view.cam.x);
     expect(p.view.camY).toBe(view.cam.y);
     expect(p.view.zoom).toBe(view.cam.zoom);
@@ -119,7 +119,7 @@ describe("the seam — the face AS DRAWN (design-015 §9)", () => {
     expect(drawn.face).toEqual(faceOf(G));
     expect(drawn.face.width).toBeGreaterThan(staticFace.width);
     // the answer IS the flight's own numbers on that face
-    const view = must(insideViewOfFace(drawn.face, { x: -220, y: -160, width: 770, height: 440 }, CAM, VP, FIT, PORTAL_GATE));
+    const view = must(insideViewOfFace(drawn.face, 0, { x: -220, y: -160, width: 770, height: 440 }, CAM, VP, FIT, PORTAL_GATE));
     expect(drawn.camera).toEqual(view.cam);
     expect(drawn.arrival).toEqual(view.arrival);
     expect(drawn.affine).toEqual(view.M);

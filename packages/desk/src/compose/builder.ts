@@ -99,7 +99,7 @@ import type { MarksInput } from "../marks/layout";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
 import type { MatFrame, SlotLight } from "../mat/layout";
-import { type ChildShape, FACE_CHIPS_MAX, FACE_RADIUS, finishOf, flightLights, flightPresent, insidePresent, type InsideView, insideViewOfFace } from "../kit/inside";
+import { type ChildShape, finishOf, flightLights, flightPresent, insidePresent, type InsideView, insideViewOfFace } from "../kit/inside";
 import { boundsOf, type CameraState, FIT, type Rect, solveFlightStart } from "../nav/flight";
 import { clipOf, faceCovers, PORTAL_CAP, PORTAL_GATE, type Presentation } from "../nav/portal";
 import { type Lamp, lampOf } from "../mat/lamp";
@@ -453,8 +453,6 @@ const MARGIN_PX = 200;
 const REDRESS_MS = 320;
 /** The host belt: a live inside's insides show live to this depth (the prototype's `depth < 4`). */
 const PORTAL_DEPTH = 4;
-/** At most this many chips per face (the kit's `FACE_CHIPS_MAX` — every container's cap, since K4b). */
-const CHIPS_MAX = FACE_CHIPS_MAX;
 
 // An object: a widget (PrefabId, Position, Size) Active in the current nav frame — the same membership the cull and the pick use.
 const membersQ = defineQuery([Position, Size, PrefabId, Active]);
@@ -788,7 +786,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     const face = st.kind.face(G);
     if (face === undefined) return undefined;
     const vpSize = viewportOf();
-    const view = insideViewOfFace(face, contentOf(container), cam, vpSize, FIT, PORTAL_GATE);
+    const view = insideViewOfFace(face, st.kind.faceLaw?.radius ?? 0, contentOf(container), cam, vpSize, FIT, PORTAL_GATE);
     if (view === null) return undefined;
     return { face, arrival: view.arrival, affine: view.M, camera: view.cam, presence: view.presence, covers: (marginPx: number) => faceCovers(view.clip, vpSize, marginPx) };
   };
@@ -891,13 +889,15 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const chipsOf = (e: Entity, st: ObjectState, ctx: ObjectContext, view: InsideView | null, slotGrid: GridConfig): ChildShape[] => {
         const chips: ChildShape[] = [];
         if (view === null) return chips;
-        // the finishes this container's face draws (K8a — its own `faceLaw`): a chip in none of them is not drawn, and counted
+        // this container's face law (K8a — its own `faceLaw`): at most its `chips`, in the finishes it draws — a chip in none of them
+        // is not drawn, and counted; a container that declares none draws no chips
+        const cap = st.kind.faceLaw?.chips ?? 0;
         const finishes = st.kind.faceLaw?.finishes ?? [];
         const insideGrid = st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid;
         const insideLamp = lampOf(insideGrid.mat.plane);
         const insideView: ObjectContext["view"] = { camX: view.cam.x, camY: view.cam.y, zoom: view.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
         for (const c of childrenOf(e)) {
-          if (chips.length >= CHIPS_MAX) break;
+          if (chips.length >= cap) break;
           const cst = stateOf(c);
           if (cst === undefined || cst.kind.chip === undefined) continue;
           const cctx = contextOf(c, cst, insideView, insideGrid, insideLamp, false);
@@ -920,7 +920,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         const face = st.kind.face?.(G);
         if (face === undefined) { st.inside = null; st.content = null; return undefined; }
         const content = contentOf(e);
-        const view = insideViewOfFace(face, content, slotCam, vpSize, FIT, PORTAL_GATE);
+        const view = insideViewOfFace(face, st.kind.faceLaw?.radius ?? 0, content, slotCam, vpSize, FIT, PORTAL_GATE);
         st.inside = view;
         st.content = content;
         return { content, view, chips: chipsOf(e, st, ctx, view, slotGrid) };
@@ -1004,7 +1004,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             // a container's inside this frame: its view under the slot camera moves with a pan even when its record stands
             if (kind.face !== undefined) {
               const face = kind.face(G);
-              st.inside = face === undefined ? null : insideViewOfFace(face, st.content, slotCam, vpSize, FIT, PORTAL_GATE);
+              st.inside = face === undefined ? null : insideViewOfFace(face, st.kind.faceLaw?.radius ?? 0, st.content, slotCam, vpSize, FIT, PORTAL_GATE);
             }
             if (verifying) checkReuse(e, st, view, slotGrid, slotLamp, springs, give, slotCam);
           } else {
@@ -1294,7 +1294,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         if (!nav.frozen) {
           const cst = states.get(container);
           const face = cst !== undefined && cst.geometry !== null && cst.seen === seq ? cst.kind.face?.(cst.geometry) : undefined;
-          if (face !== undefined) clip = clipOf(face, FACE_RADIUS, entering ? outCam : cam);
+          if (face !== undefined) clip = clipOf(face, cst?.kind.faceLaw?.radius ?? 0, entering ? outCam : cam);
           if (entering) at = departed.rows.findIndex((r) => r.entity === container);
         }
         const f = { kind: nav.kind, p: nav.p, frozen: nav.frozen };

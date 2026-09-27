@@ -1,7 +1,7 @@
 // The MINI MAT's own theme — the container's law as numbers (moved out of the engine's src/theme.ts at K4a, design-016
 // §5). Its shadow and ring are the kit's ONE PHYSICS (kit/physics.ts); its gate is the portal's (theme.ts `PORTAL`), by name.
 
-import { FACE_CHIPS_MAX, PHYSICS } from "@ice/desk/kit";
+import { PHYSICS } from "@ice/desk/kit";
 import { PORTAL } from "@ice/desk";
 
 /**
@@ -50,7 +50,12 @@ export const MINIMAT = {
    * record keeps 128), none smaller than this many CSS px; a note's writing GREEKED as lines of ink once
    * its chip is this tall (CSS px), at this presence, its lines this thick (× the line pitch).
    */
-  chips: { max: FACE_CHIPS_MAX, minPx: 1, greekPx: 18, greekAlpha: 0.42, greekWeight: 0.3 },
+  chips: { max: 64, minPx: 1, greekPx: 18, greekAlpha: 0.42, greekWeight: 0.3 },
+  /**
+   * The face's corner (MINIMAT.md §5; D2b): the inside is clipped SQUARE — the live inside, the far LOD and a flight through it
+   * (`faceClip`; its `faceLaw.radius`, K8a — the mini mat's own number, which the kit held as `FACE_RADIUS` until then).
+   */
+  faceRadius: 0,
   /** The live inside's GATE (CSS px of the face's short side): the portal's law (theme.ts `PORTAL`), by name. */
   gate: PORTAL.gate,
 } as const;

@@ -8,7 +8,7 @@
 // the inside's embedding, in the host's world. The lamp is the desk's one lamp
 // (paper.ts `lampOf`): the shadow falls away from it, the cut edge catches it.
 
-import { type FadeIn, lod, dressScale, type LineLaw, lineWeight, GLYPHS, type CameraState, type PortalAffine, type Rect, clipOf, type PortalClip, type Lamp, sdRoundBox, type ChildShape, type ChipFinish, FACE_RADIUS, PAPER_FINISH, VINYL_FINISH } from "@ice/desk/kit";
+import { type FadeIn, lod, dressScale, type LineLaw, lineWeight, GLYPHS, type CameraState, type PortalAffine, type Rect, clipOf, type PortalClip, type Lamp, sdRoundBox, type ChildShape, type ChipFinish, PAPER_FINISH, VINYL_FINISH } from "@ice/desk/kit";
 import type { RGB } from "@ice/desk";
 import { MINIMAT } from "./theme";
 
@@ -115,7 +115,7 @@ export function shadowReach(G: MiniMatGeometry, law: MiniMatLaw = DEFAULT_MINIMA
 }
 
 /** The face on screen under a camera — the portal's clip. */
-export const faceClip = (G: MiniMatGeometry, cam: CameraState): PortalClip => clipOf(faceOf(G), FACE_RADIUS, cam);
+export const faceClip = (G: MiniMatGeometry, cam: CameraState): PortalClip => clipOf(faceOf(G), MINIMAT.faceRadius, cam);
 
 // ---------------------------------------------------------------- the far LOD (MINIMAT.md §5)
 

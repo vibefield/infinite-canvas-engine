@@ -16,6 +16,7 @@
 import { type GridConfig, type CameraState, FIT, type FitBand, PORTAL_GATE, type Rect, type Viewport, type InsideView, insideViewOfFace } from "@ice/desk/kit";
 import type { MiniMatInstance } from "./layout";
 import { type Chip, DEFAULT_MINIMAT_LAW, faceLattice, faceOf, type MiniMatGeometry, type MiniMatLaw, numeralsOf } from "./minimat";
+import { MINIMAT } from "./theme";
 
 
 /**
@@ -25,7 +26,7 @@ import { type Chip, DEFAULT_MINIMAT_LAW, faceLattice, faceOf, type MiniMatGeomet
  * flight's first frame. Null only for a face with no area.
  */
 export function insideView(G: MiniMatGeometry, content: Rect | null, cam: CameraState, vp: Viewport, fit: FitBand = FIT, gate: readonly [number, number] = PORTAL_GATE): InsideView | null {
-  return insideViewOfFace(faceOf(G), content, cam, vp, fit, gate);
+  return insideViewOfFace(faceOf(G), MINIMAT.faceRadius, content, cam, vp, fit, gate);
 }
 
 /**

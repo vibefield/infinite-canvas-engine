@@ -102,7 +102,7 @@ function gateOf(world: World): readonly [number, number] {
 /**
  * A `NavFace` from the STATIC geometry — core's own word when no renderer has one: the face is
  * the portal rect, the arrival `defaultArrivalCamera`'s, the cover test sharp-cornered (the
- * desk's faces have square corners too — `FACE_RADIUS 0` — so the two agree where both answer).
+ * desk's mini mat's face has square corners too — its face law's `radius` 0, K8a — so the two agree where both answer).
  */
 export function fallbackNavFace(world: World, container: Entity, cam: CameraState, opts: { readonly face?: CanvasRect; readonly arrival?: CameraState; readonly isContainer?: (e: Entity) => boolean } = {}): NavFace | undefined {
   const face = opts.face ?? staticFace(world, container);

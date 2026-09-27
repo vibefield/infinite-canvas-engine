@@ -17,9 +17,9 @@ import { dressGrid } from "../../desk/src/mat/grid";
 import { boxOf, boxValues } from "../../desk/src/lattice/lod";
 import { departedCamera, enterFlight, exitFlight, flightAt, solveFlightStart } from "../../desk/src/nav/flight";
 import { chainOf, faceCovers, intersectBox, PORTAL_CAP, PORTAL_CHAIN, PORTAL_CHAIN_TYPE, portalValues, scissorOf, THROUGH_IN, THROUGH_OUT } from "../../desk/src/nav/portal";
-import { FACE_RADIUS } from "@ice/desk/kit";
 import { DEFAULT_MINIMAT_LAW, faceClip, faceOf, MINIMAT_REST, resolveMiniMat } from "../src/minimat/minimat";
 import { insideView } from "../src/minimat/inside";
+import { minimatKind } from "../src/minimat/kind";
 import { lampOf } from "../src/paper/paper";
 import { MINIMAT } from "../src/minimat/theme";
 import { THEMES } from "../oracle/fixtures/vf-theme";
@@ -65,7 +65,8 @@ describe("the gate and the face's geometry (§2.1, §2.5; MINIMAT.md §3)", () =
   });
   it("the face is the sheet inset by its printed border, square-cornered; its clip is clipOf of it", () => {
     expect(faceOf(G)).toEqual(K);
-    expect(FACE_RADIUS).toBe(0);
+    expect(MINIMAT.faceRadius).toBe(0);
+    expect(minimatKind().faceLaw?.radius).toBe(MINIMAT.faceRadius);   // the container's own number, declared on its kind (K8a)
     expect(faceClip(G, CAM)).toEqual(clipOf(K, 0, CAM));
   });
   it("insideView: the clip is the face on screen, M the flight's affine, the camera the departed-slot ride — at EVERY size, the gate only its presence", () => {
