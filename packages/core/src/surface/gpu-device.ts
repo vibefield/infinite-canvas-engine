@@ -9,7 +9,9 @@
  * The error log subscribes with `addEventListener('uncapturederror')`, never the `onuncapturederror` property, so no
  * other holder of the device can disconnect it; it is armed HERE, before any consumer exists, so no error goes unseen.
  * (The three.js creation rules this module carried for the GL islands — no compatibility adapter, every advertised
- * feature — left with three at D7; `hasCoreFeatures`, three's compatibility-mode signal, with them.)
+ * feature — left with three at D7; `hasCoreFeatures`, three's compatibility-mode signal, with them.) ONE feature is asked
+ * for whenever the adapter has it (design-016 §4, K2): `timestamp-query`, the GPU profiler's clock — a feature cannot be
+ * added to a device once it is made, and one left unused costs nothing, so every engine's device can be profiled.
  *
  * Headless-safe: WebGPU is not DOM (it exists in workers), so naming it here does not breach core's wall. The only
  * environmental touch is reading `navigator.gpu`, and its absence is a clean typed failure, never a throw from deep
@@ -30,6 +32,7 @@ export interface EngineGpu {
   readonly device: GPUDevice;
   /** Features actually enabled on the device (not merely adapter-advertised). */
   readonly enabled: readonly string[];
+  /** `timestamp-query` is on the device — asked for whenever the adapter has it (the GPU profiler's clock, design-016 §4). */
   readonly hasTimestampQuery: boolean;
   /** Uncaptured GPU errors since acquisition, newest last. */
   errors(): readonly GpuUncapturedError[];
@@ -40,7 +43,7 @@ export interface EngineGpu {
 export interface AcquireDeviceOpts {
   /** Defaults to "high-performance" — the desk is the frame's fill cost. */
   readonly powerPreference?: GPUPowerPreference;
-  /** Features to enable where the adapter has them (none by default — the desk needs none). */
+  /** Features to enable where the adapter has them, beside `timestamp-query` (always asked for where the adapter has it; the desk's drawing needs none). */
   readonly requiredFeatures?: readonly GPUFeatureName[];
   /** Cap the retained error log (defaults to 64). */
   readonly maxErrors?: number;
@@ -55,6 +58,14 @@ export class GpuUnavailableError extends Error {
 
 const now = (): number =>
   typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : 0;
+
+/** The profiler's clock (design-016 §4, K2): asked for on every device the adapter can give it to. */
+const PROFILER_FEATURES: readonly GPUFeatureName[] = ["timestamp-query"];
+
+/** What a device is asked for: the caller's features and the profiler's, each once, where the adapter has them. */
+function deviceFeatures(adapter: Pick<GPUAdapter, "features">, requested: readonly GPUFeatureName[] = []): GPUFeatureName[] {
+  return [...new Set([...requested, ...PROFILER_FEATURES])].filter((f) => adapter.features.has(f));
+}
 
 /**
  * Acquire the engine's device. Called by the APP before `createCanvasEngine({ compositorDevice })`; the desk's layer
@@ -72,7 +83,7 @@ export async function acquireCompositorDevice(opts: AcquireDeviceOpts = {}): Pro
   if (adapter === null) throw new GpuUnavailableError("requestAdapter returned null");
   const device = await adapter.requestDevice({
     label: "ice",
-    requiredFeatures: (opts.requiredFeatures ?? []).filter((f) => adapter.features.has(f)),
+    requiredFeatures: deviceFeatures(adapter, opts.requiredFeatures),
   });
 
   // armed BEFORE any consumer, and via addEventListener so no later holder can disconnect it

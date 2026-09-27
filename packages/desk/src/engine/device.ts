@@ -11,6 +11,7 @@ export interface GpuOptions {
   readonly gpu: GPU;
   readonly label?: string;
   readonly powerPreference?: GPUPowerPreference;
+  /** Features to enable where the adapter has them, beside `timestamp-query` — asked for whenever the adapter has it (the GPU profiler's clock, design-016 §4: a feature cannot be added to a device later, and one unused costs nothing). */
   readonly requiredFeatures?: readonly GPUFeatureName[];
   /** Device loss and uncaptured errors — the layer degrades, it does not throw. */
   readonly onLost?: (info: GPUDeviceLostInfo) => void;
@@ -30,7 +31,7 @@ export async function acquire(opts: GpuOptions): Promise<Gpu> {
   if (!adapter) throw new Error("WebGPU: requestAdapter() returned null");
   const device = await adapter.requestDevice({
     label: opts.label ?? "ground",
-    requiredFeatures: (opts.requiredFeatures ?? []).filter((f) => adapter.features.has(f)),
+    requiredFeatures: [...new Set<GPUFeatureName>([...(opts.requiredFeatures ?? []), "timestamp-query"])].filter((f) => adapter.features.has(f)),
   });
   return adopt(adapter, device, opts);
 }
