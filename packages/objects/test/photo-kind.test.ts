@@ -176,15 +176,20 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
       u.set(matUniformValues(s.view, s.fadeIn, s.cfg, s.frame ?? STILL_MAT_FRAME, strength, s.present, s.light, mat.glyphs, lit));
       return new Uint8Array(u.view().buffer, u.view().byteOffset, u.view().byteLength).slice();
     };
-    // the frame as the ground prepares a slot: its mat (the view block), then its kinds
+    // the frame as the ground prepares a slot: its mat (the view block — uploaded only when its bytes moved, K7a), then its kinds
+    let sent: unknown;
     const frame = (lit: SlotLight | undefined) => {
       writes.length = 0;
       mat.prepare(device.createCommandEncoder(), s.view, s.fadeIn, s.cfg, s.frame ?? STILL_MAT_FRAME, s.present, s.light, lit);
       kind.prepare({} as GPUCommandEncoder, { ...s, lit }, [print(0, null)]);
       expect(writes.filter((w) => w.buffer.startsWith("photo/") && w.buffer.includes("mat"))).toEqual([]);   // no copy of the block
-      return must(writes.find((w) => w.buffer === "mat/uniforms")).bytes;
+      sent = writes.find((w) => w.buffer === "mat/uniforms")?.bytes ?? sent;
+      return sent;
     };
     expect(frame(host)).toEqual(block(host));
+    expect(frame(host)).toEqual(block(host));   // the same frame again: the block stands — nothing uploaded (K7a)
+    expect(writes.find((w) => w.buffer === "mat/uniforms")).toBeUndefined();
+    expect([...mat.viewBytes]).toEqual([...block(host)]);   // …and the slot says what it holds
     expect(frame(host)).not.toEqual(block(undefined));   // the lamp is not the slot's own
     expect(frame(undefined)).toEqual(block(undefined));
     // the prints' group 0 binds that very buffer at 0

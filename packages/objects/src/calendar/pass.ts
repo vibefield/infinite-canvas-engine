@@ -91,6 +91,8 @@ interface CalTarget {
   /** The layer's targets at the pads' screen box (K7a, kit/layer.ts `BoxTargets`). */
   readonly layer: BoxTargets;
   readonly buffers: Map<number, PadBuffers>;
+  /** Turns over whenever one of this target's meshes is uploaded (K7a: a layer drawn from other meshes is drawn again). */
+  meshGen: number;
   list: CalendarDraw[];
   frameNo: number;
   screen: { x0: number; y0: number; x1: number; y1: number } | null;
@@ -98,7 +100,7 @@ interface CalTarget {
   stats: CalendarStats;
 }
 
-const calTarget = (layer: BoxTargets): CalTarget => ({ layer, buffers: new Map(), list: [], frameNo: 0, screen: null, scissor: null, stats: { calendars: 0, moving: 0 } });
+const calTarget = (layer: BoxTargets): CalTarget => ({ layer, buffers: new Map(), meshGen: 0, list: [], frameNo: 0, screen: null, scissor: null, stats: { calendars: 0, moving: 0 } });
 
 /** The tiles' stand-in before the first tile: one texel, one layer. */
 const noTiles = (device: GPUDevice): GPUTexture => device.createTexture({ label: "calendar/print tiles (none yet)", size: [1, 1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING });
@@ -165,6 +167,17 @@ export class CalendarPass {
   dropped = 0;
   /** Profiling switches: 2 no print or paper detail · 4 no gobo · 8 no rolls' shade · 16 no layer on the mat · 32 no marks · 64 no tiles · 128 no mat under it · 256 no moving sheet · 512 flat colour. */
   debug = 0;
+  /**
+   * Turns over at every pass-wide resource a layer reads changing (K7a) — a tile, a page table, the main group made again: with the
+   * target's meshes' generation, the silhouette's key, what the pass lists and the box — and by CONTENT the knobs, the records and the
+   * slot's view block — what a target's layer is laid again by, undrawn (`BoxTargets.holds`).
+   */
+  private gen = 0;
+  private readonly sig = new Float64Array(8);
+  private readonly read: Uint8Array[] = [];
+  /** Layers drawn and laid again undrawn since the pass was made (a witness). */
+  private layerDraws = 0;
+  private layerKept = 0;
 
   private constructor(device: GPUDevice, mat: MatPass, layers: number, pipes: { layoutMain: GPUBindGroupLayout; layoutComp: GPUBindGroupLayout; face: GPURenderPipeline; sheet: GPURenderPipeline; solid: GPURenderPipeline; moving: GPURenderPipeline; recv: GPURenderPipeline; comp: GPURenderPipeline }) {
     this.device = device; this.mat = mat; this.layers = layers;
@@ -281,6 +294,7 @@ export class CalendarPass {
     this.boundAssets = this.mat.assetVersion;
     this.boundTiles = p.tileTex;
     this.boundTable = p.tableBuf;
+    this.gen += 1;
   }
 
   /** Sample `root`'s print — its tiles and page tables — rather than this pass's own (K5b: the tray's specimen reads the desk's print). */
@@ -301,10 +315,24 @@ export class CalendarPass {
     this.rebind();
   }
 
+  /**
+   * The page tables let go (the desk has no pad — K7a, found by rig:stress: 227 KB of tables stood after the last pad left, the
+   * calendar kind over its 1 MB "none on the desk" line): the 16-byte stand-in again; the next sheet's grid makes them afresh.
+   */
+  releaseTables(): void {
+    if (this.tableCount === 0) return;
+    this.tableBuf.destroy();
+    this.tableBuf = this.device.createBuffer({ label: "calendar/tile tables", size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    this.tableCount = 0;
+    this.boundAssets = -1;
+    this.rebind();
+  }
+
   /** A sheet's page table (a layer per tile, or MISSING / EMPTY), into its slot. */
   writeTable(slot: number, grid: TileGrid, table: Int32Array): void {
     this.fitTables(grid);
     this.device.queue.writeBuffer(this.tableBuf, slot * grid.count * 4, table.buffer, table.byteOffset, grid.count * 4);
+    this.gen += 1;
   }
 
   /** The tiles' texture, made on the first tile laid (K6a). */
@@ -335,12 +363,14 @@ export class CalendarPass {
   /** A tile's raster (the host's canvas, TILE_TEX², straight alpha) into its layer. */
   uploadTile(layer: number, source: HTMLCanvasElement | OffscreenCanvas): void {
     this.device.queue.copyExternalImageToTexture({ source, origin: { x: 0, y: 0 } }, { texture: this.tiles(), origin: { x: 0, y: 0, z: layer }, premultipliedAlpha: false }, [TILE_TEX, TILE_TEX]);
+    this.gen += 1;
   }
 
   /** A tile's COMMITTED raster (RGBA bytes, TILE_TEX² × 4, straight alpha, row 0 at the top) into its layer — a host with no canvas (the Node oracle; D3t-c). */
   writeTileBytes(layer: number, bytes: Uint8Array<ArrayBuffer>): void {
     if (bytes.byteLength !== TILE_TEX * TILE_TEX * 4) throw new Error(`calendar: a tile is ${TILE_TEX}² RGBA (${TILE_TEX * TILE_TEX * 4} bytes), not ${bytes.byteLength}`);
     this.device.queue.writeTexture({ texture: this.tiles(), origin: { x: 0, y: 0, z: layer } }, bytes, { bytesPerRow: TILE_TEX * 4, rowsPerImage: TILE_TEX }, [TILE_TEX, TILE_TEX, 1]);
+    this.gen += 1;
   }
 
 
@@ -351,6 +381,20 @@ export class CalendarPass {
 
   /** Is the frame's layer made? */
   get layerMade(): boolean { return this.frameT.layer.made; }
+  /** The layers drawn and the ones laid again undrawn (nothing they are drawn from moved) since the pass was made (K7a). */
+  get layerFrames(): { readonly drawn: number; readonly kept: number } { return { drawn: this.layerDraws, kept: this.layerKept }; }
+
+  /**
+   * Every mesh on the device given back — the frame's and the held copy's (K7a: the desk has none of this kind's objects left, and
+   * no prepare will come to sweep the ones it no longer lists).
+   */
+  releaseMeshes(): void {
+    for (const t of [this.frameT, this.copyT]) {
+      if (t === null) continue;
+      for (const b of t.buffers.values()) { b.vb.destroy(); b.ib.destroy(); }
+      t.buffers.clear();
+    }
+  }
 
   /** The frame's layer targets let go (no pad drawn for a while, or none on the desk): made again at the next pad drawn. */
   releaseLayer(): void { this.frameT.layer.release(); }
@@ -374,6 +418,7 @@ export class CalendarPass {
       this.device.queue.writeBuffer(b.vb, 0, d.mesh.vertices.buffer, d.mesh.vertices.byteOffset, vbytes);
       this.device.queue.writeBuffer(b.ib, 0, d.mesh.indices.buffer, d.mesh.indices.byteOffset, ibytes);
       b.version = d.version; b.icount = d.mesh.icount; b.sheetFirst = d.mesh.sheetFirst; b.rollFirst = d.mesh.rollFirst;
+      this.t.meshGen += 1;
     }
     b.seen = this.t.frameNo;
     return b;
@@ -522,8 +567,24 @@ export class CalendarPass {
     if (!at) return false;
     this.drawnAt = performance.now();
     const [x0, y0, x1, y1] = at;
-    // into the targets at the pads' screen box (K7a — kit/layer.ts `BoxTargets`), on the attachment's pixel grid
+    // into the targets at the pads' screen box (K7a — kit/layer.ts `BoxTargets`), on the attachment's pixel grid — or, when nothing
+    // it was drawn from moved since (the pass's resources, the meshes, the silhouette, what it lists, the box; by content this
+    // target's knobs and records and the slot's view block: the camera, the clocks, the lamp), that layer laid again undrawn (K7a)
     this.t.layer.fit(at, size);
+    const sig = this.sig;
+    const view = this.mat.viewBytes;
+    sig[0] = this.gen; sig[1] = this.t.meshGen; sig[2] = view === undefined ? Number.NaN : (this.mat.silhouetteKey ?? Number.NaN);
+    sig[3] = this.t.list.length; sig[4] = x0; sig[5] = y0; sig[6] = x1; sig[7] = y1;
+    const read = this.read;
+    read.length = 0;
+    read.push(this.knobs.view(), this.records.view(this.t.list.length));
+    if (view !== undefined) read.push(view);
+    if (this.t.layer.holds(sig, read)) {
+      this.layerKept += 1;
+      this.t.scissor = [x0, y0, x1 - x0, y1 - y0];
+      return true;
+    }
+    this.layerDraws += 1;
     const pass = this.t.layer.begin(encoder, "calendar/layer", size, at);
     pass.setBindGroup(0, this.mainGroup);
     // the sheet in motion first: the month it lies over is then skipped by the depth test, never shaded under it
@@ -548,6 +609,7 @@ export class CalendarPass {
     range(this.solidPipe, () => 0, (b) => b.sheetFirst);
     if (!(this.debug & 128)) { pass.setPipeline(this.recvPipe); for (let i = 0; i < this.t.list.length; i++) pass.draw(6, 1, 0, i); }
     pass.end();
+    this.t.layer.drew(sig, read);
     this.t.scissor = [x0, y0, x1 - x0, y1 - y0];
     return true;
   }

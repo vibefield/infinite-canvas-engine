@@ -74,6 +74,9 @@ export class CuttingMat implements MatPass {
   /** Turns over whenever this slot's bind groups are made again — a shared asset landed, or the slot samples another silhouette. */
   private assets = 0;
   private windRuns = 0;
+  /** The view block as last uploaded (K7a: uploaded only when its bytes moved; a layered kind compares a layer's view by it). */
+  private readonly sentView = new Uint8Array(MatUniforms.size);
+  private viewSent = false;
   private readonly device: GPUDevice;
   private readonly shared: MatShared;
 
@@ -148,6 +151,8 @@ export class CuttingMat implements MatPass {
   get noiseTexture(): GPUTexture { return this.shared.noise; }
   /** Bumped whenever a shared asset lands or the slot samples another silhouette — a pass that binds them rebinds on a change. */
   get assetVersion(): number { return this.assets; }
+  get viewBytes(): Uint8Array { return this.sentView; }
+  get silhouetteKey(): number { return this.wind.key; }
 
   /** A new frame (the ground's `prepareFrame`, before its slots prepare): a wind key drawn before it may be drawn over. */
   newFrame(): void { this.shared.frame += 1; }
@@ -233,7 +238,14 @@ export class CuttingMat implements MatPass {
     const plate = PLATE_NAMES.includes(cfg.gobo.plate) ? cfg.gobo.plate : "c";
     const strength = MAT_GRID.gobo.plates[plate].strength;
     this.uniforms.set(matUniformValues(view, fadeIn, { ...cfg, gobo: { ...cfg.gobo, plate } }, frame, strength, present, light, this.shared.glyphMeta, lit));
-    this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
+    const bytes = this.uniforms.view();
+    let same = this.viewSent;
+    for (let i = 0; same && i < bytes.byteLength; i++) same = bytes[i] === this.sentView[i];
+    if (!same) {
+      this.device.queue.writeBuffer(this.uniformBuf, 0, bytes);
+      this.sentView.set(bytes);
+      this.viewSent = true;
+    }
     // a gobo at opacity 0 never consults its silhouette (mat.wgsl `sample_gobo`): the slot keeps the target it has, drawing none
     if (cfg.gobo.opacity <= 0) { this.rebind(); return false; }
     const key = frame.goboTime * 1.000001 + strength * 7.3 + PLATE_NAMES.indexOf(plate) * 1e3 + this.shared.version * 1e5;

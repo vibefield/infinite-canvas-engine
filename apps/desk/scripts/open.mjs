@@ -234,7 +234,8 @@ try {
   await q("window.__desk.ambient('still')");
   const cost = await tab.evaluate("window.__desk.holdCost(40)", { awaitPromise: true, timeoutMs: 60000 });
   const copyMs = cost.copy.ms; const handMs = cost.hand.ms; const restMs = cost.rest.ms;
-  console.log(`  cost (ms/frame, 40 back to back, GPU drained): the copy remade each frame ${copyMs.toFixed(2)} (cpu ${(cost.copy.cpu * 1000).toFixed(0)} µs) · the hand alone ${handMs.toFixed(2)} (cpu ${(cost.hand.cpu * 1000).toFixed(0)} µs) · the rest frame ${restMs.toFixed(2)} (cpu ${(cost.rest.cpu * 1000).toFixed(0)} µs)`);
+  console.log(`  cost (ms/frame, 40 back to back, GPU drained, every frame drawn in full): the copy remade each frame ${copyMs.toFixed(2)} (cpu ${(cost.copy.cpu * 1000).toFixed(0)} µs) · the hand alone ${handMs.toFixed(2)} (cpu ${(cost.hand.cpu * 1000).toFixed(0)} µs) · the rest frame ${restMs.toFixed(2)} (cpu ${(cost.rest.cpu * 1000).toFixed(0)} µs) · the held frame STANDING (K7a: its layer laid again undrawn) ${cost.standing.ms.toFixed(2)} (cpu ${(cost.standing.cpu * 1000).toFixed(0)} µs)`);
+  check(cost.standing.ms < handMs, `a held frame standing lays the hand's layer again undrawn: ${cost.standing.ms.toFixed(2)} ms against ${handMs.toFixed(2)} drawn in full (K7a)`);
   check(copyMs - handMs <= 1.5, `with a second notebook behind the hand, the desk copy + its blur costs ${(copyMs - handMs).toFixed(2)} ms over the hand alone (design-015 §11.4: ≤ 1.5 ms, once per settled desk; 0 per held frame — the row above, the wind up)`);
   console.log(`  note: a held frame is the OPEN spread at ${(672 / 252).toFixed(2)}× plus the hand's two composites — ${(handMs / restMs).toFixed(1)}× the rest frame's closed book at 1×; the object's own cost at its reading size, not the hand's overhead (the copy's is the number above)`);
   await key("Escape", "Escape", 27);

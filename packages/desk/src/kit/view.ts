@@ -37,4 +37,11 @@ export interface MatPass {
   readonly glyphs: GlyphAtlasMeta;
   /** Turns over whenever a plate, the noise or the glyphs land: a pass holding a bind group over them rebinds. */
   readonly assetVersion: number;
+  /**
+   * The view block's bytes as the slot last uploaded them, and the key of what the silhouette holds (K7a): a layered kind whose
+   * layer was drawn from the same bytes and key, with nothing of its own moved, lays it again without drawing it. Absent (a host's
+   * own mat): the layer is always drawn.
+   */
+  readonly viewBytes?: Uint8Array;
+  readonly silhouetteKey?: number;
 }

@@ -366,7 +366,7 @@ export function createBooks(host: KindHost): Books {
       const st = books.get(e);
       if (st !== undefined) pages.forget(st.id);
       books.delete(e);
-      if (books.size === 0) { rootPass()?.releaseLayer(); rootPass()?.releaseInk(); }   // no notebook on the desk: its layer, shadow maps and page ink go (K6a)
+      if (books.size === 0) { rootPass()?.releaseLayer(); rootPass()?.releaseInk(); rootPass()?.releaseMeshes(); }   // no notebook on the desk: its layer, shadow maps and page ink go (K6a)
       landedOf.delete(e);
     },
     dispose() { books.clear(); pages.dispose(); },

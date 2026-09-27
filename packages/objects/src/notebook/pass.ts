@@ -71,6 +71,8 @@ interface NbTarget {
   /** The layer's targets at the books' screen box (K7a, kit/layer.ts `BoxTargets`). */
   readonly layer: BoxTargets;
   readonly buffers: Map<number, BookBuffers>;
+  /** Turns over whenever one of this target's meshes is uploaded (K7a: a layer drawn from other meshes is drawn again). */
+  meshGen: number;
   list: NotebookDraw[];
   frameNo: number;
   screen: { x0: number; y0: number; x1: number; y1: number } | null;
@@ -78,7 +80,7 @@ interface NbTarget {
   box: readonly [number, number, number, number] | null;
 }
 
-const nbTarget = (layer: BoxTargets): NbTarget => ({ layer, buffers: new Map(), list: [], frameNo: 0, screen: null, stats: { books: 0, triangles: 0, shadowed: 0 }, box: null });
+const nbTarget = (layer: BoxTargets): NbTarget => ({ layer, buffers: new Map(), meshGen: 0, list: [], frameNo: 0, screen: null, stats: { books: 0, triangles: 0, shadowed: 0 }, box: null });
 
 /** The shadow maps' stand-in before a book is drawn: one texel, one layer. */
 const noShadows = (device: GPUDevice): GPUTexture => device.createTexture({ label: "notebook/shadow maps (none yet)", size: [1, 1, 1], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
@@ -132,6 +134,18 @@ export class NotebookPass {
   /** Shadow maps drawn and kept since the pass was made (a witness). */
   private shadowDraws = 0;
   private shadowKept = 0;
+  /**
+   * Turns over at every pass-wide resource a layer reads changing (K7a) — a page's ink uploaded, the main group made again (the
+   * mat's assets, the ink or the shadow maps' texture): with the target's meshes' generation, the silhouette's key, what the pass
+   * lists and the box — and by CONTENT the knobs, the records and the slot's view block — what a target's layer is laid again by,
+   * undrawn (`BoxTargets.holds`). A shadow map drawn is not in it: its content is its book, mesh and light — in the records.
+   */
+  private gen = 0;
+  private readonly sig = new Float64Array(8);
+  private readonly read: Uint8Array[] = [];
+  /** Layers drawn and laid again undrawn since the pass was made (a witness). */
+  private layerDraws = 0;
+  private layerKept = 0;
   private drawnAt = Number.NEGATIVE_INFINITY;
   private readonly shadowGroup: GPUBindGroup;
   private readonly inkSampler: GPUSampler;
@@ -251,6 +265,7 @@ export class NotebookPass {
     ], "notebook/main");
     this.boundAssets = this.mat.assetVersion;
     this.boundInk = this.inkReady;
+    this.gen += 1;
   }
 
   /**
@@ -271,6 +286,7 @@ export class NotebookPass {
     const y1 = Math.min(INK_H, Math.ceil(y + h));
     if (x1 <= x0 || y1 <= y0) return;
     this.device.queue.writeTexture({ texture: this.inkTex, origin: { x: x0, y: y0, z: layer } }, bytes, { offset: (y0 * INK_W + x0) * 4, bytesPerRow: INK_W * 4, rowsPerImage: INK_H }, [x1 - x0, y1 - y0, 1]);
+    this.gen += 1;
   }
 
   /** The layer's targets at the books' screen `box` (K7a) — and a shadow map a book drawn — made on the first book drawn (K6a). */
@@ -305,6 +321,18 @@ export class NotebookPass {
   }
 
   /**
+   * Every mesh on the device given back — the frame's and the held copy's (K7a: the desk has none of this kind's objects left, and
+   * no prepare will come to sweep the ones it no longer lists).
+   */
+  releaseMeshes(): void {
+    for (const t of [this.frameT, this.copyT]) {
+      if (t === null) continue;
+      for (const b of t.buffers.values()) { b.vb.destroy(); b.ib.destroy(); }
+      t.buffers.clear();
+    }
+  }
+
+  /**
    * The frame's layer targets and the shadow maps let go (no book drawn for a while, or none on the desk): made again at the next
    * book drawn. The meshes stay (the books'); the held copy's targets are the hold's (`endHold`).
    */
@@ -325,6 +353,8 @@ export class NotebookPass {
 
   /** The shadow maps drawn and the ones kept (not drawn: their book, mesh and light stood) since the pass was made (K7a). */
   get shadows(): { readonly drawn: number; readonly kept: number } { return { drawn: this.shadowDraws, kept: this.shadowKept }; }
+  /** The layers drawn and the ones laid again undrawn (nothing they are drawn from moved) since the pass was made (K7a). */
+  get layerFrames(): { readonly drawn: number; readonly kept: number } { return { drawn: this.layerDraws, kept: this.layerKept }; }
 
   /** A book's mesh on the device — uploaded when its version moved, the buffers grown when too small. */
   private upload(d: NotebookDraw): BookBuffers {
@@ -346,6 +376,7 @@ export class NotebookPass {
       this.device.queue.writeBuffer(b.vb, 0, d.mesh.vertices.buffer, d.mesh.vertices.byteOffset, vbytes);
       this.device.queue.writeBuffer(b.ib, 0, d.mesh.indices.buffer, d.mesh.indices.byteOffset, ibytes);
       b.version = d.version; b.icount = d.mesh.icount;
+      this.t.meshGen += 1;
     }
     b.seen = this.t.frameNo;
     return b;
@@ -507,6 +538,22 @@ export class NotebookPass {
     this.drawnAt = performance.now();
     const [x0, y0, x1, y1] = at;
     this.fit(at, size);
+    // 0. the layer the targets hold laid again UNDRAWN when nothing it was drawn from moved since (K7a): the pass's resources, the
+    //    meshes, the silhouette, what it lists, the box — and by content this target's knobs and records and the slot's view block
+    //    (the camera, the clocks, the lamp); no shadow map is drawn for it either
+    const sig = this.sig;
+    const view = this.mat.viewBytes;
+    sig[0] = this.gen; sig[1] = this.t.meshGen; sig[2] = view === undefined ? Number.NaN : (this.mat.silhouetteKey ?? Number.NaN);
+    sig[3] = this.t.list.length; sig[4] = x0; sig[5] = y0; sig[6] = x1; sig[7] = y1;
+    const read = this.read;
+    read.length = 0;
+    read.push(this.knobs.view(), this.records.view(this.t.list.length));
+    if (view !== undefined) read.push(view);
+    if (this.t.layer.holds(sig, read)) {
+      this.layerKept += 1;
+      this.t.box = [x0, y0, x1 - x0, y1 - y0];
+      return true;
+    }
     // 1. the shadow maps — each drawn only when its book, its mesh or its light moved since it was (K7a)
     const F = this.recordFloats;
     const stride = NbBook.size / 4;
@@ -534,6 +581,7 @@ export class NotebookPass {
       p.end();
     });
     // 2. the layer: the books, then the mat under them — into the targets at their screen box (K7a), the attachment's pixel grid
+    this.layerDraws += 1;
     const pass = this.t.layer.begin(encoder, "notebook/layer", size, at);
     pass.setBindGroup(0, this.mainGroup);
     pass.setPipeline(this.bookPipe);
@@ -547,6 +595,7 @@ export class NotebookPass {
     pass.setPipeline(this.recvPipe);
     if (!(this.debug & 64)) for (let i = 0; i < this.t.list.length; i++) pass.draw(6, 1, 0, i);
     pass.end();
+    this.t.layer.drew(sig, read);
     this.t.box = [x0, y0, x1 - x0, y1 - y0];
     return true;
   }

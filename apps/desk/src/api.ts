@@ -145,7 +145,7 @@ export interface DeskApi {
    * remade every frame (a fresh stamp), the hand alone over the standing copy, and the rest frame (nothing held) — ms per frame
    * and the CPU µs of recording one. Needs something in hand for `copy` and `hand` (null otherwise). Leaves the frame as it was.
    */
-  holdCost(n: number): Promise<{ readonly copy: { ms: number; cpu: number } | null; readonly hand: { ms: number; cpu: number } | null; readonly rest: { ms: number; cpu: number } }>;
+  holdCost(n: number): Promise<{ readonly copy: { ms: number; cpu: number } | null; readonly hand: { ms: number; cpu: number } | null; readonly rest: { ms: number; cpu: number }; readonly standing: { ms: number; cpu: number } | null }>;
   /** The performance instruments (D6 — design-015 §11.4's gates, read by rig:stress). */
   readonly perf: PerfApi;
   /** The raster budget's ledger (D6): the kinds' caches by owner against the cap, the evictions so far. */
@@ -420,13 +420,18 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
         await device.queue.onSubmittedWorkDone();
         return { ms: (performance.now() - t0) / n, cpu: cpu / n };
       };
+      // every frame of a batch DRAWN IN FULL (K7a): the camera nudged 1e-4 units every other frame, so no layered kind lays a layer it
+      // drew before undrawn (nothing it reads moved) — what a frame costs to draw, as the bounds were set against; `standing` is the
+      // held frame as the desk actually repeats it while nothing moves (the hand's layer laid again undrawn)
+      const nudge = <V extends { readonly camX: number }>(v: V, i: number): V => ({ ...v, camX: v.camX + (i & 1 ? 1e-4 : 0) });
       const held = inputs.held;
-      const copy = held === undefined ? null : await batch((i) => ({ ...inputs, held: { ...held, stamp: `cost ${i}` } }));
-      const hand = held === undefined ? null : await batch(() => inputs);
+      const copy = held === undefined ? null : await batch((i) => ({ ...inputs, view: nudge(inputs.view, i), held: { ...held, stamp: `cost ${i}`, view: nudge(held.view, i) } }));
+      const hand = held === undefined ? null : await batch((i) => ({ ...inputs, view: nudge(inputs.view, i), held: { ...held, view: nudge(held.view, i) } }));
+      const standing = held === undefined ? null : await batch(() => inputs);
       const { held: _held, ...bare } = inputs;
-      const rest = await batch(() => bare);
+      const rest = await batch((i) => ({ ...bare, view: nudge(bare.view, i) }));
       g.render(inputs);   // the frame as it was
-      return { copy, hand, rest };
+      return { copy, hand, rest, standing };
     },
     taps() {
       const m = world.getResource(NavTapMemo);

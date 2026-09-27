@@ -129,6 +129,8 @@ export abstract class LayeredKind<R, P extends LayerPass> implements KindPass<R>
 
 /** A box's targets grow and shrink by this many device px a side, so a pan's jitter never makes them again (K7a). */
 export const BOX_STEP = 256;
+/** The numbers a layer's signature holds at most (`BoxTargets.holds`). */
+const SIGNATURE = 8;
 
 /**
  * A layered kind's TARGETS AT ITS SCREEN BOX (K7a — design-016 §6): the 4× colour and depth and their resolve sized to the box
@@ -152,6 +154,11 @@ export class BoxTargets {
   private originBuf: GPUBuffer | null = null;
   private readonly sent = new Float32Array(4).fill(Number.NaN);
   private readonly next = new Float32Array(4);
+  /** What the layer the targets hold was drawn from — its pass's signature at the draw (K7a); NaN: nothing drawn since made. */
+  private readonly drawnFrom = new Float64Array(SIGNATURE).fill(Number.NaN);
+  /** …and the content it read, by value (the knobs, the records, the view block), with each copy's length. */
+  private readonly drawnBytes: Uint8Array[] = [];
+  private readonly drawnLen: number[] = [];
   constructor(private readonly device: GPUDevice, private readonly label: string, private readonly layoutComp: GPUBindGroupLayout, private readonly samples = 4) {}
 
   /** The targets are made (a layer holds device memory). */
@@ -179,6 +186,7 @@ export class BoxTargets {
       this.size.w = w;
       this.size.h = h;
       this.sent.fill(Number.NaN);
+      this.drawnFrom.fill(Number.NaN);
     }
     this.origin[0] = x0;
     this.origin[1] = y0;
@@ -205,19 +213,49 @@ export class BoxTargets {
     return pass;
   }
 
-  /** The targets let go (the next `fit` makes them again). */
+  /**
+   * The layer the targets hold was drawn from exactly `sig` and `bytes` (K7a — every input of its draw the same since: the pass's
+   * numbers — its resources' generation, what it lists, the box — and the CONTENT the draw read, compared by value: this target's
+   * knobs and records as prepared, the slot's view block. By content, not by version: a held frame's desk copy writes the shared
+   * buffers between two of the hand's frames, and the hand's layer is still what they held): it may be laid again undrawn.
+   */
+  holds(sig: ArrayLike<number>, bytes: readonly Uint8Array[]): boolean {
+    if (this.msaa === null) return false;
+    for (let i = 0; i < SIGNATURE; i++) if (this.drawnFrom[i] !== (i < sig.length ? sig[i] : 0)) return false;
+    if (bytes.length !== this.drawnBytes.length) return false;
+    for (let i = 0; i < bytes.length; i++) {
+      const a = bytes[i] as Uint8Array;
+      const b = this.drawnBytes[i] as Uint8Array;
+      if (this.drawnLen[i] !== a.byteLength) return false;
+      for (let k = 0; k < a.byteLength; k++) if (a[k] !== b[k]) return false;
+    }
+    return true;
+  }
+
+  /** The layer was drawn from `sig` and `bytes` (copied; the copies grow once and are reused). */
+  drew(sig: ArrayLike<number>, bytes: readonly Uint8Array[]): void {
+    for (let i = 0; i < SIGNATURE; i++) this.drawnFrom[i] = i < sig.length ? (sig[i] as number) : 0;
+    this.drawnBytes.length = bytes.length;
+    this.drawnLen.length = bytes.length;
+    for (let i = 0; i < bytes.length; i++) {
+      const a = bytes[i] as Uint8Array;
+      let b = this.drawnBytes[i];
+      if (b === undefined || b.byteLength < a.byteLength) { b = new Uint8Array(Math.max(a.byteLength, 64)); this.drawnBytes[i] = b; }
+      b.set(a);
+      this.drawnLen[i] = a.byteLength;
+    }
+  }
+
+  /** The targets let go, the origin's uniform with them (the next `fit` makes them again). */
   release(): void {
-    this.msaa?.destroy(); this.depth?.destroy(); this.resolve?.destroy();
-    this.msaa = null; this.depth = null; this.resolve = null; this.compGroup = null;
+    this.drawnFrom.fill(Number.NaN);
+    this.msaa?.destroy(); this.depth?.destroy(); this.resolve?.destroy(); this.originBuf?.destroy();
+    this.msaa = null; this.depth = null; this.resolve = null; this.compGroup = null; this.originBuf = null;
     this.size.w = 0;
     this.size.h = 0;
   }
 
-  dispose(): void {
-    this.release();
-    this.originBuf?.destroy();
-    this.originBuf = null;
-  }
+  dispose(): void { this.release(); }
 }
 
 /**

@@ -558,17 +558,40 @@ try {
       const c1 = await q("window.__desk.holdCopies()");
       const costs = [];
       for (let r = 0; r < ROUNDS; r++) { await front(); costs.push(await qa("window.__desk.holdCost(12)")); }
-      const hold = { copies: [c0, c1], copy: { median: median(costs.map((c) => c.copy.ms)), min: min(costs.map((c) => c.copy.ms)) }, hand: { median: median(costs.map((c) => c.hand.ms)), min: min(costs.map((c) => c.hand.ms)) }, rest: { median: median(costs.map((c) => c.rest.ms)), min: min(costs.map((c) => c.rest.ms)) }, load: load() };
+      const hold = { copies: [c0, c1], copy: { median: median(costs.map((c) => c.copy.ms)), min: min(costs.map((c) => c.copy.ms)) }, hand: { median: median(costs.map((c) => c.hand.ms)), min: min(costs.map((c) => c.hand.ms)) }, rest: { median: median(costs.map((c) => c.rest.ms)), min: min(costs.map((c) => c.rest.ms)) }, standing: { median: median(costs.map((c) => c.standing.ms)), min: min(costs.map((c) => c.standing.ms)) }, load: load() };
       report.hold = hold;
       await q("window.__desk.putDown()");
       await settle();
       console.log(`-- hold · ${ROUNDS} rounds × 12 frames · load ${hold.load} --`);
       console.log(`  desk copies while held  ${c0} → ${c1} over 60 frames`);
-      console.log(`  ms/frame                copy (the blur, remade every frame) ${fmt(hold.copy.median)} (min ${fmt(hold.copy.min)}) · hand (a held frame over the standing copy) ${fmt(hold.hand.median)} (min ${fmt(hold.hand.min)}) · rest ${fmt(hold.rest.median)} (min ${fmt(hold.rest.min)})`);
+      console.log(`  ms/frame                copy (the blur, remade every frame) ${fmt(hold.copy.median)} (min ${fmt(hold.copy.min)}) · hand (a held frame over the standing copy) ${fmt(hold.hand.median)} (min ${fmt(hold.hand.min)}) · rest ${fmt(hold.rest.median)} (min ${fmt(hold.rest.min)}) — each drawn in full · the held frame STANDING (K7a: the hand's layer laid again undrawn) ${fmt(hold.standing.median)} (min ${fmt(hold.standing.min)})`);
       check(c1 === c0, `hold: no desk copy per held frame (${c1 - c0} over 60 frames)`);
       gate(hold.copy.median - hold.hand.median <= 1.5, `hold: the blur costs ≤ 1.5 ms once (copy − hand = ${fmt(hold.copy.median - hold.hand.median)} ms) and 0 per held frame (${c1 - c0} copies)`);
-      rows.push(["hold", `blur ${fmt(hold.copy.median - hold.hand.median)} ms once`, `${c1 - c0} copies over 60 held frames · hand ${fmt(hold.hand.median)} ms`, hold.load]);
+      rows.push(["hold", `blur ${fmt(hold.copy.median - hold.hand.median)} ms once`, `${c1 - c0} copies over 60 held frames · hand ${fmt(hold.hand.median)} ms drawn · ${fmt(hold.standing.median)} ms standing`, hold.load]);
     }
+  }
+
+  // ── books (K7a, design-016 §6 · K7): a NOTEBOOK and a DESK CALENDAR on screen — the two layered kinds, each laying a layer of its
+  //    own (4× colour and depth, resolved; the notebook a shadow map a book). A pan of 2 px a frame keeps both on screen: JS, the
+  //    armed pan's real frames (the GPU span, the books' own passes a frame and their GPU ms, from the labelled passes), the memory.
+  if (wantCase("books")) {
+    const camB = { x: -600, y: -400, zoom: 1 };
+    const booksScene = { camX: camB.x, camY: camB.y, zoom: 1, theme: "light", notes: [{ x: -500, y: 250, seed: 3, text: TEXTS[0] }, { x: 450, y: 300, seed: 5, text: "" }], minimats: [], boards: [], prints: [], books: [{ x: -250, y: -60, cover: "orbit", seed: 7 }], calendars: [{ x: 300, y: -60, month: "2026-09", weekStart: 1 }] };
+    await qa(`window.__desk.setScene(${JSON.stringify(booksScene)})`, 120000);
+    await settle(20000);
+    const runs = [];
+    for (let r = 0; r < ROUNDS; r++) { const run = await drive(120, camB, 2, 0, 1); run.load = load(); runs.push(run); }
+    const s = summarise("books", runs, 120);
+    const g = await armedPan(camB, 2);
+    const mem = await memoryNow();
+    const row = (k) => mem.ledger?.byLabel?.[k]?.bytes ?? 0;
+    const bp = (k) => g.passesByPrefix[k] ?? { n: 0, ms: Number.NaN };
+    report.books = { js: s.stepMs, alloc: s.alloc, gpu: g, memory: mem };
+    console.log(`\n-- books · a notebook and a desk calendar on screen, a pan of 2 px a frame · ${ROUNDS} rounds × 120 frames · load ${s.loads.join(" ")} --`);
+    console.log(`  JS                   ${fmt(s.stepMs.median)} ms/frame (min ${fmt(s.stepMs.min)}) · heap growth ${kb(s.alloc.median)}/frame`);
+    console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · busy p50 ${fmt(g.busy.p50)} · ${g.passes} passes a frame — the notebook's ${bp("notebook").n} (${fmt(bp("notebook").ms, 3)} ms) · the calendar's ${bp("calendar").n} (${fmt(bp("calendar").ms, 3)} ms) · ${g.draws} draws (${g.timed} of ${g.frames} frames timed)`);
+    console.log(`  memory               ${memoryLine(mem)}`);
+    rows.push(["books (pan)", `span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · ${g.passes} passes`, `notebook ${bp("notebook").n} passes ${fmt(bp("notebook").ms, 3)} ms · calendar ${bp("calendar").n} passes ${fmt(bp("calendar").ms, 3)} ms · JS ${fmt(s.stepMs.median)} ms · notebook ${MB(row("notebook"))} · calendar ${MB(row("calendar"))} · ${MB(mem.ledger?.total ?? 0)} live`, g.load]);
   }
 
   // ── mixed (K6a, design-016 §6 · K-L4): THE REAL DESK — the same spiral, its things in SIBLING ORDER as they come (a print or a
@@ -703,29 +726,6 @@ try {
     check(back0?.density === null && back0?.thumb === true && backFrames <= 6 && back1?.density === 4 && back1?.bound === true && replays2 > replays1, `boards: board 0 on screen again — its thumbnail drew it in the frame it came back while its replay waited in the frame queue (K6b); the queue's turn replayed it at its rung (4 texels a unit) ${backFrames} frame(s) after, bound (${JSON.stringify(back0)} → ${JSON.stringify(back1)}; ${replays2 - replays1} replays)`);
     report.boards = { far, memFar, run: g, walked, memWalk, back: [back0, back1] };
     rows.push(["boards (20, a run)", `20 boards = ${g.byKind.board} draw · far: board ${MB(row(memFar, "board"))}`, `walked at zoom 1: ${memWalk.budget.evictions} evictions, board ${MB(row(memWalk, "board"))}; back: replayed and bound`, load()]);
-  }
-
-  // ── books (K7a, design-016 §6 · K7): a NOTEBOOK and a DESK CALENDAR on screen — the two layered kinds, each laying a layer of its
-  //    own (4× colour and depth, resolved; the notebook a shadow map a book). A pan of 2 px a frame keeps both on screen: JS, the
-  //    armed pan's real frames (the GPU span, the books' own passes a frame and their GPU ms, from the labelled passes), the memory.
-  if (wantCase("books")) {
-    const camB = { x: -600, y: -400, zoom: 1 };
-    const booksScene = { camX: camB.x, camY: camB.y, zoom: 1, theme: "light", notes: [{ x: -500, y: 250, seed: 3, text: TEXTS[0] }, { x: 450, y: 300, seed: 5, text: "" }], minimats: [], boards: [], prints: [], books: [{ x: -250, y: -60, cover: "orbit", seed: 7 }], calendars: [{ x: 300, y: -60, month: "2026-09", weekStart: 1 }] };
-    await qa(`window.__desk.setScene(${JSON.stringify(booksScene)})`, 120000);
-    await settle(20000);
-    const runs = [];
-    for (let r = 0; r < ROUNDS; r++) { const run = await drive(120, camB, 2, 0, 1); run.load = load(); runs.push(run); }
-    const s = summarise("books", runs, 120);
-    const g = await armedPan(camB, 2);
-    const mem = await memoryNow();
-    const row = (k) => mem.ledger?.byLabel?.[k]?.bytes ?? 0;
-    const bp = (k) => g.passesByPrefix[k] ?? { n: 0, ms: Number.NaN };
-    report.books = { js: s.stepMs, alloc: s.alloc, gpu: g, memory: mem };
-    console.log(`\n-- books · a notebook and a desk calendar on screen, a pan of 2 px a frame · ${ROUNDS} rounds × 120 frames · load ${s.loads.join(" ")} --`);
-    console.log(`  JS                   ${fmt(s.stepMs.median)} ms/frame (min ${fmt(s.stepMs.min)}) · heap growth ${kb(s.alloc.median)}/frame`);
-    console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · busy p50 ${fmt(g.busy.p50)} · ${g.passes} passes a frame — the notebook's ${bp("notebook").n} (${fmt(bp("notebook").ms, 3)} ms) · the calendar's ${bp("calendar").n} (${fmt(bp("calendar").ms, 3)} ms) · ${g.draws} draws (${g.timed} of ${g.frames} frames timed)`);
-    console.log(`  memory               ${memoryLine(mem)}`);
-    rows.push(["books (pan)", `span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · ${g.passes} passes`, `notebook ${bp("notebook").n} passes ${fmt(bp("notebook").ms, 3)} ms · calendar ${bp("calendar").n} passes ${fmt(bp("calendar").ms, 3)} ms · JS ${fmt(s.stepMs.median)} ms · notebook ${MB(row("notebook"))} · calendar ${MB(row("calendar"))} · ${MB(mem.ledger?.total ?? 0)} live`, g.load]);
   }
 
   // ── zoom-written (K6b, design-016 §1.3 · §6): THE WRITTEN DESK (`writtenScene`, a fresh one each round, settled at zoom 1) zoomed

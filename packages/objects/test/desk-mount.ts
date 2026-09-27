@@ -16,6 +16,8 @@ export interface DeskMount {
   readonly log: string[];
   /** The textures the device made: label, size, whether destroyed since. */
   readonly textures: { readonly label: string; readonly size: GPUExtent3D; destroyed: boolean }[];
+  /** The buffers the device made: label, size, whether destroyed since. */
+  readonly buffers: { readonly label: string; readonly size: number; destroyed: boolean }[];
   /** One step as the sleeping loop takes it; true when the gate then says sleep. */
   step(): boolean;
   /** Steps until the gate says sleep; how many it took (`cap + 1`: it never did). */
@@ -23,7 +25,7 @@ export interface DeskMount {
   dispose(): void;
 }
 
-export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }): Promise<DeskMount> {
+export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }, opts: { readonly gpuLedger?: boolean } = {}): Promise<DeskMount> {
   const undo: (() => void)[] = [installGpuFlags()];
   const log: string[] = [];
   const { device } = fakeDevice(log);
@@ -35,6 +37,15 @@ export async function mountDesk(view: { readonly w: number; readonly h: number; 
     textures.push(kept);
     (t as { destroy: () => void }).destroy = () => { kept.destroyed = true; };
     return t;
+  };
+  const buffers: DeskMount["buffers"] = [];
+  const makeBuffer = device.createBuffer.bind(device);
+  (device as { createBuffer: GPUDevice["createBuffer"] }).createBuffer = (d) => {
+    const b = makeBuffer(d);
+    const kept = { label: d.label ?? "", size: d.size, destroyed: false };
+    buffers.push(kept);
+    (b as { destroy: () => void }).destroy = () => { kept.destroyed = true; };
+    return b;
   };
   Object.assign(device, { addEventListener: () => {}, lost: new Promise(() => {}), destroy: () => {} });
   const adapter = { features: new Set<string>(), requestDevice: async () => device };
@@ -50,7 +61,7 @@ export async function mountDesk(view: { readonly w: number; readonly h: number; 
   const ce = createCanvasEngine(DESK_ENGINE);
   ce.docs.create();
   ce.world.setResource(Viewport, { w: view.w, h: view.h, dpr: view.dpr });
-  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS], docs: ce.docs })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog });
+  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS], docs: ce.docs, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}) })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog });
   undo.push(ce.engine.registerReflector(handle.reflector));
   for (let i = 0; i < 100 && handle.status().state === "pending"; i++) await new Promise((r) => setTimeout(r, 5));
   const step = (): boolean => {
@@ -59,7 +70,7 @@ export async function mountDesk(view: { readonly w: number; readonly h: number; 
     return ce.engine.frame.nextStep(t) > t;
   };
   return {
-    ce, handle, log, textures, step,
+    ce, handle, log, textures, buffers, step,
     toSleep(cap = 400) { for (let n = 1; n <= cap; n++) if (step()) return n; return cap + 1; },
     dispose() { handle.dispose(); ce.dispose(); for (const u of undo.splice(0).reverse()) u(); },
   };

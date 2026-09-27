@@ -174,7 +174,7 @@ describe("the pad's mirror, ring, presences and slots", () => {
     // rest of the sheet waits (pending) frame after frame
     let t = 0;
     // (and the residency's doors, K6a: the tiles and the layer let go with the last pad)
-    const printPass: PrintPass & { releaseTiles(): void; releaseLayer(): void; readonly tileBytes: number } = { layers: 160, uploadTile: () => {}, writeTileBytes: () => {}, writeTable: () => {}, releaseTiles: () => {}, releaseLayer: () => {}, tileBytes: 0 };
+    const printPass: PrintPass & { releaseTiles(): void; releaseLayer(): void; releaseTables(): void; releaseMeshes(): void; readonly tileBytes: number } = { layers: 160, uploadTile: () => {}, writeTileBytes: () => {}, writeTable: () => {}, releaseTiles: () => {}, releaseLayer: () => {}, releaseTables: () => {}, releaseMeshes: () => {}, tileBytes: 0 };
     const raster: PrintRaster = {
       hand: () => ({ face: { family: "Caveat", weight: 500 }, metrics: { ascent: 0.8, descent: 0.25, advance: (ch) => (ch === " " ? 0.3 : 0.5) } }),
       version: () => 1,

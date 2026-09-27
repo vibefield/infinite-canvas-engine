@@ -667,8 +667,8 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       if (st.hidden.size > 0) veilsCache = null;
       tiles?.drop(st.id, [st.slot * 2, st.slot * 2 + 1]);
       for (const k of [...prints.keys()]) if (k.startsWith(`${st.id}:`)) prints.delete(k);
-      // no pad on the desk (K6a): the tiles and the layer go — the next pad starts a tile cache afresh
-      if (pads.size === 0) { const pass = passOf(); pass?.releaseTiles(); pass?.releaseLayer(); tiles = null; }
+      // no pad on the desk (K6a): the tiles, the layer and (K7a) the page tables and meshes go — the next pad starts afresh
+      if (pads.size === 0) { const pass = passOf(); pass?.releaseTiles(); pass?.releaseLayer(); pass?.releaseTables(); pass?.releaseMeshes(); tiles = null; }
     },
     dispose() { pads.clear(); prints.clear(); },
   };
