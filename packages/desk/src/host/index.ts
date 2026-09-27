@@ -8,10 +8,10 @@
 export { deskLayer, type DeskLayerContext, type DeskLayerFactory, type DeskLayerHandle, type DeskLayerOptions, type DeskLayerPerf, type DeskLayerStatus, type DeskTrayDoor, type MatPin, type SelectionSource } from "./layer";
 export type { SelectionAnchor } from "../compose/marks";
 export { surface, type Surface } from "./surface";
-// the TEXT raster a browser hands the kinds (D2c; `KindHost.text` — the note writes in it, the calendar prints in its hand): the
+// the TEXT raster a browser hands the kinds (D2c; the `TEXT_RASTER` service, K8a — the note writes in it, the calendar prints in its hand): the
 // faces by URL, Canvas2D ink on an OffscreenCanvas
 export { type FaceSpec, inkRaster, type InkRaster, type InkRasterOptions, PEN_FACES, penFaces } from "./ink";
-// the one image decode — a pasted or dropped picture for a print (D3w; `KindHost.decode`, the host's for any kind with pictures)
+// the one image decode — a pasted or dropped picture for a print (D3w; the `PICTURE_DECODER` service, K8a — the host's for any kind with pictures)
 export { decodePicture } from "./picture";
 // What a host FEEDS the mat through the handle (the render map's finding #2): the plates' slots, the glyph atlas's shape and cells, the mat's config.
 export { DEFAULT_MAT_CONFIG, GLYPH_PAD, GLYPHS, type GlyphAtlasMeta, type MatConfig, type PlateName, type RulerConfig } from "../mat/layout";

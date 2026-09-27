@@ -25,12 +25,10 @@ import type { TypingDocs } from "../docs";
 import type { RasterBudget } from "../engine/budget";
 import type { RasterQueue } from "../engine/rasters";
 import type { KindPass, KindProgram, StratumName } from "../kind";
-import type { BlobStore, PictureDecoder } from "../kit/blobs";
 import type { NoteEditor } from "../kit/editor";
 import type { ChildShape, InsideView } from "../kit/inside";
 import type { Lamp } from "../kit/light";
-import type { PrintRaster } from "../kit/print";
-import type { TextRaster } from "../kit/raster";
+import type { Lent, ServiceKey, Services } from "../kit/services";
 import type { Rect } from "../kit/nav";
 import type { GridConfig, View } from "../kit/view";
 import type { MarkFrame } from "../marks/layout";
@@ -158,19 +156,19 @@ export interface ObjectContext {
   readonly held?: HeldContext;
 }
 
-/** What a desk hands a kind's `local()` (D2c): its ROOT pass once the ground is made, and the host's text seam. */
+/** What a desk hands a kind's `local()` (D2c): its ROOT pass once the ground is made, the SERVICES lent on this desk, and the builder's doors. */
 export interface KindHost {
   /** The kind's root pass on this desk's ground; `undefined` before `Ground.create` resolves and after the layer ends. */
   pass(): KindPass | undefined;
-  /** The host's text raster (desk/host/ink.ts in a browser); absent in Node — the oracle pins committed rasters. */
-  readonly text?: TextRaster | undefined;
+  /**
+   * THE SERVICES (K8a, kit/services.ts — an open registry by key): what the host lends (its text raster `TEXT_RASTER`, the picture
+   * decoder `PICTURE_DECODER`, the app's byte store `BLOB_STORE`, anything in `deskLayer({ services })`) and what any object's DOM
+   * half lends (`ObjectHost.lend` — the desk calendar's `PRINT_RASTER`): `use(key)` answers it, or undefined when nothing on this
+   * desk lends it (in Node the oracle pins committed rasters and tiles). Absent: a bare host (a test) — no services at all.
+   */
+  use?<T>(key: ServiceKey<T>): T | undefined;
   /** An object's DATA children (D3w, design-015 §5.1 — a board's strokes, a pad's events and pins); absent = none (a test, the oracle). */
   readonly children?: DataChildren | undefined;
-  /** The app's byte store (D3w, D-D12 — a print's picture) and the host's decoder for what it holds; absent = no pictures. */
-  readonly blobs?: BlobStore | undefined;
-  readonly decode?: PictureDecoder | undefined;
-  /** The host's PRINT raster (D3t-c — the desk calendar's tiles: desk/host/print.ts in a browser); absent in Node — the oracle pins committed tiles. */
-  readonly print?: PrintRaster | undefined;
   /**
    * The builder's word on what is DRAWN (D6, persistent records): the paint rank of `e` in the last build's root slot, undefined when it
    * was not drawn there. A kind's residency reads it instead of counting its own `record` calls — those come only when a record is
@@ -375,15 +373,16 @@ export interface KindDriver {
  * An object's DOM HALF (K4b, design-016 §5 · K-L2) — what its kind needs of the browser, DECLARED with the object as its drivers
  * are (`defineObject({ host })`): the desk layer builds what the registered objects declare and never finds a half by type or
  * names a kind. Three moments, in the layer's order:
- * - `lend`, before the kind's local: a service its world half reads through `KindHost` that only a browser can make (the desk
- *   calendar's print raster, in the host's hand — none without a text raster);
+ * - `lend`, before any kind's local: SERVICES only a browser can make, each under its key (K8a, kit/services.ts — the desk
+ *   calendar lends `PRINT_RASTER`, in the host's hand, none without a text raster), handed what is lent so far (the host's, then
+ *   the objects' before it); any kind's world half `use`s them (`KindHost.use`), a DOM half too (`ObjectDomHost.use`);
  * - `editor`, once the drivers are made: the desk's ONE focused editor (the note's); the first object that makes one owns it;
  * - `mount`, after that: a screen-space half, lent the editor if one was made (the desk calendar's days and pen borrow it). A
  *   mounted half is ended by what it joins — the calendar's by the calendar's driver.
- * K8 opens this into a service registry and lets any kind take the editor's lease.
+ * K8a opened `lend` into the service registry (kit/services.ts); the editor's lease is next.
  */
 export interface ObjectHost {
-  readonly lend?: (host: Pick<KindHost, "text">) => Pick<KindHost, "print">;
+  readonly lend?: (host: Services) => readonly Lent[];
   readonly editor?: (host: ObjectDomHost) => NoteEditor | undefined;
   readonly mount?: (host: ObjectDomHost & { readonly editor: NoteEditor | undefined }) => void;
 }
@@ -398,6 +397,8 @@ export interface ObjectDomHost {
   readonly world: World;
   /** The document's doors (docs.ts) — a half that writes, writes through them. */
   readonly docs: TypingDocs;
+  /** The services lent on this desk (K8a — `KindHost.use`'s registry): a DOM half uses them by key as a world half does. */
+  readonly use: Services["use"];
   /** The object the half was declared on — its compiled widget type (its props' groups). */
   readonly object: WidgetType;
   /** The object's own driver (`defineObject({ drivers })`), if it declared one. */

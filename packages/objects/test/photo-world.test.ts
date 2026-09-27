@@ -7,7 +7,7 @@
 import { Captures, ChildOf, createCanvasEngine, Drag, type Entity, GestureActive, LocalPointer, Movable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Viewport, Watches, CancelRequest, GestureCancelled, PressWheel } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeskBuilder, FLUX_REST, type KindHost, type ObjectContext, DEFAULT_GRID, objectKindOf, MARKS, MAT_GRID } from "@ice/desk";
-import { createMemoryBlobStore, hashBytes, RGBA_TYPE } from "@ice/desk/kit";
+import { BLOB_STORE, createMemoryBlobStore, createServices, hashBytes, PICTURE_DECODER, type PictureDecoder, RGBA_TYPE, service } from "@ice/desk/kit";
 import { PHOTO_KIND, PhotoKind, photoKind, PRINT_RETURN_MS, type Prints, printRect } from "../src/photo/kind";
 import { createPhotoCarry, Photo, PHOTO_TYPE, TWIST_PER_WHEEL } from "../src";
 import { lampOf } from "../src/paper/paper";
@@ -128,7 +128,7 @@ describe("a print's bytes through the app's BlobStore (D-D12)", () => {
     const store = createMemoryBlobStore();
     const hash = await store.put(new Uint8Array(4 * 3 * 2), RGBA_TYPE);
     const stub = stubPass();
-    const prints = must(kind.local)({ pass: () => stub.kindPass, blobs: store }) as Prints;
+    const prints = must(kind.local)({ pass: () => stub.kindPass, use: createServices([service(BLOB_STORE, store)]).use }) as Prints;
     expect(prints.pictureFor(1 as Entity, hash, 3, 2)).toBeNull();   // on its way
     await settle();
     expect(prints.tick?.(0)).toBe(true);   // a picture landed: a frame
@@ -148,7 +148,8 @@ describe("a print's bytes through the app's BlobStore (D-D12)", () => {
     const png = await store.put(new Uint8Array([137, 80, 78, 71]), "image/png");
     const stub = stubPass();
     const closed: string[] = [];
-    const host: KindHost = { pass: () => stub.kindPass, blobs: store, decode: async (b, max) => ({ kind: "source", source: { type: b.type, max }, width: 40, height: 30, close: () => closed.push(b.type) }) };
+    const decode: PictureDecoder = async (b, max) => ({ kind: "source", source: { type: b.type, max }, width: 40, height: 30, close: () => closed.push(b.type) });
+    const host: KindHost = { pass: () => stub.kindPass, use: createServices([service(BLOB_STORE, store), service(PICTURE_DECODER, decode)]).use };
     const prints = must(kind.local)(host) as Prints;
     prints.pictureFor(1 as Entity, png, 40, 30);
     prints.pictureFor(2 as Entity, "f".repeat(64), 40, 30);
@@ -163,7 +164,7 @@ describe("a print's bytes through the app's BlobStore (D-D12)", () => {
     const store = createMemoryBlobStore();
     const hash = await store.put(new Uint8Array(4), RGBA_TYPE);
     const stub = stubPass();
-    const prints = must(kind.local)({ pass: () => stub.kindPass, blobs: store }) as Prints;
+    const prints = must(kind.local)({ pass: () => stub.kindPass, use: createServices([service(BLOB_STORE, store)]).use }) as Prints;
     await prints.preload(hash, 1, 1);
     expect(prints.pictureFor(5 as Entity, hash, 1, 1)).not.toBeNull();
   });

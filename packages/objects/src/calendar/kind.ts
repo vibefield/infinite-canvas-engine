@@ -41,7 +41,7 @@ import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn
 import { CALENDAR_SHADER_FILES, calendarShaders } from "./shaders";
 import { cellAt, dayBox, noteSlot, sheetOf } from "./sheet";
 import { bandOf, GUTTER, levelFor, TILE_TEX, type TileGrid, tileGrid, tileRect, tilesIn } from "./tiles";
-import { caretAt, glyphBox, type HandLaw, HAND, type MatPass, type MarkFrame, type DeskEye, eyeOf, project, unproject, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, LayeredKind, LAYER_IDLE_MS } from "@ice/desk/kit";
+import { caretAt, glyphBox, type HandLaw, HAND, type MatPass, type MarkFrame, type DeskEye, eyeOf, project, unproject, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, LayeredKind, LAYER_IDLE_MS, PRINT_RASTER } from "@ice/desk/kit";
 import { type KindPass, type KindProgram, type SlotContext, MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
 import { shaderText } from "../shaders";
 
@@ -337,6 +337,8 @@ const NO_MARKS: Pick<CalendarDraw, "sel" | "mark" | "drop" | "caret" | "wipe"> =
 
 /** The calendar's `local()`: ids from 1, slot pairs from the lowest free (the pass's tables hold `MAX_CALENDARS` pads); the print's driver. */
 export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; readonly now?: () => number; readonly zone?: string; readonly hand?: HandLaw } = {}): Pads {
+  // the print raster — a SERVICE its DOM half lends (K8a, `PRINT_RASTER`: the host's hand), none in Node (the oracle pins its tiles)
+  const printer = host.use?.(PRINT_RASTER);
   const law = opts.law ?? CALENDAR;
   const clock = opts.now ?? (() => Date.now());
   const hand = opts.hand ?? HAND;
@@ -413,7 +415,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   };
   /** Month `month`'s print on pad `e` — built again only when what it shows changed (the prototype's `printOf`). */
   const printFor = (e: Entity, st: PadState, month: number, weekStart: 0 | 1, look: PrintLook, writing: number): SheetPrint | undefined => {
-    const raster = host.print;
+    const raster = printer;
     const h = raster?.hand();
     if (raster === undefined || h === undefined) return undefined;
     const L = sheetOf(monthGrid(month, weekStart), law);
@@ -566,7 +568,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     readSheet(e, month, level) {
       const st = pads.get(e);
       const print = st === undefined ? undefined : prints.get(`${st.id}:${month}`)?.print;
-      const raster = host.print;
+      const raster = printer;
       if (print === undefined || raster === undefined) return undefined;
       const out = new Map<string, Uint8Array<ArrayBuffer>>();
       const empty = new Set<string>();
@@ -599,7 +601,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
         if (pass !== undefined && pinned !== undefined) { const t = tilesOf(pass); t.pin(pass, `${st.id}:${month}`, slot, pinned); t.end(pass); continue; }
         const print = look === undefined ? undefined : printFor(e, st, month, G.weekStart, look, month === markMonth ? writing : Number.NaN);
         if (month === markMonth) markPrint = print;
-        if (pass === undefined || print === undefined || host.print === undefined) continue;
+        if (pass === undefined || print === undefined || printer === undefined) continue;
         // the sheet in view (sheet units) and the rung the screen wants — the moving sheet a rung softer, as the prototype drew it
         const x0 = view.camX - (G.cx - F.W / 2);
         const y0 = view.camY - (G.cy - F.H / 2);
@@ -609,7 +611,7 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
         const level = levelFor(view.zoom * view.dpr);
         const t = tilesOf(pass);
         const tiles0 = t.drawn();
-        t.sheet(pass, host.print, `${st.id}:${month}`, slot, print, { x0, y0, x1, y1 }, month === G.base ? level : Math.max(level - 1, 0), G.moving === null ? 2 : 1);
+        t.sheet(pass, printer, `${st.id}:${month}`, slot, print, { x0, y0, x1, y1 }, month === G.base ? level : Math.max(level - 1, 0), G.moving === null ? 2 : 1);
         if (t.drawn() !== tiles0) land(e);
         t.end(pass);
       }

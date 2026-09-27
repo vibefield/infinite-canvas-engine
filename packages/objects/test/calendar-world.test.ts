@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CALENDAR } from "../src/calendar/law";
 import type { CalendarDraw, CalendarPass } from "../src/calendar/pass";
 import type { PrintPass } from "../src/calendar/printing";
-import type { PrintRaster, TileSource } from "@ice/desk/kit";
+import { createServices, PRINT_RASTER, type PrintRaster, service, type TileSource } from "@ice/desk/kit";
 import { TILE_TEX } from "../src/calendar/tiles";
 import { dayIn, dayOfKey, monthOfDay } from "../src/calendar/month";
 import { padFrame } from "../src/calendar/pad";
@@ -182,7 +182,7 @@ describe("the pad's mirror, ring, presences and slots", () => {
       tile: (): TileSource => { t += 50; return {} as TileSource; },
       bytes: () => new Uint8Array(TILE_TEX * TILE_TEX * 4),
     };
-    const pads = createPads({ pass: () => new CalendarKind(printPass as unknown as CalendarPass), print: raster }, { now: () => t });
+    const pads = createPads({ pass: () => new CalendarKind(printPass as unknown as CalendarPass), use: createServices([service(PRINT_RASTER, raster)]).use }, { now: () => t });
     const s = { camX: 0 - PAD.W / 2, camY: 0 - PAD.H / 2, zoom: 0.5 };
     const ctx = ctxOf(c, s, { local: pads });
     const draw = (): void => { kind.record(kind.resolve(ctx), ctx); };

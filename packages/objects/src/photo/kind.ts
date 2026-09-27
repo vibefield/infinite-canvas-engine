@@ -25,7 +25,7 @@
 import { SAMPLE_PICTURE, samplePicture } from "./sample";
 import type { Entity } from "@ice/core";
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type ObjectRect, stringProp } from "@ice/desk";
-import { type MarkFrame, type MatPass, type DecodedPicture, RGBA_TYPE, carryOf, type ShaderText } from "@ice/desk/kit";
+import { type MarkFrame, type MatPass, type DecodedPicture, RGBA_TYPE, carryOf, type ShaderText, BLOB_STORE, PICTURE_DECODER } from "@ice/desk/kit";
 import { borderOf } from "./layout";
 import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto, twist } from "./photo";
 import { type Picture, PICTURE_MAX, type PhotoInstance, PhotoPass } from "./photo-pass";
@@ -242,10 +242,10 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
   const decodeOf = async (hash: string, width: number, height: number): Promise<DecodedPicture | undefined> => {
     // the kind's own sample (K5b — the print on the pegboard): made, never fetched
     if (hash === SAMPLE_PICTURE) return { kind: "rgba", bytes: samplePicture(width, height), width, height };
-    const blob = await host.blobs?.get(hash);
+    const blob = await host.use?.(BLOB_STORE)?.get(hash);
     if (blob === undefined) return undefined;
     if (blob.type === RGBA_TYPE) return { kind: "rgba", bytes: blob.bytes, width, height };
-    return host.decode?.(blob, PICTURE_MAX);
+    return host.use?.(PICTURE_DECODER)?.(blob, PICTURE_MAX);
   };
   /** The upload: raw RGBA by the kind, a decoded source by the device's copy — and how to decode it again (a print large on screen: its detail, K6a). */
   const upload = (d: DecodedPicture, hash: string, width: number, height: number): Picture | null => {

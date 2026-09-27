@@ -19,7 +19,7 @@ import { calendarKind, type CalendarGeometry, createPads, DRAFT_ID, type Pads, p
 import { FLUX_REST, type ObjectContext, rectOf, MAT_GRID, DEFAULT_GRID } from "@ice/desk";
 import { addEvent, Calendar, CalendarEvent, createCalendarHand, createCalendarWriting, Note, PadSelection } from "../src";
 import { lampOf } from "../src/paper/paper";
-import { type HandMetrics, HAND } from "@ice/desk/kit";
+import { createServices, type HandMetrics, HAND, PRINT_RASTER, service } from "@ice/desk/kit";
 import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
@@ -312,7 +312,7 @@ describe("the marks on the sheet (the local's `draw` → the record's `sel` · `
   it("a run across a Monday is two boxes, a box a week; the line selected is boxed where the print laid it; the caret at its index", () => {
     const raster = { hand: () => ({ face: { family: "Caveat", weight: 500 }, metrics: METRICS }), version: () => 1, measure: (_f: string, s: string) => s.length * 6, tile: () => ({}) as never, bytes: () => new Uint8Array(0) };
     const rows = [{ entity: 51 as Entity, value: { start: "2026-09-02", end: "2026-09-02", text: "haircut", seeds: "", ink: "felt" } }];
-    const pads: Pads = createPads({ pass: () => undefined, print: raster, children: { stamp: () => 0, rows: () => [], entries: ((_e: Entity, _c: unknown) => rows) as never } });
+    const pads: Pads = createPads({ pass: () => undefined, use: createServices([service(PRINT_RASTER, raster)]).use, children: { stamp: () => 0, rows: () => [], entries: ((_e: Entity, _c: unknown) => rows) as never } });
     const ctx = ctxOf({ local: pads });
     const G = kind.resolve(ctx) as CalendarGeometry;
     pads.mark(ctx.entity, { days: [day("2026-09-11"), day("2026-09-15")] });

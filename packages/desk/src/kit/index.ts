@@ -21,6 +21,7 @@ export * from "./print";
 export * from "./raster";
 export * from "./sdf";
 export * from "./seeds";
+export * from "./services";
 export * from "./springs";
 export * from "./strokes";
 export * from "./text";

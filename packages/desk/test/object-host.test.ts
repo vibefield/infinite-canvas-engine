@@ -6,12 +6,14 @@
 // fake page (the few members a mount reads) is enough.
 import { createCanvasEngine, type WidgetType } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { deskLayer } from "../src/host/layer";
+import { deskLayer, type DeskLayerOptions } from "../src/host/layer";
 import type { KindPass } from "../src/kind";
 import type { KindDriver, KindHost, ObjectDomHost, ObjectKind } from "../src/kinds/world";
 import type { NoteEditor } from "../src/kit/editor";
-import type { PrintRaster } from "../src/kit/print";
-import type { TextRaster } from "../src/kit/raster";
+import { BLOB_STORE, type BlobStore, PICTURE_DECODER } from "../src/kit/blobs";
+import { PRINT_RASTER, type PrintRaster } from "../src/kit/print";
+import { TEXT_RASTER, type TextRaster } from "../src/kit/raster";
+import { service, serviceKey } from "../src/kit/services";
 import { defineObject, hostOf } from "../src/object";
 import { type Palette, themeFrom } from "../src/theme";
 import { fakePage } from "./fake-page";
@@ -31,12 +33,12 @@ function scribbleKind(name: string, locals: KindHost[]): ObjectKind {
 /** What the halves were handed, in the order the layer called them. */
 interface Calls { lend: { type: string; text: TextRaster | undefined }[]; editor: ObjectDomHost[]; mount: (ObjectDomHost & { editor: NoteEditor | undefined })[]; order: string[] }
 
-function mountDesk(objects: WidgetType[], text?: TextRaster) {
+function mountDesk(objects: WidgetType[], text?: TextRaster, more: Pick<DeskLayerOptions, "blobs" | "services"> = {}) {
   const ce = createCanvasEngine({ widgets: objects });
   ce.docs.create();
   const page = fakePage();
   const { stack } = ce;
-  const handle = deskLayer({ theme: themeFrom("light", PALETTE), palette: PALETTE, objects, ...(text !== undefined ? { text } : {}) })({
+  const handle = deskLayer({ theme: themeFrom("light", PALETTE), palette: PALETTE, objects, ...(text !== undefined ? { text } : {}), ...more })({
     host: { container: page.container } as never, world: ce.world,
     framePick: stack.framePick, navGeometry: stack.navGeometry, heldPose: stack.heldPose,
     transitions: ce.transitions, catalog: ce.catalog, readMarquee: () => stack.marqueeBuffer, spatial: stack.index,
@@ -58,7 +60,7 @@ describe("an object's DOM half is DECLARED, and the desk builds what the objects
       type: "test.scribble", version: 1, props: {}, kind: scribbleKind("scribble", locals),
       drivers: () => driver,
       host: {
-        lend: (h) => { calls.order.push("lend"); calls.lend.push({ type: "test.scribble", text: h.text }); return { print: fakePrint }; },
+        lend: (h) => { calls.order.push("lend"); calls.lend.push({ type: "test.scribble", text: h.use(TEXT_RASTER) }); return [service(PRINT_RASTER, fakePrint)]; },
         editor: (h) => { calls.order.push("editor"); calls.editor.push(h); return made; },
         mount: (h) => { calls.order.push("mount"); calls.mount.push(h); },
       },
@@ -69,7 +71,7 @@ describe("an object's DOM half is DECLARED, and the desk builds what the objects
       // lent before the local, and the kind's world half reads what its DOM half lent (the calendar's print raster, as a plugin's)
       expect(calls.order).toEqual(["lend", "editor", "mount"]);
       expect(calls.lend).toEqual([{ type: "test.scribble", text: fakeText }]);
-      expect(locals.map((h) => h.print)).toEqual([fakePrint]);
+      expect(locals.map((h) => h.use?.(PRINT_RASTER))).toEqual([fakePrint]);
       // the halves are handed the object they were declared on and ITS driver — never found by type
       expect(calls.editor[0]?.object).toBe(Scribble);
       expect(calls.editor[0]?.driver).toBe(driver);
@@ -98,7 +100,7 @@ describe("an object's DOM half is DECLARED, and the desk builds what the objects
       expect((handle.editor() as unknown as { label: string }).label).toBe("first");
       expect(borrowed).toEqual([handle.editor()]);
       // nothing lent: every kind's local sees no print raster
-      expect(locals.map((h) => h.print)).toEqual([undefined, undefined, undefined]);
+      expect(locals.map((h) => h.use?.(PRINT_RASTER))).toEqual([undefined, undefined, undefined]);
     } finally {
       handle.dispose();
       ce.dispose();
@@ -113,11 +115,85 @@ describe("an object's DOM half is DECLARED, and the desk builds what the objects
     try {
       expect(handle.editor()).toBeUndefined();
       expect(locals.length).toBe(1);
-      expect(locals[0]?.print).toBeUndefined();
-      expect(locals[0]?.text).toBe(fakeText);
+      expect(locals[0]?.use?.(PRINT_RASTER)).toBeUndefined();
+      expect(locals[0]?.use?.(TEXT_RASTER)).toBe(fakeText);
     } finally {
       handle.dispose();
       ce.dispose();
     }
+  });
+});
+
+// K8a (design-016 §5 · K-L2): `KindHost` was a FIXED list — `print` was the desk calendar's raster, lent to the calendar alone — so no
+// plugin kind could lend a service of its own or use one another lent. The services are an open registry by key now: a kind LENDS
+// under a key (its DOM half's `lend`), ANY kind USES by key, the host's own three are entries, and a name is lent once per desk.
+describe("the services: an open registry any kind lends to and any kind uses, by key (K8a)", () => {
+  /** A service of a plugin's own — a metronome its DOM half makes and another plugin's world half reads. */
+  interface Metronome { readonly bpm: number }
+  const METRONOME = serviceKey<Metronome>("test.metronome");
+
+  it("a plugin's DOM half lends under ITS key and ANOTHER plugin's world half uses it — by a key it declared itself (by name)", () => {
+    const locals: { readonly name: string; readonly host: KindHost }[] = [];
+    const kindOf = (name: string): ObjectKind => ({ ...scribbleKind(name, []), local: (host) => { locals.push({ name, host }); return {}; } });
+    const beat: Metronome = { bpm: 96 };
+    // the lender, and a user that never imports it: its own key value, the same NAME (a kind names another only by a registry name)
+    const Lender = defineObject({ type: "test.lender", version: 1, props: {}, kind: kindOf("lender"), host: { lend: () => [service(METRONOME, beat)] } });
+    const Listener = defineObject({ type: "test.listener", version: 1, props: {}, kind: kindOf("listener") });
+    const { ce, handle } = mountDesk([Listener, Lender]);
+    try {
+      const mine = serviceKey<Metronome>("test.metronome");
+      expect(locals.map((l) => l.name)).toEqual(["listener", "lender"]);
+      // every kind sees what any object lent — the listener registered BEFORE the lender too: the lends are made before any local
+      for (const l of locals) expect(l.host.use?.(mine), l.name).toBe(beat);
+      expect(locals[0]?.host.use?.(serviceKey<Metronome>("test.other"))).toBeUndefined();
+    } finally {
+      handle.dispose();
+      ce.dispose();
+    }
+  });
+
+  it("the host's own services are entries of the same registry — text, blobs, the decoder, and any the app lends by key", () => {
+    const hosts: KindHost[] = [];
+    const Plain = defineObject({ type: "test.plain-services", version: 1, props: {}, kind: scribbleKind("plain-services", hosts) });
+    const blobs = { put: async () => "", get: async () => undefined } as BlobStore;
+    const { ce, handle } = mountDesk([Plain], fakeText, { blobs, services: [service(METRONOME, { bpm: 120 })] });
+    try {
+      const h = hosts[0];
+      expect(h?.use?.(TEXT_RASTER)).toBe(fakeText);
+      expect(h?.use?.(BLOB_STORE)).toBe(blobs);
+      expect(h?.use?.(PICTURE_DECODER)).toBeTypeOf("function");
+      expect(h?.use?.(METRONOME)?.bpm).toBe(120);
+    } finally {
+      handle.dispose();
+      ce.dispose();
+    }
+  });
+
+  it("a DOM half's lend is handed what is lent so far, and a DOM half uses the registry too (`ObjectDomHost.use`)", () => {
+    const seen: (Metronome | undefined)[] = [];
+    const mounted: (Metronome | undefined)[] = [];
+    const First = defineObject({ type: "test.first-lender", version: 1, props: {}, kind: scribbleKind("first-lender", []), host: { lend: () => [service(METRONOME, { bpm: 60 })] } });
+    const HALF = serviceKey<{ readonly half: Metronome | undefined }>("test.half");
+    const Second = defineObject({
+      type: "test.second-lender", version: 1, props: {}, kind: scribbleKind("second-lender", []),
+      host: { lend: (h) => { const m = h.use(METRONOME); seen.push(m); return [service(HALF, { half: m })]; }, mount: (h) => { mounted.push(h.use(HALF)?.half); } },
+    });
+    const { ce, handle } = mountDesk([First, Second]);
+    try {
+      expect(seen.map((m) => m?.bpm)).toEqual([60]);
+      expect(mounted.map((m) => m?.bpm)).toEqual([60]);
+    } finally {
+      handle.dispose();
+      ce.dispose();
+    }
+  });
+
+  it("a name is lent ONCE per desk: a second lender is a mount error naming both — never a silent winner", () => {
+    const A = defineObject({ type: "test.lends-a", version: 1, props: {}, kind: scribbleKind("lends-a", []), host: { lend: () => [service(METRONOME, { bpm: 1 })] } });
+    const B = defineObject({ type: "test.lends-b", version: 1, props: {}, kind: scribbleKind("lends-b", []), host: { lend: () => [service(METRONOME, { bpm: 2 })] } });
+    expect(() => mountDesk([A, B])).toThrow(/"test\.metronome" is lent twice — by the object "test\.lends-a" and by the object "test\.lends-b"/);
+    // …and so is a kind's lend over the host's own
+    const C = defineObject({ type: "test.lends-text", version: 1, props: {}, kind: scribbleKind("lends-text", []), host: { lend: () => [service(TEXT_RASTER, fakeText)] } });
+    expect(() => mountDesk([C], fakeText)).toThrow(/"text" is lent twice — by the host and by the object "test\.lends-text"/);
   });
 });

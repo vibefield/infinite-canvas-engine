@@ -1,4 +1,4 @@
-// (The kit's since K4a, design-016 §5 — moved from photo/blobs.ts: a host service the contract names, `KindHost.blobs`.)
+// (The kit's since K4a, design-016 §5 — moved from photo/blobs.ts: host services a kind `use`s — `BLOB_STORE`, `PICTURE_DECODER`, K8a.)
 //
 // A print's BYTES (design-015 D-D12; D3w): a picture is not a durable cell — strata has no bytes field,
 // and a photo is megabytes — so a print's durable props name its picture by the HASH of its bytes
@@ -11,6 +11,8 @@
 //
 // `createMemoryBlobStore` is the reference store — a Map in memory, what apps/desk hands the layer —
 // and `hashBytes` the name every store must give: SHA-256, lowercase hex, over the bytes alone.
+
+import { type ServiceKey, serviceKey } from "./services";
 
 /** A blob as the store holds it: its bytes and its media type (`image/png`, `RGBA_TYPE`, …). */
 export interface StoredBlob {
@@ -33,6 +35,11 @@ export type DecodedPicture =
 
 /** The host's decoder for an encoded blob, scaled so its long side is at most `max` texels; undefined when it cannot. */
 export type PictureDecoder = (blob: StoredBlob, max: number) => Promise<DecodedPicture | undefined>;
+
+/** The app's byte store as a desk SERVICE (K8a, kit/services.ts — `deskLayer({ blobs })` lends it): `host.use?.(BLOB_STORE)`. */
+export const BLOB_STORE: ServiceKey<BlobStore> = serviceKey<BlobStore>("blobs");
+/** The host's picture decoder as a desk SERVICE (K8a — the layer lends `decodePicture` in a browser): `host.use?.(PICTURE_DECODER)`. */
+export const PICTURE_DECODER: ServiceKey<PictureDecoder> = serviceKey<PictureDecoder>("decode");
 
 /** Raw RGBA8 rows, row-major, no header — the one media type the desk decodes itself (its size is the print's `width` × `height`). */
 export const RGBA_TYPE = "image/x-ice-rgba";

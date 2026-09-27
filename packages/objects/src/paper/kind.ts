@@ -16,7 +16,7 @@
 // takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
 
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type RungContext, stringProp } from "@ice/desk";
-import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, HAND, type ShaderText } from "@ice/desk/kit";
+import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, HAND, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
 import type { PaperInstance } from "./layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "./paper";
 import { PaperPass } from "./paper-pass";
@@ -131,7 +131,7 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
     rung: (c: RungContext): number => (c.local as Partial<Pick<Writing, "rungOf">> | undefined)?.rungOf?.(c.entity, c.props, c.rect, c.zoom, c.dpr, c.px) ?? 0,
     local: (host: KindHost): Writing => createWriting({
       pages: pagesOf(host),
-      text: host.text,
+      text: host.use?.(TEXT_RASTER),
       drawn: host.drawn,
       queue: host.rasters,
       remake: host.remake,

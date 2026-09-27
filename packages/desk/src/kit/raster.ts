@@ -1,4 +1,4 @@
-// (The kit's since K4a, design-016 §5 — moved from paper/raster.ts: a host service the contract names, `KindHost.text`.)
+// (The kit's since K4a, design-016 §5 — moved from paper/raster.ts: a host service a kind `use`s — `TEXT_RASTER`, K8a.)
 //
 // The TEXT RASTER seam (design-015 §6.1; D2c) — what the paper kind calls to turn a hand's layout
 // (text.ts, pure) into ink: the face's metrics for the layout, and the glyph boxes drawn as r8
@@ -7,6 +7,7 @@
 // lab/ink.ts); the Node oracle has none and keeps its COMMITTED raster (a still pinned on its note),
 // so a desk without a text raster draws every sheet blank but the pinned ones, honestly.
 
+import { type ServiceKey, serviceKey } from "./services";
 import type { HandLayout, HandMetrics } from "./text";
 
 /** r8 coverage rows, row 0 at the top — what the ink pages take (`PaperPass.write`). */
@@ -37,3 +38,6 @@ export interface TextRaster {
    */
   raster(layout: HandLayout, face: string, box: { readonly w: number; readonly h: number }, band: number, bleed: number): InkBitmap;
 }
+
+/** The app's text raster as a desk SERVICE (K8a, kit/services.ts — `deskLayer({ text })` lends it): `host.use?.(TEXT_RASTER)`. */
+export const TEXT_RASTER: ServiceKey<TextRaster> = serviceKey<TextRaster>("text");

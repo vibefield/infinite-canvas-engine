@@ -14,7 +14,7 @@ import { type CalendarPart, calendarKind, type Pads } from "./kind";
 import { type KindDriver, defineObject } from "@ice/desk";
 import { type CalendarHand, createCalendarHand } from "./hand";
 import { type CalendarWriting, createCalendarWriting } from "./writing";
-import { PENS } from "@ice/desk/kit";
+import { PENS, PRINT_RASTER, service, TEXT_RASTER } from "@ice/desk/kit";
 import { createCalendarInput } from "./host/input";
 import { printRaster } from "./host/print";
 
@@ -79,7 +79,7 @@ export const Calendar = defineObject({
   // the host's hand, D3t-c — none without a text raster: the oracle pins committed tiles), and its days and its pen at event time
   // (host/calendar-input.ts), mounted over the ONE editor it borrows — none on a desk that made no editor
   host: {
-    lend: (h) => (h.text === undefined ? {} : { print: printRaster({ text: h.text }) }),
+    lend: (h) => { const text = h.use(TEXT_RASTER); return text === undefined ? [] : [service(PRINT_RASTER, printRaster({ text }))]; },
     mount: (h) => {
       if (h.editor === undefined) return;
       createCalendarInput({

@@ -56,12 +56,13 @@ import { MARKS_SHADER_FILES, marksShaders } from "../marks/shaders";
 import { driversOf, hostOf, objectKindOf } from "../object";
 import type { ObjectSprings } from "../kit/springs";
 import { blueNoise } from "../assets/blue-noise.gen";
-import type { KindDriver, KindHost, KindLocal, ObjectDomHost } from "../kinds/world";
+import type { KindDriver, KindLocal, ObjectDomHost } from "../kinds/world";
 import { worldChildren } from "../compose/children";
-import type { BlobStore } from "../kit/blobs";
+import { BLOB_STORE, type BlobStore, PICTURE_DECODER } from "../kit/blobs";
+import { createServices, type Lent, service } from "../kit/services";
 import { decodePicture } from "./picture";
 import { NO_DOCS, type TypingDocs } from "../docs";
-import type { TextRaster } from "../kit/raster";
+import { TEXT_RASTER, type TextRaster } from "../kit/raster";
 import type { NoteEditor } from "../kit/editor";
 import type { InsideView } from "../kit/inside";
 import { shaderText } from "../shaders";
@@ -110,6 +111,12 @@ export interface DeskLayerOptions {
   readonly idleMs?: number;
   /** The app's byte store (D3w, D-D12): a print's picture by the hash its `blob` prop names; absent, prints draw their paper alone. */
   readonly blobs?: BlobStore;
+  /**
+   * More SERVICES the host lends its kinds (K8a, kit/services.ts), each under its key — `service(KEY, value)` — beside the three it
+   * lends by name (`text` → `TEXT_RASTER`, `blobs` → `BLOB_STORE`, and `PICTURE_DECODER`, the desk's own decode). A plugin kind
+   * `use`s one by its key; a name lent twice (here, or by an object's DOM half) is a mount error.
+   */
+  readonly services?: readonly Lent[];
   /**
    * THE RASTER BUDGET (D6, design-015 §11.4), bytes: what every kind's raster caches may hold together — a board's ink (its strokes
    * are the truth; evicted, it replays when next drawn), a notebook page's CPU raster, the calendar's tiles. The least recently used
@@ -435,13 +442,19 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // the builder DRAWS (D6, `KindHost.drawn`: the builder is made after the locals, so the word is bound late)
     const locals = new Map<string, KindLocal>();
     const children = worldChildren(world);   // …and its DATA children (D3w): the host reads them, never the kind
-    // what each object's DOM half LENDS its kind's world half (K4b, `ObjectHost.lend` — the calendar's print raster, in the host's
-    // hand, D3t-c): made once per kind before its local, from what the objects declare
-    const lent = new Map<string, Pick<KindHost, "print">>();
+    // THE SERVICES (K8a, kit/services.ts — an open registry by key): the host's own — its text raster, the picture decoder, its byte
+    // store, whatever the app lends (`opts.services`) — then what each object's DOM half LENDS (`ObjectHost.lend`: the calendar's
+    // print raster, in the host's hand, D3t-c), in registration order, each handed what is lent so far; every kind's world half and
+    // every DOM half `use`s any of them by key. A name lent twice throws here, at the mount, naming both lenders
+    const services = createServices([
+      ...(opts.text !== undefined ? [service(TEXT_RASTER, opts.text)] : []),
+      service(PICTURE_DECODER, decodePicture),
+      ...(opts.blobs !== undefined ? [service(BLOB_STORE, opts.blobs)] : []),
+      ...(opts.services ?? []),
+    ]);
     for (const t of types) {
-      const k = objectKindOf(t);
       const lend = hostOf(t)?.lend;
-      if (k !== undefined && lend !== undefined && !lent.has(k.name)) lent.set(k.name, lend({ text: opts.text }));
+      if (lend !== undefined) services.lend(lend(services), `the object "${t.type}"`);
     }
     const drawn = (e: Entity): number | undefined => builder.rankOf(e);   // `builder` is made just below; the word is only asked at a tick
     // THE REGISTERED WAKES (K7a): the kinds a wake named since their last tick
@@ -457,7 +470,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const rasters = createRasterQueue({ ...(opts.rasterMs !== undefined ? { budgetMs: opts.rasterMs } : {}), shows: (e) => builder.shows(e) || compose.trayShows(e) });
     const remake = (e: Entity): void => { builder.remake(e); if (compose.trayShows(e)) compose.wake("ink"); };
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print: lent.get(k.name)?.print, drawn, budget, rasters, remake, wake: () => wakeKind(k.name) });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), use: services.use, children, drawn, budget, rasters, remake, wake: () => wakeKind(k.name) });
       if (local !== undefined) locals.set(k.name, local);
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
@@ -526,7 +539,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const domHost = (t: WidgetType): ObjectDomHost => {
       const k = objectKindOf(t);
       return {
-        container: host.container, world, docs, object: t, driver: drivers.get(t.type), look: () => (k === undefined ? undefined : compose.look(k.name)),
+        container: host.container, world, docs, use: services.use, object: t, driver: drivers.get(t.type), look: () => (k === undefined ? undefined : compose.look(k.name)),
         geometryOf: (e) => builder.geometryOf(e), hand: () => builder.hand(), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y),
         wake: () => compose.wake("ink"), ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}),
       };
