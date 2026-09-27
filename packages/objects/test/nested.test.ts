@@ -16,7 +16,7 @@ import type { MiniMatInstance } from "../src/minimat/layout";
 import { faceOf, type MiniMatGeometry } from "../src/minimat/minimat";
 import { MiniMat, Note } from "../src";
 import type { PaperInstance } from "../src/paper/layout";
-import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const VP = { width: 1200, height: 800, dpr: 2 };

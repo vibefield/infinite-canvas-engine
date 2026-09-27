@@ -13,7 +13,7 @@ import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn
 import { calendarKind, type CalendarGeometry, createPads, partAt } from "../src/calendar/kind";
 import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID } from "@ice/desk";
 import { lampOf } from "../src/paper/paper";
-import { CALENDAR_LOOK, PALETTE, PENS, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { CALENDAR_LOOK, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const law = CALENDAR;

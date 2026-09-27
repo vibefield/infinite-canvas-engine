@@ -5,14 +5,17 @@
   "type": "module",
   "description": "The desk's six reference object kinds (design-016 §5, K4b) — the note, the mini mat, the whiteboard, the photo print, the desk calendar and the notebook, each with its world half, its pass, its WGSL, its drivers and its DOM half — compiled against the desk's PUBLIC entries alone (`@ice/desk`, `@ice/desk/kit`, `@ice/desk/engine`, core's and kernel's), exactly as a plugin kind is. Published as `@vibecook/ice/desk/objects`.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./oracle/*": "./oracle/*",
+    "./oracle/fixtures/vf-theme": "./oracle/fixtures/vf-theme.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run",
     "gen:shaders": "node tools/wgsl-to-ts.mjs",
-    "gen:check": "node tools/wgsl-to-ts.mjs --check"
+    "gen:check": "node tools/wgsl-to-ts.mjs --check",
+    "oracle": "tsx oracle/render.mjs"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
@@ -22,6 +25,7 @@
   "devDependencies": {
     "@webgpu/types": "^0.1.72",
     "tsx": "^4.20.0",
-    "vitest": "^3"
+    "vitest": "^3",
+    "webgpu": "0.4.0"
   }
 }

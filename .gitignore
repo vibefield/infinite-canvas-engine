@@ -10,6 +10,6 @@ dist-profile/
 /draft/
 
 # The desk's pixel witnesses (design-015 D1; the B1 discipline): the Dawn oracle's renders and apps/desk's rig captures are results, never sources.
-packages/desk/oracle/results/
+packages/objects/oracle/results/
 apps/desk/results/
 docs/.local-*.html

@@ -6,7 +6,7 @@
  * what a consumer installs. Run after `pnpm --filter @vibecook/ice build`:
  *
  *   1. THE PLATES must be ABSENT — by CONTENT, not by name (D7): the oracle's study plates
- *      (`packages/desk/oracle/fixtures/assets/gobo-{b,c}.rgba`, oryzo/Lusion's) and apps/desk's product
+ *      (`packages/objects/oracle/fixtures/assets/gobo-{b,c}.rgba`, oryzo/Lusion's) and apps/desk's product
  *      plates (`apps/desk/assets/gobo-*.rgba`) are 1 MB each; a plate inlined as base64 carries no file
  *      name, so each is sought as three base64 needles cut from its own bytes (one per alignment).
  *   2. THE BLUE NOISE must be PRESENT (the mat's 128² tile, generated into `src/assets/blue-noise.gen.ts`).
@@ -83,7 +83,7 @@ function plateNeedles(bytes) {
   return [0, 1, 2].map((k) => Buffer.from(bytes.subarray(at + k, at + k + 48)).toString("base64").slice(4, -4));
 }
 const plateFiles = [
-  ...["gobo-b.rgba", "gobo-c.rgba"].map((n) => resolve(repo, "packages/desk/oracle/fixtures/assets", n)),
+  ...["gobo-b.rgba", "gobo-c.rgba"].map((n) => resolve(repo, "packages/objects/oracle/fixtures/assets", n)),
   ...readdirSync(resolve(repo, "apps/desk/assets"))
     .filter((n) => /^gobo-.*\.rgba$/.test(n))
     .map((n) => resolve(repo, "apps/desk/assets", n)),

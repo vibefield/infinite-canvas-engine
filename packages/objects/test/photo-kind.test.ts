@@ -13,7 +13,7 @@ import { MAT_SHADER_FILES, matShaders } from "../../desk/src/mat/shaders";
 import { newBody, resolvePhoto } from "../src/photo/photo";
 import type { PhotoInstance, PhotoPass, Picture } from "../src/photo/photo-pass";
 import { shaderText } from "../src/shaders";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, installGpuFlags } from "../../desk/test/fake-gpu";
 import { loggingKind } from "./fake-kinds";
 import { must } from "../../desk/test/must";

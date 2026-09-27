@@ -16,7 +16,7 @@ import { Board, Calendar, DESK_OBJECTS, MiniMat, MINIMAT_TYPE, Note, Notebook, N
 import { DEFAULT_PAPER_LAW, lampOf, pickPaper, resolvePaper, tiltOf } from "../src/paper/paper";
 import { MINIMAT } from "../src/minimat/theme";
 import { PAPER } from "../src/paper/theme";
-import { PALETTE, PENS, SURFACES, THEMES, VINYLS, pen, surface, vinyl } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, PENS, SURFACES, THEMES, VINYLS, pen, surface, vinyl } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const VIEW = { camX: 13.7, camY: -21.3, zoom: 1, width: 1200, height: 800, dpr: 2 };

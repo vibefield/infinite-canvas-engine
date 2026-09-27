@@ -50,7 +50,7 @@ describe("theme (the engine's half)", () => {
       for (const p of files(join(pkg, "shaders"), /\.wgsl$/)) scan(p);
     }
     // the hosts' code — the lab's in the prototype; the oracle's and apps/desk's here (packages/ground's gate scans groundlab's)
-    for (const p of files(join(desk, "oracle"), /\.(ts|mjs)$/)) scan(p);   // the fixture is a re-export since D7: no exemption
+    for (const p of files(join(ground, "oracle"), /\.(ts|mjs)$/)) scan(p);   // the fixture is a re-export since D7: no exemption
     for (const p of files(resolve(ground, "../../apps/desk/src"), /\.ts$/)) scan(p);
     expect(offenders).toEqual([]);
   });

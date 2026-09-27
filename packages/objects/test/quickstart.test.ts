@@ -12,7 +12,7 @@ import { ActiveTool, CameraLimits, createCanvasEngine, GestureSettings, ZoomThro
 import { describe, expect, it } from "vitest";
 import { looksOf } from "../../desk/src/compose/reflector";
 import { deskLayer, objectKindOf, type ObjectKind } from "@ice/desk";
-import { ZOOM_MAX, ZOOM_MIN } from "../../desk/src/lattice/lod";
+import { ZOOM_MAX, ZOOM_MIN } from "@ice/desk";
 import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskSelect, deskTheme } from "../src";
 import { PALETTE } from "../src/palette";
 import { fakePage } from "../../desk/test/fake-page";

@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { heldSlots } from "../../desk/src/compose/marks";
 import { BOARD_TOOLS, boardKind, type BoardObjectLook, ERASER_TOOL_ID, inkOfTool, markerToolId } from "../src/board/kind";
 import { addStroke, Board, BoardStroke } from "../src";
-import { BOARD_LOOK, MARKERS, PALETTE } from "../../desk/oracle/fixtures/vf-theme";
+import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };

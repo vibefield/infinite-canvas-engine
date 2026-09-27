@@ -16,7 +16,7 @@ import { worldChildren } from "../../desk/src/compose/children";
 import { calendarKind, createPads, type Pads } from "../src/calendar/kind";
 import { paperKind } from "../src/paper/kind";
 import { Calendar, createCalendarHand, createCalendarWriting, daySlot, Note, NotePin, PadSelection, pinNote, PinsNote } from "../src";
-import { CALENDAR_LOOK, PALETTE, PENS, SURFACES, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { CALENDAR_LOOK, PALETTE, PENS, SURFACES, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const VP = { width: 1200, height: 800, dpr: 2 };

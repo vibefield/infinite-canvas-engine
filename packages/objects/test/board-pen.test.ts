@@ -13,7 +13,7 @@ import { type BoardInk, boardKind, type BoardObjectLook, type PenHand } from "..
 import { addStroke, Board, BoardStroke, boardOps, createBoardPen, decodePoints, decodeTimes } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { MAT_GRID } from "@ice/desk";
-import { BOARD_LOOK, MARKERS, PALETTE } from "../../desk/oracle/fixtures/vf-theme";
+import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };

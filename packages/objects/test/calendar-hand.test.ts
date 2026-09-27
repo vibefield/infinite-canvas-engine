@@ -20,7 +20,7 @@ import { FLUX_REST, type ObjectContext, rectOf, MAT_GRID, DEFAULT_GRID } from "@
 import { addEvent, Calendar, CalendarEvent, createCalendarHand, createCalendarWriting, Note, PadSelection } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { type HandMetrics, HAND } from "@ice/desk/kit";
-import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const day = (k: string): number => dayOfKey(k);

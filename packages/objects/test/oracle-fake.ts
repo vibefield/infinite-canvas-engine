@@ -2,8 +2,8 @@
 // pixel, only its records: what a kind's world half must equal, number for number, for the same scene
 // (design-015 D3w's parity-by-construction units). The pixels stay the oracle's (Dawn) and the rigs'.
 
-import { createOracleDesk } from "../../desk/oracle/frame.mjs";
-import { ORACLE_SCENES } from "../../desk/oracle/scenes.mjs";
+import { createOracleDesk } from "../oracle/frame.mjs";
+import { ORACLE_SCENES } from "../oracle/scenes.mjs";
 import { blueNoise } from "@ice/desk";
 import { shaderText } from "../src/shaders";
 import { fakeDevice, installGpuFlags } from "../../desk/test/fake-gpu";

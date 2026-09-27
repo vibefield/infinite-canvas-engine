@@ -17,7 +17,7 @@ import { paperKind } from "../src/paper/kind";
 import { MAT_SHADER_FILES, matShaders } from "../../desk/src/mat/shaders";
 import { MiniMat, Note, Notebook } from "../src";
 import { shaderText } from "../src/shaders";
-import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../../desk/oracle/fixtures/vf-theme";
+import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "../../desk/test/fake-gpu";
 import { must } from "../../desk/test/must";
 

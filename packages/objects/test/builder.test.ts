@@ -12,7 +12,7 @@ import { createDeskBuilder, DEFAULT_GRID } from "@ice/desk";
 import type { MiniMatInstance } from "../src/minimat/layout";
 import { MiniMat, Note } from "../src";
 import type { PaperInstance } from "../src/paper/layout";
-import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { paperKind } from "../src/paper/kind";
 import { minimatKind } from "../src/minimat/kind";
 import { must } from "../../desk/test/must";

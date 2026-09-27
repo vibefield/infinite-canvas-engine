@@ -22,7 +22,7 @@ import { DEFAULT_MINIMAT_LAW, faceClip, faceOf, MINIMAT_REST, resolveMiniMat } f
 import { insideView } from "../src/minimat/inside";
 import { lampOf } from "../src/paper/paper";
 import { MINIMAT } from "../src/minimat/theme";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 import { DESK, fakeSlot, scissorPass } from "./fake-kinds";
 
 const VP = { width: 1200, height: 800 };

@@ -2,13 +2,13 @@
 // package), from the same TypeScript passes and the same .wgsl files the
 // browser build uses. No canvas: the colour target is a readable Target.
 //
-//   pnpm --filter @ice/desk oracle              → oracle/results/oracle-<scene>.rgba for apps/desk rig:parity, and every check —
+//   pnpm --filter @ice/objects oracle              → oracle/results/oracle-<scene>.rgba for apps/desk rig:parity, and every check —
 //                                                  among them THE GOLDEN: every scene's sha-256 against the COMMITTED
 //                                                  oracle/shas.json (design-015 D7): a pixel that moves, a scene with no
 //                                                  entry or an entry with no scene is a FAIL (gate:landing runs this)
-//   ORACLE_BLESS=1 pnpm --filter @ice/desk oracle   → re-bless: write the drawn shas into oracle/shas.json (a deliberate
+//   ORACLE_BLESS=1 pnpm --filter @ice/objects oracle   → re-bless: write the drawn shas into oracle/shas.json (a deliberate
 //                                                  event — a diff of that file IS the pixel change; commit it with its why)
-//   BASELINE_DIR=<dir> pnpm --filter @ice/desk oracle   → also: the `baseline` stills byte for byte against <dir>
+//   BASELINE_DIR=<dir> pnpm --filter @ice/objects oracle   → also: the `baseline` stills byte for byte against <dir>
 //                                                  (the renders the engine made before the cards and the dot and
 //                                                  needle retired — MINIMAT.md §1: what stayed must not move); a
 //                                                  missing file is a FAIL, never a skip
@@ -32,31 +32,32 @@ import { ORACLE_SCENES, VIEW } from "./scenes.mjs";
 import { createOracleDesk } from "./frame.mjs";
 import { PRINT_FIXTURES, printSheetOf } from "./prints.mjs";
 import { inflateRawSync } from "node:zlib";
-import { acquire } from "../src/engine/device.ts";
-import { Target, readback } from "../src/engine/target.ts";
-import { DEFAULT_MAT_CONFIG } from "../src/mat/layout.ts";
-import { labelReach, labelsAlong, rulerLevels } from "../src/lattice/ruler.ts";
-import { lod } from "../src/lattice/lod.ts";
-import { localOf, sdPaper, shadowReach } from "../../objects/src/paper/paper.ts";
-import { chipOf, faceClip, faceOf, sdMiniMat } from "../../objects/src/minimat/minimat.ts";
-import { insideView } from "../../objects/src/minimat/inside.ts";
-import { arrivalCamera, FIT } from "../src/nav/flight.ts";
-import { PORTAL_GATE } from "../src/nav/portal.ts";
+import { acquire } from "../../desk/src/engine/device.ts";
+import { Target, readback } from "../../desk/src/engine/target.ts";
+import { DEFAULT_MAT_CONFIG } from "../../desk/src/mat/layout.ts";
+import { labelReach, labelsAlong, rulerLevels } from "../../desk/src/lattice/ruler.ts";
+import { lod } from "../../desk/src/lattice/lod.ts";
+import { localOf, sdPaper, shadowReach } from "../src/paper/paper.ts";
+import { chipOf, faceClip, faceOf, sdMiniMat } from "../src/minimat/minimat.ts";
+import { insideView } from "../src/minimat/inside.ts";
+import { arrivalCamera, FIT } from "../../desk/src/nav/flight.ts";
+import { PORTAL_GATE } from "../../desk/src/nav/portal.ts";
 import { THEMES, surface } from "./fixtures/vf-theme.ts";
-import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../src/mat/night.ts";
-import { sdRoundBox, unproject } from "../../objects/src/photo/photo.ts";
-import { sdBoard, sdSurface } from "../../objects/src/board/board.ts";
-import { cssColor, MARKS } from "../src/theme.ts";
-import { markDistance } from "../src/marks/mirror.ts";
+import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../../desk/src/mat/night.ts";
+import { sdRoundBox, unproject } from "../src/photo/photo.ts";
+import { sdBoard, sdSurface } from "../src/board/board.ts";
+import { cssColor, MARKS } from "../../desk/src/theme.ts";
+import { markDistance } from "../../desk/src/marks/mirror.ts";
 
 Object.assign(globalThis, globals);   // GPUBufferUsage & friends, which the browser has for free
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "..");   // packages/desk
+const root = resolve(here, "..");   // packages/objects (the oracle draws the reference kinds on the desk — design-016 K4b, D-K4b.4)
+const deskRoot = resolve(root, "../desk");   // the engine's: its assets (the blue noise) and its WGSL (the kit, the mat, the hold, the marks)
 const results = resolve(root, "oracle/results");
 mkdirSync(results, { recursive: true });
-// the .wgsl files on disk from both roots since design-016 K4b: the kinds' (packages/objects/shaders) and the desk's (the kit, the
+// the .wgsl files on disk from both roots since design-016 K4b: the kinds' (this package's shaders/) and the desk's (the kit, the
 // mat, the hold, the marks) — the two generated modules a browser composes from, byte for byte
-const SHADER_ROOTS = [resolve(root, "shaders"), resolve(root, "../objects/shaders")];
+const SHADER_ROOTS = [resolve(root, "shaders"), resolve(deskRoot, "shaders")];
 const wgsl = (rel) => { const p = SHADER_ROOTS.map((r) => resolve(r, rel)).find((f) => existsSync(f)); if (p === undefined) throw new Error(`oracle: no shader file ${rel}`); return readFileSync(p, "utf8"); };
 const texts = (files) => Object.fromEntries(Object.entries(files).map(([k, f]) => [k, wgsl(f)]));
 const FORMAT = "rgba8unorm";
@@ -66,9 +67,9 @@ const gpu = await acquire({ gpu: create([]), label: "oracle" });
 console.log(`device ${(performance.now() - t0).toFixed(0)} ms · ${gpu.info.description || gpu.info.vendor}`);
 const device = gpu.device;
 // The engine's assets (assets/: the blue noise) and the HOST's (oracle/fixtures/assets/: the gobo plates, the rulers' glyphs, the note's ink — the product's, a fixture here) — raw bytes either way.
-const bytesOf = (dir, rel) => { const b = readFileSync(resolve(root, dir, rel)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
-const raw = (rel) => bytesOf("assets", rel);
-const hostRaw = (rel) => bytesOf("oracle/fixtures/assets", rel);
+const bytesOf = (dir, rel) => { const b = readFileSync(resolve(dir, rel)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
+const raw = (rel) => bytesOf(resolve(deskRoot, "assets"), rel);
+const hostRaw = (rel) => bytesOf(resolve(root, "oracle/fixtures/assets"), rel);
 const glyphMetaPath = resolve(root, "oracle/fixtures/assets/glyphs-mono-2x.json");
 const glyphMeta = existsSync(glyphMetaPath) ? JSON.parse(readFileSync(glyphMetaPath, "utf8")) : null;
 const inkMetaPath = resolve(root, "oracle/fixtures/assets/ink-note-1.json");

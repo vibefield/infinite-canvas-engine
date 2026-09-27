@@ -13,7 +13,7 @@ import { createPhotoCarry, Photo, PHOTO_TYPE, TWIST_PER_WHEEL } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { grab, moveHold, newBody, PHOTO, release, restless, stepPhoto } from "../src/photo/photo";
 import type { Picture, PhotoPass } from "../src/photo/photo-pass";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeOracle, type OracleInternals, sceneOf } from "./oracle-fake";
 import { must } from "../../desk/test/must";
 

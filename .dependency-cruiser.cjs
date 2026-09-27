@@ -150,12 +150,13 @@ module.exports = {
       comment:
         "design-016 §5 (K4b; design-011:863 — the ground MUST NOT import a barrel of all built-ins): the desk — the engine, the " +
         "seam, the kit, the contract — never imports the reference kinds, not a module, not a type, so a plugin kind and a built-in " +
-        "stand on the same desk. Its units neither: a desk unit that drives a built-in is an objects unit. With the kinds in their " +
+        "stand on the same desk. Nothing in the desk package does: not its units (a desk unit that drives a built-in is an objects " +
+        "unit), not its tools (the oracle left with the kinds it draws). With the kinds in their " +
         "own package this one rule is what `desk-engine-never-imports-objects`, `desk-seam-never-imports-a-kind` (and its four " +
         "fenced exceptions, retired at K4b's second step) and `the-kit-imports-no-kind` were. Both path forms: a relative climb " +
         "resolves into packages/objects; a package import is reported by SPECIFIER.",
       severity: "error",
-      from: { path: "^packages/desk/(src|test)/" },
+      from: { path: "^packages/desk/" },
       to: { path: ["^packages/objects/", "^@ice/objects(/|$)"] },
     },
     {

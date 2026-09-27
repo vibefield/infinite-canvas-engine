@@ -8,11 +8,11 @@
 // re-dressing held), then by a REAL wheel (the `zoomThrough` system, the `NavRedress` fact) and OUT
 // by real wheels; live insides off and on; the quiet loop. Exit 0 = every check passed.
 //
-//   pnpm --filter ./packages/desk oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:portal
+//   pnpm --filter ./packages/objects oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:portal
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { DESK, deskNotes, MINIMAT_SCENES } from "@ice/desk/oracle/scenes.mjs";
+import { DESK, deskNotes, MINIMAT_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 
 const here = import.meta.dirname;

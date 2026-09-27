@@ -297,7 +297,7 @@ kernel`; nobody imports desk but apps and the umbrella; `desk-dom-free` (only `s
 the DOM); `desk/engine` never imports `desk/objects`. Mount: `<Desk layer={deskLayer({ theme,
 palette, objects: [...DESK_OBJECTS], text, docs, blobs })}>` (react) or `createDeskHost` (dom);
 `apps/desk/src/App.tsx` is the worked example; `deskPalette`/`deskTheme` are the theme's default. The oracle
-(`pnpm --filter @ice/desk oracle`, Dawn in Node) and `apps/desk`'s rigs are the pixel witnesses.
+(`pnpm --filter @ice/objects oracle`, Dawn in Node) and `apps/desk`'s rigs are the pixel witnesses.
 
 ## @ice/devtools
 

@@ -4,7 +4,7 @@
 // × samples). Until K2 nothing counted GPU memory but the raster budget's own caches (board/notebook/calendar rasters).
 import { createCanvasEngine } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { PALETTE, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, THEMES } from "../oracle/fixtures/vf-theme";
 import { formatBlock, instrumentMemory, regionBytes, textureBytes, deskLayer } from "@ice/desk";
 import { fakeDevice, installGpuFlags } from "../../desk/test/fake-gpu";
 

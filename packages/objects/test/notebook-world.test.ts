@@ -14,9 +14,9 @@ import type { NotebookDraw, NotebookPass } from "../src/notebook/pass";
 import { Notebook, NOTEBOOK_TYPE } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { BoardStroke, strokeRow } from "../src";
-import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, THEMES } from "../../desk/oracle/fixtures/vf-theme";
-import { notebookDraw } from "../../desk/oracle/frame.mjs";
-import { BOOK_INK } from "../../desk/oracle/scenes.mjs";
+import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
+import { notebookDraw } from "../oracle/frame.mjs";
+import { BOOK_INK } from "../oracle/scenes.mjs";
 import { fakeOracle, type OracleInternals, sceneOf } from "./oracle-fake";
 import { must } from "../../desk/test/must";
 

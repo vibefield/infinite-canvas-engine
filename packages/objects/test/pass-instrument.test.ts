@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Ground, type KindPass, type KindProgram, type StratumName, instrumentPasses, type PassFrame, readTimestamps } from "@ice/desk";
 import { MAT_SHADER_FILES, matShaders } from "../../desk/src/mat/shaders";
 import { shaderText } from "../src/shaders";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "../../desk/test/fake-gpu";
 import { frame, settle, simGpu } from "./sim-gpu";
 

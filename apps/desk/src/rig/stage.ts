@@ -1,4 +1,4 @@
-// A STILL, as the oracle states it (packages/desk/oracle/scenes.mjs), spawned INTO THE WORLD: the
+// A STILL, as the oracle states it (packages/objects/oracle/scenes.mjs), spawned INTO THE WORLD: the
 // scene's objects become entities in ONE `undoable: false` transaction in the prototype's paint
 // order (the mini mats, the desk calendars, then the things in the oracle's `thingsOf` order — the
 // whiteboards, the notes, the prints, the notebooks (D3w, scene-kinds.ts); each mini mat's inside

@@ -1,4 +1,4 @@
-// The D3w kinds in a STILL — the oracle's scenes (packages/desk/oracle/scenes.mjs) spawned INTO THE WORLD:
+// The D3w kinds in a STILL — the oracle's scenes (packages/objects/oracle/scenes.mjs) spawned INTO THE WORLD:
 // the whiteboards with their strokes as DATA CHILDREN (entities `ChildOf` the board, laid in one
 // non-undoable transaction after the spawn), the prints, the notebooks, the desk calendars — in the
 // ORACLE'S paint order (frame.mjs `deskInputs`: the mini mats, then the pads, then the things — the scene's
@@ -11,9 +11,9 @@ import type { DeskLayerHandle } from "@ice/desk";
 import { type BookPose, type Books, type PadPose, type Pads, type PhotoPose, printRect, type Prints, BOARD } from "@ice/objects";
 import { RGBA_TYPE } from "@ice/desk";
 import { addEvent, addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, monthKeyOf, monthOfKey, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/objects";
-import { BLANK_SHEET, type CommittedSheet, type PrintMeta, PRINT_ZONE, printSheetOf } from "@ice/desk/oracle/prints.mjs";
-import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
-import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
+import { BLANK_SHEET, type CommittedSheet, type PrintMeta, PRINT_ZONE, printSheetOf } from "@ice/objects/oracle/prints.mjs";
+import photoMetaUrl from "@ice/objects/oracle/fixtures/assets/photo-1.json?url";
+import photoUrl from "@ice/objects/oracle/fixtures/assets/photo-1.rgba?url";
 import { deskBlobs } from "../blobs";
 import { bytesOf } from "../fixtures";
 import type { PrintFixture } from "../rig-door";
@@ -177,7 +177,7 @@ const committed = new Map<string, Promise<CommittedSheet>>();
 function committedPrint(name: string): Promise<CommittedSheet> {
   let p = committed.get(name);
   if (p === undefined) {
-    const base = new URL(`../../../packages/desk/oracle/fixtures/assets/${name}`, location.href).href;
+    const base = new URL(`../../../packages/objects/oracle/fixtures/assets/${name}`, location.href).href;
     p = (async () => {
       const [meta, bin] = await Promise.all([fetch(`${base}.json`).then((r) => { if (!r.ok) throw new Error(`${name}.json: ${r.status}`); return r.json() as Promise<PrintMeta>; }), fetch(`${base}.bin`).then((r) => { if (!r.ok) throw new Error(`${name}.bin: ${r.status}`); return r.blob(); })]);
       const bytes = new Uint8Array(await new Response(bin.stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());

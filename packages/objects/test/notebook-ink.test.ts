@@ -19,7 +19,7 @@ import type { NotebookPass } from "../src/notebook/pass";
 import { drawSegment, drawStroke, PageRaster, scaleOf, segmentsOf } from "../src/notebook/raster";
 import { addStroke, BoardStroke, encodePoints, Notebook, PENS, StrokePrefab } from "../src";
 import { lampOf } from "../src/paper/paper";
-import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS as PEN_TOKENS, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS as PEN_TOKENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 /** A page's open extent, page units (the law's frame: 185.28 × 245.6 — 5.5 texels a unit, NOTEBOOK.md §8). */

@@ -1,7 +1,7 @@
 // apps/desk's PARITY page (design-015 §11 witness 1; plan D1's witness 5) — `parity.html`, D1's page kept whole
 // beside the real desk (`index.html`, D2a-world), what `rig:parity` still drives. Every oracle
 // scene is drawn straight through @ice/desk's engine in Chrome by the Node oracle's OWN desk
-// (packages/desk/oracle/frame.mjs: the same passes, the same fixtures, the same scene builder, the
+// (packages/objects/oracle/frame.mjs: the same passes, the same fixtures, the same scene builder, the
 // same prepareFrame → drawFrame), so `rig:parity` can hold this page to the Dawn render at maxΔ 0.
 // The only differences are the host's: the canvas's swap-chain texture (the preferred format)
 // instead of a readable target, the generated shader text instead of the .wgsl files, the fixtures
@@ -10,18 +10,18 @@
 import { acquire } from "@ice/desk/engine";
 import { surface } from "@ice/desk";
 import { blueNoise } from "@ice/desk";
-import { createOracleDesk } from "@ice/desk/oracle/frame.mjs";
-import { ORACLE_SCENES, VIEW } from "@ice/desk/oracle/scenes.mjs";
+import { createOracleDesk } from "@ice/objects/oracle/frame.mjs";
+import { ORACLE_SCENES, VIEW } from "@ice/objects/oracle/scenes.mjs";
 import { shaderText } from "@ice/objects";   // the kinds' WGSL and the kit's (per-package shader text, design-016 K4b)
-import goboBUrl from "@ice/desk/oracle/fixtures/assets/gobo-b.rgba?url";
-import goboCUrl from "@ice/desk/oracle/fixtures/assets/gobo-c.rgba?url";
-import glyphMetaUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.json?url";
-import glyphsUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.r8?url";
-import inkMetaUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.json?url";
-import inkUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.r8?url";
-import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
-import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";
-import { PRINT_FIXTURES, type PrintMeta, printSheetOf } from "@ice/desk/oracle/prints.mjs";
+import goboBUrl from "@ice/objects/oracle/fixtures/assets/gobo-b.rgba?url";
+import goboCUrl from "@ice/objects/oracle/fixtures/assets/gobo-c.rgba?url";
+import glyphMetaUrl from "@ice/objects/oracle/fixtures/assets/glyphs-mono-2x.json?url";
+import glyphsUrl from "@ice/objects/oracle/fixtures/assets/glyphs-mono-2x.r8?url";
+import inkMetaUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.json?url";
+import inkUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.r8?url";
+import photoMetaUrl from "@ice/objects/oracle/fixtures/assets/photo-1.json?url";
+import photoUrl from "@ice/objects/oracle/fixtures/assets/photo-1.rgba?url";
+import { PRINT_FIXTURES, type PrintMeta, printSheetOf } from "@ice/objects/oracle/prints.mjs";
 
 /** The page's door for the rig (and a person at the console). */
 export interface DeskParity {
@@ -109,7 +109,7 @@ async function boot(): Promise<void> {
   // the desk calendars' committed prints (D3t-c — oracle/prints.mjs): the same bytes the oracle inflates from disk
   const prints: Record<string, ReturnType<typeof printSheetOf>> = {};
   for (const name of PRINT_FIXTURES) {
-    const base = new URL(`../../../packages/desk/oracle/fixtures/assets/${name}`, location.href).href;
+    const base = new URL(`../../../packages/objects/oracle/fixtures/assets/${name}`, location.href).href;
     const [metaRes, binRes] = await Promise.all([fetch(`${base}.json`), fetch(`${base}.bin`)]);
     if (!metaRes.ok || !binRes.ok) continue;   // not committed yet: its scenes cannot be drawn (the oracle says so too)
     const bytes = new Uint8Array(await new Response((await binRes.blob()).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());

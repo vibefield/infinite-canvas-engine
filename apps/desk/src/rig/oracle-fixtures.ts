@@ -2,12 +2,12 @@
 // its plates, its committed glyph atlas, the note's committed ink raster — so `setScene` uploads exactly the bytes the
 // Node oracle read from disk. The product's own plates are src/fixtures.ts.
 
-import goboBUrl from "@ice/desk/oracle/fixtures/assets/gobo-b.rgba?url";
-import goboCUrl from "@ice/desk/oracle/fixtures/assets/gobo-c.rgba?url";
-import glyphMetaUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.json?url";
-import glyphsUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.r8?url";
-import inkMetaUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.json?url";
-import inkUrl from "@ice/desk/oracle/fixtures/assets/ink-note-1.r8?url";
+import goboBUrl from "@ice/objects/oracle/fixtures/assets/gobo-b.rgba?url";
+import goboCUrl from "@ice/objects/oracle/fixtures/assets/gobo-c.rgba?url";
+import glyphMetaUrl from "@ice/objects/oracle/fixtures/assets/glyphs-mono-2x.json?url";
+import glyphsUrl from "@ice/objects/oracle/fixtures/assets/glyphs-mono-2x.r8?url";
+import inkMetaUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.json?url";
+import inkUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.r8?url";
 import type { GlyphAtlasMeta } from "@ice/desk";
 import { bytesOf } from "../fixtures";
 

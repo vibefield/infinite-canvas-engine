@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { loadavg } from "node:os";
 import { resolve } from "node:path";
-import { RULER_SCENES } from "@ice/desk/oracle/scenes.mjs";
+import { RULER_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { lod } from "../../../packages/desk/src/lattice/lod.ts";
 import { finestLabelled, labelReach, labelsAlong, rulerLevels } from "../../../packages/desk/src/lattice/ruler.ts";
 import { DEFAULT_MAT_CONFIG } from "../../../packages/desk/src/mat/layout.ts";

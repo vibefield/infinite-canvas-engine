@@ -35,12 +35,12 @@ export { createWriting, DEFAULT_BLEED, DEFAULT_FACE, DEFAULT_HAND_LAW, type InkP
 /**
  * The desk's kinds in the order they prepare — the prototype's (the notes, the mini mats, the whiteboards; its prints
  * after the ground, as its photo lab drew them; then its two layers in the order its lab rendered them: the calendar's
- * before the frame, the notebooks' after it) — each made from `text`: the generated module unless a host says (the Node
- * oracle hands the .wgsl files on disk).
+ * before the frame, the notebooks' after it) — each made from `text`: the kinds' shader text (theirs and the kit's — ./shaders.ts)
+ * unless a host says (the Node oracle hands the .wgsl files on disk).
  */
 export function deskKinds(text: ShaderText = shaderText): readonly KindProgram[] {
   return [paperProgram(text), miniMatProgram(text), boardProgram(text), photoProgram(text), calendarProgram(text), notebookProgram(text)];
 }
 
-/** The desk's kinds on the generated shader text — what a browser host registers: `Ground.create({ device, canvas, mat, kinds: DESK_KINDS })`. */
+/** The desk's kinds on the kinds' generated shader text (and the kit's) — what a browser host registers: `Ground.create({ device, canvas, mat, kinds: DESK_KINDS })`. */
 export const DESK_KINDS: readonly KindProgram[] = deskKinds();

@@ -17,8 +17,8 @@ import { CalendarKind, calendarKind, createPads, type Pads } from "../src/calend
 import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, objectKindOf, MAT_GRID } from "@ice/desk";
 import { addEvent, Calendar, CALENDAR_TYPE, CalendarEvent, daySlot, NOTE_TYPE, Note, NotePin, pinNote, PinsNote } from "../src";
 import { lampOf } from "../src/paper/paper";
-import { CALENDAR_LOOK, PALETTE, PENS, THEMES } from "../../desk/oracle/fixtures/vf-theme";
-import { calendarDraw, pinnedAt } from "../../desk/oracle/frame.mjs";
+import { CALENDAR_LOOK, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
+import { calendarDraw, pinnedAt } from "../oracle/frame.mjs";
 import { fakeOracle, sceneOf } from "./oracle-fake";
 import { must } from "../../desk/test/must";
 

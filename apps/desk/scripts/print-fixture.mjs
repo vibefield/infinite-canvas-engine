@@ -1,4 +1,4 @@
-// The desk calendar's COMMITTED PRINT (D3t-c; packages/desk/oracle/prints.mjs) — made from, and held to, the LIVE print. Each print
+// The desk calendar's COMMITTED PRINT (D3t-c; packages/objects/oracle/prints.mjs) — made from, and held to, the LIVE print. Each print
 // fixture the oracle's scenes name (`print: { "YYYY-MM": name }`) is a month of the scenes' one set of entries: the scene is spawned
 // into the WORLD through `window.__desk.setScene` with the live print (its events as the pad's data children, today pinned, the note
 // stuck), the desk's own raster draws the sheet's tiles, and its level-2 tiles are read back (`__desk.calendar.readSheet` — the same
@@ -13,13 +13,13 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
-import { ORACLE_SCENES } from "@ice/desk/oracle/scenes.mjs";
+import { ORACLE_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { launchChrome, openTab } from "./cdp.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");
-const assets = resolve(repo, "packages/desk/oracle/fixtures/assets");
+const assets = resolve(repo, "packages/objects/oracle/fixtures/assets");
 const WRITE = process.argv.includes("--write");
 /** The level the committed prints hold (band 0.5 texels a unit — four tiles by four for a sheet). */
 export const PRINT_LEVEL = 2;

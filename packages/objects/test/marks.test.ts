@@ -22,7 +22,7 @@ import { resolveBoard } from "../src/board/board";
 import { newBody, PHOTO, resolvePhoto } from "../src/photo/photo";
 import { PAPER } from "../src/paper/theme";
 import { shaderText } from "../src/shaders";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "../../desk/test/fake-gpu";
 
 const VIEW = { width: 1200, height: 800, dpr: 2 };

@@ -8,9 +8,7 @@
     ".": "./src/index.ts",
     "./engine": "./src/engine/index.ts",
     "./kit": "./src/kit/index.ts",
-    "./oracle/*": "./oracle/*",
-    "./assets/*": "./assets/*",
-    "./oracle/fixtures/vf-theme": "./oracle/fixtures/vf-theme.ts"
+    "./assets/*": "./assets/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -18,8 +16,7 @@
     "test": "vitest run",
     "gen:shaders": "node tools/wgsl-to-ts.mjs",
     "gen:noise": "node tools/noise-to-ts.mjs",
-    "gen:check": "node tools/wgsl-to-ts.mjs --check && node tools/noise-to-ts.mjs --check",
-    "oracle": "tsx oracle/render.mjs"
+    "gen:check": "node tools/wgsl-to-ts.mjs --check && node tools/noise-to-ts.mjs --check"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
@@ -27,8 +24,6 @@
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.72",
-    "tsx": "^4.20.0",
-    "vitest": "^3",
-    "webgpu": "0.4.0"
+    "vitest": "^3"
   }
 }

@@ -17,7 +17,7 @@ import { coverFrame, frameOf, specOf } from "../src/notebook/shape";
 import { lampOf } from "../src/paper/paper";
 import { PHOTO } from "../src/photo/photo";
 import { BOARD } from "../src/board/theme";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeOracle, type OracleInternals, sceneOf } from "./oracle-fake";
 import { must } from "../../desk/test/must";
 

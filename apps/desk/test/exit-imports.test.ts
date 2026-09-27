@@ -10,7 +10,7 @@
  *      package does not ship cannot pass (until D7 it read the workspace package's map, which admits `./oracle/*`,
  *      and the app's palette came from the oracle's fixture — why the published quickstart could not run). THE RIGS'
  *      pages — `rig.html`'s harness (src/rig/) and `parity.html`'s page — may add the oracle's door,
- *      `@ice/desk/oracle/*`, which the WORKSPACE desk package publishes and the umbrella does not. Every module under
+ *      `@ice/objects/oracle/*`, which the WORKSPACE objects package publishes (the desk's until design-016 K4b) and the umbrella does not. Every module under
  *      src/ is reached by one of the three pages, and the product reaches nothing of the rigs'.
  * THE SURFACE is exactly what the product imports, no more (an allowance nothing uses fails too). A vite query
  * (`?url`) is not part of the module path.
@@ -25,8 +25,8 @@ import { describe, expect, it } from "vitest";
 
 /** THE SURFACE — the engine entries the PRODUCT imports, in their workspace spelling; each must be an entry the UMBRELLA publishes. */
 const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/objects", "@ice/desk/kit", "@ice/devtools"] as const;   // devtools since design-016 K2: the dock on ⇧`; `@ice/objects` (published `./desk/objects`) since K4b — the kinds' own package
-/** The rigs' extra door: the oracle's scenes, frames and fixtures (published by the WORKSPACE desk package, not the umbrella). */
-const RIG_DOOR = "@ice/desk/oracle/*";
+/** The rigs' extra door: the oracle's scenes, frames and fixtures (published by the WORKSPACE objects package since K4b, not the umbrella). */
+const RIG_DOOR = "@ice/objects/oracle/*";
 /** The three pages and the module each one loads (their `<script type="module" src>`); the product is `index`. */
 const PAGES = { index: ["src/main.tsx"], rig: ["src/rig/harness.ts", "src/main.tsx"], parity: ["src/parity.ts"] } as const;
 
@@ -180,6 +180,7 @@ describe("M10 exit criterion — apps/desk is surface-only", () => {
     expect(unpublished, `entries the umbrella does not publish:\n${unpublished.join("\n")}`).toEqual([]);
     // …and the oracle's door is the WORKSPACE package's alone: the umbrella ships no oracle
     expect(Object.keys(UMBRELLA).some((k) => k.includes("oracle"))).toBe(false);
-    expect(Object.hasOwn(WORKSPACE.get("@ice/desk") ?? {}, "./oracle/*")).toBe(true);
+    expect(Object.hasOwn(WORKSPACE.get("@ice/objects") ?? {}, "./oracle/*")).toBe(true);
+    expect(Object.hasOwn(WORKSPACE.get("@ice/desk") ?? {}, "./oracle/*")).toBe(false);   // K4b: the oracle left the desk with the kinds it draws
   });
 });

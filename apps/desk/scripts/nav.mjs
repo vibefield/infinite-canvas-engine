@@ -12,11 +12,11 @@
 // rise is moving, the flight pinned at p = 0 with the flux unfrozen — only the builder's p = 0 hold keeps
 // the departed desk its pre-cut frame. Exit 0 = every check passed.
 //
-//   pnpm --filter ./packages/desk oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:nav
+//   pnpm --filter ./packages/objects oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:nav
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { NAV_SCENES } from "@ice/desk/oracle/scenes.mjs";
+import { NAV_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { layoutMarks } from "../../../packages/desk/src/marks/layout.ts";
 import { markDistance } from "../../../packages/desk/src/marks/mirror.ts";
 import { flightOpacity } from "../../../packages/desk/src/nav/flight.ts";

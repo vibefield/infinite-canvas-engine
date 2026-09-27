@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MAT_CONFIG, MatUniforms, DAY_LIGHT, dayLuminance, linear, MAT, MAT_COLORS, MAT_GRID, MAT_LIGHT, NIGHT, type RGB, rgb } from "@ice/desk";
 import { STILL_MAT_FRAME, matUniformValues } from "../../desk/src/mat/layout";
 import { D65, degreeOfAdaptation, hueTint, lightValues, linearToSrgb, luminance, mesopicWeight, nightAppearance, nightReport, planckianXY, rodSignal, scotopic, spectralXY, xyToLinear } from "../../desk/src/mat/night";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 
 const desk = resolve(import.meta.dirname, "../../desk");   // the mat's WGSL is the desk's (K4b: the kinds' package reads it there)
 const close = (a: number, b: number, eps: number) => expect(Math.abs(a - b), `${a} vs ${b}`).toBeLessThan(eps);

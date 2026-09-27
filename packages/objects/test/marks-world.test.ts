@@ -11,7 +11,7 @@ import { createDeskBuilder, DEFAULT_GRID, MARKS } from "@ice/desk";
 import { MiniMat, Note } from "../src";
 import { minimatKind } from "../src/minimat/kind";
 import { paperKind } from "../src/paper/kind";
-import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const VP = { width: 1200, height: 800, dpr: 2 };

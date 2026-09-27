@@ -6,7 +6,7 @@
 import { createCanvasEngine } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deskLayer } from "@ice/desk";
-import { PALETTE, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, installGpuFlags } from "../../desk/test/fake-gpu";
 
 function fakeHost() {

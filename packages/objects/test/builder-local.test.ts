@@ -9,7 +9,7 @@ import { createDeskBuilder, type KindLocal, DEFAULT_GRID } from "@ice/desk";
 import { minimatKind } from "../src/minimat/kind";
 import { paperKind } from "../src/paper/kind";
 import { MiniMat, Note } from "../src";
-import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const VP = { width: 1200, height: 800, dpr: 2 };

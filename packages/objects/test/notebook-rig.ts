@@ -10,7 +10,7 @@ import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookPass } from "../src/notebook/pass";
 import { BoardStroke, createNotebookHand, Notebook } from "../src";
 import { lampOf } from "../src/paper/paper";
-import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const lamp = lampOf(MAT_GRID.plane);

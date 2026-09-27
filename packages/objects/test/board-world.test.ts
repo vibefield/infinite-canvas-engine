@@ -15,7 +15,7 @@ import { addStroke, Board, BOARD_TYPE, BoardStroke, boardOps, decodePoints, enco
 import { ERASER_TOOL, StrokeBuilder } from "../src/board/stroke";
 import { lampOf } from "../src/paper/paper";
 import { BOARD } from "../src/board/theme";
-import { BOARD_LOOK, MARKERS, PALETTE, THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { BOARD_LOOK, MARKERS, PALETTE, THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeEncoder, fakeOracle, type OracleInternals, sceneOf } from "./oracle-fake";
 import { must } from "../../desk/test/must";
 

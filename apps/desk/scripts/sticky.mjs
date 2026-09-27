@@ -108,7 +108,7 @@ try {
   check(await q("window.__desk.note.fontReady()"), "the hand's face (Caveat 500, the app's OFL file) is loaded");
   const b64 = await q(`window.__desk.note.rasterBytes(${JSON.stringify(INK_TEXT)}, 200, 200, 2, "caveat", 7)`);
   const mine = Buffer.from(b64 ?? "", "base64");
-  const ref = readFileSync(resolve(repo, "packages/desk/oracle/fixtures/assets/ink-note-1.r8"));
+  const ref = readFileSync(resolve(repo, "packages/objects/oracle/fixtures/assets/ink-note-1.r8"));
   let inkDiff = 0;
   for (let i = 0; i < ref.length; i++) if (ref[i] !== mine[i]) inkDiff++;
   check(mine.length === ref.length && inkDiff === 0, `the OffscreenCanvas text raster draws the prototype's committed ink-note-1.r8 byte for byte (${mine.length} of ${ref.length} bytes, ${inkDiff} differ)`);

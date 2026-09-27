@@ -24,7 +24,7 @@ export interface PrintFixture { readonly hash: string; readonly w: number; reado
 
 /** What `rig.html`'s harness hands the app. */
 export interface DeskRig {
-  /** Stage an oracle scene (packages/desk/oracle/scenes.mjs's shape) into the world. */
+  /** Stage an oracle scene (packages/objects/oracle/scenes.mjs's shape) into the world. */
   setScene(host: SceneHost, scene: object): Promise<Staged>;
   /** The oracle's photo fixture, put in the BlobStore and preloaded. */
   printFixture(handle: DeskLayerHandle): Promise<PrintFixture>;

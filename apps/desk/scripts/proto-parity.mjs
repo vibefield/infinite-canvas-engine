@@ -32,7 +32,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { ORACLE_SCENES } from "@ice/desk/oracle/scenes.mjs";
+import { ORACLE_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { launchChrome, openTab } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
 
@@ -67,8 +67,8 @@ const proto = process.env.DESK_PROTO ? resolve(process.env.DESK_PROTO) : null;
 if (!proto) die("DESK_PROTO is not set", "extract vibe-field/draft/ground/results/backup/ground-at-desk-port-2026-09-25.tgz into a scratch directory, link draft/ground's node_modules into its ground/, and point DESK_PROTO at that ground/");
 for (const f of ["lab/photo.html", "lab/photo.ts", "lab/board.html", "lab/board-lab.ts", "lab/index.html", "lab/main.ts", "node_modules/.bin/vite"]) if (!existsSync(join(proto, f))) die(`${join(proto, f)} is missing`, "DESK_PROTO must be the snapshot's ground/ with its node_modules");
 if (!existsSync(resolve(app, "dist/parity.html"))) die("the parity page's build is missing (apps/desk/dist/parity.html)", "pnpm --filter ./apps/desk build");
-const picturePath = resolve(repo, "packages/desk/oracle/fixtures/assets/photo-1.rgba");
-const pictureMeta = JSON.parse(readFileSync(resolve(repo, "packages/desk/oracle/fixtures/assets/photo-1.json"), "utf8"));
+const picturePath = resolve(repo, "packages/objects/oracle/fixtures/assets/photo-1.rgba");
+const pictureMeta = JSON.parse(readFileSync(resolve(repo, "packages/objects/oracle/fixtures/assets/photo-1.json"), "utf8"));
 const out = process.env.DESK_PROTO_OUT ? resolve(process.env.DESK_PROTO_OUT) : mkdtempSync(join(tmpdir(), "desk-proto-"));
 mkdirSync(out, { recursive: true });
 

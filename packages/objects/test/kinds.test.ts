@@ -30,7 +30,7 @@ import { lampOf } from "../src/paper/paper";
 import type { PaperPass } from "../src/paper/paper-pass";
 import { shaderText } from "../src/shaders";
 import { BOARD } from "../src/board/theme";
-import { THEMES } from "../../desk/oracle/fixtures/vf-theme";
+import { THEMES } from "../oracle/fixtures/vf-theme";
 import { DESK, fakeSlot, loggingKind, scissorPass } from "./fake-kinds";
 import { fakeDevice, fakeSurface, installGpuFlags, recordingPass } from "../../desk/test/fake-gpu";
 import { must } from "../../desk/test/must";

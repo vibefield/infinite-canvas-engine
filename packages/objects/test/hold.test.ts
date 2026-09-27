@@ -21,8 +21,8 @@ import type { NotebookDraw } from "../src/notebook/pass";
 import { Board, Calendar, Note, Notebook } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { shaderText } from "../src/shaders";
-import { calendarDraw, notebookDraw } from "../../desk/oracle/frame.mjs";
-import { BOARD_LOOK, CALENDAR_LOOK, MARKERS, NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../../desk/oracle/fixtures/vf-theme";
+import { calendarDraw, notebookDraw } from "../oracle/frame.mjs";
+import { BOARD_LOOK, CALENDAR_LOOK, MARKERS, NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "../../desk/test/fake-gpu";
 import { must } from "../../desk/test/must";
 

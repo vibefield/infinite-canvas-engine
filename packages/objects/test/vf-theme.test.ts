@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAT_COLORS, type RGB, type RGBA, cssColor } from "@ice/desk";
-import { PALETTE, SURFACES, surface, THEMES, vinyl, VINYL_NAMES } from "../../desk/oracle/fixtures/vf-theme";
+import { PALETTE, SURFACES, surface, THEMES, vinyl, VINYL_NAMES } from "../oracle/fixtures/vf-theme";
 
 const ground = resolve(import.meta.dirname, "..");
 const repo = resolve(ground, "../../../vibe-field");   // beside ICE when it is (packages/ground's convention); the cross-checks skip honestly otherwise

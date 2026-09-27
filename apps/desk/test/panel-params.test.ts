@@ -11,7 +11,7 @@ import { NAV_TRANSITION_DEFAULTS, NavTransitionSettings, ZOOM_THROUGH_DEFAULTS }
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle, GRID, type MatConfig, SPRINGS, type ThemeName } from "@ice/desk";
 import { MAT_LIGHT, themeFrom } from "@ice/desk";
 import { MINIMAT } from "@ice/objects";
-import { PALETTE } from "@ice/desk/oracle/fixtures/vf-theme";
+import { PALETTE } from "@ice/objects/oracle/fixtures/vf-theme";
 import { describe, expect, it } from "vitest";
 import { createDeskEngine } from "../src/desk";
 import { bindDeskParams, type ParamStore } from "../src/panel/panel";

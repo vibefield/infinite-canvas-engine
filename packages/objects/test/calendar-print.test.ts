@@ -17,7 +17,7 @@ import { type PrintRaster, type TileSource, encodeSeeds, type HandMetrics, HAND 
 import { cellAt, sheetOf } from "../src/calendar/sheet";
 import { EMPTY, entryOf, levelFor, MISSING, TILE_TEX, tileGrid, tilesIn } from "../src/calendar/tiles";
 import { calendarKind } from "../src/calendar/kind";
-import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS } from "../../desk/oracle/fixtures/vf-theme";
+import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const METRICS: HandMetrics = { ascent: 0.8, descent: 0.25, advance: (ch) => (ch === " " ? 0.3 : 0.5) };

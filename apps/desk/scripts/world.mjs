@@ -7,7 +7,7 @@
 // pixel. What this compares is the WORLD PATH — entities → kinds → records — against the oracle's
 // direct scene builder (frame.mjs); the hosts were already equal (rig:parity).
 //
-//   pnpm --filter ./packages/desk oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:world [scene-regex]
+//   pnpm --filter ./packages/objects oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:world [scene-regex]
 //
 // The minimat, chain and nav scenes need insides and flights (D2b) and are not drawn here; a scene
 // off the oracle is drawn and captured ONCE more (the second witness the landing discipline asks of
@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { ORACLE_SCENES } from "@ice/desk/oracle/scenes.mjs";
+import { ORACLE_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { compareSheet, liveSheet, printedSheets } from "./print-fixture.mjs";
 
@@ -59,8 +59,8 @@ const die = (what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it 
 if (!existsSync(resolve(app, "dist/rig.html"))) die("the desk's build is missing (apps/desk/dist/rig.html)", "pnpm --filter ./apps/desk build");
 const scenes = ORACLE_SCENES.filter((sc) => WORLD_SCENES.test(sc.name) && (only === null || only.test(sc.name)));
 if (scenes.length === 0) die(`no mat/ruler/paper oracle scene matches ${only}`, "pnpm --filter ./apps/desk rig:world [scene-regex]");
-const missing = scenes.filter((sc) => !existsSync(resolve(repo, `packages/desk/oracle/results/oracle-${sc.name}.rgba`)));
-if (missing.length) die(`${missing.length} of ${scenes.length} oracle render(s) missing (first: oracle-${missing[0].name}.rgba)`, "pnpm --filter ./packages/desk oracle");
+const missing = scenes.filter((sc) => !existsSync(resolve(repo, `packages/objects/oracle/results/oracle-${sc.name}.rgba`)));
+if (missing.length) die(`${missing.length} of ${scenes.length} oracle render(s) missing (first: oracle-${missing[0].name}.rgba)`, "pnpm --filter ./packages/objects oracle");
 
 async function freePort(from) {
   for (let port = from; port < from + 40; port++) {
@@ -99,7 +99,7 @@ const diffJs = (png, name) => `(async () => {
   const img = new Image(); img.src = "data:image/png;base64,${png}"; await img.decode();
   const c = new OffscreenCanvas(img.width, img.height); const g = c.getContext("2d"); g.drawImage(img, 0, 0);
   const a = g.getImageData(0, 0, img.width, img.height).data;
-  const res = await fetch("/packages/desk/oracle/results/oracle-${name}.rgba", { cache: "no-store" }); if (!res.ok) return { error: "fetch " + res.status };
+  const res = await fetch("/packages/objects/oracle/results/oracle-${name}.rgba", { cache: "no-store" }); if (!res.ok) return { error: "fetch " + res.status };
   const b = new Uint8Array(await res.arrayBuffer()); if (b.length !== a.length) return { error: "size " + img.width + "x" + img.height + " (" + a.length + " bytes) vs " + b.length };
   let maxD = 0; let over4 = 0; let differ = 0; const n = img.width * img.height;
   for (let i = 0; i < n; i++) { const o = i * 4; const d = Math.max(Math.abs(a[o] - b[o]), Math.abs(a[o + 1] - b[o + 1]), Math.abs(a[o + 2] - b[o + 2])); if (d > maxD) maxD = d; if (d > 4) over4++; if (d > 0) differ++; }
