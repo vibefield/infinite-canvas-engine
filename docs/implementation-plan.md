@@ -1079,7 +1079,7 @@ recorded here is the review of them and the wave it produced:
   the wave exists to end (D-C4.13): every fix carries a test that fails without it, PROVEN
   by reverting the hunk, not asserted.
 
-## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — D3t-a, D3t-b, D3t-c and D6 LANDED 2026-09-26; D7's review done, its fix wave in build)**
+## M20 — The desk (design-015) — **IN BUILD (planned 2026-09-25 · D1, D2a-core, D2a-render, D2a-world, D3r-a, D3r-b, D2c and D2b LANDED 2026-09-25 · D4a, D3w, four core fixes, D5a, D4b, D5b — THE DELETION — D3t-a, D3t-b, D3t-c, D6 and D7 LANDED 2026-09-26 — THE PROGRAM IS LANDED; the 0.14.0 release cut is James's)**
 
 *(Numbering note: next free after M19. design-015 is ruled in direction by James's
 2026-09-25 instruction — "no more dom and r3f widgets, we will have our webgpu object
@@ -1472,6 +1472,29 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   POLLED `tick(now)` and the followers run each tick; meeting it needs REGISTERED WAKES (a kind says when it is next live) — a
   design change, owed. Also owed: composites remade every drawn build, `rezoom` on any zoom delta (a quantised band), a
   restless kind remaking its whole kind on an edit, a live eviction → replay witness.
+- **D7 — the review and its fix wave** (**LANDED 2026-09-26**, FW-B `73e1454` … `afcdeb2`, FW-C … `f294076`, FW-A `225791b` … `a3b12ae`):
+  three read-only reviewers over the whole range (`ff76610^..f7db939`) — the law in code, the renderer and the kinds, the
+  surface/docs/tests — returned 36 verified findings (no P0; four P1), and three fix builders closed ALL of them, each fix
+  with a test that failed with its hunk reverted. THE LAW (FW-A): every desk writer now asks the version gate's read-only
+  verdict before it commits (the writer's gate); a note sticks and unsticks at the LANDING inside the move's own transaction
+  (core's new `docs.extendCommits` — one undo step, and Esc keeps the pin); a rolled month waits for the document to speak;
+  no tap writes while an object is in hand; `Held` is scoped to the frame; the calendar lease goes through the facade's
+  chokepoints; no kind state for a dead pad; the put-down flight picks where it is drawn; no double-tap during a flight;
+  stroke seeds stored (`desk.stroke` v4) — and THE KIND-DRIVERS SEAM: a kind DECLARES its drivers in `defineObject`, deskLayer
+  wires them generically (a third-party openable kind gets its driver), and `desk-seam-never-imports-a-kind` fires. THE
+  RENDERER (FW-B): the held desk copy made once under the default ambient too; the layered passes' state per render target
+  (0 allocations per held frame with a second notebook); idle-zero in hand for the board and the pad; a per-kind cap's drop
+  counted and said, never silent; ink landings (not drying) refresh the copy; ONE clock seam for the calendar's today and
+  time zone (`PRINT_ZONE` pinned; rig:world green under Asia/Tokyo); a "degraded" status on a GPU error; three keep-awakes
+  gone. THE SURFACE (FW-C): the published quickstart RUNS (the default palette and the `DESK_ENGINE` preset ship in
+  `@vibecook/ice/desk/objects`; core seeds the root canvas type's default tool); a COMMITTED PIXEL GOLDEN
+  (`oracle/shas.json`, asserted by the gate; `ORACLE_BLESS=1` re-blesses); the rigs see faults the engine contains
+  (`window.__desk.faults`, console errors); M10 held to the umbrella's exports (oracle staging behind `rig.html`); one GPU
+  device per engine; dead settings and exports removed and named in the break list; every doc contradiction fixed and
+  pinned by `check-docs`; `pack:audit` reading dist/ in eight rows; vacuous units, rig sleeps and lint blind spots fixed.
+  Graded by the orchestrator per landing: ci exit 0 and `gate:landing` exit 0 on each tip, the golden 101/101 byte for byte
+  across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
+  relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
 ## Release cut & downstream
 

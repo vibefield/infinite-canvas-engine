@@ -850,6 +850,11 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   every frame the union moved (every drag frame). A non-resizable multi-selection's group box went with it (the desk's
   marks draw every selection's look). The 8 resize handles stay — picking reads them — and `settings.chrome.liftScale`
   stays with them: it places the handles about a lifted card (the review read it as the box's alone).
+- **`DeskLayerHandle`'s per-kind doors** — `typing`, `writing()`, `pen()`, `notebook()`, `calendar()`, `pinRaster`,
+  `clearRasters` — replaced by ONE `driver(type)`: a kind DECLARES its drivers in `defineObject({ drivers })` and the desk
+  wires them generically (the kind-drivers seam, D7), so a third-party openable kind gets its driver too.
+- **`desk.calendar`'s `month` default** is `""` (it was the literal `"2026-09"`): a pad spawned without a month shows the
+  month of its own today, in its zone.
 
 ### Fixed
 
@@ -1033,6 +1038,27 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   a planted `navigator?.gpu` in `desk/src/springs.ts` passes the pre-D7 dom-free, fails the new; a planted
   `style.scale = String(cam.zoom)` in dom's remote cursors passes the pre-D7 editor law, fails the new; an
   `import "three"` in apps/desk passes the packages-only walk, fails the new one (`no-three: apps/desk/src/blobs.ts → three`).
+
+<!-- design-015 D7 — the fix wave, the law and the renderer (2026-09-26) -->
+- **The desk's writers ask the version gate** (D7 law #1): typing, the pen, the notebook's leaves, the print's carry and the
+  calendar's writing and hand committed straight through the store and never read a READ-ONLY verdict (a document written by a
+  newer build, or carrying a pack newer than this one); every desk writer now takes its session from the writer's gate, a
+  session refuses to begin on a read-only document, and a verdict flipping mid-session commits nothing.
+- **A note sticks and unsticks at the LANDING, inside the move's own transaction** (law #2): one undo step for a drop onto a
+  day, and Esc keeps the pin. New core door `docs.extendCommits(fn)` — an extender writes into a gesture's own transaction
+  after its writes; a cancelled gesture reaches none.
+- **The calendar**: a rolled month is held until the DOCUMENT speaks, so a lost race follows the peer (law #3); its lease's
+  undo and delete go through the facade (#9); a forgotten pad re-acquires no kind state (#10); pending tiles, a culled board's
+  ink stamp and a wipe on an undrawn note no longer keep the desk awake (law #5–#7); ONE clock seam for today and the zone —
+  the day turns over, and the committed print is pinned to `PRINT_ZONE` (render #6, #7).
+- **In hand**: no tap writes into a note while an object is held (law #4); `Held` is scoped to the frame (#8); the flight home
+  picks where it is drawn (#11); a tap during a nav flight is not a double-tap's half (#12); the held desk copy is made once
+  under the default ambient too, the layered passes keep state per render target, and a held board or pad goes idle (render
+  #1–#3); an ink LANDING refreshes the copy (#5).
+- **Never silent**: a kind's per-slot cap now counts and logs what it drops (`GroundStats.dropped`, render #4); an uncaptured
+  GPU error takes the layer to `degraded` (#8).
+- **`desk.stroke` v4** stores each stroke's fibre `seed` (v3 → v4 stamps −1, positional as before), so a peer's earlier
+  stroke no longer re-seeds mine on replay (law #13).
 
 ## [0.13.0] — 2026-09-07
 
