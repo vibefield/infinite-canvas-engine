@@ -102,7 +102,7 @@ describe("the far LOD (MINIMAT.md §5)", () => {
   it("a child becomes a CHIP through the embedding: its footprint scaled about the host's origin, a note's lines greeked on the x-height", () => {
     const ink = [0.1, 0.1, 0.2] as const;
     const paper = [0.96, 0.9, 0.66] as const;
-    const note = { kind: "paper" as const, cx: 100, cy: 50, hx: 40, hy: 40, angle: 0.1, radius: 2, colour: paper, height: 3, writing: { ink, x0: 16, em: 24, lines: [{ y: 40, width: 50 }, { y: 70, width: 0.2 }] } };
+    const note = { finish: "paper", cx: 100, cy: 50, hx: 40, hy: 40, angle: 0.1, radius: 2, colour: paper, height: 3, writing: { ink, x0: 16, em: 24, lines: [{ y: 40, width: 50 }, { y: 70, width: 0.2 }] } };
     const ch = chipOf(note, { s: 0.5, ox: 10, oy: 20 }, 0.3);
     expect(ch.centre).toEqual([60, 45]); expect(ch.half).toEqual([20, 20]);
     expect(ch.radius).toBe(1); expect(ch.height).toBe(1.5);
@@ -110,7 +110,7 @@ describe("the far LOD (MINIMAT.md §5)", () => {
     expect(ch.stroke).toBeCloseTo(0.5 * 0.3 * 24 * 0.5, 12);
     expect(ch.lines).toEqual([[(16 - 40) * 0.5, (16 + 50 - 40) * 0.5, (40 - 0.32 * 24 - 40) * 0.5]]);   // a line too short to read is no stroke
     expect(ch.ink).toBe(ink);
-    const mat = chipOf({ kind: "mat", cx: 0, cy: 0, hx: 190, hy: 150, angle: 0, radius: 10, colour: paper, height: 3, margin: 32 }, { s: 0.25, ox: 0, oy: 0 });
+    const mat = chipOf({ finish: "vinyl", cx: 0, cy: 0, hx: 190, hy: 150, angle: 0, radius: 10, colour: paper, height: 3, margin: 32 }, { s: 0.25, ox: 0, oy: 0 });
     expect(mat.margin).toBe(8); expect(mat.lines).toEqual([]); expect(mat.ink).toBe(paper);
     // the writing's lines stop at CHIP_LINES
     const long = chipOf({ ...note, writing: { ...note.writing, lines: Array.from({ length: 10 }, (_, i) => ({ y: 20 + i * 10, width: 30 })) } }, { s: 1, ox: 0, oy: 0 });
@@ -145,7 +145,7 @@ describe("the records and the WGSL that reads them (MINIMAT.md §6)", () => {
   it("every field the values name is the struct's, and the struct's every field is named (but its pad)", () => {
     const names = (s: { fields: readonly (readonly [string, string])[] }) => s.fields.map(([n]) => n).filter((n) => !n.startsWith("pad")).sort();
     expect(Object.keys(miniMatValues(inst, 0, 0)).sort()).toEqual(names(MiniMat));
-    const ch = chipOf({ kind: "mat", cx: 0, cy: 0, hx: 10, hy: 10, angle: 0, radius: 1, colour: [0, 0, 0], height: 1, margin: 2 }, view.M);
+    const ch = chipOf({ finish: "vinyl", cx: 0, cy: 0, hx: 10, hy: 10, angle: 0, radius: 1, colour: [0, 0, 0], height: 1, margin: 2 }, view.M);
     expect(Object.keys(chipValues(ch)).sort()).toEqual(names(ChipRecord));
     expect(chipValues(ch).kind).toBe(1);
     const meta = { scale: 2, cellW: 16, cellH: 24, advance: 14, baseline: 18, cap: 14, width: 768, height: 24, count: GLYPHS.length };

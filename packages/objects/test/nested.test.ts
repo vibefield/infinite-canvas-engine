@@ -80,7 +80,7 @@ describe("the live inside from the world (MINIMAT.md §3)", () => {
     expect(p.view.zoom).toBeCloseTo(0.48, 12);
     // the mat's record carries the chips of its three children: two paper chips (the ball pen's ink on the second), one vinyl chip
     const rec = must(f.objects[0]).record as MiniMatInstance;
-    expect(rec.chips?.map((c) => c.kind)).toEqual(["mat", "paper", "paper"]);
+    expect(rec.chips?.map((c) => c.finish)).toEqual(["vinyl", "paper", "paper"]);
     expect(rec.live).toBe(-1);
     // the inside's members lie at rest: no lift, no ring (nothing inside is held or selected)
     const noteRec = must(p.objects?.[1]).record as PaperInstance;

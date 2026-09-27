@@ -16,7 +16,7 @@
 // takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
 
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type RungContext, stringProp } from "@ice/desk";
-import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, HAND, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
+import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, HAND, PAPER_FINISH, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
 import type { PaperInstance } from "./layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "./paper";
 import { PaperPass } from "./paper-pass";
@@ -179,7 +179,7 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       const hand = opts.hand?.law ?? HAND;
       const greek = asPaperAsset(ctx.asset)?.greek ?? (laid === undefined ? undefined : { x0: hand.pad, em: hand.size, lines: laid.lines.map((L) => ({ y: L.y, width: L.width })) });
       return {
-        kind: "paper", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, radius: G.radius, colour: paper, height: G.curl * 0.5,
+        finish: PAPER_FINISH, cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, radius: G.radius, colour: paper, height: G.curl * 0.5,
         ...(greek !== undefined && greek.lines.length > 0 ? { writing: { ink, x0: greek.x0, em: greek.em, lines: greek.lines } } : {}),
       };
     },

@@ -31,12 +31,22 @@ export interface InsideView {
   readonly box: Box;
 }
 
-/** What a child is, to the face that draws it small: a sheet of paper (a note), or a mini mat of its own. */
-export type ChipKind = "paper" | "mat";
+/**
+ * The FINISH a container's face draws a child's chip in (K8a — open: until K8a a chip was a `ChipKind`, `"paper" | "mat"`, the two
+ * built-ins' own names, so no plugin kind could have one): a name among the container's `FaceLaw.finishes` — the mini mat draws
+ * `"paper"` (a sheet in the chip's colour, its writing greeked) and `"vinyl"` (grained, its frame line at `margin`) — and a plugin
+ * container draws its own. A chip names one, or several in preference order; the first the container draws wins, and a chip the
+ * container draws none of is not drawn (the builder counts it: `BuildWork.unchipped`) — never a finish it did not ask for.
+ */
+export type ChipFinish = string;
+/** The two finishes the kit names — a chip's shared vocabulary (a note's `paper`, a mini mat's `vinyl`); a container may draw more. */
+export const PAPER_FINISH: ChipFinish = "paper";
+export const VINYL_FINISH: ChipFinish = "vinyl";
 
 /** One child as the face's far LOD draws it, in the CHILD's frame (the inside's world). */
 export interface ChildShape {
-  readonly kind: ChipKind;
+  /** Its finish (`ChipFinish`) — or finishes, in preference order; the builder hands the container the one it draws. */
+  readonly finish: ChipFinish | readonly ChipFinish[];
   readonly cx: number; readonly cy: number;
   /** Half extents, the tilt (radians), the corner radius — the child's own. */
   readonly hx: number; readonly hy: number;
@@ -50,6 +60,20 @@ export interface ChildShape {
   readonly writing?: { readonly ink: RGB; readonly x0: number; readonly em: number; readonly lines: readonly { readonly y: number; readonly width: number }[] } | undefined;
   /** A mini mat's printed border, child units. */
   readonly margin?: number | undefined;
+}
+
+/**
+ * A CONTAINER kind's FACE LAW (K8a — the container's own, declared on its kind as `ObjectKind.faceLaw`): the chip finishes its face
+ * draws. Absent on a kind with a `face`: its face draws no chips.
+ */
+export interface FaceLaw {
+  readonly finishes: readonly ChipFinish[];
+}
+
+/** The finish a container draws a chip in: the chip's first that the container draws, or undefined — none (the chip is not drawn). */
+export function finishOf(finish: ChipFinish | readonly ChipFinish[], drawn: readonly ChipFinish[]): ChipFinish | undefined {
+  if (typeof finish === "string") return drawn.includes(finish) ? finish : undefined;
+  return (finish as readonly ChipFinish[]).find((f) => drawn.includes(f));
 }
 
 /**

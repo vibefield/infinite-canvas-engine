@@ -99,7 +99,7 @@ import type { MarksInput } from "../marks/layout";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
 import type { MatFrame, SlotLight } from "../mat/layout";
-import { type ChildShape, FACE_CHIPS_MAX, FACE_RADIUS, flightLights, flightPresent, insidePresent, type InsideView, insideViewOfFace } from "../kit/inside";
+import { type ChildShape, FACE_CHIPS_MAX, FACE_RADIUS, finishOf, flightLights, flightPresent, insidePresent, type InsideView, insideViewOfFace } from "../kit/inside";
 import { boundsOf, type CameraState, FIT, type Rect, solveFlightStart } from "../nav/flight";
 import { clipOf, faceCovers, PORTAL_CAP, PORTAL_GATE, type Presentation } from "../nav/portal";
 import { type Lamp, lampOf } from "../mat/lamp";
@@ -179,9 +179,11 @@ export interface BuildWork {
   readonly rerung: number;
   readonly rezoomed: number;
   readonly restless: number;
+  /** Chips a container's face could not draw (K8a): the child's chip named no finish of the container's `faceLaw` — left out, never redressed. */
+  readonly unchipped: number;
 }
 type MutableWork = { -readonly [K in keyof BuildWork]: number };
-const ZERO_WORK: BuildWork = { queried: 0, visited: 0, sorted: 0, resolved: 0, recorded: 0, reused: 0, rungs: 0, fresh: 0, rerung: 0, rezoomed: 0, restless: 0 };
+const ZERO_WORK: BuildWork = { queried: 0, visited: 0, sorted: 0, resolved: 0, recorded: 0, reused: 0, rungs: 0, fresh: 0, rerung: 0, rezoomed: 0, restless: 0, unchipped: 0 };
 
 export interface DeskBuilderStats {
   /** Objects Active in the frame this build saw. */
@@ -796,7 +798,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       if (disposed) return { objects: [], portals: [], grid, marks: marks.frame({ rows: [], cam, view: vp, dt: 0, night: false, rulers: null }), stats: EMPTY_STATS };
       seq += 1;
       lastCam = cam;
-      work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0; work.reused = 0; work.rungs = 0; work.fresh = 0; work.rerung = 0; work.rezoomed = 0; work.restless = 0;
+      work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0; work.reused = 0; work.rungs = 0; work.fresh = 0; work.rerung = 0; work.rezoomed = 0; work.restless = 0; work.unchipped = 0;
       const now = bopts.now ?? 0;
       const portalsOn = bopts.portals !== false;
       const restless = bopts.restless;
@@ -889,6 +891,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const chipsOf = (e: Entity, st: ObjectState, ctx: ObjectContext, view: InsideView | null, slotGrid: GridConfig): ChildShape[] => {
         const chips: ChildShape[] = [];
         if (view === null) return chips;
+        // the finishes this container's face draws (K8a — its own `faceLaw`): a chip in none of them is not drawn, and counted
+        const finishes = st.kind.faceLaw?.finishes ?? [];
         const insideGrid = st.kind.insideGrid?.({ props: st.props, look: ctx.look }, slotGrid) ?? slotGrid;
         const insideLamp = lampOf(insideGrid.mat.plane);
         const insideView: ObjectContext["view"] = { camX: view.cam.x, camY: view.cam.y, zoom: view.cam.zoom, width: vp.width, height: vp.height, dpr: vp.dpr };
@@ -899,7 +903,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           const cctx = contextOf(c, cst, insideView, insideGrid, insideLamp, false);
           work.resolved += 1;
           const chip = cst.kind.chip(cst.kind.resolve(cctx), cctx);
-          if (chip !== null) chips.push(chip);
+          if (chip === null) continue;
+          const finish = finishOf(chip.finish, finishes);
+          if (finish === undefined) { work.unchipped += 1; continue; }
+          chips.push(finish === chip.finish ? chip : { ...chip, finish });
         }
         return chips;
       };
@@ -1339,7 +1346,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       if (deskMoving || deskWasMoving || deskLanded) { deskSeq += 1; if (heldBuild !== undefined) heldBuild = { ...heldBuild, deskSeq }; }
       deskWasMoving = deskMoving;
       lastHand = heldBuild;
-      totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded; totals.reused += work.reused; totals.rungs += work.rungs; totals.fresh += work.fresh; totals.rerung += work.rerung; totals.rezoomed += work.rezoomed; totals.restless += work.restless;
+      totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded; totals.reused += work.reused; totals.rungs += work.rungs; totals.fresh += work.fresh; totals.rerung += work.rerung; totals.rezoomed += work.rezoomed; totals.restless += work.restless; totals.unchipped += work.unchipped;
       stats = { active: list.length, objects: objects.length, culled: list.length - drawnRows, ghosts: ghosts.size, portals: portalsCount, live, work: { ...work }, totals: { ...totals }, mismatches };
       return {
         objects,

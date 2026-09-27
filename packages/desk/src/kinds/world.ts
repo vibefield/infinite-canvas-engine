@@ -26,7 +26,7 @@ import type { RasterBudget } from "../engine/budget";
 import type { RasterQueue } from "../engine/rasters";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { DeskEditor, TextPart } from "../kit/editor";
-import type { ChildShape, InsideView } from "../kit/inside";
+import type { ChildShape, FaceLaw, InsideView } from "../kit/inside";
 import type { Lamp } from "../kit/light";
 import type { Lent, ServiceKey, Services } from "../kit/services";
 import type { Rect } from "../kit/nav";
@@ -311,9 +311,15 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
    */
   face?(geometry: G): Rect | undefined;
   /**
-   * The kind's far-LOD face inside a mini mat (MINIMAT.md §5): the child as a `ChildShape` in ITS
-   * desk's units — a note as paper with its writing greeked, a mini mat as vinyl with its border;
-   * `null` = nothing to chip. Absent = the kind has no chip yet (the oracle's prints).
+   * A CONTAINER kind's face law (K8a, kit/inside.ts `FaceLaw`): the chip finishes its face draws — the container's own, never a
+   * list in the desk. Absent on a container: its face draws no chips.
+   */
+  readonly faceLaw?: FaceLaw;
+  /**
+   * The kind's CHIP — its far impostor inside a container's face (MINIMAT.md §5; K8a: any kind's): the child as a `ChildShape` in
+   * ITS desk's units, in a finish the container draws — a note as paper with its writing greeked, a mini mat as vinyl with its
+   * border, a plugin kind as either or a finish of a plugin container's; `null` = nothing to chip. Absent = the kind has no chip
+   * (the oracle's prints): inside a far face it is not drawn.
    */
   chip?(geometry: G, ctx: ObjectContext): ChildShape | null;
   /** The grid a CONTAINER kind's inside draws with (the mini mat: the desk's fade-in, the mat in its vinyl, no rulers). Absent = the root's. */

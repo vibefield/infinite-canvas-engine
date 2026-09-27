@@ -8,7 +8,7 @@
 // the inside's embedding, in the host's world. The lamp is the desk's one lamp
 // (paper.ts `lampOf`): the shadow falls away from it, the cut edge catches it.
 
-import { type FadeIn, lod, dressScale, type LineLaw, lineWeight, GLYPHS, type CameraState, type PortalAffine, type Rect, clipOf, type PortalClip, type Lamp, sdRoundBox, type ChildShape, type ChipKind, FACE_RADIUS } from "@ice/desk/kit";
+import { type FadeIn, lod, dressScale, type LineLaw, lineWeight, GLYPHS, type CameraState, type PortalAffine, type Rect, clipOf, type PortalClip, type Lamp, sdRoundBox, type ChildShape, type ChipFinish, FACE_RADIUS, PAPER_FINISH, VINYL_FINISH } from "@ice/desk/kit";
 import type { RGB } from "@ice/desk";
 import { MINIMAT } from "./theme";
 
@@ -145,12 +145,19 @@ export function faceLattice(insideZoom: number, fadeIn: FadeIn, law: LineLaw, lo
   return { rungs: [l.fine, l.mid, l.coarse], weights: [at(0).alpha, at(1).alpha, at(2).alpha], widths: [at(0).halfWidth, at(1).halfWidth, at(2).halfWidth] };
 }
 
+/**
+ * The finishes a mini mat's face draws its chips in (K8a — its `faceLaw`, the kit's shared vocabulary: never the children's kind
+ * names): `paper` — a sheet in the chip's colour, its writing greeked; `vinyl` — grained vinyl with its frame line at the chip's margin.
+ */
+export const MINIMAT_FINISHES: readonly ChipFinish[] = [PAPER_FINISH, VINYL_FINISH];
+
 /** The most lines of a note's writing a chip greeks. */
 export const CHIP_LINES = 6;
 
 /** A chip as the pass takes it: the child mapped into the HOST's world through the inside's embedding `M` (host = o + child · s). */
 export interface Chip {
-  readonly kind: ChipKind;
+  /** The finish it is drawn in — one of the mini mat's own (`MINIMAT_FINISHES`), the builder's pick among the child's. */
+  readonly finish: ChipFinish;
   readonly centre: readonly [number, number];
   readonly half: readonly [number, number];
   readonly cos: number; readonly sin: number;
@@ -184,7 +191,7 @@ export function chipOf(c: ChildShape, M: PortalAffine, weight: number = MINIMAT.
     }
   }
   return {
-    kind: c.kind, centre: [M.ox + c.cx * s, M.oy + c.cy * s], half: [hx, hy], cos: Math.cos(c.angle), sin: Math.sin(c.angle),
+    finish: typeof c.finish === "string" ? c.finish : (c.finish[0] ?? PAPER_FINISH), centre: [M.ox + c.cx * s, M.oy + c.cy * s], half: [hx, hy], cos: Math.cos(c.angle), sin: Math.sin(c.angle),
     radius: c.radius * s, colour: c.colour, height: c.height * s, lines, stroke, ink: w?.ink ?? c.colour, margin: (c.margin ?? 0) * s,
   };
 }

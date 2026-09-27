@@ -7,7 +7,7 @@
 // pass fills for itself so a mini mat is lit exactly as the desk it lies on.
 
 import { defineStruct } from "@ice/desk/engine";
-import type { PortalAffine, GlyphAtlasMeta } from "@ice/desk/kit";
+import { type PortalAffine, type GlyphAtlasMeta, VINYL_FINISH } from "@ice/desk/kit";
 import type { RGB } from "@ice/desk";
 import { CHIP_LINES, type Chip, type FaceLattice, type MiniMatGeometry, type MiniMatLaw, NAME_CHARS, nameGlyphs, type Numerals, packGlyphs } from "./minimat";
 
@@ -103,7 +103,7 @@ export function chipValues(c: Chip) {
   const lines = new Array<number>(4 * CHIP_LINES).fill(0);
   c.lines.slice(0, CHIP_LINES).forEach((l, i) => { lines[4 * i] = l[0]; lines[4 * i + 1] = l[1]; lines[4 * i + 2] = l[2]; });
   return {
-    centre: c.centre, half: c.half, rot: [c.cos, c.sin], radius: c.radius, kind: c.kind === "mat" ? 1 : 0,
+    centre: c.centre, half: c.half, rot: [c.cos, c.sin], radius: c.radius, kind: c.finish === VINYL_FINISH ? 1 : 0,
     colour: [c.colour[0], c.colour[1], c.colour[2], c.height],
     ink: [c.ink[0], c.ink[1], c.ink[2], c.stroke],
     frame: [c.margin, Math.min(c.lines.length, CHIP_LINES), 0, 0],

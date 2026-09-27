@@ -14,10 +14,10 @@
 // product's (`theme()`, the palette's `vinyls`); `sage` is the desk's own ground.
 
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
-import { DEFAULT_GRID, type GridConfig, type MatPass, type MarkFrame, type ChildShape, FIT, PORTAL_GATE, type ShaderText } from "@ice/desk/kit";
+import { DEFAULT_GRID, type GridConfig, type MatPass, type MarkFrame, type ChildShape, FIT, PORTAL_GATE, type ShaderText, VINYL_FINISH } from "@ice/desk/kit";
 import { insideView, miniMatInstance } from "./inside";
 import type { MiniMatInstance } from "./layout";
-import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "./minimat";
+import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, MINIMAT_FINISHES, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "./minimat";
 import { MiniMatPass } from "./pass";
 import { MINIMAT_SHADER_FILES, miniMatShaders } from "./shaders";
 import { shaderText } from "../shaders";
@@ -140,12 +140,14 @@ export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGe
     },
     /** The face as drawn: the sheet inset by its printed border, through its springs (`faceOf` — what the live inside and the nav cut read). */
     face(G: MiniMatGeometry) { return faceOf(G); },
+    // its face law (K8a — the container's own): the finishes its far face draws a child's chip in
+    faceLaw: { finishes: MINIMAT_FINISHES },
     /** Inside another mini mat, a mini mat is a vinyl chip with its border (the prototype's `childrenOf`). */
     chip(G: MiniMatGeometry, ctx: ObjectContext): ChildShape {
       const look = ctx.look as MiniMatLook | undefined;
       const vinylName = stringProp(ctx.props, "vinyl", SAGE);
       const vinyl = vinylName === SAGE ? ctx.grid.mat.ground : (look?.vinyls[vinylName] ?? ctx.grid.mat.ground);
-      return { kind: "mat", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: 0, radius: G.radius, colour: vinyl, height: G.thick, margin: G.margin };
+      return { finish: VINYL_FINISH, cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: 0, radius: G.radius, colour: vinyl, height: G.thick, margin: G.margin };
     },
     insideGrid,
     frame: miniMatFrame,
