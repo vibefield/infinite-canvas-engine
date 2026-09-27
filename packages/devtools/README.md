@@ -14,7 +14,8 @@ side drifts.
 
 ## Opening it in `apps/desk`
 
-Press **`~`** (⇧`; the backtick alone is the dev panel). The dock opens and **arms the GPU profiler**.
+Press **`~`** (⇧`; the backtick alone is the dev panel). The dock's code is a chunk of its own, loaded on the
+first press, so the product page carries none of it until then. The dock opens and **arms the GPU profiler**.
 Pressing `~` again closes the dock and disarms the profiler. Opening it never wakes the desk: at rest the
 desk draws nothing (idle-zero), and the slot says it is waiting for a frame. Move the camera and the
 numbers arrive.
@@ -62,7 +63,7 @@ The GPU also waits between passes, for example for the drawable the `ground` pas
 at K2 on this Mac (D-K2.4), over 60 real frames:
 
 - in 52 the sum **overstates** the frame (the passes overlap);
-- in 8 it **understates** it (1–4 ms of waiting between passes).
+- in 8 it **understates** it (the GPU waiting between passes; the gaps printed were 0.4, 1.4 and 3.6 ms).
 
 Headline the span; read `busy` for the work and `span − busy` for the waits.
 

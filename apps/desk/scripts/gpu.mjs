@@ -25,7 +25,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
-import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, until, watchPage } from "./cdp.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -102,8 +102,14 @@ try {
   await settle();
   const cam1 = await q("window.__desk.camera()");
 
-  // ── the dock: ⇧` opens it, armed, waiting; ⇧` closes it, every wrapper gone (the rigs' door has not asked yet)
+  // ── the dock: ⇧` opens it, armed, waiting; ⇧` closes it, every wrapper gone (the rigs' door has not asked yet). Its code is a
+  //    chunk of its own, loaded on the first press: the page's scripts grow by it then, not before
+  const scripts = "performance.getEntriesByType('resource').filter((e) => e.name.endsWith('.js')).length";
+  const scripts0 = await q(scripts);
   await tilde();
+  await until(() => q("window.__desk.dock.isOpen()"), 5000);
+  const scripts1 = await q(scripts);
+  check(scripts1 > scripts0, `the dock's code loads on the first press, not with the page (${scripts0} → ${scripts1} scripts)`);
   const opened = await q(`({ open: window.__desk.dock.isOpen(), slot: !!document.querySelector('.ice-dock .ice-dock-slot[data-slot="gpu"] .ice-gpu'), waiting: document.querySelector('.ice-gpu-body')?.textContent?.includes('waiting for a frame') ?? false, armed: window.__desk.perf.gpu().armed(), wrapped: ${WRAPPED} })`);
   check(opened.open && opened.slot && opened.waiting && opened.armed && opened.wrapped.includes("createCommandEncoder") && opened.wrapped.includes("submit"), `⇧\` opens the devtools dock: the gpu slot mounted and waiting for a frame, the profiler armed (wrapped: [${opened.wrapped}])`);
   await tilde();
@@ -114,6 +120,7 @@ try {
   await q("window.__desk.submits(); 0");
   await settle();
   await tilde();
+  await until(() => q("window.__desk.dock.isOpen()"), 5000);
   await front();
   const rest = await qa(`(async () => {
     const d = window.__desk; const n0 = d.submits().total; const r0 = d.handle.redraws(); d.perf.take();

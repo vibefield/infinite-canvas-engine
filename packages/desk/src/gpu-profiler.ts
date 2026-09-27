@@ -10,7 +10,7 @@
 // the GPU time the frame took. A SUM of passes misleads both ways (`sum` is reported beside it to show it — D-K2.4, measured
 // on this Mac at K2): the Apple tiler keeps passes in flight together, so a pass's own begin/end does not isolate it and the
 // sum overstates (52 of 60 frames); and the GPU waits between passes — for the drawable the ground pass draws into — so the
-// sum understates (8 of 60, gaps of 1–4 ms). `busy` — the union of the passes' intervals — is the work without the waits:
+// sum understates (8 of 60 — the gaps printed were 0.4, 1.4 and 3.6 ms). `busy` — the union of the passes' intervals — is the work without the waits:
 // `span − busy` is what the frame waited. A frame whose every timestamp delta is a whole multiple of 100 µs is `quantised`:
 // Dawn rounds timestamps unless Chrome runs with `--disable-dawn-features=timestamp_quantization`.
 //

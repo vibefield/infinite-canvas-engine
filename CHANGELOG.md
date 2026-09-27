@@ -690,7 +690,7 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   assignability at compile time) — the span's p50/p95/max, the passes on the span, the calls, by kind, uploads,
   memory, the quantisation warning, "capture 120 frames"; the host lanes `desk flush` / `encode` / `gpu` beside
   strata's. `packages/devtools/README.md` says how to open it and what each number means. apps/desk mounts the dock on
-  `~` (⇧`), arming the profiler while it is open.
+  `~` (⇧`), arming the profiler while it is open — its code a chunk of its own, loaded on the first press.
 - **Changed, quietly**: `instrumentSubmits` is no longer installed at boot — the layer's `submits()` installs it on first
   ask (D-K2.1), `detach()` restores exactly what was there (no bound copy left as an own property), submits share ONE tap
   (`tapSubmits`), and `copyExternalImageToTexture` (a print's picture, the calendar's tiles) counts as an upload.
