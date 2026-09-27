@@ -300,7 +300,7 @@ export interface Pads extends KindLocal {
   letGo(e: Entity, now: number, cancel?: boolean): void;
   /** The hands' finished rolls since the last drain — each a month the document should now hold (the hand commits it). */
   rolled(): readonly { readonly e: Entity; readonly month: number }[];
-  /** The hand's roll is the document's business now — landed (it projects at the next sync) or refused: the pad follows the document from here. */
+  /** A hand's roll the document REFUSED (read-only, a pad gone): the pad rolls back to the document's month. A landed roll is released by the roll itself, once the document speaks (turn.ts, D7 #3). */
   unroll(e: Entity): void;
   /** A pad is on this desk (D7 #14): the hand's peek needs the pointer every frame while one is, so the hand never idles then. */
   busy(): boolean;

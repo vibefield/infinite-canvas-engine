@@ -263,19 +263,22 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
   const leaveDoor = docs.extendCommits?.(landing);
 
   /**
-   * A hand's finished roll: the document's month follows it — ONE transaction, off the undo stack. Landed or refused, the pad's
-   * hold on the month is released HERE (D7 #3, as the leaf does at leaf.ts): a landed month projects at the next sync and the
-   * pad already shows it; a refused one, or one that lost a race to a peer's roll, leaves the pad following the document — a
-   * `pending` held until the document echoed it exactly would shadow every later month the document takes.
+   * A hand's finished roll: the document's month follows it — ONE transaction, off the undo stack; refused, the pad rolls back
+   * to the document's month. The pad's hold on the month (`pending`) is NOT released here on a landed commit (D7 #3, corrected by
+   * gate:landing): the kinds' `tick` runs before the draw path refreshes the roll's `durable`, so a release at the commit left one
+   * frame in which the target fell back to the OLD month and a turn back began (the part under the tape read `moving`). The
+   * release is the roll's own (calendar/turn.ts): the document SPEAKS — its month moves, to the hand's or, a race lost, to a
+   * peer's — and the hold ends; a landed month moves it at the next sync, a lost race moves it at least once either way.
    */
   const commitRolls = (pads: Pads): void => {
     for (const { e, month } of pads.rolled()) {
       defer(() => {
         const session = writable(docs);
+        let ok = false;
         if (session !== undefined && world.isAlive(e)) {
-          try { setWidgetProps(session.store, world, e, { month: monthKeyOf(month) }, { undoable: false }); } catch { /* refused (the prop's schema, the guard): the pad follows the document */ }
+          try { setWidgetProps(session.store, world, e, { month: monthKeyOf(month) }, { undoable: false }); ok = true; } catch { ok = false; }
         }
-        pads.unroll(e);
+        if (!ok) pads.unroll(e);
       });
     }
   };

@@ -171,7 +171,7 @@ describe("the hand marks each pad from the user's selection (objects/calendar-ha
     expect(r.undoSteps()).toBe(steps);                               // a roll is not an edit
   });
 
-  it("a hand's roll landed: the pad's hold on the month is released AT the commit, not when the document echoes it — a race lost to a peer cannot shadow the document (D7 #3)", () => {
+  it("a hand's roll landed: the tick BEFORE the document echoes it starts no turn back — the hold lasts until the roll hears the document's month move (D7 #3, the gate's lesson)", () => {
     const r = rig();
     const SEP = monthIndex(2026, 9);
     r.pads.sheets(r.pad, SEP);   // the draw path's word: the pad shows the document's month
@@ -182,9 +182,17 @@ describe("the hand marks each pad from the user's selection (objects/calendar-ha
     for (let i = 0; i < 600 && r.pads.rollOf(r.pad)?.pending !== SEP + 1; i++) { t += 16; r.pads.tick?.(t); }
     expect(r.pads.rollOf(r.pad)).toMatchObject({ shown: SEP + 1, pending: SEP + 1, turn: null });
     r.hand.follow(t);
-    r.flush();   // the commit — and the release, before any tick hears the document
+    r.flush();   // the commit lands in the document
     expect((r.ce.world.get(r.pad, Calendar.groups[0]?.component as never) as { month: string }).month).toBe("2026-10");
-    expect(r.pads.rollOf(r.pad)?.pending).toBeNull();
+    // the layer's order: the kinds' tick runs BEFORE the draw path refreshes the roll's durable — this tick still hears September
+    t += 16;
+    r.pads.tick?.(t);
+    expect(r.pads.rollOf(r.pad)).toMatchObject({ shown: SEP + 1, turn: null });   // no turn back: the hold stands until the document speaks
+    // the draw path brings the document's word; the next tick hears it move and the hold ends
+    r.pads.sheets(r.pad, SEP + 1);
+    t += 16;
+    r.pads.tick?.(t);
+    expect(r.pads.rollOf(r.pad)).toMatchObject({ shown: SEP + 1, pending: null, turn: null });
   });
 
   it("a pad forgotten (its delete): a mark, a draft, a peek, a grab on it re-acquire NO state — the freed slot goes to the next pad (D7 #10)", () => {
