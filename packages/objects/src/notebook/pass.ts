@@ -126,6 +126,16 @@ export class NotebookPass {
    */
   private shadowTex: GPUTexture;
   private shadowLayers: GPUTextureView[] = [];
+  /**
+   * What each shadow map holds (K7a — cached while the lamp and the book stand still): the book's id, its mesh's version, its
+   * placement and its light's frame as the map was drawn — the map is drawn again only when one of them moved. The lamp stands
+   * in world space and the eye is not in the map, so a pan, a zoom or a frame drawn for another object draws none.
+   */
+  private readonly shadowKeys: Float32Array[] = Array.from({ length: MAX_SHADOWED }, () => new Float32Array(34).fill(Number.NaN));
+  private readonly recordFloats = new Float32Array(this.records.bytes);
+  /** Shadow maps drawn and kept since the pass was made (a witness). */
+  private shadowDraws = 0;
+  private shadowKept = 0;
   private drawnAt = Number.NEGATIVE_INFINITY;
   private readonly shadowGroup: GPUBindGroup;
   private readonly inkSampler: GPUSampler;
@@ -271,6 +281,7 @@ export class NotebookPass {
       this.shadowTex.destroy();
       this.shadowTex = this.device.createTexture({ label: "notebook/shadow maps", size: [SHADOW_RES, SHADOW_RES, want], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
       this.shadowLayers = Array.from({ length: want }, (_, i) => this.shadowTex.createView({ dimension: "2d", baseArrayLayer: i, arrayLayerCount: 1 }));
+      this.forgetShadows();
       this.boundAssets = -1;
       this.rebind();
     }
@@ -312,10 +323,17 @@ export class NotebookPass {
       this.shadowTex.destroy();
       this.shadowTex = noShadows(this.device);
       this.shadowLayers = [];
+      this.forgetShadows();
       this.boundAssets = -1;
       this.rebind();
     }
   }
+
+  /** Every shadow map's content forgotten (its texture made again or let go): each is drawn afresh at its next book. */
+  private forgetShadows(): void { for (const k of this.shadowKeys) k.fill(Number.NaN); }
+
+  /** The shadow maps drawn and the ones kept (not drawn: their book, mesh and light stood) since the pass was made (K7a). */
+  get shadows(): { readonly drawn: number; readonly kept: number } { return { drawn: this.shadowDraws, kept: this.shadowKept }; }
 
   /** A book's mesh on the device — uploaded when its version moved, the buffers grown when too small. */
   private upload(d: NotebookDraw): BookBuffers {
@@ -497,11 +515,24 @@ export class NotebookPass {
     this.drawnAt = performance.now();
     const [x0, y0, x1, y1] = at;
     this.fit(Math.max(1, size.w), Math.max(1, size.h));
-    // 1. the shadow maps
+    // 1. the shadow maps — each drawn only when its book, its mesh or its light moved since it was (K7a)
+    const F = this.recordFloats;
+    const stride = NbBook.size / 4;
+    const mo = NbBook.slots.model.byte / 4;
+    const lo = NbBook.slots.light.byte / 4;
     this.t.list.forEach((d, i) => {
       if (i >= MAX_SHADOWED || (this.debug & 8)) return;
       const b = this.t.buffers.get(d.id);
       if (!b) return;
+      const key = this.shadowKeys[i] as Float32Array;
+      const at = i * stride;
+      let same = key[0] === d.id && key[1] === b.version;
+      for (let k = 0; same && k < 16; k++) same = key[2 + k] === F[at + mo + k] && key[18 + k] === F[at + lo + k];
+      if (same) { this.shadowKept += 1; return; }
+      key[0] = d.id;
+      key[1] = b.version;
+      for (let k = 0; k < 16; k++) { key[2 + k] = F[at + mo + k] as number; key[18 + k] = F[at + lo + k] as number; }
+      this.shadowDraws += 1;
       const p = encoder.beginRenderPass({ label: `notebook/shadow ${i}`, colorAttachments: [], depthStencilAttachment: { view: this.shadowLayers[i] as GPUTextureView, depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } });
       p.setPipeline(this.shadowPipe);
       p.setBindGroup(0, this.shadowGroup);
