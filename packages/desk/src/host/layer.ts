@@ -67,6 +67,7 @@ import { createCalendarInput } from "./calendar-input";
 import type { InsideView } from "../minimat/inside";
 import { shaderText } from "../shaders";
 import { instrumentMemory, type MemoryLedger } from "../gpu-memory";
+import { createGpuProfiler, type GpuProfiler } from "../gpu-profiler";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
 import type { GroundTheme, Palette } from "../theme";
 import { surface } from "./surface";
@@ -249,6 +250,12 @@ export interface DeskLayerHandle {
   memory(): BudgetStats;
   /** The device's live GPU memory by label (K2) — kept only under `gpuLedger: true`, from the boot; undefined otherwise or before the device. */
   gpuMemory(): MemoryLedger | undefined;
+  /**
+   * THE GPU PROFILER (K2, design-016 §4) on the layer's device — made on first ask, UNARMED (nothing installed) until `arm()`:
+   * each drawn frame's GPU span and passes, its draws by kind, pipelines, bind groups, uploads, and the ledger's memory; the
+   * layer's flush is its boundary. Undefined before the device.
+   */
+  profiler(): GpuProfiler | undefined;
   /** The kinds' persistent record stores' counters by kind (D6, design-015 §4.3) — the root passes'; a rig diffs two readings. */
   records(): Readonly<Record<string, RecordStoreStats>>;
   redraws(): number;
@@ -321,7 +328,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     let ownDevice: GPUDevice | null = null;
     let drawDevice: GPUDevice | null = null;   // the device the layer draws with: its own, or the engine's (D7)
     let instrument: SubmitInstrument | undefined;
+    let asked = false;     // the rigs' door asked for the submit instrument: it stays for the layer's life
+    let holds = 0;         // the profiler's arms hold it too
     let ledger: MemoryLedger | undefined;
+    let profiler: GpuProfiler | undefined;
     let status: DeskLayerStatus = { state: "pending" };
     let disposed = false;
     let ended = false;
@@ -437,6 +447,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         const spent = performance.now() - now;
         perf.ticks += 1; perf.ms += spent;
         if (compose.redraws() !== drawn) { perf.frames += 1; perf.frameMs += spent; }
+        profiler?.flushed(spent);   // the GPU profiler's frame boundary (K2): returns at once unless armed
       },
     };
 
@@ -567,8 +578,23 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       ambient: () => ambient,
       submits() {
         // armed by the first ask (D-K2.1): a window's count needs it armed before the window opens, which asking does
-        if (instrument === undefined && drawDevice !== null && !disposed) instrument = instrumentSubmits(drawDevice);
+        if (drawDevice !== null && !disposed) { asked = true; instrument ??= instrumentSubmits(drawDevice); }
         return instrument;
+      },
+      profiler() {
+        if (profiler === undefined && drawDevice !== null && !disposed) {
+          const d = drawDevice;
+          profiler = createGpuProfiler({
+            device: d,
+            // held while the profiler is armed; off again at its release unless the rigs' door asked for it
+            submits: {
+              hold: () => { holds += 1; instrument ??= instrumentSubmits(d); return instrument; },
+              release: () => { holds -= 1; if (holds === 0 && !asked) { instrument?.detach(); instrument = undefined; } },
+            },
+            ledger: () => ledger,
+          });
+        }
+        return profiler;
       },
       perf: () => ({ ...perf }),
       memory: () => budget.stats(),
@@ -610,6 +636,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         canvas.remove();
         ground?.dispose();
         ground = null;
+        profiler?.dispose();
         instrument?.detach();   // the engine's device goes on without the layer's wrappers
         instrument = undefined;
         ledger?.detach();
