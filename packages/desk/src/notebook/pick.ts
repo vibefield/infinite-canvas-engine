@@ -5,9 +5,9 @@
 // margins. A page hit says where on the page — the arc length from the gutter and the height
 // down the page — which is what a turn needs (and a pen will).
 
-import type { DeskEye } from "./eye";
+import type { DeskEye } from "../kit/eye";
 import type { NotebookLaw } from "./law";
-import { type Rigid, dirToLocal, toLocal } from "./place";
+import { type Rigid, dirToLocal, toLocal } from "../kit/place";
 import { coverFrame, type Frame, type NotebookPose, relaxOf, restSheet, sampleRest, sheetSamples, swingOf } from "./shape";
 
 export type NotebookHit =

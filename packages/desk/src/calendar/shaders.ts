@@ -1,36 +1,29 @@
-// Assemble the calendar pass's shader parts from raw text — the browser with `?raw` imports, a Node host
-// with readFileSync; byte-identical either way. The notebook's module comes along: the pad is the
-// notebook's paper and cloth under the same colour chain.
+// Assemble the calendar pass's programs from the host's shader text — the browser's generated module, a Node host's files on
+// disk; byte-identical either way. The pad is the notebook's paper and cloth under the same colour chain: the kit's view
+// block, the mat's light and the 3D kit (kit/wgsl.ts `book`), then the calendar's own records, module and entry; its layer
+// is laid by the kit's composite.
 
-import type { ShaderPart } from "../engine/shader";
+import type { ComposeOptions } from "../engine/shader";
+import { layerComposite } from "../kit/layer";
+import { kitWgsl, type ShaderText } from "../kit/wgsl";
+import { CalPad, CalUniforms } from "./layout";
+
+/** The calendar's own shader files (the kit's pieces come by name). */
+export const CALENDAR_SHADER_FILES = { calendar: "calendar/calendar.wgsl", pass: "calendar/calendar-pass.wgsl" } as const;
 
 export interface CalendarShaders {
-  readonly modules: readonly ShaderPart[];   // mat, notebook, calendar
-  readonly entry: ShaderPart;                // calendar-pass
-  readonly composite: ShaderPart;            // the notebook's composite (a resolved layer, premultiplied)
+  readonly program: ComposeOptions;     // the kit's view · light · book + calendar, calendar-pass
+  readonly composite: ComposeOptions;   // the kit's layer composite
 }
 
-export interface CalendarShaderText {
-  readonly mat: string;
-  readonly notebook: string;
-  readonly calendar: string;
-  readonly pass: string;
-  readonly composite: string;
-}
-
-export const CALENDAR_SHADER_FILES: Record<keyof CalendarShaderText, string> = {
-  mat: "mat/mat.wgsl",
-  notebook: "notebook/notebook.wgsl",
-  calendar: "calendar/calendar.wgsl",
-  pass: "calendar/calendar-pass.wgsl",
-  composite: "notebook/notebook-composite.wgsl",
-};
-
-export function calendarShaders(t: CalendarShaderText): CalendarShaders {
-  const part = (label: string, text: string): ShaderPart => ({ label, text });
+export function calendarShaders(text: ShaderText): CalendarShaders {
+  const t = text(CALENDAR_SHADER_FILES);
   return {
-    modules: [part("mat/mat.wgsl", t.mat), part("notebook/notebook.wgsl", t.notebook), part("calendar/calendar.wgsl", t.calendar)],
-    entry: part("calendar/calendar-pass.wgsl", t.pass),
-    composite: part("notebook/notebook-composite.wgsl", t.composite),
+    program: kitWgsl(["view", "light", "book"], {
+      structs: [CalUniforms, CalPad],
+      modules: [{ label: "calendar/calendar.wgsl", text: t.calendar }],
+      entry: { label: "calendar/calendar-pass.wgsl", text: t.pass },
+    }, text),
+    composite: layerComposite(text),
   };
 }

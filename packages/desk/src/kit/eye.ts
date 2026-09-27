@@ -1,3 +1,5 @@
+// (The kit's since K4a, design-016 §5 — moved from notebook/eye.ts: the desk calendar projects through the same eye.)
+//
 // The DESK EYE — how a thing with height is seen from the top-down camera (NOTEBOOK.md §2).
 //
 // The camera is still the desk's: top-down, pan and zoom only. But a notebook is not flat, so
@@ -8,7 +10,7 @@
 // a closed book off to the side shows the edge of its pages. Pure: no GPU. `notebook.wgsl`'s
 // `nb_clip` is the same arithmetic; `unproject` is its inverse for the hit test.
 
-import type { CameraState, Viewport } from "../kit/nav";
+import type { CameraState, Viewport } from "./nav";
 
 export interface DeskEye {
   /** The eye's foot on the desk: the view's centre, world units. */

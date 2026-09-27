@@ -1,34 +1,23 @@
-// Assemble the notebook pass's shader parts from raw text — the browser with `?raw` imports, a
-// Node host with readFileSync; byte-identical either way.
+// Assemble the notebook pass's programs from the host's shader text — the browser's generated module, a Node host's files on
+// disk; byte-identical either way. The book is drawn by the kit's view block, the mat's light and the 3D kit (kit/wgsl.ts
+// `book`: the eye, the shadow, the materials), then the notebook's entry; its layer is laid by the kit's composite.
 
-import type { ShaderPart } from "../engine/shader";
+import type { ComposeOptions } from "../engine/shader";
+import { layerComposite } from "../kit/layer";
+import { kitWgsl, type ShaderText } from "../kit/wgsl";
+
+/** The notebook's own shader file (the kit's pieces come by name). */
+export const NOTEBOOK_SHADER_FILES = { pass: "notebook/notebook-pass.wgsl" } as const;
 
 export interface NotebookShaders {
-  readonly modules: readonly ShaderPart[];   // mat (the light, the gobo, the night, the noise), notebook
-  readonly entry: ShaderPart;                // notebook-pass
-  readonly composite: ShaderPart;            // notebook-composite
+  readonly program: ComposeOptions;     // the kit's view · light · book + notebook-pass
+  readonly composite: ComposeOptions;   // the kit's layer composite
 }
 
-export interface NotebookShaderText {
-  /** shaders/mat/mat.wgsl — the desk's light: the gobo term, the night's eye, the noise. */
-  readonly mat: string;
-  readonly notebook: string;
-  readonly pass: string;
-  readonly composite: string;
-}
-
-export const NOTEBOOK_SHADER_FILES: Record<keyof NotebookShaderText, string> = {
-  mat: "mat/mat.wgsl",
-  notebook: "notebook/notebook.wgsl",
-  pass: "notebook/notebook-pass.wgsl",
-  composite: "notebook/notebook-composite.wgsl",
-};
-
-export function notebookShaders(t: NotebookShaderText): NotebookShaders {
-  const part = (label: string, text: string): ShaderPart => ({ label, text });
+export function notebookShaders(text: ShaderText): NotebookShaders {
+  const t = text(NOTEBOOK_SHADER_FILES);
   return {
-    modules: [part("mat/mat.wgsl", t.mat), part("notebook/notebook.wgsl", t.notebook)],
-    entry: part("notebook/notebook-pass.wgsl", t.pass),
-    composite: part("notebook/notebook-composite.wgsl", t.composite),
+    program: kitWgsl(["view", "light", "book"], { entry: { label: "notebook/notebook-pass.wgsl", text: t.pass } }, text),
+    composite: layerComposite(text),
   };
 }

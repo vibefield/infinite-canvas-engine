@@ -1,3 +1,5 @@
+// (The kit's since K4a, design-016 §5 — moved from notebook/place.ts: the desk calendar places its pad by the same rigid maths.)
+//
 // Where a notebook IS on the desk, and the light on it (NOTEBOOK.md §5). Pure.
 //
 // A book's mesh is built in its own coordinates; this places it: a centre on the mat, a turn
@@ -8,7 +10,7 @@
 // and the notebook's shadows fall the same way from the same lamp — and the orthographic
 // frame its shadow map is drawn in, fitted to the book's bounds as it stands this frame.
 
-import type { Lamp } from "../kit/light";
+import type { Lamp } from "./light";
 
 export interface Placement {
   readonly cx: number; readonly cy: number;

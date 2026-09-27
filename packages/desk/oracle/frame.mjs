@@ -47,7 +47,7 @@ import { createSlotSet, drawFrame, prepareFrame, renderHeldFrame, SlotPool } fro
 import { HoldPass } from "../src/hold/focus.ts";
 import { heldCamera, heldFocus, heldFrame, heldPose, HOLD, homePose, progressOf, readingTarget } from "../src/hold/pose.ts";
 import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders.ts";
-import { eyeOf } from "../src/notebook/eye.ts";
+import { eyeOf } from "../src/kit/eye.ts";
 import { BOARD_KIND, boardFrame, bookFrame, CALENDAR_KIND, calendarFrame, deskKinds, MINIMAT_KIND, miniMatFrame, NOTEBOOK_KIND, PAPER_KIND, paperFrame, PHOTO_KIND, photoFrame } from "../src/kinds/index.ts";
 import { MarksPass } from "../src/marks/pass.ts";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders.ts";
@@ -69,7 +69,7 @@ import { newBody, PHOTO, printSize, resolvePhoto } from "../src/photo/photo.ts";
 import { NOTEBOOK } from "../src/notebook/law.ts";
 import { buildMesh, MeshWriter } from "../src/notebook/mesh.ts";
 import { newMotion, poseOf, withDesk } from "../src/notebook/motion.ts";
-import { lampDir, rigidOf } from "../src/notebook/place.ts";
+import { lampDir, rigidOf } from "../src/kit/place.ts";
 import { frameOf, relaxOf, specOf, swingOf } from "../src/notebook/shape.ts";
 import { CALENDAR } from "../src/calendar/law.ts";
 import { monthKeyOf } from "../src/calendar/data.ts";

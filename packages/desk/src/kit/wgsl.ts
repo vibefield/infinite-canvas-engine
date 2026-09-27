@@ -12,12 +12,13 @@
 import type { ComposeOptions, ShaderPart } from "../engine/shader";
 import type { StructDef } from "../engine/struct";
 import { MatUniforms } from "../mat/layout";
+import { NbBook, NbUniforms } from "./book";
 import { type ShaderText, shaderText } from "../shaders";
 
 export { type ShaderText, shaderText } from "../shaders";
 
 /** The kit's pieces of WGSL (below, in compose order). */
-export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler";
+export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler" | "book";
 
 /** A name of the kit's WGSL: a piece, or another name for one (`lamp`, `gobo`, `night` and `noise` are `light`). */
 export type KitWgslName = KitWgslPiece | "lamp" | "gobo" | "night" | "noise";
@@ -37,7 +38,9 @@ interface KitPiece {
  * - `light` — the mat's light as an object reads it: the desk point under a lamp, the gobo's dapple (`sample_gobo`,
  *   `lit_gobo`), the night's appearance, the value noise and the colour chain (mat/mat.wgsl; its functions call each
  *   other, so `lamp`, `gobo`, `night` and `noise` are the same piece by other names);
- * - `ruler` — the rulers' glyph lattice (mat/ruler.wgsl: a face that prints the mat's numerals).
+ * - `ruler` — the rulers' glyph lattice (mat/ruler.wgsl: a face that prints the mat's numerals);
+ * - `book` — the 3D kit (kit/book.wgsl and its records `NbUniforms`, `NbBook` — kit/book.ts): the desk eye's projection,
+ *   the PCSS shadow on an object's own shadow map, the materials of paper and cloth (after `light`, whose chain it grades by).
  */
 const PIECES = {
   view: { structs: [MatUniforms] },
@@ -45,6 +48,7 @@ const PIECES = {
   sdf: { file: "primitives.wgsl" },
   light: { file: "mat/mat.wgsl" },
   ruler: { file: "mat/ruler.wgsl" },
+  book: { structs: [NbUniforms, NbBook], file: "kit/book.wgsl" },
 } as const satisfies Record<KitWgslPiece, KitPiece>;
 
 /** The names a piece also answers to. */

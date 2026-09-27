@@ -202,7 +202,7 @@ describe("the roll", () => {
 
 import { bandOf, entryOf, LEVELS, levelFor, TILE, TileCache, tileGrid, tileRect, tilesIn } from "../src/calendar/tiles";
 import { buildPad, CMAT, movingGrid, padFrame } from "../src/calendar/pad";
-import { MeshWriter, VERTEX_FLOATS } from "../src/notebook/mesh";
+import { MeshWriter, VERTEX_FLOATS } from "../src/kit/mesh";
 
 describe("the print's tiles", () => {
   it("climbs √2 rungs from a quarter texel a unit, the rung at or above the screen's density", () => {

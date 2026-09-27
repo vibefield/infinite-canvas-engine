@@ -1,3 +1,5 @@
+// (The kit's since K4a, design-016 §5 — moved from notebook/paper-tex.ts: the desk calendar's sheets are the same paper.)
+//
 // The PAPER's texture — baked once, sampled everywhere a page is (NOTEBOOK.md §4). Pure: bytes
 // out, no GPU. A tileable 256² rgba8:
 //   R  the mottle — the pulp's slow clouds (periodic value noise, 4 and 8 cells to the tile)

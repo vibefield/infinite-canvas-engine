@@ -21,11 +21,11 @@ import type { RenderTarget } from "../kind";
 import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../kit/light";
 import type { RGB } from "../theme";
-import { type DeskEye, eyeValues, project } from "../notebook/eye";
-import { NbBook, NbUniforms } from "../notebook/layout";
-import { type BuiltMesh, VERTEX_BYTES } from "../notebook/mesh";
-import { inverseOf, matrixOf, type Rigid, worldBounds } from "../notebook/place";
-import { PAPER_TEX, paperTexture } from "../notebook/paper-tex";
+import { type DeskEye, eyeValues, project } from "../kit/eye";
+import { NbBook, NbUniforms } from "../kit/book";
+import { type BuiltMesh, VERTEX_BYTES } from "../kit/mesh";
+import { inverseOf, matrixOf, type Rigid, worldBounds } from "../kit/place";
+import { PAPER_TEX, paperTexture } from "../kit/paper-tex";
 import { generateMips, mipCount } from "../kit/mips";
 import type { CalendarLaw } from "./law";
 import { CalPad, type CalendarColours, CalUniforms, calUniformValues, MAX_CALENDARS, TABLE_SLOTS } from "./layout";
@@ -204,8 +204,8 @@ export class CalendarPass {
       { binding: 11, stages: ["fragment"], sampler: "filtering" },
     ], "calendar/main");
     const layoutComp = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }], "calendar/composite");
-    const module = await compile(device, compose({ structs: [MatUniforms, NbUniforms, NbBook, CalUniforms, CalPad], modules: src.modules, entry: src.entry }));
-    const compModule = await compile(device, compose({ entry: src.composite }));
+    const module = await compile(device, compose(src.program));
+    const compModule = await compile(device, compose(src.composite));
     const vertexLayout: GPUVertexBufferLayout = {
       arrayStride: VERTEX_BYTES,
       attributes: [

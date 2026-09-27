@@ -35,16 +35,17 @@ import { defineComponent, type Entity, field, type HeldToolApi, type HeldToolDef
 import { BoardStroke, decodePoints, decodeTimes, type StrokeRow } from "../board/data";
 import type { KindProgram, SlotContext } from "../kind";
 import type { MatPass, MarkFrame } from "../kit/view";
-import { type DeskEye, eyeOf } from "../notebook/eye";
+import { type DeskEye, eyeOf } from "../kit/eye";
 import { NOTEBOOK, type NotebookLaw } from "../notebook/law";
 import { type NotebookLook, type Ruling, RULINGS } from "../notebook/layout";
-import { type BuiltMesh, buildMesh, MeshWriter } from "../notebook/mesh";
+import { type BuiltMesh, MeshWriter } from "../kit/mesh";
+import { buildMesh } from "../notebook/mesh";
 import { inkPoints, pageOfSide, pagesInView } from "../notebook/ink";
 import { newMotion, type NotebookMotion, poseKey, poseOf, setOpen, stepLeaves, tiltToward, turnable, turnPage, withDesk } from "../notebook/motion";
 import { type InkTable, type LiveStroke, PageInk, type PageStroke, pageStrokeKey } from "../notebook/pages";
 import { type NotebookDraw, NotebookPass } from "../notebook/pass";
 import { type NotebookHit, pickNotebook } from "../notebook/pick";
-import { lampDir, type Rigid, rigidOf } from "../notebook/place";
+import { lampDir, type Rigid, rigidOf } from "../kit/place";
 import { NOTEBOOK_SHADER_FILES, notebookShaders } from "../notebook/shaders";
 import { coverFrame, type Frame, frameOf, type NotebookPose, relaxOf, specOf, swingOf } from "../notebook/shape";
 import { type ShaderText, shaderText } from "../kit/wgsl";
@@ -90,7 +91,7 @@ export function notebookProgram(text: ShaderText): KindProgram<NotebookDraw> {
     name: NOTEBOOK_KIND,
     stratum: "things",
     composite: true,
-    create: async (device, format, mat) => new NotebookKind(await NotebookPass.create(device, format, notebookShaders(text(NOTEBOOK_SHADER_FILES)), mat)),
+    create: async (device, format, mat) => new NotebookKind(await NotebookPass.create(device, format, notebookShaders(text), mat)),
   };
 }
 

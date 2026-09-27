@@ -1,3 +1,5 @@
+// (The kit's since K4a, design-016 §5 — moved from notebook/notebook.wgsl: the desk calendar composes it too, `kitWgsl([..., "book"])`.)
+//
 // The NOTEBOOK — a real 3D book under the desk's one lamp (NOTEBOOK.md). A PURE module: the
 // uniform blocks, the book records and the textures arrive as parameters, and it names no
 // colour (a book's palette is its record's). mat.wgsl comes first: its noise, its colour chain

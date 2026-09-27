@@ -44,9 +44,9 @@ import { bandOf, GUTTER, levelFor, TILE_TEX, type TileGrid, tileGrid, tileRect, 
 import { caretAt, glyphBox, type HandLaw, HAND } from "../kit/text";
 import type { KindProgram, SlotContext } from "../kind";
 import type { MatPass, MarkFrame } from "../kit/view";
-import { type DeskEye, eyeOf, project, unproject } from "../notebook/eye";
-import { MeshWriter } from "../notebook/mesh";
-import { lampDir, type Rigid, rigidOf } from "../notebook/place";
+import { type DeskEye, eyeOf, project, unproject } from "../kit/eye";
+import { MeshWriter } from "../kit/mesh";
+import { lampDir, type Rigid, rigidOf } from "../kit/place";
 import { type ShaderText, shaderText } from "../kit/wgsl";
 import { MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
 import { LayeredKind } from "../kit/layer";
@@ -93,7 +93,7 @@ export function calendarProgram(text: ShaderText): KindProgram<CalendarDraw> {
     name: CALENDAR_KIND,
     stratum: "pads",
     composite: true,
-    create: async (device, format, mat) => new CalendarKind(await CalendarPass.create(device, format, calendarShaders(text(CALENDAR_SHADER_FILES)), mat)),
+    create: async (device, format, mat) => new CalendarKind(await CalendarPass.create(device, format, calendarShaders(text), mat)),
   };
 }
 

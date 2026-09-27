@@ -12,7 +12,7 @@
 
 import type { CalendarLaw } from "./law";
 import { sheetSize } from "./law";
-import { type BuiltMesh, FLAG_TWO_SIDED, type MeshWriter } from "../notebook/mesh";
+import { type BuiltMesh, FLAG_TWO_SIDED, type MeshWriter } from "../kit/mesh";
 import { rollPoint, rollState } from "./roll";
 
 /** The materials, by the number a vertex carries. */

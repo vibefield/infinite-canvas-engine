@@ -17,7 +17,7 @@ import { DEFAULT_MAT_CONFIG, HERO_MATRIX, STILL_MAT_FRAME } from "../src/mat/lay
 import { CuttingMat } from "../src/mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import type { MatPass as MatPassType } from "../src/kit/view";
-import { eyeOf } from "../src/notebook/eye";
+import { eyeOf } from "../src/kit/eye";
 import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookDraw, NotebookPass } from "../src/notebook/pass";
 import { scissorOf } from "../src/nav/portal";

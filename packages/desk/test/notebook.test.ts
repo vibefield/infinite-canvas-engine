@@ -2,13 +2,13 @@
 // gutter's curves, a sheet in the air), the mesh, the motion (the cover, a page by key and by
 // hand, the peek, the flutter), the hit test, the placement and the lamp, the pen.
 import { describe, expect, it } from "vitest";
-import { deskAt, eyeOf, project, unproject } from "../src/notebook/eye";
+import { deskAt, eyeOf, project, unproject } from "../src/kit/eye";
 import { nibWidth, PEN, texelOf, INK_W, INK_H } from "../src/notebook/ink";
 import { NOTEBOOK } from "../src/notebook/law";
 import { buildMesh, MeshWriter, VERTEX_FLOATS } from "../src/notebook/mesh";
 import { counts, dragSheet, grabSheet, leftTop, newMotion, poseOf, releaseSheet, rightTop, setOpen, spreadOf, stepMotion, turnPage } from "../src/notebook/motion";
 import { pickNotebook } from "../src/notebook/pick";
-import { inverseOf, lampDir, lightFrame, matrixOf, rigidOf, toLocal, toWorld } from "../src/notebook/place";
+import { inverseOf, lampDir, lightFrame, matrixOf, rigidOf, toLocal, toWorld } from "../src/kit/place";
 import { angleAt, coverFrame, frameOf, integrate, profileOf, relaxOf, restSheet, ride, rideDir, sampleAir, sampleRest, sheetSamples, specOf, swingOf } from "../src/notebook/shape";
 
 const law = NOTEBOOK;

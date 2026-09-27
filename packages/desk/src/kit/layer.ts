@@ -13,6 +13,16 @@ import type { KindPass, RenderTarget, SlotContext } from "../kind";
 import type { View } from "../lattice/lod";
 import type { MatPass } from "./view";
 import { scissorOf } from "../nav/portal";
+import type { ComposeOptions } from "../engine/shader";
+import type { ShaderText } from "../shaders";
+
+/** The composite's entry: a resolved, premultiplied layer laid over what the ground drew (the layered kinds share it). */
+export const LAYER_COMPOSITE_FILE = "kit/composite.wgsl";
+
+/** The program that lays a layer — its one entry, from the host's shader text. */
+export function layerComposite(text: ShaderText): ComposeOptions {
+  return { entry: { label: LAYER_COMPOSITE_FILE, text: text({ composite: LAYER_COMPOSITE_FILE }).composite } };
+}
 
 /** A device-px rect: x, y, width, height. */
 export type Rect4 = readonly [number, number, number, number];

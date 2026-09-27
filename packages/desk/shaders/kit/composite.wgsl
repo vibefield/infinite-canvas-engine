@@ -1,3 +1,4 @@
+// (The kit's since K4a — moved from notebook/notebook-composite.wgsl: every layered kind lays its layer with it, kit/layer.ts `layerComposite`.)
 // The notebook layer onto the canvas: the resolved, premultiplied layer, over what the ground drew.
 
 @group(0) @binding(0) var layer: texture_2d<f32>;
