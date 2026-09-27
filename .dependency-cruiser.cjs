@@ -30,6 +30,34 @@
  */
 const nm = (pkg) => `node_modules/${pkg}(/|$)`;
 
+/**
+ * A KIND'S FILES (K4a, design-016 §5 · K-L1), by path — the six reference kinds are one package's worth of code each, spread
+ * where the desk's layout puts them: its folder (`src/<k>/`), its registry adapter (`kinds/<k>.ts`), its object-side files
+ * (`objects/<k>.ts` and what its object alone uses — the note's typing, the board's pen, the print's carry, the calendar's hand
+ * and writing, the notebook's leaves) and its DOM half (`host/…` — the note's editor and ink raster, the calendar's input and
+ * print raster, the print's picture decode; `desk-dom-free` keeps those under host/, so no layout makes a kind one folder).
+ * Its WGSL (`shaders/<k>/`) is read by name, not imported: test/kit-wgsl.test.ts holds a kind's programs to its own files and
+ * the kit's. NOT a kind's: the barrels and the preset that list them all (kinds/index.ts, objects/index.ts, objects/preset.ts,
+ * objects/palette.ts), the contract, the kit, the seam.
+ */
+const DESK = "^packages/desk/src/";
+const KIND_FILES = {
+  paper: ["paper/", "kinds/paper\\.ts$", "objects/(note|typing)\\.ts$", "host/(editor|ink)\\.ts$"],
+  minimat: ["minimat/", "kinds/minimat\\.ts$", "objects/minimat\\.ts$"],
+  board: ["board/", "kinds/board\\.ts$", "objects/(board|pen)\\.ts$"],
+  photo: ["photo/", "kinds/photo\\.ts$", "objects/(photo|carry)\\.ts$", "host/picture\\.ts$"],
+  calendar: ["calendar/", "kinds/calendar\\.ts$", "objects/(calendar|calendar-hand|calendar-writing)\\.ts$", "host/(calendar-input|print)\\.ts$"],
+  notebook: ["notebook/", "kinds/notebook\\.ts$", "objects/(notebook|leaf)\\.ts$"],
+};
+const kindFiles = (k) => KIND_FILES[k].map((p) => DESK + p);
+const ALL_KIND_FILES = Object.keys(KIND_FILES).flatMap(kindFiles);
+/**
+ * THE SDK a kind is written against, inside the desk (K4a): the render kit (`kit/` — `@ice/desk/kit`), the engine (`engine/` —
+ * `@ice/desk/engine`) and the contract's modules (`kind.ts`, `kinds/world.ts`, `object.ts`, the engine's theme, the typing docs,
+ * the shader text — `@ice/desk`). Outside it: core's and kernel's public entries alone.
+ */
+const KIND_SDK = [DESK + "kit/", DESK + "engine/", DESK + "(kind|object|theme|docs|shaders)\\.ts$", DESK + "kinds/world\\.ts$"];
+
 module.exports = {
   forbidden: [
     {
@@ -222,6 +250,40 @@ module.exports = {
         ],
         dependencyTypesNot: ["type-only"],
       },
+    },
+    {
+      name: "kinds-import-only-the-sdk",
+      comment:
+        "design-016 §5 · K-L1 (K4a): every built-in kind compiles against the public entries alone — a kind's files (KIND_FILES " +
+        "above) import, inside the desk, only the SDK (KIND_SDK: the kit, the engine, the contract's modules) and kind files " +
+        "(their own — another kind's is `no-kind-imports-a-kind`); outside it, core's and kernel's entries only, never a " +
+        "package's inner module. What two kinds share lives in the kit. K4b moves the kinds to their own package against " +
+        "exactly this surface. Type-only edges count: a type a kind names from a private module is a word a plugin cannot write.",
+      severity: "error",
+      from: { path: ALL_KIND_FILES },
+      to: {
+        path: [DESK, "^packages/(core|kernel)/src/"],
+        pathNot: [...KIND_SDK, ...ALL_KIND_FILES, "^packages/(core|kernel)/src/index\\.ts$"],
+      },
+    },
+    // K-L1's second half, one rule per kind (one name): a kind's files import no other kind's — not a module, not a type
+    ...Object.keys(KIND_FILES).map((k) => ({
+      name: "no-kind-imports-a-kind",
+      comment:
+        `design-016 K-L1 (K4a): no kind imports another — the ${k} kind's files import none of the other five's (a kind names ` +
+        "another only by its registry name, which core or the host resolves at run time: test/kind-names.test.ts).",
+      severity: "error",
+      from: { path: kindFiles(k) },
+      to: { path: Object.keys(KIND_FILES).filter((o) => o !== k).flatMap(kindFiles) },
+    })),
+    {
+      name: "the-kit-imports-no-kind",
+      comment:
+        "design-016 §5 (K4a): the render kit is what kinds SHARE — it is below every kind and names none (not a kind's file, " +
+        "not the barrels that list them all), so a plugin kind and a reference kind stand on the same kit.",
+      severity: "error",
+      from: { path: DESK + "kit/" },
+      to: { path: [...ALL_KIND_FILES, DESK + "kinds/index\\.ts$", DESK + "objects/"] },
     },
     {
       name: "devtools-only-core-kernel-strata",

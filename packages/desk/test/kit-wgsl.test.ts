@@ -8,10 +8,13 @@ import { compose } from "../src/engine/shader";
 import { defineStruct } from "../src/engine/struct";
 import { KIT_WGSL_FILES, type KitWgslName, kitWgsl, type ShaderText } from "../src/kit/wgsl";
 import { MatUniforms } from "../src/mat/layout";
-import { boardShaders } from "../src/board/shaders";
-import { miniMatShaders } from "../src/minimat/shaders";
-import { paperShaders } from "../src/paper/shaders";
-import { photoShaders } from "../src/photo/shaders";
+import { BOARD_SHADER_FILES, boardShaders } from "../src/board/shaders";
+import { MINIMAT_SHADER_FILES, miniMatShaders } from "../src/minimat/shaders";
+import { PAPER_SHADER_FILES, paperShaders } from "../src/paper/shaders";
+import { PHOTO_SHADER_FILES, photoShaders } from "../src/photo/shaders";
+import { CALENDAR_SHADER_FILES, calendarShaders } from "../src/calendar/shaders";
+import { LAYER_COMPOSITE_FILE } from "../src/kit/layer";
+import { NOTEBOOK_SHADER_FILES, notebookShaders } from "../src/notebook/shaders";
 
 const here = resolve(import.meta.dirname, "..", "shaders");
 /** The Node oracle's host text: the .wgsl files on disk, by a map's keys. */
@@ -55,4 +58,25 @@ describe("the kit's WGSL by name (K4a)", () => {
     }
     expect((boardShaders(disk).stamp.modules ?? []).map((m) => m.label)).toEqual(["primitives.wgsl", "board/felt.wgsl"]);
   });
+
+  it("a kind's programs compose only its own WGSL (shaders/<kind>/) and the kit's — no kind reads another's shader file (K-L1)", () => {
+    const kit = new Set<string>([...Object.values(KIT_WGSL_FILES), LAYER_COMPOSITE_FILE].filter((f): f is string => f !== undefined));
+    const programs: Record<string, readonly { readonly modules?: readonly { readonly label: string }[]; readonly entry: { readonly label: string } }[]> = {
+      paper: [paperShaders(disk)],
+      photo: [photoShaders(disk)],
+      minimat: [miniMatShaders(disk)],
+      board: Object.values(boardShaders(disk)),
+      notebook: Object.values(notebookShaders(disk)),
+      calendar: Object.values(calendarShaders(disk)),
+    };
+    const strays: string[] = [];
+    for (const [k, list] of Object.entries(programs)) {
+      for (const c of list) for (const part of [...(c.modules ?? []), c.entry]) if (!kit.has(part.label) && !part.label.startsWith(`${k}/`)) strays.push(`${k}: ${part.label}`);
+    }
+    // …and the files each kind's own map reads are its own folder's (a part is labelled by hand: the map is what is read)
+    const maps: Record<string, Readonly<Record<string, string>>> = { paper: PAPER_SHADER_FILES, photo: PHOTO_SHADER_FILES, minimat: MINIMAT_SHADER_FILES, board: BOARD_SHADER_FILES, notebook: NOTEBOOK_SHADER_FILES, calendar: CALENDAR_SHADER_FILES };
+    for (const [k, map] of Object.entries(maps)) for (const f of Object.values(map)) if (!f.startsWith(`${k}/`)) strays.push(`${k} reads ${f}`);
+    expect(strays).toEqual([]);
+  });
 });
+
