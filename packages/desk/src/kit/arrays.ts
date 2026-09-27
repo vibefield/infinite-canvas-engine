@@ -53,8 +53,6 @@ const FILL = /* wgsl */ `
 }
 `;
 
-const fills = new WeakMap<GPUDevice, Map<GPUTextureFormat, GPURenderPipeline>>();
-
 /** The plain format an `-srgb` one is viewed as for a copy (the bytes pass unchanged); a plain format is its own. */
 export const plainFormat = (f: GPUTextureFormat): GPUTextureFormat => (f.endsWith("-srgb") ? (f.slice(0, -5) as GPUTextureFormat) : f);
 
@@ -81,6 +79,8 @@ export class LayerArray {
   private cap = 0;
   /** Bumped whenever the texture is remade (a bind group holding its view must be made again). */
   version = 0;
+  /** The fill's pipeline, made on the first fill — labelled with the array's own name, so the profiler counts its passes as the kind's. */
+  private fillPipe: GPURenderPipeline | null = null;
 
   constructor(device: GPUDevice, opts: LayerArrayOptions) {
     this.device = device;
@@ -160,14 +160,10 @@ export class LayerArray {
   }
 
   private pipeline(format: GPUTextureFormat): GPURenderPipeline {
-    let by = fills.get(this.device);
-    if (by === undefined) { by = new Map(); fills.set(this.device, by); }
-    let pipe = by.get(format);
-    if (pipe === undefined) {
-      const module = this.device.createShaderModule({ label: "kit/layer fill", code: FILL });
-      pipe = this.device.createRenderPipeline({ label: `kit/layer fill ${format}`, layout: "auto", vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: "fs", targets: [{ format }] } });
-      by.set(format, pipe);
+    if (this.fillPipe === null) {
+      const module = this.device.createShaderModule({ label: `${this.label} fill`, code: FILL });
+      this.fillPipe = this.device.createRenderPipeline({ label: `${this.label} fill`, layout: "auto", vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: "fs", targets: [{ format }] } });
     }
-    return pipe;
+    return this.fillPipe;
   }
 }

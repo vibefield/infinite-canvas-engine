@@ -9,7 +9,8 @@
 //                    it and every wrapper is gone; armed at rest, 240 frames: 0 submits, 0 redraws, no frame; after a camera
 //                    move the slot reads live numbers (a screenshot into DESK_GPU_OUT, default apps/desk/results)
 //   the counts       24 notes in ONE run are ONE instanced draw of 24; notes · print · notes · print · print split the note run
-//                    in two (the code's rule: a run of one kind at a time, in paint order) — 2 draws of 5, and 3 prints
+//                    in two (the code's rule: a run of one kind at a time, in paint order) — 2 draws of 5, and the 3 prints 2
+//                    draws of 3 (the two side by side one instanced draw since K6a)
 //   the span         a multi-pass frame (the notebook's shadow and layer, the ground): its span — first begin → last end — is
 //                    well formed and > 0, and a SUM of its passes is not the frame's time: the tiler overlaps passes (sum > span
 //                    in most frames) and the GPU waits between them (the drawable: span > sum in some — D-K2.4); unquantised
@@ -174,13 +175,14 @@ try {
   check(quiet.settled && aaOk, `per-kind cost: the A/A control within its noise floor — A/A ${fmt(kc.aa, 4)} ms, floor ${fmt(kc.noise, 4)} ms (|A/A| ≤ max(2 × floor, 2 % of the ${fmt(kc.base.median, 3)} ms frame) and below the smallest cost that clears it, ${fmt(Math.min(...real), 3)} ms; the floor ≤ 10 % of the frame; the desk settled first: ${quiet.settled})`);
   await q("window.__gpuOff = window.__desk.perf.gpu().arm(); window.__desk.perf.take(); 0");
 
-  // ── prints between notes split the run as the code says: n n p n n n p p → paper 2 draws / 5 instances, photo 3
+  // ── prints between notes split the run as the code says: n n p n n n p p → paper 2 draws / 5 instances, photo 2 draws / 3
+  //    instances — the two prints side by side are ONE run and, since K6a (design-016 K-L4), ONE instanced draw
   const cam2 = { x: ROW2, y: cam1.y, zoom: cam1.zoom };
   await q(`window.__desk.setCamera(${JSON.stringify(cam2)})`);
   await settle();
   const run2 = await frames(8, cam2);
   const last2 = run2.at(-1);
-  check(run2.length > 0 && last2?.byKind.paper?.draws === 2 && last2?.byKind.paper?.instances === 5 && last2?.byKind.photo?.draws === 3, `notes · print · notes · print · print: the note run cut in two — paper ${JSON.stringify(last2?.byKind.paper)}, photo ${JSON.stringify(last2?.byKind.photo)}`);
+  check(run2.length > 0 && last2?.byKind.paper?.draws === 2 && last2?.byKind.paper?.instances === 5 && last2?.byKind.photo?.draws === 2 && last2?.byKind.photo?.instances === 3, `notes · print · notes · print · print: the note run cut in two, the two prints side by side one draw (K6a) — paper ${JSON.stringify(last2?.byKind.paper)}, photo ${JSON.stringify(last2?.byKind.photo)}`);
 
   // ── memory: the ledger's rows sum to its total; the calendar's printed tiles are uploads (copyExternalImageToTexture)
   const m = last2?.memory;
