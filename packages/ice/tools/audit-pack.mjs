@@ -23,6 +23,10 @@
  *      bare specifier is declared.
  *   8. EACH ENTRY IMPORTS IN NODE (`import(dist/<entry>.js)`): no module-scope DOM or GPU touch — the
  *      headless engine, the oracle and SSR hosts load these.
+ *   9. THE DESK'S ENTRIES CARRY NO KIND (design-016 K4b): `/desk`, `/desk/kit` and `/desk/engine` — each entry's chunk closure —
+ *      hold none of the six reference kinds' durable type ids nor their WGSL files' keys, read off `packages/objects`; the
+ *      `/desk/objects` closure holds every one (no dead needle). The kinds are a package of their own: a desk that shipped one
+ *      would be a desk a plugin kind does not stand on equal to.
  *
  * Run: `node packages/ice/tools/audit-pack.mjs` (`pnpm --filter ./packages/ice pack:audit` builds first).
  */
@@ -219,7 +223,48 @@ say(
   refused.length === 0 ? `${entries.length} entries (${entries.map(([s]) => s).join(" ")}) load with no DOM and no GPU` : refused.join(" · "),
 );
 
-console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7");
+// --- 9. the desk's entries carry no kind (design-016 §5, K4b) --------------------------------------
+// `@vibecook/ice/desk`, `/desk/kit` and `/desk/engine` are the engine, the contract and the kit — never a reference kind: the
+// closure of each entry's imports (its chunks, static and dynamic) must hold none of the six kinds' durable type ids nor their
+// WGSL. The needles are read off the kinds' own package (`objects/src/<kind>/object.ts`'s `*_TYPE`, `objects/shaders/<kind>/`'s
+// file keys — the generated module's), and `/desk/objects`' closure must hold every one of them, so none is a dead needle.
+const objectsDir = resolve(repo, "packages/objects");
+const needles = new Set();
+for (const kind of readdirSync(resolve(objectsDir, "shaders"))) {
+  const dir = resolve(objectsDir, "shaders", kind);
+  if (!statSync(dir).isDirectory()) continue;
+  for (const f of readdirSync(dir)) if (f.endsWith(".wgsl")) needles.add(`"${kind}/${f}"`);
+  const object = resolve(objectsDir, "src", kind, "object.ts");
+  if (existsSync(object)) for (const m of readFileSync(object, "utf8").matchAll(/_TYPE = "([^"]+)"/g)) needles.add(`"${m[1]}"`);
+}
+const kindNeedles = [...needles];   // a type id two objects name (the mini mat accepts the note by its type) is one needle
+/** An entry's chunks: the file its exports map names, and every relative import (static or dynamic) reached from it. */
+const closureOf = (entry) => {
+  const seen = new Set();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const name = queue.pop();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const f = bundle.find((b) => b.name === name);
+    if (f !== undefined) for (const spec of specifiersOf(f.text)) if (spec.startsWith("./")) queue.push(spec.slice(2));
+  }
+  return [...seen].map((name) => bundle.find((b) => b.name === name)).filter((f) => f !== undefined);
+};
+const entryFile = (sub) => { const t = pkg.exports?.[sub]; const d = typeof t === "string" ? t : t?.default; return d?.replace(/^\.\/dist\//, ""); };
+const deskHits = ["./desk", "./desk/kit", "./desk/engine"].flatMap((sub) =>
+  closureOf(entryFile(sub)).flatMap((f) => kindNeedles.filter((n) => f.text.includes(n)).map((n) => `${sub} → ${f.name} carries ${n}`)));
+const objectsText = closureOf(entryFile("./desk/objects")).map((f) => f.text).join("\n");
+const deadNeedles = kindNeedles.filter((n) => !objectsText.includes(n));
+say(
+  deskHits.length === 0 && deadNeedles.length === 0 && kindNeedles.length > 0,
+  "the desk's entries carry NO KIND",
+  deskHits.length === 0 && deadNeedles.length === 0
+    ? `${kindNeedles.length} needles (the six kinds' type ids and WGSL files) in none of ./desk ./desk/kit ./desk/engine's chunks, every one in ./desk/objects'`
+    : [...deskHits.slice(0, 6), ...deadNeedles.map((n) => `dead needle ${n} (not in ./desk/objects)`)].join(" · "),
+);
+
+console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7 · design-016 K4b");
 for (const r of rows) console.log(`[pack-audit] ${r}`);
 console.log(fail.length === 0 ? "[pack-audit] ALL PASS" : `[pack-audit] ${fail.length} FAILED`);
 process.exit(fail.length === 0 ? 0 : 1);
