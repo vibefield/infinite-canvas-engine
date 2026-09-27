@@ -60,14 +60,48 @@ and live presence when you `docs.join()` a room.
 | Import | Contents |
 | --- | --- |
 | `@vibecook/ice` | The headless engine: `createCanvasEngine`, `defineWidget`, `defineTool`, `definePrefab`, the props DSL `p`, the doc kit, presence, and the full ECS vocabulary. |
-| `@vibecook/ice/desk` | The desk: `deskLayer`, the kind contract (`defineObject`, `ObjectKind`, `KindProgram`), the text raster, the theme, the renderer (`Ground`) — no kind of its own. |
+| `@vibecook/ice/desk` | The desk: `deskLayer`, the kind contract (`defineObject`, `ObjectKind`, `KindProgram`, `ObjectHost`), the provides-keys (`DESK_OBJECT`, `CONTAINABLE`, `PINNABLE`), the ONE editor a kind leases, the text raster, the theme, the renderer (`Ground`) — no kind of its own. |
 | `@vibecook/ice/desk/engine` | The raw-WebGPU engine: the device (`acquire`, `adopt`), the `Surface` type (the swap chain itself is `surface()` in `/desk`), shader composition (`compose`, `compile`), pipelines and bind groups, render targets (`Target`, `beginPass`, `readback`), `defineStruct`. No pass ships here — the passes are the desk's. |
-| `@vibecook/ice/desk/objects` | The six reference object kinds: note · mini mat · notebook · whiteboard · calendar · photo (`DESK_OBJECTS`) — each its world half, its pass, its WGSL and its DOM half (the note's editor, the calendar's input), the kinds' registry (`DESK_KINDS`), the preset (`DESK_ENGINE`) and the default palette; built on `/desk`, `/desk/kit` and `/desk/engine` alone, exactly as a plugin kind is. |
-| `@vibecook/ice/desk/kit` | The render kit a kind is written against: the slot's view and its mat (`MatPass`), the lamp and its light, the shared WGSL by name (`kitWgsl`), a container's inside, the host services a kind is lent (text, print, blobs), the one physics every object shares. |
+| `@vibecook/ice/desk/objects` | The six reference object kinds: note · mini mat · notebook · whiteboard · calendar · photo (`DESK_OBJECTS`) — each its world half, its pass, its WGSL and its DOM half (the note's body, the calendar's input), the kinds' registry (`DESK_KINDS`), the preset (`DESK_ENGINE`) and the default palette; built on `/desk`, `/desk/kit` and `/desk/engine` alone, exactly as a plugin kind is. |
+| `@vibecook/ice/desk/kit` | The render kit a kind is written against: the slot's view and its mat (`MatPass`), the lamp and its light, the shared WGSL by name (`kitWgsl`), a container's inside, the service keys a kind lends and uses (`serviceKey`, `TEXT_RASTER`, `PRINT_RASTER`, `BLOB_STORE`, `PICTURE_DECODER`), a container's face law and chip finishes, the one physics every object shares. |
 | `@vibecook/ice/react` | `<Desk>`, `<EngineProvider>`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useUndoStatus`, `usePresencePeers`, …), `attachKeymap`, `<SelectionMenu>`. |
 | `@vibecook/ice/dom` | Screen space only: the canvas host, the pointer adapter, the rAF loop, input ownership, the cursors, `createDeskHost` — for custom shells without React. |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one draggable dock, and the desk's GPU slot (fed by `/desk`'s `handle.profiler()`). |
 | `@vibecook/ice/kernel` | Pure math: coordinates, spatial index, snap, wire geometry, the flight maths. Zero dependencies beyond `rbush`. |
+
+## A plugin kind
+
+Whatever a built-in kind does, a plugin kind declares the same way, against `@vibecook/ice/desk` and `/desk/kit` alone — no list
+in the engine names a kind (the six reference kinds in `/desk/objects` are built exactly so):
+
+```ts
+import { CONTAINABLE, DESK_OBJECT, defineObject } from "@vibecook/ice/desk";
+import { PAPER_FINISH, service, serviceKey, TEXT_RASTER } from "@vibecook/ice/desk/kit";
+
+const CHIME = serviceKey<Chime>("clock.chime");   // a service of its own: typed by its key, matched by its name
+
+export const Clock = defineObject({
+  type: "acme.clock", version: 1, props: { /* p.* */ },
+  kind: clockKind,                          // its world half (resolve · record · hit · chip → { finish: PAPER_FINISH, … }) and its pass
+  provides: [DESK_OBJECT, CONTAINABLE],     // it lies on the desk, and a mini mat holds it
+  menu: [{ id: "wind", label: "Wind it", glyph: { path: "M12 5v7l4 2" }, run: (api) => { /* api.setProps(e, …) */ } }],
+  host: {
+    lend: (h) => [service(CHIME, makeChime(h.use(TEXT_RASTER)))],   // what only a browser makes; any kind `use`s it
+    text: (h) => [{ part: "clock.label", tap: (t) => labelLease(h, t) }],   // a part that leases the desk's ONE editor
+  },
+});
+```
+
+- **Services** — `serviceKey`/`service`: `KindHost.use(KEY)` in the world half, `ObjectDomHost.use(KEY)` in the DOM half;
+  `deskLayer({ services })` lends more from the host. A name lent twice is a mount error.
+- **Text** — the ONE focused editor is the desk's; a `TextPart` with `tap` is routed every tap and answers an `EditorLease`; one
+  without is leased by the kind's own half (`h.editor.lend(lease)`).
+- **Placement** — by what an object `provides`: `DESK_OBJECT` (the desk canvas), `CONTAINABLE` (a mini mat), `PINNABLE` (a
+  calendar's day); a driver asks `h.provides(KEY)`.
+- **Being a container** — `ObjectKind.face` and `faceLaw: { radius, chips, finishes }`; a child's `chip()` names its finish.
+- **Held tools and menu acts** — a tool's `glyph` is a name of the bar's set or its own `{ path }`; `menu` acts show for a
+  selection of the kind and run through `ops.runMenuAction`.
+- **Stills** — `handle.pinAsset(entity, asset)` pins the kind's own `ctx.asset`.
 
 React and `react-dom` are **optional** peer dependencies — the core, desk and dom
 entries are React-free; `three` is imported nowhere.

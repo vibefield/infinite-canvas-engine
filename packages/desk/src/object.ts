@@ -42,9 +42,10 @@ export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "opena
    */
   readonly drivers?: DriverFactory;
   /**
-   * The object's DOM HALF (K4b, `ObjectHost`): what its kind needs of the browser — a service lent its world half (the calendar's
-   * print raster), the desk's one editor (the note's), a screen-space half that borrows it (the calendar's days and pen) — declared
-   * here as its drivers are, so the host builds it without naming the kind. Absent: the object needs nothing of the browser.
+   * The object's DOM HALF (K4b, `ObjectHost`): what its kind needs of the browser — services lent by key (K8a: the calendar's print
+   * raster), its TEXT PARTS that lease the desk's one editor (the note's body, the calendar's day line), a screen-space half (the
+   * calendar's days and pen) — declared here as its drivers are, so the host builds it without naming the kind. Absent: the object
+   * needs nothing of the browser.
    */
   readonly host?: ObjectHost;
 }

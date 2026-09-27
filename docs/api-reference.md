@@ -27,7 +27,7 @@ published bytes rather than trusting the last local build.
 
 | Export | Shape | Notes |
 |---|---|---|
-| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain, and a `tray` entry (design-017 §8, K5a — `{ label, props?, take?, local?, hang: { w, h, pegs, accessory }, order?, category? }`: the object's specimen on the pegboard tray, an object's only; validated at definition; K-L2 — a plugin kind declares the same, and the catalog's widgets that carry one ARE the tray's contents. K5b: `props` is the specimen's FACE; `take` what one taken off the tray is made with — absent the widget's defaults, `"face"` the face's props, or a record (`trayTakeProps` reads it); `local: true` draws the specimen, and a copy lifted off it, with its kind's desk state, for a face that lives there — a note's writing, a print's pictures, a pad's print). RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
+| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain, and a `tray` entry (design-017 §8, K5a — `{ label, props?, take?, local?, hang: { w, h, pegs, accessory }, order?, category? }`: the object's specimen on the pegboard tray, an object's only; validated at definition; K-L2 — a plugin kind declares the same, and the catalog's widgets that carry one ARE the tray's contents. K5b: `props` is the specimen's FACE; `take` what one taken off the tray is made with — absent the widget's defaults, `"face"` the face's props, or a record (`trayTakeProps` reads it); `local: true` draws the specimen, and a copy lifted off it, with its kind's desk state, for a face that lives there — a note's writing, a print's pictures, a pad's print); `heldTools` (each a `mode`/`action` with keys and a `HeldGlyph` — a name of the bar's set or its own drawing `{ path, fill? }`, design-016 K8a) and `menu` (K8a — `MenuActionDef { id, label, glyph?, keys?, run(api) }`: the acts the selection menu shows for a selection all of whose types declare them, run by `ops.runMenuAction`; `menuActionsFor(entities, menuOf)` is the shared rule). RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
 | `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, canvasDragShift, widgetDrag, portDrag}` (`canvasDragShift`: what a shift-drag on the bare canvas does — the desk's `deskSelect` pans on a bare drag and marquees on a shift-drag), `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
@@ -45,7 +45,10 @@ const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, beh
 
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
   setSelection/clearSelection/selectAll · reorder(ids, "top"|"bottom") ·
-  zoomToFit/zoomTo/panTo · enterContainer/exitContainer · cancelActiveGestures`.
+  zoomToFit/zoomTo/panTo · enterContainer/exitContainer · cancelActiveGestures ·
+  open/putDown/useHeldTool · runMenuAction(id)`. `runMenuAction` (design-016 K8a) runs a SELECTION
+  MENU act: each selected object's type that declares `id` (`defineWidget({ menu })`) runs its op
+  over its own selected objects; false when none declares it.
   Every op is one engine-owned write path (one tx / one resource write).
 - `ce.docs` — `create() · open(bytes) · join(channel, {presence?, seed?}) ·
   attachPresence(opts) · presence() · current() · close() · undo() · redo() ·
@@ -238,7 +241,7 @@ CHANGELOG's `### Removed` lists them).
 | `useUndoStatus()` | `{canUndo, canRedo}` via the `DurableUndoStatus` resource — survives doc swaps. |
 | `usePresencePeers()` | Remote peers (`PresencePeer` × `Not(Local)`), membership-keyed stable snapshots. |
 | `attachKeymap(ce, target?, overrides?)` · `nudgeSelection` · `toggleTape` | Defaults: ⌫ delete · ⌘Z/⇧⌘Z · ⌘D · ⌘A · Esc · arrows nudge (one tx/press) · ⏎ opens / enters · tool shortcuts. All resolve to ops; editable targets and keyboard claims skipped. |
-| `<SelectionMenu source actions>` · `defaultSelectionActions` · `placeSelectionMenu` · `SELECTION_MENU` · `SELECTION_GLYPHS` · `selectionTaped` | *Marks on the Mat*'s ink bar and the held bar (design-015 §7–§8, D4a/D4b): placed from the desk layer's `selection` anchor. |
+| `<SelectionMenu source actions>` · `defaultSelectionActions` · `placeSelectionMenu` · `SELECTION_MENU` · `SELECTION_GLYPHS` · `selectionTaped` | *Marks on the Mat*'s ink bar and the held bar (design-015 §7–§8, D4a/D4b): placed from the desk layer's `selection` anchor. K8a: the anchor's `menu` puts a selection's KIND ACTS first (`SelectionMenuAct` — a type's `defineWidget({ menu })`, run by `ops.runMenuAction`); a held tool's or an act's glyph is a name of `SELECTION_GLYPHS` or its own drawing (`SelectionGlyph` `{ path, fill? }`), and a name the set lacks is marked missing (its initial, `data-glyph-missing`), never drawn as the ellipsis. |
 | `useCanvasCatalog` / `useCanvasTools` / `useCurrentCanvas` / `useCanvasDiagnostics` / `useFramePreview` · `<FramePreviewBoundary>` | The canvas SDK hooks. |
 | `useWorld()` | Escape hatch: read + observe only (DEV-warned). |
 
@@ -282,7 +285,7 @@ the DOM in screen space. Entries mirror the umbrella's: **`@ice/desk`** (the roo
 renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLayerHandle` (`handle.editor()`
 is the one focused editor an object's DOM half made), the text raster `inkRaster`/`penFaces`, `decodePicture`,
 the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `ObjectKind`, `KindProgram`, `KindHost`,
-`ObjectHost` (a kind's DOM half, declared: `lend` · `editor` · `mount` — design-016 K4b) —, the builder/pick/ambient/reflector
+`ObjectHost` (a kind's DOM half, declared: `lend` · `text` · `mount` — design-016 K4b, K8a) —, the builder/pick/ambient/reflector
 of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until
 `arm()` — `instrumentPasses`, `instrumentMemory` under `deskLayer({ gpuLedger: true })`, `ablateKinds`/`withoutKind`,
 `traceOf`; `packages/devtools/README.md` says what each number means), the theme (`themeFrom`, `Palette`, `MAT`, …), `shaderText`
@@ -290,15 +293,39 @@ of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuPr
 `SPRINGS`, the zoom band `ZOOM_MIN`/`ZOOM_MAX`) · **`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the
 `Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is
 `@ice/desk`'s, and no pass ships here) · **`@ice/desk/kit`** (the render kit a kind's pass is written against besides the engine:
-the slot's view and its mat, the lamp, `kitWgsl`, a container's inside, the host services a kind is lent). The desk names no kind.
+the slot's view and its mat, the lamp, `kitWgsl`, a container's inside, the service keys a kind lends and uses). The desk names no kind.
+
+**Plugin parity (design-016 K-L2, K8a)** — whatever a built-in kind does, a plugin kind declares the same way, and no list in the
+engine names a kind:
+- **Services**, an open registry by typed key (`@ice/desk/kit`: `serviceKey<T>(name)`, `service(key, value)`, `Services`): the host
+  lends `TEXT_RASTER`, `PICTURE_DECODER`, `BLOB_STORE` (`deskLayer({ text, blobs })`) and more by key (`deskLayer({ services })`);
+  an object's DOM half lends what only a browser makes (`defineObject({ host: { lend: (h) => [service(KEY, value)] } })` — the
+  calendar's `PRINT_RASTER`); any kind's world half `use`s one (`KindHost.use?.(KEY)`), a DOM half too (`ObjectDomHost.use`). Keys
+  match by NAME; a name lent twice is a mount error.
+- **Text input**: the ONE focused editor is the DESK's (`handle.editor(): DeskEditor`, `ObjectDomHost.editor`), made whatever kinds
+  are registered; a kind declares its TEXT PARTS (`host: { text: (h) => TextPart[] }`) — a part with `tap` the desk routes every
+  tap to (`TextTap`: the world point, the stack's exact hit), answering an `EditorLease` (`part`, `label`, `value`, `input`,
+  `keydown`, `caret`, `place` → `EditorPlace`, `idle`, `ended`, `live`); a part without one is leased by the kind's own half at
+  event time (`h.editor.lend(lease)`). The note's body (`NOTE_BODY`) and the calendar's day line (`CALENDAR_LINE`) are two such parts.
+- **Placement by provides-keys** (`@ice/desk`): `DESK_OBJECT` (the desk canvas places what provides it), `CONTAINABLE` (the mini
+  mat holds what provides it), `PINNABLE` (the calendar pins it to a day — `KindDriverHost.provides(key)`).
+- **Chips and containers**: a kind's `chip()` names its `finish` (`ChipFinish`, open — the kit's `PAPER_FINISH`/`VINYL_FINISH`, or
+  a preference list); a container kind declares `faceLaw: FaceLaw { radius, chips, finishes }` — its face's corner, its chip cap,
+  the finishes it draws; a chip in none of them is left out and counted (`BuildWork.unchipped`).
+- **Held-tool glyphs**: `HeldGlyph` — a name of the bar's set or the tool's own drawing (`{ path, fill? }`); the held bar marks an
+  unknown name missing (its initial, `data-glyph-missing`), never drawing another glyph.
+- **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
+  (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
+- **Stills**: `handle.pinAsset(entity, asset)` — a kind's own asset (`ctx.asset`) in the shape the kind defines.
 
 **`@ice/objects`** is `@vibecook/ice/desk/objects` (design-016 K4b: the six reference kinds' own package, built on the three desk
 entries alone, exactly as a plugin kind is): `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`, `Calendar`, `Photo`,
 `DESK_OBJECTS`; the kinds' programs and world halves (`paperKind`, `minimatKind`, `notebookKind`, `boardKind`, `calendarKind`,
-`photoKind`, …, `DESK_KINDS`) and specs (`PAPER`, `MINIMAT`, `BOARD`, `BOOK`); their DOM halves' makers (`createNoteEditor`,
-`createCalendarInput`, `printRaster` — each object declares its own, `defineObject({ host })`); their `shaderText` (theirs and the
+`photoKind`, …, `DESK_KINDS`) and specs (`PAPER`, `MINIMAT`, `BOARD`, `BOOK`); their DOM halves' makers (`createNoteBody` —
+the note's text part, `NOTE_BODY` —, `createCalendarInput` — `CALENDAR_LINE` —, `printRaster` — each object declares its own,
+`defineObject({ host })`); the mini mat's act `VINYL_ACT`; their `shaderText` (theirs and the
 kit's); the typing session, the strokes and pins; the engine preset `DESK_ENGINE` — `createCanvasEngine(DESK_ENGINE)`: the
-objects, `deskSelect`/`DeskCanvas` (which places the six by name and any object that provides `DESK_OBJECT` — a plugin kind lies on the desk by declaring it, K5b), the wheel zooming about the pointer, the scale-free zoom, the zoom-through — and the complete
+objects, `deskSelect`/`DeskCanvas` (which places every object that provides `@ice/desk`'s `DESK_OBJECT` and names no type — the six declare it as a plugin kind does; K5b, K8a), the wheel zooming about the pointer, the scale-free zoom, the zoom-through — and the complete
 default palette `deskPalette(name)`/`deskTheme(name)`, D7. Walls: `desk = core + kernel`; nobody imports desk but apps, the
 objects and the umbrella; `desk-dom-free` (only `src/host/*` touches the DOM); the desk never imports the objects; the objects
 import the desk's three entries and core/kernel alone, no kind another. Mount: `<Desk layer={deskLayer({ theme,
