@@ -352,3 +352,14 @@ export const HOLD_INK_SCENES = [
   { name: "hold-book-ink-night-e1-z1", held: true, scene: { ...holdBase, theme: "dark", books: [inkBook({ cover: "ink" })], notes: [HOLD_NOTE], hold: { book: 0, e: 1 } } },
 ];
 ORACLE_SCENES.push(...HOLD_INK_SCENES);
+
+// THE PEGBOARD TRAY (design-017, K3): the drawer open over a desk of notes by day and by night, scrolled by a fractional row (13.4 of
+// a 40 px pitch — the carry's fraction on the GPU), and half-way through its slide (the dim at half). `trayed` runs the tray check.
+const trayBase = { ...base, theme: "light", zoom: 1, mat: matStill, notes: [{ x: 300, y: 250, seed: 7, text: "" }, { x: 640, y: 560, seed: 11, text: "" }] };
+export const TRAY_SCENES = [
+  { name: "tray-day", trayed: true, scene: { ...trayBase, tray: { p: 1, scroll: 0 } } },
+  { name: "tray-night", trayed: true, scene: { ...trayBase, theme: "dark", tray: { p: 1, scroll: 0 } } },
+  { name: "tray-scroll-frac", trayed: true, scene: { ...trayBase, tray: { p: 1, scroll: 13.4 } } },
+  { name: "tray-half-open", trayed: true, scene: { ...trayBase, tray: { p: 0.5, scroll: 0 } } },
+];
+ORACLE_SCENES.push(...TRAY_SCENES);

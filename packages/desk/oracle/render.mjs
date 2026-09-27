@@ -1022,6 +1022,43 @@ async function padNoteCheck(sc) {
 const only = process.env.ORACLE_ONLY ? new RegExp(process.env.ORACLE_ONLY) : null;
 const scenes = only ? ORACLE_SCENES.filter((sc) => only.test(sc.name)) : ORACLE_SCENES;
 let failed = 0;
+/**
+ * THE TRAY (design-017, K3) as pixels: beyond the drawer and its shadows' reach the frame is the tray-less frame dimmed — every byte
+ * × (1 − dim), the premultiplied black laid over it, to the rounding — and the drawer's face is the pegboard's: its holes darken a
+ * stadium's share of it (0.157 of a cell).
+ */
+async function trayCheck(sc) {
+  const s = sc.scene;
+  const { px: A, w, h } = await render(s, { marks: true });
+  const laid = desk.tray.laid;
+  const { tray: _tray, ...bare } = s;
+  const { px: B } = await render(bare, { marks: true });
+  const d = (s.view ?? VIEW).dpr;
+  const reach = 3 * 18 + 8 + 2;   // the lamp's shadow's σ, its push, and a pixel's margin (tray/drawer.ts DRAWER.shadow)
+  const r = laid.rect;
+  let outside = 0;
+  let worst = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const cx = x / d;
+      const cy = y / d;
+      if (cx > r.x - reach && cx < r.x + r.w + reach && cy > r.y - reach) continue;
+      outside++;
+      for (let c = 0; c < 3; c++) { const i = (y * w + x) * 4 + c; worst = Math.max(worst, Math.abs((A[i] ?? 0) - (B[i] ?? 0) * (1 - laid.dim))); }
+    }
+  }
+  // a hole is darker than 0.6 of the face's own median — by day and under the Moon alike
+  const lum = (i) => 0.2126 * (A[i] ?? 0) + 0.7152 * (A[i + 1] ?? 0) + 0.0722 * (A[i + 2] ?? 0);
+  const ls = [];
+  for (let y = Math.ceil((r.y + 40) * d); y < h; y += 2) for (let x = Math.ceil((r.x + 40) * d); x < (r.x + r.w - 40) * d; x += 2) ls.push(lum((y * w + x) * 4));
+  const face = ls.length;
+  const median = [...ls].sort((a, b) => a - b)[Math.floor(face / 2)] ?? 0;
+  const holes = ls.filter((l) => l < 0.6 * median).length / Math.max(face, 1);
+  const ok = outside > 0 && worst <= 1 && (face < 4000 || (holes > 0.12 && holes < 0.19));
+  console.log(`  ${ok ? "PASS" : "FAIL"}  tray       ${sc.name.padEnd(24)} beyond the drawer ${outside.toLocaleString()} px = the desk × ${(1 - laid.dim).toFixed(2)} (max |Δ| ${worst.toFixed(2)}) · the face ${face.toLocaleString()} px, holes ${(holes * 100).toFixed(1)} %`);
+  return ok;
+}
+
 /** THE GOLDEN (design-015 D7): every scene's pixels, pinned by sha-256 in the committed oracle/shas.json. */
 const GOLDEN = resolve(root, "oracle/shas.json");
 const bless = process.env.ORACLE_BLESS === "1";
@@ -1111,6 +1148,7 @@ for (const sc of scenes) if (sc.pad) { if (!(await padCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.padNote) { if (!(await padNoteCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.printed) { if (!(await printCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.held) { if (!(await heldCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.trayed) { if (!(await trayCheck(sc))) failed += 1; }
 // THE GOLDEN's verdict: every scene drawn as committed — or, blessing, the drawn shas written (ORACLE_ONLY merges its scenes in)
 if (bless) {
   const next = only ? { ...golden, ...drawnShas } : drawnShas;
