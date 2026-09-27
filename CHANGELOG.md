@@ -733,6 +733,37 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   `theme.ts` for their kinds (`PAPER`, `BOOK`, `BOARD`, `MINIMAT`), the numbers they shared are `kit/physics.ts`, and the
   mini mat's portal gate is the engine's `PORTAL.gate`.
 
+<!-- design-016 K3 (2026-09-27) -->
+- **The pegboard drawer** (design-016 §7 · design-017 §1–§7, K-L6): James's SDF pegboard (`research/sdf-pegboard`) as
+  the desk's widget tray — a drawer of hardboard that slides up from the bottom of the view on widgetlab rev 1's curve
+  (`340 ms cubic-bezier(0.32,0.72,0,1)`), a WINDOW onto an infinite board: the SKÅDIS lattice (stadium slots, odd rows
+  shifted half a pitch, filleted rims), the tempered face, the paler punched edge and the plaster wall behind, shaded in
+  CLOSED FORM head-on (no march, no history, no jitter — every frame final; turned-lattice tone and grain; the wall lit
+  through the slots by the research's own HOME lamp; the desk's day and night colour laws) in the root pass after the
+  marks, 0.22 ms at 2400×1600; the scroll's whole rows carried on the CPU so the pattern is exact 10⁶ rows down; a band
+  past the ends. Facts in the world: a runtime `Tray` entity per view (open, scroll, stretch, lip) — never durable or
+  synced — written by core's ops `openTray` / `closeTray` / `toggleTray` / `scrollTray` and by `trayInput` (beside the
+  hand's: while open every pointer is the tray's and the desk is inert; Esc closes the tray first; the desk's keys go
+  quiet). The renderer's word on the drawer as drawn is the `TrayPoseSlot` seam; the desk handle's `tray` door;
+  apps/desk opens it on `a` or its lip (the notch). `rig:tray` (24 rows) joins `gate:landing` (fifteen rigs); four tray
+  stills join the golden (105). Its specimens and taking one are K5.
+
+<!-- design-016 K4b (2026-09-27) -->
+- **`@ice/objects` — the six kinds leave the desk** (design-016 §5, K-L1 · K-L2): the note, the mini mat, the photo
+  print, the whiteboard, the notebook and the calendar live in their own package, one folder each (their WGSL, their
+  units, their DOM half), compiled only against the desk's PUBLIC entries (`@ice/desk`, `/kit`, `/engine`) and core's —
+  exactly what a plugin kind is. `@vibecook/ice/desk/objects` publishes them (with `DESK_OBJECTS`, `DeskCanvas`,
+  `DeskPalette`); `@vibecook/ice/desk` names no kind — `pack:audit`'s ninth question greps the desk's built entries for
+  21 needles read from the kinds (type ids, WGSL keys). A kind DECLARES its DOM half: `defineObject({ host: { lend,
+  editor, mount } })` (`ObjectHost`, `hostOf`) — `deskLayer` builds whatever the registered objects declare (the note's
+  editor, the calendar's print raster and input), so the seam's four fenced exceptions are gone (D-K4b.1); the text
+  raster and the picture decoder stay desk services lent to every kind (D-K4b.2); the container law (`insideViewOfFace`,
+  `FACE_RADIUS`, `FACE_CHIPS_MAX` …) is the kit's (D-K4b.3). The oracle and the committed golden live in
+  `packages/objects/oracle` (D-K4b.4); each package generates its own shader text (D-K4b.6). Walls:
+  `objects-imports-only-the-sdk`, `desk-never-imports-objects`, `no-kind-imports-a-kind`, `objects-dom-half-is-its-objects`,
+  `nobody-imports-objects`. `ZOOM_MIN` / `ZOOM_MAX` are exported from `@ice/desk` (the one symbol K4a's moves left
+  unreachable).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 

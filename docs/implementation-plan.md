@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2 and K4a LANDED 2026-09-27)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3 and K4b LANDED 2026-09-27)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1533,17 +1533,19 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   dock on `~`, its code a lazy chunk. `rig:gpu` (17) joins the gate. Measured: a pan-end frame = 51 draws, 29 pipelines,
   52 bind groups (prints cut the note run into 7); 243 MB live (one notebook 164 MB; the calendar kind 42.4 MB with no
   calendar on the desk) — K6/K7's inputs.
-- **K3 — the pegboard and the drawer** (design-016 §7, design-017 §1–§7): built (`Tray` in the world, `trayInput`
-  beside the hand's, the board shaded in closed form at 0.20 ms, `a`, rig:tray 24 rows, four tray stills); taking the
-  look fixes (the face's grain, the research's lamp through the slots) and rebasing onto the kit.
-- **K4a — the render kit** (**LANDED 2026-09-27**, seven commits → `7759551`, rebased over K2): `@ice/desk/kit` /
-  `@vibecook/ice/desk/kit` — the slot's view and its WGSL by name (`kitWgsl`), `MatPass` an interface, what kinds shared
-  (sdf, springs, mips, seeds, `LayeredKind`, the notebook's 3D kit, strokes, the hand's pens and faces, the editor lease's
-  types); every contract type nameable; ONE view block per slot (uploads 35.2 → 6.3 KB/frame, writes 68 → 10.1, JS step
-  1.12 → 0.91 ms on the stress pan); the walls `kinds-import-only-the-sdk` · `no-kind-imports-a-kind` ·
-  `the-kit-imports-no-kind` (121 private imports → 0). The golden byte-identical through every step.
-- K4b — the package split · K5 — tray specimens and taking one · K6 — residency and instancing · K7 — layers, wakes,
-  scale · K8 — plugin parity and a third-party kind · K9 — the review and its fixes: planned (design-016 §8).
+- **K3 — the pegboard and the drawer** (**LANDED 2026-09-27**, nine commits → `4d679f5`; the builder died at its
+  context limit after its look fixes, an opus finisher rebased it onto the kit): `Tray` in the world, `trayInput`
+  beside the hand's, the board shaded in closed form (0.22 ms), the research's HOME lamp through the slots, `a` and the
+  lip, `rig:tray` 24, four tray stills (golden 105). Graded: ci 0; gate red once on rig:open's GPU-timing row (2.00 vs
+  1.5 ms under load — 0.80/0.84 alone, equal to main interleaved), every other leg green.
+- **K4b — the package split** (**LANDED 2026-09-27**, eight commits → `c79031e`, rebased by its builder over K3):
+  `@ice/objects` (the six kinds, one folder each, compiled against the desk's public entries only); a kind declares its
+  DOM half (`defineObject({ host })`) and the seam's four exceptions are gone; the oracle and the golden in
+  `packages/objects/oracle`; per-package shader text; five new walls; pack:audit's ninth question (the desk's built
+  entries carry no kind).
+- K5a — the specimens on the pegboard · K6a — residency and instancing (prints, boards, memory) · K5b — taking one ·
+  K6b — zoom · K7 — layers, wakes, scale · K8 — plugin parity and a third-party kind · K9 — the review and its fixes:
+  planned (design-016 §8; K5 and K6 split in two after K3's builder died at its context limit).
 
 **Exit:** design-016 §6's gates on `rig:stress` and a new `rig:scale` (10,000 objects, mixed order, real pictures) with
 the load beside every number; the committed golden byte-identical through every refactor; every built-in kind compiling
