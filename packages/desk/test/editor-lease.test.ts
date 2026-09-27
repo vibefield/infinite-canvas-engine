@@ -51,7 +51,7 @@ function mountDesk(objects: WidgetType[]) {
   const handle = deskLayer({ theme: themeFrom("light", PALETTE), palette: PALETTE, objects, gpu: { requestAdapter: () => new Promise(() => {}) } as unknown as GPU })({
     host: { container } as never, world: ce.world,
     framePick: stack.framePick, navGeometry: stack.navGeometry, heldPose: stack.heldPose,
-    transitions: ce.transitions, catalog: ce.catalog, readMarquee: () => stack.marqueeBuffer, spatial: stack.index,
+    transitions: ce.transitions, catalog: ce.catalog, readMarquee: () => stack.marqueeBuffer, spatial: stack.index, frame: ce.engine.frame,
   });
   mounted.push(() => { handle.dispose(); ce.dispose(); });
   return { ce, handle, container };
@@ -114,6 +114,25 @@ describe("the ONE editor is the desk's, and a plugin kind LEASES it through the 
     expect(told.calls.at(-1)).toBe("ended");
     expect(ed.lease()).toBeUndefined();
     expect(ed.element.hidden).toBe(true);
+  });
+
+  it("the lease WAKES the sleeping loop (K7a): a tap that lends, the platform's input, a lease's end — each an outside wake, never a poll", () => {
+    const told: Told = { calls: [], value: "", alive: true };
+    const lease = lineLease("label.text", told);
+    const Label = defineObject({ type: "test.label-wakes", version: 1, props: {}, kind: labelKind("label-wakes"), host: { text: () => [{ part: "label.text", tap: () => ({ lease }) }] } });
+    const { ce, handle, container } = mountDesk([Label]);
+    const wakes = (): number => ce.engine.frame.sleepStats().wakes["desk:ink"] ?? 0;
+    const w0 = wakes();
+    tap(container, 3, 3);
+    const w1 = wakes();
+    expect(w1).toBeGreaterThan(w0);   // lent: the textarea placed and focused on the next frame
+    const ed = handle.editor();
+    ed.element.value = "a";
+    ed.element.dispatchEvent(new Event("input", { bubbles: true }));
+    const w2 = wakes();
+    expect(w2).toBeGreaterThan(w1);   // written: the part draws what was typed
+    ed.release(lease);
+    expect(wakes()).toBeGreaterThan(w2);   // let go: the part draws itself at rest
   });
 
   it("a tap with a modifier, or one that moved past the slop, is no tap; a part that answers nothing leaves the editor alone", () => {

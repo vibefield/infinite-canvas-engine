@@ -28,7 +28,7 @@ import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { DeskEditor, TextPart } from "../kit/editor";
 import type { ChildShape, FaceLaw, InsideView } from "../kit/inside";
 import type { Lamp } from "../kit/light";
-import type { Lent, ServiceKey, Services } from "../kit/services";
+import type { LendHost, Lent, ServiceKey, Services } from "../kit/services";
 import type { Rect } from "../kit/nav";
 import type { GridConfig, View } from "../kit/view";
 import type { MarkFrame } from "../marks/layout";
@@ -165,6 +165,8 @@ export interface KindHost {
    * decoder `PICTURE_DECODER`, the app's byte store `BLOB_STORE`, anything in `deskLayer({ services })`) and what any object's DOM
    * half lends (`ObjectHost.lend` — the desk calendar's `PRINT_RASTER`): `use(key)` answers it, or undefined when nothing on this
    * desk lends it (in Node the oracle pins committed rasters and tiles). Absent: a bare host (a test) — no services at all.
+   * D-K8a.1: the desk's OWN doors stay fields of this host — `pass`, `children`, `drawn`, `budget`, `rasters`, `remake`, `wake`: the
+   * builder's word, its budget, its queue and its loop, made by the desk for each kind and never lent, replaced or taken by a kind.
    */
   use?<T>(key: ServiceKey<T>): T | undefined;
   /** An object's DATA children (D3w, design-015 §5.1 — a board's strokes, a pad's events and pins); absent = none (a test, the oracle). */
@@ -386,7 +388,8 @@ export interface KindDriver {
  * names a kind. Three moments, in the layer's order:
  * - `lend`, before any kind's local: SERVICES only a browser can make, each under its key (K8a, kit/services.ts — the desk
  *   calendar lends `PRINT_RASTER`, in the host's hand, none without a text raster), handed what is lent so far (the host's, then
- *   the objects' before it); any kind's world half `use`s them (`KindHost.use`), a DOM half too (`ObjectDomHost.use`);
+ *   the objects' before it) and the desk's wake for a service whose work lands later (`LendHost.wake` — K7a's sleeping loop steps);
+ *   any kind's world half `use`s them (`KindHost.use`), a DOM half too (`ObjectDomHost.use`);
  * - `text`, once the drivers are made: the object's TEXT PARTS (K8a, kit/editor.ts `TextPart`) — the parts of its objects that
  *   LEASE the desk's ONE editor: a part with a `tap` the desk routes every tap to (the note's body), a part without one its own
  *   half leases at event time (the desk calendar's day line). The editor is the DESK's (desk/host/editor.ts): no kind makes it;
@@ -394,7 +397,7 @@ export interface KindDriver {
  *   mounted half is ended by what it joins — the calendar's by the calendar's driver.
  */
 export interface ObjectHost {
-  readonly lend?: (host: Services) => readonly Lent[];
+  readonly lend?: (host: LendHost) => readonly Lent[];
   readonly text?: (host: ObjectDomHost) => readonly TextPart[] | undefined;
   readonly mount?: (host: ObjectDomHost) => void;
 }

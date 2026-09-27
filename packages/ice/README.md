@@ -93,7 +93,8 @@ export const Clock = defineObject({
 ```
 
 - **Services** — `serviceKey`/`service`: `KindHost.use(KEY)` in the world half, `ObjectDomHost.use(KEY)` in the DOM half;
-  `deskLayer({ services })` lends more from the host. A name lent twice is a mount error.
+  `deskLayer({ services })` lends more from the host. A name lent twice is a mount error; a service whose work lands later calls
+  its lend host's `wake()` (the desk's loop sleeps at rest — nothing is polled).
 - **Text** — the ONE focused editor is the desk's; a `TextPart` with `tap` is routed every tap and answers an `EditorLease`; one
   without is leased by the kind's own half (`h.editor.lend(lease)`).
 - **Placement** — by what an object `provides`: `DESK_OBJECT` (the desk canvas), `CONTAINABLE` (a mini mat), `PINNABLE` (a

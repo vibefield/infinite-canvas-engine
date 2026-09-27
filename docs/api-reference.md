@@ -300,8 +300,11 @@ engine names a kind:
 - **Services**, an open registry by typed key (`@ice/desk/kit`: `serviceKey<T>(name)`, `service(key, value)`, `Services`): the host
   lends `TEXT_RASTER`, `PICTURE_DECODER`, `BLOB_STORE` (`deskLayer({ text, blobs })`) and more by key (`deskLayer({ services })`);
   an object's DOM half lends what only a browser makes (`defineObject({ host: { lend: (h) => [service(KEY, value)] } })` — the
-  calendar's `PRINT_RASTER`); any kind's world half `use`s one (`KindHost.use?.(KEY)`), a DOM half too (`ObjectDomHost.use`). Keys
-  match by NAME; a name lent twice is a mount error.
+  calendar's `PRINT_RASTER`), handed a `LendHost` (`use` + `wake`: a service whose work lands later wakes the sleeping loop, K7a);
+  any kind's world half `use`s one (`KindHost.use?.(KEY)`), a DOM half too (`ObjectDomHost.use`). Keys match by NAME; a name lent
+  twice is a mount error. The desk's own doors (`pass`, `children`, `drawn`, `budget`, `rasters`, `remake`, `wake`) stay
+  `KindHost` fields — never lent. Every seam wakes the sleeping loop where it changes something visible: the editor's lease
+  (`compose.wake`), a lent service's landing (`LendHost.wake`), a menu act's writes (the document's outside door).
 - **Text input**: the ONE focused editor is the DESK's (`handle.editor(): DeskEditor`, `ObjectDomHost.editor`), made whatever kinds
   are registered; a kind declares its TEXT PARTS (`host: { text: (h) => TextPart[] }`) — a part with `tap` the desk routes every
   tap to (`TextTap`: the world point, the stack's exact hit), answering an `EditorLease` (`part`, `label`, `value`, `input`,

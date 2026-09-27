@@ -453,7 +453,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     ]);
     for (const t of types) {
       const lend = hostOf(t)?.lend;
-      if (lend !== undefined) services.lend(lend(services), `the object "${t.type}"`);
+      // …handed the desk's wake for a service whose work LANDS later (K7a — a sleeping loop steps and every kind is asked again)
+      if (lend !== undefined) services.lend(lend({ use: services.use, wake: () => ctx.frame?.wake("desk:service") }), `the object "${t.type}"`);
     }
     const drawn = (e: Entity): number | undefined => builder.rankOf(e);   // `builder` is made just below; the word is only asked at a tick
     // THE REGISTERED WAKES (K7a): the kinds a wake named since their last tick

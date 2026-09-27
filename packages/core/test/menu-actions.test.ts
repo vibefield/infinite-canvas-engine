@@ -40,8 +40,12 @@ describe("a type's menu acts, run through the engine (K8a)", () => {
     try {
       ran.length = 0;
       ce.ops.setSelection([...tops, plain], "replace");
+      const docWakes = (): number => ce.engine.frame.sleepStats().wakes.doc ?? 0;
+      const before = docWakes();
       expect(ce.ops.runMenuAction("spin")).toBe(true);
       expect(ran).toEqual(["spin 2"]);   // the plain one declares none: not handed
+      // its writes are the document's: each wakes a sleeping loop (K7a's outside door — the facade's outbound watch), never a poll
+      expect(docWakes()).toBeGreaterThan(before);
       ce.step(32);
       for (const t of tops) expect((ce.world.get(t, TOP.groups[0]?.component as never) as { turns: number }).turns).toBe(1);
       // an act two types declare: each type's own run, once, over its own objects

@@ -35,6 +35,15 @@ export interface Services {
   use<T>(key: ServiceKey<T>): T | undefined;
 }
 
+/**
+ * What an object's DOM half is handed to LEND (K8a): what is lent so far, and the desk's WAKE — a service whose work LANDS later (a
+ * face loaded, a picture decoded, a feed arrived) calls it when it does, so a sleeping loop steps and every kind is asked again (K7a's
+ * law: nothing is polled at rest; what arrives outside a step says so). The kinds that read the service see the landing in their tick.
+ */
+export interface LendHost extends Services {
+  wake(): void;
+}
+
 /** A registry of what has been lent so far (the desk layer's): `lend` adds entries — a name lent twice throws, naming both lenders. */
 export interface ServiceRegistry extends Services {
   lend(entries: readonly Lent[], by: string): void;

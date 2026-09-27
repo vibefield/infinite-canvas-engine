@@ -42,7 +42,7 @@ function mountDesk(objects: WidgetType[], text?: TextRaster, more: Pick<DeskLaye
   const handle = deskLayer({ theme: themeFrom("light", PALETTE), palette: PALETTE, objects, ...(text !== undefined ? { text } : {}), ...more })({
     host: { container: page.container } as never, world: ce.world,
     framePick: stack.framePick, navGeometry: stack.navGeometry, heldPose: stack.heldPose,
-    transitions: ce.transitions, catalog: ce.catalog, readMarquee: () => stack.marqueeBuffer, spatial: stack.index,
+    transitions: ce.transitions, catalog: ce.catalog, readMarquee: () => stack.marqueeBuffer, spatial: stack.index, frame: ce.engine.frame,
   });
   return { ce, page, handle };
 }
@@ -200,6 +200,25 @@ describe("the services: an open registry any kind lends to and any kind uses, by
     try {
       expect(seen.map((m) => m?.bpm)).toEqual([60]);
       expect(mounted.map((m) => m?.bpm)).toEqual([60]);
+    } finally {
+      handle.dispose();
+      ce.dispose();
+    }
+  });
+
+  it("a lent service whose work LANDS later wakes the sleeping loop through its lend host (K7a's law — nothing polled at rest)", () => {
+    let landed: (() => void) | undefined;
+    const Feed = defineObject({
+      type: "test.feed", version: 1, props: {}, kind: scribbleKind("feed", []),
+      // the service's work lands after the mount (a face, a picture, a feed): it says so through the host it was lent with
+      host: { lend: (h) => { landed = () => h.wake(); return [service(METRONOME, { bpm: 72 })]; } },
+    });
+    const { ce, handle } = mountDesk([Feed]);
+    try {
+      const wakes = (): number => ce.engine.frame.sleepStats().wakes["desk:service"] ?? 0;
+      expect(wakes()).toBe(0);
+      landed?.();
+      expect(wakes()).toBe(1);
     } finally {
       handle.dispose();
       ce.dispose();
