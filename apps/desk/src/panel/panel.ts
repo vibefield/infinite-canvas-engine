@@ -110,6 +110,8 @@ export interface DevPanel {
   readonly params: DeskParams;
   readonly open: boolean;
   toggle(): void;
+  /** An edit from the app's keys (`u` prints the rulers or not, K1): taken and kept as the panel's own, and its rows follow. */
+  tweak(edit: (p: DeskParams) => void): void;
   /** The theme the layer draws for `name`: the desk's own until the panel is touched, then with the panel's colours and night. */
   themeOf(name: ThemeName, base: GroundTheme): GroundTheme;
 }
@@ -142,6 +144,8 @@ const browserStore: ParamStore = {
 export interface DeskParamsBinding {
   /** A change made to the params: the desk takes it; the browser keeps it — unless they ARE the product again (a reset), when nothing is kept. */
   changed(): void;
+  /** An edit from outside the rows (the app's keys: `u`, K1) — made, then taken and kept exactly as a row's change is. */
+  tweak(edit: (p: DeskParams) => void): void;
   /** Whether the params are no longer the product's (the theme then draws with the panel's colours and night). */
   readonly touched: boolean;
 }
@@ -179,7 +183,7 @@ export function bindDeskParams(host: DevPanelHost, store: ParamStore = browserSt
     if (saved !== null) restoreParams(saved, p);
   }
   changed();
-  return { changed, get touched() { return touched; } };
+  return { changed, tweak(edit) { edit(p); changed(); }, get touched() { return touched; } };
 }
 
 export function installDevPanel(host: DevPanelHost): DevPanel {
@@ -226,7 +230,7 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
       range("metres per unit", 0.0001, 0.01, 0.0001, () => p.mat.metresPerUnit, (v) => { p.mat.metresPerUnit = v; }),
     ] },
     { title: "the rulers", rows: [
-      { kind: "toggle", label: "print the rulers", get: () => p.ruler.on, set: (v) => { p.ruler.on = v; } },
+      { kind: "toggle", label: "print the rulers (u)", get: () => p.ruler.on, set: (v) => { p.ruler.on = v; } },
       range("band", 10, 60, 1, () => p.ruler.band, (v) => { p.ruler.band = v; }, "px"),
       range("margin", 0, 60, 1, () => p.ruler.margin, (v) => { p.ruler.margin = v; }, "px"),
       range("tick, minor", 0, 30, 1, () => p.ruler.tick[0], (v) => { p.ruler.tick[0] = v; }, "px"),
@@ -293,6 +297,7 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
     params: p,
     get open() { return !element.hidden; },
     toggle() { element.hidden = !element.hidden; if (!element.hidden) mounted.refresh(); },
+    tweak(edit) { bound.tweak(edit); mounted.refresh(); },
     themeOf(_name, base) { lastBase = base; return bound.touched ? themeWith(base, p) : base; },
   };
 }

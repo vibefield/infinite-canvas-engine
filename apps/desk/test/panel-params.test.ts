@@ -121,6 +121,19 @@ describe("the dev panel applies itself at install (K1)", () => {
     engine.dispose();
   });
 
+  it("`u`'s edit (a tweak from outside the rows) is taken and kept as a row's: off is configured and saved; on again is the product, kept nowhere", () => {
+    const { mats, kept, params, engine, bound } = install();
+    bound.tweak((p) => { p.ruler.on = !p.ruler.on; });
+    expect(params.ruler.on).toBe(false);
+    expect(mats.at(-1)?.ruler?.on).toBe(false);
+    expect(JSON.parse(kept.get(KEY) as string).ruler.on).toBe(false);
+    bound.tweak((p) => { p.ruler.on = !p.ruler.on; });
+    expect(mats.at(-1)).toEqual(DESK_GRID.mat);
+    expect(bound.touched).toBe(false);
+    expect(kept.has(KEY)).toBe(false);
+    engine.dispose();
+  });
+
   it("a snapshot a version bump dropped is cleared, and the product projected in its place", () => {
     const { mats, kept, engine, bound } = install({ ...JSON.parse(snapshotParams(defaultParams())), version: 1, ruler: { ...defaultParams().ruler, on: false } });
     expect(mats.at(-1)).toEqual(DESK_GRID.mat);

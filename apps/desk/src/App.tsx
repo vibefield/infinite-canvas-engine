@@ -2,7 +2,7 @@
 // FROM THE WORLD by `deskLayer()` mounted through `<Desk layer={…}>` (D5b — `<InfiniteCanvas>` became
 // `<Desk>` by deletion, plan D-D0.6; the desk draws its own selection, D4a's marks). Keys:
 // `w` sticks a note at the pointer, `m` lays a mini mat, ⌫ deletes, ⌘Z/⇧⌘Z undo and redo (the core
-// keymap), `d` toggles the theme and pins it (until then the OS leads). The generated plates and a
+// keymap), `d` toggles the theme and pins it (until then the OS leads), `u` the rulers (K1). The generated plates and a
 // runtime glyph atlas feed the mat at boot; `window.__desk` (api.ts) is the rigs' door. D4a: the desk
 // draws its marks on the GPU and the ONE screen-space selection menu rides the layer's anchor
 // (`<SelectionMenu>`), with ICE's acts and the app's own stub "Send" first (it logs — VibeField's is real).
@@ -138,6 +138,9 @@ export function App(): ReactElement {
       { key: "c", shift: true, run: () => { const d = new Date(); stick(CALENDAR_TYPE, { month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` }); } },
       { key: "d", run: () => themeRef.current.toggle() },
       { key: "t", run: cycleVinyl },
+      // K1: `u` prints the rulers or not (the ground demo's key) — through the dev panel's params, so the panel's row and the
+      // browser's saved desk agree with it; like every letter here, never while typing (the keymap's editable gate)
+      { key: "u", run: () => panelRef.current?.tweak((p) => { p.ruler.on = !p.ruler.on; }) },
       // D5a: the backtick opens and closes the dev panel (screen-space DOM, the prototype's tweak panel)
       { key: "`", run: () => panelRef.current?.toggle() },
       // D4b: Tab walks the desk's objects in reading order (top to bottom, left to right) — the keyboard's way to a notebook, which ⏎
