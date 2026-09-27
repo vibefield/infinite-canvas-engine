@@ -21,6 +21,8 @@ import {
   p,
   type CanvasEngine,
   type Entity,
+  openTray,
+  trayOpen,
 } from "@ice/core";
 import type { LayerFactory } from "@ice/dom";
 import { StrictMode, act, createElement, useState, type ReactElement } from "react";
@@ -283,6 +285,27 @@ describe("default keymap", () => {
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("the pegboard tray (design-017 §4, K3): Esc closes it FIRST — cancelling nothing with it — and while it is out the desk's own keys are quiet (Delete, an arrow)", () => {
+    const { engine, step } = makeEngine();
+    const e = spawnBox(engine, step, 50, 50);
+    engine.ops.setSelection([e]);
+    const cancel = vi.spyOn(engine.ops, "cancelActiveGestures");
+    cleanups.push(attachKeymap(engine, window));
+    openTray(engine.world);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    step();
+    expect(engine.world.isAlive(e)).toBe(true);
+    expect(engine.world.get(e, Position)?.x).toBe(50);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(trayOpen(engine.world)).toBe(false);
+    expect(cancel).not.toHaveBeenCalled();
+    // control: the drawer closed, the same arrow nudges
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    step();
+    expect(engine.world.get(e, Position)?.x).toBe(51);
   });
 
   it("does NOT fire while typing into an editable field", () => {

@@ -27,6 +27,7 @@ import {
   PointerScreen,
   PointerVersion,
   type ReflectorDef,
+  Tray,
   Viewport,
   type World,
 } from "@ice/core";
@@ -34,6 +35,7 @@ import type { Ground, GroundFrameInputs, GroundStats } from "../ground";
 import type { ObjectKind } from "../kinds/world";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GroundTheme, Palette } from "../theme";
+import { createTrayFlux, type TrayFlux } from "../tray/flux";
 import type { Ambient, AmbientState } from "./ambient";
 import type { DeskBuilder, DeskBuilderStats, DeskWakeReason, HoldPin } from "./builder";
 
@@ -60,7 +62,7 @@ export interface DeskReflectorOptions {
 }
 
 /** What woke a frame, counted since the mount — the builder's reasons and the reflector's own. */
-export type DeskWakes = Readonly<Record<DeskWakeReason | "camera" | "viewport" | "nav" | "theme" | "grid" | "pin" | "ambient" | "live" | "ink", number>>;
+export type DeskWakes = Readonly<Record<DeskWakeReason | "camera" | "viewport" | "nav" | "theme" | "grid" | "pin" | "ambient" | "live" | "ink" | "tray", number>>;
 
 export interface DeskReflectorStats extends DeskBuilderStats {
   /** Whole-frame renders so far — the churn instrument (0 on an idle desk). */
@@ -100,10 +102,13 @@ export interface DeskReflector {
   theme(): GroundTheme;
   /** A kind's look for the theme in force (its `theme()` of the palette) — the held bar's swatches read it (D3t-a). */
   look(kind: string): unknown;
+  /** The pegboard drawer's flux (design-017 §3): its motion, the drawer as drawn (the pose seam's answer), the pins for a still. */
+  readonly tray: TrayFlux;
   dispose(): void;
 }
 
 const localPointersQ = defineQuery([Pointer, LocalPointer, PointerScreen]);
+const trayQ = defineQuery([Tray]);
 
 export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   const { world, builder, ambient } = opts;
@@ -137,7 +142,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let themeGen = 0;
   let gridGen = 0;
   let pinGen = 0;
-  const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0 };
+  const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0, tray: 0 };
+  /** The pegboard drawer's motion (design-017 §3): the facts are core's `Tray`, polled each tick; the slide, the lip, the band are here. */
+  const tray = createTrayFlux();
   let builderWakes = builder.wakes();
 
   /** The local mouse pointer's screen point as NDC (x right, y up), or null before one was seen. */
@@ -185,6 +192,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       const ps = w.resourceStamp(PointerVersion);
       if (ps !== pointerStamp) { if (pointerStamp !== -1 && !inHand) ambient.touch(now); pointerStamp = ps; }
       if (w.getResource(Camera)?.gesturing === true) ambient.touch(now);
+      // THE TRAY (design-017 §3): its facts polled as the camera's stamp is — a change is a frame (one entity, a handful of fields)
+      const te = w.firstOf(trayQ);
+      if (tray.read(te === undefined ? undefined : w.get(te, Tray))) { dirty = true; wakes.tray += 1; }
       const ground = opts.ground();
       if (ground === null) return;   // pre-ready: the dirt is kept
       const cam = w.getResource(Camera);
@@ -214,6 +224,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       };
       // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
       // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)
+      // the drawer over it all, as its flux has it this frame (design-017 §3)
+      const trayed = tray.step(now, vp.w, vp.h);
       const inputs: GroundFrameInputs = {
         view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr },
         mat: amb.frame,
@@ -227,12 +239,14 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         theme,
         marks: built.marks,
         ...(held !== undefined ? { held } : {}),
+        ...(trayed !== undefined ? { tray: trayed } : {}),
       };
       lastInputs = inputs;
       lastFrame = ground.render(inputs);
       redraws += 1;
       opts.onFrame?.();
       if (builder.live()) { dirty = true; wakes.live += 1; }   // a spring, a ghost or a re-dressing ramp still moves: the next frame paints too
+      if (tray.live()) { dirty = true; wakes.tray += 1; }        // …and so does a drawer on its way, a lip lifting, a band letting go
     },
   };
 
@@ -268,6 +282,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     grid: () => grid,
     theme: () => theme,
     look: (kind) => looks.get(kind),
+    tray,
     dispose() { disposed = true; },
   };
 }

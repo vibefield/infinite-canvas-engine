@@ -8,6 +8,7 @@
  * (2) `ActiveTool` override — pan tool → "grab"; (3) else the mouse pointer's
  * `Targets` kind — a `HandleSpec` → directional resize, an entity with
  * `Position` (widget) → "default", `CanvasSurface`/none → "default".
+ * The pegboard tray's lip under the mouse (design-017 §4, K3) is a thing to pull: "pointer", over everything but the hand's.
  * Above all of them (design-015 §8, D3t-a): with an object IN HAND, the mode in hand's own
  * `cursor` (its `HeldToolDef.cursor` — "none" where the tool draws itself: the board's marker) while
  * the mouse is over the object's drawing surface (`HeldPointer.part` "content") or presses the tool.
@@ -33,6 +34,7 @@ import {
   GesturePhases,
   HandleSpec,
   Held,
+  Tray,
   HeldPointer,
   HeldPress,
   HeldTool,
@@ -52,6 +54,7 @@ const P = GesturePhases;
 const anchorQ = defineQuery([CanvasSurface]);
 const localPointerQ = defineQuery([Pointer, LocalPointer]);
 const heldQ = defineQuery([Held]);
+const trayQ = defineQuery([Tray]);
 
 /** The mode in hand's cursor while a local mouse is over the held object's drawing surface or presses its tool (D3t-a); undefined otherwise. */
 function heldToolCursor(world: World): string | undefined {
@@ -71,6 +74,12 @@ function heldToolCursor(world: World): string | undefined {
     }
   });
   return over ? cursor : undefined;
+}
+
+/** The pegboard tray's lip under the mouse (design-017 §4, K3 — `Tray.lip`, the tray input's hover fact): a thing to pull, the hand. */
+function trayCursor(world: World): string | undefined {
+  const tray = world.firstOf(trayQ);
+  return tray !== undefined && world.get(tray, Tray)?.lip === true ? "pointer" : undefined;
 }
 
 /** `HandleSpec.anchor` → CSS directional-resize cursor (design-003 §7). */
@@ -96,7 +105,7 @@ export function createCursorSync(world: World): System & { readCursor(): string 
   const system = defineSystem(
     anchorQ,
     (_b, ctx) => {
-      let resolved: string | undefined = heldToolCursor(world);
+      let resolved: string | undefined = heldToolCursor(world) ?? trayCursor(world);
       let mouseTargets: Entity | undefined;
 
       world.query(localPointerQ).each((b) => {

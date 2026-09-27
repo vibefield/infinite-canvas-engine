@@ -7,6 +7,7 @@
 // `./objects` (the six reference kinds' world halves) are the two other entries; the Node oracle
 // and the tests import the modules under src/ directly, never this barrel (host/ touches the DOM).
 export * from "./ground";
+export * from "./tray/index";
 export * from "./host/index";
 export * from "./compose/index";
 export * from "./kinds/index";

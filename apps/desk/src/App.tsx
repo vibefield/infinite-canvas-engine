@@ -2,7 +2,8 @@
 // FROM THE WORLD by `deskLayer()` mounted through `<Desk layer={…}>` (D5b — `<InfiniteCanvas>` became
 // `<Desk>` by deletion, plan D-D0.6; the desk draws its own selection, D4a's marks). Keys:
 // `w` sticks a note at the pointer, `m` lays a mini mat, ⌫ deletes, ⌘Z/⇧⌘Z undo and redo (the core
-// keymap), `d` toggles the theme and pins it (until then the OS leads), `u` the rulers (K1). The generated plates and a
+// keymap), `d` toggles the theme and pins it (until then the OS leads), `u` the rulers (K1), `a` slides the pegboard tray
+// in and out (K3, design-017). The generated plates and a
 // runtime glyph atlas feed the mat at boot (K1: the atlas re-rendered at every change of the device's ratio or the rulers' text
 // size); `window.__desk` (api.ts) is the rigs' door. D4a: the desk
 // draws its marks on the GPU and the ONE screen-space selection menu rides the layer's anchor
@@ -141,6 +142,8 @@ export function App(): ReactElement {
       // …`C` a desk calendar showing this month (CALENDAR.md — the host's clock), its week from Monday
       { key: "c", shift: true, run: () => { const d = new Date(); stick(CALENDAR_TYPE, { month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` }); } },
       { key: "d", run: () => themeRef.current.toggle() },
+      // K3: `a` ("add") slides the pegboard tray in and out (design-017 — widgetlab's `B` is the notebook's here)
+      { key: "a", run: () => { handleRef.current?.tray.toggle(); } },
       { key: "t", run: cycleVinyl },
       // K1: `u` prints the rulers or not (the ground demo's key) — through the dev panel's params, so the panel's row and the
       // browser's saved desk agree with it; like every letter here, never while typing (the keymap's editable gate)

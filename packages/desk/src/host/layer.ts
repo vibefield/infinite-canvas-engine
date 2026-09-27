@@ -33,7 +33,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, type Entity, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, type PresentationTransitionAdapter, type ReflectorDef, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, openTray, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -71,6 +71,9 @@ import { createGpuProfiler, type GpuProfiler } from "../gpu-profiler";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
 import type { GroundTheme, Palette } from "../theme";
 import { surface } from "./surface";
+import type { TrayFluxState, TrayPin } from "../tray/flux";
+import type { TrayLaid } from "../tray/pass";
+import { TRAY_SHADER_FILES, trayShaders } from "../tray/shaders";
 
 export interface DeskLayerOptions {
   /** The theme in force at the mount (the app's `themeFrom(name, palette)`). */
@@ -149,6 +152,8 @@ export interface DeskLayerContext {
   readonly navGeometry?: NavGeometrySlot;
   /** The held pose seam (design-015 §8, D4b): the desk publishes where the object in hand is ON SCREEN as it drew it; core's held input maps every pointer through it. */
   readonly heldPose?: HeldPoseSlot;
+  /** The tray pose seam (design-017 §4, K3): the desk publishes where the pegboard drawer is ON SCREEN as it drew it; core's tray input hit-tests through it. */
+  readonly trayPose?: TrayPoseSlot;
   readonly transitions?: { register(adapter: PresentationTransitionAdapter): () => void };
   readonly catalog?: { widgetTypes(): readonly WidgetType[] };
   /** The interaction stack's marquee preview (`stack.marqueeBuffer`, out of the ECS): the vellum the marks draw (D4a). */
@@ -178,6 +183,25 @@ export interface DeskLayerPerf {
   readonly ms: number;
   readonly frames: number;
   readonly frameMs: number;
+}
+
+/**
+ * The pegboard tray's door (design-017; K3) — the app's `a` and a rig's hand: the facts through core's tray ops (the one writer beside
+ * the tray's input), the flux's pins and its state.
+ */
+export interface DeskTrayDoor {
+  /** Open the drawer: refused (false) while an object is in hand; gestures in flight cancel. */
+  open(): boolean;
+  close(): void;
+  /** Open or close; returns whether it is open now. */
+  toggle(): boolean;
+  isOpen(): boolean;
+  /** The board's scroll, CSS px past its top — set when given (any value: a rig's 10⁶ rows down), and returned. */
+  scroll(px?: number): number;
+  /** The facts and the flux as of now, the drawer as last drawn (the pose seam's answer) and what the pass last laid. */
+  state(): TrayFluxState & { readonly frame: TrayScreenFrame | undefined; readonly laid: TrayLaid | null };
+  /** Pin the drawer for a still — the slide, the lift, the band, or hidden; `null` unpins. */
+  pin(pin: TrayPin | null): void;
 }
 
 export interface DeskLayerHandle {
@@ -279,6 +303,8 @@ export interface DeskLayerHandle {
   driver(type: string): KindDriver | undefined;
   /** Where the selection menu goes (D4a): the marks' box around the selection, published after each frame it moved. */
   readonly selection: SelectionSource;
+  /** The pegboard tray's door (design-017; K3). */
+  readonly tray: DeskTrayDoor;
   /**
    * The DOM-free reflector behind `reflector` — named `desk`, never `compose`: react's retired
    * `GroundLayerHandle.compose?` was the ground's COMPOSE handle (the composited profile read its
@@ -366,6 +392,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
+      // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
+      if (trayOpen(world)) return { ...a, box: null, count: 0 };
       const h = builder.hand();
       if (h === undefined) return a;
       const kind = builder.kindOf(h.entity);
@@ -469,6 +497,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     const heldPose = ctx.heldPose;
     if (heldPose !== undefined) heldPose.current = poseSource;
+    // the tray pose seam (design-017 §4): the drawer as the last frame drew it — its rect mid-slide, the layout's scroll range
+    const traySource: TrayPoseSource = { frame: () => compose.tray.frame() };
+    const trayPose = ctx.trayPose;
+    if (trayPose !== undefined) trayPose.current = traySource;
     // the ground plane's transition adapter: prepared the moment it is asked — the desk's second slot is built from the world (D2b)
     const detachTransition = ctx.transitions?.register({ id: "@ice/desk", plane: "ground", prepare: () => null }) ?? null;
 
@@ -508,7 +540,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           if (shared === undefined) ownDevice = g.device;
           if (opts.gpuLedger === true) ledger = instrumentMemory(g.device);   // before the ground makes anything
           opts.onDevice?.(g.device);
-          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
+          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText(TRAY_SHADER_FILES)) });
           if (disposed || ended) { made.dispose(); return; }
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;
@@ -620,6 +652,19 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
       },
       desk: compose,
+      tray: {
+        open: () => openTray(world),
+        close: () => closeTray(world),
+        toggle: () => toggleTray(world),
+        isOpen: () => trayOpen(world),
+        scroll(px) {
+          if (px !== undefined) scrollTray(world, px);
+          const e = trayEntity(world);
+          return e === undefined ? 0 : (world.get(e, Tray)?.scroll ?? 0);
+        },
+        state: () => ({ ...compose.tray.state(), frame: compose.tray.frame(), laid: ground?.tray?.laid ?? null }),
+        pin(pin) { compose.tray.pin(pin); compose.wake("pin"); },
+      },
       dispose() {
         disposed = true;
         listeners.clear();
@@ -630,6 +675,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         if (framePick !== undefined && framePick.current === pick) framePick.current = null;
         if (navGeometry !== undefined && navGeometry.current === navSource) navGeometry.current = null;
         if (heldPose !== undefined && heldPose.current === poseSource) heldPose.current = null;
+        if (trayPose !== undefined && trayPose.current === traySource) trayPose.current = null;
         detachTransition?.();
         compose.dispose();
         builder.dispose();

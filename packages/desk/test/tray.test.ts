@@ -4,8 +4,14 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createCanvasEngine, openTray, closeTray, Tray, trayEntity, Viewport } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createAmbient } from "../src/compose/ambient";
+import { createDeskBuilder } from "../src/compose/builder";
+import { createDeskReflector } from "../src/compose/reflector";
 import { Ground, type GroundFrameInputs } from "../src/ground";
+import { createTrayFlux } from "../src/tray/flux";
+import { PALETTE, PENS, SURFACES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import { shaderText } from "../src/shaders";
 import { band, DRAWER, drawerRect, drawerSize, scrollRange, slideEase } from "../src/tray/drawer";
@@ -222,5 +228,132 @@ describe("the tray pass on a fake device", () => {
     expect(trayWrites().length).toBe(n);
     ground.render(frame({ p: 1, lift: 0, scroll: 1e6 * P + 18 }));
     expect(trayWrites().length).toBe(n + 1);
+  });
+});
+
+describe("the flux (tray/flux.ts — the motion lives in the renderer)", () => {
+  const closed = { open: false, scroll: 0, stretch: 0, lip: false };
+  const opened = { ...closed, open: true };
+
+  it("slides on the drawer's curve by the frame clock, from where it is on a reversal; at rest it is not live", () => {
+    const f = createTrayFlux();
+    expect(f.read(closed)).toBe(true);
+    expect(f.step(0, 1200, 800)?.p).toBe(0);
+    expect(f.live()).toBe(false);
+    expect(f.read(closed)).toBe(false);   // the same facts: no frame due
+    expect(f.read(opened)).toBe(true);
+    expect(f.step(1000, 1200, 800)?.p).toBe(0);   // the tween begins on this frame's clock
+    expect(f.live()).toBe(true);
+    expect(f.step(1017, 1200, 800)?.p).toBeCloseTo(slideEase(17 / 340), 12);
+    expect(f.step(1170, 1200, 800)?.p).toBeCloseTo(slideEase(0.5), 12);
+    expect(f.step(1340, 1200, 800)?.p).toBe(1);
+    expect(f.live()).toBe(false);
+    // closed again, then opened and reversed mid-slide: the close starts from where the drawer IS
+    f.read(closed);
+    f.step(2000, 1200, 800);
+    expect(f.step(2340, 1200, 800)?.p).toBe(0);
+    f.read(opened);
+    expect(f.step(2400, 1200, 800)?.p).toBe(0);
+    const p0 = f.step(2434, 1200, 800)?.p ?? -1;
+    expect(p0).toBeCloseTo(slideEase(34 / 340), 12);
+    f.read(closed);
+    expect(f.step(2434, 1200, 800)?.p).toBeCloseTo(p0, 12);
+    expect(f.step(2604, 1200, 800)?.p).toBeCloseTo(p0 * (1 - slideEase(0.5)), 12);
+    expect(f.step(2774, 1200, 800)?.p).toBe(0);
+    expect(f.live()).toBe(false);
+  });
+
+  it("lifts the lip on its spring toward the hover fact — only while closed — and settles", () => {
+    const f = createTrayFlux();
+    f.read({ ...closed, lip: true });
+    let t = 0;
+    f.step(t, 1200, 800);
+    for (let i = 0; i < 6; i++) { t += 16; f.step(t, 1200, 800); }
+    expect(f.state().lift).toBeGreaterThan(0.3);
+    expect(f.live()).toBe(true);
+    for (let i = 0; i < 120; i++) { t += 16; f.step(t, 1200, 800); }
+    expect(f.state().lift).toBe(1);
+    expect(f.live()).toBe(false);
+    expect(f.frame()?.y).toBe(800 - DRAWER.lipHover);
+  });
+
+  it("shows the band's pull exactly while the fact holds one, and carries it home on its spring when it lets go", () => {
+    const f = createTrayFlux();
+    f.read({ ...opened, scroll: 693, stretch: 100 });
+    let t = 0;
+    const a = f.step(t, 1200, 800);
+    expect(a?.scroll).toBe(693 + band(100));
+    f.read({ ...opened, scroll: 693, stretch: 0 });
+    t += 16;
+    const b = f.step(t, 1200, 800);
+    expect(b?.scroll).toBeGreaterThan(693);
+    expect(b?.scroll).toBeLessThan(693 + band(100));
+    expect(f.live()).toBe(true);
+    for (let i = 0; i < 200 && f.live(); i++) { t += 16; f.step(t, 1200, 800); }
+    expect(f.live()).toBe(false);
+    expect(f.step(t + 16, 1200, 800)?.scroll).toBe(693);
+  });
+
+  it("publishes the drawer as drawn — its rect mid-slide, the layout's scroll range — and holds a still when pinned; hidden draws nothing", () => {
+    const f = createTrayFlux();
+    f.read(opened);
+    f.step(0, 1200, 800);
+    f.step(170, 1200, 800);
+    const fr = f.frame();
+    expect(fr?.p).toBeCloseTo(slideEase(0.5), 12);
+    expect(fr?.y).toBeCloseTo(drawerRect(1200, 800, slideEase(0.5)).y, 9);
+    expect(fr?.max).toBe(scrollRange(1200, 800));
+    f.pin({ p: 0.5, band: 12 });
+    expect(f.step(180, 1200, 800)).toEqual({ p: 0.5, lift: 0, scroll: 12 });
+    expect(f.live()).toBe(false);   // a still never keeps the desk awake
+    f.pin({ hidden: true });
+    expect(f.step(190, 1200, 800)).toBeUndefined();
+    expect(f.frame()).toBeUndefined();
+    f.pin(null);
+    expect(f.read(undefined)).toBe(true);
+    expect(f.step(200, 1200, 800)).toBeUndefined();
+  });
+});
+
+describe("the reflector draws the tray (design-017 §3 — idle-zero open and closed)", () => {
+  const undo: (() => void)[] = [];
+  beforeAll(() => { undo.push(installGpuFlags()); });
+  afterAll(() => { for (const u of undo.splice(0)) u(); });
+
+  it("one frame per frame of motion while the drawer slides, none at rest — open, and closed; the frame's tray follows the curve", async () => {
+    const ce = createCanvasEngine();
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 2 });
+    const { device, queue } = fakeDevice();
+    const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
+    const builder = createDeskBuilder(ce.world, { objects: [] });
+    const ambient = createAmbient({ mode: "still", random: () => 0.5 });
+    let ground: Ground | null = null;
+    const desk = createDeskReflector({ world: ce.world, builder, kinds: [], ambient, ground: () => ground, attach: { resize: () => {} }, theme: THEMES.light, palette });
+    ce.engine.registerReflector(desk.reflector);
+    ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [], tray: trayShaders(shaderText(TRAY_SHADER_FILES)) });
+    desk.ready();
+    let now = 1000;
+    const step = (n = 1): number => { const before = queue.submits; for (let i = 0; i < n; i++) { now += 16; ce.step(now); } return queue.submits - before; };
+    expect(step()).toBe(1);   // the first paint: the lip
+    expect(desk.lastInputs()?.tray).toEqual({ p: 0, lift: 0, scroll: 0 });
+    expect(step(240)).toBe(0);   // closed, at rest
+    openTray(ce.world);
+    const ps: number[] = [];
+    let frames = 0;
+    for (let i = 0; i < 40; i++) { frames += step(); ps.push(desk.lastInputs()?.tray?.p ?? -1); }
+    const moving = Math.ceil(DRAWER.slideMs / 16) + 1;
+    expect(frames).toBeGreaterThanOrEqual(moving - 1);
+    expect(frames).toBeLessThanOrEqual(moving + 1);
+    expect(ps[0]).toBe(0);
+    expect(ps[1]).toBeCloseTo(slideEase(16 / 340), 12);
+    expect(ps.at(-1)).toBe(1);
+    expect(step(240)).toBe(0);   // open, at rest
+    expect(desk.wakes().tray).toBeGreaterThan(0);
+    closeTray(ce.world);
+    expect(step(40)).toBeGreaterThan(0);
+    expect(step(240)).toBe(0);   // closed again, at rest
+    const e = trayEntity(ce.world);
+    expect(e !== undefined && ce.world.get(e, Tray)?.open).toBe(false);
   });
 });

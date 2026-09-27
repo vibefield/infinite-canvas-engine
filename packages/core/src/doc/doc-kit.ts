@@ -35,6 +35,7 @@ import { runCanvasSemanticMigrations } from "../canvas/migrate";
 import { Selected } from "../catalog";
 import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { ensureCanvasSurface } from "../interaction/install";
+import { ensureTray } from "../ops/tray";
 import { cancelActiveGestures } from "../ops/gestures";
 import { selectedEntities, setSelection } from "../ops/selection";
 import {
@@ -299,6 +300,7 @@ function makeSession(
       worldOwner.delete(world);
       world.reset(); // in place: observers/systems survive (R3); entities die
       ensureCanvasSurface(world); // the interaction stack's anchor must exist again
+      ensureTray(world); // …and the view's tray (closed: a document switch closes the drawer — design-017 §2)
     },
   };
 }
@@ -496,6 +498,7 @@ export function openDocSession(world: World, bytes: Uint8Array, opts: DocSession
       attachment?.detach();
       world.reset();
       ensureCanvasSurface(world);
+      ensureTray(world);
     } catch (rollbackErr) {
       return {
         ok: false,

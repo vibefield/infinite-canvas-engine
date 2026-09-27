@@ -17,6 +17,7 @@ import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
 import { type NotebookApi, notebookApi } from "./notebook-api";
 import { type RoomApi, roomApi } from "./room-api";
+import { type TrayApi, trayApi } from "./tray-api";
 import type { GlyphFeed } from "./glyphs";
 import type { ProfilerDock } from "./devtools";
 import type { DevPanel } from "./panel/panel";
@@ -83,6 +84,8 @@ export interface DeskApi {
   readonly calendar: CalendarApi;
   /** The room's doors (D5a — M5's two-tab rows, M9's live collab): an object's key, the document by key, the local commits. */
   readonly room: RoomApi;
+  /** The pegboard drawer's doors (design-017, K3). */
+  readonly tray: TrayApi;
   // ---- the nav (D2b): the doors the portal and nav rigs use
   /** The nav stack's depth (0 = the root desk). */
   depth(): number;
@@ -281,6 +284,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     notebook: notebookApi(engine, handle),
     calendar: calendarApi(engine, handle),
     room: roomApi(engine),
+    tray: trayApi(engine, handle),
     spawn(type, props, at) {
       const widget = engine.catalog.widget(type);
       if (widget === undefined) throw new Error(`desk: no object type "${type}"`);

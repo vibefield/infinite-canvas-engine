@@ -8,7 +8,7 @@
  *   ⇧⌘Z / ⇧Ctrl-Z   → docs.redo
  *   ⌘D              → ops.duplicateSelection
  *   ⌘A              → ops.selectAll
- *   Esc             → ops.cancelActiveGestures
+ *   Esc             → closes the pegboard tray first (design-017 §4), else ops.cancelActiveGestures
  *   Arrows          → nudge the selection ±1px (⇧ = ±10px) — ONE tx per press; a TAPED widget
  *                     never moves (design-015 §5.1 — `Locked`, D4a), its untaped companions do
  *   ⇧⌘L / ⇧Ctrl-L   → tape the selection down, or lift the tape when all of it is taped
@@ -45,7 +45,7 @@
  * Space warns at attach: the pointer adapter owns Space (the pan modifier,
  * design-003 §4.4) and preventDefaults it before gate 1 can let it through.
  */
-import { Container, GestureActive, Locked, Position, PrefabId, currentNavEntry, defineQuery, guardedTransaction, heldEntity, matchHeldTool, selectedEntities, tools, type CanvasEngine } from "@ice/core";
+import { Container, GestureActive, Locked, Position, PrefabId, closeTray, currentNavEntry, defineQuery, guardedTransaction, heldEntity, matchHeldTool, selectedEntities, tools, trayOpen, type CanvasEngine } from "@ice/core";
 import { isEditableTarget, keyboardClaimOf } from "@ice/dom";
 
 const gestureActiveQ = defineQuery([GestureActive]);
@@ -56,7 +56,7 @@ const gestureActiveQ = defineQuery([GestureActive]);
  */
 function openOrEnterSelected(engine: CanvasEngine): void {
   const { world } = engine;
-  if (heldEntity(world) !== undefined) return;
+  if (heldEntity(world) !== undefined || trayOpen(world)) return;
   const selected = selectedEntities(world);
   if (selected.length !== 1) return;
   const target = selected[0];
@@ -68,11 +68,13 @@ function openOrEnterSelected(engine: CanvasEngine): void {
 }
 
 /**
- * Esc (design-007 §3.3, design-015 §8 · §9): an object in hand is put down first (D4b — the object lands, still selected,
- * so ⏎ opens it again); else a live gesture is cancelled, as ever; with none to cancel, the current frame is left.
+ * Esc (design-007 §3.3, design-015 §8 · §9, design-017 §4): the pegboard tray is closed first (K3 — the drawer is the nearest
+ * thing to let go of); an object in hand is put down next (D4b — the object lands, still selected, so ⏎ opens it again); else a
+ * live gesture is cancelled, as ever; with none to cancel, the current frame is left.
  */
 function escapeOrExit(engine: CanvasEngine): void {
   const { world } = engine;
+  if (trayOpen(world)) { closeTray(world); return; }
   if (heldEntity(world) !== undefined) { engine.ops.putDown(); return; }
   const gestureLive = world.firstOf(gestureActiveQ) !== undefined;
   if (!gestureLive && currentNavEntry(world) !== undefined) {
@@ -82,8 +84,11 @@ function escapeOrExit(engine: CanvasEngine): void {
   engine.ops.cancelActiveGestures();
 }
 
-/** The desk's keys go quiet while an object is in hand (D4b): what would delete, copy, nudge or gather on the inert desk does nothing. */
-const unlessHeld = (run: (engine: CanvasEngine) => void) => (engine: CanvasEngine): void => { if (heldEntity(engine.world) === undefined) run(engine); };
+/**
+ * The desk's keys go quiet while it is inert — an object in hand (D4b) or the pegboard tray open (design-017 §4): what would delete,
+ * copy, nudge or gather on the inert desk does nothing.
+ */
+const unlessInert = (run: (engine: CanvasEngine) => void) => (engine: CanvasEngine): void => { if (heldEntity(engine.world) === undefined && !trayOpen(engine.world)) run(engine); };
 
 /**
  * The held bar's keys (design-015 §8; D3t-a): with an object in hand, its type's tools (`heldTools` — the kind's `open.tools`)
@@ -153,21 +158,21 @@ export function toggleTape(engine: CanvasEngine): void {
 /** The locked defaults + tool shortcuts (read from the registry at attach time). */
 function defaultEntries(): KeymapEntry[] {
   const entries: KeymapEntry[] = [
-    { key: "Backspace", run: unlessHeld((e) => e.ops.deleteSelection()) },
-    { key: "Delete", run: unlessHeld((e) => e.ops.deleteSelection()) },
+    { key: "Backspace", run: unlessInert((e) => e.ops.deleteSelection()) },
+    { key: "Delete", run: unlessInert((e) => e.ops.deleteSelection()) },
     { key: "z", mod: true, run: (e) => e.docs.undo() },
     { key: "z", mod: true, shift: true, run: (e) => e.docs.redo() },
-    { key: "d", mod: true, run: unlessHeld((e) => e.ops.duplicateSelection()) },
-    { key: "a", mod: true, run: unlessHeld((e) => e.ops.selectAll()) },
+    { key: "d", mod: true, run: unlessInert((e) => e.ops.duplicateSelection()) },
+    { key: "a", mod: true, run: unlessInert((e) => e.ops.selectAll()) },
     // design-015 §8 · §9 (D2b, D4b): ⏎ with ONE selected picks an openable object up, or flies into a container; Esc puts
     // the held object down, else cancels a live gesture as ever, and with none to cancel flies back out of the current frame.
     { key: "Enter", run: (e) => openOrEnterSelected(e) },
     { key: "Escape", run: (e) => escapeOrExit(e) },
-    { key: "l", mod: true, shift: true, run: unlessHeld(toggleTape) },
+    { key: "l", mod: true, shift: true, run: unlessInert(toggleTape) },
   ];
   for (const [key, dx, dy] of ARROWS) {
-    entries.push({ key, run: unlessHeld((e) => nudgeSelection(e, dx, dy)) });
-    entries.push({ key, shift: true, run: unlessHeld((e) => nudgeSelection(e, dx * 10, dy * 10)) });
+    entries.push({ key, run: unlessInert((e) => nudgeSelection(e, dx, dy)) });
+    entries.push({ key, shift: true, run: unlessInert((e) => nudgeSelection(e, dx * 10, dy * 10)) });
   }
   for (const tool of tools.all()) {
     if (tool.shortcut !== undefined) {

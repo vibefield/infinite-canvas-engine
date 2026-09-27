@@ -168,3 +168,33 @@ export const HeldTapMemo = defineResource(
   { x: field("f64", { default: 0 }), y: field("f64", { default: 0 }), at: field("f64", { default: 0 }), seq: field("u32", { default: 0 }) },
   { durable: false },
 );
+
+/**
+ * Runtime, ONE per view: THE TRAY (design-016 §7, K-L6; design-017 §2 — K3) — the pegboard drawer's facts. `open`; `scroll`, CSS px
+ * of board past its top, within `[0, max]` (the renderer's word on `max` rides the tray pose seam, systems/tray.ts); `stretch`, the
+ * rubber band's pull past an end (raw px, signed; 0 at rest); `lip`, the mouse over the lip of a closed drawer (its one hover fact);
+ * `wheelAt`, the frame clock (ms) of the last scroll input — the band lets go once it is quiet. Never in the document, never synced:
+ * a peer's tray is its own. Writers: the tray ops (ops/tray.ts) and `trayInput`; the renderer reads it, and owns the motion (the
+ * slide, the lip's lift, the band's settle — flux). The entity is ensured at install and after every reset (a document switch
+ * closes the tray); it roots the tray's runtime canvas (K5's specimens will be its children).
+ */
+export const Tray = defineComponent("Tray", {
+  open: field("bool", { default: false }),
+  scroll: field("f64", { default: 0 }),
+  stretch: field("f64", { default: 0 }),
+  lip: field("bool", { default: false }),
+  wheelAt: field("f64", { default: 0 }),
+});
+
+/**
+ * Runtime, on a local pointer: a press the TRAY took (design-017 §4) — on the lip of a closed drawer (`lip`: a click or a drag up
+ * opens it), on the open drawer (`board`: a drag scrolls it), on the dimmed desk (`desk`: released unmoved, it closes the drawer).
+ * Where it began (CSS px), the scroll it began from, whether it moved past the slop.
+ */
+export const TrayPress = defineComponent("TrayPress", {
+  kind: field(enumOf(["lip", "board", "desk"]), { default: "desk" }),
+  x: field("f64", { default: 0 }),
+  y: field("f64", { default: 0 }),
+  scroll0: field("f64", { default: 0 }),
+  moved: field("bool", { default: false }),
+});
