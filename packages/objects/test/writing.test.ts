@@ -12,6 +12,7 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper } from "../src/paper/paper";
 import { type InkBitmap, type TextRaster, encodeSeeds, type HandLayout, type HandMetrics } from "@ice/desk/kit";
 import { caretIndexIn, createWriting, type InkPages } from "../src/paper/writing";
 import { createRasterQueue, MAT_GRID } from "@ice/desk";
+import { must } from "../../desk/test/must";
 
 const E = (n: number) => n as Entity;
 const lamp = lampOf(MAT_GRID.plane);
@@ -431,6 +432,29 @@ describe("the writing · the pen and the caret (flux)", () => {
     expect(caretIndexIn(L, 1e6, (L.positions[1] as number) - L.ascent * 0.4, 5)).toBe(2);   // far right of line 1: its end
     expect(w.noteAt(300, 250)).toBe(E(1));
     expect(w.noteAt(10, 10)).toBeUndefined();
+  });
+});
+
+describe("the ink pages · re-carving empty rows (pages.ts, K6b)", () => {
+  it("a raster no row fits and no layer has room for takes a run of EMPTY rows between used ones, re-carved to its height — the rest stays an empty row; pages that never gave a rect back land where they did", () => {
+    const sh = new InkShelves(1000, 1);
+    const a = sh.alloc(1000, 300);   // rows at y 0 · 300 · 500 · 750: the layer full
+    const b = sh.alloc(1000, 200);
+    const c = sh.alloc(1000, 250);
+    sh.alloc(1000, 250);
+    expect([a?.y, b?.y, c?.y]).toEqual([0, 300, 500]);
+    expect(sh.alloc(1000, 400)).toBeNull();
+    sh.free(must(b));
+    expect(sh.alloc(1000, 400)).toBeNull();                                           // one empty row, 200 tall: not enough
+    sh.free(must(c));
+    expect(sh.alloc(1000, 400)).toEqual({ layer: 0, x: 0, y: 300, w: 1000, h: 400 });   // rows 300 and 500 together: 450 tall
+    expect(sh.alloc(1000, 50)).toEqual({ layer: 0, x: 0, y: 700, w: 1000, h: 50 });     // the rest: an empty row of 50
+    expect(sh.stats).toMatchObject({ used: 1000 * 1000, rows: 4 });   // the two middle rows re-carved into two
+    // fresh pages (a still's) carve exactly as before: the cursor, never a re-carve
+    const fresh = new InkShelves(1000, 1);
+    expect([fresh.alloc(400, 300), fresh.alloc(400, 300), fresh.alloc(300, 200)]).toEqual([
+      { layer: 0, x: 0, y: 0, w: 400, h: 300 }, { layer: 0, x: 400, y: 0, w: 400, h: 300 }, { layer: 0, x: 0, y: 300, w: 300, h: 200 },
+    ]);
   });
 });
 

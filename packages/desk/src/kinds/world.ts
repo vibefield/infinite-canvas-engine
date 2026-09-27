@@ -248,6 +248,11 @@ export interface RungContext {
   readonly dpr: number;
   /** The kind's `local()` on this desk (`KindLocal`); undefined when it keeps none. */
   readonly local: unknown;
+  /**
+   * The object's distance from the view's centre, screen px — the ORDER of what a kind asks at the new zoom (a raster at another band,
+   * of the frame raster queue: `KindHost.rasters`). The rung returned never reads it: it is where the camera is.
+   */
+  readonly px: number;
 }
 
 /**
@@ -274,7 +279,8 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
    * The record reads the view's zoom or dpr ONLY THROUGH A RUNG (K6b, design-016 §6 — a raster's band): this object's rung under
    * its slot's zoom, and the builder remakes the record only when that moves — a zoom within a rung remakes and writes nothing.
    * Asked of a drawn object whenever its slot's zoom or the dpr moved since its rung was last read, never on a pan; it reads the
-   * zoom, never where the camera is. Wins over `rezoom`.
+   * zoom, never where the camera is. Wins over `rezoom`. A kind whose raster the frame queue makes asks for it HERE (ordered by
+   * `ctx.px`) and answers the rung of what it HOLDS — the record shows that until the queue lays the new one (`KindHost.remake`).
    */
   rung?(ctx: RungContext): number;
   /** A host's LIVE law (D5a — the dev panel's door, `handle.tuneLaw`): the kind resolves under it from the next build. Absent, its law is fixed. */

@@ -675,6 +675,8 @@ try {
   if (wantCase("zoom-written")) {
     const ws = writtenScene();
     const legs = [[1, 0.35, 90], [0.35, 0.72, 60]];
+    /** The counters each step is read against (`perf.probe`), cumulative: THAT frame's work is its reading minus the one before. */
+    const KEYS = ["rasters", "replays", "recorded", "written", "blanks", "rungs", "fresh", "rerung", "rezoomed", "restless", "ran", "queueMs"];
     const perRound = [];
     for (let r = 0; r < ROUNDS; r++) {
       await qa(`window.__desk.setScene(${JSON.stringify(ws)})`, 120000);
@@ -683,61 +685,91 @@ try {
       const run = await qa(`(async () => {
         const d = window.__desk;
         const board = d.handle.local("board");
-        let recs = 0;
-        const written = () => { recs = 0; for (const v of Object.values(d.handle.records())) recs += v.written; return recs; };
-        d.perf.probe(() => { const w = d.note.writing(); const t = d.handle.stats().totals; const rq = d.handle.rasters?.(); return [w?.rasters ?? 0, board?.replays() ?? 0, t.recorded, written(), w?.blanks ?? 0, d.camera().zoom, t.rungs ?? 0, rq?.waiting ?? 0, rq?.ms ?? 0]; });
-        const p0 = [d.note.writing()?.rasters ?? 0, board?.replays() ?? 0, d.handle.stats().totals.recorded, written(), d.note.writing()?.blanks ?? 0, d.camera().zoom, d.handle.stats().totals.rungs ?? 0, d.handle.rasters?.().waiting ?? 0, d.handle.rasters?.().ms ?? 0];
+        const read = () => {
+          const w = d.note.writing();
+          const t = d.handle.stats().totals;
+          const q = d.handle.rasters();
+          let written = 0;
+          for (const v of Object.values(d.handle.records())) written += v.written;
+          return { rasters: w?.rasters ?? 0, replays: board?.replays() ?? 0, recorded: t.recorded, written, blanks: w?.blanks ?? 0, rungs: t.rungs, fresh: t.fresh, rerung: t.rerung, rezoomed: t.rezoomed, restless: t.restless, ran: q.ran, queueMs: q.ms, waiting: q.waiting, zoom: d.camera().zoom };
+        };
         const bids = d.entities().filter((e) => e.type === "desk.board").map((e) => e.id);
         const res0 = bids.map((e) => board?.residency(e) ?? null);
+        const p0 = read();
+        d.perf.probe(read);
         d.perf.take();
-        const legs = ${JSON.stringify(legs)};
-        for (const [from, to, n] of legs) {
+        for (const [from, to, n] of ${JSON.stringify(legs)}) {
           await new Promise((res) => { let i = 0; const f = () => { i++; const z = from * Math.pow(to / from, i / n); d.setCamera({ x: -600 / z, y: -400 / z, zoom: z }); if (i >= n) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
         }
         const t = d.perf.take();   // the zoom's frames
         const pz = t.probes.at(-1) ?? p0;
-        // CONVERGENCE: the camera stands; the frames until every raster the zoom asked is laid (the queue and the writing empty)
-        const owed = () => (d.handle.rasters?.().waiting ?? 0) + (d.note.writing()?.queued ?? 0);
+        // CONVERGENCE: the camera stands; the frames until the queue has nothing WAITING — every raster the zoom asked laid, or HELD
+        // for room (the pages full in shape: a capacity signal, reported beside it — the sheet keeps what it holds)
+        const owed = () => d.handle.rasters().waiting;
         const c0 = performance.now();
-        let settleFrames = 0;
-        while (owed() > 0 && settleFrames < 600) { await new Promise((res) => requestAnimationFrame(res)); settleFrames += 1; }
+        let frames = 0;
+        while (owed() > 0 && frames < 600) { await new Promise((res) => requestAnimationFrame(res)); frames += 1; }
         const cms = performance.now() - c0;
         await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
         const tc = d.perf.take();
         d.perf.probe(undefined);
         const pc = tc.probes.at(-1) ?? pz;
-        const converge = { frames: settleFrames, ms: cms, owed: owed(), maxStep: Math.max(0, ...tc.steps), rasters: pc[0] - pz[0], replays: pc[1] - pz[1] };
-        return { steps: t.steps, probes: t.probes, p0, converge, boards: [res0, bids.map((e) => board?.residency(e) ?? null)] };
+        const converge = { frames, ms: cms, owed: owed(), held: d.handle.rasters().held, maxStep: Math.max(0, ...tc.steps), rasters: pc.rasters - pz.rasters, replays: pc.replays - pz.replays, pages: d.note.pages() };
+        return { steps: t.steps, probes: t.probes, p0, converge, queue: d.handle.rasters(), boards: [res0, bids.map((e) => board?.residency(e) ?? null)] };
       })()`, 120000);
-      // each step's counters minus the step before's: what THAT frame did
-      const frames = run.steps.map((ms, i) => { const a = i === 0 ? run.p0 : run.probes[i - 1]; const b = run.probes[i]; return { ms, rasters: b[0] - a[0], replays: b[1] - a[1], recorded: b[2] - a[2], written: b[3] - a[3], blanks: b[4] - a[4], rungs: b[6] - a[6], waiting: b[7], rasterMs: b[8] - a[8] }; });
+      const frames = run.steps.map((ms, i) => {
+        const a = i === 0 ? run.p0 : run.probes[i - 1];
+        const b = run.probes[i];
+        const f = { ms, zoom: b.zoom, waiting: b.waiting };
+        for (const k of KEYS) f[k] = b[k] - a[k];
+        return f;
+      });
       const ms = frames.map((f) => f.ms);
-      const worst = frames.reduce((a, f) => (f.ms > a.ms ? f : a), frames[0]);
+      const sum = (k) => frames.reduce((a, f) => a + f[k], 0);
+      const most = (k) => max(frames.map((f) => f[k]));
       perRound.push({
         frames: frames.length, p50: pct(ms, 0.5), p95: pct(ms, 0.95), max: max(ms), over8: frames.filter((f) => f.ms > 8).length,
-        rasters: frames.reduce((a, f) => a + f.rasters, 0), rastersMax: max(frames.map((f) => f.rasters)), replays: frames.reduce((a, f) => a + f.replays, 0), replaysMax: max(frames.map((f) => f.replays)),
-        recordedMed: median(frames.map((f) => f.recorded)), writtenMed: median(frames.map((f) => f.written)), blanks: frames.reduce((a, f) => a + f.blanks, 0),
-        worst, load: load(), boards: run.boards, converge: run.converge, waitingMax: max(frames.map((f) => f.waiting)), rasterMsMax: max(frames.map((f) => f.rasterMs)),
-        // the round frame by frame: [ms, rasters, replays, remade, written, blanks, the zoom drawn, rungs read, asks waiting after it, the queue's ms in it]
-        series: frames.map((f, i) => [Math.round(f.ms * 100) / 100, f.rasters, f.replays, f.recorded, f.written, f.blanks, Math.round(run.probes[i][5] * 1000) / 1000, f.rungs, f.waiting, Math.round(f.rasterMs * 100) / 100]),
+        rasters: sum("rasters"), rastersMax: most("rasters"), replays: sum("replays"), replaysMax: most("replays"), laidMax: max(frames.map((f) => f.rasters + f.replays)),
+        // every raster and replay laid in the queue's turn: none but the queue's runs (a held run lays nothing, so laid ≤ ran)
+        laidOutside: sum("rasters") + sum("replays") - sum("ran"),
+        recordedMed: median(frames.map((f) => f.recorded)), writtenMed: median(frames.map((f) => f.written)),
+        rungs: sum("rungs"), rerung: sum("rerung"), fresh: sum("fresh"), rezoomed: sum("rezoomed"), restless: sum("restless"), recorded: sum("recorded"),
+        // THE RUNG LAW's witness: a record remade on the zoom came on screen, crossed a rung, took a raster laid (its record says where
+        // its ink is) or a raise (its kind restless) — the frames where records were remade past those causes
+        unexplained: frames.filter((f) => f.recorded > f.fresh + f.rerung + f.restless + f.rasters + f.replays).length,
+        blanks: sum("blanks"), waitingMax: most("waiting"), queueMsMax: most("queueMs"), queue: run.queue,
+        worst: frames.reduce((a, f) => (f.ms > a.ms ? f : a), frames[0]), load: load(), boards: run.boards, converge: run.converge,
+        // the round frame by frame: [ms, rasters, replays, remade, written, blanks, the zoom drawn, rungs read, asks waiting after it,
+        // the queue's ms in it, rungs crossed, came on screen]
+        series: frames.map((f) => [Math.round(f.ms * 100) / 100, f.rasters, f.replays, f.recorded, f.written, f.blanks, Math.round(f.zoom * 1000) / 1000, f.rungs, f.waiting, Math.round(f.queueMs * 100) / 100, f.rerung, f.fresh]),
       });
     }
     const col = (k) => perRound.map((p) => p[k]);
+    const total = (k) => col(k).reduce((a, b) => a + b, 0);
+    const cv = (k) => perRound.map((p) => p.converge[k]);
+    const q = perRound.at(-1).queue;
     const s = {
       rounds: perRound.length, p50: { median: median(col("p50")), min: min(col("p50")) }, p95: { median: median(col("p95")), min: min(col("p95")) }, max: { median: median(col("max")), min: min(col("max")) },
-      over8: median(col("over8")), rasters: median(col("rasters")), rastersMax: median(col("rastersMax")), replays: median(col("replays")), replaysMax: median(col("replaysMax")),
-      recordedMed: median(col("recordedMed")), writtenMed: median(col("writtenMed")), blanks: max(col("blanks")), loads: col("load"), perRound,
-      converge: { frames: median(perRound.map((p) => p.converge?.frames ?? Number.NaN)), max: max(perRound.map((p) => p.converge?.frames ?? Number.NaN)), ms: median(perRound.map((p) => p.converge?.ms ?? Number.NaN)), owed: max(perRound.map((p) => p.converge?.owed ?? 0)), rasters: median(perRound.map((p) => p.converge?.rasters ?? 0)), replays: median(perRound.map((p) => p.converge?.replays ?? 0)), maxStep: max(perRound.map((p) => p.converge?.maxStep ?? 0)) },
-      waitingMax: max(col("waitingMax")), rasterMsMax: max(col("rasterMsMax")),
+      over8: median(col("over8")), rasters: median(col("rasters")), rastersMax: max(col("rastersMax")), replays: median(col("replays")), replaysMax: max(col("replaysMax")), laidMax: max(col("laidMax")),
+      recordedMed: median(col("recordedMed")), writtenMed: median(col("writtenMed")), blanks: max(col("blanks")), waitingMax: max(col("waitingMax")), queueMsMax: max(col("queueMsMax")),
+      converge: { frames: median(cv("frames")), max: max(cv("frames")), ms: median(cv("ms")), owed: max(cv("owed")), held: max(cv("held")), rasters: median(cv("rasters")), replays: median(cv("replays")), maxStep: max(cv("maxStep")), pages: perRound.map((p) => p.converge.pages) },
+      loads: col("load"), perRound,
     };
     report["zoom-written"] = s;
-    console.log(`-- zoom-written · ${s.rounds} rounds × 150 frames (1 → 0.35 → 0.72) on 240 written notes + 8 boards · load ${s.loads.join(" ")} --`);
+    console.log(`-- zoom-written · ${s.rounds} rounds × ${perRound[0].frames} frames (1 → 0.35 → 0.72) on 240 written notes + 8 boards · load ${s.loads.join(" ")} --`);
     console.log(`  step ms/frame        p50 ${fmt(s.p50.median)} (min ${fmt(s.p50.min)}) · p95 ${fmt(s.p95.median)} (min ${fmt(s.p95.min)}) · the worst frame ${fmt(s.max.median)} (min ${fmt(s.max.min)}) · frames over 8 ms ${fmt(s.over8, 0)}`);
-    console.log(`  rasters              ${fmt(s.rasters, 0)} a round, the most in one frame ${fmt(s.rastersMax, 0)} · board replays ${fmt(s.replays, 0)} a round, the most in one frame ${fmt(s.replaysMax, 0)} · blanks ${s.blanks}`);
-    console.log(`  records/frame        remade ${fmt(s.recordedMed, 1)} · written ${fmt(s.writtenMed, 1)} (medians)`);
-    console.log(`  the queue            the most waiting after a frame ${s.waitingMax} · the most ms one frame's turn spent ${fmt(s.rasterMsMax)} · converged ${fmt(s.converge.frames, 0)} frames (${fmt(s.converge.ms, 0)} ms) after the zoom stopped, the most ${s.converge.max} (${s.converge.owed} still owed at the cap) — ${fmt(s.converge.rasters, 0)} rasters, ${fmt(s.converge.replays, 0)} replays meanwhile, its worst frame ${fmt(s.converge.maxStep)} ms`);
+    console.log(`  rasters              ${fmt(s.rasters, 0)} a round, the most in one frame ${s.rastersMax} · board replays ${fmt(s.replays, 0)} a round, the most in one frame ${s.replaysMax} · blanks ${s.blanks}`);
+    console.log(`  records              remade ${fmt(s.recordedMed, 1)} · written ${fmt(s.writtenMed, 1)} a frame (medians) · a round's ${total("recorded")} over ${s.rounds}: ${total("fresh")} came on screen, ${total("rerung")} crossed a rung (${total("rungs")} rungs read), ${total("restless")} restless, ${total("rezoomed")} by the zoom's delta alone`);
+    console.log(`  the queue            its budget ${q.budgetMs} ms · the most waiting after a frame ${s.waitingMax} · the most one turn spent ${fmt(q.peakMs)} ms, the dearest run ${fmt(q.dearest)} ms · ${q.dropped} let go unrun`);
+    console.log(`  convergence          ${fmt(s.converge.frames, 0)} frames (${fmt(s.converge.ms, 0)} ms) after the zoom stopped, the most ${s.converge.max} — ${fmt(s.converge.rasters, 0)} rasters, ${fmt(s.converge.replays, 0)} replays meanwhile, its worst frame ${fmt(s.converge.maxStep)} ms; ${s.converge.owed} still waiting, ${s.converge.held} held for room at rest (the pages at rest: ${s.converge.pages.map((g) => (g === null ? "—" : `${(g.used / 1048576).toFixed(1)}M texels in ${g.rows} rows`)).join(" · ")} of ${(4 * 2048 * 2048 / 1048576).toFixed(1)}M)`);
     console.log(`  the worst frames     ${perRound.map((p) => `${fmt(p.worst.ms, 1)} ms (${p.worst.rasters} rasters, ${p.worst.replays} replays, ${p.worst.recorded} remade)`).join(" · ")}`);
-    rows.push(["zoom-written", `p50 ${fmt(s.p50.median)} · p95 ${fmt(s.p95.median)} · worst ${fmt(s.max.median)} ms JS`, `${fmt(s.rasters, 0)} rasters a round (≤ ${fmt(s.rastersMax, 0)} a frame) · ${fmt(s.replays, 0)} replays (≤ ${fmt(s.replaysMax, 0)} a frame) · remade ${fmt(s.recordedMed, 1)}/frame · written ${fmt(s.writtenMed, 1)}/frame`, s.loads.join(" ")]);
+    check(s.max.min <= 8, `zoom-written: no frame over 8 ms in the best round — its worst ${fmt(s.max.min)} ms; the rounds' worst frames' median ${fmt(s.max.median)} ms (design-016 §6; before K6b 192.84 ms, 106 notes rastered in it)`);
+    gate(s.max.median <= 8, `zoom-written: the rounds' worst frame ≤ 8 ms — median ${fmt(s.max.median)} ms over ${s.rounds} rounds`);
+    check(total("unexplained") === 0 && total("rezoomed") === 0, `zoom-written: every record remade on the zoom came on screen, crossed a rung, took a raster laid or a raise — none by the zoom's delta alone (${total("rezoomed")}; ${total("unexplained")} frames past those causes; before K6b every note on screen, every frame: 120 a frame)`);
+    check(total("laidOutside") <= 0 && q.peakMs <= q.budgetMs + q.dearest, `zoom-written: every raster and replay of the zoom laid in the frame queue's turn (${total("rasters") + total("replays")} laid, none outside), at most ${s.laidMax} in a frame; a turn overshot its ${q.budgetMs} ms budget by at most its last run (the most one spent ${fmt(q.peakMs)} ms, the dearest run ${fmt(q.dearest)} ms)`);
+    check(s.converge.owed === 0, `zoom-written: CONVERGED — nothing waiting ${fmt(s.converge.frames, 0)} frames (${fmt(s.converge.ms, 0)} ms) after the zoom stopped (the most ${s.converge.max}): every raster it asked laid, or held for room (${s.converge.held} at rest); its worst frame meanwhile ${fmt(s.converge.maxStep)} ms`);
+    gate(s.converge.max <= 120, `zoom-written: converged within 120 frames of the zoom stopping (the most ${s.converge.max})`);
+    rows.push(["zoom-written", `p50 ${fmt(s.p50.median)} · p95 ${fmt(s.p95.median)} · worst ${fmt(s.max.median)} ms JS`, `${fmt(s.rasters, 0)} rasters a round (≤ ${s.rastersMax} a frame) · ${fmt(s.replays, 0)} replays (≤ ${s.replaysMax} a frame) · remade ${fmt(s.recordedMed, 1)}/frame · converged in ${fmt(s.converge.frames, 0)} frames`, s.loads.join(" ")]);
   }
 
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)

@@ -51,7 +51,7 @@ describe("the frame's raster queue (K6b)", () => {
     q.ask("paper", E(8), 1, costly(8, 9));
     expect(q.drain()).toBe(1);
     expect(q.drain()).toBe(1);
-    expect(q.stats()).toMatchObject({ ran: 8, turns: 5, peakRuns: 2, peakMs: 9, waiting: 0 });
+    expect(q.stats()).toMatchObject({ budgetMs: 4, ran: 8, turns: 5, peakRuns: 2, peakMs: 9, dearest: 9, waiting: 0 });
   });
 
   it("an ask whose object the last build did not draw is let go unrun — out of the budget; it asks again when it is drawn", () => {

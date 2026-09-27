@@ -57,6 +57,33 @@ export class InkShelves {
         return { layer: l, x: 0, y: row.y, w, h };
       }
     }
+    // no row fits and no layer has room below its rows: a run of EMPTY rows re-carved (K6b) — the band ladder leaves a layer carved
+    // into rows of every rung, and after a zoom out and back the texels are free in rows too short for the new band. Taken only
+    // where the two ways above found nothing, so pages that never gave a rect back (a still's) land every rect where they did.
+    for (let l = 0; l < this.stack.length; l++) {
+      const rect = this.recarve(l, w, h);
+      if (rect !== null) return rect;
+    }
+    return null;
+  }
+
+  /** In layer `l`, the first run of adjacent rows that hold nothing and are `h` tall together: one row of `h` holding the rect, the rest one empty row. */
+  private recarve(l: number, w: number, h: number): InkRect | null {
+    const L = this.stack[l] as Layer;
+    const empty = (row: Row): boolean => row.spans.every((s) => s.free);
+    for (let i = 0; i < L.rows.length; i++) {
+      if (!empty(L.rows[i] as Row)) continue;
+      let j = i;
+      let tall = 0;
+      while (j < L.rows.length && empty(L.rows[j] as Row) && tall < h) { tall += (L.rows[j] as Row).h; j += 1; }
+      if (tall < h) { i = j; continue; }
+      const y = (L.rows[i] as Row).y;
+      const row: Row = { y, h, spans: [{ x: 0, w, free: false }, { x: w, w: this.size - w, free: true }] };
+      if (w === this.size) row.spans.pop();
+      const rest: Row[] = tall > h ? [{ y: y + h, h: tall - h, spans: [{ x: 0, w: this.size, free: true }] }] : [];
+      L.rows.splice(i, j - i, row, ...rest);
+      return { layer: l, x: 0, y, w, h };
+    }
     return null;
   }
 

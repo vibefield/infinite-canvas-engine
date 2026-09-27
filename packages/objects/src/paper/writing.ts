@@ -135,6 +135,13 @@ export interface Writing {
    * through this alone, so a zoom within the band remakes nothing.
    */
   bandOf(e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly w: number; readonly h: number }, zoom: number, dpr: number): number;
+  /**
+   * Note `e`'s RUNG at `zoom` × `dpr` (K6b — the paper kind's `rung`): without a queue, the band it asks (`bandOf` — its record,
+   * remade at a crossing, rasters it at once); with one, the band of the raster it HOLDS — what its record shows — the band the zoom
+   * asks being ASKED of the queue here, `px` (screen px from the view's centre) its order: a crossing remakes no record, the raster's
+   * landing does (`remake`).
+   */
+  rungOf(e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly w: number; readonly h: number }, zoom: number, dpr: number, px: number): number;
   /** The note's layout as last drawn (undefined before, for a still, or while the face loads). */
   layoutOf(e: Entity): HandLayout | undefined;
   rasterOf(e: Entity): NoteRasterInfo | undefined;
@@ -301,6 +308,13 @@ export function createWriting(opts: WritingOptions): Writing {
     return true;
   };
 
+  /** The band note `e` asks (`bandOf`): 0 for an empty sheet, a pinned still, no text raster. */
+  const bandAsked = (e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly w: number; readonly h: number }, zoom: number, dpr: number): number => {
+    const en = entries.get(e);
+    if (text === undefined || en?.pinned === true || str(props, "text").length === 0) return 0;
+    return askBand(en, rect.w, rect.h, zoom, dpr);
+  };
+
   /** Nothing owed to the queue for `e` any more (its band came back, its words moved, it left): its ask withdrawn. */
   const unask = (e: Entity, en: Entry): void => {
     if (en.want === 0) return;
@@ -326,14 +340,12 @@ export function createWriting(opts: WritingOptions): Writing {
     return "done";
   };
 
-  /** Ask the queue for note `e`'s raster at `band`: its tier by what it shows meanwhile, the nearest the view's centre first within it. */
-  const ask = (e: Entity, en: Entry, rect: { readonly cx: number; readonly cy: number }, band: number, view: View, Q: NonNullable<KindHost["rasters"]>): void => {
+  /** Ask the queue for note `e`'s raster at `band`: its tier by what it shows meanwhile, the nearest the view's centre (`px`) first within it. */
+  const ask = (e: Entity, en: Entry, band: number, px: number, Q: NonNullable<KindHost["rasters"]>): void => {
     en.want = band;
     const shows = en.raster === null ? "nothing" : en.raster.band < band ? "magnified" : "minified";
-    const dx = rect.cx - (view.camX + view.width / (2 * view.zoom));
-    const dy = rect.cy - (view.camY + view.height / (2 * view.zoom));
     en.run ??= () => run(e);
-    Q.ask(OWNER, e, rasterPriority(shows, Math.hypot(dx, dy) * view.zoom), en.run);
+    Q.ask(OWNER, e, rasterPriority(shows, px), en.run);
   };
 
   const entryOf = (e: Entity): Entry => {
@@ -395,7 +407,7 @@ export function createWriting(opts: WritingOptions): Writing {
         if (r !== null && (r.layout !== L || r.bleed !== bleed)) { unask(e, en); lay(e, en, pages, text, L, rect.w, rect.h, band, false); }
         // none yet, or another band (a rung crossed): the queue's (K6b) — what it holds stands until its turn; without one, at once
         else if (r === null || r.band !== band) {
-          if (queue !== undefined) ask(e, en, rect, band, view, queue);
+          if (queue !== undefined) ask(e, en, band, Math.hypot(rect.cx - (view.camX + view.width / (2 * view.zoom)), rect.cy - (view.camY + view.height / (2 * view.zoom))) * view.zoom, queue);
           else lay(e, en, pages, text, L, rect.w, rect.h, band, false);
         } else unask(e, en);   // nothing owed: the zoom came back to the band it holds
       }
@@ -416,10 +428,17 @@ export function createWriting(opts: WritingOptions): Writing {
       };
     },
 
-    bandOf(e, props, rect, zoom, dpr) {
+    bandOf: (e, props, rect, zoom, dpr) => bandAsked(e, props, rect, zoom, dpr),
+
+    rungOf(e, props, rect, zoom, dpr, px) {
+      const band = bandAsked(e, props, rect, zoom, dpr);
       const en = entries.get(e);
-      if (text === undefined || en?.pinned === true || str(props, "text").length === 0) return 0;
-      return askBand(en, rect.w, rect.h, zoom, dpr);
+      // no queue, or nothing laid out to raster yet (a record not made, the face loading): the record's own draw asks, at once
+      if (queue === undefined || band === 0 || en?.layout === undefined) return band;
+      const held = en.raster?.band ?? 0;
+      if (band !== held) ask(e, en, band, px, queue);
+      else unask(e, en);
+      return held;
     },
 
     layoutOf: (e) => entries.get(e)?.layout,

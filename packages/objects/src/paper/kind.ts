@@ -126,8 +126,9 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
     ...program,
     reach: paperReach(law),
     // the record reads the view's zoom and dpr ONLY through the ink's band (paper.ts `rasterBand`) — its RUNG (K6b): a zoom within the
-    // band remakes nothing, a crossing remakes the note; nothing else of the camera (D6)
-    rung: (c: RungContext): number => (c.local as Partial<Pick<Writing, "bandOf">> | undefined)?.bandOf?.(c.entity, c.props, c.rect, c.zoom, c.dpr) ?? 0,
+    // band remakes nothing; a crossing remakes the note, or — the frame queue's — asks for the new band and remakes it when it lands
+    // (writing.ts `rungOf`); nothing else of the camera (D6)
+    rung: (c: RungContext): number => (c.local as Partial<Pick<Writing, "rungOf">> | undefined)?.rungOf?.(c.entity, c.props, c.rect, c.zoom, c.dpr, c.px) ?? 0,
     local: (host: KindHost): Writing => createWriting({
       pages: pagesOf(host),
       text: host.text,

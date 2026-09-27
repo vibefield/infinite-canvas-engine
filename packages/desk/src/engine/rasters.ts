@@ -18,6 +18,8 @@ import type { Entity } from "@ice/core";
 export type RasterRun = () => "done" | "wait";
 
 export interface RasterQueueStats {
+  /** The frame's budget, ms. */
+  readonly budgetMs: number;
   /** Asks waiting for their turn, and those held for room. */
   readonly waiting: number;
   readonly held: number;
@@ -27,9 +29,10 @@ export interface RasterQueueStats {
   readonly ms: number;
   /** Asks let go unrun: their object was not drawn when their turn came. */
   readonly dropped: number;
-  /** The most runs one turn made, and the most ms one turn spent. */
+  /** The most runs one turn made, the most ms one turn spent, and the most one run took — a turn overshoots its budget by at most its last run. */
   readonly peakRuns: number;
   readonly peakMs: number;
+  readonly dearest: number;
 }
 
 export interface RasterQueue {
@@ -115,6 +118,7 @@ export function createRasterQueue(opts: RasterQueueOptions = {}): RasterQueue {
   let dropped = 0;
   let peakRuns = 0;
   let peakMs = 0;
+  let dearest = 0;
   const remove = (k: string, a: Ask): void => { asks.delete(k); if (!a.held) waiting -= 1; };
   return {
     budgetMs,
@@ -154,6 +158,7 @@ export function createRasterQueue(opts: RasterQueueOptions = {}): RasterQueue {
         const r0 = clock();
         const verdict = a.run();
         const took = clock() - r0;
+        if (took > dearest) dearest = took;
         const c = cost.get(a.owner);
         cost.set(a.owner, { mean: c === undefined ? took : 0.7 * c.mean + 0.3 * took, last: took });
         n += 1;
@@ -170,6 +175,6 @@ export function createRasterQueue(opts: RasterQueueOptions = {}): RasterQueue {
       return n;
     },
     get size() { return waiting; },
-    stats: () => ({ waiting, held: asks.size - waiting, ran, turns, ms, dropped, peakRuns, peakMs }),
+    stats: () => ({ budgetMs, waiting, held: asks.size - waiting, ran, turns, ms, dropped, peakRuns, peakMs, dearest }),
   };
 }

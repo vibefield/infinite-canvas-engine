@@ -8,7 +8,7 @@
 // when a look is changed under the builder's feet (the control that proves the checker bites).
 import { createCanvasEngine, type Entity, Grab, NO_ENTITY, Position, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, DEFAULT_GRID, type KindLocal } from "@ice/desk";
+import { createDeskBuilder, createRasterQueue, type DeskBuilder, DEFAULT_GRID, type KindHost, type KindLocal } from "@ice/desk";
 import type { HandMetrics, InkBitmap, TextRaster } from "@ice/desk/kit";
 import type { SpatialSource } from "../../desk/src/compose/builder";
 import { minimatKind } from "../src/minimat/kind";
@@ -45,7 +45,7 @@ function makeDesk(indexed = false, locals?: ReadonlyMap<string, KindLocal>) {
 }
 
 /** The paper's WRITING over a counting text raster and real shelves (the writing's own test has the fuller fakes): what the rung law reads. */
-function inkLocal() {
+function inkLocal(queued: { queue?: KindHost["rasters"]; remake?: KindHost["remake"] } = {}) {
   const metrics: HandMetrics = { ascent: 0.8, descent: 0.2, advance: () => 0.5 };
   const bands: number[] = [];
   const text: TextRaster = {
@@ -60,7 +60,7 @@ function inkLocal() {
   };
   const shelves = new InkShelves(2048, 4);
   const pages: InkPages = { alloc: (w, h) => shelves.alloc(w, h), free: (r) => shelves.free(r), write: (r) => uvOf(r.x, r.y, r.w, r.h, 2048, 2048), reset: () => shelves.reset(), trim: () => shelves.trim() };
-  return { writing: createWriting({ pages: () => pages, text }), bands };
+  return { writing: createWriting({ pages: () => pages, text, ...queued }), bands };
 }
 
 describe("persistent records · the builder (design-015 §4.3; D6)", () => {
@@ -124,6 +124,7 @@ describe("persistent records · the builder (design-015 §4.3; D6)", () => {
       const f = build(at(zoom));
       expect(f.stats.work.recorded).toBe(1);
       expect(f.stats.work.rungs).toBe(4);
+      expect([f.stats.work.rerung, f.stats.work.rezoomed, f.stats.work.fresh]).toEqual([0, 1, 0]);   // the mat's zoom, no note's rung
       expect(recordOf(f, minimat as number)).not.toBe(recordOf(a, minimat as number));
       for (const e of [...written, empty]) expect(recordOf(f, e as number)).toBe(recordOf(a, e as number));   // identity: the very record
     }
@@ -131,6 +132,7 @@ describe("persistent records · the builder (design-015 §4.3; D6)", () => {
     // a CROSSING (3.0 > 2√2 → 4): the three written notes are remade and rastered at 4; the empty sheet asks no band and stands
     const c = build(at(1.5));
     expect(c.stats.work.recorded).toBe(4);
+    expect([c.stats.work.rerung, c.stats.work.rezoomed]).toEqual([3, 1]);   // three rungs moved, and the mat's zoom
     expect(ink.bands.slice(rasters)).toEqual([4, 4, 4]);
     expect(recordOf(c, empty as number)).toBe(recordOf(a, empty as number));
     for (const e of written) expect(recordOf(c, e as number)).not.toBe(recordOf(a, e as number));
@@ -138,6 +140,34 @@ describe("persistent records · the builder (design-015 §4.3; D6)", () => {
     const d = build({ x: 30, y: -20, zoom: 1.5 });
     expect(d.stats.work.rungs).toBe(0);
     expect(d.stats.work.recorded).toBe(0);
+  });
+
+  it("THE RUNG LAW under the frame queue (K6b): a crossing remakes NO note — its rung is the band it HOLDS; the band the zoom wants is asked of the queue, and each landing remakes its note", () => {
+    const q = createRasterQueue({ budgetMs: 1e9 });
+    const into: { builder?: DeskBuilder } = {};   // the remake door is bound late: the builder is made after its locals
+    const ink = inkLocal({ queue: q, remake: (e) => into.builder?.remake(e) });
+    const { step, build, settle, note, builder } = makeDesk(false, new Map([["paper", ink.writing]]));
+    into.builder = builder;
+    const written = [note(200, 200, { text: "one" }), note(500, 200, { text: "two" })];
+    step(3);
+    const at = (zoom: number) => ({ x: 0, y: 0, zoom });
+    settle(at(1.2));   // on screen: their first rasters asked …
+    expect(q.size).toBe(2);
+    q.drain();         // … laid by the queue's turn, their records remade at the next build
+    const a = build(at(1.2));
+    expect(a.stats.work.recorded).toBe(2);
+    expect(written.map((e) => ink.writing.rasterOf(e)?.band)).toEqual([2 ** 1.5, 2 ** 1.5]);
+    // a CROSSING (3.0 > 2√2 → 4): the rungs are read and ask — no note is remade, the old rasters stand
+    const c = build(at(1.5));
+    expect([c.stats.work.recorded, c.stats.work.rerung, c.stats.work.rungs, q.size]).toEqual([0, 0, 2, 2]);
+    expect(ink.bands.slice(-2)).toEqual([2 ** 1.5, 2 ** 1.5]);
+    // the queue's turn: laid at 4, each note remade (stale) at the next build — and only they
+    q.drain();
+    const d = build(at(1.5));
+    expect(d.stats.work.recorded).toBe(2);
+    expect(written.map((e) => ink.writing.rasterOf(e)?.band)).toEqual([4, 4]);
+    for (const o of d.objects) expect(o.record).not.toBe(c.objects.find((p) => p.key === o.key)?.record);
+    expect(build(at(1.5)).stats.work.recorded).toBe(0);
   });
 
   it("a spring moving remakes its object every build until it snaps; then a pan reuses it again", () => {

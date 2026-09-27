@@ -167,9 +167,17 @@ export interface BuildWork {
   readonly reused: number;
   /** A kind's `rung` read (K6b): of each drawn object of a kind with one, on a frame its slot's zoom or the dpr moved — a remake only when it moved. */
   readonly rungs: number;
+  /**
+   * Why records were remade (K6b, a rig's witness — the zoom's): the object had none (it came on screen), its RUNG moved, a `rezoom`
+   * kind's zoom moved, its kind's own state was restless (a board's density raised). Counted per cause: one remake may count twice.
+   */
+  readonly fresh: number;
+  readonly rerung: number;
+  readonly rezoomed: number;
+  readonly restless: number;
 }
 type MutableWork = { -readonly [K in keyof BuildWork]: number };
-const ZERO_WORK: BuildWork = { queried: 0, visited: 0, sorted: 0, resolved: 0, recorded: 0, reused: 0, rungs: 0 };
+const ZERO_WORK: BuildWork = { queried: 0, visited: 0, sorted: 0, resolved: 0, recorded: 0, reused: 0, rungs: 0, fresh: 0, rerung: 0, rezoomed: 0, restless: 0 };
 
 export interface DeskBuilderStats {
   /** Objects Active in the frame this build saw. */
@@ -498,7 +506,7 @@ const lodEase = (from: number, to: number, u: number): number => (u >= 1 ? to : 
 export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskBuilder {
   const S = opts.springs ?? SPRINGS;
   /** The one context every `rung` read is handed (K6b): filled afresh before each read, never kept by a kind. */
-  const rungCtx: { -readonly [K in keyof RungContext]: RungContext[K] } = { entity: NO_ENTITY, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, zoom: 1, dpr: 1, local: undefined };
+  const rungCtx: { -readonly [K in keyof RungContext]: RungContext[K] } = { entity: NO_ENTITY, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, zoom: 1, dpr: 1, local: undefined, px: 0 };
   const locals = opts.locals;
   /** The entity is gone from this desk for good: its kind's own state lets go of it (D2c). */
   const forget = (kind: ObjectKind, e: Entity): void => { locals?.get(kind.name)?.forget?.(e); };
@@ -766,7 +774,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       if (disposed) return { objects: [], portals: [], grid, marks: marks.frame({ rows: [], cam, view: vp, dt: 0, night: false, rulers: null }), stats: EMPTY_STATS };
       seq += 1;
       lastCam = cam;
-      work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0; work.reused = 0; work.rungs = 0;
+      work.queried = 0; work.visited = 0; work.sorted = 0; work.resolved = 0; work.recorded = 0; work.reused = 0; work.rungs = 0; work.fresh = 0; work.rerung = 0; work.rezoomed = 0; work.restless = 0;
       const now = bopts.now ?? 0;
       const portalsOn = bopts.portals !== false;
       const restless = bopts.restless;
@@ -803,10 +811,12 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // zoom is the SLOT's (an inside's camera is its host's face's, which a lift or the content moves with the root camera still) — each
       // record keeps the zoom it was made at; the dpr is the frame's
       const redpr = vp.dpr !== lastDpr;
-      /** A `rung` kind's word on `e` at its slot's `zoom` (K6b), through the one scratch context — a zoom asks it of every drawn object. */
-      const rungOf = (kind: ObjectKind, e: Entity, st: ObjectState, zoom: number): number => {
+      /** A `rung` kind's word on `e` under its slot's camera (K6b), through the one scratch context — a zoom asks it of every drawn object. */
+      const rungOf = (kind: ObjectKind, e: Entity, st: ObjectState, cam: CameraState): number => {
         work.rungs += 1;
-        rungCtx.entity = e; rungCtx.rect = st.rect; rungCtx.props = st.props; rungCtx.zoom = zoom; rungCtx.dpr = vp.dpr; rungCtx.local = locals?.get(kind.name);
+        const r = st.rect;
+        rungCtx.entity = e; rungCtx.rect = r; rungCtx.props = st.props; rungCtx.zoom = cam.zoom; rungCtx.dpr = vp.dpr; rungCtx.local = locals?.get(kind.name);
+        rungCtx.px = Math.hypot(r.cx - (cam.x + vp.width / (2 * cam.zoom)), r.cy - (cam.y + vp.height / (2 * cam.zoom))) * cam.zoom;
         return kind.rung?.(rungCtx) ?? 0;
       };
       lastDpr = vp.dpr;
@@ -931,15 +941,18 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           const give = slot === "root" ? marks.giveOf(e) : 0;
           const fluxMoved = springs ? stepSprings(e, st) : false;
           const kind = st.kind;
-          let remake = st.record === null || st.geometry === null || st.stale || remakeAll || fluxMoved || prevSlot !== slot || give !== st.give
+          const fresh = st.record === null || st.geometry === null;
+          let remake = fresh || st.stale || remakeAll || fluxMoved || prevSlot !== slot || give !== st.give
             || kind.composite === true || restless?.has(kind.name) === true;
+          if (fresh) work.fresh += 1;
+          if (restless?.has(kind.name) === true) work.restless += 1;
           // the zoom (D6; K6b): a `rung` kind is remade only when its rung moved — a zoom within the rung remakes and writes nothing, the
           // zoom it was read at kept — and a `rezoom` kind (it reads the zoom continuously) on any move
           if (!remake && (redpr || slotCam.zoom !== st.zoom)) {
             if (kind.rung !== undefined) {
-              if (rungOf(kind, e, st, slotCam.zoom) !== st.rung) remake = true;
+              if (rungOf(kind, e, st, slotCam) !== st.rung) { remake = true; work.rerung += 1; }
               else st.zoom = slotCam.zoom;
-            } else if (kind.rezoom === true) remake = true;
+            } else if (kind.rezoom === true) { remake = true; work.rezoomed += 1; }
           }
           let G: unknown;
           let R: unknown;
@@ -970,7 +983,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             st.stale = false;
             st.give = give;
             st.zoom = slotCam.zoom;
-            st.rung = kind.rung === undefined ? 0 : rungOf(kind, e, st, slotCam.zoom);
+            st.rung = kind.rung === undefined ? 0 : rungOf(kind, e, st, slotCam);
             // the marks go around what was drawn: the kind's frame on the geometry just resolved, ICE's rect (D4a) — kept with the record
             st.markRow = slot === "root"
               ? { entity: e, frame: kind.frame?.(G) ?? rectFrame(drawn), rect: { x0: r.cx - r.w / 2, y0: r.cy - r.h / 2, x1: r.cx + r.w / 2, y1: r.cy + r.h / 2 }, selected: st.selected, locked: st.locked, grabbed: st.grabbed, resizable: st.resizable }
@@ -1289,7 +1302,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       if (deskMoving || deskWasMoving || deskLanded) { deskSeq += 1; if (heldBuild !== undefined) heldBuild = { ...heldBuild, deskSeq }; }
       deskWasMoving = deskMoving;
       lastHand = heldBuild;
-      totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded; totals.reused += work.reused; totals.rungs += work.rungs;
+      totals.queried += work.queried; totals.visited += work.visited; totals.sorted += work.sorted; totals.resolved += work.resolved; totals.recorded += work.recorded; totals.reused += work.reused; totals.rungs += work.rungs; totals.fresh += work.fresh; totals.rerung += work.rerung; totals.rezoomed += work.rezoomed; totals.restless += work.restless;
       stats = { active: list.length, objects: objects.length, culled: list.length - drawnRows, ghosts: ghosts.size, portals: portalsCount, live, work: { ...work }, totals: { ...totals }, mismatches };
       return {
         objects,
