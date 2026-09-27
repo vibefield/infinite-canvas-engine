@@ -245,6 +245,8 @@ export const MARKS = {
   marquee: { edge: 0.8, reach: 12, minSide: 14, count: [14, 18] as const },
   /** A number the desk states: 10 px mono, 8 wider than its text, 15 tall, corner 3.5. */
   pill: { size: 10, pad: 8, height: 15, radius: 3.5 },
+  /** The tray's name tags as LABEL TAPE (K5b, D-K5b.7 — marks/layout.ts `tagMarks`): the embosser's near-black tape and the pale plastic of its raised capitals. */
+  label: { tape: "#17181b", letters: "#ecebe4" },
   /**
    * The laser: a faint line wall to wall (3 px at 12 %, then 1 device px + 0.5 at 34 %, both added), and between the
    * objects it aligns, 14 past them, the bloom (9 · 5 · 2.6 px at 7 · 16 · 32 %, added) under a 1.25 px line at 95 %
