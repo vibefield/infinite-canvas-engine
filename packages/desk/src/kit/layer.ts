@@ -58,8 +58,9 @@ export interface LayerPass {
   readonly dropped?: number;
   /** K6a (D-K6a.3): its frame layer's targets are made (at the first object drawn)… */
   readonly layerMade?: boolean;
-  /** …was one of its objects drawn within `ms`… */
+  /** …was one of its objects drawn within `ms` (and when last: `performance.now()`'s ms — the release's due, K7a)… */
   drawnWithin?(ms: number): boolean;
+  readonly lastDrawn?: number;
   /** …and let them go (made again at the next object drawn). */
   releaseLayer?(): void;
   dispose(): void;
@@ -120,6 +121,12 @@ export abstract class LayeredKind<R, P extends LayerPass> implements KindPass<R>
   idle(ms: number): void {
     const p = this.pass;
     if (p !== null && p.layerMade === true && p.drawnWithin?.(ms) === false) p.releaseLayer?.();
+  }
+
+  /** When `idle(ms)` next lets the layer go — its last object drawn + `ms` (K7a: the host's registered TIME wake); ∞ with none. */
+  idleAt(ms: number): number {
+    const p = this.pass;
+    return p !== null && p.layerMade === true && p.lastDrawn !== undefined ? p.lastDrawn + ms : Number.POSITIVE_INFINITY;
   }
 
   dropped(): number { return this.pass?.dropped ?? 0; }

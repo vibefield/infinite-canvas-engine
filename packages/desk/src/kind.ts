@@ -114,6 +114,11 @@ export interface KindPass<R = unknown> {
    * (K6a's D-K6a.3 — a layered kind's layer): asked each tick of the slots a host keeps beyond the root (the tray's, K5a).
    */
   idle?(ms: number): void;
+  /**
+   * When `idle(ms)` next lets something go (K7a): the host registers it as a TIME wake, so a desk asleep since the drawer shut
+   * still wakes to give the layer back. ∞, or absent: nothing to let go (a pass that says no time is let go at a tick taken anyway).
+   */
+  idleAt?(ms: number): number;
   /** A sheet's marks over its live inside, drawn right after the inside (the mini mat's chips while the inside's objects come in). */
   drawOver?(pass: GPURenderPassEncoder, index: number): void;
   /** This slot's buffers (the shared resources go with the last slot standing). */

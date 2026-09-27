@@ -61,7 +61,7 @@ export async function mountDesk(view: { readonly w: number; readonly h: number; 
   const ce = createCanvasEngine(DESK_ENGINE);
   ce.docs.create();
   ce.world.setResource(Viewport, { w: view.w, h: view.h, dpr: view.dpr });
-  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS], docs: ce.docs, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}) })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog });
+  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS], docs: ce.docs, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}) })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, trayPose: ce.stack.trayPose });
   undo.push(ce.engine.registerReflector(handle.reflector));
   for (let i = 0; i < 100 && handle.status().state === "pending"; i++) await new Promise((r) => setTimeout(r, 5));
   const step = (): boolean => {

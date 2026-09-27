@@ -340,9 +340,10 @@ export interface DeskLayerHandle {
   wakes(): DeskWakes;
   /**
    * The desk's registered wake taken apart (K7a — "why is the desk awake?"): when each part is next due, on `performance.now()`'s
-   * clock (`Infinity`: never on its own) — the reflector's, the drivers' (now while one follows), a kind woken, each kind's `due`.
+   * clock (`Infinity`: never on its own) — the reflector's, the drivers' (now while one follows), a kind woken, each kind's `due`,
+   * the tray's layers' let-go (`tray`, K7a over K5a) and the raster queue's waiting asks (`rasters`, K6b: now while any wait).
    */
-  due(now: number): { readonly at: number; readonly reflector: number; readonly drivers: number; readonly following: readonly string[]; readonly woken: readonly string[]; readonly kinds: Readonly<Record<string, number>> };
+  due(now: number): { readonly at: number; readonly reflector: number; readonly drivers: number; readonly following: readonly string[]; readonly woken: readonly string[]; readonly kinds: Readonly<Record<string, number>>; readonly tray: number; readonly rasters: number };
   geometryOf(e: Entity): unknown | undefined;
   fluxOf(e: Entity): ObjectFlux | undefined;
   lastInputs(): GroundFrameInputs | null;
@@ -602,6 +603,12 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         const d = local.due?.(now) ?? now;
         if (d < t) t = d;
       }
+      // the tray's layers (K5a): their release is a TIME — the last tray draw + LAYER_IDLE_MS — so a desk asleep since the drawer
+      // shut still gives them back (the tick that polled them no longer comes); the frame's raster queue: asks waiting their turn are
+      // due NOW (K6b — it drains over a zoom's next frames), those held for room are not (a drawn frame or a release wakes them)
+      const tray = ground?.trayIdleAt() ?? Number.POSITIVE_INFINITY;
+      if (tray < t) t = tray;
+      if (rasters.size > 0) t = now;
       return t;
     };
     const stopWake = frame?.wakeWhen("desk", deskDue);
@@ -774,7 +781,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         // the drivers with something to follow NOW (their `idle` asked — a rig's question, never the loop's)
         const busy: string[] = [];
         for (const [type, d] of drivers) if (d.idle?.() !== true) busy.push(type);
-        return { at: deskDue(now), reflector: compose.due(now), drivers: following ? now : Number.POSITIVE_INFINITY, following: busy, woken: [...woken], kinds };
+        return { at: deskDue(now), reflector: compose.due(now), drivers: following ? now : Number.POSITIVE_INFINITY, following: busy, woken: [...woken], kinds, tray: ground?.trayIdleAt() ?? Number.POSITIVE_INFINITY, rasters: rasters.size > 0 ? now : Number.POSITIVE_INFINITY };
       },
       geometryOf: (e) => builder.geometryOf(e),
       fluxOf: (e) => builder.fluxOf(e),

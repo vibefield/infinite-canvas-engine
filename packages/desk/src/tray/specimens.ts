@@ -338,6 +338,13 @@ export class TraySlots {
     for (const s of this.slots.values()) for (const k of s.kinds.values()) k.pass.idle?.(ms);
   }
 
+  /** When `idle` next lets a layer go — the soonest slot's (K7a: the host's registered time wake); ∞ — nothing to let go. */
+  idleAt(ms: number = LAYER_IDLE_MS): number {
+    let t = Number.POSITIVE_INFINITY;
+    for (const s of this.slots.values()) for (const k of s.kinds.values()) t = Math.min(t, k.pass.idleAt?.(ms) ?? Number.POSITIVE_INFINITY);
+    return t;
+  }
+
   /** The slots made so far (a rig's witness). */
   get size(): number { return this.slots.size; }
 

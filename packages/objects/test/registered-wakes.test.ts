@@ -4,7 +4,7 @@
 // the layer's own (`perf().kindTicks`, `driverAsks`): a step a registered time alone starts (`frame.settled()`) asks no driver and
 // ticks no kind but one due; and each kind's `due` answers now while it moves, a time when it has one, never at rest.
 
-import type { Entity } from "@ice/core";
+import { closeTray, type Entity, openTray } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LAYER_IDLE_MS } from "@ice/desk/kit";
 import type { BoardInk } from "../src/board/kind";
@@ -129,4 +129,37 @@ describe("the kinds' registered wakes (K7a): nothing is polled at rest", () => {
     midnight.setHours(24, 0, 0, 0);
     expect(at - performance.now()).toBeLessThanOrEqual(Math.max(LAYER_IDLE_MS, midnight.getTime() - Date.now()) + 1000);
   });
+});
+
+describe("the tray's layers under the sleeping loop (K7a over K5a)", () => {
+  let desk: DeskMount;
+  beforeAll(async () => { desk = await mountDesk(); });
+  afterAll(() => { desk?.dispose(); });
+
+  it("the drawer shut, its notebook's and calendar's layers go at a registered TIME — the last tray draw + LAYER_IDLE_MS — never by a tick the sleeping loop no longer takes", async () => {
+    expect(desk.toSleep()).toBeLessThan(400);
+    expect(desk.handle.due(performance.now()).tray).toBe(Number.POSITIVE_INFINITY);   // nothing drawn in the tray: nothing to let go
+    // the drawer's slide runs on the clock (340 ms): stepped while it moves, its composite specimens asking their slots' passes made —
+    // which land between frames (their pipelines are made asynchronously)
+    const slide = async (): Promise<void> => { const end = performance.now() + 500; while (performance.now() < end) { desk.step(); await new Promise((r) => setTimeout(r, 8)); } };
+    openTray(desk.ce.world);
+    expect(desk.step()).toBe(false);   // the drawer on its way keeps the reflector's frame owed (`tray.live()`): due now, no sleep mid-slide
+    await slide();
+    expect(desk.toSleep()).toBeLessThan(400);   // the drawer out, its specimens drawn through their own slots' passes, at rest
+    expect(desk.handle.tray.state().specimens.map((q) => q.type)).toEqual(expect.arrayContaining(["desk.notebook", "desk.calendar"]));
+    closeTray(desk.ce.world);
+    await slide();
+    expect(desk.toSleep()).toBeLessThan(400);   // shut, at rest: the loop sleeps…
+    const shut = performance.now();
+    const due = desk.handle.due(shut);
+    // …until the tray's layers are due to go — the desk's only registered time (nothing on the desk)
+    expect(due.tray).toBeGreaterThan(shut);
+    expect(due.tray - shut).toBeLessThanOrEqual(LAYER_IDLE_MS);
+    expect(due.at).toBe(due.tray);
+    // at that time one step lets them go, and nothing is due after
+    await new Promise((r) => setTimeout(r, due.tray - performance.now() + 20));
+    desk.step();
+    expect(desk.handle.due(performance.now()).tray).toBe(Number.POSITIVE_INFINITY);
+    expect(desk.handle.due(performance.now()).at).toBe(Number.POSITIVE_INFINITY);
+  }, 20_000);
 });

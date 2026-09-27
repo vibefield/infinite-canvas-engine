@@ -6,7 +6,7 @@
 // switch each paint ONE frame; a selection paints until its spring settles and then stops; the
 // ambient in `live` mode paints every frame and `still` never on its own; the pull happens every
 // tick even before the ground is here, and the first frame after it arrives paints.
-import { Camera, createCanvasEngine, Grab, NO_ENTITY, Viewport, writeRuntimeResource } from "@ice/core";
+import { Camera, createCanvasEngine, Grab, NO_ENTITY, openTray, Viewport, writeRuntimeResource } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAmbient, createDeskBuilder, createDeskReflector, Ground, type KindLocal } from "@ice/desk";
 import { looksOf } from "../../desk/src/compose/reflector";
@@ -15,6 +15,7 @@ import { minimatKind } from "../src/minimat/kind";
 import { notebookKind } from "../src/notebook/kind";
 import { paperKind } from "../src/paper/kind";
 import { MAT_SHADER_FILES, matShaders } from "../../desk/src/mat/shaders";
+import { trayShaders } from "../../desk/src/tray/shaders";
 import { MiniMat, Note, Notebook } from "../src";
 import { shaderText } from "../src/shaders";
 import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
@@ -237,5 +238,40 @@ describe("the hand under the DEFAULT ambient (design-015 §8, §11.4; D7)", () =
     expect(builder.hand()).toBeUndefined();
     expect(step(10)).toBe(10);
     expect(desk.stats().ambient.phase).toBe("live");
+  });
+});
+
+describe("the tray's specimens and the sleeping loop (K7a over K5a)", () => {
+  const undo: (() => void)[] = [];
+  beforeAll(() => { undo.push(installGpuFlags()); });
+  afterAll(() => { for (const u of undo.splice(0)) u(); });
+
+  it("a notebook specimen's pass made OUTSIDE a frame is a wake from outside: the reflector tells the host (`onWake(\"tray\")`), so a loop asleep since the drawer rested draws it", async () => {
+    const ce = createCanvasEngine({ widgets: [Note, Notebook] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 2 });
+    const { device, queue } = fakeDevice();
+    const kinds = [paperKind(), notebookKind()];
+    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, tray: trayShaders(shaderText) });
+    const builder = createDeskBuilder(ce.world, { objects: [Note, Notebook] });
+    const ambient = createAmbient({ mode: "still", random: () => 0.5 });
+    const bookPalette = { ...palette, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] } };
+    const woke: string[] = [];
+    const desk = createDeskReflector({ world: ce.world, builder, kinds, ambient, ground: () => ground, attach: { resize: () => {} }, theme: THEMES.light, palette: bookPalette, onWake: (r) => woke.push(r) });
+    ce.engine.registerReflector(desk.reflector);
+    desk.ready();
+    let now = 0;
+    const step = (n = 1): number => { const before = queue.submits; for (let i = 0; i < n; i++) { now += 16; ce.step(now); } return queue.submits - before; };
+    step(2);
+    openTray(ce.world);
+    // the pose seam — the renderer's word on the drawer (the layer host's, here a still one): the lattice law lays the specimens on it
+    ce.stack.trayPose.current = { frame: () => ({ x: 40, y: 348, w: 720, h: 252, p: 1, max: 0, pitch: 40, scroll: 0 }) };
+    expect(step(40)).toBeGreaterThan(0);   // the drawer slides out over the specimens — the notebook's asks its slot's pass made
+    expect(step(10)).toBe(0);              // …and rests: nothing moves, a host's loop would sleep here
+    expect(desk.traySpecimens().map((q) => q.type)).toContain("desk.notebook");
+    const before = woke.filter((r) => r === "tray").length;
+    await new Promise((r) => setTimeout(r, 0));   // the pass lands — between frames
+    expect(woke.filter((r) => r === "tray").length).toBe(before + 1);
+    expect(step()).toBe(1);                // the woken frame draws the specimen through its pass
   });
 });

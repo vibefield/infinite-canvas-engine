@@ -699,6 +699,8 @@ export class Ground {
 
   /** The tray's slots let go of what they make again at their next draw once undrawn a while (D-K6a.3; `TraySlots.idle`) — every tick. */
   idleTray(): void { this.traySlots?.idle(); }
+  /** When `idleTray` next lets a tray layer go (K7a — a time the host registers; ∞ — nothing to let go). */
+  trayIdleAt(): number { return this.traySlots?.idleAt() ?? Number.POSITIVE_INFINITY; }
 }
 
 /** The specimens' name tags this frame (K5a): each label centred under its specimen — below a shelf's plank — in screen px. */
