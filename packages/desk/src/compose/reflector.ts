@@ -291,7 +291,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       if (trayed !== undefined && trayed.p > 0 && tray.pinned()?.bare !== true) {
         const specimens = readSpecimens(w, te, opts.locals);
         if (specimens.length > 0) {
-          ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), () => { dirty = true; wakes.tray += 1; outside("tray"); });
+          ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), trayLanded);
           for (const q of specimens) if (q.local !== undefined) faced.set(q.key, q.local as KindLocal);
           drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p, trayed.lift), scroll: trayed.scroll }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
           trayed = { ...trayed, specimens: drawnSpecimens };
@@ -350,7 +350,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
           made.push(carriedFrame(pose, { kind, rect: { x: -n.w / 2, y: -n.h / 2, w: n.w, h: n.h }, props: takenProps(widget), key, lamp: { x: L.x - cx, y: L.y - cy, h: L.h }, ...(copyLocal !== undefined ? { local: copyLocal } : {}) }, env));
         }
         // a composite kind's pass is made async: made ahead, from the lift, so the hand-off never waits a frame for it
-        ground.warmTray(carry.types().flatMap((t) => { const k = objectKindOf(widgetTypeFor(w, t)); return k === undefined ? [] : [[carrySlot(t), k.name] as const]; }), () => { dirty = true; wakes.tray += 1; outside("tray"); });
+        ground.warmTray(carry.types().flatMap((t) => { const k = objectKindOf(widgetTypeFor(w, t)); return k === undefined ? [] : [[carrySlot(t), k.name] as const]; }), trayLanded);
         drawnCarried = made;
         if (made.length > 0) trayed = { ...trayed, carried: made };
       }
@@ -388,6 +388,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   };
 
   const outside = (reason: string): void => { opts.onWake?.(reason); };
+  /** A tray pass made BETWEEN frames — a specimen's slot, a carried copy's (composite kinds' passes are made async): a frame is owed, and
+   *  the loop may sleep since the drawer rested — a door from outside (K7a). */
+  const trayLanded = (): void => { dirty = true; wakes.tray += 1; outside("tray"); };
   return {
     reflector,
     ready() { dirty = true; outside("ready"); },

@@ -4,9 +4,10 @@
 // undrawn (a frame drawn for another object's sake with the wind still). On the fake device every render pass the desk
 // begins is logged by label, and every texture it makes is kept with its size, so what a frame drew and holds is counted.
 
-import { Camera, type Entity } from "@ice/core";
+import { Camera, type Entity, openTray } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BOX_STEP } from "@ice/desk/kit";
+import { TILE_TEX } from "../src/calendar/tiles";
 import { type DeskMount, mountDesk } from "./desk-mount";
 
 describe("the books' layers (K7a)", () => {
@@ -89,4 +90,41 @@ describe("the books' layers (K7a)", () => {
       expect(w <= 2 * BOX_STEP && h <= 2 * BOX_STEP, `a box, not the 1200 × 800 canvas: ${w} × ${h}`).toBe(true);
     }
   });
+});
+
+describe("a tray specimen reading the desk's print (K7a over K5b)", () => {
+  let desk: DeskMount;
+  beforeAll(async () => { desk = await mountDesk(); });
+  afterAll(() => { desk?.dispose(); });
+
+  it("lays its layer again undrawn only while the print it samples stands: a tile written into the desk's print draws it again", async () => {
+    desk.handle.setAmbient("still");   // the wind still: the slots' view blocks stand between frames
+    const a = desk.ce.ops.spawnWidget("desk.note", { x: 100, y: 100 });
+    const b = desk.ce.ops.spawnWidget("desk.note", { x: 100, y: 330 });
+    desk.ce.ops.spawnWidget("desk.calendar", { x: 950, y: 160 });
+    desk.toSleep();
+    // the drawer out (its slide runs on the clock), the calendar's specimen made — its pass samples the ROOT's print (`sharePrintOf`)
+    openTray(desk.ce.world);
+    const end = performance.now() + 500;
+    while (performance.now() < end) { desk.step(); await new Promise((r) => setTimeout(r, 8)); }
+    desk.toSleep();
+    expect(desk.handle.tray.state().specimens.map((q) => q.type)).toContain("desk.calendar");
+    const layers = (from: number): number => desk.log.slice(from).filter((l) => l === "pass calendar/layer").length;
+    const root = (desk.handle.ground()?.pass("calendar") as { pass?: { writeTileBytes(layer: number, bytes: Uint8Array<ArrayBuffer>): void } | null } | undefined)?.pass;
+    expect(root).toBeTruthy();
+    // the print's tile array made first (its first tile allocates it — both passes bind it again, which draws their layers anyway)
+    root?.writeTileBytes(0, new Uint8Array(TILE_TEX * TILE_TEX * 4));
+    desk.ce.ops.setSelection([b]);
+    desk.toSleep();
+    let from = desk.log.length;
+    desk.ce.ops.setSelection([a]);   // a frame for another object's sake: nothing either calendar reads moved
+    desk.toSleep();
+    expect(layers(from), "both calendars' layers laid again undrawn").toBe(0);
+    // a tile written into the desk's print, the array standing: the desk pad's input — and the specimen's, which samples it
+    root?.writeTileBytes(0, new Uint8Array(TILE_TEX * TILE_TEX * 4).fill(255));
+    from = desk.log.length;
+    desk.ce.ops.setSelection([b]);
+    desk.toSleep();
+    expect(layers(from), "the desk pad's layer AND the specimen's drawn again").toBe(2);
+  }, 20_000);
 });

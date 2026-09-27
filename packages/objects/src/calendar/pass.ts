@@ -573,7 +573,9 @@ export class CalendarPass {
     this.t.layer.fit(at, size);
     const sig = this.sig;
     const view = this.mat.viewBytes;
-    sig[0] = this.gen; sig[1] = this.t.meshGen; sig[2] = view === undefined ? Number.NaN : (this.mat.silhouetteKey ?? Number.NaN);
+    // (the pass's resources — and, a specimen sampling the desk's print (K5b `sharePrintOf`), the print's too: a tile or a page table
+    // written there is this layer's input; both counts only rise, so their sum moves when either does)
+    sig[0] = this.print === this ? this.gen : this.gen + this.print.gen; sig[1] = this.t.meshGen; sig[2] = view === undefined ? Number.NaN : (this.mat.silhouetteKey ?? Number.NaN);
     sig[3] = this.t.list.length; sig[4] = x0; sig[5] = y0; sig[6] = x1; sig[7] = y1;
     const read = this.read;
     read.length = 0;
