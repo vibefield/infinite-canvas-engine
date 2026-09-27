@@ -202,6 +202,9 @@ export class PictureStore {
     if (slotted) this.group = this.bind();
   }
 
+  /** Asks the next `step` has to answer — what a frame drew since the last step (K7a: the kind is due until it answers them). */
+  pending(): boolean { return this.asked.size > 0; }
+
   /** A print asked for its picture at `lod` this frame (a slot's prepare). */
   ask(pic: Picture, lod: number): void {
     const p = this.pictures.get(pic.id);

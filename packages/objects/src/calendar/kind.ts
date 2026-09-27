@@ -256,6 +256,8 @@ export const DRAFT_ID = -1;
 
 /** The calendar's own state on one desk: each pad's id and page-table slots, its pinned still, its print and marks; the print's presences on the root pass. */
 export interface Pads extends KindLocal {
+  /** When the kind is next live (K7a — `KindLocal.due`, declared: the six built-ins all say). */
+  due(now: number): number;
   pin(e: Entity, pose: PadPose | undefined): void;
   /** The world half's: the pad's id, its slot pair (its base sheet's table is 2k, its moving sheet's 2k + 1) and its pin. */
   state(e: Entity): { readonly id: number; readonly slot: number; readonly pose: PadPose | undefined };
@@ -306,9 +308,11 @@ export interface Pads extends KindLocal {
   letGo(e: Entity, now: number, cancel?: boolean): void;
   /** The hands' finished rolls since the last drain — each a month the document should now hold (the hand commits it). */
   rolled(): readonly { readonly e: Entity; readonly month: number }[];
+  /** A hand's finished roll waits for `rolled` to drain it (K7a): the hand is not idle, the kind is due, until it is committed. */
+  rollOwed(): boolean;
   /** A hand's roll the document REFUSED (read-only, a pad gone): the pad rolls back to the document's month. A landed roll is released by the roll itself, once the document speaks (turn.ts, D7 #3). */
   unroll(e: Entity): void;
-  /** A pad is on this desk (D7 #14): the hand's peek needs the pointer every frame while one is, so the hand never idles then. */
+  /** A pad is on this desk (D7 #14): the hand's peek follows the pointer while one is — the hand is idle only while neither the pointer nor the camera moved (K7a). */
   busy(): boolean;
   /** The notes stuck to its pads that go with their months (D3t-c): not drawn, never picked (`KindLocal.veils`). */
   veils(): ReadonlySet<Entity>;
@@ -347,6 +351,8 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   /** The day the print last called today, and when the wall clock is next asked whether it turned over (D7). */
   let dayShown: number | null = null;
   let dayCheckAt = Number.NEGATIVE_INFINITY;
+  /** A month turning at the last tick (its spring on the frame's clock): the kind is due every frame until it lands (K7a). */
+  let rolling = false;
   let ticksOn = true;
   let tiles: PrintTiles | null = null;
   let begun = false;
@@ -383,6 +389,21 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   // host says (`zone`) or a still pins them (`pinToday`, `pinZone`)
   const zoneNow = (): string | undefined => zonePin ?? opts.zone;
   const todayNow = (): number => todayPin ?? todayOf(clock(), zoneNow());
+  /**
+   * When the wall clock next turns the day over (K7a — the kind's registered wake, instead of asking the clock once a second): the
+   * first second after `from` whose day in the pad's zone is not `from`'s — hour by hour (a DST day is 23 or 25), then halved to
+   * the second. A pinned today never turns.
+   */
+  const nextTurn = (from: number): number => {
+    if (todayPin !== null) return Number.POSITIVE_INFINITY;
+    const zone = zoneNow();
+    const d0 = todayOf(from, zone);
+    let lo = from;
+    let hi = from + 3_600_000;
+    for (let i = 0; i < 26 && todayOf(hi, zone) === d0; i++) { lo = hi; hi += 3_600_000; }
+    while (hi - lo > 1000) { const mid = Math.floor((lo + hi) / 2); if (todayOf(mid, zone) === d0) lo = mid; else hi = mid; }
+    return hi;
+  };
   const entriesOf = (e: Entity): CalEvent[] => {
     const out: CalEvent[] = [];
     for (const { entity, value } of host.children?.entries?.(e, CalendarEvent) ?? []) { const ev = calEventOf(entity, value); if (ev !== null) out.push(ev); }
@@ -515,6 +536,10 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     },
     dragTo(e, s, now, moved) { const st = pads.get(e); if (st === undefined) return; dragTo(st.roll, s, now, moved, law, F); woke = true; },
     letGo(e, now, cancel) { const st = pads.get(e); if (st === undefined) return; letGo(st.roll, now, law, F, cancel); woke = true; },
+    rollOwed() {
+      for (const st of pads.values()) if (st.roll.rolled && st.roll.shown !== null) return true;
+      return false;
+    },
     rolled() {
       const out: { e: Entity; month: number }[] = [];
       for (const [e, st] of pads) if (st.roll.rolled && st.roll.shown !== null) { st.roll.rolled = false; out.push({ e, month: st.roll.shown }); }
@@ -527,8 +552,8 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     events: (e) => host.children?.rows(e, CalendarEvent) ?? [],
     today: todayNow,
     // a pin is its own frame, never a turn of the day: the next look at the wall clock starts afresh
-    pinToday(key) { todayPin = key === null ? null : (dayOr(key) ?? null); dayShown = null; woke = true; },
-    pinZone(zone) { zonePin = zone; dayShown = null; woke = true; },
+    pinToday(key) { todayPin = key === null ? null : (dayOr(key) ?? null); dayShown = null; dayCheckAt = Number.NEGATIVE_INFINITY; woke = true; },
+    pinZone(zone) { zonePin = zone; dayShown = null; dayCheckAt = Number.NEGATIVE_INFINITY; woke = true; },
     ticks(on) { if (on !== undefined && on !== ticksOn) { ticksOn = on; woke = true; } return ticksOn; },
     entries: (e) => entriesOf(e),
     printOf: (e, month) => { const st = pads.get(e); return st === undefined ? undefined : prints.get(`${st.id}:${month}`)?.print; },
@@ -593,6 +618,16 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
     /** The budget's ask (D6): the tile texture is the pass's, fixed — always kept. */
     keeps: () => true,
     landed: (e) => landedOf.get(e) ?? 0,
+    // K7a: next live now while a month turns, a pad drew with tiles still to print, or a pin, a peek, a drag asked; when its layer is
+    // made, LAYER_IDLE_MS after it was last drawn; the day's turn at the wall clock's next midnight in the pad's zone — never sooner
+    due(now) {
+      if (woke || rolling || (begun && (tiles?.pending() ?? 0) > 0)) return now;
+      for (const st of pads.values()) if (st.roll.rolled && st.roll.shown !== null) return now;   // a finished roll for the hand to commit
+      if (pads.size === 0) return Number.POSITIVE_INFINITY;
+      const own = passOf();
+      const release = own?.layerMade === true ? own.lastDrawn + LAYER_IDLE_MS : Number.POSITIVE_INFINITY;
+      return Math.min(release, now + Math.max(0, dayCheckAt - clock()));
+    },
     tick(now) {
       // tiles still to draw are a reason for a frame only while a pad DREW since the last tick: a pad culled (the builder resolves
       // nothing off-screen) or gone leaves its count standing, and a count no frame will ever lower kept the desk awake (D7)
@@ -608,12 +643,13 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       lastTick = now;
       let turning = false;
       for (const st of pads.values()) if (st.roll.durable !== null && st.pose === undefined && stepRoll(st.roll, st.roll.durable, dt, law, F)) turning = true;
+      rolling = turning;
       // the day turns over (D7): today's ring and its ticks — an unrolled pad's month too — move at midnight; the wall clock is asked
-      // about once a second, and a pinned today never turns
+      // when the day next turns (K7a — `nextTurn`, the kind's registered wake; it was once a second), and a pinned today never turns
       let turned = false;
       const wall = clock();
       if (wall >= dayCheckAt) {
-        dayCheckAt = wall + 1000;
+        dayCheckAt = nextTurn(wall);
         const d = todayNow();
         turned = dayShown !== null && d !== dayShown;
         dayShown = d;

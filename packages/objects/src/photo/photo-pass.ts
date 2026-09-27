@@ -162,6 +162,8 @@ export class PhotoPass {
    * go for what the last frame's prints asked. True when a print's tier moved (the desk must draw again).
    */
   residency(): boolean { return this.shared.pictures.step(); }
+  /** The last frame's asks still unanswered (K7a): the next tick owes them a `residency` step — a detail fetched, a slot freed. */
+  get residencyOwed(): boolean { return this.shared.pictures.pending(); }
 
   /** The pictures under the desk's budget (the kind's host lends it) — and its ask of what stays. */
   budget(budget: RasterBudget | undefined): void { this.shared.pictures.attach(budget); }

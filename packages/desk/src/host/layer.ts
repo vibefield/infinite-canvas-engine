@@ -173,6 +173,16 @@ export interface DeskLayerContext {
   readonly spatial?: SpatialSource;
   /** The engine's device (`engine.compositorDevice`, D7): the layer draws with it and never acquires its own — ONE device per engine. */
   readonly gpu?: { readonly adapter: GPUAdapter; readonly device: GPUDevice };
+  /**
+   * The engine's frame gate (K7a — the SLEEP, `@ice/core` frame-control.ts): the layer registers the desk's wake (when its reflector,
+   * its kinds and its drivers are next due), wakes a sleeping loop for what arrives outside a step, and on a step a registered time
+   * alone started (`settled`) asks only what is due. Absent (a headless host): every part is asked every step, as before.
+   */
+  readonly frame?: {
+    wake(reason: string): void;
+    wakeWhen(name: string, due: (now: number) => number): () => void;
+    settled(): boolean;
+  };
 }
 
 /** The selection menu's source (D4a): the marks' anchor as of the last frame, and a subscription that fires when it changes. */
@@ -198,6 +208,10 @@ export interface DeskLayerPerf {
   readonly ms: number;
   readonly frames: number;
   readonly frameMs: number;
+  /** Each kind's `tick`, asked (K7a): at rest a kind is asked only when it is due — the registered-wake witness. */
+  readonly kindTicks: Readonly<Record<string, number>>;
+  /** The drivers asked (`idle`, then `follow`): none on a step a registered time alone started (K7a). */
+  readonly driverAsks: number;
 }
 
 /**
@@ -324,6 +338,11 @@ export interface DeskLayerHandle {
   redraws(): number;
   stats(): DeskReflectorStats;
   wakes(): DeskWakes;
+  /**
+   * The desk's registered wake taken apart (K7a — "why is the desk awake?"): when each part is next due, on `performance.now()`'s
+   * clock (`Infinity`: never on its own) — the reflector's, the drivers' (now while one follows), a kind woken, each kind's `due`.
+   */
+  due(now: number): { readonly at: number; readonly reflector: number; readonly drivers: number; readonly following: readonly string[]; readonly woken: readonly string[]; readonly kinds: Readonly<Record<string, number>> };
   geometryOf(e: Entity): unknown | undefined;
   fluxOf(e: Entity): ObjectFlux | undefined;
   lastInputs(): GroundFrameInputs | null;
@@ -424,6 +443,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (k !== undefined && lend !== undefined && !lent.has(k.name)) lent.set(k.name, lend({ text: opts.text }));
     }
     const drawn = (e: Entity): number | undefined => builder.rankOf(e);   // `builder` is made just below; the word is only asked at a tick
+    // THE REGISTERED WAKES (K7a): the kinds a wake named since their last tick
+    const frame = ctx.frame;
+    const woken = new Set<string>();
+    const wakeKind = (name: string): void => { woken.add(name); frame?.wake("desk:kind"); };
     // THE RASTER BUDGET (D6): one ledger for every kind's raster caches; trimmed once a tick by each kind's word on what is on screen
     const budget = createRasterBudget(opts.rasterBudget ?? DEFAULT_RASTER_BUDGET);
     // THE FRAME'S RASTER QUEUE (K6b): the kinds' re-rasters under one budget a frame, its turn once a tick before the build; an ask
@@ -433,7 +456,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const rasters = createRasterQueue({ ...(opts.rasterMs !== undefined ? { budgetMs: opts.rasterMs } : {}), shows: (e) => builder.shows(e) || compose.trayShows(e) });
     const remake = (e: Entity): void => { builder.remake(e); if (compose.trayShows(e)) compose.wake("ink"); };
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print: lent.get(k.name)?.print, drawn, budget, rasters, remake });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print: lent.get(k.name)?.print, drawn, budget, rasters, remake, wake: () => wakeKind(k.name) });
       if (local !== undefined) locals.set(k.name, local);
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
@@ -470,6 +493,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       theme: opts.theme, palette: opts.palette, grid, locals,
       ...(opts.maxDpr !== undefined ? { maxDpr: opts.maxDpr } : {}),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
+      // a frame asked for outside the flush — a pin, an ink landing, the ground arriving, a theme: a sleeping loop wakes (K7a)
+      onWake: (reason) => frame?.wake(`desk:${reason}`),
     });
     motionQuery?.addEventListener("change", syncMotion);   // armed once `compose` exists (D7: never a listener over a binding in its TDZ)
 
@@ -510,19 +535,39 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     for (const t of types) hostOf(t)?.mount?.({ ...domHost(t), editor });
     // the drawing reflector, wrapped: the kinds' flux ticked before it on one clock, the editor placed after it
     let moving = false;
-    const perf = { ticks: 0, ms: 0, frames: 0, frameMs: 0 };
+    /** A driver had something to follow at the last ask (K7a): the desk is due every frame until each is idle again. */
+    let following = false;
+    const kindTicks: Record<string, number> = {};
+    const perf = { ticks: 0, ms: 0, frames: 0, frameMs: 0, driverAsks: 0 };
+    // the kinds whose own state moved (D6): their records are remade this build; the rest stand — told every tick, an empty set
+    // included (no word at all would make the builder ask every object whether a kind lifts it). ONE set, cleared a tick (K7a)
+    const restless = new Set<string>();
     const inner = compose.reflector;
     const reflector: ReflectorDef & { available(): boolean } = {
       ...inner,
       flush(w) {
         const now = performance.now();
         const drawn = compose.redraws();
-        for (const d of drivers.values()) if (d.idle?.() !== true) d.follow(now);
+        // THE REGISTERED WAKES (K7a): a step the loop took for a registered time alone (`settled` — nothing woke it, the tail long
+        // run) asks no driver (they follow input, and none came) and ticks only the kinds due now or woken; any other step asks
+        // every part, as before. A desk at rest takes no step at all — the loop sleeps (dom/loop.ts).
+        const timeAlone = frame?.settled() === true && woken.size === 0 && !compose.dirty();
+        if (!timeAlone) {
+          following = false;
+          for (const d of drivers.values()) {
+            perf.driverAsks += 1;
+            if (d.idle?.() !== true) { following = true; d.follow(now); }
+          }
+        }
         let want = false;
-        // the kinds whose own state moved (D6): their records are remade this build; the rest stand — told every tick, an empty
-        // set included (no word at all would make the builder ask every object whether a kind lifts it)
-        const restless = new Set<string>();
-        for (const [name, local] of locals) if (local.tick?.(now) === true) { want = true; restless.add(name); }
+        restless.clear();
+        for (const [name, local] of locals) {
+          if (local.tick === undefined) continue;
+          if (timeAlone && !woken.has(name) && (local.due?.(now) ?? now) > now) continue;
+          kindTicks[name] = (kindTicks[name] ?? 0) + 1;
+          if (local.tick(now)) { want = true; restless.add(name); }
+        }
+        woken.clear();
         ground?.idleTray();   // the tray's own slots let their layers go once undrawn a while, as the kinds' ticks do the root's (D-K6a.3, K5a)
         // the raster queue's turn (K6b): after the ticks (a kind's tick may ask), before the build — a raster laid now has its record
         // remade in this build (`remake`), so no frame draws a record whose ink moved under it
@@ -545,6 +590,22 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         profiler?.flushed(spent);   // the GPU profiler's frame boundary (K2): returns at once unless armed
       },
     };
+
+    // THE DESK'S REGISTERED WAKE (K7a, `@ice/core` frame-control.ts): after every step the loop asks when the desk is next due — now
+    // while a driver follows or a kind was woken, else the soonest of the reflector's (a frame owed, the wind still moving) and each
+    // kind's own `due` (a motion now, a blink or a layer's release later, nothing at all); a face landing wakes it
+    const deskDue = (now: number): number => {
+      let t = following || woken.size > 0 ? now : compose.due(now);
+      // each kind asked AFTER the step (its draw may have landed something); a kind that never said when is due every frame
+      for (const local of locals.values()) {
+        if (local.tick === undefined) continue;
+        const d = local.due?.(now) ?? now;
+        if (d < t) t = d;
+      }
+      return t;
+    };
+    const stopWake = frame?.wakeWhen("desk", deskDue);
+    const stopText = opts.text?.onVersion?.(() => frame?.wake("desk:text"));
 
     // the pick source (design-015 §4.5): the kinds' mirrors on the builder's geometry — set now, `undefined` for what it cannot see yet (B9)
     const pick = createPickSource(builder, { moving: () => moving });
@@ -695,7 +756,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         }
         return profiler;
       },
-      perf: () => ({ ...perf }),
+      perf: () => ({ ...perf, kindTicks: { ...kindTicks } }),
       memory: () => budget.stats(),
       rasters: () => rasters.stats(),
       gpuMemory: () => ledger,
@@ -707,10 +768,24 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       redraws: () => compose.redraws(),
       stats: () => compose.stats(),
       wakes: () => compose.wakes(),
+      due: (now) => {
+        const kinds: Record<string, number> = {};
+        for (const [name, local] of locals) if (local.tick !== undefined) kinds[name] = local.due?.(now) ?? now;
+        // the drivers with something to follow NOW (their `idle` asked — a rig's question, never the loop's)
+        const busy: string[] = [];
+        for (const [type, d] of drivers) if (d.idle?.() !== true) busy.push(type);
+        return { at: deskDue(now), reflector: compose.due(now), drivers: following ? now : Number.POSITIVE_INFINITY, following: busy, woken: [...woken], kinds };
+      },
       geometryOf: (e) => builder.geometryOf(e),
       fluxOf: (e) => builder.fluxOf(e),
       lastInputs: () => compose.lastInputs(),
-      dirty: () => compose.dirty() || moving,
+      // a kind still moving on its own is one DUE now (K7a): the last tick's want goes stale once the loop sleeps on its drawn frame
+      dirty: () => {
+        if (compose.dirty() || woken.size > 0) return true;
+        const now = performance.now();
+        for (const local of locals.values()) if (local.tick !== undefined && (local.due?.(now) ?? now) <= now) return true;
+        return false;
+      },
       builder,
       local: (name) => locals.get(name),
       editor: () => editor,
@@ -744,6 +819,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       },
       dispose() {
         disposed = true;
+        stopWake?.();
+        stopText?.();
         listeners.clear();
         for (const d of drivers.values()) d.dispose?.();   // the calendar's disposes its DOM half
         editor?.dispose();

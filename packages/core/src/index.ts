@@ -92,7 +92,8 @@ export {
   type PublishHook,
   type SystemRunRecord,
 } from "./engine/engine";
-export { createFrameControl, SETTLE_CAP, type FrameControl } from "./engine/frame-control";
+export { createFrameControl, SETTLE_CAP, SLEEP_TAIL, type FrameControl, type SleepStats } from "./engine/frame-control";
+export { interactionPending } from "./interaction/wakes";
 // The guest runtime (petition I14): the named frame slot for work the engine
 // did not write, under a circuit breaker. The behavior framework compiles onto
 // it (design-009); hosts reach it as `engine.guests`.

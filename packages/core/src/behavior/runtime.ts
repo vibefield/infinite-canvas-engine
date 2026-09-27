@@ -107,6 +107,8 @@ export interface BehaviorRuntimeOpts {
     addSystems(group: PhaseGroup, ...systems: readonly never[]): () => void;
     readonly guests: GuestRegistry;
     onPublish(hook: (world: World) => void): () => void;
+    /** The frame gate's registered wakes (K7a): a behavior with a `tick` hook and instances is due every frame. */
+    readonly frame?: { wakeWhen(name: string, due: (now: number) => number): () => void };
   };
   /** The FORWARDING session seam — the target swaps per doc open/close. */
   readonly session?: () => BehaviorSession | undefined;
@@ -341,6 +343,8 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
     /** The same handle, typed for `readField`'s keyof-based field parameter. */
     readonly ownFields: Component<Record<string, unknown>>;
     readonly guest: DrivenGuest;
+    /** Its registered wake (K7a): frame-cadence code — a `tick` hook with instances keeps a sleeping loop awake. */
+    private readonly stopWake: (() => void) | undefined;
     readonly ownQuery: Query;
     /** Ephemeral only: REMOTE peers' facets of this behavior (read-only). */
     readonly peersQuery: Query | undefined;
@@ -496,6 +500,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
         ...(registration.ledger === undefined ? {} : { ledger: registration.ledger }),
         busy: () => this.owed(),
       });
+      this.stopWake = opts.engine.frame?.wakeWhen(`behavior:${b.name}`, (now) => (b.on.tick !== undefined && this.instances.size > 0 ? now : Number.POSITIVE_INFINITY));
       this.ctx = this.buildCtx();
     }
 
@@ -841,6 +846,7 @@ export function createBehaviorRuntime(opts: BehaviorRuntimeOpts): BehaviorRuntim
       this.ownCollector = undefined;
       this.readsCollector = undefined;
       this.guest.remove();
+      this.stopWake?.();
     }
 
     markGeneration(): void {

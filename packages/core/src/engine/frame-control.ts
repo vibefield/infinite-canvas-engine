@@ -26,6 +26,24 @@
  * transitions. The DOM package's rAF loop is what actually parks and restarts;
  * `engine.step(now)` itself stays callable by hand (headless hosts, traces),
  * because the gate governs the LOOP, not the primitive.
+ *
+ * THE SLEEP (2026-09-27, ICE M21 K7a — design-015 §2.4 idle-zero, §11.4's
+ * ≤ 0.1 ms of main thread a second at rest). A freeze is taken; a sleep is
+ * FALLEN INTO: a host loop that opts in (`startRafLoop(…, { sleep: true })`,
+ * the desk host's default) asks {@link FrameControl.nextStep} after every step
+ * and stops scheduling frames once the engine is QUIET — no wake pending, no
+ * registered wake due, no settle reporter busy, for {@link SLEEP_TAIL} steps
+ * in a row (the tail lets a one-tick protocol — a cleared one-tick tag, a
+ * reaped recognizer, a commit at `JustEnded` — finish without a reporter of
+ * its own). Nothing is polled at rest: what can change the frame from outside
+ * a step says so — the world's outside doors (engine.ts: a write made outside
+ * a step), the input queue, the document's and the room's arrivals (the
+ * facade), a desk's own flux and its assets (`wake`) — and what is next live at
+ * a TIME says when (`wakeWhen`: a flight, a caret's blink, a layer let go,
+ * midnight). A step a sleeping loop takes for a registered time alone is
+ * {@link FrameControl.settled}: a host that polls its parts (the desk's kinds)
+ * asks only the parts that are due. A wake taken INSIDE a step asks for one
+ * more frame and restarts no tail (a kind's wanted frame is not an outside event).
  */
 import type { World } from "@vibecook/strata-ecs";
 import { FrameMode } from "../catalog/camera-derived";
@@ -38,6 +56,30 @@ import { devGuardsEnabled } from "../guards/dev";
  * reporter reads as a hiccup rather than a hang.
  */
 export const SETTLE_CAP = 120;
+
+/**
+ * Quiet steps a sleeping loop takes after the last outside wake (or the last
+ * busy step) before it sleeps (K7a): enough for the interaction stack's
+ * one-tick protocols — a pointer's up processed, its recognizer ended, the
+ * one-tick tags cleared and the recognizer reaped a tick later — to land
+ * without each needing a reporter. Three steps ≈ 50 ms at 60 Hz, once per
+ * outside event; a registered time's step takes none.
+ */
+export const SLEEP_TAIL = 3;
+
+/** What the sleep has done since the control was made (the rigs' and the units' instrument). */
+export interface SleepStats {
+  /** The host loop sleeps now (no frame scheduled; a wake or a registered time restarts it). */
+  readonly asleep: boolean;
+  /** Times the loop fell asleep. */
+  readonly sleeps: number;
+  /** Outside wakes by reason (`world`, `input`, `doc`, `presence`, `desk:…`, …) — each call counted, asleep or not. */
+  readonly wakes: Readonly<Record<string, number>>;
+  /** Steps a registered time started (the loop's own timer, nothing else pending). */
+  readonly timed: number;
+  /** Steps since the control was made (entered through the engine's `step`). */
+  readonly steps: number;
+}
 
 export interface FrameControl {
   /**
@@ -71,6 +113,42 @@ export interface FrameControl {
   claimStep(): boolean;
   /** Wake on any freeze/thaw transition (the host loop restarts here). */
   onChange(fn: () => void): () => void;
+
+  // ── the sleep (K7a) ────────────────────────────────────────────────────────
+  /**
+   * Something happened that the next frame must see — an input, a write from outside a step, a document's or a room's
+   * arrival, an asset landing, a desk's flux: outside a step it restarts a sleeping loop and the tail; inside one it asks
+   * for one more frame. Counted by `reason`.
+   */
+  wake(reason: string): void;
+  /**
+   * A REGISTERED WAKE: after every step the host asks each source when it is next due, on `performance.now()`'s clock —
+   * at or before `now`: the next frame (it still moves); a later time: then (a sleeping loop sets a timer); `Infinity`:
+   * never on its own (only a `wake` brings it back). Returns an idempotent unregister.
+   */
+  wakeWhen(name: string, due: (now: number) => number): () => void;
+  /** The sources due at `now` or before (debug/devtools: "why is the loop awake?") — settle reporters busy included. */
+  due(now: number): readonly string[];
+  /**
+   * For frame hosts, once after every step: when the next step must run — `≤ now`: the next frame; a later time: then;
+   * `Infinity`: only on a wake. CONSUMING (it counts the quiet steps of the tail), never a predicate to poll.
+   */
+  nextStep(now: number): number;
+  /** The host loop fell asleep (`true`) or woke (`false`, `timed`: for a registered time alone) — bookkeeping for the stats. */
+  sleeping(asleep: boolean, timed?: boolean): void;
+  /** A wake arrived while the host sleeps: restart here (the host loop's subscription). Returns an unsubscribe. */
+  onWake(fn: () => void): () => void;
+  /**
+   * The step in progress began SETTLED — nothing pending, the tail long run: a sleeping loop's step for a registered time
+   * alone (or a headless host's step with nothing new). A host that polls its parts asks only those that are due.
+   */
+  settled(): boolean;
+  /** The engine's `step` entered and left (engine.ts): wakes inside a step ask for a frame, never a tail. */
+  enterStep(): void;
+  leaveStep(): void;
+  /** Inside the engine's `step` right now. */
+  stepping(): boolean;
+  sleepStats(): SleepStats;
 }
 
 export function createFrameControl(world: World): FrameControl {
@@ -79,6 +157,20 @@ export function createFrameControl(world: World): FrameControl {
   const listeners = new Set<() => void>();
   let settleLeft = 0;
   let parked = false;
+  // the sleep (K7a)
+  const sources = new Map<symbol, { readonly name: string; readonly due: (now: number) => number }>();
+  const wakeListeners = new Set<() => void>();
+  const wakeCounts: Record<string, number> = {};
+  /** An outside wake since the step in progress (or the last one) began. */
+  let pending = false;
+  /** Quiet steps in a row (nothing pending, nothing due or busy at their end) — a sleeping loop sleeps at SLEEP_TAIL. */
+  let quiet = 0;
+  let inStep = false;
+  let settledStep = false;
+  let asleep = false;
+  let sleeps = 0;
+  let timed = 0;
+  let steps = 0;
 
   const sync = (): void => {
     world.setResource(FrameMode, { freezeHolds: freezes.size });
@@ -165,5 +257,82 @@ export function createFrameControl(world: World): FrameControl {
         listeners.delete(fn);
       };
     },
+
+    wake(reason) {
+      // Inside a step a wake is the step's own consequence: the part that owes the next frame says so through its registered
+      // wake or its settle reporter (a desk's dirt, a kind still moving) — never a tail per frame a kind asked for.
+      if (inStep) return;
+      wakeCounts[reason] = (wakeCounts[reason] ?? 0) + 1;
+      pending = true;
+      quiet = 0;
+      if (asleep) for (const fn of [...wakeListeners]) fn();
+    },
+
+    wakeWhen(name, due) {
+      const token = Symbol(name);
+      sources.set(token, { name, due });
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        sources.delete(token);
+      };
+    },
+
+    due(now) {
+      const names = busyNames();
+      for (const s of sources.values()) if (s.due(now) <= now) names.push(s.name);
+      return names;
+    },
+
+    nextStep(now) {
+      let busy = pending;
+      let soonest = Number.POSITIVE_INFINITY;
+      if (!busy) for (const r of reporters.values()) if (r.busy()) { busy = true; break; }
+      if (!busy) {
+        for (const s of sources.values()) {
+          const t = s.due(now);
+          if (t <= now) { busy = true; break; }
+          if (t < soonest) soonest = t;
+        }
+      }
+      if (busy) {
+        quiet = 0;
+        return now;
+      }
+      quiet += 1;
+      return quiet < SLEEP_TAIL ? now : soonest;
+    },
+
+    sleeping(on, byTimer = false) {
+      if (on === asleep) return;
+      asleep = on;
+      if (on) sleeps += 1;
+      else if (byTimer) timed += 1;
+    },
+
+    onWake(fn) {
+      wakeListeners.add(fn);
+      return () => {
+        wakeListeners.delete(fn);
+      };
+    },
+
+    settled: () => settledStep,
+
+    enterStep() {
+      inStep = true;
+      steps += 1;
+      settledStep = !pending && quiet >= SLEEP_TAIL;
+      pending = false;
+    },
+
+    leaveStep() {
+      inStep = false;
+    },
+
+    stepping: () => inStep,
+
+    sleepStats: () => ({ asleep, sleeps, wakes: { ...wakeCounts }, timed, steps }),
   };
 }

@@ -26,6 +26,11 @@ export interface TextRaster {
   /** Bumped whenever a face lands: every layout keyed by it is laid again (the prototype's `fontVersion`). */
   version(): number;
   /**
+   * Tell `fn` whenever `version` moves — a face landed between frames (K7a: the desk wakes for it; a loop at rest polls no
+   * version). Returns an unsubscribe. Absent (a fake, a raster with fixed faces): the version never moves on its own.
+   */
+  onVersion?(fn: () => void): () => void;
+  /**
    * Draw a layout's glyphs for a `box` (note units) at `band` texels per note unit: each glyph in its
    * own frame — turned, scaled, at its pressure — over a faint stroke `bleed` note units wide (the pen's
    * spread), the canvas's alpha read back as coverage.

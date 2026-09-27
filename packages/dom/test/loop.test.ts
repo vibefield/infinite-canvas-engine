@@ -3,8 +3,8 @@
  * timestamp, and the stop fn latches so an in-flight frame cannot re-schedule.
  * requestAnimationFrame is stubbed for determinism (no real frame timing).
  */
-import { createEngine, createWorld, FrameInfo } from "@ice/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createEngine, createWorld, FrameInfo, SLEEP_TAIL, Viewport } from "@ice/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startRafLoop } from "../src/loop";
 
 let scheduled: FrameRequestCallback[];
@@ -204,5 +204,70 @@ describe("startRafLoop — surviving a throwing step (petition I14)", () => {
 
     scheduled.shift()?.(16);
     expect(scheduled).toHaveLength(0); // no resurrection past its own stopper
+  });
+});
+
+/**
+ * THE SLEEP (K7a — `@ice/core` frame-control.ts): with `sleep`, the loop stops scheduling frames once the gate says the engine is
+ * quiet, and a wake (a write from outside a step, an input) or a registered time brings it back; a freeze rises it so its settle
+ * walk can park. Without `sleep` nothing changed (the tests above). Fake timers own `setTimeout` and `performance.now`.
+ */
+describe("startRafLoop — the sleep", () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] }); });
+  afterEach(() => { vi.useRealTimers(); });
+  /** Runs the scheduled frames (the rAF timestamp at the fake clock) until none is left or `cap`. Returns how many ran. */
+  const drain = (cap = 50): number => {
+    let n = 0;
+    while (scheduled.length > 0 && n < cap) { n += 1; scheduled.shift()?.(performance.now()); vi.advanceTimersByTime(16); }
+    return n;
+  };
+
+  it("sleeps after the tail — no frame scheduled — and a write from outside a step wakes it", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    startRafLoop(engine, undefined, { sleep: true });
+    expect(drain()).toBe(SLEEP_TAIL);
+    expect(scheduled).toHaveLength(0);
+    expect(engine.frame.sleepStats().asleep).toBe(true);
+    const tick = world.getResource(FrameInfo)?.tick ?? 0;
+    world.setResource(Viewport, { w: 800, h: 600, dpr: 1 });   // the world's door: a wake
+    expect(scheduled).toHaveLength(1);
+    expect(engine.frame.sleepStats().asleep).toBe(false);
+    expect(drain()).toBe(SLEEP_TAIL);
+    expect(world.getResource(FrameInfo)?.tick).toBe(tick + SLEEP_TAIL);
+  });
+
+  it("a registered time: asleep with a timer, and the frame it asks for comes when the time does", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    let at = Number.POSITIVE_INFINITY;
+    engine.frame.wakeWhen("blink", () => at);
+    startRafLoop(engine, undefined, { sleep: true });
+    at = performance.now() + 3 * 16 + 530;   // 530 ms after the tail's three frames
+    drain();
+    expect(scheduled).toHaveLength(0);
+    vi.advanceTimersByTime(500);
+    expect(scheduled).toHaveLength(0);
+    vi.advanceTimersByTime(100);
+    expect(scheduled).toHaveLength(1);
+    at = Number.POSITIVE_INFINITY;
+    expect(drain()).toBe(1);   // the time's frame alone: no tail
+    expect(engine.frame.sleepStats()).toMatchObject({ asleep: true, timed: 1 });
+  });
+
+  it("a freeze taken while it sleeps rises it, and the settle walk parks it; stop() clears a pending timer", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    engine.frame.wakeWhen("later", () => performance.now() + 10_000);
+    const stop = startRafLoop(engine, undefined, { sleep: true });
+    drain();
+    expect(scheduled).toHaveLength(0);
+    engine.frame.freeze("cover");
+    expect(scheduled).toHaveLength(1);
+    drain();
+    expect(engine.frame.isParked()).toBe(true);
+    stop();
+    vi.advanceTimersByTime(20_000);
+    expect(scheduled).toHaveLength(0);
   });
 });

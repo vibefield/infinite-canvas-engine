@@ -153,6 +153,8 @@ export interface NotebookGeometry {
 
 /** The notebook's own state on one desk: each book's id, mesh and pinned pose, the carry's tilt; the ruling's ink on the root pass; in hand (D3t-b) its sheets' motion, the pen's stroke and the pages' ink. */
 export interface Books extends KindLocal {
+  /** When the kind is next live (K7a — `KindLocal.due`, declared: the six built-ins all say). */
+  due(now: number): number;
   /** A still's pose on `e` (undefined unpins). */
   pin(e: Entity, pose: BookPose | undefined): void;
   /** The world half's: the book's pin and its tilt state. */
@@ -338,6 +340,14 @@ export function createBooks(host: KindHost): Books {
     stir() { moving = true; },
     face(e, side) { state(e).faceT = side; moving = true; },
     landed: (e) => landedOf.get(e) ?? 0,
+    // K7a: next live now while a book in hand moves or writes (its tick's own test) or a turn, a stroke, a face was asked; when the
+    // layer is made, LAYER_IDLE_MS after it was last drawn (it is let go then — at rest too); never otherwise
+    due(now) {
+      if (woke || moving) return now;
+      for (const [e, st] of books) if (st.motion !== null && (st.live !== null || st.pending !== null || st.stirring || (host.children?.stamp(e) ?? 0) !== st.stamp)) return now;
+      const own = rootPass();
+      return own?.layerMade === true ? own.lastDrawn + LAYER_IDLE_MS : Number.POSITIVE_INFINITY;
+    },
     tick() {
       // the layer's targets and shadow maps (K6a, D-K6a.3): made at the first book drawn, let go once none was for LAYER_IDLE_MS
       const own = rootPass();

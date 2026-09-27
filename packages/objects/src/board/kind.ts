@@ -208,6 +208,8 @@ export interface PenPin {
  * rather than replayed; the pen's flux and the hand it follows.
  */
 export interface BoardInk extends KindLocal {
+  /** When the kind is next live (K7a — `KindLocal.due`, declared: the six built-ins all say). */
+  due(now: number): number;
   /**
    * The raster board `e` draws with (its id on the pass): made the first time, its children REPLAYED into it whenever
    * their stamp turned over or the look changed — unless the turnover is the stroke the hand just committed (adopted: the
@@ -450,6 +452,14 @@ export function createBoardInk(host: KindHost): BoardInk {
     pinStill(on) { still = on; },
     moving() { penMoving = true; },
     landed: (e) => landedOf.get(e) ?? 0,
+    // K7a: next live now while the pen moves, a stroke is in hand, the ink dries, or the last frame's asks wait for their residency
+    // step; never otherwise — a stroke laid, undone or a peer's arrives with a wake (the input, the document)
+    due(now) {
+      const pass = passOf();
+      if (penMoving || pass?.stepOwed === true || (!still && pass?.wetting === true)) return now;
+      if (!still) for (const st of boards.values()) if (st.live !== null) return now;
+      return Number.POSITIVE_INFINITY;
+    },
     tick(now) {
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.25);
       last = now;

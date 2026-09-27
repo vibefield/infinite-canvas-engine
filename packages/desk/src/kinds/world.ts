@@ -191,6 +191,12 @@ export interface KindHost {
   readonly rasters?: RasterQueue | undefined;
   /** `e`'s record remade at the next build (K6b — a raster the queue laid: the record says where its ink is), the desk woken. */
   readonly remake?: ((e: Entity) => void) | undefined;
+  /**
+   * THE KIND'S WAKE (K7a — registered wakes): something arrived OUTSIDE a frame that changes how the kind draws (a picture
+   * decoded, a tile printed, a detail fetched): the kind is ticked at the next frame, and a sleeping loop wakes for it. A
+   * kind never polls for what an arrival can tell it. Absent (a bare host, the oracle): its tick is asked every frame.
+   */
+  readonly wake?: (() => void) | undefined;
 }
 
 /**
@@ -215,6 +221,14 @@ export interface DataChildren {
 export interface KindLocal {
   /** Once a tick, before the draw, with the frame's clock (ms): does the state want a frame now (a wipe, a blink, an asset landed)? */
   tick?(now: number): boolean;
+  /**
+   * WHEN THE KIND IS NEXT LIVE (K7a — registered wakes, design-015 §2.4): asked after each of its ticks, on the same clock —
+   * `now` or before: the next frame (a motion runs: a wipe, a roll, a flight, ink drying); a later time: then (the caret's
+   * next blink, a layer let go, midnight); `Infinity`: never on its own — only when the desk's facts move, an input comes, or
+   * the kind calls `KindHost.wake`. A loop at rest ticks a kind only when it is due: nothing is polled. Absent while `tick`
+   * is declared: due every frame — a kind that never said keeps the desk awake.
+   */
+  due?(now: number): number;
   /**
    * What has LANDED on `e` so far — a count the kind moves when something arrives that changes how the object looks with no fact
    * of its own moving (a picture decoded, ink replayed, a raster laid, tiles drawn, a wipe ended), never for a running motion (the

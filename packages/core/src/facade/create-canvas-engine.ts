@@ -1188,7 +1188,9 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     if (alreadyAdopted) return next;
     sessionVersionUnsub?.();
     let versionSignature = JSON.stringify(next.versionReport());
-    sessionVersionUnsub = next.subscribeRemote(() => {
+    const versionUnsub = next.subscribeRemote(() => {
+      // a peer's change lands at the next `world.sync()`: that frame must come (K7a — the loop may be asleep)
+      engine.frame.wake("doc");
       diagnosticsDirty = true;
       const report = next.versionReport();
       const signature = JSON.stringify(report);
@@ -1208,6 +1210,13 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         if (fallback !== undefined) writeRuntimeResource(world, ActiveTool, { id: fallback.id });
       }
     });
+    // …and a LOCAL commit made outside a step (a transaction, an undo, a redo — strata's values land at once, the structure at
+    // the next sync): the outbound wire hears every one
+    const outboundUnsub = next.store.subscribeOutbound(() => engine.frame.wake("doc"));
+    sessionVersionUnsub = () => {
+      versionUnsub();
+      outboundUnsub();
+    };
     const root = world.getResource(BoardRoot)?.root;
     if (root === undefined || !world.isAlive(root)) {
       canvasSession.detach();
@@ -1228,7 +1237,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   // ghosts, on a still-open doc), THEN detach (leave tombstones flush through
   // still-subscribed outbound before the session's wiring dies).
   const acquirePresence = (o: PresenceOpts): PresenceSession => {
-    const p = attachPresence(world, o);
+    // a peer's cursor arriving or aging out is the next frame's (K7a — a sleeping loop wakes for it)
+    const p = attachPresence(world, { ...o, onRemote: () => { o.onRemote?.(); engine.frame.wake("presence"); } });
     presence = p;
     uninstallPresence = installPresence(engine, p, {
       keyOf: (e) => session?.store.keyOf(e),

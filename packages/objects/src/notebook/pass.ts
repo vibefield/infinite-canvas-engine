@@ -285,6 +285,8 @@ export class NotebookPass {
 
   /** Was a book drawn within the last `ms`? (The kind lets the layer go once none was for a while.) */
   drawnWithin(ms: number): boolean { return performance.now() - this.drawnAt < ms; }
+  /** When the layer was last drawn (`performance.now()`; -Infinity before the first) — the kind's registered wake lets it go LAYER_IDLE_MS after (K7a). */
+  get lastDrawn(): number { return this.drawnAt; }
 
   /** Is the frame's layer made (its targets and shadow maps on the device)? */
   get layerMade(): boolean { return this.frameT.msaa !== null || this.shadowLayers.length > 0; }

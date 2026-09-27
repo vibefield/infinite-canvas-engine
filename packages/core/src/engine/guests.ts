@@ -60,7 +60,10 @@ export interface GuestInstance {
    * freeze taken mid-derive parks only AFTER the guest has caught up — the
    * canvas is never photographed between a structural change and its reflow.
    * A guest with no owed-work notion simply omits it (the frame gate then
-   * treats it as quiet, which is the honest default).
+   * treats it as quiet, which is the honest default). The same answer keeps a
+   * SLEEPING loop awake (K7a, frame-control.ts): a guest runs on the frames the
+   * engine steps — after a wake — and one that animates on its own clock says
+   * so here, or it runs only when something else wakes the loop.
    */
   busy?: () => boolean;
 }

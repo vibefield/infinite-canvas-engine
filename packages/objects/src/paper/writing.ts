@@ -125,6 +125,12 @@ export interface Writing {
   /** The frame's clock, once a tick before the draw: does the writing want a frame now? */
   tick(now: number): boolean;
   /**
+   * When the writing is next live (K7a — `KindLocal.due`): now while a frame is owed or a wipe runs on a drawn note; the
+   * caret's next blink phase while it stands; never otherwise — a face landing is the text raster's wake, an edit the
+   * editor's. A desk at rest with a caret standing takes one frame a blink phase, and none without one.
+   */
+  due(now: number): number;
+  /**
    * What note `e` draws with this frame: its ink (pinned or live), the pen's wipe, the caret. A `fading` note (a
    * delete ghost) draws only the raster it already holds — never a new layout or raster, no marks.
    */
@@ -358,6 +364,14 @@ export function createWriting(opts: WritingOptions): Writing {
   };
 
   return {
+    due(t) {
+      if (dirty || (text !== undefined && text.version() !== seenVersion)) return t;
+      for (const e of wipes.keys()) if (drawn === undefined || drawn(e) !== undefined) return t;
+      // the first phase boundary after the LAST tick (`now`): the caret it drew stands until then
+      if (focus !== undefined) return focus.t0 + (Math.floor(Math.max(0, now - focus.t0) / blinkMs) + 1) * blinkMs;
+      return Number.POSITIVE_INFINITY;
+    },
+
     tick(t) {
       now = t;
       ticks += 1;

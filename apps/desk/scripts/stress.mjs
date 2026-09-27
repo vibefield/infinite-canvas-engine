@@ -14,7 +14,8 @@
 //   DESK_STRESS_OUT=<dir> (the JSON of every round; default apps/desk/results)
 //
 // THE SCENARIOS. `idle`: 240 frames after the desk settled — submits (0), the main thread's ms per second (the whole step and
-// the desk's flush alone). `pan`: 120 frames of the camera moving 8 px a frame — the step ms a frame (median, max), the desk's
+// the desk's flush alone), the engine's steps (K7a: the loop SLEEPS at rest — none); then 1 s of the page alone between two CDP
+// readings, no rig code running in it: every task its main thread ran (`Performance.getMetrics` TaskDuration) and its script. `pan`: 120 frames of the camera moving 8 px a frame — the step ms a frame (median, max), the desk's
 // share, the builder's resolves/records a frame, the uploads a frame by kind, the heap's growth a frame, the frames' cadence;
 // then the saturated batch (`holdCost.rest`): the GPU's ms for the frame at the pan's end. `zoom`: the same, the camera
 // zooming 0.5 % a frame about the view's centre. `drag`: the 50 notes nearest the view's centre selected and dragged 60 frames
@@ -141,7 +142,7 @@ const report = {};
 try {
   const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html`);
   const logs = [];
-  await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
+  await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable"); await tab.send("Performance.enable");
   watchPage(tab, logs);
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
@@ -291,6 +292,9 @@ try {
   };
   const cam0 = { x: scene.camX, y: scene.camY, zoom: scene.zoom };
 
+  /** The frame gate's sleep between two readings (K7a): steps taken, how many a registered time started, the outside wakes. */
+  const stepsOf = (a, b) => ({ steps: b.steps - a.steps, timed: b.timed - a.timed, wakes: Object.values(b.wakes).reduce((x, y) => x + y, 0) - Object.values(a.wakes).reduce((x, y) => x + y, 0) });
+
   // ── idle: 240 frames at rest, 7 rounds
   if (wantCase("idle")) {
     const runs = [];
@@ -302,24 +306,52 @@ try {
         const d = window.__desk;
         d.perf.gc();
         const before = d.perf.take();
+        const sleep0 = d.engine.engine.frame.sleepStats();
         const t0 = performance.now();
         await new Promise((r) => { let n = 0; const f = () => { if (++n >= 240) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
         const t1 = performance.now();
         const after = d.perf.take();
-        return { ms: t1 - t0, before, after, live: d.stats().live, dirty: d.handle.dirty() };
+        return { ms: t1 - t0, before, after, live: d.stats().live, dirty: d.handle.dirty(), sleep: d.engine.engine.frame.sleepStats(), sleep0 };
       })()`);
+      // K7a — THE WHOLE PAGE at rest (design-015 §11.4 read as written: main-thread time a 1 s window): the renderer's main thread
+      // between two CDP readings 1 s apart with no rig code running in the page — everything it ran (`TaskDuration`), its JS
+      // (`ScriptDuration`) — and the engine's steps over the same window (the sleeping loop takes none)
+      const metrics = async () => Object.fromEntries((await tab.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
+      // the rest's own registered times first (the notebook's layer let go LAYER_IDLE_MS after the round's frames drew it): the
+      // window is the desk at rest after them — it names the step it waited for
+      const soon = await q("(() => { const now = performance.now(); return window.__desk.handle.due(now).at - now; })()");
+      run.waited = soon < 1500 ? soon : 0;
+      if (soon < 1500) await sleep(Math.max(0, soon) + 150);
+      const s0 = await q("window.__desk.engine.engine.frame.sleepStats()");
+      const m0 = await metrics();
+      const w0 = performance.now();
+      await sleep(1000);
+      const m1 = await metrics();
+      const w1 = performance.now();
+      const s1 = await q("window.__desk.engine.engine.frame.sleepStats()");
+      run.page = { taskMsPerS: ((m1.TaskDuration - m0.TaskDuration) * 1e6) / (w1 - w0), scriptMsPerS: ((m1.ScriptDuration - m0.ScriptDuration) * 1e6) / (w1 - w0), ...stepsOf(s0, s1) };
       run.load = load();
       runs.push(run);
     }
-    const per = runs.map((r) => { const d = diff(r.before, r.after); const steps = d.steps.slice(-240); return { submits: d.submits, stepMsPerS: (steps.reduce((a, b) => a + b, 0) / r.ms) * 1000, flushMsPerS: (d.flush.ms / r.ms) * 1000, stepMed: median(steps), ticks: d.flush.ticks, redraws: d.redraws, load: r.load }; });
-    const idle = { submits: max(per.map((p) => p.submits)), stepMsPerS: { median: median(per.map((p) => p.stepMsPerS)), min: min(per.map((p) => p.stepMsPerS)) }, flushMsPerS: { median: median(per.map((p) => p.flushMsPerS)), min: min(per.map((p) => p.flushMsPerS)) }, stepMed: median(per.map((p) => p.stepMed)), redraws: max(per.map((p) => p.redraws)), loads: per.map((p) => p.load), perRound: per };
+    const per = runs.map((r) => { const d = diff(r.before, r.after); const steps = d.steps.slice(-240); return { submits: d.submits, stepMsPerS: (steps.reduce((a, b) => a + b, 0) / r.ms) * 1000, flushMsPerS: (d.flush.ms / r.ms) * 1000, stepMed: median(steps), steps: steps.length, gate: stepsOf(r.sleep0, r.sleep), ticks: d.flush.ticks, redraws: d.redraws, asleep: r.sleep.asleep, page: r.page, load: r.load }; });
+    const col = (f) => per.map(f);
+    const idle = {
+      submits: max(col((p) => p.submits)), stepMsPerS: { median: median(col((p) => p.stepMsPerS)), min: min(col((p) => p.stepMsPerS)) }, flushMsPerS: { median: median(col((p) => p.flushMsPerS)), min: min(col((p) => p.flushMsPerS)) },
+      stepMed: median(col((p) => p.stepMed)), steps: max(col((p) => p.steps)), untimed: max(col((p) => p.gate.steps - p.gate.timed)), outside: max(col((p) => p.gate.wakes)), redraws: max(col((p) => p.redraws)), asleep: per.every((p) => p.asleep),
+      page: { taskMsPerS: { median: median(col((p) => p.page.taskMsPerS)), min: min(col((p) => p.page.taskMsPerS)), max: max(col((p) => p.page.taskMsPerS)) }, scriptMsPerS: { median: median(col((p) => p.page.scriptMsPerS)), min: min(col((p) => p.page.scriptMsPerS)) }, steps: max(col((p) => p.page.steps)), untimed: max(col((p) => p.page.steps - p.page.timed)), outside: max(col((p) => p.page.wakes)) },
+      loads: col((p) => p.load), perRound: per,
+    };
     report.idle = idle;
-    console.log(`-- idle · ${ROUNDS} rounds × 240 frames · load ${idle.loads.join(" ")} --`);
-    console.log(`  submits              ${idle.submits} (the most in a round) · redraws ${idle.redraws}`);
-    console.log(`  main thread / 1 s    the whole engine step ${fmt(idle.stepMsPerS.median, 3)} ms (min ${fmt(idle.stepMsPerS.min, 3)}) · the desk's flush ${fmt(idle.flushMsPerS.median, 3)} ms (min ${fmt(idle.flushMsPerS.min, 3)}) · a step's median ${fmt(idle.stepMed * 1000, 1)} µs`);
+    console.log(`-- idle · ${ROUNDS} rounds × 240 frames, then 1 s of the page alone · load ${idle.loads.join(" ")} --`);
+    console.log(`  submits              ${idle.submits} (the most in a round) · redraws ${idle.redraws} · engine steps ${idle.steps} over 240 frames (the most in a round; ${idle.untimed} not a registered time's, ${idle.outside} outside wakes) · the loop asleep ${idle.asleep}`);
+    console.log(`  main thread / 1 s    the whole engine step ${fmt(idle.stepMsPerS.median, 3)} ms (min ${fmt(idle.stepMsPerS.min, 3)}) · the desk's flush ${fmt(idle.flushMsPerS.median, 3)} ms (min ${fmt(idle.flushMsPerS.min, 3)})`);
+    console.log(`  the whole page / 1 s every task the renderer's main thread ran ${fmt(idle.page.taskMsPerS.median, 3)} ms (min ${fmt(idle.page.taskMsPerS.min, 3)}, max ${fmt(idle.page.taskMsPerS.max, 3)}) · its script ${fmt(idle.page.scriptMsPerS.median, 3)} ms (min ${fmt(idle.page.scriptMsPerS.min, 3)}) · engine steps ${idle.page.steps} (the most in a window; ${idle.page.untimed} not a registered time's)`);
     check(idle.submits === 0, `idle: 0 submits over 240 frames in every round (${idle.submits})`);
-    gate(idle.flushMsPerS.median <= 0.1, `idle: the desk's main thread ≤ 0.1 ms per 1 s (flush ${fmt(idle.flushMsPerS.median, 3)} ms; the whole step ${fmt(idle.stepMsPerS.median, 3)} ms — core's tick included)`);
-    rows.push(["idle", `${idle.submits} submits`, `${fmt(idle.flushMsPerS.median, 3)} ms/s desk · ${fmt(idle.stepMsPerS.median, 3)} ms/s step`, idle.loads.join(" ")]);
+    // K7a: the loop SLEEPS at rest — no step but one a registered time starts (the books' layers let go LAYER_IDLE_MS after they
+    // were last drawn, the calendar's midnight), no outside wake, so nothing is polled (design-016 §6 K7: registered wakes)
+    check(idle.untimed === 0 && idle.outside === 0 && idle.page.untimed === 0 && idle.page.outside === 0 && idle.asleep, `idle: the loop sleeps — over 240 frames ${idle.steps} steps, ${idle.untimed} not a registered time's, ${idle.outside} outside wakes; over 1 s of the page alone ${idle.page.steps} steps, ${idle.page.untimed} not a time's (asleep ${idle.asleep})`);
+    gate(idle.stepMsPerS.median <= 0.1 && idle.flushMsPerS.median <= 0.1, `idle: the engine's main thread ≤ 0.1 ms per 1 s (the whole step ${fmt(idle.stepMsPerS.median, 3)} ms — core's tick and the desk's flush ${fmt(idle.flushMsPerS.median, 3)} ms included)`);
+    rows.push(["idle", `${idle.submits} submits · ${idle.steps} steps`, `${fmt(idle.stepMsPerS.median, 3)} ms/s step · ${fmt(idle.flushMsPerS.median, 3)} ms/s desk · the page ${fmt(idle.page.taskMsPerS.median, 3)} ms/s (script ${fmt(idle.page.scriptMsPerS.median, 3)})`, idle.loads.join(" ")]);
   }
 
   // ── pan: 120 frames, 8 px a frame

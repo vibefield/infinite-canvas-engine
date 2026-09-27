@@ -20,6 +20,7 @@ import { createRecordingCommitSink, type CommitSink } from "../engine/commit-sin
 import type { Engine } from "../engine/engine";
 import type { InputQueue } from "../input/queue";
 import { createInputQueue } from "../input/queue";
+import { interactionDue, wakefulQueue } from "./wakes";
 import { createCameraSystems } from "../systems/camera-sim";
 import { createCleanupSystems } from "../systems/cleanup";
 import { createL0Systems } from "../systems/l0-input";
@@ -79,7 +80,8 @@ export interface InteractionCore {
 
 export function installInteractionCore(engine: Engine, opts: InteractionCoreOpts = {}): InteractionCore {
   const world = engine.world;
-  const queue = opts.queue ?? createInputQueue();
+  // the adapters' one door wakes a sleeping loop (K7a, engine/frame-control.ts)
+  const queue = wakefulQueue(opts.queue ?? createInputQueue(), () => engine.frame.wake("input"));
   const sink = opts.sink ?? createRecordingCommitSink();
   const canvasSurface = ensureCanvasSurface(world);
 
@@ -91,6 +93,8 @@ export function installInteractionCore(engine: Engine, opts: InteractionCoreOpts
   const cleanup = createCleanupSystems(world);
 
   const removers = [
+    // the stack's registered wake (K7a, interaction/wakes.ts): due every frame while its time-driven work is pending
+    engine.frame.wakeWhen("interaction", interactionDue(world, queue)),
     // input: lifecycle BEFORE ingest (value-based up+1 destroy; see l0-input.ts).
     engine.addSystems("input", l0.pointerLifecycle, l0.pointerIngest, l0.pointerWorldSync),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
@@ -165,7 +169,8 @@ export interface InteractionStack extends InteractionCore {
  */
 export function installInteractionStack(engine: Engine, opts: InteractionCoreOpts = {}): InteractionStack {
   const world = engine.world;
-  const queue = opts.queue ?? createInputQueue();
+  // the adapters' one door wakes a sleeping loop (K7a, engine/frame-control.ts)
+  const queue = wakefulQueue(opts.queue ?? createInputQueue(), () => engine.frame.wake("input"));
   const sink = opts.sink ?? createRecordingCommitSink();
   const canvasSurface = ensureCanvasSurface(world);
 
@@ -200,6 +205,8 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   const cleanup = createCleanupSystems(world);
 
   const removers = [
+    // the stack's registered wake (K7a, interaction/wakes.ts): due every frame while its time-driven work is pending
+    engine.frame.wakeWhen("interaction", interactionDue(world, queue)),
     engine.addSystems("input", l0.pointerLifecycle, l0.pointerIngest, l0.pointerWorldSync),
     // heldInput at the HEAD of react (design-015 §8, D4b): the ingest's one-tick tags (WentDown/WentUp) are flushed at the
     // phase boundary, so here it sees the press; its own `HandledByWidget`/`WheelHandled` flush before ctl — the recognizers

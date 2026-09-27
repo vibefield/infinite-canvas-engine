@@ -357,6 +357,8 @@ export class CalendarPass {
 
   /** Was a pad drawn within the last `ms`? */
   drawnWithin(ms: number): boolean { return performance.now() - this.drawnAt < ms; }
+  /** When the layer was last drawn (`performance.now()`; -Infinity before the first) — the kind's registered wake lets it go LAYER_IDLE_MS after (K7a). */
+  get lastDrawn(): number { return this.drawnAt; }
 
   /** Is the frame's layer made? */
   get layerMade(): boolean { return this.frameT.msaa !== null; }

@@ -66,6 +66,12 @@ export interface LayerContext {
   readonly spatial: InteractionStack["index"];
   /** The engine's device (`engine.compositorDevice`), when the app passed one (design-015 D7): the layer draws with it — ONE device per engine. */
   readonly gpu?: EngineGpu;
+  /**
+   * The frame gate's sleep (K7a, `@ice/core` frame-control.ts): the layer registers when it is next due (`wakeWhen`), wakes a
+   * sleeping loop for what it hears outside a step (`wake` — an asset landing, a theme, a pin), and asks whether the step in
+   * progress is a registered time's alone (`settled` — then it ticks only what is due).
+   */
+  readonly frame?: Pick<CanvasEngine["engine"]["frame"], "wake" | "wakeWhen" | "settled">;
 }
 
 export type LayerFactory<H extends LayerHandle = LayerHandle> = (ctx: LayerContext) => H;
@@ -77,6 +83,11 @@ export interface DeskHostOptions<H extends LayerHandle = LayerHandle> {
   readonly engine: CanvasEngine;
   /** The desk — `deskLayer({ … })` from `@vibecook/ice/desk` (`@ice/desk`'s src/host/), received opaquely. */
   readonly layer: LayerFactory<H>;
+  /**
+   * The loop SLEEPS when the engine is quiet (K7a — design-015 §11.4: a desk at rest costs the main thread nothing): no frame
+   * until an input, a write, an arrival or a registered time wakes it. Default true; false steps every frame, as before K7a.
+   */
+  readonly sleep?: boolean;
 }
 
 export interface DeskHost<H extends LayerHandle = LayerHandle> {
@@ -112,6 +123,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       readMarquee: () => stack.marqueeBuffer,
       spatial: stack.index,
       ...(engine.compositorDevice !== undefined ? { gpu: engine.compositorDevice } : {}),
+      frame: core.frame,
     });
   } catch (err) {
     host.dispose();
@@ -156,9 +168,16 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
   // nothing, so the observer never hears it and the desk kept drawing at the old ratio; an emulated one (DevTools' device mode, CDP)
   // fires not even the `(resolution)` media query (measured: `.matches` flips, no `change` over three rendered frames, no
   // device-pixel box moves). So the ratio is READ before every step — a property read — and the viewport re-synced when it moved.
-  const stopLoop = startRafLoop(core, () => {
-    if (ratio() !== synced) syncViewport();
-  });
+  const stopLoop = startRafLoop(
+    core,
+    () => {
+      if (ratio() !== synced) syncViewport();
+    },
+    { sleep: opts.sleep !== false },
+  );
+  // …and while the loop SLEEPS (K7a) no step reads it: the ratio is read twice a second instead — a property read, and the
+  // viewport write wakes the loop through the world's doors when it moved
+  const ratioPoll = opts.sleep !== false ? setInterval(() => { if (ratio() !== synced) syncViewport(); }, 500) : undefined;
 
   let disposed = false;
   return {
@@ -170,6 +189,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       if (disposed) return;
       disposed = true;
       stopLoop();
+      if (ratioPoll !== undefined) clearInterval(ratioPoll);
       resizeObserver?.disconnect();
       focus.detach();
       detachPointer();

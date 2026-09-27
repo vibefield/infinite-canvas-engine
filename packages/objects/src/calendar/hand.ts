@@ -5,7 +5,7 @@
 // newest glyph's wipe). It WRITES only as an op would, each out of the frame (a reflector never writes — D-D2c.5): the bar's today
 // (`home` bumped) rolls the pad home — its month, ONE transaction, off the undo stack (D-D3t-c.5) — and selects today.
 
-import { Active, Captures, ChildOf, type CommitIntent, defineQuery, Down, DownPart, type Entity, Grab, type GuardedTx, heldEntity, HeldPointer, HeldPress, LocalPointer, Pointer, PointerButtons, PointerPart, PointerScreen, PointerWorld, Position, PrefabId, setWidgetProps, Size, TouchesExact, TransformTween, Watches, type World } from "@ice/core";
+import { Active, Camera, Captures, ChildOf, type CommitIntent, defineQuery, Down, DownPart, type Entity, Grab, type GuardedTx, heldEntity, HeldPointer, HeldPress, LocalPointer, Pointer, PointerButtons, PointerPart, PointerScreen, PointerVersion, PointerWorld, Position, PrefabId, setWidgetProps, Size, TouchesExact, TransformTween, Watches, type World } from "@ice/core";
 import { dayOr, daySlot, monthKeyOf, NotePin, PadSelection, pinNote, PinsNote } from "./data";
 import { CALENDAR, type CalendarLaw } from "./law";
 import { keyOf, monthOfDay } from "./month";
@@ -71,6 +71,13 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
   const hands = new Map<Entity, { readonly pad: Entity; readonly x0: number; readonly y0: number }>();
   /** The pads whose corner the pointer lifted last frame. */
   let peeked = new Set<Entity>();
+  /**
+   * The pointer's input and the camera as the last `follow` saw them (K7a — registered wakes): the peek follows the pointer over a
+   * pad, so a pad on the desk needs the hand only when either moved since — never every frame (D7 #14's crutch, which kept a
+   * desk with a calendar awake forever).
+   */
+  let seenPointer = -1;
+  let seenCamera = -1;
   const G = (e: Entity): CalendarGeometry | undefined => opts.geometryOf?.(e) as CalendarGeometry | undefined;
   /** A pointer's desk point: at rest the world's; in hand through the pose the renderer drew (as core maps `HeldPointer`). */
   const deskOf = (p: Entity, pad: Entity): readonly [number, number] | undefined => {
@@ -309,6 +316,8 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
 
   return {
     follow(now) {
+      seenPointer = world.resourceStamp(PointerVersion);
+      seenCamera = world.resourceStamp(Camera);
       const pads = opts.pads();
       if (pads === undefined) return;
       if (opts.isPad !== undefined) { rollByHand(pads, now); peekUnder(pads); }
@@ -354,7 +363,9 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
     },
     idle() {
       if (heldEntity(world) !== undefined || hands.size > 0 || peeked.size > 0 || marked.size > 0 || homes.size > 0 || glides.length > 0) return false;
-      if (opts.pads()?.busy() === true) return false;
+      const pads = opts.pads();
+      if (pads?.rollOwed() === true) return false;   // a roll finished: the hand commits it (K7a — once asked every frame)
+      if (pads?.busy() === true && (world.resourceStamp(PointerVersion) !== seenPointer || world.resourceStamp(Camera) !== seenCamera)) return false;
       if (world.firstOf(selectionsQ) !== undefined || world.firstOf(grabbedQ) !== undefined) return false;
       let pressed = false;
       world.query(pointersQ).each((b) => { for (const r of b) if (((world.get(b.entity(r), PointerButtons)?.buttons ?? 0) & 1) !== 0) pressed = true; });

@@ -80,6 +80,11 @@ export interface DeskReflectorOptions {
   readonly onFrame?: () => void;
   /** The kinds' own state on this desk (`KindLocal`, by kind name): what the tray's carried objects are drawn with, as the builder's are (K5b). */
   readonly locals?: ReadonlyMap<string, KindLocal>;
+  /**
+   * Called when a frame is asked for from OUTSIDE the flush — a wake (a pin, an ink landing, the ambient's policy), the ground
+   * arriving, a theme, a grid, a harness's pin (K7a): the host wakes a sleeping loop with it.
+   */
+  readonly onWake?: (reason: string) => void;
 }
 
 /** What woke a frame, counted since the mount — the builder's reasons and the reflector's own. */
@@ -114,6 +119,12 @@ export interface DeskReflector {
   restless(kinds: ReadonlySet<string>): void;
   /** The frame dirty and not yet drawn (a rig's witness). */
   dirty(): boolean;
+  /**
+   * WHEN THE REFLECTOR IS NEXT DUE (K7a — its registered wake): `now` while a frame is owed (dirt, a live spring or ghost, the
+   * drawer on its way) or the ambient still moves (the wind's clock is a frame); `Infinity` otherwise — and while it cannot
+   * draw (no ground yet, no viewport): the ground's arrival and the viewport's write wake it.
+   */
+  due(now: number): number;
   redraws(): number;
   stats(): DeskReflectorStats;
   wakes(): DeskWakes;
@@ -156,6 +167,10 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let lastInputs: GroundFrameInputs | null = null;
   let lastFrame: GroundStats | null = null;
   let builtTick = -1;
+  /** The ambient wanted the last frame (the wind blows or eases): the next is owed too (K7a). */
+  let ambientLive = false;
+  /** The last flush could not draw (no ground, no viewport): nothing is owed until they come (K7a). */
+  let blocked = true;
   let camStamp = -1;
   let vpStamp = -1;
   let navStamp = -1;
@@ -250,15 +265,18 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         for (const [key, local] of faced) if (key > 0) { local.forget?.(key as Entity); faced.delete(key); }
       }
       const ground = opts.ground();
+      blocked = true;
       if (ground === null) return;   // pre-ready: the dirt is kept
       const cam = w.getResource(Camera);
       const vp = w.getResource(Viewport);
       if (cam === undefined || vp === undefined || vp.w <= 0 || vp.h <= 0) return;   // no viewport yet: stay dirty, paint when it exists
+      blocked = false;
       // the ambient's clocks: stepped every tick the ground is here — a frame is wanted while the wind blows or the tilt moves
       const dtMs = info?.dt ?? 16;
       // in hand the desk behind the hand STANDS STILL (§8): the clocks are not stepped — the wind holds its breath, the tilt lets
       // go of nothing — so under the default `idle` ambient too the blurred copy is made once and no frame is the wind's (D7)
       const amb = inHand ? { frame: ambient.frame(), live: false } : ambient.step(dtMs / 1000, now, pointerNdc(vp));
+      ambientLive = amb.live;
       if (amb.live) { dirty = true; wakes.ambient += 1; }
       if (!dirty) return;   // IDLE-ZERO: no getCurrentTexture, no submit
       dirty = false;
@@ -368,9 +386,10 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     },
   };
 
+  const outside = (reason: string): void => { opts.onWake?.(reason); };
   return {
     reflector,
-    ready() { dirty = true; },
+    ready() { dirty = true; outside("ready"); },
     setTheme(t, p) {
       theme = t;
       if (p !== undefined) palette = p;
@@ -378,9 +397,10 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       dirty = true;
       wakes.theme += 1;
       themeGen += 1;
+      outside("theme");
     },
-    configureGrid(g) { grid = g; dirty = true; wakes.grid += 1; gridGen += 1; },
-    wake(reason) { dirty = true; wakes[reason] += 1; if (reason === "pin") pinGen += 1; },
+    configureGrid(g) { grid = g; dirty = true; wakes.grid += 1; gridGen += 1; outside("grid"); },
+    wake(reason) { dirty = true; wakes[reason] += 1; if (reason === "pin") pinGen += 1; outside(reason); },
     pinBuild(pins) {
       if (pins.portals !== undefined) portalsOn = pins.portals;
       if (pins.lodZoom !== undefined) lodPin = pins.lodZoom === null ? undefined : pins.lodZoom;
@@ -390,9 +410,11 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       dirty = true;
       wakes.pin += 1;
       pinGen += 1;
+      outside("pin");
     },
     restless(kinds) { restless = kinds; },
     dirty: () => dirty,
+    due: (now) => (blocked || disposed ? Number.POSITIVE_INFINITY : dirty || ambientLive ? now : Number.POSITIVE_INFINITY),
     redraws: () => redraws,
     stats: () => ({ ...builder.stats(), redraws, frame: lastFrame, ambient: ambient.state() }),
     wakes: () => ({ ...wakes }),

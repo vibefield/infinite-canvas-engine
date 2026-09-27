@@ -2,10 +2,12 @@
 // ambient policy in `idle` mode with a 1 s window: after a touch the wind blows (the gobo clock
 // advances, frames submit); a second after the last touch the wind eases to still over 2 s; then,
 // with the springs settled, 240 frames pass with ZERO submits — the submit instrument wraps
-// `queue.submit` itself, installed before anything on the device could submit. Exit 0 = every
-// check passed.
+// `queue.submit` itself, installed before anything on the device could submit — and ZERO engine
+// steps: the loop SLEEPS (K7a, registered wakes); the page's main thread over 7 windows of 1 s
+// beside it. Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { loadavg } from "node:os";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 
@@ -69,12 +71,39 @@ try {
   // 240 frames: ZERO submits
   await front();
   const idle = await tab.evaluate(`(async () => {
-    const before = window.__desk.submits().total; const t = window.__desk.ambient().clocks.goboTime;
+    const before = window.__desk.submits().total; const t = window.__desk.ambient().clocks.goboTime; const steps0 = window.__desk.engine.engine.frame.sleepStats().steps;
     await new Promise((r) => { let n = 0; const f = () => { if (++n >= 240) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
-    return { submits: window.__desk.submits().total - before, clock: window.__desk.ambient().clocks.goboTime - t, live: window.__desk.stats().live, dirty: window.__desk.handle.dirty() };
+    const frame = window.__desk.engine.engine.frame;
+    return { submits: window.__desk.submits().total - before, clock: window.__desk.ambient().clocks.goboTime - t, live: window.__desk.stats().live, dirty: window.__desk.handle.dirty(), steps: frame.sleepStats().steps - steps0, asleep: frame.sleepStats().asleep };
   })()`, { awaitPromise: true, timeoutMs: 30000 });
   check(idle.submits === 0, `240 frames at rest: ${idle.submits} submits`);
   check(idle.clock === 0 && !idle.live && !idle.dirty, `the clocks stand (Δ ${idle.clock}), nothing live, nothing dirty`);
+  // K7a (design-016 §6; design-015 §11.4): the loop SLEEPS at rest — no engine step at all over 240 frames, the frame gate asleep —
+  // and the page's main thread over 7 windows of 1 s with no rig code running in it (CDP `Performance.getMetrics`: every task it
+  // ran, its script), the host's 1-minute load beside
+  check(idle.steps === 0 && idle.asleep === true, `the loop sleeps at rest: ${idle.steps} engine steps over 240 frames (asleep ${idle.asleep})`);
+  await tab.send("Performance.enable");
+  const metrics = async () => Object.fromEntries((await tab.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
+  const windows = [];
+  const wakesOf = (s) => Object.values(s.wakes).reduce((a, b) => a + b, 0);
+  for (let r = 0; r < 7; r++) {
+    // a registered time due within the window (a layer let go LAYER_IDLE_MS after it was last drawn) is waited out first
+    const soon = await q("(() => { const now = performance.now(); return window.__desk.handle.due(now).at - now; })()");
+    if (soon < 1500) await sleep(Math.max(0, soon) + 150);
+    const s0 = await q("window.__desk.engine.engine.frame.sleepStats()");
+    const m0 = await metrics();
+    const w0 = performance.now();
+    await sleep(1000);
+    const m1 = await metrics();
+    const w1 = performance.now();
+    const s1 = await q("window.__desk.engine.engine.frame.sleepStats()");
+    windows.push({ task: ((m1.TaskDuration - m0.TaskDuration) * 1e6) / (w1 - w0), script: ((m1.ScriptDuration - m0.ScriptDuration) * 1e6) / (w1 - w0), steps: s1.steps - s0.steps, untimed: (s1.steps - s0.steps) - (s1.timed - s0.timed), outside: wakesOf(s1) - wakesOf(s0), load: loadavg()[0].toFixed(2) });
+  }
+  const med = (xs) => { const t = [...xs].sort((a, b) => a - b); return t.length % 2 ? t[(t.length - 1) / 2] : (t[t.length / 2 - 1] + t[t.length / 2]) / 2; };
+  const tasks = windows.map((w) => w.task);
+  console.log(`  the page at rest, 7 × 1 s: every task ${med(tasks).toFixed(3)} ms/s (min ${Math.min(...tasks).toFixed(3)}, max ${Math.max(...tasks).toFixed(3)}) · script ${med(windows.map((w) => w.script)).toFixed(3)} ms/s · engine steps ${windows.map((w) => w.steps).join(" ")} · load ${windows.map((w) => w.load).join(" ")}`);
+  // (a step a registered time starts — a layer let go LAYER_IDLE_MS after it was last drawn — is the sleep's own; none other)
+  check(windows.every((w) => w.untimed === 0 && w.outside === 0), `the loop sleeps through 7 windows of 1 s: ${windows.reduce((a, w) => a + w.steps, 0)} engine steps, ${windows.reduce((a, w) => a + w.untimed, 0)} not a registered time's, ${windows.reduce((a, w) => a + w.outside, 0)} outside wakes`);
 
   // a touch wakes it again — and `still` mode never blows
   await mouse("mouseMoved", 520, 420);

@@ -426,6 +426,9 @@ export class BoardPass {
     return raise;
   }
 
+  /** The last frame's asks still unanswered (K7a): the next tick owes them a `step` — a slot freed, a board raised to its rung. */
+  get stepOwed(): boolean { return this.shared.asked.size > 0; }
+
   /** The raster's size in texels, or null. */
   sizeOf(id: number): readonly [number, number] | null { return this.shared.rasters.get(id)?.size ?? null; }
 

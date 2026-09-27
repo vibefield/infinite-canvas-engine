@@ -31,17 +31,34 @@
  * platform changes without an event it can hear (the device's ratio: `createDeskHost`). It runs
  * only for a step that runs (never while parked), and inside the same `try`, so a throwing hook is
  * as survivable as a throwing step.
+ *
+ * THE SLEEP (2026-09-27, ICE M21 K7a — `@ice/core`'s frame-control.ts): with `sleep`, the loop asks
+ * the frame gate after every step when the next one is due, and SLEEPS when it is not the next
+ * frame — no rAF queued, and a timer only when a registered wake names a time (a flight, a caret's
+ * blink, a layer let go). A wake (an input, a write from outside a step, a document's or a room's
+ * arrival, a desk's flux) restarts it in the next frame; so does a freeze, whose settle walk needs
+ * steps. A desk at rest then costs the main thread nothing at all (design-015 §11.4). Without
+ * `sleep` the loop steps every frame, as it always did.
  */
 import type { Engine } from "@ice/core";
 
-export function startRafLoop(engine: Engine, beforeStep?: (now: number) => void): () => void {
+export interface RafLoopOptions {
+  /** Sleep when the engine is quiet (K7a): no frame scheduled until a wake or a registered time. Default false. */
+  readonly sleep?: boolean;
+}
+
+export function startRafLoop(engine: Engine, beforeStep?: (now: number) => void, opts: RafLoopOptions = {}): () => void {
+  const sleepy = opts.sleep === true;
+  const frame = engine.frame;
   let handle = 0;
   let stopped = false;
   let parked = false;
+  let asleep = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const tick = (now: number): void => {
     if (stopped) return;
-    if (!engine.frame.claimStep()) {
+    if (!frame.claimStep()) {
       // Park: no step, and deliberately no reschedule. `wake` owns the restart.
       parked = true;
       handle = 0;
@@ -54,22 +71,56 @@ export function startRafLoop(engine: Engine, beforeStep?: (now: number) => void)
       // Re-checked AFTER the body: a `stop()` called from inside the step
       // (a publish hook, a reflector) must still win, or the loop would
       // resurrect itself past its own stopper.
-      if (!stopped) handle = requestAnimationFrame(tick);
+      if (!stopped) schedule();
     }
   };
 
+  /** After a step: the next frame, or sleep — until a wake, or the soonest registered time. */
+  const schedule = (): void => {
+    if (!sleepy) {
+      handle = requestAnimationFrame(tick);
+      return;
+    }
+    const t = performance.now();
+    const due = frame.nextStep(t);
+    if (due <= t) {
+      handle = requestAnimationFrame(tick);
+      return;
+    }
+    handle = 0;
+    asleep = true;
+    frame.sleeping(true);
+    if (due !== Number.POSITIVE_INFINITY) timer = setTimeout(() => rise(true), Math.max(0, due - t));
+  };
+
+  /** Out of the sleep: the next frame steps (`timed`: for a registered time alone). */
+  const rise = (timed: boolean): void => {
+    if (stopped || !asleep) return;
+    asleep = false;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    frame.sleeping(false, timed);
+    handle = requestAnimationFrame(tick);
+  };
+
+  // (a freeze taken while the loop sleeps rises it through the world's doors — the freeze writes its `FrameMode` mirror — so its
+  // settle walk has the steps it needs; the sleep test pins it)
   const wake = (): void => {
-    if (stopped || !parked || engine.frame.isFrozen()) return;
+    if (stopped || !parked || frame.isFrozen()) return;
     parked = false;
     handle = requestAnimationFrame(tick);
   };
-  const unsubscribe = engine.frame.onChange(wake);
+  const unsubscribe = frame.onChange(wake);
+  const unsubscribeWake = sleepy ? frame.onWake(() => rise(false)) : undefined;
 
   handle = requestAnimationFrame(tick);
 
   return () => {
     stopped = true;
     unsubscribe();
+    unsubscribeWake?.();
+    if (timer !== undefined) clearTimeout(timer);
+    if (asleep) frame.sleeping(false);
     cancelAnimationFrame(handle);
   };
 }

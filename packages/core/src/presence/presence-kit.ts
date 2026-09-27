@@ -57,6 +57,11 @@ export interface PresenceOpts {
    * `console.error`.
    */
   readonly onFault?: (where: "outbound" | "leave" | "heal", error: unknown) => void;
+  /**
+   * A peer's presence ARRIVED or AGED OUT (the Loro store's imports and its TTL sweep — never this peer's own sets): it is
+   * projected at the next `world.sync()`, so the host's next frame must come — the facade wakes a sleeping loop here (K7a).
+   */
+  readonly onRemote?: () => void;
 }
 
 export interface PresenceSession {
@@ -101,6 +106,8 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
 
   const loro = new LoroEphemeralStore(ttlMs);
   const source = new LoroEphemeralSnapshot(loro);
+  const onRemote = opts.onRemote;
+  const stopRemote = onRemote === undefined ? undefined : loro.subscribe((ev) => { if (ev.by !== "local") onRemote(); });
 
   // The binding's timers call `send`; fan it out to `onOutbound` subscribers so
   // a transport can bind AFTER attach (the doc-kit precedent — transport-free core).
@@ -200,6 +207,7 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
       }
       attachment.detach();
       outbound.clear();
+      stopRemote?.();
       loro.destroy(); // we own the Loro store — clear its wasm cleanup timer
     },
   };

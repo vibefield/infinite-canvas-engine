@@ -32,6 +32,7 @@ import { FrameInfo, setFrameInfo } from "./frame-info";
 import { createGuestRegistry, type GuestRegistry, type GuestRegistryInternal } from "./guests";
 import { createPipelineRegistry, type PhaseGroup } from "./pipeline";
 import { createReflectorRegistry, type ReflectorDef } from "./reflectors";
+import { watchWrites } from "./world-doors";
 
 export type PublishHook = (world: World) => void;
 
@@ -149,6 +150,8 @@ export function createEngine(world: World, opts?: EngineOpts): Engine {
   let publishSnapshot: PublishEntry[] = [];
   let publishDirty = true;
   const frame = createFrameControl(world);
+  // THE SLEEP (K7a, frame-control.ts): a write made outside a step wakes a sleeping loop — one inside a step is the step's own
+  watchWrites(world, () => frame.wake("world"));
 
   let telemetryArmed = false;
   // Telemetry armed ⇒ devtools attached ⇒ the breaker reports timing overruns
@@ -199,25 +202,30 @@ export function createEngine(world: World, opts?: EngineOpts): Engine {
     },
 
     step(now) {
-      setFrameInfo(world, now);
-      world.sync();
-      world.tick(pipeline.assemble());
-      const info = world.getResource(FrameInfo);
-      guests.runAll({
-        dtMs: info?.dt ?? 0,
-        tick: info?.tick ?? 0,
-        clock: info?.clock ?? 0,
-      });
-      if (publishDirty) {
-        publishSnapshot = publishHooks.slice();
-        publishDirty = false;
+      frame.enterStep();
+      try {
+        setFrameInfo(world, now);
+        world.sync();
+        world.tick(pipeline.assemble());
+        const info = world.getResource(FrameInfo);
+        guests.runAll({
+          dtMs: info?.dt ?? 0,
+          tick: info?.tick ?? 0,
+          clock: info?.clock ?? 0,
+        });
+        if (publishDirty) {
+          publishSnapshot = publishHooks.slice();
+          publishDirty = false;
+        }
+        for (const entry of publishSnapshot) {
+          if (entry.alive) entry.hook(world);
+        }
+        world.reactive.notify();
+        reflectors.flushAll();
+        if (afterHooks.length > 0) for (const hook of afterHooks.slice()) hook();
+      } finally {
+        frame.leaveStep();
       }
-      for (const entry of publishSnapshot) {
-        if (entry.alive) entry.hook(world);
-      }
-      world.reactive.notify();
-      reflectors.flushAll();
-      if (afterHooks.length > 0) for (const hook of afterHooks.slice()) hook();
     },
 
     afterStep(hook) {

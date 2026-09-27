@@ -45,6 +45,7 @@ export function inkRaster(opts: InkRasterOptions): InkRaster {
   const ok = new Set<string>();
   const metricsCache = new Map<string, HandMetrics>();
   let version = 0;
+  const versionListeners = new Set<() => void>();
   let canvas: OffscreenCanvas | null = null;
   let ctx: OffscreenCanvasRenderingContext2D | null = null;
   const context = (w: number, h: number): OffscreenCanvasRenderingContext2D => {
@@ -75,6 +76,7 @@ export function inkRaster(opts: InkRasterOptions): InkRaster {
       if (drawable) ok.add(face);
       metricsCache.delete(face);
       version += 1;   // every layout keyed by the face is laid again — with the face, or honestly without it
+      for (const fn of [...versionListeners]) fn();
       return drawable;
     });
     loads.set(face, p);
@@ -118,6 +120,10 @@ export function inkRaster(opts: InkRasterOptions): InkRaster {
     load,
     ready: (face) => ok.has(face),
     version: () => version,
+    onVersion(fn) {
+      versionListeners.add(fn);
+      return () => { versionListeners.delete(fn); };
+    },
     metrics(face) {
       if (!ok.has(face)) { void load(face); return undefined; }
       return measure(face);

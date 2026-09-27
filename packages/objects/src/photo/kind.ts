@@ -110,6 +110,8 @@ export interface FlickWitness { readonly body: PhotoBody; readonly dts: number[]
 
 /** The photo kind's own state on one desk: the prints' bodies, their pictures, the carry's door. */
 export interface Prints extends KindLocal {
+  /** When the kind is next live (K7a — `KindLocal.due`, declared: the six built-ins all say). */
+  due(now: number): number;
   /** The hand takes print `e` at a world point (the carry); a body at rest is lifted off its facts. */
   hold(e: Entity, wx: number, wy: number, t: number): void;
   /** The hand moved (world, t seconds) — the grab point follows it exactly. */
@@ -359,6 +361,9 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       return pic.picture;
     },
     landed: (e) => landedOf.get(e) ?? 0,
+    // K7a: next live now while a print leads (in a hand, in the air, flying home, resting to commit), a picture landed, or the last
+    // frame's asks wait for their residency step (a detail to fetch); never otherwise — a landing wakes it (`onPictures`)
+    due: (now) => (woke || leading.size > 0 || passOf()?.residencyOwed === true ? now : Number.POSITIVE_INFINITY),
     tick(now) {
       const dt = last < 0 ? 0 : Math.min(Math.max((now - last) / 1000, 0), 0.05);
       last = now;
@@ -366,7 +371,7 @@ export function createPrints(host: KindHost, law: PhotoLaw = PHOTO): Prints {
       // last frame's prints asked is bound, fetched or let go before this frame's build
       const pass = passOf();
       if (pass !== undefined) {
-        if (!attached) { pass.budget(host.budget); pass.onPictures = () => { woke = true; }; attached = true; }
+        if (!attached) { pass.budget(host.budget); pass.onPictures = () => { woke = true; host.wake?.(); }; attached = true; }
         if (pass.residency()) woke = true;
       }
       let want = woke;
