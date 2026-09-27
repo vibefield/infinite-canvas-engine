@@ -14,7 +14,7 @@ unsupported and wall-checked.
 
 **What a landing must pass** (design-013 C4, D-C4.11; design-015 D1): `pnpm run ci` (typecheck ·
 lint · tests · the import walls · `gen:check`) and **`pnpm run gate:landing`** — the desk's Dawn
-oracle, the `apps/desk` build, its twelve rigs (`rig:parity` first: Chrome against the oracle's
+oracle, the `apps/desk` build, its fifteen rigs (`rig:parity` first: Chrome against the oracle's
 bytes, maxΔ 0 asserted per scene) and `pack:audit`.
 The landing gate is separate from `ci` because the oracle needs Dawn, which the
 CI runner has not been probed for. A RELEASE adds the audit again from the other
