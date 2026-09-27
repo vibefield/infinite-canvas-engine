@@ -388,7 +388,8 @@ try {
     return sp.object;
   };
   /** Carried poses, one sample per animation frame, for `n` frames. */
-  const traceCarried = (n) => qa(`new Promise((r) => { const out = []; let i = 0; const f = () => { const s = window.__desk.tray.state(); out.push({ carried: s.carried, facts: window.__desk.tray.facts(), p: s.p }); if (++i >= ${n}) r(out); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
+  const traceJs = (n) => `new Promise((r) => { const out = []; let i = 0; const f = () => { const s = window.__desk.tray.state(); out.push({ carried: s.carried, facts: window.__desk.tray.facts(), p: s.p }); if (++i >= ${n}) r(out); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`;
+  const traceCarried = (n) => qa(traceJs(n));
   const frames = (n) => qa(`new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(true); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
   /** Press `type`'s specimen at (u, v) across its object and carry it to `to` in steps; `release` at the end (default). */
   const carryOut = async (type, u, v, to, { release = true, steps = 8 } = {}) => {
@@ -492,7 +493,8 @@ try {
     // THE HAND-OFF: out through the top in one move, then still — the frame that hands it and the first the ghost is drawn coincide
     const top = lifted.frame.y;
     await front();
-    const tracing = traceCarried(40);   // sampling from the frame before the move is dispatched (CDP keeps the order)
+    // the trace's evaluate is SENT before the move (CDP keeps the order; `qa` would await `front()` first and let the move pass it)
+    const tracing = tab.evaluate(traceJs(40), { awaitPromise: true, timeoutMs: 20000 });
     await mouse("mouseMoved", g[0] + 20, top - 24, { buttons: 1 });
     const trace = await tracing;
     const i0 = trace.findIndex((t) => t.carried.some((c) => c.phase === "handing"));
