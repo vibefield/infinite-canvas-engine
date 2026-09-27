@@ -204,7 +204,8 @@ export const TrayContent = defineComponent("TrayContent", {
  * runtime canvas), `PrefabId` the kind's widget type, `Position` board px (x from the drawer's left edge, y down from the board's
  * top at scroll 0), `Size` its hang's, its entry's props over the widget's defaults. Spawned equipped (no capability tag, no
  * rider, no behaviour — nothing acts on it) and under a canvas that is no frame, so never `Active`: the desk's stack never picks,
- * selects, culls or saves one; never durable, never synced.
+ * selects, culls or saves one; never durable, never synced. A host that walks "the document's widgets" by `[Position, Size, PrefabId]`
+ * excludes it (`Not(Specimen)`) — a durable transaction over a runtime entity is refused ("op references an entity not in this store").
  */
 export const Specimen = defineTag("Specimen");
 

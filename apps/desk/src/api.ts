@@ -6,7 +6,7 @@
 // assets are up. Everything reads the WORLD (Position/Size/tags) and the builder's flux; nothing here
 // writes what an op would not.
 
-import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, HeldView, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
+import { Active, type CanvasEngine, ChildOf, Not, Specimen, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, HeldView, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
 import { ablateKinds, type BuildWork, type DeskLayerPerf, type GpuFrameReport, type GpuProfiler, type GroundFrameInputs, type KindCostOptions, type KindCostReport, type UploadTally } from "@ice/desk";
 import type { DeskLayerHandle, GlyphAtlasMeta, MatPin } from "@ice/desk";
 import type { AmbientMode } from "@ice/desk";
@@ -195,7 +195,8 @@ declare global {
   interface Window { __desk?: DeskApi }
 }
 
-const widgetsQ = defineQuery([Position, Size, PrefabId]);
+/** The desk's widgets — never the tray's specimens (K5a: runtime entities with a `PrefabId`, not the document's). */
+const widgetsQ = defineQuery([Position, Size, PrefabId, Not(Specimen)]);
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
 
 export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null, glyphs: GlyphFeed | null = null, dock: ProfilerDock | null = null): DeskApi {

@@ -19,9 +19,9 @@
 // The RIGS' module since design-015 D7 (D-D7-C.3): src/rig/, loaded by rig.html's harness only — the product page
 // reaches `setScene` through the door src/rig-door.ts declares and refuses without it; the spawn itself is src/scene.ts.
 
-import { abortNavFlight, Camera, type CanvasEngine, cascadeDestroy, type Entity, HeldView, Position, PrefabId, Size, writeRuntimeResource, defineQuery } from "@ice/core";
+import { abortNavFlight, Camera, type CanvasEngine, cascadeDestroy, type Entity, HeldView, Not, Position, PrefabId, Size, Specimen, specimensOf, trayEntity, writeRuntimeResource, defineQuery } from "@ice/core";
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk";
-import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type PaperDriver } from "@ice/objects";
+import { Calendar, CALENDAR_TYPE, MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type PaperDriver } from "@ice/objects";
 import { HAND, type ThemeName } from "@ice/desk";
 import { MINIMAT, PAPER, type BoardInk, type PaperKind } from "@ice/objects";
 import { oracleFixtures } from "./oracle-fixtures";
@@ -91,7 +91,24 @@ export interface OracleMiniMat {
   readonly inside?: OracleInside;
 }
 
-const widgetsQ = defineQuery([Position, Size, PrefabId]);
+/**
+ * The calendar SPECIMEN shows the still's month, as the oracle pins it (K5a — a specimen has no local, so the calendar's clock pin never
+ * reaches it; left alone it shows today's, and a still would move with the month).
+ */
+function pinSpecimenMonth(engine: CanvasEngine, month: string): void {
+  const w = engine.world;
+  const tray = trayEntity(w);
+  const group = Calendar.groups.find((g) => g.name === Calendar.propToGroup.month);
+  if (tray === undefined || group === undefined) return;
+  for (const e of specimensOf(w, tray)) {
+    if (w.get(e, PrefabId)?.id !== CALENDAR_TYPE) continue;
+    const cell = w.get(e, group.component) as Record<string, unknown> | undefined;
+    if (cell !== undefined && cell.month !== month) w.edit(e).set(group.component, { ...cell, month });
+  }
+}
+
+/** The desk's widgets — never the tray's specimens (K5a: runtime entities with a `PrefabId`, not the document's). */
+const widgetsQ = defineQuery([Position, Size, PrefabId, Not(Specimen)]);
 
 /** Every widget on the desk, gone in ONE non-undoable transaction (a scene replaces the desk). */
 export function clearDesk(engine: CanvasEngine): void {
@@ -219,6 +236,7 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   handle.tray.close();
   handle.tray.scroll(s.tray?.scroll ?? 0);
   handle.tray.pin(s.tray === undefined ? { hidden: true } : { p: s.tray.p ?? 1, lift: s.tray.lift ?? 0, band: 0 });
+  if (s.tray !== undefined) pinSpecimenMonth(engine, "2026-09");
   (handle.local("board") as BoardInk | undefined)?.pinStill(false);   // the board's ink dries again (D3t-a)
   // 2. the theme, pinned (the OS no longer leads)
   host.setTheme(s.theme, true);

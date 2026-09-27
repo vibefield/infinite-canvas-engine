@@ -157,10 +157,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0, tray: 0 };
   /** The pegboard drawer's motion (design-017 §3): the facts are core's `Tray`, polled each tick; the slide, the lip, the band are here. */
   const tray = createTrayFlux();
-  // the tray's specimens (K5a): read from the world when the lay count moves (or the tray entity does — a reset), drawn each frame it shows
-  let specimens: TraySpecimen[] = [];
-  let specimensLaid = -1;
-  let specimensOn: Entity | undefined;
+  // the tray's specimens (K5a): read from the world each frame the drawer shows (a handful of facts — a lay, a reset or a prop moves them)
   let drawnSpecimens: readonly TraySpecimenFrame[] = [];
   let builderWakes = builder.wakes();
 
@@ -249,8 +246,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       // the first time the tray shows one (a frame is asked for when it is), the frames recorded by their own kinds
       drawnSpecimens = [];
       if (trayed !== undefined && trayed.p > 0 && tray.pinned()?.bare !== true) {
-        const laid = tc?.laid ?? 0;
-        if (laid !== specimensLaid || te !== specimensOn) { specimens = readSpecimens(w, te); specimensLaid = laid; specimensOn = te; }
+        const specimens = readSpecimens(w, te);
         if (specimens.length > 0) {
           ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), () => { dirty = true; wakes.tray += 1; });
           drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p, trayed.lift), scroll: trayed.scroll }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
