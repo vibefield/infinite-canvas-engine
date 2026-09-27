@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a and K6b LANDED 2026-09-27)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b and K5b LANDED 2026-09-27)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1555,9 +1555,14 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   rung law (`ObjectKind.rung`), one frame raster queue (4 ms a turn, nearest first, the old raster standing), board replays
   queued; `zoom-written` worst frame 192.84 → 5.81 ms, 0 frames over 8 ms. Graded: ci 0; gate red once at rig:gpu's A/A
   timing row under load (0.26 vs a 0.084 ms floor) — alone 20/0 twice; every other leg green.
-- K5b — taking one ·
-  K6b — zoom · K7 — layers, wakes, scale · K8 — plugin parity and a third-party kind · K9 — the review and its fixes:
-  planned (design-016 §8; K5 and K6 split in two after K3's builder died at its context limit).
+- **K5b — taking one off the pegboard** (**LANDED 2026-09-27**, eight commits → `f161099`, rebased by its builder over
+  K6b): the lifted copy, the hand-off to `insertByDrag` at |Δ| 0, one create/selected/undo step, every cancel writes nothing;
+  the specimens' faces (`tray.local`) and label tape; the order-dependent tray still attributed (the board's pen materials)
+  and fixed. Graded: ci 0; gate red once at rig:stress's K6b boards row (a CDP-round-trip race main has too; K7a fixes it)
+  — rig:stress alone 35/0, then 34/1 on K2's A/A timing row; every other leg green.
+- K7a — layers, wakes, allocation (built, finishing) · K8a — the open seams (building) · K8b — the desk clock · K7b —
+  scale · K9 — the review and its fixes: planned (design-016 §8; K5, K6, K7 and K8 each split in two so no builder carries
+  more than its context holds).
 
 **Exit:** design-016 §6's gates on `rig:stress` and a new `rig:scale` (10,000 objects, mixed order, real pictures) with
 the load beside every number; the committed golden byte-identical through every refactor; every built-in kind compiling

@@ -804,6 +804,22 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   (D-K6b.6). rig:stress's `zoom-written` (240 written notes, 8 boards, 1 → 0.35 → 0.72): the worst frame 192.84 → 5.81 ms,
   0 frames over 8 ms in every round, p95 26.35 → 4.75 ms, records remade a frame 120 → 1, convergence ≤ 18 frames.
 
+<!-- design-016 K5b (2026-09-27) -->
+- **Taking one off the pegboard** (design-017 §9): a press on a specimen (+4 px) lifts a COPY ×1.06 about the grab point
+  (the specimen stays hung); leaving the drawer slides it away and hands the copy to core's `insertByDrag` (a one-tick
+  `TrayIntent` applied after the step, `anchor` = the grab point — no centre-snap —, `home` = the specimen) at |Δ| 0 px; the
+  ghost grows out of the copy on the drawer's curve and the ordinary drag runs (snap, drop targets, into a mini mat per the
+  kinds' rules); release = ONE create transaction, selected, one undo step. Esc, a rejected drop or a release back over the
+  drawer cancels (the ghost flies home shrinking; nothing enters undo); a release inside the drawer puts the copy back. The
+  tray entry gains `take` (what a taken object is made with — the kind's defaults unless it says; D-K5b.1) and
+  `tray.local` (a specimen drawn with the kind's desk state — the note's words, the print's procedural `sample:dusk`, the
+  pad's month; D-K5b.3/4/5); the name tags are label-maker TAPE (`TRAY_TAG_STYLE` "tape"; "pill" restores the chips —
+  D-K5b.7); `DESK_OBJECT` — the desk canvas places anything that provides it (D-K5b.2). rig:tray 34 → 47 rows.
+- **Fixed on the way:** the board pass's pen materials defaulted to black until a desk board had drawn, so the tray's board
+  specimen changed with scene order (a board record made without the desk's local now carries its look's `materials`); a
+  specimen's raster was re-asked every frame and never laid under K6b's queue (the queue's `shows` now includes what the
+  tray drew).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
