@@ -793,6 +793,17 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   (`KindPass.idle`, `LayeredKind.idle` — the tray's notebook and calendar 137 → 0.7 MB and 134 → 2.2 MB after the drawer
   shuts). `rig:tray` 24 → 34 rows; the golden 106 (a fifth tray still, `tray-scrolled`).
 
+<!-- design-016 K6b (2026-09-27) -->
+- **The desk zooms without a stall** (design-016 §6): a kind's record depends on the zoom only through its RUNG —
+  `ObjectKind.rung(RungContext)`; the builder remakes a rung kind's record only when its rung moves (the mini mat keeps
+  `rezoom`: its lattice ramps continuously, D-K6b.1). Rasters go through ONE frame queue (`engine/rasters.ts`,
+  `KindHost.rasters` / `.remake`): kinds ask, the host drains once a tick before the build, nearest the view's centre
+  first within "shows nothing → magnified stand-in → minified" (D-K6b.2), at most `RASTER_BUDGET_MS` (4 ms, `rasterMs`) a
+  turn; the old raster stands meanwhile (a rung short reads √2 soft for 14–18 frames); an edit is laid at once so the ink
+  never lags the caret (D-K6b.3); a board's first replay and density raise queue too, and a board with no ink draws bare
+  (D-K6b.6). rig:stress's `zoom-written` (240 written notes, 8 boards, 1 → 0.35 → 0.72): the worst frame 192.84 → 5.81 ms,
+  0 frames over 8 ms in every round, p95 26.35 → 4.75 ms, records remade a frame 120 → 1, convergence ≤ 18 frames.
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 

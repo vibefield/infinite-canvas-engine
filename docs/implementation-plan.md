@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a and K5a LANDED 2026-09-27)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a and K6b LANDED 2026-09-27)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1551,6 +1551,10 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   over K6a): the tray entry a kind declares, the kernel's lattice law, `Specimen` entities under the tray, each drawn by
   its own kind in its own slot on an SDF accessory; a plugin fixture kind appears by its entry alone; rig:tray 34, golden
   106. Graded: ci 0, gate:landing 0.
+- **K6b — zoom without a stall** (**LANDED 2026-09-27**, six commits → `d6b8472`, rebased by its builder over K5a): the
+  rung law (`ObjectKind.rung`), one frame raster queue (4 ms a turn, nearest first, the old raster standing), board replays
+  queued; `zoom-written` worst frame 192.84 → 5.81 ms, 0 frames over 8 ms. Graded: ci 0; gate red once at rig:gpu's A/A
+  timing row under load (0.26 vs a 0.084 ms floor) — alone 20/0 twice; every other leg green.
 - K5b — taking one ·
   K6b — zoom · K7 — layers, wakes, scale · K8 — plugin parity and a third-party kind · K9 — the review and its fixes:
   planned (design-016 §8; K5 and K6 split in two after K3's builder died at its context limit).
