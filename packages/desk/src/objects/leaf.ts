@@ -24,14 +24,14 @@
 // the left page on, the view goes to the right page; back, the other way round (`Books.face`).
 
 import { type Component, defineQuery, type Entity, guardedTransaction, heldEntity, HeldPointer, HeldPress, HeldTool, LocalPointer, Pointer, PointerButtons, PointerScreen, setWidgetProps, Viewport, type World } from "@ice/core";
-import { addStroke, encodePoints, encodeTimes } from "../board/data";
+import { addStroke, encodePoints, encodeTimes } from "../kit/strokes";
 import { readingTarget } from "../kit/hold";
 import { type Books, DEFAULT_PEN, type NotebookGeometry, PageTurns, pageHitAt, partOf, penOfTool } from "../kinds/notebook";
 import { inkPoints, pageOfSide } from "../notebook/ink";
 import { counts, dragSheet, grabSheet, releaseSheet } from "../notebook/motion";
 import { type LiveStroke, pageStrokeKey } from "../notebook/pages";
 import { type NotebookHit, localXAt } from "../notebook/pick";
-import { type TypingDocs, writable } from "./typing";
+import { type TypingDocs, writable } from "../docs";
 
 /** The notebook's props cell (`desk.notebook:props` — its `spread` the durable fact a completed turn moves). */
 

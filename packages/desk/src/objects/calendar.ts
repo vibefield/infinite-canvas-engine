@@ -11,12 +11,11 @@ import { EventPrefab, PinPrefab, pinnedNotes } from "../calendar/data";
 import { CALENDAR } from "../calendar/law";
 import { padFrame } from "../calendar/pad";
 import { type CalendarPart, calendarKind, type Pads } from "../kinds/calendar";
-import { PAPER_KIND } from "../kinds/paper";
 import type { KindDriver } from "../kinds/world";
 import { defineObject } from "../object";
 import { type CalendarHand, createCalendarHand } from "./calendar-hand";
 import { type CalendarWriting, createCalendarWriting } from "./calendar-writing";
-import { PENS } from "./note";
+import { PENS } from "../kit/text";
 
 /** The tapes a pad is bound with (CALENDAR.md §4) — names; the cloths and foils are the host's. */
 export const TAPES = ["ink", "tobacco", "kraft"] as const;
@@ -26,6 +25,13 @@ export type TapeName = (typeof TAPES)[number];
 export const CALENDAR_TYPE = "desk.calendar";
 
 const PAD = padFrame(CALENDAR);
+
+/**
+ * The kind whose objects stick to a day (D3t-c): the note's, asked of the host by its registry NAME (`KindDriverHost.kind`) —
+ * never imported, as a plugin kind would name another (K4a, design-016 K-L1): a desk that registers no note kind lends no
+ * predicate, and the pad pins nothing. (K8 turns this into a provides-key.)
+ */
+export const PINNABLE_KIND = "paper";
 
 export const Calendar = defineObject({
   type: CALENDAR_TYPE,
@@ -49,7 +55,7 @@ export const Calendar = defineObject({
   drivers: (h): CalendarDriver => {
     const pads = (): Pads | undefined => h.local as Pads | undefined;
     const writing = createCalendarWriting({ world: h.world, docs: h.docs, pads });
-    const isNote = h.kind(PAPER_KIND);
+    const isNote = h.kind(PINNABLE_KIND);
     const driver: CalendarDriver = {
       writing,
       pads,

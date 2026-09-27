@@ -9,7 +9,7 @@ import type { TextRaster } from "../kit/raster";
 import { drawRegion, type SheetPrint } from "../calendar/print";
 import type { PrintFace, PrintRaster } from "../kit/print";
 import { TILE_TEX } from "../calendar/tiles";
-import { PEN_FACES } from "./ink";
+import { PEN_FACES } from "../kit/text";
 
 export interface PrintRasterOptions {
   /** The desk's text raster: the hand's face and its metrics (the note's). */

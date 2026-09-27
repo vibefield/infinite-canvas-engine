@@ -32,7 +32,7 @@
 // (the note's, `1`–`4`: the tool in hand), undo (⌘Z) and redo (⇧⌘Z) — the document's history over its strokes.
 
 import { defineComponent, type Entity, field, type HeldToolApi, type HeldToolDef } from "@ice/core";
-import { BoardStroke, decodePoints, decodeTimes, type StrokeRow } from "../board/data";
+import { BoardStroke, decodePoints, decodeTimes, inking, type StrokeRow } from "../kit/strokes";
 import type { KindProgram, SlotContext } from "../kind";
 import type { MatPass, MarkFrame } from "../kit/view";
 import { type DeskEye, eyeOf } from "../kit/eye";
@@ -52,7 +52,6 @@ import { type ShaderText, shaderText } from "../kit/wgsl";
 import { settled, spring } from "../kit/springs";
 import { HOLD, readingTarget } from "../kit/hold";
 import { MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../theme";
-import { inking } from "./board";
 import { LayeredKind } from "../kit/layer";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 

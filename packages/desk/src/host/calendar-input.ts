@@ -26,8 +26,8 @@ import { dayBox, sheetOf } from "../calendar/sheet";
 import { CALENDAR_KIND, type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, partAt, sheetOnScreen } from "../kinds/calendar";
 import type { KindDriver } from "../kinds/world";
 import { CALENDAR_TYPE, Calendar, type CalendarDriver } from "../objects/calendar";
-import { type TypingDocs, writable } from "../objects/typing";
-import type { EditorLease, NoteEditor } from "./editor";
+import { type TypingDocs, writable } from "../docs";
+import type { EditorLease, NoteEditor } from "../kit/editor";
 
 export interface CalendarInputOptions {
   readonly container: HTMLElement;

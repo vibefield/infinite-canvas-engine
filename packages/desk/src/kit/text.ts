@@ -217,3 +217,23 @@ export const HAND = {
   wander: { amp: 0.022, period: 9 },
   wipeMs: 110,
 } as const;
+
+/** The pens a hand writes with (STICKY.md §3) — names; the inks are the host's (the note's, and the desk calendar's lines). */
+export const PENS = ["felt", "ball", "fountain", "red"] as const;
+export type PenName = (typeof PENS)[number];
+
+/** A face: its family and weight, and the file it loads from (absent = the platform's own). */
+export interface FaceSpec {
+  readonly family: string;
+  readonly weight: number;
+  readonly url?: string;
+}
+
+/** The hand's faces by name (STICKY.md §3) — the families and weights; the app supplies the files (desk/host/ink.ts `penFaces`). */
+export const PEN_FACES: Readonly<Record<string, Omit<FaceSpec, "url">>> = {
+  caveat: { family: "Caveat", weight: 500 },
+  "caveat-bold": { family: "Caveat", weight: 600 },
+  kalam: { family: "Kalam", weight: 400 },
+  marker: { family: "Marker Felt", weight: 400 },
+  noteworthy: { family: "Noteworthy", weight: 400 },
+};

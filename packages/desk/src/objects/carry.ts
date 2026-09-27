@@ -28,7 +28,7 @@
 
 import { CancelRequest, ChildOf, type Component, defineQuery, Drag, type Entity, GestureActive, GestureCancelled, GestureEnded, GestureFailed, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, PressWheel, Size, Captures, Watches, type World } from "@ice/core";
 import type { Prints } from "../kinds/photo";
-import { type TypingDocs, writable } from "./typing";
+import { type TypingDocs, writable } from "../docs";
 
 export interface PhotoCarryOptions {
   readonly world: World;

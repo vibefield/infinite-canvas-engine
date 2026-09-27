@@ -21,7 +21,7 @@ import { keyOf } from "../calendar/month";
 import type { PadDraft, Pads } from "../kinds/calendar";
 import { decodeSeeds, encodeSeeds, freshSeed } from "../kit/seeds";
 import { carrySeeds } from "../kit/text";
-import { type TypingDocs, writable } from "./typing";
+import { type TypingDocs, writable } from "../docs";
 
 export interface CalendarWritingOptions {
   readonly world: World;

@@ -12,7 +12,7 @@ import { keyOf, monthOfDay } from "../calendar/month";
 import { padFrame } from "../calendar/pad";
 import { type CalendarGeometry, DRAFT_ID, type PadMarks, type Pads, partAt, sheetPoint } from "../kinds/calendar";
 import type { CalendarWriting } from "./calendar-writing";
-import { type TypingDocs, writable } from "./typing";
+import { type TypingDocs, writable } from "../docs";
 
 export interface CalendarHandOptions {
   readonly world: World;

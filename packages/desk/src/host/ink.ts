@@ -13,23 +13,10 @@
 // is reused for every raster (`willReadFrequently`: the CPU path the readback wants).
 
 import type { InkBitmap, TextRaster } from "../kit/raster";
-import type { HandLayout, HandMetrics } from "../kit/text";
+import { type FaceSpec, type HandLayout, type HandMetrics, PEN_FACES } from "../kit/text";
 
-/** A face: its family and weight, and the file it loads from (absent = the platform's own). */
-export interface FaceSpec {
-  readonly family: string;
-  readonly weight: number;
-  readonly url?: string;
-}
-
-/** The hand's faces by name (STICKY.md §3) — the families and weights; the app supplies the files. */
-export const PEN_FACES: Readonly<Record<string, Omit<FaceSpec, "url">>> = {
-  caveat: { family: "Caveat", weight: 500 },
-  "caveat-bold": { family: "Caveat", weight: 600 },
-  kalam: { family: "Kalam", weight: 400 },
-  marker: { family: "Marker Felt", weight: 400 },
-  noteworthy: { family: "Noteworthy", weight: 400 },
-};
+// the faces are the HAND's (kit/text.ts since K4a — the desk calendar's print sets them too); the note's raster keeps its door
+export { type FaceSpec, PEN_FACES } from "../kit/text";
 
 /** The desk's faces with the app's files: `{ caveat: url, "caveat-bold": url, kalam: url }` → face specs. */
 export function penFaces(urls: Readonly<Record<string, string>>): Readonly<Record<string, FaceSpec>> {

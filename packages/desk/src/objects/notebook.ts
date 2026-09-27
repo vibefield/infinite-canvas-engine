@@ -10,7 +10,7 @@
 // takes it, whatever it accepts).
 
 import { p } from "@ice/core";
-import { StrokePrefab } from "../board/data";
+import { StrokePrefab } from "../kit/strokes";
 import { type Books, notebookKind } from "../kinds/notebook";
 import { NOTEBOOK } from "../notebook/law";
 import { defineObject } from "../object";

@@ -9,7 +9,6 @@
 import { p } from "@ice/core";
 import { minimatKind } from "../kinds/minimat";
 import { defineObject } from "../object";
-import { NOTE_TYPE } from "./note";
 import { MINIMAT } from "../minimat/theme";
 
 /** The vinyls a mini mat is sold in (MINIMAT.md §2) — names; `sage` is the desk's ground, the rest the host's. */
@@ -18,6 +17,13 @@ export type VinylName = (typeof VINYLS)[number];
 
 /** The mini mat's durable type id. */
 export const MINIMAT_TYPE = "desk.minimat";
+
+/**
+ * The note's durable type id, which a mini mat accepts: core's container list is by TYPE NAME, resolved when something is dropped
+ * in, so the mini mat names the note as a plugin container would — never by importing it (K4a, design-016 K-L1; test/kind-names.test.ts
+ * pins it to the note's own `NOTE_TYPE`). K8 turns `accepts` into provides-keys.
+ */
+const NOTE_TYPE = "desk.note";
 
 export const MiniMat = defineObject({
   type: MINIMAT_TYPE,

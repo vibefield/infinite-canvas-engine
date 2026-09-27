@@ -28,7 +28,7 @@ import type { MarkFrame, MatPass } from "../kit/view";
 import { type ShaderText, shaderText } from "../kit/wgsl";
 import { type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
 import { BOARD } from "../board/theme";
-import { ChildOf, defineQuery, type Entity, HeldPress, type HeldToolDef, LocalPointer, Pointer, type World } from "@ice/core";
+import { ChildOf, type Entity, type HeldToolDef, type World } from "@ice/core";
 import { type KindHost, type KindLocal, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
 /** The whiteboard's kind name — its key in the registry and in every slot's `objects`. */
@@ -100,13 +100,9 @@ export const ERASER_TOOL_ID = "eraser";
 /** The ink a tool id names, or undefined (the eraser, anything else). */
 export const inkOfTool = (id: string): string | undefined => (id.startsWith("marker:") ? id.slice(7) : undefined);
 
-const heldPressesQ = defineQuery([Pointer, LocalPointer, HeldPress]);
-/** A stroke is in hand (a local pointer's press is the tool's): the history waits for it to land (BOARD.md §5 — the bench's `!this.open?.stroke`). */
-export function inking(world: World): boolean {
-  let yes = false;
-  world.query(heldPressesQ).each((b) => { for (const r of b) if (world.read(b.entity(r), HeldPress).kind === "tool") yes = true; });
-  return yes;
-}
+// a stroke in hand is the kit's question since K4a (kit/strokes.ts — the notebook asks it too); the board keeps its door
+import { inking } from "../kit/strokes";
+export { inking };
 
 /** Is there ink on board `e` — a stroke (the eraser's too: it may leave a ghost) after its last wipe? */
 export function boardInked(world: World, e: Entity): boolean {

@@ -4,6 +4,7 @@
 // engine (`@ice/desk/engine`) and the contract (`KindProgram`, `ObjectKind`, `defineObject` — `@ice/desk`) alone.
 export * from "./blobs";
 export * from "./book";
+export * from "./editor";
 export * from "./eye";
 export * from "./hold";
 export * from "./inside";
@@ -20,6 +21,7 @@ export * from "./raster";
 export * from "./sdf";
 export * from "./seeds";
 export * from "./springs";
+export * from "./strokes";
 export * from "./text";
 export * from "./uniform";
 export * from "./view";

@@ -13,11 +13,11 @@ import type { KindDriver } from "../kinds/world";
 import { defineObject } from "../object";
 import type { Writing } from "../paper/writing";
 import { PAPER } from "../paper/theme";
+import { PENS } from "../kit/text";
 import { createNoteTyping, type NoteTyping } from "./typing";
 
-/** The pens a note is written with (STICKY.md §3) — names; the inks are the host's. */
-export const PENS = ["felt", "ball", "fountain", "red"] as const;
-export type PenName = (typeof PENS)[number];
+// the pens are the HAND's (kit/text.ts since K4a — the desk calendar writes with them too); the note keeps its door
+export { PENS, type PenName } from "../kit/text";
 /** The papers a note is cut from — names; the sheets are the host's (the product's `--vf-note-surface` is `yellow`). */
 export const PAPERS = ["yellow"] as const;
 export type PaperName = (typeof PAPERS)[number];
