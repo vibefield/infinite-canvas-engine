@@ -8,7 +8,7 @@
 import { type CanvasEngine, ChildOf, type Entity, guardedTransaction, Position } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
 import type { BoardInk, BoardKind, FlickWitness, NotebookKind, Pads, Prints } from "@ice/desk";
-import { addStroke, BOARD_TYPE, type BoardPen, BoardStroke, decodePoints, decodeTimes, PHOTO_TYPE, type StrokeSpec } from "@ice/desk/objects";
+import { addStroke, BOARD_TYPE, type BoardPen, BoardStroke, decodePoints, decodeTimes, PHOTO_TYPE, type StrokeSpec } from "@ice/objects";
 import { BOARD } from "@ice/desk";
 import { printRect } from "@ice/desk";
 import { spawnAll } from "./scene";

@@ -21,7 +21,7 @@
 
 import { abortNavFlight, Camera, type CanvasEngine, cascadeDestroy, type Entity, HeldView, Position, PrefabId, Size, writeRuntimeResource, defineQuery } from "@ice/core";
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk";
-import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type PaperDriver } from "@ice/desk/objects";
+import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type PaperDriver } from "@ice/objects";
 import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk";
 import type { BoardInk, PaperKind } from "@ice/desk";
 import { oracleFixtures } from "./oracle-fixtures";

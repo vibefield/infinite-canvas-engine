@@ -15,7 +15,7 @@ import type { Entity } from "@ice/core";
 import { Active, PointerWorld, LocalPointer, Pointer, Camera, heldEntity, Position, PrefabId, Size, Viewport, defineQuery, defineTickSystem, selectedEntities } from "@ice/core";
 import { deskLayer, type DeskLayerHandle } from "@ice/desk";
 import { bookAngle } from "@ice/desk";
-import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, MiniMat, NOTE_TYPE, NOTEBOOK_TYPE, VINYLS, type VinylName } from "@ice/desk/objects";
+import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, MiniMat, NOTE_TYPE, NOTEBOOK_TYPE, VINYLS, type VinylName } from "@ice/objects";
 import type { ThemeName } from "@ice/desk";
 import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";

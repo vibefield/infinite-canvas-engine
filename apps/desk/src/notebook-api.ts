@@ -6,7 +6,7 @@
 
 import { type CanvasEngine, ChildOf, type Entity } from "@ice/core";
 import { type Books, type DeskLayerHandle, INK_H, INK_W, NOTEBOOK_PAGE } from "@ice/desk";
-import { BoardStroke, decodePoints, decodeTimes, Notebook, NOTEBOOK_TYPE, type NotebookHand } from "@ice/desk/objects";
+import { BoardStroke, decodePoints, decodeTimes, Notebook, NOTEBOOK_TYPE, type NotebookHand } from "@ice/objects";
 
 export interface NotebookApi {
   /** A book's strokes in sibling order: tool, pen, page, the path's points (page units), how many timed samples. */

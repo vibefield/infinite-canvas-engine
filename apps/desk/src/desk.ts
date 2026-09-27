@@ -1,12 +1,12 @@
 // The desk's ENGINE (design-015 §9, D2a-core's settings; D2a-world): `createCanvasEngine` over the
-// shipped preset — `DESK_ENGINE` from `@ice/desk/objects` (D7, D-D7-C.1: the desk's objects, infinite
+// shipped preset — `DESK_ENGINE` from `@ice/objects` (D7, D-D7-C.1 — its own package since K4b: the desk's objects, infinite
 // zoom, the prototype's wheel zooming about the pointer, the zoom-through, and the desk's SELECT tool —
 // a drag on the bare mat PANS, shift draws the marquee — as the root canvas type's default). Until D7
 // the preset lived here, so the published quickstart could not do what the README said; the app now
 // takes exactly what a third party takes, and adds its room and its people.
 
 import { type BootstrapClock, broadcastChannelByteChannel, type ByteChannel, type CanvasEngine, createCanvasEngine, type JoinResult, webSocketByteChannel } from "@ice/core";
-import { DESK_ENGINE, deskSelect, PRESENCE_INKS } from "@ice/desk/objects";
+import { DESK_ENGINE, deskSelect, PRESENCE_INKS } from "@ice/objects";
 
 const param = (name: string): string | undefined => (typeof location === "undefined" ? undefined : new URLSearchParams(location.search).get(name) ?? undefined);
 

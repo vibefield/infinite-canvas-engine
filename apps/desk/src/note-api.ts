@@ -9,7 +9,7 @@ import { type CanvasEngine, defineQuery, Editing, type Entity } from "@ice/core"
 import type { DeskLayerHandle } from "@ice/desk";
 import { DEFAULT_BLEED, DEFAULT_HAND_LAW, type NoteRasterInfo, type PaperKind, type WritingStats } from "@ice/desk";
 import { layoutText } from "@ice/desk/kit";
-import { NOTE_INK, NOTE_TYPE, type PaperDriver } from "@ice/desk/objects";
+import { NOTE_INK, NOTE_TYPE, type PaperDriver } from "@ice/objects";
 import { deskText } from "./faces";
 
 export interface NoteApi {

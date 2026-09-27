@@ -32,6 +32,7 @@
     "@ice/core": "workspace:*",
     "@ice/desk": "workspace:*",
     "@ice/devtools": "workspace:*",
+    "@ice/objects": "workspace:*",
     "@ice/react": "workspace:*",
     "react": "^19",
     "react-dom": "^19"

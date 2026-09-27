@@ -36,7 +36,7 @@ import {
   defineQuery,
   writeRuntimeResource,
 } from "@ice/core";
-import { MINIMAT_TYPE, NOTE_TYPE } from "@ice/desk/objects";
+import { MINIMAT_TYPE, NOTE_TYPE } from "@ice/objects";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDeskEngine, type DeskIdentity, joinDeskRoom } from "../src/desk";
 

@@ -105,6 +105,7 @@
     "@ice/devtools": "workspace:*",
     "@ice/dom": "workspace:*",
     "@ice/kernel": "workspace:*",
+    "@ice/objects": "workspace:*",
     "@ice/react": "workspace:*",
     "@types/rbush": "^3.0.3",
     "@types/react": "^19",

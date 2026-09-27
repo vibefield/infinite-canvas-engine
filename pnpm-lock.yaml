@@ -44,6 +44,9 @@ importers:
       '@ice/devtools':
         specifier: workspace:*
         version: link:../../packages/devtools
+      '@ice/objects':
+        specifier: workspace:*
+        version: link:../../packages/objects
       '@ice/react':
         specifier: workspace:*
         version: link:../../packages/react
@@ -163,6 +166,9 @@ importers:
       '@ice/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@ice/objects':
+        specifier: workspace:*
+        version: link:../objects
       '@ice/react':
         specifier: workspace:*
         version: link:../react
@@ -191,6 +197,28 @@ importers:
       '@types/rbush':
         specifier: ^3.0.3
         version: 3.0.4
+
+  packages/objects:
+    dependencies:
+      '@ice/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ice/desk':
+        specifier: workspace:*
+        version: link:../desk
+      '@ice/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+    devDependencies:
+      '@webgpu/types':
+        specifier: ^0.1.72
+        version: 0.1.72
+      tsx:
+        specifier: ^4.20.0
+        version: 4.23.13
+      vitest:
+        specifier: ^3
+        version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
 
   packages/react:
     dependencies:

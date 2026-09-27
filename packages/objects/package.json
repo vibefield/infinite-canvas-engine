@@ -1,0 +1,25 @@
+{
+  "name": "@ice/objects",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The desk's six reference object kinds (design-016 §5, K4b) — the note, the mini mat, the whiteboard, the photo print, the desk calendar and the notebook, each with its world half, its pass, its WGSL, its drivers and its DOM half — compiled against the desk's PUBLIC entries alone (`@ice/desk`, `@ice/desk/kit`, `@ice/desk/engine`, core's and kernel's), exactly as a plugin kind is. Published as `@vibecook/ice/desk/objects`.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ice/core": "workspace:*",
+    "@ice/desk": "workspace:*",
+    "@ice/kernel": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.72",
+    "tsx": "^4.20.0",
+    "vitest": "^3"
+  }
+}

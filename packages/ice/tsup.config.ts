@@ -9,7 +9,8 @@ import { defineConfig } from "tsup";
  *
  * design-015 §3 (D5b): the entries are `.` · `/kernel` · `/dom` · `/desk` ·
  * `/desk/engine` · `/desk/objects` · `/react` · `/devtools`; design-016 §5 (K4a)
- * adds `/desk/kit` (the render kit a kind is written against). `./r3f`,
+ * adds `/desk/kit` (the render kit a kind is written against), and K4b moves `/desk/objects` to a
+ * package of its own (`@ice/objects` — the six kinds, built on the public entries alone). `./r3f`,
  * `./r3f/webgpu` and the four `./ground*` entries left with their packages, and
  * with them the `three`, `@react-three` and `stats-gl` externals: the whole
  * graph is three-free (`tools/audit-pack.mjs` measures it).

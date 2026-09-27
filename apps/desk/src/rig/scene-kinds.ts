@@ -9,7 +9,7 @@
 import { type CanvasEngine, type Entity, guardedTransaction } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
 import { type BookPose, type Books, type PadPose, type Pads, type PhotoPose, printRect, type Prints, RGBA_TYPE } from "@ice/desk";
-import { addEvent, addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, monthKeyOf, monthOfKey, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/desk/objects";
+import { addEvent, addStroke, BOARD_TYPE, Calendar, CALENDAR_TYPE, daySlot, monthKeyOf, monthOfKey, Notebook, NOTEBOOK_TYPE, PHOTO_TYPE, pinNote, type StrokeSpec } from "@ice/objects";
 import { BLANK_SHEET, type CommittedSheet, type PrintMeta, PRINT_ZONE, printSheetOf } from "@ice/desk/oracle/prints.mjs";
 import photoMetaUrl from "@ice/desk/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/desk/oracle/fixtures/assets/photo-1.rgba?url";

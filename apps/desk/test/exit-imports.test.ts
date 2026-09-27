@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /** THE SURFACE — the engine entries the PRODUCT imports, in their workspace spelling; each must be an entry the UMBRELLA publishes. */
-const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/desk/objects", "@ice/desk/kit", "@ice/devtools"] as const;   // devtools since design-016 K2: the dock on ⇧`
+const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/objects", "@ice/desk/kit", "@ice/devtools"] as const;   // devtools since design-016 K2: the dock on ⇧`; `@ice/objects` (published `./desk/objects`) since K4b — the kinds' own package
 /** The rigs' extra door: the oracle's scenes, frames and fixtures (published by the WORKSPACE desk package, not the umbrella). */
 const RIG_DOOR = "@ice/desk/oracle/*";
 /** The three pages and the module each one loads (their `<script type="module" src>`); the product is `index`. */
@@ -79,7 +79,7 @@ const UMBRELLA = (JSON.parse(readFileSync(join(PACKAGES, "ice/package.json"), "u
 /**
  * The umbrella's entries in their WORKSPACE spelling → the subpath it publishes them at: each exports-map entry's
  * `dist/<name>.js` is built from `packages/ice/src/<name>.ts`, which re-exports ONE workspace barrel
- * (`export * from "../../desk/src/objects/index"` is `@ice/desk/objects`, published as `./desk/objects`).
+ * (`export * from "../../objects/src/index"` is `@ice/objects`, published as `./desk/objects` — the kinds' own package since K4b).
  */
 const PUBLISHED = new Map<string, string>();
 for (const [sub, target] of Object.entries(UMBRELLA)) {
