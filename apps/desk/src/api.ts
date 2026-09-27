@@ -1,13 +1,13 @@
 // `window.__desk` — the desk's door for the rigs (and a person at the console): the engine and the
 // layer's handle themselves, `spawn` (at a CENTRE, the prototype's convention), `setScene` (an
 // oracle still spawned into the world), the desk's objects as a harness reads them, the camera, the
-// selection, the instruments (`stats`, `wakes`, `submits`), the ambient policy, the theme, the gesture
+// selection, the instruments (`stats`, `wakes`, `submits`; the GPU profiler and per-kind cost — `perf.gpu()`, `perf.kindCost()`, K2), the ambient policy, the theme, the gesture
 // settings (a host's live tuning), and `settle` — resolves once the desk is drawn, quiet and its
 // assets are up. Everything reads the WORLD (Position/Size/tags) and the builder's flux; nothing here
 // writes what an op would not.
 
 import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, HeldView, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
-import type { BuildWork, DeskLayerPerf, GroundFrameInputs, UploadTally } from "@ice/desk";
+import { ablateKinds, type BuildWork, type DeskLayerPerf, type GpuFrameReport, type GpuProfiler, type GroundFrameInputs, type KindCostOptions, type KindCostReport, type UploadTally } from "@ice/desk";
 import type { DeskLayerHandle, GlyphAtlasMeta, MatPin } from "@ice/desk";
 import type { AmbientMode } from "@ice/desk";
 import type { ThemeName } from "@ice/desk";
@@ -162,6 +162,8 @@ export interface PerfReading {
   readonly redraws: number;
   /** The kinds' persistent record stores (D6, design-015 §4.3): records written and draw lists rewritten since the mount, by kind. */
   readonly records: Readonly<Record<string, { readonly written: number; readonly bytes: number; readonly orderWrites: number; readonly slots: number }>>;
+  /** The GPU profiler's frames completed since the last take (K2), drained — none unless it is armed (`perf.gpu()?.arm()`). */
+  readonly gpu: { readonly armed: boolean; readonly frames: readonly GpuFrameReport[] };
 }
 
 export interface PerfApi {
@@ -173,6 +175,14 @@ export interface PerfApi {
   heap(): number | null;
   /** V8's `gc()` when Chrome exposes it (`--js-flags=--expose-gc`); false when it does not. */
   gc(): boolean;
+  /** THE GPU PROFILER on the desk's device (K2, design-016 §4): unarmed until a rig or the dock arms it; null before the device. */
+  gpu(): GpuProfiler | null;
+  /**
+   * PER-KIND GPU COST BY ABLATION (K2, design-016 §4.4): the last frame drawn in saturated, drained, probe-calibrated batches with
+   * each kind's objects left out in turn, round-robined, an A/A control beside — ms per frame each kind costs, and the noise
+   * floor. At rest (a desk drawing its own frames meanwhile shares the GPU); leaves the frame as it was.
+   */
+  kindCost(opts?: KindCostOptions): Promise<KindCostReport>;
 }
 
 declare global {
@@ -236,7 +246,8 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       stepSamples = [];
       const s = handle.submits();
       const st = handle.stats();
-      return { steps, flush: handle.perf(), uploads: s?.uploadsByLabel() ?? {}, submits: s?.total() ?? 0, totals: st.totals, work: st.work, redraws: handle.redraws(), records: handle.records() };
+      const gpu = handle.profiler();
+      return { steps, flush: handle.perf(), uploads: s?.uploadsByLabel() ?? {}, submits: s?.total() ?? 0, totals: st.totals, work: st.work, redraws: handle.redraws(), records: handle.records(), gpu: { armed: gpu?.armed() ?? false, frames: gpu?.take() ?? [] } };
     },
     heap() {
       const m = (performance as { memory?: { usedJSHeapSize?: number } }).memory;
@@ -247,6 +258,14 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       if (typeof g !== "function") return false;
       g();
       return true;
+    },
+    gpu: () => handle.profiler() ?? null,
+    async kindCost(opts) {
+      const device = handle.device();
+      const g = handle.ground();
+      const inputs = handle.lastInputs();
+      if (device === undefined || g === null || inputs === null) throw new Error("desk: no frame to measure");
+      return ablateKinds({ inputs, render: (f: GroundFrameInputs) => { g.render(f); }, drain: () => device.queue.onSubmittedWorkDone(), now: () => performance.now() }, opts);
     },
   };
   const api: DeskApi = {
