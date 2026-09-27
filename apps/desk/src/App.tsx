@@ -20,6 +20,7 @@ import { installDeskApi, type DeskApi } from "./api";
 import { deskBlobs } from "./blobs";
 import { installPictureDrop } from "./paste";
 import { createDeskEngine, deskRoom, joinDeskRoom } from "./desk";
+import { disposeOnLeave } from "./lifetime";
 import { type DevPanel, installDevPanel } from "./panel/panel";
 import { defaultParams } from "./panel/params";
 import { deskText } from "./faces";
@@ -147,7 +148,13 @@ export function App(): ReactElement {
     ];
   }, [engine]);
 
-  useEffect(() => () => engine.dispose(), [engine]);
+  // The engine lives as long as the app is mounted — disposed a task after a real unmount, never by StrictMode's
+  // development double-mount check, which re-runs <Desk> against the SAME engine (lifetime.ts)
+  const [lifetime] = useState(() => disposeOnLeave(() => engine.dispose()));
+  useEffect(() => {
+    lifetime.enter();
+    return () => lifetime.leave();
+  }, [lifetime]);
 
   return (
     <Desk
