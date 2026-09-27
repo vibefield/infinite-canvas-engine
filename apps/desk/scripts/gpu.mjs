@@ -216,8 +216,10 @@ try {
 
   // ── THE DRAWER (K3, design-017) under the profiler. Armed with the drawer OPEN and at rest — the counter read before the arm —
   //    240 frames: no submit, no redraw, no GPU frame (K-L5 · K-L6: its motion is flux that runs only while it moves). Then a
-  //    scroll: its pipeline `tray/pegboard` is every frame's `tray` row — ONE draw of one instance, inside the `ground` pass (it
-  //    has no pass of its own: it draws after the marks) — its uploads the `tray` row's, its blocks and hash texture the ledger's.
+  //    scroll: its pipeline `tray/pegboard` is every frame's `tray` row — THREE draws inside the `ground` pass (it has no pass of its
+  //    own: it draws after the marks): the board under its specimens (one instance), the specimens' accessories (one each), the rim
+  //    over them (one) — K5a; the specimens themselves are their kinds' rows. Its uploads the `tray` row's — its block and the
+  //    accessories' records, both moving with the board — its blocks and hash texture the ledger's.
   await q("window.__desk.tray.open(); 0");
   await settle();
   await front();
@@ -228,20 +230,22 @@ try {
     return { open: d.tray.isOpen(), submits: d.submits().total - n0, redraws: d.handle.redraws() - r0, frames: d.perf.take().gpu.frames.length, armed: d.perf.gpu().armed() };
   })()`, 30000);
   check(openRest.open && openRest.armed && openRest.submits === 0 && openRest.redraws === 0 && openRest.frames === 0, `armed with the drawer OPEN at rest (the counter read before the arm), 240 frames: ${openRest.submits} submits, ${openRest.redraws} redraws, ${openRest.frames} GPU frames — arming adds no submit and never wakes the drawer`);
-  const run4 = await qa(`(async () => {
+  let run4 = await qa(`(async () => {
     const d = window.__desk; const s0 = d.tray.scroll();
     for (let i = 1; i <= 12; i++) { d.tray.scroll(s0 + i * 7); await new Promise((r) => requestAnimationFrame(r)); }
     await new Promise((r) => setTimeout(r, 250));
-    return d.perf.take().gpu.frames.filter((f) => f.kind === "frame");
+    return { frames: d.perf.take().gpu.frames.filter((f) => f.kind === "frame"), accessories: d.tray.state().laid?.accessories.length ?? 0 };
   })()`);
+  const nAcc = run4.accessories;
+  run4 = run4.frames;
   const last4 = run4.at(-1);
   const timed4 = run4.filter((f) => f.timing === "timed");
   const passes4 = [...new Set(timed4.flatMap((f) => f.passes.map((p) => p.label)))];
-  check(run4.length > 0 && run4.every((f) => f.byKind.tray?.draws === 1 && f.byKind.tray?.instances === 1) && timed4.length > 0 && timed4.every((f) => f.passes.some((p) => p.label === "ground") && !f.passes.some((p) => p.label.startsWith("tray"))), `the drawer is every frame's "tray" row (pipeline tray/pegboard): ONE draw of one instance in each of ${run4.length} scroll frames (${JSON.stringify(last4?.byKind.tray)}), inside the ground pass — the timed frames' passes: ${passes4.join(" · ")}`);
+  check(nAcc === 6 && run4.length > 0 && run4.every((f) => f.byKind.tray?.draws === 3 && f.byKind.tray?.instances === 2 + nAcc) && timed4.length > 0 && timed4.every((f) => f.passes.some((p) => p.label === "ground") && !f.passes.some((p) => p.label.startsWith("tray"))), `the drawer is every frame's "tray" row (pipeline tray/pegboard): THREE draws — the board, ${nAcc} accessories, the rim — of ${2 + nAcc} instances in each of ${run4.length} scroll frames (${JSON.stringify(last4?.byKind.tray)}), inside the ground pass — the timed frames' passes: ${passes4.join(" · ")}`);
   // the wind is still (no pointer here), so the frame's light does not move: a scroll changes the drawer's own block alone
   const up4 = run4.map((f) => f.uploads.tray ?? { writes: 0, bytes: 0 });
   const mem4 = last4?.memory?.byLabel.tray;
-  check(up4.every((u) => u.writes === 1 && u.bytes === up4[0].bytes) && mem4?.textures === 1 && mem4?.buffers === 2 && mem4.bytes > 0, `its uploads and memory are the "tray" rows: a scroll writes ONE block a frame, its own (${up4.map((u) => u.writes).join(" ")} × ${up4[0]?.bytes} B) — its light block, unchanged, never; the ledger's tray row ${mem4?.bytes} B — ${mem4?.textures} texture (the hash) and ${mem4?.buffers} buffers (its block, its light)`);
+  check(up4.every((u) => u.writes === 2 && u.bytes === up4[0].bytes) && mem4?.textures === 1 && mem4?.buffers === 3 && mem4.bytes > 0, `its uploads and memory are the "tray" rows: a scroll writes TWO blocks a frame — its own and its accessories' records, moving with the board (${up4.map((u) => u.writes).join(" ")} × ${up4[0]?.bytes} B) — its light block, unchanged, never; the ledger's tray row ${mem4?.bytes} B — ${mem4?.textures} texture (the hash) and ${mem4?.buffers} buffers (its block, its light, its accessories)`);
   await q("window.__gpuOff(); window.__desk.tray.close(); 0");
   await settle();
 

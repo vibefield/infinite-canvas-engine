@@ -4,14 +4,18 @@
 // pattern by exactly Δ — the carry's uniforms and a screenshot shift-compare; exact 10⁶ rows down (the same carry fraction, the same
 // holes); the wheel over the drawer scrolls it and never moves the camera; the desk inert while open; 0 submits at rest open and
 // closed (240 frames each), one frame per frame of motion; the drawer's GPU cost at 2400 × 1600 (≤ 0.3 ms: a saturated batch of it
-// alone, drained around, medians and minima of 7 rounds with the load beside them); the night; no page errors. Exit 0 = every row
-// passed.
+// alone, drained around, medians and minima of 7 rounds with the load beside them); the night; no page errors. K5a — THE SPECIMENS:
+// the six kinds in the world where the lattice law lays them (read back; never Active, selected or durable), every peg on a punched
+// hole's centre, the scroll's range from the laid content, each drawn by its own kind, a scroll of Δ moving board and specimens by Δ,
+// the band carrying them, the hover lifting one and settling, a PLUGIN fixture kind on the tray by its entry alone, idle with them
+// open and closed, and what they cost. Exit 0 = every row passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { loadavg } from "node:os";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
+import { layTray, PEG_LATTICE } from "../../../packages/kernel/src/tray.ts";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -80,6 +84,15 @@ try {
   check(lifted.facts.lip === true && lifted.frame.y === 782 && fell.facts.lip === false && fell.frame.y === 788,
     `hovered, the lip lifts to ${800 - lifted.frame.y} px (18) and falls back to ${800 - fell.frame.y} (12) when the mouse leaves`);
 
+  // K5a: the FIRST open makes, once, what the specimens need (the composite kinds' tray passes, their slots) — its submits are that setup's;
+  //      every slide after it is one frame per frame of motion (row 2)
+  const first0 = await q("window.__desk.submits().total");
+  await q("window.__desk.tray.open()"); await settle(); await sleep(300); await settle();
+  const firstOpen = (await q("window.__desk.submits().total")) - first0;
+  const slots = (await tray()).slots;
+  await q("window.__desk.tray.close()"); await settle();
+  check(slots === 6 && firstOpen > 0, `the first open made the six specimens' slots (${slots}) — ${firstOpen} submits, the slide's and the setup's, once`);
+
   // 2. `a` opens it, on the curve — sampled on the frame clock; the motion's wall time
   const lit0 = await shot();
   const sub0 = await q("window.__desk.submits().total");
@@ -102,7 +115,8 @@ try {
   const restOpen = await idle();
   check(restOpen === 0, `open at rest: ${restOpen} submits over 240 frames`);
 
-  // 3. what it draws: the face's colour, the holes' share of the board, the dimmed desk above it
+  // 3. what it draws: the face's colour, the holes' share of the board, the dimmed desk above it — the board BARE (its specimens pinned away, K5a)
+  await q("window.__desk.tray.pin({ bare: true })"); await settle();
   const lit1 = await shot();
   const inside = []; for (let y = 1000; y < 1560; y += 3) for (let x = 180; x < 2220; x += 3) inside.push(y * lit1.width + x);
   const dark = inside.filter((i) => lum(lit1, i % lit1.width, Math.floor(i / lit1.width)) < 110).length / inside.length;
@@ -145,19 +159,20 @@ try {
   }
   check(lc.rowBase === 1e6 && Math.abs(lc.frac - S0 / 40) < 1e-9 && holes > 10000 && crossed === 0,
     `10⁶ rows down: rowBase ${lc.rowBase} frac ${lc.frac.toFixed(6)}; of ${holes.toLocaleString()} hole px at the top, ${crossed} are face down there (or the reverse)`);
-  await q("window.__desk.tray.scroll(0)"); await settle();
+  await q("window.__desk.tray.scroll(0); window.__desk.tray.pin(null)"); await settle();
 
-  // 6. the wheel over the drawer scrolls it and never moves the camera; ⌘-wheel there and a wheel on the dimmed desk do nothing
-  await mouse("mouseMoved", 600, 650);
+  // 6. the wheel over the drawer scrolls it and never moves the camera; ⌘-wheel there and a wheel on the dimmed desk do nothing — over
+  //    the board where no specimen hangs at any scroll (a specimen under the mouse would lift: K5a's hover, its own row)
+  await mouse("mouseMoved", 1100, 650);
   await settle();
   const w0 = (await tray()).facts.scroll;
   const ws0 = await q("window.__desk.submits().total");
-  for (let i = 0; i < 3; i++) { await mouse("mouseWheel", 600, 650, { deltaX: 0, deltaY: 120 }); await sleep(30); }
+  for (let i = 0; i < 3; i++) { await mouse("mouseWheel", 1100, 650, { deltaX: 0, deltaY: 120 }); await sleep(30); }
   await settle();
   const w1 = (await tray()).facts.scroll;
   const wheeled = (await q("window.__desk.submits().total")) - ws0;
   check(wheeled >= 1 && wheeled <= 3, `a scroll costs a frame per wheel tick: ${wheeled} submits for 3 wheel events, then asleep`);
-  await mouse("mouseWheel", 600, 650, { deltaX: 0, deltaY: 120, modifiers: 4 });   // ⌘
+  await mouse("mouseWheel", 1100, 650, { deltaX: 0, deltaY: 120, modifiers: 4 });   // ⌘
   await mouse("mouseWheel", 600, 200, { deltaX: 0, deltaY: 120 });                 // the dimmed desk
   await sleep(200);
   const w2 = (await tray()).facts.scroll;
@@ -190,16 +205,120 @@ try {
   check((await tray()).facts.open === true, "`a` opened it");
   await settle();
 
+  // K5a — THE SPECIMENS (design-017 §8)
+  await q("window.__desk.tray.scroll(0)"); await settle();
+  // S1. the world holds the six, each exactly where the lattice law lays them — read back from core's facts, the law run here
+  const law = await q("window.__desk.tray.law()");
+  const want = layTray(law.items, law.width, law.pitch);
+  const held = await q("window.__desk.tray.specimens()");
+  const placedOk = want.placed.every((p) => held.some((h) => h.type === p.type && h.x === p.x && h.y === p.y && h.w === p.w && h.h === p.h));
+  check(held.length === 6 && want.placed.length === 6 && placedOk && held.every((h) => !h.active && !h.selected && !h.durable),
+    `the world holds ${held.length} specimens, each at its lattice place (${held.map((h) => `${h.type.replace("desk.", "")} ${h.x},${h.y}`).join(" · ")}) — none Active, selected or durable`);
+  // S2. every peg on a punched hole's centre, as drawn: back from the screen to the board (the frame's x, top and shown scroll)
+  s = await tray();
+  const pegs = s.specimens.flatMap((q) => q.pegs.map(([x, y]) => [(x - s.frame.x) / 40, (y - s.frame.y + s.frame.scroll) / 40]));
+  const onHole = ([x, y]) => { const r = Math.round(y - PEG_LATTICE.rowPhase); const c = x - PEG_LATTICE.colPhase - ((r & 1) !== 0 ? 0.5 : 0); return Math.abs(y - PEG_LATTICE.rowPhase - r) < 1e-9 && Math.abs(c - Math.round(c)) < 1e-9 && x >= PEG_LATTICE.border && x <= s.frame.w / 40 - PEG_LATTICE.border; };
+  check(pegs.length >= 6 && pegs.every(onHole), `every peg on a punched hole's centre: ${pegs.length} pegs of ${s.specimens.length} specimens in view (${pegs.slice(0, 4).map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")} …)`);
+  // S3. the scroll's range is the laid content's: its foot plus a pitch less the face (K3's 26-row stub retired)
+  check(s.frame.max === s.facts.bottom + 40 - (352 - 5) && s.facts.bottom === want.bottom, `the range ${s.frame.max} px = the content's foot ${s.facts.bottom} + 40 − the face ${352 - 5} (the law's foot ${want.bottom})`);
+  // S4. each is drawn by its own kind: its rect on screen is far from the bare board there — at the top, and scrolled to the end
+  const drawnBy = async () => {
+    const A = await shot();
+    const st = await tray();
+    await q("window.__desk.tray.pin({ bare: true })"); await settle();
+    const B = await shot();
+    await q("window.__desk.tray.pin(null)"); await settle();
+    return st.specimens.filter((q) => q.screen.y0 >= st.frame.y + 6 && q.screen.y1 <= 800).map((q) => {
+      let sum = 0; let n = 0;
+      for (let y = Math.ceil(q.screen.y0 * 2); y < q.screen.y1 * 2; y += 2) for (let x = Math.ceil(q.screen.x0 * 2); x < q.screen.x1 * 2; x += 2) { sum += Math.abs(lum(A, x, y) - lum(B, x, y)); n++; }
+      return [q.type, sum / Math.max(n, 1)];
+    });
+  };
+  const top = await drawnBy();
+  await q(`window.__desk.tray.scroll(${s.frame.max})`); await settle();
+  const end = await drawnBy();
+  const every = [...top, ...end];
+  check(new Set(every.map(([t]) => t)).size === 6 && every.every(([, d]) => d > 12), `all six drawn by their own kinds (mean |Δ| from the bare board over each rect): ${every.map(([t, d]) => `${t.replace("desk.", "")} ${d.toFixed(0)}`).join(" · ")}`);
+  await q("window.__desk.tray.scroll(0)"); await settle();
+  // S5. a scroll of Δ moves board and specimens by Δ: every rect on screen by exactly Δ (read back); the pixels Δ·dpr up — the board and
+  //     the flat kinds to a float's rounding; the notebook and the calendar are seen through the desk eye (their kinds' own 3D law: a
+  //     book passing the view's centre turns a little, D-K5a.3) — bounded, never a jump
+  await q(`window.__desk.tray.scroll(${S0})`); await settle();
+  const SA = await shot(); const ra = (await tray()).specimens;
+  await q(`window.__desk.tray.scroll(${S0 + D})`); await settle();
+  const SB = await shot(); const rb = (await tray()).specimens;
+  const rectsOk = ra.length > 0 && ra.every((a) => { const b = rb.find((q) => q.type === a.type); return b !== undefined && b.screen.y0 === a.screen.y0 - D && b.screen.x0 === a.screen.x0 && b.screen.y1 === a.screen.y1 - D; });
+  const eyed = ra.filter((q) => q.kind === "notebook" || q.kind === "calendar").map((q) => [q.screen.x0 - 12, q.screen.x1 + 30]);
+  let flatMax = 0; let flatMoved = 0; let flatN = 0; let eyeMax = 0;
+  for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) {
+    const d = Math.abs(lum(SB, x, y) - lum(SA, x, y + 2 * D));
+    if (eyed.some(([x0, x1]) => x / 2 >= x0 && x / 2 <= x1)) { eyeMax = Math.max(eyeMax, d); continue; }
+    flatMax = Math.max(flatMax, d); flatN++; if (d > 1) flatMoved++;
+  }
+  const rectsSaid = ra.map((a) => { const b = rb.find((q) => q.type === a.type); return b === undefined ? `${a.type} gone` : `${a.type.replace("desk.", "")} ${a.screen.y0}→${b.screen.y0}`; }).join(" · ");
+  check(rectsOk && flatMax < 2.5 && flatMoved / flatN < 1e-2, `a scroll of ${D} px: every specimen's rect ${D} px up exactly (${rectsSaid}); the board and the flat kinds the same pixels ${2 * D} device px up (max |Δ| ${flatMax.toFixed(2)}, ${flatMoved} of ${flatN.toLocaleString()} px past 1); the notebook and the calendar through the desk eye: max |Δ| ${eyeMax.toFixed(1)}`);
+  await q("window.__desk.tray.scroll(0)"); await settle();
+  // S6. the band carries them: a wheel past the end pulls the board AND the specimens by the band's shown pull, then lets them go
+  await q(`window.__desk.tray.scroll(${s.frame.max})`); await settle();
+  await mouse("mouseMoved", 1100, 650);
+  for (let i = 0; i < 4; i++) { await mouse("mouseWheel", 1100, 650, { deltaX: 0, deltaY: 60 }); await sleep(12); }
+  const pulled = await q("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(window.__desk.tray.state()))))");
+  const carried = pulled.specimens.length > 0 && pulled.specimens.every((q) => { const w = held.find((h) => h.type === q.type); return w !== undefined && Math.abs(q.screen.y0 - (pulled.frame.y + w.y - pulled.frame.scroll)) < 1e-9; }) && Math.abs(pulled.frame.scroll - (pulled.facts.scroll + pulled.band)) < 1e-9;
+  await sleep(300); await settle();   // quiet past the let-go (120 ms), then the settle's spring
+  const let0 = await tray();
+  check(pulled.facts.stretch > 0 && pulled.band > 0 && carried && let0.facts.stretch === 0 && let0.band === 0, `the band carries them: pulled ${pulled.facts.stretch.toFixed(0)} px past the end, shown ${pulled.band.toFixed(1)} — each specimen at its board place less the scroll and the band; let go, back to ${let0.band}`);
+  await q("window.__desk.tray.scroll(0)"); await settle();
+  // S7. the hover: the mouse over the note lifts it (the kinds' own lift — its shadow grows) and it settles; off it, down again; asleep after each
+  const noteAt = (await tray()).specimens.find((q) => q.type === "desk.note");
+  const nx = (noteAt.screen.x0 + noteAt.screen.x1) / 2;
+  const ny = (noteAt.screen.y0 + noteAt.screen.y1) / 2;
+  const H0 = await shot();
+  const h0 = await q("window.__desk.submits().total");
+  await mouse("mouseMoved", nx, ny); await settle();
+  const hovered = await tray();
+  const liftFrames = (await q("window.__desk.submits().total")) - h0;
+  const H1 = await shot();
+  let grew = 0; let gn = 0;
+  for (let y = Math.floor(noteAt.screen.y0 * 2); y < (noteAt.screen.y1 + 30) * 2; y += 2) for (let x = Math.floor(noteAt.screen.x0 * 2); x < (noteAt.screen.x1 + 30) * 2; x += 2) { grew += Math.abs(lum(H1, x, y) - lum(H0, x, y)); gn++; }
+  const restHover = await idle(120);
+  await mouse("mouseMoved", 1100, 650); await settle();
+  const dropped = await tray();
+  const restDown = await idle(120);
+  check(hovered.facts.hover === "desk.note" && hovered.hovers["desk.note"] === 1 && liftFrames > 3 && grew / gn > 1 && restHover === 0 && dropped.facts.hover === "" && Object.keys(dropped.hovers).length === 0 && restDown === 0,
+    `the hover: the note under the mouse lifts (${hovered.hovers["desk.note"]}, ${liftFrames} frames, mean |Δ| ${(grew / gn).toFixed(2)} round it — its shadow grew), asleep hovered (${restHover}); off it, down (${JSON.stringify(dropped.hovers)}), asleep (${restDown})`);
+  // S8. a PLUGIN fixture kind — declared in the app, not in @ice/objects — hangs on the tray by its entry alone
+  const plug = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?trayPlugin=1`);
+  await plug.send("Runtime.enable");
+  await plug.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+  for (let i = 0; i < 200; i++) { await plug.send("Page.bringToFront"); if (await plug.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
+  await plug.evaluate("window.__desk.ambient('still'); window.__desk.tray.open(); window.__desk.settle(4000)", { awaitPromise: true, timeoutMs: 20000 });
+  await sleep(600);
+  await plug.evaluate("window.__desk.settle(4000)", { awaitPromise: true, timeoutMs: 20000 });
+  const plugLaw = await plug.evaluate("window.__desk.tray.law()", { timeoutMs: 20000 });
+  const plugHeld = await plug.evaluate("window.__desk.tray.specimens()", { timeoutMs: 20000 });
+  const plugWant = layTray(plugLaw.items, plugLaw.width, plugLaw.pitch).placed.find((p) => p.type === "rig.swatch");
+  const plugOn = plugHeld.find((h) => h.type === "rig.swatch");
+  await plug.evaluate(`window.__desk.tray.scroll(${Math.max(0, (plugOn?.y ?? 0) - 120)}); window.__desk.settle(4000)`, { awaitPromise: true, timeoutMs: 20000 });
+  const plugDrawn = (await plug.evaluate("window.__desk.tray.state().specimens", { timeoutMs: 20000 })).find((q) => q.type === "rig.swatch");
+  const plugFaults = await plug.evaluate("window.__desk.faults ?? []", { timeoutMs: 20000 });
+  await plug.close?.();
+  check(plugHeld.length === 7 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugDrawn.accessory === "clip" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
+    `a plugin kind by its entry alone: with it registered the world holds ${plugHeld.length} (rig.swatch at ${plugOn?.x},${plugOn?.y} — the law's ${plugWant?.x},${plugWant?.y}), drawn by its kind on its clip; without it, none (${held.length})`);
+  await front();
+
   // 9. THE COST (design-017 §6.7): the drawer open at 2400 × 1600 — n of it alone per batch, and whole frames with it open and closed,
-  //    each batch drained around; medians and minima of 7 rounds, the host's load beside them
+  //    each batch drained around; medians and minima of 7 rounds, the host's load beside them — K5a: whole frames open with the
+  //    specimens and open bare, the difference what the specimens cost
   const rounds = [];
   for (let i = 0; i < 7; i++) rounds.push(await qa("window.__desk.tray.cost(60)", 90000));
   const med = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
   const alone = rounds.map((r) => r.alone.ms);
   const whole = rounds.map((r) => r.open.ms);
+  const plain = rounds.map((r) => r.bare.ms);
   const bare = rounds.map((r) => r.closed.ms);
   const load = loadavg().map((v) => v.toFixed(1)).join(" ");
-  check(med(alone) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: alone median ${med(alone).toFixed(3)} ms, min ${Math.min(...alone).toFixed(3)} (≤ 0.3); whole frames open ${med(whole).toFixed(3)} vs closed ${med(bare).toFixed(3)} ms (Δ ${(med(whole) - med(bare)).toFixed(3)}) · load ${load}`);
+  const aloneBare = rounds.map((r) => r.aloneBare.ms);
+  check(med(aloneBare) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: the board alone median ${med(aloneBare).toFixed(3)} ms, min ${Math.min(...aloneBare).toFixed(3)} (≤ 0.3) · with its six accessories ${med(alone).toFixed(3)} (min ${Math.min(...alone).toFixed(3)}); whole frames open with the specimens ${med(whole).toFixed(3)} (min ${Math.min(...whole).toFixed(3)}) · open bare ${med(plain).toFixed(3)} (min ${Math.min(...plain).toFixed(3)}) — the specimens Δ ${(med(whole) - med(plain)).toFixed(3)} · closed ${med(bare).toFixed(3)} ms · load ${load}`);
   await settle();
 
   // 10. the night: the Moon on the board, the desk dimmed 40 %

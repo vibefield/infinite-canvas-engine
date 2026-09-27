@@ -100,6 +100,9 @@ export class TrayPass {
   private readonly device: GPUDevice;
   private readonly mat: MatPass;
   private readonly pipeline: GPURenderPipeline;
+  /** K5a: the rim's and the accessories' own fragment entries on the same layout (a branch in one entry slowed the board). */
+  private readonly rimPipeline: GPURenderPipeline;
+  private readonly accPipeline: GPURenderPipeline;
   private readonly layout: GPUBindGroupLayout;
   private readonly sampler: GPUSampler;
   private readonly trayBuf: GPUBuffer;
@@ -119,10 +122,10 @@ export class TrayPass {
   private accSent = new Uint8Array(0);
   private accCount = 0;
 
-  private constructor(device: GPUDevice, mat: MatPass, pipeline: GPURenderPipeline, layout: GPUBindGroupLayout) {
+  private constructor(device: GPUDevice, mat: MatPass, pipelines: readonly [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout: GPUBindGroupLayout) {
     this.device = device;
     this.mat = mat;
-    this.pipeline = pipeline;
+    [this.pipeline, this.rimPipeline, this.accPipeline] = pipelines;
     this.layout = layout;
     this.sampler = device.createSampler({ label: "tray/pegboard/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
     this.trayBuf = uniformBuffer(device, TrayUniforms.size, "tray/pegboard/uniforms");
@@ -144,8 +147,12 @@ export class TrayPass {
       { binding: 5, stages: ["vertex", "fragment"], buffer: "read-only-storage" },
     ], "tray/pegboard");
     const pl = device.createPipelineLayout({ label: "tray/pegboard", bindGroupLayouts: [layout] });
-    const pipeline = await renderPipeline(device, { label: "tray/pegboard", layout: pl, module, format, blend: BLEND_PREMUL });
-    return new TrayPass(device, mat, pipeline, layout);
+    const pipelines = await Promise.all([
+      renderPipeline(device, { label: "tray/pegboard", layout: pl, module, format, blend: BLEND_PREMUL }),
+      renderPipeline(device, { label: "tray/pegboard/rim", layout: pl, module, format, blend: BLEND_PREMUL, fragment: "fs_rim" }),
+      renderPipeline(device, { label: "tray/pegboard/accessories", layout: pl, module, format, blend: BLEND_PREMUL, fragment: "fs_accessory" }),
+    ]);
+    return new TrayPass(device, mat, pipelines as [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout);
   }
 
   /**
@@ -233,13 +240,13 @@ export class TrayPass {
     this.device.queue.writeBuffer(buf, 0, bytes);
   }
 
-  /** The pipeline and its group, bound (rebound when the mat's assets or the accessories' buffer changed). */
-  private bind(pass: GPURenderPassEncoder): void {
+  /** A pipeline and the group, bound (the group remade when the mat's assets or the accessories' buffer changed). */
+  private bind(pass: GPURenderPassEncoder, pipeline: GPURenderPipeline): void {
     if (this.group === null || this.boundAssets !== this.mat.assetVersion) {
       this.group = bindGroup(this.device, this.layout, [this.lightBuf, this.trayBuf, this.mat.noiseTexture.createView(), this.sampler, this.hash.createView(), this.accBuf], "tray/pegboard");
       this.boundAssets = this.mat.assetVersion;
     }
-    pass.setPipeline(this.pipeline);
+    pass.setPipeline(pipeline);
     pass.setBindGroup(0, this.group);
   }
 
@@ -250,9 +257,9 @@ export class TrayPass {
   draw(pass: GPURenderPassEncoder): void {
     if (this.last === null) return;
     pass.pushDebugGroup("tray/pegboard");
-    this.bind(pass);
+    this.bind(pass, this.pipeline);
     pass.draw(6, 1, 0, 0);
-    if (this.accCount > 0) pass.draw(6, this.accCount, 0, 2);
+    if (this.accCount > 0) { pass.setPipeline(this.accPipeline); pass.draw(6, this.accCount, 0, 2); }
     pass.popDebugGroup();
   }
 
@@ -260,7 +267,7 @@ export class TrayPass {
   drawRim(pass: GPURenderPassEncoder): void {
     if (this.last === null) return;
     pass.pushDebugGroup("tray/pegboard/rim");
-    this.bind(pass);
+    this.bind(pass, this.rimPipeline);
     pass.draw(18, 1, 0, 1);
     pass.popDebugGroup();
   }

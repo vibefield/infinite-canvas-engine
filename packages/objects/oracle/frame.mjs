@@ -44,7 +44,13 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/pa
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
-import { createSlotSet, drawFrame, prepareFrame, renderHeldFrame, SlotPool } from "../../desk/src/ground.ts";
+import { createSlotSet, drawFrame, drawTray, prepareFrame, renderHeldFrame, SlotPool, tagsOf } from "../../desk/src/ground.ts";
+import { DRAWER, drawerRect, drawerSize } from "../../desk/src/tray/drawer.ts";
+import { specimenFrames, TraySlots } from "../../desk/src/tray/specimens.ts";
+import { objectKindOf } from "../../desk/src/object.ts";
+import { looksOf } from "../../desk/src/compose/reflector.ts";
+import { DESK_OBJECTS } from "../src/preset.ts";
+import { deskPalette } from "../src/palette.ts";
 import { HoldPass } from "../../desk/src/hold/focus.ts";
 import { heldCamera, heldFocus, heldFrame, heldPose, HOLD, homePose, progressOf, readingTarget } from "../../desk/src/hold/pose.ts";
 import { HOLD_SHADER_FILES, holdShaders } from "../../desk/src/hold/shaders.ts";
@@ -55,7 +61,7 @@ import { MARKS_SHADER_FILES, marksShaders } from "../../desk/src/marks/shaders.t
 import { TrayPass } from "../../desk/src/tray/pass.ts";
 import { trayShaders } from "../../desk/src/tray/shaders.ts";
 import { assembleMarks } from "../../desk/src/marks/assemble.ts";
-import { computeSnapGuides } from "@ice/kernel";
+import { computeSnapGuides, layTray } from "@ice/kernel";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../../desk/src/nav/flight.ts";
 import { PORTAL_CAP, PORTAL_GATE } from "../../desk/src/nav/portal.ts";
 import { MAT_GRID } from "../../desk/src/theme.ts";
@@ -236,6 +242,11 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const hold = await HoldPass.create(device, format, holdShaders(text(HOLD_SHADER_FILES)));
   // the pegboard tray (design-017, K3): the drawer over the marks — the same pass the ground makes
   const tray = await TrayPass.create(device, format, trayShaders(text), mat);
+  // …and its specimens (design-017 §8, K5a): the six kinds' tray entries, each in its own slot — a composite kind's pass made now, as the
+  // ground makes it the first time the tray shows one
+  const hung = DESK_OBJECTS.filter((t) => t.tray !== undefined);
+  const traySlots = new TraySlots(device, format, rootSlot, deskKinds(text));
+  await traySlots.ready(hung.map((t) => [t.type, objectKindOf(t).name]));
   /** The prototype's own selection ring (its stills drew it) — on only for the baseline check; the product's selection is the marks. */
   let prototypeRing = false;
 
@@ -662,6 +673,29 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return { theme, nav: null, prepared: { incoming: { stats: { k0: stats.k0, fade: stats.fade, wind: stats.wind } }, portals: stats.portals }, marks: [] };
   }
 
+  /**
+   * A still's tray (design-017 §8, K5a): its slide, lift and shown scroll, and — unless it is `bare` — the six kinds laid by the lattice
+   * law across the drawer, recorded by their own kinds exactly as the product's reflector records them (tray/specimens.ts): each its
+   * widget's props at their defaults under its entry's, the calendar's month the still's (its clock is the day it is drawn).
+   */
+  function trayInputsOf(s, view, theme, grid) {
+    const t = s.tray;
+    const base = { p: t.p ?? 1, lift: t.lift ?? 0, scroll: t.scroll ?? 0 };
+    if (t.bare === true) return base;
+    const items = hung.map((w) => ({ type: w.type, hang: w.tray.hang, category: w.tray.category ?? "", order: w.tray.order ?? 0 }));
+    const laid = layTray(items, drawerSize(view.width, view.height).w, DRAWER.pitch);
+    const kinds = hung.map((w) => objectKindOf(w));
+    const specimens = laid.placed.map((q, i) => {
+      const w = hung.find((x) => x.type === q.type);
+      const props = {};
+      for (const g of w.groups) { const cell = w.prefab.components.find(([c]) => c === g.component); for (const name of Object.keys(g.fields)) props[name] = cell?.[1][name]; }
+      Object.assign(props, w.tray.props, q.type === "desk.calendar" ? { month: "2026-09" } : {});
+      return { key: i + 1, type: q.type, kind: objectKindOf(w), natural: w.defaultSize, rect: { x: q.x, y: q.y, w: q.w, h: q.h }, props, accessory: w.tray.hang.accessory, pegs: w.tray.hang.pegs, label: w.tray.label };
+    });
+    const frames = specimenFrames(specimens, { rect: drawerRect(view.width, view.height, base.p, base.lift), scroll: base.scroll }, { view, theme, grid, looks: looksOf(kinds, deskPalette(theme.name), theme), lift: () => 0 });
+    return { ...base, specimens: frames };
+  }
+
   function encode(encoder, target, size, s, opts = {}) {
     prototypeRing = opts.prototypeRing === true;
     const theme = opts.theme ?? THEMES[s.theme];
@@ -705,18 +739,21 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       inputs = { view: viewOf(cam, s), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
-    const prepared = prepareFrame(encoder, rootSlot, pool, inputs, rootGrid);
+    // the pegboard drawer (design-017): a still's slide, lip and shown scroll, over the marks — and its specimens (K5a)
+    const trayIn = s.tray === undefined || s.nav ? undefined : trayInputsOf(s, inputs.view, theme, rootGrid);
+    const trayed = trayIn === undefined ? 0 : tray.prepare(inputs.view, theme, rootGrid, m, trayIn);
+    const prepared = prepareFrame(encoder, rootSlot, pool, trayIn === undefined ? inputs : { ...inputs, tray: trayIn }, rootGrid, undefined, trayed > 0 ? traySlots : undefined);
     // the desk's marks (stratum 5): a still's — a flight's chrome waits for its landing; off for a check that measures the objects alone
-    const marked = opts.marks === false || prototypeRing || s.nav ? 0 : marks.prepare(marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme));
-    // the pegboard drawer (design-017): a still's slide, lip and shown scroll, over the marks
-    const trayed = s.tray === undefined || s.nav ? 0 : tray.prepare(inputs.view, theme, rootGrid, m, { p: s.tray.p ?? 1, lift: s.tray.lift ?? 0, scroll: s.tray.scroll ?? 0 });
+    // (the tray's name tags ride the marks pass either way)
+    const tags = trayed > 0 ? { view: inputs.view, tags: tagsOf(trayIn), night: theme.matLight.night } : undefined;
+    const marked = opts.marks === false || prototypeRing || s.nav ? (tags === undefined ? 0 : marks.prepare(undefined, tags)) : marks.prepare(marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme), tags);
     const pass = beginPass(encoder, target, [bg[0], bg[1], bg[2], 1]);
     drawFrame(pass, size, viewSpecOf(s).dpr, prepared.incoming, prepared.outgoing);
     if (marked > 0) marks.draw(pass);
-    if (trayed > 0) tray.draw(pass);
+    if (trayed > 0) drawTray(pass, size, viewSpecOf(s).dpr, tray, prepared.tray, marks);
     pass.end();
     return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, tray, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, heldFrame: () => heldFrameDrawn };
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, tray, traySlots, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, heldFrame: () => heldFrameDrawn };
 }

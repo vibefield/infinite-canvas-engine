@@ -275,7 +275,7 @@ describe("the tray pass on a fake device", () => {
     log.length = 0;
     ground.render(frame({ p: 1, lift: 0, scroll: 0 }));
     const end = log.lastIndexOf("end");
-    expect(log.slice(end - 11, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600", "debug tray/pegboard/rim", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
+    expect(log.slice(end - 11, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600", "debug tray/pegboard/rim", "pipeline tray/pegboard/rim", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
     log.length = 0;
     ground.render(frame({ p: 0, lift: 0, scroll: 0 }));
     expect(log).toContain("draw 6,1,0,0");

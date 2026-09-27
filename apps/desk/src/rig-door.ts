@@ -4,7 +4,7 @@
 // app's own module graph imports the published surface only (M10, `test/exit-imports.test.ts`); on it, `window.__desk`'s
 // `setScene` and `kinds.print` refuse by name instead of reaching for fixtures a third-party app would not have.
 
-import type { CanvasEngine, Entity } from "@ice/core";
+import type { CanvasEngine, Entity, WidgetType } from "@ice/core";
 import type { DeskLayerHandle, ThemeName } from "@ice/desk";
 
 /** What a scene is staged INTO: the engine, the layer's handle, the theme's setter, the flight's pin. */
@@ -28,6 +28,8 @@ export interface DeskRig {
   setScene(host: SceneHost, scene: object): Promise<Staged>;
   /** The oracle's photo fixture, put in the BlobStore and preloaded. */
   printFixture(handle: DeskLayerHandle): Promise<PrintFixture>;
+  /** Object types the rig registers on the desk engine before it is made (K5a: rig:tray's plugin fixture, under `?trayPlugin`). */
+  readonly widgets?: readonly WidgetType[];
 }
 
 declare global {

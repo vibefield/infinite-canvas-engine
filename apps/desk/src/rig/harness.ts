@@ -5,6 +5,9 @@
 import type { DeskRig } from "../rig-door";
 import { printFixture } from "./scene-kinds";
 import { type OracleScene, setScene } from "./stage";
+import { TRAY_PLUGIN } from "./tray-plugin";
 
-const rig: DeskRig = { setScene: (host, scene) => setScene(host, scene as OracleScene), printFixture };
+// rig:tray's plugin fixture (K5a) joins the desk engine's catalog when the page asks for it — the product never imports it
+const plugins = new URLSearchParams(location.search).has("trayPlugin") ? [TRAY_PLUGIN] : [];
+const rig: DeskRig = { setScene: (host, scene) => setScene(host, scene as OracleScene), printFixture, widgets: plugins };
 window.__deskRig = rig;

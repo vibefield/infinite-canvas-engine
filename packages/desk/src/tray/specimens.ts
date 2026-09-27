@@ -145,22 +145,41 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
 /** The accessories' numbers (theme.ts `TRAY.accessory`): the kind index the shader reads, each's standing-off in pitches. */
 export const ACCESSORY_INDEX: Readonly<Record<TrayAccessory, number>> = { hook: 0, shelf: 1, clip: 2, rail: 3 };
 
-/** One specimen's accessory record (tray.wgsl `TrayAccessory`), screen CSS px: its quad the accessory's footprint and its shadow's reach. */
+/**
+ * One specimen's accessory record (tray.wgsl `TrayAccessory`), screen CSS px: its quad the ACCESSORY's own parts — the plugs and what they
+ * hold, a shelf's plank, a rail's bar, never the specimen's body between — grown by the shadow's push and blur (down and right, away
+ * from the lamp) and a pixel.
+ */
 export function accessoryOf(f: TraySpecimenFrame): { readonly box: number[]; readonly kind: number[]; readonly rect: number[]; readonly pegs0: number[]; readonly pegs1: number[] } {
   const P = DRAWER.pitch;
   const lift = TRAY_LOOK.accessoryHeight[f.accessory] * P;
   const L = TRAY_LOOK.lamp;
-  const push = Math.hypot(L[0], L[1]) / L[2] * lift + TRAY_LOOK.lampSize * lift / L[2] + 2;
-  let x0 = f.screen.x0 - 0.5 * P;
-  let x1 = f.screen.x1 + 0.5 * P;
-  let y0 = f.screen.y0;
-  let y1 = f.screen.y1 + 0.5 * P;
-  for (const [x, y] of f.pegs) { x0 = Math.min(x0, x - 0.8 * P); x1 = Math.max(x1, x + 0.8 * P); y0 = Math.min(y0, y - 0.5 * P); y1 = Math.max(y1, y + 0.9 * P); }
+  const blur = (TRAY_LOOK.lampSize * lift) / L[2] + 2;
+  const pushX = Math.max(0, (-L[0] / L[2]) * lift);
+  const pushY = Math.max(0, (-L[1] / L[2]) * lift);
+  const r = f.screen;
+  let x0 = Number.POSITIVE_INFINITY;
+  let y0 = Number.POSITIVE_INFINITY;
+  let x1 = Number.NEGATIVE_INFINITY;
+  let y1 = Number.NEGATIVE_INFINITY;
+  const add = (a: number, b: number, c: number, d: number): void => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
+  for (const [x, y] of f.pegs) {
+    add(x - 0.35 * P, y - 0.4 * P, x + 0.35 * P, y + 0.4 * P);
+    if (f.accessory === "hook") add(x - 0.15 * P, y, x + 0.15 * P, y + 0.7 * P);
+    if (f.accessory === "clip") add(x - 0.3 * P, y - 0.3 * P, x + 0.3 * P, Math.max(y, r.y0) + 0.6 * P);
+    if (f.accessory === "shelf") add(x - 0.15 * P, Math.min(y, r.y1), x + 0.15 * P, Math.max(y, r.y1) + 0.1 * P);
+  }
+  if (f.accessory === "shelf") add(r.x0 - 0.35 * P, r.y1 - 0.05 * P, r.x1 + 0.35 * P, r.y1 + 0.3 * P);
+  if (f.accessory === "rail" && f.pegs.length > 0) {
+    const xs = f.pegs.map((q) => q[0]);
+    const y = (f.pegs[0] as readonly [number, number])[1];
+    add(Math.min(...xs) - 0.45 * P, y - 0.2 * P, Math.max(...xs) + 0.45 * P, y + 0.2 * P);
+  }
   const peg = (i: number): readonly [number, number] => f.pegs[i] ?? [0, 0];
   return {
-    box: [x0 - push, y0 - push, x1 + push, y1 + push],
+    box: [x0 - blur, y0 - blur, x1 + pushX + blur, y1 + pushY + blur],
     kind: [ACCESSORY_INDEX[f.accessory], Math.min(f.pegs.length, 4), lift, 0],
-    rect: [f.screen.x0, f.screen.y0, f.screen.x1, f.screen.y1],
+    rect: [r.x0, r.y0, r.x1, r.y1],
     pegs0: [...peg(0), ...peg(1)],
     pegs1: [...peg(2), ...peg(3)],
   };

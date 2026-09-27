@@ -64,10 +64,10 @@ export class MarksPass {
    * Lay this frame's marks out and upload them (before the frame's pass begins); after them, the tray's NAME TAGS (K5a — drawn apart,
    * `drawTags`, where the tray says). Returns the count of the frame's marks that will draw (`draw`).
    */
-  prepare(input: MarksInput | undefined, tray?: { readonly view: { readonly width: number; readonly height: number; readonly dpr: number }; readonly tags: readonly { readonly label: string; readonly x: number; readonly y: number }[] }): number {
+  prepare(input: MarksInput | undefined, tray?: { readonly view: { readonly width: number; readonly height: number; readonly dpr: number }; readonly tags: readonly { readonly label: string; readonly x: number; readonly y: number }[]; readonly night?: number }): number {
     const marks = input === undefined ? [] : layoutMarks(input, this.mat.glyphs);
     const view = input?.view ?? tray?.view;
-    const tags = view === undefined ? [] : (tray?.tags ?? []).flatMap((t) => tagMarks(t.label, t.x, t.y, this.mat.glyphs, view.dpr));
+    const tags = view === undefined ? [] : (tray?.tags ?? []).flatMap((t) => tagMarks(t.label, t.x, t.y, this.mat.glyphs, view.dpr, tray?.night ?? 0));
     this.last = marks;
     this.lastTags = tags;
     const total = marks.length + tags.length;

@@ -105,14 +105,17 @@ describe("a specimen, recorded by its own kind", () => {
     expect(specimenFrames([specimen(k)], { rect: open, scroll: 150 }, env()).length).toBe(1);   // its tag and shadow still show
   });
 
-  it("its accessory's record: the quad holds its pegs, its specimen and its shadow; the kind by index; up to four pegs", () => {
+  it("its accessory's record: the quad holds its pegs and the accessory's own parts and shadow, not the specimen's body; the kind by index; up to four pegs", () => {
     const k = fakeKind("fake");
     const [f] = specimenFrames([specimen(k)], { rect: open, scroll: 0 }, env());
     if (f === undefined) throw new Error("no frame");
     const a = accessoryOf(f);
     const [x0, y0, x1, y1] = a.box as [number, number, number, number];
     for (const [x, y] of f.pegs) expect(x > x0 && x < x1 && y > y0 && y < y1).toBe(true);
-    expect(x0 < f.screen.x0 && y0 < f.screen.y0 && x1 > f.screen.x1 && y1 > f.screen.y1).toBe(true);
+    // the accessory's own parts, never the specimen's body: a hook's quad (its shadow in it) ends a little below the pegs, far above the specimen's foot
+    expect(y1).toBeLessThan(f.screen.y0 + 1.2 * P);
+    const shelf = accessoryOf({ ...f, accessory: "shelf", pegs: [[f.screen.x0 + 10, f.screen.y1 + 20]] });
+    expect((shelf.box[1] as number) > f.screen.y0 + (f.screen.y1 - f.screen.y0) / 2 && (shelf.box[3] as number) > f.screen.y1).toBe(true);
     expect(a.kind).toEqual([0, 2, TRAY_LOOK.accessoryHeight.hook * P, 0]);
     expect(a.rect).toEqual([f.screen.x0, f.screen.y0, f.screen.x1, f.screen.y1]);
     expect(a.pegs0).toEqual([...(f.pegs[0] ?? []), ...(f.pegs[1] ?? [])]);
@@ -178,7 +181,7 @@ describe("the ground draws the specimens between the board and the rim", () => {
     ground.render(inputs);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");
-    expect(log.slice(at, at + 6)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "draw 6,2,0,2", "debug end"]);
+    expect(log.slice(at, at + 7)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "pipeline tray/pegboard/accessories", "draw 6,2,0,2", "debug end"]);
     expect(log.filter((l) => l.startsWith("debug kind "))).toEqual(["debug kind fake+ 0-1"]);
     let ready = false;
     await new Promise<void>((r) => ground.warmTray([["t:layered", "layered"]], () => { ready = true; r(); }));
@@ -192,10 +195,10 @@ describe("the ground draws the specimens between the board and the rim", () => {
     expect(kinds.map(([l]) => l)).toEqual(["debug kind fake+ 0-1", "debug kind layered 0-1"]);
     const rim = log.indexOf("debug tray/pegboard/rim");
     const tags = log.indexOf("pipeline marks", at);   // the name tags: the marks' pipeline, under the face's scissor
-    expect(kinds.every(([, i]) => i > at + 5 && i < rim)).toBe(true);
+    expect(kinds.every(([, i]) => i > at + 6 && i < rim)).toBe(true);
     expect(tags).toBeGreaterThan(kinds[1]?.[1] ?? 0);
     expect(tags).toBeLessThan(rim);
-    expect(log.slice(rim, rim + 5)).toEqual(["debug tray/pegboard/rim", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
+    expect(log.slice(rim, rim + 5)).toEqual(["debug tray/pegboard/rim", "pipeline tray/pegboard/rim", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
     expect(ground.traySlots?.size).toBe(2);
     ground.dispose();
   });

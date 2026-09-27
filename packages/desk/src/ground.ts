@@ -643,7 +643,7 @@ export class Ground {
     const encoder = this.device.createCommandEncoder({ label: "ground" });
     const trayed = inputs.tray !== undefined && this.tray !== null ? this.tray.prepare(inputs.view, inputs.theme, inputs.grid ?? this.grid, inputs.mat, inputs.tray) : 0;
     const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid, undefined, trayed > 0 ? (this.traySlots ?? undefined) : undefined);
-    const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 ? { view: inputs.view, tags: tagsOf(inputs.tray) } : undefined) : 0;
+    const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night } : undefined) : 0;
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);

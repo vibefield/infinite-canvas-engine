@@ -1,8 +1,10 @@
-// The pegboard tray's pass (design-017 §5; K5a): drawn in the ROOT's render pass after the marks, premultiplied, three kinds of quad on
-// one pipeline, told apart by the instance: instance 0 the drawer UNDER its specimens (tray.wgsl `tray_drawer` — the view whole while
-// the slide shows the dim, the drawer's box grown by its shadows' reach while it is closed); from instance 2, one quad per specimen's
-// ACCESSORY with its shadow (`tray_accessory`, the records in `acc`); instance 1 the RIM over everything the drawer holds, three strips
-// along its top and sides (`tray_rim_over`) — drawn last, after the kinds drew the specimens between the board and it.
+// The pegboard tray's pass (design-017 §5; K5a): drawn in the ROOT's render pass after the marks, premultiplied, three kinds of quad —
+// one vertex entry that lays each by its instance, three fragment entries (three pipelines on one layout: a branch over the three in one
+// entry cost the board a third of its time, the register budget of the largest path paid by every pixel): instance 0 the drawer UNDER
+// its specimens (`fs` → tray.wgsl `tray_drawer` — the view whole while the slide shows the dim, the drawer's box grown by its shadows'
+// reach while it is closed); from instance 2, one quad per specimen's ACCESSORY with its shadow (`fs_accessory`, the records in `acc`);
+// instance 1 the RIM over everything the drawer holds, three strips along its top and sides (`fs_rim`) — drawn last, after the kinds
+// drew the specimens between the board and it.
 
 @group(0) @binding(0) var<uniform> u: MatUniforms;
 @group(0) @binding(1) var<uniform> t: TrayUniforms;
@@ -61,8 +63,16 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> TrayO
 }
 
 @fragment
-fn fs(i: TrayOut) -> @location(0) vec4f {
-  if (i.mode == 1u) { return tray_rim_over(u, t, i.pos.xy, noise_tex, noise_samp, hash_tex); }
-  if (i.mode == 2u) { return tray_accessory(u, t, acc[i.item], i.pos.xy, noise_tex, noise_samp, hash_tex); }
-  return tray_drawer(u, t, i.pos.xy, noise_tex, noise_samp, hash_tex);
+fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+  return tray_drawer(u, t, pos.xy, noise_tex, noise_samp, hash_tex);
+}
+
+@fragment
+fn fs_rim(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+  return tray_rim_over(u, t, pos.xy, noise_tex, noise_samp, hash_tex);
+}
+
+@fragment
+fn fs_accessory(@builtin(position) pos: vec4f, @location(1) @interpolate(flat) item: u32) -> @location(0) vec4f {
+  return tray_accessory(u, t, acc[item], pos.xy, noise_tex, noise_samp, hash_tex);
 }

@@ -301,11 +301,13 @@ function pill(out: Out, x: number, y: number, s: string, fill: RGBA, ink: RGBA, 
 
 /**
  * A NAME TAG (design-017 §8; K5a — under each of the tray's specimens): the marks' pill in the paper's white with the pencil's ink, the
- * label in the rulers' capitals (the atlas holds no other case), centred at (x, y) — screen px.
+ * label in the rulers' capitals (the atlas holds no other case), centred at (x, y) — screen px. By night (`night` 0 … 1) the paper
+ * steps back, as a card does under the Moon, and the ink with it a little.
  */
-export function tagMarks(label: string, x: number, y: number, atlas: GlyphAtlasMeta, dpr: number): MarkRecord[] {
+export function tagMarks(label: string, x: number, y: number, atlas: GlyphAtlasMeta, dpr: number, night = 0): MarkRecord[] {
   const out: Out = [];
-  pill(out, x, y, label.toUpperCase(), INK.paper, INK.pencil, "center", atlas, dpr);
+  const n = Math.min(Math.max(night, 0), 1);
+  pill(out, x, y, label.toUpperCase(), at(INK.paper, 1 - 0.55 * n), at(INK.pencil, 1 - 0.25 * n), "center", atlas, dpr);
   return out;
 }
 

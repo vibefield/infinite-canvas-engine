@@ -361,5 +361,7 @@ export const TRAY_SCENES = [
   { name: "tray-night", trayed: true, scene: { ...trayBase, theme: "dark", tray: { p: 1, scroll: 0 } } },
   { name: "tray-scroll-frac", trayed: true, scene: { ...trayBase, tray: { p: 1, scroll: 13.4 } } },
   { name: "tray-half-open", trayed: true, scene: { ...trayBase, tray: { p: 0.5, scroll: 0 } } },
+  // K5a: scrolled a fractional row past the first line — the mini mat on its shelf and the whiteboard under its rail, the notebook under the rim
+  { name: "tray-scrolled", trayed: true, scene: { ...trayBase, tray: { p: 1, scroll: 240.4 } } },
 ];
 ORACLE_SCENES.push(...TRAY_SCENES);

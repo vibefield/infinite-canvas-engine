@@ -1051,15 +1051,29 @@ async function trayCheck(sc) {
       for (let c = 0; c < 3; c++) { const i = (y * w + x) * 4 + c; worst = Math.max(worst, Math.abs((A[i] ?? 0) - (B[i] ?? 0) * (1 - laid.dim))); }
     }
   }
-  // a hole is darker than 0.6 of the face's own median — by day and under the Moon alike
-  const lum = (i) => 0.2126 * (A[i] ?? 0) + 0.7152 * (A[i + 1] ?? 0) + 0.0722 * (A[i + 2] ?? 0);
+  // the SPECIMENS (K5a): each one's rect on screen, as the pass laid its accessory, is its kind's drawing — far from the bare board there
+  const specimens = laid.accessories.map((a) => a.rect);
+  const { px: C } = await render({ ...s, tray: { ...s.tray, bare: true } }, { marks: true });
+  let drawnBy = 0;
+  let shown = 0;
+  for (const [x0, y0, x1, y1] of specimens) {
+    const ys = Math.max(y0, r.y + 6);
+    if (y1 <= ys || ys >= h / d) continue;   // wholly under the rim or below the view: nothing of it to see
+    shown++;
+    let sum = 0;
+    let n = 0;
+    for (let y = Math.ceil(ys * d); y < Math.min(y1 * d, h); y += 2) for (let x = Math.ceil(x0 * d); x < x1 * d; x += 2) { const i = (y * w + x) * 4; for (let c = 0; c < 3; c++) sum += Math.abs((A[i + c] ?? 0) - (C[i + c] ?? 0)); n += 3; }
+    if (n > 0 && sum / n > 12) drawnBy++;
+  }
+  // a hole is darker than 0.6 of the face's own median — by day and under the Moon alike — on the bare board (its specimens cover some)
+  const lum = (i) => 0.2126 * (C[i] ?? 0) + 0.7152 * (C[i + 1] ?? 0) + 0.0722 * (C[i + 2] ?? 0);
   const ls = [];
   for (let y = Math.ceil((r.y + 40) * d); y < h; y += 2) for (let x = Math.ceil((r.x + 40) * d); x < (r.x + r.w - 40) * d; x += 2) ls.push(lum((y * w + x) * 4));
   const face = ls.length;
   const median = [...ls].sort((a, b) => a - b)[Math.floor(face / 2)] ?? 0;
   const holes = ls.filter((l) => l < 0.6 * median).length / Math.max(face, 1);
-  const ok = outside > 0 && worst <= 1 && (face < 4000 || (holes > 0.12 && holes < 0.19));
-  console.log(`  ${ok ? "PASS" : "FAIL"}  tray       ${sc.name.padEnd(24)} beyond the drawer ${outside.toLocaleString()} px = the desk × ${(1 - laid.dim).toFixed(2)} (max |Δ| ${worst.toFixed(2)}) · the face ${face.toLocaleString()} px, holes ${(holes * 100).toFixed(1)} %`);
+  const ok = outside > 0 && worst <= 1 && (face < 4000 || (holes > 0.12 && holes < 0.19)) && shown > 0 && drawnBy === shown;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  tray       ${sc.name.padEnd(24)} beyond the drawer ${outside.toLocaleString()} px = the desk × ${(1 - laid.dim).toFixed(2)} (max |Δ| ${worst.toFixed(2)}) · the face ${face.toLocaleString()} px, holes ${(holes * 100).toFixed(1)} % · ${drawnBy} of ${shown} specimens in view drawn by their kinds (${specimens.length} framed)`);
   return ok;
 }
 
