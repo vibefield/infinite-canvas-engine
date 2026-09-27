@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b and K5b LANDED 2026-09-27)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1560,7 +1560,13 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   the specimens' faces (`tray.local`) and label tape; the order-dependent tray still attributed (the board's pen materials)
   and fixed. Graded: ci 0; gate red once at rig:stress's K6b boards row (a CDP-round-trip race main has too; K7a fixes it)
   — rig:stress alone 35/0, then 34/1 on K2's A/A timing row; every other leg green.
-- K7a — layers, wakes, allocation (built, finishing) · K8a — the open seams (building) · K8b — the desk clock · K7b —
+- **K7a — the books' layers, registered wakes, allocation** (**LANDED 2026-09-27**, eight commits → `83fc760`; its builder
+  died at its context limit after five, an opus finisher added the allocation work, the A/B and two rebases): the loop
+  SLEEPS at rest (engine 0.000 ms/s — the M20 idle gate met), the books' layers at their box and reused by content, the
+  allocation measured truthfully and halved (223 KB/frame — the 64 KiB gate still MISS). Graded: ci 0; gate red at
+  rig:interact's laser rows (main fails them identically at load ≥ 190 — 2 of 3 each) and once at rig:open's calendar
+  double-click (1 of 5 at load 205; main 2 of 2) — every other leg green.
+- K8a — the open seams (building) · K8b — the desk clock · K7b —
   scale · K9 — the review and its fixes: planned (design-016 §8; K5, K6, K7 and K8 each split in two so no builder carries
   more than its context holds).
 

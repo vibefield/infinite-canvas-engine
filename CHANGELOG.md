@@ -820,6 +820,24 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   specimen's raster was re-asked every frame and never laid under K6b's queue (the queue's `shows` now includes what the
   tray drew).
 
+<!-- design-016 K7a (2026-09-27) -->
+- **The loop sleeps at rest — registered wakes** (design-016 §6; design-015 §11.4's idle gate, owed since M20): the frame
+  gate learns `wake(reason)`, `wakeWhen(name, due)` and `nextStep`; `startRafLoop` schedules no frame once the engine is
+  quiet (no wake pending, no registered time due, no settle reporter busy) for three steps; kinds declare when they are next
+  live (`KindLocal.due`), the tray's release and the raster queue's waiting asks are registered too, and every door from
+  outside wakes it. At rest the engine's step and the desk's flush cost 0.000 ms/s (were 10.41 / 2.94), the page 0.14–0.23
+  ms/s, 0 submits (D-K7a.1, D-K7a.3 — the calendar's hand no longer keeps a desk with a pad awake).
+- **The books' layers**: shadow maps kept while the lamp and the book stand still; the 4× colour+depth and resolve sized to
+  the books' SCREEN BOX (`BoxTargets`, kit) — the notebook on screen 136.4 → 24.8 MB (D-K7a.4 re-blessed 13 book/pad scenes
+  and five tray stills at maxΔ 1: the rasteriser is not exactly translation-invariant); a layer nothing of which moved is
+  laid again undrawn, compared by content — a held frame standing 2.86 → 0.18 ms.
+- **Allocation**: a pan's allocation measured truthfully (D-K7a.5: rig:stress pins the young generation, so the row reads
+  allocation, not the scavenger's phase) and cut 502 → 223 KB a frame (a defect — the reflector dropped the host's EMPTY
+  restless set, so every object's `lifted()` was asked every frame —, the mount-store cull by batch columns, springs at
+  rest not stepped, the veil ask by index); the ≤ 64 KiB gate is NOT met and reads MISS.
+- **Fixed**: rig:open's desk-copy row timed the GPU's ramp after the idle rows (a warm batch first); rig:stress's boards
+  row read across three CDP round trips (read in-page).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
