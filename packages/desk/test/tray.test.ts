@@ -11,7 +11,6 @@ import { createDeskBuilder } from "../src/compose/builder";
 import { createDeskReflector } from "../src/compose/reflector";
 import { Ground, type GroundFrameInputs } from "../src/ground";
 import { createTrayFlux } from "../src/tray/flux";
-import { PALETTE, PENS, SURFACES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import { MatUniforms } from "../src/mat/layout";
 import { compose } from "../src/engine/shader";
@@ -22,8 +21,19 @@ import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punche
 import { HASH_SIZE, hashTexels, keep } from "../src/tray/pass";
 import { TrayUniforms } from "../src/tray/layout";
 import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders";
-import { THEMES } from "../oracle/fixtures/vf-theme";
+import { type Palette, themeFrom } from "../src/theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
+
+/**
+ * The ground's two roles by theme for the tray's units — VibeField's values in the desk's own shape (`Palette`, `themeFrom`). The
+ * tray is engine chrome and its units name no reference kind: since design-016 K4b the objects' shipped palette (and the oracle's
+ * fixture that re-exports it) is `@ice/objects`', which the desk never imports.
+ */
+const PALETTE: Record<"light" | "dark", Palette> = {
+  light: { canvasBg: { token: "--vf-canvas-bg", css: "#fafafa" }, select: { token: "--vf-select", css: "#4a90d9" } },
+  dark: { canvasBg: { token: "--vf-canvas-bg", css: "#171717" }, select: { token: "--vf-select", css: "#4a90d9" } },
+};
+const THEMES = { light: themeFrom("light", PALETTE.light), dark: themeFrom("dark", PALETTE.dark) };
 
 const P = DRAWER.pitch;
 /** A board point from a global Y (pitches) — exact for every Y these tests use (a row + ¾, or a small fraction). */
@@ -384,7 +394,7 @@ describe("the reflector draws the tray (design-017 §3 — idle-zero open and cl
     ce.docs.create();
     ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 2 });
     const { device, queue } = fakeDevice();
-    const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
+    const palette = PALETTE.light;   // the reflector draws no kind here (`kinds: []`): the ground's two roles are the whole palette
     const builder = createDeskBuilder(ce.world, { objects: [] });
     const ambient = createAmbient({ mode: "still", random: () => 0.5 });
     let ground: Ground | null = null;
