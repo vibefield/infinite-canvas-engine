@@ -711,11 +711,11 @@ try {
     const replays1 = await q(`window.__desk.handle.local("board").replays()`);
     console.log(`  walked at zoom 1     ${memoryLine(memWalk)} · densities ${walked.map((r) => r?.density ?? "—").join(" ")} · ${replays1 - replays0} replays`);
     // back to board 0: its record made again as it enters — its replay ASKED of the frame queue (K6b), its thumbnail drawing it until
-    // the queue's turn makes its raster at its rung and replays its strokes; bound
-    await q("window.__desk.setCamera({ x: -600, y: -400, zoom: 1 })");
+    // the queue's turn makes its raster at its rung and replays its strokes; bound. "At once" is read IN the frame it came back — the
+    // desk's first frame drawn after the camera's write, in the page (K7a: the camera written, the tab fronted and a frame waited over
+    // three CDP round trips let the queue's next turn land first under load, and the row read "made at once")
     await front();
-    await frames(1);
-    const back0 = (await res())[0];
+    const back0 = await qa(`new Promise((r) => { const d = window.__desk; const r0 = d.handle.redraws(); d.setCamera({ x: -600, y: -400, zoom: 1 }); const f = () => { if (d.handle.redraws() > r0) r(d.handle.local("board").residency(${JSON.stringify(ids[0])}) ?? null); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
     let backFrames = 1;
     while (backFrames < 60 && (await res())[0]?.density !== 4) { await frames(1); backFrames += 1; }
     await frames(8);
