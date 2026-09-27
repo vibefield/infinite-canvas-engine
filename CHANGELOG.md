@@ -764,6 +764,20 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   `nobody-imports-objects`. `ZOOM_MIN` / `ZOOM_MAX` are exported from `@ice/desk` (the one symbol K4a's moves left
   unreachable).
 
+<!-- design-016 K6a (2026-09-27) -->
+- **Prints and whiteboards draw as instanced runs, under ONE residency budget** (design-016 §6, K-L4): every picture is
+  a layer of one thumbnail array (its mip chain's tail from the first level ≤ 512², always resident); a print large on
+  screen asks for a DETAIL — the chain from `floor(lod)`, sized to the screen, re-decoded from the blob — bound in one of
+  8 pool slots, an unbound detail an LRU cache, all under the raster budget (`DEFAULT_RASTER_BUDGET` 192 → 256 MB — the
+  thumbnails and bound details, D-K6a.1); the print's record carries its layers, so a run of N prints is ONE draw of N.
+  A whiteboard's raster follows its zoom rung (2 texels per device px, a power of two 1…4 — zoom 1 at 2× is the old 4),
+  its far LOD a thumbnail in a shared array, its ink bound in pool slots, eviction keeping the thumbnail (D-K6a.2); a run
+  of N boards is one draw. The shared array is the kit's `LayerArray`. The notebook's and calendar's big textures are
+  made on first use and let go 5 s undrawn or with the last object (D-K6a.3). Measured on the mixed stress desk: live GPU
+  memory 904 → 351 MB (20 × 4096² pictures: 1,942 → 78.8 MB; no notebook or calendar: 164 → 0.3 MB and 42 → 1.0 MB);
+  draws 55 → 42 a frame, photo 19 draws → 6 for 19 prints. rig:stress gains mixed sibling order, real pictures and a
+  `pictures` scenario (31 rows).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
