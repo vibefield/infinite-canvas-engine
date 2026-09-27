@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { InkShelves, uvOf } from "../src/paper/pages";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper } from "../src/paper/paper";
 import type { InkBitmap, TextRaster } from "../src/kit/raster";
-import { encodeSeeds } from "../src/paper/seeds";
+import { encodeSeeds } from "../src/kit/seeds";
 import type { HandLayout, HandMetrics } from "../src/kit/text";
 import { caretIndexIn, createWriting, type InkPages } from "../src/paper/writing";
 import { MAT_GRID } from "../src/theme";

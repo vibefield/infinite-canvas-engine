@@ -101,7 +101,7 @@ import { boundsOf, type CameraState, FIT, type Rect, solveFlightStart } from "..
 import { clipOf, faceCovers, PORTAL_CAP, PORTAL_GATE, type Presentation } from "../nav/portal";
 import { type Lamp, lampOf } from "../mat/lamp";
 import { objectKindOf } from "../object";
-import { type ObjectSprings, SPRINGS, settled, spring } from "../springs";
+import { type ObjectSprings, SPRINGS, settled, spring } from "../kit/springs";
 import type { GroundTheme } from "../theme";
 import { MINIMAT } from "../minimat/theme";
 

@@ -3,7 +3,7 @@
 // for picking (design-015 §4.5); the marks keep one so a witness can say exactly where the chrome may
 // paint — the oracle's check holds everything outside that reach to the frame without marks, byte for byte.
 
-import { sdRoundBox } from "../sdf";
+import { sdRoundBox } from "../kit/sdf";
 import { MARK, type MarkRecord } from "./layout";
 
 const segment = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {

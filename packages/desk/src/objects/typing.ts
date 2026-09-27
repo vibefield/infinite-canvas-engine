@@ -21,7 +21,7 @@
 
 import { type Component, defineQuery, Editing, type Entity, guardedTransaction, heldEntity, LocalPointer, Pointer, TouchesExact, type World } from "@ice/core";
 import { type TypingDocs, writable, type WritableSession } from "../docs";
-import { encodeSeeds, freshSeed, seedsFor } from "../paper/seeds";
+import { encodeSeeds, freshSeed, seedsFor } from "../kit/seeds";
 import { carrySeeds } from "../kit/text";
 
 // The document's doors live in docs.ts (D-D7-A.3: no kind in them, so the host holds them without naming one); the drivers

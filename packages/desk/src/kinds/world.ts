@@ -29,7 +29,8 @@ import type { ChildShape, InsideView } from "../kit/inside";
 import type { Lamp } from "../kit/light";
 import type { PrintRaster } from "../kit/print";
 import type { TextRaster } from "../kit/raster";
-import type { GridConfig, Rect, View } from "../kit/view";
+import type { Rect } from "../kit/nav";
+import type { GridConfig, View } from "../kit/view";
 import type { MarkFrame } from "../marks/layout";
 import type { GroundTheme, Palette, ThemeName } from "../theme";
 

@@ -13,11 +13,8 @@
 //                    whole, its objects at the gate's answer.
 //   flightLights     the lamps a flight hands between the two desks.
 
-import type { Box } from "../lattice/lod";
-import type { GridConfig } from "../mat/grid";
-import type { SlotLight } from "../mat/layout";
-import { arrivalCamera, type CameraState, FIT, type FitBand, type Flight, flightOpacity, outgoingCamera, type PortalAffine, portalAffine, type Rect, type Viewport, visibleRect } from "../nav/flight";
-import { boxOfPortal, clipOf, PORTAL_GATE, type PortalClip, portalPresence, type Presentation } from "../nav/portal";
+import type { Box, GridConfig, SlotLight } from "../kit/view";
+import { arrivalCamera, type CameraState, FIT, type FitBand, type Flight, flightOpacity, outgoingCamera, type PortalAffine, portalAffine, type Rect, type Viewport, visibleRect, boxOfPortal, clipOf, PORTAL_GATE, type PortalClip, portalPresence, type Presentation } from "../kit/nav";
 import type { InsideView } from "../kit/inside";
 import type { MiniMatInstance } from "./layout";
 import { type Chip, DEFAULT_MINIMAT_LAW, FACE_RADIUS, faceLattice, faceOf, type MiniMatGeometry, type MiniMatLaw, numeralsOf } from "./minimat";

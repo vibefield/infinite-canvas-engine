@@ -26,16 +26,15 @@
 // wipe runs, once per blink phase while the caret stands, once when a face lands or the editor moves.
 
 import type { Entity } from "@ice/core";
-import type { View } from "../lattice/lod";
-import { HAND } from "../kit/text";
+import type { View } from "../kit/view";
+import { HAND, caretAt, glyphBox, type HandLaw, type HandLayout, layoutText } from "../kit/text";
 import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
 import type { InkRect, UvRect } from "./pages";
 import { INK_PAGE } from "./paper-pass";
 import { type PaperGeometry, localOf, rasterBand, sdPaper } from "./paper";
 import type { TextRaster } from "../kit/raster";
-import { seedsFor } from "./seeds";
-import { caretAt, glyphBox, type HandLaw, type HandLayout, layoutText } from "../kit/text";
+import { seedsFor } from "../kit/seeds";
 
 /** The pages a writing allocates in — the root paper pass (paper-pass.ts) satisfies it. */
 export interface InkPages {

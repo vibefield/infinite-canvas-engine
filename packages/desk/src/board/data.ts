@@ -32,8 +32,8 @@
 // from before (or one spawned without a seed) carries −1 and keeps the positional seed (`seedOfRow`), so nothing it drew changes.
 
 import { ChildOf, defineComponent, definePrefab, type Entity, field, type GuardedTx, init } from "@ice/core";
-import { linear } from "../mat/night";
-import { decodeSeeds, encodeSeeds } from "../paper/seeds";
+import { linear } from "../kit/light";
+import { decodeSeeds, encodeSeeds } from "../kit/seeds";
 import type { RGB } from "../theme";
 import { type BoardOp, BoardHistory } from "./history";
 import { ERASER_TOOL, markerTool, StrokeBuilder, type TipName, TIPS } from "./stroke";

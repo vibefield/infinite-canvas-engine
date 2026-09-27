@@ -2,8 +2,8 @@
 // card's tests when the cards retired (2026-09-25): every object lifts on these springs
 // and hit-tests with this distance.
 import { describe, expect, it } from "vitest";
-import { sdRoundBox } from "../src/sdf";
-import { settled, spring, SPRINGS } from "../src/springs";
+import { sdRoundBox } from "../src/kit/sdf";
+import { settled, spring, SPRINGS } from "../src/kit/springs";
 
 describe("sdRoundBox", () => {
   // The metric property itself: |d(p) − d(q)| ≤ |p − q| for any two points.

@@ -24,15 +24,14 @@
 
 import type { Entity } from "@ice/core";
 import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
-import type { MarkFrame } from "../marks/layout";
-import type { MatPass } from "../kit/view";
+import type { MarkFrame, MatPass } from "../kit/view";
 import { type BlobStore, type DecodedPicture, RGBA_TYPE } from "../kit/blobs";
-import { carryOf } from "../hold/pose";
+import { carryOf } from "../kit/hold";
 import { borderOf } from "../photo/layout";
 import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto, twist } from "../photo/photo";
 import { type Picture, PICTURE_MAX, type PhotoInstance, PhotoPass } from "../photo/photo-pass";
 import { PHOTO_SHADER_FILES, photoShaders } from "../photo/shaders";
-import { type ShaderText, shaderText } from "../shaders";
+import { type ShaderText, shaderText } from "../kit/wgsl";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type ObjectRect, stringProp } from "./world";
 
 /** The print's kind name — its key in the registry and in every slot's `objects`. */

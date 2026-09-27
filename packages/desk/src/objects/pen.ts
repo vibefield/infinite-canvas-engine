@@ -19,7 +19,7 @@ import { type BoardGeometry, toSurface } from "../board/board";
 import { addStroke, BoardStroke, encodePoints, strokeSeed } from "../board/data";
 import { ERASER_TOOL, markerTool, StrokeBuilder, TIP_NAMES, type TipName, TIPS } from "../board/stroke";
 import { type BoardInk, type BoardObjectLook, ERASER_TOOL_ID, inkOfTool } from "../kinds/board";
-import { linear } from "../mat/night";
+import { linear } from "../kit/light";
 import { type TypingDocs, writable } from "./typing";
 
 export interface BoardPenOptions {

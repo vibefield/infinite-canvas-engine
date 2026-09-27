@@ -8,9 +8,9 @@
 // notebook. `framing` is the camera an OPEN board is seen under: the board above the marker
 // tray, the one number the focus glide (book/focus.ts) flies to.
 
-import { sdRoundBox } from "../sdf";
-import type { CameraState, Viewport } from "../nav/flight";
-import type { Lamp } from "../paper/paper";
+import { sdRoundBox } from "../kit/sdf";
+import type { CameraState, Viewport } from "../kit/nav";
+import type { Lamp } from "../kit/light";
 import { BOARD } from "./theme";
 
 /** The board's numbers (theme.ts `BOARD`) — the engine's unless a host tweaks them. */

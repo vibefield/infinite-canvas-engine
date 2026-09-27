@@ -1,19 +1,19 @@
 // A SLOT'S VIEW, as a kind reads it (design-016 §5, K-L3): the mat a kind's pass is made on and spawned onto, and the
-// words the contract's `SlotContext` is written in — the camera and box (`View`), the grid's fade-in window, the mat's
-// config and clocks, the objects' presentation through the portal chain, the lamp the slot is lit by. The ground owns
-// the slot and fills it; a kind reads it. (The definitions stay in the engine's modules — mat/, lattice/, nav/ — and
-// this is the one door a kind names them through.)
+// words the contract's `SlotContext` is written in — the camera and box (`View`), the lattice's LOD and line law, the
+// grid's fade-in window and dressing, the mat's config and clocks, the glyph atlas, the lamp the slot is lit by. The
+// ground owns the slot and fills it; a kind reads it. (The definitions stay in the engine's modules — mat/, lattice/ —
+// and this is the one door a kind names them through; the portal chain and the flight are kit/nav.ts.)
 
 import type { GlyphAtlasMeta } from "../mat/layout";
 
-export type { Box, FadeIn, View } from "../lattice/lod";
-export type { LineLaw } from "../lattice/line";
+export { type Box, type FadeIn, type Lod, lod, type View } from "../lattice/lod";
+export { type LineLaw, type LineWeight, lineWeight } from "../lattice/line";
 export type { RulerLaw } from "../lattice/ruler";
-export type { GridConfig } from "../mat/grid";
-export type { GlyphAtlasMeta, MatConfig, MatFrame, PlateName, RulerConfig, SlotLight } from "../mat/layout";
+export { DEFAULT_GRID, dressScale, type GridConfig } from "../mat/grid";
+export { type GlyphAtlasMeta, GLYPHS, litByOwn, type MatConfig, type MatFrame, MatUniforms, type PlateName, type RulerConfig, type SlotLight } from "../mat/layout";
 export type { Mat4 } from "../mat/projector";
-export type { CameraState, PortalAffine, Rect, Viewport } from "../nav/flight";
-export type { PortalClip, Presentation } from "../nav/portal";
+/** The silhouette a kind's marks go around (`ObjectKind.frame`) — the marks' own type (marks/layout.ts). */
+export type { MarkFrame } from "../marks/layout";
 
 /**
  * A SLOT'S MAT as a kind's pass reads it: what the slot lends every kind drawn in it — the mat's animated silhouette (the

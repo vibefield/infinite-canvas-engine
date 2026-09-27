@@ -21,22 +21,19 @@
 import { bindGroup, bindLayout, storageBuffer, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
 import type { RenderTarget } from "../kind";
-import type { FadeIn, View } from "../lattice/lod";
-import { type MatConfig, type MatFrame, MatUniforms } from "../mat/layout";
-import type { MatPass } from "../kit/view";
-import { DAY_LIGHT, type MatLight } from "../mat/night";
+import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass } from "../kit/view";
+import { DAY_LIGHT, type MatLight } from "../kit/light";
 import type { RGB, RGBA } from "../theme";
 import { type DeskEye, eyeValues, project } from "./eye";
 import type { NotebookLaw } from "./law";
 import { designCode, MAX_NOTEBOOKS, MAX_SHADOWED, NbBook, NbUniforms, nbUniformValues, type NotebookLook, type Ruling, rulingCode, SHADOW_RES } from "./layout";
-import type { BuiltMesh } from "./mesh";
-import { VERTEX_BYTES } from "./mesh";
+import { type BuiltMesh, VERTEX_BYTES } from "./mesh";
 import { inverseOf, lightFrame, matrixOf, type Rigid, worldBounds } from "./place";
 import type { Frame } from "./shape";
 import type { NotebookShaders } from "./shaders";
 import { INK_H, INK_LAYERS, INK_TABLE, INK_W } from "./ink";
 import { PAPER_TEX, paperTexture } from "./paper-tex";
-import { generateMips, mipCount } from "../photo/mips";
+import { generateMips, mipCount } from "../kit/mips";
 import { sentBytes, writeChanged } from "../kit/uniform";
 
 const SAMPLES = 4;

@@ -25,7 +25,7 @@
 
 import { type Component, defineQuery, type Entity, guardedTransaction, heldEntity, HeldPointer, HeldPress, HeldTool, LocalPointer, Pointer, PointerButtons, PointerScreen, setWidgetProps, Viewport, type World } from "@ice/core";
 import { addStroke, encodePoints, encodeTimes } from "../board/data";
-import { readingTarget } from "../hold/pose";
+import { readingTarget } from "../kit/hold";
 import { type Books, DEFAULT_PEN, type NotebookGeometry, PageTurns, pageHitAt, partOf, penOfTool } from "../kinds/notebook";
 import { inkPoints, pageOfSide } from "../notebook/ink";
 import { counts, dragSheet, grabSheet, releaseSheet } from "../notebook/motion";

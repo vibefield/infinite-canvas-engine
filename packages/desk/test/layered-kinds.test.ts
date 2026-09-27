@@ -11,7 +11,7 @@ import { tileGrid } from "../src/calendar/tiles";
 import { beginPass } from "../src/engine/target";
 import { createSlotSet, drawFrame, drawSlot, Ground, type GroundFrameInputs, type KindPass, prepareFrame, type SlotContext, SlotPool } from "../src/ground";
 import { CALENDAR_KIND, CalendarKind, calendarKind, calendarProgram, deskKinds, NOTEBOOK_KIND, NotebookKind, notebookKind, notebookProgram, paperKind } from "../src/kinds";
-import { attachmentOf, clip } from "../src/kinds/layer";
+import { attachmentOf, clip } from "../src/kit/layer";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX, STILL_MAT_FRAME } from "../src/mat/layout";
 import { CuttingMat } from "../src/mat/mat-pass";

@@ -11,11 +11,9 @@
 import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
 import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
-import type { FadeIn, View } from "../lattice/lod";
-import type { Presentation } from "../nav/portal";
-import type { MatConfig, MatFrame, SlotLight } from "../mat/layout";
-import type { MatPass } from "../kit/view";
-import { DAY_LIGHT, type MatLight } from "../mat/night";
+import type { FadeIn, View, MatConfig, MatFrame, SlotLight, MatPass } from "../kit/view";
+import type { Presentation } from "../kit/nav";
+import { DAY_LIGHT, type MatLight } from "../kit/light";
 import { MAT_COLORS, type RGB } from "../theme";
 import { ChipRecord, chipValues, MAX_CHIPS, MAX_MINIMATS, MiniMat, type MiniMatInstance, MiniMatUniforms, miniMatUniformValues, miniMatValues } from "./layout";
 import { DEFAULT_MINIMAT_LAW, type MiniMatLaw } from "./minimat";

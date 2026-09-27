@@ -14,7 +14,8 @@
 
 import type { RecordStoreStats } from "./engine/records";
 import type { MatLight } from "./kit/light";
-import type { FadeIn, MatConfig, MatFrame, MatPass, Presentation, SlotLight, View } from "./kit/view";
+import type { Presentation } from "./kit/nav";
+import type { FadeIn, MatConfig, MatFrame, MatPass, SlotLight, View } from "./kit/view";
 import type { GroundTheme, RGB } from "./theme";
 
 /** The strata of the desk a kind can lie in (design-015 §4.2): beneath everything, flat on the mat holding a desk, every other thing. */

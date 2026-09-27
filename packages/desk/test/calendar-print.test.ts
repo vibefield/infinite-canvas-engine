@@ -17,7 +17,7 @@ import type { PrintRaster, TileSource } from "../src/kit/print";
 import { cellAt, sheetOf } from "../src/calendar/sheet";
 import { EMPTY, entryOf, levelFor, MISSING, TILE_TEX, tileGrid, tilesIn } from "../src/calendar/tiles";
 import { calendarKind } from "../src/kinds";
-import { encodeSeeds } from "../src/paper/seeds";
+import { encodeSeeds } from "../src/kit/seeds";
 import type { HandMetrics } from "../src/kit/text";
 import { HAND } from "../src/kit/text";
 import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS } from "../oracle/fixtures/vf-theme";

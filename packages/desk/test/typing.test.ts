@@ -7,7 +7,7 @@
 // session's commit wins (the claimed-cell rule), while one between sessions applies.
 import { createCanvasEngine, decodeEnvelope, defineQuery, Editing, encodeEnvelope, type Entity, guardedTransaction, heldEntity, LocalPointer, NO_MODS, Pointer, TouchesExact, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { decodeSeeds, seedsFor } from "../src/paper/seeds";
+import { decodeSeeds, seedsFor } from "../src/kit/seeds";
 import { Board, NOTE_INK, NOTE_PROPS, Note } from "../src/objects";
 import { createNoteTyping, tapNote } from "../src/objects/typing";
 

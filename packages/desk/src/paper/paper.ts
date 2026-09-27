@@ -9,8 +9,8 @@
 // how many texels a note's ink is drawn with at a zoom, with hysteresis so a
 // note re-rasters on a band crossing, never on a frame.
 
-import { type Lamp, lampOf } from "../mat/lamp";
-import { sdRoundBox } from "../sdf";
+import { type Lamp, lampOf } from "../kit/light";
+import { sdRoundBox } from "../kit/sdf";
 import { PAPER } from "./theme";
 import { hashHand } from "../kit/text";
 
@@ -31,8 +31,8 @@ export interface PaperLaw {
 }
 export const DEFAULT_PAPER_LAW: PaperLaw = PAPER;
 
-// The lamp is the MAT's (mat/lamp.ts — D7 #5): every kind's shadow falls from it; the paper keeps its door for its importers.
-export { type Lamp, lampOf } from "../mat/lamp";
+// The lamp is the MAT's (mat/lamp.ts — D7 #5, the kit's door since K4a): every kind's shadow falls from it; the paper keeps its door for its importers.
+export { type Lamp, lampOf } from "../kit/light";
 
 /** A note's tilt from its seed: within ± `maxDeg`, radians — never square, never the same twice. */
 export const tiltOf = (seed: number, maxDeg: number): number => ((hashHand(seed, 11)[1] - 0.5) * 2 * maxDeg * Math.PI) / 180;

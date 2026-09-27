@@ -52,7 +52,7 @@ import type { GlyphAtlasMeta, MatConfig, PlateName } from "../mat/layout";
 import { MAT_SHADER_FILES, matShaders } from "../mat/shaders";
 import { MARKS_SHADER_FILES, marksShaders } from "../marks/shaders";
 import { driversOf, objectKindOf } from "../object";
-import type { ObjectSprings } from "../springs";
+import type { ObjectSprings } from "../kit/springs";
 import { blueNoise } from "../assets/blue-noise.gen";
 import type { PaperWriting } from "../kinds/paper";
 import type { KindDriver, KindLocal } from "../kinds/world";

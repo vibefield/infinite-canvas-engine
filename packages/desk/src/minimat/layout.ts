@@ -7,9 +7,9 @@
 // pass fills for itself so a mini mat is lit exactly as the desk it lies on.
 
 import { defineStruct } from "../engine/struct";
-import type { PortalAffine } from "../nav/flight";
+import type { PortalAffine } from "../kit/nav";
 import type { RGB } from "../theme";
-import type { GlyphAtlasMeta } from "../mat/layout";
+import type { GlyphAtlasMeta } from "../kit/view";
 import { CHIP_LINES, type Chip, type FaceLattice, type MiniMatGeometry, type MiniMatLaw, NAME_CHARS, nameGlyphs, type Numerals, packGlyphs } from "./minimat";
 
 // vec2s first, then scalars, then vec4s: tight under the alignment rules.

@@ -8,14 +8,10 @@
 // the inside's embedding, in the host's world. The lamp is the desk's one lamp
 // (paper.ts `lampOf`): the shadow falls away from it, the cut edge catches it.
 
-import { type FadeIn, lod } from "../lattice/lod";
-import { dressScale } from "../mat/grid";
-import { type LineLaw, lineWeight } from "../lattice/line";
-import type { CameraState, PortalAffine, Rect } from "../nav/flight";
-import { clipOf, type PortalClip } from "../nav/portal";
-import type { Lamp } from "../paper/paper";
-import { sdRoundBox } from "../sdf";
-import { GLYPHS } from "../mat/layout";
+import { type FadeIn, lod, dressScale, type LineLaw, lineWeight, GLYPHS } from "../kit/view";
+import { type CameraState, type PortalAffine, type Rect, clipOf, type PortalClip } from "../kit/nav";
+import type { Lamp } from "../kit/light";
+import { sdRoundBox } from "../kit/sdf";
 import type { ChildShape, ChipKind } from "../kit/inside";
 import type { RGB } from "../theme";
 import { MINIMAT } from "./theme";

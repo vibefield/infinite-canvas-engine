@@ -7,7 +7,7 @@
 // the springs toward what the hand is doing, `penPose` draws the pose they reach. At rest (every spring 0) the pose is
 // `boardRest`'s — the capped marker where the oracle's still draws it — byte for byte.
 
-import { spring, settled } from "../springs";
+import { spring, settled } from "../kit/springs";
 import type { RGB } from "../theme";
 import { BOARD } from "./theme";
 import type { BoardGeometry, WorldBox } from "./board";

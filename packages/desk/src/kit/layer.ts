@@ -11,7 +11,7 @@
 
 import type { KindPass, RenderTarget, SlotContext } from "../kind";
 import type { View } from "../lattice/lod";
-import type { MatPass } from "../kit/view";
+import type { MatPass } from "./view";
 import { scissorOf } from "../nav/portal";
 
 /** A device-px rect: x, y, width, height. */

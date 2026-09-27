@@ -41,17 +41,15 @@ import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn
 import { CALENDAR_SHADER_FILES, calendarShaders } from "../calendar/shaders";
 import { cellAt, dayBox, noteSlot, sheetOf } from "../calendar/sheet";
 import { bandOf, GUTTER, levelFor, TILE_TEX, type TileGrid, tileGrid, tileRect, tilesIn } from "../calendar/tiles";
-import { caretAt, glyphBox, type HandLaw } from "../kit/text";
+import { caretAt, glyphBox, type HandLaw, HAND } from "../kit/text";
 import type { KindProgram, SlotContext } from "../kind";
-import type { MatPass } from "../kit/view";
+import type { MatPass, MarkFrame } from "../kit/view";
 import { type DeskEye, eyeOf, project, unproject } from "../notebook/eye";
 import { MeshWriter } from "../notebook/mesh";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
-import { type ShaderText, shaderText } from "../shaders";
+import { type ShaderText, shaderText } from "../kit/wgsl";
 import { MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
-import { HAND } from "../kit/text";
-import type { MarkFrame } from "../marks/layout";
-import { LayeredKind } from "./layer";
+import { LayeredKind } from "../kit/layer";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
 /** The desk calendar's kind name — its key in the registry and in every slot's `objects`. */

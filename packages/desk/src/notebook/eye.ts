@@ -8,7 +8,7 @@
 // a closed book off to the side shows the edge of its pages. Pure: no GPU. `notebook.wgsl`'s
 // `nb_clip` is the same arithmetic; `unproject` is its inverse for the hit test.
 
-import type { CameraState, Viewport } from "../nav/flight";
+import type { CameraState, Viewport } from "../kit/nav";
 
 export interface DeskEye {
   /** The eye's foot on the desk: the view's centre, world units. */

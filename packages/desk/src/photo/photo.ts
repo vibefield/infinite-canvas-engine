@@ -20,7 +20,7 @@
 
 import { MAT_COLORS, MAT_GRID, type RGB } from "../theme";
 import { PHYSICS } from "../kit/physics";
-import { type Lamp, lampOf } from "../paper/paper";
+import { type Lamp, lampOf } from "../kit/light";
 
 /**
  * The desk's ONE light: the mat's gobo projector as a lamp over the desk (paper.ts `lampOf` —

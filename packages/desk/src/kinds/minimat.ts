@@ -14,19 +14,15 @@
 // product's (`theme()`, the palette's `vinyls`); `sage` is the desk's own ground.
 
 import type { KindExtra, KindPass, KindProgram, SlotContext } from "../kind";
-import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
-import type { MatPass } from "../kit/view";
-import { insideView } from "../minimat/inside";
+import { DEFAULT_GRID, type GridConfig, type MatPass, type MarkFrame } from "../kit/view";
+import { insideView, miniMatInstance } from "../minimat/inside";
 import type { MiniMatInstance } from "../minimat/layout";
 import type { ChildShape } from "../kit/inside";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, type MiniMatGeometry, type MiniMatLaw, pickMiniMat, resolveMiniMat } from "../minimat/minimat";
-import { miniMatInstance } from "../minimat/inside";
 import { MiniMatPass } from "../minimat/pass";
 import { MINIMAT_SHADER_FILES, miniMatShaders } from "../minimat/shaders";
-import type { MarkFrame } from "../marks/layout";
-import { FIT } from "../nav/flight";
-import { PORTAL_GATE } from "../nav/portal";
-import { type ShaderText, shaderText } from "../shaders";
+import { FIT, PORTAL_GATE } from "../kit/nav";
+import { type ShaderText, shaderText } from "../kit/wgsl";
 import { type Palette, type RGB, rgb, type ThemeName, type TokenRef } from "../theme";
 import { type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 

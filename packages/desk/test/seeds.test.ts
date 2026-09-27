@@ -2,7 +2,7 @@
 // its reader tolerant, a glyph with no stored seed writes the note's own `glyphSeed` — which is a new
 // note's hand — and an edit CARRIED through the encoded cell keeps every untouched glyph's hand.
 import { describe, expect, it } from "vitest";
-import { decodeSeeds, encodeSeeds, seedsFor } from "../src/paper/seeds";
+import { decodeSeeds, encodeSeeds, seedsFor } from "../src/kit/seeds";
 import { carrySeeds, glyphSeed } from "../src/kit/text";
 
 describe("the seeds cell (paper/seeds.ts)", () => {

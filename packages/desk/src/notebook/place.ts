@@ -8,7 +8,7 @@
 // and the notebook's shadows fall the same way from the same lamp — and the orthographic
 // frame its shadow map is drawn in, fitted to the book's bounds as it stands this frame.
 
-import type { Lamp } from "../paper/paper";
+import type { Lamp } from "../kit/light";
 
 export interface Placement {
   readonly cx: number; readonly cy: number;

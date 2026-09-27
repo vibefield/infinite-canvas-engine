@@ -14,7 +14,7 @@
 // (`PadSelection`, runtime). The pin's edge is DEPENDENT: a pin dies with its note.
 
 import { ChildOf, defineComponent, definePrefab, defineRelation, type Entity, field, type GuardedTx, init, type World } from "@ice/core";
-import { decodeSeeds } from "../paper/seeds";
+import { decodeSeeds } from "../kit/seeds";
 import type { CalEvent } from "./events";
 import { CALENDAR, type CalendarLaw } from "./law";
 import { dayOfKey, keyOf, monthGrid, monthOfDay } from "./month";

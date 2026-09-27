@@ -21,4 +21,4 @@ export { decodePicture } from "./picture";
 export { DEFAULT_MAT_CONFIG, GLYPH_PAD, GLYPHS, type GlyphAtlasMeta, type MatConfig, type PlateName, type RulerConfig } from "../mat/layout";
 export type { GridConfig } from "../mat/grid";
 // …and the objects' springs a host may keep and tune live (`DeskLayerOptions.springs` — the dev panel, D5a)
-export { type ObjectSprings, SPRINGS } from "../springs";
+export { type ObjectSprings, SPRINGS } from "../kit/springs";

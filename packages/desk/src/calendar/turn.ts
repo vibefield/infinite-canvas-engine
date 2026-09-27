@@ -12,7 +12,7 @@
 import type { CalendarLaw } from "./law";
 import type { PadFrame } from "./pad";
 import { rollState, type RollState } from "./roll";
-import { spring } from "../springs";
+import { spring } from "../kit/springs";
 
 /** A turn in flight. */
 export interface Turn {

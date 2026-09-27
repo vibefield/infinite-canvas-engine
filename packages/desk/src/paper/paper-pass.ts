@@ -11,11 +11,9 @@
 import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
 import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
-import type { FadeIn, View } from "../lattice/lod";
-import type { Presentation } from "../nav/portal";
-import { litByOwn, type MatConfig, type MatFrame, type SlotLight } from "../mat/layout";
-import type { MatPass } from "../kit/view";
-import { DAY_LIGHT, type MatLight } from "../mat/night";
+import { type FadeIn, type View, litByOwn, type MatConfig, type MatFrame, type SlotLight, type MatPass } from "../kit/view";
+import type { Presentation } from "../kit/nav";
+import { DAY_LIGHT, type MatLight } from "../kit/light";
 import type { GroundTheme, RGB } from "../theme";
 import { MAX_PAPERS, Paper, PaperUniforms, type PaperInstance, paperValues } from "./layout";
 import { InkShelves, type InkRect, uvOf, type UvRect } from "./pages";

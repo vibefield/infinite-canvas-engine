@@ -34,7 +34,7 @@
 import { defineComponent, type Entity, field, type HeldToolApi, type HeldToolDef } from "@ice/core";
 import { BoardStroke, decodePoints, decodeTimes, type StrokeRow } from "../board/data";
 import type { KindProgram, SlotContext } from "../kind";
-import type { MatPass } from "../kit/view";
+import type { MatPass, MarkFrame } from "../kit/view";
 import { type DeskEye, eyeOf } from "../notebook/eye";
 import { NOTEBOOK, type NotebookLaw } from "../notebook/law";
 import { type NotebookLook, type Ruling, RULINGS } from "../notebook/layout";
@@ -47,13 +47,12 @@ import { type NotebookHit, pickNotebook } from "../notebook/pick";
 import { lampDir, type Rigid, rigidOf } from "../notebook/place";
 import { NOTEBOOK_SHADER_FILES, notebookShaders } from "../notebook/shaders";
 import { coverFrame, type Frame, frameOf, type NotebookPose, relaxOf, specOf, swingOf } from "../notebook/shape";
-import { type ShaderText, shaderText } from "../shaders";
-import { settled, spring } from "../springs";
-import { HOLD, readingTarget } from "../hold/pose";
+import { type ShaderText, shaderText } from "../kit/wgsl";
+import { settled, spring } from "../kit/springs";
+import { HOLD, readingTarget } from "../kit/hold";
 import { MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef } from "../theme";
-import type { MarkFrame } from "../marks/layout";
 import { inking } from "./board";
-import { LayeredKind } from "./layer";
+import { LayeredKind } from "../kit/layer";
 import { type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "./world";
 
 /** The notebook's kind name — its key in the registry and in every slot's `objects`. */
