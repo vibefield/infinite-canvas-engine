@@ -14,7 +14,7 @@
  *
  * Boot order (registration order = reflector flush order): host → layer → reflectors [ layer ·
  * cursor · remoteCursors ] → pointer adapter → focus → viewport (one layout read, then a
- * ResizeObserver) → rAF loop. `dispose` undoes it in reverse. The engine is NOT owned here — it
+ * ResizeObserver, and the device's ratio read before every step) → rAF loop. `dispose` undoes it in reverse. The engine is NOT owned here — it
  * outlives the mount (the app disposes it). A layer factory that throws leaves nothing claimed on
  * the engine: it runs before any registration, and only the local host is undone.
  */
@@ -135,10 +135,12 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
   const detachPointer = attachPointerAdapter(host, stack.queue);
   const focus = attachWidgetFocus(host);
 
+  const ratio = (): number => (typeof window !== "undefined" ? window.devicePixelRatio : 1);
+  let synced = 0;
   const syncViewport = (): void => {
     const rect = container.getBoundingClientRect();
-    const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
-    writeRuntimeResource(world, Viewport, { w: rect.width, h: rect.height, dpr });
+    synced = ratio();
+    writeRuntimeResource(world, Viewport, { w: rect.width, h: rect.height, dpr: synced });
   };
   syncViewport();
   let resizeObserver: ResizeObserver | undefined;
@@ -147,7 +149,13 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
     resizeObserver.observe(container);
   }
 
-  const stopLoop = startRafLoop(core);
+  // THE RATIO (ICE M21 K1): a change of the device's ratio alone — another display, the browser's zoom, an emulated ratio — resizes
+  // nothing, so the observer never hears it and the desk kept drawing at the old ratio; an emulated one (DevTools' device mode, CDP)
+  // fires not even the `(resolution)` media query (measured: `.matches` flips, no `change` over three rendered frames, no
+  // device-pixel box moves). So the ratio is READ before every step — a property read — and the viewport re-synced when it moved.
+  const stopLoop = startRafLoop(core, () => {
+    if (ratio() !== synced) syncViewport();
+  });
 
   let disposed = false;
   return {

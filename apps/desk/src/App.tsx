@@ -10,7 +10,7 @@
 // D5a: the backtick opens the DEV PANEL (panel/ — the prototype's tweak panel), its params projected into the layer.
 
 import type { Entity } from "@ice/core";
-import { Active, PointerWorld, LocalPointer, Pointer, Camera, heldEntity, Position, PrefabId, Size, Viewport, defineQuery, selectedEntities } from "@ice/core";
+import { Active, PointerWorld, LocalPointer, Pointer, Camera, heldEntity, Position, PrefabId, Size, Viewport, defineQuery, defineTickSystem, selectedEntities } from "@ice/core";
 import { deskLayer, type DeskLayerHandle } from "@ice/desk";
 import { bookAngle } from "@ice/desk";
 import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, MiniMat, NOTE_TYPE, NOTEBOOK_TYPE, VINYLS, type VinylName } from "@ice/desk/objects";
@@ -26,7 +26,7 @@ import { type DevPanel, installDevPanel } from "./panel/panel";
 import { DESK_GRID, defaultParams } from "./panel/params";
 import { deskText } from "./faces";
 import { productPlates } from "./fixtures";
-import { deskScale, glyphFeed, watchRatio } from "./glyphs";
+import { deskScale, glyphFeed } from "./glyphs";
 import { deskPalette, deskTheme, osTheme } from "./palette";
 import { spawnAll } from "./scene";
 
@@ -171,8 +171,9 @@ export function App(): ReactElement {
         const handle = handleRef.current;
         if (handle === null) { fail("the desk layer did not mount"); return; }
         setMenuSource(handle.selection);
-        // K1: the rulers' glyph atlas, kept to the device's ratio and the panel's text size (glyphs.ts) — nothing until the ground is here
-        const glyphs = glyphFeed({ ready: () => handle.available(), scale: () => deskScale(), size: () => params.ruler.text.size, upload: (a) => handle.setGlyphs(a.bytes, a.meta) });
+        // K1: the rulers' glyph atlas, kept to the ratio the desk draws at (the viewport's) and the panel's text size (glyphs.ts) —
+        // nothing until the ground is here
+        const glyphs = glyphFeed({ ready: () => handle.available(), scale: () => deskScale(engine.world.getResource(Viewport)?.dpr ?? 1), size: () => params.ruler.text.size, upload: (a) => handle.setGlyphs(a.bytes, a.meta) });
         // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing); every
         // projection re-checks the atlas against the text size
         panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined, projected: () => { glyphs.refresh(); } });
@@ -188,9 +189,10 @@ export function App(): ReactElement {
           handle.setPlate("c", plates.c);
           handle.setPlate("b", plates.b);
           glyphs.refresh();
-          // …and again whenever the ratio alone changes (another display, the browser's zoom: no resize says so); the watch ends
-          // once this mount's layer is no longer the app's (StrictMode's double mount, in development)
-          const unwatch = watchRatio(() => { if (handleRef.current === handle) glyphs.refresh(); else unwatch(); });
+          // …and again whenever the viewport's ratio moves — the host re-syncs it before any step it moved in (@ice/dom
+          // `createDeskHost`: another display, the browser's zoom, an emulated ratio — none resizes): a tick gated on it, so nothing
+          // runs while it stands. (A mount StrictMode discards never gets here: its layer never becomes available.)
+          engine.engine.addSystems("simulate", defineTickSystem(() => { glyphs.refresh(); }, { name: "desk.glyphs", runIf: () => glyphs.stale() }));
           api.state.ready = true;
         };
         feed().catch(fail);

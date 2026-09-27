@@ -55,6 +55,20 @@ describe("startRafLoop", () => {
     frame2?.(48);
     expect(world.getResource(FrameInfo)?.tick).toBe(2);
   });
+
+  it("runs `beforeStep` BEFORE each step that runs, with its timestamp — never for a parked frame (K1: the host's ratio read)", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    const seen: string[] = [];
+    startRafLoop(engine, (now) => seen.push(`${now}@${world.getResource(FrameInfo)?.tick ?? 0}`));
+    scheduled.shift()?.(16);
+    scheduled.shift()?.(32);
+    expect(seen).toEqual(["16@0", "32@1"]); // before the step: the tick the step then advances
+    engine.frame.freeze("godview");
+    scheduled.shift()?.(48); // the settle step runs, and its hook
+    scheduled.shift()?.(64); // parks: no step, no hook
+    expect(seen).toEqual(["16@0", "32@1", "48@2"]);
+  });
 });
 
 describe("startRafLoop — the freeze gate", () => {

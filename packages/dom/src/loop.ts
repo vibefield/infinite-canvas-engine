@@ -26,10 +26,15 @@
  * not restart it. Recovery needed a fresh `startRafLoop`. The next frame is now
  * scheduled in a `finally`, so a faulting frame is loud but survivable — the
  * throw still reaches the browser's error handler; only the death is gone.
+ *
+ * BEFORE EACH STEP (2026-09-27, ICE M21 K1): an optional `beforeStep` — where a host reads what the
+ * platform changes without an event it can hear (the device's ratio: `createDeskHost`). It runs
+ * only for a step that runs (never while parked), and inside the same `try`, so a throwing hook is
+ * as survivable as a throwing step.
  */
 import type { Engine } from "@ice/core";
 
-export function startRafLoop(engine: Engine): () => void {
+export function startRafLoop(engine: Engine, beforeStep?: (now: number) => void): () => void {
   let handle = 0;
   let stopped = false;
   let parked = false;
@@ -43,6 +48,7 @@ export function startRafLoop(engine: Engine): () => void {
       return;
     }
     try {
+      beforeStep?.(now);
       engine.step(now);
     } finally {
       // Re-checked AFTER the body: a `stop()` called from inside the step
