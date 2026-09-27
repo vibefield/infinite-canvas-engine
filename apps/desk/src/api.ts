@@ -425,6 +425,9 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       // held frame as the desk actually repeats it while nothing moves (the hand's layer laid again undrawn)
       const nudge = <V extends { readonly camX: number }>(v: V, i: number): V => ({ ...v, camX: v.camX + (i & 1 ? 1e-4 : 0) });
       const held = inputs.held;
+      // WARM FIRST (K7a): an untimed batch of the copy's frames before the timed ones — the GPU comes to this after the rig's idle rows
+      // (a second of nothing submitted) and its first saturated batch pays the ramp back to speed; so copy and hand are each timed warm
+      if (held !== undefined) await batch((i) => ({ ...inputs, view: nudge(inputs.view, i), held: { ...held, stamp: `warm ${i}`, view: nudge(held.view, i) } }));
       const copy = held === undefined ? null : await batch((i) => ({ ...inputs, view: nudge(inputs.view, i), held: { ...held, stamp: `cost ${i}`, view: nudge(held.view, i) } }));
       const hand = held === undefined ? null : await batch((i) => ({ ...inputs, view: nudge(inputs.view, i), held: { ...held, view: nudge(held.view, i) } }));
       const standing = held === undefined ? null : await batch(() => inputs);
