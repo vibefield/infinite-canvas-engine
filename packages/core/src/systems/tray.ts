@@ -4,9 +4,11 @@
  * visible), and what this stamps flushes before `ctl`, so picking, the recognizers and both wheel consumers never hear of what the
  * tray takes. While an object is in hand the tray stands aside (the hand's frame never draws it).
  *
- *  - CLOSED, only its lip is the tray's: the mouse over it is `Tray.lip` (the hover that lifts it); a press there is `TrayPress lip`
- *    (`HandledByWidget` — never a desk gesture) and a click, or a drag up past `lipDragPx`, opens the drawer. Everything else is the
- *    desk's, untouched.
+ *  - CLOSED, only the lip's HANDLE is the tray's — its finger notch, `handlePx` either side of the centre (D-K3.10: the lip is drawn
+ *    the drawer's whole width, but a strip that wide would take the view's bottom edge from the desk — a calendar filling the view
+ *    has its foot there): the mouse over it is `Tray.lip` (the hover that lifts the lip); a press there is `TrayPress lip`
+ *    (`HandledByWidget` — never a desk gesture) and a click, or a drag up past `lipDragPx`, opens the drawer. Everything else — the
+ *    rest of the lip included — is the desk's, untouched.
  *  - OPEN, the desk is INERT: every local pointer gets the one-tick `HandledByWidget` and `WheelHandled`, each tick, as the hand's
  *    do — so "the wheel never moves the camera" is not a rule the camera keeps; it is a fact the camera never hears about. Over the
  *    drawer the wheel scrolls it (`dy`; the OS's momentum arrives as deltas and is applied as it comes — no inertia of ours; ⌘/ctrl
@@ -42,8 +44,8 @@ export interface TrayPoseSource { frame(): TrayScreenFrame | undefined }
 /** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `heldPose`). */
 export interface TrayPoseSlot { current: TrayPoseSource | null }
 
-/** The tray's input numbers (design-017 §7): a click's slop, the lip's drag up that opens, the lip's hit pad above what is drawn, how long the scroll input must be quiet before the band lets go. */
-export const TRAY_INPUT = { slopPx: 4, lipDragPx: 10, lipPadPx: 8, letGoMs: 120 } as const;
+/** The tray's input numbers (design-017 §7): a click's slop, the lip's drag up that opens, its handle's reach either side of the centre and its hit pad above what is drawn, how long the scroll input must be quiet before the band lets go. */
+export const TRAY_INPUT = { slopPx: 4, lipDragPx: 10, handlePx: 60, lipPadPx: 8, letGoMs: 120 } as const;
 
 const trayQ = defineQuery([Tray]);
 const localPointerQ = defineQuery([Pointer, PointerScreen, LocalPointer]);
@@ -91,6 +93,9 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       let dragging = false;
       const over = (x: number, y: number, pad: number): boolean =>
         frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= frame.y - pad;
+      // the lip's handle: the notch, `handlePx` either side of the drawer's centre
+      const onHandle = (x: number, y: number): boolean =>
+        frame !== undefined && Math.abs(x - (frame.x + frame.w / 2)) <= TRAY_INPUT.handlePx && y >= frame.y - TRAY_INPUT.lipPadPx;
       for (const r of b) {
         const p = b.entity(r);
         const s = ctx.read(p, PointerScreen);
@@ -99,7 +104,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         const down = ctx.hasTag(p, WentDown) && !chrome && ((ctx.get(p, PointerButtons)?.buttons ?? 0) & 1) !== 0;
         const press = ctx.get(p, TrayPress);
         if (!open) {
-          const onLip = over(s.x, s.y, TRAY_INPUT.lipPadPx);
+          const onLip = onHandle(s.x, s.y);
           if (onLip && ctx.read(p, Pointer).device === "mouse") lip = true;
           if (down && onLip) {
             ctx.addComponent(p, TrayPress, { kind: "lip", x: s.x, y: s.y, scroll0: scroll, moved: false });

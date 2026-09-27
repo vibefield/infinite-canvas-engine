@@ -119,7 +119,7 @@ describe("the Tray fact (design-017 §2)", () => {
 });
 
 describe("closed — the lip (design-017 §4)", () => {
-  it("the mouse over the lip is the lip's hover fact — the hand's cursor, a thing to pull — and leaving it clears both", () => {
+  it("the mouse over the lip's handle (its notch) is the lip's hover fact — the hand's cursor, a thing to pull — and leaving it clears both", () => {
     const r = rig();
     expect(r.ce.stack.readCursor()).toBe("default");
     r.mouse("move", 400, 590, 0); r.step();
@@ -132,41 +132,41 @@ describe("closed — the lip (design-017 §4)", () => {
     expect(r.ce.stack.readCursor()).toBe("default");
     r.mouse("move", 20, 594, 0); r.step();    // beside the drawer
     expect(r.tray().lip).toBe(false);
+    r.mouse("move", 400 + TRAY_INPUT.handlePx + 30, 594, 0); r.step();   // on the lip, beside its handle: the desk's
+    expect(r.tray().lip).toBe(false);
   });
 
-  it("a click on the lip opens the drawer; a drag up from it opens it too; a press elsewhere near the bottom is the desk's", () => {
+  it("a click on the lip's handle opens the drawer; a drag up from it opens it too; a press beside the handle — on the lip or off it — is the desk's", () => {
     const r = rig();
     r.tap(400, 594);
     expect(trayOpen(r.world)).toBe(true);
     closeTray(r.world); r.step();
-    r.mouse("move", 300, 594, 0); r.step();
-    r.mouse("down", 300, 594, 1); r.step();
-    r.mouse("move", 300, 594 - TRAY_INPUT.lipDragPx + 1, 1); r.step();
+    r.mouse("move", 380, 594, 0); r.step();
+    r.mouse("down", 380, 594, 1); r.step();
+    r.mouse("move", 380, 594 - TRAY_INPUT.lipDragPx + 1, 1); r.step();
     expect(trayOpen(r.world)).toBe(false);   // not yet: under the drag's threshold
-    r.mouse("move", 300, 594 - TRAY_INPUT.lipDragPx - 2, 1); r.step();
+    r.mouse("move", 380, 594 - TRAY_INPUT.lipDragPx - 2, 1); r.step();
     expect(trayOpen(r.world)).toBe(true);
-    r.mouse("up", 300, 580, 0); r.step();
+    r.mouse("up", 380, 580, 0); r.step();
     closeTray(r.world); r.step();
-    r.tap(20, 594);   // beside the drawer: the desk's
+    r.tap(20, 594);    // beside the drawer: the desk's
+    r.tap(200, 594);   // on the lip, beside its handle: the desk's too
     expect(trayOpen(r.world)).toBe(false);
   });
 
-  it("a lip press never becomes a desk gesture: dragged sideways off the lip, no marquee starts (control: the same press on the desk does)", () => {
+  it("a press on the handle never becomes a desk gesture, dragged sideways (control: the same drag on the lip beside the handle IS the desk's)", () => {
     const r = rig();
-    r.drag([200, 594], [320, 594], 8);
-    expect(trayOpen(r.world)).toBe(false);   // a sideways drag does not open
-    let marquee = false;
-    r.mouse("move", 200, 300, 0); r.step();
-    r.mouse("down", 200, 300, 1); r.step();
-    for (let i = 1; i <= 8; i++) { r.mouse("move", 200 + i * 15, 300, 1); r.step(); if (r.world.firstOf(activeQ) !== undefined) marquee = true; }
-    r.mouse("up", 320, 300, 0); r.step(2);
-    expect(marquee).toBe(true);   // control: on the desk a press-drag is a gesture
-    let lipGesture = false;
-    r.mouse("move", 200, 594, 0); r.step();
-    r.mouse("down", 200, 594, 1); r.step();
-    for (let i = 1; i <= 8; i++) { r.mouse("move", 200 + i * 15, 594, 1); r.step(); if (r.world.firstOf(activeQ) !== undefined) lipGesture = true; }
-    r.mouse("up", 320, 594, 0); r.step(2);
-    expect(lipGesture).toBe(false);
+    const gesture = (x: number, y: number): boolean => {
+      let live = false;
+      r.mouse("move", x, y, 0); r.step();
+      r.mouse("down", x, y, 1); r.step();
+      for (let i = 1; i <= 8; i++) { r.mouse("move", x + i * 15, y, 1); r.step(); if (r.world.firstOf(activeQ) !== undefined) live = true; }
+      r.mouse("up", x + 120, y, 0); r.step(2);
+      return live;
+    };
+    expect(gesture(150, 594)).toBe(true);   // control: the lip beside the handle is the desk's — a press-drag there is a gesture
+    expect(gesture(350, 594)).toBe(false);  // the handle's press is the tray's
+    expect(trayOpen(r.world)).toBe(false);  // …and a sideways drag does not open
   });
 });
 
