@@ -46,16 +46,24 @@ export interface SelectionMenuAnchor {
 }
 
 /**
+ * A glyph the bar draws (K8a — core's `HeldGlyph`, mirrored structurally): a NAME of its set (`SELECTION_GLYPHS`), or a tool's OWN
+ * drawing — SVG path data in the 24-unit box, stroked 2 units in the bar's ink (`currentColor`) as the set's are, or filled.
+ */
+export type SelectionGlyph = string | { readonly path: string; readonly fill?: boolean };
+
+/**
  * A slot of the held bar as the desk publishes it (its `HeldSlot`, mirrored structurally — D3t-a): a `mode` (pressed, it
  * becomes the tool in hand) or an `action` (pressed, it runs its op), both through `ops.useHeldTool`; no `kind` = declared
- * only, shown dim and inert. `swatch`: a colour shown instead of the glyph (a marker's ink).
+ * only, shown dim and inert. `swatch`: a colour shown instead of the glyph (a marker's ink). `glyph` (K8a): a name of the bar's
+ * set or the tool's own drawing — a plugin kind's tool draws its own; a name the bar does not draw is MARKED missing (its label's
+ * initial, `data-glyph-missing`, one console error), never drawn as another glyph.
  */
 export interface SelectionMenuTool {
   readonly id: string;
   readonly label: string;
   readonly kind?: "mode" | "action";
   readonly hint?: string;
-  readonly glyph?: string;
+  readonly glyph?: SelectionGlyph;
   readonly swatch?: string;
 }
 
@@ -151,6 +159,28 @@ export const SELECTION_GLYPHS: Readonly<Record<string, ReactNode>> = {
 function Glyph({ glyph, size = 16 }: { readonly glyph: string | ReactNode; readonly size?: number }): ReactElement {
   const body = typeof glyph === "string" ? SELECTION_GLYPHS[glyph] : glyph;
   return <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" focusable="false">{body}</svg>;
+}
+
+/** Is this glyph a DRAWING (`{ path }`) rather than a name or a node? */
+const isDrawing = (g: unknown): g is { readonly path: string; readonly fill?: boolean } => typeof g === "object" && g !== null && typeof (g as { path?: unknown }).path === "string";
+/** A drawing in the bar's hand: the path in the 24-unit box, stroked like the set's (or filled). */
+const drawn = (g: { readonly path: string; readonly fill?: boolean }): ReactNode => (g.fill === true ? <path fill="currentColor" fillRule="evenodd" d={g.path} /> : stroke(<path d={g.path} />));
+/** A glyph a tool named that the bar cannot draw: its label's initial, unmistakably not a glyph of the set (K8a — never "ellipsis"). */
+const initial = (label: string): ReactNode => <text x="12" y="16.5" textAnchor="middle" fontSize="13" fontWeight="600" fill="currentColor">{(label.trim()[0] ?? "?").toUpperCase()}</text>;
+/** Each missing name said once, loudly: a declaration error, not a look. */
+const missingSaid = new Set<string>();
+
+/** A held tool's glyph as the bar draws it — and whether a NAME it gave is missing from the set. */
+function toolGlyph(t: SelectionMenuTool): { readonly node: ReactNode; readonly missing: string | undefined } {
+  const g = t.glyph;
+  if (isDrawing(g)) return { node: drawn(g), missing: undefined };
+  if (typeof g === "string" && g in SELECTION_GLYPHS) return { node: SELECTION_GLYPHS[g], missing: undefined };
+  if (typeof g === "string" && !missingSaid.has(g)) {
+    missingSaid.add(g);
+    console.error(`[ice] the held tool "${t.id}" names the glyph "${g}", which the bar does not draw — declare its drawing (\`glyph: { path }\`) or a name of SELECTION_GLYPHS`);
+  }
+  // no glyph at all, or a name the bar does not know: the tool's initial — honest, and never another tool's glyph
+  return { node: initial(t.label), missing: typeof g === "string" ? g : undefined };
 }
 
 // ---------------------------------------------------------------- the acts ICE ships
@@ -324,10 +354,11 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   // no kind stays dim and inert
   const slot = (t: SelectionMenuTool): ReactElement => {
     const tip = t.hint !== undefined ? `${t.label} (${t.hint})` : t.label;
-    const glyph = <Glyph glyph={t.glyph !== undefined && t.glyph in SELECTION_GLYPHS ? t.glyph : "ellipsis"} />;
+    const g = toolGlyph(t);
+    const glyph = <Glyph glyph={g.node} />;
     if (t.kind === undefined) {
       return (
-        <button key={t.id} type="button" className="ice-sm-btn is-dim" data-tool={t.id} aria-label={t.label} aria-disabled="true" title={tip} tabIndex={-1}>
+        <button key={t.id} type="button" className="ice-sm-btn is-dim" data-tool={t.id} data-glyph-missing={g.missing} aria-label={t.label} aria-disabled="true" title={tip} tabIndex={-1}>
           {glyph}
         </button>
       );
@@ -335,7 +366,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     const on = t.kind === "mode" && t.id === shown.active;
     return (
       <button
-        key={t.id} type="button" className={t.swatch !== undefined ? "ice-sm-ink" : "ice-sm-btn"} data-tool={t.id} data-kind={t.kind}
+        key={t.id} type="button" className={t.swatch !== undefined ? "ice-sm-ink" : "ice-sm-btn"} data-tool={t.id} data-kind={t.kind} data-glyph-missing={g.missing}
         data-on={on ? "true" : undefined} aria-pressed={t.kind === "mode" ? on : undefined} aria-label={t.label} title={tip}
         onClick={() => { setOpen(false); engine.ops.useHeldTool(t.id); }}
       >

@@ -22,6 +22,7 @@ import {
   Editing,
   GestureActive,
   GuideLine,
+  type HeldGlyph,
   LocalPointer,
   Locked,
   type MarqueeBuffer,
@@ -88,7 +89,8 @@ export interface HeldSlot {
   /** `mode` · `action`; absent = declared only (dim). */
   readonly kind?: "mode" | "action";
   readonly hint?: string;
-  readonly glyph?: string;
+  /** Its glyph (core's `HeldGlyph`, K8a): a name of the bar's set, or the tool's own drawing (`{ path }`) — plain data either way. */
+  readonly glyph?: HeldGlyph;
   /** A colour the slot shows instead of its glyph (a marker's ink), CSS. */
   readonly swatch?: string;
 }

@@ -12,7 +12,7 @@ import { createCanvasEngine, defineWidget, Held, HeldTool, type CanvasEngine, ty
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { attachKeymap, defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_MENU, SelectionMenu, type SelectionAction, type SelectionMenuAnchor, type SelectionMenuSource } from "../src";
+import { attachKeymap, defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_GLYPHS, SELECTION_MENU, SelectionMenu, type SelectionAction, type SelectionMenuAnchor, type SelectionMenuSource } from "../src";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -206,5 +206,59 @@ describe("the held bar's live tools (design-015 §8, D3t-a)", () => {
     engine.ops.putDown();
     key("Backspace", { meta: true });
     expect(actions).toEqual(["undo", "wipe"]);
+  });
+});
+
+// K8a (design-016 §5 · K-L2 — "held-tool glyphs … a plugin kind declares the same way"): the bar drew only its own set — a tool whose
+// glyph name it lacked (or a plugin's, which draws no React) was drawn SILENTLY as "ellipsis". A tool's glyph is a name of the set or
+// its OWN drawing (core's `HeldGlyph`), and a name the bar lacks is marked missing — its initial, `data-glyph-missing`, one error.
+describe("the held bar draws a plugin tool's own glyph, and never passes an unknown name off as another (K8a)", () => {
+  const ELLIPSIS = String((SELECTION_GLYPHS.ellipsis as { props: { d: string } }).props.d);
+  const PLUGIN_TOOLS = [
+    { id: "wind", label: "Wind the clock", kind: "action" as const, glyph: { path: "M12 5v7l4 2M4 12a8 8 0 1 0 16 0 8 8 0 1 0-16 0" } },
+    { id: "chime", label: "Chime", kind: "mode" as const, glyph: { path: "M6 6h12v12H6z", fill: true } },
+    { id: "gear", label: "gears", kind: "mode" as const, glyph: "no-such-glyph" },
+    { id: "bare", label: "Bare", kind: "mode" as const },
+  ];
+
+  it("a drawing is drawn in the bar's hand — stroked like the set, or filled — and a missing name is the tool's initial, marked and said once", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const source = fakeSource(anchorOf());
+      const { menu } = mount(source);
+      source.set(held({ tools: PLUGIN_TOOLS }));
+      source.set(held({ tools: PLUGIN_TOOLS, active: "chime" }));   // a re-render: the missing name is said ONCE
+      const slot = (id: string): HTMLElement => { const el = menu().querySelector<HTMLElement>(`[data-tool="${id}"]`); if (el === null) throw new Error(`no slot ${id}`); return el; };
+      const wind = slot("wind").querySelector("path");
+      expect(wind?.getAttribute("d")).toBe("M12 5v7l4 2M4 12a8 8 0 1 0 16 0 8 8 0 1 0-16 0");
+      expect(wind?.closest("g")?.getAttribute("stroke")).toBe("currentColor");
+      const chime = slot("chime").querySelector("path");
+      expect(chime?.getAttribute("fill")).toBe("currentColor");
+      // the unknown name: its initial, marked — never the ellipsis
+      const gear = slot("gear");
+      expect(gear.dataset.glyphMissing).toBe("no-such-glyph");
+      expect(gear.querySelector("text")?.textContent).toBe("G");
+      expect(gear.innerHTML).not.toContain(ELLIPSIS);
+      expect(errors.mock.calls.filter((c) => String(c[0]).includes("no-such-glyph"))).toHaveLength(1);
+      // no glyph at all: its initial, and nothing is missing
+      const bare = slot("bare");
+      expect(bare.dataset.glyphMissing).toBeUndefined();
+      expect(bare.querySelector("text")?.textContent).toBe("B");
+      for (const t of PLUGIN_TOOLS) expect(slot(t.id).innerHTML, t.id).not.toContain(ELLIPSIS);
+      // a name of the set is drawn as before
+      source.set(held());
+      const undo = menu().querySelector<HTMLElement>('[data-tool="undo"]');
+      expect(undo?.querySelector("path")).not.toBeNull();
+      expect(undo?.dataset.glyphMissing).toBeUndefined();
+      expect(undo?.innerHTML).not.toContain(ELLIPSIS);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("core takes a tool's drawing and refuses an empty one — a glyph is a name or a path", () => {
+    expect(() => defineWidget({ type: "hb:plugin-ok", object: { name: "plug" }, openable: true, heldTools: [{ id: "wind", label: "Wind", kind: "mode", glyph: { path: "M0 0h24" } }] })).not.toThrow();
+    expect(() => defineWidget({ type: "hb:plugin-bad", object: { name: "plug" }, openable: true, heldTools: [{ id: "wind", label: "Wind", kind: "mode", glyph: { path: " " } }] })).toThrow(/a glyph is a name of the bar's set or a drawing/);
+    expect(() => defineWidget({ type: "hb:plugin-empty", object: { name: "plug" }, openable: true, heldTools: [{ id: "wind", label: "Wind", kind: "mode", glyph: "" }] })).toThrow(/a glyph is a name/);
   });
 });

@@ -31,6 +31,14 @@ export interface HeldToolApi {
   setProps(props: Readonly<Record<string, unknown>>, opts?: { readonly undoable?: boolean }): boolean;
 }
 
+/**
+ * A held tool's GLYPH (design-016 §5 · K-L2, K8a): a NAME the bar draws (its set — `SELECTION_GLYPHS` in `@ice/react`, which an
+ * app may extend), or the tool's OWN drawing — SVG path data in the bar's 24-unit box, stroked 2 units in the bar's ink as the
+ * bar's own are, or filled (`fill`). A plugin kind in its own package, which draws no React, declares its drawing; a name the bar
+ * does not know is never drawn as another glyph (the bar marks it missing and says so).
+ */
+export type HeldGlyph = string | { readonly path: string; readonly fill?: boolean };
+
 /** One tool of the held bar, as a kind declares it (its `open.tools`). */
 export interface HeldToolDef {
   /** Unique within the type: what `HeldTool.id` holds for a mode, what `ops.useHeldTool` names. */
@@ -43,8 +51,8 @@ export interface HeldToolDef {
   readonly keys?: readonly string[];
   /** The key as the tip shows it ("1", "E", "⌘Z"). */
   readonly hint?: string;
-  /** A glyph of the bar's set, by name. */
-  readonly glyph?: string;
+  /** Its glyph (`HeldGlyph`, K8a): a name of the bar's set, or its own drawing (`{ path }`). */
+  readonly glyph?: HeldGlyph;
   /** A mode chosen again while active hands the hand back the mode before it. */
   readonly toggle?: boolean;
   /** The cursor over the object's drawing surface (its `content` part) while this mode is active — "none" where the tool draws itself. */
@@ -85,6 +93,13 @@ export function matchHeldTool(tools: readonly HeldToolDef[], chord: KeyChord): H
 }
 
 /** A type's tools at definition time: unique ids, a known kind, an action with its op, well-formed keys. */
+/** Is this a glyph a tool may declare — none, a non-empty name, or a drawing with non-empty path data (K8a)? */
+export function isHeldGlyph(g: unknown): g is HeldGlyph | undefined {
+  if (g === undefined) return true;
+  if (typeof g === "string") return g.length > 0;
+  return typeof g === "object" && g !== null && typeof (g as { path?: unknown }).path === "string" && (g as { path: string }).path.trim().length > 0;
+}
+
 export function validateHeldTools(type: string, tools: readonly HeldToolDef[]): void {
   const seen = new Set<string>();
   for (const t of tools) {
@@ -93,6 +108,7 @@ export function validateHeldTools(type: string, tools: readonly HeldToolDef[]): 
     seen.add(t.id);
     if (t.kind !== undefined && t.kind !== "mode" && t.kind !== "action") throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — a tool is a "mode" or an "action" (or declared with neither).`);
     if (t.kind === "action" && typeof t.run !== "function") throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — an action runs an op: declare \`run\`.`);
+    if (!isHeldGlyph(t.glyph)) throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — a glyph is a name of the bar's set or a drawing \`{ path }\` (SVG path data in the 24-unit box).`);
     for (const spec of t.keys ?? []) {
       if (parseKey(spec) === undefined) throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — the key "${spec}" is not a key spec ("1", "e", "mod+z", "mod+shift+z").`);
     }
