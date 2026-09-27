@@ -15,7 +15,7 @@
 // ink raster on the √2 band ladder in the pass's pages, the pen's wipe, the editor's caret. `record`
 // takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
 
-import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
+import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type RungContext, stringProp } from "@ice/desk";
 import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, HAND, type ShaderText } from "@ice/desk/kit";
 import type { PaperInstance } from "./layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "./paper";
@@ -125,8 +125,9 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
   return {
     ...program,
     reach: paperReach(law),
-    // the record reads the view's zoom and dpr for the ink's band (paper.ts `rasterBand`) and nothing else of the camera (D6)
-    rezoom: true,
+    // the record reads the view's zoom and dpr ONLY through the ink's band (paper.ts `rasterBand`) — its RUNG (K6b): a zoom within the
+    // band remakes nothing, a crossing remakes the note; nothing else of the camera (D6)
+    rung: (c: RungContext): number => (c.local as Partial<Pick<Writing, "bandOf">> | undefined)?.bandOf?.(c.entity, c.props, c.rect, c.zoom, c.dpr) ?? 0,
     local: (host: KindHost): Writing => createWriting({
       pages: pagesOf(host),
       text: host.text,

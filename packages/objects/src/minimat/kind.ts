@@ -111,7 +111,9 @@ export function minimatKind(opts: MiniMatKindOptions = {}): ObjectKind<MiniMatGe
     ...program,
     // the reach is the construction law's: a live law moves the face, not the shadow's reach (the dev panel's rows — D5a)
     reach: miniMatReach(law),
-    // the record reads the inside camera's zoom for the face's far-LOD lattice and its numerals (inside.ts `miniMatInstance`) and nothing else of the camera (D6)
+    // the record reads the inside camera's zoom for the face's far-LOD lattice and its numerals (inside.ts `miniMatInstance`) and nothing
+    // else of the camera (D6) — CONTINUOUSLY (K6b, D-K6b.1): every rung's weight and width ramps over its decade of the zoom (lattice/
+    // line.ts `lineWeight`) and the three rungs span every zoom, so no step of it leaves the face's pixels as they were — no `rung`
     rezoom: true,
     tune(next: unknown): void { law = next as MiniMatLaw; },
     resolve(ctx: ObjectContext): MiniMatGeometry {

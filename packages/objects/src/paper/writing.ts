@@ -112,6 +112,12 @@ export interface Writing {
    * delete ghost) draws only the raster it already holds — never a new layout or raster, no marks.
    */
   draw(e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number }, view: View & { readonly dpr: number }, geometry: PaperGeometry, fading?: boolean): NoteInk;
+  /**
+   * The band note `e` asks at `zoom` × `dpr` (K6b — the paper kind's RUNG): its raster's band under the ladder's hysteresis, the one
+   * `draw` would raster at; 0 when it asks none (an empty sheet, a pinned still, no text raster). The note's record reads the zoom
+   * through this alone, so a zoom within the band remakes nothing.
+   */
+  bandOf(e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly w: number; readonly h: number }, zoom: number, dpr: number): number;
   /** The note's layout as last drawn (undefined before, for a still, or while the face loads). */
   layoutOf(e: Entity): HandLayout | undefined;
   rasterOf(e: Entity): NoteRasterInfo | undefined;
@@ -233,6 +239,9 @@ export function createWriting(opts: WritingOptions): Writing {
     return null;
   };
 
+  /** The band a note asks at `zoom` × `dpr`: the ladder's, with the hysteresis around the band its raster holds, capped at the page. */
+  const askBand = (en: Entry | undefined, w: number, h: number, zoom: number, dpr: number): number => rasterBand(zoom, dpr, en?.raster?.band ?? 0, INK_PAGE / Math.max(w, h, 1));
+
   const near = (rect: { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number }, view: View): boolean => {
     const m = marginPx / view.zoom;
     const r = Math.hypot(rect.w, rect.h) / 2;
@@ -292,7 +301,7 @@ export function createWriting(opts: WritingOptions): Writing {
       // the raster: none for an unwritten sheet; else at the band the view asks, redrawn on a new layout or a rung only
       if (t.length === 0 || L === undefined || text === undefined) release(pages, en);
       else if (pages !== undefined && near(rect, view)) {
-        const band = rasterBand(view.zoom, view.dpr, en.raster?.band ?? 0, INK_PAGE / Math.max(rect.w, rect.h, 1));
+        const band = askBand(en, rect.w, rect.h, view.zoom, view.dpr);
         const r = en.raster;
         if (r === null || r.layout !== L || r.band !== band || r.bleed !== bleed) {
           const pw = Math.max(1, Math.ceil(rect.w * band));
@@ -324,6 +333,12 @@ export function createWriting(opts: WritingOptions): Writing {
         ...(wipe !== undefined ? { wipe } : {}),
         ...(caret !== undefined ? { caret } : {}),
       };
+    },
+
+    bandOf(e, props, rect, zoom, dpr) {
+      const en = entries.get(e);
+      if (text === undefined || en?.pinned === true || str(props, "text").length === 0) return 0;
+      return askBand(en, rect.w, rect.h, zoom, dpr);
     },
 
     layoutOf: (e) => entries.get(e)?.layout,

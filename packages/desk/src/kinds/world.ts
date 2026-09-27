@@ -230,6 +230,17 @@ export interface KindLocal {
   dispose?(): void;
 }
 
+/** What a kind's `rung` reads (K6b): the object as the builder holds it, its SLOT's zoom (an inside's is its host's face's) and the dpr, and its kind's state on this desk. */
+export interface RungContext {
+  readonly entity: Entity;
+  readonly rect: ObjectRect;
+  readonly props: Readonly<Record<string, unknown>>;
+  readonly zoom: number;
+  readonly dpr: number;
+  /** The kind's `local()` on this desk (`KindLocal`); undefined when it keeps none. */
+  readonly local: unknown;
+}
+
 /**
  * A kind, whole: the render half the ground registers (`KindProgram` — name, stratum, the pass)
  * and the world half the builder and the pick source drive. `G` is the kind's resolved geometry,
@@ -244,11 +255,19 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
   /** Components and tags the kind reads beyond its own props (the builder adds them to its change journal). */
   readonly reads?: { readonly components?: readonly Component[]; readonly tags?: readonly Tag[] };
   /**
-   * The record reads the view's ZOOM or dpr (a raster band, a far-LOD lattice) and nothing else of the camera (design-015 §4.3; D6):
-   * the builder remakes it when they move and reuses it across a pan. Absent = the record is the facts' and the flux's alone. A
+   * The record reads the view's ZOOM or dpr CONTINUOUSLY (a far-LOD lattice whose lines fade with every step of the zoom) and nothing
+   * else of the camera (design-015 §4.3; D6): the builder remakes it whenever they move and reuses it across a pan. A record that
+   * reads them only in steps says so with `rung` instead. Absent (and no `rung`) = the record is the facts' and the flux's alone. A
    * composite kind is remade every frame it is drawn whatever it says (its `resolve` steps its own motion).
    */
   readonly rezoom?: boolean;
+  /**
+   * The record reads the view's zoom or dpr ONLY THROUGH A RUNG (K6b, design-016 §6 — a raster's band): this object's rung under
+   * its slot's zoom, and the builder remakes the record only when that moves — a zoom within a rung remakes and writes nothing.
+   * Asked of a drawn object whenever its slot's zoom or the dpr moved since its rung was last read, never on a pan; it reads the
+   * zoom, never where the camera is. Wins over `rezoom`.
+   */
+  rung?(ctx: RungContext): number;
   /** A host's LIVE law (D5a — the dev panel's door, `handle.tuneLaw`): the kind resolves under it from the next build. Absent, its law is fixed. */
   tune?(law: unknown): void;
   /** The entity's geometry this frame, from its rect, its props and its flux — the prototype's `resolve*`. */

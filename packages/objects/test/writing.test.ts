@@ -121,6 +121,27 @@ describe("the writing · the raster cache's keys", () => {
     expect(t.calls.map((c) => c.band)).toEqual([4, 8, 1]);
   });
 
+  it("bandOf — the paper kind's RUNG (K6b): the band `draw` rasters at, under the same hysteresis; 0 for an empty sheet, a pinned still, no text raster", () => {
+    const { w, frame } = desk();
+    const n = { e: E(1), cx: 300, cy: 250, text: "hi" };
+    const P = { text: "hi" };
+    const R = { w: 200, h: 200 };
+    expect(w.bandOf(n.e, P, R, 1.6, 2)).toBe(4);   // no raster yet: the rung at or above 3.2
+    frame([n], { ...VIEW, zoom: 1.6 });
+    expect(w.bandOf(n.e, P, R, 1, 2)).toBe(4);     // 2 ≥ 4 / 2.3: held by the hysteresis around the raster's band
+    expect(w.bandOf(n.e, P, R, 0.5, 2)).toBe(1);   // 1 < 4 / 2.3: down to the rung at or above
+    for (const zoom of [1.9, 1, 4, 3, 0.5, 0.7]) {
+      const asked = w.bandOf(n.e, P, R, zoom, 2);
+      frame([n], { ...VIEW, zoom });
+      expect(w.rasterOf(n.e)?.band).toBe(asked);   // what the rung said is what the raster became
+    }
+    expect(w.bandOf(n.e, P, { w: 1024, h: 200 }, 8, 2)).toBe(2);   // capped at the page: 2048 / 1024
+    expect(w.bandOf(E(2), { text: "" }, R, 1.6, 2)).toBe(0);
+    expect(w.pin(E(3), new Uint8Array(4), { w: 2, h: 2 })).toBe(true);
+    expect(w.bandOf(E(3), { text: "pinned" }, R, 1.6, 2)).toBe(0);
+    expect(desk({ text: undefined }).w.bandOf(E(1), P, R, 1.6, 2)).toBe(0);
+  });
+
   it("only a note within 200 CSS px of the view pays for a raster; one further out keeps what it has", () => {
     const { w, t, frame } = desk();
     // the note's circle (r = 141) edge 250 px past the right of the view: out

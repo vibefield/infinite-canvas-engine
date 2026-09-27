@@ -8,10 +8,13 @@
 // when a look is changed under the builder's feet (the control that proves the checker bites).
 import { createCanvasEngine, type Entity, Grab, NO_ENTITY, Position, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, DEFAULT_GRID } from "@ice/desk";
+import { createDeskBuilder, DEFAULT_GRID, type KindLocal } from "@ice/desk";
+import type { HandMetrics, InkBitmap, TextRaster } from "@ice/desk/kit";
 import type { SpatialSource } from "../../desk/src/compose/builder";
 import { minimatKind } from "../src/minimat/kind";
 import { paperKind } from "../src/paper/kind";
+import { InkShelves, uvOf } from "../src/paper/pages";
+import { createWriting, type InkPages } from "../src/paper/writing";
 import { MiniMat, Note } from "../src";
 import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
@@ -23,7 +26,7 @@ const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PEN
 const looksOf = () => new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["minimat", must(minimatKind().theme)(palette, "light")]]);
 const LOOKS = looksOf();
 
-function makeDesk(indexed = false) {
+function makeDesk(indexed = false, locals?: ReadonlyMap<string, KindLocal>) {
   const ce = createCanvasEngine({ widgets: [Note, MiniMat] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: VP.width, h: VP.height, dpr: VP.dpr });
@@ -34,11 +37,30 @@ function makeDesk(indexed = false) {
   /** The engine's own index, its searches counted. */
   const searches: unknown[] = [];
   const spatial: SpatialSource = { search: (b) => { searches.push(b); return ce.stack.index.search(b); } };
-  const builder = createDeskBuilder(ce.world, { objects: [Note, MiniMat], ...(indexed ? { spatial } : {}) });
+  const builder = createDeskBuilder(ce.world, { objects: [Note, MiniMat], ...(indexed ? { spatial } : {}), ...(locals !== undefined ? { locals } : {}) });
   const build = (cam = CAM, looks = LOOKS, dt = DT) => { builder.changed(); return builder.build(cam, VP, dt, THEMES.light, DEFAULT_GRID, looks); };
   /** Build until the springs settle (bounded). */
   const settle = (cam = CAM): number => { let n = 0; do { build(cam); n += 1; } while (builder.live() && n < 600); return n; };
   return { ce, world: ce.world, step, builder, build, settle, note, mat, searches };
+}
+
+/** The paper's WRITING over a counting text raster and real shelves (the writing's own test has the fuller fakes): what the rung law reads. */
+function inkLocal() {
+  const metrics: HandMetrics = { ascent: 0.8, descent: 0.2, advance: () => 0.5 };
+  const bands: number[] = [];
+  const text: TextRaster = {
+    metrics: () => metrics,
+    version: () => 1,
+    raster(_L, _face, box, band): InkBitmap {
+      const w = Math.max(1, Math.ceil(box.w * band));
+      const h = Math.max(1, Math.ceil(box.h * band));
+      bands.push(band);
+      return { bytes: new Uint8Array(w * h), w, h };
+    },
+  };
+  const shelves = new InkShelves(2048, 4);
+  const pages: InkPages = { alloc: (w, h) => shelves.alloc(w, h), free: (r) => shelves.free(r), write: (r) => uvOf(r.x, r.y, r.w, r.h, 2048, 2048), reset: () => shelves.reset(), trim: () => shelves.trim() };
+  return { writing: createWriting({ pages: () => pages, text }), bands };
 }
 
 describe("persistent records · the builder (design-015 §4.3; D6)", () => {
@@ -81,6 +103,41 @@ describe("persistent records · the builder (design-015 §4.3; D6)", () => {
     const f = build({ x: 50, y: 20, zoom: 1.25 });
     expect(f.stats.work.recorded).toBe(0);
     expect(f.stats.work.reused).toBe(6);
+  });
+
+  it("THE RUNG LAW (K6b): a zoom within a note's band remakes no note — its record reads the zoom only through the band; a crossing remakes the written notes, never an empty one; the mini mat reads the zoom continuously and is remade on every zoom", () => {
+    const ink = inkLocal();
+    const { step, build, settle, note, mat } = makeDesk(false, new Map([["paper", ink.writing]]));
+    const written = [note(200, 200, { text: "one" }), note(500, 200, { text: "two" }), note(800, 200, { text: "three" })];
+    const empty = note(200, 500);
+    const minimat = mat(700, 550, 400, 300);
+    step(3);
+    const at = (zoom: number) => ({ x: 0, y: 0, zoom });
+    const recordOf = (f: ReturnType<typeof build>, e: number) => f.objects.find((o) => o.key === e)?.record;
+    settle(at(1.2));   // 2.4 device px a unit: every written note rastered at the ladder's rung at or above, 2√2
+    const a = build(at(1.2));
+    expect(written.map((e) => ink.writing.rasterOf(e)?.band)).toEqual([2 ** 1.5, 2 ** 1.5, 2 ** 1.5]);
+    const rasters = ink.bands.length;
+    // a zoom WITHIN the band — in (2.6 ≤ 2√2) and out (1.6 ≥ 2√2 / 2.3, the hysteresis): the notes' rungs are read, no note is remade
+    // or rastered; the mini mat alone is remade, every time
+    for (const zoom of [1.3, 0.8, 1.1]) {
+      const f = build(at(zoom));
+      expect(f.stats.work.recorded).toBe(1);
+      expect(f.stats.work.rungs).toBe(4);
+      expect(recordOf(f, minimat as number)).not.toBe(recordOf(a, minimat as number));
+      for (const e of [...written, empty]) expect(recordOf(f, e as number)).toBe(recordOf(a, e as number));   // identity: the very record
+    }
+    expect(ink.bands.length).toBe(rasters);
+    // a CROSSING (3.0 > 2√2 → 4): the three written notes are remade and rastered at 4; the empty sheet asks no band and stands
+    const c = build(at(1.5));
+    expect(c.stats.work.recorded).toBe(4);
+    expect(ink.bands.slice(rasters)).toEqual([4, 4, 4]);
+    expect(recordOf(c, empty as number)).toBe(recordOf(a, empty as number));
+    for (const e of written) expect(recordOf(c, e as number)).not.toBe(recordOf(a, e as number));
+    // the zoom standing, or a pan: no rung is read, nothing is remade
+    const d = build({ x: 30, y: -20, zoom: 1.5 });
+    expect(d.stats.work.rungs).toBe(0);
+    expect(d.stats.work.recorded).toBe(0);
   });
 
   it("a spring moving remakes its object every build until it snaps; then a pan reuses it again", () => {

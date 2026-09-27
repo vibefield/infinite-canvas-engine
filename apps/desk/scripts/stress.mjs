@@ -23,7 +23,10 @@
 // copies made while it is held (0 more), `holdCost`'s copy (the blur, once), hand (a held frame) and rest. K2 (design-016 §4): the pan
 // also runs once with the GPU profiler ARMED — the real frames' GPU span p50/p95 and their draws / pipelines / bind groups a frame —
 // and the frame at its end is measured per KIND by ablation (`perf.kindCost`, an A/A control beside); the page must be
-// cross-origin isolated (checked: every clock here is performance.now()'s).
+// cross-origin isolated (checked: every clock here is performance.now()'s). K6b (design-016 §6): `zoom-written`, LAST (it
+// stages its own desk) — 240 written notes and 8 whiteboards zoomed out 1 → 0.35 and back, a fresh desk each round (the band
+// ladder's hysteresis would otherwise leave every later round nothing to cross): each step's ms beside THAT step's rasters,
+// replays and records (`perf.probe`), p50 / p95 / the worst frame.
 //
 // The fps gates are stated against THE MACHINE'S REFRESH: headless Chrome's rAF runs at 60 Hz whatever the display, so "120
 // fps" cannot be witnessed by counting frames here — it is asserted as a FRAME BUDGET: main-thread JS ≤ 2 ms AND JS + GPU ≤
@@ -678,8 +681,8 @@ try {
         const board = d.handle.local("board");
         let recs = 0;
         const written = () => { recs = 0; for (const v of Object.values(d.handle.records())) recs += v.written; return recs; };
-        d.perf.probe(() => { const w = d.note.writing(); return [w?.rasters ?? 0, board?.replays() ?? 0, d.handle.stats().totals.recorded, written(), w?.blanks ?? 0, d.camera().zoom]; });
-        const p0 = [d.note.writing()?.rasters ?? 0, board?.replays() ?? 0, d.handle.stats().totals.recorded, written(), d.note.writing()?.blanks ?? 0];
+        d.perf.probe(() => { const w = d.note.writing(); const t = d.handle.stats().totals; return [w?.rasters ?? 0, board?.replays() ?? 0, t.recorded, written(), w?.blanks ?? 0, d.camera().zoom, t.rungs ?? 0]; });
+        const p0 = [d.note.writing()?.rasters ?? 0, board?.replays() ?? 0, d.handle.stats().totals.recorded, written(), d.note.writing()?.blanks ?? 0, d.camera().zoom, d.handle.stats().totals.rungs ?? 0];
         const bids = d.entities().filter((e) => e.type === "desk.board").map((e) => e.id);
         const res0 = bids.map((e) => board?.residency(e) ?? null);
         d.perf.take();
@@ -693,7 +696,7 @@ try {
         return { steps: t.steps, probes: t.probes, p0, boards: [res0, bids.map((e) => board?.residency(e) ?? null)] };
       })()`, 120000);
       // each step's counters minus the step before's: what THAT frame did
-      const frames = run.steps.map((ms, i) => { const a = i === 0 ? run.p0 : run.probes[i - 1]; const b = run.probes[i]; return { ms, rasters: b[0] - a[0], replays: b[1] - a[1], recorded: b[2] - a[2], written: b[3] - a[3], blanks: b[4] - a[4] }; });
+      const frames = run.steps.map((ms, i) => { const a = i === 0 ? run.p0 : run.probes[i - 1]; const b = run.probes[i]; return { ms, rasters: b[0] - a[0], replays: b[1] - a[1], recorded: b[2] - a[2], written: b[3] - a[3], blanks: b[4] - a[4], rungs: b[6] - a[6] }; });
       const ms = frames.map((f) => f.ms);
       const worst = frames.reduce((a, f) => (f.ms > a.ms ? f : a), frames[0]);
       perRound.push({
@@ -701,8 +704,8 @@ try {
         rasters: frames.reduce((a, f) => a + f.rasters, 0), rastersMax: max(frames.map((f) => f.rasters)), replays: frames.reduce((a, f) => a + f.replays, 0), replaysMax: max(frames.map((f) => f.replays)),
         recordedMed: median(frames.map((f) => f.recorded)), writtenMed: median(frames.map((f) => f.written)), blanks: frames.reduce((a, f) => a + f.blanks, 0),
         worst, load: load(), boards: run.boards,
-        // the round frame by frame: [ms, rasters, replays, remade, written, blanks, the zoom drawn]
-        series: frames.map((f, i) => [Math.round(f.ms * 100) / 100, f.rasters, f.replays, f.recorded, f.written, f.blanks, Math.round(run.probes[i][5] * 1000) / 1000]),
+        // the round frame by frame: [ms, rasters, replays, remade, written, blanks, the zoom drawn, rungs read]
+        series: frames.map((f, i) => [Math.round(f.ms * 100) / 100, f.rasters, f.replays, f.recorded, f.written, f.blanks, Math.round(run.probes[i][5] * 1000) / 1000, f.rungs]),
       });
     }
     const col = (k) => perRound.map((p) => p[k]);
