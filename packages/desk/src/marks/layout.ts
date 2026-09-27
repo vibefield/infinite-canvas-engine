@@ -300,14 +300,56 @@ function pill(out: Out, x: number, y: number, s: string, fill: RGBA, ink: RGBA, 
 }
 
 /**
- * A NAME TAG (design-017 §8; K5a — under each of the tray's specimens): the marks' pill in the paper's white with the pencil's ink, the
- * label in the rulers' capitals (the atlas holds no other case), centred at (x, y) — screen px. By night (`night` 0 … 1) the paper
- * steps back, as a card does under the Moon, and the ink with it a little.
+ * The tray's name tags' look (K5b, D-K5b.7 — a call for James; one word switches back): `"tape"` — a strip of LABEL-MAKER tape stuck
+ * to the board under each specimen, its capitals embossed; `"pill"` — K5a's marks-style chip.
  */
-export function tagMarks(label: string, x: number, y: number, atlas: GlyphAtlasMeta, dpr: number, night = 0): MarkRecord[] {
+export const TRAY_TAG_STYLE: "tape" | "pill" = "tape";
+
+/**
+ * The label tape (K5b): a strip `height` CSS px high running `pad` past the capitals, its corners barely rounded; the tape near-black,
+ * the capitals the pale plastic an embosser stretches (raised: the tape's shade just under each), a faint sheen along its top edge and
+ * its shadow on the board. By night the plastic's white steps back with the paper's, the sheen goes, the shadow lightens.
+ */
+const LABEL = {
+  height: 13,
+  pad: 5,
+  radius: 1.5,
+  tape: cssColor("#17181b"),
+  letters: cssColor("#ecebe4"),
+  shade: [0, 0, 0, 0.55] as V4,
+  sheen: [1, 1, 1, 0.1] as V4,
+  shadow: [0, 0, 0, 0.24] as V4,
+  night: { letters: 0.45, shadow: 0.5 },
+} as const;
+
+/**
+ * A NAME TAG (design-017 §8; K5a — under each of the tray's specimens), centred at (x, y) — screen px, the label in the rulers' capitals
+ * (the atlas holds no other case): by `TRAY_TAG_STYLE`, a strip of embossed label tape (K5b) or the marks' pill in the paper's white with
+ * the pencil's ink (K5a). By night (`night` 0 … 1) each steps back as a card does under the Moon.
+ */
+export function tagMarks(label: string, x: number, y: number, atlas: GlyphAtlasMeta, dpr: number, night = 0, style: "tape" | "pill" = TRAY_TAG_STYLE): MarkRecord[] {
   const out: Out = [];
   const n = Math.min(Math.max(night, 0), 1);
-  pill(out, x, y, label.toUpperCase(), at(INK.paper, 1 - 0.55 * n), at(INK.pencil, 1 - 0.25 * n), "center", atlas, dpr);
+  const s = label.toUpperCase();
+  if (style === "pill") {
+    pill(out, x, y, s, at(INK.paper, 1 - 0.55 * n), at(INK.pencil, 1 - 0.25 * n), "center", atlas, dpr);
+    return out;
+  }
+  const L = LABEL;
+  const tw = textWidth(s, atlas);
+  const hx = Math.ceil(tw / 2) + L.pad;
+  const hy = L.height / 2;
+  const cx = Math.round(x);
+  const cy = Math.round(y);
+  // stuck to the board: its shadow, the tape, the sheen along its top edge
+  box(out, MARK.fill, cx + 0.6, cy + 0.9, hx, hy, 0, L.radius, 0, at(L.shadow, 1 - L.night.shadow * n));
+  box(out, MARK.fill, cx, cy, hx, hy, 0, L.radius, 0, at(L.tape, 1));
+  box(out, MARK.fill, cx, cy - hy + 0.8, hx - L.radius, 0.45, 0, 0, 0, at(L.sheen, 1 - n));
+  // the capitals, RAISED: the tape's shade just under each, the stretched pale plastic over it
+  const x0 = cx - tw / 2;
+  const base = middleBaseline(cy + 0.5, atlas);
+  text(out, s, x0, base + 0.8, 0, L.shade, atlas, dpr);
+  text(out, s, x0, base, 0, at(L.letters, 1 - L.night.letters * n), atlas, dpr);
   return out;
 }
 

@@ -11,7 +11,7 @@ import type { KindPass, KindProgram } from "../src/kind";
 import type { ObjectContext, ObjectKind } from "../src/kinds/world";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
-import { tagMarks } from "../src/marks/layout";
+import { TRAY_TAG_STYLE, tagMarks } from "../src/marks/layout";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders";
 import { shaderText } from "../src/shaders";
 import { type Palette, themeFrom } from "../src/theme";
@@ -125,12 +125,25 @@ describe("a specimen, recorded by its own kind", () => {
     expect(accessoryOf({ ...f, accessory: "rail" }).kind[0]).toBe(3);
   });
 
-  it("its name tag is the marks' pill, centred under it", () => {
+  it("its name tag is a strip of embossed label tape (K5b, D-K5b.7), centred under it — K5a's pill one word away", () => {
     const atlas = { scale: 2, cellW: 16, cellH: 28, advance: 12, baseline: 21, cap: 15, width: 768, height: 28, count: 48 };
+    expect(TRAY_TAG_STYLE).toBe("tape");
     const t = tagMarks("Note", 300, 500, atlas, 2);
-    expect(t.length).toBe(1 + 4);   // the pill and four capitals
-    expect(t[0]?.centre[0]).toBe(300);
-    expect(Math.abs((t[0]?.centre[1] ?? 0) - 500)).toBeLessThanOrEqual(1);
+    expect(t.length).toBe(3 + 4 + 4);   // its shadow, the tape, its sheen; four capitals' shade and four raised capitals
+    const [shadow, tape, sheen] = t;
+    expect(tape?.centre[0]).toBe(300);
+    expect(Math.abs((tape?.centre[1] ?? 0) - 500)).toBeLessThanOrEqual(1);
+    const lum = (c: readonly number[] | undefined) => (c === undefined ? 0 : 0.2126 * (c[0] ?? 0) + 0.7152 * (c[1] ?? 0) + 0.0722 * (c[2] ?? 0));
+    expect(lum(tape?.colour)).toBeLessThan(0.15);                       // dark tape…
+    expect(lum(t[t.length - 1]?.colour)).toBeGreaterThan(0.85);         // …pale capitals
+    expect((shadow?.centre[1] ?? 0) > (tape?.centre[1] ?? 0) && (sheen?.centre[1] ?? 0) < (tape?.centre[1] ?? 0)).toBe(true);
+    expect((t[3]?.centre[1] ?? 0) > (t[7]?.centre[1] ?? 0)).toBe(true);  // each capital's shade just under it: raised
+    // by night the plastic's white steps back and the sheen goes
+    const dark = tagMarks("Note", 300, 500, atlas, 2, 1);
+    expect(dark[dark.length - 1]?.colour[3]).toBeCloseTo(0.55, 9);
+    expect(dark.length).toBe(2 + 4 + 4);
+    // the pill (K5a), one word away
+    expect(tagMarks("Note", 300, 500, atlas, 2, 0, "pill").length).toBe(1 + 4);
   });
 });
 
