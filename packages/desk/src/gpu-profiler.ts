@@ -3,13 +3,16 @@
 // label), the pass instrument (the encoders: passes, draws by kind, pipelines, bind groups, every labelled pass timed) and,
 // where the host kept one, the memory ledger (live bytes by label) — and turns each closed frame into ONE report:
 //
-//   { frame, span, sum, passes[{ label, begin, end }], counts{ draws, instances, pipelines, bindGroups, passes, submits,
+//   { frame, span, sum, busy, passes[{ label, begin, end }], counts{ draws, instances, pipelines, bindGroups, passes, submits,
 //     writes, uploadBytes … }, byKind, uploads, cpu{ encode, flush }, memory, quantised }
 //
-// with rolling p50 / p95 / max over a window. THE HEADLINE IS THE SPAN — first begin → last end of the frame's timed passes:
-// the Apple tiler keeps ~2 passes in flight, so a pass's own begin/end does not isolate it and a SUM of passes overstates the
-// frame (`sum` is reported beside it to show exactly that). A frame whose every timestamp delta is a whole multiple of 100 µs
-// is `quantised`: Dawn rounds timestamps unless Chrome runs with `--disable-dawn-features=timestamp_quantization`.
+// with rolling p50 / p95 / max over a window. THE HEADLINE IS THE SPAN — first begin → last end of the frame's timed passes,
+// the GPU time the frame took. A SUM of passes misleads both ways (`sum` is reported beside it to show it — D-K2.4, measured
+// on this Mac at K2): the Apple tiler keeps passes in flight together, so a pass's own begin/end does not isolate it and the
+// sum overstates (52 of 60 frames); and the GPU waits between passes — for the drawable the ground pass draws into — so the
+// sum understates (8 of 60, gaps of 1–4 ms). `busy` — the union of the passes' intervals — is the work without the waits:
+// `span − busy` is what the frame waited. A frame whose every timestamp delta is a whole multiple of 100 µs is `quantised`:
+// Dawn rounds timestamps unless Chrome runs with `--disable-dawn-features=timestamp_quantization`.
 //
 // THE FRAME (D-K2.3): a frame closes at the submit of its own encoder (`ground`, `hold` — the pass instrument); the host's
 // boundary (`flushed`, the layer's flush) closes whatever GPU work came without one (a raster made between frames: a
@@ -48,8 +51,10 @@ export interface GpuFrameReport {
   readonly at: number;
   /** THE HEADLINE: GPU ms from the first timed pass's begin to the last one's end; null when untimed. */
   readonly span: number | null;
-  /** The passes' own durations summed — NOT the frame's time (a tiler overlaps passes): beside the span to show it. */
+  /** The passes' own durations summed — NOT the frame's time: overlapping passes count twice, the GPU's waits between them not at all. */
   readonly sum: number | null;
+  /** The GPU BUSY in the frame: the union of its passes' intervals — overlaps once, waits not at all; `span − busy` is what it waited (the drawable). */
+  readonly busy: number | null;
   /** The timed passes, ms from the frame's earliest timestamp. */
   readonly passes: readonly PassTime[];
   readonly counts: GpuFrameCounts;
@@ -75,6 +80,8 @@ export interface GpuProfileStats {
   readonly frames: number;
   /** The GPU span; null while no frame in the window was timed. */
   readonly span: Rolling | null;
+  /** The GPU busy (the span less the waits). */
+  readonly busy: Rolling | null;
   readonly encode: Rolling | null;
   readonly flush: Rolling | null;
   readonly draws: Rolling | null;
@@ -153,6 +160,20 @@ export function rolling(values: readonly number[]): Rolling | null {
   return { n: s.length, p50: at(0.5), p95: at(0.95), max: s[s.length - 1] as number };
 }
 
+/** The GPU's busy time in `passes`: the union of their intervals — overlapping passes counted once, the gaps between them not at all. */
+export function busyOf(passes: readonly PassTime[]): number | null {
+  if (passes.length === 0) return null;
+  const s = [...passes].sort((a, b) => a.begin - b.begin);
+  let total = 0;
+  let b = (s[0] as PassTime).begin;
+  let e = (s[0] as PassTime).end;
+  for (const p of s) {
+    if (p.begin > e) { total += e - b; b = p.begin; e = p.end; }
+    else if (p.end > e) e = p.end;
+  }
+  return total + (e - b);
+}
+
 /** The span of `passes`: first begin → last end; null when there are none. */
 export function spanOf(passes: readonly PassTime[]): number | null {
   if (passes.length === 0) return null;
@@ -212,6 +233,7 @@ export function createGpuProfiler(opts: GpuProfilerOptions): GpuProfiler {
     const r: GpuFrameReport = {
       frame: b + f.serial, kind: f.kind, at: f.t0, span,
       sum: f.passes.length > 0 ? f.passes.reduce((s, p) => s + (p.end - p.begin), 0) : null,
+      busy: busyOf(f.passes),
       passes: f.passes,
       counts: { ...f.counts, submits: up.submits, writes: up.writes, uploadBytes: up.bytes, externals: up.externals },
       byKind: f.byKind, uploads: up.byLabel,
@@ -286,6 +308,7 @@ export function createGpuProfiler(opts: GpuProfilerOptions): GpuProfiler {
       return {
         armed: pass !== null, frames: recent.length,
         span: rolling(timed.map((r) => r.span as number)),
+        busy: rolling(timed.map((r) => r.busy as number)),
         encode: pick((r) => r.cpu.encode), flush: rolling(flushes),
         draws: pick((r) => r.counts.draws), instances: pick((r) => r.counts.instances), pipelines: pick((r) => r.counts.pipelines),
         bindGroups: pick((r) => r.counts.bindGroups), passes: pick((r) => r.counts.passes), submits: pick((r) => r.counts.submits),
@@ -370,7 +393,7 @@ export function traceOf(frames: readonly GpuFrameReport[], where: ReadonlyMap<nu
     if (w?.flushAt != null && r.cpu.flush !== null) events.push({ name: "desk flush", cat: "cpu", ph: "X", ts: us(w.flushAt), dur: us(r.cpu.flush), pid: CPU, tid: 1, args: { frame: r.frame } });
     events.push({ name: "encode", cat: "cpu", ph: "X", ts: us(r.at), dur: us(r.cpu.encode), pid: CPU, tid: 1, args: { frame: r.frame, kind: r.kind } });
     const anchor = w?.firstSubmit ?? r.at;
-    if (r.span !== null) events.push({ name: `frame ${r.frame}`, cat: "gpu", ph: "X", ts: us(anchor), dur: us(r.span), pid: GPU, tid: 1, args: { span: r.span, sum: r.sum, quantised: r.quantised } });
+    if (r.span !== null) events.push({ name: `frame ${r.frame}`, cat: "gpu", ph: "X", ts: us(anchor), dur: us(r.span), pid: GPU, tid: 1, args: { span: r.span, busy: r.busy, sum: r.sum, quantised: r.quantised } });
     for (const p of r.passes) events.push({ name: p.label, cat: "gpu", ph: "X", ts: us(anchor + p.begin), dur: us(p.end - p.begin), pid: GPU, tid: trackOf(p.label), args: { frame: r.frame } });
     events.push({ name: "draws", ph: "C", ts: us(r.at), pid: CPU, tid: 1, args: { draws: r.counts.draws, instances: r.counts.instances, pipelines: r.counts.pipelines, bindGroups: r.counts.bindGroups } });
     events.push({ name: "uploads", ph: "C", ts: us(r.at), pid: CPU, tid: 1, args: { bytes: r.counts.uploadBytes, writes: r.counts.writes } });

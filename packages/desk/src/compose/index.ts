@@ -10,7 +10,7 @@ export { createPickSource } from "./pick";
 export { createDeskReflector, type DeskReflector, type DeskReflectorOptions, type DeskReflectorStats, type DeskWakes } from "./reflector";
 export { instrumentSubmits, type SubmitHook, type SubmitInstrument, tapSubmits, type UploadTally } from "../submit-instrument";
 export { type Ablation, ablateKinds, type KindCost, type KindCostOptions, type KindCostReport, kindsIn, type Sampled, withoutKind } from "../gpu-ablation";
-export { createGpuProfiler, type GpuFrameCounts, type GpuFrameReport, type GpuProfileStats, type GpuProfiler, type GpuProfilerOptions, type Rolling, rolling, spanOf, type TraceEvent, type TraceJson, traceOf } from "../gpu-profiler";
+export { createGpuProfiler, type GpuFrameCounts, type GpuFrameReport, type GpuProfileStats, type GpuProfiler, type GpuProfilerOptions, type Rolling, rolling, busyOf, spanOf, type TraceEvent, type TraceJson, traceOf } from "../gpu-profiler";
 export { instrumentPasses, type KindDraws, type PassCounts, type PassFrame, type PassInstrument, type PassInstrumentOptions, type PassTime, type PassTiming, readTimestamps, TIMESTAMP_QUANTUM_NS, UNQUANTISED_TIMESTAMPS_FLAG } from "../pass-instrument";
 export { type FormatBlock, formatBlock, type GpuMemory, type GpuMemoryRow, instrumentMemory, type MemoryLedger, regionBytes, textureBytes } from "../gpu-memory";
 export { type BudgetStats, createRasterBudget, type RasterBudget } from "../engine/budget";

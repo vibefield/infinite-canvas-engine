@@ -2,8 +2,9 @@
 // so timestamps cannot split them: what a kind costs is measured as what the frame loses without it. The method is
 // `holdCost`'s (apps/desk api.ts) and rig:cost's, made per kind:
 //
-//   SATURATED   a batch of the same frame drawn back to back into the canvas's texture, ~25 ms of GPU (a 4-frame probe sizes
-//               it — guessed wrong once, a 370 ms command stream throttled the GPU and poisoned every later round);
+//   SATURATED   a batch of the same frame drawn back to back into the canvas's texture, ~25 ms of GPU (a 4-frame probe guesses
+//               it and one batch at the guess sizes it — guessed wrong once, a 370 ms command stream throttled the GPU and
+//               poisoned every later round);
 //   DRAINED     `onSubmittedWorkDone` covers ALL prior work, so the queue is drained BEFORE the clock starts and again to
 //               stop it — and one frame of the variant is drawn and drained first (a kind's records re-uploaded when it
 //               comes back are the warm-up's, not the batch's);
@@ -136,8 +137,9 @@ export async function ablateKinds(a: Ablation, opts: KindCostOptions = {}): Prom
     await a.drain();
     return (a.now() - t0) / n;
   };
-  const probe = await batch(base, opts.probeFrames ?? 4);
-  const frames = Math.max(opts.minFrames ?? 3, Math.min(opts.maxFrames ?? 300, Math.round((opts.targetMs ?? 25) / Math.max(probe, 0.05))));
+  const size = (perFrame: number): number => Math.max(opts.minFrames ?? 3, Math.min(opts.maxFrames ?? 300, Math.round((opts.targetMs ?? 25) / Math.max(perFrame, 0.05))));
+  // the probe's few frames carry the first frames' cold costs: re-timed once at its guess, the batch sized from that
+  const frames = size(await batch(base, size(await batch(base, opts.probeFrames ?? 4))));
   const ms = new Map<string, number[]>(variants.map((v) => [v.name, []]));
   for (let r = 0; r < rounds; r++) {
     for (let i = 0; i < variants.length; i++) {

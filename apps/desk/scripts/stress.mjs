@@ -20,7 +20,10 @@
 // zooming 0.5 % a frame about the view's centre. `drag`: the 50 notes nearest the view's centre selected and dragged 60 frames
 // by the mouse — the step ms a frame, the frames drawn a second. `edit`: a character typed into a written note — how many
 // rasters the writing drew (1) and how many records the builder made in that frame. `hold`: the notebook picked up — the desk
-// copies made while it is held (0 more), `holdCost`'s copy (the blur, once), hand (a held frame) and rest.
+// copies made while it is held (0 more), `holdCost`'s copy (the blur, once), hand (a held frame) and rest. K2 (design-016 §4): the pan
+// also runs once with the GPU profiler ARMED — the real frames' GPU span p50/p95 and their draws / pipelines / bind groups a frame —
+// and the frame at its end is measured per KIND by ablation (`perf.kindCost`, an A/A control beside); the page must be
+// cross-origin isolated (checked: every clock here is performance.now()'s).
 //
 // The fps gates are stated against THE MACHINE'S REFRESH: headless Chrome's rAF runs at 60 Hz whatever the display, so "120
 // fps" cannot be witnessed by counting frames here — it is asserted as a FRAME BUDGET: main-thread JS ≤ 2 ms AND JS + GPU ≤
@@ -50,6 +53,8 @@ const max = (xs) => Math.max(...xs);
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
 const fmt = (x, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : "—");
 const kb = (b) => `${(b / 1024).toFixed(1)} KB`;
+/** Nearest-rank percentile. */
+const pct = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? Number.NaN : s[Math.min(s.length - 1, Math.max(0, Math.ceil(q * s.length) - 1))]; };
 
 // ── THE SCENE: 1,000 root objects on a golden spiral (per 40: 4 mini mats with two notes inside, 6 prints, 1 whiteboard, 29 notes),
 //    a notebook and a desk calendar; every third note written. The camera at the field's centre, zoom 1.
@@ -134,6 +139,9 @@ try {
   const wanted = scene.notes.length + scene.minimats.length + scene.boards.length + scene.prints.length + scene.books.length + scene.calendars.length;
   check(staged.objects === wanted && st0.active === wanted, `the scene is in the world: ${staged.objects} root objects (${scene.notes.length} notes, ${scene.minimats.length} mini mats with insides, ${scene.prints.length} prints, ${scene.boards.length} whiteboards, a notebook, a desk calendar), ${st0.active} Active; spawned and settled in ${(spawnMs / 1000).toFixed(1)} s; ${st0.objects} drawn, ${st0.culled} culled at zoom 1`);
   check(gcOk && heapOk, `the heap instruments are here (gc ${gcOk}, precise heap ${heapOk})`);
+  // K2: every clock below is performance.now()'s — at 5 µs only when the page is cross-origin isolated (100 µs-coarse otherwise)
+  const coi = await q("crossOriginIsolated");
+  check(coi === true, `the page is cross-origin isolated — performance.now() resolves µs, not 100 µs (crossOriginIsolated ${coi})`);
   report.scene = { objects: staged.objects, active: st0.active, drawn: st0.objects, culled: st0.culled, spawnMs };
   console.log(`  load ${load()} · the window ${JSON.stringify(await q("window.__desk.viewport()"))}`);
 
@@ -258,6 +266,41 @@ try {
     for (let r = 0; r < ROUNDS; r++) { await front(); gpu.push((await qa("window.__desk.holdCost(24)")).rest); }
     s.gpu = { ms: { median: median(gpu.map((g) => g.ms)), min: min(gpu.map((g) => g.ms)) }, cpu: { median: median(gpu.map((g) => g.cpu)), min: min(gpu.map((g) => g.cpu)) } };
     console.log(`  saturated batch      GPU-bound ${fmt(s.gpu.ms.median)} ms/frame (min ${fmt(s.gpu.ms.min)}) · recording ${fmt(s.gpu.cpu.median)} ms · JS + GPU ${fmt(s.stepMs.median + s.gpu.ms.median)} ms vs 8.33 (120 Hz)`);
+    // K2 — THE REAL FRAMES' GPU (design-016 §4, K-L5): one more pan with the GPU profiler ARMED — every drawn frame's GPU span (its
+    // passes' first begin → last end, never a sum), its draws, pipelines and bind groups from the calls themselves — beside the
+    // saturated batch above (a still frame, GPU-bound). The armed step beside the unarmed rounds' is the profiler's own cost.
+    await q("window.__gpuOff = window.__desk.perf.gpu().arm(); 0");
+    const armedRun = await drive(120, cam0, 8, 0, 1);
+    await qa("new Promise((r) => setTimeout(r, 300))");   // the last readbacks land
+    const late = (await q("window.__desk.perf.take()")).gpu.frames;
+    await q("window.__gpuOff(); 0");
+    const gf = [...armedRun.after.gpu.frames, ...late].filter((f) => f.kind === "frame");
+    const spans = gf.flatMap((f) => (f.span !== null ? [f.span] : []));
+    const busies = gf.flatMap((f) => (f.busy !== null ? [f.busy] : []));
+    const per = (k) => median(gf.map((f) => f.counts[k]));
+    const armedStep = median(armedRun.after.steps.slice(-120));
+    s.gpuFrames = {
+      frames: gf.length, timed: spans.length, dropped: gf.filter((f) => f.timing === "dropped").length, quantised: gf.some((f) => f.quantised === true),
+      span: { p50: pct(spans, 0.5), p95: pct(spans, 0.95), max: max(spans) },
+      busy: { p50: pct(busies, 0.5), p95: pct(busies, 0.95) },
+      draws: per("draws"), instances: per("instances"), pipelines: per("pipelines"), bindGroups: per("bindGroups"), passes: per("passes"), submits: per("submits"),
+      byKind: Object.fromEntries([...new Set(gf.flatMap((f) => Object.keys(f.byKind)))].map((k) => [k, median(gf.map((f) => f.byKind[k]?.draws ?? 0))])),
+      armedStepMs: armedStep, load: load(),
+    };
+    const g = s.gpuFrames;
+    console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} · max ${fmt(g.span.max)} ms, busy p50 ${fmt(g.busy.p50)} · p95 ${fmt(g.busy.p95)} ms (the rest of the span the GPU waited) (${g.timed} of ${g.frames} frames timed, ${g.dropped} dropped for a full readback ring) · a frame: ${g.draws} draws (${g.instances} instances) · ${g.pipelines} pipelines · ${g.bindGroups} bind groups · ${g.passes} passes · ${g.submits} submit — draws by kind ${Object.entries(g.byKind).map(([k, n]) => `${k} ${n}`).join(" · ")} · JS ${fmt(armedStep)} ms/frame armed vs ${fmt(s.stepMs.median)} unarmed`);
+    check(g.timed >= g.frames / 2 && !g.quantised, `pan (armed): the real frames' GPU spans read back — ${g.timed} of ${g.frames} timed, none quantised`);
+    rows.push(["gpu (pan, real frames)", `span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · busy p50 ${fmt(g.busy.p50)}`, `${g.draws} draws · ${g.pipelines} pipelines · ${g.bindGroups} bind groups · ${g.passes} passes a frame`, g.load]);
+    // K2 — WHAT EACH KIND COSTS the frame at the pan's end (per-kind GPU by ablation, design-016 §4.4): each kind's objects left out in
+    // turn, saturated and drained batches, the variants round-robined, an A/A control beside — a kind under the floor is not a number
+    await settle();
+    const kc = await qa(`window.__desk.perf.kindCost({ rounds: ${ROUNDS} })`, 300000);
+    s.kindCost = kc;
+    console.log(`  per-kind GPU         ${Object.entries(kc.kinds).sort((a, b) => b[1].ms - a[1].ms).map(([k, v]) => `${k} ${fmt(v.ms, 3)} ms × ${v.objects}${v.clears ? "" : " (under the floor)"}`).join(" · ")} — the frame ${fmt(kc.base.median, 3)} ms, A/A ${fmt(kc.aa, 4)}, floor ${fmt(kc.noise, 4)} ms, ${kc.frames}-frame batches × ${kc.rounds} rounds`);
+    const real = Object.values(kc.kinds).filter((k) => k.clears).map((k) => k.ms);
+    check(Math.abs(kc.aa) <= Math.max(2 * kc.noise, 0.02 * kc.base.median) && real.length > 0 && Math.abs(kc.aa) < Math.min(...real), `pan: the per-kind cost's A/A control within its noise floor and below every cost it calls real (A/A ${fmt(kc.aa, 4)} ms, floor ${fmt(kc.noise, 4)} ms, the frame ${fmt(kc.base.median, 3)} ms, the smallest real cost ${fmt(Math.min(...real), 3)} ms)`);
+    gate(kc.noise <= 0.1 * kc.base.median, `pan: the per-kind cost's noise floor ≤ 10 % of the frame (${fmt(kc.noise, 4)} of ${fmt(kc.base.median, 3)} ms)`);
+    rows.push(["per kind (pan's end)", `${Object.entries(kc.kinds).sort((a, b) => b[1].ms - a[1].ms).slice(0, 3).map(([k, v]) => `${k} ${fmt(v.ms, 3)}`).join(" · ")} ms`, `A/A ${fmt(kc.aa, 4)} · floor ${fmt(kc.noise, 4)} ms · the frame ${fmt(kc.base.median, 3)} ms`, load()]);
     gate(s.stepMs.median <= 2, `pan: main-thread JS ≤ 2 ms/frame (${fmt(s.stepMs.median)})`);
     // THE O(1) PAN (design-015 §2 · §4.3 · §11.4; D6) — the counters, not the clock, and CHECKED (the clock's gates above and below
     // bend with this Mac's load; these cannot): the members are neither queried nor sorted on a camera move; the cull visits the

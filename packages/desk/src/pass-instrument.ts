@@ -15,8 +15,9 @@
 //            "loose" frame) — and its slot is mapped then. THE RING: three readback slots; a frame that finds all three
 //            still in flight is not timed (`dropped`) — the instrument never waits, never stalls, never submits, never
 //            wakes anything: a readback lands in a later task and only reports.
-//   THE TRAPS it names rather than hides: the Apple tiler keeps ~2 passes in flight, so a pass's begin/end do not isolate it
-//   — the frame's SPAN (first begin → last end) is the headline, never a sum; and Dawn rounds timestamps to 100 µs unless
+//   THE TRAPS it names rather than hides: the Apple tiler keeps passes in flight together, so a pass's begin/end do not
+//   isolate it, and the GPU may wait between passes — the frame's SPAN (first begin → last end) is the headline, never a sum
+//   (gpu-profiler.ts, D-K2.4); and Dawn rounds timestamps to 100 µs unless
 //   Chrome runs with `--disable-dawn-features=timestamp_quantization` — a frame whose every delta is a whole multiple of
 //   100 µs says `quantised`.
 //

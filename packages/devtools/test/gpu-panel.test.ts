@@ -11,6 +11,7 @@ const FRAME: GpuPanelFrame = {
   frame: 47,
   span: 2.938871,
   sum: 4.01727,
+  busy: 2.938871,
   passes: [
     { label: "mat/wind", begin: 0, end: 0.40966 },
     { label: "notebook/layer", begin: 0.303371, end: 1.439478 },
@@ -26,6 +27,7 @@ const FRAME: GpuPanelFrame = {
 const STATS: GpuPanelStats = {
   frames: 45,
   span: { n: 45, p50: 2.938871, p95: 4.510904, max: 4.925966 },
+  busy: { n: 45, p50: 2.6, p95: 3.9, max: 4.4 },
   encode: { n: 47, p50: 0.355, p95: 0.58, max: 1.355 },
   flush: { n: 47, p50: 0.555, p95: 0.865, max: 1.715 },
   quantised: false,
@@ -50,9 +52,9 @@ describe("the GPU slot (K2)", () => {
     expect(slot?.querySelector(".ice-gpu")).not.toBeNull();
     expect(text(".ice-gpu-span")).toBe("2.94 ms");
     expect(text(".ice-gpu-tail")).toBe("p95 4.51 ms · max 4.93 ms");
-    expect(texts(".ice-gpu-sect")).toContain("passes · frame 47 · span 2.94 ms · sum 4.02 ms");
+    expect(texts(".ice-gpu-sect")).toContain("passes · frame 47 · span 2.94 ms · busy 2.94 ms · sum 4.02 ms");
     const labels = texts(".ice-gpu-label");
-    expect(labels.slice(0, 3)).toEqual(["gpu span", "encode", "desk flush"]);
+    expect(labels.slice(0, 4)).toEqual(["gpu span", "gpu busy", "encode", "desk flush"]);
     expect(labels).toEqual(expect.arrayContaining(["mat/wind", "notebook/layer", "ground", "paper", "notebook"]));
     // a pass sits on the span where it ran: the ground from 21.9 % to the end
     const ground = Array.from(document.querySelectorAll(".ice-gpu-row")).find((r) => r.querySelector(".ice-gpu-label")?.textContent === "ground");
@@ -84,7 +86,7 @@ describe("the GPU slot (K2)", () => {
 
   it("quantised timestamps raise the warning with the Chrome switch that turns them off; an untimed frame says so", () => {
     const panel = createGpuPanel({ container: document.body });
-    panel.push({ ...FRAME, span: null, sum: null, passes: [], quantised: null }, { ...STATS, span: null, quantised: true });
+    panel.push({ ...FRAME, span: null, sum: null, busy: null, passes: [], quantised: null }, { ...STATS, span: null, busy: null, quantised: true });
     expect(text(".ice-gpu-warn.on")).toBe("⚠ timestamps quantised to 100 µs — launch Chrome with --disable-dawn-features=timestamp_quantization");
     expect(text(".ice-gpu-span")).toBe("–");
     expect(text(".ice-gpu-tail")).toBe("untimed");

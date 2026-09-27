@@ -61,8 +61,8 @@ describe("per-kind GPU cost by ablation (K2)", () => {
     expect(r.kinds.photo?.ms).toBeCloseTo(0.4, 9);
     expect(r.kinds.photo?.share).toBeCloseTo(0.4 / base, 9);
     expect(r.kinds.photo?.clears).toBe(true);
-    // the probe, then rounds × variants batches: each drained before its clock starts and after it stops
-    expect(log.length).toBe(2 + 2 * 5 * (2 + 3));
+    // the probe and the batch at its guess, then rounds × variants batches: each drained before its clock starts and after it stops
+    expect(log.length).toBe(2 + 2 + 2 * 5 * (2 + 3));
   });
 
   it("a position bias is rotated out and shows as the noise floor: a kind that costs nothing reads 0 and does not clear it", async () => {
@@ -78,7 +78,7 @@ describe("per-kind GPU cost by ablation (K2)", () => {
       render: () => { queued += 1; },
       drain: async () => {
         drains += 1;
-        const batch = (drains - 4) / 2;   // drains 1–2 are the probe's; batch j ends at drain 4 + 2j
+        const batch = (drains - 6) / 2;   // drains 1–4 are the probe's and the calibration's; batch j ends at drain 6 + 2j
         clock += queued * (Number.isInteger(batch) && batch >= 0 && batch % 3 === 1 ? 1 + d : 1);
         queued = 0;
       },

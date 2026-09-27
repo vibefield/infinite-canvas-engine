@@ -9,8 +9,8 @@
  *
  *   head      the GPU SPAN's p50 (THE headline: first pass begun → last pass ended), p95 · max, a sparkline against the budget
  *   warning   timestamps quantised to 100 µs — and the Chrome switch that turns it off
- *   frame     span / encode / desk flush bars against the budget, p50 · p95 · max
- *   passes    the last timed frame's passes on its span (they overlap on a tiler: the sum overstates the frame — both shown)
+ *   frame     span / busy (the span less the GPU's waits) / encode / desk flush bars against the budget, p50 · p95 · max
+ *   passes    the last timed frame's passes on its span (they overlap on a tiler, and the GPU waits between them: the sum is not the frame — both shown)
  *   calls     draws · instances · pipelines · bind groups · passes · submits · writes · upload bytes
  *   by kind   draws and instances by the kind that drew (a run of notes is ONE instanced draw)
  *   uploads   the frame's bytes by label · memory: live GPU bytes by label (the ledger), textures / buffers
@@ -32,6 +32,7 @@ export interface GpuPanelFrame {
   readonly frame: number;
   readonly span: number | null;
   readonly sum: number | null;
+  readonly busy: number | null;
   readonly passes: readonly GpuPanelPass[];
   readonly counts: {
     readonly draws: number;
@@ -67,6 +68,7 @@ export interface GpuPanelRolling {
 export interface GpuPanelStats {
   readonly frames: number;
   readonly span: GpuPanelRolling | null;
+  readonly busy: GpuPanelRolling | null;
   readonly encode: GpuPanelRolling | null;
   readonly flush: GpuPanelRolling | null;
   readonly quantised: boolean | null;
@@ -186,6 +188,7 @@ export function createGpuPanel(opts: GpuPanelOptions = {}): GpuPanel {
 
   sect("frame");
   const spanBar = bar("gpu span");
+  const busyBar = bar("gpu busy");
   const encodeBar = bar("encode");
   const flushBar = bar("desk flush");
   const passesHead = sect("passes");
@@ -285,6 +288,7 @@ export function createGpuPanel(opts: GpuPanelOptions = {}): GpuPanel {
     if (!root.classList.contains("open")) return;
 
     setBar(spanBar, st?.span?.p50 ?? f.span, rolling(st?.span));
+    setBar(busyBar, st?.busy?.p50 ?? f.busy, rolling(st?.busy));
     setBar(encodeBar, st?.encode?.p50 ?? f.cpu.encode, rolling(st?.encode));
     setBar(flushBar, st?.flush?.p50 ?? f.cpu.flush, rolling(st?.flush));
 
@@ -292,7 +296,7 @@ export function createGpuPanel(opts: GpuPanelOptions = {}): GpuPanel {
     const span = t?.span ?? null;
     passesHead.textContent = t === undefined || span === null
       ? "passes — untimed (no timestamp-query, or the readback ring was full)"
-      : `passes · frame ${t.frame} · span ${fmtMs(span)} · sum ${fmtMs(t.sum)}`;
+      : `passes · frame ${t.frame} · span ${fmtMs(span)} · busy ${fmtMs(t.busy)} · sum ${fmtMs(t.sum)}`;
     passesEl.textContent = "";
     if (t !== undefined && span !== null && span > 0) {
       for (const p of t.passes) {

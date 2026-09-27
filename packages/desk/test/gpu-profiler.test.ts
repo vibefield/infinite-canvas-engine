@@ -6,7 +6,7 @@
 import { createCanvasEngine } from "@ice/core";
 import { describe, expect, it, vi } from "vitest";
 import type { GpuMemory } from "../src/gpu-memory";
-import { createGpuProfiler, type GpuFrameReport, rolling, spanOf, type TraceEvent } from "../src/gpu-profiler";
+import { busyOf, createGpuProfiler, type GpuFrameReport, rolling, spanOf, type TraceEvent } from "../src/gpu-profiler";
 import { deskLayer } from "../src/host/layer";
 import { deskPalette, deskTheme } from "../src/objects/palette";
 import { instrumentSubmits, type SubmitInstrument } from "../src/submit-instrument";
@@ -66,6 +66,7 @@ describe("the GPU profiler (K2)", () => {
     expect(r.span).toBeCloseTo(1.15, 9);   // 0 → 1.15 ms: four 0.4 ms passes, each overlapping the next by 0.15
     expect(r.sum).toBeCloseTo(1.6, 9);
     expect(r.span as number).toBeLessThan(r.sum as number);
+    expect(r.busy).toBeCloseTo(1.15, 9);   // back to back: busy = span
     expect(r.counts).toMatchObject({ passes: 4, timed: 4, draws: 4, instances: 12, pipelines: 4, submits: 2, writes: 1, uploadBytes: 16, externals: 0 });
     expect(r.byKind).toEqual({ notebook: { draws: 2, instances: 6 }, mat: { draws: 1, instances: 3 }, ground: { draws: 1, instances: 3 } });
     expect(r.uploads).toEqual({ paper: { writes: 1, bytes: 16 } });
@@ -198,7 +199,27 @@ describe("the GPU profiler (K2)", () => {
     await settle();
   });
 
-  it("rolling and spanOf: nearest rank; the span is first begin → last end, whatever the order", () => {
+  it("a GPU that WAITS between passes: the span includes the wait, the sum does not (span > sum), busy is the work — a sum misleads both ways", async () => {
+    const g = simGpu({ pass: 400_000n, overlap: -100_000n });   // each pass 0.1 ms after the last one ended
+    const p = createGpuProfiler({ device: g.device, submits: lend(g.device) });
+    const off = p.arm();
+    frame(g.device, [["ground", ["notebook/shadow 0", "notebook/layer", "ground"]]]);
+    await settle();
+    const r = p.last();
+    expect(r?.span).toBeCloseTo(1.4, 9);
+    expect(r?.sum).toBeCloseTo(1.2, 9);
+    expect(r?.busy).toBeCloseTo(1.2, 9);
+    expect(p.stats().busy?.p50).toBeCloseTo(1.2, 9);
+    off();
+    await settle();
+  });
+
+  it("rolling, spanOf and busyOf: nearest rank; the span is first begin → last end, the busy the intervals' union, whatever the order", () => {
+    const pass = (begin: number, end: number) => ({ label: "p", begin, end });
+    expect(busyOf([pass(0, 0.4), pass(0.25, 0.65), pass(0.5, 0.9)])).toBeCloseTo(0.9, 9);   // overlapping: once
+    expect(busyOf([pass(2, 3), pass(0, 1)])).toBeCloseTo(2, 9);   // a gap: not counted
+    expect(busyOf([pass(0, 5), pass(1, 2)])).toBeCloseTo(5, 9);   // nested
+    expect(busyOf([])).toBeNull();
     expect(rolling([])).toBeNull();
     expect(rolling([5, 1, 4, 2, 3])).toEqual({ n: 5, p50: 3, p95: 5, max: 5 });
     expect(rolling(Array.from({ length: 100 }, (_, i) => i + 1))).toEqual({ n: 100, p50: 50, p95: 95, max: 100 });
