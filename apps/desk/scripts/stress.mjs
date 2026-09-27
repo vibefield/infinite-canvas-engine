@@ -24,7 +24,7 @@
 // also runs once with the GPU profiler ARMED — the real frames' GPU span p50/p95 and their draws / pipelines / bind groups a frame —
 // and the frame at its end is measured per KIND by ablation (`perf.kindCost`, an A/A control beside); the page must be
 // cross-origin isolated (checked: every clock here is performance.now()'s). K6b (design-016 §6): `zoom-written`, LAST (it
-// stages its own desk) — 240 written notes and 8 whiteboards zoomed out 1 → 0.35 and back, a fresh desk each round (the band
+// stages its own desk) — 240 written notes and 8 whiteboards zoomed out 1 → 0.35 and back in to 0.72, a fresh desk each round (the band
 // ladder's hysteresis would otherwise leave every later round nothing to cross): each step's ms beside THAT step's rasters,
 // replays and records (`perf.probe`), p50 / p95 / the worst frame.
 //
@@ -647,30 +647,34 @@ try {
     const memWalk = await memoryNow();
     const replays1 = await q(`window.__desk.handle.local("board").replays()`);
     console.log(`  walked at zoom 1     ${memoryLine(memWalk)} · densities ${walked.map((r) => r?.density ?? "—").join(" ")} · ${replays1 - replays0} replays`);
-    // back to board 0: its record made again as it enters, its strokes replayed at its rung, bound
+    // back to board 0: its record made again as it enters — its replay ASKED of the frame queue (K6b), its thumbnail drawing it until
+    // the queue's turn makes its raster at its rung and replays its strokes; bound
     await q("window.__desk.setCamera({ x: -600, y: -400, zoom: 1 })");
     await front();
     await frames(1);
     const back0 = (await res())[0];
+    let backFrames = 1;
+    while (backFrames < 60 && (await res())[0]?.density !== 4) { await frames(1); backFrames += 1; }
     await frames(8);
     await settle(20000);
     const back1 = (await res())[0];
     const replays2 = await q(`window.__desk.handle.local("board").replays()`);
-    console.log(`  back on board 0      at once ${JSON.stringify(back0)} · then ${JSON.stringify(back1)} · ${replays2 - replays1} replays`);
+    console.log(`  back on board 0      at once ${JSON.stringify(back0)} · its raster made ${backFrames} frame(s) after · then ${JSON.stringify(back1)} · ${replays2 - replays1} replays`);
     check(memWalk.budget.evictions > 0 && walked[0]?.density === null && walked[0]?.thumb === true, `boards: walked past at zoom 1 their rasters overran the budget — ${memWalk.budget.evictions} evictions, board 0's raster gone, its thumbnail kept (the budget ${MB(memWalk.budget.used)} of ${MB(memWalk.budget.cap)})`);
-    check(back0?.density === 4 && back1?.bound === true && replays2 > replays1, `boards: board 0 on screen again — its raster replayed in the frame it came back (its record's own replay, D6) at its rung (4 texels a unit) and bound (${JSON.stringify(back0)}; ${replays2 - replays1} replays)`);
+    check(back0?.density === null && back0?.thumb === true && backFrames <= 6 && back1?.density === 4 && back1?.bound === true && replays2 > replays1, `boards: board 0 on screen again — its thumbnail drew it in the frame it came back while its replay waited in the frame queue (K6b); the queue's turn replayed it at its rung (4 texels a unit) ${backFrames} frame(s) after, bound (${JSON.stringify(back0)} → ${JSON.stringify(back1)}; ${replays2 - replays1} replays)`);
     report.boards = { far, memFar, run: g, walked, memWalk, back: [back0, back1] };
     rows.push(["boards (20, a run)", `20 boards = ${g.byKind.board} draw · far: board ${MB(row(memFar, "board"))}`, `walked at zoom 1: ${memWalk.budget.evictions} evictions, board ${MB(row(memWalk, "board"))}; back: replayed and bound`, load()]);
   }
 
   // ── zoom-written (K6b, design-016 §1.3 · §6): THE WRITTEN DESK (`writtenScene`, a fresh one each round, settled at zoom 1) zoomed
   //    OUT 1 → 0.35 in 90 frames — notes and boards ENTER the view (first rasters, first replays) and the notes rastered at zoom 1
-  //    cross a rung DOWN (2 → 1 texel a unit at zoom 0.43) — and back IN 0.35 → 1 in 90 (two rungs UP: 1 → 1.41 at zoom 0.5, → 2 at
-  //    0.71). Every step's ms beside THAT step's counters (`perf.probe`): the notes' rasters laid, the boards' replays, the records the
-  //    builder remade and the stores wrote; p50 / p95 / the worst frame a round, their medians over the rounds.
+  //    cross a rung DOWN (2 → 1 texel a unit at zoom 0.43) — and back IN 0.35 → 0.72 in 60 (two rungs UP: 1 → 1.41 at zoom 0.5, → 2
+  //    at 0.707, three frames before it STOPS). Every step's ms beside THAT step's counters (`perf.probe`): the notes' rasters laid,
+  //    the boards' replays, the records the builder remade and the stores wrote; p50 / p95 / the worst frame a round, their medians
+  //    over the rounds. Then CONVERGENCE (K6b): the camera standing, the frames until every raster the zoom asked is laid.
   if (wantCase("zoom-written")) {
     const ws = writtenScene();
-    const legs = [[1, 0.35, 90], [0.35, 1, 90]];
+    const legs = [[1, 0.35, 90], [0.35, 0.72, 60]];
     const perRound = [];
     for (let r = 0; r < ROUNDS; r++) {
       await qa(`window.__desk.setScene(${JSON.stringify(ws)})`, 120000);
@@ -727,7 +731,7 @@ try {
       waitingMax: max(col("waitingMax")), rasterMsMax: max(col("rasterMsMax")),
     };
     report["zoom-written"] = s;
-    console.log(`-- zoom-written · ${s.rounds} rounds × 180 frames (1 → 0.35 → 1) on 240 written notes + 8 boards · load ${s.loads.join(" ")} --`);
+    console.log(`-- zoom-written · ${s.rounds} rounds × 150 frames (1 → 0.35 → 0.72) on 240 written notes + 8 boards · load ${s.loads.join(" ")} --`);
     console.log(`  step ms/frame        p50 ${fmt(s.p50.median)} (min ${fmt(s.p50.min)}) · p95 ${fmt(s.p95.median)} (min ${fmt(s.p95.min)}) · the worst frame ${fmt(s.max.median)} (min ${fmt(s.max.min)}) · frames over 8 ms ${fmt(s.over8, 0)}`);
     console.log(`  rasters              ${fmt(s.rasters, 0)} a round, the most in one frame ${fmt(s.rastersMax, 0)} · board replays ${fmt(s.replays, 0)} a round, the most in one frame ${fmt(s.replaysMax, 0)} · blanks ${s.blanks}`);
     console.log(`  records/frame        remade ${fmt(s.recordedMed, 1)} · written ${fmt(s.writtenMed, 1)} (medians)`);

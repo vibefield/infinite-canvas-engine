@@ -23,7 +23,7 @@ import type { BoardInstance } from "./layout";
 import { followHand, penAtRest, penPose, type PenState, stepPen } from "./pen";
 import { BOARD_SHADER_FILES, boardShaders } from "./shaders";
 import { type StrokeBuilder, TIP_NAMES, type TipName } from "./stroke";
-import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
+import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, type ObjectContext, type ObjectHit, type ObjectKind, rasterPriority, stringProp } from "@ice/desk";
 import { type MarkFrame, type MatPass, type ShaderText, inking } from "@ice/desk/kit";
 import { shaderText } from "../shaders";
 import { BOARD } from "./theme";
@@ -210,9 +210,11 @@ export interface BoardInk extends KindLocal {
    * their stamp turned over or the look changed — unless the turnover is the stroke the hand just committed (adopted: the
    * raster holds it already, wet) —; a stroke in hand is laid again over a replay; a fading ghost keeps what it had. 0 before
    * the pass is here. `zd` — device px a world unit where it is drawn (zoom × dpr): a raster made now is made at its ZOOM
-   * RUNG (K6a, `boardRung`); the pass's step raises it when the board grows on screen.
+   * RUNG (K6a, `boardRung`); the pass's step raises it when the board grows on screen. K6b: a raster to MAKE (none held — never
+   * made, or evicted — or its density raised) is asked of the desk's frame raster queue when the host has one, `px` (screen px
+   * from the view's centre) its place: the board draws its old raster, its thumbnail, else its melamine bare until its turn.
    */
-  raster(e: Entity, G: BoardGeometry, look: BoardObjectLook, ghost: boolean, zd?: number): number;
+  raster(e: Entity, G: BoardGeometry, look: BoardObjectLook, ghost: boolean, zd?: number, px?: number): number;
   /** How many replays since the desk was made (a rig's witness). */
   replays(): number;
   /** Board `e`'s raster on the pass (`BoardPass.readInk` reads it — a rig's witness); undefined before it is met. */
@@ -249,6 +251,10 @@ export interface BoardInk extends KindLocal {
 
 interface BoardState {
   readonly id: number;
+  /** The raster asked of the frame queue and not made yet (K6b): its surface, density and look; null = nothing asked. */
+  want: { readonly surface: readonly [number, number]; readonly density: number; readonly look: BoardObjectLook } | null;
+  /** The board's run for the queue, made once. */
+  run: (() => "done" | "wait") | undefined;
   stamp: number;
   /** The density the pass's step asked its raster remade at (K6a — it grew on screen); undefined when none is owed. */
   raise: number | undefined;
@@ -261,6 +267,9 @@ interface BoardState {
   hand: PenHand | undefined;
   pin: PenPin | undefined;
 }
+
+/** The frame queue's name for the board's asks (K6b) — the kind's. */
+const OWNER = "board";
 
 /** The board's `local()`: rasters by entity, released when the builder forgets a board. */
 export function createBoardInk(host: KindHost): BoardInk {
@@ -276,6 +285,9 @@ export function createBoardInk(host: KindHost): BoardInk {
   // THE BUDGET (D6): a board's raster is a cache of its strokes — charged when made (its ink with its mips, its stroke and wet layers),
   // let go when the ledger evicts it (it replays from its children when next drawn: `stamp` −1), kept while the board is on screen
   const budget = host.budget;
+  // THE FRAME QUEUE (K6b): a raster to make is asked there, made in its turn; the builder's door remakes the board's record then
+  const queue = host.rasters;
+  const remake = host.remake;
   const entityOf = new Map<string, Entity>();
   /** What has LANDED on each object, counted (D7 — `KindLocal.landed`): the held desk copy is made again when a desk object's moves. */
   const landedOf = new Map<Entity, number>();
@@ -292,11 +304,48 @@ export function createBoardInk(host: KindHost): BoardInk {
   };
   const state = (e: Entity): BoardState => {
     let st = boards.get(e);
-    if (st === undefined) { st = { id: next++, stamp: -1, raise: undefined, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); byId.set(st.id, e); }
+    if (st === undefined) { st = { id: next++, want: null, run: undefined, stamp: -1, raise: undefined, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); byId.set(st.id, e); }
     return st;
   };
+  /** A raster just made charged to the budget — evicted, the RASTER goes and its thumbnail stays (replayed when next wanted) — else touched. */
+  const charge = (e: Entity, st: BoardState, pass: BoardPass, made: boolean): void => {
+    if (made && budget !== undefined) {
+      const key = String(st.id);
+      entityOf.set(key, e);
+      const size = pass.sizeOf(st.id);
+      budget.charge("board", key, size === null ? 0 : rasterBytes(size), () => { passOf()?.evict(st.id); st.stamp = -1; entityOf.delete(key); });
+    } else budget?.touch("board", String(st.id));
+  };
+  /** Its strokes replayed into its raster — the stroke in hand laid again over them. */
+  const replay = (e: Entity, st: BoardState, pass: BoardPass, look: BoardObjectLook): void => {
+    pass.replay(st.id, boardOps(host.children?.rows(e, BoardStroke) ?? [], look.markers));
+    land(e);
+    replays += 1;
+    if (st.live !== null) pass.lay(st.id, st.live.builder.tool, st.live.builder.stamps());
+  };
+  /**
+   * The queue's turn for board `e` (K6b): its raster made at the density it last asked and its strokes replayed into it, its record
+   * remade (the frame that shows it is drawn). Nothing asked any more: done.
+   */
+  const run = (e: Entity): "done" | "wait" => {
+    const st = boards.get(e);
+    const pass = passOf();
+    const want = st?.want ?? null;
+    if (st === undefined || pass === undefined || want === null) return "done";
+    st.want = null;
+    st.raise = undefined;
+    const made = pass.ensure(st.id, want.surface, want.density);
+    charge(e, st, pass, made);
+    replay(e, st, pass, want.look);
+    st.stamp = stampOf(e);
+    st.look = want.look;
+    st.adopt = null;
+    chargeThumbs(pass);
+    remake?.(e);
+    return "done";
+  };
   return {
-    raster(e, G, look, ghost, zd) {
+    raster(e, G, look, ghost, zd, px) {
       const pass = passOf();
       if (pass === undefined) return 0;
       const st = state(e);
@@ -306,26 +355,26 @@ export function createBoardInk(host: KindHost): BoardInk {
       // the density (K6a): the one the step asked for, else the raster's own, else the rung of where it is drawn now (the law's
       // 4 without a word — a bare host, the oracle)
       const density = st.raise ?? pass.densityOf(st.id) ?? (zd === undefined ? BOARD.ink.density : boardRung(zd * G.scale));
+      const surface = surfaceSize(G);
+      // a raster to MAKE (K6b) — none held, or its density raised — is the frame queue's: the board draws what it has meanwhile (its
+      // old raster, its thumbnail, else its melamine bare) and the queue makes it and replays its strokes in its turn
+      if (queue !== undefined && pass.makes(st.id, surface, density)) {
+        st.want = { surface, density, look };
+        const shows = pass.densityOf(st.id) !== null || pass.thumbed(st.id) ? "magnified" : "nothing";
+        st.run ??= () => run(e);
+        queue.ask(OWNER, e, rasterPriority(shows, px ?? 0), st.run);
+        return st.id;
+      }
+      if (st.want !== null) { st.want = null; queue?.drop(OWNER, e); }   // nothing to make any more
       st.raise = undefined;
-      const made = pass.ensure(st.id, surfaceSize(G), density);
-      if (made && budget !== undefined) {
-        const key = String(st.id);
-        entityOf.set(key, e);
-        const size = pass.sizeOf(st.id);
-        // evicted: the RASTER goes, its thumbnail stays (the board draws it until the raster is wanted again — replayed then)
-        budget.charge("board", key, size === null ? 0 : rasterBytes(size), () => { passOf()?.evict(st.id); st.stamp = -1; entityOf.delete(key); });
-      } else budget?.touch("board", String(st.id));
+      const made = pass.ensure(st.id, surface, density);
+      charge(e, st, pass, made);
       if (made || stamp !== st.stamp || look !== st.look) {
         const rows: readonly StrokeRow[] = host.children?.rows(e, BoardStroke) ?? [];
         // the stroke the hand just committed has landed as its entity: the raster holds it already — WET — so it is adopted
         const landed = !made && look === st.look && st.adopt !== null && rows[rows.length - 1]?.points === st.adopt;
         st.adopt = null;
-        if (!landed) {
-          pass.replay(st.id, boardOps(rows, look.markers));
-          land(e);
-          replays += 1;
-          if (st.live !== null) pass.lay(st.id, st.live.builder.tool, st.live.builder.stamps());   // the stroke in hand, laid again over the replay
-        }
+        if (!landed) replay(e, st, pass, look);
         st.stamp = stamp;
         st.look = look;
       }
@@ -434,6 +483,7 @@ export function createBoardInk(host: KindHost): BoardInk {
     forget(e) {
       const st = boards.get(e);
       if (st === undefined) return;
+      queue?.drop(OWNER, e);
       passOf()?.release(st.id);
       budget?.release("board", String(st.id));
       entityOf.delete(String(st.id));
@@ -442,6 +492,7 @@ export function createBoardInk(host: KindHost): BoardInk {
       boards.delete(e);
     },
     dispose() {
+      queue?.clear(OWNER);
       const pass = passOf();
       for (const st of boards.values()) { pass?.release(st.id); budget?.release("board", String(st.id)); }
       boards.clear();
@@ -493,7 +544,9 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
       const capName = stringProp(ctx.props, "cap", "black");
       const colourOf = (name: string): RGB => (look.markers[name] ?? Object.values(look.markers)[0])?.color ?? look.metal;
       const ink = ctx.local as BoardInk | undefined;
-      const id = ink?.raster(ctx.entity, G, look, ctx.flux.fade < 1, ctx.view.zoom * ctx.view.dpr) ?? 0;
+      const v = ctx.view;
+      const px = Math.hypot(ctx.rect.cx - (v.camX + v.width / (2 * v.zoom)), ctx.rect.cy - (v.camY + v.height / (2 * v.zoom))) * v.zoom;   // its place in the frame queue (K6b)
+      const id = ink?.raster(ctx.entity, G, look, ctx.flux.fade < 1, v.zoom * v.dpr, px) ?? 0;
       // on the desk the marker lies capped in the ink it was put down in (`cap`); IN HAND (D3t-a) it follows the hand — taken up
       // as the board opens, at the pointer over the melamine, pressed while a stroke is laid, laid down again flying home
       if (ink === undefined || ctx.held === undefined) {

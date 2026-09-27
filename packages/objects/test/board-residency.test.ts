@@ -1,12 +1,14 @@
 // THE BOARDS' RESIDENCY (K6a, design-016 §6 · K-L4; board/board-pass.ts) on a fake device — no pixels (the oracle's board
 // scenes hold the pool's sampling to the golden byte for byte): the zoom rung a raster is made at, the far-LOD thumbnail cut from
 // its chain, the pool a frame binds (on-screen boards only, added within a frame, freed between), the live slot, an eviction
-// that keeps the thumbnail, and the step's raise of a board grown on screen.
+// that keeps the thumbnail, and the step's raise of a board grown on screen. K6b: a raster to MAKE (none held, or a density raised)
+// is asked of the desk's frame raster queue — a board with no ink drawn BARE meanwhile — and made and replayed in its turn.
+import type { Entity } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createSlotSet, DEFAULT_GRID, DEFAULT_MAT_CONFIG, MAT_GRID, type SlotContext } from "@ice/desk";
+import { createRasterQueue, createSlotSet, DEFAULT_GRID, DEFAULT_MAT_CONFIG, MAT_GRID, type SlotContext } from "@ice/desk";
 import { BOARD_REST, quadOf, resolveBoard } from "../src/board/board";
 import { BOARD_SLOTS, boardRung, type BoardPass } from "../src/board/board-pass";
-import { BOARD_KIND, type BoardKind } from "../src/board/kind";
+import { BOARD_KIND, type BoardKind, boardKind, type BoardObjectLook, createBoardInk } from "../src/board/kind";
 import type { BoardInstance } from "../src/board/layout";
 import { BOARD } from "../src/board/theme";
 import { deskKinds } from "../src/kinds";
@@ -14,11 +16,14 @@ import { lampOf } from "../src/paper/paper";
 import { CuttingMat } from "../../desk/src/mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "../../desk/src/mat/shaders";
 import { shaderText } from "../src/shaders";
-import { THEMES } from "../oracle/fixtures/vf-theme";
+import { BOARD_LOOK, MARKERS, PALETTE, THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, installGpuFlags } from "../../desk/test/fake-gpu";
 import { must } from "../../desk/test/must";
 
 const VIEW = { camX: 0, camY: -2000, zoom: 1, width: 1200, height: 4000, dpr: 2 };
+const E = (n: number) => n as Entity;
+const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
+const look = must(boardKind().theme)(palette, "light") as BoardObjectLook;
 const ctx = (view = VIEW): SlotContext => ({ view, fadeIn: DEFAULT_GRID.fadeIn, cfg: DEFAULT_MAT_CONFIG, frame: undefined, present: undefined, light: THEMES.light.matLight, lit: undefined, select: THEMES.light.select, theme: THEMES.light });
 const lamp = lampOf(MAT_GRID.plane);
 /** Board `id` in a column at x 600 (on screen), or at x 9000 (in the cull's margin: off screen). */
@@ -99,9 +104,64 @@ describe("the pool and the thumbnails on a fake device", () => {
     expect(pass.bound(1)).toBe(false);
     expect(pass.densityOf(1)).toBeNull();
     expect(kind.prepare({} as GPUCommandEncoder, ctx(), [board(1)])).toBe(1);   // drawn: its thumbnail
-    // released (it left the desk): nothing to draw it from
+    // released (it left the desk): no ink to draw it from — drawn BARE (K6b: a board with no ink is on the desk, its melamine from the
+    // thumbnails' empty layer; before K6b it was not drawn at all — the builder never hands a released board to the pass)
     pass.release(1);
-    expect(kind.prepare({} as GPUCommandEncoder, ctx(), [board(1)])).toBe(0);
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(), [board(1)])).toBe(1);
+  });
+
+  /** A board's ink (the kind's local) over the root pass and a frame raster queue (K6b) with no budget to speak of. */
+  async function queued() {
+    const r = await root();
+    const q = createRasterQueue({ budgetMs: 1e9 });
+    const remade: Entity[] = [];
+    const ink = createBoardInk({ pass: () => r.kind, rasters: q, remake: (e) => { remade.push(e); } });
+    return { ...r, q, remade, ink };
+  }
+
+  it("K6b: a board come on screen with NO raster ASKS the frame queue — drawn BARE meanwhile; the queue's turn makes it at its rung, replays it, cuts its thumbnail and remakes its record", async () => {
+    const { kind, pass, q, remade, ink } = await queued();
+    const G = board(1).geometry;
+    const id = ink.raster(E(7), G, look, false, 2, 0);   // its record: zd 2 — rung 4
+    expect([pass.densityOf(id), ink.replays(), q.size]).toEqual([null, 0, 1]);
+    expect(pass.thumbnailBytes).toBe(0);
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(), [board(id)])).toBe(1);   // drawn, bare: its melamine from the empty layer
+    expect(pass.thumbnailBytes).toBeGreaterThan(0);                              // (the layer taken for it)
+    expect(q.drain()).toBe(1);
+    expect([pass.densityOf(id), pass.thumbed(id), ink.replays()]).toEqual([4, true, 1]);
+    expect(remade).toEqual([E(7)]);
+    ink.raster(E(7), G, look, false, 2, 0);                                      // its record again: nothing to make, nothing asked
+    expect([q.size, ink.replays()]).toEqual([0, 1]);
+    // without a queue (a bare host, the oracle's) the record makes and replays it at once, as before
+    const bare = createBoardInk({ pass: () => kind });
+    const id2 = bare.raster(E(8), G, look, false, 2, 0);
+    expect([pass.densityOf(id2), bare.replays()]).toEqual([4, 1]);
+  });
+
+  it("K6b: the queue's order — a board with NO ink before one whose thumbnail stands (evicted), the nearest the view's centre first within each; a raise waits there too, its old raster standing; forget withdraws", async () => {
+    const { kind, pass, q, remade, ink } = await queued();
+    const G = board(1).geometry;
+    const a = ink.raster(E(1), G, look, false, 0.5, 0);   // rung 1
+    const b = ink.raster(E(2), G, look, false, 2, 300);   // rung 4 …
+    q.drain();
+    pass.evict(b);                                        // … and evicted: its thumbnail stands
+    expect([pass.densityOf(a), pass.densityOf(b), pass.thumbed(b)]).toEqual([1, null, true]);
+    // a density RAISE: on screen at zd 2 it asks 4 — the step raises it, its record asks, the old raster stands until the turn
+    kind.prepare({} as GPUCommandEncoder, ctx(), [board(a)]);
+    expect(ink.tick?.(16)).toBe(true);
+    ink.raster(E(1), G, look, false, 2, 10);
+    expect([pass.densityOf(a), q.size]).toEqual([1, 1]);
+    // the evicted board at 300 px from the centre, and two never made (nothing to show) at 500 and 100
+    remade.length = 0;
+    ink.raster(E(2), G, look, false, 2, 300);
+    ink.raster(E(3), G, look, false, 2, 500);
+    ink.raster(E(4), G, look, false, 2, 100);
+    ink.raster(E(5), G, look, false, 2, 50);
+    ink.forget?.(E(5));                                  // it left the desk: its ask with it
+    expect(q.size).toBe(4);
+    q.drain();
+    expect(remade).toEqual([E(4), E(3), E(1), E(2)]);   // nothing shown first (100, 500 px), then the stand-ins (10, 300 px)
+    expect([pass.densityOf(a), pass.densityOf(b)]).toEqual([4, 4]);
   });
 
   it("the LIVE slot: the board laid on or drying binds its stroke and wet; the step lets it go once dry", async () => {

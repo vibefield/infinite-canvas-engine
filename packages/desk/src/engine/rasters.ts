@@ -70,6 +70,22 @@ export interface RasterQueueOptions {
  */
 export const RASTER_BUDGET_MS = 4;
 
+/**
+ * What an object shows while its raster waits its turn (K6b): NOTHING (a blank sheet, a bare board), its old raster MAGNIFIED (a
+ * band or a density short of the screen's — soft), or its old raster MINIFIED (past it — only the pages' room is at stake).
+ */
+export type RasterWait = "nothing" | "magnified" | "minified";
+
+const TIERS: Readonly<Record<RasterWait, number>> = { nothing: 0, magnified: 1, minified: 2 };
+
+/**
+ * The priority every kind asks with, so one turn orders them all alike (K6b): what shows nothing first, then a stand-in magnified,
+ * then one minified — the nearest the view's centre (`px`, screen px) first within each.
+ */
+export function rasterPriority(shows: RasterWait, px: number): number {
+  return TIERS[shows] * 1e7 + Math.min(Math.max(px, 0), 1e7 - 1);
+}
+
 interface Ask {
   readonly owner: string;
   readonly key: Entity;

@@ -36,7 +36,7 @@
 // wipe runs, once per blink phase while the caret stands, once when a face lands or the editor moves.
 
 import type { Entity } from "@ice/core";
-import type { KindHost } from "@ice/desk";
+import { type KindHost, rasterPriority } from "@ice/desk";
 import { type View, HAND, caretAt, glyphBox, type HandLaw, type HandLayout, layoutText, type TextRaster, seedsFor } from "@ice/desk/kit";
 import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
@@ -194,11 +194,6 @@ interface Entry {
 
 /** The queue's name for the paper's asks (K6b) — the kind's. */
 const OWNER = "paper";
-/** The queue's tiers (K6b): what shows nothing, then a stand-in magnified, then one minified; a tier outranks any distance (px). */
-const TIER = 1e7;
-const BLANK = 0;
-const MAGNIFIED = 1;
-const MINIFIED = 2;
 
 const str = (props: Readonly<Record<string, unknown>>, name: string): string => { const v = props[name]; return typeof v === "string" ? v : ""; };
 const num = (props: Readonly<Record<string, unknown>>, name: string): number => { const v = props[name]; return typeof v === "number" && Number.isFinite(v) ? v : 0; };
@@ -334,11 +329,11 @@ export function createWriting(opts: WritingOptions): Writing {
   /** Ask the queue for note `e`'s raster at `band`: its tier by what it shows meanwhile, the nearest the view's centre first within it. */
   const ask = (e: Entity, en: Entry, rect: { readonly cx: number; readonly cy: number }, band: number, view: View, Q: NonNullable<KindHost["rasters"]>): void => {
     en.want = band;
-    const tier = en.raster === null ? BLANK : en.raster.band < band ? MAGNIFIED : MINIFIED;
+    const shows = en.raster === null ? "nothing" : en.raster.band < band ? "magnified" : "minified";
     const dx = rect.cx - (view.camX + view.width / (2 * view.zoom));
     const dy = rect.cy - (view.camY + view.height / (2 * view.zoom));
     en.run ??= () => run(e);
-    Q.ask(OWNER, e, tier * TIER + Math.hypot(dx, dy) * view.zoom, en.run);
+    Q.ask(OWNER, e, rasterPriority(shows, Math.hypot(dx, dy) * view.zoom), en.run);
   };
 
   const entryOf = (e: Entity): Entry => {

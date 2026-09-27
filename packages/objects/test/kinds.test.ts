@@ -313,20 +313,22 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     expect(asked).toContain("calendar/calendar-pass.wgsl"); expect(asked).toContain("notebook/notebook-pass.wgsl");
   });
 
-  it("the whiteboard's drawRange counts in the list it was handed: a board with no raster draws nothing and shifts nothing; its whole range is draw()'s commands", async () => {
+  it("the whiteboard's drawRange counts in the list it was handed: a board with nothing to draw it from draws nothing and shifts nothing; its whole range is draw()'s commands", async () => {
     const { device } = fakeDevice();
     const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const set = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
     const kind = must(set.kinds.get(BOARD_KIND)).pass as BoardKind;
     const pass: BoardPass = kind.pass;
-    expect(pass.ensure(1, [120, 80])).toBe(true); expect(pass.ensure(3, [120, 80])).toBe(true);
+    expect(pass.ensure(1, [120, 80])).toBe(true); expect(pass.ensure(2, [120, 80])).toBe(true); expect(pass.ensure(3, [120, 80])).toBe(true);
     const lamp = lampOf(MAT_GRID.plane);
-    const board = (id: number): BoardInstance => {
-      const G = resolveBoard({ cx: id * 300, cy: 0, w: BOARD.spec.width, h: BOARD.spec.height }, BOARD_REST, lamp);   // on screen: they take the pool's slots (K6a)
+    const board = (id: number, cx = id * 300): BoardInstance => {
+      const G = resolveBoard({ cx, cy: 0, w: BOARD.spec.width, h: BOARD.spec.height }, BOARD_REST, lamp);   // on screen: they take the pool's slots (K6a)
       return { id, geometry: G, surface: [1, 1, 1], metal: [0.5, 0.5, 0.5], quad: quadOf(G) };
     };
     const ctx: SlotContext = { view: VIEW, fadeIn: DEFAULT_GRID.fadeIn, cfg: DEFAULT_MAT_CONFIG, frame: undefined, present: undefined, light: THEMES.light.matLight, lit: undefined, select: THEMES.light.select, theme: THEMES.light };
-    expect(kind.prepare({} as GPUCommandEncoder, ctx, [board(1), board(2), board(3)])).toBe(2);   // board 2 has no raster
+    // board 2: a raster never replayed (no thumbnail) and off screen (no pool slot) — nothing to draw it from. (A board with NO ink at all
+    // is drawn bare since K6b — its melamine from the thumbnails' empty layer, while its first replay waits in the frame queue.)
+    expect(kind.prepare({} as GPUCommandEncoder, ctx, [board(1), board(2, 9000), board(3)])).toBe(2);
     const log: string[] = [];
     const rp = recordingPass(log);
     kind.drawRange(rp, 0, 3);
@@ -334,7 +336,7 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     const whole = ["pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,2,0,0"];
     expect(log).toEqual(whole);
     log.length = 0; pass.draw(rp); expect(log).toEqual(whole);
-    log.length = 0; kind.drawRange(rp, 1, 2); expect(log).toEqual([]);   // the board with no raster: nothing, not even the pipeline
+    log.length = 0; kind.drawRange(rp, 1, 2); expect(log).toEqual([]);   // the board with nothing to draw from: nothing, not even the pipeline
     log.length = 0; kind.drawRange(rp, 1, 3); expect(log).toEqual(["pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,1,0,1"]);
     log.length = 0; kind.drawRange(rp, 0, 1); expect(log).toEqual(["pipeline board/desk", "group 0 board/slot", "group 1 board/pool", "draw 6,1,0,0"]);
     // through the walker: a note laid on the first board splits the boards into two runs — the second draws board 3 alone
