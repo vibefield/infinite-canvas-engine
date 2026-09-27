@@ -66,7 +66,8 @@ function rig() {
   };
   // what the renderer would publish: the drawer 720 × 252 open (its top at 348), its 12 px lip closed; a scroll range of 600
   const max = 600;
-  const frame = (): TrayScreenFrame => (trayOpen(ce.world) ? { x: 40, y: 348, w: 720, h: 252, p: 1, max } : { x: 40, y: 588, w: 720, h: 252, p: 0, max });
+  const shown = (): number => { const e = trayEntity(ce.world); return e === undefined ? 0 : ce.world.read(e, Tray).scroll; };
+  const frame = (): TrayScreenFrame => (trayOpen(ce.world) ? { x: 40, y: 348, w: 720, h: 252, p: 1, max, pitch: 40, scroll: shown() } : { x: 40, y: 588, w: 720, h: 252, p: 0, max, pitch: 40, scroll: shown() });
   ce.stack.trayPose.current = { frame };
   const tray = () => { const e = trayEntity(ce.world); if (e === undefined) throw new Error("no tray"); return ce.world.read(e, Tray); };
   const cam = () => { const c = ce.world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1 }; return { x: c.x, y: c.y, zoom: c.zoom }; };

@@ -20,15 +20,25 @@
  * frame (its rect mid-slide, the scroll range its layout gives), so a hit and the clamp agree with the pixels. Nothing here reads a
  * kind or a pixel; opening a drawer cancels every gesture in flight (`CancelRequest`, read by the `ctl:spawn` sweep this tick).
  */
-import type { Entity, System, World } from "@vibecook/strata-ecs";
-import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { Tray, TrayPress } from "../catalog/desk";
+import type { Component, Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
+import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
+import { layTray, type TrayItem } from "@ice/kernel";
+import { Specimen, Tray, TrayContent, TrayPress } from "../catalog/desk";
 import { HandledByWidget, LocalPointer, Pointer, PointerButtons, PointerMods, PointerScreen, PointerWheel, WentCancelled, WentDown, WentUp, WheelHandled } from "../catalog/pointer";
+import { ChildOf, Position, Size } from "../catalog/scene";
+import { engineCatalogFor } from "../canvas/engine-catalog";
 import { FrameInfo } from "../engine/frame-info";
 import { cancelActiveGestures } from "../ops/gestures";
+import { type ComponentInit, type FieldWrite, PrefabId } from "../schema/prefab";
+import { WidgetEquipped, type WidgetType, widgets } from "../widget/define-widget";
+import { widgetSpawnInits } from "../widget/spawn";
 import { heldEntity } from "./held";
 
-/** The drawer ON SCREEN as the renderer drew it this frame, CSS px: its outline box (top-left, width, full height — the part below the view included), the slide `p` (0 closed … 1 open), and the scroll range `max` its layout gives. */
+/**
+ * The drawer ON SCREEN as the renderer drew it this frame, CSS px: its outline box (top-left, width, full height — the part below
+ * the view included), the slide `p` (0 closed … 1 open), the scroll range `max` the laid content gives, the board's `pitch`, and
+ * the `scroll` as DRAWN — the fact's plus the band's shown pull — so a board point under the pointer is the one on screen.
+ */
 export interface TrayScreenFrame {
   readonly x: number;
   readonly y: number;
@@ -36,6 +46,8 @@ export interface TrayScreenFrame {
   readonly h: number;
   readonly p: number;
   readonly max: number;
+  readonly pitch: number;
+  readonly scroll: number;
 }
 
 /** The pose seam: the renderer's word on where the drawer is — `undefined` before its first frame. */
@@ -49,6 +61,26 @@ export const TRAY_INPUT = { slopPx: 4, lipDragPx: 10, handlePx: 60, lipPadPx: 8,
 
 const trayQ = defineQuery([Tray]);
 const localPointerQ = defineQuery([Pointer, PointerScreen, LocalPointer]);
+
+/** The tray's specimens (K5a): the tray entity's children tagged `Specimen`, in sibling order. */
+export function specimensOf(world: World, tray: Entity): Entity[] {
+  const out: Entity[] = [];
+  for (const c of world.getReverse(tray, ChildOf)) if (world.isAlive(c) && world.hasTag(c, Specimen)) out.push(c);
+  return out;
+}
+
+/** The specimen at a board point (board px — x from the drawer's left edge, y down from the board's top at scroll 0): its type, "" for none. */
+function specimenAt(world: World, tray: Entity, bx: number, by: number): string {
+  let hit = "";
+  for (const e of specimensOf(world, tray)) {
+    const p = world.get(e, Position);
+    const z = world.get(e, Size);
+    const id = world.get(e, PrefabId)?.id;
+    if (p === undefined || z === undefined || typeof id !== "string") continue;
+    if (bx >= p.x && bx <= p.x + z.w && by >= p.y && by <= p.y + z.h) hit = id;
+  }
+  return hit;
+}
 
 /** A delta down the board into scroll ∈ [0, max], the rest into the band; a delta back unwinds the band first. */
 export function scrollBy(scroll: number, stretch: number, d: number, max: number): { readonly scroll: number; readonly stretch: number } {
@@ -79,7 +111,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       if (heldEntity(world) !== undefined) {
         // the hand's focus: the tray stands aside, its presses let go
         for (const r of b) { const p = b.entity(r); if (ctx.has(p, TrayPress)) ctx.removeComponent(p, TrayPress); }
-        if (t.lip) ctx.edit(tray).set(Tray, { ...t, lip: false });
+        if (t.lip || t.hover !== "") ctx.edit(tray).set(Tray, { ...t, lip: false, hover: "" });
         return;
       }
       const frame = opts.pose.current?.frame();
@@ -90,6 +122,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       let stretch = t.stretch;
       let wheelAt = t.wheelAt;
       let lip = false;
+      let hover = "";
       let dragging = false;
       const over = (x: number, y: number, pad: number): boolean =>
         frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= frame.y - pad;
@@ -128,6 +161,8 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         // OPEN: the desk is inert — picking, the recognizers and both wheel consumers skip this pointer this tick
         if (!ctx.hasTag(p, HandledByWidget)) ctx.addTag(p, HandledByWidget);
         if (!ctx.hasTag(p, WheelHandled)) ctx.addTag(p, WheelHandled);
+        // the specimen under the mouse (K5a): the board point as DRAWN — the pose's shown scroll, the band's pull in it
+        if (frame !== undefined && over(s.x, s.y, 0) && ctx.read(p, Pointer).device === "mouse") hover = specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll);
         const w = ctx.get(p, PointerWheel);
         if (w !== undefined && (w.dy !== 0 || w.dx !== 0 || w.pinch !== 0) && over(s.x, s.y, 0)) {
           const mods = ctx.get(p, PointerMods);
@@ -164,10 +199,74 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       }
       // the band lets go once the scroll input is quiet — never under a finger still dragging the board — and as the drawer closes
       if (stretch !== 0 && ((!dragging && now - wheelAt > TRAY_INPUT.letGoMs) || !open)) stretch = 0;
-      if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || lip !== t.lip) {
-        ctx.edit(tray).set(Tray, { open, scroll, stretch, lip: open ? false : lip, wheelAt });
+      if (!open) hover = "";
+      if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || lip !== t.lip || hover !== t.hover) {
+        ctx.edit(tray).set(Tray, { open, scroll, stretch, lip: open ? false : lip, wheelAt, hover });
       }
     },
     { name: "trayInput", access: { write: [Tray, TrayPress] } },
+  );
+}
+
+/** The catalog's object types that carry a tray entry — the tray's contents (K-L2: no list here names a kind); the registry's in an unbound world. */
+export function hungTypes(world: World): WidgetType[] {
+  const all = engineCatalogFor(world)?.widgetTypes() ?? widgets.all();
+  return all.filter((t) => t.tray !== undefined && t.object !== undefined);
+}
+
+/**
+ * THE TRAY'S LAY (design-017 §8; K5a) — the specimens in the world: one RUNTIME entity per object type whose widget carries a tray
+ * entry (`hungTypes`), `ChildOf` the tray entity (the root of its runtime canvas), `PrefabId` its type, `Position`/`Size` where the
+ * lattice law lays it (kernel `layTray`) across the drawer AS THE RENDERER DREW IT (the pose seam's width and pitch), its entry's
+ * props over the widget's defaults, spawned `Specimen` and already `WidgetEquipped` (nothing stamps it; the spatial index never
+ * takes it). Laid once the renderer has said how wide the drawer is; re-laid when that width, the pitch or the entries change (a
+ * kind registered), a specimen whose kind left destroyed; after a reset the new tray entity is laid afresh. `TrayContent` records
+ * what was laid — the content's foot is the renderer's scroll range. A tick system: its spawns are the scheduler's, once a frame.
+ */
+export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot }): TickSystem {
+  let laidKey = "";
+  return defineTickSystem(
+    (ctx) => {
+      const tray: Entity | undefined = world.firstOf(trayQ);
+      if (tray === undefined || !ctx.isAlive(tray)) return;
+      const frame = opts.pose.current?.frame();
+      if (frame === undefined || !(frame.w > 0) || !(frame.pitch > 0)) return;
+      const content = ctx.get(tray, TrayContent);
+      const types = hungTypes(world);
+      const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((t) => t.type).join(",")}`;
+      if (key === laidKey) return;
+      const items: TrayItem[] = types.map((t) => {
+        const e = t.tray as NonNullable<WidgetType["tray"]>;
+        return { type: t.type, hang: e.hang, ...(e.category !== undefined ? { category: e.category } : {}), ...(e.order !== undefined ? { order: e.order } : {}) };
+      });
+      const layout = layTray(items, frame.w, frame.pitch);
+      const have = new Map<string, Entity>();
+      for (const e of specimensOf(world, tray)) { const id = world.get(e, PrefabId)?.id; if (typeof id === "string") have.set(id, e); }
+      for (const p of layout.placed) {
+        const t = types.find((q) => q.type === p.type) as WidgetType;
+        const e = have.get(p.type);
+        if (e !== undefined) {
+          have.delete(p.type);
+          const at = ctx.get(e, Position);
+          const size = ctx.get(e, Size);
+          if (at?.x !== p.x || at?.y !== p.y) ctx.edit(e).set(Position, { x: p.x, y: p.y });
+          if (size?.w !== p.w || size?.h !== p.h) ctx.edit(e).set(Size, { w: p.w, h: p.h });
+          continue;
+        }
+        // the widget's own spawn inits (Position, Size, the entry's props folded into their groups), the untouched groups at their defaults
+        const cells = new Map<Component, Record<string, FieldWrite>>();
+        for (const [c, v] of t.prefab.components) cells.set(c, v);
+        for (const [c, v] of widgetSpawnInits(t.type, { x: p.x, y: p.y, w: p.w, h: p.h, props: t.tray?.props ?? {} }, t).overrides) cells.set(c, v);
+        cells.set(PrefabId, { id: t.type });
+        const spawned = ctx.spawn({ components: [...cells] as ComponentInit[], tags: [Specimen, WidgetEquipped] });
+        ctx.setRelation(spawned, ChildOf, tray, "last");
+      }
+      for (const e of have.values()) ctx.destroy(e);
+      const next = { width: frame.w, bottom: layout.bottom, laid: (content?.laid ?? 0) + 1 };
+      if (content === undefined) ctx.addComponent(tray, TrayContent, next);
+      else ctx.edit(tray).set(TrayContent, next);
+      laidKey = `${tray}|${next.laid}|${frame.w}|${frame.pitch}|${types.map((t) => t.type).join(",")}`;
+    },
+    { name: "trayLay", access: { write: [Position, Size, TrayContent] } },
   );
 }

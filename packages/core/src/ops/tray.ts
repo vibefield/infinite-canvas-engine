@@ -6,17 +6,25 @@
  */
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
-import { Tray } from "../catalog/desk";
+import { Tray, TrayContent } from "../catalog/desk";
+import { Container } from "../catalog/graph";
 import { heldEntity } from "../systems/held";
 import { cancelActiveGestures } from "./gestures";
 
 const trayQ = defineQuery([Tray]);
 
-/** The view's tray entity, spawned (runtime, closed) if the world has none — at install, and after a reset. */
+/**
+ * The view's tray entity, spawned (runtime, closed) if the world has none — at install, and after a reset. It ROOTS the tray's
+ * runtime canvas (K5a — a `Container`, so its specimens' first container is it, never a frame: none is ever `Active`), its
+ * content not yet laid.
+ */
 export function ensureTray(world: World): Entity {
   const existing = world.firstOf(trayQ);
   if (existing !== undefined) return existing;
-  return world.spawn({ components: [[Tray, { open: false, scroll: 0, stretch: 0, lip: false, wheelAt: 0 }]] });
+  return world.spawn({
+    components: [[Tray, { open: false, scroll: 0, stretch: 0, lip: false, wheelAt: 0, hover: "" }], [TrayContent, { width: 0, bottom: 0, laid: 0 }]],
+    tags: [Container],
+  });
 }
 
 /** The view's tray entity, if there is one. */
@@ -30,11 +38,11 @@ export function trayOpen(world: World): boolean {
   return e !== undefined && world.get(e, Tray)?.open === true;
 }
 
-const write = (world: World, patch: Partial<{ open: boolean; scroll: number; stretch: number; lip: boolean }>): void => {
+const write = (world: World, patch: Partial<{ open: boolean; scroll: number; stretch: number; lip: boolean; hover: string }>): void => {
   const e = ensureTray(world);
   const cur = world.read(e, Tray);
   const next = { ...cur, ...patch };
-  if (next.open !== cur.open || next.scroll !== cur.scroll || next.stretch !== cur.stretch || next.lip !== cur.lip) world.edit(e).set(Tray, next);
+  if (next.open !== cur.open || next.scroll !== cur.scroll || next.stretch !== cur.stretch || next.lip !== cur.lip || next.hover !== cur.hover) world.edit(e).set(Tray, next);
 };
 
 /** Open the drawer: refused (false) while an object is in hand; every gesture in flight is cancelled. */
@@ -47,7 +55,7 @@ export function openTray(world: World): boolean {
 
 /** Close the drawer; the band lets go. */
 export function closeTray(world: World): void {
-  write(world, { open: false, stretch: 0 });
+  write(world, { open: false, stretch: 0, hover: "" });
 }
 
 /** Open a closed drawer, close an open one; returns whether it is open now. */

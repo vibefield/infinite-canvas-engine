@@ -42,7 +42,7 @@ import { createInsertGhostReap } from "../systems/insert-ghost";
 import { createCursorSync } from "../systems/l4-cursor";
 import { createHeldInput, type HeldPoseSlot } from "../systems/held";
 import { createPressWheel } from "../systems/press-wheel";
-import { createTrayInput, type TrayPoseSlot } from "../systems/tray";
+import { createTrayInput, createTrayLay, type TrayPoseSlot } from "../systems/tray";
 import { ensureTray } from "../ops/tray";
 import { createNavTap } from "../systems/nav-tap";
 import { createZoomThrough } from "../systems/zoom-through";
@@ -208,7 +208,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     // which now narrow-phases wire entries against wireSync's cached cubics.
     // pressWheel beside it (D3t-a): a press holding a `WheelTurns` widget takes its pointer's wheel from both wheel consumers too.
     // trayInput right after the hand's (design-017 §4, K3): the pegboard drawer's lip, its wheel and its inert desk, in the same vocabulary
-    engine.addSystems("react", createHeldInput(world, { pose: heldPose }), createTrayInput(world, { pose: trayPose }), createPressWheel(world), pick.spatialSync, wireSync, pick.picking),
+    engine.addSystems("react", createHeldInput(world, { pose: heldPose }), createTrayInput(world, { pose: trayPose }), createTrayLay(world, { pose: trayPose }), createPressWheel(world), pick.spatialSync, wireSync, pick.picking),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
     engine.addSystems(
       "ctl:recognize",

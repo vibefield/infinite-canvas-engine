@@ -184,7 +184,29 @@ export const Tray = defineComponent("Tray", {
   stretch: field("f64", { default: 0 }),
   lip: field("bool", { default: false }),
   wheelAt: field("f64", { default: 0 }),
+  /** K5a: the type of the specimen under the mouse while the drawer is out ("" — none): the hover that lifts it (flux). */
+  hover: field("string", { default: "" }),
 });
+
+/**
+ * Runtime, on the TRAY entity (design-017 §8; K5a): what the lattice law last laid (systems/tray.ts `createTrayLay`) — the drawer's
+ * width it laid for (CSS px, the renderer's word through the pose seam), the content's foot (board px — the scroll's range is that
+ * plus a pitch less the face, the renderer's to say) and how many lays so far (a renderer re-reads the specimens when it moves).
+ */
+export const TrayContent = defineComponent("TrayContent", {
+  width: field("f64", { default: 0 }),
+  bottom: field("f64", { default: 0 }),
+  laid: field("u32", { default: 0 }),
+});
+
+/**
+ * Runtime tag: a SPECIMEN (design-017 §8; K5a) — a kind hung on the pegboard tray: `ChildOf` the tray entity (which roots its
+ * runtime canvas), `PrefabId` the kind's widget type, `Position` board px (x from the drawer's left edge, y down from the board's
+ * top at scroll 0), `Size` its hang's, its entry's props over the widget's defaults. Spawned equipped (no capability tag, no
+ * rider, no behaviour — nothing acts on it) and under a canvas that is no frame, so never `Active`: the desk's stack never picks,
+ * selects, culls or saves one; never durable, never synced.
+ */
+export const Specimen = defineTag("Specimen");
 
 /**
  * Runtime, on a local pointer: a press the TRAY took (design-017 §4) — on the lip of a closed drawer (`lip`: a click or a drag up

@@ -108,7 +108,7 @@ export function createTrayFlux(): TrayFlux {
       const pl = P?.lift ?? lift;
       const pb = P?.band ?? shown;
       const rect = drawerRect(vw, vh, pp, pl);
-      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh) };
+      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh), pitch: DRAWER.pitch, scroll: f.scroll + pb };
       return { p: pp, lift: pl, scroll: f.scroll + pb };
     },
 
