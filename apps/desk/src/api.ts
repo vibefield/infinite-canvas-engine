@@ -170,6 +170,8 @@ export interface PerfReading {
   readonly records: Readonly<Record<string, { readonly written: number; readonly bytes: number; readonly orderWrites: number; readonly slots: number }>>;
   /** The GPU profiler's frames completed since the last take (K2), drained — none unless it is armed (`perf.gpu()?.arm()`). */
   readonly gpu: { readonly armed: boolean; readonly frames: readonly GpuFrameReport[] };
+  /** The probe's reading after each of `steps`, index for index (K6b, `probe`) — empty while no probe is set; drained by `take`. */
+  readonly probes: unknown[];
 }
 
 export interface PerfApi {
@@ -177,6 +179,11 @@ export interface PerfApi {
   arm(): void;
   /** A reading of every counter; the step samples since the last take are drained. */
   take(): PerfReading;
+  /**
+   * Read `fn` after every timed step (K6b — a rig's per-frame counters beside the step's ms: the rasters laid in THAT step, never a
+   * neighbour's); `undefined` stops. Armed steps only.
+   */
+  probe(fn: (() => unknown) | undefined): void;
   /** Chrome's `performance.memory.usedJSHeapSize` (precise under `--enable-precise-memory-info`), or null where absent. */
   heap(): number | null;
   /** V8's `gc()` when Chrome exposes it (`--js-flags=--expose-gc`); false when it does not. */
@@ -239,6 +246,8 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
   // THE PERF DOOR (D6): the engine's `step` timed from outside — the loop calls `engine.step(now)` through the property, so a wrapper
   // installed here sees every step the rAF loop makes, the desk's flush among them
   let stepSamples: number[] = [];
+  let probeSamples: unknown[] = [];
+  let probe: (() => unknown) | undefined;
   let armed = false;
   const perf: PerfApi = {
     arm() {
@@ -246,16 +255,24 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       armed = true;
       const eng = engine.engine as { step(now: number): void };
       const step = eng.step.bind(eng);
-      eng.step = (now: number): void => { const t0 = performance.now(); step(now); stepSamples.push(performance.now() - t0); };
+      eng.step = (now: number): void => {
+        const t0 = performance.now();
+        step(now);
+        stepSamples.push(performance.now() - t0);
+        if (probe !== undefined) probeSamples.push(probe());   // read after the clock stopped: the probe costs the step nothing
+      };
     },
     take() {
       const steps = stepSamples;
+      const probes = probeSamples;
       stepSamples = [];
+      probeSamples = [];
       const s = handle.submits();
       const st = handle.stats();
       const gpu = handle.profiler();
-      return { steps, flush: handle.perf(), uploads: s?.uploadsByLabel() ?? {}, submits: s?.total() ?? 0, totals: st.totals, work: st.work, redraws: handle.redraws(), records: handle.records(), gpu: { armed: gpu?.armed() ?? false, frames: gpu?.take() ?? [] } };
+      return { steps, flush: handle.perf(), uploads: s?.uploadsByLabel() ?? {}, submits: s?.total() ?? 0, totals: st.totals, work: st.work, redraws: handle.redraws(), records: handle.records(), gpu: { armed: gpu?.armed() ?? false, frames: gpu?.take() ?? [] }, probes };
     },
+    probe(fn) { probe = fn; probeSamples = []; },
     heap() {
       const m = (performance as { memory?: { usedJSHeapSize?: number } }).memory;
       return typeof m?.usedJSHeapSize === "number" ? m.usedJSHeapSize : null;

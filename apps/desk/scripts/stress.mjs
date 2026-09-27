@@ -96,7 +96,19 @@ export function stressScene(n = N, { mixed = false, pictures = false } = {}) {
   return { camX: -600, camY: -400, zoom: 1, theme: "light", notes, minimats, boards, prints, books, calendars };
 }
 
-const die = (what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`); process.exit(1); };
+/**
+ * K6b (design-016 §1.3, §6): THE WRITTEN DESK — 240 notes, EVERY one written, on a 20 × 12 grid 260 units apart (5,200 × 3,120,
+ * centred on the origin), and 8 whiteboards with strokes on a ring past the cull at zoom 1 (a board's reach is ~260 units: each
+ * enters it between zoom 0.72 and 0.5 on the way out, no two in one frame but two). The camera on the origin at zoom 1.
+ */
+export function writtenScene() {
+  const notes = [];
+  for (let j = 0; j < 12; j++) for (let i = 0; i < 20; i++) notes.push({ x: Math.round((i - 9.5) * 260), y: Math.round((j - 5.5) * 260), seed: 1 + i + 20 * j, text: TEXTS[(i + 3 * j) % TEXTS.length] });
+  const boards = [[-1700, 0], [1900, 0], [0, -1250], [0, 1400], [-1800, -1000], [2000, -1100], [-2100, 1150], [1700, 1300]].map(([x, y], i) => ({ x, y, strokes: scribble(i) }));
+  return { camX: -600, camY: -400, zoom: 1, theme: "light", notes, boards };
+}
+
+const die =(what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`); process.exit(1); };
 if (!existsSync(resolve(app, "dist/rig.html"))) die("the desk's build is missing (apps/desk/dist/rig.html)", "pnpm --filter ./apps/desk build");
 
 async function freePort(from) {
@@ -646,6 +658,66 @@ try {
     check(back0?.density === 4 && back1?.bound === true && replays2 > replays1, `boards: board 0 on screen again — its raster replayed in the frame it came back (its record's own replay, D6) at its rung (4 texels a unit) and bound (${JSON.stringify(back0)}; ${replays2 - replays1} replays)`);
     report.boards = { far, memFar, run: g, walked, memWalk, back: [back0, back1] };
     rows.push(["boards (20, a run)", `20 boards = ${g.byKind.board} draw · far: board ${MB(row(memFar, "board"))}`, `walked at zoom 1: ${memWalk.budget.evictions} evictions, board ${MB(row(memWalk, "board"))}; back: replayed and bound`, load()]);
+  }
+
+  // ── zoom-written (K6b, design-016 §1.3 · §6): THE WRITTEN DESK (`writtenScene`, a fresh one each round, settled at zoom 1) zoomed
+  //    OUT 1 → 0.35 in 90 frames — notes and boards ENTER the view (first rasters, first replays) and the notes rastered at zoom 1
+  //    cross a rung DOWN (2 → 1 texel a unit at zoom 0.43) — and back IN 0.35 → 1 in 90 (two rungs UP: 1 → 1.41 at zoom 0.5, → 2 at
+  //    0.71). Every step's ms beside THAT step's counters (`perf.probe`): the notes' rasters laid, the boards' replays, the records the
+  //    builder remade and the stores wrote; p50 / p95 / the worst frame a round, their medians over the rounds.
+  if (wantCase("zoom-written")) {
+    const ws = writtenScene();
+    const legs = [[1, 0.35, 90], [0.35, 1, 90]];
+    const perRound = [];
+    for (let r = 0; r < ROUNDS; r++) {
+      await qa(`window.__desk.setScene(${JSON.stringify(ws)})`, 120000);
+      await settle(20000);
+      await front();
+      const run = await qa(`(async () => {
+        const d = window.__desk;
+        const board = d.handle.local("board");
+        let recs = 0;
+        const written = () => { recs = 0; for (const v of Object.values(d.handle.records())) recs += v.written; return recs; };
+        d.perf.probe(() => { const w = d.note.writing(); return [w?.rasters ?? 0, board?.replays() ?? 0, d.handle.stats().totals.recorded, written(), w?.blanks ?? 0, d.camera().zoom]; });
+        const p0 = [d.note.writing()?.rasters ?? 0, board?.replays() ?? 0, d.handle.stats().totals.recorded, written(), d.note.writing()?.blanks ?? 0];
+        const bids = d.entities().filter((e) => e.type === "desk.board").map((e) => e.id);
+        const res0 = bids.map((e) => board?.residency(e) ?? null);
+        d.perf.take();
+        const legs = ${JSON.stringify(legs)};
+        for (const [from, to, n] of legs) {
+          await new Promise((res) => { let i = 0; const f = () => { i++; const z = from * Math.pow(to / from, i / n); d.setCamera({ x: -600 / z, y: -400 / z, zoom: z }); if (i >= n) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+        }
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const t = d.perf.take();
+        d.perf.probe(undefined);
+        return { steps: t.steps, probes: t.probes, p0, boards: [res0, bids.map((e) => board?.residency(e) ?? null)] };
+      })()`, 120000);
+      // each step's counters minus the step before's: what THAT frame did
+      const frames = run.steps.map((ms, i) => { const a = i === 0 ? run.p0 : run.probes[i - 1]; const b = run.probes[i]; return { ms, rasters: b[0] - a[0], replays: b[1] - a[1], recorded: b[2] - a[2], written: b[3] - a[3], blanks: b[4] - a[4] }; });
+      const ms = frames.map((f) => f.ms);
+      const worst = frames.reduce((a, f) => (f.ms > a.ms ? f : a), frames[0]);
+      perRound.push({
+        frames: frames.length, p50: pct(ms, 0.5), p95: pct(ms, 0.95), max: max(ms), over8: frames.filter((f) => f.ms > 8).length,
+        rasters: frames.reduce((a, f) => a + f.rasters, 0), rastersMax: max(frames.map((f) => f.rasters)), replays: frames.reduce((a, f) => a + f.replays, 0), replaysMax: max(frames.map((f) => f.replays)),
+        recordedMed: median(frames.map((f) => f.recorded)), writtenMed: median(frames.map((f) => f.written)), blanks: frames.reduce((a, f) => a + f.blanks, 0),
+        worst, load: load(), boards: run.boards,
+        // the round frame by frame: [ms, rasters, replays, remade, written, blanks, the zoom drawn]
+        series: frames.map((f, i) => [Math.round(f.ms * 100) / 100, f.rasters, f.replays, f.recorded, f.written, f.blanks, Math.round(run.probes[i][5] * 1000) / 1000]),
+      });
+    }
+    const col = (k) => perRound.map((p) => p[k]);
+    const s = {
+      rounds: perRound.length, p50: { median: median(col("p50")), min: min(col("p50")) }, p95: { median: median(col("p95")), min: min(col("p95")) }, max: { median: median(col("max")), min: min(col("max")) },
+      over8: median(col("over8")), rasters: median(col("rasters")), rastersMax: median(col("rastersMax")), replays: median(col("replays")), replaysMax: median(col("replaysMax")),
+      recordedMed: median(col("recordedMed")), writtenMed: median(col("writtenMed")), blanks: max(col("blanks")), loads: col("load"), perRound,
+    };
+    report["zoom-written"] = s;
+    console.log(`-- zoom-written · ${s.rounds} rounds × 180 frames (1 → 0.35 → 1) on 240 written notes + 8 boards · load ${s.loads.join(" ")} --`);
+    console.log(`  step ms/frame        p50 ${fmt(s.p50.median)} (min ${fmt(s.p50.min)}) · p95 ${fmt(s.p95.median)} (min ${fmt(s.p95.min)}) · the worst frame ${fmt(s.max.median)} (min ${fmt(s.max.min)}) · frames over 8 ms ${fmt(s.over8, 0)}`);
+    console.log(`  rasters              ${fmt(s.rasters, 0)} a round, the most in one frame ${fmt(s.rastersMax, 0)} · board replays ${fmt(s.replays, 0)} a round, the most in one frame ${fmt(s.replaysMax, 0)} · blanks ${s.blanks}`);
+    console.log(`  records/frame        remade ${fmt(s.recordedMed, 1)} · written ${fmt(s.writtenMed, 1)} (medians)`);
+    console.log(`  the worst frames     ${perRound.map((p) => `${fmt(p.worst.ms, 1)} ms (${p.worst.rasters} rasters, ${p.worst.replays} replays, ${p.worst.recorded} remade)`).join(" · ")}`);
+    rows.push(["zoom-written", `p50 ${fmt(s.p50.median)} · p95 ${fmt(s.p95.median)} · worst ${fmt(s.max.median)} ms JS`, `${fmt(s.rasters, 0)} rasters a round (≤ ${fmt(s.rastersMax, 0)} a frame) · ${fmt(s.replays, 0)} replays (≤ ${fmt(s.replaysMax, 0)} a frame) · remade ${fmt(s.recordedMed, 1)}/frame · written ${fmt(s.writtenMed, 1)}/frame`, s.loads.join(" ")]);
   }
 
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
