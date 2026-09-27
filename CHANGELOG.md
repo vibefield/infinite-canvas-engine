@@ -14,6 +14,10 @@ dom's world-space half, core's surface infra, the profiles, the widget React bin
 `apps/desk`. **0.14.0 BREAKS: the break list is the `### Removed` section below.** Everything under
 `### Added` was additive when it landed; D5b is what turned the additions into the only way.
 
+**design-016 — the kit and the pegboard (M21), IN BUILD; it rides the same 0.14.0 cut.** The rulers on the product's
+desk, a GPU profiler, a public render kit the built-in kinds move onto (and into their own package), the 10,000-object
+gates, and the pegboard widget tray. Its blocks below are headed `design-016 K<n>`.
+
 ### Added
 
 <!-- design-015 D1 (2026-09-25) -->
@@ -670,6 +674,18 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   (4 of 6 one-tab replays, always after a whiteboard stroke laid by hand); the rig now waits the desk quiet after the
   pick-up (two-tab-notebook.mjs `pickUp`) — 39/39 three times running.
 
+<!-- design-016 K1 (2026-09-27) -->
+- **The rulers print on `apps/desk`'s desk** (design-016 §3): the app mounts its own grid (`DESK_GRID` — the engine's
+  with the print on; `DEFAULT_MAT_CONFIG.ruler.on` stays false, RULER.md §5: a host prints them on the root slot); `u`
+  toggles them through the dev panel's params, so the key, the panel row and the saved desk agree (`PARAMS_VERSION` 2 —
+  a desk saved "off" before boots with them on; the panel applies its saved tweaks at install); the rulers' glyph atlas
+  follows the device's ratio and the panel's text size; the panel's rulers section reaches the ground demo's parity (fine
+  ticks from/full, labels from/full, text size/inset/gap, characters). With the print on, the selection's extent, the laser
+  ticks and the menu under the top band show on the product's desk. `rig:ruler` (23 → 37 rows) witnesses the product as it
+  boots — no `setScene`, the runtime atlas.
+- **`startRafLoop(engine, beforeStep?)`** (`@ice/dom`): an optional hook run before each step that runs (never while
+  parked), inside the step's `try` — where a host reads what the platform changes without an event.
+
 <!-- design-016 K2 (2026-09-27) -->
 - **The GPU profiler** (design-016 §4, K-L5 "measured on real frames"): ICE read nothing from the GPU; now it reads every
   drawn frame. Both device paths ask for `timestamp-query` whenever the adapter has it (`EngineGpu.hasTimestampQuery`
@@ -696,6 +712,26 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   (`tapSubmits`), and `copyExternalImageToTexture` (a print's picture, the calendar's tiles) counts as an upload.
   rig:gpu (16 rows) joins `gate:landing`; rig:stress asserts `crossOriginIsolated` and reports the pan's real-frame GPU
   span p50/p95 with its draws / pipelines / bind groups a frame, and each kind's cost at the pan's end.
+
+<!-- design-016 K4a (2026-09-27) -->
+- **The render kit — `@ice/desk/kit` / `@vibecook/ice/desk/kit`** (design-016 §5, K-L1 · K-L3): what the six kinds share,
+  made public — the slot's view and its WGSL (`kitWgsl(names, own, text)` composes the shared modules BY NAME: view,
+  portal, sdf, light — lamp, gobo, night, noise — ruler), `MatPass` as an interface (the mat is `CuttingMat implements
+  MatPass`), sdf, springs, mips, seeds, `LayeredKind`, the notebook's 3D kit (eye, rigid placement, paper texture, mesh
+  writer, book records, `book.wgsl`, the layer composite), strokes and inking, the hand's pens and faces, the editor
+  lease's types, the typing docs. Every type the kind contract names is nameable from a public entry (a d.ts test holds
+  it); `pack:audit` reads nine entries.
+- **One view block per slot** (K-L3): the mat's uniforms are the block every kind binds — no kind keeps a copy
+  (`view.w` carries the objects' presence; the mat reads its own from `presence`, 864 → 880 B — D-K4a.1); a kind with no
+  objects in a slot is skipped; one wind target per plate serves every slot; knobs and layered records are written when
+  they change. rig:stress's pan: uploads 35.2 → 6.3 KB a frame, `writeBuffer`s 68 → 10.1, the JS step 1.12 → 0.91 ms;
+  the golden byte-identical through every step.
+- **The walls** (dependency-cruiser): `kinds-import-only-the-sdk` (a kind's files — `KIND_FILES` — import, inside the
+  desk, only the kit, the engine and the contract's modules; outside it core's and kernel's entries), `no-kind-imports-a-kind`
+  (a kind names another only by its registry name — the mini mat accepts `"desk.note"`, the calendar asks the host for
+  `"paper"`: D-K4a.3), `the-kit-imports-no-kind`; 121 private import statements (41 kind→kind) → 0. The kind specs left
+  `theme.ts` for their kinds (`PAPER`, `BOOK`, `BOARD`, `MINIMAT`), the numbers they shared are `kit/physics.ts`, and the
+  mini mat's portal gate is the engine's `PORTAL.gate`.
 
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
@@ -1086,6 +1122,12 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   GPU error takes the layer to `degraded` (#8).
 - **`desk.stroke` v4** stores each stroke's fibre `seed` (v3 → v4 stamps −1, positional as before), so a peer's earlier
   stroke no longer re-seeds mine on replay (law #13).
+
+<!-- design-016 K1 (2026-09-27) -->
+- **The desk follows a change of the device's ratio** (`createDeskHost`): a ratio-only change — another display, the
+  browser's zoom, an emulated ratio — resizes nothing and (emulated) fires no `(resolution)` media-query `change`, so the
+  viewport, the canvas and the rulers' atlas kept the old ratio until a window resize. The host reads `devicePixelRatio`
+  before every step and re-syncs the viewport when it moved; at rest it writes nothing and idle still submits nothing.
 
 ## [0.13.0] — 2026-09-07
 

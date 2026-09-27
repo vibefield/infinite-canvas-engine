@@ -1496,6 +1496,60 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2 and K4a LANDED 2026-09-27)**
+
+*(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
+ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
+practices like instancing to push the overall performance to production grade?"; "in original ICE vision, the engine
+itself provide SDKs and all actual widgets are implemented on top of SDKs, so that future vibefield side will further
+extend all sorts of new object widgets with plugins"; and a widget tray that is his SDF pegboard
+(`research/sdf-pegboard`) sliding up as a bottom drawer, the kinds sitting in it, its pattern scrolling without end. The
+design is `draft/design-016-the-kit-and-the-pegboard.md` (five recons over `c949a98`, the laws K-L1…K-L6, the ladder),
+the tray's `draft/design-017-the-pegboard-tray.md`, the landing log `draft/design-016-implementation-plan.md` —
+local-dev only.)*
+
+The desk becomes an SDK the built-in kinds are only the first users of, and it gets measured on the GPU. The ENGINE had the
+ground demo's rulers byte for byte but the product never printed them; ICE read nothing from the GPU; notes, mini mats and
+marks were already instanced from persistent records, but prints and boards drew one object per draw, the books redrew
+full-canvas MSAA layers every frame, every kind re-uploaded the slot's view block (≈ 36 KB a frame), and memory had no
+ceiling for pictures; the world contract was plugin-grade but every kind reached private internals (172 imports) and each
+other (57), and the SDK and the built-ins shipped as one. M21 turns the rulers on, builds the GPU profiler (extending
+`@ice/devtools`), makes a public render kit and moves the kinds onto it and into their own package, opens the lists a
+plugin kind could not join, takes prints/boards/books/zoom/idle to the 10,000-object gates, and adds the pegboard tray —
+drawn by the desk, its specimens the kinds' own draws, taking one through core's `insertByDrag`.
+
+- **K1 — the rulers, on** (**LANDED 2026-09-27**, `356377c` … `b46fcd3`): the product mounts `DESK_GRID` (the engine's
+  grid with the print on; the engine's default stays off — RULER.md §5); `u` toggles the print through the panel's params
+  (key, panel and saved desk agree; `PARAMS_VERSION` 2; the panel applies itself at install); the glyph atlas follows the
+  device's ratio and the panel's text size; the panel at the demo's parity. Found and fixed on the way: a ratio-only
+  change (another display, the browser's zoom, an emulated ratio) left the desk drawing at the old ratio until a window
+  resize — the host now reads the ratio before each step (`startRafLoop(engine, beforeStep?)`). rig:ruler 23 → 37 rows on
+  the product as it boots; the owed 1× atlas row paid. RULER.md §8's seven calls stand as built (design-016 §9 C-6).
+- **K2 — the GPU profiler** (**LANDED 2026-09-27**, eleven commits → `b2d50cd`, rebased over K1): `timestamp-query` on
+  both device paths; `instrumentPasses` (draws/instances by kind, pipelines, bind groups, every labelled pass timed,
+  resolved inside the frame's own command buffers, a never-waiting readback ring), the memory ledger, `handle.profiler()`
+  (the SPAN as headline, `busy`, p50/p95/max, the quantisation flag, a Perfetto capture), per-kind cost by ablation with an
+  A/A control; `@ice/devtools` gains the `gpu` slot (a structural mirror the app's typecheck holds); apps/desk mounts the
+  dock on `~`, its code a lazy chunk. `rig:gpu` (17) joins the gate. Measured: a pan-end frame = 51 draws, 29 pipelines,
+  52 bind groups (prints cut the note run into 7); 243 MB live (one notebook 164 MB; the calendar kind 42.4 MB with no
+  calendar on the desk) — K6/K7's inputs.
+- **K3 — the pegboard and the drawer** (design-016 §7, design-017 §1–§7): built (`Tray` in the world, `trayInput`
+  beside the hand's, the board shaded in closed form at 0.20 ms, `a`, rig:tray 24 rows, four tray stills); taking the
+  look fixes (the face's grain, the research's lamp through the slots) and rebasing onto the kit.
+- **K4a — the render kit** (**LANDED 2026-09-27**, seven commits → `7759551`, rebased over K2): `@ice/desk/kit` /
+  `@vibecook/ice/desk/kit` — the slot's view and its WGSL by name (`kitWgsl`), `MatPass` an interface, what kinds shared
+  (sdf, springs, mips, seeds, `LayeredKind`, the notebook's 3D kit, strokes, the hand's pens and faces, the editor lease's
+  types); every contract type nameable; ONE view block per slot (uploads 35.2 → 6.3 KB/frame, writes 68 → 10.1, JS step
+  1.12 → 0.91 ms on the stress pan); the walls `kinds-import-only-the-sdk` · `no-kind-imports-a-kind` ·
+  `the-kit-imports-no-kind` (121 private imports → 0). The golden byte-identical through every step.
+- K4b — the package split · K5 — tray specimens and taking one · K6 — residency and instancing · K7 — layers, wakes,
+  scale · K8 — plugin parity and a third-party kind · K9 — the review and its fixes: planned (design-016 §8).
+
+**Exit:** design-016 §6's gates on `rig:stress` and a new `rig:scale` (10,000 objects, mixed order, real pictures) with
+the load beside every number; the committed golden byte-identical through every refactor; every built-in kind compiling
+against the public entries alone and a third-party kind in its own package on the desk and in the tray; the tray's
+witnesses (design-017 §10); ci + `gate:landing` exit 0 on every landing, graded by the orchestrator on the exact SHA.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
