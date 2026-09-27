@@ -4,7 +4,7 @@
 // have. Here a THIRD-PARTY object — a kind of the test's own, no reference kind in sight — lends a service, declares a text part
 // over the desk's ONE editor (the desk's since K8a — editor-lease.test.ts leases it), and mounts a half handed it. The halves are
 // made at the mount, before the device boots, so a fake page (the few members a mount reads) is enough.
-import { createCanvasEngine, type WidgetType } from "@ice/core";
+import { createCanvasEngine, InsertGhost, type WidgetType } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { deskLayer, type DeskLayerOptions } from "../src/host/layer";
 import type { KindPass } from "../src/kind";
@@ -115,6 +115,9 @@ describe("an object's DOM half is DECLARED, and the desk builds what the objects
       expect(sticks?.(a)).toBe(true);
       expect(sticks?.(b)).toBe(false);
       expect(host?.provides("test.nothing")).toBeUndefined();
+      // an INSERT GHOST (core's tray adoption, K5b) provides nothing to a driver, as it is no kind's: only the twin it becomes
+      ce.world.addComponent(a, InsertGhost, { type: Sticky.type, props: "{}", screenX: 0, screenY: 0 });
+      expect(sticks?.(a)).toBe(false);
     } finally {
       handle.dispose();
       ce.dispose();
