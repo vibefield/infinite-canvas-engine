@@ -39,6 +39,8 @@ export const Notebook = defineObject({
   },
   size: { w: NOTEBOOK.cover.width, h: NOTEBOOK.cover.height },
   kind: notebookKind(),
+  // on the pegboard tray (design-017 §8): the notebook standing on a shelf (a whole number of pitches high, so its top meets the hooks')
+  tray: { label: "Notebook", category: "paper", order: 2, hang: { w: 143, h: 200, accessory: "shelf", pegs: [[-1.5, 0.5], [1.5, 0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
   // its strokes are its DATA (D3t-b, the Board's prefab): the catalog stamps, gates and migrates them with the book
   data: [StrokePrefab],

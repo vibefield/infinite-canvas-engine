@@ -13,6 +13,8 @@ export * from "./bezier";
 export * from "./easing";
 export * from "./nav-flight";
 export * from "./layout";
+// The pegboard tray's lattice law (design-017 §8, K5a): where the kinds hang on the board.
+export * from "./tray";
 // PARKED (design-015 §1, D5b): the shelf packer's one reader was core's residency layer
 // allocator, deleted with the surface infra. Kept, unread, for an image or text atlas.
 export * from "./atlas-pack";

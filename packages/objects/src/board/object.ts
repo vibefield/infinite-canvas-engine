@@ -34,6 +34,8 @@ export const Board = defineObject({
   },
   size: { w: BOARD.spec.width, h: BOARD.spec.height },
   kind: boardKind(),
+  // on the pegboard tray (design-017 §8): the whiteboard on a rail
+  tray: { label: "Whiteboard", category: "surface", order: 1, hang: { w: 240, h: 160, accessory: "rail", pegs: [[-2.5, -0.5], [2.5, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: true, snap: "both", drop: "never" },
   // its strokes and wipes are its DATA (D3t-a): the catalog stamps, gates and migrates their prefab with the board's own
   data: [StrokePrefab],

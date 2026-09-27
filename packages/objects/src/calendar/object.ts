@@ -46,6 +46,8 @@ export const Calendar = defineObject({
   },
   size: { w: PAD.W, h: PAD.H },
   kind: calendarKind(),
+  // on the pegboard tray (design-017 §8): the pad on a hook
+  tray: { label: "Calendar", category: "paper", order: 3, hang: { w: 152, h: 160, accessory: "hook", pegs: [[0, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both", drop: "never" },
   // its entries and its pins are its DATA (D3t-a's door, D3t-c): the catalog stamps, gates and migrates their prefabs with the pad's own
   data: [EventPrefab, PinPrefab],

@@ -297,6 +297,7 @@ export {
   type WidgetRename,
   type WidgetRenameEntry,
   type WidgetType,
+  type TrayEntry,
 } from "./widget/define-widget";
 // design-015 §8 (D3t-a): the held bar's tools — a mode (`HeldTool`, the tool in hand) or an action (an op), with its keys
 export { type HeldToolApi, type HeldToolDef, type KeyChord, keyMatches, matchHeldTool } from "./widget/held-tools";

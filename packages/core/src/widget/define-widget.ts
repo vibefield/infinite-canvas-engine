@@ -48,6 +48,7 @@ import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/p
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
 import { type HeldToolDef, validateHeldTools } from "./held-tools";
+import { hangError, type TrayHang } from "@ice/kernel";
 import type { CanvasType } from "../canvas/define-canvas-type";
 import type { FrameProjection } from "../canvas/frame-projection";
 
@@ -293,6 +294,25 @@ export interface WidgetDef {
    * §6.4 cross-schema movement).
    */
   readonly migrate?: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
+  /**
+   * The widget's TRAY ENTRY (design-017 §8; K5a — K-L2: a plugin kind declares the same): a specimen of the object hangs on the
+   * pegboard tray, drawn by its own kind. No list in the engine names a kind — the catalog's widgets that carry an entry ARE the
+   * tray's contents. Only an object has one (a specimen is its face).
+   */
+  readonly tray?: TrayEntry;
+}
+
+/**
+ * A tray entry (design-017 §8): `label` — the specimen's name tag; `props` — the specimen's props over the widget's defaults (a
+ * copy dragged out takes them, K5b); `hang` — how it hangs (kernel `TrayHang`: its size on the board in CSS px, its pegs in pitches
+ * from its hang point, its accessory); `category`, then `order`, then the type — its place in the lattice law's order.
+ */
+export interface TrayEntry {
+  readonly label: string;
+  readonly props?: Readonly<Record<string, unknown>>;
+  readonly hang: TrayHang;
+  readonly order?: number;
+  readonly category?: string;
 }
 
 export interface WidgetGroup {
@@ -345,6 +365,8 @@ export interface WidgetType {
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
   /** Pre-attached behaviors, normalized (spawn tx for durable, equip for runtime). */
   readonly behaviors: readonly WidgetBehaviorEntry[];
+  /** The tray entry (design-017 §8; K5a), validated and frozen; undefined = the widget hangs nothing on the tray. */
+  readonly tray: TrayEntry | undefined;
 }
 
 /** Stamped by the equip system once a projected widget carries its capability tags. */
@@ -606,6 +628,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
     );
   }
 
+  const tray = def.tray === undefined ? undefined : compileTrayEntry(def.type, def.tray, hasObject, props);
+
   const version = def.version ?? 1;
   if (def.migrate !== undefined) validateMigrateChain(def.type, version, def.migrate);
 
@@ -682,6 +706,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     drop: interaction.drop ?? "into",
     migrate: def.migrate ?? {},
     behaviors: behaviorEntries,
+    tray,
   };
   registry.set(def.type, widget);
   for (const decl of renameDecls) {
@@ -693,6 +718,37 @@ export function defineWidget(def: WidgetDef): WidgetType {
     });
   }
   return widget;
+}
+
+/**
+ * A tray entry, checked and frozen (design-017 §8): an object's only; a name tag; its props the widget's own, each valid under its
+ * spec; a hang the lattice law can lay (kernel `hangError`); a finite order and a string category if given.
+ */
+function compileTrayEntry(type: string, entry: TrayEntry, hasObject: boolean, props: PropsDecl): TrayEntry {
+  const fail = (why: string): never => { throw new Error(`ice: defineWidget("${type}") tray entry — ${why} (design-017 §8).`); };
+  if (!hasObject) fail("only an object hangs on the tray: a specimen is its kind's own drawing, and this widget has no object binding");
+  if (typeof entry !== "object" || entry === null) fail("an entry is { label, props?, hang, order?, category? }");
+  if (typeof entry.label !== "string" || entry.label.trim() === "") fail("its label (the specimen's name tag) is not a non-empty string");
+  const given = entry.props ?? {};
+  if (typeof given !== "object" || given === null || Array.isArray(given)) fail("its props are not a record");
+  for (const [name, value] of Object.entries(given)) {
+    const spec = props[name];
+    if (spec === undefined) fail(`its props name "${name}", which the widget does not declare`);
+    const result = (spec as PropSpec)["~standard"].validate(value);
+    if ("issues" in result && result.issues !== undefined) fail(`its prop "${name}" is invalid — ${result.issues[0]?.message}`);
+  }
+  const why = hangError(entry.hang);
+  if (why !== null) fail(`its hang: ${why}`);
+  if (entry.order !== undefined && !Number.isFinite(entry.order)) fail(`its order ${String(entry.order)} is not a finite number`);
+  if (entry.category !== undefined && typeof entry.category !== "string") fail("its category is not a string");
+  const hang = entry.hang;
+  return Object.freeze({
+    label: entry.label,
+    props: Object.freeze({ ...given }),
+    hang: Object.freeze({ w: hang.w, h: hang.h, accessory: hang.accessory, pegs: Object.freeze(hang.pegs.map((p) => Object.freeze([p[0], p[1]] as const))) }),
+    ...(entry.order !== undefined ? { order: entry.order } : {}),
+    ...(entry.category !== undefined ? { category: entry.category } : {}),
+  });
 }
 
 /** TEST-ONLY wipe (mirrors __resetPrefabsForTests; not on the barrel). */

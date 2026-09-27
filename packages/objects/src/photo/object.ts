@@ -30,6 +30,8 @@ export const Photo = defineObject({
   },
   size: { w: printExtent(0, 0).w, h: printExtent(0, 0).h },
   kind: photoKind(),
+  // on the pegboard tray (design-017 §8): a print, clipped
+  tray: { label: "Print", category: "paper", order: 1, hang: { w: 150, h: 100, accessory: "clip", pegs: [[0, -0.5]] } },
   // the wheel TURNS a print held in a hand (PHOTO.md; D3t-a — core cedes that pointer's wheel to it, `PressWheel`)
   interaction: { selectable: true, movable: false, resizable: false, snap: "both", wheelTurns: true },
   provides: [PHOTO_TYPE],

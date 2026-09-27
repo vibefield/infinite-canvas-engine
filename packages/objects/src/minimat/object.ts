@@ -34,6 +34,8 @@ export const MiniMat = defineObject({
   },
   size: { w: MINIMAT.size.w, h: MINIMAT.size.h },
   kind: minimatKind(),
+  // on the pegboard tray (design-017 §8): a mini mat on a shelf
+  tray: { label: "Mini mat", category: "surface", order: 0, hang: { w: 213, h: 160, accessory: "shelf", pegs: [[-2, 0.5], [2, 0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
   container: {
     accepts: [NOTE_TYPE, MINIMAT_TYPE],
