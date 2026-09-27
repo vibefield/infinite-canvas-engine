@@ -243,3 +243,18 @@ export function layTray(items: readonly TrayItem[], width: number, pitch: number
 export function trayScrollMax(bottom: number, face: number, pitch: number): number {
   return bottom <= 0 ? 0 : Math.max(0, bottom + pitch - face);
 }
+
+/**
+ * A specimen's FIT (design-017 §8–§9; K5a's law, K5b's grab point): its object at its natural size seen at the scale its hang asks —
+ * the smaller of the two ratios, so the whole object shows — centred in the hang's rect. `zoom` is that scale; `x`/`y`/`w`/`h` the
+ * object as drawn, in the rect's units: what a press on the specimen grabs (the insert's anchor is the press across THIS rect).
+ */
+export function specimenFit(
+  rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number },
+  natural: { readonly w: number; readonly h: number },
+): { readonly zoom: number; readonly x: number; readonly y: number; readonly w: number; readonly h: number } {
+  const zoom = Math.min(rect.w / natural.w, rect.h / natural.h);
+  const w = natural.w * zoom;
+  const h = natural.h * zoom;
+  return { zoom, x: rect.x + (rect.w - w) / 2, y: rect.y + (rect.h - h) / 2, w, h };
+}

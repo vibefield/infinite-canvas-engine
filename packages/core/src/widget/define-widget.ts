@@ -303,13 +303,17 @@ export interface WidgetDef {
 }
 
 /**
- * A tray entry (design-017 §8): `label` — the specimen's name tag; `props` — the specimen's props over the widget's defaults (a
- * copy dragged out takes them, K5b); `hang` — how it hangs (kernel `TrayHang`: its size on the board in CSS px, its pegs in pitches
- * from its hang point, its accessory); `category`, then `order`, then the type — its place in the lattice law's order.
+ * A tray entry (design-017 §8): `label` — the specimen's name tag; `props` — the specimen's props over the widget's defaults: its FACE
+ * on the board (K5b — a note with a word on it, a print with a picture); `take` — what one taken off the board is made with (K5b,
+ * D-K5b.1): absent, the widget's own defaults (a taken note is blank, a taken calendar shows its today's month); `"face"`, the
+ * specimen's props; a record, those props (each valid as `props`'); `hang` — how it hangs (kernel `TrayHang`: its size on the board in
+ * CSS px, its pegs in pitches from its hang point, its accessory); `category`, then `order`, then the type — its place in the lattice
+ * law's order.
  */
 export interface TrayEntry {
   readonly label: string;
   readonly props?: Readonly<Record<string, unknown>>;
+  readonly take?: "face" | Readonly<Record<string, unknown>>;
   readonly hang: TrayHang;
   readonly order?: number;
   readonly category?: string;
@@ -729,14 +733,18 @@ function compileTrayEntry(type: string, entry: TrayEntry, hasObject: boolean, pr
   if (!hasObject) fail("only an object hangs on the tray: a specimen is its kind's own drawing, and this widget has no object binding");
   if (typeof entry !== "object" || entry === null) fail("an entry is { label, props?, hang, order?, category? }");
   if (typeof entry.label !== "string" || entry.label.trim() === "") fail("its label (the specimen's name tag) is not a non-empty string");
-  const given = entry.props ?? {};
-  if (typeof given !== "object" || given === null || Array.isArray(given)) fail("its props are not a record");
-  for (const [name, value] of Object.entries(given)) {
-    const spec = props[name];
-    if (spec === undefined) fail(`its props name "${name}", which the widget does not declare`);
-    const result = (spec as PropSpec)["~standard"].validate(value);
-    if ("issues" in result && result.issues !== undefined) fail(`its prop "${name}" is invalid — ${result.issues[0]?.message}`);
-  }
+  const valid = (given: unknown, what: string): Readonly<Record<string, unknown>> => {
+    if (typeof given !== "object" || given === null || Array.isArray(given)) return fail(`its ${what} are not a record`);
+    for (const [name, value] of Object.entries(given)) {
+      const spec = props[name];
+      if (spec === undefined) fail(`its ${what} name "${name}", which the widget does not declare`);
+      const result = (spec as PropSpec)["~standard"].validate(value);
+      if ("issues" in result && result.issues !== undefined) fail(`its ${what === "props" ? "prop" : "take prop"} "${name}" is invalid — ${result.issues[0]?.message}`);
+    }
+    return given as Readonly<Record<string, unknown>>;
+  };
+  const given = valid(entry.props ?? {}, "props");
+  const take = entry.take === undefined || entry.take === "face" ? entry.take : valid(entry.take, "take props");
   const why = hangError(entry.hang);
   if (why !== null) fail(`its hang: ${why}`);
   if (entry.order !== undefined && !Number.isFinite(entry.order)) fail(`its order ${String(entry.order)} is not a finite number`);
@@ -745,10 +753,17 @@ function compileTrayEntry(type: string, entry: TrayEntry, hasObject: boolean, pr
   return Object.freeze({
     label: entry.label,
     props: Object.freeze({ ...given }),
+    ...(take !== undefined ? { take: take === "face" ? take : Object.freeze({ ...take }) } : {}),
     hang: Object.freeze({ w: hang.w, h: hang.h, accessory: hang.accessory, pegs: Object.freeze(hang.pegs.map((p) => Object.freeze([p[0], p[1]] as const))) }),
     ...(entry.order !== undefined ? { order: entry.order } : {}),
     ...(entry.category !== undefined ? { category: entry.category } : {}),
   });
+}
+
+/** What one taken off the tray is made with (design-017 §9; K5b, D-K5b.1): the entry's `take` — the face's props, its own, or none (the widget's defaults). */
+export function trayTakeProps(entry: TrayEntry): Readonly<Record<string, unknown>> | undefined {
+  if (entry.take === undefined) return undefined;
+  return entry.take === "face" ? entry.props : entry.take;
 }
 
 /** TEST-ONLY wipe (mirrors __resetPrefabsForTests; not on the barrel). */

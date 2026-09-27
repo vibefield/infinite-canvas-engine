@@ -7,7 +7,7 @@
 // (flux — the tray's springs). A PURE module for the frames; `TraySlots` holds the GPU half — one slot per specimen, each kind's pass
 // SPAWNED from the root's, a composite kind's (root only, D-D18) made from its program the first time the tray shows one.
 
-import type { TrayAccessory } from "@ice/kernel";
+import { specimenFit, type TrayAccessory } from "@ice/kernel";
 import type { GridConfig } from "../mat/grid";
 import type { Lamp } from "../mat/lamp";
 import type { SlotKind, SlotSet } from "../ground";
@@ -112,7 +112,8 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
     const y0 = drawn.rect.y + s.rect.y - drawn.scroll;
     const reach = P * 2;
     if (y0 + s.rect.h + reach < face.cy - face.hy || y0 - reach > Math.min(height, face.cy + face.hy)) continue;
-    const zoom = Math.min(s.rect.w / s.natural.w, s.rect.h / s.natural.h);
+    // the kernel's fit (K5b — core's grab point reads the same law): the smaller ratio, centred in the hang
+    const { zoom } = specimenFit(s.rect, s.natural);
     const cx = x0 + s.rect.w / 2;
     const cy = y0 + s.rect.h / 2;
     const view = { camX: -cx / zoom, camY: -cy / zoom, zoom, width, height, dpr };

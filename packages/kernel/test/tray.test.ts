@@ -5,7 +5,7 @@
  * at another width; the hang's validation.
  */
 import { describe, expect, it } from "vitest";
-import { hangError, hangFootprint, layTray, PEG_LATTICE, TRAY_SPACING, type TrayHang, type TrayItem, type TrayPlaced, trayScrollMax } from "../src";
+import { hangError, hangFootprint, layTray, PEG_LATTICE, specimenFit, TRAY_SPACING, type TrayHang, type TrayItem, type TrayPlaced, trayScrollMax } from "../src";
 
 const P = 40;
 const hook2: TrayHang = { w: 120, h: 120, pegs: [[-1, -0.5], [1, -0.5]], accessory: "hook" };
@@ -135,5 +135,16 @@ describe("the tray's lattice law", () => {
     const fp = hangFootprint(shelf, P);
     expect(fp.y0).toBeCloseTo(-140 / P, 9);
     expect(fp.x0).toBeLessThan(-100 / P);
+  });
+});
+
+describe("a specimen's fit (K5b — the grab point's frame)", () => {
+  it("scales the object by the smaller ratio, so it shows whole, and centres it in its hang", () => {
+    // a 200 × 100 card in a 120 × 120 hang: × 0.6 → 120 × 60, a 30 band above and below
+    expect(specimenFit({ x: 40, y: 80, w: 120, h: 120 }, { w: 200, h: 100 })).toEqual({ zoom: 0.6, x: 40, y: 110, w: 120, h: 60 });
+    // a tall one: the height binds, the band is at the sides
+    expect(specimenFit({ x: 0, y: 0, w: 150, h: 100 }, { w: 100, h: 200 })).toEqual({ zoom: 0.5, x: 50, y: 0, w: 50, h: 100 });
+    // the same aspect: it fills the hang exactly
+    expect(specimenFit({ x: 10, y: 20, w: 80, h: 80 }, { w: 200, h: 200 })).toEqual({ zoom: 0.4, x: 10, y: 20, w: 80, h: 80 });
   });
 });

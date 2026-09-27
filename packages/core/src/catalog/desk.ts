@@ -186,7 +186,45 @@ export const Tray = defineComponent("Tray", {
   wheelAt: field("f64", { default: 0 }),
   /** K5a: the type of the specimen under the mouse while the drawer is out ("" — none): the hover that lifts it (flux). */
   hover: field("string", { default: "" }),
+  /**
+   * K5b — TAKING ONE (design-017 §9): the type whose copy a pointer has lifted off the board ("" — none): pressed on its specimen and
+   * moved past the slop, still inside the drawer. `takeU`/`takeV` the grab point (0 … 1 across the object as the board draws it — the
+   * spot under the finger stays that spot of the object), `takeX`/`takeY` the pointer as last seen (CSS px) — the copy follows it
+   * (flux). `handed` counts the takes handed to the desk: it bumps on the tick the copy leaves the drawer's open rect (the drawer slides
+   * away, `TrayIntent` spawns the insert ghost after the step); a take that ends without the bump was put back.
+   */
+  take: field("string", { default: "" }),
+  takeU: field("f64", { default: 0.5 }),
+  takeV: field("f64", { default: 0.5 }),
+  takeX: field("f64", { default: 0 }),
+  takeY: field("f64", { default: 0 }),
+  handed: field("u32", { default: 0 }),
 });
+
+/**
+ * K5b — the tray's IN-TICK request to hand a taken copy to the desk (design-017 §9; `HeldIntent`'s shape): the copy left the drawer, so
+ * the facade calls `ops.insertByDrag` once the step returns — the op spawns and enqueues, which no system does mid-tick. `type` the
+ * object type; `x`/`y` the pointer (CSS px) and `pointerId`/`device`/`buttons` its press, which the insert ghost's synthetic down takes
+ * over; `u`/`v` the grab point (the insert's `anchor` — no centre-snap); `homeX`/`homeY` the specimen's spot on screen (the insert's
+ * `home`, where a cancel flies the ghost back). `epoch` bumps per request.
+ */
+export const TrayIntent = defineResource(
+  "TrayIntent",
+  {
+    type: field("string", { default: "" }),
+    x: field("f64", { default: 0 }),
+    y: field("f64", { default: 0 }),
+    pointerId: field("string", { default: "mouse" }),
+    device: field(enumOf(["mouse", "touch", "pen"]), { default: "mouse" }),
+    buttons: field("u32", { default: 1 }),
+    u: field("f64", { default: 0.5 }),
+    v: field("f64", { default: 0.5 }),
+    homeX: field("f64", { default: 0 }),
+    homeY: field("f64", { default: 0 }),
+    epoch: field("u32", { default: 0 }),
+  },
+  { durable: false },
+);
 
 /**
  * Runtime, on the TRAY entity (design-017 §8; K5a): what the lattice law last laid (systems/tray.ts `createTrayLay`) — the drawer's
@@ -212,12 +250,20 @@ export const Specimen = defineTag("Specimen");
 /**
  * Runtime, on a local pointer: a press the TRAY took (design-017 §4) — on the lip of a closed drawer (`lip`: a click or a drag up
  * opens it), on the open drawer (`board`: a drag scrolls it), on the dimmed desk (`desk`: released unmoved, it closes the drawer).
- * Where it began (CSS px), the scroll it began from, whether it moved past the slop.
+ * Where it began (CSS px), the scroll it began from, whether it moved past the slop. K5b (§9): on a SPECIMEN (`specimen`: past the
+ * slop its copy lifts; out of the drawer it is handed to the desk) — its `type`, the grab point `u`/`v` across the object as drawn,
+ * the specimen's centre on screen `homeX`/`homeY`; and, once handed, the take CARRIED (`carry`: the insert ghost's drag is this
+ * pointer's — released back over the drawer's open rect, it is cancelled and the ghost flies home).
  */
 export const TrayPress = defineComponent("TrayPress", {
-  kind: field(enumOf(["lip", "board", "desk"]), { default: "desk" }),
+  kind: field(enumOf(["lip", "board", "desk", "specimen", "carry"]), { default: "desk" }),
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
   scroll0: field("f64", { default: 0 }),
   moved: field("bool", { default: false }),
+  type: field("string", { default: "" }),
+  u: field("f64", { default: 0.5 }),
+  v: field("f64", { default: 0.5 }),
+  homeX: field("f64", { default: 0 }),
+  homeY: field("f64", { default: 0 }),
 });

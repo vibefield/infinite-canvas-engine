@@ -15,6 +15,10 @@
  *       500ms over a palette;
  *     - `SweepsContained`: a comment ghost at the tray's world point must not
  *       sweep the widgets resting under the tray into the insert.
+ *     And one is always GIVEN (K5b, design-017 §9): `Movable` — the adoption
+ *     drag is core's whatever the kind's own carry (a print is not core-movable:
+ *     its carry is its physics), so every kind taken off the tray runs the
+ *     ordinary drag to its drop.
  *     The projected twin gets the FULL tag set from the equip system.
  *
  *  2. Enqueue ONE synthetic un-flagged `down` (Law 2 — this op is an adapter
@@ -26,7 +30,7 @@
  */
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { screenToWorld, type CameraState } from "@ice/kernel";
-import { Camera, ChildOf, InsertGhost, LongPressDrag, SweepsContained } from "../catalog";
+import { Camera, ChildOf, InsertGhost, LongPressDrag, Movable, SweepsContained } from "../catalog";
 import { Active } from "../catalog/camera-derived";
 import { widgetTypeFor } from "../canvas/engine-catalog";
 import { instantiate } from "../engine/instantiate";
@@ -102,6 +106,7 @@ export function insertByDrag(
     if (tag === LongPressDrag || tag === SweepsContained) continue;
     world.addTag(ghost, tag);
   }
+  if (!world.hasTag(ghost, Movable)) world.addTag(ghost, Movable);
   world.addTag(ghost, WidgetEquipped);
   world.addTag(ghost, Active);
   const parent = frameParent(world);

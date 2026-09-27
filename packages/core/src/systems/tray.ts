@@ -15,6 +15,14 @@
  *    and a pinch are swallowed) and a press-drag scrolls it; past an end the rest is the band's `stretch` (a reversal unwinds it
  *    first), which lets go once the scroll input has been quiet `letGoMs`. A click on the dimmed desk — pressed and released there,
  *    unmoved — closes it.
+ *  - K5b, TAKING ONE (design-017 §9): a press on a SPECIMEN is `TrayPress specimen` — its type, the grab point across the object as the
+ *    board draws it (kernel `specimenFit`), the specimen's centre on screen. Past the slop its COPY lifts (`Tray.take` and the pointer:
+ *    the renderer's flux draws it; the specimen stays hung); a press on a specimen never scrolls the board. Out of the drawer's open
+ *    rect the copy is HANDED to the desk: the drawer slides away (`open` false), `handed` bumps, and the one-tick `TrayIntent` asks the
+ *    facade for `ops.insertByDrag` after the step — the insert ghost under the same grab point, its synthetic down this pointer's, the
+ *    ordinary drag from there. The press becomes `carry`: released back over the drawer's open rect, the ghost's gesture is CANCELLED
+ *    (`CancelRequest` — the ctl sweep reads it this tick, before the release can commit) and it flies home. Released inside the drawer,
+ *    or the drawer shut under it (Esc, the key), the take is put back: nothing was made, nothing enters undo.
  *
  * Where the drawer is comes through the SEAM `TrayPoseSlot` beside `heldPose`: the renderer's word on the drawer as it DREW it this
  * frame (its rect mid-slide, the scroll range its layout gives), so a hit and the clamp agree with the pixels. Nothing here reads a
@@ -22,11 +30,12 @@
  */
 import type { Component, Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
-import { layTray, type TrayItem } from "@ice/kernel";
-import { Specimen, Tray, TrayContent, TrayPress } from "../catalog/desk";
+import { layTray, specimenFit, type TrayItem } from "@ice/kernel";
+import { Specimen, Tray, TrayContent, TrayIntent, TrayPress } from "../catalog/desk";
 import { HandledByWidget, LocalPointer, Pointer, PointerButtons, PointerMods, PointerScreen, PointerWheel, WentCancelled, WentDown, WentUp, WheelHandled } from "../catalog/pointer";
 import { ChildOf, Position, Size } from "../catalog/scene";
-import { engineCatalogFor } from "../canvas/engine-catalog";
+import { engineCatalogFor, widgetTypeFor } from "../canvas/engine-catalog";
+import { Viewport } from "../catalog/camera-derived";
 import { FrameInfo } from "../engine/frame-info";
 import { cancelActiveGestures } from "../ops/gestures";
 import { type ComponentInit, type FieldWrite, PrefabId } from "../schema/prefab";
@@ -60,6 +69,8 @@ export interface TrayPoseSlot { current: TrayPoseSource | null }
 export const TRAY_INPUT = { slopPx: 4, lipDragPx: 10, handlePx: 60, lipPadPx: 8, letGoMs: 120 } as const;
 
 const trayQ = defineQuery([Tray]);
+/** A tray press on no specimen (K5b): its take fields at rest. */
+const NO_TAKE = { type: "", u: 0.5, v: 0.5, homeX: 0, homeY: 0 } as const;
 const localPointerQ = defineQuery([Pointer, PointerScreen, LocalPointer]);
 
 /** The tray's specimens (K5a): the tray entity's children tagged `Specimen`, in sibling order. */
@@ -69,15 +80,15 @@ export function specimensOf(world: World, tray: Entity): Entity[] {
   return out;
 }
 
-/** The specimen at a board point (board px — x from the drawer's left edge, y down from the board's top at scroll 0): its type, "" for none. */
-function specimenAt(world: World, tray: Entity, bx: number, by: number): string {
-  let hit = "";
+/** The specimen at a board point (board px — x from the drawer's left edge, y down from the board's top at scroll 0): its type and where it hangs, or undefined. */
+function specimenAt(world: World, tray: Entity, bx: number, by: number): { readonly type: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number } | undefined {
+  let hit: { type: string; x: number; y: number; w: number; h: number } | undefined;
   for (const e of specimensOf(world, tray)) {
     const p = world.get(e, Position);
     const z = world.get(e, Size);
     const id = world.get(e, PrefabId)?.id;
     if (p === undefined || z === undefined || typeof id !== "string") continue;
-    if (bx >= p.x && bx <= p.x + z.w && by >= p.y && by <= p.y + z.h) hit = id;
+    if (bx >= p.x && bx <= p.x + z.w && by >= p.y && by <= p.y + z.h) hit = { type: id, x: p.x, y: p.y, w: z.w, h: z.h };
   }
   return hit;
 }
@@ -102,6 +113,11 @@ export function scrollBy(scroll: number, stretch: number, d: number, max: number
 }
 
 export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlot }): System {
+  /** The one-tick ask to hand a take to the desk (the facade applies it after the step — `HeldIntent`'s way). */
+  const hand = (i: { readonly type: string; readonly x: number; readonly y: number; readonly pointerId: string; readonly device: "mouse" | "touch" | "pen"; readonly buttons: number; readonly u: number; readonly v: number; readonly homeX: number; readonly homeY: number }): void => {
+    const prev = world.getResource(TrayIntent);
+    world.setResource(TrayIntent, { ...i, epoch: (prev?.epoch ?? 0) + 1 });
+  };
   return defineSystem(
     localPointerQ,
     (b, ctx) => {
@@ -109,9 +125,9 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       if (tray === undefined || !ctx.isAlive(tray)) return;
       const t = ctx.read(tray, Tray);
       if (heldEntity(world) !== undefined) {
-        // the hand's focus: the tray stands aside, its presses let go
+        // the hand's focus: the tray stands aside, its presses let go (a take among them — put back)
         for (const r of b) { const p = b.entity(r); if (ctx.has(p, TrayPress)) ctx.removeComponent(p, TrayPress); }
-        if (t.lip || t.hover !== "") ctx.edit(tray).set(Tray, { ...t, lip: false, hover: "" });
+        if (t.lip || (t.hover ?? "") !== "" || (t.take ?? "") !== "") ctx.edit(tray).set(Tray, { ...t, lip: false, hover: "", take: "" });
         return;
       }
       const frame = opts.pose.current?.frame();
@@ -124,8 +140,17 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       let lip = false;
       let hover = "";
       let dragging = false;
+      let take = t.take ?? "";
+      let takeU = t.takeU;
+      let takeV = t.takeV;
+      let takeX = t.takeX;
+      let takeY = t.takeY;
+      let handed = t.handed;
       const over = (x: number, y: number, pad: number): boolean =>
         frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= frame.y - pad;
+      // the drawer's OPEN rect (K5b): its outline at the full slide — the pose's box with its top the view's foot less its height
+      const vh = world.getResource(Viewport)?.h ?? 0;
+      const inOpen = (x: number, y: number): boolean => frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= vh - frame.h;
       // the lip's handle: the notch, `handlePx` either side of the drawer's centre
       const onHandle = (x: number, y: number): boolean =>
         frame !== undefined && Math.abs(x - (frame.x + frame.w / 2)) <= TRAY_INPUT.handlePx && y >= frame.y - TRAY_INPUT.lipPadPx;
@@ -137,10 +162,25 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         const down = ctx.hasTag(p, WentDown) && !chrome && ((ctx.get(p, PointerButtons)?.buttons ?? 0) & 1) !== 0;
         const press = ctx.get(p, TrayPress);
         if (!open) {
+          if (press?.kind === "carry") {
+            // K5b: the take handed to the desk — the insert ghost's drag is this pointer's (its synthetic down included: never the
+            // lip's). Released back over the drawer's open rect, the gesture is cancelled — this tick's ctl sweep, before the release
+            // can commit — and the ghost flies home; anywhere else the ordinary drag ends it.
+            const ended = ctx.hasTag(p, WentUp) || ctx.hasTag(p, WentCancelled);
+            if (ctx.hasTag(p, WentUp) && inOpen(s.x, s.y)) cancelActiveGestures(world);
+            if (ended) ctx.removeComponent(p, TrayPress);
+            continue;
+          }
+          if (press?.kind === "specimen") {
+            // K5b: the drawer shut under a take (Esc, the key, a peer's op) — the copy goes back on its peg; nothing was made
+            take = "";
+            ctx.removeComponent(p, TrayPress);
+            continue;
+          }
           const onLip = onHandle(s.x, s.y);
           if (onLip && ctx.read(p, Pointer).device === "mouse") lip = true;
           if (down && onLip) {
-            ctx.addComponent(p, TrayPress, { kind: "lip", x: s.x, y: s.y, scroll0: scroll, moved: false });
+            ctx.addComponent(p, TrayPress, { kind: "lip", x: s.x, y: s.y, scroll0: scroll, moved: false, ...NO_TAKE });
             if (!ctx.hasTag(p, HandledByWidget)) ctx.addTag(p, HandledByWidget);
             continue;
           }
@@ -162,7 +202,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         if (!ctx.hasTag(p, HandledByWidget)) ctx.addTag(p, HandledByWidget);
         if (!ctx.hasTag(p, WheelHandled)) ctx.addTag(p, WheelHandled);
         // the specimen under the mouse (K5a): the board point as DRAWN — the pose's shown scroll, the band's pull in it
-        if (frame !== undefined && over(s.x, s.y, 0) && ctx.read(p, Pointer).device === "mouse") hover = specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll);
+        if (frame !== undefined && over(s.x, s.y, 0) && ctx.read(p, Pointer).device === "mouse") hover = specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll)?.type ?? "";
         const w = ctx.get(p, PointerWheel);
         if (w !== undefined && (w.dy !== 0 || w.dx !== 0 || w.pinch !== 0) && over(s.x, s.y, 0)) {
           const mods = ctx.get(p, PointerMods);
@@ -172,16 +212,51 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
           }
         }
         if (down) {
-          const kind = over(s.x, s.y, 0) ? "board" : "desk";
-          const next = { kind, x: s.x, y: s.y, scroll0: scroll + stretch, moved: false } as const;
+          const onBoard = over(s.x, s.y, 0);
+          // K5b: a press on a specimen takes it (past the slop) — the grab point across the object as the board draws it
+          const hit = onBoard && frame !== undefined ? specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll) : undefined;
+          const natural = hit === undefined ? undefined : widgetTypeFor(world, hit.type)?.defaultSize;
+          const fit = hit !== undefined && natural !== undefined && natural.w > 0 && natural.h > 0 ? specimenFit(hit, natural) : undefined;
+          const at = { x: s.x, y: s.y, scroll0: scroll + stretch, moved: false };
+          const next = hit !== undefined && fit !== undefined && frame !== undefined
+            ? {
+              ...at, kind: "specimen" as const, type: hit.type,
+              u: Math.min(Math.max((s.x - frame.x - fit.x) / fit.w, 0), 1),
+              v: Math.min(Math.max((s.y - frame.y + frame.scroll - fit.y) / fit.h, 0), 1),
+              homeX: frame.x + fit.x + fit.w / 2, homeY: frame.y + fit.y + fit.h / 2 - frame.scroll,
+            }
+            : { ...at, kind: onBoard ? ("board" as const) : ("desk" as const), ...NO_TAKE };
           if (press !== undefined) ctx.edit(p).set(TrayPress, next);
           else ctx.addComponent(p, TrayPress, next);
-          if (kind === "board") dragging = true;
+          if (next.kind === "board") dragging = true;
           continue;
         }
         if (press === undefined) continue;
         const moved = press.moved || Math.hypot(s.x - press.x, s.y - press.y) > TRAY_INPUT.slopPx;
         const ended = ctx.hasTag(p, WentUp) || ctx.hasTag(p, WentCancelled);
+        if (press.kind === "specimen") {
+          // K5b — TAKING ONE. Released (or cancelled) inside the drawer: the copy goes back on its peg — nothing was made.
+          if (ended) { take = ""; ctx.removeComponent(p, TrayPress); continue; }
+          if (!moved) continue;
+          if (!inOpen(s.x, s.y)) {
+            // out of the drawer: it slides away, and the desk takes the copy — the insert ghost under the same grab point, after the step
+            open = false;
+            take = "";
+            handed += 1;
+            const pt = ctx.read(p, Pointer);
+            hand({ type: press.type ?? "", x: s.x, y: s.y, pointerId: pt.id ?? "mouse", device: pt.device, buttons: ctx.get(p, PointerButtons)?.buttons ?? 1, u: press.u, v: press.v, homeX: press.homeX, homeY: press.homeY });
+            ctx.edit(p).set(TrayPress, { ...press, kind: "carry", moved: true });
+            continue;
+          }
+          // past the slop, in the drawer: the copy is lifted and follows the pointer (the specimen stays hung)
+          take = press.type ?? "";
+          takeU = press.u;
+          takeV = press.v;
+          takeX = s.x;
+          takeY = s.y;
+          if (moved !== press.moved) ctx.edit(p).set(TrayPress, { ...press, moved });
+          continue;
+        }
         if (press.kind === "board" && !ended) {
           // the board under the finger: where it began, less how far the pointer travelled — past an end, the band
           if (moved) {
@@ -199,9 +274,10 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       }
       // the band lets go once the scroll input is quiet — never under a finger still dragging the board — and as the drawer closes
       if (stretch !== 0 && ((!dragging && now - wheelAt > TRAY_INPUT.letGoMs) || !open)) stretch = 0;
-      if (!open) hover = "";
-      if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || lip !== t.lip || hover !== t.hover) {
-        ctx.edit(tray).set(Tray, { open, scroll, stretch, lip: open ? false : lip, wheelAt, hover });
+      if (!open) { hover = ""; take = ""; }
+      if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || lip !== t.lip || hover !== t.hover
+        || take !== t.take || takeU !== t.takeU || takeV !== t.takeV || takeX !== t.takeX || takeY !== t.takeY || handed !== t.handed) {
+        ctx.edit(tray).set(Tray, { open, scroll, stretch, lip: open ? false : lip, wheelAt, hover, take, takeU, takeV, takeX, takeY, handed });
       }
     },
     { name: "trayInput", access: { write: [Tray, TrayPress] } },

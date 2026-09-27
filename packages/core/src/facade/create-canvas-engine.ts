@@ -112,7 +112,7 @@ import { installInteractionStack, type InteractionStack } from "../interaction/i
 import { createNestedCanvas, currentNavFrame, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
 import { NavIntent } from "../nav/nav-geometry";
 import { cancelActiveGestures } from "../ops/gestures";
-import { Held, HeldIntent, HeldTool, HeldView } from "../catalog/desk";
+import { Held, HeldIntent, HeldTool, HeldView, TrayIntent } from "../catalog/desk";
 import { heldEntity } from "../systems/held";
 import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
@@ -121,7 +121,7 @@ import { clearSelection, selectedEntities, setSelection } from "../ops/selection
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
 import { setWidgetProps } from "../widget/set-props";
-import { WidgetEquipped, type WidgetType } from "../widget/define-widget";
+import { trayTakeProps, WidgetEquipped, type WidgetType } from "../widget/define-widget";
 import { registerBuiltinTools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
 import { createDocSession, openDocSession, type DocSession, type DocSessionOpts, type OpenDocResult } from "../doc/doc-kit";
@@ -791,6 +791,33 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     } else putDown();
   };
   const removeHeldIntent = engine.afterStep(applyHeldIntent);
+
+  /**
+   * The tray's HAND-OFF (design-017 §9; K5b — `TrayIntent`): a copy taken off the pegboard left the drawer inside the tick; once it is
+   * over, `ops.insertByDrag` spawns the insert ghost under the same grab point (its `anchor` — no centre-snap), its synthetic down the
+   * pointer's, flying home to the specimen's spot on a cancel — made with what the entry says one taken carries (`trayTakeProps`).
+   * Refused (a read-only document, a frame that takes no such kind): nothing is spawned, and the renderer, seeing no ghost come, puts
+   * the copy back.
+   */
+  let appliedTray = 0;
+  const applyTrayIntent = (): void => {
+    const intent = world.getResource(TrayIntent);
+    if (intent === undefined || intent.epoch === appliedTray) return;
+    appliedTray = intent.epoch;
+    const type = intent.type ?? "";
+    const entry = catalog.widget(type)?.tray;
+    if (entry === undefined) return;
+    const props = trayTakeProps(entry);
+    try {
+      ops.insertByDrag(type, {
+        screenX: intent.x, screenY: intent.y, pointerId: intent.pointerId ?? "mouse", device: intent.device, buttons: intent.buttons,
+        anchor: { u: intent.u, v: intent.v }, home: { x: intent.homeX, y: intent.homeY }, ...(props !== undefined ? { props } : {}),
+      });
+    } catch (err) {
+      console.warn(`ice: the tray could not hand "${type}" to the desk —`, err instanceof Error ? err.message : err);
+    }
+  };
+  const removeTrayIntent = engine.afterStep(applyTrayIntent);
 
   // Settings resources (design-005 §4): construction seeds; live-tunable after.
   //
@@ -1884,6 +1911,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     dispose() {
       removeNavIntent();
       removeHeldIntent();
+      removeTrayIntent();
       previews.dispose();
       closeDoc();
       transitions.dispose();
