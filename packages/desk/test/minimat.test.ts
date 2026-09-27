@@ -173,8 +173,8 @@ describe("the records and the WGSL that reads them (MINIMAT.md §6)", () => {
   it("the shaders compose, name no WGSL reserved word as a field, and read only fields the records declare", () => {
     const here = resolve(import.meta.dirname, "..", "shaders");
     const read = (f: string) => readFileSync(join(here, f), "utf8");
-    const src = miniMatShaders({ portal: read("portal.wgsl"), primitives: read("primitives.wgsl"), mat: read("mat/mat.wgsl"), ruler: read("mat/ruler.wgsl"), minimat: read("minimat/minimat.wgsl"), minimatPass: read("minimat/minimat-pass.wgsl") });
-    expect(() => compose({ structs: [MatUniforms, MiniMatUniforms, MiniMat, ChipRecord], modules: src.modules, entry: src.entry })).not.toThrow();
+    const src = miniMatShaders((files) => Object.fromEntries(Object.entries(files).map(([k, f]) => [k, read(f)])) as never);
+    expect(() => compose(src)).not.toThrow();
     for (const s of [MiniMat, ChipRecord, MiniMatUniforms]) for (const [f] of s.fields) expect(["cast", "active", "filter", "sample", "target", "handle", "layout"]).not.toContain(f);
     const own = (read("minimat/minimat.wgsl") + read("minimat/minimat-pass.wgsl")).replace(/\/\/.*$/gm, "");
     const fields = (s: { fields: readonly (readonly [string, string])[] }) => s.fields.map(([f]) => f);

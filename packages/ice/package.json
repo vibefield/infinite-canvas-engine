@@ -55,6 +55,10 @@
       "types": "./dist/types/packages/ice/src/desk-objects.d.ts",
       "default": "./dist/desk-objects.js"
     },
+    "./desk/kit": {
+      "types": "./dist/types/packages/ice/src/desk-kit.d.ts",
+      "default": "./dist/desk-kit.js"
+    },
     "./react": {
       "types": "./dist/types/packages/ice/src/react.d.ts",
       "default": "./dist/react.js"

@@ -1,34 +1,22 @@
-// Assemble the paper pass's shader parts from raw text — the browser with
-// `?raw` imports, the Node oracle with readFileSync; byte-identical either way.
-// The pass composes the card's primitives and the mat's chain (both pure).
+// Assemble the paper pass's program from the host's shader text — the browser's generated module, the Node oracle's
+// files on disk; byte-identical either way. The kit brings the slot's view block, the portal chain, the card's
+// primitives and the mat's light (kit/wgsl.ts, by name); the note's own records, module and entry follow.
 
-import type { ShaderPart } from "../engine/shader";
+import type { ComposeOptions } from "../engine/shader";
+import { kitWgsl, type ShaderText } from "../kit/wgsl";
+import { Paper, PaperUniforms } from "./layout";
 
-export interface PaperShaders {
-  readonly modules: readonly ShaderPart[];   // portal, primitives, mat, paper
-  readonly entry: ShaderPart;                // paper-pass
-}
+/** The note's own shader files (the kit's pieces come by name). */
+export const PAPER_SHADER_FILES = { paper: "paper/paper.wgsl", paperPass: "paper/paper-pass.wgsl" } as const;
 
-export interface PaperShaderText {
-  readonly portal: string;
-  readonly primitives: string;
-  readonly mat: string;
-  readonly paper: string;
-  readonly paperPass: string;
-}
+/** The paper pass's program: the kit's view · portal · sdf · light, then the note's records, module and entry. */
+export type PaperShaders = ComposeOptions;
 
-export const PAPER_SHADER_FILES: Record<keyof PaperShaderText, string> = {
-  portal: "portal.wgsl",
-  primitives: "primitives.wgsl",
-  mat: "mat/mat.wgsl",
-  paper: "paper/paper.wgsl",
-  paperPass: "paper/paper-pass.wgsl",
-};
-
-export function paperShaders(t: PaperShaderText): PaperShaders {
-  const part = (label: string, text: string): ShaderPart => ({ label, text });
-  return {
-    modules: [part("portal.wgsl", t.portal), part("primitives.wgsl", t.primitives), part("mat/mat.wgsl", t.mat), part("paper/paper.wgsl", t.paper)],
-    entry: part("paper/paper-pass.wgsl", t.paperPass),
-  };
+export function paperShaders(text: ShaderText): PaperShaders {
+  const t = text(PAPER_SHADER_FILES);
+  return kitWgsl(["view", "portal", "sdf", "light"], {
+    structs: [PaperUniforms, Paper],
+    modules: [{ label: "paper/paper.wgsl", text: t.paper }],
+    entry: { label: "paper/paper-pass.wgsl", text: t.paperPass },
+  }, text);
 }

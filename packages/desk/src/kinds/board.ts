@@ -63,7 +63,7 @@ export function boardProgram(text: ShaderText): KindProgram<BoardInstance> {
   return {
     name: BOARD_KIND,
     stratum: "things",
-    create: async (device, format, mat) => new BoardKind(await BoardPass.create(device, format, boardShaders(text(BOARD_SHADER_FILES)), mat)),
+    create: async (device, format, mat) => new BoardKind(await BoardPass.create(device, format, boardShaders(text), mat)),
   };
 }
 

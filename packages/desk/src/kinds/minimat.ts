@@ -68,7 +68,7 @@ export function miniMatProgram(text: ShaderText): KindProgram<MiniMatInstance> {
   return {
     name: MINIMAT_KIND,
     stratum: "sheets",
-    create: async (device, format, mat) => new MiniMatKind(await MiniMatPass.create(device, format, miniMatShaders(text(MINIMAT_SHADER_FILES)), mat)),
+    create: async (device, format, mat) => new MiniMatKind(await MiniMatPass.create(device, format, miniMatShaders(text), mat)),
   };
 }
 

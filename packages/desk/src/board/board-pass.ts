@@ -177,10 +177,10 @@ export class BoardPass {
     ], "board/mip");
 
     const [boardModule, stampModule, inkModule, mipModule] = await Promise.all([
-      compile(device, compose({ structs: [MatUniforms, BoardUniforms, Board], modules: src.board.modules, entry: src.board.entry })),
-      compile(device, compose({ structs: [StampUniforms, Stamp], modules: src.stamp.modules, entry: src.stamp.entry })),
-      compile(device, compose({ structs: [InkUniforms], modules: src.ink.modules, entry: src.ink.entry })),
-      compile(device, compose({ modules: src.mip.modules, entry: src.mip.entry })),
+      compile(device, compose(src.board)),
+      compile(device, compose(src.stamp)),
+      compile(device, compose(src.ink)),
+      compile(device, compose(src.mip)),
     ]);
     const inkPL = device.createPipelineLayout({ bindGroupLayouts: [inkLayout] });
     const [pipeline, stampPipeline, inkDraw, inkErase, inkWet, inkDry, mipPipeline] = await Promise.all([

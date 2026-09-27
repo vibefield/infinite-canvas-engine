@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./engine": "./src/engine/index.ts",
     "./objects": "./src/objects/index.ts",
+    "./kit": "./src/kit/index.ts",
     "./oracle/*": "./oracle/*",
     "./assets/*": "./assets/*",
     "./oracle/fixtures/vf-theme": "./oracle/fixtures/vf-theme.ts"

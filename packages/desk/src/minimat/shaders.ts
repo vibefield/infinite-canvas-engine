@@ -1,38 +1,23 @@
-// Assemble the mini mat pass's shader parts from raw text — the browser with
-// `?raw` imports, the Node oracle with readFileSync; byte-identical either way.
-// The pass composes the portal clip, the shared primitives and the mat's chain
-// (all pure) with its own.
+// Assemble the mini mat pass's program from the host's shader text — the browser's generated module, the Node oracle's
+// files on disk; byte-identical either way. The kit brings the slot's view block, the portal chain, the shared
+// primitives, the mat's light and the rulers' label arithmetic, which the numerals reuse (kit/wgsl.ts, by name); the
+// mini mat's own records, module and entry follow.
 
-import type { ShaderPart } from "../engine/shader";
+import type { ComposeOptions } from "../engine/shader";
+import { kitWgsl, type ShaderText } from "../kit/wgsl";
+import { ChipRecord, MiniMat, MiniMatUniforms } from "./layout";
 
-export interface MiniMatShaders {
-  readonly modules: readonly ShaderPart[];   // portal, primitives, mat, ruler, minimat
-  readonly entry: ShaderPart;                // minimat-pass
-}
+/** The mini mat's own shader files (the kit's pieces come by name). */
+export const MINIMAT_SHADER_FILES = { minimat: "minimat/minimat.wgsl", minimatPass: "minimat/minimat-pass.wgsl" } as const;
 
-export interface MiniMatShaderText {
-  readonly portal: string;
-  readonly primitives: string;
-  readonly mat: string;
-  /** shaders/mat/ruler.wgsl — the rulers' label arithmetic, which the numerals reuse. */
-  readonly ruler: string;
-  readonly minimat: string;
-  readonly minimatPass: string;
-}
+/** The mini mat pass's program: the kit's view · portal · sdf · light · ruler, then the mini mat's records, module and entry. */
+export type MiniMatShaders = ComposeOptions;
 
-export const MINIMAT_SHADER_FILES: Record<keyof MiniMatShaderText, string> = {
-  portal: "portal.wgsl",
-  primitives: "primitives.wgsl",
-  mat: "mat/mat.wgsl",
-  ruler: "mat/ruler.wgsl",
-  minimat: "minimat/minimat.wgsl",
-  minimatPass: "minimat/minimat-pass.wgsl",
-};
-
-export function miniMatShaders(t: MiniMatShaderText): MiniMatShaders {
-  const part = (label: string, text: string): ShaderPart => ({ label, text });
-  return {
-    modules: [part("portal.wgsl", t.portal), part("primitives.wgsl", t.primitives), part("mat/mat.wgsl", t.mat), part("mat/ruler.wgsl", t.ruler), part("minimat/minimat.wgsl", t.minimat)],
-    entry: part("minimat/minimat-pass.wgsl", t.minimatPass),
-  };
+export function miniMatShaders(text: ShaderText): MiniMatShaders {
+  const t = text(MINIMAT_SHADER_FILES);
+  return kitWgsl(["view", "portal", "sdf", "light", "ruler"], {
+    structs: [MiniMatUniforms, MiniMat, ChipRecord],
+    modules: [{ label: "minimat/minimat.wgsl", text: t.minimat }],
+    entry: { label: "minimat/minimat-pass.wgsl", text: t.minimatPass },
+  }, text);
 }

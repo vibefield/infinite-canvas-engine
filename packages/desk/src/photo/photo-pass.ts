@@ -135,7 +135,7 @@ export class PhotoPass {
       { binding: 8, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "photo/prints");
     const layout1 = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }], "photo/picture");
-    const module = await compile(device, compose({ structs: [MatUniforms, PhotoUniforms, Photo], modules: src.modules, entry: src.entry }));
+    const module = await compile(device, compose(src));
     const pl = device.createPipelineLayout({ bindGroupLayouts: [layout0, layout1] });
     const [pipeline, litPipeline] = await Promise.all([
       renderPipeline(device, { label: "photo/prints", layout: pl, module, format, blend: BLEND_PREMUL }),

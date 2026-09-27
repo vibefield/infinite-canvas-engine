@@ -99,7 +99,7 @@ export class MiniMatPass {
       { binding: 8, stages: ["fragment"], texture: "float" },
       { binding: 9, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "minimat/mats");
-    const module = await compile(device, compose({ structs: [MatUniforms, MiniMatUniforms, MiniMat, ChipRecord], modules: src.modules, entry: src.entry }));
+    const module = await compile(device, compose(src));
     const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
     const [pipeline, chipsPipeline] = await Promise.all([
       renderPipeline(device, { label: "minimat/mats", layout: pl, module, format, blend: BLEND_PREMUL }),

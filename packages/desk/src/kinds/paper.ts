@@ -61,7 +61,7 @@ export function paperProgram(text: ShaderText): KindProgram<PaperInstance> {
   return {
     name: PAPER_KIND,
     stratum: "things",
-    create: async (device, format, mat) => new PaperKind(await PaperPass.create(device, format, paperShaders(text(PAPER_SHADER_FILES)), mat)),
+    create: async (device, format, mat) => new PaperKind(await PaperPass.create(device, format, paperShaders(text), mat)),
   };
 }
 

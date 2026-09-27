@@ -10,3 +10,4 @@ export * from "./print";
 export * from "./raster";
 export * from "./text";
 export * from "./view";
+export * from "./wgsl";

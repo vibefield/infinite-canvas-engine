@@ -241,9 +241,9 @@ describe("the records and the shaders", () => {
   it("composes: the board's modules are pure and every program names a field its structs have", () => {
     const here = resolve(import.meta.dirname, "..", "shaders");
     const read = (f: string) => readFileSync(join(here, f), "utf8");
-    const src = boardShaders({ portal: read("portal.wgsl"), primitives: read("primitives.wgsl"), mat: read("mat/mat.wgsl"), felt: read("board/felt.wgsl"), board: read("board/board.wgsl"), boardPass: read("board/board-pass.wgsl"), stamp: read("board/stamp.wgsl"), ink: read("board/ink.wgsl"), mip: read("board/mip.wgsl") });
-    const board = compose({ structs: [MatUniforms, BoardUniforms, Board], modules: src.board.modules, entry: src.board.entry });
-    expect(() => compose({ structs: [StampUniforms, Stamp], modules: src.stamp.modules, entry: src.stamp.entry })).not.toThrow();
+    const src = boardShaders((files) => Object.fromEntries(Object.entries(files).map(([k, f]) => [k, read(f)])) as never);
+    const board = compose(src.board);
+    expect(() => compose(src.stamp)).not.toThrow();
     // no WGSL reserved word hides as a field (the compiler says it; this says it without a GPU)
     for (const s of [Board, BoardUniforms, StampUniforms]) for (const [f] of s.fields) expect(["cast", "active", "filter", "sample", "target", "handle", "layout"]).not.toContain(f);
     for (const m of board.code.matchAll(/\bB\.(\w+)/g)) expect(Board.fields.map(([f]) => f)).toContain(m[1]);

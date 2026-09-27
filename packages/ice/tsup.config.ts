@@ -8,7 +8,8 @@ import { defineConfig } from "tsup";
  * duplicated per entry, or duplicate-definition guards throw at import time.
  *
  * design-015 §3 (D5b): the entries are `.` · `/kernel` · `/dom` · `/desk` ·
- * `/desk/engine` · `/desk/objects` · `/react` · `/devtools`. `./r3f`,
+ * `/desk/engine` · `/desk/objects` · `/react` · `/devtools`; design-016 §5 (K4a)
+ * adds `/desk/kit` (the render kit a kind is written against). `./r3f`,
  * `./r3f/webgpu` and the four `./ground*` entries left with their packages, and
  * with them the `three`, `@react-three` and `stats-gl` externals: the whole
  * graph is three-free (`tools/audit-pack.mjs` measures it).
@@ -21,6 +22,7 @@ export default defineConfig({
     desk: "src/desk.ts",
     "desk-engine": "src/desk-engine.ts",
     "desk-objects": "src/desk-objects.ts",
+    "desk-kit": "src/desk-kit.ts",
     react: "src/react.ts",
     devtools: "src/devtools.ts",
   },

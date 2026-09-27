@@ -100,7 +100,7 @@ export class PaperPass {
       { binding: 8, stages: ["fragment"], sampler: "filtering" },
       { binding: 9, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
     ], "paper/notes");
-    const module = await compile(device, compose({ structs: [MatUniforms, PaperUniforms, Paper], modules: src.modules, entry: src.entry }));
+    const module = await compile(device, compose(src));
     const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
     const [pipeline, litPipeline] = await Promise.all([
       renderPipeline(device, { label: "paper/notes", layout: pl, module, format, blend: BLEND_PREMUL }),

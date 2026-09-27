@@ -63,6 +63,7 @@ and live presence when you `docs.join()` a room.
 | `@vibecook/ice/desk` | The desk: `deskLayer`, `defineObject`, the kind registry, the one focused editor, the text raster, the theme, the renderer (`Ground`). |
 | `@vibecook/ice/desk/engine` | The raw-WebGPU engine: the device (`acquire`, `adopt`), the `Surface` type (the swap chain itself is `surface()` in `/desk`), shader composition (`compose`, `compile`), pipelines and bind groups, render targets (`Target`, `beginPass`, `readback`), `defineStruct`. No pass ships here — the passes are the desk's. |
 | `@vibecook/ice/desk/objects` | The six reference object kinds: note · mini mat · notebook · whiteboard · calendar · photo (`DESK_OBJECTS`). |
+| `@vibecook/ice/desk/kit` | The render kit a kind is written against: the slot's view and its mat (`MatPass`), the lamp and its light, the shared WGSL by name (`kitWgsl`), a container's inside, the host services a kind is lent (text, print, blobs), the one physics every object shares. |
 | `@vibecook/ice/react` | `<Desk>`, `<EngineProvider>`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useUndoStatus`, `usePresencePeers`, …), `attachKeymap`, `<SelectionMenu>`. |
 | `@vibecook/ice/dom` | Screen space only: the canvas host, the pointer adapter, the rAF loop, input ownership, the cursors, `createDeskHost` — for custom shells without React. |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one draggable dock, and the desk's GPU slot (fed by `/desk`'s `handle.profiler()`). |

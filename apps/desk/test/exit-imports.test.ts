@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /** THE SURFACE — the engine entries the PRODUCT imports, in their workspace spelling; each must be an entry the UMBRELLA publishes. */
-const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/desk/objects", "@ice/devtools"] as const;   // devtools since design-016 K2: the dock on ⇧`
+const SURFACE = ["@ice/core", "@ice/react", "@ice/desk", "@ice/desk/objects", "@ice/desk/kit", "@ice/devtools"] as const;   // devtools since design-016 K2: the dock on ⇧`
 /** The rigs' extra door: the oracle's scenes, frames and fixtures (published by the WORKSPACE desk package, not the umbrella). */
 const RIG_DOOR = "@ice/desk/oracle/*";
 /** The three pages and the module each one loads (their `<script type="module" src>`); the product is `index`. */

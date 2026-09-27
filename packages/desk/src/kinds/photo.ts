@@ -66,7 +66,7 @@ export function photoProgram(text: ShaderText): KindProgram<PhotoInstance> {
   return {
     name: PHOTO_KIND,
     stratum: "things",
-    create: async (device, format, mat) => new PhotoKind(await PhotoPass.create(device, format, photoShaders(text(PHOTO_SHADER_FILES)), mat)),
+    create: async (device, format, mat) => new PhotoKind(await PhotoPass.create(device, format, photoShaders(text), mat)),
   };
 }
 
