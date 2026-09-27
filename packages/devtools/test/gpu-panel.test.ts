@@ -69,6 +69,19 @@ describe("the GPU slot (K2)", () => {
     ce.dispose();
   });
 
+  it("configured (`gpu: {…}`) it mounts at once and says it waits for a frame — the desk draws nothing at rest; the first frame replaces the line", () => {
+    const ce = createCanvasEngine();
+    const handle = attachDevtools(ce, { observer: false, profiler: false, gpu: { budgetMs: 8.33 } });
+    expect(document.querySelector('.ice-dock-slot[data-slot="gpu"] .ice-gpu')).not.toBeNull();
+    expect(text(".ice-gpu-body")).toContain("waiting for a frame — at rest the desk draws nothing (idle-zero); move the camera");
+    expect(text(".ice-gpu-tail")).toBe("no frame yet");
+    handle.gpuFrame(FRAME, STATS);
+    expect(text(".ice-gpu-body")).not.toContain("waiting for a frame");
+    expect(document.querySelectorAll(".ice-gpu").length).toBe(1);   // the same panel, not a second
+    handle.detach();
+    ce.dispose();
+  });
+
   it("quantised timestamps raise the warning with the Chrome switch that turns them off; an untimed frame says so", () => {
     const panel = createGpuPanel({ container: document.body });
     panel.push({ ...FRAME, span: null, sum: null, passes: [], quantised: null }, { ...STATS, span: null, quantised: true });

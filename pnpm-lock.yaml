@@ -41,6 +41,9 @@ importers:
       '@ice/desk':
         specifier: workspace:*
         version: link:../../packages/desk
+      '@ice/devtools':
+        specifier: workspace:*
+        version: link:../../packages/devtools
       '@ice/react':
         specifier: workspace:*
         version: link:../../packages/react

@@ -25,7 +25,8 @@
  *                   uploads, memory — pushed by the host through `gpuFrame`
  *                   as the STRUCTURAL MIRROR `GpuPanelFrame` (gpu-panel.ts:
  *                   devtools cannot import desk; the old GlPanelStats way),
- *                   mounted on the first push; each push also reports the
+ *                   mounted at once when configured (`gpu: {…}`), else on
+ *                   the first push; each push also reports the
  *                   host LANES `desk flush`, `encode` and `gpu` beside
  *                   strata's per-system lanes. They are readings side by
  *                   side, not a partition: `desk flush` runs inside `reflect`,
@@ -93,7 +94,7 @@ export interface DevtoolsOpts {
   readonly profiler?: boolean | Pick<ProfilerOptions, "budgetMs" | "windowSize" | "corner" | "expanded" | "lanes">;
   /** Collab demos: the presence session whose store feeds the ephemeral tab. */
   readonly presence?: () => PresenceSession | null | undefined;
-  /** The GPU slot (K2): `false` to omit, or its options (budget, expanded, the host's capture). Mounts lazily on the first `gpuFrame` push. */
+  /** The GPU slot (K2): `false` to omit, or its options (budget, expanded, the host's capture) — given as an object it mounts at once (saying it waits for a frame); otherwise on the first `gpuFrame` push. */
   readonly gpu?: boolean | Pick<GpuPanelOptions, "budgetMs" | "expanded" | "capture" | "captureFrames">;
   /** Override entity labeling (default: the engine describe below). */
   readonly describe?: DescribeFn;
@@ -261,6 +262,11 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
 
   let detached = false;
   let gpu: GpuPanel | null = null;
+  const mountGpu = (): GpuPanel => {
+    gpu ??= createGpuPanel({ ...(typeof opts.gpu === "object" ? opts.gpu : {}), ...mountIn("gpu") });
+    return gpu;
+  };
+  if (typeof opts.gpu === "object") mountGpu();   // configured: shown at once, waiting for a frame
   return {
     observer,
     profiler,
@@ -269,13 +275,7 @@ export function attachDevtools(engine: DevtoolsEngine, opts: DevtoolsOpts = {}):
     },
     gpuFrame(frame, stats) {
       if (detached || opts.gpu === false) return;
-      if (gpu === null) {
-        gpu = createGpuPanel({
-          ...(typeof opts.gpu === "object" ? opts.gpu : {}),
-          ...mountIn("gpu"),
-        });
-      }
-      gpu.push(frame, stats);
+      mountGpu().push(frame, stats);
       // the host lanes beside strata's per-system ones (side by side, not a partition — the header)
       if (frame.cpu.flush !== null) profiler?.lane("desk flush", frame.cpu.flush);
       profiler?.lane("encode", frame.cpu.encode);

@@ -165,8 +165,10 @@ export function createGpuPanel(opts: GpuPanelOptions = {}): GpuPanel {
   head.addEventListener("click", () => root.classList.toggle("open"));
 
   const body = make("div", "ice-gpu-body");
+  // until a frame comes: at rest the desk draws nothing, and the profiler never asks it to (K-L5)
+  const hint = make("div", "ice-gpu-row ice-gpu-dim", "waiting for a frame — at rest the desk draws nothing (idle-zero); move the camera");
   const warn = make("div", "ice-gpu-warn");
-  body.appendChild(warn);
+  body.append(hint, warn);
   const sect = (label: string): HTMLElement => { const s = make("div", "ice-gpu-sect", label); body.appendChild(s); return s; };
   const bar = (label: string, into: HTMLElement = body): { fill: HTMLElement; stat: HTMLElement; label: HTMLElement } => {
     const row = make("div", "ice-gpu-row");
@@ -272,6 +274,7 @@ export function createGpuPanel(opts: GpuPanelOptions = {}): GpuPanel {
   const render = (): void => {
     const f = latest;
     if (f === undefined) return;
+    hint.remove();
     const st = stats;
     spanEl.textContent = st?.span ? fmtMs(st.span.p50) : fmtMs(f.span);
     tailEl.textContent = st?.span ? `p95 ${fmtMs(st.span.p95)} · max ${fmtMs(st.span.max)}` : f.span === null ? "untimed" : "";

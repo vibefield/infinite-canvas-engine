@@ -8,6 +8,7 @@
 // draws its marks on the GPU and the ONE screen-space selection menu rides the layer's anchor
 // (`<SelectionMenu>`), with ICE's acts and the app's own stub "Send" first (it logs — VibeField's is real).
 // D5a: the backtick opens the DEV PANEL (panel/ — the prototype's tweak panel), its params projected into the layer.
+// K2: `~` (⇧`) opens the DEVTOOLS DOCK (devtools.ts) — strata's profiler, the desk's GPU, the observer; the layer keeps a GPU memory ledger for it.
 
 import type { Entity } from "@ice/core";
 import { Active, PointerWorld, LocalPointer, Pointer, Camera, heldEntity, Position, PrefabId, Size, Viewport, defineQuery, defineTickSystem, selectedEntities } from "@ice/core";
@@ -19,6 +20,7 @@ import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nud
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
 import { deskBlobs } from "./blobs";
+import { createProfilerDock, type ProfilerDock } from "./devtools";
 import { installPictureDrop } from "./paste";
 import { createDeskEngine, deskRoom, joinDeskRoom } from "./desk";
 import { disposeOnLeave } from "./lifetime";
@@ -74,6 +76,7 @@ export function App(): ReactElement {
   const handleRef = useRef<DeskLayerHandle | null>(null);
   const apiRef = useRef<DeskApi | null>(null);
   const panelRef = useRef<DevPanel | null>(null);
+  const dockRef = useRef<ProfilerDock | null>(null);
   const [params] = useState(() => defaultParams());
   const themeRef = useRef(createThemeControl(() => handleRef.current, (name) => panelRef.current?.themeOf(name, deskTheme(name)) ?? deskTheme(name)));
   const matSerial = useRef(1);
@@ -83,7 +86,7 @@ export function App(): ReactElement {
   const layer = useMemo<LayerFactory>(() => {
     // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into; K1: the product's
     // grid — the rulers printed on the root (the engine's default leaves them off; a host prints them, RULER.md §5)
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID });
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
   }, [engine, params]);
 
@@ -144,6 +147,8 @@ export function App(): ReactElement {
       { key: "u", run: () => panelRef.current?.tweak((p) => { p.ruler.on = !p.ruler.on; }) },
       // D5a: the backtick opens and closes the dev panel (screen-space DOM, the prototype's tweak panel)
       { key: "`", run: () => panelRef.current?.toggle() },
+      // K2: ⇧` — the devtools dock, the GPU profiler armed while it is open
+      { key: "~", shift: true, run: () => dockRef.current?.toggle() },
       // D4b: Tab walks the desk's objects in reading order (top to bottom, left to right) — the keyboard's way to a notebook, which ⏎
       // then picks up and Esc lands with the selection back; ⇧Tab walks back. Nothing while something is in hand (the bar's Tab is D3t's).
       { key: "Tab", run: () => tabSelection(1) },
@@ -177,7 +182,8 @@ export function App(): ReactElement {
         // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing)
         panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined });
         themeRef.current.apply();
-        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs);
+        dockRef.current = createProfilerDock(engine, handle);
+        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs, dockRef.current);
         apiRef.current = api;
         installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
         // the product's plates and a runtime glyph atlas the moment the ground is here

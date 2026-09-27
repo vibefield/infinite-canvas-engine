@@ -18,6 +18,7 @@ import { type NoteApi, noteApi } from "./note-api";
 import { type NotebookApi, notebookApi } from "./notebook-api";
 import { type RoomApi, roomApi } from "./room-api";
 import type { GlyphFeed } from "./glyphs";
+import type { ProfilerDock } from "./devtools";
 import type { DevPanel } from "./panel/panel";
 import { deskRig } from "./rig-door";
 import { spawnAll } from "./scene";
@@ -122,6 +123,8 @@ export interface DeskApi {
    * it); null before the first upload.
    */
   glyphs(): { readonly key: string; readonly meta: GlyphAtlasMeta; readonly uploads: number; readonly onMat: boolean } | null;
+  /** The devtools dock (K2 — ⇧` opens it, arming the GPU profiler): open or not. */
+  readonly dock: ProfilerDock | null;
   // ---- the hand (design-015 §8, D4b)
   /** The object in hand as of the last frame: its carry, whether settled or flying home, its frame on screen (the pose seam's word); null = nothing held. */
   hand(): { readonly entity: number; readonly e: number; readonly settled: boolean; readonly landing: boolean; readonly frame: { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly s: number; readonly settled: boolean } } | null;
@@ -192,7 +195,7 @@ declare global {
 const widgetsQ = defineQuery([Position, Size, PrefabId]);
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
 
-export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null, glyphs: GlyphFeed | null = null): DeskApi {
+export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null, glyphs: GlyphFeed | null = null, dock: ProfilerDock | null = null): DeskApi {
   const { world } = engine;
   const state = { ready: false };
   // THE FLIGHT PIN (D2b): a system after core's `navFlight` in `simulate` that puts the flight back at `pinned` and the camera at
@@ -313,6 +316,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
       if (glyphs === null || last === null) return null;
       return { key: last.key, meta: last.meta, uploads: glyphs.uploads, onMat: handle.ground()?.mat.glyphs === last.meta };
     },
+    dock,
     stats: () => handle.stats(),
     wakes: () => handle.wakes(),
     memory: () => handle.memory(),
