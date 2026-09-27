@@ -5,7 +5,7 @@
 // deletion). This is the host half — the one module beside host/surface.ts that may touch the DOM:
 // it prepends its canvas to the container, draws with the ENGINE's device when the context carries one (D7: one device
 // per engine) and otherwise acquires its OWN (`navigator.gpu`, or the `gpu` handed in),
-// installs the submit instrument before anything can submit, makes the swap chain, compiles the
+// makes the swap chain (the submit instrument waits to be asked for — K2), compiles the
 // ground from the app's object kinds (`Ground.create` — `available()` is false until it resolves),
 // reads the OS's reduced-motion preference into the ambient, and hands the DOM-free reflector
 // (compose/reflector.ts) what it needs: a `ground()` slot, a canvas sizer. It registers ONE
@@ -94,7 +94,7 @@ export interface DeskLayerOptions {
   readonly maxDpr?: number;
   /** Where the layer acquires its OWN device when the engine has none (`engine.compositorDevice` — then it draws with that): `navigator.gpu` unless a host hands another. */
   readonly gpu?: GPU;
-  /** Called once with the layer's OWN device, before anything submits — after the submit instrument is installed. */
+  /** Called once with the layer's OWN device, before anything submits. */
   readonly onDevice?: (device: GPUDevice) => void;
   /** The layer's name in the reflector roster. */
   readonly name?: string;
@@ -234,7 +234,7 @@ export interface DeskLayerHandle {
   /** The ambient policy, live: the mode, the idle window. */
   setAmbient(mode: AmbientMode, idleMs?: number): void;
   ambient(): Ambient;
-  /** The submit instrument on the layer's device (installed before anything submits); undefined before the device. */
+  /** The submit instrument on the layer's device — installed the first time it is asked for (K2, D-K2.1: never asked, the queue carries no wrapper), counting from then; undefined before the device. */
   submits(): SubmitInstrument | undefined;
   /** The layer's own main-thread time since the mount (D6, design-015 §11.4's idle gate): a rig diffs two readings. */
   perf(): DeskLayerPerf;
@@ -485,7 +485,6 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           if (disposed) { if (shared === undefined) g.device.destroy(); throw new Error("disposed before the device arrived"); }
           drawDevice = g.device;
           if (shared === undefined) ownDevice = g.device;
-          instrument = instrumentSubmits(g.device);   // before anything can submit: the idle-zero witness counts from boot
           opts.onDevice?.(g.device);
           const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
           if (disposed || ended) { made.dispose(); return; }
@@ -555,7 +554,11 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       },
       setAmbient(mode, idleMs) { ambient.configure({ mode, ...(idleMs !== undefined ? { idleMs } : {}) }); compose.wake("ambient"); },
       ambient: () => ambient,
-      submits: () => instrument,
+      submits() {
+        // armed by the first ask (D-K2.1): a window's count needs it armed before the window opens, which asking does
+        if (instrument === undefined && drawDevice !== null && !disposed) instrument = instrumentSubmits(drawDevice);
+        return instrument;
+      },
       perf: () => ({ ...perf }),
       memory: () => budget.stats(),
       records: () => {
@@ -595,6 +598,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         canvas.remove();
         ground?.dispose();
         ground = null;
+        instrument?.detach();   // the engine's device goes on without the layer's wrappers
+        instrument = undefined;
         if (ownDevice !== null) { ownDevice.destroy(); ownDevice = null; }   // the layer's own device: destroyed last
       },
     };
