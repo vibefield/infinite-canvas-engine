@@ -26,6 +26,7 @@
     "rig:proto-parity": "tsx scripts/proto-parity.mjs",
     "rig:cost": "tsx scripts/cost.mjs",
     "rig:stress": "tsx scripts/stress.mjs",
+    "rig:scale": "tsx scripts/scale.mjs",
     "gen:check": "node tools/make-gobo-plate.mjs --check"
   },
   "dependencies": {
