@@ -672,6 +672,9 @@ export class Ground {
 
   /** Make the passes the tray's composite specimens need (K5a — `TraySlots.warm`); `onReady` asks for the frame that shows them. */
   warmTray(wanted: readonly (readonly [string, string])[], onReady: () => void): void { this.traySlots?.warm(wanted, onReady); }
+
+  /** The tray's slots let go of what they make again at their next draw once undrawn a while (D-K6a.3; `TraySlots.idle`) — every tick. */
+  idleTray(): void { this.traySlots?.idle(); }
 }
 
 /** The specimens' name tags this frame (K5a): each label centred under its specimen — below a shelf's plank — in screen px. */

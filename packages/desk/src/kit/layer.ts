@@ -56,6 +56,12 @@ export interface LayerPass {
   endHold?(): void;
   /** The records its last prepare turned away at its cap (D7). */
   readonly dropped?: number;
+  /** K6a (D-K6a.3): its frame layer's targets are made (at the first object drawn)… */
+  readonly layerMade?: boolean;
+  /** …was one of its objects drawn within `ms`… */
+  drawnWithin?(ms: number): boolean;
+  /** …and let them go (made again at the next object drawn). */
+  releaseLayer?(): void;
   dispose(): void;
 }
 
@@ -106,6 +112,15 @@ export abstract class LayeredKind<R, P extends LayerPass> implements KindPass<R>
   }
 
   endHold(): void { this.pass?.endHold?.(); }
+
+  /**
+   * Let this slot's layer go when none of its objects was drawn within `ms` (D-K6a.3 for a slot the host keeps beyond the root — the
+   * tray's specimen, K5a; the ROOT's layer goes by its kind's own tick). Made again at the next object drawn.
+   */
+  idle(ms: number): void {
+    const p = this.pass;
+    if (p !== null && p.layerMade === true && p.drawnWithin?.(ms) === false) p.releaseLayer?.();
+  }
 
   dropped(): number { return this.pass?.dropped ?? 0; }
 

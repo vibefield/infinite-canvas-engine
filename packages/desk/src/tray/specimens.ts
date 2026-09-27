@@ -12,6 +12,7 @@ import type { GridConfig } from "../mat/grid";
 import type { Lamp } from "../mat/lamp";
 import type { SlotKind, SlotSet } from "../ground";
 import type { KindProgram } from "../kind";
+import { LAYER_IDLE_MS } from "../kit/layer";
 import type { ObjectContext, ObjectKind } from "../kinds/world";
 import type { View } from "../lattice/lod";
 import type { PortalClip, Presentation } from "../nav/portal";
@@ -251,6 +252,14 @@ export class TraySlots {
       if (pending === 0) resolve();
     });
     for (const [type, kind] of wanted) this.get(type, kind);
+  }
+
+  /**
+   * Each slot's passes let go of what they make again at their next draw when none of their objects was drawn within `ms` (D-K6a.3
+   * — the notebook's and the calendar's layers, a few seconds after the drawer shuts); asked every tick, drawing or not.
+   */
+  idle(ms: number = LAYER_IDLE_MS): void {
+    for (const s of this.slots.values()) for (const k of s.kinds.values()) k.pass.idle?.(ms);
   }
 
   /** The slots made so far (a rig's witness). */

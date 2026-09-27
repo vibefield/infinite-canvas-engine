@@ -171,6 +171,20 @@ describe("the notebook and the desk calendar: two layered kinds in the registry"
     expect(ownPad.law).toBe(rootPad.law);
   });
 
+  it("K5a: a slot the host keeps beyond the root lets its layer go when none of its objects was drawn within the time (D-K6a.3) — only then, and never a spawned slot's", () => {
+    const pass = (made: boolean, drawn: boolean) => { const out = { released: 0, layerMade: made, drawnWithin: (_ms: number) => drawn, releaseLayer: () => { out.released += 1; } }; return out; };
+    const idle = pass(true, false);
+    new NotebookKind(idle as unknown as NotebookPass).idle(5000);
+    expect(idle.released).toBe(1);
+    const busy = pass(true, true);
+    new CalendarKind(busy as unknown as CalendarPass).idle(5000);
+    expect(busy.released).toBe(0);
+    const none = pass(false, false);
+    new NotebookKind(none as unknown as NotebookPass).idle(5000);
+    expect(none.released).toBe(0);
+    expect(() => new NotebookKind(null).idle(5000)).not.toThrow();   // a spawned slot's pass holds nothing
+  });
+
   it("the layer is recorded into the FRAME's encoder once its pass prepared something, at the attachment the view names; the run lays it ONCE over the whole range, inside the slot's scissor, and gives the scissor back", () => {
     for (const make of [(p: unknown) => { const k = new NotebookKind(p as NotebookPass); k.ruleInk = notebookRuleInk(); return k; }, (p: unknown) => { const k = new CalendarKind(p as CalendarPass); k.alpha = CALENDAR_LOOK.alpha; return k; }]) {
       const calls: unknown[][] = [];

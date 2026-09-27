@@ -20,6 +20,7 @@ import { createTrayFlux } from "../src/tray/flux";
 import { TRAY_LOOK } from "../src/tray/look";
 import { trayShaders } from "../src/tray/shaders";
 import { accessoryOf, specimenFrames, type TraySpecimen, type TraySpecimenEnv } from "../src/tray/specimens";
+import { LAYER_IDLE_MS } from "../src/kit/layer";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
 
 const PALETTE: Palette = { canvasBg: { token: "--vf-canvas-bg", css: "#fafafa" }, select: { token: "--vf-select", css: "#4a90d9" } };
@@ -27,13 +28,15 @@ const LIGHT = themeFrom("light", PALETTE);
 const P = DRAWER.pitch;
 
 /** A kind that draws nothing but logs: what its `resolve` was handed, and its pass's draws (a debug group per range). */
-function fakeKind(name: string, composite = false): ObjectKind & { readonly seen: ObjectContext[]; readonly made: string[] } {
+function fakeKind(name: string, composite = false): ObjectKind & { readonly seen: ObjectContext[]; readonly made: string[]; readonly idled: string[] } {
   const seen: ObjectContext[] = [];
   const made: string[] = [];
+  const idled: string[] = [];
   const pass = (label: string): KindPass => ({
     spawn: () => pass(`${label}+`),
     prepare: (_e, _s, records) => records.length,
     drawRange: (p, first, end) => { p.pushDebugGroup(`kind ${label} ${first}-${end}`); p.popDebugGroup(); },
+    idle: (ms) => { idled.push(`${label} ${ms}`); },
     dispose: () => {},
   });
   return {
@@ -42,8 +45,8 @@ function fakeKind(name: string, composite = false): ObjectKind & { readonly seen
     resolve: (ctx: ObjectContext) => { seen.push(ctx); return ctx; },
     record: (_G: unknown, ctx: ObjectContext) => ({ at: ctx.view }),
     hit: () => null,
-    seen, made,
-  } as ObjectKind & { readonly seen: ObjectContext[]; readonly made: string[] };
+    seen, made, idled,
+  } as ObjectKind & { readonly seen: ObjectContext[]; readonly made: string[]; readonly idled: string[] };
 }
 
 const specimen = (kind: ObjectKind, over: Partial<TraySpecimen> = {}): TraySpecimen => ({
@@ -200,6 +203,9 @@ describe("the ground draws the specimens between the board and the rim", () => {
     expect(tags).toBeLessThan(rim);
     expect(log.slice(rim, rim + 5)).toEqual(["debug tray/pegboard/rim", "pipeline tray/pegboard/rim", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
     expect(ground.traySlots?.size).toBe(2);
+    // every tick the tray's own slots are asked to let go of what they make again (D-K6a.3) — the root's passes never by the tray
+    ground.idleTray();
+    expect([...plain.idled, ...layered.idled]).toEqual([`fake+ ${LAYER_IDLE_MS}`, `layered ${LAYER_IDLE_MS}`]);
     ground.dispose();
   });
 });

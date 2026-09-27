@@ -109,6 +109,11 @@ export interface KindPass<R = unknown> {
   dropped?(): number;
   /** The hold is over (D7): a pass that kept the held desk copy's state apart (`SlotContext.target`) gives it back. */
   endHold?(): void;
+  /**
+   * Let go of the device targets this slot's pass makes again at its next draw, when none of its objects was drawn within `ms`
+   * (K6a's D-K6a.3 — a layered kind's layer): asked each tick of the slots a host keeps beyond the root (the tray's, K5a).
+   */
+  idle?(ms: number): void;
   /** A sheet's marks over its live inside, drawn right after the inside (the mini mat's chips while the inside's objects come in). */
   drawOver?(pass: GPURenderPassEncoder, index: number): void;
   /** This slot's buffers (the shared resources go with the last slot standing). */

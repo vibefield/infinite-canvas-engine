@@ -331,6 +331,17 @@ try {
   await q("window.__desk.setTheme('light')");
   await key("a", "KeyA", 65); await settle();
 
+  // S9. the tray's notebook and calendar passes (their own, beside the root's) follow D-K6a.3: their layers made when the drawer shows
+  //     them, let go once undrawn LAYER_IDLE_MS (5 s) — the ledger's rows, open, then 6 s after the drawer shut
+  const ledger = () => q("(() => { const m = window.__desk.handle.gpuMemory()?.read().byLabel ?? {}; return { notebook: m.notebook?.bytes ?? 0, calendar: m.calendar?.bytes ?? 0 }; })()");
+  await q("window.__desk.tray.open()"); await settle(); await sleep(300); await settle();
+  const memOpen = await ledger();
+  await q("window.__desk.tray.close()"); await settle();
+  await sleep(6000);
+  const memShut = await ledger();
+  const mb = (b) => (b / 1048576).toFixed(1);
+  check(memOpen.notebook > 0 && memOpen.calendar > 0 && memShut.notebook < memOpen.notebook / 4 && memShut.calendar < memOpen.calendar / 4, `the tray's notebook and calendar layers let go once undrawn (each row under a quarter of its open size): the ledger's notebook ${mb(memOpen.notebook)} → ${mb(memShut.notebook)} MB, calendar ${mb(memOpen.calendar)} → ${mb(memShut.calendar)} MB, open → 6 s after the drawer shut`);
+
   logs.push(...(await faultsOf(tab)));
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors");

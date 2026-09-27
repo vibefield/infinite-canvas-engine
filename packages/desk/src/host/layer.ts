@@ -494,6 +494,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         // set included (no word at all would make the builder ask every object whether a kind lifts it)
         const restless = new Set<string>();
         for (const [name, local] of locals) if (local.tick?.(now) === true) { want = true; restless.add(name); }
+        ground?.idleTray();   // the tray's own slots let their layers go once undrawn a while, as the kinds' ticks do the root's (D-K6a.3, K5a)
         if (want) compose.wake("ink");
         compose.restless(restless);
         moving = want;   // D3w: a kind's own motion (a print in the air) keeps the desk from reading quiet between its frames

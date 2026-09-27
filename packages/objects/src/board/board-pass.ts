@@ -572,8 +572,10 @@ export class BoardPass {
     const y1 = y0 + view.height / view.zoom;
     let bind = false;
     for (const [i, b] of instances.entries()) {
-      // a board recorded without the desk's local asked for no raster (id 0 — a tray specimen, K5a): it draws on the one clean raster, made once
-      if (b.id === 0 && !s.rasters.has(0)) this.ensure(0, [BOARD.spec.width, BOARD.spec.height]);
+      // a board recorded without the desk's local asked for no raster (id 0 — a tray specimen, K5a): it draws on the one clean raster,
+      // made once at the lowest rung (blank ink reads the same at any density — ≈ 1 MB, never a full raster the budget cannot see),
+      // bound in the pool like any board on screen
+      if (b.id === 0 && !s.rasters.has(0)) this.ensure(0, [BOARD.spec.width, BOARD.spec.height], 1);
       const r = s.rasters.get(b.id);
       const t = s.thumbOf.get(b.id);
       if (!r && !t) continue;
