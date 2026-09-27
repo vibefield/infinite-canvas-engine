@@ -51,6 +51,8 @@ import { eyeOf } from "../src/kit/eye.ts";
 import { BOARD_KIND, boardFrame, bookFrame, CALENDAR_KIND, calendarFrame, deskKinds, MINIMAT_KIND, miniMatFrame, NOTEBOOK_KIND, PAPER_KIND, paperFrame, PHOTO_KIND, photoFrame } from "../src/kinds/index.ts";
 import { MarksPass } from "../src/marks/pass.ts";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders.ts";
+import { TrayPass } from "../src/tray/pass.ts";
+import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders.ts";
 import { assembleMarks } from "../src/marks/assemble.ts";
 import { computeSnapGuides } from "@ice/kernel";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
@@ -231,6 +233,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   const marks = await MarksPass.create(device, format, marksShaders(text(MARKS_SHADER_FILES)), mat);
   // the hand (D4b): the focus behind an object in hand and the object over it — the same pass the ground makes
   const hold = await HoldPass.create(device, format, holdShaders(text(HOLD_SHADER_FILES)));
+  // the pegboard tray (design-017, K3): the drawer over the marks — the same pass the ground makes
+  const tray = await TrayPass.create(device, format, trayShaders(text(TRAY_SHADER_FILES)), mat);
   /** The prototype's own selection ring (its stills drew it) — on only for the baseline check; the product's selection is the marks. */
   let prototypeRing = false;
 
@@ -703,12 +707,15 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     const prepared = prepareFrame(encoder, rootSlot, pool, inputs, rootGrid);
     // the desk's marks (stratum 5): a still's — a flight's chrome waits for its landing; off for a check that measures the objects alone
     const marked = opts.marks === false || prototypeRing || s.nav ? 0 : marks.prepare(marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme));
+    // the pegboard drawer (design-017): a still's slide, lip and shown scroll, over the marks
+    const trayed = s.tray === undefined || s.nav ? 0 : tray.prepare(inputs.view, theme, rootGrid, m, { p: s.tray.p ?? 1, lift: s.tray.lift ?? 0, scroll: s.tray.scroll ?? 0 });
     const pass = beginPass(encoder, target, [bg[0], bg[1], bg[2], 1]);
     drawFrame(pass, size, viewSpecOf(s).dpr, prepared.incoming, prepared.outgoing);
     if (marked > 0) marks.draw(pass);
+    if (trayed > 0) tray.draw(pass);
     pass.end();
     return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, heldFrame: () => heldFrameDrawn };
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, tray, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, heldFrame: () => heldFrameDrawn };
 }

@@ -55,6 +55,8 @@ import type { MatShaders } from "./mat/shaders";
 import type { MarksInput } from "./marks/layout";
 import { MarksPass } from "./marks/pass";
 import type { MarksShaders } from "./marks/shaders";
+import { type TrayFrameInputs, TrayPass } from "./tray/pass";
+import type { TrayShaders } from "./tray/shaders";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "./nav/portal";
 import type { GroundTheme } from "./theme";
 
@@ -62,6 +64,8 @@ export type { KindExtra, KindPass, KindProgram, RenderTarget, SlotContext, Strat
 export { STRATA } from "./kind";
 export type { MarkBar, MarkBox, MarkFrame, MarkGuide, MarkMarquee, MarkObject, MarkRuler, MarksInput, MarkTape, MarkUnion } from "./marks/layout";
 export { MARKS_SHADER_FILES, marksShaders } from "./marks/shaders";
+export type { TrayFrameInputs } from "./tray/pass";
+export { TRAY_SHADER_FILES, trayShaders } from "./tray/shaders";
 
 export interface GroundOptions {
   /**
@@ -95,6 +99,11 @@ export interface GroundOptions {
    * frame names its `held`. Absent = a ground that never picks anything up (a frame's `held` is then ignored).
    */
   readonly hold?: HoldShaders;
+  /**
+   * The pegboard tray (tray/pass.ts; design-017, K3): the drawer, drawn in the ROOT's pass after the marks when a frame names its
+   * `tray`. Absent = a ground with no tray.
+   */
+  readonly tray?: TrayShaders;
 }
 
 /** A layer a host rendered first, laid on the mat inside the ground's pass (it sets its own scissor; the ground restores the slot's). */
@@ -189,6 +198,8 @@ export interface GroundFrameInputs extends SlotInputs {
   readonly marks?: MarksInput;
   /** The object in hand (design-015 §8, D4b) while one is held or flying home; absent = the desk as it is. At `e` 0 the frame is the rest frame, byte for byte. */
   readonly held?: HeldFrameInputs;
+  /** The pegboard drawer this frame (design-017 — the renderer's flux: its slide, its lip, its shown scroll), over the marks; absent = none. Never drawn over the hand. */
+  readonly tray?: TrayFrameInputs;
 }
 
 export interface GroundStats extends GridStats {
@@ -506,6 +517,8 @@ export class Ground {
   readonly marks: MarksPass | null;
   /** The hand — the focus behind an object in hand and the object over it (D4b); null when the options named no hold shaders. */
   readonly hold: HoldPass | null;
+  /** The pegboard drawer (design-017, K3); null when the options named no tray shaders. */
+  readonly tray: TrayPass | null;
   /** The desk copy's cache (D4b): the stamp it was made for and the stats of that frame. */
   private readonly heldCache: HeldCache = { stamp: null, stats: null, copies: 0 };
   /** How many desk copies the hand has made so far (D4b) — a rig's witness that the blurred desk is made once per settled state. */
@@ -513,8 +526,8 @@ export class Ground {
   /** The drops last said, by kind (D7). */
   private readonly dropSaid = new Map<string, number>();
 
-  private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null, hold: HoldPass | null) {
-    this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks; this.hold = hold;
+  private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null, hold: HoldPass | null, tray: TrayPass | null) {
+    this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks; this.hold = hold; this.tray = tray;
     this.pool = new SlotPool(root);
   }
 
@@ -522,11 +535,12 @@ export class Ground {
     const surf = opts.surface;
     const mat = await CuttingMat.create(opts.device, surf.format, opts.mat);
     const root = await createSlotSet(opts.device, surf.format, mat, opts.kinds);
-    const [marks, hold] = await Promise.all([
+    const [marks, hold, tray] = await Promise.all([
       opts.marks === undefined ? null : MarksPass.create(opts.device, surf.format, opts.marks, mat),
       opts.hold === undefined ? null : HoldPass.create(opts.device, surf.format, opts.hold),
+      opts.tray === undefined ? null : TrayPass.create(opts.device, surf.format, opts.tray, mat),
     ]);
-    return new Ground(opts.device, surf, root, marks, hold);
+    return new Ground(opts.device, surf, root, marks, hold, tray);
   }
 
   /** The root's pass of the kind registered as `name` (undefined if none) — a host reaches its kind's own API through it: the note's ink pages, the whiteboard's rasters. */
@@ -548,11 +562,14 @@ export class Ground {
     const encoder = this.device.createCommandEncoder({ label: "ground" });
     const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid);
     const marked = inputs.marks !== undefined && this.marks !== null ? this.marks.prepare(inputs.marks) : 0;
+    const trayed = inputs.tray !== undefined && this.tray !== null ? this.tray.prepare(inputs.view, inputs.theme, inputs.grid ?? this.grid, inputs.mat, inputs.tray) : 0;
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
     // stratum 5: the marks, over every slot and every stratum (drawFrame left the scissor on the whole view)
     if (marked > 0) this.marks?.draw(pass);
+    // …and the pegboard drawer over them (design-017): the dim, its shadow on the desk, the board
+    if (trayed > 0) this.tray?.draw(pass);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
     return this.said({ ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) });
@@ -570,7 +587,7 @@ export class Ground {
   }
 
   /** The pool's slots, then the root's kinds in reverse registration order, then the mat. */
-  dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.mat.dispose(); }
+  dispose(): void { this.pool.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.tray?.dispose(); this.mat.dispose(); }
 }
 
 /** The desk copy's cache between held frames (D4b): the `stamp` it was made for (null: none yet), the stats of that frame, and how many copies were ever made (the "once per settled state" witness). */
