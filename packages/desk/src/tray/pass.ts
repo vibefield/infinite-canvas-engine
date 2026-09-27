@@ -220,7 +220,9 @@ export class TrayPass {
       face: [...T.face, 0], faceSrgb: [...T.faceSrgb, 0], edge: [...T.edge, 0], wall: [...T.wall, 0],
       cavity: [T.cavity.edge, T.cavity.heart, T.cavity.width, 0],
       keepFace: [keep(fp, 5), keep(fp, 10), keep(fp, 85), keep(fp, 190)],
-      keepFine: [keep(fp, 210), keep(fp, 42), keep(fp, 105), 0],
+      // a fleck fades by its THIN side, ≈ 0.3 of its cell (tray.wgsl `peg_flecks`): resolved cells with sub-pixel strokes alias into
+      // dashes — the research's 1024 jittered samples averaged them away, a frame that is final must not draw them
+      keepFine: [keep(fp, 210), keep(fp, 42 / 0.3), keep(fp, 105 / 0.3), 0],
       keepEdge: [keep(fp, 9), keep(fp, 18), keep(fp, 36), 0],
     };
     this.tray.set(values);

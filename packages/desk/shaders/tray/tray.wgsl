@@ -71,7 +71,7 @@ fn peg_tone(ht: texture_2d<f32>, p: PegPoint) -> f32 {
 }
 
 // The research's "fine detail fading with pixel footprint", per band: F cycles per pitch are kept while a cycle spans ≥ 4 device
-// px and gone at 2, so a scrolling board never shimmers. The footprint is the frame's, so every band's share is a UNIFORM (pass.ts
+// px and gone at 2, so a scrolling board never shimmers (a fleck by its thin side, not its cell). The footprint is the frame's, so every band's share is a UNIFORM (pass.ts
 // `keeps` — `1 − smoothstep(¼, ½, fp·F)`): the face's 5 · 10 · 85 · 190, then 210 · 42 · 105, the punched fibre's 9 · 18 · 36.
 
 // Sparse fibre flecks (the research's `flecks`): one randomly turned ellipse per jittered cell at F per pitch, signed — dark
