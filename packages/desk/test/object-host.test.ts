@@ -15,6 +15,7 @@ import { PRINT_RASTER, type PrintRaster } from "../src/kit/print";
 import { TEXT_RASTER, type TextRaster } from "../src/kit/raster";
 import { service, serviceKey } from "../src/kit/services";
 import { defineObject, hostOf } from "../src/object";
+import { DEFAULT_GRID } from "../src/mat/grid";
 import { type Palette, themeFrom } from "../src/theme";
 import { fakePage } from "./fake-page";
 
@@ -209,5 +210,31 @@ describe("the services: an open registry any kind lends to and any kind uses, by
     // …and so is a kind's lend over the host's own
     const C = defineObject({ type: "test.lends-text", version: 1, props: {}, kind: scribbleKind("lends-text", []), host: { lend: () => [service(TEXT_RASTER, fakeText)] } });
     expect(() => mountDesk([C], fakeText)).toThrow(/"text" is lent twice — by the host and by the object "test\.lends-text"/);
+  });
+});
+
+// K8a (design-016 §5 — the handle's one kind-shaped door): a still pinned a note's writing through `pinGreek(e, GreekPin)`, the paper
+// kind's shape stated in the desk. `pinAsset` is generic: the value reaches the object's kind as `ctx.asset`, in whatever shape the
+// kind defines — here a kind of the test's own reads its own.
+describe("a still pins a kind's OWN asset through the handle's generic door (K8a)", () => {
+  it("pinAsset hands the object's kind the value as `ctx.asset` at the next build, and `undefined` unpins it", () => {
+    const assets: unknown[] = [];
+    const kind: ObjectKind = { ...scribbleKind("stamped", []), record: (_G, ctx) => { assets.push(ctx.asset); return {}; } };
+    const Stamped = defineObject({ type: "test.stamped", version: 1, props: {}, kind });
+    const { ce, handle } = mountDesk([Stamped]);
+    try {
+      const e = ce.ops.spawnWidget(Stamped.type, { x: 0, y: 0, w: 40, h: 40, undoable: false });
+      ce.step(16);
+      const build = (): void => { handle.builder.changed(); handle.builder.build({ x: -100, y: -100, zoom: 1 }, { width: 400, height: 300, dpr: 1 }, 1 / 60, themeFrom("light", PALETTE), DEFAULT_GRID, new Map(), { now: 0 }); };
+      handle.pinAsset(e, { stamp: "wax", seal: 3 });
+      build();
+      expect(assets.at(-1)).toEqual({ stamp: "wax", seal: 3 });
+      handle.pinAsset(e, undefined);
+      build();
+      expect(assets.at(-1)).toBeUndefined();
+    } finally {
+      handle.dispose();
+      ce.dispose();
+    }
   });
 });

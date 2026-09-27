@@ -13,8 +13,8 @@
 // and clears it at dispose, and registers the `ground` transition plane so a nav flight can prepare.
 //
 // The parity hooks live on the HANDLE, never in durable props (the brief's pinned detail):
-// `pinMat` (the clocks, the plate, the gobo's opacity, the wind), `pinRaster` (a committed ink
-// raster on one note), `clearRasters`, `setPlate` / `setNoise` / `setGlyphs` (the product never
+// `pinMat` (the clocks, the plate, the gobo's opacity, the wind), `pinAsset` (a kind's own asset on one
+// object — a note's greeked writing; K8a: the kind's shape, never the desk's), `setPlate` / `setNoise` / `setGlyphs` (the product never
 // fed the mat before — the render map's finding #2; the blue noise is the desk's own, the plates
 // are the app's generated ones), `configureMat` (the rulers as the app's mat config). Instruments:
 // `submits()`, `stats()`, `wakes()`, `geometryOf`, `fluxOf`, `lastInputs`.
@@ -199,12 +199,6 @@ export interface SelectionSource {
   subscribe(listener: () => void): () => void;
 }
 
-/**
- * A note's writing as a still states it for the far LOD — the paper kind's `PaperWriting`, stated here by its shape since K4b (the
- * desk names no kind; a still hands the note its lines as a plugin would): the text's left edge, its em, each line's baseline and
- * width, note units.
- */
-export interface GreekPin { readonly x0: number; readonly em: number; readonly lines: readonly { readonly y: number; readonly width: number }[] }
 
 /**
  * The desk's MAIN-THREAD time (D6): every flush of the layer's reflector — the kinds' ticks, the pull, the build and the
@@ -290,8 +284,12 @@ export interface DeskLayerHandle {
   setGlyphs(bytes: Uint8Array<ArrayBuffer>, meta: GlyphAtlasMeta): void;
   /** Pin the mat for a still (a parity scene): the clocks, the plate, the gobo's opacity; `wind` > 0 unpins the clocks. `null` unpins everything. */
   pinMat(pin: MatPin | null): void;
-  /** Pin a note's writing lines for its far-LOD chip (a still states them; the live text's layout is D2c's); `undefined` unpins. */
-  pinGreek(entity: Entity, writing: GreekPin | undefined): void;
+  /**
+   * Pin a kind's own ASSET on an object for a still (K8a — generic: the kind reads it as `ctx.asset`, in a shape the KIND defines —
+   * the note's greeked writing is `{ greek }`, `PaperAsset`; the desk never knows it); `undefined` unpins. Until K8a this door was
+   * `pinGreek`, a note's writing stated by its shape (`GreekPin`) — the one kind-shaped door on the handle.
+   */
+  pinAsset(entity: Entity, asset: unknown): void;
   /** Pin an object's spring targets for a still (a scene's `held` = `{ lift: 1 }`, never a `Grab`); `undefined` unpins. */
   pinFlux(entity: Entity, targets: Partial<Pick<ObjectFlux, "lift" | "hover">> | undefined): void;
   /** Every flux pin lifted. */
@@ -734,9 +732,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         }
         compose.wake("pin");
       },
-      pinGreek(entity, lines) {
-        // the greeked lines alone ride the builder's asset (the committed raster lives in the note's writing since D2c)
-        builder.pin(entity, lines === undefined ? undefined : { greek: lines });
+      pinAsset(entity, asset) {
+        // the kind's own asset rides the builder (`ctx.asset`) — the note's greeked lines; its committed raster lives in its writing since D2c
+        builder.pin(entity, asset);
         compose.wake("pin");
       },
       pinFlux(entity, targets) { builder.pinFlux(entity, targets); compose.wake("pin"); },

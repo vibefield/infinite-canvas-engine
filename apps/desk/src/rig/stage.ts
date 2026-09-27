@@ -23,7 +23,7 @@ import { abortNavFlight, Camera, type CanvasEngine, cascadeDestroy, type Entity,
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk";
 import { Calendar, CALENDAR_TYPE, MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type PaperDriver } from "@ice/objects";
 import { HAND, type ThemeName } from "@ice/desk";
-import { MINIMAT, PAPER, type BoardInk, type PaperKind } from "@ice/objects";
+import { MINIMAT, PAPER, type BoardInk, type PaperAsset, type PaperKind } from "@ice/objects";
 import { oracleFixtures } from "./oracle-fixtures";
 import type { SceneHost, Staged } from "../rig-door";
 import { type SpawnSpec, spawnAll } from "../scene";
@@ -218,7 +218,8 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
       if (!ok) throw new Error("desk: the ink pages refused the committed raster");
     } else if (n.asset !== undefined) throw new Error(`desk: unknown note asset "${n.asset}"`);
     // the writing the far LOD greeks (frame.mjs `childrenOf`: x0 = the hand's pad, em = its size)
-    if (n.greek !== undefined && n.greek.length > 0) handle.pinGreek(e, { x0: HAND.pad, em: HAND.size, lines: n.greek.map(([y, width]) => ({ y, width })) });
+    // through the handle's generic door (K8a — `pinAsset`): the asset is the paper kind's own shape (`PaperAsset`), never the desk's
+    if (n.greek !== undefined && n.greek.length > 0) handle.pinAsset(e, { greek: { x0: HAND.pad, em: HAND.size, lines: n.greek.map(([y, width]) => ({ y, width })) } } satisfies PaperAsset);
   }
   for (let i = 0; i < mats.length; i++) {
     const inside = mats[i]?.inside;
