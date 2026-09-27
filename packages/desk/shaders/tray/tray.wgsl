@@ -325,8 +325,9 @@ fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, no
   return col;
 }
 
-// One pixel of the tray (`frag` in device px), the view whole: the dim over the desk, the drawer's shadows on it, the rim, the board —
-// premultiplied; each pixel drawn once.
+// One pixel of the tray UNDER its specimens (`frag` in device px), the view whole: the dim over the desk, the drawer's shadows on it,
+// the board to the outline — premultiplied, each pixel drawn once. The rim is laid over it all LAST (`tray_rim_over`, K5a): the
+// specimens hang between the board and the rim, and slide under the rim as the board does.
 fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
   let dpr = t.view.z;
   let p = frag / dpr;
@@ -355,9 +356,96 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
     under = vec4f(0.0, 0.0, 0.0, 1.0 - (1.0 - room) * (1.0 - lamp) * (1.0 - t.dim));
   }
   if (cover <= 0.0) { return under; }
-  let rim = clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
-  var col = vec3f(0.0);
-  if (rim < 1.0) { col = tray_board(ht, u, t, p, bn.y); }
-  if (rim > 0.0) { col = mix(col, tray_rim(ht, u, t, p, bn.y), rim); }
+  let col = tray_board(ht, u, t, p, bn.y);
   return vec4f(col * cover, cover) + under * (1.0 - cover);
+}
+
+// The RIM over everything the drawer holds (K5a): within `rim` px of the outline, at its coverage there, premultiplied — the board's
+// cut edge over the board, the accessories and the specimens alike; nothing elsewhere.
+fn tray_rim_over(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
+  let p = frag / t.view.z;
+  let px = 1.0 / t.view.z;
+  let o = tray_outline(t, p);
+  let a = clamp(0.5 - o / px, 0.0, 1.0) * clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
+  if (a <= 0.0) { return vec4f(0.0); }
+  var bn = vec3f(0.5);
+  if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
+  return vec4f(tray_rim(ht, u, t, p, bn.y) * a, a);
+}
+
+// ---- the accessories (K5a): what the specimens hang on, plugged into real holes — SKÅDIS's hook, shelf, clip and rail seen head-on, in
+// their powder coat under the lamp, each casting its shadow on the board. One instance per specimen (tray-pass.wgsl), its quad the
+// accessory and its shadow's reach; CSS px, the pitch `P` the unit of every length (kernel/tray.ts TRAY_ACCESSORY's numbers).
+fn acc_peg(a: TrayAccessory, i: u32) -> vec2f {
+  if (i == 0u) { return a.pegs0.xy; }
+  if (i == 1u) { return a.pegs0.zw; }
+  if (i == 2u) { return a.pegs1.xy; }
+  return a.pegs1.zw;
+}
+
+// The accessory's silhouette: its signed distance at `p` (negative inside) — every peg's PLUG in its hole, and the accessory's body.
+fn acc_sdf(a: TrayAccessory, p: vec2f, P: f32) -> f32 {
+  let kind = u32(a.kind.x + 0.5);
+  let n = min(u32(a.kind.y + 0.5), 4u);
+  let r = a.rect;
+  var d = 1.0e4;
+  var lo = 1.0e9;
+  var hi = -1.0e9;
+  for (var i = 0u; i < n; i++) {
+    let g = acc_peg(a, i);
+    lo = min(lo, g.x);
+    hi = max(hi, g.x);
+    d = min(d, sdf_round_box(p - g, vec2f(0.1, 0.28) * P, 0.09 * P));   // the plug, in its hole
+    if (kind == 0u) { d = min(d, sdf_segment(p, g, g + vec2f(0.0, 0.58 * P)) - 0.07 * P); }   // a hook: down to its tip
+    if (kind == 1u) { d = min(d, sdf_segment(p, g, vec2f(g.x, r.w + 0.1 * P)) - 0.06 * P); }   // a shelf's bracket, up to the plank
+    if (kind == 2u) {   // a clip: its spring from the hole down over the specimen's top edge
+      let top = g.y - 0.22 * P;
+      let foot = max(g.y, r.y) + 0.5 * P;
+      d = min(d, sdf_round_box(p - vec2f(g.x, 0.5 * (top + foot)), vec2f(0.24 * P, 0.5 * (foot - top)), 0.08 * P));
+    }
+  }
+  if (kind == 1u) {   // the shelf's plank, under the specimen and past its sides
+    let hw = 0.5 * (r.z - r.x) + 0.3 * P;
+    d = min(d, sdf_round_box(p - vec2f(0.5 * (r.x + r.z), r.w + 0.12 * P), vec2f(hw, 0.12 * P), 0.05 * P));
+  }
+  if (kind == 3u && n > 0u) {   // the rail: a bar through its holes, past the outer two
+    let y = acc_peg(a, 0u).y;
+    d = min(d, sdf_round_box(p - vec2f(0.5 * (lo + hi), y), vec2f(0.5 * (hi - lo) + 0.4 * P, 0.11 * P), 0.11 * P));
+  }
+  return d;
+}
+
+// One pixel of an accessory's quad: its shadow on the board (the silhouette seen from the lamp, pushed off by how far it stands off the
+// board, softened by the lamp's size over that), then the accessory over it — its rounded relief from the silhouette's gradient, lit as
+// the rim is; both kept inside the drawer's outline (the rim is laid over them after). Premultiplied.
+fn tray_accessory(u: MatUniforms, t: TrayUniforms, a: TrayAccessory, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
+  let p = frag / t.view.z;
+  let px = 1.0 / t.view.z;
+  let P = t.view.w;
+  let inside = clamp(0.5 - tray_outline(t, p) / px, 0.0, 1.0);
+  if (inside <= 0.0) { return vec4f(0.0); }
+  let L = t.lamp.xyz;
+  let lz = max(L.z, 1.0e-3);
+  let off = L.xy / lz * a.kind.z;
+  let sig = t.lamp.w * a.kind.z / lz + px;
+  let ds = acc_sdf(a, p + off, P);
+  let shadow = t.accessory.w * (1.0 - smoothstep(-sig, sig, ds));
+  let d = acc_sdf(a, p, P);
+  let c = clamp(0.5 - d / px, 0.0, 1.0);
+  if ((c <= 0.0) && (shadow <= 1.0e-4)) { return vec4f(0.0); }
+  var col = vec3f(0.0);
+  if (c > 0.0) {
+    let e = 0.5;
+    let gx = acc_sdf(a, p + vec2f(e, 0.0), P) - acc_sdf(a, p - vec2f(e, 0.0), P);
+    let gy = acc_sdf(a, p + vec2f(0.0, e), P) - acc_sdf(a, p - vec2f(0.0, e), P);
+    let g = vec2f(gx, gy) / max(length(vec2f(gx, gy)), 1.0e-6);
+    let s = clamp(-d / (0.07 * P), 0.0, 1.0);
+    let n = normalize(vec3f(g * (1.0 - s) * 1.2, max(s, 0.2)));
+    var bn = vec3f(0.5);
+    if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
+    col = tray_lit(u, t, t.accessory.xyz, n, 1.0, bn.y);
+  }
+  let body = c * inside;
+  let under = shadow * inside;
+  return vec4f(col * body, body + under * (1.0 - body));
 }

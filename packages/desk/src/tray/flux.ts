@@ -11,29 +11,36 @@ import { settled, spring } from "../kit/springs";
 import { band, DRAWER, drawerRect, scrollRange, slideEase } from "./drawer";
 import type { TrayFrameInputs } from "./pass";
 
-/** The facts the flux follows (core's `Tray`, as read). */
+/** The facts the flux follows (core's `Tray` and `TrayContent`, as read). */
 export interface TrayFacts {
   readonly open: boolean;
   readonly scroll: number;
   readonly stretch: number;
   readonly lip: boolean;
+  /** K5a: the specimen under the mouse ("" none) — its hover lifts it. */
+  readonly hover?: string;
+  /** K5a: the laid content's foot (board px) — the scroll's range — and the lay count (the specimens moved when it does). */
+  readonly bottom?: number;
+  readonly laid?: number;
 }
 
-/** A still's pins (a rig's, the oracle's): the slide, the lip's lift, the band's shown pull; `hidden` — no tray at all. Absent keys follow the facts. */
+/** A still's pins (a rig's, the oracle's): the slide, the lip's lift, the band's shown pull; `hidden` — no tray at all; `bare` — the board without its specimens (K5a). Absent keys follow the facts. */
 export interface TrayPin {
   readonly p?: number;
   readonly lift?: number;
   readonly band?: number;
   readonly hidden?: boolean;
+  readonly bare?: boolean;
 }
 
-/** What the flux holds, for a rig: the facts it last read, the slide and when (frame clock, ms) its tween began (−1: not yet stepped), the lift, the shown band, whether it moves. */
+/** What the flux holds, for a rig: the facts it last read, the slide and when (frame clock, ms) its tween began (−1: not yet stepped), the lift, the shown band, the specimens' hover lifts by type (K5a), whether it moves. */
 export interface TrayFluxState {
   readonly facts: TrayFacts | null;
   readonly p: number;
   readonly since: number;
   readonly lift: number;
   readonly band: number;
+  readonly hovers: Readonly<Record<string, number>>;
   readonly live: boolean;
 }
 
@@ -46,6 +53,10 @@ export interface TrayFlux {
   live(): boolean;
   /** The drawer as the last step laid it (the pose seam's answer). */
   frame(): TrayScreenFrame | undefined;
+  /** A specimen's hover lift this frame, 0 … 1 (K5a). */
+  lift(type: string): number;
+  /** The pins in force (null: none). */
+  pinned(): TrayPin | null;
   pin(pin: TrayPin | null): void;
   state(): TrayFluxState;
 }
@@ -67,13 +78,15 @@ export function createTrayFlux(): TrayFlux {
   let pinned: TrayPin | null = null;
   let drawn: TrayScreenFrame | undefined;
   let moving = false;
+  // the specimens' hover (K5a): a critically damped spring per type toward 1 under the mouse, 0 elsewhere — a type at rest at 0 is dropped
+  const hovers = new Map<string, { v: number; dv: number }>();
 
   return {
     read(f) {
       if (f === undefined) { const had = facts !== null; facts = null; return had; }
       const was = facts;
-      if (was !== null && was.open === f.open && was.scroll === f.scroll && was.stretch === f.stretch && was.lip === f.lip) return false;
-      facts = { open: f.open, scroll: f.scroll, stretch: f.stretch, lip: f.lip };
+      if (was !== null && was.open === f.open && was.scroll === f.scroll && was.stretch === f.stretch && was.lip === f.lip && was.hover === (f.hover ?? "") && was.bottom === (f.bottom ?? 0) && was.laid === (f.laid ?? 0)) return false;
+      facts = { open: f.open, scroll: f.scroll, stretch: f.stretch, lip: f.lip, hover: f.hover ?? "", bottom: f.bottom ?? 0, laid: f.laid ?? 0 };
       const target = f.open ? 1 : 0;
       if (target !== to) { from = p; to = target; t0 = -1; }
       return true;
@@ -102,19 +115,31 @@ export function createTrayFlux(): TrayFlux {
         settling = !settled(shown, shownV, 0, EPS);
         if (!settling) { shown = 0; shownV = 0; }
       }
-      moving = sliding || lifting || settling;
+      // the specimens' hover: the one under the mouse lifts, the rest settle down
+      let hovering = false;
+      const under = f.open ? (f.hover ?? "") : "";
+      if (under !== "" && !hovers.has(under)) hovers.set(under, { v: 0, dv: 0 });
+      for (const [type, h] of hovers) {
+        const to = type === under ? 1 : 0;
+        [h.v, h.dv] = spring(h.v, h.dv, to, DRAWER.liftHz, 1, dt);
+        if (settled(h.v, h.dv, to, EPS)) { h.v = to; h.dv = 0; if (to === 0) hovers.delete(type); }
+        else hovering = true;
+      }
+      moving = sliding || lifting || settling || hovering;
       const P = pinned;
       const pp = P?.p ?? p;
       const pl = P?.lift ?? lift;
       const pb = P?.band ?? shown;
       const rect = drawerRect(vw, vh, pp, pl);
-      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh), pitch: DRAWER.pitch, scroll: f.scroll + pb };
+      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh, f.bottom ?? 0), pitch: DRAWER.pitch, scroll: f.scroll + pb };
       return { p: pp, lift: pl, scroll: f.scroll + pb };
     },
 
     live: () => moving && pinned === null,
     frame: () => drawn,
+    lift: (type) => hovers.get(type)?.v ?? 0,
+    pinned: () => pinned,
     pin(pin) { pinned = pin; },
-    state: () => ({ facts, p, since: t0, lift, band: shown, live: moving }),
+    state: () => ({ facts, p, since: t0, lift, band: shown, hovers: Object.fromEntries([...hovers].map(([k, h]) => [k, h.v])), live: moving }),
   };
 }

@@ -572,6 +572,8 @@ export class BoardPass {
     const y1 = y0 + view.height / view.zoom;
     let bind = false;
     for (const [i, b] of instances.entries()) {
+      // a board recorded without the desk's local asked for no raster (id 0 — a tray specimen, K5a): it draws on the one clean raster, made once
+      if (b.id === 0 && !s.rasters.has(0)) this.ensure(0, [BOARD.spec.width, BOARD.spec.height]);
       const r = s.rasters.get(b.id);
       const t = s.thumbOf.get(b.id);
       if (!r && !t) continue;

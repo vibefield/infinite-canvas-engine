@@ -197,6 +197,17 @@ export interface DeskLayerPerf {
  * The pegboard tray's door (design-017; K3) — the app's `a` and a rig's hand: the facts through core's tray ops (the one writer beside
  * the tray's input), the flux's pins and its state.
  */
+/** A specimen as the last frame drew it (K5a — the tray door's witness): its type, kind, tag and accessory, its rect and pegs on screen (CSS px), the scale its kind drew it at. */
+export interface TraySpecimenSeen {
+  readonly type: string;
+  readonly kind: string;
+  readonly label: string;
+  readonly accessory: string;
+  readonly screen: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  readonly pegs: readonly (readonly [number, number])[];
+  readonly zoom: number;
+}
+
 export interface DeskTrayDoor {
   /** Open the drawer: refused (false) while an object is in hand; gestures in flight cancel. */
   open(): boolean;
@@ -207,7 +218,7 @@ export interface DeskTrayDoor {
   /** The board's scroll, CSS px past its top — set when given (any value: a rig's 10⁶ rows down), and returned. */
   scroll(px?: number): number;
   /** The facts and the flux as of now, the drawer as last drawn (the pose seam's answer) and what the pass last laid. */
-  state(): TrayFluxState & { readonly frame: TrayScreenFrame | undefined; readonly laid: TrayLaid | null };
+  state(): TrayFluxState & { readonly frame: TrayScreenFrame | undefined; readonly laid: TrayLaid | null; readonly specimens: readonly TraySpecimenSeen[]; readonly tags: number; readonly slots: number };
   /** Pin the drawer for a still — the slide, the lift, the band, or hidden; `null` unpins. */
   pin(pin: TrayPin | null): void;
 }
@@ -680,7 +691,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           const e = trayEntity(world);
           return e === undefined ? 0 : (world.get(e, Tray)?.scroll ?? 0);
         },
-        state: () => ({ ...compose.tray.state(), frame: compose.tray.frame(), laid: ground?.tray?.laid ?? null }),
+        state: () => ({
+          ...compose.tray.state(), frame: compose.tray.frame(), laid: ground?.tray?.laid ?? null,
+          // K5a: the specimens as the last frame drew them — each on screen, its pegs on screen, the scale its kind drew it at — its tags, its slots
+          specimens: compose.traySpecimens().map((f) => ({ type: f.type, kind: f.kind, label: f.label, accessory: f.accessory, screen: f.screen, pegs: f.pegs, zoom: f.view.zoom })),
+          tags: ground?.marks?.tagsLaid.length ?? 0,
+          slots: ground?.traySlots?.size ?? 0,
+        }),
         pin(pin) { compose.tray.pin(pin); compose.wake("pin"); },
       },
       dispose() {

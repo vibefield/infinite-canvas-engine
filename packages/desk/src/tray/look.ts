@@ -26,4 +26,10 @@ export const TRAY_LOOK = {
   })(),
   /** The lamp's angular radius, rad. */
   lampSize: TRAY.lampSize,
+  /** K5a: the accessories' powder coat, linear; each accessory's standing-off (pitches); their shadows' strength. */
+  accessory: linear(rgb(TRAY.accessory.css)),
+  accessoryHeight: TRAY.accessory.height,
+  accessoryShadow: TRAY.accessory.shadow,
+  /** K5a: a hovered specimen's lift — a share of its kind's hold. */
+  hoverLift: TRAY.hoverLift,
 } as const;

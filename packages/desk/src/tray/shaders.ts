@@ -6,7 +6,7 @@
 
 import type { ComposeOptions } from "../engine/shader";
 import { kitWgsl, type ShaderText } from "../kit/wgsl";
-import { TrayUniforms } from "./layout";
+import { TrayAccessoryStruct, TrayUniforms } from "./layout";
 
 /** The tray's own shader files (the kit's pieces come by name). */
 export const TRAY_SHADER_FILES = { tray: "tray/tray.wgsl", trayPass: "tray/tray-pass.wgsl" } as const;
@@ -17,7 +17,7 @@ export type TrayShaders = ComposeOptions;
 export function trayShaders(text: ShaderText): TrayShaders {
   const t = text(TRAY_SHADER_FILES);
   return kitWgsl(["view", "sdf", "light"], {
-    structs: [TrayUniforms],
+    structs: [TrayUniforms, TrayAccessoryStruct],
     modules: [{ label: "tray/tray.wgsl", text: t.tray }],
     entry: { label: "tray/tray-pass.wgsl", text: t.trayPass },
   }, text);

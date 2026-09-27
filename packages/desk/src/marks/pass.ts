@@ -8,7 +8,7 @@ import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } f
 import { compile, compose } from "../engine/shader";
 import type { StructBuffer } from "../engine/struct";
 import type { MatPass } from "../kit/view";
-import { layoutMarks, type MarkRecord, MarkStruct, type MarksInput, MarksUniformsStruct } from "./layout";
+import { layoutMarks, type MarkRecord, MarkStruct, type MarksInput, MarksUniformsStruct, tagMarks } from "./layout";
 import type { MarksShaders } from "./shaders";
 
 const BLEND_PREMUL: GPUBlendState = {
@@ -31,7 +31,9 @@ export class MarksPass {
   private group: GPUBindGroup | null = null;
   private boundAssets = -1;
   private count = 0;
+  private tags = 0;
   private last: readonly MarkRecord[] = [];
+  private lastTags: readonly MarkRecord[] = [];
 
   private constructor(device: GPUDevice, mat: MatPass, pipeline: GPURenderPipeline, layout: GPUBindGroupLayout) {
     this.device = device;
@@ -58,38 +60,65 @@ export class MarksPass {
     return new MarksPass(device, mat, pipeline, layout);
   }
 
-  /** Lay this frame's marks out and upload them (before the frame's pass begins). Returns the count that will draw. */
-  prepare(input: MarksInput): number {
-    const marks = layoutMarks(input, this.mat.glyphs);
+  /**
+   * Lay this frame's marks out and upload them (before the frame's pass begins); after them, the tray's NAME TAGS (K5a — drawn apart,
+   * `drawTags`, where the tray says). Returns the count of the frame's marks that will draw (`draw`).
+   */
+  prepare(input: MarksInput | undefined, tray?: { readonly view: { readonly width: number; readonly height: number; readonly dpr: number }; readonly tags: readonly { readonly label: string; readonly x: number; readonly y: number }[] }): number {
+    const marks = input === undefined ? [] : layoutMarks(input, this.mat.glyphs);
+    const view = input?.view ?? tray?.view;
+    const tags = view === undefined ? [] : (tray?.tags ?? []).flatMap((t) => tagMarks(t.label, t.x, t.y, this.mat.glyphs, view.dpr));
     this.last = marks;
-    if (marks.length > this.records.count) {
+    this.lastTags = tags;
+    const total = marks.length + tags.length;
+    if (total > this.records.count) {
       let n = this.records.count;
-      while (n < marks.length) n *= 2;
+      while (n < total) n *= 2;
       this.records = MarkStruct.alloc(n) as StructBuffer<MarkField>;
       this.recordBuf.destroy();
       this.recordBuf = storageBuffer(this.device, MarkStruct.size * n, "marks/records");
       this.group = null;
     }
     for (let i = 0; i < marks.length; i++) this.records.set(marks[i] as MarkRecord, i);
-    const atlas = this.mat.glyphs;
-    this.uniforms.set({ view: [input.view.width, input.view.height, input.view.dpr, 0], atlas: [atlas.width, atlas.height, atlas.scale, atlas.cellW] });
-    this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
-    if (marks.length > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(marks.length));
+    for (let i = 0; i < tags.length; i++) this.records.set(tags[i] as MarkRecord, marks.length + i);
     this.count = marks.length;
+    this.tags = tags.length;
+    if (view === undefined) return 0;
+    const atlas = this.mat.glyphs;
+    this.uniforms.set({ view: [view.width, view.height, view.dpr, 0], atlas: [atlas.width, atlas.height, atlas.scale, atlas.cellW] });
+    this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
+    if (total > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(total));
     return marks.length;
   }
 
-  /** The marks into the open pass — over everything drawn so far (the caller resets the scissor to the view). */
-  draw(pass: GPURenderPassEncoder): void {
-    if (this.count === 0) return;
+  /** The pipeline and its group, bound (rebound when the mat's assets or the records' buffer changed). */
+  private bind(pass: GPURenderPassEncoder): void {
     if (this.group === null || this.boundAssets !== this.mat.assetVersion) {
       this.group = bindGroup(this.device, this.layout, [this.uniformBuf, this.recordBuf, this.mat.glyphTexture.createView(), this.sampler], "marks");
       this.boundAssets = this.mat.assetVersion;
     }
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.group);
+  }
+
+  /** The marks into the open pass — over everything drawn so far (the caller resets the scissor to the view). */
+  draw(pass: GPURenderPassEncoder): void {
+    if (this.count === 0) return;
+    this.bind(pass);
     pass.draw(6, this.count, 0, 0);
   }
+
+  /** The tray's name tags (K5a) into the open pass, under the caller's scissor (the drawer's face). */
+  drawTags(pass: GPURenderPassEncoder): void {
+    if (this.tags === 0) return;
+    this.bind(pass);
+    pass.draw(6, this.tags, 0, this.count);
+  }
+
+  /** The tray's name tags laid by the last prepare. */
+  get tagCount(): number { return this.tags; }
+  /** …and their records (a rig's witness). */
+  get tagsLaid(): readonly MarkRecord[] { return this.lastTags; }
 
   /** Marks drawn by the last prepare. */
   get drawn(): number { return this.count; }

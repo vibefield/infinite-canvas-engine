@@ -33,7 +33,7 @@
 
 import { defineComponent, type Entity, field, type HeldToolApi, type HeldToolDef } from "@ice/core";
 import { BoardStroke, decodePoints, decodeTimes, inking, type StrokeRow, type MatPass, type MarkFrame, type DeskEye, eyeOf, type BuiltMesh, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, settled, spring, HOLD, readingTarget, LayeredKind, LAYER_IDLE_MS } from "@ice/desk/kit";
-import { type KindProgram, type SlotContext, MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
+import { type KindPass, type KindProgram, type SlotContext, MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
 import { NOTEBOOK, type NotebookLaw } from "./law";
 import { type NotebookLook, type Ruling, RULINGS } from "./layout";
 import { buildMesh } from "./mesh";
@@ -61,14 +61,22 @@ export class NotebookKind extends LayeredKind<NotebookDraw, NotebookPass> {
   /** Root only (D-D18): a spawned slot's pass — a mini mat's inside, a flight's departed desk — holds nothing and draws nothing. */
   spawn(_mat: MatPass): NotebookKind { return new NotebookKind(null); }
 
+  /**
+   * A slot's own pass of this kind takes the ROOT's host-set state before it prepares (its law and the ruling's ink): a spawned pass draws nothing, but a
+   * slot that made its own from the program — the tray's specimen (design-017 §8, K5a) — draws with the desk's.
+   */
+  tune(root: KindPass<unknown>): void { if (root instanceof NotebookKind && root !== this) { this.law = root.law; this.ruleInk = root.ruleInk; } }
+
   /** The pass's own `prepare`, as the prototype's lab called it: the slot's camera, grid, clocks and light, the desk eye over the slot's view, the law, the colours. */
   protected prepareOwn(pass: NotebookPass, s: SlotContext, records: readonly NotebookDraw[]): number {
-    if (records.length > 0 && !this.ruleInk) throw new Error("notebook: the ruling's ink is the host's (the theme gate) — set the kind's `ruleInk` before a book draws");
+    // the host's ink, else a record's own look's (made without the desk's local — a tray specimen, K5a): never none
+    const rule = this.ruleInk ?? records.find((r) => r.rule !== undefined)?.rule ?? null;
+    if (records.length > 0 && !rule) throw new Error("notebook: the ruling's ink is the host's (the theme gate) — set the kind's `ruleInk` before a book draws");
     const v = s.view;
     const eye = eyeOf({ x: v.camX, y: v.camY, zoom: v.zoom }, { width: v.width, height: v.height }, this.law.eye);
     // a deleted book is gone at once (D3w: its ghost's record is marked, never drawn)
     const shown = records.some((r) => VANISHED.has(r)) ? records.filter((r) => !VANISHED.has(r)) : records;
-    return pass.prepare(v, s.fadeIn, s.cfg, s.frame, s.light, eye, this.law, { cast: MAT_COLORS.cast, select: s.select, ruleInk: this.ruleInk ?? NO_INK }, shown);
+    return pass.prepare(v, s.fadeIn, s.cfg, s.frame, s.light, eye, this.law, { cast: MAT_COLORS.cast, select: s.select, ruleInk: rule ?? NO_INK }, shown);
   }
 }
 
@@ -593,6 +601,8 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
         theta: G.theta, gamma: relaxOf(G.theta), look: cover, ruling: RULINGS.includes(rulingName) ? rulingName : "dots", seed: numberProp(ctx.props, "seed", 0) % 97, ring: G.ring,
         // the pages in view with ink, each on a layer brought up to its strokes (D3t-b) — a ghost draws nothing, so asks for none
         selfShadow: G.pose.airs.length > 0 || (sw > 0.02 && sw < Math.PI - 0.02), ink: books !== undefined && G.fade >= 1 ? books.table(ctx.entity, G, look) : NO_TABLE,
+        // without the desk's local nobody sets the pass's ink: the record carries its look's
+        ...(books === undefined ? { rule: look.ruleInk } : {}),
       };
       if (G.fade < 1) VANISHED.add(draw);
       return draw;

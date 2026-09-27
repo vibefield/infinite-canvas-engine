@@ -19,7 +19,7 @@ import { shaderText } from "../src/shaders";
 import { band, DRAWER, drawerRect, drawerSize, scrollRange, slideEase } from "../src/tray/drawer";
 import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punched, rotCell } from "../src/tray/lattice";
 import { HASH_SIZE, hashTexels, keep } from "../src/tray/pass";
-import { TrayUniforms } from "../src/tray/layout";
+import { TrayAccessoryStruct, TrayUniforms } from "../src/tray/layout";
 import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders";
 import { type Palette, themeFrom } from "../src/theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
@@ -210,9 +210,10 @@ describe("the drawer (tray/drawer.ts)", () => {
     for (let t = 0; t <= 1; t += 1 / 64) { const v = slideEase(t); expect(v).toBeGreaterThanOrEqual(prev); prev = v; }
   });
 
-  it("scrolls its stub content past the face it shows (K3: 26 rows)", () => {
-    expect(scrollRange(1200, 800)).toBe(26 * 40 - (352 - 5));
-    expect(scrollRange(1200, 4000)).toBe(26 * 40 - (640 - 5));   // the tallest drawer's face still shows less than the stub
+  it("scrolls its laid content past the face it shows: the last line's foot plus a pitch, less the face (K5a — K3's stub retired)", () => {
+    expect(scrollRange(1200, 800, 530)).toBe(530 + 40 - (352 - 5));
+    expect(scrollRange(1200, 4000, 530)).toBe(0);   // the tallest drawer's face shows it all
+    expect(scrollRange(1200, 800, 0)).toBe(0);      // nothing laid: nothing to scroll
   });
 });
 
@@ -231,16 +232,16 @@ describe("the tray's program (tray/shaders.ts — the mat's light through the ki
   it("asks the kit by name for the view block's struct, the primitives and the mat's light; its own map lists only its own files", () => {
     expect(Object.values(TRAY_SHADER_FILES).filter((f) => !f.startsWith("tray/"))).toEqual([]);
     const c = trayShaders(shaderText);
-    expect((c.structs ?? []).map((s) => s.name)).toEqual(["MatUniforms", "TrayUniforms"]);
+    expect((c.structs ?? []).map((s) => s.name)).toEqual(["MatUniforms", "TrayUniforms", "TrayAccessory"]);
     expect((c.modules ?? []).map((m) => m.label)).toEqual([KIT_WGSL_FILES.sdf, KIT_WGSL_FILES.light, "tray/tray.wgsl"]);
     expect(c.entry.label).toBe("tray/tray-pass.wgsl");
   });
 
-  it("composes, byte for byte, the program K3 composed from the mat's files by hand — so the golden's tray stills cannot move", () => {
+  it("composes, byte for byte, the program composed from the mat's files by hand (K3's, and K5a's accessory record)", () => {
     const raw = shaderText({ primitives: "primitives.wgsl", mat: "mat/mat.wgsl", tray: "tray/tray.wgsl", trayPass: "tray/tray-pass.wgsl" });
     const part = (label: string, text: string) => ({ label, text });
     const byHand = compose({
-      structs: [MatUniforms, TrayUniforms],
+      structs: [MatUniforms, TrayUniforms, TrayAccessoryStruct],
       modules: [part("primitives.wgsl", raw.primitives), part("mat/mat.wgsl", raw.mat), part("tray/tray.wgsl", raw.tray)],
       entry: part("tray/tray-pass.wgsl", raw.trayPass),
     });
@@ -267,17 +268,17 @@ describe("the tray pass on a fake device", () => {
     return { ground, log, writes, frame, trayWrites };
   }
 
-  it("draws last in the ground's pass, in its debug group — one quad, the dim folded in; nothing without a tray", async () => {
+  it("draws last in the ground's pass, in its debug groups — the drawer under its specimens (one quad, the dim folded in), then the rim's three strips over them (K5a); nothing without a tray", async () => {
     const { ground, log, frame } = await mount();
     ground.render(frame());
     expect(log.some((l) => l.includes("tray/pegboard"))).toBe(false);
     log.length = 0;
     ground.render(frame({ p: 1, lift: 0, scroll: 0 }));
     const end = log.lastIndexOf("end");
-    expect(log.slice(end - 5, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6", "debug end"]);
+    expect(log.slice(end - 11, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600", "debug tray/pegboard/rim", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
     log.length = 0;
     ground.render(frame({ p: 0, lift: 0, scroll: 0 }));
-    expect(log).toContain("draw 6");
+    expect(log).toContain("draw 6,1,0,0");
     expect(ground.tray?.laid?.dim).toBe(0);
     ground.render(frame({ p: 0.5, lift: 0, scroll: 0 }, THEMES.dark));
     expect(ground.tray?.laid?.dim).toBeCloseTo(0.4 * THEMES.dark.matLight.night * 0.5 + 0.1 * (1 - THEMES.dark.matLight.night) * 0.5, 9);
@@ -371,7 +372,12 @@ describe("the flux (tray/flux.ts — the motion lives in the renderer)", () => {
     const fr = f.frame();
     expect(fr?.p).toBeCloseTo(slideEase(0.5), 12);
     expect(fr?.y).toBeCloseTo(drawerRect(1200, 800, slideEase(0.5)).y, 9);
-    expect(fr?.max).toBe(scrollRange(1200, 800));
+    expect(fr?.max).toBe(scrollRange(1200, 800, 0));
+    // the laid content's foot moves the range (K5a): a fact the flux reads
+    f.read({ ...opened, bottom: 900, laid: 1 });
+    f.step(190, 1200, 800);
+    expect(f.frame()?.max).toBe(900 + 40 - (352 - 5));
+    expect(f.frame()?.pitch).toBe(40);
     f.pin({ p: 0.5, band: 12 });
     expect(f.step(180, 1200, 800)).toEqual({ p: 0.5, lift: 0, scroll: 12 });
     expect(f.live()).toBe(false);   // a still never keeps the desk awake

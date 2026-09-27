@@ -2,7 +2,7 @@
 // (`translate(-50%, 112%) → 0` in 340 ms on `cubic-bezier(0.32,0.72,0,1)`, top radius 22) on the desk. A PURE module: the
 // tray pass shades the rect it returns, the flux publishes the same rect to core's hit tests, the tests read both.
 
-import { cubicBezierEase } from "@ice/kernel";
+import { cubicBezierEase, trayScrollMax } from "@ice/kernel";
 
 /** The drawer's numbers (design-017 §7). Lengths are CSS px; times ms. */
 export const DRAWER = {
@@ -42,8 +42,6 @@ export const DRAWER = {
   slop: 4,
   lipDrag: 10,
   lipPad: 8,
-  /** K3's stub content (design-017 §7): this many rows of board below the top, so the band at the far end is real until K5's layout. */
-  stubRows: 26,
 } as const;
 
 /** A rect on screen, CSS px: the drawer's outline box as drawn (its top-left, its width, its FULL height — the part below the view included). */
@@ -86,8 +84,11 @@ export function band(stretch: number): number {
   return Math.sign(stretch) * B * (1 - 1 / (1 + (a * DRAWER.band.c) / B));
 }
 
-/** How far the board scrolls before the band (K3's stub content): the content's rows past the face the drawer shows (its height inside the rim). */
-export function scrollRange(vw: number, vh: number): number {
+/**
+ * How far the board scrolls before the band (design-017 §8; K5a — K3's 26-row stub retired): the laid content's foot (`TrayContent.bottom`,
+ * board px) plus a pitch, less the face the drawer shows (its height inside the rim) — kernel `trayScrollMax`; 0 with nothing laid.
+ */
+export function scrollRange(vw: number, vh: number, bottom: number): number {
   const { h } = drawerSize(vw, vh);
-  return Math.max(0, DRAWER.stubRows * DRAWER.pitch - (h - DRAWER.rim));
+  return trayScrollMax(bottom, h - DRAWER.rim, DRAWER.pitch);
 }

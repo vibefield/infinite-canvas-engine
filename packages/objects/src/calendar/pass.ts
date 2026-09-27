@@ -76,6 +76,8 @@ export interface CalendarDraw {
   /** The newest glyph's box and its progress (0 … 1). */
   readonly wipe: { readonly box: SheetBox; readonly t: number } | null;
   readonly colours: CalendarColours;
+  /** The look's print presences — the pass's fallback where no host set its own (a record made without the desk's local: a tray specimen, K5a). */
+  readonly alpha?: { readonly rule: number; readonly head: number; readonly weekend: number; readonly outside: number };
 }
 
 interface PadBuffers { vb: GPUBuffer; ib: GPUBuffer; vcap: number; icap: number; version: number; icount: number; sheetFirst: number; rollFirst: number; seen: number }

@@ -26,16 +26,26 @@ import {
   Pointer,
   PointerScreen,
   PointerVersion,
+  type Entity,
+  Position,
+  PrefabId,
   type ReflectorDef,
+  Size,
+  specimensOf,
   Tray,
+  TrayContent,
   Viewport,
+  widgetTypeFor,
   type World,
 } from "@ice/core";
 import type { Ground, GroundFrameInputs, GroundStats } from "../ground";
 import type { ObjectKind } from "../kinds/world";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GroundTheme, Palette } from "../theme";
+import { objectKindOf } from "../object";
+import { drawerRect } from "../tray/drawer";
 import { createTrayFlux, type TrayFlux } from "../tray/flux";
+import { specimenFrames, type TraySpecimen, type TraySpecimenFrame } from "../tray/specimens";
 import type { Ambient, AmbientState } from "./ambient";
 import type { DeskBuilder, DeskBuilderStats, DeskWakeReason, HoldPin } from "./builder";
 
@@ -104,6 +114,8 @@ export interface DeskReflector {
   look(kind: string): unknown;
   /** The pegboard drawer's flux (design-017 §3): its motion, the drawer as drawn (the pose seam's answer), the pins for a still. */
   readonly tray: TrayFlux;
+  /** The tray's specimens as the last frame drew them (K5a) — a rig's witness; empty while the drawer is shut or bare. */
+  traySpecimens(): readonly TraySpecimenFrame[];
   dispose(): void;
 }
 
@@ -145,6 +157,11 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0, tray: 0 };
   /** The pegboard drawer's motion (design-017 §3): the facts are core's `Tray`, polled each tick; the slide, the lip, the band are here. */
   const tray = createTrayFlux();
+  // the tray's specimens (K5a): read from the world when the lay count moves (or the tray entity does — a reset), drawn each frame it shows
+  let specimens: TraySpecimen[] = [];
+  let specimensLaid = -1;
+  let specimensOn: Entity | undefined;
+  let drawnSpecimens: readonly TraySpecimenFrame[] = [];
   let builderWakes = builder.wakes();
 
   /** The local mouse pointer's screen point as NDC (x right, y up), or null before one was seen. */
@@ -194,7 +211,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       if (w.getResource(Camera)?.gesturing === true) ambient.touch(now);
       // THE TRAY (design-017 §3): its facts polled as the camera's stamp is — a change is a frame (one entity, a handful of fields)
       const te = w.firstOf(trayQ);
-      if (tray.read(te === undefined ? undefined : w.get(te, Tray))) { dirty = true; wakes.tray += 1; }
+      const tf = te === undefined ? undefined : w.get(te, Tray);
+      const tc = te === undefined ? undefined : w.get(te, TrayContent);
+      if (tray.read(tf === undefined ? undefined : { ...tf, hover: tf.hover ?? "", bottom: tc?.bottom ?? 0, laid: tc?.laid ?? 0 })) { dirty = true; wakes.tray += 1; }
       const ground = opts.ground();
       if (ground === null) return;   // pre-ready: the dirt is kept
       const cam = w.getResource(Camera);
@@ -225,7 +244,19 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
       // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)
       // the drawer over it all, as its flux has it this frame (design-017 §3)
-      const trayed = tray.step(now, vp.w, vp.h);
+      let trayed = tray.step(now, vp.w, vp.h);
+      // …and the specimens on it (K5a), while it shows (a still's `bare` pin leaves the board alone): each kind's composite pass made
+      // the first time the tray shows one (a frame is asked for when it is), the frames recorded by their own kinds
+      drawnSpecimens = [];
+      if (trayed !== undefined && trayed.p > 0 && tray.pinned()?.bare !== true) {
+        const laid = tc?.laid ?? 0;
+        if (laid !== specimensLaid || te !== specimensOn) { specimens = readSpecimens(w, te); specimensLaid = laid; specimensOn = te; }
+        if (specimens.length > 0) {
+          ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), () => { dirty = true; wakes.tray += 1; });
+          drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p, trayed.lift), scroll: trayed.scroll }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
+          trayed = { ...trayed, specimens: drawnSpecimens };
+        }
+      }
       const inputs: GroundFrameInputs = {
         view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr },
         mat: amb.frame,
@@ -283,8 +314,32 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     theme: () => theme,
     look: (kind) => looks.get(kind),
     tray,
+    traySpecimens: () => drawnSpecimens,
     dispose() { disposed = true; },
   };
+}
+
+/** The tray's specimens as the renderer reads them (K5a): the tray entity's `Specimen` children — each's object type, its kind, where it hangs, its props, its entry's hang and label. */
+function readSpecimens(w: World, tray: Entity | undefined): TraySpecimen[] {
+  if (tray === undefined) return [];
+  const out: TraySpecimen[] = [];
+  for (const e of specimensOf(w, tray)) {
+    const type = w.get(e, PrefabId)?.id;
+    if (typeof type !== "string") continue;
+    const widget = widgetTypeFor(w, type);
+    const kind = objectKindOf(widget);
+    const entry = widget?.tray;
+    const at = w.get(e, Position);
+    const size = w.get(e, Size);
+    if (widget === undefined || kind === undefined || entry === undefined || at === undefined || size === undefined) continue;
+    const props: Record<string, unknown> = {};
+    for (const g of widget.groups) {
+      const v = w.get(e, g.component) as Record<string, unknown> | undefined;
+      if (v !== undefined) for (const name of Object.keys(g.fields)) props[name] = v[name];
+    }
+    out.push({ key: e as number, type, kind, natural: widget.defaultSize, rect: { x: at.x, y: at.y, w: size.w, h: size.h }, props, accessory: entry.hang.accessory, pegs: entry.hang.pegs, label: entry.label });
+  }
+  return out;
 }
 
 /** Each kind's look for a theme, by kind name — what `ObjectContext.look` carries. */

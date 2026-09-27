@@ -284,6 +284,13 @@ export const TRAY = {
   cavity: { edge: 0.1, heart: 0.22, width: 0.13 },
   lamp: { azimuth: -36, elevation: 48 },
   lampSize: 0.06,
+  /**
+   * K5a — the ACCESSORIES the specimens hang on (hooks, shelves, clips, rails): SKÅDIS's white powder coat warmed to sit on the
+   * hardboard; how far each stands off the board (pitches — its shadow's reach on the board under the lamp); the shadow's strength.
+   */
+  accessory: { token: "SKÅDIS white, warmed", css: "#e8e3d9", height: { hook: 0.45, shelf: 0.6, clip: 0.3, rail: 0.4 }, shadow: 0.38 },
+  /** K5a — a specimen under the mouse lifts this share of the hold's lift (its own kind's `lift`): its shadow grows. */
+  hoverLift: 0.3,
 } as const;
 
 /** Everything the passes read, as numbers. */

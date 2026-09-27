@@ -138,6 +138,39 @@ describe("the notebook and the desk calendar: two layered kinds in the registry"
     expect(bare.prepare(ENCODER, s, [])).toBe(1);
   });
 
+  it("K5a: a record made without the desk's local carries its look's gate — the host's wins, the record's where it set none; a slot's own pass takes the root's through `tune`", () => {
+    const s = ctx();
+    const rule = notebookRuleInk();
+    const calls: unknown[][] = [];
+    const book = new NotebookKind(spyPass(calls, 1, null) as unknown as NotebookPass);
+    expect(book.prepare(ENCODER, s, [{ rule } as NotebookDraw])).toBe(1);   // no host ink: the record's
+    expect((must(calls[0])[8] as { ruleInk: unknown }).ruleInk).toEqual(rule);
+    const host = [0.2, 0.3, 0.4, 1] as const;
+    book.ruleInk = host;
+    calls.length = 0;
+    book.prepare(ENCODER, s, [{ rule } as NotebookDraw]);
+    expect((must(calls[0])[8] as { ruleInk: unknown }).ruleInk).toBe(host);   // the host's wins
+    const pad = new CalendarKind(spyPass(calls, 1, null) as unknown as CalendarPass);
+    calls.length = 0;
+    expect(pad.prepare(ENCODER, s, [{ alpha: CALENDAR_LOOK.alpha } as unknown as CalendarDraw])).toBe(1);
+    expect((must(calls[0])[9] as { alpha: unknown }).alpha).toEqual(CALENDAR_LOOK.alpha);
+    // tune: a slot's own pass (the tray's specimen) takes the root's law and its host-set colour
+    const root = new NotebookKind(spyPass([], 1, null) as unknown as NotebookPass);
+    root.ruleInk = host;
+    root.law = { ...NOTEBOOK };
+    const own = new NotebookKind(spyPass([], 1, null) as unknown as NotebookPass);
+    own.tune(root);
+    expect(own.ruleInk).toBe(host);
+    expect(own.law).toBe(root.law);
+    const rootPad = new CalendarKind(spyPass([], 1, null) as unknown as CalendarPass);
+    rootPad.alpha = CALENDAR_LOOK.alpha;
+    rootPad.law = { ...CALENDAR };
+    const ownPad = new CalendarKind(spyPass([], 1, null) as unknown as CalendarPass);
+    ownPad.tune(rootPad);
+    expect(ownPad.alpha).toBe(CALENDAR_LOOK.alpha);
+    expect(ownPad.law).toBe(rootPad.law);
+  });
+
   it("the layer is recorded into the FRAME's encoder once its pass prepared something, at the attachment the view names; the run lays it ONCE over the whole range, inside the slot's scissor, and gives the scissor back", () => {
     for (const make of [(p: unknown) => { const k = new NotebookKind(p as NotebookPass); k.ruleInk = notebookRuleInk(); return k; }, (p: unknown) => { const k = new CalendarKind(p as CalendarPass); k.alpha = CALENDAR_LOOK.alpha; return k; }]) {
       const calls: unknown[][] = [];

@@ -55,6 +55,8 @@ export interface NotebookDraw {
   readonly selfShadow: boolean;
   /** The pages whose ink is on the device, and the layer each is in (at most `INK_TABLE`). */
   readonly ink: { readonly pages: readonly number[]; readonly layers: readonly number[] };
+  /** The look's ruling ink — the pass's fallback where no host set its own (a record made without the desk's local: a tray specimen, K5a). */
+  readonly rule?: RGBA;
 }
 
 interface BookBuffers { vb: GPUBuffer; ib: GPUBuffer; vcap: number; icap: number; version: number; icount: number; seen: number }

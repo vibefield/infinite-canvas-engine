@@ -299,6 +299,16 @@ function pill(out: Out, x: number, y: number, s: string, fill: RGBA, ink: RGBA, 
   text(out, s, b.x0 + w / 2 - textWidth(s, atlas) / 2, middleBaseline(b.y0 + h / 2 + 0.5, atlas), 0, at(ink, 1), atlas, dpr);
 }
 
+/**
+ * A NAME TAG (design-017 §8; K5a — under each of the tray's specimens): the marks' pill in the paper's white with the pencil's ink, the
+ * label in the rulers' capitals (the atlas holds no other case), centred at (x, y) — screen px.
+ */
+export function tagMarks(label: string, x: number, y: number, atlas: GlyphAtlasMeta, dpr: number): MarkRecord[] {
+  const out: Out = [];
+  pill(out, x, y, label.toUpperCase(), INK.paper, INK.pencil, "center", atlas, dpr);
+  return out;
+}
+
 // ---------------------------------------------------------------- the vellum (chrome.js `drawMarquee`)
 
 function marquee(out: Out, m: MarkMarquee, night: boolean, dpr: number, atlas: GlyphAtlasMeta): void {

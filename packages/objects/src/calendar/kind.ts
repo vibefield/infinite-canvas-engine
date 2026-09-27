@@ -42,7 +42,7 @@ import { CALENDAR_SHADER_FILES, calendarShaders } from "./shaders";
 import { cellAt, dayBox, noteSlot, sheetOf } from "./sheet";
 import { bandOf, GUTTER, levelFor, TILE_TEX, type TileGrid, tileGrid, tileRect, tilesIn } from "./tiles";
 import { caretAt, glyphBox, type HandLaw, HAND, type MatPass, type MarkFrame, type DeskEye, eyeOf, project, unproject, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, LayeredKind, LAYER_IDLE_MS } from "@ice/desk/kit";
-import { type KindProgram, type SlotContext, MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
+import { type KindPass, type KindProgram, type SlotContext, MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
 import { shaderText } from "../shaders";
 
 /** The desk calendar's kind name — its key in the registry and in every slot's `objects`. */
@@ -71,12 +71,20 @@ export class CalendarKind extends LayeredKind<CalendarDraw, CalendarPass> {
   /** Root only (D-D18): a spawned slot's pass — a mini mat's inside, a flight's departed desk — holds nothing and draws nothing. */
   spawn(_mat: MatPass): CalendarKind { return new CalendarKind(null); }
 
+  /**
+   * A slot's own pass of this kind takes the ROOT's host-set state before it prepares (its law and the print's presences): a spawned pass draws nothing, but a
+   * slot that made its own from the program — the tray's specimen (design-017 §8, K5a) — draws with the desk's.
+   */
+  tune(root: KindPass<unknown>): void { if (root instanceof CalendarKind && root !== this) { this.law = root.law; this.alpha = root.alpha; } }
+
   /** The pass's own `prepare`, as the prototype's lab called it: the slot's camera, grid, clocks and light, the desk eye over the slot's view, the law, the tile grid, the colours. */
   protected prepareOwn(pass: CalendarPass, s: SlotContext, records: readonly CalendarDraw[]): number {
-    if (records.length > 0 && !this.alpha) throw new Error("calendar: the print's presences are the host's look — set the kind's `alpha` before a pad draws");
+    // the host's presences, else a record's own look's (made without the desk's local — a tray specimen, K5a): never none
+    const alpha = this.alpha ?? records.find((r) => r.alpha !== undefined)?.alpha ?? null;
+    if (records.length > 0 && !alpha) throw new Error("calendar: the print's presences are the host's look — set the kind's `alpha` before a pad draws");
     const v = s.view;
     const eye = eyeOf({ x: v.camX, y: v.camY, zoom: v.zoom }, { width: v.width, height: v.height }, this.law.eye);
-    return pass.prepare(v, s.fadeIn, s.cfg, s.frame, s.light, eye, this.law, this.grid, { cast: MAT_COLORS.cast, select: s.select, alpha: this.alpha ?? NO_ALPHA }, records);
+    return pass.prepare(v, s.fadeIn, s.cfg, s.frame, s.light, eye, this.law, this.grid, { cast: MAT_COLORS.cast, select: s.select, alpha: alpha ?? NO_ALPHA }, records);
   }
 }
 
@@ -757,6 +765,8 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
         id: st.id, frame: F, mesh, version: 1, rigid: G.rigid, lamp: G.lamp, lift: G.lift, ring: G.ring,
         base: sheetDraw(G.base, G.weekStart, st.slot * 2, law), moving: G.moving !== null ? sheetDraw(G.moving, G.weekStart, st.slot * 2 + 1, law) : null, roll: G.roll, marksOn: G.marksOn,
         ...marks, colours,
+        // without the desk's local nobody sets the pass's presences: the record carries its look's
+        ...(pads === undefined ? { alpha: look.alpha } : {}),
       };
     },
     hit(G: CalendarGeometry, wx: number, wy: number): ObjectHit | null {

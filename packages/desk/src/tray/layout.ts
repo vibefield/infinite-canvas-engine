@@ -25,4 +25,17 @@ export const TrayUniforms = defineStruct("TrayUniforms", [
   ["keepFace", "vec4f"], // each band's share at this footprint (tray.wgsl, the research's fade): the face's grain (≈ 19 a pitch), —, 85, 190…
   ["keepFine", "vec4f"], // …its 210 (bump) · 42 · 105 (flecks)…
   ["keepEdge", "vec4f"], // …and the punched fibre's 9 · 18 · 36
+  ["accessory", "vec4f"], // K5a: the accessories' powder coat, linear, and their shadows' strength on the board
+]);
+
+/**
+ * One specimen's ACCESSORY (K5a — tray.wgsl `tray_accessory`): drawn with the board, one instance each, its quad the accessory and its
+ * shadow's reach. Screen CSS px throughout (the drawer's camera is zoom 1): the quad, the specimen's rect, up to four pegs' hole centres.
+ */
+export const TrayAccessoryStruct = defineStruct("TrayAccessory", [
+  ["box", "vec4f"],   // the quad: x0, y0, x1, y1
+  ["kind", "vec4f"],  // the accessory (0 hook · 1 shelf · 2 clip · 3 rail), its pegs, how far it stands off the board (px), —
+  ["rect", "vec4f"],  // the specimen: x0, y0, x1, y1
+  ["pegs0", "vec4f"], // pegs 0 and 1: x, y
+  ["pegs1", "vec4f"], // pegs 2 and 3
 ]);
