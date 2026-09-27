@@ -3,9 +3,12 @@
 // slide on its curve (sampled on the frame clock at t ≈ 0 · 170 · 340 ms, and the motion's wall time); a scroll of Δ moves the
 // pattern by exactly Δ — the carry's uniforms and a screenshot shift-compare; exact 10⁶ rows down (the same carry fraction, the same
 // holes); the wheel over the drawer scrolls it and never moves the camera; the desk inert while open; 0 submits at rest open and
-// closed (240 frames each); the night; no page errors. Exit 0 = every row passed.
+// closed (240 frames each), one frame per frame of motion; the drawer's GPU cost at 2400 × 1600 (≤ 0.3 ms: a saturated batch of it
+// alone, drained around, medians and minima of 7 rounds with the load beside them); the night; no page errors. Exit 0 = every row
+// passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { loadavg } from "node:os";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
@@ -65,8 +68,8 @@ try {
 
   // 1. CLOSED: the lip at the bottom, the whole drawer's width; nothing moves at rest
   let s = await tray();
-  check(s.facts !== null && s.facts.open === false && s.frame?.p === 0 && s.frame.x === 40 && s.frame.w === 1120 && s.frame.y === 788 && s.laid?.instances === 1,
-    `closed: the lip — rect x ${s.frame?.x} y ${s.frame?.y} w ${s.frame?.w} (40 · 788 · 1120), the drawer alone drawn (${s.laid?.instances} quad)`);
+  check(s.facts !== null && s.facts.open === false && s.frame?.p === 0 && s.frame.x === 40 && s.frame.w === 1120 && s.frame.y === 788 && s.laid?.dim === 0,
+    `closed: the lip — rect x ${s.frame?.x} y ${s.frame?.y} w ${s.frame?.w} (40 · 788 · 1120), no dim (${s.laid?.dim})`);
   const restClosed = await idle();
   check(restClosed === 0, `closed at rest: ${restClosed} submits over 240 frames`);
   // the lip lifts under the mouse (and not beside it), and settles back when it leaves
@@ -79,6 +82,7 @@ try {
 
   // 2. `a` opens it, on the curve — sampled on the frame clock; the motion's wall time
   const lit0 = await shot();
+  const sub0 = await q("window.__desk.submits().total");
   const trace = await qa("window.__desk.tray.trace(420)");   // toggles: opens
   const near = (t) => trace.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
   const rows = [0, 170, 340].map((t) => { const o = near(t); return { t: o.t, p: o.p, want: ease(o.t / 340) }; });
@@ -89,8 +93,11 @@ try {
   check(reached !== undefined && reached.t >= 340 && reached.t < 340 + 40 && trace.filter((o) => o.t < 323).every((o) => o.p < 1),
     `it arrives at 340 ms and not before (first p = 1 at t ${reached?.t.toFixed(1)} ms of the frame clock, ${reached?.wall.toFixed(0)} ms of wall time after the toggle)`);
   await settle();
+  const slid = (await q("window.__desk.submits().total")) - sub0;
+  const moving = trace.filter((o) => o.p < 1).length;
+  check(slid >= moving && slid <= moving + 2, `one frame per frame of motion: ${slid} submits for the slide's ${moving} frames in motion (+ its last), then asleep`);
   s = await tray();
-  check(s.facts.open === true && s.frame.p === 1 && s.frame.y === 448 && s.frame.h === 352 && s.frame.w === 1120 && s.laid?.instances === 2 && Math.abs(s.laid.dim - 0.1) < 1e-9,
+  check(s.facts.open === true && s.frame.p === 1 && s.frame.y === 448 && s.frame.h === 352 && s.frame.w === 1120 && Math.abs(s.laid.dim - 0.1) < 1e-9,
     `open: rect y ${s.frame.y} h ${s.frame.h} (448 · 352, ≈ 44 % of 800), the dim at ${s.laid?.dim} by day`);
   const restOpen = await idle();
   check(restOpen === 0, `open at rest: ${restOpen} submits over 240 frames`);
@@ -115,10 +122,13 @@ try {
   check(la.rowBase === 0 && Math.abs(la.frac - S0 / 40) < 1e-12 && lb.rowBase === 0 && Math.abs(lb.frac - (S0 + D) / 40) < 1e-12,
     `the carry's uniforms: rowBase ${la.rowBase} frac ${la.frac} → rowBase ${lb.rowBase} frac ${lb.frac} (Δ ${D} px = ${D / 40} of a row)`);
   let maxd = 0;
+  let moved = 0;
   let sum = 0;
   let n = 0;
-  for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) { const d = Math.abs(lum(B, x, y) - lum(A, x, y + 2 * D)); maxd = Math.max(maxd, d); sum += d; n++; }
-  check(maxd <= 2 && sum / n < 0.5, `the board ${D} px on moves ${2 * D} device px up: max |Δ| ${maxd.toFixed(2)} (the screen-fixed dither's LSB), mean ${(sum / n).toFixed(3)} over ${n.toLocaleString()} px`);
+  for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) { const d = Math.abs(lum(B, x, y) - lum(A, x, y + 2 * D)); maxd = Math.max(maxd, d); sum += d; n++; if (d > 0) moved++; }
+  // the same board point is reached by two float paths (its rows on screen plus a different fraction of one): exact, but for an f32's
+  // rounding across a quantisation step — at most one step, on a vanishing share of the pixels
+  check(maxd <= 1 && moved / n < 1e-3, `the board ${D} px on is the same pixels ${2 * D} device px up: ${moved} of ${n.toLocaleString()} px differ (max |Δ| ${maxd.toFixed(2)} — an f32's rounding, ≤ 1 step), mean ${(sum / n).toFixed(4)}`);
 
   // 5. exact 10⁶ rows down: the same fraction of a row, the same holes where they were (an even carry keeps the stagger)
   await q(`window.__desk.tray.scroll(${1e6 * 40 + S0})`); await settle();
@@ -139,10 +149,14 @@ try {
 
   // 6. the wheel over the drawer scrolls it and never moves the camera; ⌘-wheel there and a wheel on the dimmed desk do nothing
   await mouse("mouseMoved", 600, 650);
+  await settle();
   const w0 = (await tray()).facts.scroll;
+  const ws0 = await q("window.__desk.submits().total");
   for (let i = 0; i < 3; i++) { await mouse("mouseWheel", 600, 650, { deltaX: 0, deltaY: 120 }); await sleep(30); }
-  await sleep(200);
+  await settle();
   const w1 = (await tray()).facts.scroll;
+  const wheeled = (await q("window.__desk.submits().total")) - ws0;
+  check(wheeled >= 1 && wheeled <= 3, `a scroll costs a frame per wheel tick: ${wheeled} submits for 3 wheel events, then asleep`);
   await mouse("mouseWheel", 600, 650, { deltaX: 0, deltaY: 120, modifiers: 4 });   // ⌘
   await mouse("mouseWheel", 600, 200, { deltaX: 0, deltaY: 120 });                 // the dimmed desk
   await sleep(200);
@@ -176,7 +190,19 @@ try {
   check((await tray()).facts.open === true, "`a` opened it");
   await settle();
 
-  // 9. the night: the Moon on the board, the desk dimmed 40 %
+  // 9. THE COST (design-017 §6.7): the drawer open at 2400 × 1600 — n of it alone per batch, and whole frames with it open and closed,
+  //    each batch drained around; medians and minima of 7 rounds, the host's load beside them
+  const rounds = [];
+  for (let i = 0; i < 7; i++) rounds.push(await qa("window.__desk.tray.cost(60)", 90000));
+  const med = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const alone = rounds.map((r) => r.alone.ms);
+  const whole = rounds.map((r) => r.open.ms);
+  const bare = rounds.map((r) => r.closed.ms);
+  const load = loadavg().map((v) => v.toFixed(1)).join(" ");
+  check(med(alone) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: alone median ${med(alone).toFixed(3)} ms, min ${Math.min(...alone).toFixed(3)} (≤ 0.3); whole frames open ${med(whole).toFixed(3)} vs closed ${med(bare).toFixed(3)} ms (Δ ${(med(whole) - med(bare)).toFixed(3)}) · load ${load}`);
+  await settle();
+
+  // 10. the night: the Moon on the board, the desk dimmed 40 %
   await q("window.__desk.setTheme('dark')"); await settle();
   const night = await shot(); const ln = (await tray()).laid;
   const nightFace = inside.map((i) => lum(night, i % night.width, Math.floor(i / night.width))).sort((a, b) => a - b)[Math.floor(inside.length * 0.6)];

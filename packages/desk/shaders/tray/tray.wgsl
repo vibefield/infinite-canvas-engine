@@ -14,10 +14,6 @@ fn peg_pcg(v: u32) -> u32 {
   return (w >> 22u) ^ w;
 }
 
-fn peg_hash(x: u32, y: u32, seed: u32) -> f32 {
-  return f32(peg_pcg(x ^ peg_pcg(y + seed))) * 2.3283064365386963e-10;
-}
-
 // Four independent uniforms for a lattice cell (the research's hash2i4).
 fn peg_hash4(x: u32, y: u32, seed: u32) -> vec4f {
   let h0 = peg_pcg(x ^ peg_pcg(y + seed));
@@ -37,47 +33,46 @@ fn peg_move(p: PegPoint, d: vec2f) -> PegPoint {
   return PegPoint(p.x + d.x, p.R + i32(fl), y - fl);
 }
 
-// ⌊a / b⌋ for b > 0 (WGSL's `/` truncates toward zero).
-fn peg_floor_div(a: i32, b: i32) -> i32 {
-  let q = a / b;
-  return select(q, q - 1, (a % b != 0) && (a < 0));
-}
-
-// ---- value noise on the board (the research's noise2, its quintic fade): the value and its gradient in lattice units
-fn peg_vnoise(x: u32, y: u32, f: vec2f, seed: u32) -> vec3f {
+// ---- value noise on the board (the research's noise2, its quintic fade): the value and its gradient in lattice units. The corners'
+// hashes come PRE-GATHERED (src/tray/pass.ts `hashTexels`: texel (i, j) holds the research's pcg hash of lattice points (i, j),
+// (i+1, j), (i, j+1), (i+1, j+1), 8 bits each, tiled every 256 cells) — one load where the pcg took eight rounds. Each band reads
+// it at its own offset (its seed); the lattice point is an integer, so the noise stays exact at any row.
+fn peg_vnoise(ht: texture_2d<f32>, x: u32, y: u32, f: vec2f, seed: u32) -> vec3f {
   let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
   let du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
-  let a = peg_hash(x, y, seed);
-  let b = peg_hash(x + 1u, y, seed);
-  let c = peg_hash(x, y + 1u, seed);
-  let d = peg_hash(x + 1u, y + 1u, seed);
+  let k = textureLoad(ht, vec2u((x + seed) & 255u, (y + ((seed * 2654435761u) >> 24u)) & 255u), 0);
+  let a = k.r;
+  let b = k.g;
+  let c = k.b;
+  let d = k.a;
   let v = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
   return vec3f(v, du.x * mix(b - a, d - c, u.y), du.y * mix(c - a, d - b, u.x));
 }
 
 // One band at (fx, fy) cells per pitch (integers): its lattice row is R·fy plus the cells within the row, in wrapping u32 — seamless
 // and exact at any R. The value, and its gradient in pitches.
-fn peg_band(p: PegPoint, fx: u32, fy: u32, seed: u32) -> vec3f {
+fn peg_band(ht: texture_2d<f32>, p: PegPoint, fx: u32, fy: u32, seed: u32) -> vec3f {
   let X = p.x * f32(fx);
   let ix = floor(X);
   let Y = p.fy * f32(fy);
   let iy = floor(Y);
-  let n = peg_vnoise(u32(i32(ix)), u32(p.R) * fy + u32(i32(iy)), vec2f(X - ix, Y - iy), seed);
+  let n = peg_vnoise(ht, u32(i32(ix)), u32(p.R) * fy + u32(i32(iy)), vec2f(X - ix, Y - iy), seed);
   return vec3f(n.x, n.y * f32(fx), n.z * f32(fy));
 }
 
-// A band WIDER than a pitch — one cell per `d` pitches (the tone drift's): the row carried by floor division.
-fn peg_band_wide(p: PegPoint, d: i32, seed: u32) -> f32 {
-  let X = p.x / f32(d);
-  let ix = floor(X);
-  let q = peg_floor_div(p.R, d);
-  let Y = (f32(p.R - q * d) + p.fy) / f32(d);
-  return peg_vnoise(u32(i32(ix)), u32(q), vec2f(X - ix, Y), seed).x;
+// The coarse TONE — the research's two coarsest octaves, ½ and 1 per pitch, pre-gathered TOGETHER at the 1-per-pitch lattice (the
+// hash texture's lower half, pass.ts `hashTexels`): one load and the quintic, normalised to [0, 1]. The row is R itself.
+fn peg_tone(ht: texture_2d<f32>, p: PegPoint) -> f32 {
+  let ix = floor(p.x);
+  let f = vec2f(p.x - ix, p.fy);
+  let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  let k = textureLoad(ht, vec2u(u32(i32(ix)) & 255u, 256u + (u32(p.R) & 255u)), 0);
+  return mix(mix(k.r, k.g, u.x), mix(k.b, k.a, u.x), u.y);
 }
 
 // The research's "fine detail fading with pixel footprint", per band: F cycles per pitch are kept while a cycle spans ≥ 4 device
-// px and gone at 2 (`fp` = pitches per device px), so a scrolling board never shimmers.
-fn peg_keep(fp: f32, F: f32) -> f32 { return 1.0 - smoothstep(0.25, 0.5, fp * F); }
+// px and gone at 2, so a scrolling board never shimmers. The footprint is the frame's, so every band's share is a UNIFORM (pass.ts
+// `keeps` — `1 − smoothstep(¼, ½, fp·F)`): the face's 5 · 10 · 85 · 190, then 210 · 42 · 105, the punched fibre's 9 · 18 · 36.
 
 // Sparse fibre flecks (the research's `flecks`): one randomly turned ellipse per jittered cell at F per pitch, signed — dark
 // negative, pale positive.
@@ -135,50 +130,46 @@ fn peg_hole(t: TrayUniforms, p: PegPoint) -> PegHole {
 }
 
 // ---- the materials (the research's boardMat · wallMat), linear albedo
-// The tempered face: the tone drift (`big` at ½ · 1 · 2 per pitch, `mid` at 5 · 10 · 20 — the research's fbm), the fine height grain
-// and its bump, the fibre flecks — every band faded by its own footprint. Out: the albedo, and the height's gradient (the bump).
-struct PegFace { alb: vec3f, grad: vec2f }
-fn peg_face(t: TrayUniforms, p: PegPoint, fp: f32) -> PegFace {
-  let big = (0.5 * (peg_band_wide(p, 2, 0x3a1u) - 0.5) + 0.25 * (peg_band(p, 1u, 1u, 0x5c7u).x - 0.5) + 0.125 * (peg_band(p, 2u, 2u, 0x9e3u).x - 0.5)) / 0.875;
+// The tempered face: the tone drift (`big` at ½ · 1 per pitch, pre-gathered as one — `peg_tone` — and `mid` at 5: the research's fbm,
+// less its three faintest octaves, which at a UI pitch carried ±4 % between them and half the face's cost), the fine height grain
+// and its bump, the fibre flecks — every band faded by its own footprint. Out: the grain as one factor on the face's linear albedo
+// (`g`: the albedo is face·(1 + g)), the height's gradient (the bump), and whether the face is FLAT here (every bump band faded).
+struct PegFace { g: f32, grad: vec2f, flat: bool }
+fn peg_face(ht: texture_2d<f32>, t: TrayUniforms, p: PegPoint, fp: f32) -> PegFace {
+  let big = peg_tone(ht, p) - 0.5;
   var mid = 0.0;
-  let k5 = peg_keep(fp, 5.0);
-  let k10 = peg_keep(fp, 10.0);
-  let k20 = peg_keep(fp, 20.0);
-  if (k5 > 0.0) { mid += 0.5 * k5 * (peg_band(p, 5u, 5u, 0x2b1u).x - 0.5); }
-  if (k10 > 0.0) { mid += 0.25 * k10 * (peg_band(p, 10u, 10u, 0x6d3u).x - 0.5); }
-  if (k20 > 0.0) { mid += 0.125 * k20 * (peg_band(p, 20u, 20u, 0x8f5u).x - 0.5); }
-  mid = mid / 0.875;
+  let k5 = t.keepFace.x;
+  if (k5 > 0.0) { mid = k5 * (peg_band(ht, p, 5u, 5u, 0x2b1u).x - 0.5); }
   // the fine height (the research's faceHeight: 0.55 · 85, 0.30 · 190×70, 0.15 · 60×210) — at a UI pitch its footprint fades it
   var h = 0.0;
   var grad = vec2f(0.0);
-  let k85 = peg_keep(fp, 85.0);
-  let k190 = peg_keep(fp, 190.0);
-  let k210 = peg_keep(fp, 210.0);
-  if (k85 > 0.0) { let n = peg_band(p, 85u, 85u, 0x1f3u); h += 0.55 * k85 * (n.x - 0.5); grad += 0.55 * k85 * n.yz; }
-  if (k190 > 0.0) { let n = peg_band(p, 190u, 70u, 0x4a7u); h += 0.30 * k190 * (n.x - 0.5); grad += 0.30 * k190 * n.yz; }
-  if (k210 > 0.0) { let n = peg_band(p, 60u, 210u, 0x7c9u); h += 0.15 * k210 * (n.x - 0.5); grad += 0.15 * k210 * n.yz; }
-  var alb = t.face.xyz * (1.0 + 0.18 * big + 0.12 * mid + 0.40 * h);
-  let k42 = peg_keep(fp, 42.0);
-  let k105 = peg_keep(fp, 105.0);
+  let k85 = t.keepFace.z;
+  let k190 = t.keepFace.w;
+  let k210 = t.keepFine.x;
+  if (k85 > 0.0) { let n = peg_band(ht, p, 85u, 85u, 0x1f3u); h += 0.55 * k85 * (n.x - 0.5); grad += 0.55 * k85 * n.yz; }
+  if (k190 > 0.0) { let n = peg_band(ht, p, 190u, 70u, 0x4a7u); h += 0.30 * k190 * (n.x - 0.5); grad += 0.30 * k190 * n.yz; }
+  if (k210 > 0.0) { let n = peg_band(ht, p, 60u, 210u, 0x7c9u); h += 0.15 * k210 * (n.x - 0.5); grad += 0.15 * k210 * n.yz; }
+  let k42 = t.keepFine.y;
+  let k105 = t.keepFine.z;
   var fl = 0.0;
   if (k42 > 0.0) { fl += 0.30 * k42 * peg_flecks(p, 42u, 0.40, 0xa13u); }
   if (k105 > 0.0) { fl += 0.18 * k105 * peg_flecks(p, 105u, 0.35, 0xc35u); }
-  alb = alb * (1.0 + fl);
   var f: PegFace;
-  f.alb = alb;
+  f.g = (1.0 + 0.18 * big + 0.12 * mid + 0.40 * h) * (1.0 + fl) - 1.0;
   f.grad = grad;
+  f.flat = (k85 <= 0.0) && (k190 <= 0.0) && (k210 <= 0.0);
   return f;
 }
 
 // The paler, fuzzier punched fibre (the research's edge): its clumps at 9 · 18 · 36 per pitch, faded by the footprint.
-fn peg_edge(t: TrayUniforms, p: PegPoint, fp: f32) -> vec3f {
+fn peg_edge(ht: texture_2d<f32>, t: TrayUniforms, p: PegPoint, fp: f32) -> vec3f {
   var clump = 0.0;
-  let k9 = peg_keep(fp, 9.0);
-  let k18 = peg_keep(fp, 18.0);
-  let k36 = peg_keep(fp, 36.0);
-  if (k9 > 0.0) { clump += 0.5 * k9 * (peg_band(p, 9u, 9u, 0x3e5u).x - 0.5); }
-  if (k18 > 0.0) { clump += 0.25 * k18 * (peg_band(p, 18u, 18u, 0x5a9u).x - 0.5); }
-  if (k36 > 0.0) { clump += 0.125 * k36 * (peg_band(p, 36u, 36u, 0x7bdu).x - 0.5); }
+  let k9 = t.keepEdge.x;
+  let k18 = t.keepEdge.y;
+  let k36 = t.keepEdge.z;
+  if (k9 > 0.0) { clump += 0.5 * k9 * (peg_band(ht, p, 9u, 9u, 0x3e5u).x - 0.5); }
+  if (k18 > 0.0) { clump += 0.25 * k18 * (peg_band(ht, p, 18u, 18u, 0x5a9u).x - 0.5); }
+  if (k36 > 0.0) { clump += 0.125 * k36 * (peg_band(ht, p, 36u, 36u, 0x7bdu).x - 0.5); }
   return t.edge.xyz * (1.0 + 0.30 * clump / 0.875);
 }
 
@@ -212,17 +203,22 @@ fn tray_lit(u: MatUniforms, t: TrayUniforms, alb: vec3f, n: vec3f, vis: f32, noi
 // The front surface at a board point: the face, or — within k of a hole — the fillet. On smax(slab, −hole, k) = 0 seen head-on the
 // surface's blend weight is h = √(d/k) for d ∈ [0,k], and its normal normalize(((h − 1)·∇d, h)) sweeps from the hole's wall to the
 // face: the rim's lit edge and its shadowed one, in the paler punched fibre where the normal is steep (the research's faceness).
-fn peg_surface(u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32, noise: f32) -> vec3f {
+fn peg_surface(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32, noise: f32) -> vec3f {
   let k = t.hole.z;
-  let face = peg_face(t, p, fp);
+  let face = peg_face(ht, t, p, fp);
+  // the PLAIN FACE — clear of every fillet, its bump faded: N·L is L_z exactly, the relief 1, the glint nothing; the grain's small
+  // linear factor rides the configured byte to first order ((1 + g)^(1/2.4) ≈ 1 + g/2.4 — the byte itself where the grain is 0)
+  if ((h.d >= k) && face.flat) {
+    return tray_colour(u, clamp(t.faceSrgb.xyz * (1.0 + face.g / 2.4), vec3f(0.0), vec3f(1.0)), 1.0, noise);
+  }
   var n = normalize(vec3f(-face.grad * 0.003, 1.0));   // the research's bump: 0.0030 per unit of the height's slope
   if (h.d < k) {
     let s = sqrt(max(h.d, 0.0) / k);
     n = normalize(vec3f((s - 1.0) * h.g, s));
   }
   let faceness = smoothstep(0.35, 0.75, n.z);
-  var alb = face.alb;
-  if (faceness < 1.0) { alb = mix(peg_edge(t, p, fp) * 0.86, alb, faceness); }   // the punched rim, burnished at the front
+  var alb = t.face.xyz * (1.0 + face.g);
+  if (faceness < 1.0) { alb = mix(peg_edge(ht, t, p, fp) * 0.86, alb, faceness); }   // the punched rim, burnished at the front
   return tray_lit(u, t, alb, n, 1.0, noise);
 }
 
@@ -230,7 +226,7 @@ fn peg_surface(u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32
 // face at B; the wall is lit iff both lie in the SAME hole — B's, with A tested against it (a convex prism holds the segment iff it
 // holds both ends) — the penumbra from the SDF distance, widened by the lamp's size over each plane's depth. The room's light reaches
 // the wall through the hole, cut by the cavity: darker toward the hole's edges.
-fn peg_wall(u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32, noise: f32) -> vec3f {
+fn peg_wall(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32, noise: f32) -> vec3f {
   let L = t.lamp.xyz;
   let off = L.xy / max(L.z, 1.0e-3);
   let thick = t.depth.x;
@@ -244,8 +240,9 @@ fn peg_wall(u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32, n
   // the room's share in the mat's shadow (shade_mat at gobo 0): the wall takes a·cav of the room and (1 − a)·vis of the lamp
   let a = 1.0 - u.gobo.z * (1.0 - u.gobo.w);
   let s = (a * cav + (1.0 - a) * vis) / (a + (1.0 - a) * vis);
-  let plaster = 1.0 + 0.10 * (peg_band(p, 2u, 2u, 0xe17u).x - 0.5);
-  return tray_lit(u, t, t.wall.xyz * (s * plaster), vec3f(0.0, 0.0, 1.0), vis, noise);
+  let plaster = 1.0 + 0.10 * (peg_band(ht, p, 2u, 2u, 0xe17u).x - 0.5);
+  // the wall faces the eye: its relief is exactly 1 and the lamp's glint on it nothing — the colour law alone, on its byte
+  return tray_colour(u, clamp(night_encode(t.wall.xyz * (s * plaster)), vec3f(0.0), vec3f(1.0)), vis, noise);
 }
 
 // ---- the drawer
@@ -266,15 +263,19 @@ fn peg_smax(a: f32, b: f32, k: f32) -> f32 {
   return mix(b, a, h) + k * h * (1.0 - h);
 }
 
-// The drawer's outline (CSS px, negative inside): a box whose top corners round and whose bottom lies past the view, less the finger
-// notch scooped from the top edge at the centre (a half-ellipse, the usual two-length estimate of its distance; its join smoothed).
-fn tray_outline(t: TrayUniforms, p: vec2f) -> f32 {
+// The drawer's body (CSS px, negative inside): a box whose top corners round and whose bottom lies past the view — what casts the shadows.
+fn tray_body(t: TrayUniforms, p: vec2f) -> f32 {
   let r = t.shape.x;
   let ext = vec2f(0.5 * t.rect.z, 0.5 * t.rect.w + r);
-  let c = vec2f(t.rect.x + ext.x, t.rect.y + ext.y);
-  let body = sdf_round_box(p - c, ext, r);
+  return sdf_round_box(p - vec2f(t.rect.x + ext.x, t.rect.y + ext.y), ext, r);
+}
+
+// The drawer's outline: its body less the finger notch scooped from the top edge at the centre (a half-ellipse, the usual two-length
+// estimate of its distance; its join smoothed).
+fn tray_outline(t: TrayUniforms, p: vec2f) -> f32 {
+  let body = tray_body(t, p);
   let nr = vec2f(t.shape.z, t.shape.w);
-  let q = p - vec2f(c.x, t.rect.y);
+  let q = p - vec2f(t.rect.x + 0.5 * t.rect.z, t.rect.y);
   let k0 = length(q / nr);
   let k1 = length(q / (nr * nr));
   return peg_smax(body, -(k0 * (k0 - 1.0) / max(k1, 1.0e-6)), t.room.z);
@@ -282,7 +283,7 @@ fn tray_outline(t: TrayUniforms, p: vec2f) -> f32 {
 
 // The rim — the board's cut edge, the paler fibre — within `rim` px of the outline: a bevel facing out of the drawer and toward the
 // eye, lit on the lamp's side and in the room's shadow on the far one. Its fibre is the drawer's own (it never scrolls).
-fn tray_rim(u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
+fn tray_rim(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
   let e = 0.5;
   let gx = tray_outline(t, p + vec2f(e, 0.0)) - tray_outline(t, p - vec2f(e, 0.0));
   let gy = tray_outline(t, p + vec2f(0.0, e)) - tray_outline(t, p - vec2f(0.0, e));
@@ -291,40 +292,56 @@ fn tray_rim(u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
   let yl = (p.y - t.rect.y) / t.view.w;
   let fl = floor(yl);
   let pt = PegPoint((p.x - t.rect.x) / t.view.w, i32(fl), yl - fl);
-  return tray_lit(u, t, peg_edge(t, pt, t.fp), n, 1.0, noise);
+  return tray_lit(u, t, peg_edge(ht, t, pt, t.fp), n, 1.0, noise);
 }
 
 // The board inside the rim: the point under the carry — the rows on screen added to the carried rows in i32 — its hole, the front
 // surface over the hole by its analytic coverage.
-fn tray_board(u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
+fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
   let ly = (p.y - t.rect.y) / t.view.w + t.frac;
   let fl = floor(ly);
   let pt = PegPoint((p.x - t.rect.x) / t.view.w, t.rowBase + i32(fl), ly - fl);
   let h = peg_hole(t, pt);
   let c = clamp(0.5 + h.d / t.fp, 0.0, 1.0);
   var col = vec3f(0.0);
-  if (c > 0.0) { col = peg_surface(u, t, pt, h, t.fp, noise); }
-  if (c < 1.0) { col = mix(peg_wall(u, t, pt, h, t.fp, noise), col, c); }
+  if (c > 0.0) { col = peg_surface(ht, u, t, pt, h, t.fp, noise); }
+  if (c < 1.0) { col = mix(peg_wall(ht, u, t, pt, h, t.fp, noise), col, c); }
   return col;
 }
 
-// One pixel of the drawer's quad (`frag` in device px): the shadow on the desk, the rim, the board — premultiplied.
-fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler) -> vec4f {
+// One pixel of the tray (`frag` in device px), the view whole: the dim over the desk, the drawer's shadows on it, the rim, the board —
+// premultiplied; each pixel drawn once.
+fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
   let dpr = t.view.z;
   let p = frag / dpr;
   let px = 1.0 / dpr;
+  let dim = vec4f(0.0, 0.0, 0.0, t.dim);
+  // beyond the shadows' reach: the dim alone
+  let reach = 3.0 * max(t.shadow.x, t.room.x) + length(t.shadow.zw);
+  if ((p.x < t.rect.x - reach) || (p.x > t.rect.x + t.rect.z + reach) || (p.y < t.rect.y - reach)) { return dim; }
+  // the blue noise is the NIGHT's (the rods' snow, mat.wgsl `night_mat`): by day the board takes none — its own grain never bands,
+  // and a scrolled board is then the same pixels, moved
+  var bn = vec3f(0.5);
+  if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
+  // DEEP INSIDE — clear of the rounded corners and the notch, the rim and two px more: covered, no rim, no shadow, no outline to evaluate
+  let m = t.shape.y + 2.0;
+  if ((p.x > t.rect.x + m) && (p.x < t.rect.x + t.rect.z - m) && (p.y > t.rect.y + max(t.shape.x, t.shape.w) + m)) {
+    return vec4f(tray_board(ht, u, t, p, bn.y), 1.0);
+  }
   let o = tray_outline(t, p);
   let cover = clamp(0.5 - o / px, 0.0, 1.0);
-  // the shadows on the desk: the room's round the outline, the lamp's pushed along its ground direction — one over the other
-  let room = t.room.y * tray_blur(o, t.room.x);
-  let lamp = t.shadow.y * tray_blur(tray_outline(t, p - t.shadow.zw), t.shadow.x);
-  let under = vec4f(0.0, 0.0, 0.0, 1.0 - (1.0 - room) * (1.0 - lamp));
+  // the shadows on the desk — the room's round the outline, the lamp's pushed along its ground direction, one over the other — where
+  // the drawer does not cover them
+  var under = dim;
+  if (cover < 1.0) {
+    let room = t.room.y * tray_blur(tray_body(t, p), t.room.x);
+    let lamp = t.shadow.y * tray_blur(tray_body(t, p - t.shadow.zw), t.shadow.x);
+    under = vec4f(0.0, 0.0, 0.0, 1.0 - (1.0 - room) * (1.0 - lamp) * (1.0 - t.dim));
+  }
   if (cover <= 0.0) { return under; }
-  let bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb;
   let rim = clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
   var col = vec3f(0.0);
-  if (rim < 1.0) { col = tray_board(u, t, p, bn.y); }
-  if (rim > 0.0) { col = mix(col, tray_rim(u, t, p, bn.y), rim); }
-  col = clamp(col + (bn.x - 0.5) / 255.0, vec3f(0.0), vec3f(1.0));   // the photo's dither: the tone drift never bands
+  if (rim < 1.0) { col = tray_board(ht, u, t, p, bn.y); }
+  if (rim > 0.0) { col = mix(col, tray_rim(ht, u, t, p, bn.y), rim); }
   return vec4f(col * cover, cover) + under * (1.0 - cover);
 }

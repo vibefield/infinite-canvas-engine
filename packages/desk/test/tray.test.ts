@@ -16,7 +16,7 @@ import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
 import { shaderText } from "../src/shaders";
 import { band, DRAWER, drawerRect, drawerSize, scrollRange, slideEase } from "../src/tray/drawer";
 import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punched } from "../src/tray/lattice";
-import { TrayUniforms } from "../src/tray/pass";
+import { HASH_SIZE, hashTexels, keep, TrayUniforms } from "../src/tray/pass";
 import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders";
 import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
@@ -198,17 +198,17 @@ describe("the tray pass on a fake device", () => {
     return { ground, log, writes, frame, trayWrites };
   }
 
-  it("draws last in the ground's pass, in its debug group: the dim and the drawer open, the drawer alone closed; nothing without a tray", async () => {
+  it("draws last in the ground's pass, in its debug group — one quad, the dim folded in; nothing without a tray", async () => {
     const { ground, log, frame } = await mount();
     ground.render(frame());
     expect(log.some((l) => l.includes("tray/pegboard"))).toBe(false);
     log.length = 0;
     ground.render(frame({ p: 1, lift: 0, scroll: 0 }));
     const end = log.lastIndexOf("end");
-    expect(log.slice(end - 5, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,2,0,0", "debug end"]);
+    expect(log.slice(end - 5, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6", "debug end"]);
     log.length = 0;
     ground.render(frame({ p: 0, lift: 0, scroll: 0 }));
-    expect(log).toContain("draw 6,1,0,1");
+    expect(log).toContain("draw 6");
     expect(ground.tray?.laid?.dim).toBe(0);
     ground.render(frame({ p: 0.5, lift: 0, scroll: 0 }, THEMES.dark));
     expect(ground.tray?.laid?.dim).toBeCloseTo(0.4 * THEMES.dark.matLight.night * 0.5 + 0.1 * (1 - THEMES.dark.matLight.night) * 0.5, 9);
@@ -355,5 +355,43 @@ describe("the reflector draws the tray (design-017 §3 — idle-zero open and cl
     expect(step(240)).toBe(0);   // closed again, at rest
     const e = trayEntity(ce.world);
     expect(e !== undefined && ce.world.get(e, Tray)?.open).toBe(false);
+  });
+});
+
+describe("the pre-gathered noise and the fades (tray/pass.ts — the cost's work, design-017 §6.7)", () => {
+  it("gives every texel its four lattice corners — its right, lower and diagonal neighbours' own values, across the wrap — in both halves", () => {
+    const N = HASH_SIZE;
+    const t = hashTexels();
+    expect(t.length).toBe(N * 2 * N * 4);
+    const px = (i: number, j: number, c: number): number => t[(j * N + (i % N)) * 4 + c] as number;
+    let bad = 0;
+    for (const half of [0, N]) {
+      for (let j = 0; j < N; j++) {
+        const jj = half + ((j + 1) % N);
+        for (let i = 0; i < N; i++) {
+          const row = half + j;
+          if (px(i, row, 1) !== px(i + 1, row, 0)) bad++;   // (i+1, j) is the right neighbour's own
+          if (px(i, row, 2) !== px(i, jj, 0)) bad++;        // (i, j+1) the lower one's
+          if (px(i, row, 3) !== px(i + 1, jj, 0)) bad++;    // (i+1, j+1) the diagonal's
+        }
+      }
+    }
+    expect(bad).toBe(0);
+    // the tone is a smooth field — neighbours close — where the hashes are not
+    let toneStep = 0;
+    let hashStep = 0;
+    for (let i = 0; i < N; i++) { toneStep += Math.abs(px(i, N + 7, 0) - px(i + 1, N + 7, 0)); hashStep += Math.abs(px(i, 7, 0) - px(i + 1, 7, 0)); }
+    expect(toneStep / N).toBeLessThan(hashStep / N / 2);
+  });
+
+  it("fades a band by its own footprint as tray.wgsl did per pixel: kept while a cycle spans ≥ 4 device px, gone at 2", () => {
+    const fp = 1 / (40 * 2);   // 40 CSS px a pitch at dpr 2
+    expect(keep(fp, 5)).toBe(1);
+    expect(keep(fp, 20)).toBe(1);   // 4 device px a cycle
+    expect(keep(fp, 30)).toBeCloseTo(0.5, 12);
+    expect(keep(fp, 40)).toBe(0);   // 2
+    expect(keep(fp, 85)).toBe(0);
+    expect(keep(1 / 40, 10)).toBe(1);
+    expect(keep(1 / 40, 15)).toBeCloseTo(0.5, 12);
   });
 });

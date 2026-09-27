@@ -1,8 +1,10 @@
-// THE TRAY PASS — the pegboard drawer on the GPU (design-017 §5–§6; K3): one pipeline, one draw of two instanced quads in the ROOT's
-// render pass after the marks — the dim over the view, then the drawer's quad grown by its shadow, where tray.wgsl shades the rim
+// THE TRAY PASS — the pegboard drawer on the GPU (design-017 §5–§6; K3): one pipeline, one draw of one quad in the ROOT's render pass
+// after the marks — the view whole while the desk is dimmed (the dim, the drawer's shadows, the board: each pixel drawn once), the
+// drawer's box and its shadows' reach while it is closed — where tray.wgsl shades the rim
 // and the research board in closed form. Its light is the DESK's: a block of the mat's own struct carrying the theme's light, the
 // root grid's shadow grade and the frame's blue-noise offset (so `shade_mat` / `night_mat` are the mat's functions, not copies),
-// and the lamp's direction from the mat's centre. It samples the root mat's blue noise and rebinds when the mat's assets change.
+// and the lamp's direction from the mat's centre. It samples the root mat's blue noise (rebinding when the mat's assets change) and
+// its own HASH texture — every value-noise octave's four lattice corners pre-gathered in one texel (`hashTexels`), made once.
 // Both blocks are uploaded only when they change. Labelled `tray/pegboard` (the pipeline, the bind group, a debug group).
 
 import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
@@ -45,9 +47,13 @@ export const TrayUniforms = defineStruct("TrayUniforms", [
   ["room", "vec4f"],     // the room's shadow round the outline: σ, α; the notch's join radius — CSS px
   ["shadow", "vec4f"],   // the lamp's shadow: σ, α, its push along the lamp's ground direction (x, y) — CSS px
   ["face", "vec4f"],     // the tempered face, linear
+  ["faceSrgb", "vec4f"], // …and its configured byte (sRGB): the plain face's colour lit flat
   ["edge", "vec4f"],     // the punched fibre, linear
   ["wall", "vec4f"],     // the plaster, linear
   ["cavity", "vec4f"],   // the room's light on the wall in a hole: at its edge, at its heart, over what width (pitches)
+  ["keepFace", "vec4f"], // each band's share at this footprint (tray.wgsl, the research's fade): the face's 5 · 10 · 85 · 190 per pitch…
+  ["keepFine", "vec4f"], // …its 210 (bump) · 42 · 105 (flecks)…
+  ["keepEdge", "vec4f"], // …and the punched fibre's 9 · 18 · 36
 ]);
 
 type TrayField = (typeof TrayUniforms.fields)[number][0];
@@ -58,13 +64,78 @@ const BLEND_PREMUL: GPUBlendState = {
   alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
 };
 
-/** What the last prepare laid (a rig's and a check's witness): the rect, the carry, the dim, and how many quads draw. */
+/** What the last prepare laid (a rig's and a check's witness): the rect, the carry, the dim. */
 export interface TrayLaid {
   readonly rect: DrawerRect;
   readonly rowBase: number;
   readonly frac: number;
   readonly dim: number;
-  readonly instances: number;
+}
+
+/** The research's pcg (shader.js `pcg`), in 32-bit integer arithmetic. */
+function pcg(v: number): number {
+  const s = (Math.imul(v >>> 0, 747796405) + 2891336453) >>> 0;
+  const w = Math.imul(((s >>> ((s >>> 28) + 4)) ^ s) >>> 0, 277803737) >>> 0;
+  return ((w >>> 22) ^ w) >>> 0;
+}
+
+/** The hash texture's side: the noise tiles every 256 lattice cells (for a band of F per pitch, every 256/F pitches). */
+export const HASH_SIZE = 256;
+
+/** The research's quintic fade (shader.js `noise2`). */
+const quintic = (f: number): number => f * f * f * (f * (f * 6 - 15) + 10);
+
+/**
+ * The PRE-GATHERED noise (design-017 §6.7), 256 × 512 rgba8 — each texel the four corners one value-noise lookup interpolates, so a
+ * band is ONE load: rows 0–255 hold the research's hash of lattice points (i, j), (i+1, j), (i, j+1), (i+1, j+1) (`pcg(i ^ pcg(j))`,
+ * its top 8 bits; each band reads it at its own offset); rows 256–511 the coarse TONE — the research's two coarsest octaves, ½ and 1
+ * per pitch at weights ½ and ¼, summed at the 1-per-pitch lattice points (the ½-octave by its own quintic between its corners, its
+ * lattice wrapping at 128 cells) and normalised — so the board reads both in one load. Everything tiles every 256 cells.
+ */
+export function hashTexels(): Uint8Array<ArrayBuffer> {
+  const N = HASH_SIZE;
+  const h = new Uint8Array(N * N);
+  for (let j = 0; j < N; j++) { const r = pcg(j); for (let i = 0; i < N; i++) h[j * N + i] = pcg((i ^ r) >>> 0) >>> 24; }
+  const at = (i: number, j: number): number => (h[(((j % N) + N) % N) * N + (((i % N) + N) % N)] as number) / 255;
+  // the tone at a 1-per-pitch lattice point: the ½-octave (seed 0x3a1 — its hash read as the shader's bands read it) at (i/2, j/2), ¼ of
+  // the 1-octave's hash (seed 0x5c7) there, normalised to [0, 1]
+  const seedY = (seed: number): number => Math.imul(seed, 2654435761) >>> 24;
+  const wide = (i: number, j: number): number => {
+    const a = Math.floor(i / 2);
+    const b = Math.floor(j / 2);
+    const u = quintic((i - 2 * a) / 2);
+    const v = quintic((j - 2 * b) / 2);
+    const c = (x: number, y: number): number => at((x % 128) + 0x3a1, (y % 128) + seedY(0x3a1));
+    const top = c(a, b) + (c(a + 1, b) - c(a, b)) * u;
+    const bottom = c(a, b + 1) + (c(a + 1, b + 1) - c(a, b + 1)) * u;
+    return top + (bottom - top) * v;
+  };
+  const tone = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) tone[j * N + i] = (0.5 * wide(i, j) + 0.25 * at(i + 0x5c7, j + seedY(0x5c7))) / 0.75;
+  const out = new Uint8Array(N * 2 * N * 4);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const i1 = (i + 1) % N;
+      const j1 = (j + 1) % N;
+      const o = (j * N + i) * 4;
+      out[o] = h[j * N + i] as number;
+      out[o + 1] = h[j * N + i1] as number;
+      out[o + 2] = h[j1 * N + i] as number;
+      out[o + 3] = h[j1 * N + i1] as number;
+      const t = ((N + j) * N + i) * 4;
+      out[t] = Math.round(255 * (tone[j * N + i] as number));
+      out[t + 1] = Math.round(255 * (tone[j * N + i1] as number));
+      out[t + 2] = Math.round(255 * (tone[j1 * N + i] as number));
+      out[t + 3] = Math.round(255 * (tone[j1 * N + i1] as number));
+    }
+  }
+  return out;
+}
+
+/** A band of F cycles per pitch at a footprint of `fp` pitches per device px: kept while a cycle spans ≥ 4 px, gone at 2 (tray.wgsl's fade). */
+export function keep(fp: number, F: number): number {
+  const x = Math.min(Math.max((fp * F - 0.25) / 0.25, 0), 1);
+  return 1 - x * x * (3 - 2 * x);
 }
 
 /** The direction to the desk's lamp from the mat's centre — what a note at world (0, 0) is lit by (design-017 §6.6): x right, y down, z up. */
@@ -82,6 +153,7 @@ export class TrayPass {
   private readonly sampler: GPUSampler;
   private readonly trayBuf: GPUBuffer;
   private readonly lightBuf: GPUBuffer;
+  private readonly hash: GPUTexture;
   private readonly tray = TrayUniforms.alloc(1);
   private readonly light = MatUniforms.alloc(1);
   private readonly sentTray = new Uint8Array(TrayUniforms.size);
@@ -99,6 +171,8 @@ export class TrayPass {
     this.sampler = device.createSampler({ label: "tray/pegboard/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
     this.trayBuf = uniformBuffer(device, TrayUniforms.size, "tray/pegboard/uniforms");
     this.lightBuf = uniformBuffer(device, MatUniforms.size, "tray/pegboard/light");
+    this.hash = device.createTexture({ label: "tray/pegboard/hash", size: [HASH_SIZE, 2 * HASH_SIZE], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    device.queue.writeTexture({ texture: this.hash }, hashTexels(), { bytesPerRow: HASH_SIZE * 4 }, [HASH_SIZE, 2 * HASH_SIZE]);
   }
 
   /** The pipeline on `format`, sampling `mat`'s blue noise (the root's: its assets are every slot's). */
@@ -109,6 +183,7 @@ export class TrayPass {
       { binding: 1, stages: ["vertex", "fragment"], buffer: "uniform" },
       { binding: 2, stages: ["fragment"], texture: "float" },
       { binding: 3, stages: ["fragment"], sampler: "filtering" },
+      { binding: 4, stages: ["fragment"], texture: "float" },
     ], "tray/pegboard");
     const pl = device.createPipelineLayout({ label: "tray/pegboard", bindGroupLayouts: [layout] });
     const pipeline = await renderPipeline(device, { label: "tray/pegboard", layout: pl, module, format, blend: BLEND_PREMUL });
@@ -117,7 +192,8 @@ export class TrayPass {
 
   /**
    * Lay the drawer out for this frame and upload what changed (before the frame's pass begins): the view, the theme's light, the
-   * root grid's grade and lamp, the frame's noise offset. Returns the quads that will draw — 2 while the slide shows the dim, else 1.
+   * root grid's grade and lamp, the frame's noise offset. Returns the quads that will draw: one (the view whole while it dims, else
+   * the drawer's box).
    */
   prepare(view: View & { readonly dpr: number }, theme: GroundTheme, grid: GridConfig, frame: MatFrame | undefined, inputs: TrayFrameInputs): number {
     const P = DRAWER.pitch;
@@ -128,20 +204,24 @@ export class TrayPass {
     const g = Math.hypot(L[0], L[1]) || 1;
     const S = DRAWER.shadow.lamp;
     const Rm = DRAWER.shadow.room;
+    const fp = 1 / (P * view.dpr);
     const dim = (DRAWER.dim.day + (DRAWER.dim.night - DRAWER.dim.day) * Math.min(Math.max(theme.matLight.night, 0), 1)) * p;
     const T = TRAY_LOOK;
     const values: Partial<Record<TrayField, number | readonly number[]>> = {
       view: [view.width, view.height, view.dpr, P],
       rect: [rect.x, rect.y, rect.w, rect.h],
-      rowBase, frac, fp: 1 / (P * view.dpr), dim,
+      rowBase, frac, fp, dim,
       shape: [DRAWER.radius, DRAWER.rim, DRAWER.notch.w / 2, DRAWER.notch.h],
       hole: [PEG.holeR, PEG.holeHalf, PEG.rimK, PEG.border],
       depth: [PEG.thick, PEG.gap, PEG.colPhase, PEG.rowPhase],
       lamp: [L[0], L[1], L[2], T.lampSize],
       room: [Rm.sigma, Rm.alpha, DRAWER.notchRound, 0],
       shadow: [S.sigma, S.alpha, (-L[0] / g) * S.push, (-L[1] / g) * S.push],
-      face: [...T.face, 0], edge: [...T.edge, 0], wall: [...T.wall, 0],
+      face: [...T.face, 0], faceSrgb: [...T.faceSrgb, 0], edge: [...T.edge, 0], wall: [...T.wall, 0],
       cavity: [T.cavity.edge, T.cavity.heart, T.cavity.width, 0],
+      keepFace: [keep(fp, 5), keep(fp, 10), keep(fp, 85), keep(fp, 190)],
+      keepFine: [keep(fp, 210), keep(fp, 42), keep(fp, 105), 0],
+      keepEdge: [keep(fp, 9), keep(fp, 18), keep(fp, 36), 0],
     };
     this.tray.set(values);
     const gobo = grid.mat.gobo;
@@ -156,9 +236,8 @@ export class TrayPass {
     this.upload(this.trayBuf, this.tray.view(), this.sentTray);
     this.upload(this.lightBuf, this.light.view(), this.sentLight);
     this.sent = true;
-    const instances = dim > 0 ? 2 : 1;
-    this.last = { rect, rowBase, frac, dim, instances };
-    return instances;
+    this.last = { rect, rowBase, frac, dim };
+    return 1;
   }
 
   /** A block to the GPU only when its bytes moved since the last upload (a drawer at rest costs no write). */
@@ -175,19 +254,18 @@ export class TrayPass {
     const laid = this.last;
     if (laid === null) return;
     if (this.group === null || this.boundAssets !== this.mat.assetVersion) {
-      this.group = bindGroup(this.device, this.layout, [this.lightBuf, this.trayBuf, this.mat.noiseTexture.createView(), this.sampler], "tray/pegboard");
+      this.group = bindGroup(this.device, this.layout, [this.lightBuf, this.trayBuf, this.mat.noiseTexture.createView(), this.sampler, this.hash.createView()], "tray/pegboard");
       this.boundAssets = this.mat.assetVersion;
     }
     pass.pushDebugGroup("tray/pegboard");
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.group);
-    // the dim is instance 0: a closed drawer draws its lip alone
-    pass.draw(6, laid.instances, 0, 2 - laid.instances);
+    pass.draw(6);
     pass.popDebugGroup();
   }
 
   /** What the last prepare laid (a rig's witness). */
   get laid(): TrayLaid | null { return this.last; }
 
-  dispose(): void { this.trayBuf.destroy(); this.lightBuf.destroy(); }
+  dispose(): void { this.trayBuf.destroy(); this.lightBuf.destroy(); this.hash.destroy(); }
 }

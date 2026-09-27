@@ -4,12 +4,14 @@
 import { linear } from "../mat/night";
 import { type RGB, rgb, TRAY } from "../theme";
 
-const face = linear(rgb(TRAY.face.css));
+const faceSrgb = rgb(TRAY.face.css);
+const face = linear(faceSrgb);
 const { research } = TRAY;
 
 export const TRAY_LOOK = {
-  /** The tempered hardboard face. */
+  /** The tempered hardboard face — and the byte it is configured as (a flat, lit face is drawn at exactly this). */
   face,
+  faceSrgb,
   /** The paler, fuzzier punched edge: the face scaled by the research's edge/face ratio. */
   edge: [0, 1, 2].map((i) => (face[i] as number) * ((research.edge[i] as number) / (research.face[i] as number))) as unknown as RGB,
   /** The painted plaster wall behind the board. */
