@@ -338,6 +338,10 @@ export interface DeskBuilder {
   veiled(e: Entity): boolean;
   /** The last build's paint rank of `e` in the ROOT slot (D6 — a kind's residency asks it); undefined = not drawn there. */
   rankOf(e: Entity): number | undefined;
+  /** Was `e` drawn in the last build — its record made or reused in ANY slot, the root's, an inside's, the hand's (K6b: the raster queue lets go of an ask whose object is not)? */
+  shows(e: Entity): boolean;
+  /** `e`'s record remade at the next build, and the desk woken (K6b — a raster LANDED on it: its record says where its ink is). */
+  remake(e: Entity): void;
   /** Every record remade at the next build (a kind's law changed under them — `tuneLaw`). */
   invalidate(): void;
   /** Check every reused record against a fresh resolve each build (`stats().mismatches`) — a rig's witness, dear per frame. */
@@ -1392,6 +1396,17 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     rankOf(e) {
       const st = states.get(e);
       return st !== undefined && st.seen === seq && st.record !== null && st.slot === "root" && st.rank >= 0 ? st.rank : undefined;
+    },
+    shows(e) {
+      const st = states.get(e);
+      return st !== undefined && st.seen === seq && st.record !== null;
+    },
+    remake(e) {
+      const st = states.get(e);
+      if (st === undefined) return;
+      st.stale = true;
+      woke = true;
+      wakes.world += 1;
     },
     invalidate() { invalidated = true; woke = true; wakes.world += 1; },
     verify(on) { verifying = on; },

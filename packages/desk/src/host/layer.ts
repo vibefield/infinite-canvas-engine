@@ -39,6 +39,7 @@ import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
 import { type BudgetStats, createRasterBudget } from "../engine/budget";
+import { createRasterQueue, type RasterQueueStats } from "../engine/rasters";
 import type { RecordStoreStats } from "../engine/records";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
 import { heldSlots, type SelectionAnchor } from "../compose/marks";
@@ -115,6 +116,12 @@ export interface DeskLayerOptions {
    * off-screen raster goes first. Default 192 MB.
    */
   readonly rasterBudget?: number;
+  /**
+   * THE FRAME'S RASTER BUDGET (K6b, design-016 §6), ms: what one frame spends making the rasters the kinds asked of the queue
+   * (engine/rasters.ts — a note's ink at a new band, a board's strokes on coming on screen); the rest wait their turn, their old
+   * raster standing. Default `RASTER_BUDGET_MS` (4).
+   */
+  readonly rasterMs?: number;
   /**
    * Keep the device's LIVE GPU MEMORY by label from the boot on (gpu-memory.ts, design-016 §4 — the profiler's memory table): a
    * map entry per texture or buffer MADE, nothing per frame. Off by default (D-K2.2): a resource made before the ledger cannot be
@@ -291,6 +298,8 @@ export interface DeskLayerHandle {
   perf(): DeskLayerPerf;
   /** The raster budget's ledger (D6): what the kinds' caches hold, by owner, against the cap; the evictions so far. */
   memory(): BudgetStats;
+  /** The frame's raster queue (K6b): the asks waiting and held, the runs, the turns, their ms and the most a turn spent. */
+  rasters(): RasterQueueStats;
   /** The device's live GPU memory by label (K2) — kept only under `gpuLedger: true`, from the boot; undefined otherwise or before the device. */
   gpuMemory(): MemoryLedger | undefined;
   /**
@@ -406,8 +415,12 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const drawn = (e: Entity): number | undefined => builder.rankOf(e);   // `builder` is made just below; the word is only asked at a tick
     // THE RASTER BUDGET (D6): one ledger for every kind's raster caches; trimmed once a tick by each kind's word on what is on screen
     const budget = createRasterBudget(opts.rasterBudget ?? DEFAULT_RASTER_BUDGET);
+    // THE FRAME'S RASTER QUEUE (K6b): the kinds' re-rasters under one budget a frame, its turn once a tick before the build; an ask
+    // whose object the last build did not draw is let go (the builder's word, bound late as `drawn` is)
+    const rasters = createRasterQueue({ ...(opts.rasterMs !== undefined ? { budgetMs: opts.rasterMs } : {}), shows: (e) => builder.shows(e) });
+    const remake = (e: Entity): void => builder.remake(e);
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print: lent.get(k.name)?.print, drawn, budget });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print: lent.get(k.name)?.print, drawn, budget, rasters, remake });
       if (local !== undefined) locals.set(k.name, local);
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
@@ -495,16 +508,24 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         const restless = new Set<string>();
         for (const [name, local] of locals) if (local.tick?.(now) === true) { want = true; restless.add(name); }
         ground?.idleTray();   // the tray's own slots let their layers go once undrawn a while, as the kinds' ticks do the root's (D-K6a.3, K5a)
+        // the raster queue's turn (K6b): after the ticks (a kind's tick may ask), before the build — a raster laid now has its record
+        // remade in this build (`remake`), so no frame draws a record whose ink moved under it
+        if (rasters.size > 0) rasters.drain();
         if (want) compose.wake("ink");
         compose.restless(restless);
         moving = want;   // D3w: a kind's own motion (a print in the air) keeps the desk from reading quiet between its frames
         inner.flush(w);
         editor?.follow();
         budget.trim(keeps);   // over the cap: the least recently used off-screen rasters go (O(1) when under it)
+        const drew = compose.redraws() !== drawn;
+        // a frame drawn: what is drawn moved, and a raster no longer drawn may be evicted — the asks held for room try again (K6b)
+        if (drew) rasters.wake();
+        // …and so do rasters still waiting their turn (K6b; those held for room do not: nothing moves until room is made)
+        if (rasters.size > 0) moving = true;
         // the desk's own main-thread time (D6): this flush, and whether it drew
         const spent = performance.now() - now;
         perf.ticks += 1; perf.ms += spent;
-        if (compose.redraws() !== drawn) { perf.frames += 1; perf.frameMs += spent; }
+        if (drew) { perf.frames += 1; perf.frameMs += spent; }
         profiler?.flushed(spent);   // the GPU profiler's frame boundary (K2): returns at once unless armed
       },
     };
@@ -660,6 +681,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       },
       perf: () => ({ ...perf }),
       memory: () => budget.stats(),
+      rasters: () => rasters.stats(),
       gpuMemory: () => ledger,
       records: () => {
         const out: Record<string, RecordStoreStats> = {};

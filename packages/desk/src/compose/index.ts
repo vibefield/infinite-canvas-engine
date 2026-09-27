@@ -14,4 +14,5 @@ export { createGpuProfiler, type GpuFrameCounts, type GpuFrameReport, type GpuPr
 export { instrumentPasses, type KindDraws, type PassCounts, type PassFrame, type PassInstrument, type PassInstrumentOptions, type PassTime, type PassTiming, readTimestamps, TIMESTAMP_QUANTUM_NS, UNQUANTISED_TIMESTAMPS_FLAG } from "../pass-instrument";
 export { type FormatBlock, formatBlock, type GpuMemory, type GpuMemoryRow, instrumentMemory, type MemoryLedger, regionBytes, textureBytes } from "../gpu-memory";
 export { type BudgetStats, createRasterBudget, type RasterBudget } from "../engine/budget";
+export { createRasterQueue, RASTER_BUDGET_MS, type RasterQueue, type RasterQueueOptions, type RasterQueueStats, type RasterRun } from "../engine/rasters";
 export { createRecordStore, type RecordStore, type RecordStoreStats } from "../engine/records";

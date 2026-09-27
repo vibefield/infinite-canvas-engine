@@ -18,6 +18,16 @@
 //   Pages full ⇒ the rasters no one drew in the last two frames are evicted, oldest first; still full ⇒
 //   the sheet draws BLANK, honestly, and `stats().blanks` says so.
 //
+// - THE QUEUE (K6b, design-016 §6 — the desk's frame raster queue, `KindHost.rasters`): a raster at another BAND (a rung
+//   crossed) or a note's FIRST (it came on screen holding none, the face landed) is ASKED, not drawn in the frame that asked — a
+//   zoom across a rung asked it of every note near the view at once (193 ms: 108 notes). The queue lays it in its turn, under the
+//   frame's budget: first what shows nothing (a blank sheet), then what shows its ink magnified (a band short of the screen's),
+//   then what shows it minified (a band past it — the pages' room), the nearest the view's centre first within each; meanwhile the
+//   raster it holds STANDS, scaled by the pass (a rung is √2: a magnified stand-in is at most one rung soft until its turn), and
+//   the new one is found room BEFORE the old is let go. Laid, the note's record is remade (`remake`) — the record says where its
+//   ink is. A raster whose WORDS moved (an edit, a resize) is laid at once, in the frame that asked: the ink never lags the caret.
+//   Without a queue (a bare host, the tests) every raster is laid at once, as before.
+//
 // A PINNED raster (a parity still's committed ink, `pin`) wins over the live one and is never re-rastered.
 // Without a text raster (the Node oracle) nothing is rastered live: the pinned rasters only.
 //
@@ -26,6 +36,7 @@
 // wipe runs, once per blink phase while the caret stands, once when a face lands or the editor moves.
 
 import type { Entity } from "@ice/core";
+import type { KindHost } from "@ice/desk";
 import { type View, HAND, caretAt, glyphBox, type HandLaw, type HandLayout, layoutText, type TextRaster, seedsFor } from "@ice/desk/kit";
 import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
@@ -71,6 +82,10 @@ export interface WritingOptions {
    * none): the eviction spares what is on screen and `noteAt` ranks by paint order. Absent, the writing counts its own draws.
    */
   readonly drawn?: ((e: Entity) => number | undefined) | undefined;
+  /** The desk's frame raster queue (K6b, `KindHost.rasters`): a new band or a first raster is asked there; absent, laid at once. */
+  readonly queue?: KindHost["rasters"];
+  /** The builder's door (K6b, `KindHost.remake`): a note's record remade once the queue laid its raster. */
+  readonly remake?: KindHost["remake"];
 }
 
 /** What a note draws with this frame — the paper kind's record takes it whole. */
@@ -102,6 +117,8 @@ export interface WritingStats {
   readonly blanks: number;
   /** Rasters evicted to make room. */
   readonly evicted: number;
+  /** Notes whose raster is asked of the queue and not laid yet (K6b) — each draws what it holds meanwhile. */
+  readonly queued: number;
 }
 
 export interface Writing {
@@ -165,11 +182,23 @@ interface Entry {
   keyed: boolean;
   raster: Raster | null;
   pinned: boolean;
+  /** The band asked of the queue and not laid yet (K6b); 0 = nothing asked. */
+  want: number;
+  /** The note's run for the queue, made once. */
+  run: (() => "done" | "wait") | undefined;
   /** The render it was last drawn in, and its place in that render's paint order. */
   drawnAt: number;
   order: number;
   geometry: PaperGeometry | undefined;
 }
+
+/** The queue's name for the paper's asks (K6b) — the kind's. */
+const OWNER = "paper";
+/** The queue's tiers (K6b): what shows nothing, then a stand-in magnified, then one minified; a tier outranks any distance (px). */
+const TIER = 1e7;
+const BLANK = 0;
+const MAGNIFIED = 1;
+const MINIFIED = 2;
 
 const str = (props: Readonly<Record<string, unknown>>, name: string): string => { const v = props[name]; return typeof v === "string" ? v : ""; };
 const num = (props: Readonly<Record<string, unknown>>, name: string): number => { const v = props[name]; return typeof v === "number" && Number.isFinite(v) ? v : 0; };
@@ -215,11 +244,14 @@ export function createWriting(opts: WritingOptions): Writing {
 
   const phaseAt = (t: number): boolean => (focus === undefined ? false : Math.floor(Math.max(0, t - focus.t0) / blinkMs) % 2 === 0);
 
+  const queue = opts.queue;
+  const remake = opts.remake;
   const release = (pages: InkPages | undefined, en: Entry): void => {
     if (en.raster === null) return;
     pages?.free(en.raster.rect);
     en.raster = null;
     pages?.trim?.();
+    queue?.wake(OWNER);   // room made: a note held for it tries again
   };
 
   const drawn = opts.drawn;
@@ -248,10 +280,71 @@ export function createWriting(opts: WritingOptions): Writing {
     return rect.cx + r >= view.camX - m && rect.cx - r <= view.camX + view.width / view.zoom + m && rect.cy + r >= view.camY - m && rect.cy - r <= view.camY + view.height / view.zoom + m;
   };
 
+  /**
+   * Lay note `e`'s ink at `band` for its layout `L` on a `w × h` sheet: in its own rect when the size is the same, else a new one.
+   * `keep` (the queue's run): the new rect is found BEFORE the old is let go — no room, and the old raster stands; else (the frame
+   * that asked) the old goes first and no room draws the sheet blank, honestly. False: no room.
+   */
+  const lay = (e: Entity, en: Entry, pages: InkPages, T: TextRaster, L: HandLayout, w: number, h: number, band: number, keep: boolean): boolean => {
+    const pw = Math.max(1, Math.ceil(w * band));
+    const ph = Math.max(1, Math.ceil(h * band));
+    const r = en.raster;
+    let at: InkRect | null = r !== null && r.rect.w === pw && r.rect.h === ph ? r.rect : null;
+    if (at === null && keep) {
+      at = room(pages, pw, ph);
+      if (at === null) return false;
+      release(pages, en);
+    } else if (at === null) {
+      release(pages, en);
+      at = room(pages, pw, ph);
+      if (at === null) { blanks += 1; return false; }
+    }
+    const bmp = T.raster(L, face, { w, h }, band, bleed);
+    en.raster = { rect: at, uv: pages.write(at, bmp.bytes), band, layout: L, bleed };
+    rasters += 1;
+    land(e);
+    return true;
+  };
+
+  /** Nothing owed to the queue for `e` any more (its band came back, its words moved, it left): its ask withdrawn. */
+  const unask = (e: Entity, en: Entry): void => {
+    if (en.want === 0) return;
+    en.want = 0;
+    queue?.drop(OWNER, e);
+  };
+
+  /**
+   * The queue's turn for note `e` (K6b): its ink laid at the band it last asked — the old raster standing until the new one has
+   * room — and its record remade. No room: it waits, held until a raster is let go. Nothing owed any more: done.
+   */
+  const run = (e: Entity): "done" | "wait" => {
+    const en = entries.get(e);
+    const pages = opts.pages();
+    const L = en?.layout;
+    if (en === undefined || en.want === 0 || en.pinned || pages === undefined || text === undefined || L === undefined) { if (en !== undefined) en.want = 0; return "done"; }
+    if (!lay(e, en, pages, text, L, en.w, en.h, en.want, true)) {
+      if (en.raster === null) blanks += 1;
+      return "wait";
+    }
+    en.want = 0;
+    remake?.(e);
+    return "done";
+  };
+
+  /** Ask the queue for note `e`'s raster at `band`: its tier by what it shows meanwhile, the nearest the view's centre first within it. */
+  const ask = (e: Entity, en: Entry, rect: { readonly cx: number; readonly cy: number }, band: number, view: View, Q: NonNullable<KindHost["rasters"]>): void => {
+    en.want = band;
+    const tier = en.raster === null ? BLANK : en.raster.band < band ? MAGNIFIED : MINIFIED;
+    const dx = rect.cx - (view.camX + view.width / (2 * view.zoom));
+    const dy = rect.cy - (view.camY + view.height / (2 * view.zoom));
+    en.run ??= () => run(e);
+    Q.ask(OWNER, e, tier * TIER + Math.hypot(dx, dy) * view.zoom, en.run);
+  };
+
   const entryOf = (e: Entity): Entry => {
     let en = entries.get(e);
     if (en === undefined) {
-      en = { text: "", seeds: "", seed: 0, w: 0, h: 0, version: -1, layout: undefined, keyed: false, raster: null, pinned: false, drawnAt: -1, order: 0, geometry: undefined };
+      en = { text: "", seeds: "", seed: 0, w: 0, h: 0, version: -1, layout: undefined, keyed: false, raster: null, pinned: false, want: 0, run: undefined, drawnAt: -1, order: 0, geometry: undefined };
       entries.set(e, en);
     }
     return en;
@@ -299,24 +392,17 @@ export function createWriting(opts: WritingOptions): Writing {
       }
       const L = en.layout;
       // the raster: none for an unwritten sheet; else at the band the view asks, redrawn on a new layout or a rung only
-      if (t.length === 0 || L === undefined || text === undefined) release(pages, en);
+      if (t.length === 0 || L === undefined || text === undefined) { release(pages, en); unask(e, en); }
       else if (pages !== undefined && near(rect, view)) {
         const band = askBand(en, rect.w, rect.h, view.zoom, view.dpr);
         const r = en.raster;
-        if (r === null || r.layout !== L || r.band !== band || r.bleed !== bleed) {
-          const pw = Math.max(1, Math.ceil(rect.w * band));
-          const ph = Math.max(1, Math.ceil(rect.h * band));
-          let at: InkRect | null = r?.rect ?? null;
-          if (at !== null && (at.w !== pw || at.h !== ph)) { release(pages, en); at = null; }
-          at ??= room(pages, pw, ph);
-          if (at === null) { en.raster = null; blanks += 1; }
-          else {
-            const bmp = text.raster(L, face, { w: rect.w, h: rect.h }, band, bleed);
-            en.raster = { rect: at, uv: pages.write(at, bmp.bytes), band, layout: L, bleed };
-            rasters += 1;
-            land(e);
-          }
-        }
+        // its WORDS moved under the raster it holds (an edit, a resize): laid in this frame — the ink never lags the caret
+        if (r !== null && (r.layout !== L || r.bleed !== bleed)) { unask(e, en); lay(e, en, pages, text, L, rect.w, rect.h, band, false); }
+        // none yet, or another band (a rung crossed): the queue's (K6b) — what it holds stands until its turn; without one, at once
+        else if (r === null || r.band !== band) {
+          if (queue !== undefined) ask(e, en, rect, band, view, queue);
+          else lay(e, en, pages, text, L, rect.w, rect.h, band, false);
+        } else unask(e, en);   // nothing owed: the zoom came back to the band it holds
       }
       // the pen's wipe over the newest glyph, and the caret
       let wipe: NoteInk["wipe"];
@@ -352,6 +438,7 @@ export function createWriting(opts: WritingOptions): Writing {
       const pages = opts.pages();
       if (pages === undefined) return false;
       const en = entryOf(e);
+      unask(e, en);
       release(pages, en);
       const at = pages.alloc(size.w, size.h);
       dirty = true;
@@ -400,13 +487,14 @@ export function createWriting(opts: WritingOptions): Writing {
 
     forget(e) {
       const en = entries.get(e);
-      if (en !== undefined) { release(opts.pages(), en); entries.delete(e); }
+      if (en !== undefined) { unask(e, en); release(opts.pages(), en); entries.delete(e); }
       wipes.delete(e);
       landedOf.delete(e);
       if (focus?.entity === e) { focus = undefined; dirty = true; }
     },
 
     reset() {
+      queue?.clear(OWNER);
       entries.clear();
       wipes.clear();
       opts.pages()?.reset(true);
@@ -416,11 +504,13 @@ export function createWriting(opts: WritingOptions): Writing {
     stats() {
       let resident = 0;
       let pinned = 0;
-      for (const en of entries.values()) { if (en.raster !== null) resident += 1; if (en.pinned) pinned += 1; }
-      return { resident, pinned, layouts, rasters, blanks, evicted };
+      let queued = 0;
+      for (const [e, en] of entries) { if (en.raster !== null) resident += 1; if (en.pinned) pinned += 1; if (en.want !== 0 && queue?.has(OWNER, e) !== false) queued += 1; }
+      return { resident, pinned, layouts, rasters, blanks, evicted, queued };
     },
 
     dispose() {
+      queue?.clear(OWNER);
       entries.clear();
       wipes.clear();
       focus = undefined;

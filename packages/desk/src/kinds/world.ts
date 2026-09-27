@@ -23,6 +23,7 @@
 import type { Component, Entity, HeldToolDef, Relation, Tag, WidgetType, World } from "@ice/core";
 import type { TypingDocs } from "../docs";
 import type { RasterBudget } from "../engine/budget";
+import type { RasterQueue } from "../engine/rasters";
 import type { KindPass, KindProgram, StratumName } from "../kind";
 import type { BlobStore, PictureDecoder } from "../kit/blobs";
 import type { NoteEditor } from "../kit/editor";
@@ -182,6 +183,14 @@ export interface KindHost {
    * what is on screen; the host trims the ledger once a tick. Absent: nothing is counted or evicted.
    */
   readonly budget?: RasterBudget | undefined;
+  /**
+   * THE FRAME'S RASTER QUEUE (K6b, engine/rasters.ts): a raster the zoom asks again (a new band, a new density) or an object come on
+   * screen holding none is ASKED here, with a priority, and made in the queue's turn under the frame's budget — the kind draws what
+   * it has meanwhile. Absent (a bare host, the oracle): a kind rasters in the frame that asks, as before.
+   */
+  readonly rasters?: RasterQueue | undefined;
+  /** `e`'s record remade at the next build (K6b — a raster the queue laid: the record says where its ink is), the desk woken. */
+  readonly remake?: ((e: Entity) => void) | undefined;
 }
 
 /**

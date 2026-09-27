@@ -132,6 +132,8 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       pages: pagesOf(host),
       text: host.text,
       drawn: host.drawn,
+      queue: host.rasters,
+      remake: host.remake,
       wipeMs: HAND.wipeMs,
       blinkMs: law.caret.blinkMs,
       ...(opts.hand?.law !== undefined ? { hand: opts.hand.law } : {}),

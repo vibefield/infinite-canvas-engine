@@ -7,11 +7,11 @@
 // re-rastered; no text raster (the oracle) rasters nothing live; the WIPE and the CARET as flux.
 import type { Entity } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { InkShelves, uvOf } from "../src/paper/pages";
+import { type InkRect, InkShelves, uvOf } from "../src/paper/pages";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper } from "../src/paper/paper";
 import { type InkBitmap, type TextRaster, encodeSeeds, type HandLayout, type HandMetrics } from "@ice/desk/kit";
 import { caretIndexIn, createWriting, type InkPages } from "../src/paper/writing";
-import { MAT_GRID } from "@ice/desk";
+import { createRasterQueue, MAT_GRID } from "@ice/desk";
 
 const E = (n: number) => n as Entity;
 const lamp = lampOf(MAT_GRID.plane);
@@ -51,10 +51,17 @@ function fakePages(layers = 4) {
   return { pages, shelves, writes, resets: () => resets };
 }
 
-function desk(opts: { text?: TextRaster | undefined; layers?: number; drawn?: (e: Entity) => number | undefined } = {}) {
+function desk(opts: { text?: TextRaster | undefined; layers?: number; drawn?: (e: Entity) => number | undefined; pages?: InkPages; queued?: boolean } = {}) {
   const t = fakeText();
   const p = fakePages(opts.layers);
-  const w = createWriting({ pages: () => p.pages, text: "text" in opts ? opts.text : t.text, ...(opts.drawn !== undefined ? { drawn: opts.drawn } : {}) });
+  const pages = opts.pages ?? p.pages;
+  // K6b: the desk's frame raster queue (no budget to speak of — a test's turn runs everything asked) and the builder's remake door
+  const q = createRasterQueue({ budgetMs: 1e9 });
+  const remade: Entity[] = [];
+  const w = createWriting({
+    pages: () => pages, text: "text" in opts ? opts.text : t.text, ...(opts.drawn !== undefined ? { drawn: opts.drawn } : {}),
+    ...(opts.queued === true ? { queue: q, remake: (e: Entity) => { remade.push(e); } } : {}),
+  });
   let now = 0;
   /** One frame: the tick, then every note drawn in order. */
   const frame = (notes: { e: Entity; cx: number; cy: number; text: string; seeds?: string; seed?: number; w?: number }[], view = VIEW, dt = 16) => {
@@ -67,7 +74,20 @@ function desk(opts: { text?: TextRaster | undefined; layers?: number; drawn?: (e
     });
     return { want, out };
   };
-  return { w, t, p, frame, now: () => now };
+  return { w, t, p, q, remade, frame, now: () => now };
+}
+
+/** Pages that hold `capacity` texels in all, no shelves: room is a sum (K6b's no-room case, exact). */
+function sumPages(capacity: number) {
+  let used = 0;
+  const rects = new Set<InkRect>();
+  const pages: InkPages = {
+    alloc: (w, h) => { if (used + w * h > capacity) return null; used += w * h; const r = { layer: 0, x: 0, y: 0, w, h }; rects.add(r); return r; },
+    free: (r) => { if (rects.delete(r)) used -= r.w * r.h; },
+    write: (r) => uvOf(r.x, r.y, r.w, r.h, 2048, 2048),
+    reset: () => { rects.clear(); used = 0; },
+  };
+  return { pages, used: () => used };
 }
 
 describe("the writing · the raster cache's keys", () => {
@@ -154,6 +174,94 @@ describe("the writing · the raster cache's keys", () => {
     frame([{ ...far, text: "far!" }], { ...VIEW });            // edited while far: it keeps the raster it has
     expect(t.calls.length).toBe(1);
     expect(w.rasterOf(E(1))).toBeDefined();
+  });
+});
+
+describe("the writing · the queue (K6b, design-016 §6)", () => {
+  it("a rung crossed ASKS the queue — the old raster STANDS (the note draws its layer and uv) until the queue's turn lays the new band and remakes its record; a first raster is asked too", () => {
+    const { w, t, q, remade, frame } = desk({ queued: true });
+    const n = { e: E(1), cx: 300, cy: 250, text: "hi" };
+    const z = (zoom: number) => ({ ...VIEW, zoom });
+    expect(frame([n], z(1.6)).out[0]?.raster).toBeUndefined();   // FIRST: asked, the sheet blank until the turn
+    expect([w.stats().queued, q.size, t.calls.length]).toEqual([1, 1, 0]);
+    q.drain();
+    expect(w.rasterOf(E(1))).toMatchObject({ band: 4, w: 800 });
+    expect(remade).toEqual([E(1)]);
+    const old = frame([n], z(1.6)).out[0]?.raster;   // the remade record draws it
+    expect(old).toBeDefined();
+    const mid = frame([n], z(4)).out[0]?.raster;       // a crossing (8): asked — the old raster stands, scaled by the pass
+    expect(mid).toEqual(old);
+    expect([w.stats().queued, t.calls.length, w.rasterOf(E(1))?.band]).toEqual([1, 1, 4]);
+    q.drain();
+    expect(w.rasterOf(E(1))).toMatchObject({ band: 8, w: 1600, h: 1600 });
+    expect(remade).toEqual([E(1), E(1)]);
+    expect(frame([n], z(4)).out[0]?.raster).not.toEqual(old);
+    expect([w.stats().queued, q.size]).toEqual([0, 0]);
+  });
+
+  it("the queue's order: what shows NOTHING first, then a stand-in MAGNIFIED, then one MINIFIED — the nearest the view's centre first within each", () => {
+    const { q, remade, frame } = desk({ queued: true });
+    const z = (zoom: number) => ({ ...VIEW, zoom });
+    // at zoom 1.6 the view is 750 × 500 units from the origin: its centre (375, 250)
+    const note = (e: number, cx: number, cy: number) => ({ e: E(e), cx, cy, text: `n${e}` });
+    const magNear = note(1, 420, 250);
+    const magFar = note(2, 100, 60);
+    const minNear = note(3, 330, 250);
+    frame([magNear, magFar], z(1));    // band 2 …
+    frame([minNear], z(4));            // … and band 8
+    q.drain();
+    remade.length = 0;
+    const blankFar = note(4, 650, 440);
+    const blankNear = note(5, 375, 280);
+    // at 1.6 (3.2 device px a unit) each asks 4: two hold 2 (magnified), one holds 8 (3.2 < 8 / 2.3 — minified), two hold none
+    frame([magFar, blankFar, minNear, magNear, blankNear], z(1.6));
+    expect(q.size).toBe(5);
+    q.drain();
+    expect(remade).toEqual([E(5), E(4), E(1), E(2), E(3)]);
+  });
+
+  it("an EDIT is laid at once, in the frame that asked (the ink never lags the caret) — and takes a waiting band's ask with it; a zoom back to the band it holds withdraws the ask", () => {
+    const { w, t, q, frame } = desk({ queued: true });
+    const n = { e: E(1), cx: 300, cy: 250, text: "hi" };
+    const z = (zoom: number) => ({ ...VIEW, zoom });
+    frame([n], z(1.6));
+    q.drain();
+    frame([n], z(4));                                  // 8 asked, waiting
+    expect(q.size).toBe(1);
+    frame([n], z(1.9));                                // 3.8: the band it holds (4) again — nothing owed
+    expect([q.size, w.stats().queued]).toEqual([0, 0]);
+    frame([n], z(4));
+    const calls = t.calls.length;
+    frame([{ ...n, text: "hi!" }], z(4));              // the words moved: laid now, at the band asked (8), the ask gone
+    expect(t.calls.length).toBe(calls + 1);
+    expect(w.rasterOf(E(1))).toMatchObject({ band: 8 });
+    expect([q.size, w.stats().queued]).toEqual([0, 0]);
+  });
+
+  it("NO ROOM: the new rect is sought BEFORE the old is let go — the old raster stands and the ask is HELD (the desk may idle); a raster let go wakes it", () => {
+    const room = sumPages(850_000);
+    const { w, q, remade, frame } = desk({ queued: true, pages: room.pages });
+    const z = (zoom: number) => ({ ...VIEW, zoom });
+    // at zoom 4 the view is 300 × 200 units from the origin: both sheets in it
+    const a = { e: E(1), cx: 100, cy: 100, text: "a", w: 100 };
+    const b = { e: E(2), cx: 220, cy: 100, text: "b", w: 100 };
+    frame([a, b], z(1.6));                             // band 4: 400² each
+    q.drain();
+    expect(room.used()).toBe(320_000);
+    remade.length = 0;
+    const old = w.rasterOf(E(1));
+    frame([a, b], z(4));                               // each asks 8 (800²): 320k + 640k > 850k while its old rect is kept
+    expect(q.size).toBe(2);
+    q.drain();
+    expect(w.rasterOf(E(1))).toEqual(old);             // it stands — the same rect, the same band
+    expect(q.stats()).toMatchObject({ waiting: 0, held: 2 });   // held, out of the count that keeps the desk awake
+    expect([q.size, remade.length, room.used()]).toEqual([0, 0, 320_000]);
+    w.forget(E(2));                                    // b leaves: its 160k go back, its ask with it — a waits for its turn again
+    expect(q.size).toBe(1);
+    q.drain();
+    expect(w.rasterOf(E(1))).toMatchObject({ band: 8, w: 800 });
+    expect(room.used()).toBe(640_000);
+    expect(remade).toEqual([E(1)]);
   });
 });
 
