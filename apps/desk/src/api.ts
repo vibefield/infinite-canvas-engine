@@ -8,7 +8,7 @@
 
 import { Active, type CanvasEngine, ChildOf, type Entity, GESTURE_DEFAULTS, GestureSettings, Grab, HeldView, Locked, NavIntent, NavRedress, NavTapMemo, NavTransition, Position, PrefabId, Selected, Size, Camera, Viewport, writeRuntimeResource, defineQuery, defineTickSystem, LocalPointer, Pointer, PointerWorld } from "@ice/core";
 import type { BuildWork, DeskLayerPerf, GroundFrameInputs, UploadTally } from "@ice/desk";
-import type { DeskLayerHandle, MatPin } from "@ice/desk";
+import type { DeskLayerHandle, GlyphAtlasMeta, MatPin } from "@ice/desk";
 import type { AmbientMode } from "@ice/desk";
 import type { ThemeName } from "@ice/desk";
 import { type CalendarApi, calendarApi } from "./calendar-api";
@@ -17,6 +17,7 @@ import { type KindsApi, kindsApi } from "./kinds-api";
 import { type NoteApi, noteApi } from "./note-api";
 import { type NotebookApi, notebookApi } from "./notebook-api";
 import { type RoomApi, roomApi } from "./room-api";
+import type { GlyphFeed } from "./glyphs";
 import type { DevPanel } from "./panel/panel";
 import { deskRig } from "./rig-door";
 import { spawnAll } from "./scene";
@@ -115,6 +116,12 @@ export interface DeskApi {
   readonly faults: readonly string[];
   /** The dev panel (D5a — the backtick opens it): its params, open or not. */
   readonly panel: DevPanel | null;
+  /**
+   * The app's runtime glyph atlas (K1 — glyphs.ts `glyphFeed`): its last upload's key (`scale:size`), meta and upload count, and
+   * whether the root mat prints with THAT atlas now (the very meta object — a rig's `setScene` uploads the committed fixture over
+   * it); null before the first upload.
+   */
+  glyphs(): { readonly key: string; readonly meta: GlyphAtlasMeta; readonly uploads: number; readonly onMat: boolean } | null;
   // ---- the hand (design-015 §8, D4b)
   /** The object in hand as of the last frame: its carry, whether settled or flying home, its frame on screen (the pose seam's word); null = nothing held. */
   hand(): { readonly entity: number; readonly e: number; readonly settled: boolean; readonly landing: boolean; readonly frame: { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly s: number; readonly settled: boolean } } | null;
@@ -175,7 +182,7 @@ declare global {
 const widgetsQ = defineQuery([Position, Size, PrefabId]);
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
 
-export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null): DeskApi {
+export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null, glyphs: GlyphFeed | null = null): DeskApi {
   const { world } = engine;
   const state = { ready: false };
   // THE FLIGHT PIN (D2b): a system after core's `navFlight` in `simulate` that puts the flight back at `pinned` and the camera at
@@ -282,6 +289,11 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     sent: [],
     faults: DESK_FAULTS,
     panel,
+    glyphs() {
+      const last = glyphs?.last ?? null;
+      if (glyphs === null || last === null) return null;
+      return { key: last.key, meta: last.meta, uploads: glyphs.uploads, onMat: handle.ground()?.mat.glyphs === last.meta };
+    },
     stats: () => handle.stats(),
     wakes: () => handle.wakes(),
     memory: () => handle.memory(),

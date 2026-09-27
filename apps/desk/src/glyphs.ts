@@ -1,6 +1,7 @@
 // The rulers' glyph atlas (RULER.md), rendered here in the browser from the product's mono stack
 // (`--vf-font-mono`, DESIGN.md §3) at the device's own ratio, so a label is the text the page would
-// set — and re-rendered when the ratio changes. The glyphs of `GLYPHS` — the rulers' twelve, then the
+// set — and re-rendered when the ratio or the rulers' text size changes (`glyphFeed` + `watchRatio`,
+// K1: the prototype's `refreshGlyphs` and `watchRatio`, lab/main.ts). The glyphs of `GLYPHS` — the rulers' twelve, then the
 // capitals and the marks a mini mat's name prints with (MINIMAT.md §2) — in a row of equal cells, each
 // drawn `GLYPH_PAD` texels in from its cell's left edge on a baseline `meta.baseline` texels under the
 // cell's top; the bytes are the canvas's alpha (coverage — the fill's colour never matters). The Node
@@ -50,4 +51,76 @@ export function makeGlyphAtlas(size: number, scale: number, family = monoStack()
   const bytes = new Uint8Array(width * height);
   for (let i = 0; i < bytes.length; i++) bytes[i] = img[i * 4 + 3] as number;
   return { bytes, meta: { scale, cellW, cellH, advance, baseline, cap, width, height, count: GLYPHS.length } };
+}
+
+/** What the ratio's watch reads of a window — a unit's double in Node. */
+export interface RatioWindow {
+  readonly devicePixelRatio: number;
+  matchMedia(query: string): Pick<MediaQueryList, "addEventListener" | "removeEventListener">;
+}
+
+/** Texels per CSS px the desk draws at: the device's ratio under the layer's cap (`deskLayer`'s `maxDpr`, 2 by default). */
+export const deskScale = (win: Pick<RatioWindow, "devicePixelRatio"> = window): number => Math.min(win.devicePixelRatio || 1, 2);
+
+/**
+ * `onChange` at every change of the device's pixel ratio. A ratio change alone — another display, the browser's zoom, an emulated
+ * ratio — resizes nothing, so no ResizeObserver fires (RULER.md; the prototype's `watchRatio`): a media query on the CURRENT
+ * ratio, re-armed on the new one at each change. Returns the unwatch.
+ */
+export function watchRatio(onChange: (ratio: number) => void, win: RatioWindow = window): () => void {
+  let mq: ReturnType<RatioWindow["matchMedia"]> | undefined;
+  function arm(): void {
+    mq = win.matchMedia(`(resolution: ${win.devicePixelRatio}dppx)`);
+    mq.addEventListener("change", fire, { once: true });
+  }
+  function fire(): void {
+    arm();
+    onChange(win.devicePixelRatio);
+  }
+  arm();
+  return () => { mq?.removeEventListener("change", fire); mq = undefined; };
+}
+
+/** The atlas the desk prints with, kept to the ratio and the rulers' text size. */
+export interface GlyphFeed {
+  /** Render and upload the atlas when the ratio or the size moved since the last upload — the same key twice is nothing; true = uploaded. */
+  refresh(): boolean;
+  /** The last upload: its key (`scale:size`) and its meta (the very object the mat was handed) — null before the first. */
+  readonly last: { readonly key: string; readonly meta: GlyphAtlasMeta } | null;
+  /** Atlases rendered and uploaded so far. */
+  readonly uploads: number;
+}
+
+export interface GlyphFeedOptions {
+  /** Whether the mat is here to take an upload (`handle.available()`): one before it would be dropped with its key kept. */
+  readonly ready: () => boolean;
+  /** Texels per CSS px (`deskScale`). */
+  readonly scale: () => number;
+  /** The rulers' text size, CSS px — the atlas's em (the panel's). */
+  readonly size: () => number;
+  readonly upload: (atlas: GlyphAtlas) => void;
+  /** The renderer: `makeGlyphAtlas` (a unit's double in Node). */
+  readonly make?: (size: number, scale: number) => GlyphAtlas;
+}
+
+export function glyphFeed(opts: GlyphFeedOptions): GlyphFeed {
+  const make = opts.make ?? ((size: number, scale: number) => makeGlyphAtlas(size, scale));
+  let last: GlyphFeed["last"] = null;
+  let uploads = 0;
+  return {
+    refresh() {
+      if (!opts.ready()) return false;
+      const scale = opts.scale();
+      const size = opts.size();
+      const key = `${scale}:${size}`;
+      if (last?.key === key) return false;
+      const atlas = make(size, scale);
+      opts.upload(atlas);
+      last = { key, meta: atlas.meta };
+      uploads += 1;
+      return true;
+    },
+    get last() { return last; },
+    get uploads() { return uploads; },
+  };
 }

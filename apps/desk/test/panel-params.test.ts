@@ -96,8 +96,9 @@ describe("the dev panel applies itself at install (K1)", () => {
     const engine = createDeskEngine(undefined, []);
     const theme = { name: (): ThemeName => "light", set: () => {}, apply: () => {} };
     const params = defaultParams();
-    const bound = bindDeskParams({ engine, handle, params, theme, storageKey: KEY }, store);
-    return { mats, kept, engine, params, bound };
+    const projected: number[] = [];
+    const bound = bindDeskParams({ engine, handle, params, theme, storageKey: KEY, projected: () => projected.push(params.ruler.text.size) }, store);
+    return { mats, kept, engine, params, bound, projected };
   }
 
   it("nothing saved: the product is projected before the first frame — the rulers printed — and nothing is kept", () => {
@@ -131,6 +132,14 @@ describe("the dev panel applies itself at install (K1)", () => {
     expect(mats.at(-1)).toEqual(DESK_GRID.mat);
     expect(bound.touched).toBe(false);
     expect(kept.has(KEY)).toBe(false);
+    engine.dispose();
+  });
+
+  it("every projection — at install, and after each change — tells the app, so its atlas follows the rulers' text size", () => {
+    const { projected, engine, bound } = install();
+    expect(projected).toEqual([DESK_GRID.mat.ruler.text.size]);
+    bound.tweak((p) => { p.ruler.text.size = 14; });
+    expect(projected).toEqual([DESK_GRID.mat.ruler.text.size, 14]);
     engine.dispose();
   });
 

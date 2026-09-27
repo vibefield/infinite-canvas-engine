@@ -3,7 +3,8 @@
 // `<Desk>` by deletion, plan D-D0.6; the desk draws its own selection, D4a's marks). Keys:
 // `w` sticks a note at the pointer, `m` lays a mini mat, ⌫ deletes, ⌘Z/⇧⌘Z undo and redo (the core
 // keymap), `d` toggles the theme and pins it (until then the OS leads), `u` the rulers (K1). The generated plates and a
-// runtime glyph atlas feed the mat at boot; `window.__desk` (api.ts) is the rigs' door. D4a: the desk
+// runtime glyph atlas feed the mat at boot (K1: the atlas re-rendered at every change of the device's ratio or the rulers' text
+// size); `window.__desk` (api.ts) is the rigs' door. D4a: the desk
 // draws its marks on the GPU and the ONE screen-space selection menu rides the layer's anchor
 // (`<SelectionMenu>`), with ICE's acts and the app's own stub "Send" first (it logs — VibeField's is real).
 // D5a: the backtick opens the DEV PANEL (panel/ — the prototype's tweak panel), its params projected into the layer.
@@ -25,7 +26,7 @@ import { type DevPanel, installDevPanel } from "./panel/panel";
 import { DESK_GRID, defaultParams } from "./panel/params";
 import { deskText } from "./faces";
 import { productPlates } from "./fixtures";
-import { makeGlyphAtlas } from "./glyphs";
+import { deskScale, glyphFeed, watchRatio } from "./glyphs";
 import { deskPalette, deskTheme, osTheme } from "./palette";
 import { spawnAll } from "./scene";
 
@@ -170,10 +171,13 @@ export function App(): ReactElement {
         const handle = handleRef.current;
         if (handle === null) { fail("the desk layer did not mount"); return; }
         setMenuSource(handle.selection);
-        // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing)
-        panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined });
+        // K1: the rulers' glyph atlas, kept to the device's ratio and the panel's text size (glyphs.ts) — nothing until the ground is here
+        const glyphs = glyphFeed({ ready: () => handle.available(), scale: () => deskScale(), size: () => params.ruler.text.size, upload: (a) => handle.setGlyphs(a.bytes, a.meta) });
+        // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing); every
+        // projection re-checks the atlas against the text size
+        panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined, projected: () => { glyphs.refresh(); } });
         themeRef.current.apply();
-        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current);
+        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs);
         apiRef.current = api;
         installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
         // the product's plates and a runtime glyph atlas the moment the ground is here
@@ -183,9 +187,10 @@ export function App(): ReactElement {
           while (!handle.available()) { if (handle.status().state === "failed") throw new Error(handle.status().message); await new Promise((r) => requestAnimationFrame(r)); }
           handle.setPlate("c", plates.c);
           handle.setPlate("b", plates.b);
-          const dpr = Math.min(window.devicePixelRatio || 1, 2);
-          const atlas = makeGlyphAtlas(10, dpr);
-          handle.setGlyphs(atlas.bytes, atlas.meta);
+          glyphs.refresh();
+          // …and again whenever the ratio alone changes (another display, the browser's zoom: no resize says so); the watch ends
+          // once this mount's layer is no longer the app's (StrictMode's double mount, in development)
+          const unwatch = watchRatio(() => { if (handleRef.current === handle) glyphs.refresh(); else unwatch(); });
           api.state.ready = true;
         };
         feed().catch(fail);

@@ -124,6 +124,8 @@ export interface DevPanelHost {
   readonly theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void; apply(): void };
   /** Where the params live between visits — undefined (a room) keeps nothing. */
   readonly storageKey: string | undefined;
+  /** After every projection (at install too): the app's glyph atlas follows the rulers' text size (K1). */
+  readonly projected?: () => void;
 }
 
 /** Where the params live between visits: the browser's storage, or a unit's double. */
@@ -170,6 +172,7 @@ export function bindDeskParams(host: DevPanelHost, store: ParamStore = browserSt
     writeRuntimeResource(world, NavTransitionSettings, { responseMs: p.nav.responseMs });
     writeRuntimeResource(world, ZoomThroughSettings, { enabled: p.nav.through, in: p.nav.throughIn, out: p.nav.throughOut, gate0: p.nav.gate0, gate1: p.nav.gate1 });
     theme.apply();
+    host.projected?.();
   };
   const product = snapshotParams(defaultParams());
   const changed = (): void => {
