@@ -422,6 +422,13 @@ try {
     const word = count("desk.note", { l: 0.08, r: 0.08, t: 0.08, b: 0.08 }, (r, g, b) => b > r + 25 && L(r, g, b) < 150);        // the pen's blue ink on the yellow
     const picture = count("desk.photo", { l: 0.12, r: 0.12, t: 0.12, b: 0.12 }, (r, g, b) => b > r + 30);                     // the dusk's blues on the white
     const month = count("desk.calendar", { l: 0.06, r: 0.06, t: 0.16, b: 0.06 }, (r, g, b) => L(r, g, b) < 200);             // the print's ink on the paper (a blank pad has none this dark)
+    // over K6b's frame raster queue: the note specimen's word was ASKED as a desk note's first raster is, and RUN (the queue's `shows` is
+    // the builder's and the tray's) — none let go, and at rest nothing is asked again
+    const qa0 = await q("window.__desk.handle.rasters()");
+    await idle(120);
+    const qa1 = await q("window.__desk.handle.rasters()");
+    check(qa0.ran >= 1 && qa0.dropped === 0 && qa1.ran === qa0.ran && qa1.turns === qa0.turns && qa1.waiting === 0 && qa1.held === 0,
+      `the specimens' rasters ride K6b's queue: ${qa0.ran} run, ${qa0.dropped} let go; at rest 120 frames on, ${qa1.ran - qa0.ran} more runs, ${qa1.turns - qa0.turns} turns, ${qa1.waiting} waiting, ${qa1.held} held`);
     check(word > 60 && picture > 2000 && month > 150, `the specimens read as the real objects (live — K5a's were blank): the note's word ${word} px of ink, the print's sample ${picture} px of sky and water, the pad's month ${month} px of print (its tiles ${printed?.drawn ?? "?"} drawn, ${printed?.pending ?? "?"} pending)`);
   }
 

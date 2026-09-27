@@ -113,6 +113,13 @@ export interface BoardInstance {
   readonly stroke?: { readonly color: RGB; readonly erase: boolean } | undefined;
   readonly pen?: BoardPen | undefined;
   readonly eraser?: BoardEraser | undefined;
+  /**
+   * The pen's MATERIALS (a marker's barrel, the eraser's felt and back) when the record was made WITHOUT the desk's local — a tray
+   * specimen (K5b): nobody else sets them on the pass that draws it (the local's raster sets the root's, and only for a desk board
+   * drawn), so the specimen carries its look's; else the one its slot's pass copied from the root showed whatever the last desk board
+   * left there — black before any was drawn (an order-dependent still). Absent: the pass's own.
+   */
+  readonly materials?: { readonly barrel: RGB; readonly felt: RGB; readonly wood: RGB } | undefined;
 }
 
 export function boardValues(b: BoardInstance, raster: { readonly size: readonly [number, number]; readonly density: number; readonly wet: boolean }, tier: readonly [number, number, number, number] = [0, 0, 0, 1]) {

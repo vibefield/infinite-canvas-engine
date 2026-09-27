@@ -127,6 +127,11 @@ export interface DeskReflector {
   readonly tray: TrayFlux;
   /** The tray's specimens as the last frame drew them (K5a) — a rig's witness; empty while the drawer is shut or bare. */
   traySpecimens(): readonly TraySpecimenFrame[];
+  /**
+   * Did the last frame's TRAY draw `e` — a specimen, a lifted copy's key, an insert ghost it presented (K5b over K6b)? The frame raster
+   * queue's word on what shows is the builder's and this: an ask a specimen's writing made (its word, `tray.local`) is run, not let go.
+   */
+  trayShows(e: Entity): boolean;
   /** The take's motion (K5b — tray/carry.ts): the lifted copy, the ghost's grow and its flight home. */
   readonly carry: TrayCarry;
   /** What the tray carried in the last frame drawn (K5b) — a rig's witness: each pose's slot, phase, ghost and rect on screen. */
@@ -178,6 +183,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   /** The take's motion (K5b): the copy, the ghost's grow, its flight home — and what it drew last. */
   const carry = createTrayCarry();
   let drawnCarried: readonly TrayCarriedFrame[] = [];
+  /** The keys the tray drew in the last frame (specimens, carried copies and ghosts) — the raster queue's `shows` beside the builder's. */
+  let trayDrawn: ReadonlySet<number> = new Set();
   /** The keys drawn with a kind's desk state from the tray (K5b — a specimen's entity, a copy's key): let go of as each goes. */
   const faced = new Map<number, KindLocal>();
   /** When the drawer last showed (frame clock, ms): its specimens' desk state is let go once it has been shut `LAYER_IDLE_MS`. */
@@ -328,6 +335,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         drawnCarried = made;
         if (made.length > 0) trayed = { ...trayed, carried: made };
       }
+      trayDrawn = new Set([...drawnSpecimens.map((f) => f.key), ...drawnCarried.map((f) => f.key)]);
       // what was drawn with a kind's desk state and is gone — a specimen re-laid away, a copy put back or handed — its records let go
       for (const [key, local] of faced) {
         const gone = key < 0 ? !poses.some((q) => q.ghost === undefined && -(0x40000000 + q.id) === key) : !w.isAlive(key as Entity);
@@ -394,6 +402,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     look: (kind) => looks.get(kind),
     tray,
     traySpecimens: () => drawnSpecimens,
+    trayShows: (e) => trayDrawn.has(e as number),
     carry,
     trayCarried: () => drawnCarried,
     dispose() { disposed = true; },

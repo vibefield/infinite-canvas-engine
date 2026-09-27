@@ -386,6 +386,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return {
       geometry: G, surface: look.surface, metal: look.frame, quad: quadOf(G, pose.box), sheen: [par[0] * k * 5, -par[1] * k * 5], pen: pose.pen,
       ...(pose.eraser !== undefined ? { eraser: pose.eraser } : {}),
+      // the pen's materials, as a record made without the desk's local carries them (K5b — the kind's pass takes them)
+      materials: boards.look,
     };
   }
   /**

@@ -428,8 +428,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const budget = createRasterBudget(opts.rasterBudget ?? DEFAULT_RASTER_BUDGET);
     // THE FRAME'S RASTER QUEUE (K6b): the kinds' re-rasters under one budget a frame, its turn once a tick before the build; an ask
     // whose object the last build did not draw is let go (the builder's word, bound late as `drawn` is)
-    const rasters = createRasterQueue({ ...(opts.rasterMs !== undefined ? { budgetMs: opts.rasterMs } : {}), shows: (e) => builder.shows(e) });
-    const remake = (e: Entity): void => builder.remake(e);
+    // …and the TRAY's (K5b): a specimen drawn with its kind's desk state (`tray.local` — a note's word) asks as a desk note does; its
+    // ask is run, not let go, and its raster's landing wakes the frame that shows it (the builder holds no specimen to remake)
+    const rasters = createRasterQueue({ ...(opts.rasterMs !== undefined ? { budgetMs: opts.rasterMs } : {}), shows: (e) => builder.shows(e) || compose.trayShows(e) });
+    const remake = (e: Entity): void => { builder.remake(e); if (compose.trayShows(e)) compose.wake("ink"); };
     for (const k of objectKinds) {
       const local = k.local?.({ pass: () => ground?.pass(k.name), text: opts.text, children, blobs: opts.blobs, decode: decodePicture, print: lent.get(k.name)?.print, drawn, budget, rasters, remake });
       if (local !== undefined) locals.set(k.name, local);

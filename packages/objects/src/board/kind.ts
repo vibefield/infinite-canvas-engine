@@ -43,6 +43,9 @@ export class BoardKind implements KindPass<BoardInstance> {
 
   /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light and the theme (its ring's colour) — and the records' keys (D6). */
   prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly BoardInstance[], extra?: KindExtra): number {
+    // a record made without the desk's local carries its look's pen materials (K5b — the tray's specimen): they are its pass's
+    const own = records.find((r) => r.materials !== undefined)?.materials;
+    if (own !== undefined && this.pass.look !== own) this.pass.look = own;
     return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.theme, extra?.keys);
   }
 
@@ -551,7 +554,8 @@ export function boardKind(opts: BoardKindOptions = {}): ObjectKind<BoardGeometry
       // as the board opens, at the pointer over the melamine, pressed while a stroke is laid, laid down again flying home
       if (ink === undefined || ctx.held === undefined) {
         if (ink !== undefined) Object.assign(ink.handFor(ctx.entity).pen, penAtRest());
-        return { id, ...boardRest(G, ctx.rect.w, ctx.rect.h, tip, colourOf(capName), look, law) };
+        // without the desk's local nobody sets the pass's pen materials: the record carries its look's (K5b — the tray's specimen)
+        return { id, ...boardRest(G, ctx.rect.w, ctx.rect.h, tip, colourOf(capName), look, law), ...(ink === undefined ? { materials: look.pen } : {}) };
       }
       const { hand, pen, pinned } = ink.handFor(ctx.entity);
       const input = { held: ctx.held.open, erasing: hand?.erasing === true, over: hand?.over === true, pressing: hand?.pressing === true };
