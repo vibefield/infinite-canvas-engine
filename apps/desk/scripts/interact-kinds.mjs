@@ -9,9 +9,9 @@
 // (like a Grab); Esc cancels the carry — nothing committed, flown back home; a press on it GLIDING catches it where it is
 // drawn (its facts still where they were) and it lands there; the wheel over it carried turns it about the finger (the
 // camera never zooms) and the rest commits the turn with the place; ⌘Z undoes both.
-import { boardFrame, bookFrame, calendarFrame, photoFrame } from "../../../packages/desk/src/kinds/index.ts";
+import { boardFrame, bookFrame, calendarFrame, photoFrame } from "../../../packages/objects/src/kinds.ts";
 import { frameOnScreen } from "../../../packages/desk/src/marks/layout.ts";
-import { stepPhoto } from "../../../packages/desk/src/photo/photo.ts";
+import { stepPhoto } from "../../../packages/objects/src/photo/photo.ts";
 
 /** @param {Record<string, any>} t the rig's helpers: q, qa, entity, entities, mouse, click, key, sleep, settle, check, near, META, SHIFT */
 export async function kindsRig(t) {

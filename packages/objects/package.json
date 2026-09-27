@@ -10,7 +10,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --dts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:shaders": "node tools/wgsl-to-ts.mjs",
+    "gen:check": "node tools/wgsl-to-ts.mjs --check"
   },
   "dependencies": {
     "@ice/core": "workspace:*",

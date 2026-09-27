@@ -8,6 +8,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { code, DOM_TOUCH } from "./dom-touch";
 
 const src = resolve(import.meta.dirname, "../src");
 
@@ -17,18 +18,6 @@ function* files(dir: string): Generator<string> {
     if (statSync(p).isDirectory()) yield* files(p);
     else if (name.endsWith(".ts")) yield p;
   }
-}
-
-/**
- * A value-level DOM touch: a global's member (optional chaining too — `navigator?.gpu`), a constructor, a call, an
- * `instanceof` against a DOM class (it throws where the class is undefined) — never a bare type name. D7 widened it:
- * `?.`, `instanceof HTMLCanvasElement|ImageBitmap|…` and `new ImageData|DOMMatrix|Path2D` passed until then.
- */
-const DOM_TOUCH = /\b(navigator|window|document|localStorage|sessionStorage)\s*(\?\.|[.[])|\b(matchMedia|requestAnimationFrame|cancelAnimationFrame|createImageBitmap|getComputedStyle)\s*\(|\bnew\s+(ResizeObserver|OffscreenCanvas|Image|ImageData|ImageBitmap|DOMMatrix|DOMPoint|DOMRect|Path2D|FontFace|MutationObserver|IntersectionObserver)\b|\binstanceof\s+(HTMLCanvasElement|HTMLImageElement|HTMLVideoElement|HTMLElement|Element|Node|ImageBitmap|ImageData|OffscreenCanvas|Window|Document|Event|MouseEvent|PointerEvent|KeyboardEvent)\b|\.getContext\s*\(|\bdevicePixelRatio\b/;
-
-/** The code without its comments (block and line) and without its string literals' insides. */
-function code(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").replace(/`(?:\\.|[^`\\])*`/g, "``").replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/'(?:\\.|[^'\\])*'/g, "''");
 }
 
 describe("desk-dom-free (design-015 §3)", () => {

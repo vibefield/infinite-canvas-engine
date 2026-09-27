@@ -37,15 +37,15 @@ import { Target, readback } from "../src/engine/target.ts";
 import { DEFAULT_MAT_CONFIG } from "../src/mat/layout.ts";
 import { labelReach, labelsAlong, rulerLevels } from "../src/lattice/ruler.ts";
 import { lod } from "../src/lattice/lod.ts";
-import { localOf, sdPaper, shadowReach } from "../src/paper/paper.ts";
-import { chipOf, faceClip, faceOf, sdMiniMat } from "../src/minimat/minimat.ts";
-import { insideView } from "../src/minimat/inside.ts";
+import { localOf, sdPaper, shadowReach } from "../../objects/src/paper/paper.ts";
+import { chipOf, faceClip, faceOf, sdMiniMat } from "../../objects/src/minimat/minimat.ts";
+import { insideView } from "../../objects/src/minimat/inside.ts";
 import { arrivalCamera, FIT } from "../src/nav/flight.ts";
 import { PORTAL_GATE } from "../src/nav/portal.ts";
 import { THEMES, surface } from "./fixtures/vf-theme.ts";
 import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../src/mat/night.ts";
-import { sdRoundBox, unproject } from "../src/photo/photo.ts";
-import { sdBoard, sdSurface } from "../src/board/board.ts";
+import { sdRoundBox, unproject } from "../../objects/src/photo/photo.ts";
+import { sdBoard, sdSurface } from "../../objects/src/board/board.ts";
 import { cssColor, MARKS } from "../src/theme.ts";
 import { markDistance } from "../src/marks/mirror.ts";
 
@@ -54,7 +54,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");   // packages/desk
 const results = resolve(root, "oracle/results");
 mkdirSync(results, { recursive: true });
-const wgsl = (rel) => readFileSync(resolve(root, "shaders", rel), "utf8");
+// the .wgsl files on disk from both roots since design-016 K4b: the kinds' (packages/objects/shaders) and the desk's (the kit, the
+// mat, the hold, the marks) — the two generated modules a browser composes from, byte for byte
+const SHADER_ROOTS = [resolve(root, "shaders"), resolve(root, "../objects/shaders")];
+const wgsl = (rel) => { const p = SHADER_ROOTS.map((r) => resolve(r, rel)).find((f) => existsSync(f)); if (p === undefined) throw new Error(`oracle: no shader file ${rel}`); return readFileSync(p, "utf8"); };
 const texts = (files) => Object.fromEntries(Object.entries(files).map(([k, f]) => [k, wgsl(f)]));
 const FORMAT = "rgba8unorm";
 

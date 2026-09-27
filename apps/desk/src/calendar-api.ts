@@ -4,8 +4,8 @@
 // read back as a fixture holds it. Reads the world and the calendar kind's own state; writes only the transactions an op would.
 
 import { type CanvasEngine, ChildOf, defineQuery, type Entity, guardedTransaction, LocalPointer, Pointer, PointerPart, TouchesExact } from "@ice/core";
-import type { CalendarGeometry, DeskLayerHandle, Pads } from "@ice/desk";
-import { sheetDayBox, sheetOnScreen } from "@ice/desk";
+import { type CalendarGeometry, type Pads, sheetDayBox, sheetOnScreen } from "@ice/objects";
+import type { DeskLayerHandle } from "@ice/desk";
 import { addEvent, CALENDAR_TYPE, type CalendarDriver, CalendarEvent, dayOr, keyOfDay, monthKeyOf, monthOfKey, PadSelection, pinnedNotes } from "@ice/objects";
 
 export interface CalendarApi {

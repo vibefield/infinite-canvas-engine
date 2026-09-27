@@ -1,8 +1,9 @@
 /**
  * The import walls (design-002 §6; reshaped at design-015 §3, D5b). One direction only:
- *   kernel ← core ← dom ← react          desk → core (+kernel)       devtools → core (+kernel)
- * kernel imports NOTHING. core never touches react/dom/three. Nobody imports desk but apps
- * (and the umbrella's entries); nobody imports devtools. three is imported NOWHERE.
+ *   kernel ← core ← dom ← react     desk → core (+kernel)     objects → desk's entries, core, kernel     devtools → core (+kernel)
+ * kernel imports NOTHING. core never touches react/dom/three. Nobody imports desk but apps and objects
+ * (and the umbrella's entries); nobody imports objects but apps (and the umbrella's entry); the desk never
+ * imports objects; nobody imports devtools. three is imported NOWHERE.
  * Violations are CI failures, not warnings — v1 had no wall to stop at.
  *
  * Each package rule is a POSITIVE ALLOWLIST: `to.pathNot` enumerates the ONLY
@@ -31,36 +32,17 @@
 const nm = (pkg) => `node_modules/${pkg}(/|$)`;
 
 /**
- * A KIND'S FILES (K4a, design-016 §5 · K-L1), by path — the six reference kinds are one package's worth of code each, spread
- * where the desk's layout puts them: its folder (`src/<k>/`), its registry adapter (`kinds/<k>.ts`), its object-side files
- * (`objects/<k>.ts` and what its object alone uses — the note's typing, the board's pen, the print's carry, the calendar's hand
- * and writing, the notebook's leaves) and its DOM half (`host/…` — the note's editor, the calendar's input and print raster;
- * `desk-dom-free` keeps those under host/, so no layout makes a kind one folder). NOT a kind's since K4b: the TEXT raster
- * (host/ink.ts) and the PICTURE decoder (host/picture.ts) — the host's services, lent every kind through `KindHost.text` /
- * `.decode` beside the app's blobs; they name no kind, and a plugin kind borrows the very same.
- * Its WGSL (`shaders/<k>/`) is read by name, not imported: test/kit-wgsl.test.ts holds a kind's programs to its own files and
- * the kit's. NOT a kind's: the barrels and the preset that list them all (kinds/index.ts, objects/index.ts, objects/preset.ts,
- * objects/palette.ts), the contract, the kit, the seam.
+ * THE REFERENCE KINDS' PACKAGE (design-016 §5, K4b): `@ice/objects`, ONE FOLDER PER KIND — its world half and its pass
+ * (`<k>/kind.ts` and the kind's modules), its object (`<k>/object.ts`, `defineObject`), what its object alone uses (the note's
+ * typing, the board's pen, the print's carry, the calendar's hand and writing, the notebook's leaves) and its DOM half
+ * (`<k>/host/` — the note's editor, the calendar's input and print raster). Its WGSL (`packages/objects/shaders/<k>/`) is read by
+ * name, not imported: test/kit-wgsl.test.ts holds a kind's programs to its own files and the kit's. The package's own shared
+ * modules — the barrel, the kinds' registry (`kinds.ts`), the preset and the palette that list them all, the shader text — are
+ * no kind's. (K4a's `KIND_FILES` named a kind's files where the desk's layout spread them; K4b moved each set into its folder.)
  */
-const DESK = "^packages/desk/src/";
-const KIND_FILES = {
-  paper: ["paper/", "kinds/paper\\.ts$", "objects/(note|typing)\\.ts$", "host/editor\\.ts$"],
-  minimat: ["minimat/", "kinds/minimat\\.ts$", "objects/minimat\\.ts$"],
-  board: ["board/", "kinds/board\\.ts$", "objects/(board|pen)\\.ts$"],
-  photo: ["photo/", "kinds/photo\\.ts$", "objects/(photo|carry)\\.ts$"],
-  calendar: ["calendar/", "kinds/calendar\\.ts$", "objects/(calendar|calendar-hand|calendar-writing)\\.ts$", "host/(calendar-input|print)\\.ts$"],
-  notebook: ["notebook/", "kinds/notebook\\.ts$", "objects/(notebook|leaf)\\.ts$"],
-};
-const kindFiles = (k) => KIND_FILES[k].map((p) => DESK + p);
-const ALL_KIND_FILES = Object.keys(KIND_FILES).flatMap(kindFiles);
-/** The kinds' DOM halves (their files under host/): reached only by their OBJECTS' declarations (`defineObject({ host })`, K4b). */
-const KIND_DOM = ALL_KIND_FILES.filter((p) => p.startsWith(`${DESK}host/`));
-/**
- * THE SDK a kind is written against, inside the desk (K4a): the render kit (`kit/` — `@ice/desk/kit`), the engine (`engine/` —
- * `@ice/desk/engine`) and the contract's modules (`kind.ts`, `kinds/world.ts`, `object.ts`, the engine's theme, the typing docs,
- * the shader text — `@ice/desk`). Outside it: core's and kernel's public entries alone.
- */
-const KIND_SDK = [DESK + "kit/", DESK + "engine/", DESK + "(kind|object|theme|docs|shaders)\\.ts$", DESK + "kinds/world\\.ts$"];
+const OBJECTS = "^packages/objects/src/";
+const KINDS = ["paper", "minimat", "board", "photo", "calendar", "notebook"];
+const kindDir = (k) => `${OBJECTS}${k}/`;
 
 module.exports = {
   forbidden: [
@@ -161,84 +143,56 @@ module.exports = {
         "outside host/ — is `packages/desk/test/dom-free.test.ts`, the grep a cruiser cannot be.",
       severity: "error",
       from: { path: "^packages/desk/src", pathNot: ["^packages/desk/src/host/", "^packages/desk/src/index\\.ts$"] },
-      to: { path: "^packages/desk/src/host/", pathNot: KIND_DOM },
+      to: { path: "^packages/desk/src/host/" },
     },
     {
-      name: "desk-dom-half-is-its-objects",
+      name: "desk-never-imports-objects",
       comment:
-        "K4b (design-016 §5 · K-L2): a kind's DOM half (its files under host/ — the note's editor, the calendar's input and print " +
-        "raster) is reached only by its OBJECT's declaration (`defineObject({ host })` in objects/*.ts) — never by the kind's world " +
-        "half, the seam or the kit — so the Node oracle still imports every world half whole, and the desk layer builds what the " +
-        "objects declare. `no-kind-imports-a-kind` keeps each declaration to its own kind's half.",
+        "design-016 §5 (K4b; design-011:863 — the ground MUST NOT import a barrel of all built-ins): the desk — the engine, the " +
+        "seam, the kit, the contract — never imports the reference kinds, not a module, not a type, so a plugin kind and a built-in " +
+        "stand on the same desk. Its units neither: a desk unit that drives a built-in is an objects unit. With the kinds in their " +
+        "own package this one rule is what `desk-engine-never-imports-objects`, `desk-seam-never-imports-a-kind` (and its four " +
+        "fenced exceptions, retired at K4b's second step) and `the-kit-imports-no-kind` were. Both path forms: a relative climb " +
+        "resolves into packages/objects; a package import is reported by SPECIFIER.",
       severity: "error",
-      from: { path: "^packages/desk/src", pathNot: ["^packages/desk/src/host/", "^packages/desk/src/index\\.ts$", "^packages/desk/src/objects/"] },
-      to: { path: KIND_DOM },
+      from: { path: "^packages/desk/(src|test)/" },
+      to: { path: ["^packages/objects/", "^@ice/objects(/|$)"] },
     },
     {
-      name: "desk-engine-never-imports-objects",
+      name: "objects-imports-only-the-sdk",
       comment:
-        "design-015 §3 (the design-014 seam test): `desk/engine` is what every desk needs and depends " +
-        "on world facts; a KIND is a look plus its behaviours and plugs in through `defineObject` " +
-        "exactly as a third-party kind will. The engine may not know the reference kinds.",
+        "design-016 §5 · K-L1 (K4b): the six built-ins compile against the desk's PUBLIC entries alone — `@ice/desk` (the contract: " +
+        "`defineObject`, `ObjectKind`, `KindProgram`, the theme, the typing docs, the shader text), `@ice/desk/kit`, " +
+        "`@ice/desk/engine` — and core's and kernel's entries, exactly as a plugin kind does. A POSITIVE allowlist: a desk source " +
+        "path (a relative climb resolves into packages/desk), another entry (`@ice/desk/oracle/*`), a package's inner module, an " +
+        "npm package or a Node builtin is a violation; type-only edges count (a type a kind names from a private module is a word a " +
+        "plugin cannot write). The desk's entries are reported by SPECIFIER (resolved through node_modules), core's and kernel's " +
+        "through tsconfig paths to their index.",
       severity: "error",
-      from: { path: "^packages/desk/src/engine/" },
-      to: { path: "^packages/desk/src/objects/" },
+      from: { path: OBJECTS },
+      to: { pathNot: [OBJECTS, "^packages/(core|kernel)/src/index\\.ts$", "^@ice/desk$", "^@ice/desk/(kit|engine)$"] },
     },
-    {
-      name: "desk-seam-never-imports-a-kind",
-      comment:
-        "design-015 §3 + D7 #5 (D-D7-A.3): the desk's SEAM — the composition (compose/), the host (host/), the hold and the " +
-        "marks — wires kinds only through what a kind DECLARES in `defineObject` (its kind, its local, its drivers, its DOM half) " +
-        "and never names one, so a third-party kind plugs in by declaring, exactly as the reference kinds do. Nothing under " +
-        "compose|host|hold|marks imports a reference kind's module — objects/*, kinds/<kind>.ts or a kind's own folder — not even " +
-        "a type. NO exceptions since K4b (design-016 §5): the builder nests every container by the kit's inside law (kit/inside.ts " +
-        "— the mini mat's `insideViewOfFace`, the presentations, the lamp handover, the face's radius and chip cap moved there), and " +
-        "the layer builds the DOM halves the objects declare (`ObjectHost`: the note's editor, the calendar's input and print " +
-        "raster) instead of finding them by type. Those halves live under host/ only because `desk-dom-free` keeps the DOM there; " +
-        "they are their kinds' files (KIND_FILES), bound by the kind rules, not the seam's.",
-      severity: "error",
-      from: { path: "^packages/desk/src/(compose|host|hold|marks)/", pathNot: ALL_KIND_FILES },
-      to: {
-        path: [
-          "^packages/desk/src/objects/",
-          "^packages/desk/src/(paper|board|notebook|calendar|photo|minimat)/",
-          "^packages/desk/src/kinds/(paper|board|notebook|calendar|photo|minimat)\\.ts$",
-        ],
-      },
-    },
-    {
-      name: "kinds-import-only-the-sdk",
-      comment:
-        "design-016 §5 · K-L1 (K4a): every built-in kind compiles against the public entries alone — a kind's files (KIND_FILES " +
-        "above) import, inside the desk, only the SDK (KIND_SDK: the kit, the engine, the contract's modules) and kind files " +
-        "(their own — another kind's is `no-kind-imports-a-kind`); outside it, core's and kernel's entries only, never a " +
-        "package's inner module. What two kinds share lives in the kit. K4b moves the kinds to their own package against " +
-        "exactly this surface. Type-only edges count: a type a kind names from a private module is a word a plugin cannot write.",
-      severity: "error",
-      from: { path: ALL_KIND_FILES },
-      to: {
-        path: [DESK, "^packages/(core|kernel)/src/"],
-        pathNot: [...KIND_SDK, ...ALL_KIND_FILES, "^packages/(core|kernel)/src/index\\.ts$"],
-      },
-    },
-    // K-L1's second half, one rule per kind (one name): a kind's files import no other kind's — not a module, not a type
-    ...Object.keys(KIND_FILES).map((k) => ({
+    // K-L1's second half, one rule per kind (one name): a kind's folder imports no other kind's — not a module, not a type
+    ...KINDS.map((k) => ({
       name: "no-kind-imports-a-kind",
       comment:
-        `design-016 K-L1 (K4a): no kind imports another — the ${k} kind's files import none of the other five's (a kind names ` +
-        "another only by its registry name, which core or the host resolves at run time: test/kind-names.test.ts).",
+        `design-016 K-L1 (K4a; by folder since K4b): the ${k} kind's folder imports none of the other five's (a kind names another ` +
+        "only by its registry name, which core or the host resolves at run time: test/kind-names.test.ts); what two kinds share is the kit's.",
       severity: "error",
-      from: { path: kindFiles(k) },
-      to: { path: Object.keys(KIND_FILES).filter((o) => o !== k).flatMap(kindFiles) },
+      from: { path: kindDir(k) },
+      to: { path: KINDS.filter((o) => o !== k).map(kindDir) },
     })),
     {
-      name: "the-kit-imports-no-kind",
+      name: "objects-dom-half-is-its-objects",
       comment:
-        "design-016 §5 (K4a): the render kit is what kinds SHARE — it is below every kind and names none (not a kind's file, " +
-        "not the barrels that list them all), so a plugin kind and a reference kind stand on the same kit.",
+        "design-016 §5 · K-L2 (K4b): the objects are DOM-free but each kind's DOM half — its `host/` folder (the note's editor, the " +
+        "calendar's input and print raster) — and that half is reached only by its OBJECT's declaration (`defineObject({ host })`, " +
+        "`<k>/object.ts`) and the package's barrel: never by a world half, a pass or the registry, so the Node oracle imports every " +
+        "world half whole and the desk layer builds what the objects declare. The API half — no document/window/navigator outside " +
+        "a `host/` folder — is packages/objects/test/dom-free.test.ts, the grep a cruiser cannot be.",
       severity: "error",
-      from: { path: DESK + "kit/" },
-      to: { path: [...ALL_KIND_FILES, DESK + "kinds/index\\.ts$", DESK + "objects/"] },
+      from: { path: OBJECTS, pathNot: [`${OBJECTS}[^/]+/host/`, `${OBJECTS}[^/]+/object\\.ts$`, `${OBJECTS}index\\.ts$`] },
+      to: { path: `${OBJECTS}[^/]+/host/` },
     },
     {
       name: "devtools-only-core-kernel-strata",
@@ -264,7 +218,7 @@ module.exports = {
       name: "nobody-imports-devtools",
       comment: "design-002 §6: devtools is a leaf — no engine package may depend on it.",
       severity: "error",
-      from: { path: "^packages/(kernel|core|dom|react|desk)/src" },
+      from: { path: "^packages/(kernel|core|dom|react|desk|objects)/src" },
       to: { path: "^packages/devtools" },
     },
     {
@@ -281,6 +235,16 @@ module.exports = {
       to: { path: ["^packages/desk/", "^@ice/desk(/|$)"] },
     },
     {
+      name: "nobody-imports-objects",
+      comment:
+        "design-016 §5 (K4b): the reference kinds are what an APP registers — nobody imports `@ice/objects` but apps (and the " +
+        "umbrella's entry, `packages/ice/src/desk-objects.ts`, which re-exports it as `@vibecook/ice/desk/objects`). The engine's " +
+        "packages below it never name a built-in (the desk's own rule is `desk-never-imports-objects`). Both path forms.",
+      severity: "error",
+      from: { path: "^packages/(kernel|core|dom|react|devtools)/(src|test)/" },
+      to: { path: ["^packages/objects/", "^@ice/objects(/|$)"] },
+    },
+    {
       name: "no-three",
       comment:
         "design-015 §3 (D5b): `three` is imported NOWHERE. Until D5b `three-only-in-r3f` let " +
@@ -295,7 +259,7 @@ module.exports = {
       severity: "error",
       // …and every app's modules too (D7: `depcruise` walks apps/ since the fix wave; an app is a consumer, and three is
       // imported NOWHERE)
-      from: { path: ["^packages/(kernel|core|dom|react|desk|devtools|ice)/src", "^apps/"] },
+      from: { path: ["^packages/(kernel|core|dom|react|desk|objects|devtools|ice)/src", "^apps/"] },
       to: { path: ["^three(/|$)", nm("three"), "^@react-three/", nm("@react-three"), "^stats-gl(/|$)", nm("stats-gl")] },
     },
   ],

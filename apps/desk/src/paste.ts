@@ -7,7 +7,7 @@
 // stay core's; these are the document's own paste and drop events, bubbling, never capture-phase.
 import { Camera, type CanvasEngine, defineQuery, type Entity, LocalPointer, Pointer, PointerWorld, Viewport } from "@ice/core";
 import { decodePicture, type DeskLayerHandle } from "@ice/desk";
-import { printRect, type Prints } from "@ice/desk";
+import { printRect, type Prints } from "@ice/objects";
 import { PHOTO_TYPE } from "@ice/objects";
 import { deskBlobs } from "./blobs";
 import { spawnAll } from "./scene";

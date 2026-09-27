@@ -21,9 +21,9 @@
 // selection menu (D4a) stands clamped over its foot's middle, so the foot is pressed a quarter in; core's drag follows the finger
 // from where it crossed the slop — a first step behind it — so a note is carried closed-loop to where its centre must land.
 import { decodePng } from "./png.mjs";
-import { CALENDAR } from "../../../packages/desk/src/calendar/law.ts";
-import { dayOfKey } from "../../../packages/desk/src/calendar/month.ts";
-import { padFrame } from "../../../packages/desk/src/calendar/pad.ts";
+import { CALENDAR } from "../../../packages/objects/src/calendar/law.ts";
+import { dayOfKey } from "../../../packages/objects/src/calendar/month.ts";
+import { padFrame } from "../../../packages/objects/src/calendar/pad.ts";
 
 /** The pad's sheet: its size, the tape across its head. */
 const F = padFrame(CALENDAR);

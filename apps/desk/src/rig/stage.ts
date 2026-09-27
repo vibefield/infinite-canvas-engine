@@ -22,8 +22,8 @@
 import { abortNavFlight, Camera, type CanvasEngine, cascadeDestroy, type Entity, HeldView, Position, PrefabId, Size, writeRuntimeResource, defineQuery } from "@ice/core";
 import { DEFAULT_MAT_CONFIG, type DeskLayerHandle } from "@ice/desk";
 import { MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type PaperDriver } from "@ice/objects";
-import { HAND, MINIMAT, PAPER, type ThemeName } from "@ice/desk";
-import type { BoardInk, PaperKind } from "@ice/desk";
+import { HAND, type ThemeName } from "@ice/desk";
+import { MINIMAT, PAPER, type BoardInk, type PaperKind } from "@ice/objects";
 import { oracleFixtures } from "./oracle-fixtures";
 import type { SceneHost, Staged } from "../rig-door";
 import { type SpawnSpec, spawnAll } from "../scene";

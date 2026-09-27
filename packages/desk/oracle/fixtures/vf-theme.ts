@@ -3,4 +3,4 @@
 // palette SHIPPED in `@vibecook/ice/desk/objects`, so the published quickstart mounts); this module
 // re-exports it, so the oracle, apps/desk's parity page and the units read the one table the
 // package publishes.
-export * from "../../src/objects/palette";
+export * from "../../../objects/src/palette";

@@ -5,7 +5,8 @@
 // phone's page); the pages' replays. Everything reads the kind's own state or the world; nothing writes.
 
 import { type CanvasEngine, ChildOf, type Entity } from "@ice/core";
-import { type Books, type DeskLayerHandle, INK_H, INK_W, NOTEBOOK_PAGE } from "@ice/desk";
+import { type Books, INK_H, INK_W, NOTEBOOK_PAGE } from "@ice/objects";
+import type { DeskLayerHandle } from "@ice/desk";
 import { BoardStroke, decodePoints, decodeTimes, Notebook, NOTEBOOK_TYPE, type NotebookHand } from "@ice/objects";
 
 export interface NotebookApi {

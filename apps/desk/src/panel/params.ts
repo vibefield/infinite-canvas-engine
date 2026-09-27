@@ -9,7 +9,8 @@
 
 import { NAV_TRANSITION_DEFAULTS, ZOOM_THROUGH_DEFAULTS } from "@ice/core";
 import { DEFAULT_MAT_CONFIG, type GridConfig, type MatConfig, type ObjectSprings, type PlateName, type RulerConfig, SPRINGS } from "@ice/desk";
-import { dayLuminance, EIGENGRAU, GRID, type GroundTheme, type MatLight, MINIMAT, NIGHT, nightLight, type RGB, type ThemeName } from "@ice/desk";
+import { dayLuminance, EIGENGRAU, GRID, type GroundTheme, type MatLight, NIGHT, nightLight, type RGB, type ThemeName } from "@ice/desk";
+import { MINIMAT } from "@ice/objects";
 
 /** Deep-mutable: the panel writes into what the engine only reads. */
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly number[] ? T[K] : T[K] extends object ? Mutable<T[K]> : T[K] };

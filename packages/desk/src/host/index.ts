@@ -3,19 +3,15 @@
 // the swap chain over a canvas, and the desk LAYER a host mounts (`deskLayer`, D2a-world: the
 // canvas in the ground slot, the device, the reflector and the pick source over the world).
 // Everything else under src/ is DOM-free, so the Node oracle imports it whole; a test greps.
+// The kinds' DOM halves — the note's editor, the calendar's input and print raster — left with their kinds at design-016 K4b
+// (`@ice/objects`: each object declares its half, `defineObject({ host })`, and the layer builds what the objects declare).
 export { deskLayer, type DeskLayerContext, type DeskLayerFactory, type DeskLayerHandle, type DeskLayerOptions, type DeskLayerPerf, type DeskLayerStatus, type DeskTrayDoor, type MatPin, type SelectionSource } from "./layer";
 export type { SelectionAnchor } from "../compose/marks";
 export { surface, type Surface } from "./surface";
-// the text raster a browser hands the paper kind (D2c): the faces by URL, Canvas2D ink on an OffscreenCanvas
+// the TEXT raster a browser hands the kinds (D2c; `KindHost.text` — the note writes in it, the calendar prints in its hand): the
+// faces by URL, Canvas2D ink on an OffscreenCanvas
 export { type FaceSpec, inkRaster, type InkRaster, type InkRasterOptions, PEN_FACES, penFaces } from "./ink";
-// …and the desk calendar's PRINT in the same hand (D3t-c): a sheet's tiles drawn on an OffscreenCanvas
-export { printRaster, type PrintRasterOptions } from "./print";
-// …and its days and its pen at event time (D3t-c): a click selects, a double-click writes, the ONE editor lent to it
-export { type CalendarInput, type CalendarInputOptions, caretIndexAt, createCalendarInput } from "./calendar-input";
-export type { EditorLease } from "./editor";
-// the ONE focused editor — the platform's textarea in screen space over the note being written (D2c)
-export { createNoteEditor, EDITOR_ATTR, KEYBOARD_CLAIM_ATTR, type NoteEditor, type NoteEditorOptions } from "./editor";
-// the one image decode — a pasted or dropped picture for a print (D3w)
+// the one image decode — a pasted or dropped picture for a print (D3w; `KindHost.decode`, the host's for any kind with pictures)
 export { decodePicture } from "./picture";
 // What a host FEEDS the mat through the handle (the render map's finding #2): the plates' slots, the glyph atlas's shape and cells, the mat's config.
 export { DEFAULT_MAT_CONFIG, GLYPH_PAD, GLYPHS, type GlyphAtlasMeta, type MatConfig, type PlateName, type RulerConfig } from "../mat/layout";

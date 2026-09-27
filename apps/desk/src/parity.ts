@@ -12,7 +12,7 @@ import { surface } from "@ice/desk";
 import { blueNoise } from "@ice/desk";
 import { createOracleDesk } from "@ice/desk/oracle/frame.mjs";
 import { ORACLE_SCENES, VIEW } from "@ice/desk/oracle/scenes.mjs";
-import { shaderText } from "@ice/desk";
+import { shaderText } from "@ice/objects";   // the kinds' WGSL and the kit's (per-package shader text, design-016 K4b)
 import goboBUrl from "@ice/desk/oracle/fixtures/assets/gobo-b.rgba?url";
 import goboCUrl from "@ice/desk/oracle/fixtures/assets/gobo-c.rgba?url";
 import glyphMetaUrl from "@ice/desk/oracle/fixtures/assets/glyphs-mono-2x.json?url";

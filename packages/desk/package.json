@@ -3,11 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The desk (design-015): the cutting mat, the mini mats and the desk's objects on one raw-WebGPU renderer — vibe-field/draft/ground's prototype, moved at D1 (2026-09-25); drawn FROM THE WORLD since D2a-world (the kinds' world halves, defineObject, the builder, the reflector, the pick source, the desk layer).",
+  "description": "The desk (design-015): the cutting mat, the mini mats and the desk's objects on one raw-WebGPU renderer — vibe-field/draft/ground's prototype, moved at D1 (2026-09-25); drawn FROM THE WORLD since D2a-world (defineObject, the builder, the reflector, the pick source, the desk layer). The six reference kinds are a package of their own since design-016 K4b (`@ice/objects`), built on this package's public entries alone.",
   "exports": {
     ".": "./src/index.ts",
     "./engine": "./src/engine/index.ts",
-    "./objects": "./src/objects/index.ts",
     "./kit": "./src/kit/index.ts",
     "./oracle/*": "./oracle/*",
     "./assets/*": "./assets/*",

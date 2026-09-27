@@ -14,11 +14,10 @@ const desk = resolve(import.meta.dirname, "..");
 const repo = resolve(desk, "../..");
 const src = resolve(desk, "src");
 
-/** The public entries a consumer can import: `@ice/desk`, `/engine`, `/objects`, `/kit`, and core's and kernel's. */
+/** The public entries a consumer can import: `@ice/desk`, `/engine`, `/kit`, and core's and kernel's (the reference kinds are `@ice/objects` since K4b — a consumer of these, as a plugin is). */
 const ENTRIES = [
   "src/index.ts",
   "src/engine/index.ts",
-  "src/objects/index.ts",
   "src/kit/index.ts",
 ].map((p) => resolve(desk, p)).concat([resolve(repo, "packages/core/src/index.ts"), resolve(repo, "packages/kernel/src/index.ts")]);
 
