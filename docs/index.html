@@ -1093,13 +1093,13 @@ footer a:hover{color:var(--ink)}
         </tr>
         <tr>
           <td><code class="pk">@vibecook/ice/desk</code></td>
-          <td>The desk: one WebGPU renderer drawing every object from the world — the cutting mat, <code>deskLayer</code>, <code>defineObject</code>, the kind registry, the one focused editor, the theme.</td>
-          <td><small>core · kernel — nobody imports desk but apps</small></td>
+          <td>The desk: one WebGPU renderer drawing every object from the world — the cutting mat, <code>deskLayer</code>, the kind contract (<code>defineObject</code>, <code>ObjectKind</code>), the theme — it names no kind.</td>
+          <td><small>core · kernel — nobody imports desk but apps and the objects</small></td>
         </tr>
         <tr>
           <td><code class="pk">@vibecook/ice/desk/engine</code> · <code class="pk">/desk/objects</code></td>
-          <td>The raw-WebGPU engine (device, surface, passes) · the six reference object kinds (note, mini mat, notebook, whiteboard, calendar, photo).</td>
-          <td><small>core · kernel</small></td>
+          <td>The raw-WebGPU engine (device, surface, passes) · the six reference object kinds (note, mini mat, notebook, whiteboard, calendar, photo) — their own package since design-016 K4b, built on the desk's public entries alone, as a plugin kind is.</td>
+          <td><small>core · kernel (the objects: the desk's entries too)</small></td>
         </tr>
         <tr>
           <td><code class="pk">@vibecook/ice/devtools</code></td>

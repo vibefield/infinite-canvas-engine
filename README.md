@@ -60,7 +60,7 @@ under this point", and the behaviours that change it (design-015 §5).
 
 ## Entry points
 
-One npm package, eight entry points (the repo develops them as workspace
+One npm package, nine entry points (the repo develops them as workspace
 packages; `packages/ice` bundles them for publish):
 
 | Entry | Contents | May import |
@@ -68,9 +68,10 @@ packages; `packages/ice` bundles them for publish):
 | `@vibecook/ice/kernel` | Pure math: coordinates (THE one Y-flip), snap, spatial index, bezier/anchors, the design-006 flight, easings, layout | `rbush` only |
 | `@vibecook/ice` | The engine: ECS catalog, frame contract, interaction stack, the widget compiler (`defineWidget` with the `object` binding), the cull, node graph, nested canvas, doc kit, presence, bootstrap, migrations, `createCanvasEngine` facade | strata-ecs, kernel, loro-crdt |
 | `@vibecook/ice/dom` | SCREEN SPACE ONLY: the canvas host, the pointer adapter (L0's producer), the rAF loop, input ownership + the editor's focus, OS + remote cursors, `createDeskHost` (the vanilla mount) | core, kernel |
-| `@vibecook/ice/desk` | The desk: one WebGPU renderer drawing every object from the world — the cutting mat, `deskLayer`, `defineObject`, the kind registry, the one focused editor, the text raster, the theme | core, kernel; **nobody imports desk but apps** |
+| `@vibecook/ice/desk` | The desk: one WebGPU renderer drawing every object from the world — the cutting mat, `deskLayer`, the kind contract (`defineObject`, `ObjectKind`, `KindProgram` — what a kind implements, is handed and declares, its DOM half included), the text raster, the theme; it names no kind | core, kernel; **nobody imports desk but apps and `/desk/objects`** |
 | `@vibecook/ice/desk/engine` | The raw-WebGPU engine alone: the device (`acquire`, `adopt`), the `Surface` type (the swap chain itself is `surface()` in `/desk`), shader composition (`compose`, `compile`), pipelines and bind groups, render targets (`Target`, `beginPass`, `readback`), `defineStruct` | — |
-| `@vibecook/ice/desk/objects` | The six reference object kinds' world halves: note · mini mat · notebook · whiteboard · calendar · photo | core, kernel |
+| `@vibecook/ice/desk/kit` | The render kit a kind's pass is written against besides the engine: the slot's view and its mat (`MatPass`), the lamp and its light, the shared WGSL by name (`kitWgsl`), a container's inside, the host services a kind is lent (text, print, blobs), the one physics every object shares | core, kernel |
+| `@vibecook/ice/desk/objects` | The six reference object kinds — note · mini mat · notebook · whiteboard · calendar · photo — each its world half, its pass, its WGSL, its drivers and its DOM half; the preset (`DESK_ENGINE`) and the default palette. Its own workspace package (`@ice/objects`), built on `/desk`, `/desk/kit` and `/desk/engine` alone, exactly as a plugin kind is | `/desk`, `/desk/kit`, `/desk/engine`, core, kernel; **nobody imports it but apps** |
 | `@vibecook/ice/react` | `<Desk>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap, the screen-space selection menu and held bar | dom, core, kernel + react/react-dom |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one dock, and the WebGPU desk's GPU slot (its frames' span, passes, draws, memory — `~` in apps/desk) | core only; **nobody imports devtools** |
 

@@ -279,25 +279,33 @@ pass draws the guides and the marquee, and a wires pass is owed to the first des
 
 The desk (design-015): every object under the camera drawn by ONE WebGPU renderer FROM THE WORLD;
 the DOM in screen space. Entries mirror the umbrella's: **`@ice/desk`** (the root barrel — the
-renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLayerHandle`, the one
-focused editor `createNoteEditor`, the text raster `inkRaster`/`penFaces`, `decodePicture`,
-`defineObject`/`objectKindOf`, the kind registry (`paperKind`, `minimatKind`, `notebookKind`,
-`boardKind`, `calendarKind`, `photoKind`, …), the builder/pick/ambient/reflector of `compose`,
-`instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until
+renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLayerHandle` (`handle.editor()`
+is the one focused editor an object's DOM half made), the text raster `inkRaster`/`penFaces`, `decodePicture`,
+the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `ObjectKind`, `KindProgram`, `KindHost`,
+`ObjectHost` (a kind's DOM half, declared: `lend` · `editor` · `mount` — design-016 K4b) —, the builder/pick/ambient/reflector
+of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until
 `arm()` — `instrumentPasses`, `instrumentMemory` under `deskLayer({ gpuLedger: true })`, `ablateKinds`/`withoutKind`,
-`traceOf`; `packages/devtools/README.md` says what each number means), the theme (`themeFrom`, `Palette`, `MAT`, `PAPER`, …), `shaderText`,
-`blueNoise`, the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs `SPRINGS`) ·
-**`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the `Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is `@ice/desk`'s, and no pass ships here) · **`@ice/desk/objects`**
-(the six reference kinds' world halves: `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`,
-`Calendar`, `Photo`, `DESK_OBJECTS`, the typing session, the strokes and pins; the engine preset
-`DESK_ENGINE` — `createCanvasEngine(DESK_ENGINE)`: the objects, `deskSelect`/`DeskCanvas`, the wheel
-zooming about the pointer, the scale-free zoom, the zoom-through — and the complete default palette
-`deskPalette(name)`/`deskTheme(name)`, D7). Walls: `desk = core +
-kernel`; nobody imports desk but apps and the umbrella; `desk-dom-free` (only `src/host/*` touches
-the DOM); `desk/engine` never imports `desk/objects`. Mount: `<Desk layer={deskLayer({ theme,
+`traceOf`; `packages/devtools/README.md` says what each number means), the theme (`themeFrom`, `Palette`, `MAT`, …), `shaderText`
+(the desk's WGSL: the kit, the mat, the hold, the marks), `blueNoise`, the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs
+`SPRINGS`, the zoom band `ZOOM_MIN`/`ZOOM_MAX`) · **`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the
+`Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is
+`@ice/desk`'s, and no pass ships here) · **`@ice/desk/kit`** (the render kit a kind's pass is written against besides the engine:
+the slot's view and its mat, the lamp, `kitWgsl`, a container's inside, the host services a kind is lent). The desk names no kind.
+
+**`@ice/objects`** is `@vibecook/ice/desk/objects` (design-016 K4b: the six reference kinds' own package, built on the three desk
+entries alone, exactly as a plugin kind is): `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`, `Calendar`, `Photo`,
+`DESK_OBJECTS`; the kinds' programs and world halves (`paperKind`, `minimatKind`, `notebookKind`, `boardKind`, `calendarKind`,
+`photoKind`, …, `DESK_KINDS`) and specs (`PAPER`, `MINIMAT`, `BOARD`, `BOOK`); their DOM halves' makers (`createNoteEditor`,
+`createCalendarInput`, `printRaster` — each object declares its own, `defineObject({ host })`); their `shaderText` (theirs and the
+kit's); the typing session, the strokes and pins; the engine preset `DESK_ENGINE` — `createCanvasEngine(DESK_ENGINE)`: the
+objects, `deskSelect`/`DeskCanvas`, the wheel zooming about the pointer, the scale-free zoom, the zoom-through — and the complete
+default palette `deskPalette(name)`/`deskTheme(name)`, D7. Walls: `desk = core + kernel`; nobody imports desk but apps, the
+objects and the umbrella; `desk-dom-free` (only `src/host/*` touches the DOM); the desk never imports the objects; the objects
+import the desk's three entries and core/kernel alone, no kind another. Mount: `<Desk layer={deskLayer({ theme,
 palette, objects: [...DESK_OBJECTS], text, docs, blobs })}>` (react) or `createDeskHost` (dom);
 `apps/desk/src/App.tsx` is the worked example; `deskPalette`/`deskTheme` are the theme's default. The oracle
-(`pnpm --filter @ice/objects oracle`, Dawn in Node) and `apps/desk`'s rigs are the pixel witnesses.
+(`pnpm --filter @ice/objects oracle`, Dawn in Node — it draws the six kinds on the desk) and `apps/desk`'s rigs are the pixel
+witnesses.
 
 ## @ice/devtools
 
