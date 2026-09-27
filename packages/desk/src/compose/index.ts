@@ -5,7 +5,7 @@
 // device, the layer factory a React or vanilla host mounts — is src/host/ (`deskLayer`, in `@ice/desk`'s root barrel).
 export { AMBIENT_DEFAULTS, type Ambient, type AmbientMode, type AmbientOptions, type AmbientPhase, type AmbientPin, type AmbientState, createAmbient } from "./ambient";
 export { type BuildViewport, type BuildWork, type BuiltDesk, createDeskBuilder, type DeskBuilder, type DeskBuilderOptions, type DeskBuilderStats, type DeskWakeReason, type HeldBuild, type HoldPin } from "./builder";
-export { createMarksCollector, type MarkRow, type MarksCollector, type SelectionAnchor } from "./marks";
+export { createMarksCollector, type MarkRow, type MarksCollector, type MenuSlot, menuSlots, type SelectionAnchor, withKindActs } from "./marks";
 export { createPickSource } from "./pick";
 export { tapHit } from "./tap";
 export { createDeskReflector, type DeskReflector, type DeskReflectorOptions, type DeskReflectorStats, type DeskWakes } from "./reflector";

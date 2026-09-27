@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, openTray, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, openTray, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -42,7 +42,7 @@ import { type BudgetStats, createRasterBudget } from "../engine/budget";
 import { createRasterQueue, type RasterQueueStats } from "../engine/rasters";
 import type { RecordStoreStats } from "../engine/records";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
-import { heldSlots, type SelectionAnchor } from "../compose/marks";
+import { heldSlots, type SelectionAnchor, withKindActs } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
@@ -480,12 +480,16 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
     // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
     // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked
+    // the object types by name (K8a): what an object provides and what acts its type declares are read off its PrefabId
+    const typeNamed = new Map([...types].map((t) => [t.type, t] as const));
+    // the selection's KIND ACTS (K8a): what every selected object's type declares (`defineObject({ menu })`), read off its PrefabId
+    const menuOf = (e: Entity): readonly MenuActionDef[] => { const id = world.isAlive(e) ? world.get(e, PrefabId)?.id : undefined; return typeof id === "string" ? (typeNamed.get(id)?.menu ?? []) : []; };
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
       if (trayOpen(world)) return { ...a, box: null, count: 0 };
       const h = builder.hand();
-      if (h === undefined) return a;
+      if (h === undefined) return withKindActs(a, selectedEntities(world), menuOf);
       const kind = builder.kindOf(h.entity);
       const swatches = kind?.open?.swatches?.(compose.look(kind.name)) ?? {};
       const active = world.isAlive(h.entity) ? (world.get(h.entity, HeldTool)?.id ?? "") : "";
@@ -524,7 +528,6 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const kindNamed = (name: string): ((e: Entity) => boolean) | undefined => (objectKinds.some((k) => k.name === name) ? (e) => ofKind(e, name) : undefined);
     // …and by what an object PROVIDES (K8a): its type's keys, read off its `PrefabId` — undefined when no type on this desk provides it;
     // an insert ghost provides nothing to a driver (K5b's law above: the calendar never pins the ghost, only the twin it becomes)
-    const typeNamed = new Map([...types].map((t) => [t.type, t] as const));
     const providing = (key: string): ((e: Entity) => boolean) | undefined =>
       [...types].some((t) => t.provides.includes(key)) ? (e) => { const id = world.isAlive(e) && !world.has(e, InsertGhost) ? world.get(e, PrefabId)?.id : undefined; return typeof id === "string" && typeNamed.get(id)?.provides.includes(key) === true; } : undefined;
     for (const t of types) {

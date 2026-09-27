@@ -50,6 +50,7 @@ export {
   type SelectionMenuProps,
   type SelectionMenuSource,
   type SelectionGlyph,
+  type SelectionMenuAct,
   type SelectionMenuTool,
   type SelectionState,
   selectionTaped,

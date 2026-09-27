@@ -18,6 +18,11 @@ export type VinylName = (typeof VINYLS)[number];
 /** The mini mat's durable type id. */
 export const MINIMAT_TYPE = "desk.minimat";
 
+/** Its selection-menu act's id (K8a): the vinyl cycles — an app's key (`t`) runs it through `ops.runMenuAction`. */
+export const VINYL_ACT = "vinyl";
+/** The act's glyph, the mat's own drawing in the bar's 24-unit box: a vinyl sample — a swatch with two strokes of its grain. */
+const VINYL_GLYPH = "M6.5 5h11A1.5 1.5 0 0 1 19 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 17.5v-11A1.5 1.5 0 0 1 6.5 5ZM5 13l8-8M11 19l8-8";
+
 export const MiniMat = defineObject({
   type: MINIMAT_TYPE,
   version: 1,
@@ -30,6 +35,18 @@ export const MiniMat = defineObject({
   // on the pegboard tray (design-017 §8): a mini mat on a shelf
   tray: { label: "Mini mat", category: "surface", order: 0, hang: { w: 213, h: 160, accessory: "shelf", pegs: [[-2, 0.5], [2, 0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
+  // its act in the selection menu (K8a — the kind's own, where the app's `t` key held it over the type name until then): the
+  // selected mini mats' vinyl cycles sage → slate → charcoal, each mat one undo step; the inside's mat is the same vinyl, so it follows
+  menu: [{
+    id: VINYL_ACT, label: "Change the vinyl", keys: "T", glyph: { path: VINYL_GLYPH },
+    run: (api) => {
+      for (const e of api.entities) {
+        const cur = api.props(e).vinyl;
+        const next = VINYLS[(VINYLS.indexOf(cur as VinylName) + 1) % VINYLS.length] ?? VINYLS[0];
+        api.setProps(e, { vinyl: next });
+      }
+    },
+  }],
   container: {
     // it holds what provides `CONTAINABLE` (K8a — a note, a mini mat, a plugin kind that declares its chip), never a list of types;
     // and it lies on the desk, and in another mini mat, by what it provides itself

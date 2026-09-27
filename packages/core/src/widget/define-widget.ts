@@ -48,6 +48,7 @@ import { definePrefab, init, type ComponentInit, type Prefab } from "../schema/p
 import { defaultValueOf } from "./props";
 import type { JsonSpec, PropSpec, PropsDecl } from "./props";
 import { type HeldToolDef, validateHeldTools } from "./held-tools";
+import { type MenuActionDef, validateMenuActions } from "./menu-actions";
 import { hangError, type TrayHang } from "@ice/kernel";
 import type { CanvasType } from "../canvas/define-canvas-type";
 import type { FrameProjection } from "../canvas/frame-projection";
@@ -230,6 +231,12 @@ export interface WidgetDef {
   /** The mode in hand when the object is picked up, from its props (the board: its capped marker's ink). Default: the first mode, else none. */
   readonly heldTool?: (props: Readonly<Record<string, unknown>>) => string;
   /**
+   * The acts the SELECTION MENU offers for a selection of this type's objects (design-016 §5 · K-L2, K8a — widget/menu-actions.ts):
+   * each an id, a label, a glyph and an op; the menu shows one when every selected object's type declares it, and
+   * `ops.runMenuAction` runs it. A kind's own acts live here, never in app code over its type name.
+   */
+  readonly menu?: readonly MenuActionDef[];
+  /**
    * What RIDES with the widget when a gesture moves it (design-015 D3t-c — the desk calendar's stuck notes): widgets of the same
    * frame the move claim adds to its dragged set, so they move with it live and land in the SAME transaction (one undo step).
    * Read from the world at the claim; a taped rider stays put, as a taped member of a selection does.
@@ -349,6 +356,8 @@ export interface WidgetType {
   readonly heldTools: readonly HeldToolDef[];
   /** The mode in hand at the pick-up, from the object's props; undefined = the first mode. */
   readonly heldTool: ((props: Readonly<Record<string, unknown>>) => string) | undefined;
+  /** The selection menu's acts for this type's objects (K8a); empty when it declares none. */
+  readonly menu: readonly MenuActionDef[];
   /** What rides with the widget when a gesture moves it (design-015 D3t-c); undefined = nothing. */
   readonly riders: ((world: World, entity: Entity) => readonly Entity[]) | undefined;
   /** The object's data prefabs (design-015 §5.1, D3t-a) — the catalog tracks them with the widget; empty for most. */
@@ -625,6 +634,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     }
     validateHeldTools(def.type, def.heldTools ?? []);
   }
+  validateMenuActions(def.type, def.menu ?? []);
   for (const d of def.data ?? []) {
     if (d.store !== "durable") throw new Error(`ice: defineWidget("${def.type}") data prefab "${d.id}" is ${d.store} — an object's data children live in the document (durable).`);
     if (d.id === def.type) throw new Error(`ice: defineWidget("${def.type}") names itself as its own data prefab.`);
@@ -683,6 +693,7 @@ export function defineWidget(def: WidgetDef): WidgetType {
     openable: hasObject && def.openable === true,
     heldTools: Object.freeze([...(def.heldTools ?? [])]),
     heldTool: def.heldTool,
+    menu: Object.freeze([...(def.menu ?? [])]),
     riders: def.riders,
     data: Object.freeze([...(def.data ?? [])]),
     defaultSize,

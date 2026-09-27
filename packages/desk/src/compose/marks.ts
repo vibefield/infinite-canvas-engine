@@ -24,6 +24,8 @@ import {
   GuideLine,
   type HeldGlyph,
   LocalPointer,
+  type MenuActionDef,
+  menuActionsFor,
   Locked,
   type MarqueeBuffer,
   Pointer,
@@ -68,6 +70,11 @@ export interface SelectionAnchor {
   readonly rulers: { readonly margin: number; readonly band: number } | null;
   /** An object is IN HAND (design-015 §8, D4b): the menu travels to the foot and becomes the held bar — Send · the kind's tools · Done. Absent = nothing held. */
   readonly held?: HeldAnchor;
+  /**
+   * The selection's KIND ACTS (K8a — its types' `defineObject({ menu })`): those every selected object's type declares, as plain data
+   * (the op stays on the type — the menu runs one through `ops.runMenuAction`). Absent: none (nothing selected declares any).
+   */
+  readonly menu?: readonly MenuSlot[];
 }
 
 /**
@@ -80,6 +87,29 @@ export interface HeldAnchor {
   readonly active: string;
   readonly landing: boolean;
   readonly settled: boolean;
+}
+
+/** A kind's act as the selection menu shows it (K8a): plain data — the op stays on the widget type (`ops.runMenuAction`). */
+export interface MenuSlot {
+  readonly id: string;
+  readonly label: string;
+  readonly glyph?: HeldGlyph;
+  readonly keys?: string;
+}
+
+/** A selection's kind acts as the menu's slots (K8a): every act its types all declare (core's `menuActionsFor`), as plain data. */
+export function menuSlots(acts: readonly MenuActionDef[]): MenuSlot[] {
+  return acts.map((a) => ({ id: a.id, label: a.label, ...(a.glyph !== undefined ? { glyph: a.glyph } : {}), ...(a.keys !== undefined ? { keys: a.keys } : {}) }));
+}
+
+/**
+ * The anchor with the selection's KIND ACTS (K8a): every act all the selected objects' types declare (`menuOf` reads an object's
+ * type's `menu`), as the menu's slots — the anchor unchanged when nothing is selected or no act is shared.
+ */
+export function withKindActs(a: SelectionAnchor, selected: readonly Entity[], menuOf: (e: Entity) => readonly MenuActionDef[]): SelectionAnchor {
+  if (a.count === 0) return a;
+  const menu = menuSlots(menuActionsFor(selected, menuOf));
+  return menu.length === 0 ? a : { ...a, menu };
 }
 
 /** A tool's slot as the bar shows it: plain data (the op stays on the widget type — the bar uses a tool through `ops.useHeldTool`). */

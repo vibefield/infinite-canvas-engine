@@ -322,6 +322,12 @@ export interface CanvasOps {
    * names no such tool, or the tool is declared only.
    */
   useHeldTool(id: string): boolean;
+  /**
+   * Run a SELECTION MENU act (design-016 §5 · K-L2, K8a — widget/menu-actions.ts): the act `id` of the selected objects' types, each
+   * declaring type's `run` handed its own selected objects. False when nothing selected declares it (the menu shows an act only when
+   * every selected object's type does; an app's key reaches the ones that do).
+   */
+  runMenuAction(id: string): boolean;
 }
 
 export interface CanvasDocs {
@@ -1848,6 +1854,44 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
           return true;
         },
       });
+      return true;
+    },
+    runMenuAction(id) {
+      // THE SELECTION MENU'S ACTS (K8a): each type that declares `id` runs it once over its own selected objects
+      const byType = new Map<WidgetType, Entity[]>();
+      for (const e of selectedEntities(world)) {
+        const typeId = world.isAlive(e) ? world.get(e, PrefabId)?.id : undefined;
+        const type = typeof typeId === "string" ? catalog.widget(typeId) : undefined;
+        if (type === undefined || !type.menu.some((a) => a.id === id)) continue;
+        const list = byType.get(type);
+        if (list === undefined) byType.set(type, [e]);
+        else list.push(e);
+      }
+      if (byType.size === 0) return false;
+      /** The session an act may write through, or undefined on a read-only document (the write ops' own test). */
+      const writable = (): DocSession | undefined => {
+        const s = session;
+        return s === undefined || s.readOnly || gateVerdict(s.versionReport()) !== "ok" || diagnosticsDirty || diagnosticSnapshot.authorityIssue !== undefined ? undefined : s;
+      };
+      for (const [type, entities] of byType) {
+        type.menu.find((a) => a.id === id)?.run({
+          world,
+          entities,
+          props: (e) => propsOf(e),
+          setProps(e, props, o) {
+            const s = writable();
+            if (s === undefined || !world.isAlive(e)) return false;
+            setWidgetProps(s.store, world, e, props, o?.undoable === false ? { undoable: false } : undefined);
+            return true;
+          },
+          transact(fn, o) {
+            const s = writable();
+            if (s === undefined) return false;
+            guardedTransaction(s.store, world, fn, o?.undoable === false ? { undoable: false } : undefined);
+            return true;
+          },
+        });
+      }
       return true;
     },
   };

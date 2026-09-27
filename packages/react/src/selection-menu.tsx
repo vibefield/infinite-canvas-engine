@@ -43,6 +43,19 @@ export interface SelectionMenuAnchor {
    * hand — core's `HeldTool` — the one slot marked.
    */
   readonly held?: { readonly tools: readonly SelectionMenuTool[]; readonly active?: string; readonly landing: boolean; readonly settled: boolean };
+  /**
+   * The selection's KIND ACTS (design-016 K8a — the desk's `MenuSlot`s, mirrored structurally): what every selected object's type
+   * declares (`defineObject({ menu })`); the menu shows them first among its acts and runs one through `ops.runMenuAction`.
+   */
+  readonly menu?: readonly SelectionMenuAct[];
+}
+
+/** A kind's act as the desk publishes it (its `MenuSlot`, mirrored structurally — K8a): plain data; the op stays on the widget type. */
+export interface SelectionMenuAct {
+  readonly id: string;
+  readonly label: string;
+  readonly glyph?: SelectionGlyph;
+  readonly keys?: string;
 }
 
 /**
@@ -170,6 +183,11 @@ const initial = (label: string): ReactNode => <text x="12" y="16.5" textAnchor="
 /** Each missing name said once, loudly: a declaration error, not a look. */
 const missingSaid = new Set<string>();
 
+/** A kind act's glyph as the menu draws it (K8a): its drawing, a name of the set, or — a name the set lacks, or none — its initial, the missing name said once. */
+function actGlyph(k: SelectionMenuAct): ReactNode {
+  return toolGlyph({ id: k.id, label: k.label, ...(k.glyph !== undefined ? { glyph: k.glyph } : {}) }).node;
+}
+
 /** A held tool's glyph as the bar draws it — and whether a NAME it gave is missing from the set. */
 function toolGlyph(t: SelectionMenuTool): { readonly node: ReactNode; readonly missing: string | undefined } {
   const g = t.glyph;
@@ -242,15 +260,16 @@ export interface SelectionMenuProps {
   readonly engine?: CanvasEngine;
 }
 
-interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean; readonly held: boolean; readonly tools: string; readonly active: string }
+interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean; readonly held: boolean; readonly tools: string; readonly active: string; readonly menu: string }
 const shownOf = (a: SelectionMenuAnchor): Shown => {
   const held = a.held !== undefined && !a.held.landing;
   // flying home the bar steps aside as for a gesture — and comes back 200 ms after the landing
   const landing = a.held?.landing === true;
   const tools = held ? (a.held?.tools ?? []).map((t) => `${t.id}:${t.kind ?? ""}:${t.swatch ?? ""}`).join("|") : "";
-  return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools, active: held ? (a.held?.active ?? "") : "" };
+  const menu = (a.menu ?? []).map((m) => `${m.id}:${m.label}`).join("|");
+  return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools, active: held ? (a.held?.active ?? "") : "", menu };
 };
-const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools && a.active === b.active;
+const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools && a.active === b.active && a.menu === b.menu;
 /** The one element's transitions: the opacity's, and — while the bar travels between the selection and the foot (M1) — the transform's. */
 const transitionOf = (away: boolean, visible: boolean, traveling: boolean): string => {
   const M = SELECTION_MENU;
@@ -269,6 +288,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   const [below, setBelow] = useState(false);
   const [traveling, setTraveling] = useState(false);
   const tools = useRef<readonly SelectionMenuTool[]>(source.anchor().held?.tools ?? []);
+  const kindActs = useRef<readonly SelectionMenuAct[]>(source.anchor().menu ?? []);
   const heldRef = useRef(shown.held);
   const travelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -279,6 +299,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     const a = source.anchor();
     const next = shownOf(a);
     if (next.held) tools.current = a.held?.tools ?? [];
+    kindActs.current = a.menu ?? [];
     setShown((prev) => (sameShown(prev, next) ? prev : next));
     if (el === null) return;
     // THE TRAVEL (M1, D4b): the bar changes place and role — the transform's transition must be on BEFORE the new place is
@@ -308,7 +329,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   }, [source]);
   // re-place after the bar's contents change size (a taped selection drops Duplicate; More opens; the bar becomes the held bar)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the placement follows what was rendered — these are its triggers, not its inputs
-  useLayoutEffect(() => { placeRef.current(); }, [shown.count, shown.locked, shown.visible, shown.held, shown.tools, open]);
+  useLayoutEffect(() => { placeRef.current(); }, [shown.count, shown.locked, shown.visible, shown.held, shown.tools, shown.menu, open]);
 
   // a gesture: away in 90 ms at once; back 200 ms after the hand lets go
   useEffect(() => {
@@ -323,7 +344,12 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   if (engine === undefined) return null;
   const state: SelectionState = { count: shown.count, locked: shown.locked };
   const visible = shown.visible;
-  const listed = acts.filter((a) => a.when === undefined || a.when(state));
+  // the selection's KIND ACTS (K8a) first among the main acts: each runs its op through the engine, on the types that declare it
+  const kinds: SelectionAction[] = kindActs.current.map((k) => ({
+    id: `kind.${k.id}`, label: k.label, glyph: actGlyph(k), ...(k.keys !== undefined ? { keys: k.keys } : {}),
+    run: (e) => { e.ops.runMenuAction(k.id); },
+  }));
+  const listed = [...kinds, ...acts].filter((a) => a.when === undefined || a.when(state));
   const at = (place: "lead" | "main" | "end") => listed.filter((a) => (a.place ?? "main") === place);
   const button = (a: SelectionAction): ReactElement => {
     const label = labelOf(a, state);

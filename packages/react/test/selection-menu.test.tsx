@@ -154,3 +154,41 @@ describe("<SelectionMenu>", () => {
     expect(menu().querySelector(".ice-sm-sheet")).toBeNull();   // a new selection closes More
   });
 });
+
+// K8a (design-016 §5 · K-L2 — "menu actions … a plugin kind declares the same way"): the menu's acts were ICE's and the app's; a kind's
+// own act (the mini mat's vinyl) was app code over its type name. A type declares its acts (`defineWidget({ menu })`), the desk
+// publishes the selection's shared ones on the anchor (`menu`), and the menu shows them FIRST among its acts, runs one through the
+// engine (`ops.runMenuAction`) and lists it in More. A fixture type of the test's own.
+const spun: number[] = [];
+defineWidget({ type: "sm:spinner", props: {}, defaultSize: { w: 80, h: 80 }, menu: [{ id: "spin", label: "Spin it", keys: "S", glyph: { path: "M4 12a8 8 0 1 0 16 0" }, run: (api) => { spun.push(api.entities.length); } }] });
+
+describe("a kind's acts in the selection menu (K8a)", () => {
+  it("the anchor's kind acts come first among the acts, drawn from their own glyph, and a press runs the op on the engine", () => {
+    spun.length = 0;
+    const source = fakeSource(anchorOf({ count: 1, menu: [{ id: "spin", label: "Spin it", keys: "S", glyph: { path: "M4 12a8 8 0 1 0 16 0" } }] }));
+    const { engine, menu, step } = mount(source, [...defaultSelectionActions()]);
+    const e = engine.ops.spawnWidget("sm:spinner", { x: 0, y: 0, undoable: false });
+    step();
+    engine.ops.setSelection([e], "replace");
+    expect(Array.from(menu().querySelectorAll<HTMLElement>("[data-act]")).map((b) => b.dataset.act)).toEqual(["kind.spin", "duplicate", "tape", "more", "delete"]);
+    const btn = menu().querySelector<HTMLElement>('[data-act="kind.spin"]');
+    expect(btn?.getAttribute("aria-label")).toBe("Spin it");
+    expect(btn?.getAttribute("title")).toBe("Spin it (S)");
+    expect(btn?.querySelector("path")?.getAttribute("d")).toBe("M4 12a8 8 0 1 0 16 0");
+    act(() => { btn?.click(); });
+    expect(spun).toEqual([1]);
+    // …and More lists it with its key
+    act(() => { menu().querySelector<HTMLElement>('[data-act="more"]')?.click(); });
+    const item = menu().querySelector<HTMLElement>('.ice-sm-sheet [data-act="kind.spin"]');
+    expect(item?.textContent).toContain("Spin it");
+    expect(item?.querySelector("kbd")?.textContent).toBe("S");
+  });
+
+  it("a selection whose types share no act shows ICE's acts alone — the kind's go when the anchor says none", () => {
+    const source = fakeSource(anchorOf({ count: 2, menu: [{ id: "spin", label: "Spin it" }] }));
+    const { menu } = mount(source, [...defaultSelectionActions()]);
+    expect(menu().querySelector('[data-act="kind.spin"]')).not.toBeNull();
+    source.set(anchorOf({ count: 2 }));
+    expect(Array.from(menu().querySelectorAll<HTMLElement>("[data-act]")).map((b) => b.dataset.act)).toEqual(["duplicate", "tape", "more", "delete"]);
+  });
+});

@@ -15,7 +15,7 @@ import type { Entity } from "@ice/core";
 import { Active, PointerWorld, LocalPointer, Pointer, Camera, heldEntity, Position, PrefabId, Size, Viewport, defineQuery, defineTickSystem, selectedEntities } from "@ice/core";
 import { deskLayer, type DeskLayerHandle } from "@ice/desk";
 import { bookAngle } from "@ice/objects";
-import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, MiniMat, NOTE_TYPE, NOTEBOOK_TYPE, VINYLS, type VinylName } from "@ice/objects";
+import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, NOTE_TYPE, NOTEBOOK_TYPE, VINYL_ACT } from "@ice/objects";
 import type { ThemeName } from "@ice/desk";
 import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -122,16 +122,6 @@ export function App(): ReactElement {
       const next = all[(at + dir + all.length) % all.length];
       if (next !== undefined) engine.ops.setSelection([next.e], "replace");
     };
-    /** `t` (MINIMAT.md §2): the selected mini mats' vinyl cycles sage → slate → charcoal; the inside's mat is the same vinyl, so it follows. */
-    const cycleVinyl = (): void => {
-      for (const e of selectedEntities(world)) {
-        const id = world.get(e, PrefabId)?.id;
-        if (id !== MINIMAT_TYPE) continue;
-        const cur = (world.get(e, MiniMat.groups[0]?.component as never) as { vinyl?: string } | undefined)?.vinyl ?? VINYLS[0];
-        const next = VINYLS[(VINYLS.indexOf(cur as VinylName) + 1) % VINYLS.length] ?? VINYLS[0];
-        engine.ops.setWidgetProps(e, { vinyl: next });
-      }
-    };
     return [
       { key: "w", run: () => stick(NOTE_TYPE, { seed: (Math.random() * 0x7fffffff) | 0 }) },
       { key: "m", run: () => stick(MINIMAT_TYPE, { name: `Mat ${matSerial.current++}` }) },
@@ -144,7 +134,8 @@ export function App(): ReactElement {
       { key: "d", run: () => themeRef.current.toggle() },
       // K3: `a` ("add") slides the pegboard tray in and out (design-017 — widgetlab's `B` is the notebook's here)
       { key: "a", run: () => { handleRef.current?.tray.toggle(); } },
-      { key: "t", run: cycleVinyl },
+      // `t` (MINIMAT.md §2): the mini mat's own act (K8a — `defineObject({ menu })`), run on the selected mats through the engine
+      { key: "t", run: () => { engine.ops.runMenuAction(VINYL_ACT); } },
       // K1: `u` prints the rulers or not (the ground demo's key) — through the dev panel's params, so the panel's row and the
       // browser's saved desk agree with it; like every letter here, never while typing (the keymap's editable gate)
       { key: "u", run: () => panelRef.current?.tweak((p) => { p.ruler.on = !p.ruler.on; }) },

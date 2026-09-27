@@ -4,7 +4,7 @@
 // `@ice/desk/kit`, `@ice/desk/engine`), exactly as a plugin kind is. Importing this module DEFINES them (core's registry is
 // process-global): an app lists them in `createCanvasEngine({ widgets })` (or spreads `DESK_ENGINE`) and the desk layer
 // registers their kinds with the ground and builds the DOM halves they declare.
-export { MINIMAT_TYPE, MiniMat, VINYLS, type VinylName } from "./minimat/object";
+export { MINIMAT_TYPE, MiniMat, VINYL_ACT, VINYLS, type VinylName } from "./minimat/object";
 export { NOTE_INK, NOTE_PROPS, NOTE_TYPE, Note, type PaperDriver, PAPERS, type PaperName, PENS, type PenName } from "./paper/object";
 export { createNoteTyping, type NoteTyping, type NoteTypingOptions, type TypingDocs } from "./paper/typing";
 // the whiteboard and its data children (D3w)
