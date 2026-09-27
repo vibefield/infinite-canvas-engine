@@ -203,7 +203,7 @@ describe("the tree, the pool", () => {
       made.push(rec);
       const minimats = { prepare: (_e: unknown, slot: SlotContext, list: readonly unknown[], extra?: KindExtra) => { rec.minis.push({ present: slot.present, lit: slot.lit, live: [0, 1, 2].map((i) => extra?.live(i) ?? -2) }); return list.length; }, tune() {} } as unknown as KindPass;
       return {
-        mat: { prepare: (_e: unknown, view: MatCall["view"], _f: unknown, _c: unknown, _m: unknown, present: unknown, _l: unknown, lit: unknown) => { rec.mat.push({ view, present, lit }); return false; } },
+        mat: { prepare: (_e: unknown, view: MatCall["view"], _f: unknown, _c: unknown, _m: unknown, present: unknown, _l: unknown, lit: unknown) => { rec.mat.push({ view, present, lit }); return false; }, newFrame: () => {} },
         kinds: new Map<string, SlotKind>([["minimat", { name: "minimat", stratum: "sheets", pass: minimats }]]),
       };
     };

@@ -20,16 +20,17 @@ import { compile, compose } from "../engine/shader";
 import { readback } from "../engine/target";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
-import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, STILL_MAT_FRAME } from "../mat/layout";
+import type { MatConfig, MatFrame } from "../mat/layout";
 import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
-import { type GroundTheme, MAT_COLORS, MAT_GRID, type RGB } from "../theme";
+import { type GroundTheme, MAT_COLORS, type RGB } from "../theme";
 import { BOARD } from "./theme";
 import { rasterSize } from "./board";
 import type { BoardOp } from "./history";
 import { Board, type BoardInstance, BoardUniforms, boardValues, InkUniforms, MAX_BOARDS, Stamp, StampUniforms } from "./layout";
 import type { BoardShaders } from "./shaders";
 import { STAMP_FLOATS, type Tool } from "./stroke";
+import { sentBytes, writeChanged } from "../kit/uniform";
 
 /** Premultiplied "source over" — the frames' blend. */
 const BLEND_PREMUL: GPUBlendState = {
@@ -103,7 +104,6 @@ interface BoardShared {
 
 export class BoardPass {
   readonly name = "board/whiteboards";
-  private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = BoardUniforms.alloc(1);
   /** The boards' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per drawn board, written when its record or its raster's facts changed. */
   private readonly store: RecordStore<BoardInstance>;
@@ -111,8 +111,9 @@ export class BoardPass {
   dropped = 0;
   private readonly stampU = StampUniforms.alloc(1);
   private readonly inkU = InkUniforms.alloc(1);
-  private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
+  /** What the GPU holds of the knobs: they are written only when they change (K4a — a standing value costs a frame nothing). */
+  private readonly knobsSent = sentBytes(BoardUniforms.size);
   private group!: GPUBindGroup;
   private boundAssets = -1;
   private boundStore = -1;
@@ -130,7 +131,6 @@ export class BoardPass {
   private constructor(device: GPUDevice, shared: BoardShared, mat: MatPass) {
     this.device = device; this.shared = shared; this.mat = mat;
     shared.slots += 1;
-    this.matBuf = uniformBuffer(device, MatUniforms.size, "board/mat uniforms");
     this.knobBuf = uniformBuffer(device, BoardUniforms.size, "board/knobs");
     // the pack reads the board's raster afresh (its size, density and wet are the `aux` the change test folds in)
     this.store = createRecordStore<BoardInstance, keyof typeof Board.slots>({
@@ -222,7 +222,7 @@ export class BoardPass {
   private rebind(): void {
     if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
-    this.group = bindGroup(this.device, s.layout0, [this.matBuf, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.inkSampler, s.linSampler, this.store.order], "board/slot");
+    this.group = bindGroup(this.device, s.layout0, [this.mat.view, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.inkSampler, s.linSampler, this.store.order], "board/slot");
     this.boundAssets = this.mat.assetVersion;
     this.boundStore = this.store.version;
   }
@@ -454,9 +454,6 @@ export class BoardPass {
     this.rebind();   // after: the store's buffers may have grown
     this.drawList = list;
     this.drawnFrom = from;
-    const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
-    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS));
-    this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     const sh = BOARD.shadow;
     const sf = BOARD.surface;
     const fr = BOARD.frame;
@@ -483,7 +480,7 @@ export class BoardPass {
       block: [blk.half[0], blk.half[1], blk.felt, blk.wood],
       block2: [(BOARD.eraser.angle * Math.PI) / 180, 0, 0, 0],
     });
-    this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
+    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     return list.length;
   }
 
@@ -530,7 +527,7 @@ export class BoardPass {
 
   /** This slot's buffers; the rasters and the stamp buffers go with the last slot standing. */
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
+    this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) { for (const id of [...s.rasters.keys()]) this.release(id); s.stampBuf.destroy(); s.stampU.destroy(); s.inkU.destroy(); }

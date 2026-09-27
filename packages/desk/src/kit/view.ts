@@ -22,6 +22,12 @@ export type { PortalClip, Presentation } from "../nav/portal";
  * other slot's pass is `spawn`ed onto that slot's. The ground's `CuttingMat` is the one there is; a kind never makes one.
  */
 export interface MatPass {
+  /**
+   * The slot's ONE VIEW BLOCK (design-016 K-L3): a `MatUniforms` buffer the slot writes once a frame — the camera and box, the
+   * clocks, the lamp's gobo, the night, the portal chain, the objects' presence (`view.w`; the mat's own is `presence.x`) — which every kind pass binds at
+   * `@group(0) @binding(0)` as `u` (`kitWgsl`'s `view` piece). A kind never writes it and never keeps a copy.
+   */
+  readonly view: GPUBuffer;
   /** The slot's animated gobo silhouette (r8, PLATE_SIZE²) — what an object's shadow and dapple sample. */
   readonly silhouette: GPUTextureView;
   /** The blue-noise tile (NOISE_SIZE², shared by every slot). */

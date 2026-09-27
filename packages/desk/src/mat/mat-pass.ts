@@ -6,10 +6,17 @@
 // gobo time moved; `draw()` records the mat into the render pass the ground
 // opened, where the desk's objects follow.
 //
-// One CuttingMat is one SLOT: its own uniforms, wind target and bind groups. The
-// pipelines, the samplers, the plates and the blue noise are shared by every
-// slot spawned from the first (`spawn()` — a flight's departed slot, a mini
-// mat's inside): a plate uploaded through any slot is the plate every slot samples.
+// One CuttingMat is one SLOT: its own uniforms and bind groups. The pipelines,
+// the samplers, the plates, the blue noise and the WIND TARGETS are shared by
+// every slot spawned from the first (`spawn()` — a flight's departed slot, a mini
+// mat's inside): a plate uploaded through any slot is the plate every slot
+// samples. Since K4a (design-016 K-L3) the slot's uniforms are its ONE VIEW BLOCK
+// (`view`): every kind drawn in the slot binds that buffer, and none writes a
+// copy; and one wind target per plate serves every slot — the wind reads only
+// the clock, the plate's strength and the plate, so a slot whose key another
+// slot drew this frame samples that silhouette and draws none (a second key on
+// the same plate in one frame — a host clocking two slots apart — draws into the
+// slot's own target instead, so no slot ever samples another's clock).
 //
 // Until a host uploads a plate the gobo reads a 1×1 white plate — a lit mat,
 // never a blank — and the blue noise is a 1×1 mid-grey (one blur angle).
@@ -43,17 +50,29 @@ interface MatShared {
   readonly loaded: { c: boolean; b: boolean; noise: boolean; glyphs: boolean };
   version: number;
   slots: number;
+  /** The wind targets, one per plate, made on first use: every slot at a plate's key samples the one silhouette (K4a). */
+  readonly winds: Partial<Record<PlateName, Wind>>;
+  /** The frame `newFrame` counts (the ground's `prepareFrame`, once a frame) — what tells a key drawn THIS frame from a stale one. */
+  frame: number;
 }
+
+/** A wind target and what it holds: the key it was drawn at (NaN: never) and the frame that drew it. */
+interface Wind { readonly target: Target; key: number; frame: number }
 
 export class CuttingMat implements MatPass {
   readonly name = "mat/mat";
   private readonly uniforms = MatUniforms.alloc(1);
   private readonly uniformBuf: GPUBuffer;
-  private readonly wind: Target;
+  /** The wind target this slot samples: its plate's shared one, or its own (`own`) after a clash in one frame. */
+  private wind: Wind;
+  /** This slot's own wind target, made only when two keys meet on one plate in one frame. */
+  private own: Wind | null = null;
   private windGroups!: Record<PlateName, GPUBindGroup>;
   private matGroup!: GPUBindGroup;
   private bound = -1;
-  private windKey = Number.NaN;
+  private boundWind: Wind | null = null;
+  /** Turns over whenever this slot's bind groups are made again — a shared asset landed, or the slot samples another silhouette. */
+  private assets = 0;
   private windRuns = 0;
   private readonly device: GPUDevice;
   private readonly shared: MatShared;
@@ -62,7 +81,7 @@ export class CuttingMat implements MatPass {
     this.device = device; this.shared = shared;
     shared.slots += 1;
     this.uniformBuf = uniformBuffer(device, MatUniforms.size, "mat/uniforms");
-    this.wind = new Target(device, { format: "r8unorm", label: "mat/wind" }, PLATE_SIZE, PLATE_SIZE);
+    this.wind = this.windOf("c");
     this.rebind();
   }
 
@@ -107,7 +126,7 @@ export class CuttingMat implements MatPass {
       noise: pixel("mat/noise", [128, 128, 128, 255]),
       glyphs: empty("mat/glyphs"), glyphMeta: NO_GLYPHS,
       loaded: { c: false, b: false, noise: false, glyphs: false },
-      version: 0, slots: 0,
+      version: 0, slots: 0, winds: {}, frame: 0,
     };
     return new CuttingMat(device, shared);
   }
@@ -120,13 +139,28 @@ export class CuttingMat implements MatPass {
   /** What the pass knows about the glyph atlas it samples (RULER.md). */
   get glyphs(): GlyphAtlasMeta { return this.shared.glyphMeta; }
   /** This slot's animated silhouette — the wind target the mat samples; the paper pass (STICKY.md) samples the same, so a note takes the mat's dapple. */
-  get silhouette(): GPUTextureView { return this.wind.view; }
+  get silhouette(): GPUTextureView { return this.wind.target.view; }
+  /** The slot's ONE VIEW BLOCK (K4a, design-016 K-L3): the uniforms this mat writes once a frame, which every kind in the slot binds. */
+  get view(): GPUBuffer { return this.uniformBuf; }
   /** The glyph atlas as uploaded (a 1×1 empty cell until a host uploads one) — the mini mat pass prints with it. */
   get glyphTexture(): GPUTexture { return this.shared.glyphs; }
   /** The shared blue noise, as uploaded (a 1×1 grey until a host uploads the tile). */
   get noiseTexture(): GPUTexture { return this.shared.noise; }
-  /** Bumped whenever a shared asset lands — a pass that binds them rebinds on a change. */
-  get assetVersion(): number { return this.shared.version; }
+  /** Bumped whenever a shared asset lands or the slot samples another silhouette — a pass that binds them rebinds on a change. */
+  get assetVersion(): number { return this.assets; }
+
+  /** A new frame (the ground's `prepareFrame`, before its slots prepare): a wind key drawn before it may be drawn over. */
+  newFrame(): void { this.shared.frame += 1; }
+
+  /** A plate's shared wind target, made on first use. */
+  private windOf(plate: PlateName): Wind {
+    const s = this.shared;
+    const made = s.winds[plate];
+    if (made) return made;
+    const w: Wind = { target: new Target(this.device, { format: "r8unorm", label: `mat/wind ${plate}` }, PLATE_SIZE, PLATE_SIZE), key: Number.NaN, frame: -1 };
+    s.winds[plate] = w;
+    return w;
+  }
 
   private upload(label: string, bytes: Uint8Array<ArrayBuffer>, size: number): GPUTexture {
     if (bytes.byteLength !== size * size * 4) throw new Error(`${label}: expected ${size}×${size} rgba8 (${size * size * 4} bytes), got ${bytes.byteLength}`);
@@ -138,11 +172,15 @@ export class CuttingMat implements MatPass {
   /** (Re)build this slot's bind groups against the shared assets' current version. */
   private rebind(): void {
     const s = this.shared;
-    if (this.bound === s.version) return;
-    const windGroup = (name: PlateName) => bindGroup(this.device, s.windLayout, [this.uniformBuf, s.plates[name].createView()], `mat/wind ${name}`);
-    this.windGroups = { c: windGroup("c"), b: windGroup("b") };
-    this.matGroup = bindGroup(this.device, s.matLayout, [this.uniformBuf, this.wind.view, s.clampSampler, s.noise.createView(), s.repeatSampler, s.glyphs.createView()], "mat/mat");
+    if (this.bound === s.version && this.boundWind === this.wind) return;
+    if (this.bound !== s.version) {
+      const windGroup = (name: PlateName) => bindGroup(this.device, s.windLayout, [this.uniformBuf, s.plates[name].createView()], `mat/wind ${name}`);
+      this.windGroups = { c: windGroup("c"), b: windGroup("b") };
+    }
+    this.matGroup = bindGroup(this.device, s.matLayout, [this.uniformBuf, this.wind.target.view, s.clampSampler, s.noise.createView(), s.repeatSampler, s.glyphs.createView()], "mat/mat");
     this.bound = s.version;
+    this.boundWind = this.wind;
+    this.assets += 1;
   }
 
   /** A 512×512 rgba8 plate: R silhouette, G wind amp 1, B phase, A amps 2+3 (assets/gobo-*.rgba). Every slot samples it. */
@@ -192,20 +230,31 @@ export class CuttingMat implements MatPass {
    * wind pass if the silhouette it holds is stale. Returns whether it ran.
    */
   prepare(encoder: GPUCommandEncoder, view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame, present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight): boolean {
-    this.rebind();
     const plate = PLATE_NAMES.includes(cfg.gobo.plate) ? cfg.gobo.plate : "c";
     const strength = MAT_GRID.gobo.plates[plate].strength;
     this.uniforms.set(matUniformValues(view, fadeIn, { ...cfg, gobo: { ...cfg.gobo, plate } }, frame, strength, present, light, this.shared.glyphMeta, lit));
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
-    if (cfg.gobo.opacity <= 0) return false;
+    // a gobo at opacity 0 never consults its silhouette (mat.wgsl `sample_gobo`): the slot keeps the target it has, drawing none
+    if (cfg.gobo.opacity <= 0) { this.rebind(); return false; }
     const key = frame.goboTime * 1.000001 + strength * 7.3 + PLATE_NAMES.indexOf(plate) * 1e3 + this.shared.version * 1e5;
-    if (key === this.windKey) return false;
-    const pass = beginPass(encoder, this.wind.view, [1, 0, 0, 1], "mat/wind");
+    // the plate's shared target when it holds this key, or is free to take it (drawn in an earlier frame); else — another slot drew
+    // another key on this plate THIS frame — the slot's own
+    const common = this.windOf(plate);
+    let w = common;
+    if (common.key !== key && common.frame === this.shared.frame) {
+      this.own ??= { target: new Target(this.device, { format: "r8unorm", label: "mat/wind own" }, PLATE_SIZE, PLATE_SIZE), key: Number.NaN, frame: -1 };
+      w = this.own;
+    }
+    this.wind = w;
+    this.rebind();
+    if (w.key === key) return false;
+    const pass = beginPass(encoder, w.target.view, [1, 0, 0, 1], "mat/wind");
     pass.setPipeline(this.shared.windPipeline);
     pass.setBindGroup(0, this.windGroups[plate]);
     pass.draw(3);
     pass.end();
-    this.windKey = key;
+    w.key = key;
+    w.frame = this.shared.frame;
     this.windRuns += 1;
     return true;
   }
@@ -218,11 +267,11 @@ export class CuttingMat implements MatPass {
 
   /** This slot's buffers; the shared plates go with the last slot standing. */
   dispose(): void {
-    this.uniformBuf.destroy(); this.wind.dispose();
+    this.uniformBuf.destroy(); this.own?.target.dispose();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) {
-      for (const n of PLATE_NAMES) s.plates[n].destroy();
+      for (const n of PLATE_NAMES) { s.plates[n].destroy(); s.winds[n]?.target.dispose(); }
       s.noise.destroy(); s.glyphs.destroy();
     }
   }

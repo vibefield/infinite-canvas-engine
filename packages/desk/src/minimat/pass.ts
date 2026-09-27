@@ -13,13 +13,14 @@ import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
-import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../mat/layout";
+import type { MatConfig, MatFrame, SlotLight } from "../mat/layout";
 import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
-import { MAT_COLORS, MAT_GRID, type RGB } from "../theme";
+import { MAT_COLORS, type RGB } from "../theme";
 import { ChipRecord, chipValues, MAX_CHIPS, MAX_MINIMATS, MiniMat, type MiniMatInstance, MiniMatUniforms, miniMatUniformValues, miniMatValues } from "./layout";
 import { DEFAULT_MINIMAT_LAW, type MiniMatLaw } from "./minimat";
 import type { MiniMatShaders } from "./shaders";
+import { sentBytes, writeChanged } from "../kit/uniform";
 
 /** Premultiplied "source over" — every desk object's blend. */
 const BLEND_PREMUL: GPUBlendState = {
@@ -44,14 +45,14 @@ const SLOTS_AT_START = 64;
 
 export class MiniMatPass {
   readonly name = "minimat/mats";
-  private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = MiniMatUniforms.alloc(1);
   /** The mini mats' PERSISTENT records and their chips (engine/records.ts, design-015 §4.3; D6): a slot per mini mat while drawn, its chips a fixed block, written when it changed. */
   private readonly store: RecordStore<MiniMatInstance>;
   /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
   dropped = 0;
-  private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
+  /** What the GPU holds of the knobs: they are written only when they change (K4a — a standing value costs a frame nothing). */
+  private readonly knobsSent = sentBytes(MiniMatUniforms.size);
   private group!: GPUBindGroup;
   private boundAssets = -1;
   private boundStore = -1;
@@ -68,7 +69,6 @@ export class MiniMatPass {
   private constructor(device: GPUDevice, shared: MiniMatShared, mat: MatPass) {
     this.device = device; this.shared = shared; this.mat = mat;
     shared.slots += 1;
-    this.matBuf = uniformBuffer(device, MatUniforms.size, "minimat/mat uniforms");
     this.knobBuf = uniformBuffer(device, MiniMatUniforms.size, "minimat/knobs");
     // a mini mat's chips are its block: the law's cap within `CHIPS_PER_MAT`; the live inside's presence is the `aux` folded in
     this.store = createRecordStore<MiniMatInstance, keyof typeof MiniMat.slots, keyof typeof ChipRecord.slots>({
@@ -124,7 +124,7 @@ export class MiniMatPass {
     if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
     // the glyph atlas the rulers print with (RULER.md) — the numerals and the name are the same mono face; sampled with the gobo's clamp
-    this.group = bindGroup(this.device, s.layout, [this.matBuf, this.knobBuf, this.store.records, this.store.blocks as GPUBuffer, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, this.mat.glyphTexture.createView(), this.store.order], "minimat/mats");
+    this.group = bindGroup(this.device, s.layout, [this.mat.view, this.knobBuf, this.store.records, this.store.blocks as GPUBuffer, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, this.mat.glyphTexture.createView(), this.store.order], "minimat/mats");
     this.boundAssets = this.mat.assetVersion;
     this.boundStore = this.store.version;
   }
@@ -149,11 +149,8 @@ export class MiniMatPass {
     let used = 0;
     for (let i = 0; i < n; i++) used += this.store.entryAt(i).blockN;
     this.count = n; this.chipsUsed = used;
-    const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
-    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS, lit));
-    this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set(miniMatUniformValues(this.law, { cream: MAT_COLORS.line, cast: MAT_COLORS.cast, select }, this.mat.glyphs));
-    this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
+    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     return n;
   }
 
@@ -186,7 +183,7 @@ export class MiniMatPass {
   }
 
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
+    this.knobBuf.destroy(); this.store.dispose();
     this.shared.slots -= 1;
   }
 }

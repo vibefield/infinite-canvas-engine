@@ -16,14 +16,14 @@ import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
-import { litByOwn, type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../mat/layout";
+import { litByOwn, type MatConfig, type MatFrame, type SlotLight } from "../mat/layout";
 import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
-import { MAT_GRID } from "../theme";
 import { MAX_PHOTOS, Photo, type PhotoPicture, PhotoUniforms, photoUniformValues, photoValues } from "./layout";
 import { generateMips, mipCount } from "./mips";
 import { PHOTO, type PhotoGeometry, type PhotoLaw } from "./photo";
 import type { PhotoShaders } from "./shaders";
+import { sentBytes, writeChanged } from "../kit/uniform";
 
 /** Premultiplied "source over". */
 const BLEND_PREMUL: GPUBlendState = {
@@ -88,14 +88,14 @@ function rawPicture(device: GPUDevice, layout1: GPUBindGroupLayout, bytes: Uint8
 
 export class PhotoPass {
   readonly name = "photo/prints";
-  private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = PhotoUniforms.alloc(1);
   /** The prints' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per print while drawn, written when it changed. */
   private readonly store: RecordStore<PhotoInstance>;
   /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
   dropped = 0;
-  private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
+  /** What the GPU holds of the knobs: they are written only when they change (K4a — a standing value costs a frame nothing). */
+  private readonly knobsSent = sentBytes(PhotoUniforms.size);
   private group!: GPUBindGroup;
   private bound = -1;
   private boundStore = -1;
@@ -112,7 +112,6 @@ export class PhotoPass {
   private constructor(device: GPUDevice, shared: PhotoShared, mat: MatPass) {
     this.device = device; this.shared = shared; this.mat = mat;
     shared.slots += 1;
-    this.matBuf = uniformBuffer(device, MatUniforms.size, "photo/mat uniforms");
     this.knobBuf = uniformBuffer(device, PhotoUniforms.size, "photo/knobs");
     this.store = createRecordStore<PhotoInstance, keyof typeof Photo.slots>({
       device, def: Photo, capacity: MAX_PHOTOS, max: MAX_PHOTOS * 64, label: "photo/prints",
@@ -164,7 +163,7 @@ export class PhotoPass {
   private rebind(): void {
     if (this.bound === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
-    this.group = bindGroup(this.device, s.layout0, [this.matBuf, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.picSampler, this.store.order], "photo/prints");
+    this.group = bindGroup(this.device, s.layout0, [this.mat.view, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.picSampler, this.store.order], "photo/prints");
     this.bound = this.mat.assetVersion;
     this.boundStore = this.store.version;
   }
@@ -202,11 +201,8 @@ export class PhotoPass {
     this.rebind();   // after: the store's buffers may have grown
     this.list = list.map((p) => p.picture);
     this.litElsewhere = !litByOwn(view, lit);
-    const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
-    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS, lit));
-    this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set(photoUniformValues(this.law));
-    this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
+    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     return n;
   }
 
@@ -236,7 +232,7 @@ export class PhotoPass {
 
   /** This slot's buffers; the blank texel goes with the last slot standing (a host's pictures are the host's to drop). */
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
+    this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) s.blank.texture.destroy();

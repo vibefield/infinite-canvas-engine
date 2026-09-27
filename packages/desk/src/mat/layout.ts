@@ -1,7 +1,10 @@
 // The cutting mat's GPU records, declared once. `MatUniforms` is what both mat
 // entries read — the wind pass (plate → animated silhouette) and the fullscreen
-// mat pass. `matUniformValues()` fills it by name from the frame, the config
-// and the theme's numbers; nothing is hand-indexed.
+// mat pass — and, since K4a (design-016 K-L3), the SLOT'S ONE VIEW BLOCK: the mat
+// writes it once a frame and every kind drawn in the slot binds the same buffer
+// (`MatPass.view`) at @group(0) @binding(0), never a copy of its own.
+// `matUniformValues()` fills it by name from the frame, the config and the
+// theme's numbers; nothing is hand-indexed.
 
 import { defineStruct } from "../engine/struct";
 import { boxValues, type FadeIn, lod, type View } from "../lattice/lod";
@@ -15,7 +18,7 @@ import { DAY_LIGHT, lightValues, type MatLight } from "./night";
 
 export const MatUniforms = defineStruct("MatUniforms", [
   ["cam", "vec4f"],         // camX, camY (world, UNwrapped — the projector is fixed in world), zoom, dpr
-  ["view", "vec4f"],        // cssW, cssH, grain time (s), presentation opacity
+  ["view", "vec4f"],        // cssW, cssH, grain time (s), the OBJECTS' presentation opacity (the slot's × their own presence — what every kind multiplies by)
   ["phase", "vec4f"],       // wrapped camX, camY (the lattice's phase), unused ×2
   ["rungs", "vec4f"],       // fine, mid, coarse spacing (world), unused
   ["lod", "vec4f"],         // fadeIn lo, hi (CSS px), unused ×2
@@ -47,6 +50,7 @@ export const MatUniforms = defineStruct("MatUniforms", [
   ["box", "vec4f"],         // the slot's box on the attachment: x, y, w, h (CSS px) — stats only; the mat is fullscreen under the scissor
   ["light", "vec4f"],       // the LIGHT (MINIMAT.md §4): the camera the lamp's gobo is sampled under — x, y, zoom — and the cross-fade toward `light2`
   ["light2", "vec4f"],      // the second light a flight hands the slot to: x, y, zoom, unused
+  ["presence", "vec4f"],    // the SLOT's presentation opacity — what the mat itself is drawn at (K4a, K-L3: the one view block carries both), unused ×3
 ] as const);
 
 export type PlateName = "c" | "b";
@@ -156,7 +160,7 @@ export function matUniformValues(view: View & { readonly dpr: number }, fadeIn: 
   const levels = rulerLevels(l, view.zoom, r, Math.max(labelReach(view.camX, view.zoom, view.width), labelReach(view.camY, view.zoom, view.height)));
   return {
     cam: [view.camX, view.camY, view.zoom, view.dpr],
-    view: [view.width, view.height, f.time, present?.opacity ?? 1],
+    view: [view.width, view.height, f.time, present === undefined ? 1 : present.objects === undefined ? present.opacity : present.opacity * present.objects],
     phase: [((view.camX % l.wrapPeriod) + l.wrapPeriod) % l.wrapPeriod, ((view.camY % l.wrapPeriod) + l.wrapPeriod) % l.wrapPeriod, 0, 0],
     rungs: [l.fine, l.mid, l.coarse, 0],
     lod: [fadeIn[0], Math.max(fadeIn[1], fadeIn[0] + 1e-3), 0, 0],
@@ -183,6 +187,9 @@ export function matUniformValues(view: View & { readonly dpr: number }, fadeIn: 
     rulerFormat: levels.flatMap((L) => [L.mult, L.exp, L.perWrap, 0]),
     box: boxValues(view),
     ...slotLightValues(view, lit),
+    // the slot's own opacity, which the mat is drawn at; `view.w` above is the objects' (what the ground's `objectsOf` hands the kinds'
+    // `SlotContext.present`). One view block per slot carries both (K4a, design-016 K-L3), so every kind reads it as it always read its copy
+    presence: [present?.opacity ?? 1, 0, 0, 0],
   };
 }
 

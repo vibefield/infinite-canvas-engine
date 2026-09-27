@@ -396,6 +396,7 @@ const liveOf = (p: Presentation | undefined): number => (p ? p.opacity * (p.obje
  */
 export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: SlotPool, inputs: GroundFrameInputs, grid: GridConfig = DEFAULT_GRID, target?: RenderTarget): PreparedFrame {
   pool.reset();
+  root.mat.newFrame();   // a wind key drawn in an earlier frame may be drawn over; one drawn in this one is every slot's (K4a)
   const theme = inputs.theme;
   let portals = 0;
   let rootDrawn: readonly (readonly [string, number])[] = [];
@@ -451,15 +452,19 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
       portals += 1;
     }
     // the kinds, in registration order: each lit by this slot's mat — its light, its lamp's gobo (MINIMAT.md §4) — at the objects'
-    // presence, a spawned slot's pass first taking the root's laws, each told which of its records carries a live inside this frame
+    // presence, a spawned slot's pass first taking the root's laws, each told which of its records carries a live inside this frame.
+    // A kind with no objects in the slot is not prepared at all (K4a, design-016 K-L3: it costs the slot nothing) — the slot's view
+    // block is the mat's, written above, so no kind has a copy to keep fresh, and no run of it is drawn (`drawSlot` walks the objects)
     const slot: SlotContext = { view: inp.view, fadeIn: g.fadeIn, cfg: g.mat, frame: inp.mat, present: objectsOf(inp.present), light: theme.matLight, lit, select: theme.select, theme, ...(target !== undefined ? { target } : {}) };
     const drawn: [string, number][] = [];
     for (const k of s.kinds.values()) {
+      const list = records.get(k.name) ?? [];
+      if (list.length === 0) { drawn.push([k.name, 0]); continue; }
       const own = root.kinds.get(k.name);
       if (own && k.pass !== own.pass) k.pass.tune?.(own.pass);
       const told = live.get(k.name);
       const ks = keys.get(k.name);
-      drawn.push([k.name, k.pass.prepare(encoder, slot, records.get(k.name) ?? [], { live: (i) => told?.get(i) ?? -1, ...(ks !== null && ks !== undefined ? { keys: ks } : {}) })]);
+      drawn.push([k.name, k.pass.prepare(encoder, slot, list, { live: (i) => told?.get(i) ?? -1, ...(ks !== null && ks !== undefined ? { keys: ks } : {}) })]);
       // what its cap turned away is said, never silent (D7)
       const turned = k.pass.dropped?.() ?? 0;
       if (turned > 0) dropped[k.name] = (dropped[k.name] ?? 0) + turned;

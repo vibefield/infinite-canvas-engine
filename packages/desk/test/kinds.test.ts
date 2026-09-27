@@ -123,6 +123,7 @@ function recordingSet(kinds: readonly (readonly [string, StratumName])[]) {
     slot,
     prepare: (_e: unknown, _v: unknown, fadeIn: unknown, _c: unknown, _f: unknown, _p: unknown, _l: unknown, lit: unknown) => { mats.push({ slot, fadeIn, lit }); return false; },
     spawn: () => { spawned += 1; return mat(`s${spawned}`); },
+    newFrame: () => {},
   });
   const pass = (slot: string, kind: string): KindPass => ({
     spawn: (m) => pass((m as unknown as { slot: string }).slot, kind),
@@ -150,10 +151,11 @@ describe("prepareFrame, kind by kind", () => {
       view: VIEW, lodZoom: 2, grid, mat: STILL_MAT_FRAME, theme: THEMES.dark,
       objects: [object("paper", "p0"), object("minimat", "m0"), object("paper", "p1"), object("minimat", "m1")], portals: [inside],
     });
-    // the inside first (its slot is prepared on the way), then the root; every kind in registration order, a kind with no records too
+    // the inside first (its slot is prepared on the way), then the root; every kind in registration order — and a kind with no
+    // records in a slot is never prepared there (K4a, design-016 K-L3: it costs the slot nothing; the slot's view block is the mat's)
     expect(prepared.map((c) => `${c.slot} ${c.kind} [${ids(c.records)}] live [${c.live}]`)).toEqual([
-      "s1 paper [q0] live [-1]", "s1 minimat [] live []", "s1 board [] live []",
-      "root paper [p0,p1] live [-1,-1]", "root minimat [m0,m1] live [-1,0.4]", "root board [] live []",
+      "s1 paper [q0] live [-1]",
+      "root paper [p0,p1] live [-1,-1]", "root minimat [m0,m1] live [-1,0.4]",
     ]);
     // one context per slot: the view, the grid's OWN fade-in (the mat's lattice is dressed for lodZoom, the objects never are), its
     // mat config, the clocks, the objects' presence, the Sun or the Moon, the lamp (the root's own at rest), the ring, the theme
@@ -176,8 +178,13 @@ describe("prepareFrame, kind by kind", () => {
 
   it("a spawned slot's pass takes the root's laws before it prepares, from the root's pass of its kind; the root's never tunes itself", () => {
     const { root, pool, tuned } = recordingSet(KINDS);
-    prepareFrame({} as GPUCommandEncoder, root, pool, { view: VIEW, theme: THEMES.light, objects: [object("minimat", "m0")], portals: [{ view: VIEW, grid: DEFAULT_GRID, present: { opacity: 1, portal: face }, at: 0 }] });
+    const inside = [object("paper", "q0"), object("minimat", "qm0"), object("board", "qb0")];
+    prepareFrame({} as GPUCommandEncoder, root, pool, { view: VIEW, theme: THEMES.light, objects: [object("minimat", "m0")], portals: [{ view: VIEW, grid: DEFAULT_GRID, present: { opacity: 1, portal: face }, at: 0, objects: inside }] });
     expect(tuned.map((t) => `${t.slot} ${t.kind}`)).toEqual(["s1 paper", "s1 minimat", "s1 board"]);
+    // …and a slot with none of a kind neither tunes nor prepares that kind (K4a)
+    const bare = recordingSet(KINDS);
+    prepareFrame({} as GPUCommandEncoder, bare.root, bare.pool, { view: VIEW, theme: THEMES.light, objects: [object("minimat", "m0")], portals: [{ view: VIEW, grid: DEFAULT_GRID, present: { opacity: 1, portal: face }, at: 0, objects: [object("paper", "q0")] }] });
+    expect(bare.tuned.map((t) => `${t.slot} ${t.kind}`)).toEqual(["s1 paper"]);
     for (const t of tuned) expect(t.by).toBe(must(root.kinds.get(t.kind)).pass);
   });
 

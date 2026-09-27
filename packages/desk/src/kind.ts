@@ -42,7 +42,7 @@ export interface SlotContext {
   readonly view: View & { readonly dpr: number };
   /** The slot's grid's fade-in window AS ITS GRID NAMES IT — `dressGrid` dresses the mat's lattice alone, never the objects. */
   readonly fadeIn: FadeIn;
-  /** The slot's mat config (its gobo, its rulers, its vinyl) — what a pass's copy of the mat's block is filled from. */
+  /** The slot's mat config (its gobo, its rulers, its vinyl). The block a pass draws with is the slot's (`MatPass.view`, K4a): read, never copied. */
   readonly cfg: MatConfig;
   /** The mat's clocks and tilt this frame; undefined = a still (a pass fills `STILL_MAT_FRAME`). */
   readonly frame: MatFrame | undefined;

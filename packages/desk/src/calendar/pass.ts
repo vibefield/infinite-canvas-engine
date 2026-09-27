@@ -19,10 +19,10 @@ import { bindGroup, bindLayout, storageBuffer, uniformBuffer } from "../engine/p
 import { compile, compose } from "../engine/shader";
 import type { RenderTarget } from "../kind";
 import type { FadeIn, View } from "../lattice/lod";
-import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, STILL_MAT_FRAME } from "../mat/layout";
+import { type MatConfig, type MatFrame, MatUniforms } from "../mat/layout";
 import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
-import { MAT_GRID, type RGB } from "../theme";
+import type { RGB } from "../theme";
 import { type DeskEye, eyeValues, project } from "../notebook/eye";
 import { NbBook, NbUniforms } from "../notebook/layout";
 import type { BuiltMesh } from "../notebook/mesh";
@@ -36,6 +36,7 @@ import { movingGrid, type PadFrame } from "./pad";
 import type { RollState } from "./roll";
 import type { CalendarShaders } from "./shaders";
 import { MISSING, TILE_TEX, type TileGrid } from "./tiles";
+import { sentBytes, writeChanged } from "../kit/uniform";
 
 const SAMPLES = 4;
 const BLEND_PREMUL: GPUBlendState = {
@@ -128,11 +129,13 @@ export class CalendarPass {
   readonly layers: number;
   private readonly device: GPUDevice;
   private readonly mat: MatPass;
-  private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = CalUniforms.alloc(1);
   private readonly records = CalPad.alloc(MAX_CALENDARS);
-  private readonly matBuf: GPUBuffer;
+  /** What the GPU holds of the records: a prefix is written only when it changed (K4a). */
+  private readonly recordsSent = sentBytes(CalPad.size * MAX_CALENDARS);
   private readonly knobBuf: GPUBuffer;
+  /** What the GPU holds of the knobs: they are written only when they change (K4a — a standing value costs a frame nothing). */
+  private readonly knobsSent = sentBytes(CalUniforms.size);
   private readonly recordBuf: GPUBuffer;
   private tableBuf: GPUBuffer;
   private readonly layoutMain: GPUBindGroupLayout;
@@ -168,7 +171,6 @@ export class CalendarPass {
     this.device = device; this.mat = mat; this.layers = layers;
     this.layoutMain = pipes.layoutMain; this.layoutComp = pipes.layoutComp;
     this.facePipe = pipes.face; this.sheetPipe = pipes.sheet; this.solidPipe = pipes.solid; this.movingPipe = pipes.moving; this.recvPipe = pipes.recv; this.compPipe = pipes.comp;
-    this.matBuf = uniformBuffer(device, MatUniforms.size, "calendar/mat uniforms");
     this.knobBuf = uniformBuffer(device, CalUniforms.size, "calendar/knobs");
     this.recordBuf = storageBuffer(device, CalPad.size * MAX_CALENDARS, "calendar/pads");
     this.tableBuf = device.createBuffer({ label: "calendar/tile tables", size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -270,7 +272,7 @@ export class CalendarPass {
   private rebind(): void {
     if (this.boundAssets === this.mat.assetVersion) return;
     this.mainGroup = bindGroup(this.device, this.layoutMain, [
-      this.matBuf, this.knobBuf, this.recordBuf, this.mat.silhouette, this.goboSampler, this.mat.noiseTexture.createView(), this.noiseSampler,
+      this.mat.view, this.knobBuf, this.recordBuf, this.mat.silhouette, this.goboSampler, this.mat.noiseTexture.createView(), this.noiseSampler,
       this.tileTex.createView({ dimension: "2d-array" }), this.tileSampler, this.tableBuf, this.paperTex.createView(), this.paperSampler,
     ], "calendar/main");
     this.boundAssets = this.mat.assetVersion;
@@ -363,11 +365,8 @@ export class CalendarPass {
     this.dropped = Math.max(0, shown.length - MAX_CALENDARS);
     this.t.list = shown.slice(0, MAX_CALENDARS) as CalendarDraw[];
     const n = this.t.list.length;
-    const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
-    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, undefined, light, NO_GLYPHS));
-    this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set(calUniformValues(law, eyeValues(eye), view.dpr, colours.cast, colours.select, colours.alpha, grid, this.debug));
-    this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
+    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     let sx0 = Number.POSITIVE_INFINITY;
     let sy0 = Number.POSITIVE_INFINITY;
     let sx1 = Number.NEGATIVE_INFINITY;
@@ -421,7 +420,7 @@ export class CalendarPass {
         col5: [...c.chipboard, 1], col6: [...c.cloth, 1], col7: [...c.foil, 1], col8: [...c.pen, 1],
       }, i);
     }
-    if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
+    if (n > 0) writeChanged(this.device.queue, this.recordBuf, this.records, this.recordsSent, n);
     for (const [id, b] of this.t.buffers) if (b.seen !== this.t.frameNo) { b.vb.destroy(); b.ib.destroy(); this.t.buffers.delete(id); }
     this.t.screen = n > 0 ? { x0: sx0, y0: sy0, x1: sx1, y1: sy1 } : null;
     this.t.stats = { calendars: n, moving };
@@ -548,6 +547,6 @@ export class CalendarPass {
     dropTarget(this.frameT);
     if (this.copyT) dropTarget(this.copyT);
     this.tileTex.destroy(); this.paperTex.destroy(); this.gridVb.destroy(); this.gridIb.destroy();
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy(); this.tableBuf.destroy();
+    this.knobBuf.destroy(); this.recordBuf.destroy(); this.tableBuf.destroy();
   }
 }

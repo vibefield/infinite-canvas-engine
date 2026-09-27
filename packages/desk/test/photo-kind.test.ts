@@ -167,24 +167,42 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     expect(drawnWith(undefined)).toBe("photo/prints");                                  // and back: the choice is per frame
   });
 
-  it("the lamp reaches the mat block the prints are shaded by: the host's camera as the slot's light, its own camera without one", async () => {
-    const { kind, writes } = await root();
+  it("the prints are shaded by the SLOT's view block (K4a, K-L3) — no copy of their own, the mat's `view` bound at 0 — and the lamp reaches it: the host's camera as the slot's light, its own camera without one", async () => {
+    const { device, mat, kind, writes, groups } = await root();
     const host: SlotLight = { a: { x: 40, y: -12, zoom: 0.5 } };
     const s = ctx({ lit: host, present: { opacity: 0.75 } });
     const block = (lit: SlotLight | undefined) => {
       const u = MatUniforms.alloc(1);
       const strength = MAT_GRID.gobo.plates[s.cfg.gobo.plate === "b" ? "b" : "c"].strength;
-      u.set(matUniformValues(s.view, s.fadeIn, s.cfg, s.frame ?? STILL_MAT_FRAME, strength, s.present, s.light, NO_GLYPHS, lit));
+      u.set(matUniformValues(s.view, s.fadeIn, s.cfg, s.frame ?? STILL_MAT_FRAME, strength, s.present, s.light, mat.glyphs, lit));
       return new Uint8Array(u.view().buffer, u.view().byteOffset, u.view().byteLength).slice();
     };
+    // the frame as the ground prepares a slot: its mat (the view block), then its kinds
+    const frame = (lit: SlotLight | undefined) => {
+      writes.length = 0;
+      mat.prepare(device.createCommandEncoder(), s.view, s.fadeIn, s.cfg, s.frame ?? STILL_MAT_FRAME, s.present, s.light, lit);
+      kind.prepare({} as GPUCommandEncoder, { ...s, lit }, [print(0, null)]);
+      expect(writes.filter((w) => w.buffer.startsWith("photo/") && w.buffer.includes("mat"))).toEqual([]);   // no copy of the block
+      return must(writes.find((w) => w.buffer === "mat/uniforms")).bytes;
+    };
+    expect(frame(host)).toEqual(block(host));
+    expect(frame(host)).not.toEqual(block(undefined));   // the lamp is not the slot's own
+    expect(frame(undefined)).toEqual(block(undefined));
+    // the prints' group 0 binds that very buffer at 0
+    const g = must(groups.filter((x) => x.label === "photo/prints").at(-1));
+    expect(([...g.entries][0]?.resource as { buffer: GPUBuffer }).buffer).toBe(mat.view);
+  });
+
+  it("its knobs are written only when they change (K4a — a standing value costs a frame nothing); a new law writes them again", async () => {
+    const { kind, writes } = await root();
+    const knobs = () => writes.filter((w) => w.buffer === "photo/knobs").length;
     writes.length = 0;
-    kind.prepare({} as GPUCommandEncoder, s, [print(0, null)]);
-    const written = must(writes.find((w) => w.buffer === "photo/mat uniforms")).bytes;
-    expect(written).toEqual(block(host));
-    expect(written).not.toEqual(block(undefined));   // the lamp is not the slot's own
-    writes.length = 0;
-    kind.prepare({} as GPUCommandEncoder, ctx({ present: { opacity: 0.75 } }), [print(0, null)]);
-    expect(must(writes.find((w) => w.buffer === "photo/mat uniforms")).bytes).toEqual(block(undefined));
+    kind.prepare({} as GPUCommandEncoder, ctx(), [print(0, null)]);
+    kind.prepare({} as GPUCommandEncoder, ctx({ view: { ...ctx().view, camX: 37 } }), [print(0, null)]);   // the camera moved: the knobs did not
+    expect(knobs()).toBe(1);
+    kind.pass.law = { ...kind.pass.law, grain: kind.pass.law.grain + 0.01 };   // a live law (the panel's): the knobs follow
+    kind.prepare({} as GPUCommandEncoder, ctx(), [print(0, null)]);
+    expect(knobs()).toBe(2);
   });
 
   it("drawRange counts in the prints it was handed: [first, end) each with its picture (the blank texel where it has none); an empty range records nothing; draw() is the whole list", async () => {

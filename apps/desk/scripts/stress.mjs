@@ -184,11 +184,14 @@ try {
       const d = diff(r.before, r.after);
       const steps = d.steps.slice(-frames);   // the frames driven (the take before the drive drained the rest)
       const upl = Object.fromEntries(Object.entries(d.uploads).map(([k, v]) => [k, v.bytes / Math.max(d.redraws, 1)]));
+      // …and the COUNT of queue writes a frame by label (K4a, design-016 K-L3: one view block per slot — the calls, not only the bytes)
+      const wrt = Object.fromEntries(Object.entries(d.uploads).map(([k, v]) => [k, v.writes / Math.max(d.redraws, 1)]));
       return {
         stepMed: median(steps), stepMax: max(steps), stepMean: mean(steps),
         flushPerFrame: d.flush.frameMs / Math.max(d.flush.frames, 1),
         resolvedPerFrame: d.work.resolved / Math.max(d.redraws, 1), recordedPerFrame: d.work.recorded / Math.max(d.redraws, 1), visitedPerFrame: d.work.visited / Math.max(d.redraws, 1), queriedPerFrame: d.work.queried / Math.max(d.redraws, 1), sortedPerFrame: d.work.sorted / Math.max(d.redraws, 1),
         uploadsPerFrame: upl, bytesPerFrame: Object.values(d.uploads).reduce((a, v) => a + v.bytes, 0) / Math.max(d.redraws, 1),
+        writesByLabel: wrt, writesPerFrame: Object.values(d.uploads).reduce((a, v) => a + v.writes, 0) / Math.max(d.redraws, 1),
         writtenPerFrame: d.records.written / Math.max(d.redraws, 1), orderWrites: d.records.orderWrites,
         allocPerFrame: (r.h1 - r.h0) / frames, fps: (frames * 1000) / r.ms, redraws: d.redraws, submits: d.submits, drawn: r.stats.objects, culled: r.stats.culled, load: r.load,
       };
@@ -202,6 +205,7 @@ try {
       recorded: { median: median(col("recordedPerFrame")), min: min(col("recordedPerFrame")) },
       visited: { median: median(col("visitedPerFrame")) }, queried: { median: median(col("queriedPerFrame")) }, sorted: { median: median(col("sortedPerFrame")) },
       bytes: { median: median(col("bytesPerFrame")), min: min(col("bytesPerFrame")) },
+      writes: { median: median(col("writesPerFrame")), min: min(col("writesPerFrame")), byLabel: Object.fromEntries([...new Set(perRound.flatMap((p) => Object.keys(p.writesByLabel)))].map((k) => [k, median(perRound.map((p) => p.writesByLabel[k] ?? 0))])) },
       written: { median: median(col("writtenPerFrame")), max: max(col("writtenPerFrame")) }, orderWrites: { median: median(col("orderWrites")), max: max(col("orderWrites")) },
       uploads: Object.fromEntries([...new Set(perRound.flatMap((p) => Object.keys(p.uploadsPerFrame)))].map((k) => [k, median(perRound.map((p) => p.uploadsPerFrame[k] ?? 0))])),
       alloc: { median: median(col("allocPerFrame")), min: min(col("allocPerFrame")) },
@@ -219,6 +223,7 @@ try {
     console.log(`  builder work/frame   resolved ${fmt(s.resolved.median, 1)} (min ${fmt(s.resolved.min, 1)}) · recorded ${fmt(s.recorded.median, 1)} · visited ${fmt(s.visited.median, 0)} · queried ${fmt(s.queried.median, 0)} · sorted ${fmt(s.sorted.median, 0)}`);
     console.log(`  records written/frame ${fmt(s.written.median, 2)} (the root stores; the most in a round ${fmt(s.written.max, 2)}) · draw lists rewritten ${fmt(s.orderWrites.median, 0)} a round (most ${fmt(s.orderWrites.max, 0)})`);
     console.log(`  uploads/frame        ${kb(s.bytes.median)} (min ${kb(s.bytes.min)}) — ${Object.entries(s.uploads).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${kb(v)}`).join(" · ")}`);
+    console.log(`  writes/frame         ${fmt(s.writes.median, 1)} (min ${fmt(s.writes.min, 1)}) — ${Object.entries(s.writes.byLabel).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${fmt(v, 1)}`).join(" · ")}`);
     console.log(`  heap growth/frame    median ${kb(s.alloc.median)} · min ${kb(s.alloc.min)}`);
     console.log(`  cadence              ${fmt(s.fps.median, 1)} fps median (min ${fmt(s.fps.min, 1)}) · ${s.redraws} redraws, ${s.submits} submits a round · ${s.drawn} drawn, ${s.culled} culled at the end`);
   };

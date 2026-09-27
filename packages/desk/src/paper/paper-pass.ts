@@ -13,14 +13,15 @@ import { createRecordStore, type RecordStore } from "../engine/records";
 import { compile, compose } from "../engine/shader";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
-import { litByOwn, type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, type SlotLight, STILL_MAT_FRAME } from "../mat/layout";
+import { litByOwn, type MatConfig, type MatFrame, type SlotLight } from "../mat/layout";
 import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
-import { type GroundTheme, MAT_GRID, type RGB } from "../theme";
+import type { GroundTheme, RGB } from "../theme";
 import { MAX_PAPERS, Paper, PaperUniforms, type PaperInstance, paperValues } from "./layout";
 import { InkShelves, type InkRect, uvOf, type UvRect } from "./pages";
 import { DEFAULT_PAPER_LAW, type PaperLaw } from "./paper";
 import type { PaperShaders } from "./shaders";
+import { sentBytes, writeChanged } from "../kit/uniform";
 
 /** Premultiplied "source over" — every desk object's blend. */
 const BLEND_PREMUL: GPUBlendState = {
@@ -48,14 +49,14 @@ interface PaperShared {
 
 export class PaperPass {
   readonly name = "paper/notes";
-  private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = PaperUniforms.alloc(1);
   /** The notes' PERSISTENT records (engine/records.ts, design-015 §4.3; D6): a slot per note while it is drawn, written when it changed. */
   private readonly store: RecordStore<PaperInstance>;
   /** The records the last prepare turned away at the pass's cap — not drawn; the ground reports them (`GroundStats.dropped`, D7). */
   dropped = 0;
-  private readonly matBuf: GPUBuffer;
   private readonly knobBuf: GPUBuffer;
+  /** What the GPU holds of the knobs: they are written only when they change (K4a — a standing value costs a frame nothing). */
+  private readonly knobsSent = sentBytes(PaperUniforms.size);
   private group!: GPUBindGroup;
   private boundAssets = -1;
   private boundStore = -1;
@@ -77,7 +78,6 @@ export class PaperPass {
   private constructor(device: GPUDevice, shared: PaperShared, mat: MatPass) {
     this.device = device; this.shared = shared; this.mat = mat;
     shared.slots += 1;
-    this.matBuf = uniformBuffer(device, MatUniforms.size, "paper/mat uniforms");
     this.knobBuf = uniformBuffer(device, PaperUniforms.size, "paper/knobs");
     this.store = createRecordStore<PaperInstance, keyof typeof Paper.slots>({
       device, def: Paper, capacity: MAX_PAPERS, max: MAX_PAPERS * 64, label: "paper/notes",
@@ -156,7 +156,7 @@ export class PaperPass {
   private rebind(): void {
     if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
-    this.group = bindGroup(this.device, s.layout, [this.matBuf, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.pagesView, s.inkSampler, this.store.order], "paper/notes");
+    this.group = bindGroup(this.device, s.layout, [this.mat.view, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.pagesView, s.inkSampler, this.store.order], "paper/notes");
     this.boundAssets = this.mat.assetVersion;
     this.boundStore = this.store.version;
   }
@@ -175,11 +175,8 @@ export class PaperPass {
     this.rebind();   // after: the store's buffers may have grown
     this.count = n;
     this.litElsewhere = !litByOwn(view, lit);
-    const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
-    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, present, light, NO_GLYPHS, lit));
-    this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1] });
-    this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
+    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     return n;
   }
 
@@ -200,7 +197,7 @@ export class PaperPass {
 
   /** This slot's buffers; the pages go with the last slot standing. */
   dispose(): void {
-    this.matBuf.destroy(); this.knobBuf.destroy(); this.store.dispose();
+    this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) s.pages.destroy();

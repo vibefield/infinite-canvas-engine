@@ -9,5 +9,6 @@ export * from "./physics";
 export * from "./print";
 export * from "./raster";
 export * from "./text";
+export * from "./uniform";
 export * from "./view";
 export * from "./wgsl";

@@ -10,6 +10,9 @@
 //                         the depth test skips every pixel the pad covers
 // The layer is resolved and laid on the mat INSIDE the ground's pass, before the cards and the notes
 // (ground.ts `underlays`): the pad lies beneath everything else on the desk.
+// The view block `u` is the SLOT's since K4a (design-016 K-L3), shared with the mat and every kind: this layer is drawn at FULL
+// presence, as it always was (the pass's own copy of the block carried no presentation, and the composite lays the layer whole),
+// so it reads neither `u.view.w` (the objects' presence) nor `u.presence.x` (the slot's) — its alpha is its coverage alone.
 
 @group(0) @binding(0) var<uniform> u: MatUniforms;
 @group(0) @binding(1) var<uniform> k: CalUniforms;
@@ -266,7 +269,7 @@ fn fs_face(in: VOut) -> @location(0) vec4f {
   let V = normalize(E - in.world);
   let q = in.uv;
   let dbg = u32(k.ring.y);
-  if ((dbg & 512u) != 0u) { return vec4f((*B).col0.rgb * u.view.w, u.view.w); }
+  if ((dbg & 512u) != 0u) { return vec4f((*B).col0.rgb, 1.0); }
   let TT = mat2x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0));   // a pad lies square: its x and y are the world's
   let bn = textureSampleLevel(noise_tex, noise_samp, in.clip.xy * u.noise.z + u.noise.xy, 0.0).rgb;
   let Lw = (*B).lamp.xyz;
@@ -277,7 +280,7 @@ fn fs_face(in: VOut) -> @location(0) vec4f {
   if ((dbg & 8u) == 0u) { sh = cal_sheet_shade(pi, in.local.xy, in.local.z, Lw, false); }
   var c = cal_lit(face.albedo, n, TT, pp.g, in.world, V, Lw, sh.x, in.ao * sh.y, true, false, k.light.z, vec2f(5.0, 0.02), bn);
   c = mix(c, k.select.rgb, face.marks);
-  return vec4f(c * u.view.w, u.view.w);
+  return vec4f(c, 1.0);
 }
 
 // A SHEET that may be seen from behind: the one in motion (mat 1), the roll of the months before (2) — the ivory,
@@ -300,7 +303,7 @@ fn fs_sheet(in: VOut) -> @location(0) vec4f {
   if (dot(n, V) < 0.0) { n = -n; back = true; }
   let q = in.uv;
   let dbg = u32(k.ring.y);
-  if ((dbg & 512u) != 0u) { return vec4f((*B).col0.rgb * u.view.w, u.view.w); }
+  if ((dbg & 512u) != 0u) { return vec4f((*B).col0.rgb, 1.0); }
   let TT = cal_tangents(n, dPdx, dPdy, dqdx, dqdy);
   let bn = textureSampleLevel(noise_tex, noise_samp, in.clip.xy * u.noise.z + u.noise.xy, 0.0).rgb;
   let Lw = (*B).lamp.xyz;   // a pad lies square on the desk: its own frame is the world's, turned by nothing
@@ -327,7 +330,7 @@ fn fs_sheet(in: VOut) -> @location(0) vec4f {
   if (!back && n.z > 0.985 && (dbg & 8u) == 0u) { sh = cal_sheet_shade(pi, in.local.xy, in.local.z, Lw, moving); }
   var c = cal_lit(albedo, n, TT, pp.g, in.world, V, Lw, sh.x, in.ao * sh.y, true, back, k.light.z, sheen, bn);
   c = mix(c, k.select.rgb, marks);
-  return vec4f(c * u.view.w, u.view.w);
+  return vec4f(c, 1.0);
 }
 
 // The pad's SOLID parts: the block's side (mat 3), the chipboard back (4), the cloth tape and its foil (5).
@@ -380,7 +383,7 @@ fn fs_solid(in: VOut) -> @location(0) vec4f {
     dapple = k.light.w;
   }
   let c = cal_lit(albedo, n, TT, grad, in.world, V, Lw, 1.0, in.ao, false, false, dapple, sheen, bn);
-  return vec4f(c * u.view.w, u.view.w);
+  return vec4f(c, 1.0);
 }
 
 // ---- the mat under a pad: its shadow, its contact, its ring
@@ -435,5 +438,5 @@ fn fs_recv(in: ROut) -> @location(0) vec4f {
   let rd = abs(d - k.ring.x * css) - rw * 0.5;
   let ring = nb_cov(rd, css / max(k.shadow2.w, 1.0)) * (*B).slots.w;
   c = vec4f(k.select.rgb * ring, ring) + c * (1.0 - ring);
-  return c * u.view.w;
+  return c;
 }

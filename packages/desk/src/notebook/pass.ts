@@ -22,10 +22,10 @@ import { bindGroup, bindLayout, storageBuffer, uniformBuffer } from "../engine/p
 import { compile, compose } from "../engine/shader";
 import type { RenderTarget } from "../kind";
 import type { FadeIn, View } from "../lattice/lod";
-import { type MatConfig, type MatFrame, MatUniforms, matUniformValues, NO_GLYPHS, STILL_MAT_FRAME } from "../mat/layout";
+import { type MatConfig, type MatFrame, MatUniforms } from "../mat/layout";
 import type { MatPass } from "../kit/view";
 import { DAY_LIGHT, type MatLight } from "../mat/night";
-import { MAT_GRID, type RGB, type RGBA } from "../theme";
+import type { RGB, RGBA } from "../theme";
 import { type DeskEye, eyeValues, project } from "./eye";
 import type { NotebookLaw } from "./law";
 import { designCode, MAX_NOTEBOOKS, MAX_SHADOWED, NbBook, NbUniforms, nbUniformValues, type NotebookLook, type Ruling, rulingCode, SHADOW_RES } from "./layout";
@@ -37,6 +37,7 @@ import type { NotebookShaders } from "./shaders";
 import { INK_H, INK_LAYERS, INK_TABLE, INK_W } from "./ink";
 import { PAPER_TEX, paperTexture } from "./paper-tex";
 import { generateMips, mipCount } from "../photo/mips";
+import { sentBytes, writeChanged } from "../kit/uniform";
 
 const SAMPLES = 4;
 const BLEND_PREMUL: GPUBlendState = {
@@ -106,11 +107,13 @@ export class NotebookPass {
   private readonly device: GPUDevice;
   private readonly format: GPUTextureFormat;
   private readonly mat: MatPass;
-  private readonly matU = MatUniforms.alloc(1);
   private readonly knobs = NbUniforms.alloc(1);
   private readonly records = NbBook.alloc(MAX_NOTEBOOKS);
-  private readonly matBuf: GPUBuffer;
+  /** What the GPU holds of the records: a prefix is written only when it changed (K4a). */
+  private readonly recordsSent = sentBytes(NbBook.size * MAX_NOTEBOOKS);
   private readonly knobBuf: GPUBuffer;
+  /** What the GPU holds of the knobs: they are written only when they change (K4a — a standing value costs a frame nothing). */
+  private readonly knobsSent = sentBytes(NbUniforms.size);
   private readonly recordBuf: GPUBuffer;
   private readonly layoutMain: GPUBindGroupLayout;
   private readonly layoutShadow: GPUBindGroupLayout;
@@ -147,7 +150,6 @@ export class NotebookPass {
     this.device = device; this.format = format; this.mat = mat;
     this.layoutMain = pipes.layoutMain; this.layoutShadow = pipes.layoutShadow; this.layoutComp = pipes.layoutComp;
     this.bookPipe = pipes.book; this.recvPipe = pipes.recv; this.shadowPipe = pipes.shadow; this.compPipe = pipes.comp;
-    this.matBuf = uniformBuffer(device, MatUniforms.size, "notebook/mat uniforms");
     this.knobBuf = uniformBuffer(device, NbUniforms.size, "notebook/knobs");
     this.recordBuf = storageBuffer(device, NbBook.size * MAX_NOTEBOOKS, "notebook/books");
     this.goboSampler = device.createSampler({ label: "notebook/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
@@ -235,7 +237,7 @@ export class NotebookPass {
   private rebind(): void {
     if (this.boundAssets === this.mat.assetVersion && this.boundInk === this.inkReady) return;
     this.mainGroup = bindGroup(this.device, this.layoutMain, [
-      this.matBuf, this.knobBuf, this.recordBuf, this.mat.silhouette, this.goboSampler, this.mat.noiseTexture.createView(), this.noiseSampler,
+      this.mat.view, this.knobBuf, this.recordBuf, this.mat.silhouette, this.goboSampler, this.mat.noiseTexture.createView(), this.noiseSampler,
       this.shadowTex.createView({ dimension: "2d-array" }), this.cmpSampler, this.inkTex.createView({ dimension: "2d-array" }), this.inkSampler,
       this.paperTex.createView(), this.paperSampler,
     ], "notebook/main");
@@ -323,15 +325,12 @@ export class NotebookPass {
     this.dropped = Math.max(0, shown.length - MAX_NOTEBOOKS);
     this.t.list = shown.slice(0, MAX_NOTEBOOKS) as NotebookDraw[];
     const n = this.t.list.length;
-    const strength = MAT_GRID.gobo.plates[cfg.gobo.plate === "b" ? "b" : "c"].strength;
-    this.matU.set(matUniformValues(view, fadeIn, cfg, frame ?? STILL_MAT_FRAME, strength, undefined, light, NO_GLYPHS));
-    this.device.queue.writeBuffer(this.matBuf, 0, this.matU.view());
     // the near plane above the tallest thing a book reaches: a book risen toward the eye in the hand (D4b) climbs past the 900 the law
     // assumed at rest, and the plane follows it (the at-rest numbers are the same bytes: no book reaches past 900 lying down)
     let top = 0;
     for (const d of this.t.list) top = Math.max(top, worldBounds(d.rigid, d.mesh.min, d.mesh.max).hi[2]);
     this.knobs.set({ ...nbUniformValues(law, eyeValues(eye, Math.max(900, top + 200)), view.dpr, colours.cast, colours.select, colours.ruleInk), ring: [law.ring.offset, this.debug, 0, 0] });
-    this.device.queue.writeBuffer(this.knobBuf, 0, this.knobs.view());
+    writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     let tris = 0;
     let shadowed = 0;
     let sx0 = Number.POSITIVE_INFINITY;
@@ -387,7 +386,7 @@ export class NotebookPass {
         inkLayer: Array.from({ length: INK_TABLE }, (_, k) => d.ink.layers[k] ?? 0),
       }, i);
     }
-    if (n > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(n));
+    if (n > 0) writeChanged(this.device.queue, this.recordBuf, this.records, this.recordsSent, n);
     // a book gone from the list gives its buffers back
     for (const [id, b] of this.t.buffers) if (b.seen !== this.t.frameNo) { b.vb.destroy(); b.ib.destroy(); this.t.buffers.delete(id); }
     this.t.screen = n > 0 ? { x0: sx0, y0: sy0, x1: sx1, y1: sy1 } : null;
@@ -507,7 +506,7 @@ export class NotebookPass {
   dispose(): void {
     dropTarget(this.frameT);
     if (this.copyT) dropTarget(this.copyT);
-    this.shadowTex.destroy(); this.inkTex.destroy(); this.paperTex.destroy(); this.matBuf.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy();
+    this.shadowTex.destroy(); this.inkTex.destroy(); this.paperTex.destroy(); this.knobBuf.destroy(); this.recordBuf.destroy();
     void this.format;
   }
 }

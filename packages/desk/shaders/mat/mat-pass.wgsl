@@ -37,5 +37,5 @@ fn fs(in: VSOut) -> @location(0) vec4f {
   if (u.light.w > 0.0) { gobo = mix(gobo, sample_gobo(u, gobo_tex, gobo_samp, desk_of(u, u.light2.xy + screen / max(u.light2.z, 1e-12)), bn.z), u.light.w); }
   // Straight alpha: the presentation's opacity through the portal clip — both 1 at rest,
   // when "source over" reduces to a plain write.
-  return vec4f(mat_colour(u, albedo, gobo, bn.y), u.view.w * portal_cover(screen, u.portals, u.clips, dpr));
+  return vec4f(mat_colour(u, albedo, gobo, bn.y), u.presence.x * portal_cover(screen, u.portals, u.clips, dpr));
 }

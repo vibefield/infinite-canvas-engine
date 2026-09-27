@@ -5,6 +5,9 @@
 //   vs_recv · fs_recv   the mat under it: the book's shadow (PCSS) and its contact, the selection ring —
 //                       drawn after the book, so the depth test skips every pixel the book covers
 // The book's record carries its placement, its lamp and its shadow map's frame.
+// The view block `u` is the SLOT's since K4a (design-016 K-L3), shared with the mat and every kind: this layer is drawn at FULL
+// presence, as it always was (the pass's own copy of the block carried no presentation, and the composite lays the layer whole),
+// so it reads neither `u.view.w` (the objects' presence) nor `u.presence.x` (the slot's) — its alpha is its coverage alone.
 
 @group(0) @binding(0) var<uniform> u: MatUniforms;
 @group(0) @binding(1) var<uniform> k: NbUniforms;
@@ -195,7 +198,7 @@ fn fs_book(in: VOut) -> @location(0) vec4f {
   let sp = pow(max(dot(nb, Hh), 0.0), sheen.x) * sheen.y * vis * g0;
   c += vec3f(sp * (1.0 - u.night.x * 0.85));
 
-  return vec4f(c * u.view.w, u.view.w);
+  return vec4f(c, 1.0);
 }
 
 // ---- the mat under a book: its shadow, its contact, its ring
@@ -254,5 +257,5 @@ fn fs_recv(in: ROut) -> @location(0) vec4f {
   let rd = abs(d - k.ring.x * css) - rw * 0.5;
   let ring = nb_cov(rd, css / max(k.shadow2.w, 1.0)) * B.look.z;
   c = vec4f(k.select.rgb * ring, ring) + c * (1.0 - ring);
-  return c * u.view.w;
+  return c;
 }
