@@ -27,6 +27,8 @@
 // stages its own desk) — 240 written notes and 8 whiteboards zoomed out 1 → 0.35 and back in to 0.72, a fresh desk each round (the band
 // ladder's hysteresis would otherwise leave every later round nothing to cross): each step's ms beside THAT step's rasters,
 // replays and records (`perf.probe`), p50 / p95 / the worst frame.
+// K7a (design-016 §6): `books` — a notebook and a desk calendar on screen, a 2 px pan: the two layered kinds' passes a frame, their
+// GPU ms (the profiler's labelled passes by prefix), the span and the memory by label — the numbers the books' layers answer.
 //
 // The fps gates are stated against THE MACHINE'S REFRESH: headless Chrome's rAF runs at 60 Hz whatever the display, so "120
 // fps" cannot be witnessed by counting frames here — it is asserted as a FRAME BUDGET: main-thread JS ≤ 2 ms AND JS + GPU ≤
@@ -205,9 +207,9 @@ try {
     })()`);
   };
   /** K2's armed pan (design-016 §4): 120 frames of the pan with the GPU profiler ARMED — the real frames' GPU span, their draws, instances, pipelines, bind groups, by kind. */
-  const armedPan = async (cam) => {
+  const armedPan = async (cam, dx = 8) => {
     await q("window.__gpuOff = window.__desk.perf.gpu().arm(); 0");
-    const armedRun = await drive(120, cam, 8, 0, 1);
+    const armedRun = await drive(120, cam, dx, 0, 1);
     await qa("new Promise((r) => setTimeout(r, 300))");   // the last readbacks land
     const late = (await q("window.__desk.perf.take()")).gpu.frames;
     await q("window.__gpuOff(); 0");
@@ -216,7 +218,12 @@ try {
     const busies = gf.flatMap((f) => (f.busy !== null ? [f.busy] : []));
     const per = (k) => median(gf.map((f) => f.counts[k]));
     const kinds = [...new Set(gf.flatMap((f) => Object.keys(f.byKind)))];
+    // K7a: the labelled passes by their label's prefix (`notebook/shadow 0` → notebook) — how many a frame, and their GPU ms summed
+    const prefixes = [...new Set(gf.flatMap((f) => (f.passes ?? []).map((p) => p.label.split("/")[0])))];
+    const passesOf = (f, k) => (f.passes ?? []).filter((p) => p.label.split("/")[0] === k);
+    const timedFrames = gf.filter((f) => f.span !== null);
     return {
+      passesByPrefix: Object.fromEntries(prefixes.map((k) => [k, { n: median(gf.map((f) => passesOf(f, k).length)), ms: pct(timedFrames.map((f) => passesOf(f, k).reduce((a, p) => a + (p.end - p.begin), 0)), 0.5) }])),
       frames: gf.length, timed: spans.length, dropped: gf.filter((f) => f.timing === "dropped").length, quantised: gf.some((f) => f.quantised === true),
       span: { p50: pct(spans, 0.5), p95: pct(spans, 0.95), max: max(spans) },
       busy: { p50: pct(busies, 0.5), p95: pct(busies, 0.95) },
@@ -664,6 +671,29 @@ try {
     check(back0?.density === null && back0?.thumb === true && backFrames <= 6 && back1?.density === 4 && back1?.bound === true && replays2 > replays1, `boards: board 0 on screen again — its thumbnail drew it in the frame it came back while its replay waited in the frame queue (K6b); the queue's turn replayed it at its rung (4 texels a unit) ${backFrames} frame(s) after, bound (${JSON.stringify(back0)} → ${JSON.stringify(back1)}; ${replays2 - replays1} replays)`);
     report.boards = { far, memFar, run: g, walked, memWalk, back: [back0, back1] };
     rows.push(["boards (20, a run)", `20 boards = ${g.byKind.board} draw · far: board ${MB(row(memFar, "board"))}`, `walked at zoom 1: ${memWalk.budget.evictions} evictions, board ${MB(row(memWalk, "board"))}; back: replayed and bound`, load()]);
+  }
+
+  // ── books (K7a, design-016 §6 · K7): a NOTEBOOK and a DESK CALENDAR on screen — the two layered kinds, each laying a layer of its
+  //    own (4× colour and depth, resolved; the notebook a shadow map a book). A pan of 2 px a frame keeps both on screen: JS, the
+  //    armed pan's real frames (the GPU span, the books' own passes a frame and their GPU ms, from the labelled passes), the memory.
+  if (wantCase("books")) {
+    const camB = { x: -600, y: -400, zoom: 1 };
+    const booksScene = { camX: camB.x, camY: camB.y, zoom: 1, theme: "light", notes: [{ x: -500, y: 250, seed: 3, text: TEXTS[0] }, { x: 450, y: 300, seed: 5, text: "" }], minimats: [], boards: [], prints: [], books: [{ x: -250, y: -60, cover: "orbit", seed: 7 }], calendars: [{ x: 300, y: -60, month: "2026-09", weekStart: 1 }] };
+    await qa(`window.__desk.setScene(${JSON.stringify(booksScene)})`, 120000);
+    await settle(20000);
+    const runs = [];
+    for (let r = 0; r < ROUNDS; r++) { const run = await drive(120, camB, 2, 0, 1); run.load = load(); runs.push(run); }
+    const s = summarise("books", runs, 120);
+    const g = await armedPan(camB, 2);
+    const mem = await memoryNow();
+    const row = (k) => mem.ledger?.byLabel?.[k]?.bytes ?? 0;
+    const bp = (k) => g.passesByPrefix[k] ?? { n: 0, ms: Number.NaN };
+    report.books = { js: s.stepMs, alloc: s.alloc, gpu: g, memory: mem };
+    console.log(`\n-- books · a notebook and a desk calendar on screen, a pan of 2 px a frame · ${ROUNDS} rounds × 120 frames · load ${s.loads.join(" ")} --`);
+    console.log(`  JS                   ${fmt(s.stepMs.median)} ms/frame (min ${fmt(s.stepMs.min)}) · heap growth ${kb(s.alloc.median)}/frame`);
+    console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · busy p50 ${fmt(g.busy.p50)} · ${g.passes} passes a frame — the notebook's ${bp("notebook").n} (${fmt(bp("notebook").ms, 3)} ms) · the calendar's ${bp("calendar").n} (${fmt(bp("calendar").ms, 3)} ms) · ${g.draws} draws (${g.timed} of ${g.frames} frames timed)`);
+    console.log(`  memory               ${memoryLine(mem)}`);
+    rows.push(["books (pan)", `span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · ${g.passes} passes`, `notebook ${bp("notebook").n} passes ${fmt(bp("notebook").ms, 3)} ms · calendar ${bp("calendar").n} passes ${fmt(bp("calendar").ms, 3)} ms · JS ${fmt(s.stepMs.median)} ms · notebook ${MB(row("notebook"))} · calendar ${MB(row("calendar"))} · ${MB(mem.ledger?.total ?? 0)} live`, g.load]);
   }
 
   // ── zoom-written (K6b, design-016 §1.3 · §6): THE WRITTEN DESK (`writtenScene`, a fresh one each round, settled at zoom 1) zoomed
