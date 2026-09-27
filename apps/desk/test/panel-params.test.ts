@@ -36,6 +36,17 @@ describe("the dev panel's defaults are the product", () => {
     expect(p.portal.on).toBe(true);
   });
 
+  it("every ruler tweak reaches the mat's config — the density, the text, the characters (the demo's rows) — and survives a snapshot", () => {
+    const p = defaultParams();
+    p.ruler.ticksFrom = [5, 7];
+    p.ruler.labelsFrom = [80, 100];
+    p.ruler.text = { size: 12, top: 6, gap: 4 };
+    p.ruler.maxChars = 6;
+    const r = matConfigOf(p.mat, p.ruler).ruler;
+    expect([r.ticksFrom, r.labelsFrom, r.text, r.maxChars]).toEqual([[5, 7], [80, 100], { size: 12, top: 6, gap: 4 }, 6]);
+    expect(restoreParams(JSON.parse(snapshotParams(p))).ruler).toEqual(p.ruler);
+  });
+
   it("the Moon from the panel's numbers is the theme's own, and by day nothing is added", () => {
     const p = defaultParams();
     const dark = themeFrom("dark", PALETTE.dark);

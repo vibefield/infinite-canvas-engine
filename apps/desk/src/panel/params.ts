@@ -44,19 +44,24 @@ export function defaultMatTweaks(): MatTweaks {
 /** The RULERS as the panel edits them (RULER.md): whether they print, and the law's numbers. On: the product's desk prints them (K1). */
 export interface RulerTweaks {
   on: boolean; band: number; margin: number; tick: [number, number, number]; line: number; label: number; tickAlpha: number; frameAlpha: number;
+  /** CSS px of pitch over which the fine ticks, and a level's labels, fade in (RULER.md §3 — the demo's four density numbers, K1). */
+  ticksFrom: [number, number]; labelsFrom: [number, number];
   /** The labels' text: its size (CSS px — the glyph atlas's em, so a change re-renders the atlas), its inset from the outer line, its gap after the tick. */
   text: { size: number; top: number; gap: number };
+  /** The most characters a label may have (a level whose labels would be wider carries none). */
+  maxChars: number;
 }
 export function defaultRulerTweaks(): RulerTweaks {
   const r = DESK_GRID.mat.ruler;
   return {
     on: r.on, band: r.band, margin: r.margin, tick: [r.tick[0], r.tick[1], r.tick[2]], line: r.line, label: r.alpha.label, tickAlpha: r.alpha.tick, frameAlpha: r.alpha.frame,
-    text: { ...r.text },
+    ticksFrom: [r.ticksFrom[0], r.ticksFrom[1]], labelsFrom: [r.labelsFrom[0], r.labelsFrom[1]], text: { ...r.text }, maxChars: r.maxChars,
   };
 }
 export const rulerConfigOf = (t: RulerTweaks): RulerConfig => ({
   ...DESK_GRID.mat.ruler, on: t.on, band: t.band, margin: t.margin, tick: [t.tick[0], t.tick[1], t.tick[2]], line: t.line,
-  alpha: { frame: t.frameAlpha, tick: t.tickAlpha, label: t.label }, text: { ...t.text },
+  alpha: { frame: t.frameAlpha, tick: t.tickAlpha, label: t.label },
+  ticksFrom: [t.ticksFrom[0], t.ticksFrom[1]], labelsFrom: [t.labelsFrom[0], t.labelsFrom[1]], text: { ...t.text }, maxChars: t.maxChars,
 });
 /** The mat's config with its rulers — the root's (a mini mat's inside never prints them). */
 export const matConfigOf = (t: MatTweaks, ruler: RulerTweaks): MatConfig => ({

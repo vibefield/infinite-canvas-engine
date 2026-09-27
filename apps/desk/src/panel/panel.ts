@@ -243,6 +243,15 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
       range("frame alpha", 0, 1, 0.01, () => p.ruler.frameAlpha, (v) => { p.ruler.frameAlpha = v; }),
       range("tick alpha", 0, 1, 0.01, () => p.ruler.tickAlpha, (v) => { p.ruler.tickAlpha = v; }),
       range("label alpha", 0, 1, 0.01, () => p.ruler.label, (v) => { p.ruler.label = v; }),
+      // K1, the demo's rows (lab/main.ts): the density — each pair kept in order, the demo's way — and the text (its size is the atlas's em: a change re-renders it)
+      range("fine ticks from (pitch)", 1, 40, 0.5, () => p.ruler.ticksFrom[0], (v) => { p.ruler.ticksFrom = [v, Math.max(p.ruler.ticksFrom[1], v + 0.5)]; }, "px"),
+      range("fine ticks full (pitch)", 1.5, 60, 0.5, () => p.ruler.ticksFrom[1], (v) => { p.ruler.ticksFrom = [Math.min(p.ruler.ticksFrom[0], v - 0.5), v]; }, "px"),
+      range("labels from (pitch)", 10, 300, 1, () => p.ruler.labelsFrom[0], (v) => { p.ruler.labelsFrom = [v, Math.max(p.ruler.labelsFrom[1], v + 1)]; }, "px"),
+      range("labels full (pitch)", 11, 400, 1, () => p.ruler.labelsFrom[1], (v) => { p.ruler.labelsFrom = [Math.min(p.ruler.labelsFrom[0], v - 1), v]; }, "px"),
+      range("text size", 6, 20, 0.5, () => p.ruler.text.size, (v) => { p.ruler.text.size = v; }, "px"),
+      range("text inset (from the outer line)", 0, 40, 0.5, () => p.ruler.text.top, (v) => { p.ruler.text.top = v; }, "px"),
+      range("text gap (after the tick)", 0, 20, 0.5, () => p.ruler.text.gap, (v) => { p.ruler.text.gap = v; }, "px"),
+      range("most characters in a label", 1, 12, 1, () => p.ruler.maxChars, (v) => { p.ruler.maxChars = v; }),
     ] },
     { title: "the lattice", rows: [
       range("fade-in from", 0, 80, 1, () => p.grid.fadeIn[0], (v) => { p.grid.fadeIn[0] = v; }, "px"),
