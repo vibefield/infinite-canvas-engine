@@ -174,9 +174,8 @@ export function App(): ReactElement {
         // K1: the rulers' glyph atlas, kept to the ratio the desk draws at (the viewport's) and the panel's text size (glyphs.ts) —
         // nothing until the ground is here
         const glyphs = glyphFeed({ ready: () => handle.available(), scale: () => deskScale(engine.world.getResource(Viewport)?.dpr ?? 1), size: () => params.ruler.text.size, upload: (a) => handle.setGlyphs(a.bytes, a.meta) });
-        // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing); every
-        // projection re-checks the atlas against the text size
-        panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined, projected: () => { glyphs.refresh(); } });
+        // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing)
+        panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined });
         themeRef.current.apply();
         const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs);
         apiRef.current = api;
@@ -190,8 +189,9 @@ export function App(): ReactElement {
           handle.setPlate("b", plates.b);
           glyphs.refresh();
           // …and again whenever the viewport's ratio moves — the host re-syncs it before any step it moved in (@ice/dom
-          // `createDeskHost`: another display, the browser's zoom, an emulated ratio — none resizes): a tick gated on it, so nothing
-          // runs while it stands. (A mount StrictMode discards never gets here: its layer never becomes available.)
+          // `createDeskHost`: another display, the browser's zoom, an emulated ratio — none resizes) — or the panel's text size:
+          // a tick gated on either, so nothing runs while they stand. (A mount StrictMode discards never gets here: its layer never
+          // becomes available.)
           engine.engine.addSystems("simulate", defineTickSystem(() => { glyphs.refresh(); }, { name: "desk.glyphs", runIf: () => glyphs.stale() }));
           api.state.ready = true;
         };

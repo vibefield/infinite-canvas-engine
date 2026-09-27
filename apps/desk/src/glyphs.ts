@@ -82,20 +82,19 @@ export interface GlyphFeedOptions {
 
 export function glyphFeed(opts: GlyphFeedOptions): GlyphFeed {
   const make = opts.make ?? ((size: number, scale: number) => makeGlyphAtlas(size, scale));
-  let last: GlyphFeed["last"] = null;
+  let last: { readonly key: string; readonly meta: GlyphAtlasMeta; readonly scale: number; readonly size: number } | null = null;
   let uploads = 0;
-  const keyNow = (): string => `${opts.scale()}:${opts.size()}`;
   return {
-    stale: () => last !== null && keyNow() !== last.key,
+    // numbers against numbers: the app asks every tick, so the answer allocates nothing
+    stale: () => last !== null && (opts.scale() !== last.scale || opts.size() !== last.size),
     refresh() {
       if (!opts.ready()) return false;
       const scale = opts.scale();
       const size = opts.size();
-      const key = `${scale}:${size}`;
-      if (last?.key === key) return false;
+      if (last !== null && last.scale === scale && last.size === size) return false;
       const atlas = make(size, scale);
       opts.upload(atlas);
-      last = { key, meta: atlas.meta };
+      last = { key: `${scale}:${size}`, meta: atlas.meta, scale, size };
       uploads += 1;
       return true;
     },
