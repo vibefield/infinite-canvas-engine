@@ -64,7 +64,16 @@ const scribble = (i) => [
   { ink: "green", tip: "fine", points: Array.from({ length: 10 }, (_, k) => [60 + k * 36, 200 + Math.cos(k * 1.1 + i) * 25]) },
   { ink: "red", tip: "chisel", points: Array.from({ length: 6 }, (_, k) => [260 + k * 30, 120 + Math.sin(k + i) * 20]) },
 ];
-export function stressScene(n = N) {
+// K6a (design-016 §6): the REAL pictures a mixed desk's prints carry — generated JPEGs (rig/scene-kinds.ts `GeneratedPicture`) of every
+// size up to PICTURE_MAX, two seeds each: 24 distinct pictures, decoded by the product's own decoder as a pasted file is
+export const PICTURES = [[4096, 4096], [4096, 3072], [3072, 4096], [3264, 2448], [2048, 1536], [1600, 1200], [1024, 768], [800, 600], [640, 480], [512, 512], [384, 256], [256, 256]]
+  .flatMap(([w, h], i) => [{ w, h, seed: 1 + 2 * i }, { w, h, seed: 2 + 2 * i }]);
+/**
+ * The stress scene. `mixed`: the things in SIBLING ORDER as the spiral lays them (a print or a whiteboard between notes — the
+ * real desk; the default groups each kind into one run, the best case). `pictures`: every print carries a real picture.
+ */
+export function stressScene(n = N, { mixed = false, pictures = false } = {}) {
+  const things = [];
   const notes = [];
   const minimats = [];
   const boards = [];
@@ -77,12 +86,13 @@ export function stressScene(n = N) {
     const y = Math.round(Math.sin(a) * rad);
     const k = i % 40;
     if (k < 4) minimats.push({ x, y, w: 320 + ((i * 37) % 160), h: 240 + ((i * 53) % 120), name: `Mat ${i}`, inside: { notes: [{ x: -60, y: -30, seed: 100 + i }, { x: 70, y: 40, seed: 200 + i, text: "inside" }], minimats: [] } });
-    else if (k < 10) prints.push({ x, y, angle: (((i * 7) % 21) - 10) / 100, picture: null });
-    else if (k === 10) boards.push({ x, y, strokes: scribble(i) });
-    else notes.push({ x, y, seed: 1 + i, text: i % 3 === 0 ? TEXTS[i % TEXTS.length] : "" });
+    else if (k < 10) { const p = { x, y, angle: (((i * 7) % 21) - 10) / 100, picture: pictures ? PICTURES[prints.length % PICTURES.length] : null }; prints.push(p); things.push({ ...p, kind: "print" }); }
+    else if (k === 10) { const b = { x, y, strokes: scribble(i) }; boards.push(b); things.push({ ...b, kind: "board" }); }
+    else { const t = { x, y, seed: 1 + i, text: i % 3 === 0 ? TEXTS[i % TEXTS.length] : "" }; notes.push(t); things.push({ ...t, kind: "note" }); }
   }
   const books = [{ x: 420, y: -260, cover: "orbit", seed: 7 }];
   const calendars = [{ x: -2400, y: 1800, month: "2026-09", weekStart: 1 }];
+  if (mixed) return { camX: -600, camY: -400, zoom: 1, theme: "light", minimats, things: [...things, ...books.map((b) => ({ ...b, kind: "book" }))], calendars, notes, boards, prints, books };
   return { camX: -600, camY: -400, zoom: 1, theme: "light", notes, minimats, boards, prints, books, calendars };
 }
 
@@ -179,6 +189,36 @@ try {
       return { ms: t1 - t0, h0, h1, before, after, stats: d.stats() };
     })()`);
   };
+  /** K2's armed pan (design-016 §4): 120 frames of the pan with the GPU profiler ARMED — the real frames' GPU span, their draws, instances, pipelines, bind groups, by kind. */
+  const armedPan = async (cam) => {
+    await q("window.__gpuOff = window.__desk.perf.gpu().arm(); 0");
+    const armedRun = await drive(120, cam, 8, 0, 1);
+    await qa("new Promise((r) => setTimeout(r, 300))");   // the last readbacks land
+    const late = (await q("window.__desk.perf.take()")).gpu.frames;
+    await q("window.__gpuOff(); 0");
+    const gf = [...armedRun.after.gpu.frames, ...late].filter((f) => f.kind === "frame");
+    const spans = gf.flatMap((f) => (f.span !== null ? [f.span] : []));
+    const busies = gf.flatMap((f) => (f.busy !== null ? [f.busy] : []));
+    const per = (k) => median(gf.map((f) => f.counts[k]));
+    const kinds = [...new Set(gf.flatMap((f) => Object.keys(f.byKind)))];
+    return {
+      frames: gf.length, timed: spans.length, dropped: gf.filter((f) => f.timing === "dropped").length, quantised: gf.some((f) => f.quantised === true),
+      span: { p50: pct(spans, 0.5), p95: pct(spans, 0.95), max: max(spans) },
+      busy: { p50: pct(busies, 0.5), p95: pct(busies, 0.95) },
+      draws: per("draws"), instances: per("instances"), pipelines: per("pipelines"), bindGroups: per("bindGroups"), passes: per("passes"), submits: per("submits"),
+      byKind: Object.fromEntries(kinds.map((k) => [k, median(gf.map((f) => f.byKind[k]?.draws ?? 0))])),
+      instancesByKind: Object.fromEntries(kinds.map((k) => [k, median(gf.map((f) => f.byKind[k]?.instances ?? 0))])),
+      armedStepMs: median(armedRun.after.steps.slice(-120)), load: load(),
+    };
+  };
+  const MB = (b) => `${(b / 1048576).toFixed(1)} MB`;
+  /** The memory ledger (K2) by label, heaviest first, and the raster budget (D6) — what the GPU holds, and what the budget sees of it. */
+  const memoryNow = async () => {
+    const ledger = await q("window.__desk.handle.gpuMemory()?.read() ?? null");
+    const budget = await q("window.__desk.memory()");
+    return { ledger, budget };
+  };
+  const memoryLine = (m) => `${MB(m.ledger?.total ?? 0)} live (${Object.entries(m.ledger?.byLabel ?? {}).sort((a, b) => b[1].bytes - a[1].bytes).slice(0, 8).map(([k, v]) => `${k} ${MB(v.bytes)}`).join(" · ")}) · budget ${MB(m.budget.used)} of ${MB(m.budget.cap)} (${Object.entries(m.budget.byOwner).map(([k, v]) => `${k} ${MB(v.bytes)} × ${v.entries}`).join(" · ")}), ${m.budget.evictions} evictions`;
   const summarise = (label, runs, frames) => {
     const perRound = runs.map((r) => {
       const d = diff(r.before, r.after);
@@ -274,24 +314,8 @@ try {
     // K2 — THE REAL FRAMES' GPU (design-016 §4, K-L5): one more pan with the GPU profiler ARMED — every drawn frame's GPU span (its
     // passes' first begin → last end, never a sum), its draws, pipelines and bind groups from the calls themselves — beside the
     // saturated batch above (a still frame, GPU-bound). The armed step beside the unarmed rounds' is the profiler's own cost.
-    await q("window.__gpuOff = window.__desk.perf.gpu().arm(); 0");
-    const armedRun = await drive(120, cam0, 8, 0, 1);
-    await qa("new Promise((r) => setTimeout(r, 300))");   // the last readbacks land
-    const late = (await q("window.__desk.perf.take()")).gpu.frames;
-    await q("window.__gpuOff(); 0");
-    const gf = [...armedRun.after.gpu.frames, ...late].filter((f) => f.kind === "frame");
-    const spans = gf.flatMap((f) => (f.span !== null ? [f.span] : []));
-    const busies = gf.flatMap((f) => (f.busy !== null ? [f.busy] : []));
-    const per = (k) => median(gf.map((f) => f.counts[k]));
-    const armedStep = median(armedRun.after.steps.slice(-120));
-    s.gpuFrames = {
-      frames: gf.length, timed: spans.length, dropped: gf.filter((f) => f.timing === "dropped").length, quantised: gf.some((f) => f.quantised === true),
-      span: { p50: pct(spans, 0.5), p95: pct(spans, 0.95), max: max(spans) },
-      busy: { p50: pct(busies, 0.5), p95: pct(busies, 0.95) },
-      draws: per("draws"), instances: per("instances"), pipelines: per("pipelines"), bindGroups: per("bindGroups"), passes: per("passes"), submits: per("submits"),
-      byKind: Object.fromEntries([...new Set(gf.flatMap((f) => Object.keys(f.byKind)))].map((k) => [k, median(gf.map((f) => f.byKind[k]?.draws ?? 0))])),
-      armedStepMs: armedStep, load: load(),
-    };
+    s.gpuFrames = await armedPan(cam0);
+    const armedStep = s.gpuFrames.armedStepMs;
     const g = s.gpuFrames;
     console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} · max ${fmt(g.span.max)} ms, busy p50 ${fmt(g.busy.p50)} · p95 ${fmt(g.busy.p95)} ms (the rest of the span the GPU waited) (${g.timed} of ${g.frames} frames timed, ${g.dropped} dropped for a full readback ring) · a frame: ${g.draws} draws (${g.instances} instances) · ${g.pipelines} pipelines · ${g.bindGroups} bind groups · ${g.passes} passes · ${g.submits} submit — draws by kind ${Object.entries(g.byKind).map(([k, n]) => `${k} ${n}`).join(" · ")} · JS ${fmt(armedStep)} ms/frame armed vs ${fmt(s.stepMs.median)} unarmed`);
     check(g.timed >= g.frames / 2 && !g.quantised, `pan (armed): the real frames' GPU spans read back — ${g.timed} of ${g.frames} timed, none quantised`);
@@ -491,6 +515,55 @@ try {
       gate(hold.copy.median - hold.hand.median <= 1.5, `hold: the blur costs ≤ 1.5 ms once (copy − hand = ${fmt(hold.copy.median - hold.hand.median)} ms) and 0 per held frame (${c1 - c0} copies)`);
       rows.push(["hold", `blur ${fmt(hold.copy.median - hold.hand.median)} ms once`, `${c1 - c0} copies over 60 held frames · hand ${fmt(hold.hand.median)} ms`, hold.load]);
     }
+  }
+
+  // ── mixed (K6a, design-016 §6 · K-L4): THE REAL DESK — the same spiral, its things in SIBLING ORDER as they come (a print or a
+  //    whiteboard between notes: runs cut) and every print carrying a REAL picture (24 generated JPEGs up to 4096², decoded by the
+  //    product's decoder). The armed pan's real frames — draws, instances, pipelines, bind groups, the GPU span, draws and instances
+  //    by kind — JS a frame, and the memory by label: the numbers instancing and residency answer.
+  if (wantCase("mixed")) {
+    const scene = stressScene(N, { mixed: true, pictures: true });
+    const t0 = performance.now();
+    await qa(`window.__desk.setScene(${JSON.stringify(scene)})`, 600000);
+    await settle(30000);
+    const pics = await q(`window.__desk.handle.local("photo")?.pictures() ?? null`);
+    console.log(`\n-- mixed · the spiral in sibling order, ${scene.prints.length} prints with real pictures (${PICTURES.length} distinct, up to 4096²) · staged in ${((performance.now() - t0) / 1000).toFixed(1)} s · load ${load()} --`);
+    check(pics !== null && pics.loading === 0 && pics.failed === 0 && pics.ready >= PICTURES.length, `mixed: every picture decoded and on the device (${JSON.stringify(pics)})`);
+    const runs = [];
+    for (let r = 0; r < ROUNDS; r++) { const run = await drive(120, cam0, 8, 0, 1); run.load = load(); runs.push(run); }
+    const s = summarise("mixed", runs, 120);
+    const g = await armedPan(cam0);
+    const mem = await memoryNow();
+    report.mixed = { js: s.stepMs, gpu: g, memory: mem, pictures: pics };
+    console.log(`  JS                   ${fmt(s.stepMs.median)} ms/frame (min ${fmt(s.stepMs.min)}) · ${kb(s.bytes.median)} up a frame`);
+    console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · busy p50 ${fmt(g.busy.p50)} · a frame: ${g.draws} draws (${g.instances} instances) · ${g.pipelines} pipelines · ${g.bindGroups} bind groups — draws by kind ${Object.entries(g.byKind).map(([k, n]) => `${k} ${n} (${g.instancesByKind[k]} inst)`).join(" · ")}`);
+    console.log(`  memory               ${memoryLine(mem)}`);
+    rows.push(["mixed (pan)", `${g.draws} draws · ${g.pipelines} pipelines · ${g.bindGroups} bind groups`, `span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · JS ${fmt(s.stepMs.median)} ms · photo ${g.byKind.photo ?? 0} draws / ${g.instancesByKind.photo ?? 0} inst · board ${g.byKind.board ?? 0} / ${g.instancesByKind.board ?? 0} · ${MB(mem.ledger?.total ?? 0)} live`, g.load]);
+  }
+
+  // ── pictures (K6a, K-L4): TWENTY 4096² pictures on the desk — twenty prints in view at zoom 0.4, no notebook, no desk calendar:
+  //    the ledger's total and its rows (the photo kind's, the calendar kind's and the notebook kind's with none of theirs on the
+  //    desk), against the raster budget; then one print zoomed large (zoom 4) — what its full resolution costs.
+  if (wantCase("pictures")) {
+    const prints = Array.from({ length: 20 }, (_, i) => ({ x: (i % 5) * 480 - 960, y: Math.floor(i / 5) * 480 - 720, picture: { w: 4096, h: 4096, seed: 1000 + i } }));
+    const t0 = performance.now();
+    await qa(`window.__desk.setScene(${JSON.stringify({ camX: -1500, camY: -1000, zoom: 0.4, theme: "light", prints })})`, 600000);
+    await settle(30000);
+    const pics = await q(`window.__desk.handle.local("photo")?.pictures() ?? null`);
+    const far = await memoryNow();
+    const st = await q("window.__desk.stats()");
+    console.log(`\n-- pictures · 20 prints of 4096² pictures, ${st.objects} drawn at zoom 0.4 · staged in ${((performance.now() - t0) / 1000).toFixed(1)} s · load ${load()} --`);
+    console.log(`  at zoom 0.4          ${memoryLine(far)}`);
+    // one print large on screen: the camera over print 0 at zoom 4
+    await q(`window.__desk.setCamera({ x: ${prints[0].x} - 600 / 4, y: ${prints[0].y} - 400 / 4, zoom: 4 })`);
+    await settle(30000);
+    await qa("new Promise((r) => setTimeout(r, 1500))");
+    await settle(30000);
+    const near = await memoryNow();
+    console.log(`  one print at zoom 4  ${memoryLine(near)}`);
+    const row = (m, k) => m.ledger?.byLabel?.[k]?.bytes ?? 0;
+    report.pictures = { pictures: pics, far, near };
+    rows.push(["pictures (20 × 4096²)", `${MB(far.ledger?.total ?? 0)} live · photo ${MB(row(far, "photo"))}`, `zoom 4 on one: ${MB(near.ledger?.total ?? 0)} · calendar ${MB(row(far, "calendar"))} · notebook ${MB(row(far, "notebook"))} with none on the desk · budget cap ${MB(far.budget.cap)}`, load()]);
   }
 
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)

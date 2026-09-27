@@ -57,9 +57,17 @@ export interface OraclePrint {
   readonly ax?: number;
   readonly ay?: number;
   readonly hold?: { readonly gx: number; readonly gy: number; readonly px: number; readonly py: number };
-  readonly picture?: string | null;
+  readonly picture?: string | null | GeneratedPicture;
   readonly selected?: boolean;
 }
+
+/**
+ * A GENERATED picture (K6a, design-016 §6): a JPEG made in the page at `w × h` from its `seed` — a photograph's statistics
+ * (smooth fields, hard edges, fine grain) — put in the desk's BlobStore and decoded by the product's own decoder, as a pasted
+ * file is. The stress rig's REAL pictures: every size up to PICTURE_MAX, no committed megabytes.
+ */
+export interface GeneratedPicture { readonly w: number; readonly h: number; readonly seed?: number }
+
 
 /** A notebook as the lab's `makeBook` takes a spec (scenes.mjs `nb()`): where, its cover and seed, and the still's pins. */
 export interface OracleBook {
@@ -247,10 +255,50 @@ export async function printFixture(handle: DeskLayerHandle): Promise<PrintFixtur
   return { hash, w: f.w, h: f.h };
 }
 
+const generated = new Map<string, Promise<PrintFixture>>();
+/** A generated picture made, stored and PRELOADED on the photo kind (once per size and seed) — resolves once it is on the device. */
+export function generatedPicture(handle: DeskLayerHandle, p: GeneratedPicture): Promise<PrintFixture> {
+  const key = `${p.w}x${p.h}:${p.seed ?? 0}`;
+  let made = generated.get(key);
+  if (made === undefined) {
+    made = (async () => {
+      const c = new OffscreenCanvas(p.w, p.h);
+      const g = c.getContext("2d") as OffscreenCanvasRenderingContext2D;
+      let s = (p.seed ?? 0) * 2654435761 + 1013904223;
+      const rnd = (): number => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+      const sky = g.createLinearGradient(0, 0, p.w * rnd(), p.h);
+      sky.addColorStop(0, `hsl(${Math.floor(rnd() * 360)} 55% 62%)`);
+      sky.addColorStop(1, `hsl(${Math.floor(rnd() * 360)} 45% 28%)`);
+      g.fillStyle = sky;
+      g.fillRect(0, 0, p.w, p.h);
+      for (let i = 0; i < 24; i++) {
+        g.fillStyle = `hsl(${Math.floor(rnd() * 360)} ${Math.floor(30 + rnd() * 50)}% ${Math.floor(20 + rnd() * 60)}% / ${(0.3 + rnd() * 0.6).toFixed(2)})`;
+        g.beginPath();
+        g.ellipse(rnd() * p.w, rnd() * p.h, (0.02 + rnd() * 0.25) * p.w, (0.02 + rnd() * 0.25) * p.h, rnd() * Math.PI, 0, 2 * Math.PI);
+        g.fill();
+      }
+      // grain: a tile of noise laid over the whole (a photograph's high frequencies, so its mips differ from its base)
+      const tile = g.createImageData(64, 64);
+      for (let i = 0; i < tile.data.length; i += 4) { const v = Math.floor(rnd() * 255); tile.data[i] = v; tile.data[i + 1] = v; tile.data[i + 2] = v; tile.data[i + 3] = 28; }
+      const grain = new OffscreenCanvas(64, 64);
+      (grain.getContext("2d") as OffscreenCanvasRenderingContext2D).putImageData(tile, 0, 0);
+      g.fillStyle = g.createPattern(grain, "repeat") as CanvasPattern;
+      g.fillRect(0, 0, p.w, p.h);
+      const blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.86 });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const hash = await deskBlobs.put(bytes, "image/jpeg");
+      await (handle.local("photo") as Prints | undefined)?.preload(hash, p.w, p.h);
+      return { hash, w: p.w, h: p.h };
+    })();
+    generated.set(key, made);
+  }
+  return made;
+}
+
 /** A print as a spawn: centred where the scene says, its extent the picture's aspect (the f32 `Size` the world keeps, so the centre is exact). */
 export function printSpec(p: OraclePrint, fx: PrintFixture): SpawnSpec {
   const r = printRect(p.x, p.y, fx.w, fx.h);
-  if (p.picture !== undefined && p.picture !== null && p.picture !== "photo-1") throw new Error(`desk: no picture "${p.picture}" (the fixture is photo-1)`);
+  if (typeof p.picture === "string" && p.picture !== "photo-1") throw new Error(`desk: no picture "${p.picture}" (the fixture is photo-1)`);
   return { type: PHOTO_TYPE, cx: r.cx, cy: r.cy, w: r.w, h: r.h, props: { blob: p.picture === null ? "" : fx.hash, width: fx.w, height: fx.h, angle: p.angle ?? 0 } };
 }
 

@@ -27,7 +27,7 @@ import { MINIMAT, PAPER, type BoardInk, type PaperKind } from "@ice/objects";
 import { oracleFixtures } from "./oracle-fixtures";
 import type { SceneHost, Staged } from "../rig-door";
 import { type SpawnSpec, spawnAll } from "../scene";
-import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, strokeSpecOf, thingsOf } from "./scene-kinds";
+import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, printFixture, type PrintFixture, printSpec, generatedPicture, strokeSpecOf, thingsOf } from "./scene-kinds";
 
 /** A scene as scenes.mjs states one — the mat, ruler, paper, minimat and nav scenes' fields, the D3w kinds' (scene-kinds.ts). */
 export interface OracleScene extends KindScene {
@@ -116,13 +116,13 @@ const frame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() =
 
 
 /** A thing as a spawn (the oracle's `thingsOf` order) into `parent` — a whiteboard and a notebook are ROOT objects (D-D18): never a mini mat's children; a print nests. */
-function thingSpec(t: OracleThing, parent: Entity | undefined, photo: PrintFixture | null): SpawnSpec {
+function thingSpec(t: OracleThing, parent: Entity | undefined, photo: PrintFixture | null, gen: ReadonlyMap<OracleThing, PrintFixture>): SpawnSpec {
   if (t.kind === "note") return noteSpec(t, parent);
   if (t.kind === "board") {
     if (parent !== undefined) throw new Error("desk: a whiteboard is a ROOT object (D-D18) — a scene cannot lay one inside a mini mat");
     return boardSpec(t);
   }
-  if (t.kind === "print" && photo !== null) return { ...printSpec(t, photo), ...(parent === undefined ? {} : { parent }) };
+  if (t.kind === "print" && photo !== null) return { ...printSpec(t, typeof t.picture === "object" && t.picture !== null ? (gen.get(t) as PrintFixture) : photo), ...(parent === undefined ? {} : { parent }) };
   if (t.kind === "book") {
     if (parent !== undefined) throw new Error("desk: a notebook is a ROOT object (D-D18) — a scene cannot lay one inside a mini mat");
     return bookSpec(t);
@@ -143,9 +143,13 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
   const mats = desk.minimats ?? [];
   const things = thingsOf(desk);
   const photo = things.some((t) => t.kind === "print") ? await printFixture(handle) : null;   // the picture in the store and on the device first
+  // …and the GENERATED pictures (K6a): made, stored and decoded by the product's decoder before the spawn, one per size and seed
+  const gen = new Map<OracleThing, PrintFixture>();
+  // (in turn: a 4096² canvas is 64 MB of the page's memory while it encodes)
+  for (const t of things) if (t.kind === "print" && typeof t.picture === "object" && t.picture !== null) gen.set(t, await generatedPicture(handle, t.picture));
   const padSpecs = desk.calendars ?? [];
   if (parent !== undefined && padSpecs.length > 0) throw new Error("desk: a desk calendar is a ROOT object (D-D18) — a scene cannot lay one inside a mini mat");
-  const spawned = spawnAll(engine, [...mats.map((m) => matSpec(m, parent)), ...padSpecs.map(padSpec), ...things.map((t) => thingSpec(t, parent, photo))], false);
+  const spawned = spawnAll(engine, [...mats.map((m) => matSpec(m, parent)), ...padSpecs.map(padSpec), ...things.map((t) => thingSpec(t, parent, photo, gen))], false);
   const matEntities = spawned.slice(0, mats.length);
   const padEntities = spawned.slice(mats.length, mats.length + padSpecs.length);
   const thingEntities = spawned.slice(mats.length + padSpecs.length);
