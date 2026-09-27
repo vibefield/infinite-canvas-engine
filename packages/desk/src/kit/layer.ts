@@ -111,3 +111,10 @@ export abstract class LayeredKind<R, P extends LayerPass> implements KindPass<R>
 
   dispose(): void { this.pass?.dispose(); }
 }
+
+/**
+ * How long a layered kind's frame targets (its 4× layer, its resolve; the notebook's shadow maps) stand with none of its objects
+ * drawn before the kind lets them go (K6a, design-016 §6 — made again at the next one drawn): render targets at the canvas's size,
+ * never a cache the raster budget holds (D-K6a.3).
+ */
+export const LAYER_IDLE_MS = 5000;

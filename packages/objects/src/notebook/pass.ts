@@ -81,6 +81,9 @@ interface NbTarget {
 
 const nbTarget = (): NbTarget => ({ msaa: null, depth: null, resolve: null, compGroup: null, size: { w: 0, h: 0 }, buffers: new Map(), list: [], frameNo: 0, screen: null, stats: { books: 0, triangles: 0, shadowed: 0 }, box: null });
 
+/** The shadow maps' stand-in before a book is drawn: one texel, one layer. */
+const noShadows = (device: GPUDevice): GPUTexture => device.createTexture({ label: "notebook/shadow maps (none yet)", size: [1, 1, 1], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+
 function dropTarget(t: NbTarget): void {
   for (const b of t.buffers.values()) { b.vb.destroy(); b.ib.destroy(); }
   t.buffers.clear();
@@ -113,8 +116,15 @@ export class NotebookPass {
   private readonly goboSampler: GPUSampler;
   private readonly noiseSampler: GPUSampler;
   private readonly cmpSampler: GPUSampler;
-  private readonly shadowTex: GPUTexture;
-  private readonly shadowLayers: GPUTextureView[] = [];
+  /**
+   * The shadow maps (K6a, design-016 §6): a placeholder until a book is drawn, then a layer a book drawn (up to MAX_SHADOWED — they
+   * are drawn again every frame, so growing them keeps nothing): a desk with no notebook holds none of their 33.5 MB, one with one
+   * book 4 MB. With the frame's layer targets they are let go when no book was drawn for a while (`releaseLayer`, the kind's tick)
+   * and with the last book — render targets, never under the raster budget (D-K6a.3; sizing them to the books' box is K7's).
+   */
+  private shadowTex: GPUTexture;
+  private shadowLayers: GPUTextureView[] = [];
+  private drawnAt = Number.NEGATIVE_INFINITY;
   private readonly shadowGroup: GPUBindGroup;
   private readonly inkSampler: GPUSampler;
   private readonly paperTex: GPUTexture;
@@ -143,8 +153,7 @@ export class NotebookPass {
     this.goboSampler = device.createSampler({ label: "notebook/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
     this.noiseSampler = device.createSampler({ label: "notebook/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
     this.cmpSampler = device.createSampler({ label: "notebook/shadow", compare: "less", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
-    this.shadowTex = device.createTexture({ label: "notebook/shadow maps", size: [SHADOW_RES, SHADOW_RES, MAX_SHADOWED], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
-    for (let i = 0; i < MAX_SHADOWED; i++) this.shadowLayers.push(this.shadowTex.createView({ dimension: "2d", baseArrayLayer: i, arrayLayerCount: 1 }));
+    this.shadowTex = noShadows(device);
     this.shadowGroup = device.createBindGroup({ label: "notebook/shadow", layout: this.layoutShadow, entries: [{ binding: 2, resource: { buffer: this.recordBuf } }] });
     this.inkSampler = device.createSampler({ label: "notebook/ink", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
     this.inkTex = device.createTexture({ label: "notebook/ink (none yet)", size: [1, 1, 2], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
@@ -253,8 +262,16 @@ export class NotebookPass {
     this.device.queue.writeTexture({ texture: this.inkTex, origin: { x: x0, y: y0, z: layer } }, bytes, { offset: (y0 * INK_W + x0) * 4, bytesPerRow: INK_W * 4, rowsPerImage: INK_H }, [x1 - x0, y1 - y0, 1]);
   }
 
-  /** The layer's targets at the canvas's device size. */
+  /** The layer's targets at the canvas's device size — and a shadow map a book drawn — made on the first book drawn (K6a). */
   private fit(w: number, h: number): void {
+    const want = Math.min(Math.max(this.t.list.length, 1), MAX_SHADOWED);
+    if (this.shadowLayers.length < want) {
+      this.shadowTex.destroy();
+      this.shadowTex = this.device.createTexture({ label: "notebook/shadow maps", size: [SHADOW_RES, SHADOW_RES, want], format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+      this.shadowLayers = Array.from({ length: want }, (_, i) => this.shadowTex.createView({ dimension: "2d", baseArrayLayer: i, arrayLayerCount: 1 }));
+      this.boundAssets = -1;
+      this.rebind();
+    }
     if (this.t.size.w === w && this.t.size.h === h && this.t.msaa) return;
     this.t.msaa?.destroy(); this.t.depth?.destroy(); this.t.resolve?.destroy();
     this.t.msaa = this.device.createTexture({ label: "notebook/layer ×4", size: [w, h], format: "rgba8unorm", sampleCount: SAMPLES, usage: GPUTextureUsage.RENDER_ATTACHMENT });
@@ -262,6 +279,38 @@ export class NotebookPass {
     this.t.resolve = this.device.createTexture({ label: "notebook/layer", size: [w, h], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
     this.t.compGroup = bindGroup(this.device, this.layoutComp, [this.t.resolve.createView()], "notebook/composite");
     this.t.size = { w, h };
+  }
+
+  /** Was a book drawn within the last `ms`? (The kind lets the layer go once none was for a while.) */
+  drawnWithin(ms: number): boolean { return performance.now() - this.drawnAt < ms; }
+
+  /** Is the frame's layer made (its targets and shadow maps on the device)? */
+  get layerMade(): boolean { return this.frameT.msaa !== null || this.shadowLayers.length > 0; }
+
+  /** The pages' ink layers let go (the desk has no notebook — K6a): the placeholder again, made anew by the next page's ink. */
+  releaseInk(): void {
+    if (!this.inkReady) return;
+    this.inkTex.destroy();
+    this.inkTex = this.device.createTexture({ label: "notebook/ink (none yet)", size: [1, 1, 2], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    this.inkReady = false;
+    this.rebind();
+  }
+
+  /**
+   * The frame's layer targets and the shadow maps let go (no book drawn for a while, or none on the desk): made again at the next
+   * book drawn. The meshes stay (the books'); the held copy's targets are the hold's (`endHold`).
+   */
+  releaseLayer(): void {
+    const t = this.frameT;
+    t.msaa?.destroy(); t.depth?.destroy(); t.resolve?.destroy();
+    t.msaa = null; t.depth = null; t.resolve = null; t.compGroup = null; t.size = { w: 0, h: 0 };
+    if (this.shadowLayers.length > 0) {
+      this.shadowTex.destroy();
+      this.shadowTex = noShadows(this.device);
+      this.shadowLayers = [];
+      this.boundAssets = -1;
+      this.rebind();
+    }
   }
 
   /** A book's mesh on the device — uploaded when its version moved, the buffers grown when too small. */
@@ -441,6 +490,7 @@ export class NotebookPass {
     const at = this.boxOf(size, dpr);
     this.t.box = null;
     if (!at) return false;
+    this.drawnAt = performance.now();
     const [x0, y0, x1, y1] = at;
     this.fit(Math.max(1, size.w), Math.max(1, size.h));
     // 1. the shadow maps

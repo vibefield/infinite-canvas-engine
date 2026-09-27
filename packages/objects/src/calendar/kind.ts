@@ -41,7 +41,7 @@ import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn
 import { CALENDAR_SHADER_FILES, calendarShaders } from "./shaders";
 import { cellAt, dayBox, noteSlot, sheetOf } from "./sheet";
 import { bandOf, GUTTER, levelFor, TILE_TEX, type TileGrid, tileGrid, tileRect, tilesIn } from "./tiles";
-import { caretAt, glyphBox, type HandLaw, HAND, type MatPass, type MarkFrame, type DeskEye, eyeOf, project, unproject, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, LayeredKind } from "@ice/desk/kit";
+import { caretAt, glyphBox, type HandLaw, HAND, type MatPass, type MarkFrame, type DeskEye, eyeOf, project, unproject, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, LayeredKind, LAYER_IDLE_MS } from "@ice/desk/kit";
 import { type KindProgram, type SlotContext, MAT_COLORS, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
 import { shaderText } from "../shaders";
 
@@ -353,14 +353,17 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
   const passOf = (): CalendarPass | undefined => { const k = host.pass(); return k instanceof CalendarKind ? (k.pass ?? undefined) : undefined; };
   const tilesOf = (pass: CalendarPass): PrintTiles => { tiles ??= new PrintTiles({ grid: tileGrid(F.W, F.H), now: clock }); if (!begun) { tiles.begin(pass); begun = true; } return tiles; };
   // THE BUDGET (D6): the print's tile layers are one fixed texture the pass owns, LRU among themselves (tiles.ts `TileCache`) —
-  // charged once as resident and kept, so the ledger tells the whole truth of what the caches hold
-  let charged = false;
+  // charged as resident and kept once it is MADE (K6a: at the first tile, never for a desk with no pad), let go with the last pad
+  let charged = 0;
   const chargeTiles = (): void => {
-    if (charged || host.budget === undefined) return;
+    if (host.budget === undefined) return;
     const pass = passOf();
     if (pass === undefined) return;
-    host.budget.charge("calendar", "print tiles", pass.layers * TILE_TEX * TILE_TEX * 4, () => {});
-    charged = true;
+    const bytes = pass.tileBytes;
+    if (bytes === charged) return;
+    if (bytes === 0) host.budget.release("calendar", "print tiles");
+    else host.budget.charge("calendar", "print tiles", bytes, () => {});
+    charged = bytes;
   };
   // THE CLOCK SEAM (D7): today and the Moon's local days on the pad's own wall clock (`now`) in its zone — the platform's unless the
   // host says (`zone`) or a still pins them (`pinToday`, `pinZone`)
@@ -582,6 +585,9 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       const drew = begun;
       begun = false;
       chargeTiles();
+      // the layer's targets (K6a, D-K6a.3): made at the first pad drawn, let go once none was for LAYER_IDLE_MS
+      const own = passOf();
+      if (own?.layerMade && !own.drawnWithin(LAYER_IDLE_MS)) own.releaseLayer();
       // the months turning (their springs on the frame's clock); tiles still to draw: another frame (the marks' clocks — the
       // caret's blink, the wipe — are the hand's: it marks anew)
       const dt = lastTick === null ? 0 : Math.min(Math.max((now - lastTick) / 1000, 0), 0.1);
@@ -611,6 +617,8 @@ export function createPads(host: KindHost, opts: { readonly law?: CalendarLaw; r
       if (st.hidden.size > 0) veilsCache = null;
       tiles?.drop(st.id, [st.slot * 2, st.slot * 2 + 1]);
       for (const k of [...prints.keys()]) if (k.startsWith(`${st.id}:`)) prints.delete(k);
+      // no pad on the desk (K6a): the tiles and the layer go — the next pad starts a tile cache afresh
+      if (pads.size === 0) { const pass = passOf(); pass?.releaseTiles(); pass?.releaseLayer(); tiles = null; }
     },
     dispose() { pads.clear(); prints.clear(); },
   };

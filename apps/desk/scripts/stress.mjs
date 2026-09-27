@@ -538,6 +538,16 @@ try {
     console.log(`  JS                   ${fmt(s.stepMs.median)} ms/frame (min ${fmt(s.stepMs.min)}) · ${kb(s.bytes.median)} up a frame`);
     console.log(`  real frames (armed)  GPU span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · busy p50 ${fmt(g.busy.p50)} · a frame: ${g.draws} draws (${g.instances} instances) · ${g.pipelines} pipelines · ${g.bindGroups} bind groups — draws by kind ${Object.entries(g.byKind).map(([k, n]) => `${k} ${n} (${g.instancesByKind[k]} inst)`).join(" · ")}`);
     console.log(`  memory               ${memoryLine(mem)} · pictures resident ${JSON.stringify((await q(`window.__desk.handle.local("photo")?.pictures() ?? null`))?.resident ?? null)}`);
+    // THE NOTEBOOK'S LAYER (K6a, D-K6a.3): 4× colour and depth and the resolve at the canvas's device size, and a shadow map a book
+    // drawn — made at the first book drawn, let go once none was for LAYER_IDLE_MS (5 s): the camera away from the book, 6 s of frames
+    const nbOn = mem.ledger?.byLabel?.notebook?.bytes ?? 0;
+    await q("window.__desk.setCamera({ x: 20000, y: 20000, zoom: 1 })");
+    await front();
+    await qa("new Promise((r) => { const t0 = performance.now(); const f = () => { const d = window.__desk; if (performance.now() - t0 > 6000) r(); else { d.setCamera({ x: 20000 + ((performance.now() - t0) % 2), y: 20000, zoom: 1 }); requestAnimationFrame(f); } }; requestAnimationFrame(f); })", 60000);
+    const away = await memoryNow();
+    const nbOff = away.ledger?.byLabel?.notebook?.bytes ?? 0;
+    console.log(`  the notebook's layer ${MB(nbOn)} with the book on screen (138.2 MB of targets at 2400 × 1600 + one 4.2 MB shadow map — was 8 maps, 33.5 MB) → ${MB(nbOff)} after 6 s with none drawn`);
+    check(nbOff < 4 * 1048576 && nbOn > nbOff, `mixed: the notebook's layer and shadow maps let go once no book was drawn for 5 s — ${MB(nbOn)} → ${MB(nbOff)} (before K6a: 164 MB standing with or without a book)`);
     rows.push(["mixed (pan)", `${g.draws} draws · ${g.pipelines} pipelines · ${g.bindGroups} bind groups`, `span p50 ${fmt(g.span.p50)} · p95 ${fmt(g.span.p95)} ms · JS ${fmt(s.stepMs.median)} ms · photo ${g.byKind.photo ?? 0} draws / ${g.instancesByKind.photo ?? 0} inst · board ${g.byKind.board ?? 0} / ${g.instancesByKind.board ?? 0} · ${MB(mem.ledger?.total ?? 0)} live`, g.load]);
   }
 
@@ -561,6 +571,10 @@ try {
     // layer of the one array), whatever its size; and the photo kind's memory is the budget's to see
     const r0 = pics?.resident;
     check(pics !== null && pics.ready >= 21 && pics.failed === 0 && pics.loading === 0 && r0?.pictures === pics.ready && r0?.layers === r0?.pictures, `pictures: every picture resident as its thumbnail — ${r0?.layers} layers of one array for ${r0?.pictures} pictures (20 × 4096², the fixture, any a scene before preloaded), none blank (${pics?.failed} failed, ${pics?.loading} loading)`);
+    // THE IDLE WASTE (K6a): a desk with no notebook and no calendar holds neither kind's textures — their shadow maps, layer
+    // targets, page ink and print tiles made on first use, let go with the last of their objects (a scene before had both)
+    check(row(far, "notebook") < 1048576 && row(far, "calendar") < 1048576, `pictures: no notebook, no calendar on the desk — the notebook kind ${MB(row(far, "notebook"))}, the calendar kind ${MB(row(far, "calendar"))} (before K6a: 164.2 and 42.2 MB)`);
+    check(far.ledger !== null && far.ledger.total <= far.budget.cap, `pictures: twenty 4096² pictures on the desk and the whole GPU ledger within the budget — ${MB(far.ledger?.total ?? 0)} live of ${MB(far.budget.cap)} (before K6a: 1,942 MB)`);
     const photoBudget = far.budget.byOwner.photo?.bytes ?? 0;
     check(row(far, "photo") <= far.budget.cap && Math.abs(row(far, "photo") - photoBudget) <= 0.05 * row(far, "photo"), `pictures: the photo kind's memory is the budget's to see — the ledger's photo ${MB(row(far, "photo"))} (the thumbnail array, its details, the records), the budget's photo ${MB(photoBudget)}, the cap ${MB(far.budget.cap)} (before K6a: 1,712 MB, outside the budget)`);
     // A RUN OF 20 PRINTS = ONE DRAW (K-L4): the twenty are sibling after sibling — the armed pan's frames draw them as one instanced draw
@@ -581,7 +595,7 @@ try {
     const rn = (await picsOf())?.resident;
     console.log(`  one print at zoom 4  ${memoryLine(near)} · resident ${JSON.stringify(rn ?? null)} · its detail bound ${bound === null ? "NEVER" : `${fmt(bound.ms, 0)} ms after the camera moved`}`);
     check(bound !== null && rn?.slotted >= 1 && rn?.built >= 1, `pictures: a print zoomed large gets its DETAIL — fetched, decoded again and bound ${bound === null ? "never" : `${fmt(bound.ms, 0)} ms after the camera moved`} (${rn?.details} detail, ${rn?.slotted} bound, ${MB(rn?.bytes.details ?? 0)}); the thumbnail drew it meanwhile`);
-    check(row(near, "photo") <= near.budget.cap, `pictures: zoomed large, the photo kind still within the budget — ${MB(row(near, "photo"))} of ${MB(near.budget.cap)}`);
+    check(row(near, "photo") <= near.budget.cap && (near.ledger?.total ?? Number.POSITIVE_INFINITY) <= near.budget.cap, `pictures: zoomed large, the photo kind ${MB(row(near, "photo"))} and the whole ledger ${MB(near.ledger?.total ?? 0)} within the budget's ${MB(near.budget.cap)}`);
     report.pictures = { pictures: pics, far, near, run: g, bound };
     rows.push(["pictures (20 × 4096²)", `${MB(far.ledger?.total ?? 0)} live · photo ${MB(row(far, "photo"))} · 20 prints = ${g.byKind.photo} draw`, `zoom 4 on one: photo ${MB(row(near, "photo"))}, its detail bound in ${bound === null ? "—" : fmt(bound.ms, 0)} ms · calendar ${MB(row(far, "calendar"))} · notebook ${MB(row(far, "notebook"))} with none on the desk · budget cap ${MB(far.budget.cap)}`, load()]);
   }

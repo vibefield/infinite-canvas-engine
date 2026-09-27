@@ -32,7 +32,7 @@
 // (the note's, `1`–`4`: the tool in hand), undo (⌘Z) and redo (⇧⌘Z) — the document's history over its strokes.
 
 import { defineComponent, type Entity, field, type HeldToolApi, type HeldToolDef } from "@ice/core";
-import { BoardStroke, decodePoints, decodeTimes, inking, type StrokeRow, type MatPass, type MarkFrame, type DeskEye, eyeOf, type BuiltMesh, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, settled, spring, HOLD, readingTarget, LayeredKind } from "@ice/desk/kit";
+import { BoardStroke, decodePoints, decodeTimes, inking, type StrokeRow, type MatPass, type MarkFrame, type DeskEye, eyeOf, type BuiltMesh, MeshWriter, lampDir, type Rigid, rigidOf, type ShaderText, settled, spring, HOLD, readingTarget, LayeredKind, LAYER_IDLE_MS } from "@ice/desk/kit";
 import { type KindProgram, type SlotContext, MAT_COLORS, type Palette, type RGB, type RGBA, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, stringProp } from "@ice/desk";
 import { NOTEBOOK, type NotebookLaw } from "./law";
 import { type NotebookLook, type Ruling, RULINGS } from "./layout";
@@ -218,6 +218,8 @@ function pageStrokeOf(row: StrokeRow, had: ReadonlyMap<string, PageStroke>, now:
 /** The notebook's `local()`. */
 export function createBooks(host: KindHost): Books {
   const books = new Map<Entity, BookState>();
+  /** The root slot's pass (the layer's owner). */
+  const rootPass = (): NotebookPass | undefined => { const k = host.pass(); return k instanceof NotebookKind ? (k.pass ?? undefined) : undefined; };
   /** What has LANDED on each object, counted (D7 — `KindLocal.landed`): the held desk copy is made again when a desk object's moves. */
   const landedOf = new Map<Entity, number>();
   const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
@@ -329,6 +331,9 @@ export function createBooks(host: KindHost): Books {
     face(e, side) { state(e).faceT = side; moving = true; },
     landed: (e) => landedOf.get(e) ?? 0,
     tick() {
+      // the layer's targets and shadow maps (K6a, D-K6a.3): made at the first book drawn, let go once none was for LAYER_IDLE_MS
+      const own = rootPass();
+      if (own?.layerMade && !own.drawnWithin(LAYER_IDLE_MS)) own.releaseLayer();
       const w = woke || moving;
       woke = false;
       moving = false;
@@ -343,6 +348,7 @@ export function createBooks(host: KindHost): Books {
       const st = books.get(e);
       if (st !== undefined) pages.forget(st.id);
       books.delete(e);
+      if (books.size === 0) { rootPass()?.releaseLayer(); rootPass()?.releaseInk(); }   // no notebook on the desk: its layer, shadow maps and page ink go (K6a)
       landedOf.delete(e);
     },
     dispose() { books.clear(); pages.dispose(); },

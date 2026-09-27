@@ -101,6 +101,9 @@ interface CalTarget {
 
 const calTarget = (): CalTarget => ({ msaa: null, depth: null, resolve: null, compGroup: null, size: { w: 0, h: 0 }, buffers: new Map(), list: [], frameNo: 0, screen: null, scissor: null, stats: { calendars: 0, moving: 0 } });
 
+/** The tiles' stand-in before the first tile: one texel, one layer. */
+const noTiles = (device: GPUDevice): GPUTexture => device.createTexture({ label: "calendar/print tiles (none yet)", size: [1, 1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING });
+
 function dropTarget(t: CalTarget): void {
   for (const b of t.buffers.values()) { b.vb.destroy(); b.ib.destroy(); }
   t.buffers.clear();
@@ -137,7 +140,11 @@ export class CalendarPass {
   private readonly noiseSampler: GPUSampler;
   private readonly tileSampler: GPUSampler;
   private readonly paperSampler: GPUSampler;
-  private readonly tileTex: GPUTexture;
+  /** The print tiles: a placeholder until the first tile is laid (K6a — a desk with no calendar holds none of their 41 MB). */
+  private tileTex: GPUTexture;
+  private tilesReady = false;
+  /** When a pad was last drawn: its layer targets are let go once none was for a while (the kind's tick — K6a, D-K6a.3). */
+  private drawnAt = Number.NEGATIVE_INFINITY;
   private readonly paperTex: GPUTexture;
   private readonly gridVb: GPUBuffer;
   private readonly gridIb: GPUBuffer;
@@ -164,7 +171,7 @@ export class CalendarPass {
     this.goboSampler = device.createSampler({ label: "calendar/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
     this.noiseSampler = device.createSampler({ label: "calendar/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
     this.tileSampler = device.createSampler({ label: "calendar/tiles", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
-    this.tileTex = device.createTexture({ label: "calendar/print tiles", size: [TILE_TEX, TILE_TEX, layers], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+    this.tileTex = noTiles(device);
     this.paperTex = device.createTexture({ label: "calendar/paper", size: [PAPER_TEX, PAPER_TEX], format: "rgba8unorm", mipLevelCount: mipCount(PAPER_TEX, PAPER_TEX), usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
     device.queue.writeTexture({ texture: this.paperTex }, paperTexture(), { bytesPerRow: PAPER_TEX * 4 }, [PAPER_TEX, PAPER_TEX, 1]);
     generateMips(device, this.paperTex);
@@ -282,15 +289,40 @@ export class CalendarPass {
     this.device.queue.writeBuffer(this.tableBuf, slot * grid.count * 4, table.buffer, table.byteOffset, grid.count * 4);
   }
 
+  /** The tiles' texture, made on the first tile laid (K6a). */
+  private tiles(): GPUTexture {
+    if (!this.tilesReady) {
+      this.tileTex.destroy();
+      this.tileTex = this.device.createTexture({ label: "calendar/print tiles", size: [TILE_TEX, TILE_TEX, this.layers], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
+      this.tilesReady = true;
+      this.boundAssets = -1;
+      this.rebind();
+    }
+    return this.tileTex;
+  }
+
+  /** What the tiles hold on the device: 0 before the first tile and after `releaseTiles`. */
+  get tileBytes(): number { return this.tilesReady ? this.layers * TILE_TEX * TILE_TEX * 4 : 0; }
+
+  /** The tiles let go (the desk has no pad): the placeholder again; the kind's tile cache starts afresh. */
+  releaseTiles(): void {
+    if (!this.tilesReady) return;
+    this.tileTex.destroy();
+    this.tileTex = noTiles(this.device);
+    this.tilesReady = false;
+    this.boundAssets = -1;
+    this.rebind();
+  }
+
   /** A tile's raster (the host's canvas, TILE_TEX², straight alpha) into its layer. */
   uploadTile(layer: number, source: HTMLCanvasElement | OffscreenCanvas): void {
-    this.device.queue.copyExternalImageToTexture({ source, origin: { x: 0, y: 0 } }, { texture: this.tileTex, origin: { x: 0, y: 0, z: layer }, premultipliedAlpha: false }, [TILE_TEX, TILE_TEX]);
+    this.device.queue.copyExternalImageToTexture({ source, origin: { x: 0, y: 0 } }, { texture: this.tiles(), origin: { x: 0, y: 0, z: layer }, premultipliedAlpha: false }, [TILE_TEX, TILE_TEX]);
   }
 
   /** A tile's COMMITTED raster (RGBA bytes, TILE_TEX² × 4, straight alpha, row 0 at the top) into its layer — a host with no canvas (the Node oracle; D3t-c). */
   writeTileBytes(layer: number, bytes: Uint8Array<ArrayBuffer>): void {
     if (bytes.byteLength !== TILE_TEX * TILE_TEX * 4) throw new Error(`calendar: a tile is ${TILE_TEX}² RGBA (${TILE_TEX * TILE_TEX * 4} bytes), not ${bytes.byteLength}`);
-    this.device.queue.writeTexture({ texture: this.tileTex, origin: { x: 0, y: 0, z: layer } }, bytes, { bytesPerRow: TILE_TEX * 4, rowsPerImage: TILE_TEX }, [TILE_TEX, TILE_TEX, 1]);
+    this.device.queue.writeTexture({ texture: this.tiles(), origin: { x: 0, y: 0, z: layer } }, bytes, { bytesPerRow: TILE_TEX * 4, rowsPerImage: TILE_TEX }, [TILE_TEX, TILE_TEX, 1]);
   }
 
   /** The layer's targets at the canvas's device size. */
@@ -302,6 +334,19 @@ export class CalendarPass {
     this.t.resolve = this.device.createTexture({ label: "calendar/layer", size: [w, h], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
     this.t.compGroup = bindGroup(this.device, this.layoutComp, [this.t.resolve.createView()], "calendar/composite");
     this.t.size = { w, h };
+  }
+
+  /** Was a pad drawn within the last `ms`? */
+  drawnWithin(ms: number): boolean { return performance.now() - this.drawnAt < ms; }
+
+  /** Is the frame's layer made? */
+  get layerMade(): boolean { return this.frameT.msaa !== null; }
+
+  /** The frame's layer targets let go (no pad drawn for a while, or none on the desk): made again at the next pad drawn. */
+  releaseLayer(): void {
+    const t = this.frameT;
+    t.msaa?.destroy(); t.depth?.destroy(); t.resolve?.destroy();
+    t.msaa = null; t.depth = null; t.resolve = null; t.compGroup = null; t.size = { w: 0, h: 0 };
   }
 
   private upload(d: CalendarDraw): PadBuffers {
@@ -467,6 +512,7 @@ export class CalendarPass {
     this.t.scissor = null;
     const at = this.boxOf(size, dpr);
     if (!at) return false;
+    this.drawnAt = performance.now();
     const [x0, y0, x1, y1] = at;
     this.fit(Math.max(1, size.w), Math.max(1, size.h));
     const pass = encoder.beginRenderPass({
