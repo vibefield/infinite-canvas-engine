@@ -475,13 +475,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
     const readMarquee = ctx.readMarquee;
     const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}) });
-    // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
-    // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
-    // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked
     // the object types by name (K8a): what an object provides and what acts its type declares are read off its PrefabId
     const typeNamed = new Map([...types].map((t) => [t.type, t] as const));
     // the selection's KIND ACTS (K8a): what every selected object's type declares (`defineObject({ menu })`), read off its PrefabId
     const menuOf = (e: Entity): readonly MenuActionDef[] => { const id = world.isAlive(e) ? world.get(e, PrefabId)?.id : undefined; return typeof id === "string" ? (typeNamed.get(id)?.menu ?? []) : []; };
+    // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
+    // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
+    // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
