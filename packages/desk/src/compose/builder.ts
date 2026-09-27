@@ -860,10 +860,18 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         const lift0 = st.lift;
         const hover0 = st.hover;
         let moving: boolean;
-        [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed || st.insert ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
-        if (moving) { live = true; deskMoving = true; }
-        [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
-        if (moving) { live = true; deskMoving = true; }
+        // a spring AT REST on its target is advanced to itself, still (K7a): it is left as it stands — no step, no tuple — so a pan
+        // over a thousand objects at rest steps none of their springs
+        const liftTo = pin?.lift ?? (st.grabbed || st.insert ? 1 : 0);
+        if (st.lift !== liftTo || st.liftV !== 0) {
+          [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, liftTo, S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
+          if (moving) { live = true; deskMoving = true; }
+        }
+        const hoverTo = pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0);
+        if (st.hover !== hoverTo || st.hoverV !== 0) {
+          [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, hoverTo, S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
+          if (moving) { live = true; deskMoving = true; }
+        }
         return st.lift !== lift0 || st.hover !== hover0;
       };
 
@@ -1067,7 +1075,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // among the desk's rows; landed — home and shut — it is the desk's again this very frame, and the brackets lock back on.
       // what the kinds' own states veil (D3t-c — a note stuck to a day of a month its calendar is not showing): asked row by row, so a
       // pad drawn earlier in this very build (the pads stratum paints first) has already said which of its notes go with its month
-      const veiledNow = { has: (e: Entity): boolean => { for (const local of locals?.values() ?? []) if (local.veils?.().has(e) === true) return true; return false; } };
+      // (the kinds that veil at all, gathered once a build: a row asks each by index — no iterator a row, K7a)
+      const veilers: KindLocal[] = [];
+      if (locals !== undefined) for (const local of locals.values()) if (local.veils !== undefined) veilers.push(local);
+      const veiledNow = { has: (e: Entity): boolean => { for (let i = 0; i < veilers.length; i++) if ((veilers[i] as KindLocal).veils?.().has(e) === true) return true; return false; } };
       /** What rides with the object in hand (D3t-c — its stuck notes): drawn in the hand's slot, never on the desk behind. */
       const handRiders = new Set<Entity>();
       const heldNow = heldEntity(world);

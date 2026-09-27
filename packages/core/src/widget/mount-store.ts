@@ -109,10 +109,8 @@ export function createWidgetRuntime(world: World): WidgetRuntime {
       const minY = tl.y - over;
       const maxX = br.x + over;
       const maxY = br.y + over;
-      const classify = (e: Entity): void => {
-        const p = ctx.read(e, Position);
-        const s = ctx.read(e, Size);
-        const inView = p.x + s.w >= minX && p.x <= maxX && p.y + s.h >= minY && p.y <= maxY;
+      const classifyAt = (e: Entity, x: number, y: number, w: number, h: number): void => {
+        const inView = x + w >= minX && x <= maxX && y + h >= minY && y <= maxY;
         // Change-only flips (hygiene, design-002 §4).
         if (inView) {
           if (!ctx.hasTag(e, Visible)) {
@@ -124,9 +122,22 @@ export function createWidgetRuntime(world: World): WidgetRuntime {
           if (ctx.hasTag(e, Visible)) ctx.removeTag(e, Visible);
         }
       };
+      const classify = (e: Entity): void => {
+        const p = ctx.read(e, Position);
+        const s = ctx.read(e, Size);
+        classifyAt(e, p.x, p.y, s.w, s.h);
+      };
       if (work.full || forcedFull) {
+        // The chunk's columns, read in place: a camera move walks every Active
+        // widget, and a whole-component `read` builds an object a call (K7a —
+        // the pan's allocation).
         ctx.query(widgetQ).each((b) => {
-          for (const r of b) classify(b.entity(r));
+          const pos = b.col(Position);
+          const size = b.col(Size);
+          for (let i = 0; i < b.count; i++) {
+            const r = b.rows[i] as number;
+            classifyAt(b.entity(r), pos.x[r] as number, pos.y[r] as number, size.w[r] as number, size.h[r] as number);
+          }
         });
         return;
       }

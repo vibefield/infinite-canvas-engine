@@ -309,7 +309,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       );
       const built = builder.build(camera, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, grid, looks, {
         now, mat: amb.frame, portals: portalsOn, freeze, holdRedress, ...(lodPin !== undefined ? { lodZoom: lodPin } : {}), ...(holdPin !== undefined ? { hold: holdPin } : {}),
-        ...(restless !== undefined && restless.size > 0 ? { restless } : {}),
+        // the host's word as told — an EMPTY set included: none restless is a word, and no word has the builder ask every object (K7a)
+        ...(restless !== undefined ? { restless } : {}),
         ...(carry.presented().size > 0 ? { presented: carry.presented() as ReadonlySet<Entity> } : {}),
       });
       restless = undefined;

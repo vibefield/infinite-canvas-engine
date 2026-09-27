@@ -126,9 +126,10 @@ async function freePort(from) {
 }
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-// V8's gc() exposed and a young generation big enough that a 120-frame batch never scavenges (the heap's growth IS the allocation);
-// precise heap readings
-const chrome = await launchChrome({ port: await freePort(9611), headless: !process.env.DESK_HEADED, extraArgs: ["--js-flags=--expose-gc --max-semi-space-size=128", "--enable-precise-memory-info"] });
+// V8's gc() exposed and a young generation big enough that a 120-frame batch never scavenges (the heap's growth IS the allocation):
+// its size PINNED, min and max (K7a — a max alone let it start small and scavenge mid-batch, so the growth read the scavenger's
+// phase: 42 or 122 KB of a pan that allocated 500 KB a frame); precise heap readings
+const chrome = await launchChrome({ port: await freePort(9611), headless: !process.env.DESK_HEADED, extraArgs: ["--js-flags=--expose-gc --min-semi-space-size=128 --max-semi-space-size=128", "--enable-precise-memory-info"] });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
 setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 900_000).unref();

@@ -8,7 +8,7 @@
 // tick even before the ground is here, and the first frame after it arrives paints.
 import { Camera, createCanvasEngine, Grab, NO_ENTITY, Viewport, writeRuntimeResource } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createAmbient, createDeskBuilder, createDeskReflector, Ground } from "@ice/desk";
+import { createAmbient, createDeskBuilder, createDeskReflector, Ground, type KindLocal } from "@ice/desk";
 import { looksOf } from "../../desk/src/compose/reflector";
 import { HOLD_SHADER_FILES, holdShaders } from "../../desk/src/hold/shaders";
 import { minimatKind } from "../src/minimat/kind";
@@ -23,7 +23,7 @@ import { must } from "../../desk/test/must";
 
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
 
-async function mount(mode: "idle" | "live" | "still" = "still") {
+async function mount(mode: "idle" | "live" | "still" = "still", locals?: ReadonlyMap<string, KindLocal>) {
   const ce = createCanvasEngine({ widgets: [Note, MiniMat] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 2 });
@@ -31,7 +31,7 @@ async function mount(mode: "idle" | "live" | "still" = "still") {
   const kinds = [paperKind(), minimatKind()];
   let ground: Ground | null = null;
   const sizes: string[] = [];
-  const builder = createDeskBuilder(ce.world, { objects: [Note, MiniMat] });
+  const builder = createDeskBuilder(ce.world, { objects: [Note, MiniMat], ...(locals !== undefined ? { locals } : {}) });
   const ambient = createAmbient({ mode, idleMs: 100, settleMs: 100, random: () => 0.5 });
   const desk = createDeskReflector({ world: ce.world, builder, kinds, ambient, ground: () => ground, attach: { resize: (w, h) => sizes.push(`${w}x${h}`) }, theme: THEMES.light, palette });
   ce.engine.registerReflector(desk.reflector);
@@ -161,6 +161,28 @@ describe("the desk reflector · idle-zero (design-015 §2.4)", () => {
     expect(painted).toBeLessThan(30);
     expect(idle.desk.stats().ambient.phase).toBe("still");
     expect(idle.step(10)).toBe(0);
+  });
+
+  it("the host's word on restlessness reaches the build as told — an EMPTY set included: a pan asks no object whether its kind lifts it; no word at all asks every one (K7a)", async () => {
+    let asked = 0;
+    // (the mini mat's kind reads no local of its own — the counting one stands in for a kind's)
+    const locals = new Map<string, KindLocal>([["minimat", { lifted: () => { asked += 1; return false; } }]]);
+    const { ce, world, desk, step, arrive } = await mount("still", locals);
+    for (let i = 0; i < 12; i++) ce.ops.spawnWidget("desk.minimat", { x: 40 + (i % 4) * 280, y: 40 + Math.floor(i / 4) * 250, w: 200, h: 150, undoable: false });
+    await arrive();
+    step(2);
+    const pan = (x: number, word: ReadonlySet<string> | undefined): number => {
+      asked = 0;
+      if (word !== undefined) desk.restless(word);   // the host tells it every tick (host/layer.ts), none restless included
+      writeRuntimeResource(world, Camera, { x, y: 0, zoom: 1, gesturing: false });
+      expect(step()).toBe(1);
+      return asked;
+    };
+    // the host's word: none restless — the lifted tier asks only what was lifted last build (nothing), never the twelve
+    expect(pan(10, new Set())).toBe(0);
+    expect(pan(20, new Set())).toBe(0);
+    // no word at all (a bare host, a test): every object is asked, as the builder's contract says
+    expect(pan(30, undefined)).toBe(12);
   });
 
   it("looksOf: each kind's theme() by name; a kind without one has no look", () => {
