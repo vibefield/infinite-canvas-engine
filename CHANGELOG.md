@@ -670,6 +670,33 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   (4 of 6 one-tab replays, always after a whiteboard stroke laid by hand); the rig now waits the desk quiet after the
   pick-up (two-tab-notebook.mjs `pickUp`) — 39/39 three times running.
 
+<!-- design-016 K2 (2026-09-27) -->
+- **The GPU profiler** (design-016 §4, K-L5 "measured on real frames"): ICE read nothing from the GPU; now it reads every
+  drawn frame. Both device paths ask for `timestamp-query` whenever the adapter has it (`EngineGpu.hasTimestampQuery`
+  is real). `instrumentPasses(device)` (`@ice/desk`) wraps the encoders — draws and instances by the kind that drew,
+  `setPipeline`/`setBindGroup`/passes, every labelled pass timed, each encoder's queries resolved inside its OWN command
+  buffer (no submit added), read back through a 3-slot `mapAsync` ring that never waits (a full ring drops the sample).
+  `instrumentMemory(device)`: live GPU bytes by label through `createTexture`/`createBuffer`/`destroy` (the formula in
+  gpu-memory.ts; the logical size), kept from the layer's boot under `deskLayer({ gpuLedger: true })` (D-K2.2).
+  `createGpuProfiler` / `handle.profiler()`: one report per frame — `span` (first begin → last end, THE headline), `busy`
+  (the passes' union), `sum` (never the frame: D-K2.4 measured it overstating 52 and understating 8 of 60 frames),
+  passes, counts incl. submits/writes/upload bytes, byKind, uploads, cpu `encode`/`flush`, memory, `quantised` (every
+  delta a 100 µs multiple — `--disable-dawn-features=timestamp_quantization` names the fix) — rolling p50/p95/max,
+  `capture(n)` → a Chrome trace-event JSON (Perfetto). `ablateKinds` / `window.__desk.perf.kindCost()`: per-kind GPU cost
+  by ablation (saturated, drained, round-robined batches, an A/A control and its noise floor) — every kind draws in the
+  one `ground` pass. Unarmed, nothing is installed; armed, no submit and no wake.
+- **`@ice/devtools` gains the `gpu` slot**: `attachDevtools(engine, { gpu })` + `handle.gpuFrame(report, stats)` fed
+  through the structural mirrors `GpuPanelFrame`/`GpuPanelStats` (devtools cannot import desk; apps/desk asserts the
+  assignability at compile time) — the span's p50/p95/max, the passes on the span, the calls, by kind, uploads,
+  memory, the quantisation warning, "capture 120 frames"; the host lanes `desk flush` / `encode` / `gpu` beside
+  strata's. `packages/devtools/README.md` says how to open it and what each number means. apps/desk mounts the dock on
+  `~` (⇧`), arming the profiler while it is open.
+- **Changed, quietly**: `instrumentSubmits` is no longer installed at boot — the layer's `submits()` installs it on first
+  ask (D-K2.1), `detach()` restores exactly what was there (no bound copy left as an own property), submits share ONE tap
+  (`tapSubmits`), and `copyExternalImageToTexture` (a print's picture, the calendar's tiles) counts as an upload.
+  rig:gpu (16 rows) joins `gate:landing`; rig:stress asserts `crossOriginIsolated` and reports the pan's real-frame GPU
+  span p50/p95 with its draws / pipelines / bind groups a frame, and each kind's cost at the pan's end.
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 

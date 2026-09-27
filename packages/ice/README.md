@@ -65,7 +65,7 @@ and live presence when you `docs.join()` a room.
 | `@vibecook/ice/desk/objects` | The six reference object kinds: note · mini mat · notebook · whiteboard · calendar · photo (`DESK_OBJECTS`). |
 | `@vibecook/ice/react` | `<Desk>`, `<EngineProvider>`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useUndoStatus`, `usePresencePeers`, …), `attachKeymap`, `<SelectionMenu>`. |
 | `@vibecook/ice/dom` | Screen space only: the canvas host, the pointer adapter, the rAF loop, input ownership, the cursors, `createDeskHost` — for custom shells without React. |
-| `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one draggable dock. |
+| `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one draggable dock, and the desk's GPU slot (fed by `/desk`'s `handle.profiler()`). |
 | `@vibecook/ice/kernel` | Pure math: coordinates, spatial index, snap, wire geometry, the flight maths. Zero dependencies beyond `rbush`. |
 
 React and `react-dom` are **optional** peer dependencies — the core, desk and dom

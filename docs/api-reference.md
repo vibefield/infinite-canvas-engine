@@ -283,7 +283,9 @@ renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLay
 focused editor `createNoteEditor`, the text raster `inkRaster`/`penFaces`, `decodePicture`,
 `defineObject`/`objectKindOf`, the kind registry (`paperKind`, `minimatKind`, `notebookKind`,
 `boardKind`, `calendarKind`, `photoKind`, …), the builder/pick/ambient/reflector of `compose`,
-`instrumentSubmits`, the theme (`themeFrom`, `Palette`, `MAT`, `PAPER`, …), `shaderText`,
+`instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until
+`arm()` — `instrumentPasses`, `instrumentMemory` under `deskLayer({ gpuLedger: true })`, `ablateKinds`/`withoutKind`,
+`traceOf`; `packages/devtools/README.md` says what each number means), the theme (`themeFrom`, `Palette`, `MAT`, `PAPER`, …), `shaderText`,
 `blueNoise`, the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs `SPRINGS`) ·
 **`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the `Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is `@ice/desk`'s, and no pass ships here) · **`@ice/desk/objects`**
 (the six reference kinds' world halves: `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`,
@@ -300,8 +302,11 @@ palette, objects: [...DESK_OBJECTS], text, docs, blobs })}>` (react) or `createD
 ## @ice/devtools
 
 `attachDevtools(engine, {container?, intervalMs?, keyOf?, cellInDoc?,
-telemetry?, dock?, observer?, profiler?, presence?, describe?})` → `{observer, profiler, lane, detach}`.
-strata's observer + profiler in one draggable dock (the GL metrics panel left at design-015 D5b). Note: arming telemetry permanently arms reactive
+telemetry?, dock?, observer?, profiler?, presence?, describe?, gpu?})` → `{observer, profiler, lane, gpuFrame, detach}`.
+strata's observer + profiler in one draggable dock (the GL metrics panel left at design-015 D5b), and since design-016 K2 the
+WebGPU desk's `gpu` slot: `gpuFrame(frame, stats)` takes the structural mirrors `GpuPanelFrame`/`GpuPanelStats` of desk's
+`GpuFrameReport`/`GpuProfileStats` and reports the host lanes `desk flush`/`encode`/`gpu`; `createGpuPanel` alone for a custom
+shell (packages/devtools/README.md: opening it — `~` in apps/desk — and what each number means). Note: arming telemetry permanently arms reactive
 stamping (+17–28% on write-heavy paths) — dev builds only.
 
 ## @ice/kernel

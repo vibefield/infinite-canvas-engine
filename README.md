@@ -72,7 +72,7 @@ packages; `packages/ice` bundles them for publish):
 | `@vibecook/ice/desk/engine` | The raw-WebGPU engine alone: the device (`acquire`, `adopt`), the `Surface` type (the swap chain itself is `surface()` in `/desk`), shader composition (`compose`, `compile`), pipelines and bind groups, render targets (`Target`, `beginPass`, `readback`), `defineStruct` | — |
 | `@vibecook/ice/desk/objects` | The six reference object kinds' world halves: note · mini mat · notebook · whiteboard · calendar · photo | core, kernel |
 | `@vibecook/ice/react` | `<Desk>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap, the screen-space selection menu and held bar | dom, core, kernel + react/react-dom |
-| `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one dock | core only; **nobody imports devtools** |
+| `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one dock, and the WebGPU desk's GPU slot (its frames' span, passes, draws, memory — `~` in apps/desk) | core only; **nobody imports devtools** |
 
 Import walls are dependency-cruiser-enforced and CI-fatal; **`three` is
 imported nowhere** (`no-three`).
