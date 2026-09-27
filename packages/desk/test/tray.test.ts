@@ -13,10 +13,14 @@ import { Ground, type GroundFrameInputs } from "../src/ground";
 import { createTrayFlux } from "../src/tray/flux";
 import { PALETTE, PENS, SURFACES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
+import { MatUniforms } from "../src/mat/layout";
+import { compose } from "../src/engine/shader";
+import { KIT_WGSL_FILES } from "../src/kit/wgsl";
 import { shaderText } from "../src/shaders";
 import { band, DRAWER, drawerRect, drawerSize, scrollRange, slideEase } from "../src/tray/drawer";
 import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punched, rotCell } from "../src/tray/lattice";
-import { HASH_SIZE, hashTexels, keep, TrayUniforms } from "../src/tray/pass";
+import { HASH_SIZE, hashTexels, keep } from "../src/tray/pass";
+import { TrayUniforms } from "../src/tray/layout";
 import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders";
 import { THEMES } from "../oracle/fixtures/vf-theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
@@ -213,6 +217,29 @@ describe("the band (design-017 §3)", () => {
   });
 });
 
+describe("the tray's program (tray/shaders.ts — the mat's light through the kit, design-016 §5)", () => {
+  it("asks the kit by name for the view block's struct, the primitives and the mat's light; its own map lists only its own files", () => {
+    expect(Object.values(TRAY_SHADER_FILES).filter((f) => !f.startsWith("tray/"))).toEqual([]);
+    const c = trayShaders(shaderText);
+    expect((c.structs ?? []).map((s) => s.name)).toEqual(["MatUniforms", "TrayUniforms"]);
+    expect((c.modules ?? []).map((m) => m.label)).toEqual([KIT_WGSL_FILES.sdf, KIT_WGSL_FILES.light, "tray/tray.wgsl"]);
+    expect(c.entry.label).toBe("tray/tray-pass.wgsl");
+  });
+
+  it("composes, byte for byte, the program K3 composed from the mat's files by hand — so the golden's tray stills cannot move", () => {
+    const raw = shaderText({ primitives: "primitives.wgsl", mat: "mat/mat.wgsl", tray: "tray/tray.wgsl", trayPass: "tray/tray-pass.wgsl" });
+    const part = (label: string, text: string) => ({ label, text });
+    const byHand = compose({
+      structs: [MatUniforms, TrayUniforms],
+      modules: [part("primitives.wgsl", raw.primitives), part("mat/mat.wgsl", raw.mat), part("tray/tray.wgsl", raw.tray)],
+      entry: part("tray/tray-pass.wgsl", raw.trayPass),
+    });
+    const kit = compose(trayShaders(shaderText));
+    expect(kit.code).toBe(byHand.code);
+    expect(kit.label).toBe(byHand.label);
+  });
+});
+
 describe("the tray pass on a fake device", () => {
   const undo: (() => void)[] = [];
   beforeAll(() => { undo.push(installGpuFlags()); });
@@ -223,7 +250,7 @@ describe("the tray pass on a fake device", () => {
     const { device } = fakeDevice(log);
     const writes: { label: string; bytes: Uint8Array }[] = [];
     (device.queue as { writeBuffer: unknown }).writeBuffer = (buf: { label: string }, _off: number, data: Uint8Array) => { writes.push({ label: buf.label, bytes: new Uint8Array(data) }); };
-    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [], tray: trayShaders(shaderText(TRAY_SHADER_FILES)) });
+    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [], tray: trayShaders(shaderText) });
     const view = { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 2 };
     const frame = (tray?: GroundFrameInputs["tray"], theme = THEMES.light): GroundFrameInputs => ({ view, theme, ...(tray !== undefined ? { tray } : {}) });
     const trayWrites = (): Uint8Array[] => writes.filter((w) => w.label === "tray/pegboard/uniforms").map((w) => w.bytes);
@@ -363,7 +390,7 @@ describe("the reflector draws the tray (design-017 §3 — idle-zero open and cl
     let ground: Ground | null = null;
     const desk = createDeskReflector({ world: ce.world, builder, kinds: [], ambient, ground: () => ground, attach: { resize: () => {} }, theme: THEMES.light, palette });
     ce.engine.registerReflector(desk.reflector);
-    ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [], tray: trayShaders(shaderText(TRAY_SHADER_FILES)) });
+    ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [], tray: trayShaders(shaderText) });
     desk.ready();
     let now = 1000;
     const step = (n = 1): number => { const before = queue.submits; for (let i = 0; i < n; i++) { now += 16; ce.step(now); } return queue.submits - before; };

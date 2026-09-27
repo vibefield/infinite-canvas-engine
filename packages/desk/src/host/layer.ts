@@ -73,7 +73,7 @@ import type { GroundTheme, Palette } from "../theme";
 import { surface } from "./surface";
 import type { TrayFluxState, TrayPin } from "../tray/flux";
 import type { TrayLaid } from "../tray/pass";
-import { TRAY_SHADER_FILES, trayShaders } from "../tray/shaders";
+import { trayShaders } from "../tray/shaders";
 
 export interface DeskLayerOptions {
   /** The theme in force at the mount (the app's `themeFrom(name, palette)`). */
@@ -540,7 +540,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           if (shared === undefined) ownDevice = g.device;
           if (opts.gpuLedger === true) ledger = instrumentMemory(g.device);   // before the ground makes anything
           opts.onDevice?.(g.device);
-          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText(TRAY_SHADER_FILES)) });
+          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText) });
           if (disposed || ended) { made.dispose(); return; }
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;

@@ -3,13 +3,15 @@
 // drawer's box and its shadows' reach while it is closed — where tray.wgsl shades the rim
 // and the research board in closed form. Its light is the DESK's: a block of the mat's own struct carrying the theme's light, the
 // root grid's shadow grade and the frame's blue-noise offset (so `shade_mat` / `night_mat` are the mat's functions, not copies),
-// and the research's HOME lamp (D-K3.4). It samples the root mat's blue noise (rebinding when the mat's assets change) and
+// and the research's HOME lamp (D-K3.4). That block is the tray's OWN, never a slot's view block: K-L3 binds a slot's kinds, and the
+// drawer is screen-space chrome drawn in no slot — the desk's camera, box, clocks, portal chain and presence are nothing to it, only
+// the light's words are — so its program asks the kit for the struct and the mat's light by name (shaders.ts) and binds its own.
+// It samples the root mat's blue noise (rebinding when the mat's assets change) and
 // its own HASH texture — every value-noise octave's four lattice corners pre-gathered in one texel (`hashTexels`), made once.
 // Both blocks are uploaded only when they change. Labelled `tray/pegboard` (the pipeline, the bind group, a debug group).
 
 import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
-import { defineStruct } from "../engine/struct";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
 import { type MatFrame, MatUniforms, NOISE_SIZE } from "../mat/layout";
@@ -18,6 +20,7 @@ import { lightValues } from "../mat/night";
 import type { GroundTheme } from "../theme";
 import { DRAWER, type DrawerRect, drawerRect } from "./drawer";
 import { carry, PEG } from "./lattice";
+import { TrayUniforms } from "./layout";
 import { TRAY_LOOK } from "./look";
 import type { TrayShaders } from "./shaders";
 
@@ -30,30 +33,6 @@ export interface TrayFrameInputs {
   /** The SHOWN scroll — CSS px of board past its top, the band included; any size (its whole rows are carried on the CPU). */
   readonly scroll: number;
 }
-
-/** The tray's own block (tray.wgsl `t`). */
-export const TrayUniforms = defineStruct("TrayUniforms", [
-  ["view", "vec4f"],     // the view: CSS width, height, dpr, the pitch (CSS px)
-  ["rect", "vec4f"],     // the drawer as drawn (drawer.ts `drawerRect`): left, top, width, full height — CSS px
-  ["rowBase", "i32"],    // THE CARRY (lattice.ts): the shown scroll's whole rows…
-  ["frac", "f32"],       // …and the fraction of a row, the only part of the scroll in an f32
-  ["fp", "f32"],         // pitches per device px — the footprint every band fades by
-  ["dim", "f32"],        // the dim's alpha this frame
-  ["shape", "vec4f"],    // the top corners' radius, the rim, the notch's half-width and depth — CSS px
-  ["hole", "vec4f"],     // the stadium's radius and straight half-length, the rim fillet k, the solid side border — pitches
-  ["depth", "vec4f"],    // the board's thickness, the gap to the wall — pitches; the phase: columns, rows
-  ["lamp", "vec4f"],     // the unit direction to the lamp (x right, y down, z toward the eye), its angular radius (rad)
-  ["room", "vec4f"],     // the room's shadow round the outline: σ, α; the notch's join radius — CSS px
-  ["shadow", "vec4f"],   // the lamp's shadow: σ, α, its push along the lamp's ground direction (x, y) — CSS px
-  ["face", "vec4f"],     // the tempered face, linear
-  ["faceSrgb", "vec4f"], // …and its configured byte (sRGB): the plain face's colour lit flat
-  ["edge", "vec4f"],     // the punched fibre, linear
-  ["wall", "vec4f"],     // the plaster, linear
-  ["cavity", "vec4f"],   // the room's light on the wall in a hole: at its edge, at its heart, over what width (pitches)
-  ["keepFace", "vec4f"], // each band's share at this footprint (tray.wgsl, the research's fade): the face's grain (≈ 19 a pitch), —, 85, 190…
-  ["keepFine", "vec4f"], // …its 210 (bump) · 42 · 105 (flecks)…
-  ["keepEdge", "vec4f"], // …and the punched fibre's 9 · 18 · 36
-]);
 
 type TrayField = (typeof TrayUniforms.fields)[number][0];
 type MatField = (typeof MatUniforms.fields)[number][0];
@@ -143,7 +122,7 @@ export class TrayPass {
 
   /** The pipeline on `format`, sampling `mat`'s blue noise (the root's: its assets are every slot's). */
   static async create(device: GPUDevice, format: GPUTextureFormat, src: TrayShaders, mat: MatPass): Promise<TrayPass> {
-    const module = await compile(device, compose({ structs: [MatUniforms, TrayUniforms], modules: src.modules, entry: src.entry }));
+    const module = await compile(device, compose(src));
     const layout = bindLayout(device, [
       { binding: 0, stages: ["fragment"], buffer: "uniform" },
       { binding: 1, stages: ["vertex", "fragment"], buffer: "uniform" },

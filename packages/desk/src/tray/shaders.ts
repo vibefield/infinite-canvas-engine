@@ -1,31 +1,24 @@
-// The tray pass's shader set (tray/tray.wgsl, tray/tray-pass.wgsl) over the primitives and the mat's own colour law (mat.wgsl) — the
-// file map a host's `ShaderText` fills, the set the pass compiles; byte-identical in the browser and in the Node oracle (the marks' convention).
+// Assemble the tray pass's program from the host's shader text — the browser's generated module, the Node oracle's files on
+// disk; byte-identical either way. The kit brings, by name (kit/wgsl.ts), the view block's struct (`MatUniforms`), the card's
+// primitives and the mat's light — `shade_mat`, `night_mat`, the colour chain; the tray's own record, module and entry follow.
+// The tray is ENGINE CHROME, not a kind (design-016 K-L6 — it stays in desk): its entry binds its OWN block of that struct,
+// never a slot's (tray/pass.ts says why).
 
-import type { ShaderPart } from "../engine/shader";
+import type { ComposeOptions } from "../engine/shader";
+import { kitWgsl, type ShaderText } from "../kit/wgsl";
+import { TrayUniforms } from "./layout";
 
-export interface TrayShaders {
-  readonly modules: readonly ShaderPart[];   // primitives, mat, tray
-  readonly entry: ShaderPart;                // tray-pass
-}
+/** The tray's own shader files (the kit's pieces come by name). */
+export const TRAY_SHADER_FILES = { tray: "tray/tray.wgsl", trayPass: "tray/tray-pass.wgsl" } as const;
 
-export interface TrayShaderText {
-  readonly primitives: string;
-  readonly mat: string;
-  readonly tray: string;
-  readonly trayPass: string;
-}
+/** The tray pass's program: the kit's view · sdf · light, then the tray's record, module and entry. */
+export type TrayShaders = ComposeOptions;
 
-export const TRAY_SHADER_FILES: Record<keyof TrayShaderText, string> = {
-  primitives: "primitives.wgsl",
-  mat: "mat/mat.wgsl",
-  tray: "tray/tray.wgsl",
-  trayPass: "tray/tray-pass.wgsl",
-};
-
-export function trayShaders(t: TrayShaderText): TrayShaders {
-  const part = (label: string, text: string): ShaderPart => ({ label, text });
-  return {
-    modules: [part("primitives.wgsl", t.primitives), part("mat/mat.wgsl", t.mat), part("tray/tray.wgsl", t.tray)],
-    entry: part("tray/tray-pass.wgsl", t.trayPass),
-  };
+export function trayShaders(text: ShaderText): TrayShaders {
+  const t = text(TRAY_SHADER_FILES);
+  return kitWgsl(["view", "sdf", "light"], {
+    structs: [TrayUniforms],
+    modules: [{ label: "tray/tray.wgsl", text: t.tray }],
+    entry: { label: "tray/tray-pass.wgsl", text: t.trayPass },
+  }, text);
 }

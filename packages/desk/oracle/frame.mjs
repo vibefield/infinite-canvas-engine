@@ -52,7 +52,7 @@ import { BOARD_KIND, boardFrame, bookFrame, CALENDAR_KIND, calendarFrame, deskKi
 import { MarksPass } from "../src/marks/pass.ts";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders.ts";
 import { TrayPass } from "../src/tray/pass.ts";
-import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders.ts";
+import { trayShaders } from "../src/tray/shaders.ts";
 import { assembleMarks } from "../src/marks/assemble.ts";
 import { computeSnapGuides } from "@ice/kernel";
 import { arrivalCamera, boundsOf, departedCamera, enterFlight, exitFlight, FIT, flightAt } from "../src/nav/flight.ts";
@@ -234,7 +234,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   // the hand (D4b): the focus behind an object in hand and the object over it — the same pass the ground makes
   const hold = await HoldPass.create(device, format, holdShaders(text(HOLD_SHADER_FILES)));
   // the pegboard tray (design-017, K3): the drawer over the marks — the same pass the ground makes
-  const tray = await TrayPass.create(device, format, trayShaders(text(TRAY_SHADER_FILES)), mat);
+  const tray = await TrayPass.create(device, format, trayShaders(text), mat);
   /** The prototype's own selection ring (its stills drew it) — on only for the baseline check; the product's selection is the marks. */
   let prototypeRing = false;
 
