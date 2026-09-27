@@ -24,7 +24,7 @@ import { carry, PEG } from "./lattice";
 import { TrayAccessoryStruct, TrayUniforms } from "./layout";
 import { TRAY_LOOK } from "./look";
 import type { TrayShaders } from "./shaders";
-import { accessoryOf, type TraySpecimenFrame } from "./specimens";
+import { accessoryOf, type TrayCarriedFrame, type TraySpecimenFrame } from "./specimens";
 
 /** The tray this frame (the renderer's flux — design-017 §3): where the slide is, the lip's lift, and the SHOWN scroll. */
 export interface TrayFrameInputs {
@@ -36,6 +36,8 @@ export interface TrayFrameInputs {
   readonly scroll: number;
   /** K5a: the specimens this frame (tray/specimens.ts) — their accessories are the pass's, their pixels their kinds'; absent = none. */
   readonly specimens?: readonly TraySpecimenFrame[];
+  /** K5b: what is CARRIED this frame (tray/carry.ts) — the lifted copy, a ghost growing out of it or shrinking home — over the drawer, whole. */
+  readonly carried?: readonly TrayCarriedFrame[];
 }
 
 type TrayField = (typeof TrayUniforms.fields)[number][0];

@@ -57,7 +57,7 @@ import { MarksPass } from "./marks/pass";
 import type { MarksShaders } from "./marks/shaders";
 import { type TrayFrameInputs, TrayPass } from "./tray/pass";
 import type { TrayShaders } from "./tray/shaders";
-import { facePresent, TraySlots } from "./tray/specimens";
+import { facePresent, type TrayCarriedFrame, TraySlots } from "./tray/specimens";
 import { DRAWER, drawerRect } from "./tray/drawer";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "./nav/portal";
 import type { GroundTheme } from "./theme";
@@ -392,6 +392,8 @@ export interface PreparedFrame {
   readonly dropped?: Readonly<Record<string, number>>;
   /** K5a: the tray's specimens, one slot each, prepared — drawn between the board and the rim (`drawTray`), each with the top of its reach on screen (CSS px); absent = none. */
   readonly tray?: readonly (DrawSlot & { readonly top: number })[];
+  /** K5b: what the tray carries, one slot each, prepared — drawn over the rim, whole (`drawTray`); absent = none. */
+  readonly carried?: readonly DrawSlot[];
 }
 
 /** Where `prepareFrame` finds a specimen's slot (tray/specimens.ts `TraySlots`): undefined while its kind's pass is being made. */
@@ -518,7 +520,24 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
       tray.push({ ...prepare(slot, { view: f.view, grid: f.grid, objects: [{ kind: f.kind, record: f.record, key: f.key }], present }, f.grid, undefined), top: f.screen.y0 - DRAWER.pitch / 2 });
     }
   }
-  return { incoming, outgoing, portals, kinds: Object.fromEntries(rootDrawn), ...(Object.keys(dropped).length > 0 ? { dropped } : {}), ...(tray.length > 0 ? { tray } : {}) };
+  // …and what it carries (K5b): each in its own slot — the copy lifted off the board, a ghost growing out of it or shrinking home — whole,
+  // never through the face (it is off the board); one slot per type, apart from its specimen's
+  const carried: DrawSlot[] = [];
+  const carriedIn = inputs.tray?.carried;
+  if (carriedIn !== undefined && carriedIn.length > 0 && traySlots !== undefined) {
+    const byType = new Map<string, TrayCarriedFrame[]>();
+    for (const f of carriedIn) byType.set(f.slot, [...(byType.get(f.slot) ?? []), f]);
+    for (const [key, list] of byType) {
+      const first = list[0] as TrayCarriedFrame;
+      const slot = traySlots.get(key, first.kind);
+      if (slot === undefined) continue;
+      carried.push(prepare(slot, { view: first.view, grid: first.grid, objects: list.map((f) => ({ kind: f.kind, record: f.record, key: f.key })) }, first.grid, undefined));
+    }
+  }
+  return {
+    incoming, outgoing, portals, kinds: Object.fromEntries(rootDrawn), ...(Object.keys(dropped).length > 0 ? { dropped } : {}), ...(tray.length > 0 ? { tray } : {}),
+    ...(carried.length > 0 ? { carried } : {}),
+  };
 }
 
 /** The drawer as its frame inputs lay it (tray/drawer.ts `drawerRect` at the flux's slide and lift). */
@@ -532,7 +551,7 @@ function trayRectOf(inputs: GroundFrameInputs): ReturnType<typeof drawerRect> {
  * shadows, the board, the accessories), each specimen by its own kind through the drawer's face, their name tags (the marks' pills),
  * then the RIM over them all — the specimens slide under it as the board does. Leaves the scissor on the whole view.
  */
-export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, tray: TrayPass, slots: readonly (DrawSlot & { readonly top: number })[] | undefined, marks: MarksPass | null): void {
+export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, tray: TrayPass, slots: readonly (DrawSlot & { readonly top: number })[] | undefined, marks: MarksPass | null, carried?: readonly DrawSlot[]): void {
   tray.draw(pass);
   const rect = tray.laid?.rect;
   if (rect !== undefined) {
@@ -554,6 +573,11 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
   }
   pass.setScissorRect(0, 0, size.w, size.h);
   tray.drawRim(pass);
+  // what the tray carries (K5b): over the rim and the dim, whole — it is off the board
+  if (carried !== undefined && carried.length > 0) {
+    for (const s of carried) drawSlot(pass, size, dpr, { ...s, bare: true });
+    pass.setScissorRect(0, 0, size.w, size.h);
+  }
 }
 
 /** The drawer's face inside its rim as a clip box (CSS px), square — the tags' scissor. */
@@ -650,7 +674,7 @@ export class Ground {
     // stratum 5: the marks, over every slot and every stratum (drawFrame left the scissor on the whole view)
     if (marked > 0) this.marks?.draw(pass);
     // …and the pegboard drawer over them (design-017): the dim, its shadow on the desk, the board, the specimens (K5a), the rim
-    if (trayed > 0 && this.tray !== null) drawTray(pass, this.surface.size(), inputs.view.dpr, this.tray, prepared.tray, this.marks);
+    if (trayed > 0 && this.tray !== null) drawTray(pass, this.surface.size(), inputs.view.dpr, this.tray, prepared.tray, this.marks, prepared.carried);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
     return this.said({ ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) });

@@ -8,7 +8,10 @@
 // the six kinds in the world where the lattice law lays them (read back; never Active, selected or durable), every peg on a punched
 // hole's centre, the scroll's range from the laid content, each drawn by its own kind, a scroll of Δ moving board and specimens by Δ,
 // the band carrying them, the hover lifting one and settling, a PLUGIN fixture kind on the tray by its entry alone, idle with them
-// open and closed, and what they cost. Exit 0 = every row passed.
+// open and closed, and what they cost. K5b — TAKING ONE: each kind dragged off its specimen made where it is dropped (the grab point kept,
+// selected, one undo step), the copy lifted at ×1.06 with the specimen still hung, the hand-off without a pop (the copy's rect and the
+// ghost's first, measured), the ways back (Esc, over the drawer, inside it) making nothing and leaving nothing in undo, the ghost flying
+// home shrinking, into a mini mat by the kinds' rules, the plugin kind taken too, idle after. Exit 0 = every row passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { loadavg } from "node:os";
@@ -300,10 +303,27 @@ try {
   const plugOn = plugHeld.find((h) => h.type === "rig.swatch");
   await plug.evaluate(`window.__desk.tray.scroll(${Math.max(0, (plugOn?.y ?? 0) - 120)}); window.__desk.settle(4000)`, { awaitPromise: true, timeoutMs: 20000 });
   const plugDrawn = (await plug.evaluate("window.__desk.tray.state().specimens", { timeoutMs: 20000 })).find((q) => q.type === "rig.swatch");
+  // K5b: the plugin kind is TAKEN as the built-ins are — its specimen dragged out makes one, selected, one undo step
+  const pm = (type, x, y, extra = {}) => plug.send("Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" ? "none" : "left", clickCount: 1, ...extra });
+  const pf = (n) => plug.evaluate(`new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(true); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`, { awaitPromise: true, timeoutMs: 20000 });
+  const pents = () => plug.evaluate("window.__desk.entities().map((e) => ({ id: e.id, type: e.type, selected: e.selected }))", { timeoutMs: 20000 });
+  await plug.send("Page.bringToFront");
+  const po = plugDrawn?.object ?? { x0: 0, y0: 0, x1: 0, y1: 0 };
+  const pg = [(po.x0 + po.x1) / 2, (po.y0 + po.y1) / 2];
+  const pBefore = new Set((await pents()).map((e) => e.id));
+  await pm("mouseMoved", pg[0], pg[1]); await pm("mousePressed", pg[0], pg[1], { buttons: 1 }); await pf(1);
+  for (let i = 1; i <= 8; i++) { await pm("mouseMoved", pg[0] + ((600 - pg[0]) * i) / 8, pg[1] + ((250 - pg[1]) * i) / 8, { buttons: 1 }); await pf(2); }
+  await pm("mouseMoved", 600, 250, { buttons: 1 }); await pf(3);
+  await pm("mouseReleased", 600, 250, { buttons: 0 }); await pf(6);
+  const pMade = (await pents()).filter((e) => !pBefore.has(e.id));
+  const pUndo = await plug.evaluate("window.__desk.engine.docs.undo()", { timeoutMs: 20000 }); await pf(2);
+  const pGone = (await pents()).every((e) => pBefore.has(e.id));
   const plugFaults = await plug.evaluate("window.__desk.faults ?? []", { timeoutMs: 20000 });
   await plug.close?.();
   check(plugHeld.length === 7 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugDrawn.accessory === "clip" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
     `a plugin kind by its entry alone: with it registered the world holds ${plugHeld.length} (rig.swatch at ${plugOn?.x},${plugOn?.y} — the law's ${plugWant?.x},${plugWant?.y}), drawn by its kind on its clip; without it, none (${held.length})`);
+  check(pMade.length === 1 && pMade[0].type === "rig.swatch" && pMade[0].selected && pUndo === true && pGone,
+    `…and TAKEN as the built-ins are (K5b): dragged off its clip to the desk, one made (${pMade.map((m) => `${m.type}${m.selected ? ", selected" : ""}`).join(" · ") || "none"}), one undo step takes it back (${pUndo}, gone ${pGone})`);
   await front();
 
   // 9. THE COST (design-017 §6.7): the drawer open at 2400 × 1600 — n of it alone per batch, and whole frames with it open and closed,
@@ -341,6 +361,173 @@ try {
   const memShut = await ledger();
   const mb = (b) => (b / 1048576).toFixed(1);
   check(memOpen.notebook > 0 && memOpen.calendar > 0 && memShut.notebook < memOpen.notebook / 4 && memShut.calendar < memOpen.calendar / 4, `the tray's notebook and calendar layers let go once undrawn (each row under a quarter of its open size): the ledger's notebook ${mb(memOpen.notebook)} → ${mb(memShut.notebook)} MB, calendar ${mb(memOpen.calendar)} → ${mb(memShut.calendar)} MB, open → 6 s after the drawer shut`);
+
+  // S10. TAKING ONE (design-017 §9; K5b): a press on a specimen + 4 px lifts a COPY (the specimen stays hung); out of the drawer it slides
+  //      away and the desk takes it — the insert ghost under the same grab point (no centre-snap), the ordinary drag, ONE create, selected,
+  //      one undo step; the hand-off without a pop; Esc mid-drag, a release back over the drawer and a release inside it cancel with
+  //      NOTHING in undo, the ghost flying home shrinking; into a mini mat by the kinds' rules; a plugin kind the same; idle after.
+  const ents = () => q("window.__desk.entities().map((e) => ({ id: e.id, type: e.type, x: e.x, y: e.y, w: e.w, h: e.h, selected: e.selected, parent: e.parent }))");
+  const rootParent = (await ents()).find((e) => e.id === note)?.parent;
+  const undo = () => q("window.__desk.engine.docs.undo()");
+  const redo = () => q("window.__desk.engine.docs.redo()");
+  /** Open the drawer with `type`'s specimen in view; its object's rect on screen. */
+  const slide = () => frames(26);   // the slide's 340 ms and a little
+  const specimenIn = async (type) => {
+    if (!(await q("window.__desk.tray.isOpen()"))) { await q("window.__desk.tray.open()"); await slide(); }
+    let sp = (await tray()).specimens.find((x) => x.type === type);
+    if (sp === undefined || sp.object.y1 > 780) {
+      const all = await q("window.__desk.tray.specimens()");
+      const w = all.find((x) => x.type === type);
+      await q(`window.__desk.tray.scroll(${Math.max(0, w.y - 60)})`); await frames(3);
+      sp = (await tray()).specimens.find((x) => x.type === type);
+    }
+    return sp.object;
+  };
+  /** Carried poses, one sample per animation frame, for `n` frames. */
+  const traceCarried = (n) => qa(`new Promise((r) => { const out = []; let i = 0; const f = () => { const s = window.__desk.tray.state(); out.push({ carried: s.carried, facts: window.__desk.tray.facts(), p: s.p }); if (++i >= ${n}) r(out); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
+  const frames = (n) => qa(`new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(true); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
+  /** Press `type`'s specimen at (u, v) across its object and carry it to `to` in steps; `release` at the end (default). */
+  const carryOut = async (type, u, v, to, { release = true, steps = 8 } = {}) => {
+    const o = await specimenIn(type);
+    const g = [o.x0 + u * (o.x1 - o.x0), o.y0 + v * (o.y1 - o.y0)];
+    await mouse("mouseMoved", g[0], g[1]); await mouse("mousePressed", g[0], g[1], { buttons: 1 }); await frames(1);
+    for (let i = 1; i <= steps; i++) { await mouse("mouseMoved", g[0] + ((to[0] - g[0]) * i) / steps, g[1] + ((to[1] - g[1]) * i) / steps, { buttons: 1 }); await frames(2); }
+    await mouse("mouseMoved", to[0], to[1], { buttons: 1 }); await frames(3);
+    if (release) { await mouse("mouseReleased", to[0], to[1], { buttons: 0 }); await frames(6); }
+    return g;
+  };
+  // each kind taken: made where it is dropped, the grab point kept, selected, one undo step (undo removes it, redo restores it)
+  const TAKEN = ["desk.note", "desk.photo", "desk.notebook", "desk.calendar", "desk.minimat", "desk.board"];
+  const takeRows = [];
+  for (const type of TAKEN) {
+    const before = new Set((await ents()).map((e) => e.id));
+    const to = [640, 260];
+    await carryOut(type, 0.3, 0.2, to);
+    const made = (await ents()).filter((e) => !before.has(e.id));
+    const m = made[0];
+    const at = m === undefined ? null : [m.x + 0.3 * m.w - to[0], m.y + 0.2 * m.h - to[1]];
+    const sel = await q("window.__desk.selection()");
+    const shut = (await tray()).facts.open === false;
+    const u1 = await undo(); await frames(2);
+    const goneAfterUndo = m !== undefined && !(await ents()).some((e) => e.id === m.id || (e.type === type && !before.has(e.id)));
+    const r1 = await redo(); await frames(2);
+    const back = (await ents()).filter((e) => !before.has(e.id) && e.type === type).length === 1;
+    await undo(); await frames(2);
+    takeRows.push({ type, n: made.length, made: m?.type, at, selected: m !== undefined && sel.length === 1 && sel[0] === m.id, root: m?.parent === rootParent, shut, u1, goneAfterUndo, r1, back });
+  }
+  const snapTol = 12;
+  check(takeRows.every((r) => r.n === 1 && r.made === r.type && r.at !== null && Math.abs(r.at[0]) <= snapTol && Math.abs(r.at[1]) <= snapTol && r.selected && r.root && r.shut && r.u1 && r.goneAfterUndo && r.r1 && r.back),
+    `each kind taken (press at 0.3, 0.2 of its specimen, dropped at 640,260): made where dropped with the grab point kept (|Δ| ≤ ${snapTol}, the drag's snap — a centre-snap is 20–30 % of the object), selected, the drawer away, ONE undo step (undo removes it, redo restores it): ${takeRows.map((r) => `${r.type.replace("desk.", "")} ${r.at === null ? "—" : r.at.map((x) => x.toFixed(1)).join(",")}${r.n === 1 && r.selected && r.u1 && r.goneAfterUndo && r.r1 && r.back ? "" : ` ✗${JSON.stringify(r)}`}`).join(" · ")}`);
+
+  // the ghost is CORE'S while it is carried: no kind's driver takes it — the print's own carry (its physics) never holds a ghost print
+  {
+    const before = new Set((await ents()).map((e) => e.id));
+    await carryOut("desk.photo", 0.5, 0.5, [600, 250], { release: false });
+    await frames(10);
+    const held = await q("(() => { const p = window.__desk.handle.local('photo'); return window.__desk.entities().filter((e) => e.type === 'desk.photo').map((e) => ({ id: e.id, lifted: p.lifted(e.id), grabbed: e.grabbed })); })()");
+    await mouse("mouseReleased", 600, 250, { buttons: 0 }); await frames(6);
+    const made = (await ents()).filter((e) => !before.has(e.id));
+    await undo(); await frames(2);
+    check(held.length === 1 && held[0].grabbed && !held[0].lifted && made.length === 1,
+      `the ghost is core's while it is carried: the print's ghost grabbed by the ordinary drag (${held[0]?.grabbed}), its kind's own carry not holding it (lifted ${held[0]?.lifted}); dropped, one print`);
+  }
+
+  // the lift: past 4 px the copy lifts (×1.06 of its specimen, under the grab point), the specimen stays hung; the drawer slides away as it leaves
+  {
+    const o = await specimenIn("desk.note");
+    const spec0 = (await tray()).specimens.find((x) => x.type === "desk.note");
+    const g = [o.x0 + 0.5 * (o.x1 - o.x0), o.y0 + 0.5 * (o.y1 - o.y0)];
+    await mouse("mouseMoved", g[0], g[1]); await mouse("mousePressed", g[0], g[1], { buttons: 1 }); await frames(1);
+    await mouse("mouseMoved", g[0] + 2, g[1] - 2, { buttons: 1 }); await frames(3);
+    const within = await tray();
+    await mouse("mouseMoved", g[0] + 20, g[1] - 30, { buttons: 1 }); await frames(30);
+    const lifted = await tray();
+    const copy = lifted.carried.find((c) => c.phase === "lift");
+    const spec1 = lifted.specimens.find((x) => x.type === "desk.note");
+    const cw = copy === undefined ? 0 : copy.screen.x1 - copy.screen.x0;
+    check(within.carried.length === 0 && within.facts.take === "" && copy !== undefined && lifted.facts.take === "desk.note" && Math.abs(cw / (o.x1 - o.x0) - 1.06) < 0.002
+      && Math.abs(copy.screen.x0 + 0.5 * cw - (g[0] + 20)) < 0.5 && JSON.stringify(spec1?.object) === JSON.stringify(spec0?.object) && lifted.facts.open === true,
+      `within the slop nothing lifts (${within.carried.length} carried); past it the copy lifts at × ${(cw / (o.x1 - o.x0)).toFixed(4)} of its specimen under the grab point, the specimen still hung where it was, the drawer open`);
+    // THE HAND-OFF: out through the top in one move, then still — the frame that hands it and the first the ghost is drawn coincide
+    const top = lifted.frame.y;
+    await front();
+    const tracing = traceCarried(40);   // sampling from the frame before the move is dispatched (CDP keeps the order)
+    await mouse("mouseMoved", g[0] + 20, top - 24, { buttons: 1 });
+    const trace = await tracing;
+    const i0 = trace.findIndex((t) => t.carried.some((c) => c.phase === "handing"));
+    const i1 = trace.findIndex((t) => t.carried.some((c) => c.phase === "grow"));
+    const hand = i0 >= 0 ? trace[i0].carried.find((c) => c.phase === "handing") : undefined;
+    const grow0 = i1 >= 0 ? trace[i1].carried.find((c) => c.phase === "grow") : undefined;
+    const pop = hand === undefined || grow0 === undefined ? Number.POSITIVE_INFINITY : Math.max(...["x0", "y0", "x1", "y1"].map((k) => Math.abs(hand.screen[k] - grow0.screen[k])));
+    const lastGrow = [...trace].reverse().find((t) => t.carried.some((c) => c.phase === "grow"));
+    const grownW = lastGrow === undefined ? 0 : (() => { const c = lastGrow.carried.find((x) => x.phase === "grow"); return c.screen.x1 - c.screen.x0; })();
+    const shutAt = trace.findIndex((t) => t.facts.open === false);
+    const pEnd = trace[trace.length - 1].p;
+    const handedTo = trace[trace.length - 1].carried.length === 0;
+    check(i0 >= 0 && i1 === i0 + 1 && pop < 0.5 && shutAt >= 0 && shutAt <= i0 && pEnd === 0 && handedTo && Math.abs(grownW - 200) < 1,
+      `the hand-off: the drawer shut as it left (frame ${shutAt}), the copy held for the frame that handed it (${i0}) and the ghost drawn the next (${i1}) on the SAME rect — |Δ| ${pop.toFixed(4)} px (no pop); it grew to its own ${grownW.toFixed(1)} px as the drawer went (p ${pEnd}), then the desk drew it`);
+    await mouse("mouseReleased", g[0] + 20, top - 24, { buttons: 0 }); await frames(6);
+    await undo(); await frames(2);
+  }
+
+  // the ways back — Esc mid-drag, a release back over the drawer, a release inside it: NOTHING in undo (a sentinel spawned just before
+  // is what one undo takes back), no object made, and the ghost flying HOME shrinking to nothing
+  const wayBack = async (how) => {
+    const sentinel = await q("window.__desk.spawn('desk.note', { seed: 5 }, { x: 1000, y: 150 })");
+    await frames(2);
+    const before = new Set((await ents()).map((e) => e.id));
+    let homes = [];
+    if (how === "inside") {
+      await carryOut("desk.note", 0.5, 0.5, [700, 600], { release: false, steps: 4 });
+      await mouse("mouseReleased", 700, 600, { buttons: 0 });
+      homes = await traceCarried(24);
+    } else {
+      await carryOut("desk.note", 0.5, 0.5, [600, 250], { release: false });
+      if (how === "esc") { await key("Escape", "Escape", 27); homes = await traceCarried(34); await mouse("mouseReleased", 600, 250, { buttons: 0 }); }
+      else {
+        for (let i = 1; i <= 6; i++) { await mouse("mouseMoved", 600, 250 + (i * (680 - 250)) / 6, { buttons: 1 }); await frames(2); }
+        await mouse("mouseReleased", 600, 680, { buttons: 0 });
+        homes = await traceCarried(34);
+      }
+    }
+    await frames(4);
+    const made = (await ents()).filter((e) => !before.has(e.id));
+    const phases = homes.map((t) => t.carried.map((c) => `${c.phase}:${(c.screen.x1 - c.screen.x0).toFixed(0)}`).join("|"));
+    const home = homes.flatMap((t) => t.carried.filter((c) => c.phase === (how === "inside" ? "back" : "home")));
+    const widths = home.map((c) => c.screen.x1 - c.screen.x0);
+    const shrank = how === "inside" ? widths.length > 3 : widths.length > 3 && widths.every((w, i) => i === 0 || w <= widths[i - 1] + 1e-6) && widths[widths.length - 1] < 8;
+    const u = await undo(); await frames(2);
+    const sentinelGone = !(await ents()).some((e) => e.id === sentinel);
+    await redo(); await frames(2);
+    const r = await undo(); await frames(2);   // tidy: the sentinel away again
+    return { how, made: made.length, shrank, first: widths[0], last: widths[widths.length - 1], frames: widths.length, u, sentinelGone, r, phases: phases.slice(0, 3) };
+  };
+  const backs = [await wayBack("esc"), await wayBack("over"), await wayBack("inside")];
+  check(backs.every((b) => b.made === 0 && b.shrank && b.u && b.sentinelGone),
+    `the ways back make nothing and leave nothing in undo (one undo takes back the sentinel spawned before): ${backs.map((b) => `${b.how} — ${b.how === "inside" ? "the copy glided back onto its specimen" : "the ghost flew home shrinking"} ${b.first?.toFixed(0)} → ${b.last?.toFixed(1)} px over ${b.frames} frames${b.made === 0 && b.shrank && b.u && b.sentinelGone ? "" : ` ✗${JSON.stringify(b)}`}`).join(" · ")}`);
+
+  // into a mini mat by the kinds' rules: a note goes inside it; a notebook (`drop: never`) lands on the desk over it
+  {
+    const mm = await q("window.__desk.spawn('desk.minimat', { name: 'Inbox' }, { x: 760, y: 230 })");
+    await frames(2);
+    const before = new Set((await ents()).map((e) => e.id));
+    await carryOut("desk.note", 0.5, 0.5, [760, 230]);
+    const noteIn = (await ents()).find((e) => !before.has(e.id) && e.type === "desk.note");
+    await undo(); await frames(2);
+    await carryOut("desk.notebook", 0.5, 0.5, [760, 230]);
+    const bookOn = (await ents()).find((e) => !before.has(e.id) && e.type === "desk.notebook");
+    await undo(); await frames(2);
+    await undo(); await frames(2);   // the mini mat
+    check(noteIn !== undefined && noteIn.parent === mm && bookOn !== undefined && bookOn.parent === rootParent,
+      `into a mini mat by the kinds' rules: a note dropped on it went inside (its parent ${noteIn?.parent}, the mat ${mm}); a notebook did not — drop: never (its parent ${bookOn?.parent}, the desk's ${rootParent})`);
+  }
+  await q("window.__desk.tray.close()"); await settle();
+  const restAfter = await idle(240);
+  check(restAfter === 0, `at rest after all of it, the drawer shut: ${restAfter} submits over 240 frames`);
+  await q("window.__desk.tray.open()"); await settle();
+  const restAfterOpen = await idle(120);
+  check(restAfterOpen === 0, `…and open: ${restAfterOpen} submits over 120 frames`);
+  await q("window.__desk.tray.close()"); await settle();
 
   logs.push(...(await faultsOf(tab)));
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);

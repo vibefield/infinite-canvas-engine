@@ -31,11 +31,17 @@ export const deskSelect: Tool = defineTool({ id: "desk.select", route: { canvasD
 /** The tools the engine compiles — a typed engine must name `select` even when no canvas allows it. */
 export const DESK_TOOLS: readonly Tool[] = [builtin("select"), deskSelect, builtin("pan")];
 
-/** The desk as a canvas type: its objects, its two tools, the natural arrival band (FIT: pad 80, zoom ½–1). */
+/**
+ * What an object PROVIDES to lie on the desk (K5b — K-L2): the desk canvas places its six reference objects by name and any other object
+ * that provides this key — a plugin kind joins the desk (and so can be taken off the tray onto it) by declaring it, never by a list here.
+ */
+export const DESK_OBJECT = "desk.object";
+
+/** The desk as a canvas type: its objects (and any that provide `DESK_OBJECT`), its two tools, the natural arrival band (FIT: pad 80, zoom ½–1). */
 export const DeskCanvas = defineCanvasType({
   id: "desk.desk",
   semanticVersion: 1,
-  semantic: { placement: { widgets: [...DESK_OBJECTS] } },
+  semantic: { placement: { widgets: [...DESK_OBJECTS], accepts: [DESK_OBJECT] } },
   presentation: {
     tools: { allowed: [deskSelect, builtin("pan")], default: deskSelect },
     camera: { arrival: "fit", padding: 80, minZoom: 0.5, maxZoom: 1 },

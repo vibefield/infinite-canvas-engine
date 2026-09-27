@@ -28,7 +28,7 @@ export { createNotebookHand, type NotebookHand, type NotebookHandOptions } from 
 export { addStroke, BoardStroke, boardOps, decodePoints, decodeTimes, encodePoints, encodeTimes, feedStroke, type MarkerInk, meanSpeed, seedOfRow, STROKE_TYPE, StrokePrefab, type StrokeRow, strokeRow, strokeSeed, type StrokeSpec } from "./board/data";
 // the desk as a whole (D7, D-D7-C.1): the objects' list, the engine preset the README's quickstart spreads, and the complete default
 // palette `deskLayer` mounts with — shipped, where until D7 only apps/desk and the oracle's fixture had them
-export { DESK_ENGINE, DESK_OBJECTS, DESK_TOOLS, DeskCanvas, deskSelect } from "./preset";
+export { DESK_ENGINE, DESK_OBJECT, DESK_OBJECTS, DESK_TOOLS, DeskCanvas, deskSelect } from "./preset";
 export { type DeskPalette, deskPalette, deskTheme, PRESENCE_INKS } from "./palette";
 // the kinds as the ground registers them — their programs, their world halves, their specs, `DESK_KINDS` (kinds.ts)
 export * from "./kinds";

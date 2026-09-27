@@ -18,7 +18,8 @@
  *  - K5b, TAKING ONE (design-017 §9): a press on a SPECIMEN is `TrayPress specimen` — its type, the grab point across the object as the
  *    board draws it (kernel `specimenFit`), the specimen's centre on screen. Past the slop its COPY lifts (`Tray.take` and the pointer:
  *    the renderer's flux draws it; the specimen stays hung); a press on a specimen never scrolls the board. Out of the drawer's open
- *    rect the copy is HANDED to the desk: the drawer slides away (`open` false), `handed` bumps, and the one-tick `TrayIntent` asks the
+ *    rect the copy is HANDED to the desk: the drawer slides away (`open` false), `handed` bumps (that tick `take` still names it, where
+ *    it left — what the renderer's ghost grows out of — and it clears the tick after), and the one-tick `TrayIntent` asks the
  *    facade for `ops.insertByDrag` after the step — the insert ghost under the same grab point, its synthetic down this pointer's, the
  *    ordinary drag from there. The press becomes `carry`: released back over the drawer's open rect, the ghost's gesture is CANCELLED
  *    (`CancelRequest` — the ctl sweep reads it this tick, before the release can commit) and it flies home. Released inside the drawer,
@@ -239,9 +240,15 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
           if (ended) { take = ""; ctx.removeComponent(p, TrayPress); continue; }
           if (!moved) continue;
           if (!inOpen(s.x, s.y)) {
-            // out of the drawer: it slides away, and the desk takes the copy — the insert ghost under the same grab point, after the step
+            // out of the drawer: it slides away, and the desk takes the copy — the insert ghost under the same grab point, after the step.
+            // This tick the take still names it, where it was handed (a flick lifts and hands in one event): the renderer's word on
+            // what the ghost grows out of; it clears the tick after, the drawer shut
             open = false;
-            take = "";
+            take = press.type ?? "";
+            takeU = press.u;
+            takeV = press.v;
+            takeX = s.x;
+            takeY = s.y;
             handed += 1;
             const pt = ctx.read(p, Pointer);
             hand({ type: press.type ?? "", x: s.x, y: s.y, pointerId: pt.id ?? "mouse", device: pt.device, buttons: ctx.get(p, PointerButtons)?.buttons ?? 1, u: press.u, v: press.v, homeX: press.homeX, homeY: press.homeY });
@@ -274,7 +281,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       }
       // the band lets go once the scroll input is quiet — never under a finger still dragging the board — and as the drawer closes
       if (stretch !== 0 && ((!dragging && now - wheelAt > TRAY_INPUT.letGoMs) || !open)) stretch = 0;
-      if (!open) { hover = ""; take = ""; }
+      if (!open) { hover = ""; if (handed === t.handed) take = ""; }
       if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || lip !== t.lip || hover !== t.hover
         || take !== t.take || takeU !== t.takeU || takeV !== t.takeV || takeX !== t.takeX || takeY !== t.takeY || handed !== t.handed) {
         ctx.edit(tray).set(Tray, { open, scroll, stretch, lip: open ? false : lip, wheelAt, hover, take, takeU, takeV, takeX, takeY, handed });

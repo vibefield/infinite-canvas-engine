@@ -163,13 +163,16 @@ describe("taking one (design-017 §9)", () => {
     // up and out of the drawer's top (348): the hand-off tick
     r.mouse("move", x, 300, 1);
     const t = r.tray();
-    expect([t.open, t.take, t.handed]).toEqual([false, "", 1]);
+    // that tick the take still names what was handed, and where (the renderer's ghost grows out of it); the tick after, it is clear
+    expect([t.open, t.take, t.handed, t.takeX, t.takeY]).toEqual([false, "take:card", 1, x, 300]);
     const intent = r.world.getResource(TrayIntent);
     expect(intent).toMatchObject({ type: "take:card", x, y: 300, pointerId: "mouse", device: "mouse", buttons: 1, epoch: 1 });
     expect(intent?.homeX).toBeCloseTo(s.x + s.w / 2, 9);
     expect(r.press()?.kind).toBe("carry");
     // after the step: the ghost, its grab point under the pointer (the card is 200 × 100: 0.25 · 200 = 50, 0.5 · 100 = 50)
     const [ghost] = r.ghosts();
+    r.step();
+    expect(r.tray().take).toBe("");
     expect(ghost).toBeDefined();
     const g = ghost as Entity;
     expect(r.world.read(g, Position)).toEqual({ x: x - 50, y: 300 - 50 });

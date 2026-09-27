@@ -20,6 +20,8 @@ import {
   Camera,
   defineQuery,
   FrameInfo,
+  GhostRetiring,
+  InsertGhost,
   LocalPointer,
   NavRedress,
   NavTransition,
@@ -34,18 +36,24 @@ import {
   specimensOf,
   Tray,
   TrayContent,
+  TransformTween,
+  trayTakeProps,
   Viewport,
+  widgetSpawnInits,
   widgetTypeFor,
+  type WidgetType,
   type World,
 } from "@ice/core";
 import type { Ground, GroundFrameInputs, GroundStats } from "../ground";
-import type { ObjectKind } from "../kinds/world";
+import { type KindLocal, type ObjectKind, rectOf } from "../kinds/world";
+import { lampOf } from "../mat/lamp";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GroundTheme, Palette } from "../theme";
 import { objectKindOf } from "../object";
 import { drawerRect } from "../tray/drawer";
 import { createTrayFlux, type TrayFlux } from "../tray/flux";
-import { specimenFrames, type TraySpecimen, type TraySpecimenFrame } from "../tray/specimens";
+import { type CarryGhost, type CarrySpecimen, createTrayCarry, type TrayCarry } from "../tray/carry";
+import { carriedFrame, carrySlot, specimenFrames, type TrayCarriedFrame, type TraySpecimen, type TraySpecimenFrame } from "../tray/specimens";
 import type { Ambient, AmbientState } from "./ambient";
 import type { DeskBuilder, DeskBuilderStats, DeskWakeReason, HoldPin } from "./builder";
 
@@ -69,6 +77,8 @@ export interface DeskReflectorOptions {
   readonly name?: string;
   /** Called after every frame drawn — the layer publishes the selection menu's anchor from it (D4a). */
   readonly onFrame?: () => void;
+  /** The kinds' own state on this desk (`KindLocal`, by kind name): what the tray's carried objects are drawn with, as the builder's are (K5b). */
+  readonly locals?: ReadonlyMap<string, KindLocal>;
 }
 
 /** What woke a frame, counted since the mount — the builder's reasons and the reflector's own. */
@@ -116,11 +126,16 @@ export interface DeskReflector {
   readonly tray: TrayFlux;
   /** The tray's specimens as the last frame drew them (K5a) — a rig's witness; empty while the drawer is shut or bare. */
   traySpecimens(): readonly TraySpecimenFrame[];
+  /** The take's motion (K5b — tray/carry.ts): the lifted copy, the ghost's grow and its flight home. */
+  readonly carry: TrayCarry;
+  /** What the tray carried in the last frame drawn (K5b) — a rig's witness: each pose's slot, phase, ghost and rect on screen. */
+  trayCarried(): readonly TrayCarriedFrame[];
   dispose(): void;
 }
 
 const localPointersQ = defineQuery([Pointer, LocalPointer, PointerScreen]);
 const trayQ = defineQuery([Tray]);
+const insertQ = defineQuery([InsertGhost, Position, Size]);
 
 export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   const { world, builder, ambient } = opts;
@@ -159,6 +174,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   const tray = createTrayFlux();
   // the tray's specimens (K5a): read from the world each frame the drawer shows (a handful of facts — a lay, a reset or a prop moves them)
   let drawnSpecimens: readonly TraySpecimenFrame[] = [];
+  /** The take's motion (K5b): the copy, the ghost's grow, its flight home — and what it drew last. */
+  const carry = createTrayCarry();
+  let drawnCarried: readonly TrayCarriedFrame[] = [];
   let builderWakes = builder.wakes();
 
   /** The local mouse pointer's screen point as NDC (x right, y up), or null before one was seen. */
@@ -227,19 +245,6 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       const dpr = Math.min(vp.dpr > 0 ? vp.dpr : 1, maxDpr);
       opts.attach.resize(Math.max(1, Math.round(vp.w * dpr)), Math.max(1, Math.round(vp.h * dpr)));
       const camera = { x: cam.x, y: cam.y, zoom: cam.zoom };
-      const built = builder.build(camera, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, grid, looks, {
-        now, mat: amb.frame, portals: portalsOn, freeze, holdRedress, ...(lodPin !== undefined ? { lodZoom: lodPin } : {}), ...(holdPin !== undefined ? { hold: holdPin } : {}),
-        ...(restless !== undefined && restless.size > 0 ? { restless } : {}),
-      });
-      restless = undefined;
-      // the hand (D4b): the desk copy's stamp is everything the copy depends on — the builder's desk count (never the held
-      // object's own facts), the camera, the viewport, the theme, the grid, the pins, the mat's clocks and tilt this frame
-      const held = built.held === undefined ? undefined : {
-        ...built.held.inputs,
-        stamp: `${built.held.deskSeq}|${camStamp}|${vpStamp}|${themeGen}|${gridGen}|${pinGen}|${amb.frame === undefined ? "still" : `${amb.frame.time},${amb.frame.goboTime},${amb.frame.noise[0]},${amb.frame.noise[1]},${amb.frame.goboMatrix.join(",")}`}`,
-      };
-      // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
-      // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)
       // the drawer over it all, as its flux has it this frame (design-017 §3)
       let trayed = tray.step(now, vp.w, vp.h);
       // …and the specimens on it (K5a), while it shows (a still's `bare` pin leaves the board alone): each kind's composite pass made
@@ -253,6 +258,61 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
           trayed = { ...trayed, specimens: drawnSpecimens };
         }
       }
+      // THE TAKE (K5b): its motion stepped on the facts — the take, the specimens as drawn, the insert ghosts — before the desk is built,
+      // so a ghost the carry draws this frame (its grow, its flight home) is none of the desk's rows
+      const poses = carry.step(
+        now,
+        tf === undefined ? undefined : { take: tf.take ?? "", u: tf.takeU, v: tf.takeV, x: tf.takeX, y: tf.takeY, handed: tf.handed },
+        drawnSpecimens.map((f): CarrySpecimen => ({ type: f.type, zoom: f.view.zoom, ...f.object })),
+        readGhosts(w),
+        camera,
+        trayed?.p ?? 0,
+      );
+      const built = builder.build(camera, { width: vp.w, height: vp.h, dpr }, dtMs / 1000, theme, grid, looks, {
+        now, mat: amb.frame, portals: portalsOn, freeze, holdRedress, ...(lodPin !== undefined ? { lodZoom: lodPin } : {}), ...(holdPin !== undefined ? { hold: holdPin } : {}),
+        ...(restless !== undefined && restless.size > 0 ? { restless } : {}),
+        ...(carry.presented().size > 0 ? { presented: carry.presented() as ReadonlySet<Entity> } : {}),
+      });
+      restless = undefined;
+      // the hand (D4b): the desk copy's stamp is everything the copy depends on — the builder's desk count (never the held
+      // object's own facts), the camera, the viewport, the theme, the grid, the pins, the mat's clocks and tilt this frame
+      const held = built.held === undefined ? undefined : {
+        ...built.held.inputs,
+        stamp: `${built.held.deskSeq}|${camStamp}|${vpStamp}|${themeGen}|${gridGen}|${pinGen}|${amb.frame === undefined ? "still" : `${amb.frame.time},${amb.frame.goboTime},${amb.frame.noise[0]},${amb.frame.noise[1]},${amb.frame.goboMatrix.join(",")}`}`,
+      };
+      // what the tray carries (K5b), recorded by the kinds under their poses — the lifted copy with what one taken is made with, a ghost
+      // with its own props and rect; each lit by the desk's lamp where it is (a copy: where the ghost it becomes will be)
+      drawnCarried = [];
+      if (trayed !== undefined && poses.length > 0) {
+        const L = lampOf(built.grid.mat.plane);
+        const env = { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks };
+        const made: TrayCarriedFrame[] = [];
+        for (const pose of poses) {
+          const widget = widgetTypeFor(w, pose.type);
+          const kind = objectKindOf(widget);
+          if (widget === undefined || kind === undefined) continue;
+          const local = opts.locals?.get(kind.name);
+          if (pose.ghost !== undefined) {
+            const g = pose.ghost as Entity;
+            const at = w.get(g, Position);
+            const size = w.get(g, Size);
+            if (at === undefined || size === undefined) continue;
+            const r = rectOf(at, size);
+            made.push(carriedFrame(pose, { kind, rect: { x: r.cx - r.w / 2, y: r.cy - r.h / 2, w: r.w, h: r.h }, props: propsOf(w, g, widget), key: g as number, lamp: L, ...(local !== undefined ? { local } : {}) }, env));
+            continue;
+          }
+          const n = widget.defaultSize;
+          const cx = cam.x + pose.px / cam.zoom - (pose.u - 0.5) * n.w;
+          const cy = cam.y + pose.py / cam.zoom - (pose.v - 0.5) * n.h;
+          made.push(carriedFrame(pose, { kind, rect: { x: -n.w / 2, y: -n.h / 2, w: n.w, h: n.h }, props: takenProps(widget), key: -(0x40000000 + pose.id), lamp: { x: L.x - cx, y: L.y - cy, h: L.h }, ...(local !== undefined ? { local } : {}) }, env));
+        }
+        // a composite kind's pass is made async: made ahead, from the lift, so the hand-off never waits a frame for it
+        ground.warmTray(carry.types().flatMap((t) => { const k = objectKindOf(widgetTypeFor(w, t)); return k === undefined ? [] : [[carrySlot(t), k.name] as const]; }), () => { dirty = true; wakes.tray += 1; });
+        drawnCarried = made;
+        if (made.length > 0) trayed = { ...trayed, carried: made };
+      }
+      // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
+      // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)
       const inputs: GroundFrameInputs = {
         view: { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp.w, height: vp.h, dpr },
         mat: amb.frame,
@@ -274,6 +334,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       opts.onFrame?.();
       if (builder.live()) { dirty = true; wakes.live += 1; }   // a spring, a ghost or a re-dressing ramp still moves: the next frame paints too
       if (tray.live()) { dirty = true; wakes.tray += 1; }        // …and so does a drawer on its way, a lip lifting, a band letting go
+      if (carry.live()) { dirty = true; wakes.tray += 1; }       // …and a copy lifting, gliding back, a ghost growing or flying home
     },
   };
 
@@ -311,6 +372,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     look: (kind) => looks.get(kind),
     tray,
     traySpecimens: () => drawnSpecimens,
+    carry,
+    trayCarried: () => drawnCarried,
     dispose() { disposed = true; },
   };
 }
@@ -335,6 +398,46 @@ function readSpecimens(w: World, tray: Entity | undefined): TraySpecimen[] {
     }
     out.push({ key: e as number, type, kind, natural: widget.defaultSize, rect: { x: at.x, y: at.y, w: size.w, h: size.h }, props, accessory: entry.hang.accessory, pegs: entry.hang.pegs, label: entry.label });
   }
+  return out;
+}
+
+/** An object's props as the world holds them: each prop group's fields. */
+function propsOf(w: World, e: Entity, widget: WidgetType): Record<string, unknown> {
+  const props: Record<string, unknown> = {};
+  for (const g of widget.groups) {
+    const v = w.get(e, g.component) as Record<string, unknown> | undefined;
+    if (v !== undefined) for (const name of Object.keys(g.fields)) props[name] = v[name];
+  }
+  return props;
+}
+
+/** What one taken off the tray is made with, as props (K5b): the widget's defaults with its entry's `take` folded in — the insert ghost's. */
+function takenProps(widget: WidgetType): Record<string, unknown> {
+  const cells = new Map<unknown, Record<string, unknown>>();
+  for (const [c, v] of widget.prefab.components) cells.set(c, v as Record<string, unknown>);
+  const take = widget.tray === undefined ? undefined : trayTakeProps(widget.tray);
+  if (take !== undefined) for (const [c, v] of widgetSpawnInits(widget.type, { x: 0, y: 0, props: take }, widget).overrides) cells.set(c, v as Record<string, unknown>);
+  const props: Record<string, unknown> = {};
+  for (const g of widget.groups) {
+    const v = cells.get(g.component);
+    if (v !== undefined) for (const name of Object.keys(g.fields)) props[name] = v[name];
+  }
+  return props;
+}
+
+/** The insert ghosts in the world (K5b): each's rect, and — flying home — how far its tween has run. */
+function readGhosts(w: World): CarryGhost[] {
+  const out: CarryGhost[] = [];
+  w.query(insertQ).each((b) => {
+    for (const r of b) {
+      const e = b.entity(r);
+      const at = w.read(e, Position);
+      const size = w.read(e, Size);
+      const retiring = w.hasTag(e, GhostRetiring);
+      const tw = retiring ? w.get(e, TransformTween) : undefined;
+      out.push({ entity: e as number, type: w.read(e, InsertGhost).type ?? "", x: at.x, y: at.y, w: size.w, h: size.h, retiring, progress: tw === undefined ? (retiring ? 1 : 0) : tw.durationMs > 0 ? tw.elapsedMs / tw.durationMs : 1 });
+    }
+  });
   return out;
 }
 

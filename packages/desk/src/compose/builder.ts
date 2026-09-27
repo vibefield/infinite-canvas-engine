@@ -15,7 +15,10 @@
 // selection ring), advanced by the frame's dt and SNAPPED when settled (B7's trap: every spring
 // snaps, or the desk never idles); and the DELETE GHOST — an entity the journal reports removed
 // keeps its last rect, props and flux and fades over `ghostMs` in its last paint position, then is
-// forgotten. No ECS machinery for any of it: a board at rest carries no per-entity state.
+// forgotten. No ECS machinery for any of it: a board at rest carries no per-entity state. An INSERT GHOST (core's tray adoption,
+// K5b) is in a hand from birth: born lifted, its lift held until it lands; it leaves with no delete fade — promoted, its twin
+// takes its place in the same flush and lands with its lift; flown home, it has shrunk to nothing — and while another presenter
+// draws it (the tray's carry: its grow out of the lifted copy, its shrink home — `presented`) it is none of the root's rows.
 //
 // PAINT ORDER: `compareStackOrder` (the stratum first — D2a-core — then the sibling sequence), the
 // `Grab` set LAST (S1's rule: a carried object paints over what it crosses; the ground draws strata
@@ -60,6 +63,7 @@ import {
   Grab,
   Held,
   HeldTool,
+  InsertGhost,
   HeldView,
   heldEntity,
   LocalPointer,
@@ -225,6 +229,8 @@ export interface BuildOptions {
   readonly hold?: HoldPin;
   /** The kinds whose own state moved this tick (their `local.tick` wanted a frame — a print gliding, ink drying): their records are remade (D6). */
   readonly restless?: ReadonlySet<string>;
+  /** Objects another presenter draws this frame (K5b — the tray's carry: an insert ghost growing out of the lifted copy, or shrinking home): none of the root's rows, no marks, their springs still run. */
+  readonly presented?: ReadonlySet<Entity>;
 }
 
 export interface HoldPin { readonly e: number; readonly open?: boolean }
@@ -404,6 +410,8 @@ interface ObjectState {
   rung: number;
   /** Its kind's word on what has landed on it, as its record was last made (`KindLocal.landed`; D7). */
   landed: number;
+  /** An insert ghost (K5b): in a hand from birth — lifted until it lands — and gone without a delete fade. */
+  readonly insert: boolean;
   /** The marks' row for the record as made (the root slot). */
   markRow: MarkRow | null;
 }
@@ -677,20 +685,34 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     const kind = objectKindOf(widget);
     if (widget === undefined || kind === undefined) return undefined;
     meet(kind);
+    const insert = world.has(e, InsertGhost);
     const st: ObjectState = {
       kind, widget, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, locked: false, resizable: false, band: DEFAULT_STRATUM_BAND, dirty: true,
-      lift: 0, liftV: 0, hover: 0, hoverV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
-      rank: -1, active: false, lifted: false, stale: true, give: 0, content: null, zoom: Number.NaN, rung: 0, landed: 0, markRow: null,
+      lift: insert ? 1 : 0, liftV: 0, hover: 0, hoverV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
+      rank: -1, active: false, lifted: false, stale: true, give: 0, content: null, zoom: Number.NaN, rung: 0, landed: 0, markRow: null, insert,
     };
     states.set(e, st);
     return st;
   };
 
+  /**
+   * Insert ghosts that left this tick (K5b), by type and rect with their lift: the twin a promotion projects in the same flush, met
+   * where its ghost was, LANDS with that lift — the drop settles as any release does, never a snap to the mat. Kept for the tick's
+   * build alone (cleared as the next pull begins).
+   */
+  const landing: { readonly type: string; readonly rect: ObjectRect; readonly lift: number; readonly liftV: number }[] = [];
+
   /** The state for an entity, met and fresh — or undefined when it is not an object. */
   const stateOf = (e: Entity): ObjectState | undefined => {
-    const st = states.get(e) ?? enter(e);
+    const had = states.get(e);
+    const st = had ?? enter(e);
     if (st === undefined) return undefined;
     if (st.dirty) refresh(e, st);
+    if (had === undefined && landing.length > 0 && !st.insert) {
+      const i = landing.findIndex((l) => l.type === st.widget.type && Math.abs(l.rect.cx - st.rect.cx) < 0.5 && Math.abs(l.rect.cy - st.rect.cy) < 0.5);
+      const l = landing[i];
+      if (l !== undefined) { st.lift = l.lift; st.liftV = l.liftV; landing.splice(i, 1); }
+    }
     return st;
   };
 
@@ -778,6 +800,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const now = bopts.now ?? 0;
       const portalsOn = bopts.portals !== false;
       const restless = bopts.restless;
+      const presented = bopts.presented;
       const nav = world.getResource(NavTransition);
       const flying = nav?.active === true;
       /**
@@ -837,7 +860,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         const lift0 = st.lift;
         const hover0 = st.hover;
         let moving: boolean;
-        [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
+        [st.lift, st.liftV, moving] = advance(st.lift, st.liftV, pin?.lift ?? (st.grabbed || st.insert ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.lift !== undefined);
         if (moving) { live = true; deskMoving = true; }
         [st.hover, st.hoverV, moving] = advance(st.hover, st.hoverV, pin?.hover ?? (hover === e && !st.grabbed ? 1 : 0), S.liftHz, S.liftDamp, dt, pin?.hover !== undefined);
         if (moving) { live = true; deskMoving = true; }
@@ -931,6 +954,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           st.next = slot === "root" ? members[i + 1] : undefined;
           // the object in hand (or flying home) is drawn as a slot of its own over the desk, never among the desk's rows nor its marks (D4b)
           if (hand !== null && hand.e > 0 && (e === hand.entity || handRiders.has(e)) && slot === "root") continue;
+          // another presenter draws it this frame (K5b — the tray's carry): none of the root's rows nor its marks; its springs run on,
+          // so it rejoins the desk at the lift it has
+          if (slot === "root" && presented?.has(e) === true) { stepSprings(e, st); st.geometry = null; st.record = null; st.inside = null; continue; }
           // veiled by a kind's own state (D3t-c — a stuck note whose month the calendar is not showing): not drawn, never picked, no marks
           if (veiledNow.has(e) && !st.grabbed) { st.geometry = null; st.record = null; st.inside = null; continue; }
           const r = st.rect;
@@ -1320,6 +1346,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     live: () => stats.live,
     changed() {
       if (disposed) return false;
+      landing.length = 0;   // the last tick's promoted ghosts: their twins were met in its build, or never will be
       const delta = collector.drain();
       const wokeNow = woke;
       let any = woke;
@@ -1353,8 +1380,14 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         for (const e of delta.removed) {
           const st = states.get(e);
           if (st === undefined) continue;
-          ghostOf(e, st);   // the ghost takes the asset with it
-          if (!ghosts.has(e)) forget(st.kind, e);   // never drawn in the root: nothing fades, the kind lets go now (D2c)
+          if (st.insert) {
+            // an insert ghost leaves without a delete fade (K5b): promoted, its twin lands in its place with its lift; flown home, it has shrunk to nothing
+            landing.push({ type: st.widget.type, rect: st.rect, lift: st.lift, liftV: st.liftV });
+            forget(st.kind, e);
+          } else {
+            ghostOf(e, st);   // the ghost takes the asset with it
+            if (!ghosts.has(e)) forget(st.kind, e);   // never drawn in the root: nothing fades, the kind lets go now (D2c)
+          }
           states.delete(e);
           pins.delete(e);
           assets.delete(e);

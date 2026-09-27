@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, openTray, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type NavFace, type NavGeometrySlot, NavTransition, openTray, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -213,6 +213,17 @@ export interface TraySpecimenSeen {
   readonly screen: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
   readonly pegs: readonly (readonly [number, number])[];
   readonly zoom: number;
+  /** K5b: its object as drawn on screen (the fit inside the hang). */
+  readonly object: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+}
+
+/** What the tray carried in the last frame drawn (K5b — the door's witness): its type and phase, the ghost it presents (absent: the copy), its object's rect on screen, its scale. */
+export interface TrayCarriedSeen {
+  readonly type: string;
+  readonly phase: string;
+  readonly ghost?: number;
+  readonly screen: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  readonly zoom: number;
 }
 
 export interface DeskTrayDoor {
@@ -225,7 +236,7 @@ export interface DeskTrayDoor {
   /** The board's scroll, CSS px past its top — set when given (any value: a rig's 10⁶ rows down), and returned. */
   scroll(px?: number): number;
   /** The facts and the flux as of now, the drawer as last drawn (the pose seam's answer) and what the pass last laid. */
-  state(): TrayFluxState & { readonly frame: TrayScreenFrame | undefined; readonly laid: TrayLaid | null; readonly specimens: readonly TraySpecimenSeen[]; readonly tags: number; readonly slots: number };
+  state(): TrayFluxState & { readonly frame: TrayScreenFrame | undefined; readonly laid: TrayLaid | null; readonly specimens: readonly TraySpecimenSeen[]; readonly tags: number; readonly slots: number; readonly carried: readonly TrayCarriedSeen[]; readonly presented: readonly number[] };
   /** Pin the drawer for a still — the slide, the lift, the band, or hidden; `null` unpins. */
   pin(pin: TrayPin | null): void;
 }
@@ -454,7 +465,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       world, builder, kinds: objectKinds, ambient,
       ground: () => ground,
       attach: { resize: (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } } },
-      theme: opts.theme, palette: opts.palette, grid,
+      theme: opts.theme, palette: opts.palette, grid, locals,
       ...(opts.maxDpr !== undefined ? { maxDpr: opts.maxDpr } : {}),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
     });
@@ -465,13 +476,16 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // openable kind with held tools gets its driver the same way. Ticked before the kinds' clocks; idle ones skipped (D7 #14)
     const docs: TypingDocs = opts.docs ?? NO_DOCS;
     const drivers = new Map<string, KindDriver>();
-    const kindNamed = (name: string): ((e: Entity) => boolean) | undefined => (objectKinds.some((k) => k.name === name) ? (e) => builder.kindOf(e)?.name === name : undefined);
+    // an INSERT GHOST (core's tray adoption, K5b) is no kind's to drive: its drag is core's until it lands (a print's carry, a pad's
+    // hand, a note's typing never take it) — the twin it becomes is theirs
+    const ofKind = (e: Entity, name: string): boolean => builder.kindOf(e)?.name === name && !world.has(e, InsertGhost);
+    const kindNamed = (name: string): ((e: Entity) => boolean) | undefined => (objectKinds.some((k) => k.name === name) ? (e) => ofKind(e, name) : undefined);
     for (const t of types) {
       const make = driversOf(t);
       const k = objectKindOf(t);
       if (make === undefined || k === undefined) continue;
       const d = make({
-        world, docs, local: locals.get(k.name), look: () => compose.look(k.name), isKind: (e) => builder.kindOf(e)?.name === k.name, kind: kindNamed,
+        world, docs, local: locals.get(k.name), look: () => compose.look(k.name), isKind: (e) => ofKind(e, k.name), kind: kindNamed,
         geometryOf: (e) => builder.geometryOf(e), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), hand: () => builder.hand(),
         refused: (e) => builder.meetTape(e), wake: () => compose.wake("ink"),
       });
@@ -717,9 +731,12 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         state: () => ({
           ...compose.tray.state(), frame: compose.tray.frame(), laid: ground?.tray?.laid ?? null,
           // K5a: the specimens as the last frame drew them — each on screen, its pegs on screen, the scale its kind drew it at — its tags, its slots
-          specimens: compose.traySpecimens().map((f) => ({ type: f.type, kind: f.kind, label: f.label, accessory: f.accessory, screen: f.screen, pegs: f.pegs, zoom: f.view.zoom })),
+          specimens: compose.traySpecimens().map((f) => ({ type: f.type, kind: f.kind, label: f.label, accessory: f.accessory, screen: f.screen, pegs: f.pegs, zoom: f.view.zoom, object: f.object })),
           tags: ground?.marks?.tagsLaid.length ?? 0,
           slots: ground?.traySlots?.size ?? 0,
+          // K5b: what the tray carried last frame — the copy, a ghost growing or flying home — and the ghosts it drew for the desk
+          carried: compose.trayCarried().map((f) => ({ type: f.type, phase: f.phase, ...(f.ghost !== undefined ? { ghost: f.ghost } : {}), screen: f.screen, zoom: f.view.zoom })),
+          presented: [...compose.carry.presented()],
         }),
         pin(pin) { compose.tray.pin(pin); compose.wake("pin"); },
       },

@@ -17,6 +17,7 @@ import type { ObjectContext, ObjectKind } from "../kinds/world";
 import type { View } from "../lattice/lod";
 import type { PortalClip, Presentation } from "../nav/portal";
 import type { GroundTheme } from "../theme";
+import { type CarryPose, carryView } from "./carry";
 import { DRAWER, type DrawerRect } from "./drawer";
 import { TRAY_LOOK } from "./look";
 
@@ -49,6 +50,8 @@ export interface TraySpecimenFrame {
   readonly grid: GridConfig;
   /** Its rect on screen, CSS px. */
   readonly screen: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+  /** Its OBJECT as drawn on screen (the kernel's fit inside the hang), CSS px (K5b — what a take grabs, where one put back lands). */
+  readonly object: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
   /** Its pegs' hole centres on screen, CSS px. */
   readonly pegs: readonly (readonly [number, number])[];
   readonly accessory: TrayAccessory;
@@ -113,7 +116,8 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
     const reach = P * 2;
     if (y0 + s.rect.h + reach < face.cy - face.hy || y0 - reach > Math.min(height, face.cy + face.hy)) continue;
     // the kernel's fit (K5b — core's grab point reads the same law): the smaller ratio, centred in the hang
-    const { zoom } = specimenFit(s.rect, s.natural);
+    const fit = specimenFit(s.rect, s.natural);
+    const zoom = fit.zoom;
     const cx = x0 + s.rect.w / 2;
     const cy = y0 + s.rect.h / 2;
     const view = { camX: -cx / zoom, camY: -cy / zoom, zoom, width, height, dpr };
@@ -137,6 +141,7 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
     out.push({
       type: s.type, kind: s.kind.name, record, key: s.key, view, grid,
       screen: { x0, y0, x1: x0 + s.rect.w, y1: y0 + s.rect.h },
+      object: { x0: drawn.rect.x + fit.x, y0: drawn.rect.y + fit.y - drawn.scroll, x1: drawn.rect.x + fit.x + fit.w, y1: drawn.rect.y + fit.y + fit.h - drawn.scroll },
       pegs: s.pegs.map(([dx, dy]) => [hx + dx * P, hy + dy * P] as const),
       accessory: s.accessory, label: s.label,
     });
@@ -184,6 +189,69 @@ export function accessoryOf(f: TraySpecimenFrame): { readonly box: number[]; rea
     rect: [r.x0, r.y0, r.x1, r.y1],
     pegs0: [...peg(0), ...peg(1)],
     pegs1: [...peg(2), ...peg(3)],
+  };
+}
+
+/** A carried object this frame (K5b — tray/carry.ts): its kind's record under its pose's view, the slot it is drawn in, where it is on screen. */
+export interface TrayCarriedFrame {
+  /** Its slot's key in `TraySlots` — one per type, apart from the specimens' (a copy and its specimen draw in the same frame). */
+  readonly slot: string;
+  readonly type: string;
+  readonly kind: string;
+  readonly record: unknown;
+  readonly key: number;
+  readonly view: View & { readonly dpr: number };
+  readonly grid: GridConfig;
+  readonly phase: CarryPose["phase"];
+  /** The insert ghost it presents (absent: the lifted copy). */
+  readonly ghost?: number;
+  /** Its object's rect on screen, CSS px. */
+  readonly screen: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+}
+
+/** What a carried pose is drawn from: its kind, its rect in its own units (the world's for a ghost — top-left; its natural size about the origin for a copy), its props, its key, the desk's lamp in those units, the kind's desk state. */
+export interface TrayCarriedSource {
+  readonly kind: ObjectKind;
+  readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+  readonly props: Readonly<Record<string, unknown>>;
+  readonly key: number;
+  readonly lamp: Lamp;
+  readonly local?: unknown;
+}
+
+/** The slot a carried type draws in. */
+export const carrySlot = (type: string): string => `carry:${type}`;
+
+/**
+ * A carried pose as its kind records it: its view (`carryView` — the object's grab point at the pose's pivot, at its scale), the tray's
+ * grid (no dapple: it lies above the desk, D-K3.6), the pose's lift, the desk's lamp where the object is — so the copy lifted off the
+ * board and the ghost it becomes are lit alike, and coincide at the hand-off.
+ */
+export function carriedFrame(pose: CarryPose, src: TrayCarriedSource, env: Omit<TraySpecimenEnv, "lift">): TrayCarriedFrame {
+  const v = carryView(pose, src.rect);
+  const view = { camX: v.camX, camY: v.camY, zoom: v.zoom, width: env.view.width, height: env.view.height, dpr: env.view.dpr };
+  const grid = trayGrid(env.grid);
+  const r = src.rect;
+  const ctx: ObjectContext = {
+    entity: src.key as ObjectContext["entity"],
+    rect: { cx: r.x + r.w / 2, cy: r.y + r.h / 2, w: r.w, h: r.h },
+    props: src.props,
+    flux: { lift: pose.lift, hover: 0, ring: 0, fade: 1 },
+    look: env.looks.get(src.kind.name),
+    theme: env.theme,
+    lamp: src.lamp,
+    view,
+    grid,
+    dt: 0,
+    ...(src.local !== undefined ? { local: src.local } : {}),
+  };
+  const record = src.kind.record(src.kind.resolve(ctx), ctx);
+  const x0 = (r.x - v.camX) * v.zoom;
+  const y0 = (r.y - v.camY) * v.zoom;
+  return {
+    slot: carrySlot(pose.type), type: pose.type, kind: src.kind.name, record, key: src.key, view, grid, phase: pose.phase,
+    ...(pose.ghost !== undefined ? { ghost: pose.ghost } : {}),
+    screen: { x0, y0, x1: x0 + r.w * v.zoom, y1: y0 + r.h * v.zoom },
   };
 }
 

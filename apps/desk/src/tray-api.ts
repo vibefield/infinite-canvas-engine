@@ -21,7 +21,7 @@ export interface TrayApi {
   pin(pin: TrayPin | null): void;
   state(): ReturnType<DeskLayerHandle["tray"]["state"]>;
   /** Core's `Tray` fact as it stands (null: no tray entity) — and its `TrayContent` (K5a: the laid content's foot, the lay count). */
-  facts(): { readonly open: boolean; readonly scroll: number; readonly stretch: number; readonly lip: boolean; readonly wheelAt: number; readonly hover: string; readonly bottom: number; readonly laid: number } | null;
+  facts(): { readonly open: boolean; readonly scroll: number; readonly stretch: number; readonly lip: boolean; readonly wheelAt: number; readonly hover: string; readonly bottom: number; readonly laid: number; readonly take: string; readonly handed: number } | null;
   /** The specimens in the world (K5a), read back from core's facts. */
   specimens(): readonly TrayWorldSpecimen[];
   /** What the lattice law lays (kernel `layTray` — the rig runs it): the catalog's tray entries, the drawer's width as drawn and the pitch. */
@@ -51,7 +51,7 @@ export function trayApi(engine: CanvasEngine, handle: DeskLayerHandle): TrayApi 
       const e = trayEntity(engine.world);
       const t = e === undefined ? undefined : engine.world.get(e, Tray);
       const c = e === undefined ? undefined : engine.world.get(e, TrayContent);
-      return t === undefined ? null : { open: t.open, scroll: t.scroll, stretch: t.stretch, lip: t.lip, wheelAt: t.wheelAt, hover: t.hover ?? "", bottom: c?.bottom ?? 0, laid: c?.laid ?? 0 };
+      return t === undefined ? null : { open: t.open, scroll: t.scroll, stretch: t.stretch, lip: t.lip, wheelAt: t.wheelAt, hover: t.hover ?? "", bottom: c?.bottom ?? 0, laid: c?.laid ?? 0, take: t.take ?? "", handed: t.handed };
     },
     specimens() {
       const w = engine.world;
