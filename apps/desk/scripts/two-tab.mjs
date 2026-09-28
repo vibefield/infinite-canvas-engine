@@ -98,10 +98,15 @@ try {
   check((await A.q("window.__desk.note.editing()")) === a, "a tap in A puts A's editor on the note");
   const sent0 = await A.q("window.__desk.room.commits()");   // the first call arms the count
   await typeKeys("hello");
-  const liveA = await A.q(`window.__desk.note.ink(${a})`);
-  const sent1 = await A.q("window.__desk.room.commits()");
+  // A's text, its outbound count and its session are ONE frame's, read in ONE evaluate (timing.mjs FRAMES) before B is asked. Read in
+  // four round trips, the session LAST, the row went red on a loaded host: a background tab's read can stall ~1 s — it answered just
+  // after A's idle commit, 1 s after the last key, on K8a's tip and on main alike — and the session was read closed after a
+  // legitimate commit. B's answer time is printed: a read past 1 s may hold that commit
+  const midA = await A.q(`(() => { const d = window.__desk; return { text: d.note.ink(${a})?.text, sent: d.room.commits(), open: d.note.sessionOpen() }; })()`);
+  const tB = Date.now();
   const midB = await B.q(`window.__desk.note.docInk(${b})`);
-  check(sent1 === sent0 && liveA?.text === "hello" && (await A.q("window.__desk.note.sessionOpen()")) && midB?.text === "", `A's keystrokes are live in A ("${liveA?.text}") and cross nothing while the session is open (A sent ${sent1 - sent0} updates; B's document: "${midB?.text}")`);
+  const msB = Date.now() - tB;
+  check(midA.sent === sent0 && midA.text === "hello" && midA.open && midB?.text === "", `A's keystrokes are live in A ("${midA.text}") and cross nothing while the session is open (A sent ${midA.sent - sent0} updates, its session ${midA.open ? "open" : "CLOSED"} in the same frame; B's document: "${midB?.text}", read in ${msB} ms)`);
 
   // Escape commits the session: B's document holds the text with A's seeds — the same hand
   await key("Escape");
