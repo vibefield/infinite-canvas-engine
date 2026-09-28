@@ -20,8 +20,8 @@
 //   capture          20 frames → a Chrome trace-event JSON (CPU spans, a GPU track per pass, counters), saved beside the shot
 //   per-kind cost    the ablation's A/A control within its noise floor
 //   the drawer       (K3) armed with the pegboard drawer OPEN and at rest, 240 frames: 0 submits, 0 redraws, no frame; then a
-//                    scroll: its pipeline `tray/pegboard` is each frame's `tray` row — one draw of one, inside the `ground` pass —
-//                    one block uploaded a frame (its own; its light block never), the ledger's `tray` row its hash and two blocks
+//                    scroll: its pipeline `tray/pegboard` is each frame's `tray` row — two draws (the board to its edge, the
+//                    accessories), inside the `ground` pass — its blocks uploaded (its light block never), the ledger's `tray` row
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:gpu        (DESK_HEADED=1 to watch)
 // Exit 0 = every check passed; 1 = a check failed or a throw; 2 = the watchdog.
@@ -219,10 +219,11 @@ try {
 
   // ── THE DRAWER (K3, design-017) under the profiler. Armed with the drawer OPEN and at rest — the counter read before the arm —
   //    240 frames: no submit, no redraw, no GPU frame (K-L5 · K-L6: its motion is flux that runs only while it moves). Then a
-  //    scroll: its pipeline `tray/pegboard` is every frame's `tray` row — THREE draws inside the `ground` pass (it has no pass of its
-  //    own: it draws after the marks): the board under its specimens (one instance), the specimens' accessories (one each), the rim
-  //    over them (one) — K5a; the specimens themselves are their kinds' rows. Its uploads the `tray` row's — its block and the
-  //    accessories' records, both moving with the board — its blocks and hash texture the ledger's.
+  //    scroll: its pipeline `tray/pegboard` is every frame's `tray` row — TWO draws inside the `ground` pass (it has no pass of its
+  //    own: it draws after the marks): the board under its specimens, its edge included (one instance — the rim laid over them all
+  //    retired, design-018 §2), and the specimens' accessories (one each) — K5a; the specimens themselves are their kinds' rows. Its
+  //    uploads the `tray` row's — its block and the accessories' records, both moving with the board — its blocks and hash texture
+  //    the ledger's.
   await q("window.__desk.tray.open(); 0");
   await settle();
   await front();
@@ -244,7 +245,7 @@ try {
   const last4 = run4.at(-1);
   const timed4 = run4.filter((f) => f.timing === "timed");
   const passes4 = [...new Set(timed4.flatMap((f) => f.passes.map((p) => p.label)))];
-  check(nAcc === 6 && run4.length > 0 && run4.every((f) => f.byKind.tray?.draws === 3 && f.byKind.tray?.instances === 2 + nAcc) && timed4.length > 0 && timed4.every((f) => f.passes.some((p) => p.label === "ground") && !f.passes.some((p) => p.label.startsWith("tray"))), `the drawer is every frame's "tray" row (pipeline tray/pegboard): THREE draws — the board, ${nAcc} accessories, the rim — of ${2 + nAcc} instances in each of ${run4.length} scroll frames (${JSON.stringify(last4?.byKind.tray)}), inside the ground pass — the timed frames' passes: ${passes4.join(" · ")}`);
+  check(nAcc === 6 && run4.length > 0 && run4.every((f) => f.byKind.tray?.draws === 2 && f.byKind.tray?.instances === 1 + nAcc) && timed4.length > 0 && timed4.every((f) => f.passes.some((p) => p.label === "ground") && !f.passes.some((p) => p.label.startsWith("tray"))), `the drawer is every frame's "tray" row (pipeline tray/pegboard): TWO draws — the board to its edge, ${nAcc} accessories — of ${1 + nAcc} instances in each of ${run4.length} scroll frames (${JSON.stringify(last4?.byKind.tray)}), inside the ground pass — the timed frames' passes: ${passes4.join(" · ")}`);
   // the wind is still (no pointer here), so the frame's light does not move: a scroll changes the drawer's own block alone
   const up4 = run4.map((f) => f.uploads.tray ?? { writes: 0, bytes: 0 });
   const mem4 = last4?.memory?.byLabel.tray;
