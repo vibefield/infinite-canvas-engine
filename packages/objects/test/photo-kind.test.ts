@@ -262,7 +262,7 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     expect(log).toEqual(["mat", "photo draw 0×2", "desk paper 0..1"]);
   });
 
-  it("the pictures are the pass's and go with the last slot standing: a picture's chain is let go once its thumbnail is laid, the array stays until the last slot", async () => {
+  it("the pictures are the pass's and go with the last slot standing: a picture's chain is let go once its thumbnail is laid, the array with its last picture (K9 R2), the stand-in with the last slot", async () => {
     const { mat, kind, textures } = await root();
     const labelled = (prefix: string) => textures.filter((t) => (t.texture as { label: string }).label.startsWith(prefix));
     expect(labelled("photo/thumbnails")).toHaveLength(1);   // the empty array's stand-in, made with the root's pass
@@ -272,8 +272,9 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     expect(labelled("photo/picture ").every((t) => t.destroyed)).toBe(true);   // the chain: its tail copied into the layer, let go
     kind.pass.dropPicture(picture);
     expect(kind.pass.pictureStats.pictures).toBe(0);
+    expect(labelled("photo/thumbnails").map((t) => t.destroyed)).toEqual([false, true]);   // the array let go with its last picture (K9 R2); the stand-in stands
     spawned.dispose();
-    expect(labelled("photo/thumbnails").some((t) => t.destroyed)).toBe(false);   // the root still stands
+    expect(labelled("photo/thumbnails")[0]?.destroyed).toBe(false);   // the root still stands
     kind.dispose();
     expect(labelled("photo/thumbnails").every((t) => t.destroyed)).toBe(true);    // the last slot standing takes them
   });

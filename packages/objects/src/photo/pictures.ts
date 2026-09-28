@@ -159,7 +159,7 @@ export class PictureStore {
     for (const p of this.pictures.values()) if (p.detail !== null) this.chargeDetail(p);
   }
 
-  /** The budget's ask: the thumbnails always; a detail while a slot binds it. */
+  /** The budget's ask: the thumbnails always (they RESIDE since K9 R2 — never in the LRU — so this is their word if ever asked); a detail while a slot binds it. */
   keeps(key: string): boolean {
     if (key === "thumbnails") return true;
     const id = /^detail (\d+)$/.exec(key);
@@ -174,7 +174,8 @@ export class PictureStore {
     const was = this.thumbs.version;
     const layer = this.thumbs.take();
     if (layer === null) return null;
-    if (this.thumbs.version !== was) { this.chargeThumbs(); this.group = this.bind(); }   // the array grew
+    this.chargeThumbs();   // a layer more in use (K9 R2: the resident charge is what the layers in use weigh)
+    if (this.thumbs.version !== was) this.group = this.bind();   // the array grew
     const { width, height } = first;
     const mips = mipCount(width, height);
     const base = thumbBase(width, height);
@@ -193,13 +194,15 @@ export class PictureStore {
     p.dropped = true;
     this.pictures.delete(p.id);
     this.asked.delete(p);
-    this.thumbs.give(p.layer);
+    const was = this.thumbs.version;
+    this.thumbs.give(p.layer);   // (K9 R2: the array may shrink here — its version moves, the group is made again)
+    this.chargeThumbs();
     p.layer = -1;
     const slotted = p.slot >= 0;
     if (slotted) this.slots[p.slot] = null;
     p.slot = -1;
     this.setDetail(p, null);
-    if (slotted) this.group = this.bind();
+    if (slotted || this.thumbs.version !== was) this.group = this.bind();
   }
 
   /** Asks the next `step` has to answer — what a frame drew since the last step (K7a: the kind is due until it answers them). */
@@ -286,7 +289,8 @@ export class PictureStore {
 
   private thumbsBytes(): number { return this.thumbs.bytes; }
 
-  private chargeThumbs(): void { this.budget?.charge("photo", "thumbnails", this.thumbsBytes(), () => {}); }
+  /** The thumbnails RESIDE in the budget (K9 R2): never evicted, outside the caches' room, charged at what the layers in use weigh. */
+  private chargeThumbs(): void { this.budget?.reside("photo", "thumbnails", this.thumbs.usedBytes); }
 
   private chargeDetail(p: Held): void {
     const d = p.detail;
@@ -334,16 +338,18 @@ export class PictureStore {
   }
 
   /**
-   * The finest level from `base` whose chain the budget has room for beside what the pictures already pin (the thumbnails, the
-   * other bound details) — so the pictures alone never hold more than the cap; null when not even the coarsest detail fits
-   * (the thumbnail serves, a little soft). The other owners' rasters are the budget's LRU to trim, as before.
+   * The finest level from `base` whose chain the budget's ROOM holds beside the other bound details — so the details alone never
+   * hold more than the caches' room (K9 R2: the thumbnails reside outside it and pin nothing here; before, they were counted and
+   * past ~128 pictures no detail could ever be afforded); null when not even the coarsest detail fits (the thumbnail serves, a
+   * little soft). The other owners' rasters are the budget's LRU to trim, as before.
    */
   private afford(p: Held, base: number): number | null {
     const b = this.budget;
     if (b === undefined) return base;
-    let pinned = this.thumbsBytes();
+    let pinned = 0;
     for (const q of this.slots) if (q !== null && q !== p && q.detail !== null) pinned += q.detail.bytes;
-    for (let j = base; j < p.base; j++) if (chainBytes(Math.max(p.width >> j, 1), Math.max(p.height >> j, 1), p.mips - j) <= b.cap - pinned) return j;
+    const room = b.room() - pinned;
+    for (let j = base; j < p.base; j++) if (chainBytes(Math.max(p.width >> j, 1), Math.max(p.height >> j, 1), p.mips - j) <= room) return j;
     return null;
   }
 

@@ -83,14 +83,15 @@ describe("the store on a fake device", () => {
     return { s, budget, textures, picture, woke: () => woke, fetches: () => fetches };
   }
 
-  it("a picture's thumbnail is its chain's tail in a layer of ONE array (charged, always kept); its chain let go once laid", () => {
+  it("a picture's thumbnail is its chain's tail in a layer of ONE array (resident in the budget at what is in use — K9 R2; always kept); its chain let go once laid", () => {
     const { s, budget, textures, picture } = store();
     const a = picture(4096, 3072);
     const b = picture(192, 128);
     expect([a.layer, a.base, b.layer, b.base]).toEqual([0, 3, 1, 0]);
     expect(textures.filter((t) => t.label === "photo/thumbnails")).toHaveLength(1);   // one array for both
     expect(textures.filter((t) => t.label.startsWith("photo/picture ")).every((t) => t.destroyed)).toBe(true);
-    expect(budget.stats().byOwner.photo).toEqual({ bytes: 4 * chainBytes(THUMB, THUMB, THUMB_MIPS), entries: 1 });
+    expect(budget.stats().byOwner.photo).toEqual({ bytes: 2 * chainBytes(THUMB, THUMB, THUMB_MIPS), entries: 1 });   // two layers in use of a capacity of four
+    expect(budget.stats().resident).toBe(2 * chainBytes(THUMB, THUMB, THUMB_MIPS));
     expect(s.keeps("thumbnails")).toBe(true);
     expect(budget.trim(() => false) >= 0 && s.keeps("thumbnails")).toBe(true);
     // a fifth picture doubles the array: a new one, the old copied and let go
@@ -167,7 +168,9 @@ describe("the store on a fake device", () => {
     roomy.s.step();
     await settle();
     expect(must(p.detail).base).toBe(2);
-    const tight = store(thumbs + 1000);                      // room for no detail
+    // room for no detail: the one thumbnail resides, and what it leaves (and the caches' floor, a quarter of the cap — K9 R2) is
+    // under the coarsest detail's 4.2 MB
+    const tight = store(chainBytes(THUMB, THUMB, THUMB_MIPS) + 1000);
     const q = tight.picture(4096, 3072);
     tight.s.ask(q, 0.3);
     tight.s.step();

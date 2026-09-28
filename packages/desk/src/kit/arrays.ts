@@ -23,10 +23,11 @@ export function chainBytes(w: number, h: number, levels: number, texel = 4): num
 
 /**
  * THE LAYER ALLOCATOR: an array's layers handed out lowest first and taken back; `take` says the capacity the array must hold
- * for the layer it hands out (doubling, from `first`, to the device's `max`) — null when it holds no more.
+ * for the layer it hands out (doubling, from `first`, to the device's `max`) — null when it holds no more. K9 R2: `shrunk` says
+ * the capacity the layers in use let the array fall back to — halves, and nothing at all when none is in use.
  */
 export class Layers {
-  private readonly free: number[] = [];
+  private free: number[] = [];
   private next = 0;
   capacity = 0;
   constructor(readonly first = 4, readonly max = 256) {}
@@ -39,6 +40,29 @@ export class Layers {
   }
   give(layer: number): void { if (layer >= 0 && layer < this.next && !this.free.includes(layer)) this.free.push(layer); }
   get used(): number { return this.next - this.free.length; }
+  /** The highest layer in use (−1 when none): what a smaller array must still hold. */
+  get highest(): number {
+    let h = this.next - 1;
+    while (h >= 0 && this.free.includes(h)) h -= 1;
+    return h;
+  }
+  /**
+   * The capacity an array holding these layers may shrink to (K9 R2): halved while fewer than a QUARTER of it is in use and the
+   * highest layer in use fits the half — down to `first`; 0 when none is in use; the current capacity when it cannot shrink.
+   */
+  shrunk(): number {
+    if (this.used === 0) return 0;
+    let c = this.capacity;
+    while (c > this.first && this.used * 4 < c && this.highest < c / 2) c /= 2;
+    return c;
+  }
+  /** The allocator's word after the array was remade at `capacity` (from `shrunk()`): the layers past it are forgotten. */
+  shrinkTo(capacity: number): void {
+    if (capacity === 0) { this.free = []; this.next = 0; this.capacity = 0; return; }
+    this.next = Math.min(this.next, capacity);
+    this.free = this.free.filter((l) => l < this.next);
+    this.capacity = capacity;
+  }
 }
 
 const FILL = /* wgsl */ `
@@ -97,18 +121,33 @@ export class LayerArray {
   /** Layers in use; the array's capacity. */
   get used(): number { return this.layers.used; }
   get capacity(): number { return this.tex === null ? 0 : this.layers.capacity; }
-  /** What the array weighs, every layer with its chain. */
+  /** What the array weighs on the device, every layer of its capacity with its chain (the GPU ledger's row). */
   get bytes(): number { return this.capacity * chainBytes(this.side, this.side, this.mips); }
+  /** What the layers IN USE weigh (K9 R2: the budget's resident charge — the capacity's slack is the ledger's to show, bounded by `give`'s shrink). */
+  get usedBytes(): number { return this.used * chainBytes(this.side, this.side, this.mips); }
 
   /** A layer for a new object (the array grown — its old layers copied — when it must be); null when the device holds no more. */
   take(): number | null {
     const t = this.layers.take();
     if (t === null) return null;
-    if (this.tex === null || t.capacity > this.cap) this.grow(t.capacity);
+    if (this.tex === null || t.capacity > this.cap) this.remake(t.capacity);
     return t.layer;
   }
 
-  give(layer: number): void { this.layers.give(layer); }
+  /**
+   * A layer given back — and the array SHRUNK when fewer than a quarter of its layers are in use and the ones in use fit the
+   * half (K9 R2: an array never shrank before, so its charge survived a document switch): remade at half, its low layers copied;
+   * let go entirely when none is in use. The version moves as on a growth — a holder rebinds its view.
+   */
+  give(layer: number): void {
+    this.layers.give(layer);
+    if (this.tex === null) return;
+    const to = this.layers.shrunk();
+    if (to >= this.cap) return;
+    if (to === 0) { this.tex.destroy(); this.tex = null; this.cap = 0; this.layers.shrinkTo(0); this.version += 1; return; }
+    this.layers.shrinkTo(to);
+    this.remake(to);
+  }
 
   /**
    * Layer `layer`'s every level from `src`'s chain: level `base + m` at the origin, its edge carried to the layer's; a level past
@@ -138,7 +177,8 @@ export class LayerArray {
 
   destroy(): void { this.tex?.destroy(); this.tex = null; this.cap = 0; }
 
-  private grow(capacity: number): void {
+  /** The array made again at `capacity` layers — the old one's layers copied, as many as both hold — and the old destroyed. */
+  private remake(capacity: number): void {
     const next = this.device.createTexture({
       label: this.label, size: [this.side, this.side, capacity], format: this.format, mipLevelCount: this.mips,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -146,10 +186,11 @@ export class LayerArray {
     });
     const old = this.tex;
     if (old !== null) {
-      const enc = this.device.createCommandEncoder({ label: `${this.label} grow` });
+      const enc = this.device.createCommandEncoder({ label: `${this.label} ${capacity > this.cap ? "grow" : "shrink"}` });
+      const layers = Math.min(this.cap, capacity);
       for (let m = 0; m < this.mips; m++) {
         const s = Math.max(this.side >> m, 1);
-        enc.copyTextureToTexture({ texture: old, mipLevel: m }, { texture: next, mipLevel: m }, [s, s, this.cap]);
+        enc.copyTextureToTexture({ texture: old, mipLevel: m }, { texture: next, mipLevel: m }, [s, s, layers]);
       }
       this.device.queue.submit([enc.finish()]);
       old.destroy();

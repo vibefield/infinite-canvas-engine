@@ -6,11 +6,23 @@
 // beyond its cap — never one the owner says to keep this frame (what is on screen) — and the owner remakes an evicted raster
 // from its data when it is next drawn. The numbers are the ledger's own (`stats`): the desk's rig reads them; nothing here
 // touches the device.
+//
+// RESIDENT charges (K9 R2, design-016 K-L4 "thumbnails always"): what an owner keeps WHOLE — the pictures' and the boards'
+// thumbnail arrays — RESIDES: it is never evicted and never in the LRU's way. Before K9 the arrays were charged like caches
+// (kept by `keep`, but counted against the cap): past ~128 pictures or boards they alone filled the cap, so the LRU evicted
+// every other owner's off-screen raster each tick and the pictures could afford no detail at all. Now the caches' ROOM is what
+// the resident charges leave of the cap, never under a FLOOR (a quarter of it — a few details, a board raster or two — however
+// many thumbnails stand), and `used` reads the whole honestly: resident and caches together, over the cap when the thumbnails
+// alone are (the rig's memory row says so rather than the desk hiding it).
 
 export interface BudgetStats {
   readonly cap: number;
-  /** Bytes charged across every owner. */
+  /** Bytes charged across every owner — the resident arrays and the caches together. */
   readonly used: number;
+  /** Bytes that reside (never evicted): the thumbnail arrays. */
+  readonly resident: number;
+  /** What the caches may hold beside what resides: `cap − resident`, never under the floor. */
+  readonly room: number;
   readonly entries: number;
   /** Evictions since the ledger was made. */
   readonly evictions: number;
@@ -19,39 +31,57 @@ export interface BudgetStats {
 
 export interface RasterBudget {
   readonly cap: number;
+  /** The caches' room this moment: `cap − resident`, never under the floor. */
+  room(): number;
   /** An owner's raster `key` of `bytes`, and how to let it go; a second charge of the same key re-sizes it (the old bytes released). Touches it. */
   charge(owner: string, key: string, bytes: number, evict: () => void): void;
+  /** An owner's `key` kept WHOLE (a thumbnail array): never evicted, outside the caches' room; a second call re-sizes it. */
+  reside(owner: string, key: string, bytes: number): void;
   /** The raster was used (drawn, written): it is the most recently used now. */
   touch(owner: string, key: string): void;
-  /** The owner let the raster go itself (no eviction). */
+  /** The owner let the raster (or the resident array) go itself (no eviction). */
   release(owner: string, key: string): void;
   /**
-   * Evict least-recently-used entries until the charge is within the cap — never one `keep` says to hold (an owner's word on
-   * what is on screen this frame; absent, every entry may go). Returns the bytes freed.
+   * Evict least-recently-used caches until they are within their room — never one `keep` says to hold (an owner's word on
+   * what is on screen this frame; absent, every cache may go), never a resident charge. Returns the bytes freed.
    */
   trim(keep?: (owner: string, key: string) => boolean): number;
   stats(): BudgetStats;
 }
 
-interface Entry { readonly owner: string; readonly key: string; bytes: number; used: number; readonly evict: () => void }
+interface Entry { readonly owner: string; readonly key: string; bytes: number; used: number; readonly resident: boolean; readonly evict: () => void }
 
 const id = (owner: string, key: string): string => `${owner}\u0000${key}`;
 
-export function createRasterBudget(cap: number): RasterBudget {
+/** The caches' floor as a share of the cap: what they may always hold, however much resides (D-K9-d.1). */
+export const BUDGET_FLOOR = 1 / 4;
+
+export function createRasterBudget(cap: number, floor: number = Math.floor(cap * BUDGET_FLOOR)): RasterBudget {
   const entries = new Map<string, Entry>();
-  let used = 0;
+  let cached = 0;
+  let resident = 0;
   let clock = 0;
   let evictions = 0;
-  const drop = (k: string, ent: Entry): void => { entries.delete(k); used -= ent.bytes; };
+  const drop = (k: string, ent: Entry): void => { entries.delete(k); if (ent.resident) resident -= ent.bytes; else cached -= ent.bytes; };
+  const room = (): number => Math.max(floor, cap - resident);
   return {
     cap,
+    room,
     charge(owner, key, bytes, evict) {
       const k = id(owner, key);
       const had = entries.get(k);
       if (had !== undefined) drop(k, had);
       clock += 1;
-      entries.set(k, { owner, key, bytes, used: clock, evict });
-      used += bytes;
+      entries.set(k, { owner, key, bytes, used: clock, resident: false, evict });
+      cached += bytes;
+    },
+    reside(owner, key, bytes) {
+      const k = id(owner, key);
+      const had = entries.get(k);
+      if (had !== undefined) drop(k, had);
+      clock += 1;
+      entries.set(k, { owner, key, bytes, used: clock, resident: true, evict: () => {} });
+      resident += bytes;
     },
     touch(owner, key) {
       const ent = entries.get(id(owner, key));
@@ -63,12 +93,13 @@ export function createRasterBudget(cap: number): RasterBudget {
       if (ent !== undefined) drop(k, ent);
     },
     trim(keep) {
-      if (used <= cap) return 0;
+      const limit = room();
+      if (cached <= limit) return 0;
       // the candidates, least recently used first
-      const order = [...entries.entries()].filter(([, e]) => keep === undefined || !keep(e.owner, e.key)).sort((a, b) => a[1].used - b[1].used);
+      const order = [...entries.entries()].filter(([, e]) => !e.resident && (keep === undefined || !keep(e.owner, e.key))).sort((a, b) => a[1].used - b[1].used);
       let freed = 0;
       for (const [k, ent] of order) {
-        if (used <= cap) break;
+        if (cached <= limit) break;
         drop(k, ent);
         freed += ent.bytes;
         evictions += 1;
@@ -84,7 +115,7 @@ export function createRasterBudget(cap: number): RasterBudget {
         o.bytes += e.bytes;
         o.entries += 1;
       }
-      return { cap, used, entries: entries.size, evictions, byOwner };
+      return { cap, used: resident + cached, resident, room: room(), entries: entries.size, evictions, byOwner };
     },
   };
 }

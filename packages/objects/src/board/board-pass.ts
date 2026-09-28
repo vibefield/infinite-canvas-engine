@@ -400,7 +400,13 @@ export class BoardPass {
     this.evict(id);
     const s = this.shared;
     const t = s.thumbOf.get(id);
-    if (t !== undefined) { s.thumbs.give(t.layer); s.thumbOf.delete(id); }
+    if (t !== undefined) {
+      const was = s.thumbs.version;
+      s.thumbs.give(t.layer);
+      s.thumbOf.delete(id);
+      if (s.bare !== null && s.thumbs.texture === null) s.bare = null;   // the array let go whole (K9 R2): the empty layer is taken again on need
+      if (s.thumbs.version !== was) bindPool(s);   // the array shrank (K9 R2)
+    }
   }
 
   /**
@@ -444,8 +450,10 @@ export class BoardPass {
   /** Is board `id`'s raster bound this frame (a pool slot, or the live one)? The budget keeps what is. */
   bound(id: number): boolean { return this.shared.pool.includes(id) || this.shared.live === id; }
 
-  /** The thumbnails' array: what it weighs (the budget's `board`/`thumbnails`, always kept). */
+  /** The thumbnails' array: what it weighs on the device, its whole capacity (the GPU ledger's row). */
   get thumbnailBytes(): number { return this.shared.thumbs.bytes; }
+  /** What the thumbnails' layers IN USE weigh — the budget's resident `board`/`thumbnails` charge (K9 R2). */
+  get thumbnailUsedBytes(): number { return this.shared.thumbs.usedBytes; }
 
   /** Has board `id` its far-LOD thumbnail (a layer, cut)? */
   thumbed(id: number): boolean { return this.shared.thumbOf.has(id); }

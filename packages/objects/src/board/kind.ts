@@ -303,12 +303,12 @@ export function createBoardInk(host: KindHost): BoardInk {
   const rasterBytes = (size: readonly [number, number]): number => Math.round(size[0] * size[1] * (4 * (4 / 3) + 1 + 1));
   /** The boards by their id on the pass (the step names boards by id). */
   const byId = new Map<number, Entity>();
-  /** The far-LOD thumbnails' array (K6a): charged when it grows, always kept. */
-  let thumbBytes = 0;
+  /** The far-LOD thumbnails' array (K6a): RESIDENT in the budget (K9 R2 — never evicted, outside the caches' room), charged at what its layers in use weigh, whenever that moves. */
+  let thumbBytes = -1;
   const chargeThumbs = (pass: BoardPass): void => {
-    if (budget === undefined || pass.thumbnailBytes === thumbBytes) return;
-    thumbBytes = pass.thumbnailBytes;
-    budget.charge("board", "thumbnails", thumbBytes, () => {});
+    if (budget === undefined || pass.thumbnailUsedBytes === thumbBytes) return;
+    thumbBytes = pass.thumbnailUsedBytes;
+    budget.reside("board", "thumbnails", thumbBytes);
   };
   const state = (e: Entity): BoardState => {
     let st = boards.get(e);
@@ -500,8 +500,10 @@ export function createBoardInk(host: KindHost): BoardInk {
       const st = boards.get(e);
       if (st === undefined) return;
       queue?.drop(OWNER, e);
-      passOf()?.release(st.id);
+      const pass = passOf();
+      pass?.release(st.id);
       budget?.release("board", String(st.id));
+      if (pass !== undefined) chargeThumbs(pass);   // its thumbnail's layer given back: the resident charge follows (K9 R2)
       entityOf.delete(String(st.id));
       byId.delete(st.id);
       landedOf.delete(e);
@@ -511,6 +513,8 @@ export function createBoardInk(host: KindHost): BoardInk {
       queue?.clear(OWNER);
       const pass = passOf();
       for (const st of boards.values()) { pass?.release(st.id); budget?.release("board", String(st.id)); }
+      budget?.release("board", "thumbnails");
+      thumbBytes = -1;
       boards.clear();
       entityOf.clear();
     },

@@ -654,7 +654,11 @@ try {
     check(row(far, "notebook") < 1048576 && row(far, "calendar") < 1048576, `pictures: no notebook, no calendar on the desk — the notebook kind ${MB(row(far, "notebook"))}, the calendar kind ${MB(row(far, "calendar"))} (before K6a: 164.2 and 42.2 MB)`);
     check(far.ledger !== null && far.ledger.total <= far.budget.cap, `pictures: twenty 4096² pictures on the desk and the whole GPU ledger within the budget — ${MB(far.ledger?.total ?? 0)} live of ${MB(far.budget.cap)} (before K6a: 1,942 MB)`);
     const photoBudget = far.budget.byOwner.photo?.bytes ?? 0;
-    check(row(far, "photo") <= far.budget.cap && Math.abs(row(far, "photo") - photoBudget) <= 0.05 * row(far, "photo"), `pictures: the photo kind's memory is the budget's to see — the ledger's photo ${MB(row(far, "photo"))} (the thumbnail array, its details, the records), the budget's photo ${MB(photoBudget)}, the cap ${MB(far.budget.cap)} (before K6a: 1,712 MB, outside the budget)`);
+    // K9 R2: the budget charges the thumbnail array's layers IN USE (resident, outside the caches' room); the ledger weighs the
+    // array's whole CAPACITY (doubling — at most twice the layers in use, and `give` shrinks it back). The two agree once the
+    // array's slack, (capacity − layers) × a layer, is set beside the budget's number
+    const slack = r0 && r0.capacity > 0 ? (r0.bytes.thumbnails * (r0.capacity - r0.layers)) / r0.capacity : 0;
+    check(row(far, "photo") <= far.budget.cap && Math.abs(row(far, "photo") - (photoBudget + slack)) <= 0.05 * row(far, "photo"), `pictures: the photo kind's memory is the budget's to see — the ledger's photo ${MB(row(far, "photo"))} (the thumbnail array at its capacity, its details, the records), the budget's photo ${MB(photoBudget)} (the layers in use, the details) + the array's slack ${MB(slack)}, the cap ${MB(far.budget.cap)} (before K6a: 1,712 MB, outside the budget)`);
     // A RUN OF 20 PRINTS = ONE DRAW (K-L4): the twenty are sibling after sibling — the armed pan's frames draw them as one instanced draw
     const g = await armedPan(camFar);
     // (K7b: a print whose detail is not bound is a FLAT CARD — the run is the card's draw then)
