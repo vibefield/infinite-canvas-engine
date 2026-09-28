@@ -72,6 +72,7 @@ import { createGpuProfiler, type GpuProfiler } from "../gpu-profiler";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
 import type { GroundTheme, Palette } from "../theme";
 import { surface } from "./surface";
+import { DRAWER } from "../tray/drawer";
 import type { TrayFluxState, TrayPin } from "../tray/flux";
 import type { TrayLaid } from "../tray/pass";
 import { trayShaders } from "../tray/shaders";
@@ -244,15 +245,22 @@ export interface TrayCarriedSeen {
 
 /**
  * Where the tray's BAR is placed from (design-018 §5 — `<TrayBar>`, @ice/react, reads it structurally): the drawer as the last frame
- * DREW it — its outline's top-left and width, its slide — the view, the hand, and the category model its chips show. A fact the bar
- * follows is never a pixel it guesses: the pill rides `drawer.y` exactly, frame by frame.
+ * DREW it — its outline's top-left and width, its slide, its HEADER (R4) — the view, the hand, the category model its chips show, and
+ * the theme's night. A fact the bar follows is never a pixel it guesses: the pill rides `drawer.y` exactly, frame by frame, and the
+ * chips lie in the header as drawn.
  */
 export interface TrayAnchor {
   /** The drawer is out (the fact: its slide may still be on its way). */
   readonly open: boolean;
-  /** The drawer's outline as drawn this frame (CSS px; its bottom runs on under the view) and its slide — null before its first frame, or while a pin hides it. */
-  readonly drawer: { readonly x: number; readonly y: number; readonly w: number; readonly p: number } | null;
+  /**
+   * The drawer's outline as drawn this frame (CSS px; its bottom runs on under the view) and its slide — null before its first frame, or
+   * while a pin hides it — and its HEADER (design-018 R4, `DRAWER.header`): the clear band under the edge's inside, from `y` for `h`,
+   * where nothing of the board's content shows and the bar lays its chips.
+   */
+  readonly drawer: { readonly x: number; readonly y: number; readonly w: number; readonly p: number; readonly header: { readonly y: number; readonly h: number } } | null;
   readonly view: { readonly width: number; readonly height: number };
+  /** The theme's night, 0 day … 1 the Moon (`MatLight.night`): the bar's label tape steps back by it as the specimens' tags do (design-018 R4). */
+  readonly night: number;
   /** An object is IN HAND (not flying home): the selection menu has the view's foot — the bar steps aside. */
   readonly held: boolean;
   /** How many entries the drawer's frame hangs, every category (0: nothing to offer here — the bar steps aside). */
@@ -563,8 +571,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const h = builder.hand();
       return {
         open: trayOpen(world),
-        drawer: f === undefined ? null : { x: f.x, y: f.y, w: f.w, p: f.p },
+        drawer: f === undefined ? null : { x: f.x, y: f.y, w: f.w, p: f.p, header: { y: f.y + DRAWER.arris, h: DRAWER.header } },
         view: { width: vp?.w ?? 0, height: vp?.h ?? 0 },
+        night: compose.theme().matLight.night,
         held: h !== undefined && !h.landing,
         entries: trayEntryCount(world),
         category: trayCategory(world),

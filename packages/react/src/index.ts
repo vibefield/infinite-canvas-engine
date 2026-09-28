@@ -55,14 +55,17 @@ export {
   type SelectionState,
   selectionTaped,
 } from "./selection-menu";
-// design-018 §5–§6 (R2): the pegboard drawer's handle and its category chips — the menu's sibling in the desk's ink
+// design-018 §5–§6 (R2, R4): the pegboard drawer's handle — the menu's sibling in the desk's ink — and its category chips, label tape in
+// the drawer's header
 export {
+  DESK_TAPE,
   placeTrayBar,
   TRAY_BAR,
   TRAY_BAR_GLYPHS,
   TrayBar,
   type TrayBarAnchor,
   type TrayBarCategory,
+  type TrayBarPlace,
   type TrayBarProps,
   type TrayBarSource,
 } from "./tray-bar";

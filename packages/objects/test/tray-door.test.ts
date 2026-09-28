@@ -5,6 +5,8 @@
 // bar is placed from — the slide frame by frame, open or shut, the category, the hand — and nothing at rest, open or shut.
 import { Camera, specimensOf, trayEntity } from "@ice/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { DRAWER } from "@ice/desk";
+import { deskPalette, deskTheme } from "../src";
 import { type DeskMount, mountDesk } from "./desk-mount";
 
 let desk: DeskMount | undefined;
@@ -72,6 +74,25 @@ describe("the tray door (design-018 §5–§6)", () => {
     door.close();
     await run(desk);
     expect(heard.length).toBe(n + 1);
+  });
+
+  it("design-018 R4: names the drawer's HEADER as drawn — the clear band under the edge's inside, where the bar lays its chips — and the theme's night, heard when the theme changes", async () => {
+    desk = await mountDesk(undefined, { frameMs: FRAME_MS });
+    const door = desk.handle.tray;
+    desk.toSleep();
+    door.open();
+    await run(desk);
+    const f = door.state().frame;
+    expect(f?.head).toBe(DRAWER.arris + DRAWER.header);   // the pose seam's word to core: nothing picked above it
+    expect(door.anchor().drawer).toEqual({ x: f?.x, y: f?.y, w: f?.w, p: 1, header: { y: (f?.y ?? 0) + DRAWER.arris, h: DRAWER.header } });
+    expect(door.anchor().night).toBe(0);
+    const nights: number[] = [];
+    const off = door.subscribe(() => { nights.push(door.anchor().night); });
+    desk.handle.setTheme(deskTheme("dark"), deskPalette("dark"));
+    await run(desk, 100);
+    expect(door.anchor().night).toBe(1);
+    expect(nights.at(-1)).toBe(1);
+    off();
   });
 
   it("says when an object is IN HAND — the menu has the view's foot — and is heard when it comes and goes", async () => {
