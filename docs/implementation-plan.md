@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27 · K-H LANDED 2026-09-28)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1566,7 +1566,12 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   allocation measured truthfully and halved (223 KB/frame — the 64 KiB gate still MISS). Graded: ci 0; gate red at
   rig:interact's laser rows (main fails them identically at load ≥ 190 — 2 of 3 each) and once at rig:open's calendar
   double-click (1 of 5 at load 205; main 2 of 2) — every other leg green.
-- K8a — the open seams (building) · K8b — the desk clock · K7b —
+- **K-H — the gate tells the truth under load** (**LANDED 2026-09-28**, ten commits → `59d055a`): timing rows WARM and
+  judged on the minimum over rounds; the A/A paired against its own spread; every Chrome and the relay on their own ports;
+  fetch retries; the laser rows paced (their red was a slow drag turning into a long press); one-batch double-clicks; a
+  progress watchdog. Three back-to-back gates green at load 55–175; four deliberate regressions red every time; the
+  calendar double-click soaked 80/80 on the sleeping loop and before it — no regression. Graded: ci 0, gate:landing 0.
+- K8a — the open seams (built; rebasing over K-H) · K8b — the desk clock · K7b —
   scale · K9 — the review and its fixes: planned (design-016 §8; K5, K6, K7 and K8 each split in two so no builder carries
   more than its context holds).
 

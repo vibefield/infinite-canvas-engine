@@ -1234,6 +1234,23 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   viewport, the canvas and the rulers' atlas kept the old ratio until a window resize. The host reads `devicePixelRatio`
   before every step and re-syncs the viewport when it moved; at rest it writes nothing and idle still submits nothing.
 
+<!-- design-016 K-H (2026-09-28) -->
+- **The landing gate tells the truth under load** (M21 K-H): in M21 most grades cost a 20–25 minute re-run because a
+  TIMING row went red under load and passed alone. Now every cost row is measured WARM (an untimed batch first) and
+  asserts the MINIMUM over ≥ 7 rounds with the host's load printed beside (load only ever adds time to a drained batch —
+  D-KH.1); the per-kind A/A control is judged PAIRED against its own spread (z ≤ 4 or |T| ≤ 2 % of the frame, 21 rounds,
+  a pooled second witness, a redraw witness — D-KH.2/.3; the old rule could not fail a mismatch); the desk copy's cost is
+  its GPU Δ plus its main-thread Δ (D-KH.4); rig:stress's zoom-written judges each frame at its best round (D-KH.7). The
+  races: every Chrome binds its OWN CDP port (port 0, read back — other sessions on the host used the same from-ports,
+  so a rig could drive another session's browser), the collab relay binds port 0 and says "listening" only once bound,
+  oracle-reference fetches retry with backoff, the laser rows are paced by the desk (a slow 2 px creep had turned the
+  drag into a long press), double-clicks go in ONE batch that waits until the desk has taken them, rig:tray's pulls,
+  flights home and arrival are read in the page, a progress watchdog replaces the one-span budget, screenshots use
+  `optimizeForSpeed` (parity 19.5 → 2.3–5.3 s a scene at load 280). `apps/desk/scripts/timing.mjs`'s header is the pattern
+  every new timed row follows. Proven: three back-to-back gates exit 0 at load 55–175 (one with a second gate beside it),
+  and four deliberate regressions (a 2 ms stall in the desk copy, doubled pegboard shading, a mismatched A/A, 9 ms before
+  every raster run) go red every time.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
