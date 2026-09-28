@@ -12,7 +12,8 @@
 // selected, one undo step), the copy lifted at ×1.06 with the specimen still hung, the hand-off without a pop (the copy's rect and the
 // ghost's first, measured), the ways back (Esc, over the drawer as drawn — still sliding away — inside it) making nothing and leaving nothing
 // in undo, the ghost flying home shrinking; K9: a drop where the drawer stood open, once it has shut, made there; into a mini mat by the
-// kinds' rules, the plugin kind taken too, idle after. Exit 0 = every row passed.
+// kinds' rules; K9: inside an entered mini mat the drawer hangs only what it takes; the plugin kind taken too, idle after. Exit 0 = every
+// row passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
@@ -826,6 +827,30 @@ try {
       check(made.length === 1 && made[0].seconds === true && under.length === 1 && under[0].seconds === true && shut.length === 1 && shut[0].seconds === false && heldNow && held2[0]?.seconds === false && pfaults.length === 0,
         `…and K8b's clock keys on the plugin page: shut, \`c\` set ${made.length} clock down (seconds ${made[0]?.seconds}); the drawer out, \`c\` made ${under.length - made.length} more and \`s\` left its seconds ${under[0]?.seconds}; shut, \`s\` flipped it to ${shut[0]?.seconds} (control); a notebook in hand (${heldNow}, the clock ${held2[0]?.selected ? "still" : "no longer"} selected), \`s\` left it ${held2[0]?.seconds}; faults ${pfaults.length}`);
     }
+  }
+
+  // K9 (S13, law #3): the drawer hangs what the CURRENT frame takes — inside an entered mini mat, exactly the kinds its ingress takes
+  // (the placement authority a take's commit asks, read beside it); K5's drawer hung every kind there, and a refused one's take died at
+  // the hand-off with a console warning. Back at the desk, every kind again
+  {
+    await q("window.__desk.tray.close()"); await settle();
+    const hungAtDesk = (await q("window.__desk.tray.specimens()")).map((s) => s.type).sort();
+    const mm = await q("window.__desk.spawn('desk.minimat', { name: 'In' }, { x: 600, y: 300 })");
+    await frames(2);
+    await q(`window.__desk.engine.ops.enterContainer(${mm}, { transition: "none" })`); await settle();
+    await q("window.__desk.tray.open()"); await settle();
+    const inside = (await q("window.__desk.tray.specimens()")).map((s) => s.type).sort();
+    const takes = await q(`${JSON.stringify(hungAtDesk)}.filter((t) => window.__desk.engine.placement.canIngress(t, ${mm}).ok)`);
+    await q("window.__desk.tray.close()"); await settle();
+    await q(`window.__desk.engine.ops.exitContainer({ transition: "none" })`); await settle();
+    await q("window.__desk.tray.open()"); await settle();
+    const back = (await q("window.__desk.tray.specimens()")).map((s) => s.type).sort();
+    await q("window.__desk.tray.close()"); await settle();
+    await undo(); await frames(2);   // the mini mat
+    const refused = hungAtDesk.filter((t) => !takes.includes(t));
+    check(refused.length > 0 && JSON.stringify(inside) === JSON.stringify([...takes].sort()) && JSON.stringify(back) === JSON.stringify(hungAtDesk),
+      `inside an entered mini mat the drawer hangs what it takes — ${inside.join(", ")} — and not ${refused.join(", ")} (refused by its ingress); back at the desk all ${back.length} again`);
+    await q("window.__desk.tray.open()"); await settle();
   }
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);

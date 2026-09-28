@@ -372,7 +372,7 @@ describe("taking one (design-017 §9)", () => {
     expect(r.world.hasTag(made[0] as Entity, Movable)).toBe(false);
   });
 
-  it("a refused hand-off (a frame that takes no such kind) spawns nothing: the drawer shut, no ghost, the reason said, nothing in undo", () => {
+  it("a frame that takes no such kind offers no specimen of it (K9 S13) — and a take the frame came to refuse under the lift is refused at the hand-off: nothing spawned, the drawer shut, the reason said, nothing in undo", () => {
     const r = rig();
     const box = r.ce.ops.spawnWidget("take:box", { x: 100, y: 60, undoable: false });
     r.world.sync();
@@ -381,7 +381,15 @@ describe("taking one (design-017 §9)", () => {
     r.step(3);
     openTray(r.world);
     r.step(2);
-    const { x } = r.lift("take:note", 0.5, 0.5);
+    expect(() => r.specimen("take:note")).toThrow("no take:note specimen");   // the box takes nothing: nothing hangs in here
+    closeTray(r.world);
+    r.ce.ops.exitContainer({ transition: "none" });
+    r.step(3);
+    openTray(r.world);
+    r.step(2);
+    const { x } = r.lift("take:note", 0.5, 0.5);                          // lifted at the root…
+    r.ce.ops.enterContainer(box, { transition: "none" });                  // …and the frame changes under it (an op: the desk is inert)
+    r.step();
     const warn = console.warn;
     const said: unknown[] = [];
     console.warn = (...a: unknown[]) => { said.push(a); };

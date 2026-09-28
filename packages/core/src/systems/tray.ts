@@ -40,7 +40,9 @@ import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ec
 import { layTray, specimenFit, type TrayItem, trayScrollMax } from "@ice/kernel";
 import { Specimen, Tray, TrayContent, TrayIntent, TrayPress } from "../catalog/desk";
 import { HandledByWidget, LocalPointer, Pointer, PointerButtons, PointerMods, PointerScreen, PointerWheel, WentCancelled, WentDown, WentUp, WheelHandled } from "../catalog/pointer";
-import { ChildOf, Position, Size } from "../catalog/scene";
+import { BoardRoot, ChildOf, Position, Size } from "../catalog/scene";
+import { currentNavFrame } from "../nav/nested-canvas";
+import type { DropPlacementPolicy } from "./l3-drop";
 import { engineCatalogFor, widgetTypeFor } from "../canvas/engine-catalog";
 import { Viewport } from "../catalog/camera-derived";
 import { FrameInfo } from "../engine/frame-info";
@@ -322,7 +324,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
   );
 }
 
-/** The catalog's object types that carry a tray entry — the tray's contents (K-L2: no list here names a kind); the registry's in an unbound world. */
+/** The catalog's object types that carry a tray entry — the tray's contents (K-L2: no list here names a kind); the registry's in an unbound world. The lay hangs those the current frame takes (K9). */
 export function hungTypes(world: World): WidgetType[] {
   const all = engineCatalogFor(world)?.widgetTypes() ?? widgets.all();
   return all.filter((t) => t.tray !== undefined && t.object !== undefined);
@@ -339,8 +341,11 @@ export function hungTypes(world: World): WidgetType[] {
  * K9 (S10, D-K9-c.2): when that range MOVES — a lay (the width, the kinds) or the drawer's face (the view's height) — a scroll past its
  * new end with nothing stretching is clamped to it in the same tick, so no frame draws blank board past the content and the next wheel
  * starts from the end; only on a move, so the rig's door (`scrollTray`) still takes any value until the range next moves.
+ * K9 (S13, D-K9-c.4): it hangs what the CURRENT frame takes — inside an entered container its ingress, at the root its canvas's
+ * placement, the authority a drop's commit asks (`placement`) — so no specimen offers a take the frame would refuse; entering or
+ * leaving re-lays it (the drawer is shut then: the desk is inert while it is out). Without a policy, every hung type.
  */
-export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot }): TickSystem {
+export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot; readonly placement?: DropPlacementPolicy | undefined }): TickSystem {
   let laidKey = "";
   let rangeKey = "";
   const clampToRange = (ctx: SystemCtx, tray: Entity, frame: TrayScreenFrame, bottom: number): void => {
@@ -360,7 +365,12 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot 
       const frame = opts.pose.current?.frame();
       if (frame === undefined || !(frame.w > 0) || !(frame.pitch > 0)) return;
       const content = ctx.get(tray, TrayContent);
-      const types = hungTypes(world);
+      const policy = opts.placement;
+      const inside = policy === undefined ? undefined : currentNavFrame(world);
+      const root = world.getResource(BoardRoot)?.root;
+      const takes = (type: string): boolean =>
+        policy === undefined ? true : inside !== undefined ? policy.canIngress(type, inside) : root === undefined || policy.canPlace === undefined || policy.canPlace(type, root);
+      const types = hungTypes(world).filter((t) => takes(t.type));
       const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((t) => t.type).join(",")}`;
       if (key === laidKey) { clampToRange(ctx, tray, frame, content?.bottom ?? 0); return; }
       const items: TrayItem[] = types.map((t) => {

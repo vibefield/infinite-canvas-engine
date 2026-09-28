@@ -611,6 +611,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     placement: {
       canIngress: (widgetTypeId, targetContainer) =>
         placement.canIngress(widgetTypeId, targetContainer).ok,
+      canPlace: (widgetTypeId, targetFrame) => placement.canPlace(widgetTypeId, targetFrame).ok,
     },
     // the gesture's and the zoom-through's "may this be entered" — the nav's own test (design-015 §9)
     isContainer: (entity) => {

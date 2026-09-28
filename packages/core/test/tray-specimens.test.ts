@@ -44,11 +44,16 @@ const PLUGIN: WidgetType = widgets.get("plugin:swatch") ?? defineWidget({
   tray: { label: "Swatch", category: "plugin", hang: { w: 80, h: 80, accessory: "clip", pegs: [[0, -0.5]] } },
 });
 const PLAIN: WidgetType = widgets.get("spec:plain") ?? defineWidget({ type: "spec:plain", object: { name: "plain" }, defaultSize: { w: 100, h: 100 } });
+// a container that takes the swatch alone (K9 S13): inside it the pad's specimen has nothing to offer
+const BIN: WidgetType = widgets.get("spec:bin") ?? defineWidget({
+  type: "spec:bin", object: { name: "bin" }, defaultSize: { w: 300, h: 200 },
+  container: { accepts: [], widgets: [PLUGIN], portal: { top: 20, right: 20, bottom: 20, left: 20 } },
+});
 
 const VP = { w: 800, h: 600, dpr: 1 };
 
 function rig(widths: { w: number; face?: number } = { w: 720 }) {
-  const ce = createCanvasEngine({ widgets: [PAD, PLUGIN, PLAIN] });
+  const ce = createCanvasEngine({ widgets: [PAD, PLUGIN, PLAIN, BIN] });
   ce.docs.create();
   ce.world.setResource(Viewport, VP);
   ce.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
@@ -189,5 +194,24 @@ describe("the tray's specimens", () => {
     bare.pose(true); bare.step(2);
     scrollTray(bare.world, 5000); bare.step(3);
     expect(bare.world.read(bare.tray(), Tray).scroll).toBe(5000);
+  });
+
+  it("hang what the CURRENT frame takes (K9 S13): inside a container that refuses a kind its specimen is not on the board — the placement authority's word — and back at the root it hangs again", () => {
+    const r = rig();
+    const bin = r.ce.ops.spawnWidget("spec:bin", { x: 300, y: 300, undoable: false });
+    r.pose(true);
+    r.step(2);
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
+    r.ce.ops.enterContainer(bin, { transition: "none" });
+    r.step(3);
+    expect(r.ce.placement.canIngress("spec:pad", bin).ok).toBe(false);          // what a take's commit in here would be told
+    expect(r.ce.placement.canIngress("plugin:swatch", bin).ok).toBe(true);
+    expect(Object.keys(r.byType())).toEqual(["plugin:swatch"]);
+    // laid by the lattice law over what hangs here: the swatch alone, first on the board
+    const alone = layTray([{ type: "plugin:swatch", hang: hangOf(PLUGIN), category: "plugin" }], 720, 40).placed[0];
+    expect(r.world.read(r.byType()["plugin:swatch"] as never, Position)).toEqual({ x: alone?.x, y: alone?.y });
+    r.ce.ops.exitContainer({ transition: "none" });
+    r.step(3);
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
   });
 });

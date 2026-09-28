@@ -94,6 +94,8 @@ function parseList(raw: string | null | undefined): string[] {
 
 export interface DropPlacementPolicy {
   canIngress(widgetTypeId: string, targetContainer: Entity): boolean;
+  /** K9: may an object of this type be made in this frame at all — the root's CanvasType placement (inside a container, `canIngress`). */
+  canPlace?(widgetTypeId: string, targetFrame: Entity): boolean;
 }
 
 export function createDropSystem(
