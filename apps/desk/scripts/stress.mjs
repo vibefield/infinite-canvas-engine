@@ -791,6 +791,7 @@ try {
       const sum = (k) => frames.reduce((a, f) => a + f[k], 0);
       const most = (k) => max(frames.map((f) => f[k]));
       perRound.push({
+        steps: ms, work: frames.map((f) => `${f.rasters}r${f.replays}p${f.recorded}m`),
         frames: frames.length, p50: pct(ms, 0.5), p95: pct(ms, 0.95), max: max(ms), over8: frames.filter((f) => f.ms > 8).length,
         rasters: sum("rasters"), rastersMax: most("rasters"), replays: sum("replays"), replaysMax: most("replays"), laidMax: max(frames.map((f) => f.rasters + f.replays)),
         // every raster and replay laid in the queue's turn: none but the queue's runs (a held run lays nothing, so laid ≤ ran)
@@ -826,7 +827,14 @@ try {
     console.log(`  the queue            its budget ${q.budgetMs} ms · the most waiting after a frame ${s.waitingMax} · the most one turn spent ${fmt(q.peakMs)} ms, the dearest run ${fmt(q.dearest)} ms · ${q.dropped} let go unrun`);
     console.log(`  convergence          ${fmt(s.converge.frames, 0)} frames (${fmt(s.converge.ms, 0)} ms) after the zoom stopped, the most ${s.converge.max} — ${fmt(s.converge.rasters, 0)} rasters, ${fmt(s.converge.replays, 0)} replays meanwhile, its worst frame ${fmt(s.converge.maxStep)} ms; ${s.converge.owed} still waiting, ${s.converge.held} held for room at rest (the pages at rest: ${s.converge.pages.map((g) => (g === null ? "—" : `${(g.used / 1048576).toFixed(1)}M texels in ${g.rows} rows`)).join(" · ")} of ${(4 * 2048 * 2048 / 1048576).toFixed(1)}M)`);
     console.log(`  the worst frames     ${perRound.map((p) => `${fmt(p.worst.ms, 1)} ms (${p.worst.rasters} rasters, ${p.worst.replays} replays, ${p.worst.recorded} remade)`).join(" · ")}`);
-    check(s.max.min <= 8, `zoom-written: no frame over 8 ms in the best round — its worst ${fmt(s.max.min)} ms; the rounds' worst frames' median ${fmt(s.max.median)} ms (design-016 §6; before K6b 192.84 ms, 106 notes rastered in it)`);
+    // EACH FRAME AT ITS BEST (K-H, D-KH.7): the rounds replay one camera path frame for frame, so a frame's own cost is its MINIMUM
+    // over the rounds (load only adds time), and the claim is the worst of those. The row took each round's WORST frame and the best
+    // round of those — the statistic a loaded host fails, since every round of 150 frames holds a preempted one: red at load 138–170 in
+    // the proof's third gate with its worst frames 8.7 / 10.5 / 21.2 ms each doing ONE raster (a quiet round's worst: 5.8 ms, two).
+    // A frame the rounds all make dear stays dear here; the old statistic is printed beside it
+    const at = perRound[0].steps.map((_, i) => min(perRound.map((p) => p.steps[i] ?? Number.POSITIVE_INFINITY)));
+    const dearest = at.reduce((a, v, i) => (v > at[a] ? i : a), 0);
+    check(at[dearest] <= 8, `zoom-written: no frame over 8 ms — each of the ${at.length} frames at its best of ${perRound.length} rounds, the dearest ${fmt(at[dearest])} ms (frame ${dearest}: ${perRound.map((p) => p.work[dearest]).join(" · ")}); the best round's worst frame ${fmt(s.max.min)} ms, the rounds' worst frames' median ${fmt(s.max.median)} ms · load ${s.loads.map((v) => Number(v).toFixed(0)).join("/")} (design-016 §6; before K6b 192.84 ms, 106 notes rastered in it)`);
     gate(s.max.median <= 8, `zoom-written: the rounds' worst frame ≤ 8 ms — median ${fmt(s.max.median)} ms over ${s.rounds} rounds`);
     check(total("unexplained") === 0 && total("rezoomed") === 0, `zoom-written: every record remade on the zoom came on screen, crossed a rung, took a raster laid or a raise — none by the zoom's delta alone (${total("rezoomed")}; ${total("unexplained")} frames past those causes; before K6b every note on screen, every frame: 120 a frame)`);
     check(total("laidOutside") <= 0 && q.peakMs <= q.budgetMs + q.dearest, `zoom-written: every raster and replay of the zoom laid in the frame queue's turn (${total("rasters") + total("replays")} laid, none outside), at most ${s.laidMax} in a frame; a turn overshot its ${q.budgetMs} ms budget by at most its last run (the most one spent ${fmt(q.peakMs)} ms, the dearest run ${fmt(q.dearest)} ms)`);
