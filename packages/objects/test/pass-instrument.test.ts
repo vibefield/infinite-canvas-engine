@@ -119,6 +119,28 @@ describe("the pass instrument (K2)", () => {
     inst.detach();
   });
 
+  it("K9 R7: work submitted with no frame encoder while the loop sleeps (a decode's mips) closes as a LOOSE frame at the microtask — the next drawn frame is its own; a tick's own small submit before its frame still belongs to the frame", async () => {
+    const g = simGpu();
+    const frames: PassFrame[] = [];
+    const inst = instrumentPasses(g.device, { onFrame: (f) => frames.push(f) });
+    frame(g.device, [["photo/mips", ["photo/mip 1"]]]);   // between frames: a decode's continuation, no tick
+    expect(inst.stats().frames).toBe(0);                   // open — the microtask has not run yet
+    await Promise.resolve();
+    expect(inst.stats().frames).toBe(1);                   // cut at the microtask: a loose frame (before K9: open, joined by the next tick's ground)
+    frame(g.device, [["ground", ["ground"]]]);             // the next tick's frame: its own — its t0, its passes
+    await settle();
+    const byKind = (k: string) => frames.filter((f) => f.kind === k).map((f) => f.passes.map((p) => p.label));
+    expect(byKind("loose")).toEqual([["photo/mip 1"]]);
+    expect(byKind("frame")).toEqual([["ground"]]);
+    // a tick: its own small submit (a board's new raster) and then the frame's — one synchronous task, so the frame closes at the
+    // ground's submit before any microtask runs, and the raster's pass is the frame's, as before
+    frames.length = 0;
+    frame(g.device, [["board/new raster", ["board/clear"]], ["ground", ["ground"]]]);
+    await settle();
+    expect(frames.map((f) => [f.kind, f.passes.map((p) => p.label)])).toEqual([["frame", ["board/clear", "ground"]]]);
+    inst.detach();
+  });
+
   it("a device without timestamp-query is counted, never timed — no query set, nothing resolved", async () => {
     const g = simGpu({ timestamps: false });
     const frames: PassFrame[] = [];

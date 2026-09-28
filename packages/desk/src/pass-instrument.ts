@@ -311,6 +311,15 @@ export function instrumentPasses(device: GPUDevice, opts: PassInstrumentOptions 
         if (enc.closes) closing = enc.frame;
       }
       if (closing !== null) close(closing, "frame");
+      // K9 R7 — work submitted with no frame encoder of its own while the loop sleeps (a decode's mips, a raster's fill, an
+      // array's grow) opened a frame that the next tick's `ground` encoder then JOINED: the frame read the decode's t0 and counted
+      // its passes. The tick is one synchronous task — its own small submits (a board's stamps, a new raster) are followed by the
+      // frame's closing submit before any microtask runs — so a frame still open at the microtask after such a submit is
+      // between-frame work: closed here as a LOOSE frame, and the next drawn frame opens its own.
+      else if (open !== null) {
+        const f = open;
+        queueMicrotask(() => { if (open === f && !f.closed) close(f, "loose"); });
+      }
     },
   });
 
