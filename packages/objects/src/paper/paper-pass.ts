@@ -176,6 +176,19 @@ export class PaperPass {
   /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
   get records() { return this.store.stats(); }
 
+  /** K7b: this slot's resources for the note's card material (shaders.ts `paperCard`), in its bindings' order — made again when the store grew. */
+  cardResources(): { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } {
+    if (this.card === null || this.card.version !== this.store.version) {
+      const s = this.shared;
+      this.card = { version: this.store.version, resources: [this.knobBuf, this.store.records, s.goboSampler, s.noiseSampler, s.pagesView, s.inkSampler] };
+    }
+    return this.card;
+  }
+  private card: { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } | null = null;
+
+  /** K7b: every note of the last prepare is the card's to draw — its slot in the store. */
+  cardSlot(index: number): number { return this.store.slotAt(index); }
+
   get drawn(): number { return this.count; }
 
   draw(pass: GPURenderPassEncoder): void { this.drawRange(pass, 0, this.count); }

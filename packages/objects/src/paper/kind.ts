@@ -20,7 +20,7 @@ import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, HAND, PAPE
 import type { PaperInstance } from "./layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "./paper";
 import { PaperPass } from "./paper-pass";
-import { PAPER_SHADER_FILES, paperShaders } from "./shaders";
+import { PAPER_SHADER_FILES, paperCard, paperShaders } from "./shaders";
 import type { UvRect } from "./pages";
 import { createWriting, type Writing } from "./writing";
 import { shaderText } from "../shaders";
@@ -46,6 +46,8 @@ export class PaperKind implements KindPass<PaperInstance> {
 
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
   records() { return this.pass.records; }
+  cardResources() { return this.pass.cardResources(); }
+  cardSlot(index: number): number { return this.pass.cardSlot(index); }
 
   dispose(): void { this.pass.dispose(); }
 }
@@ -55,6 +57,7 @@ export function paperProgram(text: ShaderText): KindProgram<PaperInstance> {
   return {
     name: PAPER_KIND,
     stratum: "things",
+    card: paperCard(text),
     create: async (device, format, mat) => new PaperKind(await PaperPass.create(device, format, paperShaders(text), mat)),
   };
 }

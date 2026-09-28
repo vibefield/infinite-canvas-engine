@@ -269,6 +269,13 @@ export class PictureStore {
     this.budget?.release("photo", "thumbnails");
   }
 
+  /** K7b: the thumbnail array as the flat-card pipeline binds it — its view, made again when the array grew (its version moved). */
+  thumbView(): { readonly version: number; readonly view: GPUTextureView } {
+    if (this.thumbCard === null || this.thumbCard.version !== this.thumbs.version) this.thumbCard = { version: this.thumbs.version, view: this.thumbs.view(this.blankArray) };
+    return this.thumbCard;
+  }
+  private thumbCard: { readonly version: number; readonly view: GPUTextureView } | null = null;
+
   // ---------------------------------------------------------------- the device's side
 
   private bind(): GPUBindGroup {

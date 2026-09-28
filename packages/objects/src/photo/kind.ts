@@ -30,7 +30,7 @@ import { borderOf } from "./layout";
 import { grab, hitPhoto, moveHold, newBody, PHOTO, type PhotoBody, type PhotoGeometry, type PhotoLaw, printSize, release, resolvePhoto, restless, stepPhoto, twist } from "./photo";
 import { type Picture, PICTURE_MAX, type PhotoInstance, PhotoPass } from "./photo-pass";
 import type { PictureStats } from "./pictures";
-import { PHOTO_SHADER_FILES, photoShaders } from "./shaders";
+import { PHOTO_SHADER_FILES, photoCard, photoShaders } from "./shaders";
 import { shaderText } from "../shaders";
 
 /** The print's kind name — its key in the registry and in every slot's `objects`. */
@@ -55,6 +55,8 @@ export class PhotoKind implements KindPass<PhotoInstance> {
   /** Records [first, end) — indices into the prints `prepare` was handed, each drawn with its picture. */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
   records() { return this.pass.records; }
+  cardResources() { return this.pass.cardResources(); }
+  cardSlot(index: number): number { return this.pass.cardSlot(index); }
 
   dispose(): void { this.pass.dispose(); }
 }
@@ -64,6 +66,7 @@ export function photoProgram(text: ShaderText): KindProgram<PhotoInstance> {
   return {
     name: PHOTO_KIND,
     stratum: "things",
+    card: photoCard(text),
     create: async (device, format, mat) => new PhotoKind(await PhotoPass.create(device, format, photoShaders(text), mat)),
   };
 }

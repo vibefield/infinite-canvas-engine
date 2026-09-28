@@ -16,6 +16,9 @@ export type BindEntry =
   | { readonly binding: number; readonly stages: readonly Visibility[]; readonly texture: GPUTextureSampleType; readonly dimension?: GPUTextureViewDimension }
   | { readonly binding: number; readonly stages: readonly Visibility[]; readonly sampler: GPUSamplerBindingType };
 
+/** A binding's layout without its number — what a card material declares (K7b), the card deals the numbers. */
+export type BindKind = BindEntry extends infer E ? (E extends BindEntry ? Omit<E, "binding"> : never) : never;
+
 export function bindLayout(device: GPUDevice, entries: readonly BindEntry[], label?: string): GPUBindGroupLayout {
   return device.createBindGroupLayout({
     ...labelled(label),

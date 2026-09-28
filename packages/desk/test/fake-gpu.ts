@@ -59,6 +59,8 @@ export function fakeDevice(log: string[] = []): FakeGpu {
   const queue = { submits: 0, writes: 0 };
   const labelled = (d?: { readonly label?: string }) => ({ label: d?.label ?? "" });
   const device = {
+    // WebGPU's default limits — what the flat-card pipeline's plan counts its bindings against (K7b, card/card.ts `planCards`)
+    limits: { maxSampledTexturesPerShaderStage: 16, maxSamplersPerShaderStage: 16, maxStorageBuffersPerShaderStage: 8, maxUniformBuffersPerShaderStage: 12, maxBindingsPerBindGroup: 1000 },
     createBindGroupLayout: labelled,
     createBindGroup: labelled,
     createPipelineLayout: labelled,

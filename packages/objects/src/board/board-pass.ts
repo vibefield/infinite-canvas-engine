@@ -278,6 +278,23 @@ export class BoardPass {
   /** Copy the root's tuning — what every slot takes each frame. */
   copy(from: BoardPass): void { this.look = from.look; this.chain = from.chain; }
 
+  /** K7b: instance `index` of the last prepare drawn by the flat-card pipeline — its slot in the store — or −1: this pass draws it (or no one). */
+  cardSlot(index: number): number { return index < this.cardsN ? (this.cards[index] as number) : -1; }
+  private cards = new Int32Array(64);
+  private cardsN = 0;
+
+  /** K7b: this slot's resources for the board's card material (shaders.ts `boardCard`), in its bindings' order — made again when the store or the thumbnails grew. */
+  cardResources(): { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } {
+    const s = this.shared;
+    if (this.card === null || this.cardOver[0] !== this.store.version || this.cardOver[1] !== s.thumbs.version) {
+      this.cardOver = [this.store.version, s.thumbs.version];
+      this.card = { version: (this.card?.version ?? 0) + 1, resources: [this.knobBuf, this.store.records, s.goboSampler, s.noiseSampler, s.inkSampler, s.thumbs.view(s.blankArray)] };
+    }
+    return this.card;
+  }
+  private card: { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } | null = null;
+  private cardOver: readonly number[] = [];
+
   private rebind(): void {
     if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
@@ -636,6 +653,15 @@ export class BoardPass {
     this.store.prepare(drawn, drawnKeys, (i) => aux[i] as number);
     this.rebind();   // after: the store's buffers may have grown
     this.drawnFrom = from;
+    // K7b: the boards the flat-card pipeline draws — every one drawn from its THUMBNAIL (no pool raster, not the live board: the card
+    // binds neither), by its instance index; the rest are this pass's
+    if (this.cards.length < instances.length) this.cards = new Int32Array(Math.max(instances.length, this.cards.length * 2));
+    this.cards.fill(-1, 0, instances.length);
+    this.cardsN = instances.length;
+    for (let j = 0; j < drawn.length; j++) {
+      const [, , slot, live] = tierOf(s, (drawn[j] as BoardInstance).id);
+      if (slot < 0 && live < 0.5) this.cards[from[j] as number] = this.store.slotAt(j);
+    }
     const sh = BOARD.shadow;
     const sf = BOARD.surface;
     const fr = BOARD.frame;

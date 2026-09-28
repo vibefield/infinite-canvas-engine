@@ -21,7 +21,7 @@ import { type BoardGeometry, type BoardLaw, DEFAULT_BOARD_LAW, pickBoard, quadOf
 import { addStroke, BoardStroke, boardOps, feedStroke, MARKERS, type MarkerInk, strokePen, type StrokeRow, strokeSeed, type StrokeSpec } from "./data";
 import type { BoardInstance } from "./layout";
 import { followHand, penAtRest, penPose, type PenState, stepPen } from "./pen";
-import { BOARD_SHADER_FILES, boardShaders } from "./shaders";
+import { BOARD_SHADER_FILES, boardCard, boardShaders } from "./shaders";
 import { type StrokeBuilder, TIP_NAMES, type TipName } from "./stroke";
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, type KindLocal, type ObjectContext, type ObjectHit, type ObjectKind, rasterPriority, stringProp } from "@ice/desk";
 import { type MarkFrame, type MatPass, type ShaderText, inking } from "@ice/desk/kit";
@@ -53,6 +53,8 @@ export class BoardKind implements KindPass<BoardInstance> {
 
   /** Records [first, end) — a board whose raster is missing draws nothing (the pass counts in the list it was handed). */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void { this.pass.drawRange(pass, first, end); }
+  cardResources() { return this.pass.cardResources(); }
+  cardSlot(index: number): number { return this.pass.cardSlot(index); }
   records() { return this.pass.records; }
 
   dispose(): void { this.pass.dispose(); }
@@ -63,6 +65,7 @@ export function boardProgram(text: ShaderText): KindProgram<BoardInstance> {
   return {
     name: BOARD_KIND,
     stratum: "things",
+    card: boardCard(text),
     create: async (device, format, mat) => new BoardKind(await BoardPass.create(device, format, boardShaders(text), mat)),
   };
 }

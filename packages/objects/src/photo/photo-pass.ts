@@ -186,6 +186,9 @@ export class PhotoPass {
     const n = this.store.prepare(list, keys !== undefined && keys.length > cap ? keys.slice(0, cap) : keys, (i) => list[i]?.picture?.tier ?? 0);
     this.rebind();   // after: the store's buffers may have grown
     this.count = list.length;
+    // K7b: the prints the flat-card pipeline draws — every one whose picture has no detail bound (the card reads the thumbnails alone)
+    if (this.cards.length < list.length) this.cards = new Int32Array(Math.max(list.length, this.cards.length * 2));
+    for (let i = 0; i < list.length; i++) this.cards[i] = (list[i]?.picture?.slot ?? -1) < 0 ? this.store.slotAt(i) : -1;
     // each print ON SCREEN asks for its picture at the lod it samples it (pictures.ts): the residency's next step answers — a
     // print in the cull's margin asks nothing (its thumbnail stands; a detail is the screen's, never a prefetch)
     const pics = this.shared.pictures;
@@ -208,6 +211,23 @@ export class PhotoPass {
 
   /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
   get records() { return this.store.stats(); }
+
+  /** K7b: record `index` of the last prepare drawn by the flat-card pipeline — its slot in the store — or −1: a detail is bound, the pass draws it. */
+  cardSlot(index: number): number { return index < this.count ? (this.cards[index] as number) : -1; }
+  private cards = new Int32Array(64);
+
+  /** K7b: this slot's resources for the print's card material (shaders.ts `photoCard`), in its bindings' order — made again when the store or the thumbnails grew. */
+  cardResources(): { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } {
+    const t = this.shared.pictures.thumbView();
+    if (this.card === null || this.cardOver[0] !== this.store.version || this.cardOver[1] !== t.version) {
+      const s = this.shared;
+      this.cardOver = [this.store.version, t.version];
+      this.card = { version: (this.card?.version ?? 0) + 1, resources: [this.knobBuf, this.store.records, s.goboSampler, s.noiseSampler, s.picSampler, t.view] };
+    }
+    return this.card;
+  }
+  private card: { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } | null = null;
+  private cardOver: readonly number[] = [];
 
   get drawn(): number { return this.count; }
 

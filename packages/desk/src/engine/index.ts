@@ -6,6 +6,6 @@ export { compose, compile, type ComposedShader, type ComposeOptions, type Shader
 export { acquire, adopt, type Gpu, type GpuOptions, type Surface } from "./device";
 export {
   bindLayout, bindGroup, renderPipeline, uniformBuffer, storageBuffer, BLEND_OVER,
-  type BindEntry, type RenderPipelineOptions,
+  type BindEntry, type BindKind, type RenderPipelineOptions, type Visibility,
 } from "./pipeline";
 export { Target, beginPass, readback, type Clear, type TargetOptions } from "./target";

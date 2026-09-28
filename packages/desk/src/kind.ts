@@ -12,7 +12,9 @@
 // goes: the inside draws right after it, then the sheet's marks over the inside
 // (`drawOver` — the mini mat's chips while the inside's objects come in).
 
+import type { BindKind } from "./engine/pipeline";
 import type { RecordStoreStats } from "./engine/records";
+import type { ComposeOptions } from "./engine/shader";
 import type { MatLight } from "./kit/light";
 import type { Presentation } from "./kit/nav";
 import type { FadeIn, MatConfig, MatFrame, MatPass, SlotLight, View } from "./kit/view";
@@ -121,6 +123,16 @@ export interface KindPass<R = unknown> {
   idleAt?(ms: number): number;
   /** A sheet's marks over its live inside, drawn right after the inside (the mini mat's chips while the inside's objects come in). */
   drawOver?(pass: GPURenderPassEncoder, index: number): void;
+  /**
+   * K7b: this slot's resources for the kind's CARD MATERIAL (`KindProgram.card`), in its `bindings` order, and a number that moves
+   * whenever one of them is replaced (a record store grown, a texture array grown) — the card's bind group is made again then.
+   */
+  cardResources?(): { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] };
+  /**
+   * K7b: record `index` of the last `prepare` drawn by the desk's FLAT-CARD pipeline — its slot in the kind's records, which the
+   * material's functions read — or −1: this pass draws it itself (a print with its detail bound, a board with its raster).
+   */
+  cardSlot?(index: number): number;
   /** This slot's buffers (the shared resources go with the last slot standing). */
   dispose(): void;
 }
@@ -140,5 +152,47 @@ export interface KindProgram<R = unknown> {
    * are cut into runs in the slot's paint order.
    */
   readonly composite?: boolean;
+  /**
+   * K7b: the kind's CARD MATERIAL — its records drawn by the desk's ONE flat-card pipeline (card/card.ts), interleaved with every
+   * other material kind's objects in one run. Absent: the kind draws every record itself, a run of its own.
+   */
+  readonly card?: CardMaterial;
   create(device: GPUDevice, format: GPUTextureFormat, mat: MatPass): Promise<KindPass<R>>;
+}
+
+/** A binding of a CARD MATERIAL (K7b): the WGSL the card declares after `@group(0) @binding(n)`, and its layout (the stages, what it is). */
+export interface CardBinding {
+  /** Whole, after the attribute: `var<uniform> paper_k: PaperUniforms` — its name UNIQUE across every kind's material (a kind prefixes its own). */
+  readonly wgsl: string;
+  readonly entry: BindKind;
+}
+
+/**
+ * A kind's CARD MATERIAL (K7b, design-016 §6 K7 — the run question). In mixed sibling order a run of one kind ends at the next
+ * object of another (rig:scale: draws ≈ 0.3 × the objects drawn, at every zoom); the kinds that declare a material are composed
+ * into ONE pipeline, so interleaved objects of every such kind are one run, one draw. Each object is drawn there by its OWN kind's
+ * functions over its own kind's records, uniforms and textures — the pixels its own pipeline makes. The card's module is the
+ * kit's pieces and every material's structs and modules (deduplicated by name and label), then its bindings, its `only`, its
+ * card functions (`shaders.entry` — the same text its own pass composes) and a dispatch on the card's material.
+ */
+export interface CardMaterial {
+  /**
+   * The kind's program as its own pass composes it — the kit's pieces, its structs, its pure modules — its `entry` the CARD FUNCTIONS
+   * over its bindings; asked when the card is composed (a host's text read then, as a pass reads it when it is made).
+   */
+  shaders(): ComposeOptions;
+  /** WGSL the card composes that the kind's own entry defines otherwise (a texel read from its thumbnails alone — the card binds no pool). */
+  readonly only?: string;
+  /** Its bindings beyond the slot's view block and mat (`u`, `gobo_tex`, `noise_tex` — the card's), in its pass's `cardResources` order. */
+  readonly bindings: readonly CardBinding[];
+  /** `fn <quad>(slot: u32, vid: u32) -> vec4f`: corner `vid`'s clip position; (2, 2, 2, 1) — the degenerate — collapses a culled one. */
+  readonly quad: string;
+  /** `fn <frag>(slot: u32, clip: vec4f) -> vec4f`: the fragment's premultiplied colour through the slot's presentation; alpha < 0 = discard. */
+  readonly frag?: string;
+  /**
+   * The fragment WRITTEN OUT instead of `frag`'s call: WGSL statements over `slot` and `in.clip` that set `c` (or discard) — the
+   * kind's own entry's fragment, statement for statement. For a kind whose shade reached through one more function compiles to
+   * other bits (the board's: one LSB on a pixel a scene — measured, K7b): the card then runs the very code its entry runs.
+   */
+  readonly fragInline?: string;
 }

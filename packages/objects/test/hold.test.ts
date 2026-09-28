@@ -306,7 +306,7 @@ describe("the ground's held frame on a fake device", () => {
     // the copy draws the mat; the hand slot is BARE — its one object over a frame already there
     expect(inside("hold/copy").some((l) => l === "pipeline mat/mat")).toBe(true);
     expect(inside("hold/hand").some((l) => l === "pipeline mat/mat")).toBe(false);
-    expect(inside("hold/hand").some((l) => l.startsWith("pipeline paper"))).toBe(true);
+    expect(inside("hold/hand").some((l) => l.startsWith("pipeline card/flat"))).toBe(true);   // the note in hand: a flat card (K7b)
     // the frame: the desk composite then the hand composite, one fullscreen triangle each
     expect(inside("hold").filter((l) => l.startsWith("pipeline"))).toEqual(["pipeline hold/desk", "pipeline hold/hand"]);
     expect(inside("hold").filter((l) => l === "draw 3")).toHaveLength(2);

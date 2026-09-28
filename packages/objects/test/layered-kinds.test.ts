@@ -285,10 +285,11 @@ describe("the prepare order: both layers in the frame's own command buffer, afte
     expect(passes).toEqual(["pass mat/wind", "pass calendar/layer", "pass notebook/shadow 0", "pass notebook/layer", "pass ground"]);
     const frame = log.slice(log.indexOf("pass ground"));
     const at = (line: string) => { const i = frame.indexOf(line); expect(i, line).toBeGreaterThan(0); return i; };
-    // inside the frame's pass: the mat, the pad's layer laid (its box, the slot's scissor back), the note, the books' layer laid last
+    // inside the frame's pass: the mat, the pad's layer laid (its box, the slot's scissor back), the note (a flat card since K7b), the
+    // books' layer laid last
     expect(at("pipeline mat/mat")).toBeLessThan(at("pipeline calendar/composite"));
-    expect(at("pipeline calendar/composite")).toBeLessThan(at("pipeline paper/notes"));
-    expect(at("pipeline paper/notes")).toBeLessThan(at("pipeline notebook/composite"));
+    expect(at("pipeline calendar/composite")).toBeLessThan(at("pipeline card/flat"));
+    expect(at("pipeline card/flat")).toBeLessThan(at("pipeline notebook/composite"));
     const calBox = must(calKind.pass).screenBox;
     const nbBox = must(nbKind.pass).screenBox;
     expect(frame.slice(at("pipeline calendar/composite") - 1, at("pipeline calendar/composite") + 4)).toEqual([`scissor ${must(calBox).join(",")}`, "pipeline calendar/composite", "group 0 calendar/composite", "draw 3", "scissor 0,0,2400,1600"]);

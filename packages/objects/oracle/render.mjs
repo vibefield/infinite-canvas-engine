@@ -28,7 +28,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, globals } from "webgpu";
-import { ORACLE_SCENES, VIEW } from "./scenes.mjs";
+import { BOARD_STROKES, ORACLE_SCENES, VIEW } from "./scenes.mjs";
 import { createOracleDesk } from "./frame.mjs";
 import { PRINT_FIXTURES, printSheetOf } from "./prints.mjs";
 import { inflateRawSync } from "node:zlib";
@@ -676,6 +676,39 @@ async function orderCheck(sc) {
 }
 
 /**
+ * K7b (design-016 §6 K7 — the run question) — THE FLAT CARDS, as pixels. A desk whose notes (half with the committed ink), prints
+ * and whiteboards INTERLEAVE in sibling order, small (zoom 0.3: every print at its thumbnail; the pool binds eight boards, the rest
+ * draw their thumbnails), drawn with the flat-card pipeline — the notes, the prints and the thumbnail boards one run — and again with
+ * the card OFF, every object its kind's own pass: the same frame byte for byte.
+ */
+async function cardCheck() {
+  const things = [];
+  for (let j = 0; j < 6; j++) for (let i = 0; i < 8; i++) {
+    const n = i + 8 * j;
+    const x = Math.round((i - 3.5) * 520);
+    const y = Math.round((j - 2.5) * 430);
+    if (n % 4 === 2) things.push({ kind: "board", x, y, strokes: BOARD_STROKES });
+    else if (n % 3 === 1) things.push({ kind: "print", x, y, angle: ((n % 7) - 3) / 50 });
+    else things.push({ kind: "note", x, y, seed: 1 + n, text: "", ...(n % 2 === 0 ? { asset: "note-1" } : {}) });
+  }
+  const s = { camX: -2400, camY: -1600, zoom: 0.3, theme: "light", things };
+  const card = desk.rootSlot.card;
+  const { px: on } = await render(s);
+  const cards = card?.count ?? 0;
+  if (card !== undefined) card.on = false;
+  let off;
+  try { off = (await render(s)).px; } finally { if (card !== undefined) card.on = true; }
+  let n = 0;
+  let max = 0;
+  for (let o = 0; o < on.length; o += 4) { const d = Math.max(delta(on, off, o), Math.abs(on[o + 3] - off[o + 3])); if (d > 0) { n++; if (d > max) max = d; } }
+  const kinds = { note: 0, print: 0, board: 0 };
+  for (const t of things) kinds[t.kind] += 1;
+  const ok = card !== undefined && cards >= kinds.note + kinds.print && n === 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  card       interleaved ${things.length} (${kinds.note} notes · ${kinds.print} prints · ${kinds.board} boards) at zoom 0.3: ${cards} drawn as flat cards · with the card vs every object its own kind's: ${n.toLocaleString()} of ${(on.length / 4).toLocaleString()} px differ (maxΔ ${max})`);
+  return ok;
+}
+
+/**
  * BOARD.md, as pixels. The same still with its whiteboards and without (the note beside it kept): (1) outside every board's quad
  * (the slab, its shadow's reach, the marker lying on it — `quadOf`, + 3 device px) byte for byte; (2) inside the boards most
  * pixels differ.
@@ -1155,6 +1188,7 @@ for (const sc of scenes) if (sc.ruler) { if (!(await rulerCheck(sc))) failed += 
 for (const sc of scenes) if (sc.paper) { if (!(await paperCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.photo) { if (!(await photoCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 1; }
+if (!(await cardCheck())) failed += 1;
 for (const sc of scenes) if (sc.board) { if (!(await boardCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ink) { if (!(await inkCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.marks) { if (!(await marksCheck(sc))) failed += 1; }

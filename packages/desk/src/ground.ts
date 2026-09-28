@@ -42,6 +42,7 @@
 // no clock — and cost nothing while no portal is on screen and no flight is on.
 
 import type { Surface } from "./engine/device";
+import { CardPass, createCardShared } from "./card/card";
 import { beginPass } from "./engine/target";
 import { HoldPass } from "./hold/focus";
 import type { HoldShaders } from "./hold/shaders";
@@ -62,7 +63,7 @@ import { DRAWER, drawerRect } from "./tray/drawer";
 import { boxOfPortal, chainOf, intersectBox, PORTAL_CHAIN, scissorOf, type Presentation } from "./nav/portal";
 import type { GroundTheme } from "./theme";
 
-export type { KindExtra, KindPass, KindProgram, RenderTarget, SlotContext, StratumName } from "./kind";
+export type { CardBinding, CardMaterial, KindExtra, KindPass, KindProgram, RenderTarget, SlotContext, StratumName } from "./kind";
 export { STRATA } from "./kind";
 export type { MarkBar, MarkBox, MarkFrame, MarkGuide, MarkMarquee, MarkObject, MarkRuler, MarksInput, MarkTape, MarkUnion } from "./marks/layout";
 export { MARKS_SHADER_FILES, marksShaders } from "./marks/shaders";
@@ -227,6 +228,8 @@ export interface SlotKind {
 export interface SlotSet {
   readonly mat: CuttingMat;
   readonly kinds: ReadonlyMap<string, SlotKind>;
+  /** The slot's FLAT-CARD pass (K7b, card/card.ts) over its kinds — absent when no registered kind declares a card material. */
+  readonly card?: CardPass;
 }
 
 /** One slot's passes for `drawFrame` — the ground's own, or the oracle's. A parent carries its nested slots. */
@@ -241,6 +244,11 @@ export interface DrawSlot {
   readonly kinds: ReadonlyMap<string, SlotKind>;
   /** The slot's objects in paint order — only their kinds matter to the draw: each kind's records are counted along them. */
   readonly objects?: readonly { readonly kind: string }[] | undefined;
+  /**
+   * The FLAT CARDS (K7b): each object's card in the card pass's list this frame (`route[i]`, −1 = its kind draws it) — a run of cards
+   * is one draw whatever kinds it interleaves. Absent: every object is its kind's.
+   */
+  readonly card?: { readonly pass: CardPass; readonly route: Int32Array } | undefined;
   /** Nested slots, each drawn right after the object `at` names (MINIMAT.md §3) — one that names no object here draws over them all. */
   readonly children?: readonly { readonly at: number; readonly slot: DrawSlot }[] | undefined;
   /** What the slot's grid did this frame. */
@@ -263,13 +271,14 @@ export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat,
     if (!STRATA.includes(p.stratum)) throw new Error(`ground: kind "${p.name}" lies in no stratum the ground draws ("${p.stratum}"; ${STRATA.join(", ")})`);
     names.add(p.name);
   }
-  const passes = await Promise.all(programs.map((p) => p.create(device, format, mat)));
+  const [passes, cards] = await Promise.all([Promise.all(programs.map((p) => p.create(device, format, mat))), createCardShared(device, format, programs)]);
   const kinds = new Map<string, SlotKind>();
   for (let i = 0; i < programs.length; i++) {
     const p = programs[i] as KindProgram;
     kinds.set(p.name, { name: p.name, stratum: p.stratum, pass: passes[i] as KindPass, ...(p.composite ? { composite: true } : {}) });
   }
-  return { mat, kinds };
+  // the kinds that declare a card material, composed into ONE pipeline (K7b): their objects interleave in one run
+  return cards === null ? { mat, kinds } : { mat, kinds, card: new CardPass(device, cards, mat, kinds) };
 }
 
 /** Slots beyond the root, spawned on first use and reused every frame: `reset()` then `acquire()` per slot the frame needs. */
@@ -285,13 +294,14 @@ export class SlotPool {
       const mat = this.root.mat.spawn();
       const kinds = new Map<string, SlotKind>();
       for (const k of this.root.kinds.values()) kinds.set(k.name, { name: k.name, stratum: k.stratum, pass: k.pass.spawn(mat), ...(k.composite ? { composite: true } : {}) });
-      this.slots.push({ mat, kinds });
+      const card = this.root.card?.spawn(mat, kinds);
+      this.slots.push(card === undefined ? { mat, kinds } : { mat, kinds, card });
     }
     return this.slots[this.used++] as SlotSet;
   }
   /** Slots spawned so far — the churn instrument. */
   get size(): number { return this.slots.length; }
-  dispose(): void { for (const s of this.slots) { s.mat.dispose(); for (const k of s.kinds.values()) k.pass.dispose(); } this.slots.length = 0; this.used = 0; }
+  dispose(): void { for (const s of this.slots) { s.mat.dispose(); s.card?.dispose(); for (const k of s.kinds.values()) k.pass.dispose(); } this.slots.length = 0; this.used = 0; }
 }
 
 /**
@@ -320,8 +330,10 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   // inside: the run through it, its inside over its face, then its marks over that (the mini mat's chips while the inside's
   // objects fade in — MINIMAT.md §5) — before the objects above it
   const next = new Map<string, number>();   // each kind's next record
+  // K7b: an object the card draws runs with the CARDS — one run however the kinds interleave — at its index in the card's list
+  const card = slot.card;
   for (const stratum of STRATA) {
-    let run: SlotKind | undefined;
+    let run: { drawRange(pass: GPURenderPassEncoder, first: number, end: number): void } | undefined;
     let first = 0;
     let end = 0;
     for (let i = 0; i < objects.length; i++) {
@@ -330,16 +342,19 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
       const index = next.get(k.name) ?? 0;
       next.set(k.name, index + 1);
       if (k.composite) continue;   // laid once, after the stratum's runs (below)
-      if (k !== run) { run?.pass.drawRange(pass, first, end); run = k; first = index; }
-      end = index + 1;
+      const c = card === undefined ? -1 : (card.route[i] as number);
+      const p = c >= 0 ? (card as { readonly pass: CardPass }).pass : k.pass;
+      const at = c >= 0 ? c : index;
+      if (p !== run) { run?.drawRange(pass, first, end); run = p; first = at; }
+      end = at + 1;
       const children = insides.get(i);
       if (!children) continue;
-      k.pass.drawRange(pass, first, end);
+      p.drawRange(pass, first, end);
       run = undefined;
       for (const child of children) { inside(child); k.pass.drawOver?.(pass, index); }
       insides.delete(i);
     }
-    run?.pass.drawRange(pass, first, end);
+    run?.drawRange(pass, first, end);
     // a kind that lays a composite of its own target (the notebook, the calendar): ONE run over all its records, after every other
     // run of the stratum — one draw lays every one of its objects, so they cannot interleave with another kind's (KindProgram.composite)
     for (const k of slot.kinds.values()) {
@@ -490,8 +505,30 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
       if (turned > 0) dropped[k.name] = (dropped[k.name] ?? 0) + turned;
     }
     if (s === root) rootDrawn = drawn;
+    // THE CARDS (K7b, card/card.ts): every object of a material kind whose pass lets it go (`cardSlot`) — never one with a live
+    // inside (its inside goes right after it) — pushed in the order drawSlot walks them, stratum by stratum, then paint order, so a
+    // run of cards is a contiguous range of the card's list
+    let card: DrawSlot["card"];
+    if (s.card?.on === true && objects.length > 0) {
+      const route = s.card.begin(objects.length);
+      for (const stratum of STRATA) {
+        for (let i = 0; i < objects.length; i++) {
+          const o = objects[i] as SlotObject;
+          const k = s.kinds.get(o.kind);
+          if (k === undefined || k.stratum !== stratum || k.composite === true) continue;
+          const m = s.card.materialOf(o.kind);
+          if (m === undefined) continue;
+          const at = indexOf[i] as number;
+          if (live.get(o.kind)?.has(at) === true) continue;
+          const cs = k.pass.cardSlot?.(at) ?? -1;
+          if (cs >= 0) route[i] = s.card.push(m, cs);
+        }
+      }
+      if (s.card.prepare(slot) > 0) card = { pass: s.card, route };
+    }
     return {
       mat: s.mat, present: inp.present, stats: gridStats(inp.view, wind), kinds: s.kinds,
+      ...(card !== undefined ? { card } : {}),
       ...(inp.underlays?.length ? { underlays: inp.underlays } : {}),
       ...(objects.length ? { objects } : {}),
       ...(children.length ? { children } : {}),
@@ -692,7 +729,7 @@ export class Ground {
   }
 
   /** The pool's slots, then the root's kinds in reverse registration order, then the mat. */
-  dispose(): void { this.pool.dispose(); this.traySlots?.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.tray?.dispose(); this.mat.dispose(); }
+  dispose(): void { this.pool.dispose(); this.traySlots?.dispose(); this.root.card?.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.tray?.dispose(); this.mat.dispose(); }
 
   /** Make the passes the tray's composite specimens need (K5a — `TraySlots.warm`); `onReady` asks for the frame that shows them. */
   warmTray(wanted: readonly (readonly [string, string])[], onReady: () => void): void { this.traySlots?.warm(wanted, onReady); }
