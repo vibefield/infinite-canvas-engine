@@ -44,8 +44,13 @@ export interface DeskProps {
   readonly engine: CanvasEngine;
   /** The desk's layer factory (`deskLayer({ … })`), received opaquely. Memoize in the caller. */
   readonly layer: LayerFactory;
-  /** Called once after the host, the reflectors and the loop are live. */
-  readonly onReady?: (handle: DeskHandle) => void;
+  /**
+   * Called once per mount after the host, the reflectors and the loop are live. What it starts that outlives the call — a
+   * listener, a wait, a join — it undoes in the cleanup it may return, which runs when the mount ends, before the host goes.
+   * An effect's contract: StrictMode's development double mount runs it for the mount it discards (K9).
+   */
+  // biome-ignore lint/suspicious/noConfusingVoidType: React's EffectCallback shape — `undefined` would refuse `(h) => log(h)`
+  readonly onReady?: (handle: DeskHandle) => void | (() => void);
   /**
    * Keymap overrides plumbed to {@link attachKeymap} (design-007 §5 M-d). An entry replaces a
    * default by its `key|mod|shift` signature; conditional behaviour belongs INSIDE `run`. BOUND
@@ -72,8 +77,9 @@ export function Desk({ engine, layer, onReady, keymapOverrides, className, style
     if (container === null) return;
     const mount = createDeskHost({ container, engine, layer });
     const detachKeymap = attachKeymap(engine, undefined, keymapOverridesRef.current ?? []);
-    onReadyRef.current?.({ engine, host: mount.host, layer: mount.layer, focus: mount.focus });
+    const undoReady = onReadyRef.current?.({ engine, host: mount.host, layer: mount.layer, focus: mount.focus });
     return () => {
+      if (typeof undoReady === "function") undoReady();   // the app's own first, while the host it started from stands
       detachKeymap();
       mount.dispose();
     };

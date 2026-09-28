@@ -231,7 +231,7 @@ CHANGELOG's `### Removed` lists them).
 | Export | Notes |
 |---|---|
 | `<EngineProvider engine>` | Context root; all hooks require it. |
-| `<Desk engine layer keymapOverrides? onReady? className? style?>` | Mounts the desk: `createDeskHost({ container, engine, layer })` + `attachKeymap`. `onReady({ engine, host, layer, focus })`. Unmount disposes the host; the engine outlives it. Children render in the container, above the canvas — screen-space chrome only (§2 law 2). |
+| `<Desk engine layer keymapOverrides? onReady? className? style?>` | Mounts the desk: `createDeskHost({ container, engine, layer })` + `attachKeymap`. `onReady({ engine, host, layer, focus })`, once per mount — it may return a cleanup, run when that mount ends, before the host goes (StrictMode's discarded development mount included: what `onReady` starts, its cleanup undoes). Unmount disposes the host; the engine outlives it. Children render in the container, above the canvas — screen-space chrome only (§2 law 2). |
 | `LayerFactory` / `LayerHandle` / `LayerContext` | Re-exported from `@ice/dom`: the structural seam a layer factory is typed against (`deskLayer` returns one). |
 | `useCommit()` | `(fn: (tx: GuardedTx) => void, {undoable?}) => void` — THE write path; one call = one undo step. |
 | `useBehavior(world, entity, behavior)` | Live behavior data for one entity; `p.json` fields parsed; `undefined` when unattached (a legitimate render state). READ-ONLY — chrome renders behavior state, never writes it. |

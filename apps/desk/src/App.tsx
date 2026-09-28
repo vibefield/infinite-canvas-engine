@@ -165,6 +165,9 @@ export function App(): ReactElement {
     lifetime.enter();
     return () => lifetime.leave();
   }, [lifetime]);
+  // …and it joins its room ONCE (K9): the mount StrictMode discards and the one that follows await the same join — a second
+  // join superseded the first, whose rejection became the fail screen
+  const joined = useRef<ReturnType<typeof joinDeskRoom> | null>(null);
 
   return (
     <Desk
@@ -175,6 +178,9 @@ export function App(): ReactElement {
       onReady={() => {
         const handle = handleRef.current;
         if (handle === null) { fail("the desk layer did not mount"); return; }
+        // K9: what this mount starts, the cleanup it returns ends — the mount StrictMode discards (in development) must leave no
+        // paste listener, no join and no wait on its dead layer behind it
+        let cancelled = false;
         setMenuSource(handle.selection);
         // K1: the rulers' glyph atlas, kept to the ratio the desk draws at (the viewport's) and the panel's text size (glyphs.ts) —
         // nothing until the ground is here
@@ -185,23 +191,26 @@ export function App(): ReactElement {
         dockRef.current = createProfilerDock(engine, handle);
         const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs, dockRef.current);
         apiRef.current = api;
-        installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
+        const undoDrop = installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
         // the product's plates and a runtime glyph atlas the moment the ground is here
         const feed = async (): Promise<void> => {
-          await joinDeskRoom(engine);   // D2c: `?room=` joins the room's document first
+          joined.current ??= joinDeskRoom(engine);
+          await joined.current;   // D2c: `?room=` joins the room's document first
+          if (cancelled) return;
           const plates = await productPlates();
-          while (!handle.available()) { if (handle.status().state === "failed") throw new Error(handle.status().message); await new Promise((r) => requestAnimationFrame(r)); }
+          while (!cancelled && !handle.available()) { if (handle.status().state === "failed") throw new Error(handle.status().message); await new Promise((r) => requestAnimationFrame(r)); }
+          if (cancelled) return;
           handle.setPlate("c", plates.c);
           handle.setPlate("b", plates.b);
           glyphs.refresh();
           // …and again whenever the viewport's ratio moves — the host re-syncs it before any step it moved in (@ice/dom
           // `createDeskHost`: another display, the browser's zoom, an emulated ratio — none resizes) — or the panel's text size:
-          // a tick gated on either, so nothing runs while they stand. (A mount StrictMode discards never gets here: its layer never
-          // becomes available.)
+          // a tick gated on either, so nothing runs while they stand. (A mount StrictMode discards never gets here: it is cancelled.)
           engine.engine.addSystems("simulate", defineTickSystem(() => { glyphs.refresh(); }, { name: "desk.glyphs", runIf: () => glyphs.stale() }));
           api.state.ready = true;
         };
-        feed().catch(fail);
+        feed().catch((e: unknown) => { if (!cancelled) fail(e); });
+        return () => { cancelled = true; undoDrop(); };
       }}
     >
       {menuSource !== null ? <SelectionMenu source={menuSource} actions={MENU_ACTIONS} /> : null}

@@ -24,6 +24,7 @@
     "rig:gpu": "tsx scripts/gpu.mjs",
     "rig:tray": "tsx scripts/tray.mjs",
     "rig:clock": "tsx scripts/clock.mjs",
+    "rig:lifetime": "tsx scripts/lifetime.mjs",
     "rig:proto-parity": "tsx scripts/proto-parity.mjs",
     "rig:cost": "tsx scripts/cost.mjs",
     "rig:stress": "tsx scripts/stress.mjs",

@@ -486,6 +486,36 @@ describe("<Desk>", () => {
     expect(mountEl.querySelectorAll("canvas")).toHaveLength(0);
   });
 
+  it("onReady's cleanup ends what that mount started — once per mount, the discarded StrictMode mount's too, before its layer goes (K9)", () => {
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+    const { engine } = makeEngine();
+    const mountEl = document.createElement("div");
+    document.body.appendChild(mountEl);
+    const root = createRoot(mountEl);
+    const layer = fakeLayer();
+    // each mount's onReady starts something of its own; its cleanup says which, and how many layers were gone by then
+    const started: number[] = [];
+    const ended: { mount: number; disposedBefore: number }[] = [];
+    const onReady = (): (() => void) => {
+      const mount = started.length;
+      started.push(mount);
+      return () => { ended.push({ mount, disposedBefore: layer.disposed() }); };
+    };
+
+    act(() => {
+      root.render(createElement(StrictMode, null, createElement(Desk, { engine, layer: layer.factory, onReady })));
+    });
+    expect(started).toEqual([0, 1]); // ready once per mount…
+    expect(ended).toEqual([{ mount: 0, disposedBefore: 0 }]); // …the discarded first mount's cleanup ran, before its layer went
+
+    act(() => {
+      root.unmount();
+    });
+    expect(ended).toEqual([{ mount: 0, disposedBefore: 0 }, { mount: 1, disposedBefore: 1 }]); // the live mount's at unmount
+    expect(layer.disposed()).toBe(2);
+  });
+
   it("renders its children in the container, above the canvas — screen-space chrome", () => {
     vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
     vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
