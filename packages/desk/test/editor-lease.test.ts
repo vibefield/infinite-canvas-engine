@@ -116,6 +116,27 @@ describe("the ONE editor is the desk's, and a plugin kind LEASES it through the 
     expect(ed.element.hidden).toBe(true);
   });
 
+  it("Tab while a lease holds the editor goes NOWHERE (K9 S4): asked and declined by the lease, it is still preventDefaulted — the page's focus order is not the editor's, so the lease keeps the editor and the next letters stay typing; a letter the lease declines is not prevented (control)", () => {
+    const told: Told = { calls: [], value: "", alive: true };
+    const lease = lineLease("label.text", told);
+    const Label = defineObject({
+      type: "test.label-tab", version: 1, props: {}, kind: labelKind("label-tab"),
+      host: { text: () => [{ part: "label.text", tap: () => ({ lease }) }] },
+    });
+    const { handle, container } = mountDesk([Label]);
+    tap(container, 40, 30);
+    const ed = handle.editor();
+    expect(ed.lease()).toBe(lease);
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    ed.element.dispatchEvent(tab);
+    expect(told.calls).toContain("key Tab");   // the lease was asked first (the fixture takes Enter alone)
+    expect(tab.defaultPrevented).toBe(true);
+    expect(ed.lease()).toBe(lease);
+    const letter = new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true });
+    ed.element.dispatchEvent(letter);
+    expect(letter.defaultPrevented).toBe(false);
+  });
+
   it("the lease WAKES the sleeping loop (K7a): a tap that lends, the platform's input, a lease's end — each an outside wake, never a poll", () => {
     const told: Told = { calls: [], value: "", alive: true };
     const lease = lineLease("label.text", told);

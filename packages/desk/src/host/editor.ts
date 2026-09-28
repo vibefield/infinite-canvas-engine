@@ -172,6 +172,9 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     const l = lent;
     if (l === undefined || ev.isComposing) return;
     if (l.keydown(ev)) { ev.preventDefault(); opts.wake(); }   // the keymap's gate 1 stands down; the key was the lease's
+    // a Tab the lease declines goes NOWHERE (K9 S4): the platform would move focus down the page's order — to the selection menu's first
+    // button — which ends the lease, and the next letters would be the desk's shortcuts; while a lease holds the editor, Tab is typing's
+    else if (ev.key === "Tab") ev.preventDefault();
   };
   const onBlur = (): void => { end(); };   // a press anywhere else: the lease ends (its holder keeps what it wrote)
   const onCompositionStart = (): void => { composing = true; };
