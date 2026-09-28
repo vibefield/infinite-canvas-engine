@@ -15,7 +15,9 @@
 // kinds' rules; K9: inside an entered mini mat the drawer hangs only what it takes; the plugin kind taken too, idle after. design-018
 // (R2) — THE BAR: the drawer's DOM handle opens and shuts it by real clicks on its rect, sits on the drawer's top edge open and at the
 // foot shut, shows the categories the drawer hangs as chips — a chip lays only its entries from the board's top and leaves the drawer
-// open, All lays them all — and the plugin's category is its own chip. Every other row reads the canvas alone (the bar hidden).
+// open, All lays them all — and the plugin's category is its own chip. (R4) — THE HEADER: under the edge a clear band where nothing
+// hangs and no hole opens, then the ramp (rows (a), (e)); the chips lie in it as label tape, found by their DOM rects, the pill holding
+// none; at rest nothing laid is faded and the chips lie on bare board. Every other row reads the canvas alone (the bar hidden).
 // Exit 0 = every row passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
@@ -24,6 +26,7 @@ import { decodePng } from "./png.mjs";
 import { hostLoad, median, minOf, watchdog } from "./timing.mjs";
 import { layTray, PEG_LATTICE } from "../../../packages/kernel/src/tray.ts";
 import { carry, cellOf, holeSdf, pointAt, punched } from "../../../packages/desk/src/tray/lattice.ts";
+import { contentShown, DRAWER } from "../../../packages/desk/src/tray/drawer.ts";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -64,11 +67,18 @@ try {
   const idle = (n = 240) => qa(`(async () => { await window.__desk.settle(4000); const b = window.__desk.submits().total; await new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); }); return window.__desk.submits().total - b; })()`);
   const tray = () => q("({ ...window.__desk.tray.state(), facts: window.__desk.tray.facts() })");
   const lum = (img, x, y) => { const i = (y * img.width + x) * 4; return 0.2126 * img.rgba[i] + 0.7152 * img.rgba[i + 1] + 0.0722 * img.rgba[i + 2]; };
-  // design-018 §5 (R2): the tray's BAR as the page lays it out — its pill's rect, its button's centre, each chip's (CSS px)
-  const BAR = `(() => { const root = document.querySelector("[data-ice-tray-bar]"); if (!root) return null; const pill = root.querySelector(".ice-tb-bar").getBoundingClientRect(); const t = root.querySelector("[data-act=tray]"); const tr = t.getBoundingClientRect();
+  // design-018 §5 (R2, R4): the tray's BAR as the page lays it out — its pill's rect, what it holds (its buttons, its word, its glyph), its
+  // button's centre, and each chip's rect and centre (CSS px) with whether the pill holds it
+  const BAR = `(() => { const root = document.querySelector("[data-ice-tray-bar]"); if (!root) return null; const pillEl = root.querySelector(".ice-tb-bar"); const pill = pillEl.getBoundingClientRect(); const t = root.querySelector("[data-act=tray]"); const tr = t.getBoundingClientRect();
     return { open: root.dataset.open, visible: root.dataset.visible, x0: pill.left, y0: pill.top, x1: pill.right, y1: pill.bottom, toggle: { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2, expanded: t.getAttribute("aria-expanded") },
-      chips: [...root.querySelectorAll(".ice-tb-chip")].map((c) => { const r = c.getBoundingClientRect(); return { id: c.dataset.category, label: c.textContent, pressed: c.getAttribute("aria-pressed"), x: r.left + r.width / 2, y: r.top + r.height / 2 }; }) }; })()`;
+      pill: { buttons: pillEl.querySelectorAll("button").length, text: pillEl.textContent, close: pillEl.querySelector("svg path") !== null },
+      chips: [...root.querySelectorAll(".ice-tb-chip")].map((c) => { const r = c.getBoundingClientRect(); return { id: c.dataset.category, label: c.textContent, pressed: c.getAttribute("aria-pressed"), x: r.left + r.width / 2, y: r.top + r.height / 2, x0: r.left, y0: r.top, x1: r.right, y1: r.bottom, inPill: pillEl.contains(c), opacity: Number(getComputedStyle(c.closest(".ice-tb-head")).opacity) }; }) }; })()`;
   const bar = () => q(BAR);
+  // design-018 R4: the drawer's HEADER — a clear band `DRAWER.header` under the edge's inside where nothing of the content shows and no
+  // hole opens — then the ramp `DRAWER.fade` the content fades in over; `below(rect)` is the first device row past both, where the board
+  // is as punched and what hangs on it whole (the rows that compare board pixels read from there)
+  const HEAD = DRAWER.arris + DRAWER.header;
+  const below = (rect) => Math.ceil((rect.y + HEAD + DRAWER.fade) * 2) + 2;
   // the board's own FACE at a device pixel for a shown scroll: clear of every punched hole by 1.5 CSS px (the lattice's CPU mirror) — a
   // hole shows the desk under the drawer (design-018 §3), which does not scroll with the board
   const onFace = (rect, xd, yd, S) => { const c = cellOf(pointAt((xd / 2 - rect.x) / 40, yd / 2 - rect.y, 40, carry(S, 40))); return !punched(c, rect.w / 40) || holeSdf(c.qx, c.qy) * 40 > 1.5; };
@@ -116,9 +126,11 @@ try {
   let firstSettled = (await settle()).settled;
   for (let i = 0; i < 7 && !firstSettled; i++) firstSettled = (await settle()).settled;
   const firstOpen = (await q("window.__desk.submits().total")) - first0;
-  const slots = (await tray()).slots;
+  const firstSeen = await tray();
+  const slots = firstSeen.slots;
+  const inView = firstSeen.specimens.length;   // R4: the lay starts under the header — at 800 px the second line hangs below the view
   await q("window.__desk.tray.close()"); await settle();
-  check(slots === 6 && firstOpen > 0 && firstSettled, `the first open made the six specimens' slots (${slots}) — ${firstOpen} submits, the slide's and the setup's, once; the desk settled after it: ${firstSettled}`);
+  check(slots === inView && inView === 4 && firstOpen > 0 && firstSettled, `the first open made the slots of the specimens it shows (${slots} for ${inView}: the first line — the second hangs below the view at 800 px since R4 laid the lay under the header) — ${firstOpen} submits, the slide's and the setup's, once; the desk settled after it: ${firstSettled}`);
 
   // 2. `a` opens it, on the curve — sampled on the frame clock; the motion's wall time
   const lit0 = await shot();
@@ -164,13 +176,13 @@ try {
   const un = await q(`window.__desk.entity(${under})`);
   const uBox = [(un.x - cam0.x) * cam0.zoom * 2, (un.y - cam0.y) * cam0.zoom * 2, (un.x + un.w - cam0.x) * cam0.zoom * 2, (un.y + un.h - cam0.y) * cam0.zoom * 2];
   const nearNote = (x, y, m) => x >= uBox[0] - m && x <= uBox[2] + m && y >= uBox[1] - m && y <= uBox[3] + m;
-  const inside = []; for (let y = 1000; y < 1560; y += 3) for (let x = 180; x < 2220; x += 3) if (!nearNote(x, y, 40)) inside.push(y * lit1.width + x);
+  const inside = []; for (let y = below({ y: 448 }); y < 1560; y += 3) for (let x = 180; x < 2220; x += 3) if (!nearNote(x, y, 40)) inside.push(y * lit1.width + x);
   const dark = inside.filter((i) => lum(lit1, i % lit1.width, Math.floor(i / lit1.width)) < 110).length / inside.length;
   const faceL = inside.map((i) => lum(lit1, i % lit1.width, Math.floor(i / lit1.width))).sort((a, b) => a - b)[Math.floor(inside.length * 0.6)];
   check(dark > 0.12 && dark < 0.19 && faceL > 165 && faceL < 200, `the board: holes darken ${(dark * 100).toFixed(1)} % of it (the stadium's 15.7 % of a cell), the face's luminance ${faceL.toFixed(0)} (≈ #cdb491's 182)`);
   // (c) NO NOTCH (design-018 §2, §5; §8 R1 c): the top edge's centre is BOARD — the tan face under its lit edge (R ≥ G ≥ B, bright),
-  //     never the desk seen through a finger notch (56 × 8 was cut there). The lattice's own holes are skipped: at scroll 0 the tips of
-  //     the row above the board's top (its centres ¼ pitch over it) show 3.2 px under the edge — the board runs on above the window
+  //     never the desk seen through a finger notch (56 × 8 was cut there). The lattice's own holes are skipped (R4: in the header none
+  //     opens — the row above the board's top that peeked 3.2 px under the edge at scroll 0 is plain face now)
   const litRect = (await tray()).frame;
   let notchN = 0;
   let notchDesk = 0;
@@ -181,14 +193,15 @@ try {
     if (!(lit1.rgba[i] >= lit1.rgba[i + 1] && lit1.rgba[i + 1] >= lit1.rgba[i + 2] && lum(lit1, x, y) > 120)) notchDesk++;
   }
   check(notchN > 0 && notchDesk === 0, `no notch: the top edge's centre is board — the ${notchN} px 1–7 px under the edge within 24 of its centre all the tan face (${notchDesk} not)`);
-  // (e) THE HOLES FADE AT THE TOP EDGE (James, 2026-09-28 — design-018 §4): within the face's feather a hole CLOSES into the plain face
-  //     as the specimens fade — its opening the specimens' ramp, smoothstep over the fade band (`DRAWER.fade`, 28) below the edge's inside.
-  //     The bare board scrolled so row 0's lit patch (row 3b's point: ¼ + 0.04, ¾ + 0.12 of its cell) sits 6 · 12 · 18 · 24 px under the
-  //     edge: its OPENING — how far its luminance has gone from the face's (the same screen row, `onFace`) toward the open holes' (row 1,
-  //     a pitch lower, past the band) — rises as the ramp does; row 1's holes are as punched
+  // (e) THE HOLES FADE AT THE TOP (James, 2026-09-28 — design-018 §4, R3; R4): in the HEADER (`DRAWER.header` under the edge's inside)
+  //     no hole opens — the plain face — and below it a hole OPENS as the specimens fade in: its opening their ramp, the smoothstep over
+  //     `DRAWER.fade` from the header's foot. The bare board scrolled so a row's lit patch (row 3b's point: ¼ + 0.04, ¾ + 0.12 of its cell)
+  //     sits d px under the edge — 12 · 36 in the header, then the ramp's quarters: its OPENING — how far its luminance has gone from the
+  //     face's (the same screen row, `onFace`) toward the open holes' (three rows lower, past the ramp) — ≈ 0, then rising as the ramp does
   const fadeRows = [];
-  for (const d of [6, 12, 18, 24]) {
-    const S = (0.75 + 0.12) * 40 - 1.5 - d;   // row 0's point at y = top + d, top = the frame's y + the arris (1.5)
+  for (const d of [12, 36, DRAWER.header + DRAWER.fade / 4, DRAWER.header + DRAWER.fade / 2, DRAWER.header + (3 * DRAWER.fade) / 4]) {
+    const k = Math.max(0, Math.ceil((DRAWER.arris + d) / 40 - 0.87));   // the first row the board can put there (the scroll ≥ 0)
+    const S = (k + 0.75 + 0.12) * 40 - DRAWER.arris - d;                // row k's point at y = the edge's inside + d
     await q(`window.__desk.tray.scroll(${S})`); await settle();
     const img = await shot();
     const fr = (await tray()).frame;
@@ -204,20 +217,21 @@ try {
       return out;
     };
     const L9 = (x, y) => { let v = 0; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) v += lum(img, x + i, y + j); return v / 9; };
-    const h0 = at(0);
-    const h1 = at(1);
+    const h0 = at(k);
+    const h1 = at(k + 3);   // 120 px lower: past the header and its ramp, as punched
     const y0 = h0[0]?.[1] ?? 0;
     const face = [];
     for (let x = Math.round(fr.x * 2) + 80; x < Math.round((fr.x + fr.w) * 2) - 80; x += 2) if (onFace(fr, x, y0, S)) face.push(lum(img, x, y0));
     const Lf = face.reduce((a, b) => a + b, 0) / Math.max(face.length, 1);
     const Lo = h1.map(([x, y]) => L9(x, y)).reduce((a, b) => a + b, 0) / Math.max(h1.length, 1);
     const mean = h0.map(([x, y]) => (Lf - L9(x, y)) / (Lf - Lo)).reduce((a, b) => a + b, 0) / Math.max(h0.length, 1);
-    const t = d / 28;
-    fadeRows.push({ d, n: h0.length, mean, want: t * t * (3 - 2 * t), Lf, Lo });
+    fadeRows.push({ d, n: h0.length, mean, want: contentShown({ y: 0 }, DRAWER.arris + d), Lf, Lo });
   }
   await q("window.__desk.tray.scroll(0)"); await settle();
-  check(fadeRows.every((r) => r.n >= 10 && Math.abs(r.mean - r.want) < 0.12 && r.Lf - r.Lo > 60) && fadeRows.every((r, i) => i === 0 || r.mean > (fadeRows[i - 1]?.mean ?? 0)),
-    `the holes fade at the top edge as the specimens do — each row's opening against the ramp: ${fadeRows.map((r) => `${r.d} px ${r.mean.toFixed(2)} (${r.want.toFixed(2)})`).join(" · ")}, rising, over ${fadeRows[0]?.n} holes a row; row 1 as punched (the face ${fadeRows[0]?.Lf.toFixed(0)}, the open holes ${fadeRows[0]?.Lo.toFixed(0)})`);
+  const zone = fadeRows.filter((r) => r.d < DRAWER.header);
+  const ramp = fadeRows.filter((r) => r.d >= DRAWER.header);
+  check(fadeRows.every((r) => r.n >= 10 && r.Lf - r.Lo > 60) && zone.every((r) => Math.abs(r.mean) < 0.06) && ramp.every((r, i) => Math.abs(r.mean - r.want) < 0.12 && (i === 0 || r.mean > (ramp[i - 1]?.mean ?? 0))),
+    `the holes: none opens in the header, then they open as the specimens fade in — each row's opening against the ramp: ${fadeRows.map((r) => `${r.d} px ${r.mean.toFixed(2)} (${r.want.toFixed(2)})`).join(" · ")}, rising, over ${fadeRows[0]?.n} holes a row; the rows past the ramp as punched (the face ${fadeRows[0]?.Lf.toFixed(0)}, the open holes ${fadeRows[0]?.Lo.toFixed(0)})`);
   const deskBefore = lum(lit0, 1200, 200);
   const deskAfter = lum(lit1, 1200, 200);
   check(Math.abs(deskAfter / deskBefore - 0.9) < 0.03, `the desk dims 10 % by day: luminance ${deskBefore.toFixed(1)} → ${deskAfter.toFixed(1)} (× ${(deskAfter / deskBefore).toFixed(3)})`);
@@ -232,6 +246,7 @@ try {
     if (hx < 0.75 || hx > 28 - 0.75) continue;
     const x = Math.round((40 + (hx + 0.04) * 40) * 2);
     const y = Math.round((448 + (row + 0.75 + 0.12) * 40) * 2);
+    if (y < below({ y: 448 })) continue;   // R4: rows 0 and 1 lie in the header and its ramp — closed, and opening (row (e))
     const shut = patch(lit0, x, y);
     const open = patch(lit1, x, y);
     const k = open.map((v, n) => v / Math.max(shut[n], 1));
@@ -261,7 +276,8 @@ try {
   let moved = 0;
   let sum = 0;
   let n = 0;
-  for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) { if (!onFace(lb.rect, x, y, S0 + D)) continue; const d = Math.abs(lum(B, x, y) - lum(A, x, y + 2 * D)); maxd = Math.max(maxd, d); sum += d; n++; if (d > 0) moved++; }
+  // (below the header and its ramp — R4: fixed on screen, they are no part of the board that moves)
+  for (let y = below(lb.rect); y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) { if (!onFace(lb.rect, x, y, S0 + D)) continue; const d = Math.abs(lum(B, x, y) - lum(A, x, y + 2 * D)); maxd = Math.max(maxd, d); sum += d; n++; if (d > 0) moved++; }
   // the same board point is reached by two float paths (its rows on screen plus a different fraction of one): exact, but for an f32's
   // rounding across a quantisation step — at most one step, on a vanishing share of the pixels
   check(maxd <= 1 && moved / n < 1e-3, `the board ${D} px on is the same pixels ${2 * D} device px up (its face — the holes show the unscrolled desk): ${moved} of ${n.toLocaleString()} px differ (max |Δ| ${maxd.toFixed(2)} — an f32's rounding, ≤ 1 step), mean ${(sum / n).toFixed(4)}`);
@@ -273,7 +289,7 @@ try {
   // anti-aliased edge may sit either side of one threshold — never across both)
   let holes = 0;
   let crossed = 0;
-  for (let y = 940; y < 1560; y += 2) for (let x = 140; x < 2260; x += 2) {
+  for (let y = below(lc.rect); y < 1560; y += 2) for (let x = 140; x < 2260; x += 2) {
     const a = lum(A, x, y);
     const c = lum(C, x, y);
     if (a < 95) holes++;
@@ -284,7 +300,10 @@ try {
   await q("window.__desk.tray.scroll(0); window.__desk.tray.pin(null)"); await settle();
 
   // 6. the wheel over the drawer scrolls it and never moves the camera; ⌘-wheel there and a wheel on the dimmed desk do nothing — over
-  //    the board where no specimen hangs at any scroll (a specimen under the mouse would lift: K5a's hover, its own row)
+  //    the board where no specimen hangs at any scroll (a specimen under the mouse would lift: K5a's hover, its own row). From 100 px
+  //    down, where the second line is drawn and its slots made (R4: at 0 it hangs below the view; revealing it first would count its
+  //    setup's frames as the wheel's)
+  await q("window.__desk.tray.scroll(100)"); await settle();
   await mouse("mouseMoved", 1100, 650);
   await settle();
   const w0 = (await tray()).facts.scroll;
@@ -406,8 +425,16 @@ try {
   s = await tray();
   const cats = await q("window.__desk.handle.tray.categories()");
   check(b !== null && b.open === "true" && b.visible === "true" && Math.abs(b.y1 - (s.frame.y - 10)) <= 1 && Math.abs((b.x0 + b.x1) / 2 - 600) <= 1
+    && b.pill.buttons === 1 && b.pill.text === "Objects" && b.pill.close && b.chips.every((c) => !c.inPill)
     && b.chips.map((c) => c.label).join(" · ") === ["All", ...cats.map((c) => c.label)].join(" · ") && cats.map((c) => c.id).join() === "paper,surfaces" && b.chips[0]?.pressed === "true",
-    `open, the bar rides the drawer's top edge at rest: its bottom at ${b?.y1.toFixed(1)} — the board's top ${s.frame.y} less 10 (±1) — centred (${b === null ? "?" : ((b.x0 + b.x1) / 2).toFixed(1)}); its chips ${b?.chips.map((c) => c.label).join(" · ")}: All and the categories the drawer hangs (${cats.map((c) => `${c.id} ${c.count}`).join(", ")}), All pressed`);
+    `open, the pill rides the drawer's top edge at rest: its bottom at ${b?.y1.toFixed(1)} — the board's top ${s.frame.y} less 10 (±1) — centred (${b === null ? "?" : ((b.x0 + b.x1) / 2).toFixed(1)}), "× ${b?.pill.text}" (${b?.pill.buttons} button, the × ${b?.pill.close}) and no chip in it (R4); the chips ${b?.chips.map((c) => c.label).join(" · ")}: All and the categories the drawer hangs (${cats.map((c) => `${c.id} ${c.count}`).join(", ")}), All pressed`);
+  // R4: the chips lie in the drawer's HEADER — found by their DOM rects: every one inside the clear band under the edge (the edge's
+  // inside … + `DRAWER.header`), the row centred on the drawer's centre line and on the band's middle, 26 px tall, whole (their strip's opacity 1)
+  const band = { y0: s.frame.y + DRAWER.arris, y1: s.frame.y + HEAD };
+  const row = { x0: Math.min(...b.chips.map((c) => c.x0)), x1: Math.max(...b.chips.map((c) => c.x1)) };
+  check(b.chips.length === 3 && b.chips.every((c) => c.y0 >= band.y0 + 4 && c.y1 <= band.y1 - 4 && Math.abs(c.y1 - c.y0 - 26) < 0.5 && c.x0 >= s.frame.x && c.x1 <= s.frame.x + s.frame.w && c.opacity === 1)
+    && Math.abs((row.x0 + row.x1) / 2 - (s.frame.x + s.frame.w / 2)) <= 1 && b.chips.every((c) => Math.abs(c.y - (band.y0 + band.y1) / 2) <= 1),
+    `the chips are in the header: ${b.chips.map((c) => `${c.label} ${c.x0.toFixed(0)}–${c.x1.toFixed(0)} × ${c.y0.toFixed(1)}–${c.y1.toFixed(1)}`).join(" · ")} — inside the clear band ${band.y0}–${band.y1}, their row centred on the drawer (${((row.x0 + row.x1) / 2).toFixed(1)} for ${s.frame.x + s.frame.w / 2}) and on the band's middle (${((band.y0 + band.y1) / 2).toFixed(1)})`);
   await q("window.__desk.tray.scroll(120)"); await settle();
   const surf = b?.chips.find((c) => c.id === "surfaces");
   await click(surf.x, surf.y); await sleep(150); await settle();
@@ -445,7 +472,49 @@ try {
   s = await tray(); b = await bar();
   check(s.facts.open === true && s.frame.p === 1 && b.open === "true" && b.toggle.expanded === "true" && Math.abs(b.y1 - (s.frame.y - 10)) <= 1,
     `…and a click on it opened the drawer again (p ${s.frame.p}): the bar back on the top edge (${b.y1.toFixed(1)} for ${s.frame.y - 10}), expanded`);
-  await q("window.__desk.bar(false)"); await settle();
+  // R4 — AT REST NOTHING LAID IS FADED, AND THE CHIPS LIE ON BARE BOARD: at scroll 0 every laid footprint (the law's, its accessory
+  //     included) at ≥ 99 % of the ramp — by the law, and by the pixels: the rest frame against the same board shown 40 px lower (where
+  //     no ramp reaches), the flat kinds' footprints the same pixels 80 device px down (the notebook's and the calendar's are seen
+  //     through the desk eye — S5); and under the chips' rects the canvas is the BARE board's, at rest and scrolled so the first line
+  //     runs up under the header (the bar hidden: the canvas alone)
+  await q("window.__desk.tray.scroll(0)"); await settle();
+  s = await tray(); b = await bar();
+  const restLaw = await q("window.__desk.tray.law()");
+  const restLay = layTray(restLaw.items, restLaw.width, restLaw.pitch).placed;
+  const restMin = Math.min(...restLay.map((p) => contentShown(s.frame, s.frame.y + p.box.y0)));
+  const kindOf = new Map(s.specimens.map((x) => [x.type, x.kind]));
+  const chipRects = b.chips.map((c) => [Math.floor(c.x0 * 2), Math.floor(c.y0 * 2), Math.ceil(c.x1 * 2), Math.ceil(c.y1 * 2)]);
+  await q("window.__desk.bar(false)");
+  const pinShot = async (pin) => { await q(`window.__desk.tray.pin(${JSON.stringify(pin)})`); await settle(); return shot(); };
+  const R0 = await pinShot({ p: 1, band: 0 });
+  const R1 = await pinShot({ p: 1, band: -40 });
+  const Rb = await pinShot({ p: 1, band: 0, bare: true });
+  const Ru = await pinShot({ p: 1, band: 100 });
+  const Rub = await pinShot({ p: 1, band: 100, bare: true });
+  await q("window.__desk.tray.pin(null)"); await settle();
+  let restMax = 0; let restMoved = 0; let restN = 0; const restTypes = [];
+  for (const p of restLay) {
+    const kind = kindOf.get(p.type);
+    if (kind === undefined || kind === "notebook" || kind === "calendar") continue;
+    const y0 = Math.ceil((s.frame.y + p.box.y0) * 2);
+    const y1 = Math.min(Math.floor((s.frame.y + p.box.y1) * 2), 1600 - 81);
+    if (y1 <= y0) continue;
+    restTypes.push(p.type.replace("desk.", ""));
+    for (let y = y0; y < y1; y++) for (let x = Math.ceil((s.frame.x + p.box.x0) * 2); x < (s.frame.x + p.box.x1) * 2; x += 2) {
+      if (!onFace(s.frame, x, y, 0)) continue;
+      const d = Math.abs(lum(R0, x, y) - lum(R1, x, y + 80));
+      restMax = Math.max(restMax, d); restN++; if (d > 1) restMoved++;
+    }
+  }
+  const underChips = (A, B) => { let m = 0; for (const [x0, y0, x1, y1] of chipRects) for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) m = Math.max(m, Math.abs(lum(A, x, y) - lum(B, x, y))); return m; };
+  const chipsRest = underChips(R0, Rb);
+  const chipsUnder = underChips(Ru, Rub);
+  const firstUnder = restLay.filter((p) => p.line === 0).some((p) => { const y0 = s.frame.y + p.y - 100; return y0 < s.frame.y + HEAD && y0 + p.h > s.frame.y + DRAWER.arris && b.chips.some((c) => c.x1 > s.frame.x + p.x && c.x0 < s.frame.x + p.x + p.w); });
+  // (max |Δ| ≤ 3: a specimen's shading moved a pitch rounds a level or two either way — its fade at 99 % would be ~2 on its contrast,
+  //  and a footprint in the ramp tens)
+  check(restMin >= 0.99 && restTypes.length >= 2 && restMax <= 3 && chipsRest < 1 && chipsUnder < 1 && firstUnder,
+    `at rest nothing laid is faded: every footprint at ≥ ${restMin.toFixed(4)} of the ramp (the law's first line under the header's ${HEAD} + ${DRAWER.fade}); the ${restTypes.join(", ")} footprints the same pixels 40 px lower (max |Δ| ${restMax.toFixed(2)}, ${restMoved} of ${restN.toLocaleString()} past 1) — and under the chips the bare board: max |Δ| ${chipsRest.toFixed(2)} at rest, ${chipsUnder.toFixed(2)} with the first line run up under them (scroll 100)`);
+  await settle();
 
   // K5a — THE SPECIMENS (design-017 §8)
   await q("window.__desk.tray.scroll(0)"); await settle();
@@ -470,7 +539,7 @@ try {
     await q("window.__desk.tray.pin({ bare: true })"); await settle();
     const B = await shot();
     await q("window.__desk.tray.pin(null)"); await settle();
-    return st.specimens.filter((q) => q.screen.y0 >= st.frame.y + 6 && q.screen.y1 <= 800).map((q) => {
+    return st.specimens.filter((q) => q.screen.y0 * 2 >= below(st.frame) && q.screen.y1 <= 800).map((q) => {   // wholly past the header's ramp (R4)
       let sum = 0; let n = 0;
       for (let y = Math.ceil(q.screen.y0 * 2); y < q.screen.y1 * 2; y += 2) for (let x = Math.ceil(q.screen.x0 * 2); x < q.screen.x1 * 2; x += 2) { sum += Math.abs(lum(A, x, y) - lum(B, x, y)); n++; }
       return [q.type, sum / Math.max(n, 1)];
@@ -490,10 +559,10 @@ try {
   await q(`window.__desk.tray.scroll(${S0 + D})`); await settle();
   const SB = await shot(); const rb = (await tray()).specimens;
   const rectsOk = ra.length > 0 && ra.every((a) => { const b = rb.find((q) => q.type === a.type); return b !== undefined && b.screen.y0 === a.screen.y0 - D && b.screen.x0 === a.screen.x0 && b.screen.y1 === a.screen.y1 - D; });
-  const eyed = ra.filter((q) => q.kind === "notebook" || q.kind === "calendar").map((q) => [q.screen.x0 - 12, q.screen.x1 + 30]);
+  const eyed = ra.filter((q) => q.kind === "notebook" || q.kind === "calendar").map((q) => [q.screen.x0 - 12, q.screen.x1 + 40]);   // and the shadow the lamp throws right (R4: the book nearer the view's centre)
   let flatMax = 0; let flatMoved = 0; let flatN = 0; let eyeMax = 0;
   const sRect = (await tray()).frame;
-  for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) {
+  for (let y = below(sRect); y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) {
     if (!onFace(sRect, x, y, S0 + D)) continue;
     const d = Math.abs(lum(SB, x, y) - lum(SA, x, y + 2 * D));
     if (eyed.some(([x0, x1]) => x / 2 >= x0 && x / 2 <= x1)) { eyeMax = Math.max(eyeMax, d); continue; }
@@ -1035,12 +1104,13 @@ try {
       `inside an entered mini mat the drawer hangs what it takes — ${inside.join(", ")} — and not ${refused.join(", ")} (refused by its ingress); back at the desk all ${back.length} again`);
     await q("window.__desk.tray.open()"); await settle();
   }
-  // (a) THE FADE (design-018 §4, §8 R1 a): each kind's specimen — the clock included (this page registers the plugin) — placed with its
-  //     top 12 px above the face's top edge (the band pinned: a still's shown scroll) fades in across the band F below that edge, as the
-  //     face's feather has every kind's own `portal_cover` (and the layered kinds' composite) do. Its visibility per device row is read
-  //     pixel by pixel against the SAME content fully shown — the board a pitch further on, 80 device px down (the face is the same
-  //     pixels moved; a hole in either frame is skipped: it shows the desk) — (frame − bare) ÷ (frame′ − bare′), the row's median:
-  //     nothing above the edge, the band's four quarters rising on the smoothstep's (0.05 · 0.32 · 0.68 · 0.95), no row a step
+  // (a) THE FADE (design-018 §4, §8 R1 a; R4): each kind's specimen — the clock included (this page registers the plugin) — placed with
+  //     its top 16 px above the HEADER's foot (the band pinned: a still's shown scroll) is wholly gone in the header and fades in across
+  //     the ramp F below it, as the face's feather has every kind's own `portal_cover` (and the layered kinds' composite) do. Its
+  //     visibility per device row is read pixel by pixel against the SAME content fully shown — the board a pitch further on, 80 device
+  //     px down, past the ramp (the face is the same pixels moved; a hole in either frame is skipped: it shows the desk) — (frame − bare)
+  //     ÷ (frame′ − bare′), the row's median: nothing in the header, the ramp's four quarters rising on the smoothstep's (0.05 · 0.32 ·
+  //     0.68 · 0.95), no row a step
   {
     const ft = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?plugins=1`);
     await ft.send("Page.enable");
@@ -1053,9 +1123,9 @@ try {
     // a pinned slide never moves (a still), so the drawer is pinned open: p 1
     await fq("window.__desk.tray.pin({ p: 1, band: 0 })"); await fsettle(); await fsettle();
     const fr = (await fq("window.__desk.tray.state()")).frame;
-    const faceTop = fr.y + 1.5;   // the face's top edge, inside the arris (tray/drawer.ts DRAWER.arris)
-    const F = 28;                 // DRAWER.fade
-    const Y0 = Math.round(faceTop * 2);
+    const Z = fr.y + HEAD;        // the header's foot — under the face's top edge (inside the arris) by `DRAWER.header`: the ramp's start
+    const F = DRAWER.fade;
+    const Y0 = Math.round(Z * 2);
     const drawnOf = async (type) => (await fq("window.__desk.tray.state()")).specimens.find((q) => q.type === type)?.object;
     const frames2 = async (band) => {
       await fq(`window.__desk.tray.pin({ p: 1, band: ${band} })`); await fsettle();
@@ -1066,12 +1136,12 @@ try {
     const ramp = (t) => { const u = Math.min(Math.max(t, 0), 1); return u * u * (3 - 2 * u); };
     const fades = [];
     for (const s of await fq("window.__desk.tray.specimens()")) {
-      // the shown scroll that lays the object's top 12 px above the face's top edge: from its hang on the board, then its object as drawn
-      let want = s.y + fr.y - faceTop + 12;
+      // the shown scroll that lays the object's top 16 px above the header's foot: from its hang on the board, then its object as drawn
+      let want = s.y + fr.y - Z + 16;
       await fq(`window.__desk.tray.pin({ p: 1, band: ${want} })`); await fsettle();
       const o0 = await drawnOf(s.type);
       if (o0 === undefined) { fades.push({ type: s.type, missing: true }); continue; }
-      want += o0.y0 - (faceTop - 12);
+      want += o0.y0 - (Z - 16);
       await fq(`window.__desk.tray.pin({ p: 1, band: ${want} })`); await fsettle();
       const o = await drawnOf(s.type);
       const [A, B] = await frames2(want);
@@ -1079,7 +1149,7 @@ try {
       const x0 = Math.ceil((o.x0 + 4) * 2);
       const x1 = Math.floor((o.x1 - 4) * 2);
       let above = 0;
-      for (let y = Y0 - 8; y < Y0 - 1; y++) for (let x = x0; x < x1; x += 2) above = Math.max(above, Math.abs(lum(A, x, y) - lum(B, x, y)));
+      for (let y = Y0 - 30; y < Y0 - 1; y++) for (let x = x0; x < x1; x += 2) above = Math.max(above, Math.abs(lum(A, x, y) - lum(B, x, y)));   // its top 15 px, in the header
       const vis = [];
       for (let y = Y0; y < Y0 + 2 * F; y++) {
         const r = [];
@@ -1098,19 +1168,22 @@ try {
       fades.push({ type: s.type, above, quarter, off: Math.max(...quarter.map((v, k) => Math.abs(v - want4[k]))), steep, rows: vis.filter(Number.isFinite).length });
     }
     // …and the TAGS and the ACCESSORIES take the same ramp (in the marks' tag draw, in `tray_accessory`): the photo's tag, then its
-    // clip, laid across the band (its centre 8 px below the edge) — the rows 1…15 px below the edge, read as above, against the ramp
+    // clip, laid across the header's foot (its centre 8 px below it) — nothing of it in the header's last 6 px, and the rows 1…15 px
+    // below its foot, read as above, against the ramp
     const partRamp = async (type, locate) => {
       await fq("window.__desk.tray.pin({ p: 1, band: 0 })"); await fsettle();
       const st0 = await fq("window.__desk.tray.state()");
       const at = locate(st0);
       if (at === null) return null;
-      const band = at.y - (faceTop + 8);
+      const band = at.y - (Z + 8);
       const [A, B] = await frames2(band);
       const [A2, B2] = await frames2(band - 40);
       const x0 = Math.round((at.x - at.hw) * 2);
       const x1 = Math.round((at.x + at.hw) * 2);
       const got = [];
       const exp = [];
+      let above = 0;
+      for (let y = Y0 - 12; y < Y0 - 1; y++) for (let x = x0; x <= x1; x++) above = Math.max(above, Math.abs(lum(A, x, y) - lum(B, x, y)));
       for (let y = Y0 + 2; y < Y0 + 30; y++) {
         const r = [];
         for (let x = x0; x <= x1; x++) {
@@ -1124,17 +1197,17 @@ try {
         exp.push(ramp((y - Y0 + 0.5) / (2 * F)));
       }
       const mean = (v) => v.reduce((m, n) => m + n, 0) / Math.max(v.length, 1);
-      return { type, rows: got.length, got: mean(got), want: mean(exp) };
+      return { type, rows: got.length, got: mean(got), want: mean(exp), above };
     };
     const P = 40;
     const tagFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); return sp === undefined ? null : { x: (sp.screen.x0 + sp.screen.x1) / 2, y: sp.screen.y1 + (sp.accessory === "shelf" ? 0.24 * P : 0) + 0.45 * P, hw: 12 }; });
     const accFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); const peg = sp?.pegs[0]; return peg === undefined ? null : { x: peg[0], y: peg[1], hw: 9 }; });   // the clip's body either side of its hole
-    const partOk = (r) => r !== null && r.rows >= 8 && Math.abs(r.got - r.want) < 0.15;
+    const partOk = (r) => r !== null && r.rows >= 8 && Math.abs(r.got - r.want) < 0.15 && r.above < 1;
     await fq("window.__desk.tray.pin(null)");
     await ft.close?.();
     const fadeOk = (r) => !r.missing && r.above < 1 && r.rows >= 40 && r.quarter[0] < r.quarter[1] && r.quarter[1] < r.quarter[2] && r.quarter[2] < r.quarter[3] && r.off < 0.12 && r.steep < 0.07;
     check(fades.length >= 7 && fades.some((r) => r.type === "ice-examples.desk-clock") && fades.every(fadeOk) && partOk(tagFade) && partOk(accFade),
-      `the fade: each kind straddling the top edge fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, above ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the print's tag ${tagFade?.got.toFixed(2)} and its clip ${accFade?.got.toFixed(2)} across the band's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}, ${accFade?.want.toFixed(2)}; ${tagFade?.rows}, ${accFade?.rows} rows)`);
+      `the fade: each kind straddling the header's foot is gone in the header and fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, in the header ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the print's tag ${tagFade?.got.toFixed(2)} and its clip ${accFade?.got.toFixed(2)} across the ramp's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}, ${accFade?.want.toFixed(2)}; ${tagFade?.rows}, ${accFade?.rows} rows; in the header ${tagFade?.above.toFixed(0)}, ${accFade?.above.toFixed(0)})`);
   }
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);
