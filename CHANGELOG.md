@@ -838,6 +838,28 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
 - **Fixed**: rig:open's desk-copy row timed the GPU's ramp after the idle rows (a warm batch first); rig:stress's boards
   row read across three CDP round trips (read in-page).
 
+<!-- design-016 K8a (2026-09-27) -->
+- **Plugin parity — the open seams** (design-016 §5, K-L2: whatever a built-in kind can do, a plugin kind declares the
+  same way). **Services** are an open registry by typed key — `serviceKey<T>(name)`, `service(key, value)`,
+  `KindHost.use?(key)`, `ObjectDomHost.use`, `deskLayer({ services })`; a kind lends under a key (its `lend` receives a
+  `LendHost` with `use` + `wake`) and any kind uses it; the text raster, the picture decoder, the byte store and the
+  calendar's print raster are entries; a name lent twice is a mount error naming both lenders (D-K8a.1). **The ONE
+  editor** is the desk's (`createDeskEditor`): every kind leases it through the `TextPart`s its `ObjectHost.text`
+  declares — a tap-routed part (the note's body) or one its own half leases (the calendar's day line) (D-K8a.2).
+  **Placement and `accepts` by provides-keys** — `DESK_OBJECT`, `CONTAINABLE`, `PINNABLE` in `@ice/desk`; the desk canvas
+  places what provides `DESK_OBJECT`, the mini mat accepts `CONTAINABLE` (D-K8a.3). **Chips** name their FINISH and a
+  container declares the finishes it draws (`ObjectKind.faceLaw: { radius, chips, finishes }` — the container's own
+  numbers; D-K8a.4). **Held-tool glyphs**: `HeldGlyph` is a name of the bar's set or `{ path, fill? }` — the held bar
+  draws a plugin's drawing (D-K8a.6). **Menu acts**: `defineObject({ menu })` → `WidgetType.menu`, run by
+  `ops.runMenuAction`; the selection menu shows a kind's acts when every selected type declares them (D-K8a.7; the mini
+  mat's vinyl left App.tsx). Every seam wakes the sleeping loop where it changes something visible.
+- **Changed (0.14.0, unreleased API — renamed or reshaped at K8a):** `ChipKind` → a chip's `finish` (`ChipFinish`,
+  `PAPER_FINISH`, `VINYL_FINISH`); `NoteEditor` → `DeskEditor`, `createNoteEditor` → `createNoteBody` (`NOTE_BODY`, the note's
+  half); `ObjectHost.editor` → `ObjectHost.text`; `pinGreek(e, GreekPin)` → `pinAsset(e, asset)` (D-K8a.8); `KindHost`'s
+  `text` / `print` / `blobs` / `decode` → `use(key)` (the desk's own doors — `pass`, `children`, `drawn`, `budget`,
+  `rasters`, `remake`, `wake` — stay fields); `insideViewOfFace` takes the container's radius; `@ice/objects` no longer
+  exports `DESK_OBJECT` (it is `@ice/desk`'s).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
