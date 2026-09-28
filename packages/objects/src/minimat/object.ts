@@ -33,7 +33,7 @@ export const MiniMat = defineObject({
   size: { w: MINIMAT.size.w, h: MINIMAT.size.h },
   kind: minimatKind(),
   // on the pegboard tray (design-017 §8): a mini mat on a shelf
-  tray: { label: "Mini mat", category: "surface", order: 0, hang: { w: 213, h: 160, accessory: "shelf", pegs: [[-2, 0.5], [2, 0.5]] } },
+  tray: { label: "Mini mat", category: "surfaces", order: 0, hang: { w: 213, h: 160, accessory: "shelf", pegs: [[-2, 0.5], [2, 0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
   // its act in the selection menu (K8a — the kind's own, where the app's `t` key held it over the type name until then): the
   // selected mini mats' vinyl cycles sage → slate → charcoal, each mat one undo step; the inside's mat is the same vinyl, so it follows

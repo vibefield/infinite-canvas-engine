@@ -35,7 +35,7 @@ export const Board = defineObject({
   size: { w: BOARD.spec.width, h: BOARD.spec.height },
   kind: boardKind(),
   // on the pegboard tray (design-017 §8): the whiteboard on a rail
-  tray: { label: "Whiteboard", category: "surface", order: 1, hang: { w: 240, h: 160, accessory: "rail", pegs: [[-2.5, -0.5], [2.5, -0.5]] } },
+  tray: { label: "Whiteboard", category: "surfaces", order: 1, hang: { w: 240, h: 160, accessory: "rail", pegs: [[-2.5, -0.5], [2.5, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: true, snap: "both", drop: "never" },
   // it lies on the desk by what it provides (K8a — `DESK_OBJECT`, the desk canvas's one key), as a plugin kind does
   provides: [DESK_OBJECT],

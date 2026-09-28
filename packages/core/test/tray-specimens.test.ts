@@ -3,7 +3,9 @@
 // the catalog's, a plugin's by its entry alone — each a runtime entity `ChildOf` it: `PrefabId` its type, `Position`/`Size` where the
 // lattice law lays it across the drawer the renderer drew (the pose seam), its entry's props over the widget's defaults, `Specimen`.
 // Never Active (the desk's stack never picks, selects or culls one), never durable; re-laid on a width change, laid afresh after a
-// reset. Open, the mouse over one is `Tray.hover` — the hover that lifts it. Through the REAL stack; the pose is the renderer's word.
+// reset. Open, the mouse over one is `Tray.hover` — the hover that lifts it. design-018 §6 (R2): THE FILTER — the view's category
+// ("" all) lays only its entries, a change zeroes the scroll and the band, one the frame hangs none of falls back to all, and the
+// categories the frame hangs are listed in the lay's order. Through the REAL stack; the pose is the renderer's word.
 import { describe, expect, it } from "vitest";
 import { layTray, trayScrollMax } from "@ice/kernel";
 import {
@@ -13,6 +15,10 @@ import {
   defineWidget,
   openTray,
   scrollTray,
+  setTrayCategory,
+  trayCategories,
+  trayCategory,
+  trayEntryCount,
   p,
   Position,
   Selectable,
@@ -44,6 +50,15 @@ const PLUGIN: WidgetType = widgets.get("plugin:swatch") ?? defineWidget({
   tray: { label: "Swatch", category: "plugin", hang: { w: 80, h: 80, accessory: "clip", pegs: [[0, -0.5]] } },
 });
 const PLAIN: WidgetType = widgets.get("spec:plain") ?? defineWidget({ type: "spec:plain", object: { name: "plain" }, defaultSize: { w: 100, h: 100 } });
+// design-018 §6: a second paper kind, and an entry that names no category (laid under all alone — no chip)
+const CARD: WidgetType = widgets.get("spec:card") ?? defineWidget({
+  type: "spec:card", object: { name: "card" }, defaultSize: { w: 100, h: 100 },
+  tray: { label: "Card", category: "paper", order: 1, hang: { w: 80, h: 80, accessory: "clip", pegs: [[0, -0.5]] } },
+});
+const LOOSE: WidgetType = widgets.get("spec:loose") ?? defineWidget({
+  type: "spec:loose", object: { name: "loose" }, defaultSize: { w: 100, h: 100 },
+  tray: { label: "Loose", hang: { w: 80, h: 80, accessory: "clip", pegs: [[0, -0.5]] } },
+});
 // a container that takes the swatch alone (K9 S13): inside it the pad's specimen has nothing to offer
 const BIN: WidgetType = widgets.get("spec:bin") ?? defineWidget({
   type: "spec:bin", object: { name: "bin" }, defaultSize: { w: 300, h: 200 },
@@ -52,8 +67,8 @@ const BIN: WidgetType = widgets.get("spec:bin") ?? defineWidget({
 
 const VP = { w: 800, h: 600, dpr: 1 };
 
-function rig(widths: { w: number; face?: number } = { w: 720 }) {
-  const ce = createCanvasEngine({ widgets: [PAD, PLUGIN, PLAIN, BIN] });
+function rig(widths: { w: number; face?: number } = { w: 720 }, extra: readonly WidgetType[] = []) {
+  const ce = createCanvasEngine({ widgets: [PAD, PLUGIN, PLAIN, BIN, ...extra] });
   ce.docs.create();
   ce.world.setResource(Viewport, VP);
   ce.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
@@ -86,7 +101,7 @@ describe("the tray's specimens", () => {
       expect(r.world.hasTag(e as never, Specimen)).toBe(true);
     }
     const c = r.world.read(r.tray(), TrayContent);
-    expect(c).toEqual({ width: 720, bottom: laid.bottom, laid: 1 });
+    expect(c).toEqual({ width: 720, bottom: laid.bottom, laid: 1, present: JSON.stringify([["paper", 1], ["plugin", 1]]) });   // design-018 §6: what it could hang
     // the entry's props over the widget's defaults
     const group = PAD.groups[0]?.component;
     if (group === undefined) throw new Error("the pad has no group");
@@ -212,6 +227,109 @@ describe("the tray's specimens", () => {
     expect(r.world.read(r.byType()["plugin:swatch"] as never, Position)).toEqual({ x: alone?.x, y: alone?.y });
     r.ce.ops.exitContainer({ transition: "none" });
     r.step(3);
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
+  });
+});
+
+describe("the filter (design-018 §6)", () => {
+  const law = (types: readonly WidgetType[]) => layTray(types.map((t) => ({ type: t.type, hang: hangOf(t), ...(t.tray?.category !== undefined ? { category: t.tray.category } : {}), ...(t.tray?.order !== undefined ? { order: t.tray.order } : {}) })), 720, 40).placed;
+
+  it("is the view's category — all (\"\") at install, set by its op, all again after a document switch — a runtime fact", () => {
+    const r = rig();
+    expect(r.world.read(r.tray(), Tray).category).toBe("");
+    setTrayCategory(r.world, "plugin");
+    expect(trayCategory(r.world)).toBe("plugin");
+    expect(r.ce.docs.current()?.store.keyOf(r.tray())).toBeUndefined();
+    r.ce.docs.create();
+    r.world.setResource(Viewport, VP);
+    r.step(2);
+    expect(trayCategory(r.world)).toBe("");
+  });
+
+  it("lists the categories the frame hangs in the lay's order — each its label and count — from the first lay on; an entry naming none is counted but has no chip", () => {
+    const r = rig({ w: 720 }, [CARD, LOOSE]);
+    r.step(2);
+    expect([trayCategories(r.world), trayEntryCount(r.world)]).toEqual([[], 0]);   // no pose, no lay: nothing to offer yet
+    r.pose(true);
+    r.step(2);
+    expect(trayCategories(r.world)).toEqual([{ id: "paper", label: "Paper", count: 2 }, { id: "plugin", label: "Plugin", count: 1 }]);
+    expect(trayEntryCount(r.world)).toBe(4);
+    setTrayCategory(r.world, "plugin");
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["plugin:swatch"]);
+    expect(trayCategories(r.world).map((c) => c.id)).toEqual(["paper", "plugin"]);   // what the frame hangs, not what is shown
+    expect(trayEntryCount(r.world)).toBe(4);
+  });
+
+  it("lays only the chosen category's entries where the law lays them alone — the others' specimens gone — and all again on \"\"; each change zeroes the scroll and the band, the same category again changes nothing", () => {
+    const r = rig({ w: 720 }, [CARD]);
+    r.pose(true);
+    r.step(2);
+    const t = () => r.world.read(r.tray(), Tray);
+    const at = (type: string) => { const e = r.byType()[type]; return e === undefined ? undefined : { ...r.world.read(e as never, Position), ...r.world.read(e as never, Size) }; };
+    const laid = () => r.world.read(r.tray(), TrayContent).laid;
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:card", "spec:pad"]);
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 77, stretch: 12 });
+    setTrayCategory(r.world, "paper");
+    r.step(2);
+    expect(Object.keys(r.byType()).sort()).toEqual(["spec:card", "spec:pad"]);
+    for (const q of law([PAD, CARD])) expect(at(q.type), q.type).toEqual({ x: q.x, y: q.y, w: q.w, h: q.h });
+    expect([t().category, t().scroll, t().stretch]).toEqual(["paper", 0, 0]);
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 30 });
+    const n = laid();
+    setTrayCategory(r.world, "paper");   // the same: no re-lay, the scroll kept
+    r.step(2);
+    expect([laid(), t().scroll]).toEqual([n, 30]);
+    setTrayCategory(r.world, "plugin");
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["plugin:swatch"]);
+    const alone = law([PLUGIN])[0];
+    expect(at("plugin:swatch")).toEqual({ x: alone?.x, y: alone?.y, w: alone?.w, h: alone?.h });
+    expect(t().scroll).toBe(0);
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 40 });
+    setTrayCategory(r.world, "");
+    r.step(2);
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:card", "spec:pad"]);
+    for (const q of law([PAD, CARD, PLUGIN])) expect(at(q.type), q.type).toEqual({ x: q.x, y: q.y, w: q.w, h: q.h });
+    expect(t().scroll).toBe(0);
+  });
+
+  it("survives the tray's own writes: the mouse over a specimen writes the fact (its hover) and the category stays", () => {
+    const r = rig();
+    r.pose(true);
+    r.step(2);
+    setTrayCategory(r.world, "paper");
+    openTray(r.world);
+    r.step(2);
+    const pad = r.byType()["spec:pad"] as number;
+    const at = r.world.read(pad as never, Position);
+    const size = r.world.read(pad as never, Size);
+    r.mouse(40 + at.x + size.w / 2, 348 + at.y + size.h / 2);
+    expect([r.world.read(r.tray(), Tray).hover, trayCategory(r.world)]).toEqual(["spec:pad", "paper"]);
+  });
+
+  it("falls back to all when the frame hangs none of the category — an id no entry names, and the category whose last entry the frame leaves behind (inside a container that takes none of it) — the board at its top", () => {
+    const r = rig();
+    r.pose(true);
+    r.step(2);
+    setTrayCategory(r.world, "nope");
+    r.step(2);
+    expect(trayCategory(r.world)).toBe("");
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
+    const bin = r.ce.ops.spawnWidget("spec:bin", { x: 300, y: 300, undoable: false });
+    setTrayCategory(r.world, "paper");
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["spec:pad"]);
+    r.ce.world.edit(r.tray()).set(Tray, { ...r.world.read(r.tray(), Tray), scroll: 25 });
+    r.ce.ops.enterContainer(bin, { transition: "none" });   // the bin takes the swatch alone: no paper hangs in it
+    r.step(3);
+    const t = r.world.read(r.tray(), Tray);
+    expect([t.category, t.scroll]).toEqual(["", 0]);
+    expect(Object.keys(r.byType())).toEqual(["plugin:swatch"]);
+    expect(trayCategories(r.world).map((c) => c.id)).toEqual(["plugin"]);
+    r.ce.ops.exitContainer({ transition: "none" });
+    r.step(3);
+    expect(trayCategory(r.world)).toBe("");   // it stays all: the fallback is the fact
     expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
   });
 });

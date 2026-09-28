@@ -2,7 +2,7 @@
 // kind uses (K-L2) — a note pad on two hooks, a print clipped, the notebook and a mini mat on shelves, the calendar on a hook, the
 // whiteboard on a rail. Each hang is drawn at its object's own aspect (a kind that sizes itself by its law is scaled, never
 // stretched), a shelf's height a whole number of pitches so its top meets the hooks'; laid by the law at the drawer's widths, every
-// peg on a punched hole.
+// peg on a punched hole. design-018 §6: filed under the chips' ids — paper and surfaces.
 import { describe, expect, it } from "vitest";
 import { layTray, PEG_LATTICE } from "@ice/kernel";
 import { DESK_OBJECTS } from "../src";
@@ -22,6 +22,11 @@ describe("the six on the pegboard", () => {
     expect(by["desk.board"]?.hang.accessory).toBe("rail");
     expect(by["desk.notebook"]?.hang.accessory).toBe("shelf");
     expect(by["desk.calendar"]?.hang.accessory).toBe("hook");
+  });
+
+  it("files them under the chips' ids (design-018 §6): paper — the note, the print, the notebook, the calendar; surfaces — the mini mat, the whiteboard", () => {
+    const by = Object.fromEntries(hung.map((t) => [t.type, t.tray?.category]));
+    expect(by).toEqual({ "desk.note": "paper", "desk.photo": "paper", "desk.notebook": "paper", "desk.calendar": "paper", "desk.minimat": "surfaces", "desk.board": "surfaces" });
   });
 
   it("hangs each at its object's own aspect — a shelf's a whole number of pitches high (its hang point is its foot)", () => {

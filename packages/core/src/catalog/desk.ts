@@ -208,6 +208,13 @@ export const Tray = defineComponent("Tray", {
   takeX: field("f64", { default: 0 }),
   takeY: field("f64", { default: 0 }),
   handed: field("u32", { default: 0 }),
+  /**
+   * design-018 §6 (R2) — THE FILTER: the tray category the drawer shows ("" — all), a tray entry's `category` string (`defineObject({
+   * tray: { category } })`). A fact of the view beside `open` — never durable, never synced (each tab its own). Writers: the op
+   * `setTrayCategory` (the bar's chips, the desk handle's door) and `trayLay` — which lays only that category's entries, zeroes the
+   * scroll and the band when it moves, and falls back to all ("") when the frame hangs none of it.
+   */
+  category: field("string", { default: "" }),
 });
 
 /**
@@ -239,11 +246,14 @@ export const TrayIntent = defineResource(
  * Runtime, on the TRAY entity (design-017 §8; K5a): what the lattice law last laid (systems/tray.ts `createTrayLay`) — the drawer's
  * width it laid for (CSS px, the renderer's word through the pose seam), the content's foot (board px — the scroll's range is that
  * plus a pitch less the face, the renderer's to say) and how many lays so far (a renderer re-reads the specimens when it moves).
+ * design-018 §6 (R2): `present`, what the frame could hang before the category's filter — its entries' categories in the lay's
+ * order with their counts, JSON `[id, count][]` ("" for an entry that names none); `trayCategories` reads it.
  */
 export const TrayContent = defineComponent("TrayContent", {
   width: field("f64", { default: 0 }),
   bottom: field("f64", { default: 0 }),
   laid: field("u32", { default: 0 }),
+  present: field("string", { default: "[]" }),
 });
 
 /**

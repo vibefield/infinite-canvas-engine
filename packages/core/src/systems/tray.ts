@@ -35,7 +35,7 @@
  */
 import type { Component, Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
-import { layTray, specimenFit, type TrayItem, trayScrollMax } from "@ice/kernel";
+import { layTray, specimenFit, type TrayItem, trayOrder, trayScrollMax } from "@ice/kernel";
 import { Specimen, Tray, TrayContent, TrayIntent, TrayPress } from "../catalog/desk";
 import { HandledByWidget, LocalPointer, Pointer, PointerButtons, PointerMods, PointerScreen, PointerWheel, WentCancelled, WentDown, WentUp, WheelHandled } from "../catalog/pointer";
 import { BoardRoot, ChildOf, Position, Size } from "../catalog/scene";
@@ -295,7 +295,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || hover !== t.hover
         || take !== t.take || takeU !== t.takeU || takeV !== t.takeV || takeX !== t.takeX || takeY !== t.takeY || handed !== t.handed
         || wheelDy !== t.wheelDy || fade !== t.fade) {
-        ctx.edit(tray).set(Tray, { open, scroll, stretch, wheelAt, wheelDy, fade, hover, take, takeU, takeV, takeX, takeY, handed });
+        ctx.edit(tray).set(Tray, { ...t, open, scroll, stretch, wheelAt, wheelDy, fade, hover, take, takeU, takeV, takeX, takeY, handed });
       }
     },
     { name: "trayInput", access: { write: [Tray, TrayPress] } },
@@ -306,6 +306,25 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
 export function hungTypes(world: World): WidgetType[] {
   const all = engineCatalogFor(world)?.widgetTypes() ?? widgets.all();
   return all.filter((t) => t.tray !== undefined && t.object !== undefined);
+}
+
+/** A hung type's tray entry as the lattice law takes it: its type, its hang, its place in the order. */
+const itemOf = (t: WidgetType): TrayItem => {
+  const e = t.tray as NonNullable<WidgetType["tray"]>;
+  return { type: t.type, hang: e.hang, ...(e.category !== undefined ? { category: e.category } : {}), ...(e.order !== undefined ? { order: e.order } : {}) };
+};
+/** A hung type's tray category ("" — its entry names none). */
+const categoryOf = (t: WidgetType): string => t.tray?.category ?? "";
+/** The categories among `types` in the lay's order (category, order, type), each with how many of them it holds (design-018 §6). */
+function presentOf(types: readonly WidgetType[]): [string, number][] {
+  const out: [string, number][] = [];
+  for (const item of types.map(itemOf).sort(trayOrder)) {
+    const id = item.category ?? "";
+    const last = out[out.length - 1];
+    if (last !== undefined && last[0] === id) last[1] += 1;
+    else out.push([id, 1]);
+  }
+  return out;
 }
 
 /**
@@ -322,10 +341,17 @@ export function hungTypes(world: World): WidgetType[] {
  * K9 (S13, D-K9-c.4): it hangs what the CURRENT frame takes — inside an entered container its ingress, at the root its canvas's
  * placement, the authority a drop's commit asks (`placement`) — so no specimen offers a take the frame would refuse; entering or
  * leaving re-lays it (the drawer is shut then: the desk is inert while it is out). Without a policy, every hung type.
+ * design-018 §6 (R2) — THE FILTER: of those it lays only the entries of the category the drawer shows (`Tray.category`, "" all); a
+ * change of it re-lays, and the board starts again at its top — the scroll and the band zeroed. A category the frame hangs none of
+ * (its last entry gone with the frame, or an id no entry names) falls back to all. What the frame could hang before the filter — its
+ * categories in the lay's order and their counts — is recorded in `TrayContent.present` (the ops' `trayCategories`: a host's chips).
  */
 export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot; readonly placement?: DropPlacementPolicy | undefined }): TickSystem {
   let laidKey = "";
   let rangeKey = "";
+  // the category the last lay showed, and on which tray entity (R2): a move of it starts the board again at its top
+  let laidTray: Entity | undefined;
+  let laidCategory = "";
   const clampToRange = (ctx: SystemCtx, tray: Entity, frame: TrayScreenFrame, bottom: number): void => {
     if (frame.face === undefined) return;
     const range = trayScrollMax(bottom, frame.face, frame.pitch);
@@ -349,17 +375,22 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
       const takes = (type: string): boolean =>
         policy === undefined ? true : inside !== undefined ? policy.canIngress(type, inside) : root === undefined || policy.canPlace === undefined || policy.canPlace(type, root);
       const types = hungTypes(world).filter((t) => takes(t.type));
-      const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((t) => t.type).join(",")}`;
+      // THE FILTER (design-018 §6): the category asked, or all when the frame hangs none of it — written back, so the fact says
+      // what is shown; a move of what is shown zeroes the scroll and the band (the board starts again at its top)
+      const t = ctx.read(tray, Tray);
+      const asked = t.category ?? "";
+      const category = asked !== "" && !types.some((q) => categoryOf(q) === asked) ? "" : asked;
+      const moved = laidTray === tray && category !== laidCategory;
+      if (category !== asked || (moved && (t.scroll !== 0 || t.stretch !== 0))) ctx.edit(tray).set(Tray, { ...t, category, ...(moved ? { scroll: 0, stretch: 0 } : {}) });
+      const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}`;
       if (key === laidKey) { clampToRange(ctx, tray, frame, content?.bottom ?? 0); return; }
-      const items: TrayItem[] = types.map((t) => {
-        const e = t.tray as NonNullable<WidgetType["tray"]>;
-        return { type: t.type, hang: e.hang, ...(e.category !== undefined ? { category: e.category } : {}), ...(e.order !== undefined ? { order: e.order } : {}) };
-      });
+      const shown = category === "" ? types : types.filter((q) => categoryOf(q) === category);
+      const items: TrayItem[] = shown.map(itemOf);
       const layout = layTray(items, frame.w, frame.pitch);
       const have = new Map<string, Entity>();
       for (const e of specimensOf(world, tray)) { const id = world.get(e, PrefabId)?.id; if (typeof id === "string") have.set(id, e); }
       for (const p of layout.placed) {
-        const t = types.find((q) => q.type === p.type) as WidgetType;
+        const w = shown.find((q) => q.type === p.type) as WidgetType;
         const e = have.get(p.type);
         if (e !== undefined) {
           have.delete(p.type);
@@ -371,17 +402,19 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
         }
         // the widget's own spawn inits (Position, Size, the entry's props folded into their groups), the untouched groups at their defaults
         const cells = new Map<Component, Record<string, FieldWrite>>();
-        for (const [c, v] of t.prefab.components) cells.set(c, v);
-        for (const [c, v] of widgetSpawnInits(t.type, { x: p.x, y: p.y, w: p.w, h: p.h, props: t.tray?.props ?? {} }, t).overrides) cells.set(c, v);
-        cells.set(PrefabId, { id: t.type });
+        for (const [c, v] of w.prefab.components) cells.set(c, v);
+        for (const [c, v] of widgetSpawnInits(w.type, { x: p.x, y: p.y, w: p.w, h: p.h, props: w.tray?.props ?? {} }, w).overrides) cells.set(c, v);
+        cells.set(PrefabId, { id: w.type });
         const spawned = ctx.spawn({ components: [...cells] as ComponentInit[], tags: [Specimen, WidgetEquipped] });
         ctx.setRelation(spawned, ChildOf, tray, "last");
       }
       for (const e of have.values()) ctx.destroy(e);
-      const next = { width: frame.w, bottom: layout.bottom, laid: (content?.laid ?? 0) + 1 };
+      const next = { width: frame.w, bottom: layout.bottom, laid: (content?.laid ?? 0) + 1, present: JSON.stringify(presentOf(types)) };
       if (content === undefined) ctx.addComponent(tray, TrayContent, next);
       else ctx.edit(tray).set(TrayContent, next);
-      laidKey = `${tray}|${next.laid}|${frame.w}|${frame.pitch}|${types.map((t) => t.type).join(",")}`;
+      laidKey = `${tray}|${next.laid}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}`;
+      laidTray = tray;
+      laidCategory = category;
       clampToRange(ctx, tray, frame, layout.bottom);
     },
     { name: "trayLay", access: { write: [Position, Size, TrayContent, Tray] } },
