@@ -1,7 +1,9 @@
-// THE PEGBOARD TRAY (design-017 §5–§6) — the drawer, and the research board in it (research/sdf-pegboard, shader.js), shaded in
-// CLOSED FORM for a head-on view: no march, no history, no jitter — every frame is final, so a scrolling drawer is clean on every
-// frame. A PURE module: the uniform blocks arrive as parameters — `u` the mat's struct carrying the DESK's light (the colour law is
-// mat.wgsl's own), `t` the tray's (src/tray/pass.ts) — and so does the blue noise.
+// THE PEGBOARD TRAY (design-017 §5–§6; design-018 §2–§4) — the drawer, and the research board in it (research/sdf-pegboard, shader.js)
+// lying on the mat, shaded in CLOSED FORM for a head-on view: no march, no history, no jitter — every frame is final, so a scrolling
+// drawer is clean on every frame. Its edge is an arris in the face's material; its holes show the desk as drawn under it, black at the
+// board's shadow; what hangs on it fades at the top edge through the face's portal feather (every kind's `portal_cover`) and here, the
+// accessories. A PURE module: the uniform blocks arrive as parameters — `u` the mat's struct carrying the DESK's light (the colour law
+// is mat.wgsl's own), `t` the tray's (src/tray/pass.ts) — and so does the blue noise.
 //
 // Board units are PITCHES (the research's 1). A board point is x from the drawer's left edge and Y down the board, Y split into a
 // whole row R (i32: the scroll's whole rows carried on the CPU plus the rows on screen) and fy ∈ [0,1): nothing large ever enters

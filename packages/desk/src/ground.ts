@@ -405,9 +405,9 @@ export interface PreparedFrame {
   readonly kinds: Readonly<Record<string, number>>;
   /** What the kinds' caps turned away, by kind name, every slot's (absent: nothing) — `GroundStats.dropped` (D7). */
   readonly dropped?: Readonly<Record<string, number>>;
-  /** K5a: the tray's specimens, one slot each, prepared — drawn between the board and the rim (`drawTray`); absent = none. */
+  /** K5a: the tray's specimens, one slot each, prepared — drawn over the board, inside its edge (`drawTray`); absent = none. */
   readonly tray?: readonly DrawSlot[];
-  /** K5b: what the tray carries, one slot each, prepared — drawn over the rim, whole (`drawTray`); absent = none. */
+  /** K5b: what the tray carries, one slot each, prepared — drawn over the drawer, whole (`drawTray`); absent = none. */
   readonly carried?: readonly DrawSlot[];
 }
 
@@ -604,7 +604,7 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
     }
   }
   pass.setScissorRect(0, 0, size.w, size.h);
-  // what the tray carries (K5b): over the rim and the dim, whole — it is off the board
+  // what the tray carries (K5b): over the drawer and the dim, whole — it is off the board
   if (carried !== undefined && carried.length > 0) {
     for (const s of carried) drawSlot(pass, size, dpr, { ...s, bare: true });
     pass.setScissorRect(0, 0, size.w, size.h);
@@ -692,7 +692,7 @@ export class Ground {
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
     // stratum 5: the marks, over every slot and every stratum (drawFrame left the scissor on the whole view)
     if (marked > 0) this.marks?.draw(pass);
-    // …and the pegboard drawer over them (design-017): the dim, its shadow on the desk, the board, the specimens (K5a), the rim
+    // …and the pegboard drawer over them (design-017): the dim, its shadow on the desk, the board to its edge, the specimens (K5a)
     if ((trayed > 0 || prepared.carried !== undefined) && this.tray !== null) drawTray(pass, this.surface.size(), inputs.view.dpr, this.tray, prepared.tray, this.marks, prepared.carried);
     pass.end();
     this.device.queue.submit([encoder.finish()]);

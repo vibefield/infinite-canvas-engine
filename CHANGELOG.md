@@ -908,6 +908,30 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   rig:tray's pixel rows (rig:parity's page has no chrome; rig:collab, clock, gpu and panel read nothing it covers).
 
 <!-- design-015 D5b (2026-09-26) -->
+<!-- design-018 R1 (2026-09-28) -->
+- **The pegboard tray, refined — the board (design-018 §2–§4, R1).** The drawer reads as a hardboard panel lying over the cutting mat:
+  - **Its edge** is an ARRIS — a 1.5 px quarter-round in the face's own material, lamp-lit where the outline faces the lamp, falling
+    to the room's shade on the far side, with a faint shadow of the window's lip on the board along the lamp's side (`DRAWER.inner`);
+    its corners a panel's 10 px. The cream rim (`DRAWER.rim`, its strips laid over everything, `TrayPass.drawRim`) and the finger
+    notch (`DRAWER.notch`, `.notchRound`, ground.ts's three scissors round it) retired. The face runs to the outline: the scroll's
+    range and the pose's `face` take the whole drawer.
+  - **Shut, it is wholly off the view**: `drawerRect(vw, vh, p)` (its `lift` gone) rests it below the view by its shadows' reach
+    (`SHADOW_REACH`, 62 px), and at p 0 the tray pass lays, uploads and draws NOTHING. The lip's drawing and its spring retired —
+    `DRAWER.lip`, `.lipHover`, `.liftHz`, `.lipDrag`, `.lipPad`, `TrayPin.lift`, `TrayFrameInputs.lift`, `TrayFluxState.lift`,
+    `TrayFacts.lip`; the specimens' hover keeps its 7 Hz as `DRAWER.hoverHz`. (The lip's INPUT and its fact are R2's.)
+  - **The holes see the desk**: a hole shows what lies under the drawer as drawn — the mat's green, its grid lines, its leaves, a note
+    laid there — in the board's shadow: premultiplied black at `1 − (1 − dim)·f^(1/2.2)`, `f` the lamp through the slot and the room's
+    light cut by the cavity, encoded as the mat's own shade. The board lies ON the mat (`PEG.thick` 0.1, `PEG.gap` 0.03 — 0.13 pitch,
+    the height the drawer's own lamp shadow is pushed by); `TRAY.cavity` 0.9 · 1 · 0.1; the research's plaster (`TRAY.research.wall`,
+    `TRAY_LOOK.wall`, the record's `wall`) retired.
+  - **The fade**: the specimens, their shadows, their accessories and their tags fade out over `DRAWER.fade` (28 px) below the face's
+    top edge instead of being cut — a top FEATHER on the portal chain (`clips[i].z`, 0 everywhere else: every other scene
+    byte-identical), so every kind that keeps the kit's contract fades with no code of its own, the plugin clock included. The notebook
+    and the calendar honour the chain now, at the kit's composite, each object as one (`layerComposite` takes `view` + `portal`; new
+    `layerCompositeLayout(device, label)`; `BoxTargets(…, samples, view)` binds the slot's view block).
+  - Witnesses: rig:tray (a) the fade — seven kinds on the smoothstep's quarters, the tags and the accessories on its ramp · (b) the
+    holes see the desk · (c) no notch · (d) shut, no tray draw; the five tray stills re-blessed, the other 107 scenes byte-identical.
+
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
 The hybrid is gone: no DOM under the camera, no GL islands, no old ground engine, no presentation

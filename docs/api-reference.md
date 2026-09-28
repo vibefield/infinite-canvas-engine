@@ -302,6 +302,12 @@ of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuPr
 `Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is
 `@ice/desk`'s, and no pass ships here) · **`@ice/desk/kit`** (the render kit a kind's pass is written against besides the engine:
 the slot's view and its mat, the lamp, `kitWgsl`, a container's inside, the service keys a kind lends and uses). The desk names no kind.
+The kit's `portal` piece — `portal_cover`, a fragment's cover through the slot's chain of faces — honours a face's top FEATHER
+(design-018 §4: the pegboard tray's face carries one, so its specimens dissolve into the board at the drawer's top edge; every kind
+that multiplies by `portal_cover` fades with no code of its own). A LAYERED kind (its objects drawn into a target of its own, laid in
+one composite) keeps the contract as one object: the kit's composite lays the layer through the slot's chain (`layerComposite`, its
+bindings `layerCompositeLayout(device, label)`, and `BoxTargets(device, label, layoutComp, samples, view)` — `view` the slot's view
+block, `MatPass.view`).
 
 **Plugin parity (design-016 K-L2, K8a)** — whatever a built-in kind does, a plugin kind declares the same way, and no list in the
 engine names a kind:
