@@ -855,7 +855,9 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   mat's vinyl left App.tsx). Every seam wakes the sleeping loop where it changes something visible.
 - **Changed (0.14.0, unreleased API — renamed or reshaped at K8a):** `ChipKind` → a chip's `finish` (`ChipFinish`,
   `PAPER_FINISH`, `VINYL_FINISH`); `NoteEditor` → `DeskEditor`, `createNoteEditor` → `createNoteBody` (`NOTE_BODY`, the note's
-  half); `ObjectHost.editor` → `ObjectHost.text`; `pinGreek(e, GreekPin)` → `pinAsset(e, asset)` (D-K8a.8); `KindHost`'s
+  half); `NoteEditorOptions` → split in two, `DeskEditorOptions` (`createDeskEditor`: the container, the world, the text
+  parts, `idleMs`, `wake`) and `NoteBodyOptions` (`createNoteBody`: the desk's `editor`, the world, the note's `driver`,
+  `geometryOf`, `font`, `hand`, `now`); `ObjectHost.editor` → `ObjectHost.text`; `pinGreek(e, GreekPin)` → `pinAsset(e, asset)` (D-K8a.8); `KindHost`'s
   `text` / `print` / `blobs` / `decode` → `use(key)` (the desk's own doors — `pass`, `children`, `drawn`, `budget`,
   `rasters`, `remake`, `wake` — stay fields); `insideViewOfFace` takes the container's radius; `@ice/objects` no longer
   exports `DESK_OBJECT` (it is `@ice/desk`'s).

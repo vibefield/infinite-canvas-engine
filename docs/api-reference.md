@@ -14,8 +14,8 @@ unsupported and wall-checked.
 
 **What a landing must pass** (design-013 C4, D-C4.11; design-015 D1): `pnpm run ci` (typecheck ·
 lint · tests · the import walls · `gen:check`) and **`pnpm run gate:landing`** — the desk's Dawn
-oracle, the `apps/desk` build, its fifteen rigs (`rig:parity` first: Chrome against the oracle's
-bytes, maxΔ 0 asserted per scene) and `pack:audit`.
+oracle, the `apps/desk` build, its eighteen rigs (`rig:parity` first: Chrome against the oracle's
+bytes, maxΔ 0 asserted per scene), `pack:audit` and the desk clock's `dts:check`.
 The landing gate is separate from `ci` because the oracle needs Dawn, which the
 CI runner has not been probed for. A RELEASE adds the audit again from the other
 side: `packages/ice`'s `prepack` runs `pack:audit`, so `npm publish` measures the
@@ -283,7 +283,8 @@ pass draws the guides and the marquee, and a wires pass is owed to the first des
 The desk (design-015): every object under the camera drawn by ONE WebGPU renderer FROM THE WORLD;
 the DOM in screen space. Entries mirror the umbrella's: **`@ice/desk`** (the root barrel — the
 renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLayerHandle` (`handle.editor()`
-is the one focused editor an object's DOM half made), the text raster `inkRaster`/`penFaces`, `decodePicture`,
+is the desk's ONE focused editor — the desk makes it at every mount, whatever kinds are registered, K8a; `status()` says whether
+it draws and `onStatus(listener)` hears each move — a device lost after the boot included, K9), the text raster `inkRaster`/`penFaces`, `decodePicture`,
 the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `ObjectKind`, `KindProgram`, `KindHost`,
 `ObjectHost` (a kind's DOM half, declared: `lend` · `text` · `mount` — design-016 K4b, K8a) —, the builder/pick/ambient/reflector
 of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until

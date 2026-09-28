@@ -17,6 +17,10 @@ function* sources(dir) {
   }
 }
 const jsdoc = [...sources(resolve(root, "packages"))].filter((p) => /^[^/]+\/src\//.test(relative(resolve(root, "packages"), p)));
+/** The landing gate's rigs, counted off its own script, and the docs that name the number (K9: they said fifteen while it ran sixteen). */
+const NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two"];
+const gateRigs = NUMBERS[(JSON.parse(read("package.json")).scripts["gate:landing"].match(/ rig:[\w-]+/g) ?? []).length] ?? "more than twenty-two";
+const RIG_COUNTED = ["README.md", "docs/api-reference.md"];
 
 /** [what, files, pattern, absent?] — absent: the stale claim must not be there; else it must. */
 const ROWS = [
@@ -31,6 +35,10 @@ const ROWS = [
   ["the JSDoc points a caller at <Desk>/EngineProvider, not <InfiniteCanvas>, for the menu's engine", ["packages/react/src/selection-menu.tsx"], /`<InfiniteCanvas>` provides one|outside `<InfiniteCanvas>`/, true],
   ["the ground's device doc says no three adopts it", ["packages/desk/src/ground.ts"], /three adopts/, true],
   ["the plugin-parity list names the wakes a kind declares and what a missing one costs (K9)", ["docs/api-reference.md"], /`KindLocal\.due\(now\)`[\s\S]*desk never sleeps[\s\S]*`KindHost\.wake\(\)`[\s\S]*`KindPass\.idleAt\(ms\)`/, false],
+  ...RIG_COUNTED.map((f) => [`${f} counts the landing gate's ${gateRigs} rigs (package.json's gate:landing, K9)`, [f], new RegExp(`\\b${gateRigs} rigs\\b`), false]),
+  [`no doc counts the landing gate's rigs as other than ${gateRigs} (K9)`, RIG_COUNTED, new RegExp(`\\b(?!${gateRigs} )(${NUMBERS.join("|")}) rigs\\b`), true],
+  ["the desk's editor is the desk's, not one an object's DOM half made (K8a; K9)", ["docs/api-reference.md"], /the one focused editor an object's DOM half made/, true],
+  ["the CHANGELOG's K8a renames name NoteEditorOptions beside NoteEditor and createNoteEditor (K9)", ["CHANGELOG.md"], /`NoteEditorOptions` → split in two/, false],
 ];
 
 const bad = [];
