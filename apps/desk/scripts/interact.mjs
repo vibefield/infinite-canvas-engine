@@ -409,22 +409,27 @@ try {
   await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 500, y: 330, deltaX: 0, deltaY: -240 });
   await sleep(250);
   await settle();
-  const camIn = await q("window.__desk.camera()");
+  const camClick = await q("window.__desk.camera()");
   const Bin = await entity(b);
-  await click((Bin.cx - camIn.x) * camIn.zoom, (Bin.cy - camIn.y) * camIn.zoom);
-  await settle();
-  const G8 = (await entity(b)).geometry;
+  await click((Bin.cx - camClick.x) * camClick.zoom, (Bin.cy - camClick.y) * camClick.zoom);
+  // SETTLED, then ONE frame's state (K-H): the camera, the note's geometry, the marks it wears, the menu's anchor, the depth — read in
+  // one evaluate, where they were six round trips after a settle that may give up (4 s) with the wheel's zoom still easing: red at
+  // load 250 in the proof's first gate, the brackets measured against a camera read before they were drawn
+  for (let i = 0; i < 8 && !(await settle()).settled; i++);
+  const st8 = await q(`(() => { const d = window.__desk; const e = d.entity(${b}); return { cam: d.camera(), g: e.geometry, selected: e.selected, marks: d.marks(), anchor: d.anchor().box, depth: d.depth() }; })()`);
+  const camIn = st8.cam;
+  const G8 = st8.g;
   const z8 = camIn.zoom;
   const want8 = { cx: (G8.centre[0] - camIn.x) * z8, cy: (G8.centre[1] - camIn.y) * z8, hx: G8.half[0] * z8, hy: G8.half[1] * z8, angle: G8.angle };
-  const got8 = (await marks())?.objects ?? [];
+  const got8 = st8.marks?.objects ?? [];
   const f8 = got8[0]?.frame;
-  const a8 = (await q("window.__desk.anchor()")).box;
+  const a8 = st8.anchor;
   const ex8 = want8.hx * Math.abs(Math.cos(want8.angle)) + want8.hy * Math.abs(Math.sin(want8.angle)) + 6;
   const ey8 = want8.hx * Math.abs(Math.sin(want8.angle)) + want8.hy * Math.abs(Math.cos(want8.angle)) + 6;
   const on8 = f8 !== undefined && near(f8.cx, want8.cx) && near(f8.cy, want8.cy) && near(f8.hx, want8.hx) && near(f8.hy, want8.hy) && near(f8.angle, want8.angle);
   const box8 = a8 !== null && near(a8.x0, want8.cx - ex8) && near(a8.y0, want8.cy - ey8) && near(a8.x1, want8.cx + ex8) && near(a8.y1, want8.cy + ey8);
-  const depth8 = await q("window.__desk.depth()");
-  check(flight8?.kind === "enter" && depth8 === 1 && (await entity(b)).selected && got8.length === 1 && got8[0].style === "brackets" && on8 && box8, `entered by a double-click (depth ${depth8}), the note inside wears its brackets where the entered camera draws it — (${f8?.cx.toFixed(1)}, ${f8?.cy.toFixed(1)}) ±(${f8?.hx.toFixed(1)}, ${f8?.hy.toFixed(1)}) turned ${f8?.angle.toFixed(4)}, its sheet's (${want8.cx.toFixed(1)}, ${want8.cy.toFixed(1)}) at zoom ${z8.toFixed(3)} — and the menu's anchor 6 px around them`);
+  const depth8 = st8.depth;
+  check(flight8?.kind === "enter" && depth8 === 1 && st8.selected && got8.length === 1 && got8[0].style === "brackets" && on8 && box8, `entered by a double-click (depth ${depth8}), the note inside wears its brackets where the entered camera draws it — (${f8?.cx.toFixed(1)}, ${f8?.cy.toFixed(1)}) ±(${f8?.hx.toFixed(1)}, ${f8?.hy.toFixed(1)}) turned ${f8?.angle.toFixed(4)}, its sheet's (${want8.cx.toFixed(1)}, ${want8.cy.toFixed(1)}) at zoom ${z8.toFixed(3)} — and the menu's anchor 6 px around them`);
   await key("Escape", "Escape", 27);   // the tap put the pen on the note (D2c): down
   await settle();
   await key("Escape", "Escape", 27);   // no gesture to cancel: Escape leaves the frame (D2b)

@@ -97,13 +97,18 @@ export async function twoWitnesses(measure, judge) {
  * on a loaded host. Measured on the calendar's tape (the rig:open row, 80 trials a build at load 17–137): the batch reaches the
  * page in 4–31 ms and the desk recognises the two taps a frame or two apart, as it does the awaited four. The events carry their
  * own timestamps 20 ms apart (a person's quick double-click). `move`: a mouseMoved to the point first (rig:open's helper had one;
- * rig:nav's and rig:interact's did not). Resolves when Chrome has acknowledged all four.
+ * rig:nav's and rig:interact's did not). Resolves once the desk has TAKEN them — three frames after Chrome acknowledged all four:
+ * without that wait rig:nav's "the cut holds the springs" (3 of 3) and rig:interact's entered note read the desk before the cut.
  */
 export async function dblClick(tab, x, y, { move = true, ...extra } = {}) {
   if (move) await tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, ...extra });
   const t = Date.now() / 1000;
   const steps = [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]];
   await Promise.all(steps.map(([type, clickCount], i) => tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount, timestamp: t + i * 0.02, ...extra })));
+  // …and TAKEN: three frames of the page's own after the four were acknowledged — the desk recognises a tap a frame (the batch's two
+  // taps land a frame or two apart), so a read after this is a read after the double-click, as the awaited four made it by their
+  // round trips (rig:nav's "the cut holds the springs" read the desk before the cut without it). A hidden tab: a second at most
+  await tab.evaluate("new Promise((r) => { let n = 0; const f = () => (++n >= 3 ? r(0) : requestAnimationFrame(f)); requestAnimationFrame(f); setTimeout(() => r(0), 1000); })", { awaitPromise: true, timeoutMs: 20000 });
 }
 
 /**

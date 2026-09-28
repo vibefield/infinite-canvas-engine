@@ -120,24 +120,28 @@ describe("a double-click as one batch (K-H)", () => {
   it("sends its four events before the first is acknowledged, 20 ms apart by their own timestamps", async () => {
     const sent: { type: string; clickCount?: number; timestamp?: number }[] = [];
     let ackFirst: () => void = () => {};
+    let taken = 0;
     const tab = {
       send: (_method: string, p: { type: string; clickCount?: number; timestamp?: number }) => {
         sent.push(p);
         return p.type === "mousePressed" && p.clickCount === 1 ? new Promise<void>((r) => { ackFirst = r; }) : Promise.resolve();
       },
+      evaluate: async () => { taken++; return 0; },
     };
     const done = dblClick(tab, 10, 20, { move: false });
     for (let i = 0; i < 4; i++) await Promise.resolve();
     expect(sent.map((p) => `${p.type} ${p.clickCount}`)).toEqual(["mousePressed 1", "mouseReleased 1", "mousePressed 2", "mouseReleased 2"]);
+    expect(taken).toBe(0);   // the desk's frames are waited only after all four were acknowledged
     ackFirst();
     await done;
+    expect(taken).toBe(1);
     const ts = sent.map((p) => p.timestamp ?? 0);
     for (let i = 1; i < 4; i++) expect((ts[i] ?? 0) - (ts[i - 1] ?? 0)).toBeCloseTo(0.02, 5);   // seconds since the epoch: f64 holds ~0.2 µs
   });
 
   it("moves to the point first unless told not to", async () => {
     const sent: string[] = [];
-    await dblClick({ send: async (_m: string, p: { type: string }) => { sent.push(p.type); } }, 1, 2);
+    await dblClick({ send: async (_m: string, p: { type: string }) => { sent.push(p.type); }, evaluate: async () => 0 }, 1, 2);
     expect(sent[0]).toBe("mouseMoved");
     expect(sent).toHaveLength(5);
   });
