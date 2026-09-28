@@ -38,7 +38,14 @@ export const STRATA: readonly StratumName[] = ["pads", "sheets", "things"];
  * hand, the desk at half the dpr (design-015 §8). A held frame prepares the root twice, once for each, so a pass that keeps state
  * between its prepares keeps the copy's apart.
  */
-export type RenderTarget = "frame" | "copy";
+/**
+ * The render a slot is prepared for (D7): the FRAME (the desk as it is), the COPY (the desk behind a carried object, made once
+ * per stamp and blurred), or the HAND (K9 R4 — the carried object alone, prepared EVERY frame of the carry while the copy
+ * stands). A pass that keeps state per render keeps the copy's apart; a pass whose residency asks are per prepare (the
+ * pictures' details, the boards' pool) re-asks what it has bound under the hand, else the tick's step — seeing only the hand's
+ * asks — would free every other detail on the desk behind it, a softness pop at every put-down.
+ */
+export type RenderTarget = "frame" | "copy" | "hand";
 
 export interface SlotContext {
   /** The slot's camera and box (CSS px) and the device pixel ratio. */

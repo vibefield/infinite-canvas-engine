@@ -784,7 +784,7 @@ export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet
   }
   const encoder = device.createCommandEncoder({ label: "hold" });
   const handInputs: GroundFrameInputs = { view: held.view, grid: held.grid, objects: [held.object, ...(held.riders ?? [])], theme: { ...inputs.theme, matLight: held.light } };
-  const hand = prepareFrame(encoder, root, pool, handInputs, held.grid);
+  const hand = prepareFrame(encoder, root, pool, handInputs, held.grid, "hand");   // (K9 R4: the passes re-ask what the copy has bound)
   const handPass = beginPass(encoder, hold.hand.view, [0, 0, 0, 0], "hold/hand");
   drawSlot(handPass, size, dpr, { ...hand.incoming, bare: true });
   handPass.end();

@@ -178,7 +178,7 @@ export class PhotoPass {
    * its light (`light` the Sun or the Moon, `lit` the lamp it is seen by — MINIMAT.md §4): the dapple falls
    * on the prints. Returns the count that will draw.
    */
-  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, prints: readonly PhotoInstance[], present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight, keys?: readonly number[]): number {
+  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, prints: readonly PhotoInstance[], present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight, keys?: readonly number[], hand = false): number {
     const cap = MAX_PHOTOS * 64;
     const list = prints.length > cap ? prints.slice(0, cap) : prints;
     this.dropped = prints.length - list.length;
@@ -192,6 +192,10 @@ export class PhotoPass {
     // each print ON SCREEN asks for its picture at the lod it samples it (pictures.ts): the residency's next step answers — a
     // print in the cull's margin asks nothing (its thumbnail stands; a detail is the screen's, never a prefetch)
     const pics = this.shared.pictures;
+    // K9 R4 — THE HAND's prepare (the carried print alone, every frame of the carry): the desk copy behind it stands as it was
+    // prepared, so its prints ask nothing this frame — the details they hold are re-asked here at the lod they were granted, or
+    // the step would free every one of them (a softness pop on every put-down; over the cap, a detail behind the hand evictable)
+    if (hand) pics.keepSlotted();
     const zd = view.zoom * view.dpr;
     const x0 = view.camX;
     const y0 = view.camY;

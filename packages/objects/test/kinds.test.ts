@@ -382,10 +382,12 @@ describe("the desk's kinds: thin adapters over the moved passes", () => {
     minimat.prepare(enc, ctx, records);   // no word from the ground: the instances say
     same(got[2], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, undefined, undefined]);
     expect(board.prepare(enc, ctx, records, extra)).toBe(7);
-    same(got[3], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.theme, undefined]);
+    same(got[3], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.theme, undefined, false]);   // …and whether this is the HAND's prepare (K9 R4)
     const keys = [11, 12];
     paper.prepare(enc, ctx, records, { ...extra, keys });
     same(got[4], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.select, ctx.lit, keys]);
+    board.prepare(enc, { ...ctx, target: "hand" }, records, extra);
+    same(got[5], [ctx.view, ctx.fadeIn, ctx.cfg, ctx.frame, records, ctx.present, ctx.light, ctx.theme, undefined, true]);
   });
 
   it("spawn wraps the pass's own spawn; tune takes the root's law (the whiteboard's is its copy); ranges and the mini mat's chips forward", () => {

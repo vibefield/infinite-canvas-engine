@@ -69,6 +69,8 @@ interface Held extends Picture {
   readonly source: PictureSource;
   /** The smallest lod a print asked it at since the last step (Infinity: not asked). */
   want: number;
+  /** The lod its slot was last granted or kept at (K9 R4: what the hand's prepare re-asks); Infinity before any. */
+  kept: number;
   /** A detail on its way, from this level; Infinity when none. */
   building: number;
   dropped: boolean;
@@ -182,7 +184,7 @@ export class PictureStore {
     const chain = this.chain(first);
     this.thumbs.fill(chain, mips, layer, base);
     chain.destroy();
-    const p: Held = { id: this.nextId++, width, height, mips, layer, base, detail: null, slot: -1, tier: 0, source, want: Number.POSITIVE_INFINITY, building: Number.POSITIVE_INFINITY, dropped: false };
+    const p: Held = { id: this.nextId++, width, height, mips, layer, base, detail: null, slot: -1, tier: 0, source, want: Number.POSITIVE_INFINITY, kept: Number.POSITIVE_INFINITY, building: Number.POSITIVE_INFINITY, dropped: false };
     this.pictures.set(p.id, p);
     return p;
   }
@@ -217,6 +219,21 @@ export class PictureStore {
   }
 
   /**
+   * K9 R4 — the HAND's prepare: every picture a slot binds is asked again at the lod it was granted, so the step keeps it. The
+   * desk copy behind a carried print is prepared once per stamp and its prints ask nothing on the frames between; the hand's
+   * frame is the only prepare then, and a step that saw its ask alone freed every other slot — a one-frame softness pop at the
+   * put-down (the rest frame drew them from their thumbnails, the tick re-slotted them), and while un-slotted `keeps` was false,
+   * so over the cap `trim` could evict a detail on screen behind the hand.
+   */
+  keepSlotted(): void {
+    for (const p of this.slots) {
+      if (p === null || p === undefined) continue;
+      if (p.kept < p.want) p.want = p.kept;
+      this.asked.add(p);
+    }
+  }
+
+  /**
    * THE FRAME BOUNDARY (the kind's tick, before the next frame's build): the pictures asked since the last step, largest on
    * screen first — the first DETAIL_SLOTS that need more than the thumbnail (or will within HEADROOM) keep or take a slot
    * once their detail is resident; a missing or too-coarse detail is fetched (a coarser one binds meanwhile), a detail finer
@@ -233,6 +250,7 @@ export class PictureStore {
       if (p !== null && p !== undefined && (!keep.has(p) || p.detail === null)) { this.slots[s] = null; p.slot = -1; p.tier += 1; moved = true; }
     }
     for (const p of chosen) {
+      p.kept = p.want;   // what the hand's prepare re-asks for it (K9 R4)
       const need = detailNeed(p.want, p.base) as number;
       const d = p.detail;
       if (d === null || d.base > need) this.fetch(p, need);   // (a coarser detail binds meanwhile)

@@ -647,10 +647,14 @@ export class BoardPass {
    * order) and the mat's block for this slot's camera and light: the dapple, the lamp's shading
    * and the shadows. A board whose raster is missing is skipped. Returns the count that will draw.
    */
-  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly BoardInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, theme?: GroundTheme, keys?: readonly number[]): number {
+  prepare(view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame | undefined, instances: readonly BoardInstance[], present: Presentation | undefined, light: MatLight = DAY_LIGHT, theme?: GroundTheme, keys?: readonly number[], hand = false): number {
     this.flush();
     this.dryNow();
     const s = this.shared;
+    // K9 R4 — THE HAND's prepare (the carried board alone, every frame of the carry): the desk copy behind it was prepared once
+    // per stamp and its boards ask nothing on the frames between, so every board the pool binds is asked again here at its
+    // raster's own density (no raise) — else the step would free their slots (a pop at the put-down; a raster behind the hand evictable)
+    if (hand) for (const id of s.pool) if (id !== null && id !== undefined) s.asked.set(id, Math.max(s.asked.get(id) ?? 0, s.rasters.get(id)?.density ?? 0));
     const from: number[] = [];
     // the boards with ink to show (a raster, or its thumbnail), in paint order — the store's records (D6); their keys alongside,
     // and each one's facts as the aux (its raster's, and where its ink is bound: a tier move repacks it)
