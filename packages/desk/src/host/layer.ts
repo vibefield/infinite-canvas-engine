@@ -247,7 +247,7 @@ export interface TrayCarriedSeen {
  * DREW it — its outline's top-left and width, its slide — the view, the hand, and the category model its chips show. A fact the bar
  * follows is never a pixel it guesses: the pill rides `drawer.y` exactly, frame by frame.
  */
-export interface TrayBarAnchor {
+export interface TrayAnchor {
   /** The drawer is out (the fact: its slide may still be on its way). */
   readonly open: boolean;
   /** The drawer's outline as drawn this frame (CSS px; its bottom runs on under the view) and its slide — null before its first frame, or while a pin hides it. */
@@ -283,7 +283,7 @@ export interface DeskTrayDoor {
   /** design-018 §6 — the categories the drawer's frame hangs, in the lay's order: each its id, its label and its count (a host's chips). */
   categories(): readonly TrayCategory[];
   /** design-018 §5 — what the bar is placed from, as of the last frame drawn. */
-  anchor(): TrayBarAnchor;
+  anchor(): TrayAnchor;
   /**
    * design-018 §5 — tell `listener` after each frame that moved what `anchor()` says: the drawer as drawn (its slide, frame by frame),
    * open or shut, the category or the categories, the hand, the entries, the view. Never at rest: no frame, no call.
@@ -557,7 +557,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     // the tray bar's source (design-018 §5): the drawer as the last frame drew it, and what its chips show — published after each frame
     // that moved it, as the menu's anchor is (the slide is drawn frame by frame, so the bar rides it exactly; at rest nothing is drawn)
-    const trayAnchorOf = (): TrayBarAnchor => {
+    const trayAnchorOf = (): TrayAnchor => {
       const f = compose.tray.frame();
       const vp = world.getResource(Viewport);
       const h = builder.hand();

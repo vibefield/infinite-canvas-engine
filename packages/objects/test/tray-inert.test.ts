@@ -6,7 +6,7 @@
 // a day (a double-click began writing, and flew the pad into the hand), and the hover rose on the dimmed desk. Here the desk is mounted
 // on the fake device as `desk-mount.ts` mounts it, on a container that KEEPS its listeners so the halves' platform events can be sent
 // at the pixel; the loop is driven as `dom/loop.ts` drives it, on a virtual clock. Every case with its control, the drawer shut.
-import { Camera, closeTray, createCanvasEngine, defineQuery, Editing, type Entity, heldEntity, LocalPointer, NO_MODS, openTray, Pointer, TouchesExact, trayOpen, Viewport } from "@ice/core";
+import { Camera, closeTray, createCanvasEngine, defineQuery, Editing, type Entity, heldEntity, LocalPointer, NO_MODS, openTray, Pointer, Selected, TouchesExact, trayOpen, Viewport } from "@ice/core";
 import { deskLayer, type DeskLayerHandle } from "@ice/desk";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme, PadSelection } from "../src";
@@ -22,10 +22,10 @@ interface Rig {
   /** Steps until the gate says sleep (400 at most). */
   settle(): void;
   step(n?: number): void;
-  /** The mouse to (x, y) through the one input path, then settled. */
-  move(x: number, y: number): void;
-  /** A press and its release at (x, y) through the queue (what the stack sees), then the platform's pointerdown + click (what the halves see). */
-  click(x: number, y: number, detail?: number): void;
+  /** The mouse to (x, y) through the one input path, then settled — `chrome`: over DOM chrome, as the adapter says it (`overInteractive`). */
+  move(x: number, y: number, chrome?: boolean): void;
+  /** A press and its release at (x, y) through the queue (what the stack sees), then the platform's pointerdown + click (what the halves see) — `chrome`: on DOM chrome (the down `surfaceHandled`). */
+  click(x: number, y: number, detail?: number, chrome?: boolean): void;
   /** The mouse pointer's exact hit. */
   exact(): Entity | undefined;
   /** The drawer opened by its op and slid; the tray's per-kind passes (made asynchronously on the fake device) settled before the test goes on. */
@@ -76,10 +76,15 @@ async function mount(): Promise<Rig> {
   let t = 1000;
   const step = (n = 1): void => { for (let i = 0; i < n; i++) { ce.engine.step(t); ce.engine.frame.nextStep(t); t += 16.7; } };
   const settle = (): void => { for (let i = 0; i < 400; i++) { ce.engine.step(t); const due = ce.engine.frame.nextStep(t); t += 16.7; if (due > t) return; } };
-  const enqueue = (kind: "move" | "down" | "up", x: number, y: number, buttons: number): void => { ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS }); ce.engine.frame.wake("test"); };
-  const move = (x: number, y: number): void => { enqueue("move", x, y, 0); settle(); };
-  const click = (x: number, y: number, detail = 1): void => {
-    enqueue("down", x, y, 1); step(2);
+  const enqueue = (kind: "move" | "down" | "up", x: number, y: number, buttons: number, chrome = false): void => {
+    // the adapter marks every move and down with what it found under the pointer (design-002 §8) — `overInteractive`, and on DOM
+    // chrome the down `surfaceHandled` too — so a move off the chrome clears what a move onto it set
+    const flags = kind === "up" ? {} : kind === "down" && chrome ? { overInteractive: true, surfaceHandled: true as const } : { overInteractive: chrome };
+    ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS, ...flags }); ce.engine.frame.wake("test");
+  };
+  const move = (x: number, y: number, chrome = false): void => { enqueue("move", x, y, 0, chrome); settle(); };
+  const click = (x: number, y: number, detail = 1, chrome = false): void => {
+    enqueue("down", x, y, 1, chrome); step(2);
     enqueue("up", x, y, 0); step(1);
     const ev = { isPrimary: true, button: 0, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, detail, preventDefault() {} };
     dispatch("pointerdown", ev);
@@ -179,5 +184,23 @@ describe("the desk under the open drawer is inert to the DOM-at-event-time halve
     r.step(30);
     expect(r.exact()).toBe(above);
     expect(r.handle.fluxOf(above)?.hover ?? 0).toBeGreaterThan(0.9);
+  });
+});
+
+describe("a click on DOM chrome is the chrome's (design-018 §5)", () => {
+  it("a click on the tray's BAR over a note at the view's foot — its moves `overInteractive`, its down `surfaceHandled`, as the adapter sends them — lends the note nothing: no lease, no `Editing`, nothing selected; the same click on the desk lends the editor (control)", async () => {
+    const r = await mount(); rigs.push(r);
+    const under = r.ce.ops.spawnWidget("desk.note", { x: 500, y: 560 });   // its sheet under the bar's closed spot, the view's bottom centre
+    r.settle();
+    r.move(600, 700, true);
+    r.click(600, 700, 1, true);
+    expect(r.handle.editor().lease()).toBeUndefined();
+    expect(r.world.hasTag(under, Editing)).toBe(false);
+    expect(r.world.hasTag(under, Selected)).toBe(false);
+    r.move(600, 700);
+    r.click(600, 700);
+    expect(r.handle.editor().lease()?.part).toBe("note.body");
+    expect(r.world.hasTag(under, Editing)).toBe(true);
+    r.handle.editor().blur(); r.settle();
   });
 });

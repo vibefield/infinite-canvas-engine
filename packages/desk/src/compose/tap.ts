@@ -3,9 +3,12 @@
 // hand's (a put-down, a held tool) — and the pointer's hit is LIVE under the hand (the hold's `HandledByWidget` is a same-phase
 // structural stamp l1-pick never sees; K9 law #1), so without this guard it would name whatever lies under the hand's frame. NONE
 // while the pegboard drawer is out (design-017 §4: the desk is inert — l1-pick answers the bare canvas then, and this refuses
-// outright, so a click on a specimen over a note under the drawer lends nothing). `found` says whether the pointer is known at
+// outright, so a click on a specimen over a note under the drawer lends nothing). NONE over DOM CHROME (design-018 §5): a pointer
+// the ingest marked `OverInteractive` — its target a `[data-canvas-interactive]` island (the selection menu, the tray's bar at the
+// view's foot) or a native control — taps the chrome, never the object under it (the halves listen on the container in the
+// capture phase, before any handler of the chrome's could stop them). `found` says whether the pointer is known at
 // all (a touch that has lifted is gone: a text part may look for itself — the note asks the notes it drew).
-import { defineQuery, type Entity, heldEntity, LocalPointer, Pointer, TouchesExact, trayOpen, type World } from "@ice/core";
+import { defineQuery, type Entity, heldEntity, LocalPointer, OverInteractive, Pointer, TouchesExact, trayOpen, type World } from "@ice/core";
 
 const tapPointersQ = defineQuery([Pointer, LocalPointer]);
 
@@ -18,7 +21,7 @@ export function tapHit(world: World, pid: string): { readonly found: boolean; re
       const p = b.entity(r);
       if (world.read(p, Pointer).id !== pid) continue;
       found = true;
-      hit = world.getRelation(p, TouchesExact);
+      hit = world.hasTag(p, OverInteractive) ? undefined : world.getRelation(p, TouchesExact);
     }
   });
   return { found, hit: found ? hit : undefined };

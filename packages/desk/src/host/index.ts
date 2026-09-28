@@ -5,7 +5,7 @@
 // Everything else under src/ is DOM-free, so the Node oracle imports it whole; a test greps.
 // The kinds' DOM halves — the note's editor, the calendar's input and print raster — left with their kinds at design-016 K4b
 // (`@ice/objects`: each object declares its half, `defineObject({ host })`, and the layer builds what the objects declare).
-export { deskLayer, type DeskLayerContext, type DeskLayerFactory, type DeskLayerHandle, type DeskLayerOptions, type DeskLayerPerf, type DeskLayerStatus, type DeskTrayDoor, type MatPin, type SelectionSource, type TrayBarAnchor } from "./layer";
+export { deskLayer, type DeskLayerContext, type DeskLayerFactory, type DeskLayerHandle, type DeskLayerOptions, type DeskLayerPerf, type DeskLayerStatus, type DeskTrayDoor, type MatPin, type SelectionSource, type TrayAnchor } from "./layer";
 export type { SelectionAnchor } from "../compose/marks";
 export { surface, type Surface } from "./surface";
 // the ONE focused editor (D2c; the desk's since design-016 K8a — every kind LEASES it through the text parts its object declares):

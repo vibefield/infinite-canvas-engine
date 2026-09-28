@@ -221,8 +221,11 @@ const glyphOf = (a: SelectionAction, s: SelectionState): string | ReactNode => (
 
 // ---------------------------------------------------------------- the ink (desk.css `.sel-menu`, the tray's material)
 
+/** The desk's INK as CSS custom properties — the menu's and, since design-018 §5, the tray bar's (`<TrayBar>`): one set of values; an app re-points them on either island. */
+export const DESK_INK = "--ice-menu-ink:rgb(16 9 4 / .94);--ice-menu-ink-solid:rgb(16 9 4);--ice-menu-cream:rgb(255 237 215);--ice-menu-cream-rgb:255 237 215;--ice-menu-brass:rgb(196 165 116);--ice-menu-hair:rgb(196 165 116 / .24);--ice-menu-rule:rgb(196 165 116 / .34);--ice-menu-danger:rgb(255 69 58);--ice-menu-danger-bg:rgb(255 69 58 / .16);--ice-menu-shadow:-1px 2px 3px rgb(14 26 10 / .25),-8px 14px 32px rgb(14 26 10 / .38)";
+
 const STYLE = `
-[data-ice-selection-menu]{--ice-menu-ink:rgb(16 9 4 / .94);--ice-menu-ink-solid:rgb(16 9 4);--ice-menu-cream:rgb(255 237 215);--ice-menu-cream-rgb:255 237 215;--ice-menu-brass:rgb(196 165 116);--ice-menu-hair:rgb(196 165 116 / .24);--ice-menu-rule:rgb(196 165 116 / .34);--ice-menu-danger:rgb(255 69 58);--ice-menu-danger-bg:rgb(255 69 58 / .16);--ice-menu-shadow:-1px 2px 3px rgb(14 26 10 / .25),-8px 14px 32px rgb(14 26 10 / .38);position:absolute;left:0;top:0;z-index:20;will-change:transform,opacity;font:500 12.5px/1 var(--ice-menu-font,system-ui,-apple-system,sans-serif);user-select:none}
+[data-ice-selection-menu]{${DESK_INK};position:absolute;left:0;top:0;z-index:20;will-change:transform,opacity;font:500 12.5px/1 var(--ice-menu-font,system-ui,-apple-system,sans-serif);user-select:none}
 [data-ice-selection-menu] .ice-sm-bar{position:relative;display:flex;align-items:center;gap:2px;height:40px;padding:4px;box-sizing:border-box;white-space:nowrap;border-radius:20px;background:var(--ice-menu-ink);color:var(--ice-menu-cream);box-shadow:inset 0 0 0 1px var(--ice-menu-hair),var(--ice-menu-shadow)}
 [data-ice-selection-menu] button{appearance:none;border:0;margin:0;padding:0;background:none;color:inherit;font:inherit;cursor:pointer}
 [data-ice-selection-menu] .ice-sm-btn{width:32px;height:32px;border-radius:16px;display:grid;place-items:center;color:rgb(var(--ice-menu-cream-rgb) / .86);transition:background 120ms ease,color 120ms ease,transform 120ms ease}

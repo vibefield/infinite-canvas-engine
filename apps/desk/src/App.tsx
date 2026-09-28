@@ -7,7 +7,8 @@
 // runtime glyph atlas feed the mat at boot (K1: the atlas re-rendered at every change of the device's ratio or the rulers' text
 // size); `window.__desk` (api.ts) is the rigs' door. D4a: the desk
 // draws its marks on the GPU and the ONE screen-space selection menu rides the layer's anchor
-// (`<SelectionMenu>`), with ICE's acts and the app's own stub "Send" first (it logs — VibeField's is real).
+// (`<SelectionMenu>`), with ICE's acts and the app's own stub "Send" first (it logs — VibeField's is real). design-018 §5 (R2): its
+// sibling `<TrayBar>` is the drawer's handle at the view's foot (the chips ride the drawer's top edge when it is out); `a` still toggles.
 // D5a: the backtick opens the DEV PANEL (panel/ — the prototype's tweak panel), its params projected into the layer.
 // K2: `~` (⇧`) opens the DEVTOOLS DOCK (devtools.ts) — strata's profiler, the desk's GPU, the observer; the layer keeps a GPU memory ledger for it.
 
@@ -18,7 +19,7 @@ import { bookAngle } from "@ice/objects";
 import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, NOTE_TYPE, NOTEBOOK_TYPE, VINYL_ACT } from "@ice/objects";
 import { CLOCK_SECONDS_ACT, CLOCK_TYPE } from "@ice-examples/desk-clock";
 import type { ThemeName } from "@ice/desk";
-import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource, unlessInert } from "@ice/react";
+import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource, TrayBar, type TrayBarSource, unlessInert } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
 import { deskBlobs } from "./blobs";
@@ -94,6 +95,7 @@ export function App(): ReactElement {
   useEffect(() => theme.follow(), [theme]);
   const matSerial = useRef(1);
   const [menuSource, setMenuSource] = useState<SelectionMenuSource | null>(null);
+  const [trayBar, setTrayBar] = useState<TrayBarSource | null>(null);
 
   // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
   const layer = useMemo<LayerFactory>(() => {
@@ -204,6 +206,7 @@ export function App(): ReactElement {
           else if (s.state === "failed" && lived && !cancelled) fail(`the GPU was lost — reload\n\n${s.message ?? ""}`);
         });
         setMenuSource(handle.selection);
+        setTrayBar(handle.tray);
         // K1: the rulers' glyph atlas, kept to the ratio the desk draws at (the viewport's) and the panel's text size (glyphs.ts) —
         // nothing until the ground is here
         const glyphs = glyphFeed({ ready: () => handle.available(), scale: () => deskScale(engine.world.getResource(Viewport)?.dpr ?? 1), size: () => params.ruler.text.size, upload: (a) => handle.setGlyphs(a.bytes, a.meta) });
@@ -235,6 +238,7 @@ export function App(): ReactElement {
         return () => { cancelled = true; undoDrop(); offStatus(); };
       }}
     >
+      {trayBar !== null ? <TrayBar source={trayBar} /> : null}
       {menuSource !== null ? <SelectionMenu source={menuSource} actions={MENU_ACTIONS} /> : null}
     </Desk>
   );

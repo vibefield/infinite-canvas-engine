@@ -1,7 +1,7 @@
 /**
  * @ice/react — the React face of the desk (design-015 §3): `<Desk>` (wraps `@ice/dom`'s
  * `createDeskHost`), EngineProvider + the Tier-3 hooks, the keymap, the screen-space selection
- * menu and held bar. Renderer-free: the desk arrives as an opaque layer factory.
+ * menu and held bar, the tray's bar (design-018). Renderer-free: the desk arrives as an opaque layer factory.
  * Import wall: @ice/dom → @ice/core down only — never three/desk (enforced). react/react-dom are peers.
  *
  * GONE at D5b (design-015 §1): `<InfiniteCanvas>` (→ `<Desk>`), `WidgetRoot` and the portals,
@@ -55,6 +55,17 @@ export {
   type SelectionState,
   selectionTaped,
 } from "./selection-menu";
+// design-018 §5–§6 (R2): the pegboard drawer's handle and its category chips — the menu's sibling in the desk's ink
+export {
+  placeTrayBar,
+  TRAY_BAR,
+  TRAY_BAR_GLYPHS,
+  TrayBar,
+  type TrayBarAnchor,
+  type TrayBarCategory,
+  type TrayBarProps,
+  type TrayBarSource,
+} from "./tray-bar";
 export { Desk, type DeskHandle, type DeskProps } from "./desk";
 // The layer seam, re-exported so an app types its factory wrapper without naming @ice/dom.
 export type { LayerContext, LayerFactory, LayerHandle } from "@ice/dom";
