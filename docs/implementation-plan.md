@@ -1611,6 +1611,47 @@ the load beside every number; the committed golden byte-identical through every 
 against the public entries alone and a third-party kind in its own package on the desk and in the tray; the tray's
 witnesses (design-017 §10); ci + `gate:landing` exit 0 on every landing, graded by the orchestrator on the exact SHA.
 
+## M22 — The tray, refined (design-018) — **LANDED 2026-09-28 (R2, then R1 rebased over it; the 0.14.0 release cut, now carrying M20, M21 and M22, is James's)**
+
+James's visual refine round on M21's pegboard tray (2026-09-28, verbatim in design-018 §0): the border "too thick and
+unnatural"; no finger notch — "we should have a dom button that toggles this tray, let's keep things simple"; a "subtle
+fade out" where a scroll hard-clipped the specimens; peg holes that feel "on top of the cutting mat"; and category filters
+like VibeField's widget tray. Designed in `draft/design-018-the-tray-refined.md`; two builders from `9b0a8fa`, each
+graded by the orchestrator on the exact SHA (`pnpm run ci` + `gate:landing`: eighteen rigs, golden 112, pack:audit,
+dts:check — all exit 0).
+
+- **R2 — the button and the filters** (**LANDED 2026-09-28**, `e35fb55`): the lip's INPUT retires (`Tray.lip`, `TrayPress`
+  `lip`, `TRAY_INPUT`'s lip numbers — a shut drawer takes no press, the bottom centre is the desk's); `Tray.category` ("" all)
+  lays only its entries, zeroes the scroll and falls back to all when its last entry goes; `trayCategories` lists what the
+  CURRENT frame can hang (D-R2.1); the built-in ids `paper` · `surfaces` · `things`; the desk handle's tray door gains
+  `category()`, `categories()`, `anchor()` and a `subscribe()` that fires after a frame that moved what the bar reads, never
+  at rest; `<TrayBar>` in `@ice/react` — one pill in the selection menu's ink, at the view's foot shut, riding the drawer's
+  top edge open with its chips and a close ×, stepping aside while an object is in hand; its clicks never reach the desk
+  (`tapHit` answers no object for an `OverInteractive` pointer, D-R2.8 — the same exposure closed for the menu); the rigs
+  that hold the page's pixels to the renderer's hide it through the desk's door (world, nav, portal, sticky, ruler, open,
+  and tray's pixel rows). rig:idle: 0 engine steps at rest with the bar showing.
+- **R1 — the board** (**LANDED 2026-09-28**, `fef69a2`, rebased over R2 — tray.mjs's lip rows unioned; R2's door test counted the slide on the wall's clock and raced the host's load once R1's shut drawer began its slide a frame later, so the mount got its own frame clock): shut, the drawer
+  rests wholly off the view and draws nothing (tray draws in a shut frame 2 → 0); the cream rim, the finger notch and the
+  lip's drawing retire — the edge is a 1.5 px arris in the face's own material (D-R1.1) under a faint inner shadow on the
+  edges that face the lamp (D-R1.2), the corners 10; the holes SEE THE DESK — premultiplied shadow over the frame as drawn,
+  the board lying on the mat (`PEG.thick` 0.10, `gap` 0.03: 0.13 pitch of height, the outline's own lamp push, D-R1.5), the
+  plaster retired — so a hole shows the mat's green, its grid and its leaves, or whatever lies under the drawer, in the
+  board's shadow (the densest ×0.70 of the dimmed desk, the mat's own leaf ×0.63 by day, D-R1.4); specimens FADE into the
+  board over 28 px at the top edge through a feather on the portal chain (`PortalClip.feather`, `clips[i].z`) — every kind
+  with no code of its own, the notebook and the calendar at the kit's layered composite (group opacity, D-R1.6), the
+  accessories and the tags on the same ramp; the five tray stills re-blessed, the other 107 byte-identical; the drawer's GPU
+  cost unchanged (bare 0.240 → 0.234 ms, K-H interleaved).
+
+**M22 as landed.** The five asks: the border is a board's edge, not a frame; the notch and the lip are gone and a DOM
+pill toggles the drawer; content dissolves into the board at the top edge; the holes show the cutting mat under the board
+in the board's own shadow (the orchestrator's call over baking the mat's colour — see design-018 §3); the chips filter the
+board by category. James's calls, each one line: the hole style (see-through; "baked" not built, D-R1.3); the board's
+height (`PEG.gap` / `thick`); the corner radius 10; the fade band 28; the inner shadow (D-R1.2); the row of holes peeking
+3 px under the edge at rest (D-R1.7 — `rowPhase` 0.75 → 0.6 in kernel `PEG_LATTICE` and desk `PEG` flips it); the bar's
+word "Objects", its glyph and the chips' ids. Owed: the desk's hover still rises under DOM chrome (l1-pick does not read
+`OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
+0 would make `normalize(shadow.zw)` NaN.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field

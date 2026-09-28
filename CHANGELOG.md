@@ -14,9 +14,13 @@ dom's world-space half, core's surface infra, the profiles, the widget React bin
 `apps/desk`. **0.14.0 BREAKS: the break list is the `### Removed` section below.** Everything under
 `### Added` was additive when it landed; D5b is what turned the additions into the only way.
 
-**design-016 — the kit and the pegboard (M21), IN BUILD; it rides the same 0.14.0 cut.** The rulers on the product's
+**design-016 — the kit and the pegboard (M21), LANDED; it rides the same 0.14.0 cut.** The rulers on the product's
 desk, a GPU profiler, a public render kit the built-in kinds move onto (and into their own package), the 10,000-object
 gates, and the pegboard widget tray. Its blocks below are headed `design-016 K<n>`.
+
+**design-018 — the tray, refined (M22), LANDED; the same 0.14.0 cut.** James's visual round on the pegboard tray: the
+board's edge in place of the cream rim, the holes seeing the desk under the board, specimens fading at the top edge, the
+notch and the lip retired for a DOM `<TrayBar>`, and category filters. Its blocks below are headed `design-018 R1/R2`.
 
 ### Added
 
